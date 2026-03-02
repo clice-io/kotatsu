@@ -121,3 +121,34 @@ if(EVENTIDE_SERDE_ENABLE_FLATBUFFERS)
         eventide::serde::flatbuffers
     )
 endif()
+
+if(EVENTIDE_SERDE_ENABLE_TOML)
+    set(TOMLPLUSPLUS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(TOMLPLUSPLUS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(TOMLPLUSPLUS_BUILD_MODULES OFF CACHE BOOL "" FORCE)
+    set(TOMLPLUSPLUS_INSTALL OFF CACHE BOOL "" FORCE)
+
+    FetchContent_Declare(
+        tomlplusplus
+        GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
+        GIT_TAG v3.4.0
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(tomlplusplus)
+
+    add_library(eventide_serde_toml INTERFACE)
+    add_library(eventide::serde::toml ALIAS eventide_serde_toml)
+
+    target_include_directories(eventide_serde_toml INTERFACE
+        "${PROJECT_SOURCE_DIR}/include"
+    )
+
+    target_link_libraries(eventide_serde_toml INTERFACE
+        eventide::reflection
+        tomlplusplus::tomlplusplus
+    )
+
+    target_link_libraries(eventide_serde INTERFACE
+        eventide::serde::toml
+    )
+endif()
