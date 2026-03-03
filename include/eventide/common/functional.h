@@ -153,6 +153,9 @@ public:
     function& operator=(const function&) = delete;
 
     function& operator=(function&& other) noexcept {
+        if(this == &other) {
+            return *this;
+        }
         this->~function();
         return *new (this) function(std::move(other));
     }
@@ -191,7 +194,7 @@ public:
             Erased{.fn = invokable}) {};
 
     template <typename Class, typename MemFn, typename ClassType = std::remove_cvref_t<Class>>
-        requires sbo_eligible<ClassType> && is_mem_fn_of<Class, MemFn>
+        requires sbo_eligible<ClassType> && is_mem_fn_of<ClassType, MemFn>
     constexpr function(Class&& invokable, MemFn) noexcept :
         function(
             [](const function* self, Args&... args) -> R {
@@ -199,11 +202,12 @@ public:
             },
             Erased{},
             [](function* self) { std::destroy_at(self->storage_as<ClassType>()); }) {
-        std::construct_at(this->storage_as<ClassType>(), std::forward<Class>(invokable));
+        std::construct_at(reinterpret_cast<ClassType*>(this->storage),
+                          std::forward<Class>(invokable));
     }
 
     template <typename Class, typename MemFn, typename ClassType = std::remove_cvref_t<Class>>
-        requires (!sbo_eligible<ClassType>) && is_mem_fn_of<Class, MemFn>
+        requires (!sbo_eligible<ClassType>) && is_mem_fn_of<ClassType, MemFn>
     constexpr function(Class&& invokable, MemFn) noexcept :
         function(
             [](const function* self, Args&... args) -> R {
