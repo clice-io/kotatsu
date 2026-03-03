@@ -14,9 +14,9 @@
 
 #include "eventide/serde/serde.h"
 
-namespace eventide::serde::flatbuffers::schema {
+namespace eventide::serde::flatbuffers::binary {
 
-namespace detail {
+namespace schema_detail {
 
 template <typename T>
 struct remove_annotation {
@@ -156,7 +156,7 @@ template <typename T>
 constexpr bool is_string_like_field_v = std::same_as<remove_optional_t<T>, std::string> ||
                                         std::same_as<remove_optional_t<T>, std::string_view>;
 
-std::string map_entry_identifier(std::string_view owner_name, std::string_view field_name) {
+inline std::string map_entry_identifier(std::string_view owner_name, std::string_view field_name) {
     return normalize_identifier(std::string(owner_name) + "_" + std::string(field_name) + "Entry");
 }
 
@@ -294,20 +294,20 @@ private:
     std::set<std::string> emitted_entries;
 };
 
-}  // namespace detail
+}  // namespace schema_detail
 
 template <typename T>
-constexpr bool is_schema_struct_v = detail::is_schema_struct_v<T>;
+constexpr bool is_schema_struct_v = schema_detail::is_schema_struct_v<T>;
 
 template <typename T>
 std::string type_identifier() {
-    return detail::type_identifier<T>();
+    return schema_detail::type_identifier<T>();
 }
 
 template <typename Root>
 std::string render() {
     static_assert(refl::reflectable_class<Root>, "render requires a reflectable root type");
-    return detail::schema_emitter{}.template emit<Root>();
+    return schema_detail::schema_emitter{}.template emit<Root>();
 }
 
 template <typename Key, typename Value>
@@ -347,4 +347,4 @@ auto bsearch_entry(const EntryVec& entries, const Key& key) -> const
     return &(*it);
 }
 
-}  // namespace eventide::serde::flatbuffers::schema
+}  // namespace eventide::serde::flatbuffers::binary

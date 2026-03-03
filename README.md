@@ -37,7 +37,7 @@ It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv)
   - `rename`, `alias`, `flatten`, `skip`, `skip_if`, `literal`, `enum_string`, etc.
 - Backend integrations:
   - `serde::json::simd` (simdjson-based JSON serializer/deserializer)
-  - FlatBuffers/FlexBuffers helpers (`flatbuffers/flex/*`, schema helpers)
+- FlatBuffers helpers (`flatbuffers/binary/*`) and FlexBuffers helpers (`flatbuffers/flex/*`)
 
 ### `jsonrpc` (`include/eventide/jsonrpc/*`)
 

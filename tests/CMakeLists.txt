@@ -85,6 +85,17 @@ else()
     message(STATUS "EVENTIDE_SERDE_ENABLE_FLATBUFFERS=OFF: skipping tests/serde/flatbuffers/*")
 endif()
 
+if(EVENTIDE_SERDE_ENABLE_TOML)
+    set(TEST_SERDE_TOML_SOURCES ${TEST_SOURCES})
+    list(FILTER TEST_SERDE_TOML_SOURCES INCLUDE REGEX "^tests/serde/toml/.*\\.cpp$")
+    list(TRANSFORM TEST_SERDE_TOML_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
+    target_sources(unit_tests PRIVATE
+        ${TEST_SERDE_TOML_SOURCES}
+    )
+else()
+    message(STATUS "EVENTIDE_SERDE_ENABLE_TOML=OFF: skipping tests/serde/toml/*")
+endif()
+
 if(EVENTIDE_ENABLE_ASYNC AND EVENTIDE_SERDE_ENABLE_SIMDJSON)
     set(TEST_JSONRPC_SOURCES ${TEST_SOURCES})
     list(FILTER TEST_JSONRPC_SOURCES INCLUDE REGEX "^tests/jsonrpc/.*\\.cpp$")
