@@ -54,7 +54,8 @@ TEST_CASE(from_deco_option_renders_usage_style_text) {
     EXPECT_TRUE(deco::desc::from_deco_option(opt.verbose) == "-v|--verbose");
     EXPECT_TRUE(deco::desc::from_deco_option(opt.output) == "-o|--output <FILE>");
     EXPECT_TRUE(deco::desc::from_deco_option(opt.include_dir) == "-I<DIR>|--include=<DIR>");
-    EXPECT_TRUE(deco::desc::from_deco_option(opt.filter) == "--filter <PATTERN>|--filter=<PATTERN>");
+    EXPECT_TRUE(deco::desc::from_deco_option(opt.filter) ==
+                "--filter <PATTERN>|--filter=<PATTERN>");
     EXPECT_TRUE(deco::desc::from_deco_option(opt.tags) ==
                 "--tags,<TAG>[,<TAG>...]|-T,<TAG>[,<TAG>...]");
     EXPECT_TRUE(deco::desc::from_deco_option(opt.pair) == "--pair <VAL1> <VAL2>");
