@@ -24,7 +24,7 @@ template <typename T>
 concept bool_like = std::same_as<T, bool>;
 
 template <typename T>
-concept int_like = if_one_of<T,
+concept int_like = is_one_of<T,
                              signed char,
                              short,
                              int,
@@ -36,7 +36,7 @@ concept int_like = if_one_of<T,
                              std::int64_t>;
 
 template <typename T>
-concept uint_like = if_one_of<T,
+concept uint_like = is_one_of<T,
                               unsigned char,
                               unsigned short,
                               unsigned int,
@@ -48,7 +48,7 @@ concept uint_like = if_one_of<T,
                               std::uint64_t>;
 
 template <typename T>
-concept floating_like = if_one_of<T, float, double, long double>;
+concept floating_like = is_one_of<T, float, double, long double>;
 
 template <typename T>
 concept char_like = std::same_as<T, char>;
@@ -88,9 +88,6 @@ concept serializer_like = requires(S& s,
                                    const std::variant<int, std::string>& variant_value,
                                    const int& key,
                                    const int& value) {
-    { s.serialize_none() } -> result_as<T, E>;
-    { s.serialize_some(i) } -> result_as<T, E>;
-
     { s.serialize_bool(b) } -> result_as<T, E>;
     { s.serialize_int(i) } -> result_as<T, E>;
     { s.serialize_uint(u) } -> result_as<T, E>;
@@ -98,6 +95,10 @@ concept serializer_like = requires(S& s,
     { s.serialize_char(c) } -> result_as<T, E>;
     { s.serialize_str(text) } -> result_as<T, E>;
     { s.serialize_bytes(bytes) } -> result_as<T, E>;
+
+    { s.serialize_null() } -> result_as<T, E>;
+    { s.serialize_some(i) } -> result_as<T, E>;
+    { s.serialize_variant(variant_value) } -> result_as<T, E>;
 
     { s.serialize_seq(len) } -> result_as<SerializeSeq, E>;
     requires requires(SerializeSeq& s) {
@@ -122,8 +123,6 @@ concept serializer_like = requires(S& s,
         { s.serialize_field(text, value) } -> result_as<void, E>;
         { s.end() } -> result_as<T, E>;
     };
-
-    { s.serialize_variant(variant_value) } -> result_as<T, E>;
 };
 
 template <typename D,
@@ -145,9 +144,6 @@ concept deserializer_like = requires(D& d,
                                      std::string_view name,
                                      std::variant<int, std::string>& variant_value,
                                      int& value) {
-    { d.deserialize_none() } -> result_as<bool, E>;
-    { d.deserialize_some(value) } -> result_as<void, E>;
-
     { d.deserialize_bool(b) } -> result_as<void, E>;
     { d.deserialize_int(i64) } -> result_as<void, E>;
     { d.deserialize_uint(u64) } -> result_as<void, E>;
@@ -155,6 +151,9 @@ concept deserializer_like = requires(D& d,
     { d.deserialize_char(c) } -> result_as<void, E>;
     { d.deserialize_str(text) } -> result_as<void, E>;
     { d.deserialize_bytes(bytes) } -> result_as<void, E>;
+
+    { d.deserialize_none() } -> result_as<bool, E>;
+    { d.deserialize_variant(variant_value) } -> result_as<void, E>;
 
     { d.deserialize_seq(len) } -> result_as<DeserializeSeq, E>;
     requires requires(DeserializeSeq& s) {
@@ -186,8 +185,6 @@ concept deserializer_like = requires(D& d,
         { s.skip_value() } -> result_as<void, E>;
         { s.end() } -> result_as<void, E>;
     };
-
-    { d.deserialize_variant(variant_value) } -> result_as<void, E>;
 };
 
 }  // namespace eventide::serde

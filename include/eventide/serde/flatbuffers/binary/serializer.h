@@ -277,7 +277,7 @@ public:
         return std::vector<std::uint8_t>(begin, begin + builder.GetSize());
     }
 
-    result_t<value_type> serialize_none() {
+    result_t<value_type> serialize_null() {
         return encode_boxed(nullptr);
     }
 

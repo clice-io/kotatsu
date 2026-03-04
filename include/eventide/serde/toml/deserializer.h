@@ -345,11 +345,6 @@ public:
         return is_none;
     }
 
-    template <typename T>
-    status_t deserialize_some(T& value) {
-        return serde::deserialize(*this, value);
-    }
-
     template <typename... Ts>
     status_t deserialize_variant(std::variant<Ts...>& value) {
         static_assert((std::default_initializable<Ts> && ...),

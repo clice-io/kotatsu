@@ -136,11 +136,6 @@ public:
 
     result_t<bool> deserialize_none();
 
-    template <typename T>
-    status_t deserialize_some(T& value) {
-        return serde::deserialize(*this, value);
-    }
-
     template <typename... Ts>
     status_t deserialize_variant(std::variant<Ts...>& value) {
         /// FIXME: This is wrong implementation.

@@ -43,7 +43,7 @@ auto Serializer::error() const -> error_type {
     return current_error();
 }
 
-auto Serializer::serialize_none() -> result_t<value_type> {
+auto Serializer::serialize_null() -> result_t<value_type> {
     return write_leaf([&] { builder.Null(); },
                       [&](const std::string& key_name) { builder.Null(key_name.c_str()); });
 }
@@ -65,7 +65,7 @@ auto Serializer::serialize_uint(std::uint64_t value) -> result_t<value_type> {
 
 auto Serializer::serialize_float(double value) -> result_t<value_type> {
     if(!std::isfinite(value)) {
-        return serialize_none();
+        return serialize_null();
     }
 
     return write_leaf(

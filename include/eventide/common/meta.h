@@ -12,7 +12,7 @@ template <typename T>
 constexpr inline bool dependent_false = false;
 
 template <typename T, typename... Ts>
-concept if_one_of = (std::same_as<T, Ts> || ...);
+concept is_one_of = (std::same_as<T, Ts> || ...);
 
 template <template <typename...> typename HKT, typename T>
 constexpr inline bool is_specialization_of = false;

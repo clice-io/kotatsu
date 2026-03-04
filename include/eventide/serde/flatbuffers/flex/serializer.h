@@ -105,7 +105,7 @@ public:
     bool valid() const;
     error_type error() const;
 
-    result_t<value_type> serialize_none();
+    result_t<value_type> serialize_null();
 
     template <typename T>
     result_t<value_type> serialize_some(const T& value) {

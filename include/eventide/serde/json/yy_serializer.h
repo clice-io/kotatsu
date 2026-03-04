@@ -101,7 +101,7 @@ public:
         return builder.to_json_string();
     }
 
-    result_t<value_type> serialize_none() {
+    result_t<value_type> serialize_null() {
         return builder.value(nullptr);
     }
 
@@ -133,7 +133,7 @@ public:
         if(std::isfinite(value)) {
             return builder.value(value);
         }
-        return serialize_none();
+        return serialize_null();
     }
 
     result_t<value_type> serialize_char(char value) {

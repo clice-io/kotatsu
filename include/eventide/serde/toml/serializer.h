@@ -371,7 +371,7 @@ public:
         value_type::table_t values;
     };
 
-    result_t<value_type> serialize_none() {
+    result_t<value_type> serialize_null() {
         return value_type(detail::none_t{});
     }
 

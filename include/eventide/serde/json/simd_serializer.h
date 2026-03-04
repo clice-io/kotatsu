@@ -130,7 +130,7 @@ public:
         return current_error();
     }
 
-    result_t<value_type> serialize_none() {
+    result_t<value_type> serialize_null() {
         return null();
     }
 

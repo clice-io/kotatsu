@@ -194,12 +194,12 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
     } else if constexpr(bytes_like<V>) {
         return s.serialize_bytes(v);
     } else if constexpr(std::same_as<V, std::nullptr_t>) {
-        return s.serialize_none();
+        return s.serialize_null();
     } else if constexpr(is_specialization_of<std::optional, V>) {
         if(v.has_value()) {
             return s.serialize_some(v.value());
         } else {
-            return s.serialize_none();
+            return s.serialize_null();
         }
     } else if constexpr(is_specialization_of<std::variant, V>) {
         return s.serialize_variant(v);
@@ -374,12 +374,12 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
 
         using value_t = typename V::value_type;
         if(v.has_value()) {
-            return d.deserialize_some(v.value());
+            return deserialize(d, v.value());
         }
 
         if constexpr(std::default_initializable<value_t>) {
             v.emplace();
-            auto status = d.deserialize_some(v.value());
+            auto status = deserialize(d, v.value());
             if(!status) {
                 v.reset();
                 return std::unexpected(status.error());
