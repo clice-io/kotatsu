@@ -9,6 +9,10 @@ target_link_libraries(eventide_serde INTERFACE
     eventide::reflection
 )
 
+if(EVENTIDE_SERDE_ENABLE_YYJSON AND NOT EVENTIDE_SERDE_ENABLE_SIMDJSON)
+    message(FATAL_ERROR "EVENTIDE_SERDE_ENABLE_YYJSON requires EVENTIDE_SERDE_ENABLE_SIMDJSON.")
+endif()
+
 if(EVENTIDE_SERDE_ENABLE_SIMDJSON)
     # Keep simdjson in "library consumer" mode.
     set(SIMDJSON_BUILD_STATIC_LIB OFF CACHE BOOL "" FORCE)
@@ -53,6 +57,27 @@ if(EVENTIDE_SERDE_ENABLE_SIMDJSON)
         simdjson::simdjson
     )
 
+    if(EVENTIDE_SERDE_ENABLE_YYJSON)
+        # Keep yyjson as a lean dependency-only library.
+        set(YYJSON_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+        set(YYJSON_BUILD_FUZZER OFF CACHE BOOL "" FORCE)
+        set(YYJSON_BUILD_MISC OFF CACHE BOOL "" FORCE)
+        set(YYJSON_BUILD_DOC OFF CACHE BOOL "" FORCE)
+        set(YYJSON_INSTALL OFF CACHE BOOL "" FORCE)
+
+        FetchContent_Declare(
+            yyjson
+            GIT_REPOSITORY https://github.com/ibireme/yyjson.git
+            GIT_TAG 0.12.0
+            GIT_SHALLOW TRUE
+        )
+        FetchContent_MakeAvailable(yyjson)
+
+        target_link_libraries(eventide_serde_json INTERFACE
+            yyjson
+        )
+    endif()
+
     target_link_libraries(eventide_serde INTERFACE
         eventide::serde::json
     )
@@ -94,5 +119,36 @@ if(EVENTIDE_SERDE_ENABLE_FLATBUFFERS)
 
     target_link_libraries(eventide_serde INTERFACE
         eventide::serde::flatbuffers
+    )
+endif()
+
+if(EVENTIDE_SERDE_ENABLE_TOML)
+    set(TOMLPLUSPLUS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(TOMLPLUSPLUS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(TOMLPLUSPLUS_BUILD_MODULES OFF CACHE BOOL "" FORCE)
+    set(TOMLPLUSPLUS_INSTALL OFF CACHE BOOL "" FORCE)
+
+    FetchContent_Declare(
+        tomlplusplus
+        GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
+        GIT_TAG v3.4.0
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(tomlplusplus)
+
+    add_library(eventide_serde_toml INTERFACE)
+    add_library(eventide::serde::toml ALIAS eventide_serde_toml)
+
+    target_include_directories(eventide_serde_toml INTERFACE
+        "${PROJECT_SOURCE_DIR}/include"
+    )
+
+    target_link_libraries(eventide_serde_toml INTERFACE
+        eventide::reflection
+        tomlplusplus::tomlplusplus
+    )
+
+    target_link_libraries(eventide_serde INTERFACE
+        eventide::serde::toml
     )
 endif()

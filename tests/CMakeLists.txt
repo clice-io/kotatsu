@@ -54,13 +54,24 @@ endif()
 
 if(EVENTIDE_SERDE_ENABLE_SIMDJSON)
     set(TEST_SERDE_SIMDJSON_SOURCES ${TEST_SOURCES})
-    list(FILTER TEST_SERDE_SIMDJSON_SOURCES INCLUDE REGEX "^tests/serde/simdjson/.*\\.cpp$")
+    list(FILTER TEST_SERDE_SIMDJSON_SOURCES INCLUDE REGEX "^tests/serde/json/.*\\.cpp$")
     list(TRANSFORM TEST_SERDE_SIMDJSON_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
     target_sources(unit_tests PRIVATE
         ${TEST_SERDE_SIMDJSON_SOURCES}
     )
 else()
-    message(STATUS "EVENTIDE_SERDE_ENABLE_SIMDJSON=OFF: skipping tests/serde/simdjson/*")
+    message(STATUS "EVENTIDE_SERDE_ENABLE_SIMDJSON=OFF: skipping tests/serde/json/*")
+endif()
+
+if(EVENTIDE_SERDE_ENABLE_YYJSON)
+    set(TEST_SERDE_YYJSON_SOURCES ${TEST_SOURCES})
+    list(FILTER TEST_SERDE_YYJSON_SOURCES INCLUDE REGEX "^tests/serde/json/(dom_tests|yyjson_.*)\\.cpp$")
+    list(TRANSFORM TEST_SERDE_YYJSON_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
+    target_sources(unit_tests PRIVATE
+        ${TEST_SERDE_YYJSON_SOURCES}
+    )
+else()
+    message(STATUS "EVENTIDE_SERDE_ENABLE_YYJSON=OFF: skipping tests/serde/json/*")
 endif()
 
 if(EVENTIDE_SERDE_ENABLE_FLATBUFFERS)
@@ -74,7 +85,28 @@ else()
     message(STATUS "EVENTIDE_SERDE_ENABLE_FLATBUFFERS=OFF: skipping tests/serde/flatbuffers/*")
 endif()
 
+if(EVENTIDE_SERDE_ENABLE_TOML)
+    set(TEST_SERDE_TOML_SOURCES ${TEST_SOURCES})
+    list(FILTER TEST_SERDE_TOML_SOURCES INCLUDE REGEX "^tests/serde/toml/.*\\.cpp$")
+    list(TRANSFORM TEST_SERDE_TOML_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
+    target_sources(unit_tests PRIVATE
+        ${TEST_SERDE_TOML_SOURCES}
+    )
+else()
+    message(STATUS "EVENTIDE_SERDE_ENABLE_TOML=OFF: skipping tests/serde/toml/*")
+endif()
+
 if(EVENTIDE_ENABLE_ASYNC AND EVENTIDE_SERDE_ENABLE_SIMDJSON)
+    set(TEST_JSONRPC_SOURCES ${TEST_SOURCES})
+    list(FILTER TEST_JSONRPC_SOURCES INCLUDE REGEX "^tests/jsonrpc/.*\\.cpp$")
+    list(TRANSFORM TEST_JSONRPC_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
+    target_sources(unit_tests PRIVATE
+        ${TEST_JSONRPC_SOURCES}
+    )
+    target_link_libraries(unit_tests PRIVATE
+        eventide::jsonrpc
+    )
+
     set(TEST_LANGUAGE_SOURCES ${TEST_SOURCES})
     list(FILTER TEST_LANGUAGE_SOURCES INCLUDE REGEX "^tests/language/.*\\.cpp$")
     list(TRANSFORM TEST_LANGUAGE_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")

@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "error.h"
+#include "owned.h"
 #include "task.h"
 
 namespace eventide {
@@ -25,7 +26,6 @@ public:
 
     struct Self;
     Self* operator->() noexcept;
-    const Self* operator->() const noexcept;
 
     static timer create(event_loop& loop = event_loop::current());
 
@@ -36,99 +36,9 @@ public:
     task<> wait();
 
 private:
-    explicit timer(Self* state) noexcept;
+    explicit timer(unique_handle<Self> self) noexcept;
 
-    std::unique_ptr<Self, void (*)(void*)> self;
-};
-
-class idle {
-public:
-    idle() noexcept;
-
-    idle(const idle&) = delete;
-    idle& operator=(const idle&) = delete;
-
-    idle(idle&& other) noexcept;
-    idle& operator=(idle&& other) noexcept;
-
-    ~idle();
-
-    struct Self;
-    Self* operator->() noexcept;
-    const Self* operator->() const noexcept;
-
-    static idle create(event_loop& loop = event_loop::current());
-
-    void start();
-
-    void stop();
-
-    task<> wait();
-
-private:
-    explicit idle(Self* state) noexcept;
-
-    std::unique_ptr<Self, void (*)(void*)> self;
-};
-
-class prepare {
-public:
-    prepare() noexcept;
-
-    prepare(const prepare&) = delete;
-    prepare& operator=(const prepare&) = delete;
-
-    prepare(prepare&& other) noexcept;
-    prepare& operator=(prepare&& other) noexcept;
-
-    ~prepare();
-
-    struct Self;
-    Self* operator->() noexcept;
-    const Self* operator->() const noexcept;
-
-    static prepare create(event_loop& loop = event_loop::current());
-
-    void start();
-
-    void stop();
-
-    task<> wait();
-
-private:
-    explicit prepare(Self* state) noexcept;
-
-    std::unique_ptr<Self, void (*)(void*)> self;
-};
-
-class check {
-public:
-    check() noexcept;
-
-    check(const check&) = delete;
-    check& operator=(const check&) = delete;
-
-    check(check&& other) noexcept;
-    check& operator=(check&& other) noexcept;
-
-    ~check();
-
-    struct Self;
-    Self* operator->() noexcept;
-    const Self* operator->() const noexcept;
-
-    static check create(event_loop& loop = event_loop::current());
-
-    void start();
-
-    void stop();
-
-    task<> wait();
-
-private:
-    explicit check(Self* state) noexcept;
-
-    std::unique_ptr<Self, void (*)(void*)> self;
+    unique_handle<Self> self;
 };
 
 class signal {
@@ -145,7 +55,6 @@ public:
 
     struct Self;
     Self* operator->() noexcept;
-    const Self* operator->() const noexcept;
 
     static result<signal> create(event_loop& loop = event_loop::current());
 
@@ -156,9 +65,96 @@ public:
     task<error> wait();
 
 private:
-    explicit signal(Self* state) noexcept;
+    explicit signal(unique_handle<Self> self) noexcept;
 
-    std::unique_ptr<Self, void (*)(void*)> self;
+    unique_handle<Self> self;
+};
+
+class idle {
+public:
+    idle() noexcept;
+
+    idle(const idle&) = delete;
+    idle& operator=(const idle&) = delete;
+
+    idle(idle&& other) noexcept;
+    idle& operator=(idle&& other) noexcept;
+
+    ~idle();
+
+    struct Self;
+    Self* operator->() noexcept;
+
+    static idle create(event_loop& loop = event_loop::current());
+
+    void start();
+
+    void stop();
+
+    task<> wait();
+
+private:
+    explicit idle(unique_handle<Self> self) noexcept;
+
+    unique_handle<Self> self;
+};
+
+class prepare {
+public:
+    prepare() noexcept;
+
+    prepare(const prepare&) = delete;
+    prepare& operator=(const prepare&) = delete;
+
+    prepare(prepare&& other) noexcept;
+    prepare& operator=(prepare&& other) noexcept;
+
+    ~prepare();
+
+    struct Self;
+    Self* operator->() noexcept;
+
+    static prepare create(event_loop& loop = event_loop::current());
+
+    void start();
+
+    void stop();
+
+    task<> wait();
+
+private:
+    explicit prepare(unique_handle<Self> self) noexcept;
+
+    unique_handle<Self> self;
+};
+
+class check {
+public:
+    check() noexcept;
+
+    check(const check&) = delete;
+    check& operator=(const check&) = delete;
+
+    check(check&& other) noexcept;
+    check& operator=(check&& other) noexcept;
+
+    ~check();
+
+    struct Self;
+    Self* operator->() noexcept;
+
+    static check create(event_loop& loop = event_loop::current());
+
+    void start();
+
+    void stop();
+
+    task<> wait();
+
+private:
+    explicit check(unique_handle<Self> self) noexcept;
+
+    unique_handle<Self> self;
 };
 
 task<> sleep(std::chrono::milliseconds timeout, event_loop& loop = event_loop::current());

@@ -53,7 +53,7 @@ TEST_CASE(mutex_lock_order) {
     EXPECT_EQ(step, 2);
 }
 
-TEST_CASE(event_set_and_wait) {
+TEST_CASE(event_set_wait) {
     event_loop loop;
     event ev;
     int fired = 0;
@@ -78,7 +78,7 @@ TEST_CASE(event_set_and_wait) {
     EXPECT_EQ(fired, 1);
 }
 
-TEST_CASE(event_manual_reset_all) {
+TEST_CASE(manual_reset_all) {
     event_loop loop;
     event ev(true);
     int count = 0;

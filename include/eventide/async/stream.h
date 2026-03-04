@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "error.h"
+#include "owned.h"
 #include "task.h"
 
 namespace eventide {
@@ -40,7 +41,6 @@ public:
 
     struct Self;
     Self* operator->() noexcept;
-    const Self* operator->() const noexcept;
 
     /// Raw libuv handle pointer, or nullptr if invalid.
     void* handle() noexcept;
@@ -51,8 +51,8 @@ public:
     /// Read available data into a std::string; waits for at least one read if empty.
     task<result<std::string>> read();
 
-    /// Read up to dst.size() bytes into dst; returns bytes read (0 on EOF/invalid).
-    task<std::size_t> read_some(std::span<char> dst);
+    /// Read up to dst.size() bytes into dst; returns bytes read, 0 on EOF, or an error.
+    task<result<std::size_t>> read_some(std::span<char> dst);
 
     using chunk = std::span<const char>;
 
@@ -78,9 +78,9 @@ public:
     error set_blocking(bool enabled);
 
 protected:
-    explicit stream(Self* state) noexcept;
+    explicit stream(unique_handle<Self> self) noexcept;
 
-    std::unique_ptr<Self, void (*)(void*)> self;
+    unique_handle<Self> self;
 };
 
 template <typename Stream>
@@ -99,8 +99,6 @@ public:
     struct Self;
     /// Internal access; null when invalid.
     Self* operator->() noexcept;
-    /// Internal access; null when invalid.
-    const Self* operator->() const noexcept;
 
     /// Accept one connection; only one pending accept is allowed at a time.
     task<result<Stream>> accept();
@@ -113,9 +111,9 @@ private:
     friend class pipe;
     friend class tcp_socket;
 
-    explicit acceptor(Self* state) noexcept;
+    explicit acceptor(unique_handle<Self> self) noexcept;
 
-    std::unique_ptr<Self, void (*)(void*)> self;
+    unique_handle<Self> self;
 };
 
 /// Pipe/socket wrapper (named pipe on Windows, Unix domain socket on Unix).
@@ -154,7 +152,7 @@ public:
                                    options opts = options(),
                                    event_loop& loop = event_loop::current());
 
-    explicit pipe(Self* state) noexcept;
+    explicit pipe(unique_handle<Self> self) noexcept;
 
 private:
     friend class process;
@@ -167,7 +165,7 @@ class tcp_socket : public stream {
 public:
     tcp_socket() noexcept = default;
 
-    explicit tcp_socket(Self* state) noexcept;
+    explicit tcp_socket(unique_handle<Self> self) noexcept;
 
     using acceptor = eventide::acceptor<tcp_socket>;
 
@@ -245,7 +243,7 @@ public:
     static result<vterm_state> get_vterm_state();
 
 private:
-    explicit console(Self* state) noexcept;
+    explicit console(unique_handle<Self> self) noexcept;
 };
 
 }  // namespace eventide

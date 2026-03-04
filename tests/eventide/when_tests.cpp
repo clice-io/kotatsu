@@ -28,7 +28,7 @@ TEST_CASE(when_all_values) {
     EXPECT_EQ(res, 3);
 }
 
-TEST_CASE(when_any_first_wins) {
+TEST_CASE(any_first_wins) {
     int a_count = 0;
     int b_count = 0;
 
@@ -53,7 +53,7 @@ TEST_CASE(when_any_first_wins) {
     EXPECT_EQ(b_count, 0);
 }
 
-TEST_CASE(when_all_sleep_values) {
+TEST_CASE(all_sleep_values) {
     event_loop loop;
     int slow_done = 0;
     int fast_done = 0;
@@ -84,7 +84,7 @@ TEST_CASE(when_all_sleep_values) {
     EXPECT_EQ(fast_done, 1);
 }
 
-TEST_CASE(when_any_sleep_winner) {
+TEST_CASE(any_sleep_wins) {
     event_loop loop;
     int fast_done = 0;
     int slow_done = 0;
@@ -115,7 +115,7 @@ TEST_CASE(when_any_sleep_winner) {
     EXPECT_EQ(slow_done, 0);
 }
 
-TEST_CASE(when_any_child_cancel) {
+TEST_CASE(any_child_cancel) {
     event_loop loop;
     int cancel_started = 0;
     int slow_started = 0;
@@ -148,7 +148,7 @@ TEST_CASE(when_any_child_cancel) {
     EXPECT_EQ(slow_done, 0);
 }
 
-TEST_CASE(when_all_child_cancel_cancels_others) {
+TEST_CASE(all_cancel_others) {
     event_loop loop;
     int cancel_started = 0;
     int slow_started = 0;

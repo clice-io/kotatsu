@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "error.h"
+#include "owned.h"
 #include "task.h"
 
 namespace eventide {
@@ -30,7 +31,6 @@ public:
 
     struct Self;
     Self* operator->() noexcept;
-    const Self* operator->() const noexcept;
 
     struct recv_flags {
         /// Packet is partial (truncated).
@@ -143,9 +143,9 @@ public:
     task<result<recv_result>> recv();
 
 private:
-    explicit udp(Self* state) noexcept;
+    explicit udp(unique_handle<Self> self) noexcept;
 
-    std::unique_ptr<Self, void (*)(void*)> self;
+    unique_handle<Self> self;
 };
 
 }  // namespace eventide

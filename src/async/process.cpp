@@ -1,6 +1,8 @@
 #include "eventide/async/process.h"
 
-#include "libuv.h"
+#include <cassert>
+
+#include "awaiter.h"
 #include "eventide/async/error.h"
 #include "eventide/async/loop.h"
 
@@ -29,50 +31,35 @@ static unsigned int to_uv_process_flags(const process::creation_options& options
     return out;
 }
 
-struct process::Self : uv_handle<process::Self, uv_process_t> {
+struct process::Self :
+    uv_handle<process::Self, uv_process_t>,
+    uv::latched_delivery<process::exit_status> {
     uv_process_t handle{};
-    system_op* waiter = nullptr;
-    process::exit_status* active = nullptr;
-    std::optional<process::exit_status> completed;
-
-    Self() {
-        handle.data = this;
-    }
 };
 
 namespace {
 
-struct process_await : system_op {
+struct process_await : uv::await_op<process_await> {
+    using await_base = uv::await_op<process_await>;
     using promise_t = task<process::wait_result>::promise_type;
 
+    // Process self used to install/remove waiter and active result pointers.
     process::Self* self;
+    // Exit status slot filled by process exit callback.
     process::exit_status result{};
 
-    explicit process_await(process::Self* self) : self(self) {
-        action = &on_cancel;
-    }
+    explicit process_await(process::Self* self) : self(self) {}
 
     static void on_cancel(system_op* op) {
-        auto* aw = static_cast<process_await*>(op);
-        if(aw->self) {
-            aw->self->waiter = nullptr;
-            aw->self->active = nullptr;
-        }
-        aw->complete();
+        await_base::complete_cancel(op, [](auto& aw) {
+            if(aw.self) {
+                aw.self->disarm();
+            }
+        });
     }
 
     static void notify(process::Self& self, process::exit_status status) {
-        self.completed = status;
-
-        if(self.waiter && self.active) {
-            *self.active = status;
-
-            auto w = self.waiter;
-            self.waiter = nullptr;
-            self.active = nullptr;
-
-            w->complete();
-        }
+        self.deliver(status);
     }
 
     bool await_ready() const noexcept {
@@ -85,15 +72,13 @@ struct process_await : system_op {
         if(!self) {
             return waiting;
         }
-        self->waiter = this;
-        self->active = &result;
-        return link_continuation(&waiting.promise(), location);
+        self->arm(*this, result);
+        return this->link_continuation(&waiting.promise(), location);
     }
 
     process::wait_result await_resume() noexcept {
         if(self) {
-            self->waiter = nullptr;
-            self->active = nullptr;
+            self->disarm();
         }
         return result;
     }
@@ -101,9 +86,9 @@ struct process_await : system_op {
 
 }  // namespace
 
-process::process() noexcept : self(nullptr, nullptr) {}
+process::process() noexcept = default;
 
-process::process(Self* self) noexcept : self(self, Self::destroy) {}
+process::process(unique_handle<Self> self) noexcept : self(std::move(self)) {}
 
 process::~process() = default;
 
@@ -112,10 +97,6 @@ process::process(process&& other) noexcept = default;
 process& process::operator=(process&& other) noexcept = default;
 
 process::Self* process::operator->() noexcept {
-    return self.get();
-}
-
-const process::Self* process::operator->() const noexcept {
     return self.get();
 }
 
@@ -145,7 +126,7 @@ process::stdio process::stdio::pipe(bool readable, bool writable) {
 }
 
 result<process::spawn_result> process::spawn(const options& opts, event_loop& loop) {
-    spawn_result out{process(new Self())};
+    spawn_result out{process(Self::make())};
 
     std::vector<std::string> argv_storage;
     if(opts.args.empty()) {
@@ -190,7 +171,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
                 break;
             case stdio::kind::pipe: {
                 auto pipe = pipe::create(pipe::options{}, loop);
-                if(!pipe.has_value()) {
+                if(!pipe) {
                     return std::unexpected(pipe.error());
                 }
 
@@ -215,9 +196,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
     uv_process_options_t uv_opts{};
     uv_opts.exit_cb = +[](uv_process_t* handle, int64_t exit_status, int term_signal) {
         auto* self = static_cast<process::Self*>(handle->data);
-        if(self == nullptr) {
-            return;
-        }
+        assert(self != nullptr && "process exit callback requires process state in handle->data");
 
         process_await::notify(*self, process::exit_status{exit_status, term_signal});
     };
@@ -241,15 +220,10 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
         return std::unexpected(error::invalid_argument);
     }
 
-    auto proc_handle = &self->handle;
-    int err = uv_spawn(static_cast<uv_loop_t*>(loop.handle()), proc_handle, &uv_opts);
-    if(err != 0) {
-        self->mark_initialized();
-        return std::unexpected(error(err));
+    auto& proc_handle = self->handle;
+    if(auto err = uv::spawn(loop, proc_handle, uv_opts)) {
+        return std::unexpected(err);
     }
-
-    self->mark_initialized();
-    proc_handle->data = self;
 
     out.stdin_pipe = std::move(created_pipes[0]);
     out.stdout_pipe = std::move(created_pipes[1]);
@@ -263,12 +237,12 @@ task<process::wait_result> process::wait() {
         co_return std::unexpected(error::invalid_argument);
     }
 
-    if(self->completed.has_value()) {
-        co_return *self->completed;
+    if(self->has_pending()) {
+        co_return self->peek_pending();
     }
 
-    if(self->waiter != nullptr) {
-        co_return std::unexpected(error::socket_is_already_connected);
+    if(self->has_waiter()) {
+        co_return std::unexpected(error::connection_already_in_progress);
     }
 
     co_return co_await process_await{self.get()};
@@ -287,9 +261,8 @@ error process::kill(int signum) {
         return error::invalid_argument;
     }
 
-    int err = uv_process_kill(&self->handle, signum);
-    if(err != 0) {
-        return error(err);
+    if(auto err = uv::process_kill(self->handle, signum)) {
+        return err;
     }
 
     return {};

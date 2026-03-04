@@ -1,7 +1,7 @@
 # eventide
 
 `eventide` is a C++23 toolkit extracted from the `clice` ecosystem.
-It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv), and now also includes compile-time reflection, serde utilities, a typed LSP server layer, a lightweight test framework, an LLVM-compatible option parsing library, and a declarative option library built on it.
+It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv), and now also includes compile-time reflection, serde utilities, a typed JSON-RPC layer, generated LSP protocol bindings, a lightweight test framework, an LLVM-compatible option parsing library, and a declarative option library built on it.
 
 ## Feature Coverage
 
@@ -37,14 +37,30 @@ It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv)
   - `rename`, `alias`, `flatten`, `skip`, `skip_if`, `literal`, `enum_string`, etc.
 - Backend integrations:
   - `serde::json::simd` (simdjson-based JSON serializer/deserializer)
-  - FlatBuffers/FlexBuffers helpers (`flatbuffers/flex/*`, schema helpers)
+- FlatBuffers helpers (`flatbuffers/binary/*`) and FlexBuffers helpers (`flatbuffers/flex/*`)
+
+### `jsonrpc` (`include/eventide/jsonrpc/*`)
+
+- JSON-RPC 2.0 protocol types and typed request/notification traits.
+- Transport abstraction (`Transport`, `StreamTransport`) for framed message IO.
+- Typed peer runtime (`Peer`) for request dispatch, notifications, and nested RPC.
+- External event-loop execution model: callers own `event_loop`, schedule `peer.run()`, and drive shutdown explicitly.
+- Error model: RPC APIs return `jsonrpc::Result<T>` (`std::expected<T, RPCError>`), where `RPCError` includes `code`, `message`, and optional structured `data`.
+- Protocol validation behavior:
+  - malformed JSON maps to `ParseError (-32700)` with `id: null`
+  - structurally invalid messages map to `InvalidRequest (-32600)` with `id: null`
+  - parameter decode failures map to `InvalidParams (-32602)`
+- Cancellation behavior:
+  - inbound `$/cancelRequest` cancels matching in-flight handlers and returns `RequestCancelled (-32800)` (aligned with LSP `LSPErrorCodes::RequestCancelled`)
+  - outbound request cancellation (token or timeout) sends `$/cancelRequest` to the remote peer when the request is still pending
+  - timeout overloads report `RequestCancelled (-32800)` with message `"request timed out"`
+  - `RequestContext` delegates via `operator->`; use `context->send_request(..., context.cancellation)` to propagate the inbound handler token explicitly
 
 ### `language` (`include/eventide/language/*`)
 
-- Typed language server abstraction (`LanguageServer`).
-- Typed request/notification registration with compile-time signature checks.
-- Stream transport abstraction for stdio / TCP (`Transport`, `StreamTransport`).
 - Generated LSP protocol model (`include/eventide/language/protocol.h`).
+- LSP URI and position helpers (`URI`, `PositionMapper`).
+- LSP request/notification traits layered onto `eventide::jsonrpc::protocol`.
 
 ### `option` (`include/eventide/option/*`)
 
@@ -85,7 +101,8 @@ include/
     async/       # Async runtime APIs
     common/      # Shared utilities
     deco/        # Declarative CLI layer built on option + reflection
-    language/    # LSP-facing server and transport interfaces
+    jsonrpc/     # JSON-RPC protocol, peer, and transport APIs
+    language/    # LSP protocol model and utilities
     option/      # LLVM-compatible option parsing layer
     reflection/  # Compile-time reflection utilities
     serde/       # Generic serde + backend adapters
@@ -93,10 +110,11 @@ include/
 
 src/
   async/         # Async runtime implementations
+  jsonrpc/       # JSON-RPC peer and transport implementations
   option/        # Option parser implementation
   deco/          # Deco target wiring (header-only APIs)
   serde/         # FlatBuffers/FlexBuffers serde implementation
-  language/      # Language server + transport implementation
+  language/      # URI/position implementations
   reflection/    # Reflection target wiring (header-only public APIs)
   zest/          # Test runner implementation
 
@@ -105,8 +123,12 @@ tests/
   deco/          # Declarative CLI/deco tests
   reflection/    # Reflection behavior tests
   eventide/      # Runtime/event-loop/IO/process/fs/sync tests
+  jsonrpc/       # JSON-RPC peer and transport tests
   serde/         # JSON/FlatBuffers serde tests
-  language/      # Language server tests
+  language/      # LSP utility and jsonrpc-trait integration tests
+
+examples/
+  jsonrpc/       # JSON-RPC stdio, scripted, and multi-process examples
 
 scripts/
   lsp_codegen.py # LSP schema -> C++ protocol header generator

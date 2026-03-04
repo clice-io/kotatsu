@@ -78,6 +78,11 @@ struct transition_await {
     std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> handle) const noexcept {
         auto& promise = handle.promise();
         if(state == async_node::Finished) {
+            // If a task was cancelled while awaiting and then reaches final_suspend during
+            // cooperative cleanup, keep the cancellation state instead of asserting.
+            if(promise.state == async_node::Cancelled) {
+                return promise.final_transition();
+            }
             assert(promise.state == async_node::Running && "only running task could finish");
             promise.state = state;
         } else if(state == async_node::Cancelled) {

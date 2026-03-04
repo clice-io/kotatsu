@@ -13,19 +13,14 @@
 #include <utility>
 #include <vector>
 
+#include "eventide/serde/json/error.h"
 #include "eventide/serde/serde.h"
-
-#if __has_include(<simdjson.h>)
-#include <simdjson.h>
-#else
-#error "simdjson.h not found. Enable EVENTIDE_SERDE_ENABLE_SIMDJSON or add simdjson include paths."
-#endif
 
 namespace eventide::serde::json::simd {
 
 class Deserializer {
 public:
-    using error_type = simdjson::error_code;
+    using error_type = json::error_kind;
 
     template <typename T>
     using result_t = std::expected<T, error_type>;
@@ -324,7 +319,7 @@ public:
 
     error_type error() const {
         if(is_valid) {
-            return simdjson::SUCCESS;
+            return error_kind::ok;
         }
         return current_error();
     }
@@ -350,7 +345,7 @@ public:
         }
 
         bool is_none = false;
-        error_type err = simdjson::SUCCESS;
+        simdjson::error_code err = simdjson::SUCCESS;
         if(current_value != nullptr) {
             err = current_value->is_null().get(is_none);
         } else {
@@ -412,7 +407,7 @@ public:
             /// of struct alternatives in std::variant.
             bool matched = false;
             bool considered = false;
-            error_type last_error = simdjson::INCORRECT_TYPE;
+            simdjson::error_code last_error = simdjson::INCORRECT_TYPE;
 
             auto try_alternative = [&](auto type_tag) {
                 if(matched) {
@@ -447,7 +442,7 @@ public:
         // (e.g. variant<uint8_t, int64_t> with input 300). Consider adding
         // backtracking here, similar to the object-path strategy above.
         bool considered = false;
-        error_type candidate_error = simdjson::INCORRECT_TYPE;
+        simdjson::error_code candidate_error = simdjson::INCORRECT_TYPE;
         auto try_first_compatible = [&](auto type_tag) {
             if(considered) {
                 return;
@@ -665,6 +660,10 @@ public:
         return s;
     }
 
+    result_t<simdjson::padded_string_view> deserialize_raw_json_view() {
+        return consume_raw_json_view();
+    }
+
 private:
     template <typename T, typename RootReader, typename ValueReader>
     status_t read_scalar(T& out, RootReader&& read_root, ValueReader&& read_value) {
@@ -672,7 +671,7 @@ private:
             return std::unexpected(current_error());
         }
 
-        error_type err = simdjson::SUCCESS;
+        simdjson::error_code err = simdjson::SUCCESS;
         if(current_value != nullptr) {
             err = std::forward<ValueReader>(read_value)(*current_value).get(out);
         } else {
@@ -730,7 +729,7 @@ private:
         }
 
         simdjson::ondemand::json_type out = simdjson::ondemand::json_type::null;
-        error_type err = simdjson::SUCCESS;
+        simdjson::error_code err = simdjson::SUCCESS;
         if(current_value != nullptr) {
             err = current_value->type().get(out);
         } else {
@@ -754,7 +753,7 @@ private:
         }
 
         simdjson::ondemand::number_type out = simdjson::ondemand::number_type::signed_integer;
-        error_type err = simdjson::SUCCESS;
+        simdjson::error_code err = simdjson::SUCCESS;
         if(current_value != nullptr) {
             err = current_value->get_number_type().get(out);
         } else {
@@ -825,22 +824,22 @@ private:
     }
 
     template <typename Alt, typename... Ts>
-    static error_type deserialize_variant_candidate(simdjson::padded_string_view raw,
-                                                    std::variant<Ts...>& value) {
+    static auto deserialize_variant_candidate(simdjson::padded_string_view raw,
+                                              std::variant<Ts...>& value) -> simdjson::error_code {
         Alt candidate{};
         Deserializer probe(raw);
         if(!probe.valid()) {
-            return probe.error();
+            return json::to_simdjson_error(probe.error());
         }
 
         auto status = serde::deserialize(probe, candidate);
         if(!status) {
-            return status.error();
+            return json::to_simdjson_error(status.error());
         }
 
         auto finished = probe.finish();
         if(!finished) {
-            return finished.error();
+            return json::to_simdjson_error(finished.error());
         }
 
         value = std::move(candidate);
@@ -853,7 +852,7 @@ private:
         }
 
         std::string_view raw{};
-        error_type err = simdjson::SUCCESS;
+        simdjson::error_code err = simdjson::SUCCESS;
         if(current_value != nullptr) {
             err = current_value->raw_json().get(raw);
         } else {
@@ -917,7 +916,7 @@ private:
         }
 
         simdjson::ondemand::array array{};
-        error_type err = simdjson::SUCCESS;
+        simdjson::error_code err = simdjson::SUCCESS;
         if(current_value != nullptr) {
             err = current_value->get_array().get(array);
         } else {
@@ -945,7 +944,7 @@ private:
         }
 
         simdjson::ondemand::object object{};
-        error_type err = simdjson::SUCCESS;
+        simdjson::error_code err = simdjson::SUCCESS;
         if(current_value != nullptr) {
             err = current_value->get_object().get(object);
         } else {
@@ -967,28 +966,28 @@ private:
         return object;
     }
 
-    void set_error(error_type error) {
+    void set_error(simdjson::error_code error) {
         if(last_error == simdjson::SUCCESS) {
             last_error = error;
         }
     }
 
-    void mark_invalid(error_type error = simdjson::TAPE_ERROR) {
+    void mark_invalid(simdjson::error_code error = simdjson::TAPE_ERROR) {
         is_valid = false;
         set_error(error);
     }
 
     error_type current_error() const {
         if(last_error != simdjson::SUCCESS) {
-            return last_error;
+            return json::make_error(last_error);
         }
-        return simdjson::TAPE_ERROR;
+        return error_kind::tape_error;
     }
 
 private:
     bool is_valid = true;
     bool root_consumed = false;
-    error_type last_error = simdjson::SUCCESS;
+    simdjson::error_code last_error = simdjson::SUCCESS;
     simdjson::ondemand::value* current_value = nullptr;
 
     simdjson::ondemand::parser parser;
@@ -998,7 +997,7 @@ private:
 };
 
 template <typename T>
-auto from_json(std::string_view json, T& value) -> std::expected<void, simdjson::error_code> {
+auto from_json(std::string_view json, T& value) -> std::expected<void, error_kind> {
     Deserializer deserializer(json);
     if(!deserializer.valid()) {
         return std::unexpected(deserializer.error());
@@ -1013,8 +1012,7 @@ auto from_json(std::string_view json, T& value) -> std::expected<void, simdjson:
 }
 
 template <typename T>
-auto from_json(simdjson::padded_string_view json, T& value)
-    -> std::expected<void, simdjson::error_code> {
+auto from_json(simdjson::padded_string_view json, T& value) -> std::expected<void, error_kind> {
     Deserializer deserializer(json);
     if(!deserializer.valid()) {
         return std::unexpected(deserializer.error());
@@ -1030,7 +1028,7 @@ auto from_json(simdjson::padded_string_view json, T& value)
 
 template <typename T>
     requires std::default_initializable<T>
-auto from_json(std::string_view json) -> std::expected<T, simdjson::error_code> {
+auto from_json(std::string_view json) -> std::expected<T, error_kind> {
     T value{};
     auto status = from_json(json, value);
     if(!status) {
@@ -1041,7 +1039,7 @@ auto from_json(std::string_view json) -> std::expected<T, simdjson::error_code> 
 
 template <typename T>
     requires std::default_initializable<T>
-auto from_json(simdjson::padded_string_view json) -> std::expected<T, simdjson::error_code> {
+auto from_json(simdjson::padded_string_view json) -> std::expected<T, error_kind> {
     T value{};
     auto status = from_json(json, value);
     if(!status) {

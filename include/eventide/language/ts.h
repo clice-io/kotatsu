@@ -12,9 +12,10 @@
 #include <variant>
 #include <vector>
 
+#include "eventide/jsonrpc/protocol.h"
 #include "eventide/serde/serde.h"
 
-namespace eventide::language::protocol {
+namespace eventide::jsonrpc::protocol {
 
 /// For `undefined | bool` .
 using optional_bool = serde::skip_if_default<bool>;
@@ -75,23 +76,8 @@ struct LSPAny : LSPVariant {
 
 struct LSPEmpty {};
 
-// LSP request/notification traits (Params -> method/result).
-template <typename Params>
-struct RequestTraits;
-
-template <typename Params>
-struct NotificationTraits;
-
-using boolean = bool;
-using integer = std::int32_t;
-using uinteger = std::uint32_t;
-using decimal = double;
-using string = std::string;
-using null = std::nullptr_t;
 using URI = string;
 using DocumentUri = string;
-
-using RequestID = variant<integer, string>;
 
 struct IncomingMessage {
     optional<string> method;
@@ -101,36 +87,36 @@ struct IncomingMessage {
     optional<string> error_json;
 };
 
-struct ResponseError {
-    integer code = 0;
-    string message;
-    optional<LSPAny> data = {};
-};
+}  // namespace eventide::jsonrpc::protocol
 
-}  // namespace eventide::language::protocol
+namespace eventide::language {
+
+namespace protocol = eventide::jsonrpc::protocol;
+
+}  // namespace eventide::language
 
 namespace eventide::serde {
 
 template <serializer_like S>
-struct serialize_traits<S, language::protocol::LSPAny> {
+struct serialize_traits<S, eventide::jsonrpc::protocol::LSPAny> {
     using value_type = typename S::value_type;
     using error_type = typename S::error_type;
 
-    static auto serialize(S& serializer, const language::protocol::LSPAny& value)
+    static auto serialize(S& serializer, const eventide::jsonrpc::protocol::LSPAny& value)
         -> std::expected<value_type, error_type> {
-        const auto& variant = static_cast<const language::protocol::LSPVariant&>(value);
+        const auto& variant = static_cast<const eventide::jsonrpc::protocol::LSPVariant&>(value);
         return std::visit([&](const auto& item) { return serde::serialize(serializer, item); },
                           variant);
     }
 };
 
 template <deserializer_like D>
-struct deserialize_traits<D, language::protocol::LSPAny> {
+struct deserialize_traits<D, eventide::jsonrpc::protocol::LSPAny> {
     using error_type = typename D::error_type;
 
-    static auto deserialize(D& deserializer, language::protocol::LSPAny& value)
+    static auto deserialize(D& deserializer, eventide::jsonrpc::protocol::LSPAny& value)
         -> std::expected<void, error_type> {
-        language::protocol::LSPVariant variant{};
+        eventide::jsonrpc::protocol::LSPVariant variant{};
         auto status = serde::deserialize(deserializer, variant);
         if(!status) {
             return std::unexpected(status.error());

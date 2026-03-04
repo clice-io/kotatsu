@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "error.h"
+#include "owned.h"
 #include "stream.h"
 #include "task.h"
 
@@ -30,7 +31,6 @@ public:
 
     struct Self;
     Self* operator->() noexcept;
-    const Self* operator->() const noexcept;
 
     struct exit_status {
         /// Exit code reported by the child.
@@ -132,9 +132,9 @@ public:
     error kill(int signum);
 
 private:
-    explicit process(Self* state) noexcept;
+    explicit process(unique_handle<Self> self) noexcept;
 
-    std::unique_ptr<Self, void (*)(void*)> self;
+    unique_handle<Self> self;
 };
 
 struct process::spawn_result {

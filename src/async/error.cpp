@@ -11,8 +11,8 @@ std::string_view error::message() const {
         return "operation aborted";
     }
 
-    const char* msg = uv_strerror(code);
-    if(msg != nullptr) {
+    auto msg = uv::strerror(code);
+    if(!msg.empty()) {
         return msg;
     }
 

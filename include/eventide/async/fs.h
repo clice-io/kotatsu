@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "error.h"
+#include "owned.h"
 #include "task.h"
 
 namespace eventide {
@@ -157,7 +158,6 @@ public:
 
     struct Self;
     Self* operator->() noexcept;
-    const Self* operator->() const noexcept;
 
     struct watch_options {
         /// Report creation/removal events (if supported by backend).
@@ -202,9 +202,9 @@ public:
     task<result<change>> wait();
 
 private:
-    explicit fs_event(Self* state) noexcept;
+    explicit fs_event(unique_handle<Self> self) noexcept;
 
-    std::unique_ptr<Self, void (*)(void*)> self;
+    unique_handle<Self> self;
 };
 
 }  // namespace eventide

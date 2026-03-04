@@ -4,6 +4,9 @@
 #include <source_location>
 #include <tuple>
 
+struct uv_loop_s;
+using uv_loop_t = uv_loop_s;
+
 namespace eventide {
 
 class async_node;
@@ -31,7 +34,9 @@ public:
     friend class async_node;
 
 public:
-    void* handle();
+    operator uv_loop_t&() noexcept;
+
+    operator const uv_loop_t&() const noexcept;
 
     int run();
 

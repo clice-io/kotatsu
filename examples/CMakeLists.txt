@@ -1,0 +1,5 @@
+if(EVENTIDE_ENABLE_ASYNC AND EVENTIDE_SERDE_ENABLE_SIMDJSON)
+    add_subdirectory(jsonrpc)
+else()
+    message(STATUS "EVENTIDE_ENABLE_ASYNC=OFF or EVENTIDE_SERDE_ENABLE_SIMDJSON=OFF: skipping examples/jsonrpc")
+endif()

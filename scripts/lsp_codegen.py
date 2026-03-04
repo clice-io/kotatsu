@@ -35,7 +35,7 @@ RECURSIVE_ALIASES = ("LSPAny", "LSPArray", "LSPObject")
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 TS_HEADER_INCLUDE = "eventide/language/ts.h"
-GENERATED_NAMESPACE = "eventide::language::protocol"
+GENERATED_NAMESPACE = "eventide::jsonrpc::protocol"
 SOURCE_TAG = "scripts/lsp_codegen.py"
 DEFAULT_SCHEMA_PATH = SCRIPT_DIR / "schema.json"
 DEFAULT_FETCH_URL = (

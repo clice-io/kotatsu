@@ -11,9 +11,9 @@
 #include <vector>
 
 #include "eventide/zest/zest.h"
+#include "eventide/serde/json/simd_deserializer.h"
+#include "eventide/serde/json/simd_serializer.h"
 #include "eventide/serde/serde.h"
-#include "eventide/serde/simdjson/deserializer.h"
-#include "eventide/serde/simdjson/serializer.h"
 
 namespace eventide::serde {
 
@@ -35,6 +35,21 @@ struct object_int_value {
 
 struct object_string_value {
     std::string value;
+};
+
+enum class signed_enum : std::int8_t {
+    low = -3,
+    high = 7,
+};
+
+enum class unsigned_enum : std::uint8_t {
+    zero = 0,
+    max = 250,
+};
+
+enum class char_enum : char {
+    a = 'A',
+    z = 'Z',
 };
 
 TEST_SUITE(serde_simdjson) {
@@ -101,6 +116,41 @@ TEST_CASE(basic_errors) {
     std::nullptr_t n = nullptr;
     auto null_status = from_json("0", n);
     EXPECT_FALSE(null_status.has_value());
+}
+
+TEST_CASE(enum_roundtrip) {
+    ASSERT_EQ(to_json(signed_enum::low), "-3");
+    ASSERT_EQ(to_json(unsigned_enum::max), "250");
+    // char-backed enum still serializes as underlying integer, not as a JSON string.
+    ASSERT_EQ(to_json(char_enum::a), "65");
+
+    signed_enum signed_out = signed_enum::high;
+    ASSERT_TRUE(from_json("-3", signed_out).has_value());
+    EXPECT_EQ(signed_out, signed_enum::low);
+
+    unsigned_enum unsigned_out = unsigned_enum::zero;
+    ASSERT_TRUE(from_json("250", unsigned_out).has_value());
+    EXPECT_EQ(unsigned_out, unsigned_enum::max);
+
+    char_enum char_out = char_enum::a;
+    ASSERT_TRUE(from_json("90", char_out).has_value());
+    EXPECT_EQ(char_out, char_enum::z);
+}
+
+TEST_CASE(enum_errors) {
+    unsigned_enum unsigned_out = unsigned_enum::zero;
+    auto negative_error = from_json("-1", unsigned_out);
+    EXPECT_FALSE(negative_error.has_value());
+    EXPECT_EQ(unsigned_out, unsigned_enum::zero);
+
+    auto overflow_error = from_json("300", unsigned_out);
+    EXPECT_FALSE(overflow_error.has_value());
+    EXPECT_EQ(unsigned_out, unsigned_enum::zero);
+
+    signed_enum signed_out = signed_enum::high;
+    auto type_error = from_json(R"("x")", signed_out);
+    EXPECT_FALSE(type_error.has_value());
+    EXPECT_EQ(signed_out, signed_enum::high);
 }
 
 TEST_CASE(array_roundtrip) {

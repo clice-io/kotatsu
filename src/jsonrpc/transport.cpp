@@ -1,4 +1,4 @@
-#include "eventide/language/transport.h"
+#include "eventide/jsonrpc/transport.h"
 
 #include <algorithm>
 #include <cctype>
@@ -9,7 +9,7 @@
 #include <string_view>
 #include <utility>
 
-namespace eventide::language {
+namespace eventide::jsonrpc {
 
 namespace {
 
@@ -129,6 +129,10 @@ std::expected<stream, std::string> open_stdio_stream(int fd, bool readable, even
 
 }  // namespace
 
+std::expected<void, std::string> Transport::close_output() {
+    return std::unexpected("transport does not support closing output");
+}
+
 StreamTransport::StreamTransport(stream input, stream output) :
     read_stream(std::move(input)), write_stream(std::move(output)) {}
 
@@ -238,4 +242,14 @@ task<bool> StreamTransport::write_message(std::string_view payload) {
     co_return !status.has_error();
 }
 
-}  // namespace eventide::language
+std::expected<void, std::string> StreamTransport::close_output() {
+    if(shared_stream) {
+        read_stream = stream{};
+        return {};
+    }
+
+    write_stream = stream{};
+    return {};
+}
+
+}  // namespace eventide::jsonrpc

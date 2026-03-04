@@ -9,7 +9,7 @@
 #include "eventide/async/stream.h"
 #include "eventide/async/task.h"
 
-namespace eventide::language {
+namespace eventide::jsonrpc {
 
 class Transport {
 public:
@@ -18,6 +18,8 @@ public:
     virtual task<std::optional<std::string>> read_message() = 0;
 
     virtual task<bool> write_message(std::string_view payload) = 0;
+
+    virtual std::expected<void, std::string> close_output();
 };
 
 class StreamTransport : public Transport {
@@ -38,10 +40,12 @@ public:
 
     task<bool> write_message(std::string_view payload) override;
 
+    std::expected<void, std::string> close_output() override;
+
 private:
     stream read_stream;
     stream write_stream;
     bool shared_stream = false;
 };
 
-}  // namespace eventide::language
+}  // namespace eventide::jsonrpc

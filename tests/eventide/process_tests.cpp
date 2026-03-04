@@ -17,6 +17,38 @@ task<process::wait_result> wait_for_exit(process& proc) {
     co_return status;
 }
 
+task<process::wait_result> wait_for_exit(process& proc, int& done, int target) {
+    auto status = co_await proc.wait();
+    done += 1;
+    if(done == target) {
+        event_loop::current().stop();
+    }
+    co_return status;
+}
+
+task<std::pair<result<std::string>, result<std::string>>> read_two_chunks(pipe p) {
+    auto first = co_await p.read_chunk();
+    result<std::string> first_out = std::unexpected(error::invalid_argument);
+    if(first) {
+        first_out = std::string(first->data(), first->size());
+        p.consume(first->size());
+    } else {
+        first_out = std::unexpected(first.error());
+    }
+
+    auto second = co_await p.read_chunk();
+    result<std::string> second_out = std::unexpected(error::invalid_argument);
+    if(second) {
+        second_out = std::string(second->data(), second->size());
+        p.consume(second->size());
+    } else {
+        second_out = std::unexpected(second.error());
+    }
+
+    event_loop::current().stop();
+    co_return std::pair{std::move(first_out), std::move(second_out)};
+}
+
 }  // namespace
 
 TEST_SUITE(process_io) {
@@ -91,7 +123,7 @@ TEST_CASE(spawn_pipe_stdout) {
     loop.run();
 }
 
-TEST_CASE(spawn_pipe_stdin_stdout) {
+TEST_CASE(spawn_pipe_stdio) {
     event_loop loop;
 
     process::options opts;
@@ -187,6 +219,35 @@ TEST_CASE(spawn_pipe_stderr) {
     loop.run();
 }
 
+TEST_CASE(spawn_pipe_stdout_read_chunk_twice) {
+#ifdef _WIN32
+    skip();
+    return;
+#else
+    event_loop loop;
+
+    process::options opts;
+    opts.file = "/bin/sh";
+    opts.args = {opts.file, "-c", "printf 'chunk-one'; sleep 0.05; printf 'chunk-two'"};
+    opts.streams = {process::stdio::ignore(),
+                    process::stdio::pipe(false, true),
+                    process::stdio::ignore()};
+
+    auto spawn_res = process::spawn(opts, loop);
+    ASSERT_TRUE(spawn_res.has_value());
+
+    auto reader = read_two_chunks(std::move(spawn_res->stdout_pipe));
+    loop.schedule(reader);
+    loop.run();
+
+    auto [first, second] = reader.result();
+    ASSERT_TRUE(first.has_value());
+    ASSERT_TRUE(second.has_value());
+    EXPECT_EQ(*first, "chunk-one");
+    EXPECT_EQ(*second, "chunk-two");
+#endif
+}
+
 TEST_CASE(spawn_invalid_file) {
     event_loop loop;
 
@@ -199,6 +260,40 @@ TEST_CASE(spawn_invalid_file) {
 
     auto spawn_res = process::spawn(opts, loop);
     EXPECT_FALSE(spawn_res.has_value());
+}
+
+TEST_CASE(wait_twice) {
+    event_loop loop;
+
+    process::options opts;
+#ifdef _WIN32
+    opts.file = "cmd.exe";
+    opts.args = {opts.file, "/c", "exit 0"};
+#else
+    opts.file = "/bin/sh";
+    opts.args = {opts.file, "-c", "true"};
+#endif
+    opts.streams = {process::stdio::ignore(), process::stdio::ignore(), process::stdio::ignore()};
+
+    auto spawn_res = process::spawn(opts, loop);
+    ASSERT_TRUE(spawn_res.has_value());
+
+    int done = 0;
+    auto first = wait_for_exit(spawn_res->proc, done, 2);
+    auto second = wait_for_exit(spawn_res->proc, done, 2);
+
+    loop.schedule(first);
+    loop.schedule(second);
+    loop.run();
+
+    auto first_result = first.result();
+    auto second_result = second.result();
+
+    EXPECT_TRUE(first_result.has_value());
+    EXPECT_FALSE(second_result.has_value());
+    if(!second_result.has_value()) {
+        EXPECT_EQ(second_result.error().value(), error::connection_already_in_progress.value());
+    }
 }
 
 };  // TEST_SUITE(process_io)

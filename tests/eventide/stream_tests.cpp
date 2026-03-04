@@ -1,4 +1,5 @@
 #include <array>
+#include <chrono>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -22,6 +23,7 @@
 #include "eventide/zest/zest.h"
 #include "eventide/async/loop.h"
 #include "eventide/async/stream.h"
+#include "eventide/async/watcher.h"
 
 namespace eventide {
 
@@ -127,11 +129,14 @@ task<result<std::string>> read_from_pipe(pipe p) {
     co_return out;
 }
 
-task<std::string> read_some_from_pipe(pipe p) {
+task<result<std::string>> read_some_from_pipe(pipe p) {
     std::array<char, 64> buf{};
     auto n = co_await p.read_some(std::span<char>(buf.data(), buf.size()));
     event_loop::current().stop();
-    co_return std::string(buf.data(), n);
+    if(!n.has_value()) {
+        co_return std::unexpected(n.error());
+    }
+    co_return std::string(buf.data(), *n);
 }
 
 task<std::pair<std::string, std::size_t>> read_chunk_from_pipe(pipe p) {
@@ -150,6 +155,44 @@ task<std::pair<std::string, std::size_t>> read_chunk_from_pipe(pipe p) {
         co_return std::make_pair(out, static_cast<std::size_t>(0));
     }
     co_return std::make_pair(out, next->size());
+}
+
+task<std::pair<result<std::string>, result<std::string>>> read_chunk_then_some(pipe p) {
+    auto first = co_await p.read_chunk();
+    result<std::string> first_out = std::unexpected(error::invalid_argument);
+    if(first) {
+        first_out = std::string(first->data(), first->size());
+        p.consume(first->size());
+    } else {
+        first_out = std::unexpected(first.error());
+    }
+
+    std::array<char, 64> buf{};
+    auto second = co_await p.read_some(std::span<char>(buf.data(), buf.size()));
+    result<std::string> second_out = std::unexpected(error::invalid_argument);
+    if(second) {
+        second_out = std::string(buf.data(), *second);
+    } else {
+        second_out = std::unexpected(second.error());
+    }
+
+    event_loop::current().stop();
+    co_return std::pair{std::move(first_out), std::move(second_out)};
+}
+
+task<> write_two_pipe_chunks(int fd, event_loop& loop) {
+    constexpr std::string_view first = "eventide-chunk";
+    constexpr std::string_view second = "eventide-read-some";
+
+    co_await sleep(std::chrono::milliseconds{1}, loop);
+    if(write_fd(fd, first.data(), first.size()) != static_cast<ssize_t>(first.size())) {
+        close_fd(fd);
+        co_return;
+    }
+
+    co_await sleep(std::chrono::milliseconds{1}, loop);
+    (void)write_fd(fd, second.data(), second.size());
+    close_fd(fd);
 }
 
 task<result<pipe>> connect_pipe(std::string_view name, int& done, int target = 2) {
@@ -207,6 +250,21 @@ task<result<std::string>> accept_and_read(tcp_socket::acceptor acc) {
     co_return data;
 }
 
+task<result<std::size_t>> accept_and_read_some(tcp_socket::acceptor acc) {
+    auto conn_res = co_await acc.accept();
+    if(!conn_res.has_value()) {
+        event_loop::current().stop();
+        co_return std::unexpected(conn_res.error());
+    }
+
+    auto conn = std::move(*conn_res);
+    std::array<char, 64> buf{};
+    auto data = co_await conn.read_some(std::span<char>(buf.data(), buf.size()));
+
+    event_loop::current().stop();
+    co_return data;
+}
+
 task<result<std::string>> accept_and_read_once(tcp_socket::acceptor acc, int& done) {
     auto conn_res = co_await acc.accept();
     if(!conn_res.has_value()) {
@@ -242,6 +300,21 @@ task<result<tcp_socket>> accept_once(tcp_socket::acceptor& acc, int& done) {
     co_return res;
 }
 
+int set_abortive_close(socket_t sock) {
+    linger opt{};
+    opt.l_onoff = 1;
+    opt.l_linger = 0;
+#ifdef _WIN32
+    return ::setsockopt(sock,
+                        SOL_SOCKET,
+                        SO_LINGER,
+                        reinterpret_cast<const char*>(&opt),
+                        static_cast<int>(sizeof(opt)));
+#else
+    return ::setsockopt(sock, SOL_SOCKET, SO_LINGER, &opt, sizeof(opt));
+#endif
+}
+
 }  // namespace
 
 TEST_SUITE(pipe) {
@@ -271,7 +344,7 @@ TEST_CASE(read_from_fd) {
     }
 }
 
-TEST_CASE(read_some_from_fd) {
+TEST_CASE(read_some_fd) {
     int fds[2] = {-1, -1};
     ASSERT_EQ(create_pipe(fds), 0);
 
@@ -289,10 +362,14 @@ TEST_CASE(read_some_from_fd) {
     loop.schedule(reader);
     loop.run();
 
-    EXPECT_EQ(reader.result(), message);
+    auto result = reader.result();
+    EXPECT_TRUE(result.has_value());
+    if(result.has_value()) {
+        EXPECT_EQ(*result, message);
+    }
 }
 
-TEST_CASE(read_chunk_from_fd) {
+TEST_CASE(read_chunk_fd) {
     int fds[2] = {-1, -1};
     ASSERT_EQ(create_pipe(fds), 0);
 
@@ -313,6 +390,28 @@ TEST_CASE(read_chunk_from_fd) {
     auto result = reader.result();
     EXPECT_EQ(result.first, message);
     EXPECT_EQ(result.second, static_cast<std::size_t>(0));
+}
+
+TEST_CASE(read_chunk_then_read_some_fd) {
+    int fds[2] = {-1, -1};
+    ASSERT_EQ(create_pipe(fds), 0);
+
+    event_loop loop;
+    auto pipe_res = pipe::open(fds[0], {}, loop);
+    ASSERT_TRUE(pipe_res.has_value());
+
+    auto reader = read_chunk_then_some(std::move(*pipe_res));
+    auto writer = write_two_pipe_chunks(fds[1], loop);
+
+    loop.schedule(reader);
+    loop.schedule(writer);
+    loop.run();
+
+    auto [first, second] = reader.result();
+    ASSERT_TRUE(first.has_value());
+    ASSERT_TRUE(second.has_value());
+    EXPECT_EQ(*first, "eventide-chunk");
+    EXPECT_EQ(*second, "eventide-read-some");
 }
 
 TEST_CASE(connect_and_accept) {
@@ -518,6 +617,35 @@ TEST_CASE(connect_and_write) {
     EXPECT_TRUE(server_res.has_value());
     EXPECT_EQ(*server_res, "eventide-tcp-connect");
     EXPECT_FALSE(static_cast<bool>(client_res));
+}
+
+TEST_CASE(read_some_error) {
+    int port = pick_free_port();
+    ASSERT_TRUE(port > 0);
+
+    event_loop loop;
+    auto acc_res = tcp_socket::listen("127.0.0.1", port, {}, loop);
+    ASSERT_TRUE(acc_res.has_value());
+
+    auto server = accept_and_read_some(std::move(*acc_res));
+
+    socket_t client_fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ASSERT_TRUE(client_fd != invalid_socket);
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(static_cast<uint16_t>(port));
+
+    ASSERT_EQ(::connect(client_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
+    ASSERT_EQ(set_abortive_close(client_fd), 0);
+    close_socket(client_fd);
+
+    loop.schedule(server);
+    loop.run();
+
+    auto result = server.result();
+    EXPECT_FALSE(result.has_value());
 }
 
 };  // TEST_SUITE(tcp)

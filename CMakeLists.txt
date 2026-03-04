@@ -11,9 +11,12 @@ option(EVENTIDE_ENABLE_ASYNC "Enable async eventide target and libuv dependency"
 option(EVENTIDE_ENABLE_OPTION "Enable option parser target" ON)
 option(EVENTIDE_ENABLE_DECO "Enable deco target" ON)
 option(EVENTIDE_ENABLE_TEST "Build unit tests" OFF)
+option(EVENTIDE_ENABLE_EXAMPLES "Build examples" OFF)
 option(EVENTIDE_ENABLE_ZEST "Build zest test framework target" OFF)
 option(EVENTIDE_SERDE_ENABLE_SIMDJSON "Enable simdjson dependency for eventide::serde" OFF)
+option(EVENTIDE_SERDE_ENABLE_YYJSON "Enable yyjson dependency for eventide::serde" OFF)
 option(EVENTIDE_SERDE_ENABLE_FLATBUFFERS "Enable flatbuffers dependency for eventide::serde" OFF)
+option(EVENTIDE_SERDE_ENABLE_TOML "Enable tomlplusplus dependency for eventide::serde" OFF)
 option(EVENTIDE_BUILD_ALL_TESTS "Enable all optional test suites for CI" OFF)
 
 if(EVENTIDE_BUILD_ALL_TESTS)
@@ -42,9 +45,19 @@ if(EVENTIDE_BUILD_ALL_TESTS)
         set(EVENTIDE_SERDE_ENABLE_SIMDJSON ON CACHE BOOL "Enable simdjson dependency for eventide::serde" FORCE)
     endif()
 
+    if(NOT EVENTIDE_SERDE_ENABLE_YYJSON)
+        message(STATUS "EVENTIDE_BUILD_ALL_TESTS=ON: enabling EVENTIDE_SERDE_ENABLE_YYJSON")
+        set(EVENTIDE_SERDE_ENABLE_YYJSON ON CACHE BOOL "Enable yyjson dependency for eventide::serde" FORCE)
+    endif()
+
     if(NOT EVENTIDE_SERDE_ENABLE_FLATBUFFERS)
         message(STATUS "EVENTIDE_BUILD_ALL_TESTS=ON: enabling EVENTIDE_SERDE_ENABLE_FLATBUFFERS")
         set(EVENTIDE_SERDE_ENABLE_FLATBUFFERS ON CACHE BOOL "Enable flatbuffers dependency for eventide::serde" FORCE)
+    endif()
+
+    if(NOT EVENTIDE_SERDE_ENABLE_TOML)
+        message(STATUS "EVENTIDE_BUILD_ALL_TESTS=ON: enabling EVENTIDE_SERDE_ENABLE_TOML")
+        set(EVENTIDE_SERDE_ENABLE_TOML ON CACHE BOOL "Enable tomlplusplus dependency for eventide::serde" FORCE)
     endif()
 endif()
 
@@ -81,6 +94,7 @@ if(EVENTIDE_ENABLE_ASYNC)
 endif()
 
 if(EVENTIDE_ENABLE_ASYNC AND EVENTIDE_SERDE_ENABLE_SIMDJSON)
+    add_subdirectory(src/jsonrpc)
     add_subdirectory(src/language)
 endif()
 
@@ -90,4 +104,8 @@ endif()
 
 if(EVENTIDE_ENABLE_TEST)
     add_subdirectory(tests)
+endif()
+
+if(EVENTIDE_ENABLE_EXAMPLES)
+    add_subdirectory(examples)
 endif()

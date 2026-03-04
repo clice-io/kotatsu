@@ -13,20 +13,15 @@
 #include <utility>
 #include <vector>
 
+#include "eventide/serde/json/error.h"
 #include "eventide/serde/serde.h"
-
-#if __has_include(<simdjson.h>)
-#include <simdjson.h>
-#else
-#error "simdjson.h not found. Enable EVENTIDE_SERDE_ENABLE_SIMDJSON or add simdjson include paths."
-#endif
 
 namespace eventide::serde::json::simd {
 
 class Serializer {
 public:
     using value_type = void;
-    using error_type = simdjson::error_code;
+    using error_type = json::error_kind;
 
     template <typename T>
     using result_t = std::expected<T, error_type>;
@@ -103,7 +98,7 @@ public:
         std::string_view out{};
         auto err = builder.view().get(out);
         if(err != simdjson::SUCCESS) {
-            return std::unexpected(err);
+            return std::unexpected(json::make_error(err));
         }
         return out;
     }
@@ -130,7 +125,7 @@ public:
 
     error_type error() const {
         if(is_valid) {
-            return simdjson::SUCCESS;
+            return error_kind::ok;
         }
         return current_error();
     }
@@ -207,6 +202,15 @@ public:
         }
 
         builder.escape_and_append_with_quotes(value);
+        return status();
+    }
+
+    result_t<value_type> serialize_raw_json(std::string_view raw_json) {
+        if(!before_value()) {
+            return status();
+        }
+
+        builder.append_raw(raw_json);
         return status();
     }
 
@@ -402,22 +406,22 @@ private:
         return true;
     }
 
-    void set_error(error_type error) {
+    void set_error(simdjson::error_code error) {
         if(last_error == simdjson::SUCCESS) {
             last_error = error;
         }
     }
 
-    void mark_invalid(error_type error = simdjson::TAPE_ERROR) {
+    void mark_invalid(simdjson::error_code error = simdjson::TAPE_ERROR) {
         is_valid = false;
         set_error(error);
     }
 
     error_type current_error() const {
         if(last_error != simdjson::SUCCESS) {
-            return last_error;
+            return json::make_error(last_error);
         }
-        return simdjson::TAPE_ERROR;
+        return error_kind::tape_error;
     }
 
     status_t status() const {
@@ -430,14 +434,14 @@ private:
 private:
     bool is_valid = true;
     bool root_written = false;
-    error_type last_error = simdjson::SUCCESS;
+    simdjson::error_code last_error = simdjson::SUCCESS;
     std::vector<container_frame> stack;
     simdjson::builder::string_builder builder;
 };
 
 template <typename T>
 auto to_json(const T& value, std::optional<std::size_t> initial_capacity = std::nullopt)
-    -> std::expected<std::string, simdjson::error_code> {
+    -> std::expected<std::string, error_kind> {
     Serializer serializer =
         initial_capacity.has_value() ? Serializer(*initial_capacity) : Serializer();
     auto result = serde::serialize(serializer, value);

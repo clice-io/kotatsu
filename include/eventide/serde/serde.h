@@ -1,5 +1,7 @@
 #pragma once
 
+#include <limits>
+
 #include "annotation.h"
 #include "attrs.h"
 #include "config.h"
@@ -17,6 +19,50 @@ template <typename D, typename T>
 struct deserialize_traits;
 
 namespace detail {
+
+template <typename Result>
+constexpr Result unexpected_number_out_of_range() {
+    using error_t = typename Result::error_type;
+    if constexpr(requires { error_t::number_out_of_range; }) {
+        return std::unexpected(error_t::number_out_of_range);
+    } else if constexpr(requires { error_t::invalid_type; }) {
+        return std::unexpected(error_t::invalid_type);
+    } else if constexpr(std::is_enum_v<error_t>) {
+        return std::unexpected(static_cast<error_t>(1));
+    } else {
+        return std::unexpected(error_t{});
+    }
+}
+
+template <typename To, typename From>
+constexpr bool integral_value_in_range(From value) {
+    static_assert(std::is_integral_v<To>);
+    static_assert(std::is_integral_v<From>);
+
+    if constexpr(std::is_signed_v<To> == std::is_signed_v<From>) {
+        using compare_t = std::conditional_t<(sizeof(From) > sizeof(To)), From, To>;
+        return static_cast<compare_t>(value) >=
+                   static_cast<compare_t>((std::numeric_limits<To>::lowest)()) &&
+               static_cast<compare_t>(value) <=
+                   static_cast<compare_t>((std::numeric_limits<To>::max)());
+    } else if constexpr(std::is_signed_v<From>) {
+        if(value < 0) {
+            return false;
+        }
+
+        using from_unsigned_t = std::make_unsigned_t<From>;
+        using to_unsigned_t = std::make_unsigned_t<To>;
+        using compare_t = std::common_type_t<from_unsigned_t, to_unsigned_t>;
+        return static_cast<compare_t>(static_cast<from_unsigned_t>(value)) <=
+               static_cast<compare_t>((std::numeric_limits<To>::max)());
+    } else {
+        using from_unsigned_t = std::make_unsigned_t<From>;
+        using to_unsigned_t = std::make_unsigned_t<To>;
+        using compare_t = std::common_type_t<from_unsigned_t, to_unsigned_t>;
+        return static_cast<compare_t>(static_cast<from_unsigned_t>(value)) <=
+               static_cast<compare_t>((std::numeric_limits<To>::max)());
+    }
+}
 
 template <typename E, typename SerializeStruct, typename Field>
 constexpr auto serialize_struct_field(SerializeStruct& s_struct, Field field)
@@ -126,6 +172,13 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
         return run_attrs_hook<typename V::attrs>(ctx, [](auto ctx) {
             return serialize(ctx.s, ctx.value);
         });
+    } else if constexpr(std::is_enum_v<V>) {
+        using underlying_t = std::underlying_type_t<V>;
+        if constexpr(std::is_signed_v<underlying_t>) {
+            return s.serialize_int(static_cast<std::int64_t>(static_cast<underlying_t>(v)));
+        } else {
+            return s.serialize_uint(static_cast<std::uint64_t>(static_cast<underlying_t>(v)));
+        }
     } else if constexpr(bool_like<V>) {
         return s.serialize_bool(v);
     } else if constexpr(int_like<V>) {
@@ -259,6 +312,31 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
             .value = value,
         };
         return run_attrs_hook<attrs_t>(ctx, terminal);
+    } else if constexpr(std::is_enum_v<V>) {
+        using underlying_t = std::underlying_type_t<V>;
+        if constexpr(std::is_signed_v<underlying_t>) {
+            std::int64_t parsed = 0;
+            auto status = d.deserialize_int(parsed);
+            if(!status) {
+                return std::unexpected(status.error());
+            }
+            if(!detail::integral_value_in_range<underlying_t>(parsed)) {
+                return detail::unexpected_number_out_of_range<std::expected<void, E>>();
+            }
+            v = static_cast<V>(static_cast<underlying_t>(parsed));
+            return {};
+        } else {
+            std::uint64_t parsed = 0;
+            auto status = d.deserialize_uint(parsed);
+            if(!status) {
+                return std::unexpected(status.error());
+            }
+            if(!detail::integral_value_in_range<underlying_t>(parsed)) {
+                return detail::unexpected_number_out_of_range<std::expected<void, E>>();
+            }
+            v = static_cast<V>(static_cast<underlying_t>(parsed));
+            return {};
+        }
     } else if constexpr(bool_like<V>) {
         return d.deserialize_bool(v);
     } else if constexpr(int_like<V>) {

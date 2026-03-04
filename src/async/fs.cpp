@@ -1,22 +1,18 @@
 #include "eventide/async/fs.h"
 
+#include <cassert>
 #include <functional>
 
-#include "libuv.h"
+#include "awaiter.h"
 #include "eventide/async/error.h"
 #include "eventide/async/loop.h"
 
 namespace eventide {
 
-struct fs_event::Self : uv_handle<fs_event::Self, uv_fs_event_t> {
+struct fs_event::Self :
+    uv_handle<fs_event::Self, uv_fs_event_t>,
+    uv::latest_value_delivery<fs_event::change> {
     uv_fs_event_t handle{};
-    system_op* waiter = nullptr;
-    result<fs_event::change>* active = nullptr;
-    std::optional<fs_event::change> pending;
-
-    Self() {
-        handle.data = this;
-    }
 };
 
 namespace {
@@ -68,51 +64,32 @@ static fs_event::change_flags to_fs_change_flags(int events) {
     return out;
 }
 
-struct fs_event_await : system_op {
+struct fs_event_await : uv::await_op<fs_event_await> {
+    using await_base = uv::await_op<fs_event_await>;
     using promise_t = task<result<fs_event::change>>::promise_type;
 
+    // Watched fs_event self used to register and clear waiter pointers.
     fs_event::Self* self;
-    result<fs_event::change> outcome = std::unexpected(error{});
+    // Result slot written by on_change() and returned from await_resume().
+    result<fs_event::change> outcome = std::unexpected(error());
 
-    explicit fs_event_await(fs_event::Self* watcher) : self(watcher) {
-        action = &on_cancel;
-    }
+    explicit fs_event_await(fs_event::Self* watcher) : self(watcher) {}
 
     static void on_cancel(system_op* op) {
-        auto* aw = static_cast<fs_event_await*>(op);
-        if(aw->self) {
-            aw->self->waiter = nullptr;
-            aw->self->active = nullptr;
-        }
-        aw->complete();
+        await_base::complete_cancel(op, [](auto& aw) {
+            if(aw.self) {
+                aw.self->disarm();
+            }
+        });
     }
 
     static void on_change(uv_fs_event_t* handle, const char* filename, int events, int status) {
         auto* watcher = static_cast<fs_event::Self*>(handle->data);
-        if(!watcher) {
-            return;
-        }
+        assert(watcher != nullptr && "on_change requires watcher state in handle->data");
 
-        auto deliver = [&](result<fs_event::change>&& value) {
-            if(watcher->waiter && watcher->active) {
-                *watcher->active = std::move(value);
-
-                auto w = watcher->waiter;
-                watcher->waiter = nullptr;
-                watcher->active = nullptr;
-
-                w->complete();
-            } else {
-                if(value.has_value()) {
-                    watcher->pending = std::move(value.value());
-                } else {
-                    watcher->pending.reset();
-                }
-            }
-        };
-
-        if(status < 0) {
-            deliver(std::unexpected(error(status)));
+        auto err = uv::status_to_error(status);
+        if(err) {
+            watcher->deliver(err);
             return;
         }
 
@@ -122,7 +99,7 @@ struct fs_event_await : system_op {
         }
         c.flags = to_fs_change_flags(events);
 
-        deliver(std::move(c));
+        watcher->deliver(std::move(c));
     }
 
     bool await_ready() const noexcept {
@@ -135,15 +112,13 @@ struct fs_event_await : system_op {
         if(!self) {
             return waiting;
         }
-        self->waiter = this;
-        self->active = &outcome;
-        return link_continuation(&waiting.promise(), location);
+        self->arm(*this, outcome);
+        return this->link_continuation(&waiting.promise(), location);
     }
 
     result<fs_event::change> await_resume() noexcept {
         if(self) {
-            self->waiter = nullptr;
-            self->active = nullptr;
+            self->disarm();
         }
         return std::move(outcome);
     }
@@ -151,9 +126,9 @@ struct fs_event_await : system_op {
 
 }  // namespace
 
-fs_event::fs_event() noexcept : self(nullptr, nullptr) {}
+fs_event::fs_event() noexcept = default;
 
-fs_event::fs_event(Self* state) noexcept : self(state, Self::destroy) {}
+fs_event::fs_event(unique_handle<Self> self) noexcept : self(std::move(self)) {}
 
 fs_event::~fs_event() = default;
 
@@ -165,22 +140,13 @@ fs_event::Self* fs_event::operator->() noexcept {
     return self.get();
 }
 
-const fs_event::Self* fs_event::operator->() const noexcept {
-    return self.get();
-}
-
 result<fs_event> fs_event::create(event_loop& loop) {
-    std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
-    auto handle = &state->handle;
-
-    int err = uv_fs_event_init(static_cast<uv_loop_t*>(loop.handle()), handle);
-    if(err != 0) {
-        return std::unexpected(error(err));
+    auto self = Self::make();
+    if(auto err = uv::fs_event_init(loop, self->handle)) {
+        return std::unexpected(err);
     }
 
-    state->mark_initialized();
-    handle->data = state.get();
-    return fs_event(state.release());
+    return fs_event(std::move(self));
 }
 
 error fs_event::start(const char* path, watch_options options) {
@@ -189,15 +155,13 @@ error fs_event::start(const char* path, watch_options options) {
     }
 
     auto uv_flags = to_uv_fs_event_flags(options);
-    if(!uv_flags.has_value()) {
+    if(!uv_flags) {
         return uv_flags.error();
     }
 
-    auto handle = &self->handle;
-    handle->data = self.get();
-    int err = uv_fs_event_start(handle, fs_event_await::on_change, path, uv_flags.value());
-    if(err != 0) {
-        return error(err);
+    auto& handle = self->handle;
+    if(auto err = uv::fs_event_start(handle, fs_event_await::on_change, path, uv_flags.value())) {
+        return err;
     }
 
     return {};
@@ -208,10 +172,9 @@ error fs_event::stop() {
         return error::invalid_argument;
     }
 
-    auto handle = &self->handle;
-    int err = uv_fs_event_stop(handle);
-    if(err != 0) {
-        return error(err);
+    auto& handle = self->handle;
+    if(auto err = uv::fs_event_stop(handle)) {
+        return err;
     }
 
     return {};
@@ -222,13 +185,11 @@ task<result<fs_event::change>> fs_event::wait() {
         co_return std::unexpected(error::invalid_argument);
     }
 
-    if(self->pending.has_value()) {
-        auto out = std::move(*self->pending);
-        self->pending.reset();
-        co_return out;
+    if(self->has_pending()) {
+        co_return self->take_pending();
     }
 
-    if(self->waiter != nullptr) {
+    if(self->has_waiter()) {
         co_return std::unexpected(error::connection_already_in_progress);
     }
 
@@ -238,20 +199,21 @@ task<result<fs_event::change>> fs_event::wait() {
 namespace {
 
 template <typename Result>
-struct fs_op : system_op {
+struct fs_op : uv::await_op<fs_op<Result>> {
     using promise_t = task<result<Result>>::promise_type;
 
+    // Underlying libuv fs request; req.data points back to this awaiter.
     uv_fs_t req = {};
+    // Extracts a typed result from a successful uv_fs_t completion.
     std::function<Result(uv_fs_t&)> populate;
+    // Final result observed by await_resume().
     result<Result> out = std::unexpected(error());
 
-    fs_op() : system_op(async_node::NodeKind::SystemIO) {
-        action = &on_cancel;
-    }
+    fs_op() = default;
 
     static void on_cancel(system_op* op) {
         auto* self = static_cast<fs_op*>(op);
-        uv_cancel(reinterpret_cast<uv_req_t*>(&self->req));
+        uv::cancel(self->req);
     }
 
     bool await_ready() const noexcept {
@@ -261,7 +223,7 @@ struct fs_op : system_op {
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
                       std::source_location location = std::source_location::current()) noexcept {
-        return link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), location);
     }
 
     result<Result> await_resume() noexcept {
@@ -323,26 +285,25 @@ static task<result<Result>> run_fs(Submit submit,
 
     auto after_cb = [](uv_fs_t* req) {
         auto* h = static_cast<fs_op<Result>*>(req->data);
-        if(h == nullptr) {
-            return;
-        }
+        assert(h != nullptr && "fs after_cb requires operation in req->data");
+
+        h->mark_cancelled_if(req->result);
 
         if(req->result < 0) {
-            h->out = std::unexpected(error(static_cast<int>(req->result)));
+            h->out = std::unexpected(uv::status_to_error(req->result));
         } else {
             h->out = h->populate(*req);
         }
 
-        uv_fs_req_cleanup(req);
+        uv::fs_req_cleanup(*req);
 
         h->complete();
     };
 
     op.req.data = &op;
 
-    int err = submit(op.req, after_cb);
-    if(err != 0) {
-        co_return std::unexpected(error(err));
+    if(auto err = submit(op.req, after_cb)) {
+        co_return std::unexpected(err);
     }
 
     co_return co_await op;
@@ -390,37 +351,30 @@ fs::dir_handle fs::dir_handle::from_native(void* ptr) {
 }
 
 task<result<fs::result>> fs::unlink(std::string_view path, event_loop& loop) {
+    std::string path_storage(path);
     co_return co_await run_fs<fs::result>(
-        [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv_fs_unlink(static_cast<uv_loop_t*>(loop.handle()),
-                                &req,
-                                std::string(path).c_str(),
-                                cb);
+        [&, path_storage](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_unlink(loop, req, path_storage.c_str(), cb);
         },
         basic_populate,
         loop);
 }
 
 task<result<fs::result>> fs::mkdir(std::string_view path, int mode, event_loop& loop) {
+    std::string path_storage(path);
     co_return co_await run_fs<fs::result>(
-        [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv_fs_mkdir(static_cast<uv_loop_t*>(loop.handle()),
-                               &req,
-                               std::string(path).c_str(),
-                               mode,
-                               cb);
+        [&, path_storage](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_mkdir(loop, req, path_storage.c_str(), mode, cb);
         },
         basic_populate,
         loop);
 }
 
 task<result<fs::result>> fs::stat(std::string_view path, event_loop& loop) {
+    std::string path_storage(path);
     co_return co_await run_fs<fs::result>(
-        [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv_fs_stat(static_cast<uv_loop_t*>(loop.handle()),
-                              &req,
-                              std::string(path).c_str(),
-                              cb);
+        [&, path_storage](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_stat(loop, req, path_storage.c_str(), cb);
         },
         basic_populate,
         loop);
@@ -431,7 +385,7 @@ task<result<fs::result>> fs::copyfile(std::string_view path,
                                       fs::copyfile_options options,
                                       event_loop& loop) {
     auto uv_flags = to_uv_copyfile_flags(options);
-    if(!uv_flags.has_value()) {
+    if(!uv_flags) {
         co_return std::unexpected(uv_flags.error());
     }
 
@@ -441,51 +395,47 @@ task<result<fs::result>> fs::copyfile(std::string_view path,
         r.aux_path = std::string(new_path);
         return r;
     };
+    std::string path_storage(path);
+    std::string new_path_storage(new_path);
 
     co_return co_await run_fs<fs::result>(
-        [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv_fs_copyfile(static_cast<uv_loop_t*>(loop.handle()),
-                                  &req,
-                                  std::string(path).c_str(),
-                                  std::string(new_path).c_str(),
-                                  uv_flags.value(),
-                                  cb);
+        [&, path_storage, new_path_storage](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_copyfile(loop,
+                                   req,
+                                   path_storage.c_str(),
+                                   new_path_storage.c_str(),
+                                   uv_flags.value(),
+                                   cb);
         },
         populate,
         loop);
 }
 
 task<result<fs::result>> fs::mkdtemp(std::string_view tpl, event_loop& loop) {
+    std::string tpl_storage(tpl);
     co_return co_await run_fs<fs::result>(
-        [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv_fs_mkdtemp(static_cast<uv_loop_t*>(loop.handle()),
-                                 &req,
-                                 std::string(tpl).c_str(),
-                                 cb);
+        [&, tpl_storage](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_mkdtemp(loop, req, tpl_storage.c_str(), cb);
         },
         basic_populate,
         loop);
 }
 
 task<result<fs::result>> fs::mkstemp(std::string_view tpl, event_loop& loop) {
+    std::string tpl_storage(tpl);
     co_return co_await run_fs<fs::result>(
-        [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv_fs_mkstemp(static_cast<uv_loop_t*>(loop.handle()),
-                                 &req,
-                                 std::string(tpl).c_str(),
-                                 cb);
+        [&, tpl_storage](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_mkstemp(loop, req, tpl_storage.c_str(), cb);
         },
         basic_populate,
         loop);
 }
 
 task<result<fs::result>> fs::rmdir(std::string_view path, event_loop& loop) {
+    std::string path_storage(path);
     co_return co_await run_fs<fs::result>(
-        [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv_fs_rmdir(static_cast<uv_loop_t*>(loop.handle()),
-                               &req,
-                               std::string(path).c_str(),
-                               cb);
+        [&, path_storage](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_rmdir(loop, req, path_storage.c_str(), cb);
         },
         basic_populate,
         loop);
@@ -495,7 +445,7 @@ task<result<std::vector<fs::dirent>>> fs::scandir(std::string_view path, event_l
     auto populate = [](uv_fs_t& req) {
         std::vector<fs::dirent> out;
         uv_dirent_t ent;
-        while(uv_fs_scandir_next(&req, &ent) != error::end_of_file.value()) {
+        while(uv::fs_scandir_next(req, ent).value() != error::end_of_file.value()) {
             fs::dirent d;
             if(ent.name) {
                 d.name = ent.name;
@@ -506,13 +456,10 @@ task<result<std::vector<fs::dirent>>> fs::scandir(std::string_view path, event_l
         return out;
     };
 
+    std::string path_storage(path);
     co_return co_await run_fs<std::vector<fs::dirent>>(
-        [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv_fs_scandir(static_cast<uv_loop_t*>(loop.handle()),
-                                 &req,
-                                 std::string(path).c_str(),
-                                 0,
-                                 cb);
+        [&, path_storage](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_scandir(loop, req, path_storage.c_str(), 0, cb);
         },
         populate,
         loop);
@@ -523,12 +470,10 @@ task<result<fs::dir_handle>> fs::opendir(std::string_view path, event_loop& loop
         return fs::dir_handle::from_native(req.ptr);
     };
 
+    std::string path_storage(path);
     co_return co_await run_fs<fs::dir_handle>(
-        [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv_fs_opendir(static_cast<uv_loop_t*>(loop.handle()),
-                                 &req,
-                                 std::string(path).c_str(),
-                                 cb);
+        [&, path_storage](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_opendir(loop, req, path_storage.c_str(), cb);
         },
         populate,
         loop);
@@ -570,10 +515,7 @@ task<result<std::vector<fs::dirent>>> fs::readdir(fs::dir_handle& dir, event_loo
 
     co_return co_await run_fs<std::vector<fs::dirent>>(
         [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv_fs_readdir(static_cast<uv_loop_t*>(loop.handle()),
-                                 &req,
-                                 static_cast<uv_dir_t*>(dir.native_handle()),
-                                 cb);
+            return uv::fs_readdir(loop, req, *static_cast<uv_dir_t*>(dir.native_handle()), cb);
         },
         populate,
         loop);
@@ -586,15 +528,12 @@ task<error> fs::closedir(fs::dir_handle& dir, event_loop& loop) {
 
     auto res = co_await run_fs<fs::result>(
         [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv_fs_closedir(static_cast<uv_loop_t*>(loop.handle()),
-                                  &req,
-                                  static_cast<uv_dir_t*>(dir.native_handle()),
-                                  cb);
+            return uv::fs_closedir(loop, req, *static_cast<uv_dir_t*>(dir.native_handle()), cb);
         },
         basic_populate,
         loop);
 
-    if(!res.has_value()) {
+    if(!res) {
         co_return res.error();
     }
 
@@ -604,20 +543,16 @@ task<error> fs::closedir(fs::dir_handle& dir, event_loop& loop) {
 
 task<result<fs::result>> fs::fstat(int fd, event_loop& loop) {
     co_return co_await run_fs<fs::result>(
-        [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv_fs_fstat(static_cast<uv_loop_t*>(loop.handle()), &req, fd, cb);
-        },
+        [&](uv_fs_t& req, uv_fs_cb cb) { return uv::fs_fstat(loop, req, fd, cb); },
         basic_populate,
         loop);
 }
 
 task<result<fs::result>> fs::lstat(std::string_view path, event_loop& loop) {
+    std::string path_storage(path);
     co_return co_await run_fs<fs::result>(
-        [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv_fs_lstat(static_cast<uv_loop_t*>(loop.handle()),
-                               &req,
-                               std::string(path).c_str(),
-                               cb);
+        [&, path_storage](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_lstat(loop, req, path_storage.c_str(), cb);
         },
         basic_populate,
         loop);
@@ -632,14 +567,12 @@ task<result<fs::result>> fs::rename(std::string_view path,
         r.aux_path = std::string(new_path);
         return r;
     };
+    std::string path_storage(path);
+    std::string new_path_storage(new_path);
 
     co_return co_await run_fs<fs::result>(
-        [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv_fs_rename(static_cast<uv_loop_t*>(loop.handle()),
-                                &req,
-                                std::string(path).c_str(),
-                                std::string(new_path).c_str(),
-                                cb);
+        [&, path_storage, new_path_storage](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_rename(loop, req, path_storage.c_str(), new_path_storage.c_str(), cb);
         },
         populate,
         loop);
@@ -647,27 +580,21 @@ task<result<fs::result>> fs::rename(std::string_view path,
 
 task<result<fs::result>> fs::fsync(int fd, event_loop& loop) {
     co_return co_await run_fs<fs::result>(
-        [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv_fs_fsync(static_cast<uv_loop_t*>(loop.handle()), &req, fd, cb);
-        },
+        [&](uv_fs_t& req, uv_fs_cb cb) { return uv::fs_fsync(loop, req, fd, cb); },
         basic_populate,
         loop);
 }
 
 task<result<fs::result>> fs::fdatasync(int fd, event_loop& loop) {
     co_return co_await run_fs<fs::result>(
-        [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv_fs_fdatasync(static_cast<uv_loop_t*>(loop.handle()), &req, fd, cb);
-        },
+        [&](uv_fs_t& req, uv_fs_cb cb) { return uv::fs_fdatasync(loop, req, fd, cb); },
         basic_populate,
         loop);
 }
 
 task<result<fs::result>> fs::ftruncate(int fd, std::int64_t offset, event_loop& loop) {
     co_return co_await run_fs<fs::result>(
-        [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv_fs_ftruncate(static_cast<uv_loop_t*>(loop.handle()), &req, fd, offset, cb);
-        },
+        [&](uv_fs_t& req, uv_fs_cb cb) { return uv::fs_ftruncate(loop, req, fd, offset, cb); },
         basic_populate,
         loop);
 }
@@ -679,39 +606,27 @@ task<result<fs::result>> fs::sendfile(int out_fd,
                                       event_loop& loop) {
     co_return co_await run_fs<fs::result>(
         [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv_fs_sendfile(static_cast<uv_loop_t*>(loop.handle()),
-                                  &req,
-                                  out_fd,
-                                  in_fd,
-                                  in_offset,
-                                  length,
-                                  cb);
+            return uv::fs_sendfile(loop, req, out_fd, in_fd, in_offset, length, cb);
         },
         basic_populate,
         loop);
 }
 
 task<result<fs::result>> fs::access(std::string_view path, int mode, event_loop& loop) {
+    std::string path_storage(path);
     co_return co_await run_fs<fs::result>(
-        [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv_fs_access(static_cast<uv_loop_t*>(loop.handle()),
-                                &req,
-                                std::string(path).c_str(),
-                                mode,
-                                cb);
+        [&, path_storage](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_access(loop, req, path_storage.c_str(), mode, cb);
         },
         basic_populate,
         loop);
 }
 
 task<result<fs::result>> fs::chmod(std::string_view path, int mode, event_loop& loop) {
+    std::string path_storage(path);
     co_return co_await run_fs<fs::result>(
-        [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv_fs_chmod(static_cast<uv_loop_t*>(loop.handle()),
-                               &req,
-                               std::string(path).c_str(),
-                               mode,
-                               cb);
+        [&, path_storage](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_chmod(loop, req, path_storage.c_str(), mode, cb);
         },
         basic_populate,
         loop);
@@ -719,14 +634,10 @@ task<result<fs::result>> fs::chmod(std::string_view path, int mode, event_loop& 
 
 task<result<fs::result>>
     fs::utime(std::string_view path, double atime, double mtime, event_loop& loop) {
+    std::string path_storage(path);
     co_return co_await run_fs<fs::result>(
-        [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv_fs_utime(static_cast<uv_loop_t*>(loop.handle()),
-                               &req,
-                               std::string(path).c_str(),
-                               atime,
-                               mtime,
-                               cb);
+        [&, path_storage](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_utime(loop, req, path_storage.c_str(), atime, mtime, cb);
         },
         basic_populate,
         loop);
@@ -734,23 +645,17 @@ task<result<fs::result>>
 
 task<result<fs::result>> fs::futime(int fd, double atime, double mtime, event_loop& loop) {
     co_return co_await run_fs<fs::result>(
-        [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv_fs_futime(static_cast<uv_loop_t*>(loop.handle()), &req, fd, atime, mtime, cb);
-        },
+        [&](uv_fs_t& req, uv_fs_cb cb) { return uv::fs_futime(loop, req, fd, atime, mtime, cb); },
         basic_populate,
         loop);
 }
 
 task<result<fs::result>>
     fs::lutime(std::string_view path, double atime, double mtime, event_loop& loop) {
+    std::string path_storage(path);
     co_return co_await run_fs<fs::result>(
-        [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv_fs_lutime(static_cast<uv_loop_t*>(loop.handle()),
-                                &req,
-                                std::string(path).c_str(),
-                                atime,
-                                mtime,
-                                cb);
+        [&, path_storage](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_lutime(loop, req, path_storage.c_str(), atime, mtime, cb);
         },
         basic_populate,
         loop);
@@ -765,14 +670,12 @@ task<result<fs::result>> fs::link(std::string_view path,
         r.aux_path = std::string(new_path);
         return r;
     };
+    std::string path_storage(path);
+    std::string new_path_storage(new_path);
 
     co_return co_await run_fs<fs::result>(
-        [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv_fs_link(static_cast<uv_loop_t*>(loop.handle()),
-                              &req,
-                              std::string(path).c_str(),
-                              std::string(new_path).c_str(),
-                              cb);
+        [&, path_storage, new_path_storage](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_link(loop, req, path_storage.c_str(), new_path_storage.c_str(), cb);
         },
         populate,
         loop);

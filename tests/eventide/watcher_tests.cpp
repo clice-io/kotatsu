@@ -82,7 +82,7 @@ TEST_CASE(sleep_once) {
     loop.run();
 }
 
-TEST_CASE(timer_repeat_wait_twice) {
+TEST_CASE(timer_repeat_twice) {
     event_loop loop;
 
     auto t = timer::create(loop);
