@@ -123,6 +123,10 @@ inline std::string join_aliases(const std::vector<std::string>& aliases, bool he
     return join_strings(aliases, help_mode ? ", " : "|");
 }
 
+constexpr inline bool has_kv_style(char style, decl::KVStyle expected) {
+    return (style & static_cast<char>(expected)) != 0;
+}
+
 inline std::string kv_joined_alias(std::string_view alias, std::string_view value_token) {
     if(alias.starts_with("--")) {
         return std::format("{}={}", alias, value_token);
@@ -170,15 +174,25 @@ inline std::string usage_text(const CfgTy& cfg, bool help_mode, std::string_view
         return join_aliases(named_aliases(cfg, fallback_name), help_mode);
     } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::KV) {
         const auto aliases = named_aliases(cfg, fallback_name);
-        if(cfg.style == decl::KVStyle::Joined) {
-            std::vector<std::string> forms;
-            forms.reserve(aliases.size());
+        const bool allow_separate = has_kv_style(cfg.style, decl::KVStyle::Separate);
+        const bool allow_joined = has_kv_style(cfg.style, decl::KVStyle::Joined);
+        if(allow_separate && !allow_joined) {
+            return std::format("{} {}", join_aliases(aliases, help_mode), value_token);
+        }
+        std::vector<std::string> forms;
+        if(allow_separate) {
+            forms.push_back(std::format("{} {}", join_aliases(aliases, help_mode), value_token));
+        }
+        if(allow_joined) {
+            forms.reserve(forms.size() + aliases.size());
             for(const auto& alias: aliases) {
                 forms.push_back(kv_joined_alias(alias, value_token));
             }
-            return join_aliases(forms, help_mode);
         }
-        return std::format("{} {}", join_aliases(aliases, help_mode), value_token);
+        if(forms.empty()) {
+            return std::format("{} {}", join_aliases(aliases, help_mode), value_token);
+        }
+        return join_aliases(forms, help_mode);
     } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::CommaJoined) {
         const auto aliases = named_aliases(cfg, fallback_name);
         std::vector<std::string> forms;

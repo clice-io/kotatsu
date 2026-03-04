@@ -21,6 +21,13 @@ struct DescOpt {
                  required = false;)
     <std::string> include_dir;
 
+    DecoKVStyled(static_cast<char>(deco::decl::KVStyle::Joined | deco::decl::KVStyle::Separate),
+                 names = {"--filter"};
+                 meta_var = "PATTERN";
+                 help = "Filter tests";
+                 required = false;)
+    <std::string> filter;
+
     DecoComma(names = {"--tags", "-T"}; meta_var = "TAG"; help = "Comma-separated tags";
               required = false;)
     <std::vector<std::string>> tags;
@@ -47,6 +54,7 @@ TEST_CASE(from_deco_option_renders_usage_style_text) {
     EXPECT_TRUE(deco::desc::from_deco_option(opt.verbose) == "-v|--verbose");
     EXPECT_TRUE(deco::desc::from_deco_option(opt.output) == "-o|--output <FILE>");
     EXPECT_TRUE(deco::desc::from_deco_option(opt.include_dir) == "-I<DIR>|--include=<DIR>");
+    EXPECT_TRUE(deco::desc::from_deco_option(opt.filter) == "--filter <PATTERN>|--filter=<PATTERN>");
     EXPECT_TRUE(deco::desc::from_deco_option(opt.tags) ==
                 "--tags,<TAG>[,<TAG>...]|-T,<TAG>[,<TAG>...]");
     EXPECT_TRUE(deco::desc::from_deco_option(opt.pair) == "--pair <VAL1> <VAL2>");
@@ -67,6 +75,10 @@ TEST_CASE(from_deco_option_renders_help_style_text) {
     const auto output_help = deco::desc::from_deco_option(opt.output, true);
     EXPECT_TRUE(output_help.find("-o, --output <FILE>") != std::string::npos);
     EXPECT_TRUE(output_help.find("Write output to FILE") != std::string::npos);
+
+    const auto filter_help = deco::desc::from_deco_option(opt.filter, true);
+    EXPECT_TRUE(filter_help.find("--filter <PATTERN>, --filter=<PATTERN>") != std::string::npos);
+    EXPECT_TRUE(filter_help.find("Filter tests") != std::string::npos);
 
     const auto input_help = deco::desc::from_deco_option(opt.input, true);
     EXPECT_TRUE(input_help.find("<INPUT>") != std::string::npos);
