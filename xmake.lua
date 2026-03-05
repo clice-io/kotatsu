@@ -195,7 +195,7 @@ if has_config("test") and has_config("ztest") then
 	target("unit_tests", function()
 		set_default(false)
 		set_kind("binary")
-		add_files("tests/main.cpp", "tests/reflection/**.cpp", "tests/zest/**.cpp")
+		add_files("tests/main.cpp", "tests/common/**.cpp", "tests/reflection/**.cpp", "tests/zest/**.cpp")
 		if has_config("async") then
 			add_files("tests/eventide/**.cpp")
 		end

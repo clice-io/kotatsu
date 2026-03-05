@@ -13,7 +13,7 @@ file(GLOB_RECURSE TEST_SOURCES RELATIVE "${PROJECT_SOURCE_DIR}" CONFIGURE_DEPEND
 )
 
 set(TEST_BASE_SOURCES ${TEST_SOURCES})
-list(FILTER TEST_BASE_SOURCES INCLUDE REGEX "^tests/(main\\.cpp|reflection/.*\\.cpp|zest/.*\\.cpp)$")
+list(FILTER TEST_BASE_SOURCES INCLUDE REGEX "^tests/(main\\.cpp|common/.*\\.cpp|reflection/.*\\.cpp|zest/.*\\.cpp)$")
 list(TRANSFORM TEST_BASE_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
 target_sources(unit_tests PRIVATE ${TEST_BASE_SOURCES})
 
