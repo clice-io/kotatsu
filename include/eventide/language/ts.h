@@ -12,10 +12,10 @@
 #include <variant>
 #include <vector>
 
-#include "eventide/jsonrpc/protocol.h"
+#include "eventide/ipc/protocol.h"
 #include "eventide/serde/serde.h"
 
-namespace eventide::jsonrpc::protocol {
+namespace eventide::ipc::protocol {
 
 /// For `undefined | bool` .
 using optional_bool = serde::skip_if_default<bool>;
@@ -87,36 +87,36 @@ struct IncomingMessage {
     optional<string> error_json;
 };
 
-}  // namespace eventide::jsonrpc::protocol
+}  // namespace eventide::ipc::protocol
 
 namespace eventide::language {
 
-namespace protocol = eventide::jsonrpc::protocol;
+namespace protocol = eventide::ipc::protocol;
 
 }  // namespace eventide::language
 
 namespace eventide::serde {
 
 template <serializer_like S>
-struct serialize_traits<S, eventide::jsonrpc::protocol::LSPAny> {
+struct serialize_traits<S, eventide::ipc::protocol::LSPAny> {
     using value_type = typename S::value_type;
     using error_type = typename S::error_type;
 
-    static auto serialize(S& serializer, const eventide::jsonrpc::protocol::LSPAny& value)
+    static auto serialize(S& serializer, const eventide::ipc::protocol::LSPAny& value)
         -> std::expected<value_type, error_type> {
-        const auto& variant = static_cast<const eventide::jsonrpc::protocol::LSPVariant&>(value);
+        const auto& variant = static_cast<const eventide::ipc::protocol::LSPVariant&>(value);
         return std::visit([&](const auto& item) { return serde::serialize(serializer, item); },
                           variant);
     }
 };
 
 template <deserializer_like D>
-struct deserialize_traits<D, eventide::jsonrpc::protocol::LSPAny> {
+struct deserialize_traits<D, eventide::ipc::protocol::LSPAny> {
     using error_type = typename D::error_type;
 
-    static auto deserialize(D& deserializer, eventide::jsonrpc::protocol::LSPAny& value)
+    static auto deserialize(D& deserializer, eventide::ipc::protocol::LSPAny& value)
         -> std::expected<void, error_type> {
-        eventide::jsonrpc::protocol::LSPVariant variant{};
+        eventide::ipc::protocol::LSPVariant variant{};
         auto status = serde::deserialize(deserializer, variant);
         if(!status) {
             return std::unexpected(status.error());

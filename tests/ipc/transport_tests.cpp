@@ -3,7 +3,7 @@
 #include <string>
 #include <utility>
 
-#include "eventide/jsonrpc/transport.h"
+#include "eventide/ipc/transport.h"
 #include "eventide/zest/zest.h"
 #include "eventide/async/loop.h"
 #include "eventide/async/stream.h"
@@ -17,7 +17,7 @@ using ssize_t = SSIZE_T;
 #include <unistd.h>
 #endif
 
-namespace eventide::jsonrpc {
+namespace eventide::ipc {
 
 namespace {
 
@@ -67,7 +67,7 @@ task<std::pair<std::optional<std::string>, std::optional<std::string>>>
 
 }  // namespace
 
-TEST_SUITE(jsonrpc_transport) {
+TEST_SUITE(ipc_transport) {
 
 TEST_CASE(stream_transport_reads_back_to_back_messages) {
     event_loop loop;
@@ -100,6 +100,6 @@ TEST_CASE(stream_transport_reads_back_to_back_messages) {
     EXPECT_EQ(*second, second_payload);
 }
 
-};  // TEST_SUITE(jsonrpc_transport)
+};  // TEST_SUITE(ipc_transport)
 
-}  // namespace eventide::jsonrpc
+}  // namespace eventide::ipc

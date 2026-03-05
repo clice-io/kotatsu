@@ -1,7 +1,7 @@
 # eventide
 
 `eventide` is a C++23 toolkit extracted from the `clice` ecosystem.
-It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv), and now also includes compile-time reflection, serde utilities, a typed JSON-RPC layer, generated LSP protocol bindings, a lightweight test framework, an LLVM-compatible option parsing library, and a declarative option library built on it.
+It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv), and now also includes compile-time reflection, serde utilities, a typed IPC layer, generated LSP protocol bindings, a lightweight test framework, an LLVM-compatible option parsing library, and a declarative option library built on it.
 
 ## Feature Coverage
 
@@ -39,13 +39,13 @@ It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv)
   - `serde::json::simd` (simdjson-based JSON serializer/deserializer)
 - FlatBuffers helpers (`flatbuffers/binary/*`) and FlexBuffers helpers (`flatbuffers/flex/*`)
 
-### `jsonrpc` (`include/eventide/jsonrpc/*`)
+### `ipc` (`include/eventide/ipc/*`)
 
 - JSON-RPC 2.0 protocol types and typed request/notification traits.
 - Transport abstraction (`Transport`, `StreamTransport`) for framed message IO.
 - Typed peer runtime (`Peer`) for request dispatch, notifications, and nested RPC.
 - External event-loop execution model: callers own `event_loop`, schedule `peer.run()`, and drive shutdown explicitly.
-- Error model: RPC APIs return `jsonrpc::Result<T>` (`std::expected<T, RPCError>`), where `RPCError` includes `code`, `message`, and optional structured `data`.
+- Error model: RPC APIs return `ipc::Result<T>` (`std::expected<T, RPCError>`), where `RPCError` includes `code`, `message`, and optional structured `data`.
 - Protocol validation behavior:
   - malformed JSON maps to `ParseError (-32700)` with `id: null`
   - structurally invalid messages map to `InvalidRequest (-32600)` with `id: null`
@@ -60,7 +60,7 @@ It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv)
 
 - Generated LSP protocol model (`include/eventide/language/protocol.h`).
 - LSP URI and position helpers (`URI`, `PositionMapper`).
-- LSP request/notification traits layered onto `eventide::jsonrpc::protocol`.
+- LSP request/notification traits layered onto `eventide::ipc::protocol`.
 
 ### `option` (`include/eventide/option/*`)
 
@@ -101,7 +101,7 @@ include/
     async/       # Async runtime APIs
     common/      # Shared utilities
     deco/        # Declarative CLI layer built on option + reflection
-    jsonrpc/     # JSON-RPC protocol, peer, and transport APIs
+    ipc/         # IPC protocol, peer, and transport APIs
     language/    # LSP protocol model and utilities
     option/      # LLVM-compatible option parsing layer
     reflection/  # Compile-time reflection utilities
@@ -110,7 +110,7 @@ include/
 
 src/
   async/         # Async runtime implementations
-  jsonrpc/       # JSON-RPC peer and transport implementations
+  ipc/           # IPC peer and transport implementations
   option/        # Option parser implementation
   deco/          # Deco target wiring (header-only APIs)
   serde/         # FlatBuffers/FlexBuffers serde implementation
@@ -123,12 +123,12 @@ tests/
   deco/          # Declarative CLI/deco tests
   reflection/    # Reflection behavior tests
   eventide/      # Runtime/event-loop/IO/process/fs/sync tests
-  jsonrpc/       # JSON-RPC peer and transport tests
+  ipc/           # IPC peer and transport tests
   serde/         # JSON/FlatBuffers serde tests
   language/      # LSP utility and jsonrpc-trait integration tests
 
 examples/
-  jsonrpc/       # JSON-RPC stdio, scripted, and multi-process examples
+  ipc/       # IPC stdio, scripted, and multi-process examples
 
 scripts/
   lsp_codegen.py # LSP schema -> C++ protocol header generator

@@ -8,13 +8,13 @@
 #include <string_view>
 #include <utility>
 
-#include "eventide/jsonrpc/protocol.h"
-#include "eventide/jsonrpc/transport.h"
+#include "eventide/ipc/codec.h"
+#include "eventide/ipc/transport.h"
 #include "eventide/async/cancellation.h"
 #include "eventide/async/loop.h"
 #include "eventide/async/task.h"
 
-namespace eventide::jsonrpc {
+namespace eventide::ipc {
 
 class Peer;
 
@@ -45,37 +45,13 @@ struct basic_request_context {
 
 using RequestContext = basic_request_context<Peer>;
 
-struct RPCError {
-    protocol::integer code = static_cast<protocol::integer>(protocol::ErrorCode::RequestFailed);
-    std::string message;
-    std::optional<protocol::Value> data = {};
-
-    RPCError() = default;
-
-    RPCError(protocol::integer code,
-             std::string message,
-             std::optional<protocol::Value> data = {}) :
-        code(code), message(std::move(message)), data(std::move(data)) {}
-
-    RPCError(protocol::ErrorCode code,
-             std::string message,
-             std::optional<protocol::Value> data = {}) :
-        RPCError(static_cast<protocol::integer>(code), std::move(message), std::move(data)) {}
-
-    RPCError(std::string message) : message(std::move(message)) {}
-
-    RPCError(const char* message) : message(message == nullptr ? "" : message) {}
-};
-
-template <typename T>
-using Result = std::expected<T, RPCError>;
-
 template <typename Params, typename ResultT = typename protocol::RequestTraits<Params>::Result>
 using RequestResult = task<Result<ResultT>>;
 
 class Peer {
 public:
     Peer(event_loop& loop, std::unique_ptr<Transport> transport);
+    Peer(event_loop& loop, std::unique_ptr<Transport> transport, std::unique_ptr<Codec> codec);
 
     Peer(const Peer&) = delete;
     Peer& operator=(const Peer&) = delete;
@@ -144,25 +120,42 @@ private:
 
     void register_notification_callback(std::string_view method, NotificationCallback callback);
 
-    task<Result<std::string>> send_request_json(std::string_view method, std::string params_json);
+    task<Result<std::string>> send_request_impl(std::string_view method, std::string params);
 
-    task<Result<std::string>> send_request_json(std::string_view method,
-                                                std::string params_json,
+    task<Result<std::string>> send_request_impl(std::string_view method,
+                                                std::string params,
                                                 cancellation_token token);
 
-    task<Result<std::string>> send_request_json(std::string_view method,
-                                                std::string params_json,
+    task<Result<std::string>> send_request_impl(std::string_view method,
+                                                std::string params,
                                                 std::chrono::milliseconds timeout);
 
-    Result<void> send_notification_json(std::string_view method, std::string params_json);
+    Result<void> send_notification_impl(std::string_view method, std::string params);
 
 private:
     struct Self;
     std::unique_ptr<Self> self;
 };
 
-}  // namespace eventide::jsonrpc
+}  // namespace eventide::ipc
 
-#define EVENTIDE_JSONRPC_PEER_INL_FROM_HEADER
-#include "eventide/jsonrpc/peer.inl"
-#undef EVENTIDE_JSONRPC_PEER_INL_FROM_HEADER
+#include "eventide/ipc/bincode_codec.h"
+#include "eventide/ipc/json_codec.h"
+
+namespace eventide::ipc {
+
+inline auto make_json_peer(event_loop& loop, std::unique_ptr<Transport> transport)
+    -> std::unique_ptr<Peer> {
+    return std::make_unique<Peer>(loop, std::move(transport), make_json_codec());
+}
+
+inline auto make_bincode_peer(event_loop& loop, std::unique_ptr<Transport> transport)
+    -> std::unique_ptr<Peer> {
+    return std::make_unique<Peer>(loop, std::move(transport), make_bincode_codec());
+}
+
+}  // namespace eventide::ipc
+
+#define EVENTIDE_IPC_PEER_INL_FROM_HEADER
+#include "eventide/ipc/peer.inl"
+#undef EVENTIDE_IPC_PEER_INL_FROM_HEADER

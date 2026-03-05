@@ -1,4 +1,4 @@
-#include "eventide/jsonrpc/transport.h"
+#include "eventide/ipc/transport.h"
 
 #include <algorithm>
 #include <cctype>
@@ -9,7 +9,7 @@
 #include <string_view>
 #include <utility>
 
-namespace eventide::jsonrpc {
+namespace eventide::ipc {
 
 namespace {
 
@@ -252,4 +252,4 @@ std::expected<void, std::string> StreamTransport::close_output() {
     return {};
 }
 
-}  // namespace eventide::jsonrpc
+}  // namespace eventide::ipc

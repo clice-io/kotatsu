@@ -8,11 +8,11 @@
 #include <utility>
 #include <vector>
 
-#include "eventide/jsonrpc/peer.h"
+#include "eventide/ipc/peer.h"
 #include "eventide/async/sync.h"
 
 namespace et = eventide;
-namespace jsonrpc = et::jsonrpc;
+namespace ipc = et::ipc;
 
 namespace {
 
@@ -34,7 +34,7 @@ struct ClientAddParams {
     std::int64_t b = 0;
 };
 
-class ScriptedTransport final : public jsonrpc::Transport {
+class ScriptedTransport final : public ipc::Transport {
 public:
     using WriteHook = std::function<void(std::string_view, ScriptedTransport&)>;
 
@@ -110,12 +110,12 @@ int main() {
         });
     auto* transport_ptr = transport.get();
 
-    jsonrpc::Peer peer(loop, std::move(transport));
+    ipc::Peer peer(loop, std::move(transport));
 
     peer.on_request(
         "example/add",
-        [](jsonrpc::RequestContext& context,
-           const AddParams& params) -> jsonrpc::RequestResult<AddParams, AddResult> {
+        [](ipc::RequestContext& context,
+           const AddParams& params) -> ipc::RequestResult<AddParams, AddResult> {
             auto notify_status =
                 context->send_notification("example/note", NoteParams{.text = "handling request"});
             if(!notify_status) {

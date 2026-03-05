@@ -6,12 +6,12 @@
 #include <utility>
 #include <vector>
 
-#include "eventide/jsonrpc/peer.h"
+#include "eventide/ipc/peer.h"
 #include "eventide/async/loop.h"
 #include "eventide/async/process.h"
 
 namespace et = eventide;
-namespace jsonrpc = et::jsonrpc;
+namespace ipc = et::ipc;
 
 namespace {
 
@@ -33,8 +33,8 @@ struct WorkerLog {
     std::string text;
 };
 
-et::task<jsonrpc::Result<BuildResult>> handle_build_request(jsonrpc::RequestContext& context,
-                                                            const BuildParams& params) {
+et::task<ipc::Result<BuildResult>> handle_build_request(ipc::RequestContext& context,
+                                                        const BuildParams& params) {
     auto log_status =
         context->send_notification("worker/log",
                                    WorkerLog{
@@ -65,7 +65,7 @@ struct WorkerOutcome {
     std::string error;
 };
 
-et::task<void> run_parent_session(jsonrpc::Peer& peer,
+et::task<void> run_parent_session(ipc::Peer& peer,
                                   et::process child,
                                   WorkerPlan plan,
                                   WorkerOutcome& outcome) {
@@ -118,13 +118,13 @@ et::task<void> run_parent_session(jsonrpc::Peer& peer,
 
 int run_worker() {
     et::event_loop loop;
-    auto transport = jsonrpc::StreamTransport::open_stdio(loop);
+    auto transport = ipc::StreamTransport::open_stdio(loop);
     if(!transport) {
         std::println(stderr, "failed to open stdio transport: {}", transport.error());
         return 1;
     }
 
-    jsonrpc::Peer peer(loop, std::move(*transport));
+    ipc::Peer peer(loop, std::move(*transport));
 
     peer.on_request("worker/build", handle_build_request);
 
@@ -157,7 +157,7 @@ int run_parent(std::string self_path) {
     };
 
     std::vector<WorkerOutcome> outcomes(plans.size());
-    std::vector<std::unique_ptr<jsonrpc::Peer>> peers;
+    std::vector<std::unique_ptr<ipc::Peer>> peers;
     peers.reserve(plans.size());
 
     for(std::size_t index = 0; index < plans.size(); ++index) {
@@ -179,9 +179,9 @@ int run_parent(std::string self_path) {
             return 1;
         }
 
-        auto transport = std::make_unique<jsonrpc::StreamTransport>(std::move(spawned->stdout_pipe),
-                                                                    std::move(spawned->stdin_pipe));
-        auto peer = std::make_unique<jsonrpc::Peer>(loop, std::move(transport));
+        auto transport = std::make_unique<ipc::StreamTransport>(std::move(spawned->stdout_pipe),
+                                                                std::move(spawned->stdin_pipe));
+        auto peer = std::make_unique<ipc::Peer>(loop, std::move(transport));
 
         peer->on_notification("worker/log", [](const WorkerLog& params) {
             std::println(stderr, "[{}] {}", params.worker_name, params.text);

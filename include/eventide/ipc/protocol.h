@@ -13,7 +13,7 @@
 
 #include "eventide/serde/serde.h"
 
-namespace eventide::jsonrpc::protocol {
+namespace eventide::ipc::protocol {
 
 template <typename Params>
 struct RequestTraits;
@@ -66,14 +66,14 @@ struct ResponseError {
     std::optional<Value> data = {};
 };
 
-}  // namespace eventide::jsonrpc::protocol
+}  // namespace eventide::ipc::protocol
 
 namespace std {
 
 template <>
-struct hash<eventide::jsonrpc::protocol::RequestID> {
-    std::size_t operator()(const eventide::jsonrpc::protocol::RequestID& id) const noexcept {
-        return std::hash<eventide::jsonrpc::protocol::RequestID::value_type>{}(id.value);
+struct hash<eventide::ipc::protocol::RequestID> {
+    std::size_t operator()(const eventide::ipc::protocol::RequestID& id) const noexcept {
+        return std::hash<eventide::ipc::protocol::RequestID::value_type>{}(id.value);
     }
 };
 
@@ -82,23 +82,23 @@ struct hash<eventide::jsonrpc::protocol::RequestID> {
 namespace eventide::serde {
 
 template <serializer_like S>
-struct serialize_traits<S, eventide::jsonrpc::protocol::RequestID> {
+struct serialize_traits<S, eventide::ipc::protocol::RequestID> {
     using value_type = typename S::value_type;
     using error_type = typename S::error_type;
 
-    static auto serialize(S& serializer, const eventide::jsonrpc::protocol::RequestID& value)
+    static auto serialize(S& serializer, const eventide::ipc::protocol::RequestID& value)
         -> std::expected<value_type, error_type> {
         return serde::serialize(serializer, value.value);
     }
 };
 
 template <deserializer_like D>
-struct deserialize_traits<D, eventide::jsonrpc::protocol::RequestID> {
+struct deserialize_traits<D, eventide::ipc::protocol::RequestID> {
     using error_type = typename D::error_type;
 
-    static auto deserialize(D& deserializer, eventide::jsonrpc::protocol::RequestID& value)
+    static auto deserialize(D& deserializer, eventide::ipc::protocol::RequestID& value)
         -> std::expected<void, error_type> {
-        using namespace eventide::jsonrpc::protocol;
+        using namespace eventide::ipc::protocol;
 
         Variant variant{};
         auto status = serde::deserialize(deserializer, variant);
@@ -134,25 +134,25 @@ private:
 };
 
 template <serializer_like S>
-struct serialize_traits<S, eventide::jsonrpc::protocol::Value> {
+struct serialize_traits<S, eventide::ipc::protocol::Value> {
     using value_type = typename S::value_type;
     using error_type = typename S::error_type;
 
-    static auto serialize(S& serializer, const eventide::jsonrpc::protocol::Value& value)
+    static auto serialize(S& serializer, const eventide::ipc::protocol::Value& value)
         -> std::expected<value_type, error_type> {
-        const auto& variant = static_cast<const eventide::jsonrpc::protocol::Variant&>(value);
+        const auto& variant = static_cast<const eventide::ipc::protocol::Variant&>(value);
         return std::visit([&](const auto& item) { return serde::serialize(serializer, item); },
                           variant);
     }
 };
 
 template <deserializer_like D>
-struct deserialize_traits<D, eventide::jsonrpc::protocol::Value> {
+struct deserialize_traits<D, eventide::ipc::protocol::Value> {
     using error_type = typename D::error_type;
 
-    static auto deserialize(D& deserializer, eventide::jsonrpc::protocol::Value& value)
+    static auto deserialize(D& deserializer, eventide::ipc::protocol::Value& value)
         -> std::expected<void, error_type> {
-        eventide::jsonrpc::protocol::Variant variant{};
+        eventide::ipc::protocol::Variant variant{};
         auto status = serde::deserialize(deserializer, variant);
         if(!status) {
             return std::unexpected(status.error());

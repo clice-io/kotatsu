@@ -11,5 +11,5 @@ target_include_directories(eventide_language PUBLIC
 )
 
 target_link_libraries(eventide_language PUBLIC
-    eventide::jsonrpc
+    eventide::ipc
 )

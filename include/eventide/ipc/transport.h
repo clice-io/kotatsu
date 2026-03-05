@@ -9,7 +9,7 @@
 #include "eventide/async/stream.h"
 #include "eventide/async/task.h"
 
-namespace eventide::jsonrpc {
+namespace eventide::ipc {
 
 class Transport {
 public:
@@ -48,4 +48,4 @@ private:
     bool shared_stream = false;
 };
 
-}  // namespace eventide::jsonrpc
+}  // namespace eventide::ipc

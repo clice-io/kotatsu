@@ -94,7 +94,7 @@ if(EVENTIDE_ENABLE_ASYNC)
 endif()
 
 if(EVENTIDE_ENABLE_ASYNC AND EVENTIDE_SERDE_ENABLE_SIMDJSON)
-    add_subdirectory(src/jsonrpc)
+    add_subdirectory(src/ipc)
     add_subdirectory(src/language)
 endif()
 

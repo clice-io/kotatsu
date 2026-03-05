@@ -3,10 +3,10 @@
 #include <string>
 #include <string_view>
 
-#include "eventide/jsonrpc/peer.h"
+#include "eventide/ipc/peer.h"
 
 namespace et = eventide;
-namespace jsonrpc = et::jsonrpc;
+namespace ipc = et::ipc;
 
 namespace {
 
@@ -27,17 +27,17 @@ struct LogParams {
 
 int main() {
     et::event_loop loop;
-    auto transport = jsonrpc::StreamTransport::open_stdio(loop);
+    auto transport = ipc::StreamTransport::open_stdio(loop);
     if(!transport) {
         std::println(stderr, "failed to open stdio transport: {}", transport.error());
         return 1;
     }
 
-    jsonrpc::Peer peer(loop, std::move(*transport));
+    ipc::Peer peer(loop, std::move(*transport));
 
     peer.on_request("example/add",
-                    [](jsonrpc::RequestContext&,
-                       const AddParams& params) -> jsonrpc::RequestResult<AddParams, AddResult> {
+                    [](ipc::RequestContext&,
+                       const AddParams& params) -> ipc::RequestResult<AddParams, AddResult> {
                         co_return AddResult{.sum = params.a + params.b};
                     });
 

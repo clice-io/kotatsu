@@ -1,7 +1,7 @@
 #pragma once
 
-#ifndef EVENTIDE_JSONRPC_PEER_INL_FROM_HEADER
-#include "eventide/jsonrpc/peer.h"
+#ifndef EVENTIDE_IPC_PEER_INL_FROM_HEADER
+#include "eventide/ipc/peer.h"
 #endif
 
 #include <functional>
@@ -13,7 +13,7 @@
 #include "eventide/common/function_traits.h"
 #include "eventide/serde/json/json.h"
 
-namespace eventide::jsonrpc {
+namespace eventide::ipc {
 
 namespace detail {
 
@@ -121,7 +121,7 @@ RequestResult<Params> Peer::send_request(const Params& params, cancellation_toke
     }
 
     auto raw_result =
-        co_await send_request_json(Traits::method, std::move(*serialized_params), std::move(token));
+        co_await send_request_impl(Traits::method, std::move(*serialized_params), std::move(token));
     if(!raw_result) {
         co_return std::unexpected(raw_result.error());
     }
@@ -156,7 +156,7 @@ task<Result<ResultT>>
         co_return std::unexpected(serialized_params.error());
     }
 
-    auto raw_result = co_await send_request_json(method, std::move(*serialized_params), std::move(token));
+    auto raw_result = co_await send_request_impl(method, std::move(*serialized_params), std::move(token));
     if(!raw_result) {
         co_return std::unexpected(raw_result.error());
     }
@@ -179,7 +179,7 @@ task<Result<ResultT>>
         co_return std::unexpected(serialized_params.error());
     }
 
-    auto raw_result = co_await send_request_json(method, std::move(*serialized_params), timeout);
+    auto raw_result = co_await send_request_impl(method, std::move(*serialized_params), timeout);
     if(!raw_result) {
         co_return std::unexpected(raw_result.error());
     }
@@ -202,7 +202,7 @@ Result<void> Peer::send_notification(const Params& params) {
     if(!serialized_params) {
         return std::unexpected(serialized_params.error());
     }
-    return send_notification_json(Traits::method, std::move(*serialized_params));
+    return send_notification_impl(Traits::method, std::move(*serialized_params));
 }
 
 template <typename Params>
@@ -211,7 +211,7 @@ Result<void> Peer::send_notification(std::string_view method, const Params& para
     if(!serialized_params) {
         return std::unexpected(serialized_params.error());
     }
-    return send_notification_json(method, std::move(*serialized_params));
+    return send_notification_impl(method, std::move(*serialized_params));
 }
 
 template <typename Callback>
@@ -306,4 +306,4 @@ void Peer::bind_notification_callback(std::string_view method, Callback&& callba
     register_notification_callback(method, std::move(wrapped));
 }
 
-}  // namespace eventide::jsonrpc
+}  // namespace eventide::ipc

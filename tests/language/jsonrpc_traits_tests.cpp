@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-#include "eventide/jsonrpc/peer.h"
+#include "eventide/ipc/peer.h"
 #include "eventide/zest/zest.h"
 #include "eventide/common/compiler.h"
 #include "eventide/async/sync.h"
@@ -16,7 +16,7 @@
 
 namespace eventide::language {
 
-namespace jsonrpc = eventide::jsonrpc;
+namespace ipc = eventide::ipc;
 
 struct AddParams {
     std::int64_t a = 0;
@@ -59,7 +59,7 @@ struct RPCNotification {
     NoteParams params;
 };
 
-class FakeTransport final : public jsonrpc::Transport {
+class FakeTransport final : public ipc::Transport {
 public:
     explicit FakeTransport(std::vector<std::string> incoming) :
         incoming_messages(std::move(incoming)) {}
@@ -86,7 +86,7 @@ private:
     std::size_t read_index = 0;
 };
 
-class ScriptedTransport final : public jsonrpc::Transport {
+class ScriptedTransport final : public ipc::Transport {
 public:
     using WriteHook = std::function<void(std::string_view, ScriptedTransport&)>;
 
@@ -143,7 +143,7 @@ private:
 
 }  // namespace eventide::language
 
-namespace eventide::jsonrpc::protocol {
+namespace eventide::ipc::protocol {
 
 template <>
 struct RequestTraits<eventide::language::AddParams> {
@@ -156,7 +156,7 @@ struct NotificationTraits<eventide::language::NoteParams> {
     constexpr inline static std::string_view method = "test/note";
 };
 
-}  // namespace eventide::jsonrpc::protocol
+}  // namespace eventide::ipc::protocol
 
 namespace eventide::language {
 
@@ -177,16 +177,16 @@ TEST_CASE(traits_dispatch_order) {
     auto* transport_ptr = transport.get();
 
     eventide::event_loop loop;
-    jsonrpc::Peer peer(loop, std::move(transport));
+    ipc::Peer peer(loop, std::move(transport));
     std::vector<std::string> order;
     bool second_saw_first = false;
     bool first_seen = false;
 
-    peer.on_request([&](jsonrpc::RequestContext&,
-                        const AddParams& params) -> jsonrpc::RequestResult<AddParams> {
-        order.emplace_back("request");
-        co_return AddResult{.sum = params.a + params.b};
-    });
+    peer.on_request(
+        [&](ipc::RequestContext&, const AddParams& params) -> ipc::RequestResult<AddParams> {
+            order.emplace_back("request");
+            co_return AddResult{.sum = params.a + params.b};
+        });
 
     peer.on_notification([&](const NoteParams& params) {
         if(params.text == "first") {
@@ -230,13 +230,13 @@ TEST_CASE(explicit_method) {
     auto* transport_ptr = transport.get();
 
     eventide::event_loop loop;
-    jsonrpc::Peer peer(loop, std::move(transport));
+    ipc::Peer peer(loop, std::move(transport));
     std::string request_method;
     std::vector<std::string> notifications;
 
     peer.on_request("custom/add",
-                    [&](jsonrpc::RequestContext& context,
-                        const AddParams& params) -> jsonrpc::RequestResult<AddParams> {
+                    [&](ipc::RequestContext& context,
+                        const AddParams& params) -> ipc::RequestResult<AddParams> {
                         request_method = std::string(context.method);
                         co_return AddResult{.sum = params.a + params.b};
                     });
@@ -287,12 +287,12 @@ TEST_CASE(request_notify_apis) {
     auto* transport_ptr = transport.get();
 
     eventide::event_loop loop;
-    jsonrpc::Peer peer(loop, std::move(transport));
+    ipc::Peer peer(loop, std::move(transport));
     std::string request_method;
     protocol::integer request_id = 0;
 
-    peer.on_request([&](jsonrpc::RequestContext& context,
-                        const AddParams& params) -> jsonrpc::RequestResult<AddParams> {
+    peer.on_request([&](ipc::RequestContext& context,
+                        const AddParams& params) -> ipc::RequestResult<AddParams> {
         request_method = std::string(context.method);
         request_id = static_cast<protocol::integer>(context.id.value);
 

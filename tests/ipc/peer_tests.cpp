@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-#include "eventide/jsonrpc/peer.h"
+#include "eventide/ipc/peer.h"
 #include "eventide/zest/zest.h"
 #include "eventide/common/compiler.h"
 #include "eventide/async/loop.h"
@@ -26,7 +26,7 @@ using ssize_t = SSIZE_T;
 #include <unistd.h>
 #endif
 
-namespace eventide::jsonrpc {
+namespace eventide::ipc {
 
 struct AddParams {
     std::int64_t a = 0;
@@ -243,9 +243,9 @@ task<> write_notification_then_response(int fd, event_loop& loop) {
 
 }  // namespace
 
-}  // namespace eventide::jsonrpc
+}  // namespace eventide::ipc
 
-namespace eventide::jsonrpc::protocol {
+namespace eventide::ipc::protocol {
 
 template <>
 struct RequestTraits<AddParams> {
@@ -258,11 +258,11 @@ struct NotificationTraits<NoteParams> {
     constexpr inline static std::string_view method = "test/note";
 };
 
-}  // namespace eventide::jsonrpc::protocol
+}  // namespace eventide::ipc::protocol
 
-namespace eventide::jsonrpc {
+namespace eventide::ipc {
 
-TEST_SUITE(jsonrpc_peer) {
+TEST_SUITE(ipc_peer) {
 
 TEST_CASE(traits_dispatch_order) {
 #if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
@@ -1224,6 +1224,6 @@ TEST_CASE(zero_timeout_cancel) {
     EXPECT_TRUE(transport_ptr->outgoing().empty());
 }
 
-};  // TEST_SUITE(jsonrpc_peer)
+};  // TEST_SUITE(ipc_peer)
 
-}  // namespace eventide::jsonrpc
+}  // namespace eventide::ipc
