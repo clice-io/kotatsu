@@ -194,7 +194,7 @@ public:
         }
 
         if(*parsed > 1U) {
-            return mark_invalid(error_type::invalid_type);
+            return mark_invalid(error_type::type_mismatch);
         }
         value = *parsed == 1U;
         return {};
@@ -309,7 +309,7 @@ public:
         if(*tag == 1U) {
             return false;
         }
-        return std::unexpected(error_type::invalid_type);
+        return std::unexpected(error_type::type_mismatch);
     }
 
     template <typename... Ts>

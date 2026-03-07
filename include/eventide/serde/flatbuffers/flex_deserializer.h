@@ -185,7 +185,7 @@ public:
         };
 
         bool matched = false;
-        std::expected<void, error_type> status = std::unexpected(error_code::invalid_type);
+        std::expected<void, error_type> status = std::unexpected(error_code::type_mismatch);
 
         auto try_alternative = [&]<typename Alt>() {
             if(matched || !matches.template operator()<Alt>()) {
@@ -207,7 +207,7 @@ public:
         (try_alternative.template operator()<Ts>(), ...);
 
         if(!matched) {
-            mark_invalid(error_code::invalid_type);
+            mark_invalid(error_code::type_mismatch);
             return std::unexpected(current_error());
         }
 
@@ -239,7 +239,7 @@ public:
             }
             parsed = static_cast<std::int64_t>(raw);
         } else {
-            mark_invalid(error_code::invalid_type);
+            mark_invalid(error_code::type_mismatch);
             return std::unexpected(current_error());
         }
 
@@ -272,7 +272,7 @@ public:
             }
             parsed = static_cast<std::uint64_t>(raw);
         } else {
-            mark_invalid(error_code::invalid_type);
+            mark_invalid(error_code::type_mismatch);
             return std::unexpected(current_error());
         }
 
@@ -294,7 +294,7 @@ public:
             return std::unexpected(reference.error());
         }
         if(!reference->IsNumeric()) {
-            mark_invalid(error_code::invalid_type);
+            mark_invalid(error_code::type_mismatch);
             return std::unexpected(current_error());
         }
 

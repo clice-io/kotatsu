@@ -37,17 +37,21 @@ enum class object_error_code : std::uint8_t {
     none = 0,
     invalid_state,
     unsupported_type,
+    type_mismatch,
+    number_out_of_range,
     too_many_fields,
 };
 
-constexpr std::string_view object_error_message(object_error_code code) {
+constexpr std::string_view error_message(object_error_code code) {
     switch(code) {
         case object_error_code::none: return "none";
-        case object_error_code::invalid_state: return "invalid_state";
-        case object_error_code::unsupported_type: return "unsupported_type";
-        case object_error_code::too_many_fields: return "too_many_fields";
+        case object_error_code::invalid_state: return "invalid state";
+        case object_error_code::unsupported_type: return "unsupported type";
+        case object_error_code::type_mismatch: return "type mismatch";
+        case object_error_code::number_out_of_range: return "number out of range";
+        case object_error_code::too_many_fields: return "too many fields";
     }
-    return "invalid_state";
+    return "invalid state";
 }
 
 template <typename T>

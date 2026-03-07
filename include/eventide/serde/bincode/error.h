@@ -9,7 +9,7 @@ enum class error_kind : std::uint8_t {
     ok = 0,
     invalid_state,
     unexpected_eof,
-    invalid_type,
+    type_mismatch,
     number_out_of_range,
     trailing_bytes,
     invalid_variant_index,
@@ -21,7 +21,7 @@ constexpr std::string_view error_message(error_kind error) {
         case error_kind::ok: return "ok";
         case error_kind::invalid_state: return "invalid_state";
         case error_kind::unexpected_eof: return "unexpected_eof";
-        case error_kind::invalid_type: return "invalid_type";
+        case error_kind::type_mismatch: return "type mismatch";
         case error_kind::number_out_of_range: return "number_out_of_range";
         case error_kind::trailing_bytes: return "trailing_bytes";
         case error_kind::invalid_variant_index: return "invalid_variant_index";

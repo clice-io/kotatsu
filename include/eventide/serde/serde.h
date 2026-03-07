@@ -302,7 +302,7 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
                     value = *parsed;
                     return true;
                 } else {
-                    return unexpected_invalid_enum<std::expected<bool, E>>();
+                    return std::unexpected(E::type_mismatch);
                 }
             }
             // Default: deserialize value directly
@@ -517,7 +517,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                 value = *mapped;
                 return {};
             } else {
-                return detail::unexpected_invalid_enum<std::expected<void, E>>();
+                return std::unexpected(E::type_mismatch);
             }
         }
         // Behavior: with<Adapter> — adapter-based deserialization
@@ -538,7 +538,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                 return std::unexpected(status.error());
             }
             if(!detail::integral_value_in_range<underlying_t>(parsed)) {
-                return detail::unexpected_number_out_of_range<std::expected<void, E>>();
+                return std::unexpected(E::number_out_of_range);
             }
             v = static_cast<V>(static_cast<underlying_t>(parsed));
             return {};
@@ -549,7 +549,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                 return std::unexpected(status.error());
             }
             if(!detail::integral_value_in_range<underlying_t>(parsed)) {
-                return detail::unexpected_number_out_of_range<std::expected<void, E>>();
+                return std::unexpected(E::number_out_of_range);
             }
             v = static_cast<V>(static_cast<underlying_t>(parsed));
             return {};
@@ -577,7 +577,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
             v = nullptr;
             return {};
         }
-        return std::unexpected(E{});
+        return std::unexpected(E::type_mismatch);
     } else if constexpr(std::same_as<V, std::monostate>) {
         auto is_none = d.deserialize_none();
         if(!is_none) {
@@ -587,7 +587,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
             v = std::monostate{};
             return {};
         }
-        return std::unexpected(E{});
+        return std::unexpected(E::type_mismatch);
     } else if constexpr(is_specialization_of<std::optional, V>) {
         auto is_none = d.deserialize_none();
         if(!is_none) {
@@ -740,8 +740,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                             return std::unexpected(invalid.error());
                         }
                         continue;
-                    } else if constexpr(std::default_initializable<E>) {
-                        return std::unexpected(E{});
+                        return std::unexpected(E::type_mismatch);
                     } else {
                         static_assert(
                             dependent_false<key_t>,

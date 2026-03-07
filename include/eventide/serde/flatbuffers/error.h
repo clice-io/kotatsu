@@ -10,7 +10,7 @@ enum class error_code : std::uint8_t {
     none,
     invalid_state,
     invalid_buffer,
-    invalid_type,
+    type_mismatch,
     number_out_of_range,
     invalid_char,
     invalid_key,
@@ -24,7 +24,7 @@ constexpr std::string_view error_message(error_code code) {
         case error_code::unknown: return "unknown";
         case error_code::invalid_state: return "invalid_state";
         case error_code::invalid_buffer: return "invalid_buffer";
-        case error_code::invalid_type: return "invalid_type";
+        case error_code::type_mismatch: return "type mismatch";
         case error_code::number_out_of_range: return "number_out_of_range";
         case error_code::invalid_char: return "invalid_char";
         case error_code::invalid_key: return "invalid_key";

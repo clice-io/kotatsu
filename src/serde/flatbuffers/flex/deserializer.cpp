@@ -37,7 +37,7 @@ auto Deserializer::DeserializeArray::end() -> status_t {
 
     if(is_strict_length) {
         if(consumed_count != expected_length || consumed_count != vector.size()) {
-            deserializer.mark_invalid(error_code::invalid_type);
+            deserializer.mark_invalid(error_code::type_mismatch);
             return std::unexpected(deserializer.current_error());
         }
         return {};
@@ -163,7 +163,7 @@ auto Deserializer::deserialize_bool(bool& value) -> status_t {
         return std::unexpected(reference.error());
     }
     if(!reference->IsBool()) {
-        mark_invalid(error_code::invalid_type);
+        mark_invalid(error_code::type_mismatch);
         return std::unexpected(current_error());
     }
 
@@ -178,7 +178,7 @@ auto Deserializer::deserialize_char(char& value) -> status_t {
         return std::unexpected(reference.error());
     }
     if(!reference->IsString() && !reference->IsKey()) {
-        mark_invalid(error_code::invalid_type);
+        mark_invalid(error_code::type_mismatch);
         return std::unexpected(current_error());
     }
 
@@ -199,7 +199,7 @@ auto Deserializer::deserialize_str(std::string& value) -> status_t {
         return std::unexpected(reference.error());
     }
     if(!reference->IsString() && !reference->IsKey()) {
-        mark_invalid(error_code::invalid_type);
+        mark_invalid(error_code::type_mismatch);
         return std::unexpected(current_error());
     }
 
@@ -228,7 +228,7 @@ auto Deserializer::deserialize_bytes(std::vector<std::byte>& value) -> status_t 
     }
 
     if(reference->IsMap() || !reference->IsVector()) {
-        mark_invalid(error_code::invalid_type);
+        mark_invalid(error_code::type_mismatch);
         return std::unexpected(current_error());
     }
 
@@ -247,7 +247,7 @@ auto Deserializer::deserialize_bytes(std::vector<std::byte>& value) -> status_t 
             }
             parsed = static_cast<std::uint64_t>(signed_value);
         } else {
-            mark_invalid(error_code::invalid_type);
+            mark_invalid(error_code::type_mismatch);
             return std::unexpected(current_error());
         }
 
@@ -268,7 +268,7 @@ auto Deserializer::deserialize_seq(std::optional<std::size_t> len) -> result_t<D
         return std::unexpected(reference.error());
     }
     if(reference->IsMap() || !reference->IsVector()) {
-        mark_invalid(error_code::invalid_type);
+        mark_invalid(error_code::type_mismatch);
         return std::unexpected(current_error());
     }
 
@@ -282,7 +282,7 @@ auto Deserializer::deserialize_tuple(std::size_t len) -> result_t<DeserializeTup
         return std::unexpected(reference.error());
     }
     if(reference->IsMap() || !reference->IsVector()) {
-        mark_invalid(error_code::invalid_type);
+        mark_invalid(error_code::type_mismatch);
         return std::unexpected(current_error());
     }
 
@@ -296,7 +296,7 @@ auto Deserializer::deserialize_map(std::optional<std::size_t> /*len*/) -> result
         return std::unexpected(reference.error());
     }
     if(!reference->IsMap()) {
-        mark_invalid(error_code::invalid_type);
+        mark_invalid(error_code::type_mismatch);
         return std::unexpected(current_error());
     }
 
@@ -315,7 +315,7 @@ auto Deserializer::deserialize_struct(std::string_view /*name*/, std::size_t /*l
         return std::unexpected(reference.error());
     }
     if(!reference->IsMap()) {
-        mark_invalid(error_code::invalid_type);
+        mark_invalid(error_code::type_mismatch);
         return std::unexpected(current_error());
     }
 
