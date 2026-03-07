@@ -6,8 +6,8 @@
 #include <string_view>
 #include <utility>
 
-#include "eventide/serde/attrs/schema.h"
-#include "eventide/serde/config.h"
+#include "eventide/serde/serde/attrs/schema.h"
+#include "eventide/serde/serde/config.h"
 
 namespace eventide::serde::detail {
 

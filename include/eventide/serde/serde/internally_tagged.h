@@ -3,7 +3,7 @@
 // This header must be included AFTER content/deserializer.h is fully defined.
 // It provides the implementation of deserialize_internally_tagged declared in serde.h.
 
-#include "eventide/serde/serde.h"
+#include "eventide/serde/serde/serde.h"
 
 namespace eventide::serde::detail {
 

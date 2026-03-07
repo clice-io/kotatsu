@@ -12,11 +12,11 @@
 #include <variant>
 #include <vector>
 
-#include "eventide/serde/config.h"
 #include "eventide/serde/content/dom.h"
 #include "eventide/serde/content/error.h"
-#include "eventide/serde/detail/serialize_helpers.h"
-#include "eventide/serde/serde.h"
+#include "eventide/serde/serde/config.h"
+#include "eventide/serde/serde/serde.h"
+#include "eventide/serde/serde/serialize_helpers.h"
 
 namespace eventide::serde::content {
 

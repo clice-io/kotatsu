@@ -13,10 +13,10 @@
 #include <utility>
 #include <vector>
 
-#include "eventide/serde/config.h"
-#include "eventide/serde/detail/serialize_helpers.h"
 #include "eventide/serde/json/error.h"
-#include "eventide/serde/serde.h"
+#include "eventide/serde/serde/config.h"
+#include "eventide/serde/serde/serde.h"
+#include "eventide/serde/serde/serialize_helpers.h"
 
 namespace eventide::serde::json {
 

@@ -7,13 +7,13 @@
 #include <string_view>
 #include <utility>
 
-#include "eventide/serde/config.h"
 #include "eventide/serde/content/deserializer.h"
 #include "eventide/serde/content/dom.h"
 #include "eventide/serde/content/serializer.h"
 #include "eventide/serde/json/deserializer.h"
 #include "eventide/serde/json/error.h"
 #include "eventide/serde/json/serializer.h"
+#include "eventide/serde/serde/config.h"
 
 namespace eventide::serde::json {
 

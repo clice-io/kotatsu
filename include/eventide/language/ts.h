@@ -13,7 +13,7 @@
 #include <vector>
 
 #include "eventide/ipc/protocol.h"
-#include "eventide/serde/serde.h"
+#include "eventide/serde/serde/serde.h"
 
 namespace eventide::ipc::protocol {
 

@@ -6,7 +6,7 @@
 #include <string_view>
 #include <variant>
 
-#include "eventide/serde/raw_value.h"
+#include "eventide/serde/serde/raw_value.h"
 
 namespace eventide::ipc {
 

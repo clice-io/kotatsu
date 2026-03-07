@@ -20,10 +20,10 @@
 #include <vector>
 
 #include "eventide/common/ranges.h"
-#include "eventide/serde/config.h"
-#include "eventide/serde/detail/type_utils.h"
-#include "eventide/serde/flatbuffers/binary_schema.h"
-#include "eventide/serde/serde.h"
+#include "eventide/serde/flatbuffers/schema.h"
+#include "eventide/serde/serde/config.h"
+#include "eventide/serde/serde/serde.h"
+#include "eventide/serde/serde/type_utils.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
 #include <flatbuffers/flatbuffers.h>
@@ -32,7 +32,7 @@
     "flatbuffers/flatbuffers.h not found. Enable EVENTIDE_SERDE_ENABLE_FLATBUFFERS or add flatbuffers include paths."
 #endif
 
-namespace eventide::serde::flatbuffers::binary {
+namespace eventide::serde::flatbuffers {
 
 enum class object_error_code : std::uint8_t {
     none = 0,
@@ -67,9 +67,6 @@ constexpr ::flatbuffers::voffset_t field_step = 2;
 using serde::detail::clean_t;
 using serde::detail::remove_annotation_t;
 using serde::detail::remove_optional_t;
-
-using binary::has_annotated_fields;
-using binary::can_inline_struct_v;
 
 inline auto field_voffset(std::size_t index) -> object_result_t<::flatbuffers::voffset_t> {
     constexpr auto max_voffset =
@@ -308,7 +305,7 @@ public:
     template <typename T>
     auto serialize_reflectable(const T& value) -> result_t<value_type> {
         using U = detail::remove_annotation_t<T>;
-        if constexpr(detail::can_inline_struct_v<U>) {
+        if constexpr(can_inline_struct_v<U>) {
             return encode_boxed(value);
         } else {
             return encode_table(value);
@@ -592,7 +589,7 @@ private:
             auto offset = builder.CreateVector(elements);
             writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
             return {};
-        } else if constexpr(detail::can_inline_struct_v<element_clean_t>) {
+        } else if constexpr(can_inline_struct_v<element_clean_t>) {
             std::vector<element_clean_t> elements;
             if constexpr(requires { value.size(); }) {
                 elements.reserve(value.size());
@@ -727,7 +724,7 @@ private:
             writers.push_back(
                 [this, field, offset = *offset] { builder.AddOffset(field, offset); });
             return {};
-        } else if constexpr(detail::can_inline_struct_v<clean_t>) {
+        } else if constexpr(can_inline_struct_v<clean_t>) {
             const clean_t copy = static_cast<clean_t>(value);
             writers.push_back([this, field, copy] { builder.AddStruct(field, &copy); });
             return {};
@@ -757,14 +754,14 @@ auto to_flatbuffer(const T& value, std::optional<std::size_t> initial_capacity =
 
 static_assert(serde::serializer_like<Serializer<>>);
 
-}  // namespace eventide::serde::flatbuffers::binary
+}  // namespace eventide::serde::flatbuffers
 
 namespace eventide::serde {
 
 template <typename Config, typename T>
     requires refl::reflectable_class<std::remove_cvref_t<T>>
-struct serialize_traits<flatbuffers::binary::Serializer<Config>, T> {
-    using serializer_t = flatbuffers::binary::Serializer<Config>;
+struct serialize_traits<flatbuffers::Serializer<Config>, T> {
+    using serializer_t = flatbuffers::Serializer<Config>;
 
     static auto serialize(serializer_t& serializer, const T& value) ->
         typename serializer_t::template result_t<typename serializer_t::value_type> {
@@ -775,8 +772,8 @@ struct serialize_traits<flatbuffers::binary::Serializer<Config>, T> {
 template <typename Config, typename T>
     requires (std::ranges::input_range<std::remove_cvref_t<T>> &&
               !refl::reflectable_class<std::remove_cvref_t<T>>)
-struct serialize_traits<flatbuffers::binary::Serializer<Config>, T> {
-    using serializer_t = flatbuffers::binary::Serializer<Config>;
+struct serialize_traits<flatbuffers::Serializer<Config>, T> {
+    using serializer_t = flatbuffers::Serializer<Config>;
 
     static auto serialize(serializer_t& serializer, const T& value) ->
         typename serializer_t::template result_t<typename serializer_t::value_type> {

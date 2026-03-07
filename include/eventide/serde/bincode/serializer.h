@@ -15,8 +15,8 @@
 #include <vector>
 
 #include "eventide/serde/bincode/error.h"
-#include "eventide/serde/config.h"
-#include "eventide/serde/serde.h"
+#include "eventide/serde/serde/config.h"
+#include "eventide/serde/serde/serde.h"
 
 namespace eventide::serde::bincode {
 

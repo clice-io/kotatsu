@@ -7,16 +7,16 @@
 #include <vector>
 
 #include "eventide/zest/zest.h"
-#include "eventide/serde/attrs.h"
-#include "eventide/serde/flatbuffers/binary.h"
+#include "eventide/serde/flatbuffers/flatbuffers.h"
+#include "eventide/serde/serde/attrs.h"
 #include <flatbuffers/flatbuffers.h>
 
 namespace eventide::serde {
 
 namespace {
 
-using flatbuffers::binary::table_view;
-using flatbuffers::binary::to_flatbuffer;
+using flatbuffers::table_view;
+using flatbuffers::to_flatbuffer;
 
 struct point {
     std::int32_t x;
@@ -181,7 +181,7 @@ TEST_CASE(roundtrip_person_with_from_flatbuffer) {
     ASSERT_TRUE(encoded.has_value());
 
     person output{};
-    auto status = flatbuffers::binary::from_flatbuffer(*encoded, output);
+    auto status = flatbuffers::from_flatbuffer(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
 }
@@ -192,7 +192,7 @@ TEST_CASE(roundtrip_root_vector_and_variant) {
     ASSERT_TRUE(encoded_vec.has_value());
 
     std::vector<std::int32_t> output_vec{};
-    auto vec_status = flatbuffers::binary::from_flatbuffer(*encoded_vec, output_vec);
+    auto vec_status = flatbuffers::from_flatbuffer(*encoded_vec, output_vec);
     ASSERT_TRUE(vec_status.has_value());
     EXPECT_EQ(output_vec, input_vec);
 
@@ -203,7 +203,7 @@ TEST_CASE(roundtrip_root_vector_and_variant) {
     ASSERT_TRUE(encoded_var.has_value());
 
     sample_variant output_var = std::int32_t{0};
-    auto var_status = flatbuffers::binary::from_flatbuffer(*encoded_var, output_var);
+    auto var_status = flatbuffers::from_flatbuffer(*encoded_var, output_var);
     ASSERT_TRUE(var_status.has_value());
     EXPECT_EQ(output_var, input_var);
 }

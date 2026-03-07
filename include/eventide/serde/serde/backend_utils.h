@@ -5,7 +5,7 @@
 #include <limits>
 #include <vector>
 
-#include "eventide/serde/traits.h"
+#include "eventide/serde/serde/traits.h"
 
 namespace eventide::serde::detail {
 

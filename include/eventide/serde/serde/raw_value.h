@@ -9,7 +9,7 @@
 #include "eventide/serde/bincode/bincode.h"
 #include "eventide/serde/json/deserializer.h"
 #include "eventide/serde/json/serializer.h"
-#include "eventide/serde/serde.h"
+#include "eventide/serde/serde/serde.h"
 
 namespace eventide::serde {
 

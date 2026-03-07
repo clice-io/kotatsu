@@ -5,7 +5,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "eventide/serde/attrs/behavior.h"
+#include "eventide/serde/serde/attrs/behavior.h"
 
 namespace eventide::serde {
 

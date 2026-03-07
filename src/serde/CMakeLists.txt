@@ -84,8 +84,6 @@ if(EVENTIDE_SERDE_ENABLE_SIMDJSON)
 endif()
 
 if(EVENTIDE_SERDE_ENABLE_FLATBUFFERS)
-    # flexbuffers::Reference parsing depends on symbols from flatbuffers util.cpp.
-    # Build the core flatbuffers static library, skip tools/tests.
     set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(FLATBUFFERS_BUILD_FLATC OFF CACHE BOOL "" FORCE)
     set(FLATBUFFERS_BUILD_FLATLIB ON CACHE BOOL "" FORCE)
@@ -100,19 +98,14 @@ if(EVENTIDE_SERDE_ENABLE_FLATBUFFERS)
     )
     FetchContent_MakeAvailable(flatbuffers)
 
-    add_library(eventide_serde_flatbuffers STATIC)
+    add_library(eventide_serde_flatbuffers INTERFACE)
     add_library(eventide::serde::flatbuffers ALIAS eventide_serde_flatbuffers)
 
-    target_sources(eventide_serde_flatbuffers PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/flatbuffers/flex/serializer.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/flatbuffers/flex/deserializer.cpp"
-    )
-
-    target_include_directories(eventide_serde_flatbuffers PUBLIC
+    target_include_directories(eventide_serde_flatbuffers INTERFACE
         "${PROJECT_SOURCE_DIR}/include"
     )
 
-    target_link_libraries(eventide_serde_flatbuffers PUBLIC
+    target_link_libraries(eventide_serde_flatbuffers INTERFACE
         eventide::reflection
         flatbuffers
     )

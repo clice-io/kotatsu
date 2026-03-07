@@ -7,15 +7,15 @@
 
 #include "annotation.h"
 #include "attrs.h"
+#include "backend_utils.h"
 #include "config.h"
+#include "field_lookup.h"
 #include "traits.h"
-#include "detail/backend_utils.h"
-#include "detail/field_lookup.h"
 #include "eventide/common/ranges.h"
 #include "eventide/reflection/enum.h"
 #include "eventide/reflection/struct.h"
-#include "eventide/serde/attrs/behavior.h"
-#include "eventide/serde/attrs/schema.h"
+#include "eventide/serde/serde/attrs/behavior.h"
+#include "eventide/serde/serde/attrs/schema.h"
 
 namespace eventide::serde {
 
@@ -579,7 +579,7 @@ template <typename E, typename D, typename... Ts, typename TagAttr>
 constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, TagAttr)
     -> std::expected<void, E>;
 
-// Implementation in eventide/serde/internally_tagged.h (requires content/deserializer.h)
+// Implementation in eventide/serde/serde/internally_tagged.h (requires content/deserializer.h)
 
 // ── Flatten field fallback (needs deserialize_struct_field above) ──
 

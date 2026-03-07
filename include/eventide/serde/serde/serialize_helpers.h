@@ -2,7 +2,7 @@
 
 #include <string_view>
 
-#include "eventide/serde/serde.h"
+#include "eventide/serde/serde/serde.h"
 
 namespace eventide::serde::detail {
 

@@ -4,7 +4,7 @@
 
 #include "eventide/ipc/codec.h"
 #include "eventide/serde/json/json.h"
-#include "eventide/serde/raw_value.h"
+#include "eventide/serde/serde/raw_value.h"
 
 namespace eventide::serde {
 

@@ -14,8 +14,8 @@
 #include <variant>
 #include <vector>
 
-#include "eventide/serde/config.h"
-#include "eventide/serde/serde.h"
+#include "eventide/serde/serde/config.h"
+#include "eventide/serde/serde/serde.h"
 #include "eventide/serde/toml/error.h"
 
 #if __has_include(<toml++/toml.hpp>)

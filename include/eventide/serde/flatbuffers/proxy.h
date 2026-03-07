@@ -13,8 +13,8 @@
 #include <utility>
 #include <vector>
 
-#include "eventide/serde/flatbuffers/binary_schema.h"
-#include "eventide/serde/serde.h"
+#include "eventide/serde/flatbuffers/schema.h"
+#include "eventide/serde/serde/serde.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
 #include <flatbuffers/flatbuffers.h>
@@ -23,7 +23,7 @@
     "flatbuffers/flatbuffers.h not found. Enable EVENTIDE_SERDE_ENABLE_FLATBUFFERS or add flatbuffers include paths."
 #endif
 
-namespace eventide::serde::flatbuffers::binary {
+namespace eventide::serde::flatbuffers {
 
 template <typename T>
 class table_view;
@@ -39,9 +39,6 @@ constexpr ::flatbuffers::voffset_t field_step = 2;
 using serde::detail::remove_annotation_t;
 using serde::detail::remove_optional_t;
 using serde::detail::clean_t;
-
-using binary::has_annotated_fields;
-using binary::can_inline_struct_v;
 
 template <typename T>
 constexpr bool is_string_like_v = serde::str_like<T>;
@@ -253,7 +250,7 @@ public:
                 return {};
             }
             return std::string_view(text->data(), text->size());
-        } else if constexpr(proxy_detail::can_inline_struct_v<element_type>) {
+        } else if constexpr(can_inline_struct_v<element_type>) {
             const auto* value = vector->Get(static_cast<::flatbuffers::uoffset_t>(index));
             if(value == nullptr) {
                 return {};
@@ -386,7 +383,7 @@ public:
                 const auto value = table->GetField<double>(field, 0.0);
                 return static_cast<member_type>(value);
             }
-        } else if constexpr(proxy_detail::can_inline_struct_v<member_type>) {
+        } else if constexpr(can_inline_struct_v<member_type>) {
             const auto* value = table->GetStruct<const member_type*>(field);
             if(value == nullptr) {
                 return {};
@@ -403,4 +400,4 @@ private:
     const table_type* table = nullptr;
 };
 
-}  // namespace eventide::serde::flatbuffers::binary
+}  // namespace eventide::serde::flatbuffers

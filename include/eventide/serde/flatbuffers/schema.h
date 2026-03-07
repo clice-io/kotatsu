@@ -12,10 +12,10 @@
 #include <utility>
 #include <vector>
 
-#include "eventide/serde/detail/type_utils.h"
-#include "eventide/serde/serde.h"
+#include "eventide/serde/serde/serde.h"
+#include "eventide/serde/serde/type_utils.h"
 
-namespace eventide::serde::flatbuffers::binary {
+namespace eventide::serde::flatbuffers {
 
 namespace schema_detail {
 
@@ -341,4 +341,4 @@ auto bsearch_entry(const EntryVec& entries, const Key& key) -> const
     return &(*it);
 }
 
-}  // namespace eventide::serde::flatbuffers::binary
+}  // namespace eventide::serde::flatbuffers

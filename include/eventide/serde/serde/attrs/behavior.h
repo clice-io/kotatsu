@@ -5,7 +5,7 @@
 #include <type_traits>
 
 #include "eventide/common/meta.h"
-#include "eventide/serde/attrs/schema.h"
+#include "eventide/serde/serde/attrs/schema.h"
 
 namespace eventide::serde {
 

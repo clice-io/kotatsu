@@ -16,10 +16,10 @@
 #include <vector>
 
 #include "eventide/common/ranges.h"
-#include "eventide/serde/config.h"
-#include "eventide/serde/detail/type_utils.h"
-#include "eventide/serde/flatbuffers/binary_schema.h"
-#include "eventide/serde/flatbuffers/binary_serializer.h"
+#include "eventide/serde/flatbuffers/schema.h"
+#include "eventide/serde/flatbuffers/serializer.h"
+#include "eventide/serde/serde/config.h"
+#include "eventide/serde/serde/type_utils.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
 #include <flatbuffers/flatbuffers.h>
@@ -28,7 +28,7 @@
     "flatbuffers/flatbuffers.h not found. Enable EVENTIDE_SERDE_ENABLE_FLATBUFFERS or add flatbuffers include paths."
 #endif
 
-namespace eventide::serde::flatbuffers::binary {
+namespace eventide::serde::flatbuffers {
 
 namespace deserialize_detail {
 
@@ -43,9 +43,6 @@ using status_t = result_t<void>;
 using serde::detail::clean_t;
 using serde::detail::remove_annotation_t;
 using serde::detail::remove_optional_t;
-
-using binary::has_annotated_fields;
-using binary::can_inline_struct_v;
 
 template <typename T>
 constexpr bool root_unboxed_v =
@@ -530,7 +527,7 @@ private:
             out.clear();
         }
         static_assert(eventide::detail::map_insertable<U, key_t, mapped_t>,
-                      "binary::from_flatbuffer map requires insertable container");
+                      "from_flatbuffer map requires insertable container");
 
         const auto* entries = table->GetPointer<
             const ::flatbuffers::Vector<::flatbuffers::Offset<::flatbuffers::Table>>*>(field);
@@ -598,11 +595,10 @@ private:
             return {};
         } else if constexpr(is_specialization_of<std::unique_ptr, U>) {
             using value_t = typename U::element_type;
-            static_assert(
-                std::default_initializable<value_t>,
-                "binary::from_flatbuffer unique_ptr requires default-constructible pointee");
+            static_assert(std::default_initializable<value_t>,
+                          "from_flatbuffer unique_ptr requires default-constructible pointee");
             static_assert(std::same_as<typename U::deleter_type, std::default_delete<value_t>>,
-                          "binary::from_flatbuffer unique_ptr with custom deleter is unsupported");
+                          "from_flatbuffer unique_ptr with custom deleter is unsupported");
 
             if(!has_field(table, field)) {
                 out.reset();
@@ -618,9 +614,8 @@ private:
             return {};
         } else if constexpr(is_specialization_of<std::shared_ptr, U>) {
             using value_t = typename U::element_type;
-            static_assert(
-                std::default_initializable<value_t>,
-                "binary::from_flatbuffer shared_ptr requires default-constructible pointee");
+            static_assert(std::default_initializable<value_t>,
+                          "from_flatbuffer shared_ptr requires default-constructible pointee");
 
             if(!has_field(table, field)) {
                 out.reset();
@@ -795,7 +790,7 @@ private:
         }
         if(!::flatbuffers::BufferHasIdentifier(
                bytes.data(),
-               ::eventide::serde::flatbuffers::binary::detail::buffer_identifier)) {
+               ::eventide::serde::flatbuffers::detail::buffer_identifier)) {
             set_invalid(object_error_code::invalid_state);
             return;
         }
@@ -893,4 +888,4 @@ auto from_flatbuffer(const std::vector<std::uint8_t>& bytes)
     return from_flatbuffer<T, Config>(std::span<const std::uint8_t>(bytes.data(), bytes.size()));
 }
 
-}  // namespace eventide::serde::flatbuffers::binary
+}  // namespace eventide::serde::flatbuffers

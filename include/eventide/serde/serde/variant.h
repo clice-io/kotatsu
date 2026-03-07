@@ -5,9 +5,9 @@
 #include <type_traits>
 
 #include "eventide/reflection/struct.h"
-#include "eventide/serde/annotation.h"
-#include "eventide/serde/serde.h"
-#include "eventide/serde/traits.h"
+#include "eventide/serde/serde/annotation.h"
+#include "eventide/serde/serde/serde.h"
+#include "eventide/serde/serde/traits.h"
 
 namespace eventide::serde {
 

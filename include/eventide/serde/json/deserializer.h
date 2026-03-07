@@ -13,12 +13,12 @@
 #include <utility>
 #include <vector>
 
-#include "eventide/serde/config.h"
 #include "eventide/serde/content/deserializer.h"
-#include "eventide/serde/detail/narrow.h"
 #include "eventide/serde/json/error.h"
-#include "eventide/serde/serde.h"
-#include "eventide/serde/variant.h"
+#include "eventide/serde/serde/config.h"
+#include "eventide/serde/serde/narrow.h"
+#include "eventide/serde/serde/serde.h"
+#include "eventide/serde/serde/variant.h"
 
 namespace eventide::serde::json {
 
@@ -923,4 +923,4 @@ static_assert(serde::deserializer_like<Deserializer<>>);
 
 }  // namespace eventide::serde::json
 
-#include "eventide/serde/internally_tagged.h"
+#include "eventide/serde/serde/internally_tagged.h"

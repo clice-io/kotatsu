@@ -14,14 +14,14 @@
 #include <variant>
 #include <vector>
 
-#include "eventide/serde/config.h"
-#include "eventide/serde/detail/deserialize_helpers.h"
-#include "eventide/serde/detail/narrow.h"
-#include "eventide/serde/detail/type_utils.h"
-#include "eventide/serde/serde.h"
+#include "eventide/serde/serde/config.h"
+#include "eventide/serde/serde/deserialize_helpers.h"
+#include "eventide/serde/serde/narrow.h"
+#include "eventide/serde/serde/serde.h"
+#include "eventide/serde/serde/type_utils.h"
+#include "eventide/serde/serde/variant.h"
 #include "eventide/serde/toml/error.h"
 #include "eventide/serde/toml/serializer.h"
-#include "eventide/serde/variant.h"
 
 #if __has_include(<toml++/toml.hpp>)
 #include <toml++/toml.hpp>
