@@ -67,7 +67,7 @@ public:
 
 private:
     constexpr function_ref(R (*proxy)(const function_ref*, Args&...), Erased ctx) noexcept :
-        proxy(proxy), erased(ctx) {}
+        proxy{proxy}, erased{ctx} {}
 
     template <typename Class>
         requires std::is_lvalue_reference_v<Class&&> && std::is_invocable_r_v<R, Class, Args...>
@@ -163,13 +163,7 @@ public:
 
     function(function&& other) noexcept {
         this->proxy = std::exchange(other.proxy, nullptr);
-        if(other.storage.magic == sbo_magic) {
-            this->storage.magic = std::exchange(other.storage.magic, 0);
-            this->storage.deleter = std::exchange(other.storage.deleter, nullptr);
-            this->storage.erased = std::exchange(other.storage.erased, Erased{});
-        } else {
-            std::memcpy(this->storage.sbo, other.storage.sbo, sizeof(this->storage.sbo));
-        }
+        this->storage = std::exchange(other.storage, Storage{});
     }
 
     function& operator=(const function&) = delete;
@@ -189,10 +183,10 @@ public:
     }
 
 private:
-    constexpr function(R (*proxy)(const function*, Args&...)) noexcept : proxy(proxy), storage() {}
+    constexpr function(R (*proxy)(const function*, Args&...)) noexcept : proxy{proxy}, storage{} {}
 
     constexpr function(R (*proxy)(const function*, Args&...), Storage storage) noexcept :
-        proxy(proxy), storage(storage) {}
+        proxy{proxy}, storage{storage} {}
 
     template <typename Class>
     constexpr static function make(Class&& invokable) {
