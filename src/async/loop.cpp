@@ -61,7 +61,6 @@ event_loop::event_loop() : self(new struct self()) {
 
     auto& idle = self->idle;
     uv::idle_init(loop, idle);
-    uv::idle_start(idle, each);
     idle.data = self.get();
 }
 

@@ -3,8 +3,11 @@
 #include "eventide/zest/macro.h"
 #include "eventide/zest/zest.h"
 #include "eventide/common/compiler.h"
+#include "eventide/async/cancellation.h"
 #include "eventide/async/loop.h"
+#include "eventide/async/sync.h"
 #include "eventide/async/task.h"
+#include "eventide/async/watcher.h"
 
 namespace eventide {
 
@@ -123,32 +126,32 @@ TEST_CASE(exception_propagation) {
 }
 #endif
 
-};  // TEST_SUITE(task)
+TEST_CASE(dump_dot_basic) {
+    bool checked = false;
 
-TEST_SUITE(shared_task) {
+    auto inner = []() -> task<int> {
+        co_return 42;
+    };
 
-TEST_CASE(future) {
-    auto task1 = []() -> shared_task<int> {
-        co_return 1;
-    }();
+    auto outer = [&]() -> task<> {
+        auto t = inner();
+        auto* node = t.operator->();
+        auto dot = node->dump_dot();
+        EXPECT_TRUE(!dot.empty());
+        EXPECT_TRUE(dot.find("digraph") != std::string::npos);
+        EXPECT_TRUE(dot.find("Task") != std::string::npos);
+        checked = true;
+        co_await std::move(t);
+    };
 
-    auto task2 = [](shared_future<int> future) -> task<int> {
-        auto res = co_await future;
-        co_return *res + 1;
-    }(task1.get());
-
-    auto task3 = [](shared_future<int> future) -> task<int> {
-        auto res = co_await future;
-        co_return *res + 2;
-    }(task1.get());
-
-    auto [res2, res3, res1] = run(task2, task3, task1);
-    EXPECT_EQ(res2, 2);
-    EXPECT_EQ(res3, 3);
-    EXPECT_EQ(res1, 1);
+    auto t = outer();
+    event_loop loop;
+    loop.schedule(t);
+    loop.run();
+    EXPECT_TRUE(checked);
 }
 
-};  // TEST_SUITE(shared_task)
+};  // TEST_SUITE(task)
 
 }  // namespace
 

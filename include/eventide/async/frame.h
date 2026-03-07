@@ -5,41 +5,56 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <exception>
 #include <limits>
+#include <set>
 #include <source_location>
+#include <string>
 #include <vector>
 
 namespace eventide {
 
-class stable_node;
-
+/// Type-erased base for all coroutine-related nodes in the task tree.
+///
+/// Node hierarchy:
+///   async_node
+///     ├─ standard_task   — user coroutine (task<T>)
+///     ├─ sync_primitive   — sync primitives (mutex, event, semaphore, cv)
+///     ├─ waiter_link      — entry in a sync_primitive wait queue
+///     ├─ aggregate_op     — when_all / when_any / async_scope
+///     └─ system_op        — pending libuv I/O operation
 class async_node {
 public:
     enum class NodeKind : std::uint8_t {
         Task,
 
-        SharedTask,
+        /// Sync primitives — sync_primitive subclasses.
         Mutex,
         Event,
         Semaphore,
         ConditionVariable,
 
-        SharedFuture,
+        /// Wait queue entries — waiter_link subclasses.
+        /// Semaphore and CV reuse EventWaiter (identical cancel semantics).
         MutexWaiter,
         EventWaiter,
 
+        /// Aggregate operations — when_all / when_any / async_scope.
         WhenAll,
         WhenAny,
         Scope,
 
+        /// Pending libuv I/O — timers, signals, fs, network, etc.
         SystemIO,
     };
 
     enum Policy : uint8_t {
         None = 0,
-        ExplicitCancel = 1 << 0,   // bit 0
-        InterceptCancel = 1 << 1,  // bit 1
+        /// Reserved for future use.
+        ExplicitCancel = 1 << 0,
+        /// When set, cancellation of this node does NOT propagate upward.
+        /// The parent resumes normally and can inspect the cancelled state.
+        /// Used by catch_cancel() and with_token().
+        InterceptCancel = 1 << 1,
     };
 
     enum State : uint8_t {
@@ -59,32 +74,20 @@ public:
 
     std::source_location location;
 
-    static async_node* current() {
-        return nullptr;
-    }
-
     bool is_standard_task() const noexcept {
         return kind == NodeKind::Task;
     }
 
-    bool is_shared_resource() const noexcept {
-        return NodeKind::SharedTask <= kind && kind <= NodeKind::ConditionVariable;
+    bool is_sync_primitive() const noexcept {
+        return NodeKind::Mutex <= kind && kind <= NodeKind::ConditionVariable;
     }
 
     bool is_waiter_link() const noexcept {
-        return NodeKind::SharedTask <= kind && kind <= NodeKind::EventWaiter;
+        return NodeKind::MutexWaiter <= kind && kind <= NodeKind::EventWaiter;
     }
 
     bool is_aggregate_op() const noexcept {
-        return NodeKind::SharedFuture <= kind && kind <= NodeKind::Scope;
-    }
-
-    bool is_stable_node() const noexcept {
-        return is_standard_task() || is_shared_resource();
-    }
-
-    bool is_transient_node() const noexcept {
-        return !is_stable_node();
+        return NodeKind::WhenAll <= kind && kind <= NodeKind::Scope;
     }
 
     bool is_finished() const noexcept {
@@ -94,6 +97,9 @@ public:
     bool is_cancelled() const noexcept {
         return state == Cancelled;
     }
+
+    /// If this node is a task, clear its awaitee pointer.
+    void clear_awaitee() noexcept;
 
     void cancel();
 
@@ -105,17 +111,42 @@ public:
 
     std::coroutine_handle<> handle_subtask_result(async_node* parent);
 
+    /// Dump the async node tree rooted at this node as a DOT (graphviz) graph.
+    std::string dump_dot() const;
+
+private:
+    const static async_node* get_awaiter(const async_node* node);
+
+    static void dump_dot_walk(const async_node* node,
+                              std::set<const async_node*>& visited,
+                              std::string& out);
+
 protected:
     explicit async_node(NodeKind k) : kind(k) {}
 };
 
-class stable_node : public async_node {
+class standard_task : public async_node {
 protected:
-    explicit stable_node(NodeKind k) : async_node(k) {}
+    friend class async_node;
+
+    explicit standard_task() : async_node(NodeKind::Task) {}
 
 public:
     std::coroutine_handle<> handle() {
         return std::coroutine_handle<>::from_address(address);
+    }
+
+    bool has_awaitee() const noexcept {
+        return awaitee != nullptr;
+    }
+
+    void detach_as_root() noexcept {
+        awaiter = nullptr;
+        root = true;
+    }
+
+    void set_awaitee(async_node* node) noexcept {
+        awaitee = node;
     }
 
 protected:
@@ -130,23 +161,6 @@ protected:
     /// Since this base class is type-erased, we cannot calculate that offset dynamically
     /// and must explicitly cache the handle address here (costing 1 pointer size).
     void* address = nullptr;
-};
-
-class transient_node : public async_node {
-protected:
-    explicit transient_node(NodeKind k) : async_node(k) {}
-};
-
-class standard_task : public stable_node {
-protected:
-    friend class async_node;
-
-    explicit standard_task() : stable_node(NodeKind::Task) {}
-
-public:
-    void set_awaitee(async_node* node) noexcept {
-        awaitee = node;
-    }
 
 private:
     /// The node that awaits this task currently, if it is empty,
@@ -157,44 +171,37 @@ private:
     async_node* awaitee = nullptr;
 };
 
-class shared_resource;
+class sync_primitive;
 
-class waiter_link : public transient_node {
+class waiter_link : public async_node {
 public:
     friend class async_node;
-    friend class shared_resource;
+    friend class sync_primitive;
 
-    explicit waiter_link(NodeKind k) : transient_node(k) {}
+    explicit waiter_link(NodeKind k) : async_node(k) {}
 
 protected:
-    shared_resource* resource = nullptr;
+    /// The sync_primitive this waiter is queued on (nullptr if not queued).
+    sync_primitive* resource = nullptr;
 
+    /// Intrusive doubly-linked list pointers for the sync_primitive's wait queue.
     waiter_link* prev = nullptr;
-
     waiter_link* next = nullptr;
 
+    /// The task that is suspended waiting for this waiter to be signalled.
     async_node* awaiter = nullptr;
 };
 
-class shared_resource : public stable_node {
+class sync_primitive : public async_node {
 public:
     friend class async_node;
 
-    explicit shared_resource(NodeKind k) : stable_node(k) {}
+    explicit sync_primitive(NodeKind k) : async_node(k) {}
 
-    void inc_ref() {
-        ref_count += 1;
-    }
-
-    void dec_ref() {
-        ref_count -= 1;
-        if(ref_count == 0) {
-            handle().destroy();
-        }
-    }
-
+    /// Appends a waiter to the end of the wait queue.
     void insert(waiter_link* link);
 
+    /// Removes a waiter from the wait queue.
     void remove(waiter_link* link);
 
 protected:
@@ -235,53 +242,74 @@ protected:
     }
 
 private:
-    std::uint32_t ref_count = 0;
-
+    /// Head and tail of the intrusive doubly-linked waiter queue.
     waiter_link* head = nullptr;
-
     waiter_link* tail = nullptr;
-
-    async_node* awaitee = nullptr;
 };
 
-class aggregate_op : public transient_node {
+/// Base for when_all / when_any / async_scope.
+///
+/// Uses a two-phase protocol in await_suspend:
+///   1. Arming: link all children, then resume them. During this phase,
+///      children that complete synchronously set pending_resume/pending_cancel
+///      instead of directly resuming the awaiter (to avoid use-after-resume).
+///   2. Post-arm: check pending flags and resume the awaiter if needed.
+///
+/// The `done` flag prevents double-processing: once set, further callbacks
+/// from children are ignored (noop_coroutine).
+class aggregate_op : public async_node {
 protected:
     friend class async_node;
 
-    explicit aggregate_op(NodeKind k) : transient_node(k) {}
+    explicit aggregate_op(NodeKind k) : async_node(k) {}
 
 protected:
+    /// Sentinel value for when_any: no winner yet.
     constexpr static std::size_t npos = (std::numeric_limits<std::size_t>::max)();
 
+    /// The parent node that co_awaited this aggregate.
     async_node* awaiter = nullptr;
 
+    /// Child nodes managed by this aggregate (tasks spawned into it).
     std::vector<async_node*> awaitees;
 
+    /// Number of children that have completed so far.
     std::size_t completed = 0;
 
+    /// Total number of children expected to complete.
     std::size_t total = 0;
 
+    /// Index of the first child to finish (when_any only).
     std::size_t winner = npos;
 
+    /// Set once this aggregate has produced its final result;
+    /// further child completions are ignored (return noop_coroutine).
     bool done = false;
 
+    /// True while await_suspend is linking and resuming children.
+    /// During arming, synchronous completions defer to pending flags
+    /// instead of directly resuming the awaiter.
     bool arming = false;
 
+    /// A child completed (or won the race) while arming was in progress.
     bool pending_resume = false;
 
+    /// A child was cancelled while arming was in progress.
     bool pending_cancel = false;
 };
 
-class system_op : public transient_node {
+class system_op : public async_node {
 protected:
     friend class async_node;
 
     using on_cancel = void (*)(system_op* self);
 
-    explicit system_op(NodeKind k = NodeKind::SystemIO) : transient_node(k) {}
+    explicit system_op(NodeKind k = NodeKind::SystemIO) : async_node(k) {}
 
+    /// Callback invoked when this operation is cancelled (e.g. to close a uv handle).
     on_cancel action = nullptr;
 
+    /// The parent node that is waiting for this I/O operation to complete.
     async_node* awaiter = nullptr;
 
 public:

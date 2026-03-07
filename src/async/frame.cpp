@@ -8,8 +8,17 @@
 
 namespace eventide {
 
+/// Tracks the most recently resumed task (used for debugging/profiling).
 static thread_local async_node* current_node = nullptr;
 
+void async_node::clear_awaitee() noexcept {
+    if(kind == NodeKind::Task) {
+        static_cast<standard_task*>(this)->set_awaitee(nullptr);
+    }
+}
+
+/// Recursively cancels this node and all of its descendants.
+/// Idempotent: re-cancelling an already-cancelled node is a no-op.
 void async_node::cancel() {
     if(state == Cancelled) {
         return;
@@ -41,21 +50,11 @@ void async_node::cancel() {
             }
             break;
         }
-        case NodeKind::SharedTask: {
-            auto* self = static_cast<shared_resource*>(this);
-            if(self->awaitee) {
-                self->awaitee->cancel();
-            }
-            break;
-        }
         case NodeKind::Mutex:
         case NodeKind::Event:
         case NodeKind::Semaphore:
         case NodeKind::ConditionVariable: {
-            auto* self = static_cast<shared_resource*>(this);
-            if(self->awaitee) {
-                self->awaitee->cancel();
-            }
+            auto* self = static_cast<sync_primitive*>(this);
 
             while(auto* cur = self->pop_waiter()) {
                 cur->state = Cancelled;
@@ -64,7 +63,6 @@ void async_node::cancel() {
             break;
         }
 
-        case NodeKind::SharedFuture:
         case NodeKind::MutexWaiter:
         case NodeKind::EventWaiter: {
             auto* self = static_cast<waiter_link*>(this);
@@ -79,6 +77,7 @@ void async_node::cancel() {
         case NodeKind::WhenAny:
         case NodeKind::Scope: {
             auto* self = static_cast<aggregate_op*>(this);
+            self->done = true;
             for(auto* child: self->awaitees) {
                 if(child) {
                     child->cancel();
@@ -97,21 +96,17 @@ void async_node::cancel() {
     }
 }
 
+/// Resumes a standard task's coroutine, unless it has been cancelled.
 void async_node::resume() {
-    const auto kind_snapshot = kind;
-    /// Task/SharedTask/SharedFuture ...
-    if(is_stable_node()) {
+    if(is_standard_task()) {
         if(!is_cancelled()) {
-            static_cast<stable_node*>(this)->handle().resume();
+            static_cast<standard_task*>(this)->handle().resume();
         }
-    }
-
-    if(kind_snapshot == NodeKind::SharedFuture) {
-        auto self = static_cast<waiter_link*>(this);
-        static_cast<stable_node*>(self->awaiter)->handle().resume();
     }
 }
 
+/// Called by libuv callbacks when an I/O operation completes.
+/// Preserves Cancelled state if already set, then notifies the parent.
 void system_op::complete() noexcept {
     if(state != Cancelled) {
         state = Finished;
@@ -127,13 +122,14 @@ void system_op::complete() noexcept {
     }
 }
 
+/// Wires this node as a child of `awaiter`. For Task nodes, sets state
+/// to Running and returns the coroutine handle (ready to resume).
+/// For transient nodes (waiter_link, system_op), records the awaiter
+/// and returns noop_coroutine (resumed later by event/complete).
 std::coroutine_handle<> async_node::link_continuation(async_node* awaiter,
                                                       std::source_location location) {
     this->location = location;
     if(awaiter->kind == NodeKind::Task) {
-        auto p = static_cast<standard_task*>(awaiter);
-        p->awaitee = this;
-    } else if(awaiter->kind == NodeKind::SharedTask) {
         auto p = static_cast<standard_task*>(awaiter);
         p->awaitee = this;
     }
@@ -146,23 +142,13 @@ std::coroutine_handle<> async_node::link_continuation(async_node* awaiter,
             return self->handle();
         }
 
-        case NodeKind::SharedTask: {
-            /// we never await shared task directly.
-            std::abort();
-        }
-
         case NodeKind::Mutex:
         case NodeKind::Event:
         case NodeKind::Semaphore:
         case NodeKind::ConditionVariable: {
-            /// TODO:
+            /// Shared resources are never linked as children; they are
+            /// awaited via their waiter_link sub-objects.
             std::abort();
-        }
-
-        case NodeKind::SharedFuture: {
-            auto self = static_cast<waiter_link*>(this);
-            self->awaiter = awaiter;
-            return std::noop_coroutine();
         }
 
         case NodeKind::MutexWaiter:
@@ -184,6 +170,9 @@ std::coroutine_handle<> async_node::link_continuation(async_node* awaiter,
     std::abort();
 }
 
+/// Called when a task reaches final_suspend (Finished or Cancelled).
+/// For root tasks with no awaiter, destroys the coroutine frame.
+/// Otherwise, notifies the parent via handle_subtask_result.
 std::coroutine_handle<> async_node::final_transition() {
     switch(kind) {
         case NodeKind::Task: {
@@ -198,33 +187,10 @@ std::coroutine_handle<> async_node::final_transition() {
             return p->awaiter->handle_subtask_result(p);
         }
 
-        case NodeKind::SharedTask: {
-            auto p = static_cast<shared_resource*>(this);
-            auto& loop = event_loop::current();
-            auto cur = p->head;
-            while(cur) {
-                if(state == Cancelled) {
-                    cur->state = Cancelled;
-                }
-
-                /// Note that even if the shared_task was cancelled, we still
-                /// need to resume it. Because we requires it to explicitly
-                /// handle cancellation result.
-                loop.schedule(static_cast<async_node&>(*cur), p->location);
-                cur = cur->next;
-            }
-
-            p->head = nullptr;
-            p->tail = nullptr;
-            p->awaitee = nullptr;
-            return std::noop_coroutine();
-        }
-
         case NodeKind::Mutex:
         case NodeKind::Event:
         case NodeKind::Semaphore:
         case NodeKind::ConditionVariable:
-        case NodeKind::SharedFuture:
         case NodeKind::MutexWaiter:
         case NodeKind::EventWaiter:
         case NodeKind::WhenAll:
@@ -236,30 +202,36 @@ std::coroutine_handle<> async_node::final_transition() {
     std::abort();
 }
 
+/// Dispatches a child's completion to its parent node.
+///
+/// For Task parents: resumes the coroutine, or propagates cancellation upward.
+/// For Aggregate parents (when_all/when_any/scope):
+///   - Cancellation: cancels all siblings, propagates upward.
+///   - WhenAny completion: records winner, cancels siblings, resumes awaiter.
+///   - WhenAll/Scope completion: increments counter, resumes awaiter when all done.
 std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
     assert(child && child != this && "invalid parameter!");
 
     switch(kind) {
-        case NodeKind::Task:
-        case NodeKind::SharedTask: {
-            auto self = static_cast<stable_node*>(this);
+        case NodeKind::Task: {
+            auto self = static_cast<standard_task*>(this);
 
             if(child->state == Finished) {
-                /// If this is standard task, and we finished as normal.
-                /// Just return its handle and resume its next await point.
+                self->awaitee = nullptr;
                 current_node = self;
                 return self->handle();
             }
 
             if(child->state == Cancelled) {
-                /// If child task was set intercepted cancel, it represents
-                /// the this will handle the cancellation explicitly rather
-                /// than implicitly spread. Just resume as normal.
+                /// InterceptCancel: the parent handles cancellation explicitly
+                /// (e.g., catch_cancel() or with_token()). Resume as normal.
                 if(child->policy == InterceptCancel) {
+                    self->awaitee = nullptr;
                     current_node = self;
                     return self->handle();
                 }
 
+                self->awaitee = nullptr;
                 self->state = Cancelled;
                 return self->final_transition();
             }
@@ -268,7 +240,8 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
         }
 
         case NodeKind::WhenAll:
-        case NodeKind::WhenAny: {
+        case NodeKind::WhenAny:
+        case NodeKind::Scope: {
             auto self = static_cast<aggregate_op*>(this);
             if(self->done) {
                 return std::noop_coroutine();
@@ -291,6 +264,7 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
                 }
 
                 if(self->awaiter) {
+                    self->awaiter->clear_awaitee();
                     self->awaiter->state = Cancelled;
                     return self->awaiter->final_transition();
                 }
@@ -321,7 +295,8 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
                 }
 
                 if(self->awaiter) {
-                    return static_cast<stable_node*>(self->awaiter)->handle();
+                    self->awaiter->clear_awaitee();
+                    return static_cast<standard_task*>(self->awaiter)->handle();
                 }
 
                 return std::noop_coroutine();
@@ -336,7 +311,8 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
                 }
 
                 if(self->awaiter) {
-                    return static_cast<stable_node*>(self->awaiter)->handle();
+                    self->awaiter->clear_awaitee();
+                    return static_cast<standard_task*>(self->awaiter)->handle();
                 }
             }
 
@@ -347,19 +323,16 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
         case NodeKind::Event:
         case NodeKind::Semaphore:
         case NodeKind::ConditionVariable:
-        case NodeKind::SharedFuture:
         case NodeKind::MutexWaiter:
         case NodeKind::EventWaiter:
-        case NodeKind::Scope:
         case NodeKind::SystemIO:
         default: {
-            /// TODO:
             std::abort();
         }
     }
 }
 
-void shared_resource::insert(waiter_link* link) {
+void sync_primitive::insert(waiter_link* link) {
     assert(link && "insert: null waiter_link");
     assert(link->resource == nullptr && "insert: waiter_link already linked");
     assert(link->prev == nullptr && link->next == nullptr && "insert: waiter_link has links");
@@ -376,7 +349,7 @@ void shared_resource::insert(waiter_link* link) {
     }
 }
 
-void shared_resource::remove(waiter_link* link) {
+void sync_primitive::remove(waiter_link* link) {
     assert(link && "remove: null waiter_link");
     assert(link->resource == this && "remove: waiter_link not owned by resource");
 

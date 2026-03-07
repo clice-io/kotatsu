@@ -33,6 +33,7 @@ add_library(eventide_async STATIC)
 add_library(eventide::async ALIAS eventide_async)
 
 target_sources(eventide_async PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/debug.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/error.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/frame.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/fs.cpp"

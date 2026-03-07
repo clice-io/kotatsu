@@ -37,7 +37,7 @@
 *.out
 *.app
 
-build*/
+/build*/
 .xmake/
 .cache/
 

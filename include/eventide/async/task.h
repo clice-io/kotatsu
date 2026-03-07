@@ -2,9 +2,8 @@
 
 #include <cassert>
 #include <cstdlib>
-#include <memory>
+#include <exception>
 #include <optional>
-#include <vector>
 
 #include "error.h"
 #include "frame.h"
@@ -233,6 +232,13 @@ public:
         return &h.promise();
     }
 
+    /// Converts task<T> to ctask<T> (= task<expected<T, cancellation>>).
+    /// Sets InterceptCancel policy so cancellation is returned as a value
+    /// instead of propagating upward.
+    ///
+    /// Implementation note: task<T> and ctask<T> share identical coroutine
+    /// frame layout (same standard_task base). We reinterpret the handle
+    /// via from_address to avoid a full coroutine type conversion.
     ctask<T> catch_cancel() {
         if constexpr(is_cancellation_t<T>) {
             static_assert(!is_cancellation_t<T>, "already explicit cancellation");
@@ -241,134 +247,8 @@ public:
         h.promise().policy = async_node::InterceptCancel;
         auto handle = h;
         h = nullptr;
-        /// We make sure they have totally same layout, so do it here is fine even if
-        /// sounds like undefined behavior.
         using coroutine_handle = ctask<T>::coroutine_handle;
         return ctask<T>(coroutine_handle::from_address(handle.address()));
-    }
-
-private:
-    coroutine_handle h;
-};
-
-template <typename T>
-class shared_task;
-
-template <typename T>
-class shared_future : public waiter_link {
-public:
-    shared_future(shared_resource* resource) : waiter_link(async_node::NodeKind::SharedFuture) {
-        resource->inc_ref();
-        resource->insert(this);
-    }
-
-    shared_future(const shared_future&) = delete;
-
-    shared_future(shared_future&& other) : waiter_link(async_node::NodeKind::SharedFuture) {
-        auto temp = other.resource;
-        temp->remove(&other);
-        temp->insert(this);
-    }
-
-    ~shared_future() {
-        if(resource) {
-            auto temp = resource;
-            temp->remove(this);
-            temp->dec_ref();
-        }
-    }
-
-    using promise_type = typename shared_task<T>::promise_type;
-
-    bool await_ready() const noexcept {
-        return static_cast<promise_type*>(resource)->value.has_value();
-    }
-
-    template <typename Promise>
-    auto await_suspend(std::coroutine_handle<Promise> awaiter,
-                       std::source_location location = std::source_location::current()) noexcept {
-        return link_continuation(&awaiter.promise(), location);
-    }
-
-    std::expected<T, cancellation> await_resume() {
-        if(resource->state == Finished) {
-            assert(await_ready() && "resume without value");
-            return *static_cast<promise_type*>(resource)->value;
-        } else {
-            return std::unexpected(cancellation());
-        }
-    }
-};
-
-template <typename T>
-class shared_task {
-public:
-    friend class event_loop;
-
-    struct promise_type;
-
-    using coroutine_handle = std::coroutine_handle<promise_type>;
-
-    struct promise_type : shared_resource, promise_result<T>, promise_exception {
-        auto handle() {
-            return coroutine_handle::from_promise(*this);
-        }
-
-        auto initial_suspend() const noexcept {
-            return std::suspend_always();
-        }
-
-        auto final_suspend() const noexcept {
-            return transition_await(async_node::Finished);
-        }
-
-        auto get_return_object() {
-            return shared_task<T>(handle());
-        }
-
-        promise_type() : shared_resource(async_node::NodeKind::SharedTask) {
-            this->address = handle().address();
-        }
-    };
-
-public:
-    shared_task() = default;
-
-    explicit shared_task(coroutine_handle h) noexcept : h(h) {
-        h.promise().inc_ref();
-    }
-
-    ~shared_task() {
-        h.promise().dec_ref();
-    }
-
-    auto result() {
-        auto&& promise = h.promise();
-        promise.rethrow_if_exception();
-        if constexpr(!std::is_void_v<T>) {
-            assert(promise.value.has_value() && "on empty return");
-            return std::move(*promise.value);
-        } else {
-            return std::nullopt;
-        }
-    }
-
-    auto value() {
-        auto&& promise = h.promise();
-        promise.rethrow_if_exception();
-        if constexpr(!std::is_void_v<T>) {
-            return std::move(promise.value);
-        } else {
-            return std::nullopt;
-        }
-    }
-
-    async_node* operator->() {
-        return &h.promise();
-    }
-
-    shared_future<T> get() {
-        return shared_future<T>(&h.promise());
     }
 
 private:

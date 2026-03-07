@@ -9,9 +9,12 @@
 
 namespace eventide {
 
-class mutex : public shared_resource {
+class mutex : public sync_primitive {
 public:
-    mutex() : shared_resource(async_node::NodeKind::Mutex) {}
+    mutex(std::source_location location = std::source_location::current()) :
+        sync_primitive(async_node::NodeKind::Mutex) {
+        this->location = location;
+    }
 
     mutex(const mutex&) = delete;
     mutex& operator=(const mutex&) = delete;
@@ -64,11 +67,13 @@ private:
     bool locked = false;
 };
 
-class semaphore : public shared_resource {
+class semaphore : public sync_primitive {
 public:
-    explicit semaphore(std::ptrdiff_t initial = 0) :
-        shared_resource(async_node::NodeKind::Semaphore) {
+    explicit semaphore(std::ptrdiff_t initial = 0,
+                       std::source_location location = std::source_location::current()) :
+        sync_primitive(async_node::NodeKind::Semaphore) {
         assert(initial >= 0 && "semaphore initial count must be non-negative");
+        this->location = location;
         count = initial;
     }
 
@@ -76,6 +81,9 @@ public:
     semaphore& operator=(const semaphore&) = delete;
 
     struct acquire_awaiter : waiter_link {
+        /// Reuses EventWaiter kind — all waiter_link subtypes share identical
+        /// cancel/link_continuation/final_transition logic, so a dedicated
+        /// SemaphoreWaiter kind is unnecessary.
         explicit acquire_awaiter(semaphore& owner) :
             waiter_link(async_node::NodeKind::EventWaiter), owner(&owner) {}
 
@@ -128,10 +136,13 @@ private:
     std::ptrdiff_t count = 0;
 };
 
-class event : public shared_resource {
+class event : public sync_primitive {
 public:
-    explicit event(bool signaled = false) :
-        shared_resource(async_node::NodeKind::Event), signaled(signaled) {}
+    explicit event(bool signaled = false,
+                   std::source_location location = std::source_location::current()) :
+        sync_primitive(async_node::NodeKind::Event), signaled(signaled) {
+        this->location = location;
+    }
 
     event(const event&) = delete;
     event& operator=(const event&) = delete;
@@ -179,14 +190,18 @@ private:
     bool signaled = false;
 };
 
-class condition_variable : public shared_resource {
+class condition_variable : public sync_primitive {
 public:
-    condition_variable() : shared_resource(async_node::NodeKind::ConditionVariable) {}
+    condition_variable(std::source_location location = std::source_location::current()) :
+        sync_primitive(async_node::NodeKind::ConditionVariable) {
+        this->location = location;
+    }
 
     condition_variable(const condition_variable&) = delete;
     condition_variable& operator=(const condition_variable&) = delete;
 
     struct wait_awaiter : waiter_link {
+        /// Reuses EventWaiter kind — see semaphore::acquire_awaiter comment.
         explicit wait_awaiter(condition_variable& owner) :
             waiter_link(async_node::NodeKind::EventWaiter), owner(&owner) {}
 
@@ -208,6 +223,10 @@ public:
         condition_variable* owner = nullptr;
     };
 
+    /// NOTE: If cancellation is intercepted (catch_cancel) around cv.wait(),
+    /// the caller resumes with the mutex NOT held, since unlock() has already
+    /// been called but co_await m.lock() was never reached. Avoid combining
+    /// cv.wait() with catch_cancel().
     task<> wait(mutex& m) {
         m.unlock();
         co_await wait_awaiter(*this);
