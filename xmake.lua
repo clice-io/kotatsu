@@ -198,7 +198,7 @@ if has_config("test") and has_config("ztest") then
 		add_files("tests/main.cpp", "tests/reflection/**.cpp", "tests/zest/**.cpp")
 		if has_config("async") then
 			add_files("tests/eventide/**.cpp")
-			add_headerfiles("examples/build_system/*")
+			add_includedirs("examples/build_system")
 		end
 		if has_config("option") then
 			add_files("tests/option/**.cpp")
