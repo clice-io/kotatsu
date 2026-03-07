@@ -719,6 +719,20 @@ private:
     }
 
 protected:
+    /// Adopt a pre-allocated buffer. The buffer must have been allocated with
+    /// mem::allocate<value_type>. After this call, the hybrid_vector owns the
+    /// buffer and will deallocate it on destruction.
+    constexpr void adopt_allocation(pointer data, size_type count, size_type cap) noexcept {
+        assert(count <= cap);
+        destroy_elements();
+        if(begin() != inline_begin()) {
+            mem::deallocate(this->m_begin, this->m_capacity);
+        }
+        this->m_begin = data;
+        this->m_size = static_cast<size_storage_type>(count);
+        this->m_capacity = static_cast<size_storage_type>(cap);
+    }
+
     constexpr void move_from_other(hybrid_vector&& other) {
         if(other.empty()) {
             return;
@@ -1390,6 +1404,19 @@ public:
 
         this->move_assign_from_other(static_cast<base_type&&>(other));
         other.reset_to_small(OtherCapacity);
+    }
+
+    /// Construct a small_vector by adopting a pre-allocated buffer.
+    /// The buffer must have been allocated with mem::allocate<value_type>.
+    /// The small_vector takes ownership and will deallocate it on destruction.
+    [[nodiscard]] constexpr static small_vector from_raw_parts(value_type* data,
+                                                               size_type count,
+                                                               size_type capacity) {
+        small_vector result;
+        if(data != nullptr && capacity > 0) {
+            result.adopt_allocation(data, count, capacity);
+        }
+        return result;
     }
 
     [[nodiscard]] constexpr size_type inline_capacity() const noexcept {

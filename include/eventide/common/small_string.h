@@ -27,6 +27,18 @@ public:
         this->append(refs);
     }
 
+    /// Adopt a pre-allocated buffer as a small_string.
+    /// The buffer must have been allocated with mem::allocate<char>.
+    [[nodiscard]] static small_string from_raw_parts(char* data,
+                                                     std::size_t count,
+                                                     std::size_t capacity) {
+        small_string result;
+        if(data != nullptr && capacity > 0) {
+            result.adopt_allocation(data, count, capacity);
+        }
+        return result;
+    }
+
     // --- String Assignment ---
 
     using base::assign;
