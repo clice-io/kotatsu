@@ -141,16 +141,17 @@ public:
 
     using Deleter = void(function*);
 
-    constexpr static size_t sbo_size = 16;
+    constexpr static size_t sbo_size = 24;
     constexpr static size_t sbo_align = alignof(std::max_align_t);
     constexpr static uint64_t sbo_magic = 0x0721'BEEF'CAFE;
 
-    using SBOStorage = union {
-        alignas(sbo_align) std::byte data[sbo_size];
+    using Storage = union {
+        alignas(sbo_align) std::byte sbo[sbo_size];
 
         struct {
             uint64_t magic;
             Deleter* deleter;
+            Erased erased;
         };
     };
 
@@ -162,8 +163,13 @@ public:
 
     function(function&& other) noexcept {
         this->proxy = std::exchange(other.proxy, nullptr);
-        this->erased = std::exchange(other.erased, Erased{});
-        std::memcpy(this->storage.data, other.storage.data, sizeof(this->storage.data));
+        if(other.storage.magic == sbo_magic) {
+            this->storage.magic = std::exchange(other.storage.magic, 0);
+            this->storage.deleter = std::exchange(other.storage.deleter, nullptr);
+            this->storage.erased = std::exchange(other.storage.erased, Erased{});
+        } else {
+            std::memcpy(this->storage.sbo, other.storage.sbo, sizeof(this->storage.sbo));
+        }
     }
 
     function& operator=(const function&) = delete;
@@ -177,20 +183,18 @@ public:
     }
 
     ~function() {
-        if(this->storage.magic == sbo_magic) {
+        if(this->storage.magic == sbo_magic && this->storage.deleter) {
             this->storage.deleter(this);
         }
     }
 
 private:
-    constexpr function(R (*proxy)(const function*, Args&...), Erased ctx) noexcept :
-        proxy(proxy), erased(ctx), storage() {}
+    constexpr function(R (*proxy)(const function*, Args&...)) noexcept : proxy(proxy), storage() {}
 
-    constexpr function(R (*proxy)(const function*, Args&...), Erased ctx, Deleter* deleter) noexcept
-        : proxy(proxy), erased(ctx), storage({.magic = sbo_magic, .deleter = deleter}) {}
+    constexpr function(R (*proxy)(const function*, Args&...), Storage storage) noexcept :
+        proxy(proxy), storage(storage) {}
 
     template <typename Class>
-        requires std::is_invocable_r_v<R, Class, Args...>
     constexpr static function make(Class&& invokable) {
         if constexpr(std::is_convertible_v<Class&&, Sign*>) {
             return function(static_cast<Sign*>(std::forward<Class>(invokable)));
@@ -203,13 +207,10 @@ private:
     template <typename Class, typename MemFn, typename ClassType = std::remove_cvref_t<Class>>
         requires sbo_eligible<ClassType> && is_mem_fn_of<ClassType, MemFn>
     constexpr function(Class&& invokable, MemFn) noexcept :
-        function(
-            [](const function* self, Args&... args) -> R {
-                return (self->storage_as<ClassType>()->*MemFn::get())(static_cast<Args>(args)...);
-            },
-            Erased{},
-            [](function* self) { std::destroy_at(self->storage_as<ClassType>()); }) {
-        std::construct_at(reinterpret_cast<ClassType*>(this->storage.data),
+        function([](const function* self, Args&... args) -> R {
+            return (self->storage_as<ClassType>()->*MemFn::get())(static_cast<Args>(args)...);
+        }) {
+        std::construct_at(reinterpret_cast<ClassType*>(this->storage.sbo),
                           std::forward<Class>(invokable));
     }
 
@@ -218,11 +219,17 @@ private:
     constexpr function(Class&& invokable, MemFn) noexcept :
         function(
             [](const function* self, Args&... args) -> R {
-                return (static_cast<ClassType*>(self->erased.ctx)->*MemFn::get())(
+                return (static_cast<ClassType*>(self->storage.erased.ctx)->*MemFn::get())(
                     static_cast<Args>(args)...);
-            },
-            Erased{.ctx = new ClassType(std::forward<Class>(invokable))},
-            [](function* self) { delete static_cast<ClassType*>(self->erased.ctx); }) {}
+    },
+            Storage{.magic = sbo_magic,
+                    .deleter =
+                        [](function* self) {
+                            delete static_cast<ClassType*>(self->storage.erased.ctx);
+                        },
+                    .erased = Erased{
+                        .ctx = new ClassType(std::forward<Class>(invokable)),
+                    }}) {}
 
 public:
     template <auto MemFnPointer, typename Class, typename Mem>
@@ -231,13 +238,19 @@ public:
     constexpr function(Sign* invokable) noexcept :
         function(
             [](const function* self, Args&... args) -> R {
-                Sign* fn = self->erased.fn;
+                Sign* fn = self->storage.erased.fn;
                 return (*fn)(static_cast<Args>(args)...);
             },
-            Erased{.fn = invokable}) {};
+            Storage{.magic = sbo_magic,
+                    .deleter =
+                        [](function* self) {
+                            // No-op deleter for raw function pointers
+                        },
+                    .erased = Erased{.fn = invokable}}) {};
 
     template <typename Class>
-        requires (!std::is_same_v<std::remove_cvref_t<Class>, function>)
+        requires (!std::is_same_v<std::remove_cvref_t<Class>, function>) &&
+                 std::is_invocable_r_v<R, Class, Args...>
     constexpr function(Class&& invokable) noexcept :
         function(make(std::forward<Class>(invokable))) {}
 
@@ -252,17 +265,16 @@ public:
 private:
     template <typename Class>
     const Class* storage_as() const {
-        return std::launder(reinterpret_cast<const Class*>(this->storage.data));
+        return std::launder(reinterpret_cast<const Class*>(this->storage.sbo));
     }
 
     template <typename Class>
     Class* storage_as() {
-        return std::launder(reinterpret_cast<Class*>(this->storage.data));
+        return std::launder(reinterpret_cast<Class*>(this->storage.sbo));
     }
 
-    SBOStorage storage;
+    Storage storage;
     R (*proxy)(const function*, Args&...);
-    Erased erased;
 };
 
 template <auto MemFnPointer, typename Class, typename Mem = mem_fn<MemFnPointer>>
