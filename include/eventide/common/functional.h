@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <cstring>
 #include <memory>
+#include <new>
 #include <type_traits>
 #include <utility>
 
@@ -13,12 +14,13 @@ struct mem_fn {
 };
 
 template <auto V, typename Class, typename Ret, typename... Args>
-    requires std::is_member_pointer_v<decltype(V)>
+    requires std::is_member_function_pointer_v<decltype(V)>
 struct mem_fn<V, Ret (Class::*)(Args...)> {
     using ClassType = Class;
-    using FunctionType = Ret (Class::*)(Args...);
+    using ClassFunctionType = Ret (Class::*)(Args...);
+    using FunctionType = Ret(Args...);
 
-    constexpr static FunctionType get() {
+    constexpr static ClassFunctionType get() {
         return V;
     }
 };
@@ -27,9 +29,10 @@ template <auto V, typename Class, typename Ret, typename... Args>
     requires std::is_member_function_pointer_v<decltype(V)>
 struct mem_fn<V, Ret (Class::*)(Args...) const> {
     using ClassType = Class;
-    using FunctionType = Ret (Class::*)(Args...) const;
+    using ClassFunctionType = Ret (Class::*)(Args...) const;
+    using FunctionType = Ret(Args...);
 
-    constexpr static FunctionType get() {
+    constexpr static ClassFunctionType get() {
         return V;
     }
 };
@@ -76,7 +79,6 @@ private:
         }
     }
 
-public:
     template <typename Class, typename MemFn>
         requires is_mem_fn_of<Class, MemFn>
     constexpr function_ref(Class* invokable, MemFn) noexcept :
@@ -86,6 +88,10 @@ public:
                     static_cast<Args>(args)...);
             },
             Erased{.ctx = invokable}) {}
+
+public:
+    template <auto MemFnPointer, typename Class, typename Mem>
+    friend function_ref<typename Mem::FunctionType> bind_ref(Class&& obj);
 
     constexpr function_ref(Sign* invokable) noexcept :
         function_ref(
@@ -184,15 +190,6 @@ private:
         }
     }
 
-public:
-    constexpr function(Sign* invokable) noexcept :
-        function(
-            [](const function* self, Args&... args) -> R {
-                Sign* fn = self->erased.fn;
-                return (*fn)(static_cast<Args>(args)...);
-            },
-            Erased{.fn = invokable}) {};
-
     template <typename Class, typename MemFn, typename ClassType = std::remove_cvref_t<Class>>
         requires sbo_eligible<ClassType> && is_mem_fn_of<ClassType, MemFn>
     constexpr function(Class&& invokable, MemFn) noexcept :
@@ -216,6 +213,18 @@ public:
             },
             Erased{.ctx = new ClassType(std::forward<Class>(invokable))},
             [](function* self) { delete static_cast<ClassType*>(self->erased.ctx); }) {}
+
+public:
+    template <auto MemFnPointer, typename Class, typename Mem>
+    friend function<typename Mem::FunctionType> bind(Class&& obj);
+
+    constexpr function(Sign* invokable) noexcept :
+        function(
+            [](const function* self, Args&... args) -> R {
+                Sign* fn = self->erased.fn;
+                return (*fn)(static_cast<Args>(args)...);
+            },
+            Erased{.fn = invokable}) {};
 
     template <typename Class>
         requires (!std::is_same_v<std::remove_cvref_t<Class>, function>)
@@ -246,5 +255,15 @@ private:
     Erased erased;
     Deleter* deleter;
 };
+
+template <auto MemFnPointer, typename Class, typename Mem = mem_fn<MemFnPointer>>
+function_ref<typename Mem::FunctionType> bind_ref(Class&& obj) {
+    return function_ref<typename Mem::FunctionType>(std::forward<Class>(obj), Mem{});
+}
+
+template <auto MemFnPointer, typename Class, typename Mem = mem_fn<MemFnPointer>>
+function<typename Mem::FunctionType> bind(Class&& obj) {
+    return function<typename Mem::FunctionType>(std::forward<Class>(obj), Mem{});
+}
 
 }  // namespace eventide

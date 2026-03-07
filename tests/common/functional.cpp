@@ -88,14 +88,14 @@ TEST_CASE(function_ref_from_stateful_lambda) {
 
 TEST_CASE(function_ref_from_pointer_and_mem_fn) {
     Adder adder{100};
-    function_ref<int(int)> fn(&adder, mem_fn<&Adder::add>{});
+    auto fn = bind_ref<&Adder::add>(adder);
     EXPECT_EQ(fn(5), 105);
     EXPECT_EQ(fn(-100), 0);
 };
 
 TEST_CASE(function_ref_from_const_mem_fn) {
     Adder adder{42};
-    function_ref<int(int)> fn(&adder, mem_fn<&Adder::add_const>{});
+    auto fn = bind_ref<&Adder::add_const>(adder);
     EXPECT_EQ(fn(8), 50);
 };
 
@@ -233,13 +233,13 @@ TEST_CASE(function_void_return) {
 
 TEST_CASE(function_with_mem_fn_small) {
     SmallCallable sc{50};
-    function<int(int)> fn(std::move(sc), mem_fn<&SmallCallable::operator()>{});
+    auto fn = bind<&SmallCallable::operator()>(sc);
     EXPECT_EQ(fn(7), 57);
 };
 
 TEST_CASE(function_with_mem_fn_large) {
     LargeCallable lc{50};
-    function<int(int)> fn(std::move(lc), mem_fn<&LargeCallable::operator()>{});
+    auto fn = bind<&LargeCallable::operator()>(lc);
     EXPECT_EQ(fn(7), 57);
 };
 
