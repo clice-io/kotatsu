@@ -77,11 +77,7 @@ struct serialize_traits<toml::Serializer, T> {
 
     static auto serialize(toml::Serializer& serializer, const T& value)
         -> std::expected<value_type, error_type> {
-        if constexpr(std::same_as<std::remove_cvref_t<T>, ::toml::table>) {
-            return serializer.serialize_dom(value);
-        } else {
-            return serializer.serialize_dom(value);
-        }
+        return serializer.serialize_dom(value);
     }
 };
 

@@ -11,7 +11,7 @@
 #include <utility>
 #include <variant>
 
-#include "eventide/serde/json/detail.h"
+#include "eventide/serde/detail/serialize_helpers.h"
 #include "eventide/serde/json/dom.h"
 #include "eventide/serde/json/error.h"
 #include "eventide/serde/serde.h"
@@ -28,8 +28,8 @@ public:
 
     using status_t = result_t<void>;
 
-    using SerializeArray = json::detail::SerializeArray<Serializer>;
-    using SerializeObject = json::detail::SerializeObject<Serializer>;
+    using SerializeArray = serde::detail::SerializeArray<Serializer>;
+    using SerializeObject = serde::detail::SerializeObject<Serializer>;
 
     using SerializeSeq = SerializeArray;
     using SerializeTuple = SerializeArray;

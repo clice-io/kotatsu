@@ -12,38 +12,16 @@
 #include <utility>
 #include <vector>
 
+#include "eventide/serde/detail/type_utils.h"
 #include "eventide/serde/serde.h"
 
 namespace eventide::serde::flatbuffers::binary {
 
 namespace schema_detail {
 
-template <typename T>
-struct remove_annotation {
-    using type = std::remove_cvref_t<T>;
-};
-
-template <typename T>
-    requires requires { typename std::remove_cvref_t<T>::annotated_type; }
-struct remove_annotation<T> {
-    using type = std::remove_cvref_t<typename std::remove_cvref_t<T>::annotated_type>;
-};
-
-template <typename T>
-using remove_annotation_t = typename remove_annotation<T>::type;
-
-template <typename T>
-struct remove_optional {
-    using type = std::remove_cvref_t<T>;
-};
-
-template <typename T>
-struct remove_optional<std::optional<T>> {
-    using type = std::remove_cvref_t<T>;
-};
-
-template <typename T>
-using remove_optional_t = typename remove_optional<remove_annotation_t<T>>::type;
+using serde::detail::remove_annotation_t;
+using serde::detail::remove_optional_t;
+using serde::detail::clean_t;
 
 template <typename T>
 constexpr bool is_std_vector_v = is_specialization_of<std::vector, std::remove_cvref_t<T>>;
@@ -298,6 +276,22 @@ private:
 
 template <typename T>
 constexpr bool is_schema_struct_v = schema_detail::is_schema_struct_v<T>;
+
+template <typename T>
+consteval bool has_annotated_fields() {
+    using U = std::remove_cvref_t<T>;
+    if constexpr(!refl::reflectable_class<U>) {
+        return false;
+    } else {
+        return []<std::size_t... I>(std::index_sequence<I...>) {
+            return (serde::annotated_type<refl::field_type<U, I>> || ...);
+        }(std::make_index_sequence<refl::field_count<U>()>{});
+    }
+}
+
+template <typename T>
+constexpr bool can_inline_struct_v =
+    refl::reflectable_class<T> && is_schema_struct_v<T> && !has_annotated_fields<T>();
 
 template <typename T>
 std::string type_identifier() {

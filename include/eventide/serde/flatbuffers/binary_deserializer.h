@@ -43,21 +43,8 @@ using serde::detail::clean_t;
 using serde::detail::remove_annotation_t;
 using serde::detail::remove_optional_t;
 
-template <typename T>
-consteval bool has_annotated_fields() {
-    using U = std::remove_cvref_t<T>;
-    if constexpr(!refl::reflectable_class<U>) {
-        return false;
-    } else {
-        return []<std::size_t... I>(std::index_sequence<I...>) {
-            return (serde::annotated_type<refl::field_type<U, I>> || ...);
-        }(std::make_index_sequence<refl::field_count<U>()>{});
-    }
-}
-
-template <typename T>
-constexpr bool can_inline_struct_v =
-    refl::reflectable_class<T> && is_schema_struct_v<T> && !has_annotated_fields<T>();
+using binary::has_annotated_fields;
+using binary::can_inline_struct_v;
 
 template <typename T>
 constexpr bool root_unboxed_v =

@@ -63,20 +63,20 @@ public:
     using DeserializeMap = DeserializeObject;
     using DeserializeStruct = DeserializeObject;
 
-    explicit Deserializer(const json::Value& value) : rootValue(value.as_ref()) {
-        if(!rootValue.valid()) {
+    explicit Deserializer(const json::Value& value) : root_value(value.as_ref()) {
+        if(!root_value.valid()) {
             mark_invalid();
         }
     }
 
-    explicit Deserializer(json::ValueRef value) : rootValue(value) {
-        if(!rootValue.valid()) {
+    explicit Deserializer(json::ValueRef value) : root_value(value) {
+        if(!root_value.valid()) {
             mark_invalid();
         }
     }
 
     [[nodiscard]] bool valid() const noexcept {
-        return isValid;
+        return is_valid;
     }
 
     [[nodiscard]] error_type error() const noexcept {
@@ -84,10 +84,10 @@ public:
     }
 
     status_t finish() {
-        if(!isValid) {
+        if(!is_valid) {
             return std::unexpected(current_error());
         }
-        if(!rootConsumed) {
+        if(!root_consumed) {
             mark_invalid();
             return std::unexpected(current_error());
         }
@@ -95,7 +95,7 @@ public:
     }
 
     result_t<bool> deserialize_none() {
-        if(!isValid) {
+        if(!is_valid) {
             return std::unexpected(current_error());
         }
 
@@ -105,8 +105,8 @@ public:
         }
 
         const bool isNone = ref->is_null();
-        if(isNone && !hasCurrentValue) {
-            rootConsumed = true;
+        if(isNone && !has_current_value) {
+            root_consumed = true;
         }
         return isNone;
     }
@@ -285,7 +285,7 @@ public:
         }
 
         DeserializeMap map(*this, *object);
-        if(!isValid) {
+        if(!is_valid) {
             return std::unexpected(current_error());
         }
         return map;
@@ -298,7 +298,7 @@ public:
         }
 
         DeserializeStruct structure(*this, *object);
-        if(!isValid) {
+        if(!is_valid) {
             return std::unexpected(current_error());
         }
         return structure;
@@ -334,7 +334,7 @@ private:
 
     template <typename T, typename Reader>
     status_t read_scalar(T& out, Reader&& reader) {
-        if(!isValid) {
+        if(!is_valid) {
             return std::unexpected(current_error());
         }
 
@@ -350,8 +350,8 @@ private:
         }
 
         out = *parsed;
-        if(!hasCurrentValue) {
-            rootConsumed = true;
+        if(!has_current_value) {
+            root_consumed = true;
         }
         return {};
     }
@@ -360,20 +360,21 @@ private:
     status_t deserialize_from_value_ref(json::ValueRef input, T& out) {
         struct value_scope {
             value_scope(Deserializer& deserializer, json::ValueRef input) :
-                deserializer(deserializer), previousHasCurrentValue(deserializer.hasCurrentValue),
-                previousCurrentValue(deserializer.currentValue) {
-                deserializer.currentValue = input;
-                deserializer.hasCurrentValue = true;
+                deserializer(deserializer),
+                previous_has_current_value(deserializer.has_current_value),
+                previous_current_value(deserializer.current_value) {
+                deserializer.current_value = input;
+                deserializer.has_current_value = true;
             }
 
             ~value_scope() {
-                deserializer.currentValue = previousCurrentValue;
-                deserializer.hasCurrentValue = previousHasCurrentValue;
+                deserializer.current_value = previous_current_value;
+                deserializer.has_current_value = previous_has_current_value;
             }
 
             Deserializer& deserializer;
-            bool previousHasCurrentValue;
-            json::ValueRef previousCurrentValue;
+            bool previous_has_current_value;
+            json::ValueRef previous_current_value;
         };
 
         value_scope scope(*this, input);
@@ -448,20 +449,20 @@ private:
     }
 
     result_t<json::ValueRef> access_value_ref(bool consume) {
-        if(!isValid) {
+        if(!is_valid) {
             return std::unexpected(current_error());
         }
-        if(hasCurrentValue) {
-            return currentValue;
+        if(has_current_value) {
+            return current_value;
         }
-        if(rootConsumed || !rootValue.valid()) {
+        if(root_consumed || !root_value.valid()) {
             mark_invalid();
             return std::unexpected(current_error());
         }
         if(consume) {
-            rootConsumed = true;
+            root_consumed = true;
         }
-        return rootValue;
+        return root_value;
     }
 
     result_t<json::ValueRef> peek_value_ref() {
@@ -501,23 +502,23 @@ private:
     }
 
     void mark_invalid(error_type error = error_type::invalid_state) {
-        isValid = false;
-        if(lastError == error_type::invalid_state || error != error_type::invalid_state) {
-            lastError = error;
+        is_valid = false;
+        if(last_error == error_type::invalid_state || error != error_type::invalid_state) {
+            last_error = error;
         }
     }
 
     [[nodiscard]] error_type current_error() const noexcept {
-        return lastError;
+        return last_error;
     }
 
 private:
-    bool isValid = true;
-    bool rootConsumed = false;
-    error_type lastError = error_type::invalid_state;
-    json::ValueRef rootValue{};
-    bool hasCurrentValue = false;
-    json::ValueRef currentValue{};
+    bool is_valid = true;
+    bool root_consumed = false;
+    error_type last_error = error_type::invalid_state;
+    json::ValueRef root_value{};
+    bool has_current_value = false;
+    json::ValueRef current_value{};
 };
 
 static_assert(serde::deserializer_like<Deserializer>);
