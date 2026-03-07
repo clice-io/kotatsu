@@ -5,6 +5,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "eventide/serde/attrs/behavior.h"
+
 namespace eventide::serde {
 
 // Wrap or inherit depending on whether T is an aggregate class.
@@ -24,6 +26,8 @@ struct annotation;
 
 template <wrap_type T, typename... Attrs>
 struct annotation<T, Attrs...> {
+    static_assert(detail::validate_attrs<std::tuple<Attrs...>>(), "Invalid attribute combination");
+
     T value;
 
     constexpr annotation() = default;
@@ -54,12 +58,16 @@ struct annotation<T, Attrs...> {
 
 template <inherit_type T, typename... Attrs>
 struct annotation<T, Attrs...> : T {
+    static_assert(detail::validate_attrs<std::tuple<Attrs...>>(), "Invalid attribute combination");
+
     using annotated_type = T;
     using attrs = std::tuple<Attrs...>;
 };
 
 template <inherit_use_type T, typename... Attrs>
 struct annotation<T, Attrs...> : T {
+    static_assert(detail::validate_attrs<std::tuple<Attrs...>>(), "Invalid attribute combination");
+
     using T::T;
     using annotated_type = T;
     using attrs = std::tuple<Attrs...>;

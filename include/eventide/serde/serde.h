@@ -9,9 +9,12 @@
 #include "attrs.h"
 #include "config.h"
 #include "traits.h"
+#include "detail/backend_utils.h"
 #include "eventide/common/ranges.h"
 #include "eventide/reflection/enum.h"
 #include "eventide/reflection/struct.h"
+#include "eventide/serde/attrs/behavior.h"
+#include "eventide/serde/attrs/schema.h"
 
 namespace eventide::serde {
 
@@ -74,20 +77,6 @@ struct deserialize_traits<D, std::array<T, N>> {
 
 namespace detail {
 
-template <typename Result>
-constexpr Result unexpected_number_out_of_range() {
-    using error_t = typename Result::error_type;
-    if constexpr(requires { error_t::number_out_of_range; }) {
-        return std::unexpected(error_t::number_out_of_range);
-    } else if constexpr(requires { error_t::invalid_type; }) {
-        return std::unexpected(error_t::invalid_type);
-    } else if constexpr(std::is_enum_v<error_t>) {
-        return std::unexpected(static_cast<error_t>(1));
-    } else {
-        return std::unexpected(error_t{});
-    }
-}
-
 template <typename To, typename From>
 constexpr bool integral_value_in_range(From value) {
     static_assert(std::is_integral_v<To>);
@@ -118,47 +107,97 @@ constexpr bool integral_value_in_range(From value) {
     }
 }
 
+// ── Direct dispatch for struct field serialization ─────────────────
+
 template <typename E, typename SerializeStruct, typename Field>
 constexpr auto serialize_struct_field(SerializeStruct& s_struct, Field field)
     -> std::expected<void, E> {
     using field_t = typename std::remove_cvref_t<decltype(field)>::type;
-    std::string scratch;
-    auto mapped_name = config::apply_field_rename(true, field.name(), scratch);
 
     if constexpr(!annotated_type<field_t>) {
+        std::string scratch;
+        auto mapped_name = config::apply_field_rename(true, field.name(), scratch);
         return s_struct.serialize_field(mapped_name, field.value());
     } else {
         using attrs_t = typename std::remove_cvref_t<field_t>::attrs;
         auto&& value = annotated_value(field.value());
         using value_t = std::remove_cvref_t<decltype(value)>;
 
-        auto terminal = []<typename Ctx>(Ctx ctx) -> std::expected<void, E> {
-            return ctx.s.serialize_field(ctx.name, ctx.value);
-        };
-        serialize_field_ctx<SerializeStruct, value_t> ctx{
-            .s = s_struct,
-            .name = mapped_name,
-            .value = value,
-        };
-        return run_attrs_hook<attrs_t>(ctx, terminal);
+        // Schema: skip — exclude field entirely
+        if constexpr(detail::tuple_has_v<attrs_t, schema::skip>) {
+            return std::expected<void, E>{};
+        }
+        // Schema: flatten — inline nested struct fields
+        else if constexpr(detail::tuple_has_v<attrs_t, schema::flatten>) {
+            static_assert(refl::reflectable_class<value_t>,
+                          "schema::flatten requires a reflectable class field type");
+            std::expected<void, E> nested_result;
+            refl::for_each(value, [&](auto nested_field) {
+                auto status = serialize_struct_field<E>(s_struct, nested_field);
+                if(!status) {
+                    nested_result = std::unexpected(status.error());
+                    return false;
+                }
+                return true;
+            });
+            return nested_result;
+        } else {
+            // Resolve effective field name
+            std::string scratch;
+            std::string_view effective_name;
+            if constexpr(detail::tuple_any_of_v<attrs_t, is_rename_attr>) {
+                using rename_attr = detail::tuple_find_t<attrs_t, is_rename_attr>;
+                effective_name = rename_attr::name;
+            } else {
+                effective_name = config::apply_field_rename(true, field.name(), scratch);
+            }
+
+            // Behavior: skip_if — conditionally skip
+            if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::skip_if>) {
+                using Pred =
+                    typename detail::tuple_find_spec_t<attrs_t, behavior::skip_if>::predicate;
+                if(evaluate_skip_predicate<Pred>(value, true)) {
+                    return std::expected<void, E>{};
+                }
+            }
+
+            // Behavior: with<Adapter> — adapter-based serialization
+            if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::with>) {
+                using Adapter =
+                    typename detail::tuple_find_spec_t<attrs_t, behavior::with>::adapter;
+                return Adapter::serialize_field(s_struct, effective_name, value);
+            }
+            // Behavior: enum_string — serialize enum as string
+            else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::enum_string>) {
+                using Policy =
+                    typename detail::tuple_find_spec_t<attrs_t, behavior::enum_string>::policy;
+                static_assert(std::is_enum_v<value_t>,
+                              "behavior::enum_string requires an enum field type");
+                auto enum_text = spelling::map_enum_to_string<value_t, Policy>(value);
+                return s_struct.serialize_field(effective_name, enum_text);
+            }
+            // Default: serialize field with its value
+            else {
+                return s_struct.serialize_field(effective_name, value);
+            }
+        }
     }
 }
+
+// ── Direct dispatch for struct field deserialization ────────────────
 
 template <typename E, typename DeserializeStruct, typename Field>
 constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
                                         std::string_view key_name,
                                         Field field) -> std::expected<bool, E> {
     using field_t = typename std::remove_cvref_t<decltype(field)>::type;
-    std::string scratch;
-    // We compare against incoming serialized keys, so we must map the reflected
-    // internal field name to its serialized form (same direction as serialize).
-    auto mapped_name = config::apply_field_rename(true, field.name(), scratch);
 
     if constexpr(!annotated_type<field_t>) {
+        std::string scratch;
+        auto mapped_name = config::apply_field_rename(true, field.name(), scratch);
         if(mapped_name != key_name) {
             return false;
         }
-
         auto result = d_struct.deserialize_value(field.value());
         if(!result) {
             return std::unexpected(result.error());
@@ -169,44 +208,112 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
         auto&& value = annotated_value(field.value());
         using value_t = std::remove_cvref_t<decltype(value)>;
 
-        auto probe_terminal =
-            []<typename Ctx>(Ctx ctx) -> std::expected<deserialize_field_probe_decision, E> {
-            if(ctx.alias_matched || ctx.key_name == ctx.field_name) {
-                return deserialize_field_probe_decision::match_deferred;
-            }
-            return deserialize_field_probe_decision::no_match;
-        };
-        deserialize_field_probe_ctx<DeserializeStruct, value_t> probe_ctx{
-            .d = d_struct,
-            .key_name = key_name,
-            .field_name = mapped_name,
-            .value = value,
-        };
-        auto probe_result = run_attrs_hook<attrs_t>(probe_ctx, probe_terminal);
-        if(!probe_result) {
-            return std::unexpected(probe_result.error());
-        }
-        if(*probe_result == deserialize_field_probe_decision::no_match) {
+        // Schema: skip — never match
+        if constexpr(detail::tuple_has_v<attrs_t, schema::skip>) {
             return false;
         }
-        if(*probe_result == deserialize_field_probe_decision::match_consumed) {
-            return true;
-        }
+        // Schema: flatten — recurse into nested struct fields
+        else if constexpr(detail::tuple_has_v<attrs_t, schema::flatten>) {
+            static_assert(refl::reflectable_class<value_t>,
+                          "schema::flatten requires a reflectable class field type");
+            bool matched = false;
+            std::expected<void, E> nested_error;
+            refl::for_each(value, [&](auto nested_field) {
+                auto status = deserialize_struct_field<E>(d_struct, key_name, nested_field);
+                if(!status) {
+                    nested_error = std::unexpected(status.error());
+                    return false;
+                }
+                if(*status) {
+                    matched = true;
+                    return false;
+                }
+                return true;
+            });
+            if(!nested_error) {
+                return std::unexpected(nested_error.error());
+            }
+            return matched;
+        } else {
+            // Resolve effective field name
+            std::string scratch;
+            std::string_view effective_name;
+            if constexpr(detail::tuple_any_of_v<attrs_t, is_rename_attr>) {
+                using rename_attr = detail::tuple_find_t<attrs_t, is_rename_attr>;
+                effective_name = rename_attr::name;
+            } else {
+                effective_name = config::apply_field_rename(true, field.name(), scratch);
+            }
 
-        auto consume_terminal = []<typename Ctx>(Ctx ctx) -> std::expected<void, E> {
-            return ctx.d.deserialize_value(ctx.value);
-        };
-        deserialize_field_consume_ctx<DeserializeStruct, value_t> consume_ctx{
-            .d = d_struct,
-            .key_name = key_name,
-            .field_name = mapped_name,
-            .value = value,
-        };
-        auto consume_result = run_attrs_hook<attrs_t>(consume_ctx, consume_terminal);
-        if(!consume_result) {
-            return std::unexpected(consume_result.error());
+            // Check name match: canonical name + aliases
+            bool name_matched = (key_name == effective_name);
+            if constexpr(detail::tuple_any_of_v<attrs_t, is_alias_attr>) {
+                if(!name_matched) {
+                    using alias_attr = detail::tuple_find_t<attrs_t, is_alias_attr>;
+                    for(auto alias_name: alias_attr::names) {
+                        if(alias_name == key_name) {
+                            name_matched = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if(!name_matched) {
+                return false;
+            }
+
+            // Behavior: skip_if — conditionally skip deserialization
+            if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::skip_if>) {
+                using Pred =
+                    typename detail::tuple_find_spec_t<attrs_t, behavior::skip_if>::predicate;
+                if(evaluate_skip_predicate<Pred>(value, false)) {
+                    auto skip_result = d_struct.skip_value();
+                    if(!skip_result) {
+                        return std::unexpected(skip_result.error());
+                    }
+                    return true;
+                }
+            }
+
+            // Behavior: with<Adapter> — adapter-based deserialization
+            if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::with>) {
+                using Adapter =
+                    typename detail::tuple_find_spec_t<attrs_t, behavior::with>::adapter;
+                auto result = Adapter::deserialize_field(d_struct, value);
+                if(!result) {
+                    return std::unexpected(result.error());
+                }
+                return true;
+            }
+            // Behavior: enum_string — deserialize string then map to enum
+            else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::enum_string>) {
+                using Policy =
+                    typename detail::tuple_find_spec_t<attrs_t, behavior::enum_string>::policy;
+                static_assert(std::is_enum_v<value_t>,
+                              "behavior::enum_string requires an enum field type");
+                std::string enum_text;
+                auto result = d_struct.deserialize_value(enum_text);
+                if(!result) {
+                    return std::unexpected(result.error());
+                }
+                auto parsed = spelling::map_string_to_enum<value_t, Policy>(enum_text);
+                if(parsed.has_value()) {
+                    value = *parsed;
+                    return true;
+                } else {
+                    return unexpected_invalid_enum<std::expected<bool, E>>();
+                }
+            }
+            // Default: deserialize value directly
+            else {
+                auto result = d_struct.deserialize_value(value);
+                if(!result) {
+                    return std::unexpected(result.error());
+                }
+                return true;
+            }
         }
-        return true;
     }
 }
 
@@ -222,10 +329,33 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
     if constexpr(requires { Serde::serialize(s, v); }) {
         return Serde::serialize(s, v);
     } else if constexpr(annotated_type<V>) {
-        serialize_value_ctx<S, typename V::annotated_type> ctx{.s = s, .value = annotated_value(v)};
-        return run_attrs_hook<typename V::attrs>(ctx, [](auto ctx) {
-            return serialize(ctx.s, ctx.value);
-        });
+        using attrs_t = typename std::remove_cvref_t<V>::attrs;
+        auto&& value = annotated_value(v);
+        using value_t = std::remove_cvref_t<decltype(value)>;
+
+        // Field-only attrs at value level are errors
+        static_assert(!detail::tuple_has_v<attrs_t, schema::skip>,
+                      "schema::skip is only valid for struct fields");
+        static_assert(!detail::tuple_has_v<attrs_t, schema::flatten>,
+                      "schema::flatten is only valid for struct fields");
+
+        // Behavior: enum_string — serialize enum as string
+        if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::enum_string>) {
+            using Policy =
+                typename detail::tuple_find_spec_t<attrs_t, behavior::enum_string>::policy;
+            static_assert(std::is_enum_v<value_t>, "behavior::enum_string requires an enum type");
+            auto enum_text = spelling::map_enum_to_string<value_t, Policy>(value);
+            return s.serialize_str(enum_text);
+        }
+        // Behavior: with<Adapter> — adapter-based serialization
+        else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::with>) {
+            using Adapter = typename detail::tuple_find_spec_t<attrs_t, behavior::with>::adapter;
+            return Adapter::serialize(s, value);
+        }
+        // Default: serialize the underlying value
+        else {
+            return serialize(s, value);
+        }
     } else if constexpr(std::is_enum_v<V>) {
         using underlying_t = std::underlying_type_t<V>;
         if constexpr(std::is_signed_v<underlying_t>) {
@@ -366,14 +496,39 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
         auto&& value = annotated_value(v);
         using value_t = std::remove_cvref_t<decltype(value)>;
 
-        auto terminal = []<typename Ctx>(Ctx ctx) -> std::expected<void, E> {
-            return deserialize(ctx.d, ctx.value);
-        };
-        deserialize_value_ctx<D, value_t> ctx{
-            .d = d,
-            .value = value,
-        };
-        return run_attrs_hook<attrs_t>(ctx, terminal);
+        // Field-only attrs at value level are errors
+        static_assert(!detail::tuple_has_v<attrs_t, schema::skip>,
+                      "schema::skip is only valid for struct fields");
+        static_assert(!detail::tuple_has_v<attrs_t, schema::flatten>,
+                      "schema::flatten is only valid for struct fields");
+
+        // Behavior: enum_string — deserialize string then map to enum
+        if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::enum_string>) {
+            using Policy =
+                typename detail::tuple_find_spec_t<attrs_t, behavior::enum_string>::policy;
+            static_assert(std::is_enum_v<value_t>, "behavior::enum_string requires an enum type");
+            std::string enum_text;
+            auto parsed = d.deserialize_str(enum_text);
+            if(!parsed) {
+                return std::unexpected(parsed.error());
+            }
+            auto mapped = spelling::map_string_to_enum<value_t, Policy>(enum_text);
+            if(mapped.has_value()) {
+                value = *mapped;
+                return {};
+            } else {
+                return detail::unexpected_invalid_enum<std::expected<void, E>>();
+            }
+        }
+        // Behavior: with<Adapter> — adapter-based deserialization
+        else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::with>) {
+            using Adapter = typename detail::tuple_find_spec_t<attrs_t, behavior::with>::adapter;
+            return Adapter::deserialize(d, value);
+        }
+        // Default: deserialize the underlying value
+        else {
+            return deserialize(d, value);
+        }
     } else if constexpr(std::is_enum_v<V>) {
         using underlying_t = std::underlying_type_t<V>;
         if constexpr(std::is_signed_v<underlying_t>) {
@@ -677,44 +832,5 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                       "cannot auto deserialize the value, try to specialize for it");
     }
 }
-
-namespace detail {
-
-/// Shared implementation: deserialize bytes as a sequence of uint8 values.
-/// Used by JSON (simd, yy) and TOML backends that represent bytes as arrays.
-template <deserializer_like D>
-auto deserialize_bytes_from_seq(D& d, std::vector<std::byte>& value)
-    -> std::expected<void, typename D::error_type> {
-    auto seq = d.deserialize_seq(std::nullopt);
-    if(!seq) {
-        return std::unexpected(seq.error());
-    }
-
-    value.clear();
-    while(true) {
-        auto has_next = seq->has_next();
-        if(!has_next) {
-            return std::unexpected(has_next.error());
-        }
-        if(!*has_next) {
-            break;
-        }
-
-        std::uint64_t byte = 0;
-        auto byte_status = seq->deserialize_element(byte);
-        if(!byte_status) {
-            return std::unexpected(byte_status.error());
-        }
-        if(byte > static_cast<std::uint64_t>((std::numeric_limits<std::uint8_t>::max)())) {
-            return unexpected_number_out_of_range<std::expected<void, typename D::error_type>>();
-        }
-
-        value.push_back(static_cast<std::byte>(static_cast<std::uint8_t>(byte)));
-    }
-
-    return seq->end();
-}
-
-}  // namespace detail
 
 }  // namespace eventide::serde
