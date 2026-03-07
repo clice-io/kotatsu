@@ -6,7 +6,68 @@
 
 namespace eventide {
 
+constexpr bool constexpr_cow_string_operations() {
+    // borrowed
+    cow_string a("hello");
+    if(a.size() != 5)
+        return false;
+    if(!a.is_borrowed())
+        return false;
+
+    // owned
+    cow_string b = cow_string::owned(string_ref("world"));
+    if(b.size() != 5)
+        return false;
+    if(!b.is_owned())
+        return false;
+
+    // copy: borrowed stays borrowed
+    cow_string c(a);
+    if(!c.is_borrowed())
+        return false;
+
+    // copy: owned deep copies
+    cow_string d(b);
+    if(!d.is_owned())
+        return false;
+
+    // move
+    cow_string e(std::move(b));
+    if(!e.is_owned())
+        return false;
+    if(!b.empty())
+        return false;
+
+    // make_owned
+    cow_string f("test");
+    f.make_owned();
+    if(!f.is_owned())
+        return false;
+    if(f.ref() != "test")
+        return false;
+
+    // release
+    cow_string g = cow_string::owned(string_ref("release"));
+    small_string<0> s = g.release();
+    if(s.ref() != "release")
+        return false;
+    if(!g.empty())
+        return false;
+
+    // comparison
+    cow_string h("abc");
+    cow_string i = cow_string::owned(string_ref("abc"));
+    if(!(h == i))
+        return false;
+
+    return true;
+}
+
 TEST_SUITE(cow_string) {
+
+TEST_CASE(constexpr) {
+    static_assert(constexpr_cow_string_operations());
+}
 
 TEST_CASE(default_construction) {
     cow_string s;
@@ -263,6 +324,19 @@ TEST_CASE(release_usable_as_small_string) {
     // The released small_string is fully functional.
     ss += "!";
     EXPECT_EQ(ss.ref(), "growable!");
+}
+
+TEST_CASE(release_borrowed_fits_inline) {
+    // "hi" (2 chars) fits in small_string<32>'s inline buffer.
+    const char* literal = "hi";
+    cow_string s{string_ref{literal}};
+    EXPECT_TRUE(s.is_borrowed());
+
+    small_string<32> ss = s.release<32>();
+
+    // Data should be in inline storage, not a heap copy.
+    EXPECT_TRUE(ss.inlined());
+    EXPECT_EQ(ss.ref(), "hi");
 }
 
 };  // TEST_SUITE(cow_string)

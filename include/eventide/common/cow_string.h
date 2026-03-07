@@ -25,14 +25,14 @@ namespace eventide {
 class cow_string {
 public:
     /// Default constructor: empty borrowed string.
-    cow_string() noexcept = default;
+    constexpr cow_string() noexcept = default;
 
     /// Construct a borrowed string from a string_ref.
-    cow_string(string_ref sv) noexcept :
+    constexpr cow_string(string_ref sv) noexcept :
         m_data(const_cast<char*>(sv.data())), m_size(sv.size()), m_capacity(0) {}
 
     /// Copy constructor: borrowed copies as borrowed, owned deep-copies.
-    cow_string(const cow_string& other) :
+    constexpr cow_string(const cow_string& other) :
         m_data(other.m_data), m_size(other.m_size), m_capacity(0) {
         if(other.m_capacity > 0) {
             m_data = alloc_copy(other.m_data, other.m_size, other.m_capacity);
@@ -41,7 +41,7 @@ public:
     }
 
     /// Move constructor: transfers ownership, source becomes empty.
-    cow_string(cow_string&& other) noexcept :
+    constexpr cow_string(cow_string&& other) noexcept :
         m_data(other.m_data), m_size(other.m_size), m_capacity(other.m_capacity) {
         other.m_data = nullptr;
         other.m_size = 0;
@@ -49,7 +49,7 @@ public:
     }
 
     /// Copy assignment.
-    cow_string& operator=(const cow_string& other) {
+    constexpr cow_string& operator=(const cow_string& other) {
         if(this != &other) {
             cow_string tmp(other);
             swap(tmp);
@@ -58,7 +58,7 @@ public:
     }
 
     /// Move assignment.
-    cow_string& operator=(cow_string&& other) noexcept {
+    constexpr cow_string& operator=(cow_string&& other) noexcept {
         if(this != &other) {
             free();
             m_data = other.m_data;
@@ -71,19 +71,19 @@ public:
         return *this;
     }
 
-    ~cow_string() {
+    constexpr ~cow_string() {
         free();
     }
 
     // --- Named constructors ---
 
     /// Explicitly create a borrowed string referencing external data.
-    [[nodiscard]] static cow_string borrowed(string_ref sv) noexcept {
+    [[nodiscard]] constexpr static cow_string borrowed(string_ref sv) noexcept {
         return cow_string(sv);
     }
 
     /// Create an owned string by taking ownership of an std::string.
-    [[nodiscard]] static cow_string owned(std::string&& s) {
+    [[nodiscard]] constexpr static cow_string owned(std::string&& s) {
         cow_string result;
         if(!s.empty()) {
             result.m_size = s.size();
@@ -94,7 +94,7 @@ public:
     }
 
     /// Create an owned string by copying from a string_ref.
-    [[nodiscard]] static cow_string owned(string_ref sv) {
+    [[nodiscard]] constexpr static cow_string owned(string_ref sv) {
         cow_string result;
         if(!sv.empty()) {
             result.m_size = sv.size();
@@ -106,52 +106,52 @@ public:
 
     // --- Observers ---
 
-    [[nodiscard]] const char* data() const noexcept {
+    [[nodiscard]] constexpr const char* data() const noexcept {
         return m_data;
     }
 
-    [[nodiscard]] std::size_t size() const noexcept {
+    [[nodiscard]] constexpr std::size_t size() const noexcept {
         return m_size;
     }
 
-    [[nodiscard]] bool empty() const noexcept {
+    [[nodiscard]] constexpr bool empty() const noexcept {
         return m_size == 0;
     }
 
-    [[nodiscard]] bool is_borrowed() const noexcept {
+    [[nodiscard]] constexpr bool is_borrowed() const noexcept {
         return m_capacity == 0;
     }
 
-    [[nodiscard]] bool is_owned() const noexcept {
+    [[nodiscard]] constexpr bool is_owned() const noexcept {
         return m_capacity > 0;
     }
 
     // --- Conversion ---
 
     /// Return a string_ref view of this string.
-    [[nodiscard]] string_ref ref() const noexcept {
+    [[nodiscard]] constexpr string_ref ref() const noexcept {
         return string_ref(m_data, m_size);
     }
 
     /// Implicit conversion to string_ref.
-    operator string_ref() const noexcept {
+    constexpr operator string_ref() const noexcept {
         return ref();
     }
 
     /// Implicit conversion to std::string_view.
-    operator std::string_view() const noexcept {
+    constexpr operator std::string_view() const noexcept {
         return std::string_view(m_data, m_size);
     }
 
     /// Convert to std::string.
-    [[nodiscard]] std::string to_string() const {
+    [[nodiscard]] constexpr std::string to_string() const {
         return std::string(m_data, m_size);
     }
 
     // --- Mutation ---
 
     /// Convert this string to owned mode (no-op if already owned).
-    void make_owned() {
+    constexpr void make_owned() {
         if(m_capacity == 0 && m_size > 0) {
             m_data = alloc_copy(m_data, m_size, m_size);
             m_capacity = m_size;
@@ -160,10 +160,20 @@ public:
 
     /// Release the buffer as a small_string<N>, transferring ownership.
     /// If owned, the buffer is moved directly without copying.
-    /// If borrowed, a copy is made. After this call, the cow_string is empty.
+    /// If borrowed and fits in inline storage, copies to inline buffer
+    /// without heap allocation; otherwise allocates.
+    /// After this call, the cow_string is empty.
     template <unsigned N = 0>
-    [[nodiscard]] small_string<N> release() {
-        make_owned();
+    [[nodiscard]] constexpr small_string<N> release() {
+        if(m_capacity == 0) {
+            // Borrowed: construct small_string from the view directly.
+            // If m_size <= N, small_string will use its inline buffer (no heap alloc).
+            small_string<N> result(string_ref(m_data, m_size));
+            m_data = nullptr;
+            m_size = 0;
+            return result;
+        }
+        // Owned: transfer the buffer directly.
         auto result = small_string<N>::from_raw_parts(m_data, m_size, m_capacity);
         m_data = nullptr;
         m_size = 0;
@@ -171,7 +181,7 @@ public:
         return result;
     }
 
-    void swap(cow_string& other) noexcept {
+    constexpr void swap(cow_string& other) noexcept {
         std::swap(m_data, other.m_data);
         std::swap(m_size, other.m_size);
         std::swap(m_capacity, other.m_capacity);
@@ -179,29 +189,29 @@ public:
 
     // --- Comparison ---
 
-    friend bool operator==(const cow_string& lhs, const cow_string& rhs) noexcept {
+    friend constexpr bool operator==(const cow_string& lhs, const cow_string& rhs) noexcept {
         return lhs.ref() == rhs.ref();
     }
 
-    friend bool operator==(const cow_string& lhs, string_ref rhs) noexcept {
+    friend constexpr bool operator==(const cow_string& lhs, string_ref rhs) noexcept {
         return lhs.ref() == rhs;
     }
 
-    friend bool operator==(const cow_string& lhs, const char* rhs) noexcept {
+    friend constexpr bool operator==(const cow_string& lhs, const char* rhs) noexcept {
         return lhs.ref() == string_ref(rhs);
     }
 
 private:
-    void free() noexcept {
+    constexpr void free() noexcept {
         if(m_capacity > 0) {
             mem::deallocate(m_data, m_capacity);
         }
     }
 
-    static char* alloc_copy(const char* src, std::size_t len, std::size_t cap) {
+    constexpr static char* alloc_copy(const char* src, std::size_t len, std::size_t cap) {
         char* buf = mem::allocate<char>(cap);
-        if(len > 0) {
-            std::memcpy(buf, src, len);
+        for(std::size_t i = 0; i < len; ++i) {
+            buf[i] = src[i];
         }
         return buf;
     }
