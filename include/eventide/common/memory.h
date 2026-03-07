@@ -152,16 +152,25 @@ constexpr inline bool is_uninitialized_memcpyable_iterator_v =
 
 #ifndef NDEBUG
 [[noreturn]]
-inline void throw_range_length_error(void) {
+inline void throw_range_length_error() {
     EVENTIDE_THROW(std::length_error("The specified range is too long."));
 }
 #endif
 
 template <typename Integer>
 [[nodiscard]]
-consteval std::size_t numeric_max(void) noexcept {
+consteval std::size_t numeric_max() noexcept {
     static_assert(0 <= (std::numeric_limits<Integer>::max)(), "Integer is nonpositive.");
     return static_cast<std::size_t>((std::numeric_limits<Integer>::max)());
+}
+
+template <typename ItDiffT>
+constexpr void check_range_length_overflow([[maybe_unused]] ItDiffT len) {
+#ifndef NDEBUG
+    if(static_cast<std::make_unsigned_t<ItDiffT>>(len) > numeric_max<std::size_t>()) {
+        throw_range_length_error();
+    }
+#endif
 }
 
 template <typename T>
@@ -269,7 +278,7 @@ class stack_temporary {
 public:
     using value_type = T;
 
-    stack_temporary(void) = delete;
+    stack_temporary() = delete;
     stack_temporary(const stack_temporary&) = delete;
     stack_temporary(stack_temporary&&) noexcept = delete;
     stack_temporary& operator=(const stack_temporary&) = delete;
@@ -280,32 +289,32 @@ public:
         construct(storage_pointer(), std::forward<Args>(args)...);
     }
 
-    constexpr ~stack_temporary(void) {
+    constexpr ~stack_temporary() {
         destroy(get_pointer());
     }
 
-    [[nodiscard]] constexpr const value_type& get(void) const noexcept {
+    [[nodiscard]] constexpr const value_type& get() const noexcept {
         return *get_pointer();
     }
 
-    [[nodiscard]] constexpr value_type&& release(void) noexcept {
+    [[nodiscard]] constexpr value_type&& release() noexcept {
         return std::move(*get_pointer());
     }
 
 private:
-    [[nodiscard]] constexpr const value_type* storage_pointer(void) const noexcept {
+    [[nodiscard]] constexpr const value_type* storage_pointer() const noexcept {
         return std::addressof(m_storage.value);
     }
 
-    [[nodiscard]] constexpr value_type* storage_pointer(void) noexcept {
+    [[nodiscard]] constexpr value_type* storage_pointer() noexcept {
         return std::addressof(m_storage.value);
     }
 
-    [[nodiscard]] constexpr const value_type* get_pointer(void) const noexcept {
+    [[nodiscard]] constexpr const value_type* get_pointer() const noexcept {
         return std::launder(storage_pointer());
     }
 
-    [[nodiscard]] constexpr value_type* get_pointer(void) noexcept {
+    [[nodiscard]] constexpr value_type* get_pointer() noexcept {
         return std::launder(storage_pointer());
     }
 
@@ -317,7 +326,7 @@ class heap_temporary {
 public:
     using value_type = T;
 
-    heap_temporary(void) = delete;
+    heap_temporary() = delete;
     heap_temporary(const heap_temporary&) = delete;
     heap_temporary(heap_temporary&&) noexcept = delete;
     heap_temporary& operator=(const heap_temporary&) = delete;
@@ -334,16 +343,16 @@ public:
         }
     }
 
-    constexpr ~heap_temporary(void) {
+    constexpr ~heap_temporary() {
         destroy(m_data);
         deallocate(m_data, 1);
     }
 
-    [[nodiscard]] constexpr const value_type& get(void) const noexcept {
+    [[nodiscard]] constexpr const value_type& get() const noexcept {
         return *m_data;
     }
 
-    [[nodiscard]] constexpr value_type&& release(void) noexcept {
+    [[nodiscard]] constexpr value_type&& release() noexcept {
         return std::move(*m_data);
     }
 
@@ -415,11 +424,7 @@ constexpr std::size_t range_length(Range&& range) {
         if constexpr(std::ranges::random_access_range<Range>) {
             const auto len = last - first;
             assert(0 <= len && "Invalid range.");
-#ifndef NDEBUG
-            if(static_cast<std::make_unsigned_t<ItDiffT>>(len) > numeric_max<std::size_t>()) {
-                throw_range_length_error();
-            }
-#endif
+            check_range_length_overflow(len);
             return static_cast<std::size_t>(len);
         } else {
             if(std::is_constant_evaluated()) {
@@ -427,19 +432,11 @@ constexpr std::size_t range_length(Range&& range) {
                 for(; !(first == last); ++first) {
                     ++len;
                 }
-#ifndef NDEBUG
-                if(static_cast<std::make_unsigned_t<ItDiffT>>(len) > numeric_max<std::size_t>()) {
-                    throw_range_length_error();
-                }
-#endif
+                check_range_length_overflow(len);
                 return static_cast<std::size_t>(len);
             }
             const auto len = std::ranges::distance(range);
-#ifndef NDEBUG
-            if(static_cast<std::make_unsigned_t<ItDiffT>>(len) > numeric_max<std::size_t>()) {
-                throw_range_length_error();
-            }
-#endif
+            check_range_length_overflow(len);
             return static_cast<std::size_t>(len);
         }
     } else {
@@ -459,11 +456,11 @@ constexpr auto iterator_address(std::contiguous_iterator auto it) noexcept {
     return std::to_address(it);
 }
 
-// [[nodiscard]]
-// template <typename T>
-// constexpr auto iterator_address(std::move_iterator<std::contiguous_iterator<T>> it) noexcept {
-//     return std::to_address(it.base());
-// }
+template <typename Iterator>
+[[nodiscard]]
+constexpr auto move_range(Iterator first, Iterator last) noexcept {
+    return std::ranges::subrange(std::make_move_iterator(first), std::make_move_iterator(last));
+}
 
 template <typename T, std::ranges::input_range Range>
 constexpr T* default_uninitialized_copy(Range&& range, T* d_first) {
@@ -515,9 +512,8 @@ constexpr T* uninitialized_relocate(Range&& range, T* dest) {
         }
         return dest + static_cast<std::ptrdiff_t>(count);
     } else {
-        auto move_range = std::ranges::subrange(std::make_move_iterator(std::ranges::begin(range)),
-                                                std::make_move_iterator(std::ranges::end(range)));
-        return uninitialized_copy<T>(move_range, dest);
+        return uninitialized_copy<T>(move_range(std::ranges::begin(range), std::ranges::end(range)),
+                                     dest);
     }
 }
 
@@ -565,10 +561,6 @@ constexpr auto uninitialized_default_construct(std::ranges::contiguous_range aut
         destroy_range(std::ranges::subrange(first, curr));
         EVENTIDE_RETHROW();
     }
-}
-
-constexpr auto uninitialized_fill(std::ranges::contiguous_range auto&& range) {
-    return uninitialized_value_construct(range);
 }
 
 template <std::ranges::contiguous_range Range, typename T>

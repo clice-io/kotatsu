@@ -47,7 +47,7 @@ using small_vector_size_type =
     std::conditional_t<sizeof(T) < 4 && sizeof(void*) >= 8, std::uint64_t, std::uint32_t>;
 
 template <typename T>
-struct default_small_vector_inline_capacity {
+struct default_buffer_size {
     constexpr static std::size_t preferred_size = 64;
 
     static_assert(
@@ -91,30 +91,13 @@ struct synth_three_way {
 };
 
 template <typename T, unsigned int InlineCapacity>
-struct small_vector_storage {
+struct inline_buffer {
 protected:
-    alignas(T) std::byte m_inline_storage[InlineCapacity * sizeof(T)];
-
-    [[nodiscard]] constexpr T* inline_storage_begin() noexcept {
-        return reinterpret_cast<T*>(m_inline_storage);
-    }
-
-    [[nodiscard]] constexpr const T* inline_storage_begin() const noexcept {
-        return reinterpret_cast<const T*>(m_inline_storage);
-    }
+    alignas(T) std::byte buffer[InlineCapacity * sizeof(T)];
 };
 
 template <typename T>
-struct alignas(T) small_vector_storage<T, 0> {
-protected:
-    [[nodiscard]] constexpr T* inline_storage_begin() noexcept {
-        return reinterpret_cast<T*>(this);
-    }
-
-    [[nodiscard]] constexpr const T* inline_storage_begin() const noexcept {
-        return reinterpret_cast<const T*>(this);
-    }
-};
+struct alignas(T) inline_buffer<T, 0> {};
 
 }  // namespace detail
 
@@ -162,10 +145,10 @@ protected:
         return first_element();
     }
 
-    constexpr void reset_to_small() noexcept {
+    constexpr void reset_to_small(size_type inline_capacity) noexcept {
         this->m_begin = inline_begin();
         this->m_size = 0;
-        this->m_capacity = 0;
+        this->m_capacity = static_cast<size_storage_type>(inline_capacity);
     }
 
     constexpr void set_size(size_type count) noexcept {
@@ -277,7 +260,32 @@ private:
     }
 
     [[nodiscard]] constexpr bool references_storage(const_pointer ptr) const noexcept {
+        if(std::is_constant_evaluated()) {
+            for(auto current = begin(); current != end(); ++current) {
+                if(std::addressof(*current) == ptr) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         return mem::pointer_in_range(ptr, elements());
+    }
+
+    template <std::ranges::range Range>
+    [[nodiscard]] constexpr bool range_references_storage(Range&& range) const noexcept {
+        using reference_type = std::ranges::range_reference_t<Range>;
+
+        if constexpr(std::is_reference_v<reference_type> &&
+                     std::same_as<std::remove_cvref_t<reference_type>, value_type>) {
+            for(auto&& element: range) {
+                if(references_storage(std::addressof(element))) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     [[nodiscard]] constexpr bool safe_to_reference_after_resize(const_pointer ptr,
@@ -390,7 +398,7 @@ private:
         if(!was_inline) {
             mem::deallocate(old_begin, old_capacity);
         }
-        reset_to_small();
+        reset_to_small(0);
     }
 
     constexpr void commit_replacement(pointer new_begin,
@@ -620,9 +628,7 @@ private:
         const auto elems_after = static_cast<size_type>(old_end - insert_pos);
 
         if(elems_after > count) {
-            auto moved_tail = std::ranges::subrange(std::make_move_iterator(old_end - count),
-                                                    std::make_move_iterator(old_end));
-            mem::uninitialized_copy(moved_tail, old_end);
+            mem::uninitialized_copy(mem::move_range(old_end - count, old_end), old_end);
             this->set_size(size() + count);
             std::ranges::move_backward(insert_pos, old_end - count, old_end);
             std::ranges::fill_n(insert_pos, count, value);
@@ -630,9 +636,7 @@ private:
         }
 
         auto* middle = mem::uninitialized_fill(counted_range(old_end, count - elems_after), value);
-        auto moved_suffix = std::ranges::subrange(std::make_move_iterator(insert_pos),
-                                                  std::make_move_iterator(old_end));
-        middle = mem::uninitialized_copy(moved_suffix, middle);
+        middle = mem::uninitialized_copy(mem::move_range(insert_pos, old_end), middle);
         this->set_size(size() + count);
         std::ranges::fill_n(insert_pos, elems_after, value);
         return insert_pos;
@@ -658,6 +662,22 @@ private:
     }
 
     template <std::ranges::forward_range Range>
+    constexpr iterator insert_aliased_forward_range(const_iterator pos,
+                                                    Range&& range,
+                                                    size_type count) {
+        auto guard = make_allocation_guard(count);
+        auto* out = mem::uninitialized_copy(std::forward<Range>(range), guard.data());
+        guard.mark(out);
+
+        auto temp_range = std::ranges::subrange(guard.data(), out);
+        if(checked_size(size(), count) > capacity()) {
+            return insert_range_reallocate(pos, temp_range, count);
+        }
+
+        return insert_range_inplace(pos, temp_range, count);
+    }
+
+    template <std::ranges::forward_range Range>
     constexpr iterator insert_range_inplace(const_iterator pos, Range&& range, size_type count) {
         const auto index = mem::range_length(range_to(pos));
         auto insert_pos = prefix(index).end();
@@ -671,9 +691,7 @@ private:
         const auto elems_after = static_cast<size_type>(old_end - insert_pos);
 
         if(elems_after > count) {
-            auto moved_tail = std::ranges::subrange(std::make_move_iterator(old_end - count),
-                                                    std::make_move_iterator(old_end));
-            mem::uninitialized_copy(moved_tail, old_end);
+            mem::uninitialized_copy(mem::move_range(old_end - count, old_end), old_end);
             this->set_size(size() + count);
             std::ranges::move_backward(insert_pos, old_end - count, old_end);
             std::ranges::copy(range, insert_pos);
@@ -683,9 +701,7 @@ private:
         auto first_part_end = std::ranges::next(std::ranges::begin(range), elems_after);
         auto tail_range = std::ranges::subrange(first_part_end, std::ranges::end(range));
         auto* middle = mem::uninitialized_copy(tail_range, old_end);
-        auto moved_suffix = std::ranges::subrange(std::make_move_iterator(insert_pos),
-                                                  std::make_move_iterator(old_end));
-        middle = mem::uninitialized_copy(moved_suffix, middle);
+        middle = mem::uninitialized_copy(mem::move_range(insert_pos, old_end), middle);
         this->set_size(size() + count);
         std::ranges::copy(std::ranges::subrange(std::ranges::begin(range), first_part_end),
                           insert_pos);
@@ -699,6 +715,11 @@ private:
             return const_cast<pointer>(pos);
         }
 
+        if(range_references_storage(range)) {
+            return insert_aliased_forward_range(pos, std::forward<Range>(range), count);
+        }
+
+        assert_safe_to_add_range(range);
         if(checked_size(size(), count) > capacity()) {
             return insert_range_reallocate(pos, std::forward<Range>(range), count);
         }
@@ -721,7 +742,7 @@ private:
         this->m_begin = other.m_begin;
         this->m_size = other.m_size;
         this->m_capacity = other.m_capacity;
-        other.reset_to_small();
+        other.reset_to_small(0);
     }
 
 protected:
@@ -735,9 +756,7 @@ protected:
             return;
         }
 
-        auto moved = std::ranges::subrange(std::make_move_iterator(other.begin()),
-                                           std::make_move_iterator(other.end()));
-        append(moved);
+        append(mem::move_range(other.begin(), other.end()));
         other.clear();
     }
 
@@ -794,10 +813,8 @@ protected:
             std::ranges::move(other.prefix(current_size), begin());
         }
 
-        auto moved_suffix =
-            std::ranges::subrange(std::make_move_iterator(other.prefix(current_size).end()),
-                                  std::make_move_iterator(other.end()));
-        mem::uninitialized_copy(moved_suffix, prefix(current_size).end());
+        mem::uninitialized_copy(mem::move_range(other.prefix(current_size).end(), other.end()),
+                                prefix(current_size).end());
         this->set_size(other_size);
         other.clear();
     }
@@ -973,6 +990,12 @@ public:
     constexpr void resize(size_type count, const_reference value)
         requires (!takes_param_by_value)
     {
+        if(count > capacity() && references_storage(std::addressof(value))) {
+            auto tmp = make_temporary(value);
+            resize_fill(count, tmp.get());
+            return;
+        }
+
         resize_fill(count, value);
     }
 
@@ -1086,9 +1109,7 @@ public:
         if(same_object(other)) {
             return;
         }
-        auto moved = std::ranges::subrange(std::make_move_iterator(other.begin()),
-                                           std::make_move_iterator(other.end()));
-        append(moved);
+        append(mem::move_range(other.begin(), other.end()));
         other.clear();
     }
 
@@ -1183,10 +1204,10 @@ public:
     template <detail::small_vector_compatible_range<value_type> Range>
     constexpr iterator insert(iterator pos, Range&& range) {
         assert(valid_insert_position(pos));
-        assert_safe_to_add_range(range);
         if constexpr(std::ranges::forward_range<Range>) {
             return insert_forward_range(pos, std::forward<Range>(range));
         }
+        assert_safe_to_add_range(range);
         return insert_input_range(pos, std::forward<Range>(range));
     }
 
@@ -1234,10 +1255,7 @@ public:
         reserve(other.size());
         other.reserve(size());
 
-        size_type shared = size();
-        if(shared > other.size()) {
-            shared = other.size();
-        }
+        const size_type shared = (std::min)(size(), other.size());
 
         for(size_type i = 0; i != shared; ++i) {
             std::swap((*this)[i], other[i]);
@@ -1245,18 +1263,14 @@ public:
 
         if(size() > other.size()) {
             const auto diff = size() - other.size();
-            auto moved_suffix = std::ranges::subrange(std::make_move_iterator(prefix(shared).end()),
-                                                      std::make_move_iterator(end()));
-            mem::uninitialized_copy(moved_suffix, other.end());
+            mem::uninitialized_copy(mem::move_range(prefix(shared).end(), end()), other.end());
             other.set_size(other.size() + diff);
             mem::destroy_range(suffix(shared));
             this->set_size(shared);
         } else if(other.size() > size()) {
             const auto diff = other.size() - size();
-            auto moved_suffix =
-                std::ranges::subrange(std::make_move_iterator(other.prefix(shared).end()),
-                                      std::make_move_iterator(other.end()));
-            mem::uninitialized_copy(moved_suffix, end());
+            mem::uninitialized_copy(mem::move_range(other.prefix(shared).end(), other.end()),
+                                    end());
             this->set_size(size() + diff);
             mem::destroy_range(other.suffix(shared));
             other.set_size(shared);
@@ -1276,21 +1290,27 @@ public:
     }
 };
 
-template <typename T,
-          unsigned int InlineCapacity = detail::default_small_vector_inline_capacity<T>::value>
-class small_vector :
-    public hybrid_vector<T>,
-    private detail::small_vector_storage<T, InlineCapacity> {
+template <typename T, unsigned int InlineCapacity = detail::default_buffer_size<T>::value>
+class small_vector : public hybrid_vector<T>, private detail::inline_buffer<T, InlineCapacity> {
     using base_type = hybrid_vector<T>;
-    using storage_base = detail::small_vector_storage<T, InlineCapacity>;
+    using storage_base = detail::inline_buffer<T, InlineCapacity>;
 
 public:
     using typename base_type::const_reference;
     using typename base_type::size_type;
     using typename base_type::value_type;
+    using base_type::assign;
 
     constexpr static size_type inline_capacity_v = InlineCapacity;
 
+private:
+    template <unsigned int OtherCapacity>
+    constexpr void move_from_typed_small_vector(small_vector<value_type, OtherCapacity>&& other) {
+        this->move_from_other(static_cast<base_type&&>(other));
+        other.reset_to_small(OtherCapacity);
+    }
+
+public:
     constexpr small_vector() noexcept : base_type(InlineCapacity) {}
 
     constexpr explicit small_vector(size_type count) : small_vector() {
@@ -1336,12 +1356,14 @@ public:
         small_vector(static_cast<const base_type&>(other)) {}
 
     constexpr small_vector(small_vector&& other) noexcept(
-        std::is_nothrow_move_constructible_v<value_type>) :
-        small_vector(static_cast<base_type&&>(other)) {}
+        std::is_nothrow_move_constructible_v<value_type>) : small_vector() {
+        move_from_typed_small_vector(std::move(other));
+    }
 
     template <unsigned int OtherCapacity>
-    constexpr small_vector(small_vector<value_type, OtherCapacity>&& other) :
-        small_vector(static_cast<base_type&&>(other)) {}
+    constexpr small_vector(small_vector<value_type, OtherCapacity>&& other) : small_vector() {
+        move_from_typed_small_vector(std::move(other));
+    }
 
     constexpr small_vector& operator=(const base_type& other) {
         if(static_cast<const base_type*>(this) == std::addressof(other)) {
@@ -1366,12 +1388,34 @@ public:
 
     constexpr small_vector&
         operator=(small_vector&& other) noexcept(std::is_nothrow_move_constructible_v<value_type>) {
-        return *this = static_cast<base_type&&>(other);
+        if(this != std::addressof(other)) {
+            this->move_assign_from_other(static_cast<base_type&&>(other));
+            other.reset_to_small(InlineCapacity);
+        }
+        return *this;
+    }
+
+    template <unsigned int OtherCapacity>
+    constexpr small_vector& operator=(small_vector<value_type, OtherCapacity>&& other) {
+        this->move_assign_from_other(static_cast<base_type&&>(other));
+        other.reset_to_small(OtherCapacity);
+        return *this;
     }
 
     constexpr small_vector& operator=(std::initializer_list<value_type> init) {
         this->assign(init);
         return *this;
+    }
+
+    template <unsigned int OtherCapacity>
+    constexpr void assign(small_vector<value_type, OtherCapacity>&& other) {
+        if(reinterpret_cast<const void*>(this) ==
+           reinterpret_cast<const void*>(std::addressof(other))) {
+            return;
+        }
+
+        this->move_assign_from_other(static_cast<base_type&&>(other));
+        other.reset_to_small(OtherCapacity);
     }
 
     [[nodiscard]] constexpr size_type inline_capacity() const noexcept {
@@ -1390,7 +1434,7 @@ public:
         if(this->size() == 0) {
             auto old_begin = this->m_begin;
             const auto old_capacity = this->m_capacity;
-            this->reset_to_small();
+            this->reset_to_small(InlineCapacity);
             mem::deallocate(old_begin, old_capacity);
             return;
         }
@@ -1428,14 +1472,7 @@ public:
                                                 guard.data());
         guard.mark(out);
 
-        auto old_begin = this->m_begin;
-        const auto old_size = this->m_size;
-        const auto old_capacity = this->m_capacity;
-
-        this->m_begin = guard.release();
-        this->m_capacity = static_cast<decltype(this->m_capacity)>(this->size());
-        mem::destroy_range(base_type::counted_range(old_begin, old_size));
-        mem::deallocate(old_begin, old_capacity);
+        this->commit_replacement(guard.release(), this->size(), this->size());
     }
 };
 

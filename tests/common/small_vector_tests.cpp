@@ -257,6 +257,8 @@ TEST_CASE(construction_and_copy_move) {
         EXPECT_EQ(moved.size(), 4U);
         EXPECT_EQ(moved.data(), old_data);
         EXPECT_TRUE(source.empty());
+        EXPECT_TRUE(source.inlined());
+        EXPECT_EQ(source.capacity(), 2U);
     }
     {
         small_vector<int, 4> source;
@@ -279,6 +281,12 @@ TEST_CASE(construction_and_copy_move) {
         EXPECT_EQ(moved[2], 3);
         EXPECT_EQ(moved.data(), old_data);
         EXPECT_FALSE(moved.inlined());
+        EXPECT_TRUE(source.empty());
+        EXPECT_TRUE(source.inlined());
+        EXPECT_EQ(source.capacity(), 2U);
+        source.push_back(9);
+        EXPECT_TRUE(source.inlined());
+        EXPECT_EQ(source[0], 9);
     }
 
     // Generator constructors should call the generator once per element.
@@ -359,6 +367,9 @@ TEST_CASE(assignment_and_append) {
         dst = std::move(src);
         EXPECT_EQ(dst.size(), 4U);
         EXPECT_EQ(dst.data(), old_data);
+        EXPECT_TRUE(src.empty());
+        EXPECT_TRUE(src.inlined());
+        EXPECT_EQ(src.capacity(), 2U);
     }
     {
         small_vector<int, 2> dst = {1, 2, 3};
@@ -376,6 +387,22 @@ TEST_CASE(assignment_and_append) {
         EXPECT_EQ(dst[0], 1);
         EXPECT_EQ(dst.data(), old_data);
         EXPECT_FALSE(dst.inlined());
+        EXPECT_TRUE(src.empty());
+        EXPECT_TRUE(src.inlined());
+        EXPECT_EQ(src.capacity(), 2U);
+        src.push_back(7);
+        EXPECT_TRUE(src.inlined());
+        EXPECT_EQ(src[0], 7);
+    }
+    {
+        small_vector<int, 2> src = {1, 2};
+        small_vector<int, 8> dst = {9, 10, 11};
+        dst.assign(std::move(src));
+        EXPECT_EQ(dst, small_vector<int, 8>{1, 2});
+        EXPECT_TRUE(dst.inlined());
+        EXPECT_TRUE(src.empty());
+        EXPECT_TRUE(src.inlined());
+        EXPECT_EQ(src.capacity(), 2U);
     }
 
     // Assign APIs should cover counts, ranges, initializer lists, and internal references.
@@ -554,6 +581,42 @@ TEST_CASE(modifiers) {
         EXPECT_EQ(values, small_vector<int, 4>{0, 1, 2, 3, 4, 5, 6});
     }
     {
+        small_vector<std::string, 8> values = {"a", "b", "c", "d"};
+        auto source = std::ranges::subrange(values.begin(), values.begin() + 2);
+        values.insert(values.begin() + 1, source);
+        EXPECT_EQ(values,
+                  small_vector<std::string, 8>{std::string("a"),
+                                               std::string("a"),
+                                               std::string("b"),
+                                               std::string("b"),
+                                               std::string("c"),
+                                               std::string("d")});
+    }
+    {
+        small_vector<std::string, 8> values = {"alpha", "beta", "gamma"};
+        auto source = std::ranges::subrange(values.begin(), values.end());
+        values.insert(values.begin(), source);
+        EXPECT_EQ(values,
+                  small_vector<std::string, 8>{std::string("alpha"),
+                                               std::string("beta"),
+                                               std::string("gamma"),
+                                               std::string("alpha"),
+                                               std::string("beta"),
+                                               std::string("gamma")});
+    }
+    {
+        small_vector<std::string, 2> values = {"alpha", "beta", "gamma"};
+        auto source = std::ranges::subrange(values.begin(), values.end());
+        values.insert(values.begin(), source);
+        EXPECT_EQ(values,
+                  small_vector<std::string, 2>{std::string("alpha"),
+                                               std::string("beta"),
+                                               std::string("gamma"),
+                                               std::string("alpha"),
+                                               std::string("beta"),
+                                               std::string("gamma")});
+    }
+    {
         small_vector<std::string, 4> values;
         values.emplace(values.begin(), "first");
         values.emplace(values.end(), "last");
@@ -622,6 +685,15 @@ TEST_CASE(capacity_and_storage_management) {
         EXPECT_EQ(values, small_vector<int, 2>{5, 6, 5, 5});
     }
     {
+        small_vector<std::string, 2> values = {"alpha", "beta"};
+        values.resize(4, values[0]);
+        EXPECT_EQ(values.size(), 4U);
+        EXPECT_EQ(values[0], "alpha");
+        EXPECT_EQ(values[1], "beta");
+        EXPECT_EQ(values[2], "alpha");
+        EXPECT_EQ(values[3], "alpha");
+    }
+    {
         small_vector<int, 4> values = {1, 2, 3, 4, 5};
         values.resize(2);
         EXPECT_EQ(values.size(), 2U);
@@ -662,6 +734,19 @@ TEST_CASE(capacity_and_storage_management) {
         EXPECT_TRUE(values.inlined());
         EXPECT_EQ(values.size(), 3U);
         EXPECT_EQ(values[2], 3);
+    }
+    {
+        small_vector<int, 4> values;
+        values.reserve(16);
+        EXPECT_TRUE(values.empty());
+        EXPECT_FALSE(values.inlined());
+        values.shrink_to_fit();
+        EXPECT_TRUE(values.empty());
+        EXPECT_TRUE(values.inlined());
+        EXPECT_EQ(values.capacity(), 4U);
+        values.push_back(42);
+        EXPECT_TRUE(values.inlined());
+        EXPECT_EQ(values[0], 42);
     }
     {
         small_vector<int, 2> values;
