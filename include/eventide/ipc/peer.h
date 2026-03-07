@@ -4,11 +4,14 @@
 #include <expected>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
 
+#include "eventide/ipc/bincode_codec.h"
 #include "eventide/ipc/codec.h"
+#include "eventide/ipc/json_codec.h"
 #include "eventide/ipc/transport.h"
 #include "eventide/async/cancellation.h"
 #include "eventide/async/loop.h"
@@ -16,6 +19,7 @@
 
 namespace eventide::ipc {
 
+template <typename Codec>
 class Peer;
 
 template <typename PeerT>
@@ -43,15 +47,20 @@ struct basic_request_context {
     }
 };
 
-using RequestContext = basic_request_context<Peer>;
-
 template <typename Params, typename ResultT = typename protocol::RequestTraits<Params>::Result>
 using RequestResult = task<Result<ResultT>>;
 
+struct request_options {
+    cancellation_token token = {};
+    std::optional<std::chrono::milliseconds> timeout = std::nullopt;
+};
+
+template <typename Codec>
 class Peer {
 public:
-    Peer(event_loop& loop, std::unique_ptr<Transport> transport);
-    Peer(event_loop& loop, std::unique_ptr<Transport> transport, std::unique_ptr<Codec> codec);
+    using RequestContext = basic_request_context<Peer>;
+
+    Peer(event_loop& loop, std::unique_ptr<Transport> transport, Codec codec = {});
 
     Peer(const Peer&) = delete;
     Peer& operator=(const Peer&) = delete;
@@ -65,26 +74,12 @@ public:
     Result<void> close_output();
 
     template <typename Params>
-    RequestResult<Params> send_request(const Params& params);
-
-    template <typename Params>
-    RequestResult<Params> send_request(const Params& params, cancellation_token token);
-
-    template <typename Params>
-    RequestResult<Params> send_request(const Params& params, std::chrono::milliseconds timeout);
-
-    template <typename ResultT, typename Params>
-    task<Result<ResultT>> send_request(std::string_view method, const Params& params);
+    RequestResult<Params> send_request(const Params& params, request_options opts = {});
 
     template <typename ResultT, typename Params>
     task<Result<ResultT>> send_request(std::string_view method,
                                        const Params& params,
-                                       cancellation_token token);
-
-    template <typename ResultT, typename Params>
-    task<Result<ResultT>> send_request(std::string_view method,
-                                       const Params& params,
-                                       std::chrono::milliseconds timeout);
+                                       request_options opts = {});
 
     template <typename Params>
     Result<void> send_notification(const Params& params);
@@ -120,42 +115,31 @@ private:
 
     void register_notification_callback(std::string_view method, NotificationCallback callback);
 
-    task<Result<std::string>> send_request_impl(std::string_view method, std::string params);
-
     task<Result<std::string>> send_request_impl(std::string_view method,
                                                 std::string params,
-                                                cancellation_token token);
-
-    task<Result<std::string>> send_request_impl(std::string_view method,
-                                                std::string params,
-                                                std::chrono::milliseconds timeout);
+                                                request_options opts);
 
     Result<void> send_notification_impl(std::string_view method, std::string params);
 
-private:
     struct Self;
     std::unique_ptr<Self> self;
 };
 
-}  // namespace eventide::ipc
+using JsonPeer = Peer<JsonCodec>;
+using BincodePeer = Peer<BincodeCodec>;
 
-#include "eventide/ipc/bincode_codec.h"
-#include "eventide/ipc/json_codec.h"
-
-namespace eventide::ipc {
-
-inline auto make_json_peer(event_loop& loop, std::unique_ptr<Transport> transport)
-    -> std::unique_ptr<Peer> {
-    return std::make_unique<Peer>(loop, std::move(transport), make_json_codec());
-}
-
-inline auto make_bincode_peer(event_loop& loop, std::unique_ptr<Transport> transport)
-    -> std::unique_ptr<Peer> {
-    return std::make_unique<Peer>(loop, std::move(transport), make_bincode_codec());
-}
+using JsonRequestContext = JsonPeer::RequestContext;
+using BincodeRequestContext = BincodePeer::RequestContext;
 
 }  // namespace eventide::ipc
 
 #define EVENTIDE_IPC_PEER_INL_FROM_HEADER
 #include "eventide/ipc/peer.inl"
 #undef EVENTIDE_IPC_PEER_INL_FROM_HEADER
+
+namespace eventide::ipc {
+
+extern template class Peer<JsonCodec>;
+extern template class Peer<BincodeCodec>;
+
+}  // namespace eventide::ipc

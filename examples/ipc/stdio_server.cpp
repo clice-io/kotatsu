@@ -33,10 +33,10 @@ int main() {
         return 1;
     }
 
-    ipc::Peer peer(loop, std::move(*transport));
+    ipc::JsonPeer peer(loop, std::move(*transport));
 
     peer.on_request("example/add",
-                    [](ipc::RequestContext&,
+                    [](ipc::JsonPeer::RequestContext&,
                        const AddParams& params) -> ipc::RequestResult<AddParams, AddResult> {
                         co_return AddResult{.sum = params.a + params.b};
                     });

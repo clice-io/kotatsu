@@ -623,6 +623,12 @@ public:
         return consume_raw_json_view();
     }
 
+    result_t<simdjson::ondemand::json_type> peek_type() {
+        return read_source<simdjson::ondemand::json_type>([](auto& doc) { return doc.type(); },
+                                                          [](auto& val) { return val.type(); },
+                                                          false);
+    }
+
 private:
     /// Unified root-vs-value dispatch. Calls `doc_fn(document)` or `val_fn(*current_value)`,
     /// each returning a simdjson result whose `.get(T&)` populates the output.
@@ -696,9 +702,7 @@ private:
     }
 
     result_t<simdjson::ondemand::json_type> peek_json_type() {
-        return read_source<simdjson::ondemand::json_type>([](auto& doc) { return doc.type(); },
-                                                          [](auto& val) { return val.type(); },
-                                                          false);
+        return peek_type();
     }
 
     result_t<simdjson::ondemand::number_type> peek_number_type() {

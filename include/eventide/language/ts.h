@@ -81,7 +81,7 @@ using DocumentUri = string;
 
 struct IncomingMessage {
     optional<string> method;
-    optional<RequestID> id;
+    RequestID id;
     optional<string> params_json;
     optional<string> result_json;
     optional<string> error_json;

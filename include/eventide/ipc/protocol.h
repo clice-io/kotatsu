@@ -43,12 +43,35 @@ struct Value : Variant {
 struct RequestID {
     using value_type = std::int64_t;
 
+    enum class State : std::uint8_t { absent, null, integer };
+
+    State state = State::absent;
     value_type value = 0;
+
+    RequestID() = default;
+
+    explicit RequestID(value_type v) : state(State::integer), value(v) {}
+
+    bool has_value() const noexcept {
+        return state == State::integer;
+    }
+
+    bool is_null() const noexcept {
+        return state == State::null;
+    }
+
+    bool is_absent() const noexcept {
+        return state == State::absent;
+    }
+
+    static RequestID null_id() {
+        RequestID id;
+        id.state = State::null;
+        return id;
+    }
 
     friend bool operator==(const RequestID&, const RequestID&) = default;
 };
-
-using ResponseID = std::optional<RequestID>;
 
 enum class ErrorCode : integer {
     ParseError = -32700,
@@ -73,65 +96,15 @@ namespace std {
 template <>
 struct hash<eventide::ipc::protocol::RequestID> {
     std::size_t operator()(const eventide::ipc::protocol::RequestID& id) const noexcept {
-        return std::hash<eventide::ipc::protocol::RequestID::value_type>{}(id.value);
+        auto h1 = std::hash<std::uint8_t>{}(static_cast<std::uint8_t>(id.state));
+        auto h2 = std::hash<eventide::ipc::protocol::RequestID::value_type>{}(id.value);
+        return h1 ^ (h2 << 1);
     }
 };
 
 }  // namespace std
 
 namespace eventide::serde {
-
-template <serializer_like S>
-struct serialize_traits<S, eventide::ipc::protocol::RequestID> {
-    using value_type = typename S::value_type;
-    using error_type = typename S::error_type;
-
-    static auto serialize(S& serializer, const eventide::ipc::protocol::RequestID& value)
-        -> std::expected<value_type, error_type> {
-        return serde::serialize(serializer, value.value);
-    }
-};
-
-template <deserializer_like D>
-struct deserialize_traits<D, eventide::ipc::protocol::RequestID> {
-    using error_type = typename D::error_type;
-
-    static auto deserialize(D& deserializer, eventide::ipc::protocol::RequestID& value)
-        -> std::expected<void, error_type> {
-        using namespace eventide::ipc::protocol;
-
-        Variant variant{};
-        auto status = serde::deserialize(deserializer, variant);
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-
-        if(const auto* integer_id = std::get_if<std::int64_t>(&variant)) {
-            value.value = *integer_id;
-            return {};
-        }
-
-        if(const auto* unsigned_id = std::get_if<std::uint32_t>(&variant)) {
-            value.value = static_cast<RequestID::value_type>(*unsigned_id);
-            return {};
-        }
-
-        return request_id_type_mismatch();
-    }
-
-private:
-    constexpr static auto request_id_type_mismatch() -> std::expected<void, error_type> {
-        if constexpr(requires { error_type::type_mismatch; }) {
-            return std::unexpected(error_type::type_mismatch);
-        } else if constexpr(requires { error_type::invalid_type; }) {
-            return std::unexpected(error_type::invalid_type);
-        } else if constexpr(std::is_enum_v<error_type>) {
-            return std::unexpected(static_cast<error_type>(1));
-        } else {
-            return std::unexpected(error_type{});
-        }
-    }
-};
 
 template <serializer_like S>
 struct serialize_traits<S, eventide::ipc::protocol::Value> {

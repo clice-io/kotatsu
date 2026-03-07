@@ -177,16 +177,16 @@ TEST_CASE(traits_dispatch_order) {
     auto* transport_ptr = transport.get();
 
     eventide::event_loop loop;
-    ipc::Peer peer(loop, std::move(transport));
+    ipc::JsonPeer peer(loop, std::move(transport));
     std::vector<std::string> order;
     bool second_saw_first = false;
     bool first_seen = false;
 
-    peer.on_request(
-        [&](ipc::RequestContext&, const AddParams& params) -> ipc::RequestResult<AddParams> {
-            order.emplace_back("request");
-            co_return AddResult{.sum = params.a + params.b};
-        });
+    peer.on_request([&](ipc::JsonPeer::RequestContext&,
+                        const AddParams& params) -> ipc::RequestResult<AddParams> {
+        order.emplace_back("request");
+        co_return AddResult{.sum = params.a + params.b};
+    });
 
     peer.on_notification([&](const NoteParams& params) {
         if(params.text == "first") {
@@ -230,12 +230,12 @@ TEST_CASE(explicit_method) {
     auto* transport_ptr = transport.get();
 
     eventide::event_loop loop;
-    ipc::Peer peer(loop, std::move(transport));
+    ipc::JsonPeer peer(loop, std::move(transport));
     std::string request_method;
     std::vector<std::string> notifications;
 
     peer.on_request("custom/add",
-                    [&](ipc::RequestContext& context,
+                    [&](ipc::JsonPeer::RequestContext& context,
                         const AddParams& params) -> ipc::RequestResult<AddParams> {
                         request_method = std::string(context.method);
                         co_return AddResult{.sum = params.a + params.b};
@@ -287,11 +287,11 @@ TEST_CASE(request_notify_apis) {
     auto* transport_ptr = transport.get();
 
     eventide::event_loop loop;
-    ipc::Peer peer(loop, std::move(transport));
+    ipc::JsonPeer peer(loop, std::move(transport));
     std::string request_method;
     protocol::integer request_id = 0;
 
-    peer.on_request([&](ipc::RequestContext& context,
+    peer.on_request([&](ipc::JsonPeer::RequestContext& context,
                         const AddParams& params) -> ipc::RequestResult<AddParams> {
         request_method = std::string(context.method);
         request_id = static_cast<protocol::integer>(context.id.value);

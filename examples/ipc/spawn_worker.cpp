@@ -33,7 +33,7 @@ struct WorkerLog {
     std::string text;
 };
 
-et::task<ipc::Result<BuildResult>> handle_build_request(ipc::RequestContext& context,
+et::task<ipc::Result<BuildResult>> handle_build_request(ipc::JsonPeer::RequestContext& context,
                                                         const BuildParams& params) {
     auto log_status =
         context->send_notification("worker/log",
@@ -65,7 +65,7 @@ struct WorkerOutcome {
     std::string error;
 };
 
-et::task<void> run_parent_session(ipc::Peer& peer,
+et::task<void> run_parent_session(ipc::JsonPeer& peer,
                                   et::process child,
                                   WorkerPlan plan,
                                   WorkerOutcome& outcome) {
@@ -124,7 +124,7 @@ int run_worker() {
         return 1;
     }
 
-    ipc::Peer peer(loop, std::move(*transport));
+    ipc::JsonPeer peer(loop, std::move(*transport));
 
     peer.on_request("worker/build", handle_build_request);
 
@@ -157,7 +157,7 @@ int run_parent(std::string self_path) {
     };
 
     std::vector<WorkerOutcome> outcomes(plans.size());
-    std::vector<std::unique_ptr<ipc::Peer>> peers;
+    std::vector<std::unique_ptr<ipc::JsonPeer>> peers;
     peers.reserve(plans.size());
 
     for(std::size_t index = 0; index < plans.size(); ++index) {
@@ -181,7 +181,7 @@ int run_parent(std::string self_path) {
 
         auto transport = std::make_unique<ipc::StreamTransport>(std::move(spawned->stdout_pipe),
                                                                 std::move(spawned->stdin_pipe));
-        auto peer = std::make_unique<ipc::Peer>(loop, std::move(transport));
+        auto peer = std::make_unique<ipc::JsonPeer>(loop, std::move(transport));
 
         peer->on_notification("worker/log", [](const WorkerLog& params) {
             std::println(stderr, "[{}] {}", params.worker_name, params.text);
