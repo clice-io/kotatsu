@@ -1127,6 +1127,265 @@ TEST_CASE(growth_and_edge_cases) {
     }
 }
 
+TEST_CASE(truncate_and_pop_back_n) {
+    // truncate should reduce size without changing capacity.
+    {
+        small_vector<int, 4> values = {1, 2, 3, 4, 5};
+        values.truncate(3);
+        EXPECT_EQ(values.size(), 3U);
+        EXPECT_EQ(values[0], 1);
+        EXPECT_EQ(values[2], 3);
+    }
+    {
+        small_vector<int, 4> values = {1, 2, 3};
+        values.truncate(3);
+        EXPECT_EQ(values.size(), 3U);
+    }
+    {
+        small_vector<int, 4> values = {1, 2, 3};
+        values.truncate(0);
+        EXPECT_TRUE(values.empty());
+    }
+    {
+        nontrivial_alive = 0;
+        {
+            small_vector<nontrivial, 2> values;
+            values.emplace_back(1);
+            values.emplace_back(2);
+            values.emplace_back(3);
+            EXPECT_EQ(nontrivial_alive, 3);
+            values.truncate(1);
+            EXPECT_EQ(nontrivial_alive, 1);
+            EXPECT_EQ(values[0].value, 1);
+        }
+        EXPECT_EQ(nontrivial_alive, 0);
+    }
+
+    // pop_back_n should remove the last N elements.
+    {
+        small_vector<int, 4> values = {1, 2, 3, 4, 5};
+        values.pop_back_n(2);
+        EXPECT_EQ(values.size(), 3U);
+        EXPECT_EQ(values.back(), 3);
+    }
+    {
+        small_vector<int, 4> values = {1, 2, 3};
+        values.pop_back_n(3);
+        EXPECT_TRUE(values.empty());
+    }
+    {
+        small_vector<int, 4> values = {1, 2, 3};
+        values.pop_back_n(0);
+        EXPECT_EQ(values.size(), 3U);
+    }
+    {
+        nontrivial_alive = 0;
+        {
+            small_vector<nontrivial, 2> values;
+            values.emplace_back(1);
+            values.emplace_back(2);
+            values.emplace_back(3);
+            values.emplace_back(4);
+            EXPECT_EQ(nontrivial_alive, 4);
+            values.pop_back_n(2);
+            EXPECT_EQ(nontrivial_alive, 2);
+            EXPECT_EQ(values[0].value, 1);
+            EXPECT_EQ(values[1].value, 2);
+        }
+        EXPECT_EQ(nontrivial_alive, 0);
+    }
+}
+
+TEST_CASE(byte_size_accessors) {
+    {
+        small_vector<int, 4> values = {1, 2, 3};
+        EXPECT_EQ(values.size_in_bytes(), 3 * sizeof(int));
+        EXPECT_EQ(values.capacity_in_bytes(), 4 * sizeof(int));
+    }
+    {
+        small_vector<int, 4> values;
+        EXPECT_EQ(values.size_in_bytes(), 0U);
+    }
+    {
+        small_vector<double, 2> values = {1.0, 2.0, 3.0};
+        EXPECT_EQ(values.size_in_bytes(), 3 * sizeof(double));
+        EXPECT_GE(values.capacity_in_bytes(), 3 * sizeof(double));
+    }
+}
+
+TEST_CASE(nontrivial_swap) {
+    // Swap with non-trivial types should not leak or double-destroy.
+    {
+        nontrivial_alive = 0;
+        {
+            small_vector<nontrivial, 2> a;
+            a.emplace_back(1);
+            a.emplace_back(2);
+            small_vector<nontrivial, 2> b;
+            b.emplace_back(3);
+            b.emplace_back(4);
+            b.emplace_back(5);
+            EXPECT_EQ(nontrivial_alive, 5);
+
+            a.swap(b);
+            EXPECT_EQ(nontrivial_alive, 5);
+            EXPECT_EQ(a.size(), 3U);
+            EXPECT_EQ(b.size(), 2U);
+            EXPECT_EQ(a[0].value, 3);
+            EXPECT_EQ(a[1].value, 4);
+            EXPECT_EQ(a[2].value, 5);
+            EXPECT_EQ(b[0].value, 1);
+            EXPECT_EQ(b[1].value, 2);
+        }
+        EXPECT_EQ(nontrivial_alive, 0);
+    }
+    // Both on heap.
+    {
+        nontrivial_alive = 0;
+        {
+            small_vector<nontrivial, 1> a;
+            a.emplace_back(1);
+            a.emplace_back(2);
+            small_vector<nontrivial, 1> b;
+            b.emplace_back(3);
+            b.emplace_back(4);
+            b.emplace_back(5);
+            EXPECT_EQ(nontrivial_alive, 5);
+
+            a.swap(b);
+            EXPECT_EQ(nontrivial_alive, 5);
+            EXPECT_EQ(a.size(), 3U);
+            EXPECT_EQ(b.size(), 2U);
+            EXPECT_EQ(a[0].value, 3);
+            EXPECT_EQ(b[0].value, 1);
+        }
+        EXPECT_EQ(nontrivial_alive, 0);
+    }
+    // One empty.
+    {
+        nontrivial_alive = 0;
+        {
+            small_vector<nontrivial, 2> a;
+            small_vector<nontrivial, 2> b;
+            b.emplace_back(1);
+            b.emplace_back(2);
+            EXPECT_EQ(nontrivial_alive, 2);
+
+            a.swap(b);
+            EXPECT_EQ(nontrivial_alive, 2);
+            EXPECT_EQ(a.size(), 2U);
+            EXPECT_TRUE(b.empty());
+            EXPECT_EQ(a[0].value, 1);
+            EXPECT_EQ(a[1].value, 2);
+        }
+        EXPECT_EQ(nontrivial_alive, 0);
+    }
+}
+
+TEST_CASE(vector_alias) {
+    // vector<T> is small_vector<T, 0> — no inline storage, always heap.
+    {
+        vector<int> values;
+        EXPECT_TRUE(values.empty());
+        EXPECT_EQ(values.inline_capacity(), 0U);
+        EXPECT_TRUE(values.inlined());
+
+        values.push_back(1);
+        values.push_back(2);
+        values.push_back(3);
+        EXPECT_EQ(values.size(), 3U);
+        EXPECT_FALSE(values.inlined());
+        EXPECT_EQ(values[0], 1);
+        EXPECT_EQ(values[2], 3);
+    }
+    {
+        vector<int> values = {1, 2, 3, 4, 5};
+        EXPECT_EQ(values.size(), 5U);
+        EXPECT_FALSE(values.inlined());
+
+        vector<int> copy(values);
+        EXPECT_EQ(copy, values);
+
+        vector<int> moved(std::move(copy));
+        EXPECT_EQ(moved, values);
+        EXPECT_TRUE(copy.empty());
+    }
+    {
+        vector<std::string> values;
+        values.emplace_back("hello");
+        values.emplace_back("world");
+        values.insert(values.begin() + 1, std::string("beautiful"));
+        EXPECT_EQ(values.size(), 3U);
+        EXPECT_EQ(values[0], "hello");
+        EXPECT_EQ(values[1], "beautiful");
+        EXPECT_EQ(values[2], "world");
+
+        values.erase(values.begin());
+        EXPECT_EQ(values.size(), 2U);
+        EXPECT_EQ(values[0], "beautiful");
+    }
+    {
+        vector<int> values = {5, 4, 3, 2, 1};
+        values.shrink_to_fit();
+        EXPECT_EQ(values.size(), 5U);
+        EXPECT_EQ(values.capacity(), 5U);
+        EXPECT_EQ(values[0], 5);
+        EXPECT_EQ(values[4], 1);
+    }
+    {
+        nontrivial_alive = 0;
+        {
+            vector<nontrivial> values;
+            values.emplace_back(1);
+            values.emplace_back(2);
+            values.emplace_back(3);
+            EXPECT_EQ(nontrivial_alive, 3);
+            values.pop_back_n(2);
+            EXPECT_EQ(nontrivial_alive, 1);
+        }
+        EXPECT_EQ(nontrivial_alive, 0);
+    }
+}
+
+TEST_CASE(assign_from_empty_hybrid_vector) {
+    // Assigning from an empty hybrid_vector&& should preserve inline capacity.
+    {
+        small_vector<int, 4> dst = {1, 2, 3};
+        small_vector<int, 2> src;
+        hybrid_vector<int>& ref = src;
+        dst.assign(std::move(ref));
+        EXPECT_TRUE(dst.empty());
+        EXPECT_EQ(dst.capacity(), 4U);
+        EXPECT_TRUE(dst.inlined());
+
+        dst.push_back(42);
+        EXPECT_TRUE(dst.inlined());
+        EXPECT_EQ(dst[0], 42);
+    }
+    // Assigning from a non-empty inline hybrid_vector&& should also work.
+    {
+        small_vector<int, 4> dst = {1, 2, 3};
+        small_vector<int, 2> src = {7, 8};
+        hybrid_vector<int>& ref = src;
+        dst.assign(std::move(ref));
+        EXPECT_EQ(dst.size(), 2U);
+        EXPECT_EQ(dst[0], 7);
+        EXPECT_EQ(dst[1], 8);
+        EXPECT_TRUE(dst.inlined());
+    }
+    // Assigning from a heap-allocated hybrid_vector&& should steal.
+    {
+        small_vector<int, 2> dst = {1};
+        small_vector<int, 2> src = {3, 4, 5, 6};
+        auto* old_data = src.data();
+        hybrid_vector<int>& ref = src;
+        dst.assign(std::move(ref));
+        EXPECT_EQ(dst.size(), 4U);
+        EXPECT_EQ(dst.data(), old_data);
+        EXPECT_EQ(dst[0], 3);
+    }
+}
+
 #ifdef __cpp_exceptions
 
 struct throwing_copy {

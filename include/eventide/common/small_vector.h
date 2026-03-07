@@ -1156,8 +1156,7 @@ public:
             return;
         }
 
-        destroy_and_deallocate();
-        move_from_other(std::move(other));
+        move_assign_from_other(std::move(other));
     }
 
     constexpr iterator insert(iterator pos, value_type value)
