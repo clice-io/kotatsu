@@ -30,25 +30,25 @@ struct Adder {
 };
 
 struct SmallCallable {
-    int val;  // sizeof <= 16
+    int val;
 
     int operator()(int x) const {
         return val + x;
     }
 };
 
-static_assert(sizeof(SmallCallable) <= 16);
+static_assert(function<int(int)>::sbo_eligible<SmallCallable>);
 
 struct LargeCallable {
     int val;
-    char padding[32]{};  // sizeof > 16
+    char padding[32]{};
 
     int operator()(int x) const {
         return val + x;
     }
 };
 
-static_assert(sizeof(LargeCallable) > 16);
+static_assert(!function<int(int)>::sbo_eligible<LargeCallable>);
 
 // --- Tests ---
 
@@ -158,19 +158,19 @@ TEST_CASE(function_from_stateless_lambda) {
 };
 
 TEST_CASE(function_from_small_lambda_sbo) {
-    // Small lambda (captures fit in 16 bytes) uses SBO storage
+    // Small lambda uses SBO storage
     int capture = 10;
     auto lambda = [capture](int x) -> int {
         return capture + x;
     };
-    static_assert(sizeof(lambda) <= 16);
+    static_assert(sizeof(lambda) <= function<int(int)>::sbo_size);
     function<int(int)> fn(std::move(lambda));
     EXPECT_EQ(fn(5), 15);
     EXPECT_EQ(fn(-10), 0);
 };
 
 TEST_CASE(function_from_large_lambda_heap) {
-    // Large lambda (captures exceed 16 bytes) uses heap allocation
+    // Large lambda uses heap allocation
     char padding[32] = {};
     padding[0] = 'A';
     int capture = 42;
@@ -178,7 +178,7 @@ TEST_CASE(function_from_large_lambda_heap) {
         (void)padding;
         return capture + x;
     };
-    static_assert(sizeof(lambda) > 16);
+    static_assert(sizeof(lambda) > function<int(int)>::sbo_size);
     function<int(int)> fn(std::move(lambda));
     EXPECT_EQ(fn(8), 50);
     EXPECT_EQ(fn(-42), 0);
@@ -214,8 +214,8 @@ TEST_CASE(function_move_assign_large_to_large) {
         (void)p2;
         return c2 + x;
     };
-    static_assert(sizeof(lambda1) > 16);
-    static_assert(sizeof(lambda2) > 16);
+    static_assert(sizeof(lambda1) > function<int(int)>::sbo_size);
+    static_assert(sizeof(lambda2) > function<int(int)>::sbo_size);
     function<int(int)> fn1(std::move(lambda1));
     function<int(int)> fn2(std::move(lambda2));
     EXPECT_EQ(fn1(10), 11);
