@@ -70,22 +70,22 @@ template <typename T>
 concept toml_dynamic_dom_type = std::same_as<std::remove_cvref_t<T>, ::toml::table> ||
                                 std::same_as<std::remove_cvref_t<T>, ::toml::array>;
 
-template <toml_dynamic_dom_type T>
-struct serialize_traits<toml::Serializer, T> {
-    using value_type = typename toml::Serializer::value_type;
-    using error_type = typename toml::Serializer::error_type;
+template <typename Config, toml_dynamic_dom_type T>
+struct serialize_traits<toml::Serializer<Config>, T> {
+    using value_type = typename toml::Serializer<Config>::value_type;
+    using error_type = typename toml::Serializer<Config>::error_type;
 
-    static auto serialize(toml::Serializer& serializer, const T& value)
+    static auto serialize(toml::Serializer<Config>& serializer, const T& value)
         -> std::expected<value_type, error_type> {
         return serializer.serialize_dom(value);
     }
 };
 
-template <>
-struct deserialize_traits<toml::Deserializer, ::toml::table> {
-    using error_type = toml::Deserializer::error_type;
+template <typename Config>
+struct deserialize_traits<toml::Deserializer<Config>, ::toml::table> {
+    using error_type = toml::Deserializer<Config>::error_type;
 
-    static auto deserialize(toml::Deserializer& deserializer, ::toml::table& value)
+    static auto deserialize(toml::Deserializer<Config>& deserializer, ::toml::table& value)
         -> std::expected<void, error_type> {
         auto table = deserializer.capture_table();
         if(!table) {
@@ -96,11 +96,11 @@ struct deserialize_traits<toml::Deserializer, ::toml::table> {
     }
 };
 
-template <>
-struct deserialize_traits<toml::Deserializer, ::toml::array> {
-    using error_type = toml::Deserializer::error_type;
+template <typename Config>
+struct deserialize_traits<toml::Deserializer<Config>, ::toml::array> {
+    using error_type = toml::Deserializer<Config>::error_type;
 
-    static auto deserialize(toml::Deserializer& deserializer, ::toml::array& value)
+    static auto deserialize(toml::Deserializer<Config>& deserializer, ::toml::array& value)
         -> std::expected<void, error_type> {
         auto array = deserializer.capture_array();
         if(!array) {

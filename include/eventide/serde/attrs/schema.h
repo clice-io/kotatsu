@@ -143,17 +143,23 @@ struct rename_all {
 struct deny_unknown_fields {};
 
 /// Enum representation strategies (for variant / tagged-union types).
-struct externally_tagged {};
+template <fixed_string... Names>
+struct externally_tagged {
+    constexpr static std::array<std::string_view, sizeof...(Names)> names = {
+        std::string_view(Names)...};
+};
 
 template <fixed_string Tag>
 struct internally_tagged {
     constexpr inline static std::string_view tag = Tag;
 };
 
-template <fixed_string Tag, fixed_string Content>
+template <fixed_string Tag, fixed_string Content, fixed_string... Names>
 struct adjacently_tagged {
     constexpr inline static std::string_view tag = Tag;
     constexpr inline static std::string_view content = Content;
+    constexpr static std::array<std::string_view, sizeof...(Names)> names = {
+        std::string_view(Names)...};
 };
 
 struct untagged {};
@@ -203,12 +209,22 @@ struct is_internally_tagged_attr<schema::internally_tagged<Tag>> {
 };
 
 template <typename T>
+struct is_externally_tagged_attr {
+    constexpr static bool value = false;
+};
+
+template <fixed_string... Names>
+struct is_externally_tagged_attr<schema::externally_tagged<Names...>> {
+    constexpr static bool value = true;
+};
+
+template <typename T>
 struct is_adjacently_tagged_attr {
     constexpr static bool value = false;
 };
 
-template <fixed_string Tag, fixed_string Content>
-struct is_adjacently_tagged_attr<schema::adjacently_tagged<Tag, Content>> {
+template <fixed_string Tag, fixed_string Content, fixed_string... Names>
+struct is_adjacently_tagged_attr<schema::adjacently_tagged<Tag, Content, Names...>> {
     constexpr static bool value = true;
 };
 
@@ -220,7 +236,7 @@ constexpr bool is_schema_attr_v =
     std::is_same_v<T, schema::skip> || std::is_same_v<T, schema::flatten> ||
     is_rename_attr<T>::value || is_alias_attr<T>::value || is_literal_attr<T>::value ||
     is_specialization_of<schema::rename_all, T> || std::is_same_v<T, schema::deny_unknown_fields> ||
-    std::is_same_v<T, schema::externally_tagged> || is_internally_tagged_attr<T>::value ||
+    is_externally_tagged_attr<T>::value || is_internally_tagged_attr<T>::value ||
     is_adjacently_tagged_attr<T>::value || std::is_same_v<T, schema::untagged>;
 
 // ── Annotation detection ──────────────────────────────────────────

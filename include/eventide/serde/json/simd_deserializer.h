@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "eventide/serde/config.h"
 #include "eventide/serde/detail/narrow.h"
 #include "eventide/serde/json/error.h"
 #include "eventide/serde/serde.h"
@@ -20,8 +21,10 @@
 
 namespace eventide::serde::json::simd {
 
+template <typename Config = config::default_config>
 class Deserializer {
 public:
+    using config_type = Config;
     using error_type = json::error_kind;
 
     template <typename T>
@@ -851,9 +854,9 @@ private:
     simdjson::ondemand::document document;
 };
 
-template <typename T>
+template <typename Config = config::default_config, typename T>
 auto from_json(std::string_view json, T& value) -> std::expected<void, error_kind> {
-    Deserializer deserializer(json);
+    Deserializer<Config> deserializer(json);
     if(!deserializer.valid()) {
         return std::unexpected(deserializer.error());
     }
@@ -866,9 +869,9 @@ auto from_json(std::string_view json, T& value) -> std::expected<void, error_kin
     return deserializer.finish();
 }
 
-template <typename T>
+template <typename Config = config::default_config, typename T>
 auto from_json(simdjson::padded_string_view json, T& value) -> std::expected<void, error_kind> {
-    Deserializer deserializer(json);
+    Deserializer<Config> deserializer(json);
     if(!deserializer.valid()) {
         return std::unexpected(deserializer.error());
     }
@@ -881,28 +884,28 @@ auto from_json(simdjson::padded_string_view json, T& value) -> std::expected<voi
     return deserializer.finish();
 }
 
-template <typename T>
+template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_json(std::string_view json) -> std::expected<T, error_kind> {
     T value{};
-    auto status = from_json(json, value);
+    auto status = from_json<Config>(json, value);
     if(!status) {
         return std::unexpected(status.error());
     }
     return value;
 }
 
-template <typename T>
+template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_json(simdjson::padded_string_view json) -> std::expected<T, error_kind> {
     T value{};
-    auto status = from_json(json, value);
+    auto status = from_json<Config>(json, value);
     if(!status) {
         return std::unexpected(status.error());
     }
     return value;
 }
 
-static_assert(serde::deserializer_like<Deserializer>);
+static_assert(serde::deserializer_like<Deserializer<>>);
 
 }  // namespace eventide::serde::json::simd

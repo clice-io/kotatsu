@@ -23,12 +23,12 @@ struct RawValue {
 
 // --- JSON serialization: inline raw JSON text ---
 
-template <>
-struct serialize_traits<json::simd::Serializer, RawValue> {
-    using value_type = typename json::simd::Serializer::value_type;
-    using error_type = typename json::simd::Serializer::error_type;
+template <typename Config>
+struct serialize_traits<json::simd::Serializer<Config>, RawValue> {
+    using value_type = typename json::simd::Serializer<Config>::value_type;
+    using error_type = typename json::simd::Serializer<Config>::error_type;
 
-    static auto serialize(json::simd::Serializer& serializer, const RawValue& value)
+    static auto serialize(json::simd::Serializer<Config>& serializer, const RawValue& value)
         -> std::expected<value_type, error_type> {
         if(value.empty()) {
             return serializer.serialize_null();
@@ -39,11 +39,11 @@ struct serialize_traits<json::simd::Serializer, RawValue> {
 
 // --- JSON deserialization: capture raw JSON view ---
 
-template <>
-struct deserialize_traits<json::simd::Deserializer, RawValue> {
-    using error_type = typename json::simd::Deserializer::error_type;
+template <typename Config>
+struct deserialize_traits<json::simd::Deserializer<Config>, RawValue> {
+    using error_type = typename json::simd::Deserializer<Config>::error_type;
 
-    static auto deserialize(json::simd::Deserializer& deserializer, RawValue& value)
+    static auto deserialize(json::simd::Deserializer<Config>& deserializer, RawValue& value)
         -> std::expected<void, error_type> {
         auto raw = deserializer.deserialize_raw_json_view();
         if(!raw) {
@@ -56,12 +56,12 @@ struct deserialize_traits<json::simd::Deserializer, RawValue> {
 
 // --- Bincode serialization: length-prefixed bytes ---
 
-template <>
-struct serialize_traits<bincode::Serializer, RawValue> {
-    using value_type = typename bincode::Serializer::value_type;
-    using error_type = typename bincode::Serializer::error_type;
+template <typename Config>
+struct serialize_traits<bincode::Serializer<Config>, RawValue> {
+    using value_type = typename bincode::Serializer<Config>::value_type;
+    using error_type = typename bincode::Serializer<Config>::error_type;
 
-    static auto serialize(bincode::Serializer& serializer, const RawValue& value)
+    static auto serialize(bincode::Serializer<Config>& serializer, const RawValue& value)
         -> std::expected<value_type, error_type> {
         auto bytes =
             std::span<const std::byte>(reinterpret_cast<const std::byte*>(value.data.data()),
@@ -72,11 +72,11 @@ struct serialize_traits<bincode::Serializer, RawValue> {
 
 // --- Bincode deserialization: length-prefixed bytes ---
 
-template <>
-struct deserialize_traits<bincode::Deserializer, RawValue> {
-    using error_type = typename bincode::Deserializer::error_type;
+template <typename Config>
+struct deserialize_traits<bincode::Deserializer<Config>, RawValue> {
+    using error_type = typename bincode::Deserializer<Config>::error_type;
 
-    static auto deserialize(bincode::Deserializer& deserializer, RawValue& value)
+    static auto deserialize(bincode::Deserializer<Config>& deserializer, RawValue& value)
         -> std::expected<void, error_type> {
         std::vector<std::byte> bytes;
         auto status = deserializer.deserialize_bytes(bytes);

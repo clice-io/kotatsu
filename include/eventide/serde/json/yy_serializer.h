@@ -11,6 +11,7 @@
 #include <utility>
 #include <variant>
 
+#include "eventide/serde/config.h"
 #include "eventide/serde/detail/serialize_helpers.h"
 #include "eventide/serde/json/dom.h"
 #include "eventide/serde/json/error.h"
@@ -18,8 +19,10 @@
 
 namespace eventide::serde::json::yy {
 
+template <typename Config = config::default_config>
 class Serializer {
 public:
+    using config_type = Config;
     using value_type = void;
     using error_type = json::error_kind;
 
@@ -28,8 +31,8 @@ public:
 
     using status_t = result_t<void>;
 
-    using SerializeArray = serde::detail::SerializeArray<Serializer>;
-    using SerializeObject = serde::detail::SerializeObject<Serializer>;
+    using SerializeArray = serde::detail::SerializeArray<Serializer<Config>>;
+    using SerializeObject = serde::detail::SerializeObject<Serializer<Config>>;
 
     using SerializeSeq = SerializeArray;
     using SerializeTuple = SerializeArray;
@@ -174,8 +177,8 @@ public:
     }
 
 private:
-    friend class serde::detail::SerializeArray<Serializer>;
-    friend class serde::detail::SerializeObject<Serializer>;
+    friend class serde::detail::SerializeArray<Serializer<Config>>;
+    friend class serde::detail::SerializeObject<Serializer<Config>>;
 
     status_t begin_object() {
         return builder.begin_object();
@@ -201,9 +204,10 @@ private:
     json::Builder builder;
 };
 
-template <typename T>
-auto to_json(const T& value) -> std::expected<std::string, Serializer::error_type> {
-    Serializer serializer;
+template <typename Config = config::default_config, typename T>
+auto to_json(const T& value)
+    -> std::expected<std::string, typename Serializer<Config>::error_type> {
+    Serializer<Config> serializer;
     if(!serializer.valid()) {
         return std::unexpected(serializer.error());
     }
@@ -220,6 +224,6 @@ auto to_json(const T& value) -> std::expected<std::string, Serializer::error_typ
     return std::move(*json);
 }
 
-static_assert(serde::serializer_like<Serializer>);
+static_assert(serde::serializer_like<Serializer<>>);
 
 }  // namespace eventide::serde::json::yy

@@ -28,21 +28,13 @@ struct rename_override_payload {
     int request_id = 0;
 };
 
-std::string prefix_policy(bool is_serialize, std::string_view value) {
-    if(is_serialize) {
-        return std::string("x_") + std::string(value);
-    }
-    if(value.starts_with("x_")) {
-        return std::string(value.substr(2));
-    }
-    return std::string(value);
-}
+struct camel_config {
+    using field_rename = rename_policy::lower_camel;
+};
 
 TEST_SUITE(serde_simdjson_config) {
 
 TEST_CASE(default_field_rename_is_identity) {
-    config::reset();
-
     protocol_payload input{
         .request_id = 7,
         .user_name = "alice",
@@ -62,92 +54,58 @@ TEST_CASE(default_field_rename_is_identity) {
     EXPECT_EQ(parsed.nested_info.some_value, 3);
 }
 
-TEST_CASE(thread_local_lower_camel_field_rename) {
-    config::reset();
-    config::set_field_rename_policy<rename_policy::lower_camel>();
-
+TEST_CASE(compile_time_lower_camel_field_rename) {
     protocol_payload input{
         .request_id = 8,
         .user_name = "bob",
         .nested_info = {.some_value = 11},
     };
 
-    auto encoded = to_json(input);
+    auto encoded = to_json<camel_config>(input);
     ASSERT_TRUE(encoded.has_value());
     EXPECT_EQ(*encoded, R"({"requestId":8,"userName":"bob","nestedInfo":{"someValue":11}})");
 
     protocol_payload parsed{};
     auto status =
-        from_json(R"({"requestId":8,"userName":"bob","nestedInfo":{"someValue":11}})", parsed);
+        from_json<camel_config>(R"({"requestId":8,"userName":"bob","nestedInfo":{"someValue":11}})",
+                                parsed);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(parsed.request_id, 8);
     EXPECT_EQ(parsed.user_name, "bob");
     EXPECT_EQ(parsed.nested_info.some_value, 11);
 }
 
-TEST_CASE(scoped_config_restores_previous_policy) {
-    config::reset();
-
+TEST_CASE(different_configs_in_same_scope) {
     protocol_payload input{
         .request_id = 9,
         .user_name = "carol",
         .nested_info = {.some_value = 21},
     };
 
-    {
-        config::runtime_config cfg{};
-        cfg.field_rename = &config::detail::apply_policy_rename<rename_policy::lower_camel>;
-        config::scoped_config guard(cfg);
+    auto camel_encoded = to_json<camel_config>(input);
+    ASSERT_TRUE(camel_encoded.has_value());
+    EXPECT_EQ(*camel_encoded,
+              R"({"requestId":9,"userName":"carol","nestedInfo":{"someValue":21}})");
 
-        auto encoded = to_json(input);
-        ASSERT_TRUE(encoded.has_value());
-        EXPECT_EQ(*encoded, R"({"requestId":9,"userName":"carol","nestedInfo":{"someValue":21}})");
-    }
-
-    auto encoded_after_scope = to_json(input);
-    ASSERT_TRUE(encoded_after_scope.has_value());
-    EXPECT_EQ(*encoded_after_scope,
+    auto default_encoded = to_json(input);
+    ASSERT_TRUE(default_encoded.has_value());
+    EXPECT_EQ(*default_encoded,
               R"({"request_id":9,"user_name":"carol","nested_info":{"some_value":21}})");
 }
 
-TEST_CASE(custom_field_rename_fn_and_attr_override) {
-    config::reset();
-
-    config::runtime_config cfg{};
-    cfg.field_rename = &prefix_policy;
-    config::scoped_config guard(cfg);
-
-    protocol_payload input{
-        .request_id = 10,
-        .user_name = "neo",
-        .nested_info = {.some_value = 42},
-    };
-    auto encoded = to_json(input);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded,
-              R"({"x_request_id":10,"x_user_name":"neo","x_nested_info":{"x_some_value":42}})");
-
-    protocol_payload parsed{};
-    auto status =
-        from_json(R"({"x_request_id":10,"x_user_name":"neo","x_nested_info":{"x_some_value":42}})",
-                  parsed);
-    ASSERT_TRUE(status.has_value());
-    EXPECT_EQ(parsed.request_id, 10);
-    EXPECT_EQ(parsed.user_name, "neo");
-    EXPECT_EQ(parsed.nested_info.some_value, 42);
-
+TEST_CASE(compile_time_config_with_attr_override) {
     rename_override_payload renamed{};
     renamed.user_name = "id-1";
     renamed.request_id = 5;
-    auto encoded_renamed = to_json(renamed);
-    ASSERT_TRUE(encoded_renamed.has_value());
-    EXPECT_EQ(*encoded_renamed, R"({"uid":"id-1","x_request_id":5})");
+    auto encoded = to_json<camel_config>(renamed);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"({"uid":"id-1","requestId":5})");
 
-    rename_override_payload parsed_renamed{};
-    auto renamed_status = from_json(R"({"uid":"id-2","x_request_id":6})", parsed_renamed);
-    ASSERT_TRUE(renamed_status.has_value());
-    EXPECT_EQ(parsed_renamed.user_name, "id-2");
-    EXPECT_EQ(parsed_renamed.request_id, 6);
+    rename_override_payload parsed{};
+    auto status = from_json<camel_config>(R"({"uid":"id-2","requestId":6})", parsed);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(parsed.user_name, "id-2");
+    EXPECT_EQ(parsed.request_id, 6);
 }
 
 };  // TEST_SUITE(serde_simdjson_config)

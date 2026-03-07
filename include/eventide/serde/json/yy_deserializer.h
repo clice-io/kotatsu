@@ -13,6 +13,7 @@
 #include <variant>
 #include <vector>
 
+#include "eventide/serde/config.h"
 #include "eventide/serde/detail/deserialize_helpers.h"
 #include "eventide/serde/detail/narrow.h"
 #include "eventide/serde/json/dom.h"
@@ -22,8 +23,10 @@
 
 namespace eventide::serde::json::yy {
 
+template <typename Config = config::default_config>
 class Deserializer {
 public:
+    using config_type = Config;
     using error_type = json::error_kind;
 
     template <typename T>
@@ -54,7 +57,7 @@ public:
                 deserializer.mark_invalid(collected.error());
                 return;
             }
-            entries = std::move(*collected);
+            this->entries = std::move(*collected);
         }
     };
 
@@ -521,6 +524,6 @@ private:
     json::ValueRef current_value{};
 };
 
-static_assert(serde::deserializer_like<Deserializer>);
+static_assert(serde::deserializer_like<Deserializer<>>);
 
 }  // namespace eventide::serde::json::yy

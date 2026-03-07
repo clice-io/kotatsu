@@ -7,6 +7,7 @@
 #include <string_view>
 #include <utility>
 
+#include "eventide/serde/config.h"
 #include "eventide/serde/json/dom.h"
 #include "eventide/serde/json/error.h"
 #include "eventide/serde/json/simd_deserializer.h"
@@ -41,11 +42,11 @@ template <typename T>
 concept json_dynamic_dom_type =
     std::same_as<T, json::Value> || std::same_as<T, json::Array> || std::same_as<T, json::Object>;
 
-template <json_dynamic_dom_type T>
-struct deserialize_traits<json::simd::Deserializer, T> {
+template <typename Config, json_dynamic_dom_type T>
+struct deserialize_traits<json::simd::Deserializer<Config>, T> {
     using error_type = json::error_kind;
 
-    static auto deserialize(json::simd::Deserializer& deserializer, T& value)
+    static auto deserialize(json::simd::Deserializer<Config>& deserializer, T& value)
         -> std::expected<void, error_type> {
         auto raw = deserializer.deserialize_raw_json_view();
         if(!raw) {
@@ -62,12 +63,12 @@ struct deserialize_traits<json::simd::Deserializer, T> {
     }
 };
 
-template <json_dynamic_dom_type T>
-struct serialize_traits<json::simd::Serializer, T> {
-    using value_type = typename json::simd::Serializer::value_type;
-    using error_type = typename json::simd::Serializer::error_type;
+template <typename Config, json_dynamic_dom_type T>
+struct serialize_traits<json::simd::Serializer<Config>, T> {
+    using value_type = typename json::simd::Serializer<Config>::value_type;
+    using error_type = typename json::simd::Serializer<Config>::error_type;
 
-    static auto serialize(json::simd::Serializer& serializer, const T& value)
+    static auto serialize(json::simd::Serializer<Config>& serializer, const T& value)
         -> std::expected<value_type, error_type> {
         auto raw = value.to_json_string();
         if(!raw) {
@@ -77,22 +78,22 @@ struct serialize_traits<json::simd::Serializer, T> {
     }
 };
 
-template <json_dynamic_dom_type T>
-struct serialize_traits<json::yy::Serializer, T> {
-    using value_type = typename json::yy::Serializer::value_type;
-    using error_type = typename json::yy::Serializer::error_type;
+template <typename Config, json_dynamic_dom_type T>
+struct serialize_traits<json::yy::Serializer<Config>, T> {
+    using value_type = typename json::yy::Serializer<Config>::value_type;
+    using error_type = typename json::yy::Serializer<Config>::error_type;
 
-    static auto serialize(json::yy::Serializer& serializer, const T& value)
+    static auto serialize(json::yy::Serializer<Config>& serializer, const T& value)
         -> std::expected<value_type, error_type> {
         return serializer.append_json_value(value);
     }
 };
 
-template <json_dynamic_dom_type T>
-struct deserialize_traits<json::yy::Deserializer, T> {
-    using error_type = typename json::yy::Deserializer::error_type;
+template <typename Config, json_dynamic_dom_type T>
+struct deserialize_traits<json::yy::Deserializer<Config>, T> {
+    using error_type = typename json::yy::Deserializer<Config>::error_type;
 
-    static auto deserialize(json::yy::Deserializer& deserializer, T& value)
+    static auto deserialize(json::yy::Deserializer<Config>& deserializer, T& value)
         -> std::expected<void, error_type> {
         auto dom = deserializer.capture_dom_value();
         if(!dom) {

@@ -11,12 +11,12 @@
 namespace eventide::serde {
 
 // Bincode serialization: write int64 directly
-template <>
-struct serialize_traits<bincode::Serializer, eventide::ipc::protocol::RequestID> {
-    using value_type = typename bincode::Serializer::value_type;
-    using error_type = typename bincode::Serializer::error_type;
+template <typename Config>
+struct serialize_traits<bincode::Serializer<Config>, eventide::ipc::protocol::RequestID> {
+    using value_type = typename bincode::Serializer<Config>::value_type;
+    using error_type = typename bincode::Serializer<Config>::error_type;
 
-    static auto serialize(bincode::Serializer& serializer,
+    static auto serialize(bincode::Serializer<Config>& serializer,
                           const eventide::ipc::protocol::RequestID& id)
         -> std::expected<value_type, error_type> {
         return serde::serialize(serializer, id.value);
@@ -24,11 +24,11 @@ struct serialize_traits<bincode::Serializer, eventide::ipc::protocol::RequestID>
 };
 
 // Bincode deserialization: read int64 directly, set state to integer
-template <>
-struct deserialize_traits<bincode::Deserializer, eventide::ipc::protocol::RequestID> {
-    using error_type = typename bincode::Deserializer::error_type;
+template <typename Config>
+struct deserialize_traits<bincode::Deserializer<Config>, eventide::ipc::protocol::RequestID> {
+    using error_type = typename bincode::Deserializer<Config>::error_type;
 
-    static auto deserialize(bincode::Deserializer& deserializer,
+    static auto deserialize(bincode::Deserializer<Config>& deserializer,
                             eventide::ipc::protocol::RequestID& id)
         -> std::expected<void, error_type> {
         auto status = serde::deserialize(deserializer, id.value);

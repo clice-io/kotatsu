@@ -14,6 +14,7 @@
 #include <variant>
 #include <vector>
 
+#include "eventide/serde/config.h"
 #include "eventide/serde/serde.h"
 #include "eventide/serde/toml/error.h"
 
@@ -252,8 +253,10 @@ inline auto array_to_value(const ::toml::array& array) -> result_t<Value> {
 
 }  // namespace detail
 
+template <typename Config = config::default_config>
 class Serializer {
 public:
+    using config_type = Config;
     using value_type = detail::Value;
     using error_type = error_kind;
 
@@ -466,12 +469,12 @@ public:
     }
 };
 
-template <typename T>
+template <typename Config = config::default_config, typename T>
 auto to_toml(const T& value) -> std::expected<::toml::table, error_kind> {
-    Serializer serializer;
+    Serializer<Config> serializer;
     return serializer.dom(value);
 }
 
-static_assert(serde::serializer_like<Serializer>);
+static_assert(serde::serializer_like<Serializer<>>);
 
 }  // namespace eventide::serde::toml

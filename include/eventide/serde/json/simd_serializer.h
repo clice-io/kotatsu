@@ -13,14 +13,17 @@
 #include <utility>
 #include <vector>
 
+#include "eventide/serde/config.h"
 #include "eventide/serde/detail/serialize_helpers.h"
 #include "eventide/serde/json/error.h"
 #include "eventide/serde/serde.h"
 
 namespace eventide::serde::json::simd {
 
+template <typename Config = config::default_config>
 class Serializer {
 public:
+    using config_type = Config;
     using value_type = void;
     using error_type = json::error_kind;
 
@@ -29,8 +32,8 @@ public:
 
     using status_t = result_t<void>;
 
-    using SerializeArray = serde::detail::SerializeArray<Serializer>;
-    using SerializeObject = serde::detail::SerializeObject<Serializer>;
+    using SerializeArray = serde::detail::SerializeArray<Serializer<Config>>;
+    using SerializeObject = serde::detail::SerializeObject<Serializer<Config>>;
 
     using SerializeSeq = SerializeArray;
     using SerializeTuple = SerializeArray;
@@ -231,8 +234,8 @@ public:
     }
 
 private:
-    friend class serde::detail::SerializeArray<Serializer>;
-    friend class serde::detail::SerializeObject<Serializer>;
+    friend class serde::detail::SerializeArray<Serializer<Config>>;
+    friend class serde::detail::SerializeObject<Serializer<Config>>;
 
     enum class container_kind : std::uint8_t { array, object };
 
@@ -393,11 +396,11 @@ private:
     simdjson::builder::string_builder builder;
 };
 
-template <typename T>
+template <typename Config = config::default_config, typename T>
 auto to_json(const T& value, std::optional<std::size_t> initial_capacity = std::nullopt)
     -> std::expected<std::string, error_kind> {
-    Serializer serializer =
-        initial_capacity.has_value() ? Serializer(*initial_capacity) : Serializer();
+    Serializer<Config> serializer =
+        initial_capacity.has_value() ? Serializer<Config>(*initial_capacity) : Serializer<Config>();
     auto result = serde::serialize(serializer, value);
     if(!result) {
         return std::unexpected(result.error());
@@ -405,6 +408,6 @@ auto to_json(const T& value, std::optional<std::size_t> initial_capacity = std::
     return serializer.str();
 }
 
-static_assert(serde::serializer_like<Serializer>);
+static_assert(serde::serializer_like<Serializer<>>);
 
 }  // namespace eventide::serde::json::simd

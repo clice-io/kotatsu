@@ -17,13 +17,16 @@
 
 #include "eventide/common/ranges.h"
 #include "eventide/serde/bincode/error.h"
+#include "eventide/serde/config.h"
 #include "eventide/serde/detail/narrow.h"
 #include "eventide/serde/serde.h"
 
 namespace eventide::serde::bincode {
 
+template <typename Config = config::default_config>
 class Deserializer {
 public:
+    using config_type = Config;
     using error_type = error_kind;
 
     template <typename T>
@@ -460,9 +463,9 @@ private:
     error_type last_error = error_type::ok;
 };
 
-template <typename T>
+template <typename Config = config::default_config, typename T>
 auto from_bytes(std::span<const std::byte> bytes, T& value) -> std::expected<void, error_kind> {
-    Deserializer deserializer(bytes);
+    Deserializer<Config> deserializer(bytes);
     if(!deserializer.valid()) {
         return std::unexpected(deserializer.error());
     }
@@ -479,69 +482,69 @@ auto from_bytes(std::span<const std::byte> bytes, T& value) -> std::expected<voi
     return {};
 }
 
-template <typename T>
+template <typename Config = config::default_config, typename T>
 auto from_bytes(std::span<const std::uint8_t> bytes, T& value) -> std::expected<void, error_kind> {
-    return from_bytes(
+    return from_bytes<Config>(
         std::span<const std::byte>(reinterpret_cast<const std::byte*>(bytes.data()), bytes.size()),
         value);
 }
 
-template <typename T>
+template <typename Config = config::default_config, typename T>
 auto from_bytes(const std::vector<std::byte>& bytes, T& value) -> std::expected<void, error_kind> {
-    return from_bytes(std::span<const std::byte>(bytes.data(), bytes.size()), value);
+    return from_bytes<Config>(std::span<const std::byte>(bytes.data(), bytes.size()), value);
 }
 
-template <typename T>
+template <typename Config = config::default_config, typename T>
 auto from_bytes(const std::vector<std::uint8_t>& bytes, T& value)
     -> std::expected<void, error_kind> {
-    return from_bytes(std::span<const std::uint8_t>(bytes.data(), bytes.size()), value);
+    return from_bytes<Config>(std::span<const std::uint8_t>(bytes.data(), bytes.size()), value);
 }
 
-template <typename T>
+template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_bytes(std::span<const std::byte> bytes) -> std::expected<T, error_kind> {
     T value{};
-    auto status = from_bytes(bytes, value);
+    auto status = from_bytes<Config>(bytes, value);
     if(!status) {
         return std::unexpected(status.error());
     }
     return value;
 }
 
-template <typename T>
+template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_bytes(std::span<const std::uint8_t> bytes) -> std::expected<T, error_kind> {
     T value{};
-    auto status = from_bytes(bytes, value);
+    auto status = from_bytes<Config>(bytes, value);
     if(!status) {
         return std::unexpected(status.error());
     }
     return value;
 }
 
-template <typename T>
+template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_bytes(const std::vector<std::byte>& bytes) -> std::expected<T, error_kind> {
-    return from_bytes<T>(std::span<const std::byte>(bytes.data(), bytes.size()));
+    return from_bytes<T, Config>(std::span<const std::byte>(bytes.data(), bytes.size()));
 }
 
-template <typename T>
+template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_bytes(const std::vector<std::uint8_t>& bytes) -> std::expected<T, error_kind> {
-    return from_bytes<T>(std::span<const std::uint8_t>(bytes.data(), bytes.size()));
+    return from_bytes<T, Config>(std::span<const std::uint8_t>(bytes.data(), bytes.size()));
 }
 
-static_assert(serde::deserializer_like<Deserializer>);
+static_assert(serde::deserializer_like<Deserializer<>>);
 
 }  // namespace eventide::serde::bincode
 
 namespace eventide::serde {
 
-template <typename T>
+template <typename Config, typename T>
     requires (refl::reflectable_class<std::remove_cvref_t<T>> &&
               !std::ranges::input_range<std::remove_cvref_t<T>>)
-struct deserialize_traits<bincode::Deserializer, T> {
-    using deserializer_t = bincode::Deserializer;
+struct deserialize_traits<bincode::Deserializer<Config>, T> {
+    using deserializer_t = bincode::Deserializer<Config>;
     using error_type = typename deserializer_t::error_type;
 
     static auto deserialize(deserializer_t& deserializer, T& value)
@@ -564,11 +567,11 @@ struct deserialize_traits<bincode::Deserializer, T> {
     }
 };
 
-template <typename T>
+template <typename Config, typename T>
     requires (std::ranges::input_range<std::remove_cvref_t<T>> &&
               format_kind<std::remove_cvref_t<T>> == range_format::map)
-struct deserialize_traits<bincode::Deserializer, T> {
-    using deserializer_t = bincode::Deserializer;
+struct deserialize_traits<bincode::Deserializer<Config>, T> {
+    using deserializer_t = bincode::Deserializer<Config>;
     using error_type = typename deserializer_t::error_type;
     using map_t = std::remove_cvref_t<T>;
     using key_t = typename map_t::key_type;

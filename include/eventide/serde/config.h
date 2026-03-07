@@ -7,94 +7,51 @@
 
 namespace eventide::serde::config {
 
-struct runtime_config {
-    using rename_transform_fn = std::string (*)(bool is_serialize, std::string_view value);
-    rename_transform_fn field_rename = nullptr;
-    rename_transform_fn enum_rename = nullptr;
+/// Default config — no rename policies applied.
+struct default_config {};
+
+/// Extract the config type from a serializer/deserializer.
+/// Falls back to default_config if S::config_type is not defined.
+template <typename S>
+struct config_of_impl {
+    using type = default_config;
 };
 
-namespace detail {
+template <typename S>
+    requires requires { typename S::config_type; }
+struct config_of_impl<S> {
+    using type = typename S::config_type;
+};
 
-template <typename Policy>
-std::string apply_policy_rename(bool is_serialize, std::string_view value) {
-    return spelling::apply_rename_policy<Policy>(is_serialize, value);
-}
+template <typename S>
+using config_of = typename config_of_impl<S>::type;
 
-}  // namespace detail
-
-inline thread_local runtime_config runtime{};
-
-const inline runtime_config& get() {
-    return runtime;
-}
-
-inline void set(runtime_config cfg) {
-    runtime = cfg;
-}
-
-inline void reset() {
-    runtime = {};
-}
-
-inline bool field_rename_enabled() {
-    return get().field_rename != nullptr;
-}
-
-inline bool enum_rename_enabled() {
-    return get().enum_rename != nullptr;
-}
-
-template <typename Policy>
-void set_field_rename_policy() {
-    auto cfg = get();
-    cfg.field_rename = &detail::apply_policy_rename<Policy>;
-    set(cfg);
-}
-
-template <typename Policy>
-void set_enum_rename_policy() {
-    auto cfg = get();
-    cfg.enum_rename = &detail::apply_policy_rename<Policy>;
-    set(cfg);
-}
-
+/// Apply field rename policy from Config.
+/// If Config::field_rename exists, uses it; otherwise returns value unchanged.
+template <typename Config>
 inline std::string_view apply_field_rename(bool is_serialize,
                                            std::string_view value,
                                            std::string& scratch) {
-    auto fn = get().field_rename;
-    if(fn == nullptr) {
+    if constexpr(requires { typename Config::field_rename; }) {
+        scratch = spelling::apply_rename_policy<typename Config::field_rename>(is_serialize, value);
+        return scratch;
+    } else {
         return value;
     }
-    scratch = fn(is_serialize, value);
-    return scratch;
 }
 
+/// Apply enum rename policy from Config.
+/// If Config::enum_rename exists, uses it; otherwise returns value unchanged.
+template <typename Config>
 inline std::string_view apply_enum_rename(bool is_serialize,
                                           std::string_view value,
                                           std::string& scratch) {
-    auto fn = get().enum_rename;
-    if(fn == nullptr) {
+    if constexpr(requires { typename Config::enum_rename; }) {
+        scratch = spelling::apply_rename_policy<typename Config::enum_rename>(is_serialize, value);
+        return scratch;
+    } else {
         return value;
     }
-    scratch = fn(is_serialize, value);
-    return scratch;
 }
-
-class scoped_config {
-public:
-    explicit scoped_config(runtime_config cfg) : prev(get()) {
-        set(cfg);
-    }
-
-    ~scoped_config() {
-        set(prev);
-    }
-
-    scoped_config(const scoped_config&) = delete;
-    scoped_config& operator=(const scoped_config&) = delete;
-
-private:
-    runtime_config prev;
-};
 
 }  // namespace eventide::serde::config

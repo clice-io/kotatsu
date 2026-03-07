@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "eventide/common/ranges.h"
+#include "eventide/serde/config.h"
 #include "eventide/serde/detail/type_utils.h"
 #include "eventide/serde/flatbuffers/binary_schema.h"
 #include "eventide/serde/flatbuffers/binary_serializer.h"
@@ -742,8 +743,10 @@ private:
 
 }  // namespace deserialize_detail
 
+template <typename Config = config::default_config>
 class Deserializer {
 public:
+    using config_type = Config;
     using error_type = object_error_code;
 
     template <typename T>
@@ -824,10 +827,10 @@ private:
     const ::flatbuffers::Table* root = nullptr;
 };
 
-template <typename T>
+template <typename Config = config::default_config, typename T>
 auto from_flatbuffer(std::span<const std::uint8_t> bytes, T& value)
     -> std::expected<void, object_error_code> {
-    Deserializer deserializer(bytes);
+    Deserializer<Config> deserializer(bytes);
     if(!deserializer.valid()) {
         return std::unexpected(deserializer.error());
     }
@@ -839,10 +842,10 @@ auto from_flatbuffer(std::span<const std::uint8_t> bytes, T& value)
     return {};
 }
 
-template <typename T>
+template <typename Config = config::default_config, typename T>
 auto from_flatbuffer(std::span<const std::byte> bytes, T& value)
     -> std::expected<void, object_error_code> {
-    Deserializer deserializer(bytes);
+    Deserializer<Config> deserializer(bytes);
     if(!deserializer.valid()) {
         return std::unexpected(deserializer.error());
     }
@@ -854,39 +857,40 @@ auto from_flatbuffer(std::span<const std::byte> bytes, T& value)
     return {};
 }
 
-template <typename T>
+template <typename Config = config::default_config, typename T>
 auto from_flatbuffer(const std::vector<std::uint8_t>& bytes, T& value)
     -> std::expected<void, object_error_code> {
-    return from_flatbuffer(std::span<const std::uint8_t>(bytes.data(), bytes.size()), value);
+    return from_flatbuffer<Config>(std::span<const std::uint8_t>(bytes.data(), bytes.size()),
+                                   value);
 }
 
-template <typename T>
+template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_flatbuffer(std::span<const std::uint8_t> bytes) -> std::expected<T, object_error_code> {
     T value{};
-    auto status = from_flatbuffer(bytes, value);
+    auto status = from_flatbuffer<Config>(bytes, value);
     if(!status) {
         return std::unexpected(status.error());
     }
     return value;
 }
 
-template <typename T>
+template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_flatbuffer(std::span<const std::byte> bytes) -> std::expected<T, object_error_code> {
     T value{};
-    auto status = from_flatbuffer(bytes, value);
+    auto status = from_flatbuffer<Config>(bytes, value);
     if(!status) {
         return std::unexpected(status.error());
     }
     return value;
 }
 
-template <typename T>
+template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_flatbuffer(const std::vector<std::uint8_t>& bytes)
     -> std::expected<T, object_error_code> {
-    return from_flatbuffer<T>(std::span<const std::uint8_t>(bytes.data(), bytes.size()));
+    return from_flatbuffer<T, Config>(std::span<const std::uint8_t>(bytes.data(), bytes.size()));
 }
 
 }  // namespace eventide::serde::flatbuffers::binary

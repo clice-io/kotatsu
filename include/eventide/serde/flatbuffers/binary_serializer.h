@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "eventide/common/ranges.h"
+#include "eventide/serde/config.h"
 #include "eventide/serde/detail/type_utils.h"
 #include "eventide/serde/flatbuffers/binary_schema.h"
 #include "eventide/serde/serde.h"
@@ -87,8 +88,10 @@ inline auto variant_field_voffset(std::size_t index) -> object_result_t<::flatbu
 
 }  // namespace detail
 
+template <typename Config = config::default_config>
 class Serializer {
 public:
+    using config_type = Config;
     using value_type = ::flatbuffers::Offset<::flatbuffers::Table>;
     using error_type = object_error_code;
 
@@ -334,7 +337,7 @@ private:
     }
 
     struct TableFieldCollector {
-        Serializer* serializer = nullptr;
+        Serializer<Config>* serializer = nullptr;
         std::vector<std::function<void()>>* writers = nullptr;
         std::size_t current_index = 0;
 
@@ -377,7 +380,7 @@ private:
         refl::for_each(value, [&](auto field) {
             collector.current_index = field.index();
             auto status =
-                serde::detail::serialize_struct_field<object_error_code>(collector, field);
+                serde::detail::serialize_struct_field<Config, object_error_code>(collector, field);
             if(!status) {
                 field_result = std::unexpected(status.error());
                 return false;
@@ -745,23 +748,23 @@ private:
     ::flatbuffers::FlatBufferBuilder builder;
 };
 
-template <typename T>
+template <typename Config = config::default_config, typename T>
 auto to_flatbuffer(const T& value, std::optional<std::size_t> initial_capacity = std::nullopt)
     -> object_result_t<std::vector<std::uint8_t>> {
-    Serializer serializer(initial_capacity.value_or(1024));
+    Serializer<Config> serializer(initial_capacity.value_or(1024));
     return serializer.bytes(value);
 }
 
-static_assert(serde::serializer_like<Serializer>);
+static_assert(serde::serializer_like<Serializer<>>);
 
 }  // namespace eventide::serde::flatbuffers::binary
 
 namespace eventide::serde {
 
-template <typename T>
+template <typename Config, typename T>
     requires refl::reflectable_class<std::remove_cvref_t<T>>
-struct serialize_traits<flatbuffers::binary::Serializer, T> {
-    using serializer_t = flatbuffers::binary::Serializer;
+struct serialize_traits<flatbuffers::binary::Serializer<Config>, T> {
+    using serializer_t = flatbuffers::binary::Serializer<Config>;
 
     static auto serialize(serializer_t& serializer, const T& value) ->
         typename serializer_t::template result_t<typename serializer_t::value_type> {
@@ -769,11 +772,11 @@ struct serialize_traits<flatbuffers::binary::Serializer, T> {
     }
 };
 
-template <typename T>
+template <typename Config, typename T>
     requires (std::ranges::input_range<std::remove_cvref_t<T>> &&
               !refl::reflectable_class<std::remove_cvref_t<T>>)
-struct serialize_traits<flatbuffers::binary::Serializer, T> {
-    using serializer_t = flatbuffers::binary::Serializer;
+struct serialize_traits<flatbuffers::binary::Serializer<Config>, T> {
+    using serializer_t = flatbuffers::binary::Serializer<Config>;
 
     static auto serialize(serializer_t& serializer, const T& value) ->
         typename serializer_t::template result_t<typename serializer_t::value_type> {

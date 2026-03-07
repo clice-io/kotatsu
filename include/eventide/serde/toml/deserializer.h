@@ -14,6 +14,7 @@
 #include <variant>
 #include <vector>
 
+#include "eventide/serde/config.h"
 #include "eventide/serde/detail/deserialize_helpers.h"
 #include "eventide/serde/detail/narrow.h"
 #include "eventide/serde/detail/type_utils.h"
@@ -76,8 +77,10 @@ auto select_root_node(const ::toml::table& table) -> const ::toml::node* {
 
 }  // namespace detail
 
+template <typename Config = config::default_config>
 class Deserializer {
 public:
+    using config_type = Config;
     using error_type = error_kind;
 
     template <typename T>
@@ -624,10 +627,10 @@ private:
     const ::toml::node* current_node = nullptr;
 };
 
-template <typename T>
+template <typename Config = config::default_config, typename T>
 auto from_toml(const ::toml::table& table, T& value) -> std::expected<void, error_kind> {
     const auto* root = detail::select_root_node<T>(table);
-    Deserializer deserializer(root);
+    Deserializer<Config> deserializer(root);
 
     auto status = serde::deserialize(deserializer, value);
     if(!status) {
@@ -641,17 +644,17 @@ auto from_toml(const ::toml::table& table, T& value) -> std::expected<void, erro
     return {};
 }
 
-template <typename T>
+template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_toml(const ::toml::table& table) -> std::expected<T, error_kind> {
     T value{};
-    auto status = from_toml(table, value);
+    auto status = from_toml<Config>(table, value);
     if(!status) {
         return std::unexpected(status.error());
     }
     return value;
 }
 
-static_assert(serde::deserializer_like<Deserializer>);
+static_assert(serde::deserializer_like<Deserializer<>>);
 
 }  // namespace eventide::serde::toml

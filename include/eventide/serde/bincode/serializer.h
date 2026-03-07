@@ -15,12 +15,15 @@
 #include <vector>
 
 #include "eventide/serde/bincode/error.h"
+#include "eventide/serde/config.h"
 #include "eventide/serde/serde.h"
 
 namespace eventide::serde::bincode {
 
+template <typename Config = config::default_config>
 class Serializer {
 public:
+    using config_type = Config;
     using value_type = void;
     using error_type = error_kind;
 
@@ -294,9 +297,9 @@ private:
     error_type last_error = error_type::ok;
 };
 
-template <typename T>
+template <typename Config = config::default_config, typename T>
 auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, error_kind> {
-    Serializer serializer;
+    Serializer<Config> serializer;
     auto status = serde::serialize(serializer, value);
     if(!status) {
         return std::unexpected(status.error());
@@ -307,6 +310,6 @@ auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, error_kin
     return serializer.take_bytes();
 }
 
-static_assert(serde::serializer_like<Serializer>);
+static_assert(serde::serializer_like<Serializer<>>);
 
 }  // namespace eventide::serde::bincode
