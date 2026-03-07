@@ -98,6 +98,9 @@ public:
         return state == Cancelled;
     }
 
+    /// If this node is a task, clear its awaitee pointer.
+    void clear_awaitee() noexcept;
+
     void cancel();
 
     void resume();
@@ -131,6 +134,15 @@ protected:
 public:
     std::coroutine_handle<> handle() {
         return std::coroutine_handle<>::from_address(address);
+    }
+
+    bool has_awaitee() const noexcept {
+        return awaitee != nullptr;
+    }
+
+    void detach_as_root() noexcept {
+        awaiter = nullptr;
+        root = true;
     }
 
     void set_awaitee(async_node* node) noexcept {

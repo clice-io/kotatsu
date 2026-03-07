@@ -12,6 +12,54 @@ namespace eventide {
 
 namespace {
 
+struct deferred_cancel_await : system_op {
+    inline static deferred_cancel_await* pending = nullptr;
+
+    int* destroyed = nullptr;
+
+    explicit deferred_cancel_await(int& destroyed_count) : destroyed(&destroyed_count) {
+        assert(pending == nullptr && "only one deferred_cancel_await may be pending at a time");
+        action = &on_cancel;
+        pending = this;
+    }
+
+    deferred_cancel_await(const deferred_cancel_await&) = delete;
+    deferred_cancel_await& operator=(const deferred_cancel_await&) = delete;
+    deferred_cancel_await(deferred_cancel_await&&) = delete;
+    deferred_cancel_await& operator=(deferred_cancel_await&&) = delete;
+
+    ~deferred_cancel_await() {
+        if(destroyed) {
+            *destroyed += 1;
+        }
+        if(pending == this) {
+            pending = nullptr;
+        }
+    }
+
+    static void on_cancel(system_op*) {}
+
+    bool await_ready() const noexcept {
+        return false;
+    }
+
+    template <typename Promise>
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<Promise> waiting,
+                      std::source_location location = std::source_location::current()) noexcept {
+        return this->link_continuation(&waiting.promise(), location);
+    }
+
+    void await_resume() const noexcept {}
+
+    static void finish_pending_cancel() {
+        auto* op = pending;
+        assert(op != nullptr && "finish_pending_cancel requires a pending awaiter");
+        pending = nullptr;
+        op->complete();
+    }
+};
+
 TEST_SUITE(when_ops) {
 
 TEST_CASE(when_all_values) {
@@ -183,6 +231,62 @@ TEST_CASE(all_cancel_others) {
     EXPECT_TRUE(task->is_cancelled());
     EXPECT_EQ(cancel_started, 1);
     EXPECT_EQ(slow_done, 0);
+}
+
+TEST_CASE(any_detaches_cancelled_child_until_quiescent) {
+    int op_destroyed = 0;
+
+    auto slow = [&]() -> task<int> {
+        deferred_cancel_await op(op_destroyed);
+        co_await op;
+        co_return 2;
+    };
+
+    auto fast = []() -> task<int> {
+        co_return 1;
+    };
+
+    auto combined = [&]() -> task<std::size_t> {
+        auto idx = co_await when_any(slow(), fast());
+        co_return idx;
+    };
+
+    auto [idx] = run(combined());
+    EXPECT_EQ(idx, 1U);
+    EXPECT_EQ(op_destroyed, 0);
+
+    deferred_cancel_await::finish_pending_cancel();
+    EXPECT_EQ(op_destroyed, 1);
+}
+
+TEST_CASE(all_detaches_cancelled_sibling_until_quiescent) {
+    int op_destroyed = 0;
+
+    auto slow = [&]() -> task<int> {
+        deferred_cancel_await op(op_destroyed);
+        co_await op;
+        co_return 2;
+    };
+
+    auto canceler = []() -> task<int> {
+        co_await cancel();
+        co_return 1;
+    };
+
+    auto combined = [&]() -> task<> {
+        co_await when_all(slow(), canceler());
+    };
+
+    auto probe = [&]() -> task<> {
+        auto res = co_await combined().catch_cancel();
+        EXPECT_FALSE(res.has_value());
+    };
+
+    run(probe());
+    EXPECT_EQ(op_destroyed, 0);
+
+    deferred_cancel_await::finish_pending_cancel();
+    EXPECT_EQ(op_destroyed, 1);
 }
 
 TEST_CASE(when_all_token_cancel) {
@@ -541,6 +645,37 @@ TEST_CASE(scope_token_cancel) {
 
     EXPECT_FALSE(guarded.value().has_value());
     EXPECT_EQ(finished, 0);
+}
+
+TEST_CASE(scope_detaches_cancelled_child_until_quiescent) {
+    int op_destroyed = 0;
+
+    auto slow = [&]() -> task<> {
+        deferred_cancel_await op(op_destroyed);
+        co_await op;
+    };
+
+    auto canceler = []() -> task<> {
+        co_await cancel();
+    };
+
+    auto driver = [&]() -> task<> {
+        async_scope scope;
+        scope.spawn(slow());
+        scope.spawn(canceler());
+        co_await scope;
+    };
+
+    auto probe = [&]() -> task<> {
+        auto res = co_await driver().catch_cancel();
+        EXPECT_FALSE(res.has_value());
+    };
+
+    run(probe());
+    EXPECT_EQ(op_destroyed, 0);
+
+    deferred_cancel_await::finish_pending_cancel();
+    EXPECT_EQ(op_destroyed, 1);
 }
 
 TEST_CASE(scope_empty) {

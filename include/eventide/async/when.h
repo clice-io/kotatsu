@@ -24,6 +24,27 @@ auto take_result(Task& task) {
     return std::move(task).result();
 }
 
+template <typename Task>
+void release_inflight(Task& task) noexcept {
+    auto* node = static_cast<standard_task*>(node_from(task));
+    if(node && node->has_awaitee()) {
+        node->detach_as_root();
+        task.release();
+    }
+}
+
+inline void destroy_or_detach(async_node* child) noexcept {
+    assert(child && child->kind == async_node::NodeKind::Task);
+    auto* task = static_cast<standard_task*>(child);
+
+    if(task->has_awaitee()) {
+        task->detach_as_root();
+        return;
+    }
+
+    task->handle().destroy();
+}
+
 }  // namespace detail
 
 /// Awaits all tasks concurrently. Returns a std::tuple of their results.
@@ -35,6 +56,10 @@ public:
     template <typename... U>
     explicit when_all(U&&... tasks) :
         aggregate_op(async_node::NodeKind::WhenAll), tasks_(std::forward<U>(tasks)...) {}
+
+    ~when_all() {
+        release_inflight(std::index_sequence_for<Tasks...>{});
+    }
 
     bool await_ready() const noexcept {
         return sizeof...(Tasks) == 0;
@@ -81,6 +106,7 @@ public:
 
         arming = false;
         if(pending_resume && awaiter) {
+            awaiter->clear_awaitee();
             if(pending_cancel) {
                 awaiter->state = Cancelled;
                 return awaiter->final_transition();
@@ -97,6 +123,11 @@ public:
     }
 
 private:
+    template <std::size_t... I>
+    void release_inflight(std::index_sequence<I...>) noexcept {
+        (detail::release_inflight(std::get<I>(tasks_)), ...);
+    }
+
     template <std::size_t... I>
     void add_awaitees(std::index_sequence<I...>) {
         (awaitees.push_back(detail::node_from(std::get<I>(tasks_))), ...);
@@ -119,6 +150,10 @@ public:
     template <typename... U>
     explicit when_any(U&&... tasks) :
         aggregate_op(async_node::NodeKind::WhenAny), tasks_(std::forward<U>(tasks)...) {}
+
+    ~when_any() {
+        release_inflight(std::index_sequence_for<Tasks...>{});
+    }
 
     bool await_ready() const noexcept {
         return sizeof...(Tasks) == 0;
@@ -165,6 +200,7 @@ public:
 
         arming = false;
         if(pending_resume && awaiter) {
+            awaiter->clear_awaitee();
             if(pending_cancel) {
                 awaiter->state = Cancelled;
                 return awaiter->final_transition();
@@ -181,6 +217,11 @@ public:
     }
 
 private:
+    template <std::size_t... I>
+    void release_inflight(std::index_sequence<I...>) noexcept {
+        (detail::release_inflight(std::get<I>(tasks_)), ...);
+    }
+
     template <std::size_t... I>
     void add_awaitees(std::index_sequence<I...>) {
         (awaitees.push_back(detail::node_from(std::get<I>(tasks_))), ...);
@@ -200,9 +241,14 @@ when_any(Tasks&&...) -> when_any<std::decay_t<Tasks>...>;
 /// variadic), scope uses a dynamic vector and takes ownership of spawned
 /// tasks via task::release().
 ///
-/// The scope destructor destroys all owned coroutine frames, so it is safe
-/// to let the scope go out of scope without awaiting (no leak, no crash).
-/// However, spawned tasks will NOT have been executed in that case.
+/// The scope destructor destroys children that have not started (or have
+/// already quiesced), so it is safe to let the scope go out of scope without
+/// awaiting. However, spawned tasks will NOT have been executed in that case.
+///
+/// Children still suspended on an in-flight awaitable are detached as root
+/// tasks instead of being destroyed eagerly. This lets cooperative cancellation
+/// finish and allows the child to destroy its own coroutine frame at
+/// final_suspend after any outstanding callbacks have retired.
 class async_scope : public aggregate_op {
 public:
     async_scope() : aggregate_op(async_node::NodeKind::Scope) {}
@@ -213,7 +259,7 @@ public:
     ~async_scope() {
         for(auto* child: awaitees) {
             if(child) {
-                static_cast<standard_task*>(child)->handle().destroy();
+                detail::destroy_or_detach(child);
             }
         }
     }
@@ -266,6 +312,7 @@ public:
 
         arming = false;
         if(pending_resume && awaiter) {
+            awaiter->clear_awaitee();
             if(pending_cancel) {
                 awaiter->state = Cancelled;
                 return awaiter->final_transition();

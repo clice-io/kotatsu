@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdlib>
 #include <functional>
 #include <map>
 #include <memory>
@@ -97,7 +98,6 @@ private:
                 unit.compiling = false;
                 unit.completion->set();
                 co_await cancel();
-                co_return false;
             }
         }
 
@@ -112,7 +112,6 @@ private:
             unit.compiling = false;
             unit.completion->set();
             co_await cancel();
-            co_return false;
         }
 
         unit.dirty = false;

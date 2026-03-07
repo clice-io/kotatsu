@@ -11,6 +11,12 @@ namespace eventide {
 /// Tracks the most recently resumed task (used for debugging/profiling).
 static thread_local async_node* current_node = nullptr;
 
+void async_node::clear_awaitee() noexcept {
+    if(kind == NodeKind::Task) {
+        static_cast<standard_task*>(this)->set_awaitee(nullptr);
+    }
+}
+
 /// Recursively cancels this node and all of its descendants.
 /// Idempotent: re-cancelling an already-cancelled node is a no-op.
 void async_node::cancel() {
@@ -225,6 +231,7 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
                     return self->handle();
                 }
 
+                self->awaitee = nullptr;
                 self->state = Cancelled;
                 return self->final_transition();
             }
@@ -257,6 +264,7 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
                 }
 
                 if(self->awaiter) {
+                    self->awaiter->clear_awaitee();
                     self->awaiter->state = Cancelled;
                     return self->awaiter->final_transition();
                 }
@@ -287,6 +295,7 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
                 }
 
                 if(self->awaiter) {
+                    self->awaiter->clear_awaitee();
                     return static_cast<standard_task*>(self->awaiter)->handle();
                 }
 
@@ -302,6 +311,7 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
                 }
 
                 if(self->awaiter) {
+                    self->awaiter->clear_awaitee();
                     return static_cast<standard_task*>(self->awaiter)->handle();
                 }
             }
