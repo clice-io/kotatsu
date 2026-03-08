@@ -332,8 +332,8 @@ private:
                 return std::unexpected(object_error_code::invalid_state);
             }
             for(std::size_t i = 0; i < vector->size(); ++i) {
-                ET_EXPECTED_TRY(
-                    store_element(std::byte{vector->Get(static_cast<::flatbuffers::uoffset_t>(i))}));
+                ET_EXPECTED_TRY(store_element(
+                    std::byte{vector->Get(static_cast<::flatbuffers::uoffset_t>(i))}));
             }
             return finalize_sequence();
         } else if constexpr(serde::bool_like<element_clean_t> || serde::int_like<element_clean_t> ||
@@ -344,7 +344,8 @@ private:
                 return std::unexpected(object_error_code::invalid_state);
             }
             for(std::size_t i = 0; i < vector->size(); ++i) {
-                ET_EXPECTED_TRY(store_element(vector->Get(static_cast<::flatbuffers::uoffset_t>(i))));
+                ET_EXPECTED_TRY(
+                    store_element(vector->Get(static_cast<::flatbuffers::uoffset_t>(i))));
             }
             return finalize_sequence();
         } else if constexpr(serde::floating_like<element_clean_t>) {
@@ -356,7 +357,8 @@ private:
                     return std::unexpected(object_error_code::invalid_state);
                 }
                 for(std::size_t i = 0; i < vector->size(); ++i) {
-                    ET_EXPECTED_TRY(store_element(vector->Get(static_cast<::flatbuffers::uoffset_t>(i))));
+                    ET_EXPECTED_TRY(
+                        store_element(vector->Get(static_cast<::flatbuffers::uoffset_t>(i))));
                 }
                 return finalize_sequence();
             } else {
@@ -365,7 +367,8 @@ private:
                     return std::unexpected(object_error_code::invalid_state);
                 }
                 for(std::size_t i = 0; i < vector->size(); ++i) {
-                    ET_EXPECTED_TRY(store_element(vector->Get(static_cast<::flatbuffers::uoffset_t>(i))));
+                    ET_EXPECTED_TRY(
+                        store_element(vector->Get(static_cast<::flatbuffers::uoffset_t>(i))));
                 }
                 return finalize_sequence();
             }

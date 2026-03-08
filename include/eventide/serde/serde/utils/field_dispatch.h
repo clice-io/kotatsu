@@ -14,6 +14,7 @@
 #include "eventide/serde/serde/attrs/schema.h"
 #include "eventide/serde/serde/config.h"
 #include "eventide/serde/serde/spelling.h"
+#include "eventide/serde/serde/utils/apply_behavior.h"
 #include "eventide/serde/serde/utils/common.h"
 #include "eventide/serde/serde/utils/fwd.h"
 
@@ -71,29 +72,15 @@ constexpr auto serialize_struct_field(SerializeStruct& s_struct, Field field)
                 }
             }
 
-            // Behavior: with<Adapter> — adapter-based serialization
-            if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::with>) {
-                using Adapter =
-                    typename detail::tuple_find_spec_t<attrs_t, behavior::with>::adapter;
-                return Adapter::serialize_field(s_struct, effective_name, value);
-            }
-            // Behavior: as<Target> — type conversion before serialization
-            else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::as>) {
-                using Target = typename detail::tuple_find_spec_t<attrs_t, behavior::as>::target;
-                static_assert(
-                    std::is_constructible_v<Target, const value_t&>,
-                    "behavior::as<Target> requires Target to be constructible from the field type");
-                Target converted(value);
-                return s_struct.serialize_field(effective_name, converted);
-            }
-            // Behavior: enum_string — serialize enum as string
-            else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::enum_string>) {
-                using Policy =
-                    typename detail::tuple_find_spec_t<attrs_t, behavior::enum_string>::policy;
-                static_assert(std::is_enum_v<value_t>,
-                              "behavior::enum_string requires an enum field type");
-                auto enum_text = spelling::map_enum_to_string<value_t, Policy>(value);
-                return s_struct.serialize_field(effective_name, enum_text);
+            // Behavior: with/as/enum_string — delegate to apply_serialize_behavior
+            if constexpr(detail::tuple_count_of_v<attrs_t, is_behavior_provider> > 0) {
+                return *detail::apply_serialize_behavior<attrs_t, value_t, E>(
+                    value,
+                    [&](const auto& v) { return s_struct.serialize_field(effective_name, v); },
+                    [&](auto tag, const auto& v) {
+                        using Adapter = typename decltype(tag)::type;
+                        return Adapter::serialize_field(s_struct, effective_name, v);
+                    });
             }
             // Default: serialize field with its value
             else {
@@ -193,39 +180,16 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
                 }
             }
 
-            // Behavior: with<Adapter> — adapter-based deserialization
-            if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::with>) {
-                using Adapter =
-                    typename detail::tuple_find_spec_t<attrs_t, behavior::with>::adapter;
-                ET_EXPECTED_TRY(Adapter::deserialize_field(d_struct, value));
+            // Behavior: with/as/enum_string — delegate to apply_deserialize_behavior
+            if constexpr(detail::tuple_count_of_v<attrs_t, is_behavior_provider> > 0) {
+                ET_EXPECTED_TRY((*detail::apply_deserialize_behavior<attrs_t, value_t, E>(
+                    value,
+                    [&](auto& v) { return d_struct.deserialize_value(v); },
+                    [&](auto tag, auto& v) -> std::expected<void, E> {
+                        using Adapter = typename decltype(tag)::type;
+                        return Adapter::deserialize_field(d_struct, v);
+                    })));
                 return true;
-            }
-            // Behavior: as<Target> — deserialize as Target, then convert back
-            else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::as>) {
-                using Target = typename detail::tuple_find_spec_t<attrs_t, behavior::as>::target;
-                static_assert(
-                    std::is_constructible_v<value_t, Target&&>,
-                    "behavior::as<Target> requires the field type to be constructible from Target");
-                Target temp{};
-                ET_EXPECTED_TRY(d_struct.deserialize_value(temp));
-                value = value_t(std::move(temp));
-                return true;
-            }
-            // Behavior: enum_string — deserialize string then map to enum
-            else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::enum_string>) {
-                using Policy =
-                    typename detail::tuple_find_spec_t<attrs_t, behavior::enum_string>::policy;
-                static_assert(std::is_enum_v<value_t>,
-                              "behavior::enum_string requires an enum field type");
-                std::string enum_text;
-                ET_EXPECTED_TRY(d_struct.deserialize_value(enum_text));
-                auto parsed = spelling::map_string_to_enum<value_t, Policy>(enum_text);
-                if(parsed.has_value()) {
-                    value = *parsed;
-                    return true;
-                } else {
-                    return std::unexpected(E::type_mismatch);
-                }
             }
             // Default: deserialize value directly
             else {

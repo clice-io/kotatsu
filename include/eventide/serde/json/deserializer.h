@@ -746,9 +746,8 @@ private:
 
     result_t<simdjson::padded_string_view> consume_raw_json_view() {
         ET_EXPECTED_TRY_V(auto raw,
-                                read_source<std::string_view>(
-                                    [](auto& doc) { return doc.raw_json(); },
-                                    [](auto& val) { return val.raw_json(); }));
+                          read_source<std::string_view>([](auto& doc) { return doc.raw_json(); },
+                                                        [](auto& val) { return val.raw_json(); }));
         return to_padded_subview(raw);
     }
 

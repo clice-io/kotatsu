@@ -16,6 +16,7 @@
 #include "eventide/reflection/struct.h"
 #include "eventide/serde/serde/attrs/behavior.h"
 #include "eventide/serde/serde/attrs/schema.h"
+#include "eventide/serde/serde/utils/apply_behavior.h"
 #include "eventide/serde/serde/utils/common.h"
 #include "eventide/serde/serde/utils/field_dispatch.h"
 #include "eventide/serde/serde/utils/fwd.h"
@@ -54,27 +55,15 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
                 return detail::serialize_adjacently_tagged<E>(s, value, tag_attr{});
             }
         }
-        // Behavior: enum_string — serialize enum as string
-        else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::enum_string>) {
-            using Policy =
-                typename detail::tuple_find_spec_t<attrs_t, behavior::enum_string>::policy;
-            static_assert(std::is_enum_v<value_t>, "behavior::enum_string requires an enum type");
-            auto enum_text = spelling::map_enum_to_string<value_t, Policy>(value);
-            return s.serialize_str(enum_text);
-        }
-        // Behavior: with<Adapter> — adapter-based serialization
-        else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::with>) {
-            using Adapter = typename detail::tuple_find_spec_t<attrs_t, behavior::with>::adapter;
-            return Adapter::serialize(s, value);
-        }
-        // Behavior: as<Target> — type conversion before serialization
-        else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::as>) {
-            using Target = typename detail::tuple_find_spec_t<attrs_t, behavior::as>::target;
-            static_assert(
-                std::is_constructible_v<Target, const value_t&>,
-                "behavior::as<Target> requires Target to be constructible from the value type");
-            Target converted(value);
-            return serialize(s, converted);
+        // Behavior: with/as/enum_string — delegate to apply_serialize_behavior
+        else if constexpr(detail::tuple_count_of_v<attrs_t, is_behavior_provider> > 0) {
+            return *detail::apply_serialize_behavior<attrs_t, value_t, E>(
+                value,
+                [&](const auto& v) { return serialize(s, v); },
+                [&](auto tag, const auto& v) {
+                    using Adapter = typename decltype(tag)::type;
+                    return Adapter::serialize(s, v);
+                });
         }
         // Struct-level schema attrs for annotated structs
         else if constexpr(refl::reflectable_class<value_t> &&
@@ -127,7 +116,7 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
         return s.serialize_variant(v);
     } else if constexpr(tuple_like<V>) {
         ET_EXPECTED_TRY_V(auto s_tuple,
-                                s.serialize_tuple(std::tuple_size_v<std::remove_cvref_t<V>>));
+                          s.serialize_tuple(std::tuple_size_v<std::remove_cvref_t<V>>));
 
         std::expected<void, E> element_result;
         auto for_each = [&](const auto& element) -> bool {
@@ -214,36 +203,15 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                 return detail::deserialize_adjacently_tagged<E>(d, value, tag_attr{});
             }
         }
-        // Behavior: enum_string — deserialize string then map to enum
-        else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::enum_string>) {
-            using Policy =
-                typename detail::tuple_find_spec_t<attrs_t, behavior::enum_string>::policy;
-            static_assert(std::is_enum_v<value_t>, "behavior::enum_string requires an enum type");
-            std::string enum_text;
-            ET_EXPECTED_TRY(d.deserialize_str(enum_text));
-            auto mapped = spelling::map_string_to_enum<value_t, Policy>(enum_text);
-            if(mapped.has_value()) {
-                value = *mapped;
-                return {};
-            } else {
-                return std::unexpected(E::type_mismatch);
-            }
-        }
-        // Behavior: with<Adapter> — adapter-based deserialization
-        else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::with>) {
-            using Adapter = typename detail::tuple_find_spec_t<attrs_t, behavior::with>::adapter;
-            return Adapter::deserialize(d, value);
-        }
-        // Behavior: as<Target> — deserialize as Target, then convert back
-        else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::as>) {
-            using Target = typename detail::tuple_find_spec_t<attrs_t, behavior::as>::target;
-            static_assert(
-                std::is_constructible_v<value_t, Target&&>,
-                "behavior::as<Target> requires the value type to be constructible from Target");
-            Target temp{};
-            ET_EXPECTED_TRY(deserialize(d, temp));
-            value = value_t(std::move(temp));
-            return {};
+        // Behavior: with/as/enum_string — delegate to apply_deserialize_behavior
+        else if constexpr(detail::tuple_count_of_v<attrs_t, is_behavior_provider> > 0) {
+            return *detail::apply_deserialize_behavior<attrs_t, value_t, E>(
+                value,
+                [&](auto& v) { return deserialize(d, v); },
+                [&](auto tag, auto& v) -> std::expected<void, E> {
+                    using Adapter = typename decltype(tag)::type;
+                    return Adapter::deserialize(d, v);
+                });
         }
         // Struct-level schema attrs for annotated structs
         else if constexpr(refl::reflectable_class<value_t> &&
@@ -365,7 +333,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
         return d.deserialize_variant(v);
     } else if constexpr(tuple_like<V>) {
         ET_EXPECTED_TRY_V(auto d_tuple,
-                                d.deserialize_tuple(std::tuple_size_v<std::remove_cvref_t<V>>));
+                          d.deserialize_tuple(std::tuple_size_v<std::remove_cvref_t<V>>));
 
         std::expected<void, E> element_result;
         auto read_element = [&](auto& element) -> bool {

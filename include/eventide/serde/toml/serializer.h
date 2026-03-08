@@ -302,8 +302,7 @@ public:
         template <typename K, typename V>
         status_t serialize_entry(const K& key, const V& value) {
             ET_EXPECTED_TRY_V(auto result, serde::serialize(serializer, value));
-            values.entries.emplace_back(serde::spelling::map_key_to_string(key),
-                                        std::move(result));
+            values.entries.emplace_back(serde::spelling::map_key_to_string(key), std::move(result));
             return {};
         }
 

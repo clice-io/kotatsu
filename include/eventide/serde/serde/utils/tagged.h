@@ -21,69 +21,19 @@
 
 namespace eventide::serde::detail {
 
-template <typename E, typename S, typename... Ts, typename TagAttr>
-constexpr auto serialize_externally_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
-    -> std::expected<typename S::value_type, E> {
-    constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
-
-    ET_EXPECTED_TRY_V(auto s_struct, s.serialize_struct("", 1));
-
-    auto name = names[value.index()];
-    std::expected<void, E> field_result{};
-    std::visit([&](const auto& item) { field_result = s_struct.serialize_field(name, item); },
-               value);
-
-    if(!field_result) {
-        return std::unexpected(field_result.error());
-    }
-    return s_struct.end();
-}
-
-template <typename E, typename S, typename... Ts, typename TagAttr>
-constexpr auto serialize_adjacently_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
-    -> std::expected<typename S::value_type, E> {
-    constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
-
-    ET_EXPECTED_TRY_V(auto s_struct, s.serialize_struct("", 2));
-
-    auto name = names[value.index()];
-    ET_EXPECTED_TRY(s_struct.serialize_field(TagAttr::field_names[0], name));
-
-    std::expected<void, E> content_result{};
-    std::visit(
-        [&](const auto& item) {
-            content_result = s_struct.serialize_field(TagAttr::field_names[1], item);
-        },
-        value);
-
-    if(!content_result) {
-        return std::unexpected(content_result.error());
-    }
-    return s_struct.end();
-}
-
-template <typename E, typename D, typename... Ts, typename TagAttr>
-constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, TagAttr)
-    -> std::expected<void, E> {
-    constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
-
-    ET_EXPECTED_TRY_V(auto d_struct, d.deserialize_struct("", 1));
-
-    ET_EXPECTED_TRY_V(auto key, d_struct.next_key());
-    if(!key.has_value()) {
-        return std::unexpected(E::type_mismatch);
-    }
-
-    std::string_view key_name = *key;
+/// Match tag_value against variant alternative names, construct the matching alternative,
+/// call reader(alt) to deserialize it, then assign to the variant.
+template <typename E, typename... Ts, typename Names, typename Reader>
+constexpr auto match_and_deserialize_alt(std::string_view tag_value,
+                                         const Names& names,
+                                         std::variant<Ts...>& value,
+                                         Reader&& reader) -> std::expected<void, E> {
     bool matched = false;
     std::expected<void, E> status{};
 
     [&]<std::size_t... I>(std::index_sequence<I...>) {
         (([&] {
-             if(matched) {
-                 return;
-             }
-             if(names[I] != key_name) {
+             if(matched || names[I] != tag_value) {
                  return;
              }
              matched = true;
@@ -91,7 +41,7 @@ constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, T
              using alt_t = std::variant_alternative_t<I, std::variant<Ts...>>;
              if constexpr(std::same_as<alt_t, std::monostate>) {
                  std::monostate alt{};
-                 auto result = d_struct.deserialize_value(alt);
+                 auto result = reader(alt);
                  if(!result) {
                      status = std::unexpected(result.error());
                  } else {
@@ -99,7 +49,7 @@ constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, T
                  }
              } else if constexpr(std::default_initializable<alt_t>) {
                  alt_t alt{};
-                 auto result = d_struct.deserialize_value(alt);
+                 auto result = reader(alt);
                  if(!result) {
                      status = std::unexpected(result.error());
                  } else {
@@ -115,9 +65,69 @@ constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, T
     if(!matched) {
         return std::unexpected(E::type_mismatch);
     }
-    if(!status) {
-        return std::unexpected(status.error());
+    return status;
+}
+
+/// Visit variant and call emitter with the active alternative's value.
+/// Propagates the emitter's result through expected.
+template <typename E, typename R, typename... Ts, typename Emitter>
+constexpr auto visit_variant_alt(const std::variant<Ts...>& value, Emitter&& emit)
+    -> std::expected<R, E> {
+    std::expected<R, E> result{std::unexpected(E::invalid_state)};
+    std::visit([&](const auto& item) { result = emit(item); }, value);
+    return result;
+}
+
+template <typename E, typename S, typename... Ts, typename TagAttr>
+constexpr auto serialize_externally_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
+    -> std::expected<typename S::value_type, E> {
+    constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
+
+    ET_EXPECTED_TRY_V(auto s_struct, s.serialize_struct("", 1));
+
+    auto name = names[value.index()];
+    ET_EXPECTED_TRY(
+        (visit_variant_alt<E, void>(value, [&](const auto& item) -> std::expected<void, E> {
+            return s_struct.serialize_field(name, item);
+        })));
+
+    return s_struct.end();
+}
+
+template <typename E, typename S, typename... Ts, typename TagAttr>
+constexpr auto serialize_adjacently_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
+    -> std::expected<typename S::value_type, E> {
+    constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
+
+    ET_EXPECTED_TRY_V(auto s_struct, s.serialize_struct("", 2));
+
+    auto name = names[value.index()];
+    ET_EXPECTED_TRY(s_struct.serialize_field(TagAttr::field_names[0], name));
+
+    ET_EXPECTED_TRY(
+        (visit_variant_alt<E, void>(value, [&](const auto& item) -> std::expected<void, E> {
+            return s_struct.serialize_field(TagAttr::field_names[1], item);
+        })));
+
+    return s_struct.end();
+}
+
+template <typename E, typename D, typename... Ts, typename TagAttr>
+constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, TagAttr)
+    -> std::expected<void, E> {
+    constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
+
+    ET_EXPECTED_TRY_V(auto d_struct, d.deserialize_struct("", 1));
+
+    ET_EXPECTED_TRY_V(auto key, d_struct.next_key());
+    if(!key.has_value()) {
+        return std::unexpected(E::type_mismatch);
     }
+
+    ET_EXPECTED_TRY((match_and_deserialize_alt<E>(*key, names, value, [&](auto& alt) {
+        return d_struct.deserialize_value(alt);
+    })));
+
     return d_struct.end();
 }
 
@@ -131,47 +141,11 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
     std::string tag_value;
 
     auto deserialize_content_for_tag = [&](auto&& read_content_alt) -> std::expected<void, E> {
-        bool matched = false;
-        std::expected<void, E> status{};
-
-        [&]<std::size_t... I>(std::index_sequence<I...>) {
-            (([&] {
-                 if(matched || names[I] != tag_value) {
-                     return;
-                 }
-                 matched = true;
-
-                 using alt_t = std::variant_alternative_t<I, std::variant<Ts...>>;
-                 if constexpr(std::same_as<alt_t, std::monostate>) {
-                     std::monostate alt{};
-                     auto result = read_content_alt(alt);
-                     if(!result) {
-                         status = std::unexpected(result.error());
-                     } else {
-                         value.template emplace<I>();
-                     }
-                 } else if constexpr(std::default_initializable<alt_t>) {
-                     alt_t alt{};
-                     auto result = read_content_alt(alt);
-                     if(!result) {
-                         status = std::unexpected(result.error());
-                     } else {
-                         value = std::move(alt);
-                     }
-                 } else {
-                     status = std::unexpected(E::invalid_state);
-                 }
-             }()),
-             ...);
-        }(std::make_index_sequence<sizeof...(Ts)>{});
-
-        if(!matched) {
-            return std::unexpected(E::type_mismatch);
-        }
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-        return {};
+        return match_and_deserialize_alt<E>(
+            tag_value,
+            names,
+            value,
+            std::forward<decltype(read_content_alt)>(read_content_alt));
     };
 
     // Read content directly from the struct deserializer
@@ -230,14 +204,13 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
         }
 
         if(buffered_content.has_value()) {
-            ET_EXPECTED_TRY(
-                deserialize_content_for_tag([&](auto& alt) -> std::expected<void, E> {
-                    content::Deserializer<typename D::config_type> buffered_deserializer(
-                        *buffered_content);
-                    ET_EXPECTED_TRY(serde::deserialize(buffered_deserializer, alt));
-                    ET_EXPECTED_TRY(buffered_deserializer.finish());
-                    return {};
-                }));
+            ET_EXPECTED_TRY(deserialize_content_for_tag([&](auto& alt) -> std::expected<void, E> {
+                content::Deserializer<typename D::config_type> buffered_deserializer(
+                    *buffered_content);
+                ET_EXPECTED_TRY(serde::deserialize(buffered_deserializer, alt));
+                ET_EXPECTED_TRY(buffered_deserializer.finish());
+                return {};
+            }));
         }
 
         return d_struct.end();
@@ -264,7 +237,7 @@ constexpr auto serialize_internally_tagged(S& s, const std::variant<Ts...>& valu
 
             using config_t = config::config_of<S>;
             ET_EXPECTED_TRY_V(auto s_struct,
-                                    s.serialize_struct("", refl::field_count<alt_t>() + 1));
+                              s.serialize_struct("", refl::field_count<alt_t>() + 1));
 
             // tag field first
             auto tag_name = names[value.index()];
@@ -324,49 +297,20 @@ constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, T
     }
 
     // Pass 2: match tag -> deserialize full object as that struct type
-    // The tag field will be skipped during struct deserialization (no matching struct field)
-    bool matched = false;
-    std::expected<void, E> status{};
+    return match_and_deserialize_alt<E>(tag_value,
+                                        names,
+                                        value,
+                                        [&](auto& alt) -> std::expected<void, E> {
+                                            using alt_t = std::remove_cvref_t<decltype(alt)>;
+                                            static_assert(
+                                                refl::reflectable_class<alt_t>,
+                                                "internally_tagged requires struct alternatives");
 
-    [&]<std::size_t... I>(std::index_sequence<I...>) {
-        (([&] {
-             if(matched) {
-                 return;
-             }
-             if(names[I] != tag_value) {
-                 return;
-             }
-             matched = true;
-
-             using alt_t = std::variant_alternative_t<I, std::variant<Ts...>>;
-             static_assert(refl::reflectable_class<alt_t>,
-                           "internally_tagged requires struct alternatives");
-
-             if constexpr(std::default_initializable<alt_t>) {
-                 alt_t alt{};
-                 content::Deserializer<config_t> deser(obj_ref);
-                 auto r = serde::deserialize(deser, alt);
-                 if(!r) {
-                     status = std::unexpected(E(r.error()));
-                     return;
-                 }
-                 auto f = deser.finish();
-                 if(!f) {
-                     status = std::unexpected(E(f.error()));
-                     return;
-                 }
-                 value = std::move(alt);
-             } else {
-                 status = std::unexpected(E::invalid_state);
-             }
-         }()),
-         ...);
-    }(std::make_index_sequence<sizeof...(Ts)>{});
-
-    if(!matched) {
-        return std::unexpected(E::type_mismatch);
-    }
-    return status;
+                                            content::Deserializer<config_t> deser(obj_ref);
+                                            ET_EXPECTED_TRY(serde::deserialize(deser, alt));
+                                            ET_EXPECTED_TRY(deser.finish());
+                                            return {};
+                                        });
 }
 
 }  // namespace eventide::serde::detail

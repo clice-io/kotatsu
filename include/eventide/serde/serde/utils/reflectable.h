@@ -17,6 +17,7 @@
 #include "eventide/serde/serde/attrs/behavior.h"
 #include "eventide/serde/serde/attrs/schema.h"
 #include "eventide/serde/serde/config.h"
+#include "eventide/serde/serde/utils/apply_behavior.h"
 #include "eventide/serde/serde/utils/field_dispatch.h"
 #include "eventide/serde/serde/utils/fwd.h"
 
@@ -142,83 +143,6 @@ auto has_ambiguous_wire_names() -> bool {
     return ambiguous;
 }
 
-/// Deserialize a single struct field by its compile-time index.
-template <typename T, typename Config, std::size_t I, typename E, typename DeserializeStruct>
-auto deserialize_field_at(DeserializeStruct& d_struct, T& value) -> std::expected<void, E> {
-    refl::field<I, T> field{value};
-    using field_t = typename decltype(field)::type;
-
-    if constexpr(!annotated_type<field_t>) {
-        auto result = d_struct.deserialize_value(field.value());
-        if(!result) {
-            return std::unexpected(result.error());
-        }
-        return {};
-    } else {
-        using attrs_t = typename std::remove_cvref_t<field_t>::attrs;
-        auto&& fval = annotated_value(field.value());
-        using value_t = std::remove_cvref_t<decltype(fval)>;
-
-        // Behavior: skip_if — conditionally skip deserialization
-        if constexpr(tuple_has_spec_v<attrs_t, behavior::skip_if>) {
-            using Pred = typename tuple_find_spec_t<attrs_t, behavior::skip_if>::predicate;
-            if(evaluate_skip_predicate<Pred>(fval, false)) {
-                auto skip_result = d_struct.skip_value();
-                if(!skip_result) {
-                    return std::unexpected(skip_result.error());
-                }
-                return {};
-            }
-        }
-
-        // Behavior: with<Adapter> — adapter-based deserialization
-        if constexpr(tuple_has_spec_v<attrs_t, behavior::with>) {
-            using Adapter = typename tuple_find_spec_t<attrs_t, behavior::with>::adapter;
-            auto result = Adapter::deserialize_field(d_struct, fval);
-            if(!result) {
-                return std::unexpected(result.error());
-            }
-            return {};
-        }
-        // Behavior: enum_string — deserialize string then map to enum
-        else if constexpr(tuple_has_spec_v<attrs_t, behavior::enum_string>) {
-            using Policy = typename tuple_find_spec_t<attrs_t, behavior::enum_string>::policy;
-            static_assert(std::is_enum_v<value_t>,
-                          "behavior::enum_string requires an enum field type");
-            std::string enum_text;
-            auto result = d_struct.deserialize_value(enum_text);
-            if(!result) {
-                return std::unexpected(result.error());
-            }
-            auto parsed = spelling::map_string_to_enum<value_t, Policy>(enum_text);
-            if(parsed.has_value()) {
-                fval = *parsed;
-                return {};
-            } else {
-                return std::unexpected(E::type_mismatch);
-            }
-        }
-        // Default: deserialize value directly
-        else {
-            // For tagged variants, preserve annotation
-            if constexpr(is_specialization_of<std::variant, value_t> &&
-                         tuple_any_of_v<attrs_t, is_tagged_attr>) {
-                auto result = d_struct.deserialize_value(field.value());
-                if(!result) {
-                    return std::unexpected(result.error());
-                }
-                return {};
-            } else {
-                auto result = d_struct.deserialize_value(fval);
-                if(!result) {
-                    return std::unexpected(result.error());
-                }
-                return {};
-            }
-        }
-    }
-}
-
 /// Dispatch to the correct field deserializer by runtime index.
 template <typename T, typename Config, typename E, typename DeserializeStruct>
 auto dispatch_field_by_index(std::size_t index, DeserializeStruct& d_struct, T& value)
@@ -229,10 +153,48 @@ auto dispatch_field_by_index(std::size_t index, DeserializeStruct& d_struct, T& 
             (([&]() -> bool {
                  if constexpr(schema::is_field_excluded<T, Is>()) {
                      return false;
+                 } else if(Is != index) {
+                     return false;
                  } else {
-                     return Is == index &&
-                            (result = deserialize_field_at<T, Config, Is, E>(d_struct, value),
-                             true);
+                     refl::field<Is, T> field{value};
+                     using field_t = typename decltype(field)::type;
+
+                     if constexpr(!annotated_type<field_t>) {
+                         result = d_struct.deserialize_value(field.value());
+                     } else {
+                         using attrs_t = typename std::remove_cvref_t<field_t>::attrs;
+                         auto&& fval = annotated_value(field.value());
+                         using value_t = std::remove_cvref_t<decltype(fval)>;
+
+                         // skip_if
+                         if constexpr(tuple_has_spec_v<attrs_t, behavior::skip_if>) {
+                             using Pred =
+                                 typename tuple_find_spec_t<attrs_t, behavior::skip_if>::predicate;
+                             if(evaluate_skip_predicate<Pred>(fval, false)) {
+                                 result = d_struct.skip_value();
+                                 return true;
+                             }
+                         }
+
+                         // with/as/enum_string
+                         if constexpr(tuple_count_of_v<attrs_t, is_behavior_provider> > 0) {
+                             result = *apply_deserialize_behavior<attrs_t, value_t, E>(
+                                 fval,
+                                 [&](auto& v) { return d_struct.deserialize_value(v); },
+                                 [&](auto tag, auto& v) -> std::expected<void, E> {
+                                     using Adapter = typename decltype(tag)::type;
+                                     return Adapter::deserialize_field(d_struct, v);
+                                 });
+                         }
+                         // Default: tagged variant passthrough or plain value
+                         else if constexpr(is_specialization_of<std::variant, value_t> &&
+                                           tuple_any_of_v<attrs_t, is_tagged_attr>) {
+                             result = d_struct.deserialize_value(field.value());
+                         } else {
+                             result = d_struct.deserialize_value(fval);
+                         }
+                     }
+                     return true;
                  }
              }()) ||
              ...);
@@ -313,9 +275,8 @@ template <typename Config, typename E, serializer_like S, typename V>
 constexpr auto serialize_reflectable(S& s, const V& v) -> std::expected<typename S::value_type, E> {
     using value_t = std::remove_cvref_t<V>;
 
-    ET_EXPECTED_TRY_V(
-        auto s_struct,
-        s.serialize_struct(refl::type_name<value_t>(), refl::field_count<value_t>()));
+    ET_EXPECTED_TRY_V(auto s_struct,
+                      s.serialize_struct(refl::type_name<value_t>(), refl::field_count<value_t>()));
 
     std::expected<void, E> field_result;
     refl::for_each(v, [&](auto field) {

@@ -657,23 +657,20 @@ private:
             return {};
         } else if constexpr(is_specialization_of<std::variant, U>) {
             ET_EXPECTED_TRY_V(auto offset, encode_variant(value));
-            writers.push_back(
-                [this, field, offset] { builder.AddOffset(field, offset); });
+            writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
             return {};
         } else if constexpr(std::ranges::input_range<clean_t>) {
             constexpr auto kind = eventide::format_kind<clean_t>;
             if constexpr(kind == eventide::range_format::map) {
                 ET_EXPECTED_TRY_V(auto offset, encode_map(value));
-                writers.push_back(
-                    [this, field, offset] { builder.AddOffset(field, offset); });
+                writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
                 return {};
             } else {
                 return collect_sequence_field(writers, field, value);
             }
         } else if constexpr(is_pair_v<clean_t> || is_tuple_v<clean_t>) {
             ET_EXPECTED_TRY_V(auto offset, encode_tuple_like(value));
-            writers.push_back(
-                [this, field, offset] { builder.AddOffset(field, offset); });
+            writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
             return {};
         } else if constexpr(can_inline_struct_v<clean_t>) {
             const clean_t copy = static_cast<clean_t>(value);
@@ -681,8 +678,7 @@ private:
             return {};
         } else if constexpr(refl::reflectable_class<clean_t>) {
             ET_EXPECTED_TRY_V(auto offset, encode_table(value));
-            writers.push_back(
-                [this, field, offset] { builder.AddOffset(field, offset); });
+            writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
             return {};
         } else {
             return std::unexpected(object_error_code::unsupported_type);
