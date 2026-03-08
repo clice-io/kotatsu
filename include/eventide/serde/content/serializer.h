@@ -12,6 +12,7 @@
 #include <variant>
 #include <vector>
 
+#include "eventide/common/expected_try.h"
 #include "eventide/serde/content/dom.h"
 #include "eventide/serde/content/error.h"
 #include "eventide/serde/serde/config.h"
@@ -115,65 +116,41 @@ public:
     }
 
     result_t<value_type> serialize_bytes(std::string_view value) {
-        auto seq = serialize_seq(value.size());
-        if(!seq) {
-            return std::unexpected(seq.error());
-        }
+        ET_EXPECTED_TRY_V(auto seq, serialize_seq(value.size()));
 
         for(unsigned char byte: value) {
-            auto element = seq->serialize_element(static_cast<std::uint64_t>(byte));
-            if(!element) {
-                return std::unexpected(element.error());
-            }
+            ET_EXPECTED_TRY(seq.serialize_element(static_cast<std::uint64_t>(byte)));
         }
-        return seq->end();
+        return seq.end();
     }
 
     result_t<value_type> serialize_bytes(std::span<const std::byte> value) {
-        auto seq = serialize_seq(value.size());
-        if(!seq) {
-            return std::unexpected(seq.error());
-        }
+        ET_EXPECTED_TRY_V(auto seq, serialize_seq(value.size()));
 
         for(std::byte byte: value) {
-            auto element = seq->serialize_element(
-                static_cast<std::uint64_t>(std::to_integer<std::uint8_t>(byte)));
-            if(!element) {
-                return std::unexpected(element.error());
-            }
+            ET_EXPECTED_TRY(seq.serialize_element(
+                static_cast<std::uint64_t>(std::to_integer<std::uint8_t>(byte))));
         }
-        return seq->end();
+        return seq.end();
     }
 
     result_t<SerializeSeq> serialize_seq(std::optional<std::size_t> /*len*/) {
-        auto started = begin_array();
-        if(!started) {
-            return std::unexpected(started.error());
-        }
+        ET_EXPECTED_TRY(begin_array());
         return SerializeSeq(*this);
     }
 
     result_t<SerializeTuple> serialize_tuple(std::size_t /*len*/) {
-        auto started = begin_array();
-        if(!started) {
-            return std::unexpected(started.error());
-        }
+        ET_EXPECTED_TRY(begin_array());
         return SerializeTuple(*this);
     }
 
     result_t<SerializeMap> serialize_map(std::optional<std::size_t> /*len*/) {
-        auto started = begin_object();
-        if(!started) {
-            return std::unexpected(started.error());
-        }
+        ET_EXPECTED_TRY(begin_object());
         return SerializeMap(*this);
     }
 
     result_t<SerializeStruct> serialize_struct(std::string_view /*name*/, std::size_t /*len*/) {
-        auto started = begin_object();
-        if(!started) {
-            return std::unexpected(started.error());
-        }
+        ET_EXPECTED_TRY(begin_object());
         return SerializeStruct(*this);
     }
 

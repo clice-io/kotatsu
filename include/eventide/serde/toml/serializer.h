@@ -14,6 +14,7 @@
 #include <variant>
 #include <vector>
 
+#include "eventide/common/expected_try.h"
 #include "eventide/serde/serde/config.h"
 #include "eventide/serde/serde/serde.h"
 #include "eventide/serde/toml/error.h"
@@ -80,20 +81,14 @@ inline auto append_to_array(::toml::array& array, const Value& value) -> status_
             } else if constexpr(std::same_as<node_t, Value::array_t>) {
                 ::toml::array nested;
                 for(const auto& element: node.values) {
-                    auto status = append_to_array(nested, element);
-                    if(!status) {
-                        return std::unexpected(status.error());
-                    }
+                    ET_EXPECTED_TRY(append_to_array(nested, element));
                 }
                 array.push_back(std::move(nested));
                 return {};
             } else if constexpr(std::same_as<node_t, Value::table_t>) {
                 ::toml::table nested;
                 for(const auto& [nested_key, nested_value]: node.entries) {
-                    auto status = assign_to_table(nested, nested_key, nested_value);
-                    if(!status) {
-                        return std::unexpected(status.error());
-                    }
+                    ET_EXPECTED_TRY(assign_to_table(nested, nested_key, nested_value));
                 }
                 array.push_back(std::move(nested));
                 return {};
@@ -123,20 +118,14 @@ inline auto assign_to_table(::toml::table& table, std::string_view key, const Va
             } else if constexpr(std::same_as<node_t, Value::array_t>) {
                 ::toml::array nested;
                 for(const auto& element: node.values) {
-                    auto status = append_to_array(nested, element);
-                    if(!status) {
-                        return std::unexpected(status.error());
-                    }
+                    ET_EXPECTED_TRY(append_to_array(nested, element));
                 }
                 table.insert_or_assign(key, std::move(nested));
                 return {};
             } else if constexpr(std::same_as<node_t, Value::table_t>) {
                 ::toml::table nested;
                 for(const auto& [nested_key, nested_value]: node.entries) {
-                    auto status = assign_to_table(nested, nested_key, nested_value);
-                    if(!status) {
-                        return std::unexpected(status.error());
-                    }
+                    ET_EXPECTED_TRY(assign_to_table(nested, nested_key, nested_value));
                 }
                 table.insert_or_assign(key, std::move(nested));
                 return {};
@@ -151,10 +140,7 @@ inline auto value_to_table(const Value& value) -> result_t<::toml::table> {
     if(std::holds_alternative<Value::table_t>(value.storage)) {
         ::toml::table table;
         for(const auto& [key, field]: std::get<Value::table_t>(value.storage).entries) {
-            auto status = assign_to_table(table, key, field);
-            if(!status) {
-                return std::unexpected(status.error());
-            }
+            ET_EXPECTED_TRY(assign_to_table(table, key, field));
         }
         return table;
     }
@@ -164,10 +150,7 @@ inline auto value_to_table(const Value& value) -> result_t<::toml::table> {
     }
 
     ::toml::table wrapped;
-    auto status = assign_to_table(wrapped, boxed_root_key, value);
-    if(!status) {
-        return std::unexpected(status.error());
-    }
+    ET_EXPECTED_TRY(assign_to_table(wrapped, boxed_root_key, value));
     return wrapped;
 }
 
@@ -213,11 +196,8 @@ inline auto node_to_value(const ::toml::node& node) -> result_t<Value> {
         Value::array_t values;
         values.values.reserve(array->size());
         for(const auto& element: *array) {
-            auto converted = node_to_value(element);
-            if(!converted.has_value()) {
-                return std::unexpected(converted.error());
-            }
-            values.values.push_back(std::move(*converted));
+            ET_EXPECTED_TRY_V(auto converted, node_to_value(element));
+            values.values.push_back(std::move(converted));
         }
         return Value(std::move(values));
     }
@@ -231,11 +211,8 @@ inline auto node_to_value(const ::toml::node& node) -> result_t<Value> {
         Value::table_t values;
         values.entries.reserve(table->size());
         for(const auto& [key, element]: *table) {
-            auto converted = node_to_value(element);
-            if(!converted.has_value()) {
-                return std::unexpected(converted.error());
-            }
-            values.entries.emplace_back(std::string(key.str()), std::move(*converted));
+            ET_EXPECTED_TRY_V(auto converted, node_to_value(element));
+            values.entries.emplace_back(std::string(key.str()), std::move(converted));
         }
         return Value(std::move(values));
     }
@@ -276,11 +253,8 @@ public:
 
         template <typename T>
         status_t serialize_element(const T& value) {
-            auto result = serde::serialize(serializer, value);
-            if(!result) {
-                return std::unexpected(result.error());
-            }
-            values.values.push_back(std::move(*result));
+            ET_EXPECTED_TRY_V(auto result, serde::serialize(serializer, value));
+            values.values.push_back(std::move(result));
             return {};
         }
 
@@ -302,11 +276,8 @@ public:
 
         template <typename T>
         status_t serialize_element(const T& value) {
-            auto result = serde::serialize(serializer, value);
-            if(!result) {
-                return std::unexpected(result.error());
-            }
-            values.values.push_back(std::move(*result));
+            ET_EXPECTED_TRY_V(auto result, serde::serialize(serializer, value));
+            values.values.push_back(std::move(result));
             return {};
         }
 
@@ -330,12 +301,9 @@ public:
 
         template <typename K, typename V>
         status_t serialize_entry(const K& key, const V& value) {
-            auto result = serde::serialize(serializer, value);
-            if(!result) {
-                return std::unexpected(result.error());
-            }
+            ET_EXPECTED_TRY_V(auto result, serde::serialize(serializer, value));
             values.entries.emplace_back(serde::spelling::map_key_to_string(key),
-                                        std::move(*result));
+                                        std::move(result));
             return {};
         }
 
@@ -357,11 +325,8 @@ public:
 
         template <typename T>
         status_t serialize_field(std::string_view key, const T& value) {
-            auto result = serde::serialize(serializer, value);
-            if(!result) {
-                return std::unexpected(result.error());
-            }
-            values.entries.emplace_back(std::string(key), std::move(*result));
+            ET_EXPECTED_TRY_V(auto result, serde::serialize(serializer, value));
+            values.entries.emplace_back(std::string(key), std::move(result));
             return {};
         }
 
@@ -444,19 +409,13 @@ public:
     }
 
     auto serialize_dom(const ::toml::table& value) -> result_t<value_type> {
-        auto converted = detail::table_to_value(value);
-        if(!converted.has_value()) {
-            return std::unexpected(converted.error());
-        }
-        return std::move(*converted);
+        ET_EXPECTED_TRY_V(auto converted, detail::table_to_value(value));
+        return std::move(converted);
     }
 
     auto serialize_dom(const ::toml::array& value) -> result_t<value_type> {
-        auto converted = detail::array_to_value(value);
-        if(!converted.has_value()) {
-            return std::unexpected(converted.error());
-        }
-        return std::move(*converted);
+        ET_EXPECTED_TRY_V(auto converted, detail::array_to_value(value));
+        return std::move(converted);
     }
 
     template <typename T>

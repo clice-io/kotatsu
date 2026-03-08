@@ -13,6 +13,7 @@
 #include <variant>
 #include <vector>
 
+#include "eventide/common/expected_try.h"
 #include "eventide/serde/content/dom.h"
 #include "eventide/serde/content/error.h"
 #include "eventide/serde/serde/config.h"
@@ -272,30 +273,19 @@ public:
     }
 
     result_t<DeserializeSeq> deserialize_seq(std::optional<std::size_t> len) {
-        auto array = open_array();
-        if(!array) {
-            return std::unexpected(array.error());
-        }
-
-        return DeserializeSeq(*this, *array, len.value_or(0), false);
+        ET_EXPECTED_TRY_V(auto array, open_array());
+        return DeserializeSeq(*this, array, len.value_or(0), false);
     }
 
     result_t<DeserializeTuple> deserialize_tuple(std::size_t len) {
-        auto array = open_array();
-        if(!array) {
-            return std::unexpected(array.error());
-        }
-
-        return DeserializeTuple(*this, *array, len, true);
+        ET_EXPECTED_TRY_V(auto array, open_array());
+        return DeserializeTuple(*this, array, len, true);
     }
 
     result_t<DeserializeMap> deserialize_map(std::optional<std::size_t> /*len*/) {
-        auto object = open_object();
-        if(!object) {
-            return std::unexpected(object.error());
-        }
+        ET_EXPECTED_TRY_V(auto object, open_object());
 
-        DeserializeMap map(*this, *object);
+        DeserializeMap map(*this, object);
         if(!is_valid) {
             return std::unexpected(current_error());
         }
@@ -303,12 +293,9 @@ public:
     }
 
     result_t<DeserializeStruct> deserialize_struct(std::string_view /*name*/, std::size_t /*len*/) {
-        auto object = open_object();
-        if(!object) {
-            return std::unexpected(object.error());
-        }
+        ET_EXPECTED_TRY_V(auto object, open_object());
 
-        DeserializeStruct structure(*this, *object);
+        DeserializeStruct structure(*this, object);
         if(!is_valid) {
             return std::unexpected(current_error());
         }
@@ -316,18 +303,13 @@ public:
     }
 
     result_t<content::Value> capture_dom_value() {
-        auto source = consume_value_ref();
-        if(!source) {
-            return std::unexpected(source.error());
-        } else {
-            auto copied = content::Value::copy_of(*source);
-            if(!copied.has_value()) {
-                mark_invalid(copied.error());
-                return std::unexpected(current_error());
-            } else {
-                return std::move(*copied);
-            }
+        ET_EXPECTED_TRY_V(auto source, consume_value_ref());
+        auto copied = content::Value::copy_of(source);
+        if(!copied.has_value()) {
+            mark_invalid(copied.error());
+            return std::unexpected(current_error());
         }
+        return std::move(*copied);
     }
 
 private:

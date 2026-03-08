@@ -10,6 +10,7 @@
 #include "attrs.h"
 #include "config.h"
 #include "traits.h"
+#include "eventide/common/expected_try.h"
 #include "eventide/common/ranges.h"
 #include "eventide/reflection/enum.h"
 #include "eventide/reflection/struct.h"
@@ -125,14 +126,12 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
     } else if constexpr(is_specialization_of<std::variant, V>) {
         return s.serialize_variant(v);
     } else if constexpr(tuple_like<V>) {
-        auto s_tuple = s.serialize_tuple(std::tuple_size_v<std::remove_cvref_t<V>>);
-        if(!s_tuple) {
-            return std::unexpected(s_tuple.error());
-        }
+        ET_EXPECTED_TRY_V(auto s_tuple,
+                                s.serialize_tuple(std::tuple_size_v<std::remove_cvref_t<V>>));
 
         std::expected<void, E> element_result;
         auto for_each = [&](const auto& element) -> bool {
-            auto result = s_tuple->serialize_element(element);
+            auto result = s_tuple.serialize_element(element);
             if(!result) {
                 element_result = std::unexpected(result.error());
                 return false;
@@ -144,7 +143,7 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
             return std::unexpected(element_result.error());
         }
 
-        return s_tuple->end();
+        return s_tuple.end();
     } else if constexpr(std::ranges::input_range<V>) {
         constexpr auto kind = format_kind<V>;
         if constexpr(kind == range_format::sequence || kind == range_format::set) {
@@ -153,38 +152,26 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
                 len = static_cast<std::size_t>(std::ranges::size(v));
             }
 
-            auto s_seq = s.serialize_seq(len);
-            if(!s_seq) {
-                return std::unexpected(s_seq.error());
-            }
+            ET_EXPECTED_TRY_V(auto s_seq, s.serialize_seq(len));
 
             for(auto&& e: v) {
-                auto element = s_seq->serialize_element(e);
-                if(!element) {
-                    return std::unexpected(element.error());
-                }
+                ET_EXPECTED_TRY(s_seq.serialize_element(e));
             }
 
-            return s_seq->end();
+            return s_seq.end();
         } else if constexpr(kind == range_format::map) {
             std::optional<std::size_t> len = std::nullopt;
             if constexpr(std::ranges::sized_range<V>) {
                 len = static_cast<std::size_t>(std::ranges::size(v));
             }
 
-            auto s_map = s.serialize_map(len);
-            if(!s_map) {
-                return std::unexpected(s_map.error());
-            }
+            ET_EXPECTED_TRY_V(auto s_map, s.serialize_map(len));
 
             for(auto&& [key, value]: v) {
-                auto entry = s_map->serialize_entry(key, value);
-                if(!entry) {
-                    return std::unexpected(entry.error());
-                }
+                ET_EXPECTED_TRY(s_map.serialize_entry(key, value));
             }
 
-            return s_map->end();
+            return s_map.end();
         } else {
             static_assert(dependent_false<V>, "cannot auto serialize the input range");
         }
@@ -233,10 +220,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                 typename detail::tuple_find_spec_t<attrs_t, behavior::enum_string>::policy;
             static_assert(std::is_enum_v<value_t>, "behavior::enum_string requires an enum type");
             std::string enum_text;
-            auto parsed = d.deserialize_str(enum_text);
-            if(!parsed) {
-                return std::unexpected(parsed.error());
-            }
+            ET_EXPECTED_TRY(d.deserialize_str(enum_text));
             auto mapped = spelling::map_string_to_enum<value_t, Policy>(enum_text);
             if(mapped.has_value()) {
                 value = *mapped;
@@ -257,10 +241,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                 std::is_constructible_v<value_t, Target&&>,
                 "behavior::as<Target> requires the value type to be constructible from Target");
             Target temp{};
-            auto status = deserialize(d, temp);
-            if(!status) {
-                return std::unexpected(status.error());
-            }
+            ET_EXPECTED_TRY(deserialize(d, temp));
             value = value_t(std::move(temp));
             return {};
         }
@@ -281,10 +262,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
         using underlying_t = std::underlying_type_t<V>;
         if constexpr(std::is_signed_v<underlying_t>) {
             std::int64_t parsed = 0;
-            auto status = d.deserialize_int(parsed);
-            if(!status) {
-                return std::unexpected(status.error());
-            }
+            ET_EXPECTED_TRY(d.deserialize_int(parsed));
             if(!detail::integral_value_in_range<underlying_t>(parsed)) {
                 return std::unexpected(E::number_out_of_range);
             }
@@ -292,10 +270,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
             return {};
         } else {
             std::uint64_t parsed = 0;
-            auto status = d.deserialize_uint(parsed);
-            if(!status) {
-                return std::unexpected(status.error());
-            }
+            ET_EXPECTED_TRY(d.deserialize_uint(parsed));
             if(!detail::integral_value_in_range<underlying_t>(parsed)) {
                 return std::unexpected(E::number_out_of_range);
             }
@@ -317,29 +292,20 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
     } else if constexpr(std::same_as<V, std::vector<std::byte>>) {
         return d.deserialize_bytes(v);
     } else if constexpr(detail::is_captured_dom_value_v<D, V>) {
-        auto captured = d.capture_dom_value();
-        if(!captured) {
-            return std::unexpected(captured.error());
-        }
-        v = std::move(*captured);
+        ET_EXPECTED_TRY_V(auto captured, d.capture_dom_value());
+        v = std::move(captured);
         return {};
     } else if constexpr(null_like<V>) {
-        auto is_none = d.deserialize_none();
-        if(!is_none) {
-            return std::unexpected(is_none.error());
-        }
-        if(*is_none) {
+        ET_EXPECTED_TRY_V(auto is_none, d.deserialize_none());
+        if(is_none) {
             v = V{};
             return {};
         }
         return std::unexpected(E::type_mismatch);
     } else if constexpr(is_specialization_of<std::optional, V>) {
-        auto is_none = d.deserialize_none();
-        if(!is_none) {
-            return std::unexpected(is_none.error());
-        }
+        ET_EXPECTED_TRY_V(auto is_none, d.deserialize_none());
 
-        if(*is_none) {
+        if(is_none) {
             v.reset();
             return {};
         }
@@ -362,11 +328,8 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                           "cannot auto deserialize optional<T> without default-constructible T");
         }
     } else if constexpr(is_specialization_of<std::unique_ptr, V>) {
-        auto is_none = d.deserialize_none();
-        if(!is_none) {
-            return std::unexpected(is_none.error());
-        }
-        if(*is_none) {
+        ET_EXPECTED_TRY_V(auto is_none, d.deserialize_none());
+        if(is_none) {
             v.reset();
             return {};
         }
@@ -378,19 +341,13 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                       "cannot auto deserialize unique_ptr<T, D> with custom deleter");
 
         auto value = std::make_unique<value_t>();
-        auto status = deserialize(d, *value);
-        if(!status) {
-            return std::unexpected(status.error());
-        }
+        ET_EXPECTED_TRY(deserialize(d, *value));
 
         v = std::move(value);
         return {};
     } else if constexpr(is_specialization_of<std::shared_ptr, V>) {
-        auto is_none = d.deserialize_none();
-        if(!is_none) {
-            return std::unexpected(is_none.error());
-        }
-        if(*is_none) {
+        ET_EXPECTED_TRY_V(auto is_none, d.deserialize_none());
+        if(is_none) {
             v.reset();
             return {};
         }
@@ -400,24 +357,19 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                       "cannot auto deserialize shared_ptr<T> without default-constructible T");
 
         auto value = std::make_shared<value_t>();
-        auto status = deserialize(d, *value);
-        if(!status) {
-            return std::unexpected(status.error());
-        }
+        ET_EXPECTED_TRY(deserialize(d, *value));
 
         v = std::move(value);
         return {};
     } else if constexpr(is_specialization_of<std::variant, V>) {
         return d.deserialize_variant(v);
     } else if constexpr(tuple_like<V>) {
-        auto d_tuple = d.deserialize_tuple(std::tuple_size_v<std::remove_cvref_t<V>>);
-        if(!d_tuple) {
-            return std::unexpected(d_tuple.error());
-        }
+        ET_EXPECTED_TRY_V(auto d_tuple,
+                                d.deserialize_tuple(std::tuple_size_v<std::remove_cvref_t<V>>));
 
         std::expected<void, E> element_result;
         auto read_element = [&](auto& element) -> bool {
-            auto result = d_tuple->deserialize_element(element);
+            auto result = d_tuple.deserialize_element(element);
             if(!result) {
                 element_result = std::unexpected(result.error());
                 return false;
@@ -429,14 +381,11 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
             return std::unexpected(element_result.error());
         }
 
-        return d_tuple->end();
+        return d_tuple.end();
     } else if constexpr(std::ranges::input_range<V>) {
         constexpr auto kind = format_kind<V>;
         if constexpr(kind == range_format::sequence || kind == range_format::set) {
-            auto d_seq = d.deserialize_seq(std::nullopt);
-            if(!d_seq) {
-                return std::unexpected(d_seq.error());
-            }
+            ET_EXPECTED_TRY_V(auto d_seq, d.deserialize_seq(std::nullopt));
 
             if constexpr(requires { v.clear(); }) {
                 v.clear();
@@ -450,32 +399,23 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                           "cannot auto deserialize range: container does not support insertion");
 
             while(true) {
-                auto has_next = d_seq->has_next();
+                ET_EXPECTED_TRY_V(auto has_next, d_seq.has_next());
                 if(!has_next) {
-                    return std::unexpected(has_next.error());
-                }
-                if(!*has_next) {
                     break;
                 }
 
                 element_t element{};
-                auto element_status = d_seq->deserialize_element(element);
-                if(!element_status) {
-                    return std::unexpected(element_status.error());
-                }
+                ET_EXPECTED_TRY(d_seq.deserialize_element(element));
 
                 eventide::detail::append_sequence_element(v, std::move(element));
             }
 
-            return d_seq->end();
+            return d_seq.end();
         } else if constexpr(kind == range_format::map) {
             using key_t = typename V::key_type;
             using mapped_t = typename V::mapped_type;
 
-            auto d_map = d.deserialize_map(std::nullopt);
-            if(!d_map) {
-                return std::unexpected(d_map.error());
-            }
+            ET_EXPECTED_TRY_V(auto d_map, d.deserialize_map(std::nullopt));
 
             if constexpr(requires { v.clear(); }) {
                 v.clear();
@@ -490,23 +430,16 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                           "cannot auto deserialize map: container does not support map insertion");
 
             while(true) {
-                auto key = d_map->next_key();
-                if(!key) {
-                    return std::unexpected(key.error());
-                }
-                if(!key->has_value()) {
+                ET_EXPECTED_TRY_V(auto key, d_map.next_key());
+                if(!key.has_value()) {
                     break;
                 }
 
-                auto parsed_key = serde::spelling::parse_map_key<key_t>(**key);
+                auto parsed_key = serde::spelling::parse_map_key<key_t>(*key);
                 if(!parsed_key) {
-                    if constexpr(requires { d_map->invalid_key(**key); }) {
-                        auto invalid = d_map->invalid_key(**key);
-                        if(!invalid) {
-                            return std::unexpected(invalid.error());
-                        }
+                    if constexpr(requires { d_map.invalid_key(*key); }) {
+                        ET_EXPECTED_TRY(d_map.invalid_key(*key));
                         continue;
-                        return std::unexpected(E::type_mismatch);
                     } else {
                         static_assert(
                             dependent_false<key_t>,
@@ -515,15 +448,12 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                 }
 
                 mapped_t mapped{};
-                auto mapped_status = d_map->deserialize_value(mapped);
-                if(!mapped_status) {
-                    return std::unexpected(mapped_status.error());
-                }
+                ET_EXPECTED_TRY(d_map.deserialize_value(mapped));
 
                 eventide::detail::insert_map_entry(v, std::move(*parsed_key), std::move(mapped));
             }
 
-            return d_map->end();
+            return d_map.end();
         } else {
             static_assert(dependent_false<V>, "cannot auto deserialize the input range");
         }

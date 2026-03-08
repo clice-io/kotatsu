@@ -15,6 +15,7 @@
 #include <variant>
 #include <vector>
 
+#include "eventide/common/expected_try.h"
 #include "eventide/common/ranges.h"
 #include "eventide/serde/bincode/error.h"
 #include "eventide/serde/serde/config.h"
@@ -48,18 +49,12 @@ public:
 
         template <typename T>
         status_t deserialize_element(T& value) {
-            auto has_next_value = has_next();
+            ET_EXPECTED_TRY_V(auto has_next_value, has_next());
             if(!has_next_value) {
-                return std::unexpected(has_next_value.error());
-            }
-            if(!*has_next_value) {
                 return deserializer.mark_invalid(error_type::invalid_state);
             }
 
-            auto status = serde::deserialize(deserializer, value);
-            if(!status) {
-                return std::unexpected(status.error());
-            }
+            ET_EXPECTED_TRY(serde::deserialize(deserializer, value));
 
             ++read_count;
             return {};
@@ -99,10 +94,7 @@ public:
                 return deserializer.mark_invalid(error_type::invalid_state);
             }
 
-            auto status = serde::deserialize(deserializer, value);
-            if(!status) {
-                return std::unexpected(status.error());
-            }
+            ET_EXPECTED_TRY(serde::deserialize(deserializer, value));
 
             ++read_count;
             return {};
@@ -191,26 +183,20 @@ public:
     }
 
     status_t deserialize_bool(bool& value) {
-        auto parsed = read_u8();
-        if(!parsed) {
-            return std::unexpected(parsed.error());
-        }
+        ET_EXPECTED_TRY_V(auto parsed, read_u8());
 
-        if(*parsed > 1U) {
+        if(parsed > 1U) {
             return mark_invalid(error_type::type_mismatch);
         }
-        value = *parsed == 1U;
+        value = parsed == 1U;
         return {};
     }
 
     template <serde::int_like T>
     status_t deserialize_int(T& value) {
-        auto parsed = read_integral<std::int64_t>();
-        if(!parsed) {
-            return std::unexpected(parsed.error());
-        }
+        ET_EXPECTED_TRY_V(auto parsed, read_integral<std::int64_t>());
 
-        auto narrowed = serde::detail::narrow_int<T>(*parsed, error_type::number_out_of_range);
+        auto narrowed = serde::detail::narrow_int<T>(parsed, error_type::number_out_of_range);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
         }
@@ -220,12 +206,9 @@ public:
 
     template <serde::uint_like T>
     status_t deserialize_uint(T& value) {
-        auto parsed = read_integral<std::uint64_t>();
-        if(!parsed) {
-            return std::unexpected(parsed.error());
-        }
+        ET_EXPECTED_TRY_V(auto parsed, read_integral<std::uint64_t>());
 
-        auto narrowed = serde::detail::narrow_uint<T>(*parsed, error_type::number_out_of_range);
+        auto narrowed = serde::detail::narrow_uint<T>(parsed, error_type::number_out_of_range);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
         }
@@ -235,12 +218,9 @@ public:
 
     template <serde::floating_like T>
     status_t deserialize_float(T& value) {
-        auto raw = read_integral<std::uint64_t>();
-        if(!raw) {
-            return std::unexpected(raw.error());
-        }
+        ET_EXPECTED_TRY_V(auto raw, read_integral<std::uint64_t>());
 
-        const double parsed = std::bit_cast<double>(*raw);
+        const double parsed = std::bit_cast<double>(raw);
         auto narrowed = serde::detail::narrow_float<T>(parsed, error_type::number_out_of_range);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
@@ -250,66 +230,54 @@ public:
     }
 
     status_t deserialize_char(char& value) {
-        auto parsed = read_u8();
-        if(!parsed) {
-            return std::unexpected(parsed.error());
-        }
-        value = static_cast<char>(*parsed);
+        ET_EXPECTED_TRY_V(auto parsed, read_u8());
+        value = static_cast<char>(parsed);
         return {};
     }
 
     status_t deserialize_str(std::string& value) {
-        auto length = read_length();
-        if(!length) {
-            return std::unexpected(length.error());
-        }
+        ET_EXPECTED_TRY_V(auto length, read_length());
 
-        if(offset + *length > bytes.size()) {
+        if(offset + length > bytes.size()) {
             return mark_invalid(error_type::unexpected_eof);
         }
 
-        if(*length == 0) {
+        if(length == 0) {
             value.clear();
             return {};
         }
 
         const auto* begin = reinterpret_cast<const char*>(bytes.data() + offset);
-        value.assign(begin, begin + *length);
-        offset += *length;
+        value.assign(begin, begin + length);
+        offset += length;
         return {};
     }
 
     status_t deserialize_bytes(std::vector<std::byte>& value) {
-        auto length = read_length();
-        if(!length) {
-            return std::unexpected(length.error());
-        }
+        ET_EXPECTED_TRY_V(auto length, read_length());
 
-        if(offset + *length > bytes.size()) {
+        if(offset + length > bytes.size()) {
             return mark_invalid(error_type::unexpected_eof);
         }
 
-        if(*length == 0) {
+        if(length == 0) {
             value.clear();
             return {};
         }
 
         value.assign(bytes.begin() + static_cast<std::ptrdiff_t>(offset),
-                     bytes.begin() + static_cast<std::ptrdiff_t>(offset + *length));
-        offset += *length;
+                     bytes.begin() + static_cast<std::ptrdiff_t>(offset + length));
+        offset += length;
         return {};
     }
 
     result_t<bool> deserialize_none() {
-        auto tag = read_u8();
-        if(!tag) {
-            return std::unexpected(tag.error());
-        }
+        ET_EXPECTED_TRY_V(auto tag, read_u8());
 
-        if(*tag == 0U) {
+        if(tag == 0U) {
             return true;
         }
-        if(*tag == 1U) {
+        if(tag == 1U) {
             return false;
         }
         auto status = mark_invalid(error_type::type_mismatch);
@@ -318,13 +286,10 @@ public:
 
     template <typename... Ts>
     status_t deserialize_variant(std::variant<Ts...>& value) {
-        auto index = read_integral<std::uint32_t>();
-        if(!index) {
-            return std::unexpected(index.error());
-        }
+        ET_EXPECTED_TRY_V(auto index, read_integral<std::uint32_t>());
 
         constexpr std::size_t variant_size = sizeof...(Ts);
-        if(*index >= variant_size) {
+        if(index >= variant_size) {
             return mark_invalid(error_type::invalid_variant_index);
         }
 
@@ -333,7 +298,7 @@ public:
 
         [&]<std::size_t... I>(std::index_sequence<I...>) {
             (([&] {
-                 if(*index != I) {
+                 if(index != I) {
                      return;
                  }
 
@@ -353,16 +318,13 @@ public:
     }
 
     result_t<DeserializeSeq> deserialize_seq(std::optional<std::size_t> len) {
-        auto parsed = read_length();
-        if(!parsed) {
-            return std::unexpected(parsed.error());
-        }
+        ET_EXPECTED_TRY_V(auto parsed, read_length());
 
-        if(len.has_value() && *len != *parsed) {
+        if(len.has_value() && *len != parsed) {
             return std::unexpected(error_type::invalid_state);
         }
 
-        return DeserializeSeq(*this, *parsed);
+        return DeserializeSeq(*this, parsed);
     }
 
     result_t<DeserializeTuple> deserialize_tuple(std::size_t len) {
@@ -390,10 +352,7 @@ private:
             return {};
         } else if constexpr(std::default_initializable<alt_t>) {
             alt_t alt{};
-            auto status = serde::deserialize(*this, alt);
-            if(!status) {
-                return std::unexpected(status.error());
-            }
+            ET_EXPECTED_TRY(serde::deserialize(*this, alt));
 
             value = std::move(alt);
             return {};
@@ -434,17 +393,14 @@ private:
     }
 
     result_t<std::size_t> read_length() {
-        auto raw = read_integral<std::uint64_t>();
-        if(!raw) {
-            return std::unexpected(raw.error());
-        }
+        ET_EXPECTED_TRY_V(auto raw, read_integral<std::uint64_t>());
 
-        if(*raw > static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)())) {
+        if(raw > static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)())) {
             (void)mark_invalid(error_type::number_out_of_range);
             return std::unexpected(current_error());
         }
 
-        return static_cast<std::size_t>(*raw);
+        return static_cast<std::size_t>(raw);
     }
 
     status_t mark_invalid(error_type error) {
@@ -471,15 +427,8 @@ auto from_bytes(std::span<const std::byte> bytes, T& value) -> std::expected<voi
         return std::unexpected(deserializer.error());
     }
 
-    auto status = serde::deserialize(deserializer, value);
-    if(!status) {
-        return std::unexpected(status.error());
-    }
-
-    auto finished = deserializer.finish();
-    if(!finished) {
-        return std::unexpected(finished.error());
-    }
+    ET_EXPECTED_TRY(serde::deserialize(deserializer, value));
+    ET_EXPECTED_TRY(deserializer.finish());
     return {};
 }
 
@@ -505,10 +454,7 @@ template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_bytes(std::span<const std::byte> bytes) -> std::expected<T, error_kind> {
     T value{};
-    auto status = from_bytes<Config>(bytes, value);
-    if(!status) {
-        return std::unexpected(status.error());
-    }
+    ET_EXPECTED_TRY(from_bytes<Config>(bytes, value));
     return value;
 }
 
@@ -516,10 +462,7 @@ template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_bytes(std::span<const std::uint8_t> bytes) -> std::expected<T, error_kind> {
     T value{};
-    auto status = from_bytes<Config>(bytes, value);
-    if(!status) {
-        return std::unexpected(status.error());
-    }
+    ET_EXPECTED_TRY(from_bytes<Config>(bytes, value));
     return value;
 }
 
@@ -549,10 +492,7 @@ constexpr auto deserialize_sequential_struct_field(D& deserializer, Field field)
     using field_t = typename std::remove_cvref_t<decltype(field)>::type;
 
     if constexpr(!annotated_type<field_t>) {
-        auto status = serde::deserialize(deserializer, field.value());
-        if(!status) {
-            return std::unexpected(status.error());
-        }
+        ET_EXPECTED_TRY(serde::deserialize(deserializer, field.value()));
         return {};
     } else {
         using attrs_t = typename std::remove_cvref_t<field_t>::attrs;
@@ -587,19 +527,13 @@ constexpr auto deserialize_sequential_struct_field(D& deserializer, Field field)
                     static_assert(std::default_initializable<consume_t>,
                                   "bincode behavior::skip_if requires default-initializable field");
                     consume_t skipped{};
-                    auto skipped_status = serde::deserialize(deserializer, skipped);
-                    if(!skipped_status) {
-                        return std::unexpected(skipped_status.error());
-                    }
+                    ET_EXPECTED_TRY(serde::deserialize(deserializer, skipped));
                     return {};
                 }
             }
 
             // Keep annotation wrapper so tagged/provider attrs are still honored.
-            auto status = serde::deserialize(deserializer, field.value());
-            if(!status) {
-                return std::unexpected(status.error());
-            }
+            ET_EXPECTED_TRY(serde::deserialize(deserializer, field.value()));
             return {};
         }
     }
@@ -629,10 +563,7 @@ struct deserialize_traits<bincode::Deserializer<Config>, T> {
             return true;
         });
 
-        if(!field_status) {
-            return std::unexpected(field_status.error());
-        }
-        return {};
+        return field_status;
     }
 };
 
@@ -655,27 +586,18 @@ struct deserialize_traits<bincode::Deserializer<Config>, T> {
         static_assert(eventide::detail::map_insertable<map_t, key_t, mapped_t>,
                       "bincode map deserialization requires insertable map container");
 
-        auto length = deserializer.read_length_prefix();
-        if(!length) {
-            return std::unexpected(length.error());
-        }
+        ET_EXPECTED_TRY_V(auto length, deserializer.read_length_prefix());
 
         if constexpr(requires { value.clear(); }) {
             value.clear();
         }
 
-        for(std::size_t i = 0; i < *length; ++i) {
+        for(std::size_t i = 0; i < length; ++i) {
             key_t key{};
-            auto key_status = serde::deserialize(deserializer, key);
-            if(!key_status) {
-                return std::unexpected(key_status.error());
-            }
+            ET_EXPECTED_TRY(serde::deserialize(deserializer, key));
 
             mapped_t mapped{};
-            auto mapped_status = serde::deserialize(deserializer, mapped);
-            if(!mapped_status) {
-                return std::unexpected(mapped_status.error());
-            }
+            ET_EXPECTED_TRY(serde::deserialize(deserializer, mapped));
 
             eventide::detail::insert_map_entry(value, std::move(key), std::move(mapped));
         }

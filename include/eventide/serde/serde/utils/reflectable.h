@@ -10,6 +10,7 @@
 #include <utility>
 #include <variant>
 
+#include "eventide/common/expected_try.h"
 #include "eventide/reflection/struct.h"
 #include "eventide/serde/serde/annotation.h"
 #include "eventide/serde/serde/attrs.h"
@@ -312,14 +313,13 @@ template <typename Config, typename E, serializer_like S, typename V>
 constexpr auto serialize_reflectable(S& s, const V& v) -> std::expected<typename S::value_type, E> {
     using value_t = std::remove_cvref_t<V>;
 
-    auto s_struct = s.serialize_struct(refl::type_name<value_t>(), refl::field_count<value_t>());
-    if(!s_struct) {
-        return std::unexpected(s_struct.error());
-    }
+    ET_EXPECTED_TRY_V(
+        auto s_struct,
+        s.serialize_struct(refl::type_name<value_t>(), refl::field_count<value_t>()));
 
     std::expected<void, E> field_result;
     refl::for_each(v, [&](auto field) {
-        auto result = serialize_struct_field<Config, E>(*s_struct, field);
+        auto result = serialize_struct_field<Config, E>(s_struct, field);
         if(!result) {
             field_result = std::unexpected(result.error());
             return false;
@@ -330,7 +330,7 @@ constexpr auto serialize_reflectable(S& s, const V& v) -> std::expected<typename
         return std::unexpected(field_result.error());
     }
 
-    return s_struct->end();
+    return s_struct.end();
 }
 
 template <typename Config, typename E, bool DenyUnknown, deserializer_like D, typename V>
@@ -342,34 +342,30 @@ constexpr auto deserialize_reflectable(D& d, V& v) -> std::expected<void, E> {
         return std::unexpected(E::invalid_state);
     }
 
-    auto d_struct = d.deserialize_struct(refl::type_name<value_t>(), refl::field_count<value_t>());
-    if(!d_struct) {
-        return std::unexpected(d_struct.error());
-    }
+    ET_EXPECTED_TRY_V(
+        auto d_struct,
+        d.deserialize_struct(refl::type_name<value_t>(), refl::field_count<value_t>()));
 
     while(true) {
-        auto key = d_struct->next_key();
-        if(!key) {
-            return std::unexpected(key.error());
-        }
-        if(!key->has_value()) {
+        ET_EXPECTED_TRY_V(auto key, d_struct.next_key());
+        if(!key.has_value()) {
             break;
         }
 
-        std::string_view key_name = **key;
+        std::string_view key_name = *key;
 
         auto idx = lookup_field<value_t, Config>(key_name);
         if(idx) {
-            auto status = dispatch_field_by_index<value_t, Config, E>(*idx, *d_struct, v);
-            if(!status) {
-                return std::unexpected(status.error());
+            auto field_status = dispatch_field_by_index<value_t, Config, E>(*idx, d_struct, v);
+            if(!field_status) {
+                return std::unexpected(field_status.error());
             }
             continue;
         }
 
         bool flatten_matched = false;
         if constexpr(has_flatten_fields<value_t>()) {
-            auto flatten_status = try_flatten_fields<value_t, Config, E>(key_name, *d_struct, v);
+            auto flatten_status = try_flatten_fields<value_t, Config, E>(key_name, d_struct, v);
             if(!flatten_status) {
                 return std::unexpected(flatten_status.error());
             }
@@ -383,14 +379,11 @@ constexpr auto deserialize_reflectable(D& d, V& v) -> std::expected<void, E> {
         if constexpr(DenyUnknown) {
             return std::unexpected(E::type_mismatch);
         } else {
-            auto skipped = d_struct->skip_value();
-            if(!skipped) {
-                return std::unexpected(skipped.error());
-            }
+            ET_EXPECTED_TRY(d_struct.skip_value());
         }
     }
 
-    return d_struct->end();
+    return d_struct.end();
 }
 
 }  // namespace eventide::serde::detail

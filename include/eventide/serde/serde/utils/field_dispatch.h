@@ -6,6 +6,7 @@
 #include <type_traits>
 #include <variant>
 
+#include "eventide/common/expected_try.h"
 #include "eventide/reflection/struct.h"
 #include "eventide/serde/serde/annotation.h"
 #include "eventide/serde/serde/attrs.h"
@@ -120,10 +121,7 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
         if(mapped_name != key_name) {
             return false;
         }
-        auto result = d_struct.deserialize_value(field.value());
-        if(!result) {
-            return std::unexpected(result.error());
-        }
+        ET_EXPECTED_TRY(d_struct.deserialize_value(field.value()));
         return true;
     } else {
         using attrs_t = typename std::remove_cvref_t<field_t>::attrs;
@@ -190,10 +188,7 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
                 using Pred =
                     typename detail::tuple_find_spec_t<attrs_t, behavior::skip_if>::predicate;
                 if(evaluate_skip_predicate<Pred>(value, false)) {
-                    auto skip_result = d_struct.skip_value();
-                    if(!skip_result) {
-                        return std::unexpected(skip_result.error());
-                    }
+                    ET_EXPECTED_TRY(d_struct.skip_value());
                     return true;
                 }
             }
@@ -202,10 +197,7 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
             if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::with>) {
                 using Adapter =
                     typename detail::tuple_find_spec_t<attrs_t, behavior::with>::adapter;
-                auto result = Adapter::deserialize_field(d_struct, value);
-                if(!result) {
-                    return std::unexpected(result.error());
-                }
+                ET_EXPECTED_TRY(Adapter::deserialize_field(d_struct, value));
                 return true;
             }
             // Behavior: as<Target> — deserialize as Target, then convert back
@@ -215,10 +207,7 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
                     std::is_constructible_v<value_t, Target&&>,
                     "behavior::as<Target> requires the field type to be constructible from Target");
                 Target temp{};
-                auto result = d_struct.deserialize_value(temp);
-                if(!result) {
-                    return std::unexpected(result.error());
-                }
+                ET_EXPECTED_TRY(d_struct.deserialize_value(temp));
                 value = value_t(std::move(temp));
                 return true;
             }
@@ -229,10 +218,7 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
                 static_assert(std::is_enum_v<value_t>,
                               "behavior::enum_string requires an enum field type");
                 std::string enum_text;
-                auto result = d_struct.deserialize_value(enum_text);
-                if(!result) {
-                    return std::unexpected(result.error());
-                }
+                ET_EXPECTED_TRY(d_struct.deserialize_value(enum_text));
                 auto parsed = spelling::map_string_to_enum<value_t, Policy>(enum_text);
                 if(parsed.has_value()) {
                     value = *parsed;
@@ -246,16 +232,10 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
                 // For tagged variants, preserve annotation so deserialize() sees tagging attrs
                 if constexpr(is_specialization_of<std::variant, value_t> &&
                              detail::tuple_any_of_v<attrs_t, is_tagged_attr>) {
-                    auto result = d_struct.deserialize_value(field.value());
-                    if(!result) {
-                        return std::unexpected(result.error());
-                    }
+                    ET_EXPECTED_TRY(d_struct.deserialize_value(field.value()));
                     return true;
                 } else {
-                    auto result = d_struct.deserialize_value(value);
-                    if(!result) {
-                        return std::unexpected(result.error());
-                    }
+                    ET_EXPECTED_TRY(d_struct.deserialize_value(value));
                     return true;
                 }
             }

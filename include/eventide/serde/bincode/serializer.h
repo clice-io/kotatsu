@@ -14,6 +14,7 @@
 #include <variant>
 #include <vector>
 
+#include "eventide/common/expected_try.h"
 #include "eventide/serde/bincode/error.h"
 #include "eventide/serde/serde/config.h"
 #include "eventide/serde/serde/serde.h"
@@ -43,10 +44,7 @@ public:
                 return serializer.mark_invalid(error_type::invalid_state);
             }
 
-            auto status = serde::serialize(serializer, value);
-            if(!status) {
-                return std::unexpected(status.error());
-            }
+            ET_EXPECTED_TRY(serde::serialize(serializer, value));
 
             ++written_count;
             return {};
@@ -58,15 +56,8 @@ public:
                 return serializer.mark_invalid(error_type::invalid_state);
             }
 
-            auto key_status = serde::serialize(serializer, key);
-            if(!key_status) {
-                return std::unexpected(key_status.error());
-            }
-
-            auto value_status = serde::serialize(serializer, value);
-            if(!value_status) {
-                return std::unexpected(value_status.error());
-            }
+            ET_EXPECTED_TRY(serde::serialize(serializer, key));
+            ET_EXPECTED_TRY(serde::serialize(serializer, value));
 
             ++written_count;
             return {};
@@ -123,10 +114,7 @@ public:
 
     template <typename T>
     result_t<value_type> serialize_some(const T& value) {
-        auto status = write_u8(1);
-        if(!status) {
-            return std::unexpected(status.error());
-        }
+        ET_EXPECTED_TRY(write_u8(1));
         return serde::serialize(*this, value);
     }
 
@@ -152,10 +140,7 @@ public:
     }
 
     result_t<value_type> serialize_str(std::string_view value) {
-        auto length_status = write_length(value.size());
-        if(!length_status) {
-            return std::unexpected(length_status.error());
-        }
+        ET_EXPECTED_TRY(write_length(value.size()));
 
         if(!is_valid) {
             return std::unexpected(current_error());
@@ -172,10 +157,7 @@ public:
     }
 
     result_t<value_type> serialize_bytes(std::span<const std::byte> value) {
-        auto length_status = write_length(value.size());
-        if(!length_status) {
-            return std::unexpected(length_status.error());
-        }
+        ET_EXPECTED_TRY(write_length(value.size()));
 
         if(!is_valid) {
             return std::unexpected(current_error());
@@ -192,10 +174,7 @@ public:
             return mark_invalid(error_type::invalid_variant_index);
         }
 
-        auto index_status = write_integral(static_cast<std::uint32_t>(variant_index));
-        if(!index_status) {
-            return std::unexpected(index_status.error());
-        }
+        ET_EXPECTED_TRY(write_integral(static_cast<std::uint32_t>(variant_index)));
 
         std::expected<void, error_type> payload_status{};
         std::visit(
@@ -225,10 +204,7 @@ public:
             return std::unexpected(error_type::invalid_state);
         }
 
-        auto length_status = write_length(*len);
-        if(!length_status) {
-            return std::unexpected(length_status.error());
-        }
+        ET_EXPECTED_TRY(write_length(*len));
         return SerializeSeq(*this, *len);
     }
 
@@ -241,10 +217,7 @@ public:
             return std::unexpected(error_type::invalid_state);
         }
 
-        auto length_status = write_length(*len);
-        if(!length_status) {
-            return std::unexpected(length_status.error());
-        }
+        ET_EXPECTED_TRY(write_length(*len));
         return SerializeMap(*this, *len);
     }
 
@@ -300,10 +273,7 @@ private:
 template <typename Config = config::default_config, typename T>
 auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, error_kind> {
     Serializer<Config> serializer;
-    auto status = serde::serialize(serializer, value);
-    if(!status) {
-        return std::unexpected(status.error());
-    }
+    ET_EXPECTED_TRY(serde::serialize(serializer, value));
     if(!serializer.valid()) {
         return std::unexpected(serializer.error());
     }

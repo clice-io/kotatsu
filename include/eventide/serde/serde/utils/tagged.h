@@ -10,6 +10,7 @@
 #include <variant>
 #include <vector>
 
+#include "eventide/common/expected_try.h"
 #include "eventide/reflection/struct.h"
 #include "eventide/serde/serde/annotation.h"
 #include "eventide/serde/serde/attrs.h"
@@ -25,20 +26,17 @@ constexpr auto serialize_externally_tagged(S& s, const std::variant<Ts...>& valu
     -> std::expected<typename S::value_type, E> {
     constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
 
-    auto s_struct = s.serialize_struct("", 1);
-    if(!s_struct) {
-        return std::unexpected(s_struct.error());
-    }
+    ET_EXPECTED_TRY_V(auto s_struct, s.serialize_struct("", 1));
 
     auto name = names[value.index()];
     std::expected<void, E> field_result{};
-    std::visit([&](const auto& item) { field_result = s_struct->serialize_field(name, item); },
+    std::visit([&](const auto& item) { field_result = s_struct.serialize_field(name, item); },
                value);
 
     if(!field_result) {
         return std::unexpected(field_result.error());
     }
-    return s_struct->end();
+    return s_struct.end();
 }
 
 template <typename E, typename S, typename... Ts, typename TagAttr>
@@ -46,28 +44,22 @@ constexpr auto serialize_adjacently_tagged(S& s, const std::variant<Ts...>& valu
     -> std::expected<typename S::value_type, E> {
     constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
 
-    auto s_struct = s.serialize_struct("", 2);
-    if(!s_struct) {
-        return std::unexpected(s_struct.error());
-    }
+    ET_EXPECTED_TRY_V(auto s_struct, s.serialize_struct("", 2));
 
     auto name = names[value.index()];
-    auto tag_result = s_struct->serialize_field(TagAttr::field_names[0], name);
-    if(!tag_result) {
-        return std::unexpected(tag_result.error());
-    }
+    ET_EXPECTED_TRY(s_struct.serialize_field(TagAttr::field_names[0], name));
 
     std::expected<void, E> content_result{};
     std::visit(
         [&](const auto& item) {
-            content_result = s_struct->serialize_field(TagAttr::field_names[1], item);
+            content_result = s_struct.serialize_field(TagAttr::field_names[1], item);
         },
         value);
 
     if(!content_result) {
         return std::unexpected(content_result.error());
     }
-    return s_struct->end();
+    return s_struct.end();
 }
 
 template <typename E, typename D, typename... Ts, typename TagAttr>
@@ -75,20 +67,14 @@ constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, T
     -> std::expected<void, E> {
     constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
 
-    auto d_struct = d.deserialize_struct("", 1);
-    if(!d_struct) {
-        return std::unexpected(d_struct.error());
-    }
+    ET_EXPECTED_TRY_V(auto d_struct, d.deserialize_struct("", 1));
 
-    auto key = d_struct->next_key();
-    if(!key) {
-        return std::unexpected(key.error());
-    }
-    if(!key->has_value()) {
+    ET_EXPECTED_TRY_V(auto key, d_struct.next_key());
+    if(!key.has_value()) {
         return std::unexpected(E::type_mismatch);
     }
 
-    std::string_view key_name = **key;
+    std::string_view key_name = *key;
     bool matched = false;
     std::expected<void, E> status{};
 
@@ -105,7 +91,7 @@ constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, T
              using alt_t = std::variant_alternative_t<I, std::variant<Ts...>>;
              if constexpr(std::same_as<alt_t, std::monostate>) {
                  std::monostate alt{};
-                 auto result = d_struct->deserialize_value(alt);
+                 auto result = d_struct.deserialize_value(alt);
                  if(!result) {
                      status = std::unexpected(result.error());
                  } else {
@@ -113,7 +99,7 @@ constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, T
                  }
              } else if constexpr(std::default_initializable<alt_t>) {
                  alt_t alt{};
-                 auto result = d_struct->deserialize_value(alt);
+                 auto result = d_struct.deserialize_value(alt);
                  if(!result) {
                      status = std::unexpected(result.error());
                  } else {
@@ -132,7 +118,7 @@ constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, T
     if(!status) {
         return std::unexpected(status.error());
     }
-    return d_struct->end();
+    return d_struct.end();
 }
 
 template <typename E, typename D, typename... Ts, typename TagAttr>
@@ -140,10 +126,7 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
     -> std::expected<void, E> {
     constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
 
-    auto d_struct = d.deserialize_struct("", 2);
-    if(!d_struct) {
-        return std::unexpected(d_struct.error());
-    }
+    ET_EXPECTED_TRY_V(auto d_struct, d.deserialize_struct("", 2));
 
     std::string tag_value;
 
@@ -193,20 +176,14 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
 
     // Read content directly from the struct deserializer
     auto read_content_direct = [&](auto& alt) -> std::expected<void, E> {
-        auto result = d_struct->deserialize_value(alt);
-        if(!result) {
-            return std::unexpected(result.error());
-        }
+        ET_EXPECTED_TRY(d_struct.deserialize_value(alt));
         return {};
     };
 
     // Expect the next key to match a specific field name
     auto expect_next_key = [&](std::string_view expected) -> std::expected<void, E> {
-        auto key = d_struct->next_key();
-        if(!key) {
-            return std::unexpected(key.error());
-        }
-        if(!key->has_value() || **key != expected) {
+        ET_EXPECTED_TRY_V(auto key, d_struct.next_key());
+        if(!key.has_value() || *key != expected) {
             return std::unexpected(E::type_mismatch);
         }
         return {};
@@ -219,47 +196,32 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
         bool has_content = false;
 
         while(true) {
-            auto key = d_struct->next_key();
-            if(!key) {
-                return std::unexpected(key.error());
-            }
-            if(!key->has_value()) {
+            ET_EXPECTED_TRY_V(auto key, d_struct.next_key());
+            if(!key.has_value()) {
                 break;
             }
 
-            if(**key == TagAttr::field_names[0]) {
+            if(*key == TagAttr::field_names[0]) {
                 if(has_tag) {
                     return std::unexpected(E::type_mismatch);
                 }
-                auto tag_status = d_struct->deserialize_value(tag_value);
-                if(!tag_status) {
-                    return std::unexpected(tag_status.error());
-                }
+                ET_EXPECTED_TRY(d_struct.deserialize_value(tag_value));
                 has_tag = true;
-            } else if(**key == TagAttr::field_names[1]) {
+            } else if(*key == TagAttr::field_names[1]) {
                 if(has_content) {
                     return std::unexpected(E::type_mismatch);
                 }
                 has_content = true;
 
                 if(has_tag) {
-                    auto content_status = deserialize_content_for_tag(read_content_direct);
-                    if(!content_status) {
-                        return std::unexpected(content_status.error());
-                    }
+                    ET_EXPECTED_TRY(deserialize_content_for_tag(read_content_direct));
                 } else {
                     captured_t captured{};
-                    auto capture_status = d_struct->deserialize_value(captured);
-                    if(!capture_status) {
-                        return std::unexpected(capture_status.error());
-                    }
+                    ET_EXPECTED_TRY(d_struct.deserialize_value(captured));
                     buffered_content.emplace(std::move(captured));
                 }
             } else {
-                auto skipped = d_struct->skip_value();
-                if(!skipped) {
-                    return std::unexpected(skipped.error());
-                }
+                ET_EXPECTED_TRY(d_struct.skip_value());
             }
         }
 
@@ -268,47 +230,23 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
         }
 
         if(buffered_content.has_value()) {
-            auto buffered_status =
+            ET_EXPECTED_TRY(
                 deserialize_content_for_tag([&](auto& alt) -> std::expected<void, E> {
                     content::Deserializer<typename D::config_type> buffered_deserializer(
                         *buffered_content);
-                    auto result = serde::deserialize(buffered_deserializer, alt);
-                    if(!result) {
-                        return std::unexpected(result.error());
-                    }
-                    auto finish_status = buffered_deserializer.finish();
-                    if(!finish_status) {
-                        return std::unexpected(finish_status.error());
-                    }
+                    ET_EXPECTED_TRY(serde::deserialize(buffered_deserializer, alt));
+                    ET_EXPECTED_TRY(buffered_deserializer.finish());
                     return {};
-                });
-            if(!buffered_status) {
-                return std::unexpected(buffered_status.error());
-            }
+                }));
         }
 
-        return d_struct->end();
+        return d_struct.end();
     } else {
-        auto tag_key_status = expect_next_key(TagAttr::field_names[0]);
-        if(!tag_key_status) {
-            return std::unexpected(tag_key_status.error());
-        }
-
-        auto tag_status = d_struct->deserialize_value(tag_value);
-        if(!tag_status) {
-            return std::unexpected(tag_status.error());
-        }
-
-        auto content_key_status = expect_next_key(TagAttr::field_names[1]);
-        if(!content_key_status) {
-            return std::unexpected(content_key_status.error());
-        }
-
-        auto content_status = deserialize_content_for_tag(read_content_direct);
-        if(!content_status) {
-            return std::unexpected(content_status.error());
-        }
-        return d_struct->end();
+        ET_EXPECTED_TRY(expect_next_key(TagAttr::field_names[0]));
+        ET_EXPECTED_TRY(d_struct.deserialize_value(tag_value));
+        ET_EXPECTED_TRY(expect_next_key(TagAttr::field_names[1]));
+        ET_EXPECTED_TRY(deserialize_content_for_tag(read_content_direct));
+        return d_struct.end();
     }
 }
 
@@ -325,22 +263,17 @@ constexpr auto serialize_internally_tagged(S& s, const std::variant<Ts...>& valu
                           "internally_tagged requires struct alternatives");
 
             using config_t = config::config_of<S>;
-            auto s_struct = s.serialize_struct("", refl::field_count<alt_t>() + 1);
-            if(!s_struct) {
-                return std::unexpected(s_struct.error());
-            }
+            ET_EXPECTED_TRY_V(auto s_struct,
+                                    s.serialize_struct("", refl::field_count<alt_t>() + 1));
 
             // tag field first
             auto tag_name = names[value.index()];
-            auto tag_status = s_struct->serialize_field(tag_field, tag_name);
-            if(!tag_status) {
-                return std::unexpected(tag_status.error());
-            }
+            ET_EXPECTED_TRY(s_struct.serialize_field(tag_field, tag_name));
 
             // struct fields
             std::expected<void, E> field_result;
             refl::for_each(item, [&](auto field) {
-                auto r = serialize_struct_field<config_t, E>(*s_struct, field);
+                auto r = serialize_struct_field<config_t, E>(s_struct, field);
                 if(!r) {
                     field_result = std::unexpected(r.error());
                     return false;
@@ -350,7 +283,7 @@ constexpr auto serialize_internally_tagged(S& s, const std::variant<Ts...>& valu
             if(!field_result) {
                 return std::unexpected(field_result.error());
             }
-            return s_struct->end();
+            return s_struct.end();
         },
         value);
 }
@@ -361,15 +294,12 @@ constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, T
     using config_t = config::config_of<D>;
 
     // Requires capture_dom_value() — buffer to content DOM, then two-pass dispatch
-    auto dom_result = d.capture_dom_value();
-    if(!dom_result) {
-        return std::unexpected(E(dom_result.error()));
-    }
+    ET_EXPECTED_TRY_V(auto dom_result, d.capture_dom_value());
 
     constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
     constexpr std::string_view tag_field = TagAttr::field_names[0];
 
-    auto obj_ref = dom_result->as_ref();
+    auto obj_ref = dom_result.as_ref();
     auto obj = obj_ref.get_object();
     if(!obj) {
         return std::unexpected(E::type_mismatch);

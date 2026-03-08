@@ -19,6 +19,7 @@
 #include <variant>
 #include <vector>
 
+#include "eventide/common/expected_try.h"
 #include "eventide/common/ranges.h"
 #include "eventide/serde/flatbuffers/schema.h"
 #include "eventide/serde/serde/config.h"
@@ -108,11 +109,8 @@ public:
 
         template <typename T>
         status_t serialize_element(const T& value) {
-            auto encoded = serde::serialize(serializer, value);
-            if(!encoded) {
-                return std::unexpected(encoded.error());
-            }
-            elements.push_back(*encoded);
+            ET_EXPECTED_TRY_V(auto encoded, serde::serialize(serializer, value));
+            elements.push_back(encoded);
             return {};
         }
 
@@ -135,13 +133,10 @@ public:
 
         template <typename T>
         status_t serialize_element(const T& value) {
-            auto field_id = detail::field_voffset(next_index);
-            if(!field_id) {
-                return std::unexpected(field_id.error());
-            }
+            ET_EXPECTED_TRY_V(auto field_id, detail::field_voffset(next_index));
             ++next_index;
 
-            return serializer.collect_field(writers, *field_id, value);
+            return serializer.collect_field(writers, field_id, value);
         }
 
         result_t<value_type> end() {
@@ -167,26 +162,11 @@ public:
         status_t serialize_entry(const K& key, const V& value) {
             std::vector<std::function<void()>> writers;
 
-            auto key_status = serializer.collect_field(writers, detail::first_field, key);
-            if(!key_status) {
-                return std::unexpected(key_status.error());
-            }
-
-            auto value_field = detail::field_voffset(1);
-            if(!value_field) {
-                return std::unexpected(value_field.error());
-            }
-
-            auto value_status = serializer.collect_field(writers, *value_field, value);
-            if(!value_status) {
-                return std::unexpected(value_status.error());
-            }
-
-            auto entry = serializer.finish_table(writers);
-            if(!entry) {
-                return std::unexpected(entry.error());
-            }
-            entries.push_back(*entry);
+            ET_EXPECTED_TRY(serializer.collect_field(writers, detail::first_field, key));
+            ET_EXPECTED_TRY_V(auto value_field, detail::field_voffset(1));
+            ET_EXPECTED_TRY(serializer.collect_field(writers, value_field, value));
+            ET_EXPECTED_TRY_V(auto entry, serializer.finish_table(writers));
+            entries.push_back(entry);
 
             return {};
         }
@@ -210,12 +190,9 @@ public:
 
         template <typename T>
         status_t serialize_field(std::string_view /*key*/, const T& value) {
-            auto field_id = detail::field_voffset(next_index);
-            if(!field_id) {
-                return std::unexpected(field_id.error());
-            }
+            ET_EXPECTED_TRY_V(auto field_id, detail::field_voffset(next_index));
             ++next_index;
-            return serializer.collect_field(writers, *field_id, value);
+            return serializer.collect_field(writers, field_id, value);
         }
 
         result_t<value_type> end() {
@@ -234,12 +211,9 @@ public:
     auto bytes(const T& value) -> result_t<std::vector<std::uint8_t>> {
         builder.Clear();
 
-        auto root = serde::serialize(*this, value);
-        if(!root) {
-            return std::unexpected(root.error());
-        }
+        ET_EXPECTED_TRY_V(auto root, serde::serialize(*this, value));
 
-        builder.Finish(*root, detail::buffer_identifier);
+        builder.Finish(root, detail::buffer_identifier);
         const auto* begin = builder.GetBufferPointer();
         return std::vector<std::uint8_t>(begin, begin + builder.GetSize());
     }
@@ -343,21 +317,15 @@ private:
             if(serializer == nullptr || writers == nullptr) {
                 return std::unexpected(object_error_code::invalid_state);
             }
-            auto field_id = detail::field_voffset(current_index);
-            if(!field_id) {
-                return std::unexpected(field_id.error());
-            }
-            return serializer->collect_field(*writers, *field_id, field_value);
+            ET_EXPECTED_TRY_V(auto field_id, detail::field_voffset(current_index));
+            return serializer->collect_field(*writers, field_id, field_value);
         }
     };
 
     template <typename T>
     auto encode_boxed(const T& value) -> result_t<value_type> {
         std::vector<std::function<void()>> writers;
-        auto collected = collect_field(writers, detail::first_field, value);
-        if(!collected) {
-            return std::unexpected(collected.error());
-        }
+        ET_EXPECTED_TRY(collect_field(writers, detail::first_field, value));
         return finish_table(writers);
     }
 
@@ -486,25 +454,11 @@ private:
         offsets.reserve(entries.size());
         for(const auto& [key, mapped]: entries) {
             std::vector<std::function<void()>> writers;
-            auto key_write = collect_field(writers, detail::first_field, key);
-            if(!key_write) {
-                return std::unexpected(key_write.error());
-            }
-
-            auto value_field = detail::field_voffset(1);
-            if(!value_field) {
-                return std::unexpected(value_field.error());
-            }
-            auto value_write = collect_field(writers, *value_field, mapped);
-            if(!value_write) {
-                return std::unexpected(value_write.error());
-            }
-
-            auto entry = finish_table(writers);
-            if(!entry) {
-                return std::unexpected(entry.error());
-            }
-            offsets.push_back(*entry);
+            ET_EXPECTED_TRY(collect_field(writers, detail::first_field, key));
+            ET_EXPECTED_TRY_V(auto value_field, detail::field_voffset(1));
+            ET_EXPECTED_TRY(collect_field(writers, value_field, mapped));
+            ET_EXPECTED_TRY_V(auto entry, finish_table(writers));
+            offsets.push_back(entry);
         }
 
         return builder.CreateVector(offsets);
@@ -589,6 +543,18 @@ private:
             auto offset = builder.CreateVector(elements);
             writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
             return {};
+        } else if constexpr(is_pair_v<element_clean_t> || is_tuple_v<element_clean_t>) {
+            std::vector<value_type> elements;
+            if constexpr(requires { value.size(); }) {
+                elements.reserve(value.size());
+            }
+            for(const auto& element: value) {
+                ET_EXPECTED_TRY_V(auto tuple, encode_tuple_like(element));
+                elements.push_back(tuple);
+            }
+            auto offset = builder.CreateVector(elements);
+            writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
+            return {};
         } else if constexpr(can_inline_struct_v<element_clean_t>) {
             std::vector<element_clean_t> elements;
             if constexpr(requires { value.size(); }) {
@@ -606,11 +572,8 @@ private:
                 elements.reserve(value.size());
             }
             for(const auto& element: value) {
-                auto table = encode_table(element);
-                if(!table) {
-                    return std::unexpected(table.error());
-                }
-                elements.push_back(*table);
+                ET_EXPECTED_TRY_V(auto table, encode_table(element));
+                elements.push_back(table);
             }
             auto offset = builder.CreateVector(elements);
             writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
@@ -621,11 +584,8 @@ private:
                 elements.reserve(value.size());
             }
             for(const auto& element: value) {
-                auto boxed = encode_boxed(element);
-                if(!boxed) {
-                    return std::unexpected(boxed.error());
-                }
-                elements.push_back(*boxed);
+                ET_EXPECTED_TRY_V(auto boxed, encode_boxed(element));
+                elements.push_back(boxed);
             }
             auto offset = builder.CreateVector(elements);
             writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
@@ -696,45 +656,33 @@ private:
             writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
             return {};
         } else if constexpr(is_specialization_of<std::variant, U>) {
-            auto offset = encode_variant(value);
-            if(!offset) {
-                return std::unexpected(offset.error());
-            }
+            ET_EXPECTED_TRY_V(auto offset, encode_variant(value));
             writers.push_back(
-                [this, field, offset = *offset] { builder.AddOffset(field, offset); });
+                [this, field, offset] { builder.AddOffset(field, offset); });
             return {};
         } else if constexpr(std::ranges::input_range<clean_t>) {
             constexpr auto kind = eventide::format_kind<clean_t>;
             if constexpr(kind == eventide::range_format::map) {
-                auto offset = encode_map(value);
-                if(!offset) {
-                    return std::unexpected(offset.error());
-                }
+                ET_EXPECTED_TRY_V(auto offset, encode_map(value));
                 writers.push_back(
-                    [this, field, offset = *offset] { builder.AddOffset(field, offset); });
+                    [this, field, offset] { builder.AddOffset(field, offset); });
                 return {};
             } else {
                 return collect_sequence_field(writers, field, value);
             }
         } else if constexpr(is_pair_v<clean_t> || is_tuple_v<clean_t>) {
-            auto offset = encode_tuple_like(value);
-            if(!offset) {
-                return std::unexpected(offset.error());
-            }
+            ET_EXPECTED_TRY_V(auto offset, encode_tuple_like(value));
             writers.push_back(
-                [this, field, offset = *offset] { builder.AddOffset(field, offset); });
+                [this, field, offset] { builder.AddOffset(field, offset); });
             return {};
         } else if constexpr(can_inline_struct_v<clean_t>) {
             const clean_t copy = static_cast<clean_t>(value);
             writers.push_back([this, field, copy] { builder.AddStruct(field, &copy); });
             return {};
         } else if constexpr(refl::reflectable_class<clean_t>) {
-            auto offset = encode_table(value);
-            if(!offset) {
-                return std::unexpected(offset.error());
-            }
+            ET_EXPECTED_TRY_V(auto offset, encode_table(value));
             writers.push_back(
-                [this, field, offset = *offset] { builder.AddOffset(field, offset); });
+                [this, field, offset] { builder.AddOffset(field, offset); });
             return {};
         } else {
             return std::unexpected(object_error_code::unsupported_type);
@@ -766,6 +714,29 @@ struct serialize_traits<flatbuffers::Serializer<Config>, T> {
     static auto serialize(serializer_t& serializer, const T& value) ->
         typename serializer_t::template result_t<typename serializer_t::value_type> {
         return serializer.serialize_reflectable(value);
+    }
+};
+
+template <typename Config, typename T>
+    requires (!refl::reflectable_class<std::remove_cvref_t<T>> &&
+              !std::ranges::input_range<std::remove_cvref_t<T>> &&
+              !is_pair_v<std::remove_cvref_t<T>> && !is_tuple_v<std::remove_cvref_t<T>> &&
+              !is_specialization_of<std::variant, std::remove_cvref_t<T>> &&
+              (std::is_enum_v<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
+               serde::null_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
+               serde::bool_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
+               serde::int_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
+               serde::uint_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
+               serde::floating_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
+               serde::char_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
+               serde::str_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
+               serde::bytes_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>>))
+struct serialize_traits<flatbuffers::Serializer<Config>, T> {
+    using serializer_t = flatbuffers::Serializer<Config>;
+
+    static auto serialize(serializer_t& serializer, const T& value) ->
+        typename serializer_t::template result_t<typename serializer_t::value_type> {
+        return serializer.serialize_boxed(value);
     }
 };
 

@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "eventide/common/expected_try.h"
 #include "eventide/serde/content/deserializer.h"
 #include "eventide/serde/json/error.h"
 #include "eventide/serde/serde/config.h"
@@ -71,29 +72,21 @@ public:
                 return std::unexpected(deserializer.current_error());
             }
 
-            auto has_next_result = has_next();
-            if(!has_next_result) {
-                return std::unexpected(has_next_result.error());
-            }
+            ET_EXPECTED_TRY_V(auto has_next_result, has_next());
 
             if(is_strict_length) {
-                if(consumed_count != expected_length || *has_next_result) {
+                if(consumed_count != expected_length || has_next_result) {
                     deserializer.mark_invalid();
                     return std::unexpected(deserializer.current_error());
                 }
                 return {};
             }
 
-            while(*has_next_result) {
-                auto skipped = skip_element();
-                if(!skipped) {
-                    return std::unexpected(skipped.error());
-                }
+            while(has_next_result) {
+                ET_EXPECTED_TRY(skip_element());
 
-                has_next_result = has_next();
-                if(!has_next_result) {
-                    return std::unexpected(has_next_result.error());
-                }
+                ET_EXPECTED_TRY_V(auto next, has_next());
+                has_next_result = next;
             }
 
             return {};
@@ -104,19 +97,13 @@ public:
 
         template <typename Action>
         status_t consume_next(Action&& action) {
-            auto has_next_result = has_next();
+            ET_EXPECTED_TRY_V(auto has_next_result, has_next());
             if(!has_next_result) {
-                return std::unexpected(has_next_result.error());
-            }
-            if(!*has_next_result) {
                 deserializer.mark_invalid();
                 return std::unexpected(deserializer.current_error());
             }
 
-            auto result = std::forward<Action>(action)(pending_value);
-            if(!result) {
-                return std::unexpected(result.error());
-            }
+            ET_EXPECTED_TRY(std::forward<Action>(action)(pending_value));
 
             ++iter;
             has_pending_value = false;
@@ -203,10 +190,7 @@ public:
                 return std::unexpected(deserializer.current_error());
             }
 
-            auto parsed = deserializer.deserialize_from_value(pending_value, value);
-            if(!parsed) {
-                return std::unexpected(parsed.error());
-            }
+            ET_EXPECTED_TRY(deserializer.deserialize_from_value(pending_value, value));
 
             ++iter;
             has_pending_value = false;
@@ -222,10 +206,7 @@ public:
                 return std::unexpected(deserializer.current_error());
             }
 
-            auto skipped = deserializer.skip_value(pending_value);
-            if(!skipped) {
-                return std::unexpected(skipped.error());
-            }
+            ET_EXPECTED_TRY(deserializer.skip_value(pending_value));
 
             ++iter;
             has_pending_value = false;
@@ -238,10 +219,7 @@ public:
             }
 
             if(has_pending_value) {
-                auto skipped = skip_value();
-                if(!skipped) {
-                    return std::unexpected(skipped.error());
-                }
+                ET_EXPECTED_TRY(skip_value());
             }
 
             while(iter != end_iter) {
@@ -254,10 +232,7 @@ public:
                 }
 
                 auto value = std::move(field).value();
-                auto skipped = deserializer.skip_value(value);
-                if(!skipped) {
-                    return std::unexpected(skipped.error());
-                }
+                ET_EXPECTED_TRY(deserializer.skip_value(value));
 
                 ++iter;
             }
@@ -426,14 +401,11 @@ public:
             return {};
         }
 
-        // TODO(eventide/serde): Non-object variant dispatch only tries the first
-        // compatible alternative. This can fail for overlapping numeric types
-        // (e.g. variant<uint8_t, int64_t> with input 300). Consider adding
-        // backtracking here, similar to the object-path strategy above.
+        bool matched = false;
         bool considered = false;
-        simdjson::error_code candidate_error = simdjson::INCORRECT_TYPE;
-        auto try_first_compatible = [&](auto type_tag) {
-            if(considered) {
+        simdjson::error_code last_error = simdjson::INCORRECT_TYPE;
+        auto try_alternative = [&](auto type_tag) {
+            if(matched) {
                 return;
             }
 
@@ -441,18 +413,24 @@ public:
             if(!variant_candidate_matches<alt_t>(*json_type, number_type)) {
                 return;
             }
+
             considered = true;
-            candidate_error = deserialize_variant_candidate<alt_t>(*raw, value);
+            auto candidate_error = deserialize_variant_candidate<alt_t>(*raw, value);
+            if(candidate_error == simdjson::SUCCESS) {
+                matched = true;
+            } else {
+                last_error = candidate_error;
+            }
         };
 
-        (try_first_compatible(std::type_identity<Ts>{}), ...);
+        (try_alternative(std::type_identity<Ts>{}), ...);
 
         if(!considered) {
             mark_invalid(simdjson::INCORRECT_TYPE);
             return std::unexpected(current_error());
         }
-        if(candidate_error != simdjson::SUCCESS) {
-            mark_invalid(candidate_error);
+        if(!matched) {
+            mark_invalid(last_error);
             return std::unexpected(current_error());
         }
         return {};
@@ -571,12 +549,9 @@ public:
     }
 
     result_t<DeserializeSeq> deserialize_seq(std::optional<std::size_t> len) {
-        auto array = open_array();
-        if(!array) {
-            return std::unexpected(array.error());
-        }
+        ET_EXPECTED_TRY_V(auto array, open_array());
 
-        DeserializeSeq seq(*this, std::move(*array), len.value_or(0), false);
+        DeserializeSeq seq(*this, std::move(array), len.value_or(0), false);
         if(!is_valid) {
             return std::unexpected(current_error());
         }
@@ -584,12 +559,9 @@ public:
     }
 
     result_t<DeserializeTuple> deserialize_tuple(std::size_t len) {
-        auto array = open_array();
-        if(!array) {
-            return std::unexpected(array.error());
-        }
+        ET_EXPECTED_TRY_V(auto array, open_array());
 
-        DeserializeTuple tuple(*this, std::move(*array), len, true);
+        DeserializeTuple tuple(*this, std::move(array), len, true);
         if(!is_valid) {
             return std::unexpected(current_error());
         }
@@ -597,12 +569,9 @@ public:
     }
 
     result_t<DeserializeMap> deserialize_map(std::optional<std::size_t> /*len*/) {
-        auto object = open_object();
-        if(!object) {
-            return std::unexpected(object.error());
-        }
+        ET_EXPECTED_TRY_V(auto object, open_object());
 
-        DeserializeMap map(*this, std::move(*object));
+        DeserializeMap map(*this, std::move(object));
         if(!is_valid) {
             return std::unexpected(current_error());
         }
@@ -610,12 +579,9 @@ public:
     }
 
     result_t<DeserializeStruct> deserialize_struct(std::string_view /*name*/, std::size_t /*len*/) {
-        auto object = open_object();
-        if(!object) {
-            return std::unexpected(object.error());
-        }
+        ET_EXPECTED_TRY_V(auto object, open_object());
 
-        DeserializeStruct s(*this, std::move(*object));
+        DeserializeStruct s(*this, std::move(object));
         if(!is_valid) {
             return std::unexpected(current_error());
         }
@@ -623,11 +589,8 @@ public:
     }
 
     result_t<content::Value> capture_dom_value() {
-        auto raw = consume_raw_json_view();
-        if(!raw) {
-            return std::unexpected(raw.error());
-        }
-        auto parsed = content::Value::parse(std::string_view(raw->data(), raw->size()));
+        ET_EXPECTED_TRY_V(auto raw, consume_raw_json_view());
+        auto parsed = content::Value::parse(std::string_view(raw.data(), raw.size()));
         if(!parsed) {
             return std::unexpected(json::make_read_error(parsed.error()));
         }
@@ -782,12 +745,11 @@ private:
     }
 
     result_t<simdjson::padded_string_view> consume_raw_json_view() {
-        auto raw = read_source<std::string_view>([](auto& doc) { return doc.raw_json(); },
-                                                 [](auto& val) { return val.raw_json(); });
-        if(!raw) {
-            return std::unexpected(raw.error());
-        }
-        return to_padded_subview(*raw);
+        ET_EXPECTED_TRY_V(auto raw,
+                                read_source<std::string_view>(
+                                    [](auto& doc) { return doc.raw_json(); },
+                                    [](auto& val) { return val.raw_json(); }));
+        return to_padded_subview(raw);
     }
 
     result_t<simdjson::padded_string_view> to_padded_subview(std::string_view raw) {
@@ -873,10 +835,7 @@ auto from_json(std::string_view json, T& value) -> std::expected<void, error_kin
         return std::unexpected(deserializer.error());
     }
 
-    auto result = serde::deserialize(deserializer, value);
-    if(!result) {
-        return std::unexpected(result.error());
-    }
+    ET_EXPECTED_TRY(serde::deserialize(deserializer, value));
 
     return deserializer.finish();
 }
@@ -888,10 +847,7 @@ auto from_json(simdjson::padded_string_view json, T& value) -> std::expected<voi
         return std::unexpected(deserializer.error());
     }
 
-    auto result = serde::deserialize(deserializer, value);
-    if(!result) {
-        return std::unexpected(result.error());
-    }
+    ET_EXPECTED_TRY(serde::deserialize(deserializer, value));
 
     return deserializer.finish();
 }
@@ -900,10 +856,7 @@ template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_json(std::string_view json) -> std::expected<T, error_kind> {
     T value{};
-    auto status = from_json<Config>(json, value);
-    if(!status) {
-        return std::unexpected(status.error());
-    }
+    ET_EXPECTED_TRY(from_json<Config>(json, value));
     return value;
 }
 
@@ -911,10 +864,7 @@ template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_json(simdjson::padded_string_view json) -> std::expected<T, error_kind> {
     T value{};
-    auto status = from_json<Config>(json, value);
-    if(!status) {
-        return std::unexpected(status.error());
-    }
+    ET_EXPECTED_TRY(from_json<Config>(json, value));
     return value;
 }
 

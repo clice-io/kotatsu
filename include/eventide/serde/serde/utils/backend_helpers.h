@@ -10,6 +10,7 @@
 #include <variant>
 #include <vector>
 
+#include "eventide/common/expected_try.h"
 #include "eventide/serde/serde/serde.h"
 
 namespace eventide::serde::detail {
@@ -101,19 +102,13 @@ public:
 
     template <typename T>
     status_t deserialize_element(T& value) {
-        auto has_next_result = has_next();
+        ET_EXPECTED_TRY_V(auto has_next_result, has_next());
         if(!has_next_result) {
-            return std::unexpected(has_next_result.error());
-        }
-        if(!*has_next_result) {
             deserializer.mark_invalid();
             return std::unexpected(deserializer.current_error());
         }
 
-        auto status = deserializer.deserialize_element_value(array, index, value);
-        if(!status) {
-            return std::unexpected(status.error());
-        }
+        ET_EXPECTED_TRY(deserializer.deserialize_element_value(array, index, value));
 
         ++index;
         ++consumed_count;
@@ -121,11 +116,8 @@ public:
     }
 
     status_t skip_element() {
-        auto has_next_result = has_next();
+        ET_EXPECTED_TRY_V(auto has_next_result, has_next());
         if(!has_next_result) {
-            return std::unexpected(has_next_result.error());
-        }
-        if(!*has_next_result) {
             deserializer.mark_invalid();
             return std::unexpected(deserializer.current_error());
         }
@@ -140,13 +132,10 @@ public:
             return std::unexpected(deserializer.current_error());
         }
 
-        auto has_next_result = has_next();
-        if(!has_next_result) {
-            return std::unexpected(has_next_result.error());
-        }
+        ET_EXPECTED_TRY_V(auto has_next_result, has_next());
 
         if(strict_length) {
-            if(consumed_count != expected_length || *has_next_result) {
+            if(consumed_count != expected_length || has_next_result) {
                 deserializer.mark_invalid();
                 return std::unexpected(deserializer.current_error());
             }
@@ -243,10 +232,7 @@ public:
             return std::unexpected(deserializer.current_error());
         }
 
-        auto status = deserializer.deserialize_entry_value(entries[index].value, value);
-        if(!status) {
-            return std::unexpected(status.error());
-        }
+        ET_EXPECTED_TRY(deserializer.deserialize_entry_value(entries[index].value, value));
 
         ++index;
         has_pending_value = false;
@@ -273,10 +259,7 @@ public:
         }
 
         if(has_pending_value) {
-            auto status = skip_value();
-            if(!status) {
-                return std::unexpected(status.error());
-            }
+            ET_EXPECTED_TRY(skip_value());
         }
 
         index = entries.size();
@@ -303,26 +286,17 @@ protected:
 template <deserializer_like D>
 auto deserialize_bytes_from_seq(D& d, std::vector<std::byte>& value)
     -> std::expected<void, typename D::error_type> {
-    auto seq = d.deserialize_seq(std::nullopt);
-    if(!seq) {
-        return std::unexpected(seq.error());
-    }
+    ET_EXPECTED_TRY_V(auto seq, d.deserialize_seq(std::nullopt));
 
     value.clear();
     while(true) {
-        auto has_next = seq->has_next();
+        ET_EXPECTED_TRY_V(auto has_next, seq.has_next());
         if(!has_next) {
-            return std::unexpected(has_next.error());
-        }
-        if(!*has_next) {
             break;
         }
 
         std::uint64_t byte = 0;
-        auto byte_status = seq->deserialize_element(byte);
-        if(!byte_status) {
-            return std::unexpected(byte_status.error());
-        }
+        ET_EXPECTED_TRY(seq.deserialize_element(byte));
         if(byte > static_cast<std::uint64_t>((std::numeric_limits<std::uint8_t>::max)())) {
             return std::unexpected(D::error_type::number_out_of_range);
         }
@@ -330,7 +304,7 @@ auto deserialize_bytes_from_seq(D& d, std::vector<std::byte>& value)
         value.push_back(static_cast<std::byte>(static_cast<std::uint8_t>(byte)));
     }
 
-    return seq->end();
+    return seq.end();
 }
 
 }  // namespace eventide::serde::detail

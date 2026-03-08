@@ -14,6 +14,7 @@
 #include <variant>
 #include <vector>
 
+#include "eventide/common/expected_try.h"
 #include "eventide/serde/serde/config.h"
 #include "eventide/serde/serde/serde.h"
 #include "eventide/serde/serde/utils/backend_helpers.h"
@@ -50,8 +51,9 @@ template <typename T>
 constexpr bool is_map_like_v = is_map_like<T>();
 
 template <typename T>
-constexpr bool root_table_v =
-    refl::reflectable_class<T> || is_map_like_v<T> || std::same_as<T, ::toml::table>;
+constexpr bool root_table_v = (refl::reflectable_class<T> && !is_pair_v<T> && !is_tuple_v<T> &&
+                               !std::ranges::input_range<T>) ||
+                              is_map_like_v<T> || std::same_as<T, ::toml::table>;
 
 template <typename T>
 auto select_root_node(const ::toml::table& table) -> const ::toml::node* {
@@ -87,100 +89,16 @@ public:
 
     using status_t = result_t<void>;
 
-    class DeserializeArray {
-    public:
-        result_t<bool> has_next() {
-            if(!deserializer.valid()) {
-                return std::unexpected(deserializer.current_error());
-            }
-            if(array == nullptr) {
-                deserializer.mark_invalid(error_kind::invalid_state);
-                return std::unexpected(deserializer.current_error());
-            }
-            return index < array->size();
-        }
-
-        template <typename T>
-        status_t deserialize_element(T& value) {
-            auto has_next_value = has_next();
-            if(!has_next_value) {
-                return std::unexpected(has_next_value.error());
-            }
-            if(!*has_next_value) {
-                deserializer.mark_invalid(error_kind::invalid_state);
-                return std::unexpected(deserializer.current_error());
-            }
-
-            const auto* node = std::addressof((*array)[index]);
-            auto status = deserializer.deserialize_from_node(node, value);
-            if(!status) {
-                return std::unexpected(status.error());
-            }
-
-            ++index;
-            ++consumed_count;
-            return {};
-        }
-
-        status_t skip_element() {
-            auto has_next_value = has_next();
-            if(!has_next_value) {
-                return std::unexpected(has_next_value.error());
-            }
-            if(!*has_next_value) {
-                deserializer.mark_invalid(error_kind::invalid_state);
-                return std::unexpected(deserializer.current_error());
-            }
-
-            ++index;
-            ++consumed_count;
-            return {};
-        }
-
-        status_t end() {
-            if(!deserializer.valid()) {
-                return std::unexpected(deserializer.current_error());
-            }
-
-            if(strict_length) {
-                if(consumed_count != expected_length) {
-                    deserializer.mark_invalid(error_kind::invalid_state);
-                    return std::unexpected(deserializer.current_error());
-                }
-
-                auto has_next_value = has_next();
-                if(!has_next_value) {
-                    return std::unexpected(has_next_value.error());
-                }
-                if(*has_next_value) {
-                    deserializer.mark_invalid(error_kind::trailing_content);
-                    return std::unexpected(deserializer.current_error());
-                }
-                return {};
-            }
-
-            if(array != nullptr) {
-                index = array->size();
-            }
-            return {};
-        }
-
-    private:
+    class DeserializeArray :
+        public serde::detail::IndexedArrayDeserializer<Deserializer, const ::toml::array*> {
+        using Base = serde::detail::IndexedArrayDeserializer<Deserializer, const ::toml::array*>;
         friend class Deserializer;
 
         DeserializeArray(Deserializer& deserializer,
                          const ::toml::array* array,
                          std::size_t expected_length,
                          bool strict_length) :
-            deserializer(deserializer), array(array), expected_length(expected_length),
-            strict_length(strict_length) {}
-
-        Deserializer& deserializer;
-        const ::toml::array* array = nullptr;
-        std::size_t index = 0;
-        std::size_t expected_length = 0;
-        std::size_t consumed_count = 0;
-        bool strict_length = false;
+            Base(deserializer, array, array ? array->size() : 0, expected_length, strict_length) {}
     };
 
     class DeserializeObject :
@@ -386,30 +304,21 @@ public:
     }
 
     result_t<DeserializeSeq> deserialize_seq(std::optional<std::size_t> len) {
-        auto array = open_array();
-        if(!array) {
-            return std::unexpected(array.error());
-        }
-        return DeserializeSeq(*this, *array, len.value_or(0), false);
+        ET_EXPECTED_TRY_V(auto array, open_array());
+        return DeserializeSeq(*this, array, len.value_or(0), false);
     }
 
     result_t<DeserializeTuple> deserialize_tuple(std::size_t len) {
-        auto array = open_array();
-        if(!array) {
-            return std::unexpected(array.error());
-        }
-        return DeserializeTuple(*this, *array, len, true);
+        ET_EXPECTED_TRY_V(auto array, open_array());
+        return DeserializeTuple(*this, array, len, true);
     }
 
     result_t<DeserializeMap> deserialize_map(std::optional<std::size_t> /*len*/) {
-        auto table = open_table();
-        if(!table) {
-            return std::unexpected(table.error());
-        }
+        ET_EXPECTED_TRY_V(auto table, open_table());
 
         DeserializeMap object(*this);
-        object.entries.reserve((*table)->size());
-        for(const auto& [key, value]: **table) {
+        object.entries.reserve(table->size());
+        for(const auto& [key, value]: *table) {
             object.entries.push_back(
                 typename DeserializeMap::entry{key.str(), std::addressof(value)});
         }
@@ -437,9 +346,16 @@ public:
     }
 
 private:
+    friend class serde::detail::IndexedArrayDeserializer<Deserializer, const ::toml::array*>;
     friend class serde::detail::IndexedObjectDeserializer<Deserializer, const ::toml::node*>;
 
-    /// Bridge method for shared deserialize helpers.
+    /// Bridge method for shared array deserialize helpers.
+    template <typename T>
+    status_t deserialize_element_value(const ::toml::array* arr, std::size_t idx, T& out) {
+        return deserialize_from_node(std::addressof((*arr)[idx]), out);
+    }
+
+    /// Bridge method for shared object deserialize helpers.
     template <typename T>
     status_t deserialize_entry_value(const ::toml::node* value, T& out) {
         return deserialize_from_node(value, out);
@@ -631,15 +547,8 @@ auto from_toml(const ::toml::table& table, T& value) -> std::expected<void, erro
     const auto* root = detail::select_root_node<T>(table);
     Deserializer<Config> deserializer(root);
 
-    auto status = serde::deserialize(deserializer, value);
-    if(!status) {
-        return std::unexpected(status.error());
-    }
-
-    auto finished = deserializer.finish();
-    if(!finished) {
-        return std::unexpected(finished.error());
-    }
+    ET_EXPECTED_TRY(serde::deserialize(deserializer, value));
+    ET_EXPECTED_TRY(deserializer.finish());
     return {};
 }
 
@@ -647,10 +556,7 @@ template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_toml(const ::toml::table& table) -> std::expected<T, error_kind> {
     T value{};
-    auto status = from_toml<Config>(table, value);
-    if(!status) {
-        return std::unexpected(status.error());
-    }
+    ET_EXPECTED_TRY(from_toml<Config>(table, value));
     return value;
 }
 
