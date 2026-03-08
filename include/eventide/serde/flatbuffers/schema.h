@@ -13,7 +13,7 @@
 #include <vector>
 
 #include "eventide/serde/serde/serde.h"
-#include "eventide/serde/serde/type_utils.h"
+#include "eventide/serde/serde/utils/common.h"
 
 namespace eventide::serde::flatbuffers {
 

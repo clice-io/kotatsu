@@ -19,7 +19,7 @@
 #include "eventide/serde/flatbuffers/schema.h"
 #include "eventide/serde/flatbuffers/serializer.h"
 #include "eventide/serde/serde/config.h"
-#include "eventide/serde/serde/type_utils.h"
+#include "eventide/serde/serde/utils/common.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
 #include <flatbuffers/flatbuffers.h>

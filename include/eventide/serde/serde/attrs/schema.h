@@ -13,8 +13,6 @@
 
 namespace eventide::serde {
 
-// ── Tuple query utilities ──────────────────────────────────────────
-
 namespace detail {
 
 /// True if any type in Ts... satisfies Pred.
@@ -108,8 +106,6 @@ using tuple_find_spec_t = typename tuple_find_spec<Tuple, HKT>::type;
 
 }  // namespace detail
 
-// ── Schema attribute tag types ─────────────────────────────────────
-
 namespace schema {
 
 // Field-level
@@ -178,8 +174,6 @@ using adjacently_tagged = tagged<Tag, Content>;
 
 }  // namespace schema
 
-// ── Schema attribute predicates (NTTP — require struct form) ───────
-
 template <typename T>
 struct is_rename_attr {
     constexpr static bool value = false;
@@ -240,8 +234,6 @@ constexpr auto resolve_tag_names() {
     }
 }
 
-// ── Composite trait ────────────────────────────────────────────────
-
 /// True for the closed set of schema attributes (field-level + struct-level).
 template <typename T>
 constexpr bool is_schema_attr_v =
@@ -250,15 +242,11 @@ constexpr bool is_schema_attr_v =
     is_specialization_of<schema::rename_all, T> || std::is_same_v<T, schema::deny_unknown_fields> ||
     is_tagged_attr<T>::value;
 
-// ── Annotation detection ──────────────────────────────────────────
-
 template <typename T>
 concept has_attrs = requires {
     typename std::remove_cvref_t<T>::annotated_type;
     typename std::remove_cvref_t<T>::attrs;
 };
-
-// ── Schema resolve: per-field queries ──────────────────────────────
 
 namespace schema {
 
@@ -343,8 +331,6 @@ consteval std::size_t alias_count() {
 
 }  // namespace detail
 
-// ── Schema resolve: conflict detection ─────────────────────────────
-
 /// Validate that no two non-excluded fields share the same canonical name
 /// and that aliases don't collide with canonical names.
 template <typename T>
@@ -398,8 +384,6 @@ consteval bool validate_field_schema() {
         return true;
     }(std::make_index_sequence<N>{});
 }
-
-// ── Schema resolve: field descriptors ──────────────────────────────
 
 template <std::size_t AliasCount>
 struct field_schema {

@@ -16,9 +16,8 @@
 #include "eventide/serde/content/deserializer.h"
 #include "eventide/serde/json/error.h"
 #include "eventide/serde/serde/config.h"
-#include "eventide/serde/serde/narrow.h"
 #include "eventide/serde/serde/serde.h"
-#include "eventide/serde/serde/variant.h"
+#include "eventide/serde/serde/utils/narrow.h"
 
 namespace eventide::serde::json {
 
@@ -922,5 +921,3 @@ auto from_json(simdjson::padded_string_view json) -> std::expected<T, error_kind
 static_assert(serde::deserializer_like<Deserializer<>>);
 
 }  // namespace eventide::serde::json
-
-#include "eventide/serde/serde/internally_tagged.h"

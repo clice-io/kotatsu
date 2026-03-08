@@ -18,8 +18,8 @@
 #include "eventide/common/ranges.h"
 #include "eventide/serde/bincode/error.h"
 #include "eventide/serde/serde/config.h"
-#include "eventide/serde/serde/narrow.h"
 #include "eventide/serde/serde/serde.h"
+#include "eventide/serde/serde/utils/narrow.h"
 
 namespace eventide::serde::bincode {
 

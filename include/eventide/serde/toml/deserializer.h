@@ -15,11 +15,10 @@
 #include <vector>
 
 #include "eventide/serde/serde/config.h"
-#include "eventide/serde/serde/deserialize_helpers.h"
-#include "eventide/serde/serde/narrow.h"
 #include "eventide/serde/serde/serde.h"
-#include "eventide/serde/serde/type_utils.h"
-#include "eventide/serde/serde/variant.h"
+#include "eventide/serde/serde/utils/backend_helpers.h"
+#include "eventide/serde/serde/utils/common.h"
+#include "eventide/serde/serde/utils/narrow.h"
 #include "eventide/serde/toml/error.h"
 #include "eventide/serde/toml/serializer.h"
 

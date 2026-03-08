@@ -16,10 +16,9 @@
 #include "eventide/serde/content/dom.h"
 #include "eventide/serde/content/error.h"
 #include "eventide/serde/serde/config.h"
-#include "eventide/serde/serde/deserialize_helpers.h"
-#include "eventide/serde/serde/narrow.h"
 #include "eventide/serde/serde/serde.h"
-#include "eventide/serde/serde/variant.h"
+#include "eventide/serde/serde/utils/backend_helpers.h"
+#include "eventide/serde/serde/utils/narrow.h"
 
 namespace eventide::serde::content {
 
@@ -536,5 +535,3 @@ private:
 static_assert(serde::deserializer_like<Deserializer<>>);
 
 }  // namespace eventide::serde::content
-
-#include "eventide/serde/serde/internally_tagged.h"

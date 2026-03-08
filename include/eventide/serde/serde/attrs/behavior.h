@@ -9,8 +9,6 @@
 
 namespace eventide::serde {
 
-// ── Behavior attribute tag types ───────────────────────────────────
-
 namespace behavior {
 
 template <typename Policy>
@@ -38,8 +36,6 @@ struct as {
 
 }  // namespace behavior
 
-// ── skip_if predicate evaluation ───────────────────────────────────
-
 namespace detail {
 
 template <typename Pred, typename Value>
@@ -61,8 +57,6 @@ constexpr bool evaluate_skip_predicate(const Value& value, bool is_serialize) {
 }
 
 }  // namespace detail
-
-// ── Built-in predicates ────────────────────────────────────────────
 
 namespace pred {
 
@@ -100,8 +94,6 @@ struct default_value {
 
 }  // namespace pred
 
-// ── Composite traits ───────────────────────────────────────────────
-
 /// True for the closed set of behavior attributes.
 template <typename T>
 constexpr bool is_behavior_attr_v =
@@ -115,8 +107,6 @@ struct is_behavior_provider {
                                   is_specialization_of<behavior::as, T> ||
                                   is_specialization_of<behavior::enum_string, T>;
 };
-
-// ── Validation ─────────────────────────────────────────────────────
 
 namespace detail {
 

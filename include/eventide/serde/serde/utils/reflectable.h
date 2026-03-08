@@ -10,13 +10,24 @@
 #include <utility>
 #include <variant>
 
+#include "eventide/reflection/struct.h"
 #include "eventide/serde/serde/annotation.h"
+#include "eventide/serde/serde/attrs.h"
+#include "eventide/serde/serde/attrs/behavior.h"
 #include "eventide/serde/serde/attrs/schema.h"
 #include "eventide/serde/serde/config.h"
+#include "eventide/serde/serde/traits.h"
+#include "eventide/serde/serde/utils/field_dispatch.h"
 
-namespace eventide::serde::detail {
+namespace eventide::serde {
 
-// ── Compile-time field descriptor table ────────────────────────────
+template <serializer_like S, typename V, typename T, typename E>
+constexpr auto serialize(S& s, const V& v) -> std::expected<T, E>;
+
+template <deserializer_like D, typename V, typename E>
+constexpr auto deserialize(D& d, V& v) -> std::expected<void, E>;
+
+namespace detail {
 
 struct field_entry {
     std::string_view name;
@@ -138,8 +149,6 @@ auto has_ambiguous_wire_names() -> bool {
     return ambiguous;
 }
 
-// ── Index-based field dispatch ─────────────────────────────────────
-
 /// Deserialize a single struct field by its compile-time index.
 template <typename T, typename Config, std::size_t I, typename E, typename DeserializeStruct>
 auto deserialize_field_at(DeserializeStruct& d_struct, T& value) -> std::expected<void, E> {
@@ -241,4 +250,157 @@ auto dispatch_field_by_index(std::size_t index, DeserializeStruct& d_struct, T& 
     }(std::make_index_sequence<refl::field_count<T>()>{});
 }
 
-}  // namespace eventide::serde::detail
+/// Check if struct T has any flatten fields.
+template <typename T>
+consteval bool has_flatten_fields() {
+    return []<std::size_t... Is>(std::index_sequence<Is...>) consteval {
+        return (schema::is_field_flattened<T, Is>() || ...);
+    }(std::make_index_sequence<refl::field_count<T>()>{});
+}
+
+/// Try to match a key against flatten fields. Returns true if matched.
+template <typename T, typename Config, typename E, typename DeserializeStruct>
+auto try_flatten_fields(std::string_view key_name, DeserializeStruct& d_struct, T& value)
+    -> std::expected<bool, E> {
+    bool matched = false;
+    std::expected<void, E> nested_error;
+
+    refl::for_each(value, [&](auto field) {
+        if(matched) {
+            return false;
+        }
+
+        using field_t = typename std::remove_cvref_t<decltype(field)>::type;
+        if constexpr(!annotated_type<field_t>) {
+            return true;
+        } else {
+            using attrs_t = typename std::remove_cvref_t<field_t>::attrs;
+            if constexpr(tuple_has_v<attrs_t, schema::flatten>) {
+                auto status = deserialize_struct_field<Config, E>(d_struct, key_name, field);
+                if(!status) {
+                    nested_error = std::unexpected(status.error());
+                    return false;
+                }
+                if(*status) {
+                    matched = true;
+                    return false;
+                }
+            }
+            return true;
+        }
+    });
+
+    if(!nested_error) {
+        return std::unexpected(nested_error.error());
+    }
+    return matched;
+}
+
+template <typename BaseConfig,
+          typename Attrs,
+          bool HasRenameAll = tuple_has_spec_v<Attrs, schema::rename_all>>
+struct annotated_struct_config {
+    using type = BaseConfig;
+};
+
+template <typename BaseConfig, typename Attrs>
+struct annotated_struct_config<BaseConfig, Attrs, true> {
+    using field_rename_policy = typename tuple_find_spec_t<Attrs, schema::rename_all>::policy;
+
+    struct type {
+        using field_rename = field_rename_policy;
+    };
+};
+
+template <typename BaseConfig, typename Attrs>
+using annotated_struct_config_t = typename annotated_struct_config<BaseConfig, Attrs>::type;
+
+template <typename Config, typename E, serializer_like S, typename V>
+    requires refl::reflectable_class<std::remove_cvref_t<V>>
+constexpr auto serialize_reflectable(S& s, const V& v) -> std::expected<typename S::value_type, E> {
+    using value_t = std::remove_cvref_t<V>;
+
+    auto s_struct = s.serialize_struct(refl::type_name<value_t>(), refl::field_count<value_t>());
+    if(!s_struct) {
+        return std::unexpected(s_struct.error());
+    }
+
+    std::expected<void, E> field_result;
+    refl::for_each(v, [&](auto field) {
+        auto result = serialize_struct_field<Config, E>(*s_struct, field);
+        if(!result) {
+            field_result = std::unexpected(result.error());
+            return false;
+        }
+        return true;
+    });
+    if(!field_result) {
+        return std::unexpected(field_result.error());
+    }
+
+    return s_struct->end();
+}
+
+template <typename Config, typename E, bool DenyUnknown, deserializer_like D, typename V>
+    requires refl::reflectable_class<std::remove_cvref_t<V>>
+constexpr auto deserialize_reflectable(D& d, V& v) -> std::expected<void, E> {
+    using value_t = std::remove_cvref_t<V>;
+
+    if(has_ambiguous_wire_names<value_t, Config>()) {
+        return std::unexpected(E::invalid_state);
+    }
+
+    auto d_struct = d.deserialize_struct(refl::type_name<value_t>(), refl::field_count<value_t>());
+    if(!d_struct) {
+        return std::unexpected(d_struct.error());
+    }
+
+    while(true) {
+        auto key = d_struct->next_key();
+        if(!key) {
+            return std::unexpected(key.error());
+        }
+        if(!key->has_value()) {
+            break;
+        }
+
+        std::string_view key_name = **key;
+
+        auto idx = lookup_field<value_t, Config>(key_name);
+        if(idx) {
+            auto status = dispatch_field_by_index<value_t, Config, E>(*idx, *d_struct, v);
+            if(!status) {
+                return std::unexpected(status.error());
+            }
+            continue;
+        }
+
+        bool flatten_matched = false;
+        if constexpr(has_flatten_fields<value_t>()) {
+            auto flatten_status = try_flatten_fields<value_t, Config, E>(key_name, *d_struct, v);
+            if(!flatten_status) {
+                return std::unexpected(flatten_status.error());
+            }
+            flatten_matched = *flatten_status;
+        }
+
+        if(flatten_matched) {
+            continue;
+        }
+
+        if constexpr(DenyUnknown) {
+            return std::unexpected(E::type_mismatch);
+        } else {
+            auto skipped = d_struct->skip_value();
+            if(!skipped) {
+                return std::unexpected(skipped.error());
+            }
+        }
+    }
+
+    return d_struct->end();
+}
+
+}  // namespace detail
+
+}  // namespace eventide::serde
