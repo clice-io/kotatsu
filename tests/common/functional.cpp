@@ -102,7 +102,7 @@ TEST_CASE(function_ref_from_const_mem_fn) {
 TEST_CASE(function_ref_from_lvalue_ref_and_mem_fn) {
     Adder adder{7};
     // This uses the (Class&& invokable, MemFn) overload with lvalue ref
-    function_ref<int(int)> fn(adder, mem_fn<&Adder::add>{});
+    auto fn = bind_ref<&Adder::add>(adder);
     EXPECT_EQ(fn(3), 10);
 };
 
