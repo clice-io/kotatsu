@@ -292,10 +292,20 @@ public:
     }
 
 private:
+    // Non-template helper to avoid lld issues with std::function vtable entries
+    // for lambdas inside heavily-instantiated template member functions.
+    void push_add_offset(std::vector<std::function<void()>>& writers,
+                         ::flatbuffers::voffset_t field,
+                         ::flatbuffers::uoffset_t raw_offset) {
+        writers.push_back([this, field, raw_offset] {
+            builder.AddOffset(field, ::flatbuffers::Offset<void>(raw_offset));
+        });
+    }
+
     template <typename OffsetT>
     auto wrap_offset(::flatbuffers::Offset<OffsetT> offset) -> result_t<value_type> {
         std::vector<std::function<void()>> writers;
-        writers.push_back([this, offset] { builder.AddOffset(detail::first_field, offset); });
+        push_add_offset(writers, detail::first_field, offset.o);
         return finish_table(writers);
     }
 
@@ -481,7 +491,7 @@ private:
                 bytes.push_back(std::to_integer<std::uint8_t>(b));
             }
             auto offset = builder.CreateVector(bytes);
-            writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
+            push_add_offset(writers, field, offset.o);
             return {};
         } else if constexpr(serde::bool_like<element_clean_t> || serde::int_like<element_clean_t> ||
                             serde::uint_like<element_clean_t>) {
@@ -493,7 +503,7 @@ private:
                 elements.push_back(static_cast<element_clean_t>(element));
             }
             auto offset = builder.CreateVector(elements);
-            writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
+            push_add_offset(writers, field, offset.o);
             return {};
         } else if constexpr(serde::floating_like<element_clean_t>) {
             if constexpr(std::same_as<element_clean_t, float> ||
@@ -506,7 +516,7 @@ private:
                     elements.push_back(static_cast<element_clean_t>(element));
                 }
                 auto offset = builder.CreateVector(elements);
-                writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
+                push_add_offset(writers, field, offset.o);
                 return {};
             } else {
                 std::vector<double> elements;
@@ -517,7 +527,7 @@ private:
                     elements.push_back(static_cast<double>(element));
                 }
                 auto offset = builder.CreateVector(elements);
-                writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
+                push_add_offset(writers, field, offset.o);
                 return {};
             }
         } else if constexpr(serde::char_like<element_clean_t>) {
@@ -529,7 +539,7 @@ private:
                 elements.push_back(static_cast<std::int8_t>(element));
             }
             auto offset = builder.CreateVector(elements);
-            writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
+            push_add_offset(writers, field, offset.o);
             return {};
         } else if constexpr(serde::str_like<element_clean_t>) {
             std::vector<::flatbuffers::Offset<::flatbuffers::String>> elements;
@@ -541,7 +551,7 @@ private:
                 elements.push_back(builder.CreateString(text.data(), text.size()));
             }
             auto offset = builder.CreateVector(elements);
-            writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
+            push_add_offset(writers, field, offset.o);
             return {};
         } else if constexpr(is_pair_v<element_clean_t> || is_tuple_v<element_clean_t>) {
             std::vector<value_type> elements;
@@ -553,7 +563,7 @@ private:
                 elements.push_back(tuple);
             }
             auto offset = builder.CreateVector(elements);
-            writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
+            push_add_offset(writers, field, offset.o);
             return {};
         } else if constexpr(can_inline_struct_v<element_clean_t>) {
             std::vector<element_clean_t> elements;
@@ -564,7 +574,7 @@ private:
                 elements.push_back(static_cast<element_clean_t>(element));
             }
             auto offset = builder.CreateVectorOfStructs(elements);
-            writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
+            push_add_offset(writers, field, offset.o);
             return {};
         } else if constexpr(refl::reflectable_class<element_clean_t>) {
             std::vector<value_type> elements;
@@ -576,7 +586,7 @@ private:
                 elements.push_back(table);
             }
             auto offset = builder.CreateVector(elements);
-            writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
+            push_add_offset(writers, field, offset.o);
             return {};
         } else {
             std::vector<value_type> elements;
@@ -588,7 +598,7 @@ private:
                 elements.push_back(boxed);
             }
             auto offset = builder.CreateVector(elements);
-            writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
+            push_add_offset(writers, field, offset.o);
             return {};
         }
     }
@@ -646,31 +656,31 @@ private:
         } else if constexpr(serde::str_like<clean_t>) {
             const std::string_view text = value;
             const auto offset = builder.CreateString(text.data(), text.size());
-            writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
+            push_add_offset(writers, field, offset.o);
             return {};
         } else if constexpr(serde::bytes_like<clean_t>) {
             const std::span<const std::byte> bytes = value;
             const auto* data =
                 bytes.empty() ? nullptr : reinterpret_cast<const std::uint8_t*>(bytes.data());
             const auto offset = builder.CreateVector(data, bytes.size());
-            writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
+            push_add_offset(writers, field, offset.o);
             return {};
         } else if constexpr(is_specialization_of<std::variant, U>) {
             ET_EXPECTED_TRY_V(auto offset, encode_variant(value));
-            writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
+            push_add_offset(writers, field, offset.o);
             return {};
         } else if constexpr(std::ranges::input_range<clean_t>) {
             constexpr auto kind = eventide::format_kind<clean_t>;
             if constexpr(kind == eventide::range_format::map) {
                 ET_EXPECTED_TRY_V(auto offset, encode_map(value));
-                writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
+                push_add_offset(writers, field, offset.o);
                 return {};
             } else {
                 return collect_sequence_field(writers, field, value);
             }
         } else if constexpr(is_pair_v<clean_t> || is_tuple_v<clean_t>) {
             ET_EXPECTED_TRY_V(auto offset, encode_tuple_like(value));
-            writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
+            push_add_offset(writers, field, offset.o);
             return {};
         } else if constexpr(can_inline_struct_v<clean_t>) {
             const clean_t copy = static_cast<clean_t>(value);
@@ -678,7 +688,7 @@ private:
             return {};
         } else if constexpr(refl::reflectable_class<clean_t>) {
             ET_EXPECTED_TRY_V(auto offset, encode_table(value));
-            writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
+            push_add_offset(writers, field, offset.o);
             return {};
         } else {
             return std::unexpected(object_error_code::unsupported_type);
