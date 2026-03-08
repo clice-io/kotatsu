@@ -329,11 +329,15 @@ public:
     [[nodiscard]] bool mutable_doc() const noexcept;
 
 protected:
-    OwnedDoc(std::uintptr_t tagged_doc_handle, int* ref_count, bool retain_owner) noexcept;
+    OwnedDoc(std::uintptr_t tagged_doc_handle,
+             int* ref_count,
+             bool retain_owner,
+             bool external_owner = false) noexcept;
 
     constexpr static std::uintptr_t k_mutable_bit = std::uintptr_t{1};
     std::uintptr_t tagged_doc_handle = 0;
     int* ref_count = nullptr;
+    bool external_owner = false;
 
     [[nodiscard]] static std::uintptr_t tag_doc(const void* pointer, bool mutable_bit) noexcept;
 
@@ -420,7 +424,8 @@ private:
     Value(std::uintptr_t tagged_value_handle,
           std::uintptr_t tagged_doc_handle,
           int* ref_count,
-          bool retain_owner) noexcept;
+          bool retain_owner,
+          bool external_owner = false) noexcept;
 
 private:
     friend class Array;
@@ -472,7 +477,8 @@ private:
     Array(std::uintptr_t tagged_value_handle,
           std::uintptr_t tagged_doc_handle,
           int* ref_count,
-          bool retain_owner) noexcept;
+          bool retain_owner,
+          bool external_owner = false) noexcept;
 
 private:
     friend class Value;
@@ -523,7 +529,8 @@ private:
     Object(std::uintptr_t tagged_value_handle,
            std::uintptr_t tagged_doc_handle,
            int* ref_count,
-           bool retain_owner) noexcept;
+           bool retain_owner,
+           bool external_owner = false) noexcept;
 
 private:
     friend class Value;
@@ -575,7 +582,16 @@ public:
     [[nodiscard]] auto to_json_string() const -> std::expected<std::string, error_kind>;
 
 private:
+    Document(std::nullptr_t) noexcept;
+
+    explicit Document(Value owner) noexcept;
+
+    std::optional<Value> owner_root;
     std::shared_ptr<yyjson_mut_doc> doc;
+
+    friend class Value;
+    friend class Array;
+    friend class Object;
 };
 
 }  // namespace eventide::serde::content

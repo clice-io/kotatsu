@@ -236,6 +236,80 @@ TEST_CASE(cow_shared_mutable_doc_on_write) {
     EXPECT_EQ(copy.use_count(), 2);
 }
 
+TEST_CASE(doc_accessors_follow_owner_document_state) {
+    auto immutable_value = must_parse_immutable_value(R"({"n":1})");
+    auto immutable_array = must_parse_immutable_value("[1,2]").as_array();
+    auto immutable_object = must_parse_immutable_value(R"({"n":1})").as_object();
+    EXPECT_FALSE(immutable_value.doc().valid());
+    EXPECT_FALSE(immutable_array.doc().valid());
+    EXPECT_FALSE(immutable_object.doc().valid());
+
+    auto mutable_value = must_parse_mutable_value(R"({"n":1})");
+    auto mutable_array = must_parse_mutable_array("[1,2]");
+    auto mutable_object = must_parse_mutable_object(R"({"n":1})");
+    auto value_doc = mutable_value.doc();
+    auto array_doc = mutable_array.doc();
+    auto object_doc = mutable_object.doc();
+    ASSERT_TRUE(value_doc.valid());
+    ASSERT_TRUE(array_doc.valid());
+    ASSERT_TRUE(object_doc.valid());
+
+    auto value_from_doc = value_doc.dom_value();
+    auto array_from_doc = array_doc.dom_value();
+    auto object_from_doc = object_doc.dom_value();
+    ASSERT_TRUE(value_from_doc.has_value());
+    ASSERT_TRUE(array_from_doc.has_value());
+    ASSERT_TRUE(object_from_doc.has_value());
+    EXPECT_EQ(value_from_doc->as_object()["n"].as_int(), 1);
+    EXPECT_EQ(array_from_doc->as_array()[1].as_int(), 2);
+    EXPECT_EQ(object_from_doc->as_object()["n"].as_int(), 1);
+}
+
+TEST_CASE(document_make_root_returns_live_wrappers) {
+    {
+        Document document;
+        auto array = document.make_array();
+        ASSERT_TRUE(array.push_back(1).has_value());
+        ASSERT_TRUE(array.push_back(2).has_value());
+
+        auto dom_value = document.dom_value();
+        ASSERT_TRUE(dom_value.has_value());
+        EXPECT_EQ(dom_value->as_array().size(), std::size_t(2));
+        EXPECT_EQ(dom_value->as_array()[0].as_int(), 1);
+        EXPECT_EQ(dom_value->as_array()[1].as_int(), 2);
+    }
+
+    {
+        Document document;
+        auto object = document.make_object();
+        ASSERT_TRUE(object.assign("a", 1).has_value());
+        ASSERT_TRUE(object.assign("b", 2).has_value());
+
+        auto dom_value = document.dom_value();
+        ASSERT_TRUE(dom_value.has_value());
+        auto dom_object = dom_value->as_object();
+        EXPECT_EQ(dom_object["a"].as_int(), 1);
+        EXPECT_EQ(dom_object["b"].as_int(), 2);
+    }
+}
+
+TEST_CASE(document_make_root_does_not_mutate_bound_owner) {
+    auto owner = must_parse_mutable_value(R"({"n":1})");
+    auto document = owner.doc();
+    ASSERT_TRUE(document.valid());
+
+    auto array = document.make_array();
+    ASSERT_TRUE(array.push_back(7).has_value());
+
+    auto owner_json = owner.to_json_string();
+    ASSERT_TRUE(owner_json.has_value());
+    EXPECT_EQ(*owner_json, R"({"n":1})");
+
+    auto document_json = document.to_json_string();
+    ASSERT_TRUE(document_json.has_value());
+    EXPECT_EQ(*document_json, "[7]");
+}
+
 TEST_CASE(write_api_invalid_state_errors) {
     Value value;
     auto value_status = value.set(1);

@@ -3,6 +3,8 @@
 #include <array>
 #include <limits>
 #include <memory>
+#include <type_traits>
+#include <utility>
 #include <variant>
 
 #include "annotation.h"
@@ -18,6 +20,13 @@
 #include "eventide/serde/serde/attrs/schema.h"
 
 namespace eventide::serde {
+
+namespace content {
+
+template <typename Config>
+class Deserializer;
+
+}  // namespace content
 
 template <typename S, typename T>
 struct serialize_traits;
@@ -77,6 +86,41 @@ struct deserialize_traits<D, std::array<T, N>> {
 };
 
 namespace detail {
+
+template <typename D, typename = void>
+struct captured_dom_value_type {};
+
+template <typename D>
+struct captured_dom_value_type<D, std::void_t<decltype(std::declval<D&>().capture_dom_value())>> {
+    using type = std::remove_cvref_t<decltype(*std::declval<D&>().capture_dom_value())>;
+};
+
+template <typename D>
+using captured_dom_value_t = typename captured_dom_value_type<D>::type;
+
+template <typename D, typename V, typename = void>
+struct is_captured_dom_value : std::false_type {};
+
+template <typename D, typename V>
+struct is_captured_dom_value<D, V, std::void_t<decltype(std::declval<D&>().capture_dom_value())>> :
+    std::bool_constant<std::same_as<std::remove_cvref_t<V>, captured_dom_value_t<D>>> {};
+
+template <typename D, typename V>
+constexpr bool is_captured_dom_value_v = is_captured_dom_value<D, V>::value;
+
+template <typename D, typename = void>
+struct can_buffer_adjacently_tagged : std::false_type {};
+
+template <typename D>
+    struct can_buffer_adjacently_tagged<
+        D,
+        std::void_t<decltype(std::declval<D&>().capture_dom_value()), typename D::config_type>> :
+    std::bool_constant < requires(const captured_dom_value_t<D>& captured) {
+    content::Deserializer<typename D::config_type>{captured};
+}>{};
+
+template <typename D>
+constexpr bool can_buffer_adjacently_tagged_v = can_buffer_adjacently_tagged<D>::value;
 
 template <typename To, typename From>
 constexpr bool integral_value_in_range(From value) {
@@ -484,75 +528,171 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
         return std::unexpected(d_struct.error());
     }
 
-    // Read tag field (must come first)
-    auto tag_key = d_struct->next_key();
-    if(!tag_key) {
-        return std::unexpected(tag_key.error());
-    }
-    if(!tag_key->has_value() || **tag_key != TagAttr::field_names[0]) {
-        return std::unexpected(E::type_mismatch);
-    }
-
     std::string tag_value;
-    auto tag_status = d_struct->deserialize_value(tag_value);
-    if(!tag_status) {
-        return std::unexpected(tag_status.error());
-    }
+    bool has_tag = false;
+    bool has_content = false;
 
-    // Read content field
-    auto content_key = d_struct->next_key();
-    if(!content_key) {
-        return std::unexpected(content_key.error());
-    }
-    if(!content_key->has_value() || **content_key != TagAttr::field_names[1]) {
-        return std::unexpected(E::type_mismatch);
-    }
+    auto deserialize_content_for_tag = [&](auto&& read_content_alt) -> std::expected<void, E> {
+        bool matched = false;
+        std::expected<void, E> status{};
 
-    // Dispatch by tag value
-    bool matched = false;
-    std::expected<void, E> status{};
-
-    [&]<std::size_t... I>(std::index_sequence<I...>) {
-        (([&] {
-             if(matched) {
-                 return;
-             }
-             if(names[I] != tag_value) {
-                 return;
-             }
-             matched = true;
-
-             using alt_t = std::variant_alternative_t<I, std::variant<Ts...>>;
-             if constexpr(std::same_as<alt_t, std::monostate>) {
-                 std::monostate alt{};
-                 auto result = d_struct->deserialize_value(alt);
-                 if(!result) {
-                     status = std::unexpected(result.error());
-                 } else {
-                     value.template emplace<I>();
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+            (([&] {
+                 if(matched || names[I] != tag_value) {
+                     return;
                  }
-             } else if constexpr(std::default_initializable<alt_t>) {
-                 alt_t alt{};
-                 auto result = d_struct->deserialize_value(alt);
-                 if(!result) {
-                     status = std::unexpected(result.error());
-                 } else {
-                     value = std::move(alt);
-                 }
-             } else {
-                 status = std::unexpected(E::invalid_state);
-             }
-         }()),
-         ...);
-    }(std::make_index_sequence<sizeof...(Ts)>{});
+                 matched = true;
 
-    if(!matched) {
-        return std::unexpected(E::type_mismatch);
+                 using alt_t = std::variant_alternative_t<I, std::variant<Ts...>>;
+                 if constexpr(std::same_as<alt_t, std::monostate>) {
+                     std::monostate alt{};
+                     auto result = read_content_alt(alt);
+                     if(!result) {
+                         status = std::unexpected(result.error());
+                     } else {
+                         value.template emplace<I>();
+                     }
+                 } else if constexpr(std::default_initializable<alt_t>) {
+                     alt_t alt{};
+                     auto result = read_content_alt(alt);
+                     if(!result) {
+                         status = std::unexpected(result.error());
+                     } else {
+                         value = std::move(alt);
+                     }
+                 } else {
+                     status = std::unexpected(E::invalid_state);
+                 }
+             }()),
+             ...);
+        }(std::make_index_sequence<sizeof...(Ts)>{});
+
+        if(!matched) {
+            return std::unexpected(E::type_mismatch);
+        }
+        if(!status) {
+            return std::unexpected(status.error());
+        }
+        return {};
+    };
+
+    if constexpr(detail::can_buffer_adjacently_tagged_v<D>) {
+        using captured_t = detail::captured_dom_value_t<D>;
+        std::optional<captured_t> buffered_content;
+
+        while(true) {
+            auto key = d_struct->next_key();
+            if(!key) {
+                return std::unexpected(key.error());
+            }
+            if(!key->has_value()) {
+                break;
+            }
+
+            if(**key == TagAttr::field_names[0]) {
+                if(has_tag) {
+                    return std::unexpected(E::type_mismatch);
+                }
+                auto tag_status = d_struct->deserialize_value(tag_value);
+                if(!tag_status) {
+                    return std::unexpected(tag_status.error());
+                }
+                has_tag = true;
+            } else if(**key == TagAttr::field_names[1]) {
+                if(has_content) {
+                    return std::unexpected(E::type_mismatch);
+                }
+                has_content = true;
+
+                if(has_tag) {
+                    auto content_status =
+                        deserialize_content_for_tag([&](auto& alt) -> std::expected<void, E> {
+                            auto result = d_struct->deserialize_value(alt);
+                            if(!result) {
+                                return std::unexpected(result.error());
+                            }
+                            return {};
+                        });
+                    if(!content_status) {
+                        return std::unexpected(content_status.error());
+                    }
+                } else {
+                    captured_t captured{};
+                    auto capture_status = d_struct->deserialize_value(captured);
+                    if(!capture_status) {
+                        return std::unexpected(capture_status.error());
+                    }
+                    buffered_content.emplace(std::move(captured));
+                }
+            } else {
+                auto skipped = d_struct->skip_value();
+                if(!skipped) {
+                    return std::unexpected(skipped.error());
+                }
+            }
+        }
+
+        if(!has_tag || !has_content) {
+            return std::unexpected(E::type_mismatch);
+        }
+
+        if(buffered_content.has_value()) {
+            auto buffered_status =
+                deserialize_content_for_tag([&](auto& alt) -> std::expected<void, E> {
+                    content::Deserializer<typename D::config_type> buffered_deserializer(
+                        *buffered_content);
+                    auto result = deserialize(buffered_deserializer, alt);
+                    if(!result) {
+                        return std::unexpected(result.error());
+                    }
+                    auto finish_status = buffered_deserializer.finish();
+                    if(!finish_status) {
+                        return std::unexpected(finish_status.error());
+                    }
+                    return {};
+                });
+            if(!buffered_status) {
+                return std::unexpected(buffered_status.error());
+            }
+        }
+
+        return d_struct->end();
+    } else {
+        // Fallback for backends that cannot buffer an unresolved field payload.
+        auto tag_key = d_struct->next_key();
+        if(!tag_key) {
+            return std::unexpected(tag_key.error());
+        }
+        if(!tag_key->has_value() || **tag_key != TagAttr::field_names[0]) {
+            return std::unexpected(E::type_mismatch);
+        }
+
+        auto tag_status = d_struct->deserialize_value(tag_value);
+        if(!tag_status) {
+            return std::unexpected(tag_status.error());
+        }
+        has_tag = true;
+
+        auto content_key = d_struct->next_key();
+        if(!content_key) {
+            return std::unexpected(content_key.error());
+        }
+        if(!content_key->has_value() || **content_key != TagAttr::field_names[1]) {
+            return std::unexpected(E::type_mismatch);
+        }
+
+        auto content_status = deserialize_content_for_tag([&](auto& alt) -> std::expected<void, E> {
+            auto result = d_struct->deserialize_value(alt);
+            if(!result) {
+                return std::unexpected(result.error());
+            }
+            return {};
+        });
+        if(!content_status) {
+            return std::unexpected(content_status.error());
+        }
+        return d_struct->end();
     }
-    if(!status) {
-        return std::unexpected(status.error());
-    }
-    return d_struct->end();
 }
 
 template <typename E, typename S, typename... Ts, typename TagAttr>
@@ -652,6 +792,111 @@ auto try_flatten_fields(std::string_view key_name, DeserializeStruct& d_struct, 
     return matched;
 }
 
+template <typename BaseConfig,
+          typename Attrs,
+          bool HasRenameAll = tuple_has_spec_v<Attrs, schema::rename_all>>
+struct annotated_struct_config {
+    using type = BaseConfig;
+};
+
+template <typename BaseConfig, typename Attrs>
+struct annotated_struct_config<BaseConfig, Attrs, true> {
+    using field_rename_policy = typename tuple_find_spec_t<Attrs, schema::rename_all>::policy;
+
+    struct type {
+        using field_rename = field_rename_policy;
+    };
+};
+
+template <typename BaseConfig, typename Attrs>
+using annotated_struct_config_t = typename annotated_struct_config<BaseConfig, Attrs>::type;
+
+template <typename Config, typename E, serializer_like S, typename V>
+    requires refl::reflectable_class<std::remove_cvref_t<V>>
+constexpr auto serialize_reflectable(S& s, const V& v) -> std::expected<typename S::value_type, E> {
+    using value_t = std::remove_cvref_t<V>;
+
+    auto s_struct = s.serialize_struct(refl::type_name<value_t>(), refl::field_count<value_t>());
+    if(!s_struct) {
+        return std::unexpected(s_struct.error());
+    }
+
+    std::expected<void, E> field_result;
+    refl::for_each(v, [&](auto field) {
+        auto result = serialize_struct_field<Config, E>(*s_struct, field);
+        if(!result) {
+            field_result = std::unexpected(result.error());
+            return false;
+        }
+        return true;
+    });
+    if(!field_result) {
+        return std::unexpected(field_result.error());
+    }
+
+    return s_struct->end();
+}
+
+template <typename Config, typename E, bool DenyUnknown, deserializer_like D, typename V>
+    requires refl::reflectable_class<std::remove_cvref_t<V>>
+constexpr auto deserialize_reflectable(D& d, V& v) -> std::expected<void, E> {
+    using value_t = std::remove_cvref_t<V>;
+
+    if(has_ambiguous_wire_names<value_t, Config>()) {
+        return std::unexpected(E::invalid_state);
+    }
+
+    auto d_struct = d.deserialize_struct(refl::type_name<value_t>(), refl::field_count<value_t>());
+    if(!d_struct) {
+        return std::unexpected(d_struct.error());
+    }
+
+    while(true) {
+        auto key = d_struct->next_key();
+        if(!key) {
+            return std::unexpected(key.error());
+        }
+        if(!key->has_value()) {
+            break;
+        }
+
+        std::string_view key_name = **key;
+
+        auto idx = lookup_field<value_t, Config>(key_name);
+        if(idx) {
+            auto status = dispatch_field_by_index<value_t, Config, E>(*idx, *d_struct, v);
+            if(!status) {
+                return std::unexpected(status.error());
+            }
+            continue;
+        }
+
+        bool flatten_matched = false;
+        if constexpr(has_flatten_fields<value_t>()) {
+            auto flatten_status = try_flatten_fields<value_t, Config, E>(key_name, *d_struct, v);
+            if(!flatten_status) {
+                return std::unexpected(flatten_status.error());
+            }
+            flatten_matched = *flatten_status;
+        }
+
+        if(flatten_matched) {
+            continue;
+        }
+
+        if constexpr(DenyUnknown) {
+            return std::unexpected(E::type_mismatch);
+        } else {
+            auto skipped = d_struct->skip_value();
+            if(!skipped) {
+                return std::unexpected(skipped.error());
+            }
+        }
+    }
+
+    return d_struct->end();
+}
+
 }  // namespace detail
 
 template <serializer_like S,
@@ -708,6 +953,14 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
                 "behavior::as<Target> requires Target to be constructible from the value type");
             Target converted(value);
             return serialize(s, converted);
+        }
+        // Struct-level schema attrs for annotated structs
+        else if constexpr(refl::reflectable_class<value_t> &&
+                          (detail::tuple_has_spec_v<attrs_t, schema::rename_all> ||
+                           detail::tuple_has_v<attrs_t, schema::deny_unknown_fields>)) {
+            using base_config_t = config::config_of<S>;
+            using struct_config_t = detail::annotated_struct_config_t<base_config_t, attrs_t>;
+            return detail::serialize_reflectable<struct_config_t, E>(s, value);
         }
         // Default: serialize the underlying value
         else {
@@ -818,25 +1071,7 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
         return s_tuple->end();
     } else if constexpr(refl::reflectable_class<V>) {
         using config_t = config::config_of<S>;
-        auto s_struct = s.serialize_struct(refl::type_name<V>(), refl::field_count<V>());
-        if(!s_struct) {
-            return std::unexpected(s_struct.error());
-        }
-
-        std::expected<void, E> field_result;
-        refl::for_each(v, [&](auto field) {
-            auto result = detail::serialize_struct_field<config_t, E>(*s_struct, field);
-            if(!result) {
-                field_result = std::unexpected(result.error());
-                return false;
-            }
-            return true;
-        });
-        if(!field_result) {
-            return std::unexpected(field_result.error());
-        }
-
-        return s_struct->end();
+        return detail::serialize_reflectable<config_t, E>(s, v);
     } else {
         static_assert(dependent_false<V>,
                       "cannot auto serialize the value, try to specialize for it");
@@ -910,6 +1145,15 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
             value = value_t(std::move(temp));
             return {};
         }
+        // Struct-level schema attrs for annotated structs
+        else if constexpr(refl::reflectable_class<value_t> &&
+                          (detail::tuple_has_spec_v<attrs_t, schema::rename_all> ||
+                           detail::tuple_has_v<attrs_t, schema::deny_unknown_fields>)) {
+            using base_config_t = config::config_of<D>;
+            using struct_config_t = detail::annotated_struct_config_t<base_config_t, attrs_t>;
+            constexpr bool deny_unknown = detail::tuple_has_v<attrs_t, schema::deny_unknown_fields>;
+            return detail::deserialize_reflectable<struct_config_t, E, deny_unknown>(d, value);
+        }
         // Default: deserialize the underlying value
         else {
             return deserialize(d, value);
@@ -953,6 +1197,13 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
         return d.deserialize_str(static_cast<std::string&>(v));
     } else if constexpr(std::same_as<V, std::vector<std::byte>>) {
         return d.deserialize_bytes(v);
+    } else if constexpr(detail::is_captured_dom_value_v<D, V>) {
+        auto captured = d.capture_dom_value();
+        if(!captured) {
+            return std::unexpected(captured.error());
+        }
+        v = std::move(*captured);
+        return {};
     } else if constexpr(std::same_as<V, std::nullptr_t>) {
         auto is_none = d.deserialize_none();
         if(!is_none) {
@@ -1169,55 +1420,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
         return d_tuple->end();
     } else if constexpr(refl::reflectable_class<V>) {
         using config_t = config::config_of<D>;
-        auto d_struct = d.deserialize_struct(refl::type_name<V>(), refl::field_count<V>());
-        if(!d_struct) {
-            return std::unexpected(d_struct.error());
-        }
-
-        while(true) {
-            auto key = d_struct->next_key();
-            if(!key) {
-                return std::unexpected(key.error());
-            }
-            if(!key->has_value()) {
-                break;
-            }
-
-            std::string_view key_name = **key;
-
-            // O(1) lookup by field name (linear scan over compile-time table, O(N) worst case)
-            auto idx = detail::lookup_field<V, config_t>(key_name);
-            if(idx) {
-                auto status = detail::dispatch_field_by_index<V, config_t, E>(*idx, *d_struct, v);
-                if(!status) {
-                    return std::unexpected(status.error());
-                }
-            } else {
-                // Fallback: check flatten fields (if any)
-                if constexpr(detail::has_flatten_fields<V>()) {
-                    auto flatten_status =
-                        detail::try_flatten_fields<V, config_t, E>(key_name, *d_struct, v);
-                    if(!flatten_status) {
-                        return std::unexpected(flatten_status.error());
-                    }
-                    if(!*flatten_status) {
-                        // No flatten field matched either — skip unknown
-                        auto skipped = d_struct->skip_value();
-                        if(!skipped) {
-                            return std::unexpected(skipped.error());
-                        }
-                    }
-                } else {
-                    // No flatten fields — skip unknown
-                    auto skipped = d_struct->skip_value();
-                    if(!skipped) {
-                        return std::unexpected(skipped.error());
-                    }
-                }
-            }
-        }
-
-        return d_struct->end();
+        return detail::deserialize_reflectable<config_t, E, false>(d, v);
     } else {
         static_assert(dependent_false<V>,
                       "cannot auto deserialize the value, try to specialize for it");

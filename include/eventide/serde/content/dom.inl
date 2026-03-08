@@ -474,7 +474,9 @@ inline bool ObjectRef::iterator::operator==(const iterator& other) const noexcep
 }
 
 inline OwnedDoc::OwnedDoc(const OwnedDoc& other) noexcept :
-    tagged_doc_handle(other.tagged_doc_handle), ref_count(other.ref_count) {
+    tagged_doc_handle(other.tagged_doc_handle),
+    ref_count(other.ref_count),
+    external_owner(other.external_owner) {
     retain();
 }
 
@@ -486,14 +488,18 @@ inline auto OwnedDoc::operator=(const OwnedDoc& other) noexcept -> OwnedDoc& {
     release();
     tagged_doc_handle = other.tagged_doc_handle;
     ref_count = other.ref_count;
+    external_owner = other.external_owner;
     retain();
     return *this;
 }
 
 inline OwnedDoc::OwnedDoc(OwnedDoc&& other) noexcept :
-    tagged_doc_handle(other.tagged_doc_handle), ref_count(other.ref_count) {
+    tagged_doc_handle(other.tagged_doc_handle),
+    ref_count(other.ref_count),
+    external_owner(other.external_owner) {
     other.tagged_doc_handle = 0;
     other.ref_count = nullptr;
+    other.external_owner = false;
 }
 
 inline auto OwnedDoc::operator=(OwnedDoc&& other) noexcept -> OwnedDoc& {
@@ -504,8 +510,10 @@ inline auto OwnedDoc::operator=(OwnedDoc&& other) noexcept -> OwnedDoc& {
     release();
     tagged_doc_handle = other.tagged_doc_handle;
     ref_count = other.ref_count;
+    external_owner = other.external_owner;
     other.tagged_doc_handle = 0;
     other.ref_count = nullptr;
+    other.external_owner = false;
     return *this;
 }
 
@@ -601,6 +609,7 @@ inline auto OwnedDoc::ensure_writable_doc_and_rebind_root(TaggedRef& ref)
                 release();
                 tagged_doc_handle = tag_doc(writable_doc, true);
                 ref_count = new_ref_count;
+                external_owner = false;
             }
         }
 
@@ -616,8 +625,11 @@ inline auto OwnedDoc::ensure_writable_doc_and_rebind_root(TaggedRef& ref)
 
 inline OwnedDoc::OwnedDoc(std::uintptr_t tagged_doc_handle,
                           int* ref_count,
-                          bool retain_owner) noexcept :
-    tagged_doc_handle(tagged_doc_handle), ref_count(ref_count) {
+                          bool retain_owner,
+                          bool external_owner) noexcept :
+    tagged_doc_handle(tagged_doc_handle),
+    ref_count(ref_count),
+    external_owner(external_owner) {
     if(retain_owner) {
         retain();
     }
@@ -638,23 +650,26 @@ inline void OwnedDoc::release() noexcept {
 
     --(*ref_count);
     if(*ref_count == 0) {
-        auto* doc = reinterpret_cast<void*>(tagged_doc_handle & ~k_mutable_bit);
-        if(doc != nullptr) {
-            mutable_doc() ? yyjson_mut_doc_free(reinterpret_cast<yyjson_mut_doc*>(doc))
-                          : yyjson_doc_free(reinterpret_cast<yyjson_doc*>(doc));
+        auto* raw_doc = reinterpret_cast<void*>(tagged_doc_handle & ~k_mutable_bit);
+        if(!external_owner && raw_doc != nullptr) {
+            mutable_doc() ? yyjson_mut_doc_free(reinterpret_cast<yyjson_mut_doc*>(raw_doc))
+                          : yyjson_doc_free(reinterpret_cast<yyjson_doc*>(raw_doc));
         }
         delete ref_count;
     }
 
     tagged_doc_handle = 0;
     ref_count = nullptr;
+    external_owner = false;
 }
 
 inline Value::Value(std::uintptr_t tagged_value_handle,
                     std::uintptr_t tagged_doc_handle,
                     int* ref_count,
-                    bool retain_owner) noexcept :
-    ValueRef(tagged_value_handle), OwnedDoc(tagged_doc_handle, ref_count, retain_owner) {}
+                    bool retain_owner,
+                    bool external_owner) noexcept :
+    ValueRef(tagged_value_handle),
+    OwnedDoc(tagged_doc_handle, ref_count, retain_owner, external_owner) {}
 
 inline auto Value::parse(std::string_view json) -> std::expected<Value, yyjson_read_code> {
     return parse(json, parse_options{});
@@ -781,9 +796,10 @@ inline ValueRef Value::as_ref() const noexcept {
 }
 
 inline Document Value::doc() const noexcept {
-    // Note: Document wraps a mutable doc. For immutable values, returns an invalid Document.
-    // This is consistent with the design: doc() is meaningful for mutable DOM trees.
-    return Document();
+    if(!valid() || !has_owner() || !mutable_doc()) {
+        return Document(nullptr);
+    }
+    return Document(*this);
 }
 
 inline auto Value::get_array() const noexcept -> std::optional<Array> {
@@ -927,8 +943,10 @@ inline auto Value::operator=(T&& value) -> Value& {
 inline Array::Array(std::uintptr_t tagged_value_handle,
                     std::uintptr_t tagged_doc_handle,
                     int* ref_count,
-                    bool retain_owner) noexcept :
-    ArrayRef(tagged_value_handle), OwnedDoc(tagged_doc_handle, ref_count, retain_owner) {}
+                    bool retain_owner,
+                    bool external_owner) noexcept :
+    ArrayRef(tagged_value_handle),
+    OwnedDoc(tagged_doc_handle, ref_count, retain_owner, external_owner) {}
 
 inline auto Array::from_immutable_doc(yyjson_doc* raw_doc) noexcept -> std::optional<Array> {
     auto value = Value::from_immutable_doc(raw_doc);
@@ -969,7 +987,10 @@ inline ArrayRef Array::as_ref() const noexcept {
 }
 
 inline Document Array::doc() const noexcept {
-    return Document();
+    if(!valid() || !has_owner() || !mutable_doc()) {
+        return Document(nullptr);
+    }
+    return Document(as_value());
 }
 
 inline Value Array::as_value() const noexcept {
@@ -1041,8 +1062,10 @@ inline auto Array::insert(std::size_t index, T&& value) -> status_t {
 inline Object::Object(std::uintptr_t tagged_value_handle,
                       std::uintptr_t tagged_doc_handle,
                       int* ref_count,
-                      bool retain_owner) noexcept :
-    ObjectRef(tagged_value_handle), OwnedDoc(tagged_doc_handle, ref_count, retain_owner) {}
+                      bool retain_owner,
+                      bool external_owner) noexcept :
+    ObjectRef(tagged_value_handle),
+    OwnedDoc(tagged_doc_handle, ref_count, retain_owner, external_owner) {}
 
 inline auto Object::from_immutable_doc(yyjson_doc* raw_doc) noexcept -> std::optional<Object> {
     auto value = Value::from_immutable_doc(raw_doc);
@@ -1083,7 +1106,10 @@ inline ObjectRef Object::as_ref() const noexcept {
 }
 
 inline Document Object::doc() const noexcept {
-    return Document();
+    if(!valid() || !has_owner() || !mutable_doc()) {
+        return Document(nullptr);
+    }
+    return Document(as_value());
 }
 
 inline Value Object::as_value() const noexcept {
@@ -1163,72 +1189,132 @@ inline auto Object::assign(std::string_view key, T&& value) -> status_t {
 
 inline Document::Document() noexcept : doc(yyjson_mut_doc_new(nullptr), yyjson_mut_doc_free) {}
 
+inline Document::Document(std::nullptr_t) noexcept {}
+
+inline Document::Document(Value owner) noexcept : owner_root(std::move(owner)) {}
+
 inline bool Document::valid() const noexcept {
-    return doc != nullptr;
+    return raw() != nullptr;
 }
 
 inline yyjson_mut_doc* Document::raw() const noexcept {
+    if(owner_root.has_value()) {
+        return owner_root->mutable_doc_ptr();
+    }
     return doc.get();
 }
 
 inline Array Document::make_array() {
     assert(valid());
-    auto* arr = yyjson_mut_arr(doc.get());
+    auto* source_doc = raw();
+    assert(source_doc != nullptr);
+
+    auto* detached_doc = yyjson_mut_doc_mut_copy(source_doc, nullptr);
+    assert(detached_doc != nullptr);
+    if(detached_doc == nullptr) {
+        return Array();
+    }
+
+    auto* arr = yyjson_mut_arr(detached_doc);
     assert(arr != nullptr);
-    yyjson_mut_doc_set_root(doc.get(), arr);
-    auto value = Value::from_mutable_doc(yyjson_mut_doc_mut_copy(doc.get(), nullptr));
-    assert(value.has_value());
-    auto array = value->get_array();
-    assert(array.has_value());
-    return std::move(*array);
+    if(arr == nullptr) {
+        yyjson_mut_doc_free(detached_doc);
+        return Array();
+    }
+    yyjson_mut_doc_set_root(detached_doc, arr);
+
+    // Document keeps owning the mutable tree, wrappers reference it as external owner.
+    doc = std::shared_ptr<yyjson_mut_doc>(detached_doc, yyjson_mut_doc_free);
+    owner_root.reset();
+
+    int* ref_count = new (std::nothrow) int(1);
+    if(ref_count == nullptr) {
+        return Array();
+    }
+
+    const auto tagged_value_handle = reinterpret_cast<std::uintptr_t>(arr) | std::uintptr_t{1};
+    const auto tagged_doc_handle = reinterpret_cast<std::uintptr_t>(detached_doc) | std::uintptr_t{1};
+    return Array(tagged_value_handle, tagged_doc_handle, ref_count, false, true);
 }
 
 inline Object Document::make_object() {
     assert(valid());
-    auto* obj = yyjson_mut_obj(doc.get());
+    auto* source_doc = raw();
+    assert(source_doc != nullptr);
+
+    auto* detached_doc = yyjson_mut_doc_mut_copy(source_doc, nullptr);
+    assert(detached_doc != nullptr);
+    if(detached_doc == nullptr) {
+        return Object();
+    }
+
+    auto* obj = yyjson_mut_obj(detached_doc);
     assert(obj != nullptr);
-    yyjson_mut_doc_set_root(doc.get(), obj);
-    auto value = Value::from_mutable_doc(yyjson_mut_doc_mut_copy(doc.get(), nullptr));
-    assert(value.has_value());
-    auto object = value->get_object();
-    assert(object.has_value());
-    return std::move(*object);
+    if(obj == nullptr) {
+        yyjson_mut_doc_free(detached_doc);
+        return Object();
+    }
+    yyjson_mut_doc_set_root(detached_doc, obj);
+
+    // Document keeps owning the mutable tree, wrappers reference it as external owner.
+    doc = std::shared_ptr<yyjson_mut_doc>(detached_doc, yyjson_mut_doc_free);
+    owner_root.reset();
+
+    int* ref_count = new (std::nothrow) int(1);
+    if(ref_count == nullptr) {
+        return Object();
+    }
+
+    const auto tagged_value_handle = reinterpret_cast<std::uintptr_t>(obj) | std::uintptr_t{1};
+    const auto tagged_doc_handle = reinterpret_cast<std::uintptr_t>(detached_doc) | std::uintptr_t{1};
+    return Object(tagged_value_handle, tagged_doc_handle, ref_count, false, true);
 }
 
 inline yyjson_mut_val* Document::unchecked_make_array() noexcept {
-    return yyjson_mut_arr(doc.get());
+    auto* raw_doc = raw();
+    return raw_doc != nullptr ? yyjson_mut_arr(raw_doc) : nullptr;
 }
 
 inline yyjson_mut_val* Document::unchecked_make_object() noexcept {
-    return yyjson_mut_obj(doc.get());
+    auto* raw_doc = raw();
+    return raw_doc != nullptr ? yyjson_mut_obj(raw_doc) : nullptr;
 }
 
 inline yyjson_mut_val* Document::unchecked_make_null() noexcept {
-    return yyjson_mut_null(doc.get());
+    auto* raw_doc = raw();
+    return raw_doc != nullptr ? yyjson_mut_null(raw_doc) : nullptr;
 }
 
 inline yyjson_mut_val* Document::unchecked_make_bool(bool value) noexcept {
-    return yyjson_mut_bool(doc.get(), value);
+    auto* raw_doc = raw();
+    return raw_doc != nullptr ? yyjson_mut_bool(raw_doc, value) : nullptr;
 }
 
 inline yyjson_mut_val* Document::unchecked_make_int(std::int64_t value) noexcept {
-    return yyjson_mut_sint(doc.get(), value);
+    auto* raw_doc = raw();
+    return raw_doc != nullptr ? yyjson_mut_sint(raw_doc, value) : nullptr;
 }
 
 inline yyjson_mut_val* Document::unchecked_make_uint(std::uint64_t value) noexcept {
-    return yyjson_mut_uint(doc.get(), value);
+    auto* raw_doc = raw();
+    return raw_doc != nullptr ? yyjson_mut_uint(raw_doc, value) : nullptr;
 }
 
 inline yyjson_mut_val* Document::unchecked_make_real(double value) noexcept {
-    return yyjson_mut_real(doc.get(), value);
+    auto* raw_doc = raw();
+    return raw_doc != nullptr ? yyjson_mut_real(raw_doc, value) : nullptr;
 }
 
 inline yyjson_mut_val* Document::unchecked_make_str(std::string_view value) noexcept {
-    return yyjson_mut_strncpy(doc.get(), value.data(), value.size());
+    auto* raw_doc = raw();
+    return raw_doc != nullptr ? yyjson_mut_strncpy(raw_doc, value.data(), value.size()) : nullptr;
 }
 
 inline void Document::unchecked_set_root(yyjson_mut_val* root) noexcept {
-    yyjson_mut_doc_set_root(doc.get(), root);
+    auto* raw_doc = raw();
+    if(raw_doc != nullptr) {
+        yyjson_mut_doc_set_root(raw_doc, root);
+    }
 }
 
 inline bool Document::unchecked_arr_add_val(yyjson_mut_val* arr, yyjson_mut_val* val) noexcept {
@@ -1246,19 +1332,23 @@ inline auto Document::dom_value() const -> std::expected<Value, error_kind> {
         return std::unexpected(error_kind::invalid_state);
     }
 
-    auto* root = yyjson_mut_doc_get_root(doc.get());
+    auto* raw_doc = raw();
+    if(raw_doc == nullptr) {
+        return std::unexpected(error_kind::invalid_state);
+    }
+
+    auto* root = yyjson_mut_doc_get_root(raw_doc);
     if(root == nullptr) {
         return std::unexpected(error_kind::invalid_state);
     }
 
-    yyjson_mut_doc* copied_doc = yyjson_mut_doc_mut_copy(doc.get(), nullptr);
+    yyjson_mut_doc* copied_doc = yyjson_mut_doc_mut_copy(raw_doc, nullptr);
     if(copied_doc == nullptr) {
         return std::unexpected(error_kind::allocation_failed);
     }
 
     auto value = Value::from_mutable_doc(copied_doc);
     if(!value.has_value()) {
-        yyjson_mut_doc_free(copied_doc);
         return std::unexpected(error_kind::invalid_state);
     }
     return std::move(*value);
@@ -1269,7 +1359,12 @@ inline auto Document::to_json_string() const -> std::expected<std::string, error
         return std::unexpected(error_kind::invalid_state);
     }
 
-    auto* root = yyjson_mut_doc_get_root(doc.get());
+    auto* raw_doc = raw();
+    if(raw_doc == nullptr) {
+        return std::unexpected(error_kind::invalid_state);
+    }
+
+    auto* root = yyjson_mut_doc_get_root(raw_doc);
     if(root == nullptr) {
         return std::unexpected(error_kind::invalid_state);
     }

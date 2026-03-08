@@ -51,15 +51,21 @@ public:
     }
 
     result_t<content::Value> dom_value() const {
-        if(!is_valid || !root_is_written) {
+        if(!is_valid) {
             return std::unexpected(last_error);
+        }
+        if(!root_is_written || !stack.empty()) {
+            return std::unexpected(error_type::invalid_state);
         }
         return doc.dom_value();
     }
 
     result_t<std::string> str() const {
-        if(!is_valid || !root_is_written) {
+        if(!is_valid) {
             return std::unexpected(last_error);
+        }
+        if(!root_is_written || !stack.empty()) {
+            return std::unexpected(error_type::invalid_state);
         }
         return doc.to_json_string();
     }

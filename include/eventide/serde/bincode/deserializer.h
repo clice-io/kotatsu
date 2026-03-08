@@ -312,7 +312,8 @@ public:
         if(*tag == 1U) {
             return false;
         }
-        return std::unexpected(error_type::type_mismatch);
+        auto status = mark_invalid(error_type::type_mismatch);
+        return std::unexpected(status.error());
     }
 
     template <typename... Ts>
@@ -540,6 +541,72 @@ static_assert(serde::deserializer_like<Deserializer<>>);
 
 namespace eventide::serde {
 
+namespace detail {
+
+template <typename Config, typename E, typename D, typename Field>
+constexpr auto deserialize_sequential_struct_field(D& deserializer, Field field)
+    -> std::expected<void, E> {
+    using field_t = typename std::remove_cvref_t<decltype(field)>::type;
+
+    if constexpr(!annotated_type<field_t>) {
+        auto status = serde::deserialize(deserializer, field.value());
+        if(!status) {
+            return std::unexpected(status.error());
+        }
+        return {};
+    } else {
+        using attrs_t = typename std::remove_cvref_t<field_t>::attrs;
+        auto&& value = annotated_value(field.value());
+        using value_t = std::remove_cvref_t<decltype(value)>;
+
+        // schema::skip excludes the field from the wire format.
+        if constexpr(tuple_has_v<attrs_t, schema::skip>) {
+            return {};
+        }
+        // schema::flatten in bincode is equivalent to inlining nested field sequence.
+        else if constexpr(tuple_has_v<attrs_t, schema::flatten>) {
+            static_assert(refl::reflectable_class<value_t>,
+                          "schema::flatten requires a reflectable class field type");
+
+            std::expected<void, E> nested_status{};
+            refl::for_each(value, [&](auto nested_field) {
+                auto status =
+                    deserialize_sequential_struct_field<Config, E>(deserializer, nested_field);
+                if(!status) {
+                    nested_status = std::unexpected(status.error());
+                    return false;
+                }
+                return true;
+            });
+            return nested_status;
+        } else {
+            if constexpr(tuple_has_spec_v<attrs_t, behavior::skip_if>) {
+                using Pred = typename tuple_find_spec_t<attrs_t, behavior::skip_if>::predicate;
+                if(evaluate_skip_predicate<Pred>(value, false)) {
+                    using consume_t = std::remove_cvref_t<decltype(field.value())>;
+                    static_assert(std::default_initializable<consume_t>,
+                                  "bincode behavior::skip_if requires default-initializable field");
+                    consume_t skipped{};
+                    auto skipped_status = serde::deserialize(deserializer, skipped);
+                    if(!skipped_status) {
+                        return std::unexpected(skipped_status.error());
+                    }
+                    return {};
+                }
+            }
+
+            // Keep annotation wrapper so tagged/provider attrs are still honored.
+            auto status = serde::deserialize(deserializer, field.value());
+            if(!status) {
+                return std::unexpected(status.error());
+            }
+            return {};
+        }
+    }
+}
+
+}  // namespace detail
+
 template <typename Config, typename T>
     requires (refl::reflectable_class<std::remove_cvref_t<T>> &&
               !std::ranges::input_range<std::remove_cvref_t<T>>)
@@ -552,7 +619,9 @@ struct deserialize_traits<bincode::Deserializer<Config>, T> {
         std::expected<void, error_type> field_status{};
 
         refl::for_each(value, [&](auto field) {
-            auto status = serde::deserialize(deserializer, field.value());
+            auto status =
+                detail::deserialize_sequential_struct_field<Config, error_type>(deserializer,
+                                                                                field);
             if(!status) {
                 field_status = std::unexpected(status.error());
                 return false;

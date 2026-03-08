@@ -36,6 +36,28 @@ struct custom_rename_payload {
     rename<std::string, "handle"> nickname;
 };
 
+struct alias_conflict_payload {
+    alias<int, "dup"> left = 0;
+    alias<int, "dup"> right = 0;
+};
+
+struct skip_unsupported_payload {
+    int id = 0;
+    skip<int*> raw = nullptr;
+};
+
+struct struct_level_payload {
+    int user_id = 0;
+    int login_count = 0;
+};
+
+using renamed_struct_level_payload =
+    annotation<struct_level_payload, schema::rename_all<rename_policy::lower_camel>>;
+using strict_renamed_struct_level_payload =
+    annotation<struct_level_payload,
+               schema::rename_all<rename_policy::lower_camel>,
+               schema::deny_unknown_fields>;
+
 TEST_SUITE(serde_simdjson_attrs) {
 
 TEST_CASE(serialize_builtin_attrs) {
@@ -114,6 +136,45 @@ TEST_CASE(top_level_annotated_value_enum_string_unknown_fails) {
     auto status = from_json(R"("unknown")", parsed);
     EXPECT_FALSE(status.has_value());
     EXPECT_EQ(parsed, access_level::admin);
+}
+
+TEST_CASE(alias_conflict_fails_fast) {
+    alias_conflict_payload parsed{};
+    auto status = from_json(R"({"dup":1})", parsed);
+    EXPECT_FALSE(status.has_value());
+    EXPECT_EQ(status.error(), json::error_kind::invalid_state);
+}
+
+TEST_CASE(skip_field_does_not_require_deserializer) {
+    skip_unsupported_payload parsed{};
+    auto status = from_json(R"({"id":17})", parsed);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(parsed.id, 17);
+    EXPECT_EQ(parsed.raw, nullptr);
+}
+
+TEST_CASE(annotated_struct_rename_all_applies) {
+    renamed_struct_level_payload input{};
+    input.user_id = 7;
+    input.login_count = 12;
+
+    auto encoded = to_json(input);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"({"userId":7,"loginCount":12})");
+
+    renamed_struct_level_payload parsed{};
+    auto status = from_json(R"({"userId":3,"loginCount":4})", parsed);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(parsed.user_id, 3);
+    EXPECT_EQ(parsed.login_count, 4);
+}
+
+TEST_CASE(annotated_struct_deny_unknown_fields_applies) {
+    strict_renamed_struct_level_payload parsed{};
+
+    auto status = from_json(R"({"userId":3,"loginCount":4,"extra":9})", parsed);
+    EXPECT_FALSE(status.has_value());
+    EXPECT_EQ(status.error(), json::error_kind::type_mismatch);
 }
 
 };  // TEST_SUITE(serde_simdjson_attrs)

@@ -67,7 +67,15 @@ public:
     using DeserializeMap = DeserializeObject;
     using DeserializeStruct = DeserializeObject;
 
-    explicit Deserializer(const content::Value& value) : root_value(value.as_ref()) {
+    explicit Deserializer(const content::Value& value) :
+        owned_root_value(value), root_value(owned_root_value->as_ref()) {
+        if(!root_value.valid()) {
+            mark_invalid();
+        }
+    }
+
+    explicit Deserializer(content::Value&& value) :
+        owned_root_value(std::move(value)), root_value(owned_root_value->as_ref()) {
         if(!root_value.valid()) {
             mark_invalid();
         }
@@ -519,6 +527,7 @@ private:
     bool is_valid = true;
     bool root_consumed = false;
     error_type last_error = error_type::invalid_state;
+    std::optional<content::Value> owned_root_value{};
     content::ValueRef root_value{};
     bool has_current_value = false;
     content::ValueRef current_value{};

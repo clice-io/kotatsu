@@ -2,9 +2,13 @@
 
 #include <array>
 #include <cstddef>
+#include <expected>
 #include <optional>
+#include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
+#include <variant>
 
 #include "eventide/serde/serde/annotation.h"
 #include "eventide/serde/serde/attrs/schema.h"
@@ -20,6 +24,15 @@ struct field_entry {
     bool has_explicit_rename;  // true if schema::rename was used (bypass config rename)
     bool is_alias;             // true if this is an alias entry
 };
+
+template <typename Config>
+inline auto effective_wire_name(const field_entry& entry, std::string& scratch)
+    -> std::string_view {
+    if(entry.has_explicit_rename || entry.is_alias) {
+        return entry.name;
+    }
+    return config::apply_field_rename<Config>(true, entry.name, scratch);
+}
 
 /// Count of non-excluded (non-skip, non-flatten) fields in struct T.
 template <typename T>
@@ -89,31 +102,40 @@ template <typename T, typename Config>
 auto lookup_field(std::string_view key) -> std::optional<std::size_t> {
     constexpr auto table = make_field_table<T, Config>();
 
-    if constexpr(requires { typename Config::field_rename; }) {
-        std::string scratch;
-        for(const auto& entry: table) {
-            if(entry.has_explicit_rename || entry.is_alias) {
-                // schema::rename or alias — already the wire name
-                if(entry.name == key) {
-                    return entry.index;
-                }
-            } else {
-                // Apply config rename to get wire name
-                auto wire_name = config::apply_field_rename<Config>(true, entry.name, scratch);
-                if(wire_name == key) {
-                    return entry.index;
-                }
-            }
+    std::string scratch;
+    for(const auto& entry: table) {
+        if(effective_wire_name<Config>(entry, scratch) == key) {
+            return entry.index;
         }
-        return std::nullopt;
-    } else {
-        for(const auto& entry: table) {
-            if(entry.name == key) {
-                return entry.index;
-            }
-        }
-        return std::nullopt;
     }
+    return std::nullopt;
+}
+
+/// True if two different fields collapse to the same effective wire name.
+/// This includes explicit rename, aliases, and Config-driven renaming.
+template <typename T, typename Config>
+auto has_ambiguous_wire_names() -> bool {
+    const static bool ambiguous = [] {
+        constexpr auto table = make_field_table<T, Config>();
+        std::string left_scratch;
+        std::string right_scratch;
+
+        for(std::size_t i = 0; i < table.size(); ++i) {
+            auto left_name = effective_wire_name<Config>(table[i], left_scratch);
+            for(std::size_t j = i + 1; j < table.size(); ++j) {
+                if(table[i].index == table[j].index) {
+                    continue;
+                }
+
+                auto right_name = effective_wire_name<Config>(table[j], right_scratch);
+                if(left_name == right_name) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }();
+    return ambiguous;
 }
 
 // ── Index-based field dispatch ─────────────────────────────────────
@@ -202,8 +224,15 @@ auto dispatch_field_by_index(std::size_t index, DeserializeStruct& d_struct, T& 
     return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> std::expected<void, E> {
         std::expected<void, E> result;
         const bool matched =
-            ((Is == index &&
-              (result = deserialize_field_at<T, Config, Is, E>(d_struct, value), true)) ||
+            (([&]() -> bool {
+                 if constexpr(schema::is_field_excluded<T, Is>()) {
+                     return false;
+                 } else {
+                     return Is == index &&
+                            (result = deserialize_field_at<T, Config, Is, E>(d_struct, value),
+                             true);
+                 }
+             }()) ||
              ...);
         if(!matched) {
             return std::unexpected(E::type_mismatch);

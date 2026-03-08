@@ -10,6 +10,8 @@ namespace eventide::serde::detail {
 template <typename E, typename D, typename... Ts, typename TagAttr>
 constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, TagAttr)
     -> std::expected<void, E> {
+    using config_t = config::config_of<D>;
+
     // Requires capture_dom_value() — buffer to content DOM, then two-pass dispatch
     auto dom_result = d.capture_dom_value();
     if(!dom_result) {
@@ -64,7 +66,7 @@ constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, T
 
              if constexpr(std::default_initializable<alt_t>) {
                  alt_t alt{};
-                 content::Deserializer<> deser(obj_ref);
+                 content::Deserializer<config_t> deser(obj_ref);
                  auto r = serde::deserialize(deser, alt);
                  if(!r) {
                      status = std::unexpected(E(r.error()));

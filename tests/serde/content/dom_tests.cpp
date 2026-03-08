@@ -12,6 +12,13 @@ struct mixed_payload {
     json::Value extra;
 };
 
+struct dom_payload {
+    int id = 0;
+    std::string name;
+
+    auto operator==(const dom_payload&) const -> bool = default;
+};
+
 std::string make_large_object_json(int count) {
     std::string out = "{";
     for(int i = 0; i < count; ++i) {
@@ -93,6 +100,24 @@ TEST_CASE(mixed_struct_roundtrip_with_dynamic_dom) {
     ASSERT_TRUE(reparsed_extra_object.has_value());
     EXPECT_EQ((*reparsed_extra_object)["name"].as_string(), std::string_view("alice"));
     EXPECT_EQ((*reparsed_extra_object)["n"].as_int(), 2);
+}
+
+TEST_CASE(deserializer_keeps_temporary_root_value_alive) {
+    auto make_dom = []() -> json::Value {
+        auto parsed = json::Value::parse(R"({"id":7,"name":"alice"})");
+        return parsed ? std::move(*parsed) : json::Value{};
+    };
+
+    dom_payload payload{};
+    json::yy::Deserializer deserializer(make_dom());
+    ASSERT_TRUE(deserializer.valid());
+
+    auto status = serde::deserialize(deserializer, payload);
+    ASSERT_TRUE(status.has_value());
+
+    auto finish = deserializer.finish();
+    ASSERT_TRUE(finish.has_value());
+    EXPECT_EQ(payload, (dom_payload{.id = 7, .name = "alice"}));
 }
 
 };  // TEST_SUITE(serde_json_dom)

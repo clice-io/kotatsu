@@ -28,6 +28,11 @@ struct rename_override_payload {
     int request_id = 0;
 };
 
+struct ambiguous_camel_payload {
+    int user_id = 0;
+    int userId = 0;
+};
+
 struct camel_config {
     using field_rename = rename_policy::lower_camel;
 };
@@ -106,6 +111,13 @@ TEST_CASE(compile_time_config_with_attr_override) {
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(parsed.user_name, "id-2");
     EXPECT_EQ(parsed.request_id, 6);
+}
+
+TEST_CASE(config_renamed_field_collision_fails_fast) {
+    ambiguous_camel_payload parsed{};
+    auto status = from_json<camel_config>(R"({"userId":1})", parsed);
+    EXPECT_FALSE(status.has_value());
+    EXPECT_EQ(status.error(), json::error_kind::invalid_state);
 }
 
 };  // TEST_SUITE(serde_simdjson_config)

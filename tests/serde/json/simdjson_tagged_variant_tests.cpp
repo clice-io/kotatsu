@@ -65,14 +65,31 @@ struct ShapeRect {
     auto operator==(const ShapeRect&) const -> bool = default;
 };
 
+struct ShapeLine {
+    int line_width{};
+
+    auto operator==(const ShapeLine&) const -> bool = default;
+};
+
 using IntTagVariant = annotation<std::variant<ShapeCircle, ShapeRect>,
                                  schema::internally_tagged<"kind">::names<"circle", "rect">>;
+
+using IntTagRenamedVariant = annotation<std::variant<ShapeLine, ShapeRect>,
+                                        schema::internally_tagged<"kind">::names<"line", "rect">>;
+
+using AdjShapeVariant =
+    annotation<std::variant<ShapeCircle, ShapeRect>,
+               schema::adjacently_tagged<"type", "value">::names<"circle", "rect">>;
 
 struct IntTagHolder {
     std::string label;
     IntTagVariant shape;
 
     auto operator==(const IntTagHolder&) const -> bool = default;
+};
+
+struct camel_config {
+    using field_rename = rename_policy::lower_camel;
 };
 
 TEST_SUITE(serde_simdjson_tagged_variant) {
@@ -211,6 +228,23 @@ TEST_CASE(adjacently_tagged_in_struct) {
     EXPECT_EQ(parsed, input);
 }
 
+TEST_CASE(adjacently_tagged_content_before_tag) {
+    AdjVariant parsed;
+    auto status = from_json(R"({"value":"hello","type":"text"})", parsed);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(std::get<std::string>(parsed), "hello");
+}
+
+TEST_CASE(adjacently_tagged_content_before_tag_ambiguous_object) {
+    AdjShapeVariant parsed;
+    auto status = from_json(R"({"value":{"width":10.0,"height":20.0},"type":"rect"})", parsed);
+    ASSERT_TRUE(status.has_value());
+
+    auto& rect = std::get<ShapeRect>(parsed);
+    EXPECT_EQ(rect.width, 10.0);
+    EXPECT_EQ(rect.height, 20.0);
+}
+
 TEST_CASE(adjacently_tagged_unknown_tag_fails) {
     AdjVariant parsed;
     auto status = from_json(R"({"type":"unknown","value":42})", parsed);
@@ -280,6 +314,14 @@ TEST_CASE(internally_tagged_missing_tag_fails) {
     IntTagVariant parsed;
     auto status = from_json(R"({"radius":5})", parsed);
     EXPECT_FALSE(status.has_value());
+}
+
+TEST_CASE(internally_tagged_deserialize_respects_config_rename) {
+    IntTagRenamedVariant parsed{};
+    auto status = from_json<camel_config>(R"({"kind":"line","lineWidth":7})", parsed);
+    ASSERT_TRUE(status.has_value());
+    ASSERT_TRUE(std::holds_alternative<ShapeLine>(parsed));
+    EXPECT_EQ(std::get<ShapeLine>(parsed).line_width, 7);
 }
 
 };  // TEST_SUITE(serde_simdjson_tagged_variant)

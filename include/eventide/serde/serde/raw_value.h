@@ -5,6 +5,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "eventide/serde/bincode/bincode.h"
 #include "eventide/serde/json/deserializer.h"
