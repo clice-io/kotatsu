@@ -589,6 +589,11 @@ public:
         unknown = info_item::unknown(unknown.id);
     }
 
+    LLVMOptGenerator(const LLVMOptGenerator&) = delete;
+    auto operator=(const LLVMOptGenerator&) -> LLVMOptGenerator& = delete;
+    LLVMOptGenerator(LLVMOptGenerator&&) = delete;
+    auto operator=(LLVMOptGenerator&&) -> LLVMOptGenerator& = delete;
+
     constexpr explicit LLVMOptGenerator(std::in_place_t) : LLVMOptGenerator() {
         build();
     }
@@ -771,12 +776,12 @@ template <typename OptDeco>
 struct BuildStorage {
     constexpr inline static auto record = build_record<OptDeco>();
     using builder_t = LLVMOptGenerator<OptDeco, record>;
-    constexpr inline static builder_t value{std::in_place};
 };
 
 template <typename OptDeco>
 const auto& build_storage() {
-    return BuildStorage<OptDeco>::value;
+    const static typename BuildStorage<OptDeco>::builder_t value{std::in_place};
+    return value;
 }
 
 }  // namespace deco::detail
