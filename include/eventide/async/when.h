@@ -21,7 +21,7 @@ async_node* node_from(Task& task) {
 /// Moves the result out of a task (used by when_all::collect).
 template <typename Task>
 auto take_result(Task& task) {
-    return std::move(task).result();
+    return task.result();
 }
 
 template <typename Task>

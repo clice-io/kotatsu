@@ -26,6 +26,7 @@ void each(uv_idle_t* idle) {
     if(self->idle_running && self->tasks.empty()) {
         self->idle_running = false;
         uv::idle_stop(*idle);
+        return;
     }
 
     /// Resume may create new tasks, we want to run them in the next iteration.
