@@ -170,6 +170,8 @@ struct MultiExclusiveCategoryOpt {
 using ParseAllStorage = std::remove_cvref_t<decltype(deco::detail::build_storage<ParseAllOpt>())>;
 static_assert(std::is_base_of_v<deco::detail::DecoStructConsumer<ParseAllStorage, ParseAllOpt>,
                                 ParseAllStorage>);
+static_assert(!std::is_copy_constructible_v<ParseAllStorage>);
+static_assert(!std::is_move_constructible_v<ParseAllStorage>);
 static_assert(std::is_same_v<
               ParseAllStorage,
               deco::detail::LLVMOptGenerator<ParseAllOpt,
