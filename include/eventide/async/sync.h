@@ -223,10 +223,16 @@ public:
         condition_variable* owner = nullptr;
     };
 
-    /// NOTE: If cancellation is intercepted (catch_cancel) around cv.wait(),
-    /// the caller resumes with the mutex NOT held, since unlock() has already
-    /// been called but co_await m.lock() was never reached. Avoid combining
-    /// cv.wait() with catch_cancel().
+    /// Atomically unlocks `m`, waits for a notification, then re-locks `m`.
+    ///
+    /// Cancellation note: if this task is cancelled while suspended on the
+    /// wait_awaiter, the mutex will NOT be re-acquired (co_await m.lock() is
+    /// never reached). In normal usage this is safe because cancellation
+    /// propagates upward — the caller is also cancelled and never observes
+    /// the unlocked mutex. However, if cancellation is intercepted externally
+    /// (e.g., catch_cancel() or with_token() wrapping a cv.wait() call), the
+    /// caller resumes with the mutex NOT held. Avoid intercepting cancellation
+    /// around cv.wait().
     task<> wait(mutex& m) {
         m.unlock();
         co_await wait_awaiter(*this);

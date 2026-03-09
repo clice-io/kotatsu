@@ -21,7 +21,7 @@ async_node* node_from(Task& task) {
 /// Moves the result out of a task (used by when_all::collect).
 template <typename Task>
 auto take_result(Task& task) {
-    return std::move(task).result();
+    return task.result();
 }
 
 template <typename Task>
@@ -45,6 +45,16 @@ inline void destroy_or_detach(async_node* child) noexcept {
     task->handle().destroy();
 }
 
+template <typename Tuple>
+void release_inflight_all(Tuple& tasks) noexcept {
+    std::apply([](auto&... ts) { (release_inflight(ts), ...); }, tasks);
+}
+
+template <typename Tuple>
+void add_awaitees_all(std::vector<async_node*>& awaitees, Tuple& tasks) {
+    std::apply([&](auto&... ts) { (awaitees.push_back(node_from(ts)), ...); }, tasks);
+}
+
 }  // namespace detail
 
 /// Awaits all tasks concurrently. Returns a std::tuple of their results.
@@ -58,7 +68,7 @@ public:
         aggregate_op(async_node::NodeKind::WhenAll), tasks_(std::forward<U>(tasks)...) {}
 
     ~when_all() {
-        release_inflight(std::index_sequence_for<Tasks...>{});
+        detail::release_inflight_all(tasks_);
     }
 
     bool await_ready() const noexcept {
@@ -69,53 +79,11 @@ public:
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<Promise> awaiter_handle,
                       std::source_location location = std::source_location::current()) noexcept {
-        this->location = location;
-
-        auto* awaiter_node = static_cast<async_node*>(&awaiter_handle.promise());
-        if(awaiter_node->kind == async_node::NodeKind::Task) {
-            static_cast<standard_task*>(awaiter_node)->set_awaitee(this);
-        }
-
-        awaiter = awaiter_node;
-        completed = 0;
         total = sizeof...(Tasks);
-        winner = npos;
-        done = false;
-        pending_resume = false;
-        pending_cancel = false;
-        arming = true;
-
         awaitees.clear();
         awaitees.reserve(total);
-        add_awaitees(std::index_sequence_for<Tasks...>{});
-
-        for(auto* child: awaitees) {
-            if(child) {
-                child->link_continuation(this, location);
-            }
-        }
-
-        for(auto* child: awaitees) {
-            if(child) {
-                child->resume();
-                if(pending_cancel) {
-                    break;
-                }
-            }
-        }
-
-        arming = false;
-        if(pending_resume && awaiter) {
-            awaiter->clear_awaitee();
-            if(pending_cancel) {
-                awaiter->state = Cancelled;
-                return awaiter->final_transition();
-            }
-
-            return static_cast<standard_task*>(awaiter)->handle();
-        }
-
-        return std::noop_coroutine();
+        detail::add_awaitees_all(awaitees, tasks_);
+        return arm_and_resume(awaiter_handle, location, [this] { return pending_cancel; });
     }
 
     auto await_resume() {
@@ -123,16 +91,6 @@ public:
     }
 
 private:
-    template <std::size_t... I>
-    void release_inflight(std::index_sequence<I...>) noexcept {
-        (detail::release_inflight(std::get<I>(tasks_)), ...);
-    }
-
-    template <std::size_t... I>
-    void add_awaitees(std::index_sequence<I...>) {
-        (awaitees.push_back(detail::node_from(std::get<I>(tasks_))), ...);
-    }
-
     template <std::size_t... I>
     auto collect(std::index_sequence<I...>) {
         return std::tuple(detail::take_result(std::get<I>(tasks_))...);
@@ -152,7 +110,7 @@ public:
         aggregate_op(async_node::NodeKind::WhenAny), tasks_(std::forward<U>(tasks)...) {}
 
     ~when_any() {
-        release_inflight(std::index_sequence_for<Tasks...>{});
+        detail::release_inflight_all(tasks_);
     }
 
     bool await_ready() const noexcept {
@@ -163,53 +121,13 @@ public:
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<Promise> awaiter_handle,
                       std::source_location location = std::source_location::current()) noexcept {
-        this->location = location;
-
-        auto* awaiter_node = static_cast<async_node*>(&awaiter_handle.promise());
-        if(awaiter_node->kind == async_node::NodeKind::Task) {
-            static_cast<standard_task*>(awaiter_node)->set_awaitee(this);
-        }
-
-        awaiter = awaiter_node;
-        completed = 0;
         total = sizeof...(Tasks);
-        winner = npos;
-        done = false;
-        pending_resume = false;
-        pending_cancel = false;
-        arming = true;
-
         awaitees.clear();
         awaitees.reserve(total);
-        add_awaitees(std::index_sequence_for<Tasks...>{});
-
-        for(auto* child: awaitees) {
-            if(child) {
-                child->link_continuation(this, location);
-            }
-        }
-
-        for(auto* child: awaitees) {
-            if(child) {
-                child->resume();
-                if(done || pending_resume || pending_cancel) {
-                    break;
-                }
-            }
-        }
-
-        arming = false;
-        if(pending_resume && awaiter) {
-            awaiter->clear_awaitee();
-            if(pending_cancel) {
-                awaiter->state = Cancelled;
-                return awaiter->final_transition();
-            }
-
-            return static_cast<standard_task*>(awaiter)->handle();
-        }
-
-        return std::noop_coroutine();
+        detail::add_awaitees_all(awaitees, tasks_);
+        return arm_and_resume(awaiter_handle, location, [this] {
+            return done || pending_resume || pending_cancel;
+        });
     }
 
     std::size_t await_resume() const noexcept {
@@ -217,16 +135,6 @@ public:
     }
 
 private:
-    template <std::size_t... I>
-    void release_inflight(std::index_sequence<I...>) noexcept {
-        (detail::release_inflight(std::get<I>(tasks_)), ...);
-    }
-
-    template <std::size_t... I>
-    void add_awaitees(std::index_sequence<I...>) {
-        (awaitees.push_back(detail::node_from(std::get<I>(tasks_))), ...);
-    }
-
     std::tuple<Tasks...> tasks_;
 };
 
@@ -280,48 +188,7 @@ public:
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<Promise> awaiter_handle,
                       std::source_location location = std::source_location::current()) noexcept {
-        this->location = location;
-
-        auto* awaiter_node = static_cast<async_node*>(&awaiter_handle.promise());
-        if(awaiter_node->kind == async_node::NodeKind::Task) {
-            static_cast<standard_task*>(awaiter_node)->set_awaitee(this);
-        }
-
-        awaiter = awaiter_node;
-        completed = 0;
-        winner = npos;
-        done = false;
-        pending_resume = false;
-        pending_cancel = false;
-        arming = true;
-
-        for(auto* child: awaitees) {
-            if(child) {
-                child->link_continuation(this, location);
-            }
-        }
-
-        for(auto* child: awaitees) {
-            if(child) {
-                child->resume();
-                if(pending_cancel) {
-                    break;
-                }
-            }
-        }
-
-        arming = false;
-        if(pending_resume && awaiter) {
-            awaiter->clear_awaitee();
-            if(pending_cancel) {
-                awaiter->state = Cancelled;
-                return awaiter->final_transition();
-            }
-
-            return static_cast<standard_task*>(awaiter)->handle();
-        }
-
-        return std::noop_coroutine();
+        return arm_and_resume(awaiter_handle, location, [this] { return pending_cancel; });
     }
 
     void await_resume() noexcept {}

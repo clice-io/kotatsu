@@ -18,6 +18,7 @@ struct event_loop::self {
 static thread_local event_loop* current_loop = nullptr;
 
 event_loop& event_loop::current() {
+    assert(current_loop && "event_loop::current() called outside a running loop");
     return *current_loop;
 }
 
@@ -26,6 +27,7 @@ void each(uv_idle_t* idle) {
     if(self->idle_running && self->tasks.empty()) {
         self->idle_running = false;
         uv::idle_stop(*idle);
+        return;
     }
 
     /// Resume may create new tasks, we want to run them in the next iteration.

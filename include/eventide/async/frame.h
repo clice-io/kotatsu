@@ -296,6 +296,57 @@ protected:
 
     /// A child was cancelled while arming was in progress.
     bool pending_cancel = false;
+
+    /// Common await_suspend logic for all aggregate operations.
+    /// The caller must populate `awaitees` and set `total` before calling.
+    /// `should_break` is called after each child resume to decide early exit.
+    template <typename Promise, typename BreakPred>
+    std::coroutine_handle<> arm_and_resume(std::coroutine_handle<Promise> awaiter_handle,
+                                           std::source_location location,
+                                           BreakPred should_break) noexcept {
+        this->location = location;
+
+        auto* awaiter_node = static_cast<async_node*>(&awaiter_handle.promise());
+        if(awaiter_node->kind == async_node::NodeKind::Task) {
+            static_cast<standard_task*>(awaiter_node)->set_awaitee(this);
+        }
+
+        awaiter = awaiter_node;
+        completed = 0;
+        winner = npos;
+        done = false;
+        pending_resume = false;
+        pending_cancel = false;
+        arming = true;
+
+        for(auto* child: awaitees) {
+            if(child) {
+                child->link_continuation(this, location);
+            }
+        }
+
+        for(auto* child: awaitees) {
+            if(child) {
+                child->resume();
+                if(should_break()) {
+                    break;
+                }
+            }
+        }
+
+        arming = false;
+        if(pending_resume && awaiter) {
+            assert(awaiter->is_standard_task() && "aggregate awaiter must be a task");
+            awaiter->clear_awaitee();
+            if(pending_cancel) {
+                awaiter->state = Cancelled;
+                return awaiter->final_transition();
+            }
+            return static_cast<standard_task*>(awaiter)->handle();
+        }
+
+        return std::noop_coroutine();
+    }
 };
 
 class system_op : public async_node {

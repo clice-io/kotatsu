@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdlib>
 #include <expected>
@@ -108,10 +107,7 @@ public:
 
 private:
     void compact() noexcept {
-        watchers.erase(std::remove_if(watchers.begin(),
-                                      watchers.end(),
-                                      [](const watcher_entry& watcher) { return watcher.id == 0; }),
-                       watchers.end());
+        std::erase_if(watchers, [](const watcher_entry& watcher) { return watcher.id == 0; });
     }
 
 private:

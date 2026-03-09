@@ -225,7 +225,7 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
             if(child->state == Cancelled) {
                 /// InterceptCancel: the parent handles cancellation explicitly
                 /// (e.g., catch_cancel() or with_token()). Resume as normal.
-                if(child->policy == InterceptCancel) {
+                if(child->policy & InterceptCancel) {
                     self->awaitee = nullptr;
                     current_node = self;
                     return self->handle();
@@ -247,7 +247,7 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
                 return std::noop_coroutine();
             }
 
-            const bool cancelled = child->state == Cancelled && child->policy != InterceptCancel;
+            const bool cancelled = child->state == Cancelled && !(child->policy & InterceptCancel);
             if(cancelled) {
                 self->done = true;
                 self->pending_cancel = true;
@@ -295,6 +295,7 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
                 }
 
                 if(self->awaiter) {
+                    assert(self->awaiter->is_standard_task() && "aggregate awaiter must be a task");
                     self->awaiter->clear_awaitee();
                     return static_cast<standard_task*>(self->awaiter)->handle();
                 }
@@ -311,6 +312,7 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
                 }
 
                 if(self->awaiter) {
+                    assert(self->awaiter->is_standard_task() && "aggregate awaiter must be a task");
                     self->awaiter->clear_awaitee();
                     return static_cast<standard_task*>(self->awaiter)->handle();
                 }

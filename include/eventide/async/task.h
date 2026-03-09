@@ -200,6 +200,17 @@ public:
 
     task& operator=(const task&) = delete;
 
+    task& operator=(task&& other) noexcept {
+        if(this != &other) {
+            if(h) {
+                h.destroy();
+            }
+            h = other.h;
+            other.h = nullptr;
+        }
+        return *this;
+    }
+
     ~task() {
         if(h) {
             h.destroy();

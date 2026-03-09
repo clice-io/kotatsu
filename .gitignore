@@ -57,3 +57,4 @@ __pycache__/
 # Generated/fetched LSP schema
 schema/lsp/schema.json
 scripts/schema.json
+/temp/
