@@ -1,5 +1,3 @@
-#include <chrono>
-
 #include "eventide/zest/zest.h"
 #include "eventide/async/loop.h"
 #include "eventide/async/sync.h"
@@ -8,8 +6,6 @@
 namespace eventide {
 
 namespace {
-
-using namespace std::chrono;
 
 TEST_SUITE(sync) {
 
@@ -31,12 +27,12 @@ TEST_CASE(mutex_lock_order) {
         co_await m.lock();
         EXPECT_EQ(step, 0);
         step = 1;
-        co_await sleep(milliseconds{5}, loop);
+        co_await sleep(5, loop);
         m.unlock();
     };
 
     auto waiter = [&]() -> task<> {
-        co_await sleep(milliseconds{1}, loop);
+        co_await sleep(1, loop);
         co_await m.lock();
         EXPECT_EQ(step, 1);
         step = 2;
@@ -65,7 +61,7 @@ TEST_CASE(event_set_wait) {
     };
 
     auto setter = [&]() -> task<> {
-        co_await sleep(milliseconds{1}, loop);
+        co_await sleep(1, loop);
         ev.set();
     };
 
@@ -108,12 +104,12 @@ TEST_CASE(semaphore_acquire_release) {
     auto first = [&]() -> task<> {
         co_await sem.acquire();
         step = 1;
-        co_await sleep(milliseconds{5}, loop);
+        co_await sleep(5, loop);
         sem.release();
     };
 
     auto second = [&]() -> task<> {
-        co_await sleep(milliseconds{1}, loop);
+        co_await sleep(1, loop);
         co_await sem.acquire();
         EXPECT_EQ(step, 1);
         step = 2;
@@ -149,7 +145,7 @@ TEST_CASE(condition_variable_wait) {
     };
 
     auto notifier = [&]() -> task<> {
-        co_await sleep(milliseconds{1}, loop);
+        co_await sleep(1, loop);
         co_await m.lock();
         step = 2;
         ready = true;

@@ -159,4 +159,6 @@ private:
 
 task<> sleep(std::chrono::milliseconds timeout, event_loop& loop = event_loop::current());
 
+task<> sleep(std::size_t milliseconds, event_loop& loop = event_loop::current());
+
 }  // namespace eventide

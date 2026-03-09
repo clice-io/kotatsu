@@ -376,4 +376,8 @@ task<> sleep(std::chrono::milliseconds timeout, event_loop& loop) {
     co_await t.wait();
 }
 
+task<> sleep(std::size_t milliseconds, event_loop& loop) {
+    co_await sleep(std::chrono::milliseconds{milliseconds}, loop);
+}
+
 }  // namespace eventide

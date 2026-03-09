@@ -180,7 +180,10 @@ public:
     cancellation_token() = default;
 
     bool cancelled() const noexcept {
-        return state && state->cancelled();
+        if(auto s = state.lock()) {
+            return s->cancelled();
+        }
+        return true;
     }
 
 private:
@@ -190,22 +193,26 @@ private:
 
     registration register_task(async_node* node) const {
         auto flag = std::make_shared<detail::cancellation_watch_flag>();
-        if(!state) {
+        auto s = state.lock();
+        if(!s) {
+            flag->cancelled = true;
+            if(node) {
+                node->cancel();
+            }
             return registration(nullptr, 0, std::move(flag));
         }
 
-        auto id = state->subscribe(node, flag);
-        return registration(state, id, std::move(flag));
+        auto id = s->subscribe(node, flag);
+        return registration(s, id, std::move(flag));
     }
 
 private:
     friend class cancellation_source;
 
-    explicit cancellation_token(std::shared_ptr<detail::cancellation_state> state) :
-        state(std::move(state)) {}
+    explicit cancellation_token(std::shared_ptr<detail::cancellation_state> state) : state(state) {}
 
 private:
-    std::shared_ptr<detail::cancellation_state> state;
+    std::weak_ptr<detail::cancellation_state> state;
 };
 
 class cancellation_source {

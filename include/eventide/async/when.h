@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -193,5 +194,46 @@ public:
 
     void await_resume() noexcept {}
 };
+
+class event_loop;
+
+task<> sleep(std::size_t milliseconds, event_loop& loop);
+
+/// Runs a task with a timeout. If the task does not complete within the
+/// specified duration, it is cancelled and cancellation propagates upward.
+///
+/// Returns cancel_result_t<T>: the task's value on success, or
+/// unexpected(cancellation{}) on timeout or self-cancellation.
+template <typename T>
+task<std::conditional_t<is_cancellation_t<T>, T, std::expected<T, cancellation>>>
+    with_timeout(task<T> t, std::size_t milliseconds, event_loop& loop) {
+    using R = std::conditional_t<is_cancellation_t<T>, T, std::expected<T, cancellation>>;
+    std::optional<R> result;
+
+    auto wrapped = [&]() -> task<> {
+        if constexpr(is_cancellation_t<T>) {
+            result.emplace(co_await std::move(t));
+        } else {
+            result.emplace(co_await std::move(t).catch_cancel());
+        }
+    };
+
+    auto timeout = [&]() -> task<> {
+        co_await sleep(milliseconds, loop);
+    };
+
+    co_await when_any(wrapped(), timeout());
+
+    if(result.has_value() && result->has_value()) {
+        if constexpr(std::is_void_v<typename R::value_type>) {
+            co_return;
+        } else {
+            co_return std::move(**result);
+        }
+    }
+
+    co_await cancel();
+    std::abort();
+}
 
 }  // namespace eventide
