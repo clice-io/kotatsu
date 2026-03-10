@@ -96,6 +96,105 @@ TEST_CASE(manual_reset_all) {
     EXPECT_EQ(count, 2);
 }
 
+TEST_CASE(event_interrupt) {
+    event_loop loop;
+    event ev;
+    bool reached = false;
+
+    auto waiter = [&]() -> task<> {
+        co_await ev.wait();
+        reached = true;
+    };
+
+    auto driver = [&]() -> task<> {
+        auto result = co_await waiter().catch_cancel();
+        EXPECT_FALSE(result.has_value());
+        EXPECT_FALSE(reached);
+        loop.stop();
+    };
+
+    auto intr = [&]() -> task<> {
+        co_await sleep(milliseconds{1}, loop);
+        ev.interrupt();
+    };
+
+    auto t1 = driver();
+    auto t2 = intr();
+    loop.schedule(t1);
+    loop.schedule(t2);
+    loop.run();
+}
+
+TEST_CASE(interrupt_many) {
+    event_loop loop;
+    event ev;
+    int cancelled = 0;
+
+    auto waiter = [&]() -> task<> {
+        auto result = co_await ev.wait().catch_cancel();
+        EXPECT_FALSE(result.has_value());
+        cancelled += 1;
+        if(cancelled == 2) {
+            loop.stop();
+        }
+    };
+
+    auto intr = [&]() -> task<> {
+        co_await sleep(milliseconds{1}, loop);
+        ev.interrupt();
+    };
+
+    auto t1 = waiter();
+    auto t2 = waiter();
+    auto t3 = intr();
+    loop.schedule(t1);
+    loop.schedule(t2);
+    loop.schedule(t3);
+    loop.run();
+
+    EXPECT_EQ(cancelled, 2);
+}
+
+TEST_CASE(future_wait) {
+    event_loop loop;
+    event ev;
+    bool fired = false;
+
+    ev.interrupt();
+
+    auto waiter = [&]() -> task<> {
+        co_await ev.wait();
+        fired = true;
+        loop.stop();
+    };
+
+    auto setter = [&]() -> task<> {
+        co_await sleep(milliseconds{1}, loop);
+        EXPECT_FALSE(fired);
+        ev.set();
+    };
+
+    auto t1 = waiter();
+    auto t2 = setter();
+    loop.schedule(t1);
+    loop.schedule(t2);
+    loop.run();
+
+    EXPECT_TRUE(fired);
+}
+
+TEST_CASE(signal_state) {
+    event ev;
+    EXPECT_FALSE(ev.is_set());
+    ev.interrupt();
+    EXPECT_FALSE(ev.is_set());
+
+    event set_ev(true);
+    EXPECT_TRUE(set_ev.is_set());
+    set_ev.interrupt();
+    EXPECT_TRUE(set_ev.is_set());
+}
+
 TEST_CASE(semaphore_acquire_release) {
     event_loop loop;
     semaphore sem(1);

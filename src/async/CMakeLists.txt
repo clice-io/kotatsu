@@ -43,6 +43,7 @@ target_sources(eventide_async PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/ringbuffer.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/acceptor.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/console.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/sync.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/stream.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/udp.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/watcher.cpp"

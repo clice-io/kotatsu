@@ -5,6 +5,7 @@
 
 #include "libuv.h"
 #include "eventide/async/loop.h"
+#include "eventide/async/sync.h"
 
 namespace eventide {
 
@@ -50,19 +51,6 @@ void async_node::cancel() {
             }
             break;
         }
-        case NodeKind::Mutex:
-        case NodeKind::Event:
-        case NodeKind::Semaphore:
-        case NodeKind::ConditionVariable: {
-            auto* self = static_cast<sync_primitive*>(this);
-
-            while(auto* cur = self->pop_waiter()) {
-                cur->state = Cancelled;
-                propagate_cancel(cur);
-            }
-            break;
-        }
-
         case NodeKind::MutexWaiter:
         case NodeKind::EventWaiter: {
             auto* self = static_cast<waiter_link*>(this);
@@ -142,15 +130,6 @@ std::coroutine_handle<> async_node::link_continuation(async_node* awaiter,
             return self->handle();
         }
 
-        case NodeKind::Mutex:
-        case NodeKind::Event:
-        case NodeKind::Semaphore:
-        case NodeKind::ConditionVariable: {
-            /// Shared resources are never linked as children; they are
-            /// awaited via their waiter_link sub-objects.
-            std::abort();
-        }
-
         case NodeKind::MutexWaiter:
         case NodeKind::EventWaiter: {
             auto self = static_cast<waiter_link*>(this);
@@ -187,10 +166,6 @@ std::coroutine_handle<> async_node::final_transition() {
             return p->awaiter->handle_subtask_result(p);
         }
 
-        case NodeKind::Mutex:
-        case NodeKind::Event:
-        case NodeKind::Semaphore:
-        case NodeKind::ConditionVariable:
         case NodeKind::MutexWaiter:
         case NodeKind::EventWaiter:
         case NodeKind::WhenAll:
@@ -321,10 +296,6 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
             return std::noop_coroutine();
         }
 
-        case NodeKind::Mutex:
-        case NodeKind::Event:
-        case NodeKind::Semaphore:
-        case NodeKind::ConditionVariable:
         case NodeKind::MutexWaiter:
         case NodeKind::EventWaiter:
         case NodeKind::SystemIO:
@@ -332,44 +303,6 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
             std::abort();
         }
     }
-}
-
-void sync_primitive::insert(waiter_link* link) {
-    assert(link && "insert: null waiter_link");
-    assert(link->resource == nullptr && "insert: waiter_link already linked");
-    assert(link->prev == nullptr && link->next == nullptr && "insert: waiter_link has links");
-
-    link->resource = this;
-
-    if(tail) {
-        tail->next = link;
-        link->prev = tail;
-        tail = link;
-    } else {
-        head = link;
-        tail = link;
-    }
-}
-
-void sync_primitive::remove(waiter_link* link) {
-    assert(link && "remove: null waiter_link");
-    assert(link->resource == this && "remove: waiter_link not owned by resource");
-
-    if(link->prev) {
-        link->prev->next = link->next;
-    } else {
-        head = link->next;
-    }
-
-    if(link->next) {
-        link->next->prev = link->prev;
-    } else {
-        tail = link->prev;
-    }
-
-    link->prev = nullptr;
-    link->next = nullptr;
-    link->resource = nullptr;
 }
 
 }  // namespace eventide

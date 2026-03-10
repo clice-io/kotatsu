@@ -60,6 +60,41 @@ struct deferred_cancel_await : system_op {
     }
 };
 
+task<int> ready_int(int value) {
+    co_return value;
+}
+
+task<> ready_void() {
+    co_return;
+}
+
+task<int> delayed_int(event_loop& loop, int ms, int value) {
+    co_await sleep(std::chrono::milliseconds{ms}, loop);
+    co_return value;
+}
+
+static_assert(detail::owned_awaitable<task<int>>);
+static_assert(!detail::owned_awaitable<task<int>&>);
+static_assert(detail::owned_awaitable<semaphore::acquire_awaiter>);
+static_assert(!detail::owned_awaitable<semaphore::acquire_awaiter&>);
+static_assert(detail::owned_async_range<small_vector<task<int>>>);
+static_assert(!detail::owned_async_range<small_vector<task<int>>&>);
+static_assert(!std::constructible_from<when_any<>>);
+static_assert(
+    !std::constructible_from<when_all<detail::range_tasks<task<int>>>, small_vector<task<int>>&>);
+static_assert(
+    !std::constructible_from<when_any<detail::range_tasks<task<int>>>, small_vector<task<int>>&>);
+
+using when_all_mixed_result =
+    decltype(std::declval<decltype(when_all(std::declval<task<int>>(), std::declval<task<>>()))>()
+                 .await_resume());
+using when_any_mixed_result =
+    decltype(std::declval<decltype(when_any(std::declval<task<int>>(), std::declval<task<>>()))>()
+                 .await_resume());
+
+static_assert(std::same_as<when_all_mixed_result, std::tuple<int, std::nullopt_t>>);
+static_assert(std::same_as<when_any_mixed_result, std::variant<int, std::nullopt_t>>);
+
 TEST_SUITE(when_ops) {
 
 TEST_CASE(when_all_values) {
@@ -94,13 +129,14 @@ TEST_CASE(any_first_wins) {
         co_return 20;
     };
 
-    auto combined = [&]() -> task<std::size_t> {
-        auto idx = co_await when_any(a(), b());
-        co_return idx;
+    auto combined = [&]() -> task<std::variant<int, int>> {
+        co_return co_await when_any(a(), b());
     };
 
-    auto [idx] = run(combined());
-    EXPECT_EQ(idx, 0U);
+    auto [winner] = run(combined());
+    EXPECT_TRUE(winner.has_value());
+    EXPECT_EQ(winner->index(), 0U);
+    EXPECT_EQ(std::get<0>(*winner), 10);
     EXPECT_EQ(a_count, 1);
     EXPECT_EQ(b_count, 0);
 }
@@ -153,16 +189,17 @@ TEST_CASE(any_sleep_wins) {
         co_return 2;
     };
 
-    auto combined = [&]() -> task<std::size_t> {
-        auto idx = co_await when_any(fast(), slow());
-        co_return idx;
+    auto combined = [&]() -> task<std::variant<int, int>> {
+        co_return co_await when_any(fast(), slow());
     };
 
     auto task = combined();
     loop.schedule(task);
     loop.run();
 
-    EXPECT_EQ(task.result(), 0U);
+    auto winner = task.result();
+    EXPECT_EQ(winner.index(), 0U);
+    EXPECT_EQ(std::get<0>(winner), 1);
     EXPECT_EQ(fast_done, 1);
     EXPECT_EQ(slow_done, 0);
 }
@@ -246,13 +283,14 @@ TEST_CASE(any_detaches_cancelled_child_until_quiescent) {
         co_return 1;
     };
 
-    auto combined = [&]() -> task<std::size_t> {
-        auto idx = co_await when_any(slow(), fast());
-        co_return idx;
+    auto combined = [&]() -> task<std::variant<int, int>> {
+        co_return co_await when_any(slow(), fast());
     };
 
-    auto [idx] = run(combined());
-    EXPECT_EQ(idx, 1U);
+    auto [winner] = run(combined());
+    EXPECT_TRUE(winner.has_value());
+    EXPECT_EQ(winner->index(), 1U);
+    EXPECT_EQ(std::get<1>(*winner), 1);
     EXPECT_EQ(op_destroyed, 0);
 
     deferred_cancel_await::finish_pending_cancel();
@@ -345,9 +383,8 @@ TEST_CASE(when_any_token_cancel) {
         co_return 2;
     };
 
-    auto combined = [&]() -> task<std::size_t> {
-        auto idx = co_await when_any(slow1(), slow2());
-        co_return idx;
+    auto combined = [&]() -> task<std::variant<int, int>> {
+        co_return co_await when_any(slow1(), slow2());
     };
 
     auto guarded = with_token(combined(), source.token());
@@ -460,13 +497,14 @@ TEST_CASE(when_any_single) {
         co_return 99;
     };
 
-    auto combined = [&]() -> task<std::size_t> {
-        auto idx = co_await when_any(a());
-        co_return idx;
+    auto combined = [&]() -> task<std::variant<int>> {
+        co_return co_await when_any(a());
     };
 
-    auto [idx] = run(combined());
-    EXPECT_EQ(idx, 0U);
+    auto [winner] = run(combined());
+    EXPECT_TRUE(winner.has_value());
+    EXPECT_EQ(winner->index(), 0U);
+    EXPECT_EQ(std::get<0>(*winner), 99);
 }
 
 TEST_CASE(when_any_second_wins) {
@@ -482,16 +520,17 @@ TEST_CASE(when_any_second_wins) {
         co_return 2;
     };
 
-    auto combined = [&]() -> task<std::size_t> {
-        auto idx = co_await when_any(slow(), fast());
-        co_return idx;
+    auto combined = [&]() -> task<std::variant<int, int>> {
+        co_return co_await when_any(slow(), fast());
     };
 
     auto task = combined();
     loop.schedule(task);
     loop.run();
 
-    EXPECT_EQ(task.result(), 1U);
+    auto winner = task.result();
+    EXPECT_EQ(winner.index(), 1U);
+    EXPECT_EQ(std::get<1>(winner), 2);
 }
 
 #ifdef __cpp_exceptions
@@ -534,6 +573,177 @@ TEST_CASE(when_any_all_cancel) {
     EXPECT_TRUE(task->is_cancelled());
 }
 
+TEST_CASE(when_all_accepts_sync_awaiters) {
+    event_loop loop;
+    semaphore sem{0};
+    int resumed = 0;
+
+    auto releaser = [&]() -> task<> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        sem.release(2);
+    };
+
+    auto combined = [&]() -> task<int> {
+        co_await when_all(sem.acquire(), sem.acquire());
+        resumed += 1;
+        co_return 7;
+    };
+
+    auto task = combined();
+    auto release_task = releaser();
+    loop.schedule(task);
+    loop.schedule(release_task);
+    loop.run();
+
+    EXPECT_TRUE(task->is_finished());
+    EXPECT_EQ(task.result(), 7);
+    EXPECT_EQ(resumed, 1);
+}
+
+TEST_CASE(when_any_accepts_sync_awaiters) {
+    event_loop loop;
+    semaphore slow{0};
+    semaphore fast{0};
+
+    auto releaser = [&]() -> task<> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        fast.release();
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        slow.release();
+    };
+
+    auto combined = [&]() -> task<std::variant<std::nullopt_t, std::nullopt_t>> {
+        co_return co_await when_any(slow.acquire(), fast.acquire());
+    };
+
+    auto task = combined();
+    auto release_task = releaser();
+    loop.schedule(task);
+    loop.schedule(release_task);
+    loop.run();
+
+    EXPECT_TRUE(task->is_finished());
+    auto winner = task.result();
+    EXPECT_EQ(winner.index(), 1U);
+}
+
+TEST_CASE(when_all_range_values) {
+    small_vector<task<int>> tasks;
+    tasks.emplace_back(ready_int(3));
+    tasks.emplace_back(ready_int(4));
+
+    auto combined = [&]() -> task<int> {
+        auto values = co_await when_all(std::move(tasks));
+        EXPECT_EQ(values.size(), 2U);
+        co_return values[0] + values[1];
+    };
+
+    auto [sum] = run(combined());
+    EXPECT_EQ(sum, 7);
+}
+
+TEST_CASE(when_all_range_empty) {
+    small_vector<task<int>> tasks;
+
+    auto combined = [&]() -> task<std::size_t> {
+        auto values = co_await when_all(std::move(tasks));
+        co_return values.size();
+    };
+
+    auto [size] = run(combined());
+    EXPECT_EQ(size, 0U);
+}
+
+TEST_CASE(when_all_range_void_values) {
+    small_vector<task<>> tasks;
+    tasks.emplace_back(ready_void());
+    tasks.emplace_back(ready_void());
+
+    auto combined = [&]() -> task<std::size_t> {
+        auto values = co_await when_all(std::move(tasks));
+        EXPECT_EQ(values.size(), 2U);
+        co_return values.size();
+    };
+
+    auto [size] = run(combined());
+    EXPECT_EQ(size, 2U);
+}
+
+TEST_CASE(when_all_range_accepts_sync_awaiters) {
+    event_loop loop;
+    semaphore sem{0};
+    small_vector<semaphore::acquire_awaiter> waits;
+    waits.emplace_back(sem.acquire());
+    waits.emplace_back(sem.acquire());
+
+    auto releaser = [&]() -> task<> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        sem.release(2);
+    };
+
+    auto combined = [&]() -> task<std::size_t> {
+        auto values = co_await when_all(std::move(waits));
+        EXPECT_EQ(values.size(), 2U);
+        co_return values.size();
+    };
+
+    auto task = combined();
+    auto release_task = releaser();
+    loop.schedule(task);
+    loop.schedule(release_task);
+    loop.run();
+
+    EXPECT_EQ(task.result(), 2U);
+}
+
+TEST_CASE(when_any_range_values) {
+    event_loop loop;
+    small_vector<task<int>> tasks;
+    tasks.emplace_back(delayed_int(loop, 10, 1));
+    tasks.emplace_back(delayed_int(loop, 1, 2));
+
+    auto combined = [&]() -> task<std::pair<std::size_t, int>> {
+        co_return co_await when_any(std::move(tasks));
+    };
+
+    auto task = combined();
+    loop.schedule(task);
+    loop.run();
+
+    auto winner = task.result();
+    EXPECT_EQ(winner.first, 1U);
+    EXPECT_EQ(winner.second, 2);
+}
+
+TEST_CASE(when_any_range_void_values) {
+    event_loop loop;
+    semaphore slow{0};
+    semaphore fast{0};
+    small_vector<semaphore::acquire_awaiter> waits;
+    waits.emplace_back(slow.acquire());
+    waits.emplace_back(fast.acquire());
+
+    auto releaser = [&]() -> task<> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        fast.release();
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        slow.release();
+    };
+
+    auto combined = [&]() -> task<std::pair<std::size_t, std::nullopt_t>> {
+        co_return co_await when_any(std::move(waits));
+    };
+
+    auto task = combined();
+    auto release_task = releaser();
+    loop.schedule(task);
+    loop.schedule(release_task);
+    loop.run();
+
+    auto winner = task.result();
+    EXPECT_EQ(winner.first, 1U);
+}
+
 };  // TEST_SUITE(when_ops)
 
 TEST_SUITE(async_scope) {
@@ -556,6 +766,33 @@ TEST_CASE(scope_basic) {
 
     run(driver());
     EXPECT_EQ(count, 111);
+}
+
+TEST_CASE(scope_accepts_sync_awaiters) {
+    event_loop loop;
+    semaphore sem{0};
+    int count = 0;
+
+    auto releaser = [&]() -> task<> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        sem.release();
+        count += 1;
+    };
+
+    auto driver = [&]() -> task<> {
+        async_scope scope;
+        scope.spawn(sem.acquire());
+        scope.spawn(releaser());
+        co_await scope;
+        count += 10;
+    };
+
+    auto task = driver();
+    loop.schedule(task);
+    loop.run();
+
+    EXPECT_TRUE(task->is_finished());
+    EXPECT_EQ(count, 11);
 }
 
 TEST_CASE(scope_with_sleep) {

@@ -120,7 +120,7 @@ task<> branch_mutex(event_loop& loop) {
 }
 
 /// when_any branch: races slow_work vs fast_work. Loser gets cancelled.
-task<std::size_t> branch_when_any(event_loop& loop) {
+task<std::variant<int, int>> branch_when_any(event_loop& loop) {
     co_return co_await when_any(slow_work(loop), fast_work(loop));
 }
 
