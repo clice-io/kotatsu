@@ -4,7 +4,7 @@
 /// execute sequentially, each printing its output.
 
 #include <chrono>
-#include <cstdio>
+#include <print>
 #include <string>
 #include <vector>
 
@@ -33,12 +33,13 @@ task<int> compute() {
 }
 
 void example_basic_tasks() {
-    std::printf("--- 1. Basic tasks ---\n");
+    std::println("--- 1. Basic tasks ---");
 
     // run() creates a temporary event loop, schedules the task, runs it,
     // and returns the result wrapped in a tuple.
     auto [result] = run(compute());
-    std::printf("compute() = %d\n\n", result);
+    std::println("compute() = {}", *result);
+    std::println("");
 }
 
 // ============================================================
@@ -46,19 +47,19 @@ void example_basic_tasks() {
 // ============================================================
 
 task<> timed_greeting(event_loop& loop) {
-    std::printf("  (waiting 50ms...)\n");
+    std::println("  (waiting 50ms...)");
     co_await sleep(50ms, loop);
-    std::printf("  Hello after 50ms!\n");
+    std::println("  Hello after 50ms!");
 }
 
 void example_timers() {
-    std::printf("--- 2. Timers and sleep ---\n");
+    std::println("--- 2. Timers and sleep ---");
 
     event_loop loop;
     auto t = timed_greeting(loop);
     loop.schedule(t);
     loop.run();
-    std::printf("\n");
+    std::println("");
 }
 
 // ============================================================
@@ -71,7 +72,7 @@ task<int> slow_add(int a, int b, event_loop& loop) {
 }
 
 void example_when_all() {
-    std::printf("--- 3. when_all ---\n");
+    std::println("--- 3. when_all ---");
 
     event_loop loop;
 
@@ -85,7 +86,8 @@ void example_when_all() {
     loop.schedule(t);
     loop.run();
 
-    std::printf("when_all result = %d\n\n", t.result());
+    std::println("when_all result = {}", t.result());
+    std::println("");
 }
 
 // ============================================================
@@ -98,7 +100,7 @@ task<std::string> fetch(const char* name, int delay_ms, event_loop& loop) {
 }
 
 void example_when_any() {
-    std::printf("--- 4. when_any ---\n");
+    std::println("--- 4. when_any ---");
 
     event_loop loop;
 
@@ -114,7 +116,8 @@ void example_when_any() {
     loop.schedule(t);
     loop.run();
 
-    std::printf("winner index = %zu (fast-server)\n\n", t.result());
+    std::println("winner index = {} (fast-server)", t.result());
+    std::println("");
 }
 
 // ============================================================
@@ -122,7 +125,7 @@ void example_when_any() {
 // ============================================================
 
 void example_async_scope() {
-    std::printf("--- 5. async_scope ---\n");
+    std::println("--- 5. async_scope ---");
 
     event_loop loop;
     int total = 0;
@@ -130,7 +133,7 @@ void example_async_scope() {
     auto worker = [&](int id, int value) -> task<> {
         co_await sleep(std::chrono::milliseconds{id * 5}, loop);
         total += value;
-        std::printf("  worker %d finished (added %d)\n", id, value);
+        std::println("  worker {} finished (added {})", id, value);
     };
 
     auto driver = [&]() -> task<> {
@@ -143,13 +146,13 @@ void example_async_scope() {
 
         // Wait for all spawned tasks to complete.
         co_await scope;
-        std::printf("  all workers done, total = %d\n", total);
+        std::println("  all workers done, total = {}", total);
     };
 
     auto t = driver();
     loop.schedule(t);
     loop.run();
-    std::printf("\n");
+    std::println("");
 }
 
 // ============================================================
@@ -157,7 +160,7 @@ void example_async_scope() {
 // ============================================================
 
 void example_cancellation() {
-    std::printf("--- 6. Cancellation ---\n");
+    std::println("--- 6. Cancellation ---");
 
     event_loop loop;
 
@@ -174,9 +177,9 @@ void example_cancellation() {
             // Cancellation becomes a value instead of propagating.
             auto result = co_await self_cancel().catch_cancel();
             if(result.has_value()) {
-                std::printf("  got value: %d\n", *result);
+                std::println("  got value: {}", *result);
             } else {
-                std::printf("  6a: caught cancellation (expected)\n");
+                std::println("  6a: caught cancellation (expected)");
             }
         };
 
@@ -208,13 +211,13 @@ void example_cancellation() {
         loop.schedule(cancel_task);
         loop.run();
 
-        std::printf("  6b: started=%d, finished=%d, cancelled=%s\n",
-                    started,
-                    finished,
-                    guarded.value().has_value() ? "no" : "yes");
+        std::println("  6b: started={}, finished={}, cancelled={}",
+                     started,
+                     finished,
+                     guarded.value().has_value() ? "no" : "yes");
     }
 
-    std::printf("\n");
+    std::println("");
 }
 
 // ============================================================
@@ -222,7 +225,7 @@ void example_cancellation() {
 // ============================================================
 
 void example_sync_primitives() {
-    std::printf("--- 7. Sync primitives ---\n");
+    std::println("--- 7. Sync primitives ---");
 
     event_loop loop;
 
@@ -247,8 +250,7 @@ void example_sync_primitives() {
         loop.run();
 
         // Mutex ensures sequential access despite concurrent tasks.
-        std::printf("  7a mutex log = \"%s\" (length 3, order depends on lock acquisition)\n",
-                    log.c_str());
+        std::println("  7a mutex log = \"{}\" (length 3, order depends on lock acquisition)", log);
     }
 
     // 7b. Event — signal between tasks
@@ -276,10 +278,10 @@ void example_sync_primitives() {
         loop.schedule(t);
         loop.run();
 
-        std::printf("  7b event: consumer_saw_it = %s\n", consumer_saw_it ? "true" : "false");
+        std::println("  7b event: consumer_saw_it = {}", consumer_saw_it ? "true" : "false");
     }
 
-    std::printf("\n");
+    std::println("");
 }
 
 // ============================================================
@@ -287,7 +289,7 @@ void example_sync_primitives() {
 // ============================================================
 
 void example_combined() {
-    std::printf("--- 8. Combined patterns ---\n");
+    std::println("--- 8. Combined patterns ---");
 
     event_loop loop;
 
@@ -308,7 +310,7 @@ void example_combined() {
         };
         auto [x, y] = co_await when_all(a(), b());
         completed_pairs += 1;
-        std::printf("  pair %d: %d + %d = %d\n", id, x, y, x + y);
+        std::println("  pair {}: {} + {} = {}", id, x, y, x + y);
     };
 
     auto driver = [&]() -> task<int> {
@@ -335,16 +337,17 @@ void example_combined() {
 
     auto result = guarded.value();
     if(result.has_value()) {
-        std::printf("  all done: %d pairs completed\n", *result);
+        std::println("  all done: {} pairs completed", *result);
     } else {
-        std::printf("  cancelled after %d pairs\n", completed_pairs);
+        std::println("  cancelled after {} pairs", completed_pairs);
     }
 }
 
 // ============================================================
 
 int main() {
-    std::printf("=== eventide async examples ===\n\n");
+    std::println("=== eventide async examples ===");
+    std::println("");
 
     example_basic_tasks();
     example_timers();
@@ -355,6 +358,7 @@ int main() {
     example_sync_primitives();
     example_combined();
 
-    std::printf("\n=== done ===\n");
+    std::println("");
+    std::println("=== done ===");
     return 0;
 }
