@@ -1,13 +1,19 @@
 #pragma once
 
 #include <cassert>
+#include <concepts>
+#include <coroutine>
 #include <cstdlib>
 #include <exception>
 #include <optional>
+#include <type_traits>
+#include <utility>
 
+#include "awaitable.h"
 #include "error.h"
 #include "frame.h"
 #include "loop.h"
+#include "eventide/common/meta.h"
 
 namespace eventide {
 
@@ -268,5 +274,58 @@ public:
 private:
     coroutine_handle h;
 };
+
+namespace detail {
+
+template <typename T>
+constexpr inline bool is_task_v = is_specialization_of<task, std::remove_cvref_t<T>>;
+
+template <typename T>
+concept owned_awaitable = !std::is_lvalue_reference_v<T> && awaitable<T&&>;
+
+template <typename T>
+using normalized_await_result_t = await_result_t<std::remove_cvref_t<T>&&>;
+
+template <typename T, bool = is_task_v<T>>
+struct normalized_task;
+
+template <typename T>
+struct normalized_task<T, true> {
+    using type = std::remove_cvref_t<T>;
+};
+
+template <typename T>
+struct normalized_task<T, false> {
+    using type = task<normalized_await_result_t<T>>;
+};
+
+template <typename T>
+using normalized_task_t = typename normalized_task<T>::type;
+
+template <typename T>
+task<T> normalize_task(task<T>&& t) {
+    return std::move(t);
+}
+
+template <typename Awaitable>
+    requires (!is_task_v<Awaitable>) && owned_awaitable<Awaitable>
+auto normalize_task_impl(std::remove_cvref_t<Awaitable> value)
+    -> task<normalized_await_result_t<Awaitable>> {
+    if constexpr(std::is_void_v<normalized_await_result_t<Awaitable>>) {
+        co_await std::move(value);
+        co_return;
+    } else {
+        co_return co_await std::move(value);
+    }
+}
+
+template <typename Awaitable>
+    requires (!is_task_v<Awaitable>) && owned_awaitable<Awaitable>
+auto normalize_task(Awaitable&& input) -> task<normalized_await_result_t<Awaitable>> {
+    return normalize_task_impl<Awaitable>(
+        std::remove_cvref_t<Awaitable>(std::forward<Awaitable>(input)));
+}
+
+}  // namespace detail
 
 }  // namespace eventide

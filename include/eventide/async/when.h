@@ -64,8 +64,10 @@ template <typename... Tasks>
 class when_all : public aggregate_op {
 public:
     template <typename... U>
+        requires (sizeof...(U) == sizeof...(Tasks)) && (detail::owned_awaitable<U> && ...)
     explicit when_all(U&&... tasks) :
-        aggregate_op(async_node::NodeKind::WhenAll), tasks_(std::forward<U>(tasks)...) {}
+        aggregate_op(async_node::NodeKind::WhenAll),
+        tasks_(detail::normalize_task(std::forward<U>(tasks))...) {}
 
     ~when_all() {
         detail::release_inflight_all(tasks_);
@@ -106,8 +108,10 @@ template <typename... Tasks>
 class when_any : public aggregate_op {
 public:
     template <typename... U>
+        requires (sizeof...(U) == sizeof...(Tasks)) && (detail::owned_awaitable<U> && ...)
     explicit when_any(U&&... tasks) :
-        aggregate_op(async_node::NodeKind::WhenAny), tasks_(std::forward<U>(tasks)...) {}
+        aggregate_op(async_node::NodeKind::WhenAny),
+        tasks_(detail::normalize_task(std::forward<U>(tasks))...) {}
 
     ~when_any() {
         detail::release_inflight_all(tasks_);
@@ -139,10 +143,12 @@ private:
 };
 
 template <typename... Tasks>
-when_all(Tasks&&...) -> when_all<std::decay_t<Tasks>...>;
+    requires (detail::owned_awaitable<Tasks> && ...)
+when_all(Tasks&&...) -> when_all<detail::normalized_task_t<Tasks&&>...>;
 
 template <typename... Tasks>
-when_any(Tasks&&...) -> when_any<std::decay_t<Tasks>...>;
+    requires (detail::owned_awaitable<Tasks> && ...)
+when_any(Tasks&&...) -> when_any<detail::normalized_task_t<Tasks&&>...>;
 
 /// Dynamic structured concurrency: spawn N tasks at runtime, then
 /// co_await the scope to wait for all of them. Unlike when_all (compile-time
@@ -178,6 +184,12 @@ public:
         t.release();
         awaitees.push_back(node);
         total += 1;
+    }
+
+    template <typename Awaitable>
+        requires (!detail::is_task_v<Awaitable>) && detail::owned_awaitable<Awaitable>
+    void spawn(Awaitable&& awaitable) {
+        spawn(detail::normalize_task(std::forward<Awaitable>(awaitable)));
     }
 
     bool await_ready() const noexcept {

@@ -68,6 +68,7 @@ protected:
         if(!awaiting || awaiting->is_cancelled()) {
             return false;
         }
+        awaiting->clear_awaitee();
         awaiting->resume();
         return true;
     }

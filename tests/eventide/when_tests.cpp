@@ -60,6 +60,11 @@ struct deferred_cancel_await : system_op {
     }
 };
 
+static_assert(detail::owned_awaitable<task<int>>);
+static_assert(!detail::owned_awaitable<task<int>&>);
+static_assert(detail::owned_awaitable<semaphore::acquire_awaiter>);
+static_assert(!detail::owned_awaitable<semaphore::acquire_awaiter&>);
+
 TEST_SUITE(when_ops) {
 
 TEST_CASE(when_all_values) {
@@ -534,6 +539,59 @@ TEST_CASE(when_any_all_cancel) {
     EXPECT_TRUE(task->is_cancelled());
 }
 
+TEST_CASE(when_all_accepts_sync_awaiters) {
+    event_loop loop;
+    semaphore sem{0};
+    int resumed = 0;
+
+    auto releaser = [&]() -> task<> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        sem.release(2);
+    };
+
+    auto combined = [&]() -> task<int> {
+        co_await when_all(sem.acquire(), sem.acquire());
+        resumed += 1;
+        co_return 7;
+    };
+
+    auto task = combined();
+    auto release_task = releaser();
+    loop.schedule(task);
+    loop.schedule(release_task);
+    loop.run();
+
+    EXPECT_TRUE(task->is_finished());
+    EXPECT_EQ(task.result(), 7);
+    EXPECT_EQ(resumed, 1);
+}
+
+TEST_CASE(when_any_accepts_sync_awaiters) {
+    event_loop loop;
+    semaphore slow{0};
+    semaphore fast{0};
+
+    auto releaser = [&]() -> task<> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        fast.release();
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        slow.release();
+    };
+
+    auto combined = [&]() -> task<std::size_t> {
+        co_return co_await when_any(slow.acquire(), fast.acquire());
+    };
+
+    auto task = combined();
+    auto release_task = releaser();
+    loop.schedule(task);
+    loop.schedule(release_task);
+    loop.run();
+
+    EXPECT_TRUE(task->is_finished());
+    EXPECT_EQ(task.result(), 1U);
+}
+
 };  // TEST_SUITE(when_ops)
 
 TEST_SUITE(async_scope) {
@@ -556,6 +614,33 @@ TEST_CASE(scope_basic) {
 
     run(driver());
     EXPECT_EQ(count, 111);
+}
+
+TEST_CASE(scope_accepts_sync_awaiters) {
+    event_loop loop;
+    semaphore sem{0};
+    int count = 0;
+
+    auto releaser = [&]() -> task<> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        sem.release();
+        count += 1;
+    };
+
+    auto driver = [&]() -> task<> {
+        async_scope scope;
+        scope.spawn(sem.acquire());
+        scope.spawn(releaser());
+        co_await scope;
+        count += 10;
+    };
+
+    auto task = driver();
+    loop.schedule(task);
+    loop.run();
+
+    EXPECT_TRUE(task->is_finished());
+    EXPECT_EQ(count, 11);
 }
 
 TEST_CASE(scope_with_sleep) {
