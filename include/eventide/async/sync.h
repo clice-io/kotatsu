@@ -12,7 +12,7 @@ namespace eventide {
 class mutex : public sync_primitive {
 public:
     mutex(std::source_location location = std::source_location::current()) :
-        sync_primitive(async_node::NodeKind::Mutex) {
+        sync_primitive(sync_primitive::Kind::Mutex) {
         this->location = location;
     }
 
@@ -71,7 +71,7 @@ class semaphore : public sync_primitive {
 public:
     explicit semaphore(std::ptrdiff_t initial = 0,
                        std::source_location location = std::source_location::current()) :
-        sync_primitive(async_node::NodeKind::Semaphore) {
+        sync_primitive(sync_primitive::Kind::Semaphore) {
         assert(initial >= 0 && "semaphore initial count must be non-negative");
         this->location = location;
         count = initial;
@@ -140,7 +140,7 @@ class event : public sync_primitive {
 public:
     explicit event(bool signaled = false,
                    std::source_location location = std::source_location::current()) :
-        sync_primitive(async_node::NodeKind::Event), signaled(signaled) {
+        sync_primitive(sync_primitive::Kind::Event), signaled(signaled) {
         this->location = location;
     }
 
@@ -193,7 +193,7 @@ private:
 class condition_variable : public sync_primitive {
 public:
     condition_variable(std::source_location location = std::source_location::current()) :
-        sync_primitive(async_node::NodeKind::ConditionVariable) {
+        sync_primitive(sync_primitive::Kind::ConditionVariable) {
         this->location = location;
     }
 

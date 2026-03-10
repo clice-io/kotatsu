@@ -50,19 +50,6 @@ void async_node::cancel() {
             }
             break;
         }
-        case NodeKind::Mutex:
-        case NodeKind::Event:
-        case NodeKind::Semaphore:
-        case NodeKind::ConditionVariable: {
-            auto* self = static_cast<sync_primitive*>(this);
-
-            while(auto* cur = self->pop_waiter()) {
-                cur->state = Cancelled;
-                propagate_cancel(cur);
-            }
-            break;
-        }
-
         case NodeKind::MutexWaiter:
         case NodeKind::EventWaiter: {
             auto* self = static_cast<waiter_link*>(this);
@@ -142,15 +129,6 @@ std::coroutine_handle<> async_node::link_continuation(async_node* awaiter,
             return self->handle();
         }
 
-        case NodeKind::Mutex:
-        case NodeKind::Event:
-        case NodeKind::Semaphore:
-        case NodeKind::ConditionVariable: {
-            /// Shared resources are never linked as children; they are
-            /// awaited via their waiter_link sub-objects.
-            std::abort();
-        }
-
         case NodeKind::MutexWaiter:
         case NodeKind::EventWaiter: {
             auto self = static_cast<waiter_link*>(this);
@@ -187,10 +165,6 @@ std::coroutine_handle<> async_node::final_transition() {
             return p->awaiter->handle_subtask_result(p);
         }
 
-        case NodeKind::Mutex:
-        case NodeKind::Event:
-        case NodeKind::Semaphore:
-        case NodeKind::ConditionVariable:
         case NodeKind::MutexWaiter:
         case NodeKind::EventWaiter:
         case NodeKind::WhenAll:
@@ -321,10 +295,6 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
             return std::noop_coroutine();
         }
 
-        case NodeKind::Mutex:
-        case NodeKind::Event:
-        case NodeKind::Semaphore:
-        case NodeKind::ConditionVariable:
         case NodeKind::MutexWaiter:
         case NodeKind::EventWaiter:
         case NodeKind::SystemIO:

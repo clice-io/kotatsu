@@ -13,25 +13,17 @@
 
 namespace eventide {
 
+class sync_primitive;
+
 /// Type-erased base for all coroutine-related nodes in the task tree.
 ///
-/// Node hierarchy:
-///   async_node
-///     ├─ standard_task   — user coroutine (task<T>)
-///     ├─ sync_primitive   — sync primitives (mutex, event, semaphore, cv)
-///     ├─ waiter_link      — entry in a sync_primitive wait queue
-///     ├─ aggregate_op     — when_all / when_any / async_scope
-///     └─ system_op        — pending libuv I/O operation
+/// This hierarchy models awaitable runtime entities only.
+/// Shared sync resources (mutex/event/semaphore/cv) live outside it and are
+/// referenced by waiter_link nodes while a task is blocked on them.
 class async_node {
 public:
     enum class NodeKind : std::uint8_t {
         Task,
-
-        /// Sync primitives — sync_primitive subclasses.
-        Mutex,
-        Event,
-        Semaphore,
-        ConditionVariable,
 
         /// Wait queue entries — waiter_link subclasses.
         /// Semaphore and CV reuse EventWaiter (identical cancel semantics).
@@ -78,10 +70,6 @@ public:
         return kind == NodeKind::Task;
     }
 
-    bool is_sync_primitive() const noexcept {
-        return NodeKind::Mutex <= kind && kind <= NodeKind::ConditionVariable;
-    }
-
     bool is_waiter_link() const noexcept {
         return NodeKind::MutexWaiter <= kind && kind <= NodeKind::EventWaiter;
     }
@@ -111,14 +99,18 @@ public:
 
     std::coroutine_handle<> handle_subtask_result(async_node* parent);
 
-    /// Dump the async node tree rooted at this node as a DOT (graphviz) graph.
+    /// Dump the async graph reachable from this node as a DOT (graphviz) graph.
     std::string dump_dot() const;
 
 private:
     const static async_node* get_awaiter(const async_node* node);
+    const static sync_primitive* get_resource_parent(const async_node* node);
 
     static void dump_dot_walk(const async_node* node,
-                              std::set<const async_node*>& visited,
+                              std::set<const void*>& visited,
+                              std::string& out);
+    static void dump_dot_walk(const sync_primitive* resource,
+                              std::set<const void*>& visited,
                               std::string& out);
 
 protected:
@@ -171,8 +163,6 @@ private:
     async_node* awaitee = nullptr;
 };
 
-class sync_primitive;
-
 class waiter_link : public async_node {
 public:
     friend class async_node;
@@ -192,11 +182,24 @@ protected:
     async_node* awaiter = nullptr;
 };
 
-class sync_primitive : public async_node {
+/// Shared base for synchronization resources. These are not awaitable runtime
+/// nodes; waiter_link sub-objects bridge tasks into the wait queue.
+class sync_primitive {
 public:
+    enum class Kind : std::uint8_t {
+        Mutex,
+        Event,
+        Semaphore,
+        ConditionVariable,
+    };
+
     friend class async_node;
 
-    explicit sync_primitive(NodeKind k) : async_node(k) {}
+    explicit sync_primitive(Kind k) : kind(k) {}
+
+    const Kind kind;
+
+    std::source_location location;
 
     /// Appends a waiter to the end of the wait queue.
     void insert(waiter_link* link);
