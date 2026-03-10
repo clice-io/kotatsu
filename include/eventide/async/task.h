@@ -286,16 +286,16 @@ concept owned_awaitable = !std::is_lvalue_reference_v<T> && awaitable<T&&>;
 template <typename T>
 using normalized_await_result_t = await_result_t<std::remove_cvref_t<T>&&>;
 
-template <typename T, bool = is_task_v<T>>
+template <typename T, typename = void>
 struct normalized_task;
 
 template <typename T>
-struct normalized_task<T, true> {
+struct normalized_task<T, std::enable_if_t<is_task_v<T>>> {
     using type = std::remove_cvref_t<T>;
 };
 
 template <typename T>
-struct normalized_task<T, false> {
+struct normalized_task<T, std::enable_if_t<!is_task_v<T> && awaitable<std::remove_cvref_t<T>&&>>> {
     using type = task<normalized_await_result_t<T>>;
 };
 

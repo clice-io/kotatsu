@@ -104,19 +104,21 @@ void example_when_any() {
 
     event_loop loop;
 
-    auto race = [&]() -> task<std::size_t> {
+    auto race = [&]() -> task<std::variant<std::string, std::string, std::string>> {
         // The fastest task wins. All others are cancelled.
-        auto winner = co_await when_any(fetch("slow-server", 100, loop),
-                                        fetch("fast-server", 10, loop),
-                                        fetch("medium-server", 50, loop));
-        co_return winner;
+        co_return co_await when_any(fetch("slow-server", 100, loop),
+                                    fetch("fast-server", 10, loop),
+                                    fetch("medium-server", 50, loop));
     };
 
     auto t = race();
     loop.schedule(t);
     loop.run();
 
-    std::println("winner index = {} (fast-server)", t.result());
+    auto winner = t.result();
+    std::println("winner index = {} (fast-server), value = {}",
+                 winner.index(),
+                 std::get<1>(winner));
     std::println("");
 }
 
