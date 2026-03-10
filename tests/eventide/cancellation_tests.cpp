@@ -1,5 +1,6 @@
 #include <atomic>
 #include <chrono>
+#include <concepts>
 #include <cstdlib>
 #include <thread>
 #include <vector>
@@ -334,6 +335,30 @@ TEST_CASE(cancel_waiting_on_event) {
     EXPECT_FALSE(guarded.value().has_value());
 
     // Event remains usable after cancellation
+    gate.set();
+    EXPECT_TRUE(gate.is_set());
+}
+
+TEST_CASE(wait_sync_primitive) {
+    event gate;
+
+    auto worker = [&]() -> task<> {
+        co_await gate.wait();
+    };
+
+    auto blocked = worker();
+    blocked->resume();
+
+    auto waiting_dot = blocked->dump_dot();
+    EXPECT_NE(waiting_dot.find("Task"), std::string::npos);
+    EXPECT_NE(waiting_dot.find("EventWaiter"), std::string::npos);
+    EXPECT_NE(waiting_dot.find("Event"), std::string::npos);
+
+    blocked->cancel();
+
+    auto cancelled_dot = blocked->dump_dot();
+    EXPECT_EQ(cancelled_dot.find("EventWaiter"), std::string::npos);
+
     gate.set();
     EXPECT_TRUE(gate.is_set());
 }

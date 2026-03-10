@@ -4,16 +4,13 @@
 #include <string_view>
 
 #include "eventide/async/frame.h"
+#include "eventide/async/sync.h"
 
 namespace eventide {
 
-static std::string_view kind_name(async_node::NodeKind k) {
+static std::string_view async_kind_name(async_node::NodeKind k) {
     switch(k) {
         case async_node::NodeKind::Task: return "Task";
-        case async_node::NodeKind::Mutex: return "Mutex";
-        case async_node::NodeKind::Event: return "Event";
-        case async_node::NodeKind::Semaphore: return "Semaphore";
-        case async_node::NodeKind::ConditionVariable: return "ConditionVariable";
         case async_node::NodeKind::MutexWaiter: return "MutexWaiter";
         case async_node::NodeKind::EventWaiter: return "EventWaiter";
         case async_node::NodeKind::WhenAll: return "WhenAll";
@@ -34,7 +31,17 @@ static std::string_view state_name(async_node::State s) {
     return "Unknown";
 }
 
-static std::string node_id(const async_node* node) {
+static std::string_view sync_kind_name(sync_primitive::Kind k) {
+    switch(k) {
+        case sync_primitive::Kind::Mutex: return "Mutex";
+        case sync_primitive::Kind::Event: return "Event";
+        case sync_primitive::Kind::Semaphore: return "Semaphore";
+        case sync_primitive::Kind::ConditionVariable: return "ConditionVariable";
+    }
+    return "Unknown";
+}
+
+static std::string node_id(const void* node) {
     return std::format("n{:x}", reinterpret_cast<std::uintptr_t>(node));
 }
 
@@ -52,12 +59,12 @@ static void emit_node(const async_node* node, std::string& out) {
     std::string label;
     if(!file.empty()) {
         label = std::format("{}\\n{}\\n{}:{}",
-                            kind_name(node->kind),
+                            async_kind_name(node->kind),
                             state_name(node->state),
                             file,
                             node->location.line());
     } else {
-        label = std::format("{}\\n{}", kind_name(node->kind), state_name(node->state));
+        label = std::format("{}\\n{}", async_kind_name(node->kind), state_name(node->state));
     }
 
     std::string_view shape = "box";
@@ -70,9 +77,6 @@ static void emit_node(const async_node* node, std::string& out) {
             case async_node::Cancelled: color = "\"#FFB6C1\""; break;
             default: break;
         }
-    } else if(node->is_sync_primitive()) {
-        shape = "ellipse";
-        color = "\"#ADD8E6\"";
     } else if(node->is_aggregate_op()) {
         shape = "diamond";
         color = "\"#D8BFD8\"";
@@ -90,22 +94,44 @@ static void emit_node(const async_node* node, std::string& out) {
                    color);
 }
 
-static void emit_edge(const async_node* from, const async_node* to, std::string& out) {
+static void emit_node(const sync_primitive* resource, std::string& out) {
+    auto file = basename(resource->location.file_name());
+    std::string label;
+    if(!file.empty()) {
+        label = std::format("{}\\n{}:{}",
+                            sync_kind_name(resource->kind),
+                            file,
+                            resource->location.line());
+    } else {
+        label = std::format("{}", sync_kind_name(resource->kind));
+    }
+
+    std::format_to(std::back_inserter(out),
+                   "  {} [label=\"{}\", shape=ellipse, style=filled, fillcolor=\"{}\"];\n",
+                   node_id(resource),
+                   label,
+                   "#ADD8E6");
+}
+
+static void emit_edge(const void* from, const void* to, std::string& out) {
     std::format_to(std::back_inserter(out), "  {} -> {};\n", node_id(from), node_id(to));
 }
 
-/// Returns the awaiter (parent) of a node, or nullptr for roots / sync_primitives.
+const sync_primitive* async_node::get_resource_parent(const async_node* node) {
+    switch(node->kind) {
+        case NodeKind::MutexWaiter:
+        case NodeKind::EventWaiter: return static_cast<const waiter_link*>(node)->resource;
+        default: return nullptr;
+    }
+}
+
+/// Returns the awaiter (parent) of a node, or nullptr for roots.
 const async_node* async_node::get_awaiter(const async_node* node) {
     switch(node->kind) {
         case NodeKind::Task: return static_cast<const standard_task*>(node)->awaiter;
         case NodeKind::MutexWaiter:
         case NodeKind::EventWaiter: {
-            // In the graph, a waiter_link's structural parent is the sync_primitive
-            // it belongs to (via resource), not the task awaiting on it.
             auto* link = static_cast<const waiter_link*>(node);
-            if(link->resource) {
-                return link->resource;
-            }
             return link->awaiter;
         }
         case NodeKind::WhenAll:
@@ -117,7 +143,7 @@ const async_node* async_node::get_awaiter(const async_node* node) {
 }
 
 void async_node::dump_dot_walk(const async_node* node,
-                               std::set<const async_node*>& visited,
+                               std::set<const void*>& visited,
                                std::string& out) {
     if(!node || !visited.insert(node).second) {
         return;
@@ -135,23 +161,11 @@ void async_node::dump_dot_walk(const async_node* node,
             break;
         }
 
-        case NodeKind::Mutex:
-        case NodeKind::Event:
-        case NodeKind::Semaphore:
-        case NodeKind::ConditionVariable: {
-            auto* sp = static_cast<const sync_primitive*>(node);
-            for(auto* w = sp->head; w != nullptr; w = w->next) {
-                emit_edge(node, w, out);
-                dump_dot_walk(w, visited, out);
-            }
-            break;
-        }
-
         case NodeKind::MutexWaiter:
         case NodeKind::EventWaiter: {
-            // Pull the owning sync_primitive into the graph.
             auto* link = static_cast<const waiter_link*>(node);
             if(link->resource) {
+                emit_edge(node, link->resource, out);
                 dump_dot_walk(link->resource, visited, out);
             }
             break;
@@ -174,15 +188,35 @@ void async_node::dump_dot_walk(const async_node* node,
     }
 }
 
+void async_node::dump_dot_walk(const sync_primitive* resource,
+                               std::set<const void*>& visited,
+                               std::string& out) {
+    if(!resource || !visited.insert(resource).second) {
+        return;
+    }
+
+    emit_node(resource, out);
+    for(auto* waiter = resource->head; waiter != nullptr; waiter = waiter->next) {
+        emit_edge(resource, waiter, out);
+        dump_dot_walk(waiter, visited, out);
+    }
+}
+
 std::string async_node::dump_dot() const {
-    // Walk up to find the root of the tree.
-    const auto* root = this;
-    while(root) {
-        auto* parent = get_awaiter(root);
+    // Walk up to find the root of the graph.
+    const auto* async_root = this;
+    const sync_primitive* resource_root = nullptr;
+    while(async_root) {
+        if(auto* resource = get_resource_parent(async_root)) {
+            resource_root = resource;
+            break;
+        }
+
+        auto* parent = get_awaiter(async_root);
         if(!parent) {
             break;
         }
-        root = parent;
+        async_root = parent;
     }
 
     std::string out;
@@ -190,8 +224,12 @@ std::string async_node::dump_dot() const {
     out += "  rankdir=TB;\n";
     out += "  node [fontname=\"Helvetica\", fontsize=10];\n";
 
-    std::set<const async_node*> visited;
-    dump_dot_walk(root, visited, out);
+    std::set<const void*> visited;
+    if(resource_root) {
+        dump_dot_walk(resource_root, visited, out);
+    } else {
+        dump_dot_walk(async_root, visited, out);
+    }
 
     out += "}\n";
     return out;
