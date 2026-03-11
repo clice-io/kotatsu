@@ -17,14 +17,8 @@
 #include "eventide/async/watcher.h"
 #include "eventide/serde/json/deserializer.h"
 
-#ifdef _WIN32
-#include <BaseTsd.h>
-#include <fcntl.h>
-#include <io.h>
-using ssize_t = SSIZE_T;
-#else
-#include <unistd.h>
-#endif
+#include "../common/fd_helpers.h"
+#include "test_transport.h"
 
 namespace eventide::ipc {
 
@@ -85,131 +79,17 @@ struct RPCCancelNotification {
     CancelParams params;
 };
 
-class FakeTransport final : public Transport {
-public:
-    explicit FakeTransport(std::vector<std::string> incoming) :
-        incoming_messages(std::move(incoming)) {}
-
-    task<std::optional<std::string>> read_message() override {
-        if(read_index >= incoming_messages.size()) {
-            co_return std::nullopt;
-        }
-        co_return incoming_messages[read_index++];
-    }
-
-    task<void, RPCError> write_message(std::string_view payload) override {
-        outgoing_messages.emplace_back(payload);
-        co_return outcome_value();
-    }
-
-    const std::vector<std::string>& outgoing() const {
-        return outgoing_messages;
-    }
-
-private:
-    std::vector<std::string> incoming_messages;
-    std::vector<std::string> outgoing_messages;
-    std::size_t read_index = 0;
-};
-
-class ScriptedTransport final : public Transport {
-public:
-    using WriteHook = std::function<void(std::string_view, ScriptedTransport&)>;
-
-    ScriptedTransport(std::vector<std::string> incoming, WriteHook hook) :
-        incoming_messages(std::move(incoming)), write_hook(std::move(hook)) {
-        if(!incoming_messages.empty()) {
-            readable.set();
-        }
-    }
-
-    task<std::optional<std::string>> read_message() override {
-        while(read_index >= incoming_messages.size()) {
-            if(closed) {
-                co_return std::nullopt;
-            }
-
-            co_await readable.wait();
-            readable.reset();
-        }
-
-        co_return incoming_messages[read_index++];
-    }
-
-    task<void, RPCError> write_message(std::string_view payload) override {
-        outgoing_messages.emplace_back(payload);
-        if(write_hook) {
-            write_hook(payload, *this);
-        }
-        co_return outcome_value();
-    }
-
-    void push_incoming(std::string payload) {
-        incoming_messages.push_back(std::move(payload));
-        readable.set();
-    }
-
-    void close() {
-        closed = true;
-        readable.set();
-    }
-
-    const std::vector<std::string>& outgoing() const {
-        return outgoing_messages;
-    }
-
-private:
-    std::vector<std::string> incoming_messages;
-    std::vector<std::string> outgoing_messages;
-    std::size_t read_index = 0;
-    WriteHook write_hook;
-    event readable;
-    bool closed = false;
-};
-
 using RequestContext = JsonPeer::RequestContext;
 
 struct PendingAddResult {
     Result<AddResult> value = outcome_error(RPCError("request not completed"));
 };
 
+using test::create_pipe;
+using test::close_fd;
+using test::write_fd;
+
 namespace {
-
-#ifdef _WIN32
-int create_pipe_fds(int fds[2]) {
-    return _pipe(fds, 4096, _O_BINARY);
-}
-
-int close_fd(int fd) {
-    return _close(fd);
-}
-
-ssize_t write_fd(int fd, const char* data, size_t len) {
-    return _write(fd, data, static_cast<unsigned int>(len));
-}
-#else
-int create_pipe_fds(int fds[2]) {
-    return ::pipe(fds);
-}
-
-int close_fd(int fd) {
-    return ::close(fd);
-}
-
-ssize_t write_fd(int fd, const char* data, size_t len) {
-    return ::write(fd, data, len);
-}
-#endif
-
-std::string frame(std::string_view payload) {
-    std::string out;
-    out.reserve(payload.size() + 32);
-    out.append("Content-Length: ");
-    out.append(std::to_string(payload.size()));
-    out.append("\r\n\r\n");
-    out.append(payload);
-    return out;
-}
 
 task<> complete_request(JsonPeer& peer, PendingAddResult& out) {
     out.value =
@@ -328,8 +208,8 @@ TEST_CASE(stream_note_response) {
 
     int incoming_fds[2] = {-1, -1};
     int outgoing_fds[2] = {-1, -1};
-    ASSERT_EQ(create_pipe_fds(incoming_fds), 0);
-    ASSERT_EQ(create_pipe_fds(outgoing_fds), 0);
+    ASSERT_EQ(create_pipe(incoming_fds), 0);
+    ASSERT_EQ(create_pipe(outgoing_fds), 0);
 
     auto input = pipe::open(incoming_fds[0], pipe::options{}, loop);
     ASSERT_TRUE(input.has_value());

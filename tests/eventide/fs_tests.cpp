@@ -4,11 +4,8 @@
 #include <string_view>
 
 #ifdef _WIN32
-#include <BaseTsd.h>
 #include <io.h>
 #include <sys/stat.h>
-#else
-#include <unistd.h>
 #endif
 
 #include "eventide/zest/zest.h"
@@ -16,35 +13,22 @@
 #include "eventide/async/loop.h"
 #include "eventide/async/task.h"
 
+#include "../common/fd_helpers.h"
+
 namespace eventide {
+
+using test::close_fd;
+using test::write_fd;
 
 namespace {
 
 #ifdef _WIN32
-using ssize_t = SSIZE_T;
-
 inline int open_fd(const std::string& path) {
     return _open(path.c_str(), _O_CREAT | _O_WRONLY | _O_TRUNC | _O_BINARY, _S_IREAD | _S_IWRITE);
-}
-
-inline ssize_t write_fd(int fd, const char* data, size_t len) {
-    return _write(fd, data, static_cast<unsigned int>(len));
-}
-
-inline void close_fd(int fd) {
-    _close(fd);
 }
 #else
 inline int open_fd(const std::string& path) {
     return ::open(path.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
-}
-
-inline ssize_t write_fd(int fd, const char* data, size_t len) {
-    return ::write(fd, data, len);
-}
-
-inline void close_fd(int fd) {
-    ::close(fd);
 }
 #endif
 
@@ -55,7 +39,7 @@ task<int, error> fs_roundtrip(event_loop& loop) {
         co_return outcome_error(dir_res.error());
     }
 
-    std::string dir = dir_res->path;
+    std::string dir = *dir_res;
     if(dir.empty()) {
         co_return outcome_error(error::invalid_argument);
     }
@@ -98,17 +82,17 @@ task<int, error> fs_roundtrip(event_loop& loop) {
     }
 
     auto close_res = co_await fs::closedir(*dir_res2, loop);
-    if(close_res) {
-        co_return outcome_error(close_res);
+    if(!close_res) {
+        co_return outcome_error(close_res.error());
     }
 
     auto unlink_res = co_await fs::unlink(file, loop);
-    if(!unlink_res.has_value()) {
+    if(!unlink_res) {
         co_return outcome_error(unlink_res.error());
     }
 
     auto rmdir_res = co_await fs::rmdir(dir, loop);
-    if(!rmdir_res.has_value()) {
+    if(!rmdir_res) {
         co_return outcome_error(rmdir_res.error());
     }
 
@@ -122,7 +106,7 @@ task<int, error> mkstemp_roundtrip(event_loop& loop) {
         co_return outcome_error(file_res.error());
     }
 
-    const int fd = static_cast<int>(file_res->value);
+    const int fd = file_res->fd;
     std::string path = file_res->path;
     if(fd >= 0) {
         close_fd(fd);
@@ -133,12 +117,12 @@ task<int, error> mkstemp_roundtrip(event_loop& loop) {
     }
 
     auto access_res = co_await fs::access(path, 0, loop);
-    if(!access_res.has_value()) {
+    if(!access_res) {
         co_return outcome_error(access_res.error());
     }
 
     auto unlink_res = co_await fs::unlink(path, loop);
-    if(!unlink_res.has_value()) {
+    if(!unlink_res) {
         co_return outcome_error(unlink_res.error());
     }
 

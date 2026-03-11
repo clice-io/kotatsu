@@ -38,9 +38,6 @@ struct bincode_error {
 using bincode_envelope =
     std::variant<bincode_request, bincode_notification, bincode_success, bincode_error>;
 
-struct cancel_request_params {
-    protocol::RequestID id;
-};
 
 }  // namespace
 
@@ -142,7 +139,7 @@ Result<std::string> BincodeCodec::encode_error_response(const protocol::RequestI
 std::optional<protocol::RequestID> BincodeCodec::parse_cancel_id(std::string_view params) {
     auto bytes_span = std::span<const std::byte>(reinterpret_cast<const std::byte*>(params.data()),
                                                  params.size());
-    cancel_request_params parsed;
+    protocol::CancelParams parsed;
     auto status = serde::bincode::from_bytes(bytes_span, parsed);
     if(!status) {
         return std::nullopt;

@@ -32,9 +32,6 @@ Result<std::string>
     return std::move(*serialized);
 }
 
-struct cancel_request_params {
-    protocol::RequestID id;
-};
 
 // --- Outgoing message structs (use RawValue to avoid double serialization) ---
 
@@ -144,7 +141,7 @@ Result<std::string> JsonCodec::encode_error_response(const protocol::RequestID& 
 
 std::optional<protocol::RequestID> JsonCodec::parse_cancel_id(std::string_view params) {
     auto parsed =
-        parse_json_value<cancel_request_params>(params, protocol::ErrorCode::InvalidParams);
+        parse_json_value<protocol::CancelParams>(params, protocol::ErrorCode::InvalidParams);
     if(!parsed) {
         return std::nullopt;
     }

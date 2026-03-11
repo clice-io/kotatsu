@@ -76,10 +76,6 @@ consteval void validate_notification_callback_signature() {
     static_assert(std::is_same_v<Ret, void>, "notification callback should return void");
 }
 
-struct cancel_request_params {
-    protocol::RequestID id;
-};
-
 inline task<> cancel_after_timeout(std::chrono::milliseconds timeout,
                                    std::shared_ptr<cancellation_source> timeout_source,
                                    event_loop& loop) {
@@ -429,7 +425,7 @@ task<std::string, RPCError> Peer<CodecT>::send_request_impl(std::string_view met
            it != self->pending_requests.end()) {
             self->pending_requests.erase(it);
             auto cancel_params_serialized =
-                self->codec.serialize_value(detail::cancel_request_params{request_id});
+                self->codec.serialize_value(protocol::CancelParams{request_id});
             if(cancel_params_serialized) {
                 auto cancel_encoded =
                     self->codec.encode_notification("$/cancelRequest", *cancel_params_serialized);

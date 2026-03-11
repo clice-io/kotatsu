@@ -8,16 +8,12 @@
 #include "eventide/async/error.h"
 
 #ifdef _WIN32
-#include <BaseTsd.h>
-#include <fcntl.h>
-#include <io.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #else
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
-#include <unistd.h>
 #endif
 
 #include "eventide/zest/zest.h"
@@ -25,7 +21,13 @@
 #include "eventide/async/stream.h"
 #include "eventide/async/watcher.h"
 
+#include "../common/fd_helpers.h"
+
 namespace eventide {
+
+using test::create_pipe;
+using test::close_fd;
+using test::write_fd;
 
 #ifdef _WIN32
 struct wsa_init_guard {
@@ -40,7 +42,6 @@ struct wsa_init_guard {
 };
 
 static wsa_init_guard wsa_guard;
-using ssize_t = SSIZE_T;
 #endif
 
 namespace {
@@ -53,18 +54,6 @@ constexpr int socket_error = SOCKET_ERROR;
 inline int close_socket(socket_t sock) {
     return ::closesocket(sock);
 }
-
-inline int close_fd(int fd) {
-    return _close(fd);
-}
-
-inline ssize_t write_fd(int fd, const char* data, size_t len) {
-    return _write(fd, data, static_cast<unsigned int>(len));
-}
-
-inline int create_pipe(int fds[2]) {
-    return _pipe(fds, 4096, _O_BINARY);
-}
 #else
 using socket_t = int;
 constexpr socket_t invalid_socket = -1;
@@ -72,18 +61,6 @@ constexpr int socket_error = -1;
 
 inline int close_socket(socket_t sock) {
     return ::close(sock);
-}
-
-inline int close_fd(int fd) {
-    return ::close(fd);
-}
-
-inline ssize_t write_fd(int fd, const char* data, size_t len) {
-    return ::write(fd, data, len);
-}
-
-inline int create_pipe(int fds[2]) {
-    return ::pipe(fds);
 }
 #endif
 

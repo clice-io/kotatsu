@@ -14,9 +14,14 @@
 #include "eventide/serde/json/deserializer.h"
 #include "eventide/language/protocol.h"
 
+#include "../ipc/test_transport.h"
+
 namespace eventide::language {
 
 namespace ipc = eventide::ipc;
+
+using ipc::FakeTransport;
+using ipc::ScriptedTransport;
 
 struct AddParams {
     std::int64_t a = 0;
@@ -58,90 +63,6 @@ struct RPCNotification {
     std::string method;
     NoteParams params;
 };
-
-class FakeTransport final : public ipc::Transport {
-public:
-    explicit FakeTransport(std::vector<std::string> incoming) :
-        incoming_messages(std::move(incoming)) {}
-
-    task<std::optional<std::string>> read_message() override {
-        if(read_index >= incoming_messages.size()) {
-            co_return std::nullopt;
-        }
-        co_return incoming_messages[read_index++];
-    }
-
-    task<void, ipc::RPCError> write_message(std::string_view payload) override {
-        outgoing_messages.emplace_back(payload);
-        co_return outcome_value();
-    }
-
-    const std::vector<std::string>& outgoing() const {
-        return outgoing_messages;
-    }
-
-private:
-    std::vector<std::string> incoming_messages;
-    std::vector<std::string> outgoing_messages;
-    std::size_t read_index = 0;
-};
-
-class ScriptedTransport final : public ipc::Transport {
-public:
-    using WriteHook = std::function<void(std::string_view, ScriptedTransport&)>;
-
-    ScriptedTransport(std::vector<std::string> incoming, WriteHook hook) :
-        incoming_messages(std::move(incoming)), write_hook(std::move(hook)) {
-        if(!incoming_messages.empty()) {
-            readable.set();
-        }
-    }
-
-    task<std::optional<std::string>> read_message() override {
-        while(read_index >= incoming_messages.size()) {
-            if(closed) {
-                co_return std::nullopt;
-            }
-
-            co_await readable.wait();
-            readable.reset();
-        }
-
-        co_return incoming_messages[read_index++];
-    }
-
-    task<void, ipc::RPCError> write_message(std::string_view payload) override {
-        outgoing_messages.emplace_back(payload);
-        if(write_hook) {
-            write_hook(payload, *this);
-        }
-        co_return outcome_value();
-    }
-
-    void push_incoming(std::string payload) {
-        incoming_messages.push_back(std::move(payload));
-        readable.set();
-    }
-
-    void close() {
-        closed = true;
-        readable.set();
-    }
-
-    const std::vector<std::string>& outgoing() const {
-        return outgoing_messages;
-    }
-
-private:
-    std::vector<std::string> incoming_messages;
-    std::vector<std::string> outgoing_messages;
-    std::size_t read_index = 0;
-    WriteHook write_hook;
-    event readable;
-    bool closed = false;
-};
-
-}  // namespace eventide::language
 
 namespace eventide::ipc::protocol {
 
