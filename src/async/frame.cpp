@@ -33,6 +33,36 @@ static void transfer_outcome(async_node* from, async_node* to) {
     }
 }
 
+std::coroutine_handle<> aggregate_op::deliver_deferred() noexcept {
+    if(deferred == Deferred::None || !awaiter) {
+        return std::noop_coroutine();
+    }
+
+    phase = Phase::Settled;
+
+    assert(awaiter->is_standard_task() && "aggregate awaiter must be a task");
+    awaiter->clear_awaitee();
+
+    switch(deferred) {
+        case Deferred::Resume:
+            return static_cast<standard_task*>(awaiter)->handle();
+
+        case Deferred::Cancel:
+            awaiter->state = Cancelled;
+            transfer_outcome(this, awaiter);
+            return awaiter->final_transition();
+
+        case Deferred::Error:
+            awaiter->state = Failed;
+            transfer_outcome(this, awaiter);
+            return awaiter->final_transition();
+
+        case Deferred::None: break;
+    }
+
+    std::abort();
+}
+
 void async_node::clear_awaitee() noexcept {
     if(kind == NodeKind::Task) {
         static_cast<standard_task*>(this)->set_awaitee(nullptr);
@@ -86,11 +116,23 @@ void async_node::cancel() {
         case NodeKind::WhenAny:
         case NodeKind::Scope: {
             auto* self = static_cast<aggregate_op*>(this);
-            self->done = true;
+            const bool was_arming = self->phase == aggregate_op::Phase::Arming;
+            self->phase = aggregate_op::Phase::Cancelling;
             for(auto* child: self->awaitees) {
                 if(child) {
                     child->cancel();
                 }
+            }
+            self->defer_cancel();
+            self->phase = was_arming ? aggregate_op::Phase::Arming : aggregate_op::Phase::Settled;
+
+            if(was_arming) {
+                break;
+            }
+
+            auto next = self->deliver_deferred();
+            if(next) {
+                next.resume();
             }
             break;
         }
@@ -260,7 +302,7 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
         case NodeKind::WhenAny:
         case NodeKind::Scope: {
             auto self = static_cast<aggregate_op*>(this);
-            if(self->done) {
+            if(self->is_settled()) {
                 return std::noop_coroutine();
             }
 
@@ -270,15 +312,20 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
                                 (!child->has_outcome() || child->get_outcome()->should_propagate());
 
             if(cancelled || failed) {
-                self->done = true;
                 if(cancelled) {
-                    self->pending_cancel = true;
+                    self->defer_cancel();
                 }
                 if(failed) {
-                    self->pending_error = true;
+                    self->defer_error();
                 }
 
                 transfer_outcome(child, self);
+
+                if(self->is_deferring()) {
+                    return std::noop_coroutine();
+                }
+
+                self->phase = aggregate_op::Phase::Settled;
 
                 for(auto* other: self->awaitees) {
                     if(other && other != child) {
@@ -286,19 +333,7 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
                     }
                 }
 
-                if(self->arming) {
-                    self->pending_resume = true;
-                    return std::noop_coroutine();
-                }
-
-                if(self->awaiter) {
-                    self->awaiter->clear_awaitee();
-                    self->awaiter->state = failed ? Failed : Cancelled;
-                    transfer_outcome(self, self->awaiter);
-                    return self->awaiter->final_transition();
-                }
-
-                return std::noop_coroutine();
+                return self->deliver_deferred();
             }
 
             if(self->kind == NodeKind::WhenAny) {
@@ -311,40 +346,32 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
                     }
                 }
 
-                self->done = true;
+                const bool deferring = self->is_deferring();
+                self->phase = aggregate_op::Phase::Settled;
                 for(auto* other: self->awaitees) {
                     if(other && other != child) {
                         other->cancel();
                     }
                 }
 
-                if(self->arming) {
-                    self->pending_resume = true;
+                self->defer_resume();
+                if(deferring) {
                     return std::noop_coroutine();
                 }
 
-                if(self->awaiter) {
-                    assert(self->awaiter->is_standard_task() && "aggregate awaiter must be a task");
-                    self->awaiter->clear_awaitee();
-                    return static_cast<standard_task*>(self->awaiter)->handle();
-                }
-
-                return std::noop_coroutine();
+                return self->deliver_deferred();
             }
 
             self->completed += 1;
             if(self->completed >= self->total) {
-                self->done = true;
-                if(self->arming) {
-                    self->pending_resume = true;
+                const bool deferring = self->is_deferring();
+                self->phase = aggregate_op::Phase::Settled;
+                self->defer_resume();
+                if(deferring) {
                     return std::noop_coroutine();
                 }
 
-                if(self->awaiter) {
-                    assert(self->awaiter->is_standard_task() && "aggregate awaiter must be a task");
-                    self->awaiter->clear_awaitee();
-                    return static_cast<standard_task*>(self->awaiter)->handle();
-                }
+                return self->deliver_deferred();
             }
 
             return std::noop_coroutine();

@@ -218,12 +218,13 @@ protected:
 ///
 /// Uses a two-phase protocol in await_suspend:
 ///   1. Arming: link all children, then resume them. During this phase,
-///      children that complete synchronously set pending_resume/pending_cancel
-///      instead of directly resuming the awaiter (to avoid use-after-resume).
-///   2. Post-arm: check pending flags and resume the awaiter if needed.
+///      synchronous child completions are deferred instead of directly
+///      resuming the awaiter (to avoid use-after-resume).
+///   2. Post-arm: deliver any deferred completion once it is safe.
 ///
-/// The `done` flag prevents double-processing: once set, further callbacks
-/// from children are ignored (noop_coroutine).
+/// Aggregate state is tracked explicitly:
+///   - `phase` controls whether child callbacks must be deferred.
+///   - `deferred` latches the completion to deliver once deferral ends.
 class aggregate_op : public async_node {
 protected:
     friend class async_node;
@@ -231,6 +232,39 @@ protected:
     explicit aggregate_op(NodeKind k) : async_node(k) {}
 
 protected:
+    enum class Phase : std::uint8_t {
+        /// Normal operating state after arming completes.
+        /// Child callbacks may settle the aggregate immediately.
+        Open,
+
+        /// await_suspend is still linking/resuming children.
+        /// Any child completion observed here must be deferred until
+        /// await_suspend returns to avoid resuming the awaiter re-entrantly.
+        Arming,
+
+        /// The aggregate itself is propagating cancellation to children.
+        /// Child callbacks can re-enter while this walk is in progress, so
+        /// completion is deferred until the cancel cascade finishes.
+        Cancelling,
+
+        /// Final outcome has been chosen and further child callbacks are ignored.
+        Settled,
+    };
+
+    enum class Deferred : std::uint8_t {
+        /// No deferred completion is waiting to be delivered.
+        None,
+
+        /// Resume the awaiter normally.
+        Resume,
+
+        /// Resume the awaiter by propagating cancellation upward.
+        Cancel,
+
+        /// Resume the awaiter by propagating failure upward.
+        Error,
+    };
+
     /// Sentinel value for when_any: no winner yet.
     constexpr static std::size_t npos = (std::numeric_limits<std::size_t>::max)();
 
@@ -249,31 +283,47 @@ protected:
     /// Index of the first child to finish (when_any only).
     std::size_t winner = npos;
 
-    /// Set once this aggregate has produced its final result;
-    /// further child completions are ignored (return noop_coroutine).
-    bool done = false;
+    /// Runtime phase for this aggregate while it is awaiting children.
+    Phase phase = Phase::Open;
 
-    /// True while await_suspend is linking and resuming children.
-    /// During arming, synchronous completions defer to pending flags
-    /// instead of directly resuming the awaiter.
-    bool arming = false;
+    /// Completion latched while callbacks are being deferred.
+    Deferred deferred = Deferred::None;
 
-    /// A child completed (or won the race) while arming was in progress.
-    bool pending_resume = false;
+    bool is_settled() const noexcept {
+        return phase == Phase::Settled;
+    }
 
-    /// A child was cancelled while arming was in progress.
-    bool pending_cancel = false;
+    bool is_deferring() const noexcept {
+        return phase == Phase::Arming || phase == Phase::Cancelling;
+    }
 
-    /// A child failed (error propagation) while arming was in progress.
-    bool pending_error = false;
+    /// Latch a normal completion, but preserve any stronger deferred signal
+    /// (cancel/error) that may already have won.
+    void defer_resume() noexcept {
+        if(deferred == Deferred::None) {
+            deferred = Deferred::Resume;
+        }
+    }
+
+    /// Cancellation outranks a plain resume and is itself outranked only by error.
+    void defer_cancel() noexcept {
+        deferred = Deferred::Cancel;
+    }
+
+    /// Error outranks all other deferred outcomes.
+    void defer_error() noexcept {
+        deferred = Deferred::Error;
+    }
+
+    /// Deliver the latched completion to the aggregate awaiter once it is safe
+    /// to resume/propagate out of the current callback stack.
+    std::coroutine_handle<> deliver_deferred() noexcept;
 
     /// Common await_suspend logic for all aggregate operations.
     /// The caller must populate `awaitees` and set `total` before calling.
-    /// `should_break` is called after each child resume to decide early exit.
-    template <typename Promise, typename BreakPred>
+    template <typename Promise>
     std::coroutine_handle<> arm_and_resume(std::coroutine_handle<Promise> awaiter_handle,
-                                           std::source_location location,
-                                           BreakPred should_break) noexcept {
+                                           std::source_location location) noexcept {
         this->location = location;
 
         auto* awaiter_node = static_cast<async_node*>(&awaiter_handle.promise());
@@ -284,11 +334,8 @@ protected:
         awaiter = awaiter_node;
         completed = 0;
         winner = npos;
-        done = false;
-        pending_resume = false;
-        pending_cancel = false;
-        pending_error = false;
-        arming = true;
+        phase = Phase::Arming;
+        deferred = Deferred::None;
 
         for(auto* child: awaitees) {
             if(child) {
@@ -299,28 +346,17 @@ protected:
         for(auto* child: awaitees) {
             if(child) {
                 child->resume();
-                if(should_break()) {
+                if(is_settled() || deferred != Deferred::None) {
                     break;
                 }
             }
         }
 
-        arming = false;
-        if(pending_resume && awaiter) {
-            assert(awaiter->is_standard_task() && "aggregate awaiter must be a task");
-            awaiter->clear_awaitee();
-            if(pending_cancel) {
-                awaiter->state = Cancelled;
-                return awaiter->final_transition();
-            }
-            if(pending_error) {
-                awaiter->state = Failed;
-                return awaiter->final_transition();
-            }
-            return static_cast<standard_task*>(awaiter)->handle();
+        if(phase == Phase::Arming) {
+            phase = Phase::Open;
         }
 
-        return std::noop_coroutine();
+        return deferred != Deferred::None ? deliver_deferred() : std::noop_coroutine();
     }
 };
 

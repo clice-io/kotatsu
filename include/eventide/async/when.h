@@ -143,9 +143,7 @@ public:
         awaitees.clear();
         awaitees.reserve(total);
         detail::add_awaitees_all(awaitees, tasks);
-        return arm_and_resume(awaiter_handle, location, [this] {
-            return pending_cancel || pending_error;
-        });
+        return arm_and_resume(awaiter_handle, location);
     }
 
     auto await_resume() {
@@ -186,9 +184,7 @@ public:
         awaitees.clear();
         awaitees.reserve(total);
         detail::add_awaitees_range(awaitees, tasks);
-        return arm_and_resume(awaiter_handle, location, [this] {
-            return pending_cancel || pending_error;
-        });
+        return arm_and_resume(awaiter_handle, location);
     }
 
     auto await_resume() {
@@ -231,9 +227,7 @@ public:
         awaitees.clear();
         awaitees.reserve(total);
         detail::add_awaitees_all(awaitees, tasks);
-        return arm_and_resume(awaiter_handle, location, [this] {
-            return done || pending_resume || pending_cancel;
-        });
+        return arm_and_resume(awaiter_handle, location);
     }
 
     auto await_resume() -> std::variant<detail::task_result_t<Tasks>...> {
@@ -292,9 +286,7 @@ public:
         awaitees.clear();
         awaitees.reserve(total);
         detail::add_awaitees_range(awaitees, tasks);
-        return arm_and_resume(awaiter_handle, location, [this] {
-            return done || pending_resume || pending_cancel;
-        });
+        return arm_and_resume(awaiter_handle, location);
     }
 
     auto await_resume() -> std::pair<std::size_t, detail::task_result_t<Task>> {
@@ -370,9 +362,7 @@ public:
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<Promise> awaiter_handle,
                       std::source_location location = std::source_location::current()) noexcept {
-        return arm_and_resume(awaiter_handle, location, [this] {
-            return pending_cancel || pending_error;
-        });
+        return arm_and_resume(awaiter_handle, location);
     }
 
     void await_resume() noexcept {}
