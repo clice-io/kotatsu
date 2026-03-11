@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdlib>
 #include <memory>
 #include <type_traits>
 #include <utility>
@@ -52,6 +53,7 @@ public:
         }
         if(state->is_cancelled()) {
             co_await cancel();
+            std::abort();
         }
         co_await state->cancel_event.wait();
     }
@@ -125,6 +127,7 @@ template <typename T, typename E, typename C, std::same_as<cancellation_token>..
 task<T, E, cancellation> with_token(task<T, E, C> inner_task, Tokens... tokens) {
     if((tokens.cancelled() || ...)) {
         co_await cancel();
+        std::abort();
     }
 
     // when_any races the wrapped task against all token waits.
@@ -137,6 +140,7 @@ task<T, E, cancellation> with_token(task<T, E, C> inner_task, Tokens... tokens) 
 
     if(task_result.is_cancelled()) {
         co_await cancel();
+        std::abort();
     }
 
     if constexpr(!std::is_void_v<E>) {

@@ -101,9 +101,7 @@ struct transition_await {
         return promise.final_transition();
     }
 
-    [[noreturn]] void await_resume() const noexcept {
-        std::abort();
-    }
+    void await_resume() const noexcept {}
 };
 
 inline auto cancel() {
@@ -311,8 +309,8 @@ public:
             return std::move(*this);
         } else {
             if constexpr(std::is_void_v<C>) {
-                h.promise().policy = static_cast<async_node::Policy>(
-                    h.promise().policy | async_node::InterceptCancel);
+                h.promise().policy = static_cast<async_node::Policy>(h.promise().policy |
+                                                                     async_node::InterceptCancel);
             }
             auto handle = h;
             h = nullptr;
