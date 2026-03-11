@@ -170,7 +170,6 @@ void example_cancellation() {
     {
         auto self_cancel = []() -> task<int> {
             co_await cancel();
-            co_return 42;  // never reached
         };
 
         auto handler = [&]() -> task<> {

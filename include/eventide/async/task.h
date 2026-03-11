@@ -101,7 +101,9 @@ struct transition_await {
         return promise.final_transition();
     }
 
-    void await_resume() const noexcept {}
+    [[noreturn]] void await_resume() const noexcept {
+        std::abort();
+    }
 };
 
 inline auto cancel() {
@@ -299,54 +301,63 @@ public:
         return &h.promise();
     }
 
-    /// Adds cancellation interception: task<T, E, void> → task<T, E, cancellation>.
-    /// Uses from_address: safe because adding C never changes the promise layout.
-    /// Idempotent: if the task already has a cancel channel, returns itself unchanged.
+    /// Adds cancellation interception via from_address (safe because C never
+    /// changes the promise layout). Defaults to the erased `cancellation` type.
+    /// Idempotent when TargetC matches the existing cancel channel.
+    template <typename TargetC = cancellation>
+        requires (!std::is_void_v<TargetC>)
     auto catch_cancel() && {
-        if constexpr(std::is_void_v<C>) {
-            h.promise().policy =
-                static_cast<async_node::Policy>(h.promise().policy | async_node::InterceptCancel);
+        if constexpr(std::same_as<C, TargetC>) {
+            return std::move(*this);
+        } else {
+            if constexpr(std::is_void_v<C>) {
+                h.promise().policy = static_cast<async_node::Policy>(
+                    h.promise().policy | async_node::InterceptCancel);
+            }
             auto handle = h;
             h = nullptr;
-            using target = task<T, E, cancellation>;
+            using target = task<T, E, TargetC>;
             using target_handle = typename target::coroutine_handle;
             return target(target_handle::from_address(handle.address()));
-        } else {
-            return std::move(*this);
         }
     }
 
-    /// Adds error interception: task<T, void, void> → task<T, error, void>.
-    /// Uses a wrapper coroutine (different promise layout).
-    /// Idempotent: if the task already has an error channel, returns itself unchanged.
+    /// Adds error interception via a wrapper coroutine (error type changes
+    /// the promise layout). Defaults to the erased `error` type.
+    /// Idempotent when TargetE matches the existing error channel.
+    template <typename TargetE = error>
+        requires (!std::is_void_v<TargetE>)
     auto catch_error() && {
-        if constexpr(!std::is_void_v<E>) {
+        if constexpr(std::same_as<E, TargetE>) {
             return std::move(*this);
         } else {
+            static_assert(std::is_void_v<E>, "cannot convert between error types");
             static_assert(std::is_void_v<C>, "use catch_all() to add both channels");
             h.promise().policy =
                 static_cast<async_node::Policy>(h.promise().policy | async_node::InterceptError);
-            return catch_error_wrapper(std::move(*this));
+            return catch_error_wrapper<TargetE>(std::move(*this));
         }
     }
 
-    /// Adds both interceptions: task<T, void, void> → task<T, error, cancellation>.
-    /// Uses a wrapper coroutine (different promise layout).
-    /// Idempotent: if both channels are already present, returns itself unchanged.
+    /// Adds both interceptions. Defaults to the erased types.
+    /// Idempotent when both channels already match the targets.
+    template <typename TargetE = error, typename TargetC = cancellation>
+        requires (!std::is_void_v<TargetE>) && (!std::is_void_v<TargetC>)
     auto catch_all() && {
-        if constexpr(!std::is_void_v<E> && !std::is_void_v<C>) {
+        if constexpr(std::same_as<E, TargetE> && std::same_as<C, TargetC>) {
             return std::move(*this);
         } else {
             static_assert(std::is_void_v<E> && std::is_void_v<C>,
                           "already has error or cancel channel");
             h.promise().policy = static_cast<async_node::Policy>(
                 h.promise().policy | async_node::InterceptError | async_node::InterceptCancel);
-            return catch_all_wrapper(std::move(*this));
+            return catch_all_wrapper<TargetE, TargetC>(std::move(*this));
         }
     }
 
 private:
-    static task<T, error, void> catch_error_wrapper(task<T, void, void> inner) {
+    template <typename TargetE>
+    static task<T, TargetE, void> catch_error_wrapper(task<T, void, void> inner) {
         if constexpr(std::is_void_v<T>) {
             co_await std::move(inner);
             co_return outcome_value();
@@ -355,7 +366,8 @@ private:
         }
     }
 
-    static task<T, error, cancellation> catch_all_wrapper(task<T, void, void> inner) {
+    template <typename TargetE, typename TargetC>
+    static task<T, TargetE, TargetC> catch_all_wrapper(task<T, void, void> inner) {
         if constexpr(std::is_void_v<T>) {
             co_await std::move(inner);
             co_return outcome_value();

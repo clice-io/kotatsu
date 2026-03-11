@@ -214,7 +214,6 @@ TEST_CASE(any_child_cancel) {
         cancel_started += 1;
         co_await sleep(std::chrono::milliseconds{1}, loop);
         co_await cancel();
-        co_return 1;
     };
 
     auto slow = [&]() -> task<int> {
@@ -247,7 +246,6 @@ TEST_CASE(all_cancel_others) {
         cancel_started += 1;
         co_await sleep(std::chrono::milliseconds{1}, loop);
         co_await cancel();
-        co_return 1;
     };
 
     auto slow = [&]() -> task<int> {
@@ -308,7 +306,6 @@ TEST_CASE(all_detaches_cancelled_sibling_until_quiescent) {
 
     auto canceler = []() -> task<int> {
         co_await cancel();
-        co_return 1;
     };
 
     auto combined = [&]() -> task<> {
@@ -416,7 +413,6 @@ TEST_CASE(when_all_mixed_cancel_intercept) {
     auto self_cancelling = [&]() -> task<int> {
         auto inner = []() -> task<int> {
             co_await cancel();
-            co_return 0;
         };
         auto result = co_await inner().catch_cancel();
         co_return result.has_value() ? *result : -1;
@@ -559,7 +555,6 @@ TEST_CASE(when_any_all_cancel) {
     auto canceler = [&]() -> task<int> {
         co_await sleep(std::chrono::milliseconds{1}, loop);
         co_await cancel();
-        co_return 0;
     };
 
     auto combined = [&]() -> task<> {
