@@ -685,6 +685,32 @@ TEST_CASE(multi_token_pass_through) {
     EXPECT_EQ(*result, 99);
 }
 
+TEST_CASE(nested_with_token_same_token_cancel) {
+    event_loop loop;
+    cancellation_source source;
+    auto token = source.token();
+    event gate;
+
+    auto inner_work = [&]() -> task<> {
+        co_await gate.wait();
+    };
+
+    auto outer_work = [&](cancellation_token t) -> task<> {
+        co_await with_token(inner_work(), t);
+    };
+
+    auto guarded = with_token(outer_work(token), token);
+
+    auto canceler = [&]() -> task<> {
+        source.cancel();
+        co_return;
+    };
+
+    loop.schedule(std::move(guarded));
+    loop.schedule(canceler());
+    EXPECT_EQ(loop.run(), 0);
+}
+
 };  // TEST_SUITE(cancellation)
 
 }  // namespace

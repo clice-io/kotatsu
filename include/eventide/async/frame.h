@@ -115,15 +115,15 @@ public:
     // --- erased_outcome support (on-demand allocation) ---
 
     bool has_outcome() const noexcept {
-        return outcome_ != nullptr;
+        return erased != nullptr;
     }
 
     erased_outcome* get_outcome() noexcept {
-        return outcome_;
+        return erased;
     }
 
     const erased_outcome* get_outcome() const noexcept {
-        return outcome_;
+        return erased;
     }
 
     erased_outcome& ensure_outcome();
@@ -146,7 +146,7 @@ protected:
 
     ~async_node();
 
-    erased_outcome* outcome_ = nullptr;
+    erased_outcome* erased = nullptr;
 };
 
 class standard_task : public async_node {

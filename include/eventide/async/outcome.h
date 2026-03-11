@@ -164,7 +164,7 @@ constexpr bool has_error_channel_v<outcome<T, E, C>> = !std::is_void_v<E>;
 template <typename T, typename E, typename C>
 class outcome {
     using storage_type = detail::outcome_storage_t<T, E, C>;
-    storage_type storage_;
+    storage_type storage;
 
 public:
     // --- Value construction ---
@@ -172,46 +172,46 @@ public:
     template <typename U = T>
         requires (!std::is_void_v<T>) && std::constructible_from<T, U&&> &&
                  (!is_outcome_v<std::decay_t<U>> || std::same_as<std::decay_t<U>, T>)
-    outcome(U&& value) : storage_(detail::ok_box<T>{T(std::forward<U>(value))}) {}
+    outcome(U&& value) : storage(detail::ok_box<T>{T(std::forward<U>(value))}) {}
 
     outcome()
         requires std::is_void_v<T>
-        : storage_(detail::ok_box<void>{}) {}
+        : storage(detail::ok_box<void>{}) {}
 
     // --- Error construction ---
 
     template <typename U>
         requires (!std::is_void_v<E>) && std::constructible_from<E, U>
-    outcome(outcome_error_t<U> e) : storage_(detail::err_box<E>{E(std::move(e.value))}) {}
+    outcome(outcome_error_t<U> e) : storage(detail::err_box<E>{E(std::move(e.value))}) {}
 
     // --- Cancel construction ---
 
     template <typename U>
         requires (!std::is_void_v<C>) && std::constructible_from<C, U>
-    outcome(outcome_cancel_t<U> c) : storage_(detail::cancel_box<C>{C(std::move(c.value))}) {}
+    outcome(outcome_cancel_t<U> c) : storage(detail::cancel_box<C>{C(std::move(c.value))}) {}
 
     // --- Void-value construction from tag ---
 
     outcome(outcome_ok_tag)
         requires std::is_void_v<T>
-        : storage_(detail::ok_box<void>{}) {}
+        : storage(detail::ok_box<void>{}) {}
 
     // --- State queries ---
 
     bool has_value() const noexcept {
-        return std::holds_alternative<detail::ok_box<T>>(storage_);
+        return std::holds_alternative<detail::ok_box<T>>(storage);
     }
 
     bool has_error() const noexcept
         requires (!std::is_void_v<E>)
     {
-        return std::holds_alternative<detail::err_box<E>>(storage_);
+        return std::holds_alternative<detail::err_box<E>>(storage);
     }
 
     bool is_cancelled() const noexcept
         requires (!std::is_void_v<C>)
     {
-        return std::holds_alternative<detail::cancel_box<C>>(storage_);
+        return std::holds_alternative<detail::cancel_box<C>>(storage);
     }
 
     explicit operator bool() const noexcept {
@@ -224,20 +224,20 @@ public:
         requires (!std::is_void_v<T>)
     {
         assert(has_value());
-        return std::get<detail::ok_box<T>>(storage_).value;
+        return std::get<detail::ok_box<T>>(storage).value;
     }
 
     const auto& value() const&
         requires (!std::is_void_v<T>)
     {
         assert(has_value());
-        return std::get<detail::ok_box<T>>(storage_).value;
+        return std::get<detail::ok_box<T>>(storage).value;
     }
 
     auto&& value() &&
         requires(!std::is_void_v<T>) {
             assert(has_value());
-            return std::move(std::get<detail::ok_box<T>>(storage_).value);
+            return std::move(std::get<detail::ok_box<T>>(storage).value);
         }
 
         auto& operator*() &
@@ -272,20 +272,20 @@ public:
         requires (!std::is_void_v<E>)
     {
         assert(has_error());
-        return std::get<detail::err_box<E>>(storage_).value;
+        return std::get<detail::err_box<E>>(storage).value;
     }
 
     const auto& error() const&
         requires (!std::is_void_v<E>)
     {
         assert(has_error());
-        return std::get<detail::err_box<E>>(storage_).value;
+        return std::get<detail::err_box<E>>(storage).value;
     }
 
     auto&& error() &&
         requires(!std::is_void_v<E>) {
             assert(has_error());
-            return std::move(std::get<detail::err_box<E>>(storage_).value);
+            return std::move(std::get<detail::err_box<E>>(storage).value);
         }
 
         // --- Cancel access ---
@@ -294,19 +294,19 @@ public:
             requires (!std::is_void_v<C>)
     {
         assert(is_cancelled());
-        return std::get<detail::cancel_box<C>>(storage_).value;
+        return std::get<detail::cancel_box<C>>(storage).value;
     }
 
     const auto& cancellation() const&
         requires (!std::is_void_v<C>)
     {
         assert(is_cancelled());
-        return std::get<detail::cancel_box<C>>(storage_).value;
+        return std::get<detail::cancel_box<C>>(storage).value;
     }
 
     auto&& cancellation() && requires(!std::is_void_v<C>) {
         assert(is_cancelled());
-        return std::move(std::get<detail::cancel_box<C>>(storage_).value);
+        return std::move(std::get<detail::cancel_box<C>>(storage).value);
     }
 };
 
@@ -316,15 +316,19 @@ public:
 
 template <typename T>
 class outcome<T, void, void> {
-    detail::ok_box<T> storage_;
+    detail::ok_box<T> storage;
 
 public:
     template <typename U = T>
         requires (!std::is_void_v<T>) && std::constructible_from<T, U&&> &&
-                 (!is_outcome_v<std::decay_t<U>>)
-    outcome(U&& value) : storage_{T(std::forward<U>(value))} {}
+                 (!is_outcome_v<std::decay_t<U>> || std::same_as<std::decay_t<U>, T>)
+    outcome(U&& value) : storage{T(std::forward<U>(value))} {}
 
     outcome()
+        requires std::is_void_v<T>
+    {}
+
+    outcome(outcome_ok_tag)
         requires std::is_void_v<T>
     {}
 
@@ -336,41 +340,41 @@ public:
         return true;
     }
 
-    T& value() &
+    auto& value() &
         requires (!std::is_void_v<T>)
     {
-        return storage_.value;
+        return storage.value;
     }
 
-    const T& value() const&
+    const auto& value() const&
         requires (!std::is_void_v<T>)
     {
-        return storage_.value;
+        return storage.value;
     }
 
-    T&& value() && requires(!std::is_void_v<T>) { return std::move(storage_.value); }
+    auto&& value() && requires(!std::is_void_v<T>) { return std::move(storage.value); }
 
-        T& operator*() &
+        auto& operator*() &
             requires (!std::is_void_v<T>)
     {
         return value();
     }
 
-    const T& operator*() const&
+    const auto& operator*() const&
         requires (!std::is_void_v<T>)
     {
         return value();
     }
 
-    T&& operator*() && requires(!std::is_void_v<T>) { return std::move(*this).value(); }
+    auto&& operator*() && requires(!std::is_void_v<T>) { return std::move(*this).value(); }
 
-                       T* operator-> ()
-                           requires (!std::is_void_v<T>)
+                          auto* operator-> ()
+                              requires (!std::is_void_v<T>)
     {
         return &value();
     }
 
-    const T* operator->() const
+    const auto* operator->() const
         requires (!std::is_void_v<T>)
     {
         return &value();
@@ -464,28 +468,28 @@ public:
         reset();
     }
 
-    erased_outcome(erased_outcome&& other) noexcept : vptr_(other.vptr_) {
-        if(vptr_) {
+    erased_outcome(erased_outcome&& other) noexcept : vptr(other.vptr) {
+        if(vptr) {
             if(other.is_inline()) {
-                vptr_->move_construct(other.buffer_, buffer_);
+                vptr->move_construct(other.buffer, buffer);
             } else {
-                *reinterpret_cast<void**>(buffer_) = *reinterpret_cast<void**>(other.buffer_);
+                *reinterpret_cast<void**>(buffer) = *reinterpret_cast<void**>(other.buffer);
             }
-            other.vptr_ = nullptr;
+            other.vptr = nullptr;
         }
     }
 
     erased_outcome& operator=(erased_outcome&& other) noexcept {
         if(this != &other) {
             reset();
-            vptr_ = other.vptr_;
-            if(vptr_) {
+            vptr = other.vptr;
+            if(vptr) {
                 if(other.is_inline()) {
-                    vptr_->move_construct(other.buffer_, buffer_);
+                    vptr->move_construct(other.buffer, buffer);
                 } else {
-                    *reinterpret_cast<void**>(buffer_) = *reinterpret_cast<void**>(other.buffer_);
+                    *reinterpret_cast<void**>(buffer) = *reinterpret_cast<void**>(other.buffer);
                 }
-                other.vptr_ = nullptr;
+                other.vptr = nullptr;
             }
         }
         return *this;
@@ -509,31 +513,31 @@ public:
     }
 
     bool empty() const noexcept {
-        return vptr_ == nullptr;
+        return vptr == nullptr;
     }
 
     bool has_error() const noexcept {
-        return vptr_ && vptr_->type == outcome_vtable::kind::error;
+        return vptr && vptr->type == outcome_vtable::kind::error;
     }
 
     bool is_cancelled() const noexcept {
-        return vptr_ && vptr_->type == outcome_vtable::kind::cancel;
+        return vptr && vptr->type == outcome_vtable::kind::cancel;
     }
 
     bool should_propagate() const noexcept {
-        return vptr_ && vptr_->should_propagate(data());
+        return vptr && vptr->should_propagate(data());
     }
 
     std::string_view reason() const noexcept {
-        return vptr_ && vptr_->reason ? vptr_->reason(data()) : "";
+        return vptr && vptr->reason ? vptr->reason(data()) : "";
     }
 
     std::string_view message() const noexcept {
-        return vptr_ && vptr_->message ? vptr_->message(data()) : "";
+        return vptr && vptr->message ? vptr->message(data()) : "";
     }
 
     bool is_retriable() const noexcept {
-        return vptr_ && vptr_->is_retriable && vptr_->is_retriable(data());
+        return vptr && vptr->is_retriable && vptr->is_retriable(data());
     }
 
     template <typename T>
@@ -547,49 +551,49 @@ public:
     }
 
     void reset() noexcept {
-        if(!vptr_) {
+        if(!vptr) {
             return;
         }
 
         if(is_inline()) {
-            vptr_->destroy(buffer_);
+            vptr->destroy(buffer);
         } else {
-            auto* p = *reinterpret_cast<void**>(buffer_);
-            vptr_->destroy(p);
-            ::operator delete(p, std::align_val_t{vptr_->align});
+            auto* p = *reinterpret_cast<void**>(buffer);
+            vptr->destroy(p);
+            ::operator delete(p, std::align_val_t{vptr->align});
         }
-        vptr_ = nullptr;
+        vptr = nullptr;
     }
 
 private:
     constexpr static std::size_t sbo_size = sizeof(void*) * 3;
 
-    const outcome_vtable* vptr_ = nullptr;
-    alignas(std::max_align_t) std::byte buffer_[sbo_size] = {};
+    const outcome_vtable* vptr = nullptr;
+    alignas(std::max_align_t) std::byte buffer[sbo_size] = {};
 
     bool is_inline() const noexcept {
-        return vptr_ && vptr_->size <= sbo_size && vptr_->align <= alignof(std::max_align_t);
+        return vptr && vptr->size <= sbo_size && vptr->align <= alignof(std::max_align_t);
     }
 
     void* data() noexcept {
-        return is_inline() ? static_cast<void*>(buffer_) : *reinterpret_cast<void**>(buffer_);
+        return is_inline() ? static_cast<void*>(buffer) : *reinterpret_cast<void**>(buffer);
     }
 
     const void* data() const noexcept {
-        return is_inline() ? static_cast<const void*>(buffer_)
-                           : *reinterpret_cast<const void* const*>(buffer_);
+        return is_inline() ? static_cast<const void*>(buffer)
+                           : *reinterpret_cast<const void* const*>(buffer);
     }
 
     template <typename T>
     void emplace(const outcome_vtable* v, T&& value) {
         using D = std::decay_t<T>;
-        vptr_ = v;
+        vptr = v;
         if(v->size <= sbo_size && v->align <= alignof(std::max_align_t)) {
-            new (buffer_) D(std::forward<T>(value));
+            new (buffer) D(std::forward<T>(value));
         } else {
             auto* p = ::operator new(v->size, std::align_val_t{v->align});
             new (p) D(std::forward<T>(value));
-            *reinterpret_cast<void**>(buffer_) = p;
+            *reinterpret_cast<void**>(buffer) = p;
         }
     }
 };

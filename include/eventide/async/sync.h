@@ -266,7 +266,9 @@ public:
 
     /// Interrupts the current wait queue without changing the signaled state.
     void interrupt() noexcept {
-        drain_waiters([this](waiter_link* waiter) { cancel_waiter(waiter); });
+        while(auto* waiter = pop_waiter()) {
+            cancel_waiter(waiter);
+        }
     }
 
     bool is_set() const noexcept {

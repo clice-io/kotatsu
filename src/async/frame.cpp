@@ -15,15 +15,15 @@ async_node::~async_node() {
 }
 
 erased_outcome& async_node::ensure_outcome() {
-    if(!outcome_) {
-        outcome_ = new erased_outcome();
+    if(!erased) {
+        erased = new erased_outcome();
     }
-    return *outcome_;
+    return *erased;
 }
 
 void async_node::clear_outcome() noexcept {
-    delete outcome_;
-    outcome_ = nullptr;
+    delete erased;
+    erased = nullptr;
 }
 
 /// Moves the erased_outcome ownership from one node to another.

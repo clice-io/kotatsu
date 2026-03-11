@@ -15,22 +15,22 @@ namespace detail {
 
 class cancellation_state {
 public:
-    bool cancelled() const noexcept {
-        return cancelled_;
+    bool is_cancelled() const noexcept {
+        return cancelled;
     }
 
     void cancel() noexcept {
-        if(cancelled_) {
+        if(cancelled) {
             return;
         }
-        cancelled_ = true;
+        cancelled = true;
         cancel_event.interrupt();
     }
 
     event cancel_event;
 
 private:
-    bool cancelled_ = false;
+    bool cancelled = false;
 };
 
 }  // namespace detail
@@ -40,7 +40,7 @@ public:
     cancellation_token() = default;
 
     bool cancelled() const noexcept {
-        return state && state->cancelled();
+        return state && state->is_cancelled();
     }
 
     /// Returns a task that suspends until the token is cancelled.
@@ -51,7 +51,7 @@ public:
             co_await never.wait();
             co_return;
         }
-        if(state->cancelled()) {
+        if(state->is_cancelled()) {
             co_await cancel();
             std::abort();
         }
@@ -91,13 +91,13 @@ public:
     }
 
     void cancel() noexcept {
-        if(state) {
-            state->cancel();
+        if(auto s = state) {
+            s->cancel();
         }
     }
 
     bool cancelled() const noexcept {
-        return state && state->cancelled();
+        return state && state->is_cancelled();
     }
 
     cancellation_token token() const noexcept {
@@ -114,14 +114,7 @@ namespace detail {
 /// the plain value type, allowing when_any to forward it through result().
 template <typename T, typename E, typename C>
 task<outcome<T, E, cancellation>> into_outcome(task<T, E, C> inner) {
-    auto child = [&]() {
-        if constexpr(std::is_void_v<C>) {
-            return std::move(inner).catch_cancel();
-        } else {
-            return std::move(inner);
-        }
-    }();
-    co_return co_await std::move(child);
+    co_return co_await std::move(inner).catch_cancel();
 }
 
 }  // namespace detail
@@ -157,11 +150,7 @@ task<T, E, cancellation> with_token(task<T, E, C> inner_task, Tokens... tokens) 
     }
 
     if constexpr(std::is_void_v<T>) {
-        if constexpr(std::is_void_v<E>) {
-            co_return;
-        } else {
-            co_return outcome_value();
-        }
+        co_return outcome_value();
     } else {
         co_return std::move(*task_result);
     }

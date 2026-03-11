@@ -186,7 +186,8 @@ struct Peer<CodecT>::Self {
             if(cancel_id) {
                 auto it = incoming_requests.find(*cancel_id);
                 if(it != incoming_requests.end() && it->second) {
-                    it->second->cancel();
+                    auto source = it->second;
+                    source->cancel();
                 }
             }
             return;
