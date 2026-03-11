@@ -11,7 +11,7 @@ namespace eventide {
 
 class async_node;
 
-template <typename T, typename E, typename C>
+template <typename T = void, typename E = void, typename C = void>
 class task;
 
 /// Runs an event loop backed by libuv.

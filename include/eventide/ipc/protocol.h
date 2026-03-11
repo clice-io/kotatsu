@@ -89,10 +89,6 @@ struct ResponseError {
     std::optional<Value> data = {};
 };
 
-struct CancelParams {
-    RequestID id;
-};
-
 }  // namespace eventide::ipc::protocol
 
 namespace std {

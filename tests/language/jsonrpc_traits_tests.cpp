@@ -7,14 +7,13 @@
 #include <utility>
 #include <vector>
 
+#include "../ipc/test_transport.h"
 #include "eventide/ipc/peer.h"
 #include "eventide/zest/zest.h"
 #include "eventide/common/compiler.h"
 #include "eventide/async/sync.h"
 #include "eventide/serde/json/deserializer.h"
 #include "eventide/language/protocol.h"
-
-#include "../ipc/test_transport.h"
 
 namespace eventide::language {
 
@@ -64,20 +63,18 @@ struct RPCNotification {
     NoteParams params;
 };
 
-namespace eventide::ipc::protocol {
+}  // namespace eventide::language
 
 template <>
-struct RequestTraits<eventide::language::AddParams> {
+struct eventide::ipc::protocol::RequestTraits<eventide::language::AddParams> {
     using Result = eventide::language::AddResult;
     constexpr inline static std::string_view method = "test/add";
 };
 
 template <>
-struct NotificationTraits<eventide::language::NoteParams> {
+struct eventide::ipc::protocol::NotificationTraits<eventide::language::NoteParams> {
     constexpr inline static std::string_view method = "test/note";
 };
-
-}  // namespace eventide::ipc::protocol
 
 namespace eventide::language {
 

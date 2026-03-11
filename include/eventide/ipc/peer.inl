@@ -424,8 +424,11 @@ task<std::string, RPCError> Peer<CodecT>::send_request_impl(std::string_view met
         if(auto it = self->pending_requests.find(request_id);
            it != self->pending_requests.end()) {
             self->pending_requests.erase(it);
+            struct cancel_request_params {
+                protocol::RequestID id;
+            };
             auto cancel_params_serialized =
-                self->codec.serialize_value(protocol::CancelParams{request_id});
+                self->codec.serialize_value(cancel_request_params{request_id});
             if(cancel_params_serialized) {
                 auto cancel_encoded =
                     self->codec.encode_notification("$/cancelRequest", *cancel_params_serialized);

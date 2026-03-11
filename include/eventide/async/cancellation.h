@@ -1,197 +1,61 @@
 #pragma once
 
-#include <cstddef>
 #include <cstdlib>
 #include <memory>
-#include <tuple>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
+#include "sync.h"
 #include "task.h"
+#include "when.h"
 
 namespace eventide {
 
-class cancellation_token;
-
 namespace detail {
 
-struct cancellation_watch_flag {
-    bool cancelled = false;
-};
-
-class cancellation_state : public std::enable_shared_from_this<cancellation_state> {
+class cancellation_state {
 public:
-    struct watcher_entry {
-        std::size_t id = 0;
-        async_node* node = nullptr;
-        std::weak_ptr<cancellation_watch_flag> flag;
-    };
-
     bool cancelled() const noexcept {
-        return cancelled_state;
+        return cancelled_;
     }
 
     void cancel() noexcept {
-        if(cancelled_state) {
+        if(cancelled_) {
             return;
         }
-
-        auto keepalive = this->shared_from_this();
-        cancelled_state = true;
-        for(auto& watcher: watchers) {
-            if(watcher.id == 0) {
-                continue;
-            }
-
-            if(auto flag = watcher.flag.lock()) {
-                flag->cancelled = true;
-            }
-
-            if(watcher.node) {
-                watcher.node->cancel();
-            }
-        }
-
-        watchers.clear();
+        cancelled_ = true;
+        cancel_event.interrupt();
     }
 
-    std::size_t subscribe(async_node* node,
-                          const std::shared_ptr<cancellation_watch_flag>& flag) noexcept {
-        if(flag) {
-            flag->cancelled = cancelled_state;
-        }
-
-        if(cancelled_state) {
-            if(node) {
-                node->cancel();
-            }
-            return 0;
-        }
-
-        auto id = next_id++;
-        if(next_id == 0) {
-            next_id = 1;
-        }
-
-        watchers.push_back(watcher_entry{
-            .id = id,
-            .node = node,
-            .flag = flag,
-        });
-        return id;
-    }
-
-    void unsubscribe(std::size_t id) noexcept {
-        if(id == 0 || watchers.empty()) {
-            return;
-        }
-
-        for(auto& watcher: watchers) {
-            if(watcher.id == id) {
-                watcher.id = 0;
-                watcher.node = nullptr;
-                watcher.flag.reset();
-                break;
-            }
-        }
-
-        if(!cancelled_state) {
-            compact();
-        }
-    }
+    event cancel_event;
 
 private:
-    void compact() noexcept {
-        std::erase_if(watchers, [](const watcher_entry& watcher) { return watcher.id == 0; });
-    }
-
-private:
-    std::vector<watcher_entry> watchers;
-    std::size_t next_id = 1;
-    bool cancelled_state = false;
+    bool cancelled_ = false;
 };
 
 }  // namespace detail
 
 class cancellation_token {
 public:
-    class registration {
-    public:
-        registration() = default;
-
-        registration(const registration&) = delete;
-        registration& operator=(const registration&) = delete;
-
-        registration(registration&& other) noexcept :
-            state(std::move(other.state)), registration_id(other.registration_id),
-            watch_flag(std::move(other.watch_flag)) {
-            other.registration_id = 0;
-        }
-
-        registration& operator=(registration&& other) noexcept {
-            if(this == &other) {
-                return *this;
-            }
-
-            unregister();
-            state = std::move(other.state);
-            registration_id = other.registration_id;
-            watch_flag = std::move(other.watch_flag);
-            other.registration_id = 0;
-            return *this;
-        }
-
-        ~registration() {
-            unregister();
-        }
-
-        void unregister() noexcept {
-            if(state && registration_id != 0) {
-                state->unsubscribe(registration_id);
-            }
-
-            registration_id = 0;
-            state.reset();
-        }
-
-        bool cancelled() const noexcept {
-            return watch_flag && watch_flag->cancelled;
-        }
-
-    private:
-        friend class cancellation_token;
-
-        registration(std::shared_ptr<detail::cancellation_state> state,
-                     std::size_t id,
-                     std::shared_ptr<detail::cancellation_watch_flag> flag) :
-            state(std::move(state)), registration_id(id), watch_flag(std::move(flag)) {}
-
-    private:
-        std::shared_ptr<detail::cancellation_state> state;
-        std::size_t registration_id = 0;
-        std::shared_ptr<detail::cancellation_watch_flag> watch_flag;
-    };
-
     cancellation_token() = default;
 
     bool cancelled() const noexcept {
         return state && state->cancelled();
     }
 
-private:
-    template <typename U, typename UE, typename UC, std::same_as<cancellation_token>... Ts>
-        requires (sizeof...(Ts) > 0)
-    friend task<U, UE, cancellation> with_token(task<U, UE, UC>, Ts...);
-
-    registration register_task(async_node* node) const {
-        auto flag = std::make_shared<detail::cancellation_watch_flag>();
+    /// Returns a task that suspends until the token is cancelled.
+    /// If already cancelled, self-cancels immediately.
+    task<> wait() const {
         if(!state) {
-            return registration(nullptr, 0, std::move(flag));
+            event never;
+            co_await never.wait();
+            co_return;
         }
-
-        auto id = state->subscribe(node, flag);
-        return registration(state, id, std::move(flag));
+        if(state->cancelled()) {
+            co_await cancel();
+            std::abort();
+        }
+        co_await state->cancel_event.wait();
     }
 
 private:
@@ -200,7 +64,6 @@ private:
     explicit cancellation_token(std::shared_ptr<detail::cancellation_state> state) :
         state(std::move(state)) {}
 
-private:
     std::shared_ptr<detail::cancellation_state> state;
 };
 
@@ -245,8 +108,27 @@ private:
     std::shared_ptr<detail::cancellation_state> state;
 };
 
+namespace detail {
+
+/// Wraps a task so its full outcome (value/error/cancellation) becomes
+/// the plain value type, allowing when_any to forward it through result().
+template <typename T, typename E, typename C>
+task<outcome<T, E, cancellation>> into_outcome(task<T, E, C> inner) {
+    auto child = [&]() {
+        if constexpr(std::is_void_v<C>) {
+            return std::move(inner).catch_cancel();
+        } else {
+            return std::move(inner);
+        }
+    }();
+    co_return co_await std::move(child);
+}
+
+}  // namespace detail
+
 /// with_token: cancel a task when any of the given tokens fire.
-/// Adds or re-uses the cancellation channel.
+/// Races the inner task against token wait tasks using when_any;
+/// if any token fires, when_any propagates cancellation automatically.
 template <typename T, typename E, typename C, std::same_as<cancellation_token>... Tokens>
     requires (sizeof...(Tokens) > 0)
 task<T, E, cancellation> with_token(task<T, E, C> inner_task, Tokens... tokens) {
@@ -255,26 +137,22 @@ task<T, E, cancellation> with_token(task<T, E, C> inner_task, Tokens... tokens) 
         std::abort();
     }
 
-    task<T, E, cancellation> child = [&]() {
-        if constexpr(std::is_void_v<C>) {
-            return std::move(inner_task).catch_cancel();
-        } else {
-            return std::move(inner_task);
-        }
-    }();
+    // when_any races the wrapped task against all token waits.
+    // If a token fires: event.interrupt() → token.wait() cancelled →
+    // when_any propagates cancellation → with_token task cancelled directly.
+    // If the task completes: when_any returns with the outcome at index 0.
+    auto variant_result =
+        co_await when_any(detail::into_outcome(std::move(inner_task)), tokens.wait()...);
+    auto& task_result = std::get<0>(variant_result);
 
-    auto registrations = std::tuple{tokens.register_task(child.operator->())...};
-    auto result = co_await std::move(child);
-    std::apply([](auto&... regs) { (regs.unregister(), ...); }, registrations);
-
-    if(result.is_cancelled()) {
+    if(task_result.is_cancelled()) {
         co_await cancel();
         std::abort();
     }
 
     if constexpr(!std::is_void_v<E>) {
-        if(result.has_error()) {
-            co_return outcome_error(std::move(result).error());
+        if(task_result.has_error()) {
+            co_return outcome_error(std::move(task_result).error());
         }
     }
 
@@ -285,7 +163,7 @@ task<T, E, cancellation> with_token(task<T, E, C> inner_task, Tokens... tokens) 
             co_return outcome_value();
         }
     } else {
-        co_return std::move(*result);
+        co_return std::move(*task_result);
     }
 }
 

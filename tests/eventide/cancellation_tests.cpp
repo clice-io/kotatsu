@@ -219,7 +219,9 @@ TEST_CASE(queue_cancel_resume) {
     loop.run();
 
     EXPECT_TRUE(target_cancelled);
-    EXPECT_EQ(observed_phase, 2);
+    // Event-based cancellation is synchronous: the target resumes within
+    // source.cancel(), before phase is advanced to 2.
+    EXPECT_EQ(observed_phase, 1);
     EXPECT_FALSE(target_started.load(std::memory_order_acquire));
 }
 
@@ -301,7 +303,7 @@ TEST_CASE(fs_cancel_resume) {
     loop.run();
 
     EXPECT_TRUE(target_cancelled);
-    EXPECT_EQ(observed_phase, 2);
+    EXPECT_EQ(observed_phase, 1);
 }
 
 TEST_CASE(cancel_waiting_on_event) {
