@@ -43,13 +43,13 @@ endif()
 
 if(EVENTIDE_ENABLE_ASYNC)
     set(TEST_EVENTIDE_SOURCES ${TEST_SOURCES})
-    list(FILTER TEST_EVENTIDE_SOURCES INCLUDE REGEX "^tests/eventide/.*\\.cpp$")
+    list(FILTER TEST_EVENTIDE_SOURCES INCLUDE REGEX "^tests/async/.*\\.cpp$")
     list(TRANSFORM TEST_EVENTIDE_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
     target_sources(unit_tests PRIVATE
         ${TEST_EVENTIDE_SOURCES}
     )
 else()
-    message(STATUS "EVENTIDE_ENABLE_ASYNC=OFF: skipping tests/eventide/*")
+    message(STATUS "EVENTIDE_ENABLE_ASYNC=OFF: skipping tests/async/*")
 endif()
 
 if(EVENTIDE_SERDE_ENABLE_SIMDJSON)
