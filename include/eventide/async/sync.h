@@ -51,17 +51,6 @@ protected:
         return head && head->generation == snapshot;
     }
 
-    template <typename Fn>
-    void drain_waiters(Fn&& fn) {
-        auto* cur = head;
-        while(cur) {
-            auto* next = cur->next;
-            remove(cur);
-            fn(cur);
-            cur = next;
-        }
-    }
-
     bool resume_waiter(waiter_link* link) noexcept {
         if(!link) {
             return false;
@@ -279,7 +268,10 @@ public:
 
     void set() noexcept {
         signaled = true;
-        drain_waiters([this](waiter_link* waiter) { resume_waiter(waiter); });
+        const auto snapshot = begin_waiter_snapshot();
+        while(front_waiter_matches(snapshot)) {
+            resume_waiter(pop_waiter());
+        }
     }
 
     void reset() noexcept {
@@ -366,7 +358,10 @@ public:
     }
 
     void notify_all() {
-        drain_waiters([this](waiter_link* waiter) { resume_waiter(waiter); });
+        const auto snapshot = begin_waiter_snapshot();
+        while(front_waiter_matches(snapshot)) {
+            resume_waiter(pop_waiter());
+        }
     }
 };
 

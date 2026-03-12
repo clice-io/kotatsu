@@ -24,10 +24,19 @@ public:
                 return;
             }
             cancelled = true;
-            cancel_event.interrupt();
+            // This event represents the sticky fact "cancellation has already
+            // happened", not the transient action "cancel whoever is currently
+            // waiting". That is why this uses set() instead of interrupt():
+            // future waiters must also observe the cancelled state
+            // immediately.
+            //
+            // Using interrupt() here introduces a lost-wakeup window between
+            // the pre-check in cancellation_token::wait() and the moment the
+            // event wait is actually linked.
+            event.set();
         }
 
-        event cancel_event;
+        event event;
 
     private:
         bool cancelled = false;
@@ -36,44 +45,57 @@ public:
     cancellation_token(const cancellation_token&) noexcept = default;
     cancellation_token& operator=(const cancellation_token&) noexcept = default;
 
-    cancellation_token(cancellation_token&& other) noexcept :
-        shared_state(std::move(other.shared_state)) {}
+    cancellation_token(cancellation_token&& other) noexcept : state(std::move(other.state)) {}
 
     cancellation_token& operator=(cancellation_token&& other) noexcept {
-        shared_state = std::move(other.shared_state);
+        state = std::move(other.state);
         return *this;
     }
 
     bool cancelled() const noexcept {
-        return shared_state->is_cancelled();
+        return state->is_cancelled();
     }
 
     /// Returns a task that never succeeds.
     ///
-    /// There are only two behaviors:
+    /// This awaitable turns the sticky cancellation state stored in
+    /// `cancel_event` back into task cancellation semantics.
+    ///
+    /// There are only two externally visible behaviors:
     /// 1. If the token is already cancelled, this task cancels immediately.
-    /// 2. Otherwise it waits until the token's internal event is interrupted,
-    ///    then the underlying event wait is cancelled.
+    /// 2. Otherwise it waits until the token's internal event is set, then
+    ///    cancels itself immediately.
+    ///
+    /// The `event` itself only wakes the waiter; it does not propagate
+    /// cancellation upward. The trailing `co_await cancel();` is therefore
+    /// essential: it converts "the cancellation event has fired" into the
+    /// coroutine state `Cancelled`, which is what with_token(...) and other
+    /// callers rely on.
     task<> wait() const {
-        if(shared_state->is_cancelled()) {
+        if(state->is_cancelled()) {
             // Preserve cancellation semantics for already-fired tokens.
             co_await cancel();
         }
-        // `cancel_event.interrupt()` cancels this wait; it does not produce a value.
-        co_await shared_state->cancel_event.wait();
+
+        // Wait for the sticky cancellation marker to become observable.
+        co_await state->event.wait();
+
+        // Being woken by cancel_event means "cancellation happened"; convert
+        // that wakeup into actual task cancellation.
+        co_await cancel();
     }
 
 private:
     friend class cancellation_source;
 
-    explicit cancellation_token(std::shared_ptr<state> state) : shared_state(std::move(state)) {}
+    explicit cancellation_token(std::shared_ptr<state> state) : state(std::move(state)) {}
 
-    std::shared_ptr<state> shared_state;
+    std::shared_ptr<state> state;
 };
 
 class cancellation_source {
 public:
-    cancellation_source() : shared_state(std::make_shared<cancellation_token::state>()) {}
+    cancellation_source() : state(std::make_shared<class cancellation_token::state>()) {}
 
     cancellation_source(const cancellation_source&) = delete;
     cancellation_source& operator=(const cancellation_source&) = delete;
@@ -86,7 +108,7 @@ public:
         }
 
         cancel();
-        shared_state = std::move(other.shared_state);
+        state = std::move(other.state);
         return *this;
     }
 
@@ -95,21 +117,21 @@ public:
     }
 
     void cancel() noexcept {
-        if(auto state = shared_state) {
-            state->cancel();
+        if(auto copy = state) {
+            copy->cancel();
         }
     }
 
     bool cancelled() const noexcept {
-        return shared_state && shared_state->is_cancelled();
+        return state && state->is_cancelled();
     }
 
     cancellation_token token() const noexcept {
-        return cancellation_token(shared_state);
+        return cancellation_token(state);
     }
 
 private:
-    std::shared_ptr<cancellation_token::state> shared_state;
+    std::shared_ptr<class cancellation_token::state> state;
 };
 
 /// with_token: cancel a task when any of the given tokens fire.
