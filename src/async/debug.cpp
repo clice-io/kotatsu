@@ -81,6 +81,7 @@ static void emit_node(const async_node* node, std::string& out) {
             case async_node::Running: color = R"("#90EE90")"; break;
             case async_node::Finished: color = R"("#D3D3D3")"; break;
             case async_node::Cancelled: color = R"("#FFB6C1")"; break;
+            case async_node::Failed: color = R"("#FFA07A")"; break;
             default: break;
         }
     } else if(node->is_aggregate_op()) {

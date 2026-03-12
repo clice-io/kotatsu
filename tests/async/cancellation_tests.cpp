@@ -120,22 +120,6 @@ TEST_CASE(token_share_state) {
     EXPECT_TRUE(token_b.cancelled());
 }
 
-TEST_CASE(move_assign_cancel) {
-    cancellation_source lhs;
-    auto lhs_token = lhs.token();
-
-    cancellation_source rhs;
-    auto rhs_token = rhs.token();
-
-    lhs = std::move(rhs);
-
-    EXPECT_TRUE(lhs_token.cancelled());
-    EXPECT_FALSE(rhs_token.cancelled());
-
-    lhs.cancel();
-    EXPECT_TRUE(rhs_token.cancelled());
-}
-
 TEST_CASE(queue_cancel_resume) {
     event_loop loop;
     cancellation_source source;
@@ -688,8 +672,10 @@ TEST_CASE(nested_with_token_same_token_cancel) {
     cancellation_source source;
     auto token = source.token();
     event gate;
+    event inner_started;
 
     auto inner_work = [&]() -> task<> {
+        inner_started.set();
         co_await gate.wait();
     };
 
@@ -700,11 +686,12 @@ TEST_CASE(nested_with_token_same_token_cancel) {
     auto guarded = with_token(outer_work(token), token);
 
     auto canceler = [&]() -> task<> {
+        co_await inner_started.wait();
         source.cancel();
         co_return;
     };
 
-    loop.schedule(std::move(guarded));
+    loop.schedule(guarded);
     loop.schedule(canceler());
     EXPECT_EQ(loop.run(), 0);
 }

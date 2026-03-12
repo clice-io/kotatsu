@@ -204,7 +204,7 @@ struct fs_op : uv::await_op<fs_op<Result>> {
     using promise_t = task<Result, error>::promise_type;
 
     uv_fs_t req = {};
-    std::function<Result(uv_fs_t&)> populate;
+    std::function<result<Result>(uv_fs_t&)> populate;
     result<Result> out = outcome_error(error());
 
     fs_op() = default;
@@ -582,10 +582,18 @@ task<std::vector<fs::dirent>, error> fs::scandir(std::string_view path, event_lo
     std::string p(path);
     co_return co_await run_fs<std::vector<fs::dirent>>(
         [&, p](uv_fs_t& req, uv_fs_cb cb) { return uv::fs_scandir(loop, req, p.c_str(), 0, cb); },
-        [](uv_fs_t& req) {
+        [](uv_fs_t& req) -> result<std::vector<fs::dirent>> {
             std::vector<fs::dirent> out;
             uv_dirent_t ent;
-            while(uv::fs_scandir_next(req, ent).value() != error::end_of_file.value()) {
+            while(true) {
+                auto err = uv::fs_scandir_next(req, ent);
+                if(err == error::end_of_file) {
+                    break;
+                }
+                if(err) {
+                    return result<std::vector<fs::dirent>>(outcome_error(err));
+                }
+
                 fs::dirent d;
                 if(ent.name) {
                     d.name = ent.name;

@@ -36,53 +36,50 @@ public:
             event.set();
         }
 
-        class event event;
+        /// Returns a task that never succeeds.
+        ///
+        /// This awaitable turns the sticky cancellation state stored in
+        /// `cancel_event` back into task cancellation semantics.
+        ///
+        /// There are only two externally visible behaviors:
+        /// 1. If the token is already cancelled, this task cancels immediately.
+        /// 2. Otherwise it waits until the token's internal event is set, then
+        ///    cancels itself immediately.
+        ///
+        /// The event itself only wakes the waiter; it does not propagate
+        /// cancellation upward. The trailing `co_await cancel();` is therefore
+        /// essential: it converts "the cancellation event has fired" into the
+        /// coroutine state `Cancelled`, which is what with_token(...) and other
+        /// callers rely on.
+        task<> wait() {
+            if(cancelled) {
+                // Preserve cancellation semantics for already-fired tokens.
+                co_await eventide::cancel();
+            }
+
+            // Wait for the sticky cancellation marker to become observable.
+            co_await event.wait();
+
+            // Being woken by cancel_event means "cancellation happened"; convert
+            // that wakeup into actual task cancellation.
+            co_await eventide::cancel();
+        }
 
     private:
+        class event event;
         bool cancelled = false;
     };
 
+    cancellation_token() noexcept = delete;
     cancellation_token(const cancellation_token&) noexcept = default;
     cancellation_token& operator=(const cancellation_token&) noexcept = default;
-
-    cancellation_token(cancellation_token&& other) noexcept : state(std::move(other.state)) {}
-
-    cancellation_token& operator=(cancellation_token&& other) noexcept {
-        state = std::move(other.state);
-        return *this;
-    }
 
     bool cancelled() const noexcept {
         return state->is_cancelled();
     }
 
-    /// Returns a task that never succeeds.
-    ///
-    /// This awaitable turns the sticky cancellation state stored in
-    /// `cancel_event` back into task cancellation semantics.
-    ///
-    /// There are only two externally visible behaviors:
-    /// 1. If the token is already cancelled, this task cancels immediately.
-    /// 2. Otherwise it waits until the token's internal event is set, then
-    ///    cancels itself immediately.
-    ///
-    /// The event itself only wakes the waiter; it does not propagate
-    /// cancellation upward. The trailing `co_await cancel();` is therefore
-    /// essential: it converts "the cancellation event has fired" into the
-    /// coroutine state `Cancelled`, which is what with_token(...) and other
-    /// callers rely on.
-    task<> wait() const {
-        if(state->is_cancelled()) {
-            // Preserve cancellation semantics for already-fired tokens.
-            co_await cancel();
-        }
-
-        // Wait for the sticky cancellation marker to become observable.
-        co_await state->event.wait();
-
-        // Being woken by cancel_event means "cancellation happened"; convert
-        // that wakeup into actual task cancellation.
-        co_await cancel();
+    task<> wait() const noexcept {
+        return state->wait();
     }
 
 private:
@@ -100,30 +97,16 @@ public:
     cancellation_source(const cancellation_source&) = delete;
     cancellation_source& operator=(const cancellation_source&) = delete;
 
-    cancellation_source(cancellation_source&&) noexcept = default;
-
-    cancellation_source& operator=(cancellation_source&& other) noexcept {
-        if(this == &other) {
-            return *this;
-        }
-
-        cancel();
-        state = std::move(other.state);
-        return *this;
-    }
-
     ~cancellation_source() {
         cancel();
     }
 
     void cancel() noexcept {
-        if(auto copy = state) {
-            copy->cancel();
-        }
+        state->cancel();
     }
 
     bool cancelled() const noexcept {
-        return state && state->is_cancelled();
+        return state->is_cancelled();
     }
 
     cancellation_token token() const noexcept {
