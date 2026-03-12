@@ -183,6 +183,17 @@ protected:
     /// The sync_primitive this waiter is queued on (nullptr if not queued).
     sync_primitive* resource = nullptr;
 
+    /// Captures which wait-queue generation this waiter joined.
+    ///
+    /// `event::interrupt()` must only cancel the waiters that were already
+    /// present when the interrupt began. The tricky part is that cancelling one
+    /// waiter resumes arbitrary user code synchronously, and that code may
+    /// immediately enqueue a fresh waiter on the same resource before
+    /// interrupt() continues. Tagging each waiter with the generation observed
+    /// at insertion time lets interrupt() stop once it reaches a waiter that
+    /// was added by a later, re-entrant wait.
+    std::size_t generation = 0;
+
     /// Intrusive doubly-linked list pointers for the sync_primitive's wait queue.
     waiter_link* prev = nullptr;
     waiter_link* next = nullptr;
@@ -284,7 +295,9 @@ protected:
 
     /// Cancellation outranks a plain resume and is itself outranked only by error.
     void defer_cancel() noexcept {
-        deferred = Deferred::Cancel;
+        if(deferred != Deferred::Error) {
+            deferred = Deferred::Cancel;
+        }
     }
 
     /// Error outranks all other deferred outcomes.

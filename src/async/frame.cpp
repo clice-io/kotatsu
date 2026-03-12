@@ -260,11 +260,13 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
                     self->defer_cancel();
                 }
                 if(failed) {
+                    const bool first_error = self->deferred != aggregate_op::Deferred::Error;
                     self->defer_error();
-                    if(child->propagated_exception) {
+                    if(first_error && child->propagated_exception) {
                         self->propagated_exception = child->propagated_exception;
                     }
-                    if(self->kind == NodeKind::WhenAny && self->winner == aggregate_op::npos) {
+                    if(first_error && self->kind == NodeKind::WhenAny &&
+                       self->winner == aggregate_op::npos) {
                         for(std::size_t i = 0; i < self->awaitees.size(); ++i) {
                             if(self->awaitees[i] == child) {
                                 self->winner = i;

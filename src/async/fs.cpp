@@ -309,8 +309,7 @@ static task<Result, error> run_fs(Submit submit,
 
 template <typename Submit>
 static task<void, error> run_void_fs(Submit submit, event_loop& loop) {
-    if(auto res = co_await run_fs<int>(std::move(submit), [](uv_fs_t&) { return 0; }, loop);
-       !res) {
+    if(auto res = co_await run_fs<int>(std::move(submit), [](uv_fs_t&) { return 0; }, loop); !res) {
         co_return outcome_error(res.error());
     }
     co_return outcome_value();

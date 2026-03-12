@@ -68,7 +68,9 @@ static void emit_node(const async_node* node, std::string& out) {
                             node->location.line());
     } else {
         label = std::format(R"({}
-{})", async_kind_name(node->kind), state_name(node->state));
+{})",
+                            async_kind_name(node->kind),
+                            state_name(node->state));
     }
 
     std::string_view shape = "box";

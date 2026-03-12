@@ -147,7 +147,7 @@ task<T, E, cancellation> with_token(task<T, E, C> inner_task, Tokens... tokens) 
     }
 
     if constexpr(std::is_void_v<T>) {
-        co_return outcome_value();
+        co_return;
     } else {
         co_return std::move(*task_result);
     }

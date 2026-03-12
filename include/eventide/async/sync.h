@@ -47,6 +47,10 @@ protected:
         return link;
     }
 
+    bool front_waiter_matches(std::size_t snapshot) const noexcept {
+        return head && head->generation == snapshot;
+    }
+
     template <typename Fn>
     void drain_waiters(Fn&& fn) {
         auto* cur = head;
@@ -74,10 +78,28 @@ protected:
 
     bool cancel_waiter(waiter_link* link) noexcept;
 
+    /// Starts a logical "snapshot" of the current wait queue.
+    ///
+    /// We do not materialize that snapshot into a temporary container: doing so
+    /// would keep raw waiter pointers alive across synchronous resumes, and one
+    /// resumed waiter is allowed to cancel/destroy sibling waiters immediately.
+    /// Instead, each queued waiter is tagged with the current generation. An
+    /// interrupt bumps the generation once, then keeps popping from the front
+    /// only while the head still belongs to the old generation.
+    std::size_t begin_waiter_snapshot() noexcept {
+        auto snapshot = waiter_generation;
+        waiter_generation += 1;
+        return snapshot;
+    }
+
 private:
     /// Head and tail of the intrusive doubly-linked waiter queue.
     waiter_link* head = nullptr;
     waiter_link* tail = nullptr;
+
+    /// Monotonic tag used to distinguish "already queued" waiters from
+    /// re-entrantly added waiters during interrupt().
+    std::size_t waiter_generation = 0;
 };
 
 class mutex : public sync_primitive {
@@ -266,8 +288,15 @@ public:
 
     /// Interrupts the current wait queue without changing the signaled state.
     void interrupt() noexcept {
-        while(auto* waiter = pop_waiter()) {
-            cancel_waiter(waiter);
+        const auto snapshot = begin_waiter_snapshot();
+
+        // cancel_waiter() resumes user code synchronously. That code may call
+        // ev.wait() again before we come back here, so a plain
+        // `while(pop_waiter())` would also drain those newcomers. By stopping
+        // once the front waiter no longer belongs to the snapshot generation,
+        // interrupt() only cancels the queue as it existed at entry.
+        while(front_waiter_matches(snapshot)) {
+            cancel_waiter(pop_waiter());
         }
     }
 

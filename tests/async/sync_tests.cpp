@@ -159,6 +159,44 @@ TEST_CASE(interrupt_many) {
     EXPECT_EQ(cancelled, 2);
 }
 
+TEST_CASE(interrupt_snapshot) {
+    event_loop loop;
+    event ev;
+    int cancelled = 0;
+    bool second_wait_cancelled = false;
+
+    auto waiter = [&]() -> task<> {
+        auto first = co_await ev.wait().catch_cancel();
+        EXPECT_FALSE(first.has_value());
+        cancelled += 1;
+
+        auto second = co_await ev.wait().catch_cancel();
+        second_wait_cancelled = !second.has_value();
+        loop.stop();
+    };
+
+    auto intr = [&]() -> task<> {
+        co_await sleep(milliseconds{1}, loop);
+        ev.interrupt();
+    };
+
+    auto setter = [&]() -> task<> {
+        co_await sleep(milliseconds{2}, loop);
+        ev.set();
+    };
+
+    auto t1 = waiter();
+    auto t2 = intr();
+    auto t3 = setter();
+    loop.schedule(t1);
+    loop.schedule(t2);
+    loop.schedule(t3);
+    loop.run();
+
+    EXPECT_EQ(cancelled, 1);
+    EXPECT_FALSE(second_wait_cancelled);
+}
+
 TEST_CASE(future_wait) {
     event_loop loop;
     event ev;

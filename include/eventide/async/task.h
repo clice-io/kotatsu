@@ -24,8 +24,7 @@ namespace eventide {
 
 /// General case: stores outcome<T, E, void>.
 /// C is never stored in the promise — cancellation uses task state.
-/// Layout depends only on T and E, enabling the from_address trick
-/// in catch_cancel() (adding C does not change the promise layout).
+/// Layout depends only on T and E; cancellation uses task state.
 template <typename T, typename E, typename C>
 struct promise_result {
     std::optional<outcome<T, E, void>> value;
@@ -45,8 +44,7 @@ struct promise_result {
 };
 
 /// All-void: the only case that needs return_void().
-/// Includes a `value` field so the layout matches the general template,
-/// enabling the from_address trick in catch_cancel().
+/// Includes a `value` field so the layout matches the general template.
 template <>
 struct promise_result<void, void, void> {
     std::optional<outcome<void, void, void>> value;
@@ -146,41 +144,61 @@ inline auto cancel() {
 // ============================================================================
 
 template <typename T, typename E, typename C>
+class task;
+
+template <typename T, typename E>
+struct task_return_object;
+
+template <typename T, typename E>
+struct task_promise_object : standard_task, promise_result<T, E, void>, promise_exception {
+    using coroutine_handle = std::coroutine_handle<task_promise_object>;
+
+    auto handle() {
+        return coroutine_handle::from_promise(*this);
+    }
+
+    auto initial_suspend() const noexcept {
+        return std::suspend_always();
+    }
+
+    auto final_suspend() const noexcept {
+        return transition_await(async_node::Finished);
+    }
+
+    auto get_return_object() {
+        return task_return_object<T, E>{handle()};
+    }
+
+    task_promise_object() {
+        this->address = handle().address();
+    }
+};
+
+template <typename T, typename E>
+struct task_return_object {
+    using promise_type = task_promise_object<T, E>;
+    using coroutine_handle = std::coroutine_handle<promise_type>;
+
+    coroutine_handle handle;
+
+    operator task<T, E, void>() && noexcept;
+
+    operator task<T, E, cancellation>() && noexcept;
+};
+
+template <typename T, typename E, typename C>
 class task {
 public:
     friend class event_loop;
+    template <typename, typename, typename>
+    friend class task;
 
     static_assert(std::is_void_v<C> || std::same_as<C, cancellation>,
                   "task only supports void or cancellation cancel channels");
 
-    struct promise_type;
+    using promise_type = task_promise_object<T, E>;
 
     using coroutine_handle = std::coroutine_handle<promise_type>;
-
-    struct promise_type : standard_task, promise_result<T, E, C>, promise_exception {
-        auto handle() {
-            return coroutine_handle::from_promise(*this);
-        }
-
-        auto initial_suspend() const noexcept {
-            return std::suspend_always();
-        }
-
-        auto final_suspend() const noexcept {
-            return transition_await(async_node::Finished);
-        }
-
-        auto get_return_object() {
-            return task(handle());
-        }
-
-        promise_type() {
-            this->address = handle().address();
-            if constexpr(!std::is_void_v<C>) {
-                this->policy = static_cast<Policy>(this->policy | InterceptCancel);
-            }
-        }
-    };
 
     struct awaiter {
         task awaitee;
@@ -249,7 +267,12 @@ public:
 public:
     task() = default;
 
-    explicit task(coroutine_handle h) noexcept : h(h) {}
+    explicit task(coroutine_handle h) noexcept : h(h) {
+        if constexpr(!std::is_void_v<C>) {
+            this->h.promise().policy = static_cast<async_node::Policy>(this->h.promise().policy |
+                                                                       async_node::InterceptCancel);
+        }
+    }
 
     task(const task&) = delete;
 
@@ -319,8 +342,7 @@ public:
         return &h.promise();
     }
 
-    /// Adds cancellation interception via from_address (safe because C never
-    /// changes the promise layout). Idempotent if already intercepting.
+    /// Adds cancellation interception. Idempotent if already intercepting.
     auto catch_cancel() && {
         if constexpr(std::same_as<C, cancellation>) {
             return std::move(*this);
@@ -365,6 +387,20 @@ private:
 
     coroutine_handle h;
 };
+
+template <typename T, typename E>
+task_return_object<T, E>::operator task<T, E, void>() && noexcept {
+    auto out = task<T, E, void>(handle);
+    handle = nullptr;
+    return out;
+}
+
+template <typename T, typename E>
+task_return_object<T, E>::operator task<T, E, cancellation>() && noexcept {
+    auto out = task<T, E, cancellation>(handle);
+    handle = nullptr;
+    return out;
+}
 
 namespace detail {
 

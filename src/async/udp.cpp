@@ -269,11 +269,8 @@ struct udp_send_await : uv::await_op<udp_send_await> {
         const sockaddr* addr =
             dest.has_value() ? reinterpret_cast<const sockaddr*>(&dest.value()) : nullptr;
 
-        if(auto err = uv::udp_send(req,
-                                   self->handle,
-                                   std::span<const uv_buf_t>{&buf, 1},
-                                   addr,
-                                   on_send)) {
+        if(auto err =
+               uv::udp_send(req, self->handle, std::span<const uv_buf_t>{&buf, 1}, addr, on_send)) {
             result = err;
             self->send.disarm();
             return waiting;
@@ -435,8 +432,9 @@ task<error> udp::send(std::span<const char> data, std::string_view host, int por
         co_return resolved.error();
     }
 
-    co_return co_await
-        udp_send_await{self.get(), data, std::optional<sockaddr_storage>(resolved->storage)};
+    co_return co_await udp_send_await{self.get(),
+                                      data,
+                                      std::optional<sockaddr_storage>(resolved->storage)};
 }
 
 task<error> udp::send(std::span<const char> data) {

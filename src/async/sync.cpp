@@ -10,6 +10,9 @@ void sync_primitive::insert(waiter_link* link) {
     assert(link->prev == nullptr && link->next == nullptr && "insert: waiter_link has links");
 
     link->resource = this;
+    // Snapshot semantics for interrupt() depend on each waiter remembering the
+    // generation that was current when it joined the queue.
+    link->generation = waiter_generation;
 
     if(tail) {
         tail->next = link;
@@ -53,6 +56,11 @@ bool sync_primitive::cancel_waiter(waiter_link* link) noexcept {
         return false;
     }
 
+    // This callback may resume arbitrary user code immediately. In particular,
+    // that code may enqueue a brand-new waiter on the same resource, or even
+    // destroy other waiters that used to be siblings of `link`. That is why
+    // interrupt() must process the queue in-place with generation checks rather
+    // than first stashing raw waiter pointers into a temporary container.
     link->state = async_node::Cancelled;
     link->policy = static_cast<async_node::Policy>(link->policy | async_node::InterceptCancel);
     auto next = awaiting->handle_subtask_result(link);
