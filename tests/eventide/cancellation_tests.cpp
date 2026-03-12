@@ -2,6 +2,7 @@
 #include <chrono>
 #include <concepts>
 #include <cstdlib>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -99,13 +100,10 @@ TEST_CASE(cancel_in_flight) {
 }
 
 TEST_CASE(destructor_cancels_tokens) {
-    cancellation_token token;
-    {
-        cancellation_source source;
-        token = source.token();
-        EXPECT_FALSE(token.cancelled());
-    }
-
+    std::optional<cancellation_source> source(std::in_place);
+    auto token = source->token();
+    EXPECT_FALSE(token.cancelled());
+    source.reset();
     EXPECT_TRUE(token.cancelled());
 }
 

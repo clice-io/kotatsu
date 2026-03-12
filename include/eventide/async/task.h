@@ -150,6 +150,9 @@ class task {
 public:
     friend class event_loop;
 
+    static_assert(std::is_void_v<C> || std::same_as<C, cancellation>,
+                  "task only supports void or cancellation cancel channels");
+
     struct promise_type;
 
     using coroutine_handle = std::coroutine_handle<promise_type>;
@@ -276,16 +279,18 @@ public:
     auto result() {
         auto&& promise = h.promise();
         promise.rethrow_if_exception();
-        if constexpr(std::is_void_v<E>) {
+        if constexpr(std::is_void_v<E> && std::is_void_v<C>) {
             if constexpr(!std::is_void_v<T>) {
                 assert(promise.value.has_value() && "result() on empty return");
                 return std::move(**promise.value);
             } else {
                 return std::nullopt;
             }
-        } else {
+        } else if constexpr(std::is_void_v<C>) {
             assert(promise.value.has_value() && "result() on empty return");
             return std::move(*promise.value);
+        } else {
+            return take_outcome(promise);
         }
     }
 
@@ -320,10 +325,8 @@ public:
         if constexpr(std::same_as<C, cancellation>) {
             return std::move(*this);
         } else {
-            if constexpr(std::is_void_v<C>) {
-                h.promise().policy = static_cast<async_node::Policy>(h.promise().policy |
-                                                                     async_node::InterceptCancel);
-            }
+            h.promise().policy =
+                static_cast<async_node::Policy>(h.promise().policy | async_node::InterceptCancel);
             auto handle = h;
             h = nullptr;
             using target = task<T, E, cancellation>;
@@ -333,6 +336,33 @@ public:
     }
 
 private:
+    static auto take_outcome(promise_type& promise) {
+        using R = outcome<T, E, cancellation>;
+
+        if(promise.state == async_node::Cancelled) {
+            return R(detail::cancel_box<cancellation>{cancellation{}});
+        }
+
+        if constexpr(std::is_void_v<E>) {
+            assert(promise.state == async_node::Finished);
+        } else {
+            assert(promise.state == async_node::Finished || promise.state == async_node::Failed);
+        }
+        assert(promise.value.has_value() && "result() on empty return");
+
+        if constexpr(!std::is_void_v<E>) {
+            if(promise.value->has_error()) {
+                return R(outcome_error(std::move(*promise.value).error()));
+            }
+        }
+
+        if constexpr(!std::is_void_v<T>) {
+            return R(std::move(**promise.value));
+        } else {
+            return R();
+        }
+    }
+
     coroutine_handle h;
 };
 

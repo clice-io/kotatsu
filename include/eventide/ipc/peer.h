@@ -26,11 +26,9 @@ struct basic_request_context {
     std::string_view method{};
     protocol::RequestID id;
     PeerT& peer;
-    cancellation_token cancellation = {};
+    cancellation_token cancellation;
 
-    basic_request_context(PeerT& peer,
-                          const protocol::RequestID& id,
-                          cancellation_token token = {}) :
+    basic_request_context(PeerT& peer, const protocol::RequestID& id, cancellation_token token) :
         id(id), peer(peer), cancellation(std::move(token)) {}
 
     bool cancelled() const noexcept {
@@ -50,7 +48,7 @@ template <typename Params, typename ResultT = typename protocol::RequestTraits<P
 using RequestResult = task<ResultT, RPCError>;
 
 struct request_options {
-    cancellation_token token = {};
+    std::optional<cancellation_token> token = std::nullopt;
     std::optional<std::chrono::milliseconds> timeout = std::nullopt;
 };
 

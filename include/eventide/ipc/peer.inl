@@ -377,8 +377,6 @@ task<std::string, RPCError> Peer<CodecT>::send_request_impl(std::string_view met
                                                              std::string params,
                                                              request_options opts) {
     std::shared_ptr<cancellation_source> timeout_source;
-    cancellation_token user_token = std::move(opts.token);
-    cancellation_token timeout_token;
 
     if(opts.timeout.has_value()) {
         if(*opts.timeout <= std::chrono::milliseconds::zero()) {
@@ -391,14 +389,13 @@ task<std::string, RPCError> Peer<CodecT>::send_request_impl(std::string_view met
             self->loop.schedule(
                 detail::cancel_after_timeout(*opts.timeout, timeout_source, self->loop));
         }
-        timeout_token = timeout_source->token();
     }
 
     if(!self || !self->transport) {
         co_return outcome_error(RPCError("transport is null"));
     }
 
-    if(user_token.cancelled()) {
+    if(opts.token && opts.token->cancelled()) {
         co_return outcome_error(
             RPCError(protocol::ErrorCode::RequestCancelled, "request cancelled"));
     }
@@ -419,8 +416,18 @@ task<std::string, RPCError> Peer<CodecT>::send_request_impl(std::string_view met
     auto wait_pending = [](const std::shared_ptr<typename Self::PendingRequest>& state) -> task<> {
         co_await state->ready.wait();
     };
-    auto wait_result =
-        co_await with_token(wait_pending(pending), user_token, timeout_token);
+    auto wait_task = wait_pending(pending);
+    outcome<void, void, cancellation> wait_result = outcome_value();
+    if(opts.token && timeout_source) {
+        wait_result =
+            co_await with_token(std::move(wait_task), *opts.token, timeout_source->token());
+    } else if(opts.token) {
+        wait_result = co_await with_token(std::move(wait_task), *opts.token);
+    } else if(timeout_source) {
+        wait_result = co_await with_token(std::move(wait_task), timeout_source->token());
+    } else {
+        co_await std::move(wait_task);
+    }
     if(!wait_result.has_value()) {
         if(auto it = self->pending_requests.find(request_id);
            it != self->pending_requests.end()) {
@@ -439,7 +446,7 @@ task<std::string, RPCError> Peer<CodecT>::send_request_impl(std::string_view met
             }
         }
 
-        if(user_token.cancelled()) {
+        if(opts.token && opts.token->cancelled()) {
             co_return outcome_error(
                 RPCError(protocol::ErrorCode::RequestCancelled, "request cancelled"));
         }

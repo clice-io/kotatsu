@@ -11,64 +11,68 @@
 
 namespace eventide {
 
-namespace detail {
-
-class cancellation_state {
-public:
-    bool is_cancelled() const noexcept {
-        return cancelled;
-    }
-
-    void cancel() noexcept {
-        if(cancelled) {
-            return;
-        }
-        cancelled = true;
-        cancel_event.interrupt();
-    }
-
-    event cancel_event;
-
-private:
-    bool cancelled = false;
-};
-
-}  // namespace detail
-
 class cancellation_token {
 public:
-    cancellation_token() = default;
+    class state {
+    public:
+        bool is_cancelled() const noexcept {
+            return cancelled;
+        }
 
-    bool cancelled() const noexcept {
-        return state && state->is_cancelled();
+        void cancel() noexcept {
+            if(cancelled) {
+                return;
+            }
+            cancelled = true;
+            cancel_event.interrupt();
+        }
+
+        event cancel_event;
+
+    private:
+        bool cancelled = false;
+    };
+
+    cancellation_token(const cancellation_token&) noexcept = default;
+    cancellation_token& operator=(const cancellation_token&) noexcept = default;
+
+    cancellation_token(cancellation_token&& other) noexcept : state_(other.state_) {}
+
+    cancellation_token& operator=(cancellation_token&& other) noexcept {
+        state_ = other.state_;
+        return *this;
     }
 
-    /// Returns a task that suspends until the token is cancelled.
-    /// If already cancelled, self-cancels immediately.
+    bool cancelled() const noexcept {
+        return state_->is_cancelled();
+    }
+
+    /// Returns a task that never succeeds.
+    ///
+    /// There are only two behaviors:
+    /// 1. If the token is already cancelled, this task cancels immediately.
+    /// 2. Otherwise it waits until the token's internal event is interrupted,
+    ///    then the underlying event wait is cancelled.
     task<> wait() const {
-        if(!state) {
-            event never;
-            co_await never.wait();
-            co_return;
-        }
-        if(state->is_cancelled()) {
+        if(state_->is_cancelled()) {
+            // Preserve cancellation semantics for already-fired tokens.
             co_await cancel();
         }
-        co_await state->cancel_event.wait();
+        // `cancel_event.interrupt()` cancels this wait; it does not produce a value.
+        co_await state_->cancel_event.wait();
     }
 
 private:
     friend class cancellation_source;
 
-    explicit cancellation_token(std::shared_ptr<detail::cancellation_state> state) :
-        state(std::move(state)) {}
+    explicit cancellation_token(std::shared_ptr<state> state) : state_(std::move(state)) {}
 
-    std::shared_ptr<detail::cancellation_state> state;
+    std::shared_ptr<state> state_;
 };
 
 class cancellation_source {
 public:
-    cancellation_source() : state(std::make_shared<detail::cancellation_state>()) {}
+    cancellation_source() : state_(std::make_shared<cancellation_token::state>()) {}
 
     cancellation_source(const cancellation_source&) = delete;
     cancellation_source& operator=(const cancellation_source&) = delete;
@@ -81,7 +85,7 @@ public:
         }
 
         cancel();
-        state = std::move(other.state);
+        state_ = std::move(other.state_);
         return *this;
     }
 
@@ -90,33 +94,22 @@ public:
     }
 
     void cancel() noexcept {
-        if(auto s = state) {
+        if(auto s = state_) {
             s->cancel();
         }
     }
 
     bool cancelled() const noexcept {
-        return state && state->is_cancelled();
+        return state_ && state_->is_cancelled();
     }
 
     cancellation_token token() const noexcept {
-        return cancellation_token(state);
+        return cancellation_token(state_);
     }
 
 private:
-    std::shared_ptr<detail::cancellation_state> state;
+    std::shared_ptr<cancellation_token::state> state_;
 };
-
-namespace detail {
-
-/// Wraps a task so its full outcome (value/error/cancellation) becomes
-/// the plain value type, allowing when_any to forward it through result().
-template <typename T, typename E, typename C>
-task<outcome<T, E, cancellation>> into_outcome(task<T, E, C> inner) {
-    co_return co_await std::move(inner).catch_cancel();
-}
-
-}  // namespace detail
 
 /// with_token: cancel a task when any of the given tokens fire.
 /// Races the inner task against token wait tasks using when_any;
@@ -128,14 +121,20 @@ task<T, E, cancellation> with_token(task<T, E, C> inner_task, Tokens... tokens) 
         co_await cancel();
     }
 
-    // when_any races the wrapped task against all token waits.
-    // If a token fires: event.interrupt() → token.wait() cancelled →
-    // when_any propagates cancellation → with_token task cancelled directly.
-    // If the task completes: when_any returns with the outcome at index 0.
-    auto variant_result =
-        co_await when_any(detail::into_outcome(std::move(inner_task)), tokens.wait()...);
+    // Race the wrapped task against all token waits.
+    //
+    // The token side is pure cancellation: `tokens.wait()` never yields a value, it only
+    // suspends until cancellation interrupts the underlying event wait. Because that
+    // cancellation is not caught here, a token firing makes `when_any(...)` cancel
+    // immediately, and execution never reaches the code below.
+    //
+    // The inner task is wrapped with `catch_cancel()`, so its cancellation is converted into
+    // a normal value of type `outcome<T, E, cancellation>` instead of cancelling the race.
+    // That means reaching the next line implies the winner was the first branch.
+    auto variant_result = co_await when_any(std::move(inner_task).catch_cancel(), tokens.wait()...);
     auto& task_result = std::get<0>(variant_result);
 
+    // Re-emit the inner task's cancellation as the cancellation of with_token(...).
     if(task_result.is_cancelled()) {
         co_await cancel();
     }
