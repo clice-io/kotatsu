@@ -269,8 +269,7 @@ public:
 
     explicit task(coroutine_handle h) noexcept : h(h) {
         if constexpr(!std::is_void_v<C>) {
-            this->h.promise().policy = static_cast<async_node::Policy>(this->h.promise().policy |
-                                                                       async_node::InterceptCancel);
+            this->h.promise().intercept_cancel();
         }
     }
 
@@ -347,8 +346,7 @@ public:
         if constexpr(std::same_as<C, cancellation>) {
             return std::move(*this);
         } else {
-            h.promise().policy =
-                static_cast<async_node::Policy>(h.promise().policy | async_node::InterceptCancel);
+            h.promise().intercept_cancel();
             auto handle = h;
             h = nullptr;
             using target = task<T, E, cancellation>;
@@ -397,6 +395,7 @@ task_return_object<T, E>::operator task<T, E, void>() && noexcept {
 
 template <typename T, typename E>
 task_return_object<T, E>::operator task<T, E, cancellation>() && noexcept {
+    handle.promise().intercept_cancel();
     auto out = task<T, E, cancellation>(handle);
     handle = nullptr;
     return out;

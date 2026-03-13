@@ -9,6 +9,10 @@
 
 namespace eventide {
 
+void async_node::intercept_cancel() noexcept {
+    policy = static_cast<Policy>(policy | InterceptCancel);
+}
+
 std::coroutine_handle<> aggregate_op::deliver_deferred() noexcept {
     if(deferred == Deferred::None || !awaiter) {
         return std::noop_coroutine();

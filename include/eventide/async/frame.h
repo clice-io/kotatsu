@@ -92,6 +92,11 @@ public:
         return state == Failed;
     }
 
+    // Keep this out-of-line. clang -O3 miscompiles direct promise policy writes in
+    // coroutine return-object conversions, which can drop InterceptCancel. See also
+    // https://github.com/llvm/llvm-project/issues/105595. Fixed in clang 21.
+    void intercept_cancel() noexcept;
+
     /// If this node is a task, clear its awaitee pointer.
     void clear_awaitee() noexcept;
 
