@@ -3,7 +3,6 @@
 #include <cassert>
 #include <concepts>
 #include <cstdint>
-#include <string_view>
 #include <type_traits>
 #include <variant>
 
@@ -17,26 +16,6 @@ constexpr bool is_outcome_v = false;
 
 template <typename T, typename E, typename C>
 constexpr bool is_outcome_v<outcome<T, E, C>> = true;
-
-/// Concept: error types that participate in structured concurrency.
-/// The framework calls should_propagate() to decide whether an error
-/// cancels sibling tasks and propagates upward through aggregates.
-template <typename E>
-concept structured_error = std::movable<E> && requires(const E& e) {
-    { e.should_propagate() } -> std::convertible_to<bool>;
-};
-
-/// Optional extension: error types with human-readable messages.
-template <typename E>
-concept descriptive_error = structured_error<E> && requires(const E& e) {
-    { e.message() } -> std::convertible_to<std::string_view>;
-};
-
-/// Optional extension: error types that support retry semantics.
-template <typename E>
-concept retriable_error = structured_error<E> && requires(const E& e) {
-    { e.is_retriable() } -> std::convertible_to<bool>;
-};
 
 struct outcome_ok_tag {};
 

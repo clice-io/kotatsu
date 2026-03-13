@@ -1,5 +1,6 @@
 #pragma once
 
+#include <concepts>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -8,6 +9,14 @@
 #include "outcome.h"
 
 namespace eventide {
+
+/// Concept: error types that participate in structured concurrency.
+/// The framework calls should_propagate() to decide whether an error
+/// cancels sibling tasks and propagates upward through aggregates.
+template <typename E>
+concept structured_error = std::movable<E> && requires(const E& e) {
+    { e.should_propagate() } -> std::convertible_to<bool>;
+};
 
 class error {
 public:
