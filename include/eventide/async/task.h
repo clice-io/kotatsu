@@ -231,7 +231,7 @@ public:
 
                 if(promise.state == async_node::Cancelled) {
                     if constexpr(!std::is_void_v<C>) {
-                        return R(detail::cancel_box<C>{C{}});
+                        return R(outcome_cancel(C{}));
                     } else {
                         std::abort();
                     }
@@ -360,7 +360,7 @@ private:
         using R = outcome<T, E, cancellation>;
 
         if(promise.state == async_node::Cancelled) {
-            return R(detail::cancel_box<cancellation>{cancellation{}});
+            return R(outcome_cancel(cancellation{}));
         }
 
         if constexpr(std::is_void_v<E>) {

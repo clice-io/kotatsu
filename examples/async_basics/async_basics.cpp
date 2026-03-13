@@ -174,8 +174,6 @@ void example_cancellation() {
         };
 
         auto handler = [&]() -> task<> {
-            // catch_cancel() converts task<int> -> ctask<int>
-            // (= task<expected<int, cancellation>>).
             // Cancellation becomes a value instead of propagating.
             auto result = co_await self_cancel().catch_cancel();
             if(result.has_value()) {

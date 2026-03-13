@@ -2,15 +2,21 @@
 
 #include <cassert>
 #include <concepts>
+#include <cstdint>
 #include <string_view>
 #include <type_traits>
-#include <utility>
 #include <variant>
 
 namespace eventide {
 
 template <typename T, typename E = void, typename C = void>
 class outcome;
+
+template <typename T>
+constexpr bool is_outcome_v = false;
+
+template <typename T, typename E, typename C>
+constexpr bool is_outcome_v<outcome<T, E, C>> = true;
 
 /// Concept: error types that participate in structured concurrency.
 /// The framework calls should_propagate() to decide whether an error
@@ -32,60 +38,11 @@ concept retriable_error = structured_error<E> && requires(const E& e) {
     { e.is_retriable() } -> std::convertible_to<bool>;
 };
 
-// ============================================================================
-// Box types: wrap values to disambiguate variant alternatives
-// ============================================================================
+struct outcome_ok_tag {};
 
-namespace detail {
-
-template <typename T>
-struct ok_box {
-    T value;
-};
-
-template <>
-struct ok_box<void> {};
-
-template <typename E>
-struct err_box {
-    E value;
-};
-
-template <typename C>
-struct cancel_box {
-    C value;
-};
-
-// Storage type selection via partial specialization
-
-template <typename T, typename E, typename C>
-struct outcome_storage {
-    using type = std::variant<ok_box<T>, err_box<E>, cancel_box<C>>;
-};
-
-template <typename T, typename E>
-struct outcome_storage<T, E, void> {
-    using type = std::variant<ok_box<T>, err_box<E>>;
-};
-
-template <typename T, typename C>
-struct outcome_storage<T, void, C> {
-    using type = std::variant<ok_box<T>, cancel_box<C>>;
-};
-
-template <typename T>
-struct outcome_storage<T, void, void> {
-    using type = ok_box<T>;
-};
-
-template <typename T, typename E, typename C>
-using outcome_storage_t = typename outcome_storage<T, E, C>::type;
-
-}  // namespace detail
-
-// ============================================================================
-// Factory tag types for constructing outcomes
-// ============================================================================
+inline outcome_ok_tag outcome_value() {
+    return {};
+}
 
 template <typename E>
 struct outcome_error_t {
@@ -97,128 +54,93 @@ outcome_error_t<std::decay_t<E>> outcome_error(E&& e) {
     return {std::forward<E>(e)};
 }
 
-/// Tag for constructing void-value outcomes: co_return outcome_value();
-struct outcome_ok_tag {};
-
-inline outcome_ok_tag outcome_value() {
-    return {};
-}
-
-// ============================================================================
-// outcome_traits: compile-time introspection
-// ============================================================================
-
-template <typename T>
-struct outcome_traits;
-
-template <typename T, typename E, typename C>
-struct outcome_traits<outcome<T, E, C>> {
-    using value_type = T;
-    using error_type = E;
-    using cancel_type = C;
-    constexpr static bool has_error_channel = !std::is_void_v<E>;
-    constexpr static bool has_cancel_channel = !std::is_void_v<C>;
+template <typename C>
+struct outcome_cancel_t {
+    C value;
 };
 
-template <typename T>
-constexpr bool is_outcome_v = false;
-
-template <typename T, typename E, typename C>
-constexpr bool is_outcome_v<outcome<T, E, C>> = true;
-
-template <typename T>
-constexpr bool has_cancel_channel_v = false;
-
-template <typename T, typename E, typename C>
-constexpr bool has_cancel_channel_v<outcome<T, E, C>> = !std::is_void_v<C>;
-
-template <typename T>
-constexpr bool has_error_channel_v = false;
-
-template <typename T, typename E, typename C>
-constexpr bool has_error_channel_v<outcome<T, E, C>> = !std::is_void_v<E>;
-
-// ============================================================================
-// outcome<T, E, C>: primary template (full three-state)
-// ============================================================================
+template <typename C>
+outcome_cancel_t<std::decay_t<C>> outcome_cancel(C&& c) {
+    return {std::forward<C>(c)};
+}
 
 template <typename T, typename E, typename C>
 class outcome {
-    using storage_type = detail::outcome_storage_t<T, E, C>;
-    storage_type storage;
+public:
+    using value_type = T;
+    using error_type = E;
+    using cancel_type = C;
+
+    enum class State : std::uint8_t { ok, err, cancelled };
+
+private:
+    template <typename X>
+    using member_t = std::conditional_t<std::is_void_v<X>, std::type_identity<void>, X>;
 
 public:
-    // --- Value construction ---
-
     template <typename U = T>
         requires (!std::is_void_v<T>) && std::constructible_from<T, U&&> &&
                  (!is_outcome_v<std::decay_t<U>> || std::same_as<std::decay_t<U>, T>)
-    outcome(U&& value) : storage(detail::ok_box<T>{T(std::forward<U>(value))}) {}
+    outcome(U&& value) : variant(std::in_place_index<0>, T(std::forward<U>(value))) {}
 
     outcome()
         requires std::is_void_v<T>
-        : storage(detail::ok_box<void>{}) {}
-
-    // --- Error construction ---
+        : variant(std::in_place_index<0>) {}
 
     template <typename U>
         requires (!std::is_void_v<E>) && std::constructible_from<E, U>
-    outcome(outcome_error_t<U> e) : storage(detail::err_box<E>{E(std::move(e.value))}) {}
-
-    // --- Cancel construction ---
+    outcome(outcome_error_t<U> e) : variant(std::in_place_index<1>, E(std::move(e.value))) {}
 
     template <typename U>
         requires (!std::is_void_v<C>) && std::constructible_from<C, U>
-    outcome(detail::cancel_box<U> c) : storage(detail::cancel_box<C>{C(std::move(c.value))}) {}
-
-    // --- Void-value construction from tag ---
+    outcome(outcome_cancel_t<U> c) : variant(std::in_place_index<2>, C(std::move(c.value))) {}
 
     outcome(outcome_ok_tag)
         requires std::is_void_v<T>
-        : storage(detail::ok_box<void>{}) {}
+        : variant(std::in_place_index<0>) {}
 
-    // --- State queries ---
+    State state() const noexcept {
+        return State(variant.index());
+    }
 
     bool has_value() const noexcept {
-        return std::holds_alternative<detail::ok_box<T>>(storage);
+        return variant.index() == 0;
     }
 
     bool has_error() const noexcept
         requires (!std::is_void_v<E>)
     {
-        return std::holds_alternative<detail::err_box<E>>(storage);
+        return variant.index() == 1;
     }
 
     bool is_cancelled() const noexcept
         requires (!std::is_void_v<C>)
     {
-        return std::holds_alternative<detail::cancel_box<C>>(storage);
+        return variant.index() == 2;
     }
 
     explicit operator bool() const noexcept {
         return has_value();
     }
 
-    // --- Value access ---
-
     auto& value() &
         requires (!std::is_void_v<T>)
     {
         assert(has_value());
-        return std::get<detail::ok_box<T>>(storage).value;
+        return std::get<0>(variant);
     }
 
     const auto& value() const&
         requires (!std::is_void_v<T>)
     {
         assert(has_value());
-        return std::get<detail::ok_box<T>>(storage).value;
+        return std::get<0>(variant);
     }
 
     auto&& value() &&
         requires(!std::is_void_v<T>) {
             assert(has_value());
-            return std::move(std::get<detail::ok_box<T>>(storage).value);
+            return std::move(std::get<0>(variant));
         }
 
         auto& operator*() &
@@ -247,63 +169,62 @@ public:
         return &value();
     }
 
-    // --- Error access ---
-
     auto& error() &
         requires (!std::is_void_v<E>)
     {
         assert(has_error());
-        return std::get<detail::err_box<E>>(storage).value;
+        return std::get<1>(variant);
     }
 
     const auto& error() const&
         requires (!std::is_void_v<E>)
     {
         assert(has_error());
-        return std::get<detail::err_box<E>>(storage).value;
+        return std::get<1>(variant);
     }
 
     auto&& error() &&
         requires(!std::is_void_v<E>) {
             assert(has_error());
-            return std::move(std::get<detail::err_box<E>>(storage).value);
+            return std::move(std::get<1>(variant));
         }
-
-        // --- Cancel access ---
 
         auto& cancellation() &
             requires (!std::is_void_v<C>)
     {
         assert(is_cancelled());
-        return std::get<detail::cancel_box<C>>(storage).value;
+        return std::get<2>(variant);
     }
 
     const auto& cancellation() const&
         requires (!std::is_void_v<C>)
     {
         assert(is_cancelled());
-        return std::get<detail::cancel_box<C>>(storage).value;
+        return std::get<2>(variant);
     }
 
-    auto&& cancellation() && requires(!std::is_void_v<C>) {
+auto&& cancellation() &&
+    requires(!std::is_void_v<C>) {
         assert(is_cancelled());
-        return std::move(std::get<detail::cancel_box<C>>(storage).value);
+        return std::move(std::get<2>(variant));
     }
-};
 
-// ============================================================================
-// outcome<T, void, void>: pure value specialization (no variant overhead)
-// ============================================================================
+    private : std::variant<member_t<T>, member_t<E>, member_t<C>> variant;
+};
 
 template <typename T>
 class outcome<T, void, void> {
-    detail::ok_box<T> storage;
+    using stored_type = std::conditional_t<std::is_void_v<T>, std::type_identity<void>, T>;
 
 public:
+    using value_type = T;
+    using error_type = void;
+    using cancel_type = void;
+
     template <typename U = T>
         requires (!std::is_void_v<T>) && std::constructible_from<T, U&&> &&
                  (!is_outcome_v<std::decay_t<U>> || std::same_as<std::decay_t<U>, T>)
-    outcome(U&& value) : storage{T(std::forward<U>(value))} {}
+    outcome(U&& value) : data(T(std::forward<U>(value))) {}
 
     outcome()
         requires std::is_void_v<T>
@@ -324,16 +245,16 @@ public:
     auto& value() &
         requires (!std::is_void_v<T>)
     {
-        return storage.value;
+        return data;
     }
 
     const auto& value() const&
         requires (!std::is_void_v<T>)
     {
-        return storage.value;
+        return data;
     }
 
-    auto&& value() && requires(!std::is_void_v<T>) { return std::move(storage.value); }
+    auto&& value() && requires(!std::is_void_v<T>) { return std::move(data); }
 
         auto& operator*() &
             requires (!std::is_void_v<T>)
@@ -360,6 +281,10 @@ public:
     {
         return &value();
     }
+
+private:
+    [[no_unique_address]]
+    std::conditional_t<std::is_void_v<T>, std::type_identity<void>, T> data;
 };
 
 }  // namespace eventide
