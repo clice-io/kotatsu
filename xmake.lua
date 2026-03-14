@@ -176,9 +176,9 @@ end
 if has_config("async") then
 	target("async", function()
 		set_kind("$(kind)")
-		add_files("src/async/*.cpp")
+		add_files("src/async/**.cpp")
 		add_includedirs("include", { public = true })
-		add_headerfiles("include/(eventide/async/*)")
+		add_headerfiles("include/(eventide/async/**)")
 		add_deps("common")
 		add_packages("libuv")
 	end)
@@ -228,7 +228,7 @@ if has_config("test") and has_config("ztest") then
 		set_kind("binary")
 		add_files("tests/main.cpp", "tests/common/**.cpp", "tests/reflection/**.cpp", "tests/zest/**.cpp")
 		if has_config("async") then
-			add_files("tests/eventide/**.cpp")
+			add_files("tests/async/**.cpp")
 			add_includedirs("examples/build_system")
 		end
 		if has_config("option") then
