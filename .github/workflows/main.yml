@@ -29,6 +29,7 @@ jobs:
             cmake:
               - 'src/**'
               - 'include/**'
+              - 'cmake/**'
               - 'tests/**'
               - 'CMakeLists.txt'
               - 'pixi.toml'

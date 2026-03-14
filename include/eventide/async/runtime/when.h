@@ -12,6 +12,7 @@
 #include <variant>
 
 #include "eventide/common/meta.h"
+#include "eventide/common/memory.h"
 #include "eventide/common/small_vector.h"
 #include "eventide/common/type_list.h"
 #include "eventide/async/runtime/frame.h"
@@ -178,7 +179,7 @@ void tuple_visit_at(std::size_t index, Tuple& tuple, F&& f) {
     throw std::invalid_argument("when_any(range) requires a non-empty range");
 #else
     assert(false && "when_any(range) requires a non-empty range");
-    std::abort();
+    EVENTIDE_THROW(std::invalid_argument("when_any(range) requires a non-empty range"));
 #endif
 }
 

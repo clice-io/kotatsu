@@ -1,10 +1,12 @@
+eventide_apply_cache_options(
+    CPPTRACE_DISABLE_CXX_20_MODULES ON
+)
 FetchContent_Declare(
     cpptrace
     GIT_REPOSITORY https://github.com/jeremy-rifkin/cpptrace.git
     GIT_TAG v1.0.4
     GIT_SHALLOW TRUE
 )
-set(CPPTRACE_DISABLE_CXX_20_MODULES ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(cpptrace)
 
 add_library(eventide_zest STATIC)
@@ -23,3 +25,5 @@ target_include_directories(eventide_zest PUBLIC
 target_link_libraries(eventide_zest PUBLIC
     cpptrace::cpptrace
 )
+
+eventide_apply_project_options(eventide_zest)

@@ -155,3 +155,6 @@ if(EVENTIDE_ENABLE_ASYNC)
         eventide::async
     )
 endif()
+
+eventide_apply_project_options(unit_tests)
+add_test(NAME unit_tests COMMAND unit_tests)

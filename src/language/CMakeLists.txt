@@ -13,3 +13,5 @@ target_include_directories(eventide_language PUBLIC
 target_link_libraries(eventide_language PUBLIC
     eventide::ipc
 )
+
+eventide_apply_project_options(eventide_language)

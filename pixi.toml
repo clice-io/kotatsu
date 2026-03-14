@@ -13,6 +13,8 @@ platforms = ["win-64", "linux-64", "osx-arm64"]
 
 [dependencies]
 python = "*"
+ninja = "*"
+ccache = "*"
 
 [environments]
 default = []
@@ -38,6 +40,11 @@ depends-on = [
 sysroot_linux-64 = "==2.17"
 gcc = "==14.2.0"
 gxx = "==14.2.0"
+clang = "==20.1.8"
+clangxx = "==20.1.8"
+lld = "==20.1.8"
+llvm-tools = "==20.1.8"
+compiler-rt = "==20.1.8"
 
 [target.osx-arm64.dependencies]
 clang = "==20.1.8"
@@ -48,6 +55,8 @@ compiler-rt = "==20.1.8"
 libcxx = "==20.1.8"
 
 [target.win-64.dependencies]
+gcc = "==14.2.0"
+gxx = "==14.2.0"
 clang = "==20.1.8"
 clangxx = "==20.1.8"
 lld = "==20.1.8"

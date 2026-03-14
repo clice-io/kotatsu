@@ -1,19 +1,13 @@
-FetchContent_Declare(
+eventide_add_git_dependency(
     libuv
     GIT_REPOSITORY https://github.com/libuv/libuv.git
     GIT_TAG v1.52.0
-    GIT_SHALLOW TRUE
+    OPTIONS
+        LIBUV_BUILD_TESTS OFF
+        LIBUV_BUILD_BENCH OFF
+        LIBUV_BUILD_SHARED OFF
+        LIBUV_BUILD_STATIC ON
 )
-
-# Configure libuv via FetchContent so no system install is required.
-if(NOT WIN32 AND CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(ASAN ON CACHE BOOL "Enable AddressSanitizer for libuv" FORCE)
-endif()
-set(LIBUV_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(LIBUV_BUILD_BENCH OFF CACHE BOOL "" FORCE)
-set(LIBUV_BUILD_SHARED OFF CACHE BOOL "" FORCE)
-set(LIBUV_BUILD_STATIC ON CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(libuv)
 
 if(WIN32)
     target_compile_definitions(uv_a PRIVATE _CRT_SECURE_NO_WARNINGS)
@@ -56,3 +50,5 @@ target_include_directories(eventide_async PUBLIC
 target_link_libraries(eventide_async PUBLIC
     libuv::libuv
 )
+
+eventide_apply_project_options(eventide_async)

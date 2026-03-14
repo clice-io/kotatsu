@@ -12,6 +12,7 @@
 #include "eventide/deco/decl.h"
 #include "eventide/deco/ty.h"
 #include "eventide/common/comptime.h"
+#include "eventide/common/memory.h"
 #include "eventide/common/meta.h"
 
 namespace deco::detail {
@@ -27,23 +28,23 @@ struct ParsedNamedOption {
 constexpr auto parse_named_option(std::string_view full_name) {
     if(full_name.starts_with("--")) {
         if(full_name.size() <= 2) {
-            throw "Option name cannot be only '--'";
+            EVENTIDE_THROW("Option name cannot be only '--'");
         }
         return ParsedNamedOption{backend::pfx_double, "--", full_name.substr(2)};
     }
     if(full_name.starts_with("-")) {
         if(full_name.size() <= 1) {
-            throw "Option name cannot be only '-'";
+            EVENTIDE_THROW("Option name cannot be only '-'");
         }
         return ParsedNamedOption{backend::pfx_dash, "-", full_name.substr(1)};
     }
     if(full_name.starts_with("/")) {
         if(full_name.size() <= 1) {
-            throw "Option name cannot be only '/'";
+            EVENTIDE_THROW("Option name cannot be only '/'");
         }
         return ParsedNamedOption{backend::pfx_slash_dash, "/", full_name.substr(1)};
     }
-    throw "Option name must start with '-', '--', or '/'";
+    EVENTIDE_THROW("Option name must start with '-', '--', or '/'");
 }
 
 template <typename Derived, typename RootTy>
@@ -70,7 +71,7 @@ private:
                 return;
             }
         }
-        throw "Unmatched config end field";
+        EVENTIDE_THROW("Unmatched config end field");
     }
 
     constexpr static void config_consume_next(std::vector<config_state>& config_stack,
@@ -416,7 +417,7 @@ private:
     constexpr void add_input_option(const decl::CommonOptionFields& cfg,
                                     accessor_fn mapped_accessor) {
         if(hasInputSlot) {
-            throw "Only one DecoInput can be declared";
+            EVENTIDE_THROW("Only one DecoInput can be declared");
         }
         hasInputSlot = true;
         if(inputOptionId == 0) {
@@ -432,7 +433,7 @@ private:
     constexpr void add_trailing_option(const decl::CommonOptionFields& cfg,
                                        accessor_fn mapped_accessor) {
         if(hasTrailingSlot) {
-            throw "Only one DecoPack can be declared";
+            EVENTIDE_THROW("Only one DecoPack can be declared");
         }
         hasTrailingSlot = true;
         hasTrailingPack = true;
@@ -530,7 +531,7 @@ private:
         const bool allow_joined = has_kv_style(cfg.style, decl::KVStyle::Joined);
         const bool allow_separate = has_kv_style(cfg.style, decl::KVStyle::Separate);
         if(!allow_joined && !allow_separate) {
-            throw "DecoKV style must include Joined and/or Separate";
+            EVENTIDE_THROW("DecoKV style must include Joined and/or Separate");
         }
 
         auto& item = new_item(mapped_accessor);
@@ -559,10 +560,10 @@ private:
                                     accessor_fn mapped_accessor,
                                     std::string_view field_name) {
         if(cfg.arg_num == 0) {
-            throw "DecoMulti arg_num must be greater than 0";
+            EVENTIDE_THROW("DecoMulti arg_num must be greater than 0");
         }
         if(cfg.arg_num > std::numeric_limits<unsigned char>::max()) {
-            throw "DecoMulti arg_num exceeds backend param capacity";
+            EVENTIDE_THROW("DecoMulti arg_num exceeds backend param capacity");
         }
         auto& item = new_item(mapped_accessor);
         item.kind = backend::Option::MultiArgClass;

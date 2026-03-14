@@ -9,3 +9,5 @@ target_sources(eventide_option PRIVATE
 target_include_directories(eventide_option PUBLIC
     "${PROJECT_SOURCE_DIR}/include"
 )
+
+eventide_apply_project_options(eventide_option)

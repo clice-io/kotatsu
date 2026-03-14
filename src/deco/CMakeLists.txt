@@ -9,3 +9,5 @@ target_link_libraries(eventide_deco INTERFACE
     eventide::option
     eventide::reflection
 )
+
+eventide_apply_project_options(eventide_deco)

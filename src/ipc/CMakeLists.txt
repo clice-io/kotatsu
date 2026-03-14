@@ -16,3 +16,5 @@ target_link_libraries(eventide_ipc PUBLIC
     eventide::async
     eventide::serde::json
 )
+
+eventide_apply_project_options(eventide_ipc)
