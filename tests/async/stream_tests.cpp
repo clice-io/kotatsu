@@ -130,8 +130,8 @@ task<std::pair<std::string, std::size_t>> read_chunk_from_pipe(pipe p) {
     co_return std::make_pair(out, next->size());
 }
 
-task<std::pair<result<std::string>, result<std::string>>> read_chunk_then_some(pipe p,
-                                                                               event& first_chunk_consumed) {
+task<std::pair<result<std::string>, result<std::string>>>
+    read_chunk_then_some(pipe p, event& first_chunk_consumed) {
     auto first = co_await p.read_chunk();
     result<std::string> first_out = outcome_error(error::invalid_argument);
     if(first) {
