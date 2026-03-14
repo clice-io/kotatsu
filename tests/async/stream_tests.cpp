@@ -491,7 +491,7 @@ TEST_CASE(stop) {
 
     EXPECT_TRUE(!task2->is_finished());
     acc->stop();
-    EXPECT_TRUE(task2->is_finished());
+    EXPECT_TRUE(task2->is_failed());
 }
 
 };  // TEST_SUITE(pipe)

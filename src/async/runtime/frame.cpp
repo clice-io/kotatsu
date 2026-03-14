@@ -26,7 +26,13 @@ std::coroutine_handle<> aggregate_op::deliver_deferred() noexcept {
     switch(deferred) {
         case Deferred::Resume: return static_cast<standard_task*>(awaiter)->handle();
 
-        case Deferred::Cancel: awaiter->state = Cancelled; return awaiter->final_transition();
+        case Deferred::Cancel:
+            if(policy & InterceptCancel) {
+                state = Cancelled;
+                return static_cast<standard_task*>(awaiter)->handle();
+            }
+            awaiter->state = Cancelled;
+            return awaiter->final_transition();
 
         case Deferred::Error: return static_cast<standard_task*>(awaiter)->handle();
 
@@ -219,7 +225,7 @@ std::coroutine_handle<> async_node::final_transition() {
 ///   or propagates cancellation upward.
 /// For Aggregate parents (when_all/when_any/scope):
 ///   - Cancellation: cancels all siblings, propagates upward.
-///   - Failed (exception/propagating error): cancels all siblings, resumes awaiter.
+///   - Failed child (exception or structured error): cancels all siblings, resumes awaiter.
 ///   - WhenAny completion: records winner, cancels siblings, resumes awaiter.
 ///   - WhenAll/Scope completion: increments counter, resumes awaiter when all done.
 std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
@@ -255,28 +261,38 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
                 return std::noop_coroutine();
             }
 
-            const bool cancelled = child->state == Cancelled && !(child->policy & InterceptCancel);
-
+            const bool aggregate_catches_cancel = self->policy & InterceptCancel;
+            const bool cancelled = child->state == Cancelled &&
+                                   (aggregate_catches_cancel || !(child->policy & InterceptCancel));
             const bool failed = child->state == Failed;
+
+            auto record_child_index = [&](std::size_t& slot) {
+                if(slot != aggregate_op::npos) {
+                    return;
+                }
+                for(std::size_t i = 0; i < self->awaitees.size(); ++i) {
+                    if(self->awaitees[i] == child) {
+                        slot = i;
+                        return;
+                    }
+                }
+            };
 
             if(cancelled || failed) {
                 if(cancelled) {
+                    if(aggregate_catches_cancel) {
+                        record_child_index(self->first_cancel_child);
+                    }
                     self->defer_cancel();
                 }
                 if(failed) {
                     const bool first_error = self->deferred != aggregate_op::Deferred::Error;
                     self->defer_error();
+                    if(first_error) {
+                        record_child_index(self->first_error_child);
+                    }
                     if(first_error && child->propagated_exception) {
                         self->propagated_exception = child->propagated_exception;
-                    }
-                    if(first_error && self->kind == NodeKind::WhenAny &&
-                       self->winner == aggregate_op::npos) {
-                        for(std::size_t i = 0; i < self->awaitees.size(); ++i) {
-                            if(self->awaitees[i] == child) {
-                                self->winner = i;
-                                break;
-                            }
-                        }
                     }
                 }
 

@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 
+#include "eventide/common/config.h"
+
 namespace eventide {
 
 class sync_primitive;
@@ -276,6 +278,12 @@ protected:
     /// Index of the first child to finish (when_any only).
     std::size_t winner = npos;
 
+    /// Index of the first child to finish with a structured error or exception.
+    std::size_t first_error_child = npos;
+
+    /// Index of the first child to finish with cancellation.
+    std::size_t first_cancel_child = npos;
+
     /// Runtime phase for this aggregate while it is awaiting children.
     Phase phase = Phase::Open;
 
@@ -312,7 +320,7 @@ protected:
 
     /// Rethrows the propagated exception if one was captured from a failed child.
     void rethrow_if_propagated() {
-#ifdef __cpp_exceptions
+#if EVENTIDE_ENABLE_EXCEPTIONS
         if(propagated_exception) {
             std::rethrow_exception(propagated_exception);
         }
@@ -338,9 +346,12 @@ protected:
         awaiter = awaiter_node;
         completed = 0;
         winner = npos;
+        first_error_child = npos;
+        first_cancel_child = npos;
         phase = Phase::Arming;
         deferred = Deferred::None;
         propagated_exception = nullptr;
+        state = Running;
 
         for(auto* child: awaitees) {
             if(child) {

@@ -12,7 +12,7 @@
 #include "../common/fd_helpers.h"
 #include "eventide/ipc/peer.h"
 #include "eventide/zest/zest.h"
-#include "eventide/common/compiler.h"
+#include "eventide/common/config.h"
 #include "eventide/async/async.h"
 #include "eventide/serde/json/deserializer.h"
 

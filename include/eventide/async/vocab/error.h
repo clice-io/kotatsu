@@ -1,6 +1,5 @@
 #pragma once
 
-#include <concepts>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -9,14 +8,6 @@
 #include "eventide/async/vocab/outcome.h"
 
 namespace eventide {
-
-/// Concept: error types that participate in structured concurrency.
-/// The framework calls should_propagate() to decide whether an error
-/// cancels sibling tasks and propagates upward through aggregates.
-template <typename E>
-concept structured_error = std::movable<E> && requires(const E& e) {
-    { e.should_propagate() } -> std::convertible_to<bool>;
-};
 
 class error {
 public:
@@ -40,12 +31,6 @@ public:
 
     constexpr explicit operator bool() const noexcept {
         return has_error();
-    }
-
-    /// structured_error protocol: real errors propagate; expected
-    /// completion signals (operation_aborted, end_of_file) do not.
-    bool should_propagate() const noexcept {
-        return has_error() && *this != operation_aborted && *this != end_of_file;
     }
 
     std::string_view message() const;

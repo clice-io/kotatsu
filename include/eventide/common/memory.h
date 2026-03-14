@@ -16,13 +16,7 @@
 #include <type_traits>
 #include <utility>
 
-#ifndef EVENTIDE_ENABLE_EXCEPTIONS
-#if defined(__cpp_exceptions)
-#define EVENTIDE_ENABLE_EXCEPTIONS 1
-#else
-#define EVENTIDE_ENABLE_EXCEPTIONS 0
-#endif
-#endif
+#include "eventide/common/config.h"
 
 #if EVENTIDE_ENABLE_EXCEPTIONS
 #define EVENTIDE_THROW(exception_expr) throw exception_expr

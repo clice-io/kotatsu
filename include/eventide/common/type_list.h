@@ -1,0 +1,132 @@
+#pragma once
+
+#include <concepts>
+#include <type_traits>
+
+namespace eventide {
+
+template <typename... Ts>
+struct type_list {};
+
+template <typename List, typename T>
+struct type_list_prepend;
+
+template <typename... Ts, typename T>
+struct type_list_prepend<type_list<Ts...>, T> {
+    using type = type_list<T, Ts...>;
+};
+
+template <typename List, typename T>
+using type_list_prepend_t = typename type_list_prepend<List, T>::type;
+
+template <typename List, typename T>
+struct type_list_append;
+
+template <typename... Ts, typename T>
+struct type_list_append<type_list<Ts...>, T> {
+    using type = type_list<Ts..., T>;
+};
+
+template <typename List, typename T>
+using type_list_append_t = typename type_list_append<List, T>::type;
+
+template <typename List, typename T>
+struct type_list_append_unique;
+
+template <typename... Ts, typename T>
+struct type_list_append_unique<type_list<Ts...>, T> {
+    using type =
+        std::conditional_t<(std::same_as<T, Ts> || ...), type_list<Ts...>, type_list<Ts..., T>>;
+};
+
+template <typename List, typename T>
+using type_list_append_unique_t = typename type_list_append_unique<List, T>::type;
+
+template <typename List, typename T>
+struct type_list_contains;
+
+template <typename... Ts, typename T>
+struct type_list_contains<type_list<Ts...>, T> :
+    std::bool_constant<(std::same_as<T, Ts> || ...)> {};
+
+template <typename List, typename T>
+constexpr inline bool type_list_contains_v = type_list_contains<List, T>::value;
+
+template <typename List, template <typename> typename Predicate>
+struct type_list_filter;
+
+template <template <typename> typename Predicate>
+struct type_list_filter<type_list<>, Predicate> {
+    using type = type_list<>;
+};
+
+template <typename T, typename... Ts, template <typename> typename Predicate>
+struct type_list_filter<type_list<T, Ts...>, Predicate> {
+private:
+    using tail = typename type_list_filter<type_list<Ts...>, Predicate>::type;
+
+public:
+    using type = std::conditional_t<Predicate<T>::value, type_list_prepend_t<tail, T>, tail>;
+};
+
+template <typename List, template <typename> typename Predicate>
+using type_list_filter_t = typename type_list_filter<List, Predicate>::type;
+
+template <typename List, template <typename> typename Mapper>
+struct type_list_transform;
+
+template <template <typename> typename Mapper, typename... Ts>
+struct type_list_transform<type_list<Ts...>, Mapper> {
+    using type = type_list<typename Mapper<Ts>::type...>;
+};
+
+template <typename List, template <typename> typename Mapper>
+using type_list_transform_t = typename type_list_transform<List, Mapper>::type;
+
+template <typename List>
+struct type_list_unique;
+
+template <typename Accum, typename List>
+struct type_list_unique_impl;
+
+template <>
+struct type_list_unique<type_list<>> {
+    using type = type_list<>;
+};
+
+template <typename... Ts>
+struct type_list_unique_impl<type_list<Ts...>, type_list<>> {
+    using type = type_list<Ts...>;
+};
+
+template <typename... Ts, typename T, typename... Rest>
+struct type_list_unique_impl<type_list<Ts...>, type_list<T, Rest...>> {
+private:
+    using next = std::conditional_t<type_list_contains_v<type_list<Ts...>, T>,
+                                    type_list<Ts...>,
+                                    type_list<Ts..., T>>;
+
+public:
+    using type = typename type_list_unique_impl<next, type_list<Rest...>>::type;
+};
+
+template <typename... Ts>
+struct type_list_unique<type_list<Ts...>> {
+    using type = typename type_list_unique_impl<type_list<>, type_list<Ts...>>::type;
+};
+
+template <typename List>
+using type_list_unique_t = typename type_list_unique<List>::type;
+
+template <typename List, template <typename...> typename Target>
+struct type_list_apply;
+
+template <typename... Ts, template <typename...> typename Target>
+struct type_list_apply<type_list<Ts...>, Target> {
+    using type = Target<Ts...>;
+};
+
+template <typename List, template <typename...> typename Target>
+using type_list_apply_t = typename type_list_apply<List, Target>::type;
+
+}  // namespace eventide

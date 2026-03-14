@@ -21,3 +21,14 @@
 #else
 #define EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF 0
 #endif
+
+#if defined(EVENTIDE_ENABLE_EXCEPTIONS)
+#if EVENTIDE_ENABLE_EXCEPTIONS && !defined(__cpp_exceptions)
+#undef EVENTIDE_ENABLE_EXCEPTIONS
+#define EVENTIDE_ENABLE_EXCEPTIONS 0
+#endif
+#elif defined(__cpp_exceptions)
+#define EVENTIDE_ENABLE_EXCEPTIONS 1
+#else
+#define EVENTIDE_ENABLE_EXCEPTIONS 0
+#endif

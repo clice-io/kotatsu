@@ -9,6 +9,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "eventide/common/config.h"
 #include "eventide/common/meta.h"
 #include "eventide/async/io/loop.h"
 #include "eventide/async/runtime/frame.h"
@@ -29,11 +30,11 @@ template <typename T, typename E, typename C>
 struct promise_result {
     std::optional<outcome<T, E, void>> value;
 
-    bool has_propagating_error() const noexcept {
-        if constexpr(!std::is_void_v<E> && structured_error<E>) {
-            return value.has_value() && value->has_error() && value->error().should_propagate();
-        } else {
+    bool has_error_result() const noexcept {
+        if constexpr(std::is_void_v<E>) {
             return false;
+        } else {
+            return value.has_value() && value->has_error();
         }
     }
 
@@ -49,7 +50,7 @@ template <>
 struct promise_result<void, void, void> {
     std::optional<outcome<void, void, void>> value;
 
-    bool has_propagating_error() const noexcept {
+    bool has_error_result() const noexcept {
         return false;
     }
 
@@ -63,7 +64,7 @@ struct promise_result<void, void, void> {
 // ============================================================================
 
 struct promise_exception {
-#ifdef __cpp_exceptions
+#if EVENTIDE_ENABLE_EXCEPTIONS
     bool has_exception() const noexcept {
         return exception != nullptr;
     }
@@ -119,7 +120,7 @@ struct transition_await {
             if(promise.has_exception()) {
                 promise.state = async_node::Failed;
                 promise.propagated_exception = promise.get_exception();
-            } else if(promise.has_propagating_error()) {
+            } else if(promise.has_error_result()) {
                 promise.state = async_node::Failed;
             } else {
                 promise.state = state;
@@ -195,6 +196,10 @@ public:
 
     static_assert(std::is_void_v<C> || std::same_as<C, cancellation>,
                   "task only supports void or cancellation cancel channels");
+
+    using value_type = T;
+    using error_type = E;
+    using cancel_type = C;
 
     using promise_type = task_promise_object<T, E>;
 

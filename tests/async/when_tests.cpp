@@ -55,6 +55,15 @@ struct deferred_cancel_await : system_op {
     }
 };
 
+struct custom_error {
+    int code = 0;
+
+    friend bool operator==(const custom_error&, const custom_error&) = default;
+};
+
+template <typename Scope, typename TaskType>
+concept scope_spawnable = requires(Scope scope, TaskType task) { scope.spawn(std::move(task)); };
+
 task<int> ready_int(int value) {
     co_return value;
 }
@@ -72,23 +81,55 @@ static_assert(detail::owned_awaitable<task<int>>);
 static_assert(!detail::owned_awaitable<task<int>&>);
 static_assert(detail::owned_awaitable<semaphore::acquire_awaiter>);
 static_assert(!detail::owned_awaitable<semaphore::acquire_awaiter&>);
-static_assert(detail::owned_async_range<small_vector<task<int>>>);
-static_assert(!detail::owned_async_range<small_vector<task<int>>&>);
+static_assert(detail::async_range<small_vector<task<int>>>);
 static_assert(!std::constructible_from<when_any<>>);
-static_assert(
-    !std::constructible_from<when_all<detail::range_tasks<task<int>>>, small_vector<task<int>>&>);
-static_assert(
-    !std::constructible_from<when_any<detail::range_tasks<task<int>>>, small_vector<task<int>>&>);
 
-using when_all_mixed_result =
-    decltype(std::declval<decltype(when_all(std::declval<task<int>>(), std::declval<task<>>()))>()
-                 .await_resume());
-using when_any_mixed_result =
-    decltype(std::declval<decltype(when_any(std::declval<task<int>>(), std::declval<task<>>()))>()
-                 .await_resume());
+void when_type_checks() {
+    task<int> value;
+    task<> unit;
+    task<int, error> value_error;
+    task<int, error> other_value_error;
+    task<int, custom_error> value_custom_error;
+    task<int, error, cancellation> value_error_cancel;
 
-static_assert(std::same_as<when_all_mixed_result, std::tuple<int, std::nullopt_t>>);
-static_assert(std::same_as<when_any_mixed_result, std::variant<int, std::nullopt_t>>);
+    static_assert(std::same_as<decltype(when_all(std::move(value), std::move(unit)).await_resume()),
+                               std::tuple<int, std::nullopt_t>>);
+    static_assert(std::same_as<decltype(when_any(std::move(value), std::move(unit)).await_resume()),
+                               std::variant<int, std::nullopt_t>>);
+    static_assert(
+        std::same_as<decltype(when_all(std::move(value_error), std::move(unit)).await_resume()),
+                     outcome<std::tuple<int, std::nullopt_t>, error, void>>);
+    static_assert(
+        std::same_as<decltype(when_any(std::move(value_error), std::move(unit)).await_resume()),
+                     outcome<std::variant<int, std::nullopt_t>, error, void>>);
+    static_assert(
+        std::same_as<
+            decltype(when_all(std::move(value_error), std::move(other_value_error)).await_resume()),
+            outcome<std::tuple<int, int>, error, void>>);
+    static_assert(
+        std::same_as<
+            decltype(when_any(std::move(value_error), std::move(other_value_error)).await_resume()),
+            outcome<std::variant<int, int>, error, void>>);
+    static_assert(
+        std::same_as<decltype(when_all(std::move(value_error), std::move(value_custom_error))
+                                  .await_resume()),
+                     outcome<std::tuple<int, int>, std::variant<error, custom_error>, void>>);
+    static_assert(
+        std::same_as<decltype(when_any(std::move(value_error), std::move(value_custom_error))
+                                  .await_resume()),
+                     outcome<std::variant<int, int>, std::variant<error, custom_error>, void>>);
+    static_assert(std::same_as<
+                  decltype(when_all(std::move(value_error_cancel), std::move(unit)).await_resume()),
+                  outcome<std::tuple<int, std::nullopt_t>, error, cancellation>>);
+    static_assert(std::same_as<
+                  decltype(when_any(std::move(value_error_cancel), std::move(unit)).await_resume()),
+                  outcome<std::variant<int, std::nullopt_t>, error, cancellation>>);
+}
+
+static_assert(std::same_as<decltype(std::declval<async_scope<error>>().await_resume()),
+                           outcome<void, error, void>>);
+static_assert(scope_spawnable<async_scope<error>, task<int, error>>);
+static_assert(!scope_spawnable<async_scope<>, task<int, error>>);
 
 TEST_SUITE(when_ops) {
 
@@ -232,6 +273,35 @@ TEST_CASE(any_child_cancel) {
     EXPECT_EQ(slow_done, 0);
 }
 
+TEST_CASE(any_catch_cancel_promotes_aggregate_cancellation) {
+    event_loop loop;
+    int slow_done = 0;
+
+    auto canceler = [&]() -> task<int> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await cancel();
+        co_return 1;
+    };
+
+    auto slow = [&]() -> task<int> {
+        co_await sleep(std::chrono::milliseconds{5}, loop);
+        slow_done += 1;
+        co_return 2;
+    };
+
+    auto combined = [&]() -> task<> {
+        auto result = co_await when_any(slow(), canceler().catch_cancel());
+        EXPECT_TRUE(result.is_cancelled());
+    };
+
+    auto task = combined();
+    loop.schedule(task);
+    loop.run();
+
+    EXPECT_TRUE(task->is_finished());
+    EXPECT_EQ(slow_done, 0);
+}
+
 TEST_CASE(all_cancel_others) {
     event_loop loop;
     int cancel_started = 0;
@@ -262,6 +332,35 @@ TEST_CASE(all_cancel_others) {
 
     EXPECT_TRUE(task->is_cancelled());
     EXPECT_EQ(cancel_started, 1);
+    EXPECT_EQ(slow_done, 0);
+}
+
+TEST_CASE(all_catch_cancel_promotes_aggregate_cancellation) {
+    event_loop loop;
+    int slow_done = 0;
+
+    auto canceler = [&]() -> task<int> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await cancel();
+        co_return 1;
+    };
+
+    auto slow = [&]() -> task<int> {
+        co_await sleep(std::chrono::milliseconds{5}, loop);
+        slow_done += 1;
+        co_return 2;
+    };
+
+    auto combined = [&]() -> task<> {
+        auto result = co_await when_all(slow(), canceler().catch_cancel());
+        EXPECT_TRUE(result.is_cancelled());
+    };
+
+    auto task = combined();
+    loop.schedule(task);
+    loop.run();
+
+    EXPECT_TRUE(task->is_finished());
     EXPECT_EQ(slow_done, 0);
 }
 
@@ -528,7 +627,7 @@ TEST_CASE(when_any_second_wins) {
     EXPECT_EQ(std::get<1>(winner), 2);
 }
 
-#ifdef __cpp_exceptions
+#if EVENTIDE_ENABLE_EXCEPTIONS
 TEST_CASE(when_all_exception) {
     auto thrower = []() -> task<int> {
         throw std::runtime_error("boom");
@@ -1033,7 +1132,7 @@ task<int, error> delayed_return_value(event_loop& loop, int ms, int val) {
 
 }  // namespace
 
-#ifdef __cpp_exceptions
+#if EVENTIDE_ENABLE_EXCEPTIONS
 
 TEST_SUITE(structured_concurrency_exceptions) {
 
@@ -1280,7 +1379,7 @@ TEST_CASE(exception_in_direct_co_await_rethrows) {
 
 };  // TEST_SUITE(structured_concurrency_exceptions)
 
-#endif  // __cpp_exceptions
+#endif  // EVENTIDE_ENABLE_EXCEPTIONS
 
 TEST_SUITE(structured_concurrency_errors) {
 
@@ -1300,9 +1399,9 @@ TEST_CASE(propagating_error_in_when_all_cancels_siblings) {
     };
 
     auto combined = [&]() -> task<> {
-        try {
-            co_await when_all(failing(), slow());
-        } catch(...) {}
+        auto res = co_await when_all(failing(), slow());
+        EXPECT_TRUE(res.has_error());
+        EXPECT_EQ(res.error(), error::connection_refused);
     };
 
     auto t = combined();
@@ -1323,9 +1422,9 @@ TEST_CASE(propagating_error_immediate_when_all) {
     };
 
     auto combined = [&]() -> task<> {
-        try {
-            co_await when_all(failing(), normal());
-        } catch(...) {}
+        auto res = co_await when_all(failing(), normal());
+        EXPECT_TRUE(res.has_error());
+        EXPECT_EQ(res.error(), error::connection_refused);
     };
 
     run(combined());
@@ -1346,7 +1445,7 @@ TEST_CASE(propagating_error_in_direct_co_await_returns_error) {
     EXPECT_EQ(res->error(), error::connection_refused);
 }
 
-TEST_CASE(non_propagating_error_does_not_cancel_siblings) {
+TEST_CASE(operation_aborted_error_now_cancels_siblings) {
     event_loop loop;
     int slow_done = 0;
 
@@ -1361,11 +1460,9 @@ TEST_CASE(non_propagating_error_does_not_cancel_siblings) {
     };
 
     auto combined = [&]() -> task<> {
-        auto [a, b] = co_await when_all(aborting(), slow());
-        EXPECT_TRUE(a.has_error());
-        EXPECT_EQ(a.error(), error::operation_aborted);
-        EXPECT_TRUE(b.has_value());
-        EXPECT_EQ(*b, 42);
+        auto res = co_await when_all(aborting(), slow());
+        EXPECT_TRUE(res.has_error());
+        EXPECT_EQ(res.error(), error::operation_aborted);
     };
 
     auto t = combined();
@@ -1373,10 +1470,10 @@ TEST_CASE(non_propagating_error_does_not_cancel_siblings) {
     loop.run();
 
     EXPECT_TRUE(t->is_finished());
-    EXPECT_EQ(slow_done, 1);
+    EXPECT_EQ(slow_done, 0);
 }
 
-TEST_CASE(eof_error_does_not_cancel_siblings) {
+TEST_CASE(eof_error_now_cancels_siblings) {
     event_loop loop;
     int slow_done = 0;
 
@@ -1391,11 +1488,9 @@ TEST_CASE(eof_error_does_not_cancel_siblings) {
     };
 
     auto combined = [&]() -> task<> {
-        auto [a, b] = co_await when_all(eof_task(), slow());
-        EXPECT_TRUE(a.has_error());
-        EXPECT_EQ(a.error(), error::end_of_file);
-        EXPECT_TRUE(b.has_value());
-        EXPECT_EQ(*b, 99);
+        auto res = co_await when_all(eof_task(), slow());
+        EXPECT_TRUE(res.has_error());
+        EXPECT_EQ(res.error(), error::end_of_file);
     };
 
     auto t = combined();
@@ -1403,10 +1498,10 @@ TEST_CASE(eof_error_does_not_cancel_siblings) {
     loop.run();
 
     EXPECT_TRUE(t->is_finished());
-    EXPECT_EQ(slow_done, 1);
+    EXPECT_EQ(slow_done, 0);
 }
 
-TEST_CASE(propagating_error_in_when_any_returns_error_as_winner) {
+TEST_CASE(propagating_error_in_when_any_returns_outer_error) {
     event_loop loop;
     int slow_done = 0;
 
@@ -1422,9 +1517,7 @@ TEST_CASE(propagating_error_in_when_any_returns_error_as_winner) {
     };
 
     auto combined = [&]() -> task<> {
-        auto winner = co_await when_any(failing(), slow());
-        EXPECT_EQ(winner.index(), 0U);
-        auto& res = std::get<0>(winner);
+        auto res = co_await when_any(failing(), slow());
         EXPECT_TRUE(res.has_error());
         EXPECT_EQ(res.error(), error::connection_refused);
     };
@@ -1437,7 +1530,7 @@ TEST_CASE(propagating_error_in_when_any_returns_error_as_winner) {
     EXPECT_EQ(slow_done, 0);
 }
 
-TEST_CASE(propagating_error_in_scope_does_not_cross_type_boundary) {
+TEST_CASE(direct_co_await_error_inside_scope_child_does_not_escape) {
     event_loop loop;
     int slow_done = 0;
 
@@ -1470,6 +1563,68 @@ TEST_CASE(propagating_error_in_scope_does_not_cross_type_boundary) {
     EXPECT_EQ(slow_done, 1);
 }
 
+TEST_CASE(async_scope_returns_structured_error) {
+    event_loop loop;
+    int slow_done = 0;
+
+    auto failing = [&]() -> task<int, error> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_return outcome_error(error::connection_refused);
+    };
+
+    auto slow = [&]() -> task<> {
+        co_await sleep(std::chrono::milliseconds{50}, loop);
+        slow_done += 1;
+    };
+
+    auto driver = [&]() -> task<> {
+        async_scope<error> scope;
+        scope.spawn(failing());
+        scope.spawn(slow());
+        auto res = co_await scope;
+        EXPECT_TRUE(res.has_error());
+        EXPECT_EQ(res.error(), error::connection_refused);
+    };
+
+    auto t = driver();
+    loop.schedule(t);
+    loop.run();
+
+    EXPECT_TRUE(t->is_finished());
+    EXPECT_EQ(slow_done, 0);
+}
+
+TEST_CASE(async_scope_mixed_error_types) {
+    event_loop loop;
+    int slow_done = 0;
+
+    auto failing = [&]() -> task<int, custom_error> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_return outcome_error(custom_error{7});
+    };
+
+    auto slow = [&]() -> task<> {
+        co_await sleep(std::chrono::milliseconds{50}, loop);
+        slow_done += 1;
+    };
+
+    auto driver = [&]() -> task<> {
+        async_scope<error, custom_error> scope;
+        scope.spawn(failing());
+        scope.spawn(slow());
+        auto res = co_await scope;
+        EXPECT_TRUE(res.has_error());
+        EXPECT_EQ(std::get<custom_error>(res.error()), custom_error{7});
+    };
+
+    auto t = driver();
+    loop.schedule(t);
+    loop.run();
+
+    EXPECT_TRUE(t->is_finished());
+    EXPECT_EQ(slow_done, 0);
+}
+
 TEST_CASE(propagating_error_in_when_all_range) {
     event_loop loop;
     int slow_done = 0;
@@ -1478,9 +1633,9 @@ TEST_CASE(propagating_error_in_when_all_range) {
         small_vector<task<int, error>> tasks;
         tasks.emplace_back(delayed_return_error(loop, 1, error::connection_refused));
         tasks.emplace_back(delayed_return_value(loop, 50, 42));
-        try {
-            co_await when_all(std::move(tasks));
-        } catch(...) {}
+        auto res = co_await when_all(std::move(tasks));
+        EXPECT_TRUE(res.has_error());
+        EXPECT_EQ(res.error(), error::connection_refused);
     };
 
     auto t = combined();
@@ -1498,8 +1653,7 @@ TEST_CASE(propagating_error_in_when_any_range) {
         small_vector<task<int, error>> tasks;
         tasks.emplace_back(delayed_return_error(loop, 1, error::connection_refused));
         tasks.emplace_back(delayed_return_value(loop, 50, 42));
-        auto [idx, res] = co_await when_any(std::move(tasks));
-        EXPECT_EQ(idx, 0U);
+        auto res = co_await when_any(std::move(tasks));
         EXPECT_TRUE(res.has_error());
         EXPECT_EQ(res.error(), error::connection_refused);
     };
@@ -1522,11 +1676,11 @@ TEST_CASE(successful_task_in_when_all_no_false_failure) {
     };
 
     auto combined = [&]() -> task<> {
-        auto [ra, rb] = co_await when_all(a(), b());
-        EXPECT_TRUE(ra.has_value());
-        EXPECT_EQ(*ra, 1);
-        EXPECT_TRUE(rb.has_value());
-        EXPECT_EQ(*rb, 2);
+        auto res = co_await when_all(a(), b());
+        EXPECT_TRUE(res.has_value());
+        auto [ra, rb] = *res;
+        EXPECT_EQ(ra, 1);
+        EXPECT_EQ(rb, 2);
     };
 
     run(combined());
@@ -1542,12 +1696,81 @@ TEST_CASE(mixed_error_and_void_in_when_all) {
     };
 
     auto combined = [&]() -> task<> {
-        try {
-            co_await when_all(failing(), void_task());
-        } catch(...) {}
+        auto res = co_await when_all(failing(), void_task());
+        EXPECT_TRUE(res.has_error());
+        EXPECT_EQ(res.error(), error::connection_refused);
     };
 
     run(combined());
+}
+
+TEST_CASE(nested_manual_error_propagation) {
+    event_loop loop;
+
+    auto failing = [&]() -> task<int, error> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_return outcome_error(error::connection_refused);
+    };
+
+    auto parent = [&]() -> task<int, error> {
+        auto res = co_await when_all(failing(), delayed_return_value(loop, 10, 42));
+        if(!res) {
+            co_return outcome_error(std::move(res).error());
+        }
+        auto [a, b] = *res;
+        co_return a + b;
+    };
+
+    auto t = parent();
+    loop.schedule(t);
+    loop.run();
+
+    auto res = t.result();
+    EXPECT_TRUE(res.has_error());
+    EXPECT_EQ(res.error(), error::connection_refused);
+}
+
+TEST_CASE(with_token_returns_structured_error_explicitly) {
+    event_loop loop;
+    cancellation_source source;
+
+    auto failing = [&]() -> task<int, error> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_return outcome_error(error::connection_refused);
+    };
+
+    auto wrapped = with_token(failing(), source.token());
+
+    loop.schedule(wrapped);
+    loop.run();
+
+    auto res = wrapped.result();
+    EXPECT_TRUE(res.has_error());
+    EXPECT_EQ(res.error(), error::connection_refused);
+}
+
+TEST_CASE(with_token_cancels_error_task) {
+    event_loop loop;
+    cancellation_source source;
+
+    auto slow = [&]() -> task<int, error> {
+        co_await sleep(std::chrono::milliseconds{50}, loop);
+        co_return 42;
+    };
+
+    auto canceler = [&]() -> task<> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        source.cancel();
+    };
+
+    auto wrapped = with_token(slow(), source.token());
+    auto cancel_task = canceler();
+
+    loop.schedule(wrapped);
+    loop.schedule(cancel_task);
+    loop.run();
+
+    EXPECT_TRUE(wrapped.result().is_cancelled());
 }
 
 };  // TEST_SUITE(structured_concurrency_errors)

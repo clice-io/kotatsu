@@ -1,5 +1,6 @@
 #pragma once
 
+#include "eventide/common/config.h"
 #include "eventide/async/io/fs.h"
 #include "eventide/async/io/loop.h"
 #include "eventide/async/io/process.h"

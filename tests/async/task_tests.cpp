@@ -2,7 +2,7 @@
 
 #include "eventide/zest/macro.h"
 #include "eventide/zest/zest.h"
-#include "eventide/common/compiler.h"
+#include "eventide/common/config.h"
 #include "eventide/async/async.h"
 
 namespace eventide {
@@ -106,7 +106,7 @@ TEST_CASE(down_cancel) {
     }
 }
 
-#ifdef __cpp_exceptions
+#if EVENTIDE_ENABLE_EXCEPTIONS
 TEST_CASE(exception_propagation) {
     auto bar1 = []() -> task<> {
         throw std::runtime_error("Test exception");

@@ -119,7 +119,7 @@ private:
 
 /// with_token: cancel a task when any of the given tokens fire.
 /// Races the inner task against token wait tasks using when_any;
-/// if any token fires, when_any propagates cancellation automatically.
+/// if any token fires, when_any reports cancellation explicitly.
 template <typename T, typename E, typename C, std::same_as<cancellation_token>... Tokens>
     requires (sizeof...(Tokens) > 0)
 task<T, E, cancellation> with_token(task<T, E, C> inner_task, Tokens... tokens) {
@@ -130,31 +130,33 @@ task<T, E, cancellation> with_token(task<T, E, C> inner_task, Tokens... tokens) 
     // Race the wrapped task against all token waits.
     //
     // The token side is pure cancellation: `tokens.wait()` never yields a value, it only
-    // suspends until cancellation interrupts the underlying event wait. Because that
-    // cancellation is not caught here, a token firing makes `when_any(...)` cancel
-    // immediately, and execution never reaches the code below.
+    // suspends until cancellation interrupts the underlying event wait. Because the inner
+    // task is wrapped with `catch_cancel()`, the aggregate also exposes cancellation
+    // explicitly, so a token firing now shows up as `race_result.is_cancelled()`.
     //
     // The inner task is wrapped with `catch_cancel()`, so its cancellation is converted into
-    // a normal value of type `outcome<T, E, cancellation>` instead of cancelling the race.
-    // That means reaching the next line implies the winner was the first branch.
-    auto variant_result = co_await when_any(std::move(inner_task).catch_cancel(), tokens.wait()...);
-    auto& task_result = std::get<0>(variant_result);
+    // the aggregate cancellation channel instead of nesting inside the success payload.
+    auto race_result = co_await when_any(std::move(inner_task).catch_cancel(), tokens.wait()...);
 
-    // Re-emit the inner task's cancellation as the cancellation of with_token(...).
-    if(task_result.is_cancelled()) {
+    if constexpr(!std::is_void_v<E>) {
+        if(race_result.has_error()) {
+            co_return outcome_error(std::move(race_result).error());
+        }
+    }
+
+    using race_result_type = decltype(race_result);
+    static_assert(!std::is_void_v<typename race_result_type::cancel_type>);
+
+    if(race_result.is_cancelled()) {
         co_await cancel();
     }
 
-    if constexpr(!std::is_void_v<E>) {
-        if(task_result.has_error()) {
-            co_return outcome_error(std::move(task_result).error());
-        }
-    }
+    auto& task_result = std::get<0>(*race_result);
 
     if constexpr(std::is_void_v<T>) {
         co_return;
     } else {
-        co_return std::move(*task_result);
+        co_return std::move(task_result);
     }
 }
 
