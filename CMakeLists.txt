@@ -142,6 +142,7 @@ else()
 
     if(MINGW)
         target_compile_options(eventide_project_options INTERFACE -Wa,-mbig-obj)
+        target_link_options(eventide_project_options INTERFACE -static-libgcc -static-libstdc++)
     endif()
 endif()
 
