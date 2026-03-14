@@ -90,7 +90,7 @@ void example_when_all() {
 // ============================================================
 
 task<std::string> fetch(const char* name, int delay_ms, event_loop& loop) {
-    co_await sleep(std::chrono::milliseconds{delay_ms}, loop);
+    co_await sleep(delay_ms, loop);
     co_return std::string(name);
 }
 
@@ -128,7 +128,7 @@ void example_async_scope() {
     int total = 0;
 
     auto worker = [&](int id, int value) -> task<> {
-        co_await sleep(std::chrono::milliseconds{id * 5}, loop);
+        co_await sleep(id * 5, loop);
         total += value;
         std::println("  worker {} finished (added {})", id, value);
     };
@@ -231,7 +231,7 @@ void example_sync_primitives() {
 
         auto append = [&](const char* msg, int delay_ms) -> task<> {
             co_await m.lock();
-            co_await sleep(std::chrono::milliseconds{delay_ms}, loop);
+            co_await sleep(delay_ms, loop);
             log += msg;
             m.unlock();
         };
@@ -296,11 +296,11 @@ void example_combined() {
 
     auto pair_work = [&](int id) -> task<> {
         auto a = [&]() -> task<int> {
-            co_await sleep(std::chrono::milliseconds{5 + id}, loop);
+            co_await sleep(5 + id, loop);
             co_return id * 10;
         };
         auto b = [&]() -> task<int> {
-            co_await sleep(std::chrono::milliseconds{5 + id}, loop);
+            co_await sleep(5 + id, loop);
             co_return id * 20;
         };
         auto [x, y] = co_await when_all(a(), b());

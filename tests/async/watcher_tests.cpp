@@ -20,7 +20,7 @@ task<> wait_idle(idle& w) {
 }
 
 task<> wait_sleep(event_loop& loop) {
-    co_await sleep(std::chrono::milliseconds{1}, loop);
+    co_await sleep(1, loop);
     event_loop::current().stop();
     co_return;
 }

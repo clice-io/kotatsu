@@ -73,7 +73,7 @@ task<> ready_void() {
 }
 
 task<int> delayed_int(event_loop& loop, int ms, int value) {
-    co_await sleep(std::chrono::milliseconds{ms}, loop);
+    co_await sleep(ms, loop);
     co_return value;
 }
 
@@ -183,13 +183,13 @@ TEST_CASE(all_sleep_values) {
     int fast_done = 0;
 
     auto slow = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{5}, loop);
+        co_await sleep(5, loop);
         slow_done += 1;
         co_return 7;
     };
 
     auto fast = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         fast_done += 1;
         co_return 9;
     };
@@ -214,13 +214,13 @@ TEST_CASE(any_sleep_wins) {
     int slow_done = 0;
 
     auto fast = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         fast_done += 1;
         co_return 1;
     };
 
     auto slow = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{10}, loop);
+        co_await sleep(10, loop);
         slow_done += 1;
         co_return 2;
     };
@@ -248,14 +248,14 @@ TEST_CASE(any_child_cancel) {
 
     auto canceler = [&]() -> task<int> {
         cancel_started += 1;
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         co_await cancel();
         co_return 1;
     };
 
     auto slow = [&]() -> task<int> {
         slow_started += 1;
-        co_await sleep(std::chrono::milliseconds{5}, loop);
+        co_await sleep(5, loop);
         slow_done += 1;
         co_return 2;
     };
@@ -278,13 +278,13 @@ TEST_CASE(any_catch_cancel_promotes_aggregate_cancellation) {
     int slow_done = 0;
 
     auto canceler = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         co_await cancel();
         co_return 1;
     };
 
     auto slow = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{5}, loop);
+        co_await sleep(5, loop);
         slow_done += 1;
         co_return 2;
     };
@@ -310,14 +310,14 @@ TEST_CASE(all_cancel_others) {
 
     auto canceler = [&]() -> task<int> {
         cancel_started += 1;
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         co_await cancel();
         co_return 1;
     };
 
     auto slow = [&]() -> task<int> {
         slow_started += 1;
-        co_await sleep(std::chrono::milliseconds{5}, loop);
+        co_await sleep(5, loop);
         slow_done += 1;
         co_return 2;
     };
@@ -340,13 +340,13 @@ TEST_CASE(all_catch_cancel_promotes_aggregate_cancellation) {
     int slow_done = 0;
 
     auto canceler = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         co_await cancel();
         co_return 1;
     };
 
     auto slow = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{5}, loop);
+        co_await sleep(5, loop);
         slow_done += 1;
         co_return 2;
     };
@@ -427,13 +427,13 @@ TEST_CASE(when_all_token_cancel) {
     int finished = 0;
 
     auto slow1 = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{10}, loop);
+        co_await sleep(10, loop);
         finished += 1;
         co_return 1;
     };
 
     auto slow2 = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{10}, loop);
+        co_await sleep(10, loop);
         finished += 1;
         co_return 2;
     };
@@ -446,7 +446,7 @@ TEST_CASE(when_all_token_cancel) {
     auto guarded = with_token(combined(), source.token());
 
     auto canceler = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         source.cancel();
     };
 
@@ -466,13 +466,13 @@ TEST_CASE(when_any_token_cancel) {
     int finished = 0;
 
     auto slow1 = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{10}, loop);
+        co_await sleep(10, loop);
         finished += 1;
         co_return 1;
     };
 
     auto slow2 = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{10}, loop);
+        co_await sleep(10, loop);
         finished += 1;
         co_return 2;
     };
@@ -484,7 +484,7 @@ TEST_CASE(when_any_token_cancel) {
     auto guarded = with_token(combined(), source.token());
 
     auto canceler = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         source.cancel();
     };
 
@@ -502,7 +502,7 @@ TEST_CASE(when_all_mixed_cancel_intercept) {
     event_loop loop;
 
     auto normal = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         co_return 42;
     };
 
@@ -605,12 +605,12 @@ TEST_CASE(when_any_second_wins) {
     event_loop loop;
 
     auto slow = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{10}, loop);
+        co_await sleep(10, loop);
         co_return 1;
     };
 
     auto fast = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         co_return 2;
     };
 
@@ -651,7 +651,7 @@ TEST_CASE(when_any_all_cancel) {
     event_loop loop;
 
     auto canceler = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         co_await cancel();
         co_return 0;
     };
@@ -673,7 +673,7 @@ TEST_CASE(when_all_accepts_sync_awaiters) {
     int resumed = 0;
 
     auto releaser = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         sem.release(2);
     };
 
@@ -700,9 +700,9 @@ TEST_CASE(when_any_accepts_sync_awaiters) {
     semaphore fast{0};
 
     auto releaser = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         fast.release();
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         slow.release();
     };
 
@@ -771,7 +771,7 @@ TEST_CASE(when_all_range_accepts_sync_awaiters) {
     waits.emplace_back(sem.acquire());
 
     auto releaser = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         sem.release(2);
     };
 
@@ -818,9 +818,9 @@ TEST_CASE(when_any_range_void_values) {
     waits.emplace_back(fast.acquire());
 
     auto releaser = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         fast.release();
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         slow.release();
     };
 
@@ -868,7 +868,7 @@ TEST_CASE(scope_accepts_sync_awaiters) {
     int count = 0;
 
     auto releaser = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         sem.release();
         count += 1;
     };
@@ -894,7 +894,7 @@ TEST_CASE(scope_with_sleep) {
     int count = 0;
 
     auto work = [&](int val, int ms) -> task<> {
-        co_await sleep(std::chrono::milliseconds{ms}, loop);
+        co_await sleep(ms, loop);
         count += val;
     };
 
@@ -919,12 +919,12 @@ TEST_CASE(scope_child_cancel) {
     int slow_done = 0;
 
     auto canceler = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         co_await cancel();
     };
 
     auto slow = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{10}, loop);
+        co_await sleep(10, loop);
         slow_done += 1;
     };
 
@@ -949,7 +949,7 @@ TEST_CASE(scope_token_cancel) {
     int finished = 0;
 
     auto slow = [&](int ms) -> task<> {
-        co_await sleep(std::chrono::milliseconds{ms}, loop);
+        co_await sleep(ms, loop);
         finished += 1;
     };
 
@@ -964,7 +964,7 @@ TEST_CASE(scope_token_cancel) {
     auto guarded = with_token(driver(), source.token());
 
     auto canceler = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         source.cancel();
     };
 
@@ -1044,7 +1044,7 @@ TEST_CASE(scope_in_when_all) {
     auto scoped_work = [&]() -> task<int> {
         async_scope scope;
         auto work = [&]() -> task<> {
-            co_await sleep(std::chrono::milliseconds{1}, loop);
+            co_await sleep(1, loop);
             scope_count += 1;
         };
         for(int i = 0; i < 3; ++i) {
@@ -1055,7 +1055,7 @@ TEST_CASE(scope_in_when_all) {
     };
 
     auto normal = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         co_return 100;
     };
 
@@ -1078,11 +1078,11 @@ TEST_CASE(when_all_in_scope) {
 
     auto pair_work = [&]() -> task<> {
         auto a = [&]() -> task<int> {
-            co_await sleep(std::chrono::milliseconds{1}, loop);
+            co_await sleep(1, loop);
             co_return 1;
         };
         auto b = [&]() -> task<int> {
-            co_await sleep(std::chrono::milliseconds{1}, loop);
+            co_await sleep(1, loop);
             co_return 2;
         };
         auto [x, y] = co_await when_all(a(), b());
@@ -1121,12 +1121,12 @@ task<int, error> return_value(int val) {
 }
 
 task<int, error> delayed_return_error(event_loop& loop, int ms, error err) {
-    co_await sleep(std::chrono::milliseconds{ms}, loop);
+    co_await sleep(ms, loop);
     co_return outcome_error(err);
 }
 
 task<int, error> delayed_return_value(event_loop& loop, int ms, int val) {
-    co_await sleep(std::chrono::milliseconds{ms}, loop);
+    co_await sleep(ms, loop);
     co_return val;
 }
 
@@ -1141,13 +1141,13 @@ TEST_CASE(exception_in_when_all_cancels_siblings) {
     int slow_done = 0;
 
     auto thrower = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         throw std::runtime_error("boom");
         co_return 0;
     };
 
     auto slow = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{50}, loop);
+        co_await sleep(50, loop);
         slow_done += 1;
         co_return 2;
     };
@@ -1189,13 +1189,13 @@ TEST_CASE(exception_in_when_any_cancels_siblings) {
     int slow_done = 0;
 
     auto thrower = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         throw std::runtime_error("boom");
         co_return 0;
     };
 
     auto slow = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{50}, loop);
+        co_await sleep(50, loop);
         slow_done += 1;
         co_return 2;
     };
@@ -1218,12 +1218,12 @@ TEST_CASE(exception_in_scope_cancels_siblings) {
     int slow_done = 0;
 
     auto thrower = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         throw std::runtime_error("scope boom");
     };
 
     auto slow = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{50}, loop);
+        co_await sleep(50, loop);
         slow_done += 1;
     };
 
@@ -1248,13 +1248,13 @@ TEST_CASE(exception_in_when_all_range) {
     int slow_done = 0;
 
     auto thrower = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         throw std::runtime_error("range boom");
         co_return 0;
     };
 
     auto slow = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{50}, loop);
+        co_await sleep(50, loop);
         slow_done += 1;
         co_return 2;
     };
@@ -1281,13 +1281,13 @@ TEST_CASE(exception_in_when_any_range) {
     int slow_done = 0;
 
     auto thrower = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         throw std::runtime_error("range any boom");
         co_return 0;
     };
 
     auto slow = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{50}, loop);
+        co_await sleep(50, loop);
         slow_done += 1;
         co_return 2;
     };
@@ -1312,7 +1312,7 @@ TEST_CASE(exception_propagates_through_nested_when_all) {
     event_loop loop;
 
     auto thrower = [&]() -> task<int> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         throw std::runtime_error("deep boom");
         co_return 0;
     };
@@ -1388,12 +1388,12 @@ TEST_CASE(propagating_error_in_when_all_cancels_siblings) {
     int slow_done = 0;
 
     auto failing = [&]() -> task<int, error> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         co_return outcome_error(error::connection_refused);
     };
 
     auto slow = [&]() -> task<int, error> {
-        co_await sleep(std::chrono::milliseconds{50}, loop);
+        co_await sleep(50, loop);
         slow_done += 1;
         co_return 42;
     };
@@ -1454,7 +1454,7 @@ TEST_CASE(operation_aborted_error_now_cancels_siblings) {
     };
 
     auto slow = [&]() -> task<int, error> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         slow_done += 1;
         co_return 42;
     };
@@ -1482,7 +1482,7 @@ TEST_CASE(eof_error_now_cancels_siblings) {
     };
 
     auto slow = [&]() -> task<int, error> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         slow_done += 1;
         co_return 99;
     };
@@ -1506,12 +1506,12 @@ TEST_CASE(propagating_error_in_when_any_returns_outer_error) {
     int slow_done = 0;
 
     auto failing = [&]() -> task<int, error> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         co_return outcome_error(error::connection_refused);
     };
 
     auto slow = [&]() -> task<int, error> {
-        co_await sleep(std::chrono::milliseconds{50}, loop);
+        co_await sleep(50, loop);
         slow_done += 1;
         co_return 42;
     };
@@ -1536,7 +1536,7 @@ TEST_CASE(direct_co_await_error_inside_scope_child_does_not_escape) {
 
     auto failing = [&]() -> task<> {
         auto inner = [&]() -> task<int, error> {
-            co_await sleep(std::chrono::milliseconds{1}, loop);
+            co_await sleep(1, loop);
             co_return outcome_error(error::connection_refused);
         };
         auto res = co_await inner();
@@ -1544,7 +1544,7 @@ TEST_CASE(direct_co_await_error_inside_scope_child_does_not_escape) {
     };
 
     auto slow = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{5}, loop);
+        co_await sleep(5, loop);
         slow_done += 1;
     };
 
@@ -1568,12 +1568,12 @@ TEST_CASE(async_scope_returns_structured_error) {
     int slow_done = 0;
 
     auto failing = [&]() -> task<int, error> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         co_return outcome_error(error::connection_refused);
     };
 
     auto slow = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{50}, loop);
+        co_await sleep(50, loop);
         slow_done += 1;
     };
 
@@ -1599,12 +1599,12 @@ TEST_CASE(async_scope_mixed_error_types) {
     int slow_done = 0;
 
     auto failing = [&]() -> task<int, custom_error> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         co_return outcome_error(custom_error{7});
     };
 
     auto slow = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{50}, loop);
+        co_await sleep(50, loop);
         slow_done += 1;
     };
 
@@ -1708,7 +1708,7 @@ TEST_CASE(nested_manual_error_propagation) {
     event_loop loop;
 
     auto failing = [&]() -> task<int, error> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         co_return outcome_error(error::connection_refused);
     };
 
@@ -1735,7 +1735,7 @@ TEST_CASE(with_token_returns_structured_error_explicitly) {
     cancellation_source source;
 
     auto failing = [&]() -> task<int, error> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         co_return outcome_error(error::connection_refused);
     };
 
@@ -1754,12 +1754,12 @@ TEST_CASE(with_token_cancels_error_task) {
     cancellation_source source;
 
     auto slow = [&]() -> task<int, error> {
-        co_await sleep(std::chrono::milliseconds{50}, loop);
+        co_await sleep(50, loop);
         co_return 42;
     };
 
     auto canceler = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         source.cancel();
     };
 
