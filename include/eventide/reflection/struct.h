@@ -84,7 +84,7 @@ struct reflection<Object> {
             return std::array<std::string_view, 1>{"PLACEHOLDER"};
         } else {
             constexpr auto addrs = field_addrs(detail::ext<detail::uninitialized<Object>>.value);
-            return std::array{refl::pointer_name<std::get<Is>(addrs)>()...};
+            return std::array{refl::pointer_name<detail::wrapper{std::get<Is>(addrs)}>()...};
         }
     }(std::make_index_sequence<field_count>{});
 };
