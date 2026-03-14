@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <exception>
 #include <optional>
+#include <source_location>
 #include <type_traits>
 #include <utility>
 
@@ -436,7 +437,9 @@ task<T, E, C> normalize_task(task<T, E, C>&& t) {
 }
 
 template <typename Awaitable>
-    requires (!is_task_v<Awaitable>) && (!std::is_reference_v<Awaitable>) && awaitable<Awaitable>
+    requires (!is_task_v<Awaitable>) && (!std::is_reference_v<Awaitable>) &&
+             std::constructible_from<std::remove_cvref_t<Awaitable>, Awaitable&&> &&
+             awaitable<std::remove_cvref_t<Awaitable>&&>
 auto normalize_task_impl(std::remove_cvref_t<Awaitable> value)
     -> task<normalized_await_result_t<Awaitable>> {
     if constexpr(std::is_void_v<normalized_await_result_t<Awaitable>>) {
@@ -448,7 +451,9 @@ auto normalize_task_impl(std::remove_cvref_t<Awaitable> value)
 }
 
 template <typename Awaitable>
-    requires (!is_task_v<Awaitable>) && (!std::is_reference_v<Awaitable>) && awaitable<Awaitable>
+    requires (!is_task_v<Awaitable>) && (!std::is_reference_v<Awaitable>) &&
+             std::constructible_from<std::remove_cvref_t<Awaitable>, Awaitable&&> &&
+             awaitable<std::remove_cvref_t<Awaitable>&&>
 auto normalize_task(Awaitable&& input) -> task<normalized_await_result_t<Awaitable>> {
     return normalize_task_impl<Awaitable>(
         std::remove_cvref_t<Awaitable>(std::forward<Awaitable>(input)));

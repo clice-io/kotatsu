@@ -882,6 +882,9 @@ public:
             assert(
                 closed_by_loop_cleanup &&
                 "uv handle destroyed while close is still pending or without loop cleanup " "tracking");
+            if(!closed_by_loop_cleanup) {
+                return;
+            }
             delete self;
             return;
         }

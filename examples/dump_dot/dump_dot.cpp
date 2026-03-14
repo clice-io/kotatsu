@@ -70,8 +70,8 @@ task<> evt_waiter(event_loop& loop) {
 /// released inside cv.wait(), so multiple waiters can enter sequentially
 /// as long as each one gets the lock before the snapshot.
 /// We use a tiny sleep to stagger them so they queue one by one.
-task<> cv_waiter(event_loop& loop, int delay_us) {
-    co_await sleep(delay_us, loop);
+task<> cv_waiter(event_loop& loop, int delay_ms) {
+    co_await sleep(delay_ms, loop);
     co_await cv_mtx.lock();
     co_await cv.wait(cv_mtx);
     cv_mtx.unlock();

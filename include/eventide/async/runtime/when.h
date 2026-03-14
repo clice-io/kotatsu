@@ -2,8 +2,10 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdlib>
 #include <optional>
 #include <ranges>
+#include <stdexcept>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -171,6 +173,15 @@ void tuple_visit_at(std::size_t index, Tuple& tuple, F&& f) {
     }(std::make_index_sequence<std::tuple_size_v<std::remove_reference_t<Tuple>>>{});
 }
 
+[[noreturn]] inline void fail_empty_when_any_range() {
+#if EVENTIDE_ENABLE_EXCEPTIONS
+    throw std::invalid_argument("when_any(range) requires a non-empty range");
+#else
+    assert(false && "when_any(range) requires a non-empty range");
+    std::abort();
+#endif
+}
+
 }  // namespace detail
 
 template <bool All, typename... Tasks>
@@ -315,7 +326,9 @@ public:
             tasks.emplace_back(detail::normalize_task(std::move(async)));
         }
         if constexpr(!All) {
-            assert(!tasks.empty() && "when_any(range) requires a non-empty range");
+            if(tasks.empty()) {
+                detail::fail_empty_when_any_range();
+            }
         }
         if constexpr(!std::is_void_v<cancel_type>) {
             this->intercept_cancel();
@@ -354,15 +367,9 @@ public:
 
         if constexpr(!std::is_void_v<cancel_type>) {
             if(this->state == async_node::Cancelled) {
-                cancel_type cancel;
-                if constexpr(std::is_void_v<detail::task_cancel_type_t<Task>>) {
-                    cancel = cancellation{};
-                } else {
-                    auto result = detail::take_result(tasks[first_cancel_child]);
-                    assert(result.is_cancelled());
-                    cancel = std::move(result).cancellation();
-                }
-                return result_type(outcome_cancel(std::move(cancel)));
+                auto result = detail::take_result(tasks[first_cancel_child]);
+                assert(result.is_cancelled());
+                return result_type(outcome_cancel(std::move(result).cancellation()));
             }
         }
 
@@ -493,8 +500,9 @@ public:
         requires std::is_void_v<E> || is_one_of<E, Errors...>
     void spawn(task<T, E, C>&& t) {
         auto* node = detail::node_from(t);
-        t.release();
+        awaitees.reserve(awaitees.size() + 1);
         if constexpr(!std::is_void_v<error_type>) {
+            error_extractors.reserve(error_extractors.size() + 1);
             if constexpr(std::is_void_v<E>) {
                 error_extractors.push_back(nullptr);
             } else {
@@ -510,6 +518,7 @@ public:
             }
         }
         awaitees.push_back(node);
+        t.release();
         total += 1;
     }
 

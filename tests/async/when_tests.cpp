@@ -1133,8 +1133,6 @@ TEST_CASE(all_range_error) {
 }
 
 TEST_CASE(any_range_error) {
-    int slow_done = 0;
-
     auto combined = [&]() -> task<> {
         small_vector<task<int, error>> tasks;
         tasks.emplace_back(delayed_return_error(1, error::connection_refused));
@@ -1148,7 +1146,6 @@ TEST_CASE(any_range_error) {
     run(t);
 
     EXPECT_TRUE(t->is_finished());
-    EXPECT_EQ(slow_done, 0);
 }
 
 TEST_CASE(direct_co_await_returns_error) {
@@ -1476,6 +1473,11 @@ TEST_CASE(any_range_exception) {
     EXPECT_TRUE(t->is_failed());
     EXPECT_THROWS(t.result());
     EXPECT_EQ(slow_done, 0);
+}
+
+TEST_CASE(any_range_empty_throws) {
+    small_vector<task<int>> tasks;
+    EXPECT_THROWS((void)when_any(std::move(tasks)));
 }
 
 TEST_CASE(nested_exception_propagates) {
