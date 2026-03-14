@@ -139,6 +139,10 @@ else()
         $<$<BOOL:${EVENTIDE_ENABLE_RTTI}>:-frtti>
         $<$<NOT:$<BOOL:${EVENTIDE_ENABLE_RTTI}>>:-fno-rtti>
     )
+
+    if(MINGW)
+        target_compile_options(eventide_project_options INTERFACE -Wa,-mbig-obj)
+    endif()
 endif()
 
 target_compile_definitions(eventide_project_options INTERFACE
