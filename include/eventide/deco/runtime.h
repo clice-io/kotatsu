@@ -7,7 +7,6 @@
 #include <map>
 #include <optional>
 #include <ostream>
-#include <print>
 #include <set>
 #include <string>
 #include <string_view>
@@ -17,6 +16,7 @@
 #include "eventide/deco/backend.h"
 #include "eventide/deco/decl.h"
 #include "eventide/deco/descriptor.h"
+#include "eventide/common/print.h"
 
 namespace deco::util {
 
@@ -210,7 +210,7 @@ class Dispatcher {
         return "nothing we can do with this options";
     };
     error_fn_t errorHandler = [](auto err) {
-        std::println(stderr, "{}", err.message);
+        eventide::println(stderr, "{}", err.message);
     };
     std::map<const deco::decl::Category*, handler_fn_t> handlers;
     std::string_view commandOverview;
@@ -306,7 +306,7 @@ class SubCommander {
     };
 
     error_fn_t errorHandler = [](const SubCommandError& err) {
-        std::println(stderr, "{}", err.message);
+        eventide::println(stderr, "{}", err.message);
     };
     std::optional<handler_fn_t> defaultHandler;
     std::vector<SubCommandHandler> handlers;

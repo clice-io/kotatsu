@@ -4,7 +4,6 @@
 #include <expected>
 #include <format>
 #include <optional>
-#include <print>
 #include <source_location>
 #include <string>
 #include <string_view>
@@ -13,6 +12,7 @@
 #include <utility>
 
 #include "eventide/common/meta.h"
+#include "eventide/common/print.h"
 #include "eventide/reflection/compare.h"
 
 namespace eventide::zest {
@@ -52,9 +52,9 @@ inline bool check_unary_failure(bool failure,
                                 const V& value,
                                 std::source_location loc = std::source_location::current()) {
     if(failure) {
-        std::println("[ expect ] {} (expected {})", expr, expectation);
-        std::println("           got: {}", zest::pretty_dump(value));
-        std::println("           at {}:{}", loc.file_name(), loc.line());
+        eventide::println("[ expect ] {} (expected {})", expr, expectation);
+        eventide::println("           got: {}", zest::pretty_dump(value));
+        eventide::println("           at {}:{}", loc.file_name(), loc.line());
     }
     return failure;
 }
@@ -68,10 +68,10 @@ inline bool check_binary_failure(bool failure,
                                  const R& rhs,
                                  std::source_location loc = std::source_location::current()) {
     if(failure) {
-        std::println("[ expect ] {} {} {}", lhs_expr, op, rhs_expr);
-        std::println("           lhs: {}", zest::pretty_dump(lhs));
-        std::println("           rhs: {}", zest::pretty_dump(rhs));
-        std::println("           at {}:{}", loc.file_name(), loc.line());
+        eventide::println("[ expect ] {} {} {}", lhs_expr, op, rhs_expr);
+        eventide::println("           lhs: {}", zest::pretty_dump(lhs));
+        eventide::println("           rhs: {}", zest::pretty_dump(rhs));
+        eventide::println("           at {}:{}", loc.file_name(), loc.line());
     }
     return failure;
 }
@@ -83,8 +83,8 @@ inline bool check_throws_failure(bool failure,
                                  std::string_view expectation,
                                  std::source_location loc = std::source_location::current()) {
     if(failure) {
-        std::println("[ expect ] {} (expected {})", expr, expectation);
-        std::println("           at {}:{}", loc.file_name(), loc.line());
+        eventide::println("[ expect ] {} (expected {})", expr, expectation);
+        eventide::println("           at {}:{}", loc.file_name(), loc.line());
     }
     return failure;
 }

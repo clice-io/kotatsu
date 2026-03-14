@@ -1,11 +1,12 @@
 #include "eventide/zest/runner.h"
 
 #include <chrono>
-#include <print>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
+
+#include "eventide/common/print.h"
 
 namespace {
 
@@ -130,9 +131,9 @@ int Runner::run_tests(std::string_view filter) {
         }
     }
 
-    std::println("{}[----------] Global test environment set-up.{}", GREEN, CLEAR);
+    eventide::println("{}[----------] Global test environment set-up.{}", GREEN, CLEAR);
     if(focus_mode) {
-        std::println("{}[  FOCUS   ] Running in focus-only mode.{}", YELLOW, CLEAR);
+        eventide::println("{}[  FOCUS   ] Running in focus-only mode.{}", YELLOW, CLEAR);
     }
 
     for(auto& [suite_name, test_cases]: all_suites) {
@@ -156,12 +157,12 @@ int Runner::run_tests(std::string_view filter) {
             }
 
             if(test_case.attrs.skip) {
-                std::println("{}[ SKIPPED  ] {}{}", YELLOW, display_name, CLEAR);
+                eventide::println("{}[ SKIPPED  ] {}{}", YELLOW, display_name, CLEAR);
                 total_skipped_tests_count += 1;
                 continue;
             }
 
-            std::println("{}[ RUN      ] {}{}", GREEN, display_name, CLEAR);
+            eventide::println("{}[ RUN      ] {}{}", GREEN, display_name, CLEAR);
             total_tests_count += 1;
 
             using namespace std::chrono;
@@ -171,12 +172,12 @@ int Runner::run_tests(std::string_view filter) {
 
             bool curr_failed = state == TestState::Failed || state == TestState::Fatal;
             auto duration = duration_cast<milliseconds>(end - begin);
-            std::println("{0}[   {1} ] {2} ({3} ms){4}",
-                         curr_failed ? RED : GREEN,
-                         curr_failed ? "FAILED" : "    OK",
-                         display_name,
-                         duration.count(),
-                         CLEAR);
+            eventide::println("{0}[   {1} ] {2} ({3} ms){4}",
+                              curr_failed ? RED : GREEN,
+                              curr_failed ? "FAILED" : "    OK",
+                              display_name,
+                              duration.count(),
+                              CLEAR);
 
             total_test_duration += duration;
             if(curr_failed) {
@@ -190,34 +191,34 @@ int Runner::run_tests(std::string_view filter) {
         }
     }
 
-    std::println("{}[----------] Global test environment tear-down. {}", GREEN, CLEAR);
-    std::println("{}[==========] {} tests from {} test suites ran. ({} ms total){}",
-                 GREEN,
-                 total_tests_count,
-                 total_suites_count,
-                 total_test_duration.count(),
-                 CLEAR);
+    eventide::println("{}[----------] Global test environment tear-down. {}", GREEN, CLEAR);
+    eventide::println("{}[==========] {} tests from {} test suites ran. ({} ms total){}",
+                      GREEN,
+                      total_tests_count,
+                      total_suites_count,
+                      total_test_duration.count(),
+                      CLEAR);
     auto total_passed_tests = total_tests_count - total_failed_tests_count;
     if(total_passed_tests > 0) {
-        std::println("{}[  PASSED  ] {} tests.{}", GREEN, total_passed_tests, CLEAR);
+        eventide::println("{}[  PASSED  ] {} tests.{}", GREEN, total_passed_tests, CLEAR);
     }
     if(total_skipped_tests_count > 0) {
-        std::println("{}[  SKIPPED ] {} tests.{}", YELLOW, total_skipped_tests_count, CLEAR);
+        eventide::println("{}[  SKIPPED ] {} tests.{}", YELLOW, total_skipped_tests_count, CLEAR);
     }
     if(total_failed_tests_count > 0) {
-        std::println("{}[  FAILED  ] {} tests, listed below:{}",
-                     RED,
-                     total_failed_tests_count,
-                     CLEAR);
+        eventide::println("{}[  FAILED  ] {} tests, listed below:{}",
+                          RED,
+                          total_failed_tests_count,
+                          CLEAR);
         for(auto& failed: failed_tests) {
-            std::println("{}[  FAILED  ] {}{}", RED, failed.name, CLEAR);
-            std::println("             at {}:{}", failed.path, failed.line);
+            eventide::println("{}[  FAILED  ] {}{}", RED, failed.name, CLEAR);
+            eventide::println("             at {}:{}", failed.path, failed.line);
         }
-        std::println("{}{} FAILED TEST{}{}",
-                     RED,
-                     total_failed_tests_count,
-                     total_failed_tests_count == 1 ? "" : "S",
-                     CLEAR);
+        eventide::println("{}{} FAILED TEST{}{}",
+                          RED,
+                          total_failed_tests_count,
+                          total_failed_tests_count == 1 ? "" : "S",
+                          CLEAR);
     }
     return total_failed_tests_count != 0;
 }

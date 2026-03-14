@@ -142,7 +142,6 @@ else()
 
     if(MINGW)
         target_compile_options(eventide_project_options INTERFACE -Wa,-mbig-obj)
-        target_link_libraries(eventide_project_options INTERFACE stdc++exp)
     endif()
 endif()
 
