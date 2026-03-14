@@ -19,6 +19,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - name: linux | gcc | debug
+            os: ubuntu-24.04
+            cc: gcc
+            cxx: g++
+            build_type: Debug
+            enable_ccache: true
+            cache_key: linux-gcc
+            cmake_args: >-
+              -DEVENTIDE_BUILD_ALL_TESTS=ON
+
           - name: linux | gcc | relwithdebinfo
             os: ubuntu-24.04
             cc: gcc
@@ -39,6 +49,16 @@ jobs:
             cmake_args: >-
               -DEVENTIDE_BUILD_ALL_TESTS=ON
               -DEVENTIDE_SANITIZE_UNDEFINED=ON
+
+          - name: linux | clang | debug
+            os: ubuntu-24.04
+            cc: clang
+            cxx: clang++
+            build_type: Debug
+            enable_ccache: true
+            cache_key: linux-clang
+            cmake_args: >-
+              -DEVENTIDE_BUILD_ALL_TESTS=ON
 
           - name: linux | clang | asan+ubsan
             os: ubuntu-24.04
@@ -74,6 +94,16 @@ jobs:
               -DEVENTIDE_BUILD_ALL_TESTS=ON
               -DEVENTIDE_ENABLE_EXCEPTIONS=OFF
 
+          - name: macos | apple-clang | debug
+            os: macos-15
+            cc: /usr/bin/clang
+            cxx: /usr/bin/clang++
+            build_type: Debug
+            enable_ccache: true
+            cache_key: macos-appleclang
+            cmake_args: >-
+              -DEVENTIDE_BUILD_ALL_TESTS=ON
+
           - name: macos | apple-clang | asan+ubsan
             os: macos-15
             cc: /usr/bin/clang
@@ -85,6 +115,16 @@ jobs:
               -DEVENTIDE_BUILD_ALL_TESTS=ON
               -DEVENTIDE_SANITIZE_ADDRESS=ON
               -DEVENTIDE_SANITIZE_UNDEFINED=ON
+
+          - name: macos | pixi-clang | debug
+            os: macos-15
+            cc: clang
+            cxx: clang++
+            build_type: Debug
+            enable_ccache: true
+            cache_key: macos-clang
+            cmake_args: >-
+              -DEVENTIDE_BUILD_ALL_TESTS=ON
 
           - name: macos | pixi-clang | relwithdebinfo
             os: macos-15
@@ -108,6 +148,17 @@ jobs:
               -DEVENTIDE_ENABLE_EXCEPTIONS=OFF
               -DEVENTIDE_ENABLE_RTTI=OFF
 
+          - name: windows | msvc | debug
+            os: windows-2025
+            cc: cl
+            cxx: cl
+            build_type: Debug
+            enable_ccache: false
+            needs_msvc_env: true
+            cache_key: windows-msvc
+            cmake_args: >-
+              -DEVENTIDE_BUILD_ALL_TESTS=ON
+
           - name: windows | msvc | asan
             os: windows-2025
             cc: cl
@@ -120,6 +171,17 @@ jobs:
               -DEVENTIDE_BUILD_ALL_TESTS=ON
               -DEVENTIDE_SANITIZE_ADDRESS=ON
 
+          - name: windows | clang-cl | debug
+            os: windows-2025
+            cc: clang-cl
+            cxx: clang-cl
+            build_type: Debug
+            enable_ccache: false
+            needs_msvc_env: true
+            cache_key: windows-clang-cl
+            cmake_args: >-
+              -DEVENTIDE_BUILD_ALL_TESTS=ON
+
           - name: windows | clang-cl | relwithdebinfo
             os: windows-2025
             cc: clang-cl
@@ -128,6 +190,16 @@ jobs:
             enable_ccache: false
             needs_msvc_env: true
             cache_key: windows-clang-cl
+            cmake_args: >-
+              -DEVENTIDE_BUILD_ALL_TESTS=ON
+
+          - name: windows | mingw | debug
+            os: windows-2025
+            cc: gcc
+            cxx: g++
+            build_type: Debug
+            enable_ccache: true
+            cache_key: windows-mingw
             cmake_args: >-
               -DEVENTIDE_BUILD_ALL_TESTS=ON
 
