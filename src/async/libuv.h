@@ -11,9 +11,11 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <unordered_set>
 #include <utility>
 
 #include "uv.h"
+#include "eventide/common/meta.h"
 #include "eventide/async/runtime/frame.h"
 #include "eventide/async/vocab/error.h"
 #include "eventide/async/vocab/owned.h"
@@ -45,23 +47,27 @@ template <typename T>
 using bare_t = std::remove_cv_t<std::remove_reference_t<T>>;
 
 template <typename T>
-concept handle_like =
-    std::same_as<bare_t<T>, uv_handle_t> || std::same_as<bare_t<T>, uv_stream_t> ||
-    std::same_as<bare_t<T>, uv_tcp_t> || std::same_as<bare_t<T>, uv_pipe_t> ||
-    std::same_as<bare_t<T>, uv_tty_t> || std::same_as<bare_t<T>, uv_udp_t> ||
-    std::same_as<bare_t<T>, uv_timer_t> || std::same_as<bare_t<T>, uv_idle_t> ||
-    std::same_as<bare_t<T>, uv_prepare_t> || std::same_as<bare_t<T>, uv_check_t> ||
-    std::same_as<bare_t<T>, uv_signal_t> || std::same_as<bare_t<T>, uv_fs_event_t> ||
-    std::same_as<bare_t<T>, uv_process_t>;
+concept handle_like = is_one_of<bare_t<T>,
+                                uv_handle_t,
+                                uv_stream_t,
+                                uv_tcp_t,
+                                uv_pipe_t,
+                                uv_tty_t,
+                                uv_udp_t,
+                                uv_timer_t,
+                                uv_idle_t,
+                                uv_prepare_t,
+                                uv_check_t,
+                                uv_signal_t,
+                                uv_fs_event_t,
+                                uv_process_t>;
 
 template <typename T>
-concept stream_like = std::same_as<bare_t<T>, uv_stream_t> || std::same_as<bare_t<T>, uv_tcp_t> ||
-                      std::same_as<bare_t<T>, uv_pipe_t> || std::same_as<bare_t<T>, uv_tty_t>;
+concept stream_like = is_one_of<bare_t<T>, uv_stream_t, uv_tcp_t, uv_pipe_t, uv_tty_t>;
 
 template <typename T>
-concept req_like = std::same_as<bare_t<T>, uv_req_t> || std::same_as<bare_t<T>, uv_fs_t> ||
-                   std::same_as<bare_t<T>, uv_work_t> || std::same_as<bare_t<T>, uv_write_t> ||
-                   std::same_as<bare_t<T>, uv_udp_send_t> || std::same_as<bare_t<T>, uv_connect_t>;
+concept req_like =
+    is_one_of<bare_t<T>, uv_req_t, uv_fs_t, uv_work_t, uv_write_t, uv_udp_send_t, uv_connect_t>;
 
 template <handle_like H>
 ALWAYS_INLINE uv_handle_t* as_handle(H& handle) noexcept {
@@ -794,31 +800,71 @@ inline result<resolved_addr> resolve_addr(std::string_view host, int port) {
     return outcome_error(error::invalid_argument);
 }
 
-}  // namespace uv
+/// Tracks handles that were force-closed during event_loop teardown.
+///
+/// This is a fallback path for late owner destruction: the normal contract is
+/// that task/handle owners should be destroyed before their event_loop goes
+/// away, so they can issue uv_close() themselves and receive their delete
+/// callback through the loop. Only when that contract is violated do we record
+/// a handle here so a later owner destruction can safely release the wrapper.
+///
+/// Storage is thread-local because libuv handles are thread-affine and a single
+/// thread may create and tear down multiple loops sequentially.
+class loop_close_fallback {
+public:
+    using registry_type = std::unordered_set<const uv_handle_t*>;
+
+    static void mark(const uv_handle_t* handle) {
+        handles().insert(handle);
+    }
+
+    static bool take(const uv_handle_t* handle) {
+        return handles().erase(handle) != 0;
+    }
+
+private:
+    static registry_type& handles() {
+        static thread_local registry_type late_closed_handles;
+        return late_closed_handles;
+    }
+};
 
 template <typename Derived, typename Handle>
-class uv_handle {
+class unique_handle_impl {
 protected:
-    uv_handle() = default;
-    ~uv_handle() = default;
+    unique_handle_impl() = default;
+    ~unique_handle_impl() = default;
 
 public:
     using pointer = unique_handle<Derived>;
 
     bool initialized() const noexcept {
         auto* self = static_cast<const Derived*>(this);
-        auto* h = reinterpret_cast<const uv_handle_t*>(&self->handle);
+        auto* h = uv::as_handle(self->handle);
         return h->loop != nullptr && h->type != UV_UNKNOWN_HANDLE;
     }
 
     static pointer make() {
         auto self = pointer(new Derived());
-        auto* h = reinterpret_cast<uv_handle_t*>(&self->handle);
+        auto* h = uv::as_handle(self->handle);
         *h = {};
         h->data = self.get();
         return self;
     }
 
+    /// Releases the wrapper around a libuv handle.
+    ///
+    /// Normal path: the owner is destroyed while the event loop is still alive,
+    /// so we issue uv_close() with a delete callback and let libuv release the
+    /// wrapper once the close finishes on the loop.
+    ///
+    /// Fallback path: event_loop teardown already force-closed the handle and
+    /// recorded it in uv::loop_close_fallback. In that case the wrapper may be
+    /// destroyed later and we reclaim it directly here.
+    ///
+    /// Any other observed closing state is unexpected and indicates a lifetime
+    /// bug: the handle is closing, but not through the recognized loop-teardown
+    /// fallback.
     static void destroy(Derived* self) noexcept {
         if(!self) {
             return;
@@ -829,9 +875,14 @@ public:
             return;
         }
 
-        auto& h = *reinterpret_cast<uv_handle_t*>(&self->handle);
+        auto& h = self->handle;
         h.data = self;
         if(uv::is_closing(h)) {
+            const bool closed_by_loop_cleanup = uv::loop_close_fallback::take(uv::as_handle(h));
+            assert(
+                closed_by_loop_cleanup &&
+                "uv handle destroyed while close is still pending or without loop cleanup " "tracking");
+            delete self;
             return;
         }
 
@@ -841,5 +892,10 @@ public:
         });
     }
 };
+
+template <typename Derived, typename Handle>
+using handle = unique_handle_impl<Derived, Handle>;
+
+}  // namespace uv
 
 }  // namespace eventide

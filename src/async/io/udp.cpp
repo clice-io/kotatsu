@@ -14,7 +14,7 @@ namespace eventide {
 
 static result<udp::endpoint> endpoint_from_sockaddr(const sockaddr* addr);
 
-struct udp::Self : uv_handle<udp::Self, uv_udp_t> {
+struct udp::Self : uv::handle<udp::Self, uv_udp_t> {
     uv_udp_t handle{};
     uv::queued_delivery<result<udp::recv_result>> recv;
     std::vector<char> buffer;

@@ -227,7 +227,7 @@ struct stream_handle {
     };
 };
 
-struct stream::Self : uv_handle<stream::Self, uv_stream_t>, stream_handle {
+struct stream::Self : uv::handle<stream::Self, uv_stream_t>, stream_handle {
     enum class read_mode { none, buffered, direct };
 
     uv::single_waiter reader;
@@ -239,7 +239,7 @@ struct stream::Self : uv_handle<stream::Self, uv_stream_t>, stream_handle {
 
 template <typename Stream>
 struct acceptor<Stream>::Self :
-    uv_handle<acceptor<Stream>::Self, uv_stream_t>,
+    uv::handle<acceptor<Stream>::Self, uv_stream_t>,
     stream_handle,
     uv::queued_delivery<result<Stream>> {
     int pipe_ipc = 0;

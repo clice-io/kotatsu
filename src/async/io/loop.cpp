@@ -67,16 +67,23 @@ event_loop::event_loop() : self(new struct self()) {
 }
 
 event_loop::~event_loop() {
-    constexpr static auto cleanup = +[](uv_handle_t* h, void*) {
+    constexpr static auto cleanup = +[](uv_handle_t* h, void* arg) {
+        auto* self = static_cast<struct event_loop::self*>(arg);
         if(!uv::is_closing(*h)) {
-            uv::close(*h, nullptr);
+            auto* idle = uv::as_handle(self->idle);
+            if(h == idle) {
+                uv::close(*h, nullptr);
+                return;
+            }
+
+            uv::close(*h, [](uv_handle_t* handle) { uv::loop_close_fallback::mark(handle); });
         }
     };
 
     auto& loop = self->loop;
     auto close_err = uv::loop_close(loop);
     if(close_err.value() == UV_EBUSY) {
-        uv::walk(loop, cleanup, nullptr);
+        uv::walk(loop, cleanup, self.get());
 
         // Run event loop to trigger all close callbacks.
         while((close_err = uv::loop_close(loop)).value() == UV_EBUSY) {

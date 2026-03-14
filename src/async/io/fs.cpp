@@ -10,7 +10,7 @@
 namespace eventide {
 
 struct fs_event::Self :
-    uv_handle<fs_event::Self, uv_fs_event_t>,
+    uv::handle<fs_event::Self, uv_fs_event_t>,
     uv::latest_value_delivery<fs_event::change> {
     uv_fs_event_t handle{};
 };

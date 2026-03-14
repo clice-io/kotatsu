@@ -10,31 +10,31 @@
 
 namespace eventide {
 
-struct timer::Self : uv_handle<timer::Self, uv_timer_t> {
+struct timer::Self : uv::handle<timer::Self, uv_timer_t> {
     uv_timer_t handle{};
     system_op* waiter = nullptr;
     int pending = 0;
 };
 
-struct idle::Self : uv_handle<idle::Self, uv_idle_t> {
+struct idle::Self : uv::handle<idle::Self, uv_idle_t> {
     uv_idle_t handle{};
     system_op* waiter = nullptr;
     int pending = 0;
 };
 
-struct prepare::Self : uv_handle<prepare::Self, uv_prepare_t> {
+struct prepare::Self : uv::handle<prepare::Self, uv_prepare_t> {
     uv_prepare_t handle{};
     system_op* waiter = nullptr;
     int pending = 0;
 };
 
-struct check::Self : uv_handle<check::Self, uv_check_t> {
+struct check::Self : uv::handle<check::Self, uv_check_t> {
     uv_check_t handle{};
     system_op* waiter = nullptr;
     int pending = 0;
 };
 
-struct signal::Self : uv_handle<signal::Self, uv_signal_t> {
+struct signal::Self : uv::handle<signal::Self, uv_signal_t> {
     uv_signal_t handle{};
     system_op* waiter = nullptr;
     error* active = nullptr;

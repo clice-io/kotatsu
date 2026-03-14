@@ -32,7 +32,7 @@ static unsigned int to_uv_process_flags(const process::creation_options& options
 }
 
 struct process::Self :
-    uv_handle<process::Self, uv_process_t>,
+    uv::handle<process::Self, uv_process_t>,
     uv::latched_delivery<process::exit_status> {
     uv_process_t handle{};
 };
