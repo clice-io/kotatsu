@@ -66,6 +66,9 @@ llvm-tools = "==20.1.8"
 compiler-rt = "==20.1.8"
 sccache = "*"
 
+[feature.windows-llvm.target.win-64.activation]
+scripts = ["scripts/activate_windows_llvm.bat"]
+
 # ============================================================================== #
 #                                    FORMAT                                      #
 # ============================================================================== #

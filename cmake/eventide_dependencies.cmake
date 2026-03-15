@@ -55,8 +55,17 @@ function(eventide_silence_third_party_target target)
         return()
     endif()
 
+    if(MSVC)
+        get_target_property(target_compile_options ${target} COMPILE_OPTIONS)
+        if(target_compile_options AND NOT target_compile_options STREQUAL "NOTFOUND")
+            set(filtered_compile_options ${target_compile_options})
+            list(FILTER filtered_compile_options EXCLUDE REGEX [[(^|.*/W[0-4]|.*/Wall)]])
+            set_property(TARGET ${target} PROPERTY COMPILE_OPTIONS "${filtered_compile_options}")
+        endif()
+    endif()
+
     target_compile_options(${target} PRIVATE
-        $<$<CXX_COMPILER_ID:MSVC>:/W0>
+        $<$<BOOL:${MSVC}>:/W0>
         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-w>
     )
 endfunction()

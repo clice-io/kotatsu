@@ -28,17 +28,51 @@ option(EVENTIDE_SANITIZE_MEMORY "Enable MemorySanitizer" OFF)
 option(EVENTIDE_SANITIZE_THREAD "Enable ThreadSanitizer" OFF)
 option(EVENTIDE_SANITIZE_UNDEFINED "Enable UndefinedBehaviorSanitizer" OFF)
 
-if(MSVC AND EVENTIDE_ENABLE_CCACHE)
-    foreach(flag_var
-            CMAKE_C_FLAGS_DEBUG
-            CMAKE_CXX_FLAGS_DEBUG
-            CMAKE_C_FLAGS_RELWITHDEBINFO
-            CMAKE_CXX_FLAGS_RELWITHDEBINFO)
-        if(DEFINED ${flag_var})
-            string(REPLACE "/Zi" "/Z7" ${flag_var} "${${flag_var}}")
-            set(${flag_var} "${${flag_var}}" CACHE STRING "" FORCE)
-        endif()
-    endforeach()
+if(MSVC)
+    set(eventide_msvc_flag_vars
+        CMAKE_CXX_FLAGS
+        CMAKE_CXX_FLAGS_DEBUG
+        CMAKE_CXX_FLAGS_RELEASE
+        CMAKE_CXX_FLAGS_RELWITHDEBINFO
+        CMAKE_CXX_FLAGS_MINSIZEREL
+    )
+
+    if(EVENTIDE_ENABLE_CCACHE)
+        foreach(flag_var
+                CMAKE_C_FLAGS_DEBUG
+                CMAKE_CXX_FLAGS_DEBUG
+                CMAKE_C_FLAGS_RELWITHDEBINFO
+                CMAKE_CXX_FLAGS_RELWITHDEBINFO)
+            if(DEFINED ${flag_var})
+                string(REPLACE "/Zi" "/Z7" ${flag_var} "${${flag_var}}")
+                set(${flag_var} "${${flag_var}}" CACHE STRING "" FORCE)
+            endif()
+        endforeach()
+    endif()
+
+    if(NOT EVENTIDE_ENABLE_EXCEPTIONS)
+        foreach(flag_var ${eventide_msvc_flag_vars})
+            if(DEFINED ${flag_var})
+                set(eventide_flags "${${flag_var}}")
+                string(REGEX REPLACE "(^| )[/-]EH[a-zA-Z0-9-]+( |$)" " " eventide_flags "${eventide_flags}")
+                string(REGEX REPLACE " +" " " eventide_flags "${eventide_flags}")
+                string(STRIP "${eventide_flags}" eventide_flags)
+                set(${flag_var} "${eventide_flags}" CACHE STRING "" FORCE)
+            endif()
+        endforeach()
+    endif()
+
+    if(NOT EVENTIDE_ENABLE_RTTI)
+        foreach(flag_var ${eventide_msvc_flag_vars})
+            if(DEFINED ${flag_var})
+                set(eventide_flags "${${flag_var}}")
+                string(REGEX REPLACE "(^| )[/-]GR( |$)" " " eventide_flags "${eventide_flags}")
+                string(REGEX REPLACE " +" " " eventide_flags "${eventide_flags}")
+                string(STRIP "${eventide_flags}" eventide_flags)
+                set(${flag_var} "${eventide_flags}" CACHE STRING "" FORCE)
+            endif()
+        endforeach()
+    endif()
 endif()
 
 add_compile_options("-D_LIBCPP_DISABLE_AVAILABILITY")
@@ -89,6 +123,21 @@ if(EVENTIDE_SANITIZE_ADDRESS)
     if(MSVC)
         set(eventide_sanitizer_compile_options "/fsanitize=address")
         set(eventide_sanitizer_link_options "")
+
+        if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            execute_process(
+                COMMAND ${CMAKE_CXX_COMPILER} --print-resource-dir
+                OUTPUT_VARIABLE eventide_clang_resource_dir
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+            )
+
+            set(eventide_asan_lib_path "${eventide_clang_resource_dir}/lib/windows")
+            list(APPEND eventide_sanitizer_link_options
+                "/libpath:${eventide_asan_lib_path}"
+                "clang_rt.asan_dynamic-x86_64.lib"
+                "/wholearchive:clang_rt.asan_dynamic_runtime_thunk-x86_64.lib"
+            )
+        endif()
     elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         set(eventide_sanitizer_compile_options "-fsanitize=address")
         set(eventide_sanitizer_link_options "-fsanitize=address")
@@ -148,8 +197,10 @@ add_library(eventide::project_options ALIAS eventide_project_options)
 
 if(MSVC)
     target_compile_options(eventide_project_options INTERFACE
+        /utf-8
         $<$<BOOL:${EVENTIDE_ENABLE_EXCEPTIONS}>:/EHsc>
         $<$<NOT:$<BOOL:${EVENTIDE_ENABLE_EXCEPTIONS}>>:/EHs-c->
+        $<$<NOT:$<BOOL:${EVENTIDE_ENABLE_EXCEPTIONS}>>:/wd4530>
         $<$<BOOL:${EVENTIDE_ENABLE_RTTI}>:/GR>
         $<$<NOT:$<BOOL:${EVENTIDE_ENABLE_RTTI}>>:/GR->
         $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/Zc:preprocessor>
@@ -177,6 +228,7 @@ target_compile_definitions(eventide_project_options INTERFACE
     EVENTIDE_ENABLE_EXCEPTIONS=$<IF:$<BOOL:${EVENTIDE_ENABLE_EXCEPTIONS}>,1,0>
     EVENTIDE_ENABLE_RTTI=$<IF:$<BOOL:${EVENTIDE_ENABLE_RTTI}>,1,0>
     $<$<CXX_COMPILER_ID:MSVC>:_CRT_SECURE_NO_WARNINGS>
+    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<NOT:$<BOOL:${EVENTIDE_ENABLE_EXCEPTIONS}>>>:_HAS_EXCEPTIONS=0>
 )
 
 function(eventide_apply_project_options target)

@@ -113,6 +113,10 @@ if(EVENTIDE_SERDE_ENABLE_FLATBUFFERS)
     set(FLATBUFFERS_BUILD_FLATLIB ON CACHE BOOL "" FORCE)
     set(FLATBUFFERS_BUILD_SHAREDLIB OFF CACHE BOOL "" FORCE)
     set(FLATBUFFERS_INSTALL OFF CACHE BOOL "" FORCE)
+    set(FLATBUFFERS_STRICT_MODE OFF CACHE BOOL "" FORCE)
+    set(FLATBUFFERS_BUILD_CPP17 OFF CACHE BOOL "" FORCE)
+    set(FLATBUFFERS_BUILD_LEGACY OFF CACHE BOOL "" FORCE)
+    set(FLATBUFFERS_ENABLE_PCH OFF CACHE BOOL "" FORCE)
 
     eventide_add_git_dependency(
         flatbuffers
@@ -124,6 +128,10 @@ if(EVENTIDE_SERDE_ENABLE_FLATBUFFERS)
             FLATBUFFERS_BUILD_FLATLIB ON
             FLATBUFFERS_BUILD_SHAREDLIB OFF
             FLATBUFFERS_INSTALL OFF
+            FLATBUFFERS_STRICT_MODE OFF
+            FLATBUFFERS_BUILD_CPP17 OFF
+            FLATBUFFERS_BUILD_LEGACY OFF
+            FLATBUFFERS_ENABLE_PCH OFF
     )
 
     add_library(eventide_serde_flatbuffers INTERFACE)
@@ -172,6 +180,10 @@ if(EVENTIDE_SERDE_ENABLE_TOML)
     target_link_libraries(eventide_serde_toml INTERFACE
         eventide::reflection
         tomlplusplus::tomlplusplus
+    )
+
+    target_compile_definitions(eventide_serde_toml INTERFACE
+        TOML_EXCEPTIONS=$<IF:$<BOOL:${EVENTIDE_ENABLE_EXCEPTIONS}>,1,0>
     )
 
     eventide_apply_project_options(eventide_serde_toml)
