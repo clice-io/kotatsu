@@ -28,6 +28,19 @@ option(EVENTIDE_SANITIZE_MEMORY "Enable MemorySanitizer" OFF)
 option(EVENTIDE_SANITIZE_THREAD "Enable ThreadSanitizer" OFF)
 option(EVENTIDE_SANITIZE_UNDEFINED "Enable UndefinedBehaviorSanitizer" OFF)
 
+if(MSVC AND EVENTIDE_ENABLE_CCACHE)
+    foreach(flag_var
+            CMAKE_C_FLAGS_DEBUG
+            CMAKE_CXX_FLAGS_DEBUG
+            CMAKE_C_FLAGS_RELWITHDEBINFO
+            CMAKE_CXX_FLAGS_RELWITHDEBINFO)
+        if(DEFINED ${flag_var})
+            string(REPLACE "/Zi" "/Z7" ${flag_var} "${${flag_var}}")
+            set(${flag_var} "${${flag_var}}" CACHE STRING "" FORCE)
+        endif()
+    endforeach()
+endif()
+
 add_compile_options("-D_LIBCPP_DISABLE_AVAILABILITY")
 
 set(eventide_primary_sanitizers "")

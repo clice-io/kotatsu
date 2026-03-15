@@ -132,7 +132,7 @@ struct wrapper {
 namespace eventide::refl {
 
 template <typename T>
-constexpr auto type_name(bool qualified = false) {
+consteval auto type_name(bool qualified = false) {
     string_ref name = std::source_location::current().function_name();
 #if __GNUC__ || __clang__
     std::size_t start = name.rfind("T =") + 3;
@@ -154,7 +154,7 @@ constexpr auto type_name(bool qualified = false) {
 
 template <auto value>
     requires std::is_enum_v<decltype(value)>
-constexpr auto enum_name() {
+consteval auto enum_name() {
     string_ref name = std::source_location::current().function_name();
 #if __GNUC__ || __clang__
     std::size_t start = name.find('=') + 2;
