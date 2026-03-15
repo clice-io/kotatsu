@@ -131,6 +131,7 @@ if(MSVC)
         $<$<NOT:$<BOOL:${EVENTIDE_ENABLE_EXCEPTIONS}>>:/EHs-c->
         $<$<BOOL:${EVENTIDE_ENABLE_RTTI}>:/GR>
         $<$<NOT:$<BOOL:${EVENTIDE_ENABLE_RTTI}>>:/GR->
+        $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/Zc:preprocessor>
     )
 else()
     target_compile_options(eventide_project_options INTERFACE
@@ -154,6 +155,7 @@ endif()
 target_compile_definitions(eventide_project_options INTERFACE
     EVENTIDE_ENABLE_EXCEPTIONS=$<IF:$<BOOL:${EVENTIDE_ENABLE_EXCEPTIONS}>,1,0>
     EVENTIDE_ENABLE_RTTI=$<IF:$<BOOL:${EVENTIDE_ENABLE_RTTI}>,1,0>
+    $<$<CXX_COMPILER_ID:MSVC>:_CRT_SECURE_NO_WARNINGS>
 )
 
 function(eventide_apply_project_options target)
@@ -219,10 +221,6 @@ if(EVENTIDE_ENABLE_TEST)
     if(NOT EVENTIDE_ENABLE_ZEST)
         message(STATUS "EVENTIDE_ENABLE_TEST=ON: enabling EVENTIDE_ENABLE_ZEST")
         set(EVENTIDE_ENABLE_ZEST ON CACHE BOOL "Build zest test framework target" FORCE)
-    endif()
-
-    if(MSVC)
-        add_compile_options("/Zc:preprocessor")
     endif()
 endif()
 

@@ -17,7 +17,7 @@ jobs:
             config_args: "--toolchain=clang-cl"
           - os: ubuntu-24.04
             toolchain: default
-            pixi_env: default
+            pixi_env: linux-gcc
             config_args: ""
           - os: macos-15
             toolchain: default

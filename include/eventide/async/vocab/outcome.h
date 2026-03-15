@@ -6,6 +6,8 @@
 #include <type_traits>
 #include <variant>
 
+#include "eventide/common/config.h"
+
 namespace eventide {
 
 template <typename T, typename E = void, typename C = void>
@@ -262,7 +264,7 @@ public:
     }
 
 private:
-    [[no_unique_address]]
+    EVENTIDE_NO_UNIQUE_ADDRESS
     std::conditional_t<std::is_void_v<T>, std::type_identity<void>, T> data;
 };
 

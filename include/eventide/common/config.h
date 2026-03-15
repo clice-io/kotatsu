@@ -22,6 +22,18 @@
 #define EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF 0
 #endif
 
+#if defined(__has_cpp_attribute)
+#if __has_cpp_attribute(msvc::no_unique_address)
+#define EVENTIDE_NO_UNIQUE_ADDRESS [[msvc::no_unique_address]]
+#elif __has_cpp_attribute(no_unique_address)
+#define EVENTIDE_NO_UNIQUE_ADDRESS [[no_unique_address]]
+#else
+#define EVENTIDE_NO_UNIQUE_ADDRESS
+#endif
+#else
+#define EVENTIDE_NO_UNIQUE_ADDRESS
+#endif
+
 #if defined(EVENTIDE_ENABLE_EXCEPTIONS)
 #if EVENTIDE_ENABLE_EXCEPTIONS && !defined(__cpp_exceptions)
 #undef EVENTIDE_ENABLE_EXCEPTIONS
