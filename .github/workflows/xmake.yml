@@ -43,7 +43,7 @@ jobs:
         uses: prefix-dev/setup-pixi@v0.9.3
         with:
           pixi-version: v0.61.0
-          environment: ${{ matrix.target.pixi_env }}
+          environments: ${{ matrix.target.pixi_env }}
           activate-environment: true
           cache: true
 
