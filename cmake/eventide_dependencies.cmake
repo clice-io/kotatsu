@@ -2,18 +2,36 @@ include(FetchContent)
 
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 
-function(eventide_apply_cache_options)
-    set(option_pairs ${ARGV})
+function(eventide_validate_option_pairs context)
+    set(option_pairs ${ARGN})
     list(LENGTH option_pairs option_count)
     math(EXPR option_remainder "${option_count} % 2")
     if(NOT option_remainder EQUAL 0)
-        message(FATAL_ERROR "eventide_apply_cache_options expects key/value pairs.")
+        message(FATAL_ERROR "${context} expects key/value pairs.")
     endif()
+endfunction()
+
+function(eventide_apply_cache_options)
+    set(option_pairs ${ARGV})
+    eventide_validate_option_pairs("eventide_apply_cache_options" ${option_pairs})
 
     while(option_pairs)
         list(POP_FRONT option_pairs option_name option_value)
         set(${option_name} "${option_value}" CACHE INTERNAL "" FORCE)
     endwhile()
+endfunction()
+
+function(eventide_make_cpm_options output_var context)
+    set(option_pairs ${ARGN})
+    eventide_validate_option_pairs("${context}" ${option_pairs})
+
+    set(cpm_options "")
+    while(option_pairs)
+        list(POP_FRONT option_pairs option_name option_value)
+        list(APPEND cpm_options "${option_name} ${option_value}")
+    endwhile()
+
+    set(${output_var} "${cpm_options}" PARENT_SCOPE)
 endfunction()
 
 function(eventide_ensure_cpm)
@@ -55,15 +73,6 @@ function(eventide_silence_third_party_target target)
         return()
     endif()
 
-    if(MSVC)
-        get_target_property(target_compile_options ${target} COMPILE_OPTIONS)
-        if(target_compile_options AND NOT target_compile_options STREQUAL "NOTFOUND")
-            set(filtered_compile_options ${target_compile_options})
-            list(FILTER filtered_compile_options EXCLUDE REGEX [[(^|.*:)[-/](W[0-4]|Wall)>?$]])
-            set_property(TARGET ${target} PROPERTY COMPILE_OPTIONS "${filtered_compile_options}")
-        endif()
-    endif()
-
     target_compile_options(${target} PRIVATE
         $<$<BOOL:${MSVC}>:/W0>
         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-w>
@@ -102,34 +111,19 @@ function(eventide_add_git_dependency name)
 
     if(ET_USE_CPM_FOR_TESTS AND ET_ENABLE_TEST)
         eventide_ensure_cpm()
-        set(cpm_options "")
-        set(option_pairs ${ARG_OPTIONS})
-        list(LENGTH option_pairs option_count)
-        math(EXPR option_remainder "${option_count} % 2")
-        if(NOT option_remainder EQUAL 0)
-            message(FATAL_ERROR "eventide_add_git_dependency(${name}) OPTIONS expects key/value pairs.")
-        endif()
-        while(option_pairs)
-            list(POP_FRONT option_pairs option_name option_value)
-            list(APPEND cpm_options "${option_name} ${option_value}")
-        endwhile()
+        eventide_make_cpm_options(cpm_options "eventide_add_git_dependency(${name}) OPTIONS" ${ARG_OPTIONS})
 
-        if(ARG_OPTIONS)
-            CPMAddPackage(
-                NAME ${name}
-                GIT_REPOSITORY ${ARG_GIT_REPOSITORY}
-                GIT_TAG ${ARG_GIT_TAG}
-                GIT_SHALLOW TRUE
-                OPTIONS ${cpm_options}
-            )
-        else()
-            CPMAddPackage(
-                NAME ${name}
-                GIT_REPOSITORY ${ARG_GIT_REPOSITORY}
-                GIT_TAG ${ARG_GIT_TAG}
-                GIT_SHALLOW TRUE
-            )
+        set(cpm_args
+            NAME ${name}
+            GIT_REPOSITORY ${ARG_GIT_REPOSITORY}
+            GIT_TAG ${ARG_GIT_TAG}
+            GIT_SHALLOW TRUE
+        )
+        if(cpm_options)
+            list(APPEND cpm_args OPTIONS ${cpm_options})
         endif()
+
+        CPMAddPackage(${cpm_args})
         eventide_silence_dependency_warnings(${name})
     else()
         eventide_apply_cache_options(${ARG_OPTIONS})
