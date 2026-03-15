@@ -10,8 +10,9 @@
 #include "eventide/reflection/struct.h"
 #include "eventide/serde/serde/annotation.h"
 #include "eventide/serde/serde/attrs.h"
-#include "eventide/serde/serde/attrs/behavior.h"
-#include "eventide/serde/serde/attrs/schema.h"
+#include "eventide/serde/schema/attrs.h"
+#include "eventide/serde/schema/behavior.h"
+#include "eventide/serde/schema/descriptor.h"
 #include "eventide/serde/serde/config.h"
 #include "eventide/serde/serde/spelling.h"
 #include "eventide/serde/serde/utils/apply_behavior.h"
@@ -85,8 +86,7 @@ constexpr auto serialize_struct_field(SerializeStruct& s_struct, Field field)
             // Default: serialize field with its value
             else {
                 // For tagged variants, preserve annotation so serialize() sees tagging attrs
-                if constexpr(is_specialization_of<std::variant, value_t> &&
-                             detail::tuple_any_of_v<attrs_t, is_tagged_attr>) {
+                if constexpr(schema::resolve_tag_mode<field_t>() != schema::tag_mode::none) {
                     return s_struct.serialize_field(effective_name, field.value());
                 } else {
                     return s_struct.serialize_field(effective_name, value);
@@ -194,8 +194,7 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
             // Default: deserialize value directly
             else {
                 // For tagged variants, preserve annotation so deserialize() sees tagging attrs
-                if constexpr(is_specialization_of<std::variant, value_t> &&
-                             detail::tuple_any_of_v<attrs_t, is_tagged_attr>) {
+                if constexpr(schema::resolve_tag_mode<field_t>() != schema::tag_mode::none) {
                     ET_EXPECTED_TRY(d_struct.deserialize_value(field.value()));
                     return true;
                 } else {

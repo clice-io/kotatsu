@@ -15,7 +15,7 @@
 
 #include "eventide/common/expected_try.h"
 #include "eventide/serde/serde/config.h"
-#include "eventide/serde/serde/schema/match.h"
+#include "eventide/serde/schema/match.h"
 #include "eventide/serde/serde/serde.h"
 #include "eventide/serde/serde/utils/backend_helpers.h"
 #include "eventide/serde/serde/utils/common.h"
@@ -153,36 +153,20 @@ public:
         return is_none;
     }
 
-    result_t<serde::type_hint> peek_type_hint() {
-        auto kind = peek_node_kind();
-        if(!kind) {
-            return std::unexpected(kind.error());
-        }
-        return map_to_type_hint(*kind);
-    }
-
     result_t<const ::toml::node*> consume_variant_source() {
         return consume_node();
     }
 
-    static result_t<std::vector<serde::schema::incoming_field>>
-        extract_object_keys(const ::toml::node* source) {
-        if(!source || !source->is_table()) {
-            return std::unexpected(error_kind::type_mismatch);
-        }
-        auto& table = *source->as_table();
-        std::vector<serde::schema::incoming_field> fields;
-        for(auto& [k, v]: table) {
-            auto kind = serde::schema::type_kind::any;
-            if(v.is_string()) kind = serde::schema::type_kind::string;
-            else if(v.is_boolean()) kind = serde::schema::type_kind::boolean;
-            else if(v.is_integer()) kind = serde::schema::type_kind::integer;
-            else if(v.is_floating_point()) kind = serde::schema::type_kind::floating;
-            else if(v.is_array()) kind = serde::schema::type_kind::array;
-            else if(v.is_table()) kind = serde::schema::type_kind::object;
-            fields.push_back({.name = std::string(k), .kind = kind});
-        }
-        return fields;
+    template <typename... Ts>
+    result_t<void> deserialize_variant(std::variant<Ts...>& v) {
+        auto source_result = consume_node();
+        if(!source_result) return std::unexpected(source_result.error());
+        auto source = *source_result;
+
+        auto node = to_schema_node(source);
+        using config_t = Config;
+        return serde::schema::untagged_dispatch<Deserializer, config_t, Ts...>(
+            v, node, [&]() -> Deserializer { return Deserializer(source); });
     }
 
     status_t deserialize_bool(bool& value) {
@@ -472,6 +456,27 @@ private:
         }
     }
 
+    static serde::type_hint node_to_hint(const ::toml::node* n) {
+        if(!n) return serde::type_hint::null_like;
+        return map_to_type_hint(classify_node(n));
+    }
+
+    static serde::schema::schema_node to_schema_node(const ::toml::node* source) {
+        serde::schema::schema_node node;
+        node.hints = node_to_hint(source);
+
+        if(source && source->is_table()) {
+            auto& table = *source->as_table();
+            for(auto& [k, v]: table) {
+                node.fields.push_back({
+                    std::string(k),
+                    node_to_hint(&v),
+                });
+            }
+        }
+        return node;
+    }
+
     result_t<const ::toml::node*> access_node(bool consume) {
         if(!is_valid) {
             return std::unexpected(current_error());
@@ -572,15 +577,3 @@ auto from_toml(const ::toml::table& table) -> std::expected<T, error_kind> {
 static_assert(serde::deserializer_like<Deserializer<>>);
 
 }  // namespace eventide::serde::toml
-
-namespace eventide::serde {
-
-template <typename Config>
-struct variant_support<toml::Deserializer<Config>> {
-    static constexpr bool untagged = true;
-    static constexpr bool externally_tagged = true;
-    static constexpr bool internally_tagged = true;
-    static constexpr bool adjacently_tagged = true;
-};
-
-}  // namespace eventide::serde

@@ -332,15 +332,3 @@ private:
 static_assert(serde::serializer_like<Serializer<>>);
 
 }  // namespace eventide::serde::content
-
-namespace eventide::serde {
-
-template <typename Config>
-struct variant_support<content::Serializer<Config>> {
-    static constexpr bool untagged = true;
-    static constexpr bool externally_tagged = true;
-    static constexpr bool internally_tagged = true;
-    static constexpr bool adjacently_tagged = true;
-};
-
-}  // namespace eventide::serde

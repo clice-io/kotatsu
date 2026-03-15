@@ -14,9 +14,9 @@
 #include "eventide/common/ranges.h"
 #include "eventide/reflection/enum.h"
 #include "eventide/reflection/struct.h"
-#include "eventide/serde/serde/attrs/behavior.h"
-#include "eventide/serde/serde/attrs/schema.h"
-#include "eventide/serde/serde/schema/schema.h"
+#include "eventide/serde/schema/attrs.h"
+#include "eventide/serde/schema/behavior.h"
+#include "eventide/serde/schema/schema.h"
 #include "eventide/serde/serde/utils/apply_behavior.h"
 #include "eventide/serde/serde/utils/common.h"
 #include "eventide/serde/serde/utils/field_dispatch.h"
@@ -43,24 +43,9 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
         static_assert(!detail::tuple_has_v<attrs_t, schema::flatten>,
                       "schema::flatten is only valid for struct fields");
 
-        // Tagged variant dispatch
-        if constexpr(is_specialization_of<std::variant, value_t> &&
-                     detail::tuple_any_of_v<attrs_t, is_tagged_attr>) {
-            using tag_attr = detail::tuple_find_t<attrs_t, is_tagged_attr>;
-            constexpr auto strategy = tagged_strategy_of<tag_attr>;
-            if constexpr(strategy == tagged_strategy::external) {
-                static_assert(variant_support<S>::externally_tagged,
-                              "this serializer does not support externally tagged variants");
-                return detail::serialize_externally_tagged<E>(s, value, tag_attr{});
-            } else if constexpr(strategy == tagged_strategy::internal) {
-                static_assert(variant_support<S>::internally_tagged,
-                              "this serializer does not support internally tagged variants");
-                return detail::serialize_internally_tagged<E>(s, value, tag_attr{});
-            } else {
-                static_assert(variant_support<S>::adjacently_tagged,
-                              "this serializer does not support adjacently tagged variants");
-                return detail::serialize_adjacently_tagged<E>(s, value, tag_attr{});
-            }
+        // Tagged variant: dispatch via schema tag_mode
+        if constexpr(schema::resolve_tag_mode<V>() != schema::tag_mode::none) {
+            return detail::serialize_tagged<E, V>(s, value);
         }
         // Behavior: with/as/enum_string — delegate to apply_serialize_behavior
         else if constexpr(detail::tuple_count_of_v<attrs_t, is_behavior_provider> > 0) {
@@ -199,24 +184,9 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
         static_assert(!detail::tuple_has_v<attrs_t, schema::flatten>,
                       "schema::flatten is only valid for struct fields");
 
-        // Tagged variant dispatch
-        if constexpr(is_specialization_of<std::variant, value_t> &&
-                     detail::tuple_any_of_v<attrs_t, is_tagged_attr>) {
-            using tag_attr = detail::tuple_find_t<attrs_t, is_tagged_attr>;
-            constexpr auto strategy = tagged_strategy_of<tag_attr>;
-            if constexpr(strategy == tagged_strategy::external) {
-                static_assert(variant_support<D>::externally_tagged,
-                              "this deserializer does not support externally tagged variants");
-                return detail::deserialize_externally_tagged<E>(d, value, tag_attr{});
-            } else if constexpr(strategy == tagged_strategy::internal) {
-                static_assert(variant_support<D>::internally_tagged,
-                              "this deserializer does not support internally tagged variants");
-                return detail::deserialize_internally_tagged<E>(d, value, tag_attr{});
-            } else {
-                static_assert(variant_support<D>::adjacently_tagged,
-                              "this deserializer does not support adjacently tagged variants");
-                return detail::deserialize_adjacently_tagged<E>(d, value, tag_attr{});
-            }
+        // Tagged variant: dispatch via schema tag_mode
+        if constexpr(schema::resolve_tag_mode<V>() != schema::tag_mode::none) {
+            return detail::deserialize_tagged<E, V>(d, value);
         }
         // Behavior: with/as/enum_string — delegate to apply_deserialize_behavior
         else if constexpr(detail::tuple_count_of_v<attrs_t, is_behavior_provider> > 0) {
@@ -341,82 +311,12 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
         v = std::move(value);
         return {};
     } else if constexpr(is_specialization_of<std::variant, V>) {
-        if constexpr(requires { d.peek_type_hint(); d.consume_variant_source(); }) {
-            return []<typename... Ts>(D& d, std::variant<Ts...>& v)
-                -> std::expected<void, E>
-            {
-                using config_t = config::config_of<D>;
-                ET_EXPECTED_TRY_V(auto hint, d.peek_type_hint());
-                ET_EXPECTED_TRY_V(auto source, d.consume_variant_source());
-
-                using source_t = std::remove_cvref_t<decltype(source)>;
-                auto hint_bits = static_cast<std::uint8_t>(hint);
-
-                // Object matching: use compile-time schema to select alternative
-                if constexpr(requires { D::extract_object_keys(source); }) {
-                    if(hint_bits & static_cast<std::uint8_t>(serde::type_hint::object)) {
-                        auto keys_result = D::extract_object_keys(source);
-                        if(keys_result) {
-                            auto idx = schema::match_variant_by_keys<config_t, Ts...>(
-                                *keys_result);
-                            if(idx.has_value()) {
-                                return detail::deserialize_variant_at_index<D, source_t, Ts...>(
-                                    *idx, std::forward<decltype(source)>(source), v);
-                            }
-                        }
-                    }
-                }
-
-                // Primitive/kind-based matching: collect all candidate indices, sorted
-                constexpr auto kind_map = schema::build_kind_to_index_map<Ts...>();
-                constexpr std::uint8_t bit_for_kind[] = {
-                    0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80,
-                };
-
-                // Collect candidate indices from all matching kinds
-                std::array<std::size_t, sizeof...(Ts)> candidates{};
-                std::size_t n_candidates = 0;
-                for(std::size_t ki = 0; ki < 8; ki++) {
-                    if(hint_bits & bit_for_kind[ki]) {
-                        for(std::size_t ci = 0; ci < kind_map.count[ki]; ci++) {
-                            auto idx = kind_map.indices[ki][ci];
-                            bool dup = false;
-                            for(std::size_t j = 0; j < n_candidates; j++) {
-                                if(candidates[j] == idx) { dup = true; break; }
-                            }
-                            if(!dup) {
-                                candidates[n_candidates++] = idx;
-                            }
-                        }
-                    }
-                }
-
-                // Sort by variant index (ascending = first-declared wins)
-                for(std::size_t i = 1; i < n_candidates; i++) {
-                    for(std::size_t j = i; j > 0 && candidates[j] < candidates[j-1]; j--) {
-                        std::swap(candidates[j], candidates[j-1]);
-                    }
-                }
-
-                // Try each candidate; first successful deserialize wins
-                for(std::size_t ci = 0; ci < n_candidates; ci++) {
-                    source_t src_copy = source;
-                    auto result = detail::deserialize_variant_at_index<D, source_t, Ts...>(
-                        candidates[ci], std::move(src_copy), v);
-                    if(result.has_value()) {
-                        return result;
-                    }
-                    if(ci + 1 == n_candidates) {
-                        return result;
-                    }
-                }
-                return std::unexpected(E::type_mismatch);
-            }(d, v);
+        if constexpr(requires(D& dd, V& vv) { dd.deserialize_variant(vv); }) {
+            return d.deserialize_variant(v);
         } else {
             static_assert(dependent_false<V>,
                 "variant deserialization requires either deserialize_traits "
-                "specialization or a self-describing backend "
-                "(peek_type_hint + consume_variant_source)");
+                "specialization or a backend providing deserialize_variant()");
         }
     } else if constexpr(tuple_like<V>) {
         ET_EXPECTED_TRY_V(auto d_tuple,

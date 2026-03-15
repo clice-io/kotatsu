@@ -298,12 +298,4 @@ struct serialize_traits<bincode::Serializer<Config>, T> {
     }
 };
 
-template <typename Config>
-struct variant_support<bincode::Serializer<Config>> {
-    static constexpr bool untagged = true;
-    static constexpr bool externally_tagged = false;
-    static constexpr bool internally_tagged = false;
-    static constexpr bool adjacently_tagged = false;
-};
-
 }  // namespace eventide::serde

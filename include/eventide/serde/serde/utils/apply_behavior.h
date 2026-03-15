@@ -6,7 +6,7 @@
 #include <type_traits>
 
 #include "eventide/serde/serde/attrs.h"
-#include "eventide/serde/serde/attrs/behavior.h"
+#include "eventide/serde/schema/behavior.h"
 #include "eventide/serde/serde/spelling.h"
 
 namespace eventide::serde::detail {

@@ -14,6 +14,8 @@
 
 #include "eventide/serde/serde/serde.h"
 #include "eventide/serde/serde/utils/common.h"
+#include "eventide/serde/schema/kind.h"
+#include "eventide/serde/schema/descriptor.h"
 
 namespace eventide::serde::flatbuffers {
 
@@ -28,10 +30,6 @@ constexpr bool is_std_vector_v = is_specialization_of<std::vector, std::remove_c
 
 template <typename T>
 constexpr bool is_std_map_v = is_specialization_of<std::map, std::remove_cvref_t<T>>;
-
-template <typename T>
-constexpr bool is_scalar_field_v =
-    std::same_as<T, bool> || serde::int_like<T> || serde::uint_like<T> || serde::floating_like<T>;
 
 inline std::string normalize_identifier(std::string_view text) {
     std::string out;
@@ -61,74 +59,53 @@ std::string type_identifier() {
     return normalize_identifier(refl::type_name<T>());
 }
 
-template <typename T>
-std::string scalar_schema_name() {
-    using U = remove_optional_t<T>;
-
-    if constexpr(std::same_as<U, bool>) {
-        return "bool";
-    } else if constexpr(std::same_as<U, std::int8_t> || std::same_as<U, signed char> ||
-                        std::same_as<U, char>) {
-        return "byte";
-    } else if constexpr(std::same_as<U, std::uint8_t> || std::same_as<U, unsigned char>) {
-        return "ubyte";
-    } else if constexpr(std::same_as<U, std::int16_t> || std::same_as<U, short>) {
-        return "short";
-    } else if constexpr(std::same_as<U, std::uint16_t> || std::same_as<U, unsigned short>) {
-        return "ushort";
-    } else if constexpr(std::same_as<U, std::int32_t> || std::same_as<U, int>) {
-        return "int";
-    } else if constexpr(std::same_as<U, std::uint32_t> || std::same_as<U, unsigned int>) {
-        return "uint";
-    } else if constexpr(std::same_as<U, std::int64_t> || std::same_as<U, long long>) {
-        return "long";
-    } else if constexpr(std::same_as<U, std::uint64_t> || std::same_as<U, unsigned long long>) {
-        return "ulong";
-    } else if constexpr(std::same_as<U, float>) {
-        return "float";
-    } else if constexpr(std::same_as<U, double>) {
-        return "double";
-    } else if constexpr(std::is_enum_v<U>) {
-        using underlying_t = std::underlying_type_t<U>;
-        return scalar_schema_name<underlying_t>();
-    } else {
-        static_assert(dependent_false<U>, "unsupported scalar schema type");
+inline std::string scalar_name_from_kind(schema::scalar_kind sk) {
+    switch(sk) {
+    case schema::scalar_kind::bool_v: return "bool";
+    case schema::scalar_kind::int8:
+    case schema::scalar_kind::char_v: return "byte";
+    case schema::scalar_kind::uint8: return "ubyte";
+    case schema::scalar_kind::int16: return "short";
+    case schema::scalar_kind::uint16: return "ushort";
+    case schema::scalar_kind::int32: return "int";
+    case schema::scalar_kind::uint32: return "uint";
+    case schema::scalar_kind::int64: return "long";
+    case schema::scalar_kind::uint64: return "ulong";
+    case schema::scalar_kind::float32: return "float";
+    case schema::scalar_kind::float64: return "double";
+    default: return "int";
     }
 }
 
-template <typename T>
-struct schema_struct_trait;
-
-template <typename T>
-constexpr bool is_schema_struct_field_v = [] {
-    using U = remove_optional_t<T>;
-    if constexpr(is_scalar_field_v<U> || std::is_enum_v<U>) {
-        return true;
-    } else if constexpr(refl::reflectable_class<U>) {
-        return schema_struct_trait<U>::value;
-    } else {
+constexpr bool is_fb_struct(const schema::type_schema_view* sv) {
+    if(!sv || sv->kind != schema::type_kind::structure) return false;
+    if(!schema::has_flag(sv->flags, schema::type_flags::is_trivial)) return false;
+    if(!schema::has_flag(sv->flags, schema::type_flags::is_standard_layout)) return false;
+    for(const auto& field: sv->fields) {
+        if(!field.nested) return false;
+        auto fk = field.nested->kind;
+        if(fk == schema::type_kind::integer || fk == schema::type_kind::floating ||
+           fk == schema::type_kind::boolean || fk == schema::type_kind::character ||
+           fk == schema::type_kind::enumeration) {
+            continue;
+        }
+        if(fk == schema::type_kind::structure && is_fb_struct(field.nested)) continue;
         return false;
     }
-}();
+    return true;
+}
 
 template <typename T>
-struct schema_struct_trait {
-    static consteval bool fields_supported() {
-        if constexpr(!refl::reflectable_class<T>) {
-            return false;
-        } else {
-            return []<std::size_t... I>(std::index_sequence<I...>) {
-                return (is_schema_struct_field_v<refl::field_type<T, I>> && ...);
-            }(std::make_index_sequence<refl::field_count<T>()>{});
-        }
-    }
-
-    constexpr static bool value = refl::reflectable_class<T> && std::is_trivial_v<T> &&
-                                  std::is_standard_layout_v<T> && fields_supported();
-};
+std::string scalar_schema_name() {
+    constexpr auto sk = schema::scalar_kind_of<T>();
+    static_assert(sk != schema::scalar_kind::none, "unsupported scalar type");
+    return scalar_name_from_kind(sk);
+}
 
 template <typename T>
-constexpr bool is_schema_struct_v = schema_struct_trait<T>::value;
+constexpr bool is_scalar_field_v =
+    schema::scalar_kind_of<T>() != schema::scalar_kind::none &&
+    !std::is_enum_v<T>;
 
 template <typename T>
 constexpr bool is_string_like_field_v = std::same_as<remove_optional_t<T>, std::string> ||
@@ -175,7 +152,8 @@ private:
             return;
         }
 
-        out += "enum " + enum_name + ":" + scalar_schema_name<std::underlying_type_t<E>>() + " {\n";
+        constexpr auto sk = schema::scalar_kind_of<std::underlying_type_t<E>>();
+        out += "enum " + enum_name + ":" + scalar_name_from_kind(sk) + " {\n";
 
         const auto& names = refl::reflection<E>::member_names;
         const auto& values = refl::reflection<E>::member_values;
@@ -217,8 +195,10 @@ private:
     template <typename T, typename Owner, std::size_t FieldIndex>
     std::string field_schema_type() {
         using U = remove_optional_t<T>;
-        if constexpr(is_scalar_field_v<U> || std::is_enum_v<U>) {
-            return std::is_enum_v<U> ? type_identifier<U>() : scalar_schema_name<U>();
+        if constexpr(std::is_enum_v<U>) {
+            return type_identifier<U>();
+        } else if constexpr(is_scalar_field_v<U>) {
+            return scalar_schema_name<U>();
         } else if constexpr(is_string_like_field_v<U>) {
             return "string";
         } else if constexpr(is_std_vector_v<U>) {
@@ -252,7 +232,8 @@ private:
             (self->template emit_map_entry_if_needed<T, I>(), ...);
         }(this, std::make_index_sequence<refl::field_count<T>()>{});
 
-        out += (is_schema_struct_v<T> ? "struct " : "table ");
+        constexpr auto* sv = schema::get_schema<T>();
+        out += (is_fb_struct(sv) ? "struct " : "table ");
         out += object_name + " {\n";
 
         []<std::size_t... I>(schema_emitter* self, std::index_sequence<I...>) {
@@ -275,23 +256,27 @@ private:
 }  // namespace schema_detail
 
 template <typename T>
-constexpr bool is_schema_struct_v = schema_detail::is_schema_struct_v<T>;
+constexpr bool is_schema_struct_v = [] {
+    if constexpr(!refl::reflectable_class<std::remove_cvref_t<T>>) {
+        return false;
+    } else {
+        return schema_detail::is_fb_struct(schema::get_schema<T>());
+    }
+}();
 
 template <typename T>
 consteval bool has_annotated_fields() {
-    using U = std::remove_cvref_t<T>;
-    if constexpr(!refl::reflectable_class<U>) {
-        return false;
-    } else {
-        return []<std::size_t... I>(std::index_sequence<I...>) {
-            return (serde::annotated_type<refl::field_type<U, I>> || ...);
-        }(std::make_index_sequence<refl::field_count<U>()>{});
-    }
+    return schema::has_flag(schema::type_flags_of<T>(), schema::type_flags::has_annotated_fields);
 }
 
 template <typename T>
-constexpr bool can_inline_struct_v =
-    refl::reflectable_class<T> && is_schema_struct_v<T> && !has_annotated_fields<T>();
+constexpr bool can_inline_struct_v = [] {
+    if constexpr(!refl::reflectable_class<std::remove_cvref_t<T>>) {
+        return false;
+    } else {
+        return is_schema_struct_v<T> && !has_annotated_fields<T>();
+    }
+}();
 
 template <typename T>
 std::string type_identifier() {

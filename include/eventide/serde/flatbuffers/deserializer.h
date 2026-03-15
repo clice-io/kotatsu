@@ -853,15 +853,3 @@ auto from_flatbuffer(const std::vector<std::uint8_t>& bytes)
 }
 
 }  // namespace eventide::serde::flatbuffers
-
-namespace eventide::serde {
-
-template <typename Config>
-struct variant_support<flatbuffers::Deserializer<Config>> {
-    static constexpr bool untagged = true;
-    static constexpr bool externally_tagged = false;
-    static constexpr bool internally_tagged = false;
-    static constexpr bool adjacently_tagged = false;
-};
-
-}  // namespace eventide::serde

@@ -5,9 +5,8 @@
 #include "spelling.h"
 #include "eventide/common/fixed_string.h"
 #include "eventide/serde/serde/annotation.h"
-#include "eventide/serde/serde/attrs/behavior.h"
-#include "eventide/serde/serde/attrs/hint.h"
-#include "eventide/serde/serde/attrs/schema.h"
+#include "eventide/serde/schema/attrs.h"
+#include "eventide/serde/schema/behavior.h"
 
 namespace eventide::serde {
 

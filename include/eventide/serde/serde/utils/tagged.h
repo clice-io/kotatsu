@@ -16,55 +16,20 @@
 #include "eventide/serde/serde/annotation.h"
 #include "eventide/serde/serde/attrs.h"
 #include "eventide/serde/serde/config.h"
-#include "eventide/serde/serde/schema/schema.h"
+#include "eventide/serde/schema/schema.h"
 #include "eventide/serde/serde/utils/field_dispatch.h"
 #include "eventide/serde/serde/utils/fwd.h"
-
-namespace eventide::serde {
-
-/// Backend capability declaration for variant tagging strategies.
-/// Specialize for each backend deserializer/serializer.
-/// Default: nothing supported (binary backends opt in via deserialize_traits).
-template <typename Backend>
-struct variant_support {
-    static constexpr bool untagged = false;
-    static constexpr bool externally_tagged = false;
-    static constexpr bool internally_tagged = false;
-    static constexpr bool adjacently_tagged = false;
-};
-
-/// Bitmask of data-model type categories.
-/// Backends map their format-specific "kind" enums to these bits.
-enum class type_hint : std::uint8_t {
-    null_like = 1 << 0,
-    boolean = 1 << 1,
-    integer = 1 << 2,
-    floating = 1 << 3,
-    string = 1 << 4,
-    array = 1 << 5,
-    object = 1 << 6,
-    any = 0x7F,
-};
-
-constexpr type_hint operator|(type_hint a, type_hint b) noexcept {
-    return static_cast<type_hint>(static_cast<std::uint8_t>(a) | static_cast<std::uint8_t>(b));
-}
-
-constexpr bool has_any(type_hint set, type_hint flags) noexcept {
-    return (static_cast<std::uint8_t>(set) & static_cast<std::uint8_t>(flags)) != 0;
-}
-
-}  // namespace eventide::serde
 
 namespace eventide::serde::detail {
 
 /// Match tag_value against variant alternative names, construct the matching alternative,
 /// call reader(alt) to deserialize it, then assign to the variant.
-template <typename E, typename... Ts, typename Names, typename Reader>
+template <typename E, typename... Ts, std::size_t N, typename Reader>
 constexpr auto match_and_deserialize_alt(std::string_view tag_value,
-                                         const Names& names,
+                                         const std::array<std::string_view, N>& names,
                                          std::variant<Ts...>& value,
                                          Reader&& reader) -> std::expected<void, E> {
+    static_assert(N == sizeof...(Ts));
     bool matched = false;
     std::expected<void, E> status{};
 
@@ -165,213 +130,174 @@ auto deserialize_variant_at_index(std::size_t idx,
         idx, std::forward<Source>(source), v, std::make_index_sequence<sizeof...(Ts)>{});
 }
 
-// ─── Serialization ──────────────────────────────────────────────────────────
+// ─── Schema-driven tagged serialization ─────────────────────────────────────
 
-template <typename E, typename S, typename... Ts, typename TagAttr>
-constexpr auto serialize_externally_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
+/// Unified tagged variant serialization.
+/// AnnotatedV is the full annotated type (e.g. annotation<variant<Ts...>, tagged<...>>).
+/// The schema layer provides tag_mode, tag/content field names, and alt names.
+template <typename E, typename AnnotatedV, typename S, typename... Ts>
+constexpr auto serialize_tagged(S& s, const std::variant<Ts...>& value)
     -> std::expected<typename S::value_type, E> {
-    constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
+    constexpr auto mode = schema::resolve_tag_mode<AnnotatedV>();
+    static_assert(mode != schema::tag_mode::none, "serialize_tagged requires a tagged variant");
 
-    ET_EXPECTED_TRY_V(auto s_struct, s.serialize_struct("", 1));
+    constexpr auto& names = schema::detail::alt_names_storage<std::remove_cvref_t<AnnotatedV>>::data;
+    constexpr auto tag_field = schema::resolve_tag_field<AnnotatedV>();
+    constexpr auto content_field = schema::resolve_content_field<AnnotatedV>();
 
-    auto name = names[value.index()];
-    ET_EXPECTED_TRY(
-        (visit_variant_alt<E, void>(value, [&](const auto& item) -> std::expected<void, E> {
-            return s_struct.serialize_field(name, item);
-        })));
-
-    return s_struct.end();
-}
-
-template <typename E, typename S, typename... Ts, typename TagAttr>
-constexpr auto serialize_adjacently_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
-    -> std::expected<typename S::value_type, E> {
-    constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
-
-    ET_EXPECTED_TRY_V(auto s_struct, s.serialize_struct("", 2));
-
-    auto name = names[value.index()];
-    ET_EXPECTED_TRY(s_struct.serialize_field(TagAttr::field_names[0], name));
-
-    ET_EXPECTED_TRY(
-        (visit_variant_alt<E, void>(value, [&](const auto& item) -> std::expected<void, E> {
-            return s_struct.serialize_field(TagAttr::field_names[1], item);
-        })));
-
-    return s_struct.end();
-}
-
-template <typename E, typename S, typename... Ts, typename TagAttr>
-constexpr auto serialize_internally_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
-    -> std::expected<typename S::value_type, E> {
-    constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
-    constexpr std::string_view tag_field = TagAttr::field_names[0];
-
-    return std::visit(
-        [&](const auto& item) -> std::expected<typename S::value_type, E> {
-            using alt_t = std::remove_cvref_t<decltype(item)>;
-            static_assert(refl::reflectable_class<alt_t>,
-                          "internally_tagged requires struct alternatives");
-
-            using config_t = config::config_of<S>;
-            ET_EXPECTED_TRY_V(auto s_struct,
-                              s.serialize_struct("", refl::field_count<alt_t>() + 1));
-
-            auto tag_name = names[value.index()];
-            ET_EXPECTED_TRY(s_struct.serialize_field(tag_field, tag_name));
-
-            std::expected<void, E> field_result;
-            refl::for_each(item, [&](auto field) {
-                auto r = serialize_struct_field<config_t, E>(s_struct, field);
-                if(!r) {
-                    field_result = std::unexpected(r.error());
-                    return false;
+    if constexpr(mode == schema::tag_mode::external) {
+        ET_EXPECTED_TRY_V(auto s_struct, s.serialize_struct("", 1));
+        auto name = names[value.index()];
+        ET_EXPECTED_TRY(
+            (visit_variant_alt<E, void>(value, [&](const auto& item) -> std::expected<void, E> {
+                return s_struct.serialize_field(name, item);
+            })));
+        return s_struct.end();
+    } else if constexpr(mode == schema::tag_mode::internal) {
+        return std::visit(
+            [&](const auto& item) -> std::expected<typename S::value_type, E> {
+                using alt_t = std::remove_cvref_t<decltype(item)>;
+                static_assert(refl::reflectable_class<alt_t>,
+                              "internally_tagged requires struct alternatives");
+                using config_t = config::config_of<S>;
+                ET_EXPECTED_TRY_V(auto s_struct,
+                                  s.serialize_struct("", refl::field_count<alt_t>() + 1));
+                auto tag_name = names[value.index()];
+                ET_EXPECTED_TRY(s_struct.serialize_field(tag_field, tag_name));
+                std::expected<void, E> field_result;
+                refl::for_each(item, [&](auto field) {
+                    auto r = serialize_struct_field<config_t, E>(s_struct, field);
+                    if(!r) {
+                        field_result = std::unexpected(r.error());
+                        return false;
+                    }
+                    return true;
+                });
+                if(!field_result) {
+                    return std::unexpected(field_result.error());
                 }
-                return true;
-            });
-            if(!field_result) {
-                return std::unexpected(field_result.error());
-            }
-            return s_struct.end();
-        },
-        value);
-}
-
-// ─── Deserialization ────────────────────────────────────────────────────────
-
-template <typename E, typename D, typename... Ts, typename TagAttr>
-constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, TagAttr)
-    -> std::expected<void, E> {
-    constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
-
-    ET_EXPECTED_TRY_V(auto d_struct, d.deserialize_struct("", 1));
-
-    ET_EXPECTED_TRY_V(auto key, d_struct.next_key());
-    if(!key.has_value()) {
-        return std::unexpected(E::type_mismatch);
+                return s_struct.end();
+            },
+            value);
+    } else {
+        static_assert(mode == schema::tag_mode::adjacent);
+        ET_EXPECTED_TRY_V(auto s_struct, s.serialize_struct("", 2));
+        auto name = names[value.index()];
+        ET_EXPECTED_TRY(s_struct.serialize_field(tag_field, name));
+        ET_EXPECTED_TRY(
+            (visit_variant_alt<E, void>(value, [&](const auto& item) -> std::expected<void, E> {
+                return s_struct.serialize_field(content_field, item);
+            })));
+        return s_struct.end();
     }
-
-    ET_EXPECTED_TRY((match_and_deserialize_alt<E>(*key, names, value, [&](auto& alt) {
-        return d_struct.deserialize_value(alt);
-    })));
-
-    return d_struct.end();
 }
 
-/// Internally tagged: two-pass using backend-native source.
-/// Pass 1: iterate struct fields to find the tag.
-/// Pass 2: full deserialization of the matched struct type.
-/// No content::Deserializer dependency.
-template <typename E, typename D, typename... Ts, typename TagAttr>
-constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, TagAttr)
+// ─── Schema-driven tagged deserialization ───────────────────────────────────
+
+/// Unified tagged variant deserialization.
+/// AnnotatedV is the full annotated type (e.g. annotation<variant<Ts...>, tagged<...>>).
+template <typename E, typename AnnotatedV, typename D, typename... Ts>
+constexpr auto deserialize_tagged(D& d, std::variant<Ts...>& value)
     -> std::expected<void, E> {
-    static_assert(
-        requires { d.consume_variant_source(); },
-        "internally_tagged deserialization requires consume_variant_source()");
+    constexpr auto mode = schema::resolve_tag_mode<AnnotatedV>();
+    static_assert(mode != schema::tag_mode::none, "deserialize_tagged requires a tagged variant");
 
-    constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
-    constexpr std::string_view tag_field = TagAttr::field_names[0];
+    constexpr auto& names = schema::detail::alt_names_storage<std::remove_cvref_t<AnnotatedV>>::data;
+    constexpr auto tag_field = schema::resolve_tag_field<AnnotatedV>();
+    constexpr auto content_field = schema::resolve_content_field<AnnotatedV>();
 
-    // Capture backend-native source (rewindable for DOM-based backends)
-    ET_EXPECTED_TRY_V(auto source, d.consume_variant_source());
-
-    // Pass 1: find tag value by iterating struct fields
-    std::string tag_value;
-    {
-        D tag_reader(source);
-        ET_EXPECTED_TRY_V(auto d_struct, tag_reader.deserialize_struct("", 0));
-        bool found = false;
-        while(true) {
-            ET_EXPECTED_TRY_V(auto key, d_struct.next_key());
-            if(!key.has_value()) {
-                break;
-            }
-            if(*key == tag_field) {
-                ET_EXPECTED_TRY(d_struct.deserialize_value(tag_value));
-                found = true;
-                break;
-            }
-            ET_EXPECTED_TRY(d_struct.skip_value());
-        }
-        if(!found) {
+    if constexpr(mode == schema::tag_mode::external) {
+        ET_EXPECTED_TRY_V(auto d_struct, d.deserialize_struct("", 1));
+        ET_EXPECTED_TRY_V(auto key, d_struct.next_key());
+        if(!key.has_value()) {
             return std::unexpected(E::type_mismatch);
         }
-    }
+        ET_EXPECTED_TRY((match_and_deserialize_alt<E>(*key, names, value, [&](auto& alt) {
+            return d_struct.deserialize_value(alt);
+        })));
+        return d_struct.end();
+    } else if constexpr(mode == schema::tag_mode::internal) {
+        static_assert(requires { d.consume_variant_source(); },
+                      "internally tagged deserialization requires consume_variant_source()");
+        ET_EXPECTED_TRY_V(auto source, d.consume_variant_source());
 
-    // Pass 2: deserialize as the matched struct type
-    return match_and_deserialize_alt<E>(
-        tag_value, names, value, [&](auto& alt) -> std::expected<void, E> {
-            using alt_t = std::remove_cvref_t<decltype(alt)>;
-            static_assert(refl::reflectable_class<alt_t>,
-                          "internally_tagged requires struct alternatives");
-            D content_reader(source);
-            ET_EXPECTED_TRY(serde::deserialize(content_reader, alt));
-            ET_EXPECTED_TRY(content_reader.finish());
-            return {};
-        });
-}
-
-/// Adjacently tagged: two-pass using backend-native source.
-/// Pass 1: iterate struct fields to find the tag value.
-/// Pass 2: re-iterate to deserialize the content field with the known type.
-template <typename E, typename D, typename... Ts, typename TagAttr>
-constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, TagAttr)
-    -> std::expected<void, E> {
-    static_assert(
-        requires { d.consume_variant_source(); },
-        "adjacently_tagged deserialization requires consume_variant_source()");
-
-    constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
-
-    // Capture backend-native source for two-pass
-    ET_EXPECTED_TRY_V(auto source, d.consume_variant_source());
-
-    // Pass 1: find tag value
-    std::string tag_value;
-    {
-        D tag_reader(source);
-        ET_EXPECTED_TRY_V(auto d_struct, tag_reader.deserialize_struct("", 2));
-        bool found = false;
-        while(true) {
-            ET_EXPECTED_TRY_V(auto key, d_struct.next_key());
-            if(!key.has_value()) {
-                break;
-            }
-            if(*key == TagAttr::field_names[0]) {
-                ET_EXPECTED_TRY(d_struct.deserialize_value(tag_value));
-                found = true;
-                break;
-            }
-            ET_EXPECTED_TRY(d_struct.skip_value());
-        }
-        if(!found) {
-            return std::unexpected(E::type_mismatch);
-        }
-    }
-
-    // Pass 2: re-iterate to find and deserialize content
-    return match_and_deserialize_alt<E>(
-        tag_value, names, value, [&](auto& alt) -> std::expected<void, E> {
-            D content_reader(source);
-            ET_EXPECTED_TRY_V(auto d_struct, content_reader.deserialize_struct("", 2));
-            bool found_content = false;
+        std::string tag_value;
+        {
+            D tag_reader(source);
+            ET_EXPECTED_TRY_V(auto d_struct, tag_reader.deserialize_struct("", 0));
+            bool found = false;
             while(true) {
                 ET_EXPECTED_TRY_V(auto key, d_struct.next_key());
-                if(!key.has_value()) {
-                    break;
-                }
-                if(*key == TagAttr::field_names[1]) {
-                    ET_EXPECTED_TRY(d_struct.deserialize_value(alt));
-                    found_content = true;
+                if(!key.has_value()) break;
+                if(*key == tag_field) {
+                    ET_EXPECTED_TRY(d_struct.deserialize_value(tag_value));
+                    found = true;
                     break;
                 }
                 ET_EXPECTED_TRY(d_struct.skip_value());
             }
-            if(!found_content) {
+            if(!found) {
                 return std::unexpected(E::type_mismatch);
             }
-            return {};
-        });
+        }
+
+        return match_and_deserialize_alt<E>(
+            tag_value, names, value, [&](auto& alt) -> std::expected<void, E> {
+                using alt_t = std::remove_cvref_t<decltype(alt)>;
+                static_assert(refl::reflectable_class<alt_t>,
+                              "internally_tagged requires struct alternatives");
+                D content_reader(source);
+                ET_EXPECTED_TRY(serde::deserialize(content_reader, alt));
+                ET_EXPECTED_TRY(content_reader.finish());
+                return {};
+            });
+    } else {
+        static_assert(mode == schema::tag_mode::adjacent);
+        static_assert(requires { d.consume_variant_source(); },
+                      "adjacently tagged deserialization requires consume_variant_source()");
+        ET_EXPECTED_TRY_V(auto source, d.consume_variant_source());
+
+        std::string tag_value;
+        {
+            D tag_reader(source);
+            ET_EXPECTED_TRY_V(auto d_struct, tag_reader.deserialize_struct("", 2));
+            bool found = false;
+            while(true) {
+                ET_EXPECTED_TRY_V(auto key, d_struct.next_key());
+                if(!key.has_value()) break;
+                if(*key == tag_field) {
+                    ET_EXPECTED_TRY(d_struct.deserialize_value(tag_value));
+                    found = true;
+                    break;
+                }
+                ET_EXPECTED_TRY(d_struct.skip_value());
+            }
+            if(!found) {
+                return std::unexpected(E::type_mismatch);
+            }
+        }
+
+        return match_and_deserialize_alt<E>(
+            tag_value, names, value, [&](auto& alt) -> std::expected<void, E> {
+                D content_reader(source);
+                ET_EXPECTED_TRY_V(auto d_struct, content_reader.deserialize_struct("", 2));
+                bool found_content = false;
+                while(true) {
+                    ET_EXPECTED_TRY_V(auto key, d_struct.next_key());
+                    if(!key.has_value()) break;
+                    if(*key == content_field) {
+                        ET_EXPECTED_TRY(d_struct.deserialize_value(alt));
+                        found_content = true;
+                        break;
+                    }
+                    ET_EXPECTED_TRY(d_struct.skip_value());
+                }
+                if(!found_content) {
+                    return std::unexpected(E::type_mismatch);
+                }
+                return {};
+            });
+    }
 }
 
 }  // namespace eventide::serde::detail

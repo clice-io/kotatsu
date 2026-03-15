@@ -17,7 +17,7 @@
 #include "eventide/serde/json/error.h"
 #include "eventide/serde/serde/utils/backend_helpers.h"
 #include "eventide/serde/serde/config.h"
-#include "eventide/serde/serde/schema/match.h"
+#include "eventide/serde/schema/match.h"
 #include "eventide/serde/serde/serde.h"
 #include "eventide/serde/serde/utils/narrow.h"
 
@@ -337,81 +337,20 @@ public:
         return is_none;
     }
 
-    result_t<serde::type_hint> peek_type_hint() {
-        auto json_type = peek_json_type();
-        if(!json_type) {
-            return std::unexpected(json_type.error());
-        }
-
-        std::optional<simdjson::ondemand::number_type> number_type = std::nullopt;
-        if(*json_type == simdjson::ondemand::json_type::number) {
-            auto current_number_type = peek_number_type();
-            if(!current_number_type) {
-                return std::unexpected(current_number_type.error());
-            }
-            number_type = *current_number_type;
-        }
-
-        return map_to_type_hint(*json_type, number_type);
-    }
-
     result_t<simdjson::padded_string_view> consume_variant_source() {
         return consume_raw_json_view();
     }
 
-    static result_t<std::vector<serde::schema::incoming_field>>
-        extract_object_keys(simdjson::padded_string_view source) {
-        simdjson::ondemand::parser key_parser;
-        simdjson::ondemand::document key_doc;
-        auto err = key_parser.iterate(source).get(key_doc);
-        if(err != simdjson::SUCCESS) {
-            return std::unexpected(json::make_error(err));
-        }
-        simdjson::ondemand::object obj;
-        err = key_doc.get_object().get(obj);
-        if(err != simdjson::SUCCESS) {
-            return std::unexpected(json::make_error(err));
-        }
-        std::vector<serde::schema::incoming_field> fields;
-        for(auto field: obj) {
-            std::string_view key;
-            err = field.unescaped_key().get(key);
-            if(err != simdjson::SUCCESS) {
-                return std::unexpected(json::make_error(err));
-            }
-            simdjson::ondemand::value val;
-            err = field.value().get(val);
-            if(err != simdjson::SUCCESS) {
-                return std::unexpected(json::make_error(err));
-            }
-            simdjson::ondemand::json_type jt;
-            err = val.type().get(jt);
-            auto kind = serde::schema::type_kind::any;
-            if(err == simdjson::SUCCESS) {
-                switch(jt) {
-                    case simdjson::ondemand::json_type::null:
-                        kind = serde::schema::type_kind::null_like;
-                        break;
-                    case simdjson::ondemand::json_type::boolean:
-                        kind = serde::schema::type_kind::boolean;
-                        break;
-                    case simdjson::ondemand::json_type::number:
-                        kind = serde::schema::type_kind::integer;
-                        break;
-                    case simdjson::ondemand::json_type::string:
-                        kind = serde::schema::type_kind::string;
-                        break;
-                    case simdjson::ondemand::json_type::array:
-                        kind = serde::schema::type_kind::array;
-                        break;
-                    case simdjson::ondemand::json_type::object:
-                        kind = serde::schema::type_kind::object;
-                        break;
-                }
-            }
-            fields.push_back({.name = std::string(key), .kind = kind});
-        }
-        return fields;
+    template <typename... Ts>
+    result_t<void> deserialize_variant(std::variant<Ts...>& v) {
+        auto source_result = consume_raw_json_view();
+        if(!source_result) return std::unexpected(source_result.error());
+        auto source = *source_result;
+
+        auto node = to_schema_node(source);
+        using config_t = Config;
+        return serde::schema::untagged_dispatch<Deserializer, config_t, Ts...>(
+            v, node, [&]() -> Deserializer { return Deserializer(source); });
     }
 
     status_t deserialize_bool(bool& value) {
@@ -682,6 +621,50 @@ private:
         }
     }
 
+    static serde::type_hint json_type_to_hint(simdjson::ondemand::json_type jt) {
+        switch(jt) {
+            case simdjson::ondemand::json_type::null: return serde::type_hint::null_like;
+            case simdjson::ondemand::json_type::boolean: return serde::type_hint::boolean;
+            case simdjson::ondemand::json_type::number:
+                return serde::type_hint::integer | serde::type_hint::floating;
+            case simdjson::ondemand::json_type::string: return serde::type_hint::string;
+            case simdjson::ondemand::json_type::array: return serde::type_hint::array;
+            case simdjson::ondemand::json_type::object: return serde::type_hint::object;
+            default: return serde::type_hint::any;
+        }
+    }
+
+    static serde::schema::schema_node to_schema_node(simdjson::padded_string_view source) {
+        serde::schema::schema_node node;
+        simdjson::ondemand::parser p;
+        simdjson::ondemand::document doc;
+        if(p.iterate(source).get(doc) != simdjson::SUCCESS) return node;
+
+        simdjson::ondemand::json_type jt;
+        if(doc.type().get(jt) != simdjson::SUCCESS) return node;
+        node.hints = json_type_to_hint(jt);
+
+        if(jt == simdjson::ondemand::json_type::object) {
+            simdjson::ondemand::object obj;
+            if(doc.get_object().get(obj) == simdjson::SUCCESS) {
+                for(auto field: obj) {
+                    std::string_view key;
+                    if(field.unescaped_key().get(key) != simdjson::SUCCESS) continue;
+                    serde::type_hint vh = serde::type_hint::any;
+                    simdjson::ondemand::value val;
+                    if(field.value().get(val) == simdjson::SUCCESS) {
+                        simdjson::ondemand::json_type vt;
+                        if(val.type().get(vt) == simdjson::SUCCESS) {
+                            vh = json_type_to_hint(vt);
+                        }
+                    }
+                    node.fields.push_back({std::string(key), vh});
+                }
+            }
+        }
+        return node;
+    }
+
     result_t<simdjson::padded_string_view> consume_raw_json_view() {
         ET_EXPECTED_TRY_V(auto raw,
                           read_source<std::string_view>([](auto& doc) { return doc.raw_json(); },
@@ -808,15 +791,3 @@ auto from_json(simdjson::padded_string_view json) -> std::expected<T, error_kind
 static_assert(serde::deserializer_like<Deserializer<>>);
 
 }  // namespace eventide::serde::json
-
-namespace eventide::serde {
-
-template <typename Config>
-struct variant_support<json::Deserializer<Config>> {
-    static constexpr bool untagged = true;
-    static constexpr bool externally_tagged = true;
-    static constexpr bool internally_tagged = true;
-    static constexpr bool adjacently_tagged = true;
-};
-
-}  // namespace eventide::serde

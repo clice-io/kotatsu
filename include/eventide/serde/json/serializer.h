@@ -375,15 +375,3 @@ auto to_json(const T& value, std::optional<std::size_t> initial_capacity = std::
 static_assert(serde::serializer_like<Serializer<>>);
 
 }  // namespace eventide::serde::json
-
-namespace eventide::serde {
-
-template <typename Config>
-struct variant_support<json::Serializer<Config>> {
-    static constexpr bool untagged = true;
-    static constexpr bool externally_tagged = true;
-    static constexpr bool internally_tagged = true;
-    static constexpr bool adjacently_tagged = true;
-};
-
-}  // namespace eventide::serde
