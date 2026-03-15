@@ -5,6 +5,7 @@
 
 #ifdef _WIN32
 #include <io.h>
+#include <share.h>
 #include <sys/stat.h>
 #endif
 
@@ -21,7 +22,15 @@ namespace {
 
 #ifdef _WIN32
 inline int open_fd(const std::string& path) {
-    return _open(path.c_str(), _O_CREAT | _O_WRONLY | _O_TRUNC | _O_BINARY, _S_IREAD | _S_IWRITE);
+    int fd = -1;
+    if(_sopen_s(&fd,
+                path.c_str(),
+                _O_CREAT | _O_WRONLY | _O_TRUNC | _O_BINARY,
+                _SH_DENYNO,
+                _S_IREAD | _S_IWRITE) != 0) {
+        return -1;
+    }
+    return fd;
 }
 #else
 inline int open_fd(const std::string& path) {

@@ -15,12 +15,24 @@ namespace {
 
 int uv_thread_pool_size_for_test() {
     int value = 4;
+#ifdef _WIN32
+    char* raw = nullptr;
+    std::size_t raw_size = 0;
+    if(_dupenv_s(&raw, &raw_size, "UV_THREADPOOL_SIZE") == 0 && raw != nullptr) {
+        int parsed = std::atoi(raw);
+        std::free(raw);
+        if(parsed > 0) {
+            value = parsed;
+        }
+    }
+#else
     if(const char* raw = std::getenv("UV_THREADPOOL_SIZE"); raw != nullptr) {
         int parsed = std::atoi(raw);
         if(parsed > 0) {
             value = parsed;
         }
     }
+#endif
 
     return value;
 }

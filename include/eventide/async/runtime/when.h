@@ -165,15 +165,6 @@ inline void destroy_or_detach(async_node* child) noexcept {
     task->handle().destroy();
 }
 
-template <typename Tuple, typename F>
-void tuple_visit_at(std::size_t index, Tuple& tuple, F&& f) {
-    [&]<std::size_t... I>(std::index_sequence<I...>) {
-        (void)((index == I &&
-                (f(std::integral_constant<std::size_t, I>{}, std::get<I>(tuple)), true)) ||
-               ...);
-    }(std::make_index_sequence<std::tuple_size_v<std::remove_reference_t<Tuple>>>{});
-}
-
 template <typename Return, std::size_t I = 0, typename Tuple, typename F>
 Return tuple_visit_at_return(std::size_t index, Tuple& tuple, F&& f) {
     if constexpr(I < std::tuple_size_v<std::remove_reference_t<Tuple>>) {

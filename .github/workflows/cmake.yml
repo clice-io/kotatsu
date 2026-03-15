@@ -81,6 +81,7 @@ jobs:
             builds: |
               debug|Debug|
               asan|RelWithDebInfo|-DEVENTIDE_SANITIZE_ADDRESS=ON
+              no-exceptions|RelWithDebInfo|-DEVENTIDE_ENABLE_EXCEPTIONS=OFF
 
           - name: windows | clang-cl
             os: windows-2025
