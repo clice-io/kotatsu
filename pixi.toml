@@ -16,6 +16,7 @@ default = ["build"]
 linux-gcc = ["build", "linux-gcc"]
 linux-clang = ["build", "linux-clang"]
 macos-clang = ["build", "macos-clang"]
+windows-msvc = ["build", "windows-msvc"]
 windows-mingw = ["build", "windows-mingw"]
 windows-llvm = ["build", "windows-llvm"]
 format = ["format"]
@@ -49,9 +50,13 @@ libcxx = "==20.1.8"
 [feature.windows-mingw.target.win-64.dependencies]
 gcc = "==14.2.0"
 gxx = "==14.2.0"
+sccache = "*"
 
 [feature.windows-mingw.target.win-64.activation.env]
 PATH = "%CONDA_PREFIX%\\Library\\bin;%PATH%"
+
+[feature.windows-msvc.target.win-64.dependencies]
+sccache = "*"
 
 [feature.windows-llvm.target.win-64.dependencies]
 clang = "==20.1.8"
@@ -59,6 +64,7 @@ clangxx = "==20.1.8"
 lld = "==20.1.8"
 llvm-tools = "==20.1.8"
 compiler-rt = "==20.1.8"
+sccache = "*"
 
 # ============================================================================== #
 #                                    FORMAT                                      #

@@ -45,6 +45,43 @@ function(eventide_ensure_cpm)
     include("${cpm_path}")
 endfunction()
 
+function(eventide_silence_third_party_target target)
+    if(NOT TARGET ${target})
+        return()
+    endif()
+
+    get_target_property(target_type ${target} TYPE)
+    if(target_type STREQUAL "INTERFACE_LIBRARY")
+        return()
+    endif()
+
+    target_compile_options(${target} PRIVATE
+        $<$<CXX_COMPILER_ID:MSVC>:/W0>
+        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-w>
+    )
+endfunction()
+
+function(eventide_silence_dependency_warnings name)
+    if(name STREQUAL "simdjson")
+        eventide_silence_third_party_target(simdjson)
+        eventide_silence_third_party_target(simdjson_static)
+    elseif(name STREQUAL "yyjson")
+        eventide_silence_third_party_target(yyjson)
+    elseif(name STREQUAL "flatbuffers")
+        eventide_silence_third_party_target(flatbuffers)
+        eventide_silence_third_party_target(flatbuffers_shared)
+    elseif(name STREQUAL "libuv")
+        eventide_silence_third_party_target(uv)
+        eventide_silence_third_party_target(uv_a)
+    elseif(name STREQUAL "cpptrace")
+        eventide_silence_third_party_target(cpptrace-lib)
+        eventide_silence_third_party_target(dwarf)
+        eventide_silence_third_party_target(libzstd_static)
+        eventide_silence_third_party_target(libzstd_shared)
+        eventide_silence_third_party_target(zstd)
+    endif()
+endfunction()
+
 function(eventide_add_git_dependency name)
     cmake_parse_arguments(PARSE_ARGV 1 ARG "" "GIT_REPOSITORY;GIT_TAG" "OPTIONS")
     if(NOT ARG_GIT_REPOSITORY)
@@ -79,6 +116,7 @@ function(eventide_add_git_dependency name)
                 GIT_SHALLOW TRUE
             )
         endif()
+        eventide_silence_dependency_warnings(${name})
     else()
         eventide_apply_cache_options(${ARG_OPTIONS})
         FetchContent_Declare(
@@ -88,5 +126,6 @@ function(eventide_add_git_dependency name)
             GIT_SHALLOW TRUE
         )
         FetchContent_MakeAvailable(${name})
+        eventide_silence_dependency_warnings(${name})
     endif()
 endfunction()

@@ -90,4 +90,33 @@ constexpr decltype(auto) annotated_value(Value&& value) {
     }
 }
 
+template <typename T>
+using annotated_underlying_t = typename std::remove_cvref_t<T>::annotated_type;
+
+template <annotated_type L, annotated_type R>
+    requires requires(const annotated_underlying_t<L>& lhs, const annotated_underlying_t<R>& rhs) {
+        { lhs == rhs } -> std::convertible_to<bool>;
+    }
+constexpr auto operator==(const L& lhs, const R& rhs) -> bool {
+    return annotated_value(lhs) == annotated_value(rhs);
+}
+
+template <annotated_type L, typename R>
+    requires (!annotated_type<R> &&
+              requires(const annotated_underlying_t<L>& lhs, const R& rhs) {
+                  { lhs == rhs } -> std::convertible_to<bool>;
+              })
+constexpr auto operator==(const L& lhs, const R& rhs) -> bool {
+    return annotated_value(lhs) == rhs;
+}
+
+template <typename L, annotated_type R>
+    requires (!annotated_type<L> &&
+              requires(const L& lhs, const annotated_underlying_t<R>& rhs) {
+                  { lhs == rhs } -> std::convertible_to<bool>;
+              })
+constexpr auto operator==(const L& lhs, const R& rhs) -> bool {
+    return lhs == annotated_value(rhs);
+}
+
 }  // namespace eventide::serde

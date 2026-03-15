@@ -7,9 +7,11 @@ env:
   BUILD_DIR: build-cmake
   CPM_SOURCE_CACHE: ${{ github.workspace }}/.cache/cpm
   CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
+  SCCACHE_DIR: ${{ github.workspace }}/.cache/sccache
   CCACHE_BASEDIR: ${{ github.workspace }}
   CCACHE_COMPILERCHECK: content
   CCACHE_MAXSIZE: 750M
+  SCCACHE_CACHE_SIZE: 750M
 
 jobs:
   build:
@@ -24,83 +26,85 @@ jobs:
             pixi_env: linux-gcc
             cc: gcc
             cxx: g++
-            enable_ccache: true
+            compiler_cache: ccache
             cache_key: linux-gcc
             builds: |
-              debug|Debug|-DEVENTIDE_BUILD_ALL_TESTS=ON
-              relwithdebinfo|RelWithDebInfo|-DEVENTIDE_BUILD_ALL_TESTS=ON
-              ubsan|RelWithDebInfo|-DEVENTIDE_BUILD_ALL_TESTS=ON -DEVENTIDE_SANITIZE_UNDEFINED=ON
+              debug|Debug|
+              relwithdebinfo|RelWithDebInfo|
+              asan|RelWithDebInfo|-DEVENTIDE_SANITIZE_ADDRESS=ON
+              ubsan|RelWithDebInfo|-DEVENTIDE_SANITIZE_UNDEFINED=ON
 
           - name: linux | clang
             os: ubuntu-24.04
             pixi_env: linux-clang
             cc: clang
             cxx: clang++
-            enable_ccache: true
+            compiler_cache: ccache
             cache_key: linux-clang
             builds: |
-              debug|Debug|-DEVENTIDE_BUILD_ALL_TESTS=ON
-              asan+ubsan|RelWithDebInfo|-DEVENTIDE_BUILD_ALL_TESTS=ON -DEVENTIDE_SANITIZE_ADDRESS=ON -DEVENTIDE_SANITIZE_UNDEFINED=ON
-              tsan|RelWithDebInfo|-DEVENTIDE_BUILD_ALL_TESTS=ON -DEVENTIDE_SANITIZE_THREAD=ON
-              no-exceptions|RelWithDebInfo|-DEVENTIDE_BUILD_ALL_TESTS=ON -DEVENTIDE_ENABLE_EXCEPTIONS=OFF
+              debug|Debug|
+              asan+ubsan|RelWithDebInfo|-DEVENTIDE_SANITIZE_ADDRESS=ON -DEVENTIDE_SANITIZE_UNDEFINED=ON
+              tsan|RelWithDebInfo|-DEVENTIDE_SANITIZE_THREAD=ON
+              no-exceptions|RelWithDebInfo|-DEVENTIDE_ENABLE_EXCEPTIONS=OFF
 
           - name: macos | apple-clang
             os: macos-15
             pixi_env: default
             cc: /usr/bin/clang
             cxx: /usr/bin/clang++
-            enable_ccache: true
+            compiler_cache: ccache
             cache_key: macos-appleclang
             builds: |
-              debug|Debug|-DEVENTIDE_BUILD_ALL_TESTS=ON
-              asan+ubsan|RelWithDebInfo|-DEVENTIDE_BUILD_ALL_TESTS=ON -DEVENTIDE_SANITIZE_ADDRESS=ON -DEVENTIDE_SANITIZE_UNDEFINED=ON
+              debug|Debug|
+              asan+ubsan|RelWithDebInfo|-DEVENTIDE_SANITIZE_ADDRESS=ON -DEVENTIDE_SANITIZE_UNDEFINED=ON
 
           - name: macos | pixi-clang
             os: macos-15
             pixi_env: macos-clang
             cc: clang
             cxx: clang++
-            enable_ccache: true
+            compiler_cache: ccache
             cache_key: macos-clang
             builds: |
-              debug|Debug|-DEVENTIDE_BUILD_ALL_TESTS=ON
-              relwithdebinfo|RelWithDebInfo|-DEVENTIDE_BUILD_ALL_TESTS=ON
-              no-exceptions+no-rtti|RelWithDebInfo|-DEVENTIDE_BUILD_ALL_TESTS=ON -DEVENTIDE_ENABLE_EXCEPTIONS=OFF -DEVENTIDE_ENABLE_RTTI=OFF
+              debug|Debug|
+              relwithdebinfo|RelWithDebInfo|
+              no-exceptions+no-rtti|RelWithDebInfo|-DEVENTIDE_ENABLE_EXCEPTIONS=OFF -DEVENTIDE_ENABLE_RTTI=OFF
 
           - name: windows | msvc
             os: windows-2025
-            pixi_env: default
+            pixi_env: windows-msvc
             cc: cl
             cxx: cl
-            enable_ccache: false
+            compiler_cache: sccache
             needs_msvc_env: true
             cache_key: windows-msvc
             builds: |
-              debug|Debug|-DEVENTIDE_BUILD_ALL_TESTS=ON
-              asan|RelWithDebInfo|-DEVENTIDE_BUILD_ALL_TESTS=ON -DEVENTIDE_SANITIZE_ADDRESS=ON
+              debug|Debug|
+              asan|RelWithDebInfo|-DEVENTIDE_SANITIZE_ADDRESS=ON
 
           - name: windows | clang-cl
             os: windows-2025
             pixi_env: windows-llvm
             cc: clang-cl
             cxx: clang-cl
-            enable_ccache: false
+            compiler_cache: sccache
             needs_msvc_env: true
             cache_key: windows-clang-cl
             builds: |
-              debug|Debug|-DEVENTIDE_BUILD_ALL_TESTS=ON
-              relwithdebinfo|RelWithDebInfo|-DEVENTIDE_BUILD_ALL_TESTS=ON
+              debug|Debug|
+              relwithdebinfo|RelWithDebInfo|
+              asan|RelWithDebInfo|-DEVENTIDE_SANITIZE_ADDRESS=ON
 
           - name: windows | mingw
             os: windows-2025
             pixi_env: windows-mingw
             cc: gcc
             cxx: g++
-            enable_ccache: true
+            compiler_cache: sccache
             cache_key: windows-mingw
             builds: |
-              debug|Debug|-DEVENTIDE_BUILD_ALL_TESTS=ON
-              relwithdebinfo|RelWithDebInfo|-DEVENTIDE_BUILD_ALL_TESTS=ON
+              debug|Debug|
+              relwithdebinfo|RelWithDebInfo|
 
     steps:
       - name: Checkout repository
@@ -126,21 +130,25 @@ jobs:
           restore-keys: |
             cpm-${{ runner.os }}-
 
-      - name: Restore ccache
-        if: ${{ matrix.enable_ccache }}
+      - name: Restore compiler cache
         uses: actions/cache@v4
         with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ matrix.cache_key }}-${{ hashFiles('pixi.lock', '.github/workflows/cmake.yml') }}
+          path: ${{ matrix.compiler_cache == 'sccache' && env.SCCACHE_DIR || env.CCACHE_DIR }}
+          key: ${{ matrix.compiler_cache }}-${{ runner.os }}-${{ matrix.cache_key }}-${{ hashFiles('pixi.lock', '.github/workflows/cmake.yml') }}
           restore-keys: |
-            ccache-${{ runner.os }}-${{ matrix.cache_key }}-
-            ccache-${{ runner.os }}-
+            ${{ matrix.compiler_cache }}-${{ runner.os }}-${{ matrix.cache_key }}-
+            ${{ matrix.compiler_cache }}-${{ runner.os }}-
 
       - name: Configure, build, and test
         shell: bash
         run: |
           set -euxo pipefail
-          ccache --zero-stats || true
+          if [[ "${{ matrix.compiler_cache }}" == "ccache" ]]; then
+            ccache --zero-stats || true
+          else
+            sccache --stop-server || true
+            sccache --zero-stats || true
+          fi
           status=0
 
           configure_build() {
@@ -161,16 +169,18 @@ jobs:
                 -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
                 -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
                 -DCMAKE_MODULE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
+                -DEVENTIDE_BUILD_ALL_TESTS=ON \
                 -DEVENTIDE_USE_CPM_FOR_TESTS=ON \
-                -DEVENTIDE_ENABLE_CCACHE=${{ matrix.enable_ccache && 'ON' || 'OFF' }} \
+                -DEVENTIDE_ENABLE_CCACHE=ON \
                 ${cmake_args}
             else
               cmake -S . -B "${build_dir}" -G Ninja \
                 -DCMAKE_BUILD_TYPE="${build_type}" \
                 -DCMAKE_C_COMPILER="${{ matrix.cc }}" \
                 -DCMAKE_CXX_COMPILER="${{ matrix.cxx }}" \
+                -DEVENTIDE_BUILD_ALL_TESTS=ON \
                 -DEVENTIDE_USE_CPM_FOR_TESTS=ON \
-                -DEVENTIDE_ENABLE_CCACHE=${{ matrix.enable_ccache && 'ON' || 'OFF' }} \
+                -DEVENTIDE_ENABLE_CCACHE=ON \
                 ${cmake_args}
             fi
           }
@@ -202,7 +212,12 @@ jobs:
 
           exit "${status}"
 
-      - name: Show ccache stats
-        if: ${{ matrix.enable_ccache }}
+      - name: Show compiler cache stats
         shell: bash
-        run: ccache --show-stats --verbose || true
+        run: |
+          if [[ "${{ matrix.compiler_cache }}" == "ccache" ]]; then
+            ccache --show-stats --verbose || true
+          else
+            sccache --show-stats || true
+            sccache --stop-server || true
+          fi
