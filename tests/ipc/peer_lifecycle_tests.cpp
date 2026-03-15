@@ -25,7 +25,7 @@ TEST_CASE(read_fail_pending) {
 
     event_loop loop;
     JsonPeer peer(loop, std::move(transport));
-    Result<AddResult> request_result = outcome_error(RPCError("not completed"));
+    Result<AddResult> request_result = outcome_error(Error("not completed"));
 
     auto requester = [&]() -> task<> {
         request_result =

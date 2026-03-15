@@ -78,15 +78,15 @@ public:
     Result<std::string> encode_success_response(const protocol::RequestID& id,
                                                 std::string_view result);
 
-    Result<std::string> encode_error_response(const protocol::RequestID& id, const RPCError& error);
+    Result<std::string> encode_error_response(const protocol::RequestID& id, const Error& error);
 
     template <typename T>
     Result<std::string> serialize_value(const T& value) {
         auto serialized = serde::json::to_string(value);
         if(!serialized) {
             return outcome_error(
-                RPCError(protocol::ErrorCode::InternalError,
-                         std::string(serde::json::error_message(serialized.error()))));
+                Error(protocol::ErrorCode::InternalError,
+                      std::string(serde::json::error_message(serialized.error()))));
         }
         return std::move(*serialized);
     }
@@ -104,7 +104,7 @@ public:
         auto parsed = serde::json::parse<T>(raw);
         if(!parsed) {
             return outcome_error(
-                RPCError(code, std::string(serde::json::error_message(parsed.error()))));
+                Error(code, std::string(serde::json::error_message(parsed.error()))));
         }
         return std::move(*parsed);
     }

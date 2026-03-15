@@ -41,8 +41,8 @@ using bincode_envelope =
 Result<std::string> encode_envelope(const bincode_envelope& envelope) {
     auto bytes = serde::bincode::to_bytes(envelope);
     if(!bytes) {
-        return outcome_error(RPCError(protocol::ErrorCode::InternalError,
-                                      std::string(serde::bincode::error_message(bytes.error()))));
+        return outcome_error(Error(protocol::ErrorCode::InternalError,
+                                   std::string(serde::bincode::error_message(bytes.error()))));
     }
     return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
 }
@@ -57,8 +57,8 @@ IncomingMessage BincodeCodec::parse_message(std::string_view payload) {
     auto status = serde::bincode::from_bytes(bytes_span, envelope);
     if(!status) {
         return IncomingParseError{
-            RPCError(protocol::ErrorCode::ParseError,
-                     std::string(serde::bincode::error_message(status.error())))};
+            Error(protocol::ErrorCode::ParseError,
+                  std::string(serde::bincode::error_message(status.error())))};
     }
 
     return std::visit(
@@ -74,7 +74,7 @@ IncomingMessage BincodeCodec::parse_message(std::string_view payload) {
                 auto id = v.id.has_value() ? *v.id : protocol::RequestID{};
                 return IncomingErrorResponse{
                     id,
-                    RPCError(static_cast<protocol::integer>(v.code), std::move(v.message))};
+                    Error(static_cast<protocol::integer>(v.code), std::move(v.message))};
             }
         },
         std::move(envelope));
@@ -99,7 +99,7 @@ Result<std::string> BincodeCodec::encode_success_response(const protocol::Reques
 }
 
 Result<std::string> BincodeCodec::encode_error_response(const protocol::RequestID& id,
-                                                        const RPCError& error) {
+                                                        const Error& error) {
     std::optional<protocol::RequestID> wire_id;
     if(id.has_value()) {
         wire_id = id;

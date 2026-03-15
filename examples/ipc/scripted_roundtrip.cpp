@@ -58,7 +58,7 @@ public:
         co_return incoming_messages[read_index++];
     }
 
-    et::task<void, ipc::RPCError> write_message(std::string_view payload) override {
+    et::task<void, ipc::Error> write_message(std::string_view payload) override {
         outgoing_messages.emplace_back(payload);
         if(write_hook) {
             write_hook(payload, *this);

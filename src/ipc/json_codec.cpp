@@ -16,7 +16,7 @@ Result<std::string>
     auto serialized = serde::json::to_string(value);
     if(!serialized) {
         return outcome_error(
-            RPCError(code, std::string(serde::json::error_message(serialized.error()))));
+            Error(code, std::string(serde::json::error_message(serialized.error()))));
     }
     return std::move(*serialized);
 }
@@ -45,7 +45,7 @@ struct outgoing_success_response_message {
 struct outgoing_error_response_message {
     std::string jsonrpc = "2.0";
     protocol::RequestID id;
-    RPCError error;
+    Error error;
 };
 
 // --- Incoming message envelope (deserialized via serde) ---
@@ -55,7 +55,7 @@ struct json_rpc_incoming {
     std::optional<std::string> method;
     std::optional<serde::RawValue> params;
     std::optional<serde::RawValue> result;
-    std::optional<RPCError> error;
+    std::optional<Error> error;
 };
 
 }  // namespace
@@ -63,9 +63,8 @@ struct json_rpc_incoming {
 IncomingMessage JsonCodec::parse_message(std::string_view payload) {
     auto envelope = serde::json::parse<json_rpc_incoming>(payload);
     if(!envelope) {
-        return IncomingParseError{
-            RPCError(protocol::ErrorCode::ParseError,
-                     std::string(serde::json::error_message(envelope.error())))};
+        return IncomingParseError{Error(protocol::ErrorCode::ParseError,
+                                        std::string(serde::json::error_message(envelope.error())))};
     }
 
     auto raw_params =
@@ -80,7 +79,7 @@ IncomingMessage JsonCodec::parse_message(std::string_view payload) {
         }
         if(envelope->id.is_null()) {
             return IncomingParseError{
-                RPCError(protocol::ErrorCode::InvalidRequest, "request id must be integer")};
+                Error(protocol::ErrorCode::InvalidRequest, "request id must be integer")};
         }
         return IncomingNotification{std::move(*envelope->method), std::move(raw_params)};
     }
@@ -96,15 +95,14 @@ IncomingMessage JsonCodec::parse_message(std::string_view payload) {
         if(has_result && !has_error) {
             return IncomingResponse{envelope->id, std::move(envelope->result->data)};
         }
-        return IncomingErrorResponse{
-            envelope->id,
-            RPCError(protocol::ErrorCode::InvalidRequest,
-                     "response must contain exactly one of result or error")};
+        return IncomingErrorResponse{envelope->id,
+                                     Error(protocol::ErrorCode::InvalidRequest,
+                                           "response must contain exactly one of result or error")};
     }
 
     // No method + no valid id → invalid
     return IncomingParseError{
-        RPCError(protocol::ErrorCode::InvalidRequest, "message must contain method or id")};
+        Error(protocol::ErrorCode::InvalidRequest, "message must contain method or id")};
 }
 
 Result<std::string> JsonCodec::encode_request(const protocol::RequestID& id,
@@ -134,10 +132,10 @@ Result<std::string> JsonCodec::encode_success_response(const protocol::RequestID
 }
 
 Result<std::string> JsonCodec::encode_error_response(const protocol::RequestID& id,
-                                                     const RPCError& error) {
+                                                     const Error& error) {
     return serialize_json_value(outgoing_error_response_message{
         .id = id,
-        .error = RPCError{error.code, error.message, error.data},
+        .error = Error{error.code, error.message, error.data},
     });
 }
 

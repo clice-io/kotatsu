@@ -24,7 +24,7 @@ public:
         co_return incoming_messages[read_index++];
     }
 
-    task<void, RPCError> write_message(std::string_view payload) override {
+    task<void, Error> write_message(std::string_view payload) override {
         outgoing_messages.emplace_back(payload);
         co_return outcome_value();
     }
@@ -63,7 +63,7 @@ public:
         co_return incoming_messages[read_index++];
     }
 
-    task<void, RPCError> write_message(std::string_view payload) override {
+    task<void, Error> write_message(std::string_view payload) override {
         outgoing_messages.emplace_back(payload);
         if(write_hook) {
             write_hook(payload, *this);

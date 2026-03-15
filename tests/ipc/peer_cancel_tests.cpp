@@ -40,7 +40,7 @@ TEST_CASE(cancel_completed) {
     EXPECT_EQ(loop.run(), 0);
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = serde::json::from_json<RPCResponse>(transport_ptr->outgoing().front());
+    auto response = serde::json::from_json<Response>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     ASSERT_TRUE(response->result.has_value());
     EXPECT_EQ(response->result->sum, 3);
@@ -91,7 +91,7 @@ TEST_CASE(double_cancel) {
     EXPECT_EQ(loop.run(), 0);
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = serde::json::from_json<RPCErrorResponse>(transport_ptr->outgoing().front());
+    auto response = serde::json::from_json<ErrorResponse>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(response->error.code,
               static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));

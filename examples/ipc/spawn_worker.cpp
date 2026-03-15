@@ -32,8 +32,8 @@ struct WorkerLog {
     std::string text;
 };
 
-et::task<BuildResult, ipc::RPCError> handle_build_request(ipc::JsonPeer::RequestContext& context,
-                                                          const BuildParams& params) {
+et::task<BuildResult, ipc::Error> handle_build_request(ipc::JsonPeer::RequestContext& context,
+                                                       const BuildParams& params) {
     auto log_status =
         context->send_notification("worker/log",
                                    WorkerLog{

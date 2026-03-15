@@ -90,7 +90,7 @@ std::string to_error_text(error err) {
 
 Result<stream> to_stream(result<tcp_socket> socket) {
     if(!socket) {
-        return outcome_error(RPCError(to_error_text(socket.error())));
+        return outcome_error(Error(to_error_text(socket.error())));
     }
     return stream(std::move(*socket));
 }
@@ -100,7 +100,7 @@ Result<stream> open_stdio_stream(int fd, bool readable, event_loop& loop) {
         case handle_type::tty: {
             auto opened = console::open(fd, console::options{readable}, loop);
             if(!opened) {
-                return outcome_error(RPCError(to_error_text(opened.error())));
+                return outcome_error(Error(to_error_text(opened.error())));
             }
             return stream(std::move(*opened));
         }
@@ -110,7 +110,7 @@ Result<stream> open_stdio_stream(int fd, bool readable, event_loop& loop) {
         case handle_type::unknown: {
             auto opened = pipe::open(fd, pipe::options{}, loop);
             if(!opened) {
-                return outcome_error(RPCError(to_error_text(opened.error())));
+                return outcome_error(Error(to_error_text(opened.error())));
             }
             return stream(std::move(*opened));
         }
@@ -118,19 +118,19 @@ Result<stream> open_stdio_stream(int fd, bool readable, event_loop& loop) {
         case handle_type::tcp: {
             auto opened = tcp_socket::open(fd, loop);
             if(!opened) {
-                return outcome_error(RPCError(to_error_text(opened.error())));
+                return outcome_error(Error(to_error_text(opened.error())));
             }
             return stream(std::move(*opened));
         }
 
-        default: return outcome_error(RPCError("unsupported stdio handle type"));
+        default: return outcome_error(Error("unsupported stdio handle type"));
     }
 }
 
 }  // namespace
 
 Result<void> Transport::close_output() {
-    return outcome_error(RPCError("transport does not support closing output"));
+    return outcome_error(Error("transport does not support closing output"));
 }
 
 StreamTransport::StreamTransport(stream input, stream output) :
@@ -153,9 +153,9 @@ Result<std::unique_ptr<StreamTransport>> StreamTransport::open_stdio(event_loop&
     return std::make_unique<StreamTransport>(std::move(*input), std::move(*output));
 }
 
-task<std::unique_ptr<StreamTransport>, RPCError> StreamTransport::connect_tcp(std::string_view host,
-                                                                              int port,
-                                                                              event_loop& loop) {
+task<std::unique_ptr<StreamTransport>, Error> StreamTransport::connect_tcp(std::string_view host,
+                                                                           int port,
+                                                                           event_loop& loop) {
     auto connected = co_await tcp_socket::connect(host, port, loop);
     auto channel = to_stream(std::move(connected));
     if(!channel) {
@@ -228,7 +228,7 @@ task<std::optional<std::string>> StreamTransport::read_message() {
     co_return payload;
 }
 
-task<void, RPCError> StreamTransport::write_message(std::string_view payload) {
+task<void, Error> StreamTransport::write_message(std::string_view payload) {
     std::string framed;
     framed.reserve(32 + payload.size());
     framed.append("Content-Length: ");
@@ -239,7 +239,7 @@ task<void, RPCError> StreamTransport::write_message(std::string_view payload) {
     auto& stream = shared_stream ? read_stream : write_stream;
     auto status = co_await stream.write(std::span<const char>(framed.data(), framed.size()));
     if(status.has_error()) {
-        co_return outcome_error(RPCError(std::string(status.message())));
+        co_return outcome_error(Error(std::string(status.message())));
     }
     co_return outcome_value();
 }

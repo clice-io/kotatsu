@@ -222,7 +222,7 @@ TEST_CASE(valid_success_response) {
 // 1.4 Valid error response
 TEST_CASE(valid_error_response) {
     BincodeCodec codec;
-    RPCError error(protocol::ErrorCode::MethodNotFound, "method not found");
+    Error error(protocol::ErrorCode::MethodNotFound, "method not found");
     auto encoded = codec.encode_error_response(protocol::RequestID(7), error);
     ASSERT_TRUE(encoded.has_value());
 
@@ -310,10 +310,10 @@ TEST_CASE(success_response_roundtrip) {
     EXPECT_EQ(resp.id, protocol::RequestID(10));
 }
 
-// 2.4 encode_error_response → parse_message roundtrip — RPCError fields preserved
+// 2.4 encode_error_response → parse_message roundtrip — Error fields preserved
 TEST_CASE(error_response_roundtrip) {
     JsonCodec codec;
-    RPCError original(protocol::ErrorCode::InternalError, "something broke");
+    Error original(protocol::ErrorCode::InternalError, "something broke");
     auto encoded = codec.encode_error_response(protocol::RequestID(20), original);
     ASSERT_TRUE(encoded.has_value());
 
@@ -379,7 +379,7 @@ TEST_CASE(success_response_roundtrip) {
 // 2.4 error response roundtrip
 TEST_CASE(error_response_roundtrip) {
     BincodeCodec codec;
-    RPCError original(protocol::ErrorCode::InternalError, "something broke");
+    Error original(protocol::ErrorCode::InternalError, "something broke");
     auto encoded = codec.encode_error_response(protocol::RequestID(20), original);
     ASSERT_TRUE(encoded.has_value());
 

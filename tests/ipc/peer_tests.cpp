@@ -18,7 +18,7 @@ task<> complete_request(JsonPeer& peer, PendingAddResult& out) {
     out.value =
         co_await peer.send_request<AddResult>("worker/build", CustomAddParams{.a = 2, .b = 3});
     if(!peer.close_output() && out.value.has_value()) {
-        out.value = outcome_error(RPCError("failed to close peer output"));
+        out.value = outcome_error(Error("failed to close peer output"));
     }
     co_return;
 }
@@ -95,7 +95,7 @@ TEST_CASE(traits_dispatch_order) {
     EXPECT_TRUE(second_saw_first);
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = serde::json::from_json<RPCResponse>(transport_ptr->outgoing().front());
+    auto response = serde::json::from_json<Response>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(response->jsonrpc, "2.0");
     EXPECT_EQ(response->id.value, 1);
@@ -174,14 +174,14 @@ TEST_CASE(peers_share_loop) {
     EXPECT_EQ(loop.run(), 0);
 
     ASSERT_EQ(transport1_ptr->outgoing().size(), 1U);
-    auto response1 = serde::json::from_json<RPCResponse>(transport1_ptr->outgoing().front());
+    auto response1 = serde::json::from_json<Response>(transport1_ptr->outgoing().front());
     ASSERT_TRUE(response1.has_value());
     EXPECT_EQ(response1->id.value, 11);
     ASSERT_TRUE(response1->result.has_value());
     EXPECT_EQ(response1->result->sum, 7);
 
     ASSERT_EQ(transport2_ptr->outgoing().size(), 1U);
-    auto response2 = serde::json::from_json<RPCResponse>(transport2_ptr->outgoing().front());
+    auto response2 = serde::json::from_json<Response>(transport2_ptr->outgoing().front());
     ASSERT_TRUE(response2.has_value());
     EXPECT_EQ(response2->id.value, 22);
     ASSERT_TRUE(response2->result.has_value());
@@ -218,7 +218,7 @@ TEST_CASE(explicit_method) {
     EXPECT_EQ(notifications.front(), "hello");
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = serde::json::from_json<RPCResponse>(transport_ptr->outgoing().front());
+    auto response = serde::json::from_json<Response>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(response->id.value, 2);
     ASSERT_TRUE(response->result.has_value());
@@ -297,19 +297,19 @@ TEST_CASE(request_notify_apis) {
     const auto& outgoing = transport_ptr->outgoing();
     ASSERT_EQ(outgoing.size(), 5U);
 
-    auto note_from_context = serde::json::from_json<RPCNotification>(outgoing[0]);
+    auto note_from_context = serde::json::from_json<Notification>(outgoing[0]);
     ASSERT_TRUE(note_from_context.has_value());
     EXPECT_EQ(note_from_context->jsonrpc, "2.0");
     EXPECT_EQ(note_from_context->method, "client/note/context");
     EXPECT_EQ(note_from_context->params.text, "context");
 
-    auto note_from_peer = serde::json::from_json<RPCNotification>(outgoing[1]);
+    auto note_from_peer = serde::json::from_json<Notification>(outgoing[1]);
     ASSERT_TRUE(note_from_peer.has_value());
     EXPECT_EQ(note_from_peer->jsonrpc, "2.0");
     EXPECT_EQ(note_from_peer->method, "client/note/peer");
     EXPECT_EQ(note_from_peer->params.text, "peer");
 
-    auto request_from_context = serde::json::from_json<RPCRequest>(outgoing[2]);
+    auto request_from_context = serde::json::from_json<Request>(outgoing[2]);
     ASSERT_TRUE(request_from_context.has_value());
     EXPECT_EQ(request_from_context->jsonrpc, "2.0");
     EXPECT_EQ(request_from_context->id.value, 1);
@@ -317,7 +317,7 @@ TEST_CASE(request_notify_apis) {
     EXPECT_EQ(request_from_context->params.a, 2);
     EXPECT_EQ(request_from_context->params.b, 3);
 
-    auto request_from_peer = serde::json::from_json<RPCRequest>(outgoing[3]);
+    auto request_from_peer = serde::json::from_json<Request>(outgoing[3]);
     ASSERT_TRUE(request_from_peer.has_value());
     EXPECT_EQ(request_from_peer->jsonrpc, "2.0");
     EXPECT_EQ(request_from_peer->id.value, 2);
@@ -325,7 +325,7 @@ TEST_CASE(request_notify_apis) {
     EXPECT_EQ(request_from_peer->params.a, 3);
     EXPECT_EQ(request_from_peer->params.b, 1);
 
-    auto final_response = serde::json::from_json<RPCResponse>(outgoing[4]);
+    auto final_response = serde::json::from_json<Response>(outgoing[4]);
     ASSERT_TRUE(final_response.has_value());
     EXPECT_EQ(final_response->jsonrpc, "2.0");
     EXPECT_EQ(final_response->id.value, 7);
@@ -343,15 +343,14 @@ TEST_CASE(request_error_code) {
     JsonPeer peer(loop, std::move(transport));
 
     peer.on_request([&](RequestContext&, const AddParams&) -> RequestResult<AddParams> {
-        co_return outcome_error(
-            RPCError(protocol::ErrorCode::InvalidParams, "forced invalid params"));
+        co_return outcome_error(Error(protocol::ErrorCode::InvalidParams, "forced invalid params"));
     });
 
     loop.schedule(peer.run());
     EXPECT_EQ(loop.run(), 0);
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = serde::json::from_json<RPCErrorResponse>(transport_ptr->outgoing().front());
+    auto response = serde::json::from_json<ErrorResponse>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(response->jsonrpc, "2.0");
     ASSERT_TRUE(response->id.has_value());
@@ -374,16 +373,16 @@ TEST_CASE(request_error_data) {
         protocol::Object data;
         data.insert_or_assign("detail", protocol::Value(std::string("invalid payload")));
         data.insert_or_assign("index", protocol::Value(std::int64_t{-3}));
-        co_return outcome_error(RPCError(protocol::ErrorCode::InvalidParams,
-                                         "forced invalid params",
-                                         protocol::Value(std::move(data))));
+        co_return outcome_error(Error(protocol::ErrorCode::InvalidParams,
+                                      "forced invalid params",
+                                      protocol::Value(std::move(data))));
     });
 
     loop.schedule(peer.run());
     EXPECT_EQ(loop.run(), 0);
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = serde::json::from_json<RPCErrorResponse>(transport_ptr->outgoing().front());
+    auto response = serde::json::from_json<ErrorResponse>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(response->jsonrpc, "2.0");
     ASSERT_TRUE(response->id.has_value());
@@ -425,7 +424,7 @@ TEST_CASE(outbound_error_data) {
 
     event_loop loop;
     JsonPeer peer(loop, std::move(transport));
-    Result<AddResult> request_result = outcome_error(RPCError("request did not complete"));
+    Result<AddResult> request_result = outcome_error(Error("request did not complete"));
 
     auto requester = [&]() -> task<> {
         request_result =
@@ -475,7 +474,7 @@ TEST_CASE(bad_response_silent) {
 
     event_loop loop;
     JsonPeer peer(loop, std::move(transport));
-    Result<AddResult> request_result = outcome_error(RPCError("request did not complete"));
+    Result<AddResult> request_result = outcome_error(Error("request did not complete"));
 
     auto requester = [&]() -> task<> {
         request_result =
@@ -512,7 +511,7 @@ TEST_CASE(bad_params_invalid) {
 
     EXPECT_FALSE(invoked);
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = serde::json::from_json<RPCErrorResponse>(transport_ptr->outgoing().front());
+    auto response = serde::json::from_json<ErrorResponse>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(response->jsonrpc, "2.0");
     ASSERT_TRUE(response->id.has_value());
@@ -535,7 +534,7 @@ TEST_CASE(malformed_parse_null) {
     EXPECT_EQ(loop.run(), 0);
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = serde::json::from_json<RPCErrorResponse>(transport_ptr->outgoing().front());
+    auto response = serde::json::from_json<ErrorResponse>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(response->jsonrpc, "2.0");
     EXPECT_FALSE(response->id.has_value());
@@ -557,7 +556,7 @@ TEST_CASE(invalid_request_null) {
     EXPECT_EQ(loop.run(), 0);
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = serde::json::from_json<RPCErrorResponse>(transport_ptr->outgoing().front());
+    auto response = serde::json::from_json<ErrorResponse>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(response->jsonrpc, "2.0");
     EXPECT_FALSE(response->id.has_value());
@@ -583,7 +582,7 @@ TEST_CASE(invalid_id_type) {
 
     EXPECT_FALSE(invoked);
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = serde::json::from_json<RPCErrorResponse>(transport_ptr->outgoing().front());
+    auto response = serde::json::from_json<ErrorResponse>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(response->jsonrpc, "2.0");
     EXPECT_FALSE(response->id.has_value());
@@ -612,7 +611,7 @@ TEST_CASE(cancel_inflight_request) {
 
     EXPECT_FALSE(finished);
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = serde::json::from_json<RPCErrorResponse>(transport_ptr->outgoing().front());
+    auto response = serde::json::from_json<ErrorResponse>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(response->jsonrpc, "2.0");
     ASSERT_TRUE(response->id.has_value());
@@ -662,7 +661,7 @@ TEST_CASE(cancel_running_handler) {
     EXPECT_FALSE(completed);
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = serde::json::from_json<RPCErrorResponse>(transport_ptr->outgoing().front());
+    auto response = serde::json::from_json<ErrorResponse>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(response->jsonrpc, "2.0");
     ASSERT_TRUE(response->id.has_value());
@@ -724,7 +723,7 @@ TEST_CASE(context_token_propagates) {
     const auto& outgoing = transport_ptr->outgoing();
     ASSERT_EQ(outgoing.size(), 3U);
 
-    auto nested_request = serde::json::from_json<RPCRequest>(outgoing[0]);
+    auto nested_request = serde::json::from_json<Request>(outgoing[0]);
     ASSERT_TRUE(nested_request.has_value());
     EXPECT_EQ(nested_request->jsonrpc, "2.0");
     EXPECT_EQ(nested_request->id.value, 1);
@@ -732,13 +731,13 @@ TEST_CASE(context_token_propagates) {
     EXPECT_EQ(nested_request->params.a, 4);
     EXPECT_EQ(nested_request->params.b, 5);
 
-    auto nested_cancel = serde::json::from_json<RPCCancelNotification>(outgoing[1]);
+    auto nested_cancel = serde::json::from_json<CancelNotification>(outgoing[1]);
     ASSERT_TRUE(nested_cancel.has_value());
     EXPECT_EQ(nested_cancel->jsonrpc, "2.0");
     EXPECT_EQ(nested_cancel->method, "$/cancelRequest");
     EXPECT_EQ(nested_cancel->params.id.value, 1);
 
-    auto final_error = serde::json::from_json<RPCErrorResponse>(outgoing[2]);
+    auto final_error = serde::json::from_json<ErrorResponse>(outgoing[2]);
     ASSERT_TRUE(final_error.has_value());
     EXPECT_EQ(final_error->jsonrpc, "2.0");
     ASSERT_TRUE(final_error->id.has_value());
@@ -761,7 +760,7 @@ TEST_CASE(outbound_cancel_request) {
     event_loop loop;
     JsonPeer peer(loop, std::move(transport));
     cancellation_source source;
-    Result<AddResult> request_result = outcome_error(RPCError("request did not complete"));
+    Result<AddResult> request_result = outcome_error(Error("request did not complete"));
 
     auto requester = [&]() -> task<> {
         request_result = co_await peer.send_request<AddResult>("worker/build",
@@ -791,13 +790,13 @@ TEST_CASE(outbound_cancel_request) {
     const auto& outgoing = transport_ptr->outgoing();
     ASSERT_EQ(outgoing.size(), 2U);
 
-    auto request = serde::json::from_json<RPCRequest>(outgoing[0]);
+    auto request = serde::json::from_json<Request>(outgoing[0]);
     ASSERT_TRUE(request.has_value());
     EXPECT_EQ(request->jsonrpc, "2.0");
     EXPECT_EQ(request->id.value, 1);
     EXPECT_EQ(request->method, "worker/build");
 
-    auto cancel = serde::json::from_json<RPCCancelNotification>(outgoing[1]);
+    auto cancel = serde::json::from_json<CancelNotification>(outgoing[1]);
     ASSERT_TRUE(cancel.has_value());
     EXPECT_EQ(cancel->jsonrpc, "2.0");
     EXPECT_EQ(cancel->method, "$/cancelRequest");
@@ -812,7 +811,7 @@ TEST_CASE(outbound_precancel) {
     JsonPeer peer(loop, std::move(transport));
     cancellation_source source;
     source.cancel();
-    Result<AddResult> request_result = outcome_error(RPCError("request did not complete"));
+    Result<AddResult> request_result = outcome_error(Error("request did not complete"));
 
     auto requester = [&]() -> task<> {
         request_result = co_await peer.send_request<AddResult>("worker/build",
@@ -852,7 +851,7 @@ TEST_CASE(outbound_timeout_cancel) {
 
     event_loop loop;
     JsonPeer peer(loop, std::move(transport));
-    Result<AddResult> request_result = outcome_error(RPCError("request did not complete"));
+    Result<AddResult> request_result = outcome_error(Error("request did not complete"));
 
     auto requester = [&]() -> task<> {
         request_result =
@@ -875,11 +874,11 @@ TEST_CASE(outbound_timeout_cancel) {
     const auto& outgoing = transport_ptr->outgoing();
     ASSERT_EQ(outgoing.size(), 2U);
 
-    auto request = serde::json::from_json<RPCRequest>(outgoing[0]);
+    auto request = serde::json::from_json<Request>(outgoing[0]);
     ASSERT_TRUE(request.has_value());
     EXPECT_EQ(request->method, "worker/build");
 
-    auto cancel = serde::json::from_json<RPCCancelNotification>(outgoing[1]);
+    auto cancel = serde::json::from_json<CancelNotification>(outgoing[1]);
     ASSERT_TRUE(cancel.has_value());
     EXPECT_EQ(cancel->method, "$/cancelRequest");
 }
@@ -890,7 +889,7 @@ TEST_CASE(zero_timeout_cancel) {
 
     event_loop loop;
     JsonPeer peer(loop, std::move(transport));
-    Result<AddResult> request_result = outcome_error(RPCError("request did not complete"));
+    Result<AddResult> request_result = outcome_error(Error("request did not complete"));
 
     auto requester = [&]() -> task<> {
         request_result =

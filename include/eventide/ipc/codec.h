@@ -8,10 +8,10 @@
 
 namespace eventide::ipc {
 
-using RPCError = protocol::RPCError;
+using Error = protocol::Error;
 
 template <typename T>
-using Result = outcome<T, RPCError>;
+using Result = outcome<T, Error>;
 
 /// Typed incoming message alternatives (codec-agnostic).
 struct IncomingRequest {
@@ -32,11 +32,11 @@ struct IncomingResponse {
 
 struct IncomingErrorResponse {
     protocol::RequestID id;
-    RPCError error;
+    Error error;
 };
 
 struct IncomingParseError {
-    RPCError error;
+    Error error;
 };
 
 using IncomingMessage = std::variant<IncomingRequest,

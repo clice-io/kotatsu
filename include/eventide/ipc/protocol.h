@@ -83,22 +83,22 @@ enum class ErrorCode : integer {
     RequestCancelled = -32800,
 };
 
-struct RPCError {
+struct Error {
     integer code = static_cast<integer>(ErrorCode::RequestFailed);
     string message;
     std::optional<Value> data = {};
 
-    RPCError() = default;
+    Error() = default;
 
-    RPCError(integer code, string message, std::optional<Value> data = {}) :
+    Error(integer code, string message, std::optional<Value> data = {}) :
         code(code), message(std::move(message)), data(std::move(data)) {}
 
-    RPCError(ErrorCode code, string message, std::optional<Value> data = {}) :
-        RPCError(static_cast<integer>(code), std::move(message), std::move(data)) {}
+    Error(ErrorCode code, string message, std::optional<Value> data = {}) :
+        Error(static_cast<integer>(code), std::move(message), std::move(data)) {}
 
-    RPCError(string message) : message(std::move(message)) {}
+    Error(string message) : message(std::move(message)) {}
 
-    RPCError(const char* message) : message(message == nullptr ? "" : message) {}
+    Error(const char* message) : message(message == nullptr ? "" : message) {}
 };
 
 struct CancelRequestParams {
@@ -153,13 +153,13 @@ struct deserialize_traits<D, eventide::ipc::protocol::Value> {
 };
 
 template <serializer_like S>
-struct serialize_traits<S, eventide::ipc::protocol::RPCError> {
+struct serialize_traits<S, eventide::ipc::protocol::Error> {
     using value_type = typename S::value_type;
     using error_type = typename S::error_type;
 
-    static auto serialize(S& s, const eventide::ipc::protocol::RPCError& error)
+    static auto serialize(S& s, const eventide::ipc::protocol::Error& error)
         -> std::expected<value_type, error_type> {
-        ET_EXPECTED_TRY_V(auto s_struct, s.serialize_struct("RPCError", 3));
+        ET_EXPECTED_TRY_V(auto s_struct, s.serialize_struct("Error", 3));
         ET_EXPECTED_TRY(s_struct.serialize_field("code", error.code));
         ET_EXPECTED_TRY(s_struct.serialize_field("message", error.message));
         ET_EXPECTED_TRY(s_struct.serialize_field("data", error.data));
@@ -168,12 +168,12 @@ struct serialize_traits<S, eventide::ipc::protocol::RPCError> {
 };
 
 template <deserializer_like D>
-struct deserialize_traits<D, eventide::ipc::protocol::RPCError> {
+struct deserialize_traits<D, eventide::ipc::protocol::Error> {
     using error_type = typename D::error_type;
 
-    static auto deserialize(D& d, eventide::ipc::protocol::RPCError& error)
+    static auto deserialize(D& d, eventide::ipc::protocol::Error& error)
         -> std::expected<void, error_type> {
-        ET_EXPECTED_TRY_V(auto d_struct, d.deserialize_struct("RPCError", 3));
+        ET_EXPECTED_TRY_V(auto d_struct, d.deserialize_struct("Error", 3));
         while(true) {
             ET_EXPECTED_TRY_V(auto key, d_struct.next_key());
             if(!key.has_value())

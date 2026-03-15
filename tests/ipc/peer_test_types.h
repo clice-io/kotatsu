@@ -38,26 +38,26 @@ struct CustomNoteParams {
     std::string text;
 };
 
-struct RPCResponse {
+struct Response {
     std::string jsonrpc;
     protocol::RequestID id;
     std::optional<AddResult> result = {};
 };
 
-struct RPCErrorResponse {
+struct ErrorResponse {
     std::string jsonrpc;
     protocol::RequestID id;
-    protocol::RPCError error;
+    protocol::Error error;
 };
 
-struct RPCRequest {
+struct Request {
     std::string jsonrpc;
     protocol::RequestID id;
     std::string method;
     AddParams params;
 };
 
-struct RPCNotification {
+struct Notification {
     std::string jsonrpc;
     std::string method;
     NoteParams params;
@@ -67,7 +67,7 @@ struct CancelParams {
     protocol::RequestID id;
 };
 
-struct RPCCancelNotification {
+struct CancelNotification {
     std::string jsonrpc;
     std::string method;
     CancelParams params;
@@ -76,7 +76,7 @@ struct RPCCancelNotification {
 using RequestContext = JsonPeer::RequestContext;
 
 struct PendingAddResult {
-    Result<AddResult> value = outcome_error(RPCError("request not completed"));
+    Result<AddResult> value = outcome_error(Error("request not completed"));
 };
 
 using test::create_pipe;
