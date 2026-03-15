@@ -80,8 +80,6 @@ public:
 
     Result<std::string> encode_error_response(const protocol::RequestID& id, const RPCError& error);
 
-    std::optional<protocol::RequestID> parse_cancel_id(std::string_view params);
-
     template <typename T>
     Result<std::string> serialize_value(const T& value) {
         auto serialized = serde::json::to_string(value);

@@ -32,8 +32,8 @@ struct WorkerLog {
     std::string text;
 };
 
-et::task<ipc::Result<BuildResult>> handle_build_request(ipc::JsonPeer::RequestContext& context,
-                                                        const BuildParams& params) {
+et::task<BuildResult, ipc::RPCError> handle_build_request(ipc::JsonPeer::RequestContext& context,
+                                                          const BuildParams& params) {
     auto log_status =
         context->send_notification("worker/log",
                                    WorkerLog{
@@ -41,7 +41,7 @@ et::task<ipc::Result<BuildResult>> handle_build_request(ipc::JsonPeer::RequestCo
                                        .text = "preparing compile command for " + params.source,
                                    });
     if(!log_status) {
-        co_return std::unexpected(log_status.error());
+        co_return et::outcome_error(log_status.error());
     }
 
     co_return BuildResult{

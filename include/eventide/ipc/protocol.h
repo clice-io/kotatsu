@@ -83,10 +83,26 @@ enum class ErrorCode : integer {
     RequestCancelled = -32800,
 };
 
-struct ResponseError {
-    integer code = 0;
+struct RPCError {
+    integer code = static_cast<integer>(ErrorCode::RequestFailed);
     string message;
     std::optional<Value> data = {};
+
+    RPCError() = default;
+
+    RPCError(integer code, string message, std::optional<Value> data = {}) :
+        code(code), message(std::move(message)), data(std::move(data)) {}
+
+    RPCError(ErrorCode code, string message, std::optional<Value> data = {}) :
+        RPCError(static_cast<integer>(code), std::move(message), std::move(data)) {}
+
+    RPCError(string message) : message(std::move(message)) {}
+
+    RPCError(const char* message) : message(message == nullptr ? "" : message) {}
+};
+
+struct CancelRequestParams {
+    RequestID id;
 };
 
 }  // namespace eventide::ipc::protocol
@@ -133,6 +149,44 @@ struct deserialize_traits<D, eventide::ipc::protocol::Value> {
         std::visit([&](auto&& item) { value = std::forward<decltype(item)>(item); },
                    std::move(variant));
         return {};
+    }
+};
+
+template <serializer_like S>
+struct serialize_traits<S, eventide::ipc::protocol::RPCError> {
+    using value_type = typename S::value_type;
+    using error_type = typename S::error_type;
+
+    static auto serialize(S& s, const eventide::ipc::protocol::RPCError& error)
+        -> std::expected<value_type, error_type> {
+        ET_EXPECTED_TRY_V(auto s_struct, s.serialize_struct("RPCError", 3));
+        ET_EXPECTED_TRY(s_struct.serialize_field("code", error.code));
+        ET_EXPECTED_TRY(s_struct.serialize_field("message", error.message));
+        ET_EXPECTED_TRY(s_struct.serialize_field("data", error.data));
+        return s_struct.end();
+    }
+};
+
+template <deserializer_like D>
+struct deserialize_traits<D, eventide::ipc::protocol::RPCError> {
+    using error_type = typename D::error_type;
+
+    static auto deserialize(D& d, eventide::ipc::protocol::RPCError& error)
+        -> std::expected<void, error_type> {
+        ET_EXPECTED_TRY_V(auto d_struct, d.deserialize_struct("RPCError", 3));
+        while(true) {
+            ET_EXPECTED_TRY_V(auto key, d_struct.next_key());
+            if(!key.has_value())
+                break;
+            if(*key == "code") {
+                ET_EXPECTED_TRY(d_struct.deserialize_value(error.code));
+            } else if(*key == "message") {
+                ET_EXPECTED_TRY(d_struct.deserialize_value(error.message));
+            } else if(*key == "data") {
+                ET_EXPECTED_TRY(d_struct.deserialize_value(error.data));
+            }
+        }
+        return d_struct.end();
     }
 };
 

@@ -179,10 +179,15 @@ struct Peer<CodecT>::Self {
 
     void dispatch_notification(const std::string& method, std::string_view params) {
         if(method == "$/cancelRequest") {
-            auto cancel_id = codec.parse_cancel_id(params);
-            if(cancel_id) {
-                auto it = incoming_requests.find(*cancel_id);
+            auto parsed = codec.template deserialize_value<protocol::CancelRequestParams>(params);
+            if(parsed) {
+                auto it = incoming_requests.find(parsed->id);
                 if(it != incoming_requests.end() && it->second) {
+                    // Copy the shared_ptr before calling cancel(). cancel() may
+                    // synchronously resume the request coroutine, which on completion
+                    // erases its entry from incoming_requests — invalidating `it` and
+                    // potentially destroying the cancellation_source. The local copy
+                    // keeps the source alive through the entire cancel() call.
                     auto source = it->second;
                     source->cancel();
                 }
@@ -248,70 +253,22 @@ struct Peer<CodecT>::Self {
         enqueue_outgoing(std::move(*response));
     }
 
-    void dispatch_response(const protocol::RequestID& id, const IncomingMessage& msg) {
-        if(msg.error.has_value()) {
-            complete_pending_request(id, outcome_error(*msg.error));
-            return;
-        }
-
-        if(msg.result.empty()) {
-            complete_pending_request(id,
-                                     outcome_error(RPCError(protocol::ErrorCode::InvalidRequest,
-                                                            "response is missing result")));
-            return;
-        }
-
-        complete_pending_request(id, Result<std::string>(std::string(msg.result)));
-    }
-
     void dispatch_incoming_message(std::string_view payload) {
         auto msg = codec.parse_message(payload);
-
-        if(msg.parse_error.has_value()) {
-            if(!msg.method.has_value() && msg.id.has_value()) {
-                complete_pending_request(msg.id, outcome_error(*msg.parse_error));
-                return;
+        std::visit([&](auto& m) {
+            using T = std::remove_cvref_t<decltype(m)>;
+            if constexpr(std::is_same_v<T, IncomingRequest>) {
+                dispatch_request(m.method, m.id, m.params);
+            } else if constexpr(std::is_same_v<T, IncomingNotification>) {
+                dispatch_notification(m.method, m.params);
+            } else if constexpr(std::is_same_v<T, IncomingResponse>) {
+                complete_pending_request(m.id, Result<std::string>(std::move(m.result)));
+            } else if constexpr(std::is_same_v<T, IncomingErrorResponse>) {
+                complete_pending_request(m.id, outcome_error(std::move(m.error)));
+            } else if constexpr(std::is_same_v<T, IncomingParseError>) {
+                send_error(protocol::RequestID{}, m.error);
             }
-
-            send_error(msg.id, *msg.parse_error);
-            return;
-        }
-
-        if(msg.method.has_value()) {
-            auto params = std::string_view(msg.params);
-            if(msg.id.has_value()) {
-                dispatch_request(*msg.method, msg.id, params);
-            } else if(msg.id.is_null()) {
-                send_error(
-                    msg.id,
-                    RPCError(protocol::ErrorCode::InvalidRequest, "request id must be integer"));
-            } else {
-                dispatch_notification(*msg.method, params);
-            }
-            return;
-        }
-
-        if(msg.id.has_value()) {
-            if(!msg.result.empty() == msg.error.has_value()) {
-                complete_pending_request(
-                    msg.id,
-                    outcome_error(
-                        RPCError(protocol::ErrorCode::InvalidRequest,
-                                 "response must contain exactly one of result or error")));
-                return;
-            }
-
-            dispatch_response(msg.id, msg);
-            return;
-        }
-
-        if(msg.id.is_null()) {
-            return;
-        }
-
-        send_error(
-            protocol::RequestID{},
-            RPCError(protocol::ErrorCode::InvalidRequest, "message must contain method or id"));
+        }, msg);
     }
 };
 
@@ -429,11 +386,8 @@ task<std::string, RPCError> Peer<CodecT>::send_request_impl(std::string_view met
         if(auto it = self->pending_requests.find(request_id);
            it != self->pending_requests.end()) {
             self->pending_requests.erase(it);
-            struct cancel_request_params {
-                protocol::RequestID id;
-            };
             auto cancel_params_serialized =
-                self->codec.serialize_value(cancel_request_params{request_id});
+                self->codec.serialize_value(protocol::CancelRequestParams{request_id});
             if(cancel_params_serialized) {
                 auto cancel_encoded =
                     self->codec.encode_notification("$/cancelRequest", *cancel_params_serialized);
