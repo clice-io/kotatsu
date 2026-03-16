@@ -1,6 +1,8 @@
 #include <array>
+#include <atomic>
 #include <optional>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -108,9 +110,13 @@ TEST_CASE(header_too_large) {
     huge_header.append(9000, 'A');
     huge_header += "\r\n\r\nhello";
 
-    ASSERT_EQ(write_fd(fds[1], huge_header.data(), huge_header.size()),
-              static_cast<ssize_t>(huge_header.size()));
-    ASSERT_EQ(close_fd(fds[1]), 0);
+    std::atomic<bool> writer_done = false;
+    std::thread writer([&] {
+        EXPECT_EQ(write_fd(fds[1], huge_header.data(), huge_header.size()),
+                  static_cast<ssize_t>(huge_header.size()));
+        EXPECT_EQ(close_fd(fds[1]), 0);
+        writer_done.store(true, std::memory_order_release);
+    });
 
     auto reader = [&]() -> task<std::optional<std::string>> {
         co_return co_await transport.read_message();
@@ -119,6 +125,9 @@ TEST_CASE(header_too_large) {
     auto read_task = reader();
     loop.schedule(read_task);
     loop.run();
+
+    writer.join();
+    EXPECT_TRUE(writer_done.load(std::memory_order_acquire));
 
     auto result = read_task.result();
     EXPECT_FALSE(result.has_value());

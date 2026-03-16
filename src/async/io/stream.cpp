@@ -391,6 +391,22 @@ void stream::consume(std::size_t n) {
     self->buffer.advance_read(n);
 }
 
+void stream::stop() {
+    assert(self && self->initialized() && "stream::stop requires initialized stream");
+
+    if(self->active_read_mode != Self::read_mode::none) {
+        uv::read_stop(self->stream);
+        self->active_read_mode = Self::read_mode::none;
+    }
+
+    if(self->reader.has_waiter()) {
+        auto* reader = self->reader.waiter;
+        self->reader.disarm();
+        self->error_code = error::operation_aborted;
+        reader->complete();
+    }
+}
+
 task<error> stream::write(std::span<const char> data) {
     if(!self || !self->initialized() || data.empty()) {
         co_return error::invalid_argument;

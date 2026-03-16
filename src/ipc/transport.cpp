@@ -180,6 +180,7 @@ task<std::optional<std::string>> StreamTransport::read_message() {
     while(!content_length.has_value()) {
         auto chunk = co_await read_stream.read_chunk();
         if(!chunk) {
+            read_stream.stop();
             co_return std::nullopt;
         }
 
@@ -187,6 +188,7 @@ task<std::optional<std::string>> StreamTransport::read_message() {
         header.append(chunk->data(), chunk->size());
 
         if(header.size() > max_header_bytes) {
+            read_stream.stop();
             co_return std::nullopt;
         }
 
@@ -198,6 +200,7 @@ task<std::optional<std::string>> StreamTransport::read_message() {
 
         const auto header_end = marker + 4;
         if(header_end > max_header_bytes) {
+            read_stream.stop();
             co_return std::nullopt;
         }
         const auto consumed_from_chunk = header_end > old_size ? header_end - old_size : 0;
@@ -206,6 +209,7 @@ task<std::optional<std::string>> StreamTransport::read_message() {
         auto view = std::string_view(header.data(), header_end);
         content_length = parse_content_length(view);
         if(!content_length.has_value()) {
+            read_stream.stop();
             co_return std::nullopt;
         }
     }
@@ -216,6 +220,7 @@ task<std::optional<std::string>> StreamTransport::read_message() {
     while(payload.size() < *content_length) {
         auto chunk = co_await read_stream.read_chunk();
         if(!chunk) {
+            read_stream.stop();
             co_return std::nullopt;
         }
 
