@@ -43,20 +43,20 @@ struct CustomNoteParams {
     std::string text;
 };
 
-struct RPCResponse {
+struct Response {
     std::string jsonrpc;
     protocol::RequestID id;
     protocol::optional<AddResult> result = {};
 };
 
-struct RPCRequest {
+struct Request {
     std::string jsonrpc;
     protocol::RequestID id;
     std::string method;
     AddParams params;
 };
 
-struct RPCNotification {
+struct Notification {
     std::string jsonrpc;
     std::string method;
     NoteParams params;
@@ -121,7 +121,7 @@ TEST_CASE(traits_dispatch_order) {
     EXPECT_TRUE(second_saw_first);
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = serde::json::from_json<RPCResponse>(transport_ptr->outgoing().front());
+    auto response = serde::json::from_json<Response>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(response->jsonrpc, "2.0");
     EXPECT_EQ(response->id.value, 1);
@@ -159,7 +159,7 @@ TEST_CASE(explicit_method) {
     EXPECT_EQ(notifications.front(), "hello");
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = serde::json::from_json<RPCResponse>(transport_ptr->outgoing().front());
+    auto response = serde::json::from_json<Response>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(response->id.value, 2);
     ASSERT_TRUE(response->result.has_value());
@@ -237,19 +237,19 @@ TEST_CASE(request_notify_apis) {
     const auto& outgoing = transport_ptr->outgoing();
     ASSERT_EQ(outgoing.size(), 5U);
 
-    auto note_from_context = serde::json::from_json<RPCNotification>(outgoing[0]);
+    auto note_from_context = serde::json::from_json<Notification>(outgoing[0]);
     ASSERT_TRUE(note_from_context.has_value());
     EXPECT_EQ(note_from_context->jsonrpc, "2.0");
     EXPECT_EQ(note_from_context->method, "client/note/context");
     EXPECT_EQ(note_from_context->params.text, "context");
 
-    auto note_from_server = serde::json::from_json<RPCNotification>(outgoing[1]);
+    auto note_from_server = serde::json::from_json<Notification>(outgoing[1]);
     ASSERT_TRUE(note_from_server.has_value());
     EXPECT_EQ(note_from_server->jsonrpc, "2.0");
     EXPECT_EQ(note_from_server->method, "client/note/server");
     EXPECT_EQ(note_from_server->params.text, "server");
 
-    auto request_from_context = serde::json::from_json<RPCRequest>(outgoing[2]);
+    auto request_from_context = serde::json::from_json<Request>(outgoing[2]);
     ASSERT_TRUE(request_from_context.has_value());
     EXPECT_EQ(request_from_context->jsonrpc, "2.0");
     EXPECT_EQ(request_from_context->id.value, 1);
@@ -257,7 +257,7 @@ TEST_CASE(request_notify_apis) {
     EXPECT_EQ(request_from_context->params.a, 2);
     EXPECT_EQ(request_from_context->params.b, 3);
 
-    auto request_from_server = serde::json::from_json<RPCRequest>(outgoing[3]);
+    auto request_from_server = serde::json::from_json<Request>(outgoing[3]);
     ASSERT_TRUE(request_from_server.has_value());
     EXPECT_EQ(request_from_server->jsonrpc, "2.0");
     EXPECT_EQ(request_from_server->id.value, 2);
@@ -265,7 +265,7 @@ TEST_CASE(request_notify_apis) {
     EXPECT_EQ(request_from_server->params.a, 3);
     EXPECT_EQ(request_from_server->params.b, 1);
 
-    auto final_response = serde::json::from_json<RPCResponse>(outgoing[4]);
+    auto final_response = serde::json::from_json<Response>(outgoing[4]);
     ASSERT_TRUE(final_response.has_value());
     EXPECT_EQ(final_response->jsonrpc, "2.0");
     EXPECT_EQ(final_response->id.value, 7);

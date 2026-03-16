@@ -153,9 +153,12 @@ struct stream_read_some_await : uv::await_op<stream_read_some_await> {
         auto s = static_cast<stream::Self*>(handle->data);
         assert(s != nullptr && "on_alloc requires stream state in handle->data");
 
+        // stop() calls uv_read_stop then disarm(), but libuv may still invoke
+        // a queued on_alloc callback after the stop. Tolerate waiter == nullptr
+        // by returning a zero-length buffer so the subsequent on_read sees EOF
+        // or nread==0 and exits harmlessly.
         auto* aw = static_cast<stream_read_some_await*>(s->reader.waiter);
-        assert(aw != nullptr && "on_alloc requires active read_some awaiter");
-        if(aw->dst.empty()) {
+        if(!aw || aw->dst.empty()) {
             buf->base = nullptr;
             buf->len = 0;
             return;
@@ -170,8 +173,12 @@ struct stream_read_some_await : uv::await_op<stream_read_some_await> {
         auto s = static_cast<stream::Self*>(stream->data);
         assert(s != nullptr && "on_read requires stream state in stream->data");
 
+        // stop() may have already disarmed the waiter. If a queued on_read
+        // fires after stop(), there is nothing left to complete — just bail out.
         auto* aw = static_cast<stream_read_some_await*>(s->reader.waiter);
-        assert(aw != nullptr && "on_read requires active read_some awaiter");
+        if(!aw) {
+            return;
+        }
 
         if(nread == UV_EOF) {
             aw->out = std::size_t{0};
@@ -389,6 +396,42 @@ void stream::consume(std::size_t n) {
     }
 
     self->buffer.advance_read(n);
+}
+
+void stream::stop() {
+    // Runtime guard: match all other public methods. assert alone compiles
+    // out in NDEBUG builds, leaving UB on default-constructed/moved-from streams.
+    if(!self || !self->initialized()) {
+        return;
+    }
+
+    // Capture the mode before resetting — we need it to pick the right
+    // error-delivery path for the pending awaiter below.
+    auto mode = self->active_read_mode;
+
+    if(mode != Self::read_mode::none) {
+        uv::read_stop(self->stream);
+        self->active_read_mode = Self::read_mode::none;
+    }
+
+    if(self->reader.has_waiter()) {
+        auto* reader = self->reader.waiter;
+        self->reader.disarm();
+
+        // For buffered reads (stream_read_await), await_resume() returns
+        // self->error_code, so setting it here is sufficient.
+        self->error_code = error::operation_aborted;
+
+        // For direct reads (stream_read_some_await), await_resume() returns
+        // aw->out instead of self->error_code. Propagate the error there too
+        // so the caller observes operation_aborted rather than a default error.
+        if(mode == Self::read_mode::direct) {
+            static_cast<stream_read_some_await*>(reader)->out =
+                outcome_error(error::operation_aborted);
+        }
+
+        reader->complete();
+    }
 }
 
 task<error> stream::write(std::span<const char> data) {

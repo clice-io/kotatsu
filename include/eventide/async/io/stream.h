@@ -60,6 +60,9 @@ public:
     /// Consume bytes from the internal buffer.
     void consume(std::size_t n);
 
+    /// Stop active reads and abort any pending read waiter.
+    void stop();
+
     /// Write data to the stream; only one writer at a time.
     task<error> write(std::span<const char> data);
 

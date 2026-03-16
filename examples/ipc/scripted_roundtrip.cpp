@@ -58,12 +58,12 @@ public:
         co_return incoming_messages[read_index++];
     }
 
-    et::task<ipc::Result<void>> write_message(std::string_view payload) override {
+    et::task<void, ipc::Error> write_message(std::string_view payload) override {
         outgoing_messages.emplace_back(payload);
         if(write_hook) {
             write_hook(payload, *this);
         }
-        co_return ipc::Result<void>{};
+        co_return et::outcome_value();
     }
 
     void push_incoming(std::string payload) {
@@ -119,14 +119,14 @@ int main() {
             auto notify_status =
                 context->send_notification("example/note", NoteParams{.text = "handling request"});
             if(!notify_status) {
-                co_return std::unexpected(notify_status.error());
+                co_return et::outcome_error(notify_status.error());
             }
 
             auto remote_sum =
                 co_await context->send_request<AddResult>("client/add",
                                                           ClientAddParams{.a = params.b, .b = 1});
             if(!remote_sum) {
-                co_return std::unexpected(remote_sum.error());
+                co_return et::outcome_error(remote_sum.error());
             }
 
             co_return AddResult{.sum = params.a + params.b + remote_sum->sum};

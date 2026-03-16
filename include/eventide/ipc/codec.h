@@ -1,47 +1,48 @@
 #pragma once
 
-#include <optional>
 #include <string>
-#include <string_view>
+#include <variant>
 
 #include "eventide/ipc/protocol.h"
 #include "eventide/async/async.h"
 
 namespace eventide::ipc {
 
-struct RPCError {
-    protocol::integer code = static_cast<protocol::integer>(protocol::ErrorCode::RequestFailed);
-    std::string message;
-    std::optional<protocol::Value> data = {};
-
-    RPCError() = default;
-
-    RPCError(protocol::integer code,
-             std::string message,
-             std::optional<protocol::Value> data = {}) :
-        code(code), message(std::move(message)), data(std::move(data)) {}
-
-    RPCError(protocol::ErrorCode code,
-             std::string message,
-             std::optional<protocol::Value> data = {}) :
-        RPCError(static_cast<protocol::integer>(code), std::move(message), std::move(data)) {}
-
-    RPCError(std::string message) : message(std::move(message)) {}
-
-    RPCError(const char* message) : message(message == nullptr ? "" : message) {}
-};
+using Error = protocol::Error;
 
 template <typename T>
-using Result = outcome<T, RPCError>;
+using Result = outcome<T, Error>;
 
-/// Parsed incoming message envelope (codec-agnostic).
-struct IncomingMessage {
-    std::optional<std::string> method;
-    protocol::RequestID id;               // default absent
-    std::string params;                   // raw serialized params (empty if absent)
-    std::string result;                   // raw serialized result (empty if absent)
-    std::optional<RPCError> error;        // parsed error from response envelope
-    std::optional<RPCError> parse_error;  // set when the message itself is malformed
+/// Typed incoming message alternatives (codec-agnostic).
+struct IncomingRequest {
+    protocol::RequestID id;
+    std::string method;
+    std::string params;
 };
+
+struct IncomingNotification {
+    std::string method;
+    std::string params;
+};
+
+struct IncomingResponse {
+    protocol::RequestID id;
+    std::string result;
+};
+
+struct IncomingErrorResponse {
+    protocol::RequestID id;
+    Error error;
+};
+
+struct IncomingParseError {
+    Error error;
+};
+
+using IncomingMessage = std::variant<IncomingRequest,
+                                     IncomingNotification,
+                                     IncomingResponse,
+                                     IncomingErrorResponse,
+                                     IncomingParseError>;
 
 }  // namespace eventide::ipc

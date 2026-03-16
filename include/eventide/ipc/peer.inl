@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -140,7 +141,7 @@ struct Peer<CodecT>::Self {
         writer_running = false;
     }
 
-    void send_error(const protocol::RequestID& id, const RPCError& error) {
+    void send_error(const protocol::RequestID& id, const Error& error) {
         auto response = codec.encode_error_response(id, error);
         if(response) {
             enqueue_outgoing(std::move(*response));
@@ -164,25 +165,27 @@ struct Peer<CodecT>::Self {
             return;
         }
 
-        std::vector<std::shared_ptr<PendingRequest>> pending;
-        pending.reserve(pending_requests.size());
-        for(auto& pending_entry: pending_requests) {
-            pending.push_back(pending_entry.second);
-        }
+        auto values = pending_requests | std::views::values;
+        std::vector<std::shared_ptr<PendingRequest>> pending(values.begin(), values.end());
         pending_requests.clear();
 
         for(auto& state: pending) {
-            state->response = outcome_error(RPCError(message));
+            state->response = outcome_error(Error(message));
             state->ready.set();
         }
     }
 
     void dispatch_notification(const std::string& method, std::string_view params) {
         if(method == "$/cancelRequest") {
-            auto cancel_id = codec.parse_cancel_id(params);
-            if(cancel_id) {
-                auto it = incoming_requests.find(*cancel_id);
+            auto parsed = codec.template deserialize_value<protocol::CancelRequestParams>(params);
+            if(parsed) {
+                auto it = incoming_requests.find(parsed->id);
                 if(it != incoming_requests.end() && it->second) {
+                    // Copy the shared_ptr before calling cancel(). cancel() may
+                    // synchronously resume the request coroutine, which on completion
+                    // erases its entry from incoming_requests — invalidating `it` and
+                    // potentially destroying the cancellation_source. The local copy
+                    // keeps the source alive through the entire cancel() call.
                     auto source = it->second;
                     source->cancel();
                 }
@@ -200,7 +203,7 @@ struct Peer<CodecT>::Self {
                           std::string_view params) {
         if(incoming_requests.contains(id)) {
             send_error(id,
-                       RPCError(protocol::ErrorCode::InvalidRequest, "duplicate request id"));
+                       Error(protocol::ErrorCode::InvalidRequest, "duplicate request id"));
             return;
         }
 
@@ -208,7 +211,7 @@ struct Peer<CodecT>::Self {
         if(it == request_callbacks.end()) {
             send_error(
                 id,
-                RPCError(protocol::ErrorCode::MethodNotFound, "method not found: " + method));
+                Error(protocol::ErrorCode::MethodNotFound, "method not found: " + method));
             return;
         }
 
@@ -229,7 +232,7 @@ struct Peer<CodecT>::Self {
 
         if(guarded_result.is_cancelled()) {
             send_error(id,
-                       RPCError(protocol::ErrorCode::RequestCancelled, "request cancelled"));
+                       Error(protocol::ErrorCode::RequestCancelled, "request cancelled"));
             co_return;
         }
 
@@ -241,77 +244,29 @@ struct Peer<CodecT>::Self {
         auto response = codec.encode_success_response(id, *guarded_result);
         if(!response) {
             send_error(id,
-                       RPCError(protocol::ErrorCode::InternalError, response.error().message));
+                       Error(protocol::ErrorCode::InternalError, response.error().message));
             co_return;
         }
 
         enqueue_outgoing(std::move(*response));
     }
 
-    void dispatch_response(const protocol::RequestID& id, const IncomingMessage& msg) {
-        if(msg.error.has_value()) {
-            complete_pending_request(id, outcome_error(*msg.error));
-            return;
-        }
-
-        if(msg.result.empty()) {
-            complete_pending_request(id,
-                                     outcome_error(RPCError(protocol::ErrorCode::InvalidRequest,
-                                                            "response is missing result")));
-            return;
-        }
-
-        complete_pending_request(id, Result<std::string>(std::string(msg.result)));
-    }
-
     void dispatch_incoming_message(std::string_view payload) {
         auto msg = codec.parse_message(payload);
-
-        if(msg.parse_error.has_value()) {
-            if(!msg.method.has_value() && msg.id.has_value()) {
-                complete_pending_request(msg.id, outcome_error(*msg.parse_error));
-                return;
+        std::visit([&](auto& m) {
+            using T = std::remove_cvref_t<decltype(m)>;
+            if constexpr(std::is_same_v<T, IncomingRequest>) {
+                dispatch_request(m.method, m.id, m.params);
+            } else if constexpr(std::is_same_v<T, IncomingNotification>) {
+                dispatch_notification(m.method, m.params);
+            } else if constexpr(std::is_same_v<T, IncomingResponse>) {
+                complete_pending_request(m.id, Result<std::string>(std::move(m.result)));
+            } else if constexpr(std::is_same_v<T, IncomingErrorResponse>) {
+                complete_pending_request(m.id, outcome_error(std::move(m.error)));
+            } else if constexpr(std::is_same_v<T, IncomingParseError>) {
+                send_error(protocol::RequestID{}, m.error);
             }
-
-            send_error(msg.id, *msg.parse_error);
-            return;
-        }
-
-        if(msg.method.has_value()) {
-            auto params = std::string_view(msg.params);
-            if(msg.id.has_value()) {
-                dispatch_request(*msg.method, msg.id, params);
-            } else if(msg.id.is_null()) {
-                send_error(
-                    msg.id,
-                    RPCError(protocol::ErrorCode::InvalidRequest, "request id must be integer"));
-            } else {
-                dispatch_notification(*msg.method, params);
-            }
-            return;
-        }
-
-        if(msg.id.has_value()) {
-            if(!msg.result.empty() == msg.error.has_value()) {
-                complete_pending_request(
-                    msg.id,
-                    outcome_error(
-                        RPCError(protocol::ErrorCode::InvalidRequest,
-                                 "response must contain exactly one of result or error")));
-                return;
-            }
-
-            dispatch_response(msg.id, msg);
-            return;
-        }
-
-        if(msg.id.is_null()) {
-            return;
-        }
-
-        send_error(
-            protocol::RequestID{},
-            RPCError(protocol::ErrorCode::InvalidRequest, "message must contain method or id"));
+        }, msg);
     }
 };
 
@@ -352,7 +307,7 @@ task<> Peer<CodecT>::run() {
 template <typename CodecT>
 Result<void> Peer<CodecT>::close_output() {
     if(!self || !self->transport) {
-        return outcome_error(RPCError("transport is null"));
+        return outcome_error(Error("transport is null"));
     }
 
     return self->transport->close_output();
@@ -370,7 +325,7 @@ void Peer<CodecT>::register_notification_callback(std::string_view method,
 }
 
 template <typename CodecT>
-task<std::string, RPCError> Peer<CodecT>::send_request_impl(std::string_view method,
+task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method,
                                                              std::string params,
                                                              request_options opts) {
     std::shared_ptr<cancellation_source> timeout_source;
@@ -378,7 +333,7 @@ task<std::string, RPCError> Peer<CodecT>::send_request_impl(std::string_view met
     if(opts.timeout.has_value()) {
         if(*opts.timeout <= std::chrono::milliseconds::zero()) {
             co_return outcome_error(
-                RPCError(protocol::ErrorCode::RequestCancelled, "request timed out"));
+                Error(protocol::ErrorCode::RequestCancelled, "request timed out"));
         }
 
         timeout_source = std::make_shared<cancellation_source>();
@@ -389,12 +344,12 @@ task<std::string, RPCError> Peer<CodecT>::send_request_impl(std::string_view met
     }
 
     if(!self || !self->transport) {
-        co_return outcome_error(RPCError("transport is null"));
+        co_return outcome_error(Error("transport is null"));
     }
 
     if(opts.token && opts.token->cancelled()) {
         co_return outcome_error(
-            RPCError(protocol::ErrorCode::RequestCancelled, "request cancelled"));
+            Error(protocol::ErrorCode::RequestCancelled, "request cancelled"));
     }
 
     auto request_id = protocol::RequestID(self->next_request_id++);
@@ -429,11 +384,8 @@ task<std::string, RPCError> Peer<CodecT>::send_request_impl(std::string_view met
         if(auto it = self->pending_requests.find(request_id);
            it != self->pending_requests.end()) {
             self->pending_requests.erase(it);
-            struct cancel_request_params {
-                protocol::RequestID id;
-            };
             auto cancel_params_serialized =
-                self->codec.serialize_value(cancel_request_params{request_id});
+                self->codec.serialize_value(protocol::CancelRequestParams{request_id});
             if(cancel_params_serialized) {
                 auto cancel_encoded =
                     self->codec.encode_notification("$/cancelRequest", *cancel_params_serialized);
@@ -445,14 +397,14 @@ task<std::string, RPCError> Peer<CodecT>::send_request_impl(std::string_view met
 
         if(opts.token && opts.token->cancelled()) {
             co_return outcome_error(
-                RPCError(protocol::ErrorCode::RequestCancelled, "request cancelled"));
+                Error(protocol::ErrorCode::RequestCancelled, "request cancelled"));
         }
         co_return outcome_error(
-            RPCError(protocol::ErrorCode::RequestCancelled, "request timed out"));
+            Error(protocol::ErrorCode::RequestCancelled, "request timed out"));
     }
 
     if(!pending->response.has_value()) {
-        co_return outcome_error(RPCError("request was not completed"));
+        co_return outcome_error(Error("request was not completed"));
     }
 
     auto& response = *pending->response;
@@ -466,7 +418,7 @@ task<std::string, RPCError> Peer<CodecT>::send_request_impl(std::string_view met
 template <typename CodecT>
 Result<void> Peer<CodecT>::send_notification_impl(std::string_view method, std::string params) {
     if(!self || !self->transport) {
-        return outcome_error(RPCError("transport is null"));
+        return outcome_error(Error("transport is null"));
     }
 
     auto notification_encoded = self->codec.encode_notification(method, params);
@@ -511,7 +463,7 @@ RequestResult<Params> Peer<CodecT>::send_request(const Params& params, request_o
 
 template <typename CodecT>
 template <typename ResultT, typename Params>
-task<ResultT, RPCError> Peer<CodecT>::send_request(std::string_view method,
+task<ResultT, Error> Peer<CodecT>::send_request(std::string_view method,
                                                     const Params& params,
                                                     request_options opts) {
     auto serialized_params = self->codec.serialize_value(params);
@@ -613,7 +565,7 @@ void Peer<CodecT>::bind_request_callback(std::string_view method, Callback&& cal
                     peer = this](const protocol::RequestID& request_id,
                                  std::string_view params_raw,
                                  cancellation_token token)
-        -> task<std::string, RPCError> {
+        -> task<std::string, Error> {
         auto parsed_params = peer->self->codec.template deserialize_value<Params>(
             params_raw, protocol::ErrorCode::InvalidParams);
         if(!parsed_params) {
@@ -632,7 +584,7 @@ void Peer<CodecT>::bind_request_callback(std::string_view method, Callback&& cal
             peer->self->codec.serialize_value(*result);
         if(!serialized) {
             co_return outcome_error(
-                RPCError(protocol::ErrorCode::InternalError, serialized.error().message));
+                Error(protocol::ErrorCode::InternalError, serialized.error().message));
         }
 
         co_return std::move(*serialized);

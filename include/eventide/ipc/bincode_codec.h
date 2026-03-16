@@ -57,17 +57,14 @@ public:
     Result<std::string> encode_success_response(const protocol::RequestID& id,
                                                 std::string_view result);
 
-    Result<std::string> encode_error_response(const protocol::RequestID& id, const RPCError& error);
-
-    std::optional<protocol::RequestID> parse_cancel_id(std::string_view params);
+    Result<std::string> encode_error_response(const protocol::RequestID& id, const Error& error);
 
     template <typename T>
     Result<std::string> serialize_value(const T& value) {
         auto bytes = serde::bincode::to_bytes(value);
         if(!bytes) {
-            return outcome_error(
-                RPCError(protocol::ErrorCode::InternalError,
-                         std::string(serde::bincode::error_message(bytes.error()))));
+            return outcome_error(Error(protocol::ErrorCode::InternalError,
+                                       std::string(serde::bincode::error_message(bytes.error()))));
         }
         return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
     }
@@ -79,7 +76,7 @@ public:
             if constexpr(std::default_initializable<T>) {
                 return T{};
             } else {
-                return outcome_error(RPCError(code, "empty params"));
+                return outcome_error(Error(code, "empty params"));
             }
         }
         auto bytes_span =
@@ -88,7 +85,7 @@ public:
         auto status = serde::bincode::from_bytes(bytes_span, value);
         if(!status) {
             return outcome_error(
-                RPCError(code, std::string(serde::bincode::error_message(status.error()))));
+                Error(code, std::string(serde::bincode::error_message(status.error()))));
         }
         return value;
     }
