@@ -26,16 +26,10 @@ std::string_view trim_ascii(std::string_view value) {
 }
 
 bool iequals_ascii(std::string_view lhs, std::string_view rhs) {
-    if(lhs.size() != rhs.size()) {
-        return false;
-    }
-    for(std::size_t i = 0; i < lhs.size(); ++i) {
-        if(std::tolower(static_cast<unsigned char>(lhs[i])) !=
-           std::tolower(static_cast<unsigned char>(rhs[i]))) {
-            return false;
-        }
-    }
-    return true;
+    return std::ranges::equal(lhs, rhs, [](char a, char b) {
+        return std::tolower(static_cast<unsigned char>(a)) ==
+               std::tolower(static_cast<unsigned char>(b));
+    });
 }
 
 std::optional<std::size_t> parse_content_length(std::string_view header) {

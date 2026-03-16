@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -164,11 +165,8 @@ struct Peer<CodecT>::Self {
             return;
         }
 
-        std::vector<std::shared_ptr<PendingRequest>> pending;
-        pending.reserve(pending_requests.size());
-        for(auto& pending_entry: pending_requests) {
-            pending.push_back(pending_entry.second);
-        }
+        auto values = pending_requests | std::views::values;
+        std::vector<std::shared_ptr<PendingRequest>> pending(values.begin(), values.end());
         pending_requests.clear();
 
         for(auto& state: pending) {

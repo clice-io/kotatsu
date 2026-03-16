@@ -135,7 +135,7 @@ Result<std::string> JsonCodec::encode_error_response(const protocol::RequestID& 
                                                      const Error& error) {
     return serialize_json_value(outgoing_error_response_message{
         .id = id,
-        .error = Error{error.code, error.message, error.data},
+        .error = error,
     });
 }
 

@@ -94,7 +94,7 @@ TEST_CASE(invalid_json) {
 }
 
 // 1.6 Method present but id is null → parse error
-TEST_CASE(method_with_null_id) {
+TEST_CASE(null_id_method) {
     JsonCodec codec;
     auto msg =
         codec.parse_message(R"({"jsonrpc":"2.0","id":null,"method":"test/foo","params":{}})");
@@ -115,7 +115,7 @@ TEST_CASE(empty_object) {
 }
 
 // 1.8 Response with both result and error → error response (validation error)
-TEST_CASE(response_both_result_and_error) {
+TEST_CASE(both_result_error) {
     JsonCodec codec;
     auto msg = codec.parse_message(
         R"({"jsonrpc":"2.0","id":5,"result":{"x":1},"error":{"code":-1,"message":"oops"}})");
@@ -127,7 +127,7 @@ TEST_CASE(response_both_result_and_error) {
 }
 
 // 1.9 Response with neither result nor error → error response (validation error)
-TEST_CASE(response_neither_result_nor_error) {
+TEST_CASE(neither_result_error) {
     JsonCodec codec;
     auto msg = codec.parse_message(R"({"jsonrpc":"2.0","id":5})");
 
@@ -138,7 +138,7 @@ TEST_CASE(response_neither_result_nor_error) {
 }
 
 // 1.10 Error response with nested data object
-TEST_CASE(error_response_with_nested_data) {
+TEST_CASE(nested_error_data) {
     JsonCodec codec;
     auto msg = codec.parse_message(
         R"({"jsonrpc":"2.0","id":9,"error":{"code":-32000,"message":"fail","data":{"retry":true,"count":3}}})");
@@ -162,7 +162,7 @@ TEST_CASE(request_missing_params) {
 }
 
 // 1.12 Request with string id (non-integer) → treated as absent id → notification
-TEST_CASE(string_id_treated_as_absent) {
+TEST_CASE(string_id_rejected) {
     JsonCodec codec;
     auto msg =
         codec.parse_message(R"({"jsonrpc":"2.0","id":"abc","method":"test/foo","params":{}})");

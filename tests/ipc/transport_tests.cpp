@@ -32,7 +32,7 @@ task<std::pair<std::optional<std::string>, std::optional<std::string>>>
 
 TEST_SUITE(ipc_transport) {
 
-TEST_CASE(stream_transport_reads_back_to_back_messages) {
+TEST_CASE(consecutive_messages) {
     event_loop loop;
 
     int fds[2] = {-1, -1};
