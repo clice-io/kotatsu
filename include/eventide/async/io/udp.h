@@ -100,9 +100,9 @@ public:
 
     error disconnect();
 
-    task<error> send(std::span<const char> data, std::string_view host, int port);
+    task<void, error> send(std::span<const char> data, std::string_view host, int port);
 
-    task<error> send(std::span<const char> data);
+    task<void, error> send(std::span<const char> data);
 
     error try_send(std::span<const char> data, std::string_view host, int port);
 

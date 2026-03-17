@@ -153,7 +153,7 @@ TEST_CASE(queue_cancel_resume) {
                 }
             },
             loop);
-        EXPECT_FALSE(static_cast<bool>(ec));
+        EXPECT_FALSE(ec.has_error());
         blockers_done.fetch_add(1, std::memory_order_release);
     };
 
@@ -239,7 +239,7 @@ TEST_CASE(fs_cancel_resume) {
                 }
             },
             loop);
-        EXPECT_FALSE(static_cast<bool>(ec));
+        EXPECT_FALSE(ec.has_error());
         blockers_done.fetch_add(1, std::memory_order_release);
     };
 

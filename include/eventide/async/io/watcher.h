@@ -62,7 +62,7 @@ public:
 
     error stop();
 
-    task<error> wait();
+    task<void, error> wait();
 
 private:
     explicit signal(unique_handle<Self> self) noexcept;

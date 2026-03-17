@@ -230,7 +230,7 @@ struct stream_read_some_await : uv::await_op<stream_read_some_await> {
 };
 
 struct stream_write_await : uv::await_op<stream_write_await> {
-    using promise_t = task<error>::promise_type;
+    using promise_t = task<void, error>::promise_type;
 
     // Stream self that owns the active write waiter.
     stream::Self* self;
@@ -434,17 +434,21 @@ void stream::stop() {
     }
 }
 
-task<error> stream::write(std::span<const char> data) {
+task<void, error> stream::write(std::span<const char> data) {
     if(!self || !self->initialized() || data.empty()) {
-        co_return error::invalid_argument;
+        co_return outcome_error(error::invalid_argument);
     }
 
     if(self->writer.has_waiter()) {
         assert(false && "stream::write supports a single writer at a time");
-        co_return error::invalid_argument;
+        co_return outcome_error(error::invalid_argument);
     }
 
-    co_return co_await stream_write_await{self.get(), data};
+    if(auto err = co_await stream_write_await{self.get(), data}) {
+        co_return outcome_error(std::move(err));
+    }
+
+    co_return outcome_value();
 }
 
 result<std::size_t> stream::try_write(std::span<const char> data) {

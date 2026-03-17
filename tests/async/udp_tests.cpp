@@ -23,7 +23,7 @@ task<udp::recv_result, error> recv_once(udp& sock, int& done) {
     co_return res;
 }
 
-task<error>
+task<void, error>
     send_to(udp& sock, std::string_view payload, std::string_view host, int port, int& done) {
     std::span<const char> data(payload.data(), payload.size());
     auto ec = co_await sock.send(data, host, port);
@@ -31,7 +31,7 @@ task<error>
     co_return ec;
 }
 
-task<error> send_connected(udp& sock, std::string_view payload, int& done) {
+task<void, error> send_connected(udp& sock, std::string_view payload, int& done) {
     std::span<const char> data(payload.data(), payload.size());
     auto ec = co_await sock.send(data);
     bump_and_stop(done, 2);
@@ -70,7 +70,7 @@ TEST_CASE(send_and_recv) {
     EXPECT_EQ(recv_result->data, "eventide-udp");
 
     auto send_result = sender.result();
-    EXPECT_FALSE(static_cast<bool>(send_result));
+    EXPECT_FALSE(send_result.has_error());
 }
 
 TEST_CASE(connect_and_send) {
@@ -104,7 +104,7 @@ TEST_CASE(connect_and_send) {
     EXPECT_EQ(recv_result->data, "eventide-udp-connect");
 
     auto send_result = sender.result();
-    EXPECT_FALSE(static_cast<bool>(send_result));
+    EXPECT_FALSE(send_result.has_error());
 }
 
 };  // TEST_SUITE(udp_io)

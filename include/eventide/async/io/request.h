@@ -1,14 +1,28 @@
 #pragma once
 
-#include <functional>
+#include <optional>
 
+#include "eventide/common/function_traits.h"
+#include "eventide/common/functional.h"
 #include "eventide/async/io/loop.h"
+#include "eventide/async/runtime/task.h"
 #include "eventide/async/vocab/error.h"
 
 namespace eventide {
 
-using work_fn = std::function<void()>;
+/// Run work on libuv's worker pool and complete when finished or with an error.
+task<void, error> queue(function<void()> fn, event_loop& loop = event_loop::current());
 
-task<error> queue(work_fn fn, event_loop& loop = event_loop::current());
+/// Run work on libuv's worker pool and return either its value or an error.
+template <typename Fn, typename R = callable_return_t<std::remove_cvref_t<Fn>>>
+    requires std::is_invocable_v<Fn> && (!std::is_void_v<R>)
+task<R, error> queue(Fn&& fn, event_loop& loop = event_loop::current()) {
+    std::optional<R> ret;
+    auto err = co_await queue(function<void()>([&] { ret.emplace(fn()); }), loop);
+    if(err) {
+        co_return outcome_error(std::move(err));
+    }
+    co_return std::move(*ret);
+}
 
 }  // namespace eventide

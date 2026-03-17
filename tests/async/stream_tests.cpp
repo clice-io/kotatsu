@@ -196,11 +196,13 @@ task<std::string, error> accept_and_read_pipe(pipe::acceptor acc, int& done) {
     co_return data;
 }
 
-task<error> connect_and_write_pipe(std::string_view name, std::string_view payload, int& done) {
+task<void, error> connect_and_write_pipe(std::string_view name,
+                                         std::string_view payload,
+                                         int& done) {
     auto conn_res = co_await pipe::connect(name);
     if(!conn_res.has_value()) {
         bump_and_stop(done, 2);
-        co_return conn_res.error();
+        co_return outcome_error(conn_res.error());
     }
 
     auto conn = std::move(*conn_res);
@@ -254,11 +256,12 @@ task<std::string, error> accept_and_read_once(tcp_socket::acceptor acc, int& don
     co_return data;
 }
 
-task<error> connect_and_send(std::string_view host, int port, std::string_view payload, int& done) {
+task<void, error>
+    connect_and_send(std::string_view host, int port, std::string_view payload, int& done) {
     auto conn_res = co_await tcp_socket::connect(host, port);
     if(!conn_res.has_value()) {
         bump_and_stop(done, 2);
-        co_return conn_res.error();
+        co_return outcome_error(conn_res.error());
     }
 
     auto conn = std::move(*conn_res);

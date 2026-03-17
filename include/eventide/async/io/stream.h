@@ -64,7 +64,7 @@ public:
     void stop();
 
     /// Write data to the stream; only one writer at a time.
-    task<error> write(std::span<const char> data);
+    task<void, error> write(std::span<const char> data);
 
     /// Try a non-blocking write; returns bytes written or error.
     result<std::size_t> try_write(std::span<const char> data);

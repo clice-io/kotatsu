@@ -238,7 +238,7 @@ task<void, Error> StreamTransport::write_message(std::string_view payload) {
     auto& stream = shared_stream ? read_stream : write_stream;
     auto status = co_await stream.write(std::span<const char>(framed.data(), framed.size()));
     if(status.has_error()) {
-        co_return outcome_error(Error(std::string(status.message())));
+        co_return outcome_error(Error(std::string(status.error().message())));
     }
     co_return outcome_value();
 }

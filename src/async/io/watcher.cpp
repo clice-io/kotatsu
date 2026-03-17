@@ -106,7 +106,7 @@ using check_await = basic_tick_await<check::Self, uv_check_t>;
 
 struct signal_await : uv::await_op<signal_await> {
     using await_base = uv::await_op<signal_await>;
-    using promise_t = task<error>::promise_type;
+    using promise_t = task<void, error>::promise_type;
 
     // Signal watcher self that owns waiter/active pointers.
     signal::Self* self;
@@ -277,21 +277,25 @@ error signal::stop() {
     return {};
 }
 
-task<error> signal::wait() {
+task<void, error> signal::wait() {
     if(!self) {
-        co_return error::invalid_argument;
+        co_return outcome_error(error::invalid_argument);
     }
 
     if(self->pending > 0) {
         self->pending -= 1;
-        co_return error{};
+        co_return outcome_value();
     }
 
     if(self->waiter != nullptr) {
-        co_return error::connection_already_in_progress;
+        co_return outcome_error(error::connection_already_in_progress);
     }
 
-    co_return co_await signal_await{self.get()};
+    if(auto err = co_await signal_await{self.get()}) {
+        co_return outcome_error(std::move(err));
+    }
+
+    co_return outcome_value();
 }
 
 #define ET_DEFINE_TICK_WATCHER_METHODS(WatcherType,                                                \

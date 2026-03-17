@@ -12,16 +12,16 @@ namespace eventide {
 namespace {
 
 struct work_op : uv::await_op<work_op> {
-    using promise_t = task<error>::promise_type;
+    using promise_t = task<void, error>::promise_type;
 
     // libuv request object; req.data points back to this awaiter.
     uv_work_t req{};
     // User-supplied function executed on libuv's worker thread.
-    work_fn fn;
+    function<void()> fn;
     // Completion status consumed by await_resume().
     error result;
 
-    work_op() = default;
+    explicit work_op(function<void()> fn) : fn(std::move(fn)) {}
 
     static void on_cancel(system_op* op) {
         auto* self = static_cast<work_op*>(op);
@@ -45,16 +45,13 @@ struct work_op : uv::await_op<work_op> {
 
 }  // namespace
 
-task<error> queue(work_fn fn, event_loop& loop) {
-    work_op op;
-    op.fn = std::move(fn);
+task<void, error> queue(function<void()> fn, event_loop& loop) {
+    work_op op(std::move(fn));
 
     auto work_cb = [](uv_work_t* req) {
         auto* holder = static_cast<work_op*>(req->data);
         assert(holder != nullptr && "work_cb requires operation in req->data");
-        if(holder->fn) {
-            holder->fn();
-        }
+        holder->fn();
     };
 
     auto after_cb = [](uv_work_t* req, int status) {
@@ -70,10 +67,14 @@ task<error> queue(work_fn fn, event_loop& loop) {
     op.req.data = &op;
 
     if(auto err = uv::queue_work(loop, op.req, work_cb, after_cb)) {
-        co_return err;
+        co_return outcome_error(err);
     }
 
-    co_return co_await op;
+    if(auto err = co_await op) {
+        co_return outcome_error(std::move(err));
+    }
+
+    co_return outcome_value();
 }
 
 }  // namespace eventide

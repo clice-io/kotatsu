@@ -200,7 +200,7 @@ struct udp_recv_await : uv::await_op<udp_recv_await> {
 };
 
 struct udp_send_await : uv::await_op<udp_send_await> {
-    using promise_t = task<error>::promise_type;
+    using promise_t = task<void, error>::promise_type;
 
     // UDP socket self that owns send waiter and inflight flags.
     udp::Self* self;
@@ -422,27 +422,35 @@ error udp::disconnect() {
     return {};
 }
 
-task<error> udp::send(std::span<const char> data, std::string_view host, int port) {
+task<void, error> udp::send(std::span<const char> data, std::string_view host, int port) {
     if(!self) {
-        co_return error::invalid_argument;
+        co_return outcome_error(error::invalid_argument);
     }
 
     auto resolved = uv::resolve_addr(host, port);
     if(!resolved) {
-        co_return resolved.error();
+        co_return outcome_error(resolved.error());
     }
 
-    co_return co_await udp_send_await{self.get(),
-                                      data,
-                                      std::optional<sockaddr_storage>(resolved->storage)};
+    if(auto err = co_await udp_send_await{self.get(),
+                                          data,
+                                          std::optional<sockaddr_storage>(resolved->storage)}) {
+        co_return outcome_error(std::move(err));
+    }
+
+    co_return outcome_value();
 }
 
-task<error> udp::send(std::span<const char> data) {
+task<void, error> udp::send(std::span<const char> data) {
     if(!self) {
-        co_return error::invalid_argument;
+        co_return outcome_error(error::invalid_argument);
     }
 
-    co_return co_await udp_send_await{self.get(), data, std::nullopt};
+    if(auto err = co_await udp_send_await{self.get(), data, std::nullopt}) {
+        co_return outcome_error(std::move(err));
+    }
+
+    co_return outcome_value();
 }
 
 error udp::try_send(std::span<const char> data, std::string_view host, int port) {

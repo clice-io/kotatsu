@@ -153,8 +153,10 @@ task<T, E, cancellation> with_token(task<T, E, C> inner_task, Tokens... tokens) 
 
     auto& task_result = std::get<0>(*race_result);
 
-    if constexpr(std::is_void_v<T>) {
+    if constexpr(std::is_void_v<T> && std::is_void_v<E>) {
         co_return;
+    } else if constexpr(std::is_void_v<T>) {
+        co_return outcome_value();
     } else {
         co_return std::move(task_result);
     }
