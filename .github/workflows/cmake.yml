@@ -114,7 +114,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.COMPILER_CACHE == 'sccache' && env.SCCACHE_DIR || env.CCACHE_DIR }}
-          key: ${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.build_name }}
+          key: ${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.build_name }}-${{ github.sha }}
           restore-keys: |
             ${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.build_name }}-
             ${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-
