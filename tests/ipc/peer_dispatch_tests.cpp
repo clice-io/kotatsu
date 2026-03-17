@@ -11,10 +11,6 @@ TEST_SUITE(ipc_peer_dispatch) {
 
 // 3.2 Unregistered method → MethodNotFound
 TEST_CASE(unregistered_method) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":1,"method":"unknown/method","params":{}})",
     });
@@ -36,10 +32,6 @@ TEST_CASE(unregistered_method) {
 
 // 3.3 Duplicate request id → InvalidRequest on second
 TEST_CASE(duplicate_request_id) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":1,"b":2}})",
         R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":3,"b":4}})",
@@ -79,10 +71,6 @@ TEST_CASE(duplicate_request_id) {
 
 // 3.5 Unregistered notification → silent ignore
 TEST_CASE(unregistered_notification) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","method":"unknown/note","params":{"text":"hello"}})",
     });
@@ -99,10 +87,6 @@ TEST_CASE(unregistered_notification) {
 
 // 3.7 Orphan response → silent ignore
 TEST_CASE(orphan_response) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":999,"result":{"sum":42}})",
     });
@@ -119,10 +103,6 @@ TEST_CASE(orphan_response) {
 
 // 3.9 Mixed message sequence
 TEST_CASE(mixed_sequence) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{
             R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":10,"b":20}})",

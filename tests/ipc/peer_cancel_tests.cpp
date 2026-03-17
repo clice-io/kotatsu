@@ -11,10 +11,6 @@ TEST_SUITE(ipc_peer_cancel) {
 
 // 4.1 Cancel an already-completed request → no crash
 TEST_CASE(cancel_completed) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{
             R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":1,"b":2}})",
@@ -48,10 +44,6 @@ TEST_CASE(cancel_completed) {
 
 // 4.2 Cancel a nonexistent request id → silent
 TEST_CASE(cancel_nonexistent) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id":9999}})",
     });
@@ -68,10 +60,6 @@ TEST_CASE(cancel_nonexistent) {
 
 // 4.3 Double cancel → idempotent, no crash
 TEST_CASE(double_cancel) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":1,"b":2}})",
         R"({"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id":1}})",
@@ -99,10 +87,6 @@ TEST_CASE(double_cancel) {
 
 // 4.5 $/cancelRequest with malformed params → silent
 TEST_CASE(bad_cancel_params) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","method":"$/cancelRequest","params":{"wrong":"field"}})",
         R"({"jsonrpc":"2.0","method":"$/cancelRequest","params":"not an object"})",

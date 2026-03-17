@@ -4,7 +4,9 @@
 
 #include "eventide/ipc/codec.h"
 #include "eventide/serde/json/json.h"
+#include "eventide/serde/serde/config.h"
 #include "eventide/serde/serde/raw_value.h"
+#include "eventide/serde/serde/spelling.h"
 
 namespace eventide::serde {
 
@@ -65,6 +67,10 @@ struct deserialize_traits<json::Deserializer<Config>, eventide::ipc::protocol::R
 
 namespace eventide::ipc {
 
+struct lsp_config {
+    using field_rename = serde::rename_policy::lower_camel;
+};
+
 class JsonCodec {
 public:
     IncomingMessage parse_message(std::string_view payload);
@@ -82,7 +88,7 @@ public:
 
     template <typename T>
     Result<std::string> serialize_value(const T& value) {
-        auto serialized = serde::json::to_string(value);
+        auto serialized = serde::json::to_string<lsp_config>(value);
         if(!serialized) {
             return outcome_error(
                 Error(protocol::ErrorCode::InternalError,
@@ -101,7 +107,7 @@ public:
                 raw = "{}";
             }
         }
-        auto parsed = serde::json::parse<T>(raw);
+        auto parsed = serde::json::parse<T, lsp_config>(raw);
         if(!parsed) {
             return outcome_error(
                 Error(code, std::string(serde::json::error_message(parsed.error()))));

@@ -71,21 +71,21 @@ auto to_json(const T& value)
 
 // Top-level convenience API (uses streaming simdjson backend by default)
 
-template <typename T>
+template <typename Config = config::default_config, typename T>
 auto parse(std::string_view json, T& value) -> std::expected<void, error_kind> {
-    return from_json(json, value);
+    return from_json<Config>(json, value);
 }
 
-template <typename T>
+template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto parse(std::string_view json) -> std::expected<T, error_kind> {
-    return from_json<T>(json);
+    return from_json<T, Config>(json);
 }
 
-template <typename T>
+template <typename Config = config::default_config, typename T>
 auto to_string(const T& value, std::optional<std::size_t> initial_capacity = std::nullopt)
     -> std::expected<std::string, error_kind> {
-    return to_json(value, initial_capacity);
+    return to_json<Config>(value, initial_capacity);
 }
 
 }  // namespace eventide::serde::json

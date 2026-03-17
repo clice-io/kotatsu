@@ -73,6 +73,21 @@ struct CancelNotification {
     CancelParams params;
 };
 
+// Types with multi-word fields for camelCase rename testing
+struct RangeAddParams {
+    std::int64_t first_value = 0;
+    std::int64_t second_value = 0;
+};
+
+struct RangeAddResult {
+    std::int64_t computed_sum = 0;
+};
+
+struct StatusNoteParams {
+    std::string display_name;
+    std::int64_t retry_count = 0;
+};
+
 using RequestContext = JsonPeer::RequestContext;
 
 struct PendingAddResult {
@@ -96,6 +111,17 @@ struct RequestTraits<AddParams> {
 template <>
 struct NotificationTraits<NoteParams> {
     constexpr inline static std::string_view method = "test/note";
+};
+
+template <>
+struct RequestTraits<RangeAddParams> {
+    using Result = RangeAddResult;
+    constexpr inline static std::string_view method = "test/rangeAdd";
+};
+
+template <>
+struct NotificationTraits<StatusNoteParams> {
+    constexpr inline static std::string_view method = "test/statusNote";
 };
 
 }  // namespace eventide::ipc::protocol
