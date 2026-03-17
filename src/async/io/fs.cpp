@@ -692,7 +692,8 @@ result<std::size_t> fs::sync::read(int fd, std::span<char> buf, std::int64_t off
 }
 
 result<std::size_t> fs::sync::write(int fd, std::span<const char> buf, std::int64_t offset) {
-    uv_buf_t uv_buf = uv_buf_init(const_cast<char*>(buf.data()), static_cast<unsigned int>(buf.size()));
+    uv_buf_t uv_buf =
+        uv_buf_init(const_cast<char*>(buf.data()), static_cast<unsigned int>(buf.size()));
     uv_fs_t req{};
     int r = uv_fs_write(sync_loop(), &req, fd, &uv_buf, 1, offset, nullptr);
     uv_fs_req_cleanup(&req);

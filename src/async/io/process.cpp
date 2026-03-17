@@ -3,13 +3,14 @@
 #include <cassert>
 
 #include "awaiter.h"
+#include "eventide/async/io/fs.h"
 #include "eventide/async/io/loop.h"
 #include "eventide/async/vocab/error.h"
 
+// clang-format off
 #if defined(__linux__)
 #include <charconv>
 #include <unistd.h>
-#include "eventide/async/io/fs.h"
 #elif defined(__APPLE__)
 #include <libproc.h>
 #include <mach/mach.h>
@@ -18,6 +19,7 @@
 #include <windows.h>
 #include <psapi.h>
 #endif
+// clang-format on
 
 namespace eventide {
 
@@ -367,7 +369,7 @@ result<process_info> process::query_info(int pid) {
     }
 
 #elif defined(__APPLE__)
-    struct proc_taskinfo pti {};
+    struct proc_taskinfo pti{};
     int ret = proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &pti, sizeof(pti));
     if(ret <= 0) {
         return outcome_error(error::no_such_process);
@@ -380,7 +382,8 @@ result<process_info> process::query_info(int pid) {
     info.stime_us = pti.pti_total_system / 1000;
 
 #elif defined(_WIN32)
-    HANDLE h = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, static_cast<DWORD>(pid));
+    HANDLE h =
+        OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, static_cast<DWORD>(pid));
     if(!h) {
         return outcome_error(error::no_such_process);
     }
@@ -396,8 +399,8 @@ result<process_info> process::query_info(int pid) {
     FILETIME creation, exit_time, kernel_time, user_time;
     if(GetProcessTimes(h, &creation, &exit_time, &kernel_time, &user_time)) {
         auto to_us = [](FILETIME ft) -> std::uint64_t {
-            std::uint64_t t = (static_cast<std::uint64_t>(ft.dwHighDateTime) << 32)
-                              | ft.dwLowDateTime;
+            std::uint64_t t =
+                (static_cast<std::uint64_t>(ft.dwHighDateTime) << 32) | ft.dwLowDateTime;
             return t / 10;  // 100-ns intervals -> microseconds
         };
         info.utime_us = to_us(user_time);
