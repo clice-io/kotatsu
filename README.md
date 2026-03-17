@@ -12,7 +12,7 @@ It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv)
 - Task composition (`when_all`, `when_any`).
 - Network / IPC wrappers:
   - `stream` base API
-  - `pipe`, `tcp_socket`, `console`
+  - `pipe`, `tcp`, `console`
   - `udp`
 - Process API (`process::spawn`, stdio pipe wiring, async wait/kill).
 - Async filesystem API (`fs::*`) and file watch API (`fs_event`).

@@ -82,7 +82,7 @@ std::string to_error_text(error err) {
     return std::string(err.message());
 }
 
-Result<stream> to_stream(result<tcp_socket> socket) {
+Result<stream> to_stream(result<tcp> socket) {
     if(!socket) {
         return outcome_error(Error(to_error_text(socket.error())));
     }
@@ -110,7 +110,7 @@ Result<stream> open_stdio_stream(int fd, bool readable, event_loop& loop) {
         }
 
         case handle_type::tcp: {
-            auto opened = tcp_socket::open(fd, loop);
+            auto opened = tcp::open(fd, loop);
             if(!opened) {
                 return outcome_error(Error(to_error_text(opened.error())));
             }
@@ -150,7 +150,7 @@ Result<std::unique_ptr<StreamTransport>> StreamTransport::open_stdio(event_loop&
 task<std::unique_ptr<StreamTransport>, Error> StreamTransport::connect_tcp(std::string_view host,
                                                                            int port,
                                                                            event_loop& loop) {
-    auto connected = co_await tcp_socket::connect(host, port, loop);
+    auto connected = co_await tcp::connect(host, port, loop);
     auto channel = to_stream(std::move(connected));
     if(!channel) {
         co_return outcome_error(channel.error());
@@ -160,7 +160,7 @@ task<std::unique_ptr<StreamTransport>, Error> StreamTransport::connect_tcp(std::
 }
 
 Result<std::unique_ptr<StreamTransport>> StreamTransport::open_tcp(int fd, event_loop& loop) {
-    auto channel = to_stream(tcp_socket::open(fd, loop));
+    auto channel = to_stream(tcp::open(fd, loop));
     if(!channel) {
         return outcome_error(channel.error());
     }

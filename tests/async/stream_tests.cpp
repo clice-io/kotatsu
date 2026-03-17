@@ -213,7 +213,7 @@ task<void, error> connect_and_write_pipe(std::string_view name,
     co_return err;
 }
 
-task<std::string, error> accept_and_read(tcp_socket::acceptor acc) {
+task<std::string, error> accept_and_read(tcp::acceptor acc) {
     auto conn_res = co_await acc.accept();
     if(!conn_res.has_value()) {
         event_loop::current().stop();
@@ -227,7 +227,7 @@ task<std::string, error> accept_and_read(tcp_socket::acceptor acc) {
     co_return data;
 }
 
-task<std::size_t, error> accept_and_read_some(tcp_socket::acceptor acc) {
+task<std::size_t, error> accept_and_read_some(tcp::acceptor acc) {
     auto conn_res = co_await acc.accept();
     if(!conn_res.has_value()) {
         event_loop::current().stop();
@@ -242,7 +242,7 @@ task<std::size_t, error> accept_and_read_some(tcp_socket::acceptor acc) {
     co_return data;
 }
 
-task<std::string, error> accept_and_read_once(tcp_socket::acceptor acc, int& done) {
+task<std::string, error> accept_and_read_once(tcp::acceptor acc, int& done) {
     auto conn_res = co_await acc.accept();
     if(!conn_res.has_value()) {
         bump_and_stop(done, 2);
@@ -258,7 +258,7 @@ task<std::string, error> accept_and_read_once(tcp_socket::acceptor acc, int& don
 
 task<void, error>
     connect_and_send(std::string_view host, int port, std::string_view payload, int& done) {
-    auto conn_res = co_await tcp_socket::connect(host, port);
+    auto conn_res = co_await tcp::connect(host, port);
     if(!conn_res.has_value()) {
         bump_and_stop(done, 2);
         co_return outcome_error(conn_res.error());
@@ -272,7 +272,7 @@ task<void, error>
     co_return err;
 }
 
-task<tcp_socket, error> accept_once(tcp_socket::acceptor& acc, int& done) {
+task<tcp, error> accept_once(tcp::acceptor& acc, int& done) {
     auto res = co_await acc.accept();
     bump_and_stop(done, 2);
     co_return res;
@@ -509,7 +509,7 @@ TEST_CASE(accept_and_read) {
     ASSERT_TRUE(port > 0);
 
     event_loop loop;
-    auto acc_res = tcp_socket::listen("127.0.0.1", port, {}, loop);
+    auto acc_res = tcp::listen("127.0.0.1", port, {}, loop);
     ASSERT_TRUE(acc_res.has_value());
 
     auto server = accept_and_read(std::move(*acc_res));
@@ -542,7 +542,7 @@ TEST_CASE(accept_already_waiting) {
     ASSERT_TRUE(port > 0);
 
     event_loop loop;
-    auto acc_res = tcp_socket::listen("127.0.0.1", port, {}, loop);
+    auto acc_res = tcp::listen("127.0.0.1", port, {}, loop);
     ASSERT_TRUE(acc_res.has_value());
 
     auto acc = std::move(*acc_res);
@@ -580,7 +580,7 @@ TEST_CASE(connect_and_write) {
     ASSERT_TRUE(port > 0);
 
     event_loop loop;
-    auto acc_res = tcp_socket::listen("127.0.0.1", port, {}, loop);
+    auto acc_res = tcp::listen("127.0.0.1", port, {}, loop);
     ASSERT_TRUE(acc_res.has_value());
 
     int done = 0;
@@ -595,7 +595,7 @@ TEST_CASE(connect_and_write) {
     auto client_res = client.result();
     EXPECT_TRUE(server_res.has_value());
     EXPECT_EQ(*server_res, "eventide-tcp-connect");
-    EXPECT_FALSE(static_cast<bool>(client_res));
+    EXPECT_FALSE(client_res.has_error());
 }
 
 TEST_CASE(read_some_error) {
@@ -603,7 +603,7 @@ TEST_CASE(read_some_error) {
     ASSERT_TRUE(port > 0);
 
     event_loop loop;
-    auto acc_res = tcp_socket::listen("127.0.0.1", port, {}, loop);
+    auto acc_res = tcp::listen("127.0.0.1", port, {}, loop);
     ASSERT_TRUE(acc_res.has_value());
 
     auto server = accept_and_read_some(std::move(*acc_res));

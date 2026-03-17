@@ -110,7 +110,7 @@ public:
 
 private:
     friend class pipe;
-    friend class tcp_socket;
+    friend class tcp;
 
     explicit acceptor(unique_handle<Self> self) noexcept;
 
@@ -162,13 +162,13 @@ private:
 };
 
 /// TCP socket wrapper.
-class tcp_socket : public stream {
+class tcp : public stream {
 public:
-    tcp_socket() noexcept = default;
+    tcp() noexcept = default;
 
-    explicit tcp_socket(unique_handle<Self> self) noexcept;
+    explicit tcp(unique_handle<Self> self) noexcept;
 
-    using acceptor = eventide::acceptor<tcp_socket>;
+    using acceptor = eventide::acceptor<tcp>;
 
     struct options {
         /// Restrict socket to IPv6 only (ignore IPv4-mapped addresses).
@@ -185,12 +185,12 @@ public:
     };
 
     /// Wrap an existing socket descriptor.
-    static result<tcp_socket> open(int fd, event_loop& loop = event_loop::current());
+    static result<tcp> open(int fd, event_loop& loop = event_loop::current());
 
     /// Connect to a TCP host/port.
-    static task<tcp_socket, error> connect(std::string_view host,
-                                           int port,
-                                           event_loop& loop = event_loop::current());
+    static task<tcp, error> connect(std::string_view host,
+                                    int port,
+                                    event_loop& loop = event_loop::current());
 
     /// Listen on a TCP host/port.
     static result<acceptor> listen(std::string_view host,
