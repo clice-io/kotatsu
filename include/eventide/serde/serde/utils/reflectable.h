@@ -43,7 +43,7 @@ inline auto effective_wire_name(const field_entry& entry, std::string& scratch)
 template <typename T>
 consteval std::size_t count_lookup_fields() {
     return []<std::size_t... Is>(std::index_sequence<Is...>) consteval {
-        return ((schema::is_field_excluded<T, Is>() ? 0 : 1) + ...);
+        return (0 + ... + (schema::is_field_excluded<T, Is>() ? 0 : 1));
     }(std::make_index_sequence<refl::field_count<T>()>{});
 }
 
@@ -51,8 +51,8 @@ consteval std::size_t count_lookup_fields() {
 template <typename T>
 consteval std::size_t count_lookup_aliases() {
     return []<std::size_t... Is>(std::index_sequence<Is...>) consteval {
-        return ((schema::is_field_excluded<T, Is>() ? 0 : schema::detail::alias_count<T, Is>()) +
-                ...);
+        return (0 + ... +
+                (schema::is_field_excluded<T, Is>() ? 0 : schema::detail::alias_count<T, Is>()));
     }(std::make_index_sequence<refl::field_count<T>()>{});
 }
 

@@ -11,10 +11,6 @@ TEST_SUITE(ipc_peer_lifecycle) {
 
 // 5.1 Transport read failure → pending requests receive error
 TEST_CASE(read_fail_pending) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{},
         [](std::string_view payload, ScriptedTransport& channel) {
@@ -44,10 +40,6 @@ TEST_CASE(read_fail_pending) {
 
 // 5.4 close_output() on base Transport → returns unsupported error
 TEST_CASE(close_unsupported) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{});
 
     event_loop loop;
@@ -65,10 +57,6 @@ TEST_CASE(close_unsupported) {
 
 // 5.5 run() with null transport → immediate return
 TEST_CASE(null_transport) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     event_loop loop;
     JsonPeer peer(loop, nullptr);
 
@@ -82,10 +70,6 @@ TEST_CASE(null_transport) {
 
 // 5.6 Double run() → second returns immediately
 TEST_CASE(double_run) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<ScriptedTransport>(std::vector<std::string>{}, nullptr);
     auto* transport_ptr = transport.get();
 

@@ -2,6 +2,7 @@
 
 #include "eventide/zest/zest.h"
 #include "eventide/serde/json/deserializer.h"
+#include "eventide/serde/json/json.h"
 #include "eventide/serde/json/serializer.h"
 #include "eventide/serde/serde/config.h"
 #include "eventide/serde/serde/serde.h"
@@ -118,6 +119,33 @@ TEST_CASE(config_renamed_field_collision_fails_fast) {
     auto status = from_json<camel_config>(R"({"userId":1})", parsed);
     EXPECT_FALSE(status.has_value());
     EXPECT_EQ(status.error(), json::error_kind::invalid_state);
+}
+
+TEST_CASE(convenience_to_string_with_config) {
+    protocol_payload input{.request_id = 5, .user_name = "eve", .nested_info = {.some_value = 1}};
+    auto encoded = json::to_string<camel_config>(input);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"({"requestId":5,"userName":"eve","nestedInfo":{"someValue":1}})");
+}
+
+TEST_CASE(convenience_parse_with_config) {
+    protocol_payload parsed{};
+    auto status = json::parse<camel_config>(
+        R"({"requestId":3,"userName":"dan","nestedInfo":{"someValue":7}})",
+        parsed);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(parsed.request_id, 3);
+    EXPECT_EQ(parsed.user_name, "dan");
+    EXPECT_EQ(parsed.nested_info.some_value, 7);
+}
+
+TEST_CASE(convenience_parse_returning_value_with_config) {
+    auto result = json::parse<protocol_payload, camel_config>(
+        R"({"requestId":2,"userName":"fay","nestedInfo":{"someValue":9}})");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->request_id, 2);
+    EXPECT_EQ(result->user_name, "fay");
+    EXPECT_EQ(result->nested_info.some_value, 9);
 }
 
 };  // TEST_SUITE(serde_simdjson_config)

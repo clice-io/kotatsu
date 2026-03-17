@@ -920,4 +920,102 @@ TEST_CASE(zero_timeout_cancel) {
 
 };  // TEST_SUITE(ipc_peer)
 
+// ============================================================================
+// Group: Peer — camelCase rename for request params and results
+// ============================================================================
+
+TEST_SUITE(ipc_peer_camel_case) {
+
+// Incoming request with camelCase params → handler receives correct values
+// Outgoing response contains camelCase result
+TEST_CASE(request_camel_case_params_and_result) {
+    auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
+        R"({"jsonrpc":"2.0","id":1,"method":"test/rangeAdd","params":{"firstValue":10,"secondValue":20}})",
+    });
+    auto* transport_ptr = transport.get();
+
+    event_loop loop;
+    JsonPeer peer(loop, std::move(transport));
+
+    peer.on_request(
+        [&](RequestContext&, const RangeAddParams& params) -> RequestResult<RangeAddParams> {
+            co_return RangeAddResult{.computed_sum = params.first_value + params.second_value};
+        });
+
+    loop.schedule(peer.run());
+    EXPECT_EQ(loop.run(), 0);
+
+    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    const auto& raw = transport_ptr->outgoing().front();
+
+    // Wire format must use camelCase
+    EXPECT_TRUE(raw.find(R"("computedSum":30)") != std::string::npos);
+    EXPECT_TRUE(raw.find("computed_sum") == std::string::npos);
+}
+
+// Incoming notification with camelCase params
+TEST_CASE(notification_camel_case_params) {
+    auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
+        R"({"jsonrpc":"2.0","method":"test/statusNote","params":{"displayName":"alice","retryCount":3}})",
+    });
+
+    event_loop loop;
+    JsonPeer peer(loop, std::move(transport));
+    std::string seen_name;
+    std::int64_t seen_count = 0;
+
+    peer.on_notification([&](const StatusNoteParams& params) {
+        seen_name = params.display_name;
+        seen_count = params.retry_count;
+    });
+
+    loop.schedule(peer.run());
+    EXPECT_EQ(loop.run(), 0);
+
+    EXPECT_EQ(seen_name, "alice");
+    EXPECT_EQ(seen_count, 3);
+}
+
+// Outgoing request serializes params in camelCase
+TEST_CASE(outbound_request_camel_case) {
+    auto transport = std::make_unique<ScriptedTransport>(
+        std::vector<std::string>{},
+        [](std::string_view payload, ScriptedTransport& channel) {
+            if(payload.find(R"("method":"test/rangeAdd")") != std::string_view::npos) {
+                channel.push_incoming(R"({"jsonrpc":"2.0","id":1,"result":{"computedSum":99}})");
+                channel.close();
+            }
+        });
+    auto* transport_ptr = transport.get();
+
+    event_loop loop;
+    JsonPeer peer(loop, std::move(transport));
+    Result<RangeAddResult> request_result = outcome_error(Error("not completed"));
+
+    auto requester = [&]() -> task<> {
+        request_result = co_await peer.send_request<RangeAddResult>(
+            "test/rangeAdd",
+            RangeAddParams{.first_value = 40, .second_value = 50});
+        co_return;
+    };
+
+    auto request_task = requester();
+    loop.schedule(peer.run());
+    loop.schedule(request_task);
+    EXPECT_EQ(loop.run(), 0);
+
+    // Verify outgoing request used camelCase
+    ASSERT_GE(transport_ptr->outgoing().size(), 1U);
+    const auto& raw = transport_ptr->outgoing().front();
+    EXPECT_TRUE(raw.find(R"("firstValue":40)") != std::string::npos);
+    EXPECT_TRUE(raw.find(R"("secondValue":50)") != std::string::npos);
+    EXPECT_TRUE(raw.find("first_value") == std::string::npos);
+
+    // Verify response deserialized correctly
+    ASSERT_TRUE(request_result.has_value());
+    EXPECT_EQ(request_result->computed_sum, 99);
+}
+
+};  // TEST_SUITE(ipc_peer_camel_case)
+
 }  // namespace eventide::ipc
