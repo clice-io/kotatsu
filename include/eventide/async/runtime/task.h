@@ -65,7 +65,7 @@ struct promise_result<void, void, void> {
 // ============================================================================
 
 struct promise_exception {
-#if ET_ENABLE_EXCEPTIONS
+#if ETD_ENABLE_EXCEPTIONS
     bool has_exception() const noexcept {
         return exception != nullptr;
     }

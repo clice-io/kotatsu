@@ -116,41 +116,41 @@ public:
     }
 
     result_t<value_type> serialize_bytes(std::string_view value) {
-        ET_EXPECTED_TRY_V(auto seq, serialize_seq(value.size()));
+        ETD_EXPECTED_TRY_V(auto seq, serialize_seq(value.size()));
 
         for(unsigned char byte: value) {
-            ET_EXPECTED_TRY(seq.serialize_element(static_cast<std::uint64_t>(byte)));
+            ETD_EXPECTED_TRY(seq.serialize_element(static_cast<std::uint64_t>(byte)));
         }
         return seq.end();
     }
 
     result_t<value_type> serialize_bytes(std::span<const std::byte> value) {
-        ET_EXPECTED_TRY_V(auto seq, serialize_seq(value.size()));
+        ETD_EXPECTED_TRY_V(auto seq, serialize_seq(value.size()));
 
         for(std::byte byte: value) {
-            ET_EXPECTED_TRY(seq.serialize_element(
+            ETD_EXPECTED_TRY(seq.serialize_element(
                 static_cast<std::uint64_t>(std::to_integer<std::uint8_t>(byte))));
         }
         return seq.end();
     }
 
     result_t<SerializeSeq> serialize_seq(std::optional<std::size_t> /*len*/) {
-        ET_EXPECTED_TRY(begin_array());
+        ETD_EXPECTED_TRY(begin_array());
         return SerializeSeq(*this);
     }
 
     result_t<SerializeTuple> serialize_tuple(std::size_t /*len*/) {
-        ET_EXPECTED_TRY(begin_array());
+        ETD_EXPECTED_TRY(begin_array());
         return SerializeTuple(*this);
     }
 
     result_t<SerializeMap> serialize_map(std::optional<std::size_t> /*len*/) {
-        ET_EXPECTED_TRY(begin_object());
+        ETD_EXPECTED_TRY(begin_object());
         return SerializeMap(*this);
     }
 
     result_t<SerializeStruct> serialize_struct(std::string_view /*name*/, std::size_t /*len*/) {
-        ET_EXPECTED_TRY(begin_object());
+        ETD_EXPECTED_TRY(begin_object());
         return SerializeStruct(*this);
     }
 

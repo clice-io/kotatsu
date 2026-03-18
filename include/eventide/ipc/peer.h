@@ -124,9 +124,9 @@ using BincodePeer = Peer<BincodeCodec>;
 
 }  // namespace eventide::ipc
 
-#define ET_IPC_PEER_INL_FROM_HEADER
+#define ETD_IPC_PEER_INL_FROM_HEADER
 #include "eventide/ipc/peer.inl"
-#undef ET_IPC_PEER_INL_FROM_HEADER
+#undef ETD_IPC_PEER_INL_FROM_HEADER
 
 namespace eventide::ipc {
 

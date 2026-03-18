@@ -25,13 +25,13 @@ jobs:
         include: 
           # Windows - MSVC
           - { os_label: windows, os: windows-2025, toolchain: msvc,        build_name: debug,                 cmake_args: "" }
-          - { os_label: windows, os: windows-2025, toolchain: msvc,        build_name: asan,                  cmake_args: "-DET_SANITIZE_ADDRESS=ON" }
-          - { os_label: windows, os: windows-2025, toolchain: msvc,        build_name: no-exceptions,         cmake_args: "-DET_ENABLE_EXCEPTIONS=OFF" }
+          - { os_label: windows, os: windows-2025, toolchain: msvc,        build_name: asan,                  cmake_args: "-DETD_SANITIZE_ADDRESS=ON" }
+          - { os_label: windows, os: windows-2025, toolchain: msvc,        build_name: no-exceptions,         cmake_args: "-DETD_ENABLE_EXCEPTIONS=OFF" }
 
           # Windows - Clang-CL
           - { os_label: windows, os: windows-2025, toolchain: clang-cl,    build_name: debug,                 cmake_args: "" }
           - { os_label: windows, os: windows-2025, toolchain: clang-cl,    build_name: relwithdebinfo,        cmake_args: "" }
-          - { os_label: windows, os: windows-2025, toolchain: clang-cl,    build_name: asan,                  cmake_args: "-DET_SANITIZE_ADDRESS=ON" }
+          - { os_label: windows, os: windows-2025, toolchain: clang-cl,    build_name: asan,                  cmake_args: "-DETD_SANITIZE_ADDRESS=ON" }
 
           # Windows - MinGW
           - { os_label: windows, os: windows-2025, toolchain: mingw,       build_name: debug,                 cmake_args: "" }
@@ -40,23 +40,23 @@ jobs:
           # Linux - GCC
           - { os_label: linux,   os: ubuntu-24.04, toolchain: gcc,         build_name: debug,                 cmake_args: "" }
           - { os_label: linux,   os: ubuntu-24.04, toolchain: gcc,         build_name: relwithdebinfo,        cmake_args: "" }
-          - { os_label: linux,   os: ubuntu-24.04, toolchain: gcc,         build_name: asan,                  cmake_args: "-DET_SANITIZE_ADDRESS=ON" }
-          - { os_label: linux,   os: ubuntu-24.04, toolchain: gcc,         build_name: ubsan,                 cmake_args: "-DET_SANITIZE_UNDEFINED=ON" }
+          - { os_label: linux,   os: ubuntu-24.04, toolchain: gcc,         build_name: asan,                  cmake_args: "-DETD_SANITIZE_ADDRESS=ON" }
+          - { os_label: linux,   os: ubuntu-24.04, toolchain: gcc,         build_name: ubsan,                 cmake_args: "-DETD_SANITIZE_UNDEFINED=ON" }
 
           # Linux - Clang
           - { os_label: linux,   os: ubuntu-24.04, toolchain: clang,       build_name: debug,                 cmake_args: "" }
-          - { os_label: linux,   os: ubuntu-24.04, toolchain: clang,       build_name: asan+ubsan,            cmake_args: "-DET_SANITIZE_ADDRESS=ON -DET_SANITIZE_UNDEFINED=ON" }
-          - { os_label: linux,   os: ubuntu-24.04, toolchain: clang,       build_name: tsan,                  cmake_args: "-DET_SANITIZE_THREAD=ON" }
-          - { os_label: linux,   os: ubuntu-24.04, toolchain: clang,       build_name: no-exceptions,         cmake_args: "-DET_ENABLE_EXCEPTIONS=OFF" }
+          - { os_label: linux,   os: ubuntu-24.04, toolchain: clang,       build_name: asan+ubsan,            cmake_args: "-DETD_SANITIZE_ADDRESS=ON -DETD_SANITIZE_UNDEFINED=ON" }
+          - { os_label: linux,   os: ubuntu-24.04, toolchain: clang,       build_name: tsan,                  cmake_args: "-DETD_SANITIZE_THREAD=ON" }
+          - { os_label: linux,   os: ubuntu-24.04, toolchain: clang,       build_name: no-exceptions,         cmake_args: "-DETD_ENABLE_EXCEPTIONS=OFF" }
 
           # macOS - Apple Clang
           - { os_label: macos,   os: macos-15,     toolchain: apple-clang, build_name: debug,                 cmake_args: "" }
-          - { os_label: macos,   os: macos-15,     toolchain: apple-clang, build_name: asan+ubsan,            cmake_args: "-DET_SANITIZE_ADDRESS=ON -DET_SANITIZE_UNDEFINED=ON" }
+          - { os_label: macos,   os: macos-15,     toolchain: apple-clang, build_name: asan+ubsan,            cmake_args: "-DETD_SANITIZE_ADDRESS=ON -DETD_SANITIZE_UNDEFINED=ON" }
 
           # macOS - Clang
           - { os_label: macos,   os: macos-15,     toolchain: clang,       build_name: debug,                 cmake_args: "" }
           - { os_label: macos,   os: macos-15,     toolchain: clang,       build_name: relwithdebinfo,        cmake_args: "" }
-          - { os_label: macos,   os: macos-15,     toolchain: clang,       build_name: no-exceptions+no-rtti, cmake_args: "-DET_ENABLE_EXCEPTIONS=OFF -DET_ENABLE_RTTI=OFF" }
+          - { os_label: macos,   os: macos-15,     toolchain: clang,       build_name: no-exceptions+no-rtti, cmake_args: "-DETD_ENABLE_EXCEPTIONS=OFF -DETD_ENABLE_RTTI=OFF" }
 
     steps:
       - name: Derive toolchain variables
@@ -145,18 +145,18 @@ jobs:
               -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
               -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
               -DCMAKE_MODULE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
-              -DET_BUILD_ALL_TESTS=ON \
-              -DET_USE_CPM_FOR_TESTS=ON \
-              -DET_ENABLE_CCACHE=ON \
+              -DETD_BUILD_ALL_TESTS=ON \
+              -DETD_USE_CPM_FOR_TESTS=ON \
+              -DETD_ENABLE_CCACHE=ON \
               ${{ matrix.cmake_args }}
           else
             cmake -S . -B "${build_dir}" -G Ninja \
               -DCMAKE_BUILD_TYPE="${{ env.BUILD_TYPE }}" \
               -DCMAKE_C_COMPILER="${{ env.CC }}" \
               -DCMAKE_CXX_COMPILER="${{ env.CXX }}" \
-              -DET_BUILD_ALL_TESTS=ON \
-              -DET_USE_CPM_FOR_TESTS=ON \
-              -DET_ENABLE_CCACHE=ON \
+              -DETD_BUILD_ALL_TESTS=ON \
+              -DETD_USE_CPM_FOR_TESTS=ON \
+              -DETD_ENABLE_CCACHE=ON \
               ${{ matrix.cmake_args }}
           fi
 

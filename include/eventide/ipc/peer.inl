@@ -1,6 +1,6 @@
 #pragma once
 
-#ifndef ET_IPC_PEER_INL_FROM_HEADER
+#ifndef ETD_IPC_PEER_INL_FROM_HEADER
 #include "eventide/ipc/peer.h"
 #endif
 
@@ -30,9 +30,8 @@ constexpr bool has_request_traits_v = requires {
 };
 
 template <typename Params>
-constexpr bool has_notification_traits_v = requires {
-    protocol::NotificationTraits<Params>::method;
-};
+constexpr bool has_notification_traits_v =
+    requires { protocol::NotificationTraits<Params>::method; };
 
 template <typename Callback>
 using request_callback_args_t = callable_args_t<std::remove_cvref_t<Callback>>;
@@ -67,8 +66,7 @@ consteval void validate_request_callback_signature() {
 template <typename Callback>
 consteval void validate_notification_callback_signature() {
     using Args = notification_callback_args_t<Callback>;
-    static_assert(std::tuple_size_v<Args> == 1,
-                  "notification callback should have one parameter");
+    static_assert(std::tuple_size_v<Args> == 1, "notification callback should have one parameter");
 
     using Ret = notification_callback_return_t<Callback>;
     static_assert(std::is_same_v<Ret, void>, "notification callback should return void");
@@ -202,16 +200,14 @@ struct Peer<CodecT>::Self {
                           const protocol::RequestID& id,
                           std::string_view params) {
         if(incoming_requests.contains(id)) {
-            send_error(id,
-                       Error(protocol::ErrorCode::InvalidRequest, "duplicate request id"));
+            send_error(id, Error(protocol::ErrorCode::InvalidRequest, "duplicate request id"));
             return;
         }
 
         auto it = request_callbacks.find(method);
         if(it == request_callbacks.end()) {
-            send_error(
-                id,
-                Error(protocol::ErrorCode::MethodNotFound, "method not found: " + method));
+            send_error(id,
+                       Error(protocol::ErrorCode::MethodNotFound, "method not found: " + method));
             return;
         }
 
@@ -231,8 +227,7 @@ struct Peer<CodecT>::Self {
         incoming_requests.erase(id);
 
         if(guarded_result.is_cancelled()) {
-            send_error(id,
-                       Error(protocol::ErrorCode::RequestCancelled, "request cancelled"));
+            send_error(id, Error(protocol::ErrorCode::RequestCancelled, "request cancelled"));
             co_return;
         }
 
@@ -243,8 +238,7 @@ struct Peer<CodecT>::Self {
 
         auto response = codec.encode_success_response(id, *guarded_result);
         if(!response) {
-            send_error(id,
-                       Error(protocol::ErrorCode::InternalError, response.error().message));
+            send_error(id, Error(protocol::ErrorCode::InternalError, response.error().message));
             co_return;
         }
 
@@ -253,20 +247,22 @@ struct Peer<CodecT>::Self {
 
     void dispatch_incoming_message(std::string_view payload) {
         auto msg = codec.parse_message(payload);
-        std::visit([&](auto& m) {
-            using T = std::remove_cvref_t<decltype(m)>;
-            if constexpr(std::is_same_v<T, IncomingRequest>) {
-                dispatch_request(m.method, m.id, m.params);
-            } else if constexpr(std::is_same_v<T, IncomingNotification>) {
-                dispatch_notification(m.method, m.params);
-            } else if constexpr(std::is_same_v<T, IncomingResponse>) {
-                complete_pending_request(m.id, Result<std::string>(std::move(m.result)));
-            } else if constexpr(std::is_same_v<T, IncomingErrorResponse>) {
-                complete_pending_request(m.id, outcome_error(std::move(m.error)));
-            } else if constexpr(std::is_same_v<T, IncomingParseError>) {
-                send_error(protocol::RequestID{}, m.error);
-            }
-        }, msg);
+        std::visit(
+            [&](auto& m) {
+                using T = std::remove_cvref_t<decltype(m)>;
+                if constexpr(std::is_same_v<T, IncomingRequest>) {
+                    dispatch_request(m.method, m.id, m.params);
+                } else if constexpr(std::is_same_v<T, IncomingNotification>) {
+                    dispatch_notification(m.method, m.params);
+                } else if constexpr(std::is_same_v<T, IncomingResponse>) {
+                    complete_pending_request(m.id, Result<std::string>(std::move(m.result)));
+                } else if constexpr(std::is_same_v<T, IncomingErrorResponse>) {
+                    complete_pending_request(m.id, outcome_error(std::move(m.error)));
+                } else if constexpr(std::is_same_v<T, IncomingParseError>) {
+                    send_error(protocol::RequestID{}, m.error);
+                }
+            },
+            msg);
     }
 };
 
@@ -320,14 +316,14 @@ void Peer<CodecT>::register_request_callback(std::string_view method, RequestCal
 
 template <typename CodecT>
 void Peer<CodecT>::register_notification_callback(std::string_view method,
-                                                   NotificationCallback callback) {
+                                                  NotificationCallback callback) {
     self->notification_callbacks.insert_or_assign(std::string(method), std::move(callback));
 }
 
 template <typename CodecT>
 task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method,
-                                                             std::string params,
-                                                             request_options opts) {
+                                                         std::string params,
+                                                         request_options opts) {
     std::shared_ptr<cancellation_source> timeout_source;
 
     if(opts.timeout.has_value()) {
@@ -348,8 +344,7 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
     }
 
     if(opts.token && opts.token->cancelled()) {
-        co_return outcome_error(
-            Error(protocol::ErrorCode::RequestCancelled, "request cancelled"));
+        co_return outcome_error(Error(protocol::ErrorCode::RequestCancelled, "request cancelled"));
     }
 
     auto request_id = protocol::RequestID(self->next_request_id++);
@@ -381,8 +376,7 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
         co_await std::move(wait_task);
     }
     if(!wait_result.has_value()) {
-        if(auto it = self->pending_requests.find(request_id);
-           it != self->pending_requests.end()) {
+        if(auto it = self->pending_requests.find(request_id); it != self->pending_requests.end()) {
             self->pending_requests.erase(it);
             auto cancel_params_serialized =
                 self->codec.serialize_value(protocol::CancelRequestParams{request_id});
@@ -399,8 +393,7 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
             co_return outcome_error(
                 Error(protocol::ErrorCode::RequestCancelled, "request cancelled"));
         }
-        co_return outcome_error(
-            Error(protocol::ErrorCode::RequestCancelled, "request timed out"));
+        co_return outcome_error(Error(protocol::ErrorCode::RequestCancelled, "request timed out"));
     }
 
     if(!pending->response.has_value()) {
@@ -464,8 +457,8 @@ RequestResult<Params> Peer<CodecT>::send_request(const Params& params, request_o
 template <typename CodecT>
 template <typename ResultT, typename Params>
 task<ResultT, Error> Peer<CodecT>::send_request(std::string_view method,
-                                                    const Params& params,
-                                                    request_options opts) {
+                                                const Params& params,
+                                                request_options opts) {
     auto serialized_params = self->codec.serialize_value(params);
     if(!serialized_params) {
         co_return outcome_error(serialized_params.error());
@@ -564,10 +557,10 @@ void Peer<CodecT>::bind_request_callback(std::string_view method, Callback&& cal
                     method_name = std::string(method),
                     peer = this](const protocol::RequestID& request_id,
                                  std::string_view params_raw,
-                                 cancellation_token token)
-        -> task<std::string, Error> {
+                                 cancellation_token token) -> task<std::string, Error> {
         auto parsed_params = peer->self->codec.template deserialize_value<Params>(
-            params_raw, protocol::ErrorCode::InvalidParams);
+            params_raw,
+            protocol::ErrorCode::InvalidParams);
         if(!parsed_params) {
             co_return outcome_error(parsed_params.error());
         }
@@ -580,8 +573,7 @@ void Peer<CodecT>::bind_request_callback(std::string_view method, Callback&& cal
             co_return outcome_error(result.error());
         }
 
-        auto serialized =
-            peer->self->codec.serialize_value(*result);
+        auto serialized = peer->self->codec.serialize_value(*result);
         if(!serialized) {
             co_return outcome_error(
                 Error(protocol::ErrorCode::InternalError, serialized.error().message));

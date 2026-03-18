@@ -159,10 +159,10 @@ struct serialize_traits<S, eventide::ipc::protocol::Error> {
 
     static auto serialize(S& s, const eventide::ipc::protocol::Error& error)
         -> std::expected<value_type, error_type> {
-        ET_EXPECTED_TRY_V(auto s_struct, s.serialize_struct("Error", 3));
-        ET_EXPECTED_TRY(s_struct.serialize_field("code", error.code));
-        ET_EXPECTED_TRY(s_struct.serialize_field("message", error.message));
-        ET_EXPECTED_TRY(s_struct.serialize_field("data", error.data));
+        ETD_EXPECTED_TRY_V(auto s_struct, s.serialize_struct("Error", 3));
+        ETD_EXPECTED_TRY(s_struct.serialize_field("code", error.code));
+        ETD_EXPECTED_TRY(s_struct.serialize_field("message", error.message));
+        ETD_EXPECTED_TRY(s_struct.serialize_field("data", error.data));
         return s_struct.end();
     }
 };
@@ -173,17 +173,17 @@ struct deserialize_traits<D, eventide::ipc::protocol::Error> {
 
     static auto deserialize(D& d, eventide::ipc::protocol::Error& error)
         -> std::expected<void, error_type> {
-        ET_EXPECTED_TRY_V(auto d_struct, d.deserialize_struct("Error", 3));
+        ETD_EXPECTED_TRY_V(auto d_struct, d.deserialize_struct("Error", 3));
         while(true) {
-            ET_EXPECTED_TRY_V(auto key, d_struct.next_key());
+            ETD_EXPECTED_TRY_V(auto key, d_struct.next_key());
             if(!key.has_value())
                 break;
             if(*key == "code") {
-                ET_EXPECTED_TRY(d_struct.deserialize_value(error.code));
+                ETD_EXPECTED_TRY(d_struct.deserialize_value(error.code));
             } else if(*key == "message") {
-                ET_EXPECTED_TRY(d_struct.deserialize_value(error.message));
+                ETD_EXPECTED_TRY(d_struct.deserialize_value(error.message));
             } else if(*key == "data") {
-                ET_EXPECTED_TRY(d_struct.deserialize_value(error.data));
+                ETD_EXPECTED_TRY(d_struct.deserialize_value(error.data));
             }
         }
         return d_struct.end();

@@ -72,7 +72,7 @@ public:
                 return std::unexpected(deserializer.current_error());
             }
 
-            ET_EXPECTED_TRY_V(auto has_next_result, has_next());
+            ETD_EXPECTED_TRY_V(auto has_next_result, has_next());
 
             if(is_strict_length) {
                 if(consumed_count != expected_length || has_next_result) {
@@ -83,9 +83,9 @@ public:
             }
 
             while(has_next_result) {
-                ET_EXPECTED_TRY(skip_element());
+                ETD_EXPECTED_TRY(skip_element());
 
-                ET_EXPECTED_TRY_V(auto next, has_next());
+                ETD_EXPECTED_TRY_V(auto next, has_next());
                 has_next_result = next;
             }
 
@@ -97,13 +97,13 @@ public:
 
         template <typename Action>
         status_t consume_next(Action&& action) {
-            ET_EXPECTED_TRY_V(auto has_next_result, has_next());
+            ETD_EXPECTED_TRY_V(auto has_next_result, has_next());
             if(!has_next_result) {
                 deserializer.mark_invalid();
                 return std::unexpected(deserializer.current_error());
             }
 
-            ET_EXPECTED_TRY(std::forward<Action>(action)(pending_value));
+            ETD_EXPECTED_TRY(std::forward<Action>(action)(pending_value));
 
             ++iter;
             has_pending_value = false;
@@ -190,7 +190,7 @@ public:
                 return std::unexpected(deserializer.current_error());
             }
 
-            ET_EXPECTED_TRY(deserializer.deserialize_from_value(pending_value, value));
+            ETD_EXPECTED_TRY(deserializer.deserialize_from_value(pending_value, value));
 
             ++iter;
             has_pending_value = false;
@@ -206,7 +206,7 @@ public:
                 return std::unexpected(deserializer.current_error());
             }
 
-            ET_EXPECTED_TRY(deserializer.skip_value(pending_value));
+            ETD_EXPECTED_TRY(deserializer.skip_value(pending_value));
 
             ++iter;
             has_pending_value = false;
@@ -219,7 +219,7 @@ public:
             }
 
             if(has_pending_value) {
-                ET_EXPECTED_TRY(skip_value());
+                ETD_EXPECTED_TRY(skip_value());
             }
 
             while(iter != end_iter) {
@@ -232,7 +232,7 @@ public:
                 }
 
                 auto value = std::move(field).value();
-                ET_EXPECTED_TRY(deserializer.skip_value(value));
+                ETD_EXPECTED_TRY(deserializer.skip_value(value));
 
                 ++iter;
             }
@@ -549,7 +549,7 @@ public:
     }
 
     result_t<DeserializeSeq> deserialize_seq(std::optional<std::size_t> len) {
-        ET_EXPECTED_TRY_V(auto array, open_array());
+        ETD_EXPECTED_TRY_V(auto array, open_array());
 
         DeserializeSeq seq(*this, std::move(array), len.value_or(0), false);
         if(!is_valid) {
@@ -559,7 +559,7 @@ public:
     }
 
     result_t<DeserializeTuple> deserialize_tuple(std::size_t len) {
-        ET_EXPECTED_TRY_V(auto array, open_array());
+        ETD_EXPECTED_TRY_V(auto array, open_array());
 
         DeserializeTuple tuple(*this, std::move(array), len, true);
         if(!is_valid) {
@@ -569,7 +569,7 @@ public:
     }
 
     result_t<DeserializeMap> deserialize_map(std::optional<std::size_t> /*len*/) {
-        ET_EXPECTED_TRY_V(auto object, open_object());
+        ETD_EXPECTED_TRY_V(auto object, open_object());
 
         DeserializeMap map(*this, std::move(object));
         if(!is_valid) {
@@ -579,7 +579,7 @@ public:
     }
 
     result_t<DeserializeStruct> deserialize_struct(std::string_view /*name*/, std::size_t /*len*/) {
-        ET_EXPECTED_TRY_V(auto object, open_object());
+        ETD_EXPECTED_TRY_V(auto object, open_object());
 
         DeserializeStruct s(*this, std::move(object));
         if(!is_valid) {
@@ -589,7 +589,7 @@ public:
     }
 
     result_t<content::Value> capture_dom_value() {
-        ET_EXPECTED_TRY_V(auto raw, consume_raw_json_view());
+        ETD_EXPECTED_TRY_V(auto raw, consume_raw_json_view());
         auto parsed = content::Value::parse(std::string_view(raw.data(), raw.size()));
         if(!parsed) {
             return std::unexpected(json::make_read_error(parsed.error()));
@@ -745,9 +745,9 @@ private:
     }
 
     result_t<simdjson::padded_string_view> consume_raw_json_view() {
-        ET_EXPECTED_TRY_V(auto raw,
-                          read_source<std::string_view>([](auto& doc) { return doc.raw_json(); },
-                                                        [](auto& val) { return val.raw_json(); }));
+        ETD_EXPECTED_TRY_V(auto raw,
+                           read_source<std::string_view>([](auto& doc) { return doc.raw_json(); },
+                                                         [](auto& val) { return val.raw_json(); }));
         return to_padded_subview(raw);
     }
 
@@ -834,7 +834,7 @@ auto from_json(std::string_view json, T& value) -> std::expected<void, error_kin
         return std::unexpected(deserializer.error());
     }
 
-    ET_EXPECTED_TRY(serde::deserialize(deserializer, value));
+    ETD_EXPECTED_TRY(serde::deserialize(deserializer, value));
 
     return deserializer.finish();
 }
@@ -846,7 +846,7 @@ auto from_json(simdjson::padded_string_view json, T& value) -> std::expected<voi
         return std::unexpected(deserializer.error());
     }
 
-    ET_EXPECTED_TRY(serde::deserialize(deserializer, value));
+    ETD_EXPECTED_TRY(serde::deserialize(deserializer, value));
 
     return deserializer.finish();
 }
@@ -855,7 +855,7 @@ template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_json(std::string_view json) -> std::expected<T, error_kind> {
     T value{};
-    ET_EXPECTED_TRY(from_json<Config>(json, value));
+    ETD_EXPECTED_TRY(from_json<Config>(json, value));
     return value;
 }
 
@@ -863,7 +863,7 @@ template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_json(simdjson::padded_string_view json) -> std::expected<T, error_kind> {
     T value{};
-    ET_EXPECTED_TRY(from_json<Config>(json, value));
+    ETD_EXPECTED_TRY(from_json<Config>(json, value));
     return value;
 }
 

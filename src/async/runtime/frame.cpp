@@ -12,13 +12,13 @@ namespace eventide {
 
 namespace {
 
-#if ET_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+#if ETD_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
 thread_local std::vector<std::coroutine_handle<>> pending_frame_destroys;
 #endif
 
 void enqueue_destroy(std::coroutine_handle<> handle) {
     if(handle) {
-#if ET_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+#if ETD_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
         pending_frame_destroys.push_back(handle);
 #else
         handle.destroy();
@@ -27,7 +27,7 @@ void enqueue_destroy(std::coroutine_handle<> handle) {
 }
 
 void drain_pending_destroys() {
-#if ET_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+#if ETD_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
     while(!pending_frame_destroys.empty()) {
         auto queued = std::move(pending_frame_destroys);
         pending_frame_destroys.clear();
@@ -46,7 +46,7 @@ void detail::resume_and_drain(std::coroutine_handle<> handle) {
     if(handle) {
         handle.resume();
     }
-#if ET_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+#if ETD_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
     drain_pending_destroys();
 #endif
 }
@@ -169,7 +169,7 @@ void async_node::resume() {
     if(is_standard_task()) {
         if(!is_cancelled() && !is_failed()) {
             static_cast<standard_task*>(this)->handle().resume();
-#if ET_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+#if ETD_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
             drain_pending_destroys();
 #endif
         }

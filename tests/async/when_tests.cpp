@@ -1337,7 +1337,7 @@ TEST_CASE(all_range_success_no_false_error) {
 // TEST_SUITE: when_exceptions — exception propagation
 // ============================================================================
 
-#if ET_ENABLE_EXCEPTIONS
+#if ETD_ENABLE_EXCEPTIONS
 
 TEST_SUITE(when_exceptions) {
 
@@ -1570,7 +1570,7 @@ TEST_CASE(exception_in_scope_cancels_siblings) {
 
 };  // TEST_SUITE(when_exceptions)
 
-#endif  // ET_ENABLE_EXCEPTIONS
+#endif  // ETD_ENABLE_EXCEPTIONS
 
 // ============================================================================
 // TEST_SUITE: async_scope

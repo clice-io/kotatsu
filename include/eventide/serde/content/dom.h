@@ -19,7 +19,7 @@
 #if __has_include(<yyjson.h>)
 #include <yyjson.h>
 #else
-#error "yyjson.h not found. Enable ET_SERDE_ENABLE_YYJSON or add yyjson include paths."
+#error "yyjson.h not found. Enable ETD_SERDE_ENABLE_YYJSON or add yyjson include paths."
 #endif
 
 #include "eventide/serde/content/error.h"
@@ -596,7 +596,7 @@ private:
 
 }  // namespace eventide::serde::content
 
-#ifndef ET_SERDE_CONTENT_DOM_INL_INCLUDED
-#define ET_SERDE_CONTENT_DOM_INL_INCLUDED 1
+#ifndef ETD_SERDE_CONTENT_DOM_INL_INCLUDED
+#define ETD_SERDE_CONTENT_DOM_INL_INCLUDED 1
 #include "eventide/serde/content/dom.inl"
 #endif

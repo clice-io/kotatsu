@@ -20,7 +20,7 @@
 #include <flatbuffers/flatbuffers.h>
 #else
 #error                                                                                             \
-    "flatbuffers/flatbuffers.h not found. Enable ET_SERDE_ENABLE_FLATBUFFERS or add flatbuffers include paths."
+    "flatbuffers/flatbuffers.h not found. Enable ETD_SERDE_ENABLE_FLATBUFFERS or add flatbuffers include paths."
 #endif
 
 namespace eventide::serde::flatbuffers {

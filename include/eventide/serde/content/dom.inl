@@ -1,7 +1,7 @@
 #pragma once
 
-#ifndef ET_SERDE_CONTENT_DOM_INL_INCLUDED
-#define ET_SERDE_CONTENT_DOM_INL_INCLUDED 1
+#ifndef ETD_SERDE_CONTENT_DOM_INL_INCLUDED
+#define ETD_SERDE_CONTENT_DOM_INL_INCLUDED 1
 #endif
 
 #include "eventide/serde/content/dom.h"
@@ -474,8 +474,7 @@ inline bool ObjectRef::iterator::operator==(const iterator& other) const noexcep
 }
 
 inline OwnedDoc::OwnedDoc(const OwnedDoc& other) noexcept :
-    tagged_doc_handle(other.tagged_doc_handle),
-    ref_count(other.ref_count),
+    tagged_doc_handle(other.tagged_doc_handle), ref_count(other.ref_count),
     external_owner(other.external_owner) {
     retain();
 }
@@ -494,8 +493,7 @@ inline auto OwnedDoc::operator=(const OwnedDoc& other) noexcept -> OwnedDoc& {
 }
 
 inline OwnedDoc::OwnedDoc(OwnedDoc&& other) noexcept :
-    tagged_doc_handle(other.tagged_doc_handle),
-    ref_count(other.ref_count),
+    tagged_doc_handle(other.tagged_doc_handle), ref_count(other.ref_count),
     external_owner(other.external_owner) {
     other.tagged_doc_handle = 0;
     other.ref_count = nullptr;
@@ -627,9 +625,7 @@ inline OwnedDoc::OwnedDoc(std::uintptr_t tagged_doc_handle,
                           int* ref_count,
                           bool retain_owner,
                           bool external_owner) noexcept :
-    tagged_doc_handle(tagged_doc_handle),
-    ref_count(ref_count),
-    external_owner(external_owner) {
+    tagged_doc_handle(tagged_doc_handle), ref_count(ref_count), external_owner(external_owner) {
     if(retain_owner) {
         retain();
     }
@@ -679,12 +675,11 @@ inline auto Value::parse(std::string_view json, parse_options options)
     -> std::expected<Value, yyjson_read_code> {
     auto flags = static_cast<yyjson_read_flag>(options.flags & ~YYJSON_READ_INSITU);
     yyjson_read_err err{};
-    yyjson_doc* raw_doc =
-        yyjson_read_opts(const_cast<char*>(json.data()),
-                         json.size(),
-                         flags,
-                         options.allocator,
-                         &err);
+    yyjson_doc* raw_doc = yyjson_read_opts(const_cast<char*>(json.data()),
+                                           json.size(),
+                                           flags,
+                                           options.allocator,
+                                           &err);
     if(raw_doc == nullptr) {
         return std::unexpected(err.code);
     } else {
@@ -745,9 +740,9 @@ inline auto Value::copy_of(ValueRef source) -> std::expected<Value, error_kind> 
         if(raw_doc == nullptr) {
             return std::unexpected(error_kind::allocation_failed);
         } else {
-            yyjson_mut_val* copied_root = source.mutable_ref()
-                                              ? yyjson_mut_val_mut_copy(raw_doc, source.mutable_ptr())
-                                              : yyjson_val_mut_copy(raw_doc, source.immutable_ptr());
+            yyjson_mut_val* copied_root =
+                source.mutable_ref() ? yyjson_mut_val_mut_copy(raw_doc, source.mutable_ptr())
+                                     : yyjson_val_mut_copy(raw_doc, source.immutable_ptr());
             if(copied_root == nullptr) {
                 yyjson_mut_doc_free(raw_doc);
                 return std::unexpected(error_kind::allocation_failed);
@@ -771,16 +766,10 @@ inline auto Value::to_json_string() const -> std::expected<std::string, yyjson_w
     } else {
         yyjson_write_err err{};
         size_t len = 0;
-        char* out = mutable_ref() ? yyjson_mut_val_write_opts(mutable_ptr(),
-                                                              YYJSON_WRITE_NOFLAG,
-                                                              nullptr,
-                                                              &len,
-                                                              &err)
-                                  : yyjson_val_write_opts(immutable_ptr(),
-                                                          YYJSON_WRITE_NOFLAG,
-                                                          nullptr,
-                                                          &len,
-                                                          &err);
+        char* out =
+            mutable_ref()
+                ? yyjson_mut_val_write_opts(mutable_ptr(), YYJSON_WRITE_NOFLAG, nullptr, &len, &err)
+                : yyjson_val_write_opts(immutable_ptr(), YYJSON_WRITE_NOFLAG, nullptr, &len, &err);
         if(out == nullptr) {
             return std::unexpected(err.code);
         } else {
@@ -933,7 +922,7 @@ inline auto Value::set(T&& value) -> status_t {
 }
 
 template <typename T>
-    requires(dom_writable_value<T> && !std::same_as<std::remove_cvref_t<T>, Value>)
+    requires (dom_writable_value<T> && !std::same_as<std::remove_cvref_t<T>, Value>)
 inline auto Value::operator=(T&& value) -> Value& {
     auto status = set(std::forward<T>(value));
     assert(status.has_value());
@@ -1233,7 +1222,8 @@ inline Array Document::make_array() {
     }
 
     const auto tagged_value_handle = reinterpret_cast<std::uintptr_t>(arr) | std::uintptr_t{1};
-    const auto tagged_doc_handle = reinterpret_cast<std::uintptr_t>(detached_doc) | std::uintptr_t{1};
+    const auto tagged_doc_handle =
+        reinterpret_cast<std::uintptr_t>(detached_doc) | std::uintptr_t{1};
     return Array(tagged_value_handle, tagged_doc_handle, ref_count, false, true);
 }
 
@@ -1266,7 +1256,8 @@ inline Object Document::make_object() {
     }
 
     const auto tagged_value_handle = reinterpret_cast<std::uintptr_t>(obj) | std::uintptr_t{1};
-    const auto tagged_doc_handle = reinterpret_cast<std::uintptr_t>(detached_doc) | std::uintptr_t{1};
+    const auto tagged_doc_handle =
+        reinterpret_cast<std::uintptr_t>(detached_doc) | std::uintptr_t{1};
     return Object(tagged_value_handle, tagged_doc_handle, ref_count, false, true);
 }
 

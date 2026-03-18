@@ -30,7 +30,7 @@
 #include <flatbuffers/flatbuffers.h>
 #else
 #error                                                                                             \
-    "flatbuffers/flatbuffers.h not found. Enable ET_SERDE_ENABLE_FLATBUFFERS or add flatbuffers include paths."
+    "flatbuffers/flatbuffers.h not found. Enable ETD_SERDE_ENABLE_FLATBUFFERS or add flatbuffers include paths."
 #endif
 
 namespace eventide::serde::flatbuffers {
@@ -109,7 +109,7 @@ public:
 
         template <typename T>
         status_t serialize_element(const T& value) {
-            ET_EXPECTED_TRY_V(auto encoded, serde::serialize(serializer, value));
+            ETD_EXPECTED_TRY_V(auto encoded, serde::serialize(serializer, value));
             elements.push_back(encoded);
             return {};
         }
@@ -133,7 +133,7 @@ public:
 
         template <typename T>
         status_t serialize_element(const T& value) {
-            ET_EXPECTED_TRY_V(auto field_id, detail::field_voffset(next_index));
+            ETD_EXPECTED_TRY_V(auto field_id, detail::field_voffset(next_index));
             ++next_index;
 
             return serializer.collect_field(writers, field_id, value);
@@ -162,10 +162,10 @@ public:
         status_t serialize_entry(const K& key, const V& value) {
             std::vector<std::function<void()>> writers;
 
-            ET_EXPECTED_TRY(serializer.collect_field(writers, detail::first_field, key));
-            ET_EXPECTED_TRY_V(auto value_field, detail::field_voffset(1));
-            ET_EXPECTED_TRY(serializer.collect_field(writers, value_field, value));
-            ET_EXPECTED_TRY_V(auto entry, serializer.finish_table(writers));
+            ETD_EXPECTED_TRY(serializer.collect_field(writers, detail::first_field, key));
+            ETD_EXPECTED_TRY_V(auto value_field, detail::field_voffset(1));
+            ETD_EXPECTED_TRY(serializer.collect_field(writers, value_field, value));
+            ETD_EXPECTED_TRY_V(auto entry, serializer.finish_table(writers));
             entries.push_back(entry);
 
             return {};
@@ -190,7 +190,7 @@ public:
 
         template <typename T>
         status_t serialize_field(std::string_view /*key*/, const T& value) {
-            ET_EXPECTED_TRY_V(auto field_id, detail::field_voffset(next_index));
+            ETD_EXPECTED_TRY_V(auto field_id, detail::field_voffset(next_index));
             ++next_index;
             return serializer.collect_field(writers, field_id, value);
         }
@@ -211,7 +211,7 @@ public:
     auto bytes(const T& value) -> result_t<std::vector<std::uint8_t>> {
         builder.Clear();
 
-        ET_EXPECTED_TRY_V(auto root, serde::serialize(*this, value));
+        ETD_EXPECTED_TRY_V(auto root, serde::serialize(*this, value));
 
         builder.Finish(root, detail::buffer_identifier);
         const auto* begin = builder.GetBufferPointer();
@@ -327,7 +327,7 @@ private:
             if(serializer == nullptr || writers == nullptr) {
                 return std::unexpected(object_error_code::invalid_state);
             }
-            ET_EXPECTED_TRY_V(auto field_id, detail::field_voffset(current_index));
+            ETD_EXPECTED_TRY_V(auto field_id, detail::field_voffset(current_index));
             return serializer->collect_field(*writers, field_id, field_value);
         }
     };
@@ -335,7 +335,7 @@ private:
     template <typename T>
     auto encode_boxed(const T& value) -> result_t<value_type> {
         std::vector<std::function<void()>> writers;
-        ET_EXPECTED_TRY(collect_field(writers, detail::first_field, value));
+        ETD_EXPECTED_TRY(collect_field(writers, detail::first_field, value));
         return finish_table(writers);
     }
 
@@ -464,10 +464,10 @@ private:
         offsets.reserve(entries.size());
         for(const auto& [key, mapped]: entries) {
             std::vector<std::function<void()>> writers;
-            ET_EXPECTED_TRY(collect_field(writers, detail::first_field, key));
-            ET_EXPECTED_TRY_V(auto value_field, detail::field_voffset(1));
-            ET_EXPECTED_TRY(collect_field(writers, value_field, mapped));
-            ET_EXPECTED_TRY_V(auto entry, finish_table(writers));
+            ETD_EXPECTED_TRY(collect_field(writers, detail::first_field, key));
+            ETD_EXPECTED_TRY_V(auto value_field, detail::field_voffset(1));
+            ETD_EXPECTED_TRY(collect_field(writers, value_field, mapped));
+            ETD_EXPECTED_TRY_V(auto entry, finish_table(writers));
             offsets.push_back(entry);
         }
 
@@ -559,7 +559,7 @@ private:
                 elements.reserve(value.size());
             }
             for(const auto& element: value) {
-                ET_EXPECTED_TRY_V(auto tuple, encode_tuple_like(element));
+                ETD_EXPECTED_TRY_V(auto tuple, encode_tuple_like(element));
                 elements.push_back(tuple);
             }
             auto offset = builder.CreateVector(elements);
@@ -582,7 +582,7 @@ private:
                 elements.reserve(value.size());
             }
             for(const auto& element: value) {
-                ET_EXPECTED_TRY_V(auto table, encode_table(element));
+                ETD_EXPECTED_TRY_V(auto table, encode_table(element));
                 elements.push_back(table);
             }
             auto offset = builder.CreateVector(elements);
@@ -594,7 +594,7 @@ private:
                 elements.reserve(value.size());
             }
             for(const auto& element: value) {
-                ET_EXPECTED_TRY_V(auto boxed, encode_boxed(element));
+                ETD_EXPECTED_TRY_V(auto boxed, encode_boxed(element));
                 elements.push_back(boxed);
             }
             auto offset = builder.CreateVector(elements);
@@ -666,20 +666,20 @@ private:
             push_add_offset(writers, field, offset.o);
             return {};
         } else if constexpr(is_specialization_of<std::variant, U>) {
-            ET_EXPECTED_TRY_V(auto offset, encode_variant(value));
+            ETD_EXPECTED_TRY_V(auto offset, encode_variant(value));
             push_add_offset(writers, field, offset.o);
             return {};
         } else if constexpr(std::ranges::input_range<clean_t>) {
             constexpr auto kind = eventide::format_kind<clean_t>;
             if constexpr(kind == eventide::range_format::map) {
-                ET_EXPECTED_TRY_V(auto offset, encode_map(value));
+                ETD_EXPECTED_TRY_V(auto offset, encode_map(value));
                 push_add_offset(writers, field, offset.o);
                 return {};
             } else {
                 return collect_sequence_field(writers, field, value);
             }
         } else if constexpr(is_pair_v<clean_t> || is_tuple_v<clean_t>) {
-            ET_EXPECTED_TRY_V(auto offset, encode_tuple_like(value));
+            ETD_EXPECTED_TRY_V(auto offset, encode_tuple_like(value));
             push_add_offset(writers, field, offset.o);
             return {};
         } else if constexpr(can_inline_struct_v<clean_t>) {
@@ -687,7 +687,7 @@ private:
             writers.push_back([this, field, copy] { builder.AddStruct(field, &copy); });
             return {};
         } else if constexpr(refl::reflectable_class<clean_t>) {
-            ET_EXPECTED_TRY_V(auto offset, encode_table(value));
+            ETD_EXPECTED_TRY_V(auto offset, encode_table(value));
             push_add_offset(writers, field, offset.o);
             return {};
         } else {

@@ -171,7 +171,7 @@ struct signal_await : uv::await_op<signal_await> {
 
 }  // namespace
 
-#define ET_DEFINE_WATCHER_SPECIAL_MEMBERS(WatcherType)                                             \
+#define ETD_DEFINE_WATCHER_SPECIAL_MEMBERS(WatcherType)                                            \
     WatcherType::WatcherType() noexcept = default;                                                 \
     WatcherType::WatcherType(unique_handle<Self> self) noexcept : self(std::move(self)) {}         \
     WatcherType::~WatcherType() = default;                                                         \
@@ -181,13 +181,13 @@ struct signal_await : uv::await_op<signal_await> {
         return self.get();                                                                         \
     }
 
-ET_DEFINE_WATCHER_SPECIAL_MEMBERS(timer)
-ET_DEFINE_WATCHER_SPECIAL_MEMBERS(signal)
-ET_DEFINE_WATCHER_SPECIAL_MEMBERS(idle)
-ET_DEFINE_WATCHER_SPECIAL_MEMBERS(prepare)
-ET_DEFINE_WATCHER_SPECIAL_MEMBERS(check)
+ETD_DEFINE_WATCHER_SPECIAL_MEMBERS(timer)
+ETD_DEFINE_WATCHER_SPECIAL_MEMBERS(signal)
+ETD_DEFINE_WATCHER_SPECIAL_MEMBERS(idle)
+ETD_DEFINE_WATCHER_SPECIAL_MEMBERS(prepare)
+ETD_DEFINE_WATCHER_SPECIAL_MEMBERS(check)
 
-#undef ET_DEFINE_WATCHER_SPECIAL_MEMBERS
+#undef ETD_DEFINE_WATCHER_SPECIAL_MEMBERS
 
 timer timer::create(event_loop& loop) {
     auto self = Self::make();
@@ -298,13 +298,13 @@ task<void, error> signal::wait() {
     co_return outcome_value();
 }
 
-#define ET_DEFINE_TICK_WATCHER_METHODS(WatcherType,                                                \
-                                       HandleType,                                                 \
-                                       AwaiterType,                                                \
-                                       INIT_FN,                                                    \
-                                       START_FN,                                                   \
-                                       STOP_FN,                                                    \
-                                       NameLiteral)                                                \
+#define ETD_DEFINE_TICK_WATCHER_METHODS(WatcherType,                                               \
+                                        HandleType,                                                \
+                                        AwaiterType,                                               \
+                                        INIT_FN,                                                   \
+                                        START_FN,                                                  \
+                                        STOP_FN,                                                   \
+                                        NameLiteral)                                               \
     WatcherType WatcherType::create(event_loop& loop) {                                            \
         auto self = Self::make();                                                                  \
         auto& handle = self->handle;                                                               \
@@ -348,31 +348,31 @@ task<void, error> signal::wait() {
         co_await AwaiterType{self.get()};                                                          \
     }
 
-ET_DEFINE_TICK_WATCHER_METHODS(idle,
-                               uv_idle_t,
-                               idle_await,
-                               uv::idle_init,
-                               uv::idle_start,
-                               uv::idle_stop,
-                               "idle")
+ETD_DEFINE_TICK_WATCHER_METHODS(idle,
+                                uv_idle_t,
+                                idle_await,
+                                uv::idle_init,
+                                uv::idle_start,
+                                uv::idle_stop,
+                                "idle")
 
-ET_DEFINE_TICK_WATCHER_METHODS(prepare,
-                               uv_prepare_t,
-                               prepare_await,
-                               uv::prepare_init,
-                               uv::prepare_start,
-                               uv::prepare_stop,
-                               "prepare")
+ETD_DEFINE_TICK_WATCHER_METHODS(prepare,
+                                uv_prepare_t,
+                                prepare_await,
+                                uv::prepare_init,
+                                uv::prepare_start,
+                                uv::prepare_stop,
+                                "prepare")
 
-ET_DEFINE_TICK_WATCHER_METHODS(check,
-                               uv_check_t,
-                               check_await,
-                               uv::check_init,
-                               uv::check_start,
-                               uv::check_stop,
-                               "check")
+ETD_DEFINE_TICK_WATCHER_METHODS(check,
+                                uv_check_t,
+                                check_await,
+                                uv::check_init,
+                                uv::check_start,
+                                uv::check_stop,
+                                "check")
 
-#undef ET_DEFINE_TICK_WATCHER_METHODS
+#undef ETD_DEFINE_TICK_WATCHER_METHODS
 
 task<> sleep(std::chrono::milliseconds timeout, event_loop& loop) {
     auto t = timer::create(loop);

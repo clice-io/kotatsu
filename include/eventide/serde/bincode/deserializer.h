@@ -49,12 +49,12 @@ public:
 
         template <typename T>
         status_t deserialize_element(T& value) {
-            ET_EXPECTED_TRY_V(auto has_next_value, has_next());
+            ETD_EXPECTED_TRY_V(auto has_next_value, has_next());
             if(!has_next_value) {
                 return deserializer.mark_invalid(error_type::invalid_state);
             }
 
-            ET_EXPECTED_TRY(serde::deserialize(deserializer, value));
+            ETD_EXPECTED_TRY(serde::deserialize(deserializer, value));
 
             ++read_count;
             return {};
@@ -94,7 +94,7 @@ public:
                 return deserializer.mark_invalid(error_type::invalid_state);
             }
 
-            ET_EXPECTED_TRY(serde::deserialize(deserializer, value));
+            ETD_EXPECTED_TRY(serde::deserialize(deserializer, value));
 
             ++read_count;
             return {};
@@ -183,7 +183,7 @@ public:
     }
 
     status_t deserialize_bool(bool& value) {
-        ET_EXPECTED_TRY_V(auto parsed, read_u8());
+        ETD_EXPECTED_TRY_V(auto parsed, read_u8());
 
         if(parsed > 1U) {
             return mark_invalid(error_type::type_mismatch);
@@ -194,7 +194,7 @@ public:
 
     template <serde::int_like T>
     status_t deserialize_int(T& value) {
-        ET_EXPECTED_TRY_V(auto parsed, read_integral<std::int64_t>());
+        ETD_EXPECTED_TRY_V(auto parsed, read_integral<std::int64_t>());
 
         auto narrowed = serde::detail::narrow_int<T>(parsed, error_type::number_out_of_range);
         if(!narrowed) {
@@ -206,7 +206,7 @@ public:
 
     template <serde::uint_like T>
     status_t deserialize_uint(T& value) {
-        ET_EXPECTED_TRY_V(auto parsed, read_integral<std::uint64_t>());
+        ETD_EXPECTED_TRY_V(auto parsed, read_integral<std::uint64_t>());
 
         auto narrowed = serde::detail::narrow_uint<T>(parsed, error_type::number_out_of_range);
         if(!narrowed) {
@@ -218,7 +218,7 @@ public:
 
     template <serde::floating_like T>
     status_t deserialize_float(T& value) {
-        ET_EXPECTED_TRY_V(auto raw, read_integral<std::uint64_t>());
+        ETD_EXPECTED_TRY_V(auto raw, read_integral<std::uint64_t>());
 
         const double parsed = std::bit_cast<double>(raw);
         auto narrowed = serde::detail::narrow_float<T>(parsed, error_type::number_out_of_range);
@@ -230,13 +230,13 @@ public:
     }
 
     status_t deserialize_char(char& value) {
-        ET_EXPECTED_TRY_V(auto parsed, read_u8());
+        ETD_EXPECTED_TRY_V(auto parsed, read_u8());
         value = static_cast<char>(parsed);
         return {};
     }
 
     status_t deserialize_str(std::string& value) {
-        ET_EXPECTED_TRY_V(auto length, read_length());
+        ETD_EXPECTED_TRY_V(auto length, read_length());
 
         if(offset + length > bytes.size()) {
             return mark_invalid(error_type::unexpected_eof);
@@ -254,7 +254,7 @@ public:
     }
 
     status_t deserialize_bytes(std::vector<std::byte>& value) {
-        ET_EXPECTED_TRY_V(auto length, read_length());
+        ETD_EXPECTED_TRY_V(auto length, read_length());
 
         if(offset + length > bytes.size()) {
             return mark_invalid(error_type::unexpected_eof);
@@ -272,7 +272,7 @@ public:
     }
 
     result_t<bool> deserialize_none() {
-        ET_EXPECTED_TRY_V(auto tag, read_u8());
+        ETD_EXPECTED_TRY_V(auto tag, read_u8());
 
         if(tag == 0U) {
             return true;
@@ -286,7 +286,7 @@ public:
 
     template <typename... Ts>
     status_t deserialize_variant(std::variant<Ts...>& value) {
-        ET_EXPECTED_TRY_V(auto index, read_integral<std::uint32_t>());
+        ETD_EXPECTED_TRY_V(auto index, read_integral<std::uint32_t>());
 
         constexpr std::size_t variant_size = sizeof...(Ts);
         if(index >= variant_size) {
@@ -318,7 +318,7 @@ public:
     }
 
     result_t<DeserializeSeq> deserialize_seq(std::optional<std::size_t> len) {
-        ET_EXPECTED_TRY_V(auto parsed, read_length());
+        ETD_EXPECTED_TRY_V(auto parsed, read_length());
 
         if(len.has_value() && *len != parsed) {
             return std::unexpected(error_type::invalid_state);
@@ -352,7 +352,7 @@ private:
             return {};
         } else if constexpr(std::default_initializable<alt_t>) {
             alt_t alt{};
-            ET_EXPECTED_TRY(serde::deserialize(*this, alt));
+            ETD_EXPECTED_TRY(serde::deserialize(*this, alt));
 
             value = std::move(alt);
             return {};
@@ -393,7 +393,7 @@ private:
     }
 
     result_t<std::size_t> read_length() {
-        ET_EXPECTED_TRY_V(auto raw, read_integral<std::uint64_t>());
+        ETD_EXPECTED_TRY_V(auto raw, read_integral<std::uint64_t>());
 
         if(raw > static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)())) {
             (void)mark_invalid(error_type::number_out_of_range);
@@ -427,8 +427,8 @@ auto from_bytes(std::span<const std::byte> bytes, T& value) -> std::expected<voi
         return std::unexpected(deserializer.error());
     }
 
-    ET_EXPECTED_TRY(serde::deserialize(deserializer, value));
-    ET_EXPECTED_TRY(deserializer.finish());
+    ETD_EXPECTED_TRY(serde::deserialize(deserializer, value));
+    ETD_EXPECTED_TRY(deserializer.finish());
     return {};
 }
 
@@ -454,7 +454,7 @@ template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_bytes(std::span<const std::byte> bytes) -> std::expected<T, error_kind> {
     T value{};
-    ET_EXPECTED_TRY(from_bytes<Config>(bytes, value));
+    ETD_EXPECTED_TRY(from_bytes<Config>(bytes, value));
     return value;
 }
 
@@ -462,7 +462,7 @@ template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_bytes(std::span<const std::uint8_t> bytes) -> std::expected<T, error_kind> {
     T value{};
-    ET_EXPECTED_TRY(from_bytes<Config>(bytes, value));
+    ETD_EXPECTED_TRY(from_bytes<Config>(bytes, value));
     return value;
 }
 
@@ -492,7 +492,7 @@ constexpr auto deserialize_sequential_struct_field(D& deserializer, Field field)
     using field_t = typename std::remove_cvref_t<decltype(field)>::type;
 
     if constexpr(!annotated_type<field_t>) {
-        ET_EXPECTED_TRY(serde::deserialize(deserializer, field.value()));
+        ETD_EXPECTED_TRY(serde::deserialize(deserializer, field.value()));
         return {};
     } else {
         using attrs_t = typename std::remove_cvref_t<field_t>::attrs;
@@ -527,13 +527,13 @@ constexpr auto deserialize_sequential_struct_field(D& deserializer, Field field)
                     static_assert(std::default_initializable<consume_t>,
                                   "bincode behavior::skip_if requires default-initializable field");
                     consume_t skipped{};
-                    ET_EXPECTED_TRY(serde::deserialize(deserializer, skipped));
+                    ETD_EXPECTED_TRY(serde::deserialize(deserializer, skipped));
                     return {};
                 }
             }
 
             // Keep annotation wrapper so tagged/provider attrs are still honored.
-            ET_EXPECTED_TRY(serde::deserialize(deserializer, field.value()));
+            ETD_EXPECTED_TRY(serde::deserialize(deserializer, field.value()));
             return {};
         }
     }
@@ -586,7 +586,7 @@ struct deserialize_traits<bincode::Deserializer<Config>, T> {
         static_assert(eventide::detail::map_insertable<map_t, key_t, mapped_t>,
                       "bincode map deserialization requires insertable map container");
 
-        ET_EXPECTED_TRY_V(auto length, deserializer.read_length_prefix());
+        ETD_EXPECTED_TRY_V(auto length, deserializer.read_length_prefix());
 
         if constexpr(requires { value.clear(); }) {
             value.clear();
@@ -594,10 +594,10 @@ struct deserialize_traits<bincode::Deserializer<Config>, T> {
 
         for(std::size_t i = 0; i < length; ++i) {
             key_t key{};
-            ET_EXPECTED_TRY(serde::deserialize(deserializer, key));
+            ETD_EXPECTED_TRY(serde::deserialize(deserializer, key));
 
             mapped_t mapped{};
-            ET_EXPECTED_TRY(serde::deserialize(deserializer, mapped));
+            ETD_EXPECTED_TRY(serde::deserialize(deserializer, mapped));
 
             eventide::detail::insert_map_entry(value, std::move(key), std::move(mapped));
         }

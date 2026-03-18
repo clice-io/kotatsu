@@ -44,7 +44,7 @@ public:
                 return serializer.mark_invalid(error_type::invalid_state);
             }
 
-            ET_EXPECTED_TRY(serde::serialize(serializer, value));
+            ETD_EXPECTED_TRY(serde::serialize(serializer, value));
 
             ++written_count;
             return {};
@@ -56,8 +56,8 @@ public:
                 return serializer.mark_invalid(error_type::invalid_state);
             }
 
-            ET_EXPECTED_TRY(serde::serialize(serializer, key));
-            ET_EXPECTED_TRY(serde::serialize(serializer, value));
+            ETD_EXPECTED_TRY(serde::serialize(serializer, key));
+            ETD_EXPECTED_TRY(serde::serialize(serializer, value));
 
             ++written_count;
             return {};
@@ -114,7 +114,7 @@ public:
 
     template <typename T>
     result_t<value_type> serialize_some(const T& value) {
-        ET_EXPECTED_TRY(write_u8(1));
+        ETD_EXPECTED_TRY(write_u8(1));
         return serde::serialize(*this, value);
     }
 
@@ -140,7 +140,7 @@ public:
     }
 
     result_t<value_type> serialize_str(std::string_view value) {
-        ET_EXPECTED_TRY(write_length(value.size()));
+        ETD_EXPECTED_TRY(write_length(value.size()));
 
         if(!is_valid) {
             return std::unexpected(current_error());
@@ -157,7 +157,7 @@ public:
     }
 
     result_t<value_type> serialize_bytes(std::span<const std::byte> value) {
-        ET_EXPECTED_TRY(write_length(value.size()));
+        ETD_EXPECTED_TRY(write_length(value.size()));
 
         if(!is_valid) {
             return std::unexpected(current_error());
@@ -174,7 +174,7 @@ public:
             return mark_invalid(error_type::invalid_variant_index);
         }
 
-        ET_EXPECTED_TRY(write_integral(static_cast<std::uint32_t>(variant_index)));
+        ETD_EXPECTED_TRY(write_integral(static_cast<std::uint32_t>(variant_index)));
 
         std::expected<void, error_type> payload_status{};
         std::visit(
@@ -204,7 +204,7 @@ public:
             return std::unexpected(error_type::invalid_state);
         }
 
-        ET_EXPECTED_TRY(write_length(*len));
+        ETD_EXPECTED_TRY(write_length(*len));
         return SerializeSeq(*this, *len);
     }
 
@@ -217,7 +217,7 @@ public:
             return std::unexpected(error_type::invalid_state);
         }
 
-        ET_EXPECTED_TRY(write_length(*len));
+        ETD_EXPECTED_TRY(write_length(*len));
         return SerializeMap(*this, *len);
     }
 
@@ -273,7 +273,7 @@ private:
 template <typename Config = config::default_config, typename T>
 auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, error_kind> {
     Serializer<Config> serializer;
-    ET_EXPECTED_TRY(serde::serialize(serializer, value));
+    ETD_EXPECTED_TRY(serde::serialize(serializer, value));
     if(!serializer.valid()) {
         return std::unexpected(serializer.error());
     }

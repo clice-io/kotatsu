@@ -26,7 +26,7 @@
 #include <flatbuffers/flatbuffers.h>
 #else
 #error                                                                                             \
-    "flatbuffers/flatbuffers.h not found. Enable ET_SERDE_ENABLE_FLATBUFFERS or add flatbuffers include paths."
+    "flatbuffers/flatbuffers.h not found. Enable ETD_SERDE_ENABLE_FLATBUFFERS or add flatbuffers include paths."
 #endif
 
 namespace eventide::serde::flatbuffers {
@@ -332,7 +332,7 @@ private:
                 return std::unexpected(object_error_code::invalid_state);
             }
             for(std::size_t i = 0; i < vector->size(); ++i) {
-                ET_EXPECTED_TRY(store_element(
+                ETD_EXPECTED_TRY(store_element(
                     std::byte{vector->Get(static_cast<::flatbuffers::uoffset_t>(i))}));
             }
             return finalize_sequence();
@@ -344,7 +344,7 @@ private:
                 return std::unexpected(object_error_code::invalid_state);
             }
             for(std::size_t i = 0; i < vector->size(); ++i) {
-                ET_EXPECTED_TRY(
+                ETD_EXPECTED_TRY(
                     store_element(vector->Get(static_cast<::flatbuffers::uoffset_t>(i))));
             }
             return finalize_sequence();
@@ -357,7 +357,7 @@ private:
                     return std::unexpected(object_error_code::invalid_state);
                 }
                 for(std::size_t i = 0; i < vector->size(); ++i) {
-                    ET_EXPECTED_TRY(
+                    ETD_EXPECTED_TRY(
                         store_element(vector->Get(static_cast<::flatbuffers::uoffset_t>(i))));
                 }
                 return finalize_sequence();
@@ -367,7 +367,7 @@ private:
                     return std::unexpected(object_error_code::invalid_state);
                 }
                 for(std::size_t i = 0; i < vector->size(); ++i) {
-                    ET_EXPECTED_TRY(
+                    ETD_EXPECTED_TRY(
                         store_element(vector->Get(static_cast<::flatbuffers::uoffset_t>(i))));
                 }
                 return finalize_sequence();
@@ -379,7 +379,7 @@ private:
                 return std::unexpected(object_error_code::invalid_state);
             }
             for(std::size_t i = 0; i < vector->size(); ++i) {
-                ET_EXPECTED_TRY(store_element(
+                ETD_EXPECTED_TRY(store_element(
                     static_cast<char>(vector->Get(static_cast<::flatbuffers::uoffset_t>(i)))));
             }
             return finalize_sequence();
@@ -390,7 +390,7 @@ private:
                 return std::unexpected(object_error_code::invalid_state);
             }
             for(std::size_t i = 0; i < vector->size(); ++i) {
-                ET_EXPECTED_TRY(store_element(static_cast<element_clean_t>(
+                ETD_EXPECTED_TRY(store_element(static_cast<element_clean_t>(
                     vector->Get(static_cast<::flatbuffers::uoffset_t>(i)))));
             }
             return finalize_sequence();
@@ -407,9 +407,9 @@ private:
                 }
                 if constexpr(std::same_as<element_t, std::string> ||
                              std::derived_from<element_t, std::string>) {
-                    ET_EXPECTED_TRY(store_element(std::string(text->data(), text->size())));
+                    ETD_EXPECTED_TRY(store_element(std::string(text->data(), text->size())));
                 } else if constexpr(std::same_as<element_t, std::string_view>) {
-                    ET_EXPECTED_TRY(store_element(std::string_view(text->data(), text->size())));
+                    ETD_EXPECTED_TRY(store_element(std::string_view(text->data(), text->size())));
                 } else {
                     return std::unexpected(object_error_code::unsupported_type);
                 }
@@ -429,8 +429,8 @@ private:
                     dec_t element{};
                     const auto* nested = vector->GetAs<::flatbuffers::Table>(
                         static_cast<::flatbuffers::uoffset_t>(i));
-                    ET_EXPECTED_TRY(decode_tuple(nested, element));
-                    ET_EXPECTED_TRY(store_element(std::move(element)));
+                    ETD_EXPECTED_TRY(decode_tuple(nested, element));
+                    ETD_EXPECTED_TRY(store_element(std::move(element)));
                 }
             }
             return finalize_sequence();
@@ -445,7 +445,7 @@ private:
                 if(element == nullptr) {
                     return std::unexpected(object_error_code::invalid_state);
                 }
-                ET_EXPECTED_TRY(store_element(*element));
+                ETD_EXPECTED_TRY(store_element(*element));
             }
             return finalize_sequence();
         } else if constexpr(refl::reflectable_class<element_clean_t>) {
@@ -462,8 +462,8 @@ private:
                     dec_t element{};
                     const auto* nested = vector->GetAs<::flatbuffers::Table>(
                         static_cast<::flatbuffers::uoffset_t>(i));
-                    ET_EXPECTED_TRY(decode_table(nested, element));
-                    ET_EXPECTED_TRY(store_element(std::move(element)));
+                    ETD_EXPECTED_TRY(decode_table(nested, element));
+                    ETD_EXPECTED_TRY(store_element(std::move(element)));
                 }
             }
             return finalize_sequence();
@@ -481,8 +481,8 @@ private:
                     dec_t element{};
                     const auto* nested = vector->GetAs<::flatbuffers::Table>(
                         static_cast<::flatbuffers::uoffset_t>(i));
-                    ET_EXPECTED_TRY(decode_root_value_from_table(nested, element));
-                    ET_EXPECTED_TRY(store_element(std::move(element)));
+                    ETD_EXPECTED_TRY(decode_root_value_from_table(nested, element));
+                    ETD_EXPECTED_TRY(store_element(std::move(element)));
                 }
             }
             return finalize_sequence();
@@ -526,8 +526,8 @@ private:
 
             key_t key{};
             mapped_t mapped{};
-            ET_EXPECTED_TRY(decode_field(entry, first_field, key, true));
-            ET_EXPECTED_TRY(decode_field(entry, field_voffset(1), mapped, true));
+            ETD_EXPECTED_TRY(decode_field(entry, first_field, key, true));
+            ETD_EXPECTED_TRY(decode_field(entry, field_voffset(1), mapped, true));
 
             auto ok = eventide::detail::insert_map_entry(out, std::move(key), std::move(mapped));
             if(!ok) {
@@ -806,7 +806,7 @@ auto from_flatbuffer(std::span<const std::uint8_t> bytes, T& value)
         return std::unexpected(deserializer.error());
     }
 
-    ET_EXPECTED_TRY(deserializer.deserialize(value));
+    ETD_EXPECTED_TRY(deserializer.deserialize(value));
     return {};
 }
 
@@ -818,7 +818,7 @@ auto from_flatbuffer(std::span<const std::byte> bytes, T& value)
         return std::unexpected(deserializer.error());
     }
 
-    ET_EXPECTED_TRY(deserializer.deserialize(value));
+    ETD_EXPECTED_TRY(deserializer.deserialize(value));
     return {};
 }
 
@@ -833,7 +833,7 @@ template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_flatbuffer(std::span<const std::uint8_t> bytes) -> std::expected<T, object_error_code> {
     T value{};
-    ET_EXPECTED_TRY(from_flatbuffer<Config>(bytes, value));
+    ETD_EXPECTED_TRY(from_flatbuffer<Config>(bytes, value));
     return value;
 }
 
@@ -841,7 +841,7 @@ template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_flatbuffer(std::span<const std::byte> bytes) -> std::expected<T, object_error_code> {
     T value{};
-    ET_EXPECTED_TRY(from_flatbuffer<Config>(bytes, value));
+    ETD_EXPECTED_TRY(from_flatbuffer<Config>(bytes, value));
     return value;
 }
 

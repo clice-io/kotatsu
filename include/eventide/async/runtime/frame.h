@@ -327,7 +327,7 @@ protected:
 
     /// Rethrows the propagated exception if one was captured from a failed child.
     void rethrow_if_propagated() {
-#if ET_ENABLE_EXCEPTIONS
+#if ETD_ENABLE_EXCEPTIONS
         if(propagated_exception) {
             std::rethrow_exception(propagated_exception);
         }

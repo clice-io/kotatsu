@@ -26,7 +26,7 @@
 #if __has_include(<toml++/toml.hpp>)
 #include <toml++/toml.hpp>
 #else
-#error "toml++/toml.hpp not found. Enable ET_SERDE_ENABLE_TOML or add tomlplusplus include paths."
+#error "toml++/toml.hpp not found. Enable ETD_SERDE_ENABLE_TOML or add tomlplusplus include paths."
 #endif
 
 namespace eventide::serde::toml {
@@ -303,17 +303,17 @@ public:
     }
 
     result_t<DeserializeSeq> deserialize_seq(std::optional<std::size_t> len) {
-        ET_EXPECTED_TRY_V(auto array, open_array());
+        ETD_EXPECTED_TRY_V(auto array, open_array());
         return DeserializeSeq(*this, array, len.value_or(0), false);
     }
 
     result_t<DeserializeTuple> deserialize_tuple(std::size_t len) {
-        ET_EXPECTED_TRY_V(auto array, open_array());
+        ETD_EXPECTED_TRY_V(auto array, open_array());
         return DeserializeTuple(*this, array, len, true);
     }
 
     result_t<DeserializeMap> deserialize_map(std::optional<std::size_t> /*len*/) {
-        ET_EXPECTED_TRY_V(auto table, open_table());
+        ETD_EXPECTED_TRY_V(auto table, open_table());
 
         DeserializeMap object(*this);
         object.entries.reserve(table->size());
@@ -546,8 +546,8 @@ auto from_toml(const ::toml::table& table, T& value) -> std::expected<void, erro
     const auto* root = detail::select_root_node<T>(table);
     Deserializer<Config> deserializer(root);
 
-    ET_EXPECTED_TRY(serde::deserialize(deserializer, value));
-    ET_EXPECTED_TRY(deserializer.finish());
+    ETD_EXPECTED_TRY(serde::deserialize(deserializer, value));
+    ETD_EXPECTED_TRY(deserializer.finish());
     return {};
 }
 
@@ -555,7 +555,7 @@ template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_toml(const ::toml::table& table) -> std::expected<T, error_kind> {
     T value{};
-    ET_EXPECTED_TRY(from_toml<Config>(table, value));
+    ETD_EXPECTED_TRY(from_toml<Config>(table, value));
     return value;
 }
 

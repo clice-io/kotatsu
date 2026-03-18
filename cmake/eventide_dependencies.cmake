@@ -35,7 +35,7 @@ function(eventide_make_cpm_options output_var context)
 endfunction()
 
 function(eventide_ensure_cpm)
-    if(NOT ET_USE_CPM_FOR_TESTS OR NOT ET_ENABLE_TEST)
+    if(NOT ETD_USE_CPM_FOR_TESTS OR NOT ETD_ENABLE_TEST)
         return()
     endif()
 
@@ -109,7 +109,7 @@ function(eventide_add_git_dependency name)
         message(FATAL_ERROR "eventide_add_git_dependency(${name}) requires GIT_TAG.")
     endif()
 
-    if(ET_USE_CPM_FOR_TESTS AND ET_ENABLE_TEST)
+    if(ETD_USE_CPM_FOR_TESTS AND ETD_ENABLE_TEST)
         eventide_ensure_cpm()
         eventide_make_cpm_options(cpm_options "eventide_add_git_dependency(${name}) OPTIONS" ${ARG_OPTIONS})
 

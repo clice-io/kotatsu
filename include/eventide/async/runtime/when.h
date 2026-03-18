@@ -179,11 +179,11 @@ Return tuple_visit_at_return(std::size_t index, Tuple& tuple, F&& f) {
 }
 
 [[noreturn]] inline void fail_empty_when_any_range() {
-#if ET_ENABLE_EXCEPTIONS
+#if ETD_ENABLE_EXCEPTIONS
     throw std::invalid_argument("when_any(range) requires a non-empty range");
 #else
     assert(false && "when_any(range) requires a non-empty range");
-    ET_THROW(std::invalid_argument("when_any(range) requires a non-empty range"));
+    ETD_THROW(std::invalid_argument("when_any(range) requires a non-empty range"));
 #endif
 }
 

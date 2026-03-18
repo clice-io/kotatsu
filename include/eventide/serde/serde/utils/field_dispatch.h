@@ -108,7 +108,7 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
         if(mapped_name != key_name) {
             return false;
         }
-        ET_EXPECTED_TRY(d_struct.deserialize_value(field.value()));
+        ETD_EXPECTED_TRY(d_struct.deserialize_value(field.value()));
         return true;
     } else {
         using attrs_t = typename std::remove_cvref_t<field_t>::attrs;
@@ -175,14 +175,14 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
                 using Pred =
                     typename detail::tuple_find_spec_t<attrs_t, behavior::skip_if>::predicate;
                 if(evaluate_skip_predicate<Pred>(value, false)) {
-                    ET_EXPECTED_TRY(d_struct.skip_value());
+                    ETD_EXPECTED_TRY(d_struct.skip_value());
                     return true;
                 }
             }
 
             // Behavior: with/as/enum_string — delegate to apply_deserialize_behavior
             if constexpr(detail::tuple_count_of_v<attrs_t, is_behavior_provider> > 0) {
-                ET_EXPECTED_TRY((*detail::apply_deserialize_behavior<attrs_t, value_t, E>(
+                ETD_EXPECTED_TRY((*detail::apply_deserialize_behavior<attrs_t, value_t, E>(
                     value,
                     [&](auto& v) { return d_struct.deserialize_value(v); },
                     [&](auto tag, auto& v) -> std::expected<void, E> {
@@ -196,10 +196,10 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
                 // For tagged variants, preserve annotation so deserialize() sees tagging attrs
                 if constexpr(is_specialization_of<std::variant, value_t> &&
                              detail::tuple_any_of_v<attrs_t, is_tagged_attr>) {
-                    ET_EXPECTED_TRY(d_struct.deserialize_value(field.value()));
+                    ETD_EXPECTED_TRY(d_struct.deserialize_value(field.value()));
                     return true;
                 } else {
-                    ET_EXPECTED_TRY(d_struct.deserialize_value(value));
+                    ETD_EXPECTED_TRY(d_struct.deserialize_value(value));
                     return true;
                 }
             }

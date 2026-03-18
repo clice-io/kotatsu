@@ -275,8 +275,9 @@ template <typename Config, typename E, serializer_like S, typename V>
 constexpr auto serialize_reflectable(S& s, const V& v) -> std::expected<typename S::value_type, E> {
     using value_t = std::remove_cvref_t<V>;
 
-    ET_EXPECTED_TRY_V(auto s_struct,
-                      s.serialize_struct(refl::type_name<value_t>(), refl::field_count<value_t>()));
+    ETD_EXPECTED_TRY_V(
+        auto s_struct,
+        s.serialize_struct(refl::type_name<value_t>(), refl::field_count<value_t>()));
 
     std::expected<void, E> field_result;
     refl::for_each(v, [&](auto field) {
@@ -303,12 +304,12 @@ constexpr auto deserialize_reflectable(D& d, V& v) -> std::expected<void, E> {
         return std::unexpected(E::invalid_state);
     }
 
-    ET_EXPECTED_TRY_V(
+    ETD_EXPECTED_TRY_V(
         auto d_struct,
         d.deserialize_struct(refl::type_name<value_t>(), refl::field_count<value_t>()));
 
     while(true) {
-        ET_EXPECTED_TRY_V(auto key, d_struct.next_key());
+        ETD_EXPECTED_TRY_V(auto key, d_struct.next_key());
         if(!key.has_value()) {
             break;
         }
@@ -340,7 +341,7 @@ constexpr auto deserialize_reflectable(D& d, V& v) -> std::expected<void, E> {
         if constexpr(DenyUnknown) {
             return std::unexpected(E::type_mismatch);
         } else {
-            ET_EXPECTED_TRY(d_struct.skip_value());
+            ETD_EXPECTED_TRY(d_struct.skip_value());
         }
     }
 

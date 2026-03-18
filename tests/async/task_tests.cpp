@@ -28,7 +28,7 @@ TEST_CASE(task_await) {
 
 // Visual Studio issue:
 // https://developercommunity.visualstudio.com/t/Unable-to-destroy-C20-coroutine-in-fin/10657377
-#if !ET_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+#if !ETD_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
     {
         event_loop loop;
         loop.schedule(foo());
@@ -106,7 +106,7 @@ TEST_CASE(down_cancel) {
     }
 }
 
-#if ET_ENABLE_EXCEPTIONS
+#if ETD_ENABLE_EXCEPTIONS
 TEST_CASE(exception_propagation) {
     auto bar1 = []() -> task<> {
         throw std::runtime_error("Test exception");

@@ -65,8 +65,7 @@ struct synth_three_way {
     template <typename LHS, typename RHS>
     [[nodiscard]]
     constexpr auto operator()(const LHS& lhs, const RHS& rhs) const
-        requires requires { lhs <=> rhs; }
-    {
+        requires requires { lhs <=> rhs; } {
         return lhs <=> rhs;
     }
 
@@ -78,8 +77,7 @@ struct synth_three_way {
             requires {
                 { lhs < rhs } -> std::convertible_to<bool>;
                 { rhs < lhs } -> std::convertible_to<bool>;
-            })
-    {
+            }) {
         if(lhs < rhs) {
             return std::weak_ordering::less;
         }
@@ -356,14 +354,14 @@ private:
 
     [[nodiscard]] constexpr size_type checked_size(size_type base, size_type extra) const {
         if(extra > max_size() - base) {
-            ET_THROW(std::length_error("small_vector capacity overflow"));
+            ETD_THROW(std::length_error("small_vector capacity overflow"));
         }
         return base + extra;
     }
 
     [[nodiscard]] constexpr size_type next_capacity(size_type min_capacity) const {
         if(min_capacity > max_size()) {
-            ET_THROW(std::length_error("small_vector capacity overflow"));
+            ETD_THROW(std::length_error("small_vector capacity overflow"));
         }
 
         size_type grown = this->m_capacity == 0 ? 1 : this->m_capacity * 2;
@@ -505,18 +503,18 @@ private:
         auto* relocated_end = new_begin;
         bool back_constructed = false;
 
-        ET_TRY {
+        ETD_TRY {
             mem::construct(counted_range(new_begin, old_size).end(), std::forward<Args>(args)...);
             back_constructed = true;
             relocated_end = mem::uninitialized_relocate(elements(), new_begin);
         }
-        ET_CATCH_ALL() {
+        ETD_CATCH_ALL() {
             mem::destroy_range(std::ranges::subrange(new_begin, relocated_end));
             if(back_constructed) {
                 mem::destroy(counted_range(new_begin, old_size).end());
             }
             mem::deallocate(new_begin, new_capacity);
-            ET_RETHROW();
+            ETD_RETHROW();
         }
 
         commit_replacement(new_begin, new_size, new_capacity);
@@ -920,14 +918,14 @@ public:
 
     constexpr reference at(size_type idx) {
         if(idx >= size()) {
-            ET_THROW(std::out_of_range("small_vector index out of range"));
+            ETD_THROW(std::out_of_range("small_vector index out of range"));
         }
         return (*this)[idx];
     }
 
     constexpr const_reference at(size_type idx) const {
         if(idx >= size()) {
-            ET_THROW(std::out_of_range("small_vector index out of range"));
+            ETD_THROW(std::out_of_range("small_vector index out of range"));
         }
         return (*this)[idx];
     }
@@ -971,14 +969,12 @@ public:
     }
 
     constexpr void resize(size_type count, value_type value)
-        requires (takes_param_by_value)
-    {
+        requires (takes_param_by_value) {
         resize_fill(count, value);
     }
 
     constexpr void resize(size_type count, const_reference value)
-        requires (!takes_param_by_value)
-    {
+        requires (!takes_param_by_value) {
         if(count > capacity() && references_storage(std::addressof(value))) {
             auto tmp = make_temporary(value);
             resize_fill(count, tmp.get());
@@ -994,14 +990,12 @@ public:
     }
 
     constexpr void push_back(value_type value)
-        requires (takes_param_by_value)
-    {
+        requires (takes_param_by_value) {
         emplace_back(value);
     }
 
     constexpr void push_back(const_reference value)
-        requires (!takes_param_by_value)
-    {
+        requires (!takes_param_by_value) {
         if(references_storage(std::addressof(value))) {
             auto tmp = make_temporary(value);
             emplace_back(tmp.get());
@@ -1011,8 +1005,7 @@ public:
     }
 
     constexpr void push_back(value_type&& value)
-        requires (!takes_param_by_value)
-    {
+        requires (!takes_param_by_value) {
         if(references_storage(std::addressof(value))) {
             auto tmp = make_temporary(std::move(value));
             emplace_back(std::move(tmp.release()));
@@ -1050,14 +1043,12 @@ public:
     }
 
     constexpr void append(size_type count, value_type value)
-        requires (takes_param_by_value)
-    {
+        requires (takes_param_by_value) {
         append_copies(count, value);
     }
 
     constexpr void append(size_type count, const_reference value)
-        requires (!takes_param_by_value)
-    {
+        requires (!takes_param_by_value) {
         if(references_storage(std::addressof(value))) {
             auto tmp = make_temporary(value);
             append_copies(count, tmp.get());
@@ -1103,14 +1094,12 @@ public:
     }
 
     constexpr void assign(size_type count, value_type value)
-        requires (takes_param_by_value)
-    {
+        requires (takes_param_by_value) {
         assign_copies(count, value);
     }
 
     constexpr void assign(size_type count, const_reference value)
-        requires (!takes_param_by_value)
-    {
+        requires (!takes_param_by_value) {
         if(references_storage(std::addressof(value))) {
             auto tmp = make_temporary(value);
             assign_copies(count, tmp.get());
@@ -1149,23 +1138,20 @@ public:
     }
 
     constexpr iterator insert(iterator pos, value_type value)
-        requires (takes_param_by_value)
-    {
+        requires (takes_param_by_value) {
         assert(valid_insert_position(pos));
         return insert_one_impl(pos, value);
     }
 
     constexpr iterator insert(iterator pos, const_reference value)
-        requires (!takes_param_by_value)
-    {
+        requires (!takes_param_by_value) {
         assert(valid_insert_position(pos));
         auto tmp = make_temporary(value);
         return insert_one_impl(pos, std::move(tmp.release()));
     }
 
     constexpr iterator insert(iterator pos, value_type&& value)
-        requires (!takes_param_by_value)
-    {
+        requires (!takes_param_by_value) {
         assert(valid_insert_position(pos));
         if(references_storage(std::addressof(value))) {
             auto tmp = make_temporary(std::move(value));
@@ -1175,15 +1161,13 @@ public:
     }
 
     constexpr iterator insert(iterator pos, size_type count, value_type value)
-        requires (takes_param_by_value)
-    {
+        requires (takes_param_by_value) {
         assert(valid_insert_position(pos));
         return insert_copies(pos, count, value);
     }
 
     constexpr iterator insert(iterator pos, size_type count, const_reference value)
-        requires (!takes_param_by_value)
-    {
+        requires (!takes_param_by_value) {
         assert(valid_insert_position(pos));
         auto tmp = make_temporary(value);
         return insert_copies(pos, count, tmp.get());
@@ -1443,14 +1427,14 @@ public:
         if(!std::is_constant_evaluated() && this->size() <= InlineCapacity) {
             auto* new_begin = this->inline_begin();
             auto* constructed = new_begin;
-            ET_TRY {
+            ETD_TRY {
                 constructed =
                     mem::uninitialized_relocate(std::ranges::subrange(this->begin(), this->end()),
                                                 new_begin);
             }
-            ET_CATCH_ALL() {
+            ETD_CATCH_ALL() {
                 mem::destroy_range(std::ranges::subrange(new_begin, constructed));
-                ET_RETHROW();
+                ETD_RETHROW();
             }
 
             auto old_begin = this->m_begin;

@@ -123,8 +123,7 @@ struct queued_delivery : waiter_binding<ResultT> {
     }
 
     void deliver(error err)
-        requires (!std::same_as<ResultT, error>)
-    {
+        requires (!std::same_as<ResultT, error>) {
         deliver(ResultT(outcome_error(err)));
     }
 };
@@ -151,8 +150,7 @@ struct stored_delivery : waiter_binding<ResultT> {
     }
 
     void deliver(error err)
-        requires (!std::same_as<ResultT, error>)
-    {
+        requires (!std::same_as<ResultT, error>) {
         deliver(ResultT(outcome_error(err)));
     }
 };
@@ -176,8 +174,7 @@ struct latched_delivery : waiter_binding<ResultT> {
     }
 
     void deliver(error err)
-        requires (!std::same_as<ResultT, error>)
-    {
+        requires (!std::same_as<ResultT, error>) {
         deliver(ResultT(outcome_error(err)));
     }
 };
@@ -207,8 +204,7 @@ struct latest_value_delivery : waiter_binding<result<ValueT>> {
     }
 
     void deliver(error err)
-        requires (!std::same_as<ValueT, void>)
-    {
+        requires (!std::same_as<ValueT, void>) {
         deliver(result<ValueT>(outcome_error(err)));
     }
 };

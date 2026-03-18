@@ -273,17 +273,17 @@ public:
     }
 
     result_t<DeserializeSeq> deserialize_seq(std::optional<std::size_t> len) {
-        ET_EXPECTED_TRY_V(auto array, open_array());
+        ETD_EXPECTED_TRY_V(auto array, open_array());
         return DeserializeSeq(*this, array, len.value_or(0), false);
     }
 
     result_t<DeserializeTuple> deserialize_tuple(std::size_t len) {
-        ET_EXPECTED_TRY_V(auto array, open_array());
+        ETD_EXPECTED_TRY_V(auto array, open_array());
         return DeserializeTuple(*this, array, len, true);
     }
 
     result_t<DeserializeMap> deserialize_map(std::optional<std::size_t> /*len*/) {
-        ET_EXPECTED_TRY_V(auto object, open_object());
+        ETD_EXPECTED_TRY_V(auto object, open_object());
 
         DeserializeMap map(*this, object);
         if(!is_valid) {
@@ -293,7 +293,7 @@ public:
     }
 
     result_t<DeserializeStruct> deserialize_struct(std::string_view /*name*/, std::size_t /*len*/) {
-        ET_EXPECTED_TRY_V(auto object, open_object());
+        ETD_EXPECTED_TRY_V(auto object, open_object());
 
         DeserializeStruct structure(*this, object);
         if(!is_valid) {
@@ -303,7 +303,7 @@ public:
     }
 
     result_t<content::Value> capture_dom_value() {
-        ET_EXPECTED_TRY_V(auto source, consume_value_ref());
+        ETD_EXPECTED_TRY_V(auto source, consume_value_ref());
         auto copied = content::Value::copy_of(source);
         if(!copied.has_value()) {
             mark_invalid(copied.error());

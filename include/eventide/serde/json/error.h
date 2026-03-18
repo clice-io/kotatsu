@@ -5,16 +5,16 @@
 
 #if __has_include(<simdjson.h>)
 #include <simdjson.h>
-#define ET_SERDE_JSON_ERROR_HAS_SIMDJSON 1
+#define ETD_SERDE_JSON_ERROR_HAS_SIMDJSON 1
 #else
-#define ET_SERDE_JSON_ERROR_HAS_SIMDJSON 0
+#define ETD_SERDE_JSON_ERROR_HAS_SIMDJSON 0
 #endif
 
 #if __has_include(<yyjson.h>)
 #include <yyjson.h>
-#define ET_SERDE_JSON_ERROR_HAS_YYJSON 1
+#define ETD_SERDE_JSON_ERROR_HAS_YYJSON 1
 #else
-#define ET_SERDE_JSON_ERROR_HAS_YYJSON 0
+#define ETD_SERDE_JSON_ERROR_HAS_YYJSON 0
 #endif
 
 namespace eventide::serde::json {
@@ -56,7 +56,7 @@ constexpr auto error_message(error_kind error) noexcept -> std::string_view {
     }
 }
 
-#if ET_SERDE_JSON_ERROR_HAS_SIMDJSON
+#if ETD_SERDE_JSON_ERROR_HAS_SIMDJSON
 constexpr auto make_error(simdjson::error_code error) noexcept -> error_kind {
     switch(error) {
         case simdjson::SUCCESS: return error_kind::ok;
@@ -93,7 +93,7 @@ constexpr auto to_simdjson_error(error_kind error) noexcept -> simdjson::error_c
 }
 #endif
 
-#if ET_SERDE_JSON_ERROR_HAS_YYJSON
+#if ETD_SERDE_JSON_ERROR_HAS_YYJSON
 constexpr auto make_read_error(yyjson_read_code error) noexcept -> error_kind {
 #ifdef YYJSON_READ_SUCCESS
     if(error == YYJSON_READ_SUCCESS) {
