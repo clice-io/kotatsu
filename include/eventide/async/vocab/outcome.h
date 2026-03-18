@@ -89,14 +89,12 @@ public:
     }
 
     bool has_error() const noexcept
-        requires (!std::is_void_v<E>)
-    {
+        requires (!std::is_void_v<E>) {
         return variant.index() == 1;
     }
 
     bool is_cancelled() const noexcept
-        requires (!std::is_void_v<C>)
-    {
+        requires (!std::is_void_v<C>) {
         return variant.index() == 2;
     }
 
@@ -105,94 +103,80 @@ public:
     }
 
     auto& value() &
-        requires (!std::is_void_v<T>)
-    {
+        requires (!std::is_void_v<T>) {
         assert(has_value());
         return std::get<0>(variant);
     }
 
     const auto& value() const&
-        requires (!std::is_void_v<T>)
-    {
+        requires (!std::is_void_v<T>) {
         assert(has_value());
         return std::get<0>(variant);
     }
 
     auto&& value() &&
-        requires (!std::is_void_v<T>)
-    {
+        requires (!std::is_void_v<T>) {
         assert(has_value());
         return std::move(std::get<0>(variant));
     }
 
     auto& operator*() &
-        requires (!std::is_void_v<T>)
-    {
+        requires (!std::is_void_v<T>) {
         return value();
     }
 
     const auto& operator*() const&
-        requires (!std::is_void_v<T>)
-    {
+        requires (!std::is_void_v<T>) {
         return value();
     }
 
     auto&& operator*() &&
-        requires (!std::is_void_v<T>)
-    {
+        requires (!std::is_void_v<T>) {
         return std::move(*this).value();
     }
 
     auto* operator->()
-        requires (!std::is_void_v<T>)
-    {
+        requires (!std::is_void_v<T>) {
         return &value();
     }
 
     const auto* operator->() const
-        requires (!std::is_void_v<T>)
-    {
+        requires (!std::is_void_v<T>) {
         return &value();
     }
 
     auto& error() &
-        requires (!std::is_void_v<E>)
-    {
+        requires (!std::is_void_v<E>) {
         assert(has_error());
         return std::get<1>(variant);
     }
 
     const auto& error() const&
-        requires (!std::is_void_v<E>)
-    {
+        requires (!std::is_void_v<E>) {
         assert(has_error());
         return std::get<1>(variant);
     }
 
     auto&& error() &&
-        requires (!std::is_void_v<E>)
-    {
+        requires (!std::is_void_v<E>) {
         assert(has_error());
         return std::move(std::get<1>(variant));
     }
 
     auto& cancellation() &
-        requires (!std::is_void_v<C>)
-    {
+        requires (!std::is_void_v<C>) {
         assert(is_cancelled());
         return std::get<2>(variant);
     }
 
     const auto& cancellation() const&
-        requires (!std::is_void_v<C>)
-    {
+        requires (!std::is_void_v<C>) {
         assert(is_cancelled());
         return std::get<2>(variant);
     }
 
     auto&& cancellation() &&
-        requires (!std::is_void_v<C>)
-    {
+        requires (!std::is_void_v<C>) {
         assert(is_cancelled());
         return std::move(std::get<2>(variant));
     }
@@ -216,12 +200,10 @@ public:
     outcome(U&& value) : data(T(std::forward<U>(value))) {}
 
     outcome()
-        requires std::is_void_v<T>
-    {}
+        requires std::is_void_v<T> {}
 
     outcome(outcome_ok_tag)
-        requires std::is_void_v<T>
-    {}
+        requires std::is_void_v<T> {}
 
     constexpr bool has_value() const noexcept {
         return true;
@@ -232,50 +214,42 @@ public:
     }
 
     auto& value() &
-        requires (!std::is_void_v<T>)
-    {
+        requires (!std::is_void_v<T>) {
         return data;
     }
 
     const auto& value() const&
-        requires (!std::is_void_v<T>)
-    {
+        requires (!std::is_void_v<T>) {
         return data;
     }
 
     auto&& value() &&
-        requires (!std::is_void_v<T>)
-    {
+        requires (!std::is_void_v<T>) {
         return std::move(data);
     }
 
     auto& operator*() &
-        requires (!std::is_void_v<T>)
-    {
+        requires (!std::is_void_v<T>) {
         return value();
     }
 
     const auto& operator*() const&
-        requires (!std::is_void_v<T>)
-    {
+        requires (!std::is_void_v<T>) {
         return value();
     }
 
     auto&& operator*() &&
-        requires (!std::is_void_v<T>)
-    {
+        requires (!std::is_void_v<T>) {
         return std::move(*this).value();
     }
 
     auto* operator->()
-        requires (!std::is_void_v<T>)
-    {
+        requires (!std::is_void_v<T>) {
         return &value();
     }
 
     const auto* operator->() const
-        requires (!std::is_void_v<T>)
-    {
+        requires (!std::is_void_v<T>) {
         return &value();
     }
 

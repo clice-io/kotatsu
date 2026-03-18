@@ -78,7 +78,7 @@ tombi = "*"
 stylua = "*"
 fd-find = "*"
 prettier = "*"
-clang-format = "==20.1.8"
+clang-format = "==21.1.8"
 
 [feature.format.tasks]
 format-cpp = "fd -H -e cpp -e h -e cc -e hpp -E include/eventide/language/protocol.h -x clang-format -i"

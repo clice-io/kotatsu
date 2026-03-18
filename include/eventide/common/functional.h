@@ -205,21 +205,18 @@ private:
                     return (static_cast<ClassType*>(self->storage.erased.ctx)->*MemFn::get())(
                         static_cast<Args>(args)...);
                 },
-                [](function* self) {
-                    delete static_cast<ClassType*>(self->storage.erased.ctx);
-                }};
+                [](function* self) { delete static_cast<ClassType*>(self->storage.erased.ctx); }};
 
             return function(
                 &vt,
                 Storage{.erased = Erased{.ctx = new ClassType(std::forward<Class>(invokable))}});
         } else {
-            constexpr static vtable vt = {[](const function* self, Args&... args) -> R {
-                                              return (self->storage_as<ClassType>()->*MemFn::get())(
-                                                  static_cast<Args>(args)...);
-                                          },
-                                          [](function* self) {
-                                              self->storage_as<ClassType>()->~ClassType();
-                                          }};
+            constexpr static vtable vt = {
+                [](const function* self, Args&... args) -> R {
+                    return (self->storage_as<ClassType>()->*MemFn::get())(
+                        static_cast<Args>(args)...);
+                },
+                [](function* self) { self->storage_as<ClassType>()->~ClassType(); }};
             Storage storage{};
             new (storage.sbo) ClassType(std::forward<Class>(invokable));
             return function(&vt, storage);
@@ -234,9 +231,7 @@ private:
                 return (static_cast<ClassType*>(self->storage.erased.ctx)->*MemFn::get())(
                     static_cast<Args>(args)...);
             },
-            [](function* self) {
-                delete static_cast<ClassType*>(self->storage.erased.ctx);
-            }};
+            [](function* self) { delete static_cast<ClassType*>(self->storage.erased.ctx); }};
 
         return function(
             &vt,

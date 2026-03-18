@@ -65,8 +65,7 @@ struct synth_three_way {
     template <typename LHS, typename RHS>
     [[nodiscard]]
     constexpr auto operator()(const LHS& lhs, const RHS& rhs) const
-        requires requires { lhs <=> rhs; }
-    {
+        requires requires { lhs <=> rhs; } {
         return lhs <=> rhs;
     }
 
@@ -78,8 +77,7 @@ struct synth_three_way {
             requires {
                 { lhs < rhs } -> std::convertible_to<bool>;
                 { rhs < lhs } -> std::convertible_to<bool>;
-            })
-    {
+            }) {
         if(lhs < rhs) {
             return std::weak_ordering::less;
         }
@@ -971,14 +969,12 @@ public:
     }
 
     constexpr void resize(size_type count, value_type value)
-        requires (takes_param_by_value)
-    {
+        requires (takes_param_by_value) {
         resize_fill(count, value);
     }
 
     constexpr void resize(size_type count, const_reference value)
-        requires (!takes_param_by_value)
-    {
+        requires (!takes_param_by_value) {
         if(count > capacity() && references_storage(std::addressof(value))) {
             auto tmp = make_temporary(value);
             resize_fill(count, tmp.get());
@@ -994,14 +990,12 @@ public:
     }
 
     constexpr void push_back(value_type value)
-        requires (takes_param_by_value)
-    {
+        requires (takes_param_by_value) {
         emplace_back(value);
     }
 
     constexpr void push_back(const_reference value)
-        requires (!takes_param_by_value)
-    {
+        requires (!takes_param_by_value) {
         if(references_storage(std::addressof(value))) {
             auto tmp = make_temporary(value);
             emplace_back(tmp.get());
@@ -1011,8 +1005,7 @@ public:
     }
 
     constexpr void push_back(value_type&& value)
-        requires (!takes_param_by_value)
-    {
+        requires (!takes_param_by_value) {
         if(references_storage(std::addressof(value))) {
             auto tmp = make_temporary(std::move(value));
             emplace_back(std::move(tmp.release()));
@@ -1050,14 +1043,12 @@ public:
     }
 
     constexpr void append(size_type count, value_type value)
-        requires (takes_param_by_value)
-    {
+        requires (takes_param_by_value) {
         append_copies(count, value);
     }
 
     constexpr void append(size_type count, const_reference value)
-        requires (!takes_param_by_value)
-    {
+        requires (!takes_param_by_value) {
         if(references_storage(std::addressof(value))) {
             auto tmp = make_temporary(value);
             append_copies(count, tmp.get());
@@ -1103,14 +1094,12 @@ public:
     }
 
     constexpr void assign(size_type count, value_type value)
-        requires (takes_param_by_value)
-    {
+        requires (takes_param_by_value) {
         assign_copies(count, value);
     }
 
     constexpr void assign(size_type count, const_reference value)
-        requires (!takes_param_by_value)
-    {
+        requires (!takes_param_by_value) {
         if(references_storage(std::addressof(value))) {
             auto tmp = make_temporary(value);
             assign_copies(count, tmp.get());
@@ -1149,23 +1138,20 @@ public:
     }
 
     constexpr iterator insert(iterator pos, value_type value)
-        requires (takes_param_by_value)
-    {
+        requires (takes_param_by_value) {
         assert(valid_insert_position(pos));
         return insert_one_impl(pos, value);
     }
 
     constexpr iterator insert(iterator pos, const_reference value)
-        requires (!takes_param_by_value)
-    {
+        requires (!takes_param_by_value) {
         assert(valid_insert_position(pos));
         auto tmp = make_temporary(value);
         return insert_one_impl(pos, std::move(tmp.release()));
     }
 
     constexpr iterator insert(iterator pos, value_type&& value)
-        requires (!takes_param_by_value)
-    {
+        requires (!takes_param_by_value) {
         assert(valid_insert_position(pos));
         if(references_storage(std::addressof(value))) {
             auto tmp = make_temporary(std::move(value));
@@ -1175,15 +1161,13 @@ public:
     }
 
     constexpr iterator insert(iterator pos, size_type count, value_type value)
-        requires (takes_param_by_value)
-    {
+        requires (takes_param_by_value) {
         assert(valid_insert_position(pos));
         return insert_copies(pos, count, value);
     }
 
     constexpr iterator insert(iterator pos, size_type count, const_reference value)
-        requires (!takes_param_by_value)
-    {
+        requires (!takes_param_by_value) {
         assert(valid_insert_position(pos));
         auto tmp = make_temporary(value);
         return insert_copies(pos, count, tmp.get());
