@@ -329,3 +329,7 @@ endif()
 if(ETD_ENABLE_EXAMPLES)
     add_subdirectory(examples)
 endif()
+
+if(ETD_ENABLE_TEST AND BUILD_TESTING AND ETD_ENABLE_ASYNC AND ETD_SERDE_ENABLE_SIMDJSON)
+    add_subdirectory(tests/integration)
+endif()

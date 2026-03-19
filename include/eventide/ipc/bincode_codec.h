@@ -10,7 +10,7 @@
 
 namespace eventide::serde {
 
-// Bincode serialization: write int64 directly
+// Bincode serialization: write int64 directly (bincode only uses integer IDs)
 template <typename Config>
 struct serialize_traits<bincode::Serializer<Config>, eventide::ipc::protocol::RequestID> {
     using value_type = typename bincode::Serializer<Config>::value_type;
@@ -19,11 +19,11 @@ struct serialize_traits<bincode::Serializer<Config>, eventide::ipc::protocol::Re
     static auto serialize(bincode::Serializer<Config>& serializer,
                           const eventide::ipc::protocol::RequestID& id)
         -> std::expected<value_type, error_type> {
-        return serde::serialize(serializer, id.value);
+        return serde::serialize(serializer, std::get<std::int64_t>(id));
     }
 };
 
-// Bincode deserialization: read int64 directly, set state to integer
+// Bincode deserialization: read int64 directly
 template <typename Config>
 struct deserialize_traits<bincode::Deserializer<Config>, eventide::ipc::protocol::RequestID> {
     using error_type = typename bincode::Deserializer<Config>::error_type;
@@ -31,11 +31,12 @@ struct deserialize_traits<bincode::Deserializer<Config>, eventide::ipc::protocol
     static auto deserialize(bincode::Deserializer<Config>& deserializer,
                             eventide::ipc::protocol::RequestID& id)
         -> std::expected<void, error_type> {
-        auto status = serde::deserialize(deserializer, id.value);
+        std::int64_t v = 0;
+        auto status = serde::deserialize(deserializer, v);
         if(!status) {
             return std::unexpected(status.error());
         }
-        id.state = eventide::ipc::protocol::RequestID::State::integer;
+        id.emplace<std::int64_t>(v);
         return {};
     }
 };

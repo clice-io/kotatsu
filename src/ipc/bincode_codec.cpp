@@ -100,10 +100,7 @@ Result<std::string> BincodeCodec::encode_success_response(const protocol::Reques
 
 Result<std::string> BincodeCodec::encode_error_response(const protocol::RequestID& id,
                                                         const Error& error) {
-    std::optional<protocol::RequestID> wire_id;
-    if(id.has_value()) {
-        wire_id = id;
-    }
+    std::optional<protocol::RequestID> wire_id = id;
     return encode_envelope(bincode_error{
         wire_id,
         static_cast<std::int32_t>(error.code),

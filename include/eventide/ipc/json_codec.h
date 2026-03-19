@@ -8,63 +8,6 @@
 #include "eventide/serde/serde/raw_value.h"
 #include "eventide/serde/serde/spelling.h"
 
-namespace eventide::serde {
-
-// JSON serialization: integer → int, absent/null → null
-template <typename Config>
-struct serialize_traits<json::Serializer<Config>, eventide::ipc::protocol::RequestID> {
-    using value_type = typename json::Serializer<Config>::value_type;
-    using error_type = typename json::Serializer<Config>::error_type;
-
-    static auto serialize(json::Serializer<Config>& serializer,
-                          const eventide::ipc::protocol::RequestID& id)
-        -> std::expected<value_type, error_type> {
-        if(id.has_value()) {
-            return serializer.serialize_int(id.value);
-        }
-        return serializer.serialize_null();
-    }
-};
-
-// JSON deserialization: three-state (absent kept by struct skip, null/integer deserialized)
-// Uses peek_type to dispatch: null → null state, number → integer state, else → error.
-template <typename Config>
-struct deserialize_traits<json::Deserializer<Config>, eventide::ipc::protocol::RequestID> {
-    using error_type = typename json::Deserializer<Config>::error_type;
-
-    static auto deserialize(json::Deserializer<Config>& deserializer,
-                            eventide::ipc::protocol::RequestID& id)
-        -> std::expected<void, error_type> {
-        auto type = deserializer.peek_type();
-        if(!type) {
-            return std::unexpected(type.error());
-        }
-
-        if(*type == simdjson::ondemand::json_type::null) {
-            auto is_null = deserializer.deserialize_none();
-            if(!is_null) {
-                return std::unexpected(is_null.error());
-            }
-            id = eventide::ipc::protocol::RequestID::null_id();
-            return {};
-        }
-
-        if(*type == simdjson::ondemand::json_type::number) {
-            std::int64_t v = 0;
-            auto status = deserializer.deserialize_int(v);
-            if(!status) {
-                return std::unexpected(status.error());
-            }
-            id = eventide::ipc::protocol::RequestID(v);
-            return {};
-        }
-
-        return std::unexpected(error_type::type_mismatch);
-    }
-};
-
-}  // namespace eventide::serde
-
 namespace eventide::ipc {
 
 struct lsp_config {

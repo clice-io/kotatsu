@@ -25,7 +25,7 @@ TEST_CASE(unregistered_method) {
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
     auto response = serde::json::from_json<ErrorResponse>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
-    EXPECT_EQ(response->id.value, 1);
+    EXPECT_EQ(std::get<std::int64_t>(response->id), 1);
     EXPECT_EQ(response->error.code,
               static_cast<protocol::integer>(protocol::ErrorCode::MethodNotFound));
 }
@@ -57,14 +57,14 @@ TEST_CASE(duplicate_request_id) {
     // (dispatched synchronously before the handler task runs)
     auto error = serde::json::from_json<ErrorResponse>(transport_ptr->outgoing()[0]);
     ASSERT_TRUE(error.has_value());
-    EXPECT_EQ(error->id.value, 1);
+    EXPECT_EQ(std::get<std::int64_t>(error->id), 1);
     EXPECT_EQ(error->error.code,
               static_cast<protocol::integer>(protocol::ErrorCode::InvalidRequest));
 
     // Second output: success response from the first handler
     auto success = serde::json::from_json<Response>(transport_ptr->outgoing()[1]);
     ASSERT_TRUE(success.has_value());
-    EXPECT_EQ(success->id.value, 1);
+    EXPECT_EQ(std::get<std::int64_t>(success->id), 1);
     ASSERT_TRUE(success->result.has_value());
     EXPECT_EQ(success->result->sum, 3);
 }
@@ -138,7 +138,7 @@ TEST_CASE(mixed_sequence) {
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
     auto response = serde::json::from_json<Response>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
-    EXPECT_EQ(response->id.value, 1);
+    EXPECT_EQ(std::get<std::int64_t>(response->id), 1);
     ASSERT_TRUE(response->result.has_value());
     EXPECT_EQ(response->result->sum, 30);
 }

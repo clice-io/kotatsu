@@ -41,7 +41,7 @@ TEST_CASE(valid_request) {
 
     ASSERT_TRUE(holds<IncomingRequest>(msg));
     auto& req = get<IncomingRequest>(msg);
-    EXPECT_EQ(req.id, protocol::RequestID(1));
+    EXPECT_EQ(req.id, protocol::RequestID{std::int64_t(1)});
     EXPECT_EQ(req.method, "test/add");
     EXPECT_FALSE(req.params.empty());
 }
@@ -65,7 +65,7 @@ TEST_CASE(valid_success_response) {
 
     ASSERT_TRUE(holds<IncomingResponse>(msg));
     auto& resp = get<IncomingResponse>(msg);
-    EXPECT_EQ(resp.id, protocol::RequestID(42));
+    EXPECT_EQ(resp.id, protocol::RequestID{std::int64_t(42)});
     EXPECT_FALSE(resp.result.empty());
 }
 
@@ -77,7 +77,7 @@ TEST_CASE(valid_error_response) {
 
     ASSERT_TRUE(holds<IncomingErrorResponse>(msg));
     auto& err = get<IncomingErrorResponse>(msg);
-    EXPECT_EQ(err.id, protocol::RequestID(7));
+    EXPECT_EQ(err.id, protocol::RequestID{std::int64_t(7)});
     EXPECT_EQ(err.error.code, static_cast<protocol::integer>(protocol::ErrorCode::MethodNotFound));
     EXPECT_EQ(err.error.message, "method not found");
     ASSERT_TRUE(err.error.data.has_value());
@@ -93,15 +93,15 @@ TEST_CASE(invalid_json) {
     EXPECT_EQ(err.error.code, static_cast<protocol::integer>(protocol::ErrorCode::ParseError));
 }
 
-// 1.6 Method present but id is null → parse error
+// 1.6 Method present but id is null → treated as notification (null id = absent)
 TEST_CASE(null_id_method) {
     JsonCodec codec;
     auto msg =
         codec.parse_message(R"({"jsonrpc":"2.0","id":null,"method":"test/foo","params":{}})");
 
-    ASSERT_TRUE(holds<IncomingParseError>(msg));
-    auto& err = get<IncomingParseError>(msg);
-    EXPECT_EQ(err.error.code, static_cast<protocol::integer>(protocol::ErrorCode::InvalidRequest));
+    ASSERT_TRUE(holds<IncomingNotification>(msg));
+    auto& note = get<IncomingNotification>(msg);
+    EXPECT_EQ(note.method, "test/foo");
 }
 
 // 1.7 Empty object — no method, no id
@@ -122,7 +122,7 @@ TEST_CASE(both_result_error) {
 
     ASSERT_TRUE(holds<IncomingErrorResponse>(msg));
     auto& err = get<IncomingErrorResponse>(msg);
-    EXPECT_EQ(err.id, protocol::RequestID(5));
+    EXPECT_EQ(err.id, protocol::RequestID{std::int64_t(5)});
     EXPECT_EQ(err.error.code, static_cast<protocol::integer>(protocol::ErrorCode::InvalidRequest));
 }
 
@@ -133,7 +133,7 @@ TEST_CASE(neither_result_error) {
 
     ASSERT_TRUE(holds<IncomingErrorResponse>(msg));
     auto& err = get<IncomingErrorResponse>(msg);
-    EXPECT_EQ(err.id, protocol::RequestID(5));
+    EXPECT_EQ(err.id, protocol::RequestID{std::int64_t(5)});
     EXPECT_EQ(err.error.code, static_cast<protocol::integer>(protocol::ErrorCode::InvalidRequest));
 }
 
@@ -161,14 +161,17 @@ TEST_CASE(request_missing_params) {
     EXPECT_TRUE(req.params.empty());
 }
 
-// 1.12 Request with string id (non-integer) → treated as absent id → notification
-TEST_CASE(string_id_rejected) {
+// 1.12 Request with string id → parsed as request with string RequestID
+TEST_CASE(string_id_accepted) {
     JsonCodec codec;
     auto msg =
         codec.parse_message(R"({"jsonrpc":"2.0","id":"abc","method":"test/foo","params":{}})");
 
-    // String id causes RequestID deserialization to fail → parse error
-    ASSERT_TRUE(holds<IncomingParseError>(msg));
+    ASSERT_TRUE(holds<IncomingRequest>(msg));
+    auto& req = get<IncomingRequest>(msg);
+    EXPECT_TRUE(std::holds_alternative<std::string>(req.id));
+    EXPECT_EQ(std::get<std::string>(req.id), "abc");
+    EXPECT_EQ(req.method, "test/foo");
 }
 
 };  // TEST_SUITE(ipc_json_codec_parse)
@@ -185,13 +188,13 @@ TEST_SUITE(ipc_bincode_codec_parse) {
 // 1.1 Valid request
 TEST_CASE(valid_request) {
     BincodeCodec codec;
-    auto encoded = codec.encode_request(protocol::RequestID(1), "test/add", R"({"a":1})");
+    auto encoded = codec.encode_request(protocol::RequestID{std::int64_t(1)}, "test/add", R"({"a":1})");
     ASSERT_TRUE(encoded.has_value());
 
     auto msg = codec.parse_message(*encoded);
     ASSERT_TRUE(holds<IncomingRequest>(msg));
     auto& req = get<IncomingRequest>(msg);
-    EXPECT_EQ(req.id, protocol::RequestID(1));
+    EXPECT_EQ(req.id, protocol::RequestID{std::int64_t(1)});
     EXPECT_EQ(req.method, "test/add");
 }
 
@@ -210,26 +213,26 @@ TEST_CASE(valid_notification) {
 // 1.3 Valid success response
 TEST_CASE(valid_success_response) {
     BincodeCodec codec;
-    auto encoded = codec.encode_success_response(protocol::RequestID(42), R"({"sum":3})");
+    auto encoded = codec.encode_success_response(protocol::RequestID{std::int64_t(42)}, R"({"sum":3})");
     ASSERT_TRUE(encoded.has_value());
 
     auto msg = codec.parse_message(*encoded);
     ASSERT_TRUE(holds<IncomingResponse>(msg));
     auto& resp = get<IncomingResponse>(msg);
-    EXPECT_EQ(resp.id, protocol::RequestID(42));
+    EXPECT_EQ(resp.id, protocol::RequestID{std::int64_t(42)});
 }
 
 // 1.4 Valid error response
 TEST_CASE(valid_error_response) {
     BincodeCodec codec;
     Error error(protocol::ErrorCode::MethodNotFound, "method not found");
-    auto encoded = codec.encode_error_response(protocol::RequestID(7), error);
+    auto encoded = codec.encode_error_response(protocol::RequestID{std::int64_t(7)}, error);
     ASSERT_TRUE(encoded.has_value());
 
     auto msg = codec.parse_message(*encoded);
     ASSERT_TRUE(holds<IncomingErrorResponse>(msg));
     auto& err = get<IncomingErrorResponse>(msg);
-    EXPECT_EQ(err.id, protocol::RequestID(7));
+    EXPECT_EQ(err.id, protocol::RequestID{std::int64_t(7)});
     EXPECT_EQ(err.error.code, static_cast<protocol::integer>(protocol::ErrorCode::MethodNotFound));
     EXPECT_EQ(err.error.message, "method not found");
 }
@@ -255,7 +258,7 @@ TEST_CASE(empty_payload) {
 // 1.11 Request with empty params
 TEST_CASE(request_empty_params) {
     BincodeCodec codec;
-    auto encoded = codec.encode_request(protocol::RequestID(1), "test/noparams", "");
+    auto encoded = codec.encode_request(protocol::RequestID{std::int64_t(1)}, "test/noparams", "");
     ASSERT_TRUE(encoded.has_value());
 
     auto msg = codec.parse_message(*encoded);
@@ -275,13 +278,13 @@ TEST_SUITE(ipc_json_codec_roundtrip) {
 // 2.1 encode_request → parse_message roundtrip
 TEST_CASE(request_roundtrip) {
     JsonCodec codec;
-    auto encoded = codec.encode_request(protocol::RequestID(99), "math/add", R"({"a":1,"b":2})");
+    auto encoded = codec.encode_request(protocol::RequestID{std::int64_t(99)}, "math/add", R"({"a":1,"b":2})");
     ASSERT_TRUE(encoded.has_value());
 
     auto msg = codec.parse_message(*encoded);
     ASSERT_TRUE(holds<IncomingRequest>(msg));
     auto& req = get<IncomingRequest>(msg);
-    EXPECT_EQ(req.id, protocol::RequestID(99));
+    EXPECT_EQ(req.id, protocol::RequestID{std::int64_t(99)});
     EXPECT_EQ(req.method, "math/add");
     EXPECT_FALSE(req.params.empty());
 }
@@ -301,26 +304,26 @@ TEST_CASE(notification_roundtrip) {
 // 2.3 encode_success_response → parse_message roundtrip
 TEST_CASE(success_response_roundtrip) {
     JsonCodec codec;
-    auto encoded = codec.encode_success_response(protocol::RequestID(10), R"({"value":42})");
+    auto encoded = codec.encode_success_response(protocol::RequestID{std::int64_t(10)}, R"({"value":42})");
     ASSERT_TRUE(encoded.has_value());
 
     auto msg = codec.parse_message(*encoded);
     ASSERT_TRUE(holds<IncomingResponse>(msg));
     auto& resp = get<IncomingResponse>(msg);
-    EXPECT_EQ(resp.id, protocol::RequestID(10));
+    EXPECT_EQ(resp.id, protocol::RequestID{std::int64_t(10)});
 }
 
 // 2.4 encode_error_response → parse_message roundtrip — Error fields preserved
 TEST_CASE(error_response_roundtrip) {
     JsonCodec codec;
     Error original(protocol::ErrorCode::InternalError, "something broke");
-    auto encoded = codec.encode_error_response(protocol::RequestID(20), original);
+    auto encoded = codec.encode_error_response(protocol::RequestID{std::int64_t(20)}, original);
     ASSERT_TRUE(encoded.has_value());
 
     auto msg = codec.parse_message(*encoded);
     ASSERT_TRUE(holds<IncomingErrorResponse>(msg));
     auto& err = get<IncomingErrorResponse>(msg);
-    EXPECT_EQ(err.id, protocol::RequestID(20));
+    EXPECT_EQ(err.id, protocol::RequestID{std::int64_t(20)});
     EXPECT_EQ(err.error.code, original.code);
     EXPECT_EQ(err.error.message, original.message);
 }
@@ -328,7 +331,7 @@ TEST_CASE(error_response_roundtrip) {
 // 2.5 Empty params roundtrip
 TEST_CASE(empty_params_roundtrip) {
     JsonCodec codec;
-    auto encoded = codec.encode_request(protocol::RequestID(1), "test/empty", "");
+    auto encoded = codec.encode_request(protocol::RequestID{std::int64_t(1)}, "test/empty", "");
     ASSERT_TRUE(encoded.has_value());
 
     auto msg = codec.parse_message(*encoded);
@@ -342,13 +345,13 @@ TEST_SUITE(ipc_bincode_codec_roundtrip) {
 // 2.1 request roundtrip
 TEST_CASE(request_roundtrip) {
     BincodeCodec codec;
-    auto encoded = codec.encode_request(protocol::RequestID(99), "math/add", R"({"a":1})");
+    auto encoded = codec.encode_request(protocol::RequestID{std::int64_t(99)}, "math/add", R"({"a":1})");
     ASSERT_TRUE(encoded.has_value());
 
     auto msg = codec.parse_message(*encoded);
     ASSERT_TRUE(holds<IncomingRequest>(msg));
     auto& req = get<IncomingRequest>(msg);
-    EXPECT_EQ(req.id, protocol::RequestID(99));
+    EXPECT_EQ(req.id, protocol::RequestID{std::int64_t(99)});
     EXPECT_EQ(req.method, "math/add");
 }
 
@@ -367,26 +370,26 @@ TEST_CASE(notification_roundtrip) {
 // 2.3 success response roundtrip
 TEST_CASE(success_response_roundtrip) {
     BincodeCodec codec;
-    auto encoded = codec.encode_success_response(protocol::RequestID(10), R"({"value":42})");
+    auto encoded = codec.encode_success_response(protocol::RequestID{std::int64_t(10)}, R"({"value":42})");
     ASSERT_TRUE(encoded.has_value());
 
     auto msg = codec.parse_message(*encoded);
     ASSERT_TRUE(holds<IncomingResponse>(msg));
     auto& resp = get<IncomingResponse>(msg);
-    EXPECT_EQ(resp.id, protocol::RequestID(10));
+    EXPECT_EQ(resp.id, protocol::RequestID{std::int64_t(10)});
 }
 
 // 2.4 error response roundtrip
 TEST_CASE(error_response_roundtrip) {
     BincodeCodec codec;
     Error original(protocol::ErrorCode::InternalError, "something broke");
-    auto encoded = codec.encode_error_response(protocol::RequestID(20), original);
+    auto encoded = codec.encode_error_response(protocol::RequestID{std::int64_t(20)}, original);
     ASSERT_TRUE(encoded.has_value());
 
     auto msg = codec.parse_message(*encoded);
     ASSERT_TRUE(holds<IncomingErrorResponse>(msg));
     auto& err = get<IncomingErrorResponse>(msg);
-    EXPECT_EQ(err.id, protocol::RequestID(20));
+    EXPECT_EQ(err.id, protocol::RequestID{std::int64_t(20)});
     EXPECT_EQ(err.error.code, original.code);
     EXPECT_EQ(err.error.message, original.message);
 }
@@ -394,7 +397,7 @@ TEST_CASE(error_response_roundtrip) {
 // 2.5 empty params roundtrip
 TEST_CASE(empty_params_roundtrip) {
     BincodeCodec codec;
-    auto encoded = codec.encode_request(protocol::RequestID(1), "test/empty", "");
+    auto encoded = codec.encode_request(protocol::RequestID{std::int64_t(1)}, "test/empty", "");
     ASSERT_TRUE(encoded.has_value());
 
     auto msg = codec.parse_message(*encoded);

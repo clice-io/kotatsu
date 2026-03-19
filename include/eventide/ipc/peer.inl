@@ -106,7 +106,7 @@ struct Peer<CodecT>::Self {
     CodecT codec;
 
     std::deque<std::string> outgoing_queue;
-    protocol::RequestID::value_type next_request_id = 1;
+    std::int64_t next_request_id = 1;
 
     std::unordered_map<std::string, RequestCallback> request_callbacks;
     std::unordered_map<std::string, NotificationCallback> notification_callbacks;
@@ -165,11 +165,11 @@ struct Peer<CodecT>::Self {
     void complete_pending_request(const protocol::RequestID& id, Result<std::string>&& response) {
         auto it = pending_requests.find(id);
         if(it == pending_requests.end()) {
-            ET_IPC_LOG(this, LogLevel::warn, "orphan response for id={}", id.value);
+            ET_IPC_LOG(this, LogLevel::warn, "orphan response for id={}", id);
             return;
         }
 
-        ET_IPC_LOG(this, LogLevel::debug, "response received for id={}", id.value);
+        ET_IPC_LOG(this, LogLevel::debug, "response received for id={}", id);
 
         auto pending = std::move(it->second);
         pending_requests.erase(it);
@@ -225,7 +225,7 @@ struct Peer<CodecT>::Self {
     void dispatch_request(const std::string& method,
                           const protocol::RequestID& id,
                           std::string_view params) {
-        ET_IPC_LOG(this, LogLevel::debug, "request: {} id={}", method, id.value);
+        ET_IPC_LOG(this, LogLevel::debug, "request: {} id={}", method, id);
 
         if(incoming_requests.contains(id)) {
             send_error(id, Error(protocol::ErrorCode::InvalidRequest, "duplicate request id"));
@@ -384,7 +384,7 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
         co_return outcome_error(Error(protocol::ErrorCode::RequestCancelled, "request cancelled"));
     }
 
-    auto request_id = protocol::RequestID(self->next_request_id++);
+    protocol::RequestID request_id{self->next_request_id++};
 
     auto pending = std::make_shared<typename Self::PendingRequest>();
     self->pending_requests.insert_or_assign(request_id, pending);

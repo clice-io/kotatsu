@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <format>
 #include <functional>
 #include <optional>
 #include <string>
@@ -40,38 +41,7 @@ struct Value : Variant {
     using Variant::operator=;
 };
 
-struct RequestID {
-    using value_type = std::int64_t;
-
-    enum class State : std::uint8_t { absent, null, integer };
-
-    State state = State::absent;
-    value_type value = 0;
-
-    RequestID() = default;
-
-    explicit RequestID(value_type v) : state(State::integer), value(v) {}
-
-    bool has_value() const noexcept {
-        return state == State::integer;
-    }
-
-    bool is_null() const noexcept {
-        return state == State::null;
-    }
-
-    bool is_absent() const noexcept {
-        return state == State::absent;
-    }
-
-    static RequestID null_id() {
-        RequestID id;
-        id.state = State::null;
-        return id;
-    }
-
-    friend bool operator==(const RequestID&, const RequestID&) = default;
-};
+using RequestID = std::variant<std::int64_t, std::string>;
 
 enum class ErrorCode : integer {
     ParseError = -32700,
@@ -112,9 +82,28 @@ namespace std {
 template <>
 struct hash<eventide::ipc::protocol::RequestID> {
     std::size_t operator()(const eventide::ipc::protocol::RequestID& id) const noexcept {
-        auto h1 = std::hash<std::uint8_t>{}(static_cast<std::uint8_t>(id.state));
-        auto h2 = std::hash<eventide::ipc::protocol::RequestID::value_type>{}(id.value);
-        return h1 ^ (h2 << 1);
+        return std::visit(
+            [](const auto& v) -> std::size_t {
+                return std::hash<std::remove_cvref_t<decltype(v)>>{}(v);
+            },
+            id);
+    }
+};
+
+template <>
+struct formatter<eventide::ipc::protocol::RequestID> {
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+
+    auto format(const eventide::ipc::protocol::RequestID& id, format_context& ctx) const {
+        return std::visit(
+            [&](const auto& v) {
+                if constexpr(std::is_same_v<std::remove_cvref_t<decltype(v)>, std::string>) {
+                    return std::format_to(ctx.out(), "\"{}\"", v);
+                } else {
+                    return std::format_to(ctx.out(), "{}", v);
+                }
+            },
+            id);
     }
 };
 
@@ -191,3 +180,4 @@ struct deserialize_traits<D, eventide::ipc::protocol::Error> {
 };
 
 }  // namespace eventide::serde
+

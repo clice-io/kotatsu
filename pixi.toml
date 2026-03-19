@@ -26,6 +26,11 @@ python = "*"
 ninja = "*"
 ccache = "*"
 
+[feature.build.pypi-dependencies]
+pygls = ">=2.0"
+pytest = ">=8.0"
+pytest-asyncio = ">=0.24"
+
 [feature.linux-gcc.target.linux-64.dependencies]
 sysroot_linux-64 = "==2.17"
 gcc = "==14.2.0"
@@ -115,6 +120,7 @@ fd -H "^\\.clang-(format|tidy)$" -x prettier.bat --write --parser yaml
 [tasks]
 xmake-test = "xmake test --verbose"
 xmake-build = "xmake --all --verbose --diagnosis"
+integration-test = "pytest tests/integration/ -v"
 
 [tasks.ci-xmake-configure]
 args = ["build_type"]

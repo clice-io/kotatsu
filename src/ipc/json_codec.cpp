@@ -51,7 +51,7 @@ struct outgoing_error_response_message {
 // --- Incoming message envelope (deserialized via serde) ---
 
 struct json_rpc_incoming {
-    protocol::RequestID id;
+    std::optional<protocol::RequestID> id;
     std::optional<std::string> method;
     std::optional<serde::RawValue> params;
     serde::RawValue result;
@@ -73,13 +73,9 @@ IncomingMessage JsonCodec::parse_message(std::string_view payload) {
     // Has method → request or notification
     if(envelope->method.has_value()) {
         if(envelope->id.has_value()) {
-            return IncomingRequest{envelope->id,
+            return IncomingRequest{*envelope->id,
                                    std::move(*envelope->method),
                                    std::move(raw_params)};
-        }
-        if(envelope->id.is_null()) {
-            return IncomingParseError{
-                Error(protocol::ErrorCode::InvalidRequest, "request id must be integer")};
         }
         return IncomingNotification{std::move(*envelope->method), std::move(raw_params)};
     }
@@ -90,12 +86,12 @@ IncomingMessage JsonCodec::parse_message(std::string_view payload) {
         auto has_error = envelope->error.has_value();
 
         if(has_error && !has_result) {
-            return IncomingErrorResponse{envelope->id, std::move(*envelope->error)};
+            return IncomingErrorResponse{*envelope->id, std::move(*envelope->error)};
         }
         if(has_result && !has_error) {
-            return IncomingResponse{envelope->id, std::move(envelope->result.data)};
+            return IncomingResponse{*envelope->id, std::move(envelope->result.data)};
         }
-        return IncomingErrorResponse{envelope->id,
+        return IncomingErrorResponse{*envelope->id,
                                      Error(protocol::ErrorCode::InvalidRequest,
                                            "response must contain exactly one of result or error")};
     }
