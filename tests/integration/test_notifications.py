@@ -3,7 +3,20 @@
 import asyncio
 
 import pytest
-from lsprotocol.types import *
+from lsprotocol.types import (
+    DiagnosticSeverity,
+    DidChangeTextDocumentParams,
+    DidCloseTextDocumentParams,
+    DidOpenTextDocumentParams,
+    DidSaveTextDocumentParams,
+    HoverParams,
+    Position,
+    Range,
+    TextDocumentContentChangePartial,
+    TextDocumentIdentifier,
+    TextDocumentItem,
+    VersionedTextDocumentIdentifier,
+)
 
 from conftest import StubClient
 
@@ -16,7 +29,10 @@ async def test_did_open_diagnostics(client: StubClient):
     client.text_document_did_open(
         DidOpenTextDocumentParams(
             text_document=TextDocumentItem(
-                uri=TEST_URI, language_id="cpp", version=1, text="int main() {}",
+                uri=TEST_URI,
+                language_id="cpp",
+                version=1,
+                text="int main() {}",
             )
         )
     )
@@ -59,9 +75,7 @@ async def test_did_change_no_crash(client: StubClient):
 @pytest.mark.asyncio
 async def test_did_close_no_crash(client: StubClient):
     client.text_document_did_close(
-        DidCloseTextDocumentParams(
-            text_document=TextDocumentIdentifier(uri=TEST_URI)
-        )
+        DidCloseTextDocumentParams(text_document=TextDocumentIdentifier(uri=TEST_URI))
     )
     result = await client.text_document_hover_async(
         HoverParams(
@@ -75,9 +89,7 @@ async def test_did_close_no_crash(client: StubClient):
 @pytest.mark.asyncio
 async def test_did_save_no_crash(client: StubClient):
     client.text_document_did_save(
-        DidSaveTextDocumentParams(
-            text_document=TextDocumentIdentifier(uri=TEST_URI)
-        )
+        DidSaveTextDocumentParams(text_document=TextDocumentIdentifier(uri=TEST_URI))
     )
     result = await client.text_document_hover_async(
         HoverParams(

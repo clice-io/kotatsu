@@ -188,7 +188,8 @@ TEST_SUITE(ipc_bincode_codec_parse) {
 // 1.1 Valid request
 TEST_CASE(valid_request) {
     BincodeCodec codec;
-    auto encoded = codec.encode_request(protocol::RequestID{std::int64_t(1)}, "test/add", R"({"a":1})");
+    auto encoded =
+        codec.encode_request(protocol::RequestID{std::int64_t(1)}, "test/add", R"({"a":1})");
     ASSERT_TRUE(encoded.has_value());
 
     auto msg = codec.parse_message(*encoded);
@@ -213,7 +214,8 @@ TEST_CASE(valid_notification) {
 // 1.3 Valid success response
 TEST_CASE(valid_success_response) {
     BincodeCodec codec;
-    auto encoded = codec.encode_success_response(protocol::RequestID{std::int64_t(42)}, R"({"sum":3})");
+    auto encoded =
+        codec.encode_success_response(protocol::RequestID{std::int64_t(42)}, R"({"sum":3})");
     ASSERT_TRUE(encoded.has_value());
 
     auto msg = codec.parse_message(*encoded);
@@ -278,7 +280,8 @@ TEST_SUITE(ipc_json_codec_roundtrip) {
 // 2.1 encode_request → parse_message roundtrip
 TEST_CASE(request_roundtrip) {
     JsonCodec codec;
-    auto encoded = codec.encode_request(protocol::RequestID{std::int64_t(99)}, "math/add", R"({"a":1,"b":2})");
+    auto encoded =
+        codec.encode_request(protocol::RequestID{std::int64_t(99)}, "math/add", R"({"a":1,"b":2})");
     ASSERT_TRUE(encoded.has_value());
 
     auto msg = codec.parse_message(*encoded);
@@ -304,7 +307,8 @@ TEST_CASE(notification_roundtrip) {
 // 2.3 encode_success_response → parse_message roundtrip
 TEST_CASE(success_response_roundtrip) {
     JsonCodec codec;
-    auto encoded = codec.encode_success_response(protocol::RequestID{std::int64_t(10)}, R"({"value":42})");
+    auto encoded =
+        codec.encode_success_response(protocol::RequestID{std::int64_t(10)}, R"({"value":42})");
     ASSERT_TRUE(encoded.has_value());
 
     auto msg = codec.parse_message(*encoded);
@@ -345,7 +349,8 @@ TEST_SUITE(ipc_bincode_codec_roundtrip) {
 // 2.1 request roundtrip
 TEST_CASE(request_roundtrip) {
     BincodeCodec codec;
-    auto encoded = codec.encode_request(protocol::RequestID{std::int64_t(99)}, "math/add", R"({"a":1})");
+    auto encoded =
+        codec.encode_request(protocol::RequestID{std::int64_t(99)}, "math/add", R"({"a":1})");
     ASSERT_TRUE(encoded.has_value());
 
     auto msg = codec.parse_message(*encoded);
@@ -370,7 +375,8 @@ TEST_CASE(notification_roundtrip) {
 // 2.3 success response roundtrip
 TEST_CASE(success_response_roundtrip) {
     BincodeCodec codec;
-    auto encoded = codec.encode_success_response(protocol::RequestID{std::int64_t(10)}, R"({"value":42})");
+    auto encoded =
+        codec.encode_success_response(protocol::RequestID{std::int64_t(10)}, R"({"value":42})");
     ASSERT_TRUE(encoded.has_value());
 
     auto msg = codec.parse_message(*encoded);

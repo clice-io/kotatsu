@@ -3,7 +3,18 @@
 import asyncio
 
 import pytest
-from lsprotocol.types import *
+from lsprotocol.types import (
+    CompletionParams,
+    DidChangeTextDocumentParams,
+    DidOpenTextDocumentParams,
+    HoverParams,
+    Position,
+    Range,
+    TextDocumentContentChangePartial,
+    TextDocumentIdentifier,
+    TextDocumentItem,
+    VersionedTextDocumentIdentifier,
+)
 
 from conftest import StubClient
 
@@ -46,7 +57,10 @@ async def test_interleaved(client: StubClient):
     client.text_document_did_open(
         DidOpenTextDocumentParams(
             text_document=TextDocumentItem(
-                uri="file:///interleave.cpp", language_id="cpp", version=1, text="void f() {}",
+                uri="file:///interleave.cpp",
+                language_id="cpp",
+                version=1,
+                text="void f() {}",
             )
         )
     )
@@ -65,7 +79,8 @@ async def test_interleaved(client: StubClient):
             ),
             content_changes=[
                 TextDocumentContentChangePartial(
-                    range=Range(start=POS, end=POS), text="// added\n",
+                    range=Range(start=POS, end=POS),
+                    text="// added\n",
                 )
             ],
         )

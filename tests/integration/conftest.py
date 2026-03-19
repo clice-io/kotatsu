@@ -6,7 +6,18 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-from lsprotocol.types import *
+from lsprotocol.types import (
+    PROGRESS,
+    TEXT_DOCUMENT_PUBLISH_DIAGNOSTICS,
+    WINDOW_WORK_DONE_PROGRESS_CREATE,
+    ClientCapabilities,
+    Diagnostic,
+    InitializeParams,
+    InitializedParams,
+    ProgressParams,
+    PublishDiagnosticsParams,
+    WorkDoneProgressCreateParams,
+)
 from pygls.lsp.client import BaseLanguageClient
 
 

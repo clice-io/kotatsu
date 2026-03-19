@@ -103,7 +103,7 @@ include/
     common/      # Shared utilities
     deco/        # Declarative CLI layer built on option + reflection
     ipc/         # IPC protocol, peer, and transport APIs
-    language/    # LSP protocol model and utilities (ipc/lsp)
+    ipc/lsp/     # LSP protocol model and utilities
     option/      # LLVM-compatible option parsing layer
     reflection/  # Compile-time reflection utilities
     serde/       # Generic serde + backend adapters

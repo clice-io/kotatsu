@@ -92,7 +92,9 @@ struct hash<eventide::ipc::protocol::RequestID> {
 
 template <>
 struct formatter<eventide::ipc::protocol::RequestID> {
-    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+    constexpr auto parse(format_parse_context& ctx) {
+        return ctx.begin();
+    }
 
     auto format(const eventide::ipc::protocol::RequestID& id, format_context& ctx) const {
         return std::visit(
@@ -180,4 +182,3 @@ struct deserialize_traits<D, eventide::ipc::protocol::Error> {
 };
 
 }  // namespace eventide::serde
-

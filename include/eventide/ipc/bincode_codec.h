@@ -19,7 +19,11 @@ struct serialize_traits<bincode::Serializer<Config>, eventide::ipc::protocol::Re
     static auto serialize(bincode::Serializer<Config>& serializer,
                           const eventide::ipc::protocol::RequestID& id)
         -> std::expected<value_type, error_type> {
-        return serde::serialize(serializer, std::get<std::int64_t>(id));
+        auto* int_id = std::get_if<std::int64_t>(&id);
+        if(!int_id) {
+            return std::unexpected(error_type::type_mismatch);
+        }
+        return serde::serialize(serializer, *int_id);
     }
 };
 

@@ -64,7 +64,8 @@ TEST_CASE(begin_report_end) {
 
     auto requester = [&]() -> task<> {
         ProgressReporter reporter(peer, protocol::ProgressToken(42));
-        co_await reporter.create();
+        auto r = co_await reporter.create();
+        EXPECT_TRUE(r.has_value());
         reporter.begin("Indexing", "Starting...", protocol::uinteger(0));
         reporter.report("50% done", protocol::uinteger(50));
         reporter.end("Complete");
@@ -106,7 +107,8 @@ TEST_CASE(string_token) {
 
     auto requester = [&]() -> task<> {
         ProgressReporter reporter(peer, protocol::ProgressToken(std::string("my-token")));
-        co_await reporter.create();
+        auto r = co_await reporter.create();
+        EXPECT_TRUE(r.has_value());
         reporter.begin("Building");
         reporter.end();
         tp->close();

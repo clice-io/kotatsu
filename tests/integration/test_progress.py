@@ -3,7 +3,11 @@
 import asyncio
 
 import pytest
-from lsprotocol.types import *
+from lsprotocol.types import (
+    CompletionParams,
+    Position,
+    TextDocumentIdentifier,
+)
 
 from conftest import StubClient
 
@@ -26,7 +30,11 @@ async def test_work_done_progress(client: StubClient):
 
     assert "test-progress" in client.progress_tokens
     assert len(client.progress_events) >= 3
-    kinds = [e["value"]["kind"] for e in client.progress_events if isinstance(e["value"], dict)]
+    kinds = [
+        e["value"]["kind"]
+        for e in client.progress_events
+        if isinstance(e["value"], dict)
+    ]
     assert "begin" in kinds
     assert "report" in kinds
     assert "end" in kinds

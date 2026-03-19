@@ -1,7 +1,46 @@
 """LSP request tests: hover, completion, definition, references, etc."""
 
 import pytest
-from lsprotocol.types import *
+from lsprotocol.types import (
+    CodeAction,
+    CodeActionContext,
+    CodeActionKind,
+    CodeActionParams,
+    CodeLensParams,
+    CompletionList,
+    CompletionParams,
+    DeclarationParams,
+    DefinitionParams,
+    DocumentFormattingParams,
+    DocumentHighlightKind,
+    DocumentHighlightParams,
+    DocumentLinkParams,
+    DocumentRangeFormattingParams,
+    DocumentSymbol,
+    DocumentSymbolParams,
+    FoldingRangeParams,
+    FormattingOptions,
+    HoverParams,
+    ImplementationParams,
+    InlayHintKind,
+    InlayHintParams,
+    Location,
+    MarkupContent,
+    MarkupKind,
+    Position,
+    PrepareRenameParams,
+    Range,
+    ReferenceContext,
+    ReferenceParams,
+    RenameParams,
+    SelectionRangeParams,
+    SignatureHelpParams,
+    SymbolKind,
+    TextDocumentIdentifier,
+    TypeDefinitionParams,
+    WorkspaceEdit,
+    WorkspaceSymbolParams,
+)
 
 from conftest import StubClient
 
@@ -48,7 +87,8 @@ async def test_definition(client: StubClient):
 async def test_references(client: StubClient):
     result = await client.text_document_references_async(
         ReferenceParams(
-            text_document=doc(), position=POS,
+            text_document=doc(),
+            position=POS,
             context=ReferenceContext(include_declaration=True),
         )
     )
@@ -122,7 +162,9 @@ async def test_document_highlight(client: StubClient):
 async def test_rename(client: StubClient):
     result = await client.text_document_rename_async(
         RenameParams(
-            text_document=doc(), position=POS, new_name="new_name",
+            text_document=doc(),
+            position=POS,
+            new_name="new_name",
         )
     )
     assert isinstance(result, WorkspaceEdit)
@@ -239,9 +281,7 @@ async def test_range_formatting(client: StubClient):
 
 @pytest.mark.asyncio
 async def test_workspace_symbol(client: StubClient):
-    result = await client.workspace_symbol_async(
-        WorkspaceSymbolParams(query="Global")
-    )
+    result = await client.workspace_symbol_async(WorkspaceSymbolParams(query="Global"))
     assert len(result) >= 1
     sym = result[0]
     assert sym.name == "GlobalFunc"

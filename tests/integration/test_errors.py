@@ -1,7 +1,12 @@
 """LSP error handling tests."""
 
 import pytest
-from lsprotocol.types import *
+from lsprotocol.types import (
+    HoverParams,
+    Position,
+    SemanticTokensParams,
+    TextDocumentIdentifier,
+)
 
 from conftest import StubClient
 
@@ -24,5 +29,7 @@ async def test_method_not_found(client: StubClient):
     """Unregistered method returns error."""
     with pytest.raises(Exception):
         await client.text_document_semantic_tokens_full_async(
-            SemanticTokensParams(text_document=TextDocumentIdentifier(uri="file:///test.cpp"))
+            SemanticTokensParams(
+                text_document=TextDocumentIdentifier(uri="file:///test.cpp")
+            )
         )

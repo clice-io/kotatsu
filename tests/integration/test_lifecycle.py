@@ -3,7 +3,12 @@
 import asyncio
 
 import pytest
-from lsprotocol.types import *
+from lsprotocol.types import (
+    ClientCapabilities,
+    InitializeParams,
+    InitializedParams,
+    TextDocumentSyncKind,
+)
 
 from conftest import StubClient, _find_stub_server
 
@@ -41,9 +46,7 @@ async def test_shutdown_exit():
     server_path = _find_stub_server()
     c = StubClient()
     await c.start_io(server_path)
-    await c.initialize_async(
-        InitializeParams(capabilities=ClientCapabilities())
-    )
+    await c.initialize_async(InitializeParams(capabilities=ClientCapabilities()))
     c.initialized(InitializedParams())
     await c.shutdown_async(None)
     c.exit(None)
@@ -56,9 +59,7 @@ async def test_exit_without_shutdown():
     server_path = _find_stub_server()
     c = StubClient()
     await c.start_io(server_path)
-    await c.initialize_async(
-        InitializeParams(capabilities=ClientCapabilities())
-    )
+    await c.initialize_async(InitializeParams(capabilities=ClientCapabilities()))
     c.initialized(InitializedParams())
     c.exit(None)
     await asyncio.sleep(0.3)

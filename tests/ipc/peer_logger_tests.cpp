@@ -22,14 +22,13 @@ TEST_CASE(trace_logs_traffic) {
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":1,"b":2}})",
     });
-    auto* tp = transport.get();
 
     event_loop loop;
     JsonPeer peer(loop, std::move(transport));
 
     LogEntries logs;
     peer.set_logger(
-        [&](LogLevel level, std::string_view msg) { logs.push_back({level, std::string(msg)}); },
+        [&](LogLevel level, std::string msg) { logs.push_back({level, std::move(msg)}); },
         LogLevel::trace);
 
     peer.on_request([&](RequestContext&, const AddParams& p) -> RequestResult<AddParams> {
@@ -64,7 +63,7 @@ TEST_CASE(level_filtering) {
 
     LogEntries logs;
     peer.set_logger(
-        [&](LogLevel level, std::string_view msg) { logs.push_back({level, std::string(msg)}); },
+        [&](LogLevel level, std::string msg) { logs.push_back({level, std::move(msg)}); },
         LogLevel::warn);
 
     peer.on_request([&](RequestContext&, const AddParams& p) -> RequestResult<AddParams> {
@@ -90,7 +89,7 @@ TEST_CASE(deser_failure_warns) {
 
     LogEntries logs;
     peer.set_logger(
-        [&](LogLevel level, std::string_view msg) { logs.push_back({level, std::string(msg)}); },
+        [&](LogLevel level, std::string msg) { logs.push_back({level, std::move(msg)}); },
         LogLevel::warn);
 
     bool called = false;
@@ -120,7 +119,7 @@ TEST_CASE(unhandled_notification_warns) {
 
     LogEntries logs;
     peer.set_logger(
-        [&](LogLevel level, std::string_view msg) { logs.push_back({level, std::string(msg)}); },
+        [&](LogLevel level, std::string msg) { logs.push_back({level, std::move(msg)}); },
         LogLevel::warn);
 
     loop.schedule(peer.run());
@@ -164,7 +163,7 @@ TEST_CASE(read_loop_lifecycle) {
 
     LogEntries logs;
     peer.set_logger(
-        [&](LogLevel level, std::string_view msg) { logs.push_back({level, std::string(msg)}); },
+        [&](LogLevel level, std::string msg) { logs.push_back({level, std::move(msg)}); },
         LogLevel::info);
 
     loop.schedule(peer.run());
