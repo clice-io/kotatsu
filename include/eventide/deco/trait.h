@@ -90,5 +90,4 @@ concept InputResultType = ScalarResultType<Ty> || VectorResultType<Ty>;
     "Result type must be a vector of primitive scalar values or provide into(vector<string_view>)."
 
 #define DecoInputResultErrString                                                                   \
-    "Input result type must be a scalar/string-like value or a vector of primitive scalar values, " \
-    "or provide a compatible into(...) overload."
+    "Input result type must be a scalar/string-like value or a vector of primitive scalar values, " "or provide a compatible into(...) overload."

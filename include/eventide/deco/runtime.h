@@ -71,8 +71,7 @@ std::string check_valid(const T& options,
     std::string err = "";
     // check required options
     storage.visit_fields(options, [&](auto& field, const auto& cfg, std::string_view name, auto) {
-        if(matched_categories.contains(cfg.category.ptr()) && cfg.required &&
-           !field.has_value()) {
+        if(matched_categories.contains(cfg.category.ptr()) && cfg.required && !field.has_value()) {
             err = std::format("required option {} is missing",
                               desc::from_deco_option(cfg, false, name));
             return false;

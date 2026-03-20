@@ -155,10 +155,8 @@ TEST_CASE(serializes_all_option_kinds_with_stable_order_and_roundtrip) {
     EXPECT_TRUE(value.joined_only.has_value() && *value.joined_only == 9);
     EXPECT_TRUE(value.split_by_name.has_value() && *value.split_by_name == 3);
     EXPECT_TRUE(value.auto_name_value.has_value() && *value.auto_name_value == 11);
-    EXPECT_TRUE(value.tags.has_value() &&
-                *value.tags == std::vector<std::string>{"a", "b"});
-    EXPECT_TRUE(value.pair.has_value() &&
-                *value.pair == std::vector<std::string>{"left", "right"});
+    EXPECT_TRUE(value.tags.has_value() && *value.tags == std::vector<std::string>{"a", "b"});
+    EXPECT_TRUE(value.pair.has_value() && *value.pair == std::vector<std::string>{"left", "right"});
     EXPECT_TRUE(value.input.has_value() && *value.input == "main.cc");
     EXPECT_TRUE(value.trailing.has_value() &&
                 *value.trailing == std::vector<std::string>{"tail1", "tail2"});
