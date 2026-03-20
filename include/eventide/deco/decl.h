@@ -192,46 +192,47 @@ struct DecoOptionBase {
 };
 
 template <typename ResTy>
-struct DecoOption : DecoOptionBase {
+struct DecoOption : public DecoOptionBase, private std::optional<ResTy> {
     using result_type = ResTy;
+    using BaseOpt = std::optional<ResTy>;
 
-    std::optional<ResTy> value = std::nullopt;
+    using BaseOpt::operator*;
+    using BaseOpt::operator->;
+    using BaseOpt::has_value;
+    using BaseOpt::value;
+    using BaseOpt::value_or;
+    using BaseOpt::reset;
+    using BaseOpt::emplace;
+    using BaseOpt::operator bool;
 
+    constexpr DecoOption() = default;
     constexpr ~DecoOption() = default;
 
-    constexpr DecoOption(ResTy default_value) : value(std::move(default_value)) {}
+    constexpr DecoOption(ResTy default_value) : BaseOpt(std::move(default_value)) {}
 
     template <typename DefaultTy>
         requires (!std::same_as<std::remove_cvref_t<DefaultTy>, DecoOption<ResTy>> &&
                   std::constructible_from<ResTy, DefaultTy>)
     constexpr DecoOption(DefaultTy&& default_value) :
-        value(ResTy(std::forward<DefaultTy>(default_value))) {}
-
-    constexpr DecoOption() = default;
+        BaseOpt(std::forward<DefaultTy>(default_value)) {}
 
     template <typename DefaultTy>
         requires (!std::same_as<std::remove_cvref_t<DefaultTy>, DecoOption<ResTy>> &&
                   std::constructible_from<ResTy, DefaultTy>)
     constexpr auto operator=(DefaultTy&& default_value) -> DecoOption<ResTy>& {
-        value = ResTy(std::forward<DefaultTy>(default_value));
+        BaseOpt::operator=(std::forward<DefaultTy>(default_value));
         return *this;
     }
 
-    ResTy& operator*() {
-        return *value;
+    const BaseOpt& as_optional() const {
+        return *this;
     }
 
-    const ResTy& operator*() const {
-        return *value;
+    BaseOpt& as_optional() {
+        return *this;
     }
 
-    ResTy* operator->() {
-        return &(*value);
-    }
-
-    const ResTy* operator->() const {
-        return &(*value);
-    }
+    virtual std::optional<std::string> into(backend::ParsedArgument&& arg) override = 0;
 };
 
 namespace detail {
@@ -357,6 +358,29 @@ std::optional<std::string> assign_vector(std::optional<ResTy>& target,
     }
 }
 
+template <typename ResTy>
+std::optional<std::string> assign_input_vector(std::optional<ResTy>& target,
+                                               std::vector<std::string>& raw_inputs,
+                                               std::span<const std::string_view> values) {
+    const auto original_size = raw_inputs.size();
+    raw_inputs.reserve(original_size + values.size());
+    for(const auto value: values) {
+        raw_inputs.emplace_back(value);
+    }
+
+    std::vector<std::string_view> all_values;
+    all_values.reserve(raw_inputs.size());
+    for(const auto& value: raw_inputs) {
+        all_values.emplace_back(value);
+    }
+
+    if(auto err = assign_vector(target, all_values)) {
+        raw_inputs.resize(original_size);
+        return err;
+    }
+    return std::nullopt;
+}
+
 }  // namespace detail
 
 template <typename ResTy>
@@ -370,9 +394,9 @@ struct FlagOption : DecoOption<ResTy> {
             return "flag option does not accept values";
         }
         if constexpr(std::same_as<ResTy, bool>) {
-            this->value = true;
+            this->as_optional() = true;
         } else {
-            this->value = this->value.value_or(0) + 1;
+            this->as_optional() = this->as_optional().value_or(0) + 1;
         }
         return std::nullopt;
     }
@@ -388,24 +412,35 @@ struct ScalarOption : DecoOption<ResTy> {
         if(arg.values.size() != 1) {
             return "expected exactly one value";
         }
-        return detail::assign_scalar(this->value, arg.values.front());
+        return detail::assign_scalar(this->as_optional(), arg.values.front());
     }
 };
 
 template <typename ResTy>
 struct InputOption : DecoOption<ResTy> {
-    static_assert(trait::ScalarResultType<ResTy>, DecoScalarResultErrString);
+    static_assert(trait::InputResultType<ResTy>, DecoInputResultErrString);
     using DecoOption<ResTy>::DecoOption;
+    std::vector<std::string> raw_inputs;
     constexpr ~InputOption() = default;
 
     std::optional<std::string> into(backend::ParsedArgument&& arg) override {
-        if(arg.values.empty()) {
-            return detail::assign_scalar(this->value, arg.get_spelling_view());
+        if constexpr(trait::ScalarResultType<ResTy>) {
+            if(arg.values.empty()) {
+                return detail::assign_scalar(this->as_optional(), arg.get_spelling_view());
+            }
+            if(arg.values.size() == 1) {
+                return detail::assign_scalar(this->as_optional(), arg.values.front());
+            }
+            return "input option expects at most one value";
+        } else {
+            if(arg.values.empty()) {
+                const std::string_view spelling = arg.get_spelling_view();
+                return detail::assign_input_vector(this->as_optional(),
+                                                   this->raw_inputs,
+                                                   {&spelling, 1});
+            }
+            return detail::assign_input_vector(this->as_optional(), this->raw_inputs, arg.values);
         }
-        if(arg.values.size() == 1) {
-            return detail::assign_scalar(this->value, arg.values.front());
-        }
-        return "input option expects at most one value";
     }
 };
 
@@ -416,7 +451,7 @@ struct VectorOption : DecoOption<ResTy> {
     constexpr ~VectorOption() = default;
 
     std::optional<std::string> into(backend::ParsedArgument&& arg) override {
-        return detail::assign_vector(this->value, arg.values);
+        return detail::assign_vector(this->as_optional(), arg.values);
     }
 };
 

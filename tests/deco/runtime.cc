@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <sstream>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -142,6 +143,22 @@ std::span<std::string> into_deco_args(Args&&... args) {
 
 };  // namespace
 
+struct CatterSelf {
+    DecoFlag(required = false)
+    v;
+    DecoInput(required = false)
+    <std::string> script_internal;
+    DecoKV(required = false)
+    <std::string> s;
+};
+
+struct CatterTrailing {
+    DecoInput(required = false)
+    <std::vector<std::string>> script_args;
+    DecoPack(required = false)
+    <std::vector<std::string>> cmd;
+};
+
 TEST_SUITE(cli_parse) {
 
 TEST_CASE(parsing) {
@@ -182,7 +199,7 @@ TEST_CASE(parsing_trailing_requires_dash_dash_separator) {
     if(!good.has_value()) {
         return;
     }
-    EXPECT_TRUE(good->options.trailing.value.has_value());
+    EXPECT_TRUE(good->options.trailing.has_value());
     EXPECT_TRUE(good->options.trailing->size() == 2);
     EXPECT_TRUE((*good->options.trailing)[0] == "a");
     EXPECT_TRUE((*good->options.trailing)[1] == "b");
@@ -220,6 +237,20 @@ TEST_CASE(when_error) {
                 res6.error().message.contains("unknown option"));
 }
 
+TEST_CASE(with_cont_parse) {
+    std::vector<std::string> args = {"-v", "script::cdb", "-t", "x", "--", "make"};
+    auto res = deco::cli::parse_with_callback<CatterSelf>(
+        args,
+        [](const CatterSelf& opt, deco::decl::DecoOptionBase* ptr) {
+            return !(&opt.s == ptr || &opt.script_internal == ptr);
+        });
+    auto res2 = deco::cli::parse<CatterTrailing>({args.begin() + res->next_index, args.end()});
+    EXPECT_EQ(res->next_index, 2);
+    EXPECT_EQ(*res->options.script_internal, "script::cdb");
+    EXPECT_EQ(res2->options.cmd->size(), 1);
+    EXPECT_EQ((*res2->options.script_args)[0], "-t");
+};
+
 };  // TEST_SUITE(cli_parse)
 
 TEST_SUITE(dispatcher) {
@@ -231,8 +262,8 @@ TEST_CASE(dispatching) {
         .dispatch(WebCliOpt::Cate::help_category, [&](auto) { dispactcher.usage(ss, true); })
         .dispatch(WebCliOpt::Cate::request_category,
                   [&](WebCliOpt opt) {
-                      EXPECT_TRUE(opt.request.method.value.has_value());
-                      EXPECT_TRUE(opt.request.url.value.has_value());
+                      EXPECT_TRUE(opt.request.method.has_value());
+                      EXPECT_TRUE(opt.request.url.has_value());
                   })
         .when_err([&](auto err) { ss << "Error: " << err.message << "\n"; });
 
@@ -292,8 +323,8 @@ TEST_CASE(dispatching_with_subcommand_dispatcher) {
     web_dispatcher
         .dispatch(WebCliOpt::Cate::request_category,
                   [&](WebCliOpt opt) {
-                      EXPECT_TRUE(opt.request.method.value.has_value());
-                      EXPECT_TRUE(opt.request.url.value.has_value());
+                      EXPECT_TRUE(opt.request.method.has_value());
+                      EXPECT_TRUE(opt.request.url.has_value());
                       ss << "request-ok";
                   })
         .when_err([&](auto err) { ss << "dispatch-err:" << err.message; });

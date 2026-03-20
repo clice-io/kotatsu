@@ -44,6 +44,11 @@ struct DescOpt {
     unnamed;
 };
 
+struct VectorInputDescOpt {
+    DecoInput(meta_var = "INPUT"; help = "Input files"; required = false;)
+    <std::vector<std::string>> inputs;
+};
+
 }  // namespace
 
 TEST_SUITE(deco_descriptor) {
@@ -84,6 +89,12 @@ TEST_CASE(from_deco_option_renders_help_style_text) {
     const auto input_help = deco::desc::from_deco_option(opt.input, true);
     EXPECT_TRUE(input_help.find("<INPUT>") != std::string::npos);
     EXPECT_TRUE(input_help.find("Input file") != std::string::npos);
+
+    VectorInputDescOpt vector_opt{};
+    EXPECT_TRUE(deco::desc::from_deco_option(vector_opt.inputs) == "<INPUT>...");
+    const auto vector_input_help = deco::desc::from_deco_option(vector_opt.inputs, true);
+    EXPECT_TRUE(vector_input_help.find("<INPUT>...") != std::string::npos);
+    EXPECT_TRUE(vector_input_help.find("Input files") != std::string::npos);
 }
 
 };  // TEST_SUITE(deco_descriptor)

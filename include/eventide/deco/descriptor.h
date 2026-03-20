@@ -226,6 +226,41 @@ inline std::string help_text(const CfgTy& cfg, std::string_view fallback_name) {
                        has_help_text(cfg.help) ? cfg.help : "no description provided");
 }
 
+template <typename FieldTy, typename CfgTy>
+inline std::string usage_text_for_field(const FieldTy&,
+                                        const CfgTy& cfg,
+                                        bool help_mode,
+                                        std::string_view fallback_name) {
+    if constexpr(CfgTy::deco_field_ty == decl::DecoType::Input && ty::deco_option_like<FieldTy>) {
+        using result_ty = typename ty::base_ty<FieldTy>::result_type;
+        const auto value_token = meta_var_token(cfg.meta_var);
+        if constexpr(!trait::ScalarResultType<result_ty> && trait::VectorResultType<result_ty>) {
+            return std::format("{}...", value_token);
+        }
+        return value_token;
+    } else {
+        return usage_text(cfg, help_mode, fallback_name);
+    }
+}
+
+template <typename FieldTy, typename CfgTy>
+inline std::string help_text_for_field(const FieldTy& field,
+                                       const CfgTy& cfg,
+                                       std::string_view fallback_name) {
+    const auto usage = usage_text_for_field(field, cfg, true, fallback_name);
+    constexpr size_t usage_column_width = 32;
+    if(usage.size() >= usage_column_width) {
+        return std::format(R"(  {}
+    {:<32}{})",
+                           usage,
+                           "",
+                           has_help_text(cfg.help) ? cfg.help : "no description provided");
+    }
+    return std::format("  {:<32}{}",
+                       usage,
+                       has_help_text(cfg.help) ? cfg.help : "no description provided");
+}
+
 }  // namespace detail
 
 template <ty::is_deco_field_or_option T>
@@ -234,9 +269,17 @@ inline std::string from_deco_option(const T& field,
                                     std::string_view fallback_name = {}) {
     const auto cfg = ty::dyn_cast(field);
     if(include_help) {
-        return detail::help_text(cfg, fallback_name);
+        if constexpr(ty::deco_option_like<T>) {
+            return detail::help_text_for_field(field, cfg, fallback_name);
+        } else {
+            return detail::help_text(cfg, fallback_name);
+        }
     }
-    return detail::usage_text(cfg, false, fallback_name);
+    if constexpr(ty::deco_option_like<T>) {
+        return detail::usage_text_for_field(field, cfg, false, fallback_name);
+    } else {
+        return detail::usage_text(cfg, false, fallback_name);
+    }
 }
 
 }  // namespace deco::desc

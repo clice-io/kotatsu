@@ -385,15 +385,26 @@ private:
                            unsigned flags_to_exclude) const;
 
     template <typename Callback, typename Arg>
-    static bool invoke_parse_callback(Callback&& callback, Arg&& arg) {
-        using result_t = std::invoke_result_t<Callback&&, Arg&&>;
+    static bool invoke_parse_callback(unsigned index, Callback&& callback, Arg&& arg) {
+        constexpr bool with_index = std::is_invocable_v<Callback, unsigned, Arg>;
+
+        auto perform_call = [&]() -> decltype(auto) {
+            if constexpr(with_index) {
+                return std::invoke(std::forward<Callback>(callback), index, std::forward<Arg>(arg));
+            } else {
+                return std::invoke(std::forward<Callback>(callback), std::forward<Arg>(arg));
+            }
+        };
+
+        using result_t = decltype(perform_call());
+
         if constexpr(std::is_void_v<result_t>) {
-            std::invoke(std::forward<Callback>(callback), std::forward<Arg>(arg));
+            perform_call();
             return true;
         } else {
             static_assert(std::is_same_v<std::remove_cvref_t<result_t>, bool>,
-                          "parse callback must return void or bool");
-            return std::invoke(std::forward<Callback>(callback), std::forward<Arg>(arg));
+                          "Eventide Error: parse callback must return void or bool");
+            return perform_call();
         }
     }
 
@@ -445,10 +456,10 @@ public:
             argv,
             missing_arg_index,
             missing_arg_count,
-            [&](auto&& parsed) -> bool {
+            [&](unsigned index, auto&& parsed) -> bool {
                 auto res = std::expected<ParsedArgument, std::string>(
                     std::forward<decltype(parsed)>(parsed));
-                return invoke_parse_callback(res_err_fn, std::move(res));
+                return invoke_parse_callback(index, res_err_fn, std::move(res));
             },
             Visibility(),
             &missing_reason);
@@ -466,7 +477,7 @@ public:
                                             reason,
                                             missing_arg_count,
                                             noun)));
-            (void)invoke_parse_callback(res_err_fn, std::move(res));
+            (void)invoke_parse_callback(missing_arg_index, res_err_fn, std::move(res));
         }
     }
 
@@ -503,6 +514,7 @@ public:
             if(this->dash_dash_parsing && str == "--") {
                 if(this->dash_dash_as_single_pack) {
                     continue_parsing = invoke_parse_callback(
+                        end,
                         arg_callback,
                         ParsedArgument{
                             .option_id = this->input_option_id,
@@ -515,7 +527,8 @@ public:
                 } else {
                     while(continue_parsing && ++index < end) {
                         continue_parsing =
-                            invoke_parse_callback(arg_callback,
+                            invoke_parse_callback(index,
+                                                  arg_callback,
                                                   ParsedArgument{
                                                       .option_id = this->input_option_id,
                                                       .spelling = std::string_view(argv[index]),
@@ -545,7 +558,7 @@ public:
                 }
                 return;
             }
-            continue_parsing = invoke_parse_callback(arg_callback, std::move(a).value());
+            continue_parsing = invoke_parse_callback(index, arg_callback, std::move(a).value());
         }
     }
 };

@@ -130,7 +130,7 @@
                               __VA_ARGS__)
 
 #define DecoInput(...)                                                                             \
-    DECO_DECLARE_OPTION_TEMPLATE(deco::trait::ScalarResultType,                                    \
+    DECO_DECLARE_OPTION_TEMPLATE(deco::trait::InputResultType,                                     \
                                  std::string,                                                      \
                                  deco::decl::InputOption,                                          \
                                  deco::decl::InputFields,                                          \

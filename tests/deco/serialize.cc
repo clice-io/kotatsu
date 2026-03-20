@@ -83,6 +83,11 @@ struct TrailingFirstOpt {
     <std::string> input;
 };
 
+struct VectorInputSerializeOpt {
+    DecoInput(required = false; category = primary_category;)
+    <std::vector<std::string>> inputs;
+};
+
 SerializeOpt make_full_opt() {
     SerializeOpt opt{};
     opt.verbose = true;
@@ -144,19 +149,17 @@ TEST_CASE(serializes_all_option_kinds_with_stable_order_and_roundtrip) {
         return;
     }
     const auto& value = parsed->options;
-    EXPECT_TRUE(value.verbose.value.has_value() && *value.verbose.value);
-    EXPECT_TRUE(value.repeat.value.has_value() && *value.repeat.value == 2u);
-    EXPECT_TRUE(value.count.value.has_value() && *value.count.value == 7);
-    EXPECT_TRUE(value.joined_only.value.has_value() && *value.joined_only.value == 9);
-    EXPECT_TRUE(value.split_by_name.value.has_value() && *value.split_by_name.value == 3);
-    EXPECT_TRUE(value.auto_name_value.value.has_value() && *value.auto_name_value.value == 11);
-    EXPECT_TRUE(value.tags.value.has_value() &&
-                *value.tags.value == std::vector<std::string>{"a", "b"});
-    EXPECT_TRUE(value.pair.value.has_value() &&
-                *value.pair.value == std::vector<std::string>{"left", "right"});
-    EXPECT_TRUE(value.input.value.has_value() && *value.input.value == "main.cc");
-    EXPECT_TRUE(value.trailing.value.has_value() &&
-                *value.trailing.value == std::vector<std::string>{"tail1", "tail2"});
+    EXPECT_TRUE(value.verbose.has_value() && *value.verbose);
+    EXPECT_TRUE(value.repeat.has_value() && *value.repeat == 2u);
+    EXPECT_TRUE(value.count.has_value() && *value.count == 7);
+    EXPECT_TRUE(value.joined_only.has_value() && *value.joined_only == 9);
+    EXPECT_TRUE(value.split_by_name.has_value() && *value.split_by_name == 3);
+    EXPECT_TRUE(value.auto_name_value.has_value() && *value.auto_name_value == 11);
+    EXPECT_TRUE(value.tags.has_value() && *value.tags == std::vector<std::string>{"a", "b"});
+    EXPECT_TRUE(value.pair.has_value() && *value.pair == std::vector<std::string>{"left", "right"});
+    EXPECT_TRUE(value.input.has_value() && *value.input == "main.cc");
+    EXPECT_TRUE(value.trailing.has_value() &&
+                *value.trailing == std::vector<std::string>{"tail1", "tail2"});
 }
 
 TEST_CASE(category_filter_generates_only_selected_groups) {
@@ -192,6 +195,23 @@ TEST_CASE(trailing_pack_is_emitted_after_non_trailing_arguments) {
     auto argv = deco::ser::to_argv(opt);
     const std::vector<std::string> expected = {"--dry-run", "front", "--", "a", "b"};
     EXPECT_TRUE(argv == expected);
+}
+
+TEST_CASE(vector_input_serializes_as_repeated_positional_arguments) {
+    VectorInputSerializeOpt opt{};
+    opt.inputs = std::vector<std::string>{"a.txt", "b.txt", "c.txt"};
+
+    auto argv = deco::ser::to_argv(opt);
+    const std::vector<std::string> expected = {"a.txt", "b.txt", "c.txt"};
+    EXPECT_TRUE(argv == expected);
+
+    auto parsed = deco::cli::parse<VectorInputSerializeOpt>(argv);
+    EXPECT_TRUE(parsed.has_value());
+    if(!parsed.has_value()) {
+        return;
+    }
+    EXPECT_TRUE(parsed->options.inputs.has_value());
+    EXPECT_TRUE(*parsed->options.inputs == expected);
 }
 
 };  // TEST_SUITE(deco_serialize)

@@ -78,6 +78,9 @@ concept PrimitiveVectorResultType =
 template <typename Ty>
 concept VectorResultType = PrimitiveVectorResultType<Ty> || CustomStringVectorResultTy<Ty>;
 
+template <typename Ty>
+concept InputResultType = ScalarResultType<Ty> || VectorResultType<Ty>;
+
 }  // namespace deco::trait
 
 #define DecoScalarResultErrString                                                                  \
@@ -85,3 +88,6 @@ concept VectorResultType = PrimitiveVectorResultType<Ty> || CustomStringVectorRe
 
 #define DecoVectorResultErrString                                                                  \
     "Result type must be a vector of primitive scalar values or provide into(vector<string_view>)."
+
+#define DecoInputResultErrString                                                                   \
+    "Input result type must be a scalar/string-like value or a vector of primitive scalar values, " "or provide a compatible into(...) overload."

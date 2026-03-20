@@ -11,6 +11,7 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -42,6 +43,7 @@ using runtime_callable_t =
 
 template <typename T>
 struct ParsedResult {
+    unsigned next_index = 0;
     T options;
     std::set<const decl::Category*> matched_categories;
 };
@@ -69,8 +71,7 @@ std::string check_valid(const T& options,
     std::string err = "";
     // check required options
     storage.visit_fields(options, [&](auto& field, const auto& cfg, std::string_view name, auto) {
-        if(matched_categories.contains(cfg.category.ptr()) && cfg.required &&
-           !field.value.has_value()) {
+        if(matched_categories.contains(cfg.category.ptr()) && cfg.required && !field.has_value()) {
             err = std::format("required option {} is missing",
                               desc::from_deco_option(cfg, false, name));
             return false;
@@ -108,71 +109,79 @@ std::string check_valid(const T& options,
     return {};
 }
 
-template <typename T>
-std::expected<ParsedResult<T>, ParseError> parse(std::span<std::string> argv) {
+template <typename T, typename Fn>
+    requires std::is_invocable_r_v<bool, Fn, const T&, decl::DecoOptionBase*>
+std::expected<ParsedResult<T>, ParseError> parse_with_callback(std::span<std::string> argv,
+                                                               Fn&& cont_fn) {
     const auto& storage = detail::build_storage<T>();
     backend::OptTable table = storage.make_opt_table();
     ParsedResult<T> res{};
     ParseError err;
-    table.parse_args(argv, [&](std::expected<backend::ParsedArgument, std::string> arg) {
-        if(!arg.has_value()) {
-            err = {ParseError::Type::BackendParsing, std::move(arg.error())};
-            return false;
-        }
+    table.parse_args(argv,
+                     [&](unsigned index, std::expected<backend::ParsedArgument, std::string> arg) {
+                         if(!arg.has_value()) {
+                             err = {ParseError::Type::BackendParsing, std::move(arg.error())};
+                             return false;
+                         }
 
-        if(storage.is_unknown_option_id(arg->option_id)) {
-            err = {ParseError::Type::BackendParsing,
-                   std::format("unknown option '{}'", arg->get_spelling_view())};
-            return false;
-        }
+                         if(storage.is_unknown_option_id(arg->option_id)) {
+                             err = {ParseError::Type::BackendParsing,
+                                    std::format("unknown option '{}'", arg->get_spelling_view())};
+                             return false;
+                         }
 
-        auto& raw_parg = *arg;
-        void* opt_raw_ptr = nullptr;
-        const decl::Category* category = nullptr;
+                         auto& raw_parg = *arg;
+                         void* opt_raw_ptr = nullptr;
+                         const decl::Category* category = nullptr;
 
-        // check input and trailing input
-        if(storage.is_input_argument(raw_parg)) {
-            if(!storage.has_input_option()) {
-                err = {ParseError::Type::DecoParsing,
-                       std::format("unexpected input argument {}", raw_parg.get_spelling_view())};
-                return false;
-            }
-        } else if(storage.is_trailing_argument(raw_parg)) {
-            if(!storage.has_trailing_option()) {
-                err = {
-                    ParseError::Type::DecoParsing,
-                    std::format("unexpected trailing argument {}", raw_parg.get_spelling_view())};
-                return false;
-            } else {
-                opt_raw_ptr = storage.trailing_ptr_of(res.options);
-                category = storage.trailing_category();
-            }
-        }
+                         // check input and trailing input
+                         if(storage.is_input_argument(raw_parg)) {
+                             if(!storage.has_input_option()) {
+                                 err = {ParseError::Type::DecoParsing,
+                                        std::format("unexpected input argument {}",
+                                                    raw_parg.get_spelling_view())};
+                                 return false;
+                             }
+                         } else if(storage.is_trailing_argument(raw_parg)) {
+                             if(!storage.has_trailing_option()) {
+                                 err = {ParseError::Type::DecoParsing,
+                                        std::format("unexpected trailing argument {}",
+                                                    raw_parg.get_spelling_view())};
+                                 return false;
+                             } else {
+                                 opt_raw_ptr = storage.trailing_ptr_of(res.options);
+                                 category = storage.trailing_category();
+                             }
+                         }
 
-        opt_raw_ptr =
-            opt_raw_ptr ? opt_raw_ptr : storage.field_ptr_of(raw_parg.option_id, res.options);
-        category = category ? category : storage.category_of(raw_parg.option_id);
+                         opt_raw_ptr = opt_raw_ptr
+                                           ? opt_raw_ptr
+                                           : storage.field_ptr_of(raw_parg.option_id, res.options);
+                         category = category ? category : storage.category_of(raw_parg.option_id);
 
-        decl::DecoOptionBase* opt_accessor = static_cast<decl::DecoOptionBase*>(opt_raw_ptr);
-        if(opt_accessor == nullptr) {
-            err = {ParseError::Type::Internal,
-                   "no option accessor found for option id " +
-                       std::to_string(raw_parg.option_id.id())};
-            return false;
-        }
-        if(auto parse_err = opt_accessor->into(std::move(raw_parg))) {
-            err = {ParseError::Type::IntoError, std::move(*parse_err)};
-            return false;
-        }
+                         decl::DecoOptionBase* opt_accessor =
+                             static_cast<decl::DecoOptionBase*>(opt_raw_ptr);
+                         if(opt_accessor == nullptr) {
+                             err = {ParseError::Type::Internal,
+                                    "no option accessor found for option id " +
+                                        std::to_string(raw_parg.option_id.id())};
+                             return false;
+                         }
+                         if(auto parse_err = opt_accessor->into(std::move(raw_parg))) {
+                             err = {ParseError::Type::IntoError, std::move(*parse_err)};
+                             return false;
+                         }
 
-        if(category == nullptr) {
-            err = {ParseError::Type::Internal,
-                   "no category found for option id " + std::to_string(raw_parg.option_id.id())};
-            return false;
-        }
-        res.matched_categories.insert(category);
-        return true;
-    });
+                         if(category == nullptr) {
+                             err = {ParseError::Type::Internal,
+                                    "no category found for option id " +
+                                        std::to_string(raw_parg.option_id.id())};
+                             return false;
+                         }
+                         res.matched_categories.insert(category);
+                         res.next_index = index;
+                         return cont_fn(res.options, opt_accessor);
+                     });
     if(!err.message.empty()) {
         return std::unexpected(std::move(err));
     }
@@ -180,7 +189,7 @@ std::expected<ParsedResult<T>, ParseError> parse(std::span<std::string> argv) {
     storage.visit_fields(res.options,
                          [&](auto& field, const auto& cfg, std::string_view name, auto) {
                              if(res.matched_categories.contains(cfg.category.ptr()) &&
-                                cfg.required && !field.value.has_value()) {
+                                cfg.required && !field.has_value()) {
                                  err = {ParseError::Type::DecoParsing,
                                         std::format("required option {} is missing",
                                                     desc::from_deco_option(cfg, false, name))};
@@ -199,6 +208,11 @@ std::expected<ParsedResult<T>, ParseError> parse(std::span<std::string> argv) {
         return std::unexpected(std::move(err));
     }
     return res;
+}
+
+template <typename T>
+std::expected<ParsedResult<T>, ParseError> parse(std::span<std::string> argv) {
+    return parse_with_callback<T>(argv, [](auto&, auto) { return true; });
 }
 
 template <typename T>

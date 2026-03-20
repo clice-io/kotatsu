@@ -573,7 +573,7 @@ private:
 
     template <typename DecoTy>
     constexpr static bool is_field_present(const DecoTy& field) {
-        return field.value.has_value();
+        return field.has_value();
     }
 
 public:

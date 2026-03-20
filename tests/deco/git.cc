@@ -97,12 +97,12 @@ TEST_CASE(clone_subcommand_parses_input_and_option) {
     deco::cli::Dispatcher<GitCloneOpt> clone_dispatcher("git clone [OPTIONS] REPO");
     clone_dispatcher
         .dispatch([&](GitCloneOpt opt) {
-            EXPECT_TRUE(opt.repo.value.has_value());
-            if(opt.repo.value.has_value()) {
+            EXPECT_TRUE(opt.repo.has_value());
+            if(opt.repo.has_value()) {
                 repo = *opt.repo;
             }
-            EXPECT_TRUE(opt.branch.value.has_value());
-            if(opt.branch.value.has_value()) {
+            EXPECT_TRUE(opt.branch.has_value());
+            if(opt.branch.has_value()) {
                 branch = *opt.branch;
             }
         })

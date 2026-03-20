@@ -152,10 +152,18 @@ public:
                          std::string_view,
                          std::index_sequence<Path...>) {
         (void)sizeof...(Path);
-        if(!should_emit(cfg) || !field.value.has_value()) {
+        if(!should_emit(cfg) || !field.has_value()) {
             return true;
         }
-        argv.push_back(scalar_to_arg(*field.value));
+        using result_ty = typename std::remove_cvref_t<FieldTy>::result_type;
+        if constexpr(trait::ScalarResultType<result_ty>) {
+            argv.push_back(scalar_to_arg(*field));
+        } else {
+            auto values = vector_to_args(*field);
+            for(auto& value: values) {
+                argv.push_back(std::move(value));
+            }
+        }
         return true;
     }
 
@@ -165,11 +173,11 @@ public:
                                   std::string_view,
                                   std::index_sequence<Path...>) {
         (void)sizeof...(Path);
-        if(!should_emit(cfg) || !field.value.has_value()) {
+        if(!should_emit(cfg) || !field.has_value()) {
             return true;
         }
         has_trailing = true;
-        trailing_values = vector_to_args(*field.value);
+        trailing_values = vector_to_args(*field);
         return true;
     }
 
@@ -179,17 +187,17 @@ public:
                         std::string_view field_name,
                         std::index_sequence<Path...>) {
         (void)sizeof...(Path);
-        if(!should_emit(cfg) || !field.value.has_value()) {
+        if(!should_emit(cfg) || !field.has_value()) {
             return true;
         }
         const auto name = option_name(cfg, field_name);
         using result_ty = typename std::remove_cvref_t<FieldTy>::result_type;
         if constexpr(std::same_as<result_ty, bool>) {
-            if(*field.value) {
+            if(*field) {
                 argv.push_back(name);
             }
         } else {
-            const auto count = static_cast<std::uint32_t>(*field.value);
+            const auto count = static_cast<std::uint32_t>(*field);
             for(std::uint32_t i = 0; i < count; ++i) {
                 argv.push_back(name);
             }
@@ -203,11 +211,11 @@ public:
                       std::string_view field_name,
                       std::index_sequence<Path...>) {
         (void)sizeof...(Path);
-        if(!should_emit(cfg) || !field.value.has_value()) {
+        if(!should_emit(cfg) || !field.has_value()) {
             return true;
         }
         const auto name = option_name(cfg, field_name);
-        const auto value = scalar_to_arg(*field.value);
+        const auto value = scalar_to_arg(*field);
         const bool allow_joined = has_kv_style(cfg.style, decl::KVStyle::Joined);
         const bool allow_separate = has_kv_style(cfg.style, decl::KVStyle::Separate);
         const bool use_joined = name_has_joined_suffix(name) || (allow_joined && !allow_separate);
@@ -226,10 +234,10 @@ public:
                                 std::string_view field_name,
                                 std::index_sequence<Path...>) {
         (void)sizeof...(Path);
-        if(!should_emit(cfg) || !field.value.has_value()) {
+        if(!should_emit(cfg) || !field.has_value()) {
             return true;
         }
-        auto values = vector_to_args(*field.value);
+        auto values = vector_to_args(*field);
         if(values.empty()) {
             return true;
         }
@@ -248,10 +256,10 @@ public:
                          std::string_view field_name,
                          std::index_sequence<Path...>) {
         (void)sizeof...(Path);
-        if(!should_emit(cfg) || !field.value.has_value()) {
+        if(!should_emit(cfg) || !field.has_value()) {
             return true;
         }
-        auto values = vector_to_args(*field.value);
+        auto values = vector_to_args(*field);
         if(values.empty()) {
             return true;
         }
