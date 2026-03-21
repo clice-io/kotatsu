@@ -354,16 +354,17 @@ TEST_CASE(request_notify_apis_failure) {
     event_loop loop;
     JsonPeer peer(loop, std::move(transport));
 
-    peer.on_request([&](RequestContext& context, const AddParams& params) -> RequestResult<AddParams> {
-        auto context_result = co_await context->send_request<AddResult>(
-            "client/add/context",
-            CustomAddParams{.a = params.a, .b = params.b});
-        if(!context_result) {
-            co_await fail(context_result.error());
-        }
+    peer.on_request(
+        [&](RequestContext& context, const AddParams& params) -> RequestResult<AddParams> {
+            auto context_result = co_await context->send_request<AddResult>(
+                "client/add/context",
+                CustomAddParams{.a = params.a, .b = params.b});
+            if(!context_result) {
+                co_await fail(context_result.error());
+            }
 
-        co_return AddResult{.sum = context_result->sum};
-    });
+            co_return AddResult{.sum = context_result->sum};
+        });
 
     loop.schedule(peer.run());
     EXPECT_EQ(loop.run(), 0);
