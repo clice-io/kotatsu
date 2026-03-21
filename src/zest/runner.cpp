@@ -39,13 +39,13 @@ struct ZestCliOptions {
 
 auto to_runner_options(ZestCliOptions options)
     -> std::expected<eventide::zest::RunnerOptions, std::string> {
-    if(options.test_filter_input.value.has_value() && !options.test_filter->empty()) {
+    if(options.test_filter_input.has_value() && !options.test_filter->empty()) {
         return std::unexpected("cannot use both positional filter and --test-filter");
     }
 
     eventide::zest::RunnerOptions runner_options;
     runner_options.only_failed_output = *options.only_failed;
-    if(options.test_filter_input.value.has_value()) {
+    if(options.test_filter_input.has_value()) {
         runner_options.filter = std::move(*options.test_filter_input);
     } else {
         runner_options.filter = std::move(*options.test_filter);
