@@ -47,7 +47,7 @@ struct promise_result {
 };
 
 /// Void-value tasks complete successfully via `co_return;`.
-/// Error results can still be written explicitly for compatibility.
+/// Use `co_await fail(...)` or `co_await or_fail(...)` to propagate errors.
 template <typename E, typename C>
 struct promise_result<void, E, C> {
     std::optional<outcome<void, E, void>> value;
@@ -211,7 +211,7 @@ struct or_fail_proxy {
 };
 
 template <typename ParentPromise, typename ParentError, typename ChildTask>
-std::coroutine_handle<> propagate_fail(async_node* child_node, async_node* parent_node) noexcept {
+std::coroutine_handle<> propagate_fail(async_node* child_node, async_node* parent_node) {
     auto* child = static_cast<typename ChildTask::promise_type*>(child_node);
     auto* parent = static_cast<ParentPromise*>(parent_node);
     auto* child_task = static_cast<standard_task*>(child_node);

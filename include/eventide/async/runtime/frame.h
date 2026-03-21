@@ -147,7 +147,7 @@ protected:
     explicit standard_task() : async_node(NodeKind::Task) {}
 
 public:
-    using error_hook = std::coroutine_handle<> (*)(async_node* child, async_node* parent) noexcept;
+    using error_hook = std::coroutine_handle<> (*)(async_node* child, async_node* parent);
 
     std::coroutine_handle<> handle() {
         return std::coroutine_handle<>::from_address(address);
