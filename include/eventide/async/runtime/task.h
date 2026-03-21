@@ -65,20 +65,6 @@ struct promise_result<void, E, C> {
     }
 };
 
-/// All-void keeps the same layout and success behavior.
-template <>
-struct promise_result<void, void, void> {
-    std::optional<outcome<void, void, void>> value;
-
-    bool has_error_result() const noexcept {
-        return false;
-    }
-
-    void return_void() noexcept {
-        value.emplace();
-    }
-};
-
 // ============================================================================
 // promise_exception, transition_await, cancel()
 // ============================================================================
@@ -176,8 +162,7 @@ concept or_fail_result = is_outcome_v<std::remove_cvref_t<Outcome>> &&
 template <typename Outcome>
     requires or_fail_result<Outcome>
 auto or_fail(Outcome&& result) {
-    return or_fail_await<std::remove_cvref_t<Outcome>>{
-        std::remove_cvref_t<Outcome>(std::forward<Outcome>(result))};
+    return or_fail_await<std::remove_cvref_t<Outcome>>{std::forward<Outcome>(result)};
 }
 
 template <typename... Args>
