@@ -1,4 +1,5 @@
 #include <stdexcept>
+#include <utility>
 
 #include "eventide/zest/zest.h"
 #include "eventide/async/async.h"
@@ -79,6 +80,7 @@ task<int> delayed_int(int ms, int value) {
 
 task<int, error> return_error(error err) {
     co_await fail(err);
+    std::unreachable();
 }
 
 task<int, error> return_value(int val) {
@@ -88,6 +90,7 @@ task<int, error> return_value(int val) {
 task<int, error> delayed_return_error(int ms, error err) {
     co_await sleep(ms);
     co_await fail(err);
+    std::unreachable();
 }
 
 task<int, error> delayed_return_value(int ms, int val) {
