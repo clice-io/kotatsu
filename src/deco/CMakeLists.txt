@@ -3,6 +3,7 @@ add_library(eventide::deco ALIAS eventide_deco)
 
 target_sources(eventide_deco PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/runtime.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/text.cc"
 )
 
 target_include_directories(eventide_deco PUBLIC

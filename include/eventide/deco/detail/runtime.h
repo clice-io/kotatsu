@@ -20,6 +20,7 @@
 #include "./backend.h"
 #include "./decl.h"
 #include "./descriptor.h"
+#include "./text.h"
 
 namespace deco::util {
 
@@ -128,41 +129,54 @@ constexpr decltype(auto) access_member_path(Obj&& obj) {
     }
 }
 
+template <typename T>
+auto make_usage_document(std::string_view command_overview) -> text::UsageDocument {
+    text::UsageDocument document{
+        .overview = std::string(command_overview),
+    };
+    std::vector<const decl::Category*> seen_categories;
+    const auto& storage = ::deco::detail::build_storage<T>();
+    storage.visit_fields(T{}, [&](const auto& field, const auto& cfg, std::string_view name, auto) {
+        const auto* category = cfg.category.ptr();
+        std::size_t group_index = 0;
+        bool found = false;
+        for(std::size_t i = 0; i < seen_categories.size(); ++i) {
+            if(seen_categories[i] == category) {
+                group_index = i;
+                found = true;
+                break;
+            }
+        }
+        if(!found) {
+            seen_categories.push_back(category);
+            document.groups.push_back(text::UsageGroup{
+                .title = desc::detail::category_desc(*category),
+                .exclusive = category->exclusive,
+                .is_default = category == &decl::default_category,
+            });
+            group_index = document.groups.size() - 1;
+        }
+
+        auto& group = document.groups[group_index];
+        group.entries.push_back(text::UsageEntry{
+            .usage = desc::from_deco_option(field, false, name),
+            .help = desc::detail::has_help_text(cfg.help) ? std::string(cfg.help) : std::string{},
+        });
+        return true;
+    });
+    return document;
+}
+
 }  // namespace detail
 
 template <typename T>
 void write_usage_for(std::ostream& os,
                      std::string_view command_overview,
-                     bool include_help = true) {
-    const auto& storage = ::deco::detail::build_storage<T>();
-    std::map<const decl::Category*, std::vector<std::string>> category_usage_map;
-    auto on_option = [&](auto, const auto& opt_fields, std::string_view field_name, auto) {
-        category_usage_map[opt_fields.category.ptr()].push_back(
-            desc::from_deco_option(opt_fields, include_help, field_name));
-        return true;
-    };
-    storage.visit_fields(T{}, on_option);
-    os << "usage: " << command_overview << "\n\n";
-    os << "Options:\n";
-    if(category_usage_map.size() == 1 &&
-       category_usage_map.begin()->first == &decl::default_category) {
-        for(const auto& usage: category_usage_map.begin()->second) {
-            os << "  " << usage << "\n";
-        }
-        return;
-    }
-
-    for(const auto& [category, usages]: category_usage_map) {
-        os << "Group " << desc::detail::category_desc(*category);
-        if(category->exclusive) {
-            os << ", exclusive with other groups";
-        }
-        os << ":\n";
-        for(const auto& usage: usages) {
-            os << "  " << usage << "\n";
-        }
-        os << "\n";
-    }
+                     bool include_help = true,
+                     const text::Renderer* renderer = nullptr) {
+    os << text::render_usage(detail::make_usage_document<T>(command_overview),
+                             include_help,
+                             renderer);
 }
 
 template <typename T, typename State = std::monostate>
@@ -171,16 +185,18 @@ class Context {
 
     invocation_t* invocation_ptr = nullptr;
     std::string_view command_overview{};
-    void (*usage_writer)(std::ostream&, std::string_view, bool) = nullptr;
+    void (*usage_writer)(std::ostream&, std::string_view, bool, const text::Renderer*) = nullptr;
+    const text::Renderer* renderer_ptr = nullptr;
 
 public:
     Context() = default;
 
     Context(invocation_t& invocation,
             std::string_view command_overview,
-            void (*usage_writer)(std::ostream&, std::string_view, bool)) :
+            void (*usage_writer)(std::ostream&, std::string_view, bool, const text::Renderer*),
+            const text::Renderer* renderer = nullptr) :
         invocation_ptr(&invocation), command_overview(command_overview),
-        usage_writer(usage_writer) {}
+        usage_writer(usage_writer), renderer_ptr(renderer) {}
 
     auto invocation() -> invocation_t& {
         return *invocation_ptr;
@@ -234,9 +250,27 @@ public:
         return invocation().command_path;
     }
 
+    auto renderer() const -> const text::Renderer& {
+        return text::resolve_renderer(renderer_ptr);
+    }
+
+    auto into_context_at_cursor(unsigned index) const -> decl::IntoContext {
+        const auto argv_view = std::span<const std::string>(argv().data(), argv().size());
+        return decl::IntoContext::at_cursor(argv_view, index, renderer_ptr);
+    }
+
+    auto into_context(const backend::ParsedArgumentOwning& arg) const -> decl::IntoContext {
+        const auto argv_view = std::span<const std::string>(argv().data(), argv().size());
+        return decl::IntoContext::from_argument(argv_view, arg, renderer_ptr);
+    }
+
+    auto format_error(std::string_view reason) const -> std::string {
+        return into_context_at_cursor(next_cursor()).format_error(reason);
+    }
+
     auto usage(std::ostream& os, bool include_help = true) const -> void {
         if(usage_writer != nullptr) {
-            usage_writer(os, command_overview, include_help);
+            usage_writer(os, command_overview, include_help, renderer_ptr);
         }
     }
 
@@ -432,7 +466,9 @@ namespace detail {
 template <typename T, typename State, typename OnOption>
 std::expected<Invocation<T, State>, ParseError> run_parse_session(std::span<std::string> argv,
                                                                   State initial_state,
-                                                                  OnOption&& on_option) {
+                                                                  OnOption&& on_option,
+                                                                  const text::Renderer* formatter =
+                                                                      nullptr) {
     const auto& storage = ::deco::detail::build_storage<T>();
     backend::OptTable table = storage.make_opt_table();
     Invocation<T, State> res{};
@@ -454,7 +490,8 @@ std::expected<Invocation<T, State>, ParseError> run_parse_session(std::span<std:
             current_argv,
             [&](unsigned next_cursor, std::expected<backend::ParsedArgument, std::string> arg) {
                 auto error_at_cursor = [&](std::string_view reason) {
-                    return decl::IntoContext::at_cursor(argv_view, next_cursor).format_error(reason);
+                    return decl::IntoContext::at_cursor(argv_view, next_cursor, formatter)
+                        .format_error(reason);
                 };
                 if(!arg.has_value()) {
                     err = {ParseError::Type::BackendParsing, error_at_cursor(arg.error())};
@@ -464,7 +501,7 @@ std::expected<Invocation<T, State>, ParseError> run_parse_session(std::span<std:
                 const auto arg_snapshot =
                     backend::ParsedArgumentOwning::from_parsed_argument(*arg);
                 auto error_at_argument = [&](std::string_view reason) {
-                    return decl::IntoContext::from_argument(argv_view, arg_snapshot)
+                    return decl::IntoContext::from_argument(argv_view, arg_snapshot, formatter)
                         .format_error(reason);
                 };
                 if(storage.is_unknown_option_id(arg->option_id)) {
@@ -513,7 +550,8 @@ std::expected<Invocation<T, State>, ParseError> run_parse_session(std::span<std:
                     return false;
                 }
                 if(auto parse_err = opt_accessor->into(
-                       std::move(raw_parg), decl::IntoContext::from_argument(argv_view, arg_snapshot))) {
+                       std::move(raw_parg),
+                       decl::IntoContext::from_argument(argv_view, arg_snapshot, formatter))) {
                     err = {ParseError::Type::IntoError, std::move(*parse_err)};
                     return false;
                 }
@@ -580,7 +618,8 @@ std::expected<Invocation<T, State>, ParseError> run_parse_session(std::span<std:
                                  const auto active_argv = std::span<const std::string>(
                                      res.active_argv.data(), res.active_argv.size());
                                  err = {ParseError::Type::DecoParsing,
-                                        decl::IntoContext::at_cursor(active_argv, res.next_index)
+                                        decl::IntoContext::at_cursor(
+                                            active_argv, res.next_index, formatter)
                                             .format_error(std::format("required option {} is missing",
                                                                       desc::from_deco_option(
                                                                           cfg, false, name)))};
@@ -597,13 +636,26 @@ std::expected<Invocation<T, State>, ParseError> run_parse_session(std::span<std:
         const auto active_argv =
             std::span<const std::string>(res.active_argv.data(), res.active_argv.size());
         err = {ParseError::Type::DecoParsing,
-               decl::IntoContext::at_cursor(active_argv, res.next_index).format_error(check_err)};
+               decl::IntoContext::at_cursor(active_argv, res.next_index, formatter)
+                   .format_error(check_err)};
         return std::unexpected(std::move(err));
     }
     return res;
 }
 
 }  // namespace detail
+
+template <typename T>
+std::expected<Invocation<T>, ParseError> invoke(std::span<std::string> argv,
+                                                const text::Renderer& formatter) {
+    return detail::run_parse_session<T, std::monostate>(
+        argv,
+        std::monostate{},
+        [](auto&, decl::DecoOptionBase&, const backend::ParsedArgumentOwning&, unsigned, auto) {
+            return decl::ParseControl::next();
+        },
+        &formatter);
+}
 
 template <typename T>
 std::expected<Invocation<T>, ParseError> invoke(std::span<std::string> argv) {
@@ -616,8 +668,24 @@ std::expected<Invocation<T>, ParseError> invoke(std::span<std::string> argv) {
 }
 
 template <typename T>
+std::expected<Invocation<T>, ParseError> parse(std::span<std::string> argv,
+                                               const text::Renderer& formatter) {
+    return invoke<T>(argv, formatter);
+}
+
+template <typename T>
 std::expected<Invocation<T>, ParseError> parse(std::span<std::string> argv) {
     return invoke<T>(argv);
+}
+
+template <typename T>
+std::expected<T, ParseError> parse_only(std::span<std::string> argv,
+                                        const text::Renderer& formatter) {
+    auto res = parse<T>(argv, formatter);
+    if(!res.has_value()) {
+        return std::unexpected(std::move(res.error()));
+    }
+    return std::move(res->options);
 }
 
 template <typename T>
@@ -683,12 +751,17 @@ class Command {
     std::vector<context_handler_t> finalizers;
     std::vector<CategoryHandler> categoryHandlers;
     std::optional<context_handler_t> defaultHandler;
+    std::optional<text::Renderer> textRenderer;
     error_fn_t errorHandler = [](const ParseError& err) {
         std::println(stderr, "{}", err.message);
     };
 
+    auto renderer_ptr() const -> const text::Renderer* {
+        return textRenderer.has_value() ? &*textRenderer : nullptr;
+    }
+
     auto make_context(invocation_t& invocation) const -> context_t {
-        return context_t(invocation, commandOverview, &write_usage_for<T>);
+        return context_t(invocation, commandOverview, &write_usage_for<T>, renderer_ptr());
     }
 
 public:
@@ -786,6 +859,16 @@ public:
         return *this;
     }
 
+    auto& render_with(text::Renderer renderer) {
+        textRenderer = std::move(renderer);
+        return *this;
+    }
+
+    auto& text_style(text::TextStyle style) {
+        textRenderer = text::CompatibleRenderer(std::move(style));
+        return *this;
+    }
+
     auto invoke(std::span<std::string> argv) -> std::expected<invocation_t, ParseError> {
         auto res = detail::run_parse_session<T, State>(
             argv,
@@ -809,7 +892,8 @@ public:
                     }
                 }
                 return decl::ParseControl::next();
-            });
+            },
+            renderer_ptr());
         if(!res.has_value()) {
             return res;
         }
@@ -834,7 +918,7 @@ public:
 
     template <typename Os>
     auto usage(Os& os, bool include_help = true) const -> void {
-        write_usage_for<T>(os, commandOverview, include_help);
+        write_usage_for<T>(os, commandOverview, include_help, renderer_ptr());
     }
 
     auto execute(std::span<std::string> argv) -> void {
@@ -903,6 +987,11 @@ class Dispatcher {
     };
     std::vector<CategoryHandler> handlers;
     std::string_view commandOverview;
+    std::optional<text::Renderer> textRenderer;
+
+    auto renderer_ptr() const -> const text::Renderer* {
+        return textRenderer.has_value() ? &*textRenderer : nullptr;
+    }
 
 public:
     Dispatcher(std::string_view command_overview) : commandOverview(command_overview) {}
@@ -953,13 +1042,29 @@ public:
         return *this;
     }
 
+    auto& render_with(text::Renderer renderer) {
+        textRenderer = std::move(renderer);
+        return *this;
+    }
+
+    auto& text_style(text::TextStyle style) {
+        textRenderer = text::CompatibleRenderer(std::move(style));
+        return *this;
+    }
+
     template <typename Os>
     void usage(Os& os, bool include_help = true) const {
-        write_usage_for<T>(os, commandOverview, include_help);
+        write_usage_for<T>(os, commandOverview, include_help, renderer_ptr());
     }
 
     void parse(std::span<std::string> argv) {
-        auto res = cli::parse<T>(argv);
+        auto res = detail::run_parse_session<T, std::monostate>(
+            argv,
+            std::monostate{},
+            [](auto&, decl::DecoOptionBase&, const backend::ParsedArgumentOwning&, unsigned, auto) {
+                return decl::ParseControl::next();
+            },
+            renderer_ptr());
         return from(res);
     }
 
@@ -1021,10 +1126,15 @@ class SubCommander {
 
     std::string commandOverview;
     std::string overview;
+    std::optional<text::Renderer> textRenderer;
 
     static auto command_of(const decl::SubCommand& subcommand) -> std::string;
     static auto display_name_of(const decl::SubCommand& subcommand, std::string_view command)
         -> std::string;
+
+    auto renderer_ptr() const -> const text::Renderer* {
+        return textRenderer.has_value() ? &*textRenderer : nullptr;
+    }
 
 public:
     SubCommander(std::string_view command_overview, std::string_view overview = {});
@@ -1061,6 +1171,16 @@ public:
                    std::is_invocable_v<std::remove_cvref_t<Handler>&, const match_t&>))
     auto& add(Handler&& default_handler) {
         return add(adapt_handler(std::forward<Handler>(default_handler)));
+    }
+
+    auto& render_with(text::Renderer renderer) {
+        textRenderer = std::move(renderer);
+        return *this;
+    }
+
+    auto& text_style(text::TextStyle style) {
+        textRenderer = text::CompatibleRenderer(std::move(style));
+        return *this;
     }
 
     auto when_err(error_fn_t error_handler) -> SubCommander&;

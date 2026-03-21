@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "text.h"
 #include "trait.h"
 
 namespace deco::decl {
@@ -164,14 +165,16 @@ struct IntoContext {
     std::span<const std::string> argv_span{};
     unsigned highlight_begin_index = 0;
     unsigned highlight_end_index = 0;
+    const cli::text::Renderer* renderer_ptr = nullptr;
 
     constexpr IntoContext() = default;
 
     constexpr IntoContext(std::span<const std::string> argv,
                           unsigned highlight_begin,
-                          unsigned highlight_end) :
+                          unsigned highlight_end,
+                          const cli::text::Renderer* renderer = nullptr) :
         argv_span(argv), highlight_begin_index(highlight_begin),
-        highlight_end_index(highlight_end) {}
+        highlight_end_index(highlight_end), renderer_ptr(renderer) {}
 
     constexpr auto argv() const -> std::span<const std::string> {
         return argv_span;
@@ -185,16 +188,24 @@ struct IntoContext {
         return highlight_end_index;
     }
 
-    static auto at_cursor(std::span<const std::string> argv, unsigned index) -> IntoContext {
+    constexpr auto renderer() const -> const cli::text::Renderer* {
+        return renderer_ptr;
+    }
+
+    static auto at_cursor(std::span<const std::string> argv,
+                          unsigned index,
+                          const cli::text::Renderer* renderer = nullptr) -> IntoContext {
         const unsigned clamped = std::min<unsigned>(index, argv.size());
-        return IntoContext(argv, clamped, clamped);
+        return IntoContext(argv, clamped, clamped, renderer);
     }
 
     template <typename ArgTy>
-    static auto from_argument(std::span<const std::string> argv, const ArgTy& arg) -> IntoContext {
+    static auto from_argument(std::span<const std::string> argv,
+                              const ArgTy& arg,
+                              const cli::text::Renderer* renderer = nullptr) -> IntoContext {
         const unsigned begin = std::min<unsigned>(arg.index, argv.size());
         if(begin >= argv.size()) {
-            return at_cursor(argv, begin);
+            return at_cursor(argv, begin, renderer);
         }
 
         unsigned end = begin + 1;
@@ -206,20 +217,21 @@ struct IntoContext {
             ++cursor;
             end = cursor;
         }
-        return IntoContext(argv, begin, end);
+        return IntoContext(argv, begin, end, renderer);
     }
 
     template <typename ArgTy>
     static auto from_value(std::span<const std::string> argv,
                            const ArgTy& arg,
-                           std::string_view value) -> IntoContext {
+                           std::string_view value,
+                           const cli::text::Renderer* renderer = nullptr) -> IntoContext {
         const unsigned begin = std::min<unsigned>(arg.index, argv.size());
         if(begin >= argv.size()) {
-            return at_cursor(argv, begin);
+            return at_cursor(argv, begin, renderer);
         }
 
         if(argv[begin] == value) {
-            return IntoContext(argv, begin, begin + 1);
+            return IntoContext(argv, begin, begin + 1, renderer);
         }
 
         unsigned cursor = begin + 1;
@@ -228,56 +240,23 @@ struct IntoContext {
                 break;
             }
             if(item == value) {
-                return IntoContext(argv, cursor, cursor + 1);
+                return IntoContext(argv, cursor, cursor + 1, renderer);
             }
             ++cursor;
         }
-        return from_argument(argv, arg);
+        return from_argument(argv, arg, renderer);
     }
 
     auto format_error(std::string_view reason) const -> std::string {
         if(argv_span.empty()) {
-            return std::string(reason);
+            return cli::text::render_diagnostic(
+                cli::text::diagnostic_message(std::string(reason)),
+                renderer_ptr);
         }
-
-        std::string rendered;
-        rendered.reserve(argv_span.size() * 8);
-        std::vector<std::size_t> starts;
-        starts.reserve(argv_span.size());
-
-        std::size_t cursor = 0;
-        for(std::size_t i = 0; i < argv_span.size(); ++i) {
-            starts.push_back(cursor);
-            rendered += argv_span[i];
-            cursor += argv_span[i].size();
-            if(i + 1 < argv_span.size()) {
-                rendered.push_back(' ');
-                ++cursor;
-            }
-        }
-
-        const unsigned begin = std::min<unsigned>(highlight_begin_index, argv_span.size());
-        unsigned end = std::min<unsigned>(highlight_end_index, argv_span.size());
-        std::size_t marker_start = rendered.size();
-        std::size_t marker_width = 1;
-        std::string label = "at end of argv";
-
-        if(begin < argv_span.size()) {
-            if(end <= begin) {
-                end = begin + 1;
-            }
-            marker_start = starts[begin];
-            marker_width = starts[end - 1] + argv_span[end - 1].size() - marker_start;
-            label = std::format("at argv[{}]", begin);
-        }
-
-        std::string marker(marker_start, ' ');
-        marker.push_back('^');
-        if(marker_width > 1) {
-            marker.append(marker_width - 1, '~');
-        }
-
-        return std::format("{}:\n  {}\n  {}\n  {}", label, rendered, marker, reason);
+        return cli::text::render_diagnostic(
+            cli::text::diagnostic_at(
+                argv_span, highlight_begin_index, highlight_end_index, std::string(reason)),
+            renderer_ptr);
     }
 };
 
@@ -291,7 +270,7 @@ struct DecoFields {
 };
 
 struct CommonOptionFields : DecoFields {
-    std::string_view help = "no provided";
+    std::string_view help = "not provided";
     std::string_view meta_var = "<value>";
 
     constexpr CommonOptionFields() = default;
@@ -351,7 +330,7 @@ struct ConfigOverrideField {
 struct ConfigFields {
     ConfigOverrideField<bool> required = true;
     ConfigOverrideField<CategoryRef> category = default_category;
-    ConfigOverrideField<std::string_view> help = "no provided";
+    ConfigOverrideField<std::string_view> help = "not provided";
     ConfigOverrideField<std::string_view> meta_var = "<value>";
 
     enum class Type : char {
@@ -506,10 +485,6 @@ inline bool iequals_ascii(std::string_view lhs, std::string_view rhs) {
     return true;
 }
 
-inline bool is_contextualized_error(std::string_view err) {
-    return err.starts_with("at argv[") || err.starts_with("at end of argv:");
-}
-
 template <typename ErrorTy>
 std::optional<std::string> normalize_into_error(const std::optional<ErrorTy>& err,
                                                 const IntoContext& context = {}) {
@@ -517,10 +492,18 @@ std::optional<std::string> normalize_into_error(const std::optional<ErrorTy>& er
         return std::nullopt;
     }
     std::string message{std::string_view(*err)};
-    if(is_contextualized_error(message)) {
+    if(cli::text::looks_like_rendered_diagnostic(message)) {
         return message;
     }
     return context.format_error(message);
+}
+
+template <typename ErrorTy>
+std::optional<std::string> stringify_into_error(const std::optional<ErrorTy>& err) {
+    if(!err.has_value()) {
+        return std::nullopt;
+    }
+    return std::string{std::string_view(*err)};
 }
 
 template <typename ResTy>
@@ -583,7 +566,7 @@ std::optional<std::string> assign_scalar(std::optional<ResTy>& target,
     if constexpr(trait::CustomStringResultTyWithContext<ResTy>) {
         auto& res = target.emplace();
         const auto err = res.into(text, context);
-        return normalize_into_error(err, context);
+        return stringify_into_error(err);
     } else if constexpr(trait::CustomStringResultTy<ResTy>) {
         auto& res = target.emplace();
         const auto err = res.into(text);
@@ -606,7 +589,7 @@ std::optional<std::string> assign_vector(std::optional<ResTy>& target,
         auto& res = target.emplace();
         std::vector<std::string_view> custom_values(values.begin(), values.end());
         const auto err = res.into(custom_values, context);
-        return normalize_into_error(err, context);
+        return stringify_into_error(err);
     } else if constexpr(trait::CustomStringVectorResultTy<ResTy>) {
         auto& res = target.emplace();
         std::vector<std::string_view> custom_values(values.begin(), values.end());
@@ -694,7 +677,8 @@ struct ScalarOption : DecoOption<ResTy> {
         if(arg.values.size() != 1) {
             return context.format_error("expected exactly one value");
         }
-        const auto value_context = IntoContext::from_value(context.argv(), arg, arg.values.front());
+        const auto value_context =
+            IntoContext::from_value(context.argv(), arg, arg.values.front(), context.renderer());
         return detail::assign_scalar(this->as_optional(), arg.values.front(), value_context);
     }
 };
@@ -715,14 +699,20 @@ struct InputOption : DecoOption<ResTy> {
         if constexpr(trait::ScalarResultType<ResTy>) {
             if(arg.values.empty()) {
                 const auto value_context =
-                    IntoContext::from_value(context.argv(), arg, arg.get_spelling_view());
+                    IntoContext::from_value(context.argv(),
+                                            arg,
+                                            arg.get_spelling_view(),
+                                            context.renderer());
                 return detail::assign_scalar(this->as_optional(),
                                              arg.get_spelling_view(),
                                              value_context);
             }
             if(arg.values.size() == 1) {
                 const auto value_context =
-                    IntoContext::from_value(context.argv(), arg, arg.values.front());
+                    IntoContext::from_value(context.argv(),
+                                            arg,
+                                            arg.values.front(),
+                                            context.renderer());
                 return detail::assign_scalar(this->as_optional(), arg.values.front(), value_context);
             }
             return context.format_error("input option expects at most one value");

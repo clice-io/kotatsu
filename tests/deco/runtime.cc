@@ -10,6 +10,7 @@
 
 #include "eventide/deco/deco.h"
 #include "eventide/deco/detail/macro.h"
+#include "eventide/deco/detail/text.h"
 #include "eventide/zest/zest.h"
 #include <eventide/zest/macro.h>
 
@@ -273,6 +274,32 @@ std::span<std::string> into_deco_args(Args&&... args) {
     return res;
 }
 
+struct ScopedDefaultRenderer {
+    deco::cli::text::Renderer saved = deco::cli::text::default_renderer();
+
+    ~ScopedDefaultRenderer() {
+        deco::cli::text::set_default_renderer(saved);
+    }
+};
+
+auto make_custom_renderer() -> deco::cli::text::Renderer {
+    auto renderer = deco::cli::text::CompatibleRenderer();
+    renderer.usage = [](const deco::cli::text::UsageDocument& document,
+                        bool include_help,
+                        const deco::cli::text::TextStyle&) {
+        return std::format("USAGE<{}:{}>", document.overview, include_help ? "help" : "plain");
+    };
+    renderer.subcommand = [](const deco::cli::text::SubCommandDocument& document,
+                             const deco::cli::text::TextStyle&) {
+        return std::format("SUB<{}:{}>", document.usage_line, document.entries.size());
+    };
+    renderer.diagnostic = [](const deco::cli::text::Diagnostic& diagnostic,
+                             const deco::cli::text::TextStyle&) {
+        return std::format("ERR<{}:{}>", diagnostic.begin, diagnostic.message);
+    };
+    return renderer;
+}
+
 };  // namespace
 
 struct CatterSelf {
@@ -400,6 +427,104 @@ TEST_CASE(parse_errors_include_location_context) {
     EXPECT_TRUE(res.error().message.contains("at argv[0]:"));
     EXPECT_TRUE(res.error().message.contains("--unknown"));
     EXPECT_TRUE(res.error().message.contains("^"));
+}
+
+TEST_CASE(global_text_style_can_disable_positioned_diagnostics) {
+    ScopedDefaultRenderer restore;
+    auto style = deco::cli::text::default_text_style();
+    style.diagnostic.enabled = false;
+    deco::cli::text::set_default_text_style(style);
+
+    auto res = deco::cli::parse<WebCliOpt>(into_deco_args("--unknown"));
+    EXPECT_FALSE(res.has_value());
+    if(res.has_value()) {
+        return;
+    }
+
+    EXPECT_TRUE(!res.error().message.contains("at argv["));
+    EXPECT_TRUE(!res.error().message.contains("^"));
+    EXPECT_TRUE(res.error().message == "unknown option '--unknown'");
+}
+
+TEST_CASE(parse_overload_accepts_custom_renderer) {
+    auto renderer = make_custom_renderer();
+    auto res = deco::cli::parse<WebCliOpt>(into_deco_args("--unknown"), renderer);
+    EXPECT_FALSE(res.has_value());
+    if(res.has_value()) {
+        return;
+    }
+
+    EXPECT_TRUE(res.error().message == "ERR<0:unknown option '--unknown'>");
+}
+
+TEST_CASE(diagnostic_at_uses_non_owning_argv_view) {
+    auto argv = into_deco_args("--unknown", "value");
+    const auto argv_view = std::span<const std::string>(argv.data(), argv.size());
+    auto diagnostic = deco::cli::text::diagnostic_at(argv_view, 0, 1, "boom");
+
+    EXPECT_EQ(diagnostic.argv.data(), argv.data());
+    argv[0] = "--renamed";
+
+    auto renderer = deco::cli::text::CompatibleRenderer();
+    const auto rendered = deco::cli::text::render_diagnostic(diagnostic, &renderer);
+    EXPECT_TRUE(rendered.contains("--renamed"));
+}
+
+TEST_CASE(modern_renderer_highlights_usage_and_diagnostic) {
+    auto renderer = deco::cli::text::ModernRenderer();
+    const auto usage_document = deco::cli::text::UsageDocument{
+        .overview = "webcli [OPTIONS]",
+        .groups =
+            {
+                deco::cli::text::UsageGroup{
+                    .title = "network",
+                    .entries =
+                        {
+                            deco::cli::text::UsageEntry{
+                                .usage = "--host <value>",
+                                .help = "connect target",
+                            },
+                        },
+                },
+            },
+    };
+
+    const auto usage = deco::cli::text::render_usage(usage_document, true, &renderer);
+    EXPECT_TRUE(usage.contains("\033["));
+    EXPECT_TRUE(usage.contains("Usage"));
+    EXPECT_TRUE(usage.contains("Options"));
+    EXPECT_TRUE(usage.contains("\033[39mconnect target\033[0m"));
+    EXPECT_TRUE(usage.contains("\033[1;4;38;5;110mnetwork\033[0m"));
+
+    auto argv = into_deco_args("webcli", "--unknown");
+    const auto diagnostic = deco::cli::text::render_diagnostic(
+        deco::cli::text::diagnostic_at(std::span<const std::string>(argv.data(), argv.size()),
+                                       1,
+                                       2,
+                                       "boom"),
+        &renderer);
+    EXPECT_TRUE(diagnostic.contains("\033["));
+    EXPECT_TRUE(diagnostic.contains("╰─▶"));
+    EXPECT_TRUE(diagnostic.contains("\033[39m[argv[1]]\033[0m"));
+}
+
+TEST_CASE(modern_renderer_crops_long_diagnostic_source_line) {
+    auto renderer = deco::cli::text::ModernRenderer();
+
+    const std::string very_long_a(200, 'a');
+    const std::string very_long_b(220, 'b');
+    auto argv = into_deco_args("-s", very_long_a, very_long_b, "--", "make");
+    const auto diagnostic = deco::cli::text::render_diagnostic(
+        deco::cli::text::diagnostic_at(std::span<const std::string>(argv.data(), argv.size()),
+                                       1,
+                                       2,
+                                       "too long"),
+        &renderer);
+
+    EXPECT_TRUE(diagnostic.contains("..."));
+    EXPECT_TRUE(diagnostic.contains("╰─▶"));
+    EXPECT_TRUE(diagnostic.contains("too long"));
+    EXPECT_TRUE(!diagnostic.contains(very_long_b));
 }
 
 TEST_CASE(with_cont_parse) {
@@ -604,6 +729,34 @@ TEST_CASE(dispatching_with_invocation_context) {
     EXPECT_EQ(seen_trace_size, 2u);
 }
 
+TEST_CASE(dispatcher_usage_respects_text_style_override) {
+    auto dispatcher = deco::cli::Dispatcher<WebCliOpt>("webcli [OPTIONS]");
+    auto style = deco::cli::text::default_text_style();
+    style.usage.options_heading = "Flags:";
+    style.usage.group_by_category = false;
+    dispatcher.text_style(style);
+
+    std::stringstream ss;
+    dispatcher.usage(ss);
+    EXPECT_TRUE(ss.str().contains("Flags:"));
+    EXPECT_TRUE(!ss.str().contains("Options:"));
+}
+
+TEST_CASE(dispatcher_can_use_custom_renderer) {
+    std::string seen_error;
+    auto dispatcher = deco::cli::Dispatcher<WebCliOpt>("webcli [OPTIONS]");
+    dispatcher.render_with(make_custom_renderer()).when_err([&](auto err) {
+        seen_error = err.message;
+    });
+
+    std::stringstream ss;
+    dispatcher.usage(ss);
+    EXPECT_TRUE(ss.str() == "USAGE<webcli [OPTIONS]:help>");
+
+    dispatcher(into_deco_args("--unknown"));
+    EXPECT_TRUE(seen_error == "ERR<0:unknown option '--unknown'>");
+}
+
 };  // TEST_SUITE(dispatcher)
 
 TEST_SUITE(subcommander) {
@@ -754,6 +907,8 @@ TEST_CASE(usage_without_default_and_unknown_subcommand) {
     std::vector<std::string> args = {"unknown"};
     subcommander(args);
     EXPECT_TRUE(ss.str().contains("unknown subcommand 'unknown'"));
+    EXPECT_TRUE(ss.str().contains("at argv[0]:"));
+    EXPECT_TRUE(ss.str().contains("^"));
 
     ss.str("");
     ss.clear();
@@ -763,6 +918,27 @@ TEST_CASE(usage_without_default_and_unknown_subcommand) {
     EXPECT_TRUE(!usage.contains("usage: catter [OPTIONS]"));
     EXPECT_TRUE(usage.contains("Subcommands:"));
     EXPECT_TRUE(usage.contains("run"));
+}
+
+TEST_CASE(subcommand_can_use_custom_renderer) {
+    std::string seen_error;
+    deco::cli::SubCommander subcommander("catter [OPTIONS]", "Overview text");
+    subcommander
+        .add(
+            deco::decl::SubCommand{
+                .name = "run",
+                .description = "Run a task",
+            },
+            [](std::span<std::string>) {})
+        .render_with(make_custom_renderer())
+        .when_err([&](auto err) { seen_error = err.message; });
+
+    std::stringstream ss;
+    subcommander.usage(ss);
+    EXPECT_TRUE(ss.str() == "SUB<catter [OPTIONS]:1>");
+
+    subcommander(into_deco_args("unknown"));
+    EXPECT_TRUE(seen_error == "ERR<0:unknown subcommand 'unknown'>");
 }
 
 };  // TEST_SUITE(subcommander)
@@ -813,6 +989,8 @@ struct CatterOpt {
 TEST_SUITE(deco_cases_from_user) {
 
 TEST_CASE(catter_v2) {
+    ScopedDefaultRenderer restore;
+    deco::cli::text::set_default_renderer(deco::cli::text::ModernRenderer());
     auto cli = deco::cli::command<CatterOpt>(
         "catter [OPTIONS] [OPTIONS for script] -- [OPTIONS for command]");
     auto eat_script_args = [](auto& step) {
@@ -829,11 +1007,6 @@ TEST_CASE(catter_v2) {
             step.context().usage(std::cerr);
             return step.stop();
         });
-
-    auto res = cli.parse_only(into_deco_args("-h", "aa.js", "script_arg", "--", "make"));
-    if(!res) {
-        std::cerr << res.error().message << '\n';
-    }
 }
 
 };  // TEST_SUITE(deco_cases_from_user)

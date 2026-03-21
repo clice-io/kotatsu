@@ -83,43 +83,37 @@ auto SubCommander::when_err(std::ostream& os) -> SubCommander& {
 }
 
 void SubCommander::usage(std::ostream& os) const {
-    if(!overview.empty()) {
-        os << overview << "\n\n";
-    }
-
-    if(defaultHandler.has_value()) {
-        os << "usage: " << commandOverview << "\n";
-        if(!handlers.empty()) {
-            os << "\n";
-        }
-    }
-
-    if(handlers.empty()) {
-        return;
-    }
-
-    std::size_t max_name_len = 0;
+    text::SubCommandDocument document{
+        .overview = overview,
+        .usage_line = commandOverview,
+        .has_usage_line = defaultHandler.has_value(),
+    };
+    document.entries.reserve(handlers.size());
     for(const auto& item: handlers) {
-        if(item.name.size() > max_name_len) {
-            max_name_len = item.name.size();
-        }
+        document.entries.push_back(text::SubCommandEntry{
+            .name = item.name,
+            .description = item.description,
+            .command = item.command,
+        });
     }
-
-    os << "Subcommands:\n";
-    for(const auto& item: handlers) {
-        os << "  " << item.name;
-        if(!item.description.empty()) {
-            os << std::string(max_name_len - item.name.size() + 2, ' ') << item.description;
-        }
-        if(item.command != item.name) {
-            os << " (" << item.command << ")";
-        }
-        os << "\n";
-    }
+    os << text::render_subcommands(document, renderer_ptr());
 }
 
 auto SubCommander::match(std::span<std::string> argv) const
     -> std::expected<SubCommander::match_t, SubCommandError> {
+    auto positioned_error = [&](SubCommandError::Type type,
+                                unsigned begin,
+                                unsigned end,
+                                std::string message) -> std::expected<match_t, SubCommandError> {
+        const auto argv_view = std::span<const std::string>(argv.data(), argv.size());
+        return std::unexpected(SubCommandError{
+            type,
+            text::render_diagnostic(
+                text::diagnostic_at(argv_view, begin, end, std::move(message)),
+                renderer_ptr()),
+        });
+    };
+
     if(!argv.empty()) {
         if(auto it = commandToHandler.find(argv.front()); it != commandToHandler.end()) {
             const auto& handler = handlers[it->second];
@@ -144,14 +138,14 @@ auto SubCommander::match(std::span<std::string> argv) const
     }
 
     if(argv.empty()) {
-        return std::unexpected(
-            SubCommandError{SubCommandError::Type::MissingSubCommand, "subcommand is required"});
+        return positioned_error(
+            SubCommandError::Type::MissingSubCommand, 0, 0, "subcommand is required");
     }
 
-    return std::unexpected(SubCommandError{
-        SubCommandError::Type::UnknownSubCommand,
-        std::format("unknown subcommand '{}'", argv.front()),
-    });
+    return positioned_error(SubCommandError::Type::UnknownSubCommand,
+                            0,
+                            1,
+                            std::format("unknown subcommand '{}'", argv.front()));
 }
 
 void SubCommander::parse(std::span<std::string> argv) {
