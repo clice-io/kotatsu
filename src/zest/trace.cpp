@@ -1,4 +1,4 @@
-#include "eventide/zest/trace.h"
+#include "eventide/zest/detail/trace.h"
 
 #include <algorithm>
 

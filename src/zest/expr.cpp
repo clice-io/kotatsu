@@ -1,4 +1,4 @@
-#include "eventide/zest/check.h"
+#include "eventide/zest/detail/check.h"
 
 namespace {
 

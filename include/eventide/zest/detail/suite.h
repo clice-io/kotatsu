@@ -1,6 +1,6 @@
 #pragma once
 
-#include "runner.h"
+#include "eventide/zest/detail/registry.h"
 #include "eventide/common/fixed_string.h"
 
 namespace eventide::zest {

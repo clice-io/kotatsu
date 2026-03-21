@@ -149,3 +149,41 @@ endif()
 
 eventide_apply_project_options(unit_tests)
 add_test(NAME unit_tests COMMAND unit_tests)
+
+if(ETD_ENABLE_DECO AND ETD_ENABLE_OPTION)
+    add_executable(zest_runner_fixture
+        "${PROJECT_SOURCE_DIR}/tests/fixtures/zest_runner_fixture.cpp"
+        "${PROJECT_SOURCE_DIR}/tests/fixtures/zest_runner_main.cpp"
+    )
+
+    target_include_directories(zest_runner_fixture PRIVATE
+        "${PROJECT_SOURCE_DIR}/include"
+    )
+
+    target_link_libraries(zest_runner_fixture PRIVATE
+        eventide::zest
+        cpptrace::cpptrace
+    )
+
+    eventide_apply_project_options(zest_runner_fixture)
+
+    add_test(
+        NAME zest_runner_fixture_default_output
+        COMMAND zest_runner_fixture zest_runner_fixture.*
+    )
+    set_tests_properties(zest_runner_fixture_default_output PROPERTIES
+        PASS_REGULAR_EXPRESSION
+            "\\[ RUN      \\].*zest_runner_fixture\\.passing_case;\\[ RUN      \\].*zest_runner_fixture\\.failing_case;\\[   FAILED \\].*zest_runner_fixture\\.failing_case"
+    )
+
+    add_test(
+        NAME zest_runner_fixture_failed_only_output
+        COMMAND zest_runner_fixture --only-failed zest_runner_fixture.*
+    )
+    set_tests_properties(zest_runner_fixture_failed_only_output PROPERTIES
+        PASS_REGULAR_EXPRESSION
+            "\\[   FAILED \\].*zest_runner_fixture\\.failing_case;\\[  FAILED  \\] 1 tests, listed below:"
+        FAIL_REGULAR_EXPRESSION
+            "\\[ RUN      \\].*zest_runner_fixture\\.(passing_case|failing_case|skipping_case);\\[    OK \\].*zest_runner_fixture\\.(passing_case|skipping_case)"
+    )
+endif()

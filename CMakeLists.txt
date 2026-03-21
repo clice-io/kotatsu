@@ -297,6 +297,18 @@ if(ETD_ENABLE_TEST)
     endif()
 endif()
 
+if(ETD_ENABLE_ZEST)
+    if(NOT ETD_ENABLE_OPTION)
+        message(STATUS "ETD_ENABLE_ZEST=ON: enabling ETD_ENABLE_OPTION")
+        set(ETD_ENABLE_OPTION ON CACHE BOOL "Enable option parser target" FORCE)
+    endif()
+
+    if(NOT ETD_ENABLE_DECO)
+        message(STATUS "ETD_ENABLE_ZEST=ON: enabling ETD_ENABLE_DECO")
+        set(ETD_ENABLE_DECO ON CACHE BOOL "Enable deco parser headers and tests" FORCE)
+    endif()
+endif()
+
 add_subdirectory(src/reflection)
 add_subdirectory(src/serde)
 

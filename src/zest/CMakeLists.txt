@@ -59,6 +59,7 @@ target_include_directories(eventide_zest PUBLIC
 
 target_link_libraries(eventide_zest PUBLIC
     cpptrace::cpptrace
+    eventide::deco
 )
 
 eventide_apply_project_options(eventide_zest)

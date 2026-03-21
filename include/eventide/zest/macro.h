@@ -1,8 +1,8 @@
 #pragma once
 
-#include "check.h"
-#include "suite.h"
-#include "trace.h"
+#include "eventide/zest/detail/check.h"
+#include "eventide/zest/detail/suite.h"
+#include "eventide/zest/detail/trace.h"
 
 #define TEST_SUITE(name) struct name##TEST : ::eventide::zest::TestSuiteDef<#name, name##TEST>
 
