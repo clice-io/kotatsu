@@ -333,6 +333,57 @@ TEST_CASE(request_notify_apis) {
     EXPECT_EQ(final_response->result->sum, 13);
 }
 
+TEST_CASE(request_notify_apis_failure) {
+    auto transport = std::make_unique<ScriptedTransport>(
+        std::vector<std::string>{
+            R"({"jsonrpc":"2.0","id":7,"method":"test/add","params":{"a":2,"b":3}})",
+        },
+        [](std::string_view payload, ScriptedTransport& channel) {
+            if(payload.find(R"("method":"client/add/context")") != std::string_view::npos) {
+                channel.push_incoming(R"({"jsonrpc":"2.0","id":1,"result":"oops"})");
+                return;
+            }
+
+            if(payload.find(R"("id":7)") != std::string_view::npos &&
+               payload.find(R"("error")") != std::string_view::npos) {
+                channel.close();
+            }
+        });
+    auto* transport_ptr = transport.get();
+
+    event_loop loop;
+    JsonPeer peer(loop, std::move(transport));
+
+    peer.on_request([&](RequestContext& context, const AddParams& params) -> RequestResult<AddParams> {
+        auto context_result = co_await context->send_request<AddResult>(
+            "client/add/context",
+            CustomAddParams{.a = params.a, .b = params.b});
+        if(!context_result) {
+            co_await fail(context_result.error());
+        }
+
+        co_return AddResult{.sum = context_result->sum};
+    });
+
+    loop.schedule(peer.run());
+    EXPECT_EQ(loop.run(), 0);
+
+    const auto& outgoing = transport_ptr->outgoing();
+    ASSERT_EQ(outgoing.size(), 2U);
+
+    auto nested_request = serde::json::from_json<Request>(outgoing[0]);
+    ASSERT_TRUE(nested_request.has_value());
+    EXPECT_EQ(nested_request->method, "client/add/context");
+
+    auto final_response = serde::json::from_json<ErrorResponse>(outgoing[1]);
+    ASSERT_TRUE(final_response.has_value());
+    EXPECT_NE(outgoing[1].find(R"("error")"), std::string::npos);
+    EXPECT_EQ(final_response->jsonrpc, "2.0");
+    EXPECT_EQ(std::get<std::int64_t>(final_response->id), 7);
+    EXPECT_EQ(final_response->error.code,
+              static_cast<protocol::integer>(protocol::ErrorCode::RequestFailed));
+}
+
 TEST_CASE(request_error_code) {
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":10,"method":"test/add","params":{"a":2,"b":3}})",

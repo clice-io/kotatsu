@@ -469,24 +469,13 @@ RequestResult<Params> Peer<CodecT>::send_request(const Params& params, request_o
                   "send_request(params) requires RequestTraits<Params>");
     using Traits = protocol::RequestTraits<Params>;
 
-    auto serialized_params = self->codec.serialize_value(params);
-    if(!serialized_params) {
-        co_await fail(serialized_params.error());
-    }
-
+    auto serialized_params = co_await or_fail(self->codec.serialize_value(params));
     auto raw_result =
-        co_await send_request_impl(Traits::method, std::move(*serialized_params), std::move(opts));
-    if(!raw_result) {
-        co_await fail(raw_result.error());
-    }
-
+        co_await send_request_impl(Traits::method, std::move(serialized_params), std::move(opts))
+            .or_fail();
     auto parsed_result =
-        self->codec.template deserialize_value<typename Traits::Result>(*raw_result);
-    if(!parsed_result) {
-        co_await fail(parsed_result.error());
-    }
-
-    co_return std::move(*parsed_result);
+        co_await or_fail(self->codec.template deserialize_value<typename Traits::Result>(raw_result));
+    co_return parsed_result;
 }
 
 template <typename CodecT>
@@ -494,23 +483,11 @@ template <typename ResultT, typename Params>
 task<ResultT, Error> Peer<CodecT>::send_request(std::string_view method,
                                                 const Params& params,
                                                 request_options opts) {
-    auto serialized_params = self->codec.serialize_value(params);
-    if(!serialized_params) {
-        co_await fail(serialized_params.error());
-    }
-
+    auto serialized_params = co_await or_fail(self->codec.serialize_value(params));
     auto raw_result =
-        co_await send_request_impl(method, std::move(*serialized_params), std::move(opts));
-    if(!raw_result) {
-        co_await fail(raw_result.error());
-    }
-
-    auto parsed_result = self->codec.template deserialize_value<ResultT>(*raw_result);
-    if(!parsed_result) {
-        co_await fail(parsed_result.error());
-    }
-
-    co_return std::move(*parsed_result);
+        co_await send_request_impl(method, std::move(serialized_params), std::move(opts)).or_fail();
+    auto parsed_result = co_await or_fail(self->codec.template deserialize_value<ResultT>(raw_result));
+    co_return parsed_result;
 }
 
 template <typename CodecT>

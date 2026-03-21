@@ -54,7 +54,7 @@ It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv)
   - inbound `$/cancelRequest` cancels matching in-flight handlers and returns `RequestCancelled (-32800)` (aligned with LSP `LSPErrorCodes::RequestCancelled`)
   - outbound request cancellation (token or timeout) sends `$/cancelRequest` to the remote peer when the request is still pending
   - timeout overloads report `RequestCancelled (-32800)` with message `"request timed out"`
-  - `RequestContext` delegates via `operator->`; use `context->send_request(..., context.cancellation)` to fail the inbound handler token explicitly
+  - `RequestContext` delegates via `operator->`; use `context->send_request(..., {.token = context.cancellation})` to propagate the inbound handler token to nested outbound requests
 
 ### `ipc/lsp` (`include/eventide/ipc/lsp/*`)
 

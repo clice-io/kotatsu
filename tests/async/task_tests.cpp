@@ -120,6 +120,19 @@ TEST_CASE(exception_propagation) {
     EXPECT_THROWS(run(bar1()));
     EXPECT_THROWS(run(bar2()));
 }
+
+TEST_CASE(or_fail_rethrows_child_exception) {
+    auto child = []() -> task<int, error> {
+        throw std::runtime_error("or_fail child exception");
+        co_return 0;
+    };
+
+    auto parent = [&]() -> task<int, error> {
+        co_return co_await child().or_fail();
+    };
+
+    EXPECT_THROWS(run(parent()));
+}
 #endif
 
 TEST_CASE(dump_dot_basic) {
