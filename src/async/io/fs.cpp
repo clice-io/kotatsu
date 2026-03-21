@@ -301,6 +301,7 @@ static task<Result, error> run_fs(Submit submit,
     op.req.data = &op;
 
     if(auto err = submit(op.req, after_cb)) {
+        uv::fs_req_cleanup(op.req);
         co_await fail(err);
     }
 
