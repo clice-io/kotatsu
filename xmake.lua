@@ -226,7 +226,12 @@ if has_config("test") and has_config("ztest") then
 	target("unit_tests", function()
 		set_default(false)
 		set_kind("binary")
-		add_files("tests/unit/main.cpp", "tests/unit/common/**.cpp", "tests/unit/reflection/**.cpp", "tests/unit/zest/**.cpp")
+		add_files(
+			"tests/unit/main.cpp",
+			"tests/unit/common/**.cpp",
+			"tests/unit/reflection/**.cpp",
+			"tests/unit/zest/**.cpp"
+		)
 		if has_config("async") then
 			add_files("tests/unit/async/**.cpp")
 			add_includedirs("examples/build_system")
