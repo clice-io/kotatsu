@@ -161,7 +161,7 @@ jobs:
           fi
 
           cmake --build "${build_dir}" --parallel
-          ctest --test-dir "${build_dir}" --output-on-failure
+          ctest --test-dir "${build_dir}" --verbose
 
       - name: Show compiler cache stats
         shell: bash
