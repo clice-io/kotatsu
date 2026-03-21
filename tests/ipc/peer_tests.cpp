@@ -259,33 +259,23 @@ TEST_CASE(request_notify_apis) {
         request_method = std::string(context.method);
         request_id = static_cast<protocol::integer>(std::get<std::int64_t>(context.id));
 
-        auto notify_from_context =
-            context->send_notification("client/note/context", CustomNoteParams{.text = "context"});
-        if(!notify_from_context) {
-            co_await fail(notify_from_context.error());
-        }
+        co_await or_fail(
+            context->send_notification("client/note/context", CustomNoteParams{.text = "context"}));
+        co_await or_fail(
+            peer.send_notification("client/note/peer", CustomNoteParams{.text = "peer"}));
 
-        auto notify_from_peer =
-            peer.send_notification("client/note/peer", CustomNoteParams{.text = "peer"});
-        if(!notify_from_peer) {
-            co_await fail(notify_from_peer.error());
-        }
-
-        auto context_result = co_await context->send_request<AddResult>(
-            "client/add/context",
-            CustomAddParams{.a = params.a, .b = params.b});
-        if(!context_result) {
-            co_await fail(context_result.error());
-        }
+        auto context_result =
+            co_await context
+                ->send_request<AddResult>("client/add/context",
+                                          CustomAddParams{.a = params.a, .b = params.b})
+                .or_fail();
 
         auto peer_result =
-            co_await peer.send_request<AddResult>("client/add/peer",
-                                                  CustomAddParams{.a = params.b, .b = 1});
-        if(!peer_result) {
-            co_await fail(peer_result.error());
-        }
+            co_await peer
+                .send_request<AddResult>("client/add/peer", CustomAddParams{.a = params.b, .b = 1})
+                .or_fail();
 
-        co_return AddResult{.sum = context_result->sum + peer_result->sum};
+        co_return AddResult{.sum = context_result.sum + peer_result.sum};
     });
 
     loop.schedule(peer.run());
@@ -356,14 +346,13 @@ TEST_CASE(request_notify_apis_failure) {
 
     peer.on_request(
         [&](RequestContext& context, const AddParams& params) -> RequestResult<AddParams> {
-            auto context_result = co_await context->send_request<AddResult>(
-                "client/add/context",
-                CustomAddParams{.a = params.a, .b = params.b});
-            if(!context_result) {
-                co_await fail(context_result.error());
-            }
+            auto context_result =
+                co_await context
+                    ->send_request<AddResult>("client/add/context",
+                                              CustomAddParams{.a = params.a, .b = params.b})
+                    .or_fail();
 
-            co_return AddResult{.sum = context_result->sum};
+            co_return AddResult{.sum = context_result.sum};
         });
 
     loop.schedule(peer.run());
@@ -738,20 +727,19 @@ TEST_CASE(context_token_propagates) {
     JsonPeer peer(loop, std::move(transport));
     bool started = false;
 
-    peer.on_request([&](RequestContext& context,
-                        const AddParams& params) -> RequestResult<AddParams> {
-        started = true;
+    peer.on_request(
+        [&](RequestContext& context, const AddParams& params) -> RequestResult<AddParams> {
+            started = true;
 
-        auto nested_result =
-            co_await context->send_request<AddResult>("client/add/context",
-                                                      CustomAddParams{.a = params.a, .b = params.b},
-                                                      {.token = context.cancellation});
-        if(!nested_result) {
-            co_await fail(nested_result.error());
-        }
+            auto nested_result =
+                co_await context
+                    ->send_request<AddResult>("client/add/context",
+                                              CustomAddParams{.a = params.a, .b = params.b},
+                                              {.token = context.cancellation})
+                    .or_fail();
 
-        co_return AddResult{.sum = nested_result->sum};
-    });
+            co_return AddResult{.sum = nested_result.sum};
+        });
 
     auto watchdog = [&]() -> task<> {
         co_await sleep(20, loop);

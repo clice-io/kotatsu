@@ -199,33 +199,23 @@ TEST_CASE(request_notify_apis) {
         request_method = std::string(context.method);
         request_id = static_cast<protocol::integer>(std::get<std::int64_t>(context.id));
 
-        auto notify_from_context =
-            context->send_notification("client/note/context", CustomNoteParams{.text = "context"});
-        if(!notify_from_context) {
-            co_await fail(notify_from_context.error());
-        }
+        co_await or_fail(
+            context->send_notification("client/note/context", CustomNoteParams{.text = "context"}));
+        co_await or_fail(
+            peer.send_notification("client/note/server", CustomNoteParams{.text = "server"}));
 
-        auto notify_from_server =
-            peer.send_notification("client/note/server", CustomNoteParams{.text = "server"});
-        if(!notify_from_server) {
-            co_await fail(notify_from_server.error());
-        }
+        auto context_result =
+            co_await context
+                ->send_request<AddResult>("client/add/context",
+                                          CustomAddParams{.a = params.a, .b = params.b})
+                .or_fail();
 
-        auto context_result = co_await context->send_request<AddResult>(
-            "client/add/context",
-            CustomAddParams{.a = params.a, .b = params.b});
-        if(!context_result) {
-            co_await fail(context_result.error());
-        }
+        auto server_result = co_await peer
+                                 .send_request<AddResult>("client/add/server",
+                                                          CustomAddParams{.a = params.b, .b = 1})
+                                 .or_fail();
 
-        auto server_result =
-            co_await peer.send_request<AddResult>("client/add/server",
-                                                  CustomAddParams{.a = params.b, .b = 1});
-        if(!server_result) {
-            co_await fail(server_result.error());
-        }
-
-        co_return AddResult{.sum = context_result->sum + server_result->sum};
+        co_return AddResult{.sum = context_result.sum + server_result.sum};
     });
 
     loop.schedule(peer.run());

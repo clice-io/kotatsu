@@ -435,12 +435,7 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
         co_await fail("request was not completed");
     }
 
-    auto& response = *pending->response;
-    if(!response) {
-        co_await fail(std::move(response).error());
-    }
-
-    co_return std::move(*response);
+    co_return co_await or_fail(std::move(*pending->response));
 }
 
 template <typename CodecT>
@@ -473,9 +468,8 @@ RequestResult<Params> Peer<CodecT>::send_request(const Params& params, request_o
     auto raw_result =
         co_await send_request_impl(Traits::method, std::move(serialized_params), std::move(opts))
             .or_fail();
-    auto parsed_result =
-        co_await or_fail(self->codec.template deserialize_value<typename Traits::Result>(raw_result));
-    co_return parsed_result;
+    co_return co_await or_fail(
+        self->codec.template deserialize_value<typename Traits::Result>(raw_result));
 }
 
 template <typename CodecT>
@@ -486,8 +480,7 @@ task<ResultT, Error> Peer<CodecT>::send_request(std::string_view method,
     auto serialized_params = co_await or_fail(self->codec.serialize_value(params));
     auto raw_result =
         co_await send_request_impl(method, std::move(serialized_params), std::move(opts)).or_fail();
-    auto parsed_result = co_await or_fail(self->codec.template deserialize_value<ResultT>(raw_result));
-    co_return parsed_result;
+    co_return co_await or_fail(self->codec.template deserialize_value<ResultT>(raw_result));
 }
 
 template <typename CodecT>
@@ -583,12 +576,8 @@ void Peer<CodecT>::bind_request_callback(std::string_view method, Callback&& cal
         typename Peer::RequestContext context(*peer, request_id, std::move(token));
         context.method = method_name;
 
-        auto result = co_await std::invoke(cb, context, *parsed_params);
-        if(!result) {
-            co_await fail(result.error());
-        }
-
-        auto serialized = peer->self->codec.serialize_value(*result);
+        auto result = co_await std::invoke(cb, context, *parsed_params).or_fail();
+        auto serialized = peer->self->codec.serialize_value(result);
         if(!serialized) {
             co_await fail(
                 Error(protocol::ErrorCode::InternalError, serialized.error().message));

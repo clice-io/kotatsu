@@ -151,12 +151,7 @@ task<std::unique_ptr<StreamTransport>, Error> StreamTransport::connect_tcp(std::
                                                                            int port,
                                                                            event_loop& loop) {
     auto connected = co_await tcp::connect(host, port, loop);
-    auto channel = to_stream(std::move(connected));
-    if(!channel) {
-        co_await fail(channel.error());
-    }
-
-    co_return std::make_unique<StreamTransport>(std::move(*channel));
+    co_return std::make_unique<StreamTransport>(co_await or_fail(to_stream(std::move(connected))));
 }
 
 Result<std::unique_ptr<StreamTransport>> StreamTransport::open_tcp(int fd, event_loop& loop) {
