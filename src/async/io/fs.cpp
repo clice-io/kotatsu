@@ -496,6 +496,54 @@ task<void, error> fs::link(std::string_view path, std::string_view new_path, eve
         loop);
 }
 
+task<void, error>
+    fs::symlink(std::string_view path, std::string_view new_path, int flags, event_loop& loop) {
+    return run_void_fs(
+        [p = std::string(path), np = std::string(new_path), flags, &loop](uv_fs_t& req,
+                                                                          uv_fs_cb cb) {
+            return uv::fs_symlink(loop, req, p.c_str(), np.c_str(), flags, cb);
+        },
+        loop);
+}
+
+task<void, error> fs::fchmod(int fd, int mode, event_loop& loop) {
+    return run_void_fs(
+        [fd, mode, &loop](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_fchmod(loop, req, fd, mode, cb);
+        },
+        loop);
+}
+
+task<void, error> fs::chown(std::string_view path, int uid, int gid, event_loop& loop) {
+    return run_void_fs(
+        [p = std::string(path), uid, gid, &loop](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_chown(loop, req, p.c_str(), uid, gid, cb);
+        },
+        loop);
+}
+
+task<void, error> fs::fchown(int fd, int uid, int gid, event_loop& loop) {
+    return run_void_fs(
+        [fd, uid, gid, &loop](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_fchown(loop, req, fd, uid, gid, cb);
+        },
+        loop);
+}
+
+task<void, error> fs::lchown(std::string_view path, int uid, int gid, event_loop& loop) {
+    return run_void_fs(
+        [p = std::string(path), uid, gid, &loop](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_lchown(loop, req, p.c_str(), uid, gid, cb);
+        },
+        loop);
+}
+
+task<void, error> fs::close(int fd, event_loop& loop) {
+    return run_void_fs(
+        [fd, &loop](uv_fs_t& req, uv_fs_cb cb) { return uv::fs_close(loop, req, fd, cb); },
+        loop);
+}
+
 task<void, error> fs::closedir(fs::dir_handle& dir, event_loop& loop) {
     if(!dir.valid()) {
         co_await fail(error::invalid_argument);
@@ -573,6 +621,87 @@ task<std::int64_t, error> fs::sendfile(int out_fd,
             return uv::fs_sendfile(loop, req, out_fd, in_fd, in_offset, length, cb);
         },
         [](uv_fs_t& req) -> std::int64_t { return req.result; },
+        loop);
+}
+
+task<std::string, error> fs::readlink(std::string_view path, event_loop& loop) {
+    return run_fs<std::string>(
+        [p = std::string(path), &loop](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_readlink(loop, req, p.c_str(), cb);
+        },
+        [](uv_fs_t& req) -> std::string {
+            return req.ptr ? static_cast<const char*>(req.ptr) : "";
+        },
+        loop);
+}
+
+task<std::string, error> fs::realpath(std::string_view path, event_loop& loop) {
+    return run_fs<std::string>(
+        [p = std::string(path), &loop](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_realpath(loop, req, p.c_str(), cb);
+        },
+        [](uv_fs_t& req) -> std::string {
+            return req.ptr ? static_cast<const char*>(req.ptr) : "";
+        },
+        loop);
+}
+
+task<fs::fs_stats, error> fs::statfs(std::string_view path, event_loop& loop) {
+    return run_fs<fs::fs_stats>(
+        [p = std::string(path), &loop](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_statfs(loop, req, p.c_str(), cb);
+        },
+        [](uv_fs_t& req) -> fs::fs_stats {
+            auto* s = static_cast<uv_statfs_t*>(req.ptr);
+            if(!s) {
+                return {};
+            }
+            return {
+                .type = s->f_type,
+                .bsize = s->f_bsize,
+                .blocks = s->f_blocks,
+                .bfree = s->f_bfree,
+                .bavail = s->f_bavail,
+                .files = s->f_files,
+                .ffree = s->f_ffree,
+                .frsize = s->f_frsize,
+            };
+        },
+        loop);
+}
+
+task<int, error> fs::open(std::string_view path, int flags, int mode, event_loop& loop) {
+    return run_fs<int>(
+        [p = std::string(path), flags, mode, &loop](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_open(loop, req, p.c_str(), flags, mode, cb);
+        },
+        [](uv_fs_t& req) -> int { return static_cast<int>(req.result); },
+        loop);
+}
+
+task<std::size_t, error>
+    fs::read(int fd, std::span<char> buf, std::int64_t offset, event_loop& loop) {
+    auto storage =
+        std::make_shared<uv_buf_t>(uv_buf_init(buf.data(), static_cast<unsigned int>(buf.size())));
+
+    return run_fs<std::size_t>(
+        [fd, storage, offset, &loop](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_read(loop, req, fd, storage.get(), 1, offset, cb);
+        },
+        [](uv_fs_t& req) -> std::size_t { return static_cast<std::size_t>(req.result); },
+        loop);
+}
+
+task<std::size_t, error>
+    fs::write(int fd, std::span<const char> buf, std::int64_t offset, event_loop& loop) {
+    auto storage = std::make_shared<uv_buf_t>(
+        uv_buf_init(const_cast<char*>(buf.data()), static_cast<unsigned int>(buf.size())));
+
+    return run_fs<std::size_t>(
+        [fd, storage, offset, &loop](uv_fs_t& req, uv_fs_cb cb) {
+            return uv::fs_write(loop, req, fd, storage.get(), 1, offset, cb);
+        },
+        [](uv_fs_t& req) -> std::size_t { return static_cast<std::size_t>(req.result); },
         loop);
 }
 

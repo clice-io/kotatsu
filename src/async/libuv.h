@@ -772,6 +772,109 @@ ALWAYS_INLINE error fs_link(uv_loop_t& loop,
     return status_to_error(::uv_fs_link(&loop, &req, path, new_path, cb));
 }
 
+ALWAYS_INLINE error fs_symlink(uv_loop_t& loop,
+                               uv_fs_t& req,
+                               const char* path,
+                               const char* new_path,
+                               int flags,
+                               uv_fs_cb cb) noexcept {
+    assert(path != nullptr && new_path != nullptr &&
+           "uv::fs_symlink requires non-null source and destination paths");
+    return status_to_error(::uv_fs_symlink(&loop, &req, path, new_path, flags, cb));
+}
+
+ALWAYS_INLINE error fs_readlink(uv_loop_t& loop,
+                                uv_fs_t& req,
+                                const char* path,
+                                uv_fs_cb cb) noexcept {
+    assert(path != nullptr && "uv::fs_readlink requires non-null path");
+    return status_to_error(::uv_fs_readlink(&loop, &req, path, cb));
+}
+
+ALWAYS_INLINE error fs_realpath(uv_loop_t& loop,
+                                uv_fs_t& req,
+                                const char* path,
+                                uv_fs_cb cb) noexcept {
+    assert(path != nullptr && "uv::fs_realpath requires non-null path");
+    return status_to_error(::uv_fs_realpath(&loop, &req, path, cb));
+}
+
+ALWAYS_INLINE error
+    fs_fchmod(uv_loop_t& loop, uv_fs_t& req, uv_file file, int mode, uv_fs_cb cb) noexcept {
+    return status_to_error(::uv_fs_fchmod(&loop, &req, file, mode, cb));
+}
+
+ALWAYS_INLINE error fs_chown(uv_loop_t& loop,
+                             uv_fs_t& req,
+                             const char* path,
+                             uv_uid_t uid,
+                             uv_gid_t gid,
+                             uv_fs_cb cb) noexcept {
+    assert(path != nullptr && "uv::fs_chown requires non-null path");
+    return status_to_error(::uv_fs_chown(&loop, &req, path, uid, gid, cb));
+}
+
+ALWAYS_INLINE error fs_fchown(uv_loop_t& loop,
+                              uv_fs_t& req,
+                              uv_file file,
+                              uv_uid_t uid,
+                              uv_gid_t gid,
+                              uv_fs_cb cb) noexcept {
+    return status_to_error(::uv_fs_fchown(&loop, &req, file, uid, gid, cb));
+}
+
+ALWAYS_INLINE error fs_lchown(uv_loop_t& loop,
+                              uv_fs_t& req,
+                              const char* path,
+                              uv_uid_t uid,
+                              uv_gid_t gid,
+                              uv_fs_cb cb) noexcept {
+    assert(path != nullptr && "uv::fs_lchown requires non-null path");
+    return status_to_error(::uv_fs_lchown(&loop, &req, path, uid, gid, cb));
+}
+
+ALWAYS_INLINE error fs_statfs(uv_loop_t& loop,
+                              uv_fs_t& req,
+                              const char* path,
+                              uv_fs_cb cb) noexcept {
+    assert(path != nullptr && "uv::fs_statfs requires non-null path");
+    return status_to_error(::uv_fs_statfs(&loop, &req, path, cb));
+}
+
+ALWAYS_INLINE error fs_open(uv_loop_t& loop,
+                            uv_fs_t& req,
+                            const char* path,
+                            int flags,
+                            int mode,
+                            uv_fs_cb cb) noexcept {
+    assert(path != nullptr && "uv::fs_open requires non-null path");
+    return status_to_error(::uv_fs_open(&loop, &req, path, flags, mode, cb));
+}
+
+ALWAYS_INLINE error fs_read(uv_loop_t& loop,
+                            uv_fs_t& req,
+                            uv_file file,
+                            const uv_buf_t bufs[],
+                            unsigned int nbufs,
+                            int64_t offset,
+                            uv_fs_cb cb) noexcept {
+    return status_to_error(::uv_fs_read(&loop, &req, file, bufs, nbufs, offset, cb));
+}
+
+ALWAYS_INLINE error fs_write(uv_loop_t& loop,
+                             uv_fs_t& req,
+                             uv_file file,
+                             const uv_buf_t bufs[],
+                             unsigned int nbufs,
+                             int64_t offset,
+                             uv_fs_cb cb) noexcept {
+    return status_to_error(::uv_fs_write(&loop, &req, file, bufs, nbufs, offset, cb));
+}
+
+ALWAYS_INLINE error fs_close(uv_loop_t& loop, uv_fs_t& req, uv_file file, uv_fs_cb cb) noexcept {
+    return status_to_error(::uv_fs_close(&loop, &req, file, cb));
+}
+
 #undef ALWAYS_INLINE
 
 struct resolved_addr {

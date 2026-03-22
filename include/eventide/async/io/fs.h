@@ -190,6 +190,53 @@ task<void, error> link(std::string_view path,
                        std::string_view new_path,
                        event_loop& loop = event_loop::current());
 
+task<void, error> symlink(std::string_view path,
+                          std::string_view new_path,
+                          int flags = 0,
+                          event_loop& loop = event_loop::current());
+
+task<std::string, error> readlink(std::string_view path, event_loop& loop = event_loop::current());
+
+task<std::string, error> realpath(std::string_view path, event_loop& loop = event_loop::current());
+
+task<void, error> fchmod(int fd, int mode, event_loop& loop = event_loop::current());
+
+task<void, error>
+    chown(std::string_view path, int uid, int gid, event_loop& loop = event_loop::current());
+
+task<void, error> fchown(int fd, int uid, int gid, event_loop& loop = event_loop::current());
+
+task<void, error>
+    lchown(std::string_view path, int uid, int gid, event_loop& loop = event_loop::current());
+
+struct fs_stats {
+    std::uint64_t type = 0;
+    std::uint64_t bsize = 0;
+    std::uint64_t blocks = 0;
+    std::uint64_t bfree = 0;
+    std::uint64_t bavail = 0;
+    std::uint64_t files = 0;
+    std::uint64_t ffree = 0;
+    std::uint64_t frsize = 0;
+};
+
+task<fs_stats, error> statfs(std::string_view path, event_loop& loop = event_loop::current());
+
+task<int, error>
+    open(std::string_view path, int flags, int mode = 0, event_loop& loop = event_loop::current());
+
+task<std::size_t, error> read(int fd,
+                              std::span<char> buf,
+                              std::int64_t offset = -1,
+                              event_loop& loop = event_loop::current());
+
+task<std::size_t, error> write(int fd,
+                               std::span<const char> buf,
+                               std::int64_t offset = -1,
+                               event_loop& loop = event_loop::current());
+
+task<void, error> close(int fd, event_loop& loop = event_loop::current());
+
 namespace sync {
 
 /// Open a file. Returns the fd on success.

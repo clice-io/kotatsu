@@ -129,6 +129,192 @@ TEST_CASE(mkstemp_and_access) {
     EXPECT_EQ(*result, 1);
 }
 
+TEST_CASE(async_open_read_write_close) {
+    event_loop loop;
+
+    auto worker = [](event_loop& loop) -> task<int, error> {
+        auto dir_template =
+            (std::filesystem::temp_directory_path() / "eventide-rw-XXXXXX").string();
+        std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+        std::string file = (std::filesystem::path(dir) / "rw_test.txt").string();
+
+        int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+
+        constexpr std::string_view payload = "hello-async-io";
+        auto written =
+            co_await fs::write(fd, std::span<const char>(payload.data(), payload.size()), -1, loop)
+                .or_fail();
+        if(written != payload.size()) {
+            co_await fail(error::io_error);
+        }
+
+        co_await fs::close(fd, loop).or_fail();
+
+        fd = co_await fs::open(file, O_RDONLY, 0, loop).or_fail();
+
+        char buf[64]{};
+        auto nread = co_await fs::read(fd, std::span<char>(buf, sizeof(buf)), -1, loop).or_fail();
+        co_await fs::close(fd, loop).or_fail();
+
+        co_await fs::unlink(file, loop).or_fail();
+        co_await fs::rmdir(dir, loop).or_fail();
+
+        std::string_view got(buf, nread);
+        co_return got == payload ? 1 : 0;
+    }(loop);
+
+    loop.schedule(worker);
+    loop.run();
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(symlink_readlink_realpath) {
+    event_loop loop;
+
+    auto worker = [](event_loop& loop) -> task<int, error> {
+        auto dir_template =
+            (std::filesystem::temp_directory_path() / "eventide-sym-XXXXXX").string();
+        std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+        std::string target = (std::filesystem::path(dir) / "target.txt").string();
+        std::string link_path = (std::filesystem::path(dir) / "link.txt").string();
+
+        // Create the target file.
+        int fd = open_fd(target);
+        if(fd < 0) {
+            co_await fail(error::io_error);
+        }
+        close_fd(fd);
+
+        co_await fs::symlink(target, link_path, 0, loop).or_fail();
+
+        auto read_target = co_await fs::readlink(link_path, loop).or_fail();
+        if(read_target != target) {
+            co_await fail(error::invalid_argument);
+        }
+
+        auto resolved = co_await fs::realpath(link_path, loop).or_fail();
+        auto expected = std::filesystem::canonical(target).string();
+        if(resolved != expected) {
+            co_await fail(error::invalid_argument);
+        }
+
+        // lstat should report a symlink.
+        auto st = co_await fs::lstat(link_path, loop).or_fail();
+        bool is_link = (st.mode & S_IFMT) == S_IFLNK;
+
+        co_await fs::unlink(link_path, loop).or_fail();
+        co_await fs::unlink(target, loop).or_fail();
+        co_await fs::rmdir(dir, loop).or_fail();
+
+        co_return is_link ? 1 : 0;
+    }(loop);
+
+    loop.schedule(worker);
+    loop.run();
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(chown_fchown_lchown) {
+    event_loop loop;
+
+    auto worker = [](event_loop& loop) -> task<int, error> {
+        auto dir_template =
+            (std::filesystem::temp_directory_path() / "eventide-chown-XXXXXX").string();
+        std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+        std::string file = (std::filesystem::path(dir) / "owned.txt").string();
+
+        int fd = open_fd(file);
+        if(fd < 0) {
+            co_await fail(error::io_error);
+        }
+        close_fd(fd);
+
+        // Get current owner.
+        auto st = co_await fs::stat(file, loop).or_fail();
+        int uid = static_cast<int>(st.uid);
+        int gid = static_cast<int>(st.gid);
+
+        // chown to same owner (should succeed without root).
+        co_await fs::chown(file, uid, gid, loop).or_fail();
+
+        // fchown via fd.
+        int ofd = co_await fs::open(file, O_RDONLY, 0, loop).or_fail();
+        co_await fs::fchown(ofd, uid, gid, loop).or_fail();
+        co_await fs::close(ofd, loop).or_fail();
+
+        // Create symlink and lchown.
+        std::string link_path = (std::filesystem::path(dir) / "link.txt").string();
+        co_await fs::symlink(file, link_path, 0, loop).or_fail();
+        co_await fs::lchown(link_path, uid, gid, loop).or_fail();
+
+        co_await fs::unlink(link_path, loop).or_fail();
+        co_await fs::unlink(file, loop).or_fail();
+        co_await fs::rmdir(dir, loop).or_fail();
+
+        co_return 1;
+    }(loop);
+
+    loop.schedule(worker);
+    loop.run();
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(fchmod) {
+    event_loop loop;
+
+    auto worker = [](event_loop& loop) -> task<int, error> {
+        auto dir_template =
+            (std::filesystem::temp_directory_path() / "eventide-fchmod-XXXXXX").string();
+        std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+        std::string file = (std::filesystem::path(dir) / "perm.txt").string();
+
+        int fd = co_await fs::open(file, O_CREAT | O_WRONLY, 0644, loop).or_fail();
+        co_await fs::fchmod(fd, 0600, loop).or_fail();
+        co_await fs::close(fd, loop).or_fail();
+
+        auto st = co_await fs::stat(file, loop).or_fail();
+        bool mode_ok = (st.mode & 0777) == 0600;
+
+        co_await fs::unlink(file, loop).or_fail();
+        co_await fs::rmdir(dir, loop).or_fail();
+
+        co_return mode_ok ? 1 : 0;
+    }(loop);
+
+    loop.schedule(worker);
+    loop.run();
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(statfs_basic) {
+    event_loop loop;
+
+    auto worker = [](event_loop& loop) -> task<int, error> {
+        auto stats = co_await fs::statfs("/tmp", loop).or_fail();
+        // Block size should be nonzero on any real filesystem.
+        co_return stats.bsize > 0 ? 1 : 0;
+    }(loop);
+
+    loop.schedule(worker);
+    loop.run();
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
 };  // TEST_SUITE(fs_request_io)
 
 }  // namespace eventide
