@@ -950,6 +950,34 @@ TEST_CASE(zero_timeout_cancel) {
     EXPECT_TRUE(transport_ptr->outgoing().empty());
 }
 
+// Handler returning task<serde::RawValue, Error> instead of RequestResult<Params>
+TEST_CASE(raw_value_return) {
+    auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
+        R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":10,"b":20}})",
+    });
+    auto* transport_ptr = transport.get();
+
+    event_loop loop;
+    JsonPeer peer(loop, std::move(transport));
+
+    peer.on_request([&](RequestContext&, const AddParams& params) -> task<serde::RawValue, Error> {
+        // Return pre-serialized JSON directly
+        auto raw = std::format(R"({{"sum":{}}})", params.a + params.b);
+        co_return serde::RawValue{.data = std::move(raw)};
+    });
+
+    loop.schedule(peer.run());
+    EXPECT_EQ(loop.run(), 0);
+
+    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    auto response = serde::json::from_json<Response>(transport_ptr->outgoing().front());
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ(response->jsonrpc, "2.0");
+    EXPECT_EQ(std::get<std::int64_t>(response->id), 1);
+    ASSERT_TRUE(response->result.has_value());
+    EXPECT_EQ(response->result->sum, 30);
+}
+
 };  // TEST_SUITE(ipc_peer)
 
 // ============================================================================
