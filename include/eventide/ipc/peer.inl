@@ -116,6 +116,7 @@ struct Peer<CodecT>::Self {
 
     bool running = false;
     bool writer_running = false;
+    bool closed = false;
 
     LogCallback logger;
     LogLevel min_level = LogLevel::info;
@@ -124,6 +125,9 @@ struct Peer<CodecT>::Self {
         loop(external_loop), codec(std::move(codec_arg)) {}
 
     void enqueue_outgoing(std::string payload) {
+        if(closed) {
+            return;
+        }
         ET_IPC_LOG(this, LogLevel::trace, "send: {}", payload);
         outgoing_queue.push_back(std::move(payload));
         if(!writer_running) {
@@ -338,10 +342,11 @@ task<> Peer<CodecT>::run() {
 
 template <typename CodecT>
 Result<void> Peer<CodecT>::close() {
-    if(!self || !self->transport) {
+    if(!self || !self->transport || self->closed) {
         return {};
     }
 
+    self->closed = true;
     ET_IPC_LOG(self.get(), LogLevel::info, "{}", "peer closing");
 
     // Cancel in-flight incoming requests. Copy sources first because
@@ -410,7 +415,7 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
         }
     }
 
-    if(!self || !self->transport) {
+    if(!self || !self->transport || self->closed) {
         co_await fail("transport is null");
     }
 
@@ -475,7 +480,7 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
 
 template <typename CodecT>
 Result<void> Peer<CodecT>::send_notification_impl(std::string_view method, std::string params) {
-    if(!self || !self->transport) {
+    if(!self || !self->transport || self->closed) {
         return outcome_error(Error("transport is null"));
     }
 
