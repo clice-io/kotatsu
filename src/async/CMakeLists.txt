@@ -8,7 +8,14 @@ eventide_add_git_dependency(
         LIBUV_BUILD_SHARED OFF
         LIBUV_BUILD_STATIC ON
         UV_LINT_W4 OFF
-        ASAN ${ETD_SANITIZE_ADDRESS}
+        # We manage sanitizers at the top-level (ETD_SANITIZE_*). libuv's internal
+        # sanitizer flags can cause mismatched link flags and, on Windows+clang-cl,
+        # tries to copy runtime DLLs from the compiler dir which doesn't work for
+        # some toolchain layouts (e.g. pixi/conda).
+        ASAN OFF
+        MSAN OFF
+        TSAN OFF
+        UBSAN OFF
 )
 
 if(WIN32)
