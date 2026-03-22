@@ -15,8 +15,11 @@
 namespace deco {
 namespace backend = eventide::option;
 namespace refl = eventide::refl;
+
 namespace decl {
+
 struct IntoContext;
+
 }
 
 }  // namespace deco
@@ -61,13 +64,12 @@ concept CustomStringVectorResultTy = requires(BaseResultTy<Ty>& value,
 };
 
 template <typename Ty>
-concept CustomStringVectorResultTyWithContext =
-    requires(BaseResultTy<Ty>& value,
-             std::vector<std::string_view>& vals,
-             const decl::IntoContext& ctx) {
-        requires std::convertible_to<OptionalResultType<decltype(value.into(vals, ctx))>,
-                                     std::string_view>;
-    };
+concept CustomStringVectorResultTyWithContext = requires(BaseResultTy<Ty>& value,
+                                                         std::vector<std::string_view>& vals,
+                                                         const decl::IntoContext& ctx) {
+    requires std::convertible_to<OptionalResultType<decltype(value.into(vals, ctx))>,
+                                 std::string_view>;
+};
 
 template <typename Ty>
 concept FlagResultType =
@@ -81,8 +83,8 @@ concept PrimitiveScalarResultType =
     StringResultType<Ty>;
 
 template <typename Ty>
-concept ScalarResultType =
-    PrimitiveScalarResultType<Ty> || CustomStringResultTy<Ty> || CustomStringResultTyWithContext<Ty>;
+concept ScalarResultType = PrimitiveScalarResultType<Ty> || CustomStringResultTy<Ty> ||
+                           CustomStringResultTyWithContext<Ty>;
 
 template <typename Ty>
 concept PrimitiveVectorResultType =
@@ -102,12 +104,10 @@ concept InputResultType = ScalarResultType<Ty> || VectorResultType<Ty>;
 }  // namespace deco::trait
 
 #define DecoScalarResultErrString                                                                  \
-    "Result type must be a primitive scalar (bool/number/string-like) or provide into(string_view) " \
-    "or into(string_view, IntoContext)."
+    "Result type must be a primitive scalar (bool/number/string-like) or provide into(string_view) " "or into(string_view, IntoContext)."
 
 #define DecoVectorResultErrString                                                                  \
-    "Result type must be a vector of primitive scalar values or provide into(vector<string_view>) " \
-    "or into(vector<string_view>, IntoContext)."
+    "Result type must be a vector of primitive scalar values or provide into(vector<string_view>) " "or into(vector<string_view>, IntoContext)."
 
 #define DecoInputResultErrString                                                                   \
     "Input result type must be a scalar/string-like value or a vector of primitive scalar values, " "or provide a compatible into(...) overload."

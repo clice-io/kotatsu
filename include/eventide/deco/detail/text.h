@@ -94,8 +94,7 @@ struct Renderer {
         std::function<std::string(const UsageDocument&, bool, const TextStyle&)>;
     using subcommand_renderer_t =
         std::function<std::string(const SubCommandDocument&, const TextStyle&)>;
-    using diagnostic_renderer_t =
-        std::function<std::string(const Diagnostic&, const TextStyle&)>;
+    using diagnostic_renderer_t = std::function<std::string(const Diagnostic&, const TextStyle&)>;
 
     TextStyle style{};
     usage_renderer_t usage;
@@ -128,10 +127,10 @@ auto render_usage(const UsageDocument& document,
                   bool include_help = true,
                   const Renderer* renderer = nullptr) -> std::string;
 
-auto render_subcommands(const SubCommandDocument& document,
-                        const Renderer* renderer = nullptr) -> std::string;
+auto render_subcommands(const SubCommandDocument& document, const Renderer* renderer = nullptr)
+    -> std::string;
 
-auto render_diagnostic(const Diagnostic& diagnostic,
-                       const Renderer* renderer = nullptr) -> std::string;
+auto render_diagnostic(const Diagnostic& diagnostic, const Renderer* renderer = nullptr)
+    -> std::string;
 
 }  // namespace deco::cli::text

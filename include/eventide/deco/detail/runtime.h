@@ -195,8 +195,8 @@ public:
             std::string_view command_overview,
             void (*usage_writer)(std::ostream&, std::string_view, bool, const text::Renderer*),
             const text::Renderer* renderer = nullptr) :
-        invocation_ptr(&invocation), command_overview(command_overview),
-        usage_writer(usage_writer), renderer_ptr(renderer) {}
+        invocation_ptr(&invocation), command_overview(command_overview), usage_writer(usage_writer),
+        renderer_ptr(renderer) {}
 
     auto invocation() -> invocation_t& {
         return *invocation_ptr;
@@ -464,11 +464,11 @@ std::string check_valid(const T& options,
 namespace detail {
 
 template <typename T, typename State, typename OnOption>
-std::expected<Invocation<T, State>, ParseError> run_parse_session(std::span<std::string> argv,
-                                                                  State initial_state,
-                                                                  OnOption&& on_option,
-                                                                  const text::Renderer* formatter =
-                                                                      nullptr) {
+std::expected<Invocation<T, State>, ParseError>
+    run_parse_session(std::span<std::string> argv,
+                      State initial_state,
+                      OnOption&& on_option,
+                      const text::Renderer* formatter = nullptr) {
     const auto& storage = ::deco::detail::build_storage<T>();
     backend::OptTable table = storage.make_opt_table();
     Invocation<T, State> res{};
@@ -498,8 +498,7 @@ std::expected<Invocation<T, State>, ParseError> run_parse_session(std::span<std:
                     return false;
                 }
 
-                const auto arg_snapshot =
-                    backend::ParsedArgumentOwning::from_parsed_argument(*arg);
+                const auto arg_snapshot = backend::ParsedArgumentOwning::from_parsed_argument(*arg);
                 auto error_at_argument = [&](std::string_view reason) {
                     return decl::IntoContext::from_argument(argv_view, arg_snapshot, formatter)
                         .format_error(reason);
@@ -544,9 +543,9 @@ std::expected<Invocation<T, State>, ParseError> run_parse_session(std::span<std:
 
                 auto* opt_accessor = static_cast<decl::DecoOptionBase*>(opt_raw_ptr);
                 if(opt_accessor == nullptr) {
-                    err = {ParseError::Type::Internal, error_at_argument(
-                                                         "no option accessor found for option id " +
-                                                         std::to_string(raw_parg.option_id.id()))};
+                    err = {ParseError::Type::Internal,
+                           error_at_argument("no option accessor found for option id " +
+                                             std::to_string(raw_parg.option_id.id()))};
                     return false;
                 }
                 if(auto parse_err = opt_accessor->into(
@@ -557,9 +556,9 @@ std::expected<Invocation<T, State>, ParseError> run_parse_session(std::span<std:
                 }
 
                 if(category == nullptr) {
-                    err = {ParseError::Type::Internal, error_at_argument(
-                                                         "no category found for option id " +
-                                                         std::to_string(raw_parg.option_id.id()))};
+                    err = {ParseError::Type::Internal,
+                           error_at_argument("no category found for option id " +
+                                             std::to_string(raw_parg.option_id.id()))};
                     return false;
                 }
                 res.matched_categories.insert(category);
@@ -611,22 +610,21 @@ std::expected<Invocation<T, State>, ParseError> run_parse_session(std::span<std:
         return res;
     }
 
-    storage.visit_fields(res.options,
-                         [&](auto& field, const auto& cfg, std::string_view name, auto) {
-                             if(res.matched_categories.contains(cfg.category.ptr()) &&
-                                cfg.required && !field.has_value()) {
-                                 const auto active_argv = std::span<const std::string>(
-                                     res.active_argv.data(), res.active_argv.size());
-                                 err = {ParseError::Type::DecoParsing,
-                                        decl::IntoContext::at_cursor(
-                                            active_argv, res.next_index, formatter)
-                                            .format_error(std::format("required option {} is missing",
-                                                                      desc::from_deco_option(
-                                                                          cfg, false, name)))};
-                                 return false;
-                             }
-                             return true;
-                         });
+    storage.visit_fields(
+        res.options,
+        [&](auto& field, const auto& cfg, std::string_view name, auto) {
+            if(res.matched_categories.contains(cfg.category.ptr()) && cfg.required &&
+               !field.has_value()) {
+                const auto active_argv =
+                    std::span<const std::string>(res.active_argv.data(), res.active_argv.size());
+                err = {ParseError::Type::DecoParsing,
+                       decl::IntoContext::at_cursor(active_argv, res.next_index, formatter)
+                           .format_error(std::format("required option {} is missing",
+                                                     desc::from_deco_option(cfg, false, name)))};
+                return false;
+            }
+            return true;
+        });
     if(!err.message.empty()) {
         return std::unexpected(std::move(err));
     }
@@ -792,9 +790,9 @@ public:
         static_assert(sizeof...(Members) > 0,
                       "Command::after requires at least one member pointer.");
         using OptionTy = std::remove_cvref_t<detail::member_path_result_t<T, Members...>>;
-        static_assert(std::derived_from<OptionTy, decl::DecoOptionBase>,
-                      "Command::after only supports member pointer paths ending at a deco "
-                      "option member.");
+        static_assert(
+            std::derived_from<OptionTy, decl::DecoOptionBase>,
+            "Command::after only supports member pointer paths ending at a deco " "option member.");
         using ValueTy = typename OptionTy::result_type;
         using FnTy = std::remove_cvref_t<Fn>;
         static_assert(

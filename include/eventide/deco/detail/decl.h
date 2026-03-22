@@ -173,8 +173,8 @@ struct IntoContext {
                           unsigned highlight_begin,
                           unsigned highlight_end,
                           const cli::text::Renderer* renderer = nullptr) :
-        argv_span(argv), highlight_begin_index(highlight_begin),
-        highlight_end_index(highlight_end), renderer_ptr(renderer) {}
+        argv_span(argv), highlight_begin_index(highlight_begin), highlight_end_index(highlight_end),
+        renderer_ptr(renderer) {}
 
     constexpr auto argv() const -> std::span<const std::string> {
         return argv_span;
@@ -249,14 +249,14 @@ struct IntoContext {
 
     auto format_error(std::string_view reason) const -> std::string {
         if(argv_span.empty()) {
-            return cli::text::render_diagnostic(
-                cli::text::diagnostic_message(std::string(reason)),
-                renderer_ptr);
+            return cli::text::render_diagnostic(cli::text::diagnostic_message(std::string(reason)),
+                                                renderer_ptr);
         }
-        return cli::text::render_diagnostic(
-            cli::text::diagnostic_at(
-                argv_span, highlight_begin_index, highlight_end_index, std::string(reason)),
-            renderer_ptr);
+        return cli::text::render_diagnostic(cli::text::diagnostic_at(argv_span,
+                                                                     highlight_begin_index,
+                                                                     highlight_end_index,
+                                                                     std::string(reason)),
+                                            renderer_ptr);
     }
 };
 
@@ -698,22 +698,22 @@ struct InputOption : DecoOption<ResTy> {
                                     const IntoContext& context) override {
         if constexpr(trait::ScalarResultType<ResTy>) {
             if(arg.values.empty()) {
-                const auto value_context =
-                    IntoContext::from_value(context.argv(),
-                                            arg,
-                                            arg.get_spelling_view(),
-                                            context.renderer());
+                const auto value_context = IntoContext::from_value(context.argv(),
+                                                                   arg,
+                                                                   arg.get_spelling_view(),
+                                                                   context.renderer());
                 return detail::assign_scalar(this->as_optional(),
                                              arg.get_spelling_view(),
                                              value_context);
             }
             if(arg.values.size() == 1) {
-                const auto value_context =
-                    IntoContext::from_value(context.argv(),
-                                            arg,
-                                            arg.values.front(),
-                                            context.renderer());
-                return detail::assign_scalar(this->as_optional(), arg.values.front(), value_context);
+                const auto value_context = IntoContext::from_value(context.argv(),
+                                                                   arg,
+                                                                   arg.values.front(),
+                                                                   context.renderer());
+                return detail::assign_scalar(this->as_optional(),
+                                             arg.values.front(),
+                                             value_context);
             }
             return context.format_error("input option expects at most one value");
         } else {

@@ -84,9 +84,8 @@ struct CompatibleRendererImpl {
     static auto render_usage_document(const UsageDocument& document,
                                       bool include_help,
                                       const TextStyle& style) -> std::string {
-        std::string rendered = std::format("usage: {}\n\n{}\n",
-                                           document.overview,
-                                           style.usage.options_heading);
+        std::string rendered =
+            std::format("usage: {}\n\n{}\n", document.overview, style.usage.options_heading);
 
         auto append_entries = [&](std::span<const UsageEntry> entries) {
             for(const auto& entry: entries) {
@@ -174,14 +173,13 @@ struct CompatibleRendererImpl {
         return rendered;
     }
 
-    static auto render_diagnostic_document(const Diagnostic& diagnostic,
-                                           const TextStyle& style) -> std::string {
+    static auto render_diagnostic_document(const Diagnostic& diagnostic, const TextStyle& style)
+        -> std::string {
         if(!style.diagnostic.enabled || !diagnostic.positioned) {
             return diagnostic.message;
         }
 
-        const auto layout =
-            build_diagnostic_layout(diagnostic, style.diagnostic.max_source_width);
+        const auto layout = build_diagnostic_layout(diagnostic, style.diagnostic.max_source_width);
 
         if(!style.diagnostic.show_source_line || diagnostic.argv.empty()) {
             if(style.diagnostic.show_label) {
@@ -325,8 +323,8 @@ struct ModernRendererImpl {
         return rendered;
     }
 
-    static auto render_diagnostic_document(const Diagnostic& diagnostic,
-                                           const TextStyle& style) -> std::string {
+    static auto render_diagnostic_document(const Diagnostic& diagnostic, const TextStyle& style)
+        -> std::string {
         if(!style.diagnostic.enabled) {
             return diagnostic.message;
         }
@@ -339,8 +337,7 @@ struct ModernRendererImpl {
             return rendered;
         }
 
-        const auto layout =
-            build_diagnostic_layout(diagnostic, style.diagnostic.max_source_width);
+        const auto layout = build_diagnostic_layout(diagnostic, style.diagnostic.max_source_width);
 
         if(style.diagnostic.show_label) {
             rendered += " ";
@@ -480,9 +477,8 @@ auto excerpt_diagnostic_line(std::string_view line,
     const std::size_t visible_marker_start =
         marker_start <= content_start ? 0 : marker_start - content_start;
     const std::size_t prefix_width = crop_left ? ellipsis.size() : 0;
-    const std::size_t visible_content_width = content_end > marker_start
-                                                  ? content_end - std::max(marker_start, content_start)
-                                                  : 0;
+    const std::size_t visible_content_width =
+        content_end > marker_start ? content_end - std::max(marker_start, content_start) : 0;
 
     excerpt.line = std::move(rendered);
     excerpt.marker_start = prefix_width + visible_marker_start;
@@ -527,9 +523,8 @@ auto mutable_default_renderer() -> Renderer& {
 
 auto looks_like_rendered_diagnostic(std::string_view text) -> bool {
     return text.starts_with("at argv[") || text.starts_with("at end of argv:") ||
-           (text.starts_with("\033[") &&
-            (text.find("╰─▶") != std::string_view::npos ||
-             text.find("error") != std::string_view::npos));
+           (text.starts_with("\033[") && (text.find("╰─▶") != std::string_view::npos ||
+                                          text.find("error") != std::string_view::npos));
 }
 
 auto diagnostic_at(std::span<const std::string> argv,
@@ -601,19 +596,19 @@ auto resolve_renderer(const Renderer* renderer) -> const Renderer& {
     return renderer == nullptr ? default_renderer() : *renderer;
 }
 
-auto render_usage(const UsageDocument& document,
-                  bool include_help,
-                  const Renderer* renderer) -> std::string {
+auto render_usage(const UsageDocument& document, bool include_help, const Renderer* renderer)
+    -> std::string {
     const auto& active_renderer = resolve_renderer(renderer);
     if(active_renderer.usage) {
         return active_renderer.usage(document, include_help, active_renderer.style);
     }
-    return CompatibleRendererImpl::render_usage_document(
-        document, include_help, active_renderer.style);
+    return CompatibleRendererImpl::render_usage_document(document,
+                                                         include_help,
+                                                         active_renderer.style);
 }
 
-auto render_subcommands(const SubCommandDocument& document,
-                        const Renderer* renderer) -> std::string {
+auto render_subcommands(const SubCommandDocument& document, const Renderer* renderer)
+    -> std::string {
     const auto& active_renderer = resolve_renderer(renderer);
     if(active_renderer.subcommand) {
         return active_renderer.subcommand(document, active_renderer.style);

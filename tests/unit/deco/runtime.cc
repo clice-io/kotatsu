@@ -467,7 +467,7 @@ TEST_CASE(modern_renderer_highlights_usage_and_diagnostic) {
         .overview = "webcli [OPTIONS]",
         .groups =
             {
-                deco::cli::text::UsageGroup{
+                     deco::cli::text::UsageGroup{
                     .title = "network",
                     .entries =
                         {
@@ -476,8 +476,7 @@ TEST_CASE(modern_renderer_highlights_usage_and_diagnostic) {
                                 .help = "connect target",
                             },
                         },
-                },
-            },
+                }, },
     };
 
     const auto usage = deco::cli::text::render_usage(usage_document, true, &renderer);

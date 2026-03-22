@@ -108,9 +108,8 @@ auto SubCommander::match(std::span<std::string> argv) const
         const auto argv_view = std::span<const std::string>(argv.data(), argv.size());
         return std::unexpected(SubCommandError{
             type,
-            text::render_diagnostic(
-                text::diagnostic_at(argv_view, begin, end, std::move(message)),
-                renderer_ptr()),
+            text::render_diagnostic(text::diagnostic_at(argv_view, begin, end, std::move(message)),
+                                    renderer_ptr()),
         });
     };
 
@@ -138,8 +137,10 @@ auto SubCommander::match(std::span<std::string> argv) const
     }
 
     if(argv.empty()) {
-        return positioned_error(
-            SubCommandError::Type::MissingSubCommand, 0, 0, "subcommand is required");
+        return positioned_error(SubCommandError::Type::MissingSubCommand,
+                                0,
+                                0,
+                                "subcommand is required");
     }
 
     return positioned_error(SubCommandError::Type::UnknownSubCommand,
