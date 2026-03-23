@@ -63,6 +63,72 @@ struct NonTrivialCallable {
 static_assert(!std::is_trivially_copyable_v<NonTrivialCallable>);
 static_assert(function<int(int)>::sbo_eligible<NonTrivialCallable>);
 
+struct TrackedCallable {
+    int* counter;
+    int val;
+
+    TrackedCallable(int* counter, int val) : counter(counter), val(val) {
+        ++(*counter);
+    }
+
+    TrackedCallable(const TrackedCallable&) = delete;
+    TrackedCallable& operator=(const TrackedCallable&) = delete;
+
+    TrackedCallable(TrackedCallable&& other) noexcept : counter(other.counter), val(other.val) {
+        ++(*counter);
+    }
+
+    TrackedCallable& operator=(TrackedCallable&& other) noexcept {
+        counter = other.counter;
+        val = other.val;
+        return *this;
+    }
+
+    ~TrackedCallable() {
+        --(*counter);
+    }
+
+    int operator()(int x) const {
+        return val + x;
+    }
+};
+
+static_assert(function<int(int)>::sbo_eligible<TrackedCallable>);
+
+struct LargeTrackedCallable {
+    int* counter;
+    int val;
+    [[maybe_unused]] char padding[32]{};
+
+    LargeTrackedCallable(int* counter, int val) : counter(counter), val(val) {
+        ++(*counter);
+    }
+
+    LargeTrackedCallable(const LargeTrackedCallable&) = delete;
+    LargeTrackedCallable& operator=(const LargeTrackedCallable&) = delete;
+
+    LargeTrackedCallable(LargeTrackedCallable&& other) noexcept :
+        counter(other.counter), val(other.val) {
+        ++(*counter);
+    }
+
+    LargeTrackedCallable& operator=(LargeTrackedCallable&& other) noexcept {
+        counter = other.counter;
+        val = other.val;
+        return *this;
+    }
+
+    ~LargeTrackedCallable() {
+        --(*counter);
+    }
+
+    int operator()(int x) const {
+        return val + x;
+    }
+};
+
+static_assert(!function<int(int)>::sbo_eligible<LargeTrackedCallable>);
+
 // --- Tests ---
 
 TEST_SUITE(functional) {
@@ -298,6 +364,230 @@ TEST_CASE(function_move_assign_non_trivial_sbo) {
     EXPECT_EQ(fn2(10), 12);
     fn2 = std::move(fn1);
     EXPECT_EQ(fn2(10), 11);
+};
+
+// ===== destructor correctness tests =====
+
+TEST_CASE(sbo_destructor_once) {
+    int counter = 0;
+    {
+        TrackedCallable tc{&counter, 10};
+        EXPECT_EQ(counter, 1);
+        function<int(int)> fn(std::move(tc));
+        EXPECT_EQ(fn(5), 15);
+    }
+    EXPECT_EQ(counter, 0);
+};
+
+TEST_CASE(heap_destructor_once) {
+    int counter = 0;
+    {
+        LargeTrackedCallable ltc{&counter, 20};
+        EXPECT_EQ(counter, 1);
+        function<int(int)> fn(std::move(ltc));
+        EXPECT_EQ(fn(5), 25);
+    }
+    EXPECT_EQ(counter, 0);
+};
+
+TEST_CASE(move_construct_sbo_destructor) {
+    int counter = 0;
+    {
+        TrackedCallable tc{&counter, 7};
+        function<int(int)> fn1(std::move(tc));
+        function<int(int)> fn2(std::move(fn1));
+        EXPECT_EQ(fn2(3), 10);
+    }
+    EXPECT_EQ(counter, 0);
+};
+
+TEST_CASE(move_construct_heap_destructor) {
+    int counter = 0;
+    {
+        LargeTrackedCallable ltc{&counter, 7};
+        function<int(int)> fn1(std::move(ltc));
+        function<int(int)> fn2(std::move(fn1));
+        EXPECT_EQ(fn2(3), 10);
+    }
+    EXPECT_EQ(counter, 0);
+};
+
+TEST_CASE(move_assign_sbo_destructor) {
+    int counter = 0;
+    {
+        TrackedCallable tc1{&counter, 1};
+        TrackedCallable tc2{&counter, 2};
+        function<int(int)> fn1(std::move(tc1));
+        function<int(int)> fn2(std::move(tc2));
+        fn2 = std::move(fn1);
+        EXPECT_EQ(fn2(10), 11);
+    }
+    EXPECT_EQ(counter, 0);
+};
+
+TEST_CASE(move_assign_heap_destructor) {
+    int counter = 0;
+    {
+        LargeTrackedCallable ltc1{&counter, 1};
+        LargeTrackedCallable ltc2{&counter, 2};
+        function<int(int)> fn1(std::move(ltc1));
+        function<int(int)> fn2(std::move(ltc2));
+        fn2 = std::move(fn1);
+        EXPECT_EQ(fn2(10), 11);
+    }
+    EXPECT_EQ(counter, 0);
+};
+
+TEST_CASE(heap_move_chain_destructor) {
+    int counter = 0;
+    {
+        LargeTrackedCallable ltc{&counter, 5};
+        function<int(int)> fn1(std::move(ltc));
+        function<int(int)> fn2(std::move(fn1));
+        function<int(int)> fn3(std::move(fn2));
+        function<int(int)> fn4(std::move(fn3));
+        EXPECT_EQ(fn4(10), 15);
+    }
+    EXPECT_EQ(counter, 0);
+};
+
+// ===== cross-storage move assignment tests =====
+
+TEST_CASE(move_assign_sbo_to_heap) {
+    int counter = 0;
+    {
+        TrackedCallable tc{&counter, 10};
+        LargeTrackedCallable ltc{&counter, 20};
+        function<int(int)> fn1(std::move(tc));
+        function<int(int)> fn2(std::move(ltc));
+        EXPECT_EQ(fn1(1), 11);
+        EXPECT_EQ(fn2(1), 21);
+        fn2 = std::move(fn1);
+        EXPECT_EQ(fn2(1), 11);
+    }
+    EXPECT_EQ(counter, 0);
+};
+
+TEST_CASE(move_assign_heap_to_sbo) {
+    int counter = 0;
+    {
+        LargeTrackedCallable ltc{&counter, 30};
+        TrackedCallable tc{&counter, 40};
+        function<int(int)> fn1(std::move(ltc));
+        function<int(int)> fn2(std::move(tc));
+        EXPECT_EQ(fn1(1), 31);
+        EXPECT_EQ(fn2(1), 41);
+        fn2 = std::move(fn1);
+        EXPECT_EQ(fn2(1), 31);
+    }
+    EXPECT_EQ(counter, 0);
+};
+
+TEST_CASE(move_assign_fnptr_to_sbo) {
+    int counter = 0;
+    {
+        TrackedCallable tc{&counter, 5};
+        function<int(int)> fn1(free_negate);
+        function<int(int)> fn2(std::move(tc));
+        EXPECT_EQ(fn1(3), -3);
+        EXPECT_EQ(fn2(3), 8);
+        fn2 = std::move(fn1);
+        EXPECT_EQ(fn2(3), -3);
+    }
+    EXPECT_EQ(counter, 0);
+};
+
+TEST_CASE(move_assign_sbo_to_fnptr) {
+    int counter = 0;
+    {
+        TrackedCallable tc{&counter, 5};
+        function<int(int)> fn1(std::move(tc));
+        function<int(int)> fn2(free_negate);
+        EXPECT_EQ(fn1(3), 8);
+        EXPECT_EQ(fn2(3), -3);
+        fn2 = std::move(fn1);
+        EXPECT_EQ(fn2(3), 8);
+    }
+    EXPECT_EQ(counter, 0);
+};
+
+// ===== self-move assignment =====
+
+TEST_CASE(self_move_assign_sbo) {
+    function<int(int)> fn([](int x) -> int { return x + 42; });
+    auto* ptr = &fn;
+    fn = std::move(*ptr);
+    EXPECT_EQ(fn(0), 42);
+};
+
+TEST_CASE(self_move_assign_heap) {
+    [[maybe_unused]] char padding[32]{};
+    int capture = 10;
+    auto lambda = [capture, padding](int x) -> int {
+        return capture + x;
+    };
+    static_assert(sizeof(lambda) > function<int(int)>::sbo_size);
+    function<int(int)> fn(std::move(lambda));
+    auto* ptr = &fn;
+    fn = std::move(*ptr);
+    EXPECT_EQ(fn(5), 15);
+};
+
+// ===== additional function_ref tests =====
+
+TEST_CASE(function_ref_mutable_lambda) {
+    int state = 0;
+    auto lambda = [&state](int x) -> int {
+        state += x;
+        return state;
+    };
+    function_ref<int(int)> fn(lambda);
+    EXPECT_EQ(fn(5), 5);
+    EXPECT_EQ(fn(3), 8);
+    EXPECT_EQ(state, 8);
+};
+
+TEST_CASE(function_ref_reassign) {
+    function_ref<int(int, int)> fn(free_add);
+    EXPECT_EQ(fn(1, 2), 3);
+    auto mul = [](int a, int b) -> int {
+        return a * b;
+    };
+    function_ref<int(int, int)> fn2(mul);
+    fn = fn2;
+    EXPECT_EQ(fn(3, 4), 12);
+};
+
+TEST_CASE(bind_ref_reflects_mutation) {
+    Adder adder{0};
+    auto fn = bind_ref<&Adder::add>(adder);
+    EXPECT_EQ(fn(5), 5);
+    adder.base = 100;
+    EXPECT_EQ(fn(5), 105);
+};
+
+// ===== complex type tests =====
+
+TEST_CASE(function_string_return) {
+    function<std::string(int)> fn([](int x) -> std::string { return "val=" + std::to_string(x); });
+    EXPECT_EQ(fn(42), std::string("val=42"));
+
+    function<std::string(int)> fn2(std::move(fn));
+    EXPECT_EQ(fn2(0), std::string("val=0"));
+};
+
+TEST_CASE(function_multiple_args) {
+    function<int(int, int, int)> fn([](int a, int b, int c) -> int { return a + b + c; });
+    EXPECT_EQ(fn(1, 2, 3), 6);
+
+    function<int(int, int, int)> fn2(std::move(fn));
+    EXPECT_EQ(fn2(10, 20, 30), 60);
+};
+
+TEST_CASE(bind_const_mem_fn) {
+    Adder adder{10};
+    auto fn = bind<&Adder::add_const>(adder);
+    EXPECT_EQ(fn(5), 15);
 };
 
 // ===== mem_fn tests =====
