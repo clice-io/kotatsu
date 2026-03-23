@@ -1,6 +1,7 @@
 #include "eventide/async/io/fs.h"
 
 #include <cassert>
+#include <filesystem>
 #include <functional>
 
 #include "awaiter.h"
@@ -705,39 +706,33 @@ task<void, error> fs::dir_cache::populate(std::string_view dir_path, event_loop&
     for(auto& ent: entries) {
         names.insert(std::move(ent.name));
     }
-    cache_.emplace(std::string(dir_path), std::move(names));
+    // Use insert-or-assign so a re-scan after invalidate replaces stale data.
+    cache.insert_or_assign(std::string(dir_path), std::move(names));
 }
 
 task<bool, error> fs::dir_cache::exists(std::string_view path, event_loop& loop) {
-    // Split path into directory and filename.
-    auto pos = path.find_last_of('/');
-#ifdef _WIN32
-    auto pos2 = path.find_last_of('\\');
-    if(pos2 != std::string_view::npos && (pos == std::string_view::npos || pos2 > pos)) {
-        pos = pos2;
-    }
-#endif
-    if(pos == std::string_view::npos || pos + 1 >= path.size()) {
+    std::filesystem::path p(path);
+    auto dir = p.parent_path().string();
+    auto name = p.filename().string();
+
+    if(dir.empty() || name.empty()) {
         co_await fail(error::invalid_argument);
     }
 
-    std::string dir(path.substr(0, pos));
-    std::string name(path.substr(pos + 1));
-
-    if(cache_.find(dir) == cache_.end()) {
+    if(cache.find(dir) == cache.end()) {
         co_await populate(dir, loop).or_fail();
     }
 
-    auto it = cache_.find(dir);
-    co_return it != cache_.end() && it->second.count(name) > 0;
+    auto it = cache.find(dir);
+    co_return it != cache.end() && it->second.count(name) > 0;
 }
 
 void fs::dir_cache::invalidate(std::string_view dir_path) {
-    cache_.erase(std::string(dir_path));
+    cache.erase(std::string(dir_path));
 }
 
 void fs::dir_cache::clear() {
-    cache_.clear();
+    cache.clear();
 }
 
 }  // namespace eventide

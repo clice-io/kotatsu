@@ -45,6 +45,38 @@ struct work_op : uv::await_op<work_op> {
     }
 };
 
+struct batch_work_op : uv::await_op<batch_work_op> {
+    using promise_t = task<void, error>::promise_type;
+
+    // Batch items whose uv_work_t requests should be cancelled.
+    std::vector<uv_work_t>* reqs = nullptr;
+    std::size_t submitted = 0;
+    error result;
+
+    static void on_cancel(system_op* op) {
+        auto* self = static_cast<batch_work_op*>(op);
+        if(self->reqs) {
+            for(std::size_t i = 0; i < self->submitted; ++i) {
+                uv::cancel((*self->reqs)[i]);
+            }
+        }
+    }
+
+    bool await_ready() const noexcept {
+        return false;
+    }
+
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<promise_t> waiting,
+                      std::source_location location = std::source_location::current()) noexcept {
+        return this->link_continuation(&waiting.promise(), location);
+    }
+
+    error await_resume() noexcept {
+        return result;
+    }
+};
+
 }  // namespace
 
 task<void, error> queue(function<void()> fn, event_loop& loop) {
@@ -82,72 +114,82 @@ task<void, error> queue_batch(std::size_t count, function<void(std::size_t)> fn,
         co_return;
     }
 
-    // Shared state: the awaiter that all items report back to, plus an atomic counter.
+    // Shared state lives on the heap so that after_cb can safely call complete()
+    // (which may destroy the coroutine frame) without use-after-free.
     struct batch_state {
-        work_op* awaiter = nullptr;
+        function<void(std::size_t)> fn;
         std::atomic<std::size_t> remaining;
         error first_error;
+        batch_work_op* awaiter = nullptr;
+        // Keep uv_work_t requests here so batch_work_op::on_cancel can reach them.
+        std::vector<uv_work_t> reqs;
+        // Per-item index stored alongside each request.
+        std::vector<std::size_t> indices;
 
-        explicit batch_state(std::size_t n) : remaining(n) {}
+        batch_state(function<void(std::size_t)> f, std::size_t n) :
+            fn(std::move(f)), remaining(n), reqs(n), indices(n) {
+            for(std::size_t i = 0; i < n; ++i) {
+                indices[i] = i;
+            }
+        }
     };
 
-    // Per-item request — lightweight, no coroutine frame.
-    struct batch_item {
-        uv_work_t req{};
-        batch_state* state = nullptr;
-        function<void(std::size_t)>* fn = nullptr;
-        std::size_t index = 0;
+    // req.data points to this to recover both the state and the item index.
+    struct item_context {
+        std::shared_ptr<batch_state> state;
+        std::size_t index;
     };
 
-    work_op op(function<void()>([]() {}));  // dummy fn, unused
+    auto state = std::make_shared<batch_state>(std::move(fn), count);
 
-    batch_state state(count);
-    state.awaiter = &op;
+    batch_work_op op;
+    op.reqs = &state->reqs;
+    state->awaiter = &op;
 
-    std::vector<batch_item> items(count);
+    // Heap-allocate contexts; each one holds a shared_ptr keeping state alive.
+    auto contexts = std::make_unique<std::vector<item_context>>(count);
+    for(std::size_t i = 0; i < count; ++i) {
+        (*contexts)[i] = {state, i};
+    }
 
     auto work_cb = [](uv_work_t* req) {
-        auto* item = static_cast<batch_item*>(req->data);
-        (*item->fn)(item->index);
+        auto* ctx = static_cast<item_context*>(req->data);
+        ctx->state->fn(ctx->index);
     };
 
     auto after_cb = [](uv_work_t* req, int status) {
-        auto* item = static_cast<batch_item*>(req->data);
-        auto* st = item->state;
+        auto* ctx = static_cast<item_context*>(req->data);
+        // Copy shared_ptr so state survives even if complete() destroys the frame.
+        auto st = ctx->state;
 
         if(status < 0) {
             st->first_error = uv::status_to_error(status);
         }
 
         if(st->remaining.fetch_sub(1) == 1) {
-            // Last item completed — resume the awaiter.
             st->awaiter->result = st->first_error;
             st->awaiter->complete();
         }
     };
 
-    op.result.clear();
-    op.req.data = &op;
-
+    std::size_t submitted = 0;
     for(std::size_t i = 0; i < count; ++i) {
-        items[i].state = &state;
-        items[i].fn = &fn;
-        items[i].index = i;
-        items[i].req.data = &items[i];
+        state->reqs[i].data = &(*contexts)[i];
 
-        if(auto err = uv::queue_work(loop, items[i].req, work_cb, after_cb)) {
-            // Adjust remaining so the already-submitted items still complete cleanly.
-            state.remaining.fetch_sub(count - i);
-            if(state.remaining.load() == 0) {
-                // Nothing was submitted successfully.
+        if(auto err = uv::queue_work(loop, state->reqs[i], work_cb, after_cb)) {
+            std::size_t not_submitted = count - i;
+            state->remaining.fetch_sub(not_submitted);
+            if(state->remaining.load() == 0) {
                 co_await fail(err);
             }
-            state.first_error = err;
+            state->first_error = err;
             break;
         }
+        ++submitted;
     }
 
-    // Suspend until all submitted items complete.
+    op.submitted = submitted;
+
     if(auto err = co_await op) {
         co_await fail(std::move(err));
     }

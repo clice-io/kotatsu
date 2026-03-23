@@ -14,7 +14,7 @@ namespace eventide {
 task<void, error> queue(function<void()> fn, event_loop& loop = event_loop::current());
 
 /// Run work on libuv's worker pool and return either its value or an error.
-template <typename Fn, typename R = callable_return_t<std::remove_cvref_t<Fn>>>
+template <typename Fn, typename R = callable_return_t<Fn>>
     requires std::is_invocable_v<Fn> && (!std::is_void_v<R>)
 task<R, error> queue(Fn fn, event_loop& loop = event_loop::current()) {
     std::optional<R> ret;

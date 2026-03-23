@@ -335,7 +335,7 @@ public:
 private:
     task<void, error> populate(std::string_view dir_path, event_loop& loop);
 
-    std::unordered_map<std::string, std::unordered_set<std::string>> cache_;
+    std::unordered_map<std::string, std::unordered_set<std::string>> cache;
 };
 
 }  // namespace fs

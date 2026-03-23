@@ -351,15 +351,17 @@ TEST_CASE(dir_cache_basic) {
         std::string file_c = (std::filesystem::path(dir) / "nonexistent.txt").string();
         bool has_c = co_await cache.exists(file_c, loop).or_fail();
 
-        // Invalidate and verify re-scan works.
+        // Delete file_b, then invalidate so re-scan picks up the change.
+        co_await fs::unlink(file_b, loop).or_fail();
+        // Without invalidation the stale cache would still report file_b as present.
         cache.invalidate(dir);
-        bool has_a_again = co_await cache.exists(file_a, loop).or_fail();
+        bool has_a_after = co_await cache.exists(file_a, loop).or_fail();
+        bool has_b_after = co_await cache.exists(file_b, loop).or_fail();
 
         co_await fs::unlink(file_a, loop).or_fail();
-        co_await fs::unlink(file_b, loop).or_fail();
         co_await fs::rmdir(dir, loop).or_fail();
 
-        co_return (has_a && has_b && !has_c && has_a_again) ? 1 : 0;
+        co_return (has_a && has_b && !has_c && has_a_after && !has_b_after) ? 1 : 0;
     }(loop);
 
     loop.schedule(worker);
