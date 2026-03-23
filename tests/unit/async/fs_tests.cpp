@@ -171,6 +171,8 @@ TEST_CASE(async_open_read_write_close) {
     EXPECT_EQ(*result, 1);
 }
 
+#ifndef _WIN32
+
 TEST_CASE(symlink_readlink_realpath) {
     event_loop loop;
 
@@ -298,11 +300,14 @@ TEST_CASE(fchmod) {
     EXPECT_EQ(*result, 1);
 }
 
+#endif  // !_WIN32
+
 TEST_CASE(statfs_basic) {
     event_loop loop;
 
     auto worker = [](event_loop& loop) -> task<int, error> {
-        auto stats = co_await fs::statfs("/tmp", loop).or_fail();
+        auto statfs_path = std::filesystem::temp_directory_path().string();
+        auto stats = co_await fs::statfs(statfs_path, loop).or_fail();
         // Block size should be nonzero on any real filesystem.
         co_return stats.bsize > 0 ? 1 : 0;
     }(loop);
