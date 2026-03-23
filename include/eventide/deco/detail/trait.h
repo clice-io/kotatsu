@@ -33,6 +33,12 @@ template <typename Ty>
 concept StringResultType = std::constructible_from<BaseResultTy<Ty>, std::string_view>;
 
 template <typename Ty>
+concept BorrowedStringResultType = std::same_as<BaseResultTy<Ty>, std::string_view>;
+
+template <typename Ty>
+concept OwnedStringResultType = StringResultType<Ty> && !BorrowedStringResultType<Ty>;
+
+template <typename Ty>
 struct OptionalTrait {
     using type = void;
 };
@@ -78,7 +84,7 @@ concept PrimitiveScalarResultType =
     std::same_as<BaseResultTy<Ty>, bool> || std::integral<BaseResultTy<Ty>> ||
     (std::floating_point<BaseResultTy<Ty>> &&
      !std::is_same_v<std::remove_cvref_t<Ty>, long double>) ||
-    StringResultType<Ty>;
+    OwnedStringResultType<Ty>;
 
 template <typename Ty>
 concept ScalarResultType = PrimitiveScalarResultType<Ty> || CustomStringResultTy<Ty> ||
@@ -102,10 +108,12 @@ concept InputResultType = ScalarResultType<Ty> || VectorResultType<Ty>;
 }  // namespace deco::trait
 
 #define DecoScalarResultErrString                                                                  \
-    "Result type must be a primitive scalar (bool/number/string-like) or provide into(string_view) " "or into(string_view, IntoContext)."
+    "Result type must be a primitive scalar (bool/number/owning string) or provide "             \
+    "into(string_view) or into(string_view, IntoContext). Default deco string parsing "          \
+    "does not support borrowing/view result types."
 
 #define DecoVectorResultErrString                                                                  \
-    "Result type must be a vector of primitive scalar values or provide into(vector<string_view>) " "or into(vector<string_view>, IntoContext)."
+    "Result type must be a vector of primitive scalar values (including owning strings only) " "or provide into(vector<string_view>) or into(vector<string_view>, IntoContext)."
 
 #define DecoInputResultErrString                                                                   \
-    "Input result type must be a scalar/string-like value or a vector of primitive scalar values, " "or provide a compatible into(...) overload."
+    "Input result type must be a scalar/owning-string value or a vector of primitive scalar " "values, or provide a compatible into(...) overload."

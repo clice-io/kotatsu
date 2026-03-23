@@ -667,6 +667,9 @@ std::expected<Invocation<T>, ParseError> parse(std::span<std::string> argv) {
 }
 
 template <typename T>
+// Returns bare options without preserving Invocation lifetime state.
+// Built-in deco parsing therefore only supports owning string result types.
+// Custom into(...) implementations remain responsible for any borrowed storage they expose.
 std::expected<T, ParseError> parse_only(std::span<std::string> argv,
                                         const text::Renderer& formatter) {
     auto res = parse<T>(argv, formatter);
@@ -677,6 +680,9 @@ std::expected<T, ParseError> parse_only(std::span<std::string> argv,
 }
 
 template <typename T>
+// Returns bare options without preserving Invocation lifetime state.
+// Built-in deco parsing therefore only supports owning string result types.
+// Custom into(...) implementations remain responsible for any borrowed storage they expose.
 std::expected<T, ParseError> parse_only(std::span<std::string> argv) {
     auto res = parse<T>(argv);
     if(!res.has_value()) {
@@ -917,6 +923,9 @@ public:
         return res;
     }
 
+    // Returns bare options without preserving Invocation lifetime state.
+    // Built-in deco parsing therefore only supports owning string result types.
+    // Custom into(...) implementations remain responsible for any borrowed storage they expose.
     auto parse_only(std::span<std::string> argv) -> std::expected<T, ParseError> {
         auto res = invoke(argv);
         if(!res.has_value()) {

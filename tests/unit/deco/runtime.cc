@@ -215,6 +215,32 @@ struct CallbackRestartOwnedOpt {
     verbose;
 };
 
+struct CallbackRestartTwiceState {
+    inline static unsigned restart_count = 0;
+
+    static void reset() {
+        restart_count = 0;
+    }
+};
+
+struct CallbackRestartTwiceOpt {
+    DecoInput(required = false; after_parsed = [](const Step& step) {
+        if(CallbackRestartTwiceState::restart_count == 0) {
+            ++CallbackRestartTwiceState::restart_count;
+            return step.restart(std::vector<std::string>{"second.cc"});
+        }
+        if(CallbackRestartTwiceState::restart_count == 1) {
+            ++CallbackRestartTwiceState::restart_count;
+            return step.restart(std::vector<std::string>{"--name", "final"});
+        }
+        return step.next();
+    };)
+    <std::string> script;
+
+    DecoKV(names = {"--name"}; required = false)
+    <std::string> name;
+};
+
 struct CallbackShortcutOpt {
     DecoInput(required = false; after_parsed = Action::stop;)
     <std::string> script;
@@ -631,6 +657,25 @@ TEST_CASE(option_callback_can_restart_with_owned_argv) {
     EXPECT_EQ(CallbackRestartOwnedState::arg_index, 0u);
     EXPECT_EQ(CallbackRestartOwnedState::next_cursor, 1u);
     EXPECT_TRUE(CallbackRestartOwnedState::value == "entry.cc");
+}
+
+TEST_CASE(option_callback_can_restart_multiple_times_with_owned_argv) {
+    CallbackRestartTwiceState::reset();
+
+    auto res = deco::cli::parse<CallbackRestartTwiceOpt>(into_deco_args("first.cc"));
+    EXPECT_TRUE(res.has_value());
+    if(!res.has_value()) {
+        return;
+    }
+
+    EXPECT_EQ(CallbackRestartTwiceState::restart_count, 2u);
+    EXPECT_TRUE(res->options.script.has_value());
+    EXPECT_TRUE(*res->options.script == "second.cc");
+    EXPECT_TRUE(res->options.name.has_value());
+    EXPECT_TRUE(*res->options.name == "final");
+    EXPECT_EQ(res->argv().size(), 2u);
+    EXPECT_TRUE(res->argv()[0] == "--name");
+    EXPECT_TRUE(res->argv()[1] == "final");
 }
 
 TEST_CASE(option_callback_supports_action_shortcut) {

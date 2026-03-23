@@ -561,6 +561,10 @@ std::optional<std::string> parse_primitive_scalar(ResTy& out, std::string_view t
         out = parsed;
         return std::nullopt;
     } else if constexpr(trait::StringResultType<ResTy>) {
+        static_assert(trait::OwnedStringResultType<ResTy>,
+                      "Default deco string parsing only supports owning result types. "
+                      "Use std::string or provide a custom into(...) overload if you need "
+                      "specialized storage.");
         out = ResTy(text);
         return std::nullopt;
     } else {

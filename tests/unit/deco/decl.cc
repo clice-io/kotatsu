@@ -7,17 +7,21 @@
 static_assert(deco::trait::ScalarResultType<bool>);
 static_assert(deco::trait::ScalarResultType<int>);
 static_assert(deco::trait::ScalarResultType<std::string>);
+static_assert(!deco::trait::ScalarResultType<std::string_view>);
 static_assert(!deco::trait::ScalarResultType<const char*>);
 static_assert(!deco::trait::ScalarResultType<std::vector<int>>);
 
 static_assert(deco::trait::VectorResultType<std::vector<int>>);
 static_assert(deco::trait::VectorResultType<std::vector<std::string>>);
+static_assert(!deco::trait::VectorResultType<std::vector<std::string_view>>);
 static_assert(!deco::trait::VectorResultType<std::span<const std::string>>);
 
 static_assert(deco::trait::InputResultType<int>);
 static_assert(deco::trait::InputResultType<std::string>);
 static_assert(deco::trait::InputResultType<std::vector<int>>);
 static_assert(deco::trait::InputResultType<std::vector<std::string>>);
+static_assert(!deco::trait::InputResultType<std::string_view>);
+static_assert(!deco::trait::InputResultType<std::vector<std::string_view>>);
 static_assert(!deco::trait::InputResultType<const char*>);
 
 constexpr deco::decl::Category verboseCategory = {
