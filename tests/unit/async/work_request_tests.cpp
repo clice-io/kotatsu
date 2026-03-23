@@ -58,6 +58,79 @@ TEST_CASE(queue_runs_twice) {
     EXPECT_EQ(flag.load(), 2);
 }
 
+TEST_CASE(queue_batch_runs_all) {
+    event_loop loop;
+    constexpr int N = 16;
+    std::atomic<int> counter{0};
+
+    auto worker = [&](event_loop& loop) -> task<void, error> {
+        co_await queue_batch(N, [&counter](std::size_t) { counter.fetch_add(1); }, loop).or_fail();
+        loop.stop();
+    }(loop);
+
+    loop.schedule(worker);
+    loop.run();
+
+    auto ec = worker.result();
+    EXPECT_FALSE(ec.has_error());
+    EXPECT_EQ(counter.load(), N);
+}
+
+TEST_CASE(queue_batch_indices_correct) {
+    event_loop loop;
+    constexpr int N = 8;
+    std::atomic<int> sum{0};
+
+    auto worker = [&](event_loop& loop) -> task<void, error> {
+        co_await queue_batch(
+            N,
+            [&sum](std::size_t i) { sum.fetch_add(static_cast<int>(i)); },
+            loop)
+            .or_fail();
+        loop.stop();
+    }(loop);
+
+    loop.schedule(worker);
+    loop.run();
+
+    auto ec = worker.result();
+    EXPECT_FALSE(ec.has_error());
+    // 0+1+2+...+7 = 28
+    EXPECT_EQ(sum.load(), 28);
+}
+
+TEST_CASE(queue_batch_zero_count) {
+    event_loop loop;
+
+    auto worker = [](event_loop& loop) -> task<void, error> {
+        co_await queue_batch(0, [](std::size_t) {}, loop).or_fail();
+        loop.stop();
+    }(loop);
+
+    loop.schedule(worker);
+    loop.run();
+
+    auto ec = worker.result();
+    EXPECT_FALSE(ec.has_error());
+}
+
+TEST_CASE(queue_batch_single_item) {
+    event_loop loop;
+    std::atomic<int> flag{0};
+
+    auto worker = [&](event_loop& loop) -> task<void, error> {
+        co_await queue_batch(1, [&flag](std::size_t) { flag.store(1); }, loop).or_fail();
+        loop.stop();
+    }(loop);
+
+    loop.schedule(worker);
+    loop.run();
+
+    auto ec = worker.result();
+    EXPECT_FALSE(ec.has_error());
+    EXPECT_EQ(flag.load(), 1);
+}
+
 };  // TEST_SUITE(work_request_io)
 
 }  // namespace eventide

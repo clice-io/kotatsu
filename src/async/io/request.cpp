@@ -1,6 +1,8 @@
 #include "eventide/async/io/request.h"
 
+#include <atomic>
 #include <cassert>
+#include <vector>
 
 #include "awaiter.h"
 #include "eventide/async/io/loop.h"
@@ -70,6 +72,82 @@ task<void, error> queue(function<void()> fn, event_loop& loop) {
         co_await fail(err);
     }
 
+    if(auto err = co_await op) {
+        co_await fail(std::move(err));
+    }
+}
+
+task<void, error> queue_batch(std::size_t count, function<void(std::size_t)> fn, event_loop& loop) {
+    if(count == 0) {
+        co_return;
+    }
+
+    // Shared state: the awaiter that all items report back to, plus an atomic counter.
+    struct batch_state {
+        work_op* awaiter = nullptr;
+        std::atomic<std::size_t> remaining;
+        error first_error;
+
+        explicit batch_state(std::size_t n) : remaining(n) {}
+    };
+
+    // Per-item request — lightweight, no coroutine frame.
+    struct batch_item {
+        uv_work_t req{};
+        batch_state* state = nullptr;
+        function<void(std::size_t)>* fn = nullptr;
+        std::size_t index = 0;
+    };
+
+    work_op op(function<void()>([]() {}));  // dummy fn, unused
+
+    batch_state state(count);
+    state.awaiter = &op;
+
+    std::vector<batch_item> items(count);
+
+    auto work_cb = [](uv_work_t* req) {
+        auto* item = static_cast<batch_item*>(req->data);
+        (*item->fn)(item->index);
+    };
+
+    auto after_cb = [](uv_work_t* req, int status) {
+        auto* item = static_cast<batch_item*>(req->data);
+        auto* st = item->state;
+
+        if(status < 0) {
+            st->first_error = uv::status_to_error(status);
+        }
+
+        if(st->remaining.fetch_sub(1) == 1) {
+            // Last item completed — resume the awaiter.
+            st->awaiter->result = st->first_error;
+            st->awaiter->complete();
+        }
+    };
+
+    op.result.clear();
+    op.req.data = &op;
+
+    for(std::size_t i = 0; i < count; ++i) {
+        items[i].state = &state;
+        items[i].fn = &fn;
+        items[i].index = i;
+        items[i].req.data = &items[i];
+
+        if(auto err = uv::queue_work(loop, items[i].req, work_cb, after_cb)) {
+            // Adjust remaining so the already-submitted items still complete cleanly.
+            state.remaining.fetch_sub(count - i);
+            if(state.remaining.load() == 0) {
+                // Nothing was submitted successfully.
+                co_await fail(err);
+            }
+            state.first_error = err;
+            break;
+        }
+    }
+
+    // Suspend until all submitted items complete.
     if(auto err = co_await op) {
         co_await fail(std::move(err));
     }

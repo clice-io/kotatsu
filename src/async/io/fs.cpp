@@ -694,4 +694,50 @@ result<std::string> fs::sync::read_to_string(std::string_view path) {
     return content;
 }
 
+// ============================================================================
+// dir_cache
+// ============================================================================
+
+task<void, error> fs::dir_cache::populate(std::string_view dir_path, event_loop& loop) {
+    auto entries = co_await fs::scandir(dir_path, loop).or_fail();
+    std::unordered_set<std::string> names;
+    names.reserve(entries.size());
+    for(auto& ent: entries) {
+        names.insert(std::move(ent.name));
+    }
+    cache_.emplace(std::string(dir_path), std::move(names));
+}
+
+task<bool, error> fs::dir_cache::exists(std::string_view path, event_loop& loop) {
+    // Split path into directory and filename.
+    auto pos = path.find_last_of('/');
+#ifdef _WIN32
+    auto pos2 = path.find_last_of('\\');
+    if(pos2 != std::string_view::npos && (pos == std::string_view::npos || pos2 > pos)) {
+        pos = pos2;
+    }
+#endif
+    if(pos == std::string_view::npos || pos + 1 >= path.size()) {
+        co_await fail(error::invalid_argument);
+    }
+
+    std::string dir(path.substr(0, pos));
+    std::string name(path.substr(pos + 1));
+
+    if(cache_.find(dir) == cache_.end()) {
+        co_await populate(dir, loop).or_fail();
+    }
+
+    auto it = cache_.find(dir);
+    co_return it != cache_.end() && it->second.count(name) > 0;
+}
+
+void fs::dir_cache::invalidate(std::string_view dir_path) {
+    cache_.erase(std::string(dir_path));
+}
+
+void fs::dir_cache::clear() {
+    cache_.clear();
+}
+
 }  // namespace eventide
