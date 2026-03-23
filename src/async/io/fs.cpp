@@ -1,7 +1,6 @@
 #include "eventide/async/io/fs.h"
 
 #include <cassert>
-#include <filesystem>
 #include <functional>
 
 #include "awaiter.h"
@@ -693,46 +692,6 @@ result<std::string> fs::sync::read_to_string(std::string_view path) {
 
     close(*fd);
     return content;
-}
-
-// ============================================================================
-// dir_cache
-// ============================================================================
-
-task<void, error> fs::dir_cache::populate(std::string_view dir_path, event_loop& loop) {
-    auto entries = co_await fs::scandir(dir_path, loop).or_fail();
-    std::unordered_set<std::string> names;
-    names.reserve(entries.size());
-    for(auto& ent: entries) {
-        names.insert(std::move(ent.name));
-    }
-    // Use insert-or-assign so a re-scan after invalidate replaces stale data.
-    cache.insert_or_assign(std::string(dir_path), std::move(names));
-}
-
-task<bool, error> fs::dir_cache::exists(std::string_view path, event_loop& loop) {
-    std::filesystem::path p(path);
-    auto dir = p.parent_path().string();
-    auto name = p.filename().string();
-
-    if(dir.empty() || name.empty()) {
-        co_await fail(error::invalid_argument);
-    }
-
-    if(cache.find(dir) == cache.end()) {
-        co_await populate(dir, loop).or_fail();
-    }
-
-    auto it = cache.find(dir);
-    co_return it != cache.end() && it->second.count(name) > 0;
-}
-
-void fs::dir_cache::invalidate(std::string_view dir_path) {
-    cache.erase(std::string(dir_path));
-}
-
-void fs::dir_cache::clear() {
-    cache.clear();
 }
 
 }  // namespace eventide

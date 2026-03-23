@@ -7,8 +7,6 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 #include "eventide/async/runtime/task.h"
@@ -314,29 +312,6 @@ error close(int fd);
 result<std::string> read_to_string(std::string_view path);
 
 }  // namespace sync
-
-/// Directory listing cache that batches existence checks via scandir.
-/// On first query for a directory, scans it once and caches all entry names.
-/// Subsequent queries for the same directory are served from the cache.
-class dir_cache {
-public:
-    dir_cache() = default;
-
-    /// Check whether a file exists by path.
-    /// Scans the parent directory on first access and caches the result.
-    task<bool, error> exists(std::string_view path, event_loop& loop = event_loop::current());
-
-    /// Invalidate the cache for a specific directory.
-    void invalidate(std::string_view dir_path);
-
-    /// Clear the entire cache.
-    void clear();
-
-private:
-    task<void, error> populate(std::string_view dir_path, event_loop& loop);
-
-    std::unordered_map<std::string, std::unordered_set<std::string>> cache;
-};
 
 }  // namespace fs
 

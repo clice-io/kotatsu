@@ -320,58 +320,6 @@ TEST_CASE(statfs_basic) {
     EXPECT_EQ(*result, 1);
 }
 
-TEST_CASE(dir_cache_basic) {
-    event_loop loop;
-
-    auto worker = [](event_loop& loop) -> task<int, error> {
-        auto dir_template =
-            (std::filesystem::temp_directory_path() / "eventide-cache-XXXXXX").string();
-        std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
-
-        // Create two files.
-        std::string file_a = (std::filesystem::path(dir) / "a.txt").string();
-        std::string file_b = (std::filesystem::path(dir) / "b.txt").string();
-
-        int fd = open_fd(file_a);
-        if(fd < 0) {
-            co_await fail(error::io_error);
-        }
-        close_fd(fd);
-
-        fd = open_fd(file_b);
-        if(fd < 0) {
-            co_await fail(error::io_error);
-        }
-        close_fd(fd);
-
-        // Use dir_cache to check existence — only one scandir should happen.
-        fs::dir_cache cache;
-        bool has_a = co_await cache.exists(file_a, loop).or_fail();
-        bool has_b = co_await cache.exists(file_b, loop).or_fail();
-        std::string file_c = (std::filesystem::path(dir) / "nonexistent.txt").string();
-        bool has_c = co_await cache.exists(file_c, loop).or_fail();
-
-        // Delete file_b, then invalidate so re-scan picks up the change.
-        co_await fs::unlink(file_b, loop).or_fail();
-        // Without invalidation the stale cache would still report file_b as present.
-        cache.invalidate(dir);
-        bool has_a_after = co_await cache.exists(file_a, loop).or_fail();
-        bool has_b_after = co_await cache.exists(file_b, loop).or_fail();
-
-        co_await fs::unlink(file_a, loop).or_fail();
-        co_await fs::rmdir(dir, loop).or_fail();
-
-        co_return (has_a && has_b && !has_c && has_a_after && !has_b_after) ? 1 : 0;
-    }(loop);
-
-    loop.schedule(worker);
-    loop.run();
-
-    auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
-    EXPECT_EQ(*result, 1);
-}
-
 };  // TEST_SUITE(fs_request_io)
 
 }  // namespace eventide
