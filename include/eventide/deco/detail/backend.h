@@ -1,4 +1,7 @@
 #pragma once
+
+#ifndef EVENTIDE_DECO_DETAIL_BACKEND_H
+#define EVENTIDE_DECO_DETAIL_BACKEND_H
 #include <algorithm>
 #include <cstddef>
 #include <cstring>
@@ -149,6 +152,29 @@ private:
         }
     }
 
+    template <typename FieldTy, typename CfgTy, std::size_t... Path>
+    constexpr static bool dispatch_deco_option_schema(Derived& derived,
+                                                      const CfgTy& cfg,
+                                                      std::string_view field_name,
+                                                      std::index_sequence<Path...> path) {
+        if constexpr(CfgTy::deco_field_ty == decl::DecoType::Input) {
+            return bool(derived.template on_input_config<FieldTy>(cfg, field_name, path));
+        } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::TrailingInput) {
+            return bool(derived.template on_trailing_input_config<FieldTy>(cfg, field_name, path));
+        } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::Flag) {
+            return bool(derived.template on_flag_config<FieldTy>(cfg, field_name, path));
+        } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::KV) {
+            return bool(derived.template on_kv_config<FieldTy>(cfg, field_name, path));
+        } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::CommaJoined) {
+            return bool(derived.template on_comma_joined_config<FieldTy>(cfg, field_name, path));
+        } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::Multi) {
+            return bool(derived.template on_multi_config<FieldTy>(cfg, field_name, path));
+        } else {
+            static_assert(eventide::dependent_false<CfgTy>, "Unsupported deco cfg type.");
+            return true;
+        }
+    }
+
     template <typename CurrentTy, typename OnOption, std::size_t... Path>
     constexpr static bool visit_fields_impl(const CurrentTy& object,
                                             std::vector<config_state>& config_stack,
@@ -184,6 +210,68 @@ private:
         });
     }
 
+    template <typename FieldTy>
+    constexpr static void on_config_field_type(std::vector<config_state>& config_stack,
+                                               std::size_t level) {
+        auto cfg = ty::cfg_ty_of<FieldTy>{};
+        switch(cfg.type) {
+            case decl::ConfigFields::Type::Start: config_push(config_stack, cfg, level); break;
+            case decl::ConfigFields::Type::End: config_pop_nearest_start(config_stack); break;
+            case decl::ConfigFields::Type::Next: config_push(config_stack, cfg, level); break;
+        }
+    }
+
+    template <typename CurrentTy, std::size_t I, typename OnOption, std::size_t... Path>
+    constexpr static bool visit_schema_field(std::vector<config_state>& config_stack,
+                                             std::size_t level,
+                                             OnOption& on_option) {
+        using FieldTy = ty::base_ty<refl::field_type<CurrentTy, I>>;
+        constexpr auto name = refl::field_name<I, CurrentTy>();
+        if constexpr(ty::is_config_field<FieldTy>) {
+            on_config_field_type<FieldTy>(config_stack, level);
+            return true;
+        } else if constexpr(ty::deco_option_like<FieldTy>) {
+            using CfgTy = ty::field_ty_of<FieldTy>;
+            const auto cfg = make_configured_cfg<CfgTy>(config_stack);
+            const bool keep_going = bool(on_option(std::type_identity<FieldTy>{},
+                                                   cfg,
+                                                   name,
+                                                   std::index_sequence<Path..., I>{}));
+            config_consume_next(config_stack, level);
+            return keep_going;
+        } else if constexpr(refl::reflectable_class<FieldTy>) {
+            const bool keep_going =
+                visit_schema_fields_impl<FieldTy, OnOption, Path..., I>(config_stack,
+                                                                        level + 1,
+                                                                        on_option);
+            config_consume_next(config_stack, level);
+            return keep_going;
+        } else {
+            return true;
+        }
+    }
+
+    template <typename CurrentTy, typename OnOption, std::size_t... Path, std::size_t... Is>
+    constexpr static bool visit_schema_fields_indices(std::index_sequence<Is...>,
+                                                      std::vector<config_state>& config_stack,
+                                                      std::size_t level,
+                                                      OnOption& on_option) {
+        return (
+            visit_schema_field<CurrentTy, Is, OnOption, Path...>(config_stack, level, on_option) &&
+            ...);
+    }
+
+    template <typename CurrentTy, typename OnOption, std::size_t... Path>
+    constexpr static bool visit_schema_fields_impl(std::vector<config_state>& config_stack,
+                                                   std::size_t level,
+                                                   OnOption& on_option) {
+        return visit_schema_fields_indices<CurrentTy, OnOption, Path...>(
+            std::make_index_sequence<refl::field_count<CurrentTy>()>{},
+            config_stack,
+            level,
+            on_option);
+    }
+
 protected:
     template <typename ObjTy, std::size_t I>
     constexpr static auto& field_by_path(ObjTy& object) {
@@ -217,16 +305,39 @@ public:
         return visit_fields_impl<RootTy>(object, config_stack, 0, on_option);
     }
 
+    template <typename OnOption>
+    constexpr bool visit_schema_fields(OnOption&& on_option) const {
+        std::vector<config_state> config_stack;
+        return visit_schema_fields_impl<RootTy>(config_stack, 0, on_option);
+    }
+
     constexpr bool consume_deco_struct(const RootTy& object = {}) {
         static_assert(refl::reflectable_class<RootTy>,
                       "DecoStructConsumer root type must be a reflectable struct");
-        auto on_option = [this](const auto& field,
-                                const auto& cfg,
-                                std::string_view field_name,
-                                auto path) {
-            return dispatch_deco_option(static_cast<Derived&>(*this), field, cfg, field_name, path);
-        };
+        auto on_option =
+            [this](const auto& field, const auto& cfg, std::string_view field_name, auto path) {
+                using FieldTy = std::remove_cvref_t<decltype(field)>;
+                return dispatch_deco_option<FieldTy>(static_cast<Derived&>(*this),
+                                                     field,
+                                                     cfg,
+                                                     field_name,
+                                                     path);
+            };
         return visit_fields(object, on_option);
+    }
+
+    constexpr bool consume_deco_struct_schema() {
+        static_assert(refl::reflectable_class<RootTy>,
+                      "DecoStructConsumer root type must be a reflectable struct");
+        auto on_option =
+            [this](auto field_tag, const auto& cfg, std::string_view field_name, auto path) {
+                using FieldTy = typename decltype(field_tag)::type;
+                return dispatch_deco_option_schema<FieldTy>(static_cast<Derived&>(*this),
+                                                            cfg,
+                                                            field_name,
+                                                            path);
+            };
+        return visit_schema_fields(on_option);
     }
 };
 
@@ -699,8 +810,7 @@ public:
     }
 
     template <typename FieldTy, typename CfgTy, std::size_t... Path>
-    constexpr bool on_input_config(const FieldTy&,
-                                   const CfgTy& cfg,
+    constexpr bool on_input_config(const CfgTy& cfg,
                                    std::string_view,
                                    std::index_sequence<Path...> path) {
         const auto mapped_accessor = base_t::accessor_from_path(path);
@@ -709,8 +819,7 @@ public:
     }
 
     template <typename FieldTy, typename CfgTy, std::size_t... Path>
-    constexpr bool on_trailing_input_config(const FieldTy&,
-                                            const CfgTy& cfg,
+    constexpr bool on_trailing_input_config(const CfgTy& cfg,
                                             std::string_view,
                                             std::index_sequence<Path...> path) {
         const auto mapped_accessor = base_t::accessor_from_path(path);
@@ -719,8 +828,7 @@ public:
     }
 
     template <typename FieldTy, typename CfgTy, std::size_t... Path>
-    constexpr bool on_flag_config(const FieldTy&,
-                                  const CfgTy& cfg,
+    constexpr bool on_flag_config(const CfgTy& cfg,
                                   std::string_view field_name,
                                   std::index_sequence<Path...> path) {
         const auto mapped_accessor = base_t::accessor_from_path(path);
@@ -729,8 +837,7 @@ public:
     }
 
     template <typename FieldTy, typename CfgTy, std::size_t... Path>
-    constexpr bool on_kv_config(const FieldTy&,
-                                const CfgTy& cfg,
+    constexpr bool on_kv_config(const CfgTy& cfg,
                                 std::string_view field_name,
                                 std::index_sequence<Path...> path) {
         const auto mapped_accessor = base_t::accessor_from_path(path);
@@ -739,8 +846,7 @@ public:
     }
 
     template <typename FieldTy, typename CfgTy, std::size_t... Path>
-    constexpr bool on_comma_joined_config(const FieldTy&,
-                                          const CfgTy& cfg,
+    constexpr bool on_comma_joined_config(const CfgTy& cfg,
                                           std::string_view field_name,
                                           std::index_sequence<Path...> path) {
         const auto mapped_accessor = base_t::accessor_from_path(path);
@@ -749,8 +855,7 @@ public:
     }
 
     template <typename FieldTy, typename CfgTy, std::size_t... Path>
-    constexpr bool on_multi_config(const FieldTy&,
-                                   const CfgTy& cfg,
+    constexpr bool on_multi_config(const CfgTy& cfg,
                                    std::string_view field_name,
                                    std::index_sequence<Path...> path) {
         const auto mapped_accessor = base_t::accessor_from_path(path);
@@ -759,7 +864,7 @@ public:
     }
 
     constexpr void build() {
-        (void)this->consume_deco_struct();
+        (void)this->consume_deco_struct_schema();
     }
 
     constexpr bool is_unknown_option_id(backend::OptSpecifier id) const {
@@ -904,3 +1009,5 @@ const auto& build_storage() {
 }
 
 }  // namespace deco::detail
+
+#endif  // EVENTIDE_DECO_DETAIL_BACKEND_H
