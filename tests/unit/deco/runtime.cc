@@ -1036,14 +1036,12 @@ struct CatterOpt {
     <std::string> internal_script;
 
     struct ScriptPath {
-        std::filesystem::path path;
-
         std::optional<std::string> into(std::string_view input,
                                         const deco::decl::IntoContext& ctx) {
             namespace fs = std::filesystem;
             std::error_code ec;
+            const fs::path path(input);
 
-            path = input;
             if(!fs::exists(path, ec)) {
                 if(ec) {
                     return ctx.format_error(std::format("filesystem error: {}", ec.message()));
