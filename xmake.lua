@@ -19,6 +19,10 @@ if has_config("serde_yyjson") and not has_config("serde_simdjson") then
 	raise("serde_yyjson requires serde_simdjson")
 end
 
+if has_config("ztest") and (not has_config("deco") or not has_config("option")) then
+	raise("ztest requires deco and option")
+end
+
 if has_config("dev") then
 	-- Don't fetch system package
 	set_policy("package.install_only", true)
@@ -168,7 +172,7 @@ if has_config("ztest") then
 		add_includedirs("include", { public = true })
 		add_headerfiles("include/(eventide/zest/**)")
 		add_cxflags("cl::/Zc:preprocessor", { public = true })
-		add_deps("common")
+		add_deps("common", "deco")
 		add_packages("cpptrace", { public = true })
 	end)
 end
