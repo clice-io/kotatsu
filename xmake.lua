@@ -230,8 +230,6 @@ end
 target("eventide", function()
 	set_default(false)
 	set_kind("static")
-	-- Use xmake's official merge-archive rule only for export/package builds.
-	-- It mutates dep-link inheritance in after_load, which can break in-tree unit test linking.
 	if not has_config("test") then
 		add_rules("utils.merge.archive")
 		set_policy("build.merge_archive", true)
