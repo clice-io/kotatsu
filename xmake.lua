@@ -227,6 +227,52 @@ if has_config("async") and has_config("serde") and has_config("serde_simdjson") 
 	end)
 end
 
+target("eventide", function()
+	set_default(false)
+	set_kind("static")
+	add_rules("utils.merge.archive")
+	set_policy("build.merge_archive", true)
+	add_files("src/eventide.cpp")
+	add_includedirs("include", { public = true })
+	add_headerfiles("include/(eventide/**)")
+
+	add_deps("common", "reflection", { public = true })
+
+	if has_config("serde") then
+		add_deps("serde", { public = true })
+		if has_config("serde_simdjson") then
+			add_deps("serde_json", { public = true })
+			add_packages("simdjson", "yyjson", { public = true })
+		end
+		if has_config("serde_flatbuffers") then
+			add_deps("serde_flatbuffers", { public = true })
+			add_packages("flatbuffers", { public = true })
+		end
+		if has_config("serde_toml") then
+			add_deps("serde_toml", { public = true })
+			add_packages("toml++", { public = true })
+		end
+	end
+
+	if has_config("option") then
+		add_deps("option", { public = true })
+	end
+	if has_config("deco") and has_config("option") then
+		add_deps("deco", { public = true })
+	end
+	if has_config("ztest") then
+		add_deps("ztest", { public = true })
+		add_packages("cpptrace", { public = true })
+	end
+	if has_config("async") then
+		add_deps("async", { public = true })
+		add_packages("libuv", { public = true })
+	end
+	if has_config("async") and has_config("serde") and has_config("serde_simdjson") then
+		add_deps("ipc", "language", { public = true })
+	end
+end)
+
 if has_config("test") and has_config("ztest") then
 	target("unit_tests", function()
 		set_default(false)
