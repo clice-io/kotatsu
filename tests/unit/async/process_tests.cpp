@@ -220,7 +220,7 @@ TEST_CASE(spawn_pipe_stderr) {
 
 TEST_CASE(spawn_pipe_stdout_read_chunk_twice) {
 #ifdef _WIN32
-    skip();
+    ::eventide::zest::skip();
     return;
 #else
     event_loop loop;
