@@ -3,8 +3,8 @@
 #include <string_view>
 #include <utility>
 
+#include "loop_fixture.h"
 #include "eventide/zest/zest.h"
-#include "eventide/async/async.h"
 
 namespace eventide {
 
@@ -50,11 +50,9 @@ task<std::pair<result<std::string>, result<std::string>>> read_two_chunks(pipe p
 
 }  // namespace
 
-TEST_SUITE(process_io) {
+TEST_SUITE(process_io, loop_fixture) {
 
 TEST_CASE(spawn_wait_simple) {
-    event_loop loop;
-
     process::options opts;
 #ifdef _WIN32
     opts.file = "cmd.exe";
@@ -71,9 +69,7 @@ TEST_CASE(spawn_wait_simple) {
     EXPECT_TRUE(spawn_res->proc.pid() > 0);
 
     auto worker = wait_for_exit(spawn_res->proc);
-
-    loop.schedule(worker);
-    loop.run();
+    schedule_all(worker);
 
     auto status = worker.result();
     EXPECT_TRUE(status.has_value());
@@ -82,8 +78,6 @@ TEST_CASE(spawn_wait_simple) {
 }
 
 TEST_CASE(spawn_pipe_stdout) {
-    event_loop loop;
-
     process::options opts;
 #ifdef _WIN32
     opts.file = "cmd.exe";
@@ -118,13 +112,11 @@ TEST_CASE(spawn_pipe_stdout) {
         event_loop::current().stop();
     };
 
-    loop.schedule(capture_stdout());
-    loop.run();
+    auto t = capture_stdout();
+    schedule_all(t);
 }
 
 TEST_CASE(spawn_pipe_stdio) {
-    event_loop loop;
-
     process::options opts;
 #ifdef _WIN32
     opts.file = "cmd.exe";
@@ -172,13 +164,11 @@ TEST_CASE(spawn_pipe_stdio) {
         event_loop::current().stop();
     };
 
-    loop.schedule(write_stdin_capture_stdout());
-    loop.run();
+    auto t = write_stdin_capture_stdout();
+    schedule_all(t);
 }
 
 TEST_CASE(spawn_pipe_stderr) {
-    event_loop loop;
-
     process::options opts;
 #ifdef _WIN32
     opts.file = "cmd.exe";
@@ -214,8 +204,8 @@ TEST_CASE(spawn_pipe_stderr) {
         event_loop::current().stop();
     };
 
-    loop.schedule(capture_stdout_stderr());
-    loop.run();
+    auto t = capture_stdout_stderr();
+    schedule_all(t);
 }
 
 TEST_CASE(spawn_pipe_stdout_read_chunk_twice) {
@@ -223,8 +213,6 @@ TEST_CASE(spawn_pipe_stdout_read_chunk_twice) {
     ::eventide::zest::skip();
     return;
 #else
-    event_loop loop;
-
     process::options opts;
     opts.file = "/bin/sh";
     opts.args = {opts.file, "-c", "printf 'chunk-one'; sleep 0.05; printf 'chunk-two'"};
@@ -236,8 +224,7 @@ TEST_CASE(spawn_pipe_stdout_read_chunk_twice) {
     ASSERT_TRUE(spawn_res.has_value());
 
     auto reader = read_two_chunks(std::move(spawn_res->stdout_pipe));
-    loop.schedule(reader);
-    loop.run();
+    schedule_all(reader);
 
     auto [first, second] = reader.result();
     ASSERT_TRUE(first.has_value());
@@ -248,8 +235,6 @@ TEST_CASE(spawn_pipe_stdout_read_chunk_twice) {
 }
 
 TEST_CASE(spawn_invalid_file) {
-    event_loop loop;
-
     process::options opts;
 #ifdef _WIN32
     opts.file = "Z:\\nonexistent\\eventide-nope.exe";
@@ -262,8 +247,6 @@ TEST_CASE(spawn_invalid_file) {
 }
 
 TEST_CASE(wait_twice) {
-    event_loop loop;
-
     process::options opts;
 #ifdef _WIN32
     opts.file = "cmd.exe";
@@ -280,10 +263,7 @@ TEST_CASE(wait_twice) {
     int done = 0;
     auto first = wait_for_exit(spawn_res->proc, done, 2);
     auto second = wait_for_exit(spawn_res->proc, done, 2);
-
-    loop.schedule(first);
-    loop.schedule(second);
-    loop.run();
+    schedule_all(first, second);
 
     auto first_result = first.result();
     auto second_result = second.result();
@@ -307,8 +287,6 @@ TEST_CASE(query_info_self) {
 }
 
 TEST_CASE(query_info_child) {
-    event_loop loop;
-
     process::options opts;
 #ifdef _WIN32
     opts.file = "cmd.exe";
@@ -338,8 +316,7 @@ TEST_CASE(query_info_child) {
     EXPECT_EQ(info2->pid, pid);
 
     auto worker = wait_for_exit(spawn_res->proc);
-    loop.schedule(worker);
-    loop.run();
+    schedule_all(worker);
 }
 
 TEST_CASE(query_info_invalid_pid) {

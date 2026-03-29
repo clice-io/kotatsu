@@ -4,8 +4,8 @@
 #include <string_view>
 #include <utility>
 
+#include "loop_fixture.h"
 #include "eventide/zest/macro.h"
-#include "eventide/async/async.h"
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -295,7 +295,7 @@ int set_abortive_close(socket_t sock) {
 
 }  // namespace
 
-TEST_SUITE(pipe) {
+TEST_SUITE(pipe, loop_fixture) {
 
 TEST_CASE(read_from_fd) {
     int fds[2] = {-1, -1};
@@ -306,14 +306,11 @@ TEST_CASE(read_from_fd) {
               static_cast<ssize_t>(message.size()));
     close_fd(fds[1]);
 
-    event_loop loop;
     auto pipe_res = pipe::open(fds[0], {}, loop);
     ASSERT_TRUE(pipe_res.has_value());
 
     auto reader = read_from_pipe(std::move(*pipe_res));
-
-    loop.schedule(reader);
-    loop.run();
+    schedule_all(reader);
 
     auto result = reader.result();
     EXPECT_TRUE(result.has_value());
@@ -331,14 +328,11 @@ TEST_CASE(read_some_fd) {
               static_cast<ssize_t>(message.size()));
     close_fd(fds[1]);
 
-    event_loop loop;
     auto pipe_res = pipe::open(fds[0], {}, loop);
     ASSERT_TRUE(pipe_res.has_value());
 
     auto reader = read_some_from_pipe(std::move(*pipe_res));
-
-    loop.schedule(reader);
-    loop.run();
+    schedule_all(reader);
 
     auto result = reader.result();
     EXPECT_TRUE(result.has_value());
@@ -356,14 +350,11 @@ TEST_CASE(read_chunk_fd) {
               static_cast<ssize_t>(message.size()));
     close_fd(fds[1]);
 
-    event_loop loop;
     auto pipe_res = pipe::open(fds[0], {}, loop);
     ASSERT_TRUE(pipe_res.has_value());
 
     auto reader = read_chunk_from_pipe(std::move(*pipe_res));
-
-    loop.schedule(reader);
-    loop.run();
+    schedule_all(reader);
 
     auto result = reader.result();
     EXPECT_EQ(result.first, message);
@@ -374,17 +365,13 @@ TEST_CASE(read_chunk_then_read_some_fd) {
     int fds[2] = {-1, -1};
     ASSERT_EQ(create_pipe(fds), 0);
 
-    event_loop loop;
     event first_chunk_consumed;
     auto pipe_res = pipe::open(fds[0], {}, loop);
     ASSERT_TRUE(pipe_res.has_value());
 
     auto reader = read_chunk_then_some(std::move(*pipe_res), first_chunk_consumed);
     auto writer = write_two_pipe_chunks(fds[1], loop, first_chunk_consumed);
-
-    loop.schedule(reader);
-    loop.schedule(writer);
-    loop.run();
+    schedule_all(reader, writer);
 
     auto [first, second] = reader.result();
     ASSERT_TRUE(first.has_value());
@@ -394,8 +381,6 @@ TEST_CASE(read_chunk_then_read_some_fd) {
 }
 
 TEST_CASE(connect_and_accept) {
-    event_loop loop;
-
 #ifdef _WIN32
     const std::string name = "\\\\.\\pipe\\eventide-test-pipe";
 #else
@@ -415,10 +400,7 @@ TEST_CASE(connect_and_accept) {
     const std::string message = "eventide-pipe-connect";
     auto server = accept_and_read_pipe(std::move(*acc_res), done);
     auto client = connect_and_write_pipe(name, message, done);
-
-    loop.schedule(server);
-    loop.schedule(client);
-    loop.run();
+    schedule_all(server, client);
 
     auto server_res = server.result();
     auto client_res = client.result();
@@ -431,8 +413,6 @@ TEST_CASE(connect_and_accept) {
 }
 
 TEST_CASE(connect_failure) {
-    event_loop loop;
-
 #ifdef _WIN32
     const std::string name = "\\\\.\\pipe\\eventide-test-pipe-missing";
 #else
@@ -445,17 +425,13 @@ TEST_CASE(connect_failure) {
 
     int done = 0;
     auto client = connect_pipe(name, done, 1);
-
-    loop.schedule(client);
-    loop.run();
+    schedule_all(client);
 
     auto client_res = client.result();
     EXPECT_FALSE(client_res.has_value());
 }
 
 TEST_CASE(stop) {
-    event_loop loop;
-
 #ifdef _WIN32
     const std::string name = "\\\\.\\pipe\\eventide-test-pipe-missing";
 #else
@@ -480,8 +456,7 @@ TEST_CASE(stop) {
         co_return res;
     }(*acc);
 
-    loop.schedule(task1);
-    loop.run();
+    schedule_all(task1);
 
     auto res1 = task1.value().value();
     EXPECT_TRUE(!res1.has_value() && res1.error() == error::operation_aborted);
@@ -492,8 +467,7 @@ TEST_CASE(stop) {
         co_return res;
     }(*acc);
 
-    loop.schedule(task2);
-    loop.run();
+    schedule_all(task2);
 
     EXPECT_TRUE(!task2->is_finished());
     acc->stop();
@@ -502,13 +476,12 @@ TEST_CASE(stop) {
 
 };  // TEST_SUITE(pipe)
 
-TEST_SUITE(tcp) {
+TEST_SUITE(tcp, loop_fixture) {
 
 TEST_CASE(accept_and_read) {
     int port = pick_free_port();
     ASSERT_TRUE(port > 0);
 
-    event_loop loop;
     auto acc_res = tcp::listen("127.0.0.1", port, {}, loop);
     ASSERT_TRUE(acc_res.has_value());
 
@@ -529,8 +502,7 @@ TEST_CASE(accept_and_read) {
               static_cast<ssize_t>(message.size()));
     close_socket(client_fd);
 
-    loop.schedule(server);
-    loop.run();
+    schedule_all(server);
 
     auto result = server.result();
     EXPECT_TRUE(result.has_value());
@@ -541,7 +513,6 @@ TEST_CASE(accept_already_waiting) {
     int port = pick_free_port();
     ASSERT_TRUE(port > 0);
 
-    event_loop loop;
     auto acc_res = tcp::listen("127.0.0.1", port, {}, loop);
     ASSERT_TRUE(acc_res.has_value());
 
@@ -562,9 +533,7 @@ TEST_CASE(accept_already_waiting) {
     ASSERT_EQ(::connect(client_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
     close_socket(client_fd);
 
-    loop.schedule(first);
-    loop.schedule(second);
-    loop.run();
+    schedule_all(first, second);
 
     auto first_res = first.result();
     auto second_res = second.result();
@@ -579,17 +548,13 @@ TEST_CASE(connect_and_write) {
     int port = pick_free_port();
     ASSERT_TRUE(port > 0);
 
-    event_loop loop;
     auto acc_res = tcp::listen("127.0.0.1", port, {}, loop);
     ASSERT_TRUE(acc_res.has_value());
 
     int done = 0;
     auto server = accept_and_read_once(std::move(*acc_res), done);
     auto client = connect_and_send("127.0.0.1", port, "eventide-tcp-connect", done);
-
-    loop.schedule(server);
-    loop.schedule(client);
-    loop.run();
+    schedule_all(server, client);
 
     auto server_res = server.result();
     auto client_res = client.result();
@@ -602,7 +567,6 @@ TEST_CASE(read_some_error) {
     int port = pick_free_port();
     ASSERT_TRUE(port > 0);
 
-    event_loop loop;
     auto acc_res = tcp::listen("127.0.0.1", port, {}, loop);
     ASSERT_TRUE(acc_res.has_value());
 
@@ -620,8 +584,7 @@ TEST_CASE(read_some_error) {
     ASSERT_EQ(set_abortive_close(client_fd), 0);
     close_socket(client_fd);
 
-    loop.schedule(server);
-    loop.run();
+    schedule_all(server);
 
     auto result = server.result();
     EXPECT_FALSE(result.has_value());

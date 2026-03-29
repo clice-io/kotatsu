@@ -1,7 +1,7 @@
 #include <chrono>
 
+#include "loop_fixture.h"
 #include "eventide/zest/zest.h"
-#include "eventide/async/async.h"
 
 namespace eventide {
 
@@ -9,7 +9,7 @@ namespace {
 
 using namespace std::chrono;
 
-TEST_SUITE(sync) {
+TEST_SUITE(sync, loop_fixture) {
 
 TEST_CASE(mutex_try_lock) {
     mutex m;
@@ -21,7 +21,6 @@ TEST_CASE(mutex_try_lock) {
 }
 
 TEST_CASE(mutex_lock_order) {
-    event_loop loop;
     mutex m;
     int step = 0;
 
@@ -44,15 +43,12 @@ TEST_CASE(mutex_lock_order) {
 
     auto t1 = holder();
     auto t2 = waiter();
-    loop.schedule(t1);
-    loop.schedule(t2);
-    loop.run();
+    schedule_all(t1, t2);
 
     EXPECT_EQ(step, 2);
 }
 
 TEST_CASE(event_set_wait) {
-    event_loop loop;
     event ev;
     int fired = 0;
 
@@ -69,15 +65,12 @@ TEST_CASE(event_set_wait) {
 
     auto t1 = waiter();
     auto t2 = setter();
-    loop.schedule(t1);
-    loop.schedule(t2);
-    loop.run();
+    schedule_all(t1, t2);
 
     EXPECT_EQ(fired, 1);
 }
 
 TEST_CASE(manual_reset_all) {
-    event_loop loop;
     event ev(true);
     int count = 0;
 
@@ -91,15 +84,12 @@ TEST_CASE(manual_reset_all) {
 
     auto t1 = waiter();
     auto t2 = waiter();
-    loop.schedule(t1);
-    loop.schedule(t2);
-    loop.run();
+    schedule_all(t1, t2);
 
     EXPECT_EQ(count, 2);
 }
 
 TEST_CASE(event_interrupt) {
-    event_loop loop;
     event ev;
     bool reached = false;
 
@@ -122,13 +112,10 @@ TEST_CASE(event_interrupt) {
 
     auto t1 = driver();
     auto t2 = intr();
-    loop.schedule(t1);
-    loop.schedule(t2);
-    loop.run();
+    schedule_all(t1, t2);
 }
 
 TEST_CASE(interrupt_many) {
-    event_loop loop;
     event ev;
     int cancelled = 0;
 
@@ -149,16 +136,12 @@ TEST_CASE(interrupt_many) {
     auto t1 = waiter();
     auto t2 = waiter();
     auto t3 = intr();
-    loop.schedule(t1);
-    loop.schedule(t2);
-    loop.schedule(t3);
-    loop.run();
+    schedule_all(t1, t2, t3);
 
     EXPECT_EQ(cancelled, 2);
 }
 
 TEST_CASE(interrupt_snapshot) {
-    event_loop loop;
     event ev;
     int cancelled = 0;
     bool second_wait_cancelled = false;
@@ -186,17 +169,13 @@ TEST_CASE(interrupt_snapshot) {
     auto t1 = waiter();
     auto t2 = intr();
     auto t3 = setter();
-    loop.schedule(t1);
-    loop.schedule(t2);
-    loop.schedule(t3);
-    loop.run();
+    schedule_all(t1, t2, t3);
 
     EXPECT_EQ(cancelled, 1);
     EXPECT_FALSE(second_wait_cancelled);
 }
 
 TEST_CASE(future_wait) {
-    event_loop loop;
     event ev;
     bool fired = false;
 
@@ -216,9 +195,7 @@ TEST_CASE(future_wait) {
 
     auto t1 = waiter();
     auto t2 = setter();
-    loop.schedule(t1);
-    loop.schedule(t2);
-    loop.run();
+    schedule_all(t1, t2);
 
     EXPECT_TRUE(fired);
 }
@@ -236,7 +213,6 @@ TEST_CASE(signal_state) {
 }
 
 TEST_CASE(semaphore_acquire_release) {
-    event_loop loop;
     semaphore sem(1);
     int step = 0;
 
@@ -258,15 +234,12 @@ TEST_CASE(semaphore_acquire_release) {
 
     auto t1 = first();
     auto t2 = second();
-    loop.schedule(t1);
-    loop.schedule(t2);
-    loop.run();
+    schedule_all(t1, t2);
 
     EXPECT_EQ(step, 2);
 }
 
 TEST_CASE(condition_variable_wait) {
-    event_loop loop;
     mutex m;
     condition_variable cv;
     bool ready = false;
@@ -294,9 +267,7 @@ TEST_CASE(condition_variable_wait) {
 
     auto t1 = waiter();
     auto t2 = notifier();
-    loop.schedule(t1);
-    loop.schedule(t2);
-    loop.run();
+    schedule_all(t1, t2);
 
     EXPECT_EQ(step, 3);
 }

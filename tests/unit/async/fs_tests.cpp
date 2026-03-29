@@ -9,9 +9,9 @@
 #include <sys/stat.h>
 #endif
 
+#include "loop_fixture.h"
 #include "../common/fd_helpers.h"
 #include "eventide/zest/zest.h"
-#include "eventide/async/async.h"
 
 namespace eventide {
 
@@ -103,14 +103,11 @@ task<int, error> mkstemp_roundtrip(event_loop& loop) {
 
 }  // namespace
 
-TEST_SUITE(fs_request_io) {
+TEST_SUITE(fs_request_io, loop_fixture) {
 
 TEST_CASE(basic_roundtrip) {
-    event_loop loop;
-
     auto worker = fs_roundtrip(loop);
-    loop.schedule(worker);
-    loop.run();
+    schedule_all(worker);
 
     auto result = worker.result();
     EXPECT_TRUE(result.has_value());
@@ -118,11 +115,8 @@ TEST_CASE(basic_roundtrip) {
 }
 
 TEST_CASE(mkstemp_and_access) {
-    event_loop loop;
-
     auto worker = mkstemp_roundtrip(loop);
-    loop.schedule(worker);
-    loop.run();
+    schedule_all(worker);
 
     auto result = worker.result();
     EXPECT_TRUE(result.has_value());
@@ -130,8 +124,6 @@ TEST_CASE(mkstemp_and_access) {
 }
 
 TEST_CASE(async_open_read_write_close) {
-    event_loop loop;
-
     auto worker = [](event_loop& loop) -> task<int, error> {
         auto dir_template =
             (std::filesystem::temp_directory_path() / "eventide-rw-XXXXXX").string();
@@ -163,8 +155,7 @@ TEST_CASE(async_open_read_write_close) {
         co_return got == payload ? 1 : 0;
     }(loop);
 
-    loop.schedule(worker);
-    loop.run();
+    schedule_all(worker);
 
     auto result = worker.result();
     EXPECT_TRUE(result.has_value());
@@ -174,8 +165,6 @@ TEST_CASE(async_open_read_write_close) {
 #ifndef _WIN32
 
 TEST_CASE(symlink_readlink_realpath) {
-    event_loop loop;
-
     auto worker = [](event_loop& loop) -> task<int, error> {
         auto dir_template =
             (std::filesystem::temp_directory_path() / "eventide-sym-XXXXXX").string();
@@ -214,8 +203,7 @@ TEST_CASE(symlink_readlink_realpath) {
         co_return is_link ? 1 : 0;
     }(loop);
 
-    loop.schedule(worker);
-    loop.run();
+    schedule_all(worker);
 
     auto result = worker.result();
     EXPECT_TRUE(result.has_value());
@@ -223,8 +211,6 @@ TEST_CASE(symlink_readlink_realpath) {
 }
 
 TEST_CASE(chown_fchown_lchown) {
-    event_loop loop;
-
     auto worker = [](event_loop& loop) -> task<int, error> {
         auto dir_template =
             (std::filesystem::temp_directory_path() / "eventide-chown-XXXXXX").string();
@@ -262,8 +248,7 @@ TEST_CASE(chown_fchown_lchown) {
         co_return 1;
     }(loop);
 
-    loop.schedule(worker);
-    loop.run();
+    schedule_all(worker);
 
     auto result = worker.result();
     EXPECT_TRUE(result.has_value());
@@ -271,8 +256,6 @@ TEST_CASE(chown_fchown_lchown) {
 }
 
 TEST_CASE(fchmod) {
-    event_loop loop;
-
     auto worker = [](event_loop& loop) -> task<int, error> {
         auto dir_template =
             (std::filesystem::temp_directory_path() / "eventide-fchmod-XXXXXX").string();
@@ -292,8 +275,7 @@ TEST_CASE(fchmod) {
         co_return mode_ok ? 1 : 0;
     }(loop);
 
-    loop.schedule(worker);
-    loop.run();
+    schedule_all(worker);
 
     auto result = worker.result();
     EXPECT_TRUE(result.has_value());
@@ -303,8 +285,6 @@ TEST_CASE(fchmod) {
 #endif  // !_WIN32
 
 TEST_CASE(statfs_basic) {
-    event_loop loop;
-
     auto worker = [](event_loop& loop) -> task<int, error> {
         auto statfs_path = std::filesystem::temp_directory_path().string();
         auto stats = co_await fs::statfs(statfs_path, loop).or_fail();
@@ -312,8 +292,7 @@ TEST_CASE(statfs_basic) {
         co_return stats.bsize > 0 ? 1 : 0;
     }(loop);
 
-    loop.schedule(worker);
-    loop.run();
+    schedule_all(worker);
 
     auto result = worker.result();
     EXPECT_TRUE(result.has_value());
