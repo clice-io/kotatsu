@@ -9,14 +9,17 @@ namespace eventide {
 namespace {
 
 struct deferred_cancel_await : system_op {
-    inline static deferred_cancel_await* pending = nullptr;
+    static deferred_cancel_await*& pending() {
+        thread_local deferred_cancel_await* p = nullptr;
+        return p;
+    }
 
     int* destroyed = nullptr;
 
     explicit deferred_cancel_await(int& destroyed_count) : destroyed(&destroyed_count) {
-        assert(pending == nullptr && "only one deferred_cancel_await may be pending at a time");
+        assert(pending() == nullptr && "only one deferred_cancel_await may be pending at a time");
         action = &on_cancel;
-        pending = this;
+        pending() = this;
     }
 
     deferred_cancel_await(const deferred_cancel_await&) = delete;
@@ -28,8 +31,8 @@ struct deferred_cancel_await : system_op {
         if(destroyed) {
             *destroyed += 1;
         }
-        if(pending == this) {
-            pending = nullptr;
+        if(pending() == this) {
+            pending() = nullptr;
         }
     }
 
@@ -49,9 +52,9 @@ struct deferred_cancel_await : system_op {
     void await_resume() const noexcept {}
 
     static void finish_pending_cancel() {
-        auto* op = pending;
+        auto* op = pending();
         assert(op != nullptr && "finish_pending_cancel requires a pending awaiter");
-        pending = nullptr;
+        pending() = nullptr;
         op->complete();
     }
 };

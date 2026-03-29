@@ -11,6 +11,8 @@ struct RunnerOptions {
     std::string filter;
     /// When true, per-test output is limited to failing cases; the final summary is still printed.
     bool only_failed_output = false;
+    /// When true, test cases are executed in parallel across multiple threads.
+    bool parallel = false;
 };
 
 /// Parse CLI arguments into RunnerOptions and execute registered tests.
