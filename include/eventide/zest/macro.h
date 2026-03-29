@@ -6,6 +6,9 @@
 
 #define TEST_SUITE(name) struct name##TEST : ::eventide::zest::TestSuiteDef<#name, name##TEST>
 
+#define TEST_SUITE_F(name, fixture)                                                                \
+    struct name##TEST : fixture, ::eventide::zest::TestSuiteDef<#name, name##TEST>
+
 #define TEST_CASE(name, ...)                                                                       \
     void _register_##name() {                                                                      \
         constexpr auto file_name = std::source_location::current().file_name();                    \
@@ -23,7 +26,7 @@
     do {                                                                                           \
         if(condition) [[unlikely]] {                                                               \
             ::eventide::zest::print_trace(std::source_location::current());                        \
-            failure();                                                                             \
+            ::eventide::zest::failure();                                                           \
             return_action;                                                                         \
         }                                                                                          \
     } while(0)

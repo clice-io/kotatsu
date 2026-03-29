@@ -7,23 +7,7 @@ namespace eventide::zest {
 
 template <fixed_string TestName, typename Derived>
 struct TestSuiteDef {
-private:
-    TestState state = TestState::Passed;
-
-public:
     using Self = Derived;
-
-    void failure() {
-        state = TestState::Failed;
-    }
-
-    void pass() {
-        state = TestState::Passed;
-    }
-
-    void skip() {
-        state = TestState::Skipped;
-    }
 
     constexpr inline static auto& test_cases() {
         static std::vector<TestCase> instance;
@@ -47,6 +31,7 @@ public:
               TestAttrs attrs = {}>
     inline static bool _register_test_case = [] {
         auto run_test = +[] -> TestState {
+            current_test_state() = TestState::Passed;
             Derived test;
             if constexpr(requires { test.setup(); }) {
                 test.setup();
@@ -58,7 +43,7 @@ public:
                 test.teardown();
             }
 
-            return test.state;
+            return current_test_state();
         };
 
         test_cases().emplace_back(case_name.data(), path.data(), line, attrs, run_test);

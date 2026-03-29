@@ -34,6 +34,23 @@ struct TestSuite {
     std::vector<TestCase> (*cases)();
 };
 
+inline TestState& current_test_state() {
+    thread_local TestState state = TestState::Passed;
+    return state;
+}
+
+inline void failure() {
+    current_test_state() = TestState::Failed;
+}
+
+inline void pass() {
+    current_test_state() = TestState::Passed;
+}
+
+inline void skip() {
+    current_test_state() = TestState::Skipped;
+}
+
 class Runner {
 public:
     static Runner& instance();
