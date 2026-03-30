@@ -414,10 +414,13 @@ int Runner::run_tests(RunnerOptions options) {
         };
 
         {
-            std::vector<std::jthread> pool;
+            std::vector<std::thread> pool;
             pool.reserve(num_workers);
             for(unsigned w = 0; w < num_workers; ++w) {
                 pool.emplace_back(worker);
+            }
+            for(auto& t: pool) {
+                t.join();
             }
         }
 
