@@ -52,7 +52,7 @@ task<std::pair<result<std::string>, result<std::string>>> read_two_chunks(pipe p
 
 TEST_SUITE(process_io, loop_fixture) {
 
-TEST_SUITE_ATTRS(.serial = true);
+TEST_SUITE_ATTRS(serial = true);
 
 TEST_CASE(spawn_wait_simple) {
     process::options opts;
