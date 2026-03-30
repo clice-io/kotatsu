@@ -7,6 +7,14 @@
 #define TEST_SUITE(name, ...)                                                                      \
     struct name##TEST : __VA_OPT__(__VA_ARGS__, )::eventide::zest::TestSuiteDef<#name, name##TEST>
 
+#define TEST_SUITE_ATTRS(...)                                                                      \
+    constexpr static ::eventide::zest::TestAttrs suite_attrs = [] constexpr {                      \
+        struct _B : ::eventide::zest::TestAttrs {                                                  \
+            constexpr _B() { __VA_ARGS__; }                                                        \
+        };                                                                                         \
+        return ::eventide::zest::TestAttrs{_B{}};                                                  \
+    }()
+
 #define TEST_CASE(name, ...)                                                                       \
     void _register_##name() {                                                                      \
         constexpr auto file_name = std::source_location::current().file_name();                    \

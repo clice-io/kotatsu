@@ -50,11 +50,8 @@ task<std::pair<result<std::string>, result<std::string>>> read_two_chunks(pipe p
 
 }  // namespace
 
-struct serial_loop_fixture : loop_fixture {
-    constexpr static zest::TestAttrs suite_attrs{.serial = true};
-};
-
-TEST_SUITE(process_io, serial_loop_fixture) {
+TEST_SUITE(process_io, loop_fixture) {
+    TEST_SUITE_ATTRS(serial = true);
 
 TEST_CASE(spawn_wait_simple) {
     process::options opts;
