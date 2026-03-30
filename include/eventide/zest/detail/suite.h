@@ -18,6 +18,7 @@ constexpr TestAttrs merge_attrs(TestAttrs suite, TestAttrs test_case) {
 template <fixed_string TestName, typename Derived>
 struct TestSuiteDef {
     using Self = Derived;
+    using TestAttrs = ::eventide::zest::TestAttrs;
 
     constexpr inline static auto& test_cases() {
         static std::vector<TestCase> instance;

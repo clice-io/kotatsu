@@ -412,7 +412,7 @@ TEST_CASE(connect_and_accept) {
     }
 }
 
-TEST_CASE(connect_failure, zest::TestAttrs{.serial = true}) {
+TEST_CASE(connect_failure, TestAttrs{.serial = true}) {
 #ifdef _WIN32
     const std::string name = "\\\\.\\pipe\\eventide-test-pipe-missing";
 #else
@@ -431,7 +431,7 @@ TEST_CASE(connect_failure, zest::TestAttrs{.serial = true}) {
     EXPECT_FALSE(client_res.has_value());
 }
 
-TEST_CASE(stop, zest::TestAttrs{.serial = true}) {
+TEST_CASE(stop, TestAttrs{.serial = true}) {
 #ifdef _WIN32
     const std::string name = "\\\\.\\pipe\\eventide-test-pipe-missing";
 #else
