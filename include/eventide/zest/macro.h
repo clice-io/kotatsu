@@ -5,7 +5,7 @@
 #include "eventide/zest/detail/trace.h"
 
 #define TEST_SUITE(name, ...)                                                                      \
-    struct name##TEST : ::eventide::zest::TestSuiteDef<#name, name##TEST __VA_OPT__(, ) __VA_ARGS__>
+    struct name##TEST : __VA_OPT__(__VA_ARGS__, )::eventide::zest::TestSuiteDef<#name, name##TEST>
 
 #define TEST_CASE(name, ...)                                                                       \
     void _register_##name() {                                                                      \
@@ -24,7 +24,7 @@
     do {                                                                                           \
         if(condition) [[unlikely]] {                                                               \
             ::eventide::zest::print_trace(std::source_location::current());                        \
-            failure();                                                                             \
+            ::eventide::zest::failure();                                                           \
             return_action;                                                                         \
         }                                                                                          \
     } while(0)

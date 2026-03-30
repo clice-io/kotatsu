@@ -1,8 +1,8 @@
 #include <chrono>
 
 #include "compile_graph.h"
+#include "loop_fixture.h"
 #include "eventide/zest/zest.h"
-#include "eventide/async/async.h"
 
 namespace eventide {
 
@@ -26,10 +26,9 @@ static CompileGraph make_test_graph() {
     return graph;
 }
 
-TEST_SUITE(build_system) {
+TEST_SUITE(build_system, loop_fixture) {
 
 TEST_CASE(normal_compilation_completes) {
-    event_loop loop;
     auto graph = make_test_graph();
 
     auto test = [&]() -> task<> {
@@ -39,12 +38,10 @@ TEST_CASE(normal_compilation_completes) {
     };
 
     auto t = test();
-    loop.schedule(t);
-    loop.run();
+    schedule_all(t);
 }
 
 TEST_CASE(update_cancels_in_flight) {
-    event_loop loop;
     auto graph = make_test_graph();
     bool compile_cancelled = false;
 
@@ -60,16 +57,12 @@ TEST_CASE(update_cancels_in_flight) {
 
     auto c = compiler();
     auto u = updater();
-
-    loop.schedule(c);
-    loop.schedule(u);
-    loop.run();
+    schedule_all(c, u);
 
     EXPECT_TRUE(compile_cancelled);
 }
 
 TEST_CASE(chain_cancel_propagates) {
-    event_loop loop;
     auto graph = make_test_graph();
     bool compile_cancelled = false;
 
@@ -85,16 +78,12 @@ TEST_CASE(chain_cancel_propagates) {
 
     auto c = compiler();
     auto u = updater();
-
-    loop.schedule(c);
-    loop.schedule(u);
-    loop.run();
+    schedule_all(c, u);
 
     EXPECT_TRUE(compile_cancelled);
 }
 
 TEST_CASE(recompile_after_update) {
-    event_loop loop;
     auto graph = make_test_graph();
 
     auto test = [&]() -> task<> {
@@ -109,12 +98,10 @@ TEST_CASE(recompile_after_update) {
     };
 
     auto t = test();
-    loop.schedule(t);
-    loop.run();
+    schedule_all(t);
 }
 
 TEST_CASE(independent_compilations_unaffected) {
-    event_loop loop;
     auto graph = make_test_graph();
     bool parser_cancelled = false;
     bool codegen_ok = false;
@@ -137,18 +124,13 @@ TEST_CASE(independent_compilations_unaffected) {
     auto cp = compile_parser();
     auto cc = compile_codegen();
     auto u = updater();
-
-    loop.schedule(cp);
-    loop.schedule(cc);
-    loop.schedule(u);
-    loop.run();
+    schedule_all(cp, cc, u);
 
     EXPECT_TRUE(parser_cancelled);
     EXPECT_TRUE(codegen_ok);
 }
 
 TEST_CASE(shared_dependency_compiled_once) {
-    event_loop loop;
     int compile_count = 0;
 
     // Use a side-effecting delay_fn to count actual compilations
@@ -168,8 +150,7 @@ TEST_CASE(shared_dependency_compiled_once) {
     };
 
     auto t = test();
-    loop.schedule(t);
-    loop.run();
+    schedule_all(t);
 
     // common.h (1) + a.cpp (1) + b.cpp (1) = 3
     // Without dedup this would be 4 (common.h compiled twice).

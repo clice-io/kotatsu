@@ -1,7 +1,7 @@
 #include <chrono>
 
+#include "loop_fixture.h"
 #include "eventide/zest/zest.h"
-#include "eventide/async/async.h"
 
 namespace eventide {
 
@@ -47,73 +47,55 @@ task<> wait_timer_twice(timer& t) {
 
 }  // namespace
 
-TEST_SUITE(watcher_io) {
+TEST_SUITE(watcher_io, loop_fixture) {
 
 TEST_CASE(timer_wait) {
-    event_loop loop;
-
     auto t = timer::create(loop);
     t.start(std::chrono::milliseconds{1}, std::chrono::milliseconds{0});
 
     auto waiter = wait_timer(t);
-    loop.schedule(waiter);
-    loop.run();
+    schedule_all(waiter);
 }
 
 TEST_CASE(idle_wait) {
-    event_loop loop;
-
     auto w = idle::create(loop);
     w.start();
 
     auto waiter = wait_idle(w);
-    loop.schedule(waiter);
-    loop.run();
+    schedule_all(waiter);
 
     w.stop();
 }
 
 TEST_CASE(sleep_once) {
-    event_loop loop;
-
     auto sleeper = wait_sleep(loop);
-    loop.schedule(sleeper);
-    loop.run();
+    schedule_all(sleeper);
 }
 
 TEST_CASE(timer_repeat_twice) {
-    event_loop loop;
-
     auto t = timer::create(loop);
     t.start(std::chrono::milliseconds{1}, std::chrono::milliseconds{1});
 
     auto waiter = wait_timer_twice(t);
-    loop.schedule(waiter);
-    loop.run();
+    schedule_all(waiter);
 }
 
 TEST_CASE(prepare_wait) {
-    event_loop loop;
-
     auto w = prepare::create(loop);
     w.start();
 
     auto waiter = wait_prepare(w);
-    loop.schedule(waiter);
-    loop.run();
+    schedule_all(waiter);
 
     w.stop();
 }
 
 TEST_CASE(check_wait) {
-    event_loop loop;
-
     auto w = check::create(loop);
     w.start();
 
     auto waiter = wait_check(w);
-    loop.schedule(waiter);
-    loop.run();
+    schedule_all(waiter);
 
     w.stop();
 }

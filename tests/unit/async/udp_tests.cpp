@@ -1,8 +1,8 @@
 #include <string>
 #include <string_view>
 
+#include "loop_fixture.h"
 #include "eventide/zest/zest.h"
-#include "eventide/async/async.h"
 
 namespace eventide {
 
@@ -40,11 +40,9 @@ task<void, error> send_connected(udp& sock, std::string_view payload, int& done)
 
 }  // namespace
 
-TEST_SUITE(udp_io) {
+TEST_SUITE(udp_io, loop_fixture) {
 
 TEST_CASE(send_and_recv) {
-    event_loop loop;
-
     auto recv_sock = udp::create(loop);
     ASSERT_TRUE(recv_sock.has_value());
 
@@ -60,10 +58,7 @@ TEST_CASE(send_and_recv) {
     int done = 0;
     auto receiver = recv_once(*recv_sock, done);
     auto sender = send_to(*send_sock, "eventide-udp", endpoint->addr, endpoint->port, done);
-
-    loop.schedule(receiver);
-    loop.schedule(sender);
-    loop.run();
+    schedule_all(receiver, sender);
 
     auto recv_result = receiver.result();
     EXPECT_TRUE(recv_result.has_value());
@@ -74,8 +69,6 @@ TEST_CASE(send_and_recv) {
 }
 
 TEST_CASE(connect_and_send) {
-    event_loop loop;
-
     auto recv_sock = udp::create(loop);
     ASSERT_TRUE(recv_sock.has_value());
 
@@ -94,10 +87,7 @@ TEST_CASE(connect_and_send) {
     int done = 0;
     auto receiver = recv_once(*recv_sock, done);
     auto sender = send_connected(*send_sock, "eventide-udp-connect", done);
-
-    loop.schedule(receiver);
-    loop.schedule(sender);
-    loop.run();
+    schedule_all(receiver, sender);
 
     auto recv_result = receiver.result();
     EXPECT_TRUE(recv_result.has_value());

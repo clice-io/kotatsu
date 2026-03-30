@@ -1,7 +1,7 @@
 #include <atomic>
 
+#include "loop_fixture.h"
 #include "eventide/zest/zest.h"
-#include "eventide/async/async.h"
 
 namespace eventide {
 
@@ -24,15 +24,13 @@ task<void, error>
 
 }  // namespace
 
-TEST_SUITE(work_request_io) {
+TEST_SUITE(work_request_io, loop_fixture) {
 
 TEST_CASE(queue_runs) {
-    event_loop loop;
     std::atomic<int> flag{0};
 
     auto worker = wait_work(flag, loop);
-    loop.schedule(worker);
-    loop.run();
+    schedule_all(worker);
 
     auto ec = worker.result();
     EXPECT_FALSE(ec.has_error());
@@ -40,16 +38,12 @@ TEST_CASE(queue_runs) {
 }
 
 TEST_CASE(queue_runs_twice) {
-    event_loop loop;
     std::atomic<int> flag{0};
     std::atomic<int> done{0};
 
     auto first = wait_work_target(flag, done, 2, loop);
     auto second = wait_work_target(flag, done, 2, loop);
-
-    loop.schedule(first);
-    loop.schedule(second);
-    loop.run();
+    schedule_all(first, second);
 
     auto ec1 = first.result();
     auto ec2 = second.result();
