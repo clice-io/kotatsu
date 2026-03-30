@@ -1,3 +1,4 @@
+#include <atomic>
 #include <chrono>
 #include <expected>
 #include <iostream>
@@ -40,6 +41,13 @@ struct ZestCliOptions {
 
     DecoFlag(names = {"--parallel"}; help = "Run test cases in parallel"; required = false)
     parallel = false;
+
+    DecoKVStyled(style = deco::decl::KVStyle::Joined | deco::decl::KVStyle::Separate,
+                 names = {"--parallel-workers"};
+                 meta_var = "<N>";
+                 help = "Number of worker threads for parallel mode (default: hardware_concurrency)";
+                 required = false)
+    <unsigned> parallel_workers = 0;
 };
 
 auto to_runner_options(ZestCliOptions options)
@@ -51,6 +59,7 @@ auto to_runner_options(ZestCliOptions options)
     eventide::zest::RunnerOptions runner_options;
     runner_options.only_failed_output = *options.only_failed;
     runner_options.parallel = *options.parallel;
+    runner_options.parallel_workers = *options.parallel_workers;
     if(options.test_filter_input.has_value()) {
         runner_options.filter = std::move(*options.test_filter_input);
     } else {
@@ -342,11 +351,20 @@ int Runner::run_tests(RunnerOptions options) {
     std::vector<TestResult> results(runnable.size());
 
     if(options.parallel) {
-        std::vector<std::jthread> threads;
-        threads.reserve(runnable.size());
+        const auto num_workers =
+            std::max(1u, options.parallel_workers
+                             ? options.parallel_workers
+                             : std::thread::hardware_concurrency());
 
-        for(std::size_t i = 0; i < runnable.size(); ++i) {
-            threads.emplace_back([&, i]() {
+        std::atomic<std::size_t> next_task{0};
+
+        auto worker = [&]() {
+            while(true) {
+                auto i = next_task.fetch_add(1, std::memory_order_relaxed);
+                if(i >= runnable.size()) {
+                    break;
+                }
+
                 using namespace std::chrono;
                 auto begin = system_clock::now();
                 auto state = runnable[i].test();
@@ -359,13 +377,18 @@ int Runner::run_tests(RunnerOptions options) {
                     .state = state,
                     .duration = duration_cast<milliseconds>(end - begin),
                 };
-            });
+            }
+        };
+
+        {
+            std::vector<std::jthread> pool;
+            pool.reserve(num_workers);
+            for(unsigned w = 0; w < num_workers; ++w) {
+                pool.emplace_back(worker);
+            }
         }
 
-        // jthread destructor joins automatically.
-        threads.clear();
-
-        // Print results after all tests complete.
+        // Print results after all workers finish.
         for(const auto& result: results) {
             const bool failed = is_failure(result.state);
             print_run_result(result.display_name, failed, result.duration, options.only_failed_output);

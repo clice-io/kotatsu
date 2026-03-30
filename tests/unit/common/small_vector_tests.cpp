@@ -44,7 +44,7 @@ struct move_only {
     }
 };
 
-static int nontrivial_alive = 0;
+static thread_local int nontrivial_alive = 0;
 
 struct nontrivial {
     int value;
@@ -1389,7 +1389,7 @@ TEST_CASE(assign_from_empty_hybrid_vector) {
 #ifdef __cpp_exceptions
 
 struct throwing_copy {
-    inline static int throw_after = -1;
+    inline thread_local static int throw_after = -1;
     int value = 0;
 
     throwing_copy() = default;
