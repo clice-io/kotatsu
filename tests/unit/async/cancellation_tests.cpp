@@ -121,7 +121,7 @@ TEST_CASE(token_share_state) {
     EXPECT_TRUE(token_b.cancelled());
 }
 
-TEST_CASE(queue_cancel_resume, TestAttrs{.serial = true}) {
+TEST_CASE(queue_cancel_resume, serial = true) {
     cancellation_source source;
     event start_target;
     event target_submitted;
@@ -207,7 +207,7 @@ TEST_CASE(queue_cancel_resume, TestAttrs{.serial = true}) {
     EXPECT_FALSE(target_started.load(std::memory_order_acquire));
 }
 
-TEST_CASE(fs_cancel_resume, TestAttrs{.serial = true}) {
+TEST_CASE(fs_cancel_resume, serial = true) {
     cancellation_source source;
     event start_target;
     event target_submitted;
