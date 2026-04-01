@@ -9,8 +9,10 @@
 #include <ranges>
 #include <span>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "eventide/serde/flatbuffers/schema.h"
@@ -31,6 +33,15 @@ class table_view;
 template <typename T>
 class array_view;
 
+template <typename... Ts>
+class variant_view;
+
+template <typename... Ts>
+class tuple_view;
+
+template <typename K, typename V>
+class map_view;
+
 namespace proxy_detail {
 
 constexpr ::flatbuffers::voffset_t first_field = 4;
@@ -45,6 +56,34 @@ constexpr bool is_string_like_v = serde::str_like<T>;
 
 template <typename T>
 constexpr bool is_range_like_v = std::ranges::input_range<T> && !is_string_like_v<T>;
+
+template <typename T>
+constexpr bool is_scalar_v =
+    serde::bool_like<T> || serde::int_like<T> || serde::uint_like<T> || serde::floating_like<T> ||
+    serde::char_like<T> || std::is_enum_v<T> || std::same_as<T, std::byte>;
+
+// Smart pointer stripping: remove unique_ptr / shared_ptr wrappers (applied after clean_t)
+template <typename T>
+struct remove_smart_ptr {
+    using type = T;
+};
+
+template <typename T, typename D>
+struct remove_smart_ptr<std::unique_ptr<T, D>> {
+    using type = typename remove_smart_ptr<T>::type;
+};
+
+template <typename T>
+struct remove_smart_ptr<std::shared_ptr<T>> {
+    using type = typename remove_smart_ptr<T>::type;
+};
+
+template <typename T>
+using remove_smart_ptr_t = typename remove_smart_ptr<T>::type;
+
+// Full cleaning: annotation -> optional -> smart_ptr
+template <typename T>
+using deep_clean_t = remove_smart_ptr_t<clean_t<T>>;
 
 template <typename T>
 struct scalar_storage {
@@ -140,27 +179,138 @@ struct array_vector_ptr : array_vector_ptr_impl<Element> {};
 template <typename Element>
 using array_vector_ptr_t = typename array_vector_ptr<Element>::type;
 
+// Helper to detect map-like ranges (has key_type + mapped_type)
+template <typename T>
+constexpr bool is_map_range_v = [] {
+    if constexpr(is_range_like_v<T>) {
+        return eventide::format_kind<T> == eventide::range_format::map;
+    } else {
+        return false;
+    }
+}();
+
+// Forward declaration of the return type resolver for a given type T read from a flatbuffer field.
+// Used by variant_view, tuple_view, and table_view to avoid duplicating dispatch logic.
+template <typename T, typename = void>
+struct field_return_type;
+
+template <typename T>
+using field_return_type_t = typename field_return_type<T>::type;
+
+// Extract variant alternatives as a variant_view
+template <typename T>
+struct variant_view_for;
+
+template <typename... Ts>
+struct variant_view_for<std::variant<Ts...>> {
+    using type = variant_view<Ts...>;
+};
+
+template <typename T>
+using variant_view_for_t = typename variant_view_for<T>::type;
+
+// Extract tuple elements as a tuple_view
+template <typename T>
+struct tuple_view_for;
+
+template <typename... Ts>
+struct tuple_view_for<std::tuple<Ts...>> {
+    using type = tuple_view<Ts...>;
+};
+
+template <typename K, typename V>
+struct tuple_view_for<std::pair<K, V>> {
+    using type = tuple_view<K, V>;
+};
+
+template <typename T>
+using tuple_view_for_t = typename tuple_view_for<T>::type;
+
+// Extract map key/value for map_view
+template <typename T>
+struct map_view_for;
+
+template <typename T>
+    requires requires {
+        typename T::key_type;
+        typename T::mapped_type;
+    }
+struct map_view_for<T> {
+    using type = map_view<typename T::key_type, typename T::mapped_type>;
+};
+
+template <typename T>
+using map_view_for_t = typename map_view_for<T>::type;
+
+// field_return_type: determines the proxy return type for a given clean type T.
+// Uses partial specialization to avoid eagerly instantiating type aliases for non-matching
+// branches.
+template <typename T, typename>
+struct field_return_type {
+    // Default: reflectable struct -> table_view
+    using type = table_view<T>;
+};
+
+template <typename T>
+struct field_return_type<T, std::enable_if_t<is_string_like_v<T>>> {
+    using type = std::string_view;
+};
+
+template <typename T>
+struct field_return_type<
+    T,
+    std::enable_if_t<!is_string_like_v<T> && (is_scalar_v<T> || can_inline_struct_v<T>)>> {
+    using type = T;
+};
+
+template <typename T>
+struct field_return_type<T, std::enable_if_t<is_specialization_of<std::variant, T>>> {
+    using type = variant_view_for_t<T>;
+};
+
+template <typename T>
+struct field_return_type<
+    T,
+    std::enable_if_t<!is_specialization_of<std::variant, T> && (is_pair_v<T> || is_tuple_v<T>)>> {
+    using type = tuple_view_for_t<T>;
+};
+
+template <typename T>
+struct field_return_type<T, std::enable_if_t<is_map_range_v<T>>> {
+    using type = map_view_for_t<T>;
+};
+
+template <typename T>
+struct field_return_type<
+    T,
+    std::enable_if_t<!is_string_like_v<T> && !is_scalar_v<T> && !can_inline_struct_v<T> &&
+                     !is_specialization_of<std::variant, T> && !is_pair_v<T> && !is_tuple_v<T> &&
+                     !is_map_range_v<T> && is_range_like_v<T>>> {
+    using type = array_view<clean_t<std::ranges::range_value_t<T>>>;
+};
+
 template <typename Member,
-          typename CleanMember = clean_t<Member>,
+          typename CleanMember = deep_clean_t<Member>,
           bool IsRange = is_range_like_v<CleanMember>>
 struct member_return_impl;
 
+// Map-like ranges get map_view
 template <typename Member, typename CleanMember>
+    requires is_map_range_v<CleanMember>
+struct member_return_impl<Member, CleanMember, true> {
+    using type = map_view_for_t<CleanMember>;
+};
+
+// Non-map ranges get array_view
+template <typename Member, typename CleanMember>
+    requires (!is_map_range_v<CleanMember>)
 struct member_return_impl<Member, CleanMember, true> {
     using type = array_view<clean_t<std::ranges::range_value_t<CleanMember>>>;
 };
 
 template <typename Member, typename CleanMember>
 struct member_return_impl<Member, CleanMember, false> {
-    using type = std::conditional_t<
-        is_string_like_v<CleanMember>,
-        std::string_view,
-        std::conditional_t<serde::bool_like<CleanMember> || serde::int_like<CleanMember> ||
-                               serde::uint_like<CleanMember> || serde::floating_like<CleanMember> ||
-                               serde::char_like<CleanMember> || std::is_enum_v<CleanMember> ||
-                               can_inline_struct_v<CleanMember>,
-                           CleanMember,
-                           table_view<CleanMember>>>;
+    using type = field_return_type_t<CleanMember>;
 };
 
 template <typename Member>
@@ -172,30 +322,78 @@ using member_return_t = typename member_return<Member>::type;
 template <typename Element>
 struct array_element_return {
 private:
-    using clean_element_t = clean_t<Element>;
+    using clean_element_t = deep_clean_t<Element>;
 
 public:
-    using type = std::conditional_t<
-        is_string_like_v<clean_element_t>,
-        std::string_view,
-        std::conditional_t<
-            serde::bool_like<clean_element_t> || serde::int_like<clean_element_t> ||
-                serde::uint_like<clean_element_t> || serde::floating_like<clean_element_t> ||
-                serde::char_like<clean_element_t> || std::is_enum_v<clean_element_t> ||
-                std::same_as<clean_element_t, std::byte> || can_inline_struct_v<clean_element_t>,
-            clean_element_t,
-            table_view<clean_element_t>>>;
+    using type = field_return_type_t<clean_element_t>;
 };
 
 template <typename Element>
 using array_element_return_t = typename array_element_return<Element>::type;
+
+// Shared helper: read a typed value from a flatbuffers::Table at a given voffset.
+// Returns the appropriate proxy type (scalar by value, string_view, table_view, etc.)
+template <typename T>
+auto read_field(const std::uint8_t* root,
+                const ::flatbuffers::Table* table,
+                ::flatbuffers::voffset_t field) -> field_return_type_t<T> {
+    using return_t = field_return_type_t<T>;
+
+    if constexpr(std::same_as<T, std::byte>) {
+        return std::byte{table->GetField<std::uint8_t>(field, std::uint8_t{})};
+    } else if constexpr(std::is_enum_v<T>) {
+        using storage_t = std::underlying_type_t<T>;
+        return static_cast<T>(table->GetField<storage_t>(field, storage_t{}));
+    } else if constexpr(serde::char_like<T>) {
+        return static_cast<T>(table->GetField<std::int8_t>(field, std::int8_t{}));
+    } else if constexpr(serde::bool_like<T> || serde::int_like<T> || serde::uint_like<T>) {
+        return table->GetField<T>(field, T{});
+    } else if constexpr(serde::floating_like<T>) {
+        if constexpr(std::same_as<T, float> || std::same_as<T, double>) {
+            return table->GetField<T>(field, T{});
+        } else {
+            return static_cast<T>(table->GetField<double>(field, 0.0));
+        }
+    } else if constexpr(is_string_like_v<T>) {
+        const auto* text = table->GetPointer<const ::flatbuffers::String*>(field);
+        if(text == nullptr) {
+            return {};
+        }
+        return std::string_view(text->data(), text->size());
+    } else if constexpr(can_inline_struct_v<T>) {
+        const auto* value = table->GetStruct<const T*>(field);
+        if(value == nullptr) {
+            return {};
+        }
+        return *value;
+    } else if constexpr(is_specialization_of<std::variant, T>) {
+        const auto* nested = table->GetPointer<const ::flatbuffers::Table*>(field);
+        return return_t(root, nested);
+    } else if constexpr(is_pair_v<T> || is_tuple_v<T>) {
+        const auto* nested = table->GetPointer<const ::flatbuffers::Table*>(field);
+        return return_t(root, nested);
+    } else if constexpr(is_map_range_v<T>) {
+        const auto* vec = table->GetPointer<
+            const ::flatbuffers::Vector<::flatbuffers::Offset<::flatbuffers::Table>>*>(field);
+        return return_t(root, vec);
+    } else if constexpr(is_range_like_v<T>) {
+        using element_type = clean_t<std::ranges::range_value_t<T>>;
+        using vector_ptr_t = array_vector_ptr_t<element_type>;
+        const auto* value = table->GetPointer<vector_ptr_t>(field);
+        return return_t(root, value);
+    } else {
+        // reflectable struct -> table_view
+        const auto* nested = table->GetPointer<const ::flatbuffers::Table*>(field);
+        return return_t(root, nested);
+    }
+}
 
 }  // namespace proxy_detail
 
 template <typename Element>
 class array_view {
 public:
-    using element_type = proxy_detail::clean_t<Element>;
+    using element_type = proxy_detail::deep_clean_t<Element>;
     using value_type = proxy_detail::array_element_return_t<element_type>;
     using vector_ptr_type = proxy_detail::array_vector_ptr_t<element_type>;
 
@@ -276,6 +474,227 @@ private:
     vector_ptr_type vector = nullptr;
 };
 
+template <typename... Ts>
+class variant_view {
+public:
+    using table_type = ::flatbuffers::Table;
+
+    constexpr variant_view() = default;
+
+    constexpr variant_view(const std::uint8_t* root, const table_type* table) noexcept :
+        root(root), table(table) {}
+
+    constexpr auto valid() const noexcept -> bool {
+        return table != nullptr;
+    }
+
+    constexpr explicit operator bool() const noexcept {
+        return valid();
+    }
+
+    auto index() const -> std::size_t {
+        if(!valid()) {
+            return sizeof...(Ts);
+        }
+        return static_cast<std::size_t>(
+            table->GetField<std::uint32_t>(proxy_detail::first_field, 0U));
+    }
+
+    template <std::size_t I>
+        requires (I < sizeof...(Ts))
+    auto get() const -> proxy_detail::field_return_type_t<
+        proxy_detail::deep_clean_t<std::variant_alternative_t<I, std::variant<Ts...>>>> {
+        using alt_t = std::variant_alternative_t<I, std::variant<Ts...>>;
+        using clean_alt_t = proxy_detail::deep_clean_t<alt_t>;
+        using return_t = proxy_detail::field_return_type_t<clean_alt_t>;
+
+        if(!valid()) {
+            return return_t{};
+        }
+
+        // variant field I is at voffset 6 + I*2 = first_field + (I+1) * field_step
+        const auto field = proxy_detail::voffset(I + 1);
+        return proxy_detail::read_field<clean_alt_t>(root, table, field);
+    }
+
+    constexpr auto root_data() const noexcept -> const std::uint8_t* {
+        return root;
+    }
+
+    constexpr auto raw() const noexcept -> const table_type* {
+        return table;
+    }
+
+private:
+    const std::uint8_t* root = nullptr;
+    const table_type* table = nullptr;
+};
+
+template <typename... Ts>
+class tuple_view {
+public:
+    using table_type = ::flatbuffers::Table;
+
+    constexpr tuple_view() = default;
+
+    constexpr tuple_view(const std::uint8_t* root, const table_type* table) noexcept :
+        root(root), table(table) {}
+
+    constexpr auto valid() const noexcept -> bool {
+        return table != nullptr;
+    }
+
+    constexpr explicit operator bool() const noexcept {
+        return valid();
+    }
+
+    template <std::size_t I>
+        requires (I < sizeof...(Ts))
+    auto get() const -> proxy_detail::field_return_type_t<
+        proxy_detail::deep_clean_t<std::tuple_element_t<I, std::tuple<Ts...>>>> {
+        using element_t = std::tuple_element_t<I, std::tuple<Ts...>>;
+        using clean_element_t = proxy_detail::deep_clean_t<element_t>;
+        using return_t = proxy_detail::field_return_type_t<clean_element_t>;
+
+        if(!valid()) {
+            return return_t{};
+        }
+
+        const auto field = proxy_detail::voffset(I);
+        return proxy_detail::read_field<clean_element_t>(root, table, field);
+    }
+
+    constexpr auto root_data() const noexcept -> const std::uint8_t* {
+        return root;
+    }
+
+    constexpr auto raw() const noexcept -> const table_type* {
+        return table;
+    }
+
+private:
+    const std::uint8_t* root = nullptr;
+    const table_type* table = nullptr;
+};
+
+template <typename K, typename V>
+class map_view {
+public:
+    using table_type = ::flatbuffers::Table;
+    using vector_type = const ::flatbuffers::Vector<::flatbuffers::Offset<::flatbuffers::Table>>*;
+
+    constexpr map_view() = default;
+
+    constexpr map_view(const std::uint8_t* root, vector_type vector) noexcept :
+        root(root), vector(vector) {}
+
+    constexpr auto valid() const noexcept -> bool {
+        return vector != nullptr;
+    }
+
+    constexpr explicit operator bool() const noexcept {
+        return valid();
+    }
+
+    auto size() const noexcept -> std::size_t {
+        return valid() ? static_cast<std::size_t>(vector->size()) : 0U;
+    }
+
+    auto empty() const noexcept -> bool {
+        return size() == 0U;
+    }
+
+    auto at(std::size_t index) const -> tuple_view<K, V> {
+        if(!valid() || index >= size()) {
+            return {};
+        }
+        const auto* entry = vector->template GetAs<::flatbuffers::Table>(
+            static_cast<::flatbuffers::uoffset_t>(index));
+        return tuple_view<K, V>(root, entry);
+    }
+
+    auto operator[](const K& key) const
+        -> proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<V>>
+        requires (
+            std::totally_ordered<proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<K>>>)
+    {
+        using clean_k = proxy_detail::deep_clean_t<K>;
+        using clean_v = proxy_detail::deep_clean_t<V>;
+        using value_return_t = proxy_detail::field_return_type_t<clean_v>;
+
+        auto entry = find_entry(key);
+        if(entry == nullptr) {
+            return value_return_t{};
+        }
+        return proxy_detail::read_field<clean_v>(root, entry, proxy_detail::voffset(1));
+    }
+
+    auto find(const K& key) const -> std::optional<tuple_view<K, V>>
+        requires (
+            std::totally_ordered<proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<K>>>)
+    {
+        auto entry = find_entry(key);
+        if(entry == nullptr) {
+            return std::nullopt;
+        }
+        return tuple_view<K, V>(root, entry);
+    }
+
+    auto contains(const K& key) const -> bool
+        requires (
+            std::totally_ordered<proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<K>>>)
+    {
+        return find_entry(key) != nullptr;
+    }
+
+    constexpr auto root_data() const noexcept -> const std::uint8_t* {
+        return root;
+    }
+
+    constexpr auto raw() const noexcept -> vector_type {
+        return vector;
+    }
+
+private:
+    auto find_entry(const K& key) const -> const ::flatbuffers::Table* {
+        using clean_k = proxy_detail::deep_clean_t<K>;
+
+        if(!valid()) {
+            return nullptr;
+        }
+
+        std::size_t lo = 0;
+        std::size_t hi = size();
+        while(lo < hi) {
+            auto mid = lo + (hi - lo) / 2;
+            const auto* entry = vector->template GetAs<::flatbuffers::Table>(
+                static_cast<::flatbuffers::uoffset_t>(mid));
+            auto entry_key =
+                proxy_detail::read_field<clean_k>(root, entry, proxy_detail::first_field);
+            if(entry_key < key) {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+
+        if(lo >= size()) {
+            return nullptr;
+        }
+
+        const auto* entry =
+            vector->template GetAs<::flatbuffers::Table>(static_cast<::flatbuffers::uoffset_t>(lo));
+        auto entry_key = proxy_detail::read_field<clean_k>(root, entry, proxy_detail::first_field);
+        if(entry_key == key) {
+            return entry;
+        }
+        return nullptr;
+    }
+
+    const std::uint8_t* root = nullptr;
+    vector_type vector = nullptr;
+};
+
 template <typename T>
 class table_view {
 public:
@@ -341,7 +760,7 @@ public:
     template <typename Member>
         requires refl::reflectable_class<object_type>
     auto operator()(Member object_type::* member) const -> proxy_detail::member_return_t<Member> {
-        using member_type = proxy_detail::clean_t<Member>;
+        using member_type = proxy_detail::deep_clean_t<Member>;
         using return_t = proxy_detail::member_return_t<Member>;
 
         if(!valid()) {
@@ -354,45 +773,7 @@ public:
         }
 
         const auto field = proxy_detail::voffset(index);
-
-        if constexpr(proxy_detail::is_range_like_v<member_type>) {
-            using element_type = proxy_detail::clean_t<std::ranges::range_value_t<member_type>>;
-            using vector_ptr_t = proxy_detail::array_vector_ptr_t<element_type>;
-            const auto* value = table->GetPointer<vector_ptr_t>(field);
-            return return_t(root, value);
-        } else if constexpr(proxy_detail::is_string_like_v<member_type>) {
-            const auto* text = table->GetPointer<const ::flatbuffers::String*>(field);
-            if(text == nullptr) {
-                return {};
-            }
-            return std::string_view(text->data(), text->size());
-        } else if constexpr(std::is_enum_v<member_type>) {
-            using storage_t = std::underlying_type_t<member_type>;
-            const auto value = table->GetField<storage_t>(field, storage_t{});
-            return static_cast<member_type>(value);
-        } else if constexpr(serde::char_like<member_type>) {
-            const auto value = table->GetField<std::int8_t>(field, std::int8_t{});
-            return static_cast<member_type>(value);
-        } else if constexpr(serde::bool_like<member_type> || serde::int_like<member_type> ||
-                            serde::uint_like<member_type>) {
-            return table->GetField<member_type>(field, member_type{});
-        } else if constexpr(serde::floating_like<member_type>) {
-            if constexpr(std::same_as<member_type, float> || std::same_as<member_type, double>) {
-                return table->GetField<member_type>(field, member_type{});
-            } else {
-                const auto value = table->GetField<double>(field, 0.0);
-                return static_cast<member_type>(value);
-            }
-        } else if constexpr(can_inline_struct_v<member_type>) {
-            const auto* value = table->GetStruct<const member_type*>(field);
-            if(value == nullptr) {
-                return {};
-            }
-            return *value;
-        } else {
-            const auto* nested = table->GetPointer<const table_type*>(field);
-            return return_t(root, nested);
-        }
+        return proxy_detail::read_field<member_type>(root, table, field);
     }
 
 private:
