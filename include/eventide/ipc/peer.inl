@@ -405,7 +405,8 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
                                                          std::string params,
                                                          request_options opts) {
     std::shared_ptr<cancellation_source> timeout_source;
-    std::shared_ptr<cancellation_source> timeout_stop;
+    // Stops the timeout timer when this coroutine finishes (destructor calls cancel()).
+    std::optional<cancellation_source> timeout_stop;
 
     if(opts.timeout.has_value()) {
         if(*opts.timeout <= std::chrono::milliseconds::zero()) {
@@ -413,7 +414,7 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
         }
 
         timeout_source = std::make_shared<cancellation_source>();
-        timeout_stop = std::make_shared<cancellation_source>();
+        timeout_stop.emplace();
         if(self) {
             self->loop.schedule(detail::cancel_after_timeout(
                 *opts.timeout, timeout_source, timeout_stop->token(), self->loop));
@@ -456,11 +457,6 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
     } else {
         co_await std::move(wait_task);
     }
-    // Stop the timeout timer so its coroutine frame (and captured shared_ptrs) are released.
-    if(timeout_stop) {
-        timeout_stop->cancel();
-    }
-
     if(!wait_result.has_value()) {
         if(auto it = self->pending_requests.find(request_id); it != self->pending_requests.end()) {
             self->pending_requests.erase(it);

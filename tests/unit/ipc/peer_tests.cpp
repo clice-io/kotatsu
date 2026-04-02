@@ -950,6 +950,42 @@ TEST_CASE(zero_timeout_cancel) {
     EXPECT_TRUE(transport_ptr->outgoing().empty());
 }
 
+// Verify that completing a request before its timeout doesn't leak the timer coroutine frame.
+// Before the fix, cancel_after_timeout held a shared_ptr<cancellation_source> in its coroutine
+// frame that was only released when the timer fired. If the request completed early and the peer
+// was closed, the timer task's coroutine frame (and its captured shared_ptrs) leaked.
+// ASan will catch this as a leak if the fix regresses.
+TEST_CASE(timeout_timer_cleanup_on_early_completion) {
+    auto transport = std::make_unique<ScriptedTransport>(
+        std::vector<std::string>{},
+        [](std::string_view payload, ScriptedTransport& channel) {
+            // When we see the outgoing request, immediately push a success response and close.
+            if(payload.find(R"("method":"worker/build")") != std::string_view::npos) {
+                channel.push_incoming(R"({"jsonrpc":"2.0","id":1,"result":{"sum":5}})");
+                channel.close();
+            }
+        });
+
+    event_loop loop;
+    JsonPeer peer(loop, std::move(transport));
+    Result<AddResult> request_result = outcome_error(Error("request did not complete"));
+
+    auto requester = [&]() -> task<> {
+        request_result =
+            co_await peer.send_request<AddResult>("worker/build",
+                                                  CustomAddParams{.a = 2, .b = 3},
+                                                  {.timeout = std::chrono::milliseconds{5000}});
+    };
+
+    auto request_task = requester();
+    loop.schedule(peer.run());
+    loop.schedule(request_task);
+    EXPECT_EQ(loop.run(), 0);
+
+    ASSERT_TRUE(request_result.has_value());
+    EXPECT_EQ(request_result->sum, 5);
+}
+
 // Handler returning task<serde::RawValue, Error> instead of RequestResult<Params>
 TEST_CASE(raw_value_return) {
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
