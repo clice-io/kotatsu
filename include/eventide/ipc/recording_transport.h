@@ -1,7 +1,7 @@
 #pragma once
 
 #include <chrono>
-#include <fstream>
+#include <cstdio>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -29,7 +29,7 @@ private:
     void write_record(std::string_view payload);
 
     std::unique_ptr<Transport> inner;
-    std::ofstream file;
+    std::FILE* file = nullptr;
     std::chrono::steady_clock::time_point start;
 };
 
