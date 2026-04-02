@@ -84,14 +84,21 @@ if has_config("test") and is_plat("windows") then
 	add_requires("unistd_h")
 end
 
+rule("cl-flags")
+on_load(function(target)
+	target:add("cxflags", "cl::/Zc:preprocessor", "cl::/utf-8", { public = true })
+end)
+
 target("common", function()
 	set_kind("headeronly")
+	add_rules("cl-flags")
 	add_includedirs("include", { public = true })
 	add_headerfiles("include/(eventide/common/*)")
 end)
 
 target("reflection", function()
 	set_kind("headeronly")
+	add_rules("cl-flags")
 	add_includedirs("include", { public = true })
 	add_headerfiles("include/(eventide/reflection/*)")
 	add_deps("common")
@@ -100,6 +107,7 @@ end)
 if has_config("serde") and has_config("serde_simdjson") then
 	target("serde_json", function()
 		set_kind("headeronly")
+		add_rules("cl-flags")
 		add_includedirs("include", { public = true })
 		add_headerfiles(
 			"include/(eventide/serde/json.h)",
@@ -117,6 +125,7 @@ end
 if has_config("serde") and has_config("serde_flatbuffers") then
 	target("serde_flatbuffers", function()
 		set_kind("headeronly")
+		add_rules("cl-flags")
 		add_includedirs("include", { public = true })
 		add_headerfiles("include/(eventide/serde/flatbuffers.h)", "include/(eventide/serde/flatbuffers/**.h)")
 		add_deps("reflection")
@@ -127,6 +136,7 @@ end
 if has_config("serde") and has_config("serde_toml") then
 	target("serde_toml", function()
 		set_kind("headeronly")
+		add_rules("cl-flags")
 		add_includedirs("include", { public = true })
 		add_headerfiles("include/(eventide/serde/toml.h)", "include/(eventide/serde/toml/**.h)")
 		add_deps("reflection")
@@ -137,6 +147,7 @@ end
 if has_config("serde") then
 	target("serde", function()
 		set_kind("headeronly")
+		add_rules("cl-flags")
 		add_includedirs("include", { public = true })
 		add_headerfiles(
 			"include/(eventide/serde/bincode.h)",
@@ -171,7 +182,7 @@ if has_config("ztest") then
 		add_files("src/zest/*.cpp")
 		add_includedirs("include", { public = true })
 		add_headerfiles("include/(eventide/zest/**)")
-		add_cxflags("cl::/Zc:preprocessor", { public = true })
+		add_rules("cl-flags")
 		add_deps("common", "deco")
 		add_packages("cpptrace", { public = true })
 	end)
@@ -180,6 +191,7 @@ end
 if has_config("async") then
 	target("async", function()
 		set_kind("$(kind)")
+		add_rules("cl-flags")
 		add_files("src/async/**.cpp")
 		add_includedirs("include", { public = true })
 		add_headerfiles("include/(eventide/async/**)")
@@ -191,6 +203,7 @@ end
 if has_config("option") then
 	target("option", function()
 		set_kind("$(kind)")
+		add_rules("cl-flags")
 		add_files("src/option/*.cc")
 		add_includedirs("include", { public = true })
 		add_headerfiles("include/(eventide/option/option.h)", "include/(eventide/option/detail/**.h)")
@@ -203,7 +216,7 @@ if has_config("deco") and has_config("option") then
 		set_kind("$(kind)")
 		add_files("src/deco/*.cc")
 		add_includedirs("include", { public = true })
-		add_cxflags("cl::/Zc:preprocessor", { public = true })
+		add_rules("cl-flags")
 		add_headerfiles("include/(eventide/deco/deco.h)", "include/(eventide/deco/detail/**.h)")
 		add_deps("option")
 	end)
@@ -212,6 +225,7 @@ end
 if has_config("async") and has_config("serde") and has_config("serde_simdjson") then
 	target("ipc", function()
 		set_kind("$(kind)")
+		add_rules("cl-flags")
 		add_files("src/ipc/*.cpp")
 		add_includedirs("include", { public = true })
 		add_headerfiles("include/(eventide/ipc/*)")
@@ -220,6 +234,7 @@ if has_config("async") and has_config("serde") and has_config("serde_simdjson") 
 
 	target("language", function()
 		set_kind("$(kind)")
+		add_rules("cl-flags")
 		add_files("src/ipc/lsp/*.cpp")
 		add_includedirs("include", { public = true })
 		add_headerfiles("include/(eventide/ipc/lsp/*)")
@@ -230,10 +245,7 @@ end
 target("eventide", function()
 	set_default(false)
 	set_kind("static")
-	if not has_config("test") then
-		add_rules("utils.merge.archive")
-		set_policy("build.merge_archive", true)
-	end
+	add_rules("cl-flags")
 	add_includedirs("include", { public = true })
 	add_headerfiles("include/(eventide/**)")
 
@@ -272,12 +284,14 @@ target("eventide", function()
 	if has_config("async") and has_config("serde") and has_config("serde_simdjson") then
 		add_deps("ipc", "language", { public = true })
 	end
+	set_policy("build.merge_archive", true)
 end)
 
 if has_config("test") and has_config("ztest") then
 	target("unit_tests", function()
 		set_default(false)
 		set_kind("binary")
+		add_rules("cl-flags")
 		add_files(
 			"tests/unit/main.cpp",
 			"tests/unit/common/**.cpp",
