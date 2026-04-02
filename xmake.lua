@@ -85,20 +85,18 @@ if has_config("test") and is_plat("windows") then
 end
 
 rule("cl-flags")
-on_load(function(target)
-	target:add("cxflags", "cl::/Zc:preprocessor", "cl::/utf-8", { public = true })
-end)
+	on_load(function(target)
+		target:add("cxflags", "cl::/Zc:preprocessor", "cl::/utf-8", { public = true })
+	end)
 
 target("common", function()
 	set_kind("headeronly")
-	add_rules("cl-flags")
 	add_includedirs("include", { public = true })
 	add_headerfiles("include/(eventide/common/*)")
 end)
 
 target("reflection", function()
 	set_kind("headeronly")
-	add_rules("cl-flags")
 	add_includedirs("include", { public = true })
 	add_headerfiles("include/(eventide/reflection/*)")
 	add_deps("common")
@@ -107,7 +105,6 @@ end)
 if has_config("serde") and has_config("serde_simdjson") then
 	target("serde_json", function()
 		set_kind("headeronly")
-		add_rules("cl-flags")
 		add_includedirs("include", { public = true })
 		add_headerfiles(
 			"include/(eventide/serde/json.h)",
@@ -125,7 +122,6 @@ end
 if has_config("serde") and has_config("serde_flatbuffers") then
 	target("serde_flatbuffers", function()
 		set_kind("headeronly")
-		add_rules("cl-flags")
 		add_includedirs("include", { public = true })
 		add_headerfiles("include/(eventide/serde/flatbuffers.h)", "include/(eventide/serde/flatbuffers/**.h)")
 		add_deps("reflection")
@@ -136,7 +132,6 @@ end
 if has_config("serde") and has_config("serde_toml") then
 	target("serde_toml", function()
 		set_kind("headeronly")
-		add_rules("cl-flags")
 		add_includedirs("include", { public = true })
 		add_headerfiles("include/(eventide/serde/toml.h)", "include/(eventide/serde/toml/**.h)")
 		add_deps("reflection")
@@ -147,7 +142,6 @@ end
 if has_config("serde") then
 	target("serde", function()
 		set_kind("headeronly")
-		add_rules("cl-flags")
 		add_includedirs("include", { public = true })
 		add_headerfiles(
 			"include/(eventide/serde/bincode.h)",
@@ -284,7 +278,10 @@ target("eventide", function()
 	if has_config("async") and has_config("serde") and has_config("serde_simdjson") then
 		add_deps("ipc", "language", { public = true })
 	end
-	set_policy("build.merge_archive", true)
+	if not has_config("test") then
+		add_rules("utils.merge.archive")
+		set_policy("build.merge_archive", true)
+	end
 end)
 
 if has_config("test") and has_config("ztest") then
