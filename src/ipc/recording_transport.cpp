@@ -10,7 +10,7 @@ RecordingTransport::RecordingTransport(std::unique_ptr<Transport> transport, std
     inner(std::move(transport)), file(std::fopen(path.c_str(), "wb")),
     start(std::chrono::steady_clock::now()) {
     assert(inner && "RecordingTransport requires a non-null inner transport");
-    assert(file && "RecordingTransport failed to open trace output file");
+    // If fopen fails, keep transport functional; write_record() no-ops on null file.
 }
 
 RecordingTransport::~RecordingTransport() {
@@ -53,19 +53,30 @@ void RecordingTransport::write_record(std::string_view payload) {
     std::string line;
     line.reserve(payload.size() + 64);
     line.append(std::format(R"({{"ts":{},"msg":")", ms));
-    for(char c: payload) {
-        switch(c) {
+    for(unsigned char uc: payload) {
+        switch(uc) {
             case '"': line.append(R"(\")"); break;
             case '\\': line.append(R"(\\)"); break;
+            case '\b': line.append(R"(\b)"); break;
+            case '\f': line.append(R"(\f)"); break;
             case '\n': line.append(R"(\n)"); break;
             case '\r': line.append(R"(\r)"); break;
             case '\t': line.append(R"(\t)"); break;
-            default: line.push_back(c); break;
+            default:
+                if(uc < 0x20) {
+                    line.append(std::format("\\u{:04X}", uc));
+                } else {
+                    line.push_back(static_cast<char>(uc));
+                }
+                break;
         }
     }
     line.append("\"}\n");
-    std::fwrite(line.data(), 1, line.size(), file);
-    std::fflush(file);
+    auto written = std::fwrite(line.data(), 1, line.size(), file);
+    if(written != line.size() || std::fflush(file) != 0) {
+        std::fclose(file);
+        file = nullptr;
+    }
 }
 
 }  // namespace eventide::ipc
