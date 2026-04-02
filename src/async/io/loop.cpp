@@ -1,14 +1,22 @@
 #include "eventide/async/io/loop.h"
 
+#include <atomic>
 #include <cassert>
 #include <deque>
-#include <mutex>
-#include <vector>
 
 #include "../libuv.h"
 #include "eventide/async/runtime/frame.h"
 
 namespace eventide {
+
+/// A node in the lock-free MPSC (multi-producer, single-consumer) queue
+/// used by event_loop::post(). Each post() allocates a node, atomically
+/// pushes it onto the intrusive stack, and signals uv_async_t. The event
+/// loop thread pops all nodes in one atomic exchange and executes them.
+struct post_node {
+    std::function<void()> callback;
+    post_node* next = nullptr;
+};
 
 struct event_loop::self {
     uv_loop_t loop = {};
@@ -17,10 +25,10 @@ struct event_loop::self {
     bool idle_running = false;
     std::deque<async_node*> tasks;
 
-    /// Guarded by `post_mutex`. Written by any thread via post(),
-    /// drained on the event loop thread in the uv_async_t callback.
-    std::mutex post_mutex;
-    std::vector<std::function<void()>> posted;
+    /// Lock-free MPSC stack head. Writers (any thread) push via CAS in
+    /// post(); the single consumer (event loop thread) drains via exchange
+    /// in the uv_async_t callback. No mutex required.
+    std::atomic<post_node*> post_head{nullptr};
 };
 
 static thread_local event_loop* current_loop = nullptr;
@@ -65,22 +73,51 @@ void event_loop::schedule(async_node& frame, std::source_location location) {
 
 void on_post(uv_async_t* handle) {
     auto* self = static_cast<struct event_loop::self*>(handle->data);
-    std::vector<std::function<void()>> batch;
-    {
-        std::lock_guard lock(self->post_mutex);
-        batch.swap(self->posted);
+
+    // Atomically steal the entire pending list. Producers may keep
+    // pushing concurrently — those nodes will be picked up next time.
+    auto* head = self->post_head.exchange(nullptr, std::memory_order_acquire);
+
+    // The stack is in LIFO order; reverse it to preserve FIFO submission order.
+    post_node* reversed = nullptr;
+    while(head) {
+        auto* next = head->next;
+        head->next = reversed;
+        reversed = head;
+        head = next;
     }
-    for(auto& fn: batch) {
-        fn();
+
+    // Execute all callbacks on the event loop thread, then free nodes.
+    while(reversed) {
+        auto* node = reversed;
+        reversed = reversed->next;
+        node->callback();
+        delete node;
     }
 }
 
 void event_loop::post(std::function<void()> callback) {
     assert(self && "post: event loop has been destroyed");
-    {
-        std::lock_guard lock(self->post_mutex);
-        self->posted.push_back(std::move(callback));
-    }
+
+    auto* node = new post_node{std::move(callback)};
+
+    // Lock-free push: CAS the new node onto the head of the stack.
+    // acq_rel on success: release makes this node's callback visible to
+    // the consumer; acquire chains the visibility of all nodes pushed by
+    // earlier producers (without acquire here, the consumer could follow
+    // the next-pointer chain but see uninitialised callback data on
+    // weakly-ordered architectures like ARM).
+    // uv_async_send is thread-safe and coalescing — multiple sends
+    // before the loop iterates result in a single callback invocation,
+    // which is fine because on_post drains the entire list each time.
+    auto* head = self->post_head.load(std::memory_order_relaxed);
+    do {
+        node->next = head;
+    } while(!self->post_head.compare_exchange_weak(head,
+                                                   node,
+                                                   std::memory_order_acq_rel,
+                                                   std::memory_order_relaxed));
+
     uv::async_send(self->async);
 }
 
@@ -115,6 +152,15 @@ event_loop::~event_loop() {
             uv::close(*h, [](uv_handle_t* handle) { uv::loop_close_fallback::mark(handle); });
         }
     };
+
+    // Drain any remaining posted callbacks that were never delivered
+    // (e.g. posted after the loop stopped running).
+    auto* leaked = self->post_head.exchange(nullptr, std::memory_order_acquire);
+    while(leaked) {
+        auto* next = leaked->next;
+        delete leaked;
+        leaked = next;
+    }
 
     auto& loop = self->loop;
     auto close_err = uv::loop_close(loop);
