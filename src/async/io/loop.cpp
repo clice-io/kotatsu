@@ -2,6 +2,8 @@
 
 #include <cassert>
 #include <deque>
+#include <mutex>
+#include <vector>
 
 #include "../libuv.h"
 #include "eventide/async/runtime/frame.h"
@@ -11,8 +13,14 @@ namespace eventide {
 struct event_loop::self {
     uv_loop_t loop = {};
     uv_idle_t idle = {};
+    uv_async_t async = {};
     bool idle_running = false;
     std::deque<async_node*> tasks;
+
+    /// Guarded by `post_mutex`. Written by any thread via post(),
+    /// drained on the event loop thread in the uv_async_t callback.
+    std::mutex post_mutex;
+    std::vector<std::function<void()>> posted;
 };
 
 static thread_local event_loop* current_loop = nullptr;
@@ -55,6 +63,27 @@ void event_loop::schedule(async_node& frame, std::source_location location) {
     self->tasks.push_back(&frame);
 }
 
+void on_post(uv_async_t* handle) {
+    auto* self = static_cast<struct event_loop::self*>(handle->data);
+    std::vector<std::function<void()>> batch;
+    {
+        std::lock_guard lock(self->post_mutex);
+        batch.swap(self->posted);
+    }
+    for(auto& fn: batch) {
+        fn();
+    }
+}
+
+void event_loop::post(std::function<void()> callback) {
+    assert(self && "post: event loop has been destroyed");
+    {
+        std::lock_guard lock(self->post_mutex);
+        self->posted.push_back(std::move(callback));
+    }
+    uv::async_send(self->async);
+}
+
 event_loop::event_loop() : self(new struct self()) {
     auto& loop = self->loop;
     if(auto err = uv::loop_init(loop)) {
@@ -64,6 +93,12 @@ event_loop::event_loop() : self(new struct self()) {
     auto& idle = self->idle;
     uv::idle_init(loop, idle);
     idle.data = self.get();
+
+    auto& async = self->async;
+    uv::async_init(loop, async, on_post);
+    async.data = self.get();
+    // Unref so the async handle alone does not keep the loop alive.
+    uv::unref(async);
 }
 
 event_loop::~event_loop() {
@@ -71,7 +106,8 @@ event_loop::~event_loop() {
         auto* self = static_cast<struct event_loop::self*>(arg);
         if(!uv::is_closing(*h)) {
             auto* idle = uv::as_handle(self->idle);
-            if(h == idle) {
+            auto* async = uv::as_handle(self->async);
+            if(h == idle || h == async) {
                 uv::close(*h, nullptr);
                 return;
             }

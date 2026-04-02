@@ -61,7 +61,8 @@ concept handle_like = is_one_of<bare_t<T>,
                                 uv_check_t,
                                 uv_signal_t,
                                 uv_fs_event_t,
-                                uv_process_t>;
+                                uv_process_t,
+                                uv_async_t>;
 
 template <typename T>
 concept stream_like = is_one_of<bare_t<T>, uv_stream_t, uv_tcp_t, uv_pipe_t, uv_tty_t>;
@@ -197,6 +198,16 @@ ALWAYS_INLINE void idle_start(uv_idle_t& handle, uv_idle_cb cb) noexcept {
 ALWAYS_INLINE void idle_stop(uv_idle_t& handle) noexcept {
     int rc = ::uv_idle_stop(&handle);
     assert(rc == 0 && "uv::idle_stop failed");
+}
+
+ALWAYS_INLINE void async_init(uv_loop_t& loop, uv_async_t& handle, uv_async_cb cb) noexcept {
+    int rc = ::uv_async_init(&loop, &handle, cb);
+    assert(rc == 0 && "uv::async_init failed");
+}
+
+ALWAYS_INLINE void async_send(uv_async_t& handle) noexcept {
+    int rc = ::uv_async_send(&handle);
+    assert(rc == 0 && "uv::async_send failed");
 }
 
 ALWAYS_INLINE void prepare_init(uv_loop_t& loop, uv_prepare_t& handle) noexcept {

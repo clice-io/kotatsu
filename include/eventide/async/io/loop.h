@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <source_location>
 #include <tuple>
@@ -46,6 +47,13 @@ public:
     int run();
 
     void stop();
+
+    /// Posts a callback to be executed on this event loop's thread.
+    ///
+    /// Thread-safe: can be called from any thread. The callback will be
+    /// invoked on the event loop thread during a subsequent iteration.
+    /// Internally uses uv_async_t to wake up the loop.
+    void post(std::function<void()> callback);
 
     /// Schedules a task for execution on this event loop.
     /// If the task is passed by rvalue (temporary), the loop takes ownership
