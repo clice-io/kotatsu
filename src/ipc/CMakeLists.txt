@@ -4,6 +4,7 @@ add_library(eventide::ipc ALIAS eventide_ipc)
 target_sources(eventide_ipc PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/peer.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/transport.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/recording_transport.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/json_codec.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/bincode_codec.cpp"
 )
