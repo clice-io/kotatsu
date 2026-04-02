@@ -14,9 +14,9 @@ namespace eventide::ipc {
 /// and can be piped directly to stdin for replay.
 class RecordingTransport : public Transport {
 public:
-    /// @param inner  The real transport to wrap.
-    /// @param path   File path to write the recorded trace.
-    RecordingTransport(std::unique_ptr<Transport> inner, std::string path);
+    /// @param transport  The real transport to wrap.
+    /// @param path       File path to write the recorded trace.
+    RecordingTransport(std::unique_ptr<Transport> transport, std::string path);
     ~RecordingTransport();
 
     task<std::optional<std::string>> read_message() override;
@@ -27,8 +27,8 @@ public:
 private:
     void write_framed(std::string_view payload);
 
-    std::unique_ptr<Transport> inner_;
-    std::ofstream file_;
+    std::unique_ptr<Transport> inner;
+    std::ofstream file;
 };
 
 }  // namespace eventide::ipc
