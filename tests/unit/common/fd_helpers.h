@@ -14,6 +14,10 @@ using ssize_t = SSIZE_T;
 
 namespace eventide::test {
 
+// IMPORTANT: Windows pipes have a tiny buffer (4KB). If you write more than
+// that before the event loop starts reading, write_fd() will block and deadlock.
+// Always write from a separate std::thread when the data may exceed ~4KB.
+
 #ifdef _WIN32
 inline int create_pipe(int fds[2]) {
     return _pipe(fds, 4096, _O_BINARY);

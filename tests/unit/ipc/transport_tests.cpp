@@ -235,6 +235,47 @@ TEST_CASE(rapid_sequential) {
     }
 }
 
+// Regression: a single chunk containing header + large payload (> 8KB total)
+// must not be rejected by the header size check.  The old code checked
+// header.size() before searching for \r\n\r\n, which meant a chunk that
+// included payload bytes beyond the header would trip the 8KB limit.
+TEST_CASE(large_payload_single_chunk) {
+    event_loop loop;
+
+    int fds[2] = {-1, -1};
+    ASSERT_EQ(create_pipe(fds), 0);
+
+    auto input = pipe::open(fds[0], pipe::options{}, loop);
+    ASSERT_TRUE(input.has_value());
+
+    StreamTransport transport(stream(std::move(*input)));
+
+    // 10KB payload — total frame is well over 8KB, but the header is tiny.
+    // Write from a thread because Windows pipe buffers are small (~4KB)
+    // and a synchronous write would block before the event loop starts reading.
+    std::string payload(10 * 1024, 'x');
+    std::string data = frame(payload);
+
+    std::thread writer([&] {
+        EXPECT_EQ(write_fd(fds[1], data.data(), data.size()), static_cast<ssize_t>(data.size()));
+        EXPECT_EQ(close_fd(fds[1]), 0);
+    });
+
+    auto reader = [&]() -> task<std::optional<std::string>> {
+        co_return co_await transport.read_message();
+    };
+
+    auto read_task = reader();
+    loop.schedule(read_task);
+    loop.run();
+
+    writer.join();
+
+    auto result = read_task.result();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->size(), payload.size());
+}
+
 };  // TEST_SUITE(ipc_transport)
 
 }  // namespace eventide::ipc

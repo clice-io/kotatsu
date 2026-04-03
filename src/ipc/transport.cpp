@@ -13,6 +13,8 @@ namespace eventide::ipc {
 
 namespace {
 
+// Guard against a broken sender that never produces \r\n\r\n —
+// without a cap the header buffer would grow until OOM.
 constexpr std::size_t max_header_bytes = 8 * 1024;
 constexpr std::size_t max_payload_bytes = 64 * 1024 * 1024;
 
@@ -172,7 +174,7 @@ task<std::optional<std::string>> StreamTransport::read_message() {
 
     while(!content_length.has_value()) {
         auto chunk = co_await read_stream.read_chunk();
-        if(!chunk) {
+        if(!chunk) [[unlikely]] {
             read_stream.stop();
             co_return std::nullopt;
         }
@@ -180,19 +182,18 @@ task<std::optional<std::string>> StreamTransport::read_message() {
         const auto old_size = header.size();
         header.append(chunk->data(), chunk->size());
 
-        if(header.size() > max_header_bytes) {
-            read_stream.stop();
-            co_return std::nullopt;
-        }
-
         auto marker = header.find("\r\n\r\n");
         if(marker == std::string::npos) {
+            if(header.size() > max_header_bytes) [[unlikely]] {
+                read_stream.stop();
+                co_return std::nullopt;
+            }
             read_stream.consume(chunk->size());
             continue;
         }
 
         const auto header_end = marker + 4;
-        if(header_end > max_header_bytes) {
+        if(header_end > max_header_bytes) [[unlikely]] {
             read_stream.stop();
             co_return std::nullopt;
         }
@@ -201,7 +202,7 @@ task<std::optional<std::string>> StreamTransport::read_message() {
 
         auto view = std::string_view(header.data(), header_end);
         content_length = parse_content_length(view);
-        if(!content_length.has_value()) {
+        if(!content_length.has_value()) [[unlikely]] {
             read_stream.stop();
             co_return std::nullopt;
         }
@@ -212,7 +213,7 @@ task<std::optional<std::string>> StreamTransport::read_message() {
 
     while(payload.size() < *content_length) {
         auto chunk = co_await read_stream.read_chunk();
-        if(!chunk) {
+        if(!chunk) [[unlikely]] {
             read_stream.stop();
             co_return std::nullopt;
         }
