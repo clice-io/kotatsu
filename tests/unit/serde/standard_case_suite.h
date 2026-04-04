@@ -39,9 +39,12 @@
 #include <variant>
 #include <vector>
 
+#include "eventide/serde/serde/annotation.h"
 #include "eventide/serde/serde/attrs.h"
 
 namespace eventide::serde::standard_case {
+
+using eventide::serde::defaulted;
 
 struct Basic {
     bool is_valid{};
@@ -63,7 +66,7 @@ struct Compound {
 struct Nullables {
     std::optional<int> opt_value;
     std::optional<std::string> opt_empty;
-    std::unique_ptr<Basic> heap_allocated;
+    defaulted<std::unique_ptr<Basic>> heap_allocated;
 
     auto operator==(const Nullables& other) const -> bool {
         if(opt_value != other.opt_value || opt_empty != other.opt_empty) {
@@ -87,7 +90,7 @@ enum class Role : std::uint8_t {
 
 struct ADTs {
     Role role{};
-    std::variant<std::monostate, int, std::string, Basic> multi_variant;
+    defaulted<std::variant<std::monostate, int, std::string, Basic>> multi_variant;
 
     auto operator==(const ADTs&) const -> bool = default;
 };
@@ -178,10 +181,10 @@ inline auto pointer_value_equal(const Ptr& lhs, const Ptr& rhs) -> bool {
 }
 
 struct SmartPointers {
-    std::unique_ptr<Basic> unique_basic;
-    std::shared_ptr<Basic> shared_basic;
-    std::shared_ptr<Basic> shared_empty;
-    std::vector<std::shared_ptr<Basic>> shared_list;
+    defaulted<std::unique_ptr<Basic>> unique_basic;
+    defaulted<std::shared_ptr<Basic>> shared_basic;
+    defaulted<std::shared_ptr<Basic>> shared_empty;
+    defaulted<std::vector<std::shared_ptr<Basic>>> shared_list;
     std::optional<std::shared_ptr<Basic>> opt_shared;
 
     auto operator==(const SmartPointers& other) const -> bool {
@@ -368,16 +371,14 @@ inline auto make_ultimate() -> Ultimate {
         .heterogeneous_tuple = std::tuple<int, bool, std::string>{7,       true,   "tuple"},
     };
 
-    out.nullables = Nullables{
-        .opt_value = 17,
-        .opt_empty = std::nullopt,
-        .heap_allocated = std::make_unique<Basic>(Basic{
-            .is_valid = false,
-            .i32 = 128,
-            .f64 = -9.75,
-            .text = "heap",
-        }),
-    };
+    out.nullables.opt_value = 17;
+    out.nullables.opt_empty = std::nullopt;
+    out.nullables.heap_allocated = std::make_unique<Basic>(Basic{
+        .is_valid = false,
+        .i32 = 128,
+        .f64 = -9.75,
+        .text = "heap",
+    });
 
     out.adts = ADTs{
         .role = Role::user,

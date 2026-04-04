@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "eventide/serde/serde/attrs/behavior.h"
+#include "eventide/serde/serde/attrs/schema.h"
 
 namespace eventide::serde {
 
@@ -69,6 +70,14 @@ struct annotation<T, Attrs...> : T {
     static_assert(detail::validate_attrs<std::tuple<Attrs...>>(), "Invalid attribute combination");
 
     using T::T;
+
+    template <typename U>
+        requires (!std::same_as<std::remove_cvref_t<U>, annotation> && std::assignable_from<T&, U>)
+    constexpr annotation& operator=(U&& raw) {
+        T::operator=(std::forward<U>(raw));
+        return *this;
+    }
+
     using annotated_type = T;
     using attrs = std::tuple<Attrs...>;
 };
@@ -118,5 +127,11 @@ template <typename L, annotated_type R>
 constexpr auto operator==(const L& lhs, const R& rhs) -> bool {
     return lhs == annotated_value(rhs);
 }
+
+/// Convenience alias: annotation<T, schema::default_value>.
+/// Marks a field as allowed to be absent during deserialization,
+/// keeping its default-constructed value. Like Rust's #[serde(default)].
+template <typename T>
+using defaulted = annotation<T, schema::default_value>;
 
 }  // namespace eventide::serde

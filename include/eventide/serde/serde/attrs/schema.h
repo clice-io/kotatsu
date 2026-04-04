@@ -113,6 +113,11 @@ struct skip {};
 
 struct flatten {};
 
+/// Allow a field to be absent during deserialization.
+/// When missing, the field keeps its default-constructed value.
+/// Equivalent to Rust's #[serde(default)].
+struct default_value {};
+
 template <fixed_string Name>
 struct rename {
     constexpr inline static std::string_view name = Name;
@@ -238,7 +243,8 @@ constexpr auto resolve_tag_names() {
 template <typename T>
 constexpr bool is_schema_attr_v =
     std::is_same_v<T, schema::skip> || std::is_same_v<T, schema::flatten> ||
-    is_rename_attr<T>::value || is_alias_attr<T>::value || is_literal_attr<T>::value ||
+    std::is_same_v<T, schema::default_value> || is_rename_attr<T>::value ||
+    is_alias_attr<T>::value || is_literal_attr<T>::value ||
     is_specialization_of<schema::rename_all, T> || std::is_same_v<T, schema::deny_unknown_fields> ||
     is_tagged_attr<T>::value;
 

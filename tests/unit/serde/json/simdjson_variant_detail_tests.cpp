@@ -718,13 +718,24 @@ TEST_CASE(in_optional) {
     EXPECT_FALSE(out.has_value());
 }
 
-TEST_CASE(default_field_values_preserved) {
-    // When a struct field is missing in the JSON, it should keep its default
+TEST_CASE(missing_required_field_rejects_tagged_candidate) {
+    // Missing non-optional field in a tagged variant should fail deserialization
     IntTagShape out{};
-    ASSERT_TRUE(from_json(R"({"type":"rect","width":5.0})", out).has_value());
-    auto& rect = std::get<Rect>(out);
-    EXPECT_EQ(rect.width, 5.0);
-    EXPECT_EQ(rect.height, 0.0);  // default
+    auto result = from_json(R"({"type":"rect","width":5.0})", out);
+    EXPECT_FALSE(result.has_value());
+}
+
+TEST_CASE(missing_required_field_rejects_untagged_variant_candidate) {
+    // In untagged variant probing, a missing required field should reject
+    // the candidate and try the next alternative.
+    // Circle has field "radius", Rect has "width" + "height".
+    // {"width": 5.0} is missing "height" so Rect should be rejected.
+    using UntaggedShape = std::variant<Rect, Circle>;
+    UntaggedShape out{};
+    // This should fail because Rect needs both width+height, and Circle
+    // doesn't match either (no "radius" field).
+    auto result = from_json(R"({"width":5.0})", out);
+    EXPECT_FALSE(result.has_value());
 }
 
 };  // TEST_SUITE(serde_variant_int_tag)

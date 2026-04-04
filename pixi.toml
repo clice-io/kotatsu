@@ -98,14 +98,14 @@ fd -H -e yaml -e yml -E pnpm-lock.yaml -x prettier --write && \
 fd -H "^\\.clang-(format|tidy)$" -x prettier --write --parser yaml
 """
 format = { depends-on = [
-  "format-cpp",
-  "format-python",
-  "format-lua",
-  "format-web",
-  "format-markdown",
-  "format-json",
-  "format-toml",
-  "format-yaml"
+    "format-cpp",
+    "format-python",
+    "format-lua",
+    "format-web",
+    "format-markdown",
+    "format-json",
+    "format-toml",
+    "format-yaml"
 ] }
 
 [feature.format.target.win-64.tasks]
@@ -129,7 +129,7 @@ cmd = "xmake config --clean --yes --mode={{ build_type }}{% if pixi.is_osx %} --
 [tasks.ci-xmake-build]
 args = ["build_type"]
 depends-on = [
-  { task = "ci-xmake-configure", args = ["{{ build_type }}"] },
-  { task = "xmake-build" },
-  { task = "xmake-test" },
+    { task = "ci-xmake-configure", args = ["{{ build_type }}"] },
+    { task = "xmake-build" },
+    { task = "xmake-test" },
 ]

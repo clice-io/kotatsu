@@ -13,6 +13,7 @@
 #include "eventide/zest/zest.h"
 #include "eventide/serde/json/deserializer.h"
 #include "eventide/serde/json/serializer.h"
+#include "eventide/serde/serde/annotation.h"
 #include "eventide/serde/serde/serde.h"
 
 namespace eventide::serde {
@@ -378,6 +379,81 @@ TEST_CASE(misc_behavior) {
 }
 
 };  // TEST_SUITE(serde_simdjson)
+
+// ═══════════════════════════════════════════════════════════════════════
+// Required field checks
+// ═══════════════════════════════════════════════════════════════════════
+
+struct StrictStruct {
+    int x{};
+    std::string name;
+};
+
+struct MixedStruct {
+    int required_field{};
+    std::optional<int> optional_field;
+    defaulted<std::string> defaulted_field;
+};
+
+struct AllOptional {
+    std::optional<int> a;
+    std::optional<std::string> b;
+};
+
+TEST_SUITE(serde_required_fields) {
+
+TEST_CASE(missing_required_field_fails) {
+    // "name" is required (non-optional), missing → error
+    auto result = from_json<StrictStruct>(R"({"x": 42})");
+    EXPECT_FALSE(result.has_value());
+}
+
+TEST_CASE(all_required_fields_present_succeeds) {
+    auto result = from_json<StrictStruct>(R"({"x": 42, "name": "hello"})");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->x, 42);
+    EXPECT_EQ(result->name, "hello");
+}
+
+TEST_CASE(empty_json_object_fails_if_required_fields) {
+    auto result = from_json<StrictStruct>(R"({})");
+    EXPECT_FALSE(result.has_value());
+}
+
+TEST_CASE(optional_field_can_be_absent) {
+    auto result = from_json<MixedStruct>(R"({"required_field": 7})");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->required_field, 7);
+    EXPECT_FALSE(result->optional_field.has_value());
+    EXPECT_EQ(result->defaulted_field, std::string{});
+}
+
+TEST_CASE(defaulted_field_can_be_absent) {
+    auto result = from_json<MixedStruct>(R"({"required_field": 1})");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->defaulted_field, std::string{});
+}
+
+TEST_CASE(defaulted_field_present_is_used) {
+    auto result = from_json<MixedStruct>(R"({"required_field": 1, "defaulted_field": "hi"})");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->defaulted_field, std::string{"hi"});
+}
+
+TEST_CASE(all_optional_struct_empty_object_succeeds) {
+    auto result = from_json<AllOptional>(R"({})");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_FALSE(result->a.has_value());
+    EXPECT_FALSE(result->b.has_value());
+}
+
+TEST_CASE(unknown_fields_ignored_by_default) {
+    auto result = from_json<StrictStruct>(R"({"x": 1, "name": "ok", "extra": true})");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->x, 1);
+}
+
+};  // TEST_SUITE(serde_required_fields)
 
 }  // namespace
 

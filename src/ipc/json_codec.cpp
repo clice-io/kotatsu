@@ -54,7 +54,10 @@ struct json_rpc_incoming {
     std::optional<protocol::RequestID> id;
     std::optional<std::string> method;
     std::optional<serde::RawValue> params;
-    std::optional<serde::RawValue> result;
+    // Not optional<RawValue> because "result": null is a valid success
+    // response — optional would lose it as nullopt. defaulted<RawValue>
+    // keeps absent → empty(), null → "null" text.
+    serde::defaulted<serde::RawValue> result;
     std::optional<Error> error;
 };
 
@@ -82,14 +85,14 @@ IncomingMessage JsonCodec::parse_message(std::string_view payload) {
 
     // No method + has id → response
     if(envelope->id.has_value()) {
-        auto has_result = envelope->result.has_value() && !envelope->result->empty();
+        auto has_result = !envelope->result.empty();
         auto has_error = envelope->error.has_value();
 
         if(has_error && !has_result) {
             return IncomingErrorResponse{*envelope->id, std::move(*envelope->error)};
         }
         if(has_result && !has_error) {
-            return IncomingResponse{*envelope->id, std::move(envelope->result->data)};
+            return IncomingResponse{*envelope->id, std::move(envelope->result.data)};
         }
         return IncomingErrorResponse{*envelope->id,
                                      Error(protocol::ErrorCode::InvalidRequest,

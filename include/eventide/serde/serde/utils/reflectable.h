@@ -295,9 +295,11 @@ constexpr auto serialize_reflectable(S& s, const V& v) -> std::expected<typename
     return s_struct.end();
 }
 
-/// True if field I of struct T may be absent from JSON without error.
-/// A field is optional if it is excluded (skip/flatten) or its underlying
-/// value type is std::optional<T>.
+/// True if field I of struct T may be absent during deserialization.
+/// A field is optional if:
+///   - excluded (skip/flatten)
+///   - its underlying type is std::optional<T>  (like Rust's Option<T>)
+///   - annotated with schema::default_value      (like Rust's #[serde(default)])
 template <typename T, std::size_t I>
 consteval bool is_field_optional() {
     if constexpr(schema::is_field_excluded<T, I>()) {
@@ -307,6 +309,10 @@ consteval bool is_field_optional() {
         // so strip cv before checking specialization.
         using field_t = std::remove_cv_t<refl::field_type<T, I>>;
         if constexpr(serde::annotated_type<field_t>) {
+            using attrs_t = typename field_t::attrs;
+            if constexpr(tuple_has_v<attrs_t, schema::default_value>) {
+                return true;
+            }
             return is_specialization_of<std::optional, typename field_t::annotated_type>;
         } else {
             return is_specialization_of<std::optional, field_t>;
@@ -379,6 +385,7 @@ constexpr auto deserialize_reflectable(D& d, V& v) -> std::expected<void, E> {
     }
 
     // Verify all required (non-optional, non-excluded) fields were present.
+    // This enables correct variant backtracking and catches malformed input.
     constexpr std::uint64_t required = required_field_mask<value_t>();
     if((seen_fields & required) != required) {
         return std::unexpected(E::type_mismatch);
