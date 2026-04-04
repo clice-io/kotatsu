@@ -298,9 +298,6 @@ target("eventide", function()
 			end
 		end
 
-		if #libraryfiles > 0 then
-			table.insert(libraryfiles, target:targetfile())
-		end
 		depend.on_changed(function()
 			progress.show(opt.progress, "${color.build.target}merging.$(mode) %s", path.filename(target:targetfile()))
 			if #libraryfiles > 0 then
