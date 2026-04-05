@@ -4,9 +4,9 @@
 #include <vector>
 
 #include "eventide/zest/zest.h"
-#include "eventide/serde/toml.h"
 #include "eventide/serde/serde/annotation.h"
 #include "eventide/serde/serde/attrs.h"
+#include "eventide/serde/toml.h"
 
 namespace eventide::serde {
 
@@ -30,6 +30,7 @@ struct strict_struct {
     int id = 0;
     std::string name;
 };
+
 using strict_payload = annotation<strict_struct, schema::deny_unknown_fields>;
 
 enum class color { red, green, blue };
@@ -130,8 +131,7 @@ zip = "wrong"
     ASSERT_FALSE(result.has_value());
     auto& e = result.error();
     // to_string format: "message at path (line L, column C)"
-    EXPECT_EQ(e.to_string(),
-              "type mismatch at addr.zip (line 6, column 7)");
+    EXPECT_EQ(e.to_string(), "type mismatch at addr.zip (line 6, column 7)");
 }
 
 };  // TEST_SUITE(serde_toml_error_message)

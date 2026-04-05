@@ -28,7 +28,7 @@ template <typename Config = config::default_config>
 class Deserializer {
 public:
     using config_type = Config;
-    using error_type = error;
+    using error_type = bincode::error;
 
     template <typename T>
     using result_t = std::expected<T, error_type>;
@@ -445,8 +445,7 @@ auto from_bytes(const std::vector<std::byte>& bytes, T& value) -> std::expected<
 }
 
 template <typename Config = config::default_config, typename T>
-auto from_bytes(const std::vector<std::uint8_t>& bytes, T& value)
-    -> std::expected<void, error> {
+auto from_bytes(const std::vector<std::uint8_t>& bytes, T& value) -> std::expected<void, error> {
     return from_bytes<Config>(std::span<const std::uint8_t>(bytes.data(), bytes.size()), value);
 }
 

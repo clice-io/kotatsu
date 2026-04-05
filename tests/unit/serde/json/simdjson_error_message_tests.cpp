@@ -29,6 +29,7 @@ struct strict_struct {
     int id = 0;
     std::string name;
 };
+
 using strict_payload = annotation<strict_struct, schema::deny_unknown_fields>;
 
 enum class color { red, green, blue };
@@ -119,8 +120,7 @@ TEST_CASE(to_string_combines_all) {
         from_json(R"({"name": "alice", "age": 30, "addr": {"city": "NY", "zip": "wrong"}})",
                   parsed);
     EXPECT_FALSE(status.has_value());
-    EXPECT_EQ(status.error().to_string(),
-              "type mismatch at addr.zip (line 1, column 60)");
+    EXPECT_EQ(status.error().to_string(), "type mismatch at addr.zip (line 1, column 60)");
 }
 
 };  // TEST_SUITE(serde_simdjson_error_message)

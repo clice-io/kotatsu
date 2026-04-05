@@ -81,7 +81,7 @@ template <typename Config = config::default_config>
 class Deserializer {
 public:
     using config_type = Config;
-    using error_type = error;
+    using error_type = toml::error;
 
     template <typename T>
     using result_t = std::expected<T, error_type>;
