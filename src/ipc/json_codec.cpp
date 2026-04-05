@@ -66,8 +66,9 @@ struct json_rpc_incoming {
 IncomingMessage JsonCodec::parse_message(std::string_view payload) {
     auto envelope = serde::json::parse<json_rpc_incoming>(payload);
     if(!envelope) {
-        return IncomingParseError{Error(protocol::ErrorCode::ParseError,
-                                        std::string(serde::json::error_message(envelope.error().kind)))};
+        return IncomingParseError{
+            Error(protocol::ErrorCode::ParseError,
+                  std::string(serde::json::error_message(envelope.error().kind)))};
     }
 
     auto raw_params =

@@ -32,9 +32,9 @@ struct basic_error {
     std::optional<source_location> location;
 
     // --- serde_error concept compatibility ---
-    static constexpr Kind type_mismatch = Kind::type_mismatch;
-    static constexpr Kind number_out_of_range = Kind::number_out_of_range;
-    static constexpr Kind invalid_state = Kind::invalid_state;
+    constexpr static Kind type_mismatch = Kind::type_mismatch;
+    constexpr static Kind number_out_of_range = Kind::number_out_of_range;
+    constexpr static Kind invalid_state = Kind::invalid_state;
 
     // --- constructors ---
     basic_error() : kind(Kind::ok) {}
@@ -45,8 +45,7 @@ struct basic_error {
 
     // --- semantic factory methods ---
     static basic_error missing_field(std::string_view field_name) {
-        return {Kind::type_mismatch,
-                "missing required field '" + std::string(field_name) + "'"};
+        return {Kind::type_mismatch, "missing required field '" + std::string(field_name) + "'"};
     }
 
     static basic_error unknown_field(std::string_view field_name) {
@@ -64,8 +63,8 @@ struct basic_error {
 
     static basic_error invalid_length(std::size_t expected, std::size_t got) {
         return {Kind::type_mismatch,
-                "invalid length: expected " + std::to_string(expected) +
-                    ", got " + std::to_string(got)};
+                "invalid length: expected " + std::to_string(expected) + ", got " +
+                    std::to_string(got)};
     }
 
     static basic_error custom(std::string_view msg) {

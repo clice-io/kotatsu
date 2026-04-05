@@ -158,7 +158,8 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
     auto expect_next_key = [&](std::string_view expected) -> std::expected<void, E> {
         ETD_EXPECTED_TRY_V(auto key, d_struct.next_key());
         if(!key.has_value() || *key != expected) {
-            return std::unexpected(E::custom("expected adjacent tag field '" + std::string(expected) + "'"));
+            return std::unexpected(
+                E::custom("expected adjacent tag field '" + std::string(expected) + "'"));
         }
         return {};
     };

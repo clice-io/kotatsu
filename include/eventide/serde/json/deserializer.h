@@ -843,8 +843,8 @@ private:
 
     error_type current_error() {
         error_type err = (last_error != simdjson::SUCCESS)
-            ? error_type(json::make_error(last_error))
-            : error_type(error_kind::tape_error);
+                             ? error_type(json::make_error(last_error))
+                             : error_type(error_kind::tape_error);
         err.location = compute_location();
         return err;
     }
