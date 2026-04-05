@@ -337,7 +337,7 @@ private:
         return true;
     }
 
-    void mark_invalid(error_kind error = error_kind::tape_error) {
+    void mark_invalid(error_kind error = error_kind::invalid_state) {
         is_valid = false;
         if(last_error == error_kind::ok) {
             last_error = error;
