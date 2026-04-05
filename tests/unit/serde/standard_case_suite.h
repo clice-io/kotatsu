@@ -116,7 +116,7 @@ struct TreeNode {
             if(static_cast<bool>(lhs_child) != static_cast<bool>(rhs_child)) {
                 return false;
             }
-            if(lhs_child && *lhs_child != *rhs_child) {
+            if(lhs_child && !(*lhs_child == *rhs_child)) {
                 return false;
             }
         }
