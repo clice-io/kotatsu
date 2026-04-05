@@ -845,7 +845,10 @@ private:
         error_type err = (last_error != simdjson::SUCCESS)
                              ? error_type(json::make_error(last_error))
                              : error_type(error_kind::tape_error);
-        err.location = compute_location();
+        auto loc = compute_location();
+        if(loc) {
+            err.set_location(*loc);
+        }
         return err;
     }
 

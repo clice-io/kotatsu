@@ -51,7 +51,7 @@ zip = 10001
 )");
     ASSERT_FALSE(result.has_value());
     auto& e = result.error();
-    EXPECT_EQ(e.message, "missing required field 'name'");
+    EXPECT_EQ(e.message(), "missing required field 'name'");
     EXPECT_EQ(e.kind, toml::error_kind::type_mismatch);
 }
 
@@ -63,7 +63,7 @@ extra = true
 )");
     ASSERT_FALSE(result.has_value());
     auto& e = result.error();
-    EXPECT_EQ(e.message, "unknown field 'extra'");
+    EXPECT_EQ(e.message(), "unknown field 'extra'");
     EXPECT_EQ(e.kind, toml::error_kind::type_mismatch);
 }
 
@@ -78,7 +78,7 @@ zip = "wrong"
     ASSERT_FALSE(result.has_value());
     auto& e = result.error();
     EXPECT_EQ(e.format_path(), "addr.zip");
-    EXPECT_EQ(e.message, "type mismatch");
+    EXPECT_EQ(e.message(), "type mismatch");
     EXPECT_EQ(e.kind, toml::error_kind::type_mismatch);
 }
 
@@ -103,7 +103,7 @@ TEST_CASE(enum_string_error_message) {
     auto status = from_toml(*table, parsed);
     ASSERT_FALSE(status.has_value());
     auto& e = status.error();
-    EXPECT_EQ(e.message, "unknown enum string value 'purple'");
+    EXPECT_EQ(e.message(), "unknown enum string value 'purple'");
     EXPECT_EQ(e.kind, toml::error_kind::type_mismatch);
 }
 
@@ -114,10 +114,10 @@ age = "not_a_number"
 )");
     ASSERT_FALSE(result.has_value());
     auto& e = result.error();
-    EXPECT_TRUE(e.location.has_value());
+    EXPECT_TRUE(e.location().has_value());
     // "age" is on line 3 (line 1 is empty after the raw string opening)
-    EXPECT_EQ(e.location->line, 3);
-    EXPECT_EQ(e.location->column, 7);
+    EXPECT_EQ(e.location()->line, 3);
+    EXPECT_EQ(e.location()->column, 7);
 }
 
 TEST_CASE(to_string_combines_all) {

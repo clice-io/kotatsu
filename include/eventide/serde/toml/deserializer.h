@@ -541,8 +541,11 @@ private:
     void mark_invalid(error_type error = error_type::invalid_state) {
         is_valid = false;
         if(last_error == error_type::invalid_state || error != error_type::invalid_state) {
-            if(!error.location) {
-                error.location = source_from_node(last_accessed_node);
+            if(!error.location()) {
+                auto loc = source_from_node(last_accessed_node);
+                if(loc) {
+                    error.set_location(*loc);
+                }
             }
             last_error = error;
         }

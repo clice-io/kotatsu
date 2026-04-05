@@ -32,6 +32,6 @@ constexpr auto error_message(error_kind error) noexcept -> std::string_view {
     }
 }
 
-using error = eventide::serde::basic_error<error_kind>;
+using error = eventide::serde::serde_error<error_kind>;
 
 }  // namespace eventide::serde::toml

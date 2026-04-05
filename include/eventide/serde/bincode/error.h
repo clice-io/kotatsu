@@ -33,6 +33,6 @@ constexpr std::string_view error_message(error_kind error) {
     return "invalid_state";
 }
 
-using error = eventide::serde::basic_error<error_kind>;
+using error = eventide::serde::serde_error<error_kind>;
 
 }  // namespace eventide::serde::bincode

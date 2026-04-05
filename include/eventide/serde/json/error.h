@@ -115,6 +115,6 @@ constexpr auto make_write_error(yyjson_write_code error) noexcept -> error_kind 
 }
 #endif
 
-using error = eventide::serde::basic_error<error_kind>;
+using error = eventide::serde::serde_error<error_kind>;
 
 }  // namespace eventide::serde::json
