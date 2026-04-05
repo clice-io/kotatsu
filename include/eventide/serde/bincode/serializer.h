@@ -271,7 +271,7 @@ private:
 };
 
 template <typename Config = config::default_config, typename T>
-auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, error_kind> {
+auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, error> {
     Serializer<Config> serializer;
     ETD_EXPECTED_TRY(serde::serialize(serializer, value));
     if(!serializer.valid()) {

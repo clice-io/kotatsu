@@ -68,8 +68,8 @@ public:
     Result<std::string> serialize_value(const T& value) {
         auto bytes = serde::bincode::to_bytes(value);
         if(!bytes) {
-            return outcome_error(Error(protocol::ErrorCode::InternalError,
-                                       std::string(serde::bincode::error_message(bytes.error()))));
+            return outcome_error(
+                Error(protocol::ErrorCode::InternalError, std::string(bytes.error().message())));
         }
         return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
     }
@@ -89,8 +89,7 @@ public:
         T value{};
         auto status = serde::bincode::from_bytes(bytes_span, value);
         if(!status) {
-            return outcome_error(
-                Error(code, std::string(serde::bincode::error_message(status.error().kind))));
+            return outcome_error(Error(code, std::string(status.error().message())));
         }
         return value;
     }

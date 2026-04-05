@@ -41,8 +41,8 @@ using bincode_envelope =
 Result<std::string> encode_envelope(const bincode_envelope& envelope) {
     auto bytes = serde::bincode::to_bytes(envelope);
     if(!bytes) {
-        return outcome_error(Error(protocol::ErrorCode::InternalError,
-                                   std::string(serde::bincode::error_message(bytes.error()))));
+        return outcome_error(
+            Error(protocol::ErrorCode::InternalError, std::string(bytes.error().message())));
     }
     return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
 }
@@ -57,8 +57,7 @@ IncomingMessage BincodeCodec::parse_message(std::string_view payload) {
     auto status = serde::bincode::from_bytes(bytes_span, envelope);
     if(!status) {
         return IncomingParseError{
-            Error(protocol::ErrorCode::ParseError,
-                  std::string(serde::bincode::error_message(status.error().kind)))};
+            Error(protocol::ErrorCode::ParseError, std::string(status.error().message()))};
     }
 
     return std::visit(

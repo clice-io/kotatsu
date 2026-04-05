@@ -372,7 +372,7 @@ private:
 
 template <typename Config = config::default_config, typename T>
 auto to_json(const T& value, std::optional<std::size_t> initial_capacity = std::nullopt)
-    -> std::expected<std::string, error_kind> {
+    -> std::expected<std::string, error> {
     Serializer<Config> serializer =
         initial_capacity.has_value() ? Serializer<Config>(*initial_capacity) : Serializer<Config>();
     ETD_EXPECTED_TRY(serde::serialize(serializer, value));

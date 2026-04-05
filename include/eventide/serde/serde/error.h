@@ -182,9 +182,4 @@ private:
     }
 };
 
-template <typename Kind>
-constexpr auto error_message(const serde_error<Kind>& e) -> std::string_view {
-    return error_message(e.kind);
-}
-
 }  // namespace eventide::serde

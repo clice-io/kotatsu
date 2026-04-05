@@ -15,8 +15,7 @@ Result<std::string>
                          protocol::ErrorCode code = protocol::ErrorCode::InternalError) {
     auto serialized = serde::json::to_string(value);
     if(!serialized) {
-        return outcome_error(
-            Error(code, std::string(serde::json::error_message(serialized.error().kind))));
+        return outcome_error(Error(code, std::string(serialized.error().message())));
     }
     return std::move(*serialized);
 }
@@ -67,8 +66,7 @@ IncomingMessage JsonCodec::parse_message(std::string_view payload) {
     auto envelope = serde::json::parse<json_rpc_incoming>(payload);
     if(!envelope) {
         return IncomingParseError{
-            Error(protocol::ErrorCode::ParseError,
-                  std::string(serde::json::error_message(envelope.error().kind)))};
+            Error(protocol::ErrorCode::ParseError, std::string(envelope.error().message()))};
     }
 
     auto raw_params =

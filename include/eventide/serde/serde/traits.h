@@ -89,16 +89,15 @@ concept tuple_like = requires { typename std::tuple_size<std::remove_cvref_t<T>>
 template <typename A, typename T, typename E>
 concept result_as = std::same_as<A, std::expected<T, E>>;
 
-/// Error concept: all serde error types must provide these named enumerators
-/// and an ADL-visible `error_message()` function. Modeled after Rust serde's
-/// `de::Error` / `ser::Error` traits — backends keep their own concrete types
-/// but the core framework can construct common errors without if-constexpr probing.
+/// Error concept: all serde error types must provide these named enumerators.
+/// Modeled after Rust serde's `de::Error` / `ser::Error` traits — backends keep
+/// their own concrete types but the core framework can construct common errors
+/// without if-constexpr probing.
 template <typename E>
 concept serde_error_like = requires {
     { E::type_mismatch } -> std::convertible_to<E>;
     { E::number_out_of_range } -> std::convertible_to<E>;
     { E::invalid_state } -> std::convertible_to<E>;
-    { error_message(E{}) } -> std::convertible_to<std::string_view>;
 };
 
 template <typename S,

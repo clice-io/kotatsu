@@ -427,7 +427,7 @@ public:
 };
 
 template <typename Config = config::default_config, typename T>
-auto to_toml(const T& value) -> std::expected<::toml::table, error_kind> {
+auto to_toml(const T& value) -> std::expected<::toml::table, error> {
     Serializer<Config> serializer;
     return serializer.dom(value);
 }
