@@ -67,7 +67,7 @@ extra = true
     EXPECT_EQ(e.kind, toml::error_kind::type_mismatch);
 }
 
-TEST_CASE(nested_field_type_error_path) {
+TEST_CASE(nested_field_error_path) {
     auto result = parse<person>(R"(
 name = "alice"
 age = 30

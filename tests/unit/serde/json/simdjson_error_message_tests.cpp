@@ -57,7 +57,7 @@ TEST_CASE(unknown_field_denied) {
     EXPECT_EQ(status.error().message(), "unknown field 'extra'");
 }
 
-TEST_CASE(nested_field_type_error_path) {
+TEST_CASE(nested_field_error_path) {
     person parsed{};
     auto status =
         from_json(R"({"name": "alice", "age": 30, "addr": {"city": "NY", "zip": "wrong"}})",
@@ -90,7 +90,7 @@ TEST_CASE(enum_string_error_message) {
     EXPECT_EQ(status.error().message(), "unknown enum string value 'yellow'");
 }
 
-TEST_CASE(number_out_of_range_message) {
+TEST_CASE(number_out_of_range) {
     std::uint8_t parsed = 0;
     auto status = from_json("300", parsed);
     EXPECT_FALSE(status.has_value());

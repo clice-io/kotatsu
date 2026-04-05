@@ -36,7 +36,7 @@ struct serde_error {
     serde_error(Kind k) : kind(k) {}
 
     serde_error(Kind k, std::string msg) :
-        kind(k), detail_(std::make_unique<detail>(std::move(msg))) {}
+        kind(k), detail(std::make_unique<detail_data>(std::move(msg))) {}
 
     // Move
     serde_error(serde_error&&) noexcept = default;
@@ -44,15 +44,15 @@ struct serde_error {
 
     // Copy (deep-copies detail if present)
     serde_error(const serde_error& other) : kind(other.kind) {
-        if(other.detail_) {
-            detail_ = std::make_unique<detail>(*other.detail_);
+        if(other.detail) {
+            detail = std::make_unique<detail_data>(*other.detail);
         }
     }
 
     serde_error& operator=(const serde_error& other) {
         if(this != &other) {
             kind = other.kind;
-            detail_ = other.detail_ ? std::make_unique<detail>(*other.detail_) : nullptr;
+            detail = other.detail ? std::make_unique<detail_data>(*other.detail) : nullptr;
         }
         return *this;
     }
@@ -91,44 +91,44 @@ struct serde_error {
     // --- path manipulation (lazily allocates detail) ---
     void prepend_field(std::string_view name) {
         ensure_detail();
-        detail_->path.insert(detail_->path.begin(), std::string(name));
+        detail->path.insert(detail->path.begin(), std::string(name));
     }
 
     void prepend_index(std::size_t index) {
         ensure_detail();
-        detail_->path.insert(detail_->path.begin(), index);
+        detail->path.insert(detail->path.begin(), index);
     }
 
     // --- location ---
     std::optional<source_location> location() const {
-        return detail_ ? detail_->location : std::nullopt;
+        return detail ? detail->location : std::nullopt;
     }
 
     void set_location(source_location loc) {
         ensure_detail();
-        detail_->location = loc;
+        detail->location = loc;
     }
 
     // --- accessors ---
     std::string_view message() const {
-        return detail_ ? std::string_view(detail_->message) : error_message(kind);
+        return detail ? std::string_view(detail->message) : error_message(kind);
     }
 
     // --- formatting ---
     std::string format_path() const {
-        if(!detail_) {
+        if(!detail) {
             return {};
         }
         std::string result;
-        for(std::size_t i = 0; i < detail_->path.size(); ++i) {
-            if(auto* field = std::get_if<std::string>(&detail_->path[i])) {
-                if(i > 0 && std::holds_alternative<std::string>(detail_->path[i - 1])) {
+        for(std::size_t i = 0; i < detail->path.size(); ++i) {
+            if(auto* field = std::get_if<std::string>(&detail->path[i])) {
+                if(i > 0 && std::holds_alternative<std::string>(detail->path[i - 1])) {
                     result += '.';
                 }
                 result += *field;
             } else {
                 result += '[';
-                result += std::to_string(std::get<std::size_t>(detail_->path[i]));
+                result += std::to_string(std::get<std::size_t>(detail->path[i]));
                 result += ']';
             }
         }
@@ -163,21 +163,21 @@ struct serde_error {
     }
 
 private:
-    struct detail {
+    struct detail_data {
         std::string message;
         std::vector<path_segment> path;
         std::optional<source_location> location;
 
-        detail() = default;
+        detail_data() = default;
 
-        explicit detail(std::string msg) : message(std::move(msg)) {}
+        explicit detail_data(std::string msg) : message(std::move(msg)) {}
     };
 
-    std::unique_ptr<detail> detail_;
+    std::unique_ptr<detail_data> detail;
 
     void ensure_detail() {
-        if(!detail_) {
-            detail_ = std::make_unique<detail>(std::string(error_message(kind)));
+        if(!detail) {
+            detail = std::make_unique<detail_data>(std::string(error_message(kind)));
         }
     }
 };
