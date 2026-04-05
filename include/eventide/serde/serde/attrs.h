@@ -42,6 +42,6 @@ template <typename T>
 using skip_if_empty = annotation<T, behavior::skip_if<pred::empty>>;
 
 template <typename T>
-using skip_if_default = annotation<T, behavior::skip_if<pred::default_value>>;
+using skip_if_default = annotation<T, behavior::skip_if<pred::default_value>, schema::default_value>;
 
 }  // namespace eventide::serde
