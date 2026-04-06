@@ -34,7 +34,7 @@ struct event_loop::self {
 
 // ── relay implementation ────────────────────────────────────────────
 
-struct relay_impl {
+struct relay::self {
     uv_async_t async = {};
     std::atomic<bool> sent{false};
     bool has_callback = false;
@@ -42,22 +42,22 @@ struct relay_impl {
 };
 
 static void on_relay(uv_async_t* handle) {
-    auto* p = static_cast<relay_impl*>(handle->data);
+    auto* p = static_cast<struct relay::self*>(handle->data);
     if(p->has_callback) {
         p->callback();
     }
     // Close the handle, releasing the loop hold. The close callback
     // frees the impl once libuv is done with the handle.
-    uv::close(*handle, [](uv_handle_t* h) { delete static_cast<relay_impl*>(h->data); });
+    uv::close(*handle, [](uv_handle_t* h) { delete static_cast<struct relay::self*>(h->data); });
 }
 
-relay::relay(relay_impl* p) noexcept : impl_(p) {}
+relay::relay(struct relay::self* p) noexcept : self(p) {}
 
-relay::relay(relay&& other) noexcept : impl_(std::exchange(other.impl_, nullptr)) {}
+relay::relay(relay&& other) noexcept : self(std::exchange(other.self, nullptr)) {}
 
 relay& relay::operator=(relay&& other) noexcept {
     if(this != &other) {
-        auto* old = std::exchange(impl_, std::exchange(other.impl_, nullptr));
+        auto* old = std::exchange(self, std::exchange(other.self, nullptr));
         if(old) {
             // Release the old handle by triggering an empty send.
             relay tmp(old);
@@ -68,17 +68,17 @@ relay& relay::operator=(relay&& other) noexcept {
 }
 
 relay::~relay() {
-    if(impl_) {
+    if(self) {
         // The relay was never sent; close the handle to release the loop hold.
-        impl_->has_callback = false;
-        impl_->sent.store(true, std::memory_order_release);
-        uv::async_send(impl_->async);
-        impl_ = nullptr;
+        self->has_callback = false;
+        self->sent.store(true, std::memory_order_release);
+        uv::async_send(self->async);
+        self = nullptr;
     }
 }
 
 void relay::send(function<void()> callback) {
-    auto* p = std::exchange(impl_, nullptr);
+    auto* p = std::exchange(self, nullptr);
     if(!p) {
         return;  // Already sent or moved-from.
     }
@@ -92,7 +92,7 @@ void relay::send(function<void()> callback) {
 }
 
 relay event_loop::create_relay() {
-    auto* p = new relay_impl();
+    auto* p = new struct relay::self();
     uv::async_init(self->loop, p->async, on_relay);
     p->async.data = p;
     // The async handle is ref'd by default, keeping the loop alive.

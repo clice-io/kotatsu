@@ -24,7 +24,7 @@ TEST_CASE(relay_keeps_loop_alive) {
     EXPECT_TRUE(called.load());
 }
 
-TEST_CASE(relay_send_from_another_thread) {
+TEST_CASE(relay_cross_thread_send) {
     std::atomic<int> value{0};
 
     auto t = [&]() -> task<> {

@@ -38,8 +38,6 @@ class task;
 ///     releases its hold on the loop.
 ///   - If the relay is destroyed without calling send(), it also
 ///     releases its hold on the loop.
-struct relay_impl;
-
 class relay {
 public:
     relay(const relay&) = delete;
@@ -57,12 +55,15 @@ public:
     /// May be called at most once; subsequent calls are no-ops.
     void send(function<void()> callback);
 
+    /// Opaque implementation detail. Defined in loop.cpp.
+    struct self;
+
 private:
     friend class event_loop;
 
-    explicit relay(relay_impl* p) noexcept;
+    explicit relay(self* p) noexcept;
 
-    relay_impl* impl_;
+    self* self;
 };
 
 /// Runs an event loop backed by libuv.
