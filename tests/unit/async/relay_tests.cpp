@@ -1,4 +1,3 @@
-#include <atomic>
 #include <thread>
 
 #include "loop_fixture.h"
@@ -13,30 +12,29 @@ TEST_SUITE(event_loop_relay, loop_fixture) {
 TEST_CASE(relay_keeps_loop_alive) {
     // A relay should keep the loop alive even with no other active handles.
     // Without the relay, the loop would exit immediately.
-    std::atomic<bool> called{false};
+    bool called = false;
 
     auto r = loop.create_relay();
-    // Post from same thread after a short delay via another thread.
-    std::thread worker([&, r = std::move(r)]() mutable { r.send([&] { called.store(true); }); });
+    std::thread worker([&, r = std::move(r)]() mutable { r.send([&] { called = true; }); });
 
     loop.run();
     worker.join();
-    EXPECT_TRUE(called.load());
+    EXPECT_TRUE(called);
 }
 
 TEST_CASE(relay_cross_thread_send) {
-    std::atomic<int> value{0};
+    int value = 0;
 
     auto t = [&]() -> task<> {
         auto r = loop.create_relay();
-        std::thread([&, r = std::move(r)]() mutable { r.send([&] { value.store(42); }); }).detach();
+        std::thread([&, r = std::move(r)]() mutable { r.send([&] { value = 42; }); }).detach();
         co_await sleep(100, loop);
         loop.stop();
     };
 
     auto task = t();
     schedule_all(task);
-    EXPECT_EQ(value.load(), 42);
+    EXPECT_EQ(value, 42);
 }
 
 TEST_CASE(relay_destroyed_without_send) {
@@ -59,17 +57,17 @@ TEST_CASE(relay_destroyed_without_send) {
 }
 
 TEST_CASE(relay_move_semantics) {
-    std::atomic<bool> called{false};
+    bool called = false;
 
     auto r1 = loop.create_relay();
     auto r2 = std::move(r1);
 
     // r1 is moved-from, send on r2 should work.
-    std::thread worker([&, r = std::move(r2)]() mutable { r.send([&] { called.store(true); }); });
+    std::thread worker([&, r = std::move(r2)]() mutable { r.send([&] { called = true; }); });
 
     loop.run();
     worker.join();
-    EXPECT_TRUE(called.load());
+    EXPECT_TRUE(called);
 }
 
 TEST_CASE(relay_duplicate_send) {
