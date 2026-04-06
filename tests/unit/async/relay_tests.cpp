@@ -72,6 +72,19 @@ TEST_CASE(relay_move_semantics) {
     EXPECT_TRUE(called.load());
 }
 
+TEST_CASE(relay_duplicate_send) {
+    // Only the first send() should take effect; subsequent calls are no-ops.
+    int counter = 0;
+
+    auto r = loop.create_relay();
+    r.send([&] { counter++; });
+    r.send([&] { counter++; });
+    r.send([&] { counter++; });
+
+    loop.run();
+    EXPECT_EQ(counter, 1);
+}
+
 TEST_CASE(relay_send_with_noop) {
     // Sending a no-op callback should just release the loop hold
     // without crashing.
