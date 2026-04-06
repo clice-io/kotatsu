@@ -50,9 +50,9 @@ public:
 
     /// Posts a callback to the event loop and releases the loop hold.
     ///
-    /// Thread-safe: can be called from any thread. The callback will be
-    /// invoked on the event loop thread during a subsequent iteration.
-    /// May be called at most once; subsequent calls are no-ops.
+    /// Can be called from any thread. Only the first call takes effect;
+    /// subsequent calls from the same thread are safe no-ops.
+    /// Concurrent calls from multiple threads are undefined behavior.
     void send(function<void()> callback);
 
     /// Opaque implementation detail. Defined in loop.cpp.
