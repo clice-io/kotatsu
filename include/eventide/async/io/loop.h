@@ -33,9 +33,9 @@ class task;
 /// Thread safety:
 ///   - Construction (create_relay) is NOT thread-safe; call it on the
 ///     loop thread before handing the relay off.
-///   - send() IS thread-safe; it can be called from any thread.
-///   - send() may be called at most once. After send(), the relay
-///     releases its hold on the loop.
+///   - send() can be called from any thread, but must be called at most
+///     once. Concurrent calls to send() are undefined behavior.
+///   - After send(), the relay releases its hold on the loop.
 ///   - If the relay is destroyed without calling send(), it also
 ///     releases its hold on the loop.
 class relay {

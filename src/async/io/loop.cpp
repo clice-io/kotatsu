@@ -36,7 +36,6 @@ struct event_loop::self {
 
 struct relay::self {
     uv_async_t async = {};
-    std::atomic<bool> sent{false};
     bool has_callback = false;
     function<void()> callback{+[] {}};
 };
@@ -71,7 +70,6 @@ relay::~relay() {
     if(self) {
         // The relay was never sent; close the handle to release the loop hold.
         self->has_callback = false;
-        self->sent.store(true, std::memory_order_release);
         uv::async_send(self->async);
         self = nullptr;
     }
@@ -81,10 +79,6 @@ void relay::send(function<void()> callback) {
     auto* p = std::exchange(self, nullptr);
     if(!p) {
         return;  // Already sent or moved-from.
-    }
-    // Only the first send() takes effect; guard against concurrent calls.
-    if(p->sent.exchange(true, std::memory_order_acq_rel)) {
-        return;
     }
     p->has_callback = true;
     p->callback = std::move(callback);

@@ -58,24 +58,6 @@ TEST_CASE(relay_destroyed_without_send) {
     EXPECT_TRUE(task_finished);
 }
 
-TEST_CASE(relay_send_called_twice) {
-    // Only the first send() should take effect.
-    std::atomic<int> counter{0};
-
-    auto r = loop.create_relay();
-    // Capture a copy-safe wrapper: move relay into a shared_ptr so both
-    // threads can attempt send().
-    auto shared = std::make_shared<relay>(std::move(r));
-
-    std::thread t1([&, shared]() { shared->send([&] { counter.fetch_add(1); }); });
-    std::thread t2([&, shared]() { shared->send([&] { counter.fetch_add(1); }); });
-
-    loop.run();
-    t1.join();
-    t2.join();
-    EXPECT_EQ(counter.load(), 1);
-}
-
 TEST_CASE(relay_move_semantics) {
     std::atomic<bool> called{false};
 
