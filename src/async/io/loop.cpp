@@ -32,6 +32,75 @@ struct event_loop::self {
     std::atomic<post_node*> post_head{nullptr};
 };
 
+// ── relay implementation ────────────────────────────────────────────
+
+struct relay_impl {
+    uv_async_t async = {};
+    std::atomic<bool> sent{false};
+    bool has_callback = false;
+    function<void()> callback{+[] {}};
+};
+
+static void on_relay(uv_async_t* handle) {
+    auto* p = static_cast<relay_impl*>(handle->data);
+    if(p->has_callback) {
+        p->callback();
+    }
+    // Close the handle, releasing the loop hold. The close callback
+    // frees the impl once libuv is done with the handle.
+    uv::close(*handle, [](uv_handle_t* h) { delete static_cast<relay_impl*>(h->data); });
+}
+
+relay::relay(relay_impl* p) noexcept : impl_(p) {}
+
+relay::relay(relay&& other) noexcept : impl_(std::exchange(other.impl_, nullptr)) {}
+
+relay& relay::operator=(relay&& other) noexcept {
+    if(this != &other) {
+        auto* old = std::exchange(impl_, std::exchange(other.impl_, nullptr));
+        if(old) {
+            // Release the old handle by triggering an empty send.
+            relay tmp(old);
+            tmp.send([] {});
+        }
+    }
+    return *this;
+}
+
+relay::~relay() {
+    if(impl_) {
+        // The relay was never sent; close the handle to release the loop hold.
+        impl_->has_callback = false;
+        impl_->sent.store(true, std::memory_order_release);
+        uv::async_send(impl_->async);
+        impl_ = nullptr;
+    }
+}
+
+void relay::send(function<void()> callback) {
+    auto* p = std::exchange(impl_, nullptr);
+    if(!p) {
+        return;  // Already sent or moved-from.
+    }
+    // Only the first send() takes effect; guard against concurrent calls.
+    if(p->sent.exchange(true, std::memory_order_acq_rel)) {
+        return;
+    }
+    p->has_callback = true;
+    p->callback = std::move(callback);
+    uv::async_send(p->async);
+}
+
+relay event_loop::create_relay() {
+    auto* p = new relay_impl();
+    uv::async_init(self->loop, p->async, on_relay);
+    p->async.data = p;
+    // The async handle is ref'd by default, keeping the loop alive.
+    return relay(p);
+}
+
+// ── event_loop ──────────────────────────────────────────────────────
+
 static thread_local event_loop* current_loop = nullptr;
 
 event_loop& event_loop::current() {
