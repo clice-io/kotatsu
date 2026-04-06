@@ -16,6 +16,56 @@ class async_node;
 template <typename T = void, typename E = void, typename C = void>
 class task;
 
+/// A one-shot relay for posting a callback to an event loop from an
+/// external context (e.g. a system async API callback).
+///
+/// Unlike event_loop::post(), creating a relay keeps the event loop alive
+/// until the relay is used or destroyed. This is useful when you call a
+/// system async API and need the loop to stay running until the API's
+/// callback fires.
+///
+/// Usage:
+///   auto relay = loop.create_relay();   // keeps loop alive
+///   some_system_async_api([relay = std::move(relay)](auto result) mutable {
+///       relay.send([result] { /* handle result on loop thread */ });
+///   });
+///
+/// Thread safety:
+///   - Construction (create_relay) is NOT thread-safe; call it on the
+///     loop thread before handing the relay off.
+///   - send() can be called from any thread, but must be called at most
+///     once. Concurrent calls to send() are undefined behavior.
+///   - After send(), the relay releases its hold on the loop.
+///   - If the relay is destroyed without calling send(), it also
+///     releases its hold on the loop.
+class relay {
+public:
+    relay(const relay&) = delete;
+    relay& operator=(const relay&) = delete;
+
+    relay(relay&& other) noexcept;
+    relay& operator=(relay&& other) noexcept;
+
+    ~relay();
+
+    /// Posts a callback to the event loop and releases the loop hold.
+    ///
+    /// Can be called from any thread. Only the first call takes effect;
+    /// subsequent calls from the same thread are safe no-ops.
+    /// Concurrent calls from multiple threads are undefined behavior.
+    void send(function<void()> callback);
+
+    /// Opaque implementation detail. Defined in loop.cpp.
+    struct self;
+
+private:
+    friend class event_loop;
+
+    explicit relay(self* p) noexcept;
+
+    self* self;
+};
+
 /// Runs an event loop backed by libuv.
 ///
 /// All async operations (tasks, timers, I/O) require an event_loop.
@@ -55,6 +105,13 @@ public:
     /// invoked on the event loop thread during a subsequent iteration.
     /// Internally uses uv_async_t to wake up the loop.
     void post(function<void()> callback);
+
+    /// Creates a relay that keeps this event loop alive until used or destroyed.
+    ///
+    /// NOT thread-safe: must be called on the loop thread. The returned relay
+    /// object can then be moved to another thread or captured in a system API
+    /// callback, where relay::send() can be called thread-safely.
+    relay create_relay();
 
     /// Schedules a task for execution on this event loop.
     /// If the task is passed by rvalue (temporary), the loop takes ownership

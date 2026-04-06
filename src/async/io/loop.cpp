@@ -32,6 +32,69 @@ struct event_loop::self {
     std::atomic<post_node*> post_head{nullptr};
 };
 
+// ── relay implementation ────────────────────────────────────────────
+
+struct relay::self {
+    uv_async_t async = {};
+    bool has_callback = false;
+    function<void()> callback{+[] {}};
+};
+
+static void on_relay(uv_async_t* handle) {
+    auto* p = static_cast<struct relay::self*>(handle->data);
+    if(p->has_callback) {
+        p->callback();
+    }
+    // Close the handle, releasing the loop hold. The close callback
+    // frees the impl once libuv is done with the handle.
+    uv::close(*handle, [](uv_handle_t* h) { delete static_cast<struct relay::self*>(h->data); });
+}
+
+relay::relay(struct relay::self* p) noexcept : self(p) {}
+
+relay::relay(relay&& other) noexcept : self(std::exchange(other.self, nullptr)) {}
+
+relay& relay::operator=(relay&& other) noexcept {
+    if(this != &other) {
+        auto* old = std::exchange(self, std::exchange(other.self, nullptr));
+        if(old) {
+            // Release the old handle by triggering an empty send.
+            relay tmp(old);
+            tmp.send([] {});
+        }
+    }
+    return *this;
+}
+
+relay::~relay() {
+    if(self) {
+        // The relay was never sent; close the handle to release the loop hold.
+        self->has_callback = false;
+        uv::async_send(self->async);
+        self = nullptr;
+    }
+}
+
+void relay::send(function<void()> callback) {
+    auto* p = std::exchange(self, nullptr);
+    if(!p) {
+        return;  // Already sent or moved-from.
+    }
+    p->has_callback = true;
+    p->callback = std::move(callback);
+    uv::async_send(p->async);
+}
+
+relay event_loop::create_relay() {
+    auto* p = new struct relay::self();
+    uv::async_init(self->loop, p->async, on_relay);
+    p->async.data = p;
+    // The async handle is ref'd by default, keeping the loop alive.
+    return relay(p);
+}
+
+// ── event_loop ──────────────────────────────────────────────────────
+
 static thread_local event_loop* current_loop = nullptr;
 
 event_loop& event_loop::current() {
