@@ -97,7 +97,7 @@ constexpr string_ref extract_identifier(string_ref expression) {
     if(expression.starts_with("::")) {
         expression = expression.drop_front(2);
     }
-    if(auto pos = expression.rfind("::"); pos != string_ref::npos) {
+    if(auto pos = find_last_top_level_scope(expression); pos != string_ref::npos) {
         expression = expression.substr(pos + 2);
     } else if(auto pos = expression.rfind(':'); pos != string_ref::npos) {
         // MSVC may format pointer NTTPs like `int*:symbol`.

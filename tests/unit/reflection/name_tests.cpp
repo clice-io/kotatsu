@@ -1,3 +1,5 @@
+#include <vector>
+
 #include "eventide/zest/zest.h"
 #include "eventide/reflection/name.h"
 
@@ -234,6 +236,7 @@ TEST_CASE(pointer_name_combinations) {
     EXPECT_EQ(pointer_name<&global_array>(), "global_array");
     EXPECT_EQ(pointer_name<static_cast<int (*)(int)>(&global_overload)>(), "global_overload");
     EXPECT_EQ(pointer_name<&global_tpl<int>>(), "global_tpl");
+    EXPECT_EQ(pointer_name<&global_tpl<std::vector<int>>>(), "global_tpl");
 
     EXPECT_EQ(pointer_name<&pointer_cases::namespaced_value>(), "namespaced_value");
     EXPECT_EQ(pointer_name<(&pointer_cases::namespaced_value)>(), "namespaced_value");
