@@ -10,6 +10,12 @@ enum class BuiltinEnumValue {
     Gamma,
 };
 
+enum class BuiltinSpelledEnum {
+    myValue,
+    Delete_,
+    V123,
+};
+
 static_assert(deco::trait::ScalarResultType<bool>);
 static_assert(deco::trait::ScalarResultType<int>);
 static_assert(deco::trait::ScalarResultType<std::string>);
@@ -92,6 +98,29 @@ struct DeclOpt {
     <std::vector<int>> pair = std::vector<int>{1, 2};
 };
 
+auto alias_decl_forward_fn(const eventide::option::ParsedArgumentOwning&)
+    -> std::expected<std::vector<std::string>, std::string> {
+    return std::vector<std::string>{"--target", "value"};
+}
+
+auto alias_decl_forward_with_context_fn(const eventide::option::ParsedArgumentOwning&,
+                                        const deco::decl::IntoContext&)
+    -> std::expected<std::vector<std::string>, std::string> {
+    return std::vector<std::string>{"--target", "value"};
+}
+
+struct AliasDeclOpt {
+    DecoFlagAlias(names = {"-O1"}; forward = {"--optimize", "1"};);
+
+    DecoKVAlias(names = {"--define-alias"}; forward = std::vector<std::string_view>{"--define"};);
+
+    DecoCommaAlias(names = {"--tags-alias"}; forward = {"--tags"};);
+
+    DecoMultiAlias(2, names = {"--pair-alias"}; forward = alias_decl_forward_fn;);
+
+    DecoFlagAlias(names = {"--ctx"}; forward = alias_decl_forward_with_context_fn;);
+};
+
 static_assert(std::is_same_v<decltype(DeclOpt{}.pack)::result_type, std::vector<std::string>>);
 static_assert(std::is_base_of_v<deco::decl::DecoOptionBase, decltype(DeclOpt{}.input)>);
 
@@ -171,6 +200,54 @@ TEST_CASE(option_declaration_has_expected_shape_and_default_assignment) {
     EXPECT_TRUE(opt.pair.value()[1] == 8);
 }
 
+TEST_CASE(alias_declaration_has_expected_shape) {
+    deco::decl::FlagAliasFields flag_cfg{};
+    flag_cfg.names = {"-O1"};
+    flag_cfg.forward = {"--optimize", "1"};
+
+    deco::decl::KVAliasFields kv_cfg{};
+    kv_cfg.names = {"--define-alias"};
+    kv_cfg.forward = std::vector<std::string_view>{"--define"};
+
+    deco::decl::CommaJoinedAliasFields comma_cfg{};
+    comma_cfg.names = {"--tags-alias"};
+    comma_cfg.forward = {"--tags"};
+
+    deco::decl::MultiAliasFields multi_cfg{};
+    multi_cfg.names = {"--pair-alias"};
+    multi_cfg.arg_num = 2;
+    multi_cfg.forward = alias_decl_forward_fn;
+
+    deco::decl::FlagAliasFields ctx_cfg{};
+    ctx_cfg.names = {"--ctx"};
+    ctx_cfg.forward = alias_decl_forward_with_context_fn;
+
+    static_assert(!std::is_base_of_v<deco::decl::DecoOptionBase, deco::decl::FlagAliasFields>);
+
+    EXPECT_TRUE(flag_cfg.names.size() == 1);
+    EXPECT_TRUE(flag_cfg.names[0] == "-O1");
+    EXPECT_TRUE(flag_cfg.forward.kind == deco::decl::AliasForwardField::Kind::Static);
+    EXPECT_TRUE(flag_cfg.forward.static_tokens.size() == 2);
+    EXPECT_TRUE(flag_cfg.forward.static_tokens[0] == "--optimize");
+    EXPECT_TRUE(flag_cfg.forward.static_tokens[1] == "1");
+
+    EXPECT_TRUE(kv_cfg.forward.kind == deco::decl::AliasForwardField::Kind::Static);
+    EXPECT_TRUE(kv_cfg.forward.static_tokens.size() == 1);
+    EXPECT_TRUE(kv_cfg.forward.static_tokens[0] == "--define");
+    EXPECT_TRUE(kv_cfg.style == deco::decl::KVStyle::Separate);
+
+    EXPECT_TRUE(comma_cfg.forward.kind == deco::decl::AliasForwardField::Kind::Static);
+    EXPECT_TRUE(comma_cfg.forward.static_tokens.size() == 1);
+    EXPECT_TRUE(comma_cfg.forward.static_tokens[0] == "--tags");
+
+    EXPECT_TRUE(multi_cfg.forward.kind == deco::decl::AliasForwardField::Kind::Dynamic);
+    EXPECT_TRUE(multi_cfg.forward.dynamic != nullptr);
+    EXPECT_TRUE(multi_cfg.arg_num == 2);
+
+    EXPECT_TRUE(ctx_cfg.forward.kind == deco::decl::AliasForwardField::Kind::DynamicWithContext);
+    EXPECT_TRUE(ctx_cfg.forward.dynamic_with_context != nullptr);
+}
+
 TEST_CASE(option_into_assigns_values_by_option_kind) {
     deco::decl::FlagOption<bool> flag{};
     auto flag_ok = flag.into(make_parsed_arg("--verbose"));
@@ -231,6 +308,14 @@ TEST_CASE(option_into_assigns_values_by_option_kind) {
     EXPECT_TRUE(!enum_input_ok.has_value());
     EXPECT_TRUE(enum_input.has_value());
     EXPECT_TRUE(enum_input.value() == BuiltinEnumValue::Gamma);
+
+    deco::decl::ScalarOption<BuiltinSpelledEnum> spelled_enum{};
+    EXPECT_TRUE(!spelled_enum.into(make_parsed_arg("--kind", {"my_value"})).has_value());
+    EXPECT_TRUE(spelled_enum.value() == BuiltinSpelledEnum::myValue);
+    EXPECT_TRUE(!spelled_enum.into(make_parsed_arg("--kind", {"Delete"})).has_value());
+    EXPECT_TRUE(spelled_enum.value() == BuiltinSpelledEnum::Delete_);
+    EXPECT_TRUE(!spelled_enum.into(make_parsed_arg("--kind", {"123"})).has_value());
+    EXPECT_TRUE(spelled_enum.value() == BuiltinSpelledEnum::V123);
 
     deco::decl::ScalarOption<double> double_opt{};
     auto double_err = double_opt.into(make_parsed_arg("--precise", {"3.14"}));

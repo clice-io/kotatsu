@@ -9,6 +9,8 @@
 #define DECO_CFG_STRUCT_NAME(id) DECO_CONCAT(_DecoCfgStruct_, id)
 #define DECO_CFG_NAME(id) DECO_CONCAT(__deco_cfg_wrapper, id)
 #define DECO_OPTION_STRUCT_NAME(id) DECO_CONCAT(_DecoOptStruct_, id)
+#define DECO_ALIAS_STRUCT_NAME(id) DECO_CONCAT(_DecoAliasStruct_, id)
+#define DECO_ALIAS_NAME(id) DECO_CONCAT(__deco_alias_wrapper, id)
 
 #define DECO_USING_OPTION_FIELDS                                                                   \
     using _deco_base_t::required;                                                                  \
@@ -41,6 +43,19 @@
 
 #define DECO_USING_MULTI                                                                           \
     DECO_USING_NAMED                                                                               \
+    using _deco_base_t::arg_num;
+
+#define DECO_USING_ALIAS                                                                           \
+    DECO_USING_CONFIG_COMMON                                                                       \
+    using _deco_base_t::names;                                                                     \
+    using _deco_base_t::forward;
+
+#define DECO_USING_KV_ALIAS                                                                        \
+    DECO_USING_ALIAS                                                                               \
+    using _deco_base_t::style;
+
+#define DECO_USING_MULTI_ALIAS                                                                     \
+    DECO_USING_ALIAS                                                                               \
     using _deco_base_t::arg_num;
 
 #define DECO_CONFIG_IMPL(id, TY, ...)                                                              \
@@ -88,6 +103,20 @@
                                    cfg_base_ty,                                                    \
                                    using_block,                                                    \
                                    __VA_ARGS__)
+
+#define DECO_DECLARE_ALIAS_IMPL(id, cfg_base_ty, using_block, ...)                                 \
+    struct DECO_ALIAS_STRUCT_NAME(id) : public cfg_base_ty {                                       \
+        using _deco_base_t = cfg_base_ty;                                                          \
+        using_block constexpr DECO_ALIAS_STRUCT_NAME(id)() {                                       \
+            __VA_ARGS__;                                                                           \
+        }                                                                                          \
+    };                                                                                             \
+    struct {                                                                                       \
+        using __deco_alias_ty = DECO_ALIAS_STRUCT_NAME(id);                                        \
+    } DECO_ALIAS_NAME(id)
+
+#define DECO_DECLARE_ALIAS(cfg_base_ty, using_block, ...)                                          \
+    DECO_DECLARE_ALIAS_IMPL(__COUNTER__, cfg_base_ty, using_block, __VA_ARGS__)
 
 #define DECO_DECLARE_OPTION_TEMPLATE_IMPL(id,                                                      \
                                           res_concept,                                             \
@@ -187,3 +216,23 @@
                                  DECO_USING_MULTI,                                                 \
                                  arg_num = number;                                                 \
                                  __VA_ARGS__)
+
+#define DecoFlagAlias(...)                                                                          \
+    DECO_DECLARE_ALIAS(deco::decl::FlagAliasFields, DECO_USING_ALIAS, __VA_ARGS__)
+
+#define DecoKVAliasStyled(kv_style, ...)                                                            \
+    DECO_DECLARE_ALIAS(deco::decl::KVAliasFields,                                                  \
+                       DECO_USING_KV_ALIAS,                                                         \
+                       style = kv_style;                                                            \
+                       __VA_ARGS__)
+
+#define DecoKVAlias(...) DecoKVAliasStyled(deco::decl::KVStyle::Separate, __VA_ARGS__)
+
+#define DecoCommaAlias(...)                                                                         \
+    DECO_DECLARE_ALIAS(deco::decl::CommaJoinedAliasFields, DECO_USING_ALIAS, __VA_ARGS__)
+
+#define DecoMultiAlias(number, ...)                                                                 \
+    DECO_DECLARE_ALIAS(deco::decl::MultiAliasFields,                                               \
+                       DECO_USING_MULTI_ALIAS,                                                      \
+                       arg_num = number;                                                            \
+                       __VA_ARGS__)

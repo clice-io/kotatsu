@@ -112,9 +112,20 @@ enum class BuiltinCliMode {
     Debug,
 };
 
+enum class BuiltinCliSpelledMode {
+    myValue,
+    Delete_,
+    V123,
+};
+
 struct BuiltinEnumCliOpt {
     DecoKV(names = {"--mode"}, required = true)
     <BuiltinCliMode> mode;
+};
+
+struct BuiltinSpelledEnumCliOpt {
+    DecoKV(names = {"--mode"}, required = true)
+    <BuiltinCliSpelledMode> mode;
 };
 
 struct InputAndTrailingOpt {
@@ -373,6 +384,47 @@ struct CatterSelf {
     <std::string> s;
 };
 
+auto runtime_alias_forward_pair(const eventide::option::ParsedArgumentOwning& arg)
+    -> std::expected<std::vector<std::string>, std::string> {
+    if(arg.values.empty()) {
+        return std::unexpected(std::string("missing alias payload"));
+    }
+    return std::vector<std::string>{"--target", arg.values.front()};
+}
+
+auto runtime_alias_forward_pair_with_context(const eventide::option::ParsedArgumentOwning&,
+                                             const deco::decl::IntoContext& context)
+    -> std::expected<std::vector<std::string>, std::string> {
+    return std::unexpected(context.format_error("ctx failure"));
+}
+
+struct AliasRuntimeOpt {
+    DecoFlag(names = {"-v"}; required = false)
+    verbose;
+
+    DecoKV(names = {"--optimize"}; required = false)
+    <std::string> optimize;
+
+    DecoKV(names = {"--target"}; required = false)
+    <std::string> target;
+
+    DecoComma(names = {"--tags"}; required = false)
+    <std::vector<std::string>> tags;
+
+    DecoMulti(2, names = {"--pair"}; required = false)
+    <std::vector<std::string>> pair;
+
+    DecoFlagAlias(names = {"-O1"}; required = false; forward = {"--optimize", "1"};);
+
+    DecoKVAlias(names = {"--target-alias"}; required = false; forward = runtime_alias_forward_pair;);
+
+    DecoCommaAlias(names = {"--tags-alias"}; required = false; forward = {"--tags"};);
+
+    DecoMultiAlias(2, names = {"--pair-alias"}; required = false; forward = {"--pair"};);
+
+    DecoFlagAlias(names = {"--ctx-fail"}; required = false; forward = runtime_alias_forward_pair_with_context;);
+};
+
 struct CatterTrailing {
     DecoInput(required = false)
     <std::vector<std::string>> script_args;
@@ -413,6 +465,29 @@ TEST_CASE(parsing_builtin_enum) {
 
     EXPECT_TRUE(res->options.mode.has_value());
     EXPECT_TRUE(res->options.mode.value() == BuiltinCliMode::Debug);
+}
+
+TEST_CASE(parsing_builtin_enum_with_serde_spelling) {
+    auto snake = deco::cli::parse<BuiltinSpelledEnumCliOpt>(into_deco_args("--mode", "my_value"));
+    EXPECT_TRUE(snake.has_value());
+    if(!snake.has_value()) {
+        return;
+    }
+    EXPECT_TRUE(snake->options.mode.value() == BuiltinCliSpelledMode::myValue);
+
+    auto keyword = deco::cli::parse<BuiltinSpelledEnumCliOpt>(into_deco_args("--mode", "Delete"));
+    EXPECT_TRUE(keyword.has_value());
+    if(!keyword.has_value()) {
+        return;
+    }
+    EXPECT_TRUE(keyword->options.mode.value() == BuiltinCliSpelledMode::Delete_);
+
+    auto numeric = deco::cli::parse<BuiltinSpelledEnumCliOpt>(into_deco_args("--mode", "123"));
+    EXPECT_TRUE(numeric.has_value());
+    if(!numeric.has_value()) {
+        return;
+    }
+    EXPECT_TRUE(numeric->options.mode.value() == BuiltinCliSpelledMode::V123);
 }
 
 TEST_CASE(parsing_input_and_trailing) {
@@ -485,6 +560,12 @@ TEST_CASE(when_error) {
     EXPECT_TRUE(res7.error().type == deco::cli::ParseError::Type::IntoError);
     EXPECT_TRUE(res7.error().message.contains("invalid enum value: Turbo"));
     EXPECT_TRUE(res7.error().message.contains("supported: Fast, Slow, Debug"));
+
+    auto res8 = deco::cli::parse<BuiltinSpelledEnumCliOpt>(into_deco_args("--mode", "nope"));
+    EXPECT_FALSE(res8.has_value());
+    EXPECT_TRUE(res8.error().type == deco::cli::ParseError::Type::IntoError);
+    EXPECT_TRUE(res8.error().message.contains("invalid enum value: nope"));
+    EXPECT_TRUE(res8.error().message.contains("supported: myValue, Delete_, V123"));
 }
 
 TEST_CASE(parse_errors_include_location_context) {
@@ -696,6 +777,66 @@ TEST_CASE(option_callback_can_restart_with_owned_argv) {
     EXPECT_EQ(CallbackRestartOwnedState::arg_index, 0u);
     EXPECT_EQ(CallbackRestartOwnedState::next_cursor, 1u);
     EXPECT_TRUE(CallbackRestartOwnedState::value == "entry.cc");
+}
+
+TEST_CASE(alias_can_forward_and_restart_without_replaying_prefix) {
+    auto res = deco::cli::parse<AliasRuntimeOpt>(into_deco_args("-v", "-O1", "--target-alias", "dst"));
+    EXPECT_TRUE(res.has_value());
+    if(!res.has_value()) {
+        return;
+    }
+
+    EXPECT_TRUE(res->options.verbose.has_value() && *res->options.verbose);
+    EXPECT_TRUE(res->options.optimize.has_value());
+    EXPECT_TRUE(*res->options.optimize == "1");
+    EXPECT_TRUE(res->options.target.has_value());
+    EXPECT_TRUE(*res->options.target == "dst");
+    EXPECT_EQ(res->next_index, 2u);
+}
+
+TEST_CASE(alias_static_forward_supports_comma_and_multi_shapes) {
+    auto res = deco::cli::parse<AliasRuntimeOpt>(
+        into_deco_args("--tags-alias,a,b", "--pair-alias", "left", "right"));
+    EXPECT_TRUE(res.has_value());
+    if(!res.has_value()) {
+        return;
+    }
+
+    EXPECT_TRUE(res->options.tags.has_value());
+    EXPECT_TRUE(res->options.tags->size() == 2);
+    EXPECT_TRUE((*res->options.tags)[0] == "a");
+    EXPECT_TRUE((*res->options.tags)[1] == "b");
+    EXPECT_TRUE(res->options.pair.has_value());
+    EXPECT_TRUE(res->options.pair->size() == 2);
+    EXPECT_TRUE((*res->options.pair)[0] == "left");
+    EXPECT_TRUE((*res->options.pair)[1] == "right");
+}
+
+TEST_CASE(alias_dynamic_with_context_preserves_preformatted_errors) {
+    auto res = deco::cli::parse<AliasRuntimeOpt>(into_deco_args("--ctx-fail"));
+    EXPECT_FALSE(res.has_value());
+    if(res.has_value()) {
+        return;
+    }
+
+    EXPECT_TRUE(res.error().type == deco::cli::ParseError::Type::IntoError);
+    EXPECT_TRUE(res.error().message.contains("ctx failure"));
+    EXPECT_TRUE(res.error().message.find("at argv[0]:") == 0);
+    EXPECT_TRUE(res.error().message.find("at argv[0]:", 1) == std::string::npos);
+}
+
+TEST_CASE(schema_only_alias_usage_does_not_expose_generated_wrapper_names) {
+    auto usage = deco::cli::text::render_usage(
+        deco::cli::detail::make_usage_document<AliasRuntimeOpt>("alias [OPTIONS]"),
+        true,
+        nullptr);
+
+    EXPECT_TRUE(usage.contains("-O1"));
+    EXPECT_TRUE(usage.contains("--target-alias"));
+    EXPECT_TRUE(usage.contains("--tags-alias"));
+    EXPECT_TRUE(usage.contains("--pair-alias"));
+    EXPECT_TRUE(!usage.contains("__deco_alias_wrapper"));
+    EXPECT_TRUE(!usage.contains("--__deco_alias_wrapper"));
 }
 
 TEST_CASE(option_callback_can_restart_multiple_times_with_owned_argv) {

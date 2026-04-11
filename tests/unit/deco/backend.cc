@@ -165,6 +165,19 @@ struct MultiExclusiveCategoryOpt {
     request;
 };
 
+auto backend_alias_forward_fn(const eventide::option::ParsedArgumentOwning&)
+    -> std::expected<std::vector<std::string>, std::string> {
+    return std::vector<std::string>{"--pair", "left", "right"};
+}
+
+struct AliasBackendOpt {
+    DecoFlagAlias(names = {"-O1"}; required = false; category = versionCategory; forward = {"--optimize", "1"};);
+
+    DecoKVAlias(names = {"--define-alias"}; required = false; category = sharedCategory; forward = std::vector<std::string_view>{"--define"};);
+
+    DecoMultiAlias(2, names = {"--pair-alias"}; required = false; category = requestCategory; forward = backend_alias_forward_fn;);
+};
+
 using ParseAllStorage = std::remove_cvref_t<decltype(deco::detail::build_storage<ParseAllOpt>())>;
 static_assert(std::is_base_of_v<deco::detail::DecoStructConsumer<ParseAllStorage, ParseAllOpt>,
                                 ParseAllStorage>);
@@ -571,6 +584,53 @@ TEST_CASE(category_map_supports_multiple_exclusive_category_definitions) {
     }
     EXPECT_TRUE(built.category_of((*parsed_args)[0].option_id) == &versionCategory);
     EXPECT_TRUE(built.category_of((*parsed_args)[1].option_id) == &requestCategory);
+}
+
+TEST_CASE(alias_entries_have_backend_metadata_without_accessor) {
+    const auto& built = deco::detail::build_storage<AliasBackendOpt>();
+
+    auto parsed = parse_with(built,
+                             {"-O1", "--define-alias", "NAME=VALUE", "--pair-alias", "a", "b"});
+    EXPECT_TRUE(parsed.has_value());
+    if(!parsed.has_value()) {
+        return;
+    }
+
+    AliasBackendOpt opt{};
+    EXPECT_TRUE(parsed->size() == 3);
+    if(parsed->size() != 3) {
+        return;
+    }
+
+    const auto* flag_meta = built.alias_meta_of((*parsed)[0].option_id);
+    using alias_meta_t = std::remove_cvref_t<decltype(*flag_meta)>;
+    EXPECT_TRUE(flag_meta != nullptr);
+    EXPECT_TRUE(built.is_alias_option_id((*parsed)[0].option_id));
+    EXPECT_TRUE(built.field_ptr_of((*parsed)[0].option_id, opt) == nullptr);
+    EXPECT_TRUE(built.category_of((*parsed)[0].option_id) == &versionCategory);
+    EXPECT_TRUE(flag_meta->kind == alias_meta_t::Kind::Flag);
+    EXPECT_TRUE(flag_meta->forward_kind == deco::decl::AliasForwardField::Kind::Static);
+    EXPECT_TRUE(flag_meta->static_tokens.size() == 2);
+    EXPECT_TRUE(flag_meta->static_tokens[0] == "--optimize");
+    EXPECT_TRUE(flag_meta->static_tokens[1] == "1");
+
+    const auto* kv_meta = built.alias_meta_of((*parsed)[1].option_id);
+    EXPECT_TRUE(kv_meta != nullptr);
+    EXPECT_TRUE(built.field_ptr_of((*parsed)[1].option_id, opt) == nullptr);
+    EXPECT_TRUE(built.category_of((*parsed)[1].option_id) == &sharedCategory);
+    EXPECT_TRUE(kv_meta->kind == alias_meta_t::Kind::KV);
+    EXPECT_TRUE(kv_meta->forward_kind == deco::decl::AliasForwardField::Kind::Static);
+    EXPECT_TRUE(kv_meta->static_tokens.size() == 1);
+    EXPECT_TRUE(kv_meta->static_tokens[0] == "--define");
+
+    const auto* multi_meta = built.alias_meta_of((*parsed)[2].option_id);
+    EXPECT_TRUE(multi_meta != nullptr);
+    EXPECT_TRUE(built.field_ptr_of((*parsed)[2].option_id, opt) == nullptr);
+    EXPECT_TRUE(built.category_of((*parsed)[2].option_id) == &requestCategory);
+    EXPECT_TRUE(multi_meta->kind == alias_meta_t::Kind::Multi);
+    EXPECT_TRUE(multi_meta->forward_kind == deco::decl::AliasForwardField::Kind::Dynamic);
+    EXPECT_TRUE(multi_meta->dynamic != nullptr);
+    EXPECT_TRUE(multi_meta->arg_num == 2);
 }
 
 TEST_CASE(visit_fields_applies_next_cfg_to_nested_struct_fields) {

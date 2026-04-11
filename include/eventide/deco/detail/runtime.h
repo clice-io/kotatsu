@@ -113,6 +113,78 @@ constexpr inline bool always_false_v = false;
 
 namespace detail {
 
+struct ResolvedAliasForward {
+    std::vector<std::string> argv;
+};
+
+template <typename AliasMeta>
+inline auto resolve_static_alias_forward(const AliasMeta& meta,
+                                         const backend::ParsedArgumentOwning& arg)
+    -> std::expected<std::vector<std::string>, std::string> {
+    std::vector<std::string> argv;
+    switch(meta.kind) {
+        case AliasMeta::Kind::None: return argv;
+        case AliasMeta::Kind::Flag:
+        case AliasMeta::Kind::KV:
+        case AliasMeta::Kind::Multi:
+            argv.reserve(meta.static_tokens.size() + arg.values.size());
+            for(const auto token: meta.static_tokens) {
+                argv.emplace_back(token);
+            }
+            for(const auto& value: arg.values) {
+                argv.push_back(value);
+            }
+            return argv;
+        case AliasMeta::Kind::CommaJoined:
+            if(meta.static_tokens.empty()) {
+                return std::unexpected(std::string("comma alias forward requires at least one target token"));
+            }
+            argv.reserve(meta.static_tokens.size());
+            for(std::size_t i = 0; i + 1 < meta.static_tokens.size(); ++i) {
+                argv.emplace_back(meta.static_tokens[i]);
+            }
+            {
+                std::string joined(meta.static_tokens.back());
+                for(const auto& value: arg.values) {
+                    joined.push_back(',');
+                    joined += value;
+                }
+                argv.push_back(std::move(joined));
+            }
+            return argv;
+    }
+    return std::unexpected(std::string("unsupported alias kind"));
+}
+
+template <typename AliasMeta>
+inline auto resolve_alias_forward(const AliasMeta& meta,
+                                  const backend::ParsedArgumentOwning& arg,
+                                  const decl::IntoContext& context)
+    -> std::expected<ResolvedAliasForward, std::string> {
+    if(meta.forward_kind == decl::AliasForwardField::Kind::Static) {
+        if(auto rewritten = resolve_static_alias_forward(meta, arg)) {
+            return ResolvedAliasForward{.argv = std::move(*rewritten)};
+        } else {
+            return std::unexpected(std::move(rewritten.error()));
+        }
+    }
+    if(meta.dynamic_with_context != nullptr) {
+        if(auto rewritten = meta.dynamic_with_context(arg, context)) {
+            return ResolvedAliasForward{.argv = std::move(*rewritten)};
+        } else {
+            return std::unexpected(std::move(rewritten.error()));
+        }
+    }
+    if(meta.dynamic != nullptr) {
+        if(auto rewritten = meta.dynamic(arg)) {
+            return ResolvedAliasForward{.argv = std::move(*rewritten)};
+        } else {
+            return std::unexpected(std::move(rewritten.error()));
+        }
+    }
+    return std::unexpected(std::string("alias forward is not configured"));
+}
+
 template <typename Ptr>
 struct member_object_pointer_traits;
 
@@ -377,10 +449,13 @@ std::string check_valid(const T& options,
     std::string err = "";
     // check required options
     storage.visit_fields(options, [&](auto& field, const auto& cfg, std::string_view name, auto) {
-        if(matched_categories.contains(cfg.category.ptr()) && cfg.required && !field.has_value()) {
-            err = std::format("required option {} is missing",
-                              desc::from_deco_option(cfg, false, name));
-            return false;
+        using field_ty = std::remove_cvref_t<decltype(field)>;
+        if constexpr(ty::deco_option_like<field_ty>) {
+            if(matched_categories.contains(cfg.category.ptr()) && cfg.required && !field.has_value()) {
+                err = std::format("required option {} is missing",
+                                  desc::from_deco_option(cfg, false, name));
+                return false;
+            }
         }
         return true;
     });
@@ -495,9 +570,42 @@ std::expected<Invocation<T>, ParseError>
                     option_callback = storage.trailing_callback();
                 }
 
+                category = category ? category : storage.category_of(raw_parg.option_id);
+                const auto into_context = decl::IntoContext::from_argument(argv_view, arg_snapshot, formatter);
+                if(const auto* alias_meta = storage.alias_meta_of(raw_parg.option_id)) {
+                    if(category == nullptr) {
+                        err = {ParseError::Type::Internal,
+                               error_at_argument("no category found for alias option id " +
+                                                 std::to_string(raw_parg.option_id.id()))};
+                        return false;
+                    }
+                    auto resolved = resolve_alias_forward(*alias_meta, arg_snapshot, into_context);
+                    if(!resolved.has_value()) {
+                        const auto reason = resolved.error();
+                        const bool should_format =
+                            alias_meta->forward_kind != decl::AliasForwardField::Kind::DynamicWithContext;
+                        err = {ParseError::Type::IntoError,
+                               reason.empty() || !should_format ? std::string(reason)
+                                                                : into_context.format_error(reason)};
+                        return false;
+                    }
+
+                    std::vector<std::string> rewritten = std::move(resolved->argv);
+                    const auto suffix = current_argv.subspan(next_cursor);
+                    rewritten.reserve(rewritten.size() + suffix.size());
+                    for(const auto& token: suffix) {
+                        rewritten.push_back(token);
+                    }
+
+                    res.next_index = next_cursor;
+                    restart_requested = true;
+                    restart_owned_argv = std::make_shared<std::vector<std::string>>(std::move(rewritten));
+                    restart_argv = std::span<std::string>(restart_owned_argv->data(), restart_owned_argv->size());
+                    return false;
+                }
+
                 opt_raw_ptr = opt_raw_ptr ? opt_raw_ptr
                                           : storage.field_ptr_of(raw_parg.option_id, res.options);
-                category = category ? category : storage.category_of(raw_parg.option_id);
                 if(!option_callback) {
                     option_callback = storage.callback_of(raw_parg.option_id);
                 }
@@ -509,9 +617,7 @@ std::expected<Invocation<T>, ParseError>
                                              std::to_string(raw_parg.option_id.id()))};
                     return false;
                 }
-                if(auto parse_err = opt_accessor->into(
-                       std::move(raw_parg),
-                       decl::IntoContext::from_argument(argv_view, arg_snapshot, formatter))) {
+                if(auto parse_err = opt_accessor->into(std::move(raw_parg), into_context)) {
                     err = {ParseError::Type::IntoError, std::move(*parse_err)};
                     return false;
                 }
@@ -587,15 +693,18 @@ std::expected<Invocation<T>, ParseError>
     storage.visit_fields(
         res.options,
         [&](auto& field, const auto& cfg, std::string_view name, auto) {
-            if(res.matched_categories.contains(cfg.category.ptr()) && cfg.required &&
-               !field.has_value()) {
-                const auto active_argv =
-                    std::span<const std::string>(res.active_argv.data(), res.active_argv.size());
-                err = {ParseError::Type::DecoParsing,
-                       decl::IntoContext::at_cursor(active_argv, res.next_index, formatter)
-                           .format_error(std::format("required option {} is missing",
-                                                     desc::from_deco_option(cfg, false, name)))};
-                return false;
+            using field_ty = std::remove_cvref_t<decltype(field)>;
+            if constexpr(ty::deco_option_like<field_ty>) {
+                if(res.matched_categories.contains(cfg.category.ptr()) && cfg.required &&
+                   !field.has_value()) {
+                    const auto active_argv =
+                        std::span<const std::string>(res.active_argv.data(), res.active_argv.size());
+                    err = {ParseError::Type::DecoParsing,
+                           decl::IntoContext::at_cursor(active_argv, res.next_index, formatter)
+                               .format_error(std::format("required option {} is missing",
+                                                         desc::from_deco_option(cfg, false, name)))};
+                    return false;
+                }
             }
             return true;
         });

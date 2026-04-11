@@ -5,6 +5,7 @@
 #include <charconv>
 #include <concepts>
 #include <cstdlib>
+#include <expected>
 #include <memory>
 #include <optional>
 #include <span>
@@ -17,7 +18,7 @@
 #include "text.h"
 #include "trait.h"
 
-#include "eventide/reflection/enum.h"
+#include "eventide/serde/serde/spelling.h"
 
 namespace deco::decl {
 
@@ -301,6 +302,70 @@ struct IntoContext {
     }
 };
 
+using AliasForwardResult = std::expected<std::vector<std::string>, std::string>;
+using AliasForwardFn = AliasForwardResult (*)(const backend::ParsedArgumentOwning& arg);
+using AliasForwardFnWithContext =
+    AliasForwardResult (*)(const backend::ParsedArgumentOwning& arg, const IntoContext& context);
+
+struct AliasForwardField {
+    enum class Kind : char {
+        None = 0,
+        Static = 1,
+        Dynamic = 2,
+        DynamicWithContext = 3,
+    };
+
+    Kind kind = Kind::None;
+    std::vector<std::string_view> static_tokens;
+    AliasForwardFn dynamic = nullptr;
+    AliasForwardFnWithContext dynamic_with_context = nullptr;
+
+    constexpr AliasForwardField() = default;
+
+    constexpr auto operator=(std::initializer_list<std::string_view> tokens)
+        -> AliasForwardField& {
+        kind = Kind::Static;
+        static_tokens.assign(tokens.begin(), tokens.end());
+        dynamic = nullptr;
+        dynamic_with_context = nullptr;
+        return *this;
+    }
+
+    constexpr auto operator=(std::vector<std::string_view> tokens) -> AliasForwardField& {
+        kind = Kind::Static;
+        static_tokens = std::move(tokens);
+        dynamic = nullptr;
+        dynamic_with_context = nullptr;
+        return *this;
+    }
+
+    constexpr auto operator=(AliasForwardFn fn) -> AliasForwardField& {
+        kind = fn ? Kind::Dynamic : Kind::None;
+        static_tokens.clear();
+        dynamic = fn;
+        dynamic_with_context = nullptr;
+        return *this;
+    }
+
+    constexpr auto operator=(AliasForwardFnWithContext fn) -> AliasForwardField& {
+        kind = fn ? Kind::DynamicWithContext : Kind::None;
+        static_tokens.clear();
+        dynamic = nullptr;
+        dynamic_with_context = fn;
+        return *this;
+    }
+
+    constexpr explicit operator bool() const {
+        return kind != Kind::None;
+    }
+};
+
+constexpr inline bool is_alias_placeholder_name(std::string_view member_name) {
+    return member_name.starts_with("__deco_alias_wrapper") ||
+           (!member_name.empty() &&
+            std::all_of(member_name.begin(), member_name.end(), [](char ch) { return ch == '_'; }));
+}
+
 struct DecoFields {
     // if true, it's required if its category occurs in options.
     bool required = true;
@@ -419,6 +484,33 @@ struct MultiFields : NamedOptionFields {
     constexpr static DecoType deco_field_ty = DecoType::Multi;
     unsigned arg_num = 1;
     constexpr MultiFields() = default;
+};
+
+struct AliasFields : NamedOptionFields {
+    AliasForwardField forward;
+    constexpr AliasFields() = default;
+};
+
+struct FlagAliasFields : AliasFields {
+    constexpr static DecoType deco_field_ty = DecoType::Flag;
+    constexpr FlagAliasFields() = default;
+};
+
+struct KVAliasFields : AliasFields {
+    constexpr static DecoType deco_field_ty = DecoType::KV;
+    char style = KVStyle::Separate;
+    constexpr KVAliasFields() = default;
+};
+
+struct CommaJoinedAliasFields : AliasFields {
+    constexpr static DecoType deco_field_ty = DecoType::CommaJoined;
+    constexpr CommaJoinedAliasFields() = default;
+};
+
+struct MultiAliasFields : AliasFields {
+    constexpr static DecoType deco_field_ty = DecoType::Multi;
+    unsigned arg_num = 1;
+    constexpr MultiAliasFields() = default;
 };
 
 struct DecoOptionBase {
@@ -574,7 +666,7 @@ std::optional<std::string> parse_primitive_scalar(ResTy& out, std::string_view t
     } else if constexpr(std::same_as<ResTy, long double>) {
         return "unsupported floating-point type: long double";
     } else if constexpr(std::is_enum_v<ResTy>) {
-        if(auto parsed = refl::enum_value<ResTy>(text)) {
+        if(auto parsed = eventide::serde::spelling::map_string_to_enum<ResTy>(text)) {
             out = *parsed;
             return std::nullopt;
         }

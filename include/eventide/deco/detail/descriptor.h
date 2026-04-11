@@ -88,7 +88,14 @@ inline std::string normalize_member_name(std::string_view member_name) {
     return normalized;
 }
 
+inline bool is_placeholder_member_name(std::string_view member_name) {
+    return decl::is_alias_placeholder_name(member_name);
+}
+
 inline std::string default_name_from_member(std::string_view member_name) {
+    if(is_placeholder_member_name(member_name)) {
+        return "";
+    }
     const auto normalized_name = normalize_member_name(member_name);
     if(normalized_name.empty()) {
         return "";
