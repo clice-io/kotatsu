@@ -116,7 +116,9 @@ private:
                 opt.help = cfg.help.get();
             }
             if(cfg.meta_var.is_overridden()) {
-                opt.meta_var = cfg.meta_var.get();
+                auto meta_var = cfg.meta_var.get();
+                meta_var.explicit_value = true;
+                opt.meta_var = meta_var;
             }
         }
     }

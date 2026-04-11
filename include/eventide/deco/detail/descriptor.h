@@ -5,8 +5,10 @@
 #include <type_traits>
 #include <vector>
 
+#include "./config.h"
 #include "./decl.h"
 #include "./ty.h"
+#include "eventide/serde/serde/spelling.h"
 
 /*
  * generate string that describes the structure of options declared in deco::desc namespace, and
@@ -54,6 +56,48 @@ inline std::string meta_var_token(std::string_view meta_var) {
         return std::string(meta_var);
     }
     return std::format("<{}>", meta_var);
+}
+
+inline std::string enum_meta_var_token(const std::vector<std::string>& names,
+                                       const config::EnumMetaVarConfig& cfg) {
+    if(names.empty()) {
+        return "<value>";
+    }
+
+    std::string body;
+    const auto limit = std::min<std::size_t>(names.size(), cfg.max_items);
+    for(std::size_t i = 0; i < limit; ++i) {
+        if(i != 0) {
+            body += cfg.separator;
+        }
+        body += names[i];
+    }
+    if(names.size() > limit) {
+        body += cfg.overflow_suffix;
+    }
+    return std::format("<{}>", body);
+}
+
+inline auto active_config(const config::Config* override_config) -> const config::Config& {
+    if(override_config != nullptr) {
+        return *override_config;
+    }
+    return config::get();
+}
+
+template <typename ResultTy>
+inline std::string inferred_meta_var_token(const decl::MetaVarField& meta_var,
+                                           const config::Config& config) {
+    if(meta_var.is_explicit()) {
+        return meta_var_token(meta_var.value);
+    }
+    if constexpr(std::is_enum_v<ResultTy>) {
+        if(config.enum_meta_var.enabled) {
+            return enum_meta_var_token(eventide::serde::spelling::enum_strings<ResultTy>(),
+                                       config.enum_meta_var);
+        }
+    }
+    return meta_var_token(meta_var.value);
 }
 
 inline std::string join_strings(const std::vector<std::string>& parts, std::string_view separator) {
@@ -170,11 +214,12 @@ inline std::string repeated_meta_vars(std::string_view value_token, unsigned arg
 }
 
 template <typename CfgTy>
-inline std::string usage_text(const CfgTy& cfg, bool help_mode, std::string_view fallback_name) {
-    const auto value_token = meta_var_token(cfg.meta_var);
-
+inline std::string usage_text(const CfgTy& cfg,
+                              bool help_mode,
+                              std::string_view fallback_name,
+                              std::string_view value_token) {
     if constexpr(CfgTy::deco_field_ty == decl::DecoType::Input) {
-        return value_token;
+        return std::string(value_token);
     } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::TrailingInput) {
         return std::format("-- {}...", value_token);
     } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::Flag) {
@@ -218,8 +263,10 @@ inline std::string usage_text(const CfgTy& cfg, bool help_mode, std::string_view
 }
 
 template <typename CfgTy>
-inline std::string help_text(const CfgTy& cfg, std::string_view fallback_name) {
-    const auto usage = usage_text(cfg, true, fallback_name);
+inline std::string help_text(const CfgTy& cfg,
+                             std::string_view fallback_name,
+                             std::string_view value_token) {
+    const auto usage = usage_text(cfg, true, fallback_name, value_token);
     constexpr size_t usage_column_width = 32;
     if(usage.size() >= usage_column_width) {
         return std::format(R"(  {}
@@ -237,24 +284,30 @@ template <typename FieldTy, typename CfgTy>
 inline std::string usage_text_for_field(const FieldTy&,
                                         const CfgTy& cfg,
                                         bool help_mode,
-                                        std::string_view fallback_name) {
-    if constexpr(CfgTy::deco_field_ty == decl::DecoType::Input && ty::deco_option_like<FieldTy>) {
+                                        std::string_view fallback_name,
+                                        const config::Config& config) {
+    if constexpr(ty::deco_option_like<FieldTy>) {
         using result_ty = typename ty::base_ty<FieldTy>::result_type;
-        const auto value_token = meta_var_token(cfg.meta_var);
-        if constexpr(!trait::ScalarResultType<result_ty> && trait::VectorResultType<result_ty>) {
-            return std::format("{}...", value_token);
+        const auto value_token = inferred_meta_var_token<result_ty>(cfg.meta_var, config);
+        if constexpr(CfgTy::deco_field_ty == decl::DecoType::Input) {
+            if constexpr(!trait::ScalarResultType<result_ty> && trait::VectorResultType<result_ty>) {
+                return std::format("{}...", value_token);
+            }
+            return value_token;
+        } else {
+            return usage_text(cfg, help_mode, fallback_name, value_token);
         }
-        return value_token;
     } else {
-        return usage_text(cfg, help_mode, fallback_name);
+        return usage_text(cfg, help_mode, fallback_name, meta_var_token(cfg.meta_var));
     }
 }
 
 template <typename FieldTy, typename CfgTy>
 inline std::string help_text_for_field(const FieldTy& field,
                                        const CfgTy& cfg,
-                                       std::string_view fallback_name) {
-    const auto usage = usage_text_for_field(field, cfg, true, fallback_name);
+                                       std::string_view fallback_name,
+                                       const config::Config& config) {
+    const auto usage = usage_text_for_field(field, cfg, true, fallback_name, config);
     constexpr size_t usage_column_width = 32;
     if(usage.size() >= usage_column_width) {
         return std::format(R"(  {}
@@ -273,19 +326,23 @@ inline std::string help_text_for_field(const FieldTy& field,
 template <ty::is_deco_field_or_option T>
 inline std::string from_deco_option(const T& field,
                                     bool include_help = false,
-                                    std::string_view fallback_name = {}) {
+                                    std::string_view fallback_name = {},
+                                    const config::Config* override_config = nullptr) {
     const auto cfg = ty::dyn_cast(field);
+    const auto& active = detail::active_config(override_config);
     if(include_help) {
         if constexpr(ty::deco_option_like<T>) {
-            return detail::help_text_for_field(field, cfg, fallback_name);
+            return detail::help_text_for_field(field, cfg, fallback_name, active);
         } else {
-            return detail::help_text(cfg, fallback_name);
+            return detail::help_text(cfg,
+                                     fallback_name,
+                                     detail::meta_var_token(cfg.meta_var));
         }
     }
     if constexpr(ty::deco_option_like<T>) {
-        return detail::usage_text_for_field(field, cfg, false, fallback_name);
+        return detail::usage_text_for_field(field, cfg, false, fallback_name, active);
     } else {
-        return detail::usage_text(cfg, false, fallback_name);
+        return detail::usage_text(cfg, false, fallback_name, detail::meta_var_token(cfg.meta_var));
     }
 }
 

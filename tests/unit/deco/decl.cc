@@ -110,15 +110,20 @@ auto alias_decl_forward_with_context_fn(const eventide::option::ParsedArgumentOw
 }
 
 struct AliasDeclOpt {
-    DecoFlagAlias(names = {"-O1"}; forward = {"--optimize", "1"};);
+    DecoFlagAlias(names = {"-O1"}; forward = {"--optimize", "1"};)
+    _;
 
-    DecoKVAlias(names = {"--define-alias"}; forward = std::vector<std::string_view>{"--define"};);
+    DecoKVAlias(names = {"--define-alias"}; forward = std::vector<std::string_view>{"--define"};)
+    __;
 
-    DecoCommaAlias(names = {"--tags-alias"}; forward = {"--tags"};);
+    DecoCommaAlias(names = {"--tags-alias"}; forward = {"--tags"};)
+    ___;
 
-    DecoMultiAlias(2, names = {"--pair-alias"}; forward = alias_decl_forward_fn;);
+    DecoMultiAlias(2, names = {"--pair-alias"}; forward = alias_decl_forward_fn;)
+    ____;
 
-    DecoFlagAlias(names = {"--ctx"}; forward = alias_decl_forward_with_context_fn;);
+    DecoFlagAlias(names = {"--ctx"}; forward = alias_decl_forward_with_context_fn;)
+    _____;
 };
 
 static_assert(std::is_same_v<decltype(DeclOpt{}.pack)::result_type, std::vector<std::string>>);

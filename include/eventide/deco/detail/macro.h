@@ -10,7 +10,6 @@
 #define DECO_CFG_NAME(id) DECO_CONCAT(__deco_cfg_wrapper, id)
 #define DECO_OPTION_STRUCT_NAME(id) DECO_CONCAT(_DecoOptStruct_, id)
 #define DECO_ALIAS_STRUCT_NAME(id) DECO_CONCAT(_DecoAliasStruct_, id)
-#define DECO_ALIAS_NAME(id) DECO_CONCAT(__deco_alias_wrapper, id)
 
 #define DECO_USING_OPTION_FIELDS                                                                   \
     using _deco_base_t::required;                                                                  \
@@ -105,15 +104,15 @@
                                    __VA_ARGS__)
 
 #define DECO_DECLARE_ALIAS_IMPL(id, cfg_base_ty, using_block, ...)                                 \
-    struct DECO_ALIAS_STRUCT_NAME(id) : public cfg_base_ty {                                       \
-        using _deco_base_t = cfg_base_ty;                                                          \
-        using_block constexpr DECO_ALIAS_STRUCT_NAME(id)() {                                       \
-            __VA_ARGS__;                                                                           \
-        }                                                                                          \
+    struct DECO_ALIAS_STRUCT_NAME(id) {                                                            \
+        struct __deco_alias_ty : public cfg_base_ty {                                              \
+            using _deco_base_t = cfg_base_ty;                                                      \
+            using_block constexpr __deco_alias_ty() {                                              \
+                __VA_ARGS__;                                                                       \
+            }                                                                                      \
+        };                                                                                         \
     };                                                                                             \
-    struct {                                                                                       \
-        using __deco_alias_ty = DECO_ALIAS_STRUCT_NAME(id);                                        \
-    } DECO_ALIAS_NAME(id)
+    DECO_ALIAS_STRUCT_NAME(id)
 
 #define DECO_DECLARE_ALIAS(cfg_base_ty, using_block, ...)                                          \
     DECO_DECLARE_ALIAS_IMPL(__COUNTER__, cfg_base_ty, using_block, __VA_ARGS__)

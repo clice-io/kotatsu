@@ -348,10 +348,24 @@ std::span<std::string> into_deco_args(Args&&... args) {
 }
 
 struct ScopedDefaultRenderer {
-    deco::cli::text::Renderer saved = deco::cli::text::default_renderer();
+    const deco::cli::text::Renderer* saved = deco::cli::text::explicit_default_renderer();
+    std::optional<deco::cli::text::Renderer> saved_copy =
+        saved != nullptr ? std::optional<deco::cli::text::Renderer>(*saved) : std::nullopt;
 
     ~ScopedDefaultRenderer() {
-        deco::cli::text::set_default_renderer(saved);
+        if(saved_copy.has_value()) {
+            deco::cli::text::set_default_renderer(*saved_copy);
+        } else {
+            deco::cli::text::clear_default_renderer();
+        }
+    }
+};
+
+struct ScopedDecoConfig {
+    deco::config::Config saved = deco::config::get();
+
+    ~ScopedDecoConfig() {
+        deco::config::set(saved);
     }
 };
 
@@ -414,15 +428,20 @@ struct AliasRuntimeOpt {
     DecoMulti(2, names = {"--pair"}; required = false)
     <std::vector<std::string>> pair;
 
-    DecoFlagAlias(names = {"-O1"}; required = false; forward = {"--optimize", "1"};);
+    DecoFlagAlias(names = {"-O1"}; required = false; forward = {"--optimize", "1"};)
+    _;
 
-    DecoKVAlias(names = {"--target-alias"}; required = false; forward = runtime_alias_forward_pair;);
+    DecoKVAlias(names = {"--target-alias"}; required = false; forward = runtime_alias_forward_pair;)
+    __;
 
-    DecoCommaAlias(names = {"--tags-alias"}; required = false; forward = {"--tags"};);
+    DecoCommaAlias(names = {"--tags-alias"}; required = false; forward = {"--tags"};)
+    ___;
 
-    DecoMultiAlias(2, names = {"--pair-alias"}; required = false; forward = {"--pair"};);
+    DecoMultiAlias(2, names = {"--pair-alias"}; required = false; forward = {"--pair"};)
+    ____;
 
-    DecoFlagAlias(names = {"--ctx-fail"}; required = false; forward = runtime_alias_forward_pair_with_context;);
+    DecoFlagAlias(names = {"--ctx-fail"}; required = false; forward = runtime_alias_forward_pair_with_context;)
+    _____;
 };
 
 struct CatterTrailing {
@@ -590,11 +609,11 @@ TEST_CASE(parse_errors_include_location_context) {
     EXPECT_TRUE(enum_res.error().message.contains("supported: Fast, Slow, Debug"));
 }
 
-TEST_CASE(global_text_style_can_disable_positioned_diagnostics) {
-    ScopedDefaultRenderer restore;
-    auto style = deco::cli::text::default_text_style();
-    style.diagnostic.enabled = false;
-    deco::cli::text::set_default_text_style(style);
+TEST_CASE(global_compatible_renderer_config_can_disable_positioned_diagnostics) {
+    ScopedDecoConfig restore;
+    auto updated = deco::config::get();
+    updated.render.compatible.diagnostic.enabled = false;
+    deco::config::set(updated);
 
     auto res = deco::cli::parse<WebCliOpt>(into_deco_args("--unknown"));
     EXPECT_FALSE(res.has_value());
@@ -991,12 +1010,12 @@ TEST_CASE(match_can_observe_invocation_context) {
     EXPECT_EQ(seen_trace_size, 2u);
 }
 
-TEST_CASE(command_usage_respects_text_style_override) {
+TEST_CASE(command_can_use_compatible_renderer_config) {
     auto command = deco::cli::command<WebCliOpt>("webcli [OPTIONS]");
-    auto style = deco::cli::text::default_text_style();
-    style.usage.options_heading = "Flags:";
-    style.usage.group_by_category = false;
-    command.text_style(style);
+    deco::cli::text::CompatibleRendererConfig config{};
+    config.usage.options_heading = "Flags:";
+    config.usage.group_by_category = false;
+    command.render_with_compatible(config);
 
     std::stringstream ss;
     command.usage(ss);
@@ -1017,6 +1036,35 @@ TEST_CASE(command_can_use_custom_renderer) {
 
     command(into_deco_args("--unknown"));
     EXPECT_TRUE(seen_error == "ERR<0:unknown option '--unknown'>");
+}
+
+TEST_CASE(command_default_renderer_overrides_config_fallback) {
+    ScopedDefaultRenderer restore_renderer;
+    ScopedDecoConfig restore_config;
+
+    auto updated = deco::config::get();
+    updated.render.compatible.usage.options_heading = "Flags:";
+    deco::config::set(updated);
+    deco::cli::text::set_default_renderer(deco::cli::text::ModernRenderer());
+
+    auto command = deco::cli::command<WebCliOpt>("webcli [OPTIONS]");
+    std::stringstream ss;
+    command.usage(ss);
+
+    EXPECT_TRUE(ss.str().contains("Usage"));
+    EXPECT_TRUE(!ss.str().contains("Flags:"));
+}
+
+TEST_CASE(command_explicit_renderer_overrides_default_renderer) {
+    ScopedDefaultRenderer restore;
+    deco::cli::text::set_default_renderer(deco::cli::text::ModernRenderer());
+
+    auto command = deco::cli::command<WebCliOpt>("webcli [OPTIONS]");
+    command.render_with(make_custom_renderer());
+
+    std::stringstream ss;
+    command.usage(ss);
+    EXPECT_TRUE(ss.str() == "USAGE<webcli [OPTIONS]:help>");
 }
 
 };  // TEST_SUITE(command_match)
@@ -1201,6 +1249,24 @@ TEST_CASE(subcommand_can_use_custom_renderer) {
 
     subcommander(into_deco_args("unknown"));
     EXPECT_TRUE(seen_error == "ERR<0:unknown subcommand 'unknown'>");
+}
+
+TEST_CASE(subcommand_can_use_modern_renderer_config) {
+    deco::cli::SubCommander subcommander("catter [OPTIONS]", "Overview text");
+    subcommander
+        .add(
+            deco::decl::SubCommand{
+                .name = "run",
+                .description = "Run a task",
+            },
+            [](std::span<std::string>) {})
+        .render_with_modern();
+
+    std::stringstream ss;
+    subcommander.usage(ss);
+    EXPECT_TRUE(ss.str().contains("Commands"));
+    EXPECT_TRUE(ss.str().contains("Overview text"));
+    EXPECT_TRUE(ss.str().contains("run"));
 }
 
 };  // TEST_SUITE(subcommander)

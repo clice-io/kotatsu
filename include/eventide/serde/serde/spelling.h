@@ -9,6 +9,7 @@
 #include <system_error>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "eventide/common/meta.h"
 #include "eventide/reflection/enum.h"
@@ -233,6 +234,20 @@ template <typename E, typename Policy = rename_policy::lower_camel>
 std::string map_enum_to_string(E value) {
     static_assert(std::is_enum_v<E>, "map_enum_to_string requires an enum type");
     return apply_rename_policy<Policy>(true, refl::enum_name(value));
+}
+
+template <typename E, typename Policy = rename_policy::lower_camel>
+auto enum_strings() -> const std::vector<std::string>& {
+    static_assert(std::is_enum_v<E>, "enum_strings requires an enum type");
+    static const auto names = [] {
+        std::vector<std::string> values;
+        values.reserve(refl::reflection<E>::member_values.size());
+        for(const auto value: refl::reflection<E>::member_values) {
+            values.push_back(map_enum_to_string<E, Policy>(value));
+        }
+        return values;
+    }();
+    return names;
 }
 
 template <typename E, typename Policy = rename_policy::lower_camel>

@@ -1,46 +1,21 @@
 #pragma once
 
-#include <cstddef>
 #include <functional>
 #include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "./config.h"
+
 namespace deco::cli::text {
 
-struct PositionStyle {
-    bool enabled = true;
-    bool show_label = true;
-    bool show_source_line = true;
-    std::size_t max_source_width = 96;
-    char pointer = '^';
-    char underline = '~';
-};
-
-struct UsageStyle {
-    bool group_by_category = true;
-    std::size_t help_column = 32;
-    std::string options_heading = "Options:";
-    std::string group_prefix = "Group ";
-    std::string exclusive_suffix = ", exclusive with other groups";
-    std::string default_help = "no description provided";
-};
-
-struct SubCommandStyle {
-    bool show_overview = true;
-    bool show_usage_line = true;
-    bool show_description = true;
-    bool align_description = true;
-    bool show_command_alias = true;
-    std::string heading = "Subcommands:";
-};
-
-struct TextStyle {
-    PositionStyle diagnostic{};
-    UsageStyle usage{};
-    SubCommandStyle subcommand{};
-};
+using PositionStyle = ::deco::config::PositionStyle;
+using UsageStyle = ::deco::config::UsageStyle;
+using SubCommandStyle = ::deco::config::SubCommandStyle;
+using TextStyle = ::deco::config::TextStyle;
+using CompatibleRendererConfig = ::deco::config::CompatibleRendererConfig;
+using ModernRendererConfig = ::deco::config::ModernRendererConfig;
 
 struct Diagnostic {
     std::string message;
@@ -105,21 +80,21 @@ struct Renderer {
 };
 
 struct CompatibleRenderer : Renderer {
-    explicit CompatibleRenderer(TextStyle style = {});
+    CompatibleRenderer();
+    explicit CompatibleRenderer(CompatibleRendererConfig config);
 };
 
 struct ModernRenderer : Renderer {
     ModernRenderer();
-    explicit ModernRenderer(TextStyle style);
+    explicit ModernRenderer(ModernRendererConfig config);
 };
 
-auto default_text_style() -> const TextStyle&;
-
-void set_default_text_style(TextStyle style);
+auto explicit_default_renderer() -> const Renderer*;
 
 auto default_renderer() -> const Renderer&;
 
 void set_default_renderer(Renderer renderer);
+void clear_default_renderer();
 
 auto resolve_renderer(const Renderer* renderer) -> const Renderer&;
 

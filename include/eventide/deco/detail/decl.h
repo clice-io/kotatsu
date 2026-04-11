@@ -375,9 +375,36 @@ struct DecoFields {
     constexpr DecoFields() = default;
 };
 
+struct MetaVarField {
+    std::string_view value = "<value>";
+    bool explicit_value = false;
+
+    constexpr MetaVarField() = default;
+    constexpr MetaVarField(std::string_view value, bool explicit_value = false) :
+        value(value), explicit_value(explicit_value) {}
+
+    constexpr auto operator=(std::string_view new_value) -> MetaVarField& {
+        value = new_value;
+        explicit_value = true;
+        return *this;
+    }
+
+    constexpr auto empty() const -> bool {
+        return value.empty();
+    }
+
+    constexpr auto is_explicit() const -> bool {
+        return explicit_value;
+    }
+
+    constexpr operator std::string_view() const {
+        return value;
+    }
+};
+
 struct CommonOptionFields : DecoFields {
     std::string_view help = "not provided";
-    std::string_view meta_var = "<value>";
+    MetaVarField meta_var{};
 
     constexpr CommonOptionFields() = default;
 };
@@ -437,7 +464,7 @@ struct ConfigFields {
     ConfigOverrideField<bool> required = true;
     ConfigOverrideField<CategoryRef> category = default_category;
     ConfigOverrideField<std::string_view> help = "not provided";
-    ConfigOverrideField<std::string_view> meta_var = "<value>";
+    ConfigOverrideField<MetaVarField> meta_var = MetaVarField{"<value>", false};
 
     enum class Type : char {
         Start = 0,
@@ -623,17 +650,17 @@ std::string format_invalid_enum_value(std::string_view text) {
     std::string message = "invalid enum value: ";
     message += text;
 
-    const auto& names = refl::reflection<EnumTy>::member_names;
-    if(names.empty()) {
+    constexpr auto values = eventide::refl::reflection<EnumTy>::member_values;
+    if(values.empty()) {
         return message;
     }
 
     message += " (supported: ";
-    for(std::size_t i = 0; i < names.size(); ++i) {
+    for(std::size_t i = 0; i < values.size(); ++i) {
         if(i != 0) {
             message += ", ";
         }
-        message += names[i];
+        message += eventide::refl::enum_name(values[i]);
     }
     message += ")";
     return message;

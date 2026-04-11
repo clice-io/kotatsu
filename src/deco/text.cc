@@ -4,6 +4,8 @@
 #include <format>
 #include <utility>
 
+#include "eventide/deco/detail/config.h"
+
 namespace deco::cli::text {
 namespace {
 
@@ -57,6 +59,9 @@ auto highlight_span(std::string_view text,
                     std::size_t width,
                     std::string_view ansi) -> std::string;
 auto modern_heading(std::string_view title, std::string_view body) -> std::string;
+auto text_style_from_config(const CompatibleRendererConfig& config) -> TextStyle;
+auto text_style_from_config(const ModernRendererConfig& config) -> TextStyle;
+auto fallback_renderer_from_config(const config::Config& current) -> Renderer;
 
 struct CompatibleRendererImpl {
     static auto render_usage_entry(const UsageEntry& entry,
@@ -206,13 +211,6 @@ struct CompatibleRendererImpl {
 };
 
 struct ModernRendererImpl {
-    static auto default_style() -> TextStyle {
-        TextStyle style{};
-        style.usage.options_heading = "Options";
-        style.subcommand.heading = "Commands";
-        return style;
-    }
-
     static auto render_usage_entry(const UsageEntry& entry,
                                    bool include_help,
                                    const TextStyle& style) -> std::string {
@@ -525,12 +523,58 @@ auto modern_heading(std::string_view title, std::string_view body) -> std::strin
     return rendered;
 }
 
-auto mutable_default_renderer() -> Renderer& {
-    static thread_local CompatibleRenderer renderer;
+auto text_style_from_config(const CompatibleRendererConfig& config) -> TextStyle {
+    return TextStyle{
+        .diagnostic = config.diagnostic,
+        .usage = config.usage,
+        .subcommand = config.subcommand,
+    };
+}
+
+auto text_style_from_config(const ModernRendererConfig& config) -> TextStyle {
+    return TextStyle{
+        .diagnostic = config.diagnostic,
+        .usage = config.usage,
+        .subcommand = config.subcommand,
+    };
+}
+
+auto fallback_renderer_from_config(const config::Config& current) -> Renderer {
+    return CompatibleRenderer(current.render.compatible);
+}
+
+auto deco_text_mutable_global_config() -> config::Config& {
+    static thread_local config::Config current{};
+    return current;
+}
+
+auto deco_text_mutable_config_renderer() -> Renderer& {
+    static thread_local Renderer renderer = fallback_renderer_from_config(deco_text_mutable_global_config());
+    return renderer;
+}
+
+auto deco_text_mutable_explicit_default_renderer() -> std::optional<Renderer>& {
+    static thread_local std::optional<Renderer> renderer;
     return renderer;
 }
 
 }  // namespace
+
+namespace detail {
+
+auto mutable_global_config() -> config::Config& {
+    return deco_text_mutable_global_config();
+}
+
+auto mutable_config_renderer() -> Renderer& {
+    return deco_text_mutable_config_renderer();
+}
+
+auto mutable_explicit_default_renderer() -> std::optional<Renderer>& {
+    return deco_text_mutable_explicit_default_renderer();
+}
+
+}  // namespace detail
 
 auto looks_like_rendered_diagnostic(std::string_view text) -> bool {
     return false;
@@ -557,8 +601,10 @@ auto diagnostic_message(std::string message) -> Diagnostic {
 
 Renderer::Renderer() = default;
 
-CompatibleRenderer::CompatibleRenderer(TextStyle style) : Renderer() {
-    this->style = std::move(style);
+CompatibleRenderer::CompatibleRenderer() : CompatibleRenderer(CompatibleRendererConfig{}) {}
+
+CompatibleRenderer::CompatibleRenderer(CompatibleRendererConfig config) : Renderer() {
+    style = text_style_from_config(config);
     usage = [](const UsageDocument& document, bool include_help, const TextStyle& active_style) {
         return CompatibleRendererImpl::render_usage_document(document, include_help, active_style);
     };
@@ -570,10 +616,10 @@ CompatibleRenderer::CompatibleRenderer(TextStyle style) : Renderer() {
     };
 }
 
-ModernRenderer::ModernRenderer() : ModernRenderer(ModernRendererImpl::default_style()) {}
+ModernRenderer::ModernRenderer() : ModernRenderer(ModernRendererConfig{}) {}
 
-ModernRenderer::ModernRenderer(TextStyle style) : Renderer() {
-    this->style = std::move(style);
+ModernRenderer::ModernRenderer(ModernRendererConfig config) : Renderer() {
+    style = text_style_from_config(config);
     usage = [](const UsageDocument& document, bool include_help, const TextStyle& active_style) {
         return ModernRendererImpl::render_usage_document(document, include_help, active_style);
     };
@@ -585,24 +631,38 @@ ModernRenderer::ModernRenderer(TextStyle style) : Renderer() {
     };
 }
 
-auto default_text_style() -> const TextStyle& {
-    return default_renderer().style;
+auto explicit_default_renderer_ptr_impl() -> const Renderer* {
+    if(auto& explicit_renderer = detail::mutable_explicit_default_renderer();
+       explicit_renderer.has_value()) {
+        return &*explicit_renderer;
+    }
+    return nullptr;
 }
 
-void set_default_text_style(TextStyle style) {
-    mutable_default_renderer().style = std::move(style);
+auto explicit_default_renderer() -> const Renderer* {
+    return explicit_default_renderer_ptr_impl();
 }
 
 auto default_renderer() -> const Renderer& {
-    return mutable_default_renderer();
+    if(const auto* renderer = explicit_default_renderer_ptr_impl(); renderer != nullptr) {
+        return *renderer;
+    }
+    return detail::mutable_config_renderer();
 }
 
 void set_default_renderer(Renderer renderer) {
-    mutable_default_renderer() = std::move(renderer);
+    detail::mutable_explicit_default_renderer() = std::move(renderer);
+}
+
+void clear_default_renderer() {
+    detail::mutable_explicit_default_renderer().reset();
 }
 
 auto resolve_renderer(const Renderer* renderer) -> const Renderer& {
-    return renderer == nullptr ? default_renderer() : *renderer;
+    if(renderer != nullptr) {
+        return *renderer;
+    }
+    return default_renderer();
 }
 
 auto render_usage(const UsageDocument& document, bool include_help, const Renderer* renderer)
@@ -634,3 +694,29 @@ auto render_diagnostic(const Diagnostic& diagnostic, const Renderer* renderer) -
 }
 
 }  // namespace deco::cli::text
+
+namespace deco::config {
+
+auto get() -> const Config& {
+    return ::deco::cli::text::detail::mutable_global_config();
+}
+
+void set(Config config) {
+    ::deco::cli::text::detail::mutable_global_config() = std::move(config);
+    ::deco::cli::text::detail::mutable_config_renderer() =
+        ::deco::cli::text::CompatibleRenderer(get().render.compatible);
+}
+
+void set_render(BuiltInRenderConfig render) {
+    auto updated = get();
+    updated.render = std::move(render);
+    set(std::move(updated));
+}
+
+void set_enum_meta_var(EnumMetaVarConfig config) {
+    auto updated = get();
+    updated.enum_meta_var = std::move(config);
+    set(std::move(updated));
+}
+
+}  // namespace deco::config
