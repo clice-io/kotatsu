@@ -604,6 +604,68 @@ void Peer<CodecT>::on_notification(std::string_view method, Callback&& callback)
 }
 
 template <typename CodecT>
+template <typename Tag>
+    requires detail::has_tag_request_traits_v<Tag>
+auto Peer<CodecT>::send_request(const typename protocol::RequestTraits<Tag>::Params& params,
+                                 request_options opts)
+    -> task<typename protocol::RequestTraits<Tag>::Result, Error> {
+    using Traits = protocol::RequestTraits<Tag>;
+
+    auto serialized_params = co_await or_fail(self->codec.serialize_value(params));
+    auto raw_result =
+        co_await send_request_impl(Traits::method, std::move(serialized_params), std::move(opts))
+            .or_fail();
+    co_return co_await or_fail(
+        self->codec.template deserialize_value<typename Traits::Result>(raw_result));
+}
+
+template <typename CodecT>
+template <typename Tag>
+    requires detail::has_tag_notification_traits_v<Tag>
+Result<void> Peer<CodecT>::send_notification(
+    const typename protocol::NotificationTraits<Tag>::Params& params) {
+    using Traits = protocol::NotificationTraits<Tag>;
+
+    auto serialized_params = self->codec.serialize_value(params);
+    if(!serialized_params) {
+        return outcome_error(serialized_params.error());
+    }
+    return send_notification_impl(Traits::method, std::move(*serialized_params));
+}
+
+template <typename CodecT>
+template <typename Tag, typename Callback>
+void Peer<CodecT>::on_request(Callback&& callback) {
+    static_assert(detail::has_tag_request_traits_v<Tag>,
+                  "on_request<Tag> requires tag-based RequestTraits<Tag>");
+    detail::validate_request_callback_signature<Callback, Peer>();
+
+    using Traits = protocol::RequestTraits<Tag>;
+    using Params = typename Traits::Params;
+
+    using Ret = detail::request_callback_return_t<Callback>;
+    static_assert(
+        std::is_same_v<Ret, task<typename Traits::Result, Error>> ||
+            std::is_same_v<Ret, task<serde::RawValue, Error>>,
+        "request callback return type should be task<Result, Error> or task<serde::RawValue, Error>");
+
+    bind_request_callback<Params>(Traits::method, std::forward<Callback>(callback));
+}
+
+template <typename CodecT>
+template <typename Tag, typename Callback>
+void Peer<CodecT>::on_notification(Callback&& callback) {
+    static_assert(detail::has_tag_notification_traits_v<Tag>,
+                  "on_notification<Tag> requires tag-based NotificationTraits<Tag>");
+    detail::validate_notification_callback_signature<Callback>();
+
+    using Traits = protocol::NotificationTraits<Tag>;
+    using Params = typename Traits::Params;
+
+    bind_notification_callback<Params>(Traits::method, std::forward<Callback>(callback));
+}
+
+template <typename CodecT>
 template <typename Params, typename Callback>
 void Peer<CodecT>::bind_request_callback(std::string_view method, Callback&& callback) {
     auto wrapped = [cb = std::forward<Callback>(callback),

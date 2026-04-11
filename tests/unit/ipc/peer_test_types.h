@@ -88,6 +88,11 @@ struct StatusNoteParams {
     std::int64_t retry_count = 0;
 };
 
+// Tag types for tag-based traits
+struct TaggedAdd {};
+
+struct TaggedNote {};
+
 using RequestContext = JsonPeer::RequestContext;
 
 struct PendingAddResult {
@@ -122,6 +127,20 @@ struct RequestTraits<RangeAddParams> {
 template <>
 struct NotificationTraits<StatusNoteParams> {
     constexpr inline static std::string_view method = "test/statusNote";
+};
+
+// Tag-based traits
+template <>
+struct RequestTraits<TaggedAdd> {
+    using Params = AddParams;
+    using Result = AddResult;
+    constexpr inline static std::string_view method = "test/taggedAdd";
+};
+
+template <>
+struct NotificationTraits<TaggedNote> {
+    using Params = NoteParams;
+    constexpr inline static std::string_view method = "test/taggedNote";
 };
 
 }  // namespace eventide::ipc::protocol
