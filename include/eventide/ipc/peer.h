@@ -20,6 +20,23 @@ namespace eventide::ipc {
 template <typename Codec>
 class Peer;
 
+namespace detail {
+
+template <typename Tag>
+constexpr bool has_tag_request_traits_v = requires {
+    typename protocol::RequestTraits<Tag>::Params;
+    typename protocol::RequestTraits<Tag>::Result;
+    protocol::RequestTraits<Tag>::method;
+};
+
+template <typename Tag>
+constexpr bool has_tag_notification_traits_v = requires {
+    typename protocol::NotificationTraits<Tag>::Params;
+    protocol::NotificationTraits<Tag>::method;
+};
+
+}  // namespace detail
+
 template <typename PeerT>
 struct basic_request_context {
     std::string_view method{};
@@ -101,6 +118,23 @@ public:
 
     template <typename Callback>
     void on_notification(std::string_view method, Callback&& callback);
+
+    template <typename Tag>
+        requires detail::has_tag_request_traits_v<Tag>
+    auto send_request(const typename protocol::RequestTraits<Tag>::Params& params,
+                      request_options opts = {})
+        -> task<typename protocol::RequestTraits<Tag>::Result, Error>;
+
+    template <typename Tag>
+        requires detail::has_tag_notification_traits_v<Tag>
+    Result<void>
+        send_notification(const typename protocol::NotificationTraits<Tag>::Params& params);
+
+    template <typename Tag, typename Callback>
+    void on_request(Callback&& callback);
+
+    template <typename Tag, typename Callback>
+    void on_notification(Callback&& callback);
 
 private:
     template <typename Params, typename Callback>
