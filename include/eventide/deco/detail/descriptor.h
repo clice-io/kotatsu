@@ -262,22 +262,28 @@ inline std::string usage_text(const CfgTy& cfg,
     }
 }
 
+inline std::string render_help_text(std::string_view usage,
+                                    std::string_view help,
+                                    const config::UsageStyle& style) {
+    if(usage.size() >= style.help_column) {
+        return std::format(R"(  {}
+    {:<{}}{})",
+                           usage,
+                           "",
+                           style.help_column,
+                           help);
+    }
+    return std::format("  {:<{}}{}", usage, style.help_column, help);
+}
+
 template <typename CfgTy>
 inline std::string help_text(const CfgTy& cfg,
                              std::string_view fallback_name,
-                             std::string_view value_token) {
+                             std::string_view value_token,
+                             const config::Config& config) {
     const auto usage = usage_text(cfg, true, fallback_name, value_token);
-    constexpr size_t usage_column_width = 32;
-    if(usage.size() >= usage_column_width) {
-        return std::format(R"(  {}
-    {:<32}{})",
-                           usage,
-                           "",
-                           has_help_text(cfg.help) ? cfg.help : "no description provided");
-    }
-    return std::format("  {:<32}{}",
-                       usage,
-                       has_help_text(cfg.help) ? cfg.help : "no description provided");
+    const auto help = has_help_text(cfg.help) ? cfg.help : config.render.compatible.usage.default_help;
+    return render_help_text(usage, help, config.render.compatible.usage);
 }
 
 template <typename FieldTy, typename CfgTy>
@@ -309,17 +315,8 @@ inline std::string help_text_for_field(const FieldTy& field,
                                        std::string_view fallback_name,
                                        const config::Config& config) {
     const auto usage = usage_text_for_field(field, cfg, true, fallback_name, config);
-    constexpr size_t usage_column_width = 32;
-    if(usage.size() >= usage_column_width) {
-        return std::format(R"(  {}
-    {:<32}{})",
-                           usage,
-                           "",
-                           has_help_text(cfg.help) ? cfg.help : "no description provided");
-    }
-    return std::format("  {:<32}{}",
-                       usage,
-                       has_help_text(cfg.help) ? cfg.help : "no description provided");
+    const auto help = has_help_text(cfg.help) ? cfg.help : config.render.compatible.usage.default_help;
+    return render_help_text(usage, help, config.render.compatible.usage);
 }
 
 }  // namespace detail
@@ -335,7 +332,7 @@ inline std::string from_deco_option(const T& field,
         if constexpr(ty::deco_option_like<T>) {
             return detail::help_text_for_field(field, cfg, fallback_name, active);
         } else {
-            return detail::help_text(cfg, fallback_name, detail::meta_var_token(cfg.meta_var));
+            return detail::help_text(cfg, fallback_name, detail::meta_var_token(cfg.meta_var), active);
         }
     }
     if constexpr(ty::deco_option_like<T>) {

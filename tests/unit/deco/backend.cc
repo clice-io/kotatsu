@@ -171,14 +171,14 @@ auto backend_alias_forward_fn(const eventide::option::ParsedArgumentOwning&)
 }
 
 struct AliasBackendOpt {
-    DecoFlagAlias(names = {"-O1"}; required = false; category = versionCategory;
+    DecoFlagAlias(names = {"-O1", "--optimize-one"}; required = false; category = versionCategory;
                   forward = {"--optimize", "1"};) _;
 
-    DecoKVAlias(names = {"--define-alias"}; required = false; category = sharedCategory;
-                forward = std::vector<std::string_view>{"--define"};) __;
+    DecoKVAlias(names = {"--define-alias", "--define-alias-alt"}; required = false;
+                category = sharedCategory; forward = std::vector<std::string_view>{"--define"};) __;
 
-    DecoMultiAlias(2, names = {"--pair-alias"}; required = false; category = requestCategory;
-                   forward = backend_alias_forward_fn;) ___;
+    DecoMultiAlias(2, names = {"--pair-alias", "--pair-alias-alt"}; required = false;
+                   category = requestCategory; forward = backend_alias_forward_fn;) ___;
 };
 
 using ParseAllStorage = std::remove_cvref_t<decltype(deco::detail::build_storage<ParseAllOpt>())>;
@@ -190,10 +190,6 @@ static_assert(std::is_same_v<
               ParseAllStorage,
               deco::detail::LLVMOptGenerator<ParseAllOpt,
                                              deco::detail::BuildStorage<ParseAllOpt>::record>>);
-static_assert(
-    std::is_same_v<
-        ParseAllStorage,
-        deco::detail::OptManager<ParseAllOpt, deco::detail::BuildStorage<ParseAllOpt>::record>>);
 
 using Parsed = eventide::option::ParsedArgument;
 
@@ -592,8 +588,13 @@ TEST_CASE(category_map_supports_multiple_exclusive_category_definitions) {
 TEST_CASE(alias_entries_have_backend_metadata_without_accessor) {
     const auto& built = deco::detail::build_storage<AliasBackendOpt>();
 
-    auto parsed =
-        parse_with(built, {"-O1", "--define-alias", "NAME=VALUE", "--pair-alias", "a", "b"});
+    auto parsed = parse_with(built,
+                             {"--optimize-one",
+                              "--define-alias-alt",
+                              "NAME=VALUE",
+                              "--pair-alias-alt",
+                              "a",
+                              "b"});
     EXPECT_TRUE(parsed.has_value());
     if(!parsed.has_value()) {
         return;

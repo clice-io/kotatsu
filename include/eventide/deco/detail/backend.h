@@ -954,8 +954,8 @@ private:
         auto& item = new_item(nullptr);
         item.kind = kind;
         item.param = param;
-        set_named_options(item.id, nullptr, field_name, cfg, {});
         set_alias_meta_for_item(item.id, make_alias_meta(cfg));
+        set_named_options(item.id, nullptr, field_name, cfg, {});
     }
 
     template <typename DecoTy>
@@ -1244,9 +1244,6 @@ consteval auto build_record() {
     counter.build();
     return counter.gen_record();
 }
-
-template <typename RootTy, auto record = eventide::comptime::counting_flag<3>>
-using OptManager = LLVMOptGenerator<RootTy, record>;
 
 template <typename OptDeco>
 struct BuildStorage {
