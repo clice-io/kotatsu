@@ -1,5 +1,6 @@
 #pragma once
 #include <format>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -85,15 +86,45 @@ inline auto active_config(const config::Config* override_config) -> const config
     return config::get();
 }
 
+template <typename ResultTy, typename = void>
+struct inferred_enum_meta_var_type {
+    using type = void;
+};
+
+template <typename ResultTy>
+    requires std::is_enum_v<ty::base_ty<ResultTy>>
+struct inferred_enum_meta_var_type<ResultTy, void> {
+    using type = ty::base_ty<ResultTy>;
+};
+
+template <typename ResultTy>
+struct inferred_enum_meta_var_type<ResultTy,
+                                   std::void_t<std::ranges::range_value_t<ty::base_ty<ResultTy>>>> {
+private:
+    using base_result_ty = ty::base_ty<ResultTy>;
+    using element_ty = std::remove_cvref_t<std::ranges::range_value_t<base_result_ty>>;
+
+public:
+    using type =
+        std::conditional_t<trait::VectorResultType<base_result_ty> &&
+                               std::ranges::range<base_result_ty> && std::is_enum_v<element_ty>,
+                           element_ty,
+                           void>;
+};
+
+template <typename ResultTy>
+using inferred_enum_meta_var_type_t = typename inferred_enum_meta_var_type<ResultTy>::type;
+
 template <typename ResultTy>
 inline std::string inferred_meta_var_token(const decl::MetaVarField& meta_var,
                                            const config::Config& config) {
+    using enum_ty = inferred_enum_meta_var_type_t<ResultTy>;
     if(meta_var.is_explicit()) {
         return meta_var_token(meta_var.value);
     }
-    if constexpr(std::is_enum_v<ResultTy>) {
+    if constexpr(!std::is_void_v<enum_ty>) {
         if(config.enum_meta_var.enabled) {
-            return enum_meta_var_token(eventide::serde::spelling::enum_strings<ResultTy>(),
+            return enum_meta_var_token(eventide::serde::spelling::enum_strings<enum_ty>(),
                                        config.enum_meta_var);
         }
     }

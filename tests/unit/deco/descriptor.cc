@@ -5,6 +5,12 @@
 #include "eventide/deco/deco.h"
 #include <eventide/zest/zest.h>
 
+enum class DescEnum {
+    Alpha,
+    Beta,
+    Gamma,
+};
+
 namespace {
 
 struct DescOpt {
@@ -51,6 +57,17 @@ struct VectorInputDescOpt {
 struct NoHelpDescOpt {
     DecoFlag(required = false;)
     no_help_flag;
+};
+
+struct EnumVectorDescOpt {
+    DecoComma(required = false;)
+    <std::vector<DescEnum>> values;
+
+    DecoMulti(2, required = false;)
+    <std::vector<DescEnum>> pair;
+
+    DecoInput(required = false;)
+    <std::vector<DescEnum>> inputs;
 };
 
 }  // namespace
@@ -124,6 +141,16 @@ TEST_CASE(from_deco_option_uses_override_config_for_non_option_help) {
 
     const auto no_help = deco::desc::from_deco_option(no_help_opt.no_help_flag, true, {}, &config);
     EXPECT_TRUE(no_help.find("fallback from override") != std::string::npos);
+}
+
+TEST_CASE(from_deco_option_infers_enum_meta_var_for_vector_results) {
+    EnumVectorDescOpt opt{};
+
+    EXPECT_TRUE(deco::desc::from_deco_option(opt.values, false, "values") ==
+                "--values,<alpha|beta|gamma>[,<alpha|beta|gamma>...]");
+    EXPECT_TRUE(deco::desc::from_deco_option(opt.pair, false, "pair") ==
+                "--pair <alpha|beta|gamma1> <alpha|beta|gamma2>");
+    EXPECT_TRUE(deco::desc::from_deco_option(opt.inputs) == "<alpha|beta|gamma>...");
 }
 
 };  // TEST_SUITE(deco_descriptor)
