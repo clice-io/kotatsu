@@ -302,7 +302,7 @@ TEST_CASE(option_into_assigns_values_by_option_kind) {
     auto enum_err = enum_opt.into(make_parsed_arg("--mode", {"Delta"}));
     EXPECT_TRUE(enum_err.has_value());
     EXPECT_TRUE(enum_err->contains("invalid enum value: Delta"));
-    EXPECT_TRUE(enum_err->contains("supported: Alpha, Beta, Gamma"));
+    EXPECT_TRUE(enum_err->contains("supported: alpha, beta, gamma"));
 
     deco::decl::InputOption<BuiltinEnumValue> enum_input{};
     auto enum_input_ok = enum_input.into(make_parsed_arg("Gamma"));
@@ -344,7 +344,7 @@ TEST_CASE(option_into_assigns_values_by_option_kind) {
     EXPECT_TRUE(enum_vector_err.has_value());
     EXPECT_TRUE(enum_vector_err->contains("invalid vector value at index 1"));
     EXPECT_TRUE(enum_vector_err->contains("invalid enum value: Delta"));
-    EXPECT_TRUE(enum_vector_err->contains("supported: Alpha, Beta, Gamma"));
+    EXPECT_TRUE(enum_vector_err->contains("supported: alpha, beta, gamma"));
 
     deco::decl::ScalarOption<CustomScalarResult> custom_scalar{};
     auto custom_scalar_ok = custom_scalar.into(make_parsed_arg("--name", {"alice"}));

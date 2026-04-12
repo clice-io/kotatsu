@@ -792,6 +792,64 @@ private:
     }
 
     template <typename FieldsTy>
+    constexpr void add_generated_kv_joined_alias_without_callback(unsigned item_id,
+                                                                  std::string_view field_name,
+                                                                  const FieldsTy& fields) {
+        const auto base_item = item_by_id(item_id);
+        const auto alias_storage = snapshot_alias_storage(item_id);
+        auto& alias = new_item(nullptr);
+        auto alias_id = alias.id;
+        alias = base_item;
+        alias.id = alias_id;
+        alias.kind = backend::Option::JoinedClass;
+        set_generated_name_from_field(alias, field_name, "=");
+        set_common_options(alias, fields);
+        set_category_for_item(alias.id, fields.category.ptr());
+        restore_alias_storage(alias.id, alias_storage);
+    }
+
+    template <typename FieldsTy>
+    constexpr auto& set_kv_alias_options_split_by_name(unsigned item_id,
+                                                       std::string_view field_name,
+                                                       const FieldsTy& fields) {
+        const auto category = fields.category.ptr();
+        auto& item = item_by_id(item_id);
+
+        auto set_kv_name_and_kind = [&](info_item& target, std::string_view full_name) {
+            set_prefixed_name(target, full_name);
+            target.kind = kv_kind_from_name(full_name);
+        };
+
+        if(fields.names.empty()) {
+            set_generated_name_from_field(item, field_name);
+            item.kind = backend::Option::SeparateClass;
+            set_common_options(item, fields);
+            set_category_for_item(item.id, category);
+            add_generated_kv_joined_alias_without_callback(item.id, field_name, fields);
+            return item_by_id(item_id);
+        }
+
+        set_kv_name_and_kind(item, fields.names.front());
+        set_category_for_item(item.id, category);
+
+        const auto item_snapshot = item;
+        for(std::size_t i = 1; i < fields.names.size(); ++i) {
+            const auto alias_storage = snapshot_alias_storage(item.id);
+            auto& alias = new_item(nullptr);
+            auto alias_id = alias.id;
+            alias = item_snapshot;
+            alias.id = alias_id;
+            set_kv_name_and_kind(alias, fields.names[i]);
+            set_common_options(alias, fields);
+            set_category_for_item(alias.id, category);
+            restore_alias_storage(alias.id, alias_storage);
+        }
+
+        set_common_options(item_by_id(item_id), fields);
+        return item_by_id(item_id);
+    }
+
+    template <typename FieldsTy>
     constexpr auto& set_kv_options_split_by_name(unsigned item_id,
                                                  accessor_fn mapped_accessor,
                                                  std::string_view field_name,
@@ -941,10 +999,10 @@ private:
     }
 
     template <typename CfgTy>
-    constexpr void add_alias_option(const CfgTy& cfg,
-                                    std::string_view field_name,
-                                    unsigned char kind,
-                                    unsigned char param) {
+    constexpr auto create_alias_item(const CfgTy& cfg,
+                                     std::string_view field_name,
+                                     unsigned char kind,
+                                     unsigned char param) -> unsigned {
         if(!cfg.forward) {
             ETD_THROW("Deco alias requires forward");
         }
@@ -955,7 +1013,17 @@ private:
         item.kind = kind;
         item.param = param;
         set_alias_meta_for_item(item.id, make_alias_meta(cfg));
-        set_named_options(item.id, nullptr, field_name, cfg, {});
+        return item.id;
+    }
+
+    template <typename CfgTy>
+    constexpr auto add_alias_option(const CfgTy& cfg,
+                                    std::string_view field_name,
+                                    unsigned char kind,
+                                    unsigned char param) -> unsigned {
+        const auto item_id = create_alias_item(cfg, field_name, kind, param);
+        set_named_options(item_id, nullptr, field_name, cfg, {});
+        return item_id;
     }
 
     template <typename DecoTy>
@@ -1060,11 +1128,20 @@ public:
         if(!allow_joined && !allow_separate) {
             ETD_THROW("DecoKVAlias style must include Joined and/or Separate");
         }
-        add_alias_option(cfg,
-                         field_name,
-                         allow_joined ? backend::Option::JoinedClass
-                                      : backend::Option::SeparateClass,
-                         1);
+        if(allow_joined && allow_separate) {
+            const auto item_id =
+                create_alias_item(cfg, field_name, backend::Option::SeparateClass, 1);
+            set_kv_alias_options_split_by_name(item_id, field_name, cfg);
+            return true;
+        }
+        const auto item_id = add_alias_option(cfg,
+                                              field_name,
+                                              allow_joined ? backend::Option::JoinedClass
+                                                           : backend::Option::SeparateClass,
+                                              1);
+        if(allow_joined && cfg.names.empty()) {
+            add_generated_kv_joined_alias_without_callback(item_id, field_name, cfg);
+        }
         return true;
     }
 

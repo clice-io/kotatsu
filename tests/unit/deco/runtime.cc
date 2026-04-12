@@ -575,13 +575,13 @@ TEST_CASE(when_error) {
     EXPECT_FALSE(res7.has_value());
     EXPECT_TRUE(res7.error().type == deco::cli::ParseError::Type::IntoError);
     EXPECT_TRUE(res7.error().message.contains("invalid enum value: Turbo"));
-    EXPECT_TRUE(res7.error().message.contains("supported: Fast, Slow, Debug"));
+    EXPECT_TRUE(res7.error().message.contains("supported: fast, slow, debug"));
 
     auto res8 = deco::cli::parse<BuiltinSpelledEnumCliOpt>(into_deco_args("--mode", "nope"));
     EXPECT_FALSE(res8.has_value());
     EXPECT_TRUE(res8.error().type == deco::cli::ParseError::Type::IntoError);
     EXPECT_TRUE(res8.error().message.contains("invalid enum value: nope"));
-    EXPECT_TRUE(res8.error().message.contains("supported: myValue, Delete_, V123"));
+    EXPECT_TRUE(res8.error().message.contains("supported: myValue, delete, v123"));
 }
 
 TEST_CASE(parse_errors_include_location_context) {
@@ -603,7 +603,7 @@ TEST_CASE(parse_errors_include_location_context) {
 
     EXPECT_TRUE(enum_res.error().message.contains("at argv[1]:"));
     EXPECT_TRUE(enum_res.error().message.contains("Turbo"));
-    EXPECT_TRUE(enum_res.error().message.contains("supported: Fast, Slow, Debug"));
+    EXPECT_TRUE(enum_res.error().message.contains("supported: fast, slow, debug"));
 }
 
 TEST_CASE(global_compatible_renderer_config_can_disable_positioned_diagnostics) {

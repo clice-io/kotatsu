@@ -149,7 +149,7 @@ TEST_CASE(from_deco_option_infers_enum_meta_var_for_vector_results) {
     EXPECT_TRUE(deco::desc::from_deco_option(opt.values, false, "values") ==
                 "--values,<alpha|beta|gamma>[,<alpha|beta|gamma>...]");
     EXPECT_TRUE(deco::desc::from_deco_option(opt.pair, false, "pair") ==
-                "--pair <alpha|beta|gamma1> <alpha|beta|gamma2>");
+                "--pair <alpha|beta|gamma> <alpha|beta|gamma>");
     EXPECT_TRUE(deco::desc::from_deco_option(opt.inputs) == "<alpha|beta|gamma>...");
 }
 

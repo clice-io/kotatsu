@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <format>
 #include <ranges>
 #include <string>
@@ -233,6 +234,10 @@ inline std::string base_meta_name(std::string_view value_token) {
 inline std::string repeated_meta_vars(std::string_view value_token, unsigned arg_num) {
     if(arg_num <= 1) {
         return std::string(value_token);
+    }
+    if(value_token.find('|') != std::string_view::npos) {
+        std::vector<std::string> values(arg_num, std::string(value_token));
+        return join_strings(values, " ");
     }
 
     const auto base_name = base_meta_name(value_token);

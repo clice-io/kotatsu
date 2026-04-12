@@ -649,7 +649,7 @@ std::string format_invalid_enum_value(std::string_view text) {
     std::string message = "invalid enum value: ";
     message += text;
 
-    constexpr auto values = eventide::refl::reflection<EnumTy>::member_values;
+    const auto& values = eventide::serde::spelling::enum_strings<EnumTy>();
     if(values.empty()) {
         return message;
     }
@@ -659,7 +659,7 @@ std::string format_invalid_enum_value(std::string_view text) {
         if(i != 0) {
             message += ", ";
         }
-        message += eventide::refl::enum_name(values[i]);
+        message += values[i];
     }
     message += ")";
     return message;

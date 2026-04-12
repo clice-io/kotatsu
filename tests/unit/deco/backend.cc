@@ -116,6 +116,21 @@ struct KVDefaultNameSplitStyleOpt {
     <int> level;
 };
 
+struct KVAliasSplitStyleByNameOpt {
+    DecoKVAliasStyled(static_cast<char>(deco::decl::KVStyle::Joined |
+                                        deco::decl::KVStyle::Separate),
+                      names = {"--target=", "--target-alias"};
+                      required = false;
+                      forward = std::vector<std::string_view>{"--target"};) _;
+};
+
+struct KVAliasDefaultNameSplitStyleOpt {
+    DecoKVAliasStyled(static_cast<char>(deco::decl::KVStyle::Joined |
+                                        deco::decl::KVStyle::Separate),
+                      required = false;
+                      forward = std::vector<std::string_view>{"--target"};) target_alias;
+};
+
 struct DeepCfgInner {
     DECO_CFG_START(required = false; category = innerCategory;);
     DecoKV()
@@ -481,6 +496,72 @@ TEST_CASE(parse_kv_default_name_adds_joined_equals_alias_when_style_includes_joi
         return;
     }
     EXPECT_TRUE((*joined_args)[0].get_spelling_view() == "--level=");
+    EXPECT_TRUE((*joined_args)[0].values.size() == 1);
+    EXPECT_TRUE((*joined_args)[0].values[0] == "42");
+}
+
+TEST_CASE(parse_kv_alias_supports_joined_and_separate_styles) {
+    const auto& built = deco::detail::build_storage<KVAliasSplitStyleByNameOpt>();
+    EXPECT_TRUE(built.option_infos().size() == 3);
+    EXPECT_TRUE(built.option_infos()[1].kind == eventide::option::Option::JoinedClass);
+    EXPECT_TRUE(built.option_infos()[2].kind == eventide::option::Option::SeparateClass);
+
+    auto joined_args = parse_with(built, {"--target=42"});
+    EXPECT_TRUE(joined_args.has_value());
+    if(!joined_args.has_value()) {
+        return;
+    }
+    EXPECT_TRUE(joined_args->size() == 1);
+    if(joined_args->size() != 1) {
+        return;
+    }
+    EXPECT_TRUE((*joined_args)[0].get_spelling_view() == "--target=");
+    EXPECT_TRUE((*joined_args)[0].values.size() == 1);
+    EXPECT_TRUE((*joined_args)[0].values[0] == "42");
+
+    auto separate_args = parse_with(built, {"--target-alias", "7"});
+    EXPECT_TRUE(separate_args.has_value());
+    if(!separate_args.has_value()) {
+        return;
+    }
+    EXPECT_TRUE(separate_args->size() == 1);
+    if(separate_args->size() != 1) {
+        return;
+    }
+    EXPECT_TRUE((*separate_args)[0].get_spelling_view() == "--target-alias");
+    EXPECT_TRUE((*separate_args)[0].values.size() == 1);
+    EXPECT_TRUE((*separate_args)[0].values[0] == "7");
+}
+
+TEST_CASE(parse_kv_alias_default_name_adds_joined_equals_alias_when_style_includes_joined) {
+    const auto& built = deco::detail::build_storage<KVAliasDefaultNameSplitStyleOpt>();
+    EXPECT_TRUE(built.option_infos().size() == 3);
+    EXPECT_TRUE(built.option_infos()[1].kind == eventide::option::Option::SeparateClass);
+    EXPECT_TRUE(built.option_infos()[2].kind == eventide::option::Option::JoinedClass);
+
+    auto separate_args = parse_with(built, {"--target-alias", "7"});
+    EXPECT_TRUE(separate_args.has_value());
+    if(!separate_args.has_value()) {
+        return;
+    }
+    EXPECT_TRUE(separate_args->size() == 1);
+    if(separate_args->size() != 1) {
+        return;
+    }
+    EXPECT_TRUE((*separate_args)[0].get_spelling_view() == "--target-alias");
+    EXPECT_TRUE((*separate_args)[0].values.size() == 1);
+    EXPECT_TRUE((*separate_args)[0].values[0] == "7");
+
+    auto joined_args = parse_with(built, {"--target-alias=42"});
+    EXPECT_TRUE(joined_args.has_value());
+    if(!joined_args.has_value()) {
+        return;
+    }
+    EXPECT_TRUE(joined_args->size() == 1);
+    if(joined_args->size() != 1) {
+        return;
+    }
+    EXPECT_TRUE((*joined_args)[0].get_spelling_view() == "--target-alias=");
     EXPECT_TRUE((*joined_args)[0].values.size() == 1);
     EXPECT_TRUE((*joined_args)[0].values[0] == "42");
 }
