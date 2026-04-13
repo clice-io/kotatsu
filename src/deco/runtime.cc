@@ -86,6 +86,11 @@ auto SubCommander::when_err(std::ostream& os) -> SubCommander& {
 }
 
 void SubCommander::usage(std::ostream& os) const {
+    const auto active_config = resolved_config();
+    std::optional<text::Renderer> fallback_renderer;
+    if(renderer_ptr() == nullptr && text::explicit_default_renderer() == nullptr) {
+        fallback_renderer.emplace(text::CompatibleRenderer(active_config.render.compatible));
+    }
     text::SubCommandDocument document{
         .overview = overview,
         .usage_line = commandOverview,
@@ -99,7 +104,9 @@ void SubCommander::usage(std::ostream& os) const {
             .command = item.command,
         });
     }
-    os << text::render_subcommands(document, renderer_ptr());
+    os << text::render_subcommands(document,
+                                   fallback_renderer.has_value() ? &*fallback_renderer
+                                                                 : renderer_ptr());
 }
 
 auto SubCommander::match(std::span<std::string> argv) const

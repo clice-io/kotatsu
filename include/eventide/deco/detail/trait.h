@@ -82,6 +82,7 @@ concept FlagResultType =
 template <typename Ty>
 concept PrimitiveScalarResultType =
     std::same_as<BaseResultTy<Ty>, bool> || std::integral<BaseResultTy<Ty>> ||
+    std::is_enum_v<BaseResultTy<Ty>> ||
     (std::floating_point<BaseResultTy<Ty>> &&
      !std::is_same_v<std::remove_cvref_t<Ty>, long double>) ||
     OwnedStringResultType<Ty>;
@@ -108,12 +109,14 @@ concept InputResultType = ScalarResultType<Ty> || VectorResultType<Ty>;
 }  // namespace deco::trait
 
 #define DecoScalarResultErrString                                                                  \
-    "Result type must be a primitive scalar (bool/number/owning string) or provide "             \
+    "Result type must be a primitive scalar (bool/number/enum/owning string) or provide "        \
     "into(string_view) or into(string_view, IntoContext). Default deco string parsing "          \
     "does not support borrowing/view result types."
 
 #define DecoVectorResultErrString                                                                  \
-    "Result type must be a vector of primitive scalar values (including owning strings only) " "or provide into(vector<string_view>) or into(vector<string_view>, IntoContext)."
+    "Result type must be a vector of primitive scalar values (including enums and owning "       \
+    "strings only) or provide into(vector<string_view>) or into(vector<string_view>, "           \
+    "IntoContext)."
 
 #define DecoInputResultErrString                                                                   \
-    "Input result type must be a scalar/owning-string value or a vector of primitive scalar " "values, or provide a compatible into(...) overload."
+    "Input result type must be a scalar value (including enums and owning strings) or a vector " "of primitive scalar values, or provide a compatible into(...) overload."

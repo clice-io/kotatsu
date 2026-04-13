@@ -5,7 +5,7 @@
 #include <charconv>
 #include <concepts>
 #include <cstdlib>
-#include <format>
+#include <expected>
 #include <memory>
 #include <optional>
 #include <span>
@@ -17,6 +17,7 @@
 
 #include "text.h"
 #include "trait.h"
+#include "eventide/serde/serde/spelling.h"
 
 namespace deco::decl {
 
@@ -300,6 +301,69 @@ struct IntoContext {
     }
 };
 
+using AliasForwardResult = std::expected<std::vector<std::string>, std::string>;
+using AliasForwardFn = AliasForwardResult (*)(const backend::ParsedArgumentOwning& arg);
+using AliasForwardFnWithContext = AliasForwardResult (*)(const backend::ParsedArgumentOwning& arg,
+                                                         const IntoContext& context);
+
+struct AliasForwardField {
+    enum class Kind : char {
+        None = 0,
+        Static = 1,
+        Dynamic = 2,
+        DynamicWithContext = 3,
+    };
+
+    Kind kind = Kind::None;
+    std::vector<std::string_view> static_tokens;
+    AliasForwardFn dynamic = nullptr;
+    AliasForwardFnWithContext dynamic_with_context = nullptr;
+
+    constexpr AliasForwardField() = default;
+
+    constexpr auto operator=(std::initializer_list<std::string_view> tokens) -> AliasForwardField& {
+        kind = Kind::Static;
+        static_tokens.assign(tokens.begin(), tokens.end());
+        dynamic = nullptr;
+        dynamic_with_context = nullptr;
+        return *this;
+    }
+
+    constexpr auto operator=(std::vector<std::string_view> tokens) -> AliasForwardField& {
+        kind = Kind::Static;
+        static_tokens = std::move(tokens);
+        dynamic = nullptr;
+        dynamic_with_context = nullptr;
+        return *this;
+    }
+
+    constexpr auto operator=(AliasForwardFn fn) -> AliasForwardField& {
+        kind = fn ? Kind::Dynamic : Kind::None;
+        static_tokens.clear();
+        dynamic = fn;
+        dynamic_with_context = nullptr;
+        return *this;
+    }
+
+    constexpr auto operator=(AliasForwardFnWithContext fn) -> AliasForwardField& {
+        kind = fn ? Kind::DynamicWithContext : Kind::None;
+        static_tokens.clear();
+        dynamic = nullptr;
+        dynamic_with_context = fn;
+        return *this;
+    }
+
+    constexpr explicit operator bool() const {
+        return kind != Kind::None;
+    }
+};
+
+constexpr inline bool is_alias_placeholder_name(std::string_view member_name) {
+    return member_name.starts_with("__deco_alias_wrapper") ||
+           (!member_name.empty() &&
+            std::all_of(member_name.begin(), member_name.end(), [](char ch) { return ch == '_'; }));
+}
+
 struct DecoFields {
     // if true, it's required if its category occurs in options.
     bool required = true;
@@ -309,9 +373,37 @@ struct DecoFields {
     constexpr DecoFields() = default;
 };
 
+struct MetaVarField {
+    std::string_view value = "<value>";
+    bool explicit_value = false;
+
+    constexpr MetaVarField() = default;
+
+    constexpr MetaVarField(std::string_view value, bool explicit_value = false) :
+        value(value), explicit_value(explicit_value) {}
+
+    constexpr auto operator=(std::string_view new_value) -> MetaVarField& {
+        value = new_value;
+        explicit_value = true;
+        return *this;
+    }
+
+    constexpr auto empty() const -> bool {
+        return value.empty();
+    }
+
+    constexpr auto is_explicit() const -> bool {
+        return explicit_value;
+    }
+
+    constexpr operator std::string_view() const {
+        return value;
+    }
+};
+
 struct CommonOptionFields : DecoFields {
     std::string_view help = "not provided";
-    std::string_view meta_var = "<value>";
+    MetaVarField meta_var{};
 
     constexpr CommonOptionFields() = default;
 };
@@ -371,7 +463,7 @@ struct ConfigFields {
     ConfigOverrideField<bool> required = true;
     ConfigOverrideField<CategoryRef> category = default_category;
     ConfigOverrideField<std::string_view> help = "not provided";
-    ConfigOverrideField<std::string_view> meta_var = "<value>";
+    ConfigOverrideField<MetaVarField> meta_var = MetaVarField{"<value>", false};
 
     enum class Type : char {
         Start = 0,
@@ -418,6 +510,33 @@ struct MultiFields : NamedOptionFields {
     constexpr static DecoType deco_field_ty = DecoType::Multi;
     unsigned arg_num = 1;
     constexpr MultiFields() = default;
+};
+
+struct AliasFields : NamedOptionFields {
+    AliasForwardField forward;
+    constexpr AliasFields() = default;
+};
+
+struct FlagAliasFields : AliasFields {
+    constexpr static DecoType deco_field_ty = DecoType::Flag;
+    constexpr FlagAliasFields() = default;
+};
+
+struct KVAliasFields : AliasFields {
+    constexpr static DecoType deco_field_ty = DecoType::KV;
+    char style = KVStyle::Separate;
+    constexpr KVAliasFields() = default;
+};
+
+struct CommaJoinedAliasFields : AliasFields {
+    constexpr static DecoType deco_field_ty = DecoType::CommaJoined;
+    constexpr CommaJoinedAliasFields() = default;
+};
+
+struct MultiAliasFields : AliasFields {
+    constexpr static DecoType deco_field_ty = DecoType::Multi;
+    unsigned arg_num = 1;
+    constexpr MultiAliasFields() = default;
 };
 
 struct DecoOptionBase {
@@ -525,6 +644,27 @@ inline bool iequals_ascii(std::string_view lhs, std::string_view rhs) {
     return true;
 }
 
+template <typename EnumTy>
+std::string format_invalid_enum_value(std::string_view text) {
+    std::string message = "invalid enum value: ";
+    message += text;
+
+    const auto& values = eventide::serde::spelling::enum_strings<EnumTy>();
+    if(values.empty()) {
+        return message;
+    }
+
+    message += " (supported: ";
+    for(std::size_t i = 0; i < values.size(); ++i) {
+        if(i != 0) {
+            message += ", ";
+        }
+        message += values[i];
+    }
+    message += ")";
+    return message;
+}
+
 template <typename ResTy>
 std::optional<std::string> parse_primitive_scalar(ResTy& out, std::string_view text) {
     if constexpr(std::same_as<ResTy, bool>) {
@@ -551,6 +691,12 @@ std::optional<std::string> parse_primitive_scalar(ResTy& out, std::string_view t
         return std::nullopt;
     } else if constexpr(std::same_as<ResTy, long double>) {
         return "unsupported floating-point type: long double";
+    } else if constexpr(std::is_enum_v<ResTy>) {
+        if(auto parsed = eventide::serde::spelling::map_string_to_enum<ResTy>(text)) {
+            out = *parsed;
+            return std::nullopt;
+        }
+        return format_invalid_enum_value<ResTy>(text);
     } else if constexpr(std::floating_point<ResTy>) {
         std::string copy(text);
         char* parse_end = nullptr;

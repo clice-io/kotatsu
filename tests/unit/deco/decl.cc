@@ -4,22 +4,38 @@
 #include "eventide/deco/deco.h"
 #include <eventide/zest/zest.h>
 
+enum class BuiltinEnumValue {
+    Alpha,
+    Beta,
+    Gamma,
+};
+
+enum class BuiltinSpelledEnum {
+    myValue,
+    Delete_,
+    V123,
+};
+
 static_assert(deco::trait::ScalarResultType<bool>);
 static_assert(deco::trait::ScalarResultType<int>);
 static_assert(deco::trait::ScalarResultType<std::string>);
+static_assert(deco::trait::ScalarResultType<BuiltinEnumValue>);
 static_assert(!deco::trait::ScalarResultType<std::string_view>);
 static_assert(!deco::trait::ScalarResultType<const char*>);
 static_assert(!deco::trait::ScalarResultType<std::vector<int>>);
 
 static_assert(deco::trait::VectorResultType<std::vector<int>>);
 static_assert(deco::trait::VectorResultType<std::vector<std::string>>);
+static_assert(deco::trait::VectorResultType<std::vector<BuiltinEnumValue>>);
 static_assert(!deco::trait::VectorResultType<std::vector<std::string_view>>);
 static_assert(!deco::trait::VectorResultType<std::span<const std::string>>);
 
 static_assert(deco::trait::InputResultType<int>);
 static_assert(deco::trait::InputResultType<std::string>);
+static_assert(deco::trait::InputResultType<BuiltinEnumValue>);
 static_assert(deco::trait::InputResultType<std::vector<int>>);
 static_assert(deco::trait::InputResultType<std::vector<std::string>>);
+static_assert(deco::trait::InputResultType<std::vector<BuiltinEnumValue>>);
 static_assert(!deco::trait::InputResultType<std::string_view>);
 static_assert(!deco::trait::InputResultType<std::vector<std::string_view>>);
 static_assert(!deco::trait::InputResultType<const char*>);
@@ -80,6 +96,30 @@ struct DeclOpt {
     <std::vector<std::string>> tags = std::vector<std::string>{"x", "y"};
     DecoMulti(2, help = "multi"; names = {"-P"};)
     <std::vector<int>> pair = std::vector<int>{1, 2};
+};
+
+auto alias_decl_forward_fn(const eventide::option::ParsedArgumentOwning&)
+    -> std::expected<std::vector<std::string>, std::string> {
+    return std::vector<std::string>{"--target", "value"};
+}
+
+auto alias_decl_forward_with_context_fn(const eventide::option::ParsedArgumentOwning&,
+                                        const deco::decl::IntoContext&)
+    -> std::expected<std::vector<std::string>, std::string> {
+    return std::vector<std::string>{"--target", "value"};
+}
+
+struct AliasDeclOpt {
+    DecoFlagAlias(names = {"-O1"}; forward = {"--optimize", "1"};) _;
+
+    DecoKVAlias(names = {"--define-alias"};
+                forward = std::vector<std::string_view>{"--define"};) __;
+
+    DecoCommaAlias(names = {"--tags-alias"}; forward = {"--tags"};) ___;
+
+    DecoMultiAlias(2, names = {"--pair-alias"}; forward = alias_decl_forward_fn;) ____;
+
+    DecoFlagAlias(names = {"--ctx"}; forward = alias_decl_forward_with_context_fn;) _____;
 };
 
 static_assert(std::is_same_v<decltype(DeclOpt{}.pack)::result_type, std::vector<std::string>>);
@@ -161,6 +201,54 @@ TEST_CASE(option_declaration_has_expected_shape_and_default_assignment) {
     EXPECT_TRUE(opt.pair.value()[1] == 8);
 }
 
+TEST_CASE(alias_declaration_has_expected_shape) {
+    deco::decl::FlagAliasFields flag_cfg{};
+    flag_cfg.names = {"-O1"};
+    flag_cfg.forward = {"--optimize", "1"};
+
+    deco::decl::KVAliasFields kv_cfg{};
+    kv_cfg.names = {"--define-alias"};
+    kv_cfg.forward = std::vector<std::string_view>{"--define"};
+
+    deco::decl::CommaJoinedAliasFields comma_cfg{};
+    comma_cfg.names = {"--tags-alias"};
+    comma_cfg.forward = {"--tags"};
+
+    deco::decl::MultiAliasFields multi_cfg{};
+    multi_cfg.names = {"--pair-alias"};
+    multi_cfg.arg_num = 2;
+    multi_cfg.forward = alias_decl_forward_fn;
+
+    deco::decl::FlagAliasFields ctx_cfg{};
+    ctx_cfg.names = {"--ctx"};
+    ctx_cfg.forward = alias_decl_forward_with_context_fn;
+
+    static_assert(!std::is_base_of_v<deco::decl::DecoOptionBase, deco::decl::FlagAliasFields>);
+
+    EXPECT_TRUE(flag_cfg.names.size() == 1);
+    EXPECT_TRUE(flag_cfg.names[0] == "-O1");
+    EXPECT_TRUE(flag_cfg.forward.kind == deco::decl::AliasForwardField::Kind::Static);
+    EXPECT_TRUE(flag_cfg.forward.static_tokens.size() == 2);
+    EXPECT_TRUE(flag_cfg.forward.static_tokens[0] == "--optimize");
+    EXPECT_TRUE(flag_cfg.forward.static_tokens[1] == "1");
+
+    EXPECT_TRUE(kv_cfg.forward.kind == deco::decl::AliasForwardField::Kind::Static);
+    EXPECT_TRUE(kv_cfg.forward.static_tokens.size() == 1);
+    EXPECT_TRUE(kv_cfg.forward.static_tokens[0] == "--define");
+    EXPECT_TRUE(kv_cfg.style == deco::decl::KVStyle::Separate);
+
+    EXPECT_TRUE(comma_cfg.forward.kind == deco::decl::AliasForwardField::Kind::Static);
+    EXPECT_TRUE(comma_cfg.forward.static_tokens.size() == 1);
+    EXPECT_TRUE(comma_cfg.forward.static_tokens[0] == "--tags");
+
+    EXPECT_TRUE(multi_cfg.forward.kind == deco::decl::AliasForwardField::Kind::Dynamic);
+    EXPECT_TRUE(multi_cfg.forward.dynamic != nullptr);
+    EXPECT_TRUE(multi_cfg.arg_num == 2);
+
+    EXPECT_TRUE(ctx_cfg.forward.kind == deco::decl::AliasForwardField::Kind::DynamicWithContext);
+    EXPECT_TRUE(ctx_cfg.forward.dynamic_with_context != nullptr);
+}
+
 TEST_CASE(option_into_assigns_values_by_option_kind) {
     deco::decl::FlagOption<bool> flag{};
     auto flag_ok = flag.into(make_parsed_arg("--verbose"));
@@ -206,6 +294,30 @@ TEST_CASE(option_into_assigns_values_by_option_kind) {
     auto float_err = float_opt.into(make_parsed_arg("--ratio", {"3.14x"}));
     EXPECT_TRUE(float_err.has_value());
 
+    deco::decl::ScalarOption<BuiltinEnumValue> enum_opt{};
+    auto enum_ok = enum_opt.into(make_parsed_arg("--mode", {"Beta"}));
+    EXPECT_TRUE(!enum_ok.has_value());
+    EXPECT_TRUE(enum_opt.has_value());
+    EXPECT_TRUE(enum_opt.value() == BuiltinEnumValue::Beta);
+    auto enum_err = enum_opt.into(make_parsed_arg("--mode", {"Delta"}));
+    EXPECT_TRUE(enum_err.has_value());
+    EXPECT_TRUE(enum_err->contains("invalid enum value: Delta"));
+    EXPECT_TRUE(enum_err->contains("supported: alpha, beta, gamma"));
+
+    deco::decl::InputOption<BuiltinEnumValue> enum_input{};
+    auto enum_input_ok = enum_input.into(make_parsed_arg("Gamma"));
+    EXPECT_TRUE(!enum_input_ok.has_value());
+    EXPECT_TRUE(enum_input.has_value());
+    EXPECT_TRUE(enum_input.value() == BuiltinEnumValue::Gamma);
+
+    deco::decl::ScalarOption<BuiltinSpelledEnum> spelled_enum{};
+    EXPECT_TRUE(!spelled_enum.into(make_parsed_arg("--kind", {"my_value"})).has_value());
+    EXPECT_TRUE(spelled_enum.value() == BuiltinSpelledEnum::myValue);
+    EXPECT_TRUE(!spelled_enum.into(make_parsed_arg("--kind", {"Delete"})).has_value());
+    EXPECT_TRUE(spelled_enum.value() == BuiltinSpelledEnum::Delete_);
+    EXPECT_TRUE(!spelled_enum.into(make_parsed_arg("--kind", {"123"})).has_value());
+    EXPECT_TRUE(spelled_enum.value() == BuiltinSpelledEnum::V123);
+
     deco::decl::ScalarOption<double> double_opt{};
     auto double_err = double_opt.into(make_parsed_arg("--precise", {"3.14"}));
     EXPECT_FALSE(double_err.has_value());
@@ -220,6 +332,19 @@ TEST_CASE(option_into_assigns_values_by_option_kind) {
     EXPECT_TRUE(vector_opt.value()[1] == 8);
     auto vector_err = vector_opt.into(make_parsed_arg("-P", {"7", "x"}));
     EXPECT_TRUE(vector_err.has_value());
+
+    deco::decl::VectorOption<std::vector<BuiltinEnumValue>> enum_vector{};
+    auto enum_vector_ok = enum_vector.into(make_parsed_arg("-M", {"Alpha", "Gamma"}));
+    EXPECT_TRUE(!enum_vector_ok.has_value());
+    EXPECT_TRUE(enum_vector.has_value());
+    EXPECT_TRUE(enum_vector.value().size() == 2);
+    EXPECT_TRUE(enum_vector.value()[0] == BuiltinEnumValue::Alpha);
+    EXPECT_TRUE(enum_vector.value()[1] == BuiltinEnumValue::Gamma);
+    auto enum_vector_err = enum_vector.into(make_parsed_arg("-M", {"Alpha", "Delta"}));
+    EXPECT_TRUE(enum_vector_err.has_value());
+    EXPECT_TRUE(enum_vector_err->contains("invalid vector value at index 1"));
+    EXPECT_TRUE(enum_vector_err->contains("invalid enum value: Delta"));
+    EXPECT_TRUE(enum_vector_err->contains("supported: alpha, beta, gamma"));
 
     deco::decl::ScalarOption<CustomScalarResult> custom_scalar{};
     auto custom_scalar_ok = custom_scalar.into(make_parsed_arg("--name", {"alice"}));

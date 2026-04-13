@@ -116,6 +116,21 @@ struct KVDefaultNameSplitStyleOpt {
     <int> level;
 };
 
+struct KVAliasSplitStyleByNameOpt {
+    DecoKVAliasStyled(static_cast<char>(deco::decl::KVStyle::Joined |
+                                        deco::decl::KVStyle::Separate),
+                      names = {"--target=", "--target-alias"};
+                      required = false;
+                      forward = std::vector<std::string_view>{"--target"};) _;
+};
+
+struct KVAliasDefaultNameSplitStyleOpt {
+    DecoKVAliasStyled(static_cast<char>(deco::decl::KVStyle::Joined |
+                                        deco::decl::KVStyle::Separate),
+                      required = false;
+                      forward = std::vector<std::string_view>{"--target"};) target_alias;
+};
+
 struct DeepCfgInner {
     DECO_CFG_START(required = false; category = innerCategory;);
     DecoKV()
@@ -165,6 +180,24 @@ struct MultiExclusiveCategoryOpt {
     request;
 };
 
+auto backend_alias_forward_fn(const eventide::option::ParsedArgumentOwning&)
+    -> std::expected<std::vector<std::string>, std::string> {
+    return std::vector<std::string>{"--pair", "left", "right"};
+}
+
+struct AliasBackendOpt {
+    DecoFlagAlias(names = {"-O1", "--optimize-one"}; required = false; category = versionCategory;
+                  forward = {"--optimize", "1"};) _;
+
+    DecoKVAlias(names = {"--define-alias", "--define-alias-alt"}; required = false;
+                category = sharedCategory;
+                forward = std::vector<std::string_view>{"--define"};) __;
+
+    DecoMultiAlias(2, names = {"--pair-alias", "--pair-alias-alt"}; required = false;
+                   category = requestCategory;
+                   forward = backend_alias_forward_fn;) ___;
+};
+
 using ParseAllStorage = std::remove_cvref_t<decltype(deco::detail::build_storage<ParseAllOpt>())>;
 static_assert(std::is_base_of_v<deco::detail::DecoStructConsumer<ParseAllStorage, ParseAllOpt>,
                                 ParseAllStorage>);
@@ -174,10 +207,6 @@ static_assert(std::is_same_v<
               ParseAllStorage,
               deco::detail::LLVMOptGenerator<ParseAllOpt,
                                              deco::detail::BuildStorage<ParseAllOpt>::record>>);
-static_assert(
-    std::is_same_v<
-        ParseAllStorage,
-        deco::detail::OptManager<ParseAllOpt, deco::detail::BuildStorage<ParseAllOpt>::record>>);
 
 using Parsed = eventide::option::ParsedArgument;
 
@@ -471,6 +500,72 @@ TEST_CASE(parse_kv_default_name_adds_joined_equals_alias_when_style_includes_joi
     EXPECT_TRUE((*joined_args)[0].values[0] == "42");
 }
 
+TEST_CASE(parse_kv_alias_supports_joined_and_separate_styles) {
+    const auto& built = deco::detail::build_storage<KVAliasSplitStyleByNameOpt>();
+    EXPECT_TRUE(built.option_infos().size() == 3);
+    EXPECT_TRUE(built.option_infos()[1].kind == eventide::option::Option::JoinedClass);
+    EXPECT_TRUE(built.option_infos()[2].kind == eventide::option::Option::SeparateClass);
+
+    auto joined_args = parse_with(built, {"--target=42"});
+    EXPECT_TRUE(joined_args.has_value());
+    if(!joined_args.has_value()) {
+        return;
+    }
+    EXPECT_TRUE(joined_args->size() == 1);
+    if(joined_args->size() != 1) {
+        return;
+    }
+    EXPECT_TRUE((*joined_args)[0].get_spelling_view() == "--target=");
+    EXPECT_TRUE((*joined_args)[0].values.size() == 1);
+    EXPECT_TRUE((*joined_args)[0].values[0] == "42");
+
+    auto separate_args = parse_with(built, {"--target-alias", "7"});
+    EXPECT_TRUE(separate_args.has_value());
+    if(!separate_args.has_value()) {
+        return;
+    }
+    EXPECT_TRUE(separate_args->size() == 1);
+    if(separate_args->size() != 1) {
+        return;
+    }
+    EXPECT_TRUE((*separate_args)[0].get_spelling_view() == "--target-alias");
+    EXPECT_TRUE((*separate_args)[0].values.size() == 1);
+    EXPECT_TRUE((*separate_args)[0].values[0] == "7");
+}
+
+TEST_CASE(parse_kv_alias_default_name_adds_joined_equals_alias_when_style_includes_joined) {
+    const auto& built = deco::detail::build_storage<KVAliasDefaultNameSplitStyleOpt>();
+    EXPECT_TRUE(built.option_infos().size() == 3);
+    EXPECT_TRUE(built.option_infos()[1].kind == eventide::option::Option::SeparateClass);
+    EXPECT_TRUE(built.option_infos()[2].kind == eventide::option::Option::JoinedClass);
+
+    auto separate_args = parse_with(built, {"--target-alias", "7"});
+    EXPECT_TRUE(separate_args.has_value());
+    if(!separate_args.has_value()) {
+        return;
+    }
+    EXPECT_TRUE(separate_args->size() == 1);
+    if(separate_args->size() != 1) {
+        return;
+    }
+    EXPECT_TRUE((*separate_args)[0].get_spelling_view() == "--target-alias");
+    EXPECT_TRUE((*separate_args)[0].values.size() == 1);
+    EXPECT_TRUE((*separate_args)[0].values[0] == "7");
+
+    auto joined_args = parse_with(built, {"--target-alias=42"});
+    EXPECT_TRUE(joined_args.has_value());
+    if(!joined_args.has_value()) {
+        return;
+    }
+    EXPECT_TRUE(joined_args->size() == 1);
+    if(joined_args->size() != 1) {
+        return;
+    }
+    EXPECT_TRUE((*joined_args)[0].get_spelling_view() == "--target-alias=");
+    EXPECT_TRUE((*joined_args)[0].values.size() == 1);
+    EXPECT_TRUE((*joined_args)[0].values[0] == "42");
+}
+
 TEST_CASE(category_map_assigns_expected_categories_for_parsed_args) {
     const auto& built = deco::detail::build_storage<ParseAllOpt>();
     auto parsed_args = parse_with(built,
@@ -571,6 +666,54 @@ TEST_CASE(category_map_supports_multiple_exclusive_category_definitions) {
     }
     EXPECT_TRUE(built.category_of((*parsed_args)[0].option_id) == &versionCategory);
     EXPECT_TRUE(built.category_of((*parsed_args)[1].option_id) == &requestCategory);
+}
+
+TEST_CASE(alias_entries_have_backend_metadata_without_accessor) {
+    const auto& built = deco::detail::build_storage<AliasBackendOpt>();
+
+    auto parsed = parse_with(
+        built,
+        {"--optimize-one", "--define-alias-alt", "NAME=VALUE", "--pair-alias-alt", "a", "b"});
+    EXPECT_TRUE(parsed.has_value());
+    if(!parsed.has_value()) {
+        return;
+    }
+
+    AliasBackendOpt opt{};
+    EXPECT_TRUE(parsed->size() == 3);
+    if(parsed->size() != 3) {
+        return;
+    }
+
+    const auto* flag_meta = built.alias_meta_of((*parsed)[0].option_id);
+    using alias_meta_t = std::remove_cvref_t<decltype(*flag_meta)>;
+    EXPECT_TRUE(flag_meta != nullptr);
+    EXPECT_TRUE(built.is_alias_option_id((*parsed)[0].option_id));
+    EXPECT_TRUE(built.field_ptr_of((*parsed)[0].option_id, opt) == nullptr);
+    EXPECT_TRUE(built.category_of((*parsed)[0].option_id) == &versionCategory);
+    EXPECT_TRUE(flag_meta->kind == alias_meta_t::Kind::Flag);
+    EXPECT_TRUE(flag_meta->forward_kind == deco::decl::AliasForwardField::Kind::Static);
+    EXPECT_TRUE(flag_meta->static_tokens.size() == 2);
+    EXPECT_TRUE(flag_meta->static_tokens[0] == "--optimize");
+    EXPECT_TRUE(flag_meta->static_tokens[1] == "1");
+
+    const auto* kv_meta = built.alias_meta_of((*parsed)[1].option_id);
+    EXPECT_TRUE(kv_meta != nullptr);
+    EXPECT_TRUE(built.field_ptr_of((*parsed)[1].option_id, opt) == nullptr);
+    EXPECT_TRUE(built.category_of((*parsed)[1].option_id) == &sharedCategory);
+    EXPECT_TRUE(kv_meta->kind == alias_meta_t::Kind::KV);
+    EXPECT_TRUE(kv_meta->forward_kind == deco::decl::AliasForwardField::Kind::Static);
+    EXPECT_TRUE(kv_meta->static_tokens.size() == 1);
+    EXPECT_TRUE(kv_meta->static_tokens[0] == "--define");
+
+    const auto* multi_meta = built.alias_meta_of((*parsed)[2].option_id);
+    EXPECT_TRUE(multi_meta != nullptr);
+    EXPECT_TRUE(built.field_ptr_of((*parsed)[2].option_id, opt) == nullptr);
+    EXPECT_TRUE(built.category_of((*parsed)[2].option_id) == &requestCategory);
+    EXPECT_TRUE(multi_meta->kind == alias_meta_t::Kind::Multi);
+    EXPECT_TRUE(multi_meta->forward_kind == deco::decl::AliasForwardField::Kind::Dynamic);
+    EXPECT_TRUE(multi_meta->dynamic != nullptr);
+    EXPECT_TRUE(multi_meta->arg_num == 2);
 }
 
 TEST_CASE(visit_fields_applies_next_cfg_to_nested_struct_fields) {

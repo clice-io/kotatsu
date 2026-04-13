@@ -1,8 +1,15 @@
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "eventide/deco/deco.h"
 #include <eventide/zest/zest.h>
+
+enum class DescEnum {
+    Alpha,
+    Beta,
+    Gamma,
+};
 
 namespace {
 
@@ -45,6 +52,22 @@ struct DescOpt {
 struct VectorInputDescOpt {
     DecoInput(meta_var = "INPUT"; help = "Input files"; required = false;)
     <std::vector<std::string>> inputs;
+};
+
+struct NoHelpDescOpt {
+    DecoFlag(required = false;)
+    no_help_flag;
+};
+
+struct EnumVectorDescOpt {
+    DecoComma(required = false;)
+    <std::vector<DescEnum>> values;
+
+    DecoMulti(2, required = false;)
+    <std::vector<DescEnum>> pair;
+
+    DecoInput(required = false;)
+    <std::vector<DescEnum>> inputs;
 };
 
 }  // namespace
@@ -93,6 +116,41 @@ TEST_CASE(from_deco_option_renders_help_style_text) {
     const auto vector_input_help = deco::desc::from_deco_option(vector_opt.inputs, true);
     EXPECT_TRUE(vector_input_help.find("<INPUT>...") != std::string::npos);
     EXPECT_TRUE(vector_input_help.find("Input files") != std::string::npos);
+}
+
+TEST_CASE(from_deco_option_uses_configured_help_layout_and_default_help) {
+    DescOpt opt{};
+    NoHelpDescOpt no_help_opt{};
+    auto config = deco::config::get();
+    config.render.compatible.usage.help_column = 10;
+    config.render.compatible.usage.default_help = "configured help text";
+
+    const auto verbose_help = deco::desc::from_deco_option(opt.verbose, true, {}, &config);
+    EXPECT_TRUE(verbose_help.find("-v, --verbose") != std::string::npos);
+    EXPECT_TRUE(verbose_help.find("\n") != std::string::npos);
+    EXPECT_TRUE(verbose_help.find("Show version and exit") != std::string::npos);
+
+    const auto no_help = deco::desc::from_deco_option(no_help_opt.no_help_flag, true, {}, &config);
+    EXPECT_TRUE(no_help.find("configured help text") != std::string::npos);
+}
+
+TEST_CASE(from_deco_option_uses_override_config_for_non_option_help) {
+    NoHelpDescOpt no_help_opt{};
+    auto config = deco::config::get();
+    config.render.compatible.usage.default_help = "fallback from override";
+
+    const auto no_help = deco::desc::from_deco_option(no_help_opt.no_help_flag, true, {}, &config);
+    EXPECT_TRUE(no_help.find("fallback from override") != std::string::npos);
+}
+
+TEST_CASE(from_deco_option_infers_enum_meta_var_for_vector_results) {
+    EnumVectorDescOpt opt{};
+
+    EXPECT_TRUE(deco::desc::from_deco_option(opt.values, false, "values") ==
+                "--values,<alpha|beta|gamma>[,<alpha|beta|gamma>...]");
+    EXPECT_TRUE(deco::desc::from_deco_option(opt.pair, false, "pair") ==
+                "--pair <alpha|beta|gamma> <alpha|beta|gamma>");
+    EXPECT_TRUE(deco::desc::from_deco_option(opt.inputs) == "<alpha|beta|gamma>...");
 }
 
 };  // TEST_SUITE(deco_descriptor)

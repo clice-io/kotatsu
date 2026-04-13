@@ -347,44 +347,102 @@ std::expected<PArg, const char*>
     // Search for the first next option which could be a prefix.
     start = (this->tablegen_mode) ? std::lower_bound(start, end, name, OptNameLess()) : start;
 
-    // Options are stored in sorted order, with '\0' at the end of the
-    // alphabet. Since the only options which can accept a string must
-    // prefix it, we iteratively search for the next option which could
-    // be a prefix.
-    //
-    // FIXME: This is searching much more than necessary, but I am
-    // blanking on the simplest way to make it fast. We can solve this
-    // problem when we move to TableGen.
-    for(; start != end; ++start) {
-        unsigned arg_sz = 0;
-        // Scan for first option which is a proper prefix.
+    // TableGen-sorted tables keep the original first-match behavior.
+    if(this->tablegen_mode) {
+        // Options are stored in sorted order, with '\0' at the end of the
+        // alphabet. Since the only options which can accept a string must
+        // prefix it, we iteratively search for the next option which could
+        // be a prefix.
         for(; start != end; ++start) {
-            if(arg_sz = match_opt(start, str, this->ignore_case); arg_sz) {
+            unsigned arg_sz = 0;
+            // Scan for first option which is a proper prefix.
+            for(; start != end; ++start) {
+                if(arg_sz = match_opt(start, str, this->ignore_case); arg_sz) {
+                    break;
+                }
+            }
+            if(start == end) {
                 break;
             }
+
+            Option opt(start, this);
+
+            if(exclude_option(opt)) {
+                continue;
+            }
+
+            auto a = opt.accept(argv,
+                                std::string_view(argv[index]).substr(0, arg_sz),
+                                /*GroupedShortOption=*/false,
+                                index);
+            if(a.has_value()) {
+                return a;
+            }
+
+            // Otherwise, see if this argument was missing values.
+            if(prev != index) {
+                return std::unexpected(a.error() != nullptr ? a.error() : "missing argument");
+            }
         }
-        if(start == end) {
-            break;
+    } else {
+        std::expected<PArg, const char*> best_match =
+            std::unexpected("internal error: option does not match argument");
+        unsigned best_match_size = 0;
+        unsigned best_index = prev;
+        const char* missing_error = nullptr;
+        unsigned missing_index = prev;
+        unsigned missing_match_size = 0;
+
+        // Unsorted tables may contain overlapping spellings, so prefer the
+        // longest successful prefix match instead of returning the first one.
+        for(; start != end; ++start) {
+            unsigned arg_sz = 0;
+            // Scan for first option which is a proper prefix.
+            for(; start != end; ++start) {
+                if(arg_sz = match_opt(start, str, this->ignore_case); arg_sz) {
+                    break;
+                }
+            }
+            if(start == end) {
+                break;
+            }
+
+            Option opt(start, this);
+
+            if(exclude_option(opt)) {
+                continue;
+            }
+
+            unsigned candidate_index = prev;
+            auto a = opt.accept(argv,
+                                std::string_view(argv[prev]).substr(0, arg_sz),
+                                /*GroupedShortOption=*/false,
+                                candidate_index);
+            if(a.has_value()) {
+                if(best_match_size < arg_sz) {
+                    best_match = std::move(a);
+                    best_match_size = arg_sz;
+                    best_index = candidate_index;
+                }
+                continue;
+            }
+
+            if(candidate_index != prev && missing_match_size < arg_sz) {
+                missing_error = a.error() != nullptr ? a.error() : "missing argument";
+                missing_index = candidate_index;
+                missing_match_size = arg_sz;
+            }
         }
 
-        Option opt(start, this);
-
-        if(exclude_option(opt)) {
-            continue;
+        if(best_match.has_value()) {
+            index = best_index;
+            return best_match;
         }
 
-        // See if this option matches.
-        auto a = opt.accept(argv,
-                            std::string_view(argv[index]).substr(0, arg_sz),
-                            /*GroupedShortOption=*/false,
-                            index);
-        if(a.has_value()) {
-            return a;
+        if(missing_match_size != 0) {
+            index = missing_index;
+            return std::unexpected(missing_error != nullptr ? missing_error : "missing argument");
         }
-
-        // Otherwise, see if this argument was missing values.
-        if(prev != index)
-            return std::unexpected(a.error() != nullptr ? a.error() : "missing argument");
     }
 
     // If we failed to find an option and this arg started with /, then it's

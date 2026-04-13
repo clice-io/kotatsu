@@ -1,5 +1,6 @@
 #pragma once
 #include "./detail/backend.h"
+#include "./detail/config.h"
 #include "./detail/decl.h"
 #include "./detail/descriptor.h"
 #include "./detail/macro.h"

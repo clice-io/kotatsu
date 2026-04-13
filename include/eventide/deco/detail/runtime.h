@@ -46,7 +46,13 @@ struct Invocation {
     std::vector<backend::ParsedArgumentOwning> parsed_arguments{};
     std::vector<std::string> command_path{};
     std::string_view command_overview{};
-    void (*usage_writer)(std::ostream&, std::string_view, bool, const text::Renderer*) = nullptr;
+    std::optional<config::Config> usage_config{};
+    std::optional<text::Renderer> resolved_renderer{};
+    void (*usage_writer)(std::ostream&,
+                         std::string_view,
+                         bool,
+                         const config::Config*,
+                         const text::Renderer*) = nullptr;
     const text::Renderer* renderer_ptr = nullptr;
 
     auto next_cursor() const -> unsigned {
@@ -77,6 +83,9 @@ struct Invocation {
     }
 
     auto renderer() const -> const text::Renderer& {
+        if(resolved_renderer.has_value()) {
+            return *resolved_renderer;
+        }
         return text::resolve_renderer(renderer_ptr);
     }
 
@@ -96,7 +105,11 @@ struct Invocation {
 
     auto usage(std::ostream& os, bool include_help = true) const -> void {
         if(usage_writer != nullptr) {
-            usage_writer(os, command_overview, include_help, renderer_ptr);
+            usage_writer(os,
+                         command_overview,
+                         include_help,
+                         usage_config ? &*usage_config : nullptr,
+                         renderer_ptr);
         }
     }
 
@@ -112,6 +125,79 @@ template <typename T>
 constexpr inline bool always_false_v = false;
 
 namespace detail {
+
+struct ResolvedAliasForward {
+    std::vector<std::string> argv;
+};
+
+template <typename AliasMeta>
+inline auto resolve_static_alias_forward(const AliasMeta& meta,
+                                         const backend::ParsedArgumentOwning& arg)
+    -> std::expected<std::vector<std::string>, std::string> {
+    std::vector<std::string> argv;
+    switch(meta.kind) {
+        case AliasMeta::Kind::None: return argv;
+        case AliasMeta::Kind::Flag:
+        case AliasMeta::Kind::KV:
+        case AliasMeta::Kind::Multi:
+            argv.reserve(meta.static_tokens.size() + arg.values.size());
+            for(const auto token: meta.static_tokens) {
+                argv.emplace_back(token);
+            }
+            for(const auto& value: arg.values) {
+                argv.push_back(value);
+            }
+            return argv;
+        case AliasMeta::Kind::CommaJoined:
+            if(meta.static_tokens.empty()) {
+                return std::unexpected(
+                    std::string("comma alias forward requires at least one target token"));
+            }
+            argv.reserve(meta.static_tokens.size());
+            for(std::size_t i = 0; i + 1 < meta.static_tokens.size(); ++i) {
+                argv.emplace_back(meta.static_tokens[i]);
+            }
+            {
+                std::string joined(meta.static_tokens.back());
+                for(const auto& value: arg.values) {
+                    joined.push_back(',');
+                    joined += value;
+                }
+                argv.push_back(std::move(joined));
+            }
+            return argv;
+    }
+    return std::unexpected(std::string("unsupported alias kind"));
+}
+
+template <typename AliasMeta>
+inline auto resolve_alias_forward(const AliasMeta& meta,
+                                  const backend::ParsedArgumentOwning& arg,
+                                  const decl::IntoContext& context)
+    -> std::expected<ResolvedAliasForward, std::string> {
+    if(meta.forward_kind == decl::AliasForwardField::Kind::Static) {
+        if(auto rewritten = resolve_static_alias_forward(meta, arg)) {
+            return ResolvedAliasForward{.argv = std::move(*rewritten)};
+        } else {
+            return std::unexpected(std::move(rewritten.error()));
+        }
+    }
+    if(meta.dynamic_with_context != nullptr) {
+        if(auto rewritten = meta.dynamic_with_context(arg, context)) {
+            return ResolvedAliasForward{.argv = std::move(*rewritten)};
+        } else {
+            return std::unexpected(std::move(rewritten.error()));
+        }
+    }
+    if(meta.dynamic != nullptr) {
+        if(auto rewritten = meta.dynamic(arg)) {
+            return ResolvedAliasForward{.argv = std::move(*rewritten)};
+        } else {
+            return std::unexpected(std::move(rewritten.error()));
+        }
+    }
+    return std::unexpected(std::string("alias forward is not configured"));
+}
 
 template <typename Ptr>
 struct member_object_pointer_traits;
@@ -158,7 +244,8 @@ constexpr decltype(auto) access_member_path(Obj&& obj) {
 }
 
 template <typename T>
-auto make_usage_document(std::string_view command_overview) -> text::UsageDocument {
+auto make_usage_document(std::string_view command_overview,
+                         const config::Config* usage_config = nullptr) -> text::UsageDocument {
     text::UsageDocument document{
         .overview = std::string(command_overview),
     };
@@ -187,7 +274,7 @@ auto make_usage_document(std::string_view command_overview) -> text::UsageDocume
 
         auto& group = document.groups[group_index];
         group.entries.push_back(text::UsageEntry{
-            .usage = desc::from_deco_option(field, false, name),
+            .usage = desc::from_deco_option(field, false, name, usage_config),
             .help = desc::detail::has_help_text(cfg.help) ? std::string(cfg.help) : std::string{},
         });
         return true;
@@ -201,8 +288,9 @@ template <typename T>
 void write_usage_for(std::ostream& os,
                      std::string_view command_overview,
                      bool include_help = true,
+                     const config::Config* usage_config = nullptr,
                      const text::Renderer* renderer = nullptr) {
-    os << text::render_usage(detail::make_usage_document<T>(command_overview),
+    os << text::render_usage(detail::make_usage_document<T>(command_overview, usage_config),
                              include_help,
                              renderer);
 }
@@ -377,10 +465,14 @@ std::string check_valid(const T& options,
     std::string err = "";
     // check required options
     storage.visit_fields(options, [&](auto& field, const auto& cfg, std::string_view name, auto) {
-        if(matched_categories.contains(cfg.category.ptr()) && cfg.required && !field.has_value()) {
-            err = std::format("required option {} is missing",
-                              desc::from_deco_option(cfg, false, name));
-            return false;
+        using field_ty = std::remove_cvref_t<decltype(field)>;
+        if constexpr(ty::deco_option_like<field_ty>) {
+            if(matched_categories.contains(cfg.category.ptr()) && cfg.required &&
+               !field.has_value()) {
+                err = std::format("required option {} is missing",
+                                  desc::from_deco_option(cfg, false, name));
+                return false;
+            }
         }
         return true;
     });
@@ -495,9 +587,47 @@ std::expected<Invocation<T>, ParseError>
                     option_callback = storage.trailing_callback();
                 }
 
+                category = category ? category : storage.category_of(raw_parg.option_id);
+                const auto into_context =
+                    decl::IntoContext::from_argument(argv_view, arg_snapshot, formatter);
+                if(const auto* alias_meta = storage.alias_meta_of(raw_parg.option_id)) {
+                    if(category == nullptr) {
+                        err = {ParseError::Type::Internal,
+                               error_at_argument("no category found for alias option id " +
+                                                 std::to_string(raw_parg.option_id.id()))};
+                        return false;
+                    }
+                    auto resolved = resolve_alias_forward(*alias_meta, arg_snapshot, into_context);
+                    if(!resolved.has_value()) {
+                        const auto reason = resolved.error();
+                        const bool should_format =
+                            alias_meta->forward_kind !=
+                            decl::AliasForwardField::Kind::DynamicWithContext;
+                        err = {ParseError::Type::IntoError,
+                               reason.empty() || !should_format
+                                   ? std::string(reason)
+                                   : into_context.format_error(reason)};
+                        return false;
+                    }
+
+                    std::vector<std::string> rewritten = std::move(resolved->argv);
+                    const auto suffix = current_argv.subspan(next_cursor);
+                    rewritten.reserve(rewritten.size() + suffix.size());
+                    for(const auto& token: suffix) {
+                        rewritten.push_back(token);
+                    }
+
+                    res.next_index = next_cursor;
+                    restart_requested = true;
+                    restart_owned_argv =
+                        std::make_shared<std::vector<std::string>>(std::move(rewritten));
+                    restart_argv = std::span<std::string>(restart_owned_argv->data(),
+                                                          restart_owned_argv->size());
+                    return false;
+                }
+
                 opt_raw_ptr = opt_raw_ptr ? opt_raw_ptr
                                           : storage.field_ptr_of(raw_parg.option_id, res.options);
-                category = category ? category : storage.category_of(raw_parg.option_id);
                 if(!option_callback) {
                     option_callback = storage.callback_of(raw_parg.option_id);
                 }
@@ -509,9 +639,7 @@ std::expected<Invocation<T>, ParseError>
                                              std::to_string(raw_parg.option_id.id()))};
                     return false;
                 }
-                if(auto parse_err = opt_accessor->into(
-                       std::move(raw_parg),
-                       decl::IntoContext::from_argument(argv_view, arg_snapshot, formatter))) {
+                if(auto parse_err = opt_accessor->into(std::move(raw_parg), into_context)) {
                     err = {ParseError::Type::IntoError, std::move(*parse_err)};
                     return false;
                 }
@@ -587,15 +715,19 @@ std::expected<Invocation<T>, ParseError>
     storage.visit_fields(
         res.options,
         [&](auto& field, const auto& cfg, std::string_view name, auto) {
-            if(res.matched_categories.contains(cfg.category.ptr()) && cfg.required &&
-               !field.has_value()) {
-                const auto active_argv =
-                    std::span<const std::string>(res.active_argv.data(), res.active_argv.size());
-                err = {ParseError::Type::DecoParsing,
-                       decl::IntoContext::at_cursor(active_argv, res.next_index, formatter)
-                           .format_error(std::format("required option {} is missing",
-                                                     desc::from_deco_option(cfg, false, name)))};
-                return false;
+            using field_ty = std::remove_cvref_t<decltype(field)>;
+            if constexpr(ty::deco_option_like<field_ty>) {
+                if(res.matched_categories.contains(cfg.category.ptr()) && cfg.required &&
+                   !field.has_value()) {
+                    const auto active_argv = std::span<const std::string>(res.active_argv.data(),
+                                                                          res.active_argv.size());
+                    err = {
+                        ParseError::Type::DecoParsing,
+                        decl::IntoContext::at_cursor(active_argv, res.next_index, formatter)
+                            .format_error(std::format("required option {} is missing",
+                                                      desc::from_deco_option(cfg, false, name)))};
+                    return false;
+                }
             }
             return true;
         });
@@ -740,6 +872,7 @@ class Command {
     std::vector<CategoryMatch> categoryMatches;
     std::optional<match_handler_t> matchAllHandler;
     std::optional<text::Renderer> textRenderer;
+    config::ConfigOverride configOverride{};
     error_fn_t errorHandler = [](const ParseError& err) {
         std::println(stderr, "{}", err.message);
     };
@@ -748,10 +881,26 @@ class Command {
         return textRenderer.has_value() ? &*textRenderer : nullptr;
     }
 
-    auto bind_runtime(invocation_t& invocation) const -> void {
+    auto resolved_config() const -> config::Config {
+        return config::merge(config::get(), configOverride);
+    }
+
+    auto make_fallback_renderer() const -> std::optional<text::Renderer> {
+        if(renderer_ptr() != nullptr) {
+            return std::nullopt;
+        }
+        if(text::explicit_default_renderer() != nullptr) {
+            return std::nullopt;
+        }
+        return text::CompatibleRenderer(resolved_config().render.compatible);
+    }
+
+    auto bind_runtime(invocation_t& invocation,
+                      const text::Renderer* active_renderer = nullptr) const -> void {
         invocation.command_overview = commandOverview;
+        invocation.usage_config = resolved_config();
         invocation.usage_writer = &write_usage_for<T>;
-        invocation.renderer_ptr = renderer_ptr();
+        invocation.renderer_ptr = active_renderer != nullptr ? active_renderer : renderer_ptr();
         if(!commandName.empty() && invocation.command_path.empty()) {
             invocation.command_path = {commandName};
         }
@@ -857,23 +1006,37 @@ public:
         return *this;
     }
 
-    auto& text_style(text::TextStyle style) {
-        textRenderer = text::CompatibleRenderer(std::move(style));
+    auto& config(config::ConfigOverride override_config) {
+        configOverride = std::move(override_config);
         return *this;
     }
 
+    auto& render_with_compatible(text::CompatibleRendererConfig config = {}) {
+        return render_with(text::CompatibleRenderer(std::move(config)));
+    }
+
+    auto& render_with_modern(text::ModernRendererConfig config = {}) {
+        return render_with(text::ModernRenderer(std::move(config)));
+    }
+
     auto invoke(std::span<std::string> argv) -> std::expected<invocation_t, ParseError> {
+        std::optional<text::Renderer> fallback_renderer = make_fallback_renderer();
+        const text::Renderer* active_renderer = renderer_ptr();
+        if(fallback_renderer.has_value()) {
+            active_renderer = &*fallback_renderer;
+        }
+
         auto res = detail::run_parse_session<T>(
             argv,
-            [this](invocation_t& invocation,
-                   decl::DecoOptionBase& accessor,
-                   const backend::ParsedArgumentOwning& arg,
-                   unsigned cursor,
-                   std::span<std::string> active_argv) {
+            [this, active_renderer](invocation_t& invocation,
+                                    decl::DecoOptionBase& accessor,
+                                    const backend::ParsedArgumentOwning& arg,
+                                    unsigned cursor,
+                                    std::span<std::string> active_argv) {
                 if(afterHooks.empty()) {
                     return decl::ParseControl::next();
                 }
-                bind_runtime(invocation);
+                bind_runtime(invocation, active_renderer);
                 auto* accessor_ptr = &accessor;
                 for(auto& hook: afterHooks) {
                     if(hook.matches != nullptr && hook.matches(invocation.options, accessor_ptr)) {
@@ -886,12 +1049,17 @@ public:
                 }
                 return decl::ParseControl::next();
             },
-            renderer_ptr());
+            active_renderer);
         if(!res.has_value()) {
             return res;
         }
 
-        bind_runtime(*res);
+        if(fallback_renderer.has_value()) {
+            res->resolved_renderer = std::move(fallback_renderer);
+            active_renderer = &*res->resolved_renderer;
+        }
+
+        bind_runtime(*res, active_renderer);
         for(auto& finalize: finalizers) {
             finalize(*res);
         }
@@ -900,7 +1068,13 @@ public:
 
     template <typename Os>
     auto usage(Os& os, bool include_help = true) const -> void {
-        write_usage_for<T>(os, commandOverview, include_help, renderer_ptr());
+        const auto usage_config = resolved_config();
+        const auto fallback_renderer = make_fallback_renderer();
+        write_usage_for<T>(os,
+                           commandOverview,
+                           include_help,
+                           &usage_config,
+                           fallback_renderer.has_value() ? &*fallback_renderer : renderer_ptr());
     }
 
     auto execute(std::span<std::string> argv) -> void {
@@ -971,6 +1145,7 @@ class SubCommander {
     std::string commandOverview;
     std::string overview;
     std::optional<text::Renderer> textRenderer;
+    config::ConfigOverride configOverride{};
 
     static auto command_of(const decl::SubCommand& subcommand) -> std::string;
     static auto display_name_of(const decl::SubCommand& subcommand, std::string_view command)
@@ -978,6 +1153,10 @@ class SubCommander {
 
     auto renderer_ptr() const -> const text::Renderer* {
         return textRenderer.has_value() ? &*textRenderer : nullptr;
+    }
+
+    auto resolved_config() const -> config::Config {
+        return config::merge(config::get(), configOverride);
     }
 
 public:
@@ -1022,8 +1201,16 @@ public:
         return *this;
     }
 
-    auto& text_style(text::TextStyle style) {
-        textRenderer = text::CompatibleRenderer(std::move(style));
+    auto& render_with_compatible(text::CompatibleRendererConfig config = {}) {
+        return render_with(text::CompatibleRenderer(std::move(config)));
+    }
+
+    auto& render_with_modern(text::ModernRendererConfig config = {}) {
+        return render_with(text::ModernRenderer(std::move(config)));
+    }
+
+    auto& config(config::ConfigOverride override_config) {
+        configOverride = std::move(override_config);
         return *this;
     }
 

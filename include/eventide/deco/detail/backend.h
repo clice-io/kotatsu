@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstring>
+#include <expected>
 #include <limits>
 #include <span>
 #include <string_view>
@@ -115,7 +116,9 @@ private:
                 opt.help = cfg.help.get();
             }
             if(cfg.meta_var.is_overridden()) {
-                opt.meta_var = cfg.meta_var.get();
+                auto meta_var = cfg.meta_var.get();
+                meta_var.explicit_value = true;
+                opt.meta_var = meta_var;
             }
         }
     }
@@ -139,13 +142,29 @@ private:
         } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::TrailingInput) {
             return bool(derived.on_trailing_input_config(field, cfg, field_name, path));
         } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::Flag) {
-            return bool(derived.on_flag_config(field, cfg, field_name, path));
+            if constexpr(std::is_base_of_v<decl::AliasFields, CfgTy>) {
+                return bool(derived.on_flag_alias(field, cfg, field_name, path));
+            } else {
+                return bool(derived.on_flag_config(field, cfg, field_name, path));
+            }
         } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::KV) {
-            return bool(derived.on_kv_config(field, cfg, field_name, path));
+            if constexpr(std::is_base_of_v<decl::AliasFields, CfgTy>) {
+                return bool(derived.on_kv_alias(field, cfg, field_name, path));
+            } else {
+                return bool(derived.on_kv_config(field, cfg, field_name, path));
+            }
         } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::CommaJoined) {
-            return bool(derived.on_comma_joined_config(field, cfg, field_name, path));
+            if constexpr(std::is_base_of_v<decl::AliasFields, CfgTy>) {
+                return bool(derived.on_comma_joined_alias(field, cfg, field_name, path));
+            } else {
+                return bool(derived.on_comma_joined_config(field, cfg, field_name, path));
+            }
         } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::Multi) {
-            return bool(derived.on_multi_config(field, cfg, field_name, path));
+            if constexpr(std::is_base_of_v<decl::AliasFields, CfgTy>) {
+                return bool(derived.on_multi_alias(field, cfg, field_name, path));
+            } else {
+                return bool(derived.on_multi_config(field, cfg, field_name, path));
+            }
         } else {
             static_assert(eventide::dependent_false<CfgTy>, "Unsupported deco cfg type.");
             return true;
@@ -162,13 +181,30 @@ private:
         } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::TrailingInput) {
             return bool(derived.template on_trailing_input_config<FieldTy>(cfg, field_name, path));
         } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::Flag) {
-            return bool(derived.template on_flag_config<FieldTy>(cfg, field_name, path));
+            if constexpr(std::is_base_of_v<decl::AliasFields, CfgTy>) {
+                return bool(derived.template on_flag_alias<FieldTy>(cfg, field_name, path));
+            } else {
+                return bool(derived.template on_flag_config<FieldTy>(cfg, field_name, path));
+            }
         } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::KV) {
-            return bool(derived.template on_kv_config<FieldTy>(cfg, field_name, path));
+            if constexpr(std::is_base_of_v<decl::AliasFields, CfgTy>) {
+                return bool(derived.template on_kv_alias<FieldTy>(cfg, field_name, path));
+            } else {
+                return bool(derived.template on_kv_config<FieldTy>(cfg, field_name, path));
+            }
         } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::CommaJoined) {
-            return bool(derived.template on_comma_joined_config<FieldTy>(cfg, field_name, path));
+            if constexpr(std::is_base_of_v<decl::AliasFields, CfgTy>) {
+                return bool(derived.template on_comma_joined_alias<FieldTy>(cfg, field_name, path));
+            } else {
+                return bool(
+                    derived.template on_comma_joined_config<FieldTy>(cfg, field_name, path));
+            }
         } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::Multi) {
-            return bool(derived.template on_multi_config<FieldTy>(cfg, field_name, path));
+            if constexpr(std::is_base_of_v<decl::AliasFields, CfgTy>) {
+                return bool(derived.template on_multi_alias<FieldTy>(cfg, field_name, path));
+            } else {
+                return bool(derived.template on_multi_config<FieldTy>(cfg, field_name, path));
+            }
         } else {
             static_assert(eventide::dependent_false<CfgTy>, "Unsupported deco cfg type.");
             return true;
@@ -189,6 +225,13 @@ private:
                 return true;
             } else if constexpr(ty::deco_option_like<FieldTy>) {
                 using CfgTy = ty::field_ty_of<FieldTy>;
+                const auto cfg = make_configured_cfg<CfgTy>(config_stack);
+                const bool keep_going =
+                    bool(on_option(field.value(), cfg, name, std::index_sequence<Path..., idx>{}));
+                config_consume_next(config_stack, level);
+                return keep_going;
+            } else if constexpr(ty::is_alias_field<FieldTy>) {
+                using CfgTy = ty::alias_ty_of<FieldTy>;
                 const auto cfg = make_configured_cfg<CfgTy>(config_stack);
                 const bool keep_going =
                     bool(on_option(field.value(), cfg, name, std::index_sequence<Path..., idx>{}));
@@ -232,6 +275,15 @@ private:
             return true;
         } else if constexpr(ty::deco_option_like<FieldTy>) {
             using CfgTy = ty::field_ty_of<FieldTy>;
+            const auto cfg = make_configured_cfg<CfgTy>(config_stack);
+            const bool keep_going = bool(on_option(std::type_identity<FieldTy>{},
+                                                   cfg,
+                                                   name,
+                                                   std::index_sequence<Path..., I>{}));
+            config_consume_next(config_stack, level);
+            return keep_going;
+        } else if constexpr(ty::is_alias_field<FieldTy>) {
+            using CfgTy = ty::alias_ty_of<FieldTy>;
             const auto cfg = make_configured_cfg<CfgTy>(config_stack);
             const bool keep_going = bool(on_option(std::type_identity<FieldTy>{},
                                                    cfg,
@@ -393,13 +445,31 @@ public:
     }
 };
 
-template <typename RootTy, auto record = eventide::comptime::counting_flag<4>>
+template <typename RootTy, auto record = eventide::comptime::counting_flag<6>>
 class LLVMOptGenerator : public DecoStructConsumer<LLVMOptGenerator<RootTy, record>, RootTy> {
     using base_t = DecoStructConsumer<LLVMOptGenerator<RootTy, record>, RootTy>;
 
 public:
     using accessor_fn = typename base_t::accessor_fn;
     using parse_callback_t = decl::ErasedParseCallback;
+
+    struct AliasRuntimeMeta {
+        enum class Kind : char {
+            None = 0,
+            Flag = 1,
+            KV = 2,
+            CommaJoined = 3,
+            Multi = 4,
+        };
+
+        Kind kind = Kind::None;
+        decl::AliasForwardField::Kind forward_kind = decl::AliasForwardField::Kind::None;
+        std::span<const std::string_view> static_tokens = {};
+        decl::AliasForwardFn dynamic = nullptr;
+        decl::AliasForwardFnWithContext dynamic_with_context = nullptr;
+        unsigned arg_num = 0;
+        char style = 0;
+    };
 
 private:
     using info_item = backend::OptTable::Info;
@@ -410,6 +480,10 @@ private:
         eventide::comptime::ComptimeVector<const decl::Category*, resource_ty, 2>;
     using callback_map_type = eventide::comptime::ComptimeVector<parse_callback_t, resource_ty, 3>;
 
+    using alias_meta_map_type =
+        eventide::comptime::ComptimeVector<AliasRuntimeMeta, resource_ty, 4>;
+    using string_pool_type = eventide::comptime::ComptimeVector<std::string_view, resource_ty, 5>;
+
     // Keep a dummy at index 0 so item.id can be used as direct index.
     resource_ty resource{};
     StrPool<resource_ty> strPool;
@@ -417,6 +491,8 @@ private:
     id_map_type idMap{};
     category_map_type categoryMap{};
     callback_map_type callbackMap{};
+    alias_meta_map_type aliasMetaMap{};
+    string_pool_type aliasStringPool{};
 
     bool hasInputSlot = false;
     bool hasTrailingSlot = false;
@@ -448,7 +524,12 @@ private:
         idMap.push_back(mapped_accessor);
         categoryMap.push_back(nullptr);
         callbackMap.push_back({});
+        aliasMetaMap.push_back({});
         return item;
+    }
+
+    constexpr static bool is_placeholder_field_name(std::string_view field_name) {
+        return decl::is_alias_placeholder_name(field_name);
     }
 
     constexpr void set_category_for_item(unsigned item_id, const decl::Category* category) {
@@ -457,6 +538,34 @@ private:
 
     constexpr void set_callback_for_item(unsigned item_id, parse_callback_t callback) {
         callbackMap[item_id] = callback;
+    }
+
+    constexpr auto store_alias_tokens(std::span<const std::string_view> tokens)
+        -> std::span<const std::string_view> {
+        const auto offset = aliasStringPool.size();
+        for(const auto token: tokens) {
+            aliasStringPool.push_back(strPool.add(token));
+        }
+        return std::span<const std::string_view>(aliasStringPool.data() + offset, tokens.size());
+    }
+
+    constexpr void set_alias_meta_for_item(unsigned item_id, AliasRuntimeMeta meta) {
+        if(!meta.static_tokens.empty()) {
+            meta.static_tokens = store_alias_tokens(meta.static_tokens);
+        }
+        aliasMetaMap[item_id] = meta;
+    }
+
+    struct AliasStorageSnapshot {
+        AliasRuntimeMeta meta{};
+    };
+
+    constexpr auto snapshot_alias_storage(unsigned item_id) const -> AliasStorageSnapshot {
+        return AliasStorageSnapshot{.meta = aliasMetaMap[item_id]};
+    }
+
+    constexpr void restore_alias_storage(unsigned item_id, const AliasStorageSnapshot& snapshot) {
+        aliasMetaMap[item_id] = snapshot.meta;
     }
 
     template <typename CallbackTy>
@@ -581,6 +690,7 @@ private:
 
         const auto item_snapshot = item;
         for(std::size_t i = 1; i < fields.names.size(); ++i) {
+            const auto alias_storage = snapshot_alias_storage(item.id);
             auto& alias = new_item(mapped_accessor);
             auto alias_id = alias.id;
             alias = item_snapshot;
@@ -589,6 +699,7 @@ private:
             set_common_options(alias, fields);
             set_category_for_item(alias.id, category);
             set_callback_for_item(alias.id, callback);
+            restore_alias_storage(alias.id, alias_storage);
         }
 
         set_common_options(item_by_id(item_id), fields);
@@ -665,6 +776,7 @@ private:
                                                  std::string_view field_name,
                                                  const FieldsTy& fields) {
         const auto base_item = item_by_id(item_id);
+        const auto alias_storage = snapshot_alias_storage(item_id);
         auto& alias = new_item(mapped_accessor);
         auto alias_id = alias.id;
         alias = base_item;
@@ -676,6 +788,65 @@ private:
         set_callback_for_item(
             alias.id,
             make_parse_callback<typename FieldsTy::result_type>(fields.after_parsed));
+        restore_alias_storage(alias.id, alias_storage);
+    }
+
+    template <typename FieldsTy>
+    constexpr void add_generated_kv_joined_alias_without_callback(unsigned item_id,
+                                                                  std::string_view field_name,
+                                                                  const FieldsTy& fields) {
+        const auto base_item = item_by_id(item_id);
+        const auto alias_storage = snapshot_alias_storage(item_id);
+        auto& alias = new_item(nullptr);
+        auto alias_id = alias.id;
+        alias = base_item;
+        alias.id = alias_id;
+        alias.kind = backend::Option::JoinedClass;
+        set_generated_name_from_field(alias, field_name, "=");
+        set_common_options(alias, fields);
+        set_category_for_item(alias.id, fields.category.ptr());
+        restore_alias_storage(alias.id, alias_storage);
+    }
+
+    template <typename FieldsTy>
+    constexpr auto& set_kv_alias_options_split_by_name(unsigned item_id,
+                                                       std::string_view field_name,
+                                                       const FieldsTy& fields) {
+        const auto category = fields.category.ptr();
+        auto& item = item_by_id(item_id);
+
+        auto set_kv_name_and_kind = [&](info_item& target, std::string_view full_name) {
+            set_prefixed_name(target, full_name);
+            target.kind = kv_kind_from_name(full_name);
+        };
+
+        if(fields.names.empty()) {
+            set_generated_name_from_field(item, field_name);
+            item.kind = backend::Option::SeparateClass;
+            set_common_options(item, fields);
+            set_category_for_item(item.id, category);
+            add_generated_kv_joined_alias_without_callback(item.id, field_name, fields);
+            return item_by_id(item_id);
+        }
+
+        set_kv_name_and_kind(item, fields.names.front());
+        set_category_for_item(item.id, category);
+
+        const auto item_snapshot = item;
+        for(std::size_t i = 1; i < fields.names.size(); ++i) {
+            const auto alias_storage = snapshot_alias_storage(item.id);
+            auto& alias = new_item(nullptr);
+            auto alias_id = alias.id;
+            alias = item_snapshot;
+            alias.id = alias_id;
+            set_kv_name_and_kind(alias, fields.names[i]);
+            set_common_options(alias, fields);
+            set_category_for_item(alias.id, category);
+            restore_alias_storage(alias.id, alias_storage);
+        }
+
+        set_common_options(item_by_id(item_id), fields);
+        return item_by_id(item_id);
     }
 
     template <typename FieldsTy>
@@ -711,6 +882,7 @@ private:
 
         const auto item_snapshot = item;
         for(std::size_t i = 1; i < fields.names.size(); ++i) {
+            const auto alias_storage = snapshot_alias_storage(item.id);
             auto& alias = new_item(mapped_accessor);
             auto alias_id = alias.id;
             alias = item_snapshot;
@@ -721,6 +893,7 @@ private:
             set_callback_for_item(
                 alias.id,
                 make_parse_callback<typename FieldsTy::result_type>(fields.after_parsed));
+            restore_alias_storage(alias.id, alias_storage);
         }
 
         set_common_options(item_by_id(item_id), fields);
@@ -779,6 +952,80 @@ private:
         set_named_options(item.id, mapped_accessor, field_name, cfg, callback);
     }
 
+    constexpr static auto alias_kind_for(const decl::FlagAliasFields&) {
+        return AliasRuntimeMeta::Kind::Flag;
+    }
+
+    constexpr static auto alias_kind_for(const decl::KVAliasFields&) {
+        return AliasRuntimeMeta::Kind::KV;
+    }
+
+    constexpr static auto alias_kind_for(const decl::CommaJoinedAliasFields&) {
+        return AliasRuntimeMeta::Kind::CommaJoined;
+    }
+
+    constexpr static auto alias_kind_for(const decl::MultiAliasFields&) {
+        return AliasRuntimeMeta::Kind::Multi;
+    }
+
+    template <typename CfgTy>
+    constexpr auto make_alias_meta(const CfgTy& cfg) -> AliasRuntimeMeta {
+        AliasRuntimeMeta meta{};
+        meta.kind = alias_kind_for(cfg);
+        if constexpr(requires { cfg.arg_num; }) {
+            meta.arg_num = cfg.arg_num;
+        } else {
+            meta.arg_num = 0u;
+        }
+        if constexpr(requires { cfg.style; }) {
+            meta.style = cfg.style;
+        } else {
+            meta.style = char{};
+        }
+        meta.forward_kind = cfg.forward.kind;
+        switch(cfg.forward.kind) {
+            case decl::AliasForwardField::Kind::None: break;
+            case decl::AliasForwardField::Kind::Static:
+                meta.static_tokens =
+                    std::span<const std::string_view>(cfg.forward.static_tokens.data(),
+                                                      cfg.forward.static_tokens.size());
+                break;
+            case decl::AliasForwardField::Kind::Dynamic: meta.dynamic = cfg.forward.dynamic; break;
+            case decl::AliasForwardField::Kind::DynamicWithContext:
+                meta.dynamic_with_context = cfg.forward.dynamic_with_context;
+                break;
+        }
+        return meta;
+    }
+
+    template <typename CfgTy>
+    constexpr auto create_alias_item(const CfgTy& cfg,
+                                     std::string_view field_name,
+                                     unsigned char kind,
+                                     unsigned char param) -> unsigned {
+        if(!cfg.forward) {
+            ETD_THROW("Deco alias requires forward");
+        }
+        if(cfg.names.empty() && is_placeholder_field_name(field_name)) {
+            ETD_THROW("Deco alias placeholders must declare explicit names");
+        }
+        auto& item = new_item(nullptr);
+        item.kind = kind;
+        item.param = param;
+        set_alias_meta_for_item(item.id, make_alias_meta(cfg));
+        return item.id;
+    }
+
+    template <typename CfgTy>
+    constexpr auto add_alias_option(const CfgTy& cfg,
+                                    std::string_view field_name,
+                                    unsigned char kind,
+                                    unsigned char param) -> unsigned {
+        const auto item_id = create_alias_item(cfg, field_name, kind, param);
+        set_named_options(item_id, nullptr, field_name, cfg, {});
+        return item_id;
+    }
+
     template <typename DecoTy>
     constexpr static bool is_field_present(const DecoTy& field) {
         return field.has_value();
@@ -789,12 +1036,13 @@ public:
 
     constexpr explicit LLVMOptGenerator() :
         strPool(resource), itemPool(resource), idMap(resource), categoryMap(resource),
-        callbackMap(resource) {
+        callbackMap(resource), aliasMetaMap(resource), aliasStringPool(resource) {
         // Dummy item: keeps id and index aligned (id 0 => index 0).
         itemPool.push_back(make_default_item(0));
         idMap.push_back(nullptr);
         categoryMap.push_back(nullptr);
         callbackMap.push_back({});
+        aliasMetaMap.push_back({});
 
         auto& unknown = new_item(nullptr);
         unknown = info_item::unknown(unknown.id);
@@ -863,6 +1111,65 @@ public:
         return true;
     }
 
+    template <typename FieldTy, typename CfgTy, std::size_t... Path>
+    constexpr bool on_flag_alias(const CfgTy& cfg,
+                                 std::string_view field_name,
+                                 std::index_sequence<Path...>) {
+        add_alias_option(cfg, field_name, backend::Option::FlagClass, 0);
+        return true;
+    }
+
+    template <typename FieldTy, typename CfgTy, std::size_t... Path>
+    constexpr bool on_kv_alias(const CfgTy& cfg,
+                               std::string_view field_name,
+                               std::index_sequence<Path...>) {
+        const bool allow_joined = has_kv_style(cfg.style, decl::KVStyle::Joined);
+        const bool allow_separate = has_kv_style(cfg.style, decl::KVStyle::Separate);
+        if(!allow_joined && !allow_separate) {
+            ETD_THROW("DecoKVAlias style must include Joined and/or Separate");
+        }
+        if(allow_joined && allow_separate) {
+            const auto item_id =
+                create_alias_item(cfg, field_name, backend::Option::SeparateClass, 1);
+            set_kv_alias_options_split_by_name(item_id, field_name, cfg);
+            return true;
+        }
+        const auto item_id = add_alias_option(cfg,
+                                              field_name,
+                                              allow_joined ? backend::Option::JoinedClass
+                                                           : backend::Option::SeparateClass,
+                                              1);
+        if(allow_joined && cfg.names.empty()) {
+            add_generated_kv_joined_alias_without_callback(item_id, field_name, cfg);
+        }
+        return true;
+    }
+
+    template <typename FieldTy, typename CfgTy, std::size_t... Path>
+    constexpr bool on_comma_joined_alias(const CfgTy& cfg,
+                                         std::string_view field_name,
+                                         std::index_sequence<Path...>) {
+        add_alias_option(cfg, field_name, backend::Option::CommaJoinedClass, 1);
+        return true;
+    }
+
+    template <typename FieldTy, typename CfgTy, std::size_t... Path>
+    constexpr bool on_multi_alias(const CfgTy& cfg,
+                                  std::string_view field_name,
+                                  std::index_sequence<Path...>) {
+        if(cfg.arg_num == 0) {
+            ETD_THROW("DecoMultiAlias arg_num must be greater than 0");
+        }
+        if(cfg.arg_num > std::numeric_limits<unsigned char>::max()) {
+            ETD_THROW("DecoMultiAlias arg_num exceeds backend param capacity");
+        }
+        add_alias_option(cfg,
+                         field_name,
+                         backend::Option::MultiArgClass,
+                         static_cast<unsigned char>(cfg.arg_num));
+        return true;
+    }
+
     constexpr void build() {
         (void)this->consume_deco_struct_schema();
     }
@@ -901,6 +1208,28 @@ public:
 
     constexpr auto callback_map() const {
         return std::span<const parse_callback_t>(callbackMap.data(), callbackMap.size());
+    }
+
+    constexpr auto alias_meta_map() const {
+        return std::span<const AliasRuntimeMeta>(aliasMetaMap.data(), aliasMetaMap.size());
+    }
+
+    constexpr bool is_alias_option_id(backend::OptSpecifier opt) const {
+        if(!opt.is_valid()) {
+            return false;
+        }
+        const auto id = opt.id();
+        if(id >= aliasMetaMap.size()) {
+            return false;
+        }
+        return aliasMetaMap[id].kind != AliasRuntimeMeta::Kind::None;
+    }
+
+    constexpr auto alias_meta_of(backend::OptSpecifier opt) const -> const AliasRuntimeMeta* {
+        if(!is_alias_option_id(opt)) {
+            return nullptr;
+        }
+        return &aliasMetaMap[opt.id()];
     }
 
     constexpr void* field_ptr_of(backend::OptSpecifier opt, RootTy& object) const {
@@ -992,9 +1321,6 @@ consteval auto build_record() {
     counter.build();
     return counter.gen_record();
 }
-
-template <typename RootTy, auto record = eventide::comptime::counting_flag<3>>
-using OptManager = LLVMOptGenerator<RootTy, record>;
 
 template <typename OptDeco>
 struct BuildStorage {
