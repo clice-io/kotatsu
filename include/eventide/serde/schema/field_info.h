@@ -117,12 +117,6 @@ struct map_type_info : type_info {
     const type_info* value;
 };
 
-/// struct
-struct struct_type_info : type_info {
-    std::span<const field_info> fields;
-    bool is_trivial_layout;
-};
-
 /// enum — runtime-accessible enum metadata
 struct enum_type_info : type_info {
     std::span<const std::string_view> member_names;
@@ -165,6 +159,12 @@ struct field_info {
     bool is_literal;    // schema::literal
     bool has_skip_if;   // behavior::skip_if present
     bool has_behavior;  // with/as/enum_string present
+};
+
+/// struct — placed after field_info so that std::span<const field_info> sees a complete type.
+struct struct_type_info : type_info {
+    std::span<const field_info> fields;
+    bool is_trivial_layout;
 };
 
 // ---------------------------------------------------------------------------
