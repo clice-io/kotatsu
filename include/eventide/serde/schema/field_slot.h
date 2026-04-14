@@ -7,14 +7,8 @@
 
 namespace eventide::serde::schema {
 
-// ---------------------------------------------------------------------------
-// type_list -- compile-time type sequence
-// ---------------------------------------------------------------------------
-
 template <typename... Ts>
 struct type_list {};
-
-// -- element access --
 
 template <std::size_t I, typename List>
 struct type_list_element;
@@ -31,8 +25,6 @@ struct type_list_element<0, type_list<First, Rest...>> {
 template <std::size_t I, typename List>
 using type_list_element_t = typename type_list_element<I, List>::type;
 
-// -- concatenation (binary) --
-
 template <typename A, typename B>
 struct type_list_cat_impl;
 
@@ -43,8 +35,6 @@ struct type_list_cat_impl<type_list<As...>, type_list<Bs...>> {
 
 template <typename A, typename B>
 using type_list_cat_t = typename type_list_cat_impl<A, B>::type;
-
-// -- variadic concatenation --
 
 template <typename... Lists>
 struct type_list_concat;
@@ -66,8 +56,6 @@ struct type_list_concat<First, Second, Rest...> :
 template <typename... Lists>
 using type_list_concat_t = typename type_list_concat<Lists...>::type;
 
-// -- size --
-
 template <typename List>
 struct type_list_size;
 
@@ -77,20 +65,6 @@ struct type_list_size<type_list<Ts...>> : std::integral_constant<std::size_t, si
 template <typename List>
 constexpr inline std::size_t type_list_size_v = type_list_size<List>::value;
 
-// ---------------------------------------------------------------------------
-// field_slot -- compile-time per-field descriptor
-// ---------------------------------------------------------------------------
-
-/// Describes one logical (non-skipped, possibly-flattened) field at the type
-/// level.  Carried inside a type_list so that virtual_schema can expose a
-/// `slots` typedef for per-field compile-time dispatch.
-///
-/// @tparam RawType      The C++ field type (annotation unwrapped).
-/// @tparam WireType     The type that actually hits the wire (after
-///                       as<>/with<>/enum_string<> resolution).
-///                       Defaults to RawType when no behavior attr is present.
-/// @tparam BehaviorAttrs A std::tuple<...> of the behavior attributes found
-///                       on this field (skip_if, with, as, enum_string, tagged).
 template <typename RawType, typename WireType = RawType, typename BehaviorAttrs = std::tuple<>>
 struct field_slot {
     using raw_type = RawType;

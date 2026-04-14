@@ -25,10 +25,6 @@
 
 namespace eventide::serde::schema {
 
-// ===================================================================
-// Forward declarations
-// ===================================================================
-
 template <typename T, typename Config = serde::config::default_config>
 constexpr const type_info* type_info_of();
 
@@ -38,11 +34,6 @@ struct virtual_schema;
 
 namespace detail {
 
-// ===================================================================
-// Constexpr rename utilities (for rename_all support)
-// ===================================================================
-
-/// Fixed-capacity constexpr string buffer for compile-time rename transformations.
 struct name_buf {
     std::array<char, 64> data{};
     std::size_t len = 0;
@@ -84,8 +75,6 @@ constexpr char cx_upper(char c) {
     return cx_is_lower(c) ? static_cast<char>(c - 'a' + 'A') : c;
 }
 
-/// Normalize any identifier to lower_snake_case at compile time.
-/// Handles camelCase, PascalCase, UPPER_SNAKE, and mixed forms.
 constexpr name_buf normalize_to_lower_snake_cx(std::string_view text) {
     name_buf out{};
     for(std::size_t i = 0; i < text.size(); ++i) {
@@ -124,7 +113,6 @@ constexpr name_buf normalize_to_lower_snake_cx(std::string_view text) {
     return out;
 }
 
-/// Convert a lower_snake identifier to camelCase or PascalCase at compile time.
 constexpr name_buf snake_to_camel_cx(std::string_view text, bool upper_first) {
     auto snake = normalize_to_lower_snake_cx(text);
     name_buf out{};
@@ -149,7 +137,6 @@ constexpr name_buf snake_to_camel_cx(std::string_view text, bool upper_first) {
     return out;
 }
 
-/// Convert to UPPER_SNAKE_CASE at compile time.
 constexpr name_buf snake_to_upper_cx(std::string_view text) {
     auto snake = normalize_to_lower_snake_cx(text);
     for(std::size_t i = 0; i < snake.len; ++i) {
@@ -158,7 +145,6 @@ constexpr name_buf snake_to_upper_cx(std::string_view text) {
     return snake;
 }
 
-/// Apply the given rename policy at compile time, returning a name_buf.
 template <typename Policy>
 constexpr name_buf apply_rename_cx(std::string_view input) {
     using namespace serde::spelling::rename_policy;
@@ -184,8 +170,6 @@ constexpr name_buf apply_rename_cx(std::string_view input) {
     }
 }
 
-/// Static storage for a compile-time renamed field name.
-/// Two-step consteval: first compute the length, then store into an exact-size array.
 template <typename T, std::size_t I, typename Policy>
 struct wire_name_static {
     constexpr static auto buf = apply_rename_cx<Policy>(refl::field_name<I, T>());
@@ -200,7 +184,6 @@ struct wire_name_static {
     constexpr static std::string_view value{storage.data(), storage.size()};
 };
 
-/// True if field I of struct T has an explicit schema::rename attribute.
 template <typename T, std::size_t I>
 consteval bool field_has_explicit_rename() {
     using field_t = refl::field_type<T, I>;
@@ -211,11 +194,6 @@ consteval bool field_has_explicit_rename() {
     }
 }
 
-/// Resolve the wire name for field I of struct T under Config.
-/// Priority:
-///   1. Explicit rename<"name"> on the field -> use canonical_field_name (already resolved).
-///   2. Config has field_rename and it's not identity -> apply rename_all via wire_name_static.
-///   3. Otherwise -> use canonical_field_name (= reflection name).
 template <typename T, std::size_t I, typename Config>
 consteval std::string_view resolve_wire_name() {
     if constexpr(field_has_explicit_rename<T, I>()) {
@@ -233,11 +211,6 @@ consteval std::string_view resolve_wire_name() {
     }
 }
 
-// ===================================================================
-// Behavior attribute helpers
-// ===================================================================
-
-/// Filter a tuple of attrs down to only behavior attributes.
 template <typename Tuple>
 struct filter_behavior_attrs;
 
@@ -259,14 +232,12 @@ struct filter_behavior_attrs<std::tuple<First, Rest...>> {
 template <typename Tuple>
 using filter_behavior_attrs_t = typename filter_behavior_attrs<Tuple>::type;
 
-/// Detect whether a type T declares a nested `wire_type` alias.
 template <typename T, typename = void>
 struct adapter_has_wire_type : std::false_type {};
 
 template <typename T>
 struct adapter_has_wire_type<T, std::void_t<typename T::wire_type>> : std::true_type {};
 
-/// True if AttrsTuple contains a with<Adapter> whose Adapter declares wire_type.
 template <typename AttrsTuple>
 constexpr bool has_with_wire_type_v = [] {
     if constexpr(!serde::detail::tuple_has_spec_v<AttrsTuple, serde::behavior::with>) {
@@ -278,21 +249,12 @@ constexpr bool has_with_wire_type_v = [] {
     }
 }();
 
-/// Extract Adapter::wire_type from a with<Adapter> in AttrsTuple.
-/// Only instantiated when has_with_wire_type_v is true.
 template <typename AttrsTuple>
 struct extract_with_wire_type {
     using with_attr = serde::detail::tuple_find_spec_t<AttrsTuple, serde::behavior::with>;
     using type = typename with_attr::adapter::wire_type;
 };
 
-/// Determine the wire type for a field given its raw type and attrs tuple.
-/// - as<Target>                           => Target
-/// - enum_string<...>                     => std::string_view
-/// - with<Adapter> where Adapter has wire_type => Adapter::wire_type
-/// - otherwise                            => RawType
-///
-/// Uses partial specialization to avoid eager evaluation of nested aliases.
 template <typename RawType,
           typename AttrsTuple,
           bool HasAs = serde::detail::tuple_has_spec_v<AttrsTuple, serde::behavior::as>,
@@ -329,7 +291,6 @@ struct resolve_wire_type<RawType,
 template <typename RawType, typename AttrsTuple>
 using resolve_wire_type_t = typename resolve_wire_type<RawType, AttrsTuple>::type;
 
-/// Unwrap annotated_type to get the underlying raw type.
 template <typename T>
 struct unwrap_annotated {
     using raw_type = T;
@@ -342,10 +303,6 @@ struct unwrap_annotated<T> {
     using attrs = typename std::remove_cvref_t<T>::attrs;
 };
 
-// ===================================================================
-// Alias storage -- each field with aliases gets a static array
-// ===================================================================
-
 template <typename T, std::size_t I>
 consteval bool has_alias_attr() {
     using field_t = refl::field_type<T, I>;
@@ -353,7 +310,6 @@ consteval bool has_alias_attr() {
     return serde::detail::tuple_any_of_v<attrs_t, serde::is_alias_attr>;
 }
 
-// Primary template: field has no alias attribute.
 template <typename T, std::size_t I, bool HasAlias = has_alias_attr<T, I>()>
 struct alias_storage {
     constexpr static bool has_alias = false;
@@ -361,7 +317,6 @@ struct alias_storage {
     constexpr static std::array<std::string_view, 0> names = {};
 };
 
-// Specialization: field has an alias attribute — safe to access attrs via unwrap_annotated.
 template <typename T, std::size_t I>
 struct alias_storage<T, I, true> {
     constexpr static bool has_alias = true;
@@ -374,11 +329,6 @@ struct alias_storage<T, I, true> {
     constexpr static auto names = alias_attr::names;
 };
 
-// ===================================================================
-// Effective field count (accounting for skip / flatten)
-// ===================================================================
-
-/// Count contribution of a single physical field.
 template <typename T, std::size_t I>
 consteval std::size_t single_field_count() {
     using field_t = refl::field_type<T, I>;
@@ -405,7 +355,6 @@ consteval std::size_t single_field_count() {
     }
 }
 
-/// Total number of logical fields for a reflectable struct (skip, flatten expanded).
 template <typename T>
     requires refl::reflectable_class<std::remove_cvref_t<T>>
 consteval std::size_t effective_field_count() {
@@ -420,11 +369,6 @@ consteval std::size_t effective_field_count() {
     }
 }
 
-// ===================================================================
-// Single-field contribution for slots (type_list)
-// ===================================================================
-
-/// Helper to check skip/flatten via unwrap_annotated (MSVC-safe, no if constexpr).
 template <typename T, std::size_t I>
 struct field_attr_flags {
     using field_t = refl::field_type<T, I>;
@@ -433,7 +377,6 @@ struct field_attr_flags {
     constexpr static bool flattened = serde::detail::tuple_has_v<attrs_t, schema::flatten>;
 };
 
-/// Primary template: normal field -> type_list with one field_slot.
 template <typename T,
           typename Config,
           std::size_t I,
@@ -450,23 +393,17 @@ struct single_field_slots {
                                       filter_behavior_attrs_t<attrs_t>>>;
 };
 
-/// Skipped field -> empty type_list.
 template <typename T, typename Config, std::size_t I, bool Flattened>
 struct single_field_slots<T, Config, I, /*Skipped=*/true, Flattened> {
     using type = type_list<>;
 };
 
-/// Flattened field -> delegate to inner struct's virtual_schema slots.
 template <typename T, typename Config, std::size_t I>
 struct single_field_slots<T, Config, I, /*Skipped=*/false, /*Flattened=*/true> {
     using field_t = refl::field_type<T, I>;
     using inner_t = typename unwrap_annotated<field_t>::raw_type;
     using type = typename virtual_schema<inner_t, Config>::slots;
 };
-
-// ===================================================================
-// Build slots by concatenating per-field contributions
-// ===================================================================
 
 template <typename T, typename Config, typename Seq>
 struct build_slots_from_seq;
@@ -486,15 +423,9 @@ using build_slots_t =
     typename build_slots_from_seq<T, Config, std::make_index_sequence<refl::field_count<T>()>>::
         type;
 
-// ===================================================================
-// Build fields array (constexpr)
-// ===================================================================
-
-/// Forward declaration for mutual recursion with build_fields.
 template <typename T, typename Config, std::size_t I>
 consteval void fill_field(auto& result, std::size_t& out, std::size_t base_offset);
 
-/// Build a single field_info for physical field I of struct T.
 template <typename T, typename Config, std::size_t I>
 consteval field_info make_field_info(std::size_t base_offset) {
     using field_t = refl::field_type<T, I>;
@@ -503,18 +434,12 @@ consteval field_info make_field_info(std::size_t base_offset) {
     using attrs_t = typename unwrap::attrs;
     using wire_t = resolve_wire_type_t<raw_type, attrs_t>;
 
-    // Determine wire name: explicit rename > Config::field_rename (rename_all) > reflection name.
     std::string_view name = resolve_wire_name<T, I, Config>();
 
-    // Aliases -- reference the static storage so the span stays valid.
     auto& alias_arr = alias_storage<T, I>::names;
     std::span<const std::string_view> aliases{alias_arr.data(), alias_arr.size()};
 
-    // Offset (base_offset is a parameter, not a constant expression;
-    // but we are inside a consteval function so everything is compile-time).
     std::size_t offset = base_offset + refl::field_offset<T>(I);
-
-    // Flags — attrs_t is std::tuple<> for non-annotated fields, so all queries return false.
     constexpr bool has_default = serde::detail::tuple_has_v<attrs_t, schema::default_value>;
     constexpr bool is_literal = serde::detail::tuple_any_of_v<attrs_t, serde::is_literal_attr>;
     constexpr bool has_skip_if = serde::detail::tuple_has_spec_v<attrs_t, serde::behavior::skip_if>;
@@ -534,12 +459,6 @@ consteval field_info make_field_info(std::size_t base_offset) {
     };
 }
 
-/// Recursively collect field_info entries into a fixed-size array.
-/// For a normal field: 1 entry. For flatten: recursively inline the inner
-/// struct's fields with adjusted offset. For skip: 0 entries.
-///
-/// We build via an output-index approach: write into a pre-sized array
-/// at successive positions.
 template <typename T, typename Config>
 consteval auto build_fields(std::size_t base_offset = 0) {
     constexpr std::size_t count = effective_field_count<T>();
@@ -577,19 +496,11 @@ consteval void fill_field(auto& result, std::size_t& out, std::size_t base_offse
     }
 }
 
-// ===================================================================
-// Struct-level deny_unknown_fields detection
-// ===================================================================
-
 template <typename T>
 consteval bool has_deny_unknown_fields() {
     using attrs_t = typename unwrap_annotated<T>::attrs;
     return serde::detail::tuple_has_v<attrs_t, schema::deny_unknown_fields>;
 }
-
-// ===================================================================
-// enum_values_as_i64 — convert enum member values to int64 for runtime access
-// ===================================================================
 
 template <typename E>
     requires std::is_enum_v<E>
@@ -604,19 +515,13 @@ struct enum_values_as_i64 {
     }();
 };
 
-/// Forward declaration — full definition (with initializer) after virtual_schema.
-/// Breaks self-referential constexpr cycles via declaration/definition separation.
+/// Forward declaration — full definition after virtual_schema.
 template <typename V, typename Config>
 struct struct_info_node;
 
 }  // namespace detail
 
-// ===================================================================
-// type_info_of -- static storage for type descriptors
-// ===================================================================
-
 /// Returns a pointer to a static type descriptor for T.
-/// Uses if-constexpr dispatch with local static constexpr storage.
 template <typename T, typename Config>
 constexpr const type_info* type_info_of() {
     using V = std::remove_cvref_t<T>;
@@ -725,29 +630,16 @@ constexpr const type_info* type_info_of() {
     }
 }
 
-// ===================================================================
-// virtual_schema -- the core schema descriptor for reflectable structs
-// ===================================================================
-
 template <typename T, typename Config>
     requires refl::reflectable_class<std::remove_cvref_t<T>>
 struct virtual_schema {
     using V = std::remove_cvref_t<T>;
 
-    /// Number of logical (non-skipped, flatten-expanded) fields.
     constexpr static std::size_t count = detail::effective_field_count<V>();
-
-    /// Compile-time field descriptors.
     constexpr static std::array<field_info, count> fields = detail::build_fields<V, Config>();
-
-    /// Per-field type-level slots for compile-time dispatch.
     using slots = detail::build_slots_t<V, Config>;
-
-    /// Whether the struct is trivially copyable (POD-like, candidate for inline/fixed-size layout).
     constexpr static bool is_trivially_copyable =
         std::is_trivial_v<V> && std::is_standard_layout_v<V>;
-
-    /// Whether unknown fields should be rejected during deserialization.
     constexpr static bool deny_unknown = detail::has_deny_unknown_fields<V>();
 };
 
