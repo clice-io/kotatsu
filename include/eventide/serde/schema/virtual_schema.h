@@ -347,43 +347,33 @@ struct unwrap_annotated<T> {
 // ===================================================================
 
 template <typename T, std::size_t I>
+consteval bool has_alias_attr() {
+    using field_t = refl::field_type<T, I>;
+    if constexpr(!serde::has_attrs<field_t>) {
+        return false;
+    } else {
+        return serde::detail::tuple_any_of_v<typename field_t::attrs, serde::is_alias_attr>;
+    }
+}
+
+// Primary template: field has no alias attribute.
+template <typename T, std::size_t I, bool HasAlias = has_alias_attr<T, I>()>
 struct alias_storage {
-    constexpr static bool has_alias = [] {
-        using field_t = refl::field_type<T, I>;
-        if constexpr(!serde::has_attrs<field_t>) {
-            return false;
-        } else {
-            return serde::detail::tuple_any_of_v<typename field_t::attrs, serde::is_alias_attr>;
-        }
-    }();
+    constexpr static bool has_alias = false;
+    constexpr static std::size_t count = 0;
+    constexpr static std::array<std::string_view, 0> names = {};
+};
 
-    constexpr static std::size_t count = [] {
-        using field_t = refl::field_type<T, I>;
-        if constexpr(!serde::has_attrs<field_t>) {
-            return std::size_t{0};
-        } else if constexpr(!serde::detail::tuple_any_of_v<typename field_t::attrs,
-                                                           serde::is_alias_attr>) {
-            return std::size_t{0};
-        } else {
-            using alias_attr =
-                serde::detail::tuple_find_t<typename field_t::attrs, serde::is_alias_attr>;
-            return alias_attr::names.size();
-        }
-    }();
+// Specialization: field has an alias attribute — safe to access field_t::attrs.
+template <typename T, std::size_t I>
+struct alias_storage<T, I, true> {
+    constexpr static bool has_alias = true;
 
-    constexpr static auto names = [] {
-        using field_t = refl::field_type<T, I>;
-        if constexpr(!serde::has_attrs<field_t>) {
-            return std::array<std::string_view, 0>{};
-        } else if constexpr(!serde::detail::tuple_any_of_v<typename field_t::attrs,
-                                                           serde::is_alias_attr>) {
-            return std::array<std::string_view, 0>{};
-        } else {
-            using alias_attr =
-                serde::detail::tuple_find_t<typename field_t::attrs, serde::is_alias_attr>;
-            return alias_attr::names;
-        }
-    }();
+    using field_t = refl::field_type<T, I>;
+    using alias_attr = serde::detail::tuple_find_t<typename field_t::attrs, serde::is_alias_attr>;
+
+    constexpr static std::size_t count = alias_attr::names.size();
+    constexpr static auto names = alias_attr::names;
 };
 
 // ===================================================================
@@ -641,12 +631,10 @@ struct enum_values_as_i64 {
     }();
 };
 
-/// Declaration only — address known, value defined after virtual_schema.
+/// Forward declaration — full definition (with initializer) after virtual_schema.
 /// Breaks self-referential constexpr cycles via declaration/definition separation.
 template <typename V, typename Config>
-struct struct_info_node {
-    const static struct_type_info value;
-};
+struct struct_info_node;
 
 }  // namespace detail
 
@@ -793,10 +781,12 @@ struct virtual_schema {
 namespace detail {
 
 template <typename V, typename Config>
-const struct_type_info struct_info_node<V, Config>::value = {
-    {type_kind::structure, refl::type_name<V>()},
-    {virtual_schema<V, Config>::fields.data(), virtual_schema<V, Config>::count},
-    virtual_schema<V, Config>::is_trivially_copyable,
+struct struct_info_node {
+    const inline static struct_type_info value = {
+        {type_kind::structure, refl::type_name<V>()},
+        {virtual_schema<V, Config>::fields.data(), virtual_schema<V, Config>::count},
+        virtual_schema<V, Config>::is_trivially_copyable,
+    };
 };
 
 }  // namespace detail
