@@ -349,11 +349,8 @@ struct unwrap_annotated<T> {
 template <typename T, std::size_t I>
 consteval bool has_alias_attr() {
     using field_t = refl::field_type<T, I>;
-    if constexpr(!serde::has_attrs<field_t>) {
-        return false;
-    } else {
-        return serde::detail::tuple_any_of_v<typename field_t::attrs, serde::is_alias_attr>;
-    }
+    using attrs_t = typename unwrap_annotated<field_t>::attrs;
+    return serde::detail::tuple_any_of_v<attrs_t, serde::is_alias_attr>;
 }
 
 // Primary template: field has no alias attribute.
@@ -364,13 +361,14 @@ struct alias_storage {
     constexpr static std::array<std::string_view, 0> names = {};
 };
 
-// Specialization: field has an alias attribute — safe to access field_t::attrs.
+// Specialization: field has an alias attribute — safe to access attrs via unwrap_annotated.
 template <typename T, std::size_t I>
 struct alias_storage<T, I, true> {
     constexpr static bool has_alias = true;
 
     using field_t = refl::field_type<T, I>;
-    using alias_attr = serde::detail::tuple_find_t<typename field_t::attrs, serde::is_alias_attr>;
+    using attrs_t = typename unwrap_annotated<field_t>::attrs;
+    using alias_attr = serde::detail::tuple_find_t<attrs_t, serde::is_alias_attr>;
 
     constexpr static std::size_t count = alias_attr::names.size();
     constexpr static auto names = alias_attr::names;
@@ -383,17 +381,17 @@ struct alias_storage<T, I, true> {
 /// Count contribution of a single physical field.
 template <typename T, std::size_t I>
 consteval std::size_t single_field_count() {
-    if constexpr(schema::is_field_skipped<T, I>()) {
+    using field_t = refl::field_type<T, I>;
+    using attrs_t = typename unwrap_annotated<field_t>::attrs;
+    constexpr bool skipped = serde::detail::tuple_has_v<attrs_t, schema::skip>;
+    constexpr bool flattened = serde::detail::tuple_has_v<attrs_t, schema::flatten>;
+
+    if constexpr(skipped) {
         return 0;
-    } else if constexpr(schema::is_field_flattened<T, I>()) {
-        // Flatten: the field's underlying type must be reflectable.
-        // Forward-declare the recursive call by using a lambda to defer lookup.
-        using field_t = refl::field_type<T, I>;
+    } else if constexpr(flattened) {
         using inner_t = typename unwrap_annotated<field_t>::raw_type;
         static_assert(refl::reflectable_class<std::remove_cvref_t<inner_t>>,
                       "flatten requires the field type to be a reflectable struct");
-        // Recurse into the inner struct. effective_field_count is defined below
-        // but visible here because both are in the same namespace.
         constexpr std::size_t N_inner = refl::field_count<std::remove_cvref_t<inner_t>>();
         if constexpr(N_inner == 0) {
             return 0;
@@ -426,12 +424,21 @@ consteval std::size_t effective_field_count() {
 // Single-field contribution for slots (type_list)
 // ===================================================================
 
+/// Helper to check skip/flatten via unwrap_annotated (MSVC-safe, no if constexpr).
+template <typename T, std::size_t I>
+struct field_attr_flags {
+    using field_t = refl::field_type<T, I>;
+    using attrs_t = typename unwrap_annotated<field_t>::attrs;
+    constexpr static bool skipped = serde::detail::tuple_has_v<attrs_t, schema::skip>;
+    constexpr static bool flattened = serde::detail::tuple_has_v<attrs_t, schema::flatten>;
+};
+
 /// Primary template: normal field -> type_list with one field_slot.
 template <typename T,
           typename Config,
           std::size_t I,
-          bool Skipped = schema::is_field_skipped<T, I>(),
-          bool Flattened = schema::is_field_flattened<T, I>()>
+          bool Skipped = field_attr_flags<T, I>::skipped,
+          bool Flattened = field_attr_flags<T, I>::flattened>
 struct single_field_slots {
     using field_t = refl::field_type<T, I>;
     using unwrap = unwrap_annotated<field_t>;
@@ -507,42 +514,12 @@ consteval field_info make_field_info(std::size_t base_offset) {
     // but we are inside a consteval function so everything is compile-time).
     std::size_t offset = base_offset + refl::field_offset<T>(I);
 
-    // Flags
-    constexpr bool has_default = [] {
-        if constexpr(!serde::has_attrs<field_t>) {
-            return false;
-        } else {
-            return serde::detail::tuple_has_v<typename std::remove_cvref_t<field_t>::attrs,
-                                              schema::default_value>;
-        }
-    }();
-
-    constexpr bool is_literal = [] {
-        if constexpr(!serde::has_attrs<field_t>) {
-            return false;
-        } else {
-            return serde::detail::tuple_any_of_v<typename std::remove_cvref_t<field_t>::attrs,
-                                                 serde::is_literal_attr>;
-        }
-    }();
-
-    constexpr bool has_skip_if = [] {
-        if constexpr(!serde::has_attrs<field_t>) {
-            return false;
-        } else {
-            return serde::detail::tuple_has_spec_v<typename std::remove_cvref_t<field_t>::attrs,
-                                                   serde::behavior::skip_if>;
-        }
-    }();
-
-    constexpr bool has_behavior = [] {
-        if constexpr(!serde::has_attrs<field_t>) {
-            return false;
-        } else {
-            return serde::detail::tuple_any_of_v<typename std::remove_cvref_t<field_t>::attrs,
-                                                 serde::is_behavior_provider>;
-        }
-    }();
+    // Flags — attrs_t is std::tuple<> for non-annotated fields, so all queries return false.
+    constexpr bool has_default = serde::detail::tuple_has_v<attrs_t, schema::default_value>;
+    constexpr bool is_literal = serde::detail::tuple_any_of_v<attrs_t, serde::is_literal_attr>;
+    constexpr bool has_skip_if = serde::detail::tuple_has_spec_v<attrs_t, serde::behavior::skip_if>;
+    constexpr bool has_behavior =
+        serde::detail::tuple_any_of_v<attrs_t, serde::is_behavior_provider>;
 
     return field_info{
         .name = name,
@@ -581,11 +558,15 @@ consteval auto build_fields(std::size_t base_offset = 0) {
 
 template <typename T, typename Config, std::size_t I>
 consteval void fill_field(auto& result, std::size_t& out, std::size_t base_offset) {
-    if constexpr(schema::is_field_skipped<T, I>()) {
+    using field_t_ = refl::field_type<T, I>;
+    using attrs_t_ = typename unwrap_annotated<field_t_>::attrs;
+    constexpr bool skipped = serde::detail::tuple_has_v<attrs_t_, schema::skip>;
+    constexpr bool flattened = serde::detail::tuple_has_v<attrs_t_, schema::flatten>;
+
+    if constexpr(skipped) {
         // skip: do nothing
-    } else if constexpr(schema::is_field_flattened<T, I>()) {
-        using field_t = refl::field_type<T, I>;
-        using inner_t = typename unwrap_annotated<field_t>::raw_type;
+    } else if constexpr(flattened) {
+        using inner_t = typename unwrap_annotated<field_t_>::raw_type;
         std::size_t inner_offset = base_offset + refl::field_offset<T>(I);
         auto inner = build_fields<inner_t, Config>(inner_offset);
         for(std::size_t i = 0; i < inner.size(); ++i) {
@@ -602,16 +583,8 @@ consteval void fill_field(auto& result, std::size_t& out, std::size_t base_offse
 
 template <typename T>
 consteval bool has_deny_unknown_fields() {
-    // deny_unknown_fields is a struct-level attribute. It can appear as an
-    // attribute on the struct type itself when the struct is wrapped with
-    // annotation<MyStruct, deny_unknown_fields>.  However, the more common
-    // pattern is to check the *first field* or a struct-level annotation list.
-    // For now we check if T itself is annotated with deny_unknown_fields.
-    if constexpr(serde::has_attrs<T>) {
-        return serde::detail::tuple_has_v<typename T::attrs, schema::deny_unknown_fields>;
-    } else {
-        return false;
-    }
+    using attrs_t = typename unwrap_annotated<T>::attrs;
+    return serde::detail::tuple_has_v<attrs_t, schema::deny_unknown_fields>;
 }
 
 // ===================================================================
