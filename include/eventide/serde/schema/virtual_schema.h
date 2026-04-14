@@ -645,7 +645,7 @@ struct enum_values_as_i64 {
 /// Breaks self-referential constexpr cycles via declaration/definition separation.
 template <typename V, typename Config>
 struct struct_info_node {
-    static const struct_type_info value;
+    const static struct_type_info value;
 };
 
 }  // namespace detail
