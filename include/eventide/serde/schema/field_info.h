@@ -137,6 +137,7 @@ struct field_info {
 struct struct_type_info : type_info {
     std::span<const field_info> fields;
     bool is_trivial_layout;
+    bool deny_unknown;
 };
 
 template <typename T>

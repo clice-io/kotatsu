@@ -645,6 +645,7 @@ struct struct_info_node {
         {type_kind::structure, refl::type_name<V>()},
         {virtual_schema<V, Config>::fields.data(), virtual_schema<V, Config>::count},
         virtual_schema<V, Config>::is_trivially_copyable,
+        virtual_schema<V, Config>::deny_unknown,
     };
 };
 
