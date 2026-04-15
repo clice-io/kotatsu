@@ -63,8 +63,9 @@ bool sync_primitive::cancel_waiter(waiter_link* link) noexcept {
     // than first stashing raw waiter pointers into a temporary container.
     link->state = async_node::Cancelled;
     link->policy = static_cast<async_node::Policy>(link->policy | async_node::InterceptCancel);
+    auto* prev = detail::current_node();
     auto next = awaiting->handle_subtask_result(link);
-    detail::resume_and_drain(next);
+    detail::resume_and_drain(prev, next);
     return true;
 }
 

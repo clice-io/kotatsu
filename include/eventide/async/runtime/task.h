@@ -66,6 +66,24 @@ struct promise_result<void, E, C> {
 };
 
 // ============================================================================
+// initial_tracking_suspend — sets current node when coroutine body first runs
+// ============================================================================
+
+struct initial_tracking_suspend {
+    async_node* node;
+
+    bool await_ready() const noexcept {
+        return false;
+    }
+
+    void await_suspend(std::coroutine_handle<>) const noexcept {}
+
+    void await_resume() const noexcept {
+        detail::set_current_node(node);
+    }
+};
+
+// ============================================================================
 // promise_exception, transition_await, cancel()
 // ============================================================================
 
@@ -245,6 +263,7 @@ std::coroutine_handle<> propagate_fail(async_node* child_node, async_node* paren
 
     // Exception: let parent resume normally; await_resume will rethrow.
     if(child->propagated_exception) {
+        detail::set_current_node(parent_node);
         return parent_task->handle();
     }
 
@@ -301,8 +320,8 @@ struct task_promise_object : standard_task, promise_result<T, E, void>, promise_
         return coroutine_handle::from_promise(*this);
     }
 
-    auto initial_suspend() const noexcept {
-        return std::suspend_always();
+    auto initial_suspend() noexcept {
+        return initial_tracking_suspend{static_cast<async_node*>(this)};
     }
 
     auto final_suspend() const noexcept {
