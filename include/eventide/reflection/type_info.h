@@ -369,6 +369,12 @@ struct field_attr_flags {
     constexpr static bool flattened = tuple_has_v<attrs_t, attrs::flatten>;
 };
 
+template <typename T, typename Config>
+using built_fields_t = std::array<field_info, effective_field_count<T>()>;
+
+template <typename T, typename Config>
+constexpr built_fields_t<T, Config> build_fields(std::size_t base_offset = 0);
+
 template <typename T>
 constexpr bool has_deny_unknown_fields() {
     using attrs_t = typename unwrap_annotated<T>::attrs;
@@ -410,9 +416,14 @@ struct struct_info_node {
 
     constexpr static bool is_trivially_copyable = std::is_trivially_copyable_v<V>;
 
-    const static std::array<field_info, count> fields;
+    constexpr inline static built_fields_t<V, schema_config> fields = build_fields<V, schema_config>();
 
-    const static struct_type_info value;
+    constexpr inline static struct_type_info value = {
+        {type_kind::structure, refl::type_name<V>()},
+        deny_unknown,
+        is_trivially_copyable,
+        {fields.data(), count},
+    };
 };
 
 template <typename TagAttr>
@@ -655,9 +666,8 @@ constexpr field_info make_field_info(std::size_t base_offset) {
 }
 
 template <typename T, typename Config>
-constexpr auto build_fields(std::size_t base_offset = 0) {
-    constexpr std::size_t count = effective_field_count<T>();
-    std::array<field_info, count> result{};
+constexpr built_fields_t<T, Config> build_fields(std::size_t base_offset) {
+    built_fields_t<T, Config> result{};
     std::size_t out = 0;
 
     constexpr std::size_t N = refl::field_count<T>();
@@ -689,19 +699,6 @@ constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offse
         result[out++] = make_field_info<T, Config, I>(base_offset);
     }
 }
-
-template <typename V, typename Config, typename AttrsTuple>
-constexpr inline struct_type_info struct_info_node<V, Config, AttrsTuple>::value = {
-    {type_kind::structure, refl::type_name<V>()},
-    deny_unknown,
-    is_trivially_copyable,
-    {fields.data(),        count               },
-};
-
-template <typename V, typename Config, typename AttrsTuple>
-constexpr inline std::array<field_info, struct_info_node<V, Config, AttrsTuple>::count>
-    struct_info_node<V, Config, AttrsTuple>::fields =
-        build_fields<V, typename struct_info_node<V, Config, AttrsTuple>::schema_config>();
 
 }  // namespace detail
 
