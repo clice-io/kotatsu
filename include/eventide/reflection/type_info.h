@@ -468,13 +468,12 @@ struct struct_info_node {
 template <typename V, typename Config, typename AttrsTuple>
 struct annotated_struct_info_node {
     using schema_config = struct_schema_config_t<Config, AttrsTuple>;
-
+    const static struct_type_info value;
     constexpr static std::size_t count = effective_field_count<V>();
     const static std::array<field_info, count> fields;
     constexpr static bool is_trivially_copyable =
         std::is_trivial_v<V> && std::is_standard_layout_v<V>;
     constexpr static bool deny_unknown = tuple_has_v<AttrsTuple, attrs::deny_unknown_fields>;
-    const static struct_type_info value;
 };
 
 template <typename TagAttr>
@@ -675,18 +674,18 @@ constexpr inline std::array<field_info, struct_info_node<V, Config>::count>
     struct_info_node<V, Config>::fields = build_fields<V, Config>();
 
 template <typename V, typename Config, typename AttrsTuple>
-constexpr inline std::array<field_info, annotated_struct_info_node<V, Config, AttrsTuple>::count>
-    annotated_struct_info_node<V, Config, AttrsTuple>::fields =
-        build_fields<V,
-                     typename annotated_struct_info_node<V, Config, AttrsTuple>::schema_config>();
-
-template <typename V, typename Config, typename AttrsTuple>
 constexpr inline struct_type_info annotated_struct_info_node<V, Config, AttrsTuple>::value = {
     {type_kind::structure, refl::type_name<V>()},
     {fields.data(),        count               },
     is_trivially_copyable,
     deny_unknown,
 };
+
+template <typename V, typename Config, typename AttrsTuple>
+constexpr inline std::array<field_info, annotated_struct_info_node<V, Config, AttrsTuple>::count>
+    annotated_struct_info_node<V, Config, AttrsTuple>::fields =
+        build_fields<V,
+                     typename annotated_struct_info_node<V, Config, AttrsTuple>::schema_config>();
 
 }  // namespace detail
 
