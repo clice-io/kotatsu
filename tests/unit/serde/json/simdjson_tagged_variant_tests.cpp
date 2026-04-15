@@ -8,6 +8,8 @@
 
 namespace eventide::serde {
 
+using namespace refl;
+
 namespace {
 
 using json::from_json;
@@ -23,7 +25,7 @@ struct Basic {
 // ── Externally tagged ──────────────────────────────────────────────
 
 using ExtVariant = annotation<std::variant<int, std::string, Basic>,
-                              schema::externally_tagged::names<"integer", "text", "basic">>;
+                              refl::attrs::externally_tagged::names<"integer", "text", "basic">>;
 
 struct ExtTaggedHolder {
     std::string name;
@@ -36,7 +38,7 @@ struct ExtTaggedHolder {
 
 using AdjVariant =
     annotation<std::variant<int, std::string, Basic>,
-               schema::adjacently_tagged<"type", "value">::names<"integer", "text", "basic">>;
+               refl::attrs::adjacently_tagged<"type", "value">::names<"integer", "text", "basic">>;
 
 struct AdjTaggedHolder {
     std::string name;
@@ -48,7 +50,7 @@ struct AdjTaggedHolder {
 // ── Variant with monostate ─────────────────────────────────────────
 
 using ExtWithMono = annotation<std::variant<std::monostate, int, std::string>,
-                               schema::externally_tagged::names<"none", "integer", "text">>;
+                               refl::attrs::externally_tagged::names<"none", "integer", "text">>;
 
 // ── Internally tagged ─────────────────────────────────────────────
 
@@ -72,14 +74,15 @@ struct ShapeLine {
 };
 
 using IntTagVariant = annotation<std::variant<ShapeCircle, ShapeRect>,
-                                 schema::internally_tagged<"kind">::names<"circle", "rect">>;
+                                 refl::attrs::internally_tagged<"kind">::names<"circle", "rect">>;
 
-using IntTagRenamedVariant = annotation<std::variant<ShapeLine, ShapeRect>,
-                                        schema::internally_tagged<"kind">::names<"line", "rect">>;
+using IntTagRenamedVariant =
+    annotation<std::variant<ShapeLine, ShapeRect>,
+               refl::attrs::internally_tagged<"kind">::names<"line", "rect">>;
 
 using AdjShapeVariant =
     annotation<std::variant<ShapeCircle, ShapeRect>,
-               schema::adjacently_tagged<"type", "value">::names<"circle", "rect">>;
+               refl::attrs::adjacently_tagged<"type", "value">::names<"circle", "rect">>;
 
 struct IntTagHolder {
     std::string label;

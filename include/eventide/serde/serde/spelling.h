@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "eventide/common/meta.h"
+#include "eventide/common/naming.h"
 #include "eventide/reflection/enum.h"
 
 namespace eventide::serde {
@@ -32,114 +33,6 @@ std::string to_string_storage(Mapped&& mapped) {
                       "rename policy must return std::string or string-like value");
         return {};
     }
-}
-
-constexpr bool is_ascii_lower(char c) {
-    return c >= 'a' && c <= 'z';
-}
-
-constexpr bool is_ascii_upper(char c) {
-    return c >= 'A' && c <= 'Z';
-}
-
-constexpr bool is_ascii_digit(char c) {
-    return c >= '0' && c <= '9';
-}
-
-constexpr bool is_ascii_alpha(char c) {
-    return is_ascii_lower(c) || is_ascii_upper(c);
-}
-
-constexpr bool is_ascii_alnum(char c) {
-    return is_ascii_alpha(c) || is_ascii_digit(c);
-}
-
-constexpr char ascii_lower(char c) {
-    if(is_ascii_upper(c)) {
-        return static_cast<char>(c - 'A' + 'a');
-    }
-    return c;
-}
-
-constexpr char ascii_upper(char c) {
-    if(is_ascii_lower(c)) {
-        return static_cast<char>(c - 'a' + 'A');
-    }
-    return c;
-}
-
-inline std::string trim_underscores(std::string text) {
-    std::size_t start = 0;
-    while(start < text.size() && text[start] == '_') {
-        ++start;
-    }
-
-    std::size_t end = text.size();
-    while(end > start && text[end - 1] == '_') {
-        --end;
-    }
-    return text.substr(start, end - start);
-}
-
-inline std::string normalize_to_lower_snake(std::string_view text) {
-    std::string out;
-    out.reserve(text.size() + 8);
-
-    for(std::size_t i = 0; i < text.size(); ++i) {
-        const char c = text[i];
-        if(is_ascii_alnum(c)) {
-            if(is_ascii_upper(c)) {
-                const bool prev_is_alnum = i > 0 && is_ascii_alnum(text[i - 1]);
-                const bool prev_is_lower_or_digit =
-                    i > 0 && (is_ascii_lower(text[i - 1]) || is_ascii_digit(text[i - 1]));
-                const bool next_is_lower = i + 1 < text.size() && is_ascii_lower(text[i + 1]);
-                if(!out.empty() && out.back() != '_' && prev_is_alnum &&
-                   (prev_is_lower_or_digit || next_is_lower)) {
-                    out.push_back('_');
-                }
-                out.push_back(ascii_lower(c));
-            } else {
-                out.push_back(ascii_lower(c));
-            }
-        } else if(!out.empty() && out.back() != '_') {
-            out.push_back('_');
-        }
-    }
-
-    return trim_underscores(std::move(out));
-}
-
-inline std::string snake_to_camel(std::string_view text, bool upper_first) {
-    auto snake = normalize_to_lower_snake(text);
-    std::string out;
-    out.reserve(snake.size());
-
-    bool capitalize_next = upper_first;
-    bool seen_output = false;
-    for(const char c: snake) {
-        if(c == '_') {
-            capitalize_next = true;
-            continue;
-        }
-        if(capitalize_next && is_ascii_alpha(c)) {
-            out.push_back(ascii_upper(c));
-        } else if(!seen_output) {
-            out.push_back(upper_first ? ascii_upper(c) : ascii_lower(c));
-        } else {
-            out.push_back(c);
-        }
-        capitalize_next = false;
-        seen_output = true;
-    }
-    return out;
-}
-
-inline std::string snake_to_upper(std::string_view text) {
-    auto snake = normalize_to_lower_snake(text);
-    for(char& c: snake) {
-        c = ascii_upper(c);
-    }
-    return snake;
 }
 
 template <std::signed_integral T>
@@ -176,46 +69,12 @@ std::optional<T> parse_floating(std::string_view text) {
 
 namespace rename_policy {
 
-struct identity {
-    std::string operator()(bool, std::string_view value) const {
-        return std::string(value);
-    }
-};
-
-struct lower_snake {
-    std::string operator()(bool, std::string_view value) const {
-        return detail::normalize_to_lower_snake(value);
-    }
-};
-
-struct lower_camel {
-    std::string operator()(bool is_serialize, std::string_view value) const {
-        if(is_serialize) {
-            return detail::snake_to_camel(value, false);
-        }
-        return detail::normalize_to_lower_snake(value);
-    }
-};
-
-struct upper_camel {
-    std::string operator()(bool is_serialize, std::string_view value) const {
-        if(is_serialize) {
-            return detail::snake_to_camel(value, true);
-        }
-        return detail::normalize_to_lower_snake(value);
-    }
-};
-
-struct upper_snake {
-    std::string operator()(bool is_serialize, std::string_view value) const {
-        if(is_serialize) {
-            return detail::snake_to_upper(value);
-        }
-        return detail::normalize_to_lower_snake(value);
-    }
-};
-
-using upper_case = upper_snake;
+using identity = naming::rename_policy::identity;
+using lower_snake = naming::rename_policy::lower_snake;
+using lower_camel = naming::rename_policy::lower_camel;
+using upper_camel = naming::rename_policy::upper_camel;
+using upper_snake = naming::rename_policy::upper_snake;
+using upper_case = naming::rename_policy::upper_case;
 
 }  // namespace rename_policy
 
@@ -266,7 +125,7 @@ constexpr std::optional<E> map_string_to_enum(std::string_view value) {
             return parsed;
         }
 
-        if(!candidate.empty() && detail::is_ascii_digit(candidate.front())) {
+        if(!candidate.empty() && naming::is_digit(candidate.front())) {
             auto underscored = std::string("_") + std::string(candidate);
             if(auto parsed = refl::enum_value<E>(underscored)) {
                 return parsed;
@@ -285,12 +144,12 @@ constexpr std::optional<E> map_string_to_enum(std::string_view value) {
         return parsed;
     }
 
-    auto lower_camel = detail::snake_to_camel(mapped, false);
+    auto lower_camel = naming::snake_to_camel(mapped, false);
     if(auto parsed = try_parse(lower_camel)) {
         return parsed;
     }
 
-    auto upper_camel = detail::snake_to_camel(mapped, true);
+    auto upper_camel = naming::snake_to_camel(mapped, true);
     if(auto parsed = try_parse(upper_camel)) {
         return parsed;
     }

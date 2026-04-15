@@ -12,9 +12,9 @@
 #include <vector>
 
 #include "eventide/common/expected_try.h"
+#include "eventide/reflection/annotation.h"
+#include "eventide/reflection/attrs.h"
 #include "eventide/reflection/struct.h"
-#include "eventide/serde/serde/annotation.h"
-#include "eventide/serde/serde/attrs.h"
 #include "eventide/serde/serde/config.h"
 #include "eventide/serde/serde/utils/common.h"
 #include "eventide/serde/serde/utils/field_dispatch.h"
@@ -82,7 +82,7 @@ constexpr auto visit_variant_alt(const std::variant<Ts...>& value, Emitter&& emi
 template <typename E, typename S, typename... Ts, typename TagAttr>
 constexpr auto serialize_externally_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
     -> std::expected<typename S::value_type, E> {
-    constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
+    constexpr auto names = refl::resolve_tag_names<TagAttr, Ts...>();
 
     ETD_EXPECTED_TRY_V(auto s_struct, s.serialize_struct("", 1));
 
@@ -98,7 +98,7 @@ constexpr auto serialize_externally_tagged(S& s, const std::variant<Ts...>& valu
 template <typename E, typename S, typename... Ts, typename TagAttr>
 constexpr auto serialize_adjacently_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
     -> std::expected<typename S::value_type, E> {
-    constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
+    constexpr auto names = refl::resolve_tag_names<TagAttr, Ts...>();
 
     ETD_EXPECTED_TRY_V(auto s_struct, s.serialize_struct("", 2));
 
@@ -116,7 +116,7 @@ constexpr auto serialize_adjacently_tagged(S& s, const std::variant<Ts...>& valu
 template <typename E, typename D, typename... Ts, typename TagAttr>
 constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, TagAttr)
     -> std::expected<void, E> {
-    constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
+    constexpr auto names = refl::resolve_tag_names<TagAttr, Ts...>();
 
     ETD_EXPECTED_TRY_V(auto d_struct, d.deserialize_struct("", 1));
 
@@ -135,7 +135,7 @@ constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, T
 template <typename E, typename D, typename... Ts, typename TagAttr>
 constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, TagAttr)
     -> std::expected<void, E> {
-    constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
+    constexpr auto names = refl::resolve_tag_names<TagAttr, Ts...>();
 
     ETD_EXPECTED_TRY_V(auto d_struct, d.deserialize_struct("", 2));
 
@@ -231,7 +231,7 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
 template <typename E, typename S, typename... Ts, typename TagAttr>
 constexpr auto serialize_internally_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
     -> std::expected<typename S::value_type, E> {
-    constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
+    constexpr auto names = refl::resolve_tag_names<TagAttr, Ts...>();
     constexpr std::string_view tag_field = TagAttr::field_names[0];
 
     return std::visit(
@@ -274,7 +274,7 @@ constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, T
     // Requires capture_dom_value() — buffer to content DOM, then two-pass dispatch
     ETD_EXPECTED_TRY_V(auto dom_result, d.capture_dom_value());
 
-    constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
+    constexpr auto names = refl::resolve_tag_names<TagAttr, Ts...>();
     constexpr std::string_view tag_field = TagAttr::field_names[0];
 
     auto obj_ref = dom_result.as_ref();
@@ -349,7 +349,7 @@ template <typename T>
 constexpr type_hint expected_type_hints() {
     using U = std::remove_cvref_t<T>;
 
-    if constexpr(eventide::serde::annotated_type<U>) {
+    if constexpr(refl::annotated_type<U>) {
         return expected_type_hints<typename U::annotated_type>();
     } else if constexpr(eventide::is_specialization_of<std::optional, U>) {
         return type_hint::null_like | expected_type_hints<typename U::value_type>();

@@ -39,12 +39,12 @@
 #include <variant>
 #include <vector>
 
-#include "eventide/serde/serde/annotation.h"
-#include "eventide/serde/serde/attrs.h"
+#include "eventide/reflection/annotation.h"
+#include "eventide/reflection/attrs.h"
 
 namespace eventide::serde::standard_case {
 
-using eventide::serde::defaulted;
+using namespace refl;
 
 struct Basic {
     bool is_valid{};
@@ -245,19 +245,19 @@ struct StructLevelPayload {
 };
 
 using RenamedStructLevelPayload =
-    annotation<StructLevelPayload, schema::rename_all<rename_policy::lower_camel>>;
+    annotation<StructLevelPayload, attrs::rename_all<rename_policy::lower_camel>>;
 using StrictRenamedStructLevelPayload = annotation<StructLevelPayload,
-                                                   schema::rename_all<rename_policy::lower_camel>,
-                                                   schema::deny_unknown_fields>;
+                                                   attrs::rename_all<rename_policy::lower_camel>,
+                                                   attrs::deny_unknown_fields>;
 
 using EnumStringAccess = enum_string<AccessLevel>;
 
 using TaggedExternalVariant =
     annotation<std::variant<int, std::string, Basic>,
-               schema::externally_tagged::names<"integer", "text", "basic">>;
+               attrs::externally_tagged::names<"integer", "text", "basic">>;
 using TaggedAdjacentVariant =
     annotation<std::variant<int, std::string, Basic>,
-               schema::adjacently_tagged<"type", "value">::names<"integer", "text", "basic">>;
+               attrs::adjacently_tagged<"type", "value">::names<"integer", "text", "basic">>;
 
 struct TaggedCircle {
     double radius{};
@@ -272,9 +272,8 @@ struct TaggedRect {
     auto operator==(const TaggedRect&) const -> bool = default;
 };
 
-using TaggedInternalVariant =
-    annotation<std::variant<TaggedCircle, TaggedRect>,
-               schema::internally_tagged<"kind">::names<"circle", "rect">>;
+using TaggedInternalVariant = annotation<std::variant<TaggedCircle, TaggedRect>,
+                                         attrs::internally_tagged<"kind">::names<"circle", "rect">>;
 
 struct TaggedExternalHolder {
     std::string name;
@@ -864,32 +863,32 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             auto output = (rt)(input);                                                             \
             ASSERT_TRUE(output.has_value());                                                       \
             EXPECT_EQ(output->id, input.id);                                                       \
-            EXPECT_EQ(eventide::serde::annotated_value(output->display_name),                      \
+            EXPECT_EQ(eventide::refl::annotated_value(output->display_name),                       \
                       std::string("alice"));                                                       \
-            EXPECT_EQ(eventide::serde::annotated_value(output->internal_id), 1000);                \
-            EXPECT_EQ(eventide::serde::annotated_value(output->note),                              \
+            EXPECT_EQ(eventide::refl::annotated_value(output->internal_id), 1000);                 \
+            EXPECT_EQ(eventide::refl::annotated_value(output->note),                               \
                       std::optional<std::string>{"note"});                                         \
-            EXPECT_EQ(eventide::serde::annotated_value(output->profile),                           \
-                      eventide::serde::annotated_value(input.profile));                            \
-            EXPECT_EQ(eventide::serde::annotated_value(output->level),                             \
+            EXPECT_EQ(eventide::refl::annotated_value(output->profile),                            \
+                      eventide::refl::annotated_value(input.profile));                             \
+            EXPECT_EQ(eventide::refl::annotated_value(output->level),                              \
                       eventide::serde::standard_case::AccessLevel::admin);                         \
         }                                                                                          \
         {                                                                                          \
             payload_t input{};                                                                     \
             input.id = 9;                                                                          \
             input.display_name = "bob";                                                            \
-            eventide::serde::annotated_value(input.note) = std::nullopt;                           \
-            eventide::serde::annotated_value(input.profile).first = "Bob";                         \
-            eventide::serde::annotated_value(input.profile).age = 21;                              \
+            eventide::refl::annotated_value(input.note) = std::nullopt;                            \
+            eventide::refl::annotated_value(input.profile).first = "Bob";                          \
+            eventide::refl::annotated_value(input.profile).age = 21;                               \
             input.level = eventide::serde::standard_case::AccessLevel::guest;                      \
             auto output = (rt)(input);                                                             \
             ASSERT_TRUE(output.has_value());                                                       \
             EXPECT_EQ(output->id, 9);                                                              \
-            EXPECT_EQ(eventide::serde::annotated_value(output->display_name), std::string("bob")); \
-            EXPECT_EQ(eventide::serde::annotated_value(output->note), std::nullopt);               \
-            EXPECT_EQ(eventide::serde::annotated_value(output->profile).first, "Bob");             \
-            EXPECT_EQ(eventide::serde::annotated_value(output->profile).age, 21);                  \
-            EXPECT_EQ(eventide::serde::annotated_value(output->level),                             \
+            EXPECT_EQ(eventide::refl::annotated_value(output->display_name), std::string("bob"));  \
+            EXPECT_EQ(eventide::refl::annotated_value(output->note), std::nullopt);                \
+            EXPECT_EQ(eventide::refl::annotated_value(output->profile).first, "Bob");              \
+            EXPECT_EQ(eventide::refl::annotated_value(output->profile).age, 21);                   \
+            EXPECT_EQ(eventide::refl::annotated_value(output->level),                              \
                       eventide::serde::standard_case::AccessLevel::guest);                         \
         }                                                                                          \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(                                                           \

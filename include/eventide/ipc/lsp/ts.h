@@ -18,11 +18,11 @@
 namespace eventide::ipc::protocol {
 
 /// For `undefined | bool` .
-using optional_bool = serde::skip_if_default<bool>;
+using optional_bool = refl::skip_if_default<bool>;
 
 /// For `undefined | T` .
 template <typename T>
-using optional = serde::skip_if_none<T>;
+using optional = refl::skip_if_none<T>;
 
 /// For `a: T | null`
 template <typename T>
@@ -36,10 +36,10 @@ template <typename... Ts>
 using optional_variant = optional<variant<Ts...>>;
 
 /// For multiple inherit.
-using serde::flatten;
+using refl::flatten;
 
 /// For closed string enum.
-using serde::enum_string;
+using refl::enum_string;
 
 /// For empty object literal.
 struct LspEmptyObject {};

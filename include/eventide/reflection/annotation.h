@@ -5,20 +5,17 @@
 #include <type_traits>
 #include <utility>
 
-#include "eventide/serde/serde/attrs/behavior.h"
-#include "eventide/serde/serde/attrs/schema.h"
+#include "attrs.h"
+#include "eventide/common/naming.h"
 
-namespace eventide::serde {
+namespace eventide::refl {
 
-// Wrap or inherit depending on whether T is an aggregate class.
 template <typename T>
 concept wrap_type = !std::is_class_v<T> || std::is_final_v<T>;
 
-// Aggregate class that can be inherited without losing aggregate-ness.
 template <typename T>
 concept inherit_type = std::is_aggregate_v<T> && !wrap_type<T>;
 
-// Non-aggregate class where inheriting and reusing constructors is desired.
 template <typename T>
 concept inherit_use_type = !std::is_aggregate_v<T> && !wrap_type<T>;
 
@@ -82,12 +79,6 @@ struct annotation<T, Attrs...> : T {
     using attrs = std::tuple<Attrs...>;
 };
 
-template <typename T>
-concept annotated_type = requires {
-    typename std::remove_cvref_t<T>::annotated_type;
-    typename std::remove_cvref_t<T>::attrs;
-};
-
 template <annotated_type Value>
 constexpr decltype(auto) annotated_value(Value&& value) {
     using annotation_t = std::remove_cvref_t<Value>;
@@ -128,10 +119,42 @@ constexpr auto operator==(const L& lhs, const R& rhs) -> bool {
     return lhs == annotated_value(rhs);
 }
 
-/// Convenience alias: annotation<T, schema::default_value>.
-/// Marks a field as allowed to be absent during deserialization,
-/// keeping its default-constructed value. Like Rust's #[serde(default)].
-template <typename T>
-using defaulted = annotation<T, schema::default_value>;
+namespace rename_policy = naming::rename_policy;
 
-}  // namespace eventide::serde
+template <typename T>
+using defaulted = annotation<T, attrs::default_value>;
+
+template <typename T>
+using skip = annotation<T, attrs::skip>;
+
+template <typename T>
+using flatten = annotation<T, attrs::flatten>;
+
+template <typename T, fixed_string Name>
+using literal = annotation<T, attrs::literal<Name>>;
+
+template <typename T, fixed_string Name>
+using rename = annotation<T, attrs::rename<Name>>;
+
+template <typename T, fixed_string Name, fixed_string... AliasNames>
+using rename_alias = annotation<T, attrs::rename<Name>, attrs::alias<AliasNames...>>;
+
+template <typename T, fixed_string... Names>
+using alias = annotation<T, attrs::alias<Names...>>;
+
+template <typename T, typename Pred>
+using skip_if = annotation<T, behavior::skip_if<Pred>>;
+
+template <typename E, typename Policy = rename_policy::lower_camel>
+using enum_string = annotation<E, behavior::enum_string<Policy>>;
+
+template <typename T>
+using skip_if_none = annotation<std::optional<T>, behavior::skip_if<pred::optional_none>>;
+
+template <typename T>
+using skip_if_empty = annotation<T, behavior::skip_if<pred::empty>>;
+
+template <typename T>
+using skip_if_default = annotation<T, behavior::skip_if<pred::default_value>, attrs::default_value>;
+
+}  // namespace eventide::refl

@@ -9,6 +9,8 @@
 
 namespace eventide::serde {
 
+using namespace refl;
+
 namespace {
 
 using json::from_json;

@@ -91,7 +91,7 @@ format-python = "ruff format ."
 format-lua = "stylua ."
 format-web = "fd -H -e js -e ts -e css -x prettier --write"
 format-markdown = "fd -H -e md -x prettier --write"
-format-json = "fd -H -e json -E package-lock.json -x prettier --write"
+format-json = "fd -H -e json -E package-lock.json -E .git -x prettier --write"
 format-toml = "fd -H -e toml -x tombi format"
 format-yaml = """
 fd -H -e yaml -e yml -E pnpm-lock.yaml -x prettier --write && \
@@ -111,7 +111,7 @@ format = { depends-on = [
 [feature.format.target.win-64.tasks]
 format-web = "fd -H -e js -e ts -e css -x prettier.bat --write"
 format-markdown = "fd -H -e md -x prettier.bat --write"
-format-json = "fd -H -e json -E package-lock.json -x prettier.bat --write"
+format-json = "fd -H -e json -E package-lock.json -E .git -x prettier.bat --write"
 format-yaml = """
 fd -H -e yaml -e yml -E pnpm-lock.yaml -x prettier.bat --write && \
 fd -H "^\\.clang-(format|tidy)$" -x prettier.bat --write --parser yaml

@@ -610,8 +610,8 @@ private:
         using U = std::remove_cvref_t<T>;
         using clean_t = detail::clean_t<U>;
 
-        if constexpr(serde::annotated_type<U>) {
-            return collect_field(writers, field, serde::annotated_value(value));
+        if constexpr(refl::annotated_type<U>) {
+            return collect_field(writers, field, refl::annotated_value(value));
         } else if constexpr(is_specialization_of<std::optional, U>) {
             if(!value.has_value()) {
                 return {};

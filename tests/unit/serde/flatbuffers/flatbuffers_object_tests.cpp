@@ -12,11 +12,13 @@
 #include <vector>
 
 #include "eventide/zest/zest.h"
+#include "eventide/reflection/attrs.h"
 #include "eventide/serde/flatbuffers/flatbuffers.h"
-#include "eventide/serde/serde/attrs.h"
 #include <flatbuffers/flatbuffers.h>
 
 namespace eventide::serde {
+
+using namespace refl;
 
 namespace {
 

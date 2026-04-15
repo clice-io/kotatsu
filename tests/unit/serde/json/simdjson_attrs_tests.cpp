@@ -8,6 +8,8 @@
 
 namespace eventide::serde {
 
+using namespace refl;
+
 namespace {
 
 using json::from_json;
@@ -52,11 +54,11 @@ struct struct_level_payload {
 };
 
 using renamed_struct_level_payload =
-    annotation<struct_level_payload, schema::rename_all<rename_policy::lower_camel>>;
+    annotation<struct_level_payload, refl::attrs::rename_all<refl::rename_policy::lower_camel>>;
 using strict_renamed_struct_level_payload =
     annotation<struct_level_payload,
-               schema::rename_all<rename_policy::lower_camel>,
-               schema::deny_unknown_fields>;
+               refl::attrs::rename_all<refl::rename_policy::lower_camel>,
+               refl::attrs::deny_unknown_fields>;
 
 TEST_SUITE(serde_simdjson_attrs) {
 

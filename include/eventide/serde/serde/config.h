@@ -4,11 +4,11 @@
 #include <string_view>
 
 #include "spelling.h"
+#include "eventide/reflection/type_info.h"
 
 namespace eventide::serde::config {
 
-/// Default config — no rename policies applied.
-struct default_config {};
+using default_config = refl::default_config;
 
 /// Extract the config type from a serializer/deserializer.
 /// Falls back to default_config if S::config_type is not defined.

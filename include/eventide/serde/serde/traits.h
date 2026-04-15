@@ -17,74 +17,45 @@
 
 #include "eventide/common/meta.h"
 #include "eventide/common/ranges.h"
+#include "eventide/reflection/type_kind.h"
 
 namespace eventide::serde {
 
-template <typename T>
-concept null_like = is_one_of<T, std::nullptr_t, std::nullopt_t, std::monostate>;
+// Type-classification concepts — canonical definitions live in eventide::refl
+// (type_kind.h).  These aliases keep existing serde code compiling unchanged.
 
 template <typename T>
-concept bool_like = std::same_as<T, bool>;
+concept null_like = refl::null_like<T>;
 
 template <typename T>
-concept int_like = is_one_of<T,
-                             signed char,
-                             short,
-                             int,
-                             long,
-                             long long,
-                             std::int8_t,
-                             std::int16_t,
-                             std::int32_t,
-                             std::int64_t>;
+concept bool_like = refl::bool_like<T>;
 
 template <typename T>
-concept uint_like = is_one_of<T,
-                              unsigned char,
-                              unsigned short,
-                              unsigned int,
-                              unsigned long,
-                              unsigned long long,
-                              std::uint8_t,
-                              std::uint16_t,
-                              std::uint32_t,
-                              std::uint64_t>;
+concept int_like = refl::int_like<T>;
 
 template <typename T>
-concept floating_like = is_one_of<T, float, double, long double>;
+concept uint_like = refl::uint_like<T>;
 
 template <typename T>
-concept char_like = std::same_as<T, char>;
+concept floating_like = refl::floating_like<T>;
 
 template <typename T>
-concept str_like = std::convertible_to<T, std::string_view>;
+concept char_like = refl::char_like<T>;
 
 template <typename T>
-concept bytes_like = std::convertible_to<T, std::span<const std::byte>>;
+concept str_like = refl::str_like<T>;
 
 template <typename T>
-constexpr inline bool is_pair_v = is_specialization_of<std::pair, T>;
+concept bytes_like = refl::bytes_like<T>;
 
 template <typename T>
-constexpr inline bool is_tuple_v = is_specialization_of<std::tuple, T>;
-
-namespace detail {
-
-template <typename T, std::size_t... Is>
-consteval bool tuple_gettable_impl(std::index_sequence<Is...>) {
-    return (requires(T& value) { std::get<Is>(value); } && ...);
-}
+constexpr inline bool is_pair_v = refl::is_pair_v<T>;
 
 template <typename T>
-consteval bool tuple_gettable() {
-    return tuple_gettable_impl<T>(std::make_index_sequence<std::tuple_size_v<T>>{});
-}
-
-}  // namespace detail
+constexpr inline bool is_tuple_v = refl::is_tuple_v<T>;
 
 template <typename T>
-concept tuple_like = requires { typename std::tuple_size<std::remove_cvref_t<T>>::type; } &&
-                     detail::tuple_gettable<std::remove_cvref_t<T>>();
+concept tuple_like = refl::tuple_like<T>;
 
 template <typename A, typename T, typename E>
 concept result_as = std::same_as<A, std::expected<T, E>>;

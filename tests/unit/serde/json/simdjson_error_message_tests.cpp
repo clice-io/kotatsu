@@ -3,12 +3,14 @@
 #include <vector>
 
 #include "eventide/zest/zest.h"
+#include "eventide/reflection/annotation.h"
+#include "eventide/reflection/attrs.h"
 #include "eventide/serde/json/deserializer.h"
-#include "eventide/serde/serde/annotation.h"
-#include "eventide/serde/serde/attrs.h"
 #include "eventide/serde/serde/serde.h"
 
 namespace eventide::serde {
+
+using namespace refl;
 
 namespace {
 
@@ -30,7 +32,7 @@ struct strict_struct {
     std::string name;
 };
 
-using strict_payload = annotation<strict_struct, schema::deny_unknown_fields>;
+using strict_payload = annotation<strict_struct, refl::attrs::deny_unknown_fields>;
 
 enum class color { red, green, blue };
 

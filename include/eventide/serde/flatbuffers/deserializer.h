@@ -92,8 +92,8 @@ private:
         using U = std::remove_cvref_t<T>;
         using clean_u_t = clean_t<U>;
 
-        if constexpr(serde::annotated_type<U>) {
-            return decode_root_value(serde::annotated_value(out));
+        if constexpr(refl::annotated_type<U>) {
+            return decode_root_value(refl::annotated_value(out));
         } else if constexpr(is_specialization_of<std::optional, U>) {
             using value_t = typename U::value_type;
             using clean_value_t = clean_t<value_t>;
@@ -546,8 +546,8 @@ private:
         using U = std::remove_cvref_t<T>;
         using clean_u_t = clean_t<U>;
 
-        if constexpr(serde::annotated_type<U>) {
-            return decode_field(table, field, serde::annotated_value(out), required);
+        if constexpr(refl::annotated_type<U>) {
+            return decode_field(table, field, refl::annotated_value(out), required);
         } else if constexpr(is_specialization_of<std::optional, U>) {
             using value_t = typename U::value_type;
             if(!has_field(table, field)) {
@@ -699,8 +699,8 @@ private:
         using U = std::remove_cvref_t<T>;
         using clean_u_t = clean_t<U>;
 
-        if constexpr(serde::annotated_type<U>) {
-            return decode_root_value_from_table(table, serde::annotated_value(out));
+        if constexpr(refl::annotated_type<U>) {
+            return decode_root_value_from_table(table, refl::annotated_value(out));
         } else if constexpr(root_unboxed_v<clean_u_t>) {
             return decode_unboxed(table, out);
         } else {

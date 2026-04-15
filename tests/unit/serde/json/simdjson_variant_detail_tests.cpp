@@ -12,6 +12,8 @@
 
 namespace eventide::serde {
 
+using namespace refl;
+
 namespace {
 
 using json::from_json;
@@ -54,24 +56,25 @@ struct Empty {
 
 // External
 using ExtSimple =
-    annotation<std::variant<int, std::string>, schema::externally_tagged::names<"num", "str">>;
+    annotation<std::variant<int, std::string>, refl::attrs::externally_tagged::names<"num", "str">>;
 
 using ExtWithMono = annotation<std::variant<std::monostate, int, std::string>,
-                               schema::externally_tagged::names<"none", "num", "str">>;
+                               refl::attrs::externally_tagged::names<"none", "num", "str">>;
 
 using ExtWithStruct = annotation<std::variant<int, Point, Color>,
-                                 schema::externally_tagged::names<"int", "point", "color">>;
+                                 refl::attrs::externally_tagged::names<"int", "point", "color">>;
 
 // Adjacent
 using AdjSimple = annotation<std::variant<int, std::string>,
-                             schema::adjacently_tagged<"t", "v">::names<"num", "str">>;
+                             refl::attrs::adjacently_tagged<"t", "v">::names<"num", "str">>;
 
 using AdjWithMono =
     annotation<std::variant<std::monostate, int, std::string>,
-               schema::adjacently_tagged<"tag", "data">::names<"nil", "num", "str">>;
+               refl::attrs::adjacently_tagged<"tag", "data">::names<"nil", "num", "str">>;
 
-using AdjWithStruct = annotation<std::variant<int, Point>,
-                                 schema::adjacently_tagged<"type", "value">::names<"int", "point">>;
+using AdjWithStruct =
+    annotation<std::variant<int, Point>,
+               refl::attrs::adjacently_tagged<"type", "value">::names<"int", "point">>;
 
 // Internal
 struct Circle {
@@ -95,11 +98,11 @@ struct Triangle {
 };
 
 using IntTagShape = annotation<std::variant<Circle, Rect>,
-                               schema::internally_tagged<"type">::names<"circle", "rect">>;
+                               refl::attrs::internally_tagged<"type">::names<"circle", "rect">>;
 
 using IntTagTriShape =
     annotation<std::variant<Circle, Rect, Triangle>,
-               schema::internally_tagged<"kind">::names<"circle", "rect", "triangle">>;
+               refl::attrs::internally_tagged<"kind">::names<"circle", "rect", "triangle">>;
 
 // ── Containers with tagged variants ──────────────────────────────────
 
@@ -749,7 +752,7 @@ TEST_SUITE(serde_variant_nested) {
 TEST_CASE(variant_in_struct_in_variant) {
     // An externally tagged variant whose struct alternative contains another ext variant
     using Inner =
-        annotation<std::variant<int, std::string>, schema::externally_tagged::names<"i", "s">>;
+        annotation<std::variant<int, std::string>, refl::attrs::externally_tagged::names<"i", "s">>;
 
     struct Wrapper {
         std::string id;
@@ -759,7 +762,7 @@ TEST_CASE(variant_in_struct_in_variant) {
     };
 
     using Outer = annotation<std::variant<int, Wrapper>,
-                             schema::externally_tagged::names<"plain", "wrapped">>;
+                             refl::attrs::externally_tagged::names<"plain", "wrapped">>;
 
     Outer v = Wrapper{.id = "w1", .val = std::string("inner")};
     auto encoded = to_json(v);
@@ -773,7 +776,7 @@ TEST_CASE(variant_in_struct_in_variant) {
 
 TEST_CASE(vector_of_tagged_variants) {
     using V = annotation<std::variant<int, std::string>,
-                         schema::adjacently_tagged<"t", "v">::names<"i", "s">>;
+                         refl::attrs::adjacently_tagged<"t", "v">::names<"i", "s">>;
 
     std::vector<V> vec = {V{1}, V{std::string("a")}, V{2}, V{std::string("b")}};
     auto encoded = to_json(vec);

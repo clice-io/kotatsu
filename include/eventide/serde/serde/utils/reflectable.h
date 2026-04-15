@@ -11,11 +11,9 @@
 #include <variant>
 
 #include "eventide/common/expected_try.h"
+#include "eventide/reflection/annotation.h"
+#include "eventide/reflection/attrs.h"
 #include "eventide/reflection/struct.h"
-#include "eventide/serde/serde/annotation.h"
-#include "eventide/serde/serde/attrs.h"
-#include "eventide/serde/serde/attrs/behavior.h"
-#include "eventide/serde/serde/attrs/schema.h"
 #include "eventide/serde/serde/config.h"
 #include "eventide/serde/serde/utils/apply_behavior.h"
 #include "eventide/serde/serde/utils/field_dispatch.h"
@@ -43,7 +41,7 @@ inline auto effective_wire_name(const field_entry& entry, std::string& scratch)
 template <typename T>
 consteval std::size_t count_lookup_fields() {
     return []<std::size_t... Is>(std::index_sequence<Is...>) consteval {
-        return (0 + ... + (schema::is_field_excluded<T, Is>() ? 0 : 1));
+        return (0 + ... + (refl::attrs::is_field_excluded<T, Is>() ? 0 : 1));
     }(std::make_index_sequence<refl::field_count<T>()>{});
 }
 
@@ -52,7 +50,9 @@ template <typename T>
 consteval std::size_t count_lookup_aliases() {
     return []<std::size_t... Is>(std::index_sequence<Is...>) consteval {
         return (0 + ... +
-                (schema::is_field_excluded<T, Is>() ? 0 : schema::detail::alias_count<T, Is>()));
+                (refl::attrs::is_field_excluded<T, Is>()
+                     ? 0
+                     : refl::attrs::detail::alias_count<T, Is>()));
     }(std::make_index_sequence<refl::field_count<T>()>{});
 }
 
@@ -68,25 +68,25 @@ consteval auto make_field_table() {
     std::size_t pos = 0;
 
     auto fill = [&]<std::size_t I>() consteval {
-        if constexpr(schema::is_field_excluded<T, I>()) {
+        if constexpr(refl::attrs::is_field_excluded<T, I>()) {
             return;
         } else {
             using field_t = refl::field_type<T, I>;
             constexpr bool has_rename = []() consteval {
-                if constexpr(serde::has_attrs<field_t>) {
-                    return serde::detail::tuple_any_of_v<typename field_t::attrs, is_rename_attr>;
+                if constexpr(refl::annotated_type<field_t>) {
+                    return tuple_any_of_v<typename field_t::attrs, refl::is_rename_attr>;
                 } else {
                     return false;
                 }
             }();
 
             // Canonical name
-            table[pos++] = {schema::canonical_field_name<T, I>(), I, has_rename, false};
+            table[pos++] = {refl::attrs::canonical_field_name<T, I>(), I, has_rename, false};
 
             // Aliases
-            if constexpr(schema::detail::field_has_alias<T, I>()) {
+            if constexpr(refl::attrs::detail::field_has_alias<T, I>()) {
                 using attrs_t = typename field_t::attrs;
-                using alias_attr = serde::detail::tuple_find_t<attrs_t, is_alias_attr>;
+                using alias_attr = tuple_find_t<attrs_t, refl::is_alias_attr>;
                 for(auto alias_name: alias_attr::names) {
                     table[pos++] = {alias_name, I, true, true};
                 }
@@ -151,7 +151,7 @@ auto dispatch_field_by_index(std::size_t index, DeserializeStruct& d_struct, T& 
         std::expected<void, E> result;
         const bool matched =
             (([&]() -> bool {
-                 if constexpr(schema::is_field_excluded<T, Is>()) {
+                 if constexpr(refl::attrs::is_field_excluded<T, Is>()) {
                      return false;
                  } else if(Is != index) {
                      return false;
@@ -159,25 +159,26 @@ auto dispatch_field_by_index(std::size_t index, DeserializeStruct& d_struct, T& 
                      refl::field<Is, T> field{value};
                      using field_t = typename decltype(field)::type;
 
-                     if constexpr(!annotated_type<field_t>) {
+                     if constexpr(!refl::annotated_type<field_t>) {
                          result = d_struct.deserialize_value(field.value());
                      } else {
                          using attrs_t = typename std::remove_cvref_t<field_t>::attrs;
-                         auto&& fval = annotated_value(field.value());
+                         auto&& fval = refl::annotated_value(field.value());
                          using value_t = std::remove_cvref_t<decltype(fval)>;
 
                          // skip_if
-                         if constexpr(tuple_has_spec_v<attrs_t, behavior::skip_if>) {
+                         if constexpr(tuple_has_spec_v<attrs_t, refl::behavior::skip_if>) {
                              using Pred =
-                                 typename tuple_find_spec_t<attrs_t, behavior::skip_if>::predicate;
-                             if(evaluate_skip_predicate<Pred>(fval, false)) {
+                                 typename tuple_find_spec_t<attrs_t,
+                                                            refl::behavior::skip_if>::predicate;
+                             if(refl::detail::evaluate_skip_predicate<Pred>(fval, false)) {
                                  result = d_struct.skip_value();
                                  return true;
                              }
                          }
 
                          // with/as/enum_string
-                         if constexpr(tuple_count_of_v<attrs_t, is_behavior_provider> > 0) {
+                         if constexpr(tuple_count_of_v<attrs_t, refl::is_behavior_provider> > 0) {
                              result = *apply_deserialize_behavior<attrs_t, value_t, E>(
                                  fval,
                                  [&](auto& v) { return d_struct.deserialize_value(v); },
@@ -188,7 +189,7 @@ auto dispatch_field_by_index(std::size_t index, DeserializeStruct& d_struct, T& 
                          }
                          // Default: tagged variant passthrough or plain value
                          else if constexpr(is_specialization_of<std::variant, value_t> &&
-                                           tuple_any_of_v<attrs_t, is_tagged_attr>) {
+                                           tuple_any_of_v<attrs_t, refl::is_tagged_attr>) {
                              result = d_struct.deserialize_value(field.value());
                          } else {
                              result = d_struct.deserialize_value(fval);
@@ -209,7 +210,7 @@ auto dispatch_field_by_index(std::size_t index, DeserializeStruct& d_struct, T& 
 template <typename T>
 consteval bool has_flatten_fields() {
     return []<std::size_t... Is>(std::index_sequence<Is...>) consteval {
-        return (schema::is_field_flattened<T, Is>() || ...);
+        return (refl::attrs::is_field_flattened<T, Is>() || ...);
     }(std::make_index_sequence<refl::field_count<T>()>{});
 }
 
@@ -226,11 +227,11 @@ auto try_flatten_fields(std::string_view key_name, DeserializeStruct& d_struct, 
         }
 
         using field_t = typename std::remove_cvref_t<decltype(field)>::type;
-        if constexpr(!annotated_type<field_t>) {
+        if constexpr(!refl::annotated_type<field_t>) {
             return true;
         } else {
             using attrs_t = typename std::remove_cvref_t<field_t>::attrs;
-            if constexpr(tuple_has_v<attrs_t, schema::flatten>) {
+            if constexpr(tuple_has_v<attrs_t, refl::attrs::flatten>) {
                 auto status = deserialize_struct_field<Config, E>(d_struct, key_name, field);
                 if(!status) {
                     nested_error = std::unexpected(status.error());
@@ -253,14 +254,14 @@ auto try_flatten_fields(std::string_view key_name, DeserializeStruct& d_struct, 
 
 template <typename BaseConfig,
           typename Attrs,
-          bool HasRenameAll = tuple_has_spec_v<Attrs, schema::rename_all>>
+          bool HasRenameAll = tuple_has_spec_v<Attrs, refl::attrs::rename_all>>
 struct annotated_struct_config {
     using type = BaseConfig;
 };
 
 template <typename BaseConfig, typename Attrs>
 struct annotated_struct_config<BaseConfig, Attrs, true> {
-    using field_rename_policy = typename tuple_find_spec_t<Attrs, schema::rename_all>::policy;
+    using field_rename_policy = typename tuple_find_spec_t<Attrs, refl::attrs::rename_all>::policy;
 
     struct type {
         using field_rename = field_rename_policy;
@@ -302,15 +303,15 @@ constexpr auto serialize_reflectable(S& s, const V& v) -> std::expected<typename
 ///   - annotated with schema::default_value      (like Rust's #[serde(default)])
 template <typename T, std::size_t I>
 consteval bool is_field_optional() {
-    if constexpr(schema::is_field_excluded<T, I>()) {
+    if constexpr(refl::attrs::is_field_excluded<T, I>()) {
         return true;
     } else {
         // refl::field_type may carry const from the reflection machinery,
         // so strip cv before checking specialization.
         using field_t = std::remove_cv_t<refl::field_type<T, I>>;
-        if constexpr(serde::annotated_type<field_t>) {
+        if constexpr(refl::annotated_type<field_t>) {
             using attrs_t = typename field_t::attrs;
-            if constexpr(tuple_has_v<attrs_t, schema::default_value>) {
+            if constexpr(tuple_has_v<attrs_t, refl::attrs::default_value>) {
                 return true;
             }
             return is_specialization_of<std::optional, typename field_t::annotated_type>;

@@ -7,6 +7,8 @@
 
 namespace eventide::serde {
 
+using namespace refl;
+
 namespace {
 
 struct SkipOnDeserialize {
@@ -40,7 +42,7 @@ struct PlainFlattened {
 
 struct WithSkippedField {
     int first{};
-    annotation<int, schema::skip> skipped = 77;
+    annotation<int, attrs::skip> skipped = 77;
     int second{};
 };
 
@@ -52,7 +54,7 @@ struct WithSkipIfField {
 
 struct WithFlattenField {
     int first{};
-    annotation<FlattenInner, schema::flatten> inner{};
+    annotation<FlattenInner, attrs::flatten> inner{};
     int third{};
 };
 

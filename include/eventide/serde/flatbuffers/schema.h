@@ -284,7 +284,7 @@ consteval bool has_annotated_fields() {
         return false;
     } else {
         return []<std::size_t... I>(std::index_sequence<I...>) {
-            return (serde::annotated_type<refl::field_type<U, I>> || ...);
+            return (refl::annotated_type<refl::field_type<U, I>> || ...);
         }(std::make_index_sequence<refl::field_count<U>()>{});
     }
 }
