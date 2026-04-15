@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdlib>
 #include <memory>
 #include <optional>
 #include <ranges>
@@ -39,6 +40,9 @@ struct name_buf {
     std::size_t len = 0;
 
     constexpr void push(char c) {
+        if(len >= data.size()) {
+            std::abort();
+        }
         data[len++] = c;
     }
 
@@ -534,6 +538,19 @@ struct enum_values_as_i64 {
     }();
 };
 
+template <typename E>
+    requires std::is_enum_v<E>
+struct enum_values_as_u64 {
+    constexpr static auto values = [] {
+        constexpr auto& src = refl::reflection<E>::member_values;
+        std::array<std::uint64_t, src.size()> out{};
+        for(std::size_t i = 0; i < src.size(); ++i) {
+            out[i] = static_cast<std::uint64_t>(static_cast<std::underlying_type_t<E>>(src[i]));
+        }
+        return out;
+    }();
+};
+
 /// Forward declaration — full definition after virtual_schema.
 template <typename V, typename Config>
 struct struct_info_node;
@@ -700,26 +717,43 @@ constexpr const type_info* type_info_of() {
                 type_info_of<element_t, Config>(),
             };
             return &info;
-        } else {
+        } else if constexpr(fmt == range_format::sequence) {
             using element_t = std::ranges::range_value_t<T>;
             constexpr static array_type_info info = {
                 {type_kind::array, refl::type_name<T>()},
                 type_info_of<element_t, Config>(),
             };
             return &info;
+        } else {
+            constexpr static type_info info = {type_kind::unknown, refl::type_name<T>()};
+            return &info;
         }
     } else if constexpr(refl::reflectable_class<T>) {
         return &detail::struct_info_node<T, Config>::value;
     } else if constexpr(std::is_enum_v<T>) {
         constexpr static auto& names = refl::reflection<T>::member_names;
-        constexpr static auto& values = detail::enum_values_as_i64<T>::values;
-        constexpr static enum_type_info info = {
-            {type_kind::enumeration, refl::type_name<T>()},
-            {names.data(),           names.size()        },
-            {values.data(),          values.size()       },
-            kind_of<std::underlying_type_t<T>>(),
-        };
-        return &info;
+        using underlying_t = std::underlying_type_t<T>;
+        if constexpr(std::is_unsigned_v<underlying_t> && sizeof(underlying_t) == 8) {
+            constexpr static auto& values = detail::enum_values_as_u64<T>::values;
+            constexpr static enum_type_info info = {
+                {type_kind::enumeration, refl::type_name<T>()},
+                {names.data(),           names.size()        },
+                {},
+                {values.data(),          values.size()       },
+                kind_of<underlying_t>(),
+            };
+            return &info;
+        } else {
+            constexpr static auto& values = detail::enum_values_as_i64<T>::values;
+            constexpr static enum_type_info info = {
+                {type_kind::enumeration, refl::type_name<T>()},
+                {names.data(),           names.size()        },
+                {values.data(),          values.size()       },
+                {},
+                kind_of<underlying_t>(),
+            };
+            return &info;
+        }
     } else {
         constexpr static type_info info = {kind_of<T>(), refl::type_name<T>()};
         return &info;

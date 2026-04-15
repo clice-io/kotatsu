@@ -1,4 +1,7 @@
+#include <cstddef>
 #include <cstdint>
+#include <iterator>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -54,6 +57,37 @@ struct Rect {
 
 using TaggedRoot = annotation<std::variant<Circle, Rect>,
                               schema::internally_tagged<"kind">::names<"circle", "rect">>;
+
+enum class HugeUnsignedEnum : std::uint64_t {
+    zero = 0,
+    max = std::numeric_limits<std::uint64_t>::max(),
+};
+
+struct disabled_range;
+
+struct disabled_range_iter {
+    using iterator_concept = std::input_iterator_tag;
+    using iterator_category = std::input_iterator_tag;
+    using value_type = disabled_range;
+    using difference_type = std::ptrdiff_t;
+
+    auto operator*() const -> disabled_range;
+    auto operator++() -> disabled_range_iter& { return *this; }
+    auto operator++(int) -> disabled_range_iter { return *this; }
+    auto operator==(std::default_sentinel_t) const -> bool { return true; }
+};
+
+struct disabled_range {
+    auto begin() const -> disabled_range_iter { return {}; }
+    auto end() const -> std::default_sentinel_t { return {}; }
+};
+
+inline auto disabled_range_iter::operator*() const -> disabled_range {
+    return {};
+}
+
+static_assert(std::ranges::input_range<disabled_range>);
+static_assert(eventide::format_kind<disabled_range> == eventide::range_format::disabled);
 
 }  // namespace test_schema
 
@@ -282,6 +316,27 @@ TEST_CASE(annotated_type_info) {
         EXPECT_EQ(var->alt_names[0], "circle");
         EXPECT_EQ(var->alt_names[1], "rect");
     }
+
+    {
+        constexpr auto& info = *type_info_of<test_schema::HugeUnsignedEnum, default_config>();
+        EXPECT_EQ(info.kind, type_kind::enumeration);
+
+        auto* ei = static_cast<const schema::enum_type_info*>(static_cast<const type_info*>(&info));
+        EXPECT_EQ(ei->underlying_kind, type_kind::uint64);
+        EXPECT_EQ(ei->member_values.size(), 0U);
+        EXPECT_EQ(ei->member_u64_values.size(), 2U);
+        EXPECT_TRUE((ei->member_u64_values[0] == 0U &&
+                     ei->member_u64_values[1] == std::numeric_limits<std::uint64_t>::max()) ||
+                    (ei->member_u64_values[1] == 0U &&
+                     ei->member_u64_values[0] == std::numeric_limits<std::uint64_t>::max()));
+    }
+}
+
+TEST_CASE(disabled_range_type_info_is_unknown) {
+    EXPECT_EQ(schema::kind_of<test_schema::disabled_range>(), type_kind::unknown);
+
+    constexpr auto& info = *type_info_of<test_schema::disabled_range, default_config>();
+    EXPECT_EQ(info.kind, type_kind::unknown);
 }
 
 };  // TEST_SUITE(virtual_schema_type_info)

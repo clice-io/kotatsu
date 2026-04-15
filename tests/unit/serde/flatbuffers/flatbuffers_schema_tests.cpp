@@ -1,4 +1,6 @@
+#include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -73,6 +75,10 @@ struct s_str {
     std::string v;
 };
 
+struct s_bytes {
+    std::vector<std::byte> v;
+};
+
 // ---------------------------------------------------------------------------
 // Enums
 // ---------------------------------------------------------------------------
@@ -81,6 +87,10 @@ enum class single_enum : std::int32_t { only = 42 };
 enum class status : std::int32_t { ok = 0, fail = 1, pending = 2 };
 enum class flag_u8 : std::uint8_t { off = 0, on = 1 };
 enum class level_i16 : std::int16_t { low = 0, mid = 50, high = 100 };
+enum class huge_u64 : std::uint64_t {
+    zero = 0,
+    max = std::numeric_limits<std::uint64_t>::max(),
+};
 
 // ---------------------------------------------------------------------------
 // Containers
@@ -372,6 +382,10 @@ struct with_level {
     std::int32_t v;
 };
 
+struct with_huge_u64 {
+    huge_u64 e;
+};
+
 struct with_all_ptr {
     std::optional<std::string> opt;
     std::unique_ptr<std::int32_t> uniq;
@@ -548,6 +562,16 @@ root_type s_str;
 )fbs");
 }
 
+TEST_CASE(scalar_bytes) {
+    EXPECT_EQ(fbs::render(schema::type_info_of<s_bytes>()),
+              R"fbs(table s_bytes {
+  v:[ubyte];
+}
+
+root_type s_bytes;
+)fbs");
+}
+
 // ---------------------------------------------------------------------------
 // Group 2: Basic structs
 // ---------------------------------------------------------------------------
@@ -644,6 +668,21 @@ struct with_level {
 }
 
 root_type with_level;
+)fbs");
+}
+
+TEST_CASE(enum_with_huge_u64) {
+    EXPECT_EQ(fbs::render(schema::type_info_of<with_huge_u64>()),
+              R"fbs(enum huge_u64:ulong {
+  max = 18446744073709551615,
+  zero = 0
+}
+
+struct with_huge_u64 {
+  e:huge_u64;
+}
+
+root_type with_huge_u64;
 )fbs");
 }
 
@@ -856,7 +895,7 @@ root_type s_map_str_i32;
 TEST_CASE(container_vec_vec_i32) {
     EXPECT_EQ(fbs::render(schema::type_info_of<s_vec_vec_i32>()),
               R"fbs(table s_vec_vec_i32 {
-  v:[[int]];
+  v:string;
 }
 
 root_type s_vec_vec_i32;
@@ -1876,6 +1915,11 @@ table multi_map {
 
 root_type multi_map;
 )fbs");
+}
+
+TEST_CASE(output_rejects_non_struct_root) {
+    auto result = fbs::render(schema::type_info_of<std::int32_t>());
+    EXPECT_TRUE(result.empty());
 }
 
 // ---------------------------------------------------------------------------

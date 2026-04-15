@@ -42,6 +42,10 @@ class emitter {
 
 public:
     std::string emit(const type_info* root) {
+        if(root == nullptr || root->kind != tk::structure) {
+            return {};
+        }
+        root = unwrap(root);
         emit_object(root);
         out += "root_type " + normalize_identifier(root->type_name) + ";\n";
         return std::move(out);
@@ -83,7 +87,11 @@ private:
         }
         for(const auto& field: si->fields) {
             auto* ft = unwrap(field.type);
-            if(ft->is_scalar() || ft->kind == tk::enumeration) {
+            if(ft->kind == tk::boolean || ft->kind == tk::int8 || ft->kind == tk::int16 ||
+               ft->kind == tk::int32 || ft->kind == tk::int64 || ft->kind == tk::uint8 ||
+               ft->kind == tk::uint16 || ft->kind == tk::uint32 || ft->kind == tk::uint64 ||
+               ft->kind == tk::float32 || ft->kind == tk::float64 ||
+               ft->kind == tk::character || ft->kind == tk::enumeration) {
                 continue;
             }
             if(!is_fbs_struct(ft)) {
@@ -108,12 +116,17 @@ private:
             case tk::float32:
             case tk::float64:
             case tk::character: return scalar_fbs_name(ti->kind);
+            case tk::bytes: return "[ubyte]";
             case tk::enumeration:
             case tk::structure: return normalize_identifier(ti->type_name);
             case tk::string: return "string";
             case tk::array:
             case tk::set: {
                 auto* ai = static_cast<const array_type_info*>(ti);
+                auto* element = unwrap(ai->element);
+                if(element->kind == tk::array || element->kind == tk::set) {
+                    return "string";
+                }
                 return "[" + wire_fbs_name(ai->element) + "]";
             }
             default: return "string";
@@ -151,7 +164,11 @@ private:
         out += "enum " + name + ":" + scalar_fbs_name(ei->underlying_kind) + " {\n";
         for(std::size_t i = 0; i < ei->member_names.size(); ++i) {
             out += "  " + normalize_identifier(ei->member_names[i]);
-            out += " = " + std::to_string(ei->member_values[i]);
+            if(ei->underlying_kind == tk::uint64) {
+                out += " = " + std::to_string(ei->member_u64_values[i]);
+            } else {
+                out += " = " + std::to_string(ei->member_values[i]);
+            }
             out += (i + 1 < ei->member_names.size()) ? ",\n" : "\n";
         }
         out += "}\n\n";

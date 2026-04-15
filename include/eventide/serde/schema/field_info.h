@@ -102,6 +102,7 @@ struct map_type_info : type_info {
 struct enum_type_info : type_info {
     std::span<const std::string_view> member_names;
     std::span<const std::int64_t> member_values;
+    std::span<const std::uint64_t> member_u64_values;
     type_kind underlying_kind;
 };
 
@@ -225,8 +226,10 @@ consteval type_kind kind_of() {
             return type_kind::map;
         } else if constexpr(fmt == range_format::set) {
             return type_kind::set;
-        } else {
+        } else if constexpr(fmt == range_format::sequence) {
             return type_kind::array;
+        } else {
+            return type_kind::unknown;
         }
     } else if constexpr(refl::reflectable_class<T>) {
         return type_kind::structure;

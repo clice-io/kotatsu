@@ -52,8 +52,16 @@ namespace eventide::serde {
 
 struct json_schema_opaque_root {};
 
+}  // namespace eventide::serde
+
+namespace eventide::serde::schema {
+
 template <>
-constexpr inline bool schema::schema_opaque<json_schema_opaque_root> = true;
+constexpr inline bool schema_opaque<eventide::serde::json_schema_opaque_root> = true;
+
+}  // namespace eventide::serde::schema
+
+namespace eventide::serde {
 
 namespace {
 
