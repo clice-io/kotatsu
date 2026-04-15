@@ -416,13 +416,14 @@ struct struct_info_node {
 
     constexpr static bool is_trivially_copyable = std::is_trivially_copyable_v<V>;
 
-    constexpr inline static built_fields_t<V, schema_config> fields = build_fields<V, schema_config>();
+    constexpr inline static built_fields_t<V, schema_config> fields =
+        build_fields<V, schema_config>();
 
     constexpr inline static struct_type_info value = {
         {type_kind::structure, refl::type_name<V>()},
         deny_unknown,
         is_trivially_copyable,
-        {fields.data(), count},
+        {fields.data(),        count               },
     };
 };
 
