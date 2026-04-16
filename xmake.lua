@@ -238,9 +238,6 @@ if has_config("async") then
 		if has_config("serde") and has_config("serde_simdjson") then
 			add_files("src/ipc/codec/json.cpp")
 			add_deps("serde_json")
-			add_defines("ETD_IPC_ENABLE_JSON=1", { public = true })
-		else
-			add_defines("ETD_IPC_ENABLE_JSON=0", { public = true })
 		end
 		add_deps("async")
 	end)

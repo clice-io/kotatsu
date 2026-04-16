@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "../test_transport.h"
-#include "eventide/ipc/peer.h"
+#include "eventide/ipc/codec/json.h"
 #include "eventide/zest/zest.h"
 #include "eventide/async/async.h"
 #include "eventide/serde/json/deserializer.h"

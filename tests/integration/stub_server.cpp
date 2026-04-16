@@ -2,7 +2,7 @@
 #include <string>
 #include <vector>
 
-#include "eventide/ipc/peer.h"
+#include "eventide/ipc/codec/json.h"
 #include "eventide/ipc/lsp/progress.h"
 #include "eventide/ipc/lsp/protocol.h"
 

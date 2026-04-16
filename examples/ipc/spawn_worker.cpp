@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-#include "eventide/ipc/peer.h"
+#include "eventide/ipc/codec/json.h"
 #include "eventide/async/async.h"
 
 namespace et = eventide;

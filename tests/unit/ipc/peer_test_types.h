@@ -9,7 +9,7 @@
 
 #include "test_transport.h"
 #include "../common/fd_helpers.h"
-#include "eventide/ipc/peer.h"
+#include "eventide/ipc/codec/json.h"
 #include "eventide/common/config.h"
 #include "eventide/async/async.h"
 #include "eventide/serde/json/deserializer.h"

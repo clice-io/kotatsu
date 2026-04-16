@@ -133,4 +133,6 @@ Result<std::string> JsonCodec::encode_error_response(const protocol::RequestID& 
     });
 }
 
+template class Peer<JsonCodec>;
+
 }  // namespace eventide::ipc

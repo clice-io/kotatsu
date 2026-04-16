@@ -5,6 +5,7 @@
 #include <string>
 
 #include "eventide/ipc/codec.h"
+#include "eventide/ipc/peer.h"
 #include "eventide/serde/bincode/bincode.h"
 #include "eventide/serde/serde/raw_value.h"
 
@@ -94,5 +95,9 @@ public:
         return value;
     }
 };
+
+using BincodePeer = Peer<BincodeCodec>;
+
+extern template class Peer<BincodeCodec>;
 
 }  // namespace eventide::ipc

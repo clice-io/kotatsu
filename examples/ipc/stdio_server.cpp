@@ -3,7 +3,7 @@
 #include <string>
 #include <string_view>
 
-#include "eventide/ipc/peer.h"
+#include "eventide/ipc/codec/json.h"
 
 namespace et = eventide;
 namespace ipc = et::ipc;

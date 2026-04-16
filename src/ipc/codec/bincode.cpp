@@ -105,4 +105,6 @@ Result<std::string> BincodeCodec::encode_error_response(const protocol::RequestI
     });
 }
 
+template class Peer<BincodeCodec>;
+
 }  // namespace eventide::ipc
