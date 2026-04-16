@@ -17,7 +17,7 @@
 
 #include "text.h"
 #include "trait.h"
-#include "eventide/serde/serde/spelling.h"
+#include "kota/codec/spelling.h"
 
 namespace deco::decl {
 
@@ -649,7 +649,7 @@ std::string format_invalid_enum_value(std::string_view text) {
     std::string message = "invalid enum value: ";
     message += text;
 
-    const auto& values = eventide::serde::spelling::enum_strings<EnumTy>();
+    const auto& values = kota::codec::spelling::enum_strings<EnumTy>();
     if(values.empty()) {
         return message;
     }
@@ -692,7 +692,7 @@ std::optional<std::string> parse_primitive_scalar(ResTy& out, std::string_view t
     } else if constexpr(std::same_as<ResTy, long double>) {
         return "unsupported floating-point type: long double";
     } else if constexpr(std::is_enum_v<ResTy>) {
-        if(auto parsed = eventide::serde::spelling::map_string_to_enum<ResTy>(text)) {
+        if(auto parsed = kota::codec::spelling::map_string_to_enum<ResTy>(text)) {
             out = *parsed;
             return std::nullopt;
         }

@@ -3,11 +3,11 @@
 #include <variant>
 #include <vector>
 
-#include "eventide/zest/zest.h"
-#include "eventide/reflection/attrs.h"
-#include "eventide/reflection/schema.h"
+#include "kota/zest/zest.h"
+#include "kota/meta/attrs.h"
+#include "kota/meta/schema.h"
 
-namespace eventide::refl {
+namespace kota::meta {
 
 namespace test_schema {
 
@@ -287,4 +287,4 @@ TEST_CASE(tagged_field_type_info) {
 
 }  // namespace
 
-}  // namespace eventide::refl
+}  // namespace kota::meta

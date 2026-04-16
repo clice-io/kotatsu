@@ -4,13 +4,13 @@
 #include <type_traits>
 #include <variant>
 
-#include "eventide/zest/zest.h"
-#include "eventide/reflection/attrs.h"
-#include "eventide/reflection/schema.h"
+#include "kota/zest/zest.h"
+#include "kota/meta/attrs.h"
+#include "kota/meta/schema.h"
 
-namespace eventide::refl {
+namespace kota::meta {
 
-using eventide::type_list_element_t;
+using kota::type_list_element_t;
 
 namespace test_schema {
 
@@ -209,4 +209,4 @@ TEST_CASE(skip_if_combined_with_behavior) {
 
 }  // namespace
 
-}  // namespace eventide::refl
+}  // namespace kota::meta

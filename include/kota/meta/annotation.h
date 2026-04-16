@@ -6,9 +6,9 @@
 #include <utility>
 
 #include "attrs.h"
-#include "eventide/common/naming.h"
+#include "kota/support/naming.h"
 
-namespace eventide::refl {
+namespace kota::meta {
 
 template <typename T>
 concept wrap_type = !std::is_class_v<T> || std::is_final_v<T>;
@@ -157,4 +157,4 @@ using skip_if_empty = annotation<T, behavior::skip_if<pred::empty>>;
 template <typename T>
 using skip_if_default = annotation<T, behavior::skip_if<pred::default_value>, attrs::default_value>;
 
-}  // namespace eventide::refl
+}  // namespace kota::meta

@@ -4,11 +4,11 @@
 #include <cstdint>
 #include <memory>
 
-#include "eventide/async/runtime/task.h"
-#include "eventide/async/vocab/error.h"
-#include "eventide/async/vocab/owned.h"
+#include "kota/async/runtime/task.h"
+#include "kota/async/vocab/error.h"
+#include "kota/async/vocab/owned.h"
 
-namespace eventide {
+namespace kota {
 
 class event_loop;
 
@@ -163,4 +163,4 @@ inline task<> sleep(int ms, event_loop& loop = event_loop::current()) {
     return sleep(std::chrono::milliseconds{ms}, loop);
 }
 
-}  // namespace eventide
+}  // namespace kota

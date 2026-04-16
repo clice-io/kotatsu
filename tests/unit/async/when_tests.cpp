@@ -1,10 +1,10 @@
 #include <stdexcept>
 #include <utility>
 
-#include "eventide/zest/zest.h"
-#include "eventide/async/async.h"
+#include "kota/zest/zest.h"
+#include "kota/async/async.h"
 
-namespace eventide {
+namespace kota {
 
 namespace {
 
@@ -1343,7 +1343,7 @@ TEST_CASE(all_range_success_no_false_error) {
 // TEST_SUITE: when_exceptions — exception propagation
 // ============================================================================
 
-#if ETD_ENABLE_EXCEPTIONS
+#if KOTA_ENABLE_EXCEPTIONS
 
 TEST_SUITE(when_exceptions) {
 
@@ -1576,7 +1576,7 @@ TEST_CASE(exception_in_scope_cancels_siblings) {
 
 };  // TEST_SUITE(when_exceptions)
 
-#endif  // ETD_ENABLE_EXCEPTIONS
+#endif  // KOTA_ENABLE_EXCEPTIONS
 
 // ============================================================================
 // TEST_SUITE: async_scope
@@ -1909,4 +1909,4 @@ TEST_CASE(when_all_in_scope) {
 
 };  // TEST_SUITE(async_scope)
 
-}  // namespace eventide
+}  // namespace kota

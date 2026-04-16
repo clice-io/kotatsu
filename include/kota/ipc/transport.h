@@ -5,10 +5,10 @@
 #include <string>
 #include <string_view>
 
-#include "eventide/ipc/codec.h"
-#include "eventide/async/async.h"
+#include "kota/ipc/codec.h"
+#include "kota/async/async.h"
 
-namespace eventide::ipc {
+namespace kota::ipc {
 
 class Transport {
 public:
@@ -51,4 +51,4 @@ private:
     bool shared_stream = false;
 };
 
-}  // namespace eventide::ipc
+}  // namespace kota::ipc

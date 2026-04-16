@@ -3,8 +3,8 @@
 #include <string>
 #include <vector>
 
-#include "eventide/deco/deco.h"
-#include "eventide/zest/zest.h"
+#include "kota/deco/deco.h"
+#include "kota/zest/zest.h"
 
 namespace {
 

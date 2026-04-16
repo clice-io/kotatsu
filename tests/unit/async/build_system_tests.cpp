@@ -2,9 +2,9 @@
 
 #include "compile_graph.h"
 #include "loop_fixture.h"
-#include "eventide/zest/zest.h"
+#include "kota/zest/zest.h"
 
-namespace eventide {
+namespace kota {
 
 namespace {
 
@@ -161,4 +161,4 @@ TEST_CASE(shared_dependency_compiled_once) {
 
 }  // namespace
 
-}  // namespace eventide
+}  // namespace kota

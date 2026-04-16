@@ -6,7 +6,7 @@
 
 #include "type_traits.h"
 
-namespace eventide {
+namespace kota {
 
 namespace detail {
 
@@ -89,4 +89,4 @@ struct tuple_find_spec<std::tuple<Ts...>, HKT> : detail::pack_find_spec<HKT, Ts.
 template <typename Tuple, template <typename...> typename HKT>
 using tuple_find_spec_t = typename tuple_find_spec<Tuple, HKT>::type;
 
-}  // namespace eventide
+}  // namespace kota

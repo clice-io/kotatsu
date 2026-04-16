@@ -7,16 +7,16 @@
 #include <string_view>
 #include <utility>
 
-#include "eventide/serde/content/deserializer.h"
-#include "eventide/serde/content/dom.h"
-#include "eventide/serde/content/serializer.h"
-#include "eventide/serde/json/deserializer.h"
-#include "eventide/serde/json/error.h"
-#include "eventide/serde/json/serializer.h"
-#include "eventide/serde/serde/config.h"
-#include "eventide/serde/serde/raw_value.h"
+#include "kota/codec/content/deserializer.h"
+#include "kota/codec/content/dom.h"
+#include "kota/codec/content/serializer.h"
+#include "kota/codec/json/deserializer.h"
+#include "kota/codec/json/error.h"
+#include "kota/codec/json/serializer.h"
+#include "kota/codec/config.h"
+#include "kota/codec/raw_value.h"
 
-namespace eventide::serde::json {
+namespace kota::codec::json {
 
 // DOM type aliases (previously in json/dom.h)
 using ValueKind = content::ValueKind;
@@ -89,9 +89,9 @@ auto to_string(const T& value, std::optional<std::size_t> initial_capacity = std
     return to_json<Config>(value, initial_capacity);
 }
 
-}  // namespace eventide::serde::json
+}  // namespace kota::codec::json
 
-namespace eventide::serde {
+namespace kota::codec {
 
 template <typename T>
 concept json_dynamic_dom_type =
@@ -207,4 +207,4 @@ struct deserialize_traits<json::Deserializer<Config>, RawValue> {
     }
 };
 
-}  // namespace eventide::serde
+}  // namespace kota::codec

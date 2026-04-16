@@ -1,4 +1,4 @@
-#include "eventide/async/io/udp.h"
+#include "kota/async/io/udp.h"
 
 #include <cassert>
 #include <cstring>
@@ -7,10 +7,10 @@
 #include <utility>
 
 #include "awaiter.h"
-#include "eventide/async/io/loop.h"
-#include "eventide/async/vocab/error.h"
+#include "kota/async/io/loop.h"
+#include "kota/async/vocab/error.h"
 
-namespace eventide {
+namespace kota {
 
 static result<udp::endpoint> endpoint_from_sockaddr(const sockaddr* addr);
 
@@ -667,4 +667,4 @@ std::size_t udp::send_queue_count() const {
     return uv::udp_get_send_queue_count(self->handle);
 }
 
-}  // namespace eventide
+}  // namespace kota

@@ -13,11 +13,11 @@
 
 #include "annotation.h"
 #include "struct.h"
-#include "eventide/common/ranges.h"
-#include "eventide/common/type_list.h"
-#include "eventide/common/type_traits.h"
+#include "kota/support/ranges.h"
+#include "kota/support/type_list.h"
+#include "kota/support/type_traits.h"
 
-namespace eventide::refl {
+namespace kota::meta {
 
 template <typename T>
 concept null_like = is_one_of<T, std::nullptr_t, std::nullopt_t, std::monostate>;
@@ -185,4 +185,4 @@ consteval type_kind kind_of() {
     }
 }
 
-}  // namespace eventide::refl
+}  // namespace kota::meta

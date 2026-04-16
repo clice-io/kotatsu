@@ -1,11 +1,11 @@
-#include "eventide/serde/json/json.h"
+#include "kota/codec/json/json.h"
 
 #include <string>
 #include <string_view>
 
-#include "eventide/ipc/codec/json.h"
+#include "kota/ipc/codec/json.h"
 
-namespace eventide::ipc {
+namespace kota::ipc {
 
 namespace {
 
@@ -135,4 +135,4 @@ Result<std::string> JsonCodec::encode_error_response(const protocol::RequestID& 
 
 template class Peer<JsonCodec>;
 
-}  // namespace eventide::ipc
+}  // namespace kota::ipc

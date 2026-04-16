@@ -22,7 +22,7 @@
 #include "./decl.h"
 #include "./descriptor.h"
 #include "./text.h"
-#include "eventide/common/functional.h"
+#include "kota/support/functional.h"
 
 namespace deco::util {
 
@@ -33,7 +33,7 @@ std::vector<std::string> argvify(int argc, const char* const* argv, unsigned ski
 namespace deco::cli {
 
 template <typename Signature>
-using runtime_callable_t = eventide::function<Signature>;
+using runtime_callable_t = kota::function<Signature>;
 
 template <typename T>
 struct Invocation {

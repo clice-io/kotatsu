@@ -14,22 +14,22 @@
 #include <variant>
 #include <vector>
 
-#include "eventide/common/expected_try.h"
-#include "eventide/serde/serde/config.h"
-#include "eventide/serde/serde/serde.h"
-#include "eventide/serde/serde/utils/backend_helpers.h"
-#include "eventide/serde/serde/utils/common.h"
-#include "eventide/serde/serde/utils/narrow.h"
-#include "eventide/serde/toml/error.h"
-#include "eventide/serde/toml/serializer.h"
+#include "kota/support/expected_try.h"
+#include "kota/codec/config.h"
+#include "kota/codec/serde.h"
+#include "kota/codec/detail/backend_helpers.h"
+#include "kota/codec/detail/common.h"
+#include "kota/codec/detail/narrow.h"
+#include "kota/codec/toml/error.h"
+#include "kota/codec/toml/serializer.h"
 
 #if __has_include(<toml++/toml.hpp>)
 #include <toml++/toml.hpp>
 #else
-#error "toml++/toml.hpp not found. Enable ETD_SERDE_ENABLE_TOML or add tomlplusplus include paths."
+#error "toml++/toml.hpp not found. Enable KOTA_SERDE_ENABLE_TOML or add tomlplusplus include paths."
 #endif
 
-namespace eventide::serde::toml {
+namespace kota::codec::toml {
 
 namespace detail {
 
@@ -296,17 +296,17 @@ public:
     }
 
     result_t<DeserializeSeq> deserialize_seq(std::optional<std::size_t> len) {
-        ETD_EXPECTED_TRY_V(auto array, open_array());
+        KOTA_EXPECTED_TRY_V(auto array, open_array());
         return DeserializeSeq(*this, array, len.value_or(0), false);
     }
 
     result_t<DeserializeTuple> deserialize_tuple(std::size_t len) {
-        ETD_EXPECTED_TRY_V(auto array, open_array());
+        KOTA_EXPECTED_TRY_V(auto array, open_array());
         return DeserializeTuple(*this, array, len, true);
     }
 
     result_t<DeserializeMap> deserialize_map(std::optional<std::size_t> /*len*/) {
-        ETD_EXPECTED_TRY_V(auto table, open_table());
+        KOTA_EXPECTED_TRY_V(auto table, open_table());
 
         DeserializeMap object(*this);
         object.entries.reserve(table->size());
@@ -554,8 +554,8 @@ auto from_toml(const ::toml::table& table, T& value) -> std::expected<void, erro
     const auto* root = detail::select_root_node<T>(table);
     Deserializer<Config> deserializer(root);
 
-    ETD_EXPECTED_TRY(serde::deserialize(deserializer, value));
-    ETD_EXPECTED_TRY(deserializer.finish());
+    KOTA_EXPECTED_TRY(serde::deserialize(deserializer, value));
+    KOTA_EXPECTED_TRY(deserializer.finish());
     return {};
 }
 
@@ -563,10 +563,10 @@ template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_toml(const ::toml::table& table) -> std::expected<T, error> {
     T value{};
-    ETD_EXPECTED_TRY(from_toml<Config>(table, value));
+    KOTA_EXPECTED_TRY(from_toml<Config>(table, value));
     return value;
 }
 
 static_assert(serde::deserializer_like<Deserializer<>>);
 
-}  // namespace eventide::serde::toml
+}  // namespace kota::codec::toml

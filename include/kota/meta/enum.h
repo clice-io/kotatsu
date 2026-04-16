@@ -10,7 +10,7 @@
 
 #include "name.h"
 
-namespace eventide::refl::detail {
+namespace kota::meta::detail {
 
 template <typename E, int V>
 consteval E enum_probe_value() {
@@ -68,9 +68,9 @@ consteval auto count_valid(const std::array<bool, N>& valid) {
     return count;
 }
 
-}  // namespace eventide::refl::detail
+}  // namespace kota::meta::detail
 
-namespace eventide::refl {
+namespace kota::meta {
 
 template <typename T>
 struct reflection;
@@ -151,4 +151,4 @@ constexpr std::optional<E> enum_value(std::string_view name) {
     return std::nullopt;
 }
 
-}  // namespace eventide::refl
+}  // namespace kota::meta

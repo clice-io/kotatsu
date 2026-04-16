@@ -3,9 +3,9 @@
 #include <cstdint>
 #include <string_view>
 
-#include "eventide/serde/serde/error.h"
+#include "kota/codec/error.h"
 
-namespace eventide::serde::toml {
+namespace kota::codec::toml {
 
 enum class error_kind : std::uint16_t {
     ok = 0,
@@ -32,6 +32,6 @@ constexpr auto error_message(error_kind error) noexcept -> std::string_view {
     }
 }
 
-using error = eventide::serde::serde_error<error_kind>;
+using error = kota::codec::serde_error<error_kind>;
 
-}  // namespace eventide::serde::toml
+}  // namespace kota::codec::toml

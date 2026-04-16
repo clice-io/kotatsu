@@ -12,9 +12,9 @@
 #include <vector>
 
 #include "opt_specifier.h"
-#include "eventide/common/type_traits.h"
+#include "kota/support/type_traits.h"
 
-namespace eventide::option {
+namespace kota::option {
 
 struct OptionEnum {
     enum OptionClass {
@@ -82,7 +82,7 @@ struct ParsedArgumentBase {
                         return std::string_view(arg.data());
                     } else {
                         static_assert(
-                            eventide::dependent_false<std::decay_t<decltype(arg)>>,
+                            kota::dependent_false<std::decay_t<decltype(arg)>>,
                             "Unhandled variant type in ParsedArgumentBase::get_spelling_view");
                         return "";
                     }
@@ -191,4 +191,4 @@ inline std::array<char, 8> to_spelling_array(std::string_view str) {
     return arr;
 };
 
-}  // namespace eventide::option
+}  // namespace kota::option

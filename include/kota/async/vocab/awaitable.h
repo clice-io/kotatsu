@@ -5,9 +5,9 @@
 #include <type_traits>
 #include <utility>
 
-#include "eventide/async/runtime/frame.h"
+#include "kota/async/runtime/frame.h"
 
-namespace eventide::detail {
+namespace kota::detail {
 
 template <typename T>
 decltype(auto) get_awaiter(T&& value) {
@@ -43,4 +43,4 @@ concept awaitable =
 template <typename T>
 using await_result_t = decltype(std::declval<awaiter_t<T>>().await_resume());
 
-}  // namespace eventide::detail
+}  // namespace kota::detail

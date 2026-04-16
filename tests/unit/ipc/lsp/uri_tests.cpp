@@ -1,7 +1,7 @@
-#include "eventide/zest/zest.h"
-#include "eventide/ipc/lsp/uri.h"
+#include "kota/zest/zest.h"
+#include "kota/ipc/lsp/uri.h"
 
-namespace eventide::ipc::lsp {
+namespace kota::ipc::lsp {
 
 TEST_SUITE(language_uri) {
 
@@ -157,4 +157,4 @@ TEST_CASE(non_file_path_fails) {
 
 };  // TEST_SUITE(language_uri)
 
-}  // namespace eventide::ipc::lsp
+}  // namespace kota::ipc::lsp

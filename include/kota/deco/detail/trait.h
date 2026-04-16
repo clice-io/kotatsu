@@ -9,12 +9,12 @@
 #include <utility>
 #include <vector>
 
-#include "eventide/option/option.h"
-#include "eventide/reflection/struct.h"
+#include "kota/option/option.h"
+#include "kota/meta/struct.h"
 
 namespace deco {
-namespace backend = eventide::option;
-namespace refl = eventide::refl;
+namespace backend = kota::option;
+namespace refl = kota::meta;
 
 namespace decl {
 

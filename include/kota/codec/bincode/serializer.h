@@ -14,12 +14,12 @@
 #include <variant>
 #include <vector>
 
-#include "eventide/common/expected_try.h"
-#include "eventide/serde/bincode/error.h"
-#include "eventide/serde/serde/config.h"
-#include "eventide/serde/serde/serde.h"
+#include "kota/support/expected_try.h"
+#include "kota/codec/bincode/error.h"
+#include "kota/codec/config.h"
+#include "kota/codec/serde.h"
 
-namespace eventide::serde::bincode {
+namespace kota::codec::bincode {
 
 template <typename Config = config::default_config>
 class Serializer {
@@ -44,7 +44,7 @@ public:
                 return serializer.mark_invalid(error_type::invalid_state);
             }
 
-            ETD_EXPECTED_TRY(serde::serialize(serializer, value));
+            KOTA_EXPECTED_TRY(serde::serialize(serializer, value));
 
             ++written_count;
             return {};
@@ -56,8 +56,8 @@ public:
                 return serializer.mark_invalid(error_type::invalid_state);
             }
 
-            ETD_EXPECTED_TRY(serde::serialize(serializer, key));
-            ETD_EXPECTED_TRY(serde::serialize(serializer, value));
+            KOTA_EXPECTED_TRY(serde::serialize(serializer, key));
+            KOTA_EXPECTED_TRY(serde::serialize(serializer, value));
 
             ++written_count;
             return {};
@@ -114,7 +114,7 @@ public:
 
     template <typename T>
     result_t<value_type> serialize_some(const T& value) {
-        ETD_EXPECTED_TRY(write_u8(1));
+        KOTA_EXPECTED_TRY(write_u8(1));
         return serde::serialize(*this, value);
     }
 
@@ -140,7 +140,7 @@ public:
     }
 
     result_t<value_type> serialize_str(std::string_view value) {
-        ETD_EXPECTED_TRY(write_length(value.size()));
+        KOTA_EXPECTED_TRY(write_length(value.size()));
 
         if(!is_valid) {
             return std::unexpected(last_error);
@@ -157,7 +157,7 @@ public:
     }
 
     result_t<value_type> serialize_bytes(std::span<const std::byte> value) {
-        ETD_EXPECTED_TRY(write_length(value.size()));
+        KOTA_EXPECTED_TRY(write_length(value.size()));
 
         if(!is_valid) {
             return std::unexpected(last_error);
@@ -174,7 +174,7 @@ public:
             return mark_invalid(error_type::invalid_variant_index);
         }
 
-        ETD_EXPECTED_TRY(write_integral(static_cast<std::uint32_t>(variant_index)));
+        KOTA_EXPECTED_TRY(write_integral(static_cast<std::uint32_t>(variant_index)));
 
         std::expected<void, error_type> payload_status{};
         std::visit(
@@ -204,7 +204,7 @@ public:
             return std::unexpected(error_type::invalid_state);
         }
 
-        ETD_EXPECTED_TRY(write_length(*len));
+        KOTA_EXPECTED_TRY(write_length(*len));
         return SerializeSeq(*this, *len);
     }
 
@@ -217,7 +217,7 @@ public:
             return std::unexpected(error_type::invalid_state);
         }
 
-        ETD_EXPECTED_TRY(write_length(*len));
+        KOTA_EXPECTED_TRY(write_length(*len));
         return SerializeMap(*this, *len);
     }
 
@@ -269,7 +269,7 @@ private:
 template <typename Config = config::default_config, typename T>
 auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, error> {
     Serializer<Config> serializer;
-    ETD_EXPECTED_TRY(serde::serialize(serializer, value));
+    KOTA_EXPECTED_TRY(serde::serialize(serializer, value));
     if(!serializer.valid()) {
         return std::unexpected(serializer.error());
     }
@@ -278,4 +278,4 @@ auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, error> {
 
 static_assert(serde::serializer_like<Serializer<>>);
 
-}  // namespace eventide::serde::bincode
+}  // namespace kota::codec::bincode

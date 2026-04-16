@@ -12,7 +12,7 @@ using ssize_t = SSIZE_T;
 #include <unistd.h>
 #endif
 
-namespace eventide::test {
+namespace kota::test {
 
 // IMPORTANT: Windows pipes have a tiny buffer (4KB). If you write more than
 // that before the event loop starts reading, write_fd() will block and deadlock.
@@ -44,4 +44,4 @@ inline ssize_t write_fd(int fd, const char* data, size_t len) {
 }
 #endif
 
-}  // namespace eventide::test
+}  // namespace kota::test

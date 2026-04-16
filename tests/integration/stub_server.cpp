@@ -2,9 +2,9 @@
 #include <string>
 #include <vector>
 
-#include "eventide/ipc/codec/json.h"
-#include "eventide/ipc/lsp/progress.h"
-#include "eventide/ipc/lsp/protocol.h"
+#include "kota/ipc/codec/json.h"
+#include "kota/ipc/lsp/progress.h"
+#include "kota/ipc/lsp/protocol.h"
 
 namespace et = eventide;
 namespace ipc = et::ipc;

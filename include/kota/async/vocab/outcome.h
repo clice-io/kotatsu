@@ -6,9 +6,9 @@
 #include <type_traits>
 #include <variant>
 
-#include "eventide/common/config.h"
+#include "kota/support/config.h"
 
-namespace eventide {
+namespace kota {
 
 template <typename T, typename E = void, typename C = void>
 class outcome;
@@ -254,8 +254,8 @@ public:
     }
 
 private:
-    ETD_NO_UNIQUE_ADDRESS
+    KOTA_NO_UNIQUE_ADDRESS
     std::conditional_t<std::is_void_v<T>, std::type_identity<void>, T> data;
 };
 
-}  // namespace eventide
+}  // namespace kota

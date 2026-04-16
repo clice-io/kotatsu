@@ -5,7 +5,7 @@
 
 #include "../common/string_ref.h"
 
-namespace eventide::refl::detail {
+namespace kota::meta::detail {
 
 constexpr std::size_t find_last_top_level_scope(string_ref sv) {
     std::size_t pos = string_ref::npos;
@@ -127,9 +127,9 @@ struct wrapper {
     constexpr wrapper(T value) : value(value) {}
 };
 
-}  // namespace eventide::refl::detail
+}  // namespace kota::meta::detail
 
-namespace eventide::refl {
+namespace kota::meta {
 
 template <typename T>
 constexpr auto type_name(bool qualified = false) {
@@ -186,4 +186,4 @@ consteval auto member_name() {
     return detail::extract_identifier(name);
 }
 
-}  // namespace eventide::refl
+}  // namespace kota::meta

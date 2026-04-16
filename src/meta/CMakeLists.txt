@@ -1,8 +1,8 @@
-add_library(eventide_reflection INTERFACE)
-add_library(eventide::reflection ALIAS eventide_reflection)
+add_library(kota_meta INTERFACE)
+add_library(kota::meta ALIAS kota_meta)
 
-target_include_directories(eventide_reflection INTERFACE
+target_include_directories(kota_meta INTERFACE
     "${PROJECT_SOURCE_DIR}/include"
 )
 
-eventide_apply_project_options(eventide_reflection)
+kota_apply_project_options(kota_meta)

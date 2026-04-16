@@ -106,7 +106,7 @@ class Serializer : public deco::detail::DecoStructConsumer<Serializer<StructTy>,
             oss << value;
             return oss.str();
         } else {
-            static_assert(eventide::dependent_false<raw_ty>,
+            static_assert(kota::dependent_false<raw_ty>,
                           "Unsupported scalar value type for deco::ser::Serializer.");
             return {};
         }
@@ -122,7 +122,7 @@ class Serializer : public deco::detail::DecoStructConsumer<Serializer<StructTy>,
             }
             return output;
         } else {
-            static_assert(eventide::dependent_false<raw_ty>,
+            static_assert(kota::dependent_false<raw_ty>,
                           "Vector option result type must be a range for serialization.");
             return {};
         }

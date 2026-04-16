@@ -9,7 +9,7 @@
 #include "small_string.h"
 #include "string_ref.h"
 
-namespace eventide {
+namespace kota {
 
 /// A copy-on-write string that can either borrow a reference to external data
 /// or own its own heap-allocated copy. Designed for zero-copy deserialization:
@@ -221,4 +221,4 @@ private:
     std::size_t m_capacity = 0;
 };
 
-}  // namespace eventide
+}  // namespace kota

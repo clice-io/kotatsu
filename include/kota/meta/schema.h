@@ -3,9 +3,9 @@
 #include <tuple>
 
 #include "type_info.h"
-#include "eventide/common/type_list.h"
+#include "kota/support/type_list.h"
 
-namespace eventide::refl {
+namespace kota::meta {
 
 template <typename RawType, typename WireType = RawType, typename BehaviorAttrs = std::tuple<>>
 struct field_slot {
@@ -82,4 +82,4 @@ struct single_field_slots<T, Config, I, /*Skipped=*/false, /*Flattened=*/true> {
 
 }  // namespace detail
 
-}  // namespace eventide::refl
+}  // namespace kota::meta

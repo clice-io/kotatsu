@@ -16,10 +16,10 @@
 #include <utility>
 
 #include "uv.h"
-#include "eventide/common/type_list.h"
-#include "eventide/async/runtime/frame.h"
-#include "eventide/async/vocab/error.h"
-#include "eventide/async/vocab/owned.h"
+#include "kota/support/type_list.h"
+#include "kota/async/runtime/frame.h"
+#include "kota/async/vocab/error.h"
+#include "kota/async/vocab/owned.h"
 
 #ifdef min
 #undef min
@@ -40,7 +40,7 @@
 #define ALWAYS_INLINE inline
 #endif
 
-namespace eventide {
+namespace kota {
 
 namespace uv {
 
@@ -1021,4 +1021,4 @@ using handle = unique_handle_impl<Derived, Handle>;
 
 }  // namespace uv
 
-}  // namespace eventide
+}  // namespace kota

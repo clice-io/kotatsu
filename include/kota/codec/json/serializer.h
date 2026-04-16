@@ -13,13 +13,13 @@
 #include <utility>
 #include <vector>
 
-#include "eventide/common/expected_try.h"
-#include "eventide/serde/json/error.h"
-#include "eventide/serde/serde/config.h"
-#include "eventide/serde/serde/serde.h"
-#include "eventide/serde/serde/utils/backend_helpers.h"
+#include "kota/support/expected_try.h"
+#include "kota/codec/json/error.h"
+#include "kota/codec/config.h"
+#include "kota/codec/serde.h"
+#include "kota/codec/detail/backend_helpers.h"
 
-namespace eventide::serde::json {
+namespace kota::codec::json {
 
 template <typename Config = config::default_config>
 class Serializer {
@@ -62,7 +62,7 @@ public:
     }
 
     result_t<std::string> str() const {
-        ETD_EXPECTED_TRY_V(auto out, view());
+        KOTA_EXPECTED_TRY_V(auto out, view());
         return std::string(out);
     }
 
@@ -167,20 +167,20 @@ public:
     }
 
     result_t<value_type> serialize_bytes(std::string_view value) {
-        ETD_EXPECTED_TRY_V(auto seq, serialize_seq(value.size()));
+        KOTA_EXPECTED_TRY_V(auto seq, serialize_seq(value.size()));
 
         for(unsigned char byte: value) {
-            ETD_EXPECTED_TRY(seq.serialize_element(static_cast<std::uint64_t>(byte)));
+            KOTA_EXPECTED_TRY(seq.serialize_element(static_cast<std::uint64_t>(byte)));
         }
 
         return seq.end();
     }
 
     result_t<value_type> serialize_bytes(std::span<const std::byte> value) {
-        ETD_EXPECTED_TRY_V(auto seq, serialize_seq(value.size()));
+        KOTA_EXPECTED_TRY_V(auto seq, serialize_seq(value.size()));
 
         for(std::byte byte: value) {
-            ETD_EXPECTED_TRY(seq.serialize_element(
+            KOTA_EXPECTED_TRY(seq.serialize_element(
                 static_cast<std::uint64_t>(std::to_integer<std::uint8_t>(byte))));
         }
 
@@ -188,22 +188,22 @@ public:
     }
 
     result_t<SerializeSeq> serialize_seq(std::optional<std::size_t> /*len*/) {
-        ETD_EXPECTED_TRY(begin_array());
+        KOTA_EXPECTED_TRY(begin_array());
         return SerializeSeq(*this);
     }
 
     result_t<SerializeTuple> serialize_tuple(std::size_t /*len*/) {
-        ETD_EXPECTED_TRY(begin_array());
+        KOTA_EXPECTED_TRY(begin_array());
         return SerializeTuple(*this);
     }
 
     result_t<SerializeMap> serialize_map(std::optional<std::size_t> /*len*/) {
-        ETD_EXPECTED_TRY(begin_object());
+        KOTA_EXPECTED_TRY(begin_object());
         return SerializeMap(*this);
     }
 
     result_t<SerializeStruct> serialize_struct(std::string_view /*name*/, std::size_t /*len*/) {
-        ETD_EXPECTED_TRY(begin_object());
+        KOTA_EXPECTED_TRY(begin_object());
         return SerializeStruct(*this);
     }
 
@@ -364,10 +364,10 @@ auto to_json(const T& value, std::optional<std::size_t> initial_capacity = std::
     -> std::expected<std::string, error> {
     Serializer<Config> serializer =
         initial_capacity.has_value() ? Serializer<Config>(*initial_capacity) : Serializer<Config>();
-    ETD_EXPECTED_TRY(serde::serialize(serializer, value));
+    KOTA_EXPECTED_TRY(serde::serialize(serializer, value));
     return serializer.str();
 }
 
 static_assert(serde::serializer_like<Serializer<>>);
 
-}  // namespace eventide::serde::json
+}  // namespace kota::codec::json

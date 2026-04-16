@@ -1,7 +1,7 @@
 #include "peer_test_types.h"
-#include "eventide/zest/zest.h"
+#include "kota/zest/zest.h"
 
-namespace eventide::ipc {
+namespace kota::ipc {
 
 // ============================================================================
 // Group 4: Peer — cancellation edge cases
@@ -104,4 +104,4 @@ TEST_CASE(bad_cancel_params) {
 
 };  // TEST_SUITE(ipc_peer_cancel)
 
-}  // namespace eventide::ipc
+}  // namespace kota::ipc

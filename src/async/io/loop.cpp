@@ -1,14 +1,14 @@
-#include "eventide/async/io/loop.h"
+#include "kota/async/io/loop.h"
 
 #include <atomic>
 #include <cassert>
 #include <deque>
 
 #include "../libuv.h"
-#include "eventide/common/functional.h"
-#include "eventide/async/runtime/frame.h"
+#include "kota/support/functional.h"
+#include "kota/async/runtime/frame.h"
 
-namespace eventide {
+namespace kota {
 
 /// A node in the lock-free MPSC (multi-producer, single-consumer) queue
 /// used by event_loop::post(). Each post() allocates a node, atomically
@@ -258,4 +258,4 @@ void event_loop::stop() {
     uv::stop(self->loop);
 }
 
-}  // namespace eventide
+}  // namespace kota

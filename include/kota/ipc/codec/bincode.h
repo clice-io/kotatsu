@@ -4,21 +4,21 @@
 #include <span>
 #include <string>
 
-#include "eventide/ipc/codec.h"
-#include "eventide/ipc/peer.h"
-#include "eventide/serde/bincode/bincode.h"
-#include "eventide/serde/serde/raw_value.h"
+#include "kota/ipc/codec.h"
+#include "kota/ipc/peer.h"
+#include "kota/codec/bincode/bincode.h"
+#include "kota/codec/raw_value.h"
 
-namespace eventide::serde {
+namespace kota::codec {
 
 // Bincode serialization: write int64 directly (bincode only uses integer IDs)
 template <typename Config>
-struct serialize_traits<bincode::Serializer<Config>, eventide::ipc::protocol::RequestID> {
+struct serialize_traits<bincode::Serializer<Config>, kota::ipc::protocol::RequestID> {
     using value_type = typename bincode::Serializer<Config>::value_type;
     using error_type = typename bincode::Serializer<Config>::error_type;
 
     static auto serialize(bincode::Serializer<Config>& serializer,
-                          const eventide::ipc::protocol::RequestID& id)
+                          const kota::ipc::protocol::RequestID& id)
         -> std::expected<value_type, error_type> {
         auto* int_id = std::get_if<std::int64_t>(&id);
         if(!int_id) {
@@ -30,11 +30,11 @@ struct serialize_traits<bincode::Serializer<Config>, eventide::ipc::protocol::Re
 
 // Bincode deserialization: read int64 directly
 template <typename Config>
-struct deserialize_traits<bincode::Deserializer<Config>, eventide::ipc::protocol::RequestID> {
+struct deserialize_traits<bincode::Deserializer<Config>, kota::ipc::protocol::RequestID> {
     using error_type = typename bincode::Deserializer<Config>::error_type;
 
     static auto deserialize(bincode::Deserializer<Config>& deserializer,
-                            eventide::ipc::protocol::RequestID& id)
+                            kota::ipc::protocol::RequestID& id)
         -> std::expected<void, error_type> {
         std::int64_t v = 0;
         auto status = serde::deserialize(deserializer, v);
@@ -46,9 +46,9 @@ struct deserialize_traits<bincode::Deserializer<Config>, eventide::ipc::protocol
     }
 };
 
-}  // namespace eventide::serde
+}  // namespace kota::codec
 
-namespace eventide::ipc {
+namespace kota::ipc {
 
 class BincodeCodec {
 public:
@@ -100,4 +100,4 @@ using BincodePeer = Peer<BincodeCodec>;
 
 extern template class Peer<BincodeCodec>;
 
-}  // namespace eventide::ipc
+}  // namespace kota::ipc

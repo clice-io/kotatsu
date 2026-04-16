@@ -5,9 +5,9 @@
 #include <string_view>
 #include <vector>
 
-#include "eventide/zest/run.h"
+#include "kota/zest/run.h"
 
-namespace eventide::zest {
+namespace kota::zest {
 
 enum class TestState {
     Passed,
@@ -65,4 +65,4 @@ private:
     std::vector<TestSuite> suites;
 };
 
-}  // namespace eventide::zest
+}  // namespace kota::zest

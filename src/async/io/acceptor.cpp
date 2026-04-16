@@ -4,9 +4,9 @@
 #include <utility>
 
 #include "awaiter.h"
-#include "eventide/async/io/loop.h"
+#include "kota/async/io/loop.h"
 
-namespace eventide {
+namespace kota {
 
 namespace {
 
@@ -451,4 +451,4 @@ result<int> tcp::local_port(tcp::acceptor& acc) {
     return outcome_error(error::invalid_argument);
 }
 
-}  // namespace eventide
+}  // namespace kota

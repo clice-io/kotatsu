@@ -2,8 +2,8 @@
 
 #include <source_location>
 
-namespace eventide::zest {
+namespace kota::zest {
 
 void print_trace(std::source_location location = std::source_location::current());
 
-}  // namespace eventide::zest
+}  // namespace kota::zest

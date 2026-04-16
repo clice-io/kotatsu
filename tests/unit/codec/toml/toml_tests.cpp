@@ -4,10 +4,10 @@
 #include <string>
 #include <vector>
 
-#include "eventide/zest/zest.h"
-#include "eventide/serde/toml.h"
+#include "kota/zest/zest.h"
+#include "kota/codec/toml.h"
 
-namespace eventide::serde {
+namespace kota::codec {
 
 namespace {
 
@@ -136,6 +136,6 @@ TEST_CASE(boxed_root_scalar_and_optional_none) {
 
 }  // namespace
 
-}  // namespace eventide::serde
+}  // namespace kota::codec
 
 #endif

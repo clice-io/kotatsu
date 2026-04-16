@@ -3,11 +3,11 @@
 #include <vector>
 
 #include "peer_test_types.h"
-#include "eventide/ipc/logger.h"
-#include "eventide/zest/zest.h"
-#include "eventide/async/async.h"
+#include "kota/ipc/logger.h"
+#include "kota/zest/zest.h"
+#include "kota/async/async.h"
 
-namespace eventide::ipc {
+namespace kota::ipc {
 
 struct LogEntry {
     LogLevel level;
@@ -185,4 +185,4 @@ TEST_CASE(read_loop_lifecycle) {
 
 };  // TEST_SUITE(ipc_peer_logger)
 
-}  // namespace eventide::ipc
+}  // namespace kota::ipc

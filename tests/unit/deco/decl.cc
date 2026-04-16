@@ -1,7 +1,7 @@
 #include <string>
 #include <vector>
 
-#include "eventide/deco/deco.h"
+#include "kota/deco/deco.h"
 #include <eventide/zest/zest.h>
 
 enum class BuiltinEnumValue {
@@ -65,8 +65,8 @@ struct CustomScalarResult {
 };
 
 auto make_parsed_arg(std::string_view spelling, std::vector<std::string_view> values = {}) {
-    return eventide::option::ParsedArgument{
-        .option_id = eventide::option::OptSpecifier(1u),
+    return kota::option::ParsedArgument{
+        .option_id = kota::option::OptSpecifier(1u),
         .spelling = spelling,
         .values = std::move(values),
         .index = 0,
@@ -98,12 +98,12 @@ struct DeclOpt {
     <std::vector<int>> pair = std::vector<int>{1, 2};
 };
 
-auto alias_decl_forward_fn(const eventide::option::ParsedArgumentOwning&)
+auto alias_decl_forward_fn(const kota::option::ParsedArgumentOwning&)
     -> std::expected<std::vector<std::string>, std::string> {
     return std::vector<std::string>{"--target", "value"};
 }
 
-auto alias_decl_forward_with_context_fn(const eventide::option::ParsedArgumentOwning&,
+auto alias_decl_forward_with_context_fn(const kota::option::ParsedArgumentOwning&,
                                         const deco::decl::IntoContext&)
     -> std::expected<std::vector<std::string>, std::string> {
     return std::vector<std::string>{"--target", "value"};

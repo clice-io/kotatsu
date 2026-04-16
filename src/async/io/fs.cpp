@@ -1,13 +1,13 @@
-#include "eventide/async/io/fs.h"
+#include "kota/async/io/fs.h"
 
 #include <cassert>
 #include <functional>
 
 #include "awaiter.h"
-#include "eventide/async/io/loop.h"
-#include "eventide/async/vocab/error.h"
+#include "kota/async/io/loop.h"
+#include "kota/async/vocab/error.h"
 
-namespace eventide {
+namespace kota {
 
 // ============================================================================
 // Filesystem operations
@@ -718,4 +718,4 @@ result<std::string> fs::sync::read_to_string(std::string_view path) {
     return content;
 }
 
-}  // namespace eventide
+}  // namespace kota

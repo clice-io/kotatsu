@@ -15,17 +15,17 @@
 #include <variant>
 #include <vector>
 
-#include "eventide/serde/flatbuffers/schema.h"
-#include "eventide/serde/serde/serde.h"
+#include "kota/codec/flatbuffers/schema.h"
+#include "kota/codec/serde.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
 #include <flatbuffers/flatbuffers.h>
 #else
 #error                                                                                             \
-    "flatbuffers/flatbuffers.h not found. Enable ETD_SERDE_ENABLE_FLATBUFFERS or add flatbuffers include paths."
+    "flatbuffers/flatbuffers.h not found. Enable KOTA_SERDE_ENABLE_FLATBUFFERS or add flatbuffers include paths."
 #endif
 
-namespace eventide::serde::flatbuffers {
+namespace kota::codec::flatbuffers {
 
 template <typename T>
 class table_view;
@@ -183,7 +183,7 @@ using array_vector_ptr_t = typename array_vector_ptr<Element>::type;
 template <typename T>
 constexpr bool is_map_range_v = [] {
     if constexpr(is_range_like_v<T>) {
-        return eventide::format_kind<T> == eventide::range_format::map;
+        return kota::format_kind<T> == kota::range_format::map;
     } else {
         return false;
     }
@@ -784,4 +784,4 @@ private:
     const table_type* table = nullptr;
 };
 
-}  // namespace eventide::serde::flatbuffers
+}  // namespace kota::codec::flatbuffers

@@ -2,14 +2,14 @@
 
 #include <type_traits>
 
-#include "eventide/ipc/codec.h"
-#include "eventide/ipc/peer.h"
-#include "eventide/serde/json/json.h"
-#include "eventide/serde/serde/config.h"
-#include "eventide/serde/serde/raw_value.h"
-#include "eventide/serde/serde/spelling.h"
+#include "kota/ipc/codec.h"
+#include "kota/ipc/peer.h"
+#include "kota/codec/json/json.h"
+#include "kota/codec/config.h"
+#include "kota/codec/raw_value.h"
+#include "kota/codec/spelling.h"
 
-namespace eventide::ipc {
+namespace kota::ipc {
 
 struct lsp_config {
     using field_rename = serde::rename_policy::lower_camel;
@@ -62,4 +62,4 @@ using JsonPeer = Peer<JsonCodec>;
 
 extern template class Peer<JsonCodec>;
 
-}  // namespace eventide::ipc
+}  // namespace kota::ipc

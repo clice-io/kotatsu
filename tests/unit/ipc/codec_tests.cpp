@@ -3,11 +3,11 @@
 #include <string_view>
 #include <variant>
 
-#include "eventide/ipc/codec/bincode.h"
-#include "eventide/ipc/codec/json.h"
-#include "eventide/zest/zest.h"
+#include "kota/ipc/codec/bincode.h"
+#include "kota/ipc/codec/json.h"
+#include "kota/zest/zest.h"
 
-namespace eventide::ipc {
+namespace kota::ipc {
 
 // ============================================================================
 // Helpers
@@ -414,4 +414,4 @@ TEST_CASE(empty_params_roundtrip) {
 
 };  // TEST_SUITE(ipc_bincode_codec_roundtrip)
 
-}  // namespace eventide::ipc
+}  // namespace kota::ipc

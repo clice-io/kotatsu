@@ -2,10 +2,10 @@
 #include <cstdint>
 #include <vector>
 
-#include "eventide/zest/zest.h"
-#include "eventide/serde/bincode.h"
+#include "kota/zest/zest.h"
+#include "kota/codec/bincode.h"
 
-namespace eventide::serde {
+namespace kota::codec {
 
 using namespace refl;
 
@@ -120,4 +120,4 @@ TEST_CASE(struct_deserialize_respects_flatten) {
 
 }  // namespace
 
-}  // namespace eventide::serde
+}  // namespace kota::codec

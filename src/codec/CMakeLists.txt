@@ -1,21 +1,21 @@
-add_library(eventide_serde INTERFACE)
-add_library(eventide::serde ALIAS eventide_serde)
+add_library(kota_codec INTERFACE)
+add_library(kota::codec ALIAS kota_codec)
 
-target_include_directories(eventide_serde INTERFACE
+target_include_directories(kota_codec INTERFACE
     "${PROJECT_SOURCE_DIR}/include"
 )
 
-target_link_libraries(eventide_serde INTERFACE
-    eventide::reflection
+target_link_libraries(kota_codec INTERFACE
+    kota::meta
 )
 
-eventide_apply_project_options(eventide_serde)
+kota_apply_project_options(kota_codec)
 
-if(ETD_SERDE_ENABLE_YYJSON AND NOT ETD_SERDE_ENABLE_SIMDJSON)
-    message(FATAL_ERROR "ETD_SERDE_ENABLE_YYJSON requires ETD_SERDE_ENABLE_SIMDJSON.")
+if(KOTA_CODEC_ENABLE_YYJSON AND NOT KOTA_CODEC_ENABLE_SIMDJSON)
+    message(FATAL_ERROR "KOTA_CODEC_ENABLE_YYJSON requires KOTA_CODEC_ENABLE_SIMDJSON.")
 endif()
 
-if(ETD_SERDE_ENABLE_SIMDJSON)
+if(KOTA_CODEC_ENABLE_SIMDJSON)
     # Keep simdjson in "library consumer" mode.
     set(SIMDJSON_BUILD_STATIC_LIB OFF CACHE BOOL "" FORCE)
     set(SIMDJSON_DEVELOPER_MODE OFF CACHE BOOL "" FORCE)
@@ -24,7 +24,7 @@ if(ETD_SERDE_ENABLE_SIMDJSON)
 
     # Lock behavior knobs so parent/toolchain cache does not accidentally change them.
     set(SIMDJSON_ENABLE_THREADS ON CACHE BOOL "" FORCE)
-    set(SIMDJSON_EXCEPTIONS ${ETD_ENABLE_EXCEPTIONS} CACHE BOOL "" FORCE)
+    set(SIMDJSON_EXCEPTIONS ${KOTA_ENABLE_EXCEPTIONS} CACHE BOOL "" FORCE)
     set(SIMDJSON_DISABLE_DEPRECATED_API OFF CACHE BOOL "" FORCE)
     set(SIMDJSON_MINUS_ZERO_AS_FLOAT OFF CACHE BOOL "" FORCE)
 
@@ -49,7 +49,7 @@ if(ETD_SERDE_ENABLE_SIMDJSON)
             SIMDJSON_DEVELOPMENT_CHECKS OFF
             SIMDJSON_STATIC_REFLECTION OFF
             SIMDJSON_ENABLE_THREADS ON
-            SIMDJSON_EXCEPTIONS ${ETD_ENABLE_EXCEPTIONS}
+            SIMDJSON_EXCEPTIONS ${KOTA_ENABLE_EXCEPTIONS}
             SIMDJSON_DISABLE_DEPRECATED_API OFF
             SIMDJSON_MINUS_ZERO_AS_FLOAT OFF
             SIMDJSON_CHECK_EOF OFF
@@ -63,21 +63,21 @@ if(ETD_SERDE_ENABLE_SIMDJSON)
             SIMDJSON_SKIPUTF8VALIDATION OFF
     )
 
-    add_library(eventide_serde_json INTERFACE)
-    add_library(eventide::serde::json ALIAS eventide_serde_json)
+    add_library(kota_codec_json INTERFACE)
+    add_library(kota::codec::json ALIAS kota_codec_json)
 
-    target_include_directories(eventide_serde_json INTERFACE
+    target_include_directories(kota_codec_json INTERFACE
         "${PROJECT_SOURCE_DIR}/include"
     )
 
-    target_link_libraries(eventide_serde_json INTERFACE
-        eventide::reflection
+    target_link_libraries(kota_codec_json INTERFACE
+        kota::meta
         simdjson::simdjson
     )
 
-    eventide_apply_project_options(eventide_serde_json)
+    kota_apply_project_options(kota_codec_json)
 
-    if(ETD_SERDE_ENABLE_YYJSON)
+    if(KOTA_CODEC_ENABLE_YYJSON)
         # Keep yyjson as a lean dependency-only library.
         set(YYJSON_BUILD_TESTS OFF CACHE BOOL "" FORCE)
         set(YYJSON_BUILD_FUZZER OFF CACHE BOOL "" FORCE)
@@ -97,17 +97,17 @@ if(ETD_SERDE_ENABLE_SIMDJSON)
                 YYJSON_INSTALL OFF
         )
 
-        target_link_libraries(eventide_serde_json INTERFACE
+        target_link_libraries(kota_codec_json INTERFACE
             yyjson
         )
     endif()
 
-    target_link_libraries(eventide_serde INTERFACE
-        eventide::serde::json
+    target_link_libraries(kota_codec INTERFACE
+        kota::codec::json
     )
 endif()
 
-if(ETD_SERDE_ENABLE_FLATBUFFERS)
+if(KOTA_CODEC_ENABLE_FLATBUFFERS)
     set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(FLATBUFFERS_BUILD_FLATC OFF CACHE BOOL "" FORCE)
     set(FLATBUFFERS_BUILD_FLATLIB ON CACHE BOOL "" FORCE)
@@ -134,26 +134,26 @@ if(ETD_SERDE_ENABLE_FLATBUFFERS)
             FLATBUFFERS_ENABLE_PCH OFF
     )
 
-    add_library(eventide_serde_flatbuffers INTERFACE)
-    add_library(eventide::serde::flatbuffers ALIAS eventide_serde_flatbuffers)
+    add_library(kota_codec_flatbuffers INTERFACE)
+    add_library(kota::codec::flatbuffers ALIAS kota_codec_flatbuffers)
 
-    target_include_directories(eventide_serde_flatbuffers INTERFACE
+    target_include_directories(kota_codec_flatbuffers INTERFACE
         "${PROJECT_SOURCE_DIR}/include"
     )
 
-    target_link_libraries(eventide_serde_flatbuffers INTERFACE
-        eventide::reflection
+    target_link_libraries(kota_codec_flatbuffers INTERFACE
+        kota::meta
         flatbuffers
     )
 
-    eventide_apply_project_options(eventide_serde_flatbuffers)
+    kota_apply_project_options(kota_codec_flatbuffers)
 
-    target_link_libraries(eventide_serde INTERFACE
-        eventide::serde::flatbuffers
+    target_link_libraries(kota_codec INTERFACE
+        kota::codec::flatbuffers
     )
 endif()
 
-if(ETD_SERDE_ENABLE_TOML)
+if(KOTA_CODEC_ENABLE_TOML)
     set(TOMLPLUSPLUS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(TOMLPLUSPLUS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     set(TOMLPLUSPLUS_BUILD_MODULES OFF CACHE BOOL "" FORCE)
@@ -170,25 +170,25 @@ if(ETD_SERDE_ENABLE_TOML)
             TOMLPLUSPLUS_INSTALL OFF
     )
 
-    add_library(eventide_serde_toml INTERFACE)
-    add_library(eventide::serde::toml ALIAS eventide_serde_toml)
+    add_library(kota_codec_toml INTERFACE)
+    add_library(kota::codec::toml ALIAS kota_codec_toml)
 
-    target_include_directories(eventide_serde_toml INTERFACE
+    target_include_directories(kota_codec_toml INTERFACE
         "${PROJECT_SOURCE_DIR}/include"
     )
 
-    target_link_libraries(eventide_serde_toml INTERFACE
-        eventide::reflection
+    target_link_libraries(kota_codec_toml INTERFACE
+        kota::meta
         tomlplusplus::tomlplusplus
     )
 
-    target_compile_definitions(eventide_serde_toml INTERFACE
-        TOML_EXCEPTIONS=$<IF:$<BOOL:${ETD_ENABLE_EXCEPTIONS}>,1,0>
+    target_compile_definitions(kota_codec_toml INTERFACE
+        TOML_EXCEPTIONS=$<IF:$<BOOL:${KOTA_ENABLE_EXCEPTIONS}>,1,0>
     )
 
-    eventide_apply_project_options(eventide_serde_toml)
+    kota_apply_project_options(kota_codec_toml)
 
-    target_link_libraries(eventide_serde INTERFACE
-        eventide::serde::toml
+    target_link_libraries(kota_codec INTERFACE
+        kota::codec::toml
     )
 endif()

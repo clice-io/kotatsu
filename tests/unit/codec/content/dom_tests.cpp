@@ -1,9 +1,9 @@
 #include <string>
 
-#include "eventide/zest/zest.h"
-#include "eventide/serde/json/json.h"
+#include "kota/zest/zest.h"
+#include "kota/codec/json/json.h"
 
-namespace eventide::serde {
+namespace kota::codec {
 
 namespace {
 
@@ -124,4 +124,4 @@ TEST_CASE(deserializer_keeps_temporary_root_value_alive) {
 
 }  // namespace
 
-}  // namespace eventide::serde
+}  // namespace kota::codec

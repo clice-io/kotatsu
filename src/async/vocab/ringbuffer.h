@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <vector>
 
-namespace eventide {
+namespace kota {
 
 class ring_buffer {
 public:
@@ -32,4 +32,4 @@ private:
     size_t size = 0;
 };
 
-}  // namespace eventide
+}  // namespace kota

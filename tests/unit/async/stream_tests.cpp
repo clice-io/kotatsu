@@ -5,7 +5,7 @@
 #include <utility>
 
 #include "loop_fixture.h"
-#include "eventide/zest/macro.h"
+#include "kota/zest/macro.h"
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -17,9 +17,9 @@
 #endif
 
 #include "../common/fd_helpers.h"
-#include "eventide/zest/zest.h"
+#include "kota/zest/zest.h"
 
-namespace eventide {
+namespace kota {
 
 using test::create_pipe;
 using test::close_fd;
@@ -450,7 +450,7 @@ TEST_CASE(stop, serial = true) {
     auto err = acc->stop();
     EXPECT_FALSE(err.has_error());
 
-    auto task1 = [](acceptor<pipe>& acc) -> eventide::task<pipe, error> {
+    auto task1 = [](acceptor<pipe>& acc) -> kota::task<pipe, error> {
         auto res = co_await acc.accept();
         event_loop::current().stop();
         co_return res;
@@ -461,7 +461,7 @@ TEST_CASE(stop, serial = true) {
     auto res1 = task1.value().value();
     EXPECT_TRUE(!res1.has_value() && res1.error() == error::operation_aborted);
 
-    auto task2 = [](acceptor<pipe>& acc) -> eventide::task<pipe, error> {
+    auto task2 = [](acceptor<pipe>& acc) -> kota::task<pipe, error> {
         event_loop::current().stop();
         auto res = co_await acc.accept();
         co_return res;
@@ -592,4 +592,4 @@ TEST_CASE(read_some_error) {
 
 };  // TEST_SUITE(tcp)
 
-}  // namespace eventide
+}  // namespace kota

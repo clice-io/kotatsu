@@ -3,7 +3,7 @@
 #include <string>
 #include <string_view>
 
-namespace eventide::zest {
+namespace kota::zest {
 
 /// Runtime configuration for executing registered zest test cases.
 struct RunnerOptions {
@@ -28,4 +28,4 @@ int run_tests(RunnerOptions options);
 /// Convenience overload for running with only a test-name filter.
 int run_tests(std::string_view filter);
 
-}  // namespace eventide::zest
+}  // namespace kota::zest

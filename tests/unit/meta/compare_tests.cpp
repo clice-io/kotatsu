@@ -8,10 +8,10 @@
 #include <unordered_set>
 #include <vector>
 
-#include "eventide/zest/zest.h"
-#include "eventide/reflection/compare.h"
+#include "kota/zest/zest.h"
+#include "kota/meta/compare.h"
 
-namespace eventide::refl {
+namespace kota::meta {
 
 namespace {
 
@@ -646,4 +646,4 @@ TEST_CASE(functor_sort) {
 
 }  // namespace
 
-}  // namespace eventide::refl
+}  // namespace kota::meta

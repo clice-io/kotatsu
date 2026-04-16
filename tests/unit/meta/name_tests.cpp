@@ -1,9 +1,9 @@
 #include <vector>
 
-#include "eventide/zest/zest.h"
-#include "eventide/reflection/name.h"
+#include "kota/zest/zest.h"
+#include "kota/meta/name.h"
 
-namespace eventide::refl {
+namespace kota::meta {
 
 namespace {
 
@@ -285,4 +285,4 @@ TEST_CASE(enum_name_sparse_values) {
 
 }  // namespace
 
-}  // namespace eventide::refl
+}  // namespace kota::meta

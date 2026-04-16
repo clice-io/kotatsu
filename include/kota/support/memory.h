@@ -15,9 +15,9 @@
 #include <type_traits>
 #include <utility>
 
-#include "eventide/common/config.h"
+#include "kota/support/config.h"
 
-namespace eventide::mem {
+namespace kota::mem {
 
 template <typename T>
 union uninitialized {
@@ -130,7 +130,7 @@ constexpr inline bool is_uninitialized_memcpyable_iterator_v =
 #ifndef NDEBUG
 [[noreturn]]
 inline void throw_range_length_error() {
-    ETD_THROW(std::length_error("The specified range is too long."));
+    KOTA_THROW(std::length_error("The specified range is too long."));
 }
 #endif
 
@@ -311,12 +311,12 @@ public:
 
     template <typename... Args>
     constexpr explicit heap_temporary(Args&&... args) : m_data(allocate_storage()) {
-        ETD_TRY {
+        KOTA_TRY {
             construct(m_data, std::forward<Args>(args)...);
         }
-        ETD_CATCH_ALL() {
+        KOTA_CATCH_ALL() {
             deallocate(m_data, 1);
-            ETD_RETHROW();
+            KOTA_RETHROW();
         }
     }
 
@@ -442,16 +442,16 @@ constexpr auto move_range(Iterator first, Iterator last) noexcept {
 template <typename T, std::ranges::input_range Range>
 constexpr T* default_uninitialized_copy(Range&& range, T* d_first) {
     T* d_last = d_first;
-    ETD_TRY {
+    KOTA_TRY {
         for(auto&& value: range) {
             construct(d_last, std::forward<decltype(value)>(value));
             ++d_last;
         }
         return d_last;
     }
-    ETD_CATCH_ALL() {
+    KOTA_CATCH_ALL() {
         destroy_range(std::ranges::subrange(d_first, d_last));
-        ETD_RETHROW();
+        KOTA_RETHROW();
     }
 }
 
@@ -505,15 +505,15 @@ constexpr auto uninitialized_value_construct(std::ranges::contiguous_range auto&
         }
     }
     T* curr = first;
-    ETD_TRY {
+    KOTA_TRY {
         for(; !(curr == last); ++curr) {
             construct(curr);
         }
         return curr;
     }
-    ETD_CATCH_ALL() {
+    KOTA_CATCH_ALL() {
         destroy_range(std::ranges::subrange(first, curr));
-        ETD_RETHROW();
+        KOTA_RETHROW();
     }
 }
 
@@ -528,15 +528,15 @@ constexpr auto uninitialized_default_construct(std::ranges::contiguous_range aut
     }
 
     T* curr = first;
-    ETD_TRY {
+    KOTA_TRY {
         for(; !(curr == last); ++curr) {
             default_construct(curr);
         }
         return curr;
     }
-    ETD_CATCH_ALL() {
+    KOTA_CATCH_ALL() {
         destroy_range(std::ranges::subrange(first, curr));
-        ETD_RETHROW();
+        KOTA_RETHROW();
     }
 }
 
@@ -545,16 +545,16 @@ constexpr auto uninitialized_fill(Range&& range, const T& val) {
     auto* first = std::ranges::data(range);
     auto* last = std::ranges::data(range) + static_cast<std::ptrdiff_t>(std::ranges::size(range));
     T* curr = first;
-    ETD_TRY {
+    KOTA_TRY {
         for(; !(curr == last); ++curr) {
             construct(curr, val);
         }
         return curr;
     }
-    ETD_CATCH_ALL() {
+    KOTA_CATCH_ALL() {
         destroy_range(std::ranges::subrange(first, curr));
-        ETD_RETHROW();
+        KOTA_RETHROW();
     }
 }
 
-}  // namespace eventide::mem
+}  // namespace kota::mem

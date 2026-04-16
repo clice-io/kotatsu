@@ -8,12 +8,12 @@
 
 #include "../libuv.h"
 #include "../vocab/ringbuffer.h"
-#include "eventide/async/io/stream.h"
-#include "eventide/async/runtime/frame.h"
-#include "eventide/async/vocab/error.h"
-#include "eventide/async/vocab/outcome.h"
+#include "kota/async/io/stream.h"
+#include "kota/async/runtime/frame.h"
+#include "kota/async/vocab/error.h"
+#include "kota/async/vocab/outcome.h"
 
-namespace eventide::uv {
+namespace kota::uv {
 
 template <typename StatusT>
 inline bool is_cancelled_status(StatusT status) noexcept {
@@ -209,9 +209,9 @@ struct latest_value_delivery : waiter_binding<result<ValueT>> {
     }
 };
 
-}  // namespace eventide::uv
+}  // namespace kota::uv
 
-namespace eventide {
+namespace kota {
 
 struct stream_handle {
     union {
@@ -241,4 +241,4 @@ struct acceptor<Stream>::Self :
     int pipe_ipc = 0;
 };
 
-}  // namespace eventide
+}  // namespace kota

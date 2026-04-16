@@ -6,7 +6,7 @@
 #include <optional>
 #include <type_traits>
 
-namespace eventide {
+namespace kota {
 
 template <typename T>
 constexpr inline bool dependent_false = false;
@@ -56,4 +56,4 @@ constexpr inline bool is_optional_v = is_specialization_of<std::optional, std::r
 template <typename T>
 constexpr inline bool is_expected_v = is_specialization_of<std::expected, std::remove_cvref_t<T>>;
 
-}  // namespace eventide
+}  // namespace kota

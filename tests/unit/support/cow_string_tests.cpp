@@ -1,10 +1,10 @@
 #include <string>
 #include <utility>
 
-#include "eventide/zest/zest.h"
-#include "eventide/common/cow_string.h"
+#include "kota/zest/zest.h"
+#include "kota/support/cow_string.h"
 
-namespace eventide {
+namespace kota {
 
 constexpr bool constexpr_cow_string_operations() {
     // borrowed
@@ -341,4 +341,4 @@ TEST_CASE(release_borrowed_fits_inline) {
 
 };  // TEST_SUITE(cow_string)
 
-}  // namespace eventide
+}  // namespace kota

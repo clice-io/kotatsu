@@ -2,13 +2,13 @@
 #include <string>
 #include <vector>
 
-#include "eventide/zest/zest.h"
-#include "eventide/reflection/annotation.h"
-#include "eventide/reflection/attrs.h"
-#include "eventide/serde/json/deserializer.h"
-#include "eventide/serde/serde/serde.h"
+#include "kota/zest/zest.h"
+#include "kota/meta/annotation.h"
+#include "kota/meta/attrs.h"
+#include "kota/codec/json/deserializer.h"
+#include "kota/codec/serde.h"
 
-namespace eventide::serde {
+namespace kota::codec {
 
 using namespace refl;
 
@@ -129,4 +129,4 @@ TEST_CASE(to_string_combines_all) {
 
 }  // namespace
 
-}  // namespace eventide::serde
+}  // namespace kota::codec

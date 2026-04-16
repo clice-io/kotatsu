@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 
-namespace eventide::serde {
+namespace kota::codec {
 
 struct RawValue {
     std::string data;
@@ -11,4 +11,4 @@ struct RawValue {
     }
 };
 
-}  // namespace eventide::serde
+}  // namespace kota::codec

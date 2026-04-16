@@ -3,7 +3,7 @@
 #include <string>
 #include <string_view>
 
-namespace eventide::naming {
+namespace kota::naming {
 
 constexpr bool is_lower(char c) {
     return c >= 'a' && c <= 'z';
@@ -137,4 +137,4 @@ using upper_case = upper_snake;
 
 }  // namespace rename_policy
 
-}  // namespace eventide::naming
+}  // namespace kota::naming

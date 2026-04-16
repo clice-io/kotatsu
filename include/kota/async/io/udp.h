@@ -7,11 +7,11 @@
 #include <string_view>
 #include <vector>
 
-#include "eventide/async/runtime/task.h"
-#include "eventide/async/vocab/error.h"
-#include "eventide/async/vocab/owned.h"
+#include "kota/async/runtime/task.h"
+#include "kota/async/vocab/error.h"
+#include "kota/async/vocab/owned.h"
 
-namespace eventide {
+namespace kota {
 
 class event_loop;
 
@@ -147,4 +147,4 @@ private:
     unique_handle<Self> self;
 };
 
-}  // namespace eventide
+}  // namespace kota

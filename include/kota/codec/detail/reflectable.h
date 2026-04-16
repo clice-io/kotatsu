@@ -10,16 +10,16 @@
 #include <utility>
 #include <variant>
 
-#include "eventide/common/expected_try.h"
-#include "eventide/reflection/annotation.h"
-#include "eventide/reflection/attrs.h"
-#include "eventide/reflection/struct.h"
-#include "eventide/serde/serde/config.h"
-#include "eventide/serde/serde/utils/apply_behavior.h"
-#include "eventide/serde/serde/utils/field_dispatch.h"
-#include "eventide/serde/serde/utils/fwd.h"
+#include "kota/support/expected_try.h"
+#include "kota/meta/annotation.h"
+#include "kota/meta/attrs.h"
+#include "kota/meta/struct.h"
+#include "kota/codec/config.h"
+#include "kota/codec/detail/apply_behavior.h"
+#include "kota/codec/detail/field_dispatch.h"
+#include "kota/codec/detail/fwd.h"
 
-namespace eventide::serde::detail {
+namespace kota::codec::detail {
 
 struct field_entry {
     std::string_view name;
@@ -276,7 +276,7 @@ template <typename Config, typename E, serializer_like S, typename V>
 constexpr auto serialize_reflectable(S& s, const V& v) -> std::expected<typename S::value_type, E> {
     using value_t = std::remove_cvref_t<V>;
 
-    ETD_EXPECTED_TRY_V(
+    KOTA_EXPECTED_TRY_V(
         auto s_struct,
         s.serialize_struct(refl::type_name<value_t>(), refl::field_count<value_t>()));
 
@@ -341,14 +341,14 @@ constexpr auto deserialize_reflectable(D& d, V& v) -> std::expected<void, E> {
         return std::unexpected(E::invalid_state);
     }
 
-    ETD_EXPECTED_TRY_V(
+    KOTA_EXPECTED_TRY_V(
         auto d_struct,
         d.deserialize_struct(refl::type_name<value_t>(), refl::field_count<value_t>()));
 
     std::uint64_t seen_fields = 0;
 
     while(true) {
-        ETD_EXPECTED_TRY_V(auto key, d_struct.next_key());
+        KOTA_EXPECTED_TRY_V(auto key, d_struct.next_key());
         if(!key.has_value()) {
             break;
         }
@@ -385,7 +385,7 @@ constexpr auto deserialize_reflectable(D& d, V& v) -> std::expected<void, E> {
         if constexpr(DenyUnknown) {
             return std::unexpected(E::unknown_field(key_name));
         } else {
-            ETD_EXPECTED_TRY(d_struct.skip_value());
+            KOTA_EXPECTED_TRY(d_struct.skip_value());
         }
     }
 
@@ -407,4 +407,4 @@ constexpr auto deserialize_reflectable(D& d, V& v) -> std::expected<void, E> {
     return d_struct.end();
 }
 
-}  // namespace eventide::serde::detail
+}  // namespace kota::codec::detail

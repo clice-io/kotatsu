@@ -1,7 +1,7 @@
 #include "peer_test_types.h"
-#include "eventide/zest/zest.h"
+#include "kota/zest/zest.h"
 
-namespace eventide::ipc {
+namespace kota::ipc {
 
 TEST_SUITE(ipc_peer_tagged_traits) {
 
@@ -104,4 +104,4 @@ TEST_CASE(tagged_send_apis) {
 
 };  // TEST_SUITE(ipc_peer_tagged_traits)
 
-}  // namespace eventide::ipc
+}  // namespace kota::ipc

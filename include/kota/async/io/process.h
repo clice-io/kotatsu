@@ -7,12 +7,12 @@
 #include <string>
 #include <vector>
 
-#include "eventide/async/io/stream.h"
-#include "eventide/async/runtime/task.h"
-#include "eventide/async/vocab/error.h"
-#include "eventide/async/vocab/owned.h"
+#include "kota/async/io/stream.h"
+#include "kota/async/runtime/task.h"
+#include "kota/async/vocab/error.h"
+#include "kota/async/vocab/owned.h"
 
-namespace eventide {
+namespace kota {
 
 class event_loop;
 
@@ -173,4 +173,4 @@ struct process::spawn_result {
     pipe stderr_pipe;
 };
 
-}  // namespace eventide
+}  // namespace kota

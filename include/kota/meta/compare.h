@@ -9,9 +9,9 @@
 #include <utility>
 
 #include "struct.h"
-#include "eventide/common/ranges.h"
+#include "kota/support/ranges.h"
 
-namespace eventide::refl::detail {
+namespace kota::meta::detail {
 
 template <typename L, typename R>
 concept reflectable_pair = reflectable_class<L> && reflectable_class<R>;
@@ -438,9 +438,9 @@ constexpr bool compare_ge(const L& lhs, const R& rhs) {
     }
 }
 
-}  // namespace eventide::refl::detail
+}  // namespace kota::meta::detail
 
-namespace eventide::refl {
+namespace kota::meta {
 
 struct eq_t {
     using is_transparent = void;
@@ -503,4 +503,4 @@ constexpr inline le_t le;
 constexpr inline gt_t gt;
 constexpr inline ge_t ge;
 
-}  // namespace eventide::refl
+}  // namespace kota::meta

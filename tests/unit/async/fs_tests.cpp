@@ -11,9 +11,9 @@
 
 #include "loop_fixture.h"
 #include "../common/fd_helpers.h"
-#include "eventide/zest/zest.h"
+#include "kota/zest/zest.h"
 
-namespace eventide {
+namespace kota {
 
 using test::close_fd;
 using test::write_fd;
@@ -301,4 +301,4 @@ TEST_CASE(statfs_basic) {
 
 };  // TEST_SUITE(fs_request_io)
 
-}  // namespace eventide
+}  // namespace kota

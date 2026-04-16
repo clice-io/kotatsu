@@ -1,9 +1,9 @@
 #include <cstdint>
 
-#include "eventide/zest/zest.h"
-#include "eventide/reflection/enum.h"
+#include "kota/zest/zest.h"
+#include "kota/meta/enum.h"
 
-namespace eventide::refl {
+namespace kota::meta {
 
 namespace {
 
@@ -97,4 +97,4 @@ TEST_CASE(enum_member_names) {
 
 }  // namespace
 
-}  // namespace eventide::refl
+}  // namespace kota::meta

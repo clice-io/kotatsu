@@ -1,12 +1,12 @@
 #include <string>
 
 #include "../standard_case_suite.h"
-#include "eventide/zest/zest.h"
-#include "eventide/serde/json/error.h"
-#include "eventide/serde/json/json.h"
-#include "eventide/serde/serde/serde.h"
+#include "kota/zest/zest.h"
+#include "kota/codec/json/error.h"
+#include "kota/codec/json/json.h"
+#include "kota/codec/serde.h"
 
-namespace eventide::serde {
+namespace kota::codec {
 
 namespace {
 
@@ -56,4 +56,4 @@ SERDE_STANDARD_TEST_CASES_COMPLEX(rt)
 
 }  // namespace
 
-}  // namespace eventide::serde
+}  // namespace kota::codec

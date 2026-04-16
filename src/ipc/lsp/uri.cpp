@@ -1,9 +1,9 @@
-#include "eventide/ipc/lsp/uri.h"
+#include "kota/ipc/lsp/uri.h"
 
 #include <algorithm>
 #include <ranges>
 
-namespace eventide::ipc::lsp {
+namespace kota::ipc::lsp {
 
 namespace {
 
@@ -463,4 +463,4 @@ std::expected<std::string, std::string> URI::file_path() const {
     return *decoded_path;
 }
 
-}  // namespace eventide::ipc::lsp
+}  // namespace kota::ipc::lsp

@@ -15,13 +15,13 @@
 #include <variant>
 #include <vector>
 
-#include "eventide/common/ranges.h"
-#include "eventide/common/type_traits.h"
-#include "eventide/reflection/type_kind.h"
+#include "kota/support/ranges.h"
+#include "kota/support/type_traits.h"
+#include "kota/meta/type_kind.h"
 
-namespace eventide::serde {
+namespace kota::codec {
 
-// Type-classification concepts — canonical definitions live in eventide::refl
+// Type-classification concepts — canonical definitions live in kota::meta
 // (type_kind.h).  These aliases keep existing serde code compiling unchanged.
 
 template <typename T>
@@ -192,4 +192,4 @@ concept deserializer_like =
         };
     };
 
-}  // namespace eventide::serde
+}  // namespace kota::codec

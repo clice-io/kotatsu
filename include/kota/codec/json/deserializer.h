@@ -13,14 +13,14 @@
 #include <utility>
 #include <vector>
 
-#include "eventide/common/expected_try.h"
-#include "eventide/serde/content/deserializer.h"
-#include "eventide/serde/json/error.h"
-#include "eventide/serde/serde/config.h"
-#include "eventide/serde/serde/serde.h"
-#include "eventide/serde/serde/utils/narrow.h"
+#include "kota/support/expected_try.h"
+#include "kota/codec/content/deserializer.h"
+#include "kota/codec/json/error.h"
+#include "kota/codec/config.h"
+#include "kota/codec/serde.h"
+#include "kota/codec/detail/narrow.h"
 
-namespace eventide::serde::json {
+namespace kota::codec::json {
 
 template <typename Config = config::default_config>
 class Deserializer {
@@ -71,7 +71,7 @@ public:
                 return std::unexpected(deserializer.error());
             }
 
-            ETD_EXPECTED_TRY_V(auto has_next_result, has_next());
+            KOTA_EXPECTED_TRY_V(auto has_next_result, has_next());
 
             if(is_strict_length) {
                 if(consumed_count != expected_length || has_next_result) {
@@ -81,9 +81,9 @@ public:
             }
 
             while(has_next_result) {
-                ETD_EXPECTED_TRY(skip_element());
+                KOTA_EXPECTED_TRY(skip_element());
 
-                ETD_EXPECTED_TRY_V(auto next, has_next());
+                KOTA_EXPECTED_TRY_V(auto next, has_next());
                 has_next_result = next;
             }
 
@@ -95,12 +95,12 @@ public:
 
         template <typename Action>
         status_t consume_next(Action&& action) {
-            ETD_EXPECTED_TRY_V(auto has_next_result, has_next());
+            KOTA_EXPECTED_TRY_V(auto has_next_result, has_next());
             if(!has_next_result) {
                 return deserializer.mark_invalid();
             }
 
-            ETD_EXPECTED_TRY(std::forward<Action>(action)(pending_value));
+            KOTA_EXPECTED_TRY(std::forward<Action>(action)(pending_value));
 
             ++iter;
             has_pending_value = false;
@@ -182,7 +182,7 @@ public:
                 return deserializer.mark_invalid();
             }
 
-            ETD_EXPECTED_TRY(deserializer.deserialize_from_value(pending_value, value));
+            KOTA_EXPECTED_TRY(deserializer.deserialize_from_value(pending_value, value));
 
             ++iter;
             has_pending_value = false;
@@ -197,7 +197,7 @@ public:
                 return deserializer.mark_invalid();
             }
 
-            ETD_EXPECTED_TRY(deserializer.skip_value(pending_value));
+            KOTA_EXPECTED_TRY(deserializer.skip_value(pending_value));
 
             ++iter;
             has_pending_value = false;
@@ -210,7 +210,7 @@ public:
             }
 
             if(has_pending_value) {
-                ETD_EXPECTED_TRY(skip_value());
+                KOTA_EXPECTED_TRY(skip_value());
             }
 
             while(iter != end_iter) {
@@ -222,7 +222,7 @@ public:
                 }
 
                 auto value = std::move(field).value();
-                ETD_EXPECTED_TRY(deserializer.skip_value(value));
+                KOTA_EXPECTED_TRY(deserializer.skip_value(value));
 
                 ++iter;
             }
@@ -521,7 +521,7 @@ public:
     }
 
     result_t<DeserializeSeq> deserialize_seq(std::optional<std::size_t> len) {
-        ETD_EXPECTED_TRY_V(auto array, open_array());
+        KOTA_EXPECTED_TRY_V(auto array, open_array());
 
         DeserializeSeq seq(*this, std::move(array), len.value_or(0), false);
         if(!is_valid) {
@@ -531,7 +531,7 @@ public:
     }
 
     result_t<DeserializeTuple> deserialize_tuple(std::size_t len) {
-        ETD_EXPECTED_TRY_V(auto array, open_array());
+        KOTA_EXPECTED_TRY_V(auto array, open_array());
 
         DeserializeTuple tuple(*this, std::move(array), len, true);
         if(!is_valid) {
@@ -541,7 +541,7 @@ public:
     }
 
     result_t<DeserializeMap> deserialize_map(std::optional<std::size_t> /*len*/) {
-        ETD_EXPECTED_TRY_V(auto object, open_object());
+        KOTA_EXPECTED_TRY_V(auto object, open_object());
 
         DeserializeMap map(*this, std::move(object));
         if(!is_valid) {
@@ -551,7 +551,7 @@ public:
     }
 
     result_t<DeserializeStruct> deserialize_struct(std::string_view /*name*/, std::size_t /*len*/) {
-        ETD_EXPECTED_TRY_V(auto object, open_object());
+        KOTA_EXPECTED_TRY_V(auto object, open_object());
 
         DeserializeStruct s(*this, std::move(object));
         if(!is_valid) {
@@ -561,7 +561,7 @@ public:
     }
 
     result_t<content::Value> capture_dom_value() {
-        ETD_EXPECTED_TRY_V(auto raw, consume_raw_json_view());
+        KOTA_EXPECTED_TRY_V(auto raw, consume_raw_json_view());
         auto parsed = content::Value::parse(std::string_view(raw.data(), raw.size()));
         if(!parsed) {
             return std::unexpected(json::make_read_error(parsed.error()));
@@ -699,15 +699,15 @@ private:
             return std::unexpected(probe.error());
         }
 
-        ETD_EXPECTED_TRY(serde::deserialize(probe, candidate));
-        ETD_EXPECTED_TRY(probe.finish());
+        KOTA_EXPECTED_TRY(serde::deserialize(probe, candidate));
+        KOTA_EXPECTED_TRY(probe.finish());
 
         value = std::move(candidate);
         return {};
     }
 
     result_t<simdjson::padded_string_view> consume_raw_json_view() {
-        ETD_EXPECTED_TRY_V(auto raw,
+        KOTA_EXPECTED_TRY_V(auto raw,
                            read_source<std::string_view>([](auto& doc) { return doc.raw_json(); },
                                                          [](auto& val) { return val.raw_json(); }));
         return to_padded_subview(raw);
@@ -822,7 +822,7 @@ auto from_json(std::string_view json, T& value) -> std::expected<void, error> {
         return std::unexpected(deserializer.error());
     }
 
-    ETD_EXPECTED_TRY(serde::deserialize(deserializer, value));
+    KOTA_EXPECTED_TRY(serde::deserialize(deserializer, value));
 
     return deserializer.finish();
 }
@@ -834,7 +834,7 @@ auto from_json(simdjson::padded_string_view json, T& value) -> std::expected<voi
         return std::unexpected(deserializer.error());
     }
 
-    ETD_EXPECTED_TRY(serde::deserialize(deserializer, value));
+    KOTA_EXPECTED_TRY(serde::deserialize(deserializer, value));
 
     return deserializer.finish();
 }
@@ -843,7 +843,7 @@ template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_json(std::string_view json) -> std::expected<T, error> {
     T value{};
-    ETD_EXPECTED_TRY(from_json<Config>(json, value));
+    KOTA_EXPECTED_TRY(from_json<Config>(json, value));
     return value;
 }
 
@@ -851,10 +851,10 @@ template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_json(simdjson::padded_string_view json) -> std::expected<T, error> {
     T value{};
-    ETD_EXPECTED_TRY(from_json<Config>(json, value));
+    KOTA_EXPECTED_TRY(from_json<Config>(json, value));
     return value;
 }
 
 static_assert(serde::deserializer_like<Deserializer<>>);
 
-}  // namespace eventide::serde::json
+}  // namespace kota::codec::json

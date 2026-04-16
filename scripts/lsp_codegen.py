@@ -34,8 +34,8 @@ CPP_KEYWORDS = {
 RECURSIVE_ALIASES = ("LSPAny", "LSPArray", "LSPObject")
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
-TS_HEADER_INCLUDE = "eventide/ipc/lsp/ts.h"
-GENERATED_NAMESPACE = "eventide::ipc::protocol"
+TS_HEADER_INCLUDE = "kota/ipc/lsp/ts.h"
+GENERATED_NAMESPACE = "kota::ipc::protocol"
 SOURCE_TAG = "scripts/lsp_codegen.py"
 DEFAULT_SCHEMA_PATH = SCRIPT_DIR / "schema.json"
 DEFAULT_FETCH_URL = (

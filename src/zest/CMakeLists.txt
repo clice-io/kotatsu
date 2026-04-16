@@ -44,22 +44,22 @@ eventide_add_git_dependency(
         ${eventide_cpptrace_options}
 )
 
-add_library(eventide_zest STATIC)
-add_library(eventide::zest ALIAS eventide_zest)
+add_library(kota_zest STATIC)
+add_library(kota::zest ALIAS kota_zest)
 
-target_sources(eventide_zest PRIVATE
+target_sources(kota_zest PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/trace.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/runner.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/expr.cpp"
 )
 
-target_include_directories(eventide_zest PUBLIC
+target_include_directories(kota_zest PUBLIC
     "${PROJECT_SOURCE_DIR}/include"
 )
 
-target_link_libraries(eventide_zest PUBLIC
+target_link_libraries(kota_zest PUBLIC
     cpptrace::cpptrace
-    eventide::deco
+    kota::deco
 )
 
-eventide_apply_project_options(eventide_zest)
+kota_apply_project_options(kota_zest)

@@ -11,14 +11,14 @@
 #include <utility>
 #include <variant>
 
-#include "eventide/common/memory.h"
-#include "eventide/common/small_vector.h"
-#include "eventide/common/type_list.h"
-#include "eventide/async/runtime/frame.h"
-#include "eventide/async/runtime/task.h"
-#include "eventide/async/vocab/outcome.h"
+#include "kota/support/memory.h"
+#include "kota/support/small_vector.h"
+#include "kota/support/type_list.h"
+#include "kota/async/runtime/frame.h"
+#include "kota/async/runtime/task.h"
+#include "kota/async/vocab/outcome.h"
 
-namespace eventide {
+namespace kota {
 
 namespace detail {
 
@@ -178,11 +178,11 @@ Return tuple_visit_at_return(std::size_t index, Tuple& tuple, F&& f) {
 }
 
 [[noreturn]] inline void fail_empty_when_any_range() {
-#if ETD_ENABLE_EXCEPTIONS
+#if KOTA_ENABLE_EXCEPTIONS
     throw std::invalid_argument("when_any(range) requires a non-empty range");
 #else
     assert(false && "when_any(range) requires a non-empty range");
-    ETD_THROW(std::invalid_argument("when_any(range) requires a non-empty range"));
+    KOTA_THROW(std::invalid_argument("when_any(range) requires a non-empty range"));
 #endif
 }
 
@@ -568,4 +568,4 @@ private:
 
 async_scope() -> async_scope<>;
 
-}  // namespace eventide
+}  // namespace kota

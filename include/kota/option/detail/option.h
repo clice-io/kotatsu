@@ -8,7 +8,7 @@
 #include "opt_table.h"
 #include "parsed_arg.h"
 
-namespace eventide::option {
+namespace kota::option {
 
 using PArgResult = std::expected<PArg, const char*>;
 
@@ -218,4 +218,4 @@ public:
     void print(std::ostream& o, bool add_new_line) const;
 };
 
-}  // namespace eventide::option
+}  // namespace kota::option

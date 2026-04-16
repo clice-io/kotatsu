@@ -8,15 +8,15 @@
 #include <vector>
 
 #include "../test_transport.h"
-#include "eventide/ipc/codec/json.h"
-#include "eventide/zest/zest.h"
-#include "eventide/async/async.h"
-#include "eventide/serde/json/deserializer.h"
-#include "eventide/ipc/lsp/protocol.h"
+#include "kota/ipc/codec/json.h"
+#include "kota/zest/zest.h"
+#include "kota/async/async.h"
+#include "kota/codec/json/deserializer.h"
+#include "kota/ipc/lsp/protocol.h"
 
-namespace eventide::ipc::lsp {
+namespace kota::ipc::lsp {
 
-namespace ipc = eventide::ipc;
+namespace ipc = kota::ipc;
 
 using ipc::FakeTransport;
 using ipc::ScriptedTransport;
@@ -62,20 +62,20 @@ struct Notification {
     NoteParams params;
 };
 
-}  // namespace eventide::ipc::lsp
+}  // namespace kota::ipc::lsp
 
 template <>
-struct eventide::ipc::protocol::RequestTraits<eventide::ipc::lsp::AddParams> {
-    using Result = eventide::ipc::lsp::AddResult;
+struct kota::ipc::protocol::RequestTraits<kota::ipc::lsp::AddParams> {
+    using Result = kota::ipc::lsp::AddResult;
     constexpr inline static std::string_view method = "test/add";
 };
 
 template <>
-struct eventide::ipc::protocol::NotificationTraits<eventide::ipc::lsp::NoteParams> {
+struct kota::ipc::protocol::NotificationTraits<kota::ipc::lsp::NoteParams> {
     constexpr inline static std::string_view method = "test/note";
 };
 
-namespace eventide::ipc::lsp {
+namespace kota::ipc::lsp {
 
 TEST_SUITE(language_jsonrpc_traits) {
 
@@ -87,7 +87,7 @@ TEST_CASE(traits_dispatch_order) {
     });
     auto* transport_ptr = transport.get();
 
-    eventide::event_loop loop;
+    kota::event_loop loop;
     ipc::JsonPeer peer(loop, std::move(transport));
     std::vector<std::string> order;
     bool second_saw_first = false;
@@ -136,7 +136,7 @@ TEST_CASE(explicit_method) {
     });
     auto* transport_ptr = transport.get();
 
-    eventide::event_loop loop;
+    kota::event_loop loop;
     ipc::JsonPeer peer(loop, std::move(transport));
     std::string request_method;
     std::vector<std::string> notifications;
@@ -189,7 +189,7 @@ TEST_CASE(request_notify_apis) {
         });
     auto* transport_ptr = transport.get();
 
-    eventide::event_loop loop;
+    kota::event_loop loop;
     ipc::JsonPeer peer(loop, std::move(transport));
     std::string request_method;
     protocol::integer request_id = 0;
@@ -265,4 +265,4 @@ TEST_CASE(request_notify_apis) {
 
 };  // TEST_SUITE(language_jsonrpc_traits)
 
-}  // namespace eventide::ipc::lsp
+}  // namespace kota::ipc::lsp

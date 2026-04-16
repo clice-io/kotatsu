@@ -3,10 +3,10 @@
 #include <string>
 #include <string_view>
 
-#include "eventide/zest/zest.h"
-#include "eventide/serde/json/json.h"
+#include "kota/zest/zest.h"
+#include "kota/codec/json/json.h"
 
-namespace eventide::serde::json {
+namespace kota::codec::json {
 
 namespace {
 
@@ -335,4 +335,4 @@ TEST_CASE(write_api_invalid_state_errors) {
 
 }  // namespace
 
-}  // namespace eventide::serde::json
+}  // namespace kota::codec::json

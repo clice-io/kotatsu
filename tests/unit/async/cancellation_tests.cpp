@@ -7,9 +7,9 @@
 #include <vector>
 
 #include "loop_fixture.h"
-#include "eventide/zest/zest.h"
+#include "kota/zest/zest.h"
 
-namespace eventide {
+namespace kota {
 
 namespace {
 
@@ -658,4 +658,4 @@ TEST_CASE(nested_with_token_same_token_cancel) {
 
 }  // namespace
 
-}  // namespace eventide
+}  // namespace kota

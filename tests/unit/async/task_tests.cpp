@@ -1,11 +1,11 @@
 #include <stdexcept>
 
-#include "eventide/zest/macro.h"
-#include "eventide/zest/zest.h"
-#include "eventide/common/config.h"
-#include "eventide/async/async.h"
+#include "kota/zest/macro.h"
+#include "kota/zest/zest.h"
+#include "kota/support/config.h"
+#include "kota/async/async.h"
 
-namespace eventide {
+namespace kota {
 
 namespace {
 
@@ -28,7 +28,7 @@ TEST_CASE(task_await) {
 
 // Visual Studio issue:
 // https://developercommunity.visualstudio.com/t/Unable-to-destroy-C20-coroutine-in-fin/10657377
-#if !ETD_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+#if !KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
     {
         event_loop loop;
         loop.schedule(foo());
@@ -106,7 +106,7 @@ TEST_CASE(down_cancel) {
     }
 }
 
-#if ETD_ENABLE_EXCEPTIONS
+#if KOTA_ENABLE_EXCEPTIONS
 TEST_CASE(exception_propagation) {
     auto bar1 = []() -> task<> {
         throw std::runtime_error("Test exception");
@@ -164,4 +164,4 @@ TEST_CASE(dump_dot_basic) {
 
 }  // namespace
 
-}  // namespace eventide
+}  // namespace kota

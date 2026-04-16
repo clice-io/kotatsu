@@ -1,3 +1,3 @@
 #pragma once
 
-#include "eventide/serde/flatbuffers/flatbuffers.h"
+#include "kota/codec/flatbuffers/flatbuffers.h"

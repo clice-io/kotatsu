@@ -1,11 +1,11 @@
-#include "eventide/async/io/process.h"
+#include "kota/async/io/process.h"
 
 #include <cassert>
 
 #include "awaiter.h"
-#include "eventide/async/io/fs.h"
-#include "eventide/async/io/loop.h"
-#include "eventide/async/vocab/error.h"
+#include "kota/async/io/fs.h"
+#include "kota/async/io/loop.h"
+#include "kota/async/vocab/error.h"
 
 #if defined(__linux__)
 #include <charconv>
@@ -19,7 +19,7 @@
 #include <psapi.h>
 #endif
 
-namespace eventide {
+namespace kota {
 
 static unsigned int to_uv_process_flags(const process::creation_options& options) {
     unsigned int out = 0;
@@ -417,4 +417,4 @@ result<process_info> process::query_info(int pid) {
     return info;
 }
 
-}  // namespace eventide
+}  // namespace kota

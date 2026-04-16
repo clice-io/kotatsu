@@ -5,11 +5,11 @@
 #include <type_traits>
 #include <utility>
 
-#include "eventide/async/runtime/sync.h"
-#include "eventide/async/runtime/task.h"
-#include "eventide/async/runtime/when.h"
+#include "kota/async/runtime/sync.h"
+#include "kota/async/runtime/task.h"
+#include "kota/async/runtime/when.h"
 
-namespace eventide {
+namespace kota {
 
 class cancellation_token {
 public:
@@ -54,7 +54,7 @@ public:
         task<> wait() {
             if(cancelled) {
                 // Preserve cancellation semantics for already-fired tokens.
-                co_await eventide::cancel();
+                co_await kota::cancel();
             }
 
             // Wait for the sticky cancellation marker to become observable.
@@ -62,7 +62,7 @@ public:
 
             // Being woken by cancel_event means "cancellation happened"; convert
             // that wakeup into actual task cancellation.
-            co_await eventide::cancel();
+            co_await kota::cancel();
         }
 
     private:
@@ -157,4 +157,4 @@ task<T, E, cancellation> with_token(task<T, E, C> inner_task, Tokens... tokens) 
     }
 }
 
-}  // namespace eventide
+}  // namespace kota

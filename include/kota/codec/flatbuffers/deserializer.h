@@ -15,21 +15,21 @@
 #include <variant>
 #include <vector>
 
-#include "eventide/common/expected_try.h"
-#include "eventide/common/ranges.h"
-#include "eventide/serde/flatbuffers/schema.h"
-#include "eventide/serde/flatbuffers/serializer.h"
-#include "eventide/serde/serde/config.h"
-#include "eventide/serde/serde/utils/common.h"
+#include "kota/support/expected_try.h"
+#include "kota/support/ranges.h"
+#include "kota/codec/flatbuffers/schema.h"
+#include "kota/codec/flatbuffers/serializer.h"
+#include "kota/codec/config.h"
+#include "kota/codec/detail/common.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
 #include <flatbuffers/flatbuffers.h>
 #else
 #error                                                                                             \
-    "flatbuffers/flatbuffers.h not found. Enable ETD_SERDE_ENABLE_FLATBUFFERS or add flatbuffers include paths."
+    "flatbuffers/flatbuffers.h not found. Enable KOTA_SERDE_ENABLE_FLATBUFFERS or add flatbuffers include paths."
 #endif
 
-namespace eventide::serde::flatbuffers {
+namespace kota::codec::flatbuffers {
 
 namespace deserialize_detail {
 
@@ -287,7 +287,7 @@ private:
         }
 
         constexpr bool index_assignable_fixed_size =
-            !eventide::detail::sequence_insertable<U, element_t> &&
+            !kota::detail::sequence_insertable<U, element_t> &&
             requires(U& container, std::size_t index, element_t value) {
                 std::tuple_size<U>::value;
                 container[index] = std::move(value);
@@ -305,7 +305,7 @@ private:
                 ++written_count;
                 return {};
             } else {
-                auto ok = eventide::detail::append_sequence_element(
+                auto ok = kota::detail::append_sequence_element(
                     out,
                     static_cast<element_t>(std::forward<decltype(element)>(element)));
                 if(!ok) {
@@ -332,7 +332,7 @@ private:
                 return std::unexpected(object_error_code::invalid_state);
             }
             for(std::size_t i = 0; i < vector->size(); ++i) {
-                ETD_EXPECTED_TRY(store_element(
+                KOTA_EXPECTED_TRY(store_element(
                     std::byte{vector->Get(static_cast<::flatbuffers::uoffset_t>(i))}));
             }
             return finalize_sequence();
@@ -344,7 +344,7 @@ private:
                 return std::unexpected(object_error_code::invalid_state);
             }
             for(std::size_t i = 0; i < vector->size(); ++i) {
-                ETD_EXPECTED_TRY(
+                KOTA_EXPECTED_TRY(
                     store_element(vector->Get(static_cast<::flatbuffers::uoffset_t>(i))));
             }
             return finalize_sequence();
@@ -357,7 +357,7 @@ private:
                     return std::unexpected(object_error_code::invalid_state);
                 }
                 for(std::size_t i = 0; i < vector->size(); ++i) {
-                    ETD_EXPECTED_TRY(
+                    KOTA_EXPECTED_TRY(
                         store_element(vector->Get(static_cast<::flatbuffers::uoffset_t>(i))));
                 }
                 return finalize_sequence();
@@ -367,7 +367,7 @@ private:
                     return std::unexpected(object_error_code::invalid_state);
                 }
                 for(std::size_t i = 0; i < vector->size(); ++i) {
-                    ETD_EXPECTED_TRY(
+                    KOTA_EXPECTED_TRY(
                         store_element(vector->Get(static_cast<::flatbuffers::uoffset_t>(i))));
                 }
                 return finalize_sequence();
@@ -379,7 +379,7 @@ private:
                 return std::unexpected(object_error_code::invalid_state);
             }
             for(std::size_t i = 0; i < vector->size(); ++i) {
-                ETD_EXPECTED_TRY(store_element(
+                KOTA_EXPECTED_TRY(store_element(
                     static_cast<char>(vector->Get(static_cast<::flatbuffers::uoffset_t>(i)))));
             }
             return finalize_sequence();
@@ -390,7 +390,7 @@ private:
                 return std::unexpected(object_error_code::invalid_state);
             }
             for(std::size_t i = 0; i < vector->size(); ++i) {
-                ETD_EXPECTED_TRY(store_element(static_cast<element_clean_t>(
+                KOTA_EXPECTED_TRY(store_element(static_cast<element_clean_t>(
                     vector->Get(static_cast<::flatbuffers::uoffset_t>(i)))));
             }
             return finalize_sequence();
@@ -407,9 +407,9 @@ private:
                 }
                 if constexpr(std::same_as<element_t, std::string> ||
                              std::derived_from<element_t, std::string>) {
-                    ETD_EXPECTED_TRY(store_element(std::string(text->data(), text->size())));
+                    KOTA_EXPECTED_TRY(store_element(std::string(text->data(), text->size())));
                 } else if constexpr(std::same_as<element_t, std::string_view>) {
-                    ETD_EXPECTED_TRY(store_element(std::string_view(text->data(), text->size())));
+                    KOTA_EXPECTED_TRY(store_element(std::string_view(text->data(), text->size())));
                 } else {
                     return std::unexpected(object_error_code::unsupported_type);
                 }
@@ -429,8 +429,8 @@ private:
                     dec_t element{};
                     const auto* nested = vector->GetAs<::flatbuffers::Table>(
                         static_cast<::flatbuffers::uoffset_t>(i));
-                    ETD_EXPECTED_TRY(decode_tuple(nested, element));
-                    ETD_EXPECTED_TRY(store_element(std::move(element)));
+                    KOTA_EXPECTED_TRY(decode_tuple(nested, element));
+                    KOTA_EXPECTED_TRY(store_element(std::move(element)));
                 }
             }
             return finalize_sequence();
@@ -445,7 +445,7 @@ private:
                 if(element == nullptr) {
                     return std::unexpected(object_error_code::invalid_state);
                 }
-                ETD_EXPECTED_TRY(store_element(*element));
+                KOTA_EXPECTED_TRY(store_element(*element));
             }
             return finalize_sequence();
         } else if constexpr(refl::reflectable_class<element_clean_t>) {
@@ -462,8 +462,8 @@ private:
                     dec_t element{};
                     const auto* nested = vector->GetAs<::flatbuffers::Table>(
                         static_cast<::flatbuffers::uoffset_t>(i));
-                    ETD_EXPECTED_TRY(decode_table(nested, element));
-                    ETD_EXPECTED_TRY(store_element(std::move(element)));
+                    KOTA_EXPECTED_TRY(decode_table(nested, element));
+                    KOTA_EXPECTED_TRY(store_element(std::move(element)));
                 }
             }
             return finalize_sequence();
@@ -481,8 +481,8 @@ private:
                     dec_t element{};
                     const auto* nested = vector->GetAs<::flatbuffers::Table>(
                         static_cast<::flatbuffers::uoffset_t>(i));
-                    ETD_EXPECTED_TRY(decode_root_value_from_table(nested, element));
-                    ETD_EXPECTED_TRY(store_element(std::move(element)));
+                    KOTA_EXPECTED_TRY(decode_root_value_from_table(nested, element));
+                    KOTA_EXPECTED_TRY(store_element(std::move(element)));
                 }
             }
             return finalize_sequence();
@@ -508,7 +508,7 @@ private:
         if constexpr(requires { out.clear(); }) {
             out.clear();
         }
-        static_assert(eventide::detail::map_insertable<U, key_t, mapped_t>,
+        static_assert(kota::detail::map_insertable<U, key_t, mapped_t>,
                       "from_flatbuffer map requires insertable container");
 
         const auto* entries = table->GetPointer<
@@ -526,10 +526,10 @@ private:
 
             key_t key{};
             mapped_t mapped{};
-            ETD_EXPECTED_TRY(decode_field(entry, first_field, key, true));
-            ETD_EXPECTED_TRY(decode_field(entry, field_voffset(1), mapped, true));
+            KOTA_EXPECTED_TRY(decode_field(entry, first_field, key, true));
+            KOTA_EXPECTED_TRY(decode_field(entry, field_voffset(1), mapped, true));
 
-            auto ok = eventide::detail::insert_map_entry(out, std::move(key), std::move(mapped));
+            auto ok = kota::detail::insert_map_entry(out, std::move(key), std::move(mapped));
             if(!ok) {
                 return std::unexpected(object_error_code::unsupported_type);
             }
@@ -669,8 +669,8 @@ private:
                 const auto* nested = table->GetPointer<const ::flatbuffers::Table*>(field);
                 return decode_variant(nested, out);
             } else if constexpr(std::ranges::input_range<clean_u_t>) {
-                constexpr auto kind = eventide::format_kind<clean_u_t>;
-                if constexpr(kind == eventide::range_format::map) {
+                constexpr auto kind = kota::format_kind<clean_u_t>;
+                if constexpr(kind == kota::range_format::map) {
                     return decode_map(table, field, out, required);
                 } else {
                     return decode_sequence(table, field, out, required);
@@ -766,7 +766,7 @@ private:
         }
         if(!::flatbuffers::BufferHasIdentifier(
                bytes.data(),
-               ::eventide::serde::flatbuffers::detail::buffer_identifier)) {
+               ::kota::codec::flatbuffers::detail::buffer_identifier)) {
             set_invalid(object_error_code::invalid_state);
             return;
         }
@@ -806,7 +806,7 @@ auto from_flatbuffer(std::span<const std::uint8_t> bytes, T& value)
         return std::unexpected(deserializer.error());
     }
 
-    ETD_EXPECTED_TRY(deserializer.deserialize(value));
+    KOTA_EXPECTED_TRY(deserializer.deserialize(value));
     return {};
 }
 
@@ -818,7 +818,7 @@ auto from_flatbuffer(std::span<const std::byte> bytes, T& value)
         return std::unexpected(deserializer.error());
     }
 
-    ETD_EXPECTED_TRY(deserializer.deserialize(value));
+    KOTA_EXPECTED_TRY(deserializer.deserialize(value));
     return {};
 }
 
@@ -833,7 +833,7 @@ template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_flatbuffer(std::span<const std::uint8_t> bytes) -> std::expected<T, object_error_code> {
     T value{};
-    ETD_EXPECTED_TRY(from_flatbuffer<Config>(bytes, value));
+    KOTA_EXPECTED_TRY(from_flatbuffer<Config>(bytes, value));
     return value;
 }
 
@@ -841,7 +841,7 @@ template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
 auto from_flatbuffer(std::span<const std::byte> bytes) -> std::expected<T, object_error_code> {
     T value{};
-    ETD_EXPECTED_TRY(from_flatbuffer<Config>(bytes, value));
+    KOTA_EXPECTED_TRY(from_flatbuffer<Config>(bytes, value));
     return value;
 }
 
@@ -852,4 +852,4 @@ auto from_flatbuffer(const std::vector<std::uint8_t>& bytes)
     return from_flatbuffer<T, Config>(std::span<const std::uint8_t>(bytes.data(), bytes.size()));
 }
 
-}  // namespace eventide::serde::flatbuffers
+}  // namespace kota::codec::flatbuffers

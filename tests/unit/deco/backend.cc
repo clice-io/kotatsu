@@ -3,7 +3,7 @@
 #include <type_traits>
 #include <vector>
 
-#include "eventide/deco/deco.h"
+#include "kota/deco/deco.h"
 #include <eventide/zest/zest.h>
 
 namespace {
@@ -180,7 +180,7 @@ struct MultiExclusiveCategoryOpt {
     request;
 };
 
-auto backend_alias_forward_fn(const eventide::option::ParsedArgumentOwning&)
+auto backend_alias_forward_fn(const kota::option::ParsedArgumentOwning&)
     -> std::expected<std::vector<std::string>, std::string> {
     return std::vector<std::string>{"--pair", "left", "right"};
 }
@@ -208,7 +208,7 @@ static_assert(std::is_same_v<
               deco::detail::LLVMOptGenerator<ParseAllOpt,
                                              deco::detail::BuildStorage<ParseAllOpt>::record>>);
 
-using Parsed = eventide::option::ParsedArgument;
+using Parsed = kota::option::ParsedArgument;
 
 struct ParsedArgs {
     std::vector<std::string> argv_storage;
@@ -283,7 +283,7 @@ TEST_CASE(storage_keeps_dummy_alignment_for_id_map) {
     EXPECT_TRUE(built.option_infos().size() == built.opt_size());
     for(size_t i = 0; i < built.option_infos().size(); ++i) {
         EXPECT_TRUE(built.option_infos()[i].id == i + 1);
-        if(built.option_infos()[i].kind == eventide::option::Option::UnknownClass) {
+        if(built.option_infos()[i].kind == kota::option::Option::UnknownClass) {
             EXPECT_TRUE(built.id_map()[i + 1] == nullptr);
             EXPECT_TRUE(built.category_map()[i + 1] == nullptr);
         } else {
@@ -437,8 +437,8 @@ TEST_CASE(parse_pack_then_input_rebinds_input_id_map) {
 TEST_CASE(parse_kv_supports_joined_and_separate_styles) {
     const auto& built = deco::detail::build_storage<KVSplitStyleByNameOpt>();
     EXPECT_TRUE(built.option_infos().size() == 3);
-    EXPECT_TRUE(built.option_infos()[1].kind == eventide::option::Option::JoinedClass);
-    EXPECT_TRUE(built.option_infos()[2].kind == eventide::option::Option::SeparateClass);
+    EXPECT_TRUE(built.option_infos()[1].kind == kota::option::Option::JoinedClass);
+    EXPECT_TRUE(built.option_infos()[2].kind == kota::option::Option::SeparateClass);
 
     auto joined_args = parse_with(built, {"--test=42"});
     EXPECT_TRUE(joined_args.has_value());
@@ -470,8 +470,8 @@ TEST_CASE(parse_kv_supports_joined_and_separate_styles) {
 TEST_CASE(parse_kv_default_name_adds_joined_equals_alias_when_style_includes_joined) {
     const auto& built = deco::detail::build_storage<KVDefaultNameSplitStyleOpt>();
     EXPECT_TRUE(built.option_infos().size() == 3);
-    EXPECT_TRUE(built.option_infos()[1].kind == eventide::option::Option::SeparateClass);
-    EXPECT_TRUE(built.option_infos()[2].kind == eventide::option::Option::JoinedClass);
+    EXPECT_TRUE(built.option_infos()[1].kind == kota::option::Option::SeparateClass);
+    EXPECT_TRUE(built.option_infos()[2].kind == kota::option::Option::JoinedClass);
 
     auto separate_args = parse_with(built, {"--level", "7"});
     EXPECT_TRUE(separate_args.has_value());
@@ -503,8 +503,8 @@ TEST_CASE(parse_kv_default_name_adds_joined_equals_alias_when_style_includes_joi
 TEST_CASE(parse_kv_alias_supports_joined_and_separate_styles) {
     const auto& built = deco::detail::build_storage<KVAliasSplitStyleByNameOpt>();
     EXPECT_TRUE(built.option_infos().size() == 3);
-    EXPECT_TRUE(built.option_infos()[1].kind == eventide::option::Option::JoinedClass);
-    EXPECT_TRUE(built.option_infos()[2].kind == eventide::option::Option::SeparateClass);
+    EXPECT_TRUE(built.option_infos()[1].kind == kota::option::Option::JoinedClass);
+    EXPECT_TRUE(built.option_infos()[2].kind == kota::option::Option::SeparateClass);
 
     auto joined_args = parse_with(built, {"--target=42"});
     EXPECT_TRUE(joined_args.has_value());
@@ -536,8 +536,8 @@ TEST_CASE(parse_kv_alias_supports_joined_and_separate_styles) {
 TEST_CASE(parse_kv_alias_default_name_adds_joined_equals_alias_when_style_includes_joined) {
     const auto& built = deco::detail::build_storage<KVAliasDefaultNameSplitStyleOpt>();
     EXPECT_TRUE(built.option_infos().size() == 3);
-    EXPECT_TRUE(built.option_infos()[1].kind == eventide::option::Option::SeparateClass);
-    EXPECT_TRUE(built.option_infos()[2].kind == eventide::option::Option::JoinedClass);
+    EXPECT_TRUE(built.option_infos()[1].kind == kota::option::Option::SeparateClass);
+    EXPECT_TRUE(built.option_infos()[2].kind == kota::option::Option::JoinedClass);
 
     auto separate_args = parse_with(built, {"--target-alias", "7"});
     EXPECT_TRUE(separate_args.has_value());

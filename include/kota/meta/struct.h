@@ -7,7 +7,7 @@
 
 #include "name.h"
 
-namespace eventide::refl::detail {
+namespace kota::meta::detail {
 
 template <class T>
 extern const T ext{};
@@ -48,9 +48,9 @@ consteval auto field_count() {
     }
 }
 
-}  // namespace eventide::refl::detail
+}  // namespace kota::meta::detail
 
-namespace eventide::refl {
+namespace kota::meta {
 
 template <typename T>
 struct reflection;
@@ -221,4 +221,4 @@ concept reflectable_class = requires {
     reflection<T>::field_count;
 };
 
-}  // namespace eventide::refl
+}  // namespace kota::meta

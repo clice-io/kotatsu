@@ -12,9 +12,9 @@
 #include <string>
 #include <vector>
 
-#include "eventide/common/config.h"
+#include "kota/support/config.h"
 
-namespace eventide {
+namespace kota {
 
 class sync_primitive;
 
@@ -346,7 +346,7 @@ protected:
 
     /// Rethrows the propagated exception if one was captured from a failed child.
     void rethrow_if_propagated() {
-#if ETD_ENABLE_EXCEPTIONS
+#if KOTA_ENABLE_EXCEPTIONS
         if(propagated_exception) {
             std::rethrow_exception(propagated_exception);
         }
@@ -420,4 +420,4 @@ public:
     void complete() noexcept;
 };
 
-}  // namespace eventide
+}  // namespace kota

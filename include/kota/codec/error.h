@@ -10,7 +10,7 @@
 #include <variant>
 #include <vector>
 
-namespace eventide::serde {
+namespace kota::codec {
 
 struct source_location {
     std::size_t line = 0;
@@ -169,4 +169,4 @@ private:
     }
 };
 
-}  // namespace eventide::serde
+}  // namespace kota::codec

@@ -10,11 +10,11 @@
 #include <type_traits>
 
 #include "struct.h"
-#include "eventide/common/fixed_string.h"
-#include "eventide/common/tuple_traits.h"
-#include "eventide/common/type_traits.h"
+#include "kota/support/fixed_string.h"
+#include "kota/support/tuple_traits.h"
+#include "kota/support/type_traits.h"
 
-namespace eventide::refl {
+namespace kota::meta {
 
 /// A hint attribute is transparent to the core serde framework.
 /// Backends query hints by their own tag type and interpret them freely.
@@ -504,4 +504,4 @@ constexpr bool validate_attrs() {
 
 }  // namespace detail
 
-}  // namespace eventide::refl
+}  // namespace kota::meta

@@ -1,4 +1,4 @@
-#include "eventide/option/option.h"
+#include "kota/option/option.h"
 
 #include <cassert>
 #include <cstring>
@@ -7,7 +7,7 @@
 #include <string_view>
 #include <utility>
 
-namespace eventide::option {
+namespace kota::option {
 namespace {
 
 constexpr const char* k_no_match = "internal error: option does not match argument";
@@ -315,4 +315,4 @@ PArgResult Option::accept(const ArgList& args,
     return a;
 }
 
-}  // namespace eventide::option
+}  // namespace kota::option

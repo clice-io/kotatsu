@@ -6,17 +6,17 @@
 #include <type_traits>
 #include <variant>
 
-#include "eventide/common/expected_try.h"
-#include "eventide/reflection/annotation.h"
-#include "eventide/reflection/attrs.h"
-#include "eventide/reflection/struct.h"
-#include "eventide/serde/serde/config.h"
-#include "eventide/serde/serde/spelling.h"
-#include "eventide/serde/serde/utils/apply_behavior.h"
-#include "eventide/serde/serde/utils/common.h"
-#include "eventide/serde/serde/utils/fwd.h"
+#include "kota/support/expected_try.h"
+#include "kota/meta/annotation.h"
+#include "kota/meta/attrs.h"
+#include "kota/meta/struct.h"
+#include "kota/codec/config.h"
+#include "kota/codec/spelling.h"
+#include "kota/codec/detail/apply_behavior.h"
+#include "kota/codec/detail/common.h"
+#include "kota/codec/detail/fwd.h"
 
-namespace eventide::serde::detail {
+namespace kota::codec::detail {
 
 template <typename Config, typename E, typename SerializeStruct, typename Field>
 constexpr auto serialize_struct_field(SerializeStruct& s_struct, Field field)
@@ -106,7 +106,7 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
         if(mapped_name != key_name) {
             return false;
         }
-        ETD_EXPECTED_TRY(d_struct.deserialize_value(field.value()));
+        KOTA_EXPECTED_TRY(d_struct.deserialize_value(field.value()));
         return true;
     } else {
         using attrs_t = typename std::remove_cvref_t<field_t>::attrs;
@@ -173,14 +173,14 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
                 using Pred =
                     typename tuple_find_spec_t<attrs_t, refl::behavior::skip_if>::predicate;
                 if(refl::evaluate_skip_predicate<Pred>(value, false)) {
-                    ETD_EXPECTED_TRY(d_struct.skip_value());
+                    KOTA_EXPECTED_TRY(d_struct.skip_value());
                     return true;
                 }
             }
 
             // Behavior: with/as/enum_string — delegate to apply_deserialize_behavior
             if constexpr(tuple_count_of_v<attrs_t, refl::is_behavior_provider> > 0) {
-                ETD_EXPECTED_TRY((*detail::apply_deserialize_behavior<attrs_t, value_t, E>(
+                KOTA_EXPECTED_TRY((*detail::apply_deserialize_behavior<attrs_t, value_t, E>(
                     value,
                     [&](auto& v) { return d_struct.deserialize_value(v); },
                     [&](auto tag, auto& v) -> std::expected<void, E> {
@@ -194,10 +194,10 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
                 // For tagged variants, preserve annotation so deserialize() sees tagging attrs
                 if constexpr(is_specialization_of<std::variant, value_t> &&
                              tuple_any_of_v<attrs_t, refl::is_tagged_attr>) {
-                    ETD_EXPECTED_TRY(d_struct.deserialize_value(field.value()));
+                    KOTA_EXPECTED_TRY(d_struct.deserialize_value(field.value()));
                     return true;
                 } else {
-                    ETD_EXPECTED_TRY(d_struct.deserialize_value(value));
+                    KOTA_EXPECTED_TRY(d_struct.deserialize_value(value));
                     return true;
                 }
             }
@@ -205,4 +205,4 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
     }
 }
 
-}  // namespace eventide::serde::detail
+}  // namespace kota::codec::detail

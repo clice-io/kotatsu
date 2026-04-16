@@ -1,7 +1,7 @@
 #include "peer_test_types.h"
-#include "eventide/zest/zest.h"
+#include "kota/zest/zest.h"
 
-namespace eventide::ipc {
+namespace kota::ipc {
 
 // ============================================================================
 // Group 3: Peer — dispatch routing
@@ -145,4 +145,4 @@ TEST_CASE(mixed_sequence) {
 
 };  // TEST_SUITE(ipc_peer_dispatch)
 
-}  // namespace eventide::ipc
+}  // namespace kota::ipc

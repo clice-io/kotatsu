@@ -4,9 +4,9 @@
 #include <string_view>
 
 #include "spelling.h"
-#include "eventide/reflection/type_info.h"
+#include "kota/meta/type_info.h"
 
-namespace eventide::serde::config {
+namespace kota::codec::config {
 
 using default_config = refl::default_config;
 
@@ -54,4 +54,4 @@ inline std::string_view apply_enum_rename(bool is_serialize,
     }
 }
 
-}  // namespace eventide::serde::config
+}  // namespace kota::codec::config

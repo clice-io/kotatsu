@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <string_view>
 
-namespace eventide {
+namespace kota {
 
 template <std::size_t N>
 struct fixed_string : std::array<char, N + 1> {
@@ -35,4 +35,4 @@ struct fixed_string : std::array<char, N + 1> {
 template <std::size_t M>
 fixed_string(const char (&)[M]) -> fixed_string<M - 1>;
 
-}  // namespace eventide
+}  // namespace kota

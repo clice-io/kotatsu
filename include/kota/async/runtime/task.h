@@ -11,15 +11,15 @@
 #include <type_traits>
 #include <utility>
 
-#include "eventide/common/config.h"
-#include "eventide/common/type_traits.h"
-#include "eventide/async/io/loop.h"
-#include "eventide/async/runtime/frame.h"
-#include "eventide/async/vocab/awaitable.h"
-#include "eventide/async/vocab/error.h"
-#include "eventide/async/vocab/outcome.h"
+#include "kota/support/config.h"
+#include "kota/support/type_traits.h"
+#include "kota/async/io/loop.h"
+#include "kota/async/runtime/frame.h"
+#include "kota/async/vocab/awaitable.h"
+#include "kota/async/vocab/error.h"
+#include "kota/async/vocab/outcome.h"
 
-namespace eventide {
+namespace kota {
 
 // ============================================================================
 // promise_result — two specializations
@@ -70,7 +70,7 @@ struct promise_result<void, E, C> {
 // ============================================================================
 
 struct promise_exception {
-#if ETD_ENABLE_EXCEPTIONS
+#if KOTA_ENABLE_EXCEPTIONS
     bool has_exception() const noexcept {
         return exception != nullptr;
     }
@@ -671,4 +671,4 @@ auto normalize_task(Awaitable&& input) -> task<normalized_await_result_t<Awaitab
 
 }  // namespace detail
 
-}  // namespace eventide
+}  // namespace kota

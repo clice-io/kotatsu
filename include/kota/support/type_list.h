@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <type_traits>
 
-namespace eventide {
+namespace kota {
 
 template <typename T, typename... Ts>
 concept is_one_of = (std::same_as<T, Ts> || ...);
@@ -143,4 +143,4 @@ struct type_list_size<type_list<Ts...>> : std::integral_constant<std::size_t, si
 template <typename List>
 constexpr inline std::size_t type_list_size_v = type_list_size<List>::value;
 
-}  // namespace eventide
+}  // namespace kota

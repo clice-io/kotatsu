@@ -2,9 +2,9 @@
 #include <string_view>
 
 #include "loop_fixture.h"
-#include "eventide/zest/zest.h"
+#include "kota/zest/zest.h"
 
-namespace eventide {
+namespace kota {
 
 namespace {
 
@@ -99,4 +99,4 @@ TEST_CASE(connect_and_send) {
 
 };  // TEST_SUITE(udp_io)
 
-}  // namespace eventide
+}  // namespace kota

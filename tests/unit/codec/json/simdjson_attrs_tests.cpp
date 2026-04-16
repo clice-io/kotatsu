@@ -1,12 +1,12 @@
 #include <optional>
 #include <string>
 
-#include "eventide/zest/zest.h"
-#include "eventide/serde/json/deserializer.h"
-#include "eventide/serde/json/serializer.h"
-#include "eventide/serde/serde/serde.h"
+#include "kota/zest/zest.h"
+#include "kota/codec/json/deserializer.h"
+#include "kota/codec/json/serializer.h"
+#include "kota/codec/serde.h"
 
-namespace eventide::serde {
+namespace kota::codec {
 
 using namespace refl;
 
@@ -183,4 +183,4 @@ TEST_CASE(annotated_struct_deny_unknown_fields_applies) {
 
 }  // namespace
 
-}  // namespace eventide::serde
+}  // namespace kota::codec

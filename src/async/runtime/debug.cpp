@@ -3,10 +3,10 @@
 #include <string>
 #include <string_view>
 
-#include "eventide/async/runtime/frame.h"
-#include "eventide/async/runtime/sync.h"
+#include "kota/async/runtime/frame.h"
+#include "kota/async/runtime/sync.h"
 
-namespace eventide {
+namespace kota {
 
 static std::string_view async_kind_name(async_node::NodeKind k) {
     switch(k) {
@@ -253,4 +253,4 @@ std::string async_node::dump_dot() const {
     return out;
 }
 
-}  // namespace eventide
+}  // namespace kota

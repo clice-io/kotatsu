@@ -4,10 +4,10 @@
 #include <type_traits>
 #include <utility>
 
-#include "eventide/zest/zest.h"
-#include "eventide/reflection/struct.h"
+#include "kota/zest/zest.h"
+#include "kota/meta/struct.h"
 
-namespace eventide::refl {
+namespace kota::meta {
 
 namespace {
 
@@ -396,4 +396,4 @@ TEST_CASE(for_each_many36) {
 
 }  // namespace
 
-}  // namespace eventide::refl
+}  // namespace kota::meta

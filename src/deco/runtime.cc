@@ -1,6 +1,6 @@
 #include <utility>
 
-#include "eventide/deco/deco.h"
+#include "kota/deco/deco.h"
 
 namespace deco::util {
 

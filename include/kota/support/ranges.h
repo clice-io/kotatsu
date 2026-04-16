@@ -8,7 +8,7 @@
 
 #include "type_traits.h"
 
-namespace eventide {
+namespace kota {
 
 template <typename T>
 constexpr bool is_map_value_v = false;
@@ -157,4 +157,4 @@ constexpr bool insert_map_entry(Map& map, Key&& key, Mapped&& value) {
 
 }  // namespace detail
 
-}  // namespace eventide
+}  // namespace kota

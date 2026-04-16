@@ -4,7 +4,7 @@
 #include <functional>
 #include <string>
 
-namespace eventide::ipc {
+namespace kota::ipc {
 
 enum class LogLevel : std::uint8_t {
     trace = 0,
@@ -16,4 +16,4 @@ enum class LogLevel : std::uint8_t {
 
 using LogCallback = std::function<void(LogLevel, std::string)>;
 
-}  // namespace eventide::ipc
+}  // namespace kota::ipc

@@ -10,10 +10,10 @@
 #include <stdexcept>
 #endif
 
-#include "eventide/zest/zest.h"
-#include "eventide/common/small_vector.h"
+#include "kota/zest/zest.h"
+#include "kota/support/small_vector.h"
 
-namespace eventide {
+namespace kota {
 
 namespace {
 
@@ -1463,4 +1463,4 @@ TEST_CASE(exception_safety) {
 
 }  // namespace
 
-}  // namespace eventide
+}  // namespace kota

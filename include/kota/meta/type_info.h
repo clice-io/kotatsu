@@ -17,12 +17,12 @@
 #include "enum.h"
 #include "struct.h"
 #include "type_kind.h"
-#include "eventide/common/naming.h"
-#include "eventide/common/ranges.h"
-#include "eventide/common/tuple_traits.h"
-#include "eventide/common/type_traits.h"
+#include "kota/support/naming.h"
+#include "kota/support/ranges.h"
+#include "kota/support/tuple_traits.h"
+#include "kota/support/type_traits.h"
 
-namespace eventide::refl {
+namespace kota::meta {
 
 struct default_config {};
 
@@ -697,4 +697,4 @@ constexpr const type_info* type_info_of() {
     return &detail::type_instance<T, Config>::value;
 }
 
-}  // namespace eventide::refl
+}  // namespace kota::meta

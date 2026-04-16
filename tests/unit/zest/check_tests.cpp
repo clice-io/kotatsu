@@ -2,9 +2,9 @@
 #include <optional>
 #include <string>
 
-#include "eventide/zest/zest.h"
+#include "kota/zest/zest.h"
 
-namespace eventide::zest {
+namespace kota::zest {
 
 namespace {
 
@@ -116,4 +116,4 @@ TEST_CASE(binary_ordering_assert_macros) {
 
 }  // namespace
 
-}  // namespace eventide::zest
+}  // namespace kota::zest

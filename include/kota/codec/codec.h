@@ -8,20 +8,20 @@
 
 #include "config.h"
 #include "traits.h"
-#include "eventide/common/expected_try.h"
-#include "eventide/common/ranges.h"
-#include "eventide/reflection/annotation.h"
-#include "eventide/reflection/attrs.h"
-#include "eventide/reflection/enum.h"
-#include "eventide/reflection/struct.h"
-#include "eventide/serde/serde/utils/apply_behavior.h"
-#include "eventide/serde/serde/utils/common.h"
-#include "eventide/serde/serde/utils/field_dispatch.h"
-#include "eventide/serde/serde/utils/fwd.h"
-#include "eventide/serde/serde/utils/reflectable.h"
-#include "eventide/serde/serde/utils/tagged.h"
+#include "kota/support/expected_try.h"
+#include "kota/support/ranges.h"
+#include "kota/meta/annotation.h"
+#include "kota/meta/attrs.h"
+#include "kota/meta/enum.h"
+#include "kota/meta/struct.h"
+#include "kota/codec/detail/apply_behavior.h"
+#include "kota/codec/detail/common.h"
+#include "kota/codec/detail/field_dispatch.h"
+#include "kota/codec/detail/fwd.h"
+#include "kota/codec/detail/reflectable.h"
+#include "kota/codec/detail/tagged.h"
 
-namespace eventide::serde {
+namespace kota::codec {
 
 template <serializer_like S, typename V, typename T, typename E>
 constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
@@ -113,7 +113,7 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
     } else if constexpr(is_specialization_of<std::variant, V>) {
         return s.serialize_variant(v);
     } else if constexpr(tuple_like<V>) {
-        ETD_EXPECTED_TRY_V(auto s_tuple,
+        KOTA_EXPECTED_TRY_V(auto s_tuple,
                            s.serialize_tuple(std::tuple_size_v<std::remove_cvref_t<V>>));
 
         std::expected<void, E> element_result;
@@ -139,10 +139,10 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
                 len = static_cast<std::size_t>(std::ranges::size(v));
             }
 
-            ETD_EXPECTED_TRY_V(auto s_seq, s.serialize_seq(len));
+            KOTA_EXPECTED_TRY_V(auto s_seq, s.serialize_seq(len));
 
             for(auto&& e: v) {
-                ETD_EXPECTED_TRY(s_seq.serialize_element(e));
+                KOTA_EXPECTED_TRY(s_seq.serialize_element(e));
             }
 
             return s_seq.end();
@@ -152,10 +152,10 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
                 len = static_cast<std::size_t>(std::ranges::size(v));
             }
 
-            ETD_EXPECTED_TRY_V(auto s_map, s.serialize_map(len));
+            KOTA_EXPECTED_TRY_V(auto s_map, s.serialize_map(len));
 
             for(auto&& [key, value]: v) {
-                ETD_EXPECTED_TRY(s_map.serialize_entry(key, value));
+                KOTA_EXPECTED_TRY(s_map.serialize_entry(key, value));
             }
 
             return s_map.end();
@@ -228,7 +228,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
         using underlying_t = std::underlying_type_t<V>;
         if constexpr(std::is_signed_v<underlying_t>) {
             std::int64_t parsed = 0;
-            ETD_EXPECTED_TRY(d.deserialize_int(parsed));
+            KOTA_EXPECTED_TRY(d.deserialize_int(parsed));
             if(!detail::integral_value_in_range<underlying_t>(parsed)) {
                 return std::unexpected(E::number_out_of_range);
             }
@@ -236,7 +236,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
             return {};
         } else {
             std::uint64_t parsed = 0;
-            ETD_EXPECTED_TRY(d.deserialize_uint(parsed));
+            KOTA_EXPECTED_TRY(d.deserialize_uint(parsed));
             if(!detail::integral_value_in_range<underlying_t>(parsed)) {
                 return std::unexpected(E::number_out_of_range);
             }
@@ -258,18 +258,18 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
     } else if constexpr(std::same_as<V, std::vector<std::byte>>) {
         return d.deserialize_bytes(v);
     } else if constexpr(detail::is_captured_dom_value_v<D, V>) {
-        ETD_EXPECTED_TRY_V(auto captured, d.capture_dom_value());
+        KOTA_EXPECTED_TRY_V(auto captured, d.capture_dom_value());
         v = std::move(captured);
         return {};
     } else if constexpr(null_like<V>) {
-        ETD_EXPECTED_TRY_V(auto is_none, d.deserialize_none());
+        KOTA_EXPECTED_TRY_V(auto is_none, d.deserialize_none());
         if(is_none) {
             v = V{};
             return {};
         }
         return std::unexpected(E::type_mismatch);
     } else if constexpr(is_specialization_of<std::optional, V>) {
-        ETD_EXPECTED_TRY_V(auto is_none, d.deserialize_none());
+        KOTA_EXPECTED_TRY_V(auto is_none, d.deserialize_none());
 
         if(is_none) {
             v.reset();
@@ -294,7 +294,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                           "cannot auto deserialize optional<T> without default-constructible T");
         }
     } else if constexpr(is_specialization_of<std::unique_ptr, V>) {
-        ETD_EXPECTED_TRY_V(auto is_none, d.deserialize_none());
+        KOTA_EXPECTED_TRY_V(auto is_none, d.deserialize_none());
         if(is_none) {
             v.reset();
             return {};
@@ -307,12 +307,12 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                       "cannot auto deserialize unique_ptr<T, D> with custom deleter");
 
         auto value = std::make_unique<value_t>();
-        ETD_EXPECTED_TRY(deserialize(d, *value));
+        KOTA_EXPECTED_TRY(deserialize(d, *value));
 
         v = std::move(value);
         return {};
     } else if constexpr(is_specialization_of<std::shared_ptr, V>) {
-        ETD_EXPECTED_TRY_V(auto is_none, d.deserialize_none());
+        KOTA_EXPECTED_TRY_V(auto is_none, d.deserialize_none());
         if(is_none) {
             v.reset();
             return {};
@@ -323,14 +323,14 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                       "cannot auto deserialize shared_ptr<T> without default-constructible T");
 
         auto value = std::make_shared<value_t>();
-        ETD_EXPECTED_TRY(deserialize(d, *value));
+        KOTA_EXPECTED_TRY(deserialize(d, *value));
 
         v = std::move(value);
         return {};
     } else if constexpr(is_specialization_of<std::variant, V>) {
         return d.deserialize_variant(v);
     } else if constexpr(tuple_like<V>) {
-        ETD_EXPECTED_TRY_V(auto d_tuple,
+        KOTA_EXPECTED_TRY_V(auto d_tuple,
                            d.deserialize_tuple(std::tuple_size_v<std::remove_cvref_t<V>>));
 
         std::expected<void, E> element_result;
@@ -355,7 +355,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
     } else if constexpr(std::ranges::input_range<V>) {
         constexpr auto kind = format_kind<V>;
         if constexpr(kind == range_format::sequence || kind == range_format::set) {
-            ETD_EXPECTED_TRY_V(auto d_seq, d.deserialize_seq(std::nullopt));
+            KOTA_EXPECTED_TRY_V(auto d_seq, d.deserialize_seq(std::nullopt));
 
             if constexpr(requires { v.clear(); }) {
                 v.clear();
@@ -365,12 +365,12 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
             static_assert(
                 std::default_initializable<element_t>,
                 "auto deserialization for ranges requires default-constructible elements");
-            static_assert(eventide::detail::sequence_insertable<V, element_t>,
+            static_assert(kota::detail::sequence_insertable<V, element_t>,
                           "cannot auto deserialize range: container does not support insertion");
 
             std::size_t seq_index = 0;
             while(true) {
-                ETD_EXPECTED_TRY_V(auto has_next, d_seq.has_next());
+                KOTA_EXPECTED_TRY_V(auto has_next, d_seq.has_next());
                 if(!has_next) {
                     break;
                 }
@@ -383,7 +383,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                     return std::unexpected(std::move(err));
                 }
 
-                eventide::detail::append_sequence_element(v, std::move(element));
+                kota::detail::append_sequence_element(v, std::move(element));
                 ++seq_index;
             }
 
@@ -392,7 +392,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
             using key_t = typename V::key_type;
             using mapped_t = typename V::mapped_type;
 
-            ETD_EXPECTED_TRY_V(auto d_map, d.deserialize_map(std::nullopt));
+            KOTA_EXPECTED_TRY_V(auto d_map, d.deserialize_map(std::nullopt));
 
             if constexpr(requires { v.clear(); }) {
                 v.clear();
@@ -403,11 +403,11 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                 "auto map deserialization requires key_type parseable from JSON object keys");
             static_assert(std::default_initializable<mapped_t>,
                           "auto map deserialization requires default-constructible mapped_type");
-            static_assert(eventide::detail::map_insertable<V, key_t, mapped_t>,
+            static_assert(kota::detail::map_insertable<V, key_t, mapped_t>,
                           "cannot auto deserialize map: container does not support map insertion");
 
             while(true) {
-                ETD_EXPECTED_TRY_V(auto key, d_map.next_key());
+                KOTA_EXPECTED_TRY_V(auto key, d_map.next_key());
                 if(!key.has_value()) {
                     break;
                 }
@@ -415,7 +415,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                 auto parsed_key = serde::spelling::parse_map_key<key_t>(*key);
                 if(!parsed_key) {
                     if constexpr(requires { d_map.invalid_key(*key); }) {
-                        ETD_EXPECTED_TRY(d_map.invalid_key(*key));
+                        KOTA_EXPECTED_TRY(d_map.invalid_key(*key));
                         continue;
                     } else {
                         static_assert(
@@ -432,7 +432,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                     return std::unexpected(std::move(err));
                 }
 
-                eventide::detail::insert_map_entry(v, std::move(*parsed_key), std::move(mapped));
+                kota::detail::insert_map_entry(v, std::move(*parsed_key), std::move(mapped));
             }
 
             return d_map.end();
@@ -448,4 +448,4 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
     }
 }
 
-}  // namespace eventide::serde
+}  // namespace kota::codec

@@ -6,10 +6,10 @@
 #include <string>
 #include <type_traits>
 
-#include "eventide/reflection/attrs.h"
-#include "eventide/serde/serde/spelling.h"
+#include "kota/meta/attrs.h"
+#include "kota/codec/spelling.h"
 
-namespace eventide::serde::detail {
+namespace kota::codec::detail {
 
 /// Serialize-side behavior attribute dispatch.
 ///
@@ -89,4 +89,4 @@ constexpr auto apply_deserialize_behavior(value_t& value, Reader&& read, WithFn&
     }
 }
 
-}  // namespace eventide::serde::detail
+}  // namespace kota::codec::detail

@@ -2,9 +2,9 @@
 
 #include <expected>
 
-#include "eventide/serde/serde/traits.h"
+#include "kota/codec/traits.h"
 
-namespace eventide::serde {
+namespace kota::codec {
 
 template <typename S, typename T>
 struct serialize_traits;
@@ -21,4 +21,4 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E>;
 template <deserializer_like D, typename V, typename E = typename D::error_type>
 constexpr auto deserialize(D& d, V& v) -> std::expected<void, E>;
 
-}  // namespace eventide::serde
+}  // namespace kota::codec

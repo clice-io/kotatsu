@@ -3,10 +3,10 @@
 #include <string>
 #include <variant>
 
-#include "eventide/ipc/protocol.h"
-#include "eventide/async/async.h"
+#include "kota/ipc/protocol.h"
+#include "kota/async/async.h"
 
-namespace eventide::ipc {
+namespace kota::ipc {
 
 using Error = protocol::Error;
 
@@ -45,4 +45,4 @@ using IncomingMessage = std::variant<IncomingRequest,
                                      IncomingErrorResponse,
                                      IncomingParseError>;
 
-}  // namespace eventide::ipc
+}  // namespace kota::ipc

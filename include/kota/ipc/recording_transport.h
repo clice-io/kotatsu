@@ -6,9 +6,9 @@
 #include <string>
 #include <string_view>
 
-#include "eventide/ipc/transport.h"
+#include "kota/ipc/transport.h"
 
-namespace eventide::ipc {
+namespace kota::ipc {
 
 /// Transport decorator that records client-to-server messages to a JSONL file.
 /// Each line is: {"ts":<ms_since_start>,"msg":"<escaped_json>"}
@@ -33,4 +33,4 @@ private:
     std::chrono::steady_clock::time_point start;
 };
 
-}  // namespace eventide::ipc
+}  // namespace kota::ipc

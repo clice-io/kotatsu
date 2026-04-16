@@ -3,7 +3,7 @@
 #include <utility>
 
 #include "decl.h"
-#include "eventide/reflection/struct.h"
+#include "kota/meta/struct.h"
 
 namespace deco::ty {
 

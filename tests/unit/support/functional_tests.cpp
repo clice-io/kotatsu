@@ -5,7 +5,7 @@
 #include <eventide/zest/zest.h>
 #include <eventide/common/functional.h>
 
-using namespace eventide;
+using namespace kota;
 
 // --- Helpers ---
 

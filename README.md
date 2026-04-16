@@ -60,7 +60,7 @@ It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv)
 
 - Generated LSP protocol model (`include/eventide/ipc/lsp/protocol.h`).
 - LSP URI and position helpers (`URI`, `PositionMapper`).
-- LSP request/notification traits layered onto `eventide::ipc::protocol`.
+- LSP request/notification traits layered onto `kota::ipc::protocol`.
 - `ProgressReporter` for `$/progress` work-done notifications.
 
 ### `option` (`include/eventide/option/*`)
@@ -80,7 +80,7 @@ It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv)
 
 - **Dec**larative **o**ption library
 - Declarative CLI option definition macros (`DecoFlag`, `DecoKV`, `DecoInput`, `DecoPack`, etc.).
-- Reflection-driven compile-time option table generation on top of `eventide::option`.
+- Reflection-driven compile-time option table generation on top of `kota::option`.
 - Runtime parser + dispatch layer (`deco::cli::parse`, `Dispatcher`, `SubCommander`).
 - Built-in usage/help descriptor rendering and category constraints:
   - required options

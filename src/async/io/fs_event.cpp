@@ -1,12 +1,12 @@
-#include "eventide/async/io/fs_event.h"
+#include "kota/async/io/fs_event.h"
 
 #include <cassert>
 
 #include "awaiter.h"
-#include "eventide/async/io/loop.h"
-#include "eventide/async/vocab/error.h"
+#include "kota/async/io/loop.h"
+#include "kota/async/vocab/error.h"
 
-namespace eventide {
+namespace kota {
 
 struct fs_event::Self :
     uv::handle<fs_event::Self, uv_fs_event_t>,
@@ -192,4 +192,4 @@ task<fs_event::change, error> fs_event::wait() {
     co_return co_await fs_event_await{self.get()};
 }
 
-}  // namespace eventide
+}  // namespace kota

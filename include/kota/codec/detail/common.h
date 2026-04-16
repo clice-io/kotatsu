@@ -5,7 +5,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace eventide::serde {
+namespace kota::codec {
 
 namespace content {
 
@@ -113,4 +113,4 @@ using clean_t = remove_optional_t<remove_annotation_t<T>>;
 
 }  // namespace detail
 
-}  // namespace eventide::serde
+}  // namespace kota::codec

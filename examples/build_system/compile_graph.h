@@ -8,9 +8,9 @@
 #include <string>
 #include <vector>
 
-#include "eventide/async/async.h"
+#include "kota/async/async.h"
 
-namespace eventide {
+namespace kota {
 
 struct CompileUnit {
     std::string name;
@@ -120,4 +120,4 @@ private:
     delay_fn compile_delay_;
 };
 
-}  // namespace eventide
+}  // namespace kota

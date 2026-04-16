@@ -1,6 +1,6 @@
 #pragma once
 
-namespace eventide::option {
+namespace kota::option {
 
 /// OptSpecifier - Wrapper class for abstracting references to option IDs.
 class OptSpecifier {
@@ -29,4 +29,4 @@ public:
     }
 };
 
-}  // namespace eventide::option
+}  // namespace kota::option

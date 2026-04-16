@@ -1,9 +1,9 @@
 #include <optional>
 
-#include "eventide/zest/zest.h"
-#include "eventide/serde/content.h"
+#include "kota/zest/zest.h"
+#include "kota/codec/content.h"
 
-namespace eventide::serde {
+namespace kota::codec {
 
 namespace {
 
@@ -41,4 +41,4 @@ TEST_CASE(dom_value_and_str_require_closed_containers) {
 
 }  // namespace
 
-}  // namespace eventide::serde
+}  // namespace kota::codec

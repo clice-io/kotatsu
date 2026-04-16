@@ -10,10 +10,10 @@
 #include <variant>
 #include <vector>
 
-#include "eventide/common/expected_try.h"
-#include "eventide/serde/serde/serde.h"
+#include "kota/support/expected_try.h"
+#include "kota/codec/serde.h"
 
-namespace eventide::serde::detail {
+namespace kota::codec::detail {
 
 /// Shared array serializer for streaming backends (JSON, flexbuffers, etc.).
 /// `S` is the concrete Serializer type that provides `end_array()`.
@@ -102,12 +102,12 @@ public:
 
     template <typename T>
     status_t deserialize_element(T& value) {
-        ETD_EXPECTED_TRY_V(auto has_next_result, has_next());
+        KOTA_EXPECTED_TRY_V(auto has_next_result, has_next());
         if(!has_next_result) {
             return deserializer.mark_invalid();
         }
 
-        ETD_EXPECTED_TRY(deserializer.deserialize_element_value(array, index, value));
+        KOTA_EXPECTED_TRY(deserializer.deserialize_element_value(array, index, value));
 
         ++index;
         ++consumed_count;
@@ -115,7 +115,7 @@ public:
     }
 
     status_t skip_element() {
-        ETD_EXPECTED_TRY_V(auto has_next_result, has_next());
+        KOTA_EXPECTED_TRY_V(auto has_next_result, has_next());
         if(!has_next_result) {
             return deserializer.mark_invalid();
         }
@@ -130,7 +130,7 @@ public:
             return std::unexpected(deserializer.error());
         }
 
-        ETD_EXPECTED_TRY_V(auto has_next_result, has_next());
+        KOTA_EXPECTED_TRY_V(auto has_next_result, has_next());
 
         if(strict_length) {
             if(consumed_count != expected_length || has_next_result) {
@@ -226,7 +226,7 @@ public:
             return deserializer.mark_invalid();
         }
 
-        ETD_EXPECTED_TRY(deserializer.deserialize_entry_value(entries[index].value, value));
+        KOTA_EXPECTED_TRY(deserializer.deserialize_entry_value(entries[index].value, value));
 
         ++index;
         has_pending_value = false;
@@ -252,7 +252,7 @@ public:
         }
 
         if(has_pending_value) {
-            ETD_EXPECTED_TRY(skip_value());
+            KOTA_EXPECTED_TRY(skip_value());
         }
 
         index = entries.size();
@@ -279,17 +279,17 @@ protected:
 template <deserializer_like D>
 auto deserialize_bytes_from_seq(D& d, std::vector<std::byte>& value)
     -> std::expected<void, typename D::error_type> {
-    ETD_EXPECTED_TRY_V(auto seq, d.deserialize_seq(std::nullopt));
+    KOTA_EXPECTED_TRY_V(auto seq, d.deserialize_seq(std::nullopt));
 
     value.clear();
     while(true) {
-        ETD_EXPECTED_TRY_V(auto has_next, seq.has_next());
+        KOTA_EXPECTED_TRY_V(auto has_next, seq.has_next());
         if(!has_next) {
             break;
         }
 
         std::uint64_t byte = 0;
-        ETD_EXPECTED_TRY(seq.deserialize_element(byte));
+        KOTA_EXPECTED_TRY(seq.deserialize_element(byte));
         if(byte > static_cast<std::uint64_t>((std::numeric_limits<std::uint8_t>::max)())) {
             return std::unexpected(D::error_type::number_out_of_range);
         }
@@ -300,4 +300,4 @@ auto deserialize_bytes_from_seq(D& d, std::vector<std::byte>& value)
     return seq.end();
 }
 
-}  // namespace eventide::serde::detail
+}  // namespace kota::codec::detail

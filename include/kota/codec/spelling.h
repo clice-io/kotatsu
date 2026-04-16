@@ -11,11 +11,11 @@
 #include <utility>
 #include <vector>
 
-#include "eventide/common/naming.h"
-#include "eventide/common/type_traits.h"
-#include "eventide/reflection/enum.h"
+#include "kota/support/naming.h"
+#include "kota/support/type_traits.h"
+#include "kota/meta/enum.h"
 
-namespace eventide::serde {
+namespace kota::codec {
 
 namespace spelling {
 
@@ -253,4 +253,4 @@ using upper_case = spelling::rename_policy::upper_case;
 
 }  // namespace rename_policy
 
-}  // namespace eventide::serde
+}  // namespace kota::codec

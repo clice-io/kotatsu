@@ -6,7 +6,7 @@
 
 #include "awaiter.h"
 
-namespace eventide {
+namespace kota {
 
 namespace {
 
@@ -501,4 +501,4 @@ error stream::set_blocking(bool enabled) {
 
 stream::stream(unique_handle<Self> self) noexcept : self(std::move(self)) {}
 
-}  // namespace eventide
+}  // namespace kota

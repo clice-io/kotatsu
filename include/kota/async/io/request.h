@@ -2,13 +2,13 @@
 
 #include <optional>
 
-#include "eventide/common/function_traits.h"
-#include "eventide/common/functional.h"
-#include "eventide/async/io/loop.h"
-#include "eventide/async/runtime/task.h"
-#include "eventide/async/vocab/error.h"
+#include "kota/support/function_traits.h"
+#include "kota/support/functional.h"
+#include "kota/async/io/loop.h"
+#include "kota/async/runtime/task.h"
+#include "kota/async/vocab/error.h"
 
-namespace eventide {
+namespace kota {
 
 /// Run work on libuv's worker pool and complete when finished or with an error.
 task<void, error> queue(function<void()> fn, event_loop& loop = event_loop::current());
@@ -22,4 +22,4 @@ task<R, error> queue(Fn fn, event_loop& loop = event_loop::current()) {
     co_return std::move(*ret);
 }
 
-}  // namespace eventide
+}  // namespace kota

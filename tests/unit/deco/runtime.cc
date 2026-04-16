@@ -1,4 +1,4 @@
-#include "eventide/deco/detail/runtime.h"
+#include "kota/deco/detail/runtime.h"
 
 #include <filesystem>
 #include <fstream>
@@ -10,10 +10,10 @@
 #include <string_view>
 #include <vector>
 
-#include "eventide/deco/deco.h"
-#include "eventide/deco/detail/macro.h"
-#include "eventide/deco/detail/text.h"
-#include "eventide/zest/zest.h"
+#include "kota/deco/deco.h"
+#include "kota/deco/detail/macro.h"
+#include "kota/deco/detail/text.h"
+#include "kota/zest/zest.h"
 #include <eventide/zest/macro.h>
 
 namespace {
@@ -398,7 +398,7 @@ struct CatterSelf {
     <std::string> s;
 };
 
-auto runtime_alias_forward_pair(const eventide::option::ParsedArgumentOwning& arg)
+auto runtime_alias_forward_pair(const kota::option::ParsedArgumentOwning& arg)
     -> std::expected<std::vector<std::string>, std::string> {
     if(arg.values.empty()) {
         return std::unexpected(std::string("missing alias payload"));
@@ -406,7 +406,7 @@ auto runtime_alias_forward_pair(const eventide::option::ParsedArgumentOwning& ar
     return std::vector<std::string>{"--target", arg.values.front()};
 }
 
-auto runtime_alias_forward_pair_with_context(const eventide::option::ParsedArgumentOwning&,
+auto runtime_alias_forward_pair_with_context(const kota::option::ParsedArgumentOwning&,
                                              const deco::decl::IntoContext& context)
     -> std::expected<std::vector<std::string>, std::string> {
     return std::unexpected(context.format_error("ctx failure"));

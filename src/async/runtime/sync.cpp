@@ -1,8 +1,8 @@
-#include "eventide/async/runtime/sync.h"
+#include "kota/async/runtime/sync.h"
 
 #include <cassert>
 
-namespace eventide {
+namespace kota {
 
 void sync_primitive::insert(waiter_link* link) {
     assert(link && "insert: null waiter_link");
@@ -68,4 +68,4 @@ bool sync_primitive::cancel_waiter(waiter_link* link) noexcept {
     return true;
 }
 
-}  // namespace eventide
+}  // namespace kota

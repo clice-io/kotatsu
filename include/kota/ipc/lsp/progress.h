@@ -4,10 +4,10 @@
 #include <string>
 #include <utility>
 
-#include "eventide/ipc/peer.h"
-#include "eventide/ipc/lsp/protocol.h"
+#include "kota/ipc/peer.h"
+#include "kota/ipc/lsp/protocol.h"
 
-namespace eventide::ipc::lsp {
+namespace kota::ipc::lsp {
 
 template <typename PeerT>
 class ProgressReporter {
@@ -80,4 +80,4 @@ private:
     }
 };
 
-}  // namespace eventide::ipc::lsp
+}  // namespace kota::ipc::lsp

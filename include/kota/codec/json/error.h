@@ -3,23 +3,23 @@
 #include <cstdint>
 #include <string_view>
 
-#include "eventide/serde/serde/error.h"
+#include "kota/codec/error.h"
 
 #if __has_include(<simdjson.h>)
 #include <simdjson.h>
-#define ETD_SERDE_JSON_ERROR_HAS_SIMDJSON 1
+#define KOTA_SERDE_JSON_ERROR_HAS_SIMDJSON 1
 #else
-#define ETD_SERDE_JSON_ERROR_HAS_SIMDJSON 0
+#define KOTA_SERDE_JSON_ERROR_HAS_SIMDJSON 0
 #endif
 
 #if __has_include(<yyjson.h>)
 #include <yyjson.h>
-#define ETD_SERDE_JSON_ERROR_HAS_YYJSON 1
+#define KOTA_SERDE_JSON_ERROR_HAS_YYJSON 1
 #else
-#define ETD_SERDE_JSON_ERROR_HAS_YYJSON 0
+#define KOTA_SERDE_JSON_ERROR_HAS_YYJSON 0
 #endif
 
-namespace eventide::serde::json {
+namespace kota::codec::json {
 
 enum class error_kind : std::uint16_t {
     ok = 0,
@@ -58,7 +58,7 @@ constexpr auto error_message(error_kind error) noexcept -> std::string_view {
     }
 }
 
-#if ETD_SERDE_JSON_ERROR_HAS_SIMDJSON
+#if KOTA_SERDE_JSON_ERROR_HAS_SIMDJSON
 constexpr auto make_error(simdjson::error_code error) noexcept -> error_kind {
     switch(error) {
         case simdjson::SUCCESS: return error_kind::ok;
@@ -76,7 +76,7 @@ constexpr auto make_error(simdjson::error_code error) noexcept -> error_kind {
 
 #endif
 
-#if ETD_SERDE_JSON_ERROR_HAS_YYJSON
+#if KOTA_SERDE_JSON_ERROR_HAS_YYJSON
 constexpr auto make_read_error(yyjson_read_code error) noexcept -> error_kind {
 #ifdef YYJSON_READ_SUCCESS
     if(error == YYJSON_READ_SUCCESS) {
@@ -96,6 +96,6 @@ constexpr auto make_write_error(yyjson_write_code error) noexcept -> error_kind 
 }
 #endif
 
-using error = eventide::serde::serde_error<error_kind>;
+using error = kota::codec::serde_error<error_kind>;
 
-}  // namespace eventide::serde::json
+}  // namespace kota::codec::json

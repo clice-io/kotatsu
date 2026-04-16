@@ -8,7 +8,7 @@ eventide_add_git_dependency(
         LIBUV_BUILD_SHARED OFF
         LIBUV_BUILD_STATIC ON
         UV_LINT_W4 OFF
-        # We manage sanitizers at the top-level (ETD_SANITIZE_*). libuv's internal
+        # We manage sanitizers at the top-level (KOTA_SANITIZE_*). libuv's internal
         # sanitizer flags can cause mismatched link flags and, on Windows+clang-cl,
         # tries to copy runtime DLLs from the compiler dir which doesn't work for
         # some toolchain layouts (e.g. pixi/conda).
@@ -32,10 +32,10 @@ if(NOT MSVC AND TARGET uv_a)
     )
 endif()
 
-add_library(eventide_async STATIC)
-add_library(eventide::async ALIAS eventide_async)
+add_library(kota_async STATIC)
+add_library(kota::async ALIAS kota_async)
 
-target_sources(eventide_async PRIVATE
+target_sources(kota_async PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/runtime/debug.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/runtime/frame.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/runtime/sync.cpp"
@@ -53,12 +53,12 @@ target_sources(eventide_async PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/io/watcher.cpp"
 )
 
-target_include_directories(eventide_async PUBLIC
+target_include_directories(kota_async PUBLIC
     "${PROJECT_SOURCE_DIR}/include"
 )
 
-target_link_libraries(eventide_async PUBLIC
+target_link_libraries(kota_async PUBLIC
     libuv::libuv
 )
 
-eventide_apply_project_options(eventide_async)
+kota_apply_project_options(kota_async)

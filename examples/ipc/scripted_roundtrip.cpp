@@ -8,8 +8,8 @@
 #include <utility>
 #include <vector>
 
-#include "eventide/ipc/codec/json.h"
-#include "eventide/async/async.h"
+#include "kota/ipc/codec/json.h"
+#include "kota/async/async.h"
 
 namespace et = eventide;
 namespace ipc = et::ipc;

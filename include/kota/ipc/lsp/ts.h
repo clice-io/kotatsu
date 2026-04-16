@@ -12,10 +12,10 @@
 #include <variant>
 #include <vector>
 
-#include "eventide/ipc/protocol.h"
-#include "eventide/serde/serde/serde.h"
+#include "kota/ipc/protocol.h"
+#include "kota/codec/serde.h"
 
-namespace eventide::ipc::protocol {
+namespace kota::ipc::protocol {
 
 /// For `undefined | bool` .
 using optional_bool = refl::skip_if_default<bool>;
@@ -87,36 +87,36 @@ struct IncomingMessage {
     optional<string> error_json;
 };
 
-}  // namespace eventide::ipc::protocol
+}  // namespace kota::ipc::protocol
 
-namespace eventide::ipc::lsp {
+namespace kota::ipc::lsp {
 
-namespace protocol = eventide::ipc::protocol;
+namespace protocol = kota::ipc::protocol;
 
-}  // namespace eventide::ipc::lsp
+}  // namespace kota::ipc::lsp
 
-namespace eventide::serde {
+namespace kota::codec {
 
 template <serializer_like S>
-struct serialize_traits<S, eventide::ipc::protocol::LSPAny> {
+struct serialize_traits<S, kota::ipc::protocol::LSPAny> {
     using value_type = typename S::value_type;
     using error_type = typename S::error_type;
 
-    static auto serialize(S& serializer, const eventide::ipc::protocol::LSPAny& value)
+    static auto serialize(S& serializer, const kota::ipc::protocol::LSPAny& value)
         -> std::expected<value_type, error_type> {
-        const auto& variant = static_cast<const eventide::ipc::protocol::LSPVariant&>(value);
+        const auto& variant = static_cast<const kota::ipc::protocol::LSPVariant&>(value);
         return std::visit([&](const auto& item) { return serde::serialize(serializer, item); },
                           variant);
     }
 };
 
 template <deserializer_like D>
-struct deserialize_traits<D, eventide::ipc::protocol::LSPAny> {
+struct deserialize_traits<D, kota::ipc::protocol::LSPAny> {
     using error_type = typename D::error_type;
 
-    static auto deserialize(D& deserializer, eventide::ipc::protocol::LSPAny& value)
+    static auto deserialize(D& deserializer, kota::ipc::protocol::LSPAny& value)
         -> std::expected<void, error_type> {
-        eventide::ipc::protocol::LSPVariant variant{};
+        kota::ipc::protocol::LSPVariant variant{};
         auto status = serde::deserialize(deserializer, variant);
         if(!status) {
             return std::unexpected(status.error());
@@ -127,4 +127,4 @@ struct deserialize_traits<D, eventide::ipc::protocol::LSPAny> {
     }
 };
 
-}  // namespace eventide::serde
+}  // namespace kota::codec

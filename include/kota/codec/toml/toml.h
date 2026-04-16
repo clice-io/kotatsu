@@ -9,11 +9,11 @@
 #include <type_traits>
 #include <utility>
 
-#include "eventide/serde/toml/deserializer.h"
-#include "eventide/serde/toml/error.h"
-#include "eventide/serde/toml/serializer.h"
+#include "kota/codec/toml/deserializer.h"
+#include "kota/codec/toml/error.h"
+#include "kota/codec/toml/serializer.h"
 
-namespace eventide::serde::toml {
+namespace kota::codec::toml {
 
 inline auto parse_table(std::string_view text) -> std::expected<::toml::table, error> {
 #if TOML_EXCEPTIONS
@@ -62,9 +62,9 @@ auto to_string(const T& value) -> std::expected<std::string, error> {
     return out.str();
 }
 
-}  // namespace eventide::serde::toml
+}  // namespace kota::codec::toml
 
-namespace eventide::serde {
+namespace kota::codec {
 
 template <typename T>
 concept toml_dynamic_dom_type = std::same_as<std::remove_cvref_t<T>, ::toml::table> ||
@@ -111,4 +111,4 @@ struct deserialize_traits<toml::Deserializer<Config>, ::toml::array> {
     }
 };
 
-}  // namespace eventide::serde
+}  // namespace kota::codec

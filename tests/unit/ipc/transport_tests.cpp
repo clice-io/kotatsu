@@ -8,11 +8,11 @@
 
 #include "test_transport.h"
 #include "../common/fd_helpers.h"
-#include "eventide/ipc/transport.h"
-#include "eventide/zest/zest.h"
-#include "eventide/async/async.h"
+#include "kota/ipc/transport.h"
+#include "kota/zest/zest.h"
+#include "kota/async/async.h"
 
-namespace eventide::ipc {
+namespace kota::ipc {
 
 using test::create_pipe;
 using test::close_fd;
@@ -278,4 +278,4 @@ TEST_CASE(large_payload_single_chunk) {
 
 };  // TEST_SUITE(ipc_transport)
 
-}  // namespace eventide::ipc
+}  // namespace kota::ipc

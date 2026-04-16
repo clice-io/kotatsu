@@ -8,13 +8,13 @@
 #include <string_view>
 #include <utility>
 
-#include "eventide/ipc/codec.h"
-#include "eventide/ipc/logger.h"
-#include "eventide/ipc/transport.h"
-#include "eventide/async/async.h"
-#include "eventide/serde/serde/raw_value.h"
+#include "kota/ipc/codec.h"
+#include "kota/ipc/logger.h"
+#include "kota/ipc/transport.h"
+#include "kota/async/async.h"
+#include "kota/codec/raw_value.h"
 
-namespace eventide::ipc {
+namespace kota::ipc {
 
 template <typename Codec>
 class Peer;
@@ -160,8 +160,8 @@ private:
     std::unique_ptr<Self> self;
 };
 
-}  // namespace eventide::ipc
+}  // namespace kota::ipc
 
-#define ETD_IPC_PEER_INL_FROM_HEADER
-#include "eventide/ipc/peer.inl"
-#undef ETD_IPC_PEER_INL_FROM_HEADER
+#define KOTA_IPC_PEER_INL_FROM_HEADER
+#include "kota/ipc/peer.inl"
+#undef KOTA_IPC_PEER_INL_FROM_HEADER

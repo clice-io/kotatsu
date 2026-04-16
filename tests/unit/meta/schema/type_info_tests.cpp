@@ -11,10 +11,10 @@
 #include <variant>
 #include <vector>
 
-#include "eventide/zest/zest.h"
-#include "eventide/reflection/schema.h"
+#include "kota/zest/zest.h"
+#include "kota/meta/schema.h"
 
-namespace eventide::refl {
+namespace kota::meta {
 
 namespace test_schema {
 
@@ -130,7 +130,7 @@ inline auto disabled_range_iter::operator*() const -> disabled_range {
 }
 
 static_assert(std::ranges::input_range<disabled_range>);
-static_assert(eventide::format_kind<disabled_range> == eventide::range_format::disabled);
+static_assert(kota::format_kind<disabled_range> == kota::range_format::disabled);
 
 }  // namespace test_schema
 
@@ -528,4 +528,4 @@ TEST_CASE(disabled_range_type_info_is_unknown) {
 
 }  // namespace
 
-}  // namespace eventide::refl
+}  // namespace kota::meta

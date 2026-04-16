@@ -19,21 +19,21 @@
 #include <variant>
 #include <vector>
 
-#include "eventide/common/expected_try.h"
-#include "eventide/common/ranges.h"
-#include "eventide/serde/flatbuffers/schema.h"
-#include "eventide/serde/serde/config.h"
-#include "eventide/serde/serde/serde.h"
-#include "eventide/serde/serde/utils/common.h"
+#include "kota/support/expected_try.h"
+#include "kota/support/ranges.h"
+#include "kota/codec/flatbuffers/schema.h"
+#include "kota/codec/config.h"
+#include "kota/codec/serde.h"
+#include "kota/codec/detail/common.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
 #include <flatbuffers/flatbuffers.h>
 #else
 #error                                                                                             \
-    "flatbuffers/flatbuffers.h not found. Enable ETD_SERDE_ENABLE_FLATBUFFERS or add flatbuffers include paths."
+    "flatbuffers/flatbuffers.h not found. Enable KOTA_SERDE_ENABLE_FLATBUFFERS or add flatbuffers include paths."
 #endif
 
-namespace eventide::serde::flatbuffers {
+namespace kota::codec::flatbuffers {
 
 enum class object_error_code : std::uint8_t {
     none = 0,
@@ -109,7 +109,7 @@ public:
 
         template <typename T>
         status_t serialize_element(const T& value) {
-            ETD_EXPECTED_TRY_V(auto encoded, serde::serialize(serializer, value));
+            KOTA_EXPECTED_TRY_V(auto encoded, serde::serialize(serializer, value));
             elements.push_back(encoded);
             return {};
         }
@@ -133,7 +133,7 @@ public:
 
         template <typename T>
         status_t serialize_element(const T& value) {
-            ETD_EXPECTED_TRY_V(auto field_id, detail::field_voffset(next_index));
+            KOTA_EXPECTED_TRY_V(auto field_id, detail::field_voffset(next_index));
             ++next_index;
 
             return serializer.collect_field(writers, field_id, value);
@@ -162,10 +162,10 @@ public:
         status_t serialize_entry(const K& key, const V& value) {
             std::vector<std::function<void()>> writers;
 
-            ETD_EXPECTED_TRY(serializer.collect_field(writers, detail::first_field, key));
-            ETD_EXPECTED_TRY_V(auto value_field, detail::field_voffset(1));
-            ETD_EXPECTED_TRY(serializer.collect_field(writers, value_field, value));
-            ETD_EXPECTED_TRY_V(auto entry, serializer.finish_table(writers));
+            KOTA_EXPECTED_TRY(serializer.collect_field(writers, detail::first_field, key));
+            KOTA_EXPECTED_TRY_V(auto value_field, detail::field_voffset(1));
+            KOTA_EXPECTED_TRY(serializer.collect_field(writers, value_field, value));
+            KOTA_EXPECTED_TRY_V(auto entry, serializer.finish_table(writers));
             entries.push_back(entry);
 
             return {};
@@ -190,7 +190,7 @@ public:
 
         template <typename T>
         status_t serialize_field(std::string_view /*key*/, const T& value) {
-            ETD_EXPECTED_TRY_V(auto field_id, detail::field_voffset(next_index));
+            KOTA_EXPECTED_TRY_V(auto field_id, detail::field_voffset(next_index));
             ++next_index;
             return serializer.collect_field(writers, field_id, value);
         }
@@ -211,7 +211,7 @@ public:
     auto bytes(const T& value) -> result_t<std::vector<std::uint8_t>> {
         builder.Clear();
 
-        ETD_EXPECTED_TRY_V(auto root, serde::serialize(*this, value));
+        KOTA_EXPECTED_TRY_V(auto root, serde::serialize(*this, value));
 
         builder.Finish(root, detail::buffer_identifier);
         const auto* begin = builder.GetBufferPointer();
@@ -327,7 +327,7 @@ private:
             if(serializer == nullptr || writers == nullptr) {
                 return std::unexpected(object_error_code::invalid_state);
             }
-            ETD_EXPECTED_TRY_V(auto field_id, detail::field_voffset(current_index));
+            KOTA_EXPECTED_TRY_V(auto field_id, detail::field_voffset(current_index));
             return serializer->collect_field(*writers, field_id, field_value);
         }
     };
@@ -335,7 +335,7 @@ private:
     template <typename T>
     auto encode_boxed(const T& value) -> result_t<value_type> {
         std::vector<std::function<void()>> writers;
-        ETD_EXPECTED_TRY(collect_field(writers, detail::first_field, value));
+        KOTA_EXPECTED_TRY(collect_field(writers, detail::first_field, value));
         return finish_table(writers);
     }
 
@@ -464,10 +464,10 @@ private:
         offsets.reserve(entries.size());
         for(const auto& [key, mapped]: entries) {
             std::vector<std::function<void()>> writers;
-            ETD_EXPECTED_TRY(collect_field(writers, detail::first_field, key));
-            ETD_EXPECTED_TRY_V(auto value_field, detail::field_voffset(1));
-            ETD_EXPECTED_TRY(collect_field(writers, value_field, mapped));
-            ETD_EXPECTED_TRY_V(auto entry, finish_table(writers));
+            KOTA_EXPECTED_TRY(collect_field(writers, detail::first_field, key));
+            KOTA_EXPECTED_TRY_V(auto value_field, detail::field_voffset(1));
+            KOTA_EXPECTED_TRY(collect_field(writers, value_field, mapped));
+            KOTA_EXPECTED_TRY_V(auto entry, finish_table(writers));
             offsets.push_back(entry);
         }
 
@@ -559,7 +559,7 @@ private:
                 elements.reserve(value.size());
             }
             for(const auto& element: value) {
-                ETD_EXPECTED_TRY_V(auto tuple, encode_tuple_like(element));
+                KOTA_EXPECTED_TRY_V(auto tuple, encode_tuple_like(element));
                 elements.push_back(tuple);
             }
             auto offset = builder.CreateVector(elements);
@@ -582,7 +582,7 @@ private:
                 elements.reserve(value.size());
             }
             for(const auto& element: value) {
-                ETD_EXPECTED_TRY_V(auto table, encode_table(element));
+                KOTA_EXPECTED_TRY_V(auto table, encode_table(element));
                 elements.push_back(table);
             }
             auto offset = builder.CreateVector(elements);
@@ -594,7 +594,7 @@ private:
                 elements.reserve(value.size());
             }
             for(const auto& element: value) {
-                ETD_EXPECTED_TRY_V(auto boxed, encode_boxed(element));
+                KOTA_EXPECTED_TRY_V(auto boxed, encode_boxed(element));
                 elements.push_back(boxed);
             }
             auto offset = builder.CreateVector(elements);
@@ -666,20 +666,20 @@ private:
             push_add_offset(writers, field, offset.o);
             return {};
         } else if constexpr(is_specialization_of<std::variant, U>) {
-            ETD_EXPECTED_TRY_V(auto offset, encode_variant(value));
+            KOTA_EXPECTED_TRY_V(auto offset, encode_variant(value));
             push_add_offset(writers, field, offset.o);
             return {};
         } else if constexpr(std::ranges::input_range<clean_t>) {
-            constexpr auto kind = eventide::format_kind<clean_t>;
-            if constexpr(kind == eventide::range_format::map) {
-                ETD_EXPECTED_TRY_V(auto offset, encode_map(value));
+            constexpr auto kind = kota::format_kind<clean_t>;
+            if constexpr(kind == kota::range_format::map) {
+                KOTA_EXPECTED_TRY_V(auto offset, encode_map(value));
                 push_add_offset(writers, field, offset.o);
                 return {};
             } else {
                 return collect_sequence_field(writers, field, value);
             }
         } else if constexpr(is_pair_v<clean_t> || is_tuple_v<clean_t>) {
-            ETD_EXPECTED_TRY_V(auto offset, encode_tuple_like(value));
+            KOTA_EXPECTED_TRY_V(auto offset, encode_tuple_like(value));
             push_add_offset(writers, field, offset.o);
             return {};
         } else if constexpr(can_inline_struct_v<clean_t>) {
@@ -687,7 +687,7 @@ private:
             writers.push_back([this, field, copy] { builder.AddStruct(field, &copy); });
             return {};
         } else if constexpr(refl::reflectable_class<clean_t>) {
-            ETD_EXPECTED_TRY_V(auto offset, encode_table(value));
+            KOTA_EXPECTED_TRY_V(auto offset, encode_table(value));
             push_add_offset(writers, field, offset.o);
             return {};
         } else {
@@ -708,9 +708,9 @@ auto to_flatbuffer(const T& value, std::optional<std::size_t> initial_capacity =
 
 static_assert(serde::serializer_like<Serializer<>>);
 
-}  // namespace eventide::serde::flatbuffers
+}  // namespace kota::codec::flatbuffers
 
-namespace eventide::serde {
+namespace kota::codec {
 
 template <typename Config, typename T>
     requires refl::reflectable_class<std::remove_cvref_t<T>>
@@ -758,4 +758,4 @@ struct serialize_traits<flatbuffers::Serializer<Config>, T> {
     }
 };
 
-}  // namespace eventide::serde
+}  // namespace kota::codec

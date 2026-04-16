@@ -4,10 +4,10 @@
 #include <string>
 #include <vector>
 
-#include "eventide/zest/zest.h"
-#include "eventide/serde/flatbuffers/schema.h"
+#include "kota/zest/zest.h"
+#include "kota/codec/flatbuffers/schema.h"
 
-namespace eventide::serde {
+namespace kota::codec {
 
 namespace {
 
@@ -68,6 +68,6 @@ TEST_CASE(sorted_entries_support_binary_search_lookup) {
 
 }  // namespace
 
-}  // namespace eventide::serde
+}  // namespace kota::codec
 
 #endif

@@ -1,20 +1,20 @@
-add_library(eventide_ipc STATIC)
-add_library(eventide::ipc ALIAS eventide_ipc)
+add_library(kota_ipc STATIC)
+add_library(kota::ipc ALIAS kota_ipc)
 
-target_sources(eventide_ipc PRIVATE
+target_sources(kota_ipc PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/transport.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/recording_transport.cpp"
 )
 
-target_include_directories(eventide_ipc PUBLIC
+target_include_directories(kota_ipc PUBLIC
     "${PROJECT_SOURCE_DIR}/include"
 )
 
-target_link_libraries(eventide_ipc PUBLIC
-    eventide::async
+target_link_libraries(kota_ipc PUBLIC
+    kota::async
 )
 
-eventide_apply_project_options(eventide_ipc)
+kota_apply_project_options(kota_ipc)
 
 add_subdirectory(codec)
 add_subdirectory(lsp)

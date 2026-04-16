@@ -1,7 +1,7 @@
 #pragma once
 
-#ifndef ETD_IPC_PEER_INL_FROM_HEADER
-#include "eventide/ipc/peer.h"
+#ifndef KOTA_IPC_PEER_INL_FROM_HEADER
+#include "kota/ipc/peer.h"
 #endif
 
 #include <deque>
@@ -18,7 +18,7 @@
 #include <utility>
 #include <vector>
 
-#include "eventide/common/function_traits.h"
+#include "kota/support/function_traits.h"
 
 // Lazy log macro: level check happens before std::format is evaluated.
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
@@ -28,7 +28,7 @@
             (self_ptr)->logger((lvl), std::format(fmt, __VA_ARGS__));                              \
     } while(false)
 
-namespace eventide::ipc {
+namespace kota::ipc {
 
 namespace detail {
 
@@ -719,6 +719,6 @@ void Peer<CodecT>::bind_notification_callback(std::string_view method, Callback&
     register_notification_callback(method, std::move(wrapped));
 }
 
-}  // namespace eventide::ipc
+}  // namespace kota::ipc
 
 #undef ET_IPC_LOG

@@ -1,12 +1,12 @@
 #pragma once
 
-#ifndef ETD_SERDE_CONTENT_DOM_INL_INCLUDED
-#define ETD_SERDE_CONTENT_DOM_INL_INCLUDED 1
+#ifndef KOTA_SERDE_CONTENT_DOM_INL_INCLUDED
+#define KOTA_SERDE_CONTENT_DOM_INL_INCLUDED 1
 #endif
 
-#include "eventide/serde/content/dom.h"
+#include "kota/codec/content/dom.h"
 
-namespace eventide::serde::content {
+namespace kota::codec::content {
 
 inline TaggedRef::TaggedRef(const yyjson_val* value) noexcept :
     tagged_handle_value(tag_handle(value, false)) {}
@@ -1372,4 +1372,4 @@ inline auto Document::to_json_string() const -> std::expected<std::string, error
     return json;
 }
 
-}  // namespace eventide::serde::content
+}  // namespace kota::codec::content

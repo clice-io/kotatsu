@@ -8,7 +8,7 @@
 #include <string_view>
 #include <utility>
 
-namespace eventide {
+namespace kota {
 
 /// A string_view extension with convenient string manipulation methods.
 /// Inherits from std::string_view and adds operations like split, trim,
@@ -489,4 +489,4 @@ public:
     }
 };
 
-}  // namespace eventide
+}  // namespace kota

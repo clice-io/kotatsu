@@ -13,15 +13,15 @@
 #include <variant>
 #include <vector>
 
-#include "eventide/common/expected_try.h"
-#include "eventide/serde/content/dom.h"
-#include "eventide/serde/content/error.h"
-#include "eventide/serde/serde/config.h"
-#include "eventide/serde/serde/serde.h"
-#include "eventide/serde/serde/utils/backend_helpers.h"
-#include "eventide/serde/serde/utils/narrow.h"
+#include "kota/support/expected_try.h"
+#include "kota/codec/content/dom.h"
+#include "kota/codec/content/error.h"
+#include "kota/codec/config.h"
+#include "kota/codec/serde.h"
+#include "kota/codec/detail/backend_helpers.h"
+#include "kota/codec/detail/narrow.h"
 
-namespace eventide::serde::content {
+namespace kota::codec::content {
 
 template <typename Config = config::default_config>
 class Deserializer {
@@ -267,17 +267,17 @@ public:
     }
 
     result_t<DeserializeSeq> deserialize_seq(std::optional<std::size_t> len) {
-        ETD_EXPECTED_TRY_V(auto array, open_array());
+        KOTA_EXPECTED_TRY_V(auto array, open_array());
         return DeserializeSeq(*this, array, len.value_or(0), false);
     }
 
     result_t<DeserializeTuple> deserialize_tuple(std::size_t len) {
-        ETD_EXPECTED_TRY_V(auto array, open_array());
+        KOTA_EXPECTED_TRY_V(auto array, open_array());
         return DeserializeTuple(*this, array, len, true);
     }
 
     result_t<DeserializeMap> deserialize_map(std::optional<std::size_t> /*len*/) {
-        ETD_EXPECTED_TRY_V(auto object, open_object());
+        KOTA_EXPECTED_TRY_V(auto object, open_object());
 
         DeserializeMap map(*this, object);
         if(!is_valid) {
@@ -287,7 +287,7 @@ public:
     }
 
     result_t<DeserializeStruct> deserialize_struct(std::string_view /*name*/, std::size_t /*len*/) {
-        ETD_EXPECTED_TRY_V(auto object, open_object());
+        KOTA_EXPECTED_TRY_V(auto object, open_object());
 
         DeserializeStruct structure(*this, object);
         if(!is_valid) {
@@ -297,7 +297,7 @@ public:
     }
 
     result_t<content::Value> capture_dom_value() {
-        ETD_EXPECTED_TRY_V(auto source, consume_value_ref());
+        KOTA_EXPECTED_TRY_V(auto source, consume_value_ref());
         auto copied = content::Value::copy_of(source);
         if(!copied.has_value()) {
             return mark_invalid(copied.error());
@@ -501,4 +501,4 @@ private:
 
 static_assert(serde::deserializer_like<Deserializer<>>);
 
-}  // namespace eventide::serde::content
+}  // namespace kota::codec::content

@@ -1,13 +1,13 @@
-#include "eventide/async/io/request.h"
+#include "kota/async/io/request.h"
 
 #include <cassert>
 
 #include "awaiter.h"
-#include "eventide/async/io/loop.h"
-#include "eventide/async/runtime/task.h"
-#include "eventide/async/vocab/error.h"
+#include "kota/async/io/loop.h"
+#include "kota/async/runtime/task.h"
+#include "kota/async/vocab/error.h"
 
-namespace eventide {
+namespace kota {
 
 namespace {
 
@@ -75,4 +75,4 @@ task<void, error> queue(function<void()> fn, event_loop& loop) {
     }
 }
 
-}  // namespace eventide
+}  // namespace kota

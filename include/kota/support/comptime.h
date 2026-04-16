@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-namespace eventide::comptime {
+namespace kota::comptime {
 
 template <size_t reserved>
 struct Record {
@@ -314,4 +314,4 @@ public:
     }
 };
 
-}  // namespace eventide::comptime
+}  // namespace kota::comptime

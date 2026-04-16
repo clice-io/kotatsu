@@ -8,10 +8,10 @@
 #include <variant>
 #include <vector>
 
-#include "eventide/zest/zest.h"
-#include "eventide/reflection/type_kind.h"
+#include "kota/zest/zest.h"
+#include "kota/meta/type_kind.h"
 
-namespace eventide::refl {
+namespace kota::meta {
 
 namespace test_schema {
 
@@ -70,4 +70,4 @@ TEST_CASE(compounds) {
 
 }  // namespace
 
-}  // namespace eventide::refl
+}  // namespace kota::meta

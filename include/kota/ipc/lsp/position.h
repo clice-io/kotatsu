@@ -6,9 +6,9 @@
 #include <string_view>
 #include <vector>
 
-#include "eventide/ipc/lsp/protocol.h"
+#include "kota/ipc/lsp/protocol.h"
 
-namespace eventide::ipc::lsp {
+namespace kota::ipc::lsp {
 
 /// Position unit encoding used by LSP line/character coordinates.
 enum class PositionEncoding : std::uint8_t {
@@ -66,4 +66,4 @@ private:
     std::vector<std::uint32_t> line_starts;
 };
 
-}  // namespace eventide::ipc::lsp
+}  // namespace kota::ipc::lsp

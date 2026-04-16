@@ -1,10 +1,10 @@
-#include "eventide/deco/detail/text.h"
+#include "kota/deco/detail/text.h"
 
 #include <algorithm>
 #include <format>
 #include <utility>
 
-#include "eventide/deco/detail/config.h"
+#include "kota/deco/detail/config.h"
 
 namespace deco::cli::text {
 namespace {

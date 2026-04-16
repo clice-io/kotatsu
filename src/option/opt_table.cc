@@ -10,9 +10,9 @@
 #include <string_view>
 #include <vector>
 
-#include "eventide/option/option.h"
+#include "kota/option/option.h"
 
-using namespace eventide::option;
+using namespace kota::option;
 
 namespace {
 

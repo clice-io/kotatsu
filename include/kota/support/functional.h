@@ -9,7 +9,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace eventide {
+namespace kota {
 
 template <auto V, typename T = decltype(V)>
 struct mem_fn {
@@ -544,4 +544,4 @@ constexpr function<typename Mem::FunctionType> bind(Class&& obj) {
     return function<typename Mem::FunctionType>::make(std::forward<Class>(obj), Mem{});
 }
 
-}  // namespace eventide
+}  // namespace kota

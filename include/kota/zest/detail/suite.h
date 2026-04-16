@@ -1,9 +1,9 @@
 #pragma once
 
-#include "eventide/zest/detail/registry.h"
-#include "eventide/common/fixed_string.h"
+#include "kota/zest/detail/registry.h"
+#include "kota/support/fixed_string.h"
 
-namespace eventide::zest {
+namespace kota::zest {
 
 /// Merge suite-level and case-level test attributes.
 /// Case-level flags override suite defaults when explicitly set to true.
@@ -69,4 +69,4 @@ struct TestSuiteDef {
     }();
 };
 
-}  // namespace eventide::zest
+}  // namespace kota::zest

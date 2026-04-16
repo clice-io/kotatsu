@@ -8,9 +8,9 @@
 #include <type_traits>
 #include <utility>
 
-#include "eventide/serde/serde/traits.h"
+#include "kota/codec/traits.h"
 
-namespace eventide::serde::detail {
+namespace kota::codec::detail {
 
 /// Narrow int64_t to a smaller signed integer type. Returns error if out of range.
 template <int_like T, typename E>
@@ -56,4 +56,4 @@ auto narrow_char(std::string_view text, E type_error) -> std::expected<char, E> 
     return text.front();
 }
 
-}  // namespace eventide::serde::detail
+}  // namespace kota::codec::detail

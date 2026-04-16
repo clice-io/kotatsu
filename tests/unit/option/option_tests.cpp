@@ -9,12 +9,12 @@
 #include <string_view>
 #include <vector>
 
-#include "eventide/option/option.h"
-#include "eventide/zest/zest.h"
+#include "kota/option/option.h"
+#include "kota/zest/zest.h"
 
 namespace {
 
-namespace opt = eventide::option;
+namespace opt = kota::option;
 using namespace std::literals::string_view_literals;
 
 std::vector<std::string> split2vec(std::string_view str) {
@@ -127,7 +127,7 @@ struct ProxyParsedOption {
 ProxyParsedOption parse_proxy_opt(std::span<std::string> argv_span, bool with_program_name = true) {
     ProxyParsedOption option{};
     auto argv = with_program_name ? argv_span.subspan(1) : argv_span;
-#if ETD_ENABLE_EXCEPTIONS
+#if KOTA_ENABLE_EXCEPTIONS
     if(argv.empty()) {
         throw std::invalid_argument("no arguments provided");
     }
@@ -165,7 +165,7 @@ ProxyParsedOption parse_proxy_opt(std::span<std::string> argv_span, bool with_pr
     });
 
     if(!error.empty()) {
-#if ETD_ENABLE_EXCEPTIONS
+#if KOTA_ENABLE_EXCEPTIONS
         throw std::invalid_argument(error);
 #else
         option.argv = std::unexpected(error);
@@ -309,7 +309,7 @@ TEST_CASE(proxy_parser_parse_opt_success) {
         EXPECT_TRUE(result.argv.has_value());
         EXPECT_EQ(result.argv.value().size(), 0U);
     };
-#if ETD_ENABLE_EXCEPTIONS
+#if KOTA_ENABLE_EXCEPTIONS
     EXPECT_NOTHROWS(f());
 #else
     f();
@@ -327,7 +327,7 @@ TEST_CASE(proxy_parser_parse_opt_with_input_args) {
         EXPECT_EQ(result.argv.value()[0], "script.py");
         EXPECT_EQ(result.argv.value()[1], "--verbose");
     };
-#if ETD_ENABLE_EXCEPTIONS
+#if KOTA_ENABLE_EXCEPTIONS
     EXPECT_NOTHROWS(f());
 #else
     f();
@@ -336,7 +336,7 @@ TEST_CASE(proxy_parser_parse_opt_with_input_args) {
 
 TEST_CASE(proxy_parser_parse_opt_error_handling) {
     auto argv = split2vec("proxy -p");
-#if ETD_ENABLE_EXCEPTIONS
+#if KOTA_ENABLE_EXCEPTIONS
     EXPECT_THROWS((parse_proxy_opt(argv)));
 #else
     auto result = parse_proxy_opt(argv);
@@ -351,7 +351,7 @@ TEST_CASE(proxy_parser_parse_opt_passes_error_payload) {
         auto result = parse_proxy_opt(argv);
         EXPECT_FALSE(result.argv.has_value());
     };
-#if ETD_ENABLE_EXCEPTIONS
+#if KOTA_ENABLE_EXCEPTIONS
     EXPECT_NOTHROWS(f());
 #else
     f();

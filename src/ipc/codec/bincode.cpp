@@ -1,4 +1,4 @@
-#include "eventide/ipc/codec/bincode.h"
+#include "kota/ipc/codec/bincode.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -6,7 +6,7 @@
 #include <string_view>
 #include <variant>
 
-namespace eventide::ipc {
+namespace kota::ipc {
 
 namespace {
 
@@ -107,4 +107,4 @@ Result<std::string> BincodeCodec::encode_error_response(const protocol::RequestI
 
 template class Peer<BincodeCodec>;
 
-}  // namespace eventide::ipc
+}  // namespace kota::ipc

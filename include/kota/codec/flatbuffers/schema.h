@@ -12,10 +12,10 @@
 #include <utility>
 #include <vector>
 
-#include "eventide/serde/serde/serde.h"
-#include "eventide/serde/serde/utils/common.h"
+#include "kota/codec/serde.h"
+#include "kota/codec/detail/common.h"
 
-namespace eventide::serde::flatbuffers {
+namespace kota::codec::flatbuffers {
 
 namespace schema_detail {
 
@@ -341,4 +341,4 @@ auto bsearch_entry(const EntryVec& entries, const Key& key) -> const
     return &(*it);
 }
 
-}  // namespace eventide::serde::flatbuffers
+}  // namespace kota::codec::flatbuffers

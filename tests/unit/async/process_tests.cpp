@@ -4,9 +4,9 @@
 #include <utility>
 
 #include "loop_fixture.h"
-#include "eventide/zest/zest.h"
+#include "kota/zest/zest.h"
 
-namespace eventide {
+namespace kota {
 
 namespace {
 
@@ -212,7 +212,7 @@ TEST_CASE(spawn_pipe_stderr) {
 
 TEST_CASE(spawn_pipe_stdout_read_chunk_twice) {
 #ifdef _WIN32
-    ::eventide::zest::skip();
+    ::kota::zest::skip();
     return;
 #else
     process::options opts;
@@ -343,4 +343,4 @@ TEST_CASE(query_info_invalid_pid) {
 
 };  // TEST_SUITE(process_io)
 
-}  // namespace eventide
+}  // namespace kota

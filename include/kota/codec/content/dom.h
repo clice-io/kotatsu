@@ -19,12 +19,12 @@
 #if __has_include(<yyjson.h>)
 #include <yyjson.h>
 #else
-#error "yyjson.h not found. Enable ETD_SERDE_ENABLE_YYJSON or add yyjson include paths."
+#error "yyjson.h not found. Enable KOTA_SERDE_ENABLE_YYJSON or add yyjson include paths."
 #endif
 
-#include "eventide/serde/content/error.h"
+#include "kota/codec/content/error.h"
 
-namespace eventide::serde::content {
+namespace kota::codec::content {
 
 class ValueRef;
 class ArrayRef;
@@ -594,9 +594,9 @@ private:
     friend class Object;
 };
 
-}  // namespace eventide::serde::content
+}  // namespace kota::codec::content
 
-#ifndef ETD_SERDE_CONTENT_DOM_INL_INCLUDED
-#define ETD_SERDE_CONTENT_DOM_INL_INCLUDED 1
-#include "eventide/serde/content/dom.inl"
+#ifndef KOTA_SERDE_CONTENT_DOM_INL_INCLUDED
+#define KOTA_SERDE_CONTENT_DOM_INL_INCLUDED 1
+#include "kota/codec/content/dom.inl"
 #endif

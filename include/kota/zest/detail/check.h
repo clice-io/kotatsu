@@ -12,10 +12,10 @@
 #include <type_traits>
 #include <utility>
 
-#include "eventide/common/type_traits.h"
-#include "eventide/reflection/compare.h"
+#include "kota/support/type_traits.h"
+#include "kota/meta/compare.h"
 
-namespace eventide::zest {
+namespace kota::zest {
 
 template <typename T>
 inline std::string pretty_dump(const T& value) {
@@ -91,4 +91,4 @@ inline bool check_throws_failure(bool failure,
 
 #endif
 
-}  // namespace eventide::zest
+}  // namespace kota::zest

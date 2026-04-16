@@ -6,7 +6,7 @@
 #include <tuple>
 #include <type_traits>
 
-namespace eventide {
+namespace kota {
 
 /// check if T is a function pointer type
 template <typename T>
@@ -110,4 +110,4 @@ using callable_return_t = typename callable_traits<Callable>::return_type;
 template <typename Callable>
 constexpr std::size_t callable_args_count_v = std::tuple_size_v<callable_args_t<Callable>>;
 
-}  // namespace eventide
+}  // namespace kota

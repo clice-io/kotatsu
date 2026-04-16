@@ -4,7 +4,7 @@
 #include <cassert>
 #include <cstring>
 
-namespace eventide {
+namespace kota {
 
 size_t ring_buffer::read(char* dest, size_t len) {
     const size_t to_read = std::min(len, size);
@@ -86,4 +86,4 @@ void ring_buffer::advance_write(size_t len) {
     size += len;
 }
 
-}  // namespace eventide
+}  // namespace kota

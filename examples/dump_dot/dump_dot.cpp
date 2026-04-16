@@ -17,9 +17,9 @@
 #include <chrono>
 #include <print>
 
-#include "eventide/async/async.h"
+#include "kota/async/async.h"
 
-using namespace eventide;
+using namespace kota;
 using namespace std::chrono_literals;
 
 // ---------------------------------------------------------------------------

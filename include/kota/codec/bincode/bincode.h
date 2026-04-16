@@ -1,11 +1,11 @@
 #pragma once
 
-#include "eventide/serde/bincode/deserializer.h"
-#include "eventide/serde/bincode/error.h"
-#include "eventide/serde/bincode/serializer.h"
-#include "eventide/serde/serde/raw_value.h"
+#include "kota/codec/bincode/deserializer.h"
+#include "kota/codec/bincode/error.h"
+#include "kota/codec/bincode/serializer.h"
+#include "kota/codec/raw_value.h"
 
-namespace eventide::serde {
+namespace kota::codec {
 
 // --- Bincode serialization: length-prefixed bytes ---
 
@@ -41,4 +41,4 @@ struct deserialize_traits<bincode::Deserializer<Config>, RawValue> {
     }
 };
 
-}  // namespace eventide::serde
+}  // namespace kota::codec

@@ -11,12 +11,12 @@
 #include <variant>
 #include <vector>
 
-#include "eventide/zest/zest.h"
-#include "eventide/reflection/attrs.h"
-#include "eventide/serde/flatbuffers/flatbuffers.h"
+#include "kota/zest/zest.h"
+#include "kota/meta/attrs.h"
+#include "kota/codec/flatbuffers/flatbuffers.h"
 #include <flatbuffers/flatbuffers.h>
 
-namespace eventide::serde {
+namespace kota::codec {
 
 using namespace refl;
 
@@ -978,6 +978,6 @@ TEST_CASE(array_view_out_of_bounds) {
 
 }  // namespace
 
-}  // namespace eventide::serde
+}  // namespace kota::codec
 
 #endif

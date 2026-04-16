@@ -15,13 +15,13 @@
 
 #include "./decl.h"
 #include "./ty.h"
-#include "eventide/common/comptime.h"
-#include "eventide/common/memory.h"
-#include "eventide/common/type_traits.h"
+#include "kota/support/comptime.h"
+#include "kota/support/memory.h"
+#include "kota/support/type_traits.h"
 
 namespace deco::detail {
 
-using namespace eventide::comptime;
+using namespace kota::comptime;
 
 struct ParsedNamedOption {
     std::span<const std::string_view> prefixes = backend::pfx_none;
@@ -32,23 +32,23 @@ struct ParsedNamedOption {
 constexpr auto parse_named_option(std::string_view full_name) {
     if(full_name.starts_with("--")) {
         if(full_name.size() <= 2) {
-            ETD_THROW("Option name cannot be only '--'");
+            KOTA_THROW("Option name cannot be only '--'");
         }
         return ParsedNamedOption{backend::pfx_double, "--", full_name.substr(2)};
     }
     if(full_name.starts_with("-")) {
         if(full_name.size() <= 1) {
-            ETD_THROW("Option name cannot be only '-'");
+            KOTA_THROW("Option name cannot be only '-'");
         }
         return ParsedNamedOption{backend::pfx_dash, "-", full_name.substr(1)};
     }
     if(full_name.starts_with("/")) {
         if(full_name.size() <= 1) {
-            ETD_THROW("Option name cannot be only '/'");
+            KOTA_THROW("Option name cannot be only '/'");
         }
         return ParsedNamedOption{backend::pfx_slash_dash, "/", full_name.substr(1)};
     }
-    ETD_THROW("Option name must start with '-', '--', or '/'");
+    KOTA_THROW("Option name must start with '-', '--', or '/'");
 }
 
 template <typename Derived, typename RootTy>
@@ -75,7 +75,7 @@ private:
                 return;
             }
         }
-        ETD_THROW("Unmatched config end field");
+        KOTA_THROW("Unmatched config end field");
     }
 
     constexpr static void config_consume_next(std::vector<config_state>& config_stack,
@@ -166,7 +166,7 @@ private:
                 return bool(derived.on_multi_config(field, cfg, field_name, path));
             }
         } else {
-            static_assert(eventide::dependent_false<CfgTy>, "Unsupported deco cfg type.");
+            static_assert(kota::dependent_false<CfgTy>, "Unsupported deco cfg type.");
             return true;
         }
     }
@@ -206,7 +206,7 @@ private:
                 return bool(derived.template on_multi_config<FieldTy>(cfg, field_name, path));
             }
         } else {
-            static_assert(eventide::dependent_false<CfgTy>, "Unsupported deco cfg type.");
+            static_assert(kota::dependent_false<CfgTy>, "Unsupported deco cfg type.");
             return true;
         }
     }
@@ -445,7 +445,7 @@ public:
     }
 };
 
-template <typename RootTy, auto record = eventide::comptime::counting_flag<6>>
+template <typename RootTy, auto record = kota::comptime::counting_flag<6>>
 class LLVMOptGenerator : public DecoStructConsumer<LLVMOptGenerator<RootTy, record>, RootTy> {
     using base_t = DecoStructConsumer<LLVMOptGenerator<RootTy, record>, RootTy>;
 
@@ -473,16 +473,16 @@ public:
 
 private:
     using info_item = backend::OptTable::Info;
-    using resource_ty = eventide::comptime::ComptimeMemoryResource<record>;
-    using item_pool_type = eventide::comptime::ComptimeVector<info_item, resource_ty, 0>;
-    using id_map_type = eventide::comptime::ComptimeVector<accessor_fn, resource_ty, 1>;
+    using resource_ty = kota::comptime::ComptimeMemoryResource<record>;
+    using item_pool_type = kota::comptime::ComptimeVector<info_item, resource_ty, 0>;
+    using id_map_type = kota::comptime::ComptimeVector<accessor_fn, resource_ty, 1>;
     using category_map_type =
-        eventide::comptime::ComptimeVector<const decl::Category*, resource_ty, 2>;
-    using callback_map_type = eventide::comptime::ComptimeVector<parse_callback_t, resource_ty, 3>;
+        kota::comptime::ComptimeVector<const decl::Category*, resource_ty, 2>;
+    using callback_map_type = kota::comptime::ComptimeVector<parse_callback_t, resource_ty, 3>;
 
     using alias_meta_map_type =
-        eventide::comptime::ComptimeVector<AliasRuntimeMeta, resource_ty, 4>;
-    using string_pool_type = eventide::comptime::ComptimeVector<std::string_view, resource_ty, 5>;
+        kota::comptime::ComptimeVector<AliasRuntimeMeta, resource_ty, 4>;
+    using string_pool_type = kota::comptime::ComptimeVector<std::string_view, resource_ty, 5>;
 
     // Keep a dummy at index 0 so item.id can be used as direct index.
     resource_ty resource{};
@@ -710,7 +710,7 @@ private:
     constexpr void add_input_option(const CfgTy& cfg, accessor_fn mapped_accessor) {
         static_assert(std::is_base_of_v<decl::CommonOptionFields, std::remove_cvref_t<CfgTy>>);
         if(hasInputSlot) {
-            ETD_THROW("Only one DecoInput can be declared");
+            KOTA_THROW("Only one DecoInput can be declared");
         }
         hasInputSlot = true;
         if(inputOptionId == 0) {
@@ -729,7 +729,7 @@ private:
     constexpr void add_trailing_option(const CfgTy& cfg, accessor_fn mapped_accessor) {
         static_assert(std::is_base_of_v<decl::CommonOptionFields, std::remove_cvref_t<CfgTy>>);
         if(hasTrailingSlot) {
-            ETD_THROW("Only one DecoPack can be declared");
+            KOTA_THROW("Only one DecoPack can be declared");
         }
         hasTrailingSlot = true;
         hasTrailingPack = true;
@@ -908,7 +908,7 @@ private:
         const bool allow_joined = has_kv_style(cfg.style, decl::KVStyle::Joined);
         const bool allow_separate = has_kv_style(cfg.style, decl::KVStyle::Separate);
         if(!allow_joined && !allow_separate) {
-            ETD_THROW("DecoKV style must include Joined and/or Separate");
+            KOTA_THROW("DecoKV style must include Joined and/or Separate");
         }
 
         auto& item = new_item(mapped_accessor);
@@ -941,10 +941,10 @@ private:
                                     std::string_view field_name) {
         const auto callback = make_parse_callback<typename CfgTy::result_type>(cfg.after_parsed);
         if(cfg.arg_num == 0) {
-            ETD_THROW("DecoMulti arg_num must be greater than 0");
+            KOTA_THROW("DecoMulti arg_num must be greater than 0");
         }
         if(cfg.arg_num > std::numeric_limits<unsigned char>::max()) {
-            ETD_THROW("DecoMulti arg_num exceeds backend param capacity");
+            KOTA_THROW("DecoMulti arg_num exceeds backend param capacity");
         }
         auto& item = new_item(mapped_accessor);
         item.kind = backend::Option::MultiArgClass;
@@ -1004,10 +1004,10 @@ private:
                                      unsigned char kind,
                                      unsigned char param) -> unsigned {
         if(!cfg.forward) {
-            ETD_THROW("Deco alias requires forward");
+            KOTA_THROW("Deco alias requires forward");
         }
         if(cfg.names.empty() && is_placeholder_field_name(field_name)) {
-            ETD_THROW("Deco alias placeholders must declare explicit names");
+            KOTA_THROW("Deco alias placeholders must declare explicit names");
         }
         auto& item = new_item(nullptr);
         item.kind = kind;
@@ -1126,7 +1126,7 @@ public:
         const bool allow_joined = has_kv_style(cfg.style, decl::KVStyle::Joined);
         const bool allow_separate = has_kv_style(cfg.style, decl::KVStyle::Separate);
         if(!allow_joined && !allow_separate) {
-            ETD_THROW("DecoKVAlias style must include Joined and/or Separate");
+            KOTA_THROW("DecoKVAlias style must include Joined and/or Separate");
         }
         if(allow_joined && allow_separate) {
             const auto item_id =
@@ -1158,10 +1158,10 @@ public:
                                   std::string_view field_name,
                                   std::index_sequence<Path...>) {
         if(cfg.arg_num == 0) {
-            ETD_THROW("DecoMultiAlias arg_num must be greater than 0");
+            KOTA_THROW("DecoMultiAlias arg_num must be greater than 0");
         }
         if(cfg.arg_num > std::numeric_limits<unsigned char>::max()) {
-            ETD_THROW("DecoMultiAlias arg_num exceeds backend param capacity");
+            KOTA_THROW("DecoMultiAlias arg_num exceeds backend param capacity");
         }
         add_alias_option(cfg,
                          field_name,

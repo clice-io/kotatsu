@@ -3,9 +3,9 @@
 #include <cstdint>
 #include <string_view>
 
-#include "eventide/serde/serde/error.h"
+#include "kota/codec/error.h"
 
-namespace eventide::serde::bincode {
+namespace kota::codec::bincode {
 
 enum class error_kind : std::uint8_t {
     ok = 0,
@@ -33,6 +33,6 @@ constexpr std::string_view error_message(error_kind error) {
     return "invalid_state";
 }
 
-using error = eventide::serde::serde_error<error_kind>;
+using error = kota::codec::serde_error<error_kind>;
 
-}  // namespace eventide::serde::bincode
+}  // namespace kota::codec::bincode

@@ -10,7 +10,7 @@
 #include "./config.h"
 #include "./decl.h"
 #include "./ty.h"
-#include "eventide/serde/serde/spelling.h"
+#include "kota/codec/spelling.h"
 
 /*
  * generate string that describes the structure of options declared in deco::desc namespace, and
@@ -125,7 +125,7 @@ inline std::string inferred_meta_var_token(const decl::MetaVarField& meta_var,
     }
     if constexpr(!std::is_void_v<enum_ty>) {
         if(config.enum_meta_var.enabled) {
-            return enum_meta_var_token(eventide::serde::spelling::enum_strings<enum_ty>(),
+            return enum_meta_var_token(kota::codec::spelling::enum_strings<enum_ty>(),
                                        config.enum_meta_var);
         }
     }

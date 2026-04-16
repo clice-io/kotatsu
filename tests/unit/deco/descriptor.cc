@@ -2,7 +2,7 @@
 #include <string_view>
 #include <vector>
 
-#include "eventide/deco/deco.h"
+#include "kota/deco/deco.h"
 #include <eventide/zest/zest.h>
 
 enum class DescEnum {

@@ -1,9 +1,9 @@
 #include <atomic>
 
 #include "loop_fixture.h"
-#include "eventide/zest/zest.h"
+#include "kota/zest/zest.h"
 
-namespace eventide {
+namespace kota {
 
 namespace {
 
@@ -54,4 +54,4 @@ TEST_CASE(queue_runs_twice) {
 
 };  // TEST_SUITE(work_request_io)
 
-}  // namespace eventide
+}  // namespace kota

@@ -5,9 +5,9 @@
 #include <type_traits>
 #include <utility>
 
-#include "eventide/async/vocab/outcome.h"
+#include "kota/async/vocab/outcome.h"
 
-namespace eventide {
+namespace kota {
 
 class error {
 public:
@@ -146,4 +146,4 @@ struct cancellation {
 template <typename T>
 using result = outcome<T, error, void>;
 
-}  // namespace eventide
+}  // namespace kota

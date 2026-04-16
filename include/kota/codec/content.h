@@ -1,6 +1,6 @@
 #pragma once
 
-#include "eventide/serde/content/deserializer.h"
-#include "eventide/serde/content/dom.h"
-#include "eventide/serde/content/error.h"
-#include "eventide/serde/content/serializer.h"
+#include "kota/codec/content/deserializer.h"
+#include "kota/codec/content/dom.h"
+#include "kota/codec/content/error.h"
+#include "kota/codec/content/serializer.h"

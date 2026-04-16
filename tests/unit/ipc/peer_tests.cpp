@@ -6,11 +6,11 @@
 #include <vector>
 
 #include "peer_test_types.h"
-#include "eventide/zest/zest.h"
-#include "eventide/async/async.h"
-#include "eventide/serde/json/deserializer.h"
+#include "kota/zest/zest.h"
+#include "kota/async/async.h"
+#include "kota/codec/json/deserializer.h"
 
-namespace eventide::ipc {
+namespace kota::ipc {
 
 namespace {
 
@@ -48,9 +48,9 @@ task<> write_notification_then_response(int fd, event_loop& loop) {
 
 }  // namespace
 
-}  // namespace eventide::ipc
+}  // namespace kota::ipc
 
-namespace eventide::ipc {
+namespace kota::ipc {
 
 TEST_SUITE(ipc_peer) {
 
@@ -1114,4 +1114,4 @@ TEST_CASE(outbound_request) {
 
 };  // TEST_SUITE(ipc_peer_camel_case)
 
-}  // namespace eventide::ipc
+}  // namespace kota::ipc

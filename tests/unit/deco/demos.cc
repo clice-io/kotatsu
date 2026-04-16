@@ -3,9 +3,9 @@
 #include <string>
 #include <vector>
 
-#include "eventide/deco/deco.h"
-#include "eventide/deco/detail/text.h"
-#include "eventide/zest/macro.h"
+#include "kota/deco/deco.h"
+#include "kota/deco/detail/text.h"
+#include "kota/zest/macro.h"
 
 namespace {
 

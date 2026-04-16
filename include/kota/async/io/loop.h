@@ -4,12 +4,12 @@
 #include <source_location>
 #include <tuple>
 
-#include "eventide/common/functional.h"
+#include "kota/support/functional.h"
 
 struct uv_loop_s;
 using uv_loop_t = uv_loop_s;
 
-namespace eventide {
+namespace kota {
 
 class async_node;
 
@@ -143,4 +143,4 @@ auto run(Tasks&&... tasks) {
     return std::tuple(std::move(tasks.value())...);
 }
 
-}  // namespace eventide
+}  // namespace kota

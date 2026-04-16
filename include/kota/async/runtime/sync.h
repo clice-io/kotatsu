@@ -4,10 +4,10 @@
 #include <cstddef>
 #include <source_location>
 
-#include "eventide/async/runtime/frame.h"
-#include "eventide/async/runtime/task.h"
+#include "kota/async/runtime/frame.h"
+#include "kota/async/runtime/task.h"
 
-namespace eventide {
+namespace kota {
 
 /// Shared base for synchronization resources. These are not awaitable runtime
 /// nodes; waiter_link sub-objects bridge tasks into the wait queue.
@@ -367,4 +367,4 @@ public:
     }
 };
 
-}  // namespace eventide
+}  // namespace kota

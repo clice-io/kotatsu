@@ -17,7 +17,7 @@
 #include "parsed_arg.h"
 #include "util.h"
 
-namespace eventide::option {
+namespace kota::option {
 
 class Option;
 
@@ -563,4 +563,4 @@ public:
     }
 };
 
-}  // namespace eventide::option
+}  // namespace kota::option

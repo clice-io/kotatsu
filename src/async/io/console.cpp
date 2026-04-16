@@ -1,9 +1,9 @@
 #include <memory>
 
 #include "awaiter.h"
-#include "eventide/async/io/loop.h"
+#include "kota/async/io/loop.h"
 
-namespace eventide {
+namespace kota {
 
 result<console> console::open(int fd, console::options opts, event_loop& loop) {
     auto self = Self::make();
@@ -70,4 +70,4 @@ result<console::vterm_state> console::get_vterm_state() {
 
 console::console(unique_handle<Self> self) noexcept : stream(std::move(self)) {}
 
-}  // namespace eventide
+}  // namespace kota

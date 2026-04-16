@@ -7,7 +7,7 @@
 #include "small_vector.h"
 #include "string_ref.h"
 
-namespace eventide {
+namespace kota {
 
 /// A SmallVector<char> with string-like convenience methods.
 /// All string operations delegate to string_ref.
@@ -132,4 +132,4 @@ public:
     }
 };
 
-}  // namespace eventide
+}  // namespace kota
