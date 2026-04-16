@@ -280,7 +280,10 @@ constexpr bool has_struct_schema_attrs_v = tuple_has_spec_v<AttrsTuple, attrs::r
                                            tuple_has_v<AttrsTuple, attrs::deny_unknown_fields>;
 
 template <typename AttrsTuple>
-constexpr bool has_tagged_schema_attr_v = tuple_any_of_v<AttrsTuple, is_tagged_attr>;
+using tagged_schema_attr_t = tuple_find_t<AttrsTuple, is_tagged_attr>;
+
+template <typename AttrsTuple>
+constexpr bool has_tagged_schema_attr_v = !std::is_void_v<tagged_schema_attr_t<AttrsTuple>>;
 
 template <typename T>
 struct type_instance_subject {
@@ -445,7 +448,7 @@ struct annotated_variant_info_node;
 template <typename Config, typename AttrsTuple, typename... Ts>
 struct annotated_variant_info_node<std::variant<Ts...>, Config, AttrsTuple> {
     using variant_t = std::variant<Ts...>;
-    using tag_attr = tuple_find_t<AttrsTuple, is_tagged_attr>;
+    using tag_attr = tagged_schema_attr_t<AttrsTuple>;
 
     constexpr static auto alt_names = resolve_tag_names<tag_attr, Ts...>();
     constexpr static std::array<const type_info*, sizeof...(Ts)> alternatives = {
@@ -484,6 +487,22 @@ struct variant_info_node<std::variant<Ts...>, Config> {
         {},
         {},
     };
+};
+
+template <typename Variant,
+          typename Config,
+          typename AttrsTuple,
+          bool HasTagged = has_tagged_schema_attr_v<AttrsTuple>>
+struct variant_info_selector;
+
+template <typename Config, typename AttrsTuple, typename... Ts>
+struct variant_info_selector<std::variant<Ts...>, Config, AttrsTuple, true> {
+    using node = annotated_variant_info_node<std::variant<Ts...>, Config, AttrsTuple>;
+};
+
+template <typename Config, typename AttrsTuple, typename... Ts>
+struct variant_info_selector<std::variant<Ts...>, Config, AttrsTuple, false> {
+    using node = variant_info_node<std::variant<Ts...>, Config>;
 };
 
 template <typename Tuple,
@@ -543,13 +562,8 @@ struct type_instance<T, Config, type_kind::variant> {
     using attrs_t = typename subject::attrs_t;
     using wire_t = typename subject::wire_t;
 
-    constexpr inline static variant_type_info value = [] {
-        if constexpr(has_tagged_schema_attr_v<attrs_t>) {
-            return annotated_variant_info_node<wire_t, Config, attrs_t>::value;
-        } else {
-            return variant_info_node<wire_t, Config>::value;
-        }
-    }();
+    constexpr inline static variant_type_info value =
+        variant_info_selector<wire_t, Config, attrs_t>::node::value;
 };
 
 template <typename T, typename Config>
@@ -601,9 +615,14 @@ struct type_instance<T, Config, type_kind::structure> {
     using attrs_t = typename subject::attrs_t;
     using wire_t = typename subject::wire_t;
 
-    constexpr inline static struct_type_info value =
-        struct_info_node<wire_t, Config, attrs_t>::value;
+    const static struct_type_info value;
 };
+
+template <typename T, typename Config>
+constexpr struct_type_info type_instance<T, Config, type_kind::structure>::value =
+    struct_info_node<typename type_instance_subject<T>::wire_t,
+                     Config,
+                     typename type_instance_subject<T>::attrs_t>::value;
 
 template <typename T, typename Config>
 struct type_instance<T, Config, type_kind::enumeration> {
