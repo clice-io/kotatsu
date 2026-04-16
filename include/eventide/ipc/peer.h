@@ -8,10 +8,10 @@
 #include <string_view>
 #include <utility>
 
-#include "eventide/ipc/bincode_codec.h"
 #include "eventide/ipc/codec.h"
+#include "eventide/ipc/codec/bincode.h"
 #if ETD_IPC_ENABLE_JSON
-#include "eventide/ipc/json_codec.h"
+#include "eventide/ipc/codec/json.h"
 #endif
 #include "eventide/ipc/logger.h"
 #include "eventide/ipc/transport.h"

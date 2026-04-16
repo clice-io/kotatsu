@@ -3,7 +3,7 @@
 #include <string>
 #include <string_view>
 
-#include "eventide/ipc/json_codec.h"
+#include "eventide/ipc/codec/json.h"
 
 namespace eventide::ipc {
 

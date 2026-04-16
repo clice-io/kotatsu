@@ -3,8 +3,8 @@
 #include <string_view>
 #include <variant>
 
-#include "eventide/ipc/bincode_codec.h"
-#include "eventide/ipc/json_codec.h"
+#include "eventide/ipc/codec/bincode.h"
+#include "eventide/ipc/codec/json.h"
 #include "eventide/zest/zest.h"
 
 namespace eventide::ipc {
