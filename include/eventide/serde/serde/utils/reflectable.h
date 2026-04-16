@@ -171,7 +171,7 @@ auto dispatch_field_by_index(std::size_t index, DeserializeStruct& d_struct, T& 
                              using Pred =
                                  typename tuple_find_spec_t<attrs_t,
                                                             refl::behavior::skip_if>::predicate;
-                             if(refl::detail::evaluate_skip_predicate<Pred>(fval, false)) {
+                             if(refl::evaluate_skip_predicate<Pred>(fval, false)) {
                                  result = d_struct.skip_value();
                                  return true;
                              }

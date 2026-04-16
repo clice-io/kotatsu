@@ -127,7 +127,7 @@ constexpr std::string apply_rename_cx(std::string_view input) {
     } else if constexpr(std::is_same_v<Policy, upper_snake>) {
         return naming::snake_to_upper(input);
     } else {
-        return std::string(input);
+        static_assert(sizeof(Policy) == 0, "Unknown rename policy");
     }
 }
 
@@ -156,19 +156,28 @@ constexpr bool field_has_explicit_rename() {
     }
 }
 
+template <typename Config>
+struct effective_field_rename {
+    using type = naming::rename_policy::identity;
+};
+
+template <typename Config>
+    requires requires { typename Config::field_rename; }
+struct effective_field_rename<Config> {
+    using type = typename Config::field_rename;
+};
+
+template <typename Config>
+using effective_field_rename_t = typename effective_field_rename<Config>::type;
+
 template <typename T, std::size_t I, typename Config>
 constexpr std::string_view resolve_wire_name() {
-    if constexpr(field_has_explicit_rename<T, I>()) {
+    using policy = effective_field_rename_t<Config>;
+    if constexpr(field_has_explicit_rename<T, I>() ||
+                 std::is_same_v<policy, naming::rename_policy::identity>) {
         return attrs::canonical_field_name<T, I>();
-    } else if constexpr(requires { typename Config::field_rename; }) {
-        using policy = typename Config::field_rename;
-        if constexpr(std::is_same_v<policy, naming::rename_policy::identity>) {
-            return attrs::canonical_field_name<T, I>();
-        } else {
-            return wire_name_static<T, I, policy>::value;
-        }
     } else {
-        return attrs::canonical_field_name<T, I>();
+        return wire_name_static<T, I, policy>::value;
     }
 }
 
@@ -211,40 +220,21 @@ struct extract_with_wire_type {
     using type = typename with_attr::adapter::wire_type;
 };
 
-template <typename RawType,
-          typename AttrsTuple,
-          bool HasAs = tuple_has_spec_v<AttrsTuple, behavior::as>,
-          bool HasEnumStr = tuple_has_spec_v<AttrsTuple, behavior::enum_string>,
-          bool HasWithWireType = has_with_wire_type_v<AttrsTuple>>
-struct resolve_wire_type {
-    using type = RawType;
-};
-
-template <typename RawType, typename AttrsTuple, bool HasEnumStr, bool HasWithWireType>
-struct resolve_wire_type<RawType, AttrsTuple, /*HasAs=*/true, HasEnumStr, HasWithWireType> {
-    using type = typename tuple_find_spec_t<AttrsTuple, behavior::as>::target;
-};
-
-template <typename RawType, typename AttrsTuple, bool HasWithWireType>
-struct resolve_wire_type<RawType,
-                         AttrsTuple,
-                         /*HasAs=*/false,
-                         /*HasEnumStr=*/true,
-                         HasWithWireType> {
-    using type = std::string_view;
-};
+template <typename RawType, typename AttrsTuple>
+constexpr auto resolve_wire_type_impl() {
+    if constexpr(tuple_has_spec_v<AttrsTuple, behavior::as>) {
+        return std::type_identity<typename tuple_find_spec_t<AttrsTuple, behavior::as>::target>{};
+    } else if constexpr(tuple_has_spec_v<AttrsTuple, behavior::enum_string>) {
+        return std::type_identity<std::string_view>{};
+    } else if constexpr(has_with_wire_type_v<AttrsTuple>) {
+        return std::type_identity<typename extract_with_wire_type<AttrsTuple>::type>{};
+    } else {
+        return std::type_identity<RawType>{};
+    }
+}
 
 template <typename RawType, typename AttrsTuple>
-struct resolve_wire_type<RawType,
-                         AttrsTuple,
-                         /*HasAs=*/false,
-                         /*HasEnumStr=*/false,
-                         /*HasWithWireType=*/true> {
-    using type = typename extract_with_wire_type<AttrsTuple>::type;
-};
-
-template <typename RawType, typename AttrsTuple>
-using resolve_wire_type_t = typename resolve_wire_type<RawType, AttrsTuple>::type;
+using resolve_wire_type_t = typename decltype(resolve_wire_type_impl<RawType, AttrsTuple>())::type;
 
 template <typename T>
 struct unwrap_annotated {
@@ -326,30 +316,7 @@ struct alias_storage<T, I, true> {
 };
 
 template <typename T, std::size_t I>
-constexpr std::size_t single_field_count() {
-    using field_t = refl::field_type<T, I>;
-    using attrs_t = typename unwrap_annotated<field_t>::attrs;
-    constexpr bool skipped = tuple_has_v<attrs_t, attrs::skip>;
-    constexpr bool flattened = tuple_has_v<attrs_t, attrs::flatten>;
-
-    if constexpr(skipped) {
-        return 0;
-    } else if constexpr(flattened) {
-        using inner_t = typename unwrap_annotated<field_t>::raw_type;
-        static_assert(refl::reflectable_class<std::remove_cvref_t<inner_t>>,
-                      "flatten requires the field type to be a reflectable struct");
-        constexpr std::size_t N_inner = refl::field_count<std::remove_cvref_t<inner_t>>();
-        if constexpr(N_inner == 0) {
-            return 0;
-        } else {
-            return []<std::size_t... Js>(std::index_sequence<Js...>) constexpr {
-                return (single_field_count<std::remove_cvref_t<inner_t>, Js>() + ...);
-            }(std::make_index_sequence<N_inner>{});
-        }
-    } else {
-        return 1;
-    }
-}
+constexpr std::size_t single_field_count();
 
 template <typename T>
     requires refl::reflectable_class<T>
@@ -361,6 +328,25 @@ constexpr std::size_t effective_field_count() {
         return []<std::size_t... Is>(std::index_sequence<Is...>) constexpr {
             return (single_field_count<T, Is>() + ...);
         }(std::make_index_sequence<N>{});
+    }
+}
+
+template <typename T, std::size_t I>
+constexpr std::size_t single_field_count() {
+    using field_t = refl::field_type<T, I>;
+    using attrs_t = typename unwrap_annotated<field_t>::attrs;
+    constexpr bool skipped = tuple_has_v<attrs_t, attrs::skip>;
+    constexpr bool flattened = tuple_has_v<attrs_t, attrs::flatten>;
+
+    if constexpr(skipped) {
+        return 0;
+    } else if constexpr(flattened) {
+        using inner_t = std::remove_cvref_t<typename unwrap_annotated<field_t>::raw_type>;
+        static_assert(refl::reflectable_class<inner_t>,
+                      "flatten requires the field type to be a reflectable struct");
+        return effective_field_count<inner_t>();
+    } else {
+        return 1;
     }
 }
 
@@ -384,27 +370,14 @@ constexpr bool has_deny_unknown_fields() {
     return tuple_has_v<attrs_t, attrs::deny_unknown_fields>;
 }
 
-template <typename E>
+template <typename E, typename IntT>
     requires std::is_enum_v<E>
-struct enum_values_as_i64 {
+struct enum_values_as {
     constexpr static auto values = [] {
         constexpr auto& src = refl::reflection<E>::member_values;
-        std::array<std::int64_t, src.size()> out{};
+        std::array<IntT, src.size()> out{};
         for(std::size_t i = 0; i < src.size(); ++i) {
-            out[i] = static_cast<std::int64_t>(static_cast<std::underlying_type_t<E>>(src[i]));
-        }
-        return out;
-    }();
-};
-
-template <typename E>
-    requires std::is_enum_v<E>
-struct enum_values_as_u64 {
-    constexpr static auto values = [] {
-        constexpr auto& src = refl::reflection<E>::member_values;
-        std::array<std::uint64_t, src.size()> out{};
-        for(std::size_t i = 0; i < src.size(); ++i) {
-            out[i] = static_cast<std::uint64_t>(static_cast<std::underlying_type_t<E>>(src[i]));
+            out[i] = static_cast<IntT>(static_cast<std::underlying_type_t<E>>(src[i]));
         }
         return out;
     }();
@@ -442,67 +415,64 @@ constexpr tag_mode tagged_mode_for() {
     }
 }
 
-template <typename Variant, typename Config, typename AttrsTuple>
-struct annotated_variant_info_node;
+template <typename Variant, typename Config, typename AttrsTuple = std::tuple<>>
+struct variant_info_node;
 
 template <typename Config, typename AttrsTuple, typename... Ts>
-struct annotated_variant_info_node<std::variant<Ts...>, Config, AttrsTuple> {
+struct variant_info_node<std::variant<Ts...>, Config, AttrsTuple> {
     using variant_t = std::variant<Ts...>;
-    using tag_attr = tagged_schema_attr_t<AttrsTuple>;
+    constexpr static bool has_tag = has_tagged_schema_attr_v<AttrsTuple>;
 
-    constexpr static auto alt_names = resolve_tag_names<tag_attr, Ts...>();
     constexpr static std::array<const type_info*, sizeof...(Ts)> alternatives = {
         &type_instance<Ts, Config>::value...};
-    constexpr static tag_mode tagging = tagged_mode_for<tag_attr>();
-    constexpr static std::string_view tag_field =
-        tagging == tag_mode::external ? std::string_view{} : tag_attr::field_names[0];
-    constexpr static std::string_view content_field =
-        tagging == tag_mode::adjacent ? tag_attr::field_names[1] : std::string_view{};
+
+    // Backing storage is always sizeof...(Ts) (>=1 since variant must have alternatives);
+    // for non-tagged variants the elements stay default-constructed and the consumer
+    // span below is explicitly given size 0, so no element is ever read.
+    constexpr static auto alt_names = [] {
+        if constexpr(has_tag) {
+            return resolve_tag_names<tagged_schema_attr_t<AttrsTuple>, Ts...>();
+        } else {
+            return std::array<std::string_view, sizeof...(Ts)>{};
+        }
+    }();
+
+    constexpr static tag_mode tagging = [] {
+        if constexpr(has_tag) {
+            return tagged_mode_for<tagged_schema_attr_t<AttrsTuple>>();
+        } else {
+            return tag_mode::none;
+        }
+    }();
+
+    constexpr static std::string_view tag_field = [] {
+        if constexpr(has_tag) {
+            using tag_attr = tagged_schema_attr_t<AttrsTuple>;
+            if constexpr(tagged_mode_for<tag_attr>() != tag_mode::external) {
+                return std::string_view{tag_attr::field_names[0]};
+            }
+        }
+        return std::string_view{};
+    }();
+
+    constexpr static std::string_view content_field = [] {
+        if constexpr(has_tag) {
+            using tag_attr = tagged_schema_attr_t<AttrsTuple>;
+            if constexpr(tagged_mode_for<tag_attr>() == tag_mode::adjacent) {
+                return std::string_view{tag_attr::field_names[1]};
+            }
+        }
+        return std::string_view{};
+    }();
 
     constexpr inline static variant_type_info value = {
-        {type_kind::variant,  refl::type_name<variant_t>()},
-        {alternatives.data(), alternatives.size()         },
+        {type_kind::variant,  refl::type_name<variant_t>()  },
+        {alternatives.data(), alternatives.size()           },
         tagging,
         tag_field,
         content_field,
-        {alt_names.data(),    alt_names.size()            },
+        {alt_names.data(),    has_tag ? alt_names.size() : 0},
     };
-};
-
-template <typename Variant, typename Config>
-struct variant_info_node;
-
-template <typename Config, typename... Ts>
-struct variant_info_node<std::variant<Ts...>, Config> {
-    using variant_t = std::variant<Ts...>;
-
-    constexpr inline static std::array<const type_info*, sizeof...(Ts)> alternatives = {
-        &type_instance<Ts, Config>::value...};
-
-    constexpr inline static variant_type_info value = {
-        {type_kind::variant, refl::type_name<variant_t>()},
-        {alternatives.data(), alternatives.size()},
-        tag_mode::none,
-        {},
-        {},
-        {},
-    };
-};
-
-template <typename Variant,
-          typename Config,
-          typename AttrsTuple,
-          bool HasTagged = has_tagged_schema_attr_v<AttrsTuple>>
-struct variant_info_selector;
-
-template <typename Config, typename AttrsTuple, typename... Ts>
-struct variant_info_selector<std::variant<Ts...>, Config, AttrsTuple, true> {
-    using node = annotated_variant_info_node<std::variant<Ts...>, Config, AttrsTuple>;
-};
-
-template <typename Config, typename AttrsTuple, typename... Ts>
-struct variant_info_selector<std::variant<Ts...>, Config, AttrsTuple, false> {
-    using node = variant_info_node<std::variant<Ts...>, Config>;
 };
 
 template <typename Tuple,
@@ -563,7 +533,7 @@ struct type_instance<T, Config, type_kind::variant> {
     using wire_t = typename subject::wire_t;
 
     constexpr inline static variant_type_info value =
-        variant_info_selector<wire_t, Config, attrs_t>::node::value;
+        variant_info_node<wire_t, Config, attrs_t>::value;
 };
 
 template <typename T, typename Config>
@@ -632,7 +602,7 @@ struct type_instance<T, Config, type_kind::enumeration> {
 
     constexpr inline static enum_type_info value = [] {
         if constexpr(std::is_unsigned_v<underlying_t> && sizeof(underlying_t) == 8) {
-            constexpr auto& values = enum_values_as_u64<wire_t>::values;
+            constexpr auto& values = enum_values_as<wire_t, std::uint64_t>::values;
             return enum_type_info{
                 {type_kind::enumeration, refl::type_name<wire_t>()},
                 {names.data(), names.size()},
@@ -641,7 +611,7 @@ struct type_instance<T, Config, type_kind::enumeration> {
                 kind_of<underlying_t>(),
             };
         } else {
-            constexpr auto& values = enum_values_as_i64<wire_t>::values;
+            constexpr auto& values = enum_values_as<wire_t, std::int64_t>::values;
             return enum_type_info{
                 {type_kind::enumeration, refl::type_name<wire_t>()},
                 {names.data(), names.size()},

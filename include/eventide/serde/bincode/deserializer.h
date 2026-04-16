@@ -515,7 +515,7 @@ constexpr auto deserialize_sequential_struct_field(D& deserializer, Field field)
             if constexpr(tuple_has_spec_v<attrs_t, refl::behavior::skip_if>) {
                 using skip_if_attr = tuple_find_spec_t<attrs_t, refl::behavior::skip_if>;
                 using Pred = typename skip_if_attr::predicate;
-                if(refl::detail::evaluate_skip_predicate<Pred>(value, false)) {
+                if(refl::evaluate_skip_predicate<Pred>(value, false)) {
                     using consume_t = std::remove_cvref_t<decltype(field.value())>;
                     static_assert(std::default_initializable<consume_t>,
                                   "bincode behavior::skip_if requires default-initializable field");

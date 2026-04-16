@@ -65,7 +65,7 @@ constexpr auto serialize_struct_field(SerializeStruct& s_struct, Field field)
             if constexpr(tuple_has_spec_v<attrs_t, refl::behavior::skip_if>) {
                 using Pred =
                     typename tuple_find_spec_t<attrs_t, refl::behavior::skip_if>::predicate;
-                if(refl::detail::evaluate_skip_predicate<Pred>(value, true)) {
+                if(refl::evaluate_skip_predicate<Pred>(value, true)) {
                     return std::expected<void, E>{};
                 }
             }
@@ -172,7 +172,7 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
             if constexpr(tuple_has_spec_v<attrs_t, refl::behavior::skip_if>) {
                 using Pred =
                     typename tuple_find_spec_t<attrs_t, refl::behavior::skip_if>::predicate;
-                if(refl::detail::evaluate_skip_predicate<Pred>(value, false)) {
+                if(refl::evaluate_skip_predicate<Pred>(value, false)) {
                     ETD_EXPECTED_TRY(d_struct.skip_value());
                     return true;
                 }

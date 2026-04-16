@@ -21,29 +21,6 @@ template <typename List, typename T>
 using type_list_prepend_t = typename type_list_prepend<List, T>::type;
 
 template <typename List, typename T>
-struct type_list_append;
-
-template <typename... Ts, typename T>
-struct type_list_append<type_list<Ts...>, T> {
-    using type = type_list<Ts..., T>;
-};
-
-template <typename List, typename T>
-using type_list_append_t = typename type_list_append<List, T>::type;
-
-template <typename List, typename T>
-struct type_list_append_unique;
-
-template <typename... Ts, typename T>
-struct type_list_append_unique<type_list<Ts...>, T> {
-    using type =
-        std::conditional_t<(std::same_as<T, Ts> || ...), type_list<Ts...>, type_list<Ts..., T>>;
-};
-
-template <typename List, typename T>
-using type_list_append_unique_t = typename type_list_append_unique<List, T>::type;
-
-template <typename List, typename T>
 struct type_list_contains;
 
 template <typename... Ts, typename T>
@@ -72,17 +49,6 @@ public:
 
 template <typename List, template <typename> typename Predicate>
 using type_list_filter_t = typename type_list_filter<List, Predicate>::type;
-
-template <typename List, template <typename> typename Mapper>
-struct type_list_transform;
-
-template <template <typename> typename Mapper, typename... Ts>
-struct type_list_transform<type_list<Ts...>, Mapper> {
-    using type = type_list<typename Mapper<Ts>::type...>;
-};
-
-template <typename List, template <typename> typename Mapper>
-using type_list_transform_t = typename type_list_transform<List, Mapper>::type;
 
 template <typename List>
 struct type_list_unique;
@@ -118,17 +84,6 @@ struct type_list_unique<type_list<Ts...>> {
 
 template <typename List>
 using type_list_unique_t = typename type_list_unique<List>::type;
-
-template <typename List, template <typename...> typename Target>
-struct type_list_apply;
-
-template <typename... Ts, template <typename...> typename Target>
-struct type_list_apply<type_list<Ts...>, Target> {
-    using type = Target<Ts...>;
-};
-
-template <typename List, template <typename...> typename Target>
-using type_list_apply_t = typename type_list_apply<List, Target>::type;
 
 template <std::size_t I, typename List>
 struct type_list_element;

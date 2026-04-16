@@ -425,8 +425,6 @@ struct as {
 
 }  // namespace behavior
 
-namespace detail {
-
 template <typename Pred, typename Value>
 constexpr bool evaluate_skip_predicate(const Value& value, bool is_serialize) {
     if constexpr(requires {
@@ -444,8 +442,6 @@ constexpr bool evaluate_skip_predicate(const Value& value, bool is_serialize) {
         return false;
     }
 }
-
-}  // namespace detail
 
 namespace pred {
 
