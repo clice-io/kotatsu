@@ -14,6 +14,7 @@
 #include "eventide/serde/json/error.h"
 #include "eventide/serde/json/serializer.h"
 #include "eventide/serde/serde/config.h"
+#include "eventide/serde/serde/raw_value.h"
 
 namespace eventide::serde::json {
 
@@ -170,6 +171,39 @@ struct deserialize_traits<json::yy::Deserializer<Config>, T> {
             value = std::move(*object);
             return {};
         }
+    }
+};
+
+// --- JSON serialization: inline raw JSON text ---
+
+template <typename Config>
+struct serialize_traits<json::Serializer<Config>, RawValue> {
+    using value_type = typename json::Serializer<Config>::value_type;
+    using error_type = typename json::Serializer<Config>::error_type;
+
+    static auto serialize(json::Serializer<Config>& serializer, const RawValue& value)
+        -> std::expected<value_type, error_type> {
+        if(value.empty()) {
+            return serializer.serialize_null();
+        }
+        return serializer.serialize_raw_json(value.data);
+    }
+};
+
+// --- JSON deserialization: capture raw JSON view ---
+
+template <typename Config>
+struct deserialize_traits<json::Deserializer<Config>, RawValue> {
+    using error_type = typename json::Deserializer<Config>::error_type;
+
+    static auto deserialize(json::Deserializer<Config>& deserializer, RawValue& value)
+        -> std::expected<void, error_type> {
+        auto raw = deserializer.deserialize_raw_json_view();
+        if(!raw) {
+            return std::unexpected(raw.error());
+        }
+        value.data.assign(raw->data(), raw->size());
+        return {};
     }
 };
 
