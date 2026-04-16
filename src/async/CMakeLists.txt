@@ -1,4 +1,4 @@
-eventide_add_git_dependency(
+kota_add_git_dependency(
     libuv
     GIT_REPOSITORY https://github.com/libuv/libuv.git
     GIT_TAG v1.52.0

@@ -8,7 +8,7 @@ set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
-option(KOTA_ENABLE_ASYNC "Enable async eventide target and libuv dependency" ON)
+option(KOTA_ENABLE_ASYNC "Enable async kotatsu target and libuv dependency" ON)
 option(KOTA_ENABLE_OPTION "Enable option parser target" ON)
 option(KOTA_ENABLE_DECO "Enable deco target" ON)
 option(KOTA_ENABLE_TEST "Build unit tests" OFF)
@@ -19,8 +19,8 @@ option(KOTA_CODEC_ENABLE_YYJSON "Enable yyjson dependency for kota::codec" OFF)
 option(KOTA_CODEC_ENABLE_FLATBUFFERS "Enable flatbuffers dependency for kota::codec" OFF)
 option(KOTA_CODEC_ENABLE_TOML "Enable tomlplusplus dependency for kota::codec" OFF)
 option(KOTA_BUILD_ALL_TESTS "Enable all optional test suites for CI" OFF)
-option(KOTA_ENABLE_EXCEPTIONS "Build eventide targets with exception support" ON)
-option(KOTA_ENABLE_RTTI "Build eventide targets with RTTI support" ON)
+option(KOTA_ENABLE_EXCEPTIONS "Build kotatsu targets with exception support" ON)
+option(KOTA_ENABLE_RTTI "Build kotatsu targets with RTTI support" ON)
 option(KOTA_USE_CPM_FOR_TESTS "Use CPM.cmake instead of FetchContent when tests are enabled" OFF)
 option(KOTA_ENABLE_CCACHE "Enable compiler cache launchers when available" OFF)
 option(KOTA_SANITIZE_ADDRESS "Enable AddressSanitizer" OFF)
@@ -55,8 +55,8 @@ endif()
 if(KOTA_SANITIZE_THREAD)
     list(APPEND kota_primary_sanitizers "thread")
 endif()
-list(LENGTH kota_primary_sanitizers eventide_primary_sanitizer_count)
-if(eventide_primary_sanitizer_count GREATER 1)
+list(LENGTH kota_primary_sanitizers kota_primary_sanitizer_count)
+if(kota_primary_sanitizer_count GREATER 1)
     message(FATAL_ERROR "ASan, MSan, and TSan are mutually exclusive.")
 endif()
 
@@ -95,13 +95,13 @@ if(KOTA_SANITIZE_ADDRESS)
         if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
             execute_process(
                 COMMAND ${CMAKE_CXX_COMPILER} --print-resource-dir
-                OUTPUT_VARIABLE eventide_clang_resource_dir
+                OUTPUT_VARIABLE kota_clang_resource_dir
                 OUTPUT_STRIP_TRAILING_WHITESPACE
             )
 
-            set(eventide_asan_lib_path "${eventide_clang_resource_dir}/lib/windows")
+            set(kota_asan_lib_path "${kota_clang_resource_dir}/lib/windows")
             list(APPEND kota_sanitizer_link_options
-                "/libpath:${eventide_asan_lib_path}"
+                "/libpath:${kota_asan_lib_path}"
                 "clang_rt.asan_dynamic-x86_64.lib"
                 "/wholearchive:clang_rt.asan_dynamic_runtime_thunk-x86_64.lib"
             )
@@ -222,7 +222,7 @@ if(KOTA_BUILD_ALL_TESTS)
 
     if(NOT KOTA_ENABLE_ASYNC)
         message(STATUS "KOTA_BUILD_ALL_TESTS=ON: enabling KOTA_ENABLE_ASYNC")
-        set(KOTA_ENABLE_ASYNC ON CACHE BOOL "Enable async eventide target and libuv dependency" FORCE)
+        set(KOTA_ENABLE_ASYNC ON CACHE BOOL "Enable async kotatsu target and libuv dependency" FORCE)
     endif()
 
     if(NOT KOTA_ENABLE_OPTION)

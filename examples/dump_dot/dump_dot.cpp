@@ -11,7 +11,7 @@
 /// dump_dot(), which walks UP to the root and then renders the full graph.
 ///
 /// Usage:
-///   ./eventide_example_dump_dot > graph.dot
+///   ./dump_dot > graph.dot
 ///   dot -Tpng graph.dot -o graph.png
 
 #include <chrono>

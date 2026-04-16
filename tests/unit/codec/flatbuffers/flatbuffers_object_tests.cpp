@@ -210,7 +210,7 @@ TEST_CASE(roundtrip_root_vector_and_variant) {
     EXPECT_EQ(output_vec, input_vec);
 
     using sample_variant = std::variant<std::int32_t, std::string>;
-    const sample_variant input_var = std::string("eventide");
+    const sample_variant input_var = std::string("kotatsu");
 
     auto encoded_var = to_flatbuffer(input_var);
     ASSERT_TRUE(encoded_var.has_value());
@@ -493,7 +493,7 @@ TEST_CASE(variant_scalar_alternative) {
 }
 
 TEST_CASE(variant_string_alternative) {
-    with_variant input{.value = std::string("eventide")};
+    with_variant input{.value = std::string("kotatsu")};
 
     auto encoded = to_flatbuffer(input);
     ASSERT_TRUE(encoded.has_value());
@@ -504,7 +504,7 @@ TEST_CASE(variant_string_alternative) {
     auto v = root[&with_variant::value];
     ASSERT_TRUE(v.valid());
     EXPECT_EQ(v.index(), 1U);
-    EXPECT_EQ(v.get<1>(), "eventide");
+    EXPECT_EQ(v.get<1>(), "kotatsu");
 }
 
 TEST_CASE(variant_struct_alternative) {

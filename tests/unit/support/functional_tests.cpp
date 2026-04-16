@@ -1,9 +1,9 @@
 #include <string>
 #include <utility>
 
-#include <eventide/zest/macro.h>
-#include <eventide/zest/zest.h>
-#include <eventide/common/functional.h>
+#include <kota/zest/macro.h>
+#include <kota/zest/zest.h>
+#include <kota/support/functional.h>
 
 using namespace kota;
 

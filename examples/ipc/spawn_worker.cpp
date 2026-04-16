@@ -9,7 +9,7 @@
 #include "kota/ipc/codec/json.h"
 #include "kota/async/async.h"
 
-namespace et = eventide;
+namespace et = kota;
 namespace ipc = et::ipc;
 
 namespace {
@@ -139,19 +139,19 @@ int run_parent(std::string self_path) {
          .worker_name = "worker-1",
          .source = "src/main.cpp",
          .header = "vector",
-         .include_path = "/opt/eventide/example/include",
+         .include_path = "/opt/kotatsu/example/include",
          },
         {
          .worker_name = "worker-2",
          .source = "src/lib.cpp",
          .header = "string",
-         .include_path = "/opt/eventide/example/include",
+         .include_path = "/opt/kotatsu/example/include",
          },
         {
          .worker_name = "worker-3",
          .source = "src/tool.cpp",
          .header = "memory",
-         .include_path = "/opt/eventide/example/include",
+         .include_path = "/opt/kotatsu/example/include",
          },
     };
 

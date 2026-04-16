@@ -11,7 +11,7 @@
 #include "kota/ipc/codec/json.h"
 #include "kota/async/async.h"
 
-namespace et = eventide;
+namespace et = kota;
 namespace ipc = et::ipc;
 
 namespace {

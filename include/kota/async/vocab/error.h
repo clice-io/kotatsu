@@ -37,7 +37,7 @@ public:
 
     friend constexpr bool operator==(const error& lhs, const error& rhs) noexcept = default;
 
-    /// eventide-specific error codes:
+    /// kotatsu-specific error codes:
     const static error operation_aborted;
 
     /// libuv error codes:

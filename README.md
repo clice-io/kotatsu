@@ -1,11 +1,11 @@
-# eventide
+# kotatsu
 
-`eventide` is a C++23 toolkit extracted from the `clice` ecosystem.
-It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv), and now also includes compile-time reflection, serde utilities, a typed IPC layer, generated LSP protocol bindings, a lightweight test framework, an LLVM-compatible option parsing library, and a declarative option library built on it.
+`kotatsu` is a C++23 toolkit extracted from the `clice` ecosystem.
+It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv), and now also includes compile-time reflection, codec utilities, a typed IPC layer, generated LSP protocol bindings, a lightweight test framework, an LLVM-compatible option parsing library, and a declarative option library built on it.
 
 ## Feature Coverage
 
-### `eventide` async runtime (`include/eventide/*`)
+### `async` runtime (`include/kota/async/*`)
 
 - Coroutine task system (`task`, shared task/future utilities, cancellation).
 - Event loop scheduling (`event_loop`, `run(...)` helper).
@@ -19,7 +19,7 @@ It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv)
 - Libuv watcher wrappers (`timer`, `idle`, `prepare`, `check`, `signal`).
 - Coroutine-friendly sync primitives (`mutex`, `semaphore`, `event`, `condition_variable`).
 
-### `reflection` (`include/eventide/reflection/*`)
+### `meta` (`include/kota/meta/*`)
 
 - Aggregate reflection:
   - field count
@@ -30,16 +30,16 @@ It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv)
 - Compile-time type/pointer/member name extraction.
 - Callable/function traits (`callable_args_t`, `callable_return_t`, etc.).
 
-### `serde` (`include/eventide/serde/*`)
+### `codec` (`include/kota/codec/*`)
 
 - Generic serialization/deserialization trait layer.
 - Field annotation system:
   - `rename`, `alias`, `flatten`, `skip`, `skip_if`, `literal`, `enum_string`, etc.
 - Backend integrations:
-  - `serde::json::simd` (simdjson-based JSON serializer/deserializer)
+  - `codec::json::simd` (simdjson-based JSON serializer/deserializer)
 - FlatBuffers helpers (`flatbuffers/binary/*`) and FlexBuffers helpers (`flatbuffers/flex/*`)
 
-### `ipc` (`include/eventide/ipc/*`)
+### `ipc` (`include/kota/ipc/*`)
 
 - JSON-RPC 2.0 protocol types and typed request/notification traits.
 - Transport abstraction (`Transport`, `StreamTransport`) for framed message IO.
@@ -56,14 +56,14 @@ It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv)
   - timeout overloads report `RequestCancelled (-32800)` with message `"request timed out"`
   - `RequestContext` delegates via `operator->`; use `context->send_request(..., {.token = context.cancellation})` to propagate the inbound handler token to nested outbound requests
 
-### `ipc/lsp` (`include/eventide/ipc/lsp/*`)
+### `ipc/lsp` (`include/kota/ipc/lsp/*`)
 
-- Generated LSP protocol model (`include/eventide/ipc/lsp/protocol.h`).
+- Generated LSP protocol model (`include/kota/ipc/lsp/protocol.h`).
 - LSP URI and position helpers (`URI`, `PositionMapper`).
 - LSP request/notification traits layered onto `kota::ipc::protocol`.
 - `ProgressReporter` for `$/progress` work-done notifications.
 
-### `option` (`include/eventide/option/*`)
+### `option` (`include/kota/option/*`)
 
 - LLVM-compatible option parsing model (`OptTable`, `Option`, `ParsedArgument`).
 - Supports common option styles:
@@ -76,7 +76,7 @@ It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv)
 - Alias/group matching, visibility/flag filtering, and grouped short options.
 - Callback-based parse APIs for one-arg and whole-argv flows.
 
-### `deco` (`include/eventide/deco/*`)
+### `deco` (`include/kota/deco/*`)
 
 - **Dec**larative **o**ption library
 - Declarative CLI option definition macros (`DecoFlag`, `DecoKV`, `DecoInput`, `DecoPack`, etc.).
@@ -87,7 +87,7 @@ It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv)
   - required/exclusive categories
   - nested config scopes
 
-### `zest` test framework (`include/eventide/zest/*`)
+### `zest` test framework (`include/kota/zest/*`)
 
 - Minimal unit test framework used by this repository.
 - Test suite / test case registration macros.
@@ -98,15 +98,15 @@ It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv)
 
 ```text
 include/
-  eventide/      # Public headers
+  kota/        # Public headers
     async/       # Async runtime APIs
-    common/      # Shared utilities
-    deco/        # Declarative CLI layer built on option + reflection
+    support/     # Shared utilities
+    deco/        # Declarative CLI layer built on option + meta
     ipc/         # IPC protocol, peer, and transport APIs
     ipc/lsp/     # LSP protocol model and utilities
     option/      # LLVM-compatible option parsing layer
-    reflection/  # Compile-time reflection utilities
-    serde/       # Generic serde + backend adapters
+    meta/        # Compile-time reflection utilities
+    codec/       # Generic codec + backend adapters
     zest/        # Internal test framework headers
 
 src/
@@ -114,19 +114,19 @@ src/
   ipc/           # IPC peer and transport implementations
   option/        # Option parser implementation
   deco/          # Deco target wiring (header-only APIs)
-  serde/         # FlatBuffers/FlexBuffers serde implementation
-  ipc/lsp/   # URI/position implementations
-  reflection/    # Reflection target wiring (header-only public APIs)
+  codec/         # FlatBuffers/FlexBuffers codec implementation
+  ipc/lsp/       # URI/position implementations
+  meta/          # Meta/reflection target wiring (header-only public APIs)
   zest/          # Test runner implementation
 
 tests/
   unit/          # Unit tests
     option/      # Option parser behavior tests
     deco/        # Declarative CLI/deco tests
-    reflection/  # Reflection behavior tests
+    meta/        # Reflection behavior tests
     async/       # Runtime/event-loop/IO/process/fs/sync tests
     ipc/         # IPC peer and transport tests
-    serde/       # JSON/FlatBuffers serde tests
+    codec/       # JSON/FlatBuffers codec tests
     ipc/lsp/     # LSP utility, progress, and jsonrpc-trait tests
 
 examples/

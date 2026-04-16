@@ -5,7 +5,7 @@
 
 #include "kota/ipc/codec/json.h"
 
-namespace et = eventide;
+namespace et = kota;
 namespace ipc = et::ipc;
 
 namespace {

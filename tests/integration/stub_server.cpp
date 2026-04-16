@@ -6,7 +6,7 @@
 #include "kota/ipc/lsp/progress.h"
 #include "kota/ipc/lsp/protocol.h"
 
-namespace et = eventide;
+namespace et = kota;
 namespace ipc = et::ipc;
 namespace lsp = ipc::lsp;
 namespace proto = ipc::protocol;

@@ -152,35 +152,35 @@ kota_apply_project_options(unit_tests)
 if(KOTA_SANITIZE_ADDRESS AND MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     # clang-cl ASan uses a runtime DLL; copy it next to the test executable so `ctest` can run
     # without requiring CI to tweak PATH.
-    get_filename_component(eventide_clang_compiler_dir "${CMAKE_C_COMPILER}" DIRECTORY)
-    set(eventide_asan_runtime_search_paths
-        "${eventide_clang_compiler_dir}"
-        "${eventide_asan_lib_path}"
+    get_filename_component(kota_clang_compiler_dir "${CMAKE_C_COMPILER}" DIRECTORY)
+    set(kota_asan_runtime_search_paths
+        "${kota_clang_compiler_dir}"
+        "${kota_asan_lib_path}"
     )
 
-    foreach(eventide_asan_runtime_name IN ITEMS
+    foreach(kota_asan_runtime_name IN ITEMS
         clang_rt.asan_dynamic-x86_64.dll
         clang_rt.asan_dbg_dynamic-x86_64.dll
     )
-        set(eventide_asan_runtime_path "")
-        foreach(eventide_asan_runtime_dir IN LISTS eventide_asan_runtime_search_paths)
-            if(eventide_asan_runtime_dir AND EXISTS "${eventide_asan_runtime_dir}/${eventide_asan_runtime_name}")
-                set(eventide_asan_runtime_path "${eventide_asan_runtime_dir}/${eventide_asan_runtime_name}")
+        set(kota_asan_runtime_path "")
+        foreach(kota_asan_runtime_dir IN LISTS kota_asan_runtime_search_paths)
+            if(kota_asan_runtime_dir AND EXISTS "${kota_asan_runtime_dir}/${kota_asan_runtime_name}")
+                set(kota_asan_runtime_path "${kota_asan_runtime_dir}/${kota_asan_runtime_name}")
                 break()
             endif()
         endforeach()
 
-        if(eventide_asan_runtime_path)
+        if(kota_asan_runtime_path)
             add_custom_command(TARGET unit_tests POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${eventide_asan_runtime_path}"
+                    "${kota_asan_runtime_path}"
                     "$<TARGET_FILE_DIR:unit_tests>"
                 VERBATIM
             )
         else()
             message(WARNING
-                "KOTA_SANITIZE_ADDRESS=ON, but ${eventide_asan_runtime_name} was not found. "
-                "Tried: ${eventide_asan_runtime_search_paths}"
+                "KOTA_SANITIZE_ADDRESS=ON, but ${kota_asan_runtime_name} was not found. "
+                "Tried: ${kota_asan_runtime_search_paths}"
             )
         endif()
     endforeach()

@@ -39,7 +39,7 @@ if(KOTA_CODEC_ENABLE_SIMDJSON)
     set(SIMDJSON_VERBOSE_LOGGING OFF CACHE BOOL "" FORCE)
     set(SIMDJSON_SKIPUTF8VALIDATION OFF CACHE BOOL "" FORCE)
 
-    eventide_add_git_dependency(
+    kota_add_git_dependency(
         simdjson
         GIT_REPOSITORY https://github.com/simdjson/simdjson.git
         GIT_TAG v4.2.4
@@ -85,7 +85,7 @@ if(KOTA_CODEC_ENABLE_SIMDJSON)
         set(YYJSON_BUILD_DOC OFF CACHE BOOL "" FORCE)
         set(YYJSON_INSTALL OFF CACHE BOOL "" FORCE)
 
-        eventide_add_git_dependency(
+        kota_add_git_dependency(
             yyjson
             GIT_REPOSITORY https://github.com/ibireme/yyjson.git
             GIT_TAG 0.12.0
@@ -118,7 +118,7 @@ if(KOTA_CODEC_ENABLE_FLATBUFFERS)
     set(FLATBUFFERS_BUILD_LEGACY OFF CACHE BOOL "" FORCE)
     set(FLATBUFFERS_ENABLE_PCH OFF CACHE BOOL "" FORCE)
 
-    eventide_add_git_dependency(
+    kota_add_git_dependency(
         flatbuffers
         GIT_REPOSITORY https://github.com/google/flatbuffers.git
         GIT_TAG v25.2.10
@@ -159,7 +159,7 @@ if(KOTA_CODEC_ENABLE_TOML)
     set(TOMLPLUSPLUS_BUILD_MODULES OFF CACHE BOOL "" FORCE)
     set(TOMLPLUSPLUS_INSTALL OFF CACHE BOOL "" FORCE)
 
-    eventide_add_git_dependency(
+    kota_add_git_dependency(
         tomlplusplus
         GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
         GIT_TAG v3.4.0

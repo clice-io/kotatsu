@@ -14,7 +14,7 @@
 #include "kota/deco/detail/macro.h"
 #include "kota/deco/detail/text.h"
 #include "kota/zest/zest.h"
-#include <eventide/zest/macro.h>
+#include <kota/zest/macro.h>
 
 namespace {
 
@@ -1349,7 +1349,7 @@ TEST_CASE(catter_v2) {
         });
 
     const auto script_path =
-        std::filesystem::temp_directory_path() / "eventide-catter-v2-script.tmp";
+        std::filesystem::temp_directory_path() / "kotatsu-catter-v2-script.tmp";
     {
         std::ofstream out(script_path);
         out << "print('hello')\n";

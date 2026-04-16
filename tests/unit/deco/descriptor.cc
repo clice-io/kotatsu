@@ -3,7 +3,7 @@
 #include <vector>
 
 #include "kota/deco/deco.h"
-#include <eventide/zest/zest.h>
+#include <kota/zest/zest.h>
 
 enum class DescEnum {
     Alpha,

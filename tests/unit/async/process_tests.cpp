@@ -83,12 +83,12 @@ TEST_CASE(spawn_pipe_stdout) {
     process::options opts;
 #ifdef _WIN32
     opts.file = "cmd.exe";
-    opts.args = {opts.file, "/c", "echo eventide-stdout"};
-    const std::string expected = "eventide-stdout\r\n";
+    opts.args = {opts.file, "/c", "echo kotatsu-stdout"};
+    const std::string expected = "kotatsu-stdout\r\n";
 #else
     opts.file = "/bin/sh";
-    opts.args = {opts.file, "-c", "printf 'eventide-stdout'"};
-    const std::string expected = "eventide-stdout";
+    opts.args = {opts.file, "-c", "printf 'kotatsu-stdout'"};
+    const std::string expected = "kotatsu-stdout";
 #endif
     opts.streams = {process::stdio::ignore(),
                     process::stdio::pipe(false, true),
@@ -131,7 +131,7 @@ TEST_CASE(spawn_pipe_stdio) {
                     process::stdio::pipe(false, true),
                     process::stdio::ignore()};
 
-    const std::string payload = "eventide-stdin-payload\n";
+    const std::string payload = "kotatsu-stdin-payload\n";
 
     auto spawn_res = process::spawn(opts, loop);
     ASSERT_TRUE(spawn_res.has_value());
@@ -174,10 +174,10 @@ TEST_CASE(spawn_pipe_stderr) {
     process::options opts;
 #ifdef _WIN32
     opts.file = "cmd.exe";
-    opts.args = {opts.file, "/c", "echo eventide-stderr 1>&2"};
+    opts.args = {opts.file, "/c", "echo kotatsu-stderr 1>&2"};
 #else
     opts.file = "/bin/sh";
-    opts.args = {opts.file, "-c", "printf 'eventide-stderr' 1>&2"};
+    opts.args = {opts.file, "-c", "printf 'kotatsu-stderr' 1>&2"};
 #endif
     opts.streams = {process::stdio::ignore(),
                     process::stdio::pipe(false, true),
@@ -200,7 +200,7 @@ TEST_CASE(spawn_pipe_stderr) {
         EXPECT_TRUE(stderr_out.has_value());
 
         if(stderr_out.has_value()) {
-            EXPECT_TRUE(stderr_out->find("eventide-stderr") != std::string::npos);
+            EXPECT_TRUE(stderr_out->find("kotatsu-stderr") != std::string::npos);
         }
 
         event_loop::current().stop();
@@ -239,9 +239,9 @@ TEST_CASE(spawn_pipe_stdout_read_chunk_twice) {
 TEST_CASE(spawn_invalid_file) {
     process::options opts;
 #ifdef _WIN32
-    opts.file = "Z:\\nonexistent\\eventide-nope.exe";
+    opts.file = "Z:\\nonexistent\\kotatsu-nope.exe";
 #else
-    opts.file = "/nonexistent/eventide-nope";
+    opts.file = "/nonexistent/kotatsu-nope";
 #endif
 
     auto spawn_res = process::spawn(opts, loop);

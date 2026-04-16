@@ -344,7 +344,7 @@ public:
         }
 
         if(*json_type == simdjson::ondemand::json_type::object) {
-            /// TODO(eventide/serde): Optimize object-variant dispatch with a two-pass strategy.
+            /// TODO(kotatsu/serde): Optimize object-variant dispatch with a two-pass strategy.
             /// Pass 1: walk fields once to collect a lightweight structural signature
             /// (field names + coarse JSON value categories).
             /// Use that signature to select a likely target alternative (especially among

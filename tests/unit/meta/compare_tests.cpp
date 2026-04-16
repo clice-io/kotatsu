@@ -188,9 +188,9 @@ TEST_CASE(primitive_types) {
 }
 
 TEST_CASE(string_native) {
-    constexpr std::string_view view = "eventide";
-    constexpr char literal[] = "eventide";
-    const std::string str = "eventide";
+    constexpr std::string_view view = "kotatsu";
+    constexpr char literal[] = "kotatsu";
+    const std::string str = "kotatsu";
 
     EXPECT_TRUE(eq(view, literal));
     EXPECT_TRUE(eq(literal, view));

@@ -1447,7 +1447,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=pathlib.Path,
-        default=pathlib.Path("include/eventide/ipc/lsp/protocol.h"),
+        default=pathlib.Path("include/kota/ipc/lsp/protocol.h"),
         help="Path to generated protocol header file (default: %(default)s)",
     )
     return parser.parse_args()
