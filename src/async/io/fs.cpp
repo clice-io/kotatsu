@@ -488,8 +488,8 @@ task<fs::fs_stats, error> fs::statfs(std::string_view path, event_loop& loop) {
                 .bavail = s->f_bavail,
                 .files = s->f_files,
                 .ffree = s->f_ffree,
-                // f_frsize was added in libuv 1.52. Fall back to f_bsize on older
-                // versions (conda-forge's macOS toolchain still ships 1.51).
+        // f_frsize was added in libuv 1.52. Fall back to f_bsize on older
+        // versions (conda-forge's macOS toolchain still ships 1.51).
 #if UV_VERSION_HEX >= ((1 << 16) | (52 << 8))
                 .frsize = s->f_frsize,
 #else
