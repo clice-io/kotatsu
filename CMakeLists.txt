@@ -164,12 +164,30 @@ endif()
 
 include(kota_dependencies)
 
+# kota::project_options carries ABI-relevant flags (exceptions, RTTI, source
+# encoding, compile definitions, MinGW link flags) and propagates PUBLIC so
+# that downstream consumers link-compatibly with kotatsu.
 add_library(kota_project_options INTERFACE)
 add_library(kota::project_options ALIAS kota_project_options)
+
+# kota::project_warnings carries diagnostic-only flags (-Wall/-Wextra/-Werror
+# and MSVC equivalents). These must NOT leak to downstream consumers — their
+# codebases have their own warning policies and may legitimately trigger
+# warnings kotatsu treats as errors. Applied PRIVATE via
+# kota_apply_project_options() below.
+add_library(kota_project_warnings INTERFACE)
+add_library(kota::project_warnings ALIAS kota_project_warnings)
 
 if(MSVC)
     target_compile_options(kota_project_options INTERFACE
         /utf-8
+        $<$<BOOL:${KOTA_ENABLE_EXCEPTIONS}>:/EHsc>
+        $<$<NOT:$<BOOL:${KOTA_ENABLE_EXCEPTIONS}>>:/EHs-c->
+        $<$<BOOL:${KOTA_ENABLE_RTTI}>:/GR>
+        $<$<NOT:$<BOOL:${KOTA_ENABLE_RTTI}>>:/GR->
+        $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/Zc:preprocessor>
+    )
+    target_compile_options(kota_project_warnings INTERFACE
         /W4
         /WX
         # Suppress warnings from headers in directories flagged as SYSTEM
@@ -177,24 +195,21 @@ if(MSVC)
         # INTERFACE_SYSTEM_INCLUDE_DIRECTORIES), so /WX does not promote
         # third-party header warnings into our errors.
         /external:W0
-        $<$<BOOL:${KOTA_ENABLE_EXCEPTIONS}>:/EHsc>
-        $<$<NOT:$<BOOL:${KOTA_ENABLE_EXCEPTIONS}>>:/EHs-c->
         $<$<NOT:$<BOOL:${KOTA_ENABLE_EXCEPTIONS}>>:/wd4530>
-        $<$<BOOL:${KOTA_ENABLE_RTTI}>:/GR>
-        $<$<NOT:$<BOOL:${KOTA_ENABLE_RTTI}>>:/GR->
-        $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/Zc:preprocessor>
         $<$<CXX_COMPILER_ID:MSVC>:/wd4033>
     )
 else()
     target_compile_options(kota_project_options INTERFACE
-        -Wall
-        -Wextra
-        -Werror
-        $<$<CXX_COMPILER_ID:GNU>:-Wno-error=maybe-uninitialized>
         $<$<BOOL:${KOTA_ENABLE_EXCEPTIONS}>:-fexceptions>
         $<$<NOT:$<BOOL:${KOTA_ENABLE_EXCEPTIONS}>>:-fno-exceptions>
         $<$<BOOL:${KOTA_ENABLE_RTTI}>:-frtti>
         $<$<NOT:$<BOOL:${KOTA_ENABLE_RTTI}>>:-fno-rtti>
+    )
+    target_compile_options(kota_project_warnings INTERFACE
+        -Wall
+        -Wextra
+        -Werror
+        $<$<CXX_COMPILER_ID:GNU>:-Wno-error=maybe-uninitialized>
     )
 
     if(MINGW)
@@ -222,11 +237,15 @@ function(kota_apply_project_options target)
 
     get_target_property(target_type ${target} TYPE)
     if(target_type STREQUAL "INTERFACE_LIBRARY")
+        # INTERFACE libraries cannot declare PRIVATE deps; warnings are picked
+        # up by the concrete (non-INTERFACE) targets that implement them via
+        # their own kota_apply_project_options() calls.
         target_link_libraries(${target} INTERFACE kota::project_options)
     elseif(target_type STREQUAL "EXECUTABLE")
-        target_link_libraries(${target} PRIVATE kota::project_options)
+        target_link_libraries(${target} PRIVATE kota::project_options kota::project_warnings)
     else()
         target_link_libraries(${target} PUBLIC kota::project_options)
+        target_link_libraries(${target} PRIVATE kota::project_warnings)
     endif()
 endfunction()
 
