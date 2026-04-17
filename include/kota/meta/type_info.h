@@ -391,15 +391,8 @@ struct struct_info_node {
 
     constexpr static bool is_trivially_copyable = std::is_trivially_copyable_v<V>;
 
-    constexpr inline static built_fields_t<V, schema_config> fields =
-        build_fields<V, schema_config>();
-
-    constexpr inline static struct_type_info value = {
-        {type_kind::structure, meta::type_name<V>()},
-        deny_unknown,
-        is_trivially_copyable,
-        {fields.data(),        count               },
-    };
+    static const built_fields_t<V, schema_config> fields;
+    static const struct_type_info value;
 };
 
 template <typename TagAttr>
@@ -579,19 +572,15 @@ struct type_instance<T, Config, type_kind::array> {
 };
 
 template <typename T, typename Config>
-struct type_instance<T, Config, type_kind::structure> {
+struct type_instance<T, Config, type_kind::structure>
+    : struct_info_node<
+          typename type_instance_subject<T>::wire_t,
+          Config,
+          typename type_instance_subject<T>::attrs_t> {
     using subject = type_instance_subject<T>;
     using attrs_t = typename subject::attrs_t;
     using wire_t = typename subject::wire_t;
-
-    const static struct_type_info value;
 };
-
-template <typename T, typename Config>
-constexpr struct_type_info type_instance<T, Config, type_kind::structure>::value =
-    struct_info_node<typename type_instance_subject<T>::wire_t,
-                     Config,
-                     typename type_instance_subject<T>::attrs_t>::value;
 
 template <typename T, typename Config>
 struct type_instance<T, Config, type_kind::enumeration> {
@@ -688,6 +677,20 @@ constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offse
         result[out++] = make_field_info<T, Config, I>(base_offset);
     }
 }
+
+template <typename V, typename Config, typename AttrsTuple>
+constexpr const built_fields_t<V, typename struct_info_node<V, Config, AttrsTuple>::schema_config>
+    struct_info_node<V, Config, AttrsTuple>::fields =
+        build_fields<V, typename struct_info_node<V, Config, AttrsTuple>::schema_config>();
+
+template <typename V, typename Config, typename AttrsTuple>
+constexpr const struct_type_info struct_info_node<V, Config, AttrsTuple>::value = {
+    {type_kind::structure, meta::type_name<V>()},
+    struct_info_node<V, Config, AttrsTuple>::deny_unknown,
+    struct_info_node<V, Config, AttrsTuple>::is_trivially_copyable,
+    {struct_info_node<V, Config, AttrsTuple>::fields.data(),
+     struct_info_node<V, Config, AttrsTuple>::count},
+};
 
 }  // namespace detail
 
