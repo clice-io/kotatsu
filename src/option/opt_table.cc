@@ -176,19 +176,6 @@ static unsigned match_opt(const OptTable::Info* i, std::string_view str, bool ig
     return 0;
 }
 
-// Returns true if one of the Prefixes + In.Names matches Option
-static bool opt_matches(const OptTable::Info& in, std::string_view option) {
-    auto name = in.name();
-    if(option.ends_with(name)) {
-        option.remove_suffix(name.size());
-        for(auto prefix: in.prefixes())
-            if(option == prefix) {
-                return true;
-            }
-    }
-    return false;
-}
-
 // Parse a single argument, return the new argument, and update Index. If
 // GroupedShortOptions is true, -a matches "-abc" and the argument in Args
 // will be updated to "-bc". This overload does not support VisibilityMask

@@ -177,12 +177,6 @@ task<pipe, error> connect_pipe(std::string_view name, int& done, int target = 2)
     co_return result;
 }
 
-task<pipe, error> accept_pipe_once(pipe::acceptor acc, int& done) {
-    auto result = co_await acc.accept();
-    bump_and_stop(done, 2);
-    co_return result;
-}
-
 task<std::string, error> accept_and_read_pipe(pipe::acceptor acc, int& done) {
     auto conn_res = co_await acc.accept();
     if(!conn_res.has_value()) {

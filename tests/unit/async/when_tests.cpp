@@ -81,11 +81,6 @@ task<int> delayed_int(int ms, int value) {
     co_return value;
 }
 
-task<int, error> return_error(error err) {
-    co_await fail(err);
-    std::unreachable();
-}
-
 task<int, error> return_value(int val) {
     co_return val;
 }

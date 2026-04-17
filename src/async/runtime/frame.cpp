@@ -26,8 +26,8 @@ void enqueue_destroy(std::coroutine_handle<> handle) {
     }
 }
 
-void drain_pending_destroys() {
 #if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+void drain_pending_destroys() {
     while(!pending_frame_destroys.empty()) {
         auto queued = std::move(pending_frame_destroys);
         pending_frame_destroys.clear();
@@ -37,8 +37,8 @@ void drain_pending_destroys() {
             }
         }
     }
-#endif
 }
+#endif
 
 }  // namespace
 
