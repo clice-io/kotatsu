@@ -104,12 +104,12 @@ struct fs_event_await : uv::await_op<fs_event_await> {
 
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
-                      std::source_location location = std::source_location::current()) noexcept {
+                      std::source_location loc = std::source_location::current()) noexcept {
         if(!self) {
             return waiting;
         }
         self->arm(*this, outcome);
-        return this->link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), loc);
     }
 
     result<fs_event::change> await_resume() noexcept {

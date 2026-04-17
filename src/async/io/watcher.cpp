@@ -79,12 +79,12 @@ struct basic_tick_await : uv::await_op<basic_tick_await<SelfT, HandleT>> {
 
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
-                      std::source_location location = std::source_location::current()) noexcept {
+                      std::source_location loc = std::source_location::current()) noexcept {
         if(!self) {
             return waiting;
         }
         self->waiter = this;
-        return this->link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), loc);
     }
 
     void await_resume() noexcept {
@@ -146,13 +146,13 @@ struct signal_await : uv::await_op<signal_await> {
 
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
-                      std::source_location location = std::source_location::current()) noexcept {
+                      std::source_location loc = std::source_location::current()) noexcept {
         if(!self) {
             return waiting;
         }
         self->waiter = this;
         self->active = &result;
-        return this->link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), loc);
     }
 
     error await_resume() noexcept {

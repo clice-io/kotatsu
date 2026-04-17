@@ -130,7 +130,7 @@ struct udp_recv_await : uv::await_op<udp_recv_await> {
         assert(u != nullptr && "on_alloc requires udp state in handle->data");
 
         buf->base = u->buffer.data();
-        buf->len = u->buffer.size();
+        buf->len = static_cast<decltype(buf->len)>(u->buffer.size());
     }
 
     static void on_read(uv_udp_t* handle,
@@ -168,7 +168,7 @@ struct udp_recv_await : uv::await_op<udp_recv_await> {
 
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
-                      std::source_location location = std::source_location::current()) noexcept {
+                      std::source_location loc = std::source_location::current()) noexcept {
         if(!self) {
             return waiting;
         }
@@ -186,7 +186,7 @@ struct udp_recv_await : uv::await_op<udp_recv_await> {
             }
         }
 
-        return this->link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), loc);
     }
 
     result<udp::recv_result> await_resume() noexcept {
@@ -248,7 +248,7 @@ struct udp_send_await : uv::await_op<udp_send_await> {
 
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
-                      std::source_location location = std::source_location::current()) noexcept {
+                      std::source_location loc = std::source_location::current()) noexcept {
         if(!self) {
             result = error::invalid_argument;
             return waiting;
@@ -275,7 +275,7 @@ struct udp_send_await : uv::await_op<udp_send_await> {
         }
 
         self->send_inflight = true;
-        return this->link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), loc);
     }
 
     error await_resume() noexcept {

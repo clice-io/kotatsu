@@ -81,12 +81,12 @@ struct process_await : uv::await_op<process_await> {
 
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
-                      std::source_location location = std::source_location::current()) noexcept {
+                      std::source_location loc = std::source_location::current()) noexcept {
         if(!self) {
             return waiting;
         }
         self->arm(*this, result);
-        return this->link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), loc);
     }
 
     process::wait_result await_resume() noexcept {

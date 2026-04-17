@@ -60,7 +60,7 @@ struct stream_read_await : uv::await_op<stream_read_await> {
 
         auto [dst, writable] = s->buffer.get_write_ptr();
         buf->base = dst;
-        buf->len = writable;
+        buf->len = static_cast<decltype(buf->len)>(writable);
 
         if(writable == 0) {
             uv::read_stop(*reinterpret_cast<uv_stream_t*>(handle));
@@ -102,7 +102,7 @@ struct stream_read_await : uv::await_op<stream_read_await> {
     template <typename Promise>
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<Promise> waiting,
-                      std::source_location location = std::source_location::current()) noexcept {
+                      std::source_location loc = std::source_location::current()) noexcept {
         if(!self) {
             return waiting;
         }
@@ -116,7 +116,7 @@ struct stream_read_await : uv::await_op<stream_read_await> {
             return waiting;
         }
         self->reader.arm(*this);
-        return this->link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), loc);
     }
 
     error await_resume() noexcept {
@@ -206,7 +206,7 @@ struct stream_read_some_await : uv::await_op<stream_read_some_await> {
     template <typename Promise>
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<Promise> waiting,
-                      std::source_location location = std::source_location::current()) noexcept {
+                      std::source_location loc = std::source_location::current()) noexcept {
         if(!self) {
             return waiting;
         }
@@ -218,7 +218,7 @@ struct stream_read_some_await : uv::await_op<stream_read_some_await> {
             return waiting;
         }
 
-        return this->link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), loc);
     }
 
     result<std::size_t> await_resume() noexcept {
@@ -277,7 +277,7 @@ struct stream_write_await : uv::await_op<stream_write_await> {
 
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
-                      std::source_location location = std::source_location::current()) noexcept {
+                      std::source_location loc = std::source_location::current()) noexcept {
         if(!self) {
             return waiting;
         }
@@ -293,7 +293,7 @@ struct stream_write_await : uv::await_op<stream_write_await> {
             return waiting;
         }
 
-        return this->link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), loc);
     }
 
     error await_resume() noexcept {
