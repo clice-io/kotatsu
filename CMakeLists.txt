@@ -172,6 +172,7 @@ if(MSVC)
         $<$<BOOL:${KOTA_ENABLE_RTTI}>:/GR>
         $<$<NOT:$<BOOL:${KOTA_ENABLE_RTTI}>>:/GR->
         $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/Zc:preprocessor>
+        $<$<CXX_COMPILER_ID:MSVC>:/wd4033>
     )
 else()
     target_compile_options(kota_project_options INTERFACE
@@ -195,8 +196,8 @@ endif()
 target_compile_definitions(kota_project_options INTERFACE
     KOTA_ENABLE_EXCEPTIONS=$<IF:$<BOOL:${KOTA_ENABLE_EXCEPTIONS}>,1,0>
     KOTA_ENABLE_RTTI=$<IF:$<BOOL:${KOTA_ENABLE_RTTI}>,1,0>
-    $<$<CXX_COMPILER_ID:MSVC>:_CRT_SECURE_NO_WARNINGS>
-    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<NOT:$<BOOL:${KOTA_ENABLE_EXCEPTIONS}>>>:_HAS_EXCEPTIONS=0>
+    $<$<BOOL:${MSVC}>:_CRT_SECURE_NO_WARNINGS>
+    $<$<AND:$<BOOL:${MSVC}>,$<NOT:$<BOOL:${KOTA_ENABLE_EXCEPTIONS}>>>:_HAS_EXCEPTIONS=0>
 )
 
 function(kota_apply_project_options target)

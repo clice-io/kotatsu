@@ -116,14 +116,14 @@ public:
             auto begin_result = this->array.begin();
             auto begin_err = std::move(begin_result).get(iter);
             if(begin_err != simdjson::SUCCESS) {
-                deserializer.mark_invalid(begin_err);
+                (void)deserializer.mark_invalid(begin_err);
                 return;
             }
 
             auto end_result = this->array.end();
             auto end_err = std::move(end_result).get(end_iter);
             if(end_err != simdjson::SUCCESS) {
-                deserializer.mark_invalid(end_err);
+                (void)deserializer.mark_invalid(end_err);
                 return;
             }
         }
@@ -237,14 +237,14 @@ public:
             auto begin_result = this->object.begin();
             auto begin_err = std::move(begin_result).get(iter);
             if(begin_err != simdjson::SUCCESS) {
-                deserializer.mark_invalid(begin_err);
+                (void)deserializer.mark_invalid(begin_err);
                 return;
             }
 
             auto end_result = this->object.end();
             auto end_err = std::move(end_result).get(end_iter);
             if(end_err != simdjson::SUCCESS) {
-                deserializer.mark_invalid(end_err);
+                (void)deserializer.mark_invalid(end_err);
                 return;
             }
         }
@@ -742,7 +742,7 @@ private:
         auto document_result = parser.iterate(json);
         auto err = std::move(document_result).get(document);
         if(err != simdjson::SUCCESS) {
-            mark_invalid(err);
+            (void)mark_invalid(err);
         }
     }
 

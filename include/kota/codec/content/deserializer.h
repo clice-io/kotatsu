@@ -54,7 +54,7 @@ public:
             Base(deserializer) {
             auto collected = deserializer.collect_object_entries(object);
             if(!collected) {
-                deserializer.mark_invalid(collected.error());
+                (void)deserializer.mark_invalid(collected.error());
                 return;
             }
             this->entries = std::move(*collected);
@@ -69,20 +69,20 @@ public:
     explicit Deserializer(const content::Value& value) :
         owned_root_value(value), root_value(owned_root_value->as_ref()) {
         if(!root_value.valid()) {
-            mark_invalid();
+            (void)mark_invalid();
         }
     }
 
     explicit Deserializer(content::Value&& value) :
         owned_root_value(std::move(value)), root_value(owned_root_value->as_ref()) {
         if(!root_value.valid()) {
-            mark_invalid();
+            (void)mark_invalid();
         }
     }
 
     explicit Deserializer(content::ValueRef value) : root_value(value) {
         if(!root_value.valid()) {
-            mark_invalid();
+            (void)mark_invalid();
         }
     }
 
