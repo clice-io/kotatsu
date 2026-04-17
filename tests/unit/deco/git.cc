@@ -30,7 +30,7 @@ struct GitCloneOpt {
 
 struct GitTagOpt {
     struct Cate {
-        constexpr static deco::decl::Category mode_category{
+        constexpr static kota::deco::decl::Category mode_category{
             .exclusive = false,
             .required = true,
             .name = "mode",
@@ -56,22 +56,22 @@ std::vector<std::string> make_args(Args&&... args) {
 TEST_SUITE(deco_git) {
 
 TEST_CASE(usage_lists_git_style_subcommands) {
-    auto commit_command = deco::cli::command<GitCommitOpt>("git commit [OPTIONS]");
+    auto commit_command = kota::deco::cli::command<GitCommitOpt>("git commit [OPTIONS]");
     commit_command.matchAll([](GitCommitOpt) {});
 
-    auto clone_command = deco::cli::command<GitCloneOpt>("git clone [OPTIONS]");
+    auto clone_command = kota::deco::cli::command<GitCloneOpt>("git clone [OPTIONS]");
     clone_command.matchAll([](GitCloneOpt) {});
 
-    deco::cli::SubCommander git("git [--version] [--help] <command> [<args>]",
+    kota::deco::cli::SubCommander git("git [--version] [--help] <command> [<args>]",
                                 "A fast, scalable, distributed version control system");
     git.add(
-           deco::decl::SubCommand{
+           kota::deco::decl::SubCommand{
                .name = "commit",
                .description = "Record changes to the repository",
            },
            commit_command)
         .add(
-            deco::decl::SubCommand{
+            kota::deco::decl::SubCommand{
                 .name = "clone",
                 .description = "Clone a repository into a new directory",
             },
@@ -93,7 +93,7 @@ TEST_CASE(clone_subcommand_parses_input_and_option) {
     std::string dispatch_err;
     std::string subcommand_err;
 
-    auto clone_command = deco::cli::command<GitCloneOpt>("git clone [OPTIONS] REPO");
+    auto clone_command = kota::deco::cli::command<GitCloneOpt>("git clone [OPTIONS] REPO");
     clone_command
         .matchAll([&](GitCloneOpt opt) {
             EXPECT_TRUE(opt.repo.has_value());
@@ -107,9 +107,9 @@ TEST_CASE(clone_subcommand_parses_input_and_option) {
         })
         .on_error([&](auto err) { dispatch_err = err.message; });
 
-    deco::cli::SubCommander git("git [--version] [--help] <command> [<args>]");
+    kota::deco::cli::SubCommander git("git [--version] [--help] <command> [<args>]");
     git.add(
-           deco::decl::SubCommand{
+           kota::deco::decl::SubCommand{
                .name = "clone",
                .description = "Clone a repository into a new directory",
            },
@@ -129,14 +129,14 @@ TEST_CASE(commit_subcommand_reports_required_option_error) {
     std::string dispatch_err;
     std::string subcommand_err;
 
-    auto commit_command = deco::cli::command<GitCommitOpt>("git commit [OPTIONS]");
+    auto commit_command = kota::deco::cli::command<GitCommitOpt>("git commit [OPTIONS]");
     commit_command.matchAll([](GitCommitOpt) {}).on_error([&](auto err) {
         dispatch_err = err.message;
     });
 
-    deco::cli::SubCommander git("git [--version] [--help] <command> [<args>]");
+    kota::deco::cli::SubCommander git("git [--version] [--help] <command> [<args>]");
     git.add(
-           deco::decl::SubCommand{
+           kota::deco::decl::SubCommand{
                .name = "commit",
                .description = "Record changes to the repository",
            },
@@ -153,12 +153,12 @@ TEST_CASE(commit_subcommand_reports_required_option_error) {
 TEST_CASE(unknown_subcommand_reports_error) {
     std::string subcommand_err;
 
-    auto commit_command = deco::cli::command<GitCommitOpt>("git commit [OPTIONS]");
+    auto commit_command = kota::deco::cli::command<GitCommitOpt>("git commit [OPTIONS]");
     commit_command.matchAll([](GitCommitOpt) {});
 
-    deco::cli::SubCommander git("git [--version] [--help] <command> [<args>]");
+    kota::deco::cli::SubCommander git("git [--version] [--help] <command> [<args>]");
     git.add(
-           deco::decl::SubCommand{
+           kota::deco::decl::SubCommand{
                .name = "commit",
                .description = "Record changes to the repository",
            },
@@ -174,12 +174,12 @@ TEST_CASE(unknown_subcommand_reports_error) {
 TEST_CASE(required_category_error_is_reported) {
     std::string dispatch_err;
 
-    auto tag_command = deco::cli::command<GitTagOpt>("git tag [OPTIONS]");
+    auto tag_command = kota::deco::cli::command<GitTagOpt>("git tag [OPTIONS]");
     tag_command.matchAll([](GitTagOpt) {}).on_error([&](auto err) { dispatch_err = err.message; });
 
-    deco::cli::SubCommander git("git [--version] [--help] <command> [<args>]");
+    kota::deco::cli::SubCommander git("git [--version] [--help] <command> [<args>]");
     git.add(
-        deco::decl::SubCommand{
+        kota::deco::decl::SubCommand{
             .name = "tag",
             .description = "Create, list, delete or verify a tag object",
         },

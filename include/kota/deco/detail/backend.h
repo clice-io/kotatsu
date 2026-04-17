@@ -17,7 +17,7 @@
 #include "kota/support/memory.h"
 #include "kota/support/type_traits.h"
 
-namespace deco::detail {
+namespace kota::deco::detail {
 
 using namespace kota::comptime;
 
@@ -1332,4 +1332,4 @@ const auto& build_storage() {
     return value;
 }
 
-}  // namespace deco::detail
+}  // namespace kota::deco::detail

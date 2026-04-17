@@ -58,8 +58,8 @@
     using _deco_base_t::arg_num;
 
 #define DECO_CONFIG_IMPL(id, TY, ...)                                                              \
-    struct DECO_CFG_STRUCT_NAME(id) : public deco::decl::ConfigFields {                            \
-        using _deco_base_t = deco::decl::ConfigFields;                                             \
+    struct DECO_CFG_STRUCT_NAME(id) : public kota::deco::decl::ConfigFields {                            \
+        using _deco_base_t = kota::deco::decl::ConfigFields;                                             \
         DECO_USING_CONFIG_COMMON                                                                   \
         constexpr DECO_CFG_STRUCT_NAME(id)() {                                                     \
             type = TY;                                                                             \
@@ -71,20 +71,20 @@
     } DECO_CFG_NAME(id);
 
 #define DECO_CFG(...)                                                                              \
-    DECO_CONFIG_IMPL(__COUNTER__, deco::decl::ConfigFields::Type::Next, __VA_ARGS__)
+    DECO_CONFIG_IMPL(__COUNTER__, kota::deco::decl::ConfigFields::Type::Next, __VA_ARGS__)
 #define DECO_CFG_START(...)                                                                        \
-    DECO_CONFIG_IMPL(__COUNTER__, deco::decl::ConfigFields::Type::Start, __VA_ARGS__)
+    DECO_CONFIG_IMPL(__COUNTER__, kota::deco::decl::ConfigFields::Type::Start, __VA_ARGS__)
 #define DECO_CFG_END(...)                                                                          \
-    DECO_CONFIG_IMPL(__COUNTER__, deco::decl::ConfigFields::Type::End, __VA_ARGS__)
+    DECO_CONFIG_IMPL(__COUNTER__, kota::deco::decl::ConfigFields::Type::End, __VA_ARGS__)
 
 #define DECO_DECLARE_OPTION_TYPED_IMPL(id, option_base_ty, cfg_base_ty, using_block, ...)          \
     struct DECO_OPTION_STRUCT_NAME(id) : public option_base_ty {                                   \
         struct __deco_field_ty :                                                                   \
             public cfg_base_ty,                                                                    \
-            public deco::decl::OptionCallbackField<typename option_base_ty::result_type> {         \
+            public kota::deco::decl::OptionCallbackField<typename option_base_ty::result_type> {         \
             using _deco_base_t = cfg_base_ty;                                                      \
             using _deco_callback_base_t =                                                          \
-                deco::decl::OptionCallbackField<typename option_base_ty::result_type>;             \
+                kota::deco::decl::OptionCallbackField<typename option_base_ty::result_type>;             \
             using result_type = typename option_base_ty::result_type;                              \
             using_block constexpr __deco_field_ty() {                                              \
                 __VA_ARGS__;                                                                       \
@@ -128,9 +128,9 @@
     struct DECO_OPTION_STRUCT_NAME(id) : public option_base_tpl<ResTy> {                           \
         struct __deco_field_ty :                                                                   \
             public cfg_base_ty,                                                                    \
-            public deco::decl::OptionCallbackField<ResTy> {                                        \
+            public kota::deco::decl::OptionCallbackField<ResTy> {                                        \
             using _deco_base_t = cfg_base_ty;                                                      \
-            using _deco_callback_base_t = deco::decl::OptionCallbackField<ResTy>;                  \
+            using _deco_callback_base_t = kota::deco::decl::OptionCallbackField<ResTy>;                  \
             using result_type = ResTy;                                                             \
             using_block constexpr __deco_field_ty() {                                              \
                 __VA_ARGS__;                                                                       \
@@ -161,73 +161,73 @@
                                       __VA_ARGS__)
 
 #define DecoFlag(...)                                                                              \
-    DECO_DECLARE_OPTION_TYPED(deco::decl::FlagOption<bool>,                                        \
-                              deco::decl::FlagFields,                                              \
+    DECO_DECLARE_OPTION_TYPED(kota::deco::decl::FlagOption<bool>,                                        \
+                              kota::deco::decl::FlagFields,                                              \
                               DECO_USING_FLAG,                                                     \
                               __VA_ARGS__)
 
 #define DecoFlagN(...)                                                                             \
-    DECO_DECLARE_OPTION_TYPED(deco::decl::FlagOption<std::uint32_t>,                               \
-                              deco::decl::FlagFields,                                              \
+    DECO_DECLARE_OPTION_TYPED(kota::deco::decl::FlagOption<std::uint32_t>,                               \
+                              kota::deco::decl::FlagFields,                                              \
                               DECO_USING_FLAG,                                                     \
                               __VA_ARGS__)
 
 #define DecoInput(...)                                                                             \
-    DECO_DECLARE_OPTION_TEMPLATE(deco::trait::InputResultType,                                     \
+    DECO_DECLARE_OPTION_TEMPLATE(kota::deco::trait::InputResultType,                                     \
                                  std::string,                                                      \
-                                 deco::decl::InputOption,                                          \
-                                 deco::decl::InputFields,                                          \
+                                 kota::deco::decl::InputOption,                                          \
+                                 kota::deco::decl::InputFields,                                          \
                                  DECO_USING_INPUT,                                                 \
                                  __VA_ARGS__)
 
 #define DecoPack(...)                                                                              \
-    DECO_DECLARE_OPTION_TEMPLATE(deco::trait::VectorResultType,                                    \
+    DECO_DECLARE_OPTION_TEMPLATE(kota::deco::trait::VectorResultType,                                    \
                                  std::vector<std::string>,                                         \
-                                 deco::decl::VectorOption,                                         \
-                                 deco::decl::PackFields,                                           \
+                                 kota::deco::decl::VectorOption,                                         \
+                                 kota::deco::decl::PackFields,                                           \
                                  DECO_USING_PACK,                                                  \
                                  __VA_ARGS__)
 
 #define DecoKVStyled(kv_style, ...)                                                                \
-    DECO_DECLARE_OPTION_TEMPLATE(deco::trait::ScalarResultType,                                    \
+    DECO_DECLARE_OPTION_TEMPLATE(kota::deco::trait::ScalarResultType,                                    \
                                  std::string,                                                      \
-                                 deco::decl::ScalarOption,                                         \
-                                 deco::decl::KVFields,                                             \
+                                 kota::deco::decl::ScalarOption,                                         \
+                                 kota::deco::decl::KVFields,                                             \
                                  DECO_USING_KV,                                                    \
                                  style = kv_style;                                                 \
                                  __VA_ARGS__)
 
-#define DecoKV(...) DecoKVStyled(deco::decl::KVStyle::Separate, __VA_ARGS__)
+#define DecoKV(...) DecoKVStyled(kota::deco::decl::KVStyle::Separate, __VA_ARGS__)
 
 #define DecoComma(...)                                                                             \
-    DECO_DECLARE_OPTION_TEMPLATE(deco::trait::VectorResultType,                                    \
+    DECO_DECLARE_OPTION_TEMPLATE(kota::deco::trait::VectorResultType,                                    \
                                  std::vector<std::string>,                                         \
-                                 deco::decl::VectorOption,                                         \
-                                 deco::decl::CommaJoinedFields,                                    \
+                                 kota::deco::decl::VectorOption,                                         \
+                                 kota::deco::decl::CommaJoinedFields,                                    \
                                  DECO_USING_COMMA_JOINED,                                          \
                                  __VA_ARGS__)
 
 #define DecoMulti(number, ...)                                                                     \
-    DECO_DECLARE_OPTION_TEMPLATE(deco::trait::VectorResultType,                                    \
+    DECO_DECLARE_OPTION_TEMPLATE(kota::deco::trait::VectorResultType,                                    \
                                  std::vector<std::string>,                                         \
-                                 deco::decl::VectorOption,                                         \
-                                 deco::decl::MultiFields,                                          \
+                                 kota::deco::decl::VectorOption,                                         \
+                                 kota::deco::decl::MultiFields,                                          \
                                  DECO_USING_MULTI,                                                 \
                                  arg_num = number;                                                 \
                                  __VA_ARGS__)
 
 #define DecoFlagAlias(...)                                                                         \
-    DECO_DECLARE_ALIAS(deco::decl::FlagAliasFields, DECO_USING_ALIAS, __VA_ARGS__)
+    DECO_DECLARE_ALIAS(kota::deco::decl::FlagAliasFields, DECO_USING_ALIAS, __VA_ARGS__)
 
 #define DecoKVAliasStyled(kv_style, ...)                                                           \
-    DECO_DECLARE_ALIAS(deco::decl::KVAliasFields, DECO_USING_KV_ALIAS, style = kv_style;           \
+    DECO_DECLARE_ALIAS(kota::deco::decl::KVAliasFields, DECO_USING_KV_ALIAS, style = kv_style;           \
                        __VA_ARGS__)
 
-#define DecoKVAlias(...) DecoKVAliasStyled(deco::decl::KVStyle::Separate, __VA_ARGS__)
+#define DecoKVAlias(...) DecoKVAliasStyled(kota::deco::decl::KVStyle::Separate, __VA_ARGS__)
 
 #define DecoCommaAlias(...)                                                                        \
-    DECO_DECLARE_ALIAS(deco::decl::CommaJoinedAliasFields, DECO_USING_ALIAS, __VA_ARGS__)
+    DECO_DECLARE_ALIAS(kota::deco::decl::CommaJoinedAliasFields, DECO_USING_ALIAS, __VA_ARGS__)
 
 #define DecoMultiAlias(number, ...)                                                                \
-    DECO_DECLARE_ALIAS(deco::decl::MultiAliasFields, DECO_USING_MULTI_ALIAS, arg_num = number;     \
+    DECO_DECLARE_ALIAS(kota::deco::decl::MultiAliasFields, DECO_USING_MULTI_ALIAS, arg_num = number;     \
                        __VA_ARGS__)

@@ -26,7 +26,7 @@ constexpr std::string_view red = "\033[31m";
 constexpr std::string_view clear = "\033[0m";
 
 struct ZestCliOptions {
-    DecoKVStyled(style = deco::decl::KVStyle::Joined | deco::decl::KVStyle::Separate,
+    DecoKVStyled(style = kota::deco::decl::KVStyle::Joined | kota::deco::decl::KVStyle::Separate,
                  names = {"--test-filter"};
                  meta_var = "<PATTERN>";
                  help = "test name filters, SUITE or SUITE.TEST or SUITE.* or *";
@@ -44,7 +44,7 @@ struct ZestCliOptions {
     parallel = false;
 
     DecoKVStyled(
-        style = deco::decl::KVStyle::Joined | deco::decl::KVStyle::Separate,
+        style = kota::deco::decl::KVStyle::Joined | kota::deco::decl::KVStyle::Separate,
         names = {"--parallel-workers"};
         meta_var = "<N>";
         help = "Number of worker threads for parallel mode (default: hardware_concurrency)";
@@ -245,12 +245,12 @@ void print_summary(const RunSummary& summary) {
 namespace kota::zest {
 
 int run_cli(int argc, char** argv, std::string_view command_overview) {
-    auto args = deco::util::argvify(argc, argv);
-    auto renderer = deco::cli::text::ModernRenderer();
-    deco::cli::Command<ZestCliOptions> command(command_overview);
+    auto args = kota::deco::util::argvify(argc, argv);
+    auto renderer = kota::deco::cli::text::ModernRenderer();
+    kota::deco::cli::Command<ZestCliOptions> command(command_overview);
     command.render_with(renderer);
 
-    auto parsed = deco::cli::parse<ZestCliOptions>(args, renderer);
+    auto parsed = kota::deco::cli::parse<ZestCliOptions>(args, renderer);
     if(!parsed.has_value()) {
         std::cerr << "Error parsing options: " << parsed.error().message << "\n";
         command.usage(std::cerr);

@@ -13,11 +13,11 @@
 #include "kota/codec/spelling.h"
 
 /*
- * generate string that describes the structure of options declared in deco::desc namespace, and
+ * generate string that describes the structure of options declared in kota::deco::desc namespace, and
  * provide utilities to access the fields of the options by their corresponding option specifiers.
  */
 
-namespace deco::desc {
+namespace kota::deco::desc {
 namespace detail {
 
 constexpr std::string_view defaultHelpText = "not provided";
@@ -383,4 +383,4 @@ inline std::string from_deco_option(const T& field,
     }
 }
 
-}  // namespace deco::desc
+}  // namespace kota::deco::desc

@@ -19,7 +19,7 @@
 #include "trait.h"
 #include "kota/codec/spelling.h"
 
-namespace deco::decl {
+namespace kota::deco::decl {
 
 enum class DecoType {
     Input,
@@ -920,4 +920,4 @@ struct SubCommand {
     std::optional<std::string_view> command;
 };
 
-}  // namespace deco::decl
+}  // namespace kota::deco::decl

@@ -5,7 +5,7 @@
 #include "decl.h"
 #include "kota/meta/struct.h"
 
-namespace deco::ty {
+namespace kota::deco::ty {
 
 template <typename T>
 using base_ty = std::remove_cvref_t<T>;
@@ -66,4 +66,4 @@ constexpr auto dyn_cast(const T& field) {
     }
 }
 
-}  // namespace deco::ty
+}  // namespace kota::deco::ty

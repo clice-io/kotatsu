@@ -29,8 +29,8 @@ struct MyClang {
 TEST_SUITE(deco_demos) {
 
 TEST_CASE(MyClang) {
-    auto cmd = deco::cli::command<MyClang>("Clang [OPTIONS] inputs");
-    cmd.render_with(deco::cli::text::ModernRenderer());
+    auto cmd = kota::deco::cli::command<MyClang>("Clang [OPTIONS] inputs");
+    cmd.render_with(kota::deco::cli::text::ModernRenderer());
 
     std::stringstream ss;
     cmd.usage(ss);

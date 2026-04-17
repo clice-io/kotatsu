@@ -8,14 +8,14 @@
 
 #include "./config.h"
 
-namespace deco::cli::text {
+namespace kota::deco::cli::text {
 
-using PositionStyle = ::deco::config::PositionStyle;
-using UsageStyle = ::deco::config::UsageStyle;
-using SubCommandStyle = ::deco::config::SubCommandStyle;
-using TextStyle = ::deco::config::TextStyle;
-using CompatibleRendererConfig = ::deco::config::CompatibleRendererConfig;
-using ModernRendererConfig = ::deco::config::ModernRendererConfig;
+using PositionStyle = ::kota::deco::config::PositionStyle;
+using UsageStyle = ::kota::deco::config::UsageStyle;
+using SubCommandStyle = ::kota::deco::config::SubCommandStyle;
+using TextStyle = ::kota::deco::config::TextStyle;
+using CompatibleRendererConfig = ::kota::deco::config::CompatibleRendererConfig;
+using ModernRendererConfig = ::kota::deco::config::ModernRendererConfig;
 
 struct Diagnostic {
     std::string message;
@@ -108,4 +108,4 @@ auto render_subcommands(const SubCommandDocument& document, const Renderer* rend
 auto render_diagnostic(const Diagnostic& diagnostic, const Renderer* renderer = nullptr)
     -> std::string;
 
-}  // namespace deco::cli::text
+}  // namespace kota::deco::cli::text

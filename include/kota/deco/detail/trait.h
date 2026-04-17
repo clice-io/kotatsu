@@ -12,7 +12,7 @@
 #include "kota/option/option.h"
 #include "kota/meta/struct.h"
 
-namespace deco {
+namespace kota::deco {
 namespace backend = kota::option;
 namespace refl = kota::meta;
 
@@ -22,9 +22,9 @@ struct IntoContext;
 
 }
 
-}  // namespace deco
+}  // namespace kota::deco
 
-namespace deco::trait {
+namespace kota::deco::trait {
 
 template <typename Ty>
 using BaseResultTy = std::remove_cvref_t<Ty>;
@@ -106,7 +106,7 @@ concept VectorResultType = PrimitiveVectorResultType<Ty> || CustomStringVectorRe
 template <typename Ty>
 concept InputResultType = ScalarResultType<Ty> || VectorResultType<Ty>;
 
-}  // namespace deco::trait
+}  // namespace kota::deco::trait
 
 #define DecoScalarResultErrString                                                                  \
     "Result type must be a primitive scalar (bool/number/enum/owning string) or provide "        \

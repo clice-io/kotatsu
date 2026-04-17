@@ -6,7 +6,7 @@
 
 #include "kota/deco/detail/config.h"
 
-namespace deco::cli::text {
+namespace kota::deco::cli::text {
 namespace {
 
 constexpr std::string_view ansi_reset = "\033[0m";
@@ -694,18 +694,18 @@ auto render_diagnostic(const Diagnostic& diagnostic, const Renderer* renderer) -
     return CompatibleRendererImpl::render_diagnostic_document(diagnostic, active_renderer.style);
 }
 
-}  // namespace deco::cli::text
+}  // namespace kota::deco::cli::text
 
-namespace deco::config {
+namespace kota::deco::config {
 
 auto get() -> const Config& {
-    return ::deco::cli::text::detail::mutable_global_config();
+    return ::kota::deco::cli::text::detail::mutable_global_config();
 }
 
 void set(Config config) {
-    ::deco::cli::text::detail::mutable_global_config() = std::move(config);
-    ::deco::cli::text::detail::mutable_config_renderer() =
-        ::deco::cli::text::CompatibleRenderer(get().render.compatible);
+    ::kota::deco::cli::text::detail::mutable_global_config() = std::move(config);
+    ::kota::deco::cli::text::detail::mutable_config_renderer() =
+        ::kota::deco::cli::text::CompatibleRenderer(get().render.compatible);
 }
 
 void set_render(BuiltInRenderConfig render) {
@@ -720,4 +720,4 @@ void set_enum_meta_var(EnumMetaVarConfig config) {
     set(std::move(updated));
 }
 
-}  // namespace deco::config
+}  // namespace kota::deco::config

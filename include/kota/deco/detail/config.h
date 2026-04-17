@@ -5,7 +5,7 @@
 #include <string>
 #include <utility>
 
-namespace deco::config {
+namespace kota::deco::config {
 
 struct PositionStyle {
     bool enabled = true;
@@ -94,4 +94,4 @@ void set(Config config);
 void set_render(BuiltInRenderConfig render);
 void set_enum_meta_var(EnumMetaVarConfig config);
 
-}  // namespace deco::config
+}  // namespace kota::deco::config

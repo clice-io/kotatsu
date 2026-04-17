@@ -11,10 +11,10 @@
 
 #include "./backend.h"
 
-namespace deco::ser {
+namespace kota::deco::ser {
 
 template <typename StructTy>
-class Serializer : public deco::detail::DecoStructConsumer<Serializer<StructTy>, StructTy> {
+class Serializer : public kota::deco::detail::DecoStructConsumer<Serializer<StructTy>, StructTy> {
     using base_t = detail::DecoStructConsumer<Serializer<StructTy>, StructTy>;
     using category_span_t = std::span<const decl::Category* const>;
 
@@ -107,7 +107,7 @@ class Serializer : public deco::detail::DecoStructConsumer<Serializer<StructTy>,
             return oss.str();
         } else {
             static_assert(kota::dependent_false<raw_ty>,
-                          "Unsupported scalar value type for deco::ser::Serializer.");
+                          "Unsupported scalar value type for kota::deco::ser::Serializer.");
             return {};
         }
     }
@@ -289,4 +289,4 @@ std::vector<std::string> to_argv(const StructTy& object,
     return Serializer<StructTy>(object, categories).to_argv();
 }
 
-}  // namespace deco::ser
+}  // namespace kota::deco::ser

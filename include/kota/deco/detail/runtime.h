@@ -24,13 +24,13 @@
 #include "./text.h"
 #include "kota/support/functional.h"
 
-namespace deco::util {
+namespace kota::deco::util {
 
 std::vector<std::string> argvify(int argc, const char* const* argv, unsigned skip_num = 1);
 
-}  // namespace deco::util
+}  // namespace kota::deco::util
 
-namespace deco::cli {
+namespace kota::deco::cli {
 
 template <typename Signature>
 using runtime_callable_t = kota::function<Signature>;
@@ -250,7 +250,7 @@ auto make_usage_document(std::string_view command_overview,
         .overview = std::string(command_overview),
     };
     std::vector<const decl::Category*> seen_categories;
-    const auto& storage = ::deco::detail::build_storage<T>();
+    const auto& storage = ::kota::deco::detail::build_storage<T>();
     storage.visit_fields(T{}, [&](const auto& field, const auto& cfg, std::string_view name, auto) {
         const auto* category = cfg.category.ptr();
         std::size_t group_index = 0;
@@ -461,7 +461,7 @@ struct SubCommandError {
 template <typename T>
 std::string check_valid(const T& options,
                         const std::set<const decl::Category*>& matched_categories) {
-    const auto& storage = ::deco::detail::build_storage<T>();
+    const auto& storage = ::kota::deco::detail::build_storage<T>();
     std::string err = "";
     // check required options
     storage.visit_fields(options, [&](auto& field, const auto& cfg, std::string_view name, auto) {
@@ -519,7 +519,7 @@ std::expected<Invocation<T>, ParseError>
     run_parse_session(std::span<std::string> argv,
                       OnOption&& on_option,
                       const text::Renderer* formatter = nullptr) {
-    const auto& storage = ::deco::detail::build_storage<T>();
+    const auto& storage = ::kota::deco::detail::build_storage<T>();
     backend::OptTable table = storage.make_opt_table();
     Invocation<T> res{};
     ParseError err;
@@ -1222,4 +1222,4 @@ public:
     void operator()(std::span<std::string> argv);
 };
 
-};  // namespace deco::cli
+};  // namespace kota::deco::cli

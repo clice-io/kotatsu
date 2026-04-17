@@ -8,43 +8,43 @@
 
 namespace {
 
-constexpr deco::decl::Category sharedCategory = {
+constexpr kota::deco::decl::Category sharedCategory = {
     .exclusive = false,
     .name = "shared",
     .description = "all nested output options must be set together",
 };
 
-constexpr deco::decl::Category versionCategory = {
+constexpr kota::deco::decl::Category versionCategory = {
     .exclusive = true,
     .name = "version",
     .description = "version-only mode",
 };
 
-constexpr deco::decl::Category requestCategory = {
+constexpr kota::deco::decl::Category requestCategory = {
     .exclusive = true,
     .name = "request",
     .description = "request-only mode",
 };
 
-constexpr deco::decl::Category topCategory = {
+constexpr kota::deco::decl::Category topCategory = {
     .exclusive = false,
     .name = "top",
     .description = "top config group",
 };
 
-constexpr deco::decl::Category innerCategory = {
+constexpr kota::deco::decl::Category innerCategory = {
     .exclusive = false,
     .name = "inner",
     .description = "nested config group",
 };
 
-constexpr deco::decl::Category inputCategory = {
+constexpr kota::deco::decl::Category inputCategory = {
     .exclusive = false,
     .name = "input",
     .description = "single positional input",
 };
 
-constexpr deco::decl::Category trailingCategory = {
+constexpr kota::deco::decl::Category trailingCategory = {
     .exclusive = false,
     .name = "trailing",
     .description = "arguments after --",
@@ -63,7 +63,7 @@ struct ParseAllOpt {
     verbose;
     DecoInput(help = "input"; required = false;)
     <std::string> input;
-    DecoKVStyled(deco::decl::KVStyle::Joined, required = false; category = sharedCategory;)
+    DecoKVStyled(kota::deco::decl::KVStyle::Joined, required = false; category = sharedCategory;)
     <int> opt;
     DECO_CFG_END();
 
@@ -104,29 +104,29 @@ struct RequiredOpt {
 };
 
 struct KVSplitStyleByNameOpt {
-    DecoKVStyled(static_cast<char>(deco::decl::KVStyle::Joined | deco::decl::KVStyle::Separate),
+    DecoKVStyled(static_cast<char>(kota::deco::decl::KVStyle::Joined | kota::deco::decl::KVStyle::Separate),
                  names = {"--test=", "--a"};
                  required = false;)
     <int> level;
 };
 
 struct KVDefaultNameSplitStyleOpt {
-    DecoKVStyled(static_cast<char>(deco::decl::KVStyle::Joined | deco::decl::KVStyle::Separate),
+    DecoKVStyled(static_cast<char>(kota::deco::decl::KVStyle::Joined | kota::deco::decl::KVStyle::Separate),
                  required = false;)
     <int> level;
 };
 
 struct KVAliasSplitStyleByNameOpt {
-    DecoKVAliasStyled(static_cast<char>(deco::decl::KVStyle::Joined |
-                                        deco::decl::KVStyle::Separate),
+    DecoKVAliasStyled(static_cast<char>(kota::deco::decl::KVStyle::Joined |
+                                        kota::deco::decl::KVStyle::Separate),
                       names = {"--target=", "--target-alias"};
                       required = false;
                       forward = std::vector<std::string_view>{"--target"};) _;
 };
 
 struct KVAliasDefaultNameSplitStyleOpt {
-    DecoKVAliasStyled(static_cast<char>(deco::decl::KVStyle::Joined |
-                                        deco::decl::KVStyle::Separate),
+    DecoKVAliasStyled(static_cast<char>(kota::deco::decl::KVStyle::Joined |
+                                        kota::deco::decl::KVStyle::Separate),
                       required = false;
                       forward = std::vector<std::string_view>{"--target"};) target_alias;
 };
@@ -198,15 +198,15 @@ struct AliasBackendOpt {
                    forward = backend_alias_forward_fn;) ___;
 };
 
-using ParseAllStorage = std::remove_cvref_t<decltype(deco::detail::build_storage<ParseAllOpt>())>;
-static_assert(std::is_base_of_v<deco::detail::DecoStructConsumer<ParseAllStorage, ParseAllOpt>,
+using ParseAllStorage = std::remove_cvref_t<decltype(kota::deco::detail::build_storage<ParseAllOpt>())>;
+static_assert(std::is_base_of_v<kota::deco::detail::DecoStructConsumer<ParseAllStorage, ParseAllOpt>,
                                 ParseAllStorage>);
 static_assert(!std::is_copy_constructible_v<ParseAllStorage>);
 static_assert(!std::is_move_constructible_v<ParseAllStorage>);
 static_assert(std::is_same_v<
               ParseAllStorage,
-              deco::detail::LLVMOptGenerator<ParseAllOpt,
-                                             deco::detail::BuildStorage<ParseAllOpt>::record>>);
+              kota::deco::detail::LLVMOptGenerator<ParseAllOpt,
+                                             kota::deco::detail::BuildStorage<ParseAllOpt>::record>>);
 
 using Parsed = kota::option::ParsedArgument;
 
@@ -273,7 +273,7 @@ std::expected<ParsedArgs, std::string> parse_with(const BuiltTy& built,
 TEST_SUITE(deco_backend) {
 
 TEST_CASE(storage_keeps_dummy_alignment_for_id_map) {
-    const auto& built = deco::detail::build_storage<ParseAllOpt>();
+    const auto& built = kota::deco::detail::build_storage<ParseAllOpt>();
 
     EXPECT_TRUE(built.opt_size() > 1);
     EXPECT_TRUE(built.id_map().size() == built.option_infos().size() + 1);
@@ -294,7 +294,7 @@ TEST_CASE(storage_keeps_dummy_alignment_for_id_map) {
 }
 
 TEST_CASE(parse_covers_flag_input_kv_comma_multi) {
-    const auto& built = deco::detail::build_storage<ParseAllOpt>();
+    const auto& built = kota::deco::detail::build_storage<ParseAllOpt>();
     std::vector<std::string> argv = {"--version",
                                      "--opt42",
                                      "--out-path",
@@ -368,7 +368,7 @@ TEST_CASE(parse_covers_flag_input_kv_comma_multi) {
 }
 
 TEST_CASE(parse_pack_covers_trailing_input_option) {
-    const auto& built = deco::detail::build_storage<ParsePackOpt>();
+    const auto& built = kota::deco::detail::build_storage<ParsePackOpt>();
     std::vector<std::string> argv = {"-d", "--", "a", "b", "c"};
 
     auto parsed_args = parse_with(built, argv);
@@ -394,7 +394,7 @@ TEST_CASE(parse_pack_covers_trailing_input_option) {
 }
 
 TEST_CASE(parse_input_and_pack_can_coexist) {
-    const auto& built = deco::detail::build_storage<InputThenPackOpt>();
+    const auto& built = kota::deco::detail::build_storage<InputThenPackOpt>();
     auto parsed_args = parse_with(built, {"front", "--", "a", "b"});
     EXPECT_TRUE(parsed_args.has_value());
     if(!parsed_args.has_value()) {
@@ -414,7 +414,7 @@ TEST_CASE(parse_input_and_pack_can_coexist) {
 }
 
 TEST_CASE(parse_pack_then_input_rebinds_input_id_map) {
-    const auto& built = deco::detail::build_storage<PackThenInputOpt>();
+    const auto& built = kota::deco::detail::build_storage<PackThenInputOpt>();
     auto parsed_args = parse_with(built, {"front", "--", "a", "b"});
     EXPECT_TRUE(parsed_args.has_value());
     if(!parsed_args.has_value()) {
@@ -435,7 +435,7 @@ TEST_CASE(parse_pack_then_input_rebinds_input_id_map) {
 }
 
 TEST_CASE(parse_kv_supports_joined_and_separate_styles) {
-    const auto& built = deco::detail::build_storage<KVSplitStyleByNameOpt>();
+    const auto& built = kota::deco::detail::build_storage<KVSplitStyleByNameOpt>();
     EXPECT_TRUE(built.option_infos().size() == 3);
     EXPECT_TRUE(built.option_infos()[1].kind == kota::option::Option::JoinedClass);
     EXPECT_TRUE(built.option_infos()[2].kind == kota::option::Option::SeparateClass);
@@ -468,7 +468,7 @@ TEST_CASE(parse_kv_supports_joined_and_separate_styles) {
 }
 
 TEST_CASE(parse_kv_default_name_adds_joined_equals_alias_when_style_includes_joined) {
-    const auto& built = deco::detail::build_storage<KVDefaultNameSplitStyleOpt>();
+    const auto& built = kota::deco::detail::build_storage<KVDefaultNameSplitStyleOpt>();
     EXPECT_TRUE(built.option_infos().size() == 3);
     EXPECT_TRUE(built.option_infos()[1].kind == kota::option::Option::SeparateClass);
     EXPECT_TRUE(built.option_infos()[2].kind == kota::option::Option::JoinedClass);
@@ -501,7 +501,7 @@ TEST_CASE(parse_kv_default_name_adds_joined_equals_alias_when_style_includes_joi
 }
 
 TEST_CASE(parse_kv_alias_supports_joined_and_separate_styles) {
-    const auto& built = deco::detail::build_storage<KVAliasSplitStyleByNameOpt>();
+    const auto& built = kota::deco::detail::build_storage<KVAliasSplitStyleByNameOpt>();
     EXPECT_TRUE(built.option_infos().size() == 3);
     EXPECT_TRUE(built.option_infos()[1].kind == kota::option::Option::JoinedClass);
     EXPECT_TRUE(built.option_infos()[2].kind == kota::option::Option::SeparateClass);
@@ -534,7 +534,7 @@ TEST_CASE(parse_kv_alias_supports_joined_and_separate_styles) {
 }
 
 TEST_CASE(parse_kv_alias_default_name_adds_joined_equals_alias_when_style_includes_joined) {
-    const auto& built = deco::detail::build_storage<KVAliasDefaultNameSplitStyleOpt>();
+    const auto& built = kota::deco::detail::build_storage<KVAliasDefaultNameSplitStyleOpt>();
     EXPECT_TRUE(built.option_infos().size() == 3);
     EXPECT_TRUE(built.option_infos()[1].kind == kota::option::Option::SeparateClass);
     EXPECT_TRUE(built.option_infos()[2].kind == kota::option::Option::JoinedClass);
@@ -567,7 +567,7 @@ TEST_CASE(parse_kv_alias_default_name_adds_joined_equals_alias_when_style_includ
 }
 
 TEST_CASE(category_map_assigns_expected_categories_for_parsed_args) {
-    const auto& built = deco::detail::build_storage<ParseAllOpt>();
+    const auto& built = kota::deco::detail::build_storage<ParseAllOpt>();
     auto parsed_args = parse_with(built,
                                   {"--version",
                                    "--opt1",
@@ -596,7 +596,7 @@ TEST_CASE(category_map_assigns_expected_categories_for_parsed_args) {
             EXPECT_TRUE(category == &versionCategory);
             version_count += 1;
         } else if(spelling == "main.cc") {
-            EXPECT_TRUE(category == &deco::decl::default_category);
+            EXPECT_TRUE(category == &kota::deco::decl::default_category);
             default_count += 1;
         } else {
             EXPECT_TRUE(category == &sharedCategory);
@@ -609,7 +609,7 @@ TEST_CASE(category_map_assigns_expected_categories_for_parsed_args) {
 }
 
 TEST_CASE(category_map_keeps_alias_category_consistent) {
-    const auto& built = deco::detail::build_storage<ParseAllOpt>();
+    const auto& built = kota::deco::detail::build_storage<ParseAllOpt>();
     auto short_args = parse_with(built, {"-V"});
     auto long_args = parse_with(built, {"--version"});
     EXPECT_TRUE(short_args.has_value());
@@ -627,7 +627,7 @@ TEST_CASE(category_map_keeps_alias_category_consistent) {
 }
 
 TEST_CASE(category_map_supports_deep_nested_cfg_areas) {
-    const auto& built = deco::detail::build_storage<DeepCfgOpt>();
+    const auto& built = kota::deco::detail::build_storage<DeepCfgOpt>();
     auto parsed_args = parse_with(built, {"--top", "1", "--tail", "2", "-a", "3", "--mid", "4"});
     EXPECT_TRUE(parsed_args.has_value());
     if(!parsed_args.has_value()) {
@@ -654,7 +654,7 @@ TEST_CASE(category_map_supports_deep_nested_cfg_areas) {
 }
 
 TEST_CASE(category_map_supports_multiple_exclusive_category_definitions) {
-    const auto& built = deco::detail::build_storage<MultiExclusiveCategoryOpt>();
+    const auto& built = kota::deco::detail::build_storage<MultiExclusiveCategoryOpt>();
     auto parsed_args = parse_with(built, {"--version", "--request"});
     EXPECT_TRUE(parsed_args.has_value());
     if(!parsed_args.has_value()) {
@@ -669,7 +669,7 @@ TEST_CASE(category_map_supports_multiple_exclusive_category_definitions) {
 }
 
 TEST_CASE(alias_entries_have_backend_metadata_without_accessor) {
-    const auto& built = deco::detail::build_storage<AliasBackendOpt>();
+    const auto& built = kota::deco::detail::build_storage<AliasBackendOpt>();
 
     auto parsed = parse_with(
         built,
@@ -692,7 +692,7 @@ TEST_CASE(alias_entries_have_backend_metadata_without_accessor) {
     EXPECT_TRUE(built.field_ptr_of((*parsed)[0].option_id, opt) == nullptr);
     EXPECT_TRUE(built.category_of((*parsed)[0].option_id) == &versionCategory);
     EXPECT_TRUE(flag_meta->kind == alias_meta_t::Kind::Flag);
-    EXPECT_TRUE(flag_meta->forward_kind == deco::decl::AliasForwardField::Kind::Static);
+    EXPECT_TRUE(flag_meta->forward_kind == kota::deco::decl::AliasForwardField::Kind::Static);
     EXPECT_TRUE(flag_meta->static_tokens.size() == 2);
     EXPECT_TRUE(flag_meta->static_tokens[0] == "--optimize");
     EXPECT_TRUE(flag_meta->static_tokens[1] == "1");
@@ -702,7 +702,7 @@ TEST_CASE(alias_entries_have_backend_metadata_without_accessor) {
     EXPECT_TRUE(built.field_ptr_of((*parsed)[1].option_id, opt) == nullptr);
     EXPECT_TRUE(built.category_of((*parsed)[1].option_id) == &sharedCategory);
     EXPECT_TRUE(kv_meta->kind == alias_meta_t::Kind::KV);
-    EXPECT_TRUE(kv_meta->forward_kind == deco::decl::AliasForwardField::Kind::Static);
+    EXPECT_TRUE(kv_meta->forward_kind == kota::deco::decl::AliasForwardField::Kind::Static);
     EXPECT_TRUE(kv_meta->static_tokens.size() == 1);
     EXPECT_TRUE(kv_meta->static_tokens[0] == "--define");
 
@@ -711,13 +711,13 @@ TEST_CASE(alias_entries_have_backend_metadata_without_accessor) {
     EXPECT_TRUE(built.field_ptr_of((*parsed)[2].option_id, opt) == nullptr);
     EXPECT_TRUE(built.category_of((*parsed)[2].option_id) == &requestCategory);
     EXPECT_TRUE(multi_meta->kind == alias_meta_t::Kind::Multi);
-    EXPECT_TRUE(multi_meta->forward_kind == deco::decl::AliasForwardField::Kind::Dynamic);
+    EXPECT_TRUE(multi_meta->forward_kind == kota::deco::decl::AliasForwardField::Kind::Dynamic);
     EXPECT_TRUE(multi_meta->dynamic != nullptr);
     EXPECT_TRUE(multi_meta->arg_num == 2);
 }
 
 TEST_CASE(visit_fields_applies_next_cfg_to_nested_struct_fields) {
-    const auto& built = deco::detail::build_storage<NextOnNestedOpt>();
+    const auto& built = kota::deco::detail::build_storage<NextOnNestedOpt>();
 
     auto partial_nested_args = parse_with(built, {"--left", "1"});
     EXPECT_TRUE(partial_nested_args.has_value());
@@ -741,7 +741,7 @@ TEST_CASE(visit_fields_applies_next_cfg_to_nested_struct_fields) {
                                }
                                if(field_name == "tail") {
                                    EXPECT_TRUE(cfg.required == false);
-                                   EXPECT_TRUE(cfg.category.ptr() == &deco::decl::default_category);
+                                   EXPECT_TRUE(cfg.category.ptr() == &kota::deco::decl::default_category);
                                    tail_cfg_count += 1;
                                }
                                return true;
