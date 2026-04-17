@@ -1,20 +1,16 @@
 #pragma once
 
-#include <cassert>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <expected>
 #include <iterator>
 #include <memory>
-#include <new>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 #if __has_include(<yyjson.h>)
 #include "yyjson.h"

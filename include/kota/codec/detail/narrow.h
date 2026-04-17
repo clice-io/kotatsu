@@ -5,8 +5,6 @@
 #include <expected>
 #include <limits>
 #include <string_view>
-#include <type_traits>
-#include <utility>
 
 #include "kota/codec/traits.h"
 

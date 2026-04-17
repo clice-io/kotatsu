@@ -2,7 +2,6 @@
 
 #include <concepts>
 #include <expected>
-#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>

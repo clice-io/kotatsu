@@ -9,7 +9,6 @@
 #include <iterator>
 #include <limits>
 #include <memory>
-#include <new>
 #include <ranges>
 #include <stdexcept>
 #include <type_traits>

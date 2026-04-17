@@ -4,16 +4,13 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
 #include <unordered_set>
-#include <utility>
 
 #include "uv.h"
 #include "kota/support/type_list.h"

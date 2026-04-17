@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <string>
 
 #ifdef _WIN32
 #include <BaseTsd.h>

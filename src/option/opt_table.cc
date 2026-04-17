@@ -2,7 +2,6 @@
 #include <cassert>
 #include <cctype>
 #include <cstdio>
-#include <cstring>
 #include <expected>
 #include <set>
 #include <span>

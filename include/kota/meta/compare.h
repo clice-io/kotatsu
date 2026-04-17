@@ -4,9 +4,7 @@
 #include <concepts>
 #include <cstddef>
 #include <ranges>
-#include <tuple>
 #include <type_traits>
-#include <utility>
 
 #include "struct.h"
 #include "kota/support/ranges.h"

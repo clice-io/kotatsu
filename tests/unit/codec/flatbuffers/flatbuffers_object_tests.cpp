@@ -1,6 +1,5 @@
 #if __has_include(<flatbuffers/flatbuffers.h>)
 
-#include <array>
 #include <cstdint>
 #include <map>
 #include <memory>

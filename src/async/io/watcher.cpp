@@ -2,7 +2,6 @@
 
 #include <cassert>
 #include <chrono>
-#include <memory>
 
 #include "awaiter.h"
 #include "kota/async/io/loop.h"

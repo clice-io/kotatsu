@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cmath>
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -9,8 +8,6 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <type_traits>
-#include <utility>
 #include <vector>
 
 #include "kota/support/expected_try.h"

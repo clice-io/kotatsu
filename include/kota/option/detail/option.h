@@ -2,7 +2,6 @@
 #include <cassert>
 #include <expected>
 #include <string_view>
-#include <utility>
 
 #include "opt_specifier.h"
 #include "opt_table.h"

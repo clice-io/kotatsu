@@ -1,4 +1,3 @@
-#include <string>
 
 #include "../standard_case_suite.h"
 #include "kota/zest/zest.h"

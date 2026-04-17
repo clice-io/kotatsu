@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cassert>
 #include <coroutine>
 #include <cstddef>
 #include <cstdint>

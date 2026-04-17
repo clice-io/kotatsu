@@ -1,11 +1,9 @@
 #pragma once
 
 #include <cstddef>
-#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
-#include <vector>
 
 #include "kota/async/runtime/task.h"
 #include "kota/async/vocab/error.h"

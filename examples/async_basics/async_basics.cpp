@@ -6,7 +6,6 @@
 #include <chrono>
 #include <print>
 #include <string>
-#include <vector>
 
 #include "kota/async/async.h"
 

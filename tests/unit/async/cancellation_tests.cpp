@@ -1,6 +1,5 @@
 #include <atomic>
 #include <chrono>
-#include <concepts>
 #include <cstdlib>
 #include <optional>
 #include <thread>

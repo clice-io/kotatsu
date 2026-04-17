@@ -1,6 +1,5 @@
 #pragma once
 #include <type_traits>
-#include <utility>
 
 #include "decl.h"
 #include "kota/meta/struct.h"

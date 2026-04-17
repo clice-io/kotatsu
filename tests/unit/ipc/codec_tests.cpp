@@ -1,6 +1,5 @@
 #include <cstdint>
 #include <string>
-#include <string_view>
 #include <variant>
 
 #include "kota/ipc/codec/bincode.h"

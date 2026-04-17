@@ -1,5 +1,4 @@
 #include <string>
-#include <string_view>
 #include <vector>
 
 #include "kota/deco/deco.h"

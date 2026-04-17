@@ -2,7 +2,6 @@
 
 #include <concepts>
 #include <coroutine>
-#include <type_traits>
 #include <utility>
 
 #include "kota/async/runtime/frame.h"

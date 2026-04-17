@@ -1,7 +1,6 @@
 #include <cstdint>
 #include <print>
 #include <string>
-#include <string_view>
 
 #include "kota/ipc/codec/json.h"
 

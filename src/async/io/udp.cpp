@@ -1,8 +1,6 @@
 #include "kota/async/io/udp.h"
 
 #include <cassert>
-#include <cstring>
-#include <memory>
 #include <optional>
 #include <utility>
 
