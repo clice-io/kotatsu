@@ -1,4 +1,3 @@
-
 #include "awaiter.h"
 #include "kota/async/io/loop.h"
 

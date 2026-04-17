@@ -1,6 +1,5 @@
 #if __has_include(<flatbuffers/flatbuffers.h>)
 
-
 #include "../standard_case_suite.h"
 #include "kota/zest/zest.h"
 #include "kota/codec/flatbuffers/flatbuffers.h"
