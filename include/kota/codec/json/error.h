@@ -7,16 +7,16 @@
 
 #if __has_include(<simdjson.h>)
 #include <simdjson.h>
-#define KOTA_SERDE_JSON_ERROR_HAS_SIMDJSON 1
+#define KOTA_CODEC_JSON_ERROR_HAS_SIMDJSON 1
 #else
-#define KOTA_SERDE_JSON_ERROR_HAS_SIMDJSON 0
+#define KOTA_CODEC_JSON_ERROR_HAS_SIMDJSON 0
 #endif
 
 #if __has_include(<yyjson.h>)
 #include <yyjson.h>
-#define KOTA_SERDE_JSON_ERROR_HAS_YYJSON 1
+#define KOTA_CODEC_JSON_ERROR_HAS_YYJSON 1
 #else
-#define KOTA_SERDE_JSON_ERROR_HAS_YYJSON 0
+#define KOTA_CODEC_JSON_ERROR_HAS_YYJSON 0
 #endif
 
 namespace kota::codec::json {
@@ -58,7 +58,7 @@ constexpr auto error_message(error_kind error) noexcept -> std::string_view {
     }
 }
 
-#if KOTA_SERDE_JSON_ERROR_HAS_SIMDJSON
+#if KOTA_CODEC_JSON_ERROR_HAS_SIMDJSON
 constexpr auto make_error(simdjson::error_code error) noexcept -> error_kind {
     switch(error) {
         case simdjson::SUCCESS: return error_kind::ok;
@@ -76,7 +76,7 @@ constexpr auto make_error(simdjson::error_code error) noexcept -> error_kind {
 
 #endif
 
-#if KOTA_SERDE_JSON_ERROR_HAS_YYJSON
+#if KOTA_CODEC_JSON_ERROR_HAS_YYJSON
 constexpr auto make_read_error(yyjson_read_code error) noexcept -> error_kind {
 #ifdef YYJSON_READ_SUCCESS
     if(error == YYJSON_READ_SUCCESS) {

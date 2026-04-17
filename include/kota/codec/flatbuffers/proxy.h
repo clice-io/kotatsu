@@ -22,7 +22,7 @@
 #include <flatbuffers/flatbuffers.h>
 #else
 #error                                                                                             \
-    "flatbuffers/flatbuffers.h not found. Enable KOTA_SERDE_ENABLE_FLATBUFFERS or add flatbuffers include paths."
+    "flatbuffers/flatbuffers.h not found. Enable KOTA_CODEC_ENABLE_FLATBUFFERS or add flatbuffers include paths."
 #endif
 
 namespace kota::codec::flatbuffers {

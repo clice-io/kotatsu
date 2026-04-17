@@ -1,7 +1,7 @@
 #pragma once
 
-#ifndef KOTA_SERDE_CONTENT_DOM_INL_INCLUDED
-#define KOTA_SERDE_CONTENT_DOM_INL_INCLUDED 1
+#ifndef KOTA_CODEC_CONTENT_DOM_INL_INCLUDED
+#define KOTA_CODEC_CONTENT_DOM_INL_INCLUDED 1
 #endif
 
 #include "kota/codec/content/dom.h"

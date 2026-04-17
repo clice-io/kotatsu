@@ -19,7 +19,7 @@
 #if __has_include(<yyjson.h>)
 #include <yyjson.h>
 #else
-#error "yyjson.h not found. Enable KOTA_SERDE_ENABLE_YYJSON or add yyjson include paths."
+#error "yyjson.h not found. Enable KOTA_CODEC_ENABLE_YYJSON or add yyjson include paths."
 #endif
 
 #include "kota/codec/content/error.h"
@@ -596,7 +596,7 @@ private:
 
 }  // namespace kota::codec::content
 
-#ifndef KOTA_SERDE_CONTENT_DOM_INL_INCLUDED
-#define KOTA_SERDE_CONTENT_DOM_INL_INCLUDED 1
+#ifndef KOTA_CODEC_CONTENT_DOM_INL_INCLUDED
+#define KOTA_CODEC_CONTENT_DOM_INL_INCLUDED 1
 #include "kota/codec/content/dom.inl"
 #endif
