@@ -196,8 +196,8 @@ void system_op::complete() noexcept {
 /// For transient nodes (waiter_link, system_op), records the awaiter
 /// and returns noop_coroutine (resumed later by event/complete).
 std::coroutine_handle<> async_node::link_continuation(async_node* awaiter,
-                                                      std::source_location location) {
-    this->location = location;
+                                                      std::source_location loc) {
+    this->location = loc;
     if(awaiter->kind == NodeKind::Task) {
         auto p = static_cast<standard_task*>(awaiter);
         p->awaitee = this;

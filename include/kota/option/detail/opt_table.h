@@ -86,7 +86,7 @@ public:
         }
 
         unsigned num_prefixes() const {
-            return this->_prefixes.size();
+            return static_cast<unsigned>(this->_prefixes.size());
         }
 
         std::span<const std::string_view> prefixes() const {
@@ -106,7 +106,8 @@ public:
         }
 
         std::string_view name() const {
-            unsigned prefix_length = this->has_no_prefix() ? 0 : this->_prefixes[0].size();
+            unsigned prefix_length =
+                this->has_no_prefix() ? 0 : static_cast<unsigned>(this->_prefixes[0].size());
             return this->_prefixed_name.substr(prefix_length);
         }
 
@@ -159,9 +160,9 @@ public:
                                        "input content");
         }
 
-        constexpr auto alias_of(unsigned origin_id, const char* alias_args = nullptr) {
-            this->alias_args = alias_args;
-            this->alias_id = origin_id;
+        constexpr auto alias_of(unsigned origin_id, const char* origin_args = nullptr) {
+            this->alias_args = origin_args;
+            this->alias_id = static_cast<unsigned short>(origin_id);
             return *this;
         }
     };
@@ -251,7 +252,7 @@ public:
 
     /// Return the total number of option classes.
     unsigned num_options() const {
-        return this->option_infos.size();
+        return static_cast<unsigned>(this->option_infos.size());
     }
 
     auto options() const {

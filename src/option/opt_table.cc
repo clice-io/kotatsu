@@ -169,7 +169,7 @@ static unsigned match_opt(const OptTable::Info* i, std::string_view str, bool ig
             bool matched =
                 ignore_case ? starts_with_insensitive(rest, name) : rest.starts_with(name);
             if(matched) {
-                return prefix.size() + name.size();
+                return static_cast<unsigned>(prefix.size() + name.size());
             }
         }
     }
