@@ -60,7 +60,7 @@ template <typename Object>
 struct reflection<Object> {
     constexpr inline static auto field_count = meta::detail::field_count<Object>();
 
-    constexpr static auto field_addrs(auto&& object) {
+    constexpr static auto field_addrs([[maybe_unused]] auto&& object) {
         if constexpr(field_count == 0) {
             return std::tuple{};
         }

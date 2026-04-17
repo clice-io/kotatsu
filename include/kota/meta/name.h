@@ -99,9 +99,9 @@ constexpr string_ref extract_identifier(string_ref expression) {
     }
     if(auto pos = find_last_top_level_scope(expression); pos != string_ref::npos) {
         expression = expression.substr(pos + 2);
-    } else if(auto pos = expression.rfind(':'); pos != string_ref::npos) {
+    } else if(auto colon = expression.rfind(':'); colon != string_ref::npos) {
         // MSVC may format pointer NTTPs like `int*:symbol`.
-        expression = expression.substr(pos + 1);
+        expression = expression.substr(colon + 1);
     }
     if(auto pos = expression.rfind("->"); pos != string_ref::npos) {
         expression = expression.substr(pos + 2);

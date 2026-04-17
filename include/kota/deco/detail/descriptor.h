@@ -337,8 +337,9 @@ inline std::string usage_text_for_field(const FieldTy&,
             if constexpr(!trait::ScalarResultType<result_ty> &&
                          trait::VectorResultType<result_ty>) {
                 return std::format("{}...", value_token);
+            } else {
+                return value_token;
             }
-            return value_token;
         } else {
             return usage_text(cfg, help_mode, fallback_name, value_token);
         }

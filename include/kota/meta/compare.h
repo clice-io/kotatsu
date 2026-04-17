@@ -318,8 +318,24 @@ constexpr bool compare_eq(const L& lhs, const R& rhs) {
             return false;
         }
     } else if constexpr(eq_comparable_with<L, R>) {
-        if constexpr(standard_integer<L> && standard_integer<R>) {
-            return std::cmp_equal(lhs, rhs);
+        constexpr bool lhs_int_like = std::is_enum_v<L> || standard_integer<L>;
+        constexpr bool rhs_int_like = std::is_enum_v<R> || standard_integer<R>;
+        if constexpr(lhs_int_like && rhs_int_like) {
+            auto to_integer = [](auto v) {
+                using V = decltype(v);
+                if constexpr(std::is_enum_v<V>) {
+                    return static_cast<std::underlying_type_t<V>>(v);
+                } else {
+                    return v;
+                }
+            };
+            auto li = to_integer(lhs);
+            auto ri = to_integer(rhs);
+            if constexpr(standard_integer<decltype(li)> && standard_integer<decltype(ri)>) {
+                return std::cmp_equal(li, ri);
+            } else {
+                return static_cast<bool>(li == ri);
+            }
         } else {
             return static_cast<bool>(lhs == rhs);
         }

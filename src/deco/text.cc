@@ -395,8 +395,9 @@ auto join_argv(std::span<const std::string> argv) -> JoinedArgv {
 
 auto build_diagnostic_layout(const Diagnostic& diagnostic, std::size_t max_width)
     -> DiagnosticLayout {
-    const unsigned begin = std::min<unsigned>(diagnostic.begin, diagnostic.argv.size());
-    unsigned end = std::min<unsigned>(diagnostic.end, diagnostic.argv.size());
+    const auto argc = static_cast<unsigned>(diagnostic.argv.size());
+    const unsigned begin = std::min<unsigned>(diagnostic.begin, argc);
+    unsigned end = std::min<unsigned>(diagnostic.end, argc);
     const bool points_to_end = begin >= diagnostic.argv.size();
     if(end <= begin) {
         end = begin + 1;
@@ -612,8 +613,8 @@ CompatibleRenderer::CompatibleRenderer(CompatibleRendererConfig config) : Render
     subcommand = [](const SubCommandDocument& document, const TextStyle& active_style) {
         return CompatibleRendererImpl::render_subcommand_document(document, active_style);
     };
-    diagnostic = [](const Diagnostic& diagnostic, const TextStyle& active_style) {
-        return CompatibleRendererImpl::render_diagnostic_document(diagnostic, active_style);
+    diagnostic = [](const Diagnostic& diag, const TextStyle& active_style) {
+        return CompatibleRendererImpl::render_diagnostic_document(diag, active_style);
     };
 }
 
@@ -627,8 +628,8 @@ ModernRenderer::ModernRenderer(ModernRendererConfig config) : Renderer() {
     subcommand = [](const SubCommandDocument& document, const TextStyle& active_style) {
         return ModernRendererImpl::render_subcommand_document(document, active_style);
     };
-    diagnostic = [](const Diagnostic& diagnostic, const TextStyle& active_style) {
-        return ModernRendererImpl::render_diagnostic_document(diagnostic, active_style);
+    diagnostic = [](const Diagnostic& diag, const TextStyle& active_style) {
+        return ModernRendererImpl::render_diagnostic_document(diag, active_style);
     };
 }
 

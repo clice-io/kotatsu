@@ -228,7 +228,7 @@ struct IntoContext {
     static auto at_cursor(std::span<const std::string> argv,
                           unsigned index,
                           const cli::text::Renderer* renderer = nullptr) -> IntoContext {
-        const unsigned clamped = std::min<unsigned>(index, argv.size());
+        const unsigned clamped = std::min<unsigned>(index, static_cast<unsigned>(argv.size()));
         return IntoContext(argv, clamped, clamped, renderer);
     }
 
@@ -236,7 +236,7 @@ struct IntoContext {
     static auto from_argument(std::span<const std::string> argv,
                               const ArgTy& arg,
                               const cli::text::Renderer* renderer = nullptr) -> IntoContext {
-        const unsigned begin = std::min<unsigned>(arg.index, argv.size());
+        const unsigned begin = std::min<unsigned>(arg.index, static_cast<unsigned>(argv.size()));
         if(begin >= argv.size()) {
             return at_cursor(argv, begin, renderer);
         }
@@ -258,7 +258,7 @@ struct IntoContext {
                            const ArgTy& arg,
                            std::string_view value,
                            const cli::text::Renderer* renderer = nullptr) -> IntoContext {
-        const unsigned begin = std::min<unsigned>(arg.index, argv.size());
+        const unsigned begin = std::min<unsigned>(arg.index, static_cast<unsigned>(argv.size()));
         if(begin >= argv.size()) {
             return at_cursor(argv, begin, renderer);
         }

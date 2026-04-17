@@ -93,8 +93,15 @@ protected:
     alignas(T) std::byte buffer[InlineCapacity * sizeof(T)];
 };
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4324)  // empty inline buffer intentionally carries T's alignment
+#endif
 template <typename T>
 struct alignas(T) inline_buffer<T, 0> {};
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 }  // namespace detail
 
@@ -1177,9 +1184,10 @@ public:
         assert(valid_insert_position(pos));
         if constexpr(std::ranges::forward_range<Range>) {
             return insert_forward_range(pos, std::forward<Range>(range));
+        } else {
+            assert_safe_to_add_range(range);
+            return insert_input_range(pos, std::forward<Range>(range));
         }
-        assert_safe_to_add_range(range);
-        return insert_input_range(pos, std::forward<Range>(range));
     }
 
     constexpr iterator insert(iterator pos, std::initializer_list<value_type> init) {

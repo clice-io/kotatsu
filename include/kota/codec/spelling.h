@@ -86,7 +86,6 @@ std::string apply_rename_policy(bool is_serialize, std::string_view value) {
         static_assert(dependent_false<Policy>,
                       "rename policy must support operator()(bool, std::string_view)");
     }
-    return std::string(value);
 }
 
 template <typename E, typename Policy = rename_policy::lower_camel>

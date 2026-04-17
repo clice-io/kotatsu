@@ -118,27 +118,27 @@ private:
                     return status;
                 }
                 return {};
-            }
-
-            if(has_field(root, first_field)) {
-                if(!out.has_value()) {
-                    if constexpr(std::default_initializable<value_t>) {
-                        out.emplace();
-                    } else {
-                        return std::unexpected(object_error_code::unsupported_type);
+            } else {
+                if(has_field(root, first_field)) {
+                    if(!out.has_value()) {
+                        if constexpr(std::default_initializable<value_t>) {
+                            out.emplace();
+                        } else {
+                            return std::unexpected(object_error_code::unsupported_type);
+                        }
                     }
+
+                    auto status = decode_field(root, first_field, out.value(), true);
+                    if(!status) {
+                        out.reset();
+                        return status;
+                    }
+                    return {};
                 }
 
-                auto status = decode_field(root, first_field, out.value(), true);
-                if(!status) {
-                    out.reset();
-                    return status;
-                }
+                out.reset();
                 return {};
             }
-
-            out.reset();
-            return {};
         } else if constexpr(root_unboxed_v<clean_u_t>) {
             return decode_unboxed(root, out);
         } else {

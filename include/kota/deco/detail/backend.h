@@ -912,7 +912,8 @@ private:
             set_kv_options_split_by_name(item.id, mapped_accessor, field_name, cfg);
             return;
         }
-        item.kind = allow_joined ? backend::Option::JoinedClass : backend::Option::SeparateClass;
+        item.kind = static_cast<unsigned char>(allow_joined ? backend::Option::JoinedClass
+                                                             : backend::Option::SeparateClass);
         set_named_options(item.id, mapped_accessor, field_name, cfg, callback);
         if(allow_joined && cfg.names.empty()) {
             add_generated_kv_joined_alias(item.id, mapped_accessor, field_name, cfg);
@@ -1131,8 +1132,9 @@ public:
         }
         const auto item_id = add_alias_option(cfg,
                                               field_name,
-                                              allow_joined ? backend::Option::JoinedClass
-                                                           : backend::Option::SeparateClass,
+                                              static_cast<unsigned char>(allow_joined
+                                                                             ? backend::Option::JoinedClass
+                                                                             : backend::Option::SeparateClass),
                                               1);
         if(allow_joined && cfg.names.empty()) {
             add_generated_kv_joined_alias_without_callback(item_id, field_name, cfg);

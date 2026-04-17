@@ -495,7 +495,7 @@ public:
         if(missing_arg_reason != nullptr) {
             *missing_arg_reason = nullptr;
         }
-        unsigned index = 0, end = argv.size();
+        unsigned index = 0, end = static_cast<unsigned>(argv.size());
         bool continue_parsing = true;
 
         auto exclude_option_fn =

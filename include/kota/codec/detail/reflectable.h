@@ -163,7 +163,7 @@ auto dispatch_field_by_index(std::size_t index, DeserializeStruct& d_struct, T& 
                          result = d_struct.deserialize_value(field.value());
                      } else {
                          using attrs_t = typename std::remove_cvref_t<field_t>::attrs;
-                         auto&& fval = meta::annotated_value(field.value());
+                         [[maybe_unused]] auto&& fval = meta::annotated_value(field.value());
                          using value_t = std::remove_cvref_t<decltype(fval)>;
 
                          // skip_if
