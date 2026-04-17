@@ -523,6 +523,105 @@ TEST_CASE(disabled_range_type_info_is_unknown) {
     EXPECT_EQ(info.kind, type_kind::unknown);
 }
 
+TEST_CASE(cv_canonicalization_scalars) {
+    static_assert(type_info_of<int>() == type_info_of<const int>());
+    static_assert(type_info_of<int>() == type_info_of<volatile int>());
+    static_assert(type_info_of<int>() == type_info_of<const volatile int>());
+    static_assert(type_info_of<std::string>() == type_info_of<const std::string>());
+    static_assert(type_info_of<bool>() == type_info_of<const bool>());
+}
+
+TEST_CASE(cv_canonicalization_enum) {
+    static_assert(type_info_of<test_schema::color>() == type_info_of<const test_schema::color>());
+}
+
+TEST_CASE(cv_canonicalization_containers) {
+    static_assert(type_info_of<std::vector<int>>() == type_info_of<const std::vector<int>>());
+    static_assert(type_info_of<std::set<int>>() == type_info_of<const std::set<int>>());
+    static_assert(type_info_of<std::map<std::string, int>>() ==
+                  type_info_of<const std::map<std::string, int>>());
+    static_assert(type_info_of<std::optional<int>>() == type_info_of<const std::optional<int>>());
+    static_assert(type_info_of<std::unique_ptr<int>>() ==
+                  type_info_of<const std::unique_ptr<int>>());
+}
+
+TEST_CASE(cv_canonicalization_structure) {
+    static_assert(type_info_of<test_schema::SimpleStruct>() ==
+                  type_info_of<const test_schema::SimpleStruct>());
+    static_assert(type_info_of<test_schema::TreeNode>() ==
+                  type_info_of<const test_schema::TreeNode>());
+    static_assert(type_info_of<test_schema::MixedRecursive>() ==
+                  type_info_of<const test_schema::MixedRecursive>());
+}
+
+TEST_CASE(cv_canonicalization_variant) {
+    using V = std::variant<int, std::string>;
+    static_assert(type_info_of<V>() == type_info_of<const V>());
+}
+
+TEST_CASE(cv_canonicalization_tuple) {
+    using T = std::tuple<int, std::string, double>;
+    static_assert(type_info_of<T>() == type_info_of<const T>());
+}
+
+TEST_CASE(recursive_self_pointer_identity) {
+    // The pointer stored in a recursive field must equal type_info_of<Self>().
+    constexpr auto* tree = type_info_of<test_schema::TreeNode>();
+    auto* tree_si = static_cast<const struct_type_info*>(tree);
+    auto* children_arr = static_cast<const array_type_info*>(tree_si->fields[1].type);
+    EXPECT_EQ(children_arr->element, tree);
+
+    constexpr auto* linked = type_info_of<test_schema::LinkedNode>();
+    auto* linked_si = static_cast<const struct_type_info*>(linked);
+    auto* next_ptr = static_cast<const optional_type_info*>(linked_si->fields[1].type);
+    EXPECT_EQ(next_ptr->inner, linked);
+
+    constexpr auto* mx = type_info_of<test_schema::MixedRecursive>();
+    auto* mx_si = static_cast<const struct_type_info*>(mx);
+    // deep: optional<unique_ptr<Self>>
+    auto* deep_opt = static_cast<const optional_type_info*>(mx_si->fields[1].type);
+    auto* deep_ptr = static_cast<const optional_type_info*>(deep_opt->inner);
+    EXPECT_EQ(deep_ptr->inner, mx);
+    // grouped: map<string, vector<Self>>
+    auto* grouped_map = static_cast<const map_type_info*>(mx_si->fields[2].type);
+    auto* grouped_arr = static_cast<const array_type_info*>(grouped_map->value);
+    EXPECT_EQ(grouped_arr->element, mx);
+}
+
+TEST_CASE(virtual_schema_recursive_fields_are_usable) {
+    // Drives the same code path as type_info_of but through virtual_schema, which
+    // previously routed through struct_info_node. Verifies fields/count are
+    // instantiable and consistent for recursive types.
+    using TS = virtual_schema<test_schema::TreeNode>;
+    EXPECT_EQ(TS::count, 2U);
+    EXPECT_EQ(TS::fields.size(), 2U);
+    EXPECT_EQ(TS::fields[0].name, "value");
+    EXPECT_EQ(TS::fields[1].name, "children");
+
+    using MX = virtual_schema<test_schema::MixedRecursive>;
+    EXPECT_EQ(MX::count, 3U);
+    EXPECT_EQ(MX::fields.size(), 3U);
+    EXPECT_EQ(MX::fields[0].name, "tag");
+    EXPECT_EQ(MX::fields[1].name, "deep");
+    EXPECT_EQ(MX::fields[2].name, "grouped");
+
+    using VB = virtual_schema<test_schema::VariantBranch>;
+    EXPECT_EQ(VB::count, 1U);
+    EXPECT_EQ(VB::fields[0].name, "nodes");
+}
+
+TEST_CASE(recursive_cv_shares_storage) {
+    // Combines recursion with cv canonicalization: const T and T must resolve to
+    // the exact same type_info object even for self-referential structs.
+    constexpr auto* non_cv = type_info_of<test_schema::TreeNode>();
+    constexpr auto* with_cv = type_info_of<const test_schema::TreeNode>();
+    EXPECT_EQ(non_cv, with_cv);
+
+    auto* tree_si = static_cast<const struct_type_info*>(non_cv);
+    auto* arr = static_cast<const array_type_info*>(tree_si->fields[1].type);
+    EXPECT_EQ(arr->element, with_cv);
+}
+
 };  // TEST_SUITE(virtual_schema_type_info)
 
 }  // namespace
