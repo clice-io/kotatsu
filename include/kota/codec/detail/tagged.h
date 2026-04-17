@@ -212,7 +212,7 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
             KOTA_EXPECTED_TRY(deserialize_content_for_tag([&](auto& alt) -> std::expected<void, E> {
                 content::Deserializer<typename D::config_type> buffered_deserializer(
                     *buffered_content);
-                KOTA_EXPECTED_TRY(serde::deserialize(buffered_deserializer, alt));
+                KOTA_EXPECTED_TRY(codec::deserialize(buffered_deserializer, alt));
                 KOTA_EXPECTED_TRY(buffered_deserializer.finish());
                 return {};
             }));
@@ -312,7 +312,7 @@ constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, T
                                                 "internally_tagged requires struct alternatives");
 
                                             content::Deserializer<config_t> deser(obj_ref);
-                                            KOTA_EXPECTED_TRY(serde::deserialize(deser, alt));
+                                            KOTA_EXPECTED_TRY(codec::deserialize(deser, alt));
                                             KOTA_EXPECTED_TRY(deser.finish());
                                             return {};
                                         });
@@ -396,7 +396,7 @@ auto try_deserialize_variant_candidate(Source&& source, std::variant<Ts...>& val
         return std::unexpected(probe.error());
     }
 
-    auto status = serde::deserialize(probe, candidate);
+    auto status = codec::deserialize(probe, candidate);
     if(!status) {
         return std::unexpected(status.error());
     }
@@ -418,7 +418,7 @@ auto try_deserialize_variant_candidate(Source&& source, std::variant<Ts...>& val
 ///
 /// D: the Deserializer type (must be constructible from Source)
 /// Source: the captured value (e.g., json::ValueRef, const toml::node*)
-/// hint: the serde::type_hint for the current value
+/// hint: the codec::type_hint for the current value
 /// mismatch_error: the error value to use when no alternative matches
 template <typename D, typename Source, typename... Ts>
 auto try_variant_dispatch(Source&& source,

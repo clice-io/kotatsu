@@ -16,7 +16,7 @@
 
 #include "kota/support/expected_try.h"
 #include "kota/codec/config.h"
-#include "kota/codec/serde.h"
+#include "kota/codec/codec.h"
 #include "kota/codec/detail/backend_helpers.h"
 #include "kota/codec/detail/common.h"
 #include "kota/codec/detail/narrow.h"
@@ -33,9 +33,9 @@ namespace kota::codec::toml {
 
 namespace detail {
 
-using serde::detail::clean_t;
-using serde::detail::remove_annotation_t;
-using serde::detail::remove_optional_t;
+using codec::detail::clean_t;
+using codec::detail::remove_annotation_t;
+using codec::detail::remove_optional_t;
 
 template <typename T>
 consteval bool is_map_like() {
@@ -89,8 +89,8 @@ public:
     using status_t = result_t<void>;
 
     class DeserializeArray :
-        public serde::detail::IndexedArrayDeserializer<Deserializer, const ::toml::array*> {
-        using Base = serde::detail::IndexedArrayDeserializer<Deserializer, const ::toml::array*>;
+        public codec::detail::IndexedArrayDeserializer<Deserializer, const ::toml::array*> {
+        using Base = codec::detail::IndexedArrayDeserializer<Deserializer, const ::toml::array*>;
         friend class Deserializer;
 
         DeserializeArray(Deserializer& deserializer,
@@ -101,8 +101,8 @@ public:
     };
 
     class DeserializeObject :
-        public serde::detail::IndexedObjectDeserializer<Deserializer, const ::toml::node*> {
-        using Base = serde::detail::IndexedObjectDeserializer<Deserializer, const ::toml::node*>;
+        public codec::detail::IndexedObjectDeserializer<Deserializer, const ::toml::node*> {
+        using Base = codec::detail::IndexedObjectDeserializer<Deserializer, const ::toml::node*>;
         friend class Deserializer;
 
         explicit DeserializeObject(Deserializer& deserializer) : Base(deserializer) {}
@@ -163,7 +163,7 @@ public:
             return std::unexpected(source.error());
         }
 
-        auto result = serde::try_variant_dispatch<Deserializer>(*source,
+        auto result = codec::try_variant_dispatch<Deserializer>(*source,
                                                                 map_to_type_hint(*kind),
                                                                 value,
                                                                 error_type::type_mismatch);
@@ -183,7 +183,7 @@ public:
         });
     }
 
-    template <serde::int_like T>
+    template <codec::int_like T>
     status_t deserialize_int(T& value) {
         std::int64_t parsed = 0;
         auto status = read_scalar(parsed, [](const ::toml::node& node) -> result_t<std::int64_t> {
@@ -197,7 +197,7 @@ public:
             return std::unexpected(status.error());
         }
 
-        auto narrowed = serde::detail::narrow_int<T>(parsed, error_kind::number_out_of_range);
+        auto narrowed = codec::detail::narrow_int<T>(parsed, error_kind::number_out_of_range);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
         }
@@ -206,7 +206,7 @@ public:
         return {};
     }
 
-    template <serde::uint_like T>
+    template <codec::uint_like T>
     status_t deserialize_uint(T& value) {
         std::int64_t parsed = 0;
         auto status = read_scalar(parsed, [](const ::toml::node& node) -> result_t<std::int64_t> {
@@ -226,7 +226,7 @@ public:
 
         const auto unsigned_value = static_cast<std::uint64_t>(parsed);
         auto narrowed =
-            serde::detail::narrow_uint<T>(unsigned_value, error_kind::number_out_of_range);
+            codec::detail::narrow_uint<T>(unsigned_value, error_kind::number_out_of_range);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
         }
@@ -235,7 +235,7 @@ public:
         return {};
     }
 
-    template <serde::floating_like T>
+    template <codec::floating_like T>
     status_t deserialize_float(T& value) {
         double parsed = 0.0;
         auto status = read_scalar(parsed, [](const ::toml::node& node) -> result_t<double> {
@@ -249,7 +249,7 @@ public:
             return std::unexpected(status.error());
         }
 
-        auto narrowed = serde::detail::narrow_float<T>(parsed, error_kind::number_out_of_range);
+        auto narrowed = codec::detail::narrow_float<T>(parsed, error_kind::number_out_of_range);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
         }
@@ -272,7 +272,7 @@ public:
         }
 
         auto narrowed =
-            serde::detail::narrow_char(std::string_view(text), error_kind::type_mismatch);
+            codec::detail::narrow_char(std::string_view(text), error_kind::type_mismatch);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
         }
@@ -292,7 +292,7 @@ public:
     }
 
     status_t deserialize_bytes(std::vector<std::byte>& value) {
-        return serde::detail::deserialize_bytes_from_seq(*this, value);
+        return codec::detail::deserialize_bytes_from_seq(*this, value);
     }
 
     result_t<DeserializeSeq> deserialize_seq(std::optional<std::size_t> len) {
@@ -338,8 +338,8 @@ public:
     }
 
 private:
-    friend class serde::detail::IndexedArrayDeserializer<Deserializer, const ::toml::array*>;
-    friend class serde::detail::IndexedObjectDeserializer<Deserializer, const ::toml::node*>;
+    friend class codec::detail::IndexedArrayDeserializer<Deserializer, const ::toml::array*>;
+    friend class codec::detail::IndexedObjectDeserializer<Deserializer, const ::toml::node*>;
 
     /// Bridge method for shared array deserialize helpers.
     template <typename T>
@@ -404,7 +404,7 @@ private:
         };
 
         value_scope scope(*this, node);
-        return serde::deserialize(*this, out);
+        return codec::deserialize(*this, out);
     }
 
     result_t<node_kind> peek_node_kind() {
@@ -440,16 +440,16 @@ private:
         return node_kind::unknown;
     }
 
-    static serde::type_hint map_to_type_hint(node_kind kind) {
+    static codec::type_hint map_to_type_hint(node_kind kind) {
         switch(kind) {
-            case node_kind::none: return serde::type_hint::null_like;
-            case node_kind::boolean: return serde::type_hint::boolean;
-            case node_kind::integer: return serde::type_hint::integer;
-            case node_kind::floating: return serde::type_hint::floating;
-            case node_kind::string: return serde::type_hint::string;
-            case node_kind::array: return serde::type_hint::array;
-            case node_kind::table: return serde::type_hint::object;
-            default: return serde::type_hint::any;
+            case node_kind::none: return codec::type_hint::null_like;
+            case node_kind::boolean: return codec::type_hint::boolean;
+            case node_kind::integer: return codec::type_hint::integer;
+            case node_kind::floating: return codec::type_hint::floating;
+            case node_kind::string: return codec::type_hint::string;
+            case node_kind::array: return codec::type_hint::array;
+            case node_kind::table: return codec::type_hint::object;
+            default: return codec::type_hint::any;
         }
     }
 
@@ -511,7 +511,7 @@ private:
         return open_as<::toml::table>();
     }
 
-    static std::optional<serde::source_location> source_from_node(const ::toml::node* node) {
+    static std::optional<codec::source_location> source_from_node(const ::toml::node* node) {
         if(!node) {
             return std::nullopt;
         }
@@ -519,7 +519,7 @@ private:
         if(!static_cast<bool>(region.begin)) {
             return std::nullopt;
         }
-        return serde::source_location{
+        return codec::source_location{
             static_cast<std::size_t>(region.begin.line),
             static_cast<std::size_t>(region.begin.column),
             0,
@@ -554,7 +554,7 @@ auto from_toml(const ::toml::table& table, T& value) -> std::expected<void, erro
     const auto* root = detail::select_root_node<T>(table);
     Deserializer<Config> deserializer(root);
 
-    KOTA_EXPECTED_TRY(serde::deserialize(deserializer, value));
+    KOTA_EXPECTED_TRY(codec::deserialize(deserializer, value));
     KOTA_EXPECTED_TRY(deserializer.finish());
     return {};
 }
@@ -567,6 +567,6 @@ auto from_toml(const ::toml::table& table) -> std::expected<T, error> {
     return value;
 }
 
-static_assert(serde::deserializer_like<Deserializer<>>);
+static_assert(codec::deserializer_like<Deserializer<>>);
 
 }  // namespace kota::codec::toml

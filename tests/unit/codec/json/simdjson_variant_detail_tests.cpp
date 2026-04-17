@@ -8,11 +8,11 @@
 #include "kota/zest/zest.h"
 #include "kota/codec/json/deserializer.h"
 #include "kota/codec/json/serializer.h"
-#include "kota/codec/serde.h"
+#include "kota/codec/codec.h"
 
 namespace kota::codec {
 
-using namespace refl;
+using namespace meta;
 
 namespace {
 

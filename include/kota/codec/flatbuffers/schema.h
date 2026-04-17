@@ -12,16 +12,16 @@
 #include <utility>
 #include <vector>
 
-#include "kota/codec/serde.h"
+#include "kota/codec/codec.h"
 #include "kota/codec/detail/common.h"
 
 namespace kota::codec::flatbuffers {
 
 namespace schema_detail {
 
-using serde::detail::remove_annotation_t;
-using serde::detail::remove_optional_t;
-using serde::detail::clean_t;
+using codec::detail::remove_annotation_t;
+using codec::detail::remove_optional_t;
+using codec::detail::clean_t;
 
 template <typename T>
 constexpr bool is_std_vector_v = is_specialization_of<std::vector, std::remove_cvref_t<T>>;
@@ -31,7 +31,7 @@ constexpr bool is_std_map_v = is_specialization_of<std::map, std::remove_cvref_t
 
 template <typename T>
 constexpr bool is_scalar_field_v =
-    std::same_as<T, bool> || serde::int_like<T> || serde::uint_like<T> || serde::floating_like<T>;
+    std::same_as<T, bool> || codec::int_like<T> || codec::uint_like<T> || codec::floating_like<T>;
 
 inline std::string normalize_identifier(std::string_view text) {
     std::string out;

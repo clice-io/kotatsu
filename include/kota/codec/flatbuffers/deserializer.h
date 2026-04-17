@@ -41,9 +41,9 @@ using result_t = std::expected<T, object_error_code>;
 
 using status_t = result_t<void>;
 
-using serde::detail::clean_t;
-using serde::detail::remove_annotation_t;
-using serde::detail::remove_optional_t;
+using codec::detail::clean_t;
+using codec::detail::remove_annotation_t;
+using codec::detail::remove_optional_t;
 
 template <typename T>
 constexpr bool root_unboxed_v =
@@ -336,8 +336,8 @@ private:
                     std::byte{vector->Get(static_cast<::flatbuffers::uoffset_t>(i))}));
             }
             return finalize_sequence();
-        } else if constexpr(serde::bool_like<element_clean_t> || serde::int_like<element_clean_t> ||
-                            serde::uint_like<element_clean_t>) {
+        } else if constexpr(codec::bool_like<element_clean_t> || codec::int_like<element_clean_t> ||
+                            codec::uint_like<element_clean_t>) {
             const auto* vector =
                 table->GetPointer<const ::flatbuffers::Vector<element_clean_t>*>(field);
             if(vector == nullptr) {
@@ -348,7 +348,7 @@ private:
                     store_element(vector->Get(static_cast<::flatbuffers::uoffset_t>(i))));
             }
             return finalize_sequence();
-        } else if constexpr(serde::floating_like<element_clean_t>) {
+        } else if constexpr(codec::floating_like<element_clean_t>) {
             if constexpr(std::same_as<element_clean_t, float> ||
                          std::same_as<element_clean_t, double>) {
                 const auto* vector =
@@ -372,7 +372,7 @@ private:
                 }
                 return finalize_sequence();
             }
-        } else if constexpr(serde::char_like<element_clean_t>) {
+        } else if constexpr(codec::char_like<element_clean_t>) {
             const auto* vector =
                 table->GetPointer<const ::flatbuffers::Vector<std::int8_t>*>(field);
             if(vector == nullptr) {
@@ -394,7 +394,7 @@ private:
                     vector->Get(static_cast<::flatbuffers::uoffset_t>(i)))));
             }
             return finalize_sequence();
-        } else if constexpr(serde::str_like<element_clean_t>) {
+        } else if constexpr(codec::str_like<element_clean_t>) {
             const auto* vector = table->GetPointer<
                 const ::flatbuffers::Vector<::flatbuffers::Offset<::flatbuffers::String>>*>(field);
             if(vector == nullptr) {
@@ -620,21 +620,21 @@ private:
                 auto value = table->GetField<underlying_t>(field, underlying_t{});
                 out = static_cast<U>(static_cast<clean_u_t>(value));
                 return {};
-            } else if constexpr(serde::bool_like<clean_u_t> || serde::int_like<clean_u_t> ||
-                                serde::uint_like<clean_u_t>) {
+            } else if constexpr(codec::bool_like<clean_u_t> || codec::int_like<clean_u_t> ||
+                                codec::uint_like<clean_u_t>) {
                 out = static_cast<U>(table->GetField<clean_u_t>(field, clean_u_t{}));
                 return {};
-            } else if constexpr(serde::floating_like<clean_u_t>) {
+            } else if constexpr(codec::floating_like<clean_u_t>) {
                 if constexpr(std::same_as<clean_u_t, float> || std::same_as<clean_u_t, double>) {
                     out = static_cast<U>(table->GetField<clean_u_t>(field, clean_u_t{}));
                 } else {
                     out = static_cast<U>(table->GetField<double>(field, 0.0));
                 }
                 return {};
-            } else if constexpr(serde::char_like<clean_u_t>) {
+            } else if constexpr(codec::char_like<clean_u_t>) {
                 out = static_cast<U>(static_cast<char>(table->GetField<std::int8_t>(field, 0)));
                 return {};
-            } else if constexpr(serde::str_like<clean_u_t>) {
+            } else if constexpr(codec::str_like<clean_u_t>) {
                 const auto* text = table->GetPointer<const ::flatbuffers::String*>(field);
                 if(text == nullptr) {
                     return std::unexpected(object_error_code::invalid_state);
@@ -649,7 +649,7 @@ private:
                 } else {
                     return std::unexpected(object_error_code::unsupported_type);
                 }
-            } else if constexpr(serde::bytes_like<clean_u_t>) {
+            } else if constexpr(codec::bytes_like<clean_u_t>) {
                 if constexpr(std::same_as<U, std::vector<std::byte>>) {
                     const auto* bytes =
                         table->GetPointer<const ::flatbuffers::Vector<std::uint8_t>*>(field);

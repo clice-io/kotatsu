@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "kota/support/expected_try.h"
-#include "kota/codec/serde.h"
+#include "kota/codec/codec.h"
 
 namespace kota::codec::detail {
 
@@ -24,7 +24,7 @@ public:
 
     template <typename T>
     auto serialize_element(const T& value) -> typename S::status_t {
-        auto result = serde::serialize(serializer, value);
+        auto result = codec::serialize(serializer, value);
         if(!result) {
             return std::unexpected(result.error());
         }
@@ -48,11 +48,11 @@ public:
 
     template <typename K, typename V>
     auto serialize_entry(const K& key, const V& value) -> typename S::status_t {
-        auto key_status = serializer.key(serde::spelling::map_key_to_string(key));
+        auto key_status = serializer.key(codec::spelling::map_key_to_string(key));
         if(!key_status) {
             return std::unexpected(key_status.error());
         }
-        return serde::serialize(serializer, value);
+        return codec::serialize(serializer, value);
     }
 
     template <typename T>
@@ -61,7 +61,7 @@ public:
         if(!key_status) {
             return std::unexpected(key_status.error());
         }
-        return serde::serialize(serializer, value);
+        return codec::serialize(serializer, value);
     }
 
     auto end() -> typename S::template result_t<typename S::value_type> {

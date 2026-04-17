@@ -19,7 +19,7 @@
 #include "kota/support/ranges.h"
 #include "kota/codec/bincode/error.h"
 #include "kota/codec/config.h"
-#include "kota/codec/serde.h"
+#include "kota/codec/codec.h"
 #include "kota/codec/detail/narrow.h"
 
 namespace kota::codec::bincode {
@@ -54,7 +54,7 @@ public:
                 return deserializer.mark_invalid(error_type::invalid_state);
             }
 
-            KOTA_EXPECTED_TRY(serde::deserialize(deserializer, value));
+            KOTA_EXPECTED_TRY(codec::deserialize(deserializer, value));
 
             ++read_count;
             return {};
@@ -94,7 +94,7 @@ public:
                 return deserializer.mark_invalid(error_type::invalid_state);
             }
 
-            KOTA_EXPECTED_TRY(serde::deserialize(deserializer, value));
+            KOTA_EXPECTED_TRY(codec::deserialize(deserializer, value));
 
             ++read_count;
             return {};
@@ -192,11 +192,11 @@ public:
         return {};
     }
 
-    template <serde::int_like T>
+    template <codec::int_like T>
     status_t deserialize_int(T& value) {
         KOTA_EXPECTED_TRY_V(auto parsed, read_integral<std::int64_t>());
 
-        auto narrowed = serde::detail::narrow_int<T>(parsed, error_type::number_out_of_range);
+        auto narrowed = codec::detail::narrow_int<T>(parsed, error_type::number_out_of_range);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
         }
@@ -204,11 +204,11 @@ public:
         return {};
     }
 
-    template <serde::uint_like T>
+    template <codec::uint_like T>
     status_t deserialize_uint(T& value) {
         KOTA_EXPECTED_TRY_V(auto parsed, read_integral<std::uint64_t>());
 
-        auto narrowed = serde::detail::narrow_uint<T>(parsed, error_type::number_out_of_range);
+        auto narrowed = codec::detail::narrow_uint<T>(parsed, error_type::number_out_of_range);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
         }
@@ -216,12 +216,12 @@ public:
         return {};
     }
 
-    template <serde::floating_like T>
+    template <codec::floating_like T>
     status_t deserialize_float(T& value) {
         KOTA_EXPECTED_TRY_V(auto raw, read_integral<std::uint64_t>());
 
         const double parsed = std::bit_cast<double>(raw);
-        auto narrowed = serde::detail::narrow_float<T>(parsed, error_type::number_out_of_range);
+        auto narrowed = codec::detail::narrow_float<T>(parsed, error_type::number_out_of_range);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
         }
@@ -351,7 +351,7 @@ private:
             return {};
         } else if constexpr(std::default_initializable<alt_t>) {
             alt_t alt{};
-            KOTA_EXPECTED_TRY(serde::deserialize(*this, alt));
+            KOTA_EXPECTED_TRY(codec::deserialize(*this, alt));
 
             value = std::move(alt);
             return {};
@@ -420,7 +420,7 @@ auto from_bytes(std::span<const std::byte> bytes, T& value) -> std::expected<voi
         return std::unexpected(deserializer.error());
     }
 
-    KOTA_EXPECTED_TRY(serde::deserialize(deserializer, value));
+    KOTA_EXPECTED_TRY(codec::deserialize(deserializer, value));
     KOTA_EXPECTED_TRY(deserializer.finish());
     return {};
 }
@@ -470,7 +470,7 @@ auto from_bytes(const std::vector<std::uint8_t>& bytes) -> std::expected<T, erro
     return from_bytes<T, Config>(std::span<const std::uint8_t>(bytes.data(), bytes.size()));
 }
 
-static_assert(serde::deserializer_like<Deserializer<>>);
+static_assert(codec::deserializer_like<Deserializer<>>);
 
 }  // namespace kota::codec::bincode
 
@@ -484,7 +484,7 @@ constexpr auto deserialize_sequential_struct_field(D& deserializer, Field field)
     using field_t = typename std::remove_cvref_t<decltype(field)>::type;
 
     if constexpr(!meta::annotated_type<field_t>) {
-        KOTA_EXPECTED_TRY(serde::deserialize(deserializer, field.value()));
+        KOTA_EXPECTED_TRY(codec::deserialize(deserializer, field.value()));
         return {};
     } else {
         using attrs_t = typename std::remove_cvref_t<field_t>::attrs;
@@ -520,13 +520,13 @@ constexpr auto deserialize_sequential_struct_field(D& deserializer, Field field)
                     static_assert(std::default_initializable<consume_t>,
                                   "bincode behavior::skip_if requires default-initializable field");
                     consume_t skipped{};
-                    KOTA_EXPECTED_TRY(serde::deserialize(deserializer, skipped));
+                    KOTA_EXPECTED_TRY(codec::deserialize(deserializer, skipped));
                     return {};
                 }
             }
 
             // Keep annotation wrapper so tagged/provider attrs are still honored.
-            KOTA_EXPECTED_TRY(serde::deserialize(deserializer, field.value()));
+            KOTA_EXPECTED_TRY(codec::deserialize(deserializer, field.value()));
             return {};
         }
     }
@@ -587,10 +587,10 @@ struct deserialize_traits<bincode::Deserializer<Config>, T> {
 
         for(std::size_t i = 0; i < length; ++i) {
             key_t key{};
-            KOTA_EXPECTED_TRY(serde::deserialize(deserializer, key));
+            KOTA_EXPECTED_TRY(codec::deserialize(deserializer, key));
 
             mapped_t mapped{};
-            KOTA_EXPECTED_TRY(serde::deserialize(deserializer, mapped));
+            KOTA_EXPECTED_TRY(codec::deserialize(deserializer, mapped));
 
             kota::detail::insert_map_entry(value, std::move(key), std::move(mapped));
         }

@@ -565,8 +565,8 @@ void Peer<CodecT>::on_request(Callback&& callback) {
     using Ret = detail::request_callback_return_t<Callback>;
     static_assert(
         std::is_same_v<Ret, RequestResult<Params>> ||
-            std::is_same_v<Ret, task<serde::RawValue, Error>>,
-        "request callback return type should be RequestResult<Params> " "or task<serde::RawValue, Error>");
+            std::is_same_v<Ret, task<codec::RawValue, Error>>,
+        "request callback return type should be RequestResult<Params> " "or task<codec::RawValue, Error>");
 
     bind_request_callback<Params>(protocol::RequestTraits<Params>::method,
                                   std::forward<Callback>(callback));
@@ -646,8 +646,8 @@ void Peer<CodecT>::on_request(Callback&& callback) {
     using Ret = detail::request_callback_return_t<Callback>;
     static_assert(
         std::is_same_v<Ret, task<typename Traits::Result, Error>> ||
-            std::is_same_v<Ret, task<serde::RawValue, Error>>,
-        "request callback return type should be task<Result, Error> or task<serde::RawValue, Error>");
+            std::is_same_v<Ret, task<codec::RawValue, Error>>,
+        "request callback return type should be task<Result, Error> or task<codec::RawValue, Error>");
 
     bind_request_callback<Params>(Traits::method, std::forward<Callback>(callback));
 }

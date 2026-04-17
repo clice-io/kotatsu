@@ -44,7 +44,7 @@
 
 namespace kota::codec::standard_case {
 
-using namespace refl;
+using namespace meta;
 
 struct Basic {
     bool is_valid{};

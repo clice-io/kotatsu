@@ -16,7 +16,7 @@
 #include <vector>
 
 #include "kota/codec/flatbuffers/schema.h"
-#include "kota/codec/serde.h"
+#include "kota/codec/codec.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
 #include <flatbuffers/flatbuffers.h>
@@ -47,20 +47,20 @@ namespace proxy_detail {
 constexpr ::flatbuffers::voffset_t first_field = 4;
 constexpr ::flatbuffers::voffset_t field_step = 2;
 
-using serde::detail::remove_annotation_t;
-using serde::detail::remove_optional_t;
-using serde::detail::clean_t;
+using codec::detail::remove_annotation_t;
+using codec::detail::remove_optional_t;
+using codec::detail::clean_t;
 
 template <typename T>
-constexpr bool is_string_like_v = serde::str_like<T>;
+constexpr bool is_string_like_v = codec::str_like<T>;
 
 template <typename T>
 constexpr bool is_range_like_v = std::ranges::input_range<T> && !is_string_like_v<T>;
 
 template <typename T>
 constexpr bool is_scalar_v =
-    serde::bool_like<T> || serde::int_like<T> || serde::uint_like<T> || serde::floating_like<T> ||
-    serde::char_like<T> || std::is_enum_v<T> || std::same_as<T, std::byte>;
+    codec::bool_like<T> || codec::int_like<T> || codec::uint_like<T> || codec::floating_like<T> ||
+    codec::char_like<T> || std::is_enum_v<T> || std::same_as<T, std::byte>;
 
 // Smart pointer stripping: remove unique_ptr / shared_ptr wrappers (applied after clean_t)
 template <typename T>
@@ -148,10 +148,10 @@ inline auto voffset(std::size_t index) -> ::flatbuffers::voffset_t {
 template <typename Element,
           typename CleanElement = clean_t<Element>,
           bool IsScalarLike = std::same_as<CleanElement, std::byte> ||
-                              serde::bool_like<CleanElement> || serde::int_like<CleanElement> ||
-                              serde::uint_like<CleanElement> ||
-                              serde::floating_like<CleanElement> ||
-                              serde::char_like<CleanElement> || std::is_enum_v<CleanElement>,
+                              codec::bool_like<CleanElement> || codec::int_like<CleanElement> ||
+                              codec::uint_like<CleanElement> ||
+                              codec::floating_like<CleanElement> ||
+                              codec::char_like<CleanElement> || std::is_enum_v<CleanElement>,
           bool IsString = is_string_like_v<CleanElement>,
           bool IsInlineStruct = can_inline_struct_v<CleanElement>>
 struct array_vector_ptr_impl {
@@ -344,11 +344,11 @@ auto read_field(const std::uint8_t* root,
     } else if constexpr(std::is_enum_v<T>) {
         using storage_t = std::underlying_type_t<T>;
         return static_cast<T>(table->GetField<storage_t>(field, storage_t{}));
-    } else if constexpr(serde::char_like<T>) {
+    } else if constexpr(codec::char_like<T>) {
         return static_cast<T>(table->GetField<std::int8_t>(field, std::int8_t{}));
-    } else if constexpr(serde::bool_like<T> || serde::int_like<T> || serde::uint_like<T>) {
+    } else if constexpr(codec::bool_like<T> || codec::int_like<T> || codec::uint_like<T>) {
         return table->GetField<T>(field, T{});
-    } else if constexpr(serde::floating_like<T>) {
+    } else if constexpr(codec::floating_like<T>) {
         if constexpr(std::same_as<T, float> || std::same_as<T, double>) {
             return table->GetField<T>(field, T{});
         } else {
@@ -433,13 +433,13 @@ public:
             using storage_t = proxy_detail::scalar_storage_t<element_type>;
             return static_cast<element_type>(
                 static_cast<storage_t>(vector->Get(static_cast<::flatbuffers::uoffset_t>(index))));
-        } else if constexpr(serde::char_like<element_type>) {
+        } else if constexpr(codec::char_like<element_type>) {
             return static_cast<char>(vector->Get(static_cast<::flatbuffers::uoffset_t>(index)));
-        } else if constexpr(serde::bool_like<element_type> || serde::int_like<element_type> ||
-                            serde::uint_like<element_type>) {
+        } else if constexpr(codec::bool_like<element_type> || codec::int_like<element_type> ||
+                            codec::uint_like<element_type>) {
             return static_cast<element_type>(
                 vector->Get(static_cast<::flatbuffers::uoffset_t>(index)));
-        } else if constexpr(serde::floating_like<element_type>) {
+        } else if constexpr(codec::floating_like<element_type>) {
             return static_cast<element_type>(
                 vector->Get(static_cast<::flatbuffers::uoffset_t>(index)));
         } else if constexpr(proxy_detail::is_string_like_v<element_type>) {

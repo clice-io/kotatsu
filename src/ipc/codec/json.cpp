@@ -13,7 +13,7 @@ template <typename T>
 Result<std::string>
     serialize_json_value(const T& value,
                          protocol::ErrorCode code = protocol::ErrorCode::InternalError) {
-    auto serialized = serde::json::to_string(value);
+    auto serialized = codec::json::to_string(value);
     if(!serialized) {
         return outcome_error(Error(code, serialized.error().to_string()));
     }
@@ -24,19 +24,19 @@ struct outgoing_request_message {
     std::string jsonrpc = "2.0";
     protocol::RequestID id;
     std::string method;
-    serde::RawValue params;
+    codec::RawValue params;
 };
 
 struct outgoing_notification_message {
     std::string jsonrpc = "2.0";
     std::string method;
-    serde::RawValue params;
+    codec::RawValue params;
 };
 
 struct outgoing_success_response_message {
     std::string jsonrpc = "2.0";
     protocol::RequestID id;
-    serde::RawValue result;
+    codec::RawValue result;
 };
 
 struct outgoing_error_response_message {
@@ -48,18 +48,18 @@ struct outgoing_error_response_message {
 struct json_rpc_incoming {
     std::optional<protocol::RequestID> id;
     std::optional<std::string> method;
-    std::optional<serde::RawValue> params;
+    std::optional<codec::RawValue> params;
     // Not optional<RawValue> because "result": null is a valid success
     // response — optional would lose it as nullopt. defaulted<RawValue>
     // keeps absent → empty(), null → "null" text.
-    meta::defaulted<serde::RawValue> result;
+    meta::defaulted<codec::RawValue> result;
     std::optional<Error> error;
 };
 
 }  // namespace
 
 IncomingMessage JsonCodec::parse_message(std::string_view payload) {
-    auto envelope = serde::json::parse<json_rpc_incoming>(payload);
+    auto envelope = codec::json::parse<json_rpc_incoming>(payload);
     if(!envelope) {
         return IncomingParseError{
             Error(protocol::ErrorCode::ParseError, envelope.error().to_string())};
@@ -105,7 +105,7 @@ Result<std::string> JsonCodec::encode_request(const protocol::RequestID& id,
     return serialize_json_value(outgoing_request_message{
         .id = id,
         .method = std::string(method),
-        .params = serde::RawValue{std::string(params)},
+        .params = codec::RawValue{std::string(params)},
     });
 }
 
@@ -113,7 +113,7 @@ Result<std::string> JsonCodec::encode_notification(std::string_view method,
                                                    std::string_view params) {
     return serialize_json_value(outgoing_notification_message{
         .method = std::string(method),
-        .params = serde::RawValue{std::string(params)},
+        .params = codec::RawValue{std::string(params)},
     });
 }
 
@@ -121,7 +121,7 @@ Result<std::string> JsonCodec::encode_success_response(const protocol::RequestID
                                                        std::string_view result) {
     return serialize_json_value(outgoing_success_response_message{
         .id = id,
-        .result = serde::RawValue{std::string(result)},
+        .result = codec::RawValue{std::string(result)},
     });
 }
 

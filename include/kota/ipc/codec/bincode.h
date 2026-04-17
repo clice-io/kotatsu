@@ -24,7 +24,7 @@ struct serialize_traits<bincode::Serializer<Config>, kota::ipc::protocol::Reques
         if(!int_id) {
             return std::unexpected(error_type::type_mismatch);
         }
-        return serde::serialize(serializer, *int_id);
+        return codec::serialize(serializer, *int_id);
     }
 };
 
@@ -37,7 +37,7 @@ struct deserialize_traits<bincode::Deserializer<Config>, kota::ipc::protocol::Re
                             kota::ipc::protocol::RequestID& id)
         -> std::expected<void, error_type> {
         std::int64_t v = 0;
-        auto status = serde::deserialize(deserializer, v);
+        auto status = codec::deserialize(deserializer, v);
         if(!status) {
             return std::unexpected(status.error());
         }
@@ -67,7 +67,7 @@ public:
 
     template <typename T>
     Result<std::string> serialize_value(const T& value) {
-        auto bytes = serde::bincode::to_bytes(value);
+        auto bytes = codec::bincode::to_bytes(value);
         if(!bytes) {
             return outcome_error(
                 Error(protocol::ErrorCode::InternalError, bytes.error().to_string()));
@@ -88,7 +88,7 @@ public:
         auto bytes_span =
             std::span<const std::byte>(reinterpret_cast<const std::byte*>(raw.data()), raw.size());
         T value{};
-        auto status = serde::bincode::from_bytes(bytes_span, value);
+        auto status = codec::bincode::from_bytes(bytes_span, value);
         if(!status) {
             return outcome_error(Error(code, status.error().to_string()));
         }

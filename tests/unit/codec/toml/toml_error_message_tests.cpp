@@ -10,7 +10,7 @@
 
 namespace kota::codec {
 
-using namespace refl;
+using namespace meta;
 
 namespace {
 

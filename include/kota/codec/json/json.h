@@ -56,7 +56,7 @@ auto to_json(const T& value)
         return std::unexpected(serializer.error());
     }
 
-    auto result = serde::serialize(serializer, value);
+    auto result = codec::serialize(serializer, value);
     if(!result) {
         return std::unexpected(result.error());
     }

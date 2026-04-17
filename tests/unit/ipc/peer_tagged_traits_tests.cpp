@@ -24,7 +24,7 @@ TEST_CASE(tagged_request_handler) {
     EXPECT_EQ(loop.run(), 0);
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = serde::json::from_json<Response>(transport_ptr->outgoing().front());
+    auto response = codec::json::from_json<Response>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(std::get<std::int64_t>(response->id), 1);
     ASSERT_TRUE(response->result.has_value());
@@ -84,18 +84,18 @@ TEST_CASE(tagged_send_apis) {
     const auto& outgoing = transport_ptr->outgoing();
     ASSERT_EQ(outgoing.size(), 3U);
 
-    auto note = serde::json::from_json<Notification>(outgoing[0]);
+    auto note = codec::json::from_json<Notification>(outgoing[0]);
     ASSERT_TRUE(note.has_value());
     EXPECT_EQ(note->method, "test/taggedNote");
     EXPECT_EQ(note->params.text, "tagged");
 
-    auto req = serde::json::from_json<Request>(outgoing[1]);
+    auto req = codec::json::from_json<Request>(outgoing[1]);
     ASSERT_TRUE(req.has_value());
     EXPECT_EQ(req->method, "test/taggedAdd");
     EXPECT_EQ(req->params.a, 42);
     EXPECT_EQ(req->params.b, 58);
 
-    auto resp = serde::json::from_json<Response>(outgoing[2]);
+    auto resp = codec::json::from_json<Response>(outgoing[2]);
     ASSERT_TRUE(resp.has_value());
     EXPECT_EQ(std::get<std::int64_t>(resp->id), 7);
     ASSERT_TRUE(resp->result.has_value());

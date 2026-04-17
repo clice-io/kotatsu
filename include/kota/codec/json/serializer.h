@@ -16,7 +16,7 @@
 #include "kota/support/expected_try.h"
 #include "kota/codec/json/error.h"
 #include "kota/codec/config.h"
-#include "kota/codec/serde.h"
+#include "kota/codec/codec.h"
 #include "kota/codec/detail/backend_helpers.h"
 
 namespace kota::codec::json {
@@ -33,8 +33,8 @@ public:
 
     using status_t = result_t<void>;
 
-    using SerializeArray = serde::detail::SerializeArray<Serializer<Config>>;
-    using SerializeObject = serde::detail::SerializeObject<Serializer<Config>>;
+    using SerializeArray = codec::detail::SerializeArray<Serializer<Config>>;
+    using SerializeObject = codec::detail::SerializeObject<Serializer<Config>>;
 
     using SerializeSeq = SerializeArray;
     using SerializeTuple = SerializeArray;
@@ -88,13 +88,13 @@ public:
 
     template <typename T>
     result_t<value_type> serialize_some(const T& value) {
-        return serde::serialize(*this, value);
+        return codec::serialize(*this, value);
     }
 
     template <typename... Ts>
     result_t<value_type> serialize_variant(const std::variant<Ts...>& value) {
         return std::visit(
-            [&](const auto& item) -> result_t<value_type> { return serde::serialize(*this, item); },
+            [&](const auto& item) -> result_t<value_type> { return codec::serialize(*this, item); },
             value);
     }
 
@@ -208,8 +208,8 @@ public:
     }
 
 private:
-    friend class serde::detail::SerializeArray<Serializer<Config>>;
-    friend class serde::detail::SerializeObject<Serializer<Config>>;
+    friend class codec::detail::SerializeArray<Serializer<Config>>;
+    friend class codec::detail::SerializeObject<Serializer<Config>>;
 
     enum class container_kind : std::uint8_t { array, object };
 
@@ -364,10 +364,10 @@ auto to_json(const T& value, std::optional<std::size_t> initial_capacity = std::
     -> std::expected<std::string, error> {
     Serializer<Config> serializer =
         initial_capacity.has_value() ? Serializer<Config>(*initial_capacity) : Serializer<Config>();
-    KOTA_EXPECTED_TRY(serde::serialize(serializer, value));
+    KOTA_EXPECTED_TRY(codec::serialize(serializer, value));
     return serializer.str();
 }
 
-static_assert(serde::serializer_like<Serializer<>>);
+static_assert(codec::serializer_like<Serializer<>>);
 
 }  // namespace kota::codec::json

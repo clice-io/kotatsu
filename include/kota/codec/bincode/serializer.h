@@ -17,7 +17,7 @@
 #include "kota/support/expected_try.h"
 #include "kota/codec/bincode/error.h"
 #include "kota/codec/config.h"
-#include "kota/codec/serde.h"
+#include "kota/codec/codec.h"
 
 namespace kota::codec::bincode {
 
@@ -44,7 +44,7 @@ public:
                 return serializer.mark_invalid(error_type::invalid_state);
             }
 
-            KOTA_EXPECTED_TRY(serde::serialize(serializer, value));
+            KOTA_EXPECTED_TRY(codec::serialize(serializer, value));
 
             ++written_count;
             return {};
@@ -56,8 +56,8 @@ public:
                 return serializer.mark_invalid(error_type::invalid_state);
             }
 
-            KOTA_EXPECTED_TRY(serde::serialize(serializer, key));
-            KOTA_EXPECTED_TRY(serde::serialize(serializer, value));
+            KOTA_EXPECTED_TRY(codec::serialize(serializer, key));
+            KOTA_EXPECTED_TRY(codec::serialize(serializer, value));
 
             ++written_count;
             return {};
@@ -115,7 +115,7 @@ public:
     template <typename T>
     result_t<value_type> serialize_some(const T& value) {
         KOTA_EXPECTED_TRY(write_u8(1));
-        return serde::serialize(*this, value);
+        return codec::serialize(*this, value);
     }
 
     result_t<value_type> serialize_bool(bool value) {
@@ -183,7 +183,7 @@ public:
                 if constexpr(std::same_as<item_t, std::monostate>) {
                     payload_status = {};
                 } else {
-                    auto serialized = serde::serialize(*this, item);
+                    auto serialized = codec::serialize(*this, item);
                     if(!serialized) {
                         payload_status = std::unexpected(serialized.error());
                     } else {
@@ -269,13 +269,13 @@ private:
 template <typename Config = config::default_config, typename T>
 auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, error> {
     Serializer<Config> serializer;
-    KOTA_EXPECTED_TRY(serde::serialize(serializer, value));
+    KOTA_EXPECTED_TRY(codec::serialize(serializer, value));
     if(!serializer.valid()) {
         return std::unexpected(serializer.error());
     }
     return serializer.take_bytes();
 }
 
-static_assert(serde::serializer_like<Serializer<>>);
+static_assert(codec::serializer_like<Serializer<>>);
 
 }  // namespace kota::codec::bincode

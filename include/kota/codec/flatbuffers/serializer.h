@@ -23,7 +23,7 @@
 #include "kota/support/ranges.h"
 #include "kota/codec/flatbuffers/schema.h"
 #include "kota/codec/config.h"
-#include "kota/codec/serde.h"
+#include "kota/codec/codec.h"
 #include "kota/codec/detail/common.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
@@ -65,9 +65,9 @@ constexpr inline char buffer_identifier[] = "EVTO";
 constexpr ::flatbuffers::voffset_t first_field = 4;
 constexpr ::flatbuffers::voffset_t field_step = 2;
 
-using serde::detail::clean_t;
-using serde::detail::remove_annotation_t;
-using serde::detail::remove_optional_t;
+using codec::detail::clean_t;
+using codec::detail::remove_annotation_t;
+using codec::detail::remove_optional_t;
 
 inline auto field_voffset(std::size_t index) -> object_result_t<::flatbuffers::voffset_t> {
     constexpr auto max_voffset =
@@ -109,7 +109,7 @@ public:
 
         template <typename T>
         status_t serialize_element(const T& value) {
-            KOTA_EXPECTED_TRY_V(auto encoded, serde::serialize(serializer, value));
+            KOTA_EXPECTED_TRY_V(auto encoded, codec::serialize(serializer, value));
             elements.push_back(encoded);
             return {};
         }
@@ -211,7 +211,7 @@ public:
     auto bytes(const T& value) -> result_t<std::vector<std::uint8_t>> {
         builder.Clear();
 
-        KOTA_EXPECTED_TRY_V(auto root, serde::serialize(*this, value));
+        KOTA_EXPECTED_TRY_V(auto root, codec::serialize(*this, value));
 
         builder.Finish(root, detail::buffer_identifier);
         const auto* begin = builder.GetBufferPointer();
@@ -224,7 +224,7 @@ public:
 
     template <typename T>
     result_t<value_type> serialize_some(const T& value) {
-        return serde::serialize(*this, value);
+        return codec::serialize(*this, value);
     }
 
     result_t<value_type> serialize_bool(bool value) {
@@ -355,7 +355,7 @@ private:
         meta::for_each(value, [&](auto field) {
             collector.current_index = field.index();
             auto status =
-                serde::detail::serialize_struct_field<Config, object_error_code>(collector, field);
+                codec::detail::serialize_struct_field<Config, object_error_code>(collector, field);
             if(!status) {
                 field_result = std::unexpected(status.error());
                 return false;
@@ -493,8 +493,8 @@ private:
             auto offset = builder.CreateVector(bytes);
             push_add_offset(writers, field, offset.o);
             return {};
-        } else if constexpr(serde::bool_like<element_clean_t> || serde::int_like<element_clean_t> ||
-                            serde::uint_like<element_clean_t>) {
+        } else if constexpr(codec::bool_like<element_clean_t> || codec::int_like<element_clean_t> ||
+                            codec::uint_like<element_clean_t>) {
             std::vector<element_clean_t> elements;
             if constexpr(requires { value.size(); }) {
                 elements.reserve(value.size());
@@ -505,7 +505,7 @@ private:
             auto offset = builder.CreateVector(elements);
             push_add_offset(writers, field, offset.o);
             return {};
-        } else if constexpr(serde::floating_like<element_clean_t>) {
+        } else if constexpr(codec::floating_like<element_clean_t>) {
             if constexpr(std::same_as<element_clean_t, float> ||
                          std::same_as<element_clean_t, double>) {
                 std::vector<element_clean_t> elements;
@@ -530,7 +530,7 @@ private:
                 push_add_offset(writers, field, offset.o);
                 return {};
             }
-        } else if constexpr(serde::char_like<element_clean_t>) {
+        } else if constexpr(codec::char_like<element_clean_t>) {
             std::vector<std::int8_t> elements;
             if constexpr(requires { value.size(); }) {
                 elements.reserve(value.size());
@@ -541,7 +541,7 @@ private:
             auto offset = builder.CreateVector(elements);
             push_add_offset(writers, field, offset.o);
             return {};
-        } else if constexpr(serde::str_like<element_clean_t>) {
+        } else if constexpr(codec::str_like<element_clean_t>) {
             std::vector<::flatbuffers::Offset<::flatbuffers::String>> elements;
             if constexpr(requires { value.size(); }) {
                 elements.reserve(value.size());
@@ -628,19 +628,19 @@ private:
         } else if constexpr(std::is_enum_v<clean_t>) {
             using underlying_t = std::underlying_type_t<clean_t>;
             return collect_field(writers, field, static_cast<underlying_t>(value));
-        } else if constexpr(serde::bool_like<clean_t>) {
+        } else if constexpr(codec::bool_like<clean_t>) {
             const bool v = static_cast<bool>(value);
             writers.push_back([this, field, v] { builder.AddElement<bool>(field, v); });
             return {};
-        } else if constexpr(serde::int_like<clean_t>) {
+        } else if constexpr(codec::int_like<clean_t>) {
             const clean_t v = static_cast<clean_t>(value);
             writers.push_back([this, field, v] { builder.AddElement<clean_t>(field, v); });
             return {};
-        } else if constexpr(serde::uint_like<clean_t>) {
+        } else if constexpr(codec::uint_like<clean_t>) {
             const clean_t v = static_cast<clean_t>(value);
             writers.push_back([this, field, v] { builder.AddElement<clean_t>(field, v); });
             return {};
-        } else if constexpr(serde::floating_like<clean_t>) {
+        } else if constexpr(codec::floating_like<clean_t>) {
             if constexpr(std::same_as<clean_t, float> || std::same_as<clean_t, double>) {
                 const clean_t v = static_cast<clean_t>(value);
                 writers.push_back([this, field, v] { builder.AddElement<clean_t>(field, v); });
@@ -649,16 +649,16 @@ private:
                 writers.push_back([this, field, v] { builder.AddElement<double>(field, v); });
             }
             return {};
-        } else if constexpr(serde::char_like<clean_t>) {
+        } else if constexpr(codec::char_like<clean_t>) {
             const std::int8_t v = static_cast<std::int8_t>(value);
             writers.push_back([this, field, v] { builder.AddElement<std::int8_t>(field, v); });
             return {};
-        } else if constexpr(serde::str_like<clean_t>) {
+        } else if constexpr(codec::str_like<clean_t>) {
             const std::string_view text = value;
             const auto offset = builder.CreateString(text.data(), text.size());
             push_add_offset(writers, field, offset.o);
             return {};
-        } else if constexpr(serde::bytes_like<clean_t>) {
+        } else if constexpr(codec::bytes_like<clean_t>) {
             const std::span<const std::byte> bytes = value;
             const auto* data =
                 bytes.empty() ? nullptr : reinterpret_cast<const std::uint8_t*>(bytes.data());
@@ -706,7 +706,7 @@ auto to_flatbuffer(const T& value, std::optional<std::size_t> initial_capacity =
     return serializer.bytes(value);
 }
 
-static_assert(serde::serializer_like<Serializer<>>);
+static_assert(codec::serializer_like<Serializer<>>);
 
 }  // namespace kota::codec::flatbuffers
 
@@ -729,14 +729,14 @@ template <typename Config, typename T>
               !is_pair_v<std::remove_cvref_t<T>> && !is_tuple_v<std::remove_cvref_t<T>> &&
               !is_specialization_of<std::variant, std::remove_cvref_t<T>> &&
               (std::is_enum_v<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
-               serde::null_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
-               serde::bool_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
-               serde::int_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
-               serde::uint_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
-               serde::floating_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
-               serde::char_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
-               serde::str_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
-               serde::bytes_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>>))
+               codec::null_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
+               codec::bool_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
+               codec::int_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
+               codec::uint_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
+               codec::floating_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
+               codec::char_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
+               codec::str_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
+               codec::bytes_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>>))
 struct serialize_traits<flatbuffers::Serializer<Config>, T> {
     using serializer_t = flatbuffers::Serializer<Config>;
 

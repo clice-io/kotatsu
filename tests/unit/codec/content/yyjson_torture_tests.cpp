@@ -4,7 +4,7 @@
 #include "kota/zest/zest.h"
 #include "kota/codec/json/error.h"
 #include "kota/codec/json/json.h"
-#include "kota/codec/serde.h"
+#include "kota/codec/codec.h"
 
 namespace kota::codec {
 
@@ -26,7 +26,7 @@ auto rt = []<typename T>(const T& input) -> std::expected<T, json::error> {
 
     T decoded{};
     Deserializer deserializer(*dom);
-    auto status = serde::deserialize(deserializer, decoded);
+    auto status = codec::deserialize(deserializer, decoded);
     if(!status) {
         return std::unexpected(status.error());
     }

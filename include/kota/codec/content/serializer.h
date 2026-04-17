@@ -16,7 +16,7 @@
 #include "kota/codec/content/dom.h"
 #include "kota/codec/content/error.h"
 #include "kota/codec/config.h"
-#include "kota/codec/serde.h"
+#include "kota/codec/codec.h"
 #include "kota/codec/detail/backend_helpers.h"
 
 namespace kota::codec::content {
@@ -33,8 +33,8 @@ public:
 
     using status_t = result_t<void>;
 
-    using SerializeArray = serde::detail::SerializeArray<Serializer<Config>>;
-    using SerializeObject = serde::detail::SerializeObject<Serializer<Config>>;
+    using SerializeArray = codec::detail::SerializeArray<Serializer<Config>>;
+    using SerializeObject = codec::detail::SerializeObject<Serializer<Config>>;
 
     using SerializeSeq = SerializeArray;
     using SerializeTuple = SerializeArray;
@@ -77,13 +77,13 @@ public:
 
     template <typename T>
     result_t<value_type> serialize_some(const T& value) {
-        return serde::serialize(*this, value);
+        return codec::serialize(*this, value);
     }
 
     template <typename... Ts>
     result_t<value_type> serialize_variant(const std::variant<Ts...>& value) {
         return std::visit(
-            [&](const auto& item) -> result_t<value_type> { return serde::serialize(*this, item); },
+            [&](const auto& item) -> result_t<value_type> { return codec::serialize(*this, item); },
             value);
     }
 
@@ -167,8 +167,8 @@ public:
     }
 
 private:
-    friend class serde::detail::SerializeArray<Serializer<Config>>;
-    friend class serde::detail::SerializeObject<Serializer<Config>>;
+    friend class codec::detail::SerializeArray<Serializer<Config>>;
+    friend class codec::detail::SerializeObject<Serializer<Config>>;
 
     status_t begin_object() {
         if(!valid()) {
@@ -337,6 +337,6 @@ private:
     content::Document doc;
 };
 
-static_assert(serde::serializer_like<Serializer<>>);
+static_assert(codec::serializer_like<Serializer<>>);
 
 }  // namespace kota::codec::content

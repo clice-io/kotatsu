@@ -16,7 +16,7 @@
 
 #include "kota/support/expected_try.h"
 #include "kota/codec/config.h"
-#include "kota/codec/serde.h"
+#include "kota/codec/codec.h"
 #include "kota/codec/toml/error.h"
 
 #if __has_include(<toml++/toml.hpp>)
@@ -252,7 +252,7 @@ public:
 
         template <typename T>
         status_t serialize_element(const T& value) {
-            KOTA_EXPECTED_TRY_V(auto result, serde::serialize(serializer, value));
+            KOTA_EXPECTED_TRY_V(auto result, codec::serialize(serializer, value));
             values.values.push_back(std::move(result));
             return {};
         }
@@ -275,7 +275,7 @@ public:
 
         template <typename T>
         status_t serialize_element(const T& value) {
-            KOTA_EXPECTED_TRY_V(auto result, serde::serialize(serializer, value));
+            KOTA_EXPECTED_TRY_V(auto result, codec::serialize(serializer, value));
             values.values.push_back(std::move(result));
             return {};
         }
@@ -300,8 +300,8 @@ public:
 
         template <typename K, typename V>
         status_t serialize_entry(const K& key, const V& value) {
-            KOTA_EXPECTED_TRY_V(auto result, serde::serialize(serializer, value));
-            values.entries.emplace_back(serde::spelling::map_key_to_string(key), std::move(result));
+            KOTA_EXPECTED_TRY_V(auto result, codec::serialize(serializer, value));
+            values.entries.emplace_back(codec::spelling::map_key_to_string(key), std::move(result));
             return {};
         }
 
@@ -323,7 +323,7 @@ public:
 
         template <typename T>
         status_t serialize_field(std::string_view key, const T& value) {
-            KOTA_EXPECTED_TRY_V(auto result, serde::serialize(serializer, value));
+            KOTA_EXPECTED_TRY_V(auto result, codec::serialize(serializer, value));
             values.entries.emplace_back(std::string(key), std::move(result));
             return {};
         }
@@ -343,7 +343,7 @@ public:
 
     template <typename T>
     result_t<value_type> serialize_some(const T& value) {
-        return serde::serialize(*this, value);
+        return codec::serialize(*this, value);
     }
 
     result_t<value_type> serialize_bool(bool value) {
@@ -386,7 +386,7 @@ public:
     template <typename... Ts>
     result_t<value_type> serialize_variant(const std::variant<Ts...>& value) {
         return std::visit(
-            [&](const auto& item) -> result_t<value_type> { return serde::serialize(*this, item); },
+            [&](const auto& item) -> result_t<value_type> { return codec::serialize(*this, item); },
             value);
     }
 
@@ -418,7 +418,7 @@ public:
 
     template <typename T>
     auto dom(const T& value) -> result_t<::toml::table> {
-        auto result = serde::serialize(*this, value);
+        auto result = codec::serialize(*this, value);
         if(!result.has_value()) {
             return std::unexpected(result.error());
         }
@@ -432,6 +432,6 @@ auto to_toml(const T& value) -> std::expected<::toml::table, error> {
     return serializer.dom(value);
 }
 
-static_assert(serde::serializer_like<Serializer<>>);
+static_assert(codec::serializer_like<Serializer<>>);
 
 }  // namespace kota::codec::toml

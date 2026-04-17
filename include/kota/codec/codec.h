@@ -399,7 +399,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
             }
 
             static_assert(
-                serde::spelling::parseable_map_key<key_t>,
+                codec::spelling::parseable_map_key<key_t>,
                 "auto map deserialization requires key_type parseable from JSON object keys");
             static_assert(std::default_initializable<mapped_t>,
                           "auto map deserialization requires default-constructible mapped_type");
@@ -412,7 +412,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                     break;
                 }
 
-                auto parsed_key = serde::spelling::parse_map_key<key_t>(*key);
+                auto parsed_key = codec::spelling::parse_map_key<key_t>(*key);
                 if(!parsed_key) {
                     if constexpr(requires { d_map.invalid_key(*key); }) {
                         KOTA_EXPECTED_TRY(d_map.invalid_key(*key));

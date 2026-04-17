@@ -12,7 +12,7 @@
 namespace kota::ipc {
 
 struct lsp_config {
-    using field_rename = serde::rename_policy::lower_camel;
+    using field_rename = codec::rename_policy::lower_camel;
 };
 
 class JsonCodec {
@@ -32,7 +32,7 @@ public:
 
     template <typename T>
     Result<std::string> serialize_value(const T& value) {
-        auto serialized = serde::json::to_string<lsp_config>(value);
+        auto serialized = codec::json::to_string<lsp_config>(value);
         if(!serialized) {
             return outcome_error(
                 Error(protocol::ErrorCode::InternalError, serialized.error().to_string()));
@@ -50,7 +50,7 @@ public:
                 raw = "{}";
             }
         }
-        auto parsed = serde::json::parse<T, lsp_config>(raw);
+        auto parsed = codec::json::parse<T, lsp_config>(raw);
         if(!parsed) {
             return outcome_error(Error(code, parsed.error().to_string()));
         }

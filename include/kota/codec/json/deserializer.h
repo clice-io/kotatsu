@@ -17,7 +17,7 @@
 #include "kota/codec/content/deserializer.h"
 #include "kota/codec/json/error.h"
 #include "kota/codec/config.h"
-#include "kota/codec/serde.h"
+#include "kota/codec/codec.h"
 #include "kota/codec/detail/narrow.h"
 
 namespace kota::codec::json {
@@ -423,7 +423,7 @@ public:
             [](simdjson::ondemand::value& value) { return value.get_bool(); });
     }
 
-    template <serde::int_like T>
+    template <codec::int_like T>
     status_t deserialize_int(T& value) {
         std::int64_t parsed = 0;
         auto status = read_scalar(
@@ -434,7 +434,7 @@ public:
             return std::unexpected(status.error());
         }
 
-        auto narrowed = serde::detail::narrow_int<T>(parsed, error_type::number_out_of_range);
+        auto narrowed = codec::detail::narrow_int<T>(parsed, error_type::number_out_of_range);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
         }
@@ -443,7 +443,7 @@ public:
         return {};
     }
 
-    template <serde::uint_like T>
+    template <codec::uint_like T>
     status_t deserialize_uint(T& value) {
         std::uint64_t parsed = 0;
         auto status = read_scalar(
@@ -454,7 +454,7 @@ public:
             return std::unexpected(status.error());
         }
 
-        auto narrowed = serde::detail::narrow_uint<T>(parsed, error_type::number_out_of_range);
+        auto narrowed = codec::detail::narrow_uint<T>(parsed, error_type::number_out_of_range);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
         }
@@ -463,7 +463,7 @@ public:
         return {};
     }
 
-    template <serde::floating_like T>
+    template <codec::floating_like T>
     status_t deserialize_float(T& value) {
         double parsed = 0.0;
         auto status = read_scalar(
@@ -474,7 +474,7 @@ public:
             return std::unexpected(status.error());
         }
 
-        auto narrowed = serde::detail::narrow_float<T>(parsed, error_type::number_out_of_range);
+        auto narrowed = codec::detail::narrow_float<T>(parsed, error_type::number_out_of_range);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
         }
@@ -493,7 +493,7 @@ public:
             return std::unexpected(status.error());
         }
 
-        auto narrowed = serde::detail::narrow_char(text, error_type::type_mismatch);
+        auto narrowed = codec::detail::narrow_char(text, error_type::type_mismatch);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
         }
@@ -517,7 +517,7 @@ public:
     }
 
     status_t deserialize_bytes(std::vector<std::byte>& value) {
-        return serde::detail::deserialize_bytes_from_seq(*this, value);
+        return codec::detail::deserialize_bytes_from_seq(*this, value);
     }
 
     result_t<DeserializeSeq> deserialize_seq(std::optional<std::size_t> len) {
@@ -645,7 +645,7 @@ private:
         };
 
         ValueScope scope(*this, value);
-        return serde::deserialize(*this, out);
+        return codec::deserialize(*this, out);
     }
 
     result_t<simdjson::ondemand::json_type> peek_json_type() {
@@ -659,26 +659,26 @@ private:
             false);
     }
 
-    static serde::type_hint
+    static codec::type_hint
         map_to_type_hint(simdjson::ondemand::json_type json_type,
                          std::optional<simdjson::ondemand::number_type> number_type) {
         switch(json_type) {
-            case simdjson::ondemand::json_type::null: return serde::type_hint::null_like;
-            case simdjson::ondemand::json_type::boolean: return serde::type_hint::boolean;
+            case simdjson::ondemand::json_type::null: return codec::type_hint::null_like;
+            case simdjson::ondemand::json_type::boolean: return codec::type_hint::boolean;
             case simdjson::ondemand::json_type::number: {
                 if(!number_type.has_value()) {
-                    return serde::type_hint::integer | serde::type_hint::floating;
+                    return codec::type_hint::integer | codec::type_hint::floating;
                 }
                 if(*number_type == simdjson::ondemand::number_type::signed_integer ||
                    *number_type == simdjson::ondemand::number_type::unsigned_integer) {
-                    return serde::type_hint::integer;
+                    return codec::type_hint::integer;
                 }
-                return serde::type_hint::floating;
+                return codec::type_hint::floating;
             }
-            case simdjson::ondemand::json_type::string: return serde::type_hint::string;
-            case simdjson::ondemand::json_type::array: return serde::type_hint::array;
-            case simdjson::ondemand::json_type::object: return serde::type_hint::object;
-            default: return serde::type_hint::any;
+            case simdjson::ondemand::json_type::string: return codec::type_hint::string;
+            case simdjson::ondemand::json_type::array: return codec::type_hint::array;
+            case simdjson::ondemand::json_type::object: return codec::type_hint::object;
+            default: return codec::type_hint::any;
         }
     }
 
@@ -686,7 +686,7 @@ private:
     constexpr static bool
         variant_candidate_matches(simdjson::ondemand::json_type json_type,
                                   std::optional<simdjson::ondemand::number_type> number_type) {
-        return serde::has_any(serde::expected_type_hints<T>(),
+        return codec::has_any(codec::expected_type_hints<T>(),
                               map_to_type_hint(json_type, number_type));
     }
 
@@ -699,7 +699,7 @@ private:
             return std::unexpected(probe.error());
         }
 
-        KOTA_EXPECTED_TRY(serde::deserialize(probe, candidate));
+        KOTA_EXPECTED_TRY(codec::deserialize(probe, candidate));
         KOTA_EXPECTED_TRY(probe.finish());
 
         value = std::move(candidate);
@@ -770,7 +770,7 @@ private:
         return mark_invalid(json::make_error(err));
     }
 
-    std::optional<serde::source_location> compute_location() {
+    std::optional<codec::source_location> compute_location() {
         auto loc_result = document.current_location();
         const char* loc = nullptr;
         if(std::move(loc_result).get(loc) != simdjson::SUCCESS || loc == nullptr) {
@@ -800,7 +800,7 @@ private:
             }
         }
 
-        return serde::source_location{line, col, offset};
+        return codec::source_location{line, col, offset};
     }
 
 private:
@@ -822,7 +822,7 @@ auto from_json(std::string_view json, T& value) -> std::expected<void, error> {
         return std::unexpected(deserializer.error());
     }
 
-    KOTA_EXPECTED_TRY(serde::deserialize(deserializer, value));
+    KOTA_EXPECTED_TRY(codec::deserialize(deserializer, value));
 
     return deserializer.finish();
 }
@@ -834,7 +834,7 @@ auto from_json(simdjson::padded_string_view json, T& value) -> std::expected<voi
         return std::unexpected(deserializer.error());
     }
 
-    KOTA_EXPECTED_TRY(serde::deserialize(deserializer, value));
+    KOTA_EXPECTED_TRY(codec::deserialize(deserializer, value));
 
     return deserializer.finish();
 }
@@ -855,6 +855,6 @@ auto from_json(simdjson::padded_string_view json) -> std::expected<T, error> {
     return value;
 }
 
-static_assert(serde::deserializer_like<Deserializer<>>);
+static_assert(codec::deserializer_like<Deserializer<>>);
 
 }  // namespace kota::codec::json

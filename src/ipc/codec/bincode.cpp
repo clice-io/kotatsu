@@ -13,31 +13,31 @@ namespace {
 struct bincode_request {
     protocol::RequestID id;
     std::string method;
-    serde::RawValue params;
+    codec::RawValue params;
 };
 
 struct bincode_notification {
     std::string method;
-    serde::RawValue params;
+    codec::RawValue params;
 };
 
 struct bincode_success {
     protocol::RequestID id;
-    serde::RawValue result;
+    codec::RawValue result;
 };
 
 struct bincode_error {
     std::optional<protocol::RequestID> id;
     std::int32_t code = 0;
     std::string message;
-    serde::RawValue data;
+    codec::RawValue data;
 };
 
 using bincode_envelope =
     std::variant<bincode_request, bincode_notification, bincode_success, bincode_error>;
 
 Result<std::string> encode_envelope(const bincode_envelope& envelope) {
-    auto bytes = serde::bincode::to_bytes(envelope);
+    auto bytes = codec::bincode::to_bytes(envelope);
     if(!bytes) {
         return outcome_error(Error(protocol::ErrorCode::InternalError, bytes.error().to_string()));
     }
@@ -51,7 +51,7 @@ IncomingMessage BincodeCodec::parse_message(std::string_view payload) {
                                                  payload.size());
 
     bincode_envelope envelope;
-    auto status = serde::bincode::from_bytes(bytes_span, envelope);
+    auto status = codec::bincode::from_bytes(bytes_span, envelope);
     if(!status) {
         return IncomingParseError{
             Error(protocol::ErrorCode::ParseError, status.error().to_string())};
@@ -80,18 +80,18 @@ Result<std::string> BincodeCodec::encode_request(const protocol::RequestID& id,
                                                  std::string_view method,
                                                  std::string_view params) {
     return encode_envelope(
-        bincode_request{id, std::string(method), serde::RawValue{std::string(params)}});
+        bincode_request{id, std::string(method), codec::RawValue{std::string(params)}});
 }
 
 Result<std::string> BincodeCodec::encode_notification(std::string_view method,
                                                       std::string_view params) {
     return encode_envelope(
-        bincode_notification{std::string(method), serde::RawValue{std::string(params)}});
+        bincode_notification{std::string(method), codec::RawValue{std::string(params)}});
 }
 
 Result<std::string> BincodeCodec::encode_success_response(const protocol::RequestID& id,
                                                           std::string_view result) {
-    return encode_envelope(bincode_success{id, serde::RawValue{std::string(result)}});
+    return encode_envelope(bincode_success{id, codec::RawValue{std::string(result)}});
 }
 
 Result<std::string> BincodeCodec::encode_error_response(const protocol::RequestID& id,
@@ -101,7 +101,7 @@ Result<std::string> BincodeCodec::encode_error_response(const protocol::RequestI
         wire_id,
         static_cast<std::int32_t>(error.code),
         error.message,
-        serde::RawValue{},
+        codec::RawValue{},
     });
 }
 

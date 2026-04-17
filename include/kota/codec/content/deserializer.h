@@ -17,7 +17,7 @@
 #include "kota/codec/content/dom.h"
 #include "kota/codec/content/error.h"
 #include "kota/codec/config.h"
-#include "kota/codec/serde.h"
+#include "kota/codec/codec.h"
 #include "kota/codec/detail/backend_helpers.h"
 #include "kota/codec/detail/narrow.h"
 
@@ -35,8 +35,8 @@ public:
     using status_t = result_t<void>;
 
     class DeserializeArray :
-        public serde::detail::IndexedArrayDeserializer<Deserializer, content::ArrayRef> {
-        using Base = serde::detail::IndexedArrayDeserializer<Deserializer, content::ArrayRef>;
+        public codec::detail::IndexedArrayDeserializer<Deserializer, content::ArrayRef> {
+        using Base = codec::detail::IndexedArrayDeserializer<Deserializer, content::ArrayRef>;
         friend class Deserializer;
 
         DeserializeArray(Deserializer& deserializer,
@@ -47,8 +47,8 @@ public:
     };
 
     class DeserializeObject :
-        public serde::detail::IndexedObjectDeserializer<Deserializer, content::ValueRef> {
-        using Base = serde::detail::IndexedObjectDeserializer<Deserializer, content::ValueRef>;
+        public codec::detail::IndexedObjectDeserializer<Deserializer, content::ValueRef> {
+        using Base = codec::detail::IndexedObjectDeserializer<Deserializer, content::ValueRef>;
         friend class Deserializer;
 
         DeserializeObject(Deserializer& deserializer, content::ObjectRef object) :
@@ -134,7 +134,7 @@ public:
             return std::unexpected(source.error());
         }
 
-        auto result = serde::try_variant_dispatch<Deserializer>(*source,
+        auto result = codec::try_variant_dispatch<Deserializer>(*source,
                                                                 map_to_type_hint(*valueKind),
                                                                 value,
                                                                 error_type::type_mismatch);
@@ -154,7 +154,7 @@ public:
         });
     }
 
-    template <serde::int_like T>
+    template <codec::int_like T>
     status_t deserialize_int(T& value) {
         std::int64_t parsed = 0;
         auto status = read_scalar(parsed, [](content::ValueRef ref) -> result_t<std::int64_t> {
@@ -168,7 +168,7 @@ public:
             return std::unexpected(status.error());
         }
 
-        auto narrowed = serde::detail::narrow_int<T>(parsed, error_type::number_out_of_range);
+        auto narrowed = codec::detail::narrow_int<T>(parsed, error_type::number_out_of_range);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
         }
@@ -177,7 +177,7 @@ public:
         return {};
     }
 
-    template <serde::uint_like T>
+    template <codec::uint_like T>
     status_t deserialize_uint(T& value) {
         std::uint64_t parsed = 0;
         auto status = read_scalar(parsed, [](content::ValueRef ref) -> result_t<std::uint64_t> {
@@ -191,7 +191,7 @@ public:
             return std::unexpected(status.error());
         }
 
-        auto narrowed = serde::detail::narrow_uint<T>(parsed, error_type::number_out_of_range);
+        auto narrowed = codec::detail::narrow_uint<T>(parsed, error_type::number_out_of_range);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
         }
@@ -200,7 +200,7 @@ public:
         return {};
     }
 
-    template <serde::floating_like T>
+    template <codec::floating_like T>
     status_t deserialize_float(T& value) {
         double parsed = 0.0;
         auto status = read_scalar(parsed, [](content::ValueRef ref) -> result_t<double> {
@@ -214,7 +214,7 @@ public:
             return std::unexpected(status.error());
         }
 
-        auto narrowed = serde::detail::narrow_float<T>(parsed, error_type::number_out_of_range);
+        auto narrowed = codec::detail::narrow_float<T>(parsed, error_type::number_out_of_range);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
         }
@@ -236,7 +236,7 @@ public:
             return std::unexpected(status.error());
         }
 
-        auto narrowed = serde::detail::narrow_char(text, error_type::type_mismatch);
+        auto narrowed = codec::detail::narrow_char(text, error_type::type_mismatch);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
         }
@@ -263,7 +263,7 @@ public:
     }
 
     status_t deserialize_bytes(std::vector<std::byte>& value) {
-        return serde::detail::deserialize_bytes_from_seq(*this, value);
+        return codec::detail::deserialize_bytes_from_seq(*this, value);
     }
 
     result_t<DeserializeSeq> deserialize_seq(std::optional<std::size_t> len) {
@@ -306,8 +306,8 @@ public:
     }
 
 private:
-    friend class serde::detail::IndexedArrayDeserializer<Deserializer, content::ArrayRef>;
-    friend class serde::detail::IndexedObjectDeserializer<Deserializer, content::ValueRef>;
+    friend class codec::detail::IndexedArrayDeserializer<Deserializer, content::ArrayRef>;
+    friend class codec::detail::IndexedObjectDeserializer<Deserializer, content::ValueRef>;
 
     enum class value_kind : std::uint8_t {
         null,
@@ -363,7 +363,7 @@ private:
         };
 
         value_scope scope(*this, input);
-        return serde::deserialize(*this, out);
+        return codec::deserialize(*this, out);
     }
 
     template <typename T>
@@ -404,15 +404,15 @@ private:
         return mark_invalid(error_type::type_mismatch);
     }
 
-    static serde::type_hint map_to_type_hint(value_kind kind) {
+    static codec::type_hint map_to_type_hint(value_kind kind) {
         switch(kind) {
-            case value_kind::null: return serde::type_hint::null_like;
-            case value_kind::boolean: return serde::type_hint::boolean;
-            case value_kind::number: return serde::type_hint::integer | serde::type_hint::floating;
-            case value_kind::string: return serde::type_hint::string;
-            case value_kind::array: return serde::type_hint::array;
-            case value_kind::object: return serde::type_hint::object;
-            default: return serde::type_hint::any;
+            case value_kind::null: return codec::type_hint::null_like;
+            case value_kind::boolean: return codec::type_hint::boolean;
+            case value_kind::number: return codec::type_hint::integer | codec::type_hint::floating;
+            case value_kind::string: return codec::type_hint::string;
+            case value_kind::array: return codec::type_hint::array;
+            case value_kind::object: return codec::type_hint::object;
+            default: return codec::type_hint::any;
         }
     }
 
@@ -499,6 +499,6 @@ private:
     content::ValueRef current_value{};
 };
 
-static_assert(serde::deserializer_like<Deserializer<>>);
+static_assert(codec::deserializer_like<Deserializer<>>);
 
 }  // namespace kota::codec::content

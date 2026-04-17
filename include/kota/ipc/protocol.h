@@ -12,7 +12,7 @@
 #include <variant>
 #include <vector>
 
-#include "kota/codec/serde.h"
+#include "kota/codec/codec.h"
 
 namespace kota::ipc::protocol {
 
@@ -121,7 +121,7 @@ struct serialize_traits<S, kota::ipc::protocol::Value> {
     static auto serialize(S& serializer, const kota::ipc::protocol::Value& value)
         -> std::expected<value_type, error_type> {
         const auto& variant = static_cast<const kota::ipc::protocol::Variant&>(value);
-        return std::visit([&](const auto& item) { return serde::serialize(serializer, item); },
+        return std::visit([&](const auto& item) { return codec::serialize(serializer, item); },
                           variant);
     }
 };
@@ -133,7 +133,7 @@ struct deserialize_traits<D, kota::ipc::protocol::Value> {
     static auto deserialize(D& deserializer, kota::ipc::protocol::Value& value)
         -> std::expected<void, error_type> {
         kota::ipc::protocol::Variant variant{};
-        auto status = serde::deserialize(deserializer, variant);
+        auto status = codec::deserialize(deserializer, variant);
         if(!status) {
             return std::unexpected(status.error());
         }

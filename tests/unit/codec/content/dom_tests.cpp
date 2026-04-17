@@ -112,7 +112,7 @@ TEST_CASE(deserializer_keeps_temporary_root_value_alive) {
     json::yy::Deserializer deserializer(make_dom());
     ASSERT_TRUE(deserializer.valid());
 
-    auto status = serde::deserialize(deserializer, payload);
+    auto status = codec::deserialize(deserializer, payload);
     ASSERT_TRUE(status.has_value());
 
     auto finish = deserializer.finish();

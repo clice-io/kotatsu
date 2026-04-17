@@ -5,11 +5,11 @@
 #include "kota/codec/json/json.h"
 #include "kota/codec/json/serializer.h"
 #include "kota/codec/config.h"
-#include "kota/codec/serde.h"
+#include "kota/codec/codec.h"
 
 namespace kota::codec {
 
-using namespace refl;
+using namespace meta;
 
 namespace {
 
