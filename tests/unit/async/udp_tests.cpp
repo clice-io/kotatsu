@@ -2,9 +2,9 @@
 #include <string_view>
 
 #include "loop_fixture.h"
-#include "eventide/zest/zest.h"
+#include "kota/zest/zest.h"
 
-namespace eventide {
+namespace kota {
 
 namespace {
 
@@ -57,12 +57,12 @@ TEST_CASE(send_and_recv) {
 
     int done = 0;
     auto receiver = recv_once(*recv_sock, done);
-    auto sender = send_to(*send_sock, "eventide-udp", endpoint->addr, endpoint->port, done);
+    auto sender = send_to(*send_sock, "kotatsu-udp", endpoint->addr, endpoint->port, done);
     schedule_all(receiver, sender);
 
     auto recv_result = receiver.result();
     EXPECT_TRUE(recv_result.has_value());
-    EXPECT_EQ(recv_result->data, "eventide-udp");
+    EXPECT_EQ(recv_result->data, "kotatsu-udp");
 
     auto send_result = sender.result();
     EXPECT_FALSE(send_result.has_error());
@@ -86,12 +86,12 @@ TEST_CASE(connect_and_send) {
 
     int done = 0;
     auto receiver = recv_once(*recv_sock, done);
-    auto sender = send_connected(*send_sock, "eventide-udp-connect", done);
+    auto sender = send_connected(*send_sock, "kotatsu-udp-connect", done);
     schedule_all(receiver, sender);
 
     auto recv_result = receiver.result();
     EXPECT_TRUE(recv_result.has_value());
-    EXPECT_EQ(recv_result->data, "eventide-udp-connect");
+    EXPECT_EQ(recv_result->data, "kotatsu-udp-connect");
 
     auto send_result = sender.result();
     EXPECT_FALSE(send_result.has_error());
@@ -99,4 +99,4 @@ TEST_CASE(connect_and_send) {
 
 };  // TEST_SUITE(udp_io)
 
-}  // namespace eventide
+}  // namespace kota

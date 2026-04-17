@@ -53,10 +53,10 @@ jobs:
           --mode=${{ matrix.mode }}
           ${{ matrix.target.config_args }}
           --dev=y
-          --serde_simdjson=y
-          --serde_yyjson=y
-          --serde_flatbuffers=y
-          --serde_toml=y
+          --codec_simdjson=y
+          --codec_yyjson=y
+          --codec_flatbuffers=y
+          --codec_toml=y
 
       - name: Build
         run: xmake --all --verbose --diagnosis

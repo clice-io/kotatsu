@@ -1,9 +1,9 @@
 #include <chrono>
 
 #include "loop_fixture.h"
-#include "eventide/zest/zest.h"
+#include "kota/zest/zest.h"
 
-namespace eventide {
+namespace kota {
 
 namespace {
 
@@ -276,4 +276,4 @@ TEST_CASE(condition_variable_wait) {
 
 }  // namespace
 
-}  // namespace eventide
+}  // namespace kota

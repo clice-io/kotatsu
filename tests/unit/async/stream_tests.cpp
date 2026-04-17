@@ -1,11 +1,10 @@
 #include <array>
-#include <chrono>
 #include <string>
 #include <string_view>
 #include <utility>
 
 #include "loop_fixture.h"
-#include "eventide/zest/macro.h"
+#include "kota/zest/macro.h"
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -16,10 +15,10 @@
 #include <sys/socket.h>
 #endif
 
-#include "../common/fd_helpers.h"
-#include "eventide/zest/zest.h"
+#include "../support/fd_helpers.h"
+#include "kota/zest/zest.h"
 
-namespace eventide {
+namespace kota {
 
 using test::create_pipe;
 using test::close_fd;
@@ -45,7 +44,6 @@ namespace {
 #ifdef _WIN32
 using socket_t = SOCKET;
 constexpr socket_t invalid_socket = INVALID_SOCKET;
-constexpr int socket_error = SOCKET_ERROR;
 
 inline int close_socket(socket_t sock) {
     return ::closesocket(sock);
@@ -53,7 +51,6 @@ inline int close_socket(socket_t sock) {
 #else
 using socket_t = int;
 constexpr socket_t invalid_socket = -1;
-constexpr int socket_error = -1;
 
 inline int close_socket(socket_t sock) {
     return ::close(sock);
@@ -158,8 +155,8 @@ task<std::pair<result<std::string>, result<std::string>>>
 }
 
 task<> write_two_pipe_chunks(int fd, event_loop& loop, event& first_chunk_consumed) {
-    constexpr std::string_view first = "eventide-chunk";
-    constexpr std::string_view second = "eventide-read-some";
+    constexpr std::string_view first = "kotatsu-chunk";
+    constexpr std::string_view second = "kotatsu-read-some";
 
     co_await sleep(1, loop);
     if(write_fd(fd, first.data(), first.size()) != static_cast<ssize_t>(first.size())) {
@@ -175,12 +172,6 @@ task<> write_two_pipe_chunks(int fd, event_loop& loop, event& first_chunk_consum
 task<pipe, error> connect_pipe(std::string_view name, int& done, int target = 2) {
     auto result = co_await pipe::connect(name);
     bump_and_stop(done, target);
-    co_return result;
-}
-
-task<pipe, error> accept_pipe_once(pipe::acceptor acc, int& done) {
-    auto result = co_await acc.accept();
-    bump_and_stop(done, 2);
     co_return result;
 }
 
@@ -301,7 +292,7 @@ TEST_CASE(read_from_fd) {
     int fds[2] = {-1, -1};
     ASSERT_EQ(create_pipe(fds), 0);
 
-    const std::string message = "eventide-pipe";
+    const std::string message = "kotatsu-pipe";
     ASSERT_EQ(write_fd(fds[1], message.data(), message.size()),
               static_cast<ssize_t>(message.size()));
     close_fd(fds[1]);
@@ -323,7 +314,7 @@ TEST_CASE(read_some_fd) {
     int fds[2] = {-1, -1};
     ASSERT_EQ(create_pipe(fds), 0);
 
-    const std::string message = "eventide-pipe-read-some";
+    const std::string message = "kotatsu-pipe-read-some";
     ASSERT_EQ(write_fd(fds[1], message.data(), message.size()),
               static_cast<ssize_t>(message.size()));
     close_fd(fds[1]);
@@ -345,7 +336,7 @@ TEST_CASE(read_chunk_fd) {
     int fds[2] = {-1, -1};
     ASSERT_EQ(create_pipe(fds), 0);
 
-    const std::string message = "eventide-pipe-read-view";
+    const std::string message = "kotatsu-pipe-read-view";
     ASSERT_EQ(write_fd(fds[1], message.data(), message.size()),
               static_cast<ssize_t>(message.size()));
     close_fd(fds[1]);
@@ -376,15 +367,15 @@ TEST_CASE(read_chunk_then_read_some_fd) {
     auto [first, second] = reader.result();
     ASSERT_TRUE(first.has_value());
     ASSERT_TRUE(second.has_value());
-    EXPECT_EQ(*first, "eventide-chunk");
-    EXPECT_EQ(*second, "eventide-read-some");
+    EXPECT_EQ(*first, "kotatsu-chunk");
+    EXPECT_EQ(*second, "kotatsu-read-some");
 }
 
 TEST_CASE(connect_and_accept) {
 #ifdef _WIN32
-    const std::string name = "\\\\.\\pipe\\eventide-test-pipe";
+    const std::string name = "\\\\.\\pipe\\kotatsu-test-pipe";
 #else
-    std::string name = "eventide-test-pipe-XXXXXX";
+    std::string name = "kotatsu-test-pipe-XXXXXX";
     int fd = ::mkstemp(name.data());
     ASSERT_TRUE(fd >= 0);
     close_fd(fd);
@@ -397,7 +388,7 @@ TEST_CASE(connect_and_accept) {
     ASSERT_TRUE(acc_res.has_value());
 
     int done = 0;
-    const std::string message = "eventide-pipe-connect";
+    const std::string message = "kotatsu-pipe-connect";
     auto server = accept_and_read_pipe(std::move(*acc_res), done);
     auto client = connect_and_write_pipe(name, message, done);
     schedule_all(server, client);
@@ -414,9 +405,9 @@ TEST_CASE(connect_and_accept) {
 
 TEST_CASE(connect_failure, serial = true) {
 #ifdef _WIN32
-    const std::string name = "\\\\.\\pipe\\eventide-test-pipe-missing";
+    const std::string name = "\\\\.\\pipe\\kotatsu-test-pipe-missing";
 #else
-    std::string name = "eventide-test-pipe-missing-XXXXXX";
+    std::string name = "kotatsu-test-pipe-missing-XXXXXX";
     int fd = ::mkstemp(name.data());
     ASSERT_TRUE(fd >= 0);
     close_fd(fd);
@@ -433,9 +424,9 @@ TEST_CASE(connect_failure, serial = true) {
 
 TEST_CASE(stop, serial = true) {
 #ifdef _WIN32
-    const std::string name = "\\\\.\\pipe\\eventide-test-pipe-missing";
+    const std::string name = "\\\\.\\pipe\\kotatsu-test-pipe-missing";
 #else
-    std::string name = "eventide-test-pipe-missing-XXXXXX";
+    std::string name = "kotatsu-test-pipe-missing-XXXXXX";
     int fd = ::mkstemp(name.data());
     ASSERT_TRUE(fd >= 0);
     close_fd(fd);
@@ -450,7 +441,7 @@ TEST_CASE(stop, serial = true) {
     auto err = acc->stop();
     EXPECT_FALSE(err.has_error());
 
-    auto task1 = [](acceptor<pipe>& acc) -> eventide::task<pipe, error> {
+    auto task1 = [](acceptor<pipe>& acc) -> task<pipe, error> {
         auto res = co_await acc.accept();
         event_loop::current().stop();
         co_return res;
@@ -461,7 +452,7 @@ TEST_CASE(stop, serial = true) {
     auto res1 = task1.value().value();
     EXPECT_TRUE(!res1.has_value() && res1.error() == error::operation_aborted);
 
-    auto task2 = [](acceptor<pipe>& acc) -> eventide::task<pipe, error> {
+    auto task2 = [](acceptor<pipe>& acc) -> task<pipe, error> {
         event_loop::current().stop();
         auto res = co_await acc.accept();
         co_return res;
@@ -497,8 +488,8 @@ TEST_CASE(accept_and_read) {
 
     ASSERT_EQ(::connect(client_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
 
-    const std::string message = "eventide-tcp";
-    ASSERT_EQ(::send(client_fd, message.data(), message.size(), 0),
+    const std::string message = "kotatsu-tcp";
+    ASSERT_EQ(::send(client_fd, message.data(), static_cast<int>(message.size()), 0),
               static_cast<ssize_t>(message.size()));
     close_socket(client_fd);
 
@@ -553,13 +544,13 @@ TEST_CASE(connect_and_write) {
 
     int done = 0;
     auto server = accept_and_read_once(std::move(*acc_res), done);
-    auto client = connect_and_send("127.0.0.1", port, "eventide-tcp-connect", done);
+    auto client = connect_and_send("127.0.0.1", port, "kotatsu-tcp-connect", done);
     schedule_all(server, client);
 
     auto server_res = server.result();
     auto client_res = client.result();
     EXPECT_TRUE(server_res.has_value());
-    EXPECT_EQ(*server_res, "eventide-tcp-connect");
+    EXPECT_EQ(*server_res, "kotatsu-tcp-connect");
     EXPECT_FALSE(client_res.has_error());
 }
 
@@ -592,4 +583,4 @@ TEST_CASE(read_some_error) {
 
 };  // TEST_SUITE(tcp)
 
-}  // namespace eventide
+}  // namespace kota

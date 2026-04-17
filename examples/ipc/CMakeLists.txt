@@ -1,25 +1,25 @@
-add_executable(eventide_example_ipc_stdio_server
+add_executable(kota_example_ipc_stdio_server
     "${CMAKE_CURRENT_SOURCE_DIR}/stdio_server.cpp"
 )
 
-target_include_directories(eventide_example_ipc_stdio_server PRIVATE
+target_include_directories(kota_example_ipc_stdio_server PRIVATE
     "${PROJECT_SOURCE_DIR}/include"
 )
 
-target_link_libraries(eventide_example_ipc_stdio_server PRIVATE
-    eventide::ipc
+target_link_libraries(kota_example_ipc_stdio_server PRIVATE
+    kota::ipc
 )
 
-add_executable(eventide_example_ipc_scripted_roundtrip
+add_executable(kota_example_ipc_scripted_roundtrip
     "${CMAKE_CURRENT_SOURCE_DIR}/scripted_roundtrip.cpp"
 )
 
-target_include_directories(eventide_example_ipc_scripted_roundtrip PRIVATE
+target_include_directories(kota_example_ipc_scripted_roundtrip PRIVATE
     "${PROJECT_SOURCE_DIR}/include"
 )
 
-target_link_libraries(eventide_example_ipc_scripted_roundtrip PRIVATE
-    eventide::ipc
+target_link_libraries(kota_example_ipc_scripted_roundtrip PRIVATE
+    kota::ipc
 )
 
 add_executable(spawn_worker
@@ -31,5 +31,5 @@ target_include_directories(spawn_worker PRIVATE
 )
 
 target_link_libraries(spawn_worker PRIVATE
-    eventide::ipc
+    kota::ipc
 )

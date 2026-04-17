@@ -3,26 +3,27 @@
 #include <string>
 #include <vector>
 
-#include "eventide/deco/deco.h"
-#include "eventide/zest/zest.h"
+#include "kota/deco/deco.h"
+#include "kota/zest/zest.h"
 
+namespace kota::deco {
 namespace {
 
-constexpr deco::decl::Category primary_category = {
+constexpr decl::Category primary_category = {
     .exclusive = false,
     .required = false,
     .name = "primary",
     .description = "primary serialization group",
 };
 
-constexpr deco::decl::Category secondary_category = {
+constexpr decl::Category secondary_category = {
     .exclusive = false,
     .required = false,
     .name = "secondary",
     .description = "secondary serialization group",
 };
 
-constexpr deco::decl::Category trailing_category = {
+constexpr decl::Category trailing_category = {
     .exclusive = false,
     .required = false,
     .name = "trailing",
@@ -39,13 +40,11 @@ struct SerializeOpt {
     DecoKV(names = {"--count"}; required = false; category = primary_category;)
     <int> count;
 
-    DecoKVStyled(deco::decl::KVStyle::Joined, names = {"--joined"}; required = false;
+    DecoKVStyled(decl::KVStyle::Joined, names = {"--joined"}; required = false;
                  category = primary_category;)
     <int> joined_only;
 
-    DecoKVStyled(static_cast<char>(deco::decl::KVStyle::Joined | deco::decl::KVStyle::Separate),
-                 names = {"--split="};
-                 required = false;
+    DecoKVStyled(decl::KVStyle::JoinedOrSeparate, names = {"--split="}; required = false;
                  category = secondary_category;)
     <int> split_by_name;
 
@@ -100,26 +99,24 @@ SerializeOpt make_full_opt() {
     return opt;
 }
 
-}  // namespace
-
 TEST_SUITE(deco_serialize) {
 
 TEST_CASE(optional_and_empty_values_are_not_generated) {
     SerializeOpt opt{};
-    auto argv = deco::ser::to_argv(opt);
+    auto argv = ser::to_argv(opt);
     EXPECT_TRUE(argv.empty());
 
     opt.verbose = false;
     opt.repeat = static_cast<std::uint32_t>(0);
     opt.tags = std::vector<std::string>{};
     opt.pair = std::vector<std::string>{};
-    auto argv2 = deco::ser::to_argv(opt);
+    auto argv2 = ser::to_argv(opt);
     EXPECT_TRUE(argv2.empty());
 }
 
 TEST_CASE(serializes_all_option_kinds_with_stable_order_and_roundtrip) {
     auto opt = make_full_opt();
-    auto argv = deco::ser::to_argv(opt);
+    auto argv = ser::to_argv(opt);
 
     const std::vector<std::string> expected = {"-v",
                                                "-n",
@@ -140,7 +137,7 @@ TEST_CASE(serializes_all_option_kinds_with_stable_order_and_roundtrip) {
                                                "tail2"};
     EXPECT_TRUE(argv == expected);
 
-    auto parsed = deco::cli::parse<SerializeOpt>(argv);
+    auto parsed = cli::parse<SerializeOpt>(argv);
     EXPECT_TRUE(parsed.has_value());
     if(!parsed.has_value()) {
         return;
@@ -162,14 +159,14 @@ TEST_CASE(serializes_all_option_kinds_with_stable_order_and_roundtrip) {
 TEST_CASE(category_filter_generates_only_selected_groups) {
     auto opt = make_full_opt();
 
-    auto primary_only = deco::ser::to_argv(opt, primary_category);
+    auto primary_only = ser::to_argv(opt, primary_category);
     const std::vector<std::string> expected_primary =
         {"-v", "-n", "-n", "--count", "7", "--joined9", "main.cc"};
     EXPECT_TRUE(primary_only == expected_primary);
 
-    const deco::decl::Category* selected[] = {&secondary_category, &trailing_category};
+    const decl::Category* selected[] = {&secondary_category, &trailing_category};
     auto secondary_and_trailing =
-        deco::ser::to_argv(opt, std::span<const deco::decl::Category* const>(selected));
+        ser::to_argv(opt, std::span<const decl::Category* const>(selected));
     const std::vector<std::string> expected_secondary = {"--split=3",
                                                          "--auto-name-value",
                                                          "11",
@@ -189,7 +186,7 @@ TEST_CASE(trailing_pack_is_emitted_after_non_trailing_arguments) {
     opt.dry_run = true;
     opt.input = std::string("front");
 
-    auto argv = deco::ser::to_argv(opt);
+    auto argv = ser::to_argv(opt);
     const std::vector<std::string> expected = {"--dry-run", "front", "--", "a", "b"};
     EXPECT_TRUE(argv == expected);
 }
@@ -198,11 +195,11 @@ TEST_CASE(vector_input_serializes_as_repeated_positional_arguments) {
     VectorInputSerializeOpt opt{};
     opt.inputs = std::vector<std::string>{"a.txt", "b.txt", "c.txt"};
 
-    auto argv = deco::ser::to_argv(opt);
+    auto argv = ser::to_argv(opt);
     const std::vector<std::string> expected = {"a.txt", "b.txt", "c.txt"};
     EXPECT_TRUE(argv == expected);
 
-    auto parsed = deco::cli::parse<VectorInputSerializeOpt>(argv);
+    auto parsed = cli::parse<VectorInputSerializeOpt>(argv);
     EXPECT_TRUE(parsed.has_value());
     if(!parsed.has_value()) {
         return;
@@ -212,3 +209,6 @@ TEST_CASE(vector_input_serializes_as_repeated_positional_arguments) {
 }
 
 };  // TEST_SUITE(deco_serialize)
+
+}  // namespace
+}  // namespace kota::deco

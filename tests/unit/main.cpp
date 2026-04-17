@@ -1,5 +1,5 @@
-#include "eventide/zest/zest.h"
+#include "kota/zest/zest.h"
 
 int main(int argc, char** argv) {
-    return eventide::zest::run_cli(argc, argv);
+    return kota::zest::run_cli(argc, argv);
 }

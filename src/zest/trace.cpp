@@ -1,10 +1,10 @@
-#include "eventide/zest/detail/trace.h"
+#include "kota/zest/detail/trace.h"
 
 #include <algorithm>
 
 #include "cpptrace/cpptrace.hpp"
 
-namespace eventide::zest {
+namespace kota::zest {
 
 void print_trace(std::source_location location) {
     auto trace = cpptrace::generate_trace();
@@ -21,4 +21,4 @@ void print_trace(std::source_location location) {
     trace.print();
 }
 
-}  // namespace eventide::zest
+}  // namespace kota::zest

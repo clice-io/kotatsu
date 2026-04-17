@@ -1,8 +1,8 @@
 #pragma once
 
-#include "eventide/async/async.h"
+#include "kota/async/async.h"
 
-namespace eventide {
+namespace kota {
 
 struct loop_fixture {
     event_loop loop;
@@ -14,4 +14,4 @@ struct loop_fixture {
     }
 };
 
-}  // namespace eventide
+}  // namespace kota

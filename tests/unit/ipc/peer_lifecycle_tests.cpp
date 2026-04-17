@@ -1,7 +1,8 @@
 #include "peer_test_types.h"
-#include "eventide/zest/zest.h"
+#include "kota/zest/zest.h"
 
-namespace eventide::ipc {
+namespace kota::ipc {
+namespace {
 
 // ============================================================================
 // Group 5: Peer — lifecycle & error handling
@@ -190,4 +191,5 @@ TEST_CASE(close_idempotent) {
 
 };  // TEST_SUITE(ipc_peer_lifecycle)
 
-}  // namespace eventide::ipc
+}  // namespace
+}  // namespace kota::ipc

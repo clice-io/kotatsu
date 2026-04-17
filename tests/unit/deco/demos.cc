@@ -3,10 +3,11 @@
 #include <string>
 #include <vector>
 
-#include "eventide/deco/deco.h"
-#include "eventide/deco/detail/text.h"
-#include "eventide/zest/macro.h"
+#include "kota/deco/deco.h"
+#include "kota/deco/detail/text.h"
+#include "kota/zest/macro.h"
 
+namespace kota::deco {
 namespace {
 
 struct MyClang {
@@ -24,13 +25,11 @@ struct MyClang {
         _;
 };
 
-}  // namespace
-
 TEST_SUITE(deco_demos) {
 
 TEST_CASE(MyClang) {
-    auto cmd = deco::cli::command<MyClang>("Clang [OPTIONS] inputs");
-    cmd.render_with(deco::cli::text::ModernRenderer());
+    auto cmd = cli::command<MyClang>("Clang [OPTIONS] inputs");
+    cmd.render_with(cli::text::ModernRenderer());
 
     std::stringstream ss;
     cmd.usage(ss);
@@ -51,3 +50,6 @@ TEST_CASE(MyClang) {
 }
 
 };  // TEST_SUITE(deco_demos)
+
+}  // namespace
+}  // namespace kota::deco

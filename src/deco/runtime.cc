@@ -1,8 +1,8 @@
 #include <utility>
 
-#include "eventide/deco/deco.h"
+#include "kota/deco/deco.h"
 
-namespace deco::util {
+namespace kota::deco::util {
 
 std::vector<std::string> argvify(int argc, const char* const* argv, unsigned skip_num) {
     std::vector<std::string> res;
@@ -15,9 +15,9 @@ std::vector<std::string> argvify(int argc, const char* const* argv, unsigned ski
     return res;
 }
 
-}  // namespace deco::util
+}  // namespace kota::deco::util
 
-namespace deco::cli {
+namespace kota::deco::cli {
 
 auto SubCommander::command_of(const decl::SubCommand& subcommand) -> std::string {
     if(subcommand.command.has_value()) {
@@ -95,6 +95,7 @@ void SubCommander::usage(std::ostream& os) const {
         .overview = overview,
         .usage_line = commandOverview,
         .has_usage_line = defaultHandler.has_value(),
+        .entries = {},
     };
     document.entries.reserve(handlers.size());
     for(const auto& item: handlers) {
@@ -191,4 +192,4 @@ void SubCommander::operator()(std::span<std::string> argv) {
     parse(argv);
 }
 
-}  // namespace deco::cli
+}  // namespace kota::deco::cli

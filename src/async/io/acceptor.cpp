@@ -1,12 +1,11 @@
 #include <cassert>
-#include <memory>
 #include <type_traits>
 #include <utility>
 
 #include "awaiter.h"
-#include "eventide/async/io/loop.h"
+#include "kota/async/io/loop.h"
 
-namespace eventide {
+namespace kota {
 
 namespace {
 
@@ -81,12 +80,12 @@ struct accept_await : uv::await_op<accept_await<Stream>> {
 
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
-                      std::source_location location = std::source_location::current()) noexcept {
+                      std::source_location loc = std::source_location::current()) noexcept {
         if(!self) {
             return waiting;
         }
         self->arm(*this, outcome);
-        return this->link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), loc);
     }
 
     result<Stream> await_resume() noexcept {
@@ -224,7 +223,7 @@ struct connect_await : uv::await_op<connect_await<Stream>> {
 
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
-                      std::source_location location = std::source_location::current()) noexcept {
+                      std::source_location loc = std::source_location::current()) noexcept {
         if(!self || !ready) {
             return waiting;
         }
@@ -248,7 +247,7 @@ struct connect_await : uv::await_op<connect_await<Stream>> {
             return waiting;
         }
 
-        return this->link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), loc);
     }
 
     result<Stream> await_resume() noexcept {
@@ -451,4 +450,4 @@ result<int> tcp::local_port(tcp::acceptor& acc) {
     return outcome_error(error::invalid_argument);
 }
 
-}  // namespace eventide
+}  // namespace kota

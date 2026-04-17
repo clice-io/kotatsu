@@ -12,10 +12,10 @@
 #include <unordered_set>
 #include <vector>
 
-#include "eventide/deco/deco.h"
-#include "eventide/deco/detail/text.h"
-#include "eventide/zest/detail/registry.h"
-#include "eventide/zest/run.h"
+#include "kota/deco/deco.h"
+#include "kota/deco/detail/text.h"
+#include "kota/zest/detail/registry.h"
+#include "kota/zest/run.h"
 
 namespace {
 
@@ -26,8 +26,7 @@ constexpr std::string_view red = "\033[31m";
 constexpr std::string_view clear = "\033[0m";
 
 struct ZestCliOptions {
-    DecoKVStyled(style = deco::decl::KVStyle::Joined | deco::decl::KVStyle::Separate,
-                 names = {"--test-filter"};
+    DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate, names = {"--test-filter"};
                  meta_var = "<PATTERN>";
                  help = "test name filters, SUITE or SUITE.TEST or SUITE.* or *";
                  required = false)
@@ -44,8 +43,7 @@ struct ZestCliOptions {
     parallel = false;
 
     DecoKVStyled(
-        style = deco::decl::KVStyle::Joined | deco::decl::KVStyle::Separate,
-        names = {"--parallel-workers"};
+        kota::deco::decl::KVStyle::JoinedOrSeparate, names = {"--parallel-workers"};
         meta_var = "<N>";
         help = "Number of worker threads for parallel mode (default: hardware_concurrency)";
         required = false)
@@ -53,12 +51,12 @@ struct ZestCliOptions {
 };
 
 auto to_runner_options(ZestCliOptions options)
-    -> std::expected<eventide::zest::RunnerOptions, std::string> {
+    -> std::expected<kota::zest::RunnerOptions, std::string> {
     if(options.test_filter_input.has_value() && !options.test_filter->empty()) {
         return std::unexpected("cannot use both positional filter and --test-filter");
     }
 
-    eventide::zest::RunnerOptions runner_options;
+    kota::zest::RunnerOptions runner_options;
     runner_options.only_failed_output = *options.only_failed;
     runner_options.parallel = *options.parallel;
     runner_options.parallel_workers = *options.parallel_workers;
@@ -94,11 +92,11 @@ struct TestResult {
     std::string display_name;
     std::string path;
     std::size_t line;
-    eventide::zest::TestState state;
+    kota::zest::TestState state;
     std::chrono::milliseconds duration;
 };
 
-using SuiteMap = std::unordered_map<std::string, std::vector<eventide::zest::TestCase>>;
+using SuiteMap = std::unordered_map<std::string, std::vector<kota::zest::TestCase>>;
 
 bool matches_pattern(std::string_view text, std::string_view pattern) {
     std::size_t ti = 0, pi = 0, star = std::string_view::npos, match = 0;
@@ -151,7 +149,7 @@ auto resolve_filter_patterns(std::string_view filter) -> FilterPatternSet {
     return patterns;
 }
 
-auto group_suites(const std::vector<eventide::zest::TestSuite>& suites) -> SuiteMap {
+auto group_suites(const std::vector<kota::zest::TestSuite>& suites) -> SuiteMap {
     SuiteMap grouped_suites;
     for(const auto& suite: suites) {
         auto& target = grouped_suites[suite.name];
@@ -192,8 +190,8 @@ bool has_focused_tests(const SuiteMap& grouped_suites, const FilterPatternSet& p
     return false;
 }
 
-bool is_failure(eventide::zest::TestState state) {
-    return state == eventide::zest::TestState::Failed || state == eventide::zest::TestState::Fatal;
+bool is_failure(kota::zest::TestState state) {
+    return state == kota::zest::TestState::Failed || state == kota::zest::TestState::Fatal;
 }
 
 void print_run_result(std::string_view display_name,
@@ -242,15 +240,15 @@ void print_summary(const RunSummary& summary) {
 
 }  // namespace
 
-namespace eventide::zest {
+namespace kota::zest {
 
 int run_cli(int argc, char** argv, std::string_view command_overview) {
-    auto args = deco::util::argvify(argc, argv);
-    auto renderer = deco::cli::text::ModernRenderer();
-    deco::cli::Command<ZestCliOptions> command(command_overview);
+    auto args = kota::deco::util::argvify(argc, argv);
+    auto renderer = kota::deco::cli::text::ModernRenderer();
+    kota::deco::cli::Command<ZestCliOptions> command(command_overview);
     command.render_with(renderer);
 
-    auto parsed = deco::cli::parse<ZestCliOptions>(args, renderer);
+    auto parsed = kota::deco::cli::parse<ZestCliOptions>(args, renderer);
     if(!parsed.has_value()) {
         std::cerr << "Error parsing options: " << parsed.error().message << "\n";
         command.usage(std::cerr);
@@ -462,4 +460,4 @@ int Runner::run_tests(RunnerOptions options) {
     return summary.failed != 0;
 }
 
-}  // namespace eventide::zest
+}  // namespace kota::zest

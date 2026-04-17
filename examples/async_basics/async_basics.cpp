@@ -1,4 +1,4 @@
-/// async_basics.cpp — Showcases eventide's async primitives.
+/// async_basics.cpp — Showcases kotatsu's async primitives.
 ///
 /// Each section is self-contained. Run the program to see all examples
 /// execute sequentially, each printing its output.
@@ -6,11 +6,10 @@
 #include <chrono>
 #include <print>
 #include <string>
-#include <vector>
 
-#include "eventide/async/async.h"
+#include "kota/async/async.h"
 
-using namespace eventide;
+using namespace kota;
 using namespace std::chrono_literals;
 
 // ============================================================
@@ -341,7 +340,7 @@ void example_combined() {
 // ============================================================
 
 int main() {
-    std::println("=== eventide async examples ===");
+    std::println("=== kotatsu async examples ===");
     std::println("");
 
     example_basic_tasks();

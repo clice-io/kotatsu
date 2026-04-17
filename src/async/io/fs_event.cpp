@@ -1,12 +1,12 @@
-#include "eventide/async/io/fs_event.h"
+#include "kota/async/io/fs_event.h"
 
 #include <cassert>
 
 #include "awaiter.h"
-#include "eventide/async/io/loop.h"
-#include "eventide/async/vocab/error.h"
+#include "kota/async/io/loop.h"
+#include "kota/async/vocab/error.h"
 
-namespace eventide {
+namespace kota {
 
 struct fs_event::Self :
     uv::handle<fs_event::Self, uv_fs_event_t>,
@@ -48,7 +48,7 @@ static result<unsigned int> to_uv_fs_event_flags(const fs_event::watch_options& 
     return out;
 }
 
-static fs_event::change_flags to_fs_change_flags(int events) {
+static fs_event::change_flags to_fs_change_flags([[maybe_unused]] int events) {
     fs_event::change_flags out{};
 #ifdef UV_RENAME
     if((events & UV_RENAME) != 0) {
@@ -104,12 +104,12 @@ struct fs_event_await : uv::await_op<fs_event_await> {
 
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
-                      std::source_location location = std::source_location::current()) noexcept {
+                      std::source_location loc = std::source_location::current()) noexcept {
         if(!self) {
             return waiting;
         }
         self->arm(*this, outcome);
-        return this->link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), loc);
     }
 
     result<fs_event::change> await_resume() noexcept {
@@ -192,4 +192,4 @@ task<fs_event::change, error> fs_event::wait() {
     co_return co_await fs_event_await{self.get()};
 }
 
-}  // namespace eventide
+}  // namespace kota

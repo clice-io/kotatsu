@@ -1,4 +1,3 @@
-#include <array>
 #include <atomic>
 #include <optional>
 #include <string>
@@ -7,12 +6,12 @@
 #include <vector>
 
 #include "test_transport.h"
-#include "../common/fd_helpers.h"
-#include "eventide/ipc/transport.h"
-#include "eventide/zest/zest.h"
-#include "eventide/async/async.h"
+#include "../support/fd_helpers.h"
+#include "kota/ipc/transport.h"
+#include "kota/zest/zest.h"
+#include "kota/async/async.h"
 
-namespace eventide::ipc {
+namespace kota::ipc {
 
 using test::create_pipe;
 using test::close_fd;
@@ -27,8 +26,6 @@ task<std::pair<std::optional<std::string>, std::optional<std::string>>>
     event_loop::current().stop();
     co_return std::pair{std::move(first), std::move(second)};
 }
-
-}  // namespace
 
 TEST_SUITE(ipc_transport) {
 
@@ -278,4 +275,5 @@ TEST_CASE(large_payload_single_chunk) {
 
 };  // TEST_SUITE(ipc_transport)
 
-}  // namespace eventide::ipc
+}  // namespace
+}  // namespace kota::ipc

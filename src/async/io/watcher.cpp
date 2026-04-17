@@ -1,14 +1,13 @@
-#include "eventide/async/io/watcher.h"
+#include "kota/async/io/watcher.h"
 
 #include <cassert>
 #include <chrono>
-#include <memory>
 
 #include "awaiter.h"
-#include "eventide/async/io/loop.h"
-#include "eventide/async/vocab/error.h"
+#include "kota/async/io/loop.h"
+#include "kota/async/vocab/error.h"
 
-namespace eventide {
+namespace kota {
 
 struct timer::Self : uv::handle<timer::Self, uv_timer_t> {
     uv_timer_t handle{};
@@ -80,12 +79,12 @@ struct basic_tick_await : uv::await_op<basic_tick_await<SelfT, HandleT>> {
 
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
-                      std::source_location location = std::source_location::current()) noexcept {
+                      std::source_location loc = std::source_location::current()) noexcept {
         if(!self) {
             return waiting;
         }
         self->waiter = this;
-        return this->link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), loc);
     }
 
     void await_resume() noexcept {
@@ -147,13 +146,13 @@ struct signal_await : uv::await_op<signal_await> {
 
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
-                      std::source_location location = std::source_location::current()) noexcept {
+                      std::source_location loc = std::source_location::current()) noexcept {
         if(!self) {
             return waiting;
         }
         self->waiter = this;
         self->active = &result;
-        return this->link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), loc);
     }
 
     error await_resume() noexcept {
@@ -171,7 +170,7 @@ struct signal_await : uv::await_op<signal_await> {
 
 }  // namespace
 
-#define ETD_DEFINE_WATCHER_SPECIAL_MEMBERS(WatcherType)                                            \
+#define KOTA_DEFINE_WATCHER_SPECIAL_MEMBERS(WatcherType)                                           \
     WatcherType::WatcherType() noexcept = default;                                                 \
     WatcherType::WatcherType(unique_handle<Self> self) noexcept : self(std::move(self)) {}         \
     WatcherType::~WatcherType() = default;                                                         \
@@ -181,13 +180,13 @@ struct signal_await : uv::await_op<signal_await> {
         return self.get();                                                                         \
     }
 
-ETD_DEFINE_WATCHER_SPECIAL_MEMBERS(timer)
-ETD_DEFINE_WATCHER_SPECIAL_MEMBERS(signal)
-ETD_DEFINE_WATCHER_SPECIAL_MEMBERS(idle)
-ETD_DEFINE_WATCHER_SPECIAL_MEMBERS(prepare)
-ETD_DEFINE_WATCHER_SPECIAL_MEMBERS(check)
+KOTA_DEFINE_WATCHER_SPECIAL_MEMBERS(timer)
+KOTA_DEFINE_WATCHER_SPECIAL_MEMBERS(signal)
+KOTA_DEFINE_WATCHER_SPECIAL_MEMBERS(idle)
+KOTA_DEFINE_WATCHER_SPECIAL_MEMBERS(prepare)
+KOTA_DEFINE_WATCHER_SPECIAL_MEMBERS(check)
 
-#undef ETD_DEFINE_WATCHER_SPECIAL_MEMBERS
+#undef KOTA_DEFINE_WATCHER_SPECIAL_MEMBERS
 
 timer timer::create(event_loop& loop) {
     auto self = Self::make();
@@ -296,13 +295,13 @@ task<void, error> signal::wait() {
     }
 }
 
-#define ETD_DEFINE_TICK_WATCHER_METHODS(WatcherType,                                               \
-                                        HandleType,                                                \
-                                        AwaiterType,                                               \
-                                        INIT_FN,                                                   \
-                                        START_FN,                                                  \
-                                        STOP_FN,                                                   \
-                                        NameLiteral)                                               \
+#define KOTA_DEFINE_TICK_WATCHER_METHODS(WatcherType,                                              \
+                                         HandleType,                                               \
+                                         AwaiterType,                                              \
+                                         INIT_FN,                                                  \
+                                         START_FN,                                                 \
+                                         STOP_FN,                                                  \
+                                         NameLiteral)                                              \
     WatcherType WatcherType::create(event_loop& loop) {                                            \
         auto self = Self::make();                                                                  \
         auto& handle = self->handle;                                                               \
@@ -346,31 +345,31 @@ task<void, error> signal::wait() {
         co_await AwaiterType{self.get()};                                                          \
     }
 
-ETD_DEFINE_TICK_WATCHER_METHODS(idle,
-                                uv_idle_t,
-                                idle_await,
-                                uv::idle_init,
-                                uv::idle_start,
-                                uv::idle_stop,
-                                "idle")
+KOTA_DEFINE_TICK_WATCHER_METHODS(idle,
+                                 uv_idle_t,
+                                 idle_await,
+                                 uv::idle_init,
+                                 uv::idle_start,
+                                 uv::idle_stop,
+                                 "idle")
 
-ETD_DEFINE_TICK_WATCHER_METHODS(prepare,
-                                uv_prepare_t,
-                                prepare_await,
-                                uv::prepare_init,
-                                uv::prepare_start,
-                                uv::prepare_stop,
-                                "prepare")
+KOTA_DEFINE_TICK_WATCHER_METHODS(prepare,
+                                 uv_prepare_t,
+                                 prepare_await,
+                                 uv::prepare_init,
+                                 uv::prepare_start,
+                                 uv::prepare_stop,
+                                 "prepare")
 
-ETD_DEFINE_TICK_WATCHER_METHODS(check,
-                                uv_check_t,
-                                check_await,
-                                uv::check_init,
-                                uv::check_start,
-                                uv::check_stop,
-                                "check")
+KOTA_DEFINE_TICK_WATCHER_METHODS(check,
+                                 uv_check_t,
+                                 check_await,
+                                 uv::check_init,
+                                 uv::check_start,
+                                 uv::check_stop,
+                                 "check")
 
-#undef ETD_DEFINE_TICK_WATCHER_METHODS
+#undef KOTA_DEFINE_TICK_WATCHER_METHODS
 
 task<> sleep(std::chrono::milliseconds timeout, event_loop& loop) {
     auto t = timer::create(loop);
@@ -378,4 +377,4 @@ task<> sleep(std::chrono::milliseconds timeout, event_loop& loop) {
     co_await t.wait();
 }
 
-}  // namespace eventide
+}  // namespace kota

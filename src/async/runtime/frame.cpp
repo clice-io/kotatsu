@@ -1,24 +1,24 @@
-#include "eventide/async/runtime/frame.h"
+#include "kota/async/runtime/frame.h"
 
 #include <cassert>
 #include <utility>
 #include <vector>
 
 #include "../libuv.h"
-#include "eventide/async/io/loop.h"
-#include "eventide/async/runtime/sync.h"
+#include "kota/async/io/loop.h"
+#include "kota/async/runtime/sync.h"
 
-namespace eventide {
+namespace kota {
 
 namespace {
 
-#if ETD_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+#if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
 thread_local std::vector<std::coroutine_handle<>> pending_frame_destroys;
 #endif
 
 void enqueue_destroy(std::coroutine_handle<> handle) {
     if(handle) {
-#if ETD_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+#if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
         pending_frame_destroys.push_back(handle);
 #else
         handle.destroy();
@@ -26,8 +26,8 @@ void enqueue_destroy(std::coroutine_handle<> handle) {
     }
 }
 
+#if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
 void drain_pending_destroys() {
-#if ETD_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
     while(!pending_frame_destroys.empty()) {
         auto queued = std::move(pending_frame_destroys);
         pending_frame_destroys.clear();
@@ -37,8 +37,8 @@ void drain_pending_destroys() {
             }
         }
     }
-#endif
 }
+#endif
 
 }  // namespace
 
@@ -46,7 +46,7 @@ void detail::resume_and_drain(std::coroutine_handle<> handle) {
     if(handle) {
         handle.resume();
     }
-#if ETD_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+#if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
     drain_pending_destroys();
 #endif
 }
@@ -169,7 +169,7 @@ void async_node::resume() {
     if(is_standard_task()) {
         if(!is_cancelled() && !is_failed()) {
             static_cast<standard_task*>(this)->handle().resume();
-#if ETD_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+#if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
             drain_pending_destroys();
 #endif
         }
@@ -196,8 +196,8 @@ void system_op::complete() noexcept {
 /// For transient nodes (waiter_link, system_op), records the awaiter
 /// and returns noop_coroutine (resumed later by event/complete).
 std::coroutine_handle<> async_node::link_continuation(async_node* awaiter,
-                                                      std::source_location location) {
-    this->location = location;
+                                                      std::source_location loc) {
+    this->location = loc;
     if(awaiter->kind == NodeKind::Task) {
         auto p = static_cast<standard_task*>(awaiter);
         p->awaitee = this;
@@ -408,4 +408,4 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
     }
 }
 
-}  // namespace eventide
+}  // namespace kota

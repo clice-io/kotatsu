@@ -1,0 +1,102 @@
+#pragma once
+
+#include <concepts>
+#include <span>
+#include <string>
+
+#include "kota/ipc/codec.h"
+#include "kota/ipc/peer.h"
+#include "kota/codec/bincode/bincode.h"
+#include "kota/codec/raw_value.h"
+
+namespace kota::codec {
+
+// Bincode serialization: write int64 directly (bincode only uses integer IDs)
+template <typename Config>
+struct serialize_traits<bincode::Serializer<Config>, kota::ipc::protocol::RequestID> {
+    using value_type = typename bincode::Serializer<Config>::value_type;
+    using error_type = typename bincode::Serializer<Config>::error_type;
+
+    static auto serialize(bincode::Serializer<Config>& serializer,
+                          const kota::ipc::protocol::RequestID& id)
+        -> std::expected<value_type, error_type> {
+        auto* int_id = std::get_if<std::int64_t>(&id);
+        if(!int_id) {
+            return std::unexpected(error_type::type_mismatch);
+        }
+        return codec::serialize(serializer, *int_id);
+    }
+};
+
+// Bincode deserialization: read int64 directly
+template <typename Config>
+struct deserialize_traits<bincode::Deserializer<Config>, kota::ipc::protocol::RequestID> {
+    using error_type = typename bincode::Deserializer<Config>::error_type;
+
+    static auto deserialize(bincode::Deserializer<Config>& deserializer,
+                            kota::ipc::protocol::RequestID& id) -> std::expected<void, error_type> {
+        std::int64_t v = 0;
+        auto status = codec::deserialize(deserializer, v);
+        if(!status) {
+            return std::unexpected(status.error());
+        }
+        id.emplace<std::int64_t>(v);
+        return {};
+    }
+};
+
+}  // namespace kota::codec
+
+namespace kota::ipc {
+
+class BincodeCodec {
+public:
+    IncomingMessage parse_message(std::string_view payload);
+
+    Result<std::string> encode_request(const protocol::RequestID& id,
+                                       std::string_view method,
+                                       std::string_view params);
+
+    Result<std::string> encode_notification(std::string_view method, std::string_view params);
+
+    Result<std::string> encode_success_response(const protocol::RequestID& id,
+                                                std::string_view result);
+
+    Result<std::string> encode_error_response(const protocol::RequestID& id, const Error& error);
+
+    template <typename T>
+    Result<std::string> serialize_value(const T& value) {
+        auto bytes = codec::bincode::to_bytes(value);
+        if(!bytes) {
+            return outcome_error(
+                Error(protocol::ErrorCode::InternalError, bytes.error().to_string()));
+        }
+        return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
+    }
+
+    template <typename T>
+    Result<T> deserialize_value(std::string_view raw,
+                                protocol::ErrorCode code = protocol::ErrorCode::RequestFailed) {
+        if(raw.empty()) {
+            if constexpr(std::default_initializable<T>) {
+                return T{};
+            } else {
+                return outcome_error(Error(code, "empty params"));
+            }
+        }
+        auto bytes_span =
+            std::span<const std::byte>(reinterpret_cast<const std::byte*>(raw.data()), raw.size());
+        T value{};
+        auto status = codec::bincode::from_bytes(bytes_span, value);
+        if(!status) {
+            return outcome_error(Error(code, status.error().to_string()));
+        }
+        return value;
+    }
+};
+
+using BincodePeer = Peer<BincodeCodec>;
+
+extern template class Peer<BincodeCodec>;
+
+}  // namespace kota::ipc

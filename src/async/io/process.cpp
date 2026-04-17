@@ -1,11 +1,11 @@
-#include "eventide/async/io/process.h"
+#include "kota/async/io/process.h"
 
 #include <cassert>
 
 #include "awaiter.h"
-#include "eventide/async/io/fs.h"
-#include "eventide/async/io/loop.h"
-#include "eventide/async/vocab/error.h"
+#include "kota/async/io/fs.h"
+#include "kota/async/io/loop.h"
+#include "kota/async/vocab/error.h"
 
 #if defined(__linux__)
 #include <charconv>
@@ -19,7 +19,7 @@
 #include <psapi.h>
 #endif
 
-namespace eventide {
+namespace kota {
 
 static unsigned int to_uv_process_flags(const process::creation_options& options) {
     unsigned int out = 0;
@@ -81,12 +81,12 @@ struct process_await : uv::await_op<process_await> {
 
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
-                      std::source_location location = std::source_location::current()) noexcept {
+                      std::source_location loc = std::source_location::current()) noexcept {
         if(!self) {
             return waiting;
         }
         self->arm(*this, result);
-        return this->link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), loc);
     }
 
     process::wait_result await_resume() noexcept {
@@ -139,7 +139,7 @@ process::stdio process::stdio::pipe(bool readable, bool writable) {
 }
 
 result<process::spawn_result> process::spawn(const options& opts, event_loop& loop) {
-    spawn_result out{process(Self::make())};
+    spawn_result out{process(Self::make()), {}, {}, {}};
 
     std::vector<std::string> argv_storage;
     if(opts.args.empty()) {
@@ -417,4 +417,4 @@ result<process_info> process::query_info(int pid) {
     return info;
 }
 
-}  // namespace eventide
+}  // namespace kota

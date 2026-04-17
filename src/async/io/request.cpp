@@ -1,13 +1,13 @@
-#include "eventide/async/io/request.h"
+#include "kota/async/io/request.h"
 
 #include <cassert>
 
 #include "awaiter.h"
-#include "eventide/async/io/loop.h"
-#include "eventide/async/runtime/task.h"
-#include "eventide/async/vocab/error.h"
+#include "kota/async/io/loop.h"
+#include "kota/async/runtime/task.h"
+#include "kota/async/vocab/error.h"
 
-namespace eventide {
+namespace kota {
 
 namespace {
 
@@ -34,8 +34,8 @@ struct work_op : uv::await_op<work_op> {
 
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
-                      std::source_location location = std::source_location::current()) noexcept {
-        return this->link_continuation(&waiting.promise(), location);
+                      std::source_location loc = std::source_location::current()) noexcept {
+        return this->link_continuation(&waiting.promise(), loc);
     }
 
     error await_resume() noexcept {
@@ -75,4 +75,4 @@ task<void, error> queue(function<void()> fn, event_loop& loop) {
     }
 }
 
-}  // namespace eventide
+}  // namespace kota

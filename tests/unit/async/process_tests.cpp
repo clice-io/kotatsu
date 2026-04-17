@@ -1,12 +1,11 @@
 #include <span>
 #include <string>
-#include <string_view>
 #include <utility>
 
 #include "loop_fixture.h"
-#include "eventide/zest/zest.h"
+#include "kota/zest/zest.h"
 
-namespace eventide {
+namespace kota {
 
 namespace {
 
@@ -25,6 +24,7 @@ task<process::wait_result> wait_for_exit(process& proc, int& done, int target) {
     co_return status;
 }
 
+#ifndef _WIN32
 task<std::pair<result<std::string>, result<std::string>>> read_two_chunks(pipe p) {
     auto first = co_await p.read_chunk();
     result<std::string> first_out = outcome_error(error::invalid_argument);
@@ -47,6 +47,7 @@ task<std::pair<result<std::string>, result<std::string>>> read_two_chunks(pipe p
     event_loop::current().stop();
     co_return std::pair{std::move(first_out), std::move(second_out)};
 }
+#endif
 
 }  // namespace
 
@@ -83,12 +84,12 @@ TEST_CASE(spawn_pipe_stdout) {
     process::options opts;
 #ifdef _WIN32
     opts.file = "cmd.exe";
-    opts.args = {opts.file, "/c", "echo eventide-stdout"};
-    const std::string expected = "eventide-stdout\r\n";
+    opts.args = {opts.file, "/c", "echo kotatsu-stdout"};
+    const std::string expected = "kotatsu-stdout\r\n";
 #else
     opts.file = "/bin/sh";
-    opts.args = {opts.file, "-c", "printf 'eventide-stdout'"};
-    const std::string expected = "eventide-stdout";
+    opts.args = {opts.file, "-c", "printf 'kotatsu-stdout'"};
+    const std::string expected = "kotatsu-stdout";
 #endif
     opts.streams = {process::stdio::ignore(),
                     process::stdio::pipe(false, true),
@@ -131,7 +132,7 @@ TEST_CASE(spawn_pipe_stdio) {
                     process::stdio::pipe(false, true),
                     process::stdio::ignore()};
 
-    const std::string payload = "eventide-stdin-payload\n";
+    const std::string payload = "kotatsu-stdin-payload\n";
 
     auto spawn_res = process::spawn(opts, loop);
     ASSERT_TRUE(spawn_res.has_value());
@@ -174,10 +175,10 @@ TEST_CASE(spawn_pipe_stderr) {
     process::options opts;
 #ifdef _WIN32
     opts.file = "cmd.exe";
-    opts.args = {opts.file, "/c", "echo eventide-stderr 1>&2"};
+    opts.args = {opts.file, "/c", "echo kotatsu-stderr 1>&2"};
 #else
     opts.file = "/bin/sh";
-    opts.args = {opts.file, "-c", "printf 'eventide-stderr' 1>&2"};
+    opts.args = {opts.file, "-c", "printf 'kotatsu-stderr' 1>&2"};
 #endif
     opts.streams = {process::stdio::ignore(),
                     process::stdio::pipe(false, true),
@@ -200,7 +201,7 @@ TEST_CASE(spawn_pipe_stderr) {
         EXPECT_TRUE(stderr_out.has_value());
 
         if(stderr_out.has_value()) {
-            EXPECT_TRUE(stderr_out->find("eventide-stderr") != std::string::npos);
+            EXPECT_TRUE(stderr_out->find("kotatsu-stderr") != std::string::npos);
         }
 
         event_loop::current().stop();
@@ -212,7 +213,7 @@ TEST_CASE(spawn_pipe_stderr) {
 
 TEST_CASE(spawn_pipe_stdout_read_chunk_twice) {
 #ifdef _WIN32
-    ::eventide::zest::skip();
+    zest::skip();
     return;
 #else
     process::options opts;
@@ -239,9 +240,9 @@ TEST_CASE(spawn_pipe_stdout_read_chunk_twice) {
 TEST_CASE(spawn_invalid_file) {
     process::options opts;
 #ifdef _WIN32
-    opts.file = "Z:\\nonexistent\\eventide-nope.exe";
+    opts.file = "Z:\\nonexistent\\kotatsu-nope.exe";
 #else
-    opts.file = "/nonexistent/eventide-nope";
+    opts.file = "/nonexistent/kotatsu-nope";
 #endif
 
     auto spawn_res = process::spawn(opts, loop);
@@ -343,4 +344,4 @@ TEST_CASE(query_info_invalid_pid) {
 
 };  // TEST_SUITE(process_io)
 
-}  // namespace eventide
+}  // namespace kota

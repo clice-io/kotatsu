@@ -1,12 +1,12 @@
-#include "eventide/deco/detail/text.h"
+#include "kota/deco/detail/text.h"
 
 #include <algorithm>
 #include <format>
 #include <utility>
 
-#include "eventide/deco/detail/config.h"
+#include "kota/deco/detail/config.h"
 
-namespace deco::cli::text {
+namespace kota::deco::cli::text {
 namespace {
 
 constexpr std::string_view ansi_reset = "\033[0m";
@@ -395,8 +395,9 @@ auto join_argv(std::span<const std::string> argv) -> JoinedArgv {
 
 auto build_diagnostic_layout(const Diagnostic& diagnostic, std::size_t max_width)
     -> DiagnosticLayout {
-    const unsigned begin = std::min<unsigned>(diagnostic.begin, diagnostic.argv.size());
-    unsigned end = std::min<unsigned>(diagnostic.end, diagnostic.argv.size());
+    const auto argc = static_cast<unsigned>(diagnostic.argv.size());
+    const unsigned begin = std::min<unsigned>(diagnostic.begin, argc);
+    unsigned end = std::min<unsigned>(diagnostic.end, argc);
     const bool points_to_end = begin >= diagnostic.argv.size();
     if(end <= begin) {
         end = begin + 1;
@@ -577,7 +578,7 @@ auto mutable_explicit_default_renderer() -> std::optional<Renderer>& {
 
 }  // namespace detail
 
-auto looks_like_rendered_diagnostic(std::string_view text) -> bool {
+auto looks_like_rendered_diagnostic([[maybe_unused]] std::string_view text) -> bool {
     return false;
 }
 
@@ -612,8 +613,8 @@ CompatibleRenderer::CompatibleRenderer(CompatibleRendererConfig config) : Render
     subcommand = [](const SubCommandDocument& document, const TextStyle& active_style) {
         return CompatibleRendererImpl::render_subcommand_document(document, active_style);
     };
-    diagnostic = [](const Diagnostic& diagnostic, const TextStyle& active_style) {
-        return CompatibleRendererImpl::render_diagnostic_document(diagnostic, active_style);
+    diagnostic = [](const Diagnostic& diag, const TextStyle& active_style) {
+        return CompatibleRendererImpl::render_diagnostic_document(diag, active_style);
     };
 }
 
@@ -627,8 +628,8 @@ ModernRenderer::ModernRenderer(ModernRendererConfig config) : Renderer() {
     subcommand = [](const SubCommandDocument& document, const TextStyle& active_style) {
         return ModernRendererImpl::render_subcommand_document(document, active_style);
     };
-    diagnostic = [](const Diagnostic& diagnostic, const TextStyle& active_style) {
-        return ModernRendererImpl::render_diagnostic_document(diagnostic, active_style);
+    diagnostic = [](const Diagnostic& diag, const TextStyle& active_style) {
+        return ModernRendererImpl::render_diagnostic_document(diag, active_style);
     };
 }
 
@@ -694,18 +695,18 @@ auto render_diagnostic(const Diagnostic& diagnostic, const Renderer* renderer) -
     return CompatibleRendererImpl::render_diagnostic_document(diagnostic, active_renderer.style);
 }
 
-}  // namespace deco::cli::text
+}  // namespace kota::deco::cli::text
 
-namespace deco::config {
+namespace kota::deco::config {
 
 auto get() -> const Config& {
-    return ::deco::cli::text::detail::mutable_global_config();
+    return ::kota::deco::cli::text::detail::mutable_global_config();
 }
 
 void set(Config config) {
-    ::deco::cli::text::detail::mutable_global_config() = std::move(config);
-    ::deco::cli::text::detail::mutable_config_renderer() =
-        ::deco::cli::text::CompatibleRenderer(get().render.compatible);
+    ::kota::deco::cli::text::detail::mutable_global_config() = std::move(config);
+    ::kota::deco::cli::text::detail::mutable_config_renderer() =
+        ::kota::deco::cli::text::CompatibleRenderer(get().render.compatible);
 }
 
 void set_render(BuiltInRenderConfig render) {
@@ -720,4 +721,4 @@ void set_enum_meta_var(EnumMetaVarConfig config) {
     set(std::move(updated));
 }
 
-}  // namespace deco::config
+}  // namespace kota::deco::config

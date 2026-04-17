@@ -1,13 +1,13 @@
-target_sources(eventide_ipc PRIVATE
+target_sources(kota_ipc PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/bincode.cpp"
 )
 
-if(ETD_SERDE_ENABLE_SIMDJSON)
-    target_sources(eventide_ipc PRIVATE
+if(KOTA_CODEC_ENABLE_SIMDJSON)
+    target_sources(kota_ipc PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/json.cpp"
     )
 
-    target_link_libraries(eventide_ipc PUBLIC
-        eventide::serde::json
+    target_link_libraries(kota_ipc PUBLIC
+        kota::codec::json
     )
 endif()

@@ -4,22 +4,19 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
 #include <unordered_set>
-#include <utility>
 
 #include "uv.h"
-#include "eventide/common/meta.h"
-#include "eventide/async/runtime/frame.h"
-#include "eventide/async/vocab/error.h"
-#include "eventide/async/vocab/owned.h"
+#include "kota/support/type_list.h"
+#include "kota/async/runtime/frame.h"
+#include "kota/async/vocab/error.h"
+#include "kota/async/vocab/owned.h"
 
 #ifdef min
 #undef min
@@ -40,7 +37,7 @@
 #define ALWAYS_INLINE inline
 #endif
 
-namespace eventide {
+namespace kota {
 
 namespace uv {
 
@@ -185,65 +182,65 @@ ALWAYS_INLINE void walk(uv_loop_t& loop, uv_walk_cb cb, void* arg) noexcept {
 }
 
 ALWAYS_INLINE void idle_init(uv_loop_t& loop, uv_idle_t& handle) noexcept {
-    int rc = ::uv_idle_init(&loop, &handle);
+    [[maybe_unused]] int rc = ::uv_idle_init(&loop, &handle);
     assert(rc == 0 && "uv::idle_init failed");
 }
 
 ALWAYS_INLINE void idle_start(uv_idle_t& handle, uv_idle_cb cb) noexcept {
     assert(cb != nullptr && "uv::idle_start requires non-null callback");
-    int rc = ::uv_idle_start(&handle, cb);
+    [[maybe_unused]] int rc = ::uv_idle_start(&handle, cb);
     assert(rc == 0 && "uv::idle_start failed");
 }
 
 ALWAYS_INLINE void idle_stop(uv_idle_t& handle) noexcept {
-    int rc = ::uv_idle_stop(&handle);
+    [[maybe_unused]] int rc = ::uv_idle_stop(&handle);
     assert(rc == 0 && "uv::idle_stop failed");
 }
 
 ALWAYS_INLINE void async_init(uv_loop_t& loop, uv_async_t& handle, uv_async_cb cb) noexcept {
-    int rc = ::uv_async_init(&loop, &handle, cb);
+    [[maybe_unused]] int rc = ::uv_async_init(&loop, &handle, cb);
     assert(rc == 0 && "uv::async_init failed");
 }
 
 ALWAYS_INLINE void async_send(uv_async_t& handle) noexcept {
-    int rc = ::uv_async_send(&handle);
+    [[maybe_unused]] int rc = ::uv_async_send(&handle);
     assert(rc == 0 && "uv::async_send failed");
 }
 
 ALWAYS_INLINE void prepare_init(uv_loop_t& loop, uv_prepare_t& handle) noexcept {
-    int rc = ::uv_prepare_init(&loop, &handle);
+    [[maybe_unused]] int rc = ::uv_prepare_init(&loop, &handle);
     assert(rc == 0 && "uv::prepare_init failed");
 }
 
 ALWAYS_INLINE void prepare_start(uv_prepare_t& handle, uv_prepare_cb cb) noexcept {
     assert(cb != nullptr && "uv::prepare_start requires non-null callback");
-    int rc = ::uv_prepare_start(&handle, cb);
+    [[maybe_unused]] int rc = ::uv_prepare_start(&handle, cb);
     assert(rc == 0 && "uv::prepare_start failed");
 }
 
 ALWAYS_INLINE void prepare_stop(uv_prepare_t& handle) noexcept {
-    int rc = ::uv_prepare_stop(&handle);
+    [[maybe_unused]] int rc = ::uv_prepare_stop(&handle);
     assert(rc == 0 && "uv::prepare_stop failed");
 }
 
 ALWAYS_INLINE void check_init(uv_loop_t& loop, uv_check_t& handle) noexcept {
-    int rc = ::uv_check_init(&loop, &handle);
+    [[maybe_unused]] int rc = ::uv_check_init(&loop, &handle);
     assert(rc == 0 && "uv::check_init failed");
 }
 
 ALWAYS_INLINE void check_start(uv_check_t& handle, uv_check_cb cb) noexcept {
     assert(cb != nullptr && "uv::check_start requires non-null callback");
-    int rc = ::uv_check_start(&handle, cb);
+    [[maybe_unused]] int rc = ::uv_check_start(&handle, cb);
     assert(rc == 0 && "uv::check_start failed");
 }
 
 ALWAYS_INLINE void check_stop(uv_check_t& handle) noexcept {
-    int rc = ::uv_check_stop(&handle);
+    [[maybe_unused]] int rc = ::uv_check_stop(&handle);
     assert(rc == 0 && "uv::check_stop failed");
 }
 
 ALWAYS_INLINE void timer_init(uv_loop_t& loop, uv_timer_t& handle) noexcept {
-    int rc = ::uv_timer_init(&loop, &handle);
+    [[maybe_unused]] int rc = ::uv_timer_init(&loop, &handle);
     assert(rc == 0 && "uv::timer_init failed");
 }
 
@@ -252,12 +249,12 @@ ALWAYS_INLINE void timer_start(uv_timer_t& handle,
                                std::uint64_t timeout,
                                std::uint64_t repeat) noexcept {
     assert(cb != nullptr && "uv::timer_start requires non-null callback");
-    int rc = ::uv_timer_start(&handle, cb, timeout, repeat);
+    [[maybe_unused]] int rc = ::uv_timer_start(&handle, cb, timeout, repeat);
     assert(rc == 0 && "uv::timer_start failed");
 }
 
 ALWAYS_INLINE void timer_stop(uv_timer_t& handle) noexcept {
-    int rc = ::uv_timer_stop(&handle);
+    [[maybe_unused]] int rc = ::uv_timer_stop(&handle);
     assert(rc == 0 && "uv::timer_stop failed");
 }
 
@@ -313,7 +310,7 @@ ALWAYS_INLINE error read_start(S& stream, uv_alloc_cb alloc_cb, uv_read_cb read_
 
 template <stream_like S>
 ALWAYS_INLINE void read_stop(S& stream) noexcept {
-    int rc = ::uv_read_stop(as_stream(stream));
+    [[maybe_unused]] int rc = ::uv_read_stop(as_stream(stream));
     assert(rc == 0 && "uv::read_stop failed");
 }
 
@@ -393,7 +390,8 @@ ALWAYS_INLINE uv_handle_type guess_handle(uv_file file) noexcept {
 template <stream_like S>
 ALWAYS_INLINE result<std::size_t> try_write(S& stream, std::span<const uv_buf_t> bufs) noexcept {
     assert(!bufs.empty() && "uv::try_write requires a non-empty buffer span");
-    int rc = ::uv_try_write(as_stream(stream), bufs.data(), static_cast<unsigned>(bufs.size()));
+    [[maybe_unused]] int rc =
+        ::uv_try_write(as_stream(stream), bufs.data(), static_cast<unsigned>(bufs.size()));
     if(rc < 0) {
         return outcome_error(error(rc));
     }
@@ -422,7 +420,7 @@ ALWAYS_INLINE error tty_reset_mode() noexcept {
 
 ALWAYS_INLINE result<tty_winsize> tty_get_winsize(uv_tty_t& handle) noexcept {
     tty_winsize out{};
-    int rc = ::uv_tty_get_winsize(&handle, &out.width, &out.height);
+    [[maybe_unused]] int rc = ::uv_tty_get_winsize(&handle, &out.width, &out.height);
     if(rc != 0) {
         return outcome_error(error(rc));
     }
@@ -435,7 +433,7 @@ ALWAYS_INLINE void tty_set_vterm_state(uv_tty_vtermstate_t state) noexcept {
 
 ALWAYS_INLINE result<uv_tty_vtermstate_t> tty_get_vterm_state() noexcept {
     uv_tty_vtermstate_t out = UV_TTY_UNSUPPORTED;
-    int rc = ::uv_tty_get_vterm_state(&out);
+    [[maybe_unused]] int rc = ::uv_tty_get_vterm_state(&out);
     if(rc != 0) {
         return outcome_error(error(rc));
     }
@@ -472,7 +470,7 @@ ALWAYS_INLINE error udp_recv_start(uv_udp_t& handle,
 }
 
 ALWAYS_INLINE void udp_recv_stop(uv_udp_t& handle) noexcept {
-    int rc = ::uv_udp_recv_stop(&handle);
+    [[maybe_unused]] int rc = ::uv_udp_recv_stop(&handle);
     assert(rc == 0 && "uv::udp_recv_stop failed");
 }
 
@@ -490,7 +488,8 @@ ALWAYS_INLINE result<std::size_t> udp_try_send(uv_udp_t& handle,
                                                std::span<const uv_buf_t> bufs,
                                                const sockaddr* addr) noexcept {
     assert(!bufs.empty() && "uv::udp_try_send requires a non-empty buffer span");
-    int rc = ::uv_udp_try_send(&handle, bufs.data(), static_cast<unsigned>(bufs.size()), addr);
+    [[maybe_unused]] int rc =
+        ::uv_udp_try_send(&handle, bufs.data(), static_cast<unsigned>(bufs.size()), addr);
     if(rc < 0) {
         return outcome_error(error(rc));
     }
@@ -1021,4 +1020,4 @@ using handle = unique_handle_impl<Derived, Handle>;
 
 }  // namespace uv
 
-}  // namespace eventide
+}  // namespace kota

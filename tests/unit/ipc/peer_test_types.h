@@ -1,20 +1,18 @@
 #pragma once
 
 #include <cstdint>
-#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <vector>
 
 #include "test_transport.h"
-#include "../common/fd_helpers.h"
-#include "eventide/ipc/codec/json.h"
-#include "eventide/common/config.h"
-#include "eventide/async/async.h"
-#include "eventide/serde/json/deserializer.h"
+#include "../support/fd_helpers.h"
+#include "kota/ipc/codec/json.h"
+#include "kota/support/config.h"
+#include "kota/async/async.h"
+#include "kota/codec/json/deserializer.h"
 
-namespace eventide::ipc {
+namespace kota::ipc {
 
 struct AddParams {
     std::int64_t a = 0;
@@ -103,9 +101,9 @@ using test::create_pipe;
 using test::close_fd;
 using test::write_fd;
 
-}  // namespace eventide::ipc
+}  // namespace kota::ipc
 
-namespace eventide::ipc::protocol {
+namespace kota::ipc::protocol {
 
 template <>
 struct RequestTraits<AddParams> {
@@ -143,4 +141,4 @@ struct NotificationTraits<TaggedNote> {
     constexpr inline static std::string_view method = "test/taggedNote";
 };
 
-}  // namespace eventide::ipc::protocol
+}  // namespace kota::ipc::protocol

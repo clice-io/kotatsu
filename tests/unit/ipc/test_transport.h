@@ -7,10 +7,10 @@
 #include <utility>
 #include <vector>
 
-#include "eventide/ipc/peer.h"
-#include "eventide/async/async.h"
+#include "kota/ipc/peer.h"
+#include "kota/async/async.h"
 
-namespace eventide::ipc {
+namespace kota::ipc {
 
 class FakeTransport final : public Transport {
 public:
@@ -109,4 +109,4 @@ inline std::string frame(std::string_view payload) {
     return out;
 }
 
-}  // namespace eventide::ipc
+}  // namespace kota::ipc

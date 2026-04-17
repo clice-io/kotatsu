@@ -1,14 +1,14 @@
-#include "eventide/async/io/loop.h"
+#include "kota/async/io/loop.h"
 
 #include <atomic>
 #include <cassert>
 #include <deque>
 
 #include "../libuv.h"
-#include "eventide/common/functional.h"
-#include "eventide/async/runtime/frame.h"
+#include "kota/support/functional.h"
+#include "kota/async/runtime/frame.h"
 
-namespace eventide {
+namespace kota {
 
 /// A node in the lock-free MPSC (multi-producer, single-consumer) queue
 /// used by event_loop::post(). Each post() allocates a node, atomically
@@ -117,7 +117,7 @@ void each(uv_idle_t* idle) {
     }
 }
 
-void event_loop::schedule(async_node& frame, std::source_location location) {
+void event_loop::schedule(async_node& frame, std::source_location loc) {
     assert(self && "schedule: no current event loop in this thread");
 
     if(frame.state == async_node::Pending) {
@@ -126,13 +126,13 @@ void event_loop::schedule(async_node& frame, std::source_location location) {
         std::abort();
     }
 
-    frame.location = location;
-    auto& self = *this;
-    if(!self->idle_running && self->tasks.empty()) {
-        self->idle_running = true;
-        uv::idle_start(self->idle, each);
+    frame.location = loc;
+    auto& loop = *this;
+    if(!loop->idle_running && loop->tasks.empty()) {
+        loop->idle_running = true;
+        uv::idle_start(loop->idle, each);
     }
-    self->tasks.push_back(&frame);
+    loop->tasks.push_back(&frame);
 }
 
 void on_post(uv_async_t* handle) {
@@ -258,4 +258,4 @@ void event_loop::stop() {
     uv::stop(self->loop);
 }
 
-}  // namespace eventide
+}  // namespace kota

@@ -1,4 +1,4 @@
-#include "eventide/ipc/transport.h"
+#include "kota/ipc/transport.h"
 
 #include <algorithm>
 #include <cctype>
@@ -9,7 +9,7 @@
 #include <string_view>
 #include <utility>
 
-namespace eventide::ipc {
+namespace kota::ipc {
 
 namespace {
 
@@ -261,4 +261,4 @@ Result<void> StreamTransport::close() {
     return {};
 }
 
-}  // namespace eventide::ipc
+}  // namespace kota::ipc

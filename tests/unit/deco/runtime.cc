@@ -1,22 +1,30 @@
-#include "eventide/deco/detail/runtime.h"
+#if defined(_MSC_VER)
+// Test fixtures hold thread_local members inside anonymous-namespace structs;
+// MSVC emits C5046 for the synthesized thread-local destructor registration.
+#pragma warning(disable : 5046)
+#endif
+
+#include "kota/deco/detail/runtime.h"
 
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <optional>
-#include <print>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
 
-#include "eventide/deco/deco.h"
-#include "eventide/deco/detail/macro.h"
-#include "eventide/deco/detail/text.h"
-#include "eventide/zest/zest.h"
-#include <eventide/zest/macro.h>
+#include "kota/deco/deco.h"
+#include "kota/deco/detail/macro.h"
+#include "kota/deco/detail/text.h"
+#include "kota/zest/macro.h"
+#include "kota/zest/zest.h"
 
+namespace kota::deco {
 namespace {
+
+namespace option = ::kota::option;
 
 struct Version {
     DecoFlag(names = {"-v", "--version"}, help = "Show version and exit")
@@ -76,19 +84,19 @@ struct Request {
 
 struct WebCliOpt {
     struct Cate {
-        constexpr static deco::decl::Category version_category{
+        constexpr static decl::Category version_category{
             .exclusive = true,
             .required = false,
             .name = "version",
             .description = "version-only mode",
         };
-        constexpr static deco::decl::Category help_category{
+        constexpr static decl::Category help_category{
             .exclusive = true,
             .required = false,
             .name = "help",
             .description = "help-only mode",
         };
-        constexpr static deco::decl::Category request_category{
+        constexpr static decl::Category request_category{
             .exclusive = true,
             .required = false,
             .name = "request",
@@ -130,13 +138,13 @@ struct BuiltinSpelledEnumCliOpt {
 
 struct InputAndTrailingOpt {
     struct Cate {
-        constexpr static deco::decl::Category input_category{
+        constexpr static decl::Category input_category{
             .exclusive = false,
             .required = false,
             .name = "input",
             .description = "single positional input",
         };
-        constexpr static deco::decl::Category trailing_category{
+        constexpr static decl::Category trailing_category{
             .exclusive = false,
             .required = false,
             .name = "trailing",
@@ -334,10 +342,6 @@ struct NestedAfterOpt {
     NestedAfterSecondBranch second;
 };
 
-}  // namespace
-
-namespace {
-
 template <typename... Args>
 std::span<std::string> into_deco_args(Args&&... args) {
     static thread_local std::vector<std::string> res;
@@ -348,46 +352,43 @@ std::span<std::string> into_deco_args(Args&&... args) {
 }
 
 struct ScopedDefaultRenderer {
-    const deco::cli::text::Renderer* saved = deco::cli::text::explicit_default_renderer();
-    std::optional<deco::cli::text::Renderer> saved_copy =
-        saved != nullptr ? std::optional<deco::cli::text::Renderer>(*saved) : std::nullopt;
+    const cli::text::Renderer* saved = cli::text::explicit_default_renderer();
+    std::optional<cli::text::Renderer> saved_copy =
+        saved != nullptr ? std::optional<cli::text::Renderer>(*saved) : std::nullopt;
 
     ~ScopedDefaultRenderer() {
         if(saved_copy.has_value()) {
-            deco::cli::text::set_default_renderer(*saved_copy);
+            cli::text::set_default_renderer(*saved_copy);
         } else {
-            deco::cli::text::clear_default_renderer();
+            cli::text::clear_default_renderer();
         }
     }
 };
 
 struct ScopedDecoConfig {
-    deco::config::Config saved = deco::config::get();
+    config::Config saved = config::get();
 
     ~ScopedDecoConfig() {
-        deco::config::set(saved);
+        config::set(saved);
     }
 };
 
-auto make_custom_renderer() -> deco::cli::text::Renderer {
-    auto renderer = deco::cli::text::CompatibleRenderer();
-    renderer.usage = [](const deco::cli::text::UsageDocument& document,
+auto make_custom_renderer() -> cli::text::Renderer {
+    auto renderer = cli::text::CompatibleRenderer();
+    renderer.usage = [](const cli::text::UsageDocument& document,
                         bool include_help,
-                        const deco::cli::text::TextStyle&) {
+                        const cli::text::TextStyle&) {
         return std::format("USAGE<{}:{}>", document.overview, include_help ? "help" : "plain");
     };
-    renderer.subcommand = [](const deco::cli::text::SubCommandDocument& document,
-                             const deco::cli::text::TextStyle&) {
+    renderer.subcommand = [](const cli::text::SubCommandDocument& document,
+                             const cli::text::TextStyle&) {
         return std::format("SUB<{}:{}>", document.usage_line, document.entries.size());
     };
-    renderer.diagnostic = [](const deco::cli::text::Diagnostic& diagnostic,
-                             const deco::cli::text::TextStyle&) {
+    renderer.diagnostic = [](const cli::text::Diagnostic& diagnostic, const cli::text::TextStyle&) {
         return std::format("ERR<{}:{}>", diagnostic.begin, diagnostic.message);
     };
     return renderer;
 }
-
-};  // namespace
 
 struct CatterSelf {
     DecoFlag(required = false)
@@ -398,7 +399,7 @@ struct CatterSelf {
     <std::string> s;
 };
 
-auto runtime_alias_forward_pair(const eventide::option::ParsedArgumentOwning& arg)
+auto runtime_alias_forward_pair(const option::ParsedArgumentOwning& arg)
     -> std::expected<std::vector<std::string>, std::string> {
     if(arg.values.empty()) {
         return std::unexpected(std::string("missing alias payload"));
@@ -406,8 +407,8 @@ auto runtime_alias_forward_pair(const eventide::option::ParsedArgumentOwning& ar
     return std::vector<std::string>{"--target", arg.values.front()};
 }
 
-auto runtime_alias_forward_pair_with_context(const eventide::option::ParsedArgumentOwning&,
-                                             const deco::decl::IntoContext& context)
+auto runtime_alias_forward_pair_with_context(const option::ParsedArgumentOwning&,
+                                             const decl::IntoContext& context)
     -> std::expected<std::vector<std::string>, std::string> {
     return std::unexpected(context.format_error("ctx failure"));
 }
@@ -452,7 +453,7 @@ TEST_SUITE(cli_parse) {
 
 TEST_CASE(parsing) {
     auto args = into_deco_args("-X", "POST", "--url", "https://example.com");
-    auto res = deco::cli::parse<WebCliOpt>(args);
+    auto res = cli::parse<WebCliOpt>(args);
     EXPECT_TRUE(res.has_value());
 
     const auto& opt = res->options;
@@ -462,7 +463,7 @@ TEST_CASE(parsing) {
 
 TEST_CASE(parse_result_exposes_options) {
     auto args = into_deco_args("-X", "POST", "--url", "https://example.com");
-    auto res = deco::cli::parse<WebCliOpt>(args);
+    auto res = cli::parse<WebCliOpt>(args);
     EXPECT_TRUE(res.has_value());
     if(!res.has_value()) {
         return;
@@ -473,7 +474,7 @@ TEST_CASE(parse_result_exposes_options) {
 }
 
 TEST_CASE(parsing_builtin_enum) {
-    auto res = deco::cli::parse<BuiltinEnumCliOpt>(into_deco_args("--mode", "Debug"));
+    auto res = cli::parse<BuiltinEnumCliOpt>(into_deco_args("--mode", "Debug"));
     EXPECT_TRUE(res.has_value());
     if(!res.has_value()) {
         return;
@@ -484,21 +485,21 @@ TEST_CASE(parsing_builtin_enum) {
 }
 
 TEST_CASE(parsing_builtin_enum_with_serde_spelling) {
-    auto snake = deco::cli::parse<BuiltinSpelledEnumCliOpt>(into_deco_args("--mode", "my_value"));
+    auto snake = cli::parse<BuiltinSpelledEnumCliOpt>(into_deco_args("--mode", "my_value"));
     EXPECT_TRUE(snake.has_value());
     if(!snake.has_value()) {
         return;
     }
     EXPECT_TRUE(snake->options.mode.value() == BuiltinCliSpelledMode::myValue);
 
-    auto keyword = deco::cli::parse<BuiltinSpelledEnumCliOpt>(into_deco_args("--mode", "Delete"));
+    auto keyword = cli::parse<BuiltinSpelledEnumCliOpt>(into_deco_args("--mode", "Delete"));
     EXPECT_TRUE(keyword.has_value());
     if(!keyword.has_value()) {
         return;
     }
     EXPECT_TRUE(keyword->options.mode.value() == BuiltinCliSpelledMode::Delete_);
 
-    auto numeric = deco::cli::parse<BuiltinSpelledEnumCliOpt>(into_deco_args("--mode", "123"));
+    auto numeric = cli::parse<BuiltinSpelledEnumCliOpt>(into_deco_args("--mode", "123"));
     EXPECT_TRUE(numeric.has_value());
     if(!numeric.has_value()) {
         return;
@@ -508,7 +509,7 @@ TEST_CASE(parsing_builtin_enum_with_serde_spelling) {
 
 TEST_CASE(parsing_input_and_trailing) {
     auto args = into_deco_args("front", "--", "a", "b", "c");
-    auto res = deco::cli::parse<InputAndTrailingOpt>(args);
+    auto res = cli::parse<InputAndTrailingOpt>(args);
     EXPECT_TRUE(res.has_value());
     if(!res.has_value()) {
         return;
@@ -524,12 +525,12 @@ TEST_CASE(parsing_input_and_trailing) {
 }
 
 TEST_CASE(parsing_trailing_requires_dash_dash_separator) {
-    auto bad = deco::cli::parse<TrailingOnlyOpt>(into_deco_args("front"));
+    auto bad = cli::parse<TrailingOnlyOpt>(into_deco_args("front"));
     EXPECT_FALSE(bad.has_value());
-    EXPECT_TRUE(bad.error().type == deco::cli::ParseError::Type::DecoParsing);
+    EXPECT_TRUE(bad.error().type == cli::ParseError::Type::DecoParsing);
     EXPECT_TRUE(bad.error().message.contains("unexpected input argument"));
 
-    auto good = deco::cli::parse<TrailingOnlyOpt>(into_deco_args("--", "a", "b"));
+    auto good = cli::parse<TrailingOnlyOpt>(into_deco_args("--", "a", "b"));
     EXPECT_TRUE(good.has_value());
     if(!good.has_value()) {
         return;
@@ -541,51 +542,51 @@ TEST_CASE(parsing_trailing_requires_dash_dash_separator) {
 }
 
 TEST_CASE(when_error) {
-    auto res = deco::cli::parse<WebCliOpt>(into_deco_args("-X", "INVALID"));
+    auto res = cli::parse<WebCliOpt>(into_deco_args("-X", "INVALID"));
     EXPECT_FALSE(res.has_value());
-    EXPECT_TRUE(res.error().type == deco::cli::ParseError::Type::IntoError &&
+    EXPECT_TRUE(res.error().type == cli::ParseError::Type::IntoError &&
                 res.error().message.contains("Invalid request type"));
 
-    auto res2 = deco::cli::parse<WebCliOpt>(into_deco_args("--url", "ftp://example.com"));
+    auto res2 = cli::parse<WebCliOpt>(into_deco_args("--url", "ftp://example.com"));
     EXPECT_FALSE(res2.has_value());
-    EXPECT_TRUE(res2.error().type == deco::cli::ParseError::Type::IntoError &&
+    EXPECT_TRUE(res2.error().type == cli::ParseError::Type::IntoError &&
                 res2.error().message.contains("Invalid URL"));
 
-    auto res3 = deco::cli::parse<WebCliOpt>(into_deco_args("--unknown"));
+    auto res3 = cli::parse<WebCliOpt>(into_deco_args("--unknown"));
     EXPECT_FALSE(res3.has_value());
-    EXPECT_TRUE(res3.error().type == deco::cli::ParseError::Type::BackendParsing &&
+    EXPECT_TRUE(res3.error().type == cli::ParseError::Type::BackendParsing &&
                 res3.error().message.contains("unknown option"));
 
-    auto res4 = deco::cli::parse<WebCliOpt>(into_deco_args("-v", "--help"));
+    auto res4 = cli::parse<WebCliOpt>(into_deco_args("-v", "--help"));
     EXPECT_FALSE(res4.has_value());
-    EXPECT_TRUE(res4.error().type == deco::cli::ParseError::Type::DecoParsing &&
+    EXPECT_TRUE(res4.error().type == cli::ParseError::Type::DecoParsing &&
                 res4.error().message.contains("exclusive"));
 
-    auto res5 = deco::cli::parse<WebCliOpt>(into_deco_args("-X", "GET"));
+    auto res5 = cli::parse<WebCliOpt>(into_deco_args("-X", "GET"));
     EXPECT_FALSE(res5.has_value());
-    EXPECT_TRUE(res5.error().type == deco::cli::ParseError::Type::DecoParsing &&
+    EXPECT_TRUE(res5.error().type == cli::ParseError::Type::DecoParsing &&
                 res5.error().message.contains("required option"));
 
-    auto res6 = deco::cli::parse<WebCliOpt>(into_deco_args("--", "a", "b"));
+    auto res6 = cli::parse<WebCliOpt>(into_deco_args("--", "a", "b"));
     EXPECT_FALSE(res6.has_value());
-    EXPECT_TRUE(res6.error().type == deco::cli::ParseError::Type::BackendParsing &&
+    EXPECT_TRUE(res6.error().type == cli::ParseError::Type::BackendParsing &&
                 res6.error().message.contains("unknown option"));
 
-    auto res7 = deco::cli::parse<BuiltinEnumCliOpt>(into_deco_args("--mode", "Turbo"));
+    auto res7 = cli::parse<BuiltinEnumCliOpt>(into_deco_args("--mode", "Turbo"));
     EXPECT_FALSE(res7.has_value());
-    EXPECT_TRUE(res7.error().type == deco::cli::ParseError::Type::IntoError);
+    EXPECT_TRUE(res7.error().type == cli::ParseError::Type::IntoError);
     EXPECT_TRUE(res7.error().message.contains("invalid enum value: Turbo"));
     EXPECT_TRUE(res7.error().message.contains("supported: fast, slow, debug"));
 
-    auto res8 = deco::cli::parse<BuiltinSpelledEnumCliOpt>(into_deco_args("--mode", "nope"));
+    auto res8 = cli::parse<BuiltinSpelledEnumCliOpt>(into_deco_args("--mode", "nope"));
     EXPECT_FALSE(res8.has_value());
-    EXPECT_TRUE(res8.error().type == deco::cli::ParseError::Type::IntoError);
+    EXPECT_TRUE(res8.error().type == cli::ParseError::Type::IntoError);
     EXPECT_TRUE(res8.error().message.contains("invalid enum value: nope"));
     EXPECT_TRUE(res8.error().message.contains("supported: myValue, delete, v123"));
 }
 
 TEST_CASE(parse_errors_include_location_context) {
-    auto res = deco::cli::parse<WebCliOpt>(into_deco_args("--unknown"));
+    auto res = cli::parse<WebCliOpt>(into_deco_args("--unknown"));
     EXPECT_FALSE(res.has_value());
     if(res.has_value()) {
         return;
@@ -595,7 +596,7 @@ TEST_CASE(parse_errors_include_location_context) {
     EXPECT_TRUE(res.error().message.contains("--unknown"));
     EXPECT_TRUE(res.error().message.contains("^"));
 
-    auto enum_res = deco::cli::parse<BuiltinEnumCliOpt>(into_deco_args("--mode", "Turbo"));
+    auto enum_res = cli::parse<BuiltinEnumCliOpt>(into_deco_args("--mode", "Turbo"));
     EXPECT_FALSE(enum_res.has_value());
     if(enum_res.has_value()) {
         return;
@@ -608,11 +609,11 @@ TEST_CASE(parse_errors_include_location_context) {
 
 TEST_CASE(global_compatible_renderer_config_can_disable_positioned_diagnostics) {
     ScopedDecoConfig restore;
-    auto updated = deco::config::get();
+    auto updated = config::get();
     updated.render.compatible.diagnostic.enabled = false;
-    deco::config::set(updated);
+    config::set(updated);
 
-    auto res = deco::cli::parse<WebCliOpt>(into_deco_args("--unknown"));
+    auto res = cli::parse<WebCliOpt>(into_deco_args("--unknown"));
     EXPECT_FALSE(res.has_value());
     if(res.has_value()) {
         return;
@@ -625,7 +626,7 @@ TEST_CASE(global_compatible_renderer_config_can_disable_positioned_diagnostics) 
 
 TEST_CASE(parse_overload_accepts_custom_renderer) {
     auto renderer = make_custom_renderer();
-    auto res = deco::cli::parse<WebCliOpt>(into_deco_args("--unknown"), renderer);
+    auto res = cli::parse<WebCliOpt>(into_deco_args("--unknown"), renderer);
     EXPECT_FALSE(res.has_value());
     if(res.has_value()) {
         return;
@@ -637,27 +638,27 @@ TEST_CASE(parse_overload_accepts_custom_renderer) {
 TEST_CASE(diagnostic_at_uses_non_owning_argv_view) {
     auto argv = into_deco_args("--unknown", "value");
     const auto argv_view = std::span<const std::string>(argv.data(), argv.size());
-    auto diagnostic = deco::cli::text::diagnostic_at(argv_view, 0, 1, "boom");
+    auto diagnostic = cli::text::diagnostic_at(argv_view, 0, 1, "boom");
 
     EXPECT_EQ(diagnostic.argv.data(), argv.data());
     argv[0] = "--renamed";
 
-    auto renderer = deco::cli::text::CompatibleRenderer();
-    const auto rendered = deco::cli::text::render_diagnostic(diagnostic, &renderer);
+    auto renderer = cli::text::CompatibleRenderer();
+    const auto rendered = cli::text::render_diagnostic(diagnostic, &renderer);
     EXPECT_TRUE(rendered.contains("--renamed"));
 }
 
 TEST_CASE(modern_renderer_highlights_usage_and_diagnostic) {
-    auto renderer = deco::cli::text::ModernRenderer();
-    const auto usage_document = deco::cli::text::UsageDocument{
+    auto renderer = cli::text::ModernRenderer();
+    const auto usage_document = cli::text::UsageDocument{
         .overview = "webcli [OPTIONS]",
         .groups =
             {
-                     deco::cli::text::UsageGroup{
+                     cli::text::UsageGroup{
                     .title = "network",
                     .entries =
                         {
-                            deco::cli::text::UsageEntry{
+                            cli::text::UsageEntry{
                                 .usage = "--host <value>",
                                 .help = "connect target",
                             },
@@ -665,7 +666,7 @@ TEST_CASE(modern_renderer_highlights_usage_and_diagnostic) {
                 }, },
     };
 
-    const auto usage = deco::cli::text::render_usage(usage_document, true, &renderer);
+    const auto usage = cli::text::render_usage(usage_document, true, &renderer);
     EXPECT_TRUE(usage.contains("\033["));
     EXPECT_TRUE(usage.contains("Usage"));
     EXPECT_TRUE(usage.contains("Options"));
@@ -673,11 +674,11 @@ TEST_CASE(modern_renderer_highlights_usage_and_diagnostic) {
     EXPECT_TRUE(usage.contains("\033[1;4;38;5;110mnetwork\033[0m"));
 
     auto argv = into_deco_args("webcli", "--unknown");
-    const auto diagnostic = deco::cli::text::render_diagnostic(
-        deco::cli::text::diagnostic_at(std::span<const std::string>(argv.data(), argv.size()),
-                                       1,
-                                       2,
-                                       "boom"),
+    const auto diagnostic = cli::text::render_diagnostic(
+        cli::text::diagnostic_at(std::span<const std::string>(argv.data(), argv.size()),
+                                 1,
+                                 2,
+                                 "boom"),
         &renderer);
     EXPECT_TRUE(diagnostic.contains("\033["));
     EXPECT_TRUE(diagnostic.contains("╰─▶"));
@@ -685,16 +686,16 @@ TEST_CASE(modern_renderer_highlights_usage_and_diagnostic) {
 }
 
 TEST_CASE(modern_renderer_crops_long_diagnostic_source_line) {
-    auto renderer = deco::cli::text::ModernRenderer();
+    auto renderer = cli::text::ModernRenderer();
 
     const std::string very_long_a(200, 'a');
     const std::string very_long_b(220, 'b');
     auto argv = into_deco_args("-s", very_long_a, very_long_b, "--", "make");
-    const auto diagnostic = deco::cli::text::render_diagnostic(
-        deco::cli::text::diagnostic_at(std::span<const std::string>(argv.data(), argv.size()),
-                                       1,
-                                       2,
-                                       "too long"),
+    const auto diagnostic = cli::text::render_diagnostic(
+        cli::text::diagnostic_at(std::span<const std::string>(argv.data(), argv.size()),
+                                 1,
+                                 2,
+                                 "too long"),
         &renderer);
 
     EXPECT_TRUE(diagnostic.contains("..."));
@@ -705,12 +706,12 @@ TEST_CASE(modern_renderer_crops_long_diagnostic_source_line) {
 
 TEST_CASE(with_cont_parse) {
     std::vector<std::string> args = {"-v", "script::cdb", "-t", "x", "--", "make"};
-    auto res = deco::cli::parse_with_callback<CatterSelf>(
+    auto res = cli::parse_with_callback<CatterSelf>(
         args,
-        [](const CatterSelf& opt, deco::decl::DecoOptionBase* ptr) {
+        [](const CatterSelf& opt, decl::DecoOptionBase* ptr) {
             return !(&opt.s == ptr || &opt.script_internal == ptr);
         });
-    auto res2 = deco::cli::parse<CatterTrailing>({args.begin() + res->next_index, args.end()});
+    auto res2 = cli::parse<CatterTrailing>({args.begin() + res->next_index, args.end()});
     EXPECT_EQ(res->next_index, 2);
     EXPECT_EQ(*res->options.script_internal, "script::cdb");
     EXPECT_EQ(res2->options.cmd->size(), 1);
@@ -719,7 +720,7 @@ TEST_CASE(with_cont_parse) {
 
 TEST_CASE(invocation_exposes_trace_and_remaining_args) {
     std::vector<std::string> args = {"-v", "script::cdb", "-t", "x", "--", "make"};
-    auto command = deco::cli::command<CatterSelf>("catter");
+    auto command = cli::command<CatterSelf>("catter");
     command.after<&CatterSelf::script_internal>([](const auto& step) { return step.stop(); });
     auto res = command.invoke(args);
     EXPECT_TRUE(res.has_value());
@@ -739,7 +740,7 @@ TEST_CASE(invocation_exposes_trace_and_remaining_args) {
 TEST_CASE(option_callback_can_stop_early_with_current_result) {
     CallbackStopState::reset();
 
-    auto res = deco::cli::parse<CallbackStopOpt>(into_deco_args("script.lua"));
+    auto res = cli::parse<CallbackStopOpt>(into_deco_args("script.lua"));
     EXPECT_TRUE(res.has_value());
     if(!res.has_value()) {
         return;
@@ -759,7 +760,7 @@ TEST_CASE(option_callback_can_restart_with_new_span) {
     CallbackRestartState::reset();
 
     auto res =
-        deco::cli::parse<CallbackRestartOpt>(into_deco_args("entry.cc", "--skip", "ignored", "-v"));
+        cli::parse<CallbackRestartOpt>(into_deco_args("entry.cc", "--skip", "ignored", "-v"));
     EXPECT_TRUE(res.has_value());
     if(!res.has_value()) {
         return;
@@ -778,7 +779,7 @@ TEST_CASE(option_callback_can_restart_with_new_span) {
 TEST_CASE(option_callback_can_restart_with_owned_argv) {
     CallbackRestartOwnedState::reset();
 
-    auto res = deco::cli::parse<CallbackRestartOwnedOpt>(into_deco_args("entry.cc"));
+    auto res = cli::parse<CallbackRestartOwnedOpt>(into_deco_args("entry.cc"));
     EXPECT_TRUE(res.has_value());
     if(!res.has_value()) {
         return;
@@ -796,8 +797,7 @@ TEST_CASE(option_callback_can_restart_with_owned_argv) {
 }
 
 TEST_CASE(alias_can_forward_and_restart_without_replaying_prefix) {
-    auto res =
-        deco::cli::parse<AliasRuntimeOpt>(into_deco_args("-v", "-O1", "--target-alias", "dst"));
+    auto res = cli::parse<AliasRuntimeOpt>(into_deco_args("-v", "-O1", "--target-alias", "dst"));
     EXPECT_TRUE(res.has_value());
     if(!res.has_value()) {
         return;
@@ -812,7 +812,7 @@ TEST_CASE(alias_can_forward_and_restart_without_replaying_prefix) {
 }
 
 TEST_CASE(alias_static_forward_supports_comma_and_multi_shapes) {
-    auto res = deco::cli::parse<AliasRuntimeOpt>(
+    auto res = cli::parse<AliasRuntimeOpt>(
         into_deco_args("--tags-alias,a,b", "--pair-alias", "left", "right"));
     EXPECT_TRUE(res.has_value());
     if(!res.has_value()) {
@@ -830,21 +830,21 @@ TEST_CASE(alias_static_forward_supports_comma_and_multi_shapes) {
 }
 
 TEST_CASE(alias_dynamic_with_context_preserves_preformatted_errors) {
-    auto res = deco::cli::parse<AliasRuntimeOpt>(into_deco_args("--ctx-fail"));
+    auto res = cli::parse<AliasRuntimeOpt>(into_deco_args("--ctx-fail"));
     EXPECT_FALSE(res.has_value());
     if(res.has_value()) {
         return;
     }
 
-    EXPECT_TRUE(res.error().type == deco::cli::ParseError::Type::IntoError);
+    EXPECT_TRUE(res.error().type == cli::ParseError::Type::IntoError);
     EXPECT_TRUE(res.error().message.contains("ctx failure"));
     EXPECT_TRUE(res.error().message.find("at argv[0]:") == 0);
     EXPECT_TRUE(res.error().message.find("at argv[0]:", 1) == std::string::npos);
 }
 
 TEST_CASE(schema_only_alias_usage_does_not_expose_generated_wrapper_names) {
-    auto usage = deco::cli::text::render_usage(
-        deco::cli::detail::make_usage_document<AliasRuntimeOpt>("alias [OPTIONS]"),
+    auto usage = cli::text::render_usage(
+        cli::detail::make_usage_document<AliasRuntimeOpt>("alias [OPTIONS]"),
         true,
         nullptr);
 
@@ -859,7 +859,7 @@ TEST_CASE(schema_only_alias_usage_does_not_expose_generated_wrapper_names) {
 TEST_CASE(option_callback_can_restart_multiple_times_with_owned_argv) {
     CallbackRestartTwiceState::reset();
 
-    auto res = deco::cli::parse<CallbackRestartTwiceOpt>(into_deco_args("first.cc"));
+    auto res = cli::parse<CallbackRestartTwiceOpt>(into_deco_args("first.cc"));
     EXPECT_TRUE(res.has_value());
     if(!res.has_value()) {
         return;
@@ -876,7 +876,7 @@ TEST_CASE(option_callback_can_restart_multiple_times_with_owned_argv) {
 }
 
 TEST_CASE(option_callback_supports_action_shortcut) {
-    auto res = deco::cli::parse<CallbackShortcutOpt>(into_deco_args("shortcut.lua"));
+    auto res = cli::parse<CallbackShortcutOpt>(into_deco_args("shortcut.lua"));
     EXPECT_TRUE(res.has_value());
     if(!res.has_value()) {
         return;
@@ -892,7 +892,7 @@ TEST_CASE(command_after_runs_after_field_callback) {
     CallbackComposeState::reset();
     unsigned command_count = 0;
 
-    auto command = deco::cli::command<CallbackComposeOpt>("compose");
+    auto command = cli::command<CallbackComposeOpt>("compose");
     command.after<&CallbackComposeOpt::verbose>([&](const auto& step) {
         EXPECT_EQ(CallbackComposeState::count, 1u);
         EXPECT_TRUE(step.value());
@@ -921,7 +921,7 @@ TEST_CASE(command_after_supports_nested_member_paths) {
     unsigned hit_count = 0;
     std::string seen;
 
-    auto command = deco::cli::command<NestedAfterOpt>("nested");
+    auto command = cli::command<NestedAfterOpt>("nested");
     command
         .after<&NestedAfterOpt::first, &NestedAfterFirstBranch::leaf, &NestedAfterFirstLeaf::token>(
             [&](const auto& step) {
@@ -948,7 +948,7 @@ TEST_CASE(command_after_supports_nested_member_paths) {
 TEST_CASE(command_callbacks_can_capture_state_finalize_and_match_all) {
     std::string seen;
     std::string entry;
-    auto command = deco::cli::command<CommandFlowOpt>("run");
+    auto command = cli::command<CommandFlowOpt>("run");
     command
         .after<&CommandFlowOpt::script>([prefix = std::string("entry:"), &entry](auto& step) {
             entry = prefix + step.value();
@@ -970,7 +970,7 @@ TEST_CASE(command_callbacks_can_capture_state_finalize_and_match_all) {
 TEST_SUITE(command_match) {
 
 TEST_CASE(match_dispatches_by_category) {
-    auto command = deco::cli::command<WebCliOpt>("webcli [OPTIONS]");
+    auto command = cli::command<WebCliOpt>("webcli [OPTIONS]");
     std::stringstream ss;
     command.match(WebCliOpt::Cate::version_category, [&](auto) { ss << "Version 1.0.0"; })
         .match(WebCliOpt::Cate::help_category, [&](auto) { command.usage(ss, true); })
@@ -993,13 +993,13 @@ TEST_CASE(match_dispatches_by_category) {
 }
 
 TEST_CASE(match_can_observe_invocation_context) {
-    auto command = deco::cli::command<WebCliOpt>("webcli [OPTIONS]");
+    auto command = cli::command<WebCliOpt>("webcli [OPTIONS]");
     std::string seen_url;
     unsigned seen_trace_size = 0;
     command.match(WebCliOpt::Cate::request_category,
-                  [&](const deco::cli::Invocation<WebCliOpt>& invocation) {
+                  [&](const cli::Invocation<WebCliOpt>& invocation) {
                       EXPECT_TRUE(invocation.matched(WebCliOpt::Cate::request_category));
-                      seen_trace_size = invocation.trace().size();
+                      seen_trace_size = static_cast<unsigned>(invocation.trace().size());
                       seen_url = invocation.options.request.url->url;
                   });
 
@@ -1009,8 +1009,8 @@ TEST_CASE(match_can_observe_invocation_context) {
 }
 
 TEST_CASE(command_can_use_compatible_renderer_config) {
-    auto command = deco::cli::command<WebCliOpt>("webcli [OPTIONS]");
-    deco::cli::text::CompatibleRendererConfig config{};
+    auto command = cli::command<WebCliOpt>("webcli [OPTIONS]");
+    cli::text::CompatibleRendererConfig config{};
     config.usage.options_heading = "Flags:";
     config.usage.group_by_category = false;
     command.render_with_compatible(config);
@@ -1023,7 +1023,7 @@ TEST_CASE(command_can_use_compatible_renderer_config) {
 
 TEST_CASE(command_can_use_custom_renderer) {
     std::string seen_error;
-    auto command = deco::cli::command<WebCliOpt>("webcli [OPTIONS]");
+    auto command = cli::command<WebCliOpt>("webcli [OPTIONS]");
     command.render_with(make_custom_renderer()).on_error([&](auto err) {
         seen_error = err.message;
     });
@@ -1040,12 +1040,12 @@ TEST_CASE(command_default_renderer_overrides_config_fallback) {
     ScopedDefaultRenderer restore_renderer;
     ScopedDecoConfig restore_config;
 
-    auto updated = deco::config::get();
+    auto updated = config::get();
     updated.render.compatible.usage.options_heading = "Flags:";
-    deco::config::set(updated);
-    deco::cli::text::set_default_renderer(deco::cli::text::ModernRenderer());
+    config::set(updated);
+    cli::text::set_default_renderer(cli::text::ModernRenderer());
 
-    auto command = deco::cli::command<WebCliOpt>("webcli [OPTIONS]");
+    auto command = cli::command<WebCliOpt>("webcli [OPTIONS]");
     std::stringstream ss;
     command.usage(ss);
 
@@ -1055,9 +1055,9 @@ TEST_CASE(command_default_renderer_overrides_config_fallback) {
 
 TEST_CASE(command_explicit_renderer_overrides_default_renderer) {
     ScopedDefaultRenderer restore;
-    deco::cli::text::set_default_renderer(deco::cli::text::ModernRenderer());
+    cli::text::set_default_renderer(cli::text::ModernRenderer());
 
-    auto command = deco::cli::command<WebCliOpt>("webcli [OPTIONS]");
+    auto command = cli::command<WebCliOpt>("webcli [OPTIONS]");
     command.render_with(make_custom_renderer());
 
     std::stringstream ss;
@@ -1070,11 +1070,11 @@ TEST_CASE(command_explicit_renderer_overrides_default_renderer) {
 TEST_SUITE(subcommander) {
 
 TEST_CASE(dispatching_with_subcommand_and_default) {
-    deco::cli::SubCommander subcommander("catter [OPTIONS]");
+    cli::SubCommander subcommander("catter [OPTIONS]");
     std::stringstream ss;
     subcommander
         .add(
-            deco::decl::SubCommand{
+            decl::SubCommand{
                 .name = "run",
                 .description = "Run task",
             },
@@ -1105,9 +1105,9 @@ TEST_CASE(dispatching_with_subcommand_and_default) {
 }
 
 TEST_CASE(match_reports_subcommand_context) {
-    deco::cli::SubCommander subcommander("catter [OPTIONS]");
+    cli::SubCommander subcommander("catter [OPTIONS]");
     subcommander.add(
-        deco::decl::SubCommand{
+        decl::SubCommand{
             .name = "run",
             .description = "Run task",
         },
@@ -1127,14 +1127,14 @@ TEST_CASE(match_reports_subcommand_context) {
 }
 
 TEST_CASE(dispatching_with_subcommand_match_handler) {
-    deco::cli::SubCommander subcommander("catter [OPTIONS]");
+    cli::SubCommander subcommander("catter [OPTIONS]");
     std::string seen;
     subcommander.add(
-        deco::decl::SubCommand{
+        decl::SubCommand{
             .name = "run",
             .description = "Run task",
         },
-        [&](const deco::cli::SubCommandMatch& match) {
+        [&](const cli::SubCommandMatch& match) {
             seen = std::string(match.command) + ":" + std::string(match.args().front());
         });
 
@@ -1145,7 +1145,7 @@ TEST_CASE(dispatching_with_subcommand_match_handler) {
 
 TEST_CASE(dispatching_with_subcommand_command) {
     std::stringstream ss;
-    auto web_command = deco::cli::command<WebCliOpt>("web [OPTIONS]");
+    auto web_command = cli::command<WebCliOpt>("web [OPTIONS]");
     web_command
         .match(WebCliOpt::Cate::request_category,
                [&](WebCliOpt opt) {
@@ -1155,10 +1155,10 @@ TEST_CASE(dispatching_with_subcommand_command) {
                })
         .on_error([&](auto err) { ss << "dispatch-err:" << err.message; });
 
-    deco::cli::SubCommander subcommander("catter [OPTIONS]");
+    cli::SubCommander subcommander("catter [OPTIONS]");
     subcommander
         .add(
-            deco::decl::SubCommand{
+            decl::SubCommand{
                 .name = "web",
                 .description = "Web request",
             },
@@ -1171,16 +1171,16 @@ TEST_CASE(dispatching_with_subcommand_command) {
 }
 
 TEST_CASE(usage_with_default_and_overview) {
-    deco::cli::SubCommander subcommander("catter [OPTIONS]", "Catter command line");
+    cli::SubCommander subcommander("catter [OPTIONS]", "Catter command line");
     subcommander
         .add(
-            deco::decl::SubCommand{
+            decl::SubCommand{
                 .name = "run",
                 .description = "Run a task",
             },
             [](std::span<std::string>) {})
         .add(
-            deco::decl::SubCommand{
+            decl::SubCommand{
                 .name = "inspect",
                 .description = "Inspect metadata",
                 .command = "show",
@@ -1201,11 +1201,11 @@ TEST_CASE(usage_with_default_and_overview) {
 }
 
 TEST_CASE(usage_without_default_and_unknown_subcommand) {
-    deco::cli::SubCommander subcommander("catter [OPTIONS]", "Overview text");
+    cli::SubCommander subcommander("catter [OPTIONS]", "Overview text");
     std::stringstream ss;
     subcommander
         .add(
-            deco::decl::SubCommand{
+            decl::SubCommand{
                 .name = "run",
                 .description = "Run a task",
             },
@@ -1230,10 +1230,10 @@ TEST_CASE(usage_without_default_and_unknown_subcommand) {
 
 TEST_CASE(subcommand_can_use_custom_renderer) {
     std::string seen_error;
-    deco::cli::SubCommander subcommander("catter [OPTIONS]", "Overview text");
+    cli::SubCommander subcommander("catter [OPTIONS]", "Overview text");
     subcommander
         .add(
-            deco::decl::SubCommand{
+            decl::SubCommand{
                 .name = "run",
                 .description = "Run a task",
             },
@@ -1250,10 +1250,10 @@ TEST_CASE(subcommand_can_use_custom_renderer) {
 }
 
 TEST_CASE(subcommand_can_use_modern_renderer_config) {
-    deco::cli::SubCommander subcommander("catter [OPTIONS]", "Overview text");
+    cli::SubCommander subcommander("catter [OPTIONS]", "Overview text");
     subcommander
         .add(
-            deco::decl::SubCommand{
+            decl::SubCommand{
                 .name = "run",
                 .description = "Run a task",
             },
@@ -1281,8 +1281,7 @@ struct CatterOpt {
     struct ScriptPath {
         std::filesystem::path path;
 
-        std::optional<std::string> into(std::string_view input,
-                                        const deco::decl::IntoContext& ctx) {
+        std::optional<std::string> into(std::string_view input, const decl::IntoContext& ctx) {
             namespace fs = std::filesystem;
             std::error_code ec;
 
@@ -1330,9 +1329,9 @@ TEST_SUITE(deco_cases_from_user) {
 
 TEST_CASE(catter_v2) {
     ScopedDefaultRenderer restore;
-    deco::cli::text::set_default_renderer(deco::cli::text::ModernRenderer());
-    auto cli = deco::cli::command<CatterOpt>(
-        "catter [OPTIONS] [OPTIONS for script] -- [OPTIONS for command]");
+    cli::text::set_default_renderer(cli::text::ModernRenderer());
+    auto cli =
+        cli::command<CatterOpt>("catter [OPTIONS] [OPTIONS for script] -- [OPTIONS for command]");
     auto eat_script_args = [](auto& step) {
         unsigned idx = step.next_cursor();
         std::span<std::string> original_argv = step.original_argv();
@@ -1349,7 +1348,7 @@ TEST_CASE(catter_v2) {
         });
 
     const auto script_path =
-        std::filesystem::temp_directory_path() / "eventide-catter-v2-script.tmp";
+        std::filesystem::temp_directory_path() / "kotatsu-catter-v2-script.tmp";
     {
         std::ofstream out(script_path);
         out << "print('hello')\n";
@@ -1371,3 +1370,6 @@ TEST_CASE(catter_v2) {
 }
 
 };  // TEST_SUITE(deco_cases_from_user)
+
+}  // namespace
+}  // namespace kota::deco

@@ -1,4 +1,4 @@
-set_project("eventide")
+set_project("kotatsu")
 
 add_rules("mode.debug", "mode.release", "mode.releasedbg")
 set_allowedplats("windows", "linux", "macosx")
@@ -7,16 +7,16 @@ option("dev", { default = true })
 option("test", { default = true })
 option("async", { default = true })
 option("ztest", { default = true })
-option("serde", { default = true })
+option("codec", { default = true })
 option("option", { default = true })
 option("deco", { default = true })
-option("serde_simdjson", { default = false })
-option("serde_yyjson", { default = false })
-option("serde_flatbuffers", { default = false })
-option("serde_toml", { default = false })
+option("codec_simdjson", { default = false })
+option("codec_yyjson", { default = false })
+option("codec_flatbuffers", { default = false })
+option("codec_toml", { default = false })
 
-if has_config("serde_yyjson") and not has_config("serde_simdjson") then
-	raise("serde_yyjson requires serde_simdjson")
+if has_config("codec_yyjson") and not has_config("codec_simdjson") then
+	raise("codec_yyjson requires codec_simdjson")
 end
 
 if has_config("ztest") and (not has_config("deco") or not has_config("option")) then
@@ -70,16 +70,16 @@ end
 if has_config("ztest") then
 	add_requires("cpptrace v1.0.4")
 end
-if has_config("serde") and has_config("serde_simdjson") then
+if has_config("codec") and has_config("codec_simdjson") then
 	add_requires("simdjson v4.2.4")
 end
-if has_config("serde") and has_config("serde_yyjson") then
+if has_config("codec") and has_config("codec_yyjson") then
 	add_requires("yyjson 0.12.0")
 end
-if has_config("serde") and has_config("serde_flatbuffers") then
+if has_config("codec") and has_config("codec_flatbuffers") then
 	add_requires("flatbuffers v25.2.10")
 end
-if has_config("serde") and has_config("serde_toml") then
+if has_config("codec") and has_config("codec_toml") then
 	add_requires("toml++ v3.4.0")
 end
 if has_config("test") and is_plat("windows") then
@@ -91,92 +91,93 @@ on_load(function(target)
 	target:add("cxflags", "cl::/Zc:preprocessor", "cl::/utf-8", { public = true })
 end)
 
-target("common", function()
+target("support", function()
 	set_kind("headeronly")
 	add_includedirs("include", { public = true })
-	add_headerfiles("include/(eventide/common/*)")
+	add_headerfiles("include/(kota/support/*)")
 	add_rules("cl-flags")
 end)
 
-target("reflection", function()
+target("meta", function()
 	set_kind("headeronly")
 	add_includedirs("include", { public = true })
-	add_headerfiles("include/(eventide/reflection/*)")
-	add_deps("common")
+	add_headerfiles("include/(kota/meta/*)")
+	add_deps("support")
 	add_rules("cl-flags")
 end)
 
-if has_config("serde") and has_config("serde_simdjson") then
-	target("serde_json", function()
+if has_config("codec") and has_config("codec_simdjson") then
+	target("codec_json", function()
 		set_kind("headeronly")
 		add_includedirs("include", { public = true })
 		add_headerfiles(
-			"include/(eventide/serde/json.h)",
-			"include/(eventide/serde/json/**.h)",
-			"include/(eventide/serde/content.h)",
-			"include/(eventide/serde/content/**.h)",
-			"include/(eventide/serde/content/**.inl)"
+			"include/(kota/codec/json.h)",
+			"include/(kota/codec/json/**.h)",
+			"include/(kota/codec/content.h)",
+			"include/(kota/codec/content/**.h)",
+			"include/(kota/codec/content/**.inl)"
 		)
 		add_rules("cl-flags")
-		add_deps("reflection")
+		add_deps("meta")
 		add_packages("simdjson", { public = true })
-		if has_config("serde_yyjson") then
+		if has_config("codec_yyjson") then
 			add_packages("yyjson", { public = true })
 		end
 	end)
 end
 
-if has_config("serde") and has_config("serde_flatbuffers") then
-	target("serde_flatbuffers", function()
+if has_config("codec") and has_config("codec_flatbuffers") then
+	target("codec_flatbuffers", function()
 		set_kind("headeronly")
 		add_includedirs("include", { public = true })
-		add_headerfiles("include/(eventide/serde/flatbuffers.h)", "include/(eventide/serde/flatbuffers/**.h)")
+		add_headerfiles("include/(kota/codec/flatbuffers.h)", "include/(kota/codec/flatbuffers/**.h)")
 		add_rules("cl-flags")
-		add_deps("reflection")
+		add_deps("meta")
 		add_packages("flatbuffers", { public = true })
 	end)
 end
 
-if has_config("serde") and has_config("serde_toml") then
-	target("serde_toml", function()
+if has_config("codec") and has_config("codec_toml") then
+	target("codec_toml", function()
 		set_kind("headeronly")
 		add_includedirs("include", { public = true })
-		add_headerfiles("include/(eventide/serde/toml.h)", "include/(eventide/serde/toml/**.h)")
+		add_headerfiles("include/(kota/codec/toml.h)", "include/(kota/codec/toml/**.h)")
 		add_rules("cl-flags")
 
-		add_deps("reflection")
+		add_deps("meta")
 		add_packages("toml++", { public = true })
 	end)
 end
 
-if has_config("serde") then
-	target("serde", function()
+if has_config("codec") then
+	target("codec", function()
 		set_kind("headeronly")
 		add_includedirs("include", { public = true })
 		add_headerfiles(
-			"include/(eventide/serde/bincode.h)",
-			"include/(eventide/serde/bincode/**.h)",
-			"include/(eventide/serde/serde/**.h)"
+			"include/(kota/codec/bincode.h)",
+			"include/(kota/codec/bincode/**.h)",
+			"include/(kota/codec/*.h)",
+			"include/(kota/codec/detail/**.h)"
 		)
 		add_rules("cl-flags")
-		add_deps("common", "reflection")
-		if has_config("serde_simdjson") then
+		add_deps("support", "meta")
+		if has_config("codec_simdjson") then
 			add_headerfiles(
-				"include/(eventide/serde/json.h)",
-				"include/(eventide/serde/json/**.h)",
-				"include/(eventide/serde/content.h)",
-				"include/(eventide/serde/content/**.h)",
-				"include/(eventide/serde/content/**.inl)"
+				"include/(kota/codec/json.h)",
+				"include/(kota/codec/json/**.h)",
+				"include/(kota/codec/content.h)",
+				"include/(kota/codec/content/**.h)",
+				"include/(kota/codec/content/**.inl)"
 			)
-			add_deps("serde_json")
+			add_deps("codec_json")
 		end
-		if has_config("serde_flatbuffers") then
-			add_headerfiles("include/(eventide/serde/flatbuffers.h)", "include/(eventide/serde/flatbuffers/**.h)")
-			add_deps("serde_flatbuffers")
+		if has_config("codec_flatbuffers") then
+			add_headerfiles("include/(kota/codec/flatbuffers.h)", "include/(kota/codec/flatbuffers/**.h)")
+			add_deps("codec_flatbuffers")
 		end
-		if has_config("serde_toml") then
-			add_headerfiles("include/(eventide/serde/toml.h)", "include/(eventide/serde/toml/**.h)")
-			add_deps("serde_toml")
+		if has_config("codec_toml") then
+			add_headerfiles("include/(kota/codec/toml.h)", "include/(kota/codec/toml/**.h)")
+			add_deps("codec_toml")
 		end
 	end)
 end
@@ -186,9 +187,9 @@ if has_config("ztest") then
 		set_kind("$(kind)")
 		add_files("src/zest/*.cpp")
 		add_includedirs("include", { public = true })
-		add_headerfiles("include/(eventide/zest/**)")
+		add_headerfiles("include/(kota/zest/**)")
 		add_rules("cl-flags")
-		add_deps("common", "deco")
+		add_deps("support", "deco")
 		add_packages("cpptrace", { public = true })
 	end)
 end
@@ -199,8 +200,8 @@ if has_config("async") then
 		add_rules("cl-flags")
 		add_files("src/async/**.cpp")
 		add_includedirs("include", { public = true })
-		add_headerfiles("include/(eventide/async/**)")
-		add_deps("common")
+		add_headerfiles("include/(kota/async/**)")
+		add_deps("support")
 		add_packages("libuv")
 	end)
 end
@@ -211,8 +212,8 @@ if has_config("option") then
 		add_rules("cl-flags")
 		add_files("src/option/*.cc")
 		add_includedirs("include", { public = true })
-		add_headerfiles("include/(eventide/option/option.h)", "include/(eventide/option/detail/**.h)")
-		add_deps("common")
+		add_headerfiles("include/(kota/option/option.h)", "include/(kota/option/detail/**.h)")
+		add_deps("support")
 	end)
 end
 
@@ -222,7 +223,7 @@ if has_config("deco") and has_config("option") then
 		add_files("src/deco/*.cc")
 		add_includedirs("include", { public = true })
 		add_rules("cl-flags")
-		add_headerfiles("include/(eventide/deco/deco.h)", "include/(eventide/deco/detail/**.h)")
+		add_headerfiles("include/(kota/deco/deco.h)", "include/(kota/deco/detail/**.h)")
 		add_deps("option")
 	end)
 end
@@ -234,10 +235,10 @@ if has_config("async") then
 		add_files("src/ipc/*.cpp")
 		add_files("src/ipc/codec/bincode.cpp")
 		add_includedirs("include", { public = true })
-		add_headerfiles("include/(eventide/ipc/*)")
-		if has_config("serde") and has_config("serde_simdjson") then
+		add_headerfiles("include/(kota/ipc/*)")
+		if has_config("codec") and has_config("codec_simdjson") then
 			add_files("src/ipc/codec/json.cpp")
-			add_deps("serde_json")
+			add_deps("codec_json")
 		end
 		add_deps("async")
 	end)
@@ -247,35 +248,35 @@ if has_config("async") then
 		add_rules("cl-flags")
 		add_files("src/ipc/lsp/*.cpp")
 		add_includedirs("include", { public = true })
-		add_headerfiles("include/(eventide/ipc/lsp/*)")
+		add_headerfiles("include/(kota/ipc/lsp/*)")
 		add_deps("ipc")
 	end)
 end
 
-target("eventide", function()
+target("kotatsu", function()
 	set_default(false)
 	set_kind("static")
 	add_rules("cl-flags")
 	add_includedirs("include", { public = true })
-	add_headerfiles("include/(eventide/**)")
+	add_headerfiles("include/(kota/**)")
 
-	add_deps("common", "reflection", { public = true })
+	add_deps("support", "meta", { public = true })
 
-	if has_config("serde") then
-		add_deps("serde", { public = true })
-		if has_config("serde_simdjson") then
-			add_deps("serde_json", { public = true })
+	if has_config("codec") then
+		add_deps("codec", { public = true })
+		if has_config("codec_simdjson") then
+			add_deps("codec_json", { public = true })
 			add_packages("simdjson", { public = true })
 		end
-		if has_config("serde_yyjson") then
+		if has_config("codec_yyjson") then
 			add_packages("yyjson", { public = true })
 		end
-		if has_config("serde_flatbuffers") then
-			add_deps("serde_flatbuffers", { public = true })
+		if has_config("codec_flatbuffers") then
+			add_deps("codec_flatbuffers", { public = true })
 			add_packages("flatbuffers", { public = true })
 		end
-		if has_config("serde_toml") then
-			add_deps("serde_toml", { public = true })
+		if has_config("codec_toml") then
+			add_deps("codec_toml", { public = true })
 			add_packages("toml++", { public = true })
 		end
 	end
@@ -333,8 +334,8 @@ if has_config("test") and has_config("ztest") then
 		add_rules("cl-flags")
 		add_files(
 			"tests/unit/main.cpp",
-			"tests/unit/common/**.cpp",
-			"tests/unit/reflection/**.cpp",
+			"tests/unit/support/**.cpp",
+			"tests/unit/meta/**.cpp",
 			"tests/unit/zest/**.cpp"
 		)
 		if has_config("async") then
@@ -347,26 +348,26 @@ if has_config("test") and has_config("ztest") then
 		if has_config("deco") and has_config("option") then
 			add_files("tests/unit/deco/**.cc")
 		end
-		if has_config("serde") and has_config("serde_simdjson") then
-			add_files("tests/unit/serde/json/simdjson_*.cpp")
+		if has_config("codec") and has_config("codec_simdjson") then
+			add_files("tests/unit/codec/json/simdjson_*.cpp")
 		end
-		if has_config("serde") and has_config("serde_yyjson") then
-			add_files("tests/unit/serde/content/**.cpp")
+		if has_config("codec") and has_config("codec_yyjson") then
+			add_files("tests/unit/codec/content/**.cpp")
 		end
-		if has_config("serde") and has_config("serde_flatbuffers") then
-			add_files("tests/unit/serde/flatbuffers/**.cpp")
+		if has_config("codec") and has_config("codec_flatbuffers") then
+			add_files("tests/unit/codec/flatbuffers/**.cpp")
 		end
-		if has_config("serde") and has_config("serde_toml") then
-			add_files("tests/unit/serde/toml/**.cpp")
+		if has_config("codec") and has_config("codec_toml") then
+			add_files("tests/unit/codec/toml/**.cpp")
 		end
-		if has_config("serde") then
-			add_files("tests/unit/serde/bincode/**.cpp")
+		if has_config("codec") then
+			add_files("tests/unit/codec/bincode/**.cpp")
 		end
-		if has_config("async") and has_config("serde") and has_config("serde_simdjson") then
+		if has_config("async") and has_config("codec") and has_config("codec_simdjson") then
 			add_files("tests/unit/ipc/**.cpp")
 		end
 
-		add_deps("eventide")
+		add_deps("kotatsu")
 
 		add_tests("default")
 	end)

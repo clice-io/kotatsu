@@ -1,10 +1,10 @@
-#include "eventide/ipc/recording_transport.h"
+#include "kota/ipc/recording_transport.h"
 
 #include <cassert>
 #include <format>
 #include <utility>
 
-namespace eventide::ipc {
+namespace kota::ipc {
 
 RecordingTransport::RecordingTransport(std::unique_ptr<Transport> transport, std::string path) :
     inner(std::move(transport)), file(std::fopen(path.c_str(), "wb")),
@@ -79,4 +79,4 @@ void RecordingTransport::write_record(std::string_view payload) {
     }
 }
 
-}  // namespace eventide::ipc
+}  // namespace kota::ipc

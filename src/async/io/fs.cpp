@@ -1,13 +1,13 @@
-#include "eventide/async/io/fs.h"
+#include "kota/async/io/fs.h"
 
 #include <cassert>
 #include <functional>
 
 #include "awaiter.h"
-#include "eventide/async/io/loop.h"
-#include "eventide/async/vocab/error.h"
+#include "kota/async/io/loop.h"
+#include "kota/async/vocab/error.h"
 
-namespace eventide {
+namespace kota {
 
 // ============================================================================
 // Filesystem operations
@@ -36,8 +36,8 @@ struct fs_op : uv::await_op<fs_op<Result>> {
 
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
-                      std::source_location location = std::source_location::current()) noexcept {
-        return this->link_continuation(&waiting.promise(), location);
+                      std::source_location loc = std::source_location::current()) noexcept {
+        return this->link_continuation(&waiting.promise(), loc);
     }
 
     result<Result> await_resume() noexcept {
@@ -93,7 +93,7 @@ static result<int> to_uv_copyfile_flags(const fs::copyfile_options& options) {
 template <typename Result, typename Submit, typename Populate>
 static task<Result, error> run_fs(Submit submit,
                                   Populate populate,
-                                  event_loop& loop = event_loop::current()) {
+                                  [[maybe_unused]] event_loop& loop = event_loop::current()) {
     fs_op<Result> op;
     op.populate = populate;
 
@@ -126,7 +126,7 @@ static task<Result, error> run_fs(Submit submit,
 }
 
 template <typename Submit>
-static task<void, error> run_void_fs(Submit submit, event_loop& loop) {
+static task<void, error> run_void_fs(Submit submit, [[maybe_unused]] event_loop& loop) {
     if(auto res = co_await run_fs<int>(std::move(submit), [](uv_fs_t&) { return 0; }, loop); !res) {
         co_await fail(res.error());
     }
@@ -334,7 +334,12 @@ task<void, error>
     fs::chown(std::string_view path, std::uint32_t uid, std::uint32_t gid, event_loop& loop) {
     return run_void_fs(
         [p = std::string(path), uid, gid, &loop](uv_fs_t& req, uv_fs_cb cb) {
-            return uv::fs_chown(loop, req, p.c_str(), uid, gid, cb);
+            return uv::fs_chown(loop,
+                                req,
+                                p.c_str(),
+                                static_cast<uv_uid_t>(uid),
+                                static_cast<uv_gid_t>(gid),
+                                cb);
         },
         loop);
 }
@@ -342,7 +347,12 @@ task<void, error>
 task<void, error> fs::fchown(int fd, std::uint32_t uid, std::uint32_t gid, event_loop& loop) {
     return run_void_fs(
         [fd, uid, gid, &loop](uv_fs_t& req, uv_fs_cb cb) {
-            return uv::fs_fchown(loop, req, fd, uid, gid, cb);
+            return uv::fs_fchown(loop,
+                                 req,
+                                 fd,
+                                 static_cast<uv_uid_t>(uid),
+                                 static_cast<uv_gid_t>(gid),
+                                 cb);
         },
         loop);
 }
@@ -351,7 +361,12 @@ task<void, error>
     fs::lchown(std::string_view path, std::uint32_t uid, std::uint32_t gid, event_loop& loop) {
     return run_void_fs(
         [p = std::string(path), uid, gid, &loop](uv_fs_t& req, uv_fs_cb cb) {
-            return uv::fs_lchown(loop, req, p.c_str(), uid, gid, cb);
+            return uv::fs_lchown(loop,
+                                 req,
+                                 p.c_str(),
+                                 static_cast<uv_uid_t>(uid),
+                                 static_cast<uv_gid_t>(gid),
+                                 cb);
         },
         loop);
 }
@@ -718,4 +733,4 @@ result<std::string> fs::sync::read_to_string(std::string_view path) {
     return content;
 }
 
-}  // namespace eventide
+}  // namespace kota

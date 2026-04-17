@@ -1,4 +1,4 @@
-#include "eventide/zest/detail/check.h"
+#include "kota/zest/detail/check.h"
 
 namespace {
 
@@ -16,7 +16,7 @@ std::string_view trim_expr(std::string_view sv) {
 
 }  // namespace
 
-namespace eventide::zest {
+namespace kota::zest {
 
 binary_expr_pair parse_binary_exprs(std::string_view exprs) {
     int angle = 0;
@@ -92,4 +92,4 @@ binary_expr_pair parse_binary_exprs(std::string_view exprs) {
     return {trim_expr(exprs), "<unknown>"};
 }
 
-}  // namespace eventide::zest
+}  // namespace kota::zest

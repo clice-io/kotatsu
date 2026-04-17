@@ -1,14 +1,14 @@
-#include <format>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "../peer_test_types.h"
-#include "eventide/zest/zest.h"
-#include "eventide/async/async.h"
-#include "eventide/ipc/lsp/progress.h"
+#include "kota/zest/zest.h"
+#include "kota/async/async.h"
+#include "kota/ipc/lsp/progress.h"
 
-namespace eventide::ipc {
+namespace kota::ipc {
+namespace {
 
 using lsp::ProgressReporter;
 
@@ -159,4 +159,5 @@ TEST_CASE(create_failure) {
 
 };  // TEST_SUITE(ipc_progress)
 
-}  // namespace eventide::ipc
+}  // namespace
+}  // namespace kota::ipc

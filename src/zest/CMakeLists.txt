@@ -1,4 +1,4 @@
-set(eventide_cpptrace_options
+set(kota_cpptrace_options
     CPPTRACE_DISABLE_CXX_20_MODULES ON
     CPPTRACE_BUILD_TESTING OFF
     CPPTRACE_BUILD_BENCHMARKING OFF
@@ -6,7 +6,7 @@ set(eventide_cpptrace_options
 )
 
 if(WIN32)
-    list(APPEND eventide_cpptrace_options
+    list(APPEND kota_cpptrace_options
         CPPTRACE_GET_SYMBOLS_WITH_DBGHELP ON
         CPPTRACE_GET_SYMBOLS_WITH_LIBDWARF OFF
         CPPTRACE_GET_SYMBOLS_WITH_ADDR2LINE OFF
@@ -15,7 +15,7 @@ if(WIN32)
         CPPTRACE_GET_SYMBOLS_WITH_NOTHING OFF
     )
 elseif(APPLE)
-    list(APPEND eventide_cpptrace_options
+    list(APPEND kota_cpptrace_options
         CPPTRACE_GET_SYMBOLS_WITH_ADDR2LINE ON
         CPPTRACE_ADDR2LINE_SEARCH_SYSTEM_PATH ON
         CPPTRACE_GET_SYMBOLS_WITH_LIBDWARF OFF
@@ -25,7 +25,7 @@ elseif(APPLE)
         CPPTRACE_GET_SYMBOLS_WITH_NOTHING OFF
     )
 else()
-    list(APPEND eventide_cpptrace_options
+    list(APPEND kota_cpptrace_options
         CPPTRACE_GET_SYMBOLS_WITH_ADDR2LINE ON
         CPPTRACE_ADDR2LINE_SEARCH_SYSTEM_PATH ON
         CPPTRACE_GET_SYMBOLS_WITH_LIBDWARF OFF
@@ -36,30 +36,30 @@ else()
     )
 endif()
 
-eventide_add_git_dependency(
+kota_add_git_dependency(
     cpptrace
     GIT_REPOSITORY https://github.com/jeremy-rifkin/cpptrace.git
     GIT_TAG v1.0.4
     OPTIONS
-        ${eventide_cpptrace_options}
+        ${kota_cpptrace_options}
 )
 
-add_library(eventide_zest STATIC)
-add_library(eventide::zest ALIAS eventide_zest)
+add_library(kota_zest STATIC)
+add_library(kota::zest ALIAS kota_zest)
 
-target_sources(eventide_zest PRIVATE
+target_sources(kota_zest PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/trace.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/runner.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/expr.cpp"
 )
 
-target_include_directories(eventide_zest PUBLIC
+target_include_directories(kota_zest PUBLIC
     "${PROJECT_SOURCE_DIR}/include"
 )
 
-target_link_libraries(eventide_zest PUBLIC
+target_link_libraries(kota_zest PUBLIC
     cpptrace::cpptrace
-    eventide::deco
+    kota::deco
 )
 
-eventide_apply_project_options(eventide_zest)
+kota_apply_project_options(kota_zest)

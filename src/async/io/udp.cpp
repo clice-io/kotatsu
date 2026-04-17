@@ -1,16 +1,14 @@
-#include "eventide/async/io/udp.h"
+#include "kota/async/io/udp.h"
 
 #include <cassert>
-#include <cstring>
-#include <memory>
 #include <optional>
 #include <utility>
 
 #include "awaiter.h"
-#include "eventide/async/io/loop.h"
-#include "eventide/async/vocab/error.h"
+#include "kota/async/io/loop.h"
+#include "kota/async/vocab/error.h"
 
-namespace eventide {
+namespace kota {
 
 static result<udp::endpoint> endpoint_from_sockaddr(const sockaddr* addr);
 
@@ -89,7 +87,7 @@ static result<unsigned int> to_uv_udp_bind_flags(const udp::bind_options& option
     return out;
 }
 
-static udp::recv_flags to_udp_recv_flags(unsigned flags) {
+static udp::recv_flags to_udp_recv_flags([[maybe_unused]] unsigned flags) {
     udp::recv_flags out{};
 #ifdef UV_UDP_PARTIAL
     if((flags & UV_UDP_PARTIAL) != 0) {
@@ -132,7 +130,7 @@ struct udp_recv_await : uv::await_op<udp_recv_await> {
         assert(u != nullptr && "on_alloc requires udp state in handle->data");
 
         buf->base = u->buffer.data();
-        buf->len = u->buffer.size();
+        buf->len = static_cast<decltype(buf->len)>(u->buffer.size());
     }
 
     static void on_read(uv_udp_t* handle,
@@ -170,7 +168,7 @@ struct udp_recv_await : uv::await_op<udp_recv_await> {
 
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
-                      std::source_location location = std::source_location::current()) noexcept {
+                      std::source_location loc = std::source_location::current()) noexcept {
         if(!self) {
             return waiting;
         }
@@ -188,7 +186,7 @@ struct udp_recv_await : uv::await_op<udp_recv_await> {
             }
         }
 
-        return this->link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), loc);
     }
 
     result<udp::recv_result> await_resume() noexcept {
@@ -250,7 +248,7 @@ struct udp_send_await : uv::await_op<udp_send_await> {
 
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
-                      std::source_location location = std::source_location::current()) noexcept {
+                      std::source_location loc = std::source_location::current()) noexcept {
         if(!self) {
             result = error::invalid_argument;
             return waiting;
@@ -277,7 +275,7 @@ struct udp_send_await : uv::await_op<udp_send_await> {
         }
 
         self->send_inflight = true;
-        return this->link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), loc);
     }
 
     error await_resume() noexcept {
@@ -667,4 +665,4 @@ std::size_t udp::send_queue_count() const {
     return uv::udp_get_send_queue_count(self->handle);
 }
 
-}  // namespace eventide
+}  // namespace kota

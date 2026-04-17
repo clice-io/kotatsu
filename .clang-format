@@ -105,27 +105,27 @@ IncludeCategories:
     Priority: 30
     SortPriority: 50
 
-  - Regex: '^["<](eventide/zest)/'
+  - Regex: '^["<](kota/zest)/'
     Priority: 30
     SortPriority: 40
 
-  - Regex: '^["<](eventide/common)/'
+  - Regex: '^["<](kota/support)/'
     Priority: 30
     SortPriority: 41
 
-  - Regex: '^["<](eventide/async)/'
+  - Regex: '^["<](kota/async)/'
     Priority: 30
     SortPriority: 42
 
-  - Regex: '^["<](eventide/reflection)/'
+  - Regex: '^["<](kota/meta)/'
     Priority: 30
     SortPriority: 43
 
-  - Regex: '^["<](eventide/serde)/'
+  - Regex: '^["<](kota/codec)/'
     Priority: 30
     SortPriority: 44
 
-  - Regex: '^["<](eventide/ipc/lsp)/'
+  - Regex: '^["<](kota/ipc/lsp)/'
     Priority: 30
     SortPriority: 45
 

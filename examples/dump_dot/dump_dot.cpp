@@ -11,15 +11,15 @@
 /// dump_dot(), which walks UP to the root and then renders the full graph.
 ///
 /// Usage:
-///   ./eventide_example_dump_dot > graph.dot
+///   ./dump_dot > graph.dot
 ///   dot -Tpng graph.dot -o graph.png
 
 #include <chrono>
 #include <print>
 
-#include "eventide/async/async.h"
+#include "kota/async/async.h"
 
-using namespace eventide;
+using namespace kota;
 using namespace std::chrono_literals;
 
 // ---------------------------------------------------------------------------

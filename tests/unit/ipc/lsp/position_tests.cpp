@@ -1,9 +1,10 @@
 #include <cstdint>
 
-#include "eventide/zest/zest.h"
-#include "eventide/ipc/lsp/position.h"
+#include "kota/zest/zest.h"
+#include "kota/ipc/lsp/position.h"
 
-namespace eventide::ipc::lsp {
+namespace kota::ipc::lsp {
+namespace {
 
 TEST_SUITE(language_position) {
 
@@ -276,4 +277,5 @@ TEST_CASE(to_offset_character_out_of_range) {
 
 };  // TEST_SUITE(language_position)
 
-}  // namespace eventide::ipc::lsp
+}  // namespace
+}  // namespace kota::ipc::lsp

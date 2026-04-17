@@ -1,7 +1,8 @@
 #include "peer_test_types.h"
-#include "eventide/zest/zest.h"
+#include "kota/zest/zest.h"
 
-namespace eventide::ipc {
+namespace kota::ipc {
+namespace {
 
 // ============================================================================
 // Group 3: Peer — dispatch routing
@@ -23,7 +24,7 @@ TEST_CASE(unregistered_method) {
     EXPECT_EQ(loop.run(), 0);
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = serde::json::from_json<ErrorResponse>(transport_ptr->outgoing().front());
+    auto response = codec::json::from_json<ErrorResponse>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(std::get<std::int64_t>(response->id), 1);
     EXPECT_EQ(response->error.code,
@@ -55,14 +56,14 @@ TEST_CASE(duplicate_request_id) {
 
     // First output: InvalidRequest error for duplicate id
     // (dispatched synchronously before the handler task runs)
-    auto error = serde::json::from_json<ErrorResponse>(transport_ptr->outgoing()[0]);
+    auto error = codec::json::from_json<ErrorResponse>(transport_ptr->outgoing()[0]);
     ASSERT_TRUE(error.has_value());
     EXPECT_EQ(std::get<std::int64_t>(error->id), 1);
     EXPECT_EQ(error->error.code,
               static_cast<protocol::integer>(protocol::ErrorCode::InvalidRequest));
 
     // Second output: success response from the first handler
-    auto success = serde::json::from_json<Response>(transport_ptr->outgoing()[1]);
+    auto success = codec::json::from_json<Response>(transport_ptr->outgoing()[1]);
     ASSERT_TRUE(success.has_value());
     EXPECT_EQ(std::get<std::int64_t>(success->id), 1);
     ASSERT_TRUE(success->result.has_value());
@@ -136,7 +137,7 @@ TEST_CASE(mixed_sequence) {
     EXPECT_EQ(order[1], "request");
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = serde::json::from_json<Response>(transport_ptr->outgoing().front());
+    auto response = codec::json::from_json<Response>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(std::get<std::int64_t>(response->id), 1);
     ASSERT_TRUE(response->result.has_value());
@@ -145,4 +146,5 @@ TEST_CASE(mixed_sequence) {
 
 };  // TEST_SUITE(ipc_peer_dispatch)
 
-}  // namespace eventide::ipc
+}  // namespace
+}  // namespace kota::ipc

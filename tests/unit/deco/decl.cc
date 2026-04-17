@@ -1,8 +1,13 @@
 #include <string>
 #include <vector>
 
-#include "eventide/deco/deco.h"
-#include <eventide/zest/zest.h>
+#include "kota/deco/deco.h"
+#include "kota/zest/zest.h"
+
+namespace kota::deco {
+namespace {
+
+namespace option = ::kota::option;
 
 enum class BuiltinEnumValue {
     Alpha,
@@ -16,37 +21,37 @@ enum class BuiltinSpelledEnum {
     V123,
 };
 
-static_assert(deco::trait::ScalarResultType<bool>);
-static_assert(deco::trait::ScalarResultType<int>);
-static_assert(deco::trait::ScalarResultType<std::string>);
-static_assert(deco::trait::ScalarResultType<BuiltinEnumValue>);
-static_assert(!deco::trait::ScalarResultType<std::string_view>);
-static_assert(!deco::trait::ScalarResultType<const char*>);
-static_assert(!deco::trait::ScalarResultType<std::vector<int>>);
+static_assert(trait::ScalarResultType<bool>);
+static_assert(trait::ScalarResultType<int>);
+static_assert(trait::ScalarResultType<std::string>);
+static_assert(trait::ScalarResultType<BuiltinEnumValue>);
+static_assert(!trait::ScalarResultType<std::string_view>);
+static_assert(!trait::ScalarResultType<const char*>);
+static_assert(!trait::ScalarResultType<std::vector<int>>);
 
-static_assert(deco::trait::VectorResultType<std::vector<int>>);
-static_assert(deco::trait::VectorResultType<std::vector<std::string>>);
-static_assert(deco::trait::VectorResultType<std::vector<BuiltinEnumValue>>);
-static_assert(!deco::trait::VectorResultType<std::vector<std::string_view>>);
-static_assert(!deco::trait::VectorResultType<std::span<const std::string>>);
+static_assert(trait::VectorResultType<std::vector<int>>);
+static_assert(trait::VectorResultType<std::vector<std::string>>);
+static_assert(trait::VectorResultType<std::vector<BuiltinEnumValue>>);
+static_assert(!trait::VectorResultType<std::vector<std::string_view>>);
+static_assert(!trait::VectorResultType<std::span<const std::string>>);
 
-static_assert(deco::trait::InputResultType<int>);
-static_assert(deco::trait::InputResultType<std::string>);
-static_assert(deco::trait::InputResultType<BuiltinEnumValue>);
-static_assert(deco::trait::InputResultType<std::vector<int>>);
-static_assert(deco::trait::InputResultType<std::vector<std::string>>);
-static_assert(deco::trait::InputResultType<std::vector<BuiltinEnumValue>>);
-static_assert(!deco::trait::InputResultType<std::string_view>);
-static_assert(!deco::trait::InputResultType<std::vector<std::string_view>>);
-static_assert(!deco::trait::InputResultType<const char*>);
+static_assert(trait::InputResultType<int>);
+static_assert(trait::InputResultType<std::string>);
+static_assert(trait::InputResultType<BuiltinEnumValue>);
+static_assert(trait::InputResultType<std::vector<int>>);
+static_assert(trait::InputResultType<std::vector<std::string>>);
+static_assert(trait::InputResultType<std::vector<BuiltinEnumValue>>);
+static_assert(!trait::InputResultType<std::string_view>);
+static_assert(!trait::InputResultType<std::vector<std::string_view>>);
+static_assert(!trait::InputResultType<const char*>);
 
-constexpr deco::decl::Category verboseCategory = {
+constexpr decl::Category verboseCategory = {
     .exclusive = true,
     .name = "verbose",
     .description = "verbose-only mode",
 };
 
-constexpr deco::decl::Category packCategory = {
+constexpr decl::Category packCategory = {
     .exclusive = false,
     .name = "pack",
     .description = "pack option group",
@@ -65,8 +70,8 @@ struct CustomScalarResult {
 };
 
 auto make_parsed_arg(std::string_view spelling, std::vector<std::string_view> values = {}) {
-    return eventide::option::ParsedArgument{
-        .option_id = eventide::option::OptSpecifier(1u),
+    return option::ParsedArgument{
+        .option_id = option::OptSpecifier(1u),
         .spelling = spelling,
         .values = std::move(values),
         .index = 0,
@@ -88,7 +93,7 @@ struct DeclOpt {
     DecoPack(help = "pack"; category = packCategory;)
     <std::vector<std::string>> pack = std::vector<std::string>{"a", "b"};
 
-    DecoKVStyled(deco::decl::KVStyle::Joined, help = "joined-kv";)
+    DecoKVStyled(decl::KVStyle::Joined, help = "joined-kv";)
     <int> joined = 7;
     DecoKV(help = "separate-kv";)
     <std::string> path = "entry.js";
@@ -98,13 +103,13 @@ struct DeclOpt {
     <std::vector<int>> pair = std::vector<int>{1, 2};
 };
 
-auto alias_decl_forward_fn(const eventide::option::ParsedArgumentOwning&)
+auto alias_decl_forward_fn(const option::ParsedArgumentOwning&)
     -> std::expected<std::vector<std::string>, std::string> {
     return std::vector<std::string>{"--target", "value"};
 }
 
-auto alias_decl_forward_with_context_fn(const eventide::option::ParsedArgumentOwning&,
-                                        const deco::decl::IntoContext&)
+auto alias_decl_forward_with_context_fn(const option::ParsedArgumentOwning&,
+                                        const decl::IntoContext&)
     -> std::expected<std::vector<std::string>, std::string> {
     return std::vector<std::string>{"--target", "value"};
 }
@@ -123,7 +128,7 @@ struct AliasDeclOpt {
 };
 
 static_assert(std::is_same_v<decltype(DeclOpt{}.pack)::result_type, std::vector<std::string>>);
-static_assert(std::is_base_of_v<deco::decl::DecoOptionBase, decltype(DeclOpt{}.input)>);
+static_assert(std::is_base_of_v<decl::DecoOptionBase, decltype(DeclOpt{}.input)>);
 
 TEST_SUITE(deco_decl) {
 
@@ -160,7 +165,7 @@ TEST_CASE(option_declaration_has_expected_shape_and_default_assignment) {
 
     using JoinedCfg = typename decltype(opt.joined)::__deco_field_ty;
     JoinedCfg joined_cfg{};
-    EXPECT_TRUE(joined_cfg.style == deco::decl::KVStyle::Joined);
+    EXPECT_TRUE(joined_cfg.style == decl::KVStyle::Joined);
     EXPECT_TRUE(opt.joined.has_value());
     EXPECT_TRUE(opt.joined.value() == 7);
     opt.joined = 11;
@@ -168,7 +173,7 @@ TEST_CASE(option_declaration_has_expected_shape_and_default_assignment) {
 
     using PathCfg = typename decltype(opt.path)::__deco_field_ty;
     PathCfg path_cfg{};
-    EXPECT_TRUE(path_cfg.style == deco::decl::KVStyle::Separate);
+    EXPECT_TRUE(path_cfg.style == decl::KVStyle::Separate);
     EXPECT_TRUE(opt.path.has_value());
     EXPECT_TRUE(opt.path.value() == "entry.js");
     opt.path = std::string("run.js");
@@ -202,55 +207,55 @@ TEST_CASE(option_declaration_has_expected_shape_and_default_assignment) {
 }
 
 TEST_CASE(alias_declaration_has_expected_shape) {
-    deco::decl::FlagAliasFields flag_cfg{};
+    decl::FlagAliasFields flag_cfg{};
     flag_cfg.names = {"-O1"};
     flag_cfg.forward = {"--optimize", "1"};
 
-    deco::decl::KVAliasFields kv_cfg{};
+    decl::KVAliasFields kv_cfg{};
     kv_cfg.names = {"--define-alias"};
     kv_cfg.forward = std::vector<std::string_view>{"--define"};
 
-    deco::decl::CommaJoinedAliasFields comma_cfg{};
+    decl::CommaJoinedAliasFields comma_cfg{};
     comma_cfg.names = {"--tags-alias"};
     comma_cfg.forward = {"--tags"};
 
-    deco::decl::MultiAliasFields multi_cfg{};
+    decl::MultiAliasFields multi_cfg{};
     multi_cfg.names = {"--pair-alias"};
     multi_cfg.arg_num = 2;
     multi_cfg.forward = alias_decl_forward_fn;
 
-    deco::decl::FlagAliasFields ctx_cfg{};
+    decl::FlagAliasFields ctx_cfg{};
     ctx_cfg.names = {"--ctx"};
     ctx_cfg.forward = alias_decl_forward_with_context_fn;
 
-    static_assert(!std::is_base_of_v<deco::decl::DecoOptionBase, deco::decl::FlagAliasFields>);
+    static_assert(!std::is_base_of_v<decl::DecoOptionBase, decl::FlagAliasFields>);
 
     EXPECT_TRUE(flag_cfg.names.size() == 1);
     EXPECT_TRUE(flag_cfg.names[0] == "-O1");
-    EXPECT_TRUE(flag_cfg.forward.kind == deco::decl::AliasForwardField::Kind::Static);
+    EXPECT_TRUE(flag_cfg.forward.kind == decl::AliasForwardField::Kind::Static);
     EXPECT_TRUE(flag_cfg.forward.static_tokens.size() == 2);
     EXPECT_TRUE(flag_cfg.forward.static_tokens[0] == "--optimize");
     EXPECT_TRUE(flag_cfg.forward.static_tokens[1] == "1");
 
-    EXPECT_TRUE(kv_cfg.forward.kind == deco::decl::AliasForwardField::Kind::Static);
+    EXPECT_TRUE(kv_cfg.forward.kind == decl::AliasForwardField::Kind::Static);
     EXPECT_TRUE(kv_cfg.forward.static_tokens.size() == 1);
     EXPECT_TRUE(kv_cfg.forward.static_tokens[0] == "--define");
-    EXPECT_TRUE(kv_cfg.style == deco::decl::KVStyle::Separate);
+    EXPECT_TRUE(kv_cfg.style == decl::KVStyle::Separate);
 
-    EXPECT_TRUE(comma_cfg.forward.kind == deco::decl::AliasForwardField::Kind::Static);
+    EXPECT_TRUE(comma_cfg.forward.kind == decl::AliasForwardField::Kind::Static);
     EXPECT_TRUE(comma_cfg.forward.static_tokens.size() == 1);
     EXPECT_TRUE(comma_cfg.forward.static_tokens[0] == "--tags");
 
-    EXPECT_TRUE(multi_cfg.forward.kind == deco::decl::AliasForwardField::Kind::Dynamic);
+    EXPECT_TRUE(multi_cfg.forward.kind == decl::AliasForwardField::Kind::Dynamic);
     EXPECT_TRUE(multi_cfg.forward.dynamic != nullptr);
     EXPECT_TRUE(multi_cfg.arg_num == 2);
 
-    EXPECT_TRUE(ctx_cfg.forward.kind == deco::decl::AliasForwardField::Kind::DynamicWithContext);
+    EXPECT_TRUE(ctx_cfg.forward.kind == decl::AliasForwardField::Kind::DynamicWithContext);
     EXPECT_TRUE(ctx_cfg.forward.dynamic_with_context != nullptr);
 }
 
 TEST_CASE(option_into_assigns_values_by_option_kind) {
-    deco::decl::FlagOption<bool> flag{};
+    decl::FlagOption<bool> flag{};
     auto flag_ok = flag.into(make_parsed_arg("--verbose"));
     EXPECT_TRUE(!flag_ok.has_value());
     EXPECT_TRUE(flag.has_value());
@@ -258,7 +263,7 @@ TEST_CASE(option_into_assigns_values_by_option_kind) {
     auto flag_err = flag.into(make_parsed_arg("--verbose", {"1"}));
     EXPECT_TRUE(flag_err.has_value());
 
-    deco::decl::ScalarOption<int> scalar{};
+    decl::ScalarOption<int> scalar{};
     auto scalar_ok = scalar.into(make_parsed_arg("--count", {"42"}));
     EXPECT_TRUE(!scalar_ok.has_value());
     EXPECT_TRUE(scalar.has_value());
@@ -266,7 +271,7 @@ TEST_CASE(option_into_assigns_values_by_option_kind) {
     auto scalar_err = scalar.into(make_parsed_arg("--count", {"not-a-number"}));
     EXPECT_TRUE(scalar_err.has_value());
 
-    deco::decl::InputOption<int> input{};
+    decl::InputOption<int> input{};
     auto input_ok = input.into(make_parsed_arg("123"));
     EXPECT_TRUE(!input_ok.has_value());
     EXPECT_TRUE(input.has_value());
@@ -274,7 +279,7 @@ TEST_CASE(option_into_assigns_values_by_option_kind) {
     auto input_err = input.into(make_parsed_arg("bad-int"));
     EXPECT_TRUE(input_err.has_value());
 
-    deco::decl::InputOption<std::vector<int>> input_vector{};
+    decl::InputOption<std::vector<int>> input_vector{};
     auto input_vector_ok = input_vector.into(make_parsed_arg("7"));
     EXPECT_TRUE(!input_vector_ok.has_value());
     EXPECT_TRUE(input_vector.has_value());
@@ -286,7 +291,7 @@ TEST_CASE(option_into_assigns_values_by_option_kind) {
     EXPECT_TRUE(input_vector_err.has_value());
     EXPECT_TRUE(input_vector.value() == std::vector<int>{7, 8});
 
-    deco::decl::ScalarOption<float> float_opt{};
+    decl::ScalarOption<float> float_opt{};
     auto float_ok = float_opt.into(make_parsed_arg("--ratio", {"3.14"}));
     EXPECT_TRUE(!float_ok.has_value());
     EXPECT_TRUE(float_opt.has_value());
@@ -294,7 +299,7 @@ TEST_CASE(option_into_assigns_values_by_option_kind) {
     auto float_err = float_opt.into(make_parsed_arg("--ratio", {"3.14x"}));
     EXPECT_TRUE(float_err.has_value());
 
-    deco::decl::ScalarOption<BuiltinEnumValue> enum_opt{};
+    decl::ScalarOption<BuiltinEnumValue> enum_opt{};
     auto enum_ok = enum_opt.into(make_parsed_arg("--mode", {"Beta"}));
     EXPECT_TRUE(!enum_ok.has_value());
     EXPECT_TRUE(enum_opt.has_value());
@@ -304,13 +309,13 @@ TEST_CASE(option_into_assigns_values_by_option_kind) {
     EXPECT_TRUE(enum_err->contains("invalid enum value: Delta"));
     EXPECT_TRUE(enum_err->contains("supported: alpha, beta, gamma"));
 
-    deco::decl::InputOption<BuiltinEnumValue> enum_input{};
+    decl::InputOption<BuiltinEnumValue> enum_input{};
     auto enum_input_ok = enum_input.into(make_parsed_arg("Gamma"));
     EXPECT_TRUE(!enum_input_ok.has_value());
     EXPECT_TRUE(enum_input.has_value());
     EXPECT_TRUE(enum_input.value() == BuiltinEnumValue::Gamma);
 
-    deco::decl::ScalarOption<BuiltinSpelledEnum> spelled_enum{};
+    decl::ScalarOption<BuiltinSpelledEnum> spelled_enum{};
     EXPECT_TRUE(!spelled_enum.into(make_parsed_arg("--kind", {"my_value"})).has_value());
     EXPECT_TRUE(spelled_enum.value() == BuiltinSpelledEnum::myValue);
     EXPECT_TRUE(!spelled_enum.into(make_parsed_arg("--kind", {"Delete"})).has_value());
@@ -318,12 +323,12 @@ TEST_CASE(option_into_assigns_values_by_option_kind) {
     EXPECT_TRUE(!spelled_enum.into(make_parsed_arg("--kind", {"123"})).has_value());
     EXPECT_TRUE(spelled_enum.value() == BuiltinSpelledEnum::V123);
 
-    deco::decl::ScalarOption<double> double_opt{};
+    decl::ScalarOption<double> double_opt{};
     auto double_err = double_opt.into(make_parsed_arg("--precise", {"3.14"}));
     EXPECT_FALSE(double_err.has_value());
     EXPECT_TRUE(double_opt.value() == 3.14);
 
-    deco::decl::VectorOption<std::vector<int>> vector_opt{};
+    decl::VectorOption<std::vector<int>> vector_opt{};
     auto vector_ok = vector_opt.into(make_parsed_arg("-P", {"7", "8"}));
     EXPECT_TRUE(!vector_ok.has_value());
     EXPECT_TRUE(vector_opt.has_value());
@@ -333,7 +338,7 @@ TEST_CASE(option_into_assigns_values_by_option_kind) {
     auto vector_err = vector_opt.into(make_parsed_arg("-P", {"7", "x"}));
     EXPECT_TRUE(vector_err.has_value());
 
-    deco::decl::VectorOption<std::vector<BuiltinEnumValue>> enum_vector{};
+    decl::VectorOption<std::vector<BuiltinEnumValue>> enum_vector{};
     auto enum_vector_ok = enum_vector.into(make_parsed_arg("-M", {"Alpha", "Gamma"}));
     EXPECT_TRUE(!enum_vector_ok.has_value());
     EXPECT_TRUE(enum_vector.has_value());
@@ -346,7 +351,7 @@ TEST_CASE(option_into_assigns_values_by_option_kind) {
     EXPECT_TRUE(enum_vector_err->contains("invalid enum value: Delta"));
     EXPECT_TRUE(enum_vector_err->contains("supported: alpha, beta, gamma"));
 
-    deco::decl::ScalarOption<CustomScalarResult> custom_scalar{};
+    decl::ScalarOption<CustomScalarResult> custom_scalar{};
     auto custom_scalar_ok = custom_scalar.into(make_parsed_arg("--name", {"alice"}));
     EXPECT_TRUE(!custom_scalar_ok.has_value());
     EXPECT_TRUE(custom_scalar.has_value());
@@ -364,7 +369,7 @@ TEST_CASE(option_into_assigns_values_by_option_kind) {
         }
     };
 
-    deco::decl::VectorOption<CustomVectorResult> custom_vector{};
+    decl::VectorOption<CustomVectorResult> custom_vector{};
     auto custom_vector_ok = custom_vector.into(make_parsed_arg("--tags", {"x", "y"}));
     EXPECT_TRUE(!custom_vector_ok.has_value());
     EXPECT_TRUE(custom_vector.has_value());
@@ -374,3 +379,6 @@ TEST_CASE(option_into_assigns_values_by_option_kind) {
 }
 
 };  // TEST_SUITE(deco_decl)
+
+}  // namespace
+}  // namespace kota::deco
