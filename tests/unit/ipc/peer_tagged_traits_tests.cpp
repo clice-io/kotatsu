@@ -2,6 +2,7 @@
 #include "kota/zest/zest.h"
 
 namespace kota::ipc {
+namespace {
 
 TEST_SUITE(ipc_peer_tagged_traits) {
 
@@ -104,4 +105,5 @@ TEST_CASE(tagged_send_apis) {
 
 };  // TEST_SUITE(ipc_peer_tagged_traits)
 
+}  // namespace
 }  // namespace kota::ipc

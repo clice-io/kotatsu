@@ -5,6 +5,7 @@
 #include "kota/support/cow_string.h"
 
 namespace kota {
+namespace {
 
 constexpr bool constexpr_cow_string_operations() {
     // borrowed
@@ -342,4 +343,5 @@ TEST_CASE(release_borrowed_fits_inline) {
 
 };  // TEST_SUITE(cow_string)
 
+}  // namespace
 }  // namespace kota

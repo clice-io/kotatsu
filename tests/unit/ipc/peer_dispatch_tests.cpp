@@ -2,6 +2,7 @@
 #include "kota/zest/zest.h"
 
 namespace kota::ipc {
+namespace {
 
 // ============================================================================
 // Group 3: Peer — dispatch routing
@@ -145,4 +146,5 @@ TEST_CASE(mixed_sequence) {
 
 };  // TEST_SUITE(ipc_peer_dispatch)
 
+}  // namespace
 }  // namespace kota::ipc

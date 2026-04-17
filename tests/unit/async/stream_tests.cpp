@@ -441,7 +441,7 @@ TEST_CASE(stop, serial = true) {
     auto err = acc->stop();
     EXPECT_FALSE(err.has_error());
 
-    auto task1 = [](acceptor<pipe>& acc) -> kota::task<pipe, error> {
+    auto task1 = [](acceptor<pipe>& acc) -> task<pipe, error> {
         auto res = co_await acc.accept();
         event_loop::current().stop();
         co_return res;
@@ -452,7 +452,7 @@ TEST_CASE(stop, serial = true) {
     auto res1 = task1.value().value();
     EXPECT_TRUE(!res1.has_value() && res1.error() == error::operation_aborted);
 
-    auto task2 = [](acceptor<pipe>& acc) -> kota::task<pipe, error> {
+    auto task2 = [](acceptor<pipe>& acc) -> task<pipe, error> {
         event_loop::current().stop();
         auto res = co_await acc.accept();
         co_return res;

@@ -8,6 +8,7 @@
 #include "kota/ipc/lsp/progress.h"
 
 namespace kota::ipc {
+namespace {
 
 using lsp::ProgressReporter;
 
@@ -158,4 +159,5 @@ TEST_CASE(create_failure) {
 
 };  // TEST_SUITE(ipc_progress)
 
+}  // namespace
 }  // namespace kota::ipc

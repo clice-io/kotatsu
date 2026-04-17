@@ -562,8 +562,8 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
 
 #define SERDE_STANDARD_TEST_CASES_TUPLE_LIKE(rt)                                                   \
     TEST_CASE(standard_tuple_like_roundtrip) {                                                     \
-        using basic_t = kota::codec::standard_case::Basic;                                         \
-        using scalar_tuple_t = kota::codec::standard_case::scalar_tuple;                           \
+        using basic_t = standard_case::Basic;                                                      \
+        using scalar_tuple_t = standard_case::scalar_tuple;                                        \
         const scalar_tuple_t scalar_a{true,                                                        \
                                       'q',                                                         \
                                       std::int8_t(-12),                                            \
@@ -594,24 +594,22 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::pair<std::uint64_t, bool>{42ULL, true});          \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(                                                           \
             rt,                                                                                    \
-            std::pair<basic_t, basic_t>{                                                           \
-                kota::codec::standard_case::make_basic(true, 11, 1.5, "lhs"),                      \
-                kota::codec::standard_case::make_basic(false, -22, -2.5, "rhs")});                 \
+            std::pair<basic_t, basic_t>{standard_case::make_basic(true, 11, 1.5, "lhs"),           \
+                                        standard_case::make_basic(false, -22, -2.5, "rhs")});      \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::tuple<int, bool, std::string>{7, true, "tuple"}); \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, scalar_a);                                             \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(                                                           \
             rt,                                                                                    \
             std::tuple<basic_t, std::array<int, 3>, std::pair<std::uint32_t, float>>{              \
-                kota::codec::standard_case::make_basic(true, 33, 3.75, "tuple-struct"),            \
+                standard_case::make_basic(true, 33, 3.75, "tuple-struct"),                         \
                 std::array<int, 3>{1, 3, 5},                                                       \
                 std::pair<std::uint32_t, float>{99U, 6.25F} \
         });                                     \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::array<int, 3>{4, 5, 6});                          \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(                                                           \
             rt,                                                                                    \
-            std::array<basic_t, 2>{                                                                \
-                kota::codec::standard_case::make_basic(true, 101, 10.1, "arr-a"),                  \
-                kota::codec::standard_case::make_basic(false, -202, -20.2, "arr-b")});             \
+            std::array<basic_t, 2>{standard_case::make_basic(true, 101, 10.1, "arr-a"),            \
+                                   standard_case::make_basic(false, -202, -20.2, "arr-b")});       \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(                                                           \
             rt,                                                                                    \
             std::pair<scalar_tuple_t, scalar_tuple_t>{scalar_a, scalar_b});                        \
@@ -622,15 +620,15 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
 
 #define SERDE_STANDARD_TEST_CASES_SEQUENCE_SET(rt)                                                 \
     TEST_CASE(standard_sequence_set_roundtrip) {                                                   \
-        using basic_t = kota::codec::standard_case::Basic;                                         \
+        using basic_t = standard_case::Basic;                                                      \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::vector<int>{1, 2, 3, 5});                         \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::vector<std::uint64_t>{1ULL, 5ULL, 9ULL});         \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::vector<std::string>{"a", "bb", "ccc"});           \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::vector<std::byte>{std::byte{0}, std::byte{127}}); \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(                                                           \
             rt,                                                                                    \
-            std::vector<basic_t>{kota::codec::standard_case::make_basic(true, 1, 1.25, "v0"),      \
-                                 kota::codec::standard_case::make_basic(false, -2, -2.5, "v1")});  \
+            std::vector<basic_t>{standard_case::make_basic(true, 1, 1.25, "v0"),                   \
+                                 standard_case::make_basic(false, -2, -2.5, "v1")});               \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt,                                                        \
                                         std::vector<std::tuple<std::int32_t, bool, std::string>>{  \
                                             {1, true,  "x"},                                        \
@@ -657,7 +655,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
 
 #define SERDE_STANDARD_TEST_CASES_MAPS(rt)                                                         \
     TEST_CASE(standard_map_roundtrip) {                                                            \
-        using basic_t = kota::codec::standard_case::Basic;                                         \
+        using basic_t = standard_case::Basic;                                                      \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt,                                                        \
                                         std::map<std::string, int>{                                \
                                             {"a", 1},                                              \
@@ -672,9 +670,9 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
         SERDE_STANDARD_ASSERT_ROUNDTRIP(                                                           \
             rt,                                                                                    \
             std::map<std::string, basic_t>{                                                        \
-                {"x", kota::codec::standard_case::make_basic(true,  10,  1.0,  "mx")},                \
-                {"y", kota::codec::standard_case::make_basic(false, -20, -2.0, "my")} \
-        });           \
+                {"x", standard_case::make_basic(true,  10,  1.0,  "mx")},                             \
+                {"y", standard_case::make_basic(false, -20, -2.0, "my")} \
+        });                        \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt,                                                        \
                                         std::map<int, std::tuple<bool, double, std::string>>{      \
                                             {1, {true, 1.25, "one"} },                              \
@@ -694,9 +692,9 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
         SERDE_STANDARD_ASSERT_ROUNDTRIP(                                                           \
             rt,                                                                                    \
             std::unordered_map<std::string, basic_t>{                                              \
-                {"u1", kota::codec::standard_case::make_basic(true,  7,  7.7,  "ux")},                \
-                {"u2", kota::codec::standard_case::make_basic(false, -8, -8.8, "uy")} \
-        });           \
+                {"u1", standard_case::make_basic(true,  7,  7.7,  "ux")},                             \
+                {"u2", standard_case::make_basic(false, -8, -8.8, "uy")} \
+        });                        \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt,                                                        \
                                         std::unordered_map<std::uint64_t, std::vector<int>>{       \
                                             {10ULL, {1, 2}   },                                       \
@@ -708,16 +706,15 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
 
 #define SERDE_STANDARD_TEST_CASES_OPTIONAL(rt)                                                     \
     TEST_CASE(standard_optional_roundtrip) {                                                       \
-        using basic_t = kota::codec::standard_case::Basic;                                         \
-        using scalar_tuple_t = kota::codec::standard_case::scalar_tuple;                           \
+        using basic_t = standard_case::Basic;                                                      \
+        using scalar_tuple_t = standard_case::scalar_tuple;                                        \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::optional<int>{17});                               \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::optional<int>{std::nullopt});                     \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::optional<double>{-3.5});                          \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::optional<std::string>{std::string("opt-text")});  \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(                                                           \
             rt,                                                                                    \
-            std::optional<basic_t>{                                                                \
-                kota::codec::standard_case::make_basic(true, 55, 5.5, "opt-basic")});              \
+            std::optional<basic_t>{standard_case::make_basic(true, 55, 5.5, "opt-basic")});        \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::optional<basic_t>{std::nullopt});                 \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt,                                                        \
                                         std::optional<scalar_tuple_t>{                             \
@@ -744,9 +741,9 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
 
 #define SERDE_STANDARD_TEST_CASES_POINTERS(rt)                                                     \
     TEST_CASE(standard_smart_pointers_roundtrip) {                                                 \
-        SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, kota::codec::standard_case::make_smart_pointers());    \
+        SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, standard_case::make_smart_pointers());                 \
         {                                                                                          \
-            auto input = kota::codec::standard_case::make_smart_pointers();                        \
+            auto input = standard_case::make_smart_pointers();                                     \
             input.unique_basic.reset();                                                            \
             input.shared_basic.reset();                                                            \
             input.opt_shared.reset();                                                              \
@@ -755,20 +752,20 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             EXPECT_EQ(input, *output);                                                             \
         }                                                                                          \
         {                                                                                          \
-            auto input = kota::codec::standard_case::make_smart_pointers();                        \
+            auto input = standard_case::make_smart_pointers();                                     \
             input.shared_list.clear();                                                             \
             input.shared_list.push_back(nullptr);                                                  \
-            input.shared_list.push_back(std::make_shared<kota::codec::standard_case::Basic>(       \
-                kota::codec::standard_case::make_basic(true, 9, 0.9, "tail")));                    \
-            input.opt_shared = std::shared_ptr<kota::codec::standard_case::Basic>{};               \
+            input.shared_list.push_back(std::make_shared<standard_case::Basic>(                    \
+                standard_case::make_basic(true, 9, 0.9, "tail")));                                 \
+            input.opt_shared = std::shared_ptr<standard_case::Basic>{};                            \
             auto output = (rt)(input);                                                             \
             ASSERT_TRUE(output.has_value());                                                       \
             EXPECT_EQ(input, *output);                                                             \
         }                                                                                          \
         {                                                                                          \
-            auto input = kota::codec::standard_case::make_smart_pointers();                        \
-            auto aliased = std::make_shared<kota::codec::standard_case::Basic>(                    \
-                kota::codec::standard_case::make_basic(true, 1234, 12.34, "aliased"));             \
+            auto input = standard_case::make_smart_pointers();                                     \
+            auto aliased = std::make_shared<standard_case::Basic>(                                 \
+                standard_case::make_basic(true, 1234, 12.34, "aliased"));                          \
             input.shared_basic = aliased;                                                          \
             input.shared_list = {aliased, aliased};                                                \
             auto output = (rt)(input);                                                             \
@@ -782,9 +779,9 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
 
 #define SERDE_STANDARD_TEST_CASES_POINTERS_WIRE_SAFE(rt)                                           \
     TEST_CASE(standard_smart_pointers_roundtrip) {                                                 \
-        SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, kota::codec::standard_case::make_smart_pointers());    \
+        SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, standard_case::make_smart_pointers());                 \
         {                                                                                          \
-            auto input = kota::codec::standard_case::make_smart_pointers();                        \
+            auto input = standard_case::make_smart_pointers();                                     \
             input.unique_basic.reset();                                                            \
             input.shared_basic.reset();                                                            \
             input.opt_shared.reset();                                                              \
@@ -793,9 +790,9 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             EXPECT_EQ(input, *output);                                                             \
         }                                                                                          \
         {                                                                                          \
-            auto input = kota::codec::standard_case::make_smart_pointers();                        \
-            auto aliased = std::make_shared<kota::codec::standard_case::Basic>(                    \
-                kota::codec::standard_case::make_basic(true, 1234, 12.34, "aliased"));             \
+            auto input = standard_case::make_smart_pointers();                                     \
+            auto aliased = std::make_shared<standard_case::Basic>(                                 \
+                standard_case::make_basic(true, 1234, 12.34, "aliased"));                          \
             input.shared_basic = aliased;                                                          \
             input.shared_list = {aliased, aliased};                                                \
             auto output = (rt)(input);                                                             \
@@ -813,7 +810,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
 #define SERDE_STANDARD_TEST_CASES_POINTERS_TOML_SAFE(rt)                                           \
     TEST_CASE(standard_smart_pointers_roundtrip) {                                                 \
         {                                                                                          \
-            auto input = kota::codec::standard_case::make_smart_pointers();                        \
+            auto input = standard_case::make_smart_pointers();                                     \
             input.shared_list.erase(                                                               \
                 std::remove(input.shared_list.begin(), input.shared_list.end(), nullptr),          \
                 input.shared_list.end());                                                          \
@@ -822,7 +819,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             EXPECT_EQ(input, *output);                                                             \
         }                                                                                          \
         {                                                                                          \
-            auto input = kota::codec::standard_case::make_smart_pointers();                        \
+            auto input = standard_case::make_smart_pointers();                                     \
             input.shared_list.erase(                                                               \
                 std::remove(input.shared_list.begin(), input.shared_list.end(), nullptr),          \
                 input.shared_list.end());                                                          \
@@ -834,9 +831,9 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             EXPECT_EQ(input, *output);                                                             \
         }                                                                                          \
         {                                                                                          \
-            auto input = kota::codec::standard_case::make_smart_pointers();                        \
-            auto aliased = std::make_shared<kota::codec::standard_case::Basic>(                    \
-                kota::codec::standard_case::make_basic(true, 1234, 12.34, "aliased"));             \
+            auto input = standard_case::make_smart_pointers();                                     \
+            auto aliased = std::make_shared<standard_case::Basic>(                                 \
+                standard_case::make_basic(true, 1234, 12.34, "aliased"));                          \
             input.shared_basic = aliased;                                                          \
             input.shared_empty.reset();                                                            \
             input.shared_list = {aliased, aliased};                                                \
@@ -853,88 +850,75 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
 
 #define SERDE_STANDARD_TEST_CASES_ATTRS(rt)                                                        \
     TEST_CASE(standard_attrs_roundtrip) {                                                          \
-        using payload_t = kota::codec::standard_case::AttrPayload;                                 \
+        using payload_t = standard_case::AttrPayload;                                              \
         {                                                                                          \
-            auto input = kota::codec::standard_case::make_attr_payload();                          \
+            auto input = standard_case::make_attr_payload();                                       \
             input.internal_id = 4242;                                                              \
             auto output = (rt)(input);                                                             \
             ASSERT_TRUE(output.has_value());                                                       \
             EXPECT_EQ(output->id, input.id);                                                       \
-            EXPECT_EQ(kota::meta::annotated_value(output->display_name), std::string("alice"));    \
-            EXPECT_EQ(kota::meta::annotated_value(output->internal_id), 1000);                     \
-            EXPECT_EQ(kota::meta::annotated_value(output->note),                                   \
-                      std::optional<std::string>{"note"});                                         \
-            EXPECT_EQ(kota::meta::annotated_value(output->profile),                                \
-                      kota::meta::annotated_value(input.profile));                                 \
-            EXPECT_EQ(kota::meta::annotated_value(output->level),                                  \
-                      kota::codec::standard_case::AccessLevel::admin);                             \
+            EXPECT_EQ(meta::annotated_value(output->display_name), std::string("alice"));          \
+            EXPECT_EQ(meta::annotated_value(output->internal_id), 1000);                           \
+            EXPECT_EQ(meta::annotated_value(output->note), std::optional<std::string>{"note"});    \
+            EXPECT_EQ(meta::annotated_value(output->profile),                                      \
+                      meta::annotated_value(input.profile));                                       \
+            EXPECT_EQ(meta::annotated_value(output->level), standard_case::AccessLevel::admin);    \
         }                                                                                          \
         {                                                                                          \
             payload_t input{};                                                                     \
             input.id = 9;                                                                          \
             input.display_name = "bob";                                                            \
-            kota::meta::annotated_value(input.note) = std::nullopt;                                \
-            kota::meta::annotated_value(input.profile).first = "Bob";                              \
-            kota::meta::annotated_value(input.profile).age = 21;                                   \
-            input.level = kota::codec::standard_case::AccessLevel::guest;                          \
+            meta::annotated_value(input.note) = std::nullopt;                                      \
+            meta::annotated_value(input.profile).first = "Bob";                                    \
+            meta::annotated_value(input.profile).age = 21;                                         \
+            input.level = standard_case::AccessLevel::guest;                                       \
             auto output = (rt)(input);                                                             \
             ASSERT_TRUE(output.has_value());                                                       \
             EXPECT_EQ(output->id, 9);                                                              \
-            EXPECT_EQ(kota::meta::annotated_value(output->display_name), std::string("bob"));      \
-            EXPECT_EQ(kota::meta::annotated_value(output->note), std::nullopt);                    \
-            EXPECT_EQ(kota::meta::annotated_value(output->profile).first, "Bob");                  \
-            EXPECT_EQ(kota::meta::annotated_value(output->profile).age, 21);                       \
-            EXPECT_EQ(kota::meta::annotated_value(output->level),                                  \
-                      kota::codec::standard_case::AccessLevel::guest);                             \
+            EXPECT_EQ(meta::annotated_value(output->display_name), std::string("bob"));            \
+            EXPECT_EQ(meta::annotated_value(output->note), std::nullopt);                          \
+            EXPECT_EQ(meta::annotated_value(output->profile).first, "Bob");                        \
+            EXPECT_EQ(meta::annotated_value(output->profile).age, 21);                             \
+            EXPECT_EQ(meta::annotated_value(output->level), standard_case::AccessLevel::guest);    \
         }                                                                                          \
+        SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, standard_case::make_renamed_struct_level_payload());   \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(                                                           \
             rt,                                                                                    \
-            kota::codec::standard_case::make_renamed_struct_level_payload());                      \
+            standard_case::make_strict_renamed_struct_level_payload());                            \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(                                                           \
             rt,                                                                                    \
-            kota::codec::standard_case::make_strict_renamed_struct_level_payload());               \
-        SERDE_STANDARD_ASSERT_ROUNDTRIP(rt,                                                        \
-                                        kota::codec::standard_case::EnumStringAccess{              \
-                                            kota::codec::standard_case::AccessLevel::viewer});     \
+            standard_case::EnumStringAccess{standard_case::AccessLevel::viewer});                  \
     }
 
 /// Tagged variants (external / adjacent / internal).
 
 #define SERDE_STANDARD_TEST_CASES_TAGGED_VARIANTS(rt)                                              \
     TEST_CASE(standard_tagged_variants_roundtrip) {                                                \
-        using ext_t = kota::codec::standard_case::TaggedExternalVariant;                           \
-        using adj_t = kota::codec::standard_case::TaggedAdjacentVariant;                           \
-        using int_t = kota::codec::standard_case::TaggedInternalVariant;                           \
+        using ext_t = standard_case::TaggedExternalVariant;                                        \
+        using adj_t = standard_case::TaggedAdjacentVariant;                                        \
+        using int_t = standard_case::TaggedInternalVariant;                                        \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, ext_t{42});                                            \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, ext_t{std::string("hello")});                          \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt,                                                        \
                                         ext_t{                                                     \
-                                            kota::codec::standard_case::Basic{                     \
-                                                                              .is_valid = true,                                  \
-                                                                              .i32 = 11,                                         \
-                                                                              .f64 = 1.25,                                       \
-                                                                              .text = "ext-basic",                               \
-                                                                              } \
+                                            standard_case::Basic{                                  \
+                                                                 .is_valid = true,                                  \
+                                                                 .i32 = 11,                                         \
+                                                                 .f64 = 1.25,                                       \
+                                                                 .text = "ext-basic",                               \
+                                                                 } \
         });                                                   \
-        SERDE_STANDARD_ASSERT_ROUNDTRIP(                                                           \
-            rt,                                                                                    \
-            kota::codec::standard_case::make_tagged_external_holder());                            \
+        SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, standard_case::make_tagged_external_holder());         \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, adj_t{9});                                             \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, adj_t{std::string("adj")});                            \
-        SERDE_STANDARD_ASSERT_ROUNDTRIP(                                                           \
-            rt,                                                                                    \
-            kota::codec::standard_case::make_tagged_adjacent_holder());                            \
-        SERDE_STANDARD_ASSERT_ROUNDTRIP(                                                           \
-            rt,                                                                                    \
-            int_t{kota::codec::standard_case::TaggedCircle{.radius = 3.14}});                      \
+        SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, standard_case::make_tagged_adjacent_holder());         \
+        SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, int_t{standard_case::TaggedCircle{.radius = 3.14}});   \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(                                                           \
             rt,                                                                                    \
             int_t{                                                                                 \
-                kota::codec::standard_case::TaggedRect{.width = 10.0, .height = 20.0} \
-        });           \
-        SERDE_STANDARD_ASSERT_ROUNDTRIP(                                                           \
-            rt,                                                                                    \
-            kota::codec::standard_case::make_tagged_internal_holder());                            \
+                standard_case::TaggedRect{.width = 10.0, .height = 20.0} \
+        });                        \
+        SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, standard_case::make_tagged_internal_holder());         \
     }
 
 /// Text decoder error paths.
@@ -946,17 +930,17 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
     TEST_CASE(standard_error_paths_text) {                                                         \
         std::int32_t i32 = 0;                                                                      \
         SERDE_STANDARD_ASSERT_TEXT_DECODE_FAIL(decode_text, R"("bad-int")", i32);                  \
-        kota::codec::standard_case::StrictRenamedStructLevelPayload strict{};                      \
+        standard_case::StrictRenamedStructLevelPayload strict{};                                   \
         SERDE_STANDARD_ASSERT_TEXT_DECODE_FAIL(decode_text,                                        \
                                                R"({"userId":3,"loginCount":4,"extra":9})",         \
                                                strict);                                            \
-        kota::codec::standard_case::TaggedExternalVariant ext{};                                   \
+        standard_case::TaggedExternalVariant ext{};                                                \
         SERDE_STANDARD_ASSERT_TEXT_DECODE_FAIL(decode_text, R"({"unknown":42})", ext);             \
-        kota::codec::standard_case::TaggedAdjacentVariant adj{};                                   \
+        standard_case::TaggedAdjacentVariant adj{};                                                \
         SERDE_STANDARD_ASSERT_TEXT_DECODE_FAIL(decode_text,                                        \
                                                R"({"type":"unknown","value":42})",                 \
                                                adj);                                               \
-        kota::codec::standard_case::TaggedInternalVariant internal{};                              \
+        standard_case::TaggedInternalVariant internal{};                                           \
         SERDE_STANDARD_ASSERT_TEXT_DECODE_FAIL(decode_text, R"({"radius":5.0})", internal);        \
     }
 
@@ -964,7 +948,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
 
 #define SERDE_STANDARD_TEST_CASES_VARIANT(rt)                                                      \
     TEST_CASE(standard_variant_roundtrip) {                                                        \
-        using basic_t = kota::codec::standard_case::Basic;                                         \
+        using basic_t = standard_case::Basic;                                                      \
         using primary_variant_t = std::variant<std::monostate, int, double, std::string, basic_t>; \
         using nested_variant_t = std::                                                             \
             variant<std::tuple<int, std::string>, std::vector<int>, std::array<int, 3>, basic_t>;  \
@@ -974,8 +958,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, primary_variant_t{std::string("variant-text")});       \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(                                                           \
             rt,                                                                                    \
-            primary_variant_t{                                                                     \
-                kota::codec::standard_case::make_basic(true, 64, 2.5, "variant-basic")});          \
+            primary_variant_t{standard_case::make_basic(true, 64, 2.5, "variant-basic")});         \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt,                                                        \
                                         nested_variant_t{                                          \
                                             std::tuple<int, std::string>{7, "seven"} \
@@ -990,12 +973,12 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
         });                        \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(                                                           \
             rt,                                                                                    \
-            nested_variant_t{kota::codec::standard_case::make_basic(false, -9, -1.25, "nested")}); \
+            nested_variant_t{standard_case::make_basic(false, -9, -1.25, "nested")});              \
     }
 
 #define SERDE_STANDARD_TEST_CASES_VARIANT_WIRE_SAFE(rt)                                            \
     TEST_CASE(standard_variant_roundtrip) {                                                        \
-        using basic_t = kota::codec::standard_case::Basic;                                         \
+        using basic_t = standard_case::Basic;                                                      \
         using primary_variant_t = std::variant<std::monostate, int, double, std::string, basic_t>; \
         using nested_variant_t =                                                                   \
             std::variant<std::tuple<int, std::string>, std::vector<int>, basic_t>;                 \
@@ -1005,8 +988,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, primary_variant_t{std::string("variant-text")});       \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(                                                           \
             rt,                                                                                    \
-            primary_variant_t{                                                                     \
-                kota::codec::standard_case::make_basic(true, 64, 2.5, "variant-basic")});          \
+            primary_variant_t{standard_case::make_basic(true, 64, 2.5, "variant-basic")});         \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt,                                                        \
                                         nested_variant_t{                                          \
                                             std::tuple<int, std::string>{7, "seven"} \
@@ -1017,7 +999,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
         });                           \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(                                                           \
             rt,                                                                                    \
-            nested_variant_t{kota::codec::standard_case::make_basic(false, -9, -1.25, "nested")}); \
+            nested_variant_t{standard_case::make_basic(false, -9, -1.25, "nested")});              \
     }
 
 #define SERDE_STANDARD_TEST_CASES_VARIANT_TEXT_SAFE(rt)                                            \
@@ -1044,12 +1026,12 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
 
 #define SERDE_STANDARD_TEST_CASES_COMPLEX(rt)                                                      \
     TEST_CASE(standard_complex_roundtrip) {                                                        \
-        SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, kota::codec::standard_case::make_scalars());           \
-        SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, kota::codec::standard_case::make_nested_containers()); \
-        SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, kota::codec::standard_case::make_empty_containers());  \
-        SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, kota::codec::standard_case::make_ultimate());          \
+        SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, standard_case::make_scalars());                        \
+        SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, standard_case::make_nested_containers());              \
+        SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, standard_case::make_empty_containers());               \
+        SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, standard_case::make_ultimate());                       \
         {                                                                                          \
-            auto input = kota::codec::standard_case::make_ultimate();                              \
+            auto input = standard_case::make_ultimate();                                           \
             input.adts.multi_variant = std::monostate{};                                           \
             input.nullables.opt_value.reset();                                                     \
             input.nullables.heap_allocated.reset();                                                \
@@ -1058,14 +1040,14 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             EXPECT_EQ(input, *output);                                                             \
         }                                                                                          \
         {                                                                                          \
-            auto input = kota::codec::standard_case::make_ultimate();                              \
+            auto input = standard_case::make_ultimate();                                           \
             input.adts.multi_variant = 123;                                                        \
             auto output = (rt)(input);                                                             \
             ASSERT_TRUE(output.has_value());                                                       \
             EXPECT_EQ(input, *output);                                                             \
         }                                                                                          \
         {                                                                                          \
-            auto input = kota::codec::standard_case::make_ultimate();                              \
+            auto input = standard_case::make_ultimate();                                           \
             input.adts.multi_variant = std::string("variant-text");                                \
             auto output = (rt)(input);                                                             \
             ASSERT_TRUE(output.has_value());                                                       \

@@ -2,6 +2,7 @@
 #include "kota/zest/zest.h"
 
 namespace kota::ipc {
+namespace {
 
 // ============================================================================
 // Group 4: Peer — cancellation edge cases
@@ -104,4 +105,5 @@ TEST_CASE(bad_cancel_params) {
 
 };  // TEST_SUITE(ipc_peer_cancel)
 
+}  // namespace
 }  // namespace kota::ipc

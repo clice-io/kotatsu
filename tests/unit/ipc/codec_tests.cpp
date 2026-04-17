@@ -24,8 +24,6 @@ const T& get(const IncomingMessage& msg) {
     return std::get<T>(msg);
 }
 
-}  // namespace
-
 // ============================================================================
 // Group 1: JsonCodec — parse_message boundary tests
 // ============================================================================
@@ -413,4 +411,5 @@ TEST_CASE(empty_params_roundtrip) {
 
 };  // TEST_SUITE(ipc_bincode_codec_roundtrip)
 
+}  // namespace
 }  // namespace kota::ipc

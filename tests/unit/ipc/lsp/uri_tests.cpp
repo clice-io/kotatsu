@@ -2,6 +2,7 @@
 #include "kota/ipc/lsp/uri.h"
 
 namespace kota::ipc::lsp {
+namespace {
 
 TEST_SUITE(language_uri) {
 
@@ -157,4 +158,5 @@ TEST_CASE(non_file_path_fails) {
 
 };  // TEST_SUITE(language_uri)
 
+}  // namespace
 }  // namespace kota::ipc::lsp

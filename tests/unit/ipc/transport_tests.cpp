@@ -27,8 +27,6 @@ task<std::pair<std::optional<std::string>, std::optional<std::string>>>
     co_return std::pair{std::move(first), std::move(second)};
 }
 
-}  // namespace
-
 TEST_SUITE(ipc_transport) {
 
 TEST_CASE(consecutive_messages) {
@@ -277,4 +275,5 @@ TEST_CASE(large_payload_single_chunk) {
 
 };  // TEST_SUITE(ipc_transport)
 
+}  // namespace
 }  // namespace kota::ipc

@@ -213,7 +213,7 @@ TEST_CASE(spawn_pipe_stderr) {
 
 TEST_CASE(spawn_pipe_stdout_read_chunk_twice) {
 #ifdef _WIN32
-    ::kota::zest::skip();
+    zest::skip();
     return;
 #else
     process::options opts;

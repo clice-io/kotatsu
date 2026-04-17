@@ -14,11 +14,7 @@
 #include "kota/ipc/lsp/protocol.h"
 
 namespace kota::ipc::lsp {
-
-namespace ipc = kota::ipc;
-
-using ipc::FakeTransport;
-using ipc::ScriptedTransport;
+namespace {
 
 struct AddParams {
     std::int64_t a = 0;
@@ -61,20 +57,26 @@ struct Notification {
     NoteParams params;
 };
 
+}  // namespace
 }  // namespace kota::ipc::lsp
 
+namespace kota::ipc::protocol {
+
 template <>
-struct kota::ipc::protocol::RequestTraits<kota::ipc::lsp::AddParams> {
-    using Result = kota::ipc::lsp::AddResult;
+struct RequestTraits<lsp::AddParams> {
+    using Result = lsp::AddResult;
     constexpr inline static std::string_view method = "test/add";
 };
 
 template <>
-struct kota::ipc::protocol::NotificationTraits<kota::ipc::lsp::NoteParams> {
+struct NotificationTraits<lsp::NoteParams> {
     constexpr inline static std::string_view method = "test/note";
 };
 
+}  // namespace kota::ipc::protocol
+
 namespace kota::ipc::lsp {
+namespace {
 
 TEST_SUITE(language_jsonrpc_traits) {
 
@@ -86,17 +88,17 @@ TEST_CASE(traits_dispatch_order) {
     });
     auto* transport_ptr = transport.get();
 
-    kota::event_loop loop;
-    ipc::JsonPeer peer(loop, std::move(transport));
+    event_loop loop;
+    JsonPeer peer(loop, std::move(transport));
     std::vector<std::string> order;
     bool second_saw_first = false;
     bool first_seen = false;
 
-    peer.on_request([&](ipc::JsonPeer::RequestContext&,
-                        const AddParams& params) -> ipc::RequestResult<AddParams> {
-        order.emplace_back("request");
-        co_return AddResult{.sum = params.a + params.b};
-    });
+    peer.on_request(
+        [&](JsonPeer::RequestContext&, const AddParams& params) -> RequestResult<AddParams> {
+            order.emplace_back("request");
+            co_return AddResult{.sum = params.a + params.b};
+        });
 
     peer.on_notification([&](const NoteParams& params) {
         if(params.text == "first") {
@@ -135,14 +137,14 @@ TEST_CASE(explicit_method) {
     });
     auto* transport_ptr = transport.get();
 
-    kota::event_loop loop;
-    ipc::JsonPeer peer(loop, std::move(transport));
+    event_loop loop;
+    JsonPeer peer(loop, std::move(transport));
     std::string request_method;
     std::vector<std::string> notifications;
 
     peer.on_request("custom/add",
-                    [&](ipc::JsonPeer::RequestContext& context,
-                        const AddParams& params) -> ipc::RequestResult<AddParams> {
+                    [&](JsonPeer::RequestContext& context,
+                        const AddParams& params) -> RequestResult<AddParams> {
                         request_method = std::string(context.method);
                         co_return AddResult{.sum = params.a + params.b};
                     });
@@ -188,13 +190,13 @@ TEST_CASE(request_notify_apis) {
         });
     auto* transport_ptr = transport.get();
 
-    kota::event_loop loop;
-    ipc::JsonPeer peer(loop, std::move(transport));
+    event_loop loop;
+    JsonPeer peer(loop, std::move(transport));
     std::string request_method;
     protocol::integer request_id = 0;
 
-    peer.on_request([&](ipc::JsonPeer::RequestContext& context,
-                        const AddParams& params) -> ipc::RequestResult<AddParams> {
+    peer.on_request([&](JsonPeer::RequestContext& context,
+                        const AddParams& params) -> RequestResult<AddParams> {
         request_method = std::string(context.method);
         request_id = static_cast<protocol::integer>(std::get<std::int64_t>(context.id));
 
@@ -264,4 +266,5 @@ TEST_CASE(request_notify_apis) {
 
 };  // TEST_SUITE(language_jsonrpc_traits)
 
+}  // namespace
 }  // namespace kota::ipc::lsp

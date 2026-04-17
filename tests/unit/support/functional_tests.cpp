@@ -6,7 +6,8 @@
 #include "kota/zest/zest.h"
 #include "kota/support/functional.h"
 
-using namespace kota;
+namespace kota {
+namespace {
 
 // --- Helpers ---
 
@@ -661,3 +662,6 @@ TEST_CASE(mem_fn_const) {
 };
 
 };  // TEST_SUITE(functional)
+
+}  // namespace
+}  // namespace kota

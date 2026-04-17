@@ -2,6 +2,7 @@
 #include "kota/zest/zest.h"
 
 namespace kota::ipc {
+namespace {
 
 // ============================================================================
 // Group 5: Peer — lifecycle & error handling
@@ -190,4 +191,5 @@ TEST_CASE(close_idempotent) {
 
 };  // TEST_SUITE(ipc_peer_lifecycle)
 
+}  // namespace
 }  // namespace kota::ipc

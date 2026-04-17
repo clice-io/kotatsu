@@ -45,12 +45,6 @@ task<> write_notification_then_response(int fd, event_loop& loop) {
     co_return;
 }
 
-}  // namespace
-
-}  // namespace kota::ipc
-
-namespace kota::ipc {
-
 TEST_SUITE(ipc_peer) {
 
 TEST_CASE(traits_dispatch_order) {
@@ -1113,4 +1107,5 @@ TEST_CASE(outbound_request) {
 
 };  // TEST_SUITE(ipc_peer_camel_case)
 
+}  // namespace
 }  // namespace kota::ipc

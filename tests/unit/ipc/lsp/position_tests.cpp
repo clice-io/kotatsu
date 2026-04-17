@@ -4,6 +4,7 @@
 #include "kota/ipc/lsp/position.h"
 
 namespace kota::ipc::lsp {
+namespace {
 
 TEST_SUITE(language_position) {
 
@@ -276,4 +277,5 @@ TEST_CASE(to_offset_character_out_of_range) {
 
 };  // TEST_SUITE(language_position)
 
+}  // namespace
 }  // namespace kota::ipc::lsp

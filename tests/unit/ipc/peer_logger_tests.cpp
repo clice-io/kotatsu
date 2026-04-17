@@ -8,6 +8,7 @@
 #include "kota/async/async.h"
 
 namespace kota::ipc {
+namespace {
 
 struct LogEntry {
     LogLevel level;
@@ -185,4 +186,5 @@ TEST_CASE(read_loop_lifecycle) {
 
 };  // TEST_SUITE(ipc_peer_logger)
 
+}  // namespace
 }  // namespace kota::ipc
