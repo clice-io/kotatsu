@@ -14,7 +14,7 @@
 #include "kota/zest/zest.h"
 #include "kota/meta/attrs.h"
 #include "kota/codec/flatbuffers/flatbuffers.h"
-#include <flatbuffers/flatbuffers.h>
+#include "flatbuffers/flatbuffers.h"
 
 namespace kota::codec {
 

@@ -19,7 +19,7 @@
 #include "kota/codec/flatbuffers/schema.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
-#include <flatbuffers/flatbuffers.h>
+#include "flatbuffers/flatbuffers.h"
 #else
 #error                                                                                             \
     "flatbuffers/flatbuffers.h not found. Enable KOTA_CODEC_ENABLE_FLATBUFFERS or add flatbuffers include paths."

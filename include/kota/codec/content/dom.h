@@ -17,7 +17,7 @@
 #include <vector>
 
 #if __has_include(<yyjson.h>)
-#include <yyjson.h>
+#include "yyjson.h"
 #else
 #error "yyjson.h not found. Enable KOTA_CODEC_ENABLE_YYJSON or add yyjson include paths."
 #endif

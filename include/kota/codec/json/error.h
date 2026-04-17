@@ -6,14 +6,14 @@
 #include "kota/codec/error.h"
 
 #if __has_include(<simdjson.h>)
-#include <simdjson.h>
+#include "simdjson.h"
 #define KOTA_CODEC_JSON_ERROR_HAS_SIMDJSON 1
 #else
 #define KOTA_CODEC_JSON_ERROR_HAS_SIMDJSON 0
 #endif
 
 #if __has_include(<yyjson.h>)
-#include <yyjson.h>
+#include "yyjson.h"
 #define KOTA_CODEC_JSON_ERROR_HAS_YYJSON 1
 #else
 #define KOTA_CODEC_JSON_ERROR_HAS_YYJSON 0

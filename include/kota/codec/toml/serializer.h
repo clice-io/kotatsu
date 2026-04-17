@@ -20,7 +20,7 @@
 #include "kota/codec/toml/error.h"
 
 #if __has_include(<toml++/toml.hpp>)
-#include <toml++/toml.hpp>
+#include "toml++/toml.hpp"
 #else
 #error "toml++/toml.hpp not found. Enable KOTA_CODEC_ENABLE_TOML or add tomlplusplus include paths."
 #endif
