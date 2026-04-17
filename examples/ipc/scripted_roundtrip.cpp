@@ -63,7 +63,7 @@ public:
         if(write_hook) {
             write_hook(payload, *this);
         }
-        co_return et::outcome_value();
+        co_return;
     }
 
     void push_incoming(std::string payload) {
@@ -71,9 +71,10 @@ public:
         readable.set();
     }
 
-    void close() {
+    ipc::Result<void> close() override {
         closed = true;
         readable.set();
+        return {};
     }
 
     const std::vector<std::string>& outgoing() const {
