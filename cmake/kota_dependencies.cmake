@@ -68,16 +68,26 @@ function(kota_silence_third_party_target target)
         return()
     endif()
 
+    # Consumers of this target see its include dirs as SYSTEM, so warnings from
+    # the third-party headers do not trip our /WX or -Werror in translation units
+    # that only include (but don't compile) the dependency.
+    get_target_property(existing_includes ${target} INTERFACE_INCLUDE_DIRECTORIES)
+    if(existing_includes)
+        set_target_properties(${target} PROPERTIES
+            INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${existing_includes}")
+    endif()
+
     get_target_property(target_type ${target} TYPE)
     if(target_type STREQUAL "INTERFACE_LIBRARY")
         return()
     endif()
 
-    get_target_property(existing_opts ${target} COMPILE_OPTIONS)
-    if(existing_opts)
-        list(FILTER existing_opts EXCLUDE REGEX "^[-/](W[0-4X]|Wall|Wextra|Wpedantic|Werror)$")
-        set_target_properties(${target} PROPERTIES COMPILE_OPTIONS "${existing_opts}")
-    endif()
+    # Wipe the target's direct COMPILE_OPTIONS (including generator expressions
+    # like cpptrace's `$<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive->`) so /W4 or
+    # -Wall from the dependency does not land on the command line alongside the
+    # /W0 / -w we add below. Directory-level or CMAKE_*_FLAGS-level options are
+    # untouched; we only need to neutralize the dependency's own warning opt-ins.
+    set_target_properties(${target} PROPERTIES COMPILE_OPTIONS "")
 
     target_compile_options(${target} PRIVATE
         $<$<BOOL:${MSVC}>:/W0>

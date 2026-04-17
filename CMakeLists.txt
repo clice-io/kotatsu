@@ -168,6 +168,11 @@ if(MSVC)
         /utf-8
         /W4
         /WX
+        # Suppress warnings from headers in directories flagged as SYSTEM
+        # (e.g. via kota_silence_third_party_target's
+        # INTERFACE_SYSTEM_INCLUDE_DIRECTORIES), so /WX does not promote
+        # third-party header warnings into our errors.
+        /external:W0
         $<$<BOOL:${KOTA_ENABLE_EXCEPTIONS}>:/EHsc>
         $<$<NOT:$<BOOL:${KOTA_ENABLE_EXCEPTIONS}>>:/EHs-c->
         $<$<NOT:$<BOOL:${KOTA_ENABLE_EXCEPTIONS}>>:/wd4530>
