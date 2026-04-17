@@ -63,12 +63,12 @@ using build_slots_t =
 template <typename T, typename Config = default_config>
     requires meta::reflectable_class<T>
 struct virtual_schema {
-    constexpr static std::size_t count = detail::struct_info_node<T, Config>::count;
-    constexpr static auto& fields = detail::struct_info_node<T, Config>::fields;
+    constexpr static std::size_t count = detail::type_instance<T, Config>::count;
+    constexpr static auto& fields = detail::type_instance<T, Config>::fields;
     using slots = detail::build_slots_t<T, Config>;
     constexpr static bool is_trivially_copyable =
-        detail::struct_info_node<T, Config>::is_trivially_copyable;
-    constexpr static bool deny_unknown = detail::struct_info_node<T, Config>::deny_unknown;
+        detail::type_instance<T, Config>::is_trivially_copyable;
+    constexpr static bool deny_unknown = detail::type_instance<T, Config>::deny_unknown;
 };
 
 namespace detail {
