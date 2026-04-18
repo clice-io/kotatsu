@@ -585,7 +585,7 @@ struct type_instance_impl<T, Config, type_kind::structure> {
         {type_kind::structure, meta::type_name<wire_t>()},
         deny_unknown,
         is_trivially_copyable,
-        {fields.data(), count},
+        {fields.data(),        count                    },
     };
 };
 

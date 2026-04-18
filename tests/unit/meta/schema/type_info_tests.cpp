@@ -565,8 +565,8 @@ TEST_CASE(value_copy_all_kinds) {
 
     // array
     {
-        constexpr auto v = *static_cast<const array_type_info*>(
-            type_info_of<std::vector<int>, default_config>());
+        constexpr auto v =
+            *static_cast<const array_type_info*>(type_info_of<std::vector<int>, default_config>());
         static_assert(v.kind == type_kind::array);
         static_assert(v.element()->kind == type_kind::int32);
     }
