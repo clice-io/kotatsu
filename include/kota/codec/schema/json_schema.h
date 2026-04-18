@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cctype>
 #include <cstdint>
 #include <format>
 #include <iterator>
@@ -12,24 +11,9 @@
 #include <vector>
 
 #include "kota/meta/type_info.h"
+#include "kota/support/naming.h"
 
 namespace kota::codec::schema::json_schema {
-
-inline std::string normalize_name(std::string_view text) {
-    std::string out;
-    out.reserve(text.size());
-    for(char c: text) {
-        const unsigned char u = static_cast<unsigned char>(c);
-        out.push_back(std::isalnum(u) ? c : '_');
-    }
-    if(out.empty()) {
-        return "Unnamed";
-    }
-    if(std::isdigit(static_cast<unsigned char>(out.front()))) {
-        out.insert(out.begin(), '_');
-    }
-    return out;
-}
 
 class emitter {
     using tk = meta::type_kind;
@@ -98,7 +82,7 @@ private:
         if(i < vi->alt_names.size()) {
             return std::string(vi->alt_names[i]);
         }
-        return normalize_name(vi->alternatives[i]().type_name);
+        return kota::naming::normalize_identifier(vi->alternatives[i]().type_name);
     }
 
     void write_schema(const meta::type_info* ti) {
@@ -152,7 +136,7 @@ private:
             return;
         }
         auto* si = static_cast<const meta::struct_type_info*>(ti);
-        auto name = normalize_name(ti->type_name);
+        auto name = kota::naming::normalize_identifier(ti->type_name);
         visited.insert(name);
 
         out += ',';
@@ -250,7 +234,7 @@ private:
     }
 
     void write_struct_ref(const meta::type_info* ti) {
-        auto name = normalize_name(ti->type_name);
+        auto name = kota::naming::normalize_identifier(ti->type_name);
         ensure_struct_def(ti, name);
         out += '{';
         key("$ref");
