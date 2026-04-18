@@ -17,10 +17,14 @@
 
 #include "kota/support/expected_try.h"
 #include "kota/support/ranges.h"
+#include "kota/support/type_list.h"
 #include "kota/codec/config.h"
 #include "kota/codec/detail/common.h"
 #include "kota/codec/flatbuffers/schema.h"
 #include "kota/codec/flatbuffers/serializer.h"
+#include "kota/meta/attrs.h"
+#include "kota/meta/enum.h"
+#include "kota/meta/schema.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
 #include "flatbuffers/flatbuffers.h"
@@ -45,10 +49,15 @@ using codec::detail::clean_t;
 using codec::detail::remove_annotation_t;
 using codec::detail::remove_optional_t;
 
+// Matches serializer::encode_root: a type is "unboxed" at root iff it maps to a
+// FlatBuffers table directly — a user-defined reflectable struct (not an inline
+// struct, not a stdlib aggregate such as std::array), a tuple/pair, or a
+// variant. Everything else is boxed inside a single-field wrapper table.
 template <typename T>
 constexpr bool root_unboxed_v =
-    (meta::reflectable_class<T> && !can_inline_struct_v<T>) || is_pair_v<T> || is_tuple_v<T> ||
-    is_specialization_of<std::variant, T>;
+    (meta::reflectable_class<T> && !can_inline_struct_v<T> && !std::ranges::input_range<T> &&
+     !is_pair_v<T> && !is_tuple_v<T>) ||
+    is_pair_v<T> || is_tuple_v<T> || is_specialization_of<std::variant, T>;
 
 inline auto field_voffset(std::size_t index) -> ::flatbuffers::voffset_t {
     return static_cast<::flatbuffers::voffset_t>(static_cast<std::size_t>(first_field) +
@@ -87,6 +96,7 @@ public:
     }
 
 private:
+    // === Root entry =========================================================
     template <typename T>
     auto decode_root_value(T& out) const -> status_t {
         using U = std::remove_cvref_t<T>;
@@ -128,7 +138,8 @@ private:
                         }
                     }
 
-                    auto status = decode_field(root, first_field, out.value(), true);
+                    auto status = collect_decode_field<value_t, std::tuple<>>(
+                        root, first_field, out.value(), true);
                     if(!status) {
                         out.reset();
                         return status;
@@ -142,69 +153,87 @@ private:
         } else if constexpr(root_unboxed_v<clean_u_t>) {
             return decode_unboxed(root, out);
         } else {
-            return decode_field(root, first_field, out, true);
+            return collect_decode_field<U, std::tuple<>>(root, first_field, out, true);
         }
     }
 
     template <typename T>
     auto decode_unboxed(const ::flatbuffers::Table* table, T& out) const -> status_t {
         using U = clean_t<T>;
-        if constexpr(meta::reflectable_class<U> && !can_inline_struct_v<U>) {
-            return decode_table(table, out);
-        } else if constexpr(is_pair_v<U> || is_tuple_v<U>) {
+        if constexpr(is_pair_v<U> || is_tuple_v<U>) {
             return decode_tuple(table, out);
         } else if constexpr(is_specialization_of<std::variant, U>) {
             return decode_variant(table, out);
+        } else if constexpr(meta::reflectable_class<U> && !can_inline_struct_v<U> &&
+                            !std::ranges::input_range<U>) {
+            return decode_struct(table, out);
         } else {
             return std::unexpected(object_error_code::unsupported_type);
         }
     }
 
+    // === Struct decoding via virtual_schema =================================
     template <typename T>
-    auto decode_table(const ::flatbuffers::Table* table, T& out) const -> status_t {
+    auto decode_struct(const ::flatbuffers::Table* table, T& out) const -> status_t {
         using U = std::remove_cvref_t<T>;
-        static_assert(meta::reflectable_class<U>, "decode_table requires reflectable class");
+        static_assert(meta::reflectable_class<U>, "decode_struct requires reflectable class");
 
         if(table == nullptr) {
             return std::unexpected(object_error_code::invalid_state);
         }
 
-        std::expected<void, object_error_code> result{};
-        meta::for_each(out, [&](auto field) {
-            const auto field_id = field_voffset(field.index());
-            auto status = decode_field(table, field_id, field.value(), false);
-            if(!status) {
-                result = std::unexpected(status.error());
-                return false;
-            }
-            return true;
-        });
-        if(!result) {
-            return std::unexpected(result.error());
+        using schema = meta::virtual_schema<U, config::default_config>;
+        using slots = typename schema::slots;
+        constexpr std::size_t N = kota::type_list_size_v<slots>;
+
+        status_t status{};
+        bool ok = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+            return (this->template decode_struct_slot<U, Is>(table, out, status) && ...);
+        }(std::make_index_sequence<N>{});
+
+        if(!ok) {
+            return std::unexpected(status.error());
         }
         return {};
     }
 
+    template <typename T, std::size_t I>
+    auto decode_struct_slot(const ::flatbuffers::Table* table, T& out, status_t& status) const
+        -> bool {
+        using schema = meta::virtual_schema<T, config::default_config>;
+        using slot_t = kota::type_list_element_t<I, typename schema::slots>;
+        // `field_type<T, I>` is derived from pointers captured against a const
+        // instance, so slot_t::raw_type is cv-qualified. Strip const so we can
+        // decode into the field in place.
+        using raw_t = std::remove_cv_t<typename slot_t::raw_type>;
+        using attrs_t = typename slot_t::attrs;
+
+        constexpr std::size_t offset = schema::fields[I].offset;
+        constexpr std::size_t physical_index = schema::fields[I].physical_index;
+
+        auto* base = reinterpret_cast<std::byte*>(std::addressof(out));
+        auto& field_value = *reinterpret_cast<raw_t*>(base + offset);
+
+        const auto voffset = field_voffset(physical_index);
+
+        auto r = collect_decode_field<raw_t, attrs_t>(table, voffset, field_value, /*required=*/false);
+        if(!r) {
+            status = std::unexpected(r.error());
+            return false;
+        }
+        return true;
+    }
+
+    // === Tuple ==============================================================
     template <typename T>
     auto decode_tuple(const ::flatbuffers::Table* table, T& out) const -> status_t {
         if(table == nullptr) {
             return std::unexpected(object_error_code::invalid_state);
         }
 
-        std::expected<void, object_error_code> status{};
-        auto decode_one = [&](auto index_c, auto& element) {
-            constexpr std::size_t index = decltype(index_c)::value;
-            const auto field = field_voffset(index);
-            auto decoded = decode_field(table, field, element, false);
-            if(!decoded) {
-                status = std::unexpected(decoded.error());
-                return false;
-            }
-            return true;
-        };
-
+        status_t status{};
         const bool ok = [&]<std::size_t... I>(std::index_sequence<I...>) {
-            return (decode_one(std::integral_constant<std::size_t, I>{}, std::get<I>(out)) && ...);
+            return (this->template decode_tuple_element<T, I>(table, out, status) && ...);
         }(std::make_index_sequence<std::tuple_size_v<std::remove_cvref_t<T>>>{});
 
         if(!ok) {
@@ -213,6 +242,21 @@ private:
         return {};
     }
 
+    template <typename Tuple, std::size_t I>
+    auto decode_tuple_element(const ::flatbuffers::Table* table, Tuple& out, status_t& status) const
+        -> bool {
+        using element_t = std::tuple_element_t<I, std::remove_cvref_t<Tuple>>;
+        const auto vo = field_voffset(I);
+        auto r = collect_decode_field<element_t, std::tuple<>>(
+            table, vo, std::get<I>(out), /*required=*/false);
+        if(!r) {
+            status = std::unexpected(r.error());
+            return false;
+        }
+        return true;
+    }
+
+    // === Variant ============================================================
     template <typename T>
     auto decode_variant(const ::flatbuffers::Table* table, T& out) const -> status_t {
         using U = std::remove_cvref_t<T>;
@@ -231,7 +275,7 @@ private:
             return std::unexpected(object_error_code::invalid_state);
         }
 
-        std::expected<void, object_error_code> status{};
+        status_t status{};
         bool matched = false;
         [&]<std::size_t... I>(std::index_sequence<I...>) {
             (([&] {
@@ -245,7 +289,8 @@ private:
                          return std::unexpected(object_error_code::unsupported_type);
                      } else {
                          alt_t alt{};
-                         auto decoded = decode_field(table, value_field, alt, true);
+                         auto decoded = collect_decode_field<alt_t, std::tuple<>>(
+                             table, value_field, alt, /*required=*/true);
                          if(!decoded) {
                              return std::unexpected(decoded.error());
                          }
@@ -266,6 +311,7 @@ private:
         return {};
     }
 
+    // === Sequence ===========================================================
     template <typename T>
     auto decode_sequence(const ::flatbuffers::Table* table,
                          ::flatbuffers::voffset_t field,
@@ -462,7 +508,7 @@ private:
                     dec_t element{};
                     const auto* nested = vector->GetAs<::flatbuffers::Table>(
                         static_cast<::flatbuffers::uoffset_t>(i));
-                    KOTA_EXPECTED_TRY(decode_table(nested, element));
+                    KOTA_EXPECTED_TRY(decode_struct(nested, element));
                     KOTA_EXPECTED_TRY(store_element(std::move(element)));
                 }
             }
@@ -489,6 +535,7 @@ private:
         }
     }
 
+    // === Map ================================================================
     template <typename T>
     auto decode_map(const ::flatbuffers::Table* table,
                     ::flatbuffers::voffset_t field,
@@ -526,8 +573,10 @@ private:
 
             key_t key{};
             mapped_t mapped{};
-            KOTA_EXPECTED_TRY(decode_field(entry, first_field, key, true));
-            KOTA_EXPECTED_TRY(decode_field(entry, field_voffset(1), mapped, true));
+            KOTA_EXPECTED_TRY(
+                (collect_decode_field<key_t, std::tuple<>>(entry, first_field, key, true)));
+            KOTA_EXPECTED_TRY((collect_decode_field<mapped_t, std::tuple<>>(
+                entry, field_voffset(1), mapped, true)));
 
             auto ok = kota::detail::insert_map_entry(out, std::move(key), std::move(mapped));
             if(!ok) {
@@ -538,16 +587,81 @@ private:
         return {};
     }
 
-    template <typename T>
-    auto decode_field(const ::flatbuffers::Table* table,
-                      ::flatbuffers::voffset_t field,
-                      T& out,
-                      bool required) const -> status_t {
-        using U = std::remove_cvref_t<T>;
+    // === Field-level entry (applies behavior attrs, then dispatches) ========
+    template <typename Raw, typename Attrs, typename V>
+    auto collect_decode_field(const ::flatbuffers::Table* table,
+                              ::flatbuffers::voffset_t voffset,
+                              V& out,
+                              bool required) const -> status_t {
+        using U = std::remove_cvref_t<V>;
+
+        // Strip annotation transparently; attrs from the slot already apply.
+        if constexpr(meta::annotated_type<U>) {
+            using inner = typename U::annotated_type;
+            return collect_decode_field<inner, Attrs>(
+                table, voffset, meta::annotated_value(out), required);
+        } else if constexpr(kota::tuple_has_spec_v<Attrs, meta::behavior::as>) {
+            using target = typename kota::tuple_find_spec_t<Attrs, meta::behavior::as>::target;
+            if(!has_field(table, voffset)) {
+                if(required) {
+                    return std::unexpected(object_error_code::invalid_state);
+                }
+                return {};
+            }
+            target tmp{};
+            KOTA_EXPECTED_TRY(
+                (collect_decode_field<target, std::tuple<>>(table, voffset, tmp, true)));
+            out = static_cast<U>(std::move(tmp));
+            return {};
+        } else if constexpr(kota::tuple_has_spec_v<Attrs, meta::behavior::enum_string>) {
+            using clean_u = detail::clean_t<U>;
+            static_assert(std::is_enum_v<clean_u>, "enum_string requires an enum type");
+            if(!has_field(table, voffset)) {
+                if(required) {
+                    return std::unexpected(object_error_code::invalid_state);
+                }
+                return {};
+            }
+            std::string name;
+            KOTA_EXPECTED_TRY(
+                (collect_decode_field<std::string, std::tuple<>>(table, voffset, name, true)));
+            auto parsed = meta::enum_value<clean_u>(name);
+            if(!parsed.has_value()) {
+                return std::unexpected(object_error_code::invalid_state);
+            }
+            out = static_cast<U>(*parsed);
+            return {};
+        } else if constexpr(kota::tuple_has_spec_v<Attrs, meta::behavior::with>) {
+            using adapter =
+                typename kota::tuple_find_spec_t<Attrs, meta::behavior::with>::adapter;
+            using wire_t = typename adapter::wire_type;
+            if(!has_field(table, voffset)) {
+                if(required) {
+                    return std::unexpected(object_error_code::invalid_state);
+                }
+                return {};
+            }
+            wire_t wire{};
+            KOTA_EXPECTED_TRY(
+                (collect_decode_field<wire_t, std::tuple<>>(table, voffset, wire, true)));
+            out = static_cast<U>(adapter::from_wire(std::move(wire)));
+            return {};
+        } else {
+            return dispatch_decode_field(table, voffset, out, required);
+        }
+    }
+
+    // === Type-based dispatch (no attrs) =====================================
+    template <typename V>
+    auto dispatch_decode_field(const ::flatbuffers::Table* table,
+                               ::flatbuffers::voffset_t field,
+                               V& out,
+                               bool required) const -> status_t {
+        using U = std::remove_cvref_t<V>;
         using clean_u_t = clean_t<U>;
 
         if constexpr(meta::annotated_type<U>) {
-            return decode_field(table, field, meta::annotated_value(out), required);
+            return dispatch_decode_field(table, field, meta::annotated_value(out), required);
         } else if constexpr(is_specialization_of<std::optional, U>) {
             using value_t = typename U::value_type;
             if(!has_field(table, field)) {
@@ -563,7 +677,8 @@ private:
                 }
             }
 
-            auto status = decode_field(table, field, out.value(), true);
+            auto status = collect_decode_field<value_t, std::tuple<>>(
+                table, field, out.value(), /*required=*/true);
             if(!status) {
                 out.reset();
                 return status;
@@ -582,7 +697,8 @@ private:
             }
 
             auto value = std::make_unique<value_t>();
-            auto status = decode_field(table, field, *value, true);
+            auto status = collect_decode_field<value_t, std::tuple<>>(
+                table, field, *value, /*required=*/true);
             if(!status) {
                 return status;
             }
@@ -599,7 +715,8 @@ private:
             }
 
             auto value = std::make_shared<value_t>();
-            auto status = decode_field(table, field, *value, true);
+            auto status = collect_decode_field<value_t, std::tuple<>>(
+                table, field, *value, /*required=*/true);
             if(!status) {
                 return status;
             }
@@ -687,7 +804,7 @@ private:
                 return {};
             } else if constexpr(meta::reflectable_class<clean_u_t>) {
                 const auto* nested = table->GetPointer<const ::flatbuffers::Table*>(field);
-                return decode_table(nested, out);
+                return decode_struct(nested, out);
             } else {
                 return std::unexpected(object_error_code::unsupported_type);
             }
@@ -704,7 +821,7 @@ private:
         } else if constexpr(root_unboxed_v<clean_u_t>) {
             return decode_unboxed(table, out);
         } else {
-            return decode_field(table, first_field, out, true);
+            return collect_decode_field<U, std::tuple<>>(table, first_field, out, true);
         }
     }
 
