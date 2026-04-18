@@ -38,8 +38,8 @@ enum ColorUnscoped : std::int32_t {
     blue_unscoped = 2,
 };
 
-enum class color { red, green, blue };
+enum class Color { red, green, blue };
 
-enum class small_enum : std::int8_t { a = 1, b = 2 };
+enum class SmallEnum : std::int8_t { a = 1, b = 2 };
 
 }  // namespace kota::meta::fixtures

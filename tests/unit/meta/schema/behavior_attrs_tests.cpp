@@ -85,7 +85,7 @@ TEST_CASE(enum_string) {
     // Verify slot types
     using slots = virtual_schema<fx::EnumStringStruct>::slots;
     using slot0 = type_list_element_t<0, slots>;
-    EXPECT_TRUE((std::is_same_v<typename slot0::raw_type, fx::color>));
+    EXPECT_TRUE((std::is_same_v<typename slot0::raw_type, fx::Color>));
     EXPECT_TRUE((std::is_same_v<typename slot0::wire_type, std::string_view>));
 
     // plain int is unaffected

@@ -56,16 +56,16 @@ struct AsOptionalStruct {
 };
 
 struct EnumStringStruct {
-    annotation<color, behavior::enum_string<rename_policy::identity>> color_field;
+    annotation<Color, behavior::enum_string<rename_policy::identity>> color_field;
     int count;
 };
 
 struct EnumStringCamelStruct {
-    annotation<color, behavior::enum_string<rename_policy::lower_camel>> color_field;
+    annotation<Color, behavior::enum_string<rename_policy::lower_camel>> color_field;
 };
 
 struct EnumStringUpperSnakeStruct {
-    annotation<color, behavior::enum_string<rename_policy::upper_snake>> color_field;
+    annotation<Color, behavior::enum_string<rename_policy::upper_snake>> color_field;
 };
 
 struct SkipIfEmptyStringStruct {

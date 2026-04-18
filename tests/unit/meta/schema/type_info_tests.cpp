@@ -67,7 +67,7 @@ TEST_CASE(scalar_helpers) {
     EXPECT_FALSE(str_info.is_numeric());
 
     // enum: scalar but not numeric
-    constexpr auto enum_info = type_info_of<fx::color, default_config>();
+    constexpr auto enum_info = type_info_of<fx::Color, default_config>();
     EXPECT_EQ(enum_info.kind, type_kind::enumeration);
     EXPECT_TRUE(enum_info.is_scalar());
     EXPECT_FALSE(enum_info.is_numeric());
@@ -473,7 +473,7 @@ TEST_CASE(cv_canonicalization_all_kinds) {
     static_assert(&type_info_of<bool>() == &type_info_of<const bool>());
 
     // enum
-    static_assert(&type_info_of<fx::color>() == &type_info_of<const fx::color>());
+    static_assert(&type_info_of<fx::Color>() == &type_info_of<const fx::Color>());
 
     // containers: array / set / map / optional / pointer
     static_assert(&type_info_of<std::vector<int>>() == &type_info_of<const std::vector<int>>());

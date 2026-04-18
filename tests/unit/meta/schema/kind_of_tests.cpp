@@ -40,8 +40,8 @@ TEST_CASE(scalars) {
 }
 
 TEST_CASE(enums) {
-    EXPECT_EQ(kind_of<fx::color>(), type_kind::enumeration);
-    EXPECT_EQ(kind_of<fx::small_enum>(), type_kind::enumeration);
+    EXPECT_EQ(kind_of<fx::Color>(), type_kind::enumeration);
+    EXPECT_EQ(kind_of<fx::SmallEnum>(), type_kind::enumeration);
 }
 
 TEST_CASE(compounds) {
