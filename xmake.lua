@@ -332,6 +332,7 @@ if has_config("test") and has_config("ztest") then
 		set_default(false)
 		set_kind("binary")
 		add_rules("cl-flags")
+		add_includedirs("tests")
 		add_files(
 			"tests/unit/main.cpp",
 			"tests/unit/support/**.cpp",
