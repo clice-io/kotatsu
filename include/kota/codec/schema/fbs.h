@@ -3,9 +3,10 @@
 #include <cstdint>
 #include <format>
 #include <iterator>
-#include <set>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "kota/meta/type_info.h"
 #include "kota/support/naming.h"
@@ -26,14 +27,12 @@ public:
         }
         const auto* ti = unwrap(&root);
         emit_object(ti);
-        std::format_to(std::back_inserter(out),
-                       "root_type {};\n",
-                       kota::naming::normalize_identifier(ti->type_name));
+        std::format_to(std::back_inserter(out), "root_type {};\n", canonical_name(ti));
         return std::move(out);
     }
 
 private:
-    const static meta::type_info* unwrap(const meta::type_info* ti) {
+    static const meta::type_info* unwrap(const meta::type_info* ti) {
         while(ti->kind == tk::optional || ti->kind == tk::pointer) {
             ti = &static_cast<const meta::optional_type_info*>(ti)->inner();
         }
@@ -77,7 +76,8 @@ private:
         }
     }
 
-    static bool is_fbs_struct(const meta::type_info* ti) {
+    static bool is_fbs_struct(const meta::type_info* ti,
+                              std::unordered_set<const meta::type_info*>& visited) {
         if(ti->kind != tk::structure) {
             return false;
         }
@@ -85,16 +85,38 @@ private:
         if(!si->is_trivial_layout) {
             return false;
         }
+        if(!visited.insert(ti).second) {
+            return true;
+        }
         for(const auto& field: si->fields) {
             auto* ft = unwrap(&field.type());
             if(is_fbs_scalar(ft->kind)) {
                 continue;
             }
-            if(!is_fbs_struct(ft)) {
+            if(!is_fbs_struct(ft, visited)) {
                 return false;
             }
         }
         return true;
+    }
+
+    static bool is_fbs_struct(const meta::type_info* ti) {
+        std::unordered_set<const meta::type_info*> visited;
+        return is_fbs_struct(ti, visited);
+    }
+
+    const std::string& canonical_name(const meta::type_info* ti) {
+        auto it = type_names.find(ti);
+        if(it != type_names.end()) {
+            return it->second;
+        }
+        auto base = kota::naming::normalize_identifier(ti->type_name);
+        auto name = base;
+        for(std::size_t counter = 2; used_names.contains(name); ++counter) {
+            name = std::format("{}_{}", base, counter);
+        }
+        used_names.insert(name);
+        return type_names.emplace(ti, std::move(name)).first->second;
     }
 
     std::string wire_fbs_name(const meta::type_info* ti) {
@@ -114,7 +136,7 @@ private:
             case tk::character: return std::string(scalar_fbs_name(ti->kind));
             case tk::bytes: return "[ubyte]";
             case tk::enumeration:
-            case tk::structure: return kota::naming::normalize_identifier(ti->type_name);
+            case tk::structure: return canonical_name(ti);
             case tk::string: return "string";
             case tk::array:
             case tk::set: {
@@ -170,10 +192,10 @@ private:
     }
 
     void emit_enum(const meta::type_info* ti) {
-        auto name = kota::naming::normalize_identifier(ti->type_name);
-        if(!emitted_enums.insert(name).second) {
+        if(!emitted.insert(ti).second) {
             return;
         }
+        const auto& name = canonical_name(ti);
         auto* ei = static_cast<const meta::enum_type_info*>(ti);
         auto it = std::back_inserter(out);
         std::format_to(it, "enum {}:{} {{\n", name, scalar_fbs_name(ei->underlying_kind));
@@ -188,10 +210,10 @@ private:
     }
 
     void emit_object(const meta::type_info* ti) {
-        auto object_name = kota::naming::normalize_identifier(ti->type_name);
-        if(!emitted_objects.insert(object_name).second) {
+        if(!emitted.insert(ti).second) {
             return;
         }
+        const auto& object_name = canonical_name(ti);
 
         auto* si = static_cast<const meta::struct_type_info*>(ti);
         const auto& fields = si->fields;
@@ -240,9 +262,10 @@ private:
     }
 
     std::string out;
-    std::set<std::string> emitted_objects;
-    std::set<std::string> emitted_enums;
-    std::set<std::string> emitted_entries;
+    std::unordered_map<const meta::type_info*, std::string> type_names;
+    std::unordered_set<std::string> used_names;
+    std::unordered_set<const meta::type_info*> emitted;
+    std::unordered_set<std::string> emitted_entries;
 };
 
 inline std::string render(const meta::type_info& root) {

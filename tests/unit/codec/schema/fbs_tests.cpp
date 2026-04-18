@@ -1432,7 +1432,7 @@ root_type set_of_struct;
 // ---------------------------------------------------------------------------
 
 TEST_CASE(normalize_empty) {
-    EXPECT_EQ(kota::naming::normalize_identifier(""), "Unnamed");
+    EXPECT_EQ(kota::naming::normalize_identifier(""), "unnamed");
 }
 
 TEST_CASE(normalize_leading_digit) {

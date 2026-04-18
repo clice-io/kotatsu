@@ -92,7 +92,7 @@ constexpr std::string normalize_identifier(std::string_view text) {
         out.push_back(is_alnum(c) ? c : '_');
     }
     if(out.empty()) {
-        return "Unnamed";
+        return "unnamed";
     }
     if(is_digit(out.front())) {
         out.insert(out.begin(), '_');
