@@ -190,7 +190,7 @@ TEST_CASE(compound_types) {
         EXPECT_EQ(info.kind, type_kind::array);
         EXPECT_FALSE(info.is_scalar());
         auto* arr = static_cast<const array_type_info*>(static_cast<const type_info*>(&info));
-        EXPECT_EQ(arr->element->kind, type_kind::int32);
+        EXPECT_EQ(arr->element()->kind, type_kind::int32);
     }
 
     // set<int> -> set with int32 element
@@ -199,7 +199,7 @@ TEST_CASE(compound_types) {
         EXPECT_EQ(info.kind, type_kind::set);
         EXPECT_FALSE(info.is_scalar());
         auto* arr = static_cast<const array_type_info*>(static_cast<const type_info*>(&info));
-        EXPECT_EQ(arr->element->kind, type_kind::int32);
+        EXPECT_EQ(arr->element()->kind, type_kind::int32);
     }
 
     // map<string, int> -> map with string key, int32 value
@@ -208,8 +208,8 @@ TEST_CASE(compound_types) {
         EXPECT_EQ(info.kind, type_kind::map);
         EXPECT_FALSE(info.is_scalar());
         auto* m = static_cast<const map_type_info*>(static_cast<const type_info*>(&info));
-        EXPECT_EQ(m->key->kind, type_kind::string);
-        EXPECT_EQ(m->value->kind, type_kind::int32);
+        EXPECT_EQ(m->key()->kind, type_kind::string);
+        EXPECT_EQ(m->value()->kind, type_kind::int32);
     }
 
     // optional<int> -> optional with int32 inner
@@ -217,7 +217,7 @@ TEST_CASE(compound_types) {
         constexpr auto& info = *type_info_of<std::optional<int>, default_config>();
         EXPECT_EQ(info.kind, type_kind::optional);
         auto* opt = static_cast<const optional_type_info*>(static_cast<const type_info*>(&info));
-        EXPECT_EQ(opt->inner->kind, type_kind::int32);
+        EXPECT_EQ(opt->inner()->kind, type_kind::int32);
     }
 
     // unique_ptr<int> -> pointer with int32 inner
@@ -225,7 +225,7 @@ TEST_CASE(compound_types) {
         constexpr auto& info = *type_info_of<std::unique_ptr<int>, default_config>();
         EXPECT_EQ(info.kind, type_kind::pointer);
         auto* ptr = static_cast<const optional_type_info*>(static_cast<const type_info*>(&info));
-        EXPECT_EQ(ptr->inner->kind, type_kind::int32);
+        EXPECT_EQ(ptr->inner()->kind, type_kind::int32);
     }
 
     // shared_ptr<string> -> pointer with string inner
@@ -233,7 +233,7 @@ TEST_CASE(compound_types) {
         constexpr auto& info = *type_info_of<std::shared_ptr<std::string>, default_config>();
         EXPECT_EQ(info.kind, type_kind::pointer);
         auto* ptr = static_cast<const optional_type_info*>(static_cast<const type_info*>(&info));
-        EXPECT_EQ(ptr->inner->kind, type_kind::string);
+        EXPECT_EQ(ptr->inner()->kind, type_kind::string);
     }
 
     // variant<int, string> -> variant with 2 alternatives
@@ -242,8 +242,8 @@ TEST_CASE(compound_types) {
         EXPECT_EQ(info.kind, type_kind::variant);
         auto* var = static_cast<const variant_type_info*>(static_cast<const type_info*>(&info));
         EXPECT_EQ(var->alternatives.size(), 2U);
-        EXPECT_EQ(var->alternatives[0]->kind, type_kind::int32);
-        EXPECT_EQ(var->alternatives[1]->kind, type_kind::string);
+        EXPECT_EQ(var->alternatives[0]()->kind, type_kind::int32);
+        EXPECT_EQ(var->alternatives[1]()->kind, type_kind::string);
     }
 
     // pair<int, float> -> tuple with 2 elements
@@ -252,8 +252,8 @@ TEST_CASE(compound_types) {
         EXPECT_EQ(info.kind, type_kind::tuple);
         auto* tup = static_cast<const tuple_type_info*>(static_cast<const type_info*>(&info));
         EXPECT_EQ(tup->elements.size(), 2U);
-        EXPECT_EQ(tup->elements[0]->kind, type_kind::int32);
-        EXPECT_EQ(tup->elements[1]->kind, type_kind::float32);
+        EXPECT_EQ(tup->elements[0]()->kind, type_kind::int32);
+        EXPECT_EQ(tup->elements[1]()->kind, type_kind::float32);
     }
 
     // tuple<int, double, string> -> tuple with 3 elements
@@ -263,9 +263,9 @@ TEST_CASE(compound_types) {
         EXPECT_EQ(info.kind, type_kind::tuple);
         auto* tup = static_cast<const tuple_type_info*>(static_cast<const type_info*>(&info));
         EXPECT_EQ(tup->elements.size(), 3U);
-        EXPECT_EQ(tup->elements[0]->kind, type_kind::int32);
-        EXPECT_EQ(tup->elements[1]->kind, type_kind::float64);
-        EXPECT_EQ(tup->elements[2]->kind, type_kind::string);
+        EXPECT_EQ(tup->elements[0]()->kind, type_kind::int32);
+        EXPECT_EQ(tup->elements[1]()->kind, type_kind::float64);
+        EXPECT_EQ(tup->elements[2]()->kind, type_kind::string);
     }
 
     // SimpleStruct -> structure
@@ -282,9 +282,9 @@ TEST_CASE(nested_type_info) {
         constexpr auto& info = *type_info_of<std::vector<std::optional<int>>, default_config>();
         EXPECT_EQ(info.kind, type_kind::array);
         auto* arr = static_cast<const array_type_info*>(static_cast<const type_info*>(&info));
-        EXPECT_EQ(arr->element->kind, type_kind::optional);
-        auto* opt = static_cast<const optional_type_info*>(arr->element);
-        EXPECT_EQ(opt->inner->kind, type_kind::int32);
+        EXPECT_EQ(arr->element()->kind, type_kind::optional);
+        auto* opt = static_cast<const optional_type_info*>(arr->element());
+        EXPECT_EQ(opt->inner()->kind, type_kind::int32);
     }
 
     // map<string, vector<int>> -> map -> string key, array value -> int32 element
@@ -293,10 +293,10 @@ TEST_CASE(nested_type_info) {
             *type_info_of<std::map<std::string, std::vector<int>>, default_config>();
         EXPECT_EQ(info.kind, type_kind::map);
         auto* m = static_cast<const map_type_info*>(static_cast<const type_info*>(&info));
-        EXPECT_EQ(m->key->kind, type_kind::string);
-        EXPECT_EQ(m->value->kind, type_kind::array);
-        auto* inner_arr = static_cast<const array_type_info*>(m->value);
-        EXPECT_EQ(inner_arr->element->kind, type_kind::int32);
+        EXPECT_EQ(m->key()->kind, type_kind::string);
+        EXPECT_EQ(m->value()->kind, type_kind::array);
+        auto* inner_arr = static_cast<const array_type_info*>(m->value());
+        EXPECT_EQ(inner_arr->element()->kind, type_kind::int32);
     }
 
     // set<vector<string>> -> set -> array -> string
@@ -304,9 +304,9 @@ TEST_CASE(nested_type_info) {
         constexpr auto& info = *type_info_of<std::set<std::vector<std::string>>, default_config>();
         EXPECT_EQ(info.kind, type_kind::set);
         auto* s = static_cast<const array_type_info*>(static_cast<const type_info*>(&info));
-        EXPECT_EQ(s->element->kind, type_kind::array);
-        auto* inner_arr = static_cast<const array_type_info*>(s->element);
-        EXPECT_EQ(inner_arr->element->kind, type_kind::string);
+        EXPECT_EQ(s->element()->kind, type_kind::array);
+        auto* inner_arr = static_cast<const array_type_info*>(s->element());
+        EXPECT_EQ(inner_arr->element()->kind, type_kind::string);
     }
 
     // unique_ptr<vector<int>> -> pointer -> array -> int32
@@ -314,9 +314,9 @@ TEST_CASE(nested_type_info) {
         constexpr auto& info = *type_info_of<std::unique_ptr<std::vector<int>>, default_config>();
         EXPECT_EQ(info.kind, type_kind::pointer);
         auto* ptr = static_cast<const optional_type_info*>(static_cast<const type_info*>(&info));
-        EXPECT_EQ(ptr->inner->kind, type_kind::array);
-        auto* arr = static_cast<const array_type_info*>(ptr->inner);
-        EXPECT_EQ(arr->element->kind, type_kind::int32);
+        EXPECT_EQ(ptr->inner()->kind, type_kind::array);
+        auto* arr = static_cast<const array_type_info*>(ptr->inner());
+        EXPECT_EQ(arr->element()->kind, type_kind::int32);
     }
 }
 
@@ -348,8 +348,8 @@ TEST_CASE(annotated_type_info) {
         auto* var = static_cast<const variant_type_info*>(static_cast<const type_info*>(&info));
         EXPECT_EQ(var->tagging, tag_mode::internal);
         EXPECT_EQ(var->alternatives.size(), 2U);
-        EXPECT_EQ(var->alternatives[0]->kind, type_kind::structure);
-        EXPECT_EQ(var->alternatives[1]->kind, type_kind::structure);
+        EXPECT_EQ(var->alternatives[0]()->kind, type_kind::structure);
+        EXPECT_EQ(var->alternatives[1]()->kind, type_kind::structure);
         EXPECT_EQ(var->tag_field, "kind");
         EXPECT_EQ(var->content_field, "");
         EXPECT_EQ(var->alt_names.size(), 2U);
@@ -379,13 +379,13 @@ TEST_CASE(recursive_tree_node) {
     auto* si = static_cast<const struct_type_info*>(static_cast<const type_info*>(&info));
     EXPECT_EQ(si->fields.size(), 2U);
     EXPECT_EQ(si->fields[0].name, "value");
-    EXPECT_EQ(si->fields[0].type->kind, type_kind::string);
+    EXPECT_EQ(si->fields[0].type()->kind, type_kind::string);
 
     EXPECT_EQ(si->fields[1].name, "children");
-    EXPECT_EQ(si->fields[1].type->kind, type_kind::array);
-    auto* arr = static_cast<const array_type_info*>(si->fields[1].type);
-    EXPECT_EQ(arr->element->kind, type_kind::structure);
-    EXPECT_EQ(arr->element->type_name, info.type_name);
+    EXPECT_EQ(si->fields[1].type()->kind, type_kind::array);
+    auto* arr = static_cast<const array_type_info*>(si->fields[1].type());
+    EXPECT_EQ(arr->element()->kind, type_kind::structure);
+    EXPECT_EQ(arr->element()->type_name, info.type_name);
 }
 
 TEST_CASE(recursive_linked_list_unique_ptr) {
@@ -395,13 +395,13 @@ TEST_CASE(recursive_linked_list_unique_ptr) {
     auto* si = static_cast<const struct_type_info*>(static_cast<const type_info*>(&info));
     EXPECT_EQ(si->fields.size(), 2U);
     EXPECT_EQ(si->fields[0].name, "data");
-    EXPECT_EQ(si->fields[0].type->kind, type_kind::int32);
+    EXPECT_EQ(si->fields[0].type()->kind, type_kind::int32);
 
     EXPECT_EQ(si->fields[1].name, "next");
-    EXPECT_EQ(si->fields[1].type->kind, type_kind::pointer);
-    auto* ptr = static_cast<const optional_type_info*>(si->fields[1].type);
-    EXPECT_EQ(ptr->inner->kind, type_kind::structure);
-    EXPECT_EQ(ptr->inner->type_name, info.type_name);
+    EXPECT_EQ(si->fields[1].type()->kind, type_kind::pointer);
+    auto* ptr = static_cast<const optional_type_info*>(si->fields[1].type());
+    EXPECT_EQ(ptr->inner()->kind, type_kind::structure);
+    EXPECT_EQ(ptr->inner()->type_name, info.type_name);
 }
 
 TEST_CASE(recursive_shared_ptr_with_vector) {
@@ -412,21 +412,21 @@ TEST_CASE(recursive_shared_ptr_with_vector) {
     EXPECT_EQ(si->fields.size(), 3U);
 
     EXPECT_EQ(si->fields[0].name, "label");
-    EXPECT_EQ(si->fields[0].type->kind, type_kind::string);
+    EXPECT_EQ(si->fields[0].type()->kind, type_kind::string);
 
     EXPECT_EQ(si->fields[1].name, "parent");
-    EXPECT_EQ(si->fields[1].type->kind, type_kind::pointer);
-    auto* parent_ptr = static_cast<const optional_type_info*>(si->fields[1].type);
-    EXPECT_EQ(parent_ptr->inner->kind, type_kind::structure);
-    EXPECT_EQ(parent_ptr->inner->type_name, info.type_name);
+    EXPECT_EQ(si->fields[1].type()->kind, type_kind::pointer);
+    auto* parent_ptr = static_cast<const optional_type_info*>(si->fields[1].type());
+    EXPECT_EQ(parent_ptr->inner()->kind, type_kind::structure);
+    EXPECT_EQ(parent_ptr->inner()->type_name, info.type_name);
 
     EXPECT_EQ(si->fields[2].name, "children");
-    EXPECT_EQ(si->fields[2].type->kind, type_kind::array);
-    auto* arr = static_cast<const array_type_info*>(si->fields[2].type);
-    EXPECT_EQ(arr->element->kind, type_kind::pointer);
-    auto* child_ptr = static_cast<const optional_type_info*>(arr->element);
-    EXPECT_EQ(child_ptr->inner->kind, type_kind::structure);
-    EXPECT_EQ(child_ptr->inner->type_name, info.type_name);
+    EXPECT_EQ(si->fields[2].type()->kind, type_kind::array);
+    auto* arr = static_cast<const array_type_info*>(si->fields[2].type());
+    EXPECT_EQ(arr->element()->kind, type_kind::pointer);
+    auto* child_ptr = static_cast<const optional_type_info*>(arr->element());
+    EXPECT_EQ(child_ptr->inner()->kind, type_kind::structure);
+    EXPECT_EQ(child_ptr->inner()->type_name, info.type_name);
 }
 
 TEST_CASE(recursive_optional_vector) {
@@ -436,15 +436,15 @@ TEST_CASE(recursive_optional_vector) {
     auto* si = static_cast<const struct_type_info*>(static_cast<const type_info*>(&info));
     EXPECT_EQ(si->fields.size(), 2U);
     EXPECT_EQ(si->fields[0].name, "id");
-    EXPECT_EQ(si->fields[0].type->kind, type_kind::int32);
+    EXPECT_EQ(si->fields[0].type()->kind, type_kind::int32);
 
     EXPECT_EQ(si->fields[1].name, "sub_items");
-    EXPECT_EQ(si->fields[1].type->kind, type_kind::optional);
-    auto* opt = static_cast<const optional_type_info*>(si->fields[1].type);
-    EXPECT_EQ(opt->inner->kind, type_kind::array);
-    auto* arr = static_cast<const array_type_info*>(opt->inner);
-    EXPECT_EQ(arr->element->kind, type_kind::structure);
-    EXPECT_EQ(arr->element->type_name, info.type_name);
+    EXPECT_EQ(si->fields[1].type()->kind, type_kind::optional);
+    auto* opt = static_cast<const optional_type_info*>(si->fields[1].type());
+    EXPECT_EQ(opt->inner()->kind, type_kind::array);
+    auto* arr = static_cast<const array_type_info*>(opt->inner());
+    EXPECT_EQ(arr->element()->kind, type_kind::structure);
+    EXPECT_EQ(arr->element()->type_name, info.type_name);
 }
 
 TEST_CASE(recursive_map_values) {
@@ -454,14 +454,14 @@ TEST_CASE(recursive_map_values) {
     auto* si = static_cast<const struct_type_info*>(static_cast<const type_info*>(&info));
     EXPECT_EQ(si->fields.size(), 2U);
     EXPECT_EQ(si->fields[0].name, "name");
-    EXPECT_EQ(si->fields[0].type->kind, type_kind::string);
+    EXPECT_EQ(si->fields[0].type()->kind, type_kind::string);
 
     EXPECT_EQ(si->fields[1].name, "nested");
-    EXPECT_EQ(si->fields[1].type->kind, type_kind::map);
-    auto* m = static_cast<const map_type_info*>(si->fields[1].type);
-    EXPECT_EQ(m->key->kind, type_kind::string);
-    EXPECT_EQ(m->value->kind, type_kind::structure);
-    EXPECT_EQ(m->value->type_name, info.type_name);
+    EXPECT_EQ(si->fields[1].type()->kind, type_kind::map);
+    auto* m = static_cast<const map_type_info*>(si->fields[1].type());
+    EXPECT_EQ(m->key()->kind, type_kind::string);
+    EXPECT_EQ(m->value()->kind, type_kind::structure);
+    EXPECT_EQ(m->value()->type_name, info.type_name);
 }
 
 TEST_CASE(recursive_variant_tree) {
@@ -471,18 +471,18 @@ TEST_CASE(recursive_variant_tree) {
     auto* si = static_cast<const struct_type_info*>(static_cast<const type_info*>(&branch_info));
     EXPECT_EQ(si->fields.size(), 1U);
     EXPECT_EQ(si->fields[0].name, "nodes");
-    EXPECT_EQ(si->fields[0].type->kind, type_kind::array);
+    EXPECT_EQ(si->fields[0].type()->kind, type_kind::array);
 
-    auto* arr = static_cast<const array_type_info*>(si->fields[0].type);
-    EXPECT_EQ(arr->element->kind, type_kind::variant);
-    auto* var = static_cast<const variant_type_info*>(arr->element);
+    auto* arr = static_cast<const array_type_info*>(si->fields[0].type());
+    EXPECT_EQ(arr->element()->kind, type_kind::variant);
+    auto* var = static_cast<const variant_type_info*>(arr->element());
     EXPECT_EQ(var->alternatives.size(), 2U);
 
     constexpr auto& leaf_info = *type_info_of<test_schema::VariantLeaf, default_config>();
-    EXPECT_EQ(var->alternatives[0]->kind, type_kind::structure);
-    EXPECT_EQ(var->alternatives[0]->type_name, leaf_info.type_name);
-    EXPECT_EQ(var->alternatives[1]->kind, type_kind::structure);
-    EXPECT_EQ(var->alternatives[1]->type_name, branch_info.type_name);
+    EXPECT_EQ(var->alternatives[0]()->kind, type_kind::structure);
+    EXPECT_EQ(var->alternatives[0]()->type_name, leaf_info.type_name);
+    EXPECT_EQ(var->alternatives[1]()->kind, type_kind::structure);
+    EXPECT_EQ(var->alternatives[1]()->type_name, branch_info.type_name);
 }
 
 TEST_CASE(recursive_mixed_deep) {
@@ -494,26 +494,26 @@ TEST_CASE(recursive_mixed_deep) {
 
     // tag: string
     EXPECT_EQ(si->fields[0].name, "tag");
-    EXPECT_EQ(si->fields[0].type->kind, type_kind::string);
+    EXPECT_EQ(si->fields[0].type()->kind, type_kind::string);
 
     // deep: optional -> pointer -> structure (self)
     EXPECT_EQ(si->fields[1].name, "deep");
-    EXPECT_EQ(si->fields[1].type->kind, type_kind::optional);
-    auto* opt = static_cast<const optional_type_info*>(si->fields[1].type);
-    EXPECT_EQ(opt->inner->kind, type_kind::pointer);
-    auto* ptr = static_cast<const optional_type_info*>(opt->inner);
-    EXPECT_EQ(ptr->inner->kind, type_kind::structure);
-    EXPECT_EQ(ptr->inner->type_name, info.type_name);
+    EXPECT_EQ(si->fields[1].type()->kind, type_kind::optional);
+    auto* opt = static_cast<const optional_type_info*>(si->fields[1].type());
+    EXPECT_EQ(opt->inner()->kind, type_kind::pointer);
+    auto* ptr = static_cast<const optional_type_info*>(opt->inner());
+    EXPECT_EQ(ptr->inner()->kind, type_kind::structure);
+    EXPECT_EQ(ptr->inner()->type_name, info.type_name);
 
     // grouped: map<string, vector<self>>
     EXPECT_EQ(si->fields[2].name, "grouped");
-    EXPECT_EQ(si->fields[2].type->kind, type_kind::map);
-    auto* m = static_cast<const map_type_info*>(si->fields[2].type);
-    EXPECT_EQ(m->key->kind, type_kind::string);
-    EXPECT_EQ(m->value->kind, type_kind::array);
-    auto* arr = static_cast<const array_type_info*>(m->value);
-    EXPECT_EQ(arr->element->kind, type_kind::structure);
-    EXPECT_EQ(arr->element->type_name, info.type_name);
+    EXPECT_EQ(si->fields[2].type()->kind, type_kind::map);
+    auto* m = static_cast<const map_type_info*>(si->fields[2].type());
+    EXPECT_EQ(m->key()->kind, type_kind::string);
+    EXPECT_EQ(m->value()->kind, type_kind::array);
+    auto* arr = static_cast<const array_type_info*>(m->value());
+    EXPECT_EQ(arr->element()->kind, type_kind::structure);
+    EXPECT_EQ(arr->element()->type_name, info.type_name);
 }
 
 TEST_CASE(disabled_range_type_info_is_unknown) {
@@ -523,19 +523,18 @@ TEST_CASE(disabled_range_type_info_is_unknown) {
     EXPECT_EQ(info.kind, type_kind::unknown);
 }
 
-TEST_CASE(cv_canonicalization_scalars) {
+TEST_CASE(cv_canonicalization_all_kinds) {
+    // scalars
     static_assert(type_info_of<int>() == type_info_of<const int>());
     static_assert(type_info_of<int>() == type_info_of<volatile int>());
     static_assert(type_info_of<int>() == type_info_of<const volatile int>());
     static_assert(type_info_of<std::string>() == type_info_of<const std::string>());
     static_assert(type_info_of<bool>() == type_info_of<const bool>());
-}
 
-TEST_CASE(cv_canonicalization_enum) {
+    // enum
     static_assert(type_info_of<test_schema::color>() == type_info_of<const test_schema::color>());
-}
 
-TEST_CASE(cv_canonicalization_containers) {
+    // containers: array / set / map / optional / pointer
     static_assert(type_info_of<std::vector<int>>() == type_info_of<const std::vector<int>>());
     static_assert(type_info_of<std::set<int>>() == type_info_of<const std::set<int>>());
     static_assert(type_info_of<std::map<std::string, int>>() ==
@@ -543,49 +542,123 @@ TEST_CASE(cv_canonicalization_containers) {
     static_assert(type_info_of<std::optional<int>>() == type_info_of<const std::optional<int>>());
     static_assert(type_info_of<std::unique_ptr<int>>() ==
                   type_info_of<const std::unique_ptr<int>>());
-}
 
-TEST_CASE(cv_canonicalization_structure) {
+    // structure (including recursive)
     static_assert(type_info_of<test_schema::SimpleStruct>() ==
                   type_info_of<const test_schema::SimpleStruct>());
     static_assert(type_info_of<test_schema::TreeNode>() ==
                   type_info_of<const test_schema::TreeNode>());
     static_assert(type_info_of<test_schema::MixedRecursive>() ==
                   type_info_of<const test_schema::MixedRecursive>());
-}
 
-TEST_CASE(cv_canonicalization_variant) {
+    // variant / tuple
     using V = std::variant<int, std::string>;
     static_assert(type_info_of<V>() == type_info_of<const V>());
+    using TupT = std::tuple<int, std::string, double>;
+    static_assert(type_info_of<TupT>() == type_info_of<const TupT>());
 }
 
-TEST_CASE(cv_canonicalization_tuple) {
-    using T = std::tuple<int, std::string, double>;
-    static_assert(type_info_of<T>() == type_info_of<const T>());
+TEST_CASE(value_copy_all_kinds) {
+    // Full value copies of each kind's type_info subclass must succeed during
+    // constant initialization. This is the core guarantee the function-pointer
+    // trampoline delivers: clang used to bail out on recursive structures here.
+
+    // array
+    {
+        constexpr auto v = *static_cast<const array_type_info*>(
+            type_info_of<std::vector<int>, default_config>());
+        static_assert(v.kind == type_kind::array);
+        static_assert(v.element()->kind == type_kind::int32);
+    }
+
+    // map
+    {
+        constexpr auto v = *static_cast<const map_type_info*>(
+            type_info_of<std::map<std::string, int>, default_config>());
+        static_assert(v.kind == type_kind::map);
+        static_assert(v.key()->kind == type_kind::string);
+        static_assert(v.value()->kind == type_kind::int32);
+    }
+
+    // optional
+    {
+        constexpr auto v = *static_cast<const optional_type_info*>(
+            type_info_of<std::optional<int>, default_config>());
+        static_assert(v.kind == type_kind::optional);
+        static_assert(v.inner()->kind == type_kind::int32);
+    }
+
+    // tuple
+    {
+        constexpr auto v = *static_cast<const tuple_type_info*>(
+            type_info_of<std::tuple<int, std::string>, default_config>());
+        static_assert(v.kind == type_kind::tuple);
+        static_assert(v.elements.size() == 2U);
+        static_assert(v.elements[0]()->kind == type_kind::int32);
+        static_assert(v.elements[1]()->kind == type_kind::string);
+    }
+
+    // variant
+    {
+        constexpr auto v = *static_cast<const variant_type_info*>(
+            type_info_of<std::variant<int, std::string>, default_config>());
+        static_assert(v.kind == type_kind::variant);
+        static_assert(v.alternatives.size() == 2U);
+        static_assert(v.alternatives[0]()->kind == type_kind::int32);
+    }
+
+    // plain structure
+    {
+        constexpr auto v = *static_cast<const struct_type_info*>(
+            type_info_of<test_schema::SimpleStruct, default_config>());
+        static_assert(v.kind == type_kind::structure);
+        static_assert(v.fields.size() == 3U);
+        static_assert(v.fields[0].type()->kind == type_kind::int32);
+    }
+
+    // recursive structure — this is the root motivation for the refactor.
+    // Before the function-pointer trampoline, clang could not constant-evaluate
+    // a value copy of a self-referential struct_type_info.
+    {
+        constexpr auto v = *static_cast<const struct_type_info*>(
+            type_info_of<test_schema::TreeNode, default_config>());
+        static_assert(v.kind == type_kind::structure);
+        static_assert(v.fields.size() == 2U);
+        static_assert(v.fields[0].type()->kind == type_kind::string);
+        static_assert(v.fields[1].type()->kind == type_kind::array);
+    }
+
+    // deeply recursive structure with mixed indirection
+    {
+        constexpr auto v = *static_cast<const struct_type_info*>(
+            type_info_of<test_schema::MixedRecursive, default_config>());
+        static_assert(v.kind == type_kind::structure);
+        static_assert(v.fields.size() == 3U);
+    }
 }
 
 TEST_CASE(recursive_self_pointer_identity) {
-    // The pointer stored in a recursive field must equal type_info_of<Self>().
+    // The pointer returned by a recursive field must equal type_info_of<Self>().
     constexpr auto* tree = type_info_of<test_schema::TreeNode>();
     auto* tree_si = static_cast<const struct_type_info*>(tree);
-    auto* children_arr = static_cast<const array_type_info*>(tree_si->fields[1].type);
-    EXPECT_EQ(children_arr->element, tree);
+    auto* children_arr = static_cast<const array_type_info*>(tree_si->fields[1].type());
+    EXPECT_EQ(children_arr->element(), tree);
 
     constexpr auto* linked = type_info_of<test_schema::LinkedNode>();
     auto* linked_si = static_cast<const struct_type_info*>(linked);
-    auto* next_ptr = static_cast<const optional_type_info*>(linked_si->fields[1].type);
-    EXPECT_EQ(next_ptr->inner, linked);
+    auto* next_ptr = static_cast<const optional_type_info*>(linked_si->fields[1].type());
+    EXPECT_EQ(next_ptr->inner(), linked);
 
     constexpr auto* mx = type_info_of<test_schema::MixedRecursive>();
     auto* mx_si = static_cast<const struct_type_info*>(mx);
     // deep: optional<unique_ptr<Self>>
-    auto* deep_opt = static_cast<const optional_type_info*>(mx_si->fields[1].type);
-    auto* deep_ptr = static_cast<const optional_type_info*>(deep_opt->inner);
-    EXPECT_EQ(deep_ptr->inner, mx);
+    auto* deep_opt = static_cast<const optional_type_info*>(mx_si->fields[1].type());
+    auto* deep_ptr = static_cast<const optional_type_info*>(deep_opt->inner());
+    EXPECT_EQ(deep_ptr->inner(), mx);
     // grouped: map<string, vector<Self>>
-    auto* grouped_map = static_cast<const map_type_info*>(mx_si->fields[2].type);
-    auto* grouped_arr = static_cast<const array_type_info*>(grouped_map->value);
-    EXPECT_EQ(grouped_arr->element, mx);
+    auto* grouped_map = static_cast<const map_type_info*>(mx_si->fields[2].type());
+    auto* grouped_arr = static_cast<const array_type_info*>(grouped_map->value());
+    EXPECT_EQ(grouped_arr->element(), mx);
 }
 
 TEST_CASE(virtual_schema_recursive_fields_are_usable) {
@@ -618,8 +691,8 @@ TEST_CASE(recursive_cv_shares_storage) {
     EXPECT_EQ(non_cv, with_cv);
 
     auto* tree_si = static_cast<const struct_type_info*>(non_cv);
-    auto* arr = static_cast<const array_type_info*>(tree_si->fields[1].type);
-    EXPECT_EQ(arr->element, with_cv);
+    auto* arr = static_cast<const array_type_info*>(tree_si->fields[1].type());
+    EXPECT_EQ(arr->element(), with_cv);
 }
 
 };  // TEST_SUITE(virtual_schema_type_info)
