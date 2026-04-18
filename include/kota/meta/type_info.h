@@ -112,9 +112,6 @@ struct struct_type_info : type_info {
 template <typename T, typename Config = default_config>
 constexpr const type_info& type_info_of();
 
-template <typename T, typename Config = default_config>
-constexpr const type_info& get_value_of();
-
 namespace detail {
 
 template <typename Policy>
@@ -411,7 +408,7 @@ struct variant_info_node<std::variant<Ts...>, Config, AttrsTuple> {
     constexpr static bool has_tag = has_tagged_schema_attr_v<AttrsTuple>;
 
     constexpr static std::array<type_info_fn, sizeof...(Ts)> alternatives = {
-        get_value_of<Ts, Config>...};
+        type_info_of<Ts, Config>...};
 
     // Backing storage is always sizeof...(Ts) (>=1 since variant must have alternatives);
     // for non-tagged variants the elements stay default-constructed and the consumer
@@ -470,7 +467,7 @@ struct tuple_info_node;
 template <typename Tuple, typename Config, std::size_t... Is>
 struct tuple_info_node<Tuple, Config, std::index_sequence<Is...>> {
     constexpr inline static std::array<type_info_fn, sizeof...(Is)> elements = {
-        get_value_of<std::tuple_element_t<Is, Tuple>, Config>...};
+        type_info_of<std::tuple_element_t<Is, Tuple>, Config>...};
 
     constexpr inline static tuple_type_info value = {
         {type_kind::tuple, meta::type_name<Tuple>()},
@@ -497,7 +494,7 @@ struct type_instance_impl<T, Config, type_kind::optional> {
 
     constexpr inline static optional_type_info value = {
         {type_kind::optional, meta::type_name<wire_t>()},
-        get_value_of<inner_t, Config>,
+        type_info_of<inner_t, Config>,
     };
 };
 
@@ -509,7 +506,7 @@ struct type_instance_impl<T, Config, type_kind::pointer> {
 
     constexpr inline static optional_type_info value = {
         {type_kind::pointer, meta::type_name<wire_t>()},
-        get_value_of<inner_t, Config>,
+        type_info_of<inner_t, Config>,
     };
 };
 
@@ -539,8 +536,8 @@ struct type_instance_impl<T, Config, type_kind::map> {
 
     constexpr inline static map_type_info value = {
         {type_kind::map, meta::type_name<wire_t>()},
-        get_value_of<key_t, Config>,
-        get_value_of<mapped_t, Config>,
+        type_info_of<key_t, Config>,
+        type_info_of<mapped_t, Config>,
     };
 };
 
@@ -551,7 +548,7 @@ struct type_instance_impl<T, Config, type_kind::set> {
 
     constexpr inline static array_type_info value = {
         {type_kind::set, meta::type_name<wire_t>()},
-        get_value_of<element_t, Config>,
+        type_info_of<element_t, Config>,
     };
 };
 
@@ -562,7 +559,7 @@ struct type_instance_impl<T, Config, type_kind::array> {
 
     constexpr inline static array_type_info value = {
         {type_kind::array, meta::type_name<wire_t>()},
-        get_value_of<element_t, Config>,
+        type_info_of<element_t, Config>,
     };
 };
 
@@ -642,7 +639,7 @@ constexpr field_info make_field_info(std::size_t base_offset) {
         .aliases = aliases,
         .offset = offset,
         .physical_index = I,
-        .type = get_value_of<field_t, Config>,
+        .type = type_info_of<field_t, Config>,
         .has_default = has_default,
         .is_literal = is_literal,
         .has_skip_if = has_skip_if,
@@ -688,13 +685,8 @@ constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offse
 }  // namespace detail
 
 template <typename T, typename Config>
-constexpr const type_info& get_value_of() {
-    return detail::type_instance<T, Config>::value;
-}
-
-template <typename T, typename Config>
 constexpr const type_info& type_info_of() {
-    return get_value_of<T, Config>();
+    return detail::type_instance<T, Config>::value;
 }
 
 }  // namespace kota::meta
