@@ -121,6 +121,7 @@ endif()
 target_include_directories(unit_tests PRIVATE
     "${PROJECT_SOURCE_DIR}/include"
     "${PROJECT_SOURCE_DIR}/examples/build_system"
+    "${PROJECT_SOURCE_DIR}/tests"
 )
 
 target_link_libraries(unit_tests PRIVATE

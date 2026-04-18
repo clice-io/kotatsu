@@ -1,121 +1,25 @@
 #include <cstddef>
-#include <string>
-#include <variant>
-#include <vector>
 
+#include "fixtures/schema/containers.h"
+#include "fixtures/schema/primitives.h"
+#include "fixtures/schema/schema_attrs.h"
+#include "fixtures/schema/tagged.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/attrs.h"
 #include "kota/meta/schema.h"
 
 namespace kota::meta {
 
-namespace test_schema {
-
-// -- rename + skip --
-
-struct AnnotatedStruct {
-    annotation<int, attrs::rename<"id">> user_id;
-    annotation<std::string, attrs::skip> internal;
-    float value;
-};
-
-// -- alias --
-
-struct AliasStruct {
-    annotation<int, attrs::alias<"user_id", "userId">> id;
-    std::string name;
-};
-
-// -- flatten --
-
-struct Inner {
-    int a;
-    int b;
-};
-
-struct Outer {
-    int x;
-    annotation<Inner, attrs::flatten> inner;
-    int y;
-};
-
-// -- deep flatten (flatten of flatten) --
-
-struct DeepInner {
-    int p;
-    int q;
-};
-
-struct Middle {
-    int m;
-    annotation<DeepInner, attrs::flatten> deep;
-};
-
-struct DeepOuter {
-    int head;
-    annotation<Middle, attrs::flatten> mid;
-    int tail;
-};
-
-// -- default_value + literal --
-
-struct DefaultLiteralStruct {
-    annotation<int, attrs::default_value> with_default;
-    annotation<std::string, attrs::literal<"v1">> version;
-    int plain;
-};
-
-// -- simple struct (for basic field verification) --
-
-struct SimpleStruct {
-    int x;
-    std::string name;
-    float score;
-};
-
-// -- nested struct for field_info type tree --
-
-struct NestedStruct {
-    std::vector<SimpleStruct> items;
-};
-
-struct TaggedCircle {
-    int radius;
-};
-
-struct TaggedRect {
-    int width;
-    int height;
-};
-
-using ExternalTagged =
-    annotation<std::variant<int, std::string>, attrs::externally_tagged::names<"integer", "text">>;
-
-using InternalTagged = annotation<std::variant<TaggedCircle, TaggedRect>,
-                                  attrs::internally_tagged<"kind">::names<"circle", "rect">>;
-
-using AdjacentTagged =
-    annotation<std::variant<int, std::string>,
-               attrs::adjacently_tagged<"type", "value">::names<"integer", "text">>;
-
-struct TaggedFieldStruct {
-    ExternalTagged ext;
-    InternalTagged in;
-    AdjacentTagged adj;
-};
-
-}  // namespace test_schema
-
 namespace {
 
-// ----- rename, skip, alias -----
+namespace fx = ::kota::meta::fixtures;
 
 TEST_SUITE(virtual_schema_schema_attrs) {
 
 TEST_CASE(simple_struct_fields) {
-    EXPECT_EQ(virtual_schema<test_schema::SimpleStruct>::count, 3U);
+    EXPECT_EQ(virtual_schema<fx::SimpleStruct>::count, 3U);
 
-    constexpr auto& fields = virtual_schema<test_schema::SimpleStruct>::fields;
+    constexpr auto& fields = virtual_schema<fx::SimpleStruct>::fields;
 
     EXPECT_EQ(fields[0].name, "x");
     EXPECT_EQ(fields[1].name, "name");
@@ -146,9 +50,9 @@ TEST_CASE(simple_struct_fields) {
 
 TEST_CASE(rename_and_skip) {
     // AnnotatedStruct: user_id(rename<"id">), internal(skip), value
-    EXPECT_EQ(virtual_schema<test_schema::AnnotatedStruct>::count, 2U);
+    EXPECT_EQ(virtual_schema<fx::AnnotatedStruct>::count, 2U);
 
-    constexpr auto& fields = virtual_schema<test_schema::AnnotatedStruct>::fields;
+    constexpr auto& fields = virtual_schema<fx::AnnotatedStruct>::fields;
 
     EXPECT_EQ(fields[0].name, "id");
     EXPECT_EQ(fields[0].type().kind, type_kind::int32);
@@ -160,7 +64,7 @@ TEST_CASE(rename_and_skip) {
 }
 
 TEST_CASE(alias) {
-    constexpr auto& fields = virtual_schema<test_schema::AliasStruct>::fields;
+    constexpr auto& fields = virtual_schema<fx::AliasStruct>::fields;
 
     EXPECT_EQ(fields[0].aliases.size(), 2U);
     EXPECT_EQ(fields[0].aliases[0], "user_id");
@@ -172,9 +76,9 @@ TEST_CASE(alias) {
 
 TEST_CASE(flatten) {
     // Outer: x(1) + Inner{a,b}(2) + y(1) = 4 fields
-    EXPECT_EQ(virtual_schema<test_schema::Outer>::count, 4U);
+    EXPECT_EQ(virtual_schema<fx::Outer>::count, 4U);
 
-    constexpr auto& fields = virtual_schema<test_schema::Outer>::fields;
+    constexpr auto& fields = virtual_schema<fx::Outer>::fields;
 
     EXPECT_EQ(fields[0].name, "x");
     EXPECT_EQ(fields[1].name, "a");
@@ -191,18 +95,18 @@ TEST_CASE(flatten) {
     EXPECT_TRUE(fields[2].offset > fields[1].offset);
     EXPECT_TRUE(fields[3].offset > fields[2].offset);
 
-    constexpr auto outer_inner_offset = field_offset<test_schema::Outer>(1);
-    constexpr auto inner_a_offset = field_offset<test_schema::Inner>(0);
-    constexpr auto inner_b_offset = field_offset<test_schema::Inner>(1);
+    constexpr auto outer_inner_offset = field_offset<fx::Outer>(1);
+    constexpr auto inner_a_offset = field_offset<fx::Inner>(0);
+    constexpr auto inner_b_offset = field_offset<fx::Inner>(1);
     EXPECT_EQ(fields[1].offset, outer_inner_offset + inner_a_offset);
     EXPECT_EQ(fields[2].offset, outer_inner_offset + inner_b_offset);
 }
 
 TEST_CASE(deep_flatten) {
     // DeepOuter: head + Middle{m, DeepInner{p,q}} + tail = 5 fields
-    EXPECT_EQ(virtual_schema<test_schema::DeepOuter>::count, 5U);
+    EXPECT_EQ(virtual_schema<fx::DeepOuter>::count, 5U);
 
-    constexpr auto& fields = virtual_schema<test_schema::DeepOuter>::fields;
+    constexpr auto& fields = virtual_schema<fx::DeepOuter>::fields;
 
     EXPECT_EQ(fields[0].name, "head");
     EXPECT_EQ(fields[1].name, "m");
@@ -221,9 +125,9 @@ TEST_CASE(deep_flatten) {
 }
 
 TEST_CASE(default_value_and_literal) {
-    EXPECT_EQ(virtual_schema<test_schema::DefaultLiteralStruct>::count, 3U);
+    EXPECT_EQ(virtual_schema<fx::DefaultLiteralStruct>::count, 3U);
 
-    constexpr auto& fields = virtual_schema<test_schema::DefaultLiteralStruct>::fields;
+    constexpr auto& fields = virtual_schema<fx::DefaultLiteralStruct>::fields;
 
     EXPECT_TRUE(fields[0].has_default);
     EXPECT_FALSE(fields[0].is_literal);
@@ -238,15 +142,15 @@ TEST_CASE(default_value_and_literal) {
 TEST_CASE(deny_unknown_default_false) {
     // deny_unknown_fields is resolved at the serde dispatch level, not on the
     // struct type itself. For regular reflectable structs, deny_unknown is always false.
-    EXPECT_FALSE(virtual_schema<test_schema::SimpleStruct>::deny_unknown);
-    EXPECT_FALSE(virtual_schema<test_schema::AnnotatedStruct>::deny_unknown);
+    EXPECT_FALSE(virtual_schema<fx::SimpleStruct>::deny_unknown);
+    EXPECT_FALSE(virtual_schema<fx::AnnotatedStruct>::deny_unknown);
 }
 
 TEST_CASE(nested_field_type_info) {
     // NestedStruct: items is vector<SimpleStruct>
-    EXPECT_EQ(virtual_schema<test_schema::NestedStruct>::count, 1U);
+    EXPECT_EQ(virtual_schema<fx::NestedStruct>::count, 1U);
 
-    constexpr auto& fields = virtual_schema<test_schema::NestedStruct>::fields;
+    constexpr auto& fields = virtual_schema<fx::NestedStruct>::fields;
     EXPECT_EQ(fields[0].name, "items");
     EXPECT_EQ(fields[0].type().kind, type_kind::array);
 
@@ -256,7 +160,7 @@ TEST_CASE(nested_field_type_info) {
 }
 
 TEST_CASE(tagged_field_type_info) {
-    constexpr auto& fields = virtual_schema<test_schema::TaggedFieldStruct>::fields;
+    constexpr auto& fields = virtual_schema<fx::TaggedFieldStruct>::fields;
     EXPECT_EQ(fields.size(), 3U);
 
     constexpr auto ext = static_cast<const variant_type_info&>(fields[0].type());

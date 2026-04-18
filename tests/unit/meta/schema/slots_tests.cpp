@@ -4,6 +4,11 @@
 #include <type_traits>
 #include <variant>
 
+#include "fixtures/schema/behavior_attrs.h"
+#include "fixtures/schema/enums.h"
+#include "fixtures/schema/primitives.h"
+#include "fixtures/schema/schema_attrs.h"
+#include "fixtures/schema/tagged.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/attrs.h"
 #include "kota/meta/schema.h"
@@ -13,65 +18,14 @@ namespace kota::meta {
 using kota::type_list_size_v;
 using kota::type_list_element_t;
 
-namespace test_schema {
-
-struct SimpleStruct {
-    int x;
-    std::string name;
-    float score;
-};
-
-struct AnnotatedStruct {
-    annotation<int, attrs::rename<"id">> user_id;
-    annotation<std::string, attrs::skip> internal;
-    float value;
-};
-
-struct Inner {
-    int a;
-    int b;
-};
-
-struct Outer {
-    int x;
-    annotation<Inner, attrs::flatten> inner;
-    int y;
-};
-
-struct BehaviorStruct {
-    annotation<std::optional<int>, behavior::skip_if<pred::optional_none>> maybe;
-    annotation<int, behavior::as<std::string>> as_str;
-    float plain;
-};
-
-enum class color { red, green, blue };
-
-struct EnumStringStruct {
-    annotation<color, behavior::enum_string<rename_policy::identity>> color_field;
-    int count;
-};
-
-struct IntToStringAdapter {
-    using wire_type = std::string;
-};
-
-struct WithWireTypeStruct {
-    annotation<int, behavior::with<IntToStringAdapter>> converted;
-    float plain;
-};
-
-struct TaggedVariantStruct {
-    annotation<std::variant<int, std::string>, attrs::tagged<>> tv;
-};
-
-}  // namespace test_schema
-
 namespace {
+
+namespace fx = ::kota::meta::fixtures;
 
 TEST_SUITE(virtual_schema_slots) {
 
 TEST_CASE(simple_struct_slots) {
-    using slots = virtual_schema<test_schema::SimpleStruct>::slots;
+    using slots = virtual_schema<fx::SimpleStruct>::slots;
     EXPECT_EQ(type_list_size_v<slots>, 3U);
 
     using slot0 = type_list_element_t<0, slots>;
@@ -94,11 +48,11 @@ TEST_CASE(simple_struct_slots) {
 
 TEST_CASE(skip_and_flatten_slot_counts) {
     // skip removes "internal", leaving 2
-    using ann_slots = virtual_schema<test_schema::AnnotatedStruct>::slots;
+    using ann_slots = virtual_schema<fx::AnnotatedStruct>::slots;
     EXPECT_EQ(type_list_size_v<ann_slots>, 2U);
 
     // flatten expands inner, yielding 4
-    using outer_slots = virtual_schema<test_schema::Outer>::slots;
+    using outer_slots = virtual_schema<fx::Outer>::slots;
     EXPECT_EQ(type_list_size_v<outer_slots>, 4U);
 
     // Verify flattened slot types: all int32
@@ -113,7 +67,7 @@ TEST_CASE(skip_and_flatten_slot_counts) {
 }
 
 TEST_CASE(behavior_wire_types) {
-    using slots = virtual_schema<test_schema::BehaviorStruct>::slots;
+    using slots = virtual_schema<fx::BehaviorStruct>::slots;
 
     // Field 0 (maybe): raw=optional<int>, wire=optional<int>, has skip_if attr
     using slot0 = type_list_element_t<0, slots>;
@@ -134,15 +88,15 @@ TEST_CASE(behavior_wire_types) {
 }
 
 TEST_CASE(enum_string_slot) {
-    using slots = virtual_schema<test_schema::EnumStringStruct>::slots;
+    using slots = virtual_schema<fx::EnumStringStruct>::slots;
     using slot0 = type_list_element_t<0, slots>;
 
-    EXPECT_TRUE((std::is_same_v<typename slot0::raw_type, test_schema::color>));
+    EXPECT_TRUE((std::is_same_v<typename slot0::raw_type, fx::color>));
     EXPECT_TRUE((std::is_same_v<typename slot0::wire_type, std::string_view>));
 }
 
 TEST_CASE(with_wire_type_slot) {
-    using slots = virtual_schema<test_schema::WithWireTypeStruct>::slots;
+    using slots = virtual_schema<fx::WithWireTypeStruct>::slots;
     using slot0 = type_list_element_t<0, slots>;
 
     EXPECT_TRUE((std::is_same_v<typename slot0::raw_type, int>));
@@ -150,7 +104,7 @@ TEST_CASE(with_wire_type_slot) {
 }
 
 TEST_CASE(tagged_variant_slot) {
-    using slots = virtual_schema<test_schema::TaggedVariantStruct>::slots;
+    using slots = virtual_schema<fx::TaggedVariantStruct>::slots;
     using slot0 = type_list_element_t<0, slots>;
 
     // tagged<> is a schema attr that appears in behavior attrs filter

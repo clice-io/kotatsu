@@ -1,139 +1,29 @@
 #include <cstddef>
 #include <cstdint>
-#include <iterator>
 #include <limits>
 #include <map>
 #include <memory>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <variant>
 #include <vector>
 
+#include "fixtures/schema/containers.h"
+#include "fixtures/schema/enums.h"
+#include "fixtures/schema/primitives.h"
+#include "fixtures/schema/recursive.h"
+#include "fixtures/schema/schema_attrs.h"
+#include "fixtures/schema/tagged.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/schema.h"
 
 namespace kota::meta {
 
-namespace test_schema {
-
-enum class color { red, green, blue };
-
-struct SimpleStruct {
-    int x;
-    std::string name;
-    float score;
-};
-
-struct RenameTarget {
-    int user_name;
-    std::string display_name;
-};
-
-using RenamedRoot = annotation<RenameTarget, attrs::rename_all<rename_policy::lower_camel>>;
-
-using StrictRoot = annotation<RenameTarget, attrs::deny_unknown_fields>;
-
-struct Circle {
-    double radius;
-};
-
-struct Rect {
-    double width;
-    double height;
-};
-
-using TaggedRoot = annotation<std::variant<Circle, Rect>,
-                              attrs::internally_tagged<"kind">::names<"circle", "rect">>;
-
-enum class HugeUnsignedEnum : std::uint64_t {
-    zero = 0,
-    max = std::numeric_limits<std::uint64_t>::max(),
-};
-
-struct TreeNode {
-    std::string value;
-    std::vector<TreeNode> children;
-};
-
-struct LinkedNode {
-    int data;
-    std::unique_ptr<LinkedNode> next;
-};
-
-struct SharedNode {
-    std::string label;
-    std::shared_ptr<SharedNode> parent;
-    std::vector<std::shared_ptr<SharedNode>> children;
-};
-
-struct OptionalRecursive {
-    int id;
-    std::optional<std::vector<OptionalRecursive>> sub_items;
-};
-
-struct MapRecursive {
-    std::string name;
-    std::map<std::string, MapRecursive> nested;
-};
-
-struct VariantLeaf {
-    int val;
-};
-
-struct VariantBranch {
-    std::vector<std::variant<VariantLeaf, VariantBranch>> nodes;
-};
-
-struct MixedRecursive {
-    std::string tag;
-    std::optional<std::unique_ptr<MixedRecursive>> deep;
-    std::map<std::string, std::vector<MixedRecursive>> grouped;
-};
-
-struct disabled_range;
-
-struct disabled_range_iter {
-    using iterator_concept = std::input_iterator_tag;
-    using iterator_category = std::input_iterator_tag;
-    using value_type = disabled_range;
-    using difference_type = std::ptrdiff_t;
-
-    auto operator*() const -> disabled_range;
-
-    auto operator++() -> disabled_range_iter& {
-        return *this;
-    }
-
-    auto operator++(int) -> disabled_range_iter {
-        return *this;
-    }
-
-    auto operator==(std::default_sentinel_t) const -> bool {
-        return true;
-    }
-};
-
-struct disabled_range {
-    auto begin() const -> disabled_range_iter {
-        return {};
-    }
-
-    auto end() const -> std::default_sentinel_t {
-        return {};
-    }
-};
-
-inline auto disabled_range_iter::operator*() const -> disabled_range {
-    return {};
-}
-
-static_assert(std::ranges::input_range<disabled_range>);
-static_assert(kota::format_kind<disabled_range> == kota::range_format::disabled);
-
-}  // namespace test_schema
-
 namespace {
+
+namespace fx = ::kota::meta::fixtures;
 
 TEST_SUITE(virtual_schema_type_info) {
 
@@ -177,7 +67,7 @@ TEST_CASE(scalar_helpers) {
     EXPECT_FALSE(str_info.is_numeric());
 
     // enum: scalar but not numeric
-    constexpr auto enum_info = type_info_of<test_schema::color, default_config>();
+    constexpr auto enum_info = type_info_of<fx::color, default_config>();
     EXPECT_EQ(enum_info.kind, type_kind::enumeration);
     EXPECT_TRUE(enum_info.is_scalar());
     EXPECT_FALSE(enum_info.is_numeric());
@@ -283,7 +173,7 @@ TEST_CASE(compound_types) {
 
     // SimpleStruct -> structure
     {
-        constexpr auto info = type_info_of<test_schema::SimpleStruct, default_config>();
+        constexpr auto info = type_info_of<fx::SimpleStruct, default_config>();
         EXPECT_EQ(info.kind, type_kind::structure);
         EXPECT_FALSE(info.is_scalar());
     }
@@ -343,8 +233,8 @@ TEST_CASE(nested_type_info) {
 
 TEST_CASE(annotated_type_info) {
     {
-        constexpr auto si = static_cast<const struct_type_info&>(
-            type_info_of<test_schema::RenamedRoot, default_config>());
+        constexpr auto si =
+            static_cast<const struct_type_info&>(type_info_of<fx::RenamedRoot, default_config>());
         EXPECT_EQ(si.kind, type_kind::structure);
         EXPECT_EQ(si.fields.size(), 2U);
         EXPECT_EQ(si.fields[0].name, "userName");
@@ -353,16 +243,16 @@ TEST_CASE(annotated_type_info) {
     }
 
     {
-        constexpr auto si = static_cast<const struct_type_info&>(
-            type_info_of<test_schema::StrictRoot, default_config>());
+        constexpr auto si =
+            static_cast<const struct_type_info&>(type_info_of<fx::StrictRoot, default_config>());
         EXPECT_EQ(si.kind, type_kind::structure);
         EXPECT_EQ(si.fields.size(), 2U);
         EXPECT_TRUE(si.deny_unknown);
     }
 
     {
-        constexpr auto var = static_cast<const variant_type_info&>(
-            type_info_of<test_schema::TaggedRoot, default_config>());
+        constexpr auto var =
+            static_cast<const variant_type_info&>(type_info_of<fx::TaggedRoot, default_config>());
         EXPECT_EQ(var.kind, type_kind::variant);
         EXPECT_EQ(var.tagging, tag_mode::internal);
         EXPECT_EQ(var.alternatives.size(), 2U);
@@ -379,7 +269,7 @@ TEST_CASE(annotated_type_info) {
 
     {
         constexpr auto ei = static_cast<const enum_type_info&>(
-            type_info_of<test_schema::HugeUnsignedEnum, default_config>());
+            type_info_of<fx::HugeUnsignedEnum, default_config>());
         EXPECT_EQ(ei.kind, type_kind::enumeration);
         EXPECT_EQ(ei.underlying_kind, type_kind::uint64);
         EXPECT_EQ(ei.member_names.size(), 2U);
@@ -392,7 +282,7 @@ TEST_CASE(annotated_type_info) {
 
 TEST_CASE(recursive_tree_node) {
     constexpr auto si =
-        static_cast<const struct_type_info&>(type_info_of<test_schema::TreeNode, default_config>());
+        static_cast<const struct_type_info&>(type_info_of<fx::TreeNode, default_config>());
     EXPECT_EQ(si.kind, type_kind::structure);
     EXPECT_EQ(si.fields.size(), 2U);
 
@@ -411,8 +301,8 @@ TEST_CASE(recursive_tree_node) {
 }
 
 TEST_CASE(recursive_linked_list_unique_ptr) {
-    constexpr auto si = static_cast<const struct_type_info&>(
-        type_info_of<test_schema::LinkedNode, default_config>());
+    constexpr auto si =
+        static_cast<const struct_type_info&>(type_info_of<fx::LinkedNode, default_config>());
     EXPECT_EQ(si.kind, type_kind::structure);
     EXPECT_EQ(si.fields.size(), 2U);
 
@@ -431,8 +321,8 @@ TEST_CASE(recursive_linked_list_unique_ptr) {
 }
 
 TEST_CASE(recursive_shared_ptr_with_vector) {
-    constexpr auto si = static_cast<const struct_type_info&>(
-        type_info_of<test_schema::SharedNode, default_config>());
+    constexpr auto si =
+        static_cast<const struct_type_info&>(type_info_of<fx::SharedNode, default_config>());
     EXPECT_EQ(si.kind, type_kind::structure);
     EXPECT_EQ(si.fields.size(), 3U);
 
@@ -461,8 +351,8 @@ TEST_CASE(recursive_shared_ptr_with_vector) {
 }
 
 TEST_CASE(recursive_optional_vector) {
-    constexpr auto si = static_cast<const struct_type_info&>(
-        type_info_of<test_schema::OptionalRecursive, default_config>());
+    constexpr auto si =
+        static_cast<const struct_type_info&>(type_info_of<fx::OptionalRecursive, default_config>());
     EXPECT_EQ(si.kind, type_kind::structure);
     EXPECT_EQ(si.fields.size(), 2U);
 
@@ -483,8 +373,8 @@ TEST_CASE(recursive_optional_vector) {
 }
 
 TEST_CASE(recursive_map_values) {
-    constexpr auto si = static_cast<const struct_type_info&>(
-        type_info_of<test_schema::MapRecursive, default_config>());
+    constexpr auto si =
+        static_cast<const struct_type_info&>(type_info_of<fx::MapRecursive, default_config>());
     EXPECT_EQ(si.kind, type_kind::structure);
     EXPECT_EQ(si.fields.size(), 2U);
 
@@ -504,8 +394,8 @@ TEST_CASE(recursive_map_values) {
 }
 
 TEST_CASE(recursive_variant_tree) {
-    constexpr auto si = static_cast<const struct_type_info&>(
-        type_info_of<test_schema::VariantBranch, default_config>());
+    constexpr auto si =
+        static_cast<const struct_type_info&>(type_info_of<fx::VariantBranch, default_config>());
     EXPECT_EQ(si.kind, type_kind::structure);
     EXPECT_EQ(si.fields.size(), 1U);
 
@@ -520,7 +410,7 @@ TEST_CASE(recursive_variant_tree) {
     constexpr auto var = static_cast<const variant_type_info&>(arr.element());
     EXPECT_EQ(var.alternatives.size(), 2U);
 
-    constexpr auto leaf_info = type_info_of<test_schema::VariantLeaf, default_config>();
+    constexpr auto leaf_info = type_info_of<fx::VariantLeaf, default_config>();
     constexpr auto alt0 = var.alternatives[0]();
     constexpr auto alt1 = var.alternatives[1]();
     EXPECT_EQ(alt0.kind, type_kind::structure);
@@ -530,8 +420,8 @@ TEST_CASE(recursive_variant_tree) {
 }
 
 TEST_CASE(recursive_mixed_deep) {
-    constexpr auto si = static_cast<const struct_type_info&>(
-        type_info_of<test_schema::MixedRecursive, default_config>());
+    constexpr auto si =
+        static_cast<const struct_type_info&>(type_info_of<fx::MixedRecursive, default_config>());
     EXPECT_EQ(si.kind, type_kind::structure);
     EXPECT_EQ(si.fields.size(), 3U);
 
@@ -568,9 +458,9 @@ TEST_CASE(recursive_mixed_deep) {
 }
 
 TEST_CASE(disabled_range_type_info_is_unknown) {
-    EXPECT_EQ(kind_of<test_schema::disabled_range>(), type_kind::unknown);
+    EXPECT_EQ(kind_of<fx::disabled_range>(), type_kind::unknown);
 
-    constexpr auto info = type_info_of<test_schema::disabled_range, default_config>();
+    constexpr auto info = type_info_of<fx::disabled_range, default_config>();
     EXPECT_EQ(info.kind, type_kind::unknown);
 }
 
@@ -583,7 +473,7 @@ TEST_CASE(cv_canonicalization_all_kinds) {
     static_assert(&type_info_of<bool>() == &type_info_of<const bool>());
 
     // enum
-    static_assert(&type_info_of<test_schema::color>() == &type_info_of<const test_schema::color>());
+    static_assert(&type_info_of<fx::color>() == &type_info_of<const fx::color>());
 
     // containers: array / set / map / optional / pointer
     static_assert(&type_info_of<std::vector<int>>() == &type_info_of<const std::vector<int>>());
@@ -595,12 +485,9 @@ TEST_CASE(cv_canonicalization_all_kinds) {
                   &type_info_of<const std::unique_ptr<int>>());
 
     // structure (including recursive)
-    static_assert(&type_info_of<test_schema::SimpleStruct>() ==
-                  &type_info_of<const test_schema::SimpleStruct>());
-    static_assert(&type_info_of<test_schema::TreeNode>() ==
-                  &type_info_of<const test_schema::TreeNode>());
-    static_assert(&type_info_of<test_schema::MixedRecursive>() ==
-                  &type_info_of<const test_schema::MixedRecursive>());
+    static_assert(&type_info_of<fx::SimpleStruct>() == &type_info_of<const fx::SimpleStruct>());
+    static_assert(&type_info_of<fx::TreeNode>() == &type_info_of<const fx::TreeNode>());
+    static_assert(&type_info_of<fx::MixedRecursive>() == &type_info_of<const fx::MixedRecursive>());
 
     // variant / tuple
     using V = std::variant<int, std::string>;
@@ -674,8 +561,8 @@ TEST_CASE(value_copy_all_kinds) {
 
     // plain structure
     {
-        constexpr auto s = static_cast<const struct_type_info&>(
-            type_info_of<test_schema::SimpleStruct, default_config>());
+        constexpr auto s =
+            static_cast<const struct_type_info&>(type_info_of<fx::SimpleStruct, default_config>());
         static_assert(s.kind == type_kind::structure);
         static_assert(s.fields.size() == 3U);
         constexpr auto f0_type = s.fields[0].type();
@@ -691,8 +578,8 @@ TEST_CASE(value_copy_all_kinds) {
     // a value copy of a self-referential struct_type_info. Here we walk every
     // level, copying into a local constexpr at each step.
     {
-        constexpr auto tree = static_cast<const struct_type_info&>(
-            type_info_of<test_schema::TreeNode, default_config>());
+        constexpr auto tree =
+            static_cast<const struct_type_info&>(type_info_of<fx::TreeNode, default_config>());
         static_assert(tree.kind == type_kind::structure);
         static_assert(tree.fields.size() == 2U);
 
@@ -711,7 +598,7 @@ TEST_CASE(value_copy_all_kinds) {
     // map<string, vector<self>>). Copy at every level.
     {
         constexpr auto mx = static_cast<const struct_type_info&>(
-            type_info_of<test_schema::MixedRecursive, default_config>());
+            type_info_of<fx::MixedRecursive, default_config>());
         static_assert(mx.kind == type_kind::structure);
         static_assert(mx.fields.size() == 3U);
 
@@ -737,17 +624,17 @@ TEST_CASE(value_copy_all_kinds) {
 
 TEST_CASE(recursive_self_pointer_identity) {
     // The reference returned by a recursive field must alias type_info_of<Self>().
-    constexpr auto& tree = type_info_of<test_schema::TreeNode>();
+    constexpr auto& tree = type_info_of<fx::TreeNode>();
     constexpr auto& tree_si = static_cast<const struct_type_info&>(tree);
     constexpr auto& children_arr = static_cast<const array_type_info&>(tree_si.fields[1].type());
     EXPECT_EQ(&children_arr.element(), &tree);
 
-    constexpr auto& linked = type_info_of<test_schema::LinkedNode>();
+    constexpr auto& linked = type_info_of<fx::LinkedNode>();
     constexpr auto& linked_si = static_cast<const struct_type_info&>(linked);
     constexpr auto& next_ptr = static_cast<const optional_type_info&>(linked_si.fields[1].type());
     EXPECT_EQ(&next_ptr.inner(), &linked);
 
-    constexpr auto& mx = type_info_of<test_schema::MixedRecursive>();
+    constexpr auto& mx = type_info_of<fx::MixedRecursive>();
     constexpr auto& mx_si = static_cast<const struct_type_info&>(mx);
     // deep: optional<unique_ptr<Self>>
     constexpr auto& deep_opt = static_cast<const optional_type_info&>(mx_si.fields[1].type());
@@ -763,20 +650,20 @@ TEST_CASE(virtual_schema_recursive_fields_are_usable) {
     // Drives the same code path as type_info_of but through virtual_schema, which
     // previously routed through struct_info_node. Verifies fields/count are
     // instantiable and consistent for recursive types.
-    using TS = virtual_schema<test_schema::TreeNode>;
+    using TS = virtual_schema<fx::TreeNode>;
     EXPECT_EQ(TS::count, 2U);
     EXPECT_EQ(TS::fields.size(), 2U);
     EXPECT_EQ(TS::fields[0].name, "value");
     EXPECT_EQ(TS::fields[1].name, "children");
 
-    using MX = virtual_schema<test_schema::MixedRecursive>;
+    using MX = virtual_schema<fx::MixedRecursive>;
     EXPECT_EQ(MX::count, 3U);
     EXPECT_EQ(MX::fields.size(), 3U);
     EXPECT_EQ(MX::fields[0].name, "tag");
     EXPECT_EQ(MX::fields[1].name, "deep");
     EXPECT_EQ(MX::fields[2].name, "grouped");
 
-    using VB = virtual_schema<test_schema::VariantBranch>;
+    using VB = virtual_schema<fx::VariantBranch>;
     EXPECT_EQ(VB::count, 1U);
     EXPECT_EQ(VB::fields[0].name, "nodes");
 }
@@ -784,8 +671,8 @@ TEST_CASE(virtual_schema_recursive_fields_are_usable) {
 TEST_CASE(recursive_cv_shares_storage) {
     // Combines recursion with cv canonicalization: const T and T must resolve to
     // the exact same type_info object even for self-referential structs.
-    constexpr auto& non_cv = type_info_of<test_schema::TreeNode>();
-    constexpr auto& with_cv = type_info_of<const test_schema::TreeNode>();
+    constexpr auto& non_cv = type_info_of<fx::TreeNode>();
+    constexpr auto& with_cv = type_info_of<const fx::TreeNode>();
     EXPECT_EQ(&non_cv, &with_cv);
 
     constexpr auto& tree_si = static_cast<const struct_type_info&>(non_cv);

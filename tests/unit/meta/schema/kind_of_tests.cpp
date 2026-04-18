@@ -8,25 +8,16 @@
 #include <variant>
 #include <vector>
 
+#include "fixtures/schema/enums.h"
+#include "fixtures/schema/primitives.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/type_kind.h"
 
 namespace kota::meta {
 
-namespace test_schema {
-
-enum class color { red, green, blue };
-
-enum class small_enum : std::int8_t { a = 1, b = 2 };
-
-struct SimpleStruct {
-    int x;
-    std::string name;
-};
-
-}  // namespace test_schema
-
 namespace {
+
+namespace fx = ::kota::meta::fixtures;
 
 TEST_SUITE(virtual_schema_kind_of) {
 
@@ -49,8 +40,8 @@ TEST_CASE(scalars) {
 }
 
 TEST_CASE(enums) {
-    EXPECT_EQ(kind_of<test_schema::color>(), type_kind::enumeration);
-    EXPECT_EQ(kind_of<test_schema::small_enum>(), type_kind::enumeration);
+    EXPECT_EQ(kind_of<fx::color>(), type_kind::enumeration);
+    EXPECT_EQ(kind_of<fx::small_enum>(), type_kind::enumeration);
 }
 
 TEST_CASE(compounds) {
@@ -63,7 +54,7 @@ TEST_CASE(compounds) {
     EXPECT_EQ(kind_of<std::variant<int, std::string>>(), type_kind::variant);
     EXPECT_EQ(kind_of<std::tuple<int, float>>(), type_kind::tuple);
     EXPECT_EQ(kind_of<std::pair<int, std::string>>(), type_kind::tuple);
-    EXPECT_EQ(kind_of<test_schema::SimpleStruct>(), type_kind::structure);
+    EXPECT_EQ(kind_of<fx::SimpleStruct>(), type_kind::structure);
 }
 
 };  // TEST_SUITE(virtual_schema_kind_of)
