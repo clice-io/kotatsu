@@ -2,6 +2,8 @@
 
 #include <cctype>
 #include <cstdint>
+#include <format>
+#include <iterator>
 #include <limits>
 #include <set>
 #include <string>
@@ -11,33 +13,29 @@
 
 #include "kota/meta/type_info.h"
 
-namespace kota::meta::codegen::json_schema {
+namespace kota::codec::schema::json_schema {
 
 inline std::string normalize_name(std::string_view text) {
     std::string out;
     out.reserve(text.size());
     for(char c: text) {
         const unsigned char u = static_cast<unsigned char>(c);
-        if(std::isalnum(u)) {
-            out.push_back(c);
-        } else {
-            out.push_back('_');
-        }
+        out.push_back(std::isalnum(u) ? c : '_');
     }
     if(out.empty()) {
-        out = "Unnamed";
+        return "Unnamed";
     }
-    if(std::isdigit(static_cast<unsigned char>(out.front())) != 0) {
+    if(std::isdigit(static_cast<unsigned char>(out.front()))) {
         out.insert(out.begin(), '_');
     }
     return out;
 }
 
 class emitter {
-    using tk = type_kind;
+    using tk = meta::type_kind;
 
 public:
-    std::string emit(const type_info& root) {
+    std::string emit(const meta::type_info& root) {
         out += '{';
         key("$schema");
         str("https://json-schema.org/draft/2020-12/schema");
@@ -63,9 +61,9 @@ public:
     }
 
 private:
-    const static type_info* unwrap(const type_info* ti) {
+    const static meta::type_info* unwrap(const meta::type_info* ti) {
         while(ti->kind == tk::optional || ti->kind == tk::pointer) {
-            ti = &static_cast<const optional_type_info*>(ti)->inner();
+            ti = &static_cast<const meta::optional_type_info*>(ti)->inner();
         }
         return ti;
     }
@@ -96,7 +94,14 @@ private:
         escape_json(out, s);
     }
 
-    void write_schema(const type_info* ti) {
+    static std::string alternative_name(const meta::variant_type_info* vi, std::size_t i) {
+        if(i < vi->alt_names.size()) {
+            return std::string(vi->alt_names[i]);
+        }
+        return normalize_name(vi->alternatives[i]().type_name);
+    }
+
+    void write_schema(const meta::type_info* ti) {
         ti = unwrap(ti);
 
         switch(ti->kind) {
@@ -132,7 +137,7 @@ private:
         }
     }
 
-    void write_schema_fields(const type_info* ti) {
+    void write_schema_fields(const meta::type_info* ti) {
         ti = unwrap(ti);
         if(ti->kind != tk::structure) {
             auto saved = std::move(out);
@@ -146,7 +151,7 @@ private:
             }
             return;
         }
-        auto* si = static_cast<const struct_type_info*>(ti);
+        auto* si = static_cast<const meta::struct_type_info*>(ti);
         auto name = normalize_name(ti->type_name);
         visited.insert(name);
 
@@ -172,33 +177,20 @@ private:
     }
 
     void write_integer(std::int64_t min_val, std::int64_t max_val) {
-        out += '{';
-        key("type");
-        str("integer");
-        out += ',';
-        key("minimum");
-        out += std::to_string(min_val);
-        out += ',';
-        key("maximum");
-        out += std::to_string(max_val);
-        out += '}';
+        std::format_to(std::back_inserter(out),
+                       R"({{"type":"integer","minimum":{},"maximum":{}}})",
+                       min_val,
+                       max_val);
     }
 
     void write_unsigned(std::uint64_t max_val) {
-        out += '{';
-        key("type");
-        str("integer");
-        out += ',';
-        key("minimum");
-        out += '0';
-        out += ',';
-        key("maximum");
-        out += std::to_string(max_val);
-        out += '}';
+        std::format_to(std::back_inserter(out),
+                       R"({{"type":"integer","minimum":0,"maximum":{}}})",
+                       max_val);
     }
 
-    void write_enum(const type_info* ti) {
-        auto* ei = static_cast<const enum_type_info*>(ti);
+    void write_enum(const meta::type_info* ti) {
+        auto* ei = static_cast<const meta::enum_type_info*>(ti);
         out += '{';
         key("enum");
         out += '[';
@@ -212,8 +204,8 @@ private:
         out += '}';
     }
 
-    void write_array(const type_info* ti) {
-        auto* ai = static_cast<const array_type_info*>(ti);
+    void write_array(const meta::type_info* ti) {
+        auto* ai = static_cast<const meta::array_type_info*>(ti);
         out += '{';
         key("type");
         str("array");
@@ -228,8 +220,8 @@ private:
         out += '}';
     }
 
-    void write_map(const type_info* ti) {
-        auto* mi = static_cast<const map_type_info*>(ti);
+    void write_map(const meta::type_info* ti) {
+        auto* mi = static_cast<const meta::map_type_info*>(ti);
         out += '{';
         key("type");
         str("object");
@@ -239,8 +231,8 @@ private:
         out += '}';
     }
 
-    void write_tuple(const type_info* ti) {
-        auto* tup = static_cast<const tuple_type_info*>(ti);
+    void write_tuple(const meta::type_info* ti) {
+        auto* tup = static_cast<const meta::tuple_type_info*>(ti);
         out += '{';
         key("type");
         str("array");
@@ -257,21 +249,21 @@ private:
         out += '}';
     }
 
-    void write_struct_ref(const type_info* ti) {
+    void write_struct_ref(const meta::type_info* ti) {
         auto name = normalize_name(ti->type_name);
         ensure_struct_def(ti, name);
         out += '{';
         key("$ref");
-        str("#/$defs/" + name);
+        str(std::format("#/$defs/{}", name));
         out += '}';
     }
 
-    void ensure_struct_def(const type_info* ti, const std::string& name) {
+    void ensure_struct_def(const meta::type_info* ti, const std::string& name) {
         if(!visited.insert(name).second) {
             return;
         }
 
-        auto* si = static_cast<const struct_type_info*>(ti);
+        auto* si = static_cast<const meta::struct_type_info*>(ti);
 
         auto saved = std::move(out);
         out.clear();
@@ -294,7 +286,7 @@ private:
         out = std::move(saved);
     }
 
-    void write_properties(const struct_type_info* si) {
+    void write_properties(const meta::struct_type_info* si) {
         out += '{';
         for(std::size_t i = 0; i < si->fields.size(); ++i) {
             if(i > 0) {
@@ -306,52 +298,63 @@ private:
         out += '}';
     }
 
-    void write_required(const struct_type_info* si) {
+    void write_required(const meta::struct_type_info* si) {
         bool first = true;
         for(const auto& f: si->fields) {
-            const type_info& ft = f.type();
+            const meta::type_info& ft = f.type();
             bool is_optional = f.has_default || ft.kind == tk::optional || ft.kind == tk::pointer;
-            if(!is_optional) {
-                if(first) {
-                    out += ',';
-                    key("required");
-                    out += '[';
-                    first = false;
-                } else {
-                    out += ',';
-                }
-                str(f.name);
+            if(is_optional) {
+                continue;
             }
+            if(first) {
+                out += ',';
+                key("required");
+                out += '[';
+                first = false;
+            } else {
+                out += ',';
+            }
+            str(f.name);
         }
         if(!first) {
             out += ']';
         }
     }
 
-    void write_variant(const type_info* ti) {
-        auto* vi = static_cast<const variant_type_info*>(ti);
+    void write_tag_const(std::string_view tag_field, std::string_view alt_name) {
+        out += '{';
+        key("properties");
+        out += '{';
+        key(tag_field);
+        out += '{';
+        key("const");
+        str(alt_name);
+        out += '}';
+        out += '}';
+        out += ',';
+        key("required");
+        out += '[';
+        str(tag_field);
+        out += ']';
+        out += '}';
+    }
+
+    void write_variant(const meta::type_info* ti) {
+        auto* vi = static_cast<const meta::variant_type_info*>(ti);
         out += '{';
         key("oneOf");
         out += '[';
 
-        switch(vi->tagging) {
-            case tag_mode::none:
-                for(std::size_t i = 0; i < vi->alternatives.size(); ++i) {
-                    if(i > 0) {
-                        out += ',';
-                    }
-                    write_schema(&vi->alternatives[i]());
-                }
-                break;
+        for(std::size_t i = 0; i < vi->alternatives.size(); ++i) {
+            if(i > 0) {
+                out += ',';
+            }
 
-            case tag_mode::external:
-                for(std::size_t i = 0; i < vi->alternatives.size(); ++i) {
-                    if(i > 0) {
-                        out += ',';
-                    }
-                    auto alt_name = i < vi->alt_names.size()
-                                        ? std::string(vi->alt_names[i])
-                                        : normalize_name(vi->alternatives[i]().type_name);
+            switch(vi->tagging) {
+                case meta::tag_mode::none: write_schema(&vi->alternatives[i]()); break;
+
+                case meta::tag_mode::external: {
+                    auto alt_name = alternative_name(vi, i);
                     out += '{';
                     key("type");
                     str("object");
@@ -370,50 +373,24 @@ private:
                     key("additionalProperties");
                     out += "false";
                     out += '}';
+                    break;
                 }
-                break;
 
-            case tag_mode::internal:
-                for(std::size_t i = 0; i < vi->alternatives.size(); ++i) {
-                    if(i > 0) {
-                        out += ',';
-                    }
-                    auto alt_name = i < vi->alt_names.size()
-                                        ? std::string(vi->alt_names[i])
-                                        : normalize_name(vi->alternatives[i]().type_name);
+                case meta::tag_mode::internal: {
+                    auto alt_name = alternative_name(vi, i);
                     out += '{';
                     key("allOf");
                     out += '[';
                     write_schema(&vi->alternatives[i]());
                     out += ',';
-                    out += '{';
-                    key("properties");
-                    out += '{';
-                    key(vi->tag_field);
-                    out += '{';
-                    key("const");
-                    str(alt_name);
-                    out += '}';
-                    out += '}';
-                    out += ',';
-                    key("required");
-                    out += '[';
-                    str(vi->tag_field);
+                    write_tag_const(vi->tag_field, alt_name);
                     out += ']';
                     out += '}';
-                    out += ']';
-                    out += '}';
+                    break;
                 }
-                break;
 
-            case tag_mode::adjacent:
-                for(std::size_t i = 0; i < vi->alternatives.size(); ++i) {
-                    if(i > 0) {
-                        out += ',';
-                    }
-                    auto alt_name = i < vi->alt_names.size()
-                                        ? std::string(vi->alt_names[i])
-                                        : normalize_name(vi->alternatives[i]().type_name);
+                case meta::tag_mode::adjacent: {
+                    auto alt_name = alternative_name(vi, i);
                     out += '{';
                     key("type");
                     str("object");
@@ -440,8 +417,9 @@ private:
                     key("additionalProperties");
                     out += "false";
                     out += '}';
+                    break;
                 }
-                break;
+            }
         }
 
         out += ']';
@@ -453,8 +431,8 @@ private:
     std::set<std::string> visited;
 };
 
-inline std::string render(const type_info& root) {
+inline std::string render(const meta::type_info& root) {
     return emitter{}.emit(root);
 }
 
-}  // namespace kota::meta::codegen::json_schema
+}  // namespace kota::codec::schema::json_schema

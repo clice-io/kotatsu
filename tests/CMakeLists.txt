@@ -93,7 +93,7 @@ else()
 endif()
 
 set(TEST_CODEC_BINCODE_SOURCES ${TEST_SOURCES})
-list(FILTER TEST_CODEC_BINCODE_SOURCES INCLUDE REGEX "^tests/unit/codec/bincode/.*\\.cpp$")
+list(FILTER TEST_CODEC_BINCODE_SOURCES INCLUDE REGEX "^tests/unit/codec/(bincode|schema)/.*\\.cpp$")
 list(TRANSFORM TEST_CODEC_BINCODE_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
 target_sources(unit_tests PRIVATE
     ${TEST_CODEC_BINCODE_SOURCES}

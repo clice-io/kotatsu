@@ -44,8 +44,8 @@
 
 #include "kota/zest/zest.h"
 #include "kota/meta/attrs.h"
-#include "kota/meta/codegen/json_schema.h"
 #include "kota/meta/schema.h"
+#include "kota/codec/schema/json_schema.h"
 
 namespace kota::meta {
 
@@ -478,7 +478,7 @@ struct set_of_struct {
     std::string name;
 };
 
-namespace js = codegen::json_schema;
+namespace js = kota::codec::schema::json_schema;
 
 // ===========================================================================
 TEST_SUITE(serde_json_schema) {

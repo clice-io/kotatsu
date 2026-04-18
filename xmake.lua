@@ -93,7 +93,7 @@ end)
 target("meta", function()
 	set_kind("headeronly")
 	add_includedirs("include", { public = true })
-	add_headerfiles("include/(kota/meta/**.h)", "include/(kota/meta/**.inl)")
+	add_headerfiles("include/(kota/meta/*)")
 	add_deps("support")
 	add_rules("cl-flags")
 end)
@@ -146,7 +146,8 @@ if has_config("codec") then
 			"include/(kota/codec/bincode.h)",
 			"include/(kota/codec/bincode/**.h)",
 			"include/(kota/codec/*.h)",
-			"include/(kota/codec/detail/**.h)"
+			"include/(kota/codec/detail/**.h)",
+			"include/(kota/codec/schema/**.h)"
 		)
 		add_rules("cl-flags")
 		add_deps("support", "meta")
@@ -346,7 +347,7 @@ if has_config("test") and has_config("ztest") then
 			add_files("tests/unit/codec/toml/**.cpp")
 		end
 		if has_config("codec") then
-			add_files("tests/unit/codec/bincode/**.cpp")
+			add_files("tests/unit/codec/bincode/**.cpp", "tests/unit/codec/schema/**.cpp")
 		end
 		if has_config("async") and has_config("codec") and has_config("codec_simdjson") then
 			add_files("tests/unit/ipc/**.cpp")
