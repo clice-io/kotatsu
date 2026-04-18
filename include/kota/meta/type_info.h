@@ -56,7 +56,7 @@ struct type_info {
     }
 };
 
-using type_info_fn = const type_info* (*)();
+using type_info_fn = const type_info& (*)();
 
 struct array_type_info : type_info {
     type_info_fn element;
@@ -110,10 +110,10 @@ struct struct_type_info : type_info {
 };
 
 template <typename T, typename Config = default_config>
-constexpr const type_info* type_info_of();
+constexpr const type_info& type_info_of();
 
 template <typename T, typename Config = default_config>
-constexpr const type_info* get_value_of();
+constexpr const type_info& get_value_of();
 
 namespace detail {
 
@@ -688,12 +688,12 @@ constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offse
 }  // namespace detail
 
 template <typename T, typename Config>
-constexpr const type_info* get_value_of() {
-    return &detail::type_instance<T, Config>::value;
+constexpr const type_info& get_value_of() {
+    return detail::type_instance<T, Config>::value;
 }
 
 template <typename T, typename Config>
-constexpr const type_info* type_info_of() {
+constexpr const type_info& type_info_of() {
     return get_value_of<T, Config>();
 }
 

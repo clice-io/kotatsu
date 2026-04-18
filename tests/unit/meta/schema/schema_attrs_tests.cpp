@@ -121,9 +121,9 @@ TEST_CASE(simple_struct_fields) {
     EXPECT_EQ(fields[1].name, "name");
     EXPECT_EQ(fields[2].name, "score");
 
-    EXPECT_EQ(fields[0].type()->kind, type_kind::int32);
-    EXPECT_EQ(fields[1].type()->kind, type_kind::string);
-    EXPECT_EQ(fields[2].type()->kind, type_kind::float32);
+    EXPECT_EQ(fields[0].type().kind, type_kind::int32);
+    EXPECT_EQ(fields[1].type().kind, type_kind::string);
+    EXPECT_EQ(fields[2].type().kind, type_kind::float32);
 
     EXPECT_EQ(fields[0].physical_index, 0U);
     EXPECT_EQ(fields[1].physical_index, 1U);
@@ -151,11 +151,11 @@ TEST_CASE(rename_and_skip) {
     constexpr auto& fields = virtual_schema<test_schema::AnnotatedStruct>::fields;
 
     EXPECT_EQ(fields[0].name, "id");
-    EXPECT_EQ(fields[0].type()->kind, type_kind::int32);
+    EXPECT_EQ(fields[0].type().kind, type_kind::int32);
     EXPECT_EQ(fields[0].physical_index, 0U);
 
     EXPECT_EQ(fields[1].name, "value");
-    EXPECT_EQ(fields[1].type()->kind, type_kind::float32);
+    EXPECT_EQ(fields[1].type().kind, type_kind::float32);
     EXPECT_EQ(fields[1].physical_index, 2U);
 }
 
@@ -182,7 +182,7 @@ TEST_CASE(flatten) {
     EXPECT_EQ(fields[3].name, "y");
 
     for(std::size_t i = 0; i < 4; ++i) {
-        EXPECT_EQ(fields[i].type()->kind, type_kind::int32);
+        EXPECT_EQ(fields[i].type().kind, type_kind::int32);
     }
 
     // Offsets: strictly increasing, flattened offsets match outer+inner layout
@@ -211,7 +211,7 @@ TEST_CASE(deep_flatten) {
     EXPECT_EQ(fields[4].name, "tail");
 
     for(std::size_t i = 0; i < 5; ++i) {
-        EXPECT_EQ(fields[i].type()->kind, type_kind::int32);
+        EXPECT_EQ(fields[i].type().kind, type_kind::int32);
     }
 
     // Offsets must be strictly increasing
@@ -248,39 +248,40 @@ TEST_CASE(nested_field_type_info) {
 
     constexpr auto& fields = virtual_schema<test_schema::NestedStruct>::fields;
     EXPECT_EQ(fields[0].name, "items");
-    EXPECT_EQ(fields[0].type()->kind, type_kind::array);
+    EXPECT_EQ(fields[0].type().kind, type_kind::array);
 
-    auto* arr = static_cast<const array_type_info*>(fields[0].type());
-    EXPECT_EQ(arr->element()->kind, type_kind::structure);
+    constexpr auto arr = static_cast<const array_type_info&>(fields[0].type());
+    constexpr auto elem = arr.element();
+    EXPECT_EQ(elem.kind, type_kind::structure);
 }
 
 TEST_CASE(tagged_field_type_info) {
     constexpr auto& fields = virtual_schema<test_schema::TaggedFieldStruct>::fields;
     EXPECT_EQ(fields.size(), 3U);
 
-    auto* ext = static_cast<const variant_type_info*>(fields[0].type());
-    EXPECT_EQ(ext->tagging, tag_mode::external);
-    EXPECT_EQ(ext->tag_field, "");
-    EXPECT_EQ(ext->content_field, "");
-    EXPECT_EQ(ext->alt_names.size(), 2U);
-    EXPECT_EQ(ext->alt_names[0], "integer");
-    EXPECT_EQ(ext->alt_names[1], "text");
+    constexpr auto ext = static_cast<const variant_type_info&>(fields[0].type());
+    EXPECT_EQ(ext.tagging, tag_mode::external);
+    EXPECT_EQ(ext.tag_field, "");
+    EXPECT_EQ(ext.content_field, "");
+    EXPECT_EQ(ext.alt_names.size(), 2U);
+    EXPECT_EQ(ext.alt_names[0], "integer");
+    EXPECT_EQ(ext.alt_names[1], "text");
 
-    auto* in = static_cast<const variant_type_info*>(fields[1].type());
-    EXPECT_EQ(in->tagging, tag_mode::internal);
-    EXPECT_EQ(in->tag_field, "kind");
-    EXPECT_EQ(in->content_field, "");
-    EXPECT_EQ(in->alt_names.size(), 2U);
-    EXPECT_EQ(in->alt_names[0], "circle");
-    EXPECT_EQ(in->alt_names[1], "rect");
+    constexpr auto in = static_cast<const variant_type_info&>(fields[1].type());
+    EXPECT_EQ(in.tagging, tag_mode::internal);
+    EXPECT_EQ(in.tag_field, "kind");
+    EXPECT_EQ(in.content_field, "");
+    EXPECT_EQ(in.alt_names.size(), 2U);
+    EXPECT_EQ(in.alt_names[0], "circle");
+    EXPECT_EQ(in.alt_names[1], "rect");
 
-    auto* adj = static_cast<const variant_type_info*>(fields[2].type());
-    EXPECT_EQ(adj->tagging, tag_mode::adjacent);
-    EXPECT_EQ(adj->tag_field, "type");
-    EXPECT_EQ(adj->content_field, "value");
-    EXPECT_EQ(adj->alt_names.size(), 2U);
-    EXPECT_EQ(adj->alt_names[0], "integer");
-    EXPECT_EQ(adj->alt_names[1], "text");
+    constexpr auto adj = static_cast<const variant_type_info&>(fields[2].type());
+    EXPECT_EQ(adj.tagging, tag_mode::adjacent);
+    EXPECT_EQ(adj.tag_field, "type");
+    EXPECT_EQ(adj.content_field, "value");
+    EXPECT_EQ(adj.alt_names.size(), 2U);
+    EXPECT_EQ(adj.alt_names[0], "integer");
+    EXPECT_EQ(adj.alt_names[1], "text");
 }
 
 };  // TEST_SUITE(virtual_schema_schema_attrs)
