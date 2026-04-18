@@ -285,9 +285,7 @@ struct type_instance_subject {
     constexpr static type_kind kind = kind_of<wire_t>();
 };
 
-template <typename T,
-          typename Config,
-          type_kind Kind = type_instance_subject<T>::kind>
+template <typename T, typename Config, type_kind Kind = type_instance_subject<T>::kind>
 struct type_instance_impl;
 
 template <typename T, typename Config = default_config>
@@ -575,8 +573,8 @@ struct type_instance_impl<T, Config, type_kind::structure> {
         has_deny_unknown_fields<wire_t>() || tuple_has_v<attrs_t, attrs::deny_unknown_fields>;
     constexpr static bool is_trivially_copyable = std::is_trivially_copyable_v<wire_t>;
 
-    static const built_fields_t<wire_t, schema_config> fields;
-    static const struct_type_info value;
+    const static built_fields_t<wire_t, schema_config> fields;
+    const static struct_type_info value;
 };
 
 template <typename T, typename Config>
