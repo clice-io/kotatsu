@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cctype>
 #include <cstdint>
 #include <format>
 #include <iterator>
@@ -9,27 +8,12 @@
 #include <string_view>
 
 #include "kota/meta/type_info.h"
+#include "kota/support/naming.h"
 
 namespace kota::codec::schema::fbs {
 
-inline std::string normalize_identifier(std::string_view text) {
-    std::string out;
-    out.reserve(text.size());
-    for(char c: text) {
-        const unsigned char u = static_cast<unsigned char>(c);
-        out.push_back(std::isalnum(u) ? c : '_');
-    }
-    if(out.empty()) {
-        return "Unnamed";
-    }
-    if(std::isdigit(static_cast<unsigned char>(out.front()))) {
-        out.insert(out.begin(), '_');
-    }
-    return out;
-}
-
 inline std::string map_entry_identifier(std::string_view owner, std::string_view field) {
-    return normalize_identifier(std::format("{}_{}Entry", owner, field));
+    return kota::naming::normalize_identifier(std::format("{}_{}Entry", owner, field));
 }
 
 class emitter {
@@ -44,7 +28,7 @@ public:
         emit_object(ti);
         std::format_to(std::back_inserter(out),
                        "root_type {};\n",
-                       normalize_identifier(ti->type_name));
+                       kota::naming::normalize_identifier(ti->type_name));
         return std::move(out);
     }
 
@@ -130,7 +114,7 @@ private:
             case tk::character: return std::string(scalar_fbs_name(ti->kind));
             case tk::bytes: return "[ubyte]";
             case tk::enumeration:
-            case tk::structure: return normalize_identifier(ti->type_name);
+            case tk::structure: return kota::naming::normalize_identifier(ti->type_name);
             case tk::string: return "string";
             case tk::array:
             case tk::set: {
@@ -186,7 +170,7 @@ private:
     }
 
     void emit_enum(const meta::type_info* ti) {
-        auto name = normalize_identifier(ti->type_name);
+        auto name = kota::naming::normalize_identifier(ti->type_name);
         if(!emitted_enums.insert(name).second) {
             return;
         }
@@ -196,7 +180,7 @@ private:
         for(std::size_t i = 0; i < ei->member_names.size(); ++i) {
             std::format_to(it,
                            "  {} = {}{}\n",
-                           normalize_identifier(ei->member_names[i]),
+                           kota::naming::normalize_identifier(ei->member_names[i]),
                            format_enum_value(ei, i),
                            i + 1 < ei->member_names.size() ? "," : "");
         }
@@ -204,7 +188,7 @@ private:
     }
 
     void emit_object(const meta::type_info* ti) {
-        auto object_name = normalize_identifier(ti->type_name);
+        auto object_name = kota::naming::normalize_identifier(ti->type_name);
         if(!emitted_objects.insert(object_name).second) {
             return;
         }
@@ -240,7 +224,7 @@ private:
                        is_fbs_struct(ti) ? "struct" : "table",
                        object_name);
         for(const auto& f: fields) {
-            auto fname = normalize_identifier(f.name);
+            auto fname = kota::naming::normalize_identifier(f.name);
             auto* ft = unwrap(&f.type());
             if(ft->kind == tk::map) {
                 auto entry_name = map_entry_identifier(object_name, f.name);

@@ -85,6 +85,21 @@ constexpr std::string snake_to_camel(std::string_view text, bool upper_first) {
     return out;
 }
 
+constexpr std::string normalize_identifier(std::string_view text) {
+    std::string out;
+    out.reserve(text.size());
+    for(char c: text) {
+        out.push_back(is_alnum(c) ? c : '_');
+    }
+    if(out.empty()) {
+        return "Unnamed";
+    }
+    if(is_digit(out.front())) {
+        out.insert(out.begin(), '_');
+    }
+    return out;
+}
+
 constexpr std::string snake_to_upper(std::string_view text) {
     auto snake = normalize_to_lower_snake(text);
     for(auto& c: snake)

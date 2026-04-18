@@ -1432,35 +1432,35 @@ root_type set_of_struct;
 // ---------------------------------------------------------------------------
 
 TEST_CASE(normalize_empty) {
-    EXPECT_EQ(fbs::normalize_identifier(""), "Unnamed");
+    EXPECT_EQ(kota::naming::normalize_identifier(""), "Unnamed");
 }
 
 TEST_CASE(normalize_leading_digit) {
-    EXPECT_EQ(fbs::normalize_identifier("3abc"), "_3abc");
+    EXPECT_EQ(kota::naming::normalize_identifier("3abc"), "_3abc");
 }
 
 TEST_CASE(normalize_special_chars) {
-    EXPECT_EQ(fbs::normalize_identifier("a::b<c>"), "a__b_c_");
+    EXPECT_EQ(kota::naming::normalize_identifier("a::b<c>"), "a__b_c_");
 }
 
 TEST_CASE(normalize_alpha_unchanged) {
-    EXPECT_EQ(fbs::normalize_identifier("FooBar"), "FooBar");
+    EXPECT_EQ(kota::naming::normalize_identifier("FooBar"), "FooBar");
 }
 
 TEST_CASE(normalize_underscores_preserved) {
-    EXPECT_EQ(fbs::normalize_identifier("__hello__"), "__hello__");
+    EXPECT_EQ(kota::naming::normalize_identifier("__hello__"), "__hello__");
 }
 
 TEST_CASE(normalize_spaces_to_underscores) {
-    EXPECT_EQ(fbs::normalize_identifier("a b c"), "a_b_c");
+    EXPECT_EQ(kota::naming::normalize_identifier("a b c"), "a_b_c");
 }
 
 TEST_CASE(normalize_single_char) {
-    EXPECT_EQ(fbs::normalize_identifier("x"), "x");
+    EXPECT_EQ(kota::naming::normalize_identifier("x"), "x");
 }
 
 TEST_CASE(normalize_all_digits) {
-    EXPECT_EQ(fbs::normalize_identifier("123"), "_123");
+    EXPECT_EQ(kota::naming::normalize_identifier("123"), "_123");
 }
 
 // ---------------------------------------------------------------------------
@@ -1927,52 +1927,52 @@ TEST_CASE(output_rejects_non_struct_root) {
 
 TEST_CASE(normalize_tab_char) {
     // Tab is not alphanumeric, should become underscore
-    EXPECT_EQ(fbs::normalize_identifier("a\tb"), "a_b");
+    EXPECT_EQ(kota::naming::normalize_identifier("a\tb"), "a_b");
 }
 
 TEST_CASE(normalize_mixed_symbols) {
     // Multiple different non-alphanumeric characters
-    EXPECT_EQ(fbs::normalize_identifier("a+b-c*d/e"), "a_b_c_d_e");
+    EXPECT_EQ(kota::naming::normalize_identifier("a+b-c*d/e"), "a_b_c_d_e");
 }
 
 TEST_CASE(normalize_dot_separator) {
     // Dots should become underscores
-    EXPECT_EQ(fbs::normalize_identifier("com.example.Foo"), "com_example_Foo");
+    EXPECT_EQ(kota::naming::normalize_identifier("com.example.Foo"), "com_example_Foo");
 }
 
 TEST_CASE(normalize_angle_brackets) {
     // Template-like syntax
-    EXPECT_EQ(fbs::normalize_identifier("vector<int>"), "vector_int_");
+    EXPECT_EQ(kota::naming::normalize_identifier("vector<int>"), "vector_int_");
 }
 
 TEST_CASE(normalize_parens) {
     // Parentheses
-    EXPECT_EQ(fbs::normalize_identifier("foo(bar)"), "foo_bar_");
+    EXPECT_EQ(kota::naming::normalize_identifier("foo(bar)"), "foo_bar_");
 }
 
 TEST_CASE(normalize_single_special) {
     // Single non-alphanumeric character
-    EXPECT_EQ(fbs::normalize_identifier("@"), "_");
+    EXPECT_EQ(kota::naming::normalize_identifier("@"), "_");
 }
 
 TEST_CASE(normalize_leading_underscore) {
     // Leading underscore is fine — no digit prefix
-    EXPECT_EQ(fbs::normalize_identifier("_foo"), "_foo");
+    EXPECT_EQ(kota::naming::normalize_identifier("_foo"), "_foo");
 }
 
 TEST_CASE(normalize_trailing_digit) {
     // Trailing digit is fine
-    EXPECT_EQ(fbs::normalize_identifier("abc123"), "abc123");
+    EXPECT_EQ(kota::naming::normalize_identifier("abc123"), "abc123");
 }
 
 TEST_CASE(normalize_all_underscores) {
     // All underscores — should pass through unchanged
-    EXPECT_EQ(fbs::normalize_identifier("___"), "___");
+    EXPECT_EQ(kota::naming::normalize_identifier("___"), "___");
 }
 
 TEST_CASE(normalize_namespace_colons) {
     // Double colon namespace separator
-    EXPECT_EQ(fbs::normalize_identifier("std::string"), "std__string");
+    EXPECT_EQ(kota::naming::normalize_identifier("std::string"), "std__string");
 }
 
 // ---------------------------------------------------------------------------
