@@ -10,6 +10,7 @@
 
 #include "kota/support/type_traits.h"
 #include "kota/meta/compare.h"
+#include "kota/meta/name.h"
 
 namespace kota::zest {
 
@@ -53,6 +54,23 @@ inline bool check_unary_failure(bool failure,
         std::println("           at {}:{}", loc.file_name(), loc.line());
     }
     return failure;
+}
+
+template <typename L, typename R>
+inline bool check_type_eq_failure(std::string_view exprs_str,
+                                  std::source_location loc = std::source_location::current()) {
+    if constexpr(std::is_same_v<L, R>) {
+        (void)exprs_str;
+        (void)loc;
+        return false;
+    } else {
+        const auto exprs = zest::parse_binary_exprs(exprs_str);
+        std::println("[ expect ] {} is same type as {}", exprs.lhs, exprs.rhs);
+        std::println("           lhs: {}", ::kota::meta::type_name<L>());
+        std::println("           rhs: {}", ::kota::meta::type_name<R>());
+        std::println("           at {}:{}", loc.file_name(), loc.line());
+        return true;
+    }
 }
 
 template <typename L, typename R>

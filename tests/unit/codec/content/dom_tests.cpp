@@ -15,8 +15,6 @@ struct mixed_payload {
 struct dom_payload {
     int id = 0;
     std::string name;
-
-    auto operator==(const dom_payload&) const -> bool = default;
 };
 
 std::string make_large_object_json(int count) {

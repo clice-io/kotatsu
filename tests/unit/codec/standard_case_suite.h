@@ -39,12 +39,18 @@
 #include <variant>
 #include <vector>
 
+#include "fixtures/schema/primitives.h"
+#include "fixtures/schema/tagged.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
 
 namespace kota::codec::standard_case {
 
 using namespace meta;
+
+using AllPrimitives = meta::fixtures::AllPrimitives;
+using TaggedCircle = meta::fixtures::Circle;
+using TaggedRect = meta::fixtures::Rect;
 
 struct Basic {
     bool is_valid{};
@@ -132,24 +138,6 @@ struct Ultimate {
     TreeNode root;
 
     auto operator==(const Ultimate&) const -> bool = default;
-};
-
-struct Scalars {
-    bool b{};
-    std::int8_t i8{};
-    std::int16_t i16{};
-    std::int32_t i32{};
-    std::int64_t i64{};
-    std::uint8_t u8{};
-    std::uint16_t u16{};
-    std::uint32_t u32{};
-    std::uint64_t u64{};
-    float f32{};
-    double f64{};
-    char ch{};
-    std::string str;
-
-    auto operator==(const Scalars&) const -> bool = default;
 };
 
 struct NestedContainers {
@@ -259,19 +247,6 @@ using TaggedAdjacentVariant =
     annotation<std::variant<int, std::string, Basic>,
                attrs::adjacently_tagged<"type", "value">::names<"integer", "text", "basic">>;
 
-struct TaggedCircle {
-    double radius{};
-
-    auto operator==(const TaggedCircle&) const -> bool = default;
-};
-
-struct TaggedRect {
-    double width{};
-    double height{};
-
-    auto operator==(const TaggedRect&) const -> bool = default;
-};
-
 using TaggedInternalVariant = annotation<std::variant<TaggedCircle, TaggedRect>,
                                          attrs::internally_tagged<"kind">::names<"circle", "rect">>;
 
@@ -292,8 +267,6 @@ struct TaggedAdjacentHolder {
 struct TaggedInternalHolder {
     std::string label;
     TaggedInternalVariant shape;
-
-    auto operator==(const TaggedInternalHolder&) const -> bool = default;
 };
 
 using scalar_tuple = std::tuple<bool,
@@ -319,8 +292,8 @@ inline auto make_basic(bool is_valid, std::int32_t i32, double f64, std::string 
     };
 }
 
-inline auto make_scalars() -> Scalars {
-    return Scalars{
+inline auto make_scalars() -> AllPrimitives {
+    return AllPrimitives{
         .b = true,
         .i8 = -42,
         .i16 = -1000,
@@ -332,8 +305,8 @@ inline auto make_scalars() -> Scalars {
         .u64 = 10000000000ULL,
         .f32 = 3.14F,
         .f64 = 2.718281828,
-        .ch = 'Z',
-        .str = "hello scalars",
+        .c = 'Z',
+        .s = "hello scalars",
     };
 }
 
@@ -496,8 +469,6 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
         EXPECT_FALSE(status.has_value());                                                          \
     }
 
-/// Primitive scalars.
-
 #define SERDE_STANDARD_TEST_CASES_PRIMITIVES(rt)                                                   \
     TEST_CASE(standard_primitives_roundtrip) {                                                     \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, true);                                                 \
@@ -508,8 +479,6 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, 'x');                                                  \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::string("hello-serde"));                           \
     }
-
-/// Numeric boundaries.
 
 #define SERDE_STANDARD_TEST_CASES_NUMERIC_BOUNDARIES(rt)                                           \
     TEST_CASE(standard_numeric_boundaries_roundtrip) {                                             \
@@ -557,8 +526,6 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::numeric_limits<double>::lowest());                \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::numeric_limits<double>::max());                   \
     }
-
-/// Tuple-like (tuple / pair / array).
 
 #define SERDE_STANDARD_TEST_CASES_TUPLE_LIKE(rt)                                                   \
     TEST_CASE(standard_tuple_like_roundtrip) {                                                     \
@@ -616,8 +583,6 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::array<scalar_tuple_t, 2>{scalar_a, scalar_b});    \
     }
 
-/// Sequence / set containers (vector / set / unordered_set).
-
 #define SERDE_STANDARD_TEST_CASES_SEQUENCE_SET(rt)                                                 \
     TEST_CASE(standard_sequence_set_roundtrip) {                                                   \
         using basic_t = standard_case::Basic;                                                      \
@@ -650,8 +615,6 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt,                                                        \
                                         std::unordered_set<std::uint64_t>{11ULL, 22ULL, 33ULL});   \
     }
-
-/// Map containers (map / unordered_map).
 
 #define SERDE_STANDARD_TEST_CASES_MAPS(rt)                                                         \
     TEST_CASE(standard_map_roundtrip) {                                                            \
@@ -702,8 +665,6 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
         });                                  \
     }
 
-/// Optional values.
-
 #define SERDE_STANDARD_TEST_CASES_OPTIONAL(rt)                                                     \
     TEST_CASE(standard_optional_roundtrip) {                                                       \
         using basic_t = standard_case::Basic;                                                      \
@@ -736,8 +697,6 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
         });                           \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::optional<std::vector<int>>{std::nullopt});        \
     }
-
-/// Smart pointers (unique_ptr / shared_ptr).
 
 #define SERDE_STANDARD_TEST_CASES_POINTERS(rt)                                                     \
     TEST_CASE(standard_smart_pointers_roundtrip) {                                                 \
@@ -846,8 +805,6 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
         }                                                                                          \
     }
 
-/// Attribute behaviors and schema attrs.
-
 #define SERDE_STANDARD_TEST_CASES_ATTRS(rt)                                                        \
     TEST_CASE(standard_attrs_roundtrip) {                                                          \
         using payload_t = standard_case::AttrPayload;                                              \
@@ -890,8 +847,6 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             standard_case::EnumStringAccess{standard_case::AccessLevel::viewer});                  \
     }
 
-/// Tagged variants (external / adjacent / internal).
-
 #define SERDE_STANDARD_TEST_CASES_TAGGED_VARIANTS(rt)                                              \
     TEST_CASE(standard_tagged_variants_roundtrip) {                                                \
         using ext_t = standard_case::TaggedExternalVariant;                                        \
@@ -921,11 +876,9 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, standard_case::make_tagged_internal_holder());         \
     }
 
-/// Text decoder error paths.
-/// decode_text signature:
-///   template <typename T>
-///   auto decode_text(std::string_view text, T& out) -> std::expected<void, E>;
-
+// decode_text signature:
+//   template <typename T>
+//   auto decode_text(std::string_view text, T& out) -> std::expected<void, E>;
 #define SERDE_STANDARD_TEST_CASES_ERROR_PATHS_TEXT(decode_text)                                    \
     TEST_CASE(standard_error_paths_text) {                                                         \
         std::int32_t i32 = 0;                                                                      \
@@ -943,8 +896,6 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
         standard_case::TaggedInternalVariant internal{};                                           \
         SERDE_STANDARD_ASSERT_TEXT_DECODE_FAIL(decode_text, R"({"radius":5.0})", internal);        \
     }
-
-/// Variant values.
 
 #define SERDE_STANDARD_TEST_CASES_VARIANT(rt)                                                      \
     TEST_CASE(standard_variant_roundtrip) {                                                        \
@@ -1005,8 +956,6 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
 #define SERDE_STANDARD_TEST_CASES_VARIANT_TEXT_SAFE(rt)                                            \
     SERDE_STANDARD_TEST_CASES_VARIANT_WIRE_SAFE(rt)
 
-/// All container-like and sum-type groups.
-
 #define SERDE_STANDARD_TEST_CASES_STL_CONTAINERS(rt)                                               \
     SERDE_STANDARD_TEST_CASES_TUPLE_LIKE(rt)                                                       \
     SERDE_STANDARD_TEST_CASES_SEQUENCE_SET(rt)                                                     \
@@ -1015,14 +964,10 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
     SERDE_STANDARD_TEST_CASES_POINTERS(rt)                                                         \
     SERDE_STANDARD_TEST_CASES_VARIANT(rt)
 
-/// Extended schema/annotation/tagged coverage.
-
 #define SERDE_STANDARD_TEST_CASES_EXTENDED(rt)                                                     \
     SERDE_STANDARD_TEST_CASES_NUMERIC_BOUNDARIES(rt)                                               \
     SERDE_STANDARD_TEST_CASES_ATTRS(rt)                                                            \
     SERDE_STANDARD_TEST_CASES_TAGGED_VARIANTS(rt)
-
-/// Complex composed structs.
 
 #define SERDE_STANDARD_TEST_CASES_COMPLEX(rt)                                                      \
     TEST_CASE(standard_complex_roundtrip) {                                                        \
@@ -1054,8 +999,6 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             EXPECT_EQ(input, *output);                                                             \
         }                                                                                          \
     }
-
-/// Full suite.
 
 #define SERDE_STANDARD_TEST_CASES_ALL(rt)                                                          \
     SERDE_STANDARD_TEST_CASES_PRIMITIVES(rt)                                                       \

@@ -2,13 +2,17 @@
 #include <initializer_list>
 #include <map>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <variant>
 #include <vector>
 
 #include "kota/zest/zest.h"
+#include "kota/meta/annotation.h"
+#include "kota/meta/attrs.h"
 #include "kota/meta/compare.h"
 
 namespace kota::meta {
@@ -619,6 +623,103 @@ TEST_CASE(custom_ops) {
 
     EXPECT_TRUE(gt(c, a));
     EXPECT_TRUE(ge(c, a));
+}
+
+struct v_circle {
+    int radius;
+};
+
+struct v_rect {
+    int width;
+    int height;
+};
+
+#if KOTA_ENABLE_EXCEPTIONS
+struct throwing_alt {
+    throwing_alt() = default;
+
+    throwing_alt(const throwing_alt&) {
+        throw std::runtime_error("throwing_alt");
+    }
+
+    auto operator==(const throwing_alt&) const -> bool {
+        return true;
+    }
+
+    auto operator<(const throwing_alt&) const -> bool {
+        return false;
+    }
+};
+#endif
+
+TEST_CASE(variant_eq_unreflectable_alt) {
+    using shape_t = std::variant<v_circle, v_rect>;
+    shape_t a = v_circle{.radius = 3};
+    shape_t b = v_circle{.radius = 3};
+    shape_t c = v_circle{.radius = 4};
+    shape_t d = v_rect{.width = 1, .height = 2};
+
+    EXPECT_TRUE(eq(a, b));
+    EXPECT_FALSE(eq(a, c));
+    EXPECT_FALSE(eq(a, d));
+    EXPECT_TRUE(ne(a, c));
+}
+
+TEST_CASE(variant_lt_index_tie_break) {
+    using shape_t = std::variant<v_circle, v_rect>;
+    shape_t a = v_circle{.radius = 10};
+    shape_t b = v_rect{.width = 1, .height = 1};
+
+    EXPECT_TRUE(lt(a, b));
+    EXPECT_FALSE(lt(b, a));
+    EXPECT_TRUE(le(a, b));
+    EXPECT_TRUE(gt(b, a));
+    EXPECT_TRUE(ge(b, a));
+}
+
+TEST_CASE(variant_lt_same_alternative) {
+    using shape_t = std::variant<v_circle, v_rect>;
+    shape_t small = v_rect{.width = 1, .height = 2};
+    shape_t big = v_rect{.width = 1, .height = 5};
+    EXPECT_TRUE(lt(small, big));
+    EXPECT_FALSE(lt(big, small));
+}
+
+#if KOTA_ENABLE_EXCEPTIONS
+TEST_CASE(variant_valueless_compares_less) {
+    using shape_t = std::variant<throwing_alt, v_circle>;
+    shape_t valued = v_circle{.radius = 1};
+    shape_t valueless;
+    try {
+        throwing_alt seed;
+        valueless.emplace<throwing_alt>(seed);
+    } catch(const std::exception&) {}
+    ASSERT_TRUE(valueless.valueless_by_exception());
+
+    EXPECT_TRUE(lt(valueless, valued));
+    EXPECT_FALSE(lt(valued, valueless));
+    EXPECT_FALSE(eq(valueless, valued));
+
+    shape_t valueless2;
+    try {
+        throwing_alt seed;
+        valueless2.emplace<throwing_alt>(seed);
+    } catch(const std::exception&) {}
+    ASSERT_TRUE(valueless2.valueless_by_exception());
+    EXPECT_FALSE(lt(valueless, valueless2));
+    EXPECT_FALSE(lt(valueless2, valueless));
+}
+#endif
+
+TEST_CASE(variant_in_annotation) {
+    using tagged_shape_t =
+        annotation<std::variant<v_circle, v_rect>, attrs::internally_tagged<"kind">>;
+    tagged_shape_t lhs = v_circle{.radius = 2};
+    tagged_shape_t rhs = v_circle{.radius = 2};
+    tagged_shape_t other = v_rect{.width = 3, .height = 4};
+    EXPECT_TRUE(eq(lhs, rhs));
+    EXPECT_FALSE(eq(lhs, other));
+    EXPECT_TRUE(lt(lhs, other));
 }
 
 TEST_CASE(functor_sort) {

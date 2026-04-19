@@ -1,6 +1,8 @@
 #include <string>
 #include <variant>
 
+#include "fixtures/schema/common.h"
+#include "fixtures/schema/tagged.h"
 #include "kota/zest/zest.h"
 #include "kota/codec/codec.h"
 #include "kota/codec/json/deserializer.h"
@@ -15,14 +17,9 @@ namespace {
 using json::from_json;
 using json::to_json;
 
-struct Basic {
-    bool is_valid{};
-    std::int32_t i32{};
-
-    auto operator==(const Basic&) const -> bool = default;
-};
-
-// ── Externally tagged ──────────────────────────────────────────────
+using ShapeCircle = meta::fixtures::Circle;
+using ShapeRect = meta::fixtures::Rect;
+using Basic = meta::fixtures::BoolInt;
 
 using ExtVariant = annotation<std::variant<int, std::string, Basic>,
                               meta::attrs::externally_tagged::names<"integer", "text", "basic">>;
@@ -30,11 +27,7 @@ using ExtVariant = annotation<std::variant<int, std::string, Basic>,
 struct ExtTaggedHolder {
     std::string name;
     ExtVariant data;
-
-    auto operator==(const ExtTaggedHolder&) const -> bool = default;
 };
-
-// ── Adjacently tagged ──────────────────────────────────────────────
 
 using AdjVariant =
     annotation<std::variant<int, std::string, Basic>,
@@ -43,34 +36,13 @@ using AdjVariant =
 struct AdjTaggedHolder {
     std::string name;
     AdjVariant data;
-
-    auto operator==(const AdjTaggedHolder&) const -> bool = default;
 };
-
-// ── Variant with monostate ─────────────────────────────────────────
 
 using ExtWithMono = annotation<std::variant<std::monostate, int, std::string>,
                                meta::attrs::externally_tagged::names<"none", "integer", "text">>;
 
-// ── Internally tagged ─────────────────────────────────────────────
-
-struct ShapeCircle {
-    double radius{};
-
-    auto operator==(const ShapeCircle&) const -> bool = default;
-};
-
-struct ShapeRect {
-    double width{};
-    double height{};
-
-    auto operator==(const ShapeRect&) const -> bool = default;
-};
-
 struct ShapeLine {
     int line_width{};
-
-    auto operator==(const ShapeLine&) const -> bool = default;
 };
 
 using IntTagVariant = annotation<std::variant<ShapeCircle, ShapeRect>,
@@ -80,15 +52,9 @@ using IntTagRenamedVariant =
     annotation<std::variant<ShapeLine, ShapeRect>,
                meta::attrs::internally_tagged<"kind">::names<"line", "rect">>;
 
-using AdjShapeVariant =
-    annotation<std::variant<ShapeCircle, ShapeRect>,
-               meta::attrs::adjacently_tagged<"type", "value">::names<"circle", "rect">>;
-
 struct IntTagHolder {
     std::string label;
     IntTagVariant shape;
-
-    auto operator==(const IntTagHolder&) const -> bool = default;
 };
 
 struct camel_config {
@@ -96,8 +62,6 @@ struct camel_config {
 };
 
 TEST_SUITE(serde_simdjson_tagged_variant) {
-
-// ── externally_tagged tests ────────────────────────────────────────
 
 TEST_CASE(externally_tagged_int) {
     ExtVariant v = 42;
@@ -149,17 +113,6 @@ TEST_CASE(externally_tagged_in_struct) {
     EXPECT_EQ(parsed, input);
 }
 
-TEST_CASE(externally_tagged_struct_roundtrip) {
-    ExtTaggedHolder input{.name = "rtrip", .data = std::string("world")};
-    auto encoded = to_json(input);
-    ASSERT_TRUE(encoded.has_value());
-
-    ExtTaggedHolder parsed{};
-    auto status = from_json(*encoded, parsed);
-    ASSERT_TRUE(status.has_value());
-    EXPECT_EQ(parsed, input);
-}
-
 TEST_CASE(externally_tagged_monostate) {
     ExtWithMono v = std::monostate{};
     auto encoded = to_json(v);
@@ -172,14 +125,6 @@ TEST_CASE(externally_tagged_monostate) {
     ASSERT_TRUE(status.has_value());
     EXPECT_TRUE(std::holds_alternative<std::monostate>(parsed));
 }
-
-TEST_CASE(externally_tagged_unknown_tag_fails) {
-    ExtVariant parsed;
-    auto status = from_json(R"({"unknown":42})", parsed);
-    EXPECT_FALSE(status.has_value());
-}
-
-// ── adjacently_tagged tests ────────────────────────────────────────
 
 TEST_CASE(adjacently_tagged_int) {
     AdjVariant v = 42;
@@ -231,31 +176,6 @@ TEST_CASE(adjacently_tagged_in_struct) {
     EXPECT_EQ(parsed, input);
 }
 
-TEST_CASE(adjacently_tagged_content_before_tag) {
-    AdjVariant parsed;
-    auto status = from_json(R"({"value":"hello","type":"text"})", parsed);
-    ASSERT_TRUE(status.has_value());
-    EXPECT_EQ(std::get<std::string>(parsed), "hello");
-}
-
-TEST_CASE(adjacently_tagged_content_before_tag_ambiguous_object) {
-    AdjShapeVariant parsed;
-    auto status = from_json(R"({"value":{"width":10.0,"height":20.0},"type":"rect"})", parsed);
-    ASSERT_TRUE(status.has_value());
-
-    auto& rect = std::get<ShapeRect>(parsed);
-    EXPECT_EQ(rect.width, 10.0);
-    EXPECT_EQ(rect.height, 20.0);
-}
-
-TEST_CASE(adjacently_tagged_unknown_tag_fails) {
-    AdjVariant parsed;
-    auto status = from_json(R"({"type":"unknown","value":42})", parsed);
-    EXPECT_FALSE(status.has_value());
-}
-
-// ── internally_tagged tests ───────────────────────────────────────
-
 TEST_CASE(internally_tagged_circle_serialize) {
     IntTagVariant v = ShapeCircle{.radius = 3.14};
     auto encoded = to_json(v);
@@ -270,31 +190,6 @@ TEST_CASE(internally_tagged_rect_serialize) {
     EXPECT_EQ(*encoded, R"({"kind":"rect","width":10.0,"height":20.0})");
 }
 
-TEST_CASE(internally_tagged_circle_roundtrip) {
-    IntTagVariant v = ShapeCircle{.radius = 3.14};
-    auto encoded = to_json(v);
-    ASSERT_TRUE(encoded.has_value());
-
-    IntTagVariant parsed;
-    auto status = from_json(*encoded, parsed);
-    ASSERT_TRUE(status.has_value());
-    auto& circle = std::get<ShapeCircle>(parsed);
-    EXPECT_EQ(circle.radius, 3.14);
-}
-
-TEST_CASE(internally_tagged_rect_roundtrip) {
-    IntTagVariant v = ShapeRect{.width = 10.0, .height = 20.0};
-    auto encoded = to_json(v);
-    ASSERT_TRUE(encoded.has_value());
-
-    IntTagVariant parsed;
-    auto status = from_json(*encoded, parsed);
-    ASSERT_TRUE(status.has_value());
-    auto& rect = std::get<ShapeRect>(parsed);
-    EXPECT_EQ(rect.width, 10.0);
-    EXPECT_EQ(rect.height, 20.0);
-}
-
 TEST_CASE(internally_tagged_in_struct) {
     IntTagHolder input{.label = "my shape", .shape = ShapeCircle{.radius = 5.0}};
     auto encoded = to_json(input);
@@ -305,18 +200,6 @@ TEST_CASE(internally_tagged_in_struct) {
     auto status = from_json(*encoded, parsed);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(parsed, input);
-}
-
-TEST_CASE(internally_tagged_unknown_tag_fails) {
-    IntTagVariant parsed;
-    auto status = from_json(R"({"kind":"triangle","side":5})", parsed);
-    EXPECT_FALSE(status.has_value());
-}
-
-TEST_CASE(internally_tagged_missing_tag_fails) {
-    IntTagVariant parsed;
-    auto status = from_json(R"({"radius":5})", parsed);
-    EXPECT_FALSE(status.has_value());
 }
 
 TEST_CASE(internally_tagged_deserialize_respects_config_rename) {

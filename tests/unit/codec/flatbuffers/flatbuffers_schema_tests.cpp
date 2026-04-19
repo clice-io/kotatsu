@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "fixtures/schema/common.h"
 #include "kota/zest/zest.h"
 #include "kota/codec/flatbuffers/schema.h"
 
@@ -11,10 +12,7 @@ namespace kota::codec {
 
 namespace {
 
-struct point2d {
-    std::int32_t x;
-    std::int32_t y;
-};
+using point2d = meta::fixtures::Point2i;
 
 struct payload {
     point2d point;

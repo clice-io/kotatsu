@@ -10,6 +10,7 @@
 #include <variant>
 #include <vector>
 
+#include "fixtures/schema/common.h"
 #include "kota/zest/zest.h"
 #include "kota/codec/codec.h"
 #include "kota/codec/json/deserializer.h"
@@ -24,12 +25,7 @@ namespace {
 using json::from_json;
 using json::to_json;
 
-struct person {
-    int id = 0;
-    std::string name;
-    std::vector<int> scores;
-    bool active = false;
-};
+using person = meta::fixtures::PersonWithScores;
 
 struct object_int_value {
     int value = 0;
@@ -380,10 +376,6 @@ TEST_CASE(misc_behavior) {
 }
 
 };  // TEST_SUITE(serde_simdjson)
-
-// ═══════════════════════════════════════════════════════════════════════
-// Required field checks
-// ═══════════════════════════════════════════════════════════════════════
 
 struct StrictStruct {
     int x{};

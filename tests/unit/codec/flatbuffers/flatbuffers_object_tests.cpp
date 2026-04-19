@@ -10,6 +10,7 @@
 #include <variant>
 #include <vector>
 
+#include "fixtures/schema/common.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/attrs.h"
 #include "kota/codec/flatbuffers/flatbuffers.h"
@@ -30,19 +31,8 @@ using flatbuffers::variant_view;
 
 enum class color : std::int32_t { red = 0, green = 1, blue = 2 };
 
-struct point {
-    std::int32_t x;
-    std::int32_t y;
-
-    auto operator==(const point&) const -> bool = default;
-};
-
-struct address {
-    std::string city;
-    std::int32_t zip;
-
-    auto operator==(const address&) const -> bool = default;
-};
+using point = meta::fixtures::Point2i;
+using address = meta::fixtures::Address;
 
 struct person {
     std::int32_t id;
@@ -50,8 +40,6 @@ struct person {
     point pos;
     std::vector<std::int32_t> scores;
     address addr;
-
-    auto operator==(const person&) const -> bool = default;
 };
 
 struct with_skip {

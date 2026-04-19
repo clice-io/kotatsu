@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "fixtures/schema/common.h"
 #include "kota/zest/zest.h"
 #include "kota/codec/toml.h"
 
@@ -16,14 +17,7 @@ using toml::parse;
 using toml::to_string;
 using toml::to_toml;
 
-struct person {
-    int id = 0;
-    std::string name;
-    std::vector<int> scores;
-    bool active = false;
-
-    auto operator==(const person&) const -> bool = default;
-};
+using person = meta::fixtures::PersonWithScores;
 
 struct payload_with_extra {
     int id = 0;

@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "fixtures/schema/common.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
@@ -17,30 +18,12 @@ namespace {
 using toml::from_toml;
 using toml::parse;
 
-struct address {
-    std::string city;
-    int zip = 0;
-};
+using person = meta::fixtures::Person;
+using with_scores = meta::fixtures::WithScores;
 
-struct person {
-    std::string name;
-    int age = 0;
-    address addr;
-};
-
-struct strict_struct {
-    int id = 0;
-    std::string name;
-};
-
-using strict_payload = annotation<strict_struct, meta::attrs::deny_unknown_fields>;
+using strict_payload = annotation<meta::fixtures::StrictIdName, meta::attrs::deny_unknown_fields>;
 
 enum class color { red, green, blue };
-
-struct with_scores {
-    std::string name;
-    std::vector<int> scores;
-};
 
 TEST_SUITE(serde_toml_error_message) {
 

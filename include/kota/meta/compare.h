@@ -6,7 +6,9 @@
 #include <ranges>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
+#include "annotation.h"
 #include "struct.h"
 #include "kota/support/ranges.h"
 
@@ -25,6 +27,41 @@ concept standard_integer =
 
 template <typename L, typename R>
 concept reflectable_pair = reflectable_class<L> && reflectable_class<R>;
+
+template <typename T>
+struct variant_of {
+    using type = void;
+};
+
+template <typename... Ts>
+struct variant_of<std::variant<Ts...>> {
+    using type = std::variant<Ts...>;
+};
+
+template <typename T>
+    requires annotated_type<T>
+struct variant_of<T> {
+    using type = typename variant_of<typename T::annotated_type>::type;
+};
+
+template <typename T>
+using variant_of_t = typename variant_of<std::remove_cvref_t<T>>::type;
+
+template <typename T>
+concept variant_like = !std::is_void_v<variant_of_t<T>>;
+
+template <typename L, typename R>
+concept variant_pair = variant_like<L> && variant_like<R>;
+
+template <typename T>
+    requires variant_like<T>
+constexpr auto as_variant(const T& v) -> const variant_of_t<T>& {
+    if constexpr(is_specialization_of<std::variant, T>) {
+        return v;
+    } else {
+        return as_variant(annotated_value(v));
+    }
+}
 
 template <typename T>
 using range_ref_t = std::ranges::range_reference_t<const std::remove_reference_t<T>>;
@@ -316,6 +353,27 @@ constexpr bool compare_eq(const L& lhs, const R& rhs) {
                           "meta::eq: internal error: takeover range category not handled");
             return false;
         }
+    } else if constexpr(variant_pair<L, R>) {
+        const auto& vl = as_variant(lhs);
+        const auto& vr = as_variant(rhs);
+        if(vl.index() != vr.index()) {
+            return false;
+        }
+        if(vl.valueless_by_exception()) {
+            return true;
+        }
+        return std::visit(
+            [](const auto& l_alt, const auto& r_alt) -> bool {
+                using LT = std::remove_cvref_t<decltype(l_alt)>;
+                using RT = std::remove_cvref_t<decltype(r_alt)>;
+                if constexpr(std::is_same_v<LT, RT>) {
+                    return compare_eq(l_alt, r_alt);
+                } else {
+                    return false;
+                }
+            },
+            vl,
+            vr);
     } else if constexpr(eq_comparable_with<L, R>) {
         constexpr bool lhs_int_like = std::is_enum_v<L> || standard_integer<L>;
         constexpr bool rhs_int_like = std::is_enum_v<R> || standard_integer<R>;
@@ -362,7 +420,7 @@ constexpr bool compare_eq(const L& lhs, const R& rhs) {
 
 template <typename L, typename R>
 constexpr bool compare_ne(const L& lhs, const R& rhs) {
-    if constexpr(!takeover_range_ne<L, R> && ne_comparable_with<L, R>) {
+    if constexpr(!takeover_range_ne<L, R> && !variant_pair<L, R> && ne_comparable_with<L, R>) {
         return static_cast<bool>(lhs != rhs);
     } else {
         return !compare_eq(lhs, rhs);
@@ -392,6 +450,30 @@ constexpr bool compare_lt(const L& lhs, const R& rhs) {
                           "meta::lt: internal error: takeover range category not handled");
             return false;
         }
+    } else if constexpr(variant_pair<L, R>) {
+        const auto& vl = as_variant(lhs);
+        const auto& vr = as_variant(rhs);
+        if(vl.valueless_by_exception()) {
+            return !vr.valueless_by_exception();
+        }
+        if(vr.valueless_by_exception()) {
+            return false;
+        }
+        if(vl.index() != vr.index()) {
+            return vl.index() < vr.index();
+        }
+        return std::visit(
+            [](const auto& l_alt, const auto& r_alt) -> bool {
+                using LT = std::remove_cvref_t<decltype(l_alt)>;
+                using RT = std::remove_cvref_t<decltype(r_alt)>;
+                if constexpr(std::is_same_v<LT, RT>) {
+                    return compare_lt(l_alt, r_alt);
+                } else {
+                    return false;
+                }
+            },
+            vl,
+            vr);
     } else if constexpr(lt_comparable_with<L, R>) {
         return static_cast<bool>(lhs < rhs);
     } else if constexpr(reflectable_pair<L, R>) {
@@ -442,7 +524,7 @@ template <typename L, typename R>
 constexpr bool compare_le(const L& lhs, const R& rhs) {
     // For a strict-weak-order comparator (<), `lhs <= rhs` is equivalent to `!(rhs < lhs)`.
     // This is also equivalent to `(lhs < rhs) || (lhs == rhs)`.
-    if constexpr(!takeover_range_le<L, R> && le_comparable_with<L, R>) {
+    if constexpr(!takeover_range_le<L, R> && !variant_pair<L, R> && le_comparable_with<L, R>) {
         return static_cast<bool>(lhs <= rhs);
     } else {
         return !compare_lt(rhs, lhs);
@@ -451,7 +533,7 @@ constexpr bool compare_le(const L& lhs, const R& rhs) {
 
 template <typename L, typename R>
 constexpr bool compare_gt(const L& lhs, const R& rhs) {
-    if constexpr(!takeover_range_gt<L, R> && gt_comparable_with<L, R>) {
+    if constexpr(!takeover_range_gt<L, R> && !variant_pair<L, R> && gt_comparable_with<L, R>) {
         return static_cast<bool>(lhs > rhs);
     } else {
         return compare_lt(rhs, lhs);
@@ -461,7 +543,7 @@ constexpr bool compare_gt(const L& lhs, const R& rhs) {
 template <typename L, typename R>
 constexpr bool compare_ge(const L& lhs, const R& rhs) {
     // Symmetric to <= : `lhs >= rhs` is `!(lhs < rhs)` under strict-weak-order semantics.
-    if constexpr(!takeover_range_ge<L, R> && ge_comparable_with<L, R>) {
+    if constexpr(!takeover_range_ge<L, R> && !variant_pair<L, R> && ge_comparable_with<L, R>) {
         return static_cast<bool>(lhs >= rhs);
     } else {
         return !compare_lt(lhs, rhs);
