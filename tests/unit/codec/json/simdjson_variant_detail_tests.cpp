@@ -22,17 +22,12 @@ namespace {
 using json::from_json;
 using json::to_json;
 
-// ── Helper types ─────────────────────────────────────────────────────
-
 using Point = meta::fixtures::Point2d;
 using Color = meta::fixtures::Color3;
 using IntHolder = meta::fixtures::IntHolder;
 using StringHolder = meta::fixtures::StringHolder;
 using Empty = meta::fixtures::EmptyStruct;
 
-// ── Tagged variant type aliases ──────────────────────────────────────
-
-// External
 using ExtSimple =
     annotation<std::variant<int, std::string>, meta::attrs::externally_tagged::names<"num", "str">>;
 
@@ -42,7 +37,6 @@ using ExtWithMono = annotation<std::variant<std::monostate, int, std::string>,
 using ExtWithStruct = annotation<std::variant<int, Point, Color>,
                                  meta::attrs::externally_tagged::names<"int", "point", "color">>;
 
-// Adjacent
 using AdjSimple = annotation<std::variant<int, std::string>,
                              meta::attrs::adjacently_tagged<"t", "v">::names<"num", "str">>;
 
@@ -54,7 +48,6 @@ using AdjWithStruct =
     annotation<std::variant<int, Point>,
                meta::attrs::adjacently_tagged<"type", "value">::names<"int", "point">>;
 
-// Internal
 using Circle = meta::fixtures::Circle;
 using Rect = meta::fixtures::Rect;
 using Triangle = meta::fixtures::Triangle;
@@ -65,8 +58,6 @@ using IntTagShape = annotation<std::variant<Circle, Rect>,
 using IntTagTriShape =
     annotation<std::variant<Circle, Rect, Triangle>,
                meta::attrs::internally_tagged<"kind">::names<"circle", "rect", "triangle">>;
-
-// ── Containers with tagged variants ──────────────────────────────────
 
 struct ExtHolder {
     std::string label;
@@ -82,10 +73,6 @@ struct IntTagHolder {
     std::string name;
     IntTagShape shape;
 };
-
-// ═══════════════════════════════════════════════════════════════════════
-// §1  Untagged variant — type-hint discrimination
-// ═══════════════════════════════════════════════════════════════════════
 
 TEST_SUITE(serde_variant_untagged) {
 
@@ -265,10 +252,6 @@ TEST_CASE(variant_roundtrip_all_scalars) {
 
 };  // TEST_SUITE(serde_variant_untagged)
 
-// ═══════════════════════════════════════════════════════════════════════
-// §2  Externally tagged — detailed tests
-// ═══════════════════════════════════════════════════════════════════════
-
 TEST_SUITE(serde_variant_ext) {
 
 TEST_CASE(roundtrip_all_alternatives) {
@@ -400,10 +383,6 @@ TEST_CASE(empty_string_value) {
 }
 
 };  // TEST_SUITE(serde_variant_ext)
-
-// ═══════════════════════════════════════════════════════════════════════
-// §3  Adjacently tagged — detailed tests
-// ═══════════════════════════════════════════════════════════════════════
 
 TEST_SUITE(serde_variant_adj) {
 
@@ -542,10 +521,6 @@ TEST_CASE(in_map) {
 }
 
 };  // TEST_SUITE(serde_variant_adj)
-
-// ═══════════════════════════════════════════════════════════════════════
-// §4  Internally tagged — detailed tests
-// ═══════════════════════════════════════════════════════════════════════
 
 TEST_SUITE(serde_variant_int_tag) {
 
@@ -698,10 +673,6 @@ TEST_CASE(missing_required_field_rejects_untagged_variant_candidate) {
 }
 
 };  // TEST_SUITE(serde_variant_int_tag)
-
-// ═══════════════════════════════════════════════════════════════════════
-// §5  Nested variants and complex compositions
-// ═══════════════════════════════════════════════════════════════════════
 
 TEST_SUITE(serde_variant_nested) {
 

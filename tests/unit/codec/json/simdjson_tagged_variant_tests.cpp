@@ -21,8 +21,6 @@ using ShapeCircle = meta::fixtures::Circle;
 using ShapeRect = meta::fixtures::Rect;
 using Basic = meta::fixtures::BoolInt;
 
-// ── Externally tagged ──────────────────────────────────────────────
-
 using ExtVariant = annotation<std::variant<int, std::string, Basic>,
                               meta::attrs::externally_tagged::names<"integer", "text", "basic">>;
 
@@ -30,8 +28,6 @@ struct ExtTaggedHolder {
     std::string name;
     ExtVariant data;
 };
-
-// ── Adjacently tagged ──────────────────────────────────────────────
 
 using AdjVariant =
     annotation<std::variant<int, std::string, Basic>,
@@ -42,12 +38,8 @@ struct AdjTaggedHolder {
     AdjVariant data;
 };
 
-// ── Variant with monostate ─────────────────────────────────────────
-
 using ExtWithMono = annotation<std::variant<std::monostate, int, std::string>,
                                meta::attrs::externally_tagged::names<"none", "integer", "text">>;
-
-// ── Internally tagged ─────────────────────────────────────────────
 
 struct ShapeLine {
     int line_width{};
@@ -70,8 +62,6 @@ struct camel_config {
 };
 
 TEST_SUITE(serde_simdjson_tagged_variant) {
-
-// ── externally_tagged tests ────────────────────────────────────────
 
 TEST_CASE(externally_tagged_int) {
     ExtVariant v = 42;
@@ -136,8 +126,6 @@ TEST_CASE(externally_tagged_monostate) {
     EXPECT_TRUE(std::holds_alternative<std::monostate>(parsed));
 }
 
-// ── adjacently_tagged tests ────────────────────────────────────────
-
 TEST_CASE(adjacently_tagged_int) {
     AdjVariant v = 42;
     auto encoded = to_json(v);
@@ -187,8 +175,6 @@ TEST_CASE(adjacently_tagged_in_struct) {
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(parsed, input);
 }
-
-// ── internally_tagged tests ───────────────────────────────────────
 
 TEST_CASE(internally_tagged_circle_serialize) {
     IntTagVariant v = ShapeCircle{.radius = 3.14};

@@ -377,10 +377,6 @@ TEST_CASE(misc_behavior) {
 
 };  // TEST_SUITE(serde_simdjson)
 
-// ═══════════════════════════════════════════════════════════════════════
-// Required field checks
-// ═══════════════════════════════════════════════════════════════════════
-
 struct StrictStruct {
     int x{};
     std::string name;
