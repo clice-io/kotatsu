@@ -53,8 +53,8 @@ TEST_CASE(with_wire_type) {
     // Verify slot wire_type at compile time
     using slots = virtual_schema<fx::WithWireTypeStruct>::slots;
     using slot0 = type_list_element_t<0, slots>;
-    EXPECT_TYPE_EQ(typename slot0::raw_type, int);
-    EXPECT_TYPE_EQ(typename slot0::wire_type, std::string);
+    EXPECT_TYPE_EQ(slot0::raw_type, int);
+    EXPECT_TYPE_EQ(slot0::wire_type, std::string);
 
     // plain float is unaffected
     STATIC_EXPECT_EQ(fields[1].type().kind, type_kind::float32);
@@ -71,8 +71,8 @@ TEST_CASE(with_no_wire_type) {
     // Slot raw_type == wire_type when adapter lacks wire_type
     using slots = virtual_schema<fx::WithNoWireTypeStruct>::slots;
     using slot0 = type_list_element_t<0, slots>;
-    EXPECT_TYPE_EQ(typename slot0::raw_type, int);
-    EXPECT_TYPE_EQ(typename slot0::wire_type, int);
+    EXPECT_TYPE_EQ(slot0::raw_type, int);
+    EXPECT_TYPE_EQ(slot0::wire_type, int);
 }
 
 TEST_CASE(enum_string) {
@@ -85,8 +85,8 @@ TEST_CASE(enum_string) {
     // Verify slot types
     using slots = virtual_schema<fx::EnumStringStruct>::slots;
     using slot0 = type_list_element_t<0, slots>;
-    EXPECT_TYPE_EQ(typename slot0::raw_type, fx::Color);
-    EXPECT_TYPE_EQ(typename slot0::wire_type, std::string_view);
+    EXPECT_TYPE_EQ(slot0::raw_type, fx::Color);
+    EXPECT_TYPE_EQ(slot0::wire_type, std::string_view);
 
     // plain int is unaffected
     STATIC_EXPECT_EQ(fields[1].type().kind, type_kind::int32);
@@ -100,9 +100,9 @@ TEST_CASE(tagged_variant) {
     // tagged<> should appear in slot behavior attrs
     using slots = virtual_schema<fx::TaggedVariantStruct>::slots;
     using slot0 = type_list_element_t<0, slots>;
-    EXPECT_TYPE_EQ(typename slot0::raw_type, std::variant<int, std::string>);
+    EXPECT_TYPE_EQ(slot0::raw_type, std::variant<int, std::string>);
     // wire_type stays as variant (tagged is a schema attr, not a type transform)
-    EXPECT_TYPE_EQ(typename slot0::wire_type, std::variant<int, std::string>);
+    EXPECT_TYPE_EQ(slot0::wire_type, std::variant<int, std::string>);
 }
 
 TEST_CASE(multi_attr_combination) {
