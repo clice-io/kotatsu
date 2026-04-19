@@ -68,34 +68,25 @@
         ZEST_CHECK_IMPL(failed, return_action);                                                    \
     } while(0)
 
-// STATIC variants bind the macro args to proper constexpr locals named
-// `value` / `lhs` / `rhs` — same identifiers the runtime lambdas use — and
-// wrap the shared failure predicate in std::bool_constant<> to force
-// constant evaluation. This keeps STATIC_EXPECT_* definitions textually
-// identical to their EXPECT_* counterparts; only the dispatch target
-// differs.
+// STATIC variants wrap the failure predicate in std::bool_constant<> to force
+// constant evaluation. Macro args are spliced directly into the predicate, so
+// the predicate text uses `__VA_ARGS__` rather than the `lhs`/`rhs` identifiers
+// the runtime lambdas bind — STATIC has no double-eval concern to work around.
 #define ZEST_STATIC_EXPECT_UNARY(expectation, failure_pred, return_action, ...)                    \
-    do {                                                                                           \
-        constexpr auto value = (__VA_ARGS__);                                                      \
-        ZEST_CHECK_IMPL(::kota::zest::check_unary_failure(std::bool_constant<(failure_pred)>(),    \
-                                                          #__VA_ARGS__,                            \
-                                                          (expectation),                           \
-                                                          value),                                  \
-                        return_action);                                                            \
-    } while(false)
+    ZEST_CHECK_IMPL(::kota::zest::check_unary_failure(std::bool_constant<(failure_pred)>(),        \
+                                                      #__VA_ARGS__,                                \
+                                                      (expectation),                               \
+                                                      (__VA_ARGS__)),                              \
+                    return_action)
 
 #define ZEST_STATIC_EXPECT_BINARY(op_string, failure_pred, return_action, ...)                     \
     do {                                                                                           \
-        constexpr auto _zest_cap = ::kota::zest::binary_capture{__VA_ARGS__};                      \
-        constexpr auto lhs = _zest_cap.lhs;                                                        \
-        constexpr auto rhs = _zest_cap.rhs;                                                        \
         const auto exprs = ::kota::zest::parse_binary_exprs(#__VA_ARGS__);                         \
         ZEST_CHECK_IMPL(::kota::zest::check_binary_failure(std::bool_constant<(failure_pred)>(),   \
                                                            #op_string,                             \
                                                            exprs.lhs,                              \
                                                            exprs.rhs,                              \
-                                                           lhs,                                    \
-                                                           rhs),                                   \
+                                                           __VA_ARGS__),                           \
                         return_action);                                                            \
     } while(false)
 
@@ -110,14 +101,14 @@
 #define EXPECT_GE(...) ZEST_EXPECT_BINARY(>=, !::kota::meta::ge(lhs, rhs), (void)0, __VA_ARGS__)
 
 // clang-format off
-#define STATIC_EXPECT_TRUE(...) ZEST_STATIC_EXPECT_UNARY("true", !(value), (void)0, __VA_ARGS__)
-#define STATIC_EXPECT_FALSE(...) ZEST_STATIC_EXPECT_UNARY("false", (value), (void)0, __VA_ARGS__)
-#define STATIC_EXPECT_EQ(...) ZEST_STATIC_EXPECT_BINARY(==, !::kota::meta::eq(lhs, rhs), (void)0, __VA_ARGS__)
-#define STATIC_EXPECT_NE(...) ZEST_STATIC_EXPECT_BINARY(!=, ::kota::meta::eq(lhs, rhs), (void)0, __VA_ARGS__)
-#define STATIC_EXPECT_LT(...) ZEST_STATIC_EXPECT_BINARY(<, !::kota::meta::lt(lhs, rhs), (void)0, __VA_ARGS__)
-#define STATIC_EXPECT_LE(...) ZEST_STATIC_EXPECT_BINARY(<=, !::kota::meta::le(lhs, rhs), (void)0, __VA_ARGS__)
-#define STATIC_EXPECT_GT(...) ZEST_STATIC_EXPECT_BINARY(>, !::kota::meta::gt(lhs, rhs), (void)0, __VA_ARGS__)
-#define STATIC_EXPECT_GE(...) ZEST_STATIC_EXPECT_BINARY(>=, !::kota::meta::ge(lhs, rhs), (void)0, __VA_ARGS__)
+#define STATIC_EXPECT_TRUE(...) ZEST_STATIC_EXPECT_UNARY("true", !(__VA_ARGS__), (void)0, __VA_ARGS__)
+#define STATIC_EXPECT_FALSE(...) ZEST_STATIC_EXPECT_UNARY("false", (__VA_ARGS__), (void)0, __VA_ARGS__)
+#define STATIC_EXPECT_EQ(...) ZEST_STATIC_EXPECT_BINARY(==, !::kota::meta::eq(__VA_ARGS__), (void)0, __VA_ARGS__)
+#define STATIC_EXPECT_NE(...) ZEST_STATIC_EXPECT_BINARY(!=, ::kota::meta::eq(__VA_ARGS__), (void)0, __VA_ARGS__)
+#define STATIC_EXPECT_LT(...) ZEST_STATIC_EXPECT_BINARY(<, !::kota::meta::lt(__VA_ARGS__), (void)0, __VA_ARGS__)
+#define STATIC_EXPECT_LE(...) ZEST_STATIC_EXPECT_BINARY(<=, !::kota::meta::le(__VA_ARGS__), (void)0, __VA_ARGS__)
+#define STATIC_EXPECT_GT(...) ZEST_STATIC_EXPECT_BINARY(>, !::kota::meta::gt(__VA_ARGS__), (void)0, __VA_ARGS__)
+#define STATIC_EXPECT_GE(...) ZEST_STATIC_EXPECT_BINARY(>=, !::kota::meta::ge(__VA_ARGS__), (void)0, __VA_ARGS__)
 // clang-format on
 
 #define ASSERT_TRUE(...) ZEST_EXPECT_UNARY("true", !(value), return, __VA_ARGS__)

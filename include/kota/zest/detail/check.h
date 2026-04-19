@@ -41,20 +41,6 @@ struct binary_expr_pair {
 
 binary_expr_pair parse_binary_exprs(std::string_view exprs);
 
-// Captures two values into a single constexpr-initializable object so that
-// STATIC_EXPECT_* can bind the arg pair to proper constexpr locals named
-// `lhs` / `rhs` — identifiers a shared failure-predicate like
-// `!::kota::meta::eq(lhs, rhs)` can refer to in both runtime and constexpr
-// contexts.
-template <typename L, typename R>
-struct binary_capture {
-    L lhs;
-    R rhs;
-};
-
-template <typename L, typename R>
-binary_capture(L, R) -> binary_capture<L, R>;
-
 template <typename V>
 inline bool check_unary_failure(bool failure,
                                 std::string_view expr,
