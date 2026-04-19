@@ -146,8 +146,7 @@ if has_config("codec") then
 			"include/(kota/codec/bincode.h)",
 			"include/(kota/codec/bincode/**.h)",
 			"include/(kota/codec/*.h)",
-			"include/(kota/codec/detail/**.h)",
-			"include/(kota/codec/schema/**.h)"
+			"include/(kota/codec/detail/**.h)"
 		)
 		add_rules("cl-flags")
 		add_deps("support", "meta")
@@ -337,7 +336,9 @@ if has_config("test") and has_config("ztest") then
 			add_files("tests/unit/deco/**.cc")
 		end
 		if has_config("codec") and has_config("codec_simdjson") then
-			add_files("tests/unit/codec/json/simdjson_*.cpp")
+			add_files("tests/unit/codec/json/**.cpp")
+		end
+		if has_config("codec") then
 			add_files("tests/unit/codec/content/**.cpp")
 		end
 		if has_config("codec") and has_config("codec_flatbuffers") then
@@ -347,7 +348,7 @@ if has_config("test") and has_config("ztest") then
 			add_files("tests/unit/codec/toml/**.cpp")
 		end
 		if has_config("codec") then
-			add_files("tests/unit/codec/bincode/**.cpp", "tests/unit/codec/schema/**.cpp")
+			add_files("tests/unit/codec/bincode/**.cpp")
 		end
 		if has_config("async") and has_config("codec") and has_config("codec_simdjson") then
 			add_files("tests/unit/ipc/**.cpp")

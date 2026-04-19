@@ -1,8 +1,8 @@
 // ---------------------------------------------------------------------------
-// json_schema_tests.cpp
+// schema_tests.cpp
 //
 // Unit tests for the JSON Schema codegen module. Each test renders a C++ type
-// through meta::type_info_of<T>() and json_schema::render(), then
+// through meta::type_info_of<T>() and json::schema::render(), then
 // compares the output against the exact expected JSON string.
 //
 // Test groups:
@@ -45,7 +45,7 @@
 #include "kota/zest/zest.h"
 #include "kota/meta/attrs.h"
 #include "kota/meta/schema.h"
-#include "kota/codec/schema/json_schema.h"
+#include "kota/codec/json/schema.h"
 
 namespace kota::meta {
 
@@ -478,7 +478,7 @@ struct set_of_struct {
     std::string name;
 };
 
-namespace js = kota::codec::schema::json_schema;
+namespace js = kota::codec::json::schema;
 
 // ===========================================================================
 TEST_SUITE(serde_json_schema) {
