@@ -279,14 +279,14 @@ constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, T
 
     auto obj_ref = dom_result.as_ref();
     auto obj = obj_ref.get_object();
-    if(!obj) {
+    if(!obj.valid()) {
         return std::unexpected(E::invalid_type("object", "non-object"));
     }
 
     // Pass 1: find tag
     std::string_view tag_value;
     bool found = false;
-    for(auto entry: *obj) {
+    for(auto entry: obj) {
         if(entry.key == tag_field) {
             auto s = entry.value.get_string();
             if(!s) {

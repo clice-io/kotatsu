@@ -466,10 +466,10 @@ private:
         }
 
         auto array = ref->get_array();
-        if(!array) {
+        if(!array.valid()) {
             return mark_invalid(error_type::type_mismatch);
         }
-        return *array;
+        return array;
     }
 
     result_t<content::ObjectRef> open_object() {
@@ -479,10 +479,10 @@ private:
         }
 
         auto object = ref->get_object();
-        if(!object) {
+        if(!object.valid()) {
             return mark_invalid(error_type::type_mismatch);
         }
-        return std::move(*object);
+        return object;
     }
 
     std::unexpected<error_type> mark_invalid(error_type error = error_type::invalid_state) {

@@ -82,14 +82,14 @@ TEST_CASE(parse_and_view_basic_via_json) {
 
     auto root = parsed->as_ref();
     auto object = root.get_object();
-    ASSERT_TRUE(object.has_value());
-    ASSERT_EQ(object->at("a").as_int(), 1);
-    ASSERT_EQ(object->at("b").as_string(), std::string_view("x"));
+    ASSERT_TRUE(object.valid());
+    ASSERT_EQ(object.at("a").as_int(), 1);
+    ASSERT_EQ(object.at("b").as_string(), std::string_view("x"));
 
-    auto array = (*object)["arr"].get_array();
-    ASSERT_TRUE(array.has_value());
-    ASSERT_EQ((*array)[1].as_int(), 2);
-    EXPECT_FALSE(object->get("missing").has_value());
+    auto array = object["arr"].get_array();
+    ASSERT_TRUE(array.valid());
+    ASSERT_EQ(array[1].as_int(), 2);
+    EXPECT_FALSE(object.contains("missing"));
 }
 
 TEST_CASE(object_lookup_builds_lazy_index) {
@@ -98,10 +98,10 @@ TEST_CASE(object_lookup_builds_lazy_index) {
     ASSERT_TRUE(parsed.has_value());
 
     auto object = parsed->as_ref().get_object();
-    ASSERT_TRUE(object.has_value());
+    ASSERT_TRUE(object.valid());
     for(int i = 0; i < 32; ++i) {
         std::string key = "k" + std::to_string(i);
-        ASSERT_EQ((*object)[key].as_int(), i);
+        ASSERT_EQ(object[key].as_int(), i);
     }
 }
 
@@ -148,9 +148,33 @@ TEST_CASE(mixed_struct_roundtrip_with_dynamic_dom) {
     ASSERT_TRUE(reparsed.has_value());
     EXPECT_EQ(reparsed->id, 7);
     auto reparsed_extra_object = reparsed->extra.as_ref().get_object();
-    ASSERT_TRUE(reparsed_extra_object.has_value());
-    EXPECT_EQ((*reparsed_extra_object)["name"].as_string(), std::string_view("alice"));
-    EXPECT_EQ((*reparsed_extra_object)["n"].as_int(), 2);
+    ASSERT_TRUE(reparsed_extra_object.valid());
+    EXPECT_EQ(reparsed_extra_object["name"].as_string(), std::string_view("alice"));
+    EXPECT_EQ(reparsed_extra_object["n"].as_int(), 2);
+}
+
+TEST_CASE(deep_nested_array_via_json_roundtrip) {
+    constexpr int depth = 16;
+    std::string text(depth, '[');
+    text.push_back('1');
+    text.append(depth, ']');
+
+    auto parsed = json::parse<json::Value>(text);
+    ASSERT_TRUE(parsed.has_value());
+
+    content::ValueRef cursor = parsed->as_ref();
+    for(int i = 0; i < depth; ++i) {
+        auto array = cursor.get_array();
+        ASSERT_TRUE(array.valid());
+        ASSERT_EQ(array.size(), std::size_t(1));
+        cursor = array[0];
+    }
+    ASSERT_TRUE(cursor.is_int());
+    EXPECT_EQ(cursor.as_int(), 1);
+
+    auto encoded = json::to_string(*parsed);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, text);
 }
 
 TEST_CASE(content_deserializer_keeps_temporary_root_value_alive) {

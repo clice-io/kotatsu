@@ -65,7 +65,7 @@ TEST_CASE(object_assign_is_upsert) {
     EXPECT_EQ(object.at("b").as_int(), 3);
 }
 
-TEST_CASE(object_insert_appends_without_dedup) {
+TEST_CASE(object_insert_appends_preserving_duplicates) {
     content::Object object;
     object.insert("k", content::Value(std::int64_t(1)));
     object.insert("k", content::Value(std::int64_t(2)));
@@ -73,6 +73,18 @@ TEST_CASE(object_insert_appends_without_dedup) {
     EXPECT_EQ(object.size(), std::size_t(2));
     EXPECT_EQ(object.entries()[0].value.as_int(), 1);
     EXPECT_EQ(object.entries()[1].value.as_int(), 2);
+}
+
+TEST_CASE(object_find_returns_latest_when_duplicates) {
+    content::Object object;
+    object.insert("k", content::Value(std::int64_t(1)));
+    object.insert("k", content::Value(std::int64_t(2)));
+    object.insert("k", content::Value(std::int64_t(3)));
+
+    ASSERT_TRUE(object.contains("k"));
+    ASSERT_NE(object.find("k"), nullptr);
+    EXPECT_EQ(object.find("k")->as_int(), 3);
+    EXPECT_EQ(object.at("k").as_int(), 3);
 }
 
 TEST_CASE(object_find_returns_nullptr_when_missing) {
@@ -85,13 +97,14 @@ TEST_CASE(object_find_returns_nullptr_when_missing) {
     EXPECT_FALSE(object.contains("absent"));
 }
 
-TEST_CASE(object_remove_reports_whether_key_existed) {
+TEST_CASE(object_remove_erases_all_matching_and_returns_count) {
     content::Object object;
     object.assign("a", content::Value(std::int64_t(1)));
     object.assign("b", content::Value(std::int64_t(2)));
+    object.insert("a", content::Value(std::int64_t(11)));
 
-    EXPECT_TRUE(object.remove("a"));
-    EXPECT_FALSE(object.remove("a"));
+    EXPECT_EQ(object.remove("a"), std::size_t(2));
+    EXPECT_EQ(object.remove("a"), std::size_t(0));
     EXPECT_FALSE(object.contains("a"));
     EXPECT_TRUE(object.contains("b"));
     EXPECT_EQ(object.size(), std::size_t(1));
@@ -114,6 +127,50 @@ TEST_CASE(object_lookup_reflects_mutations) {
 
     object.insert("k9", content::Value(std::int64_t(9)));
     EXPECT_EQ(object.at("k9").as_int(), 9);
+}
+
+TEST_CASE(object_index_invalidated_after_cached_lookup_then_insert) {
+    content::Object object;
+    object.insert("a", content::Value(std::int64_t(1)));
+    object.insert("b", content::Value(std::int64_t(2)));
+
+    EXPECT_EQ(object.at("a").as_int(), 1);
+
+    object.insert("c", content::Value(std::int64_t(3)));
+    EXPECT_EQ(object.at("c").as_int(), 3);
+    EXPECT_EQ(object.at("a").as_int(), 1);
+}
+
+TEST_CASE(object_index_invalidated_after_cached_lookup_then_assign_new_key) {
+    content::Object object;
+    object.insert("a", content::Value(std::int64_t(1)));
+
+    EXPECT_EQ(object.at("a").as_int(), 1);
+
+    object.assign("b", content::Value(std::int64_t(2)));
+    EXPECT_EQ(object.at("b").as_int(), 2);
+    EXPECT_EQ(object.at("a").as_int(), 1);
+}
+
+TEST_CASE(object_equality_multiset_with_duplicates) {
+    content::Object a;
+    a.insert("k", content::Value(std::int64_t(1)));
+    a.insert("k", content::Value(std::int64_t(2)));
+
+    content::Object b;
+    b.insert("k", content::Value(std::int64_t(2)));
+    b.insert("k", content::Value(std::int64_t(1)));
+
+    EXPECT_TRUE(a == b);
+
+    content::Object c;
+    c.insert("k", content::Value(std::int64_t(1)));
+    c.insert("k", content::Value(std::int64_t(1)));
+    EXPECT_FALSE(a == c);
+
+    content::Object d;
+    d.insert("k", content::Value(std::int64_t(1)));
+    EXPECT_FALSE(a == d);
 }
 
 };  // TEST_SUITE(serde_content_dom_write)

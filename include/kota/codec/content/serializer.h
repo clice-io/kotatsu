@@ -282,7 +282,7 @@ private:
             return f.array->empty() ? nullptr : &(*f.array)[f.array->size() - 1];
         }
         if(f.object != nullptr) {
-            return f.object->empty() ? nullptr : &f.object->entries().back().value;
+            return f.object->empty() ? nullptr : &f.object->back_value();
         }
         return nullptr;
     }

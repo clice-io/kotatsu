@@ -8,6 +8,7 @@
 #include <iterator>
 #include <limits>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -137,7 +138,9 @@ public:
 
     void insert(std::string key, Value value);
     void assign(std::string_view key, Value value);
-    bool remove(std::string_view key);
+    std::size_t remove(std::string_view key);
+
+    [[nodiscard]] Value& back_value();
 
     [[nodiscard]] iterator begin() noexcept;
     [[nodiscard]] iterator end() noexcept;
@@ -147,7 +150,6 @@ public:
     [[nodiscard]] ObjectRef as_ref() const noexcept;
 
     [[nodiscard]] const container_t& entries() const noexcept;
-    [[nodiscard]] container_t& entries() noexcept;
 
     bool operator==(const Object& other) const;
 
@@ -209,8 +211,6 @@ public:
     [[nodiscard]] std::optional<std::uint64_t> get_uint() const noexcept;
     [[nodiscard]] std::optional<double> get_double() const noexcept;
     [[nodiscard]] std::optional<std::string_view> get_string() const noexcept;
-    [[nodiscard]] std::optional<Array> get_array() const;
-    [[nodiscard]] std::optional<Object> get_object() const;
 
     [[nodiscard]] const Array* try_array() const noexcept;
     [[nodiscard]] Array* try_array() noexcept;
@@ -230,7 +230,6 @@ public:
     [[nodiscard]] ValueRef as_ref() const noexcept;
 
     [[nodiscard]] const storage_t& storage() const noexcept;
-    [[nodiscard]] storage_t& storage() noexcept;
 
     bool operator==(const Value& other) const;
 
@@ -267,8 +266,8 @@ public:
     [[nodiscard]] std::optional<std::uint64_t> get_uint() const noexcept;
     [[nodiscard]] std::optional<double> get_double() const noexcept;
     [[nodiscard]] std::optional<std::string_view> get_string() const noexcept;
-    [[nodiscard]] std::optional<ArrayRef> get_array() const noexcept;
-    [[nodiscard]] std::optional<ObjectRef> get_object() const noexcept;
+    [[nodiscard]] ArrayRef get_array() const noexcept;
+    [[nodiscard]] ObjectRef get_object() const noexcept;
 
     [[nodiscard]] bool as_bool() const;
     [[nodiscard]] std::int64_t as_int() const;
@@ -299,7 +298,6 @@ public:
     [[nodiscard]] std::size_t size() const noexcept;
     [[nodiscard]] bool empty() const noexcept;
 
-    [[nodiscard]] std::optional<ValueRef> get(std::size_t index) const noexcept;
     [[nodiscard]] ValueRef at(std::size_t index) const;
     [[nodiscard]] ValueRef operator[](std::size_t index) const noexcept;
 
@@ -354,7 +352,6 @@ public:
     [[nodiscard]] std::size_t size() const noexcept;
     [[nodiscard]] bool empty() const noexcept;
 
-    [[nodiscard]] std::optional<ValueRef> get(std::string_view key) const noexcept;
     [[nodiscard]] bool contains(std::string_view key) const noexcept;
     [[nodiscard]] ValueRef at(std::string_view key) const;
     [[nodiscard]] ValueRef operator[](std::string_view key) const noexcept;
@@ -484,7 +481,7 @@ inline void Object::ensure_index() const {
     index_.emplace();
     index_->reserve(entries_.size());
     for(std::size_t i = 0; i < entries_.size(); ++i) {
-        index_->emplace(std::string_view(entries_[i].key), i);
+        (*index_)[std::string_view(entries_[i].key)] = i;
     }
 }
 
@@ -507,13 +504,17 @@ inline Value* Object::find(std::string_view key) {
 
 inline const Value& Object::at(std::string_view key) const {
     const Value* v = find(key);
-    assert(v != nullptr);
+    if(v == nullptr) {
+        throw std::out_of_range("kota::codec::content::Object::at: missing key");
+    }
     return *v;
 }
 
 inline Value& Object::at(std::string_view key) {
     Value* v = find(key);
-    assert(v != nullptr);
+    if(v == nullptr) {
+        throw std::out_of_range("kota::codec::content::Object::at: missing key");
+    }
     return *v;
 }
 
@@ -531,15 +532,19 @@ inline void Object::assign(std::string_view key, Value value) {
     invalidate_index();
 }
 
-inline bool Object::remove(std::string_view key) {
-    ensure_index();
-    auto it = index_->find(key);
-    if(it == index_->end()) {
-        return false;
+inline std::size_t Object::remove(std::string_view key) {
+    auto before = entries_.size();
+    std::erase_if(entries_, [&](const entry& e) { return e.key == key; });
+    auto removed = before - entries_.size();
+    if(removed != 0) {
+        invalidate_index();
     }
-    entries_.erase(entries_.begin() + static_cast<std::ptrdiff_t>(it->second));
-    invalidate_index();
-    return true;
+    return removed;
+}
+
+inline Value& Object::back_value() {
+    assert(!entries_.empty());
+    return entries_.back().value;
 }
 
 inline auto Object::begin() noexcept -> iterator { return entries_.begin(); }
@@ -550,15 +555,23 @@ inline auto Object::end() const noexcept -> const_iterator { return entries_.end
 inline ObjectRef Object::as_ref() const noexcept { return ObjectRef(*this); }
 
 inline const Object::container_t& Object::entries() const noexcept { return entries_; }
-inline Object::container_t& Object::entries() noexcept { return entries_; }
 
 inline bool Object::operator==(const Object& other) const {
     if(entries_.size() != other.entries_.size()) {
         return false;
     }
-    for(const auto& e: entries_) {
-        const Value* v = other.find(e.key);
-        if(v == nullptr || !(*v == e.value)) {
+    std::vector<bool> matched(other.entries_.size(), false);
+    for(const auto& lhs: entries_) {
+        bool found = false;
+        for(std::size_t j = 0; j < other.entries_.size(); ++j) {
+            if(!matched[j] && other.entries_[j].key == lhs.key &&
+               other.entries_[j].value == lhs.value) {
+                matched[j] = true;
+                found = true;
+                break;
+            }
+        }
+        if(!found) {
             return false;
         }
     }
@@ -679,44 +692,15 @@ inline std::optional<std::string_view> Value::get_string() const noexcept {
     return std::nullopt;
 }
 
-inline std::optional<Array> Value::get_array() const {
-    if(const auto* p = std::get_if<Array>(&storage_)) {
-        return *p;
-    }
-    return std::nullopt;
-}
-
-inline std::optional<Object> Value::get_object() const {
-    if(const auto* p = std::get_if<Object>(&storage_)) {
-        return *p;
-    }
-    return std::nullopt;
-}
-
 inline const Array* Value::try_array() const noexcept { return std::get_if<Array>(&storage_); }
 inline Array* Value::try_array() noexcept { return std::get_if<Array>(&storage_); }
 inline const Object* Value::try_object() const noexcept { return std::get_if<Object>(&storage_); }
 inline Object* Value::try_object() noexcept { return std::get_if<Object>(&storage_); }
 
 inline bool Value::as_bool() const { return std::get<bool>(storage_); }
-
-inline std::int64_t Value::as_int() const {
-    auto v = get_int();
-    assert(v.has_value());
-    return *v;
-}
-
-inline std::uint64_t Value::as_uint() const {
-    auto v = get_uint();
-    assert(v.has_value());
-    return *v;
-}
-
-inline double Value::as_double() const {
-    auto v = get_double();
-    assert(v.has_value());
-    return *v;
-}
+inline std::int64_t Value::as_int() const { return std::get<std::int64_t>(storage_); }
+inline std::uint64_t Value::as_uint() const { return std::get<std::uint64_t>(storage_); }
+inline double Value::as_double() const { return std::get<double>(storage_); }
 
 inline std::string_view Value::as_string() const {
     const auto& s = std::get<std::string>(storage_);
@@ -731,7 +715,6 @@ inline Object& Value::as_object() { return std::get<Object>(storage_); }
 inline ValueRef Value::as_ref() const noexcept { return ValueRef(*this); }
 
 inline const Value::storage_t& Value::storage() const noexcept { return storage_; }
-inline Value::storage_t& Value::storage() noexcept { return storage_; }
 
 inline bool Value::operator==(const Value& other) const { return storage_ == other.storage_; }
 
@@ -770,24 +753,18 @@ inline std::optional<std::string_view> ValueRef::get_string() const noexcept {
     return ptr_ != nullptr ? ptr_->get_string() : std::nullopt;
 }
 
-inline std::optional<ArrayRef> ValueRef::get_array() const noexcept {
+inline ArrayRef ValueRef::get_array() const noexcept {
     if(ptr_ == nullptr) {
-        return std::nullopt;
+        return ArrayRef{};
     }
-    if(const Array* a = ptr_->try_array()) {
-        return ArrayRef(*a);
-    }
-    return std::nullopt;
+    return ArrayRef(ptr_->try_array());
 }
 
-inline std::optional<ObjectRef> ValueRef::get_object() const noexcept {
+inline ObjectRef ValueRef::get_object() const noexcept {
     if(ptr_ == nullptr) {
-        return std::nullopt;
+        return ObjectRef{};
     }
-    if(const Object* o = ptr_->try_object()) {
-        return ObjectRef(*o);
-    }
-    return std::nullopt;
+    return ObjectRef(ptr_->try_object());
 }
 
 inline bool ValueRef::as_bool() const { return ptr_->as_bool(); }
@@ -815,13 +792,6 @@ inline ArrayRef::ArrayRef(const Array* array) noexcept : ptr_(array) {}
 inline bool ArrayRef::valid() const noexcept { return ptr_ != nullptr; }
 inline std::size_t ArrayRef::size() const noexcept { return ptr_ != nullptr ? ptr_->size() : 0; }
 inline bool ArrayRef::empty() const noexcept { return ptr_ == nullptr || ptr_->empty(); }
-
-inline std::optional<ValueRef> ArrayRef::get(std::size_t index) const noexcept {
-    if(ptr_ == nullptr || index >= ptr_->size()) {
-        return std::nullopt;
-    }
-    return ValueRef((*ptr_)[index]);
-}
 
 inline ValueRef ArrayRef::at(std::size_t index) const {
     assert_valid();
@@ -864,16 +834,6 @@ inline ObjectRef::ObjectRef(const Object* object) noexcept : ptr_(object) {}
 inline bool ObjectRef::valid() const noexcept { return ptr_ != nullptr; }
 inline std::size_t ObjectRef::size() const noexcept { return ptr_ != nullptr ? ptr_->size() : 0; }
 inline bool ObjectRef::empty() const noexcept { return ptr_ == nullptr || ptr_->empty(); }
-
-inline std::optional<ValueRef> ObjectRef::get(std::string_view key) const noexcept {
-    if(ptr_ == nullptr) {
-        return std::nullopt;
-    }
-    if(const Value* v = ptr_->find(key)) {
-        return ValueRef(*v);
-    }
-    return std::nullopt;
-}
 
 inline bool ObjectRef::contains(std::string_view key) const noexcept {
     return ptr_ != nullptr && ptr_->contains(key);
