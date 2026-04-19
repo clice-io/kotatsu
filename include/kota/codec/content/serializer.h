@@ -48,9 +48,13 @@ public:
     auto operator=(const Serializer&) -> Serializer& = delete;
     auto operator=(Serializer&&) -> Serializer& = delete;
 
-    [[nodiscard]] bool valid() const noexcept { return is_valid; }
+    [[nodiscard]] bool valid() const noexcept {
+        return is_valid;
+    }
 
-    [[nodiscard]] error_type error() const noexcept { return last_error; }
+    [[nodiscard]] error_type error() const noexcept {
+        return last_error;
+    }
 
     result_t<content::Value> dom_value() const {
         if(!is_valid) {
@@ -72,7 +76,9 @@ public:
         return std::move(root_);
     }
 
-    result_t<value_type> serialize_null() { return append_value(content::Value(nullptr)); }
+    result_t<value_type> serialize_null() {
+        return append_value(content::Value(nullptr));
+    }
 
     template <typename T>
     result_t<value_type> serialize_some(const T& value) {
@@ -82,17 +88,21 @@ public:
     template <typename... Ts>
     result_t<value_type> serialize_variant(const std::variant<Ts...>& value) {
         return std::visit(
-            [&](const auto& item) -> result_t<value_type> {
-                return codec::serialize(*this, item);
-            },
+            [&](const auto& item) -> result_t<value_type> { return codec::serialize(*this, item); },
             value);
     }
 
-    result_t<value_type> serialize_bool(bool v) { return append_value(content::Value(v)); }
+    result_t<value_type> serialize_bool(bool v) {
+        return append_value(content::Value(v));
+    }
 
-    result_t<value_type> serialize_int(std::int64_t v) { return append_value(content::Value(v)); }
+    result_t<value_type> serialize_int(std::int64_t v) {
+        return append_value(content::Value(v));
+    }
 
-    result_t<value_type> serialize_uint(std::uint64_t v) { return append_value(content::Value(v)); }
+    result_t<value_type> serialize_uint(std::uint64_t v) {
+        return append_value(content::Value(v));
+    }
 
     result_t<value_type> serialize_float(double v) {
         if(std::isfinite(v)) {
@@ -190,7 +200,8 @@ private:
         if(arr == nullptr) {
             return mark_invalid();
         }
-        stack.push_back(frame{.array = arr, .object = nullptr, .pending_key = {}, .has_pending_key = false});
+        stack.push_back(
+            frame{.array = arr, .object = nullptr, .pending_key = {}, .has_pending_key = false});
         return {};
     }
 
@@ -211,7 +222,8 @@ private:
         if(obj == nullptr) {
             return mark_invalid();
         }
-        stack.push_back(frame{.array = nullptr, .object = obj, .pending_key = {}, .has_pending_key = false});
+        stack.push_back(
+            frame{.array = nullptr, .object = obj, .pending_key = {}, .has_pending_key = false});
         return {};
     }
 
@@ -311,8 +323,7 @@ namespace kota::codec {
 // --- Generic Value/Array/Object serialization: dispatch across any Serializer. ---
 
 template <typename T>
-concept content_dom_type = std::same_as<T, content::Value> ||
-                           std::same_as<T, content::Array> ||
+concept content_dom_type = std::same_as<T, content::Value> || std::same_as<T, content::Array> ||
                            std::same_as<T, content::Object>;
 
 template <serializer_like S>
