@@ -53,6 +53,20 @@ enum class storage_index : std::size_t {
     object_v = 7,
 };
 
+inline std::string_view kind_name(ValueKind kind) noexcept {
+    switch(kind) {
+        case ValueKind::null_value: return "null";
+        case ValueKind::boolean: return "boolean";
+        case ValueKind::signed_int: return "signed_int";
+        case ValueKind::unsigned_int: return "unsigned_int";
+        case ValueKind::floating: return "float";
+        case ValueKind::string: return "string";
+        case ValueKind::array: return "array";
+        case ValueKind::object: return "object";
+        default: return "invalid";
+    }
+}
+
 }  // namespace detail
 
 class Array {
@@ -168,68 +182,210 @@ public:
                                    Array,
                                    Object>;
 
-    Value() noexcept;
-    Value(const Value&);
-    Value(Value&&) noexcept;
-    auto operator=(const Value&) -> Value&;
-    auto operator=(Value&&) noexcept -> Value&;
-    ~Value();
+    Value() noexcept : storage_(std::monostate{}) {}
 
-    Value(std::nullptr_t) noexcept;
-    Value(bool v) noexcept;
-    Value(std::int64_t v) noexcept;
-    Value(std::uint64_t v) noexcept;
-    Value(double v) noexcept;
-    Value(const char* v);
-    Value(std::string_view v);
-    Value(std::string v);
-    Value(Array v);
-    Value(Object v);
+    Value(const Value&) = default;
+    Value(Value&&) noexcept = default;
+    auto operator=(const Value&) -> Value& = default;
+    auto operator=(Value&&) noexcept -> Value& = default;
+    ~Value() = default;
+
+    Value(std::nullptr_t) noexcept : storage_(std::monostate{}) {}
+
+    Value(bool v) noexcept : storage_(v) {}
+
+    Value(std::int64_t v) noexcept : storage_(v) {}
+
+    Value(std::uint64_t v) noexcept : storage_(v) {}
+
+    Value(double v) noexcept : storage_(v) {}
+
+    Value(const char* v) : storage_(std::string(v)) {}
+
+    Value(std::string_view v) : storage_(std::string(v)) {}
+
+    Value(std::string v) : storage_(std::move(v)) {}
+
+    Value(Array v) : storage_(std::move(v)) {}
+
+    Value(Object v) : storage_(std::move(v)) {}
 
     template <std::integral T>
         requires (!std::same_as<T, bool> && !std::same_as<T, char> &&
                   !std::same_as<T, std::int64_t> && !std::same_as<T, std::uint64_t>)
-    Value(T v) noexcept;
+    Value(T v) noexcept {
+        if constexpr(std::is_signed_v<T>) {
+            storage_ = static_cast<std::int64_t>(v);
+        } else {
+            storage_ = static_cast<std::uint64_t>(v);
+        }
+    }
 
-    [[nodiscard]] ValueKind kind() const noexcept;
+    [[nodiscard]] ValueKind kind() const noexcept {
+        switch(storage_.index()) {
+            case static_cast<std::size_t>(detail::storage_index::null_v):
+                return ValueKind::null_value;
+            case static_cast<std::size_t>(detail::storage_index::bool_v): return ValueKind::boolean;
+            case static_cast<std::size_t>(detail::storage_index::int_v):
+                return ValueKind::signed_int;
+            case static_cast<std::size_t>(detail::storage_index::uint_v):
+                return ValueKind::unsigned_int;
+            case static_cast<std::size_t>(detail::storage_index::double_v):
+                return ValueKind::floating;
+            case static_cast<std::size_t>(detail::storage_index::string_v):
+                return ValueKind::string;
+            case static_cast<std::size_t>(detail::storage_index::array_v): return ValueKind::array;
+            case static_cast<std::size_t>(detail::storage_index::object_v):
+                return ValueKind::object;
+            default: return ValueKind::invalid;
+        }
+    }
 
-    [[nodiscard]] bool is_null() const noexcept;
-    [[nodiscard]] bool is_bool() const noexcept;
-    [[nodiscard]] bool is_int() const noexcept;
-    [[nodiscard]] bool is_number() const noexcept;
-    [[nodiscard]] bool is_string() const noexcept;
-    [[nodiscard]] bool is_array() const noexcept;
-    [[nodiscard]] bool is_object() const noexcept;
+    [[nodiscard]] bool is_null() const noexcept {
+        return std::holds_alternative<std::monostate>(storage_);
+    }
 
-    [[nodiscard]] std::optional<bool> get_bool() const noexcept;
-    [[nodiscard]] std::optional<std::int64_t> get_int() const noexcept;
-    [[nodiscard]] std::optional<std::uint64_t> get_uint() const noexcept;
-    [[nodiscard]] std::optional<double> get_double() const noexcept;
-    [[nodiscard]] std::optional<std::string_view> get_string() const noexcept;
+    [[nodiscard]] bool is_bool() const noexcept {
+        return std::holds_alternative<bool>(storage_);
+    }
 
-    [[nodiscard]] const Array* try_array() const noexcept;
-    [[nodiscard]] Array* try_array() noexcept;
-    [[nodiscard]] const Object* try_object() const noexcept;
-    [[nodiscard]] Object* try_object() noexcept;
+    [[nodiscard]] bool is_int() const noexcept {
+        return std::holds_alternative<std::int64_t>(storage_) ||
+               std::holds_alternative<std::uint64_t>(storage_);
+    }
 
-    [[nodiscard]] bool as_bool() const;
-    [[nodiscard]] std::int64_t as_int() const;
-    [[nodiscard]] std::uint64_t as_uint() const;
-    [[nodiscard]] double as_double() const;
-    [[nodiscard]] std::string_view as_string() const;
-    [[nodiscard]] const Array& as_array() const;
-    [[nodiscard]] Array& as_array();
-    [[nodiscard]] const Object& as_object() const;
-    [[nodiscard]] Object& as_object();
+    [[nodiscard]] bool is_number() const noexcept {
+        return is_int() || std::holds_alternative<double>(storage_);
+    }
+
+    [[nodiscard]] bool is_string() const noexcept {
+        return std::holds_alternative<std::string>(storage_);
+    }
+
+    [[nodiscard]] bool is_array() const noexcept {
+        return std::holds_alternative<Array>(storage_);
+    }
+
+    [[nodiscard]] bool is_object() const noexcept {
+        return std::holds_alternative<Object>(storage_);
+    }
+
+    [[nodiscard]] std::optional<bool> get_bool() const noexcept {
+        if(const auto* p = std::get_if<bool>(&storage_)) {
+            return *p;
+        }
+        return std::nullopt;
+    }
+
+    [[nodiscard]] std::optional<std::int64_t> get_int() const noexcept {
+        if(const auto* p = std::get_if<std::int64_t>(&storage_)) {
+            return *p;
+        }
+        if(const auto* p = std::get_if<std::uint64_t>(&storage_)) {
+            if(*p <= static_cast<std::uint64_t>((std::numeric_limits<std::int64_t>::max)())) {
+                return static_cast<std::int64_t>(*p);
+            }
+        }
+        return std::nullopt;
+    }
+
+    [[nodiscard]] std::optional<std::uint64_t> get_uint() const noexcept {
+        if(const auto* p = std::get_if<std::uint64_t>(&storage_)) {
+            return *p;
+        }
+        if(const auto* p = std::get_if<std::int64_t>(&storage_)) {
+            if(*p >= 0) {
+                return static_cast<std::uint64_t>(*p);
+            }
+        }
+        return std::nullopt;
+    }
+
+    [[nodiscard]] std::optional<double> get_double() const noexcept {
+        if(const auto* p = std::get_if<double>(&storage_)) {
+            return *p;
+        }
+        if(const auto* p = std::get_if<std::int64_t>(&storage_)) {
+            return static_cast<double>(*p);
+        }
+        if(const auto* p = std::get_if<std::uint64_t>(&storage_)) {
+            return static_cast<double>(*p);
+        }
+        return std::nullopt;
+    }
+
+    [[nodiscard]] std::optional<std::string_view> get_string() const noexcept {
+        if(const auto* p = std::get_if<std::string>(&storage_)) {
+            return std::string_view(*p);
+        }
+        return std::nullopt;
+    }
+
+    [[nodiscard]] const Array* try_array() const noexcept {
+        return std::get_if<Array>(&storage_);
+    }
+
+    [[nodiscard]] Array* try_array() noexcept {
+        return std::get_if<Array>(&storage_);
+    }
+
+    [[nodiscard]] const Object* try_object() const noexcept {
+        return std::get_if<Object>(&storage_);
+    }
+
+    [[nodiscard]] Object* try_object() noexcept {
+        return std::get_if<Object>(&storage_);
+    }
+
+    [[nodiscard]] bool as_bool() const {
+        return std::get<bool>(storage_);
+    }
+
+    [[nodiscard]] std::int64_t as_int() const {
+        return std::get<std::int64_t>(storage_);
+    }
+
+    [[nodiscard]] std::uint64_t as_uint() const {
+        return std::get<std::uint64_t>(storage_);
+    }
+
+    [[nodiscard]] double as_double() const {
+        return std::get<double>(storage_);
+    }
+
+    [[nodiscard]] std::string_view as_string() const {
+        const auto& s = std::get<std::string>(storage_);
+        return std::string_view(s);
+    }
+
+    [[nodiscard]] const Array& as_array() const {
+        return std::get<Array>(storage_);
+    }
+
+    [[nodiscard]] Array& as_array() {
+        return std::get<Array>(storage_);
+    }
+
+    [[nodiscard]] const Object& as_object() const {
+        return std::get<Object>(storage_);
+    }
+
+    [[nodiscard]] Object& as_object() {
+        return std::get<Object>(storage_);
+    }
 
     [[nodiscard]] Cursor as_ref() const noexcept;
 
     [[nodiscard]] Cursor operator[](std::string_view key) const;
     [[nodiscard]] Cursor operator[](std::size_t index) const;
 
-    [[nodiscard]] const storage_t& storage() const noexcept;
+    [[nodiscard]] const storage_t& storage() const noexcept {
+        return storage_;
+    }
 
-    bool operator==(const Value& other) const;
+    bool operator==(const Value& other) const {
+        return storage_ == other.storage_;
+    }
 
 private:
     storage_t storage_;
@@ -245,57 +401,177 @@ struct Object::entry {
 class Cursor {
 public:
     Cursor() noexcept = default;
-    explicit Cursor(const Value& value) noexcept;
-    explicit Cursor(const Value* value) noexcept;
 
-    [[nodiscard]] bool valid() const noexcept;
-    [[nodiscard]] bool has_error() const noexcept;
-    [[nodiscard]] std::string_view error() const noexcept;
-    [[nodiscard]] ValueKind kind() const noexcept;
+    explicit Cursor(const Value& value) noexcept : ptr(&value) {}
 
-    [[nodiscard]] bool is_null() const noexcept;
-    [[nodiscard]] bool is_bool() const noexcept;
-    [[nodiscard]] bool is_int() const noexcept;
-    [[nodiscard]] bool is_number() const noexcept;
-    [[nodiscard]] bool is_string() const noexcept;
-    [[nodiscard]] bool is_array() const noexcept;
-    [[nodiscard]] bool is_object() const noexcept;
+    explicit Cursor(const Value* value) noexcept : ptr(value) {}
 
-    [[nodiscard]] std::optional<bool> get_bool() const noexcept;
-    [[nodiscard]] std::optional<std::int64_t> get_int() const noexcept;
-    [[nodiscard]] std::optional<std::uint64_t> get_uint() const noexcept;
-    [[nodiscard]] std::optional<double> get_double() const noexcept;
-    [[nodiscard]] std::optional<std::string_view> get_string() const noexcept;
+    [[nodiscard]] bool valid() const noexcept {
+        return ptr != nullptr;
+    }
 
-    [[nodiscard]] const Array* try_array() const noexcept;
-    [[nodiscard]] const Object* try_object() const noexcept;
+    [[nodiscard]] bool has_error() const noexcept {
+        return !message.empty();
+    }
 
-    [[nodiscard]] bool as_bool() const;
-    [[nodiscard]] std::int64_t as_int() const;
-    [[nodiscard]] std::uint64_t as_uint() const;
-    [[nodiscard]] double as_double() const;
-    [[nodiscard]] std::string_view as_string() const;
-    [[nodiscard]] const Array& as_array() const;
-    [[nodiscard]] const Object& as_object() const;
+    [[nodiscard]] std::string_view error() const noexcept {
+        return message;
+    }
 
-    [[nodiscard]] Cursor operator[](std::string_view key) const;
-    [[nodiscard]] Cursor operator[](std::size_t index) const;
+    [[nodiscard]] ValueKind kind() const noexcept {
+        return ptr != nullptr ? ptr->kind() : ValueKind::invalid;
+    }
 
-    void assert_valid() const;
-    void assert_kind(ValueKind expected) const;
+    [[nodiscard]] bool is_null() const noexcept {
+        return ptr != nullptr && ptr->is_null();
+    }
 
-    [[nodiscard]] const Value* unwrap() const noexcept;
+    [[nodiscard]] bool is_bool() const noexcept {
+        return ptr != nullptr && ptr->is_bool();
+    }
+
+    [[nodiscard]] bool is_int() const noexcept {
+        return ptr != nullptr && ptr->is_int();
+    }
+
+    [[nodiscard]] bool is_number() const noexcept {
+        return ptr != nullptr && ptr->is_number();
+    }
+
+    [[nodiscard]] bool is_string() const noexcept {
+        return ptr != nullptr && ptr->is_string();
+    }
+
+    [[nodiscard]] bool is_array() const noexcept {
+        return ptr != nullptr && ptr->is_array();
+    }
+
+    [[nodiscard]] bool is_object() const noexcept {
+        return ptr != nullptr && ptr->is_object();
+    }
+
+    [[nodiscard]] std::optional<bool> get_bool() const noexcept {
+        return ptr != nullptr ? ptr->get_bool() : std::nullopt;
+    }
+
+    [[nodiscard]] std::optional<std::int64_t> get_int() const noexcept {
+        return ptr != nullptr ? ptr->get_int() : std::nullopt;
+    }
+
+    [[nodiscard]] std::optional<std::uint64_t> get_uint() const noexcept {
+        return ptr != nullptr ? ptr->get_uint() : std::nullopt;
+    }
+
+    [[nodiscard]] std::optional<double> get_double() const noexcept {
+        return ptr != nullptr ? ptr->get_double() : std::nullopt;
+    }
+
+    [[nodiscard]] std::optional<std::string_view> get_string() const noexcept {
+        return ptr != nullptr ? ptr->get_string() : std::nullopt;
+    }
+
+    [[nodiscard]] const Array* try_array() const noexcept {
+        return ptr != nullptr ? ptr->try_array() : nullptr;
+    }
+
+    [[nodiscard]] const Object* try_object() const noexcept {
+        return ptr != nullptr ? ptr->try_object() : nullptr;
+    }
+
+    [[nodiscard]] bool as_bool() const {
+        return ptr->as_bool();
+    }
+
+    [[nodiscard]] std::int64_t as_int() const {
+        return ptr->as_int();
+    }
+
+    [[nodiscard]] std::uint64_t as_uint() const {
+        return ptr->as_uint();
+    }
+
+    [[nodiscard]] double as_double() const {
+        return ptr->as_double();
+    }
+
+    [[nodiscard]] std::string_view as_string() const {
+        return ptr->as_string();
+    }
+
+    [[nodiscard]] const Array& as_array() const {
+        return ptr->as_array();
+    }
+
+    [[nodiscard]] const Object& as_object() const {
+        return ptr->as_object();
+    }
+
+    [[nodiscard]] Cursor operator[](std::string_view key) const {
+        if(ptr != nullptr) {
+            return (*ptr)[key];
+        }
+        return make_error(message.empty() ? std::format(R"(["{}"])", key)
+                                          : std::format(R"({} -> ["{}"])", message, key));
+    }
+
+    [[nodiscard]] Cursor operator[](std::size_t index) const {
+        if(ptr != nullptr) {
+            return (*ptr)[index];
+        }
+        return make_error(message.empty() ? std::format("[{}]", index)
+                                          : std::format("{} -> [{}]", message, index));
+    }
+
+    void assert_valid() const {
+        assert(ptr != nullptr);
+    }
+
+    void assert_kind([[maybe_unused]] ValueKind expected) const {
+        assert_valid();
+        assert(kind() == expected);
+    }
+
+    [[nodiscard]] const Value* unwrap() const noexcept {
+        return ptr;
+    }
 
 private:
     friend class Value;
 
-    static Cursor make_error(std::string text) noexcept;
+    static Cursor make_error(std::string text) noexcept {
+        Cursor c;
+        c.message = std::move(text);
+        return c;
+    }
 
     const Value* ptr = nullptr;
     std::string message;
 };
 
-// --- Array special members (defined after Value is complete) ---
+inline Cursor Value::as_ref() const noexcept {
+    return Cursor(*this);
+}
+
+inline Cursor Value::operator[](std::string_view key) const {
+    if(const Object* obj = try_object()) {
+        if(const Value* v = obj->find(key)) {
+            return Cursor(*v);
+        }
+        return Cursor::make_error(std::format(R"(missing key "{}")", key));
+    }
+    return Cursor::make_error(std::format("expected object, got {}", detail::kind_name(kind())));
+}
+
+inline Cursor Value::operator[](std::size_t index) const {
+    if(const Array* arr = try_array()) {
+        if(index < arr->size()) {
+            return Cursor((*arr)[index]);
+        }
+        return Cursor::make_error(
+            std::format("index {} out of range (size {})", index, arr->size()));
+    }
+    return Cursor::make_error(std::format("expected array, got {}", detail::kind_name(kind())));
+}
 
 inline Array::Array() = default;
 inline Array::Array(const Array&) = default;
@@ -384,8 +660,6 @@ inline std::vector<Value>& Array::items() noexcept {
 inline bool Array::operator==(const Array& other) const {
     return items_ == other.items_;
 }
-
-// --- Object special members and methods ---
 
 inline Object::Object() = default;
 
@@ -552,388 +826,6 @@ inline bool Object::operator==(const Object& other) const {
         }
     }
     return true;
-}
-
-// --- Value special members and methods ---
-
-inline Value::Value() noexcept : storage_(std::monostate{}) {}
-
-inline Value::Value(const Value&) = default;
-inline Value::Value(Value&&) noexcept = default;
-inline auto Value::operator=(const Value&) -> Value& = default;
-inline auto Value::operator=(Value&&) noexcept -> Value& = default;
-inline Value::~Value() = default;
-
-inline Value::Value(std::nullptr_t) noexcept : storage_(std::monostate{}) {}
-
-inline Value::Value(bool v) noexcept : storage_(v) {}
-
-inline Value::Value(std::int64_t v) noexcept : storage_(v) {}
-
-inline Value::Value(std::uint64_t v) noexcept : storage_(v) {}
-
-inline Value::Value(double v) noexcept : storage_(v) {}
-
-inline Value::Value(const char* v) : storage_(std::string(v)) {}
-
-inline Value::Value(std::string_view v) : storage_(std::string(v)) {}
-
-inline Value::Value(std::string v) : storage_(std::move(v)) {}
-
-inline Value::Value(Array v) : storage_(std::move(v)) {}
-
-inline Value::Value(Object v) : storage_(std::move(v)) {}
-
-template <std::integral T>
-    requires (!std::same_as<T, bool> && !std::same_as<T, char> && !std::same_as<T, std::int64_t> &&
-              !std::same_as<T, std::uint64_t>)
-inline Value::Value(T v) noexcept {
-    if constexpr(std::is_signed_v<T>) {
-        storage_ = static_cast<std::int64_t>(v);
-    } else {
-        storage_ = static_cast<std::uint64_t>(v);
-    }
-}
-
-inline ValueKind Value::kind() const noexcept {
-    switch(storage_.index()) {
-        case static_cast<std::size_t>(detail::storage_index::null_v): return ValueKind::null_value;
-        case static_cast<std::size_t>(detail::storage_index::bool_v): return ValueKind::boolean;
-        case static_cast<std::size_t>(detail::storage_index::int_v): return ValueKind::signed_int;
-        case static_cast<std::size_t>(detail::storage_index::uint_v):
-            return ValueKind::unsigned_int;
-        case static_cast<std::size_t>(detail::storage_index::double_v): return ValueKind::floating;
-        case static_cast<std::size_t>(detail::storage_index::string_v): return ValueKind::string;
-        case static_cast<std::size_t>(detail::storage_index::array_v): return ValueKind::array;
-        case static_cast<std::size_t>(detail::storage_index::object_v): return ValueKind::object;
-        default: return ValueKind::invalid;
-    }
-}
-
-inline bool Value::is_null() const noexcept {
-    return std::holds_alternative<std::monostate>(storage_);
-}
-
-inline bool Value::is_bool() const noexcept {
-    return std::holds_alternative<bool>(storage_);
-}
-
-inline bool Value::is_int() const noexcept {
-    return std::holds_alternative<std::int64_t>(storage_) ||
-           std::holds_alternative<std::uint64_t>(storage_);
-}
-
-inline bool Value::is_number() const noexcept {
-    return is_int() || std::holds_alternative<double>(storage_);
-}
-
-inline bool Value::is_string() const noexcept {
-    return std::holds_alternative<std::string>(storage_);
-}
-
-inline bool Value::is_array() const noexcept {
-    return std::holds_alternative<Array>(storage_);
-}
-
-inline bool Value::is_object() const noexcept {
-    return std::holds_alternative<Object>(storage_);
-}
-
-inline std::optional<bool> Value::get_bool() const noexcept {
-    if(const auto* p = std::get_if<bool>(&storage_)) {
-        return *p;
-    }
-    return std::nullopt;
-}
-
-inline std::optional<std::int64_t> Value::get_int() const noexcept {
-    if(const auto* p = std::get_if<std::int64_t>(&storage_)) {
-        return *p;
-    }
-    if(const auto* p = std::get_if<std::uint64_t>(&storage_)) {
-        if(*p <= static_cast<std::uint64_t>((std::numeric_limits<std::int64_t>::max)())) {
-            return static_cast<std::int64_t>(*p);
-        }
-    }
-    return std::nullopt;
-}
-
-inline std::optional<std::uint64_t> Value::get_uint() const noexcept {
-    if(const auto* p = std::get_if<std::uint64_t>(&storage_)) {
-        return *p;
-    }
-    if(const auto* p = std::get_if<std::int64_t>(&storage_)) {
-        if(*p >= 0) {
-            return static_cast<std::uint64_t>(*p);
-        }
-    }
-    return std::nullopt;
-}
-
-inline std::optional<double> Value::get_double() const noexcept {
-    if(const auto* p = std::get_if<double>(&storage_)) {
-        return *p;
-    }
-    if(const auto* p = std::get_if<std::int64_t>(&storage_)) {
-        return static_cast<double>(*p);
-    }
-    if(const auto* p = std::get_if<std::uint64_t>(&storage_)) {
-        return static_cast<double>(*p);
-    }
-    return std::nullopt;
-}
-
-inline std::optional<std::string_view> Value::get_string() const noexcept {
-    if(const auto* p = std::get_if<std::string>(&storage_)) {
-        return std::string_view(*p);
-    }
-    return std::nullopt;
-}
-
-const inline Array* Value::try_array() const noexcept {
-    return std::get_if<Array>(&storage_);
-}
-
-inline Array* Value::try_array() noexcept {
-    return std::get_if<Array>(&storage_);
-}
-
-const inline Object* Value::try_object() const noexcept {
-    return std::get_if<Object>(&storage_);
-}
-
-inline Object* Value::try_object() noexcept {
-    return std::get_if<Object>(&storage_);
-}
-
-inline bool Value::as_bool() const {
-    return std::get<bool>(storage_);
-}
-
-inline std::int64_t Value::as_int() const {
-    return std::get<std::int64_t>(storage_);
-}
-
-inline std::uint64_t Value::as_uint() const {
-    return std::get<std::uint64_t>(storage_);
-}
-
-inline double Value::as_double() const {
-    return std::get<double>(storage_);
-}
-
-inline std::string_view Value::as_string() const {
-    const auto& s = std::get<std::string>(storage_);
-    return std::string_view(s);
-}
-
-const inline Array& Value::as_array() const {
-    return std::get<Array>(storage_);
-}
-
-inline Array& Value::as_array() {
-    return std::get<Array>(storage_);
-}
-
-const inline Object& Value::as_object() const {
-    return std::get<Object>(storage_);
-}
-
-inline Object& Value::as_object() {
-    return std::get<Object>(storage_);
-}
-
-namespace detail {
-
-inline std::string_view kind_name(ValueKind kind) noexcept {
-    switch(kind) {
-        case ValueKind::null_value: return "null";
-        case ValueKind::boolean: return "boolean";
-        case ValueKind::signed_int: return "signed_int";
-        case ValueKind::unsigned_int: return "unsigned_int";
-        case ValueKind::floating: return "float";
-        case ValueKind::string: return "string";
-        case ValueKind::array: return "array";
-        case ValueKind::object: return "object";
-        default: return "invalid";
-    }
-}
-
-}  // namespace detail
-
-inline Cursor Value::as_ref() const noexcept {
-    return Cursor(*this);
-}
-
-inline Cursor Value::operator[](std::string_view key) const {
-    if(const Object* obj = try_object()) {
-        if(const Value* v = obj->find(key)) {
-            return Cursor(*v);
-        }
-        return Cursor::make_error(std::format(R"(missing key "{}")", key));
-    }
-    return Cursor::make_error(std::format("expected object, got {}", detail::kind_name(kind())));
-}
-
-inline Cursor Value::operator[](std::size_t index) const {
-    if(const Array* arr = try_array()) {
-        if(index < arr->size()) {
-            return Cursor((*arr)[index]);
-        }
-        return Cursor::make_error(
-            std::format("index {} out of range (size {})", index, arr->size()));
-    }
-    return Cursor::make_error(std::format("expected array, got {}", detail::kind_name(kind())));
-}
-
-const inline Value::storage_t& Value::storage() const noexcept {
-    return storage_;
-}
-
-inline bool Value::operator==(const Value& other) const {
-    return storage_ == other.storage_;
-}
-
-// --- Cursor ---
-
-inline Cursor::Cursor(const Value& value) noexcept : ptr(&value) {}
-
-inline Cursor::Cursor(const Value* value) noexcept : ptr(value) {}
-
-inline Cursor Cursor::make_error(std::string text) noexcept {
-    Cursor c;
-    c.message = std::move(text);
-    return c;
-}
-
-inline bool Cursor::valid() const noexcept {
-    return ptr != nullptr;
-}
-
-inline bool Cursor::has_error() const noexcept {
-    return !message.empty();
-}
-
-inline std::string_view Cursor::error() const noexcept {
-    return message;
-}
-
-inline ValueKind Cursor::kind() const noexcept {
-    return ptr != nullptr ? ptr->kind() : ValueKind::invalid;
-}
-
-inline bool Cursor::is_null() const noexcept {
-    return ptr != nullptr && ptr->is_null();
-}
-
-inline bool Cursor::is_bool() const noexcept {
-    return ptr != nullptr && ptr->is_bool();
-}
-
-inline bool Cursor::is_int() const noexcept {
-    return ptr != nullptr && ptr->is_int();
-}
-
-inline bool Cursor::is_number() const noexcept {
-    return ptr != nullptr && ptr->is_number();
-}
-
-inline bool Cursor::is_string() const noexcept {
-    return ptr != nullptr && ptr->is_string();
-}
-
-inline bool Cursor::is_array() const noexcept {
-    return ptr != nullptr && ptr->is_array();
-}
-
-inline bool Cursor::is_object() const noexcept {
-    return ptr != nullptr && ptr->is_object();
-}
-
-inline std::optional<bool> Cursor::get_bool() const noexcept {
-    return ptr != nullptr ? ptr->get_bool() : std::nullopt;
-}
-
-inline std::optional<std::int64_t> Cursor::get_int() const noexcept {
-    return ptr != nullptr ? ptr->get_int() : std::nullopt;
-}
-
-inline std::optional<std::uint64_t> Cursor::get_uint() const noexcept {
-    return ptr != nullptr ? ptr->get_uint() : std::nullopt;
-}
-
-inline std::optional<double> Cursor::get_double() const noexcept {
-    return ptr != nullptr ? ptr->get_double() : std::nullopt;
-}
-
-inline std::optional<std::string_view> Cursor::get_string() const noexcept {
-    return ptr != nullptr ? ptr->get_string() : std::nullopt;
-}
-
-const inline Array* Cursor::try_array() const noexcept {
-    return ptr != nullptr ? ptr->try_array() : nullptr;
-}
-
-const inline Object* Cursor::try_object() const noexcept {
-    return ptr != nullptr ? ptr->try_object() : nullptr;
-}
-
-inline bool Cursor::as_bool() const {
-    return ptr->as_bool();
-}
-
-inline std::int64_t Cursor::as_int() const {
-    return ptr->as_int();
-}
-
-inline std::uint64_t Cursor::as_uint() const {
-    return ptr->as_uint();
-}
-
-inline double Cursor::as_double() const {
-    return ptr->as_double();
-}
-
-inline std::string_view Cursor::as_string() const {
-    return ptr->as_string();
-}
-
-const inline Array& Cursor::as_array() const {
-    return ptr->as_array();
-}
-
-const inline Object& Cursor::as_object() const {
-    return ptr->as_object();
-}
-
-inline Cursor Cursor::operator[](std::string_view key) const {
-    if(ptr != nullptr) {
-        return (*ptr)[key];
-    }
-    return Cursor::make_error(
-        message.empty() ? std::format(R"(["{}"])", key)
-                        : std::format(R"({} -> ["{}"])", message, key));
-}
-
-inline Cursor Cursor::operator[](std::size_t index) const {
-    if(ptr != nullptr) {
-        return (*ptr)[index];
-    }
-    return Cursor::make_error(message.empty() ? std::format("[{}]", index)
-                                              : std::format("{} -> [{}]", message, index));
-}
-
-inline void Cursor::assert_valid() const {
-    assert(ptr != nullptr);
-}
-
-inline void Cursor::assert_kind([[maybe_unused]] ValueKind expected) const {
-    assert_valid();
-    assert(kind() == expected);
-}
-
-const inline Value* Cursor::unwrap() const noexcept {
-    return ptr;
 }
 
 }  // namespace kota::codec::content
