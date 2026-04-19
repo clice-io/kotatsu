@@ -634,6 +634,7 @@ struct v_rect {
     int height;
 };
 
+#if KOTA_ENABLE_EXCEPTIONS
 struct throwing_alt {
     throwing_alt() = default;
 
@@ -649,6 +650,7 @@ struct throwing_alt {
         return false;
     }
 };
+#endif
 
 TEST_CASE(variant_eq_unreflectable_alt) {
     using shape_t = std::variant<v_circle, v_rect>;
@@ -683,6 +685,7 @@ TEST_CASE(variant_lt_same_alternative) {
     EXPECT_FALSE(lt(big, small));
 }
 
+#if KOTA_ENABLE_EXCEPTIONS
 TEST_CASE(variant_valueless_compares_less) {
     using shape_t = std::variant<throwing_alt, v_circle>;
     shape_t valued = v_circle{.radius = 1};
@@ -706,6 +709,7 @@ TEST_CASE(variant_valueless_compares_less) {
     EXPECT_FALSE(lt(valueless, valueless2));
     EXPECT_FALSE(lt(valueless2, valueless));
 }
+#endif
 
 TEST_CASE(variant_in_annotation) {
     using tagged_shape_t =
