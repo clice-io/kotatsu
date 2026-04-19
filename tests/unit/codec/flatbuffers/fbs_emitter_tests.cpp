@@ -48,7 +48,7 @@ TEST_CASE(all_primitives_emits_every_scalar_kind) {
 
 TEST_CASE(enum_underlying_mapped_to_fbs_scalar) {
     struct EnumHolder {
-        fx::color c;
+        fx::Color c;
     };
 
     const auto schema = fbs::render<EnumHolder>();
