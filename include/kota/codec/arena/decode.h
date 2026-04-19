@@ -505,6 +505,11 @@ auto decode_value_at(const B& d,
                 } else if constexpr(std::same_as<U, std::string_view>) {
                     out = std::string_view(text.data(), text.size());
                     return {};
+                } else if constexpr(std::constructible_from<U, const char*, std::size_t>) {
+                    // Fallback for string-view-like types (e.g. llvm::StringRef)
+                    // that wrap an external buffer via (ptr, size).
+                    out = U(text.data(), text.size());
+                    return {};
                 } else {
                     return std::unexpected(E::unsupported_type);
                 }
@@ -658,6 +663,8 @@ auto decode_sequence(const B& d,
                 KOTA_EXPECTED_TRY(store_element(std::string(text.data(), text.size())));
             } else if constexpr(std::same_as<element_t, std::string_view>) {
                 KOTA_EXPECTED_TRY(store_element(std::string_view(text.data(), text.size())));
+            } else if constexpr(std::constructible_from<element_t, const char*, std::size_t>) {
+                KOTA_EXPECTED_TRY(store_element(element_t(text.data(), text.size())));
             } else {
                 return std::unexpected(E::unsupported_type);
             }
@@ -738,8 +745,14 @@ auto decode_map(const B& d,
                 bool required) -> std::expected<void, typename B::error_type> {
     using E = typename B::error_type;
     using U = std::remove_cvref_t<T>;
-    using key_t = typename U::key_type;
-    using mapped_t = typename U::mapped_type;
+    // Derive key/mapped types from the iterator reference (see encode_map
+    // for rationale). This lets us decode into containers whose
+    // U::key_type differs from the logical key type used during iteration
+    // (e.g. llvm::StringMap where key_type=const char* but the reference
+    // yields StringRef via StringMapEntry's tuple protocol).
+    using ref_t = std::remove_cvref_t<std::ranges::range_reference_t<U>>;
+    using key_t = std::remove_cvref_t<std::tuple_element_t<0, ref_t>>;
+    using mapped_t = std::remove_cvref_t<std::tuple_element_t<1, ref_t>>;
 
     if(!view.has(sid)) {
         if(required) {

@@ -471,8 +471,13 @@ template <typename Config, typename B, typename T>
 auto encode_map(B& b, const T& map)
     -> std::expected<typename B::vector_ref, typename B::error_type> {
     using U = std::remove_cvref_t<T>;
-    using key_t = typename U::key_type;
-    using mapped_t = typename U::mapped_type;
+    // Derive key/mapped types from the iterator's reference rather than
+    // U::key_type / U::mapped_type: some containers (e.g. llvm::StringMap)
+    // expose key_type=const char* while the iterator yields StringRef, so
+    // the reference-derived types match what structured binding gives us.
+    using ref_t = std::remove_cvref_t<std::ranges::range_reference_t<U>>;
+    using key_t = std::remove_cvref_t<std::tuple_element_t<0, ref_t>>;
+    using mapped_t = std::remove_cvref_t<std::tuple_element_t<1, ref_t>>;
 
     std::vector<std::pair<key_t, mapped_t>> entries;
     entries.reserve(map.size());
