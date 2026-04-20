@@ -17,6 +17,7 @@
 
 #include "kota/support/expected_try.h"
 #include "kota/support/ranges.h"
+#include "kota/codec/backend.h"
 #include "kota/codec/bincode/error.h"
 #include "kota/codec/codec.h"
 #include "kota/codec/config.h"
@@ -29,6 +30,9 @@ class Deserializer {
 public:
     using config_type = Config;
     using error_type = bincode::error;
+
+    constexpr static auto backend_kind_v = backend_kind::streaming;
+    constexpr static auto field_mode_v = field_mode::by_position;
 
     template <typename T>
     using result_t = std::expected<T, error_type>;
@@ -475,90 +479,6 @@ static_assert(codec::deserializer_like<Deserializer<>>);
 }  // namespace kota::codec::bincode
 
 namespace kota::codec {
-
-namespace detail {
-
-template <typename Config, typename E, typename D, typename Field>
-constexpr auto deserialize_sequential_struct_field(D& deserializer, Field field)
-    -> std::expected<void, E> {
-    using field_t = typename std::remove_cvref_t<decltype(field)>::type;
-
-    if constexpr(!meta::annotated_type<field_t>) {
-        KOTA_EXPECTED_TRY(codec::deserialize(deserializer, field.value()));
-        return {};
-    } else {
-        using attrs_t = typename std::remove_cvref_t<field_t>::attrs;
-        auto&& value = meta::annotated_value(field.value());
-        using value_t = std::remove_cvref_t<decltype(value)>;
-
-        // schema::skip excludes the field from the wire format.
-        if constexpr(tuple_has_v<attrs_t, meta::attrs::skip>) {
-            return {};
-        }
-        // schema::flatten in bincode is equivalent to inlining nested field sequence.
-        else if constexpr(tuple_has_v<attrs_t, meta::attrs::flatten>) {
-            static_assert(meta::reflectable_class<value_t>,
-                          "schema::flatten requires a reflectable class field type");
-
-            std::expected<void, E> nested_status{};
-            meta::for_each(value, [&](auto nested_field) {
-                auto status =
-                    deserialize_sequential_struct_field<Config, E>(deserializer, nested_field);
-                if(!status) {
-                    nested_status = std::unexpected(status.error());
-                    return false;
-                }
-                return true;
-            });
-            return nested_status;
-        } else {
-            if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
-                using skip_if_attr = tuple_find_spec_t<attrs_t, meta::behavior::skip_if>;
-                using Pred = typename skip_if_attr::predicate;
-                if(meta::evaluate_skip_predicate<Pred>(value, false)) {
-                    using consume_t = std::remove_cvref_t<decltype(field.value())>;
-                    static_assert(std::default_initializable<consume_t>,
-                                  "bincode behavior::skip_if requires default-initializable field");
-                    consume_t skipped{};
-                    KOTA_EXPECTED_TRY(codec::deserialize(deserializer, skipped));
-                    return {};
-                }
-            }
-
-            // Keep annotation wrapper so tagged/provider attrs are still honored.
-            KOTA_EXPECTED_TRY(codec::deserialize(deserializer, field.value()));
-            return {};
-        }
-    }
-}
-
-}  // namespace detail
-
-template <typename Config, typename T>
-    requires (meta::reflectable_class<std::remove_cvref_t<T>> &&
-              !std::ranges::input_range<std::remove_cvref_t<T>>)
-struct deserialize_traits<bincode::Deserializer<Config>, T> {
-    using deserializer_t = bincode::Deserializer<Config>;
-    using error_type = typename deserializer_t::error_type;
-
-    static auto deserialize(deserializer_t& deserializer, T& value)
-        -> std::expected<void, error_type> {
-        std::expected<void, error_type> field_status{};
-
-        meta::for_each(value, [&](auto field) {
-            auto status =
-                detail::deserialize_sequential_struct_field<Config, error_type>(deserializer,
-                                                                                field);
-            if(!status) {
-                field_status = std::unexpected(status.error());
-                return false;
-            }
-            return true;
-        });
-
-        return field_status;
-    }
-};
 
 template <typename Config, typename T>
     requires (std::ranges::input_range<std::remove_cvref_t<T>> &&

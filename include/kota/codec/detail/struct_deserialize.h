@@ -288,6 +288,20 @@ auto struct_deserialize_by_position(D& d, T& v) -> std::expected<void, E> {
             auto* base = reinterpret_cast<std::byte*>(std::addressof(v));
             auto& field_value = *reinterpret_cast<raw_t*>(base + offset);
 
+            // skip_if: evaluate predicate — if true, read-and-discard to maintain position
+            if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
+                using pred = typename tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
+                if(meta::evaluate_skip_predicate<pred>(field_value, false)) {
+                    raw_t discard{};
+                    auto r = codec::deserialize(d, discard);
+                    if(!r) {
+                        status = std::unexpected(r.error());
+                        return false;
+                    }
+                    return true;
+                }
+            }
+
             auto r = deserialize_slot_value<attrs_t, E>(d, field_value);
             if(!r) {
                 status = std::unexpected(r.error());

@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "kota/support/expected_try.h"
+#include "kota/codec/backend.h"
 #include "kota/codec/bincode/error.h"
 #include "kota/codec/codec.h"
 #include "kota/codec/config.h"
@@ -27,6 +28,9 @@ public:
     using config_type = Config;
     using value_type = void;
     using error_type = error_kind;
+
+    constexpr static auto backend_kind_v = backend_kind::streaming;
+    constexpr static auto field_mode_v = field_mode::by_position;
 
     template <typename T>
     using result_t = std::expected<T, error_type>;
