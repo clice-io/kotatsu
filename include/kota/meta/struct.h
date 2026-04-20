@@ -41,7 +41,9 @@ consteval auto test() {
 
 template <typename T, std::size_t N = 0>
 consteval auto field_count() {
-    if constexpr(test<T, N>() && !test<T, N + 1>()) {
+    if constexpr(N > 72) {
+        return std::size_t(0);
+    } else if constexpr(test<T, N>() && !test<T, N + 1>()) {
         return N;
     } else {
         return field_count<T, N + 1>();

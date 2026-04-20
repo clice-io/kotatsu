@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "kota/support/expected_try.h"
+#include "kota/codec/backend.h"
 #include "kota/codec/codec.h"
 #include "kota/codec/config.h"
 #include "kota/codec/detail/backend_helpers.h"
@@ -81,6 +82,9 @@ class Deserializer {
 public:
     using config_type = Config;
     using error_type = toml::error;
+
+    constexpr static auto backend_kind_v = backend_kind::streaming;
+    constexpr static auto field_mode_v = field_mode::by_name;
 
     template <typename T>
     using result_t = std::expected<T, error_type>;
@@ -336,6 +340,64 @@ public:
         return **array;
     }
 
+    // --- New-style streaming struct interface ---
+
+    status_t begin_object() {
+        KOTA_EXPECTED_TRY_V(auto table, open_table());
+        deser_frame frame;
+        frame.table = table;
+        frame.iter = table->cbegin();
+        frame.end_iter = table->cend();
+        deser_stack.push_back(std::move(frame));
+        return {};
+    }
+
+    result_t<std::optional<std::string_view>> next_field() {
+        if(!is_valid || deser_stack.empty()) {
+            return mark_invalid(error_kind::invalid_state);
+        }
+        auto& frame = deser_stack.back();
+
+        // Advance past the previous field (consumed by deserialization)
+        if(frame.pending_node != nullptr) {
+            ++frame.iter;
+            frame.pending_node = nullptr;
+        }
+
+        if(frame.iter == frame.end_iter) {
+            has_current_value = false;
+            current_node = nullptr;
+            return std::optional<std::string_view>(std::nullopt);
+        }
+
+        const auto& [key, node] = *frame.iter;
+        frame.pending_node = std::addressof(node);
+        current_node = frame.pending_node;
+        has_current_value = true;
+        return std::optional<std::string_view>(key.str());
+    }
+
+    status_t skip_field_value() {
+        if(!is_valid || deser_stack.empty()) {
+            return mark_invalid(error_kind::invalid_state);
+        }
+        auto& frame = deser_stack.back();
+        ++frame.iter;
+        has_current_value = false;
+        current_node = nullptr;
+        return {};
+    }
+
+    status_t end_object() {
+        if(!is_valid || deser_stack.empty()) {
+            return mark_invalid(error_kind::invalid_state);
+        }
+        deser_stack.pop_back();
+        has_current_value = !deser_stack.empty();
+        current_node = nullptr;
+        return {};
+    }
+
 private:
     friend class codec::detail::IndexedArrayDeserializer<Deserializer, const ::toml::array*>;
     friend class codec::detail::IndexedObjectDeserializer<Deserializer, const ::toml::node*>;
@@ -539,6 +601,13 @@ private:
     }
 
 private:
+    struct deser_frame {
+        const ::toml::table* table = nullptr;
+        ::toml::table::const_iterator iter{};
+        ::toml::table::const_iterator end_iter{};
+        const ::toml::node* pending_node = nullptr;
+    };
+
     bool is_valid = true;
     bool root_consumed = false;
     error_type last_error = error_type::invalid_state;
@@ -546,6 +615,7 @@ private:
     bool has_current_value = false;
     const ::toml::node* current_node = nullptr;
     const ::toml::node* last_accessed_node = nullptr;
+    std::vector<deser_frame> deser_stack;
 };
 
 template <typename Config = config::default_config, typename T>

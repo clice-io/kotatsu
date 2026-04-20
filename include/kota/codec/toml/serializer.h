@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "kota/support/expected_try.h"
+#include "kota/codec/backend.h"
 #include "kota/codec/codec.h"
 #include "kota/codec/config.h"
 #include "kota/codec/toml/error.h"
@@ -236,6 +237,9 @@ public:
     using value_type = detail::Value;
     using error_type = error_kind;
 
+    constexpr static auto backend_kind_v = backend_kind::streaming;
+    constexpr static auto field_mode_v = field_mode::by_name;
+
     template <typename T>
     using result_t = std::expected<T, error_type>;
 
@@ -406,6 +410,47 @@ public:
         return SerializeStruct(*this, len);
     }
 
+    // --- New-style streaming struct interface ---
+
+    status_t begin_object(std::size_t count) {
+        ser_stack.push_back({});
+        ser_stack.back().table.entries.reserve(count);
+        return {};
+    }
+
+    status_t field(std::string_view name) {
+        ser_stack.back().pending_key = std::string(name);
+        return {};
+    }
+
+    status_t accept_field_value(value_type v) {
+        auto& frame = ser_stack.back();
+        frame.table.entries.emplace_back(std::move(frame.pending_key), std::move(v));
+        frame.pending_key.clear();
+        return {};
+    }
+
+    result_t<value_type> end_object() {
+        auto frame = std::move(ser_stack.back());
+        ser_stack.pop_back();
+        return value_type(std::move(frame.table));
+    }
+
+    status_t begin_array(std::size_t count) {
+        ser_stack.push_back({});
+        ser_stack.back().array.values.reserve(count);
+        ser_stack.back().is_array = true;
+        return {};
+    }
+
+    result_t<value_type> end_array() {
+        auto frame = std::move(ser_stack.back());
+        ser_stack.pop_back();
+        return value_type(std::move(frame.array));
+    }
+
+    // --- DOM helpers ---
+
     auto serialize_dom(const ::toml::table& value) -> result_t<value_type> {
         KOTA_EXPECTED_TRY_V(auto converted, detail::table_to_value(value));
         return converted;
@@ -424,6 +469,16 @@ public:
         }
         return detail::value_to_table(*result);
     }
+
+private:
+    struct ser_frame {
+        value_type::table_t table;
+        value_type::array_t array;
+        std::string pending_key;
+        bool is_array = false;
+    };
+
+    std::vector<ser_frame> ser_stack;
 };
 
 template <typename Config = config::default_config, typename T>
