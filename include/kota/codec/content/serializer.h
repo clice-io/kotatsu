@@ -63,7 +63,7 @@ public:
         if(!root_is_written || !stack.empty()) {
             return std::unexpected(error_type::invalid_state);
         }
-        return root_;
+        return root;
     }
 
     result_t<content::Value> take_dom_value() {
@@ -74,7 +74,7 @@ public:
             return std::unexpected(error_type::invalid_state);
         }
         root_is_written = false;
-        return std::move(root_);
+        return std::move(root);
     }
 
     result_t<value_type> serialize_null() {
@@ -258,7 +258,7 @@ private:
             if(root_is_written) {
                 return mark_invalid();
             }
-            root_ = std::move(v);
+            root = std::move(v);
             root_is_written = true;
             return {};
         }
@@ -288,7 +288,7 @@ private:
 
     content::Value* last_placed_slot() {
         if(stack.empty()) {
-            return &root_;
+            return &root;
         }
         auto& f = stack.back();
         if(f.array != nullptr) {
@@ -308,7 +308,7 @@ private:
         return std::unexpected(last_error);
     }
 
-    content::Value root_;
+    content::Value root;
     std::vector<frame> stack;
     bool is_valid = true;
     bool root_is_written = false;
@@ -355,7 +355,7 @@ struct serialize_traits<S, content::Value> {
                     return serialize_traits<S, content::Object>::serialize(s, stored);
                 }
             },
-            value.storage());
+            value.variant());
     }
 };
 

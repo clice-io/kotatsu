@@ -1,6 +1,5 @@
 #include <cstdint>
 #include <string>
-#include <string_view>
 
 #include "kota/zest/zest.h"
 #include "kota/codec/content.h"
@@ -59,7 +58,7 @@ TEST_CASE(construct_scalars) {
     EXPECT_TRUE(double_value.is_number());
     EXPECT_EQ(double_value.as_double(), 3.5);
 
-    content::Value string_value(std::string("hello"));
+    content::Value string_value("hello");
     EXPECT_TRUE(string_value.is_string());
     EXPECT_EQ(string_value.as_string(), "hello");
 }
@@ -185,7 +184,7 @@ TEST_CASE(deep_nested_array_via_json_roundtrip) {
     content::Cursor cursor = parsed->cursor();
     for(int i = 0; i < depth; ++i) {
         ASSERT_TRUE(cursor.is_array());
-        ASSERT_EQ(cursor.as_array().size(), std::size_t(1));
+        ASSERT_EQ(cursor.as_array().size(), 1);
         cursor = cursor[0];
     }
     ASSERT_TRUE(cursor.is_int());
@@ -248,12 +247,6 @@ TEST_CASE(cursor_explicit_bool_conversion) {
 
     EXPECT_TRUE(static_cast<bool>(valid_c));
     EXPECT_FALSE(static_cast<bool>(invalid_c));
-
-    if(valid_c) {
-        EXPECT_TRUE(true);
-    } else {
-        EXPECT_TRUE(false);
-    }
 }
 
 TEST_CASE(cursor_get_accessors_on_invalid_return_nullopt) {
@@ -270,7 +263,7 @@ TEST_CASE(cursor_get_accessors_on_invalid_return_nullopt) {
 TEST_CASE(empty_object_find_and_cursor_access) {
     content::Object obj;
     EXPECT_TRUE(obj.empty());
-    EXPECT_EQ(obj.size(), std::size_t(0));
+    EXPECT_EQ(obj.size(), 0);
     EXPECT_EQ(obj.find("anything"), nullptr);
     EXPECT_FALSE(obj.contains("anything"));
 
@@ -314,7 +307,7 @@ TEST_CASE(deep_nested_copy_is_independent) {
     // Copy should be unaffected
     auto& copy_data = copy.as_object().at("data").as_array()[0].as_object();
     ASSERT_TRUE(copy_data.at("nums").is_array());
-    EXPECT_EQ(copy_data.at("nums").as_array().size(), std::size_t(2));
+    EXPECT_EQ(copy_data.at("nums").as_array().size(), 2);
     EXPECT_EQ(copy_data.at("nums").as_array()[0].as_int(), 1);
     EXPECT_EQ(copy_data.at("nums").as_array()[1].as_int(), 2);
 

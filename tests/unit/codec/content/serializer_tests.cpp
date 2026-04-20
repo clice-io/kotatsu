@@ -26,7 +26,7 @@ TEST_CASE(dom_value_requires_closed_containers) {
     auto complete = serializer.dom_value();
     ASSERT_TRUE(complete.has_value());
     ASSERT_TRUE(complete->is_array());
-    EXPECT_EQ(complete->as_array().size(), std::size_t(1));
+    EXPECT_EQ(complete->as_array().size(), 1);
     EXPECT_EQ(complete->as_array()[0].as_int(), 1);
 }
 
@@ -44,7 +44,7 @@ TEST_CASE(take_dom_value_moves_root_out) {
     ASSERT_TRUE(taken->is_object());
 
     const auto& object = taken->as_object();
-    EXPECT_EQ(object.size(), std::size_t(2));
+    EXPECT_EQ(object.size(), 2);
     EXPECT_EQ(object.at("a").as_int(), 1);
     EXPECT_EQ(object.at("b").as_int(), 2);
 }
@@ -64,7 +64,7 @@ TEST_CASE(append_dom_value_inlines_foreign_subtree) {
     ASSERT_TRUE(dom.has_value());
     ASSERT_TRUE(dom->is_array());
     const auto& array = dom->as_array();
-    ASSERT_EQ(array.size(), std::size_t(1));
+    ASSERT_EQ(array.size(), 1);
     ASSERT_TRUE(array[0].is_object());
     EXPECT_EQ(array[0].as_object().at("k").as_int(), 9);
 }

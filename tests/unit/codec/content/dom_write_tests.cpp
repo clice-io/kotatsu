@@ -1,6 +1,5 @@
 #include <cstdint>
 #include <string>
-#include <string_view>
 #include <utility>
 
 #include "kota/zest/zest.h"
@@ -24,7 +23,7 @@ TEST_CASE(value_reassignment_changes_kind) {
     arr.push_back(content::Value(std::int64_t(2)));
     value = content::Value(std::move(arr));
     ASSERT_TRUE(value.is_array());
-    EXPECT_EQ(value.as_array().size(), std::size_t(1));
+    EXPECT_EQ(value.as_array().size(), 1);
     EXPECT_EQ(value.as_array()[0].as_int(), 2);
 }
 
@@ -35,7 +34,7 @@ TEST_CASE(array_push_back_and_emplace_back) {
     array.emplace_back(std::int64_t(7));
     array.emplace_back("z");
 
-    ASSERT_EQ(array.size(), std::size_t(4));
+    ASSERT_EQ(array.size(), 4);
     EXPECT_TRUE(array[0].is_null());
     EXPECT_EQ(array[1].as_bool(), true);
     EXPECT_EQ(array[2].as_int(), 7);
@@ -47,11 +46,11 @@ TEST_CASE(array_clear_and_reserve) {
     array.reserve(4);
     array.push_back(content::Value(std::int64_t(1)));
     array.push_back(content::Value(std::int64_t(2)));
-    ASSERT_EQ(array.size(), std::size_t(2));
+    ASSERT_EQ(array.size(), 2);
 
     array.clear();
     EXPECT_TRUE(array.empty());
-    EXPECT_EQ(array.size(), std::size_t(0));
+    EXPECT_EQ(array.size(), 0);
 }
 
 TEST_CASE(object_assign_is_upsert) {
@@ -60,7 +59,7 @@ TEST_CASE(object_assign_is_upsert) {
     object.assign("a", content::Value(std::int64_t(2)));
     object.assign("b", content::Value(std::int64_t(3)));
 
-    EXPECT_EQ(object.size(), std::size_t(2));
+    EXPECT_EQ(object.size(), 2);
     EXPECT_EQ(object.at("a").as_int(), 2);
     EXPECT_EQ(object.at("b").as_int(), 3);
 }
@@ -70,9 +69,9 @@ TEST_CASE(object_insert_appends_preserving_duplicates) {
     object.insert("k", content::Value(std::int64_t(1)));
     object.insert("k", content::Value(std::int64_t(2)));
 
-    EXPECT_EQ(object.size(), std::size_t(2));
-    EXPECT_EQ(object.entries()[0].value.as_int(), 1);
-    EXPECT_EQ(object.entries()[1].value.as_int(), 2);
+    EXPECT_EQ(object.size(), 2);
+    EXPECT_EQ(object.begin()[0].value.as_int(), 1);
+    EXPECT_EQ(object.begin()[1].value.as_int(), 2);
 }
 
 TEST_CASE(object_find_returns_latest_when_duplicates) {
@@ -103,11 +102,11 @@ TEST_CASE(object_remove_erases_all_matching_and_returns_count) {
     object.assign("b", content::Value(std::int64_t(2)));
     object.insert("a", content::Value(std::int64_t(11)));
 
-    EXPECT_EQ(object.remove("a"), std::size_t(2));
-    EXPECT_EQ(object.remove("a"), std::size_t(0));
+    EXPECT_EQ(object.remove("a"), 2);
+    EXPECT_EQ(object.remove("a"), 0);
     EXPECT_FALSE(object.contains("a"));
     EXPECT_TRUE(object.contains("b"));
-    EXPECT_EQ(object.size(), std::size_t(1));
+    EXPECT_EQ(object.size(), 1);
 }
 
 TEST_CASE(object_lookup_reflects_mutations) {
@@ -168,7 +167,7 @@ TEST_CASE(object_assign_existing_key_preserves_index_correctness) {
     EXPECT_EQ(object.find("a")->as_int(), 1);
     EXPECT_EQ(object.find("b")->as_int(), 20);
     EXPECT_EQ(object.find("c")->as_int(), 3);
-    EXPECT_EQ(object.size(), std::size_t(3));
+    EXPECT_EQ(object.size(), 3);
 }
 
 TEST_CASE(object_remove_then_insert_same_key) {
@@ -180,7 +179,7 @@ TEST_CASE(object_remove_then_insert_same_key) {
     EXPECT_EQ(object.find("x")->as_int(), 1);
 
     // Remove and re-insert
-    EXPECT_EQ(object.remove("x"), std::size_t(1));
+    EXPECT_EQ(object.remove("x"), 1);
     EXPECT_EQ(object.find("x"), nullptr);
 
     object.insert("x", content::Value(std::int64_t(99)));
