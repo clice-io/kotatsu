@@ -59,19 +59,15 @@ if(KOTA_CODEC_ENABLE_SIMDJSON)
     target_sources(unit_tests PRIVATE
         ${TEST_CODEC_SIMDJSON_SOURCES}
     )
-else()
-    message(STATUS "KOTA_CODEC_ENABLE_SIMDJSON=OFF: skipping tests/unit/codec/json/*")
-endif()
 
-if(KOTA_CODEC_ENABLE_YYJSON)
-    set(TEST_CODEC_YYJSON_SOURCES ${TEST_SOURCES})
-    list(FILTER TEST_CODEC_YYJSON_SOURCES INCLUDE REGEX "^tests/unit/codec/content/.*\\.cpp$")
-    list(TRANSFORM TEST_CODEC_YYJSON_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
+    set(TEST_CODEC_CONTENT_SOURCES ${TEST_SOURCES})
+    list(FILTER TEST_CODEC_CONTENT_SOURCES INCLUDE REGEX "^tests/unit/codec/content/.*\\.cpp$")
+    list(TRANSFORM TEST_CODEC_CONTENT_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
     target_sources(unit_tests PRIVATE
-        ${TEST_CODEC_YYJSON_SOURCES}
+        ${TEST_CODEC_CONTENT_SOURCES}
     )
 else()
-    message(STATUS "KOTA_CODEC_ENABLE_YYJSON=OFF: skipping tests/unit/codec/content/*")
+    message(STATUS "KOTA_CODEC_ENABLE_SIMDJSON=OFF: skipping tests/unit/codec/{json,content}/*")
 endif()
 
 if(KOTA_CODEC_ENABLE_FLATBUFFERS)
@@ -149,6 +145,10 @@ if(KOTA_ENABLE_ASYNC)
 endif()
 
 kota_apply_project_options(unit_tests)
+
+if(MSVC)
+    target_compile_options(unit_tests PRIVATE /bigobj)
+endif()
 
 if(KOTA_SANITIZE_ADDRESS AND MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     # clang-cl ASan uses a runtime DLL; copy it next to the test executable so `ctest` can run

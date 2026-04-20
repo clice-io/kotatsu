@@ -54,7 +54,6 @@ jobs:
           ${{ matrix.target.config_args }}
           --dev=y
           --codec_simdjson=y
-          --codec_yyjson=y
           --codec_flatbuffers=y
           --codec_toml=y
 

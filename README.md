@@ -56,7 +56,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - Generic trait contract: `serialize_traits<S, V>` / `deserialize_traits<D, V>` with `std::expected<…, error>` return. The `serializer_like` / `deserializer_like` concepts spell out the full visitor surface (null, bool, int, uint, float, char, str, bytes, optional, seq, tuple, map, struct, plus external / internal / adjacent variant tagging).
 - Structured error model: a generic `serde_error<Kind>` template carrying a lazily allocated detail block (message, navigation path, source location), with per-backend kind enums (`json::error_kind`, `bincode::error_kind`, `toml::error_kind`, …).
 - Backends:
-  - JSON (`codec/json/`): a high-throughput streaming backend built on simdjson, plus a DOM-based backend built on yyjson for push/pull access, and a portable content-DOM variant.
+  - JSON (`codec/json/`): a high-throughput streaming backend built on simdjson, with a portable `content::Value` DOM (pure `std::variant`) for structured in-memory access.
   - Bincode (`codec/bincode/`): compact length-prefixed binary format, read and write.
   - TOML (`codec/toml/`): `tomlplusplus`-backed, read and write.
   - FlatBuffers (`codec/flatbuffers/`): binary serialization plus compile-time `.fbs` schema emission from annotated structs.

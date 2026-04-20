@@ -11,13 +11,8 @@ option("codec", { default = true })
 option("option", { default = true })
 option("deco", { default = true })
 option("codec_simdjson", { default = false })
-option("codec_yyjson", { default = false })
 option("codec_flatbuffers", { default = false })
 option("codec_toml", { default = false })
-
-if has_config("codec_yyjson") and not has_config("codec_simdjson") then
-	raise("codec_yyjson requires codec_simdjson")
-end
 
 if has_config("ztest") and (not has_config("deco") or not has_config("option")) then
 	raise("ztest requires deco and option")
@@ -73,9 +68,6 @@ end
 if has_config("codec") and has_config("codec_simdjson") then
 	add_requires("simdjson v4.2.4")
 end
-if has_config("codec") and has_config("codec_yyjson") then
-	add_requires("yyjson 0.12.0")
-end
 if has_config("codec") and has_config("codec_flatbuffers") then
 	add_requires("flatbuffers v25.2.10")
 end
@@ -120,9 +112,6 @@ if has_config("codec") and has_config("codec_simdjson") then
 		add_rules("cl-flags")
 		add_deps("meta")
 		add_packages("simdjson", { public = true })
-		if has_config("codec_yyjson") then
-			add_packages("yyjson", { public = true })
-		end
 	end)
 end
 
@@ -268,9 +257,6 @@ target("kotatsu", function()
 			add_deps("codec_json", { public = true })
 			add_packages("simdjson", { public = true })
 		end
-		if has_config("codec_yyjson") then
-			add_packages("yyjson", { public = true })
-		end
 		if has_config("codec_flatbuffers") then
 			add_deps("codec_flatbuffers", { public = true })
 			add_packages("flatbuffers", { public = true })
@@ -351,8 +337,6 @@ if has_config("test") and has_config("ztest") then
 		end
 		if has_config("codec") and has_config("codec_simdjson") then
 			add_files("tests/unit/codec/json/simdjson_*.cpp")
-		end
-		if has_config("codec") and has_config("codec_yyjson") then
 			add_files("tests/unit/codec/content/**.cpp")
 		end
 		if has_config("codec") and has_config("codec_flatbuffers") then

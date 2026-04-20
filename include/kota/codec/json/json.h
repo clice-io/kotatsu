@@ -9,7 +9,7 @@
 
 #include "kota/codec/config.h"
 #include "kota/codec/content/deserializer.h"
-#include "kota/codec/content/dom.h"
+#include "kota/codec/content/document.h"
 #include "kota/codec/content/serializer.h"
 #include "kota/codec/json/deserializer.h"
 #include "kota/codec/json/error.h"
@@ -18,57 +18,12 @@
 
 namespace kota::codec::json {
 
-// DOM type aliases (previously in json/dom.h)
+// DOM type aliases (shared with content backend)
 using ValueKind = content::ValueKind;
-using TaggedRef = content::TaggedRef;
-using ValueRef = content::ValueRef;
-using ArrayRef = content::ArrayRef;
-using ObjectRef = content::ObjectRef;
-using OwnedDoc = content::OwnedDoc;
+using Cursor = content::Cursor;
 using Value = content::Value;
 using Array = content::Array;
 using Object = content::Object;
-using Document = content::Document;
-
-template <typename T>
-constexpr inline bool dom_writable_char_array_v = content::dom_writable_char_array_v<T>;
-
-template <typename T>
-constexpr inline bool dom_writable_value_v = content::dom_writable_value_v<T>;
-
-template <typename T>
-concept dom_writable_value = content::dom_writable_value<T>;
-
-// yy (DOM-based) backend aliases
-namespace yy {
-
-template <typename Config = config::default_config>
-using Serializer = content::Serializer<Config>;
-
-template <typename Config = config::default_config>
-using Deserializer = content::Deserializer<Config>;
-
-template <typename Config = config::default_config, typename T>
-auto to_json(const T& value)
-    -> std::expected<std::string, typename Serializer<Config>::error_type> {
-    Serializer<Config> serializer;
-    if(!serializer.valid()) {
-        return std::unexpected(serializer.error());
-    }
-
-    auto result = codec::serialize(serializer, value);
-    if(!result) {
-        return std::unexpected(result.error());
-    }
-
-    auto json = serializer.str();
-    if(!json) {
-        return std::unexpected(json.error());
-    }
-    return std::move(*json);
-}
-
-}  // namespace yy
 
 // Top-level convenience API (uses streaming simdjson backend by default)
 
@@ -103,72 +58,26 @@ struct deserialize_traits<json::Deserializer<Config>, T> {
 
     static auto deserialize(json::Deserializer<Config>& deserializer, T& value)
         -> std::expected<void, error_type> {
-        auto raw = deserializer.deserialize_raw_json_view();
-        if(!raw) {
-            return std::unexpected(raw.error());
-        }
-
-        auto parsed = T::parse(std::string_view(*raw));
-        if(!parsed) {
-            return std::unexpected(json::make_read_error(parsed.error()));
-        }
-
-        value = std::move(*parsed);
-        return {};
-    }
-};
-
-template <typename Config, json_dynamic_dom_type T>
-struct serialize_traits<json::Serializer<Config>, T> {
-    using value_type = typename json::Serializer<Config>::value_type;
-    using error_type = typename json::Serializer<Config>::error_type;
-
-    static auto serialize(json::Serializer<Config>& serializer, const T& value)
-        -> std::expected<value_type, error_type> {
-        auto raw = value.to_json_string();
-        if(!raw) {
-            return std::unexpected(json::make_write_error(raw.error()));
-        }
-        return serializer.serialize_raw_json(*raw);
-    }
-};
-
-template <typename Config, json_dynamic_dom_type T>
-struct serialize_traits<json::yy::Serializer<Config>, T> {
-    using value_type = typename json::yy::Serializer<Config>::value_type;
-    using error_type = typename json::yy::Serializer<Config>::error_type;
-
-    static auto serialize(json::yy::Serializer<Config>& serializer, const T& value)
-        -> std::expected<value_type, error_type> {
-        return serializer.append_dom_value(value);
-    }
-};
-
-template <typename Config, json_dynamic_dom_type T>
-struct deserialize_traits<json::yy::Deserializer<Config>, T> {
-    using error_type = typename json::yy::Deserializer<Config>::error_type;
-
-    static auto deserialize(json::yy::Deserializer<Config>& deserializer, T& value)
-        -> std::expected<void, error_type> {
         auto dom = deserializer.capture_dom_value();
         if(!dom) {
             return std::unexpected(dom.error());
-        } else if constexpr(std::same_as<T, json::Value>) {
+        }
+        if constexpr(std::same_as<T, json::Value>) {
             value = std::move(*dom);
             return {};
         } else if constexpr(std::same_as<T, json::Array>) {
-            auto array = dom->get_array();
-            if(!array) {
+            content::Array* arr = dom->get_array();
+            if(arr == nullptr) {
                 return std::unexpected(json::error_kind::type_mismatch);
             }
-            value = std::move(*array);
+            value = std::move(*arr);
             return {};
         } else {
-            auto object = dom->get_object();
-            if(!object) {
+            content::Object* obj = dom->get_object();
+            if(obj == nullptr) {
                 return std::unexpected(json::error_kind::type_mismatch);
             }
-            value = std::move(*object);
+            value = std::move(*obj);
             return {};
         }
     }

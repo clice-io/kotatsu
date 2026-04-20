@@ -11,10 +11,6 @@ target_link_libraries(kota_codec INTERFACE
 
 kota_apply_project_options(kota_codec)
 
-if(KOTA_CODEC_ENABLE_YYJSON AND NOT KOTA_CODEC_ENABLE_SIMDJSON)
-    message(FATAL_ERROR "KOTA_CODEC_ENABLE_YYJSON requires KOTA_CODEC_ENABLE_SIMDJSON.")
-endif()
-
 if(KOTA_CODEC_ENABLE_SIMDJSON)
     # Keep simdjson in "library consumer" mode.
     set(SIMDJSON_BUILD_STATIC_LIB OFF CACHE BOOL "" FORCE)
@@ -76,31 +72,6 @@ if(KOTA_CODEC_ENABLE_SIMDJSON)
     )
 
     kota_apply_project_options(kota_codec_json)
-
-    if(KOTA_CODEC_ENABLE_YYJSON)
-        # Keep yyjson as a lean dependency-only library.
-        set(YYJSON_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-        set(YYJSON_BUILD_FUZZER OFF CACHE BOOL "" FORCE)
-        set(YYJSON_BUILD_MISC OFF CACHE BOOL "" FORCE)
-        set(YYJSON_BUILD_DOC OFF CACHE BOOL "" FORCE)
-        set(YYJSON_INSTALL OFF CACHE BOOL "" FORCE)
-
-        kota_add_git_dependency(
-            yyjson
-            GIT_REPOSITORY https://github.com/ibireme/yyjson.git
-            GIT_TAG 0.12.0
-            OPTIONS
-                YYJSON_BUILD_TESTS OFF
-                YYJSON_BUILD_FUZZER OFF
-                YYJSON_BUILD_MISC OFF
-                YYJSON_BUILD_DOC OFF
-                YYJSON_INSTALL OFF
-        )
-
-        target_link_libraries(kota_codec_json INTERFACE
-            yyjson
-        )
-    endif()
 
     target_link_libraries(kota_codec INTERFACE
         kota::codec::json

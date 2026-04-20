@@ -16,6 +16,7 @@
 #include "kota/meta/attrs.h"
 #include "kota/meta/struct.h"
 #include "kota/codec/config.h"
+#include "kota/codec/content/document.h"
 #include "kota/codec/detail/common.h"
 #include "kota/codec/detail/field_dispatch.h"
 #include "kota/codec/detail/fwd.h"
@@ -277,16 +278,16 @@ constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, T
     constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
     constexpr std::string_view tag_field = TagAttr::field_names[0];
 
-    auto obj_ref = dom_result.as_ref();
-    auto obj = obj_ref.get_object();
-    if(!obj) {
+    auto dom_cursor = dom_result.cursor();
+    const content::Object* obj = dom_cursor.get_object();
+    if(obj == nullptr) {
         return std::unexpected(E::invalid_type("object", "non-object"));
     }
 
     // Pass 1: find tag
     std::string_view tag_value;
     bool found = false;
-    for(auto entry: *obj) {
+    for(const auto& entry: *obj) {
         if(entry.key == tag_field) {
             auto s = entry.value.get_string();
             if(!s) {
@@ -311,7 +312,7 @@ constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, T
                                                 meta::reflectable_class<alt_t>,
                                                 "internally_tagged requires struct alternatives");
 
-                                            content::Deserializer<config_t> deser(obj_ref);
+                                            content::Deserializer<config_t> deser(dom_cursor);
                                             KOTA_EXPECTED_TRY(codec::deserialize(deser, alt));
                                             KOTA_EXPECTED_TRY(deser.finish());
                                             return {};
@@ -417,7 +418,7 @@ auto try_deserialize_variant_candidate(Source&& source, std::variant<Ts...>& val
 /// deserialization via the probe-deserialize-finish pattern.
 ///
 /// D: the Deserializer type (must be constructible from Source)
-/// Source: the captured value (e.g., json::ValueRef, const toml::node*)
+/// Source: the captured value (e.g., json::Cursor, const toml::node*)
 /// hint: the codec::type_hint for the current value
 /// mismatch_error: the error value to use when no alternative matches
 template <typename D, typename Source, typename... Ts>

@@ -12,13 +12,6 @@
 #define KOTA_CODEC_JSON_ERROR_HAS_SIMDJSON 0
 #endif
 
-#if __has_include(<yyjson.h>)
-#include "yyjson.h"
-#define KOTA_CODEC_JSON_ERROR_HAS_YYJSON 1
-#else
-#define KOTA_CODEC_JSON_ERROR_HAS_YYJSON 0
-#endif
-
 namespace kota::codec::json {
 
 enum class error_kind : std::uint16_t {
@@ -74,26 +67,6 @@ constexpr auto make_error(simdjson::error_code error) noexcept -> error_kind {
     }
 }
 
-#endif
-
-#if KOTA_CODEC_JSON_ERROR_HAS_YYJSON
-constexpr auto make_read_error([[maybe_unused]] yyjson_read_code error) noexcept -> error_kind {
-#ifdef YYJSON_READ_SUCCESS
-    if(error == YYJSON_READ_SUCCESS) {
-        return error_kind::ok;
-    }
-#endif
-    return error_kind::parse_error;
-}
-
-constexpr auto make_write_error([[maybe_unused]] yyjson_write_code error) noexcept -> error_kind {
-#ifdef YYJSON_WRITE_SUCCESS
-    if(error == YYJSON_WRITE_SUCCESS) {
-        return error_kind::ok;
-    }
-#endif
-    return error_kind::write_failed;
-}
 #endif
 
 using error = kota::codec::serde_error<error_kind>;

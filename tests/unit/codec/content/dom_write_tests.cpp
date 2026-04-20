@@ -1,338 +1,329 @@
-#include <cassert>
 #include <cstdint>
 #include <string>
-#include <string_view>
+#include <utility>
 
 #include "kota/zest/zest.h"
-#include "kota/codec/json/json.h"
+#include "kota/codec/content.h"
 
-namespace kota::codec::json {
+namespace kota::codec {
 
 namespace {
 
-static_assert(dom_writable_value_v<std::nullptr_t>);
-static_assert(dom_writable_value_v<bool>);
-static_assert(dom_writable_value_v<int>);
-static_assert(dom_writable_value_v<unsigned int>);
-static_assert(dom_writable_value_v<double>);
-static_assert(dom_writable_value_v<std::string_view>);
-static_assert(dom_writable_value_v<const char*>);
-static_assert(dom_writable_value_v<char[8]>);
-static_assert(!dom_writable_value_v<std::string>);
-static_assert(!dom_writable_value_v<ValueRef>);
-static_assert(!dom_writable_value_v<ArrayRef>);
-static_assert(!dom_writable_value_v<ObjectRef>);
+TEST_SUITE(serde_content_dom_write) {
 
-auto parse_immutable_value(std::string_view json) -> std::optional<Value> {
-    yyjson_doc* doc = yyjson_read(json.data(), json.size(), 0);
-    if(doc == nullptr) {
-        return std::nullopt;
-    } else {
-        return Value::from_immutable_doc(doc);
-    }
+TEST_CASE(value_reassignment_changes_kind) {
+    content::Value value(std::int64_t(1));
+    ASSERT_TRUE(value.is_int());
+
+    value = content::Value("x");
+    ASSERT_TRUE(value.is_string());
+    EXPECT_EQ(value.as_string(), "x");
+
+    content::Array arr;
+    arr.push_back(content::Value(std::int64_t(2)));
+    value = content::Value(std::move(arr));
+    ASSERT_TRUE(value.is_array());
+    EXPECT_EQ(value.as_array().size(), 1);
+    EXPECT_EQ(value.as_array()[0].as_int(), 2);
 }
 
-auto parse_mutable_value(std::string_view json) -> std::optional<Value> {
-    yyjson_doc* doc = yyjson_read(json.data(), json.size(), 0);
-    if(doc == nullptr) {
-        return std::nullopt;
-    } else {
-        yyjson_mut_doc* mutable_doc = yyjson_doc_mut_copy(doc, nullptr);
-        yyjson_doc_free(doc);
-        if(mutable_doc == nullptr) {
-            return std::nullopt;
-        } else {
-            return Value::from_mutable_doc(mutable_doc);
-        }
-    }
-}
+TEST_CASE(array_push_back_and_emplace_back) {
+    content::Array array;
+    array.push_back(content::Value(nullptr));
+    array.push_back(content::Value(true));
+    array.emplace_back(std::int64_t(7));
+    array.emplace_back("z");
 
-auto parse_mutable_array(std::string_view json) -> std::optional<Array> {
-    auto value = parse_mutable_value(json);
-    if(!value.has_value()) {
-        return std::nullopt;
-    } else {
-        return value->get_array();
-    }
-}
-
-auto parse_mutable_object(std::string_view json) -> std::optional<Object> {
-    auto value = parse_mutable_value(json);
-    if(!value.has_value()) {
-        return std::nullopt;
-    } else {
-        return value->get_object();
-    }
-}
-
-auto must_parse_immutable_value(std::string_view json) -> Value {
-    auto value = parse_immutable_value(json);
-    assert(value.has_value());
-    return std::move(*value);
-}
-
-auto must_parse_mutable_value(std::string_view json) -> Value {
-    auto value = parse_mutable_value(json);
-    assert(value.has_value());
-    return std::move(*value);
-}
-
-auto must_parse_mutable_array(std::string_view json) -> Array {
-    auto value = parse_mutable_array(json);
-    assert(value.has_value());
-    return std::move(*value);
-}
-
-auto must_parse_mutable_object(std::string_view json) -> Object {
-    auto value = parse_mutable_object(json);
-    assert(value.has_value());
-    return std::move(*value);
-}
-
-TEST_SUITE(serde_json_yyjson_dom2_write) {
-
-TEST_CASE(value_parse_default) {
-    auto value = Value::parse(R"({"a":1})");
-    ASSERT_TRUE(value.has_value());
-    EXPECT_EQ(value->as_object()["a"].as_int(), 1);
-}
-
-TEST_CASE(value_parse_with_yyjson_flags) {
-    Value::parse_options options{};
-    options.flags = YYJSON_READ_ALLOW_COMMENTS | YYJSON_READ_ALLOW_TRAILING_COMMAS;
-
-    auto value = Value::parse("{/*comment*/\"a\":1,}", options);
-    ASSERT_TRUE(value.has_value());
-    EXPECT_EQ(value->as_object()["a"].as_int(), 1);
-}
-
-TEST_CASE(value_set_scalars) {
-    auto value = must_parse_mutable_value("0");
-
-    ASSERT_TRUE(value.set(nullptr).has_value());
-    EXPECT_TRUE(value.is_null());
-
-    ASSERT_TRUE(value.set(true).has_value());
-    EXPECT_EQ(value.as_bool(), true);
-
-    ASSERT_TRUE(value.set(std::int64_t(-7)).has_value());
-    EXPECT_EQ(value.as_int(), -7);
-
-    ASSERT_TRUE(value.set(std::uint64_t(42)).has_value());
-    EXPECT_EQ(value.as_uint(), std::uint64_t(42));
-
-    ASSERT_TRUE(value.set(3.5).has_value());
-    EXPECT_EQ(value.as_double(), 3.5);
-
-    ASSERT_TRUE(value.set(std::string_view("hello")).has_value());
-    EXPECT_EQ(value.as_string(), std::string_view("hello"));
-
-    ASSERT_TRUE(value.set("world").has_value());
-    EXPECT_EQ(value.as_string(), std::string_view("world"));
-}
-
-TEST_CASE(value_operator_assign_changes_kind) {
-    auto value = must_parse_mutable_value("1");
-
-    value = "x";
-    EXPECT_TRUE(value.is_string());
-    EXPECT_EQ(value.as_string(), std::string_view("x"));
-
-    auto source_object = must_parse_immutable_value(R"({"k":1})");
-    value = source_object.as_object();
-    EXPECT_TRUE(value.is_object());
-    EXPECT_EQ(value.as_object()["k"].as_int(), 1);
-
-    auto source_array = must_parse_immutable_value("[1,2]");
-    value = source_array.as_array();
-    EXPECT_TRUE(value.is_array());
-    EXPECT_EQ(value.as_array().size(), std::size_t(2));
-    EXPECT_EQ(value.as_array()[1].as_int(), 2);
-}
-
-TEST_CASE(array_push_back_with_scalars_and_dom) {
-    auto array = must_parse_mutable_array("[]");
-
-    ASSERT_TRUE(array.push_back(nullptr).has_value());
-    ASSERT_TRUE(array.push_back(true).has_value());
-    ASSERT_TRUE(array.push_back(2).has_value());
-    ASSERT_TRUE(array.push_back("x").has_value());
-
-    auto source_object = must_parse_immutable_value(R"({"a":1})");
-    ASSERT_TRUE(array.push_back(source_object.as_object()).has_value());
-
-    auto source_array = must_parse_immutable_value("[9]");
-    ASSERT_TRUE(array.push_back(source_array.as_array()).has_value());
-
-    EXPECT_EQ(array.size(), std::size_t(6));
+    ASSERT_EQ(array.size(), 4);
     EXPECT_TRUE(array[0].is_null());
     EXPECT_EQ(array[1].as_bool(), true);
-    EXPECT_EQ(array[2].as_int(), 2);
-    EXPECT_EQ(array[3].as_string(), std::string_view("x"));
-    EXPECT_EQ(array[4].as_object()["a"].as_int(), 1);
-    EXPECT_EQ(array[5].as_array()[0].as_int(), 9);
+    EXPECT_EQ(array[2].as_int(), 7);
+    EXPECT_EQ(array[3].as_string(), "z");
 }
 
-TEST_CASE(array_insert_bounds_and_positions) {
-    auto array = must_parse_mutable_array("[1,3]");
+TEST_CASE(array_clear_and_reserve) {
+    content::Array array;
+    array.reserve(4);
+    array.push_back(content::Value(std::int64_t(1)));
+    array.push_back(content::Value(std::int64_t(2)));
+    ASSERT_EQ(array.size(), 2);
 
-    ASSERT_TRUE(array.insert(1, 2).has_value());
-    ASSERT_TRUE(array.insert(3, 4).has_value());
-
-    EXPECT_EQ(array.size(), std::size_t(4));
-    EXPECT_EQ(array[0].as_int(), 1);
-    EXPECT_EQ(array[1].as_int(), 2);
-    EXPECT_EQ(array[2].as_int(), 3);
-    EXPECT_EQ(array[3].as_int(), 4);
-
-    auto out_of_range = array.insert(5, 0);
-    ASSERT_FALSE(out_of_range.has_value());
-    EXPECT_EQ(out_of_range.error(), error_kind::index_out_of_bounds);
+    array.clear();
+    EXPECT_TRUE(array.empty());
+    EXPECT_EQ(array.size(), 0);
 }
 
-TEST_CASE(object_insert_rejects_duplicate_key) {
-    auto object = must_parse_mutable_object("{}");
+TEST_CASE(object_assign_is_upsert) {
+    content::Object object;
+    object.assign("a", content::Value(std::int64_t(1)));
+    object.assign("a", content::Value(std::int64_t(2)));
+    object.assign("b", content::Value(std::int64_t(3)));
 
-    ASSERT_TRUE(object.insert("a", 1).has_value());
-    auto duplicate = object.insert("a", 2);
-    ASSERT_FALSE(duplicate.has_value());
-    EXPECT_EQ(duplicate.error(), error_kind::already_exists);
-    EXPECT_EQ(object["a"].as_int(), 1);
+    EXPECT_EQ(object.size(), 2);
+    EXPECT_EQ(object.at("a").as_int(), 2);
+    EXPECT_EQ(object.at("b").as_int(), 3);
 }
 
-TEST_CASE(object_assign_supports_upsert) {
-    auto object = must_parse_mutable_object(R"({"a":1})");
+TEST_CASE(object_insert_appends_preserving_duplicates) {
+    content::Object object;
+    object.insert("k", content::Value(std::int64_t(1)));
+    object.insert("k", content::Value(std::int64_t(2)));
 
-    ASSERT_TRUE(object.assign("a", 2).has_value());
-    ASSERT_TRUE(object.assign("b", 3).has_value());
-
-    EXPECT_EQ(object["a"].as_int(), 2);
-    EXPECT_EQ(object["b"].as_int(), 3);
+    EXPECT_EQ(object.size(), 2);
+    EXPECT_EQ(object.begin()[0].value.as_int(), 1);
+    EXPECT_EQ(object.begin()[1].value.as_int(), 2);
 }
 
-TEST_CASE(cow_immutable_doc_on_write) {
-    auto value = must_parse_immutable_value(R"({"n":1})");
-    auto copy = value;
-    auto object = value.as_object();
+TEST_CASE(object_find_returns_latest_when_duplicates) {
+    content::Object object;
+    object.insert("k", content::Value(std::int64_t(1)));
+    object.insert("k", content::Value(std::int64_t(2)));
+    object.insert("k", content::Value(std::int64_t(3)));
 
-    ASSERT_TRUE(object.assign("n", 2).has_value());
-
-    EXPECT_EQ(object["n"].as_int(), 2);
-    EXPECT_EQ(copy.as_object()["n"].as_int(), 1);
-    EXPECT_TRUE(object.mutable_doc());
-    EXPECT_FALSE(copy.mutable_doc());
+    ASSERT_TRUE(object.contains("k"));
+    ASSERT_NE(object.find("k"), nullptr);
+    EXPECT_EQ(object.find("k")->as_int(), 3);
+    EXPECT_EQ(object.at("k").as_int(), 3);
 }
 
-TEST_CASE(cow_shared_mutable_doc_on_write) {
-    auto value = must_parse_mutable_value(R"({"n":1})");
-    auto copy = value;
-    auto object = value.as_object();
+TEST_CASE(object_find_returns_nullptr_when_missing) {
+    content::Object object;
+    object.insert("present", content::Value(std::int64_t(1)));
 
-    ASSERT_TRUE(object.assign("n", 2).has_value());
-
-    EXPECT_EQ(object["n"].as_int(), 2);
-    EXPECT_EQ(copy.as_object()["n"].as_int(), 1);
-    EXPECT_EQ(object.use_count(), 1);
-    EXPECT_EQ(copy.use_count(), 2);
+    EXPECT_EQ(object.find("present")->as_int(), 1);
+    EXPECT_EQ(object.find("absent"), nullptr);
+    EXPECT_TRUE(object.contains("present"));
+    EXPECT_FALSE(object.contains("absent"));
 }
 
-TEST_CASE(doc_accessors_follow_owner_document_state) {
-    auto immutable_value = must_parse_immutable_value(R"({"n":1})");
-    auto immutable_array = must_parse_immutable_value("[1,2]").as_array();
-    auto immutable_object = must_parse_immutable_value(R"({"n":1})").as_object();
-    EXPECT_FALSE(immutable_value.doc().valid());
-    EXPECT_FALSE(immutable_array.doc().valid());
-    EXPECT_FALSE(immutable_object.doc().valid());
+TEST_CASE(object_remove_erases_all_matching_and_returns_count) {
+    content::Object object;
+    object.assign("a", content::Value(std::int64_t(1)));
+    object.assign("b", content::Value(std::int64_t(2)));
+    object.insert("a", content::Value(std::int64_t(11)));
 
-    auto mutable_value = must_parse_mutable_value(R"({"n":1})");
-    auto mutable_array = must_parse_mutable_array("[1,2]");
-    auto mutable_object = must_parse_mutable_object(R"({"n":1})");
-    auto value_doc = mutable_value.doc();
-    auto array_doc = mutable_array.doc();
-    auto object_doc = mutable_object.doc();
-    ASSERT_TRUE(value_doc.valid());
-    ASSERT_TRUE(array_doc.valid());
-    ASSERT_TRUE(object_doc.valid());
-
-    auto value_from_doc = value_doc.dom_value();
-    auto array_from_doc = array_doc.dom_value();
-    auto object_from_doc = object_doc.dom_value();
-    ASSERT_TRUE(value_from_doc.has_value());
-    ASSERT_TRUE(array_from_doc.has_value());
-    ASSERT_TRUE(object_from_doc.has_value());
-    EXPECT_EQ(value_from_doc->as_object()["n"].as_int(), 1);
-    EXPECT_EQ(array_from_doc->as_array()[1].as_int(), 2);
-    EXPECT_EQ(object_from_doc->as_object()["n"].as_int(), 1);
+    EXPECT_EQ(object.remove("a"), 2);
+    EXPECT_EQ(object.remove("a"), 0);
+    EXPECT_FALSE(object.contains("a"));
+    EXPECT_TRUE(object.contains("b"));
+    EXPECT_EQ(object.size(), 1);
 }
 
-TEST_CASE(document_make_root_returns_live_wrappers) {
-    {
-        Document document;
-        auto array = document.make_array();
-        ASSERT_TRUE(array.push_back(1).has_value());
-        ASSERT_TRUE(array.push_back(2).has_value());
-
-        auto dom_value = document.dom_value();
-        ASSERT_TRUE(dom_value.has_value());
-        EXPECT_EQ(dom_value->as_array().size(), std::size_t(2));
-        EXPECT_EQ(dom_value->as_array()[0].as_int(), 1);
-        EXPECT_EQ(dom_value->as_array()[1].as_int(), 2);
+TEST_CASE(object_lookup_reflects_mutations) {
+    content::Object object;
+    for(int i = 0; i < 8; ++i) {
+        object.insert("k" + std::to_string(i), content::Value(std::int64_t(i)));
     }
 
-    {
-        Document document;
-        auto object = document.make_object();
-        ASSERT_TRUE(object.assign("a", 1).has_value());
-        ASSERT_TRUE(object.assign("b", 2).has_value());
+    EXPECT_EQ(object.at("k3").as_int(), 3);
 
-        auto dom_value = document.dom_value();
-        ASSERT_TRUE(dom_value.has_value());
-        auto dom_object = dom_value->as_object();
-        EXPECT_EQ(dom_object["a"].as_int(), 1);
-        EXPECT_EQ(dom_object["b"].as_int(), 2);
+    object.remove("k3");
+    EXPECT_EQ(object.find("k3"), nullptr);
+    EXPECT_EQ(object.at("k4").as_int(), 4);
+
+    object.assign("k4", content::Value(std::int64_t(40)));
+    EXPECT_EQ(object.at("k4").as_int(), 40);
+
+    object.insert("k9", content::Value(std::int64_t(9)));
+    EXPECT_EQ(object.at("k9").as_int(), 9);
+}
+
+TEST_CASE(object_index_invalidated_after_cached_lookup_then_insert) {
+    content::Object object;
+    object.insert("a", content::Value(std::int64_t(1)));
+    object.insert("b", content::Value(std::int64_t(2)));
+
+    EXPECT_EQ(object.at("a").as_int(), 1);
+
+    object.insert("c", content::Value(std::int64_t(3)));
+    EXPECT_EQ(object.at("c").as_int(), 3);
+    EXPECT_EQ(object.at("a").as_int(), 1);
+}
+
+TEST_CASE(object_index_invalidated_after_cached_lookup_then_assign_new_key) {
+    content::Object object;
+    object.insert("a", content::Value(std::int64_t(1)));
+
+    EXPECT_EQ(object.at("a").as_int(), 1);
+
+    object.assign("b", content::Value(std::int64_t(2)));
+    EXPECT_EQ(object.at("b").as_int(), 2);
+    EXPECT_EQ(object.at("a").as_int(), 1);
+}
+
+TEST_CASE(object_assign_existing_key_preserves_index_correctness) {
+    content::Object object;
+    // Seed > 16 entries to cross the indexing threshold.
+    for(int i = 0; i < 20; ++i) {
+        object.insert("k" + std::to_string(i), content::Value(std::int64_t(i)));
+    }
+
+    // Trigger index build
+    EXPECT_EQ(object.find("k5")->as_int(), 5);
+
+    // Assign existing key — should NOT invalidate index
+    object.assign("k5", content::Value(std::int64_t(50)));
+
+    // All lookups still work correctly via cached index
+    EXPECT_EQ(object.find("k0")->as_int(), 0);
+    EXPECT_EQ(object.find("k5")->as_int(), 50);
+    EXPECT_EQ(object.find("k19")->as_int(), 19);
+    EXPECT_EQ(object.size(), 20);
+}
+
+TEST_CASE(object_remove_then_insert_same_key) {
+    content::Object object;
+    object.insert("x", content::Value(std::int64_t(1)));
+    object.insert("y", content::Value(std::int64_t(2)));
+
+    // Trigger index build
+    EXPECT_EQ(object.find("x")->as_int(), 1);
+
+    // Remove and re-insert
+    EXPECT_EQ(object.remove("x"), 1);
+    EXPECT_EQ(object.find("x"), nullptr);
+
+    object.insert("x", content::Value(std::int64_t(99)));
+    ASSERT_NE(object.find("x"), nullptr);
+    EXPECT_EQ(object.find("x")->as_int(), 99);
+    EXPECT_EQ(object.find("y")->as_int(), 2);
+}
+
+TEST_CASE(object_clear_then_lookup) {
+    content::Object object;
+    object.insert("a", content::Value(std::int64_t(1)));
+    object.insert("b", content::Value(std::int64_t(2)));
+
+    // Trigger index build
+    EXPECT_EQ(object.find("a")->as_int(), 1);
+
+    object.clear();
+    EXPECT_TRUE(object.empty());
+    EXPECT_EQ(object.find("a"), nullptr);
+    EXPECT_FALSE(object.contains("b"));
+}
+
+TEST_CASE(object_equality_multiset_with_duplicates) {
+    content::Object a;
+    a.insert("k", content::Value(std::int64_t(1)));
+    a.insert("k", content::Value(std::int64_t(2)));
+
+    content::Object b;
+    b.insert("k", content::Value(std::int64_t(2)));
+    b.insert("k", content::Value(std::int64_t(1)));
+
+    EXPECT_TRUE(a == b);
+
+    content::Object c;
+    c.insert("k", content::Value(std::int64_t(1)));
+    c.insert("k", content::Value(std::int64_t(1)));
+    EXPECT_FALSE(a == c);
+
+    content::Object d;
+    d.insert("k", content::Value(std::int64_t(1)));
+    EXPECT_FALSE(a == d);
+}
+
+TEST_CASE(small_object_lookup_without_index) {
+    // Objects with <= 8 entries should work correctly via linear scan.
+    content::Object obj;
+    for(int i = 0; i < 8; ++i) {
+        obj.insert("k" + std::to_string(i), content::Value(std::int64_t(i)));
+    }
+
+    // All lookups work
+    for(int i = 0; i < 8; ++i) {
+        auto* v = obj.find("k" + std::to_string(i));
+        ASSERT_NE(v, nullptr);
+        EXPECT_EQ(v->as_int(), i);
+    }
+    EXPECT_EQ(obj.find("missing"), nullptr);
+}
+
+TEST_CASE(large_object_builds_index_on_lookup) {
+    // Objects with > 8 entries should build an index.
+    content::Object obj;
+    for(int i = 0; i < 20; ++i) {
+        obj.insert("k" + std::to_string(i), content::Value(std::int64_t(i)));
+    }
+
+    // First lookup triggers index build; all entries remain accessible.
+    for(int i = 0; i < 20; ++i) {
+        auto* v = obj.find("k" + std::to_string(i));
+        ASSERT_NE(v, nullptr);
+        EXPECT_EQ(v->as_int(), i);
+    }
+    EXPECT_EQ(obj.find("missing"), nullptr);
+}
+
+TEST_CASE(insert_after_index_build_invalidates_and_rebuilds) {
+    content::Object obj;
+    for(int i = 0; i < 10; ++i) {
+        obj.insert("k" + std::to_string(i), content::Value(std::int64_t(i)));
+    }
+
+    // Trigger index build
+    EXPECT_EQ(obj.find("k5")->as_int(), 5);
+
+    // Insert invalidates index; next lookup rebuilds correctly.
+    obj.insert("new", content::Value(std::int64_t(99)));
+    EXPECT_EQ(obj.find("new")->as_int(), 99);
+    EXPECT_EQ(obj.find("k0")->as_int(), 0);
+    EXPECT_EQ(obj.find("k9")->as_int(), 9);
+}
+
+TEST_CASE(many_inserts_with_reallocation_stays_correct) {
+    content::Object obj;
+
+    // Insert enough entries to trigger multiple vector reallocations.
+    for(int i = 0; i < 100; ++i) {
+        obj.insert("key" + std::to_string(i), content::Value(std::int64_t(i)));
+        // Interleave lookups to trigger index build/invalidate cycles.
+        if(i % 15 == 0 && i > 0) {
+            EXPECT_EQ(obj.find("key0")->as_int(), 0);
+            EXPECT_EQ(obj.find("key" + std::to_string(i))->as_int(), i);
+        }
+    }
+
+    // Final verification
+    for(int i = 0; i < 100; ++i) {
+        auto* v = obj.find("key" + std::to_string(i));
+        ASSERT_NE(v, nullptr);
+        EXPECT_EQ(v->as_int(), i);
     }
 }
 
-TEST_CASE(document_make_root_does_not_mutate_bound_owner) {
-    auto owner = must_parse_mutable_value(R"({"n":1})");
-    auto document = owner.doc();
-    ASSERT_TRUE(document.valid());
+TEST_CASE(remove_from_large_object_invalidates_index) {
+    content::Object obj;
+    for(int i = 0; i < 12; ++i) {
+        obj.insert("k" + std::to_string(i), content::Value(std::int64_t(i)));
+    }
 
-    auto array = document.make_array();
-    ASSERT_TRUE(array.push_back(7).has_value());
+    // Build index
+    EXPECT_EQ(obj.find("k5")->as_int(), 5);
 
-    auto owner_json = owner.to_json_string();
-    ASSERT_TRUE(owner_json.has_value());
-    EXPECT_EQ(*owner_json, R"({"n":1})");
+    // Remove middle element
+    EXPECT_EQ(obj.remove("k5"), 1);
+    EXPECT_EQ(obj.find("k5"), nullptr);
 
-    auto document_json = document.to_json_string();
-    ASSERT_TRUE(document_json.has_value());
-    EXPECT_EQ(*document_json, "[7]");
+    // Other elements still found correctly after index rebuild
+    EXPECT_EQ(obj.find("k0")->as_int(), 0);
+    EXPECT_EQ(obj.find("k11")->as_int(), 11);
+    EXPECT_EQ(obj.size(), 11);
 }
 
-TEST_CASE(write_api_invalid_state_errors) {
-    Value value;
-    auto value_status = value.set(1);
-    ASSERT_FALSE(value_status.has_value());
-    EXPECT_EQ(value_status.error(), error_kind::invalid_state);
-
-    Array array;
-    auto array_status = array.push_back(1);
-    ASSERT_FALSE(array_status.has_value());
-    EXPECT_EQ(array_status.error(), error_kind::invalid_state);
-
-    Object object;
-    auto object_insert = object.insert("a", 1);
-    ASSERT_FALSE(object_insert.has_value());
-    EXPECT_EQ(object_insert.error(), error_kind::invalid_state);
-
-    auto object_assign = object.assign("a", 1);
-    ASSERT_FALSE(object_assign.has_value());
-    EXPECT_EQ(object_assign.error(), error_kind::invalid_state);
+TEST_CASE(duplicate_keys_find_returns_last_inserted) {
+    content::Object obj;
+    for(int i = 0; i < 10; ++i) {
+        obj.insert("dup", content::Value(std::int64_t(i)));
+    }
+    // find should return the last-inserted entry (index 9)
+    ASSERT_NE(obj.find("dup"), nullptr);
+    EXPECT_EQ(obj.find("dup")->as_int(), 9);
 }
 
-};  // TEST_SUITE(serde_json_yyjson_dom2_write)
+};  // TEST_SUITE(serde_content_dom_write)
 
 }  // namespace
 
-}  // namespace kota::codec::json
+}  // namespace kota::codec

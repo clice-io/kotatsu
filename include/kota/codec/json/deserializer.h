@@ -16,6 +16,7 @@
 #include "kota/codec/codec.h"
 #include "kota/codec/config.h"
 #include "kota/codec/content/deserializer.h"
+#include "kota/codec/content/document.h"
 #include "kota/codec/detail/narrow.h"
 #include "kota/codec/json/error.h"
 
@@ -560,12 +561,26 @@ public:
     }
 
     result_t<content::Value> capture_dom_value() {
-        KOTA_EXPECTED_TRY_V(auto raw, consume_raw_json_view());
-        auto parsed = content::Value::parse(std::string_view(raw.data(), raw.size()));
-        if(!parsed) {
-            return std::unexpected(json::make_read_error(parsed.error()));
+        if(!is_valid) {
+            return std::unexpected(last_error);
         }
-        return std::move(*parsed);
+
+        content::Value out;
+        if(current_value != nullptr) {
+            KOTA_EXPECTED_TRY(build_dom_from_value(*current_value, out));
+        } else {
+            if(root_consumed) {
+                return mark_invalid();
+            }
+            simdjson::ondemand::value root_value;
+            auto err = document.get_value().get(root_value);
+            if(err != simdjson::SUCCESS) {
+                return mark_invalid(err);
+            }
+            root_consumed = true;
+            KOTA_EXPECTED_TRY(build_dom_from_value(root_value, out));
+        }
+        return out;
     }
 
     result_t<simdjson::padded_string_view> deserialize_raw_json_view() {
@@ -579,6 +594,117 @@ public:
     }
 
 private:
+    status_t build_dom_from_value(simdjson::ondemand::value& value, content::Value& out) {
+        simdjson::ondemand::json_type type;
+        auto err = value.type().get(type);
+        if(err != simdjson::SUCCESS) {
+            return mark_invalid(err);
+        }
+
+        switch(type) {
+            case simdjson::ondemand::json_type::null: {
+                out = content::Value(nullptr);
+                return {};
+            }
+            case simdjson::ondemand::json_type::boolean: {
+                bool b = false;
+                err = value.get_bool().get(b);
+                if(err != simdjson::SUCCESS) {
+                    return mark_invalid(err);
+                }
+                out = content::Value(b);
+                return {};
+            }
+            case simdjson::ondemand::json_type::number: {
+                simdjson::ondemand::number_type nt{};
+                err = value.get_number_type().get(nt);
+                if(err != simdjson::SUCCESS) {
+                    return mark_invalid(err);
+                }
+                if(nt == simdjson::ondemand::number_type::signed_integer) {
+                    std::int64_t i = 0;
+                    err = value.get_int64().get(i);
+                    if(err != simdjson::SUCCESS) {
+                        return mark_invalid(err);
+                    }
+                    out = content::Value(i);
+                } else if(nt == simdjson::ondemand::number_type::unsigned_integer) {
+                    std::uint64_t u = 0;
+                    err = value.get_uint64().get(u);
+                    if(err != simdjson::SUCCESS) {
+                        return mark_invalid(err);
+                    }
+                    out = content::Value(u);
+                } else {
+                    double d = 0.0;
+                    err = value.get_double().get(d);
+                    if(err != simdjson::SUCCESS) {
+                        return mark_invalid(err);
+                    }
+                    out = content::Value(d);
+                }
+                return {};
+            }
+            case simdjson::ondemand::json_type::string: {
+                std::string_view s;
+                err = value.get_string().get(s);
+                if(err != simdjson::SUCCESS) {
+                    return mark_invalid(err);
+                }
+                out = content::Value(std::string(s));
+                return {};
+            }
+            case simdjson::ondemand::json_type::array: {
+                simdjson::ondemand::array arr;
+                err = value.get_array().get(arr);
+                if(err != simdjson::SUCCESS) {
+                    return mark_invalid(err);
+                }
+                content::Array out_arr;
+                for(auto item: arr) {
+                    simdjson::ondemand::value child_v;
+                    auto item_err = std::move(item).get(child_v);
+                    if(item_err != simdjson::SUCCESS) {
+                        return mark_invalid(item_err);
+                    }
+                    content::Value child;
+                    KOTA_EXPECTED_TRY(build_dom_from_value(child_v, child));
+                    out_arr.push_back(std::move(child));
+                }
+                out = content::Value(std::move(out_arr));
+                return {};
+            }
+            case simdjson::ondemand::json_type::object: {
+                simdjson::ondemand::object obj;
+                err = value.get_object().get(obj);
+                if(err != simdjson::SUCCESS) {
+                    return mark_invalid(err);
+                }
+                content::Object out_obj;
+                for(auto field_result: obj) {
+                    simdjson::ondemand::field field;
+                    auto ferr = std::move(field_result).get(field);
+                    if(ferr != simdjson::SUCCESS) {
+                        return mark_invalid(ferr);
+                    }
+                    std::string key;
+                    auto kerr = field.unescaped_key(key);
+                    if(kerr != simdjson::SUCCESS) {
+                        return mark_invalid(kerr);
+                    }
+                    auto child_v = std::move(field).value();
+                    content::Value child;
+                    KOTA_EXPECTED_TRY(build_dom_from_value(child_v, child));
+                    out_obj.insert(std::move(key), std::move(child));
+                }
+                out = content::Value(std::move(out_obj));
+                return {};
+            }
+            default: break;
+        }
+        return mark_invalid();
+    }
+
     /// Unified root-vs-value dispatch. Calls `doc_fn(document)` or `val_fn(*current_value)`,
     /// each returning a simdjson result whose `.get(T&)` populates the output.
     /// When `consume` is true, marks root as consumed on success.
