@@ -9,17 +9,18 @@
 #include <type_traits>
 #include <utility>
 #include <variant>
-#include <vector>
 
 #include "kota/support/expected_try.h"
+#include "kota/support/type_list.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
+#include "kota/meta/schema.h"
 #include "kota/meta/struct.h"
 #include "kota/codec/config.h"
 #include "kota/codec/content/document.h"
 #include "kota/codec/detail/common.h"
-#include "kota/codec/detail/field_dispatch.h"
 #include "kota/codec/detail/fwd.h"
+#include "kota/codec/detail/struct_serialize.h"
 
 namespace kota::codec::detail {
 
@@ -70,30 +71,32 @@ constexpr auto match_and_deserialize_alt(std::string_view tag_value,
     return status;
 }
 
-/// Visit variant and call emitter with the active alternative's value.
-/// Propagates the emitter's result through expected.
-template <typename E, typename R, typename... Ts, typename Emitter>
-constexpr auto visit_variant_alt(const std::variant<Ts...>& value, Emitter&& emit)
-    -> std::expected<R, E> {
-    std::expected<R, E> result{std::unexpected(E::invalid_state)};
-    std::visit([&](const auto& item) { result = emit(item); }, value);
-    return result;
-}
+// ─── Serialization ───────────────────────────────────────────────────────────
 
 template <typename E, typename S, typename... Ts, typename TagAttr>
 constexpr auto serialize_externally_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
     -> std::expected<typename S::value_type, E> {
     constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
 
-    KOTA_EXPECTED_TRY_V(auto s_struct, s.serialize_struct("", 1));
+    KOTA_EXPECTED_TRY(s.begin_object(1));
 
     auto name = names[value.index()];
-    KOTA_EXPECTED_TRY(
-        (visit_variant_alt<E, void>(value, [&](const auto& item) -> std::expected<void, E> {
-            return s_struct.serialize_field(name, item);
-        })));
+    KOTA_EXPECTED_TRY(s.field(name));
 
-    return s_struct.end();
+    std::expected<void, E> inner_status{};
+    std::visit(
+        [&](const auto& item) {
+            auto r = emit_field_value<S, E>(s, codec::serialize(s, item));
+            if(!r) {
+                inner_status = std::unexpected(r.error());
+            }
+        },
+        value);
+    if(!inner_status) {
+        return std::unexpected(inner_status.error());
+    }
+
+    return s.end_object();
 }
 
 template <typename E, typename S, typename... Ts, typename TagAttr>
@@ -101,36 +104,101 @@ constexpr auto serialize_adjacently_tagged(S& s, const std::variant<Ts...>& valu
     -> std::expected<typename S::value_type, E> {
     constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
 
-    KOTA_EXPECTED_TRY_V(auto s_struct, s.serialize_struct("", 2));
+    KOTA_EXPECTED_TRY(s.begin_object(2));
 
-    auto name = names[value.index()];
-    KOTA_EXPECTED_TRY(s_struct.serialize_field(TagAttr::field_names[0], name));
+    // Tag field
+    auto tag_name = names[value.index()];
+    KOTA_EXPECTED_TRY(s.field(TagAttr::field_names[0]));
+    {
+        auto _r = emit_field_value<S, E>(s, codec::serialize(s, tag_name));
+        if(!_r) return std::unexpected(_r.error());
+    }
 
-    KOTA_EXPECTED_TRY(
-        (visit_variant_alt<E, void>(value, [&](const auto& item) -> std::expected<void, E> {
-            return s_struct.serialize_field(TagAttr::field_names[1], item);
-        })));
+    // Content field
+    KOTA_EXPECTED_TRY(s.field(TagAttr::field_names[1]));
+    std::expected<void, E> inner_status{};
+    std::visit(
+        [&](const auto& item) {
+            auto r = emit_field_value<S, E>(s, codec::serialize(s, item));
+            if(!r) {
+                inner_status = std::unexpected(r.error());
+            }
+        },
+        value);
+    if(!inner_status) {
+        return std::unexpected(inner_status.error());
+    }
 
-    return s_struct.end();
+    return s.end_object();
 }
+
+template <typename E, typename S, typename... Ts, typename TagAttr>
+constexpr auto serialize_internally_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
+    -> std::expected<typename S::value_type, E> {
+    constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
+    constexpr std::string_view tag_field = TagAttr::field_names[0];
+
+    return std::visit(
+        [&](const auto& item) -> std::expected<typename S::value_type, E> {
+            using alt_t = std::remove_cvref_t<decltype(item)>;
+            static_assert(meta::reflectable_class<alt_t>,
+                          "internally_tagged requires struct alternatives");
+
+            using config_t = config::config_of<S>;
+            using schema = meta::virtual_schema<alt_t, config_t>;
+            using slots = typename schema::slots;
+            constexpr std::size_t N = type_list_size_v<slots>;
+
+            KOTA_EXPECTED_TRY(s.begin_object(N + 1));
+
+            // Tag field first
+            auto tag_name = names[value.index()];
+            KOTA_EXPECTED_TRY(s.field(tag_field));
+            {
+                auto _r = emit_field_value<S, E>(s, codec::serialize(s, tag_name));
+                if(!_r) return std::unexpected(_r.error());
+            }
+
+            // Struct fields via schema
+            std::expected<void, E> slot_status{};
+            bool ok = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+                return ([&] {
+                    auto r = serialize_slot_by_name<config_t, E, alt_t, Is>(s, item);
+                    if(!r) {
+                        slot_status = std::unexpected(r.error());
+                        return false;
+                    }
+                    return true;
+                }() && ...);
+            }(std::make_index_sequence<N>{});
+
+            if(!ok) {
+                return std::unexpected(slot_status.error());
+            }
+            return s.end_object();
+        },
+        value);
+}
+
+// ─── Deserialization ─────────────────────────────────────────────────────────
 
 template <typename E, typename D, typename... Ts, typename TagAttr>
 constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, TagAttr)
     -> std::expected<void, E> {
     constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
 
-    KOTA_EXPECTED_TRY_V(auto d_struct, d.deserialize_struct("", 1));
+    KOTA_EXPECTED_TRY(d.begin_object());
 
-    KOTA_EXPECTED_TRY_V(auto key, d_struct.next_key());
+    KOTA_EXPECTED_TRY_V(auto key, d.next_field());
     if(!key.has_value()) {
         return std::unexpected(E::custom("expected externally tagged variant key"));
     }
 
     KOTA_EXPECTED_TRY((match_and_deserialize_alt<E>(*key, names, value, [&](auto& alt) {
-        return d_struct.deserialize_value(alt);
+        return codec::deserialize(d, alt);
     })));
 
-    return d_struct.end();
+    return d.end_object();
 }
 
 template <typename E, typename D, typename... Ts, typename TagAttr>
@@ -138,7 +206,7 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
     -> std::expected<void, E> {
     constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
 
-    KOTA_EXPECTED_TRY_V(auto d_struct, d.deserialize_struct("", 2));
+    KOTA_EXPECTED_TRY(d.begin_object());
 
     std::string tag_value;
 
@@ -150,20 +218,8 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
             std::forward<decltype(read_content_alt)>(read_content_alt));
     };
 
-    // Read content directly from the struct deserializer
     auto read_content_direct = [&](auto& alt) -> std::expected<void, E> {
-        KOTA_EXPECTED_TRY(d_struct.deserialize_value(alt));
-        return {};
-    };
-
-    // Expect the next key to match a specific field name
-    auto expect_next_key = [&](std::string_view expected) -> std::expected<void, E> {
-        KOTA_EXPECTED_TRY_V(auto key, d_struct.next_key());
-        if(!key.has_value() || *key != expected) {
-            return std::unexpected(
-                E::custom(std::format("expected adjacent tag field '{}'", expected)));
-        }
-        return {};
+        return codec::deserialize(d, alt);
     };
 
     if constexpr(detail::can_buffer_adjacently_tagged_v<D>) {
@@ -173,18 +229,18 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
         bool has_content = false;
 
         while(true) {
-            KOTA_EXPECTED_TRY_V(auto key, d_struct.next_key());
-            if(!key.has_value()) {
+            KOTA_EXPECTED_TRY_V(auto field_key, d.next_field());
+            if(!field_key.has_value()) {
                 break;
             }
 
-            if(*key == TagAttr::field_names[0]) {
+            if(*field_key == TagAttr::field_names[0]) {
                 if(has_tag) {
                     return std::unexpected(E::duplicate_field(TagAttr::field_names[0]));
                 }
-                KOTA_EXPECTED_TRY(d_struct.deserialize_value(tag_value));
+                KOTA_EXPECTED_TRY(codec::deserialize(d, tag_value));
                 has_tag = true;
-            } else if(*key == TagAttr::field_names[1]) {
+            } else if(*field_key == TagAttr::field_names[1]) {
                 if(has_content) {
                     return std::unexpected(E::duplicate_field(TagAttr::field_names[1]));
                 }
@@ -194,11 +250,11 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
                     KOTA_EXPECTED_TRY(deserialize_content_for_tag(read_content_direct));
                 } else {
                     captured_t captured{};
-                    KOTA_EXPECTED_TRY(d_struct.deserialize_value(captured));
+                    KOTA_EXPECTED_TRY(codec::deserialize(d, captured));
                     buffered_content.emplace(std::move(captured));
                 }
             } else {
-                KOTA_EXPECTED_TRY(d_struct.skip_value());
+                KOTA_EXPECTED_TRY(d.skip_field_value());
             }
         }
 
@@ -219,52 +275,25 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
             }));
         }
 
-        return d_struct.end();
+        return d.end_object();
     } else {
-        KOTA_EXPECTED_TRY(expect_next_key(TagAttr::field_names[0]));
-        KOTA_EXPECTED_TRY(d_struct.deserialize_value(tag_value));
-        KOTA_EXPECTED_TRY(expect_next_key(TagAttr::field_names[1]));
+        // Strict order: tag then content
+        KOTA_EXPECTED_TRY_V(auto key1, d.next_field());
+        if(!key1.has_value() || *key1 != TagAttr::field_names[0]) {
+            return std::unexpected(
+                E::custom(std::format("expected adjacent tag field '{}'", TagAttr::field_names[0])));
+        }
+        KOTA_EXPECTED_TRY(codec::deserialize(d, tag_value));
+
+        KOTA_EXPECTED_TRY_V(auto key2, d.next_field());
+        if(!key2.has_value() || *key2 != TagAttr::field_names[1]) {
+            return std::unexpected(E::custom(
+                std::format("expected adjacent content field '{}'", TagAttr::field_names[1])));
+        }
         KOTA_EXPECTED_TRY(deserialize_content_for_tag(read_content_direct));
-        return d_struct.end();
+
+        return d.end_object();
     }
-}
-
-template <typename E, typename S, typename... Ts, typename TagAttr>
-constexpr auto serialize_internally_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
-    -> std::expected<typename S::value_type, E> {
-    constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
-    constexpr std::string_view tag_field = TagAttr::field_names[0];
-
-    return std::visit(
-        [&](const auto& item) -> std::expected<typename S::value_type, E> {
-            using alt_t = std::remove_cvref_t<decltype(item)>;
-            static_assert(meta::reflectable_class<alt_t>,
-                          "internally_tagged requires struct alternatives");
-
-            using config_t = config::config_of<S>;
-            KOTA_EXPECTED_TRY_V(auto s_struct,
-                                s.serialize_struct("", meta::field_count<alt_t>() + 1));
-
-            // tag field first
-            auto tag_name = names[value.index()];
-            KOTA_EXPECTED_TRY(s_struct.serialize_field(tag_field, tag_name));
-
-            // struct fields
-            std::expected<void, E> field_result;
-            meta::for_each(item, [&](auto field) {
-                auto r = serialize_struct_field<config_t, E>(s_struct, field);
-                if(!r) {
-                    field_result = std::unexpected(r.error());
-                    return false;
-                }
-                return true;
-            });
-            if(!field_result) {
-                return std::unexpected(field_result.error());
-            }
-            return s_struct.end();
-        },
-        value);
 }
 
 template <typename E, typename D, typename... Ts, typename TagAttr>
@@ -412,15 +441,6 @@ auto try_deserialize_variant_candidate(Source&& source, std::variant<Ts...>& val
 }
 
 /// Shared variant dispatch for DOM-like deserializers.
-///
-/// Given a source value and a type_hint describing its data-model category,
-/// iterate all variant alternatives, check if the hint matches, and attempt
-/// deserialization via the probe-deserialize-finish pattern.
-///
-/// D: the Deserializer type (must be constructible from Source)
-/// Source: the captured value (e.g., json::Cursor, const toml::node*)
-/// hint: the codec::type_hint for the current value
-/// mismatch_error: the error value to use when no alternative matches
 template <typename D, typename Source, typename... Ts>
 auto try_variant_dispatch(Source&& source,
                           type_hint hint,

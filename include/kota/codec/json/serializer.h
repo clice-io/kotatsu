@@ -14,7 +14,6 @@
 #include "kota/codec/backend.h"
 #include "kota/codec/codec.h"
 #include "kota/codec/config.h"
-#include "kota/codec/detail/backend_helpers.h"
 #include "kota/codec/json/error.h"
 
 namespace kota::codec::json {
@@ -33,14 +32,6 @@ public:
     using result_t = std::expected<T, error_type>;
 
     using status_t = result_t<void>;
-
-    using SerializeArray = codec::detail::SerializeArray<Serializer<Config>>;
-    using SerializeObject = codec::detail::SerializeObject<Serializer<Config>>;
-
-    using SerializeSeq = SerializeArray;
-    using SerializeTuple = SerializeArray;
-    using SerializeMap = SerializeObject;
-    using SerializeStruct = SerializeObject;
 
     Serializer() = default;
 
@@ -168,44 +159,20 @@ public:
     }
 
     result_t<value_type> serialize_bytes(std::string_view value) {
-        KOTA_EXPECTED_TRY_V(auto seq, serialize_seq(value.size()));
-
+        KOTA_EXPECTED_TRY(begin_array(value.size()));
         for(unsigned char byte: value) {
-            KOTA_EXPECTED_TRY(seq.serialize_element(static_cast<std::uint64_t>(byte)));
+            KOTA_EXPECTED_TRY(serialize_uint(static_cast<std::uint64_t>(byte)));
         }
-
-        return seq.end();
+        return end_array();
     }
 
     result_t<value_type> serialize_bytes(std::span<const std::byte> value) {
-        KOTA_EXPECTED_TRY_V(auto seq, serialize_seq(value.size()));
-
+        KOTA_EXPECTED_TRY(begin_array(value.size()));
         for(std::byte byte: value) {
-            KOTA_EXPECTED_TRY(seq.serialize_element(
+            KOTA_EXPECTED_TRY(serialize_uint(
                 static_cast<std::uint64_t>(std::to_integer<std::uint8_t>(byte))));
         }
-
-        return seq.end();
-    }
-
-    result_t<SerializeSeq> serialize_seq(std::optional<std::size_t> /*len*/) {
-        KOTA_EXPECTED_TRY(begin_array_impl());
-        return SerializeSeq(*this);
-    }
-
-    result_t<SerializeTuple> serialize_tuple(std::size_t /*len*/) {
-        KOTA_EXPECTED_TRY(begin_array_impl());
-        return SerializeTuple(*this);
-    }
-
-    result_t<SerializeMap> serialize_map(std::optional<std::size_t> /*len*/) {
-        KOTA_EXPECTED_TRY(begin_object_impl());
-        return SerializeMap(*this);
-    }
-
-    result_t<SerializeStruct> serialize_struct(std::string_view /*name*/, std::size_t /*len*/) {
-        KOTA_EXPECTED_TRY(begin_object_impl());
-        return SerializeStruct(*this);
+        return end_array();
     }
 
     // --- New-style streaming struct interface ---
@@ -235,7 +202,7 @@ public:
         return key(name);
     }
 
-    status_t begin_array(std::size_t /*count*/) {
+    status_t begin_array(std::optional<std::size_t> /*count*/) {
         return begin_array_impl();
     }
 
@@ -256,9 +223,6 @@ public:
     }
 
 private:
-    friend class codec::detail::SerializeArray<Serializer<Config>>;
-    friend class codec::detail::SerializeObject<Serializer<Config>>;
-
     enum class container_kind : std::uint8_t { array, object };
 
     struct container_frame {

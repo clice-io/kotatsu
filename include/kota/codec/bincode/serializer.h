@@ -37,59 +37,6 @@ public:
 
     using status_t = result_t<void>;
 
-    class SerializeElements {
-    public:
-        SerializeElements(Serializer& serializer, std::size_t expected_count) noexcept :
-            serializer(serializer), expected_count(expected_count) {}
-
-        template <typename T>
-        status_t serialize_element(const T& value) {
-            if(written_count >= expected_count) {
-                return serializer.mark_invalid(error_type::invalid_state);
-            }
-
-            KOTA_EXPECTED_TRY(codec::serialize(serializer, value));
-
-            ++written_count;
-            return {};
-        }
-
-        template <typename K, typename V>
-        status_t serialize_entry(const K& key, const V& value) {
-            if(written_count >= expected_count) {
-                return serializer.mark_invalid(error_type::invalid_state);
-            }
-
-            KOTA_EXPECTED_TRY(codec::serialize(serializer, key));
-            KOTA_EXPECTED_TRY(codec::serialize(serializer, value));
-
-            ++written_count;
-            return {};
-        }
-
-        template <typename T>
-        status_t serialize_field(std::string_view /*key*/, const T& value) {
-            return serialize_element(value);
-        }
-
-        result_t<value_type> end() {
-            if(written_count != expected_count) {
-                return serializer.mark_invalid(error_type::invalid_state);
-            }
-            return {};
-        }
-
-    private:
-        Serializer& serializer;
-        std::size_t expected_count = 0;
-        std::size_t written_count = 0;
-    };
-
-    using SerializeSeq = SerializeElements;
-    using SerializeTuple = SerializeElements;
-    using SerializeMap = SerializeElements;
-    using SerializeStruct = SerializeElements;
-
     Serializer() = default;
 
     explicit Serializer(std::size_t reserve_bytes) {
@@ -203,31 +150,22 @@ public:
         return {};
     }
 
-    result_t<SerializeSeq> serialize_seq(std::optional<std::size_t> len) {
-        if(!len.has_value()) {
-            return std::unexpected(error_type::invalid_state);
+    // --- New-style streaming interface ---
+
+    status_t begin_array(std::optional<std::size_t> len) {
+        if(len.has_value()) {
+            return write_length(*len);
         }
-
-        KOTA_EXPECTED_TRY(write_length(*len));
-        return SerializeSeq(*this, *len);
+        return {};
     }
 
-    result_t<SerializeTuple> serialize_tuple(std::size_t len) {
-        return SerializeTuple(*this, len);
-    }
+    result_t<value_type> end_array() { return {}; }
 
-    result_t<SerializeMap> serialize_map(std::optional<std::size_t> len) {
-        if(!len.has_value()) {
-            return std::unexpected(error_type::invalid_state);
-        }
+    status_t begin_object(std::size_t /*count*/) { return {}; }
 
-        KOTA_EXPECTED_TRY(write_length(*len));
-        return SerializeMap(*this, *len);
-    }
+    status_t field(std::string_view /*name*/) { return {}; }
 
-    result_t<SerializeStruct> serialize_struct(std::string_view /*name*/, std::size_t len) {
-        return SerializeStruct(*this, len);
-    }
+    result_t<value_type> end_object() { return {}; }
 
 private:
     template <typename T>

@@ -69,11 +69,7 @@ concept serde_error_like = requires {
 
 template <typename S,
           typename T = typename S::value_type,
-          typename E = typename S::error_type,
-          typename SerializeSeq = typename S::SerializeSeq,
-          typename SerializeTuple = typename S::SerializeTuple,
-          typename SerializeMap = typename S::SerializeMap,
-          typename SerializeStruct = typename S::SerializeStruct>
+          typename E = typename S::error_type>
 concept serializer_like =
     serde_error_like<E> && requires(S& s,
                                     bool b,
@@ -84,10 +80,8 @@ concept serializer_like =
                                     std::string_view text,
                                     std::span<const std::byte> bytes,
                                     std::optional<std::size_t> len,
-                                    std::size_t tuple_len,
-                                    const std::variant<int, std::string>& variant_value,
-                                    const int& key,
-                                    const int& value) {
+                                    std::size_t count,
+                                    const std::variant<int, std::string>& variant_value) {
         { s.serialize_bool(b) } -> result_as<T, E>;
         { s.serialize_int(i) } -> result_as<T, E>;
         { s.serialize_uint(u) } -> result_as<T, E>;
@@ -100,37 +94,16 @@ concept serializer_like =
         { s.serialize_some(i) } -> result_as<T, E>;
         { s.serialize_variant(variant_value) } -> result_as<T, E>;
 
-        { s.serialize_seq(len) } -> result_as<SerializeSeq, E>;
-        requires requires(SerializeSeq& s) {
-            { s.serialize_element(value) } -> result_as<void, E>;
-            { s.end() } -> result_as<T, E>;
-        };
+        { s.begin_array(len) } -> result_as<void, E>;
+        { s.end_array() } -> result_as<T, E>;
 
-        { s.serialize_tuple(tuple_len) } -> result_as<SerializeTuple, E>;
-        requires requires(SerializeTuple& s) {
-            { s.serialize_element(value) } -> result_as<void, E>;
-            { s.end() } -> result_as<T, E>;
-        };
-
-        { s.serialize_map(len) } -> result_as<SerializeMap, E>;
-        requires requires(SerializeMap& s) {
-            { s.serialize_entry(key, value) } -> result_as<void, E>;
-            { s.end() } -> result_as<T, E>;
-        };
-
-        { s.serialize_struct(text, tuple_len) } -> result_as<SerializeStruct, E>;
-        requires requires(SerializeStruct& s) {
-            { s.serialize_field(text, value) } -> result_as<void, E>;
-            { s.end() } -> result_as<T, E>;
-        };
+        { s.begin_object(count) } -> result_as<void, E>;
+        { s.field(text) } -> result_as<void, E>;
+        { s.end_object() } -> result_as<T, E>;
     };
 
 template <typename D,
-          typename E = typename D::error_type,
-          typename DeserializeSeq = typename D::DeserializeSeq,
-          typename DeserializeTuple = typename D::DeserializeTuple,
-          typename DeserializeMap = typename D::DeserializeMap,
-          typename DeserializeStruct = typename D::DeserializeStruct>
+          typename E = typename D::error_type>
 concept deserializer_like =
     serde_error_like<E> && requires(D& d,
                                     bool& b,
@@ -140,11 +113,7 @@ concept deserializer_like =
                                     double& f64,
                                     std::string& text,
                                     std::vector<std::byte>& bytes,
-                                    std::optional<std::size_t> len,
-                                    std::size_t tuple_len,
-                                    std::string_view name,
-                                    std::variant<int, std::string>& variant_value,
-                                    int& value) {
+                                    std::variant<int, std::string>& variant_value) {
         { d.deserialize_bool(b) } -> result_as<void, E>;
         { d.deserialize_int(i64) } -> result_as<void, E>;
         { d.deserialize_uint(u64) } -> result_as<void, E>;
@@ -156,36 +125,16 @@ concept deserializer_like =
         { d.deserialize_none() } -> result_as<bool, E>;
         { d.deserialize_variant(variant_value) } -> result_as<void, E>;
 
-        { d.deserialize_seq(len) } -> result_as<DeserializeSeq, E>;
-        requires requires(DeserializeSeq& s) {
-            { s.has_next() } -> result_as<bool, E>;
-            { s.deserialize_element(value) } -> result_as<void, E>;
-            { s.skip_element() } -> result_as<void, E>;
-            { s.end() } -> result_as<void, E>;
-        };
+        // Streaming object interface
+        { d.begin_object() } -> result_as<void, E>;
+        { d.end_object() } -> result_as<void, E>;
+        { d.next_field() } -> result_as<std::optional<std::string_view>, E>;
+        { d.skip_field_value() } -> result_as<void, E>;
 
-        { d.deserialize_tuple(tuple_len) } -> result_as<DeserializeTuple, E>;
-        requires requires(DeserializeTuple& s) {
-            { s.deserialize_element(value) } -> result_as<void, E>;
-            { s.skip_element() } -> result_as<void, E>;
-            { s.end() } -> result_as<void, E>;
-        };
-
-        { d.deserialize_map(len) } -> result_as<DeserializeMap, E>;
-        requires requires(DeserializeMap& s) {
-            { s.next_key() } -> result_as<std::optional<std::string_view>, E>;
-            { s.deserialize_value(value) } -> result_as<void, E>;
-            { s.skip_value() } -> result_as<void, E>;
-            { s.end() } -> result_as<void, E>;
-        };
-
-        { d.deserialize_struct(name, tuple_len) } -> result_as<DeserializeStruct, E>;
-        requires requires(DeserializeStruct& s) {
-            { s.next_key() } -> result_as<std::optional<std::string_view>, E>;
-            { s.deserialize_value(value) } -> result_as<void, E>;
-            { s.skip_value() } -> result_as<void, E>;
-            { s.end() } -> result_as<void, E>;
-        };
+        // Streaming array interface
+        { d.begin_array() } -> result_as<void, E>;
+        { d.next_element() } -> result_as<bool, E>;
+        { d.end_array() } -> result_as<void, E>;
     };
 
 }  // namespace kota::codec

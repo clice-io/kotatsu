@@ -20,6 +20,7 @@
 #include "kota/codec/detail/struct_serialize.h"
 #include "kota/codec/detail/struct_deserialize.h"
 #include "kota/codec/detail/tagged.h"
+#include "kota/codec/spelling.h"
 
 namespace kota::codec {
 
@@ -150,24 +151,40 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
     } else if constexpr(is_specialization_of<std::variant, V>) {
         return s.serialize_variant(v);
     } else if constexpr(tuple_like<V>) {
-        KOTA_EXPECTED_TRY_V(auto s_tuple,
-                            s.serialize_tuple(std::tuple_size_v<std::remove_cvref_t<V>>));
-
-        std::expected<void, E> element_result;
-        auto for_each = [&](const auto& element) -> bool {
-            auto result = s_tuple.serialize_element(element);
-            if(!result) {
-                element_result = std::unexpected(result.error());
-                return false;
+        constexpr std::size_t N = std::tuple_size_v<std::remove_cvref_t<V>>;
+        if constexpr(S::field_mode_v == field_mode::by_name) {
+            KOTA_EXPECTED_TRY(s.begin_array(N));
+            std::expected<void, E> element_result;
+            auto for_each = [&](const auto& element) -> bool {
+                auto r = detail::emit_element_value<S, E>(s, codec::serialize(s, element));
+                if(!r) {
+                    element_result = std::unexpected(r.error());
+                    return false;
+                }
+                return true;
+            };
+            std::apply([&](const auto&... elements) { (for_each(elements) && ...); }, v);
+            if(!element_result) {
+                return std::unexpected(element_result.error());
             }
-            return true;
-        };
-        std::apply([&](const auto&... elements) { return (for_each(elements) && ...); }, v);
-        if(!element_result) {
-            return std::unexpected(element_result.error());
+            return s.end_array();
+        } else {
+            // by_position: serialize elements directly without framing
+            std::expected<void, E> element_result;
+            auto for_each = [&](const auto& element) -> bool {
+                auto r = codec::serialize(s, element);
+                if(!r) {
+                    element_result = std::unexpected(r.error());
+                    return false;
+                }
+                return true;
+            };
+            std::apply([&](const auto&... elements) { (for_each(elements) && ...); }, v);
+            if(!element_result) {
+                return std::unexpected(element_result.error());
+            }
+            return {};
         }
-
-        return s_tuple.end();
     } else if constexpr(std::ranges::input_range<V>) {
         constexpr auto kind = format_kind<V>;
         if constexpr(kind == range_format::sequence || kind == range_format::set) {
@@ -176,26 +193,35 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
                 len = static_cast<std::size_t>(std::ranges::size(v));
             }
 
-            KOTA_EXPECTED_TRY_V(auto s_seq, s.serialize_seq(len));
+            KOTA_EXPECTED_TRY(s.begin_array(len));
 
             for(auto&& e: v) {
-                KOTA_EXPECTED_TRY(s_seq.serialize_element(e));
+                { auto _r = detail::emit_element_value<S, E>(s, codec::serialize(s, e)); if(!_r) return std::unexpected(_r.error()); }
             }
 
-            return s_seq.end();
+            return s.end_array();
         } else if constexpr(kind == range_format::map) {
             std::optional<std::size_t> len = std::nullopt;
             if constexpr(std::ranges::sized_range<V>) {
                 len = static_cast<std::size_t>(std::ranges::size(v));
             }
 
-            KOTA_EXPECTED_TRY_V(auto s_map, s.serialize_map(len));
-
-            for(auto&& [key, value]: v) {
-                KOTA_EXPECTED_TRY(s_map.serialize_entry(key, value));
+            if constexpr(S::field_mode_v == field_mode::by_name) {
+                KOTA_EXPECTED_TRY(s.begin_object(len.value_or(0)));
+                for(auto&& [key, value]: v) {
+                    KOTA_EXPECTED_TRY(s.field(codec::spelling::map_key_to_string(key)));
+                    { auto _r = detail::emit_field_value<S, E>(s, codec::serialize(s, value)); if(!_r) return std::unexpected(_r.error()); }
+                }
+                return s.end_object();
+            } else {
+                // by_position: write length + key-value pairs
+                KOTA_EXPECTED_TRY(s.begin_array(len));
+                for(auto&& [key, value]: v) {
+                    KOTA_EXPECTED_TRY(codec::serialize(s, key));
+                    KOTA_EXPECTED_TRY(codec::serialize(s, value));
+                }
+                return s.end_array();
             }
-
-            return s_map.end();
         } else {
             static_assert(dependent_false<V>, "cannot auto serialize the input range");
         }
@@ -365,37 +391,57 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
     } else if constexpr(is_specialization_of<std::variant, V>) {
         return d.deserialize_variant(v);
     } else if constexpr(tuple_like<V>) {
-        KOTA_EXPECTED_TRY_V(auto d_tuple,
-                            d.deserialize_tuple(std::tuple_size_v<std::remove_cvref_t<V>>));
+        if constexpr(D::field_mode_v == field_mode::by_name) {
+            KOTA_EXPECTED_TRY(d.begin_array());
 
-        std::expected<void, E> element_result;
-        std::size_t tuple_index = 0;
-        auto read_element = [&](auto& element) -> bool {
-            auto result = d_tuple.deserialize_element(element);
-            if(!result) {
-                auto err = std::move(result).error();
-                err.prepend_index(tuple_index);
-                element_result = std::unexpected(std::move(err));
-                return false;
+            std::expected<void, E> element_result;
+            std::size_t tuple_index = 0;
+            auto read_element = [&](auto& element) -> bool {
+                auto has = d.next_element();
+                if(!has || !*has) {
+                    element_result = std::unexpected(E::type_mismatch);
+                    return false;
+                }
+                auto result = deserialize(d, element);
+                if(!result) {
+                    auto err = std::move(result).error();
+                    err.prepend_index(tuple_index);
+                    element_result = std::unexpected(std::move(err));
+                    return false;
+                }
+                ++tuple_index;
+                return true;
+            };
+            std::apply([&](auto&... elements) { (read_element(elements) && ...); }, v);
+            if(!element_result) {
+                return std::unexpected(element_result.error());
             }
-            ++tuple_index;
-            return true;
-        };
-        std::apply([&](auto&... elements) { return (read_element(elements) && ...); }, v);
-        if(!element_result) {
-            return std::unexpected(element_result.error());
-        }
 
-        return d_tuple.end();
+            return d.end_array();
+        } else {
+            // by_position: just deserialize elements directly
+            std::expected<void, E> element_result;
+            std::size_t tuple_index = 0;
+            auto read_element = [&](auto& element) -> bool {
+                auto result = deserialize(d, element);
+                if(!result) {
+                    auto err = std::move(result).error();
+                    err.prepend_index(tuple_index);
+                    element_result = std::unexpected(std::move(err));
+                    return false;
+                }
+                ++tuple_index;
+                return true;
+            };
+            std::apply([&](auto&... elements) { (read_element(elements) && ...); }, v);
+            if(!element_result) {
+                return std::unexpected(element_result.error());
+            }
+            return {};
+        }
     } else if constexpr(std::ranges::input_range<V>) {
         constexpr auto kind = format_kind<V>;
         if constexpr(kind == range_format::sequence || kind == range_format::set) {
-            KOTA_EXPECTED_TRY_V(auto d_seq, d.deserialize_seq(std::nullopt));
-
-            if constexpr(requires { v.clear(); }) {
-                v.clear();
-            }
-
             using element_t = std::ranges::range_value_t<V>;
             static_assert(
                 std::default_initializable<element_t>,
@@ -403,15 +449,21 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
             static_assert(kota::detail::sequence_insertable<V, element_t>,
                           "cannot auto deserialize range: container does not support insertion");
 
+            KOTA_EXPECTED_TRY(d.begin_array());
+
+            if constexpr(requires { v.clear(); }) {
+                v.clear();
+            }
+
             std::size_t seq_index = 0;
             while(true) {
-                KOTA_EXPECTED_TRY_V(auto has_next, d_seq.has_next());
+                KOTA_EXPECTED_TRY_V(auto has_next, d.next_element());
                 if(!has_next) {
                     break;
                 }
 
                 element_t element{};
-                auto elem_status = d_seq.deserialize_element(element);
+                auto elem_status = deserialize(d, element);
                 if(!elem_status) {
                     auto err = std::move(elem_status).error();
                     err.prepend_index(seq_index);
@@ -422,55 +474,86 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                 ++seq_index;
             }
 
-            return d_seq.end();
+            return d.end_array();
         } else if constexpr(kind == range_format::map) {
             using key_t = typename V::key_type;
             using mapped_t = typename V::mapped_type;
 
-            KOTA_EXPECTED_TRY_V(auto d_map, d.deserialize_map(std::nullopt));
-
-            if constexpr(requires { v.clear(); }) {
-                v.clear();
-            }
-
-            static_assert(
-                codec::spelling::parseable_map_key<key_t>,
-                "auto map deserialization requires key_type parseable from JSON object keys");
             static_assert(std::default_initializable<mapped_t>,
                           "auto map deserialization requires default-constructible mapped_type");
             static_assert(kota::detail::map_insertable<V, key_t, mapped_t>,
                           "cannot auto deserialize map: container does not support map insertion");
 
-            while(true) {
-                KOTA_EXPECTED_TRY_V(auto key, d_map.next_key());
-                if(!key.has_value()) {
-                    break;
-                }
-
-                auto parsed_key = codec::spelling::parse_map_key<key_t>(*key);
-                if(!parsed_key) {
-                    if constexpr(requires { d_map.invalid_key(*key); }) {
-                        KOTA_EXPECTED_TRY(d_map.invalid_key(*key));
-                        continue;
-                    } else {
-                        static_assert(
-                            dependent_false<key_t>,
-                            "key parse failed and deserializer does not provide invalid_key");
-                    }
-                }
-
-                mapped_t mapped{};
-                auto map_val_status = d_map.deserialize_value(mapped);
-                if(!map_val_status) {
-                    auto err = std::move(map_val_status).error();
-                    err.prepend_field(*key);
-                    return std::unexpected(std::move(err));
-                }
-
-                kota::detail::insert_map_entry(v, std::move(*parsed_key), std::move(mapped));
+            if constexpr(requires { v.clear(); }) {
+                v.clear();
             }
 
-            return d_map.end();
+            if constexpr(D::field_mode_v == field_mode::by_name) {
+                static_assert(
+                    codec::spelling::parseable_map_key<key_t>,
+                    "by_name map deserialization requires key_type parseable from string keys");
+
+                KOTA_EXPECTED_TRY(d.begin_object());
+
+                while(true) {
+                    KOTA_EXPECTED_TRY_V(auto key, d.next_field());
+                    if(!key.has_value()) {
+                        break;
+                    }
+
+                    auto parsed_key = codec::spelling::parse_map_key<key_t>(*key);
+                    if(!parsed_key) {
+                        return std::unexpected(E::custom("invalid map key"));
+                    }
+
+                    mapped_t mapped{};
+                    auto map_val_status = deserialize(d, mapped);
+                    if(!map_val_status) {
+                        auto err = std::move(map_val_status).error();
+                        err.prepend_field(*key);
+                        return std::unexpected(std::move(err));
+                    }
+
+                    kota::detail::insert_map_entry(v, std::move(*parsed_key), std::move(mapped));
+                }
+
+                return d.end_object();
+            } else {
+                // by_position: length-prefixed sequence of key-value pairs
+                static_assert(std::default_initializable<key_t>,
+                              "by_position map deserialization requires default-constructible key_type");
+
+                KOTA_EXPECTED_TRY(d.begin_array());
+
+                std::size_t pair_index = 0;
+                while(true) {
+                    KOTA_EXPECTED_TRY_V(auto has_next, d.next_element());
+                    if(!has_next) {
+                        break;
+                    }
+
+                    key_t key{};
+                    auto key_status = deserialize(d, key);
+                    if(!key_status) {
+                        auto err = std::move(key_status).error();
+                        err.prepend_index(pair_index);
+                        return std::unexpected(std::move(err));
+                    }
+
+                    mapped_t mapped{};
+                    auto val_status = deserialize(d, mapped);
+                    if(!val_status) {
+                        auto err = std::move(val_status).error();
+                        err.prepend_index(pair_index);
+                        return std::unexpected(std::move(err));
+                    }
+
+                    kota::detail::insert_map_entry(v, std::move(key), std::move(mapped));
+                    ++pair_index;
+                }
+
+                return d.end_array();
+            }
         } else {
             static_assert(dependent_false<V>, "cannot auto deserialize the input range");
         }

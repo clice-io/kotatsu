@@ -13,15 +13,14 @@ TEST_SUITE(serde_content_serializer) {
 TEST_CASE(dom_value_requires_closed_containers) {
     content::Serializer<> serializer;
 
-    auto seq = serializer.serialize_seq(std::nullopt);
-    ASSERT_TRUE(seq.has_value());
-    ASSERT_TRUE(seq->serialize_element(1).has_value());
+    ASSERT_TRUE(serializer.begin_array(std::nullopt).has_value());
+    ASSERT_TRUE(codec::serialize(serializer, 1).has_value());
 
     auto incomplete = serializer.dom_value();
     ASSERT_FALSE(incomplete.has_value());
     EXPECT_EQ(incomplete.error(), content::error_kind::invalid_state);
 
-    ASSERT_TRUE(seq->end().has_value());
+    ASSERT_TRUE(serializer.end_array().has_value());
 
     auto complete = serializer.dom_value();
     ASSERT_TRUE(complete.has_value());
@@ -33,11 +32,12 @@ TEST_CASE(dom_value_requires_closed_containers) {
 TEST_CASE(take_dom_value_moves_root_out) {
     content::Serializer<> serializer;
 
-    auto map = serializer.serialize_map(std::nullopt);
-    ASSERT_TRUE(map.has_value());
-    ASSERT_TRUE(map->serialize_entry("a", 1).has_value());
-    ASSERT_TRUE(map->serialize_entry("b", 2).has_value());
-    ASSERT_TRUE(map->end().has_value());
+    ASSERT_TRUE(serializer.begin_object(2).has_value());
+    ASSERT_TRUE(serializer.field("a").has_value());
+    ASSERT_TRUE(codec::serialize(serializer, 1).has_value());
+    ASSERT_TRUE(serializer.field("b").has_value());
+    ASSERT_TRUE(codec::serialize(serializer, 2).has_value());
+    ASSERT_TRUE(serializer.end_object().has_value());
 
     auto taken = serializer.take_dom_value();
     ASSERT_TRUE(taken.has_value());
@@ -55,10 +55,9 @@ TEST_CASE(append_dom_value_inlines_foreign_subtree) {
     content::Object subtree;
     subtree.insert("k", content::Value(std::int64_t(9)));
 
-    auto seq = serializer.serialize_seq(std::nullopt);
-    ASSERT_TRUE(seq.has_value());
+    ASSERT_TRUE(serializer.begin_array(std::nullopt).has_value());
     ASSERT_TRUE(serializer.append_dom_value(std::move(subtree)).has_value());
-    ASSERT_TRUE(seq->end().has_value());
+    ASSERT_TRUE(serializer.end_array().has_value());
 
     auto dom = serializer.dom_value();
     ASSERT_TRUE(dom.has_value());

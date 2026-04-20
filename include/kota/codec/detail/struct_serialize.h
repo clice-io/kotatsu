@@ -47,6 +47,20 @@ auto emit_field_value(S& s, std::expected<typename S::value_type, E>&& r) -> std
     return {};
 }
 
+/// For DOM-based serializers, forward the produced value to the array element accumulator.
+template <typename S, typename E>
+auto emit_element_value(S& s, std::expected<typename S::value_type, E>&& r) -> std::expected<void, E> {
+    if(!r) {
+        return std::unexpected(std::move(r).error());
+    }
+    if constexpr(!std::is_void_v<typename S::value_type>) {
+        if constexpr(requires { s.accept_element_value(std::move(*r)); }) {
+            return s.accept_element_value(std::move(*r));
+        }
+    }
+    return {};
+}
+
 /// Serialize a single slot's value after applying behavior attributes.
 /// Calls the top-level serialize() on the (possibly transformed) value.
 template <typename Attrs, typename E, typename S, typename V>

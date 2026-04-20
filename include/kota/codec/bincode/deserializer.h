@@ -39,124 +39,6 @@ public:
 
     using status_t = result_t<void>;
 
-    class DeserializeSeq {
-    public:
-        DeserializeSeq(Deserializer& deserializer, std::size_t expected_count) noexcept :
-            deserializer(deserializer), expected_count(expected_count) {}
-
-        result_t<bool> has_next() {
-            if(!deserializer.is_valid) {
-                return std::unexpected(deserializer.last_error);
-            }
-            return read_count < expected_count;
-        }
-
-        template <typename T>
-        status_t deserialize_element(T& value) {
-            KOTA_EXPECTED_TRY_V(auto has_next_value, has_next());
-            if(!has_next_value) {
-                return deserializer.mark_invalid(error_type::invalid_state);
-            }
-
-            KOTA_EXPECTED_TRY(codec::deserialize(deserializer, value));
-
-            ++read_count;
-            return {};
-        }
-
-        status_t skip_element() {
-            return deserializer.mark_invalid(error_kind::unsupported_operation);
-        }
-
-        status_t end() {
-            if(!deserializer.is_valid) {
-                return std::unexpected(deserializer.last_error);
-            }
-            if(read_count != expected_count) {
-                return deserializer.mark_invalid(error_type::invalid_state);
-            }
-            return {};
-        }
-
-    private:
-        Deserializer& deserializer;
-        std::size_t expected_count = 0;
-        std::size_t read_count = 0;
-    };
-
-    class DeserializeTuple {
-    public:
-        DeserializeTuple(Deserializer& deserializer, std::size_t expected_count) noexcept :
-            deserializer(deserializer), expected_count(expected_count) {}
-
-        template <typename T>
-        status_t deserialize_element(T& value) {
-            if(!deserializer.is_valid) {
-                return std::unexpected(deserializer.last_error);
-            }
-            if(read_count >= expected_count) {
-                return deserializer.mark_invalid(error_type::invalid_state);
-            }
-
-            KOTA_EXPECTED_TRY(codec::deserialize(deserializer, value));
-
-            ++read_count;
-            return {};
-        }
-
-        status_t skip_element() {
-            return deserializer.mark_invalid(error_kind::unsupported_operation);
-        }
-
-        status_t end() {
-            if(!deserializer.is_valid) {
-                return std::unexpected(deserializer.last_error);
-            }
-            if(read_count != expected_count) {
-                return deserializer.mark_invalid(error_type::invalid_state);
-            }
-            return {};
-        }
-
-    private:
-        Deserializer& deserializer;
-        std::size_t expected_count = 0;
-        std::size_t read_count = 0;
-    };
-
-    class DeserializeUnsupported {
-    public:
-        explicit DeserializeUnsupported(Deserializer& deserializer) noexcept :
-            deserializer(deserializer) {}
-
-        result_t<std::optional<std::string_view>> next_key() {
-            return deserializer.mark_invalid(error_kind::unsupported_operation);
-        }
-
-        status_t invalid_key(std::string_view /*key_name*/) {
-            return deserializer.mark_invalid(error_kind::unsupported_operation);
-        }
-
-        template <typename T>
-        status_t deserialize_value(T& /*value*/) {
-            return deserializer.mark_invalid(error_kind::unsupported_operation);
-        }
-
-        status_t skip_value() {
-            return deserializer.mark_invalid(error_kind::unsupported_operation);
-        }
-
-        status_t end() {
-            return deserializer.mark_invalid(error_kind::unsupported_operation);
-        }
-
-    private:
-        Deserializer& deserializer;
-    };
-
-    using DeserializeMap = DeserializeUnsupported;
-    using DeserializeStruct = DeserializeUnsupported;
-
     explicit Deserializer(std::span<const std::byte> bytes) : bytes(bytes) {}
 
     explicit Deserializer(std::span<const std::uint8_t> bytes) :
@@ -320,30 +202,48 @@ public:
         return {};
     }
 
-    result_t<DeserializeSeq> deserialize_seq(std::optional<std::size_t> len) {
-        KOTA_EXPECTED_TRY_V(auto parsed, read_length());
+    // --- Streaming object interface (unsupported for binary format) ---
 
-        if(len.has_value() && *len != parsed) {
-            return std::unexpected(error_type::invalid_state);
+    status_t begin_object() {
+        return mark_invalid(error_kind::unsupported_operation);
+    }
+
+    status_t end_object() {
+        return mark_invalid(error_kind::unsupported_operation);
+    }
+
+    result_t<std::optional<std::string_view>> next_field() {
+        return mark_invalid(error_kind::unsupported_operation);
+    }
+
+    status_t skip_field_value() {
+        return mark_invalid(error_kind::unsupported_operation);
+    }
+
+    // --- Streaming array interface ---
+
+    status_t begin_array() {
+        KOTA_EXPECTED_TRY_V(auto len, read_length());
+        array_stack.push_back(len);
+        return {};
+    }
+
+    result_t<bool> next_element() {
+        if(!is_valid) {
+            return std::unexpected(last_error);
         }
-
-        return DeserializeSeq(*this, parsed);
+        if(array_stack.empty() || array_stack.back() == 0) {
+            return false;
+        }
+        --array_stack.back();
+        return true;
     }
 
-    result_t<DeserializeTuple> deserialize_tuple(std::size_t len) {
-        return DeserializeTuple(*this, len);
-    }
-
-    result_t<DeserializeMap> deserialize_map(std::optional<std::size_t> /*len*/) {
-        return DeserializeUnsupported(*this);
-    }
-
-    result_t<DeserializeStruct> deserialize_struct(std::string_view /*name*/, std::size_t /*len*/) {
-        return DeserializeUnsupported(*this);
-    }
-
-    result_t<std::size_t> read_length_prefix() {
-        return read_length();
+    status_t end_array() {
+        if(!array_stack.empty()) {
+            array_stack.pop_back();
+        }
+        return {};
     }
 
 private:
@@ -413,6 +313,7 @@ private:
 private:
     std::span<const std::byte> bytes{};
     std::size_t offset = 0;
+    std::vector<std::size_t> array_stack;
     bool is_valid = true;
     error_type last_error = error_kind::ok;
 };
@@ -499,13 +400,18 @@ struct deserialize_traits<bincode::Deserializer<Config>, T> {
         static_assert(kota::detail::map_insertable<map_t, key_t, mapped_t>,
                       "bincode map deserialization requires insertable map container");
 
-        KOTA_EXPECTED_TRY_V(auto length, deserializer.read_length_prefix());
+        KOTA_EXPECTED_TRY(deserializer.begin_array());
 
         if constexpr(requires { value.clear(); }) {
             value.clear();
         }
 
-        for(std::size_t i = 0; i < length; ++i) {
+        while(true) {
+            KOTA_EXPECTED_TRY_V(auto has_next, deserializer.next_element());
+            if(!has_next) {
+                break;
+            }
+
             key_t key{};
             KOTA_EXPECTED_TRY(codec::deserialize(deserializer, key));
 
@@ -515,7 +421,7 @@ struct deserialize_traits<bincode::Deserializer<Config>, T> {
             kota::detail::insert_map_entry(value, std::move(key), std::move(mapped));
         }
 
-        return {};
+        return deserializer.end_array();
     }
 };
 

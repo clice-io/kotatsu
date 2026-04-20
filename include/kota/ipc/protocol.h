@@ -149,11 +149,14 @@ struct serialize_traits<S, kota::ipc::protocol::Error> {
 
     static auto serialize(S& s, const kota::ipc::protocol::Error& error)
         -> std::expected<value_type, error_type> {
-        KOTA_EXPECTED_TRY_V(auto s_struct, s.serialize_struct("Error", 3));
-        KOTA_EXPECTED_TRY(s_struct.serialize_field("code", error.code));
-        KOTA_EXPECTED_TRY(s_struct.serialize_field("message", error.message));
-        KOTA_EXPECTED_TRY(s_struct.serialize_field("data", error.data));
-        return s_struct.end();
+        KOTA_EXPECTED_TRY(s.begin_object(3));
+        KOTA_EXPECTED_TRY(s.field("code"));
+        KOTA_EXPECTED_TRY(codec::serialize(s, error.code));
+        KOTA_EXPECTED_TRY(s.field("message"));
+        KOTA_EXPECTED_TRY(codec::serialize(s, error.message));
+        KOTA_EXPECTED_TRY(s.field("data"));
+        KOTA_EXPECTED_TRY(codec::serialize(s, error.data));
+        return s.end_object();
     }
 };
 
@@ -163,20 +166,22 @@ struct deserialize_traits<D, kota::ipc::protocol::Error> {
 
     static auto deserialize(D& d, kota::ipc::protocol::Error& error)
         -> std::expected<void, error_type> {
-        KOTA_EXPECTED_TRY_V(auto d_struct, d.deserialize_struct("Error", 3));
+        KOTA_EXPECTED_TRY(d.begin_object());
         while(true) {
-            KOTA_EXPECTED_TRY_V(auto key, d_struct.next_key());
+            KOTA_EXPECTED_TRY_V(auto key, d.next_field());
             if(!key.has_value())
                 break;
             if(*key == "code") {
-                KOTA_EXPECTED_TRY(d_struct.deserialize_value(error.code));
+                KOTA_EXPECTED_TRY(codec::deserialize(d, error.code));
             } else if(*key == "message") {
-                KOTA_EXPECTED_TRY(d_struct.deserialize_value(error.message));
+                KOTA_EXPECTED_TRY(codec::deserialize(d, error.message));
             } else if(*key == "data") {
-                KOTA_EXPECTED_TRY(d_struct.deserialize_value(error.data));
+                KOTA_EXPECTED_TRY(codec::deserialize(d, error.data));
+            } else {
+                KOTA_EXPECTED_TRY(d.skip_field_value());
             }
         }
-        return d_struct.end();
+        return d.end_object();
     }
 };
 

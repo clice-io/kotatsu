@@ -245,102 +245,6 @@ public:
 
     using status_t = result_t<void>;
 
-    class SerializeSeq {
-    public:
-        explicit SerializeSeq(Serializer& serializer, std::optional<std::size_t> len) noexcept :
-            serializer(serializer) {
-            if(len.has_value()) {
-                values.values.reserve(*len);
-            }
-        }
-
-        template <typename T>
-        status_t serialize_element(const T& value) {
-            KOTA_EXPECTED_TRY_V(auto result, codec::serialize(serializer, value));
-            values.values.push_back(std::move(result));
-            return {};
-        }
-
-        result_t<value_type> end() {
-            return value_type(std::move(values));
-        }
-
-    private:
-        Serializer& serializer;
-        value_type::array_t values;
-    };
-
-    class SerializeTuple {
-    public:
-        explicit SerializeTuple(Serializer& serializer, std::size_t len) noexcept :
-            serializer(serializer) {
-            values.values.reserve(len);
-        }
-
-        template <typename T>
-        status_t serialize_element(const T& value) {
-            KOTA_EXPECTED_TRY_V(auto result, codec::serialize(serializer, value));
-            values.values.push_back(std::move(result));
-            return {};
-        }
-
-        result_t<value_type> end() {
-            return value_type(std::move(values));
-        }
-
-    private:
-        Serializer& serializer;
-        value_type::array_t values;
-    };
-
-    class SerializeMap {
-    public:
-        explicit SerializeMap(Serializer& serializer, std::optional<std::size_t> len) noexcept :
-            serializer(serializer) {
-            if(len.has_value()) {
-                values.entries.reserve(*len);
-            }
-        }
-
-        template <typename K, typename V>
-        status_t serialize_entry(const K& key, const V& value) {
-            KOTA_EXPECTED_TRY_V(auto result, codec::serialize(serializer, value));
-            values.entries.emplace_back(codec::spelling::map_key_to_string(key), std::move(result));
-            return {};
-        }
-
-        result_t<value_type> end() {
-            return value_type(std::move(values));
-        }
-
-    private:
-        Serializer& serializer;
-        value_type::table_t values;
-    };
-
-    class SerializeStruct {
-    public:
-        explicit SerializeStruct(Serializer& serializer, std::size_t len) noexcept :
-            serializer(serializer) {
-            values.entries.reserve(len);
-        }
-
-        template <typename T>
-        status_t serialize_field(std::string_view key, const T& value) {
-            KOTA_EXPECTED_TRY_V(auto result, codec::serialize(serializer, value));
-            values.entries.emplace_back(std::string(key), std::move(result));
-            return {};
-        }
-
-        result_t<value_type> end() {
-            return value_type(std::move(values));
-        }
-
-    private:
-        Serializer& serializer;
-        value_type::table_t values;
-    };
-
     result_t<value_type> serialize_null() {
         return value_type(detail::none_t{});
     }
@@ -394,23 +298,7 @@ public:
             value);
     }
 
-    result_t<SerializeSeq> serialize_seq(std::optional<std::size_t> len) {
-        return SerializeSeq(*this, len);
-    }
-
-    result_t<SerializeTuple> serialize_tuple(std::size_t len) {
-        return SerializeTuple(*this, len);
-    }
-
-    result_t<SerializeMap> serialize_map(std::optional<std::size_t> len) {
-        return SerializeMap(*this, len);
-    }
-
-    result_t<SerializeStruct> serialize_struct(std::string_view /*name*/, std::size_t len) {
-        return SerializeStruct(*this, len);
-    }
-
-    // --- New-style streaming struct interface ---
+    // --- Streaming interface ---
 
     status_t begin_object(std::size_t count) {
         ser_stack.push_back({});
@@ -436,10 +324,18 @@ public:
         return value_type(std::move(frame.table));
     }
 
-    status_t begin_array(std::size_t count) {
+    status_t begin_array(std::optional<std::size_t> count) {
         ser_stack.push_back({});
-        ser_stack.back().array.values.reserve(count);
+        if(count.has_value()) {
+            ser_stack.back().array.values.reserve(*count);
+        }
         ser_stack.back().is_array = true;
+        return {};
+    }
+
+    status_t accept_element_value(value_type v) {
+        auto& frame = ser_stack.back();
+        frame.array.values.push_back(std::move(v));
         return {};
     }
 

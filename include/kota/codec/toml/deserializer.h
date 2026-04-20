@@ -17,7 +17,6 @@
 #include "kota/codec/backend.h"
 #include "kota/codec/codec.h"
 #include "kota/codec/config.h"
-#include "kota/codec/detail/backend_helpers.h"
 #include "kota/codec/detail/common.h"
 #include "kota/codec/detail/narrow.h"
 #include "kota/codec/toml/error.h"
@@ -90,31 +89,6 @@ public:
     using result_t = std::expected<T, error_type>;
 
     using status_t = result_t<void>;
-
-    class DeserializeArray :
-        public codec::detail::IndexedArrayDeserializer<Deserializer, const ::toml::array*> {
-        using Base = codec::detail::IndexedArrayDeserializer<Deserializer, const ::toml::array*>;
-        friend class Deserializer;
-
-        DeserializeArray(Deserializer& deserializer,
-                         const ::toml::array* array,
-                         std::size_t expected_length,
-                         bool strict_length) :
-            Base(deserializer, array, array ? array->size() : 0, expected_length, strict_length) {}
-    };
-
-    class DeserializeObject :
-        public codec::detail::IndexedObjectDeserializer<Deserializer, const ::toml::node*> {
-        using Base = codec::detail::IndexedObjectDeserializer<Deserializer, const ::toml::node*>;
-        friend class Deserializer;
-
-        explicit DeserializeObject(Deserializer& deserializer) : Base(deserializer) {}
-    };
-
-    using DeserializeSeq = DeserializeArray;
-    using DeserializeTuple = DeserializeArray;
-    using DeserializeMap = DeserializeObject;
-    using DeserializeStruct = DeserializeObject;
 
     explicit Deserializer(const ::toml::table& root) :
         root_node(std::addressof(static_cast<const ::toml::node&>(root))) {}
@@ -295,33 +269,21 @@ public:
     }
 
     status_t deserialize_bytes(std::vector<std::byte>& value) {
-        return codec::detail::deserialize_bytes_from_seq(*this, value);
-    }
-
-    result_t<DeserializeSeq> deserialize_seq(std::optional<std::size_t> len) {
-        KOTA_EXPECTED_TRY_V(auto array, open_array());
-        return DeserializeSeq(*this, array, len.value_or(0), false);
-    }
-
-    result_t<DeserializeTuple> deserialize_tuple(std::size_t len) {
-        KOTA_EXPECTED_TRY_V(auto array, open_array());
-        return DeserializeTuple(*this, array, len, true);
-    }
-
-    result_t<DeserializeMap> deserialize_map(std::optional<std::size_t> /*len*/) {
-        KOTA_EXPECTED_TRY_V(auto table, open_table());
-
-        DeserializeMap object(*this);
-        object.entries.reserve(table->size());
-        for(const auto& [key, value]: *table) {
-            object.entries.push_back(
-                typename DeserializeMap::entry{key.str(), std::addressof(value)});
+        KOTA_EXPECTED_TRY(begin_array());
+        value.clear();
+        while(true) {
+            KOTA_EXPECTED_TRY_V(auto has_next, next_element());
+            if(!has_next) {
+                break;
+            }
+            std::uint64_t byte_val = 0;
+            KOTA_EXPECTED_TRY(deserialize_uint(byte_val));
+            if(byte_val > 255U) {
+                return mark_invalid(error_kind::number_out_of_range);
+            }
+            value.push_back(static_cast<std::byte>(static_cast<std::uint8_t>(byte_val)));
         }
-        return object;
-    }
-
-    result_t<DeserializeStruct> deserialize_struct(std::string_view /*name*/, std::size_t /*len*/) {
-        return deserialize_map(std::nullopt);
+        return end_array();
     }
 
     result_t<::toml::table> capture_table() {
@@ -393,27 +355,46 @@ public:
             return mark_invalid(error_kind::invalid_state);
         }
         deser_stack.pop_back();
-        has_current_value = !deser_stack.empty();
+        has_current_value = false;
+        current_node = nullptr;
+        return {};
+    }
+
+    // --- New-style streaming array interface ---
+
+    status_t begin_array() {
+        KOTA_EXPECTED_TRY_V(auto arr, open_array());
+        array_stack.push_back({arr, 0});
+        return {};
+    }
+
+    result_t<bool> next_element() {
+        if(!is_valid || array_stack.empty()) {
+            return mark_invalid(error_kind::invalid_state);
+        }
+        auto& frame = array_stack.back();
+        if(frame.index >= frame.array->size()) {
+            has_current_value = false;
+            current_node = nullptr;
+            return false;
+        }
+        current_node = std::addressof((*frame.array)[frame.index]);
+        has_current_value = true;
+        ++frame.index;
+        return true;
+    }
+
+    status_t end_array() {
+        if(!is_valid || array_stack.empty()) {
+            return mark_invalid(error_kind::invalid_state);
+        }
+        array_stack.pop_back();
+        has_current_value = false;
         current_node = nullptr;
         return {};
     }
 
 private:
-    friend class codec::detail::IndexedArrayDeserializer<Deserializer, const ::toml::array*>;
-    friend class codec::detail::IndexedObjectDeserializer<Deserializer, const ::toml::node*>;
-
-    /// Bridge method for shared array deserialize helpers.
-    template <typename T>
-    status_t deserialize_element_value(const ::toml::array* arr, std::size_t idx, T& out) {
-        return deserialize_from_node(std::addressof((*arr)[idx]), out);
-    }
-
-    /// Bridge method for shared object deserialize helpers.
-    template <typename T>
-    status_t deserialize_entry_value(const ::toml::node* value, T& out) {
-        return deserialize_from_node(value, out);
-    }
-
     enum class node_kind : std::uint8_t {
         none,
         boolean,
@@ -608,6 +589,11 @@ private:
         const ::toml::node* pending_node = nullptr;
     };
 
+    struct array_frame {
+        const ::toml::array* array = nullptr;
+        std::size_t index = 0;
+    };
+
     bool is_valid = true;
     bool root_consumed = false;
     error_type last_error = error_type::invalid_state;
@@ -616,6 +602,7 @@ private:
     const ::toml::node* current_node = nullptr;
     const ::toml::node* last_accessed_node = nullptr;
     std::vector<deser_frame> deser_stack;
+    std::vector<array_frame> array_stack;
 };
 
 template <typename Config = config::default_config, typename T>

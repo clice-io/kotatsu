@@ -22,7 +22,7 @@
 #include "kota/meta/attrs.h"
 #include "kota/meta/enum.h"
 #include "kota/meta/schema.h"
-#include "kota/codec/arena/traits.h"
+#include "kota/codec/detail/arena_traits.h"
 #include "kota/codec/config.h"
 #include "kota/codec/detail/common.h"
 #include "kota/codec/traits.h"

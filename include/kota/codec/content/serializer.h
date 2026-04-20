@@ -18,7 +18,6 @@
 #include "kota/codec/config.h"
 #include "kota/codec/content/document.h"
 #include "kota/codec/content/error.h"
-#include "kota/codec/detail/backend_helpers.h"
 
 namespace kota::codec::content {
 
@@ -36,14 +35,6 @@ public:
     using result_t = std::expected<T, error_type>;
 
     using status_t = result_t<void>;
-
-    using SerializeArray = codec::detail::SerializeArray<Serializer<Config>>;
-    using SerializeObject = codec::detail::SerializeObject<Serializer<Config>>;
-
-    using SerializeSeq = SerializeArray;
-    using SerializeTuple = SerializeArray;
-    using SerializeMap = SerializeObject;
-    using SerializeStruct = SerializeObject;
 
     Serializer() = default;
 
@@ -125,40 +116,20 @@ public:
     }
 
     result_t<value_type> serialize_bytes(std::string_view value) {
-        KOTA_EXPECTED_TRY_V(auto seq, serialize_seq(value.size()));
+        KOTA_EXPECTED_TRY(begin_array(value.size()));
         for(unsigned char byte: value) {
-            KOTA_EXPECTED_TRY(seq.serialize_element(static_cast<std::uint64_t>(byte)));
+            KOTA_EXPECTED_TRY(serialize_uint(static_cast<std::uint64_t>(byte)));
         }
-        return seq.end();
+        return end_array();
     }
 
     result_t<value_type> serialize_bytes(std::span<const std::byte> value) {
-        KOTA_EXPECTED_TRY_V(auto seq, serialize_seq(value.size()));
+        KOTA_EXPECTED_TRY(begin_array(value.size()));
         for(std::byte byte: value) {
-            KOTA_EXPECTED_TRY(seq.serialize_element(
+            KOTA_EXPECTED_TRY(serialize_uint(
                 static_cast<std::uint64_t>(std::to_integer<std::uint8_t>(byte))));
         }
-        return seq.end();
-    }
-
-    result_t<SerializeSeq> serialize_seq(std::optional<std::size_t> /*len*/) {
-        KOTA_EXPECTED_TRY(begin_array_impl());
-        return SerializeSeq(*this);
-    }
-
-    result_t<SerializeTuple> serialize_tuple(std::size_t /*len*/) {
-        KOTA_EXPECTED_TRY(begin_array_impl());
-        return SerializeTuple(*this);
-    }
-
-    result_t<SerializeMap> serialize_map(std::optional<std::size_t> /*len*/) {
-        KOTA_EXPECTED_TRY(begin_object_impl());
-        return SerializeMap(*this);
-    }
-
-    result_t<SerializeStruct> serialize_struct(std::string_view /*name*/, std::size_t /*len*/) {
-        KOTA_EXPECTED_TRY(begin_object_impl());
-        return SerializeStruct(*this);
+        return end_array();
     }
 
     result_t<value_type> append_dom_value(const content::Value& value) {
@@ -204,7 +175,7 @@ public:
         return key(name);
     }
 
-    status_t begin_array(std::size_t /*count*/) {
+    status_t begin_array(std::optional<std::size_t> /*count*/) {
         return begin_array_impl();
     }
 
@@ -217,9 +188,6 @@ public:
     }
 
 private:
-    friend class codec::detail::SerializeArray<Serializer<Config>>;
-    friend class codec::detail::SerializeObject<Serializer<Config>>;
-
     struct frame {
         content::Array* array = nullptr;
         content::Object* object = nullptr;
@@ -384,11 +352,12 @@ struct serialize_traits<S, content::Array> {
 
     static auto serialize(S& s, const content::Array& value)
         -> std::expected<value_type, error_type> {
-        KOTA_EXPECTED_TRY_V(auto seq, s.serialize_seq(value.size()));
+        KOTA_EXPECTED_TRY(s.begin_array(value.size()));
         for(const auto& item: value) {
-            KOTA_EXPECTED_TRY(seq.serialize_element(item));
+            auto _r = detail::emit_element_value<S, error_type>(s, codec::serialize(s, item));
+            if(!_r) return std::unexpected(_r.error());
         }
-        return seq.end();
+        return s.end_array();
     }
 };
 
@@ -399,11 +368,13 @@ struct serialize_traits<S, content::Object> {
 
     static auto serialize(S& s, const content::Object& value)
         -> std::expected<value_type, error_type> {
-        KOTA_EXPECTED_TRY_V(auto map, s.serialize_map(value.size()));
+        KOTA_EXPECTED_TRY(s.begin_object(value.size()));
         for(const auto& entry: value) {
-            KOTA_EXPECTED_TRY(map.serialize_entry(std::string_view(entry.key), entry.value));
+            KOTA_EXPECTED_TRY(s.field(std::string_view(entry.key)));
+            auto _r = detail::emit_field_value<S, error_type>(s, codec::serialize(s, entry.value));
+            if(!_r) return std::unexpected(_r.error());
         }
-        return map.end();
+        return s.end_object();
     }
 };
 
