@@ -5,6 +5,7 @@
 #include <utility>
 #include <variant>
 
+#include "backend.h"
 #include "config.h"
 #include "traits.h"
 #include "kota/support/expected_try.h"
@@ -18,6 +19,8 @@
 #include "kota/codec/detail/field_dispatch.h"
 #include "kota/codec/detail/fwd.h"
 #include "kota/codec/detail/reflectable.h"
+#include "kota/codec/detail/struct_serialize.h"
+#include "kota/codec/detail/struct_deserialize.h"
 #include "kota/codec/detail/tagged.h"
 
 namespace kota::codec {
@@ -162,8 +165,12 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
             static_assert(dependent_false<V>, "cannot auto serialize the input range");
         }
     } else if constexpr(meta::reflectable_class<V>) {
-        using config_t = config::config_of<S>;
-        return detail::serialize_reflectable<config_t, E>(s, v);
+        if constexpr(has_field_mode<S>) {
+            return detail::struct_serialize<config::config_of<S>, E>(s, v);
+        } else {
+            using config_t = config::config_of<S>;
+            return detail::serialize_reflectable<config_t, E>(s, v);
+        }
     } else {
         static_assert(dependent_false<V>,
                       "cannot auto serialize the value, try to specialize for it");
@@ -439,8 +446,12 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
             static_assert(dependent_false<V>, "cannot auto deserialize the input range");
         }
     } else if constexpr(meta::reflectable_class<V>) {
-        using config_t = config::config_of<D>;
-        return detail::deserialize_reflectable<config_t, E, false>(d, v);
+        if constexpr(has_field_mode<D>) {
+            return detail::struct_deserialize<config::config_of<D>, E>(d, v);
+        } else {
+            using config_t = config::config_of<D>;
+            return detail::deserialize_reflectable<config_t, E, false>(d, v);
+        }
     } else {
         static_assert(dependent_false<V>,
                       "cannot auto deserialize the value, try to specialize for it");
