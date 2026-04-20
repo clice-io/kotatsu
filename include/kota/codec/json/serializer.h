@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "kota/support/expected_try.h"
+#include "kota/codec/backend.h"
 #include "kota/codec/codec.h"
 #include "kota/codec/config.h"
 #include "kota/codec/detail/backend_helpers.h"
@@ -24,6 +25,9 @@ public:
     using config_type = Config;
     using value_type = void;
     using error_type = json::error_kind;
+
+    constexpr static auto backend_kind_v = backend_kind::streaming;
+    constexpr static auto field_mode_v = field_mode::by_name;
 
     template <typename T>
     using result_t = std::expected<T, error_type>;
@@ -185,45 +189,29 @@ public:
     }
 
     result_t<SerializeSeq> serialize_seq(std::optional<std::size_t> /*len*/) {
-        KOTA_EXPECTED_TRY(begin_array());
+        KOTA_EXPECTED_TRY(begin_array_impl());
         return SerializeSeq(*this);
     }
 
     result_t<SerializeTuple> serialize_tuple(std::size_t /*len*/) {
-        KOTA_EXPECTED_TRY(begin_array());
+        KOTA_EXPECTED_TRY(begin_array_impl());
         return SerializeTuple(*this);
     }
 
     result_t<SerializeMap> serialize_map(std::optional<std::size_t> /*len*/) {
-        KOTA_EXPECTED_TRY(begin_object());
+        KOTA_EXPECTED_TRY(begin_object_impl());
         return SerializeMap(*this);
     }
 
     result_t<SerializeStruct> serialize_struct(std::string_view /*name*/, std::size_t /*len*/) {
-        KOTA_EXPECTED_TRY(begin_object());
+        KOTA_EXPECTED_TRY(begin_object_impl());
         return SerializeStruct(*this);
     }
 
-private:
-    friend class codec::detail::SerializeArray<Serializer<Config>>;
-    friend class codec::detail::SerializeObject<Serializer<Config>>;
+    // --- New-style streaming struct interface ---
 
-    enum class container_kind : std::uint8_t { array, object };
-
-    struct container_frame {
-        container_kind kind;
-        bool first = true;
-        bool expect_key = true;
-    };
-
-    status_t begin_object() {
-        if(!before_value()) {
-            return status();
-        }
-
-        builder.start_object();
-        stack.push_back(container_frame{container_kind::object, true, true});
-        return {};
+    status_t begin_object(std::size_t /*count*/) {
+        return begin_object_impl();
     }
 
     result_t<value_type> end_object() {
@@ -243,14 +231,12 @@ private:
         return status();
     }
 
-    status_t begin_array() {
-        if(!before_value()) {
-            return status();
-        }
+    status_t field(std::string_view name) {
+        return key(name);
+    }
 
-        builder.start_array();
-        stack.push_back(container_frame{container_kind::array, true, false});
-        return {};
+    status_t begin_array(std::size_t /*count*/) {
+        return begin_array_impl();
     }
 
     result_t<value_type> end_array() {
@@ -267,6 +253,38 @@ private:
         builder.end_array();
         stack.pop_back();
         return status();
+    }
+
+private:
+    friend class codec::detail::SerializeArray<Serializer<Config>>;
+    friend class codec::detail::SerializeObject<Serializer<Config>>;
+
+    enum class container_kind : std::uint8_t { array, object };
+
+    struct container_frame {
+        container_kind kind;
+        bool first = true;
+        bool expect_key = true;
+    };
+
+    status_t begin_object_impl() {
+        if(!before_value()) {
+            return status();
+        }
+
+        builder.start_object();
+        stack.push_back(container_frame{container_kind::object, true, true});
+        return {};
+    }
+
+    status_t begin_array_impl() {
+        if(!before_value()) {
+            return status();
+        }
+
+        builder.start_array();
+        stack.push_back(container_frame{container_kind::array, true, false});
+        return {};
     }
 
     status_t key(std::string_view key_name) {

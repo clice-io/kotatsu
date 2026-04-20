@@ -192,7 +192,9 @@ struct filter_runtime_attrs<std::tuple<>> {
 template <typename First, typename... Rest>
 struct filter_runtime_attrs<std::tuple<First, Rest...>> {
     using tail = typename filter_runtime_attrs<std::tuple<Rest...>>::type;
-    using type = std::conditional_t<is_behavior_attr_v<First> || is_tagged_attr<First>::value,
+    static constexpr bool keep = is_behavior_attr_v<First> || is_tagged_attr<First>::value ||
+                                 std::is_same_v<First, attrs::default_value>;
+    using type = std::conditional_t<keep,
                                     decltype(std::tuple_cat(std::declval<std::tuple<First>>(),
                                                             std::declval<tail>())),
                                     tail>;

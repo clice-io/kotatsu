@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "kota/support/expected_try.h"
+#include "kota/codec/backend.h"
 #include "kota/codec/codec.h"
 #include "kota/codec/config.h"
 #include "kota/codec/content/deserializer.h"
@@ -27,6 +28,9 @@ class Deserializer {
 public:
     using config_type = Config;
     using error_type = json::error;
+
+    constexpr static auto backend_kind_v = backend_kind::streaming;
+    constexpr static auto field_mode_v = field_mode::by_name;
 
     template <typename T>
     using result_t = std::expected<T, error_type>;
@@ -593,6 +597,95 @@ public:
                                                           false);
     }
 
+    // --- New-style streaming struct interface ---
+
+    status_t begin_object() {
+        KOTA_EXPECTED_TRY_V(auto obj, open_object());
+        current_value = nullptr;  // prevent dangling after push_back
+
+        deser_frame frame;
+        frame.object = std::move(obj);
+
+        auto begin_result = frame.object.begin();
+        auto begin_err = std::move(begin_result).get(frame.iter);
+        if(begin_err != simdjson::SUCCESS) {
+            return mark_invalid(begin_err);
+        }
+
+        auto end_result = frame.object.end();
+        auto end_err = std::move(end_result).get(frame.end_iter);
+        if(end_err != simdjson::SUCCESS) {
+            return mark_invalid(end_err);
+        }
+
+        deser_stack.push_back(std::move(frame));
+        return {};
+    }
+
+    result_t<std::optional<std::string_view>> next_field() {
+        if(!is_valid || deser_stack.empty()) {
+            return mark_invalid();
+        }
+        auto& frame = deser_stack.back();
+
+        // Advance past the previous field
+        if(frame.has_pending_value) {
+            ++frame.iter;
+            frame.has_pending_value = false;
+        }
+
+        if(frame.iter == frame.end_iter) {
+            current_value = nullptr;
+            return std::optional<std::string_view>(std::nullopt);
+        }
+
+        simdjson::ondemand::field field{};
+        auto field_result = *frame.iter;
+        auto field_err = std::move(field_result).get(field);
+        if(field_err != simdjson::SUCCESS) {
+            return mark_invalid(field_err);
+        }
+
+        auto key_err = field.unescaped_key(frame.pending_key);
+        if(key_err != simdjson::SUCCESS) {
+            return mark_invalid(key_err);
+        }
+
+        frame.pending_value = std::move(field).value();
+        frame.has_pending_value = true;
+        current_value = &frame.pending_value;
+        return std::optional<std::string_view>(std::string_view(frame.pending_key));
+    }
+
+    status_t skip_field_value() {
+        if(!is_valid || deser_stack.empty()) {
+            return mark_invalid();
+        }
+        auto& frame = deser_stack.back();
+        if(!frame.has_pending_value) {
+            return mark_invalid();
+        }
+        KOTA_EXPECTED_TRY(skip_value(frame.pending_value));
+        ++frame.iter;
+        frame.has_pending_value = false;
+        current_value = nullptr;
+        return {};
+    }
+
+    status_t end_object() {
+        if(!is_valid || deser_stack.empty()) {
+            return mark_invalid();
+        }
+        auto& frame = deser_stack.back();
+        // Advance past the last consumed field if needed
+        if(frame.has_pending_value) {
+            ++frame.iter;
+        }
+        deser_stack.pop_back();
+        current_value = nullptr;
+        return {};
+    }
+
 private:
     status_t build_dom_from_value(simdjson::ondemand::value& value, content::Value& out) {
         simdjson::ondemand::json_type type;
@@ -934,6 +1027,17 @@ private:
     bool root_consumed = false;
     error_type last_error;
     simdjson::ondemand::value* current_value = nullptr;
+
+    struct deser_frame {
+        simdjson::ondemand::object object{};
+        simdjson::ondemand::object_iterator iter{};
+        simdjson::ondemand::object_iterator end_iter{};
+        simdjson::ondemand::value pending_value{};
+        std::string pending_key;
+        bool has_pending_value = false;
+    };
+
+    std::vector<deser_frame> deser_stack;
 
     simdjson::ondemand::parser parser;
     simdjson::padded_string json_buffer;

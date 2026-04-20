@@ -20,9 +20,21 @@
 #include "kota/codec/config.h"
 #include "kota/codec/detail/apply_behavior.h"
 #include "kota/codec/detail/fwd.h"
-#include "kota/codec/detail/reflectable.h"
 
 namespace kota::codec::detail {
+
+// Forward declarations for tagged variant dispatch (defined in tagged.h)
+template <typename E, typename D, typename... Ts, typename TagAttr>
+constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, TagAttr)
+    -> std::expected<void, E>;
+
+template <typename E, typename D, typename... Ts, typename TagAttr>
+constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, TagAttr)
+    -> std::expected<void, E>;
+
+template <typename E, typename D, typename... Ts, typename TagAttr>
+constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, TagAttr)
+    -> std::expected<void, E>;
 
 /// Deserialize a single slot's value after applying reverse behavior attributes.
 template <typename Attrs, typename E, typename D, typename V>
@@ -48,7 +60,21 @@ auto deserialize_slot_value(D& d, V& value) -> std::expected<void, E> {
         }
     }
 
-    // No behavior or tagged variant passthrough
+    // Tagged variants: dispatch directly since we have the attrs but no annotation wrapper
+    if constexpr(is_specialization_of<std::variant, std::remove_cvref_t<V>> &&
+                 tuple_any_of_v<Attrs, meta::is_tagged_attr>) {
+        using tag_attr = tuple_find_t<Attrs, meta::is_tagged_attr>;
+        constexpr auto strategy = meta::tagged_strategy_of<tag_attr>;
+        if constexpr(strategy == meta::tagged_strategy::external) {
+            return deserialize_externally_tagged<E>(d, value, tag_attr{});
+        } else if constexpr(strategy == meta::tagged_strategy::internal) {
+            return deserialize_internally_tagged<E>(d, value, tag_attr{});
+        } else {
+            return deserialize_adjacently_tagged<E>(d, value, tag_attr{});
+        }
+    }
+
+    // Default: plain value
     return codec::deserialize(d, value);
 }
 
@@ -102,19 +128,99 @@ auto dispatch_slot_deserialize(D& d, std::size_t slot_index, T& value) -> std::e
     }(std::make_index_sequence<N>{});
 }
 
+/// Check whether any two fields in the virtual_schema share the same wire name or alias.
+template <typename T, typename Config>
+auto schema_has_ambiguous_wire_names() -> bool {
+    const static bool ambiguous = [] {
+        using schema = meta::virtual_schema<T, Config>;
+        for(std::size_t i = 0; i < schema::count; ++i) {
+            for(std::size_t j = i + 1; j < schema::count; ++j) {
+                // name vs name
+                if(schema::fields[i].name == schema::fields[j].name) {
+                    return true;
+                }
+                // name vs aliases
+                for(auto alias: schema::fields[j].aliases) {
+                    if(schema::fields[i].name == alias) {
+                        return true;
+                    }
+                }
+                for(auto alias: schema::fields[i].aliases) {
+                    if(alias == schema::fields[j].name) {
+                        return true;
+                    }
+                }
+                // aliases vs aliases
+                for(auto a: schema::fields[i].aliases) {
+                    for(auto b: schema::fields[j].aliases) {
+                        if(a == b) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }();
+    return ambiguous;
+}
+
+/// Lookup a wire name in the virtual_schema fields array (handles flatten + aliases).
+template <typename T, typename Config>
+auto schema_lookup_field(std::string_view key) -> std::optional<std::size_t> {
+    using schema = meta::virtual_schema<T, Config>;
+    for(std::size_t i = 0; i < schema::count; ++i) {
+        if(schema::fields[i].name == key) {
+            return i;
+        }
+        for(auto alias: schema::fields[i].aliases) {
+            if(alias == key) {
+                return i;
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+/// Compute required field bitmask from virtual_schema slots.
+template <typename T, typename Config>
+consteval std::uint64_t schema_required_field_mask() {
+    using schema = meta::virtual_schema<T, Config>;
+    using slots = typename schema::slots;
+    constexpr std::size_t N = type_list_size_v<slots>;
+    static_assert(N <= 64, "schema_required_field_mask: >64 slots not supported");
+
+    std::uint64_t mask = 0;
+    [&]<std::size_t... Is>(std::index_sequence<Is...>) consteval {
+        (([&] {
+             using slot_t = type_list_element_t<Is, slots>;
+             using raw_t = std::remove_cv_t<typename slot_t::raw_type>;
+             using attrs_t = typename slot_t::attrs;
+
+             constexpr bool has_default = tuple_has_v<attrs_t, meta::attrs::default_value>;
+             constexpr bool is_opt = is_specialization_of<std::optional, raw_t>;
+
+             if constexpr(!has_default && !is_opt) {
+                 mask |= (std::uint64_t(1) << Is);
+             }
+         }()),
+         ...);
+    }(std::make_index_sequence<N>{});
+
+    return mask;
+}
+
 /// Virtual-schema-driven struct deserialization (by_name mode).
 /// Requires the deserializer to provide:
 ///   d.begin_object()              → status_t
 ///   d.next_field()                → result_t<optional<string_view>>
-///   d.deserialize_field_value(v)  → status_t  (or the top-level deserialize works)
 ///   d.skip_field_value()          → status_t
 ///   d.end_object()                → status_t
 template <typename Config, typename E, typename D, typename T>
 auto struct_deserialize_by_name(D& d, T& v) -> std::expected<void, E> {
     using schema = meta::virtual_schema<T, Config>;
 
-    // Reuse existing lookup infrastructure from reflectable.h
-    if(has_ambiguous_wire_names<T, Config>()) {
+    if(schema_has_ambiguous_wire_names<T, Config>()) {
         return std::unexpected(E::invalid_state);
     }
 
@@ -130,8 +236,7 @@ auto struct_deserialize_by_name(D& d, T& v) -> std::expected<void, E> {
 
         std::string_view key_name = *key;
 
-        // Lookup field in the schema's lookup table
-        auto idx = lookup_field<T, Config>(key_name);
+        auto idx = schema_lookup_field<T, Config>(key_name);
         if(idx) {
             auto field_status = dispatch_slot_deserialize<T, Config, E>(d, *idx, v);
             if(!field_status) {
@@ -143,11 +248,6 @@ auto struct_deserialize_by_name(D& d, T& v) -> std::expected<void, E> {
             continue;
         }
 
-        // Try flatten fields
-        if constexpr(has_flatten_fields<T>()) {
-            // TODO: flatten support in new dispatch
-        }
-
         if constexpr(schema::deny_unknown) {
             return std::unexpected(E::unknown_field(key_name));
         } else {
@@ -156,13 +256,12 @@ auto struct_deserialize_by_name(D& d, T& v) -> std::expected<void, E> {
     }
 
     // Check required fields
-    constexpr std::uint64_t required = required_field_mask<T>();
+    constexpr std::uint64_t required = schema_required_field_mask<T, Config>();
     if((seen_fields & required) != required) {
-        constexpr auto table = make_field_table<T, Config>();
         std::uint64_t missing = required & ~seen_fields;
-        for(const auto& entry: table) {
-            if(!entry.is_alias && (missing & (std::uint64_t(1) << entry.index))) {
-                return std::unexpected(E::missing_field(entry.name));
+        for(std::size_t i = 0; i < schema::count; ++i) {
+            if(missing & (std::uint64_t(1) << i)) {
+                return std::unexpected(E::missing_field(schema::fields[i].name));
             }
         }
         return std::unexpected(E::missing_field("unknown"));
