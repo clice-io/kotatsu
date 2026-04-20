@@ -16,6 +16,7 @@
 #include "kota/meta/struct.h"
 #include "kota/codec/detail/apply_behavior.h"
 #include "kota/codec/detail/common.h"
+#include "kota/codec/detail/dispatch.h"
 #include "kota/codec/detail/fwd.h"
 #include "kota/codec/detail/struct_serialize.h"
 #include "kota/codec/detail/struct_deserialize.h"
@@ -24,212 +25,15 @@
 
 namespace kota::codec {
 
-namespace detail {
-
-template <typename BaseConfig,
-          typename Attrs,
-          bool HasRenameAll = tuple_has_spec_v<Attrs, meta::attrs::rename_all>,
-          bool HasDenyUnknown = tuple_has_v<Attrs, meta::attrs::deny_unknown_fields>>
-struct annotated_struct_config {
-    using type = BaseConfig;
-};
-
-template <typename BaseConfig, typename Attrs>
-struct annotated_struct_config<BaseConfig, Attrs, true, false> {
-    struct type {
-        using field_rename = typename tuple_find_spec_t<Attrs, meta::attrs::rename_all>::policy;
-    };
-};
-
-template <typename BaseConfig, typename Attrs>
-struct annotated_struct_config<BaseConfig, Attrs, false, true> {
-    struct type {
-        static constexpr bool deny_unknown_fields = true;
-    };
-};
-
-template <typename BaseConfig, typename Attrs>
-struct annotated_struct_config<BaseConfig, Attrs, true, true> {
-    struct type {
-        using field_rename = typename tuple_find_spec_t<Attrs, meta::attrs::rename_all>::policy;
-        static constexpr bool deny_unknown_fields = true;
-    };
-};
-
-template <typename BaseConfig, typename Attrs>
-using annotated_struct_config_t = typename annotated_struct_config<BaseConfig, Attrs>::type;
-
-}  // namespace detail
-
 template <serializer_like S, typename V, typename T, typename E>
 constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
     using Serde = serialize_traits<S, V>;
 
     if constexpr(requires { Serde::serialize(s, v); }) {
         return Serde::serialize(s, v);
-    } else if constexpr(meta::annotated_type<V>) {
-        using attrs_t = typename std::remove_cvref_t<V>::attrs;
-        auto&& value = meta::annotated_value(v);
-        using value_t = std::remove_cvref_t<decltype(value)>;
-
-        // Field-only attrs at value level are errors
-        static_assert(!tuple_has_v<attrs_t, meta::attrs::skip>,
-                      "schema::skip is only valid for struct fields");
-        static_assert(!tuple_has_v<attrs_t, meta::attrs::flatten>,
-                      "schema::flatten is only valid for struct fields");
-
-        // Tagged variant dispatch
-        if constexpr(is_specialization_of<std::variant, value_t> &&
-                     tuple_any_of_v<attrs_t, meta::is_tagged_attr>) {
-            using tag_attr = tuple_find_t<attrs_t, meta::is_tagged_attr>;
-            constexpr auto strategy = meta::tagged_strategy_of<tag_attr>;
-            if constexpr(strategy == meta::tagged_strategy::external) {
-                return detail::serialize_externally_tagged<E>(s, value, tag_attr{});
-            } else if constexpr(strategy == meta::tagged_strategy::internal) {
-                return detail::serialize_internally_tagged<E>(s, value, tag_attr{});
-            } else {
-                return detail::serialize_adjacently_tagged<E>(s, value, tag_attr{});
-            }
-        }
-        // Behavior: with/as/enum_string — delegate to apply_serialize_behavior
-        else if constexpr(tuple_count_of_v<attrs_t, meta::is_behavior_provider> > 0) {
-            return *detail::apply_serialize_behavior<attrs_t, value_t, E>(
-                value,
-                [&](const auto& v) { return serialize(s, v); },
-                [&](auto tag, const auto& v) {
-                    using Adapter = typename decltype(tag)::type;
-                    return Adapter::serialize(s, v);
-                });
-        }
-        // Struct-level schema attrs for annotated structs
-        else if constexpr(meta::reflectable_class<value_t> &&
-                          (tuple_has_spec_v<attrs_t, meta::attrs::rename_all> ||
-                           tuple_has_v<attrs_t, meta::attrs::deny_unknown_fields>)) {
-            using base_config_t = config::config_of<S>;
-            using struct_config_t = detail::annotated_struct_config_t<base_config_t, attrs_t>;
-            return detail::struct_serialize<struct_config_t, E>(s, value);
-        }
-        // Default: serialize the underlying value
-        else {
-            return serialize(s, value);
-        }
-    } else if constexpr(std::is_enum_v<V>) {
-        using underlying_t = std::underlying_type_t<V>;
-        if constexpr(std::is_signed_v<underlying_t>) {
-            return s.serialize_int(static_cast<std::int64_t>(static_cast<underlying_t>(v)));
-        } else {
-            return s.serialize_uint(static_cast<std::uint64_t>(static_cast<underlying_t>(v)));
-        }
-    } else if constexpr(bool_like<V>) {
-        return s.serialize_bool(v);
-    } else if constexpr(int_like<V>) {
-        return s.serialize_int(v);
-    } else if constexpr(uint_like<V>) {
-        return s.serialize_uint(v);
-    } else if constexpr(floating_like<V>) {
-        return s.serialize_float(static_cast<double>(v));
-    } else if constexpr(char_like<V>) {
-        return s.serialize_char(v);
-    } else if constexpr(str_like<V>) {
-        return s.serialize_str(v);
-    } else if constexpr(bytes_like<V>) {
-        return s.serialize_bytes(v);
-    } else if constexpr(null_like<V>) {
-        return s.serialize_null();
-    } else if constexpr(is_specialization_of<std::optional, V>) {
-        if(v.has_value()) {
-            return s.serialize_some(v.value());
-        } else {
-            return s.serialize_null();
-        }
-    } else if constexpr(is_specialization_of<std::unique_ptr, V> ||
-                        is_specialization_of<std::shared_ptr, V>) {
-        if(v) {
-            return s.serialize_some(*v);
-        }
-        return s.serialize_null();
-    } else if constexpr(is_specialization_of<std::variant, V>) {
-        return s.serialize_variant(v);
-    } else if constexpr(tuple_like<V>) {
-        constexpr std::size_t N = std::tuple_size_v<std::remove_cvref_t<V>>;
-        if constexpr(S::field_mode_v == field_mode::by_name) {
-            KOTA_EXPECTED_TRY(s.begin_array(N));
-            std::expected<void, E> element_result;
-            auto for_each = [&](const auto& element) -> bool {
-                auto r = detail::emit_element_value<S, E>(s, codec::serialize(s, element));
-                if(!r) {
-                    element_result = std::unexpected(r.error());
-                    return false;
-                }
-                return true;
-            };
-            std::apply([&](const auto&... elements) { (for_each(elements) && ...); }, v);
-            if(!element_result) {
-                return std::unexpected(element_result.error());
-            }
-            return s.end_array();
-        } else {
-            // by_position: serialize elements directly without framing
-            std::expected<void, E> element_result;
-            auto for_each = [&](const auto& element) -> bool {
-                auto r = codec::serialize(s, element);
-                if(!r) {
-                    element_result = std::unexpected(r.error());
-                    return false;
-                }
-                return true;
-            };
-            std::apply([&](const auto&... elements) { (for_each(elements) && ...); }, v);
-            if(!element_result) {
-                return std::unexpected(element_result.error());
-            }
-            return {};
-        }
-    } else if constexpr(std::ranges::input_range<V>) {
-        constexpr auto kind = format_kind<V>;
-        if constexpr(kind == range_format::sequence || kind == range_format::set) {
-            std::optional<std::size_t> len = std::nullopt;
-            if constexpr(std::ranges::sized_range<V>) {
-                len = static_cast<std::size_t>(std::ranges::size(v));
-            }
-
-            KOTA_EXPECTED_TRY(s.begin_array(len));
-
-            for(auto&& e: v) {
-                { auto _r = detail::emit_element_value<S, E>(s, codec::serialize(s, e)); if(!_r) return std::unexpected(_r.error()); }
-            }
-
-            return s.end_array();
-        } else if constexpr(kind == range_format::map) {
-            std::optional<std::size_t> len = std::nullopt;
-            if constexpr(std::ranges::sized_range<V>) {
-                len = static_cast<std::size_t>(std::ranges::size(v));
-            }
-
-            if constexpr(S::field_mode_v == field_mode::by_name) {
-                KOTA_EXPECTED_TRY(s.begin_object(len.value_or(0)));
-                for(auto&& [key, value]: v) {
-                    KOTA_EXPECTED_TRY(s.field(codec::spelling::map_key_to_string(key)));
-                    { auto _r = detail::emit_field_value<S, E>(s, codec::serialize(s, value)); if(!_r) return std::unexpected(_r.error()); }
-                }
-                return s.end_object();
-            } else {
-                // by_position: write length + key-value pairs
-                KOTA_EXPECTED_TRY(s.begin_array(len));
-                for(auto&& [key, value]: v) {
-                    KOTA_EXPECTED_TRY(codec::serialize(s, key));
-                    KOTA_EXPECTED_TRY(codec::serialize(s, value));
-                }
-                return s.end_array();
-            }
-        } else {
-            static_assert(dependent_false<V>, "cannot auto serialize the input range");
-        }
-    } else if constexpr(meta::reflectable_class<V>) {
-        return detail::struct_serialize<config::config_of<S>, E>(s, v);
     } else {
-        static_assert(dependent_false<V>,
-                      "cannot auto serialize the value, try to specialize for it");
+        detail::StreamingCtx<S> ctx{s};
+        return detail::unified_serialize<config::config_of<S>, detail::StreamingCtx<S>, std::tuple<>>(ctx, v);
     }
 }
 

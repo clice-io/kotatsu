@@ -23,6 +23,7 @@
 #include "kota/meta/attrs.h"
 #include "kota/meta/schema.h"
 #include "kota/codec/detail/arena_traits.h"
+#include "kota/codec/detail/dispatch.h"
 #include "kota/codec/config.h"
 #include "kota/codec/detail/common.h"
 #include "kota/codec/traits.h"
@@ -245,33 +246,14 @@ auto encode_variant(B& b, const T& value)
     return tb.finalize();
 }
 
-// Field-level dispatch: apply annotation + behavior attrs, then route by type.
+// Field-level dispatch: delegates to unified_serialize via ArenaFieldCtx.
 template <typename Config, typename B, typename Raw, typename Attrs, typename V>
 auto encode_value_at(B& b, typename B::TableBuilder& tb, typename B::slot_id sid, const V& value)
     -> std::expected<void, typename B::error_type> {
-    using E = typename B::error_type;
     using U = std::remove_cvref_t<V>;
 
-    if constexpr(meta::annotated_type<U>) {
-        using inner = typename U::annotated_type;
-        return encode_value_at<Config, B, inner, Attrs>(b, tb, sid, meta::annotated_value(value));
-    } else if constexpr(kota::tuple_has_spec_v<Attrs, meta::behavior::as>) {
-        using target = typename kota::tuple_find_spec_t<Attrs, meta::behavior::as>::target;
-        target tmp = static_cast<target>(value);
-        return encode_value_at<Config, B, target, std::tuple<>>(b, tb, sid, tmp);
-    } else if constexpr(kota::tuple_has_spec_v<Attrs, meta::behavior::enum_string>) {
-        using clean_u = detail::clean_t<U>;
-        static_assert(std::is_enum_v<clean_u>, "enum_string requires an enum type");
-        std::string_view name = meta::enum_name(static_cast<clean_u>(value));
-        KOTA_EXPECTED_TRY_V(auto r, b.alloc_string(name));
-        tb.add_offset(sid, r);
-        return {};
-    } else if constexpr(kota::tuple_has_spec_v<Attrs, meta::behavior::with>) {
-        using adapter = typename kota::tuple_find_spec_t<Attrs, meta::behavior::with>::adapter;
-        using wire_t = typename adapter::wire_type;
-        wire_t wire = adapter::to_wire(value);
-        return encode_value_at<Config, B, wire_t, std::tuple<>>(b, tb, sid, wire);
-    } else if constexpr(arena::streaming_serialize_traits<B, U>) {
+    // Check arena-specific custom traits first
+    if constexpr(arena::streaming_serialize_traits<B, U>) {
         using traits = kota::codec::serialize_traits<B, std::remove_cvref_t<U>>;
         KOTA_EXPECTED_TRY_V(auto r, traits::serialize(b, value));
         tb.add_offset(sid, r);
@@ -282,85 +264,8 @@ auto encode_value_at(B& b, typename B::TableBuilder& tb, typename B::slot_id sid
         wire_t wire = traits::serialize(b, value);
         return encode_value_at<Config, B, wire_t, std::tuple<>>(b, tb, sid, wire);
     } else {
-        using clean_u = detail::clean_t<U>;
-
-        if constexpr(is_specialization_of<std::optional, U>) {
-            if(!value.has_value()) {
-                return {};
-            }
-            using inner = typename U::value_type;
-            return encode_value_at<Config, B, inner, std::tuple<>>(b, tb, sid, *value);
-        } else if constexpr(is_specialization_of<std::unique_ptr, U> ||
-                            is_specialization_of<std::shared_ptr, U>) {
-            if(!value) {
-                return {};
-            }
-            using inner = typename U::element_type;
-            return encode_value_at<Config, B, inner, std::tuple<>>(b, tb, sid, *value);
-        } else if constexpr(std::same_as<clean_u, std::nullptr_t>) {
-            return {};
-        } else if constexpr(std::is_enum_v<clean_u>) {
-            using underlying = std::underlying_type_t<clean_u>;
-            return encode_value_at<Config, B, underlying, std::tuple<>>(
-                b,
-                tb,
-                sid,
-                static_cast<underlying>(value));
-        } else if constexpr(codec::bool_like<clean_u>) {
-            tb.add_scalar(sid, static_cast<bool>(value));
-            return {};
-        } else if constexpr(codec::int_like<clean_u> || codec::uint_like<clean_u>) {
-            tb.add_scalar(sid, static_cast<clean_u>(value));
-            return {};
-        } else if constexpr(codec::floating_like<clean_u>) {
-            if constexpr(std::same_as<clean_u, float> || std::same_as<clean_u, double>) {
-                tb.add_scalar(sid, static_cast<clean_u>(value));
-            } else {
-                tb.add_scalar(sid, static_cast<double>(value));
-            }
-            return {};
-        } else if constexpr(codec::char_like<clean_u>) {
-            tb.add_scalar(sid, static_cast<std::int8_t>(value));
-            return {};
-        } else if constexpr(codec::str_like<clean_u>) {
-            const std::string_view text = value;
-            KOTA_EXPECTED_TRY_V(auto r, b.alloc_string(text));
-            tb.add_offset(sid, r);
-            return {};
-        } else if constexpr(codec::bytes_like<clean_u>) {
-            const std::span<const std::byte> bytes = value;
-            KOTA_EXPECTED_TRY_V(auto r, b.alloc_bytes(bytes));
-            tb.add_offset(sid, r);
-            return {};
-        } else if constexpr(is_specialization_of<std::variant, U>) {
-            KOTA_EXPECTED_TRY_V(auto r, encode_variant<Config>(b, value));
-            tb.add_offset(sid, r);
-            return {};
-        } else if constexpr(std::ranges::input_range<clean_u>) {
-            constexpr auto kind = kota::format_kind<clean_u>;
-            if constexpr(kind == kota::range_format::map) {
-                KOTA_EXPECTED_TRY_V(auto r, encode_map<Config>(b, value));
-                tb.add_offset(sid, r);
-                return {};
-            } else {
-                KOTA_EXPECTED_TRY_V(auto r, encode_sequence<Config>(b, value));
-                tb.add_offset(sid, r);
-                return {};
-            }
-        } else if constexpr(is_pair_v<clean_u> || is_tuple_v<clean_u>) {
-            KOTA_EXPECTED_TRY_V(auto r, encode_tuple_like<Config>(b, value));
-            tb.add_offset(sid, r);
-            return {};
-        } else if constexpr(B::template can_inline_struct_field<clean_u>) {
-            tb.add_inline_struct(sid, static_cast<clean_u>(value));
-            return {};
-        } else if constexpr(meta::reflectable_class<clean_u>) {
-            KOTA_EXPECTED_TRY_V(auto r, encode_table<Config>(b, value));
-            tb.add_offset(sid, r);
-            return {};
-        } else {
-            return std::unexpected(E::unsupported_type);
-        }
+        codec::detail::ArenaFieldCtx<B> ctx{b, tb, sid};
+        return codec::detail::unified_serialize<Config, codec::detail::ArenaFieldCtx<B>, Attrs>(ctx, value);
     }
 }
 
