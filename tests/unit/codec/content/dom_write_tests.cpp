@@ -223,6 +223,104 @@ TEST_CASE(object_equality_multiset_with_duplicates) {
     EXPECT_FALSE(a == d);
 }
 
+TEST_CASE(small_object_lookup_without_index) {
+    // Objects with <= 8 entries should work correctly via linear scan.
+    content::Object obj;
+    for(int i = 0; i < 8; ++i) {
+        obj.insert("k" + std::to_string(i), content::Value(std::int64_t(i)));
+    }
+
+    // All lookups work
+    for(int i = 0; i < 8; ++i) {
+        auto* v = obj.find("k" + std::to_string(i));
+        ASSERT_NE(v, nullptr);
+        EXPECT_EQ(v->as_int(), i);
+    }
+    EXPECT_EQ(obj.find("missing"), nullptr);
+}
+
+TEST_CASE(large_object_builds_index_on_lookup) {
+    // Objects with > 8 entries should build an index.
+    content::Object obj;
+    for(int i = 0; i < 20; ++i) {
+        obj.insert("k" + std::to_string(i), content::Value(std::int64_t(i)));
+    }
+
+    // First lookup triggers index build; all entries remain accessible.
+    for(int i = 0; i < 20; ++i) {
+        auto* v = obj.find("k" + std::to_string(i));
+        ASSERT_NE(v, nullptr);
+        EXPECT_EQ(v->as_int(), i);
+    }
+    EXPECT_EQ(obj.find("missing"), nullptr);
+}
+
+TEST_CASE(insert_after_index_build_invalidates_and_rebuilds) {
+    content::Object obj;
+    for(int i = 0; i < 10; ++i) {
+        obj.insert("k" + std::to_string(i), content::Value(std::int64_t(i)));
+    }
+
+    // Trigger index build
+    EXPECT_EQ(obj.find("k5")->as_int(), 5);
+
+    // Insert invalidates index; next lookup rebuilds correctly.
+    obj.insert("new", content::Value(std::int64_t(99)));
+    EXPECT_EQ(obj.find("new")->as_int(), 99);
+    EXPECT_EQ(obj.find("k0")->as_int(), 0);
+    EXPECT_EQ(obj.find("k9")->as_int(), 9);
+}
+
+TEST_CASE(many_inserts_with_reallocation_stays_correct) {
+    content::Object obj;
+
+    // Insert enough entries to trigger multiple vector reallocations.
+    for(int i = 0; i < 100; ++i) {
+        obj.insert("key" + std::to_string(i), content::Value(std::int64_t(i)));
+        // Interleave lookups to trigger index build/invalidate cycles.
+        if(i % 15 == 0 && i > 0) {
+            EXPECT_EQ(obj.find("key0")->as_int(), 0);
+            EXPECT_EQ(obj.find("key" + std::to_string(i))->as_int(), i);
+        }
+    }
+
+    // Final verification
+    for(int i = 0; i < 100; ++i) {
+        auto* v = obj.find("key" + std::to_string(i));
+        ASSERT_NE(v, nullptr);
+        EXPECT_EQ(v->as_int(), i);
+    }
+}
+
+TEST_CASE(remove_from_large_object_invalidates_index) {
+    content::Object obj;
+    for(int i = 0; i < 12; ++i) {
+        obj.insert("k" + std::to_string(i), content::Value(std::int64_t(i)));
+    }
+
+    // Build index
+    EXPECT_EQ(obj.find("k5")->as_int(), 5);
+
+    // Remove middle element
+    EXPECT_EQ(obj.remove("k5"), 1);
+    EXPECT_EQ(obj.find("k5"), nullptr);
+
+    // Other elements still found correctly after index rebuild
+    EXPECT_EQ(obj.find("k0")->as_int(), 0);
+    EXPECT_EQ(obj.find("k11")->as_int(), 11);
+    EXPECT_EQ(obj.size(), 11);
+}
+
+TEST_CASE(duplicate_keys_find_returns_last_inserted) {
+    content::Object obj;
+    for(int i = 0; i < 10; ++i) {
+        obj.insert("dup", content::Value(std::int64_t(i)));
+    }
+    // find should return the last-inserted entry (index 9)
+    ASSERT_NE(obj.find("dup"), nullptr);
+    EXPECT_EQ(obj.find("dup")->as_int(), 9);
+}
+
 };  // TEST_SUITE(serde_content_dom_write)
 
 }  // namespace

@@ -289,19 +289,19 @@ public:
         return std::nullopt;
     }
 
-    [[nodiscard]] const Array* try_array() const noexcept {
+    [[nodiscard]] const Array* get_array() const noexcept {
         return std::get_if<Array>(&storage);
     }
 
-    [[nodiscard]] Array* try_array() noexcept {
+    [[nodiscard]] Array* get_array() noexcept {
         return std::get_if<Array>(&storage);
     }
 
-    [[nodiscard]] const Object* try_object() const noexcept {
+    [[nodiscard]] const Object* get_object() const noexcept {
         return std::get_if<Object>(&storage);
     }
 
-    [[nodiscard]] Object* try_object() noexcept {
+    [[nodiscard]] Object* get_object() noexcept {
         return std::get_if<Object>(&storage);
     }
 
@@ -442,12 +442,12 @@ public:
         return ptr != nullptr ? ptr->get_string() : std::nullopt;
     }
 
-    [[nodiscard]] const Array* try_array() const noexcept {
-        return ptr != nullptr ? ptr->try_array() : nullptr;
+    [[nodiscard]] const Array* get_array() const noexcept {
+        return ptr != nullptr ? ptr->get_array() : nullptr;
     }
 
-    [[nodiscard]] const Object* try_object() const noexcept {
-        return ptr != nullptr ? ptr->try_object() : nullptr;
+    [[nodiscard]] const Object* get_object() const noexcept {
+        return ptr != nullptr ? ptr->get_object() : nullptr;
     }
 
     [[nodiscard]] bool as_bool() const {
@@ -532,7 +532,7 @@ inline Cursor Value::cursor() const noexcept {
 }
 
 inline Cursor Value::operator[](std::string_view key) const {
-    if(const Object* obj = try_object()) {
+    if(const Object* obj = get_object()) {
         if(const Value* v = obj->find(key)) {
             return Cursor(*v);
         }
@@ -542,7 +542,7 @@ inline Cursor Value::operator[](std::string_view key) const {
 }
 
 inline Cursor Value::operator[](std::size_t index) const {
-    if(const Array* arr = try_array()) {
+    if(const Array* arr = get_array()) {
         if(index < arr->size()) {
             return Cursor((*arr)[index]);
         }
@@ -688,6 +688,10 @@ inline void Object::ensure_index() const {
     if(index.has_value()) {
         return;
     }
+    // Small objects: linear scan is faster than hash table overhead.
+    if(entries.size() <= 16) {
+        return;
+    }
     index.emplace();
     index->reserve(entries.size());
     for(std::size_t i = 0; i < entries.size(); ++i) {
@@ -701,11 +705,17 @@ inline bool Object::contains(std::string_view key) const {
 
 const inline Value* Object::find(std::string_view key) const {
     ensure_index();
-    auto it = index->find(key);
-    if(it == index->end()) {
-        return nullptr;
+    if(index.has_value()) {
+        auto it = index->find(key);
+        return it != index->end() ? &entries[it->second].value : nullptr;
     }
-    return &entries[it->second].value;
+    // Linear scan for small objects (index not built).
+    for(auto it = entries.rbegin(); it != entries.rend(); ++it) {
+        if(it->key == key) {
+            return &it->value;
+        }
+    }
+    return nullptr;
 }
 
 inline Value* Object::find(std::string_view key) {

@@ -465,7 +465,7 @@ private:
             return std::unexpected(ref.error());
         }
 
-        const content::Array* array = ref->try_array();
+        const content::Array* array = ref->get_array();
         if(array == nullptr) {
             return mark_invalid(error_type::type_mismatch);
         }
@@ -478,7 +478,7 @@ private:
             return std::unexpected(ref.error());
         }
 
-        const content::Object* object = ref->try_object();
+        const content::Object* object = ref->get_object();
         if(object == nullptr) {
             return mark_invalid(error_type::type_mismatch);
         }
@@ -534,7 +534,7 @@ struct deserialize_traits<content::Deserializer<Config>, content::Array> {
         if(!dom) {
             return std::unexpected(dom.error());
         }
-        content::Array* arr = dom->try_array();
+        content::Array* arr = dom->get_array();
         if(arr == nullptr) {
             return std::unexpected(content::error::type_mismatch);
         }
@@ -553,7 +553,7 @@ struct deserialize_traits<content::Deserializer<Config>, content::Object> {
         if(!dom) {
             return std::unexpected(dom.error());
         }
-        content::Object* obj = dom->try_object();
+        content::Object* obj = dom->get_object();
         if(obj == nullptr) {
             return std::unexpected(content::error::type_mismatch);
         }

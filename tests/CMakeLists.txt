@@ -145,6 +145,10 @@ endif()
 
 kota_apply_project_options(unit_tests)
 
+if(MSVC)
+    target_compile_options(unit_tests PRIVATE /bigobj)
+endif()
+
 if(KOTA_SANITIZE_ADDRESS AND MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     # clang-cl ASan uses a runtime DLL; copy it next to the test executable so `ctest` can run
     # without requiring CI to tweak PATH.

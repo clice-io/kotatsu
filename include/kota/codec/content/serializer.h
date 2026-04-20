@@ -278,12 +278,12 @@ private:
 
     content::Array* last_placed_array() {
         content::Value* slot = last_placed_slot();
-        return slot != nullptr ? slot->try_array() : nullptr;
+        return slot != nullptr ? slot->get_array() : nullptr;
     }
 
     content::Object* last_placed_object() {
         content::Value* slot = last_placed_slot();
-        return slot != nullptr ? slot->try_object() : nullptr;
+        return slot != nullptr ? slot->get_object() : nullptr;
     }
 
     content::Value* last_placed_slot() {

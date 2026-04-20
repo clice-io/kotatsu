@@ -256,8 +256,8 @@ TEST_CASE(cursor_get_accessors_on_invalid_return_nullopt) {
     EXPECT_FALSE(c.get_uint().has_value());
     EXPECT_FALSE(c.get_double().has_value());
     EXPECT_FALSE(c.get_string().has_value());
-    EXPECT_EQ(c.try_array(), nullptr);
-    EXPECT_EQ(c.try_object(), nullptr);
+    EXPECT_EQ(c.get_array(), nullptr);
+    EXPECT_EQ(c.get_object(), nullptr);
 }
 
 TEST_CASE(empty_object_find_and_cursor_access) {

@@ -279,7 +279,7 @@ constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, T
     constexpr std::string_view tag_field = TagAttr::field_names[0];
 
     auto dom_cursor = dom_result.cursor();
-    const content::Object* obj = dom_cursor.try_object();
+    const content::Object* obj = dom_cursor.get_object();
     if(obj == nullptr) {
         return std::unexpected(E::invalid_type("object", "non-object"));
     }

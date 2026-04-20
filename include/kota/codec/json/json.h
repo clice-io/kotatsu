@@ -66,14 +66,14 @@ struct deserialize_traits<json::Deserializer<Config>, T> {
             value = std::move(*dom);
             return {};
         } else if constexpr(std::same_as<T, json::Array>) {
-            content::Array* arr = dom->try_array();
+            content::Array* arr = dom->get_array();
             if(arr == nullptr) {
                 return std::unexpected(json::error_kind::type_mismatch);
             }
             value = std::move(*arr);
             return {};
         } else {
-            content::Object* obj = dom->try_object();
+            content::Object* obj = dom->get_object();
             if(obj == nullptr) {
                 return std::unexpected(json::error_kind::type_mismatch);
             }
