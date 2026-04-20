@@ -23,7 +23,6 @@
 
 namespace kota::codec::detail {
 
-// Forward declarations for tagged variant dispatch (defined in tagged.h)
 template <typename E, typename D, typename... Ts, typename TagAttr>
 constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, TagAttr)
     -> std::expected<void, E>;
@@ -36,7 +35,6 @@ template <typename E, typename D, typename... Ts, typename TagAttr>
 constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, TagAttr)
     -> std::expected<void, E>;
 
-/// Deserialize a single slot's value after applying reverse behavior attributes.
 template <typename Attrs, typename E, typename D, typename V>
 auto deserialize_slot_value(D& d, V& value) -> std::expected<void, E> {
     if constexpr(tuple_count_of_v<Attrs, meta::is_behavior_provider> > 0) {
@@ -60,7 +58,6 @@ auto deserialize_slot_value(D& d, V& value) -> std::expected<void, E> {
         }
     }
 
-    // Tagged variants: dispatch directly since we have the attrs but no annotation wrapper
     if constexpr(is_specialization_of<std::variant, std::remove_cvref_t<V>> &&
                  tuple_any_of_v<Attrs, meta::is_tagged_attr>) {
         using tag_attr = tuple_find_t<Attrs, meta::is_tagged_attr>;
@@ -74,12 +71,9 @@ auto deserialize_slot_value(D& d, V& value) -> std::expected<void, E> {
         }
     }
 
-    // Default: plain value
     return codec::deserialize(d, value);
 }
 
-/// Dispatch deserialization to the correct slot by runtime index (by_name mode).
-/// Uses virtual_schema offsets for direct field access.
 template <typename T, typename Config, typename E, typename D>
 auto dispatch_slot_deserialize(D& d, std::size_t slot_index, T& value) -> std::expected<void, E> {
     using schema = meta::virtual_schema<T, Config>;
@@ -103,13 +97,10 @@ auto dispatch_slot_deserialize(D& d, std::size_t slot_index, T& value) -> std::e
              auto* base = reinterpret_cast<std::byte*>(std::addressof(value));
              auto& field_value = *reinterpret_cast<raw_t*>(base + offset);
 
-             // skip_if
              if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
                  using pred =
                      typename tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
                  if(meta::evaluate_skip_predicate<pred>(field_value, false)) {
-                     // For deserialization, skip_if means: skip reading the value from wire
-                     // but we still need to consume the wire token. Use the deserializer's skip.
                      if constexpr(requires { d.skip_field_value(); }) {
                          result = d.skip_field_value();
                      }
@@ -128,7 +119,6 @@ auto dispatch_slot_deserialize(D& d, std::size_t slot_index, T& value) -> std::e
     }(std::make_index_sequence<N>{});
 }
 
-/// Check whether any two fields in the virtual_schema share the same wire name or alias.
 template <typename T, typename Config>
 auto schema_has_ambiguous_wire_names() -> bool {
     const static bool ambiguous = [] {
@@ -165,7 +155,6 @@ auto schema_has_ambiguous_wire_names() -> bool {
     return ambiguous;
 }
 
-/// Lookup a wire name in the virtual_schema fields array (handles flatten + aliases).
 template <typename T, typename Config>
 auto schema_lookup_field(std::string_view key) -> std::optional<std::size_t> {
     using schema = meta::virtual_schema<T, Config>;
@@ -182,7 +171,6 @@ auto schema_lookup_field(std::string_view key) -> std::optional<std::size_t> {
     return std::nullopt;
 }
 
-/// Compute required field bitmask from virtual_schema slots.
 template <typename T, typename Config>
 consteval std::uint64_t schema_required_field_mask() {
     using schema = meta::virtual_schema<T, Config>;
@@ -210,16 +198,9 @@ consteval std::uint64_t schema_required_field_mask() {
     return mask;
 }
 
-/// Detect whether Config carries deny_unknown_fields = true (from annotated struct attrs).
 template <typename Config>
 constexpr bool config_deny_unknown_v = requires { requires Config::deny_unknown_fields; };
 
-/// Virtual-schema-driven struct deserialization (by_name mode).
-/// Requires the deserializer to provide:
-///   d.begin_object()              → status_t
-///   d.next_field()                → result_t<optional<string_view>>
-///   d.skip_field_value()          → status_t
-///   d.end_object()                → status_t
 template <typename Config, typename E, typename D, typename T>
 auto struct_deserialize_by_name(D& d, T& v) -> std::expected<void, E> {
     using schema = meta::virtual_schema<T, Config>;
@@ -260,7 +241,6 @@ auto struct_deserialize_by_name(D& d, T& v) -> std::expected<void, E> {
         }
     }
 
-    // Check required fields
     constexpr std::uint64_t required = schema_required_field_mask<T, Config>();
     if((seen_fields & required) != required) {
         std::uint64_t missing = required & ~seen_fields;
@@ -275,7 +255,6 @@ auto struct_deserialize_by_name(D& d, T& v) -> std::expected<void, E> {
     return d.end_object();
 }
 
-/// Virtual-schema-driven struct deserialization (by_position mode).
 template <typename Config, typename E, typename D, typename T>
 auto struct_deserialize_by_position(D& d, T& v) -> std::expected<void, E> {
     using schema = meta::virtual_schema<T, Config>;
@@ -293,7 +272,6 @@ auto struct_deserialize_by_position(D& d, T& v) -> std::expected<void, E> {
             auto* base = reinterpret_cast<std::byte*>(std::addressof(v));
             auto& field_value = *reinterpret_cast<raw_t*>(base + offset);
 
-            // skip_if: evaluate predicate — if true, read-and-discard to maintain position
             if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
                 using pred = typename tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
                 if(meta::evaluate_skip_predicate<pred>(field_value, false)) {
@@ -322,7 +300,6 @@ auto struct_deserialize_by_position(D& d, T& v) -> std::expected<void, E> {
     return {};
 }
 
-/// Entry point: detect field_mode and dispatch.
 template <typename Config, typename E, typename D, typename T>
 auto struct_deserialize(D& d, T& v) -> std::expected<void, E> {
     if constexpr(D::field_mode_v == field_mode::by_name) {

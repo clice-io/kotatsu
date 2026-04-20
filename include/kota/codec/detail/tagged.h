@@ -24,8 +24,6 @@
 
 namespace kota::codec::detail {
 
-/// Match tag_value against variant alternative names, construct the matching alternative,
-/// call reader(alt) to deserialize it, then assign to the variant.
 template <typename E, typename... Ts, typename Names, typename Reader>
 constexpr auto match_and_deserialize_alt(std::string_view tag_value,
                                          const Names& names,
@@ -70,8 +68,6 @@ constexpr auto match_and_deserialize_alt(std::string_view tag_value,
     }
     return status;
 }
-
-// ─── Serialization ───────────────────────────────────────────────────────────
 
 template <typename E, typename S, typename... Ts, typename TagAttr>
 constexpr auto serialize_externally_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
@@ -179,8 +175,6 @@ constexpr auto serialize_internally_tagged(S& s, const std::variant<Ts...>& valu
         },
         value);
 }
-
-// ─── Deserialization ─────────────────────────────────────────────────────────
 
 template <typename E, typename D, typename... Ts, typename TagAttr>
 constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, TagAttr)
@@ -352,9 +346,6 @@ constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, T
 
 namespace kota::codec {
 
-/// Bitmask of data-model type categories.
-/// Backends map their format-specific "kind" enums to these bits;
-/// the shared `expected_type_hints<T>()` maps C++ types to them.
 enum class type_hint : std::uint8_t {
     null_like = 1 << 0,
     boolean = 1 << 1,
@@ -374,7 +365,6 @@ constexpr bool has_any(type_hint set, type_hint flags) noexcept {
     return (static_cast<std::uint8_t>(set) & static_cast<std::uint8_t>(flags)) != 0;
 }
 
-/// Map a C++ type `T` to the set of data-model categories it can deserialize from.
 template <typename T>
 constexpr type_hint expected_type_hints() {
     using U = std::remove_cvref_t<T>;
@@ -415,8 +405,6 @@ constexpr type_hint expected_type_hints() {
     }
 }
 
-/// Shared implementation of the probe-deserialize-finish pattern for variant candidates.
-/// `D` must be constructible from `Source`.
 template <typename D, typename Alt, typename Source, typename... Ts>
 auto try_deserialize_variant_candidate(Source&& source, std::variant<Ts...>& value)
     -> std::expected<void, typename D::error_type> {
@@ -440,7 +428,6 @@ auto try_deserialize_variant_candidate(Source&& source, std::variant<Ts...>& val
     return {};
 }
 
-/// Shared variant dispatch for DOM-like deserializers.
 template <typename D, typename Source, typename... Ts>
 auto try_variant_dispatch(Source&& source,
                           type_hint hint,

@@ -202,8 +202,6 @@ public:
         return {};
     }
 
-    // --- Streaming object interface (unsupported for binary format) ---
-
     status_t begin_object() {
         return mark_invalid(error_kind::unsupported_operation);
     }
@@ -219,8 +217,6 @@ public:
     status_t skip_field_value() {
         return mark_invalid(error_kind::unsupported_operation);
     }
-
-    // --- Streaming array interface ---
 
     status_t begin_array() {
         KOTA_EXPECTED_TRY_V(auto len, read_length());

@@ -298,8 +298,6 @@ public:
             value);
     }
 
-    // --- Streaming interface ---
-
     status_t begin_object(std::size_t count) {
         ser_stack.push_back({});
         ser_stack.back().table.entries.reserve(count);
@@ -344,8 +342,6 @@ public:
         ser_stack.pop_back();
         return value_type(std::move(frame.array));
     }
-
-    // --- DOM helpers ---
 
     auto serialize_dom(const ::toml::table& value) -> result_t<value_type> {
         KOTA_EXPECTED_TRY_V(auto converted, detail::table_to_value(value));

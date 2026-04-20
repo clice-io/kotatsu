@@ -83,8 +83,6 @@ struct deserialize_traits<json::Deserializer<Config>, T> {
     }
 };
 
-// --- JSON serialization: inline raw JSON text ---
-
 template <typename Config>
 struct serialize_traits<json::Serializer<Config>, RawValue> {
     using value_type = typename json::Serializer<Config>::value_type;
@@ -98,8 +96,6 @@ struct serialize_traits<json::Serializer<Config>, RawValue> {
         return serializer.serialize_raw_json(value.data);
     }
 };
-
-// --- JSON deserialization: capture raw JSON view ---
 
 template <typename Config>
 struct deserialize_traits<json::Deserializer<Config>, RawValue> {

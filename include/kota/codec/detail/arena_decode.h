@@ -39,7 +39,6 @@ constexpr bool root_unboxed_for =
      !std::ranges::input_range<T> && !is_pair_v<T> && !is_tuple_v<T>) ||
     is_pair_v<T> || is_tuple_v<T> || is_specialization_of<std::variant, T>;
 
-// Forward declarations.
 template <typename Config, typename B, typename Raw, typename Attrs, typename V>
 auto decode_value_at(const B& d,
                      typename B::TableView view,
@@ -854,7 +853,6 @@ auto decode_map(const B& d,
 
 }  // namespace detail
 
-// Public re-exports.
 using detail::decode_map;
 using detail::decode_root;
 using detail::decode_sequence;

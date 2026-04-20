@@ -156,8 +156,6 @@ public:
         return append_value(content::Value(std::move(value)));
     }
 
-    // --- New-style streaming struct interface ---
-
     status_t begin_object(std::size_t /*count*/) {
         return begin_object_impl();
     }
@@ -307,8 +305,6 @@ static_assert(codec::serializer_like<Serializer<>>);
 
 namespace kota::codec {
 
-// --- Generic Value/Array/Object serialization: dispatch across any Serializer. ---
-
 template <typename T>
 concept content_dom_type = std::same_as<T, content::Value> || std::same_as<T, content::Array> ||
                            std::same_as<T, content::Object>;
@@ -377,8 +373,6 @@ struct serialize_traits<S, content::Object> {
         return s.end_object();
     }
 };
-
-// --- content::Serializer: fast-path that moves the Value directly into the stream. ---
 
 template <typename Config>
 struct serialize_traits<content::Serializer<Config>, content::Value> {

@@ -11,14 +11,6 @@
 
 namespace kota::codec::detail {
 
-/// Serialize-side behavior attribute dispatch.
-///
-/// Checks attrs_t for `with`/`as`/`enum_string` and handles them:
-///   - with:        calls with_fn(type_identity<Adapter>{}, value)
-///   - as:          converts value to Target, then calls emit(converted)
-///   - enum_string: maps enum to string, then calls emit(string)
-///
-/// Returns std::nullopt if no behavior attribute matched (caller should use default path).
 template <typename attrs_t, typename value_t, typename E, typename Emitter, typename WithFn>
 constexpr auto apply_serialize_behavior(const value_t& value, Emitter&& emit, WithFn&& with_fn)
     -> std::optional<decltype(emit(value))> {
@@ -42,14 +34,6 @@ constexpr auto apply_serialize_behavior(const value_t& value, Emitter&& emit, Wi
     }
 }
 
-/// Deserialize-side behavior attribute dispatch.
-///
-/// Checks attrs_t for `with`/`as`/`enum_string` and handles them:
-///   - with:        calls with_fn(type_identity<Adapter>{}, value)
-///   - as:          deserializes into Target via read(temp), then converts back
-///   - enum_string: reads string via read(str), then maps to enum
-///
-/// Returns std::nullopt if no behavior attribute matched (caller should use default path).
 template <typename attrs_t, typename value_t, typename E, typename Reader, typename WithFn>
 constexpr auto apply_deserialize_behavior(value_t& value, Reader&& read, WithFn&& with_fn)
     -> std::optional<std::expected<void, E>> {

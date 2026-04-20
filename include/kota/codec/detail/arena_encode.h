@@ -34,18 +34,12 @@ namespace detail {
 
 using codec::detail::clean_t;
 
-// Inline-struct routing is split into two backend predicates:
-//  * `can_inline_struct_field<T>` — the backend supports storing a whole
-//    struct inside a parent table's slot (no pointer indirection).
-//  * `can_inline_struct_element<T>` — the backend supports laying out a
-//    vector of structs inline (one contiguous region, no per-element pointer).
 template <typename B, typename T>
 concept backend_can_inline_struct_field = B::template can_inline_struct_field<T>;
 
 template <typename B, typename T>
 concept backend_can_inline_struct_element = B::template can_inline_struct_element<T>;
 
-// Forward declarations.
 template <typename Config, typename B, typename Raw, typename Attrs, typename V>
 auto encode_value_at(B& b, typename B::TableBuilder& tb, typename B::slot_id sid, const V& value)
     -> std::expected<void, typename B::error_type>;
@@ -114,7 +108,6 @@ auto encode_boxed(B& b, const T& value)
     return tb.finalize();
 }
 
-// Struct encoding via virtual_schema.
 template <typename Config, typename B, typename T, std::size_t I>
 auto encode_struct_slot(B& b, typename B::TableBuilder& tb, const T& value)
     -> std::expected<void, typename B::error_type> {
@@ -127,7 +120,6 @@ auto encode_struct_slot(B& b, typename B::TableBuilder& tb, const T& value)
     const auto* base = reinterpret_cast<const std::byte*>(std::addressof(value));
     const auto& field_value = *reinterpret_cast<const raw_t*>(base + offset);
 
-    // skip_if short-circuit before we compute a slot id.
     if constexpr(kota::tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
         using pred = typename kota::tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
         if(meta::evaluate_skip_predicate<pred>(field_value, /*is_serialize=*/true)) {
@@ -246,13 +238,11 @@ auto encode_variant(B& b, const T& value)
     return tb.finalize();
 }
 
-// Field-level dispatch: delegates to unified_serialize via ArenaFieldCtx.
 template <typename Config, typename B, typename Raw, typename Attrs, typename V>
 auto encode_value_at(B& b, typename B::TableBuilder& tb, typename B::slot_id sid, const V& value)
     -> std::expected<void, typename B::error_type> {
     using U = std::remove_cvref_t<V>;
 
-    // Check arena-specific custom traits first
     if constexpr(arena::streaming_serialize_traits<B, U>) {
         using traits = kota::codec::serialize_traits<B, std::remove_cvref_t<U>>;
         KOTA_EXPECTED_TRY_V(auto r, traits::serialize(b, value));
@@ -436,7 +426,6 @@ auto encode_map(B& b, const T& map)
 
 }  // namespace detail
 
-// Public re-exports.
 using detail::encode_boxed;
 using detail::encode_map;
 using detail::encode_root;

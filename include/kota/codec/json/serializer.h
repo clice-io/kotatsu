@@ -175,8 +175,6 @@ public:
         return end_array();
     }
 
-    // --- New-style streaming struct interface ---
-
     status_t begin_object(std::size_t /*count*/) {
         return begin_object_impl();
     }

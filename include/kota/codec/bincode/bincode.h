@@ -7,8 +7,6 @@
 
 namespace kota::codec {
 
-// --- Bincode serialization: length-prefixed bytes ---
-
 template <typename Config>
 struct serialize_traits<bincode::Serializer<Config>, RawValue> {
     using value_type = typename bincode::Serializer<Config>::value_type;
@@ -22,8 +20,6 @@ struct serialize_traits<bincode::Serializer<Config>, RawValue> {
         return serializer.serialize_bytes(bytes);
     }
 };
-
-// --- Bincode deserialization: length-prefixed bytes ---
 
 template <typename Config>
 struct deserialize_traits<bincode::Deserializer<Config>, RawValue> {

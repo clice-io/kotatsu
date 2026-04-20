@@ -263,8 +263,6 @@ public:
         return *ptr;
     }
 
-    // --- New-style streaming struct interface ---
-
     status_t begin_object() {
         KOTA_EXPECTED_TRY_V(auto obj, open_object());
         deser_stack.push_back(deser_frame{.object = obj, .it = obj->begin()});
@@ -302,8 +300,6 @@ public:
         deser_stack.pop_back();
         return {};
     }
-
-    // --- New-style streaming array interface ---
 
     status_t begin_array() {
         KOTA_EXPECTED_TRY_V(auto arr, open_array());

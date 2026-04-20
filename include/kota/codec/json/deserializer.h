@@ -340,8 +340,6 @@ public:
                                                           false);
     }
 
-    // --- New-style streaming struct interface ---
-
     status_t begin_object() {
         KOTA_EXPECTED_TRY_V(auto obj, open_object());
         current_value = nullptr;  // prevent dangling after push_back
@@ -428,8 +426,6 @@ public:
         current_value = nullptr;
         return {};
     }
-
-    // --- New-style streaming array interface ---
 
     status_t begin_array() {
         KOTA_EXPECTED_TRY_V(auto array, open_array());

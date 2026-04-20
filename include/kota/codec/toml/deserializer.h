@@ -302,8 +302,6 @@ public:
         return **array;
     }
 
-    // --- New-style streaming struct interface ---
-
     status_t begin_object() {
         KOTA_EXPECTED_TRY_V(auto table, open_table());
         deser_frame frame;
@@ -359,8 +357,6 @@ public:
         current_node = nullptr;
         return {};
     }
-
-    // --- New-style streaming array interface ---
 
     status_t begin_array() {
         KOTA_EXPECTED_TRY_V(auto arr, open_array());
