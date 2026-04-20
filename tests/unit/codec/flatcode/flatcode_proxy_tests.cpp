@@ -6,9 +6,9 @@
 #include <variant>
 #include <vector>
 
-#include "kota/codec/flatcode/flatcode.h"
-#include "kota/meta/attrs.h"
 #include "kota/zest/zest.h"
+#include "kota/meta/attrs.h"
+#include "kota/codec/flatcode/flatcode.h"
 
 namespace kota::codec {
 
@@ -151,7 +151,9 @@ TEST_CASE(pair_field_read_through_tuple_view) {
         auto operator==(const pair_owner&) const -> bool = default;
     };
 
-    const pair_owner input{.kv = {42, "hi"}};
+    const pair_owner input{
+        .kv = {42, "hi"}
+    };
     auto encoded = to_flatcode(input);
     ASSERT_TRUE(encoded.has_value());
 
@@ -189,7 +191,9 @@ TEST_CASE(map_field_contains_and_lookup) {
         auto operator==(const m_owner&) const -> bool = default;
     };
 
-    const m_owner input{.table = {{1, "one"}, {2, "two"}, {3, "three"}}};
+    const m_owner input{
+        .table = {{1, "one"}, {2, "two"}, {3, "three"}}
+    };
     auto encoded = to_flatcode(input);
     ASSERT_TRUE(encoded.has_value());
 

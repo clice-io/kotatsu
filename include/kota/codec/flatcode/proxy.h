@@ -14,9 +14,9 @@
 #include <utility>
 #include <variant>
 
+#include "kota/meta/schema.h"
 #include "kota/codec/codec.h"
 #include "kota/codec/flatcode/deserializer.h"
-#include "kota/meta/schema.h"
 
 namespace kota::codec::flatcode {
 
@@ -145,7 +145,9 @@ inline auto field_slot(std::size_t index) -> slot_id {
     return r.has_value() ? *r : slot_id{0};
 }
 
-inline auto variant_tag_slot() -> slot_id { return backend::variant_tag_slot_id(); }
+inline auto variant_tag_slot() -> slot_id {
+    return backend::variant_tag_slot_id();
+}
 
 inline auto variant_payload_slot(std::size_t index) -> slot_id {
     auto r = backend::variant_payload_slot_id(index);
@@ -374,8 +376,7 @@ auto read_field(table_view_type view, slot_id field) -> field_return_type_t<T> {
         if(off + 4U + len > view.buffer_size()) {
             return {};
         }
-        return std::string_view(
-            reinterpret_cast<const char*>(view.buffer_base() + off + 4U), len);
+        return std::string_view(reinterpret_cast<const char*>(view.buffer_base() + off + 4U), len);
     } else if constexpr(detail::is_inline_struct_v<T>) {
         if(!view.valid() || !view.has(field)) {
             return T{};
@@ -437,7 +438,9 @@ public:
                static_cast<std::size_t>(vec_off) + 4U <= base_size;
     }
 
-    explicit operator bool() const noexcept { return valid(); }
+    explicit operator bool() const noexcept {
+        return valid();
+    }
 
     auto size() const noexcept -> std::size_t {
         if(!valid()) {
@@ -448,9 +451,13 @@ public:
         return count;
     }
 
-    auto empty() const noexcept -> bool { return size() == 0U; }
+    auto empty() const noexcept -> bool {
+        return size() == 0U;
+    }
 
-    auto operator[](std::size_t index) const -> value_type { return at(index); }
+    auto operator[](std::size_t index) const -> value_type {
+        return at(index);
+    }
 
     auto at(std::size_t index) const -> value_type {
         if(!valid() || index >= size()) {
@@ -468,8 +475,7 @@ public:
                             codec::uint_like<element_type>) {
             return read_inline_scalar<element_type>(index);
         } else if constexpr(codec::floating_like<element_type>) {
-            if constexpr(std::same_as<element_type, float> ||
-                         std::same_as<element_type, double>) {
+            if constexpr(std::same_as<element_type, float> || std::same_as<element_type, double>) {
                 return read_inline_scalar<element_type>(index);
             } else {
                 return static_cast<element_type>(read_inline_scalar<double>(index));
@@ -562,8 +568,13 @@ public:
 
     constexpr explicit variant_view(view_type view) noexcept : view(view) {}
 
-    auto valid() const noexcept -> bool { return view.valid(); }
-    explicit operator bool() const noexcept { return valid(); }
+    auto valid() const noexcept -> bool {
+        return view.valid();
+    }
+
+    explicit operator bool() const noexcept {
+        return valid();
+    }
 
     auto index() const -> std::size_t {
         if(!valid()) {
@@ -587,7 +598,9 @@ public:
         return proxy_detail::read_field<clean_alt_t>(view, proxy_detail::variant_payload_slot(I));
     }
 
-    auto raw() const noexcept -> view_type { return view; }
+    auto raw() const noexcept -> view_type {
+        return view;
+    }
 
 private:
     view_type view;
@@ -604,8 +617,13 @@ public:
 
     constexpr explicit tuple_view(view_type view) noexcept : view(view) {}
 
-    auto valid() const noexcept -> bool { return view.valid(); }
-    explicit operator bool() const noexcept { return valid(); }
+    auto valid() const noexcept -> bool {
+        return view.valid();
+    }
+
+    explicit operator bool() const noexcept {
+        return valid();
+    }
 
     template <std::size_t I>
         requires (I < sizeof...(Ts))
@@ -621,7 +639,9 @@ public:
         return proxy_detail::read_field<clean_element_t>(view, proxy_detail::field_slot(I));
     }
 
-    auto raw() const noexcept -> view_type { return view; }
+    auto raw() const noexcept -> view_type {
+        return view;
+    }
 
 private:
     view_type view;
@@ -644,7 +664,9 @@ public:
                static_cast<std::size_t>(vec_off) + 4U <= base_size;
     }
 
-    explicit operator bool() const noexcept { return valid(); }
+    explicit operator bool() const noexcept {
+        return valid();
+    }
 
     auto size() const noexcept -> std::size_t {
         if(!valid()) {
@@ -655,7 +677,9 @@ public:
         return count;
     }
 
-    auto empty() const noexcept -> bool { return size() == 0U; }
+    auto empty() const noexcept -> bool {
+        return size() == 0U;
+    }
 
     auto at(std::size_t index) const -> tuple_view<K, V> {
         if(!valid() || index >= size()) {
@@ -728,8 +752,7 @@ private:
         while(lo < hi) {
             auto mid = lo + (hi - lo) / 2;
             auto entry = entry_view(mid);
-            auto entry_key =
-                proxy_detail::read_field<clean_k>(entry, proxy_detail::field_slot(0));
+            auto entry_key = proxy_detail::read_field<clean_k>(entry, proxy_detail::field_slot(0));
             if(entry_key < key) {
                 lo = mid + 1;
             } else {
@@ -785,14 +808,22 @@ public:
     }
 
     static auto from_bytes(std::span<const std::byte> bytes) -> table_view {
-        return from_bytes(std::span<const std::uint8_t>(
-            reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size()));
+        return from_bytes(
+            std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(bytes.data()),
+                                          bytes.size()));
     }
 
-    auto valid() const noexcept -> bool { return view.valid(); }
-    explicit operator bool() const noexcept { return valid(); }
+    auto valid() const noexcept -> bool {
+        return view.valid();
+    }
 
-    auto raw() const noexcept -> view_type { return view; }
+    explicit operator bool() const noexcept {
+        return valid();
+    }
+
+    auto raw() const noexcept -> view_type {
+        return view;
+    }
 
     template <typename Member>
         requires meta::reflectable_class<object_type>

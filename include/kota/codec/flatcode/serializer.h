@@ -13,11 +13,11 @@
 #include <utility>
 #include <vector>
 
+#include "kota/support/expected_try.h"
+#include "kota/meta/schema.h"
 #include "kota/codec/arena/encode.h"
 #include "kota/codec/arena/traits.h"
 #include "kota/codec/config.h"
-#include "kota/meta/schema.h"
-#include "kota/support/expected_try.h"
 
 namespace kota::codec::flatcode {
 
@@ -75,18 +75,20 @@ using object_result_t = std::expected<T, object_error_code>;
 
 namespace detail {
 
-constexpr std::uint32_t magic_evfc = 0x43465645U;       // 'EVFC'
-constexpr std::uint32_t max_slot_count = 256U;           // sanity cap
-constexpr std::size_t header_size = 8;                   // magic + root_offset
+constexpr std::uint32_t magic_evfc = 0x43465645U;  // 'EVFC'
+constexpr std::uint32_t max_slot_count = 256U;     // sanity cap
+constexpr std::size_t header_size = 8;             // magic + root_offset
 
 // Strongly-typed wrappers around a blob index (index into Serializer::blobs).
 // Kept distinct to catch accidental type mix-ups at compile time.
 struct string_ref {
     std::uint32_t idx = 0;
 };
+
 struct vector_ref {
     std::uint32_t idx = 0;
 };
+
 struct table_ref {
     std::uint32_t idx = 0;
 };
@@ -94,12 +96,12 @@ struct table_ref {
 struct blob {
     std::vector<std::byte> data;
     std::uint32_t align = 4;
-    std::uint32_t final_offset = 0;   // computed in bytes()
+    std::uint32_t final_offset = 0;  // computed in bytes()
 };
 
 struct fixup {
     std::uint32_t source_blob_idx;
-    std::uint32_t position;           // byte offset within source blob
+    std::uint32_t position;  // byte offset within source blob
     std::uint32_t target_blob_idx;
 };
 
@@ -120,8 +122,7 @@ inline auto append_bytes(std::vector<std::byte>& data, const void* src, std::siz
 // — meaning its on-wire bytes can be a bit-copy of the in-memory layout.
 template <typename T>
 constexpr bool is_inline_struct_v =
-    meta::reflectable_class<std::remove_cvref_t<T>> &&
-    std::is_trivial_v<std::remove_cvref_t<T>> &&
+    meta::reflectable_class<std::remove_cvref_t<T>> && std::is_trivial_v<std::remove_cvref_t<T>> &&
     std::is_standard_layout_v<std::remove_cvref_t<T>>;
 
 }  // namespace detail
@@ -155,7 +156,9 @@ public:
         return static_cast<slot_id>(index);
     }
 
-    static auto variant_tag_slot_id() -> slot_id { return 0; }
+    static auto variant_tag_slot_id() -> slot_id {
+        return 0;
+    }
 
     static auto variant_payload_slot_id(std::size_t index) -> result_t<slot_id> {
         return field_slot_id(index + 1);
@@ -172,8 +175,7 @@ public:
 
         template <typename T>
         auto add_scalar(slot_id sid, T value) -> void {
-            static_assert(std::is_trivially_copyable_v<T>,
-                          "scalar must be trivially copyable");
+            static_assert(std::is_trivially_copyable_v<T>, "scalar must be trivially copyable");
             slot_entry e;
             e.sid = sid;
             e.align = static_cast<std::uint32_t>(alignof(T));
@@ -187,7 +189,7 @@ public:
             slot_entry e;
             e.sid = sid;
             e.align = 4;
-            e.payload.resize(4);   // placeholder; filled via fixup
+            e.payload.resize(4);  // placeholder; filled via fixup
             e.target = ref.idx;
             slots.push_back(std::move(e));
         }
@@ -271,14 +273,16 @@ public:
             slot_id sid = 0;
             std::uint32_t align = 4;
             std::vector<std::byte> payload;
-            std::optional<std::uint32_t> target;   // blob idx if offset field
+            std::optional<std::uint32_t> target;  // blob idx if offset field
         };
 
         Serializer* owner;
         std::vector<slot_entry> slots;
     };
 
-    auto start_table() -> TableBuilder { return TableBuilder(*this); }
+    auto start_table() -> TableBuilder {
+        return TableBuilder(*this);
+    }
 
     // =======================================================================
     // Non-table allocations — emit a blob immediately and return its ref.
@@ -398,9 +402,12 @@ public:
         // Bucket blobs by alignment class: 8 / 4 / 2 / 1.
         std::vector<std::uint32_t> buckets[4];
         auto bucket_of = [](std::uint32_t align) -> std::size_t {
-            if(align >= 8) return 0;
-            if(align >= 4) return 1;
-            if(align >= 2) return 2;
+            if(align >= 8)
+                return 0;
+            if(align >= 4)
+                return 1;
+            if(align >= 2)
+                return 2;
             return 3;
         };
         for(std::uint32_t i = 0; i < blobs.size(); ++i) {

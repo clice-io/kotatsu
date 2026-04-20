@@ -1,6 +1,6 @@
 #include "../standard_case_suite.h"
-#include "kota/codec/flatcode/flatcode.h"
 #include "kota/zest/zest.h"
+#include "kota/codec/flatcode/flatcode.h"
 
 namespace kota::codec {
 

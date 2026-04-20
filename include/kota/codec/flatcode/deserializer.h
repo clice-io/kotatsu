@@ -8,11 +8,11 @@
 #include <string_view>
 #include <vector>
 
+#include "kota/support/expected_try.h"
 #include "kota/codec/arena/decode.h"
 #include "kota/codec/arena/traits.h"
 #include "kota/codec/config.h"
 #include "kota/codec/flatcode/serializer.h"
-#include "kota/support/expected_try.h"
 
 namespace kota::codec::flatcode {
 
@@ -36,7 +36,9 @@ public:
     scalar_vector_view(const std::uint8_t* elements_ptr, std::size_t count) :
         elements(elements_ptr), count_(count) {}
 
-    auto size() const -> std::size_t { return count_; }
+    auto size() const -> std::size_t {
+        return count_;
+    }
 
     auto operator[](std::size_t index) const -> T {
         return read_scalar<T>(elements + index * sizeof(T));
@@ -57,7 +59,9 @@ public:
                        std::size_t count) :
         base(buffer_base), base_size(buffer_size), offsets(offsets_ptr), count_(count) {}
 
-    auto size() const -> std::size_t { return count_; }
+    auto size() const -> std::size_t {
+        return count_;
+    }
 
     auto operator[](std::size_t index) const -> std::string_view {
         const auto off = read_scalar<std::uint32_t>(offsets + index * 4);
@@ -86,7 +90,9 @@ public:
     inline_struct_vector_view(const std::uint8_t* elements_ptr, std::size_t count) :
         elements(elements_ptr), count_(count) {}
 
-    auto size() const -> std::size_t { return count_; }
+    auto size() const -> std::size_t {
+        return count_;
+    }
 
     auto operator[](std::size_t index) const -> T {
         T value{};
@@ -110,7 +116,9 @@ public:
                       std::size_t count) :
         base(buffer_base), base_size(buffer_size), offsets(offsets_ptr), count_(count) {}
 
-    auto size() const -> std::size_t { return count_; }
+    auto size() const -> std::size_t {
+        return count_;
+    }
 
     auto operator[](std::size_t index) const -> TableView {
         const auto off = read_scalar<std::uint32_t>(offsets + index * 4);
@@ -151,7 +159,9 @@ public:
         return static_cast<slot_id>(index);
     }
 
-    static auto variant_tag_slot_id() -> slot_id { return 0; }
+    static auto variant_tag_slot_id() -> slot_id {
+        return 0;
+    }
 
     static auto variant_payload_slot_id(std::size_t index) -> result_t<slot_id> {
         return field_slot_id(index + 1);
@@ -185,7 +195,9 @@ public:
             }
         }
 
-        auto valid() const -> bool { return base != nullptr; }
+        auto valid() const -> bool {
+            return base != nullptr;
+        }
 
         auto has(slot_id sid) const -> bool {
             if(!valid() || sid >= n_slots_cached) {
@@ -227,9 +239,17 @@ public:
             return table_off + slot_offset(sid);
         }
 
-        auto buffer_base() const -> const std::uint8_t* { return base; }
-        auto buffer_size() const -> std::size_t { return base_size; }
-        auto table_start() const -> std::uint32_t { return table_off; }
+        auto buffer_base() const -> const std::uint8_t* {
+            return base;
+        }
+
+        auto buffer_size() const -> std::size_t {
+            return base_size;
+        }
+
+        auto table_start() const -> std::uint32_t {
+            return table_off;
+        }
 
     private:
         auto slot_offset(std::uint32_t sid) const -> std::uint32_t {
@@ -244,7 +264,9 @@ public:
 
     // === Construction ======================================================
 
-    explicit Deserializer(std::span<const std::uint8_t> bytes) { initialize(bytes); }
+    explicit Deserializer(std::span<const std::uint8_t> bytes) {
+        initialize(bytes);
+    }
 
     explicit Deserializer(std::span<const std::byte> bytes) {
         if(bytes.empty()) {
@@ -258,7 +280,10 @@ public:
     explicit Deserializer(const std::vector<std::uint8_t>& bytes) :
         Deserializer(std::span<const std::uint8_t>(bytes.data(), bytes.size())) {}
 
-    auto valid() const -> bool { return is_valid; }
+    auto valid() const -> bool {
+        return is_valid;
+    }
+
     auto error() const -> error_type {
         return is_valid ? object_error_code::none : last_error;
     }
@@ -276,7 +301,8 @@ public:
         if(!view.valid() || !view.has(sid)) {
             return std::unexpected(object_error_code::invalid_state);
         }
-        const auto off = detail::read_scalar<std::uint32_t>(buffer.data() + view.slot_absolute_offset(sid));
+        const auto off =
+            detail::read_scalar<std::uint32_t>(buffer.data() + view.slot_absolute_offset(sid));
         if(off == 0 || off + 4 > buffer.size()) {
             return std::unexpected(object_error_code::invalid_state);
         }
@@ -291,7 +317,8 @@ public:
         if(!view.valid() || !view.has(sid)) {
             return std::unexpected(object_error_code::invalid_state);
         }
-        const auto off = detail::read_scalar<std::uint32_t>(buffer.data() + view.slot_absolute_offset(sid));
+        const auto off =
+            detail::read_scalar<std::uint32_t>(buffer.data() + view.slot_absolute_offset(sid));
         if(off == 0 || off + 4 > buffer.size()) {
             return std::unexpected(object_error_code::invalid_state);
         }
@@ -319,7 +346,8 @@ public:
         if(!view.valid() || !view.has(sid)) {
             return std::unexpected(object_error_code::invalid_state);
         }
-        const auto vec_off = detail::read_scalar<std::uint32_t>(buffer.data() + view.slot_absolute_offset(sid));
+        const auto vec_off =
+            detail::read_scalar<std::uint32_t>(buffer.data() + view.slot_absolute_offset(sid));
         if(vec_off == 0 || vec_off + 4 > buffer.size()) {
             return std::unexpected(object_error_code::invalid_state);
         }
@@ -362,7 +390,8 @@ public:
         if(!view.valid() || !view.has(sid)) {
             return std::unexpected(object_error_code::invalid_state);
         }
-        const auto nested_off = detail::read_scalar<std::uint32_t>(buffer.data() + view.slot_absolute_offset(sid));
+        const auto nested_off =
+            detail::read_scalar<std::uint32_t>(buffer.data() + view.slot_absolute_offset(sid));
         if(nested_off == 0 || nested_off >= buffer.size()) {
             return std::unexpected(object_error_code::invalid_state);
         }
@@ -378,7 +407,8 @@ public:
         if(!view.valid() || !view.has(sid)) {
             return std::unexpected(object_error_code::invalid_state);
         }
-        const auto vec_off = detail::read_scalar<std::uint32_t>(buffer.data() + view.slot_absolute_offset(sid));
+        const auto vec_off =
+            detail::read_scalar<std::uint32_t>(buffer.data() + view.slot_absolute_offset(sid));
         if(vec_off == 0 || vec_off + 4 > buffer.size()) {
             return std::unexpected(object_error_code::invalid_state);
         }
@@ -475,8 +505,7 @@ private:
 };
 
 template <typename Config = config::default_config, typename T>
-auto from_flatcode(std::span<const std::uint8_t> bytes, T& value)
-    -> object_result_t<void> {
+auto from_flatcode(std::span<const std::uint8_t> bytes, T& value) -> object_result_t<void> {
     Deserializer<Config> deserializer(bytes);
     if(!deserializer.valid()) {
         return std::unexpected(deserializer.error());
@@ -496,10 +525,8 @@ auto from_flatcode(std::span<const std::byte> bytes, T& value) -> object_result_
 }
 
 template <typename Config = config::default_config, typename T>
-auto from_flatcode(const std::vector<std::uint8_t>& bytes, T& value)
-    -> object_result_t<void> {
-    return from_flatcode<Config>(std::span<const std::uint8_t>(bytes.data(), bytes.size()),
-                                     value);
+auto from_flatcode(const std::vector<std::uint8_t>& bytes, T& value) -> object_result_t<void> {
+    return from_flatcode<Config>(std::span<const std::uint8_t>(bytes.data(), bytes.size()), value);
 }
 
 template <typename T, typename Config = config::default_config>
