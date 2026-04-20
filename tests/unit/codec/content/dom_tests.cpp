@@ -315,6 +315,93 @@ TEST_CASE(deep_nested_copy_is_independent) {
     EXPECT_TRUE(original.as_object().at("data").as_array()[0].as_object().at("nums").is_string());
 }
 
+TEST_CASE(array_range_for_iteration) {
+    content::Array arr;
+    arr.push_back(content::Value(std::int64_t(10)));
+    arr.push_back(content::Value(std::int64_t(20)));
+    arr.push_back(content::Value(std::int64_t(30)));
+
+    std::int64_t sum = 0;
+    for(auto& val: arr) {
+        sum += val.as_int();
+    }
+    EXPECT_EQ(sum, 60);
+}
+
+TEST_CASE(array_const_range_for_iteration) {
+    content::Array arr;
+    arr.push_back(content::Value("a"));
+    arr.push_back(content::Value("b"));
+    arr.push_back(content::Value("c"));
+
+    const auto& const_arr = arr;
+    std::string result;
+    for(const auto& val: const_arr) {
+        result += val.as_string();
+    }
+    EXPECT_EQ(result, "abc");
+}
+
+TEST_CASE(object_range_for_iteration) {
+    content::Object obj;
+    obj.insert("x", content::Value(std::int64_t(1)));
+    obj.insert("y", content::Value(std::int64_t(2)));
+    obj.insert("z", content::Value(std::int64_t(3)));
+
+    std::int64_t sum = 0;
+    std::string keys;
+    for(auto& [key, value]: obj) {
+        keys += key;
+        sum += value.as_int();
+    }
+    EXPECT_EQ(sum, 6);
+    EXPECT_EQ(keys, "xyz");
+}
+
+TEST_CASE(object_const_range_for_iteration) {
+    content::Object obj;
+    obj.insert("a", content::Value("hello"));
+    obj.insert("b", content::Value("world"));
+
+    const auto& const_obj = obj;
+    std::string result;
+    for(const auto& [key, value]: const_obj) {
+        result += key;
+        result += "=";
+        result += value.as_string();
+        result += ";";
+    }
+    EXPECT_EQ(result, "a=hello;b=world;");
+}
+
+TEST_CASE(array_mutation_during_iteration) {
+    content::Array arr;
+    arr.push_back(content::Value(std::int64_t(1)));
+    arr.push_back(content::Value(std::int64_t(2)));
+    arr.push_back(content::Value(std::int64_t(3)));
+
+    for(auto& val: arr) {
+        val = content::Value(val.as_int() * 10);
+    }
+
+    EXPECT_EQ(arr[0].as_int(), 10);
+    EXPECT_EQ(arr[1].as_int(), 20);
+    EXPECT_EQ(arr[2].as_int(), 30);
+}
+
+TEST_CASE(object_mutation_during_iteration) {
+    content::Object obj;
+    obj.insert("a", content::Value(std::int64_t(1)));
+    obj.insert("b", content::Value(std::int64_t(2)));
+
+    for(auto& [key, value]: obj) {
+        value = content::Value(value.as_int() + 100);
+    }
+
+    EXPECT_EQ(obj.at("a").as_int(), 101);
+    EXPECT_EQ(obj.at("b").as_int(), 102);
+}
+
 TEST_CASE(content_deserializer_keeps_temporary_root_value_alive) {
     auto make_dom = []() -> json::Value {
         auto parsed = json::parse<json::Value>(R"({"id":7,"name":"alice"})");
