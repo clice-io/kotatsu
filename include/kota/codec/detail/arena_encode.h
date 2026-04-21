@@ -22,10 +22,10 @@
 #include "kota/support/type_traits.h"
 #include "kota/meta/attrs.h"
 #include "kota/meta/schema.h"
-#include "kota/codec/detail/arena_traits.h"
-#include "kota/codec/detail/dispatch.h"
 #include "kota/codec/config.h"
+#include "kota/codec/detail/arena_traits.h"
 #include "kota/codec/detail/common.h"
+#include "kota/codec/detail/dispatch.h"
 #include "kota/codec/traits.h"
 
 namespace kota::codec::arena {
@@ -255,7 +255,9 @@ auto encode_value_at(B& b, typename B::TableBuilder& tb, typename B::slot_id sid
         return encode_value_at<Config, B, wire_t, std::tuple<>>(b, tb, sid, wire);
     } else {
         codec::detail::ArenaFieldCtx<B> ctx{b, tb, sid};
-        return codec::detail::unified_serialize<Config, codec::detail::ArenaFieldCtx<B>, Attrs>(ctx, value);
+        return codec::detail::unified_serialize<Config, codec::detail::ArenaFieldCtx<B>, Attrs>(
+            ctx,
+            value);
     }
 }
 

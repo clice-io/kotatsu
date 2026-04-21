@@ -11,9 +11,9 @@
 #include <utility>
 #include <vector>
 
+#include "kota/codec/config.h"
 #include "kota/codec/detail/arena_encode.h"
 #include "kota/codec/detail/arena_traits.h"
-#include "kota/codec/config.h"
 #include "kota/codec/flatbuffers/struct_layout.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)

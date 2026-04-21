@@ -67,9 +67,7 @@ concept serde_error_like = requires {
     { E::invalid_state } -> std::convertible_to<E>;
 };
 
-template <typename S,
-          typename T = typename S::value_type,
-          typename E = typename S::error_type>
+template <typename S, typename T = typename S::value_type, typename E = typename S::error_type>
 concept serializer_like =
     serde_error_like<E> && requires(S& s,
                                     bool b,
@@ -102,8 +100,7 @@ concept serializer_like =
         { s.end_object() } -> result_as<T, E>;
     };
 
-template <typename D,
-          typename E = typename D::error_type>
+template <typename D, typename E = typename D::error_type>
 concept deserializer_like =
     serde_error_like<E> && requires(D& d,
                                     bool& b,

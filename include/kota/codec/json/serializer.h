@@ -75,7 +75,11 @@ public:
     }
 
     result_t<value_type> serialize_null() {
-        return null();
+        if(!before_value()) {
+            return status();
+        }
+        builder.append_null();
+        return status();
     }
 
     template <typename T>
@@ -169,14 +173,19 @@ public:
     result_t<value_type> serialize_bytes(std::span<const std::byte> value) {
         KOTA_EXPECTED_TRY(begin_array(value.size()));
         for(std::byte byte: value) {
-            KOTA_EXPECTED_TRY(serialize_uint(
-                static_cast<std::uint64_t>(std::to_integer<std::uint8_t>(byte))));
+            KOTA_EXPECTED_TRY(
+                serialize_uint(static_cast<std::uint64_t>(std::to_integer<std::uint8_t>(byte))));
         }
         return end_array();
     }
 
     status_t begin_object(std::size_t /*count*/) {
-        return begin_object_impl();
+        if(!before_value()) {
+            return status();
+        }
+        builder.start_object();
+        stack.push_back(container_frame{container_kind::object, true, true});
+        return {};
     }
 
     result_t<value_type> end_object() {
@@ -197,11 +206,35 @@ public:
     }
 
     status_t field(std::string_view name) {
-        return key(name);
+        if(!is_valid || stack.empty()) {
+            mark_invalid();
+            return std::unexpected(last_error);
+        }
+
+        auto& frame = stack.back();
+        if(frame.kind != container_kind::object || !frame.expect_key) {
+            mark_invalid();
+            return std::unexpected(last_error);
+        }
+
+        if(!frame.first) {
+            builder.append_comma();
+        }
+        frame.first = false;
+
+        builder.escape_and_append_with_quotes(name);
+        builder.append_colon();
+        frame.expect_key = false;
+        return status();
     }
 
     status_t begin_array(std::optional<std::size_t> /*count*/) {
-        return begin_array_impl();
+        if(!before_value()) {
+            return status();
+        }
+        builder.start_array();
+        stack.push_back(container_frame{container_kind::array, true, false});
+        return {};
     }
 
     result_t<value_type> end_array() {
@@ -228,58 +261,6 @@ private:
         bool first = true;
         bool expect_key = true;
     };
-
-    status_t begin_object_impl() {
-        if(!before_value()) {
-            return status();
-        }
-
-        builder.start_object();
-        stack.push_back(container_frame{container_kind::object, true, true});
-        return {};
-    }
-
-    status_t begin_array_impl() {
-        if(!before_value()) {
-            return status();
-        }
-
-        builder.start_array();
-        stack.push_back(container_frame{container_kind::array, true, false});
-        return {};
-    }
-
-    status_t key(std::string_view key_name) {
-        if(!is_valid || stack.empty()) {
-            mark_invalid();
-            return std::unexpected(last_error);
-        }
-
-        auto& frame = stack.back();
-        if(frame.kind != container_kind::object || !frame.expect_key) {
-            mark_invalid();
-            return std::unexpected(last_error);
-        }
-
-        if(!frame.first) {
-            builder.append_comma();
-        }
-        frame.first = false;
-
-        builder.escape_and_append_with_quotes(key_name);
-        builder.append_colon();
-        frame.expect_key = false;
-        return status();
-    }
-
-    status_t null() {
-        if(!before_value()) {
-            return status();
-        }
-
-        builder.append_null();
-        return status();
-    }
 
     bool before_value() {
         if(!is_valid) {

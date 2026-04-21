@@ -43,7 +43,9 @@ auto deserialize_slot_value(D& d, V& value) -> std::expected<void, E> {
             [&](auto& v) { return codec::deserialize(d, v); },
             [&](auto tag, auto& v) -> std::expected<void, E> {
                 using Adapter = typename decltype(tag)::type;
-                if constexpr(requires { Adapter::from_wire(std::declval<typename Adapter::wire_type>()); }) {
+                if constexpr(requires {
+                                 Adapter::from_wire(std::declval<typename Adapter::wire_type>());
+                             }) {
                     using wire_t = typename Adapter::wire_type;
                     wire_t wire{};
                     KOTA_EXPECTED_TRY(codec::deserialize(d, wire));
@@ -273,7 +275,8 @@ auto struct_deserialize_by_position(D& d, T& v) -> std::expected<void, E> {
             auto& field_value = *reinterpret_cast<raw_t*>(base + offset);
 
             if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
-                using pred = typename tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
+                using pred =
+                    typename tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
                 if(meta::evaluate_skip_predicate<pred>(field_value, false)) {
                     raw_t discard{};
                     auto r = codec::deserialize(d, discard);

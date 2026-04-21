@@ -126,8 +126,8 @@ public:
     result_t<value_type> serialize_bytes(std::span<const std::byte> value) {
         KOTA_EXPECTED_TRY(begin_array(value.size()));
         for(std::byte byte: value) {
-            KOTA_EXPECTED_TRY(serialize_uint(
-                static_cast<std::uint64_t>(std::to_integer<std::uint8_t>(byte))));
+            KOTA_EXPECTED_TRY(
+                serialize_uint(static_cast<std::uint64_t>(std::to_integer<std::uint8_t>(byte))));
         }
         return end_array();
     }
@@ -157,7 +157,17 @@ public:
     }
 
     status_t begin_object(std::size_t /*count*/) {
-        return begin_object_impl();
+        if(!is_valid) {
+            return std::unexpected(last_error);
+        }
+        KOTA_EXPECTED_TRY(append_value(content::Value(content::Object{})));
+        content::Object* obj = last_placed_object();
+        if(obj == nullptr) {
+            return mark_invalid();
+        }
+        stack.push_back(
+            frame{.array = nullptr, .object = obj, .pending_key = {}, .has_pending_key = false});
+        return {};
     }
 
     result_t<value_type> end_object() {
@@ -170,11 +180,30 @@ public:
     }
 
     status_t field(std::string_view name) {
-        return key(name);
+        if(!is_valid || stack.empty() || stack.back().object == nullptr) {
+            return mark_invalid();
+        }
+        auto& f = stack.back();
+        if(f.has_pending_key) {
+            return mark_invalid();
+        }
+        f.pending_key.assign(name.data(), name.size());
+        f.has_pending_key = true;
+        return {};
     }
 
     status_t begin_array(std::optional<std::size_t> /*count*/) {
-        return begin_array_impl();
+        if(!is_valid) {
+            return std::unexpected(last_error);
+        }
+        KOTA_EXPECTED_TRY(append_value(content::Value(content::Array{})));
+        content::Array* arr = last_placed_array();
+        if(arr == nullptr) {
+            return mark_invalid();
+        }
+        stack.push_back(
+            frame{.array = arr, .object = nullptr, .pending_key = {}, .has_pending_key = false});
+        return {};
     }
 
     result_t<value_type> end_array() {
@@ -192,47 +221,6 @@ private:
         std::string pending_key;
         bool has_pending_key = false;
     };
-
-    status_t begin_array_impl() {
-        if(!is_valid) {
-            return std::unexpected(last_error);
-        }
-        KOTA_EXPECTED_TRY(append_value(content::Value(content::Array{})));
-        content::Array* arr = last_placed_array();
-        if(arr == nullptr) {
-            return mark_invalid();
-        }
-        stack.push_back(
-            frame{.array = arr, .object = nullptr, .pending_key = {}, .has_pending_key = false});
-        return {};
-    }
-
-    status_t begin_object_impl() {
-        if(!is_valid) {
-            return std::unexpected(last_error);
-        }
-        KOTA_EXPECTED_TRY(append_value(content::Value(content::Object{})));
-        content::Object* obj = last_placed_object();
-        if(obj == nullptr) {
-            return mark_invalid();
-        }
-        stack.push_back(
-            frame{.array = nullptr, .object = obj, .pending_key = {}, .has_pending_key = false});
-        return {};
-    }
-
-    status_t key(std::string_view key_name) {
-        if(!is_valid || stack.empty() || stack.back().object == nullptr) {
-            return mark_invalid();
-        }
-        auto& f = stack.back();
-        if(f.has_pending_key) {
-            return mark_invalid();
-        }
-        f.pending_key.assign(key_name.data(), key_name.size());
-        f.has_pending_key = true;
-        return {};
-    }
 
     status_t append_value(content::Value v) {
         if(!is_valid) {
@@ -351,7 +339,8 @@ struct serialize_traits<S, content::Array> {
         KOTA_EXPECTED_TRY(s.begin_array(value.size()));
         for(const auto& item: value) {
             auto _r = detail::emit_element_value<S, error_type>(s, codec::serialize(s, item));
-            if(!_r) return std::unexpected(_r.error());
+            if(!_r)
+                return std::unexpected(_r.error());
         }
         return s.end_array();
     }
@@ -368,7 +357,8 @@ struct serialize_traits<S, content::Object> {
         for(const auto& entry: value) {
             KOTA_EXPECTED_TRY(s.field(std::string_view(entry.key)));
             auto _r = detail::emit_field_value<S, error_type>(s, codec::serialize(s, entry.value));
-            if(!_r) return std::unexpected(_r.error());
+            if(!_r)
+                return std::unexpected(_r.error());
         }
         return s.end_object();
     }

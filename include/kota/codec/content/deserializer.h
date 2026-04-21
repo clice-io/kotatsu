@@ -264,7 +264,11 @@ public:
     }
 
     status_t begin_object() {
-        KOTA_EXPECTED_TRY_V(auto obj, open_object());
+        KOTA_EXPECTED_TRY_V(auto ref, consume_value_ref());
+        const content::Object* obj = ref.get_object();
+        if(obj == nullptr) {
+            return mark_invalid(error_type::type_mismatch);
+        }
         deser_stack.push_back(deser_frame{.object = obj, .it = obj->begin()});
         return {};
     }
@@ -302,7 +306,11 @@ public:
     }
 
     status_t begin_array() {
-        KOTA_EXPECTED_TRY_V(auto arr, open_array());
+        KOTA_EXPECTED_TRY_V(auto ref, consume_value_ref());
+        const content::Array* arr = ref.get_array();
+        if(arr == nullptr) {
+            return mark_invalid(error_type::type_mismatch);
+        }
         array_stack.push_back({arr, 0});
         return {};
     }
@@ -451,32 +459,6 @@ private:
 
     result_t<content::Cursor> consume_value_ref() {
         return access_value_ref(true);
-    }
-
-    result_t<const content::Array*> open_array() {
-        auto ref = consume_value_ref();
-        if(!ref) {
-            return std::unexpected(ref.error());
-        }
-
-        const content::Array* array = ref->get_array();
-        if(array == nullptr) {
-            return mark_invalid(error_type::type_mismatch);
-        }
-        return array;
-    }
-
-    result_t<const content::Object*> open_object() {
-        auto ref = consume_value_ref();
-        if(!ref) {
-            return std::unexpected(ref.error());
-        }
-
-        const content::Object* object = ref->get_object();
-        if(object == nullptr) {
-            return mark_invalid(error_type::type_mismatch);
-        }
-        return object;
     }
 
     std::unexpected<error_type> mark_invalid(error_type error = error_type::invalid_state) {

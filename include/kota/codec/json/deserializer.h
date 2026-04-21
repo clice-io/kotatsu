@@ -97,7 +97,7 @@ public:
         static_assert((std::default_initializable<Ts> && ...),
                       "variant deserialization requires default-constructible alternatives");
 
-        auto json_type = peek_json_type();
+        auto json_type = peek_type();
         if(!json_type) {
             return std::unexpected(json_type.error());
         }
@@ -341,7 +341,10 @@ public:
     }
 
     status_t begin_object() {
-        KOTA_EXPECTED_TRY_V(auto obj, open_object());
+        KOTA_EXPECTED_TRY_V(
+            auto obj,
+            read_source<simdjson::ondemand::object>([](auto& doc) { return doc.get_object(); },
+                                                    [](auto& val) { return val.get_object(); }));
         current_value = nullptr;  // prevent dangling after push_back
 
         deser_frame frame;
@@ -428,7 +431,10 @@ public:
     }
 
     status_t begin_array() {
-        KOTA_EXPECTED_TRY_V(auto array, open_array());
+        KOTA_EXPECTED_TRY_V(
+            auto array,
+            read_source<simdjson::ondemand::array>([](auto& doc) { return doc.get_array(); },
+                                                   [](auto& val) { return val.get_array(); }));
         current_value = nullptr;
 
         array_frame frame;
@@ -671,10 +677,6 @@ private:
         return codec::deserialize(*this, out);
     }
 
-    result_t<simdjson::ondemand::json_type> peek_json_type() {
-        return peek_type();
-    }
-
     result_t<simdjson::ondemand::number_type> peek_number_type() {
         return read_source<simdjson::ondemand::number_type>(
             [](auto& doc) { return doc.get_number_type(); },
@@ -768,16 +770,6 @@ private:
         if(err != simdjson::SUCCESS) {
             (void)mark_invalid(err);
         }
-    }
-
-    result_t<simdjson::ondemand::array> open_array() {
-        return read_source<simdjson::ondemand::array>([](auto& doc) { return doc.get_array(); },
-                                                      [](auto& val) { return val.get_array(); });
-    }
-
-    result_t<simdjson::ondemand::object> open_object() {
-        return read_source<simdjson::ondemand::object>([](auto& doc) { return doc.get_object(); },
-                                                       [](auto& val) { return val.get_object(); });
     }
 
     std::unexpected<error_type> mark_invalid(error_kind err = error_kind::invalid_state) {

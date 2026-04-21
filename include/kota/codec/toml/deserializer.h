@@ -303,7 +303,7 @@ public:
     }
 
     status_t begin_object() {
-        KOTA_EXPECTED_TRY_V(auto table, open_table());
+        KOTA_EXPECTED_TRY_V(auto table, open_as<::toml::table>());
         deser_frame frame;
         frame.table = table;
         frame.iter = table->cbegin();
@@ -359,7 +359,7 @@ public:
     }
 
     status_t begin_array() {
-        KOTA_EXPECTED_TRY_V(auto arr, open_array());
+        KOTA_EXPECTED_TRY_V(auto arr, open_as<::toml::array>());
         array_stack.push_back({arr, 0});
         return {};
     }
@@ -539,14 +539,6 @@ private:
             return mark_invalid(error_kind::type_mismatch);
         }
         return casted;
-    }
-
-    result_t<const ::toml::array*> open_array() {
-        return open_as<::toml::array>();
-    }
-
-    result_t<const ::toml::table*> open_table() {
-        return open_as<::toml::table>();
     }
 
     static std::optional<codec::source_location> source_from_node(const ::toml::node* node) {

@@ -220,14 +220,6 @@ inline auto node_to_value(const ::toml::node& node) -> result_t<Value> {
     return std::unexpected(error_kind::unsupported_type);
 }
 
-inline auto table_to_value(const ::toml::table& table) -> result_t<Value> {
-    return node_to_value(table);
-}
-
-inline auto array_to_value(const ::toml::array& array) -> result_t<Value> {
-    return node_to_value(array);
-}
-
 }  // namespace detail
 
 template <typename Config = config::default_config>
@@ -344,12 +336,12 @@ public:
     }
 
     auto serialize_dom(const ::toml::table& value) -> result_t<value_type> {
-        KOTA_EXPECTED_TRY_V(auto converted, detail::table_to_value(value));
+        KOTA_EXPECTED_TRY_V(auto converted, detail::node_to_value(value));
         return converted;
     }
 
     auto serialize_dom(const ::toml::array& value) -> result_t<value_type> {
-        KOTA_EXPECTED_TRY_V(auto converted, detail::array_to_value(value));
+        KOTA_EXPECTED_TRY_V(auto converted, detail::node_to_value(value));
         return converted;
     }
 

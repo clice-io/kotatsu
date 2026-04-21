@@ -16,7 +16,6 @@
 #include <vector>
 
 #include "kota/support/expected_try.h"
-#include "kota/support/ranges.h"
 #include "kota/codec/backend.h"
 #include "kota/codec/bincode/error.h"
 #include "kota/codec/codec.h"
@@ -374,51 +373,3 @@ auto from_bytes(const std::vector<std::uint8_t>& bytes) -> std::expected<T, erro
 static_assert(codec::deserializer_like<Deserializer<>>);
 
 }  // namespace kota::codec::bincode
-
-namespace kota::codec {
-
-template <typename Config, typename T>
-    requires (std::ranges::input_range<std::remove_cvref_t<T>> &&
-              format_kind<std::remove_cvref_t<T>> == range_format::map)
-struct deserialize_traits<bincode::Deserializer<Config>, T> {
-    using deserializer_t = bincode::Deserializer<Config>;
-    using error_type = typename deserializer_t::error_type;
-    using map_t = std::remove_cvref_t<T>;
-    using key_t = typename map_t::key_type;
-    using mapped_t = typename map_t::mapped_type;
-
-    static auto deserialize(deserializer_t& deserializer, T& value)
-        -> std::expected<void, error_type> {
-        static_assert(std::default_initializable<key_t>,
-                      "bincode map deserialization requires default-constructible key_type");
-        static_assert(std::default_initializable<mapped_t>,
-                      "bincode map deserialization requires default-constructible mapped_type");
-        static_assert(kota::detail::map_insertable<map_t, key_t, mapped_t>,
-                      "bincode map deserialization requires insertable map container");
-
-        KOTA_EXPECTED_TRY(deserializer.begin_array());
-
-        if constexpr(requires { value.clear(); }) {
-            value.clear();
-        }
-
-        while(true) {
-            KOTA_EXPECTED_TRY_V(auto has_next, deserializer.next_element());
-            if(!has_next) {
-                break;
-            }
-
-            key_t key{};
-            KOTA_EXPECTED_TRY(codec::deserialize(deserializer, key));
-
-            mapped_t mapped{};
-            KOTA_EXPECTED_TRY(codec::deserialize(deserializer, mapped));
-
-            kota::detail::insert_map_entry(value, std::move(key), std::move(mapped));
-        }
-
-        return deserializer.end_array();
-    }
-};
-
-}  // namespace kota::codec

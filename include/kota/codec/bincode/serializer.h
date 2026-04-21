@@ -157,13 +157,21 @@ public:
         return {};
     }
 
-    result_t<value_type> end_array() { return {}; }
+    result_t<value_type> end_array() {
+        return {};
+    }
 
-    status_t begin_object(std::size_t /*count*/) { return {}; }
+    status_t begin_object(std::size_t /*count*/) {
+        return {};
+    }
 
-    status_t field(std::string_view /*name*/) { return {}; }
+    status_t field(std::string_view /*name*/) {
+        return {};
+    }
 
-    result_t<value_type> end_object() { return {}; }
+    result_t<value_type> end_object() {
+        return {};
+    }
 
 private:
     template <typename T>

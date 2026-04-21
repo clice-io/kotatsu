@@ -32,7 +32,8 @@ constexpr auto serialize_adjacently_tagged(S& s, const std::variant<Ts...>& valu
     -> std::expected<typename S::value_type, E>;
 
 template <typename S, typename E>
-auto emit_field_value(S& s, std::expected<typename S::value_type, E>&& r) -> std::expected<void, E> {
+auto emit_field_value(S& s, std::expected<typename S::value_type, E>&& r)
+    -> std::expected<void, E> {
     if(!r) {
         return std::unexpected(std::move(r).error());
     }
@@ -45,7 +46,8 @@ auto emit_field_value(S& s, std::expected<typename S::value_type, E>&& r) -> std
 }
 
 template <typename S, typename E>
-auto emit_element_value(S& s, std::expected<typename S::value_type, E>&& r) -> std::expected<void, E> {
+auto emit_element_value(S& s, std::expected<typename S::value_type, E>&& r)
+    -> std::expected<void, E> {
     if(!r) {
         return std::unexpected(std::move(r).error());
     }
@@ -140,8 +142,7 @@ auto serialize_slot_by_position(S& s, const T& v) -> std::expected<void, E> {
 }
 
 template <typename Config, typename E, typename S, typename T>
-auto struct_serialize_by_name(S& s, const T& v)
-    -> std::expected<typename S::value_type, E> {
+auto struct_serialize_by_name(S& s, const T& v) -> std::expected<typename S::value_type, E> {
     using schema = meta::virtual_schema<T, Config>;
     using slots = typename schema::slots;
     constexpr std::size_t N = type_list_size_v<slots>;
@@ -167,8 +168,7 @@ auto struct_serialize_by_name(S& s, const T& v)
 }
 
 template <typename Config, typename E, typename S, typename T>
-auto struct_serialize_by_position(S& s, const T& v)
-    -> std::expected<typename S::value_type, E> {
+auto struct_serialize_by_position(S& s, const T& v) -> std::expected<typename S::value_type, E> {
     using schema = meta::virtual_schema<T, Config>;
     using slots = typename schema::slots;
     constexpr std::size_t N = type_list_size_v<slots>;

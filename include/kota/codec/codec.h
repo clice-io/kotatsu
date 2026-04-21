@@ -18,8 +18,8 @@
 #include "kota/codec/detail/common.h"
 #include "kota/codec/detail/dispatch.h"
 #include "kota/codec/detail/fwd.h"
-#include "kota/codec/detail/struct_serialize.h"
 #include "kota/codec/detail/struct_deserialize.h"
+#include "kota/codec/detail/struct_serialize.h"
 #include "kota/codec/detail/tagged.h"
 #include "kota/codec/spelling.h"
 
@@ -33,7 +33,8 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
         return Serde::serialize(s, v);
     } else {
         detail::StreamingCtx<S> ctx{s};
-        return detail::unified_serialize<config::config_of<S>, detail::StreamingCtx<S>, std::tuple<>>(ctx, v);
+        return detail::
+            unified_serialize<config::config_of<S>, detail::StreamingCtx<S>, std::tuple<>>(ctx, v);
     }
 }
 
@@ -324,8 +325,9 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                 return d.end_object();
             } else {
                 // by_position: length-prefixed sequence of key-value pairs
-                static_assert(std::default_initializable<key_t>,
-                              "by_position map deserialization requires default-constructible key_type");
+                static_assert(
+                    std::default_initializable<key_t>,
+                    "by_position map deserialization requires default-constructible key_type");
 
                 KOTA_EXPECTED_TRY(d.begin_array());
 
