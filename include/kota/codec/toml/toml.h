@@ -71,7 +71,7 @@ concept toml_dynamic_dom_type = std::same_as<std::remove_cvref_t<T>, ::toml::tab
 
 template <typename Config, toml_dynamic_dom_type T>
 struct serialize_traits<toml::Serializer<Config>, T> {
-    using value_type = typename toml::Serializer<Config>::value_type;
+    using value_type = void;
     using error_type = typename toml::Serializer<Config>::error_type;
 
     static auto serialize(toml::Serializer<Config>& serializer, const T& value)
