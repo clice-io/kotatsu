@@ -71,9 +71,9 @@ auto deserialize_slot_value(D& d, V& value) -> std::expected<void, E> {
         } else {
             return deserialize_adjacently_tagged<E>(d, value, tag_attr{});
         }
+    } else {
+        return codec::deserialize(d, value);
     }
-
-    return codec::deserialize(d, value);
 }
 
 template <typename T, typename Config, typename E, typename D>
