@@ -964,6 +964,33 @@ ALWAYS_INLINE unsigned int available_parallelism() noexcept {
     return ::uv_available_parallelism();
 }
 
+// --- Synchronous fs wrappers (no event loop needed) ---
+
+ALWAYS_INLINE int fs_open_sync(uv_fs_t& req, const char* path, int flags, int mode) noexcept {
+    assert(path != nullptr && "uv::fs_open_sync requires non-null path");
+    return ::uv_fs_open(nullptr, &req, path, flags, mode, nullptr);
+}
+
+ALWAYS_INLINE int fs_read_sync(uv_fs_t& req,
+                                uv_file file,
+                                const uv_buf_t bufs[],
+                                unsigned int nbufs,
+                                int64_t offset) noexcept {
+    return ::uv_fs_read(nullptr, &req, file, bufs, nbufs, offset, nullptr);
+}
+
+ALWAYS_INLINE int fs_write_sync(uv_fs_t& req,
+                                 uv_file file,
+                                 const uv_buf_t bufs[],
+                                 unsigned int nbufs,
+                                 int64_t offset) noexcept {
+    return ::uv_fs_write(nullptr, &req, file, bufs, nbufs, offset, nullptr);
+}
+
+ALWAYS_INLINE int fs_close_sync(uv_fs_t& req, uv_file file) noexcept {
+    return ::uv_fs_close(nullptr, &req, file, nullptr);
+}
+
 #undef ALWAYS_INLINE
 
 struct resolved_addr {

@@ -632,81 +632,63 @@ task<std::vector<fs::dirent>, error> fs::readdir(fs::dir_handle& dir, event_loop
         loop);
 }
 
-// ============================================================================
-// Synchronous file operations
-// ============================================================================
-
-namespace {
-
-/// Returns a thread-local loop handle for synchronous libuv fs calls.
-/// libuv sync operations (cb = nullptr) don't actually run the event loop,
-/// but uv_default_loop() is a process-global singleton and is NOT thread-safe.
-/// Using a thread-local loop avoids data races when sync fs calls are made
-/// from multiple threads concurrently.
-uv_loop_t* sync_loop() noexcept {
-    static thread_local struct sync_loop_holder {
-        uv_loop_t loop{};
-
-        sync_loop_holder() {
-            if(uv_loop_init(&loop) != 0) {
-                std::terminate();
-            }
-        }
-
-        ~sync_loop_holder() {
-            if(uv_loop_close(&loop) != 0) {
-                std::terminate();
-            }
-        }
-    } holder;
-
-    return &holder.loop;
+template <typename Fn, typename Map>
+static auto run_sync_fs(Fn&& fn, Map&& map) {
+    uv_fs_t req{};
+    int r = fn(req);
+    uv::fs_req_cleanup(req);
+    return map(r);
 }
 
-}  // namespace
+template <typename Fn>
+static error run_sync_fs(Fn&& fn) {
+    return run_sync_fs(std::forward<Fn>(fn), [](int r) -> error {
+        if(r < 0) {
+            return uv::status_to_error(r);
+        }
+        return {};
+    });
+}
 
 result<int> fs::sync::open(std::string_view path, int flags, int mode) {
     std::string p(path);
-    uv_fs_t req{};
-    int r = uv_fs_open(sync_loop(), &req, p.c_str(), flags, mode, nullptr);
-    uv_fs_req_cleanup(&req);
-    if(r < 0) {
-        return outcome_error(uv::status_to_error(r));
-    }
-    return r;
+    return run_sync_fs(
+        [&](uv_fs_t& req) { return uv::fs_open_sync(req, p.c_str(), flags, mode); },
+        [](int r) -> result<int> {
+            if(r < 0) {
+                return outcome_error(uv::status_to_error(r));
+            }
+            return r;
+        });
 }
 
 result<std::size_t> fs::sync::read(int fd, std::span<char> buf, std::int64_t offset) {
     uv_buf_t uv_buf = uv_buf_init(buf.data(), static_cast<unsigned int>(buf.size()));
-    uv_fs_t req{};
-    int r = uv_fs_read(sync_loop(), &req, fd, &uv_buf, 1, offset, nullptr);
-    uv_fs_req_cleanup(&req);
-    if(r < 0) {
-        return outcome_error(uv::status_to_error(r));
-    }
-    return static_cast<std::size_t>(r);
+    return run_sync_fs(
+        [&](uv_fs_t& req) { return uv::fs_read_sync(req, fd, &uv_buf, 1, offset); },
+        [](int r) -> result<std::size_t> {
+            if(r < 0) {
+                return outcome_error(uv::status_to_error(r));
+            }
+            return static_cast<std::size_t>(r);
+        });
 }
 
 result<std::size_t> fs::sync::write(int fd, std::span<const char> buf, std::int64_t offset) {
     uv_buf_t uv_buf =
         uv_buf_init(const_cast<char*>(buf.data()), static_cast<unsigned int>(buf.size()));
-    uv_fs_t req{};
-    int r = uv_fs_write(sync_loop(), &req, fd, &uv_buf, 1, offset, nullptr);
-    uv_fs_req_cleanup(&req);
-    if(r < 0) {
-        return outcome_error(uv::status_to_error(r));
-    }
-    return static_cast<std::size_t>(r);
+    return run_sync_fs(
+        [&](uv_fs_t& req) { return uv::fs_write_sync(req, fd, &uv_buf, 1, offset); },
+        [](int r) -> result<std::size_t> {
+            if(r < 0) {
+                return outcome_error(uv::status_to_error(r));
+            }
+            return static_cast<std::size_t>(r);
+        });
 }
 
 error fs::sync::close(int fd) {
-    uv_fs_t req{};
-    int r = uv_fs_close(sync_loop(), &req, fd, nullptr);
-    uv_fs_req_cleanup(&req);
-    if(r < 0) {
-        return uv::status_to_error(r);
-    }
-    return {};
+    return run_sync_fs([&](uv_fs_t& req) { return uv::fs_close_sync(req, fd); });
 }
 
 result<std::string> fs::sync::read_to_string(std::string_view path) {
