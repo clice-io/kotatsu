@@ -1,10 +1,13 @@
 #include "kota/zest/zest.h"
-#include "kota/async/io/process.h"
 #include "kota/async/io/system.h"
 
 namespace kota {
 
 TEST_SUITE(system_info) {
+
+TEST_CASE(current_pid_positive) {
+    EXPECT_GT(sys::current_pid(), 0);
+}
 
 TEST_CASE(memory_sane) {
     auto info = sys::memory();
@@ -21,21 +24,21 @@ TEST_CASE(resident_memory) {
     EXPECT_TRUE(*rss > 0);
 }
 
-TEST_CASE(resources) {
-    auto ru = sys::resources();
-    ASSERT_TRUE(ru.has_value());
-    // user_time may be 0 if the process hasn't consumed a full tick yet.
-    EXPECT_TRUE(ru->user_time >= std::chrono::microseconds::zero());
-    EXPECT_TRUE(ru->max_rss > 0);
+TEST_CASE(process_self) {
+    auto stat = sys::process();
+    ASSERT_TRUE(stat.has_value());
+    EXPECT_EQ(stat->pid, sys::current_pid());
+    EXPECT_GT(stat->rss, std::size_t{0});
+    EXPECT_GT(stat->vsize, std::size_t{0});
+    EXPECT_GT(stat->max_rss, std::size_t{0});
 }
 
-TEST_CASE(process_self) {
-    auto pid = process::current_pid();
+TEST_CASE(process_by_pid) {
+    auto pid = sys::current_pid();
     auto stat = sys::process(pid);
     ASSERT_TRUE(stat.has_value());
     EXPECT_EQ(stat->pid, pid);
     EXPECT_GT(stat->rss, std::size_t{0});
-    EXPECT_GT(stat->vsize, std::size_t{0});
 }
 
 TEST_CASE(process_invalid_pid) {
@@ -93,7 +96,16 @@ TEST_CASE(priority_round_trip) {
     auto orig = sys::priority();
     ASSERT_TRUE(orig.has_value());
 
-    // Lower priority (higher nice value), then restore.
+#ifdef _WIN32
+    // Windows maps nice values to discrete priority classes;
+    // only class boundary values (0, 10, 19, ...) round-trip exactly.
+    auto err = sys::set_priority(0);
+    EXPECT_TRUE(!err.has_error());
+    auto changed = sys::priority();
+    ASSERT_TRUE(changed.has_value());
+    EXPECT_EQ(*changed, 0);
+    sys::set_priority(*orig);
+#else
     auto err = sys::set_priority(*orig + 1);
     EXPECT_TRUE(!err.has_error());
 
@@ -102,6 +114,7 @@ TEST_CASE(priority_round_trip) {
     EXPECT_EQ(*changed, *orig + 1);
 
     sys::set_priority(*orig);
+#endif
 }
 
 };  // TEST_SUITE(system_info)

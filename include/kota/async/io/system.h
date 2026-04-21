@@ -56,30 +56,6 @@ struct cpu_core {
     cpu_times times;
 };
 
-/// Process resource usage snapshot (mirrors POSIX getrusage).
-struct resource_usage {
-    /// User-mode CPU time.
-    std::chrono::microseconds user_time{};
-
-    /// Kernel-mode CPU time.
-    std::chrono::microseconds system_time{};
-
-    /// Peak resident set size in kilobytes.
-    std::uint64_t max_rss = 0;
-
-    /// Page faults serviced without I/O (minor faults).
-    std::uint64_t minor_faults = 0;
-
-    /// Page faults requiring disk I/O (major faults).
-    std::uint64_t major_faults = 0;
-
-    /// Context switches initiated by the process yielding the CPU.
-    std::uint64_t voluntary_context_switches = 0;
-
-    /// Context switches forced by the scheduler.
-    std::uint64_t involuntary_context_switches = 0;
-};
-
 /// Snapshot of a process's resource usage.
 struct process_stat {
     /// Process ID.
@@ -96,6 +72,21 @@ struct process_stat {
 
     /// Kernel-mode CPU time.
     std::chrono::microseconds system_time{};
+
+    /// Peak resident set size in bytes.
+    std::size_t max_rss = 0;
+
+    /// Page faults serviced without I/O (minor faults).
+    std::uint64_t minor_faults = 0;
+
+    /// Page faults requiring disk I/O (major faults).
+    std::uint64_t major_faults = 0;
+
+    /// Context switches initiated by the process yielding the CPU.
+    std::uint64_t voluntary_context_switches = 0;
+
+    /// Context switches forced by the scheduler.
+    std::uint64_t involuntary_context_switches = 0;
 };
 
 /// Operating system identification.
@@ -113,17 +104,17 @@ struct uname_info {
     std::string machine;
 };
 
+/// Retrieve the OS pid of the calling process.
+int current_pid() noexcept;
+
 /// Query system memory information.
 memory_info memory();
 
 /// Query the resident set size of the current process (in bytes).
 result<std::size_t> resident_memory();
 
-/// Query detailed resource usage for the current process.
-result<resource_usage> resources();
-
-/// Query resource usage for a process by pid.
-result<process_stat> process(int pid);
+/// Query resource usage for a process by pid (0 = current process).
+result<process_stat> process(int pid = 0);
 
 /// Query per-core CPU information.
 result<std::vector<cpu_core>> cpu_cores();

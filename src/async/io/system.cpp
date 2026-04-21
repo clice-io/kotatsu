@@ -16,6 +16,10 @@
 
 namespace kota::sys {
 
+int current_pid() noexcept {
+    return static_cast<int>(::uv_os_getpid());
+}
+
 memory_info memory() {
     memory_info info;
     info.total = ::uv_get_total_memory();
@@ -31,25 +35,6 @@ result<std::size_t> resident_memory() {
         return outcome_error(err);
     }
     return rss;
-}
-
-result<resource_usage> resources() {
-    uv_rusage_t ru{};
-    if(auto err = uv::getrusage(ru)) {
-        return outcome_error(err);
-    }
-
-    resource_usage usage;
-    usage.user_time =
-        std::chrono::seconds(ru.ru_utime.tv_sec) + std::chrono::microseconds(ru.ru_utime.tv_usec);
-    usage.system_time =
-        std::chrono::seconds(ru.ru_stime.tv_sec) + std::chrono::microseconds(ru.ru_stime.tv_usec);
-    usage.max_rss = ru.ru_maxrss;
-    usage.minor_faults = ru.ru_minflt;
-    usage.major_faults = ru.ru_majflt;
-    usage.voluntary_context_switches = ru.ru_nvcsw;
-    usage.involuntary_context_switches = ru.ru_nivcsw;
-    return usage;
 }
 
 result<std::vector<cpu_core>> cpu_cores() {
@@ -137,6 +122,11 @@ error set_priority(int value, int pid) {
 }
 
 result<process_stat> process(int pid) {
+    bool is_self = (pid == 0);
+    if(is_self) {
+        pid = current_pid();
+    }
+
     process_stat stat{};
     stat.pid = pid;
 
@@ -180,8 +170,9 @@ result<process_stat> process(int pid) {
         stat.rss = rss_pages * page_size;
     }
 
-    // CPU times from /proc/<pid>/stat.
-    // Format: "pid (comm) state field4 ... field14(utime) field15(stime) ..."
+    // CPU times and faults from /proc/<pid>/stat.
+    // Format: "pid (comm) state ppid(4) ... minflt(10) cminflt(11)
+    //          majflt(12) cmajflt(13) utime(14) stime(15) ..."
     {
         auto content = fs::sync::read_to_string(proc_path + "/stat");
         if(content) {
@@ -190,14 +181,18 @@ result<process_stat> process(int pid) {
                 const char* cur = content->data() + rp + 1;
                 const char* end = content->data() + content->size();
 
-                // Fields after ')': state(3) ppid(4) ... utime(14) stime(15).
-                skip_field(cur, end);  // state
-                for(int i = 0; i < 10 && cur < end; ++i) {
-                    next_ulong(cur, end);
+                skip_field(cur, end);  // state (3)
+                for(int i = 0; i < 6 && cur < end; ++i) {
+                    next_ulong(cur, end);  // ppid(4)..flags(9)
                 }
 
-                unsigned long utime_ticks = next_ulong(cur, end);
-                unsigned long stime_ticks = next_ulong(cur, end);
+                stat.minor_faults = next_ulong(cur, end);  // minflt (10)
+                next_ulong(cur, end);                      // cminflt (11)
+                stat.major_faults = next_ulong(cur, end);  // majflt (12)
+                next_ulong(cur, end);                      // cmajflt (13)
+
+                unsigned long utime_ticks = next_ulong(cur, end);  // (14)
+                unsigned long stime_ticks = next_ulong(cur, end);  // (15)
 
                 long hz = sysconf(_SC_CLK_TCK);
                 if(hz <= 0) {
@@ -207,6 +202,15 @@ result<process_stat> process(int pid) {
                 stat.user_time = std::chrono::microseconds(utime_ticks * 1'000'000ULL / uhz);
                 stat.system_time = std::chrono::microseconds(stime_ticks * 1'000'000ULL / uhz);
             }
+        }
+    }
+
+    if(is_self) {
+        uv_rusage_t ru{};
+        if(!uv::getrusage(ru)) {
+            stat.max_rss = static_cast<std::size_t>(ru.ru_maxrss) * 1024;  // KB → bytes
+            stat.voluntary_context_switches = ru.ru_nvcsw;
+            stat.involuntary_context_switches = ru.ru_nivcsw;
         }
     }
 
@@ -221,12 +225,29 @@ result<process_stat> process(int pid) {
     stat.vsize = pti.pti_virtual_size;
     stat.user_time = std::chrono::microseconds(pti.pti_total_user / 1000);
     stat.system_time = std::chrono::microseconds(pti.pti_total_system / 1000);
+    stat.minor_faults = pti.pti_faults;
+    stat.major_faults = pti.pti_pageins;
+    stat.voluntary_context_switches = pti.pti_csw;
+
+    if(is_self) {
+        uv_rusage_t ru{};
+        if(!uv::getrusage(ru)) {
+            stat.max_rss = ru.ru_maxrss;  // bytes on macOS
+            stat.involuntary_context_switches = ru.ru_nivcsw;
+        }
+    }
 
 #elif defined(_WIN32)
-    HANDLE h =
-        OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, static_cast<DWORD>(pid));
-    if(!h) {
-        return outcome_error(error::no_such_process);
+    HANDLE h;
+    if(is_self) {
+        h = GetCurrentProcess();
+    } else {
+        h = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
+                        FALSE,
+                        static_cast<DWORD>(pid));
+        if(!h) {
+            return outcome_error(error::no_such_process);
+        }
     }
 
     PROCESS_MEMORY_COUNTERS pmc{};
@@ -234,6 +255,7 @@ result<process_stat> process(int pid) {
     if(GetProcessMemoryInfo(h, &pmc, sizeof(pmc))) {
         stat.rss = pmc.WorkingSetSize;
         stat.vsize = pmc.PagefileUsage;
+        stat.max_rss = pmc.PeakWorkingSetSize;
     }
 
     FILETIME creation, exit_time, kernel_time, user_time;
@@ -247,7 +269,9 @@ result<process_stat> process(int pid) {
         stat.system_time = std::chrono::microseconds(to_us(kernel_time));
     }
 
-    CloseHandle(h);
+    if(!is_self) {
+        CloseHandle(h);
+    }
 #else
     return outcome_error(error::function_not_implemented);
 #endif
