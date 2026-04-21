@@ -1,10 +1,8 @@
 #pragma once
 
 #include <cstddef>
-#include <map>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 #include "kota/codec/codec.h"
 #include "kota/codec/detail/common.h"
@@ -16,12 +14,6 @@ namespace schema_detail {
 using codec::detail::remove_annotation_t;
 using codec::detail::remove_optional_t;
 using codec::detail::clean_t;
-
-template <typename T>
-constexpr bool is_std_vector_v = is_specialization_of<std::vector, std::remove_cvref_t<T>>;
-
-template <typename T>
-constexpr bool is_std_map_v = is_specialization_of<std::map, std::remove_cvref_t<T>>;
 
 template <typename T>
 constexpr bool is_scalar_field_v =

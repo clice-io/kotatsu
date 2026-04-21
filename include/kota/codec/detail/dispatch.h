@@ -359,6 +359,9 @@ auto unified_serialize(Ctx& ctx, const V& v) -> typename Ctx::result_type {
                       "schema::flatten is only valid for struct fields");
 
         if constexpr(Ctx::backend_kind_v == backend_kind::arena) {
+            // Arena backends handle annotations (tagged variants, behavior providers,
+            // rename_all) at the field level in their own encoding pipeline.
+            // Strip the annotation wrapper and recurse into unified_serialize.
             return unified_serialize<Config, Ctx, Attrs>(ctx, value);
         } else if constexpr(is_specialization_of<std::variant, value_t> &&
                             tuple_any_of_v<attrs_t, meta::is_tagged_attr>) {
@@ -389,32 +392,25 @@ auto unified_serialize(Ctx& ctx, const V& v) -> typename Ctx::result_type {
             return unified_serialize<Config, Ctx, Attrs>(ctx, value);
         }
     } else if constexpr(tuple_count_of_v<Attrs, meta::is_behavior_provider> > 0) {
-        if constexpr(Ctx::backend_kind_v == backend_kind::streaming) {
-            return *apply_serialize_behavior<Attrs, U, E>(
-                v,
-                [&](const auto& inner) { return codec::serialize(ctx.s, inner); },
-                [&](auto tag, const auto& inner) {
-                    using Adapter = typename decltype(tag)::type;
+        return *apply_serialize_behavior<Attrs, U, E>(
+            v,
+            [&](const auto& inner) {
+                if constexpr(Ctx::backend_kind_v == backend_kind::streaming) {
+                    return codec::serialize(ctx.s, inner);
+                } else {
+                    return unified_serialize<Config, Ctx, std::tuple<>>(ctx, inner);
+                }
+            },
+            [&](auto tag, const auto& inner) {
+                using Adapter = typename decltype(tag)::type;
+                if constexpr(Ctx::backend_kind_v == backend_kind::streaming) {
                     return Adapter::serialize(ctx.s, inner);
-                });
-        } else {
-            if constexpr(tuple_has_spec_v<Attrs, meta::behavior::as>) {
-                using target = typename tuple_find_spec_t<Attrs, meta::behavior::as>::target;
-                target tmp = static_cast<target>(v);
-                return unified_serialize<Config, Ctx, std::tuple<>>(ctx, tmp);
-            } else if constexpr(tuple_has_spec_v<Attrs, meta::behavior::enum_string>) {
-                static_assert(std::is_enum_v<U>, "enum_string requires an enum type");
-                std::string_view name = meta::enum_name(static_cast<U>(v));
-                return ctx.emit_str(name);
-            } else if constexpr(tuple_has_spec_v<Attrs, meta::behavior::with>) {
-                using adapter = typename tuple_find_spec_t<Attrs, meta::behavior::with>::adapter;
-                using wire_t = typename adapter::wire_type;
-                wire_t wire = adapter::to_wire(v);
-                return unified_serialize<Config, Ctx, std::tuple<>>(ctx, wire);
-            } else {
-                return unified_serialize<Config, Ctx, std::tuple<>>(ctx, v);
-            }
-        }
+                } else {
+                    using wire_t = typename Adapter::wire_type;
+                    wire_t wire = Adapter::to_wire(inner);
+                    return unified_serialize<Config, Ctx, std::tuple<>>(ctx, wire);
+                }
+            });
     } else if constexpr(std::is_enum_v<U>) {
         using underlying_t = std::underlying_type_t<U>;
         if constexpr(Ctx::backend_kind_v == backend_kind::streaming) {
@@ -435,6 +431,8 @@ auto unified_serialize(Ctx& ctx, const V& v) -> typename Ctx::result_type {
             if constexpr(std::same_as<U, float> || std::same_as<U, double>) {
                 return ctx.emit_float_typed(static_cast<U>(v));
             } else {
+                // long double is narrowed to double — most wire formats
+                // (FlatBuffers, JSON, TOML, bincode) lack extended precision.
                 return ctx.emit_float(static_cast<double>(v));
             }
         } else {

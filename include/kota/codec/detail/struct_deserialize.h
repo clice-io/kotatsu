@@ -209,7 +209,7 @@ auto struct_deserialize_by_name(D& d, T& v) -> std::expected<void, E> {
     using schema = meta::virtual_schema<T, Config>;
     constexpr bool deny_unknown = schema::deny_unknown || config_deny_unknown_v<Config>;
 
-    if(schema_has_ambiguous_wire_names<T, Config>()) {
+    if constexpr(schema_has_ambiguous_wire_names<T, Config>()) {
         return std::unexpected(E::invalid_state);
     }
 

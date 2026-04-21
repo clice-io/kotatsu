@@ -169,6 +169,9 @@ auto struct_serialize_by_name(S& s, const T& v) -> std::expected<typename S::val
 
 template <typename Config, typename E, typename S, typename T>
 auto struct_serialize_by_position(S& s, const T& v) -> std::expected<typename S::value_type, E> {
+    static_assert(std::is_void_v<typename S::value_type>,
+                  "by_position serialization requires value_type = void");
+
     using schema = meta::virtual_schema<T, Config>;
     using slots = typename schema::slots;
     constexpr std::size_t N = type_list_size_v<slots>;

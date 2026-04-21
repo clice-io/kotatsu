@@ -517,6 +517,8 @@ auto decode_value_at(const B& d,
                     out.assign(text.data(), text.size());
                     return {};
                 } else if constexpr(std::same_as<U, std::string_view>) {
+                    // N.B. the returned view points into the FlatBuffer's backing memory;
+                    // it is only valid for the lifetime of the underlying buffer.
                     out = std::string_view(text.data(), text.size());
                     return {};
                 } else if constexpr(std::constructible_from<U, const char*, std::size_t>) {
