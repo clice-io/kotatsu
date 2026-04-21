@@ -241,8 +241,8 @@ result<process_stat> process(int pid) {
     stat.vsize = pti.pti_virtual_size;
     stat.user_time = std::chrono::microseconds(pti.pti_total_user / 1000);
     stat.system_time = std::chrono::microseconds(pti.pti_total_system / 1000);
-    stat.minor_faults = pti.pti_faults;
     stat.major_faults = pti.pti_pageins;
+    stat.minor_faults = pti.pti_faults - pti.pti_pageins;
     stat.voluntary_context_switches = pti.pti_csw;
 
     if(is_self) {

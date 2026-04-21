@@ -972,18 +972,18 @@ ALWAYS_INLINE int fs_open_sync(uv_fs_t& req, const char* path, int flags, int mo
 }
 
 ALWAYS_INLINE int fs_read_sync(uv_fs_t& req,
-                                uv_file file,
-                                const uv_buf_t bufs[],
-                                unsigned int nbufs,
-                                int64_t offset) noexcept {
+                               uv_file file,
+                               const uv_buf_t bufs[],
+                               unsigned int nbufs,
+                               int64_t offset) noexcept {
     return ::uv_fs_read(nullptr, &req, file, bufs, nbufs, offset, nullptr);
 }
 
 ALWAYS_INLINE int fs_write_sync(uv_fs_t& req,
-                                 uv_file file,
-                                 const uv_buf_t bufs[],
-                                 unsigned int nbufs,
-                                 int64_t offset) noexcept {
+                                uv_file file,
+                                const uv_buf_t bufs[],
+                                unsigned int nbufs,
+                                int64_t offset) noexcept {
     return ::uv_fs_write(nullptr, &req, file, bufs, nbufs, offset, nullptr);
 }
 

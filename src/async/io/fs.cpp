@@ -652,39 +652,36 @@ static error run_sync_fs(Fn&& fn) {
 
 result<int> fs::sync::open(std::string_view path, int flags, int mode) {
     std::string p(path);
-    return run_sync_fs(
-        [&](uv_fs_t& req) { return uv::fs_open_sync(req, p.c_str(), flags, mode); },
-        [](int r) -> result<int> {
-            if(r < 0) {
-                return outcome_error(uv::status_to_error(r));
-            }
-            return r;
-        });
+    return run_sync_fs([&](uv_fs_t& req) { return uv::fs_open_sync(req, p.c_str(), flags, mode); },
+                       [](int r) -> result<int> {
+                           if(r < 0) {
+                               return outcome_error(uv::status_to_error(r));
+                           }
+                           return r;
+                       });
 }
 
 result<std::size_t> fs::sync::read(int fd, std::span<char> buf, std::int64_t offset) {
     uv_buf_t uv_buf = uv_buf_init(buf.data(), static_cast<unsigned int>(buf.size()));
-    return run_sync_fs(
-        [&](uv_fs_t& req) { return uv::fs_read_sync(req, fd, &uv_buf, 1, offset); },
-        [](int r) -> result<std::size_t> {
-            if(r < 0) {
-                return outcome_error(uv::status_to_error(r));
-            }
-            return static_cast<std::size_t>(r);
-        });
+    return run_sync_fs([&](uv_fs_t& req) { return uv::fs_read_sync(req, fd, &uv_buf, 1, offset); },
+                       [](int r) -> result<std::size_t> {
+                           if(r < 0) {
+                               return outcome_error(uv::status_to_error(r));
+                           }
+                           return static_cast<std::size_t>(r);
+                       });
 }
 
 result<std::size_t> fs::sync::write(int fd, std::span<const char> buf, std::int64_t offset) {
     uv_buf_t uv_buf =
         uv_buf_init(const_cast<char*>(buf.data()), static_cast<unsigned int>(buf.size()));
-    return run_sync_fs(
-        [&](uv_fs_t& req) { return uv::fs_write_sync(req, fd, &uv_buf, 1, offset); },
-        [](int r) -> result<std::size_t> {
-            if(r < 0) {
-                return outcome_error(uv::status_to_error(r));
-            }
-            return static_cast<std::size_t>(r);
-        });
+    return run_sync_fs([&](uv_fs_t& req) { return uv::fs_write_sync(req, fd, &uv_buf, 1, offset); },
+                       [](int r) -> result<std::size_t> {
+                           if(r < 0) {
+                               return outcome_error(uv::status_to_error(r));
+                           }
+                           return static_cast<std::size_t>(r);
+                       });
 }
 
 error fs::sync::close(int fd) {
