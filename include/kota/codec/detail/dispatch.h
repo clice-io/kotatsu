@@ -293,9 +293,9 @@ struct ArenaFieldCtx {
         return {};
     }
 
-    template <typename V>
+    template <typename Config = config::default_config, typename V>
     result_type emit_some(const V& v) {
-        return unified_serialize<config::default_config, ArenaFieldCtx<B>, std::tuple<>>(*this, v);
+        return unified_serialize<Config, ArenaFieldCtx<B>, std::tuple<>>(*this, v);
     }
 
     template <typename Config, typename V>

@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <expected>
+#include <memory>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -72,6 +73,8 @@ auto serialize_slot_value(S& s, const V& value) -> std::expected<void, E> {
                 if constexpr(requires { Adapter::to_wire(v); }) {
                     auto wire = Adapter::to_wire(v);
                     return emit_field_value<S, E>(s, codec::serialize(s, wire));
+                } else if constexpr(requires { Adapter::serialize(s, v); }) {
+                    return emit_field_value<S, E>(s, Adapter::serialize(s, v));
                 } else {
                     return emit_field_value<S, E>(s, codec::serialize(s, v));
                 }
@@ -134,7 +137,10 @@ auto serialize_slot_by_position(S& s, const T& v) -> std::expected<void, E> {
     if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
         using pred = typename tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
         if(meta::evaluate_skip_predicate<pred>(field_value, /*is_serialize=*/true)) {
-            return {};
+            // For by-position formats, we cannot omit the slot — it would shift
+            // all subsequent field positions.  Serialize the default value instead.
+            raw_t default_value{};
+            return serialize_slot_value<attrs_t, E>(s, default_value);
         }
     }
 

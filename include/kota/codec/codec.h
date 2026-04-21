@@ -317,11 +317,15 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                         return std::unexpected(E::custom("invalid map key"));
                     }
 
+                    // Copy the key before nested deserialization — d.next_field()
+                    // returns a view that may be invalidated by recursive reads.
+                    std::string owned_key(*key);
+
                     mapped_t mapped{};
                     auto map_val_status = deserialize(d, mapped);
                     if(!map_val_status) {
                         auto err = std::move(map_val_status).error();
-                        err.prepend_field(*key);
+                        err.prepend_field(owned_key);
                         return std::unexpected(std::move(err));
                     }
 

@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -51,6 +52,8 @@ auto deserialize_slot_value(D& d, V& value) -> std::expected<void, E> {
                     KOTA_EXPECTED_TRY(codec::deserialize(d, wire));
                     v = Adapter::from_wire(std::move(wire));
                     return {};
+                } else if constexpr(requires { Adapter::deserialize(d, v); }) {
+                    return Adapter::deserialize(d, v);
                 } else {
                     return codec::deserialize(d, v);
                 }
@@ -282,8 +285,10 @@ auto struct_deserialize_by_position(D& d, T& v) -> std::expected<void, E> {
                 using pred =
                     typename tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
                 if(meta::evaluate_skip_predicate<pred>(field_value, false)) {
+                    // Discard using the same wire shape as normal deserialization
+                    // (respects with/as/enum_string behavior attrs).
                     raw_t discard{};
-                    auto r = codec::deserialize(d, discard);
+                    auto r = deserialize_slot_value<attrs_t, E>(d, discard);
                     if(!r) {
                         status = std::unexpected(r.error());
                         return false;

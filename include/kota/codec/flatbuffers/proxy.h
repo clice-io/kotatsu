@@ -4,6 +4,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <ranges>
@@ -169,9 +170,13 @@ auto field_index(Member Object::* member) -> std::size_t {
 // Slot-id helpers — delegate to the Deserializer's static helpers so the
 // proxy and arena decode layer stay in sync. Errors are ignored here (the
 // proxy uses unchecked reads and returns empty values on miss).
+// Sentinel slot that FlatBuffers' GetOptionalFieldOffset treats as "absent"
+// (any voffset >= vtable_size → returns 0).
+inline constexpr slot_id invalid_slot = std::numeric_limits<slot_id>::max();
+
 inline auto field_slot(std::size_t index) -> slot_id {
     auto r = backend::field_slot_id(index);
-    return r.has_value() ? *r : slot_id{0};
+    return r.has_value() ? *r : invalid_slot;
 }
 
 inline auto variant_tag_slot() -> slot_id {
@@ -180,7 +185,7 @@ inline auto variant_tag_slot() -> slot_id {
 
 inline auto variant_payload_slot(std::size_t index) -> slot_id {
     auto r = backend::variant_payload_slot_id(index);
-    return r.has_value() ? *r : slot_id{0};
+    return r.has_value() ? *r : invalid_slot;
 }
 
 template <typename Element,

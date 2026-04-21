@@ -196,7 +196,14 @@ public:
 
     template <typename T>
     auto dom(const T& value) -> result_t<::toml::table> {
-        KOTA_EXPECTED_TRY(codec::serialize(*this, value));
+        root_table_.clear();
+        ser_stack.clear();
+        auto status = codec::serialize(*this, value);
+        if(!status) {
+            root_table_.clear();
+            ser_stack.clear();
+            return std::unexpected(status.error());
+        }
         return std::move(root_table_);
     }
 

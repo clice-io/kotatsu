@@ -227,7 +227,10 @@ public:
         if(!is_valid) {
             return std::unexpected(last_error);
         }
-        if(array_stack.empty() || array_stack.back() == 0) {
+        if(array_stack.empty()) {
+            return mark_invalid(error_type::invalid_state);
+        }
+        if(array_stack.back() == 0) {
             return false;
         }
         --array_stack.back();

@@ -25,6 +25,7 @@
 #include "kota/codec/config.h"
 #include "kota/codec/detail/arena_traits.h"
 #include "kota/codec/detail/common.h"
+#include "kota/codec/spelling.h"
 #include "kota/codec/traits.h"
 
 namespace kota::codec::arena {
@@ -353,6 +354,8 @@ auto decode_value_at(const B& d,
         return {};
     } else if constexpr(kota::tuple_has_spec_v<Attrs, meta::behavior::enum_string>) {
         using clean_u = detail::clean_t<U>;
+        using Policy =
+            typename kota::tuple_find_spec_t<Attrs, meta::behavior::enum_string>::policy;
         static_assert(std::is_enum_v<clean_u>, "enum_string requires an enum type");
         if(!view.has(sid)) {
             if(required) {
@@ -367,7 +370,7 @@ auto decode_value_at(const B& d,
                                                                    sid,
                                                                    name,
                                                                    /*required=*/true)));
-        auto parsed = meta::enum_value<clean_u>(name);
+        auto parsed = codec::spelling::map_string_to_enum<clean_u, Policy>(name);
         if(!parsed.has_value()) {
             return std::unexpected(E::invalid_state);
         }

@@ -194,6 +194,12 @@ constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, T
         return codec::deserialize(d, alt);
     })));
 
+    // Reject trailing fields — externally tagged must have exactly one key.
+    KOTA_EXPECTED_TRY_V(auto trailing, d.next_field());
+    if(trailing.has_value()) {
+        return std::unexpected(E::custom("externally tagged variant must have exactly one field"));
+    }
+
     return d.end_object();
 }
 
