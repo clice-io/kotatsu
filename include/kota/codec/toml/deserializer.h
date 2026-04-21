@@ -343,6 +343,7 @@ public:
         }
         auto& frame = deser_stack.back();
         ++frame.iter;
+        frame.pending_node = nullptr;
         has_current_value = false;
         current_node = nullptr;
         return {};

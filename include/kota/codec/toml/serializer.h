@@ -123,7 +123,7 @@ public:
 
         if(ser_stack.empty()) {
             root_table_ = std::move(frame.table);
-            root_is_direct_table_ = true;
+
             return {};
         }
 
@@ -166,7 +166,7 @@ public:
     auto serialize_dom(const ::toml::table& value) -> status_t {
         if(ser_stack.empty()) {
             root_table_ = value;
-            root_is_direct_table_ = true;
+
             return {};
         }
         auto& parent = ser_stack.back();
@@ -225,7 +225,6 @@ private:
     };
 
     ::toml::table root_table_;
-    bool root_is_direct_table_ = false;
     std::vector<ser_frame> ser_stack;
 };
 

@@ -75,6 +75,12 @@ TEST_CASE(mixed_recursive_fields_without_prior_type_info) {
     STATIC_EXPECT_EQ(S::fields[2].name, "grouped");
 }
 
+TEST_CASE(variant_branch_mutual_recursion_without_prior_type_info) {
+    using S = virtual_schema<fx::VariantBranch>;
+    STATIC_EXPECT_EQ(S::count, 1U);
+    STATIC_EXPECT_EQ(S::fields[0].name, "nodes");
+}
+
 };  // TEST_SUITE(virtual_schema_recursive_first_access)
 
 }  // namespace

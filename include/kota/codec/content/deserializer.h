@@ -302,6 +302,7 @@ public:
             return mark_invalid();
         }
         deser_stack.pop_back();
+        has_current_value = false;
         return {};
     }
 

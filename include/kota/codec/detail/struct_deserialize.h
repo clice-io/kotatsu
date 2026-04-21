@@ -122,39 +122,36 @@ auto dispatch_slot_deserialize(D& d, std::size_t slot_index, T& value) -> std::e
 }
 
 template <typename T, typename Config>
-auto schema_has_ambiguous_wire_names() -> bool {
-    const static bool ambiguous = [] {
-        using schema = meta::virtual_schema<T, Config>;
-        for(std::size_t i = 0; i < schema::count; ++i) {
-            for(std::size_t j = i + 1; j < schema::count; ++j) {
-                // name vs name
-                if(schema::fields[i].name == schema::fields[j].name) {
+consteval bool schema_has_ambiguous_wire_names() {
+    using schema = meta::virtual_schema<T, Config>;
+    for(std::size_t i = 0; i < schema::count; ++i) {
+        for(std::size_t j = i + 1; j < schema::count; ++j) {
+            // name vs name
+            if(schema::fields[i].name == schema::fields[j].name) {
+                return true;
+            }
+            // name vs aliases
+            for(auto alias: schema::fields[j].aliases) {
+                if(schema::fields[i].name == alias) {
                     return true;
                 }
-                // name vs aliases
-                for(auto alias: schema::fields[j].aliases) {
-                    if(schema::fields[i].name == alias) {
-                        return true;
-                    }
+            }
+            for(auto alias: schema::fields[i].aliases) {
+                if(alias == schema::fields[j].name) {
+                    return true;
                 }
-                for(auto alias: schema::fields[i].aliases) {
-                    if(alias == schema::fields[j].name) {
+            }
+            // aliases vs aliases
+            for(auto a: schema::fields[i].aliases) {
+                for(auto b: schema::fields[j].aliases) {
+                    if(a == b) {
                         return true;
-                    }
-                }
-                // aliases vs aliases
-                for(auto a: schema::fields[i].aliases) {
-                    for(auto b: schema::fields[j].aliases) {
-                        if(a == b) {
-                            return true;
-                        }
                     }
                 }
             }
         }
-        return false;
-    }();
-    return ambiguous;
+    }
+    return false;
 }
 
 template <typename T, typename Config>

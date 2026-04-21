@@ -235,9 +235,13 @@ public:
     }
 
     status_t end_array() {
-        if(!array_stack.empty()) {
-            array_stack.pop_back();
+        if(array_stack.empty()) {
+            return mark_invalid(error_type::invalid_state);
         }
+        if(array_stack.back() != 0) {
+            return mark_invalid(error_type::invalid_state);
+        }
+        array_stack.pop_back();
         return {};
     }
 

@@ -40,21 +40,21 @@ struct annotated_struct_config {
 
 template <typename BaseConfig, typename Attrs>
 struct annotated_struct_config<BaseConfig, Attrs, true, false> {
-    struct type {
+    struct type : BaseConfig {
         using field_rename = typename tuple_find_spec_t<Attrs, meta::attrs::rename_all>::policy;
     };
 };
 
 template <typename BaseConfig, typename Attrs>
 struct annotated_struct_config<BaseConfig, Attrs, false, true> {
-    struct type {
+    struct type : BaseConfig {
         constexpr static bool deny_unknown_fields = true;
     };
 };
 
 template <typename BaseConfig, typename Attrs>
 struct annotated_struct_config<BaseConfig, Attrs, true, true> {
-    struct type {
+    struct type : BaseConfig {
         using field_rename = typename tuple_find_spec_t<Attrs, meta::attrs::rename_all>::policy;
         constexpr static bool deny_unknown_fields = true;
     };

@@ -151,10 +151,10 @@ public:
     }
 
     status_t begin_array(std::optional<std::size_t> len) {
-        if(len.has_value()) {
-            return write_length(*len);
+        if(!len.has_value()) {
+            return std::unexpected(error_type::invalid_state);
         }
-        return {};
+        return write_length(*len);
     }
 
     result_t<value_type> end_array() {

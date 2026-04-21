@@ -68,12 +68,6 @@ template <typename Config, typename B, typename T>
 auto encode_boxed(B& b, const T& value)
     -> std::expected<typename B::table_ref, typename B::error_type>;
 
-template <typename T>
-constexpr bool root_unboxed_v =
-    (meta::reflectable_class<T> && !std::ranges::input_range<T> && !is_pair_v<T> &&
-     !is_tuple_v<T>) ||
-    is_pair_v<T> || is_tuple_v<T> || is_specialization_of<std::variant, T>;
-
 template <typename Config, typename B, typename T>
 auto encode_root(B& b, const T& value)
     -> std::expected<typename B::table_ref, typename B::error_type> {
@@ -436,6 +430,5 @@ using detail::encode_table;
 using detail::encode_tuple_like;
 using detail::encode_value_at;
 using detail::encode_variant;
-using detail::root_unboxed_v;
 
 }  // namespace kota::codec::arena

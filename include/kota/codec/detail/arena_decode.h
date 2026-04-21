@@ -808,24 +808,8 @@ auto decode_map(const B& d,
             return std::unexpected(E::invalid_state);
         }
 
-        auto make_key = [] {
-            if constexpr(std::is_class_v<key_t>) {
-                key_t k;
-                return k;
-            } else {
-                return key_t{};
-            }
-        };
-        auto make_mapped = [] {
-            if constexpr(std::is_class_v<mapped_t>) {
-                mapped_t m;
-                return m;
-            } else {
-                return mapped_t{};
-            }
-        };
-        key_t key = make_key();
-        mapped_t mapped = make_mapped();
+        key_t key{};
+        mapped_t mapped{};
         auto key_sid = B::field_slot_id(0);
         if(!key_sid) {
             return std::unexpected(key_sid.error());
