@@ -173,29 +173,35 @@ auto schema_lookup_field(std::string_view key) -> std::optional<std::size_t> {
     return std::nullopt;
 }
 
+template <typename Slots, std::size_t I>
+consteval std::uint64_t required_field_bit() {
+    using slot_t = type_list_element_t<I, Slots>;
+    using raw_t = std::remove_cv_t<typename slot_t::raw_type>;
+    using attrs_t = typename slot_t::attrs;
+    if constexpr(!tuple_has_v<attrs_t, meta::attrs::default_value> &&
+                 !is_specialization_of<std::optional, raw_t>) {
+        return std::uint64_t(1) << I;
+    } else {
+        return 0;
+    }
+}
+
+template <typename Slots, std::size_t... Is>
+consteval std::uint64_t required_field_mask_impl(std::index_sequence<Is...>) {
+    if constexpr(sizeof...(Is) == 0) {
+        return 0;
+    } else {
+        return (required_field_bit<Slots, Is>() | ...);
+    }
+}
+
 template <typename T, typename Config>
 consteval std::uint64_t schema_required_field_mask() {
     using schema = meta::virtual_schema<T, Config>;
     using slots = typename schema::slots;
     constexpr std::size_t N = type_list_size_v<slots>;
     static_assert(N <= 64, "schema_required_field_mask: >64 slots not supported");
-
-    std::uint64_t mask = 0;
-    [&]<std::size_t... Is>(std::index_sequence<Is...>) consteval {
-        (([&] {
-             using slot_t = type_list_element_t<Is, slots>;
-             using raw_t = std::remove_cv_t<typename slot_t::raw_type>;
-             using attrs_t = typename slot_t::attrs;
-
-             if constexpr(!tuple_has_v<attrs_t, meta::attrs::default_value> &&
-                          !is_specialization_of<std::optional, raw_t>) {
-                 mask |= (std::uint64_t(1) << Is);
-             }
-         }()),
-         ...);
-    }(std::make_index_sequence<N>{});
-
-    return mask;
+    return required_field_mask_impl<slots>(std::make_index_sequence<N>{});
 }
 
 template <typename Config>
