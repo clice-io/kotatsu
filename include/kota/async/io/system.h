@@ -45,7 +45,7 @@ struct cpu_times {
 };
 
 /// Information about a single logical CPU core.
-struct cpu_info {
+struct cpu_core {
     /// CPU model name (e.g. "Intel(R) Core(TM) i7-10700K").
     std::string model;
 
@@ -80,6 +80,24 @@ struct resource_usage {
     std::uint64_t involuntary_context_switches = 0;
 };
 
+/// Snapshot of a process's resource usage.
+struct process_stat {
+    /// Process ID.
+    int pid = -1;
+
+    /// Resident set size in bytes (physical memory).
+    std::size_t rss = 0;
+
+    /// Virtual memory size in bytes.
+    std::size_t vsize = 0;
+
+    /// User-mode CPU time.
+    std::chrono::microseconds user_time{};
+
+    /// Kernel-mode CPU time.
+    std::chrono::microseconds system_time{};
+};
+
 /// Operating system identification.
 struct uname_info {
     /// OS name (e.g. "Linux", "Darwin", "Windows_NT").
@@ -104,8 +122,11 @@ result<std::size_t> resident_memory();
 /// Query detailed resource usage for the current process.
 result<resource_usage> resources();
 
+/// Query resource usage for a process by pid.
+result<process_stat> process(int pid);
+
 /// Query per-core CPU information.
-result<std::vector<cpu_info>> cpus();
+result<std::vector<cpu_core>> cpu_cores();
 
 /// Return the number of CPUs available to the process.
 unsigned int parallelism();

@@ -14,24 +14,6 @@ namespace kota {
 
 class event_loop;
 
-/// Snapshot of process resource usage.
-struct process_info {
-    /// Process ID.
-    int pid = -1;
-
-    /// Resident set size in bytes (physical memory).
-    std::size_t rss = 0;
-
-    /// Virtual memory size in bytes.
-    std::size_t vsize = 0;
-
-    /// User-mode CPU time in microseconds.
-    std::uint64_t utime_us = 0;
-
-    /// Kernel-mode CPU time in microseconds.
-    std::uint64_t stime_us = 0;
-};
-
 class process {
 public:
     process() noexcept;
@@ -148,12 +130,6 @@ public:
 
     /// Retrieve the OS pid of the calling process.
     static int current_pid() noexcept;
-
-    /// Query resource usage for this process.
-    result<process_info> query_info() const;
-
-    /// Query resource usage for an arbitrary process by pid.
-    static result<process_info> query_info(int pid);
 
 private:
     explicit process(unique_handle<Self> self) noexcept;

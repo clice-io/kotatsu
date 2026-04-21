@@ -1,4 +1,5 @@
 #include "kota/zest/zest.h"
+#include "kota/async/io/process.h"
 #include "kota/async/io/system.h"
 
 namespace kota {
@@ -28,14 +29,28 @@ TEST_CASE(resources) {
     EXPECT_TRUE(ru->max_rss > 0);
 }
 
-TEST_CASE(cpus_populated) {
-    auto cpus = sys::cpus();
-    ASSERT_TRUE(cpus.has_value());
-    EXPECT_TRUE(!cpus->empty());
+TEST_CASE(process_self) {
+    auto pid = process::current_pid();
+    auto stat = sys::process(pid);
+    ASSERT_TRUE(stat.has_value());
+    EXPECT_EQ(stat->pid, pid);
+    EXPECT_GT(stat->rss, std::size_t{0});
+    EXPECT_GT(stat->vsize, std::size_t{0});
+}
+
+TEST_CASE(process_invalid_pid) {
+    auto stat = sys::process(999999999);
+    EXPECT_FALSE(stat.has_value());
+}
+
+TEST_CASE(cpu_cores_populated) {
+    auto cores = sys::cpu_cores();
+    ASSERT_TRUE(cores.has_value());
+    EXPECT_TRUE(!cores->empty());
     // speed_mhz may be 0 on some virtualized environments.
-    for(auto& cpu: *cpus) {
-        EXPECT_TRUE(!cpu.model.empty());
-        EXPECT_TRUE(cpu.speed_mhz >= 0);
+    for(auto& core: *cores) {
+        EXPECT_TRUE(!core.model.empty());
+        EXPECT_TRUE(core.speed_mhz >= 0);
     }
 }
 

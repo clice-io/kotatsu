@@ -4,6 +4,7 @@
 
 #include "loop_fixture.h"
 #include "kota/zest/zest.h"
+#include "kota/async/io/system.h"
 
 namespace kota {
 
@@ -278,26 +279,13 @@ TEST_CASE(wait_twice) {
     }
 }
 
-TEST_CASE(query_info_self) {
-    // Query info about our own process (always valid).
-    int self_pid = process::current_pid();
-
-    auto info = process::query_info(self_pid);
-    ASSERT_TRUE(info.has_value());
-    EXPECT_EQ(info->pid, self_pid);
-    EXPECT_GT(info->rss, std::size_t{0});
-    EXPECT_GT(info->vsize, std::size_t{0});
-}
-
-TEST_CASE(query_info_child) {
+TEST_CASE(process_stat_child) {
     process::options opts;
 #ifdef _WIN32
     opts.file = "cmd.exe";
-    // Echo a ready marker then block on stdin until the parent closes it.
     opts.args = {opts.file, "/c", "echo x & set /p dummy="};
 #else
     opts.file = "/bin/sh";
-    // Print a ready marker then block on stdin until the parent closes the pipe.
     opts.args = {opts.file, "-c", "printf x; read _"};
 #endif
     opts.streams = {process::stdio::pipe(true, false),
@@ -311,22 +299,14 @@ TEST_CASE(query_info_child) {
     EXPECT_GT(pid, 0);
 
     auto verify = [&]() -> task<void> {
-        // Wait until the child has written to stdout — it is definitely running.
         auto data = co_await spawn_res->stdout_pipe.read();
         EXPECT_TRUE(data.has_value());
 
-        // Query via the instance method.
-        auto info = spawn_res->proc.query_info();
-        CO_ASSERT_TRUE(info.has_value());
-        EXPECT_EQ(info->pid, pid);
-        EXPECT_GT(info->rss, std::size_t{0});
+        auto stat = sys::process(pid);
+        CO_ASSERT_TRUE(stat.has_value());
+        EXPECT_EQ(stat->pid, pid);
+        EXPECT_GT(stat->rss, std::size_t{0});
 
-        // Query via the static overload.
-        auto info2 = process::query_info(pid);
-        CO_ASSERT_TRUE(info2.has_value());
-        EXPECT_EQ(info2->pid, pid);
-
-        // Destroy stdin pipe so the child gets EOF and exits.
         { auto drop = std::move(spawn_res->stdin_pipe); }
         co_await spawn_res->proc.wait();
         event_loop::current().stop();
@@ -334,12 +314,6 @@ TEST_CASE(query_info_child) {
 
     auto task = verify();
     schedule_all(task);
-}
-
-TEST_CASE(query_info_invalid_pid) {
-    // A very large pid should not correspond to any real process.
-    auto info = process::query_info(999999999);
-    EXPECT_FALSE(info.has_value());
 }
 
 };  // TEST_SUITE(process_io)
