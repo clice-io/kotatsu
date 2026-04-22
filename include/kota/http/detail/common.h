@@ -66,8 +66,8 @@ using curl_option_hook = std::function<curl::easy_error(CURL*)>;
 
 struct proxy {
     std::string url;
-    std::string username;
-    std::string password;
+    std::string username = {};
+    std::string password = {};
 };
 
 struct redirect_policy {

@@ -72,7 +72,7 @@ struct server_request {
 
 struct server_response {
     int status = 200;
-    std::vector<std::pair<std::string, std::string>> headers;
+    std::vector<std::pair<std::string, std::string>> headers = {};
     std::string body;
     std::chrono::milliseconds delay = 0ms;
 };
@@ -924,10 +924,11 @@ TEST_CASE(http_requests_can_interleave_with_uv_events) {
     event gate;
     auto flow =
         interleaved_fetch(client.on(loop), server.url("/first"), server.url("/second"), gate);
-    auto release_gate = [&]() -> task<> {
+    auto release_gate_fn = [&]() -> task<> {
         co_await sleep(1ms, loop);
         gate.set();
-    }();
+    };
+    auto release_gate = release_gate_fn();
 
     loop.schedule(flow);
     loop.schedule(release_gate);
