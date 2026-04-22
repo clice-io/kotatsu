@@ -1,6 +1,7 @@
 #include <cassert>
 #include <chrono>
 #include <cstdlib>
+#include <format>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -202,11 +203,13 @@ request_builder& request_builder::method(std::string value) {
 }
 
 request_builder& request_builder::bearer_auth(std::string token) {
-    return header("authorization", "Bearer " + token);
+    return header("authorization", std::format("Bearer {}", token));
 }
 
 request_builder& request_builder::basic_auth(std::string username, std::string password) {
-    return header("authorization", "Basic " + detail::base64_encode(username + ":" + password));
+    return header(
+        "authorization",
+        std::format("Basic {}", detail::base64_encode(std::format("{}:{}", username, password))));
 }
 
 request_builder& request_builder::user_agent(std::string value) {

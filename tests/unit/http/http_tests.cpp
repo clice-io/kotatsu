@@ -4,6 +4,7 @@
 #include <charconv>
 #include <chrono>
 #include <cstddef>
+#include <format>
 #include <functional>
 #include <optional>
 #include <string>
@@ -163,28 +164,19 @@ task<> write_response(tcp& client, server_response response, event_loop& loop) {
         co_await sleep(response.delay, loop);
     }
 
-    std::string payload;
-    payload += "HTTP/1.1 ";
-    payload += std::to_string(response.status);
-    payload += ' ';
-    payload += reason_phrase(response.status);
-    payload += "\r\n";
+    std::string payload =
+        std::format("HTTP/1.1 {} {}\r\n", response.status, reason_phrase(response.status));
 
     bool has_content_length = false;
     bool has_connection = false;
     for(const auto& [name, value]: response.headers) {
         has_content_length = has_content_length || lower_ascii(name) == "content-length";
         has_connection = has_connection || lower_ascii(name) == "connection";
-        payload += name;
-        payload += ": ";
-        payload += value;
-        payload += "\r\n";
+        payload += std::format("{}: {}\r\n", name, value);
     }
 
     if(!has_content_length) {
-        payload += "Content-Length: ";
-        payload += std::to_string(response.body.size());
-        payload += "\r\n";
+        payload += std::format("Content-Length: {}\r\n", response.body.size());
     }
     if(!has_connection) {
         payload += "Connection: close\r\n";
@@ -229,7 +221,7 @@ public:
     test_http_server& operator=(const test_http_server&) = delete;
 
     std::string url(std::string_view path) const {
-        return "http://127.0.0.1:" + std::to_string(port) + std::string(path);
+        return std::format("http://127.0.0.1:{}{}", port, path);
     }
 
     bool valid() const noexcept {
@@ -309,7 +301,7 @@ task<std::string, http::error> when_all_fetch(http::bound_client api,
     }
 
     auto [left, right] = *both;
-    co_return left.text_copy() + "|" + right.text_copy();
+    co_return std::format("{}|{}", left.text_copy(), right.text_copy());
 }
 
 task<std::string, http::error> interleaved_fetch(http::bound_client api,
@@ -319,7 +311,7 @@ task<std::string, http::error> interleaved_fetch(http::bound_client api,
     auto first = co_await api.get(std::move(first_url)).send().or_fail();
     co_await gate.wait();
     auto second = co_await api.get(std::move(second_url)).send().or_fail();
-    co_return first.text_copy() + "|" + second.text_copy();
+    co_return std::format("{}|{}", first.text_copy(), second.text_copy());
 }
 
 task<void, http::error>
@@ -338,7 +330,7 @@ task<std::string, http::error> recreate_manager_between_requests(http::client& c
     auto first = co_await client.get(std::move(first_url)).send().or_fail();
     http::manager::unregister_loop(loop);
     auto second = co_await client.get(std::move(second_url)).send().or_fail();
-    co_return first.text_copy() + "|" + second.text_copy();
+    co_return std::format("{}|{}", first.text_copy(), second.text_copy());
 }
 
 }  // namespace
@@ -655,7 +647,7 @@ TEST_CASE(record_cookie_false_disables_automatic_cookie_handling_for_future_requ
 
 TEST_CASE(query_parameters_are_encoded_and_headers_are_upserted) {
     test_http_server server(loop, [](const server_request& request) -> server_response {
-        return {.body = request.target + "|" + std::string(request.header("x-test"))};
+        return {.body = std::format("{}|{}", request.target, request.header("x-test"))};
     });
     ASSERT_TRUE(server.valid());
 
@@ -674,7 +666,7 @@ TEST_CASE(query_parameters_are_encoded_and_headers_are_upserted) {
 
 TEST_CASE(form_request_sets_content_type_and_encodes_body) {
     test_http_server server(loop, [](const server_request& request) -> server_response {
-        return {.body = std::string(request.header("content-type")) + "|" + request.body};
+        return {.body = std::format("{}|{}", request.header("content-type"), request.body)};
     });
     ASSERT_TRUE(server.valid());
 
@@ -780,7 +772,7 @@ TEST_CASE(redirect_policy_none_preserves_redirect_response) {
 
 TEST_CASE(custom_http_method_is_forwarded_verbatim) {
     test_http_server server(loop, [](const server_request& request) -> server_response {
-        return {.body = request.method + " " + request.target};
+        return {.body = std::format("{} {}", request.method, request.target)};
     });
     ASSERT_TRUE(server.valid());
 
@@ -856,7 +848,7 @@ TEST_CASE(many_concurrent_requests_complete) {
     tasks.reserve(count);
 
     for(int i = 0; i < count; ++i) {
-        tasks.push_back(client.get(server.url("/req/" + std::to_string(i))).send());
+        tasks.push_back(client.get(server.url(std::format("/req/{}", i))).send());
     }
 
     for(auto& task: tasks) {
@@ -870,10 +862,10 @@ TEST_CASE(many_concurrent_requests_complete) {
     for(int i = 0; i < count; ++i) {
         auto result = tasks[i].result();
         ASSERT_TRUE(result.has_value());
-        EXPECT_EQ(result->text(), "/req/" + std::to_string(i));
+        EXPECT_EQ(result->text(), std::format("/req/{}", i));
         auto target = result->header_value("x-target");
         ASSERT_TRUE(target.has_value());
-        EXPECT_EQ(*target, "/req/" + std::to_string(i));
+        EXPECT_EQ(*target, std::format("/req/{}", i));
     }
 }
 
