@@ -20,7 +20,6 @@
 #include "kota/codec/backend.h"
 #include "kota/codec/config.h"
 #include "kota/codec/detail/apply_behavior.h"
-#include "kota/codec/detail/fwd.h"
 #include "kota/codec/detail/struct_visitor.h"
 
 namespace kota::codec::detail {

@@ -1,23 +1,9 @@
 #pragma once
 
-#include <memory>
-#include <type_traits>
-#include <utility>
-#include <variant>
-
 #include "backend.h"
 #include "config.h"
-#include "kota/support/expected_try.h"
-#include "kota/support/ranges.h"
-#include "kota/meta/annotation.h"
-#include "kota/meta/attrs.h"
-#include "kota/meta/enum.h"
-#include "kota/meta/struct.h"
-#include "kota/codec/detail/common.h"
 #include "kota/codec/detail/deser_dispatch.h"
-#include "kota/codec/detail/dispatch.h"
-#include "kota/codec/detail/fwd.h"
-#include "kota/codec/detail/struct_serialize.h"
+#include "kota/codec/detail/ser_dispatch.h"
 
 namespace kota::codec {
 

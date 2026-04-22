@@ -19,7 +19,6 @@
 #include "kota/codec/config.h"
 #include "kota/codec/content/document.h"
 #include "kota/codec/detail/common.h"
-#include "kota/codec/detail/fwd.h"
 #include "kota/codec/detail/struct_serialize.h"
 
 namespace kota::codec::detail {

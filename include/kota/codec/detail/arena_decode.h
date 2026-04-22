@@ -20,7 +20,6 @@
 #include "kota/support/type_list.h"
 #include "kota/support/type_traits.h"
 #include "kota/meta/attrs.h"
-#include "kota/meta/enum.h"
 #include "kota/meta/schema.h"
 #include "kota/codec/backend.h"
 #include "kota/codec/config.h"

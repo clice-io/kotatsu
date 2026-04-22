@@ -25,7 +25,7 @@
 #include "kota/codec/backend.h"
 #include "kota/codec/config.h"
 #include "kota/codec/detail/common.h"
-#include "kota/codec/detail/dispatch.h"
+#include "kota/codec/detail/ser_dispatch.h"
 
 namespace kota::codec::arena {
 

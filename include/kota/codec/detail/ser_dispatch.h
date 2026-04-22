@@ -23,7 +23,6 @@
 #include "kota/codec/config.h"
 #include "kota/codec/detail/apply_behavior.h"
 #include "kota/codec/detail/common.h"
-#include "kota/codec/detail/fwd.h"
 #include "kota/codec/detail/struct_serialize.h"
 #include "kota/codec/spelling.h"
 
