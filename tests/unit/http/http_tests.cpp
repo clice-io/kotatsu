@@ -193,33 +193,32 @@ task<> write_response(tcp& client, server_response response, event_loop& loop) {
     payload += "\r\n";
     payload += response.body;
 
-    if(auto err = co_await client.write(std::span<const char>(payload.data(), payload.size()))) {
-        (void)err;
-    }
+    [[maybe_unused]] auto err =
+        co_await client.write(std::span<const char>(payload.data(), payload.size()));
 }
 
 class test_http_server {
 public:
     using handler_type = std::function<server_response(const server_request&)>;
 
-    test_http_server(event_loop& loop, handler_type handler) :
-        loop_(&loop), handler_(std::move(handler)) {
-        auto listener = tcp::listen("127.0.0.1", 0, {}, loop);
+    test_http_server(event_loop& ev_loop, handler_type cb) :
+        loop(&ev_loop), handler(std::move(cb)) {
+        auto listener = tcp::listen("127.0.0.1", 0, {}, ev_loop);
         if(!listener) {
             return;
         }
 
-        acceptor_ = std::move(*listener);
-        auto port = tcp::local_port(acceptor_);
-        if(!port) {
-            acceptor_.stop();
+        acceptor = std::move(*listener);
+        auto local_port = tcp::local_port(acceptor);
+        if(!local_port) {
+            acceptor.stop();
             return;
         }
 
-        port_ = *port;
-        uv::unref(acceptor_->stream);
-        server_task_ = serve();
-        loop_->schedule(server_task_);
+        port = *local_port;
+        uv::unref(acceptor->stream);
+        server_task = serve();
+        loop->schedule(server_task);
     }
 
     ~test_http_server() {
@@ -230,28 +229,28 @@ public:
     test_http_server& operator=(const test_http_server&) = delete;
 
     std::string url(std::string_view path) const {
-        return "http://127.0.0.1:" + std::to_string(port_) + std::string(path);
+        return "http://127.0.0.1:" + std::to_string(port) + std::string(path);
     }
 
     bool valid() const noexcept {
-        return port_ > 0;
+        return port > 0;
     }
 
     void stop() {
-        if(stopped_.exchange(true) || !valid()) {
+        if(stopped.exchange(true) || !valid()) {
             return;
         }
 
-        auto acceptor = std::move(acceptor_);
-        (void)acceptor.stop();
-        acceptor = {};
-        loop_->run();
-        auto result = server_task_.result();
+        auto moved_acceptor = std::move(acceptor);
+        [[maybe_unused]] auto stop_err = moved_acceptor.stop();
+        moved_acceptor = {};
+        loop->run();
+        auto result = server_task.result();
         if(result.has_error()) {
             auto err = result.error();
             EXPECT_TRUE(err == error::operation_aborted);
         }
-        port_ = 0;
+        port = 0;
     }
 
 private:
@@ -261,13 +260,13 @@ private:
             co_return;
         }
 
-        auto response = handler_ ? handler_(**request) : server_response{};
-        co_await write_response(client, std::move(response), *loop_);
+        auto response = handler ? handler(**request) : server_response{};
+        co_await write_response(client, std::move(response), *loop);
     }
 
     task<void, error> serve() {
         while(true) {
-            auto client = co_await acceptor_.accept();
+            auto client = co_await acceptor.accept();
             if(!client) {
                 if(client.error() == error::operation_aborted) {
                     co_return;
@@ -275,16 +274,16 @@ private:
                 co_await fail(client.error());
             }
 
-            loop_->schedule(handle_client(std::move(*client)));
+            loop->schedule(handle_client(std::move(*client)));
         }
     }
 
-    event_loop* loop_ = nullptr;
-    tcp::acceptor acceptor_{};
-    handler_type handler_{};
-    task<void, error> server_task_{};
-    std::atomic<bool> stopped_ = false;
-    int port_ = 0;
+    event_loop* loop = nullptr;
+    tcp::acceptor acceptor{};
+    handler_type handler{};
+    task<void, error> server_task{};
+    std::atomic<bool> stopped = false;
+    int port = 0;
 };
 
 struct http_loop_fixture : loop_fixture {

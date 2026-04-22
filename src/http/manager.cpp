@@ -29,8 +29,10 @@ auto& managers() {
 }
 
 template <typename T>
-void require_multi_setopt(CURLM* multi, CURLMoption option, T value, const char* message) noexcept {
-    (void)message;
+void require_multi_setopt(CURLM* multi,
+                          CURLMoption option,
+                          T value,
+                          [[maybe_unused]] const char* message) noexcept {
     [[maybe_unused]] auto err = curl::multi_setopt(multi, option, value);
     assert(curl::ok(err) && message);
 }
@@ -291,8 +293,7 @@ void manager::update_timeout(long timeout_ms) noexcept {
 }
 
 void manager::close_watchers() noexcept {
-    for(auto& [socket, context]: sockets) {
-        (void)socket;
+    for([[maybe_unused]] auto& [socket, context]: sockets) {
         if(!context) {
             continue;
         }

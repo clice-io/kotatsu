@@ -63,8 +63,7 @@ std::expected<client, error> build_client(event_loop* bound_loop, Options&& opti
 void require_share_setopt(CURLSH* share,
                           CURLSHoption option,
                           auto value,
-                          const char* message) noexcept {
-    (void)message;
+                          [[maybe_unused]] const char* message) noexcept {
     [[maybe_unused]] auto err = curl::share_setopt(share, option, value);
     assert(curl::ok(err) && message);
 }
