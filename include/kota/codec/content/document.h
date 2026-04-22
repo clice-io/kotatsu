@@ -194,6 +194,8 @@ public:
 
     Value(Object v) : storage(std::move(v)) {}
 
+    Value(std::initializer_list<Object::entry> entries);
+
     template <std::integral T>
         requires (!std::same_as<T, bool> && !std::same_as<T, char> &&
                   !std::same_as<T, std::int64_t> && !std::same_as<T, std::uint64_t>)
@@ -365,6 +367,8 @@ struct Object::entry {
 
     bool operator==(const entry& other) const = default;
 };
+
+inline Value::Value(std::initializer_list<Object::entry> entries) : storage(Object(entries)) {}
 
 class Cursor {
 public:
