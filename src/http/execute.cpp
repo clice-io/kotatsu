@@ -122,7 +122,8 @@ struct request_awaiter : uv::await_op<request_awaiter> {
         }
 
         if(state->request_released) {
-            return result_type(outcome_error(error::invalid_request("request state already released")));
+            return result_type(
+                outcome_error(error::invalid_request("request state already released")));
         }
 
         return state->request.finish();
