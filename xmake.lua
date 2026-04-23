@@ -6,7 +6,7 @@ set_allowedplats("windows", "linux", "macosx")
 option("dev", { default = true })
 option("test", { default = true })
 option("async", { default = true })
-option("http", { default = false })
+option("http", { default = true })
 option("ztest", { default = true })
 option("codec", { default = true })
 option("option", { default = true })
@@ -199,7 +199,7 @@ if has_config("async") then
 		add_includedirs("include", { public = true })
 		add_headerfiles("include/(kota/async/**)")
 		add_deps("support")
-		add_packages("libuv")
+		add_packages("libuv", { public = true })
 	end)
 end
 

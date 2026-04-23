@@ -7,6 +7,7 @@
 #include <format>
 #include <functional>
 #include <optional>
+#include <print>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -15,6 +16,7 @@
 
 #include "../../src/async/io/awaiter.h"
 #include "../async/loop_fixture.h"
+#include "kota/http/detail/client.h"
 #include "kota/http/detail/manager.h"
 #include "kota/http/http.h"
 #include "kota/zest/macro.h"

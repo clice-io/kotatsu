@@ -12,6 +12,7 @@ namespace kota::http {
 
 struct client_state {
     explicit client_state(client_options opts);
+    ~client_state() noexcept;
 
     void bind(event_loop& loop) noexcept;
 

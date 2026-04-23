@@ -107,6 +107,20 @@ client_state::client_state(client_options opts) : defaults(std::move(opts)) {
                          "curl share ssl session registration failed");
 }
 
+client_state::~client_state() noexcept {
+    if(!share) {
+        return;
+    }
+
+    curl::share_setopt(share.get(), CURLSHOPT_UNSHARE, CURL_LOCK_DATA_COOKIE);
+    curl::share_setopt(share.get(), CURLSHOPT_UNSHARE, CURL_LOCK_DATA_DNS);
+    curl::share_setopt(share.get(), CURLSHOPT_UNSHARE, CURL_LOCK_DATA_SSL_SESSION);
+    curl::share_setopt(share.get(), CURLSHOPT_LOCKFUNC, nullptr);
+    curl::share_setopt(share.get(), CURLSHOPT_UNLOCKFUNC, nullptr);
+    curl::share_setopt(share.get(), CURLSHOPT_USERDATA, nullptr);
+    share.reset();
+}
+
 void client_state::bind(event_loop& loop) noexcept {
     bound_loop = &loop;
 }
