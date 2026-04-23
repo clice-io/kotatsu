@@ -6,21 +6,21 @@
 
 namespace kota::http::detail {
 
-struct request_runtime_state;
-using request_runtime_ref = std::shared_ptr<request_runtime_state>;
+struct inflight_request_state;
+using inflight_request_ref = std::shared_ptr<inflight_request_state>;
 
 curl::easy_error ensure_curl_runtime() noexcept;
 
-request_runtime_ref make_request_runtime_state() noexcept;
+inflight_request_ref make_inflight_request_state() noexcept;
 
-void* request_runtime_opaque(const request_runtime_ref& runtime) noexcept;
+void* inflight_request_opaque(const inflight_request_ref& request) noexcept;
 
-request_runtime_ref retain_request_operation(void* opaque) noexcept;
+inflight_request_ref retain_inflight_request(void* opaque) noexcept;
 
-void mark_request_operation_removed(const request_runtime_ref& runtime) noexcept;
+void mark_inflight_request_removed(const inflight_request_ref& request) noexcept;
 
-void complete_request_operation(const request_runtime_ref& runtime,
-                                curl::easy_error result,
-                                bool resume_inline) noexcept;
+void complete_inflight_request(const inflight_request_ref& request,
+                               curl::easy_error result,
+                               bool resume_inline) noexcept;
 
 }  // namespace kota::http::detail

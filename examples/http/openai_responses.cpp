@@ -18,7 +18,8 @@ struct response_request {
 };
 
 task<void, http::error> request_openai(event_loop& loop) {
-    http::client client({.timeout = 60s});
+    http::client client;
+    client.timeout(60s);
     auto api = client.on(loop);
 
     auto result = co_await api.post("http://.../v1/responses")

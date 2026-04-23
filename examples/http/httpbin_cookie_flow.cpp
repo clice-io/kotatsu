@@ -14,10 +14,11 @@ void print_error(std::string_view label, const http::error& err) {
 }
 
 task<> run_demo(event_loop& loop) {
-    http::client client(loop);
+    http::client client;
 
     std::println("1) let httpbin set two cookies while automatic recording is enabled");
-    auto seeded = co_await client.get("https://httpbin.io/cookies/set?session=jar-demo&theme=light")
+    auto seeded = co_await client.on(loop)
+                      .get("https://httpbin.io/cookies/set?session=jar-demo&theme=light")
                       .send()
                       .catch_cancel();
     if(seeded.is_cancelled()) {
@@ -32,7 +33,8 @@ task<> run_demo(event_loop& loop) {
     std::println("seed response body: {}", seeded->text());
 
     std::println("\n2) ask httpbin which cookies it sees from the recorded jar");
-    auto jar_echo = co_await client.get("https://httpbin.io/cookies").send().catch_cancel();
+    auto jar_echo =
+        co_await client.on(loop).get("https://httpbin.io/cookies").send().catch_cancel();
     if(jar_echo.is_cancelled()) {
         std::println("jar echo request cancelled");
         co_return;
@@ -48,7 +50,8 @@ task<> run_demo(event_loop& loop) {
     client.record_cookie(false);
 
     std::println("\n4) send manual cookies on one request with cookies(...)");
-    auto manual = co_await client.get("https://httpbin.io/cookies")
+    auto manual = co_await client.on(loop)
+                      .get("https://httpbin.io/cookies")
                       .cookies("session=manual-demo; theme=manual-only")
                       .send()
                       .catch_cancel();

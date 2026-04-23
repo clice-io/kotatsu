@@ -325,13 +325,13 @@ task<void, http::error>
     sibling.reset();
 }
 
-task<std::string, http::error> recreate_manager_between_requests(http::client& client,
+task<std::string, http::error> recreate_manager_between_requests(http::bound_client api,
                                                                  event_loop& loop,
                                                                  std::string first_url,
                                                                  std::string second_url) {
-    auto first = co_await client.get(std::move(first_url)).send().or_fail();
+    auto first = co_await api.get(std::move(first_url)).send().or_fail();
     http::manager::unregister_loop(loop);
-    auto second = co_await client.get(std::move(second_url)).send().or_fail();
+    auto second = co_await api.get(std::move(second_url)).send().or_fail();
     co_return std::format("{}|{}", first.text_copy(), second.text_copy());
 }
 
@@ -339,53 +339,63 @@ task<std::string, http::error> recreate_manager_between_requests(http::client& c
 
 TEST_SUITE(http_client, http_loop_fixture) {
 
-TEST_CASE(builder_overrides_preserve_manual_cookie) {
-    http::client client(
-        loop,
-        {.proxy_config = http::proxy{.url = "http://proxy.internal:9000"}, .record_cookie = true});
+TEST_CASE(client_defaults_preserve_manual_cookie_overrides) {
+    test_http_server server(loop, [](const server_request& request) -> server_response {
+        return {.body = std::string(request.header("cookie"))};
+    });
+    ASSERT_TRUE(server.valid());
 
-    auto built =
-        client.get("http://example.test").cookies("manual=1").no_proxy().timeout(25ms).build();
+    auto client = http::client().proxy("http://proxy.internal:9000").record_cookie(true);
 
-    EXPECT_TRUE(built.record_cookie);
-    EXPECT_TRUE(built.disable_proxy);
-    EXPECT_FALSE(built.proxy_config.has_value());
-    EXPECT_TRUE(built.timeout.has_value());
-    EXPECT_EQ(*built.timeout, 25ms);
-    EXPECT_EQ(built.cookie, "manual=1");
+    auto req = client.on(loop)
+                   .get(server.url("/echo"))
+                   .cookies("manual=1")
+                   .no_proxy()
+                   .timeout(25ms)
+                   .send();
+    auto result = run_task(*this, req);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->text(), "manual=1");
 }
 
-TEST_CASE(client_can_be_built_unbound_and_bound_later) {
-    auto client = http::client::builder().user_agent("late-bind").build();
+TEST_CASE(client_defaults_can_be_configured_fluently) {
+    test_http_server server(loop, [](const server_request& request) -> server_response {
+        if(request.target == "/seed") {
+            return {.headers = {{"Set-Cookie", "session=jar; Path=/"}}, .body = "seed"};
+        }
+        if(request.target == "/ua") {
+            return {.body = std::string(request.header("user-agent"))};
+        }
+        return {.body = std::string(request.header("cookie"))};
+    });
+    ASSERT_TRUE(server.valid());
 
-    ASSERT_TRUE(client.has_value());
-    EXPECT_FALSE(client->is_bound());
+    auto client = http::client().user_agent("late-bind").record_cookie(false);
 
-    client->record_cookie(false);
-    client->bind(loop);
-    EXPECT_TRUE(client->is_bound());
+    auto seed = client.on(loop).get(server.url("/seed")).send();
+    auto seed_result = run_task(*this, seed);
+    ASSERT_TRUE(seed_result.has_value());
 
-    auto built = client->get("https://example.test/api").build();
-    EXPECT_EQ(built.user_agent, "late-bind");
-    EXPECT_FALSE(built.record_cookie);
+    auto ua = client.on(loop).get(server.url("/ua")).send();
+    auto ua_result = run_task(*this, ua);
+    ASSERT_TRUE(ua_result.has_value());
+    EXPECT_EQ(ua_result->text(), "late-bind");
+
+    auto echo = client.on(loop).get(server.url("/echo")).send();
+    auto echo_result = run_task(*this, echo);
+    ASSERT_TRUE(echo_result.has_value());
+    EXPECT_TRUE(echo_result->bytes().empty());
 }
 
-TEST_CASE(unbound_client_can_dispatch_via_on) {
+TEST_CASE(temporary_client_can_dispatch_via_on) {
     test_http_server server(loop, [](const server_request& request) -> server_response {
         return {.body = request.target};
     });
     ASSERT_TRUE(server.valid());
 
-    http::client client;
-    EXPECT_FALSE(client.is_bound());
-    EXPECT_FALSE(client.loop().has_value());
-
-    auto req = client.on(loop).get(server.url("/via-on")).send();
+    auto req = http::client().record_cookie(false).on(loop).get(server.url("/via-on")).send();
     auto result = run_task(*this, req);
     ASSERT_TRUE(result.has_value());
-    EXPECT_TRUE(client.is_bound());
-    ASSERT_TRUE(client.loop().has_value());
-    EXPECT_EQ(&client.loop()->get(), &loop);
     EXPECT_EQ(result->text(), "/via-on");
 }
 
@@ -399,11 +409,11 @@ TEST_CASE(request_builder_keeps_client_state_alive_after_client_destruction) {
     ASSERT_TRUE(server.valid());
 
     auto builder = [&]() {
-        http::client client(loop);
-        auto seed = client.get(server.url("/seed")).send();
+        http::client client;
+        auto seed = client.on(loop).get(server.url("/seed")).send();
         auto seed_result = run_task(*this, seed);
         EXPECT_TRUE(seed_result.has_value());
-        return client.get(server.url("/echo"));
+        return client.on(loop).get(server.url("/echo"));
     }();
 
     auto req = std::move(builder).send();
@@ -422,8 +432,8 @@ TEST_CASE(bound_client_keeps_client_state_alive_after_client_destruction) {
     ASSERT_TRUE(server.valid());
 
     auto api = [&]() {
-        http::client client(loop);
-        auto seed = client.get(server.url("/seed")).send();
+        http::client client;
+        auto seed = client.on(loop).get(server.url("/seed")).send();
         auto seed_result = run_task(*this, seed);
         EXPECT_TRUE(seed_result.has_value());
         return client.on(loop);
@@ -437,19 +447,17 @@ TEST_CASE(bound_client_keeps_client_state_alive_after_client_destruction) {
 
 #if KOTA_HTTP_HAS_CODEC_JSON
 TEST_CASE(request_builder_json_sets_body_and_content_type) {
+    test_http_server server(loop, [](const server_request& request) -> server_response {
+        return {.body = std::format("{}|{}", request.header("content-type"), request.body)};
+    });
+    ASSERT_TRUE(server.valid());
+
     http::client client;
 
-    auto builder = client.post("https://example.test/json");
-    builder.json(std::vector<int>{1, 2, 3});
-
-    auto built = std::move(builder).build();
-    EXPECT_EQ(built.body, "[1,2,3]");
-    auto content_type =
-        std::find_if(built.headers.begin(), built.headers.end(), [](const http::header& item) {
-            return item.name == "content-type";
-        });
-    ASSERT_NE(content_type, built.headers.end());
-    EXPECT_EQ(content_type->value, "application/json");
+    auto req = client.on(loop).post(server.url("/json")).json(std::vector<int>{1, 2, 3}).send();
+    auto result = run_task(*this, req);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->text(), "application/json|[1,2,3]");
 }
 #endif
 
@@ -474,57 +482,12 @@ TEST_CASE(http_curl_error_uses_detail_when_present) {
     EXPECT_EQ(err.message(), http::message(err));
 }
 
-TEST_CASE(unbound_client_send_fails_cleanly) {
-    http::client client;
-    EXPECT_FALSE(client.is_bound());
-
-    auto req = client.get("https://example.com").send();
-    auto result = run_task(*this, req);
-    EXPECT_TRUE(result.has_error());
-    EXPECT_EQ(result.error().kind, http::error_kind::invalid_request);
-}
-
-TEST_CASE(client_builder_applies_redirect_and_tls_defaults) {
-    auto client = http::client::builder(loop)
-                      .user_agent("eventide-test")
-                      .redirect(http::redirect_policy::limited(3))
-                      .referer(false)
-                      .https_only()
-                      .danger_accept_invalid_certs()
-                      .danger_accept_invalid_hostnames()
-                      .min_tls_version(http::tls_version::tls1_2)
-                      .max_tls_version(http::tls_version::tls1_3)
-                      .timeout(42ms)
-                      .build();
-
-    ASSERT_TRUE(client.has_value());
-    client->record_cookie(false);
-
-    auto built = client->get("https://example.test/api").build();
-    EXPECT_EQ(built.user_agent, "eventide-test");
-    EXPECT_FALSE(built.record_cookie);
-    EXPECT_EQ(built.redirect.max_redirects, std::size_t(3));
-    EXPECT_FALSE(built.redirect.referer);
-    EXPECT_TRUE(built.tls.https_only);
-    EXPECT_TRUE(built.tls.danger_accept_invalid_certs);
-    EXPECT_TRUE(built.tls.danger_accept_invalid_hostnames);
-    ASSERT_TRUE(built.tls.min_version.has_value());
-    ASSERT_TRUE(built.tls.max_version.has_value());
-    EXPECT_EQ(*built.tls.min_version, http::tls_version::tls1_2);
-    EXPECT_EQ(*built.tls.max_version, http::tls_version::tls1_3);
-    ASSERT_TRUE(built.timeout.has_value());
-    EXPECT_EQ(*built.timeout, 42ms);
-}
-
 TEST_CASE(invalid_tls_range_is_rejected_during_request_prepare) {
-    auto client = http::client::builder(loop)
+    auto client = http::client()
                       .min_tls_version(http::tls_version::tls1_3)
-                      .max_tls_version(http::tls_version::tls1_2)
-                      .build();
+                      .max_tls_version(http::tls_version::tls1_2);
 
-    ASSERT_TRUE(client.has_value());
-
-    auto req = client->get("https://example.com").send();
+    auto req = client.on(loop).get("https://example.com").send();
     auto result = run_task(*this, req);
     EXPECT_TRUE(result.has_error());
     EXPECT_EQ(result.error().kind, http::error_kind::invalid_request);
@@ -543,16 +506,16 @@ TEST_CASE(cookie_store_persists_and_response_headers_are_captured) {
     });
     ASSERT_TRUE(server.valid());
 
-    http::client client(loop);
+    http::client client;
 
-    auto seed = client.get(server.url("/seed")).send();
+    auto seed = client.on(loop).get(server.url("/seed")).send();
     auto seed_result = run_task(*this, seed);
     ASSERT_TRUE(seed_result.has_value());
     auto header = seed_result->header_value("x-test");
     ASSERT_TRUE(header.has_value());
     EXPECT_EQ(*header, "seed");
 
-    auto follow = client.get(server.url("/echo-cookie")).send();
+    auto follow = client.on(loop).get(server.url("/echo-cookie")).send();
     auto follow_result = run_task(*this, follow);
     ASSERT_TRUE(follow_result.has_value());
     EXPECT_EQ(follow_result->text(), "session=alpha");
@@ -568,19 +531,19 @@ TEST_CASE(cookie_store_isolated_between_clients_on_same_loop) {
     });
     ASSERT_TRUE(server.valid());
 
-    http::client left(loop);
-    http::client right(loop);
+    http::client left;
+    http::client right;
 
-    auto seed = left.get(server.url("/seed")).send();
+    auto seed = left.on(loop).get(server.url("/seed")).send();
     auto seed_result = run_task(*this, seed);
     ASSERT_TRUE(seed_result.has_value());
 
-    auto right_check = right.get(server.url("/echo-cookie")).send();
+    auto right_check = right.on(loop).get(server.url("/echo-cookie")).send();
     auto right_result = run_task(*this, right_check);
     ASSERT_TRUE(right_result.has_value());
     EXPECT_TRUE(right_result->bytes().empty());
 
-    auto left_check = left.get(server.url("/echo-cookie")).send();
+    auto left_check = left.on(loop).get(server.url("/echo-cookie")).send();
     auto left_result = run_task(*this, left_check);
     ASSERT_TRUE(left_result.has_value());
     EXPECT_EQ(left_result->text(), "session=left");
@@ -592,10 +555,10 @@ TEST_CASE(request_cookie_string_is_forwarded_verbatim) {
     });
     ASSERT_TRUE(server.valid());
 
-    http::client client(loop);
+    http::client client;
     client.record_cookie(false);
 
-    auto req = client.get(server.url("/echo-cookie")).cookies("session=manual").send();
+    auto req = client.on(loop).get(server.url("/echo-cookie")).cookies("session=manual").send();
     auto result = run_task(*this, req);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->text(), "session=manual");
@@ -611,15 +574,15 @@ TEST_CASE(record_cookie_false_disables_store_but_keeps_manual_cookies) {
     });
     ASSERT_TRUE(server.valid());
 
-    http::client client(loop);
+    http::client client;
 
-    auto seed = client.get(server.url("/seed")).send();
+    auto seed = client.on(loop).get(server.url("/seed")).send();
     auto seed_result = run_task(*this, seed);
     ASSERT_TRUE(seed_result.has_value());
 
     client.record_cookie(false);
 
-    auto req = client.get(server.url("/echo-cookie")).cookies("manual=1").send();
+    auto req = client.on(loop).get(server.url("/echo-cookie")).cookies("manual=1").send();
     auto result = run_task(*this, req);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->text(), "manual=1");
@@ -638,19 +601,19 @@ TEST_CASE(record_cookie_false_disables_automatic_cookie_handling_for_future_requ
     });
     ASSERT_TRUE(server.valid());
 
-    http::client client(loop);
+    http::client client;
 
-    auto seed = client.get(server.url("/seed")).send();
+    auto seed = client.on(loop).get(server.url("/seed")).send();
     auto seed_result = run_task(*this, seed);
     ASSERT_TRUE(seed_result.has_value());
 
     client.record_cookie(false);
 
-    auto disabled_seed = client.get(server.url("/seed-disabled")).send();
+    auto disabled_seed = client.on(loop).get(server.url("/seed-disabled")).send();
     auto disabled_seed_result = run_task(*this, disabled_seed);
     ASSERT_TRUE(disabled_seed_result.has_value());
 
-    auto req = client.get(server.url("/echo-cookie")).send();
+    auto req = client.on(loop).get(server.url("/echo-cookie")).send();
     auto result = run_task(*this, req);
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(result->bytes().empty());
@@ -662,9 +625,10 @@ TEST_CASE(query_parameters_are_encoded_and_headers_are_upserted) {
     });
     ASSERT_TRUE(server.valid());
 
-    http::client client(loop);
+    http::client client;
 
-    auto req = client.get(server.url("/inspect"))
+    auto req = client.on(loop)
+                   .get(server.url("/inspect"))
                    .query("q", "a b")
                    .query("path", "x/y")
                    .header("x-test", "one")
@@ -681,9 +645,10 @@ TEST_CASE(form_request_sets_content_type_and_encodes_body) {
     });
     ASSERT_TRUE(server.valid());
 
-    http::client client(loop);
+    http::client client;
 
-    auto req = client.post(server.url("/form"))
+    auto req = client.on(loop)
+                   .post(server.url("/form"))
                    .form({
                        {"name", "alice"},
                        {"note", "a b+c"}
@@ -695,9 +660,9 @@ TEST_CASE(form_request_sets_content_type_and_encodes_body) {
 }
 
 TEST_CASE(get_request_with_body_is_rejected) {
-    http::client client(loop);
+    http::client client;
 
-    auto req = client.get("https://example.com").body("unexpected").send();
+    auto req = client.on(loop).get("https://example.com").body("unexpected").send();
     auto result = run_task(*this, req);
     EXPECT_TRUE(result.has_error());
     EXPECT_EQ(result.error().kind, http::error_kind::invalid_request);
@@ -705,9 +670,9 @@ TEST_CASE(get_request_with_body_is_rejected) {
 }
 
 TEST_CASE(head_request_with_body_is_rejected) {
-    http::client client(loop);
+    http::client client;
 
-    auto req = client.head("https://example.com").body("unexpected").send();
+    auto req = client.on(loop).head("https://example.com").body("unexpected").send();
     auto result = run_task(*this, req);
     EXPECT_TRUE(result.has_error());
     EXPECT_EQ(result.error().kind, http::error_kind::invalid_request);
@@ -721,9 +686,9 @@ TEST_CASE(head_request_captures_headers_and_skips_body) {
     });
     ASSERT_TRUE(server.valid());
 
-    http::client client(loop);
+    http::client client;
 
-    auto req = client.head(server.url("/only-headers")).send();
+    auto req = client.on(loop).head(server.url("/only-headers")).send();
     auto result = run_task(*this, req);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->status, 200);
@@ -745,10 +710,9 @@ TEST_CASE(redirect_policy_follows_by_default_when_enabled) {
     });
     ASSERT_TRUE(server.valid());
 
-    auto client = http::client::builder(loop).redirect(http::redirect_policy::limited(4)).build();
-    ASSERT_TRUE(client.has_value());
+    auto client = http::client().redirect(http::redirect_policy::limited(4));
 
-    auto req = client->get(server.url("/jump")).send();
+    auto req = client.on(loop).get(server.url("/jump")).send();
     auto result = run_task(*this, req);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->status, 200);
@@ -768,10 +732,9 @@ TEST_CASE(redirect_policy_none_preserves_redirect_response) {
     });
     ASSERT_TRUE(server.valid());
 
-    auto client = http::client::builder(loop).redirect(http::redirect_policy::none()).build();
-    ASSERT_TRUE(client.has_value());
+    auto client = http::client().redirect(http::redirect_policy::none());
 
-    auto req = client->get(server.url("/jump")).send();
+    auto req = client.on(loop).get(server.url("/jump")).send();
     auto result = run_task(*this, req);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->status, 302);
@@ -787,8 +750,8 @@ TEST_CASE(custom_http_method_is_forwarded_verbatim) {
     });
     ASSERT_TRUE(server.valid());
 
-    http::client client(loop);
-    auto req = client.request("OPTIONS", server.url("/caps")).send();
+    http::client client;
+    auto req = client.on(loop).request("OPTIONS", server.url("/caps")).send();
     auto result = run_task(*this, req);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->text(), "OPTIONS /caps");
@@ -800,9 +763,11 @@ TEST_CASE(custom_curl_string_option_can_override_user_agent) {
     });
     ASSERT_TRUE(server.valid());
 
-    http::client client(loop);
-    auto req =
-        client.get(server.url("/ua")).curl_option(CURLOPT_USERAGENT, "curl-opt-agent/1.0").send();
+    http::client client;
+    auto req = client.on(loop)
+                   .get(server.url("/ua"))
+                   .curl_option(CURLOPT_USERAGENT, "curl-opt-agent/1.0")
+                   .send();
     auto result = run_task(*this, req);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->text(), "curl-opt-agent/1.0");
@@ -820,8 +785,9 @@ TEST_CASE(custom_curl_long_option_can_override_redirect_behavior) {
     });
     ASSERT_TRUE(server.valid());
 
-    http::client client(loop);
-    auto req = client.get(server.url("/jump")).curl_option(CURLOPT_FOLLOWLOCATION, 0L).send();
+    http::client client;
+    auto req =
+        client.on(loop).get(server.url("/jump")).curl_option(CURLOPT_FOLLOWLOCATION, 0L).send();
     auto result = run_task(*this, req);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->status, 302);
@@ -834,10 +800,9 @@ TEST_CASE(https_only_rejects_plain_http_requests) {
     });
     ASSERT_TRUE(server.valid());
 
-    auto client = http::client::builder(loop).https_only().build();
-    ASSERT_TRUE(client.has_value());
+    auto client = http::client().https_only();
 
-    auto req = client->get(server.url("/plain")).send();
+    auto req = client.on(loop).get(server.url("/plain")).send();
     auto result = run_task(*this, req);
     EXPECT_TRUE(result.has_error());
     EXPECT_EQ(result.error().kind, http::error_kind::curl);
@@ -854,12 +819,12 @@ TEST_CASE(many_concurrent_requests_complete) {
     });
     ASSERT_TRUE(server.valid());
 
-    http::client client(loop);
+    http::client client;
     std::vector<task<http::response, http::error>> tasks;
     tasks.reserve(count);
 
     for(int i = 0; i < count; ++i) {
-        tasks.push_back(client.get(server.url(std::format("/req/{}", i))).send());
+        tasks.push_back(client.on(loop).get(server.url(std::format("/req/{}", i))).send());
     }
 
     for(auto& task: tasks) {
@@ -889,12 +854,12 @@ TEST_CASE(in_flight_request_survives_client_destruction) {
     });
     ASSERT_TRUE(server.valid());
 
-    std::optional<http::client> client(std::in_place, loop);
-    auto seed = client->get(server.url("/seed")).send();
+    std::optional<http::client> client(std::in_place);
+    auto seed = client->on(loop).get(server.url("/seed")).send();
     auto seed_result = run_task(*this, seed);
     ASSERT_TRUE(seed_result.has_value());
 
-    auto req = client->get(server.url("/slow-cookie")).send();
+    auto req = client->on(loop).get(server.url("/slow-cookie")).send();
     client.reset();
 
     auto result = run_task(*this, req);
@@ -909,7 +874,7 @@ TEST_CASE(multiple_http_requests_can_be_coawaited_with_when_all) {
     });
     ASSERT_TRUE(server.valid());
 
-    http::client client(loop);
+    http::client client;
     auto flow = when_all_fetch(client.on(loop), server.url("/left"), server.url("/right"));
     auto result = run_task(*this, flow);
     ASSERT_TRUE(result.has_value());
@@ -922,7 +887,7 @@ TEST_CASE(http_requests_can_interleave_with_uv_events) {
     });
     ASSERT_TRUE(server.valid());
 
-    http::client client(loop);
+    http::client client;
     event gate;
     auto flow =
         interleaved_fetch(client.on(loop), server.url("/first"), server.url("/second"), gate);
@@ -952,9 +917,9 @@ TEST_CASE(cancelled_request_does_not_break_following_requests) {
     });
     ASSERT_TRUE(server.valid());
 
-    http::client client(loop);
+    http::client client;
 
-    auto request = client.get(server.url("/slow")).send().catch_cancel();
+    auto request = client.on(loop).get(server.url("/slow")).send().catch_cancel();
     auto cancel_after = [](task<http::response, http::error, cancellation>* pending,
                            event_loop& ev) -> task<> {
         co_await sleep(20ms, ev);
@@ -970,7 +935,7 @@ TEST_CASE(cancelled_request_does_not_break_following_requests) {
     EXPECT_TRUE(cancelled.is_cancelled());
     EXPECT_EQ(http::manager::for_loop(loop).pending_requests(), std::size_t(0));
 
-    auto next = client.get(server.url("/ok")).send();
+    auto next = client.on(loop).get(server.url("/ok")).send();
     auto next_result = run_task(*this, next);
     ASSERT_TRUE(next_result.has_value());
     EXPECT_EQ(next_result->text(), "ok");
@@ -986,10 +951,10 @@ TEST_CASE(destroying_a_sibling_task_after_http_completion_keeps_manager_healthy)
     });
     ASSERT_TRUE(server.valid());
 
-    http::client client(loop);
+    http::client client;
     std::optional<task<http::response, http::error>> sibling(
         std::in_place,
-        client.get(server.url("/second")).send());
+        client.on(loop).get(server.url("/second")).send());
     auto flow = destroy_sibling_after_first(client.on(loop), server.url("/first"), sibling);
 
     loop.schedule(flow);
@@ -1001,7 +966,7 @@ TEST_CASE(destroying_a_sibling_task_after_http_completion_keeps_manager_healthy)
     EXPECT_FALSE(sibling.has_value());
     EXPECT_EQ(http::manager::for_loop(loop).pending_requests(), std::size_t(0));
 
-    auto next = client.get(server.url("/after")).send();
+    auto next = client.on(loop).get(server.url("/after")).send();
     auto next_result = run_task(*this, next);
     ASSERT_TRUE(next_result.has_value());
     EXPECT_EQ(next_result->text(), "/after");
@@ -1015,8 +980,8 @@ TEST_CASE(http_completion_can_recreate_manager_inline) {
     });
     ASSERT_TRUE(server.valid());
 
-    http::client client(loop);
-    auto flow = recreate_manager_between_requests(client,
+    http::client client;
+    auto flow = recreate_manager_between_requests(client.on(loop),
                                                   loop,
                                                   server.url("/first"),
                                                   server.url("/second"));

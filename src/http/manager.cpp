@@ -52,7 +52,8 @@ manager::manager(event_loop& loop, curl::multi_handle handle) noexcept :
 }
 
 std::expected<void, error> manager::initialize() {
-    if(auto err = curl::multi_setopt(multi.get(), CURLMOPT_SOCKETFUNCTION, &manager::on_curl_socket);
+    if(auto err =
+           curl::multi_setopt(multi.get(), CURLMOPT_SOCKETFUNCTION, &manager::on_curl_socket);
        !curl::ok(err)) {
         return std::unexpected(error::from_curl(
             err,
@@ -66,7 +67,8 @@ std::expected<void, error> manager::initialize() {
             std::format("failed to register curl socket callback data: {}", curl::message(err))));
     }
 
-    if(auto err = curl::multi_setopt(multi.get(), CURLMOPT_TIMERFUNCTION, &manager::on_curl_timeout);
+    if(auto err =
+           curl::multi_setopt(multi.get(), CURLMOPT_TIMERFUNCTION, &manager::on_curl_timeout);
        !curl::ok(err)) {
         return std::unexpected(error::from_curl(
             err,
@@ -184,7 +186,7 @@ void manager::drain_completed_arming(void* arming_request) noexcept {
 }
 
 void manager::drain_completed_impl(void* arming_request) noexcept {
-    std::vector<std::pair<detail::request_runtime_ref, curl::easy_error>> deferred;
+    std::vector<std::pair<detail::inflight_request_ref, curl::easy_error>> deferred;
     int pending = 0;
     while(auto* msg = curl::multi_info_read(multi.get(), &pending)) {
         if(msg->msg != CURLMSG_DONE) {
@@ -197,28 +199,28 @@ void manager::drain_completed_impl(void* arming_request) noexcept {
             continue;
         }
 
-        auto runtime = detail::retain_request_operation(opaque);
-        if(!runtime) {
+        auto request = detail::retain_inflight_request(opaque);
+        if(!request) {
             continue;
         }
 
         remove_request(easy);
         if(arming_request != nullptr && opaque == arming_request) {
-            detail::mark_request_operation_removed(runtime);
-            detail::complete_request_operation(runtime, msg->data.result, true);
+            detail::mark_inflight_request_removed(request);
+            detail::complete_inflight_request(request, msg->data.result, true);
             continue;
         }
 
-        detail::mark_request_operation_removed(runtime);
-        deferred.emplace_back(std::move(runtime), msg->data.result);
+        detail::mark_inflight_request_removed(request);
+        deferred.emplace_back(std::move(request), msg->data.result);
     }
 
     if(deferred.empty()) {
         return;
     }
 
-    for(auto& [runtime, result]: deferred) {
-        detail::complete_request_operation(runtime, result, false);
+    for(auto& [request, result]: deferred) {
+        detail::complete_inflight_request(request, result, false);
     }
 }
 

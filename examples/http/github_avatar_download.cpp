@@ -12,9 +12,10 @@ using namespace kota;
 namespace {
 
 task<void, http::error> download_avatar(event_loop& loop) {
-    http::client client(loop);
+    http::client client;
 
-    auto response = co_await client.get("https://avatars.githubusercontent.com/u/75871375?v=4")
+    auto response = co_await client.on(loop)
+                        .get("https://avatars.githubusercontent.com/u/75871375?v=4")
                         .header("accept", "image/*")
                         .send()
                         .or_fail();

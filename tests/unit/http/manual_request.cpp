@@ -7,8 +7,8 @@ TEST_SUITE(http_manual_request) {
 TEST_CASE(get_request) {
     using namespace kota;
     event_loop loop;
-    http::client client(loop);
-    auto request = client.get("https://github.com").send();
+    http::client client;
+    auto request = client.on(loop).get("https://github.com").send();
     loop.schedule(request);
     loop.run();
     auto result = request.result();

@@ -1,10 +1,10 @@
-#include "kota/http/detail/prepared_request.h"
+#include "kota/http/detail/inflight_request.h"
 
 #include <cassert>
 #include <cstddef>
 #include <limits>
-#include <memory>
 #include <string_view>
+#include <utility>
 
 #include "kota/http/detail/util.h"
 
@@ -26,6 +26,30 @@ constexpr int tls_version_rank(http::tls_version value) noexcept {
 }  // namespace
 
 namespace detail {
+
+namespace {
+
+bool bind_easy(CURL* easy,
+               const std::shared_ptr<shared_resources>& shared,
+               bool enable_record_cookie) noexcept {
+    if(!easy || !shared || !shared->share) {
+        return false;
+    }
+
+    if(auto err = curl::setopt(easy, CURLOPT_SHARE, shared->share.get()); !curl::ok(err)) {
+        return false;
+    }
+
+    if(enable_record_cookie) {
+        if(auto err = curl::setopt(easy, CURLOPT_COOKIEFILE, ""); !curl::ok(err)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+}  // namespace
 
 long to_curl_ssl_min(http::tls_version value) noexcept {
     switch(value) {
@@ -69,10 +93,28 @@ long to_curl_ssl_max(http::tls_version value) noexcept {
     return 0;
 }
 
+inflight_request::inflight_request(http::request request) noexcept :
+    request_settings(std::move(request)), shared(std::move(request.shared)),
+    method_name(std::move(request.method_name)), url_string(std::move(request.url_string)),
+    query_params(std::move(request.query_params)), body_text(std::move(request.body_text)) {
+    easy = curl::easy_handle::create();
+    if(!easy) {
+        fail(CURLE_FAILED_INIT);
+        return;
+    }
+
+    if(!easy_setopt(*this, CURLOPT_WRITEFUNCTION, &inflight_request::on_write) ||
+       !easy_setopt(*this, CURLOPT_WRITEDATA, this) ||
+       !easy_setopt(*this, CURLOPT_HEADERFUNCTION, &inflight_request::on_header) ||
+       !easy_setopt(*this, CURLOPT_HEADERDATA, this)) {
+        return;
+    }
+}
+
 std::size_t
-    prepared_request::on_write(char* data, std::size_t size, std::size_t count, void* userdata) {
-    auto* self = static_cast<prepared_request*>(userdata);
-    assert(self != nullptr && "curl write callback requires prepared_request");
+    inflight_request::on_write(char* data, std::size_t size, std::size_t count, void* userdata) {
+    auto* self = static_cast<inflight_request*>(userdata);
+    assert(self != nullptr && "curl write callback requires inflight_request");
 
     const auto bytes = size * count;
     auto* begin = reinterpret_cast<const std::byte*>(data);
@@ -81,9 +123,9 @@ std::size_t
 }
 
 std::size_t
-    prepared_request::on_header(char* data, std::size_t size, std::size_t count, void* userdata) {
-    auto* self = static_cast<prepared_request*>(userdata);
-    assert(self != nullptr && "curl header callback requires prepared_request");
+    inflight_request::on_header(char* data, std::size_t size, std::size_t count, void* userdata) {
+    auto* self = static_cast<inflight_request*>(userdata);
+    assert(self != nullptr && "curl header callback requires inflight_request");
 
     const auto bytes = size * count;
     std::string_view line(data, bytes);
@@ -108,72 +150,71 @@ std::size_t
     auto name = detail::trim_ascii(line.substr(0, colon));
     auto value = detail::trim_ascii(line.substr(colon + 1));
     self->out.headers.push_back({name, value});
-
     return bytes;
 }
 
-bool prepared_request::fail(error err) noexcept {
+bool inflight_request::fail(error err) noexcept {
     result = std::move(err);
     return false;
 }
 
-bool prepared_request::fail(curl::easy_error code) noexcept {
+bool inflight_request::fail(curl::easy_error code) noexcept {
     return fail(error::from_curl(code));
 }
 
-bool prepared_request::apply_url() noexcept {
-    if(spec.url.empty()) {
+bool inflight_request::apply_url() noexcept {
+    if(url_string.empty()) {
         return fail(error::invalid_request("request url must not be empty"));
     }
 
-    final_url = spec.url;
-    if(!spec.query.empty()) {
+    final_url = url_string;
+    if(!query_params.empty()) {
         final_url += final_url.find('?') != std::string::npos ? '&' : '?';
-        final_url += detail::encode_pairs(spec.query);
+        final_url += detail::encode_pairs(query_params);
     }
 
     return easy_setopt(*this, CURLOPT_URL, final_url.c_str());
 }
 
-bool prepared_request::apply_method() noexcept {
-    if(spec.method.empty()) {
+bool inflight_request::apply_method() noexcept {
+    if(method_name.empty()) {
         return fail(error::invalid_request("request method must not be empty"));
     }
 
-    if(detail::iequals(spec.method, http::method::get)) {
+    if(detail::iequals(method_name, http::method::get)) {
         return true;
     }
 
-    if(detail::iequals(spec.method, http::method::post)) {
+    if(detail::iequals(method_name, http::method::post)) {
         return easy_setopt(*this, CURLOPT_POST, 1L);
     }
 
-    if(detail::iequals(spec.method, http::method::head)) {
+    if(detail::iequals(method_name, http::method::head)) {
         return easy_setopt(*this, CURLOPT_NOBODY, 1L) &&
-               easy_setopt(*this, CURLOPT_CUSTOMREQUEST, spec.method.c_str());
+               easy_setopt(*this, CURLOPT_CUSTOMREQUEST, method_name.c_str());
     }
 
-    return easy_setopt(*this, CURLOPT_CUSTOMREQUEST, spec.method.c_str());
+    return easy_setopt(*this, CURLOPT_CUSTOMREQUEST, method_name.c_str());
 }
 
-bool prepared_request::apply_body() noexcept {
-    if(spec.body.empty()) {
+bool inflight_request::apply_body() noexcept {
+    if(body_text.empty()) {
         return true;
     }
 
-    if(detail::iequals(spec.method, http::method::get) ||
-       detail::iequals(spec.method, http::method::head)) {
+    if(detail::iequals(method_name, http::method::get) ||
+       detail::iequals(method_name, http::method::head)) {
         return fail(error::invalid_request("request body is not supported for GET or HEAD"));
     }
 
     return easy_setopt(*this,
                        CURLOPT_POSTFIELDSIZE_LARGE,
-                       static_cast<curl_off_t>(spec.body.size())) &&
-           easy_setopt(*this, CURLOPT_COPYPOSTFIELDS, spec.body.c_str());
+                       static_cast<curl_off_t>(body_text.size())) &&
+           easy_setopt(*this, CURLOPT_COPYPOSTFIELDS, body_text.c_str());
 }
 
-bool prepared_request::apply_headers() noexcept {
-    for(const auto& item: spec.headers) {
+bool inflight_request::apply_headers() noexcept {
+    for(const auto& item: header_list) {
         std::string line = item.name;
         line += ": ";
         line += item.value;
@@ -189,46 +230,49 @@ bool prepared_request::apply_headers() noexcept {
     return easy_setopt(*this, CURLOPT_HTTPHEADER, header_lines.get());
 }
 
-bool prepared_request::apply_cookies() noexcept {
-    if(spec.cookie.empty()) {
+bool inflight_request::apply_cookies() noexcept {
+    if(cookie_string.empty()) {
         return true;
     }
 
-    return easy_setopt(*this, CURLOPT_COOKIE, spec.cookie.c_str());
+    return easy_setopt(*this, CURLOPT_COOKIE, cookie_string.c_str());
 }
 
-bool prepared_request::apply_user_agent() noexcept {
-    if(spec.user_agent.empty()) {
+bool inflight_request::apply_user_agent() noexcept {
+    if(user_agent_value.empty()) {
         return true;
     }
-    return easy_setopt(*this, CURLOPT_USERAGENT, spec.user_agent.c_str());
+
+    return easy_setopt(*this, CURLOPT_USERAGENT, user_agent_value.c_str());
 }
 
-bool prepared_request::apply_redirect() noexcept {
-    if(!spec.redirect.follow) {
+bool inflight_request::apply_redirect() noexcept {
+    if(!redirect_policy_value.follow) {
         return easy_setopt(*this, CURLOPT_FOLLOWLOCATION, 0L);
     }
 
     return easy_setopt(*this, CURLOPT_FOLLOWLOCATION, 1L) &&
-           easy_setopt(*this, CURLOPT_MAXREDIRS, static_cast<long>(spec.redirect.max_redirects)) &&
-           easy_setopt(*this, CURLOPT_AUTOREFERER, spec.redirect.referer ? 1L : 0L);
+           easy_setopt(*this,
+                       CURLOPT_MAXREDIRS,
+                       static_cast<long>(redirect_policy_value.max_redirects)) &&
+           easy_setopt(*this, CURLOPT_AUTOREFERER, redirect_policy_value.referer ? 1L : 0L);
 }
 
-bool prepared_request::apply_tls() noexcept {
-    if(spec.tls.min_version && spec.tls.max_version &&
-       tls_version_rank(*spec.tls.min_version) > tls_version_rank(*spec.tls.max_version)) {
+bool inflight_request::apply_tls() noexcept {
+    if(tls_config.min_version && tls_config.max_version &&
+       tls_version_rank(*tls_config.min_version) > tls_version_rank(*tls_config.max_version)) {
         return fail(error::invalid_request("min tls version must not exceed max tls version"));
     }
 
 #if LIBCURL_VERSION_NUM >= 0x075500
-    const char* protocols = spec.tls.https_only ? "https" : "http,https";
+    const char* protocols = tls_config.https_only ? "https" : "http,https";
     if(!easy_setopt(*this, CURLOPT_PROTOCOLS_STR, protocols) ||
        !easy_setopt(*this, CURLOPT_REDIR_PROTOCOLS_STR, protocols)) {
         return false;
     }
 #else
-    long protocols =
-        spec.tls.https_only ? CURLPROTO_HTTPS : static_cast<long>(CURLPROTO_HTTP | CURLPROTO_HTTPS);
+    long protocols = tls_config.https_only ? CURLPROTO_HTTPS
+                                           : static_cast<long>(CURLPROTO_HTTP | CURLPROTO_HTTPS);
     if(!easy_setopt(*this, CURLOPT_PROTOCOLS, protocols) ||
        !easy_setopt(*this, CURLOPT_REDIR_PROTOCOLS, protocols)) {
         return false;
@@ -237,28 +281,28 @@ bool prepared_request::apply_tls() noexcept {
 
     if(!easy_setopt(*this,
                     CURLOPT_SSL_VERIFYPEER,
-                    spec.tls.danger_accept_invalid_certs ? 0L : 1L) ||
+                    tls_config.danger_accept_invalid_certs ? 0L : 1L) ||
        !easy_setopt(*this,
                     CURLOPT_SSL_VERIFYHOST,
-                    spec.tls.danger_accept_invalid_hostnames ? 0L : 2L)) {
+                    tls_config.danger_accept_invalid_hostnames ? 0L : 2L)) {
         return false;
     }
 
-    if(spec.tls.ca_file && !easy_setopt(*this, CURLOPT_CAINFO, spec.tls.ca_file->c_str())) {
+    if(tls_config.ca_file && !easy_setopt(*this, CURLOPT_CAINFO, tls_config.ca_file->c_str())) {
         return false;
     }
 
-    if(spec.tls.ca_path && !easy_setopt(*this, CURLOPT_CAPATH, spec.tls.ca_path->c_str())) {
+    if(tls_config.ca_path && !easy_setopt(*this, CURLOPT_CAPATH, tls_config.ca_path->c_str())) {
         return false;
     }
 
-    if(spec.tls.min_version || spec.tls.max_version) {
+    if(tls_config.min_version || tls_config.max_version) {
         long version = CURL_SSLVERSION_DEFAULT;
-        if(spec.tls.min_version) {
-            version = to_curl_ssl_min(*spec.tls.min_version);
+        if(tls_config.min_version) {
+            version = to_curl_ssl_min(*tls_config.min_version);
         }
-        if(spec.tls.max_version) {
-            auto upper = to_curl_ssl_max(*spec.tls.max_version);
+        if(tls_config.max_version) {
+            auto upper = to_curl_ssl_max(*tls_config.max_version);
             if(upper == 0) {
                 return fail(error::invalid_request(
                     "libcurl does not support the requested max tls version"));
@@ -273,16 +317,16 @@ bool prepared_request::apply_tls() noexcept {
     return true;
 }
 
-bool prepared_request::apply_proxy() noexcept {
-    if(spec.disable_proxy) {
+bool inflight_request::apply_proxy() noexcept {
+    if(disable_proxy) {
         return easy_setopt(*this, CURLOPT_PROXY, "");
     }
 
-    if(!spec.proxy_config) {
+    if(!proxy_config) {
         return true;
     }
 
-    const auto& proxy = *spec.proxy_config;
+    const auto& proxy = *proxy_config;
     if(proxy.url.empty()) {
         return fail(error::invalid_request("proxy url must not be empty"));
     }
@@ -304,12 +348,12 @@ bool prepared_request::apply_proxy() noexcept {
     return true;
 }
 
-bool prepared_request::apply_timeout() noexcept {
-    if(!spec.timeout) {
+bool inflight_request::apply_timeout() noexcept {
+    if(!timeout_value) {
         return true;
     }
 
-    const auto timeout_ms = spec.timeout->count();
+    const auto timeout_ms = timeout_value->count();
     if(timeout_ms < 0) {
         return fail(error::invalid_request("timeout must be non-negative"));
     }
@@ -321,8 +365,8 @@ bool prepared_request::apply_timeout() noexcept {
     return easy_setopt(*this, CURLOPT_TIMEOUT_MS, static_cast<long>(timeout_ms));
 }
 
-bool prepared_request::apply_curl_options() noexcept {
-    for(const auto& option: spec.curl_options) {
+bool inflight_request::apply_curl_options() noexcept {
+    for(const auto& option: curl_options) {
         if(auto err = option(easy.get()); !curl::ok(err)) {
             return fail(err);
         }
@@ -331,51 +375,41 @@ bool prepared_request::apply_curl_options() noexcept {
     return true;
 }
 
-prepared_request::prepared_request(request req, std::shared_ptr<client_state> owner) noexcept :
-    owner(std::move(owner)), spec(std::move(req)) {
-    easy = curl::easy_handle::create();
-    if(!easy) {
-        fail(CURLE_FAILED_INIT);
-        return;
+bool inflight_request::prepare() noexcept {
+    if(!easy || result.kind != error_kind::curl || !curl::ok(result.curl_code)) {
+        return false;
     }
 
-    if(this->owner && !this->owner->bind_easy(easy.get(), spec.record_cookie)) {
-        fail(error::invalid_request("failed to bind curl easy to client state"));
-        return;
-    }
-
-    if(!easy_setopt(*this, CURLOPT_WRITEFUNCTION, &prepared_request::on_write) ||
-       !easy_setopt(*this, CURLOPT_WRITEDATA, this) ||
-       !easy_setopt(*this, CURLOPT_HEADERFUNCTION, &prepared_request::on_header) ||
-       !easy_setopt(*this, CURLOPT_HEADERDATA, this)) {
-        return;
+    if(!bind_easy(easy.get(), shared, record_cookie_enabled)) {
+        return fail(error::invalid_request("failed to bind curl easy to shared request resources"));
     }
 
     if(!apply_url() || !apply_method() || !apply_body() || !apply_headers() || !apply_cookies() ||
        !apply_user_agent() || !apply_redirect() || !apply_tls() || !apply_proxy() ||
        !apply_timeout() || !apply_curl_options()) {
-        return;
-    }
-}
-
-bool prepared_request::ready() const noexcept {
-    return easy && result.kind == error_kind::curl && curl::ok(result.curl_code);
-}
-
-bool prepared_request::bind_runtime(void* opaque) noexcept {
-    if(!ready()) {
         return false;
     }
 
-    if(!easy_setopt(*this, CURLOPT_PRIVATE, opaque)) {
-        return false;
-    }
-
-    runtime_bound = true;
     return true;
 }
 
-outcome<response, error, cancellation> prepared_request::finish() noexcept {
+bool inflight_request::bind_runtime(void* opaque) noexcept {
+    if(!easy || result.kind != error_kind::curl || !curl::ok(result.curl_code)) {
+        return false;
+    }
+
+    return easy_setopt(*this, CURLOPT_PRIVATE, opaque);
+}
+
+void inflight_request::clear_runtime_binding() noexcept {
+    if(!easy) {
+        return;
+    }
+
+    [[maybe_unused]] auto err = curl::setopt(easy.get(), CURLOPT_PRIVATE, nullptr);
+}
+
+outcome<response, error, cancellation> inflight_request::finish() noexcept {
     if(result.kind != error_kind::curl || !curl::ok(result.curl_code)) {
         return outcome<response, error, cancellation>(outcome_error(std::move(result)));
     }

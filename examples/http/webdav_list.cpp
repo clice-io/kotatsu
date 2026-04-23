@@ -25,9 +25,10 @@ constexpr std::string_view propfind_body =
 )";
 
 task<void, http::error> list_webdav_directory(event_loop& loop) {
-    http::client client(loop);
+    http::client client;
 
-    auto response = co_await client.request("PROPFIND", std::string(webdav_url))
+    auto response = co_await client.on(loop)
+                        .request("PROPFIND", std::string(webdav_url))
                         .basic_auth(std::string(webdav_username), std::string(webdav_password))
                         .header("depth", "1")
                         .header("content-type", "application/xml; charset=utf-8")

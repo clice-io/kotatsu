@@ -19,69 +19,55 @@ void print_error(std::string_view label, const http::error& err) {
 }
 
 http::client build_demo_client() {
-    auto built = http::client::builder()
-                     .default_header("accept", "application/json")
-                     .default_header("x-demo-client", "eventide")
-                     .user_agent("eventide-http-showcase/1.0")
-                     .timeout(10s)
-                     .redirect(http::redirect_policy::limited(5))
-                     .referer(true)
-                     .https_only(false)
-                     .danger_accept_invalid_certs(false)
-                     .danger_accept_invalid_hostnames(false)
-                     .min_tls_version(http::tls_version::tls1_2)
-                     .max_tls_version(http::tls_version::tls1_3)
-                     .ca_file("/etc/ssl/certs/ca-certificates.crt")
-                     .build();
-
-    if(!built) {
-        std::println(stderr, "failed to build client: {}", http::message(built.error()));
-        std::exit(1);
-    }
-
-    return std::move(*built);
+    return http::client()
+        .default_header("accept", "application/json")
+        .default_header("x-demo-client", "eventide")
+        .user_agent("eventide-http-showcase/1.0")
+        .timeout(10s)
+        .redirect(http::redirect_policy::limited(5))
+        .referer(true)
+        .https_only(false)
+        .danger_accept_invalid_certs(false)
+        .danger_accept_invalid_hostnames(false)
+        .min_tls_version(http::tls_version::tls1_2)
+        .max_tls_version(http::tls_version::tls1_3)
+        .ca_file("/etc/ssl/certs/ca-certificates.crt");
 }
 
-void showcase_request_builders(http::client& client) {
-    auto get_req = client.get("https://example.com")
-                       .query("lang", "en")
-                       .header("accept-language", "en-US")
-                       .cookies("session=manual; preview=true")
-                       .timeout(2s)
-                       .build();
+void showcase_request_builders(http::bound_client api) {
+    api.get("https://example.com")
+        .query("lang", "en")
+        .header("accept-language", "en-US")
+        .cookies("session=manual; preview=true")
+        .timeout(2s);
 
-    auto post_json = client.post("https://api.example.com/items")
-                         .bearer_auth("demo-token")
-                         .json_text(R"({"name":"eventide","kind":"demo"})")
-                         .build();
+    api.post("https://api.example.com/items")
+        .bearer_auth("demo-token")
+        .json_text(R"({"name":"eventide","kind":"demo"})");
 
-    auto post_form = client.post("https://api.example.com/form")
-                         .basic_auth("demo", "secret")
-                         .form({
-                             {"name", "eventide"},
-                             {"kind", "form"    }
-    })
-                         .build();
+    api.post("https://api.example.com/form")
+        .basic_auth("demo", "secret")
+        .form({
+            {"name", "eventide"},
+            {"kind", "form"    }
+    });
 
-    auto put_body = client.put("https://api.example.com/blob")
-                        .header("content-type", "text/plain")
-                        .body("plain request body")
-                        .build();
+    api.put("https://api.example.com/blob")
+        .header("content-type", "text/plain")
+        .body("plain request body");
 
-    auto patch_req = client.patch("https://api.example.com/items/42")
-                         .header("content-type", "application/merge-patch+json")
-                         .body(R"({"enabled":true})")
-                         .build();
+    api.patch("https://api.example.com/items/42")
+        .header("content-type", "application/merge-patch+json")
+        .body(R"({"enabled":true})");
 
-    auto delete_req = client.del("https://api.example.com/items/42").no_proxy().build();
-
-    auto head_req = client.head("https://example.com").build();
+    api.del("https://api.example.com/items/42").no_proxy();
+    api.head("https://example.com");
 }
 
 task<> run_showcase(event_loop& loop) {
     auto client = build_demo_client();
-    showcase_request_builders(client);
     auto api = client.on(loop);
+    showcase_request_builders(api);
 
     client.record_cookie(true);
 
@@ -103,9 +89,8 @@ task<> run_showcase(event_loop& loop) {
     std::println("GET {} -> {}", home->url, home->status);
     std::println("body bytes: {}", home->bytes().size());
 
-    auto built_head = client.head("https://example.com").header("accept", "*/*").build();
-
-    auto head = co_await api.execute(std::move(built_head)).catch_cancel();
+    auto head =
+        co_await api.head("https://example.com").header("accept", "*/*").send().catch_cancel();
     if(head.is_cancelled()) {
         std::println("head request cancelled");
         co_return;

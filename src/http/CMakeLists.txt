@@ -1,6 +1,6 @@
 if(DEFINED ENV{CONDA_PREFIX})
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        set(OPENSSL_ROOT_DIR "$ENV{CONDA_PREFIX}" CACHE PATH "" FORCE)
+set(OPENSSL_ROOT_DIR "$ENV{CONDA_PREFIX}" CACHE PATH "" FORCE)
     elseif(APPLE)
         execute_process(COMMAND brew --prefix openssl@3
                         OUTPUT_VARIABLE _brew_openssl OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
@@ -31,9 +31,11 @@ add_library(kota_http STATIC)
 add_library(kota::http ALIAS kota_http)
 
 target_sources(kota_http PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/bound_client.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/client.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/execute.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/inflight_request.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/manager.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/prepared_request.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/request.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/response.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/runtime.cpp"
