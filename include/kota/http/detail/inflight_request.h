@@ -16,6 +16,10 @@ namespace kota::http::detail {
 class inflight_request : public request_settings {
 public:
     explicit inflight_request(http::request request) noexcept;
+    inflight_request(const inflight_request&) = delete;
+    inflight_request& operator=(const inflight_request&) = delete;
+    inflight_request(inflight_request&&) = delete;
+    inflight_request& operator=(inflight_request&&) = delete;
 
     bool fail(error err) noexcept;
     bool fail(curl::easy_error code) noexcept;

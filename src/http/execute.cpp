@@ -14,28 +14,31 @@ namespace detail {
 struct request_awaiter;
 
 struct inflight_request_state : std::enable_shared_from_this<inflight_request_state> {
+    explicit inflight_request_state(http::request req) noexcept : request(std::move(req)) {}
+
     manager* mgr = nullptr;
-    std::shared_ptr<inflight_request> request;
+    inflight_request request;
     request_awaiter* awaiter = nullptr;
     bool registered = false;
     bool completed = false;
+    bool request_released = false;
 
     void detach_from_multi() noexcept {
-        if(!registered || !mgr || !request || !request->easy) {
+        if(!registered || !mgr || request_released || !request.easy) {
             registered = false;
             return;
         }
 
-        request->clear_runtime_binding();
-        mgr->remove_request(request->easy.get());
+        request.clear_runtime_binding();
+        mgr->remove_request(request.easy.get());
         registered = false;
     }
 
     void release_request() noexcept {
-        if(request) {
-            request->clear_runtime_binding();
-            request->easy.reset();
-            request.reset();
+        if(!request_released) {
+            request.clear_runtime_binding();
+            request.easy.reset();
+            request_released = true;
         }
     }
 
@@ -52,10 +55,9 @@ struct request_awaiter : uv::await_op<request_awaiter> {
 
     inflight_request_ref state;
 
-    request_awaiter(manager& manager, std::shared_ptr<inflight_request> request) :
-        state(make_inflight_request_state()) {
+    request_awaiter(manager& manager, inflight_request_ref request_state) :
+        state(std::move(request_state)) {
         state->mgr = &manager;
-        state->request = std::move(request);
         state->awaiter = this;
     }
 
@@ -79,21 +81,21 @@ struct request_awaiter : uv::await_op<request_awaiter> {
     }
 
     void start() noexcept {
-        if(state->completed || !state->request || !state->request->easy) {
+        if(state->completed || state->request_released || !state->request.easy) {
             return;
         }
 
-        if(!state->request->bind_runtime(inflight_request_opaque(state))) {
-            if(state->request->result.kind == error_kind::curl &&
-               curl::ok(state->request->result.curl_code)) {
-                state->request->result = error::invalid_request("request runtime binding failed");
+        if(!state->request.bind_runtime(inflight_request_opaque(state))) {
+            if(state->request.result.kind == error_kind::curl &&
+               curl::ok(state->request.result.curl_code)) {
+                state->request.result = error::invalid_request("request runtime binding failed");
             }
             state->completed = true;
             return;
         }
 
-        if(auto err = state->mgr->add_request(state->request->easy.get()); !curl::ok(err)) {
-            state->request->fail(error::from_curl(curl::to_easy_error(err)));
+        if(auto err = state->mgr->add_request(state->request.easy.get()); !curl::ok(err)) {
+            state->request.fail(error::from_curl(curl::to_easy_error(err)));
             state->completed = true;
             return;
         }
@@ -119,11 +121,11 @@ struct request_awaiter : uv::await_op<request_awaiter> {
             return result_type(outcome_cancel(cancellation("http request cancelled")));
         }
 
-        if(!state->request) {
-            return result_type(outcome_error(error::invalid_request("missing request state")));
+        if(state->request_released) {
+            return result_type(outcome_error(error::invalid_request("request state already released")));
         }
 
-        return state->request->finish();
+        return state->request.finish();
     }
 };
 
@@ -134,8 +136,8 @@ void inflight_request_state::complete(error err, bool resume) noexcept {
 
     completed = true;
     registered = false;
-    if(request) {
-        request->result = std::move(err);
+    if(!request_released) {
+        request.result = std::move(err);
     }
 
     auto* waiting = awaiter;
@@ -144,8 +146,8 @@ void inflight_request_state::complete(error err, bool resume) noexcept {
     }
 }
 
-inflight_request_ref make_inflight_request_state() noexcept {
-    return std::make_shared<inflight_request_state>();
+inflight_request_ref make_inflight_request_state(http::request request) noexcept {
+    return std::make_shared<inflight_request_state>(std::move(request));
 }
 
 void* inflight_request_opaque(const inflight_request_ref& request) noexcept {
@@ -178,9 +180,11 @@ void complete_inflight_request(const inflight_request_ref& request,
 }
 
 task<response, error> execute_request(http::request request, event_loop& loop) {
-    auto in_flight = std::make_shared<inflight_request>(std::move(request));
-    if(!in_flight->prepare()) {
-        co_await fail(std::move(in_flight->result));
+    // libcurl callbacks keep `userdata = this`, so the prepared request must stay at a stable
+    // address for the rest of its lifetime.
+    auto state = make_inflight_request_state(std::move(request));
+    if(!state->request.prepare()) {
+        co_await fail(std::move(state->request.result));
     }
 
     auto manager = manager::try_for_loop(loop);
@@ -188,7 +192,7 @@ task<response, error> execute_request(http::request request, event_loop& loop) {
         co_await fail(std::move(manager.error()));
     }
 
-    request_awaiter awaiter(manager->get(), std::move(in_flight));
+    request_awaiter awaiter(manager->get(), std::move(state));
     awaiter.start();
     auto result = co_await awaiter;
 
