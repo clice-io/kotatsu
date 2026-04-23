@@ -16,9 +16,11 @@
 #include "kota/codec/content/serializer.h"
 #include "kota/codec/json/serializer.h"
 
-namespace kota::codec::json::schema {
+namespace kota::codec::json {
 
-class emitter {
+namespace detail {
+
+class SchemaEmitter {
     using tk = meta::type_kind;
 
 public:
@@ -41,7 +43,7 @@ public:
             schema.insert("$defs", std::move(defs_obj));
         }
 
-        return content::Value(std::move(schema));
+        return schema;
     }
 
 private:
@@ -119,7 +121,7 @@ private:
             case tk::tuple: return make_tuple(ti);
             case tk::structure: return make_struct_ref(ti);
             case tk::variant: return make_variant(ti);
-            default: return content::Value(content::Object{});
+            default: return content::Object{};
         }
     }
 
@@ -182,7 +184,7 @@ private:
         if(ti->kind == tk::set) {
             obj.insert("uniqueItems", true);
         }
-        return content::Value(std::move(obj));
+        return obj;
     }
 
     content::Value make_map(const meta::type_info* ti) {
@@ -225,7 +227,7 @@ private:
         auto* si = static_cast<const meta::struct_type_info*>(ti);
         content::Object body;
         add_struct_body(body, si);
-        defs.emplace_back(canonical_name(ti), content::Value(std::move(body)));
+        defs.emplace_back(canonical_name(ti), std::move(body));
     }
 
     content::Value make_properties(const meta::struct_type_info* si) {
@@ -233,7 +235,7 @@ private:
         for(const auto& f: si->fields) {
             props.insert(std::string(f.name), make_schema(&f.type()));
         }
-        return content::Value(std::move(props));
+        return props;
     }
 
     static void add_required(content::Object& target, const meta::struct_type_info* si) {
@@ -323,12 +325,29 @@ private:
     const meta::type_info* root_ti = nullptr;
 };
 
-inline content::Value render_value(const meta::type_info& root) {
-    return emitter{}.emit(root);
+}  // namespace detail
+
+inline content::Value schema(const meta::type_info& root) {
+    return detail::SchemaEmitter{}.emit(root);
 }
 
-inline std::string render(const meta::type_info& root) {
-    return to_json(render_value(root)).value();
+template <typename T>
+content::Value schema() {
+    return schema(meta::type_info_of<T>());
 }
 
-}  // namespace kota::codec::json::schema
+inline std::string schema_string(const meta::type_info& root, bool pretty = false) {
+    auto compact = to_json(schema(root)).value();
+    if(!pretty) {
+        return compact;
+    }
+    simdjson::dom::parser parser;
+    return simdjson::prettify(parser.parse(compact));
+}
+
+template <typename T>
+std::string schema_string(bool pretty = false) {
+    return schema_string(meta::type_info_of<T>(), pretty);
+}
+
+}  // namespace kota::codec::json
