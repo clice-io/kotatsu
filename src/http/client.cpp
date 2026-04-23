@@ -43,11 +43,8 @@ std::shared_ptr<detail::shared_resources> detail::make_shared_resources() {
         return {};
     }
 
-    if(auto err =
-           curl::share_setopt(resources->share.get(), CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION);
-       !curl::ok(err)) {
-        return {};
-    }
+    // SSL session sharing is best-effort: skip if curl was built without SSL.
+    curl::share_setopt(resources->share.get(), CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION);
 
     return resources;
 }
