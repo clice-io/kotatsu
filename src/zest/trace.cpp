@@ -1,8 +1,12 @@
 #include "kota/zest/detail/trace.h"
 
 #include <algorithm>
+#include <format>
+#include <print>
 
+#include "kota/support/functional.h"
 #include "cpptrace/cpptrace.hpp"
+#include <cpptrace/from_current.hpp>
 
 namespace kota::zest {
 
@@ -20,5 +24,29 @@ void print_trace(std::source_location location) {
     }
     trace.print();
 }
+#ifdef __cpp_exceptions
+bool trace_exception(function<void()> cb, bool print) {
+    CPPTRACE_TRY {
+        CPPTRACE_TRY {
+            cb();
+        }
+        CPPTRACE_CATCH(const std::exception& e) {
+            if(print) {
+                std::println("[ exception ] {}", e.what());
+                cpptrace::from_current_exception().print();
+            }
+            return true;
+        }
+    }
+    CPPTRACE_CATCH(...) {
+        if(print) {
+            std::println("[ exception ] <non-std exception>");
+            cpptrace::from_current_exception().print();
+        }
+        return true;
+    }
+    return false;
+}
+#endif
 
 }  // namespace kota::zest

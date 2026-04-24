@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <expected>
 #include <format>
 #include <optional>
@@ -8,6 +9,8 @@
 #include <string>
 #include <string_view>
 
+#include "kota/zest/detail/trace.h"
+#include "kota/support/functional.h"
 #include "kota/support/type_traits.h"
 #include "kota/meta/compare.h"
 #include "kota/meta/name.h"
