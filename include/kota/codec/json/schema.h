@@ -342,7 +342,8 @@ inline std::string schema_string(const meta::type_info& root, bool pretty = fals
         return compact;
     }
     simdjson::dom::parser parser;
-    return simdjson::prettify(parser.parse(compact));
+    auto doc = parser.parse(compact);
+    return simdjson::prettify(doc.value());
 }
 
 template <typename T>
