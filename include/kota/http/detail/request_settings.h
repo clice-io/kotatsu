@@ -51,7 +51,8 @@ public:
     }
 
     decltype(auto) default_header(this auto&& self, std::string name, std::string value) {
-        return std::forward<decltype(self)>(self).header(std::move(name), std::move(value));
+        detail::insert_header(self.header_list, std::move(name), std::move(value));
+        return std::forward<decltype(self)>(self);
     }
 
     decltype(auto) cookies(this auto&& self, std::string value) {

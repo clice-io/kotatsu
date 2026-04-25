@@ -33,6 +33,16 @@ void upsert_header(std::vector<header>& headers, std::string name, std::string v
     headers.push_back({std::move(name), std::move(value)});
 }
 
+void insert_header(std::vector<header>& headers, std::string name, std::string value) {
+    for(const auto& item: headers) {
+        if(iequals(item.name, name)) {
+            return;
+        }
+    }
+
+    headers.push_back({std::move(name), std::move(value)});
+}
+
 std::string trim_ascii(std::string_view text) {
     std::size_t begin = 0;
     std::size_t end = text.size();

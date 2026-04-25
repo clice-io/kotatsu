@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <format>
 #include <memory>
@@ -132,6 +133,7 @@ std::expected<std::reference_wrapper<manager>, error> manager::try_for_loop(even
 manager& manager::for_loop(event_loop& loop) {
     auto out = try_for_loop(loop);
     if(!out) {
+        std::fprintf(stderr, "fatal: %s\n", out.error().message().c_str());
         std::abort();
     }
     return out->get();
