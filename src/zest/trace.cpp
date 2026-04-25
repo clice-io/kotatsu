@@ -5,8 +5,7 @@
 #include <print>
 
 #include "kota/support/functional.h"
-#include "cpptrace/cpptrace.hpp"
-#include <cpptrace/from_current.hpp>
+#include <cpptrace/cpptrace.hpp>
 
 namespace kota::zest {
 
@@ -24,7 +23,14 @@ void print_trace(std::source_location location) {
     }
     trace.print();
 }
+
+}  // namespace kota::zest
+
 #ifdef __cpp_exceptions
+#include <cpptrace/from_current.hpp>
+
+namespace kota::zest {
+
 bool trace_exception(function<void()> cb, bool print) {
     bool ret = false;
 
@@ -49,6 +55,6 @@ bool trace_exception(function<void()> cb, bool print) {
     }
     return ret;
 }
-#endif
 
 }  // namespace kota::zest
+#endif
