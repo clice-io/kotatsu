@@ -89,7 +89,14 @@ constexpr std::string normalize_identifier(std::string_view text) {
     std::string out;
     out.reserve(text.size());
     for(char c: text) {
-        out.push_back(is_alnum(c) ? c : '_');
+        if(is_alnum(c)) {
+            out.push_back(c);
+        } else if(out.empty() || out.back() != '_') {
+            out.push_back('_');
+        }
+    }
+    while(!out.empty() && out.back() == '_') {
+        out.pop_back();
     }
     if(out.empty()) {
         return "unnamed";

@@ -122,6 +122,13 @@ TEST_CASE(floating_point_inf) {
     EXPECT_EQ(*result, "null");
 }
 
+TEST_CASE(floating_point_neg_inf) {
+    content::Value v(-std::numeric_limits<double>::infinity());
+    auto result = json::to_string(v);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, "null");
+}
+
 TEST_CASE(string_simple) {
     content::Value v(std::string("hello"));
     auto result = json::to_string(v);
@@ -148,6 +155,27 @@ TEST_CASE(string_with_control_chars) {
     auto result = json::to_string(v);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, R"("tab\there")");
+}
+
+TEST_CASE(string_with_carriage_return) {
+    content::Value v(std::string("line\rend"));
+    auto result = json::to_string(v);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, R"("line\rend")");
+}
+
+TEST_CASE(string_with_backspace) {
+    content::Value v(std::string("back\bspace"));
+    auto result = json::to_string(v);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, R"("back\bspace")");
+}
+
+TEST_CASE(string_with_formfeed) {
+    content::Value v(std::string("form\ffeed"));
+    auto result = json::to_string(v);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, R"("form\ffeed")");
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <expected>
 #include <format>
 #include <limits>
 #include <string>
@@ -10,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "kota/support/expected_try.h"
 #include "kota/support/naming.h"
 #include "kota/meta/type_info.h"
 #include "kota/codec/content/document.h"
@@ -22,18 +24,21 @@ namespace detail {
 
 class SchemaEmitter {
     using tk = meta::type_kind;
+    using result_t = std::expected<content::Value, error>;
 
 public:
-    content::Value emit(const meta::type_info& root) {
+    result_t emit(const meta::type_info& root) {
         root_ti = unwrap(&root);
         if(root_ti->kind == tk::structure) {
-            used_names.insert(kota::naming::normalize_identifier(root_ti->type_name));
+            auto name = kota::naming::normalize_identifier(root_ti->type_name);
+            used_names.insert(name);
+            def_names.emplace(root_ti, std::move(name));
         }
 
         content::Object schema;
         schema.insert("$schema", "https://json-schema.org/draft/2020-12/schema");
 
-        merge_schema_fields(schema, &root);
+        KOTA_EXPECTED_TRY(merge_schema_fields(schema, &root));
 
         if(!defs.empty()) {
             content::Object defs_obj;
@@ -43,7 +48,7 @@ public:
             schema.insert("$defs", std::move(defs_obj));
         }
 
-        return schema;
+        return content::Value(std::move(schema));
     }
 
 private:
@@ -61,41 +66,52 @@ private:
         return kota::naming::normalize_identifier(vi->alternatives[i]().type_name);
     }
 
-    const std::string& canonical_name(const meta::type_info* ti) {
+    std::expected<std::string_view, error> def_name(const meta::type_info* ti) {
         auto it = def_names.find(ti);
         if(it != def_names.end()) {
-            return it->second;
+            return std::string_view(it->second);
         }
-        auto base = kota::naming::normalize_identifier(ti->type_name);
-        auto name = base;
-        for(std::size_t counter = 2; used_names.contains(name); ++counter) {
-            name = std::format("{}_{}", base, counter);
+        auto name = kota::naming::normalize_identifier(ti->type_name);
+        if(!used_names.insert(name).second) {
+            return std::unexpected(error::custom(
+                error_kind::invalid_state,
+                std::format("duplicate $defs name '{}' from type '{}'", name, ti->type_name)));
         }
-        used_names.insert(name);
-        return def_names.emplace(ti, std::move(name)).first->second;
+        auto [pos, _] = def_names.emplace(ti, std::move(name));
+        return std::string_view(pos->second);
     }
 
-    content::Value make_schema(const meta::type_info* ti) {
-        ti = unwrap(ti);
+    result_t make_nullable(const meta::type_info* ti) {
+        auto* inner = unwrap(ti);
+        KOTA_EXPECTED_TRY_V(auto schema, make_schema(inner));
+        return content::Value{
+            {"oneOf", content::Array{std::move(schema), content::Value{{"type", "null"}}}},
+        };
+    }
+
+    result_t make_schema(const meta::type_info* ti) {
+        if(ti->kind == tk::optional || ti->kind == tk::pointer) {
+            return make_nullable(ti);
+        }
 
         switch(ti->kind) {
             case tk::null:
-                return {
+                return content::Value{
                     {"type", "null"}
                 };
             case tk::boolean:
-                return {
+                return content::Value{
                     {"type", "boolean"}
                 };
             case tk::character:
             case tk::string:
             case tk::bytes:
-                return {
+                return content::Value{
                     {"type", "string"}
                 };
             case tk::float32:
             case tk::float64:
-                return {
+                return content::Value{
                     {"type", "number"}
                 };
             case tk::int8:
@@ -121,121 +137,132 @@ private:
             case tk::tuple: return make_tuple(ti);
             case tk::structure: return make_struct_ref(ti);
             case tk::variant: return make_variant(ti);
-            default: return content::Object{};
+            default: return content::Value(content::Object{});
         }
     }
 
-    void merge_schema_fields(content::Object& target, const meta::type_info* ti) {
+    std::expected<void, error> merge_schema_fields(content::Object& target,
+                                                   const meta::type_info* ti) {
         ti = unwrap(ti);
         if(ti->kind == tk::structure) {
-            add_struct_body(target, static_cast<const meta::struct_type_info*>(ti));
-            return;
+            return add_struct_body(target, static_cast<const meta::struct_type_info*>(ti));
         }
-        auto schema = make_schema(ti);
+        KOTA_EXPECTED_TRY_V(auto schema, make_schema(ti));
         if(auto* obj = schema.get_object()) {
             for(auto& entry: *obj) {
                 target.insert(std::string(entry.key), std::move(entry.value));
             }
         }
+        return {};
     }
 
-    void add_struct_body(content::Object& target, const meta::struct_type_info* si) {
+    std::expected<void, error> add_struct_body(content::Object& target,
+                                               const meta::struct_type_info* si) {
         target.insert("type", "object");
-        target.insert("properties", make_properties(si));
+        KOTA_EXPECTED_TRY_V(auto props, make_properties(si));
+        target.insert("properties", std::move(props));
         add_required(target, si);
         if(si->deny_unknown) {
             target.insert("additionalProperties", false);
         }
+        return {};
     }
 
-    static content::Value make_integer(std::int64_t min_val, std::int64_t max_val) {
-        return {
+    static result_t make_integer(std::int64_t min_val, std::int64_t max_val) {
+        return content::Value{
             {"type",    "integer"},
             {"minimum", min_val  },
             {"maximum", max_val  },
         };
     }
 
-    static content::Value make_unsigned(std::uint64_t max_val) {
-        return {
+    static result_t make_unsigned(std::uint64_t max_val) {
+        return content::Value{
             {"type",    "integer"       },
             {"minimum", std::uint64_t{0}},
             {"maximum", max_val         },
         };
     }
 
-    static content::Value make_enum(const meta::type_info* ti) {
+    static result_t make_enum(const meta::type_info* ti) {
         auto* ei = static_cast<const meta::enum_type_info*>(ti);
         content::Array values;
         for(const auto& name: ei->member_names) {
             values.push_back(content::Value(name));
         }
-        return {
+        return content::Value{
             {"enum", std::move(values)}
         };
     }
 
-    content::Value make_array(const meta::type_info* ti) {
+    result_t make_array(const meta::type_info* ti) {
         auto* ai = static_cast<const meta::array_type_info*>(ti);
+        KOTA_EXPECTED_TRY_V(auto items, make_schema(&ai->element()));
         content::Object obj{
-            {"type",  "array"                    },
-            {"items", make_schema(&ai->element())},
+            {"type",  "array"         },
+            {"items", std::move(items)},
         };
         if(ti->kind == tk::set) {
             obj.insert("uniqueItems", true);
         }
-        return obj;
+        return content::Value(std::move(obj));
     }
 
-    content::Value make_map(const meta::type_info* ti) {
+    result_t make_map(const meta::type_info* ti) {
         auto* mi = static_cast<const meta::map_type_info*>(ti);
-        return {
-            {"type",                 "object"                 },
-            {"additionalProperties", make_schema(&mi->value())},
+        KOTA_EXPECTED_TRY_V(auto val_schema, make_schema(&mi->value()));
+        return content::Value{
+            {"type",                 "object"             },
+            {"additionalProperties", std::move(val_schema)},
         };
     }
 
-    content::Value make_tuple(const meta::type_info* ti) {
+    result_t make_tuple(const meta::type_info* ti) {
         auto* tup = static_cast<const meta::tuple_type_info*>(ti);
         content::Array items;
         for(std::size_t i = 0; i < tup->elements.size(); ++i) {
-            items.push_back(make_schema(&tup->elements[i]()));
+            KOTA_EXPECTED_TRY_V(auto elem, make_schema(&tup->elements[i]()));
+            items.push_back(std::move(elem));
         }
-        return {
+        return content::Value{
             {"type",        "array"         },
             {"prefixItems", std::move(items)},
+            {"items",       false           },
         };
     }
 
-    content::Value make_struct_ref(const meta::type_info* ti) {
+    result_t make_struct_ref(const meta::type_info* ti) {
         if(ti == root_ti) {
-            return {
+            return content::Value{
                 {"$ref", "#"}
             };
         }
-        const auto& name = canonical_name(ti);
-        ensure_struct_def(ti);
-        return {
+        KOTA_EXPECTED_TRY_V(auto name, def_name(ti));
+        KOTA_EXPECTED_TRY(ensure_struct_def(ti));
+        return content::Value{
             {"$ref", std::format("#/$defs/{}", name)}
         };
     }
 
-    void ensure_struct_def(const meta::type_info* ti) {
+    std::expected<void, error> ensure_struct_def(const meta::type_info* ti) {
         if(!emitted.insert(ti).second) {
-            return;
+            return {};
         }
         auto* si = static_cast<const meta::struct_type_info*>(ti);
+        KOTA_EXPECTED_TRY_V(auto name, def_name(ti));
         content::Object body;
-        add_struct_body(body, si);
-        defs.emplace_back(canonical_name(ti), std::move(body));
+        KOTA_EXPECTED_TRY(add_struct_body(body, si));
+        defs.emplace_back(std::string(name), std::move(body));
+        return {};
     }
 
-    content::Value make_properties(const meta::struct_type_info* si) {
+    result_t make_properties(const meta::struct_type_info* si) {
         content::Object props;
         for(const auto& f: si->fields) {
-            props.insert(std::string(f.name), make_schema(&f.type()));
+            KOTA_EXPECTED_TRY_V(auto schema, make_schema(&f.type()));
+            props.insert(std::string(f.name), std::move(schema));
         }
-        return props;
+        return content::Value(std::move(props));
     }
 
     static void add_required(content::Object& target, const meta::struct_type_info* si) {
@@ -259,33 +286,37 @@ private:
         };
     }
 
-    content::Value make_variant(const meta::type_info* ti) {
+    result_t make_variant(const meta::type_info* ti) {
         auto* vi = static_cast<const meta::variant_type_info*>(ti);
         content::Array one_of;
 
         for(std::size_t i = 0; i < vi->alternatives.size(); ++i) {
             switch(vi->tagging) {
-                case meta::tag_mode::none:
-                    one_of.push_back(make_schema(&vi->alternatives[i]()));
+                case meta::tag_mode::none: {
+                    KOTA_EXPECTED_TRY_V(auto schema, make_schema(&vi->alternatives[i]()));
+                    one_of.push_back(std::move(schema));
                     break;
+                }
 
                 case meta::tag_mode::external: {
                     auto alt_name = alternative_name(vi, i);
+                    KOTA_EXPECTED_TRY_V(auto schema, make_schema(&vi->alternatives[i]()));
                     one_of.push_back({
-                        {"type",                 "object"                                         },
-                        {"properties",           {{alt_name, make_schema(&vi->alternatives[i]())}}},
-                        {"required",             content::Array{content::Value(alt_name)}         },
-                        {"additionalProperties", false                                            },
+                        {"type",                 "object"                                },
+                        {"properties",           {{alt_name, std::move(schema)}}         },
+                        {"required",             content::Array{content::Value(alt_name)}},
+                        {"additionalProperties", false                                   },
                     });
                     break;
                 }
 
                 case meta::tag_mode::internal: {
                     auto alt_name = alternative_name(vi, i);
+                    KOTA_EXPECTED_TRY_V(auto schema, make_schema(&vi->alternatives[i]()));
                     one_of.push_back({
                         {"allOf",
                          content::Array{
-                             make_schema(&vi->alternatives[i]()),
+                             std::move(schema),
                              make_tag_const(vi->tag_field, alt_name),
                          }},
                     });
@@ -294,12 +325,13 @@ private:
 
                 case meta::tag_mode::adjacent: {
                     auto alt_name = alternative_name(vi, i);
+                    KOTA_EXPECTED_TRY_V(auto schema, make_schema(&vi->alternatives[i]()));
                     one_of.push_back({
                         {"type",                 "object"},
                         {"properties",
                          content::Object{
                              {std::string(vi->tag_field), {{"const", alt_name}}},
-                             {std::string(vi->content_field), make_schema(&vi->alternatives[i]())},
+                             {std::string(vi->content_field), std::move(schema)},
                          }                               },
                         {"required",
                          content::Array{
@@ -313,7 +345,7 @@ private:
             }
         }
 
-        return {
+        return content::Value{
             {"oneOf", std::move(one_of)}
         };
     }
@@ -327,27 +359,32 @@ private:
 
 }  // namespace detail
 
-inline content::Value schema(const meta::type_info& root) {
+inline std::expected<content::Value, error> schema(const meta::type_info& root) {
     return detail::SchemaEmitter{}.emit(root);
 }
 
 template <typename T>
-content::Value schema() {
+std::expected<content::Value, error> schema() {
     return schema(meta::type_info_of<T>());
 }
 
-inline std::string schema_string(const meta::type_info& root, bool pretty = false) {
-    auto compact = to_json(schema(root)).value();
+inline std::expected<std::string, error> schema_string(const meta::type_info& root,
+                                                       bool pretty = false) {
+    KOTA_EXPECTED_TRY_V(auto value, schema(root));
+    KOTA_EXPECTED_TRY_V(auto compact, to_json(std::move(value)));
     if(!pretty) {
         return compact;
     }
     simdjson::dom::parser parser;
     auto doc = parser.parse(compact);
+    if(doc.error()) {
+        return std::unexpected(error(make_error(doc.error())));
+    }
     return simdjson::prettify(doc.value());
 }
 
 template <typename T>
-std::string schema_string(bool pretty = false) {
+std::expected<std::string, error> schema_string(bool pretty = false) {
     return schema_string(meta::type_info_of<T>(), pretty);
 }
 
