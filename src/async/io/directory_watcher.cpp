@@ -1,6 +1,7 @@
 #include "kota/async/io/directory_watcher.h"
 
 #include <efsw/efsw.h>
+#include <utility>
 
 #include "kota/async/io/loop.h"
 #include "kota/async/io/watcher.h"
@@ -11,11 +12,18 @@ namespace kota {
 struct directory_watcher::Self : std::enable_shared_from_this<Self> {
     event_loop* loop;
     efsw_watcher watcher = nullptr;
+    efsw_watchid watch_id = 0;
     timer debounce_timer;
     kota::event has_events{false};
     std::vector<change> buffer;
     std::chrono::milliseconds debounce_ms;
     bool closed = false;
+
+    ~Self() {
+        if(watcher) {
+            efsw_release(watcher);
+        }
+    }
 
     void on_change(change c) {
         if(closed) {
@@ -61,8 +69,6 @@ struct directory_watcher::Self : std::enable_shared_from_this<Self> {
             c.associated = std::move(old_path);
         }
 
-        c.is_directory = false;
-
         auto shared = raw->shared_from_this();
         raw->loop->post([shared, c = std::move(c)]() mutable { shared->on_change(std::move(c)); });
     }
@@ -80,6 +86,21 @@ directory_watcher::directory_watcher(directory_watcher&&) noexcept = default;
 
 directory_watcher& directory_watcher::operator=(directory_watcher&&) noexcept = default;
 
+namespace {
+
+error efsw_error_to_error(efsw_watchid id) {
+    switch(id) {
+        case EFSW_NOTFOUND: return error::no_such_file_or_directory;
+        case EFSW_REPEATED: return error::file_already_exists;
+        case EFSW_OUTOFSCOPE: return error::invalid_argument;
+        case EFSW_NOTREADABLE: return error::permission_denied;
+        case EFSW_REMOTE: return error::remote_io_error;
+        default: return error::unknown_error;
+    }
+}
+
+}  // namespace
+
 result<directory_watcher> directory_watcher::create(const char* path,
                                                     options opts,
                                                     event_loop& loop) {
@@ -95,10 +116,10 @@ result<directory_watcher> directory_watcher::create(const char* path,
 
     efsw_watchid id = efsw_addwatch(s->watcher, path, Self::efsw_callback, 1, s.get());
     if(id < 0) {
-        efsw_release(s->watcher);
-        return outcome_error(error::unknown_error);
+        return outcome_error(efsw_error_to_error(id));
     }
 
+    s->watch_id = id;
     efsw_watch(s->watcher);
 
     return directory_watcher(std::move(s));
@@ -121,9 +142,7 @@ task<std::vector<directory_watcher::change>, error> directory_watcher::next() {
     self->debounce_timer.start(self->debounce_ms);
     co_await self->debounce_timer.wait();
 
-    auto batch = std::move(self->buffer);
-    self->buffer.clear();
-    co_return batch;
+    co_return std::exchange(self->buffer, {});
 }
 
 void directory_watcher::close() {
@@ -132,6 +151,7 @@ void directory_watcher::close() {
     }
 
     if(self->watcher) {
+        efsw_removewatch_byid(self->watcher, self->watch_id);
         efsw_release(self->watcher);
         self->watcher = nullptr;
     }

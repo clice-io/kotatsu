@@ -37,7 +37,6 @@ public:
         std::string path;
         effect type;
         std::string associated;
-        bool is_directory;
     };
 
     struct options {

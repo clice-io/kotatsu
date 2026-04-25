@@ -1,6 +1,7 @@
 #pragma once
 
 #include "kota/support/config.h"
+#include "kota/async/io/directory_watcher.h"
 #include "kota/async/io/fs.h"
 #include "kota/async/io/loop.h"
 #include "kota/async/io/process.h"
