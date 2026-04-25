@@ -104,7 +104,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - Minimal unit test framework used throughout this repository.
 - `TEST_SUITE` / `TEST_CASE` registration with compile-time case attributes (skip / focus / serial) and `setup` / `teardown` hooks.
 - `EXPECT_*` / `ASSERT_*` and coroutine-aware `CO_ASSERT_*` helpers; binary comparisons go through `meta::eq` / `lt` / … so any reflectable type is printable and comparable.
-- Exception helpers: `CAUGHT(expr)` and `ZEST_EXPECT_THROWS(expr, Exception)`.
+- Exception helpers: `CAUGHT(print, expr)` and `ZEST_EXPECT_THROWS(expr, Exception)`.
 - Default CLI runner: filter by `suite[.test]` with wildcards (`--test-filter=…`), optional `--parallel` / `--parallel-workers=N`, and `--only-failed-output`.
 - Failure reporting uses `std::source_location` to point at the failing expression.
 
