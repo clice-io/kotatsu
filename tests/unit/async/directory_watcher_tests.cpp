@@ -5,18 +5,18 @@
 
 #include "loop_fixture.h"
 #include "kota/zest/zest.h"
-#include "kota/async/io/directory_watcher.h"
+#include "kota/async/io/fs_event.h"
 
 namespace kota {
 
 namespace {
 
-task<std::vector<directory_watcher::change>, error> next_or_timeout(directory_watcher& w,
-                                                                    event_loop& loop,
-                                                                    int timeout_ms = 10000) {
-    auto do_timeout = [&]() -> task<std::vector<directory_watcher::change>, error> {
+task<std::vector<fs_event::change>, error> next_or_timeout(fs_event& w,
+                                                           event_loop& loop,
+                                                           int timeout_ms = 10000) {
+    auto do_timeout = [&]() -> task<std::vector<fs_event::change>, error> {
         co_await sleep(timeout_ms, loop);
-        co_return std::vector<directory_watcher::change>{};
+        co_return std::vector<fs_event::change>{};
     };
 
     auto result = co_await when_any(w.next(), do_timeout());
@@ -24,19 +24,15 @@ task<std::vector<directory_watcher::change>, error> next_or_timeout(directory_wa
         co_await fail(result.error());
     }
 
-    co_return std::visit(
-        [](auto&& v) -> std::vector<directory_watcher::change> { return std::move(v); },
-        std::move(*result));
+    co_return std::visit([](auto&& v) -> std::vector<fs_event::change> { return std::move(v); },
+                         std::move(*result));
 }
 
 task<int, error> watch_file_create(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
 
-    auto watcher =
-        directory_watcher::create(dir,
-                                  directory_watcher::options{std::chrono::milliseconds{50}},
-                                  loop);
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
     if(!watcher.has_value()) {
         co_await fail(watcher.error());
     }
@@ -51,7 +47,7 @@ task<int, error> watch_file_create(event_loop& loop) {
 
     bool found = false;
     for(const auto& c: changes) {
-        if(c.type == directory_watcher::effect::create) {
+        if(c.type == fs_event::effect::create) {
             found = true;
         }
     }
@@ -71,10 +67,7 @@ task<int, error> watch_file_modify(event_loop& loop) {
     int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
     co_await fs::close(fd, loop).or_fail();
 
-    auto watcher =
-        directory_watcher::create(dir,
-                                  directory_watcher::options{std::chrono::milliseconds{50}},
-                                  loop);
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
     if(!watcher.has_value()) {
         co_await fail(watcher.error());
     }
@@ -91,7 +84,7 @@ task<int, error> watch_file_modify(event_loop& loop) {
 
     bool found = false;
     for(const auto& c: changes) {
-        if(c.type == directory_watcher::effect::modify) {
+        if(c.type == fs_event::effect::modify) {
             found = true;
         }
     }
@@ -111,10 +104,7 @@ task<int, error> watch_file_delete(event_loop& loop) {
     int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
     co_await fs::close(fd, loop).or_fail();
 
-    auto watcher =
-        directory_watcher::create(dir,
-                                  directory_watcher::options{std::chrono::milliseconds{50}},
-                                  loop);
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
     if(!watcher.has_value()) {
         co_await fail(watcher.error());
     }
@@ -127,7 +117,7 @@ task<int, error> watch_file_delete(event_loop& loop) {
 
     bool found = false;
     for(const auto& c: changes) {
-        if(c.type == directory_watcher::effect::destroy) {
+        if(c.type == fs_event::effect::destroy) {
             found = true;
         }
     }
@@ -148,10 +138,7 @@ task<int, error> watch_file_rename(event_loop& loop) {
     int fd = co_await fs::open(src, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
     co_await fs::close(fd, loop).or_fail();
 
-    auto watcher =
-        directory_watcher::create(dir,
-                                  directory_watcher::options{std::chrono::milliseconds{50}},
-                                  loop);
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
     if(!watcher.has_value()) {
         co_await fail(watcher.error());
     }
@@ -164,9 +151,8 @@ task<int, error> watch_file_rename(event_loop& loop) {
 
     bool found_relevant = false;
     for(const auto& c: changes) {
-        if(c.type == directory_watcher::effect::rename ||
-           c.type == directory_watcher::effect::create ||
-           c.type == directory_watcher::effect::destroy) {
+        if(c.type == fs_event::effect::rename || c.type == fs_event::effect::create ||
+           c.type == fs_event::effect::destroy) {
             found_relevant = true;
         }
     }
@@ -179,11 +165,7 @@ task<int, error> watch_file_rename(event_loop& loop) {
 }
 
 task<int, error> watch_nonexistent_path(event_loop& loop) {
-    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
-    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
-    co_await fs::rmdir(dir, loop).or_fail();
-
-    auto result = directory_watcher::create(dir, {}, loop);
+    auto result = fs_event::create("/nonexistent/dir/that/does/not/exist", {}, loop);
     if(result.has_value()) {
         co_return 0;
     }
@@ -195,10 +177,7 @@ task<int, error> watch_close_then_next(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
 
-    auto watcher =
-        directory_watcher::create(dir,
-                                  directory_watcher::options{std::chrono::milliseconds{50}},
-                                  loop);
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
     if(!watcher.has_value()) {
         co_await fail(watcher.error());
     }
@@ -220,10 +199,7 @@ task<int, error> watch_multiple_next_calls(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
 
-    auto watcher =
-        directory_watcher::create(dir,
-                                  directory_watcher::options{std::chrono::milliseconds{50}},
-                                  loop);
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
     if(!watcher.has_value()) {
         co_await fail(watcher.error());
     }
@@ -260,10 +236,7 @@ task<int, error> watch_debounce_batching(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
 
-    auto watcher =
-        directory_watcher::create(dir,
-                                  directory_watcher::options{std::chrono::milliseconds{200}},
-                                  loop);
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{200}}, loop);
     if(!watcher.has_value()) {
         co_await fail(watcher.error());
     }
@@ -296,10 +269,7 @@ task<int, error> watch_subdirectory_changes(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
 
-    auto watcher =
-        directory_watcher::create(dir,
-                                  directory_watcher::options{std::chrono::milliseconds{50}},
-                                  loop);
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
     if(!watcher.has_value()) {
         co_await fail(watcher.error());
     }
@@ -340,9 +310,7 @@ task<int, error> watch_non_recursive(event_loop& loop) {
     co_await fs::mkdir(subdir, 0755, loop).or_fail();
 
     auto watcher =
-        directory_watcher::create(dir,
-                                  directory_watcher::options{std::chrono::milliseconds{50}, false},
-                                  loop);
+        fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}, false}, loop);
     if(!watcher.has_value()) {
         co_await fail(watcher.error());
     }
@@ -357,7 +325,7 @@ task<int, error> watch_non_recursive(event_loop& loop) {
 
     bool found_top = false;
     for(const auto& c: changes) {
-        if(c.type == directory_watcher::effect::create) {
+        if(c.type == fs_event::effect::create) {
             found_top = true;
         }
     }
@@ -376,18 +344,12 @@ task<int, error> watch_move_assignment(event_loop& loop) {
     std::string dir1 = co_await fs::mkdtemp(dir_template1, loop).or_fail();
     std::string dir2 = co_await fs::mkdtemp(dir_template2, loop).or_fail();
 
-    auto watcher_a =
-        directory_watcher::create(dir1,
-                                  directory_watcher::options{std::chrono::milliseconds{50}},
-                                  loop);
+    auto watcher_a = fs_event::create(dir1, fs_event::options{std::chrono::milliseconds{50}}, loop);
     if(!watcher_a.has_value()) {
         co_await fail(watcher_a.error());
     }
 
-    auto watcher_b =
-        directory_watcher::create(dir2,
-                                  directory_watcher::options{std::chrono::milliseconds{50}},
-                                  loop);
+    auto watcher_b = fs_event::create(dir2, fs_event::options{std::chrono::milliseconds{50}}, loop);
     if(!watcher_b.has_value()) {
         co_await fail(watcher_b.error());
     }
@@ -404,7 +366,7 @@ task<int, error> watch_move_assignment(event_loop& loop) {
 
     bool found = false;
     for(const auto& c: changes) {
-        if(c.type == directory_watcher::effect::create) {
+        if(c.type == fs_event::effect::create) {
             found = true;
         }
     }
@@ -423,9 +385,7 @@ task<int, error> watch_destructor_cleanup(event_loop& loop) {
 
     {
         auto watcher =
-            directory_watcher::create(dir,
-                                      directory_watcher::options{std::chrono::milliseconds{50}},
-                                      loop);
+            fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
         if(!watcher.has_value()) {
             co_await fail(watcher.error());
         }
@@ -440,10 +400,7 @@ task<int, error> watch_double_close(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
 
-    auto watcher =
-        directory_watcher::create(dir,
-                                  directory_watcher::options{std::chrono::milliseconds{50}},
-                                  loop);
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
     if(!watcher.has_value()) {
         co_await fail(watcher.error());
     }
@@ -460,7 +417,7 @@ task<int, error> watch_default_options(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
 
-    auto watcher = directory_watcher::create(dir, {}, loop);
+    auto watcher = fs_event::create(dir, {}, loop);
     if(!watcher.has_value()) {
         co_await fail(watcher.error());
     }
@@ -471,9 +428,1292 @@ task<int, error> watch_default_options(event_loop& loop) {
     co_return 1;
 }
 
+// ── parcel-watcher parity: files ────────────────────────────────────
+
+task<int, error> watch_rename_populates_old_path(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    std::string src = (std::filesystem::path(dir) / "old_name.txt").string();
+    std::string dst = (std::filesystem::path(dir) / "new_name.txt").string();
+
+    int fd = co_await fs::open(src, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    co_await fs::rename(src, dst, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    // Renames are decomposed into destroy + create (matching parcel-watcher)
+    bool found_destroy_old = false;
+    bool found_create_new = false;
+    for(const auto& c: changes) {
+        if(c.type == fs_event::effect::destroy &&
+           c.path.find("old_name.txt") != std::string::npos) {
+            found_destroy_old = true;
+        }
+        if(c.type == fs_event::effect::create && c.path.find("new_name.txt") != std::string::npos) {
+            found_create_new = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::unlink(dst, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return (found_destroy_old && found_create_new) ? 1 : 0;
+}
+
+task<int, error> watch_rename_existing_file(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    std::string src = (std::filesystem::path(dir) / "existing.txt").string();
+    int fd = co_await fs::open(src, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    co_await sleep(100, loop);
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    std::string dst = (std::filesystem::path(dir) / "renamed.txt").string();
+    co_await fs::rename(src, dst, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found = false;
+    for(const auto& c: changes) {
+        if(c.type == fs_event::effect::rename || c.type == fs_event::effect::create ||
+           c.type == fs_event::effect::destroy) {
+            found = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::unlink(dst, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return found ? 1 : 0;
+}
+
+// ── parcel-watcher parity: directories ──────────────────────────────
+
+task<int, error> watch_directory_creation(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    std::string sub = (std::filesystem::path(dir) / "newdir").string();
+    co_await fs::mkdir(sub, 0755, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found = false;
+    for(const auto& c: changes) {
+        if(c.type == fs_event::effect::create && c.path.find("newdir") != std::string::npos) {
+            found = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::rmdir(sub, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return found ? 1 : 0;
+}
+
+task<int, error> watch_directory_rename(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    std::string sub1 = (std::filesystem::path(dir) / "before_dir").string();
+    co_await fs::mkdir(sub1, 0755, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    std::string sub2 = (std::filesystem::path(dir) / "after_dir").string();
+    co_await fs::rename(sub1, sub2, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found_relevant = false;
+    for(const auto& c: changes) {
+        if(c.type == fs_event::effect::rename || c.type == fs_event::effect::create ||
+           c.type == fs_event::effect::destroy) {
+            found_relevant = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::rmdir(sub2, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return found_relevant ? 1 : 0;
+}
+
+task<int, error> watch_directory_deletion(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    std::string sub = (std::filesystem::path(dir) / "todelete").string();
+    co_await fs::mkdir(sub, 0755, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    co_await fs::rmdir(sub, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found = false;
+    for(const auto& c: changes) {
+        if(c.type == fs_event::effect::destroy && c.path.find("todelete") != std::string::npos) {
+            found = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return found ? 1 : 0;
+}
+
+// ── parcel-watcher parity: sub-files ────────────────────────────────
+
+task<int, error> watch_subfile_create(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    std::string sub = (std::filesystem::path(dir) / "subdir").string();
+    co_await fs::mkdir(sub, 0755, loop).or_fail();
+
+    // Consume the mkdir event batch
+    co_await next_or_timeout(*watcher, loop).or_fail();
+    co_await sleep(100, loop);
+
+    std::string file = (std::filesystem::path(sub) / "child.txt").string();
+    int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found = false;
+    for(const auto& c: changes) {
+        if(c.type == fs_event::effect::create && c.path.find("child.txt") != std::string::npos) {
+            found = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::unlink(file, loop).or_fail();
+    co_await fs::rmdir(sub, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return found ? 1 : 0;
+}
+
+task<int, error> watch_subfile_modify(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    std::string sub = (std::filesystem::path(dir) / "subdir").string();
+    co_await fs::mkdir(sub, 0755, loop).or_fail();
+    std::string file = (std::filesystem::path(sub) / "edit.txt").string();
+    int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    fd = co_await fs::open(file, O_WRONLY, 0, loop).or_fail();
+    constexpr std::string_view payload = "updated";
+    co_await fs::write(fd, std::span<const char>(payload.data(), payload.size()), -1, loop)
+        .or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found = false;
+    for(const auto& c: changes) {
+        if(c.type == fs_event::effect::modify && c.path.find("edit.txt") != std::string::npos) {
+            found = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::unlink(file, loop).or_fail();
+    co_await fs::rmdir(sub, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return found ? 1 : 0;
+}
+
+task<int, error> watch_subfile_rename(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    std::string sub = (std::filesystem::path(dir) / "subdir").string();
+    co_await fs::mkdir(sub, 0755, loop).or_fail();
+    std::string src = (std::filesystem::path(sub) / "a.txt").string();
+    int fd = co_await fs::open(src, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    std::string dst = (std::filesystem::path(sub) / "b.txt").string();
+    co_await fs::rename(src, dst, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found = false;
+    for(const auto& c: changes) {
+        if(c.type == fs_event::effect::rename || c.type == fs_event::effect::create ||
+           c.type == fs_event::effect::destroy) {
+            if(c.path.find("subdir") != std::string::npos) {
+                found = true;
+            }
+        }
+    }
+
+    watcher->close();
+    co_await fs::unlink(dst, loop).or_fail();
+    co_await fs::rmdir(sub, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return found ? 1 : 0;
+}
+
+task<int, error> watch_subfile_delete(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    std::string sub = (std::filesystem::path(dir) / "subdir").string();
+    co_await fs::mkdir(sub, 0755, loop).or_fail();
+    std::string file = (std::filesystem::path(sub) / "gone.txt").string();
+    int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    co_await fs::unlink(file, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found = false;
+    for(const auto& c: changes) {
+        if(c.type == fs_event::effect::destroy && c.path.find("gone.txt") != std::string::npos) {
+            found = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::rmdir(sub, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return found ? 1 : 0;
+}
+
+// ── parcel-watcher parity: sub-directories ──────────────────────────
+
+task<int, error> watch_nested_subdir_create(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    std::string sub1 = (std::filesystem::path(dir) / "level1").string();
+    co_await fs::mkdir(sub1, 0755, loop).or_fail();
+    co_await next_or_timeout(*watcher, loop).or_fail();
+    co_await sleep(100, loop);
+
+    std::string sub2 = (std::filesystem::path(sub1) / "level2").string();
+    co_await fs::mkdir(sub2, 0755, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found = false;
+    for(const auto& c: changes) {
+        if(c.type == fs_event::effect::create && c.path.find("level2") != std::string::npos) {
+            found = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::rmdir(sub2, loop).or_fail();
+    co_await fs::rmdir(sub1, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return found ? 1 : 0;
+}
+
+task<int, error> watch_deep_nested_file(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    std::string d1 = (std::filesystem::path(dir) / "a").string();
+    co_await fs::mkdir(d1, 0755, loop).or_fail();
+    co_await next_or_timeout(*watcher, loop).or_fail();
+    co_await sleep(100, loop);
+
+    std::string d2 = (std::filesystem::path(d1) / "b").string();
+    co_await fs::mkdir(d2, 0755, loop).or_fail();
+    co_await next_or_timeout(*watcher, loop).or_fail();
+    co_await sleep(100, loop);
+
+    std::string file = (std::filesystem::path(d2) / "deep.txt").string();
+    int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found = false;
+    for(const auto& c: changes) {
+        if(c.type == fs_event::effect::create && c.path.find("deep.txt") != std::string::npos) {
+            found = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::unlink(file, loop).or_fail();
+    co_await fs::rmdir(d2, loop).or_fail();
+    co_await fs::rmdir(d1, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return found ? 1 : 0;
+}
+
+task<int, error> watch_subdir_rename(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    std::string sub1 = (std::filesystem::path(dir) / "orig").string();
+    co_await fs::mkdir(sub1, 0755, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    std::string sub2 = (std::filesystem::path(dir) / "moved").string();
+    co_await fs::rename(sub1, sub2, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found_relevant = false;
+    for(const auto& c: changes) {
+        if(c.type == fs_event::effect::rename || c.type == fs_event::effect::create ||
+           c.type == fs_event::effect::destroy) {
+            found_relevant = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::rmdir(sub2, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return found_relevant ? 1 : 0;
+}
+
+task<int, error> watch_renamed_dir_still_tracked(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    std::string sub = (std::filesystem::path(dir) / "trackme").string();
+    co_await fs::mkdir(sub, 0755, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    std::string sub2 = (std::filesystem::path(dir) / "tracked").string();
+    co_await fs::rename(sub, sub2, loop).or_fail();
+
+    // Consume rename events
+    co_await next_or_timeout(*watcher, loop).or_fail();
+    co_await sleep(500, loop);
+
+    std::string file = (std::filesystem::path(sub2) / "after_rename.txt").string();
+    int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found = false;
+    for(const auto& c: changes) {
+        if(c.path.find("after_rename.txt") != std::string::npos) {
+            found = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::unlink(file, loop).or_fail();
+    co_await fs::rmdir(sub2, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return found ? 1 : 0;
+}
+
+// ── parcel-watcher parity: errors ───────────────────────────────────
+
+task<int, error> watch_error_on_bad_parent(event_loop& loop) {
+    auto result = fs_event::create("/nonexistent/parent/file.txt", {}, loop);
+    co_return result.has_error() ? 1 : 0;
+}
+
+// ── parcel-watcher parity: multiple watchers ────────────────────────
+
+task<int, error> watch_multiple_watchers_same_dir(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    auto w1 = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    auto w2 = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+
+    if(!w1.has_value() || !w2.has_value()) {
+        co_await fail(error::unknown_error);
+    }
+
+    co_await sleep(500, loop);
+
+    std::string file = (std::filesystem::path(dir) / "shared.txt").string();
+    int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto changes1 = co_await next_or_timeout(*w1, loop).or_fail();
+    auto changes2 = co_await next_or_timeout(*w2, loop).or_fail();
+
+    bool w1_saw = false;
+    bool w2_saw = false;
+    for(const auto& c: changes1) {
+        if(c.type == fs_event::effect::create)
+            w1_saw = true;
+    }
+    for(const auto& c: changes2) {
+        if(c.type == fs_event::effect::create)
+            w2_saw = true;
+    }
+
+    w1->close();
+    w2->close();
+    co_await fs::unlink(file, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return (w1_saw && w2_saw) ? 1 : 0;
+}
+
+task<int, error> watch_multiple_watchers_different_dirs(event_loop& loop) {
+    auto t1 = (std::filesystem::temp_directory_path() / "kotatsu-dw1-XXXXXX").string();
+    auto t2 = (std::filesystem::temp_directory_path() / "kotatsu-dw2-XXXXXX").string();
+    std::string dir1 = co_await fs::mkdtemp(t1, loop).or_fail();
+    std::string dir2 = co_await fs::mkdtemp(t2, loop).or_fail();
+
+    auto w1 = fs_event::create(dir1, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    auto w2 = fs_event::create(dir2, fs_event::options{std::chrono::milliseconds{50}}, loop);
+
+    if(!w1.has_value() || !w2.has_value()) {
+        co_await fail(error::unknown_error);
+    }
+
+    co_await sleep(500, loop);
+
+    std::string f1 = (std::filesystem::path(dir1) / "one.txt").string();
+    std::string f2 = (std::filesystem::path(dir2) / "two.txt").string();
+    int fd = co_await fs::open(f1, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+    fd = co_await fs::open(f2, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto c1 = co_await next_or_timeout(*w1, loop).or_fail();
+    auto c2 = co_await next_or_timeout(*w2, loop).or_fail();
+
+    bool w1_saw = false;
+    bool w2_saw = false;
+    for(const auto& c: c1) {
+        if(c.path.find("one.txt") != std::string::npos)
+            w1_saw = true;
+    }
+    for(const auto& c: c2) {
+        if(c.path.find("two.txt") != std::string::npos)
+            w2_saw = true;
+    }
+
+    w1->close();
+    w2->close();
+    co_await fs::unlink(f1, loop).or_fail();
+    co_await fs::unlink(f2, loop).or_fail();
+    co_await fs::rmdir(dir1, loop).or_fail();
+    co_await fs::rmdir(dir2, loop).or_fail();
+
+    co_return (w1_saw && w2_saw) ? 1 : 0;
+}
+
+// ── parcel-watcher parity: rapid changes ────────────────────────────
+
+task<int, error> watch_rapid_create_delete(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{100}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    std::string f1 = (std::filesystem::path(dir) / "keep.txt").string();
+    std::string f2 = (std::filesystem::path(dir) / "ephemeral.txt").string();
+
+    int fd = co_await fs::open(f1, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+    fd = co_await fs::open(f2, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+    co_await fs::unlink(f2, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool saw_keep_create = false;
+    for(const auto& c: changes) {
+        if(c.path.find("keep.txt") != std::string::npos && c.type == fs_event::effect::create) {
+            saw_keep_create = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::unlink(f1, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return saw_keep_create ? 1 : 0;
+}
+
+task<int, error> watch_rapid_multiple_writes(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    std::string file = (std::filesystem::path(dir) / "multi.txt").string();
+    int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{100}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    for(int i = 0; i < 5; ++i) {
+        fd = co_await fs::open(file, O_WRONLY, 0, loop).or_fail();
+        std::string payload = "write" + std::to_string(i);
+        co_await fs::write(fd, std::span<const char>(payload.data(), payload.size()), -1, loop)
+            .or_fail();
+        co_await fs::close(fd, loop).or_fail();
+    }
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool saw_modify = false;
+    for(const auto& c: changes) {
+        if(c.type == fs_event::effect::modify && c.path.find("multi.txt") != std::string::npos) {
+            saw_modify = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::unlink(file, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return saw_modify ? 1 : 0;
+}
+
+// ── compatibility: attribute changes ────────────────────────────────
+
+task<int, error> watch_attribute_change(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    std::string file = (std::filesystem::path(dir) / "attrs.txt").string();
+    int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    co_await fs::chmod(file, 0444, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found = false;
+    for(const auto& c: changes) {
+        if(c.type == fs_event::effect::modify && c.path.find("attrs.txt") != std::string::npos) {
+            found = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::chmod(file, 0644, loop).or_fail();
+    co_await fs::unlink(file, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return found ? 1 : 0;
+}
+
+// ── compatibility: atomic file replacement (vim-style) ─────────────
+
+task<int, error> watch_atomic_replace(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    std::string target = (std::filesystem::path(dir) / "target.txt").string();
+    int fd = co_await fs::open(target, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    constexpr std::string_view original = "original";
+    co_await fs::write(fd, std::span<const char>(original.data(), original.size()), -1, loop)
+        .or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    std::string tmp = (std::filesystem::path(dir) / "target.txt.tmp").string();
+    fd = co_await fs::open(tmp, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    constexpr std::string_view updated = "updated";
+    co_await fs::write(fd, std::span<const char>(updated.data(), updated.size()), -1, loop)
+        .or_fail();
+    co_await fs::close(fd, loop).or_fail();
+    co_await fs::rename(tmp, target, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found = false;
+    for(const auto& c: changes) {
+        if(c.path.find("target.txt") != std::string::npos &&
+           (c.type == fs_event::effect::create || c.type == fs_event::effect::modify)) {
+            found = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::unlink(target, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return found ? 1 : 0;
+}
+
+// ── compatibility: TOCTOU (create dir + immediate file) ────────────
+
+task<int, error> watch_toctou_dir_and_file(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{100}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    std::string sub = (std::filesystem::path(dir) / "racedir").string();
+    co_await fs::mkdir(sub, 0755, loop).or_fail();
+    std::string file = (std::filesystem::path(sub) / "quick.txt").string();
+    int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    bool found = false;
+    for(int attempt = 0; attempt < 3 && !found; ++attempt) {
+        auto changes = co_await next_or_timeout(*watcher, loop, 3000).or_fail();
+        for(const auto& c: changes) {
+            if(c.path.find("quick.txt") != std::string::npos) {
+                found = true;
+            }
+        }
+    }
+
+    watcher->close();
+    co_await fs::unlink(file, loop).or_fail();
+    co_await fs::rmdir(sub, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return found ? 1 : 0;
+}
+
+// ── compatibility: unicode filenames ───────────────────────────────
+
+task<int, error> watch_unicode_filename(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    std::string file = (std::filesystem::path(dir) / "\xe6\x96\x87\xe4\xbb\xb6.txt").string();
+    int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found = false;
+    for(const auto& c: changes) {
+        if(c.type == fs_event::effect::create &&
+           c.path.find("\xe6\x96\x87\xe4\xbb\xb6") != std::string::npos) {
+            found = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::unlink(file, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return found ? 1 : 0;
+}
+
+// ── compatibility: symlink create/delete ───────────────────────────
+
+task<int, error> watch_symlink_create_delete(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    std::string real = (std::filesystem::path(dir) / "real.txt").string();
+    int fd = co_await fs::open(real, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    std::string link = (std::filesystem::path(dir) / "link.txt").string();
+    co_await fs::symlink(real, link, 0, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found_create = false;
+    for(const auto& c: changes) {
+        if(c.type == fs_event::effect::create && c.path.find("link.txt") != std::string::npos) {
+            found_create = true;
+        }
+    }
+
+    co_await fs::unlink(link, loop).or_fail();
+
+    auto changes2 = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found_delete = false;
+    for(const auto& c: changes2) {
+        if(c.type == fs_event::effect::destroy && c.path.find("link.txt") != std::string::npos) {
+            found_delete = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::unlink(real, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return (found_create && found_delete) ? 1 : 0;
+}
+
+// ── compatibility: large event burst ───────────────────────────────
+
+task<int, error> watch_large_burst(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{200}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    constexpr int count = 50;
+    std::vector<std::string> files;
+    files.reserve(count);
+    for(int i = 0; i < count; ++i) {
+        std::string file =
+            (std::filesystem::path(dir) / ("burst_" + std::to_string(i) + ".txt")).string();
+        int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+        co_await fs::close(fd, loop).or_fail();
+        files.push_back(std::move(file));
+    }
+
+    int total_creates = 0;
+    for(int attempt = 0; attempt < 5; ++attempt) {
+        auto changes = co_await next_or_timeout(*watcher, loop, 3000).or_fail();
+        if(changes.empty())
+            break;
+        for(const auto& c: changes) {
+            if(c.type == fs_event::effect::create) {
+                ++total_creates;
+            }
+        }
+    }
+
+    watcher->close();
+    for(auto& f: files) {
+        co_await fs::unlink(f, loop).or_fail();
+    }
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return total_creates >= count / 2 ? 1 : 0;
+}
+
+// ── compatibility: debounce coalescing ─────────────────────────────
+
+task<int, error> watch_debounce_coalesces(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    std::string file = (std::filesystem::path(dir) / "coalesce.txt").string();
+    int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{200}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    for(int i = 0; i < 10; ++i) {
+        std::string f =
+            (std::filesystem::path(dir) / ("coalesce_" + std::to_string(i) + ".txt")).string();
+        fd = co_await fs::open(f, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+        co_await fs::close(fd, loop).or_fail();
+    }
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    int create_count = 0;
+    for(const auto& c: changes) {
+        if(c.type == fs_event::effect::create) {
+            ++create_count;
+        }
+    }
+
+    watcher->close();
+    co_await fs::unlink(file, loop).or_fail();
+    for(int i = 0; i < 10; ++i) {
+        std::string f =
+            (std::filesystem::path(dir) / ("coalesce_" + std::to_string(i) + ".txt")).string();
+        co_await fs::unlink(f, loop).or_fail();
+    }
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return create_count >= 3 ? 1 : 0;
+}
+
+// ── parcel-watcher parity: watched root directory deletion ─────────
+
+task<int, error> watch_root_dir_deleted(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found = false;
+    for(const auto& c: changes) {
+        if(c.type == fs_event::effect::destroy && c.path == dir) {
+            found = true;
+        }
+    }
+
+    watcher->close();
+    co_return found ? 1 : 0;
+}
+
+// ── parcel-watcher parity: delete subdir with files inside ────────
+
+task<int, error> watch_subdir_delete_with_files(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    std::string sub = (std::filesystem::path(dir) / "mydir").string();
+    co_await fs::mkdir(sub, 0755, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    std::string file = (std::filesystem::path(sub) / "child.txt").string();
+    int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    co_await next_or_timeout(*watcher, loop).or_fail();
+    co_await sleep(200, loop);
+
+    co_await fs::unlink(file, loop).or_fail();
+    co_await fs::rmdir(sub, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found_file_delete = false;
+    bool found_dir_delete = false;
+    for(const auto& c: changes) {
+        if(c.type == fs_event::effect::destroy && c.path.find("child.txt") != std::string::npos) {
+            found_file_delete = true;
+        }
+        if(c.type == fs_event::effect::destroy && c.path.find("mydir") != std::string::npos &&
+           c.path.find("child.txt") == std::string::npos) {
+            found_dir_delete = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return (found_file_delete && found_dir_delete) ? 1 : 0;
+}
+
+// ── parcel-watcher parity: symlink rename ─────────────────────────
+
+task<int, error> watch_symlink_rename(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    std::string real = (std::filesystem::path(dir) / "real.txt").string();
+    int fd = co_await fs::open(real, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    std::string link1 = (std::filesystem::path(dir) / "link1.txt").string();
+    co_await fs::symlink(real, link1, 0, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    std::string link2 = (std::filesystem::path(dir) / "link2.txt").string();
+    co_await fs::rename(link1, link2, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found_destroy = false;
+    bool found_create = false;
+    for(const auto& c: changes) {
+        if(c.type == fs_event::effect::destroy && c.path.find("link1.txt") != std::string::npos) {
+            found_destroy = true;
+        }
+        if(c.type == fs_event::effect::create && c.path.find("link2.txt") != std::string::npos) {
+            found_create = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::unlink(link2, loop).or_fail();
+    co_await fs::unlink(real, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return (found_destroy && found_create) ? 1 : 0;
+}
+
+// ── parcel-watcher parity: symlink update (write through symlink) ─
+
+task<int, error> watch_symlink_update(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    std::string real = (std::filesystem::path(dir) / "real.txt").string();
+    int fd = co_await fs::open(real, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    constexpr std::string_view initial = "hello";
+    co_await fs::write(fd, std::span<const char>(initial.data(), initial.size()), -1, loop)
+        .or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    std::string link = (std::filesystem::path(dir) / "link.txt").string();
+    co_await fs::symlink(real, link, 0, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    fd = co_await fs::open(link, O_WRONLY | O_TRUNC, 0, loop).or_fail();
+    constexpr std::string_view updated = "world";
+    co_await fs::write(fd, std::span<const char>(updated.data(), updated.size()), -1, loop)
+        .or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found_modify = false;
+    for(const auto& c: changes) {
+        if(c.type == fs_event::effect::modify) {
+            found_modify = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::unlink(link, loop).or_fail();
+    co_await fs::unlink(real, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return found_modify ? 1 : 0;
+}
+
+// ── parcel-watcher parity: folder symlink ─────────────────────────
+
+task<int, error> watch_folder_symlink(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    std::string sub = (std::filesystem::path(dir) / "realdir").string();
+    co_await fs::mkdir(sub, 0755, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    std::string link = (std::filesystem::path(dir) / "linkdir").string();
+    co_await fs::symlink(sub, link, 0, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found_create = false;
+    for(const auto& c: changes) {
+        if(c.type == fs_event::effect::create && c.path.find("linkdir") != std::string::npos) {
+            found_create = true;
+        }
+    }
+
+    co_await fs::unlink(link, loop).or_fail();
+
+    auto changes2 = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found_delete = false;
+    for(const auto& c: changes2) {
+        if(c.type == fs_event::effect::destroy && c.path.find("linkdir") != std::string::npos) {
+            found_delete = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::rmdir(sub, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return (found_create && found_delete) ? 1 : 0;
+}
+
+// ── parcel-watcher parity: rapid create+update → create ───────────
+
+task<int, error> watch_rapid_create_update(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{200}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    std::string file = (std::filesystem::path(dir) / "rapid.txt").string();
+    int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    constexpr std::string_view v1 = "hello";
+    co_await fs::write(fd, std::span<const char>(v1.data(), v1.size()), -1, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    fd = co_await fs::open(file, O_WRONLY | O_TRUNC, 0, loop).or_fail();
+    constexpr std::string_view v2 = "updated";
+    co_await fs::write(fd, std::span<const char>(v2.data(), v2.size()), -1, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool saw_create = false;
+    for(const auto& c: changes) {
+        if(c.path.find("rapid.txt") != std::string::npos && c.type == fs_event::effect::create) {
+            saw_create = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::unlink(file, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return saw_create ? 1 : 0;
+}
+
+// ── parcel-watcher parity: rapid update+delete → delete ───────────
+
+task<int, error> watch_rapid_update_delete(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    std::string file = (std::filesystem::path(dir) / "doomed.txt").string();
+    int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    constexpr std::string_view initial = "hello";
+    co_await fs::write(fd, std::span<const char>(initial.data(), initial.size()), -1, loop)
+        .or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{200}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    fd = co_await fs::open(file, O_WRONLY | O_TRUNC, 0, loop).or_fail();
+    constexpr std::string_view updated = "updated";
+    co_await fs::write(fd, std::span<const char>(updated.data(), updated.size()), -1, loop)
+        .or_fail();
+    co_await fs::close(fd, loop).or_fail();
+    co_await fs::unlink(file, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool saw_destroy = false;
+    for(const auto& c: changes) {
+        if(c.path.find("doomed.txt") != std::string::npos && c.type == fs_event::effect::destroy) {
+            saw_destroy = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return saw_destroy ? 1 : 0;
+}
+
+// ── parcel-watcher parity: rapid delete+create → update ───────────
+
+task<int, error> watch_rapid_delete_create(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    std::string file = (std::filesystem::path(dir) / "phoenix.txt").string();
+    int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    constexpr std::string_view v1 = "v1";
+    co_await fs::write(fd, std::span<const char>(v1.data(), v1.size()), -1, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{200}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    co_await fs::unlink(file, loop).or_fail();
+    fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    constexpr std::string_view v2 = "v2";
+    co_await fs::write(fd, std::span<const char>(v2.data(), v2.size()), -1, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool saw_relevant = false;
+    for(const auto& c: changes) {
+        if(c.path.find("phoenix.txt") != std::string::npos) {
+            saw_relevant = true;
+        }
+    }
+
+    watcher->close();
+    co_await fs::unlink(file, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return saw_relevant ? 1 : 0;
+}
+
 }  // namespace
 
-TEST_SUITE(directory_watcher_io, loop_fixture) {
+TEST_SUITE(fs_event_io, loop_fixture) {
 
 TEST_CASE(detect_file_creation) {
     auto worker = watch_file_create(loop);
@@ -601,6 +1841,303 @@ TEST_CASE(create_with_default_options) {
     EXPECT_EQ(*result, 1);
 }
 
-};  // TEST_SUITE(directory_watcher_io)
+TEST_CASE(rename_populates_old_path) {
+    auto worker = watch_rename_populates_old_path(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(rename_existing_file) {
+    auto worker = watch_rename_existing_file(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(directory_creation) {
+    auto worker = watch_directory_creation(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(directory_rename) {
+    auto worker = watch_directory_rename(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(directory_deletion) {
+    auto worker = watch_directory_deletion(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(subfile_create) {
+    auto worker = watch_subfile_create(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(subfile_modify) {
+    auto worker = watch_subfile_modify(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(subfile_rename) {
+    auto worker = watch_subfile_rename(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(subfile_delete) {
+    auto worker = watch_subfile_delete(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(nested_subdir_create) {
+    auto worker = watch_nested_subdir_create(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(deep_nested_file) {
+    auto worker = watch_deep_nested_file(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(subdir_rename) {
+    auto worker = watch_subdir_rename(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(renamed_dir_still_tracked) {
+    auto worker = watch_renamed_dir_still_tracked(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(error_on_bad_parent) {
+    auto worker = watch_error_on_bad_parent(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(multiple_watchers_same_dir) {
+    auto worker = watch_multiple_watchers_same_dir(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(multiple_watchers_different_dirs) {
+    auto worker = watch_multiple_watchers_different_dirs(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(rapid_create_delete) {
+    auto worker = watch_rapid_create_delete(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(rapid_multiple_writes) {
+    auto worker = watch_rapid_multiple_writes(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(attribute_change) {
+    auto worker = watch_attribute_change(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(atomic_replace) {
+    auto worker = watch_atomic_replace(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(toctou_dir_and_file) {
+    auto worker = watch_toctou_dir_and_file(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(unicode_filename) {
+    auto worker = watch_unicode_filename(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(symlink_create_delete) {
+    auto worker = watch_symlink_create_delete(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(large_burst) {
+    auto worker = watch_large_burst(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(debounce_coalesces) {
+    auto worker = watch_debounce_coalesces(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(root_dir_deleted) {
+    auto worker = watch_root_dir_deleted(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(subdir_delete_with_files) {
+    auto worker = watch_subdir_delete_with_files(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(symlink_rename) {
+    auto worker = watch_symlink_rename(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(symlink_update) {
+    auto worker = watch_symlink_update(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(folder_symlink) {
+    auto worker = watch_folder_symlink(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(rapid_create_update) {
+    auto worker = watch_rapid_create_update(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(rapid_update_delete) {
+    auto worker = watch_rapid_update_delete(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(rapid_delete_create) {
+    auto worker = watch_rapid_delete_create(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+};  // TEST_SUITE(fs_event_io)
 
 }  // namespace kota

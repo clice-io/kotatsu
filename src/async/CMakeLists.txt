@@ -32,17 +32,6 @@ if(NOT MSVC AND TARGET uv_a)
     )
 endif()
 
-kota_add_git_dependency(
-    efsw
-    GIT_REPOSITORY https://github.com/SpartanJ/efsw.git
-    GIT_TAG 1.5.1
-    OPTIONS
-        BUILD_SHARED_LIBS OFF
-        BUILD_STATIC_LIBS ON
-        BUILD_TEST_APP OFF
-        EFSW_INSTALL OFF
-)
-
 add_library(kota_async STATIC)
 add_library(kota::async ALIAS kota_async)
 
@@ -62,7 +51,7 @@ target_sources(kota_async PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/io/system.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/io/udp.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/io/watcher.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/io/directory_watcher.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/io/fs_event.cpp"
 )
 
 target_include_directories(kota_async PUBLIC
@@ -73,8 +62,10 @@ target_link_libraries(kota_async PUBLIC
     libuv::libuv
 )
 
-target_link_libraries(kota_async PRIVATE
-    efsw-static
-)
+if(APPLE)
+    target_link_libraries(kota_async PRIVATE
+        "-framework CoreServices"
+    )
+endif()
 
 kota_apply_project_options(kota_async)

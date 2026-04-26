@@ -14,23 +14,24 @@ namespace kota {
 
 class event_loop;
 
-class directory_watcher {
+class fs_event {
 public:
-    directory_watcher() noexcept;
+    fs_event() noexcept;
 
-    directory_watcher(const directory_watcher&) = delete;
-    directory_watcher& operator=(const directory_watcher&) = delete;
+    fs_event(const fs_event&) = delete;
+    fs_event& operator=(const fs_event&) = delete;
 
-    directory_watcher(directory_watcher&&) noexcept;
-    directory_watcher& operator=(directory_watcher&&) noexcept;
+    fs_event(fs_event&&) noexcept;
+    fs_event& operator=(fs_event&&) noexcept;
 
-    ~directory_watcher();
+    ~fs_event();
 
     enum class effect : std::uint8_t {
         create,
         modify,
         destroy,
         rename,
+        overflow,
         other,
     };
 
@@ -50,9 +51,9 @@ public:
             debounce(debounce), recursive(recursive) {}
     };
 
-    static result<directory_watcher> create(std::string_view path,
-                                            options opts = {},
-                                            event_loop& loop = event_loop::current());
+    static result<fs_event> create(std::string_view path,
+                                   options opts = {},
+                                   event_loop& loop = event_loop::current());
 
     task<std::vector<change>, error> next();
 
@@ -61,7 +62,7 @@ public:
 private:
     struct Self;
 
-    explicit directory_watcher(std::shared_ptr<Self> self) noexcept;
+    explicit fs_event(std::shared_ptr<Self> self) noexcept;
 
     std::shared_ptr<Self> self;
 };
