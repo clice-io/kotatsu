@@ -137,7 +137,12 @@ private:
             case tk::tuple: return make_tuple(ti);
             case tk::structure: return make_struct_ref(ti);
             case tk::variant: return make_variant(ti);
-            default: return content::Value(content::Object{});
+            case tk::any: return content::Value(content::Object{});
+            default:
+                return std::unexpected(error::custom(
+                    error_kind::invalid_state,
+                    std::format("unsupported type kind '{}' for JSON Schema generation",
+                                ti->type_name)));
         }
     }
 

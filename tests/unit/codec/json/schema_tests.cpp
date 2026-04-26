@@ -1045,9 +1045,32 @@ TEST_CASE(root_adjacent_variant) {
         R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("oneOf":[)" R"({"type":"object",)" R"("properties":{)" R"("type":{"const":"integer"},)" R"("value":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["type","value"],)" R"("additionalProperties":false},)" R"({"type":"object",)" R"("properties":{)" R"("type":{"const":"text"},)" R"("value":{"type":"string"}},)" R"("required":["type","value"],)" R"("additionalProperties":false}]})");
 }
 
-TEST_CASE(opaque_root) {
-    const auto result = json::schema_string<json_schema_opaque_root>().value();
+TEST_CASE(opaque_root_returns_error) {
+    const auto result = json::schema_string<json_schema_opaque_root>();
+    EXPECT_TRUE(!result.has_value());
+}
+
+TEST_CASE(any_type_root) {
+    const static type_info any_ti = {type_kind::any, "any"};
+    const auto result = json::schema_string(any_ti).value();
     EXPECT_EQ(result, R"({"$schema":"https://json-schema.org/draft/2020-12/schema"})");
+}
+
+TEST_CASE(any_type_field) {
+    const static type_info any_ti = {type_kind::any, "any"};
+    const static field_info any_fields[] = {
+        {"data", {}, 0, 0, []() -> const type_info& { return any_ti; }, false, false, false, false},
+    };
+    const static struct_type_info any_struct = {
+        {type_kind::structure, "with_any"},
+        false,
+        false,
+        {any_fields,           1         },
+    };
+    const auto result = json::schema_string(any_struct).value();
+    EXPECT_EQ(
+        result,
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{"data":{}},)" R"("required":["data"]})");
 }
 
 // ---------------------------------------------------------------------------
