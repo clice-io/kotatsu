@@ -40,6 +40,9 @@ namespace kota {
     (IN_ATTRIB | IN_CREATE | IN_DELETE | IN_DELETE_SELF | IN_MODIFY | IN_MOVE_SELF |               \
      IN_MOVED_FROM | IN_MOVED_TO | IN_DONT_FOLLOW | IN_ONLYDIR | IN_EXCL_UNLINK)
 
+// All buffer/map mutations happen on the event loop thread (on_poll callback on Linux,
+// loop->post() lambdas on macOS/Windows), so no mutex is needed. Only `closed` is
+// accessed cross-thread and uses std::atomic with acquire/release ordering.
 struct fs_event::Self : std::enable_shared_from_this<Self> {
     event_loop* loop;
     timer debounce_timer;
@@ -113,7 +116,7 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
     }
 
     void push_event(change c) {
-        if(closed.load(std::memory_order_relaxed))
+        if(closed.load(std::memory_order_acquire))
             return;
         buffer.push_back(std::move(c));
         has_events.set();
@@ -252,7 +255,7 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
 
     static void on_poll(uv_poll_t* handle, int status, int events) {
         auto* self = static_cast<Self*>(handle->data);
-        if(status < 0 || self->closed.load(std::memory_order_relaxed))
+        if(status < 0 || self->closed.load(std::memory_order_acquire))
             return;
         if(events & UV_READABLE) {
             self->process_inotify_events();
@@ -334,7 +337,7 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
     }
 
     void push_event(change c) {
-        if(closed.load(std::memory_order_relaxed))
+        if(closed.load(std::memory_order_acquire))
             return;
         buffer.push_back(std::move(c));
         has_events.set();
@@ -346,9 +349,10 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                                   void* event_paths,
                                   const FSEventStreamEventFlags flags[],
                                   const FSEventStreamEventId[]) {
-        auto* self = static_cast<Self*>(info);
+        auto* raw = static_cast<Self*>(info);
+        auto shared = raw->shared_from_this();
 
-        if(self->closed.load(std::memory_order_acquire))
+        if(shared->closed.load(std::memory_order_acquire))
             return;
 
         auto** paths = static_cast<char**>(event_paths);
@@ -368,8 +372,8 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                 continue;
             if(flags[i] & kFSEventStreamEventFlagRootChanged) {
                 struct stat st;
-                if(stat(self->root_path.c_str(), &st) != 0) {
-                    changes.push_back(change{self->root_path, effect::destroy, {}});
+                if(stat(shared->root_path.c_str(), &st) != 0) {
+                    changes.push_back(change{shared->root_path, effect::destroy, {}});
                 }
                 continue;
             }
@@ -383,9 +387,9 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                 path.pop_back();
             }
 
-            if(!self->recursive) {
-                size_t prefix_len = self->root_path.size();
-                if(self->root_path.back() != '/')
+            if(!shared->recursive) {
+                size_t prefix_len = shared->root_path.size();
+                if(shared->root_path.back() != '/')
                     prefix_len += 1;
                 if(path.size() <= prefix_len)
                     continue;
@@ -395,7 +399,7 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                 }
             }
 
-            if(self->closed.load(std::memory_order_relaxed))
+            if(shared->closed.load(std::memory_order_acquire))
                 continue;
 
             bool is_created = (flags[i] & kFSEventStreamEventFlagItemCreated) != 0;
@@ -428,11 +432,10 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
         if(changes.empty())
             return;
 
-        if(self->closed.load(std::memory_order_acquire))
+        if(shared->closed.load(std::memory_order_acquire))
             return;
 
-        auto shared = self->shared_from_this();
-        self->loop->post([shared, changes = std::move(changes)]() mutable {
+        shared->loop->post([shared, changes = std::move(changes)]() mutable {
             for(auto& c: changes) {
                 shared->push_event(std::move(c));
             }
@@ -496,7 +499,7 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                 auto* s = reinterpret_cast<Self*>(param);
                 s->running = false;
                 if(s->dir_handle != INVALID_HANDLE_VALUE) {
-                    CancelIo(s->dir_handle);
+                    CancelIoEx(s->dir_handle, nullptr);
                     CloseHandle(s->dir_handle);
                     s->dir_handle = INVALID_HANDLE_VALUE;
                 }
@@ -507,7 +510,7 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
     }
 
     void push_event(change c) {
-        if(closed.load(std::memory_order_relaxed))
+        if(closed.load(std::memory_order_acquire))
             return;
         buffer.push_back(std::move(c));
         has_events.set();
@@ -629,7 +632,12 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                     changes.push_back(change{std::move(full), effect::modify, {}});
                     break;
                 }
-                case FILE_ACTION_RENAMED_OLD_NAME: pending_old_name = std::move(full); break;
+                case FILE_ACTION_RENAMED_OLD_NAME:
+                    if(!pending_old_name.empty()) {
+                        changes.push_back(change{std::move(pending_old_name), effect::destroy, {}});
+                    }
+                    pending_old_name = std::move(full);
+                    break;
                 case FILE_ACTION_RENAMED_NEW_NAME:
                     if(!pending_old_name.empty()) {
                         changes.push_back(
@@ -856,7 +864,7 @@ result<fs_event> fs_event::create(std::string_view path, event_loop& loop) {
 }
 
 task<std::vector<fs_event::change>, error> fs_event::next() {
-    if(!self || self->closed.load(std::memory_order_relaxed)) {
+    if(!self || self->closed.load(std::memory_order_acquire)) {
         co_await fail(error::invalid_argument);
     }
 
@@ -865,7 +873,7 @@ task<std::vector<fs_event::change>, error> fs_event::next() {
             self->has_events.reset();
             co_await self->has_events.wait();
 
-            if(self->closed.load(std::memory_order_relaxed)) {
+            if(self->closed.load(std::memory_order_acquire)) {
                 co_await fail(error::operation_aborted);
             }
         }

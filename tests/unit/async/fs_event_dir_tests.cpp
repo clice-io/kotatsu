@@ -11,6 +11,8 @@ namespace kota {
 
 namespace {
 
+// Returns empty vector on timeout (not an error) so callers like large_burst
+// can loop collecting batches until silence, using changes.empty() as the stop signal.
 task<std::vector<fs_event::change>, error> next_or_timeout(fs_event& w,
                                                            event_loop& loop,
                                                            int timeout_ms = 10000) {

@@ -61,7 +61,8 @@ private:
 
     explicit fs_event(std::shared_ptr<Self> self) noexcept;
 
-    // shared_ptr because macOS/Windows backends need cross-thread shared ownership
+    // shared_ptr (not unique_handle): macOS/Windows callbacks run on background
+    // threads and must prevent Self destruction via shared_from_this().
     std::shared_ptr<Self> self;
 };
 

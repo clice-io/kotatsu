@@ -11,6 +11,7 @@ namespace kota {
 
 namespace {
 
+// Returns empty vector on timeout (not an error) — see fs_event_dir_tests.cpp.
 task<std::vector<fs_event::change>, error> next_or_timeout(fs_event& w,
                                                            event_loop& loop,
                                                            int timeout_ms = 10000) {
