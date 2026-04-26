@@ -229,10 +229,13 @@ private:
             KOTA_EXPECTED_TRY_V(auto elem, make_schema(&tup->elements[i]()));
             items.push_back(std::move(elem));
         }
+        auto size = static_cast<std::uint64_t>(tup->elements.size());
         return content::Value{
             {"type",        "array"         },
             {"prefixItems", std::move(items)},
             {"items",       false           },
+            {"minItems",    size            },
+            {"maxItems",    size            },
         };
     }
 
@@ -291,6 +294,46 @@ private:
         };
     }
 
+    result_t make_internal_tagged(const meta::type_info* ti,
+                                  std::string_view tag_field,
+                                  std::string_view alt_name) {
+        ti = unwrap(ti);
+        if(ti->kind == tk::structure) {
+            auto* si = static_cast<const meta::struct_type_info*>(ti);
+            KOTA_EXPECTED_TRY_V(auto props, make_properties(si));
+            auto* props_obj = props.get_object();
+            props_obj->insert(std::string(tag_field),
+                              content::Value{
+                                  {"const", alt_name}
+            });
+            content::Object obj;
+            obj.insert("type", "object");
+            obj.insert("properties", std::move(props));
+            content::Array required;
+            for(const auto& f: si->fields) {
+                const meta::type_info& ft = f.type();
+                bool is_opt = f.has_default || ft.kind == tk::optional || ft.kind == tk::pointer;
+                if(!is_opt) {
+                    required.push_back(content::Value(f.name));
+                }
+            }
+            required.push_back(content::Value(tag_field));
+            obj.insert("required", std::move(required));
+            if(si->deny_unknown) {
+                obj.insert("additionalProperties", false);
+            }
+            return content::Value(std::move(obj));
+        }
+        KOTA_EXPECTED_TRY_V(auto schema, make_schema(ti));
+        return content::Value{
+            {"allOf",
+             content::Array{
+                 std::move(schema),
+                 make_tag_const(tag_field, alt_name),
+             }},
+        };
+    }
+
     result_t make_variant(const meta::type_info* ti) {
         auto* vi = static_cast<const meta::variant_type_info*>(ti);
         content::Array one_of;
@@ -317,14 +360,10 @@ private:
 
                 case meta::tag_mode::internal: {
                     auto alt_name = alternative_name(vi, i);
-                    KOTA_EXPECTED_TRY_V(auto schema, make_schema(&vi->alternatives[i]()));
-                    one_of.push_back({
-                        {"allOf",
-                         content::Array{
-                             std::move(schema),
-                             make_tag_const(vi->tag_field, alt_name),
-                         }},
-                    });
+                    KOTA_EXPECTED_TRY_V(
+                        auto schema,
+                        make_internal_tagged(&vi->alternatives[i](), vi->tag_field, alt_name));
+                    one_of.push_back(std::move(schema));
                     break;
                 }
 

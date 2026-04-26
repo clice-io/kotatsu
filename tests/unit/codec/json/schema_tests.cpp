@@ -657,28 +657,28 @@ TEST_CASE(tuple_pair) {
     const auto result = json::schema_string<s_pair>().value();
     EXPECT_EQ(
         result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"type":"array",)" R"("prefixItems":[)" R"({"type":"string"},)" R"({"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}],)" R"("items":false}},)" R"("required":["v"]})");
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"type":"array",)" R"("prefixItems":[)" R"({"type":"string"},)" R"({"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}],)" R"("items":false,)" R"("minItems":2,"maxItems":2}},)" R"("required":["v"]})");
 }
 
 TEST_CASE(tuple_triple) {
     const auto result = json::schema_string<s_tuple>().value();
     EXPECT_EQ(
         result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"type":"array",)" R"("prefixItems":[)" R"({"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"({"type":"string"},)" R"({"type":"boolean"}],)" R"("items":false}},)" R"("required":["v"]})");
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"type":"array",)" R"("prefixItems":[)" R"({"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"({"type":"string"},)" R"({"type":"boolean"}],)" R"("items":false,)" R"("minItems":3,"maxItems":3}},)" R"("required":["v"]})");
 }
 
 TEST_CASE(tuple_pair_in_struct) {
     const auto result = json::schema_string<with_pair_field>().value();
     EXPECT_EQ(
         result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("p":{"type":"array",)" R"("prefixItems":[)" R"({"type":"string"},)" R"({"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}],)" R"("items":false},)" R"("name":{"type":"string"}},)" R"("required":["p","name"]})");
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("p":{"type":"array",)" R"("prefixItems":[)" R"({"type":"string"},)" R"({"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}],)" R"("items":false,)" R"("minItems":2,"maxItems":2},)" R"("name":{"type":"string"}},)" R"("required":["p","name"]})");
 }
 
 TEST_CASE(tuple_in_struct) {
     const auto result = json::schema_string<with_tuple_field>().value();
     EXPECT_EQ(
         result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("t":{"type":"array",)" R"("prefixItems":[)" R"({"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"({"type":"boolean"}],)" R"("items":false},)" R"("name":{"type":"string"}},)" R"("required":["t","name"]})");
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("t":{"type":"array",)" R"("prefixItems":[)" R"({"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"({"type":"boolean"}],)" R"("items":false,)" R"("minItems":2,"maxItems":2},)" R"("name":{"type":"string"}},)" R"("required":["t","name"]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -978,8 +978,9 @@ TEST_CASE(variant_internal_tag) {
         {&int_field,           1         },
     };
     const auto result = json::schema_string(int_wrap).value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"oneOf":[)" R"({"allOf":[)" R"({"$ref":"#/$defs/point2d"},)" R"({"properties":{)" R"("type":{"const":"point"}},)" R"("required":["type"]}]},)" R"({"allOf":[)" R"({"$ref":"#/$defs/inner"},)" R"({"properties":{)" R"("type":{"const":"inner"}},)" R"("required":["type"]}]}]}},)" R"("required":["v"],)" R"("$defs":{)" R"("point2d":{"type":"object",)" R"("properties":{)" R"("x":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("y":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["x","y"]},)" R"("inner":{"type":"object",)" R"("properties":{)" R"("a":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["a"]}}})");
+    EXPECT_EQ(
+        result,
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"oneOf":[)" R"({"type":"object",)" R"("properties":{)" R"("x":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)" R"("y":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)" R"("type":{"const":"point"}},)" R"("required":["x","y","type"]},)" R"({"type":"object",)" R"("properties":{)" R"("a":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)" R"("type":{"const":"inner"}},)" R"("required":["a","type"]}]}},)" R"("required":["v"]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -1035,7 +1036,7 @@ TEST_CASE(root_internal_variant) {
     const auto result = json::schema_string<root_internal_variant>().value();
     EXPECT_EQ(
         result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("oneOf":[)" R"({"allOf":[)" R"({"$ref":"#/$defs/tagged_circle"},)" R"({"properties":{)" R"("kind":{"const":"circle"}},)" R"("required":["kind"]}]},)" R"({"allOf":[)" R"({"$ref":"#/$defs/tagged_rect"},)" R"({"properties":{)" R"("kind":{"const":"rect"}},)" R"("required":["kind"]}]}],)" R"("$defs":{)" R"("tagged_circle":{"type":"object",)" R"("properties":{)" R"("radius":{"type":"number"}},)" R"("required":["radius"]},)" R"("tagged_rect":{"type":"object",)" R"("properties":{)" R"("width":{"type":"number"},)" R"("height":{"type":"number"}},)" R"("required":["width","height"]}}})");
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("oneOf":[)" R"({"type":"object",)" R"("properties":{)" R"("radius":{"type":"number"},)" R"("kind":{"const":"circle"}},)" R"("required":["radius","kind"]},)" R"({"type":"object",)" R"("properties":{)" R"("width":{"type":"number"},)" R"("height":{"type":"number"},)" R"("kind":{"const":"rect"}},)" R"("required":["width","height","kind"]}]})");
 }
 
 TEST_CASE(root_adjacent_variant) {
