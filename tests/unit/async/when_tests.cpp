@@ -1795,6 +1795,84 @@ TEST_CASE(when_all_in_group) {
     EXPECT_EQ(count, 6);
 }
 
+TEST_CASE(child_self_cancel) {
+    int slow_done = 0;
+
+    auto canceler = [&]() -> task<> {
+        co_await sleep(1);
+        co_await cancel();
+    };
+
+    auto slow = [&]() -> task<> {
+        co_await sleep(5);
+        slow_done += 1;
+    };
+
+    auto driver = [&]() -> task<> {
+        event_loop& loop = event_loop::current();
+        task_group<> group(loop);
+        group.spawn(canceler());
+        group.spawn(slow());
+        co_await group.join();
+    };
+
+    run(driver());
+    EXPECT_EQ(slow_done, 1);
+}
+
+TEST_CASE(token_cancel) {
+    cancellation_source source;
+    int finished = 0;
+
+    auto slow = [&](int ms) -> task<> {
+        co_await sleep(ms);
+        finished += 1;
+    };
+
+    auto driver = [&]() -> task<int> {
+        event_loop& loop = event_loop::current();
+        task_group<> group(loop);
+        group.spawn(slow(10));
+        group.spawn(slow(10));
+        co_await group.join();
+        co_return 1;
+    };
+
+    auto guarded = with_token(driver(), source.token());
+
+    auto canceler = [&]() -> task<> {
+        co_await sleep(1);
+        source.cancel();
+    };
+
+    auto cancel_task = canceler();
+    run(guarded, cancel_task);
+
+    EXPECT_FALSE(guarded.value().has_value());
+    EXPECT_EQ(finished, 0);
+}
+
+TEST_CASE(cancel_all) {
+    int finished = 0;
+
+    auto slow = [&](int ms) -> task<> {
+        co_await sleep(ms);
+        finished += 1;
+    };
+
+    auto driver = [&]() -> task<> {
+        event_loop& loop = event_loop::current();
+        task_group<> group(loop);
+        group.spawn(slow(50));
+        group.spawn(slow(50));
+        group.cancel_all();
+        co_await group.join();
+    };
+
+    run(driver());
+    EXPECT_EQ(finished, 0);
+}
+
 };  // TEST_SUITE(task_group)
 
 }  // namespace kota

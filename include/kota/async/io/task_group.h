@@ -13,6 +13,7 @@
 #include "kota/async/io/loop.h"
 #include "kota/async/runtime/sync.h"
 #include "kota/async/runtime/task.h"
+#include "kota/async/vocab/cancellation.h"
 #include "kota/async/vocab/outcome.h"
 
 namespace kota {
@@ -66,12 +67,19 @@ public:
     void spawn(task<T, E, C>&& t) {
         ++active;
         done.reset();
-        loop.schedule(monitor(std::move(t)));
+        loop.schedule(monitor(with_token(std::move(t), cancel_source.token())));
     }
 
     task<result_type> join() {
         if(active > 0) {
-            co_await done.wait();
+            auto wait_result = co_await done.wait().catch_cancel();
+            if(!wait_result.has_value()) {
+                cancel_source.cancel();
+                if(active > 0) {
+                    co_await done.wait();
+                }
+                co_await cancel();
+            }
         }
 
 #if KOTA_ENABLE_EXCEPTIONS
@@ -86,6 +94,10 @@ public:
             }
             co_return result_type();
         }
+    }
+
+    void cancel_all() {
+        cancel_source.cancel();
     }
 
 private:
@@ -120,11 +132,11 @@ private:
 
     event_loop& loop;
     event done{true};
+    cancellation_source cancel_source;
     std::size_t active = 0;
 
     bool has_error = false;
-    using stored_error_type =
-        std::conditional_t<std::is_void_v<error_type>, int, error_type>;
+    using stored_error_type = std::conditional_t<std::is_void_v<error_type>, int, error_type>;
     std::optional<stored_error_type> first_error;
 
     std::exception_ptr exception;
