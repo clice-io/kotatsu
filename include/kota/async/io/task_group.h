@@ -78,11 +78,11 @@ public:
         if(active > 0) {
             auto wait_result = co_await done->wait().catch_cancel();
             if(!wait_result.has_value()) {
-                cancel_all();
+                cancel();
                 if(active > 0) {
                     co_await done->wait();
                 }
-                co_await cancel();
+                co_await kota::cancel();
             }
         }
 
@@ -100,7 +100,7 @@ public:
         }
     }
 
-    void cancel_all() {
+    void cancel() {
         cancelled = true;
         for(auto* node: children) {
             if(node) {

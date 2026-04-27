@@ -1823,7 +1823,7 @@ TEST_CASE(token_cancel) {
     EXPECT_EQ(finished, 0);
 }
 
-TEST_CASE(cancel_all) {
+TEST_CASE(cancel) {
     int finished = 0;
 
     auto slow = [&](int ms) -> task<> {
@@ -1835,7 +1835,7 @@ TEST_CASE(cancel_all) {
         task_group<> group(loop);
         group.spawn(slow(50));
         group.spawn(slow(50));
-        group.cancel_all();
+        group.cancel();
         co_await group.join();
     };
 
