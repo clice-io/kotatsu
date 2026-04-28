@@ -16,8 +16,8 @@
 #include <uv.h>
 #elif defined(__APPLE__)
 #include <CoreServices/CoreServices.h>
+#include <dispatch/dispatch.h>
 #include <fcntl.h>
-#include <pthread.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <uv.h>
@@ -306,34 +306,24 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
     std::string file_filter;
 
     FSEventStreamRef stream = nullptr;
-    CFRunLoopRef cf_run_loop = nullptr;
-    pthread_t cf_thread{};
-    bool thread_started = false;
-    pthread_mutex_t start_mutex = PTHREAD_MUTEX_INITIALIZER;
-    pthread_cond_t start_cond = PTHREAD_COND_INITIALIZER;
+    dispatch_queue_t dispatch_queue = nullptr;
 
     ~Self() {
         stop_fsevents();
-        pthread_mutex_destroy(&start_mutex);
-        pthread_cond_destroy(&start_cond);
     }
 
     void stop_fsevents() {
-        if(stream && cf_run_loop) {
+        if(stream) {
             FSEventStreamStop(stream);
             FSEventStreamInvalidate(stream);
             FSEventStreamRelease(stream);
             stream = nullptr;
-
-            CFRunLoopStop(cf_run_loop);
         }
 
-        if(thread_started) {
-            pthread_join(cf_thread, nullptr);
-            thread_started = false;
+        if(dispatch_queue) {
+            dispatch_release(dispatch_queue);
+            dispatch_queue = nullptr;
         }
-
-        cf_run_loop = nullptr;
     }
 
     void push_event(change c) {
@@ -440,22 +430,6 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                 shared->push_event(std::move(c));
             }
         });
-    }
-
-    static void* cf_thread_entry(void* arg) {
-        auto* self = static_cast<Self*>(arg);
-
-        pthread_mutex_lock(&self->start_mutex);
-        self->cf_run_loop = CFRunLoopGetCurrent();
-
-        FSEventStreamScheduleWithRunLoop(self->stream, self->cf_run_loop, kCFRunLoopDefaultMode);
-        FSEventStreamStart(self->stream);
-
-        pthread_cond_signal(&self->start_cond);
-        pthread_mutex_unlock(&self->start_mutex);
-
-        CFRunLoopRun();
-        return nullptr;
     }
 };
 
@@ -625,7 +599,7 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                     break;
                 case FILE_ACTION_MODIFIED: {
                     std::wstring wfull =
-                        root_wpath + L"\\" + std::wstring(info->FileName, name_chars);
+                        root_wpath + L"/" + std::wstring(info->FileName, name_chars);
                     DWORD attrs = GetFileAttributesW(wfull.c_str());
                     if(attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY))
                         break;
@@ -733,6 +707,10 @@ result<fs_event> fs_event::create(std::string_view path, options opts, event_loo
         s->file_filter = std::move(filename);
     }
 
+#if defined(_WIN32)
+    std::replace(s->root_path.begin(), s->root_path.end(), '\\', '/');
+#endif
+
     s->debounce_timer = timer::create(loop);
 
 #if defined(__linux__)
@@ -802,17 +780,15 @@ result<fs_event> fs_event::create(std::string_view path, options opts, event_loo
         return outcome_error(error::unknown_error);
     }
 
-    pthread_mutex_lock(&s->start_mutex);
-    int pt_err = pthread_create(&s->cf_thread, nullptr, Self::cf_thread_entry, s.get());
-    if(pt_err != 0) {
-        pthread_mutex_unlock(&s->start_mutex);
+    s->dispatch_queue = dispatch_queue_create("kota.fs_event", DISPATCH_QUEUE_SERIAL);
+    if(!s->dispatch_queue) {
         FSEventStreamRelease(s->stream);
         s->stream = nullptr;
         return outcome_error(error::unknown_error);
     }
-    s->thread_started = true;
-    pthread_cond_wait(&s->start_cond, &s->start_mutex);
-    pthread_mutex_unlock(&s->start_mutex);
+
+    FSEventStreamSetDispatchQueue(s->stream, s->dispatch_queue);
+    FSEventStreamStart(s->stream);
 
 #elif defined(_WIN32)
     std::wstring wpath;
