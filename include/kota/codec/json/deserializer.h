@@ -140,7 +140,9 @@ public:
                 return mark_invalid(error_kind::type_mismatch);
             }
 
-            obj.reset();
+            if(obj.reset().error()) {
+                return mark_invalid(error_kind::invalid_state);
+            }
             preloaded_object = std::move(obj);
             has_preloaded_object = true;
 

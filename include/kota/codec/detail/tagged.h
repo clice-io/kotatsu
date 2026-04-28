@@ -416,6 +416,9 @@ bool alt_has_field(std::string_view name) {
         return true;
     } else {
         using schema = meta::virtual_schema<U, Config>;
+        if constexpr(!schema::deny_unknown) {
+            return true;
+        }
         for(const auto& field: schema::fields) {
             if(field.name == name) {
                 return true;
