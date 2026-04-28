@@ -233,7 +233,7 @@ protected:
     async_node* awaiter = nullptr;
 };
 
-/// Base for when_all / when_any / async_scope.
+/// Base for when_all / when_any.
 ///
 /// Uses a two-phase protocol in await_suspend:
 ///   1. Arming: link all children, then resume them. During this phase,
