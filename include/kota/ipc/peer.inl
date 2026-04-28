@@ -137,8 +137,11 @@ struct Peer<CodecT>::Self {
     }
 
     task<> write_loop() {
-        while(!closed) {
+        while(true) {
             if(outgoing_queue.empty()) {
+                if(closed) {
+                    break;
+                }
                 write_event.reset();
                 co_await write_event.wait();
                 continue;
@@ -342,10 +345,14 @@ task<> Peer<CodecT>::run() {
             self->dispatch_incoming_message(*payload, request_group);
         }
         ET_IPC_LOG(self.get(), LogLevel::info, "{}", "read loop ended");
+
+        co_await request_group.join();
+
+        self->closed = true;
+        self->write_event.set();
     };
 
     co_await when_all(read_loop(), self->write_loop());
-    co_await request_group.join();
 
     self->running = false;
 }
