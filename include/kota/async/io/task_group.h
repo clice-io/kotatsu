@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <exception>
@@ -68,9 +69,16 @@ public:
     void spawn(task<T, E, C>&& t) {
         ++active;
         done->reset();
-        std::size_t index = children.size();
+        auto it = std::find(children.begin(), children.end(), nullptr);
+        std::size_t index;
+        if(it != children.end()) {
+            index = static_cast<std::size_t>(it - children.begin());
+        } else {
+            index = children.size();
+            children.push_back(nullptr);
+        }
         auto m = monitor(std::move(t), index);
-        children.push_back(m.operator->());
+        children[index] = m.operator->();
         loop.schedule(std::move(m));
     }
 
@@ -102,7 +110,9 @@ public:
 
     void cancel() {
         cancelled = true;
-        for(auto* node: children) {
+        const std::size_t n = children.size();
+        for(std::size_t i = 0; i < n; ++i) {
+            auto* node = children[i];
             if(node) {
                 auto* t = static_cast<standard_task*>(node);
                 if(t->has_awaitee()) {
