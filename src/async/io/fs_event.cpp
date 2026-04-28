@@ -350,6 +350,8 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
         std::vector<change> changes;
         changes.reserve(num_events);
 
+        std::string pending_old_name;
+
         for(size_t i = 0; i < num_events; ++i) {
             if(flags[i] & kFSEventStreamEventFlagMustScanSubDirs) {
                 changes.push_back(change{{}, effect::overflow, {}});
@@ -389,6 +391,13 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                 }
             }
 
+            if(!shared->file_filter.empty()) {
+                auto slash = path.rfind('/');
+                auto filename = (slash != std::string::npos) ? path.substr(slash + 1) : path;
+                if(filename != shared->file_filter)
+                    continue;
+            }
+
             if(shared->closed.load(std::memory_order_acquire))
                 continue;
 
@@ -401,22 +410,56 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                                             kFSEventStreamEventFlagItemChangeOwner |
                                             kFSEventStreamEventFlagItemXattrMod)) != 0;
 
-            if(is_created && !(is_removed || is_modified || is_renamed)) {
+            if(is_renamed) {
+                struct stat st;
+                if(stat(path.c_str(), &st) != 0) {
+                    if(!pending_old_name.empty()) {
+                        changes.push_back(change{std::move(pending_old_name), effect::destroy, {}});
+                    }
+                    pending_old_name = std::move(path);
+                } else {
+                    if(!pending_old_name.empty()) {
+                        changes.push_back(
+                            change{std::move(path), effect::rename, std::move(pending_old_name)});
+                        pending_old_name.clear();
+                    } else {
+                        changes.push_back(change{std::move(path), effect::create, {}});
+                    }
+                }
+                continue;
+            }
+
+            if(is_created && !(is_removed || is_modified)) {
                 changes.push_back(change{std::move(path), effect::create, {}});
-            } else if(is_removed && !(is_created || is_modified || is_renamed)) {
+            } else if(is_removed && !(is_created || is_modified)) {
                 changes.push_back(change{std::move(path), effect::destroy, {}});
-            } else if(is_modified && !(is_created || is_removed || is_renamed)) {
+            } else if(is_modified && !(is_created || is_removed)) {
                 changes.push_back(change{std::move(path), effect::modify, {}});
             } else {
                 struct stat st;
                 if(stat(path.c_str(), &st) != 0 || !path_exists(paths[i])) {
                     changes.push_back(change{std::move(path), effect::destroy, {}});
+                } else if(is_created && is_modified) {
+                    // FSEvents coalesced both flags. Use birthtime to disambiguate:
+                    // a freshly created file has birthtime close to mtime.
+                    long long diff_ms =
+                        (st.st_mtimespec.tv_sec - st.st_birthtimespec.tv_sec) * 1000LL +
+                        (st.st_mtimespec.tv_nsec - st.st_birthtimespec.tv_nsec) / 1000000LL;
+                    if(diff_ms < 200) {
+                        changes.push_back(change{std::move(path), effect::create, {}});
+                    } else {
+                        changes.push_back(change{std::move(path), effect::modify, {}});
+                    }
                 } else if(is_modified) {
                     changes.push_back(change{std::move(path), effect::modify, {}});
                 } else {
                     changes.push_back(change{std::move(path), effect::create, {}});
                 }
             }
+        }
+
+        if(!pending_old_name.empty()) {
+            changes.push_back(change{std::move(pending_old_name), effect::destroy, {}});
         }
 
         if(changes.empty())
