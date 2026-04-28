@@ -334,7 +334,7 @@ task<> Peer<CodecT>::run() {
 
     task_group<> request_group(self->loop);
 
-    auto read_loop = [this, &request_group]() -> task<> {
+    auto read_messages = [this, &request_group]() -> task<> {
         ET_IPC_LOG(self.get(), LogLevel::info, "{}", "read loop started");
         while(self->transport) {
             auto payload = co_await self->transport->read_message();
@@ -345,9 +345,14 @@ task<> Peer<CodecT>::run() {
             self->dispatch_incoming_message(*payload, request_group);
         }
         ET_IPC_LOG(self.get(), LogLevel::info, "{}", "read loop ended");
+    };
 
+    auto read_loop = [&]() -> task<> {
+        auto result = co_await read_messages().catch_cancel();
+        if(result.is_cancelled()) {
+            request_group.cancel();
+        }
         co_await request_group.join();
-
         self->closed = true;
         self->write_event.set();
     };
