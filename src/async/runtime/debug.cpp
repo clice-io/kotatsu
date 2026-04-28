@@ -15,7 +15,6 @@ static std::string_view async_kind_name(async_node::NodeKind k) {
         case async_node::NodeKind::EventWaiter: return "EventWaiter";
         case async_node::NodeKind::WhenAll: return "WhenAll";
         case async_node::NodeKind::WhenAny: return "WhenAny";
-        case async_node::NodeKind::Scope: return "Scope";
         case async_node::NodeKind::SystemIO: return "SystemIO";
     }
     return "Unknown";
@@ -149,8 +148,7 @@ const async_node* async_node::get_awaiter(const async_node* node) {
             return link->awaiter;
         }
         case NodeKind::WhenAll:
-        case NodeKind::WhenAny:
-        case NodeKind::Scope: return static_cast<const aggregate_op*>(node)->awaiter;
+        case NodeKind::WhenAny: return static_cast<const aggregate_op*>(node)->awaiter;
         case NodeKind::SystemIO: return static_cast<const system_op*>(node)->awaiter;
         default: return nullptr;
     }
@@ -186,8 +184,7 @@ void async_node::dump_dot_walk(const async_node* node,
         }
 
         case NodeKind::WhenAll:
-        case NodeKind::WhenAny:
-        case NodeKind::Scope: {
+        case NodeKind::WhenAny: {
             auto* agg = static_cast<const aggregate_op*>(node);
             for(auto* child: agg->awaitees) {
                 if(child) {

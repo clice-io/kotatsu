@@ -132,8 +132,7 @@ void async_node::cancel() {
         }
 
         case NodeKind::WhenAll:
-        case NodeKind::WhenAny:
-        case NodeKind::Scope: {
+        case NodeKind::WhenAny: {
             auto* self = static_cast<aggregate_op*>(this);
             const bool was_arming = self->phase == aggregate_op::Phase::Arming;
             self->phase = aggregate_op::Phase::Cancelling;
@@ -218,8 +217,7 @@ std::coroutine_handle<> async_node::link_continuation(async_node* awaiter,
             return std::noop_coroutine();
         }
         case NodeKind::WhenAll:
-        case NodeKind::WhenAny:
-        case NodeKind::Scope: break;
+        case NodeKind::WhenAny: break;
         case NodeKind::SystemIO: {
             auto self = static_cast<system_op*>(this);
             self->awaiter = awaiter;
@@ -251,7 +249,6 @@ std::coroutine_handle<> async_node::final_transition() {
         case NodeKind::EventWaiter:
         case NodeKind::WhenAll:
         case NodeKind::WhenAny:
-        case NodeKind::Scope:
         case NodeKind::SystemIO: break;
     }
 
@@ -266,7 +263,7 @@ std::coroutine_handle<> async_node::final_transition() {
 ///   - Cancellation: cancels all siblings, propagates upward.
 ///   - Failed child (exception or structured error): cancels all siblings, resumes awaiter.
 ///   - WhenAny completion: records winner, cancels siblings, resumes awaiter.
-///   - WhenAll/Scope completion: increments counter, resumes awaiter when all done.
+///   - WhenAll completion: increments counter, resumes awaiter when all done.
 std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
     assert(child && child != this && "invalid parameter!");
 
@@ -301,8 +298,7 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
         }
 
         case NodeKind::WhenAll:
-        case NodeKind::WhenAny:
-        case NodeKind::Scope: {
+        case NodeKind::WhenAny: {
             auto self = static_cast<aggregate_op*>(this);
             if(self->is_settled()) {
                 return std::noop_coroutine();

@@ -1645,11 +1645,13 @@ TEST_CASE(returns_structured_error) {
         group.spawn(slow());
         auto res = co_await group.join();
         EXPECT_TRUE(res.has_error());
-        EXPECT_EQ(res.error(), error::connection_refused);
+        EXPECT_EQ(res.error().size(), 1u);
+        EXPECT_EQ(res.error()[0], error::connection_refused);
     };
 
     auto t = driver();
     schedule_all(t);
+    EXPECT_EQ(slow_done, 0);
 }
 
 TEST_CASE(mixed_error_types) {
@@ -1671,11 +1673,13 @@ TEST_CASE(mixed_error_types) {
         group.spawn(slow());
         auto res = co_await group.join();
         EXPECT_TRUE(res.has_error());
-        EXPECT_EQ(std::get<custom_error>(res.error()), custom_error{7});
+        EXPECT_EQ(res.error().size(), 1u);
+        EXPECT_EQ(std::get<custom_error>(res.error()[0]), custom_error{7});
     };
 
     auto t = driver();
     schedule_all(t);
+    EXPECT_EQ(slow_done, 0);
 }
 
 TEST_CASE(direct_error_does_not_escape) {
@@ -1869,6 +1873,7 @@ TEST_CASE(exception_propagates) {
     schedule_all(t);
     EXPECT_TRUE(t->is_failed());
     EXPECT_THROWS(t.result());
+    EXPECT_EQ(slow_done, 0);
 }
 #endif
 

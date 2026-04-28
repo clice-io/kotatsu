@@ -4,7 +4,6 @@
 #include <cstddef>
 #include <exception>
 #include <memory>
-#include <optional>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -50,7 +49,8 @@ class task_group {
 public:
     using error_type = detail::tg_error_type_t<Errors...>;
     using result_type =
-        std::conditional_t<std::is_void_v<error_type>, void, outcome<void, error_type, void>>;
+        std::conditional_t<std::is_void_v<error_type>, void,
+                           outcome<void, std::vector<error_type>, void>>;
 
     explicit task_group(event_loop& loop) : loop(loop) {}
 
@@ -87,14 +87,14 @@ public:
         }
 
 #if KOTA_ENABLE_EXCEPTIONS
-        if(exception) {
-            std::rethrow_exception(exception);
+        if(!exceptions.empty()) {
+            std::rethrow_exception(exceptions.front());
         }
 #endif
 
         if constexpr(!std::is_void_v<error_type>) {
-            if(has_error) {
-                co_return result_type(outcome_error(std::move(*first_error)));
+            if(!errors.empty()) {
+                co_return result_type(outcome_error(std::move(errors)));
             }
             co_return result_type();
         }
@@ -120,21 +120,20 @@ private:
                 auto result = co_await std::move(child).catch_cancel();
 
                 if constexpr(!std::is_void_v<E>) {
-                    if(result.has_error() && !has_error) {
-                        has_error = true;
+                    if(result.has_error()) {
                         if constexpr(std::is_same_v<E, error_type>) {
-                            first_error.emplace(std::move(result).error());
+                            errors.push_back(std::move(result).error());
                         } else {
-                            first_error.emplace(error_type(std::move(result).error()));
+                            errors.push_back(error_type(std::move(result).error()));
                         }
+                        cancel();
                     }
                 }
             }
             KOTA_CATCH_ALL() {
 #if KOTA_ENABLE_EXCEPTIONS
-                if(!exception) {
-                    exception = std::current_exception();
-                }
+                exceptions.push_back(std::current_exception());
+                cancel();
 #endif
             }
         }
@@ -152,11 +151,10 @@ private:
     bool cancelled = false;
     std::vector<async_node*> children;
 
-    bool has_error = false;
     using stored_error_type = std::conditional_t<std::is_void_v<error_type>, int, error_type>;
-    std::optional<stored_error_type> first_error;
+    std::vector<stored_error_type> errors;
 
-    std::exception_ptr exception;
+    std::vector<std::exception_ptr> exceptions;
 };
 
 task_group(event_loop&) -> task_group<>;
