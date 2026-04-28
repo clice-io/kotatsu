@@ -48,9 +48,9 @@ template <typename... Errors>
 class task_group {
 public:
     using error_type = detail::tg_error_type_t<Errors...>;
-    using result_type =
-        std::conditional_t<std::is_void_v<error_type>, void,
-                           outcome<void, std::vector<error_type>, void>>;
+    using result_type = std::conditional_t<std::is_void_v<error_type>,
+                                           void,
+                                           outcome<void, std::vector<error_type>, void>>;
 
     explicit task_group(event_loop& loop) : loop(loop) {}
 
