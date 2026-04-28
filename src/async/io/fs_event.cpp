@@ -411,7 +411,7 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                 struct stat st;
                 if(stat(path.c_str(), &st) != 0 || !path_exists(paths[i])) {
                     changes.push_back(change{std::move(path), effect::destroy, {}});
-                } else if(is_modified && !is_created) {
+                } else if(is_modified) {
                     changes.push_back(change{std::move(path), effect::modify, {}});
                 } else {
                     changes.push_back(change{std::move(path), effect::create, {}});
@@ -425,9 +425,12 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
         if(shared->closed.load(std::memory_order_acquire))
             return;
 
-        shared->loop->post([shared, changes = std::move(changes)]() mutable {
-            for(auto& c: changes) {
-                shared->push_event(std::move(c));
+        std::weak_ptr<Self> weak = shared;
+        shared->loop->post([weak, changes = std::move(changes)]() mutable {
+            if(auto s = weak.lock()) {
+                for(auto& c: changes) {
+                    s->push_event(std::move(c));
+                }
             }
         });
     }
@@ -550,8 +553,12 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                 poll();
                 return;
             case ERROR_NOTIFY_ENUM_DIR: {
-                auto shared = shared_from_this();
-                loop->post([shared]() { shared->push_event(change{{}, effect::overflow, {}}); });
+                std::weak_ptr<Self> weak = shared_from_this();
+                loop->post([weak]() {
+                    if(auto s = weak.lock()) {
+                        s->push_event(change{{}, effect::overflow, {}});
+                    }
+                });
                 poll();
                 return;
             }
@@ -560,9 +567,12 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                 bool is_dir =
                     attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY);
                 if(!is_dir) {
-                    auto shared = shared_from_this();
-                    loop->post([shared]() {
-                        shared->push_event(change{shared->root_path, effect::destroy, {}});
+                    std::weak_ptr<Self> weak = shared_from_this();
+                    std::string path = root_path;
+                    loop->post([weak, path = std::move(path)]() {
+                        if(auto s = weak.lock()) {
+                            s->push_event(change{std::string(path), effect::destroy, {}});
+                        }
                     });
                     running = false;
                     return;
@@ -633,10 +643,12 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
         }
 
         if(!changes.empty()) {
-            auto shared = shared_from_this();
-            loop->post([shared, changes = std::move(changes)]() mutable {
-                for(auto& c: changes) {
-                    shared->push_event(std::move(c));
+            std::weak_ptr<Self> weak = shared_from_this();
+            loop->post([weak, changes = std::move(changes)]() mutable {
+                if(auto s = weak.lock()) {
+                    for(auto& c: changes) {
+                        s->push_event(std::move(c));
+                    }
                 }
             });
         }
