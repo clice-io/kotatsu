@@ -61,6 +61,8 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
     std::unordered_map<int, std::string> wd_to_path;
     std::unordered_map<std::string, int> path_to_wd;
 
+    // Safety net: stop_inotify() handles the full teardown; this only
+    // closes the fd in case Self outlives the fs_event wrapper.
     ~Self() {
         if(inotify_fd >= 0) {
             ::close(inotify_fd);
@@ -294,6 +296,8 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
     FSEventStreamRef stream = nullptr;
     dispatch_queue_t dispatch_queue = nullptr;
 
+    // Safety net: fs_event::stop() calls stop_fsevents() first; this
+    // guards against Self outliving the fs_event wrapper.
     ~Self() {
         stop_fsevents();
     }
@@ -484,6 +488,8 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
     std::vector<BYTE> write_buffer;
     OVERLAPPED overlapped{};
 
+    // Safety net: fs_event::stop() calls stop_win() first; this
+    // guards against Self outliving the fs_event wrapper.
     ~Self() {
         stop_win();
     }
@@ -596,6 +602,7 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                     running = false;
                     return;
                 }
+                poll();
                 return;
             }
             default:
