@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cassert>
-#include <cstddef>
 #include <exception>
 #include <source_location>
 #include <type_traits>
@@ -19,33 +18,34 @@ namespace kota {
 namespace detail {
 
 template <typename List>
-struct tg_type_aggregate;
+struct task_group_type_aggregate;
 
 template <>
-struct tg_type_aggregate<type_list<>> {
+struct task_group_type_aggregate<type_list<>> {
     using type = void;
 };
 
 template <typename T>
-struct tg_type_aggregate<type_list<T>> {
+struct task_group_type_aggregate<type_list<T>> {
     using type = T;
 };
 
 template <typename... Ts>
     requires (sizeof...(Ts) > 1)
-struct tg_type_aggregate<type_list<Ts...>> {
+struct task_group_type_aggregate<type_list<Ts...>> {
     using type = std::variant<Ts...>;
 };
 
 template <typename... Ts>
-using tg_error_type_t = typename tg_type_aggregate<type_list_unique_t<type_list<Ts...>>>::type;
+using task_group_error_type_t =
+    typename task_group_type_aggregate<type_list_unique_t<type_list<Ts...>>>::type;
 
 }  // namespace detail
 
 template <typename... Errors>
 class task_group : public task_group_node {
 public:
-    using error_type = detail::tg_error_type_t<Errors...>;
+    using error_type = detail::task_group_error_type_t<Errors...>;
     using result_type = std::conditional_t<std::is_void_v<error_type>,
                                            void,
                                            outcome<void, std::vector<error_type>, void>>;
@@ -161,7 +161,7 @@ private:
     };
 
     template <typename T, typename E>
-    static void extract_error(async_node* child, void* group_ptr) {
+    static void extract_error(async_node* child, task_group_node* group_ptr) {
         auto* g = static_cast<task_group*>(group_ptr);
 
         if(child->propagated_exception) {

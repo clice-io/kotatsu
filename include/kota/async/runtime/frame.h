@@ -428,7 +428,7 @@ protected:
     bool fail_fast_started = false;
 
     struct error_handler {
-        void (*fn)(async_node* child, void* group) = nullptr;
+        void (*fn)(async_node* child, task_group_node* group) = nullptr;
     };
 
     std::vector<error_handler> error_handlers;
