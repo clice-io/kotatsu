@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -385,13 +386,12 @@ constexpr bool kind_compatible(meta::type_kind target, meta::type_kind source) n
 
 template <typename T>
 constexpr bool accepts_kind(meta::type_kind source) noexcept {
-    using U = std::remove_cvref_t<T>;
-    constexpr auto k = meta::kind_of<U>();
+    constexpr auto k = meta::kind_of<T>();
 
     if constexpr(k == meta::type_kind::optional) {
-        return source == meta::type_kind::null || accepts_kind<typename U::value_type>(source);
+        return source == meta::type_kind::null || accepts_kind<typename T::value_type>(source);
     } else if constexpr(k == meta::type_kind::pointer) {
-        return source == meta::type_kind::null || accepts_kind<typename U::element_type>(source);
+        return source == meta::type_kind::null || accepts_kind<typename T::element_type>(source);
     } else if constexpr(k == meta::type_kind::variant) {
         return true;
     } else {
@@ -442,12 +442,11 @@ namespace detail {
 
 template <typename T>
 consteval meta::type_kind resolved_alt_kind() noexcept {
-    using U = std::remove_cvref_t<T>;
-    constexpr auto k = meta::kind_of<U>();
+    constexpr auto k = meta::kind_of<T>();
     if constexpr(k == meta::type_kind::optional) {
-        return resolved_alt_kind<typename U::value_type>();
+        return resolved_alt_kind<typename T::value_type>();
     } else if constexpr(k == meta::type_kind::pointer) {
-        return resolved_alt_kind<typename U::element_type>();
+        return resolved_alt_kind<typename T::element_type>();
     } else {
         return k;
     }
@@ -467,13 +466,7 @@ const inline meta::type_info* unwrap_indirect(const meta::type_info* info) {
 
 template <typename F>
 bool field_name_matches(const F& field, std::string_view name) {
-    if(field.name == name)
-        return true;
-    for(auto alias: field.aliases) {
-        if(alias == name)
-            return true;
-    }
-    return false;
+    return field.name == name || std::ranges::contains(field.aliases, name);
 }
 
 template <typename Adapter>

@@ -27,18 +27,34 @@ namespace kota::codec::json {
 namespace detail {
 
 struct simdjson_source_adapter {
-    using node_type = simdjson::ondemand::value;
+    struct node_type {
+        simdjson::ondemand::value val{};
+        simdjson::ondemand::object* obj_ptr = nullptr;
+        simdjson::ondemand::array* arr_ptr = nullptr;
+
+        node_type() = default;
+
+        node_type(simdjson::ondemand::value v) : val(v) {}
+
+        explicit node_type(simdjson::ondemand::object* o) : obj_ptr(o) {}
+
+        explicit node_type(simdjson::ondemand::array* a) : arr_ptr(a) {}
+    };
 
     static meta::type_kind kind_of(node_type node) {
+        if(node.obj_ptr)
+            return meta::type_kind::structure;
+        if(node.arr_ptr)
+            return meta::type_kind::array;
         simdjson::ondemand::json_type type;
-        if(node.type().get(type) != simdjson::SUCCESS)
+        if(node.val.type().get(type) != simdjson::SUCCESS)
             return meta::type_kind::any;
         switch(type) {
             case simdjson::ondemand::json_type::null: return meta::type_kind::null;
             case simdjson::ondemand::json_type::boolean: return meta::type_kind::boolean;
             case simdjson::ondemand::json_type::number: {
                 simdjson::ondemand::number_type nt;
-                if(node.get_number_type().get(nt) != simdjson::SUCCESS)
+                if(node.val.get_number_type().get(nt) != simdjson::SUCCESS)
                     return meta::type_kind::int64;
                 return nt == simdjson::ondemand::number_type::floating_point_number
                            ? meta::type_kind::float64
@@ -53,35 +69,51 @@ struct simdjson_source_adapter {
 
     template <typename Fn>
     static void for_each_field(node_type node, Fn&& fn) {
-        simdjson::ondemand::object obj;
-        if(node.get_object().get(obj) != simdjson::SUCCESS)
-            return;
-        for(auto field_result: obj) {
-            simdjson::ondemand::field field;
-            if(std::move(field_result).get(field) != simdjson::SUCCESS)
-                break;
-            std::string_view key;
-            if(field.unescaped_key().get(key) != simdjson::SUCCESS)
-                break;
-            fn(key, std::move(field).value());
+        auto iterate = [&](simdjson::ondemand::object& obj) {
+            for(auto field_result: obj) {
+                simdjson::ondemand::field field;
+                if(std::move(field_result).get(field) != simdjson::SUCCESS)
+                    break;
+                std::string_view key;
+                if(field.unescaped_key().get(key) != simdjson::SUCCESS)
+                    break;
+                fn(key, node_type(std::move(field).value()));
+            }
+        };
+
+        if(node.obj_ptr) {
+            iterate(*node.obj_ptr);
+        } else {
+            simdjson::ondemand::object obj;
+            if(node.val.get_object().get(obj) != simdjson::SUCCESS)
+                return;
+            iterate(obj);
         }
     }
 
     template <typename Fn>
     static void for_each_element(node_type node, Fn&& fn) {
-        simdjson::ondemand::array arr;
-        if(node.get_array().get(arr) != simdjson::SUCCESS)
-            return;
-        std::size_t total = 0;
-        if(arr.count_elements().get(total) != simdjson::SUCCESS)
-            return;
-        std::size_t idx = 0;
-        for(auto elem_result: arr) {
-            simdjson::ondemand::value elem;
-            if(std::move(elem_result).get(elem) != simdjson::SUCCESS)
-                break;
-            fn(idx, total, std::move(elem));
-            ++idx;
+        auto iterate = [&](simdjson::ondemand::array& arr) {
+            std::size_t total = 0;
+            if(arr.count_elements().get(total) != simdjson::SUCCESS)
+                return;
+            std::size_t idx = 0;
+            for(auto elem_result: arr) {
+                simdjson::ondemand::value elem;
+                if(std::move(elem_result).get(elem) != simdjson::SUCCESS)
+                    break;
+                fn(idx, total, node_type(std::move(elem)));
+                ++idx;
+            }
+        };
+
+        if(node.arr_ptr) {
+            iterate(*node.arr_ptr);
+        } else {
+            simdjson::ondemand::array arr;
+            if(node.val.get_array().get(arr) != simdjson::SUCCESS)
+                return;
+            iterate(arr);
         }
     }
 };
@@ -172,6 +204,8 @@ public:
         }
 
         constexpr std::size_t N = sizeof...(Ts);
+        std::size_t best = N;
+        using adapter = detail::simdjson_source_adapter;
 
         if(*json_type == simdjson::ondemand::json_type::object) {
             auto obj_result =
@@ -181,99 +215,40 @@ public:
                 return std::unexpected(obj_result.error());
             }
             auto obj = std::move(*obj_result);
-
-            std::size_t best = score_variant_from_object<Ts...>(obj);
-
-            if(best >= N) {
-                return mark_invalid(error_kind::type_mismatch);
-            }
-
+            best =
+                codec::select_variant_index<adapter, config_type, Ts...>(adapter::node_type(&obj));
             obj.reset();
             preloaded_object = std::move(obj);
             has_preloaded_object = true;
-
-            status_t result = std::unexpected(error_type::type_mismatch);
-            std::size_t idx = 0;
-            auto try_alt = [&](auto type_tag) {
-                if(idx++ != best)
-                    return;
-                using alt_t = typename decltype(type_tag)::type;
-                alt_t candidate{};
-                auto status = codec::deserialize(*this, candidate);
-                if(status) {
-                    value = std::move(candidate);
-                    result = {};
-                } else {
-                    result = std::unexpected(status.error());
-                }
-            };
-            (try_alt(std::type_identity<Ts>{}), ...);
-
-            has_preloaded_object = false;
-            return result;
-        }
-
-        std::optional<simdjson::ondemand::number_type> number_type = std::nullopt;
-        if(*json_type == simdjson::ondemand::json_type::number) {
-            auto current_number_type = peek_number_type();
-            if(!current_number_type) {
-                return std::unexpected(current_number_type.error());
+        } else if(*json_type == simdjson::ondemand::json_type::array) {
+            auto arr_result =
+                read_source<simdjson::ondemand::array>([](auto& doc) { return doc.get_array(); },
+                                                       [](auto& val) { return val.get_array(); });
+            if(!arr_result) {
+                return std::unexpected(arr_result.error());
             }
-            number_type = *current_number_type;
-        }
-
-        auto source_kind = map_to_kind(*json_type, number_type);
-
-        std::uint64_t live = 0;
-        std::size_t live_count = 0;
-        {
-            std::size_t idx = 0;
-            auto init = [&](auto type_tag) {
-                using alt_t = typename decltype(type_tag)::type;
-                if(codec::accepts_kind<alt_t>(source_kind)) {
-                    live |= (std::uint64_t{1} << idx);
-                    ++live_count;
+            auto arr = std::move(*arr_result);
+            best =
+                codec::select_variant_index<adapter, config_type, Ts...>(adapter::node_type(&arr));
+            arr.reset();
+            preloaded_array = std::move(arr);
+            has_preloaded_array = true;
+        } else {
+            std::optional<simdjson::ondemand::number_type> number_type = std::nullopt;
+            if(*json_type == simdjson::ondemand::json_type::number) {
+                auto current_number_type = peek_number_type();
+                if(!current_number_type) {
+                    return std::unexpected(current_number_type.error());
                 }
-                ++idx;
-            };
-            (init(std::type_identity<Ts>{}), ...);
+                number_type = *current_number_type;
+            }
+            auto source_kind = map_to_kind(*json_type, number_type);
+            best = codec::select_variant_index<config_type, Ts...>(source_kind);
         }
-
-        if(live_count == 0) {
-            return mark_invalid(error_kind::type_mismatch);
-        }
-
-        if(live_count == 1) {
-            std::size_t best = static_cast<std::size_t>(__builtin_ctzll(live));
-            status_t result = std::unexpected(error_type::type_mismatch);
-            std::size_t idx = 0;
-            auto try_alt = [&](auto type_tag) {
-                if(idx++ != best)
-                    return;
-                using alt_t = typename decltype(type_tag)::type;
-                alt_t candidate{};
-                auto status = codec::deserialize(*this, candidate);
-                if(status) {
-                    value = std::move(candidate);
-                    result = {};
-                } else {
-                    result = std::unexpected(status.error());
-                }
-            };
-            (try_alt(std::type_identity<Ts>{}), ...);
-            return result;
-        }
-
-        auto dom = capture_dom_value();
-        if(!dom) {
-            return std::unexpected(dom.error());
-        }
-
-        const content::Value* node = &*dom;
-        std::size_t best =
-            codec::select_variant_index<codec::content_source_adapter, config_type, Ts...>(node);
 
         if(best >= N) {
+            has_preloaded_object = false;
+            has_preloaded_array = false;
             return mark_invalid(error_kind::type_mismatch);
         }
 
@@ -284,23 +259,19 @@ public:
                 return;
             using alt_t = typename decltype(type_tag)::type;
             alt_t candidate{};
-            content::Deserializer<config_type> sub_deser(std::move(*dom));
-            auto status = codec::deserialize(sub_deser, candidate);
+            auto status = codec::deserialize(*this, candidate);
             if(status) {
-                if(auto fin = sub_deser.finish(); fin) {
-                    value = std::move(candidate);
-                    result = {};
-                }
+                value = std::move(candidate);
+                result = {};
             } else {
-                result = std::unexpected(error_type(error_kind::type_mismatch));
+                result = std::unexpected(status.error());
             }
         };
         (try_alt(std::type_identity<Ts>{}), ...);
 
-        if(!result) {
-            return mark_invalid(result.error().kind);
-        }
-        return {};
+        has_preloaded_object = false;
+        has_preloaded_array = false;
+        return result;
     }
 
     status_t deserialize_bool(bool& value) {
@@ -549,14 +520,23 @@ public:
     }
 
     status_t begin_array() {
-        KOTA_EXPECTED_TRY_V(
-            auto array,
-            read_source<simdjson::ondemand::array>([](auto& doc) { return doc.get_array(); },
-                                                   [](auto& val) { return val.get_array(); }));
+        simdjson::ondemand::array arr;
+        if(has_preloaded_array) {
+            arr = std::move(preloaded_array);
+            has_preloaded_array = false;
+        } else {
+            auto arr_result =
+                read_source<simdjson::ondemand::array>([](auto& doc) { return doc.get_array(); },
+                                                       [](auto& val) { return val.get_array(); });
+            if(!arr_result) {
+                return std::unexpected(arr_result.error());
+            }
+            arr = std::move(*arr_result);
+        }
         current_value = nullptr;
 
         array_frame frame;
-        frame.array = std::move(array);
+        frame.array = std::move(arr);
 
         auto begin_result = frame.array.begin();
         auto begin_err = std::move(begin_result).get(frame.iter);
@@ -887,117 +867,6 @@ private:
         }
     }
 
-    template <typename... Ts>
-    std::size_t score_variant_from_object(simdjson::ondemand::object& obj) {
-        constexpr std::size_t N = sizeof...(Ts);
-        constexpr auto source_kind = meta::type_kind::structure;
-        using config_t = Config;
-
-        std::uint64_t live = 0;
-        std::size_t live_count = 0;
-        {
-            std::size_t idx = 0;
-            auto init = [&](auto type_tag) {
-                using alt_t = typename decltype(type_tag)::type;
-                if(codec::accepts_kind<alt_t>(source_kind)) {
-                    live |= (std::uint64_t{1} << idx);
-                    ++live_count;
-                }
-                ++idx;
-            };
-            (init(std::type_identity<Ts>{}), ...);
-        }
-
-        if(live_count <= 1) {
-            if(live_count == 1)
-                return static_cast<std::size_t>(__builtin_ctzll(live));
-            return N;
-        }
-
-        constexpr meta::type_info_fn info_fns[] = {&meta::type_info_of<Ts, config_t>...};
-        std::size_t scores[N] = {};
-
-        codec::detail::variant_candidate candidates[64];
-        std::size_t cand_count = 0;
-        {
-            std::uint64_t mask = live;
-            while(mask) {
-                std::size_t idx = static_cast<std::size_t>(__builtin_ctzll(mask));
-                candidates[cand_count++] = {idx, &info_fns[idx]()};
-                mask &= mask - 1;
-            }
-        }
-
-        codec::detail::variant_candidate struct_cands[64];
-        std::size_t struct_n = 0;
-        codec::detail::variant_candidate map_cands[64];
-        std::size_t map_n = 0;
-
-        for(std::size_t i = 0; i < cand_count; ++i) {
-            const auto* info = codec::detail::unwrap_indirect(candidates[i].type);
-            scores[candidates[i].index] += 1;
-            if(info->kind == meta::type_kind::structure)
-                struct_cands[struct_n++] = {candidates[i].index, info};
-            else if(info->kind == meta::type_kind::map)
-                map_cands[map_n++] = {candidates[i].index, info};
-        }
-
-        if(struct_n + map_n > 0) {
-            for(auto field_result: obj) {
-                simdjson::ondemand::field field;
-                if(std::move(field_result).get(field) != simdjson::SUCCESS)
-                    break;
-                std::string_view key;
-                if(field.unescaped_key().get(key) != simdjson::SUCCESS)
-                    break;
-                auto child = std::move(field).value();
-
-                codec::detail::variant_candidate child_cands[64];
-                std::size_t child_n = 0;
-
-                for(std::size_t i = 0; i < struct_n; ++i) {
-                    auto& si = static_cast<const meta::struct_type_info&>(*struct_cands[i].type);
-                    for(const auto& f: si.fields) {
-                        if(codec::detail::field_name_matches(f, key)) {
-                            child_cands[child_n++] = {struct_cands[i].index, &f.type()};
-                            break;
-                        }
-                    }
-                }
-
-                for(std::size_t i = 0; i < map_n; ++i) {
-                    auto& mi = static_cast<const meta::map_type_info&>(*map_cands[i].type);
-                    child_cands[child_n++] = {map_cands[i].index, &mi.value()};
-                }
-
-                if(child_n > 0) {
-                    codec::detail::multi_score<detail::simdjson_source_adapter>(child,
-                                                                                child_cands,
-                                                                                child_n,
-                                                                                scores);
-                }
-            }
-        }
-
-        std::size_t best_score = 0;
-        std::size_t best_idx = N;
-        {
-            std::uint64_t mask = live;
-            while(mask) {
-                std::size_t idx = static_cast<std::size_t>(__builtin_ctzll(mask));
-                if(scores[idx] > best_score) {
-                    best_score = scores[idx];
-                    best_idx = idx;
-                }
-                mask &= mask - 1;
-            }
-        }
-
-        if(best_idx < N)
-            return best_idx;
-        return codec::numeric_tiebreaker<Ts...>(live);
-    }
-
     result_t<simdjson::padded_string_view> to_padded_subview(std::string_view raw) {
         const char* base = input_view.data();
         if(base == nullptr) {
@@ -1086,6 +955,8 @@ private:
 
     bool has_preloaded_object = false;
     simdjson::ondemand::object preloaded_object{};
+    bool has_preloaded_array = false;
+    simdjson::ondemand::array preloaded_array{};
 
     struct deser_frame {
         simdjson::ondemand::object object{};
