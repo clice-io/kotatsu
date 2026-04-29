@@ -1,19 +1,16 @@
 #pragma once
 
-#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <exception>
-#include <memory>
+#include <source_location>
 #include <type_traits>
-#include <utility>
 #include <variant>
 #include <vector>
 
 #include "kota/support/config.h"
 #include "kota/support/type_list.h"
-#include "kota/async/io/loop.h"
-#include "kota/async/runtime/sync.h"
+#include "kota/async/runtime/frame.h"
 #include "kota/async/runtime/task.h"
 #include "kota/async/vocab/outcome.h"
 
@@ -46,14 +43,14 @@ using tg_error_type_t = typename tg_type_aggregate<type_list<Ts...>>::type;
 }  // namespace detail
 
 template <typename... Errors>
-class task_group {
+class task_group : public task_group_node {
 public:
     using error_type = detail::tg_error_type_t<Errors...>;
     using result_type = std::conditional_t<std::is_void_v<error_type>,
                                            void,
                                            outcome<void, std::vector<error_type>, void>>;
 
-    explicit task_group(event_loop& loop) : loop(loop) {}
+    explicit task_group(event_loop&) {}
 
     task_group(const task_group&) = delete;
     task_group& operator=(const task_group&) = delete;
@@ -61,105 +58,127 @@ public:
     task_group& operator=(task_group&&) = delete;
 
     ~task_group() {
-        assert(active == 0 && "task_group destroyed with active tasks");
+        for(auto* child: awaitees) {
+            if(child) {
+                auto* t = static_cast<standard_task*>(child);
+                if(t->has_awaitee()) {
+                    t->detach_as_root();
+                } else {
+                    t->handle().destroy();
+                }
+            }
+        }
     }
 
     template <typename T, typename E, typename C>
         requires std::is_void_v<E> || is_one_of<E, Errors...>
     void spawn(task<T, E, C>&& t) {
-        ++active;
-        done->reset();
-        auto it = std::find(children.begin(), children.end(), nullptr);
-        std::size_t index;
-        if(it != children.end()) {
-            index = static_cast<std::size_t>(it - children.begin());
-        } else {
-            index = children.size();
-            children.push_back(nullptr);
-        }
-        auto m = monitor(std::move(t), index);
-        children[index] = m.operator->();
-        loop.schedule(std::move(m));
-    }
+        auto* node = t.operator->();
+        node->intercept_cancel();
+        t.release();
 
-    task<result_type> join() {
-        if(active > 0) {
-            auto wait_result = co_await done->wait().catch_cancel();
-            if(!wait_result.has_value()) {
-                cancel();
-                if(active > 0) {
-                    co_await done->wait();
-                }
-                co_await kota::cancel();
-            }
-        }
+        ++total;
+        awaitees.push_back(node);
+        error_handlers.push_back({&extract_error<T, E>});
 
-#if KOTA_ENABLE_EXCEPTIONS
-        if(!exceptions.empty()) {
-            std::rethrow_exception(exceptions.front());
-        }
-#endif
-
-        if constexpr(!std::is_void_v<error_type>) {
-            if(!errors.empty()) {
-                co_return result_type(outcome_error(std::move(errors)));
-            }
-            co_return result_type();
-        }
+        auto handle = node->link_continuation(this, std::source_location::current());
+        detail::resume_and_drain(handle);
     }
 
     void cancel() {
-        cancelled = true;
-        const std::size_t n = children.size();
+        if(fail_fast_started) {
+            return;
+        }
+        fail_fast_started = true;
+        phase = Phase::Cancelling;
+        const std::size_t n = awaitees.size();
         for(std::size_t i = 0; i < n; ++i) {
-            auto* node = children[i];
-            if(node) {
-                auto* t = static_cast<standard_task*>(node);
-                if(t->has_awaitee()) {
-                    node->cancel();
-                }
+            auto* child = awaitees[i];
+            if(child) {
+                child->async_node::cancel();
             }
         }
+        phase = Phase::Open;
+
+        if(deferred != Deferred::None && awaiter) {
+            phase = Phase::Settled;
+            auto handle = deliver_deferred();
+            detail::resume_and_drain(handle);
+        }
+    }
+
+    auto join() {
+        return join_awaiter{*this};
     }
 
 private:
-    template <typename T, typename E, typename C>
-    task<> monitor(task<T, E, C> child, std::size_t index) {
-        if(!cancelled) {
-            KOTA_TRY {
-                auto result = co_await std::move(child).catch_cancel();
+    struct join_awaiter {
+        task_group& group;
 
-                if constexpr(!std::is_void_v<E>) {
-                    if(result.has_error()) {
-                        if constexpr(std::is_same_v<E, error_type>) {
-                            errors.push_back(std::move(result).error());
-                        } else {
-                            errors.push_back(error_type(std::move(result).error()));
-                        }
-                        cancel();
-                    }
+        bool await_ready() const noexcept {
+            return group.completed >= group.total;
+        }
+
+        template <typename Promise>
+        std::coroutine_handle<> await_suspend(
+            std::coroutine_handle<Promise> h,
+            std::source_location location = std::source_location::current()) noexcept {
+            group.location = location;
+            auto* awaiter_node = static_cast<async_node*>(&h.promise());
+            if(awaiter_node->kind == NodeKind::Task) {
+                static_cast<standard_task*>(awaiter_node)->set_awaitee(&group);
+            }
+            group.awaiter = awaiter_node;
+            group.state = Running;
+
+            if(group.completed >= group.total) {
+                group.phase = Phase::Settled;
+                awaiter_node->clear_awaitee();
+                return h;
+            }
+
+            return std::noop_coroutine();
+        }
+
+        result_type await_resume() {
+#if KOTA_ENABLE_EXCEPTIONS
+            if(!group.exceptions.empty()) {
+                std::rethrow_exception(group.exceptions.front());
+            }
+#endif
+
+            if constexpr(!std::is_void_v<error_type>) {
+                if(!group.errors.empty()) {
+                    return result_type(outcome_error(std::move(group.errors)));
+                }
+                return result_type();
+            }
+        }
+    };
+
+    template <typename T, typename E>
+    static void extract_error(async_node* child, void* group_ptr) {
+        auto* g = static_cast<task_group*>(group_ptr);
+
+        if(child->propagated_exception) {
+#if KOTA_ENABLE_EXCEPTIONS
+            g->exceptions.push_back(child->propagated_exception);
+#endif
+            return;
+        }
+
+        if constexpr(!std::is_void_v<E>) {
+            auto* promise =
+                static_cast<task_promise_object<T, E>*>(static_cast<standard_task*>(child));
+            if(promise->value.has_value() && promise->value->has_error()) {
+                if constexpr(std::is_same_v<E, error_type>) {
+                    g->errors.push_back(std::move(*promise->value).error());
+                } else {
+                    g->errors.push_back(error_type(std::move(*promise->value).error()));
                 }
             }
-            KOTA_CATCH_ALL() {
-#if KOTA_ENABLE_EXCEPTIONS
-                exceptions.push_back(std::current_exception());
-                cancel();
-#endif
-            }
-        }
-
-        children[index] = nullptr;
-        if(--active == 0) {
-            auto d = done;
-            d->set();
         }
     }
-
-    event_loop& loop;
-    std::shared_ptr<event> done = std::make_shared<event>(true);
-    std::size_t active = 0;
-    bool cancelled = false;
-    std::vector<async_node*> children;
 
     using stored_error_type = std::conditional_t<std::is_void_v<error_type>, int, error_type>;
     std::vector<stored_error_type> errors;
