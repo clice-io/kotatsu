@@ -1395,6 +1395,9 @@ task<int, error> watch_root_dir_deleted(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
     auto canonical_dir = std::filesystem::canonical(dir).string();
+#if defined(_WIN32)
+    std::replace(canonical_dir.begin(), canonical_dir.end(), '\\', '/');
+#endif
 
     auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
     if(!watcher.has_value()) {
@@ -1535,9 +1538,9 @@ task<int, error> watch_symlink_update(event_loop& loop) {
 
     co_await sleep(500, loop);
 
-    fd = co_await fs::open(link, O_WRONLY | O_TRUNC, 0, loop).or_fail();
+    fd = co_await fs::open(link, O_WRONLY, 0, loop).or_fail();
     constexpr std::string_view updated = "world";
-    co_await fs::write(fd, std::span<const char>(updated.data(), updated.size()), -1, loop)
+    co_await fs::write(fd, std::span<const char>(updated.data(), updated.size()), 0, loop)
         .or_fail();
     co_await fs::close(fd, loop).or_fail();
 
@@ -1623,9 +1626,9 @@ task<int, error> watch_rapid_create_update(event_loop& loop) {
     co_await fs::write(fd, std::span<const char>(v1.data(), v1.size()), -1, loop).or_fail();
     co_await fs::close(fd, loop).or_fail();
 
-    fd = co_await fs::open(file, O_WRONLY | O_TRUNC, 0, loop).or_fail();
+    fd = co_await fs::open(file, O_WRONLY, 0, loop).or_fail();
     constexpr std::string_view v2 = "updated";
-    co_await fs::write(fd, std::span<const char>(v2.data(), v2.size()), -1, loop).or_fail();
+    co_await fs::write(fd, std::span<const char>(v2.data(), v2.size()), 0, loop).or_fail();
     co_await fs::close(fd, loop).or_fail();
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
@@ -1664,9 +1667,9 @@ task<int, error> watch_rapid_update_delete(event_loop& loop) {
 
     co_await sleep(500, loop);
 
-    fd = co_await fs::open(file, O_WRONLY | O_TRUNC, 0, loop).or_fail();
+    fd = co_await fs::open(file, O_WRONLY, 0, loop).or_fail();
     constexpr std::string_view updated = "updated";
-    co_await fs::write(fd, std::span<const char>(updated.data(), updated.size()), -1, loop)
+    co_await fs::write(fd, std::span<const char>(updated.data(), updated.size()), 0, loop)
         .or_fail();
     co_await fs::close(fd, loop).or_fail();
     co_await fs::unlink(file, loop).or_fail();

@@ -54,8 +54,8 @@ task<int, error> fse_detect_modify(event_loop& loop) {
 
     co_await sleep(500, loop);
 
-    fd = co_await fs::open(file, O_WRONLY | O_TRUNC, 0644, loop).or_fail();
-    co_await fs::write(fd, std::span<const char>("updated", 7), -1, loop).or_fail();
+    fd = co_await fs::open(file, O_WRONLY, 0, loop).or_fail();
+    co_await fs::write(fd, std::span<const char>("updated", 7), 0, loop).or_fail();
     co_await fs::close(fd, loop).or_fail();
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
@@ -144,8 +144,8 @@ task<int, error> fse_ignores_sibling(event_loop& loop) {
 
     co_await sleep(200, loop);
 
-    fd = co_await fs::open(target, O_WRONLY | O_TRUNC, 0644, loop).or_fail();
-    co_await fs::write(fd, std::span<const char>("signal", 6), -1, loop).or_fail();
+    fd = co_await fs::open(target, O_WRONLY, 0, loop).or_fail();
+    co_await fs::write(fd, std::span<const char>("signal", 6), 0, loop).or_fail();
     co_await fs::close(fd, loop).or_fail();
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
