@@ -38,7 +38,7 @@ struct tg_type_aggregate<type_list<Ts...>> {
 };
 
 template <typename... Ts>
-using tg_error_type_t = typename tg_type_aggregate<type_list<Ts...>>::type;
+using tg_error_type_t = typename tg_type_aggregate<type_list_unique_t<type_list<Ts...>>>::type;
 
 }  // namespace detail
 
@@ -73,6 +73,10 @@ public:
     template <typename T, typename E, typename C>
         requires std::is_void_v<E> || is_one_of<E, Errors...>
     void spawn(task<T, E, C>&& t) {
+        if(fail_fast_started || phase == Phase::Settled) {
+            return;
+        }
+
         auto* node = t.operator->();
         node->intercept_cancel();
         t.release();
