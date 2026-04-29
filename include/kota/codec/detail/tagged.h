@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -568,7 +569,7 @@ std::size_t numeric_tiebreaker(std::uint64_t live) {
     {
         std::uint64_t mask = live;
         while(mask) {
-            std::size_t idx = static_cast<std::size_t>(__builtin_ctzll(mask));
+            std::size_t idx = static_cast<std::size_t>(std::countr_zero(mask));
             if(!meta::is_integer_kind(alt_kinds[idx]))
                 all_integer = false;
             if(!meta::is_floating_kind(alt_kinds[idx]))
@@ -577,11 +578,11 @@ std::size_t numeric_tiebreaker(std::uint64_t live) {
         }
     }
     if(all_integer || all_float) {
-        std::size_t best_idx = static_cast<std::size_t>(__builtin_ctzll(live));
+        std::size_t best_idx = static_cast<std::size_t>(std::countr_zero(live));
         std::size_t best_width = kind_width(alt_kinds[best_idx]);
         std::uint64_t mask = live & (live - 1);
         while(mask) {
-            std::size_t idx = static_cast<std::size_t>(__builtin_ctzll(mask));
+            std::size_t idx = static_cast<std::size_t>(std::countr_zero(mask));
             std::size_t w = kind_width(alt_kinds[idx]);
             if(w > best_width) {
                 best_width = w;
@@ -591,7 +592,7 @@ std::size_t numeric_tiebreaker(std::uint64_t live) {
         }
         return best_idx;
     }
-    return static_cast<std::size_t>(__builtin_ctzll(live));
+    return static_cast<std::size_t>(std::countr_zero(live));
 }
 
 template <typename Adapter, typename Config, typename... Ts>
@@ -619,7 +620,7 @@ std::size_t select_variant_index(typename Adapter::node_type node) {
     if(live_count == 0)
         return N;
     if(live_count == 1)
-        return static_cast<std::size_t>(__builtin_ctzll(live));
+        return static_cast<std::size_t>(std::countr_zero(live));
 
     constexpr meta::type_info_fn info_fns[] = {&meta::type_info_of<Ts, Config>...};
     std::size_t scores[N] = {};
@@ -629,7 +630,7 @@ std::size_t select_variant_index(typename Adapter::node_type node) {
     {
         std::uint64_t mask = live;
         while(mask) {
-            std::size_t idx = static_cast<std::size_t>(__builtin_ctzll(mask));
+            std::size_t idx = static_cast<std::size_t>(std::countr_zero(mask));
             candidates[cand_count++] = {idx, &info_fns[idx]()};
             mask &= mask - 1;
         }
@@ -642,7 +643,7 @@ std::size_t select_variant_index(typename Adapter::node_type node) {
     {
         std::uint64_t mask = live;
         while(mask) {
-            std::size_t idx = static_cast<std::size_t>(__builtin_ctzll(mask));
+            std::size_t idx = static_cast<std::size_t>(std::countr_zero(mask));
             if(scores[idx] > best_score) {
                 best_score = scores[idx];
                 best_idx = idx;
@@ -680,9 +681,31 @@ std::size_t select_variant_index(meta::type_kind source_kind) {
     if(live_count == 0)
         return N;
     if(live_count == 1)
-        return static_cast<std::size_t>(__builtin_ctzll(live));
+        return static_cast<std::size_t>(std::countr_zero(live));
 
     return numeric_tiebreaker<Ts...>(live);
+}
+
+template <typename E, typename D, typename... Ts>
+auto deserialize_variant_at(D& d, std::variant<Ts...>& value, std::size_t best)
+    -> std::expected<void, E> {
+    std::expected<void, E> result = std::unexpected(E::type_mismatch);
+    std::size_t idx = 0;
+    auto try_alt = [&](auto type_tag) {
+        if(idx++ != best)
+            return;
+        using alt_t = typename decltype(type_tag)::type;
+        alt_t candidate{};
+        auto status = codec::deserialize(d, candidate);
+        if(status) {
+            value = std::move(candidate);
+            result = {};
+        } else {
+            result = std::unexpected(status.error());
+        }
+    };
+    (try_alt(std::type_identity<Ts>{}), ...);
+    return result;
 }
 
 }  // namespace kota::codec

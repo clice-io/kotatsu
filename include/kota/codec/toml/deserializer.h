@@ -187,24 +187,7 @@ public:
             return mark_invalid(error_type::type_mismatch);
         }
 
-        status_t result = std::unexpected(error_type::type_mismatch);
-        std::size_t idx = 0;
-        auto try_alt = [&](auto type_tag) {
-            if(idx++ != best)
-                return;
-            using alt_t = typename decltype(type_tag)::type;
-            alt_t candidate{};
-            auto status = codec::deserialize(*this, candidate);
-            if(status) {
-                value = std::move(candidate);
-                result = {};
-            } else {
-                result = std::unexpected(status.error());
-            }
-        };
-        (try_alt(std::type_identity<Ts>{}), ...);
-
-        return result;
+        return codec::deserialize_variant_at<error_type>(*this, value, best);
     }
 
     status_t deserialize_bool(bool& value) {
