@@ -39,9 +39,10 @@ public:
         MutexWaiter,
         EventWaiter,
 
-        /// Aggregate operations — when_all / when_any.
+        /// Aggregate operations — when_all / when_any / task_group.
         WhenAll,
         WhenAny,
+        TaskGroup,
 
         /// Pending libuv I/O — timers, signals, fs, network, etc.
         SystemIO,
@@ -84,7 +85,7 @@ public:
     }
 
     bool is_aggregate_op() const noexcept {
-        return NodeKind::WhenAll <= kind && kind <= NodeKind::WhenAny;
+        return NodeKind::WhenAll <= kind && kind <= NodeKind::TaskGroup;
     }
 
     bool is_finished() const noexcept {
@@ -416,6 +417,21 @@ protected:
 
 public:
     void complete() noexcept;
+};
+
+class task_group_node : public aggregate_op {
+protected:
+    friend class async_node;
+
+    explicit task_group_node() : aggregate_op(NodeKind::TaskGroup) {}
+
+    bool fail_fast_started = false;
+
+    struct error_handler {
+        void (*fn)(async_node* child, void* group) = nullptr;
+    };
+
+    std::vector<error_handler> error_handlers;
 };
 
 }  // namespace kota

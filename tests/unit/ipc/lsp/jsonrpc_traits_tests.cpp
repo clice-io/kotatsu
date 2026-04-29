@@ -116,9 +116,9 @@ TEST_CASE(traits_dispatch_order) {
     EXPECT_EQ(loop.run(), 0);
 
     ASSERT_EQ(order.size(), 3U);
-    EXPECT_EQ(order[0], "note:first");
-    EXPECT_EQ(order[1], "note:second");
-    EXPECT_EQ(order[2], "request");
+    EXPECT_EQ(order[0], "request");
+    EXPECT_EQ(order[1], "note:first");
+    EXPECT_EQ(order[2], "note:second");
     EXPECT_TRUE(second_saw_first);
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);

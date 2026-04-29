@@ -219,11 +219,6 @@ struct Peer<CodecT>::Self {
             if(parsed) {
                 auto it = incoming_requests.find(parsed->id);
                 if(it != incoming_requests.end() && it->second) {
-                    // Copy the shared_ptr before calling cancel(). cancel() may
-                    // synchronously resume the request coroutine, which on completion
-                    // erases its entry from incoming_requests — invalidating `it` and
-                    // potentially destroying the cancellation_source. The local copy
-                    // keeps the source alive through the entire cancel() call.
                     auto source = it->second;
                     source->cancel();
                 }
@@ -268,7 +263,6 @@ struct Peer<CodecT>::Self {
                        std::string params,
                        cancellation_token token) {
         auto guarded_result = co_await with_token(callback(id, params, token), token);
-        incoming_requests.erase(id);
 
         if(guarded_result.is_cancelled()) {
             send_error(id, Error(protocol::ErrorCode::RequestCancelled, "request cancelled"));
