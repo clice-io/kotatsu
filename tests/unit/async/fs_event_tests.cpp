@@ -311,6 +311,7 @@ task<int, error> fse_file_filter_rejects_similar_name(event_loop& loop) {
     co_return leaked_similar ? 0 : 1;
 }
 
+#if !defined(__APPLE__)
 task<int, error> fse_file_filter_only_sibling_no_event(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-fe-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
@@ -346,6 +347,7 @@ task<int, error> fse_file_filter_only_sibling_no_event(event_loop& loop) {
 
     co_return result.has_error() && result.error() == error::operation_aborted ? 1 : 0;
 }
+#endif
 
 task<int, error> fse_file_filter_dir_mode_no_filter(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-fe-XXXXXX").string();

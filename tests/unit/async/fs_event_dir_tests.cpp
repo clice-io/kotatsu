@@ -1188,10 +1188,8 @@ task<int, error> watch_unicode_filename(event_loop& loop) {
 
 // Windows symlink creation requires SeCreateSymbolicLinkPrivilege, which
 // is unavailable in unprivileged CI runners.
-task<int, error> watch_symlink_create_delete([[maybe_unused]] event_loop& loop) {
-#if defined(_WIN32)
-    co_return 1;
-#else
+#if !defined(_WIN32)
+task<int, error> watch_symlink_create_delete(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
 
@@ -1228,8 +1226,8 @@ task<int, error> watch_symlink_create_delete([[maybe_unused]] event_loop& loop) 
     co_await fs::rmdir(dir, loop).or_fail();
 
     co_return (found_create && found_delete) ? 1 : 0;
-#endif
 }
+#endif
 
 task<int, error> watch_large_burst(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
@@ -1380,10 +1378,8 @@ task<int, error> watch_subdir_delete_with_files(event_loop& loop) {
 }
 
 // See watch_symlink_create_delete for why Windows is skipped.
-task<int, error> watch_symlink_rename([[maybe_unused]] event_loop& loop) {
-#if defined(_WIN32)
-    co_return 1;
-#else
+#if !defined(_WIN32)
+task<int, error> watch_symlink_rename(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
 
@@ -1422,14 +1418,9 @@ task<int, error> watch_symlink_rename([[maybe_unused]] event_loop& loop) {
     co_await fs::rmdir(dir, loop).or_fail();
 
     co_return (found_rename || (found_destroy && found_create)) ? 1 : 0;
-#endif
 }
 
-// See watch_symlink_create_delete for why Windows is skipped.
-task<int, error> watch_symlink_update([[maybe_unused]] event_loop& loop) {
-#if defined(_WIN32)
-    co_return 1;
-#else
+task<int, error> watch_symlink_update(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
 
@@ -1466,14 +1457,9 @@ task<int, error> watch_symlink_update([[maybe_unused]] event_loop& loop) {
     co_await fs::rmdir(dir, loop).or_fail();
 
     co_return found_modify ? 1 : 0;
-#endif
 }
 
-// See watch_symlink_create_delete for why Windows is skipped.
-task<int, error> watch_folder_symlink([[maybe_unused]] event_loop& loop) {
-#if defined(_WIN32)
-    co_return 1;
-#else
+task<int, error> watch_folder_symlink(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
 
@@ -1509,8 +1495,8 @@ task<int, error> watch_folder_symlink([[maybe_unused]] event_loop& loop) {
     co_await fs::rmdir(dir, loop).or_fail();
 
     co_return (found_create && found_delete) ? 1 : 0;
-#endif
 }
+#endif
 
 task<int, error> watch_rapid_create_update(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
