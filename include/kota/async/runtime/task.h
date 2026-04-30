@@ -669,6 +669,11 @@ auto normalize_task(Awaitable&& input) -> task<normalized_await_result_t<Awaitab
         std::remove_cvref_t<Awaitable>(std::forward<Awaitable>(input)));
 }
 
+template <typename T, typename E, typename C>
+async_node* node_from(task<T, E, C>& t) {
+    return t.operator->();
+}
+
 }  // namespace detail
 
 }  // namespace kota
