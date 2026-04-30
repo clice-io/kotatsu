@@ -164,6 +164,9 @@ static_assert(std::same_as<when_any_result<task<int, error>, task<>>,
 // --- Case 8: task_group type checks ---
 static_assert(group_spawnable<task_group<error>, task<int, error>>);
 static_assert(!group_spawnable<task_group<>, task<int, error>>);
+static_assert(group_spawnable<task_group<error>, task<>>);
+static_assert(group_spawnable<task_group<error, custom_error>, task<int, custom_error>>);
+static_assert(!group_spawnable<task_group<error>, task<int, custom_error>>);
 
 }  // namespace
 
@@ -1878,9 +1881,36 @@ TEST_CASE(exception_propagates) {
     EXPECT_THROWS(t.result());
     EXPECT_EQ(slow_done, 0);
 }
+
+TEST_CASE(exception_takes_precedence_over_error) {
+    auto thrower = [&]() -> task<int, error> {
+        co_await sleep(1, loop);
+        throw std::runtime_error("boom");
+    };
+
+    auto failing = [&]() -> task<int, error> {
+        co_await sleep(2, loop);
+        co_await fail(error::connection_refused);
+    };
+
+    auto driver = [&]() -> task<> {
+        task_group<error> group(loop);
+        group.spawn(thrower());
+        group.spawn(failing());
+        auto res = co_await group.join();
+        (void)res;
+    };
+
+    auto t = driver();
+    schedule_all(t);
+    EXPECT_TRUE(t->is_failed());
+    EXPECT_THROWS(t.result());
+}
 #endif
 
-TEST_CASE(collects_multiple_errors) {
+// Fail-fast cancels siblings after the first error, so the error vector
+// always contains exactly 1 entry.  Verify the value is correct.
+TEST_CASE(fail_fast_collects_first_error) {
     auto failing = [&](int ms, error e) -> task<int, error> {
         co_await sleep(ms, loop);
         co_await fail(e);
@@ -1889,16 +1919,58 @@ TEST_CASE(collects_multiple_errors) {
     auto driver = [&]() -> task<> {
         task_group<error> group(loop);
         group.spawn(failing(1, error::connection_refused));
-        group.spawn(failing(1, error::connection_reset_by_peer));
-        group.spawn(failing(1, error::io_error));
+        group.spawn(failing(2, error::connection_reset_by_peer));
+        group.spawn(failing(3, error::io_error));
         auto res = co_await group.join();
         EXPECT_TRUE(res.has_error());
         EXPECT_EQ(res.error().size(), 1u);
+        EXPECT_EQ(res.error().front(), error::connection_refused);
     };
 
     auto t = driver();
     schedule_all(t);
     EXPECT_TRUE(t->is_finished());
+}
+
+TEST_CASE(all_success_with_error_type) {
+    auto ok = [&](int ms, int val) -> task<int, error> {
+        co_await sleep(ms, loop);
+        co_return val;
+    };
+
+    auto driver = [&]() -> task<> {
+        task_group<error> group(loop);
+        group.spawn(ok(1, 10));
+        group.spawn(ok(1, 20));
+        group.spawn(ok(1, 30));
+        auto res = co_await group.join();
+        EXPECT_TRUE(res.has_value());
+    };
+
+    auto t = driver();
+    schedule_all(t);
+    EXPECT_TRUE(t->is_finished());
+}
+
+TEST_CASE(spawn_after_join) {
+    int count = 0;
+
+    auto work = [&]() -> task<> {
+        count += 1;
+        co_return;
+    };
+
+    auto driver = [&]() -> task<> {
+        task_group<> group(loop);
+        group.spawn(work());
+        co_await group.join();
+        group.spawn(work());
+    };
+
+    auto t = driver();
+    schedule_all(t);
+    EXPECT_TRUE(t->is_finished());
+    EXPECT_EQ(count, 1);
 }
 
 TEST_CASE(fail_fast_cancels_siblings) {

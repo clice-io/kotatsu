@@ -28,24 +28,6 @@ using task_error_type_t = typename Task::error_type;
 template <typename Task>
 using task_cancel_type_t = typename Task::cancel_type;
 
-template <typename List>
-struct type_list_to_aggregate;
-
-template <>
-struct type_list_to_aggregate<type_list<>> {
-    using type = void;
-};
-
-template <typename T>
-struct type_list_to_aggregate<type_list<T>> {
-    using type = T;
-};
-
-template <typename... Ts>
-struct type_list_to_aggregate<type_list<Ts...>> {
-    using type = std::variant<Ts...>;
-};
-
 template <typename T>
 struct keep_non_void : std::bool_constant<!std::is_void_v<T>> {};
 
@@ -127,11 +109,6 @@ auto strip_channels_from_result(outcome<T, E, C>&& result) {
 template <typename Task, bool CaptureCancel>
 using task_success_t =
     decltype(strip_channels_from_result<CaptureCancel>(std::declval<task_result_t<Task>>()));
-
-template <typename Task>
-async_node* node_from(Task& task) {
-    return task.operator->();
-}
 
 template <typename Task>
 auto take_result(Task& task) {

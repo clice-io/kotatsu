@@ -1,9 +1,9 @@
 #pragma once
 
+#include <cassert>
 #include <exception>
 #include <source_location>
 #include <type_traits>
-#include <variant>
 #include <vector>
 
 #include "kota/support/config.h"
@@ -16,28 +16,9 @@ namespace kota {
 
 namespace detail {
 
-template <typename List>
-struct task_group_type_aggregate;
-
-template <>
-struct task_group_type_aggregate<type_list<>> {
-    using type = void;
-};
-
-template <typename T>
-struct task_group_type_aggregate<type_list<T>> {
-    using type = T;
-};
-
-template <typename... Ts>
-    requires (sizeof...(Ts) > 1)
-struct task_group_type_aggregate<type_list<Ts...>> {
-    using type = std::variant<Ts...>;
-};
-
 template <typename... Ts>
 using task_group_error_type_t =
-    typename task_group_type_aggregate<type_list_unique_t<type_list<Ts...>>>::type;
+    typename type_list_to_aggregate<type_list_unique_t<type_list<Ts...>>>::type;
 
 }  // namespace detail
 
@@ -71,10 +52,13 @@ public:
             return;
         }
 
-        auto* node = t.operator->();
+        auto* node = detail::node_from(t);
         node->intercept_cancel();
-        t.release();
 
+        awaitees.reserve(awaitees.size() + 1);
+        error_handlers.reserve(error_handlers.size() + 1);
+
+        t.release();
         ++total;
         awaitees.push_back(node);
         error_handlers.push_back({&extract_error<T, E>});
@@ -116,14 +100,19 @@ private:
     struct join_awaiter {
         task_group& group;
 
-        bool await_ready() const noexcept {
-            return group.completed >= group.total;
+        bool await_ready() noexcept {
+            if(group.completed >= group.total) {
+                group.phase = Phase::Settled;
+                return true;
+            }
+            return false;
         }
 
         template <typename Promise>
         std::coroutine_handle<> await_suspend(
             std::coroutine_handle<Promise> h,
             std::source_location location = std::source_location::current()) noexcept {
+            assert(group.phase != Phase::Settled && "join() called twice on the same task_group");
             group.location = location;
             auto* awaiter_node = static_cast<async_node*>(&h.promise());
             if(awaiter_node->kind == NodeKind::Task) {
@@ -181,10 +170,9 @@ private:
         }
     }
 
-    struct empty {};
-
     KOTA_NO_UNIQUE_ADDRESS
-        std::conditional_t<std::is_void_v<error_type>, empty, std::vector<error_type>>
+    std::
+        conditional_t<std::is_void_v<error_type>, std::type_identity<void>, std::vector<error_type>>
             errors;
 
     std::vector<std::exception_ptr> exceptions;
