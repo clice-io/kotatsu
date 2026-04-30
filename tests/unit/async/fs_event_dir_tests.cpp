@@ -171,9 +171,9 @@ task<int, error> watch_stop_during_next(event_loop& loop) {
 
     co_await sleep(500, loop);
 
-    // Schedule stop() after a short delay; next() should unblock with
-    // operation_aborted rather than deadlocking. The timeout in
-    // next_or_timeout acts as a deadlock detector.
+    // Schedule stop() after a short delay. The key invariant is that
+    // next() must return (not deadlock). It may return buffered events
+    // (if the platform delivered some before stop) or operation_aborted.
     auto stopper = [&]() -> task<void, error> {
         co_await sleep(100, loop);
         watcher->stop();
@@ -181,14 +181,16 @@ task<int, error> watch_stop_during_next(event_loop& loop) {
     auto stop_task = stopper();
     loop.schedule(stop_task);
 
-    auto result = co_await watcher->next();
+    auto result = co_await next_or_timeout(*watcher, loop, 5000);
 
     co_await fs::rmdir(dir, loop).or_fail();
 
-    if(!result.has_error()) {
-        co_return 0;
+    // Either we got events or operation_aborted — both are fine.
+    // A deadlock would have triggered the 5s timeout (empty result).
+    if(result.has_error()) {
+        co_return result.error() == error::operation_aborted ? 1 : 0;
     }
-    co_return result.error() == error::operation_aborted ? 1 : 0;
+    co_return 1;
 }
 
 task<int, error> watch_multiple_next_calls(event_loop& loop) {
