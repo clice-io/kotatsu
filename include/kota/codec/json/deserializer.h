@@ -168,6 +168,7 @@ public:
             return std::unexpected(last_error);
         }
 
+        // pending_object/pending_array means we're positioned at a container, not null
         if(pending_object || pending_array) {
             return false;
         }

@@ -512,6 +512,7 @@ void multi_score(typename Adapter::node_type node,
             auto& vi = static_cast<const meta::variant_type_info&>(*info);
             std::size_t start = expanded.size();
             for(const auto& alt_fn: vi.alternatives) {
+                // index into exp_scores[], not into the outer scores[]
                 expanded.push_back({expanded.size(), &alt_fn()});
             }
             groups.push_back({candidates[i].index, start, expanded.size() - start});
@@ -633,8 +634,6 @@ constexpr live_mask build_live_mask(meta::type_kind source_kind) {
     return {bits, count};
 }
 
-}  // namespace detail
-
 template <typename Config, typename... Ts>
 std::optional<std::size_t> select_by_kind(std::uint64_t live, meta::type_kind source_kind) {
     constexpr meta::type_info_fn info_fns[] = {&meta::type_info_of<Ts, Config>...};
@@ -643,7 +642,7 @@ std::optional<std::size_t> select_by_kind(std::uint64_t live, meta::type_kind so
     std::uint64_t mask = live;
     while(mask) {
         std::size_t idx = static_cast<std::size_t>(std::countr_zero(mask));
-        auto s = detail::score_type_info(&info_fns[idx](), source_kind);
+        auto s = score_type_info(&info_fns[idx](), source_kind);
         if(s > best_score) {
             best_score = s;
             best_idx = idx;
@@ -652,6 +651,8 @@ std::optional<std::size_t> select_by_kind(std::uint64_t live, meta::type_kind so
     }
     return best_idx;
 }
+
+}  // namespace detail
 
 template <source_adapter Adapter, typename Config, typename... Ts>
 std::optional<std::size_t> select_variant_index(typename Adapter::node_type node) {
@@ -704,7 +705,10 @@ std::optional<std::size_t> select_variant_index(typename Adapter::node_type node
     if(best_idx && best_count == 1)
         return best_idx;
 
-    return select_by_kind<Config, Ts...>(live, source_kind);
+    // Tied deep scores: fall back to kind_match_quality which prefers exact kind
+    // matches.  When struct and map tie (e.g. identical field types), declaration
+    // order among equal-quality candidates decides the winner.
+    return detail::select_by_kind<Config, Ts...>(live, source_kind);
 }
 
 template <typename Config, typename... Ts>
@@ -718,7 +722,7 @@ std::optional<std::size_t> select_variant_index(meta::type_kind source_kind) {
     if(live_count == 1)
         return static_cast<std::size_t>(std::countr_zero(live));
 
-    return select_by_kind<Config, Ts...>(live, source_kind);
+    return detail::select_by_kind<Config, Ts...>(live, source_kind);
 }
 
 template <typename E, typename D, typename... Ts>

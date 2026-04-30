@@ -31,6 +31,14 @@ using IntTagShape =
     meta::annotation<std::variant<Circle, Rect>,
                      meta::attrs::internally_tagged<"type">::names<"circle", "rect">>;
 
+using ExtTagShape =
+    meta::annotation<std::variant<int, std::string>,
+                     meta::attrs::externally_tagged::names<"integer", "text">>;
+
+using AdjTagShape =
+    meta::annotation<std::variant<int, std::string>,
+                     meta::attrs::adjacently_tagged<"type", "value">::names<"integer", "text">>;
+
 struct VariantField {
     std::variant<int, std::string> value;
 };
@@ -400,6 +408,110 @@ radius = 2.5
 }
 
 };  // TEST_SUITE(serde_toml_variant_internally_tagged)
+
+TEST_SUITE(serde_toml_variant_externally_tagged) {
+
+TEST_CASE(int_roundtrip) {
+    struct Holder {
+        ExtTagShape data;
+    };
+
+    auto tbl = ::toml::table{{"data", ::toml::table{{"integer", 42}}}};
+    Holder out{};
+    ASSERT_TRUE(from_toml(tbl, out).has_value());
+    EXPECT_EQ(std::get<int>(out.data), 42);
+
+    Holder input{.data = 42};
+    auto dom = to_toml(input);
+    ASSERT_TRUE(dom.has_value());
+    ASSERT_TRUE(from_toml(*dom, out).has_value());
+    EXPECT_EQ(std::get<int>(out.data), 42);
+}
+
+TEST_CASE(string_roundtrip) {
+    struct Holder {
+        ExtTagShape data;
+    };
+
+    auto tbl = ::toml::table{{"data", ::toml::table{{"text", "hello"}}}};
+    Holder out{};
+    ASSERT_TRUE(from_toml(tbl, out).has_value());
+    EXPECT_EQ(std::get<std::string>(out.data), "hello");
+}
+
+TEST_CASE(unknown_tag_fails) {
+    struct Holder {
+        ExtTagShape data;
+    };
+
+    auto tbl = ::toml::table{{"data", ::toml::table{{"unknown", 1}}}};
+    Holder out{};
+    EXPECT_FALSE(from_toml(tbl, out).has_value());
+}
+
+};  // TEST_SUITE(serde_toml_variant_externally_tagged)
+
+TEST_SUITE(serde_toml_variant_adjacently_tagged) {
+
+TEST_CASE(int_roundtrip) {
+    struct Holder {
+        AdjTagShape data;
+    };
+
+    auto tbl = ::toml::table{{"data", ::toml::table{{"type", "integer"}, {"value", 42}}}};
+    Holder out{};
+    ASSERT_TRUE(from_toml(tbl, out).has_value());
+    EXPECT_EQ(std::get<int>(out.data), 42);
+
+    Holder input{.data = 42};
+    auto dom = to_toml(input);
+    ASSERT_TRUE(dom.has_value());
+    ASSERT_TRUE(from_toml(*dom, out).has_value());
+    EXPECT_EQ(std::get<int>(out.data), 42);
+}
+
+TEST_CASE(string_roundtrip) {
+    struct Holder {
+        AdjTagShape data;
+    };
+
+    auto tbl = ::toml::table{{"data", ::toml::table{{"type", "text"}, {"value", "hello"}}}};
+    Holder out{};
+    ASSERT_TRUE(from_toml(tbl, out).has_value());
+    EXPECT_EQ(std::get<std::string>(out.data), "hello");
+}
+
+TEST_CASE(unknown_tag_fails) {
+    struct Holder {
+        AdjTagShape data;
+    };
+
+    auto tbl = ::toml::table{{"data", ::toml::table{{"type", "unknown"}, {"value", 1}}}};
+    Holder out{};
+    EXPECT_FALSE(from_toml(tbl, out).has_value());
+}
+
+TEST_CASE(missing_tag_fails) {
+    struct Holder {
+        AdjTagShape data;
+    };
+
+    auto tbl = ::toml::table{{"data", ::toml::table{{"value", 42}}}};
+    Holder out{};
+    EXPECT_FALSE(from_toml(tbl, out).has_value());
+}
+
+TEST_CASE(missing_content_fails) {
+    struct Holder {
+        AdjTagShape data;
+    };
+
+    auto tbl = ::toml::table{{"data", ::toml::table{{"type", "integer"}}}};
+    Holder out{};
+    EXPECT_FALSE(from_toml(tbl, out).has_value());
+}
+
+};  // TEST_SUITE(serde_toml_variant_adjacently_tagged)
 
 }  // namespace
 
