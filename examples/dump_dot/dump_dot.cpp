@@ -2,7 +2,7 @@
 ///
 /// Constructs a graph that exercises all NodeKind variants at once:
 ///   Task, Mutex, Semaphore, Event, ConditionVariable,
-///   MutexWaiter, EventWaiter, WhenAll, WhenAny, Scope, SystemIO
+///   MutexWaiter, EventWaiter, WhenAll, WhenAny, SystemIO
 ///
 /// Every sync primitive has multiple waiters queued so the waiter linked-list
 /// is clearly visible in the rendered graph.
@@ -103,7 +103,7 @@ task<> observer(event_loop& loop) {
 }
 
 // ---------------------------------------------------------------------------
-// Composite branches — exercise when_all, when_any, async_scope.
+// Composite branches — exercise when_all, when_any, task_group.
 // ---------------------------------------------------------------------------
 
 /// when_all branch: 1 holder + 3 contenders → Mutex has 3 MutexWaiters.
@@ -119,27 +119,27 @@ task<std::variant<int, int>> branch_when_any(event_loop& loop) {
     co_return co_await when_any(slow_work(loop), fast_work(loop));
 }
 
-/// async_scope branch: dynamically spawns tasks that block on sem / event / cv.
+/// task_group branch: dynamically spawns tasks that block on sem / event / cv.
 /// Multiple waiters per primitive to demonstrate the waiter linked-list.
-task<> branch_scope(event_loop& loop) {
-    async_scope scope;
+task<> branch_task_group(event_loop& loop) {
+    task_group<> group(loop);
 
     // 3 acquirers on the semaphore (all block — count is 0).
-    scope.spawn(sem_acquirer(loop));
-    scope.spawn(sem_acquirer(loop));
-    scope.spawn(sem_acquirer(loop));
+    group.spawn(sem_acquirer(loop));
+    group.spawn(sem_acquirer(loop));
+    group.spawn(sem_acquirer(loop));
 
     // 3 waiters on the event (all block — event is unset).
-    scope.spawn(evt_waiter(loop));
-    scope.spawn(evt_waiter(loop));
-    scope.spawn(evt_waiter(loop));
+    group.spawn(evt_waiter(loop));
+    group.spawn(evt_waiter(loop));
+    group.spawn(evt_waiter(loop));
 
     // 2 waiters on the condition variable.
     // Stagger by 1 ms so each one acquires cv_mtx in turn before the snapshot.
-    scope.spawn(cv_waiter(loop, 0));
-    scope.spawn(cv_waiter(loop, 1));
+    group.spawn(cv_waiter(loop, 0));
+    group.spawn(cv_waiter(loop, 1));
 
-    co_await scope;
+    co_await group.join();
 }
 
 /// Cancellation branch: a long-running task wrapped with a cancellation token.
@@ -189,8 +189,8 @@ task<> driver(event_loop& loop) {
     //         │    └─ WhenAny
     //         │         ├─ slow_work (Task → SystemIO)
     //         │         └─ fast_work (Task → SystemIO)
-    //         ├─ branch_scope (Task)
-    //         │    └─ Scope
+    //         ├─ branch_task_group (Task)
+    //         │    └─ task_group (spawned tasks)
     //         │         ├─ sem_acquirer ×3 (Task → EventWaiter)
     //         │         │   └─ Semaphore (ellipse, 3 waiters linked)
     //         │         ├─ evt_waiter ×3 (Task → EventWaiter)
@@ -206,7 +206,7 @@ task<> driver(event_loop& loop) {
                       releaser(),
                       branch_mutex(loop),
                       branch_when_any(loop),
-                      branch_scope(loop),
+                      branch_task_group(loop),
                       branch_cancel(loop));
 }
 

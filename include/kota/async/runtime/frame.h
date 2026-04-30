@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <coroutine>
 #include <cstddef>
 #include <cstdint>
@@ -39,10 +40,10 @@ public:
         MutexWaiter,
         EventWaiter,
 
-        /// Aggregate operations — when_all / when_any / async_scope.
+        /// Aggregate operations — when_all / when_any / task_group.
         WhenAll,
         WhenAny,
-        Scope,
+        TaskGroup,
 
         /// Pending libuv I/O — timers, signals, fs, network, etc.
         SystemIO,
@@ -85,7 +86,7 @@ public:
     }
 
     bool is_aggregate_op() const noexcept {
-        return NodeKind::WhenAll <= kind && kind <= NodeKind::Scope;
+        return NodeKind::WhenAll <= kind && kind <= NodeKind::TaskGroup;
     }
 
     bool is_finished() const noexcept {
@@ -234,7 +235,7 @@ protected:
     async_node* awaiter = nullptr;
 };
 
-/// Base for when_all / when_any / async_scope.
+/// Base for when_all / when_any.
 ///
 /// Uses a two-phase protocol in await_suspend:
 ///   1. Arming: link all children, then resume them. During this phase,
@@ -418,5 +419,36 @@ protected:
 public:
     void complete() noexcept;
 };
+
+class task_group_node : public aggregate_op {
+protected:
+    friend class async_node;
+
+    explicit task_group_node() : aggregate_op(NodeKind::TaskGroup) {}
+
+    bool stopped = false;
+
+    struct error_handler {
+        void (*fn)(async_node* child, task_group_node* group) = nullptr;
+    };
+
+    std::vector<error_handler> error_handlers;
+};
+
+namespace detail {
+
+inline void destroy_or_detach(async_node* child) noexcept {
+    assert(child && child->kind == async_node::NodeKind::Task);
+    auto* task = static_cast<standard_task*>(child);
+
+    if(task->has_awaitee()) {
+        task->detach_as_root();
+        return;
+    }
+
+    task->handle().destroy();
+}
+
+}  // namespace detail
 
 }  // namespace kota

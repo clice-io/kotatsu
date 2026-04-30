@@ -117,11 +117,11 @@ void example_when_any() {
 }
 
 // ============================================================
-// 5. async_scope — dynamic structured concurrency
+// 5. task_group — dynamic structured concurrency
 // ============================================================
 
-void example_async_scope() {
-    std::println("--- 5. async_scope ---");
+void example_task_group() {
+    std::println("--- 5. task_group ---");
 
     event_loop loop;
     int total = 0;
@@ -133,15 +133,16 @@ void example_async_scope() {
     };
 
     auto driver = [&]() -> task<> {
-        async_scope scope;
+        task_group<> group(loop);
 
         // Spawn a dynamic number of tasks at runtime.
+        // Unlike async_scope, tasks start immediately on spawn().
         for(int i = 0; i < 5; ++i) {
-            scope.spawn(worker(i, (i + 1) * 10));
+            group.spawn(worker(i, (i + 1) * 10));
         }
 
         // Wait for all spawned tasks to complete.
-        co_await scope;
+        co_await group.join();
         std::println("  all workers done, total = {}", total);
     };
 
@@ -279,7 +280,7 @@ void example_sync_primitives() {
 }
 
 // ============================================================
-// 8. Combining patterns — scope + when_all + cancellation
+// 8. Combining patterns — task_group + when_all + cancellation
 // ============================================================
 
 void example_combined() {
@@ -287,7 +288,7 @@ void example_combined() {
 
     event_loop loop;
 
-    // Use a scope to spawn workers, each doing a when_all internally,
+    // Use a task_group to spawn workers, each doing a when_all internally,
     // with external cancellation cutting everything short.
 
     cancellation_source source;
@@ -308,11 +309,11 @@ void example_combined() {
     };
 
     auto driver = [&]() -> task<int> {
-        async_scope scope;
+        task_group<> group(loop);
         for(int i = 0; i < 5; ++i) {
-            scope.spawn(pair_work(i));
+            group.spawn(pair_work(i));
         }
-        co_await scope;
+        co_await group.join();
         co_return completed_pairs;
     };
 
@@ -347,7 +348,7 @@ int main() {
     example_timers();
     example_when_all();
     example_when_any();
-    example_async_scope();
+    example_task_group();
     example_cancellation();
     example_sync_primitives();
     example_combined();

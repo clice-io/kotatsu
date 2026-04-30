@@ -189,6 +189,86 @@ TEST_CASE(close_idempotent) {
     EXPECT_EQ(loop.run(), 0);
 }
 
+// 5.12 close() awaits all in-flight handlers via request_group.join()
+TEST_CASE(close_awaits_multiple_inflight_handlers) {
+    int handlers_started = 0;
+    int handlers_completed = 0;
+
+    auto transport = std::make_unique<ScriptedTransport>(
+        std::vector<std::string>{
+            R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":1,"b":2}})",
+            R"({"jsonrpc":"2.0","id":2,"method":"test/add","params":{"a":3,"b":4}})",
+            R"({"jsonrpc":"2.0","id":3,"method":"test/add","params":{"a":5,"b":6}})",
+        },
+        nullptr);
+
+    event_loop loop;
+    JsonPeer peer(loop, std::move(transport));
+
+    peer.on_request([&](RequestContext, AddParams params) -> RequestResult<AddParams> {
+        handlers_started++;
+        co_await sleep(std::chrono::seconds(10), loop);
+        handlers_completed++;
+        co_return AddResult{.sum = params.a + params.b};
+    });
+
+    auto closer = [&]() -> task<> {
+        co_await sleep(1, loop);
+        EXPECT_EQ(handlers_started, 3);
+        peer.close();
+    };
+
+    loop.schedule(peer.run());
+    loop.schedule(closer());
+    EXPECT_EQ(loop.run(), 0);
+
+    EXPECT_EQ(handlers_started, 3);
+    EXPECT_EQ(handlers_completed, 0);
+}
+
+// 5.13 close() with mixed completed and in-flight handlers
+TEST_CASE(close_after_partial_completion) {
+    int quick_done = 0;
+    int slow_done = 0;
+
+    auto transport = std::make_unique<ScriptedTransport>(
+        std::vector<std::string>{
+            R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":1,"b":2}})",
+            R"({"jsonrpc":"2.0","id":2,"method":"test/add","params":{"a":3,"b":4}})",
+        },
+        nullptr);
+
+    event_loop loop;
+    JsonPeer peer(loop, std::move(transport));
+
+    int request_count = 0;
+    peer.on_request([&](RequestContext, AddParams params) -> RequestResult<AddParams> {
+        int n = ++request_count;
+        if(n == 1) {
+            co_await sleep(1, loop);
+            quick_done = 1;
+        } else {
+            co_await sleep(std::chrono::seconds(10), loop);
+            slow_done = 1;
+        }
+        co_return AddResult{.sum = params.a + params.b};
+    });
+
+    auto closer = [&]() -> task<> {
+        co_await sleep(5, loop);
+        EXPECT_EQ(quick_done, 1);
+        EXPECT_EQ(slow_done, 0);
+        peer.close();
+    };
+
+    loop.schedule(peer.run());
+    loop.schedule(closer());
+    EXPECT_EQ(loop.run(), 0);
+
+    EXPECT_EQ(quick_done, 1);
+    EXPECT_EQ(slow_done, 0);
+}
+
 };  // TEST_SUITE(ipc_peer_lifecycle)
 
 }  // namespace

@@ -13,7 +13,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - Task composition with sibling cancellation:
   - `when_all(...)` — wait for all children; first error cancels the rest.
   - `when_any(...)` — race children; the winner cancels the rest.
-  - `async_scope` — spawn a dynamic fan-out of sibling tasks and join them.
+  - `task_group` — spawn a dynamic fan-out of tasks that start immediately, then join.
 - Cooperative cancellation model:
   - `cancellation_token` / `cancellation_source` for thread-safe external triggering.
   - `with_token(task, tokens...)` races a task against one or more tokens.

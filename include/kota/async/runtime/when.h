@@ -28,24 +28,6 @@ using task_error_type_t = typename Task::error_type;
 template <typename Task>
 using task_cancel_type_t = typename Task::cancel_type;
 
-template <typename List>
-struct type_list_to_aggregate;
-
-template <>
-struct type_list_to_aggregate<type_list<>> {
-    using type = void;
-};
-
-template <typename T>
-struct type_list_to_aggregate<type_list<T>> {
-    using type = T;
-};
-
-template <typename... Ts>
-struct type_list_to_aggregate<type_list<Ts...>> {
-    using type = std::variant<Ts...>;
-};
-
 template <typename T>
 struct keep_non_void : std::bool_constant<!std::is_void_v<T>> {};
 
@@ -129,11 +111,6 @@ using task_success_t =
     decltype(strip_channels_from_result<CaptureCancel>(std::declval<task_result_t<Task>>()));
 
 template <typename Task>
-async_node* node_from(Task& task) {
-    return task.operator->();
-}
-
-template <typename Task>
 auto take_result(Task& task) {
     return task.result();
 }
@@ -150,18 +127,6 @@ void release_inflight(Task& task) noexcept {
         node->detach_as_root();
         task.release();
     }
-}
-
-inline void destroy_or_detach(async_node* child) noexcept {
-    assert(child && child->kind == async_node::NodeKind::Task);
-    auto* task = static_cast<standard_task*>(child);
-
-    if(task->has_awaitee()) {
-        task->detach_as_root();
-        return;
-    }
-
-    task->handle().destroy();
 }
 
 template <typename Return, std::size_t I = 0, typename Tuple, typename F>
@@ -484,88 +449,5 @@ when_any(Tasks...) -> when_any<detail::normalized_task_t<Tasks>...>;
 
 template <detail::async_range Range>
 when_any(Range) -> when_any<detail::range_tasks<detail::normalized_range_task_t<Range>>>;
-
-template <typename... Errors>
-class async_scope : public aggregate_op {
-public:
-    using error_type = detail::aggregated_channel_t<Errors...>;
-    using result_type =
-        std::conditional_t<std::is_void_v<error_type>, void, outcome<void, error_type, void>>;
-
-    async_scope() : aggregate_op(async_node::NodeKind::Scope) {}
-
-    async_scope(const async_scope&) = delete;
-    async_scope& operator=(const async_scope&) = delete;
-
-    ~async_scope() {
-        for(auto* node: awaitees) {
-            if(node) {
-                detail::destroy_or_detach(node);
-            }
-        }
-    }
-
-    template <typename T, typename E, typename C>
-        requires std::is_void_v<E> || is_one_of<E, Errors...>
-    void spawn(task<T, E, C>&& t) {
-        auto* node = detail::node_from(t);
-        awaitees.reserve(awaitees.size() + 1);
-        if constexpr(!std::is_void_v<error_type>) {
-            error_extractors.reserve(error_extractors.size() + 1);
-            if constexpr(std::is_void_v<E>) {
-                error_extractors.push_back(nullptr);
-            } else {
-                error_extractors.push_back([](async_node* current) -> error_type {
-                    using handle_type = typename task<T, E, C>::coroutine_handle;
-                    auto handle = handle_type::from_address(
-                        static_cast<standard_task*>(current)->handle().address());
-                    auto& promise = handle.promise();
-                    assert(promise.value.has_value());
-                    assert(promise.value->has_error());
-                    return error_type(std::move(*promise.value).error());
-                });
-            }
-        }
-        awaitees.push_back(node);
-        t.release();
-        total += 1;
-    }
-
-    template <detail::awaitable Awaitable>
-        requires (!detail::is_task_v<Awaitable>) &&
-                 std::is_void_v<detail::task_error_type_t<detail::normalized_task_t<Awaitable>>>
-    void spawn(Awaitable awaitable) {
-        spawn(detail::normalize_task(std::move(awaitable)));
-    }
-
-    bool await_ready() const noexcept {
-        return awaitees.empty();
-    }
-
-    template <typename Promise>
-    std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<Promise> awaiter_handle,
-                      std::source_location location = std::source_location::current()) noexcept {
-        total = awaitees.size();
-        return arm_and_resume(awaiter_handle, location);
-    }
-
-    auto await_resume() -> result_type {
-        rethrow_if_propagated();
-
-        if constexpr(!std::is_void_v<error_type>) {
-            if(first_error_child != aggregate_op::npos) {
-                return result_type(outcome_error(
-                    error_extractors[first_error_child](awaitees[first_error_child])));
-            }
-            return result_type();
-        }
-    }
-
-private:
-    std::vector<error_type (*)(async_node*)> error_extractors;
-};
-
-async_scope() -> async_scope<>;
 
 }  // namespace kota
