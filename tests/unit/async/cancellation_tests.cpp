@@ -653,6 +653,35 @@ TEST_CASE(nested_with_token_same_token_cancel) {
     schedule_all(guarded, cancel_task);
 }
 
+// Exercises the void-returning with_token cancellation path — the MSVC
+// coroutine codegen can fall through past co_await cancel() and reach
+// undefined behavior when dereferencing a cancelled race_result.
+TEST_CASE(cancel_void_task_in_flight) {
+    cancellation_source source;
+    event gate;
+    bool started = false;
+    bool finished = false;
+
+    auto worker = [&]() -> task<> {
+        started = true;
+        co_await gate.wait();
+        finished = true;
+    };
+
+    auto canceler = [&]() -> task<> {
+        co_await sleep(1, loop);
+        source.cancel();
+    };
+
+    auto guarded = with_token(worker(), source.token());
+    auto cancel_task = canceler();
+    schedule_all(guarded, cancel_task);
+
+    EXPECT_TRUE(started);
+    EXPECT_FALSE(finished);
+    EXPECT_TRUE(source.cancelled());
+}
+
 };  // TEST_SUITE(cancellation)
 
 }  // namespace

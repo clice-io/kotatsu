@@ -34,8 +34,6 @@ struct event_loop::self {
     std::atomic<post_node*> post_head{nullptr};
 };
 
-// ── relay implementation ────────────────────────────────────────────
-
 struct relay::self {
     uv_async_t async = {};
     bool has_callback = false;
@@ -94,8 +92,6 @@ relay event_loop::create_relay() {
     // The async handle is ref'd by default, keeping the loop alive.
     return relay(p);
 }
-
-// ── event_loop ──────────────────────────────────────────────────────
 
 static thread_local event_loop* current_loop = nullptr;
 
