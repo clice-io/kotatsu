@@ -27,7 +27,7 @@
 #include "kota/codec/detail/ser_dispatch.h"
 #include "kota/codec/detail/spelling.h"
 #include "kota/codec/detail/struct_deserialize.h"
-#include "kota/codec/detail/tagged.h"
+#include "kota/codec/detail/variant_dispatch.h"
 
 namespace kota::codec::detail {
 
@@ -98,13 +98,6 @@ struct StreamingDeserCtx {
 
     result_type read_bytes(std::vector<std::byte>& v) {
         return d.deserialize_bytes(v);
-    }
-
-    template <typename V>
-    result_type read_captured_dom(V& v) {
-        KOTA_EXPECTED_TRY_V(auto captured, d.capture_dom_value());
-        v = std::move(captured);
-        return {};
     }
 
     result_type read_null(bool& is_none) {
@@ -486,9 +479,6 @@ auto unified_deserialize(Ctx& ctx, V& v) -> typename Ctx::result_type {
         return ctx.read_str(static_cast<std::string&>(v));
     } else if constexpr(std::same_as<U, std::vector<std::byte>>) {
         return ctx.read_bytes(v);
-    } else if constexpr(Ctx::backend_kind_v == backend_kind::streaming &&
-                        is_captured_dom_value_v<decltype(std::declval<Ctx>().d), U>) {
-        return ctx.read_captured_dom(v);
     } else if constexpr(null_like<U>) {
         bool is_none = false;
         KOTA_EXPECTED_TRY(ctx.read_null(is_none));

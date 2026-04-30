@@ -7,49 +7,7 @@
 
 namespace kota::codec {
 
-namespace content {
-
-template <typename Config>
-class Deserializer;
-
-}  // namespace content
-
 namespace detail {
-
-template <typename D, typename = void>
-struct captured_dom_value_type {};
-
-template <typename D>
-struct captured_dom_value_type<D, std::void_t<decltype(std::declval<D&>().capture_dom_value())>> {
-    using type = std::remove_cvref_t<decltype(*std::declval<D&>().capture_dom_value())>;
-};
-
-template <typename D>
-using captured_dom_value_t = typename captured_dom_value_type<D>::type;
-
-template <typename D, typename V, typename = void>
-struct is_captured_dom_value : std::false_type {};
-
-template <typename D, typename V>
-struct is_captured_dom_value<D, V, std::void_t<decltype(std::declval<D&>().capture_dom_value())>> :
-    std::bool_constant<std::same_as<std::remove_cvref_t<V>, captured_dom_value_t<D>>> {};
-
-template <typename D, typename V>
-constexpr bool is_captured_dom_value_v = is_captured_dom_value<D, V>::value;
-
-template <typename D, typename = void>
-struct can_buffer_adjacently_tagged : std::false_type {};
-
-template <typename D>
-    struct can_buffer_adjacently_tagged<
-        D,
-        std::void_t<decltype(std::declval<D&>().capture_dom_value()), typename D::config_type>> :
-    std::bool_constant < requires(const captured_dom_value_t<D>& captured) {
-    content::Deserializer<typename D::config_type>{captured};
-}>{};
-
-template <typename D>
-constexpr bool can_buffer_adjacently_tagged_v = can_buffer_adjacently_tagged<D>::value;
 
 template <typename To, typename From>
 constexpr bool integral_value_in_range(From value) {

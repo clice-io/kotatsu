@@ -13,15 +13,112 @@
 #include <vector>
 
 #include "kota/support/expected_try.h"
-#include "kota/codec/content/deserializer.h"
-#include "kota/codec/content/document.h"
 #include "kota/codec/detail/backend.h"
 #include "kota/codec/detail/codec.h"
 #include "kota/codec/detail/config.h"
 #include "kota/codec/detail/narrow.h"
+#include "kota/codec/detail/variant_dispatch.h"
 #include "kota/codec/json/error.h"
 
 namespace kota::codec::json {
+
+namespace detail {
+
+struct simdjson_source_adapter {
+    struct node_type {
+        simdjson::ondemand::value val{};
+        simdjson::ondemand::object* obj_ptr = nullptr;
+        simdjson::ondemand::array* arr_ptr = nullptr;
+
+        node_type() = default;
+
+        node_type(simdjson::ondemand::value v) : val(v) {}
+
+        explicit node_type(simdjson::ondemand::object* o) : obj_ptr(o) {}
+
+        explicit node_type(simdjson::ondemand::array* a) : arr_ptr(a) {}
+    };
+
+    static meta::type_kind kind_of(node_type node) {
+        if(node.obj_ptr)
+            return meta::type_kind::structure;
+        if(node.arr_ptr)
+            return meta::type_kind::array;
+        simdjson::ondemand::json_type type;
+        if(node.val.type().get(type) != simdjson::SUCCESS)
+            return meta::type_kind::any;
+        switch(type) {
+            case simdjson::ondemand::json_type::null: return meta::type_kind::null;
+            case simdjson::ondemand::json_type::boolean: return meta::type_kind::boolean;
+            case simdjson::ondemand::json_type::number: {
+                simdjson::ondemand::number_type nt;
+                if(node.val.get_number_type().get(nt) != simdjson::SUCCESS)
+                    return meta::type_kind::int64;
+                if(nt == simdjson::ondemand::number_type::floating_point_number)
+                    return meta::type_kind::float64;
+                if(nt == simdjson::ondemand::number_type::unsigned_integer)
+                    return meta::type_kind::uint64;
+                return meta::type_kind::int64;
+            }
+            case simdjson::ondemand::json_type::string: return meta::type_kind::string;
+            case simdjson::ondemand::json_type::array: return meta::type_kind::array;
+            case simdjson::ondemand::json_type::object: return meta::type_kind::structure;
+            default: return meta::type_kind::any;
+        }
+    }
+
+    template <typename Fn>
+    static void for_each_field(node_type node, Fn&& fn) {
+        auto iterate = [&](simdjson::ondemand::object& obj) {
+            for(auto field_result: obj) {
+                simdjson::ondemand::field field;
+                if(std::move(field_result).get(field) != simdjson::SUCCESS)
+                    break;
+                std::string_view key;
+                if(field.unescaped_key().get(key) != simdjson::SUCCESS)
+                    break;
+                fn(key, node_type(std::move(field).value()));
+            }
+        };
+
+        if(node.obj_ptr) {
+            iterate(*node.obj_ptr);
+        } else {
+            simdjson::ondemand::object obj;
+            if(node.val.get_object().get(obj) != simdjson::SUCCESS)
+                return;
+            iterate(obj);
+        }
+    }
+
+    template <typename Fn>
+    static void for_each_element(node_type node, Fn&& fn) {
+        auto iterate = [&](simdjson::ondemand::array& arr) {
+            std::size_t total = 0;
+            if(arr.count_elements().get(total) != simdjson::SUCCESS)
+                return;
+            std::size_t idx = 0;
+            for(auto elem_result: arr) {
+                simdjson::ondemand::value elem;
+                if(std::move(elem_result).get(elem) != simdjson::SUCCESS)
+                    break;
+                fn(idx, total, node_type(std::move(elem)));
+                ++idx;
+            }
+        };
+
+        if(node.arr_ptr) {
+            iterate(*node.arr_ptr);
+        } else {
+            simdjson::ondemand::array arr;
+            if(node.val.get_array().get(arr) != simdjson::SUCCESS)
+                return;
+            iterate(arr);
+        }
+    }
+};
+
+}  // namespace detail
 
 template <typename Config = config::default_config>
 class Deserializer {
@@ -71,6 +168,10 @@ public:
             return std::unexpected(last_error);
         }
 
+        if(pending_object || pending_array) {
+            return false;
+        }
+
         bool is_none = false;
         simdjson::error_code err = simdjson::SUCCESS;
         if(current_value != nullptr) {
@@ -92,199 +193,50 @@ public:
         return is_none;
     }
 
-    template <typename... Ts>
-    status_t deserialize_variant(std::variant<Ts...>& value) {
-        static_assert((std::default_initializable<Ts> && ...),
-                      "variant deserialization requires default-constructible alternatives");
-
-        auto json_type = peek_type();
-        if(!json_type) {
-            return std::unexpected(json_type.error());
-        }
-
-        std::optional<simdjson::ondemand::number_type> number_type = std::nullopt;
-        if(*json_type == simdjson::ondemand::json_type::number) {
-            auto current_number_type = peek_number_type();
-            if(!current_number_type) {
-                return std::unexpected(current_number_type.error());
-            }
-            number_type = *current_number_type;
-        }
-
-        auto raw = consume_raw_json_view();
-        if(!raw) {
-            return std::unexpected(raw.error());
-        }
-
-        if(*json_type == simdjson::ondemand::json_type::object) {
-            /// TODO(kotatsu/serde): Optimize object-variant dispatch with a two-pass strategy.
-            /// Pass 1: walk fields once to collect a lightweight structural signature
-            /// (field names + coarse JSON value categories).
-            /// Use that signature to select a likely target alternative (especially among
-            /// many struct-like alternatives) without trying each candidate parser.
-            /// Pass 2: deserialize exactly once into the selected alternative.
-            /// Target complexity: at most two object traversals regardless of the number
-            /// of struct alternatives in std::variant.
-            bool matched = false;
-            bool considered = false;
-            error_type obj_last_error = error_type::type_mismatch;
-
-            auto try_alternative = [&](auto type_tag) {
-                if(matched) {
-                    return;
-                }
-
-                using alt_t = typename decltype(type_tag)::type;
-                if(!variant_candidate_matches<alt_t>(*json_type, number_type)) {
-                    return;
-                }
-                considered = true;
-
-                auto candidate_status = deserialize_variant_candidate<alt_t>(*raw, value);
-                if(candidate_status) {
-                    matched = true;
-                } else {
-                    obj_last_error = candidate_status.error();
-                }
-            };
-
-            (try_alternative(std::type_identity<Ts>{}), ...);
-
-            if(!matched) {
-                return mark_invalid(considered ? obj_last_error.kind : error_kind::type_mismatch);
-            }
-            return {};
-        }
-
-        bool matched = false;
-        bool considered = false;
-        error_type variant_last_error = error_type::type_mismatch;
-        auto try_alternative = [&](auto type_tag) {
-            if(matched) {
-                return;
-            }
-
-            using alt_t = typename decltype(type_tag)::type;
-            if(!variant_candidate_matches<alt_t>(*json_type, number_type)) {
-                return;
-            }
-
-            considered = true;
-            auto candidate_status = deserialize_variant_candidate<alt_t>(*raw, value);
-            if(candidate_status) {
-                matched = true;
-            } else {
-                variant_last_error = candidate_status.error();
-            }
-        };
-
-        (try_alternative(std::type_identity<Ts>{}), ...);
-
-        if(!considered) {
-            return mark_invalid(error_kind::type_mismatch);
-        }
-        if(!matched) {
-            return mark_invalid(variant_last_error.kind);
-        }
-        return {};
-    }
-
     status_t deserialize_bool(bool& value) {
-        return read_scalar(
-            value,
-            [](simdjson::ondemand::document& doc) { return doc.get_bool(); },
-            [](simdjson::ondemand::value& value) { return value.get_bool(); });
+        return read_scalar(value, [](auto& src) { return src.get_bool(); });
     }
 
     template <codec::int_like T>
     status_t deserialize_int(T& value) {
-        std::int64_t parsed = 0;
-        auto status = read_scalar(
-            parsed,
-            [](simdjson::ondemand::document& doc) { return doc.get_int64(); },
-            [](simdjson::ondemand::value& value) { return value.get_int64(); });
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-
-        auto narrowed = codec::detail::narrow_int<T>(parsed, error_type::number_out_of_range);
-        if(!narrowed) {
-            return mark_invalid(narrowed.error());
-        }
-
-        value = *narrowed;
-        return {};
+        return read_and_narrow<std::int64_t>(
+            value,
+            [](auto& src) { return src.get_int64(); },
+            [](auto p) {
+                return codec::detail::narrow_int<T>(p, error_type::number_out_of_range);
+            });
     }
 
     template <codec::uint_like T>
     status_t deserialize_uint(T& value) {
-        std::uint64_t parsed = 0;
-        auto status = read_scalar(
-            parsed,
-            [](simdjson::ondemand::document& doc) { return doc.get_uint64(); },
-            [](simdjson::ondemand::value& value) { return value.get_uint64(); });
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-
-        auto narrowed = codec::detail::narrow_uint<T>(parsed, error_type::number_out_of_range);
-        if(!narrowed) {
-            return mark_invalid(narrowed.error());
-        }
-
-        value = *narrowed;
-        return {};
+        return read_and_narrow<std::uint64_t>(
+            value,
+            [](auto& src) { return src.get_uint64(); },
+            [](auto p) {
+                return codec::detail::narrow_uint<T>(p, error_type::number_out_of_range);
+            });
     }
 
     template <codec::floating_like T>
     status_t deserialize_float(T& value) {
-        double parsed = 0.0;
-        auto status = read_scalar(
-            parsed,
-            [](simdjson::ondemand::document& doc) { return doc.get_double(); },
-            [](simdjson::ondemand::value& value) { return value.get_double(); });
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-
-        auto narrowed = codec::detail::narrow_float<T>(parsed, error_type::number_out_of_range);
-        if(!narrowed) {
-            return mark_invalid(narrowed.error());
-        }
-
-        value = *narrowed;
-        return {};
+        return read_and_narrow<double>(
+            value,
+            [](auto& src) { return src.get_double(); },
+            [](auto p) {
+                return codec::detail::narrow_float<T>(p, error_type::number_out_of_range);
+            });
     }
 
     status_t deserialize_char(char& value) {
-        std::string_view text;
-        auto status = read_scalar(
-            text,
-            [](simdjson::ondemand::document& doc) { return doc.get_string(); },
-            [](simdjson::ondemand::value& value) { return value.get_string(); });
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-
-        auto narrowed = codec::detail::narrow_char(text, error_type::type_mismatch);
-        if(!narrowed) {
-            return mark_invalid(narrowed.error());
-        }
-
-        value = *narrowed;
-        return {};
+        return read_and_narrow<std::string_view>(
+            value,
+            [](auto& src) { return src.get_string(); },
+            [](auto p) { return codec::detail::narrow_char(p, error_type::type_mismatch); });
     }
 
     status_t deserialize_str(std::string& value) {
         std::string_view text;
-        auto status = read_scalar(
-            text,
-            [](simdjson::ondemand::document& doc) { return doc.get_string(); },
-            [](simdjson::ondemand::value& value) { return value.get_string(); });
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-
+        KOTA_EXPECTED_TRY(read_scalar(text, [](auto& src) { return src.get_string(); }));
         value.assign(text.data(), text.size());
         return {};
     }
@@ -307,63 +259,99 @@ public:
         return end_array();
     }
 
-    result_t<content::Value> capture_dom_value() {
-        if(!is_valid) {
-            return std::unexpected(last_error);
-        }
-
-        content::Value out;
-        if(current_value != nullptr) {
-            KOTA_EXPECTED_TRY(build_dom_from_value(*current_value, out));
-        } else {
-            if(root_consumed) {
-                return mark_invalid();
-            }
-            simdjson::ondemand::value root_value;
-            auto err = document.get_value().get(root_value);
-            if(err != simdjson::SUCCESS) {
-                return mark_invalid(err);
-            }
-            root_consumed = true;
-            KOTA_EXPECTED_TRY(build_dom_from_value(root_value, out));
-        }
-        return out;
-    }
-
-    result_t<simdjson::padded_string_view> deserialize_raw_json_view() {
-        return consume_raw_json_view();
-    }
-
     result_t<simdjson::ondemand::json_type> peek_type() {
-        return read_source<simdjson::ondemand::json_type>([](auto& doc) { return doc.type(); },
-                                                          [](auto& val) { return val.type(); },
+        return read_source<simdjson::ondemand::json_type>([](auto& src) { return src.type(); },
                                                           false);
     }
 
+    result_t<simdjson::ondemand::number_type> peek_number_type() {
+        return read_source<simdjson::ondemand::number_type>(
+            [](auto& src) { return src.get_number_type(); },
+            false);
+    }
+
+    result_t<meta::type_kind> peek_kind() {
+        KOTA_EXPECTED_TRY_V(auto type, peek_type());
+        std::optional<simdjson::ondemand::number_type> nt;
+        if(type == simdjson::ondemand::json_type::number) {
+            KOTA_EXPECTED_TRY_V(auto ntype, peek_number_type());
+            nt = ntype;
+        }
+        return map_to_kind(type, nt);
+    }
+
+    result_t<simdjson::padded_string_view> deserialize_raw_json_view() {
+        KOTA_EXPECTED_TRY_V(auto raw, read_source<std::string_view>([](auto& src) {
+                                return src.raw_json();
+                            }));
+        return to_padded_subview(raw);
+    }
+
+    template <typename... Ts>
+    status_t deserialize_variant(std::variant<Ts...>& value) {
+        static_assert((std::default_initializable<Ts> && ...),
+                      "variant deserialization requires default-constructible alternatives");
+
+        auto json_type = peek_type();
+        if(!json_type) {
+            return std::unexpected(json_type.error());
+        }
+
+        std::optional<std::size_t> best;
+        using adapter = detail::simdjson_source_adapter;
+
+        if(*json_type == simdjson::ondemand::json_type::object) {
+            KOTA_EXPECTED_TRY_V(auto obj, read_source<simdjson::ondemand::object>([](auto& src) {
+                                    return src.get_object();
+                                }));
+            best =
+                codec::select_variant_index<adapter, config_type, Ts...>(adapter::node_type(&obj));
+            if(auto r = obj.reset(); r.error() != simdjson::SUCCESS) {
+                return mark_invalid(r.error());
+            }
+            pending_object.emplace(std::move(obj));
+        } else if(*json_type == simdjson::ondemand::json_type::array) {
+            KOTA_EXPECTED_TRY_V(auto arr, read_source<simdjson::ondemand::array>([](auto& src) {
+                                    return src.get_array();
+                                }));
+            best =
+                codec::select_variant_index<adapter, config_type, Ts...>(adapter::node_type(&arr));
+            if(auto r = arr.reset(); r.error() != simdjson::SUCCESS) {
+                return mark_invalid(r.error());
+            }
+            pending_array.emplace(std::move(arr));
+        } else {
+            std::optional<simdjson::ondemand::number_type> number_type = std::nullopt;
+            if(*json_type == simdjson::ondemand::json_type::number) {
+                KOTA_EXPECTED_TRY_V(auto nt, peek_number_type());
+                number_type = nt;
+            }
+            best = codec::select_variant_index<config_type, Ts...>(
+                map_to_kind(*json_type, number_type));
+        }
+
+        if(!best) {
+            pending_object.reset();
+            pending_array.reset();
+            return mark_invalid(error_kind::type_mismatch);
+        }
+
+        auto result = codec::deserialize_variant_at<error_type>(*this, value, *best);
+        pending_object.reset();
+        pending_array.reset();
+        return result;
+    }
+
     status_t begin_object() {
-        KOTA_EXPECTED_TRY_V(
-            auto obj,
-            read_source<simdjson::ondemand::object>([](auto& doc) { return doc.get_object(); },
-                                                    [](auto& val) { return val.get_object(); }));
-        current_value = nullptr;  // prevent dangling after push_back
-
-        deser_frame frame;
-        frame.object = std::move(obj);
-
-        auto begin_result = frame.object.begin();
-        auto begin_err = std::move(begin_result).get(frame.iter);
-        if(begin_err != simdjson::SUCCESS) {
-            return mark_invalid(begin_err);
+        if(pending_object) {
+            auto obj = std::move(*pending_object);
+            pending_object.reset();
+            return begin_object(std::move(obj));
         }
-
-        auto end_result = frame.object.end();
-        auto end_err = std::move(end_result).get(frame.end_iter);
-        if(end_err != simdjson::SUCCESS) {
-            return mark_invalid(end_err);
-        }
-
-        deser_stack.push_back(std::move(frame));
-        return {};
+        KOTA_EXPECTED_TRY_V(auto obj, read_source<simdjson::ondemand::object>([](auto& src) {
+                                return src.get_object();
+                            }));
+        return begin_object(std::move(obj));
     }
 
     result_t<std::optional<std::string_view>> next_field() {
@@ -372,7 +360,6 @@ public:
         }
         auto& frame = deser_stack.back();
 
-        // Advance past the previous field
         if(frame.has_pending_value) {
             ++frame.iter;
             frame.has_pending_value = false;
@@ -409,7 +396,11 @@ public:
         if(!frame.has_pending_value) {
             return mark_invalid();
         }
-        KOTA_EXPECTED_TRY(skip_value(frame.pending_value));
+        std::string_view raw{};
+        auto err = frame.pending_value.raw_json().get(raw);
+        if(err != simdjson::SUCCESS) {
+            return mark_invalid(err);
+        }
         ++frame.iter;
         frame.has_pending_value = false;
         current_value = nullptr;
@@ -421,7 +412,6 @@ public:
             return mark_invalid();
         }
         auto& frame = deser_stack.back();
-        // Advance past the last consumed field if needed
         if(frame.has_pending_value) {
             ++frame.iter;
         }
@@ -431,29 +421,15 @@ public:
     }
 
     status_t begin_array() {
-        KOTA_EXPECTED_TRY_V(
-            auto array,
-            read_source<simdjson::ondemand::array>([](auto& doc) { return doc.get_array(); },
-                                                   [](auto& val) { return val.get_array(); }));
-        current_value = nullptr;
-
-        array_frame frame;
-        frame.array = std::move(array);
-
-        auto begin_result = frame.array.begin();
-        auto begin_err = std::move(begin_result).get(frame.iter);
-        if(begin_err != simdjson::SUCCESS) {
-            return mark_invalid(begin_err);
+        if(pending_array) {
+            auto arr = std::move(*pending_array);
+            pending_array.reset();
+            return begin_array(std::move(arr));
         }
-
-        auto end_result = frame.array.end();
-        auto end_err = std::move(end_result).get(frame.end_iter);
-        if(end_err != simdjson::SUCCESS) {
-            return mark_invalid(end_err);
-        }
-
-        array_stack.push_back(std::move(frame));
-        return {};
+        KOTA_EXPECTED_TRY_V(auto arr, read_source<simdjson::ondemand::array>([](auto& src) {
+                                return src.get_array();
+                            }));
+        return begin_array(std::move(arr));
     }
 
     result_t<bool> next_element() {
@@ -462,7 +438,6 @@ public:
         }
         auto& frame = array_stack.back();
 
-        // Advance past previous element
         if(frame.has_pending_value) {
             ++frame.iter;
             frame.has_pending_value = false;
@@ -497,123 +472,73 @@ public:
         return {};
     }
 
-private:
-    status_t build_dom_from_value(simdjson::ondemand::value& value, content::Value& out) {
-        simdjson::ondemand::json_type type;
-        auto err = value.type().get(type);
+    result_t<std::string> scan_object_field(std::string_view field_name) {
+        KOTA_EXPECTED_TRY_V(auto obj, read_source<simdjson::ondemand::object>([](auto& src) {
+                                return src.get_object();
+                            }));
+        current_value = nullptr;
+        std::string result;
+        bool found = false;
+        for(auto field_result: obj) {
+            simdjson::ondemand::field field;
+            if(std::move(field_result).get(field) != simdjson::SUCCESS)
+                break;
+            std::string_view key;
+            if(field.unescaped_key().get(key) != simdjson::SUCCESS)
+                break;
+            if(key == field_name) {
+                std::string_view val;
+                auto err = std::move(field).value().get_string().get(val);
+                if(err != simdjson::SUCCESS) {
+                    return mark_invalid(err);
+                }
+                result = std::string(val);
+                found = true;
+                break;
+            }
+        }
+        if(!found) {
+            return std::unexpected(
+                error_type::custom(std::format("missing field '{}'", field_name)));
+        }
+        if(auto r = obj.reset(); r.error() != simdjson::SUCCESS) {
+            return mark_invalid(r.error());
+        }
+        pending_object.emplace(std::move(obj));
+        return result;
+    }
+
+    result_t<std::string> buffer_raw_field_value() {
+        if(!is_valid || deser_stack.empty()) {
+            return mark_invalid();
+        }
+        auto& frame = deser_stack.back();
+        if(!frame.has_pending_value) {
+            return mark_invalid();
+        }
+        std::string_view raw;
+        auto err = frame.pending_value.raw_json().get(raw);
         if(err != simdjson::SUCCESS) {
             return mark_invalid(err);
         }
-
-        switch(type) {
-            case simdjson::ondemand::json_type::null: {
-                out = content::Value(nullptr);
-                return {};
-            }
-            case simdjson::ondemand::json_type::boolean: {
-                bool b = false;
-                err = value.get_bool().get(b);
-                if(err != simdjson::SUCCESS) {
-                    return mark_invalid(err);
-                }
-                out = content::Value(b);
-                return {};
-            }
-            case simdjson::ondemand::json_type::number: {
-                simdjson::ondemand::number_type nt{};
-                err = value.get_number_type().get(nt);
-                if(err != simdjson::SUCCESS) {
-                    return mark_invalid(err);
-                }
-                if(nt == simdjson::ondemand::number_type::signed_integer) {
-                    std::int64_t i = 0;
-                    err = value.get_int64().get(i);
-                    if(err != simdjson::SUCCESS) {
-                        return mark_invalid(err);
-                    }
-                    out = content::Value(i);
-                } else if(nt == simdjson::ondemand::number_type::unsigned_integer) {
-                    std::uint64_t u = 0;
-                    err = value.get_uint64().get(u);
-                    if(err != simdjson::SUCCESS) {
-                        return mark_invalid(err);
-                    }
-                    out = content::Value(u);
-                } else {
-                    double d = 0.0;
-                    err = value.get_double().get(d);
-                    if(err != simdjson::SUCCESS) {
-                        return mark_invalid(err);
-                    }
-                    out = content::Value(d);
-                }
-                return {};
-            }
-            case simdjson::ondemand::json_type::string: {
-                std::string_view s;
-                err = value.get_string().get(s);
-                if(err != simdjson::SUCCESS) {
-                    return mark_invalid(err);
-                }
-                out = content::Value(std::string(s));
-                return {};
-            }
-            case simdjson::ondemand::json_type::array: {
-                simdjson::ondemand::array arr;
-                err = value.get_array().get(arr);
-                if(err != simdjson::SUCCESS) {
-                    return mark_invalid(err);
-                }
-                content::Array out_arr;
-                for(auto item: arr) {
-                    simdjson::ondemand::value child_v;
-                    auto item_err = std::move(item).get(child_v);
-                    if(item_err != simdjson::SUCCESS) {
-                        return mark_invalid(item_err);
-                    }
-                    content::Value child;
-                    KOTA_EXPECTED_TRY(build_dom_from_value(child_v, child));
-                    out_arr.push_back(std::move(child));
-                }
-                out = content::Value(std::move(out_arr));
-                return {};
-            }
-            case simdjson::ondemand::json_type::object: {
-                simdjson::ondemand::object obj;
-                err = value.get_object().get(obj);
-                if(err != simdjson::SUCCESS) {
-                    return mark_invalid(err);
-                }
-                content::Object out_obj;
-                for(auto field_result: obj) {
-                    simdjson::ondemand::field field;
-                    auto ferr = std::move(field_result).get(field);
-                    if(ferr != simdjson::SUCCESS) {
-                        return mark_invalid(ferr);
-                    }
-                    std::string key;
-                    auto kerr = field.unescaped_key(key);
-                    if(kerr != simdjson::SUCCESS) {
-                        return mark_invalid(kerr);
-                    }
-                    auto child_v = std::move(field).value();
-                    content::Value child;
-                    KOTA_EXPECTED_TRY(build_dom_from_value(child_v, child));
-                    out_obj.insert(std::move(key), std::move(child));
-                }
-                out = content::Value(std::move(out_obj));
-                return {};
-            }
-            default: break;
-        }
-        return mark_invalid();
+        std::string result(raw);
+        ++frame.iter;
+        frame.has_pending_value = false;
+        current_value = nullptr;
+        return result;
     }
 
-    /// Unified root-vs-value dispatch. Calls `doc_fn(document)` or `val_fn(*current_value)`,
-    /// each returning a simdjson result whose `.get(T&)` populates the output.
-    /// When `consume` is true, marks root as consumed on success.
-    template <typename T, typename DocFn, typename ValFn>
-    result_t<T> read_source(DocFn&& doc_fn, ValFn&& val_fn, bool consume = true) {
+    template <typename T>
+    status_t replay_buffered_field(std::string_view raw_json, T& value) {
+        Deserializer sub(raw_json);
+        KOTA_EXPECTED_TRY(codec::deserialize(sub, value));
+        KOTA_EXPECTED_TRY(sub.finish());
+        return {};
+    }
+
+private:
+    template <typename T, typename Fn>
+    result_t<T> read_source(Fn&& fn, bool consume = true) {
         if(!is_valid) {
             return std::unexpected(last_error);
         }
@@ -621,12 +546,12 @@ private:
         T out{};
         simdjson::error_code err = simdjson::SUCCESS;
         if(current_value != nullptr) {
-            err = std::forward<ValFn>(val_fn)(*current_value).get(out);
+            err = fn(*current_value).get(out);
         } else {
             if(root_consumed) {
                 return mark_invalid();
             }
-            err = std::forward<DocFn>(doc_fn)(document).get(out);
+            err = fn(document).get(out);
             if(err == simdjson::SUCCESS && consume) {
                 root_consumed = true;
             }
@@ -638,9 +563,9 @@ private:
         return out;
     }
 
-    template <typename T, typename DocFn, typename ValFn>
-    status_t read_scalar(T& out, DocFn&& doc_fn, ValFn&& val_fn) {
-        auto result = read_source<T>(std::forward<DocFn>(doc_fn), std::forward<ValFn>(val_fn));
+    template <typename T, typename Fn>
+    status_t read_scalar(T& out, Fn&& fn) {
+        auto result = read_source<T>(std::forward<Fn>(fn));
         if(!result) {
             return std::unexpected(result.error());
         }
@@ -648,95 +573,78 @@ private:
         return {};
     }
 
-    status_t skip_value(simdjson::ondemand::value& value) {
-        std::string_view raw{};
-        auto err = value.raw_json().get(raw);
-        if(err != simdjson::SUCCESS) {
-            return mark_invalid(err);
+    template <typename Parsed, typename T, typename Fn, typename NarrowFn>
+    status_t read_and_narrow(T& value, Fn&& fn, NarrowFn&& narrow_fn) {
+        Parsed parsed{};
+        KOTA_EXPECTED_TRY(read_scalar(parsed, std::forward<Fn>(fn)));
+        auto narrowed = std::forward<NarrowFn>(narrow_fn)(parsed);
+        if(!narrowed) {
+            return mark_invalid(narrowed.error());
         }
+        value = *narrowed;
         return {};
     }
 
-    template <typename T>
-    status_t deserialize_from_value(simdjson::ondemand::value& value, T& out) {
-        struct ValueScope {
-            explicit ValueScope(Deserializer& deserializer, simdjson::ondemand::value& value) :
-                deserializer(deserializer), previous(deserializer.current_value) {
-                deserializer.current_value = &value;
-            }
+    status_t begin_object(simdjson::ondemand::object obj) {
+        current_value = nullptr;
+        deser_frame frame;
+        frame.object = std::move(obj);
 
-            ~ValueScope() {
-                deserializer.current_value = previous;
-            }
+        auto begin_result = frame.object.begin();
+        auto begin_err = std::move(begin_result).get(frame.iter);
+        if(begin_err != simdjson::SUCCESS) {
+            return mark_invalid(begin_err);
+        }
 
-            Deserializer& deserializer;
-            simdjson::ondemand::value* previous;
-        };
+        auto end_result = frame.object.end();
+        auto end_err = std::move(end_result).get(frame.end_iter);
+        if(end_err != simdjson::SUCCESS) {
+            return mark_invalid(end_err);
+        }
 
-        ValueScope scope(*this, value);
-        return codec::deserialize(*this, out);
+        deser_stack.push_back(std::move(frame));
+        return {};
     }
 
-    result_t<simdjson::ondemand::number_type> peek_number_type() {
-        return read_source<simdjson::ondemand::number_type>(
-            [](auto& doc) { return doc.get_number_type(); },
-            [](auto& val) { return val.get_number_type(); },
-            false);
+    status_t begin_array(simdjson::ondemand::array arr) {
+        current_value = nullptr;
+        array_frame frame;
+        frame.array = std::move(arr);
+
+        auto begin_result = frame.array.begin();
+        auto begin_err = std::move(begin_result).get(frame.iter);
+        if(begin_err != simdjson::SUCCESS) {
+            return mark_invalid(begin_err);
+        }
+
+        auto end_result = frame.array.end();
+        auto end_err = std::move(end_result).get(frame.end_iter);
+        if(end_err != simdjson::SUCCESS) {
+            return mark_invalid(end_err);
+        }
+
+        array_stack.push_back(std::move(frame));
+        return {};
     }
 
-    static codec::type_hint
-        map_to_type_hint(simdjson::ondemand::json_type json_type,
-                         std::optional<simdjson::ondemand::number_type> number_type) {
+    static meta::type_kind map_to_kind(simdjson::ondemand::json_type json_type,
+                                       std::optional<simdjson::ondemand::number_type> number_type) {
         switch(json_type) {
-            case simdjson::ondemand::json_type::null: return codec::type_hint::null_like;
-            case simdjson::ondemand::json_type::boolean: return codec::type_hint::boolean;
-            case simdjson::ondemand::json_type::number: {
-                if(!number_type.has_value()) {
-                    return codec::type_hint::integer | codec::type_hint::floating;
+            case simdjson::ondemand::json_type::null: return meta::type_kind::null;
+            case simdjson::ondemand::json_type::boolean: return meta::type_kind::boolean;
+            case simdjson::ondemand::json_type::number:
+                if(number_type.has_value()) {
+                    if(*number_type == simdjson::ondemand::number_type::floating_point_number)
+                        return meta::type_kind::float64;
+                    if(*number_type == simdjson::ondemand::number_type::unsigned_integer)
+                        return meta::type_kind::uint64;
                 }
-                if(*number_type == simdjson::ondemand::number_type::signed_integer ||
-                   *number_type == simdjson::ondemand::number_type::unsigned_integer) {
-                    return codec::type_hint::integer;
-                }
-                return codec::type_hint::floating;
-            }
-            case simdjson::ondemand::json_type::string: return codec::type_hint::string;
-            case simdjson::ondemand::json_type::array: return codec::type_hint::array;
-            case simdjson::ondemand::json_type::object: return codec::type_hint::object;
-            default: return codec::type_hint::any;
+                return meta::type_kind::int64;
+            case simdjson::ondemand::json_type::string: return meta::type_kind::string;
+            case simdjson::ondemand::json_type::array: return meta::type_kind::array;
+            case simdjson::ondemand::json_type::object: return meta::type_kind::structure;
+            default: return meta::type_kind::any;
         }
-    }
-
-    template <typename T>
-    constexpr static bool
-        variant_candidate_matches(simdjson::ondemand::json_type json_type,
-                                  std::optional<simdjson::ondemand::number_type> number_type) {
-        return codec::has_any(codec::expected_type_hints<T>(),
-                              map_to_type_hint(json_type, number_type));
-    }
-
-    template <typename Alt, typename... Ts>
-    static auto deserialize_variant_candidate(simdjson::padded_string_view raw,
-                                              std::variant<Ts...>& value) -> status_t {
-        Alt candidate{};
-        Deserializer probe(raw);
-        if(!probe.valid()) {
-            return std::unexpected(probe.error());
-        }
-
-        KOTA_EXPECTED_TRY(codec::deserialize(probe, candidate));
-        KOTA_EXPECTED_TRY(probe.finish());
-
-        value = std::move(candidate);
-        return {};
-    }
-
-    result_t<simdjson::padded_string_view> consume_raw_json_view() {
-        KOTA_EXPECTED_TRY_V(
-            auto raw,
-            read_source<std::string_view>([](auto& doc) { return doc.raw_json(); },
-                                          [](auto& val) { return val.raw_json(); }));
-        return to_padded_subview(raw);
     }
 
     result_t<simdjson::padded_string_view> to_padded_subview(std::string_view raw) {
@@ -804,7 +712,6 @@ private:
             offset = total;
         }
 
-        // Compute line and column by scanning input
         std::size_t line = 1;
         std::size_t col = 1;
         for(std::size_t i = 0; i < offset; ++i) {
@@ -818,12 +725,6 @@ private:
 
         return codec::source_location{line, col, offset};
     }
-
-private:
-    bool is_valid = true;
-    bool root_consumed = false;
-    error_type last_error;
-    simdjson::ondemand::value* current_value = nullptr;
 
     struct deser_frame {
         simdjson::ondemand::object object{};
@@ -841,6 +742,14 @@ private:
         simdjson::ondemand::value pending_value{};
         bool has_pending_value = false;
     };
+
+    bool is_valid = true;
+    bool root_consumed = false;
+    error_type last_error;
+    simdjson::ondemand::value* current_value = nullptr;
+
+    std::optional<simdjson::ondemand::object> pending_object;
+    std::optional<simdjson::ondemand::array> pending_array;
 
     std::vector<deser_frame> deser_stack;
     std::vector<array_frame> array_stack;

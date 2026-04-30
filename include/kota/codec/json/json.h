@@ -48,41 +48,6 @@ auto to_string(const T& value, std::optional<std::size_t> initial_capacity = std
 
 namespace kota::codec {
 
-template <typename T>
-concept json_dynamic_dom_type =
-    std::same_as<T, json::Value> || std::same_as<T, json::Array> || std::same_as<T, json::Object>;
-
-template <typename Config, json_dynamic_dom_type T>
-struct deserialize_traits<json::Deserializer<Config>, T> {
-    using error_type = json::error;
-
-    static auto deserialize(json::Deserializer<Config>& deserializer, T& value)
-        -> std::expected<void, error_type> {
-        auto dom = deserializer.capture_dom_value();
-        if(!dom) {
-            return std::unexpected(dom.error());
-        }
-        if constexpr(std::same_as<T, json::Value>) {
-            value = std::move(*dom);
-            return {};
-        } else if constexpr(std::same_as<T, json::Array>) {
-            content::Array* arr = dom->get_array();
-            if(arr == nullptr) {
-                return std::unexpected(json::error_kind::type_mismatch);
-            }
-            value = std::move(*arr);
-            return {};
-        } else {
-            content::Object* obj = dom->get_object();
-            if(obj == nullptr) {
-                return std::unexpected(json::error_kind::type_mismatch);
-            }
-            value = std::move(*obj);
-            return {};
-        }
-    }
-};
-
 template <typename Config>
 struct serialize_traits<json::Serializer<Config>, RawValue> {
     using value_type = typename json::Serializer<Config>::value_type;

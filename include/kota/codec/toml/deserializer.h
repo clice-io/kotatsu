@@ -76,6 +76,51 @@ auto select_root_node(const ::toml::table& table) -> const ::toml::node* {
 
 }  // namespace detail
 
+struct toml_source_adapter {
+    using node_type = const ::toml::node*;
+
+    static meta::type_kind kind_of(node_type node) {
+        if(!node)
+            return meta::type_kind::null;
+        if(node->is_boolean())
+            return meta::type_kind::boolean;
+        if(node->is_integer())
+            return meta::type_kind::int64;
+        if(node->is_floating_point())
+            return meta::type_kind::float64;
+        if(node->is_string())
+            return meta::type_kind::string;
+        if(node->is_array())
+            return meta::type_kind::array;
+        if(node->is_table())
+            return meta::type_kind::structure;
+        return meta::type_kind::any;
+    }
+
+    template <typename Fn>
+    static void for_each_field(node_type node, Fn&& fn) {
+        if(!node)
+            return;
+        if(const auto* tbl = node->as_table()) {
+            for(const auto& [k, v]: *tbl) {
+                fn(std::string_view(k), &v);
+            }
+        }
+    }
+
+    template <typename Fn>
+    static void for_each_element(node_type node, Fn&& fn) {
+        if(!node)
+            return;
+        if(const auto* arr = node->as_array()) {
+            std::size_t total = arr->size();
+            for(std::size_t i = 0; i < total; ++i) {
+                fn(i, total, arr->get(i));
+            }
+        }
+    }
+};
+
 template <typename Config = config::default_config>
 class Deserializer {
 public:
@@ -130,24 +175,21 @@ public:
 
     template <typename... Ts>
     status_t deserialize_variant(std::variant<Ts...>& value) {
-        auto kind = peek_node_kind();
-        if(!kind) {
-            return std::unexpected(kind.error());
+        static_assert((std::default_initializable<Ts> && ...),
+                      "variant deserialization requires default-constructible alternatives");
+
+        auto node = peek_node();
+        if(!node) {
+            return std::unexpected(node.error());
         }
 
-        auto source = consume_node();
-        if(!source) {
-            return std::unexpected(source.error());
+        auto best = codec::select_variant_index<toml_source_adapter, config_type, Ts...>(*node);
+
+        if(!best) {
+            return mark_invalid(error_type::type_mismatch);
         }
 
-        auto result = codec::try_variant_dispatch<Deserializer>(*source,
-                                                                map_to_type_hint(*kind),
-                                                                value,
-                                                                error_type::type_mismatch);
-        if(!result) {
-            return mark_invalid(result.error());
-        }
-        return {};
+        return codec::deserialize_variant_at<error_type>(*this, value, *best);
     }
 
     status_t deserialize_bool(bool& value) {
@@ -162,100 +204,69 @@ public:
 
     template <codec::int_like T>
     status_t deserialize_int(T& value) {
-        std::int64_t parsed = 0;
-        auto status = read_scalar(parsed, [](const ::toml::node& node) -> result_t<std::int64_t> {
-            auto parsed = node.value<std::int64_t>();
-            if(!parsed.has_value()) {
-                return std::unexpected(error_kind::type_mismatch);
-            }
-            return *parsed;
-        });
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-
-        auto narrowed = codec::detail::narrow_int<T>(parsed, error_kind::number_out_of_range);
-        if(!narrowed) {
-            return mark_invalid(narrowed.error());
-        }
-
-        value = *narrowed;
-        return {};
+        return read_and_narrow<std::int64_t>(
+            value,
+            [](const ::toml::node& node) -> result_t<std::int64_t> {
+                auto parsed = node.value<std::int64_t>();
+                if(!parsed.has_value()) {
+                    return std::unexpected(error_kind::type_mismatch);
+                }
+                return *parsed;
+            },
+            [](auto p) {
+                return codec::detail::narrow_int<T>(p, error_kind::number_out_of_range);
+            });
     }
 
     template <codec::uint_like T>
     status_t deserialize_uint(T& value) {
-        std::int64_t parsed = 0;
-        auto status = read_scalar(parsed, [](const ::toml::node& node) -> result_t<std::int64_t> {
-            auto parsed = node.value<std::int64_t>();
-            if(!parsed.has_value()) {
-                return std::unexpected(error_kind::type_mismatch);
-            }
-            return *parsed;
-        });
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-
-        if(parsed < 0) {
-            return mark_invalid(error_kind::number_out_of_range);
-        }
-
-        const auto unsigned_value = static_cast<std::uint64_t>(parsed);
-        auto narrowed =
-            codec::detail::narrow_uint<T>(unsigned_value, error_kind::number_out_of_range);
-        if(!narrowed) {
-            return mark_invalid(narrowed.error());
-        }
-
-        value = *narrowed;
-        return {};
+        return read_and_narrow<std::int64_t>(
+            value,
+            [](const ::toml::node& node) -> result_t<std::int64_t> {
+                auto parsed = node.value<std::int64_t>();
+                if(!parsed.has_value()) {
+                    return std::unexpected(error_kind::type_mismatch);
+                }
+                return *parsed;
+            },
+            [](std::int64_t p) -> std::expected<T, error_type> {
+                if(p < 0) {
+                    return std::unexpected(error_kind::number_out_of_range);
+                }
+                return codec::detail::narrow_uint<T>(static_cast<std::uint64_t>(p),
+                                                     error_kind::number_out_of_range);
+            });
     }
 
     template <codec::floating_like T>
     status_t deserialize_float(T& value) {
-        double parsed = 0.0;
-        auto status = read_scalar(parsed, [](const ::toml::node& node) -> result_t<double> {
-            auto parsed = node.value<double>();
-            if(!parsed.has_value()) {
-                return std::unexpected(error_kind::type_mismatch);
-            }
-            return *parsed;
-        });
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-
-        auto narrowed = codec::detail::narrow_float<T>(parsed, error_kind::number_out_of_range);
-        if(!narrowed) {
-            return mark_invalid(narrowed.error());
-        }
-
-        value = *narrowed;
-        return {};
+        return read_and_narrow<double>(
+            value,
+            [](const ::toml::node& node) -> result_t<double> {
+                auto parsed = node.value<double>();
+                if(!parsed.has_value()) {
+                    return std::unexpected(error_kind::type_mismatch);
+                }
+                return *parsed;
+            },
+            [](auto p) {
+                return codec::detail::narrow_float<T>(p, error_kind::number_out_of_range);
+            });
     }
 
     status_t deserialize_char(char& value) {
-        std::string text;
-        auto status = read_scalar(text, [](const ::toml::node& node) -> result_t<std::string> {
-            auto parsed = node.value<std::string>();
-            if(!parsed.has_value()) {
-                return std::unexpected(error_kind::type_mismatch);
-            }
-            return std::move(*parsed);
-        });
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-
-        auto narrowed =
-            codec::detail::narrow_char(std::string_view(text), error_kind::type_mismatch);
-        if(!narrowed) {
-            return mark_invalid(narrowed.error());
-        }
-
-        value = *narrowed;
-        return {};
+        return read_and_narrow<std::string>(
+            value,
+            [](const ::toml::node& node) -> result_t<std::string> {
+                auto parsed = node.value<std::string>();
+                if(!parsed.has_value()) {
+                    return std::unexpected(error_kind::type_mismatch);
+                }
+                return std::move(*parsed);
+            },
+            [](const std::string& p) {
+                return codec::detail::narrow_char(std::string_view(p), error_kind::type_mismatch);
+            });
     }
 
     status_t deserialize_str(std::string& value) {
@@ -300,6 +311,38 @@ public:
             return std::unexpected(array.error());
         }
         return **array;
+    }
+
+    result_t<meta::type_kind> peek_kind() {
+        auto node = peek_node();
+        if(!node) {
+            return std::unexpected(node.error());
+        }
+        return toml_source_adapter::kind_of(*node);
+    }
+
+    result_t<std::string> scan_object_field(std::string_view field_name) {
+        auto node = peek_node();
+        if(!node) {
+            return std::unexpected(node.error());
+        }
+        if(*node == nullptr) {
+            return mark_invalid(error_kind::type_mismatch);
+        }
+        const auto* table = (*node)->as_table();
+        if(table == nullptr) {
+            return mark_invalid(error_kind::type_mismatch);
+        }
+        auto it = table->find(field_name);
+        if(it == table->cend()) {
+            return std::unexpected(
+                error_type::custom(std::format("missing field '{}'", field_name)));
+        }
+        auto val = it->second.template value<std::string_view>();
+        if(!val.has_value()) {
+            return mark_invalid(error_kind::type_mismatch);
+        }
+        return std::string(*val);
     }
 
     status_t begin_object() {
@@ -392,16 +435,17 @@ public:
     }
 
 private:
-    enum class node_kind : std::uint8_t {
-        none,
-        boolean,
-        integer,
-        floating,
-        string,
-        array,
-        table,
-        unknown,
-    };
+    template <typename Parsed, typename T, typename Fn, typename NarrowFn>
+    status_t read_and_narrow(T& value, Fn&& fn, NarrowFn&& narrow_fn) {
+        Parsed parsed{};
+        KOTA_EXPECTED_TRY(read_scalar(parsed, std::forward<Fn>(fn)));
+        auto narrowed = std::forward<NarrowFn>(narrow_fn)(parsed);
+        if(!narrowed) {
+            return mark_invalid(narrowed.error());
+        }
+        value = *narrowed;
+        return {};
+    }
 
     template <typename T, typename Reader>
     status_t read_scalar(T& out, Reader&& reader) {
@@ -420,76 +464,6 @@ private:
 
         out = std::move(*parsed);
         return {};
-    }
-
-    template <typename T>
-    status_t deserialize_from_node(const ::toml::node* node, T& out) {
-        struct value_scope {
-            value_scope(Deserializer& deserializer, const ::toml::node* value) :
-                deserializer(deserializer), previous_has_current(deserializer.has_current_value),
-                previous_current(deserializer.current_node) {
-                deserializer.current_node = value;
-                deserializer.has_current_value = true;
-            }
-
-            ~value_scope() {
-                deserializer.current_node = previous_current;
-                deserializer.has_current_value = previous_has_current;
-            }
-
-            Deserializer& deserializer;
-            bool previous_has_current;
-            const ::toml::node* previous_current;
-        };
-
-        value_scope scope(*this, node);
-        return codec::deserialize(*this, out);
-    }
-
-    result_t<node_kind> peek_node_kind() {
-        auto node = peek_node();
-        if(!node) {
-            return std::unexpected(node.error());
-        }
-        return classify_node(*node);
-    }
-
-    static auto classify_node(const ::toml::node* node) -> node_kind {
-        if(node == nullptr) {
-            return node_kind::none;
-        }
-        if(node->is_boolean()) {
-            return node_kind::boolean;
-        }
-        if(node->is_integer()) {
-            return node_kind::integer;
-        }
-        if(node->is_floating_point()) {
-            return node_kind::floating;
-        }
-        if(node->is_string()) {
-            return node_kind::string;
-        }
-        if(node->is_array()) {
-            return node_kind::array;
-        }
-        if(node->is_table()) {
-            return node_kind::table;
-        }
-        return node_kind::unknown;
-    }
-
-    static codec::type_hint map_to_type_hint(node_kind kind) {
-        switch(kind) {
-            case node_kind::none: return codec::type_hint::null_like;
-            case node_kind::boolean: return codec::type_hint::boolean;
-            case node_kind::integer: return codec::type_hint::integer;
-            case node_kind::floating: return codec::type_hint::floating;
-            case node_kind::string: return codec::type_hint::string;
-            case node_kind::array: return codec::type_hint::array;
-            case node_kind::table: return codec::type_hint::object;
-            default: return codec::type_hint::any;
-        }
     }
 
     result_t<const ::toml::node*> access_node(bool consume) {
