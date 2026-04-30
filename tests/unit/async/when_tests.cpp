@@ -1906,6 +1906,30 @@ TEST_CASE(exception_takes_precedence_over_error) {
     EXPECT_TRUE(t->is_failed());
     EXPECT_THROWS(t.result());
 }
+
+TEST_CASE(only_first_exception_rethrown) {
+    auto thrower = [&](int ms, const char* msg) -> task<> {
+        co_await sleep(ms, loop);
+        throw std::runtime_error(msg);
+    };
+
+    auto driver = [&]() -> task<> {
+        task_group<> group(loop);
+        group.spawn(thrower(1, "first"));
+        group.spawn(thrower(1, "second"));
+        group.spawn(thrower(1, "third"));
+        co_await group.join();
+    };
+
+    auto t = driver();
+    schedule_all(t);
+    EXPECT_TRUE(t->is_failed());
+    try {
+        t.result();
+    } catch(const std::runtime_error& e) {
+        EXPECT_EQ(std::string_view(e.what()), "first");
+    }
+}
 #endif
 
 // Fail-fast cancels siblings after the first error, so the error vector
@@ -2071,6 +2095,64 @@ TEST_CASE(empty_cancel) {
     auto t = driver();
     schedule_all(t);
     EXPECT_TRUE(t->is_finished());
+}
+
+TEST_CASE(external_cancel_sets_stopped) {
+    cancellation_source source;
+    int finished = 0;
+
+    auto slow = [&](int ms) -> task<> {
+        co_await sleep(ms, loop);
+        finished += 1;
+    };
+
+    auto driver = [&]() -> task<int> {
+        task_group<> group(loop);
+        group.spawn(slow(50));
+        group.spawn(slow(50));
+        co_await group.join();
+        co_return 1;
+    };
+
+    auto guarded = with_token(driver(), source.token());
+
+    auto canceler = [&]() -> task<> {
+        co_await sleep(1, loop);
+        source.cancel();
+    };
+
+    auto cancel_task = canceler();
+    schedule_all(guarded, cancel_task);
+    EXPECT_FALSE(guarded.value().has_value());
+    EXPECT_EQ(finished, 0);
+}
+
+TEST_CASE(destroy_mixed_completed_and_pending) {
+    int op_destroyed = 0;
+    int sync_count = 0;
+
+    auto sync_work = [&]() -> task<> {
+        sync_count += 1;
+        co_return;
+    };
+
+    auto pending_work = [&]() -> task<> {
+        deferred_cancel_await op(op_destroyed);
+        co_await op;
+    };
+
+    {
+        task_group<> group(loop);
+        group.spawn(sync_work());
+        group.spawn(sync_work());
+        group.spawn(pending_work());
+    }
+
+    EXPECT_EQ(sync_count, 2);
+    EXPECT_EQ(op_destroyed, 0);
+
+    deferred_cancel_await::finish_pending_cancel();
+    EXPECT_EQ(op_destroyed, 1);
 }
 
 TEST_CASE(detach_as_root_on_destroy) {

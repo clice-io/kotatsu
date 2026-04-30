@@ -135,6 +135,9 @@ void async_node::cancel() {
         case NodeKind::WhenAny:
         case NodeKind::TaskGroup: {
             auto* self = static_cast<aggregate_op*>(this);
+            if(kind == NodeKind::TaskGroup) {
+                static_cast<task_group_node*>(this)->stopped = true;
+            }
             const bool was_arming = self->phase == aggregate_op::Phase::Arming;
             self->phase = aggregate_op::Phase::Cancelling;
             for(auto* child: self->awaitees) {
