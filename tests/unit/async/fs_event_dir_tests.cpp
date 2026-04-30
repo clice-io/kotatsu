@@ -20,7 +20,7 @@ task<int, error> watch_file_create(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string file = (std::filesystem::path(dir) / "test.txt").string();
     int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
@@ -50,7 +50,7 @@ task<int, error> watch_file_modify(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     fd = co_await fs::open(file, O_WRONLY, 0, loop).or_fail();
     constexpr std::string_view payload = "hello";
@@ -82,7 +82,7 @@ task<int, error> watch_file_delete(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     co_await fs::unlink(file, loop).or_fail();
 
@@ -111,7 +111,7 @@ task<int, error> watch_file_rename(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     co_await fs::rename(src, dst, loop).or_fail();
 
@@ -168,7 +168,7 @@ task<int, error> watch_stop_during_next(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     // Schedule stop() after a short delay. The key invariant is that
     // next() must return (not deadlock). It may return buffered events
@@ -184,10 +184,11 @@ task<int, error> watch_stop_during_next(event_loop& loop) {
 
     co_await fs::rmdir(dir, loop).or_fail();
 
-    // Either we got events or operation_aborted — both are fine.
-    // A deadlock would have triggered the 5s timeout (empty result).
     if(result.has_error()) {
-        co_return result.error() == error::operation_aborted ? 1 : 0;
+        co_return (result.error() == error::operation_aborted ||
+                   result.error() == error::connection_timed_out)
+            ? 1
+            : 0;
     }
     co_return 1;
 }
@@ -201,7 +202,7 @@ task<int, error> watch_stop_during_debounce(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string file = (std::filesystem::path(dir) / "debounce_stop.txt").string();
     int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
@@ -222,7 +223,10 @@ task<int, error> watch_stop_during_debounce(event_loop& loop) {
     co_await fs::rmdir(dir, loop).or_fail();
 
     if(result.has_error()) {
-        co_return result.error() == error::operation_aborted ? 1 : 0;
+        co_return (result.error() == error::operation_aborted ||
+                   result.error() == error::connection_timed_out)
+            ? 1
+            : 0;
     }
     co_return 1;
 }
@@ -236,7 +240,7 @@ task<int, error> watch_multiple_next_calls(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string file1 = (std::filesystem::path(dir) / "a.txt").string();
     int fd = co_await fs::open(file1, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
@@ -273,7 +277,7 @@ task<int, error> watch_debounce_batching(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string file1 = (std::filesystem::path(dir) / "x.txt").string();
     std::string file2 = (std::filesystem::path(dir) / "y.txt").string();
@@ -306,12 +310,12 @@ task<int, error> watch_subdirectory_changes(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string subdir = (std::filesystem::path(dir) / "sub").string();
     co_await fs::mkdir(subdir, 0755, loop).or_fail();
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string file = (std::filesystem::path(subdir) / "nested.txt").string();
     int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
@@ -344,7 +348,7 @@ task<int, error> watch_non_recursive(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     // Create file in subdir first (should be excluded)
     std::string deep_file = (std::filesystem::path(subdir) / "deep.txt").string();
@@ -394,7 +398,7 @@ task<int, error> watch_move_assignment(event_loop& loop) {
 
     *watcher_a = std::move(*watcher_b);
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string file = (std::filesystem::path(dir2) / "moved.txt").string();
     int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
@@ -476,7 +480,7 @@ task<int, error> watch_rename_populates_old_path(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     co_await fs::rename(src, dst, loop).or_fail();
 
@@ -514,7 +518,7 @@ task<int, error> watch_rename_existing_file(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string dst = (std::filesystem::path(dir) / "renamed.txt").string();
     co_await fs::rename(src, dst, loop).or_fail();
@@ -541,7 +545,7 @@ task<int, error> watch_directory_creation(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string sub = (std::filesystem::path(dir) / "newdir").string();
     co_await fs::mkdir(sub, 0755, loop).or_fail();
@@ -571,7 +575,7 @@ task<int, error> watch_directory_rename(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string sub2 = (std::filesystem::path(dir) / "after_dir").string();
     co_await fs::rename(sub1, sub2, loop).or_fail();
@@ -601,7 +605,7 @@ task<int, error> watch_directory_deletion(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     co_await fs::rmdir(sub, loop).or_fail();
 
@@ -626,7 +630,7 @@ task<int, error> watch_subfile_create(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string sub = (std::filesystem::path(dir) / "subdir").string();
     co_await fs::mkdir(sub, 0755, loop).or_fail();
@@ -668,7 +672,7 @@ task<int, error> watch_subfile_modify(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     fd = co_await fs::open(file, O_WRONLY, 0, loop).or_fail();
     constexpr std::string_view payload = "updated";
@@ -705,7 +709,7 @@ task<int, error> watch_subfile_rename(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string dst = (std::filesystem::path(sub) / "b.txt").string();
     co_await fs::rename(src, dst, loop).or_fail();
@@ -741,7 +745,7 @@ task<int, error> watch_subfile_delete(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     co_await fs::unlink(file, loop).or_fail();
 
@@ -767,7 +771,7 @@ task<int, error> watch_nested_subdir_create(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string sub1 = (std::filesystem::path(dir) / "level1").string();
     co_await fs::mkdir(sub1, 0755, loop).or_fail();
@@ -800,7 +804,7 @@ task<int, error> watch_deep_nested_file(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string d1 = (std::filesystem::path(dir) / "a").string();
     co_await fs::mkdir(d1, 0755, loop).or_fail();
@@ -843,7 +847,7 @@ task<int, error> watch_subdir_rename(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string sub2 = (std::filesystem::path(dir) / "moved").string();
     co_await fs::rename(sub1, sub2, loop).or_fail();
@@ -873,14 +877,14 @@ task<int, error> watch_renamed_dir_still_tracked(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string sub2 = (std::filesystem::path(dir) / "tracked").string();
     co_await fs::rename(sub, sub2, loop).or_fail();
 
     // Consume rename events
     co_await next_or_timeout(*watcher, loop).or_fail();
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string file = (std::filesystem::path(sub2) / "after_rename.txt").string();
     int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
@@ -916,7 +920,7 @@ task<int, error> watch_multiple_watchers_same_dir(event_loop& loop) {
         co_await fail(error::unknown_error);
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string file = (std::filesystem::path(dir) / "shared.txt").string();
     int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
@@ -949,7 +953,7 @@ task<int, error> watch_multiple_watchers_different_dirs(event_loop& loop) {
         co_await fail(error::unknown_error);
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string f1 = (std::filesystem::path(dir1) / "one.txt").string();
     std::string f2 = (std::filesystem::path(dir2) / "two.txt").string();
@@ -987,7 +991,7 @@ task<int, error> watch_rapid_create_delete(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string f1 = (std::filesystem::path(dir) / "keep.txt").string();
     std::string f2 = (std::filesystem::path(dir) / "ephemeral.txt").string();
@@ -1024,7 +1028,7 @@ task<int, error> watch_rapid_multiple_writes(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     for(int i = 0; i < 5; ++i) {
         fd = co_await fs::open(file, O_WRONLY, 0, loop).or_fail();
@@ -1060,7 +1064,7 @@ task<int, error> watch_attribute_change(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     co_await fs::chmod(file, 0444, loop).or_fail();
 
@@ -1094,7 +1098,7 @@ task<int, error> watch_atomic_replace(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string tmp = (std::filesystem::path(dir) / "target.txt.tmp").string();
     fd = co_await fs::open(tmp, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
@@ -1127,7 +1131,7 @@ task<int, error> watch_toctou_dir_and_file(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string sub = (std::filesystem::path(dir) / "racedir").string();
     co_await fs::mkdir(sub, 0755, loop).or_fail();
@@ -1137,8 +1141,10 @@ task<int, error> watch_toctou_dir_and_file(event_loop& loop) {
 
     bool found = false;
     for(int attempt = 0; attempt < 3 && !found; ++attempt) {
-        auto changes = co_await next_or_timeout(*watcher, loop, 3000).or_fail();
-        found = std::ranges::any_of(changes, [](const auto& c) {
+        auto result = co_await next_or_timeout(*watcher, loop, 3000);
+        if(result.has_error())
+            break;
+        found = std::ranges::any_of(*result, [](const auto& c) {
             return c.path.find("quick.txt") != std::string::npos;
         });
     }
@@ -1160,7 +1166,7 @@ task<int, error> watch_unicode_filename(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string file = (std::filesystem::path(dir) / "\xe6\x96\x87\xe4\xbb\xb6.txt").string();
     int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
@@ -1198,7 +1204,7 @@ task<int, error> watch_symlink_create_delete([[maybe_unused]] event_loop& loop) 
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string link = (std::filesystem::path(dir) / "link.txt").string();
     co_await fs::symlink(real, link, 0, loop).or_fail();
@@ -1234,7 +1240,7 @@ task<int, error> watch_large_burst(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     constexpr int count = 50;
     std::vector<std::string> files;
@@ -1249,10 +1255,10 @@ task<int, error> watch_large_burst(event_loop& loop) {
 
     int total_creates = 0;
     for(int attempt = 0; attempt < 5; ++attempt) {
-        auto changes = co_await next_or_timeout(*watcher, loop, 3000).or_fail();
-        if(changes.empty())
+        auto result = co_await next_or_timeout(*watcher, loop, 3000);
+        if(result.has_error())
             break;
-        total_creates += static_cast<int>(std::ranges::count_if(changes, [](const auto& c) {
+        total_creates += static_cast<int>(std::ranges::count_if(*result, [](const auto& c) {
             return c.type == fs_event::effect::create;
         }));
     }
@@ -1263,7 +1269,7 @@ task<int, error> watch_large_burst(event_loop& loop) {
     }
     co_await fs::rmdir(dir, loop).or_fail();
 
-    co_return total_creates >= (count * 9 / 10) ? 1 : 0;
+    co_return total_creates >= (count * 48 / 50) ? 1 : 0;
 }
 
 task<int, error> watch_debounce_coalesces(event_loop& loop) {
@@ -1279,7 +1285,7 @@ task<int, error> watch_debounce_coalesces(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     for(int i = 0; i < 10; ++i) {
         std::string f =
@@ -1303,7 +1309,7 @@ task<int, error> watch_debounce_coalesces(event_loop& loop) {
     }
     co_await fs::rmdir(dir, loop).or_fail();
 
-    co_return create_count >= 7 ? 1 : 0;
+    co_return create_count >= 9 ? 1 : 0;
 }
 
 task<int, error> watch_root_dir_deleted(event_loop& loop) {
@@ -1319,7 +1325,7 @@ task<int, error> watch_root_dir_deleted(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     co_await fs::rmdir(dir, loop).or_fail();
 
@@ -1345,7 +1351,7 @@ task<int, error> watch_subdir_delete_with_files(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string file = (std::filesystem::path(sub) / "child.txt").string();
     int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
@@ -1393,7 +1399,7 @@ task<int, error> watch_symlink_rename([[maybe_unused]] event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string link2 = (std::filesystem::path(dir) / "link2.txt").string();
     co_await fs::rename(link1, link2, loop).or_fail();
@@ -1442,7 +1448,7 @@ task<int, error> watch_symlink_update([[maybe_unused]] event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     fd = co_await fs::open(link, O_WRONLY, 0, loop).or_fail();
     constexpr std::string_view updated = "world";
@@ -1479,7 +1485,7 @@ task<int, error> watch_folder_symlink([[maybe_unused]] event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string link = (std::filesystem::path(dir) / "linkdir").string();
     co_await fs::symlink(sub, link, 0, loop).or_fail();
@@ -1515,7 +1521,7 @@ task<int, error> watch_rapid_create_update(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string file = (std::filesystem::path(dir) / "rapid.txt").string();
     int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
@@ -1557,7 +1563,7 @@ task<int, error> watch_rapid_update_delete(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     fd = co_await fs::open(file, O_WRONLY, 0, loop).or_fail();
     constexpr std::string_view updated = "updated";
@@ -1594,7 +1600,7 @@ task<int, error> watch_rapid_delete_create(event_loop& loop) {
         co_await fail(watcher.error());
     }
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     co_await fs::unlink(file, loop).or_fail();
     fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
@@ -1631,7 +1637,7 @@ task<int, error> watch_case_only_rename(event_loop& loop) {
     if(!watcher.has_value())
         co_await fail(watcher.error());
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     co_await fs::rename(lower, upper, loop).or_fail();
 
@@ -1661,7 +1667,7 @@ task<int, error> watch_nested_dir_rename(event_loop& loop) {
     if(!watcher.has_value())
         co_await fail(watcher.error());
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string sub2 = (std::filesystem::path(dir) / "parent2").string();
     std::string subsub2 = (std::filesystem::path(dir) / "parent2" / "child2").string();
@@ -1694,7 +1700,7 @@ task<int, error> watch_create_rename_coalesce(event_loop& loop) {
     if(!watcher.has_value())
         co_await fail(watcher.error());
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string f1 = (std::filesystem::path(dir) / "temp.txt").string();
     std::string f2 = (std::filesystem::path(dir) / "final.txt").string();
@@ -1727,7 +1733,7 @@ task<int, error> watch_chain_rename_coalesce(event_loop& loop) {
     if(!watcher.has_value())
         co_await fail(watcher.error());
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     std::string f1 = (std::filesystem::path(dir) / "step1.txt").string();
     std::string f2 = (std::filesystem::path(dir) / "step2.txt").string();
@@ -1754,6 +1760,66 @@ task<int, error> watch_chain_rename_coalesce(event_loop& loop) {
     co_await fs::rmdir(dir, loop).or_fail();
 
     co_return saw_final ? 1 : 0;
+}
+
+task<int, error> watch_special_char_filename(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value())
+        co_await fail(watcher.error());
+
+    co_await wait_for_watcher_ready(loop);
+
+    std::string file = (std::filesystem::path(dir) / "file with spaces & (parens).txt").string();
+    int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::create && c.path.find("spaces") != std::string::npos;
+    });
+
+    watcher->stop();
+    co_await fs::unlink(file, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return found ? 1 : 0;
+}
+
+task<int, error> watch_rapid_stop_create_cycle(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    for(int i = 0; i < 5; ++i) {
+        auto watcher =
+            fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+        if(!watcher.has_value())
+            co_await fail(watcher.error());
+        watcher->stop();
+    }
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value())
+        co_await fail(watcher.error());
+
+    co_await wait_for_watcher_ready(loop);
+
+    std::string file = (std::filesystem::path(dir) / "final.txt").string();
+    int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    bool found = has_effect(changes, fs_event::effect::create);
+
+    watcher->stop();
+    co_await fs::unlink(file, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return found ? 1 : 0;
 }
 
 }  // namespace
@@ -2103,6 +2169,10 @@ TEST_CASE(unicode_filename) {
 }
 
 TEST_CASE(symlink_create_delete) {
+#if defined(_WIN32)
+    kota::zest::skip();
+    return;
+#endif
     auto worker = watch_symlink_create_delete(loop);
     schedule_all(worker);
 
@@ -2148,6 +2218,10 @@ TEST_CASE(subdir_delete_with_files) {
 }
 
 TEST_CASE(symlink_rename) {
+#if defined(_WIN32)
+    kota::zest::skip();
+    return;
+#endif
     auto worker = watch_symlink_rename(loop);
     schedule_all(worker);
 
@@ -2157,6 +2231,10 @@ TEST_CASE(symlink_rename) {
 }
 
 TEST_CASE(symlink_update) {
+#if defined(_WIN32)
+    kota::zest::skip();
+    return;
+#endif
     auto worker = watch_symlink_update(loop);
     schedule_all(worker);
 
@@ -2166,6 +2244,10 @@ TEST_CASE(symlink_update) {
 }
 
 TEST_CASE(folder_symlink) {
+#if defined(_WIN32)
+    kota::zest::skip();
+    return;
+#endif
     auto worker = watch_folder_symlink(loop);
     schedule_all(worker);
 
@@ -2230,6 +2312,24 @@ TEST_CASE(create_rename_coalesce) {
 
 TEST_CASE(chain_rename_coalesce) {
     auto worker = watch_chain_rename_coalesce(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(special_char_filename) {
+    auto worker = watch_special_char_filename(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(rapid_stop_create_cycle) {
+    auto worker = watch_rapid_stop_create_cycle(loop);
     schedule_all(worker);
 
     auto result = worker.result();

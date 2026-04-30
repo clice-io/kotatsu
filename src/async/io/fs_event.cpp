@@ -11,6 +11,7 @@
 #include "kota/async/runtime/sync.h"
 
 #if defined(__linux__)
+#include <cerrno>
 #include <sys/inotify.h>
 #include <unistd.h>
 #include <uv.h>
@@ -42,7 +43,7 @@ namespace kota {
 struct fs_event_base {
     event_loop* loop;
     timer debounce_timer;
-    kota::event has_events{false};
+    event has_events{false};
     // Accessed only on the event-loop thread; guarded by debounce_timer.
     std::vector<fs_event::change> buffer;
     std::chrono::milliseconds debounce_ms;
@@ -187,7 +188,12 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
         alignas(struct inotify_event) char buf[inotify_read_buf_size];
         for(;;) {
             ssize_t n = ::read(inotify_fd, buf, sizeof(buf));
-            if(n <= 0)
+            if(n < 0) {
+                if(errno == EINTR)
+                    continue;
+                break;
+            }
+            if(n == 0)
                 break;
 
             struct raw_event {
@@ -779,6 +785,8 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
         read_buffer.resize(DEFAULT_BUF_SIZE);
         write_buffer.resize(DEFAULT_BUF_SIZE);
         ZeroMemory(&overlapped, sizeof(OVERLAPPED));
+        // APC-only: hEvent is unused by the kernel when a completion routine
+        // is supplied, so we repurpose it to pass Self* to the callback.
         overlapped.hEvent = reinterpret_cast<HANDLE>(s.get());
         running.store(true, std::memory_order_release);
 
@@ -915,6 +923,8 @@ task<std::vector<fs_event::change>, error> fs_event::next() {
     }
 }
 
+// Must be called from the event-loop thread. has_events and debounce_timer
+// are not thread-safe; calling stop() from another thread races with next().
 void fs_event::stop() {
     if(!self) {
         return;

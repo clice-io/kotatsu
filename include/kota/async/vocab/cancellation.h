@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <utility>
 
@@ -14,14 +15,14 @@ public:
     class state {
     public:
         bool is_cancelled() const noexcept {
-            return cancelled;
+            return cancelled.load(std::memory_order_acquire);
         }
 
         void cancel() noexcept {
-            if(cancelled) {
+            if(cancelled.load(std::memory_order_acquire)) {
                 return;
             }
-            cancelled = true;
+            cancelled.store(true, std::memory_order_release);
             // This event represents the sticky fact "cancellation has already
             // happened", not the transient action "cancel whoever is currently
             // waiting". That is why this uses set() instead of interrupt():
@@ -50,7 +51,7 @@ public:
         /// coroutine state `Cancelled`, which is what with_token(...) and other
         /// callers rely on.
         task<> wait() {
-            if(cancelled) {
+            if(cancelled.load(std::memory_order_acquire)) {
                 // Preserve cancellation semantics for already-fired tokens.
                 co_await kota::cancel();
             }
@@ -65,7 +66,7 @@ public:
 
     private:
         class event event;
-        bool cancelled = false;
+        std::atomic<bool> cancelled{false};
     };
 
     cancellation_token() noexcept = delete;

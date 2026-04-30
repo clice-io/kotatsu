@@ -31,6 +31,7 @@ public:
         destroy,
         rename,
         overflow,
+        // Default for change{}; no platform backend produces this value.
         other,
     };
 

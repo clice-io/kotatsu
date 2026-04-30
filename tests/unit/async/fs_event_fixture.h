@@ -10,12 +10,19 @@
 
 namespace kota {
 
+// Platform watchers (inotify, FSEvents, ReadDirectoryChangesW) need time to
+// register with the kernel after create() returns.  This helper encapsulates
+// the stabilisation delay so tests don't scatter magic numbers.
+inline task<void, error> wait_for_watcher_ready(event_loop& loop) {
+    co_await sleep(500, loop);
+}
+
 inline task<std::vector<fs_event::change>, error> next_or_timeout(fs_event& w,
                                                                   event_loop& loop,
                                                                   int timeout_ms = 10000) {
     auto do_timeout = [&]() -> task<std::vector<fs_event::change>, error> {
         co_await sleep(timeout_ms, loop);
-        co_return std::vector<fs_event::change>{};
+        co_await fail(error::connection_timed_out);
     };
 
     auto result = co_await when_any(w.next(), do_timeout());

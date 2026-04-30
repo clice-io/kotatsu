@@ -24,7 +24,7 @@ task<int, error> fse_detect_modify(event_loop& loop) {
     if(!watcher.has_value())
         co_await fail(watcher.error());
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     fd = co_await fs::open(file, O_WRONLY, 0, loop).or_fail();
     co_await fs::write(fd, std::span<const char>("updated", 7), 0, loop).or_fail();
@@ -49,7 +49,7 @@ task<int, error> fse_detect_create(event_loop& loop) {
     if(!watcher.has_value())
         co_await fail(watcher.error());
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
     co_await fs::write(fd, std::span<const char>("hello", 5), -1, loop).or_fail();
@@ -76,7 +76,7 @@ task<int, error> fse_detect_destroy(event_loop& loop) {
     if(!watcher.has_value())
         co_await fail(watcher.error());
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     co_await fs::unlink(file, loop).or_fail();
 
@@ -102,7 +102,7 @@ task<int, error> fse_ignores_sibling(event_loop& loop) {
     if(!watcher.has_value())
         co_await fail(watcher.error());
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     fd = co_await fs::open(sibling, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
     co_await fs::write(fd, std::span<const char>("noise", 5), -1, loop).or_fail();
@@ -148,7 +148,7 @@ task<int, error> fse_atomic_replace(event_loop& loop) {
     if(!watcher.has_value())
         co_await fail(watcher.error());
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     fd = co_await fs::open(tmp, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
     co_await fs::write(fd, std::span<const char>("v2", 2), -1, loop).or_fail();
@@ -219,7 +219,7 @@ task<int, error> fse_two_arg_create(event_loop& loop) {
     if(!watcher.has_value())
         co_await fail(watcher.error());
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     fd = co_await fs::open(file, O_WRONLY, 0, loop).or_fail();
     co_await fs::write(fd, std::span<const char>("changed", 7), 0, loop).or_fail();
@@ -246,7 +246,7 @@ task<int, error> fse_stop_during_next(event_loop& loop) {
     if(!watcher.has_value())
         co_await fail(watcher.error());
 
-    co_await sleep(500, loop);
+    co_await wait_for_watcher_ready(loop);
 
     auto stopper = [&]() -> task<void, error> {
         co_await sleep(100, loop);
@@ -261,9 +261,113 @@ task<int, error> fse_stop_during_next(event_loop& loop) {
     co_await fs::rmdir(dir, loop).or_fail();
 
     if(result.has_error()) {
-        co_return result.error() == error::operation_aborted ? 1 : 0;
+        co_return (result.error() == error::operation_aborted ||
+                   result.error() == error::connection_timed_out)
+            ? 1
+            : 0;
     }
     co_return 1;
+}
+
+task<int, error> fse_file_filter_rejects_similar_name(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-fe-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    std::string target = (std::filesystem::path(dir) / "config.json").string();
+    std::string similar = (std::filesystem::path(dir) / "config.json.bak").string();
+
+    int fd = co_await fs::open(target, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto watcher = fs_event::create(target, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value())
+        co_await fail(watcher.error());
+
+    co_await wait_for_watcher_ready(loop);
+
+    fd = co_await fs::open(similar, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::write(fd, std::span<const char>("backup", 6), -1, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    co_await sleep(200, loop);
+
+    fd = co_await fs::open(target, O_WRONLY, 0, loop).or_fail();
+    co_await fs::write(fd, std::span<const char>("signal", 6), 0, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    watcher->stop();
+    co_await fs::unlink(target, loop).or_fail();
+    co_await fs::unlink(similar, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    if(!has_effect(changes, fs_event::effect::modify))
+        co_return 0;
+
+    bool leaked_similar = std::ranges::any_of(changes, [](const auto& c) {
+        return c.path.find(".bak") != std::string::npos;
+    });
+    co_return leaked_similar ? 0 : 1;
+}
+
+task<int, error> fse_file_filter_only_sibling_no_event(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-fe-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    std::string target = (std::filesystem::path(dir) / "watched.json").string();
+    std::string sibling = (std::filesystem::path(dir) / "other.txt").string();
+
+    int fd = co_await fs::open(target, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto watcher = fs_event::create(target, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value())
+        co_await fail(watcher.error());
+
+    co_await wait_for_watcher_ready(loop);
+
+    fd = co_await fs::open(sibling, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::write(fd, std::span<const char>("noise", 5), -1, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto stopper = [&]() -> task<void, error> {
+        co_await sleep(1000, loop);
+        watcher->stop();
+    };
+    auto stop_task = stopper();
+    loop.schedule(stop_task);
+
+    auto result = co_await watcher->next();
+
+    co_await fs::unlink(target, loop).or_fail();
+    co_await fs::unlink(sibling, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return result.has_error() && result.error() == error::operation_aborted ? 1 : 0;
+}
+
+task<int, error> fse_file_filter_dir_mode_no_filter(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-fe-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value())
+        co_await fail(watcher.error());
+
+    co_await wait_for_watcher_ready(loop);
+
+    std::string file = (std::filesystem::path(dir) / "any_file.txt").string();
+    int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    watcher->stop();
+    co_await fs::unlink(file, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return has_effect(changes, fs_event::effect::create) ? 1 : 0;
 }
 
 }  // namespace
@@ -352,6 +456,30 @@ TEST_CASE(two_arg_create) {
 
 TEST_CASE(stop_during_next) {
     auto worker = fse_stop_during_next(loop);
+    schedule_all(worker);
+    auto result = worker.result();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(file_filter_rejects_similar_name) {
+    auto worker = fse_file_filter_rejects_similar_name(loop);
+    schedule_all(worker);
+    auto result = worker.result();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(file_filter_only_sibling_no_event) {
+    auto worker = fse_file_filter_only_sibling_no_event(loop);
+    schedule_all(worker);
+    auto result = worker.result();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(file_filter_dir_mode_no_filter) {
+    auto worker = fse_file_filter_dir_mode_no_filter(loop);
     schedule_all(worker);
     auto result = worker.result();
     ASSERT_TRUE(result.has_value());
