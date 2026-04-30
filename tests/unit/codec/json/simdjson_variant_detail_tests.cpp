@@ -1062,6 +1062,100 @@ TEST_CASE(two_structs_different_field_count) {
     EXPECT_EQ(std::get<Point>(out), (Point{1.0, 2.0}));
 }
 
+TEST_CASE(empty_object_scoring) {
+    using V = std::variant<Point, std::map<std::string, int>>;
+
+    V out{};
+    // Empty object has no matching struct fields → map wins
+    ASSERT_TRUE(from_json(R"({})", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_TRUE(std::get<std::map<std::string, int>>(out).empty());
+}
+
+TEST_CASE(empty_array_scoring) {
+    using V = std::variant<std::vector<int>, std::string>;
+
+    V out{};
+    // Empty array → vector accepts it
+    ASSERT_TRUE(from_json(R"([])", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_TRUE(std::get<std::vector<int>>(out).empty());
+}
+
+TEST_CASE(same_field_same_type_struct_tie) {
+    // Two structs with identical field names and types — first wins
+    struct A {
+        int value;
+    };
+
+    struct B {
+        int value;
+    };
+
+    using V = std::variant<A, B>;
+
+    V out{};
+    ASSERT_TRUE(from_json(R"({"value":1})", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<A>(out).value, 1);
+}
+
+TEST_CASE(variant_wrapper_no_inflation) {
+    // variant<variant<double, int>, int> facing integer source:
+    // The nested variant should NOT score higher than the direct int.
+    using Inner = std::variant<double, int>;
+    using V = std::variant<Inner, int>;
+
+    V out{};
+    ASSERT_TRUE(from_json("42", out).has_value());
+    // Both alternatives accept int. The nested variant's best inner match (int)
+    // should score the same as the direct int. First one wins on tie.
+    EXPECT_EQ(out.index(), 0U);
+    auto& inner = std::get<Inner>(out);
+    EXPECT_EQ(inner.index(), 1U);
+    EXPECT_EQ(std::get<int>(inner), 42);
+}
+
+TEST_CASE(field_subset_superset_matching) {
+    // Struct with more matching fields should score higher.
+    // {a, b} matches StructAB (2 fields) better than StructA (1 field).
+    struct StructA {
+        int a;
+    };
+
+    struct StructAB {
+        int a;
+        int b;
+    };
+
+    using V = std::variant<StructA, StructAB>;
+
+    V out{};
+    ASSERT_TRUE(from_json(R"({"a":1,"b":2})", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<StructAB>(out).a, 1);
+    EXPECT_EQ(std::get<StructAB>(out).b, 2);
+
+    // {a} alone — both accept, but StructA matches exactly
+    ASSERT_TRUE(from_json(R"({"a":1})", out).has_value());
+    // StructA has 1 field match, StructAB also has 1 field match → tie, first wins
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<StructA>(out).a, 1);
+}
+
+TEST_CASE(recursive_map_scoring) {
+    using V = std::variant<std::map<std::string, int>, std::map<std::string, std::string>>;
+
+    V out{};
+    ASSERT_TRUE(from_json(R"({"a":1,"b":2})", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<std::map<std::string, int>>(out).at("a"), 1);
+
+    ASSERT_TRUE(from_json(R"({"a":"x","b":"y"})", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<std::map<std::string, std::string>>(out).at("a"), "x");
+}
+
 };  // TEST_SUITE(serde_variant_deep_dispatch)
 
 }  // namespace

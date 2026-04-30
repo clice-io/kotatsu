@@ -12,6 +12,7 @@
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <vector>
 
 #include "kota/support/expected_try.h"
 #include "kota/support/type_list.h"
@@ -301,6 +302,11 @@ constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, T
 
 namespace kota::codec {
 
+template <typename A>
+concept source_adapter = requires(typename A::node_type node) {
+    { A::kind_of(node) } -> std::same_as<meta::type_kind>;
+};
+
 constexpr std::size_t kind_width(meta::type_kind k) noexcept {
     switch(k) {
         case meta::type_kind::int8:
@@ -381,6 +387,9 @@ constexpr std::size_t kind_match_quality(meta::type_kind target, meta::type_kind
     return 0;
 }
 
+// accepts_kind mirrors score_type_info at compile time: kind_compatible(k, source) ↔
+// kind_match_quality(k, source) > 0. Both unwrap optional/pointer/variant independently because
+// accepts_kind operates on static types while score_type_info uses runtime type_info.
 template <typename T>
 constexpr bool accepts_kind(meta::type_kind source) noexcept {
     constexpr auto k = meta::kind_of<T>();
@@ -407,8 +416,8 @@ struct content_source_adapter {
         switch(node->kind()) {
             case content::ValueKind::null_value: return meta::type_kind::null;
             case content::ValueKind::boolean: return meta::type_kind::boolean;
-            case content::ValueKind::signed_int:
-            case content::ValueKind::unsigned_int: return meta::type_kind::int64;
+            case content::ValueKind::signed_int: return meta::type_kind::int64;
+            case content::ValueKind::unsigned_int: return meta::type_kind::uint64;
             case content::ValueKind::floating: return meta::type_kind::float64;
             case content::ValueKind::string: return meta::type_kind::string;
             case content::ValueKind::array: return meta::type_kind::array;
@@ -475,7 +484,7 @@ bool field_name_matches(const F& field, std::string_view name) {
     return field.name == name || std::ranges::contains(field.aliases, name);
 }
 
-template <typename Adapter>
+template <source_adapter Adapter>
 void multi_score(typename Adapter::node_type node,
                  const variant_candidate* candidates,
                  std::size_t count,
@@ -485,27 +494,42 @@ void multi_score(typename Adapter::node_type node,
 
     auto source_kind = Adapter::kind_of(node);
 
-    variant_candidate struct_cands[64];
-    std::size_t struct_n = 0;
-    variant_candidate map_cands[64];
-    std::size_t map_n = 0;
-    variant_candidate seq_cands[64];
-    std::size_t seq_n = 0;
+    std::vector<variant_candidate> struct_cands;
+    std::vector<variant_candidate> map_cands;
+    std::vector<variant_candidate> seq_cands;
 
-    variant_candidate expanded[64];
-    std::size_t exp_n = 0;
+    // Expand nested variants into individual alternatives, scoring each independently.
+    // Take max per parent group then add, so variant<double, int> facing int source
+    // scores the same as a direct int candidate, not higher (sum of all alternatives).
+    struct expansion_group {
+        std::size_t parent_index;
+        std::size_t start;
+        std::size_t count;
+    };
+
+    std::vector<variant_candidate> expanded;
+    std::vector<expansion_group> groups;
     for(std::size_t i = 0; i < count; ++i) {
         const auto* info = unwrap_indirect(candidates[i].type);
         if(info->kind == meta::type_kind::variant) {
             auto& vi = static_cast<const meta::variant_type_info&>(*info);
+            std::size_t start = expanded.size();
             for(const auto& alt_fn: vi.alternatives) {
-                if(exp_n < 64)
-                    expanded[exp_n++] = {candidates[i].index, &alt_fn()};
+                expanded.push_back({expanded.size(), &alt_fn()});
             }
+            groups.push_back({candidates[i].index, start, expanded.size() - start});
         }
     }
-    if(exp_n > 0) {
-        multi_score<Adapter>(node, expanded, exp_n, scores);
+    if(!expanded.empty()) {
+        std::vector<std::size_t> exp_scores(expanded.size(), 0);
+        multi_score<Adapter>(node, expanded.data(), expanded.size(), exp_scores.data());
+        for(auto& group: groups) {
+            std::size_t best = 0;
+            for(std::size_t j = group.start; j < group.start + group.count; ++j) {
+                best = std::max(best, exp_scores[j]);
+            }
+            scores[group.parent_index] += best;
+        }
     }
 
     for(std::size_t i = 0; i < count; ++i) {
@@ -518,74 +542,104 @@ void multi_score(typename Adapter::node_type node,
         scores[candidates[i].index] += 1;
 
         if(info->kind == meta::type_kind::structure)
-            struct_cands[struct_n++] = {candidates[i].index, info};
+            struct_cands.push_back({candidates[i].index, info});
         else if(info->kind == meta::type_kind::map)
-            map_cands[map_n++] = {candidates[i].index, info};
+            map_cands.push_back({candidates[i].index, info});
         else if(meta::is_sequence_kind(info->kind))
-            seq_cands[seq_n++] = {candidates[i].index, info};
+            seq_cands.push_back({candidates[i].index, info});
     }
 
-    if(meta::is_object_kind(source_kind) && (struct_n + map_n) > 0) {
+    if(meta::is_object_kind(source_kind) && (struct_cands.size() + map_cands.size()) > 0) {
+        std::vector<bool> struct_matched(struct_cands.size(), false);
         Adapter::for_each_field(
             node,
             [&](std::string_view name, typename Adapter::node_type child) {
-                variant_candidate child_cands[64];
-                std::size_t child_n = 0;
+                std::vector<variant_candidate> child_cands;
 
-                for(std::size_t i = 0; i < struct_n; ++i) {
-                    auto& si = static_cast<const meta::struct_type_info&>(*struct_cands[i].type);
-                    for(const auto& f: si.fields) {
+                for(std::size_t si = 0; si < struct_cands.size(); ++si) {
+                    auto& sc = struct_cands[si];
+                    auto& info = static_cast<const meta::struct_type_info&>(*sc.type);
+                    for(const auto& f: info.fields) {
                         if(field_name_matches(f, name)) {
-                            child_cands[child_n++] = {struct_cands[i].index, &f.type()};
+                            child_cands.push_back({sc.index, &f.type()});
+                            struct_matched[si] = true;
                             break;
                         }
                     }
                 }
 
-                for(std::size_t i = 0; i < map_n; ++i) {
-                    auto& mi = static_cast<const meta::map_type_info&>(*map_cands[i].type);
-                    child_cands[child_n++] = {map_cands[i].index, &mi.value()};
+                for(auto& mc: map_cands) {
+                    auto& mi = static_cast<const meta::map_type_info&>(*mc.type);
+                    child_cands.push_back({mc.index, &mi.value()});
                 }
 
-                if(child_n > 0) {
-                    multi_score<Adapter>(child, child_cands, child_n, scores);
+                if(!child_cands.empty()) {
+                    multi_score<Adapter>(child, child_cands.data(), child_cands.size(), scores);
                 }
             });
+
+        for(std::size_t si = 0; si < struct_cands.size(); ++si) {
+            if(struct_matched[si])
+                continue;
+            auto& info = static_cast<const meta::struct_type_info&>(*struct_cands[si].type);
+            if(!info.fields.empty() && scores[struct_cands[si].index] > 0)
+                scores[struct_cands[si].index] -= 1;
+        }
     }
 
-    if(meta::is_sequence_kind(source_kind) && seq_n > 0) {
+    if(meta::is_sequence_kind(source_kind) && !seq_cands.empty()) {
         Adapter::for_each_element(
             node,
             [&](std::size_t elem_idx, std::size_t total, typename Adapter::node_type elem) {
-                variant_candidate child_cands[64];
-                std::size_t child_n = 0;
+                std::vector<variant_candidate> child_cands;
 
-                for(std::size_t i = 0; i < seq_n; ++i) {
-                    const auto* info = seq_cands[i].type;
+                for(auto& sc: seq_cands) {
+                    const auto* info = sc.type;
                     if(info->kind == meta::type_kind::array || info->kind == meta::type_kind::set) {
                         auto& ai = static_cast<const meta::array_type_info&>(*info);
-                        child_cands[child_n++] = {seq_cands[i].index, &ai.element()};
+                        child_cands.push_back({sc.index, &ai.element()});
                     } else if(info->kind == meta::type_kind::tuple) {
                         auto& ti = static_cast<const meta::tuple_type_info&>(*info);
                         if(ti.elements.size() != total)
                             continue;
                         if(elem_idx < ti.elements.size()) {
-                            child_cands[child_n++] = {seq_cands[i].index, &ti.elements[elem_idx]()};
+                            child_cands.push_back({sc.index, &ti.elements[elem_idx]()});
                         }
                     }
                 }
 
-                if(child_n > 0) {
-                    multi_score<Adapter>(elem, child_cands, child_n, scores);
+                if(!child_cands.empty()) {
+                    multi_score<Adapter>(elem, child_cands.data(), child_cands.size(), scores);
                 }
             });
     }
 }
 
+struct live_mask {
+    std::uint64_t bits;
+    std::size_t count;
+};
+
+template <typename... Ts>
+constexpr live_mask build_live_mask(meta::type_kind source_kind) {
+    std::uint64_t bits = 0;
+    std::size_t count = 0;
+    std::size_t idx = 0;
+    (([&] {
+         if(accepts_kind<Ts>(source_kind)) {
+             bits |= (std::uint64_t{1} << idx);
+             ++count;
+         }
+         ++idx;
+     }()),
+     ...);
+    return {bits, count};
+}
+
 }  // namespace detail
 
 template <typename Config, typename... Ts>
-std::optional<std::size_t> score_and_select(std::uint64_t live, meta::type_kind source_kind) {
+std::optional<std::size_t> select_by_kind(std::uint64_t live, meta::type_kind source_kind) {
     constexpr meta::type_info_fn info_fns[] = {&meta::type_info_of<Ts, Config>...};
     std::size_t best_score = 0;
     std::optional<std::size_t> best_idx;
@@ -602,27 +656,14 @@ std::optional<std::size_t> score_and_select(std::uint64_t live, meta::type_kind 
     return best_idx;
 }
 
-template <typename Adapter, typename Config, typename... Ts>
+template <source_adapter Adapter, typename Config, typename... Ts>
 std::optional<std::size_t> select_variant_index(typename Adapter::node_type node) {
     constexpr std::size_t N = sizeof...(Ts);
     static_assert(N <= 64, "variant with more than 64 alternatives is not supported");
 
     auto source_kind = Adapter::kind_of(node);
 
-    std::uint64_t live = 0;
-    std::size_t live_count = 0;
-    {
-        std::size_t idx = 0;
-        auto init = [&](auto type_tag) {
-            using alt_t = typename decltype(type_tag)::type;
-            if(accepts_kind<alt_t>(source_kind)) {
-                live |= (std::uint64_t{1} << idx);
-                ++live_count;
-            }
-            ++idx;
-        };
-        (init(std::type_identity<Ts>{}), ...);
-    }
+    auto [live, live_count] = detail::build_live_mask<Ts...>(source_kind);
 
     if(live_count == 0)
         return std::nullopt;
@@ -646,6 +687,7 @@ std::optional<std::size_t> select_variant_index(typename Adapter::node_type node
     detail::multi_score<Adapter>(node, candidates, cand_count, scores);
 
     std::size_t best_score = 0;
+    std::size_t best_count = 0;
     std::optional<std::size_t> best_idx;
     {
         std::uint64_t mask = live;
@@ -654,42 +696,32 @@ std::optional<std::size_t> select_variant_index(typename Adapter::node_type node
             if(scores[idx] > best_score) {
                 best_score = scores[idx];
                 best_idx = idx;
+                best_count = 1;
+            } else if(scores[idx] == best_score) {
+                ++best_count;
             }
             mask &= mask - 1;
         }
     }
 
-    if(best_idx)
+    if(best_idx && best_count == 1)
         return best_idx;
 
-    return score_and_select<Config, Ts...>(live, source_kind);
+    return select_by_kind<Config, Ts...>(live, source_kind);
 }
 
 template <typename Config, typename... Ts>
 std::optional<std::size_t> select_variant_index(meta::type_kind source_kind) {
     static_assert(sizeof...(Ts) <= 64, "variant with more than 64 alternatives is not supported");
 
-    std::uint64_t live = 0;
-    std::size_t live_count = 0;
-    {
-        std::size_t idx = 0;
-        auto init = [&](auto type_tag) {
-            using alt_t = typename decltype(type_tag)::type;
-            if(accepts_kind<alt_t>(source_kind)) {
-                live |= (std::uint64_t{1} << idx);
-                ++live_count;
-            }
-            ++idx;
-        };
-        (init(std::type_identity<Ts>{}), ...);
-    }
+    auto [live, live_count] = detail::build_live_mask<Ts...>(source_kind);
 
     if(live_count == 0)
         return std::nullopt;
     if(live_count == 1)
         return static_cast<std::size_t>(std::countr_zero(live));
 
-    return score_and_select<Config, Ts...>(live, source_kind);
+    return select_by_kind<Config, Ts...>(live, source_kind);
 }
 
 template <typename E, typename D, typename... Ts>

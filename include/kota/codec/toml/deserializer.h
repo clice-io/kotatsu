@@ -205,100 +205,69 @@ public:
 
     template <codec::int_like T>
     status_t deserialize_int(T& value) {
-        std::int64_t parsed = 0;
-        auto status = read_scalar(parsed, [](const ::toml::node& node) -> result_t<std::int64_t> {
-            auto parsed = node.value<std::int64_t>();
-            if(!parsed.has_value()) {
-                return std::unexpected(error_kind::type_mismatch);
-            }
-            return *parsed;
-        });
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-
-        auto narrowed = codec::detail::narrow_int<T>(parsed, error_kind::number_out_of_range);
-        if(!narrowed) {
-            return mark_invalid(narrowed.error());
-        }
-
-        value = *narrowed;
-        return {};
+        return read_and_narrow<std::int64_t>(
+            value,
+            [](const ::toml::node& node) -> result_t<std::int64_t> {
+                auto parsed = node.value<std::int64_t>();
+                if(!parsed.has_value()) {
+                    return std::unexpected(error_kind::type_mismatch);
+                }
+                return *parsed;
+            },
+            [](auto p) {
+                return codec::detail::narrow_int<T>(p, error_kind::number_out_of_range);
+            });
     }
 
     template <codec::uint_like T>
     status_t deserialize_uint(T& value) {
-        std::int64_t parsed = 0;
-        auto status = read_scalar(parsed, [](const ::toml::node& node) -> result_t<std::int64_t> {
-            auto parsed = node.value<std::int64_t>();
-            if(!parsed.has_value()) {
-                return std::unexpected(error_kind::type_mismatch);
-            }
-            return *parsed;
-        });
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-
-        if(parsed < 0) {
-            return mark_invalid(error_kind::number_out_of_range);
-        }
-
-        const auto unsigned_value = static_cast<std::uint64_t>(parsed);
-        auto narrowed =
-            codec::detail::narrow_uint<T>(unsigned_value, error_kind::number_out_of_range);
-        if(!narrowed) {
-            return mark_invalid(narrowed.error());
-        }
-
-        value = *narrowed;
-        return {};
+        return read_and_narrow<std::int64_t>(
+            value,
+            [](const ::toml::node& node) -> result_t<std::int64_t> {
+                auto parsed = node.value<std::int64_t>();
+                if(!parsed.has_value()) {
+                    return std::unexpected(error_kind::type_mismatch);
+                }
+                return *parsed;
+            },
+            [](std::int64_t p) -> std::expected<T, error_type> {
+                if(p < 0) {
+                    return std::unexpected(error_kind::number_out_of_range);
+                }
+                return codec::detail::narrow_uint<T>(
+                    static_cast<std::uint64_t>(p), error_kind::number_out_of_range);
+            });
     }
 
     template <codec::floating_like T>
     status_t deserialize_float(T& value) {
-        double parsed = 0.0;
-        auto status = read_scalar(parsed, [](const ::toml::node& node) -> result_t<double> {
-            auto parsed = node.value<double>();
-            if(!parsed.has_value()) {
-                return std::unexpected(error_kind::type_mismatch);
-            }
-            return *parsed;
-        });
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-
-        auto narrowed = codec::detail::narrow_float<T>(parsed, error_kind::number_out_of_range);
-        if(!narrowed) {
-            return mark_invalid(narrowed.error());
-        }
-
-        value = *narrowed;
-        return {};
+        return read_and_narrow<double>(
+            value,
+            [](const ::toml::node& node) -> result_t<double> {
+                auto parsed = node.value<double>();
+                if(!parsed.has_value()) {
+                    return std::unexpected(error_kind::type_mismatch);
+                }
+                return *parsed;
+            },
+            [](auto p) {
+                return codec::detail::narrow_float<T>(p, error_kind::number_out_of_range);
+            });
     }
 
     status_t deserialize_char(char& value) {
-        std::string text;
-        auto status = read_scalar(text, [](const ::toml::node& node) -> result_t<std::string> {
-            auto parsed = node.value<std::string>();
-            if(!parsed.has_value()) {
-                return std::unexpected(error_kind::type_mismatch);
-            }
-            return std::move(*parsed);
-        });
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-
-        auto narrowed =
-            codec::detail::narrow_char(std::string_view(text), error_kind::type_mismatch);
-        if(!narrowed) {
-            return mark_invalid(narrowed.error());
-        }
-
-        value = *narrowed;
-        return {};
+        return read_and_narrow<std::string>(
+            value,
+            [](const ::toml::node& node) -> result_t<std::string> {
+                auto parsed = node.value<std::string>();
+                if(!parsed.has_value()) {
+                    return std::unexpected(error_kind::type_mismatch);
+                }
+                return std::move(*parsed);
+            },
+            [](const std::string& p) {
+                return codec::detail::narrow_char(std::string_view(p), error_kind::type_mismatch);
+            });
     }
 
     status_t deserialize_str(std::string& value) {
@@ -467,6 +436,18 @@ public:
     }
 
 private:
+    template <typename Parsed, typename T, typename Fn, typename NarrowFn>
+    status_t read_and_narrow(T& value, Fn&& fn, NarrowFn&& narrow_fn) {
+        Parsed parsed{};
+        KOTA_EXPECTED_TRY(read_scalar(parsed, std::forward<Fn>(fn)));
+        auto narrowed = std::forward<NarrowFn>(narrow_fn)(parsed);
+        if(!narrowed) {
+            return mark_invalid(narrowed.error());
+        }
+        value = *narrowed;
+        return {};
+    }
+
     template <typename T, typename Reader>
     status_t read_scalar(T& out, Reader&& reader) {
         auto node = consume_node();

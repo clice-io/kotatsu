@@ -17,7 +17,7 @@
 #include "kota/codec/detail/codec.h"
 #include "kota/codec/detail/config.h"
 #include "kota/codec/detail/narrow.h"
-#include "kota/codec/detail/tagged.h"
+#include "kota/codec/detail/variant_dispatch.h"
 #include "kota/codec/json/error.h"
 
 namespace kota::codec::json {
@@ -476,6 +476,7 @@ public:
         KOTA_EXPECTED_TRY_V(auto obj, read_source<simdjson::ondemand::object>([](auto& src) {
                                 return src.get_object();
                             }));
+        current_value = nullptr;
         std::string result;
         bool found = false;
         for(auto field_result: obj) {
