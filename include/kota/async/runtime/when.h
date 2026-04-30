@@ -152,18 +152,6 @@ void release_inflight(Task& task) noexcept {
     }
 }
 
-inline void destroy_or_detach(async_node* child) noexcept {
-    assert(child && child->kind == async_node::NodeKind::Task);
-    auto* task = static_cast<standard_task*>(child);
-
-    if(task->has_awaitee()) {
-        task->detach_as_root();
-        return;
-    }
-
-    task->handle().destroy();
-}
-
 template <typename Return, std::size_t I = 0, typename Tuple, typename F>
 Return tuple_visit_at_return(std::size_t index, Tuple& tuple, F&& f) {
     if constexpr(I < std::tuple_size_v<std::remove_reference_t<Tuple>>) {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <coroutine>
 #include <cstddef>
 #include <cstdint>
@@ -433,5 +434,21 @@ protected:
 
     std::vector<error_handler> error_handlers;
 };
+
+namespace detail {
+
+inline void destroy_or_detach(async_node* child) noexcept {
+    assert(child && child->kind == async_node::NodeKind::Task);
+    auto* task = static_cast<standard_task*>(child);
+
+    if(task->has_awaitee()) {
+        task->detach_as_root();
+        return;
+    }
+
+    task->handle().destroy();
+}
+
+}  // namespace detail
 
 }  // namespace kota
