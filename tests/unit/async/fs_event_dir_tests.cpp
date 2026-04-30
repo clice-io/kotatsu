@@ -1173,7 +1173,7 @@ task<int, error> watch_unicode_filename(event_loop& loop) {
 
 // ── compatibility: symlink create/delete ───────────────────────────
 
-task<int, error> watch_symlink_create_delete(event_loop& loop) {
+task<int, error> watch_symlink_create_delete([[maybe_unused]] event_loop& loop) {
 #if defined(_WIN32)
     co_return 1;
 #else
@@ -1374,7 +1374,7 @@ task<int, error> watch_subdir_delete_with_files(event_loop& loop) {
 
 // ── parcel-watcher parity: symlink rename ─────────────────────────
 
-task<int, error> watch_symlink_rename(event_loop& loop) {
+task<int, error> watch_symlink_rename([[maybe_unused]] event_loop& loop) {
 #if defined(_WIN32)
     co_return 1;
 #else
@@ -1421,7 +1421,7 @@ task<int, error> watch_symlink_rename(event_loop& loop) {
 
 // ── parcel-watcher parity: symlink update (write through symlink) ─
 
-task<int, error> watch_symlink_update(event_loop& loop) {
+task<int, error> watch_symlink_update([[maybe_unused]] event_loop& loop) {
 #if defined(_WIN32)
     co_return 1;
 #else
@@ -1466,7 +1466,7 @@ task<int, error> watch_symlink_update(event_loop& loop) {
 
 // ── parcel-watcher parity: folder symlink ─────────────────────────
 
-task<int, error> watch_folder_symlink(event_loop& loop) {
+task<int, error> watch_folder_symlink([[maybe_unused]] event_loop& loop) {
 #if defined(_WIN32)
     co_return 1;
 #else
