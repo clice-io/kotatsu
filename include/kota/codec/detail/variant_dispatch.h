@@ -12,9 +12,9 @@
 #include <type_traits>
 #include <utility>
 #include <variant>
-#include <vector>
 
 #include "kota/support/expected_try.h"
+#include "kota/support/small_vector.h"
 #include "kota/support/type_list.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
@@ -494,21 +494,18 @@ void multi_score(typename Adapter::node_type node,
 
     auto source_kind = Adapter::kind_of(node);
 
-    std::vector<variant_candidate> struct_cands;
-    std::vector<variant_candidate> map_cands;
-    std::vector<variant_candidate> seq_cands;
+    small_vector<variant_candidate, 4> struct_cands;
+    small_vector<variant_candidate, 4> map_cands;
+    small_vector<variant_candidate, 4> seq_cands;
 
-    // Expand nested variants into individual alternatives, scoring each independently.
-    // Take max per parent group then add, so variant<double, int> facing int source
-    // scores the same as a direct int candidate, not higher (sum of all alternatives).
     struct expansion_group {
         std::size_t parent_index;
         std::size_t start;
         std::size_t count;
     };
 
-    std::vector<variant_candidate> expanded;
-    std::vector<expansion_group> groups;
+    small_vector<variant_candidate, 4> expanded;
+    small_vector<expansion_group, 4> groups;
     for(std::size_t i = 0; i < count; ++i) {
         const auto* info = unwrap_indirect(candidates[i].type);
         if(info->kind == meta::type_kind::variant) {
@@ -521,7 +518,7 @@ void multi_score(typename Adapter::node_type node,
         }
     }
     if(!expanded.empty()) {
-        std::vector<std::size_t> exp_scores(expanded.size(), 0);
+        small_vector<std::size_t, 4> exp_scores(expanded.size());
         multi_score<Adapter>(node, expanded.data(), expanded.size(), exp_scores.data());
         for(auto& group: groups) {
             std::size_t best = 0;
@@ -550,11 +547,11 @@ void multi_score(typename Adapter::node_type node,
     }
 
     if(meta::is_object_kind(source_kind) && (struct_cands.size() + map_cands.size()) > 0) {
-        std::vector<bool> struct_matched(struct_cands.size(), false);
+        small_vector<bool, 4> struct_matched(struct_cands.size());
         Adapter::for_each_field(
             node,
             [&](std::string_view name, typename Adapter::node_type child) {
-                std::vector<variant_candidate> child_cands;
+                small_vector<variant_candidate, 4> child_cands;
 
                 for(std::size_t si = 0; si < struct_cands.size(); ++si) {
                     auto& sc = struct_cands[si];
@@ -591,7 +588,7 @@ void multi_score(typename Adapter::node_type node,
         Adapter::for_each_element(
             node,
             [&](std::size_t elem_idx, std::size_t total, typename Adapter::node_type elem) {
-                std::vector<variant_candidate> child_cands;
+                small_vector<variant_candidate, 4> child_cands;
 
                 for(auto& sc: seq_cands) {
                     const auto* info = sc.type;

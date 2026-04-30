@@ -183,8 +183,7 @@ public:
             return std::unexpected(node.error());
         }
 
-        auto best =
-            codec::select_variant_index<toml_source_adapter, config_type, Ts...>(*node);
+        auto best = codec::select_variant_index<toml_source_adapter, config_type, Ts...>(*node);
 
         if(!best) {
             return mark_invalid(error_type::type_mismatch);
@@ -234,8 +233,8 @@ public:
                 if(p < 0) {
                     return std::unexpected(error_kind::number_out_of_range);
                 }
-                return codec::detail::narrow_uint<T>(
-                    static_cast<std::uint64_t>(p), error_kind::number_out_of_range);
+                return codec::detail::narrow_uint<T>(static_cast<std::uint64_t>(p),
+                                                     error_kind::number_out_of_range);
             });
     }
 

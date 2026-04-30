@@ -21,8 +21,9 @@ using StringHolder = meta::fixtures::StringHolder;
 using Circle = meta::fixtures::Circle;
 using Rect = meta::fixtures::Rect;
 
-using IntTagShape = meta::annotation<std::variant<Circle, Rect>,
-                                    meta::attrs::internally_tagged<"type">::names<"circle", "rect">>;
+using IntTagShape =
+    meta::annotation<std::variant<Circle, Rect>,
+                     meta::attrs::internally_tagged<"type">::names<"circle", "rect">>;
 
 template <typename T>
 auto from_content(const content::Value& val, T& out) -> std::expected<void, content::error> {

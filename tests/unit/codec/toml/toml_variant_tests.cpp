@@ -27,8 +27,9 @@ using StringHolder = meta::fixtures::StringHolder;
 using Circle = meta::fixtures::Circle;
 using Rect = meta::fixtures::Rect;
 
-using IntTagShape = meta::annotation<std::variant<Circle, Rect>,
-                                    meta::attrs::internally_tagged<"type">::names<"circle", "rect">>;
+using IntTagShape =
+    meta::annotation<std::variant<Circle, Rect>,
+                     meta::attrs::internally_tagged<"type">::names<"circle", "rect">>;
 
 struct VariantField {
     std::variant<int, std::string> value;
@@ -48,13 +49,17 @@ TEST_CASE(int_vs_string) {
         V data;
     };
 
-    auto tbl_int = ::toml::table{{"data", 42}};
+    auto tbl_int = ::toml::table{
+        {"data", 42}
+    };
     Holder out{};
     ASSERT_TRUE(from_toml(tbl_int, out).has_value());
     EXPECT_EQ(out.data.index(), 0U);
     EXPECT_EQ(std::get<int>(out.data), 42);
 
-    auto tbl_str = ::toml::table{{"data", "hello"}};
+    auto tbl_str = ::toml::table{
+        {"data", "hello"}
+    };
     ASSERT_TRUE(from_toml(tbl_str, out).has_value());
     EXPECT_EQ(out.data.index(), 1U);
     EXPECT_EQ(std::get<std::string>(out.data), "hello");
@@ -67,13 +72,17 @@ TEST_CASE(int_before_double) {
         V num;
     };
 
-    auto tbl = ::toml::table{{"num", 42}};
+    auto tbl = ::toml::table{
+        {"num", 42}
+    };
     Holder out{};
     ASSERT_TRUE(from_toml(tbl, out).has_value());
     EXPECT_EQ(out.num.index(), 0U);
     EXPECT_EQ(std::get<int>(out.num), 42);
 
-    auto tbl_f = ::toml::table{{"num", 3.14}};
+    auto tbl_f = ::toml::table{
+        {"num", 3.14}
+    };
     ASSERT_TRUE(from_toml(tbl_f, out).has_value());
     EXPECT_EQ(out.num.index(), 1U);
     EXPECT_EQ(std::get<double>(out.num), 3.14);
@@ -86,13 +95,17 @@ TEST_CASE(bool_vs_int) {
         V data;
     };
 
-    auto tbl_bool = ::toml::table{{"data", true}};
+    auto tbl_bool = ::toml::table{
+        {"data", true}
+    };
     Holder out{};
     ASSERT_TRUE(from_toml(tbl_bool, out).has_value());
     EXPECT_EQ(out.data.index(), 0U);
     EXPECT_EQ(std::get<bool>(out.data), true);
 
-    auto tbl_int = ::toml::table{{"data", 7}};
+    auto tbl_int = ::toml::table{
+        {"data", 7}
+    };
     ASSERT_TRUE(from_toml(tbl_int, out).has_value());
     EXPECT_EQ(out.data.index(), 1U);
     EXPECT_EQ(std::get<int>(out.data), 7);
@@ -105,13 +118,17 @@ TEST_CASE(struct_deep_scoring) {
         V item;
     };
 
-    auto tbl_int = ::toml::table{{"item", ::toml::table{{"value", 42}}}};
+    auto tbl_int = ::toml::table{
+        {"item", ::toml::table{{"value", 42}}}
+    };
     Holder out{};
     ASSERT_TRUE(from_toml(tbl_int, out).has_value());
     EXPECT_EQ(out.item.index(), 0U);
     EXPECT_EQ(std::get<IntHolder>(out.item).value, 42);
 
-    auto tbl_str = ::toml::table{{"item", ::toml::table{{"value", "hello"}}}};
+    auto tbl_str = ::toml::table{
+        {"item", ::toml::table{{"value", "hello"}}}
+    };
     ASSERT_TRUE(from_toml(tbl_str, out).has_value());
     EXPECT_EQ(out.item.index(), 1U);
     EXPECT_EQ(std::get<StringHolder>(out.item).value, "hello");
@@ -128,13 +145,17 @@ TEST_CASE(array_vs_table) {
     arr.push_back(1);
     arr.push_back(2);
     arr.push_back(3);
-    auto tbl_arr = ::toml::table{{"data", std::move(arr)}};
+    auto tbl_arr = ::toml::table{
+        {"data", std::move(arr)}
+    };
     Holder out{};
     ASSERT_TRUE(from_toml(tbl_arr, out).has_value());
     EXPECT_EQ(out.data.index(), 0U);
     EXPECT_EQ(std::get<std::vector<int>>(out.data), std::vector<int>({1, 2, 3}));
 
-    auto tbl_map = ::toml::table{{"data", ::toml::table{{"a", 1}, {"b", 2}}}};
+    auto tbl_map = ::toml::table{
+        {"data", ::toml::table{{"a", 1}, {"b", 2}}}
+    };
     ASSERT_TRUE(from_toml(tbl_map, out).has_value());
     EXPECT_EQ(out.data.index(), 1U);
     auto& m = std::get<std::map<std::string, int>>(out.data);
@@ -150,13 +171,17 @@ TEST_CASE(struct_vs_map_scoring) {
         V data;
     };
 
-    auto tbl_point = ::toml::table{{"data", ::toml::table{{"x", 1.0}, {"y", 2.0}}}};
+    auto tbl_point = ::toml::table{
+        {"data", ::toml::table{{"x", 1.0}, {"y", 2.0}}}
+    };
     Holder out{};
     ASSERT_TRUE(from_toml(tbl_point, out).has_value());
     EXPECT_EQ(out.data.index(), 0U);
     EXPECT_EQ(std::get<Point>(out.data), (Point{1.0, 2.0}));
 
-    auto tbl_map = ::toml::table{{"data", ::toml::table{{"foo", 3.0}}}};
+    auto tbl_map = ::toml::table{
+        {"data", ::toml::table{{"foo", 3.0}}}
+    };
     ASSERT_TRUE(from_toml(tbl_map, out).has_value());
     EXPECT_EQ(out.data.index(), 1U);
     EXPECT_EQ(std::get<std::map<std::string, double>>(out.data).at("foo"), 3.0);
@@ -169,7 +194,9 @@ TEST_CASE(no_match_fails) {
         V data;
     };
 
-    auto tbl_bool = ::toml::table{{"data", true}};
+    auto tbl_bool = ::toml::table{
+        {"data", true}
+    };
     Holder out{};
     EXPECT_FALSE(from_toml(tbl_bool, out).has_value());
 }
@@ -216,7 +243,9 @@ TEST_CASE(empty_object_scoring) {
         V data;
     };
 
-    auto tbl_empty = ::toml::table{{"data", ::toml::table{}}};
+    auto tbl_empty = ::toml::table{
+        {"data", ::toml::table{}}
+    };
     Holder out{};
     ASSERT_TRUE(from_toml(tbl_empty, out).has_value());
     EXPECT_EQ(out.data.index(), 1U);
@@ -230,7 +259,9 @@ TEST_CASE(empty_array_scoring) {
     };
 
     ::toml::array arr;
-    auto tbl = ::toml::table{{"data", std::move(arr)}};
+    auto tbl = ::toml::table{
+        {"data", std::move(arr)}
+    };
     Holder out{};
     ASSERT_TRUE(from_toml(tbl, out).has_value());
     EXPECT_EQ(out.data.index(), 0U);
@@ -244,13 +275,17 @@ TEST_CASE(field_subset_match) {
         V shape;
     };
 
-    auto tbl = ::toml::table{{"shape", ::toml::table{{"radius", 5.0}}}};
+    auto tbl = ::toml::table{
+        {"shape", ::toml::table{{"radius", 5.0}}}
+    };
     Holder out{};
     ASSERT_TRUE(from_toml(tbl, out).has_value());
     EXPECT_EQ(out.shape.index(), 1U);
     EXPECT_EQ(std::get<Circle>(out.shape).radius, 5.0);
 
-    auto tbl2 = ::toml::table{{"shape", ::toml::table{{"x", 1.0}, {"y", 2.0}}}};
+    auto tbl2 = ::toml::table{
+        {"shape", ::toml::table{{"x", 1.0}, {"y", 2.0}}}
+    };
     ASSERT_TRUE(from_toml(tbl2, out).has_value());
     EXPECT_EQ(out.shape.index(), 0U);
     EXPECT_EQ(std::get<Point>(out.shape), (Point{1.0, 2.0}));
@@ -265,7 +300,9 @@ TEST_CASE(circle_roundtrip) {
         IntTagShape shape;
     };
 
-    auto tbl = ::toml::table{{"shape", ::toml::table{{"type", "circle"}, {"radius", 5.0}}}};
+    auto tbl = ::toml::table{
+        {"shape", ::toml::table{{"type", "circle"}, {"radius", 5.0}}}
+    };
     Holder out{};
     ASSERT_TRUE(from_toml(tbl, out).has_value());
     EXPECT_EQ(std::get<Circle>(out.shape), (Circle{.radius = 5.0}));
@@ -301,7 +338,9 @@ TEST_CASE(missing_tag_fails) {
         IntTagShape shape;
     };
 
-    auto tbl = ::toml::table{{"shape", ::toml::table{{"radius", 5.0}}}};
+    auto tbl = ::toml::table{
+        {"shape", ::toml::table{{"radius", 5.0}}}
+    };
     Holder out{};
     EXPECT_FALSE(from_toml(tbl, out).has_value());
 }
@@ -326,9 +365,18 @@ TEST_CASE(vector_of_tagged) {
     };
 
     ::toml::array arr;
-    arr.push_back(::toml::table{{"type", "circle"}, {"radius", 1.0}});
-    arr.push_back(::toml::table{{"type", "rect"}, {"width", 2.0}, {"height", 3.0}});
-    auto tbl = ::toml::table{{"shapes", std::move(arr)}};
+    arr.push_back(::toml::table{
+        {"type",   "circle"},
+        {"radius", 1.0     }
+    });
+    arr.push_back(::toml::table{
+        {"type",   "rect"},
+        {"width",  2.0   },
+        {"height", 3.0   }
+    });
+    auto tbl = ::toml::table{
+        {"shapes", std::move(arr)}
+    };
 
     Holder out{};
     ASSERT_TRUE(from_toml(tbl, out).has_value());
