@@ -181,8 +181,11 @@ private:
         }
     }
 
-    using stored_error_type = std::conditional_t<std::is_void_v<error_type>, int, error_type>;
-    std::vector<stored_error_type> errors;
+    struct empty {};
+
+    KOTA_NO_UNIQUE_ADDRESS
+        std::conditional_t<std::is_void_v<error_type>, empty, std::vector<error_type>>
+            errors;
 
     std::vector<std::exception_ptr> exceptions;
 };
