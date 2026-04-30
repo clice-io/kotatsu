@@ -541,7 +541,7 @@ struct deserialize_traits<D, content::Value> {
             KOTA_EXPECTED_TRY(d.deserialize_bool(b));
             value = content::Value(b);
         } else if(meta::is_integer_kind(kind)) {
-            if(kind >= meta::type_kind::uint8) {
+            if(meta::is_unsigned_integer_kind(kind)) {
                 std::uint64_t u = 0;
                 KOTA_EXPECTED_TRY(d.deserialize_uint(u));
                 value = content::Value(u);

@@ -120,6 +120,14 @@ constexpr bool is_integer_kind(type_kind k) noexcept {
     return k >= type_kind::int8 && k <= type_kind::uint64;
 }
 
+constexpr bool is_signed_integer_kind(type_kind k) noexcept {
+    return k >= type_kind::int8 && k <= type_kind::int64;
+}
+
+constexpr bool is_unsigned_integer_kind(type_kind k) noexcept {
+    return k >= type_kind::uint8 && k <= type_kind::uint64;
+}
+
 constexpr bool is_floating_kind(type_kind k) noexcept {
     return k == type_kind::float32 || k == type_kind::float64;
 }

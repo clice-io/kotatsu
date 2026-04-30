@@ -305,6 +305,8 @@ namespace kota::codec {
 template <typename A>
 concept source_adapter = requires(typename A::node_type node) {
     { A::kind_of(node) } -> std::same_as<meta::type_kind>;
+    A::for_each_field(node, [](std::string_view, typename A::node_type) {});
+    A::for_each_element(node, [](std::size_t, std::size_t, typename A::node_type) {});
 };
 
 constexpr std::size_t kind_width(meta::type_kind k) noexcept {
@@ -428,6 +430,8 @@ struct content_source_adapter {
 
     template <typename Fn>
     static void for_each_field(node_type node, Fn&& fn) {
+        if(!node)
+            return;
         if(const auto* obj = node->get_object()) {
             for(const auto& entry: *obj) {
                 fn(std::string_view(entry.key), &entry.value);
@@ -437,6 +441,8 @@ struct content_source_adapter {
 
     template <typename Fn>
     static void for_each_element(node_type node, Fn&& fn) {
+        if(!node)
+            return;
         if(const auto* arr = node->get_array()) {
             std::size_t total = arr->size();
             for(std::size_t i = 0; i < total; ++i) {
@@ -620,6 +626,7 @@ struct live_mask {
 
 template <typename... Ts>
 constexpr live_mask build_live_mask(meta::type_kind source_kind) {
+    static_assert(sizeof...(Ts) <= 64, "variant with more than 64 alternatives is not supported");
     std::uint64_t bits = 0;
     std::size_t count = 0;
     std::size_t idx = 0;

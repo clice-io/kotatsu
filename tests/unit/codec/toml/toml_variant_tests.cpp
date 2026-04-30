@@ -31,9 +31,8 @@ using IntTagShape =
     meta::annotation<std::variant<Circle, Rect>,
                      meta::attrs::internally_tagged<"type">::names<"circle", "rect">>;
 
-using ExtTagShape =
-    meta::annotation<std::variant<int, std::string>,
-                     meta::attrs::externally_tagged::names<"integer", "text">>;
+using ExtTagShape = meta::annotation<std::variant<int, std::string>,
+                                     meta::attrs::externally_tagged::names<"integer", "text">>;
 
 using AdjTagShape =
     meta::annotation<std::variant<int, std::string>,
@@ -416,7 +415,9 @@ TEST_CASE(int_roundtrip) {
         ExtTagShape data;
     };
 
-    auto tbl = ::toml::table{{"data", ::toml::table{{"integer", 42}}}};
+    auto tbl = ::toml::table{
+        {"data", ::toml::table{{"integer", 42}}}
+    };
     Holder out{};
     ASSERT_TRUE(from_toml(tbl, out).has_value());
     EXPECT_EQ(std::get<int>(out.data), 42);
@@ -433,7 +434,9 @@ TEST_CASE(string_roundtrip) {
         ExtTagShape data;
     };
 
-    auto tbl = ::toml::table{{"data", ::toml::table{{"text", "hello"}}}};
+    auto tbl = ::toml::table{
+        {"data", ::toml::table{{"text", "hello"}}}
+    };
     Holder out{};
     ASSERT_TRUE(from_toml(tbl, out).has_value());
     EXPECT_EQ(std::get<std::string>(out.data), "hello");
@@ -444,7 +447,9 @@ TEST_CASE(unknown_tag_fails) {
         ExtTagShape data;
     };
 
-    auto tbl = ::toml::table{{"data", ::toml::table{{"unknown", 1}}}};
+    auto tbl = ::toml::table{
+        {"data", ::toml::table{{"unknown", 1}}}
+    };
     Holder out{};
     EXPECT_FALSE(from_toml(tbl, out).has_value());
 }
@@ -458,7 +463,9 @@ TEST_CASE(int_roundtrip) {
         AdjTagShape data;
     };
 
-    auto tbl = ::toml::table{{"data", ::toml::table{{"type", "integer"}, {"value", 42}}}};
+    auto tbl = ::toml::table{
+        {"data", ::toml::table{{"type", "integer"}, {"value", 42}}}
+    };
     Holder out{};
     ASSERT_TRUE(from_toml(tbl, out).has_value());
     EXPECT_EQ(std::get<int>(out.data), 42);
@@ -475,7 +482,9 @@ TEST_CASE(string_roundtrip) {
         AdjTagShape data;
     };
 
-    auto tbl = ::toml::table{{"data", ::toml::table{{"type", "text"}, {"value", "hello"}}}};
+    auto tbl = ::toml::table{
+        {"data", ::toml::table{{"type", "text"}, {"value", "hello"}}}
+    };
     Holder out{};
     ASSERT_TRUE(from_toml(tbl, out).has_value());
     EXPECT_EQ(std::get<std::string>(out.data), "hello");
@@ -486,7 +495,9 @@ TEST_CASE(unknown_tag_fails) {
         AdjTagShape data;
     };
 
-    auto tbl = ::toml::table{{"data", ::toml::table{{"type", "unknown"}, {"value", 1}}}};
+    auto tbl = ::toml::table{
+        {"data", ::toml::table{{"type", "unknown"}, {"value", 1}}}
+    };
     Holder out{};
     EXPECT_FALSE(from_toml(tbl, out).has_value());
 }
@@ -496,7 +507,9 @@ TEST_CASE(missing_tag_fails) {
         AdjTagShape data;
     };
 
-    auto tbl = ::toml::table{{"data", ::toml::table{{"value", 42}}}};
+    auto tbl = ::toml::table{
+        {"data", ::toml::table{{"value", 42}}}
+    };
     Holder out{};
     EXPECT_FALSE(from_toml(tbl, out).has_value());
 }
@@ -506,7 +519,9 @@ TEST_CASE(missing_content_fails) {
         AdjTagShape data;
     };
 
-    auto tbl = ::toml::table{{"data", ::toml::table{{"type", "integer"}}}};
+    auto tbl = ::toml::table{
+        {"data", ::toml::table{{"type", "integer"}}}
+    };
     Holder out{};
     EXPECT_FALSE(from_toml(tbl, out).has_value());
 }
