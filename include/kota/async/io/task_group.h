@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cassert>
 #include <exception>
 #include <source_location>
 #include <type_traits>
@@ -73,7 +72,7 @@ public:
     template <typename T, typename E, typename C>
         requires std::is_void_v<E> || is_one_of<E, Errors...>
     void spawn(task<T, E, C>&& t) {
-        if(fail_fast_started || phase == Phase::Settled) {
+        if(stopped || phase == Phase::Settled) {
             return;
         }
 
@@ -90,10 +89,10 @@ public:
     }
 
     void cancel() {
-        if(fail_fast_started) {
+        if(stopped) {
             return;
         }
-        fail_fast_started = true;
+        stopped = true;
         phase = Phase::Cancelling;
         const std::size_t n = awaitees.size();
         for(std::size_t i = 0; i < n; ++i) {
@@ -102,7 +101,10 @@ public:
                 child->async_node::cancel();
             }
         }
-        phase = Phase::Open;
+
+        if(phase == Phase::Cancelling) {
+            phase = Phase::Open;
+        }
 
         if(deferred != Deferred::None && awaiter) {
             phase = Phase::Settled;

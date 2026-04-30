@@ -31,7 +31,7 @@ TEST_CASE(unregistered_method) {
               static_cast<protocol::integer>(protocol::ErrorCode::MethodNotFound));
 }
 
-// 3.3 Duplicate request id → InvalidRequest on second
+// 3.3 Duplicate request id while first is still pending → InvalidRequest
 TEST_CASE(duplicate_request_id) {
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":1,"b":2}})",
@@ -45,6 +45,7 @@ TEST_CASE(duplicate_request_id) {
 
     peer.on_request([&](RequestContext&, const AddParams& params) -> RequestResult<AddParams> {
         ++invocations;
+        co_await sleep(1, loop);
         co_return AddResult{.sum = params.a + params.b};
     });
 
@@ -54,17 +55,17 @@ TEST_CASE(duplicate_request_id) {
     EXPECT_EQ(invocations, 1);
     ASSERT_EQ(transport_ptr->outgoing().size(), 2U);
 
-    auto success = codec::json::from_json<Response>(transport_ptr->outgoing()[0]);
-    ASSERT_TRUE(success.has_value());
-    EXPECT_EQ(std::get<std::int64_t>(success->id), 1);
-    ASSERT_TRUE(success->result.has_value());
-    EXPECT_EQ(success->result->sum, 3);
-
-    auto error = codec::json::from_json<ErrorResponse>(transport_ptr->outgoing()[1]);
+    auto error = codec::json::from_json<ErrorResponse>(transport_ptr->outgoing()[0]);
     ASSERT_TRUE(error.has_value());
     EXPECT_EQ(std::get<std::int64_t>(error->id), 1);
     EXPECT_EQ(error->error.code,
               static_cast<protocol::integer>(protocol::ErrorCode::InvalidRequest));
+
+    auto success = codec::json::from_json<Response>(transport_ptr->outgoing()[1]);
+    ASSERT_TRUE(success.has_value());
+    EXPECT_EQ(std::get<std::int64_t>(success->id), 1);
+    ASSERT_TRUE(success->result.has_value());
+    EXPECT_EQ(success->result->sum, 3);
 }
 
 // 3.5 Unregistered notification → silent ignore

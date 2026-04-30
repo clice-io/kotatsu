@@ -416,18 +416,21 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
                         break;
                     }
                 }
+            }
 
-                if(!self->fail_fast_started) {
-                    self->fail_fast_started = true;
-                    if(self->completed < self->total) {
-                        self->phase = aggregate_op::Phase::Cancelling;
-                        const std::size_t n = self->awaitees.size();
-                        for(std::size_t i = 0; i < n; ++i) {
-                            auto* other = self->awaitees[i];
-                            if(other && other != child) {
-                                other->cancel();
-                            }
+            if((child->state == Failed || child->state == Cancelled) && !self->stopped &&
+               self->phase == aggregate_op::Phase::Open) {
+                self->stopped = true;
+                if(self->completed < self->total) {
+                    self->phase = aggregate_op::Phase::Cancelling;
+                    const std::size_t n = self->awaitees.size();
+                    for(std::size_t i = 0; i < n; ++i) {
+                        auto* other = self->awaitees[i];
+                        if(other && other != child) {
+                            other->cancel();
                         }
+                    }
+                    if(self->phase == aggregate_op::Phase::Cancelling) {
                         self->phase = aggregate_op::Phase::Open;
                     }
                 }

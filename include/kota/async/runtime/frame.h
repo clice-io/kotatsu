@@ -425,7 +425,7 @@ protected:
 
     explicit task_group_node() : aggregate_op(NodeKind::TaskGroup) {}
 
-    bool fail_fast_started = false;
+    bool stopped = false;
 
     struct error_handler {
         void (*fn)(async_node* child, task_group_node* group) = nullptr;

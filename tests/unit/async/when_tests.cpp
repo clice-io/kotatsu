@@ -1651,6 +1651,7 @@ TEST_CASE(returns_structured_error) {
 
     auto t = driver();
     schedule_all(t);
+    EXPECT_TRUE(t->is_finished());
     EXPECT_EQ(slow_done, 0);
 }
 
@@ -1679,6 +1680,7 @@ TEST_CASE(mixed_error_types) {
 
     auto t = driver();
     schedule_all(t);
+    EXPECT_TRUE(t->is_finished());
     EXPECT_EQ(slow_done, 0);
 }
 
@@ -1793,7 +1795,8 @@ TEST_CASE(child_self_cancel) {
 
     auto t = driver();
     schedule_all(t);
-    EXPECT_EQ(slow_done, 1);
+    EXPECT_TRUE(t->is_finished());
+    EXPECT_EQ(slow_done, 0);
 }
 
 TEST_CASE(token_cancel) {
@@ -1891,10 +1894,12 @@ TEST_CASE(collects_multiple_errors) {
         auto res = co_await group.join();
         EXPECT_TRUE(res.has_error());
         EXPECT_GE(res.error().size(), 1u);
+        EXPECT_LE(res.error().size(), 3u);
     };
 
     auto t = driver();
     schedule_all(t);
+    EXPECT_TRUE(t->is_finished());
 }
 
 TEST_CASE(fail_fast_cancels_siblings) {
@@ -1923,6 +1928,78 @@ TEST_CASE(fail_fast_cancels_siblings) {
     auto t = driver();
     schedule_all(t);
     EXPECT_EQ(completed, 0);
+}
+
+TEST_CASE(not_awaited) {
+    int count = 0;
+
+    auto work = [&]() -> task<> {
+        count += 1;
+        co_return;
+    };
+
+    {
+        task_group<> group(loop);
+        group.spawn(work());
+        group.spawn(work());
+    }
+
+    EXPECT_EQ(count, 2);
+}
+
+TEST_CASE(spawn_after_cancel) {
+    int count = 0;
+
+    auto work = [&]() -> task<> {
+        count += 1;
+        co_return;
+    };
+
+    auto driver = [&]() -> task<> {
+        task_group<> group(loop);
+        group.spawn(work());
+        group.cancel();
+        group.spawn(work());
+        co_await group.join();
+    };
+
+    auto t = driver();
+    schedule_all(t);
+    EXPECT_EQ(count, 1);
+}
+
+TEST_CASE(cancel_idempotent) {
+    int finished = 0;
+
+    auto slow = [&]() -> task<> {
+        co_await sleep(50, loop);
+        finished += 1;
+    };
+
+    auto driver = [&]() -> task<> {
+        task_group<> group(loop);
+        group.spawn(slow());
+        group.cancel();
+        group.cancel();
+        group.cancel();
+        co_await group.join();
+    };
+
+    auto t = driver();
+    schedule_all(t);
+    EXPECT_EQ(finished, 0);
+}
+
+TEST_CASE(empty_cancel) {
+    auto driver = [&]() -> task<> {
+        task_group<> group(loop);
+        group.cancel();
+        co_await group.join();
+    };
+
+    auto t = driver();
+    schedule_all(t);
+    EXPECT_TRUE(t->is_finished());
 }
 
 };  // TEST_SUITE(task_group)

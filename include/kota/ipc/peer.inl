@@ -263,6 +263,7 @@ struct Peer<CodecT>::Self {
                        std::string params,
                        cancellation_token token) {
         auto guarded_result = co_await with_token(callback(id, params, token), token);
+        incoming_requests.erase(id);
 
         if(guarded_result.is_cancelled()) {
             send_error(id, Error(protocol::ErrorCode::RequestCancelled, "request cancelled"));
@@ -328,7 +329,7 @@ task<> Peer<CodecT>::run() {
 
     task_group<> request_group(self->loop);
 
-    auto read_messages = [this, &request_group]() -> task<> {
+    auto read_and_dispatch = [this, &request_group]() -> task<> {
         ET_IPC_LOG(self.get(), LogLevel::info, "{}", "read loop started");
         while(self->transport) {
             auto payload = co_await self->transport->read_message();
@@ -342,7 +343,7 @@ task<> Peer<CodecT>::run() {
     };
 
     auto read_loop = [&]() -> task<> {
-        auto result = co_await read_messages().catch_cancel();
+        auto result = co_await read_and_dispatch().catch_cancel();
         if(result.is_cancelled()) {
             request_group.cancel();
         }
