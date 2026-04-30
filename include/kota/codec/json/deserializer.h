@@ -54,9 +54,11 @@ struct simdjson_source_adapter {
                 simdjson::ondemand::number_type nt;
                 if(node.val.get_number_type().get(nt) != simdjson::SUCCESS)
                     return meta::type_kind::int64;
-                return nt == simdjson::ondemand::number_type::floating_point_number
-                           ? meta::type_kind::float64
-                           : meta::type_kind::int64;
+                if(nt == simdjson::ondemand::number_type::floating_point_number)
+                    return meta::type_kind::float64;
+                if(nt == simdjson::ondemand::number_type::unsigned_integer)
+                    return meta::type_kind::uint64;
+                return meta::type_kind::int64;
             }
             case simdjson::ondemand::json_type::string: return meta::type_kind::string;
             case simdjson::ondemand::json_type::array: return meta::type_kind::array;
@@ -254,81 +256,43 @@ public:
 
     template <codec::int_like T>
     status_t deserialize_int(T& value) {
-        std::int64_t parsed = 0;
-        auto status = read_scalar(
-            parsed,
-            [](simdjson::ondemand::document& doc) { return doc.get_int64(); },
-            [](simdjson::ondemand::value& value) { return value.get_int64(); });
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-
-        auto narrowed = codec::detail::narrow_int<T>(parsed, error_type::number_out_of_range);
-        if(!narrowed) {
-            return mark_invalid(narrowed.error());
-        }
-
-        value = *narrowed;
-        return {};
+        return read_and_narrow<std::int64_t>(
+            value,
+            [](auto& doc) { return doc.get_int64(); },
+            [](auto& val) { return val.get_int64(); },
+            [](auto p) {
+                return codec::detail::narrow_int<T>(p, error_type::number_out_of_range);
+            });
     }
 
     template <codec::uint_like T>
     status_t deserialize_uint(T& value) {
-        std::uint64_t parsed = 0;
-        auto status = read_scalar(
-            parsed,
-            [](simdjson::ondemand::document& doc) { return doc.get_uint64(); },
-            [](simdjson::ondemand::value& value) { return value.get_uint64(); });
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-
-        auto narrowed = codec::detail::narrow_uint<T>(parsed, error_type::number_out_of_range);
-        if(!narrowed) {
-            return mark_invalid(narrowed.error());
-        }
-
-        value = *narrowed;
-        return {};
+        return read_and_narrow<std::uint64_t>(
+            value,
+            [](auto& doc) { return doc.get_uint64(); },
+            [](auto& val) { return val.get_uint64(); },
+            [](auto p) {
+                return codec::detail::narrow_uint<T>(p, error_type::number_out_of_range);
+            });
     }
 
     template <codec::floating_like T>
     status_t deserialize_float(T& value) {
-        double parsed = 0.0;
-        auto status = read_scalar(
-            parsed,
-            [](simdjson::ondemand::document& doc) { return doc.get_double(); },
-            [](simdjson::ondemand::value& value) { return value.get_double(); });
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-
-        auto narrowed = codec::detail::narrow_float<T>(parsed, error_type::number_out_of_range);
-        if(!narrowed) {
-            return mark_invalid(narrowed.error());
-        }
-
-        value = *narrowed;
-        return {};
+        return read_and_narrow<double>(
+            value,
+            [](auto& doc) { return doc.get_double(); },
+            [](auto& val) { return val.get_double(); },
+            [](auto p) {
+                return codec::detail::narrow_float<T>(p, error_type::number_out_of_range);
+            });
     }
 
     status_t deserialize_char(char& value) {
-        std::string_view text;
-        auto status = read_scalar(
-            text,
-            [](simdjson::ondemand::document& doc) { return doc.get_string(); },
-            [](simdjson::ondemand::value& value) { return value.get_string(); });
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-
-        auto narrowed = codec::detail::narrow_char(text, error_type::type_mismatch);
-        if(!narrowed) {
-            return mark_invalid(narrowed.error());
-        }
-
-        value = *narrowed;
-        return {};
+        return read_and_narrow<std::string_view>(
+            value,
+            [](auto& doc) { return doc.get_string(); },
+            [](auto& val) { return val.get_string(); },
+            [](auto p) { return codec::detail::narrow_char(p, error_type::type_mismatch); });
     }
 
     status_t deserialize_str(std::string& value) {
@@ -364,7 +328,11 @@ public:
     }
 
     result_t<simdjson::padded_string_view> deserialize_raw_json_view() {
-        return consume_raw_json_view();
+        KOTA_EXPECTED_TRY_V(
+            auto raw,
+            read_source<std::string_view>([](auto& doc) { return doc.raw_json(); },
+                                          [](auto& val) { return val.raw_json(); }));
+        return to_padded_subview(raw);
     }
 
     result_t<simdjson::ondemand::json_type> peek_type() {
@@ -508,7 +476,11 @@ public:
         if(!frame.has_pending_value) {
             return mark_invalid();
         }
-        KOTA_EXPECTED_TRY(skip_value(frame.pending_value));
+        std::string_view raw{};
+        auto err = frame.pending_value.raw_json().get(raw);
+        if(err != simdjson::SUCCESS) {
+            return mark_invalid(err);
+        }
         ++frame.iter;
         frame.has_pending_value = false;
         current_value = nullptr;
@@ -665,21 +637,17 @@ private:
         return {};
     }
 
-    status_t skip_value(simdjson::ondemand::value& value) {
-        std::string_view raw{};
-        auto err = value.raw_json().get(raw);
-        if(err != simdjson::SUCCESS) {
-            return mark_invalid(err);
+    template <typename Parsed, typename T, typename DocFn, typename ValFn, typename NarrowFn>
+    status_t read_and_narrow(T& value, DocFn&& doc_fn, ValFn&& val_fn, NarrowFn&& narrow_fn) {
+        Parsed parsed{};
+        KOTA_EXPECTED_TRY(
+            read_scalar(parsed, std::forward<DocFn>(doc_fn), std::forward<ValFn>(val_fn)));
+        auto narrowed = std::forward<NarrowFn>(narrow_fn)(parsed);
+        if(!narrowed) {
+            return mark_invalid(narrowed.error());
         }
+        value = *narrowed;
         return {};
-    }
-
-    result_t<simdjson::padded_string_view> consume_raw_json_view() {
-        KOTA_EXPECTED_TRY_V(
-            auto raw,
-            read_source<std::string_view>([](auto& doc) { return doc.raw_json(); },
-                                          [](auto& val) { return val.raw_json(); }));
-        return to_padded_subview(raw);
     }
 
     static meta::type_kind map_to_kind(simdjson::ondemand::json_type json_type,
