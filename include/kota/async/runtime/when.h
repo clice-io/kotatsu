@@ -32,7 +32,7 @@ template <typename T>
 struct keep_non_void : std::bool_constant<!std::is_void_v<T>> {};
 
 template <typename... Ts>
-using aggregated_channel_t = typename type_list_to_aggregate<
+using aggregated_channel_t = typename type_list_to_union<
     type_list_unique_t<type_list_filter_t<type_list<Ts...>, keep_non_void>>>::type;
 
 template <typename T>

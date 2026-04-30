@@ -269,6 +269,30 @@ TEST_CASE(close_after_partial_completion) {
     EXPECT_EQ(slow_done, 0);
 }
 
+// 5.14 write failure closes transport, ending the read loop
+TEST_CASE(write_fail_closes_transport) {
+    auto transport = std::make_unique<ScriptedTransport>(std::vector<std::string>{}, nullptr);
+    auto* transport_ptr = transport.get();
+
+    event_loop loop;
+    JsonPeer peer(loop, std::move(transport));
+    Result<AddResult> request_result = outcome_error(Error("not completed"));
+
+    auto requester = [&]() -> task<> {
+        co_await sleep(1, loop);
+        transport_ptr->set_fail_writes(true);
+        request_result =
+            co_await peer.send_request<AddResult>("worker/build", CustomAddParams{.a = 1, .b = 2});
+    };
+
+    loop.schedule(peer.run());
+    loop.schedule(requester());
+    EXPECT_EQ(loop.run(), 0);
+
+    ASSERT_FALSE(request_result.has_value());
+    EXPECT_FALSE(request_result.error().message.empty());
+}
+
 };  // TEST_SUITE(ipc_peer_lifecycle)
 
 }  // namespace

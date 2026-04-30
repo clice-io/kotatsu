@@ -413,8 +413,8 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
             if(child->state == Failed) {
                 for(std::size_t i = 0; i < self->awaitees.size(); ++i) {
                     if(self->awaitees[i] == child) {
-                        if(i < self->error_handlers.size() && self->error_handlers[i].fn) {
-                            self->error_handlers[i].fn(child, self);
+                        if(i < self->error_handlers.size() && self->error_handlers[i]) {
+                            self->error_handlers[i](child, self);
                         }
                         break;
                     }
@@ -425,17 +425,7 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
                self->phase == aggregate_op::Phase::Open) {
                 self->stopped = true;
                 if(self->completed < self->total) {
-                    self->phase = aggregate_op::Phase::Cancelling;
-                    const std::size_t n = self->awaitees.size();
-                    for(std::size_t i = 0; i < n; ++i) {
-                        auto* other = self->awaitees[i];
-                        if(other && other != child) {
-                            other->cancel();
-                        }
-                    }
-                    if(self->phase == aggregate_op::Phase::Cancelling) {
-                        self->phase = aggregate_op::Phase::Open;
-                    }
+                    self->cancel_children(child);
                 }
             }
 

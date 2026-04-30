@@ -428,11 +428,23 @@ protected:
 
     bool stopped = false;
 
-    struct error_handler {
-        void (*fn)(async_node* child, task_group_node* group) = nullptr;
-    };
+    using error_handler = void (*)(async_node* child, task_group_node* group);
 
     std::vector<error_handler> error_handlers;
+
+    void cancel_children(async_node* exclude = nullptr) {
+        phase = Phase::Cancelling;
+        const std::size_t n = awaitees.size();
+        for(std::size_t i = 0; i < n; ++i) {
+            auto* child = awaitees[i];
+            if(child && child != exclude) {
+                child->cancel();
+            }
+        }
+        if(phase == Phase::Cancelling) {
+            phase = Phase::Open;
+        }
+    }
 };
 
 namespace detail {

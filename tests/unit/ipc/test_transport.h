@@ -68,11 +68,18 @@ public:
     }
 
     task<void, Error> write_message(std::string_view payload) override {
+        if(fail_writes) {
+            co_await kota::fail(Error("write failed"));
+        }
         outgoing_messages.emplace_back(payload);
         if(write_hook) {
             write_hook(payload, *this);
         }
         co_return;
+    }
+
+    void set_fail_writes(bool fail) {
+        fail_writes = fail;
     }
 
     void push_incoming(std::string payload) {
@@ -97,6 +104,7 @@ private:
     WriteHook write_hook;
     event readable;
     bool closed = false;
+    bool fail_writes = false;
 };
 
 inline std::string frame(std::string_view payload) {

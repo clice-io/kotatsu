@@ -2201,6 +2201,242 @@ TEST_CASE(detaches_until_quiescent) {
     EXPECT_EQ(op_destroyed, 1);
 }
 
+// cancel() called while join() is suspended — tests deliver_deferred() fast path
+TEST_CASE(cancel_while_join_suspended) {
+    int finished = 0;
+    task_group<>* group_ptr = nullptr;
+
+    auto slow = [&]() -> task<> {
+        co_await sleep(std::chrono::seconds(10), loop);
+        finished += 1;
+    };
+
+    auto driver = [&]() -> task<> {
+        task_group<> group(loop);
+        group_ptr = &group;
+        group.spawn(slow());
+        group.spawn(slow());
+        co_await group.join();
+    };
+
+    auto canceler = [&]() -> task<> {
+        co_await sleep(1, loop);
+        group_ptr->cancel();
+    };
+
+    auto t = driver();
+    auto c = canceler();
+    schedule_all(t, c);
+    EXPECT_TRUE(t->is_finished());
+    EXPECT_EQ(finished, 0);
+}
+
+// cancel() while join() suspended, with errors — errors collected before cancel
+TEST_CASE(cancel_while_join_suspended_with_error) {
+    task_group<error>* group_ptr = nullptr;
+
+    auto failing = [&]() -> task<int, error> {
+        co_await sleep(1, loop);
+        co_await fail(error::connection_refused);
+    };
+
+    auto slow = [&]() -> task<> {
+        co_await sleep(std::chrono::seconds(10), loop);
+    };
+
+    auto driver = [&]() -> task<> {
+        task_group<error> group(loop);
+        group_ptr = &group;
+        group.spawn(failing());
+        group.spawn(slow());
+        auto res = co_await group.join();
+        EXPECT_TRUE(res.has_error());
+        EXPECT_EQ(res.error().size(), 1u);
+        EXPECT_EQ(res.error().front(), error::connection_refused);
+    };
+
+    auto canceler = [&]() -> task<> {
+        co_await sleep(5, loop);
+        group_ptr->cancel();
+    };
+
+    auto t = driver();
+    auto c = canceler();
+    schedule_all(t, c);
+    EXPECT_TRUE(t->is_finished());
+}
+
+// Partial completion then external cancel then join completes
+TEST_CASE(partial_completion_then_cancel) {
+    int fast_done = 0;
+    int slow_done = 0;
+    task_group<>* group_ptr = nullptr;
+
+    auto fast = [&]() -> task<> {
+        co_await sleep(1, loop);
+        fast_done += 1;
+    };
+
+    auto slow = [&]() -> task<> {
+        co_await sleep(std::chrono::seconds(10), loop);
+        slow_done += 1;
+    };
+
+    auto driver = [&]() -> task<> {
+        task_group<> group(loop);
+        group_ptr = &group;
+        group.spawn(fast());
+        group.spawn(slow());
+        co_await group.join();
+    };
+
+    auto canceler = [&]() -> task<> {
+        co_await sleep(5, loop);
+        group_ptr->cancel();
+    };
+
+    auto t = driver();
+    auto c = canceler();
+    schedule_all(t, c);
+    EXPECT_TRUE(t->is_finished());
+    EXPECT_EQ(fast_done, 1);
+    EXPECT_EQ(slow_done, 0);
+}
+
+// spawn() returns bool indicating acceptance
+TEST_CASE(spawn_returns_false_after_settled) {
+    bool accepted = true;
+
+    auto work = [&]() -> task<> {
+        co_return;
+    };
+
+    auto driver = [&]() -> task<> {
+        task_group<> group(loop);
+        EXPECT_TRUE(group.spawn(work()));
+        co_await group.join();
+        accepted = group.spawn(work());
+    };
+
+    auto t = driver();
+    schedule_all(t);
+    EXPECT_FALSE(accepted);
+}
+
+TEST_CASE(spawn_returns_false_after_cancel) {
+    auto work = [&]() -> task<> {
+        co_return;
+    };
+
+    auto driver = [&]() -> task<> {
+        task_group<> group(loop);
+        EXPECT_TRUE(group.spawn(work()));
+        group.cancel();
+        EXPECT_FALSE(group.spawn(work()));
+        co_await group.join();
+    };
+
+    auto t = driver();
+    schedule_all(t);
+}
+
+// Stress test: 100+ tasks
+TEST_CASE(stress_many_tasks) {
+    int count = 0;
+
+    auto work = [&]() -> task<> {
+        count += 1;
+        co_return;
+    };
+
+    auto driver = [&]() -> task<> {
+        task_group<> group(loop);
+        for(int i = 0; i < 200; ++i) {
+            group.spawn(work());
+        }
+        co_await group.join();
+    };
+
+    auto t = driver();
+    schedule_all(t);
+    EXPECT_EQ(count, 200);
+}
+
+TEST_CASE(stress_many_tasks_with_sleep) {
+    int count = 0;
+
+    auto work = [&]() -> task<> {
+        co_await sleep(1, loop);
+        count += 1;
+    };
+
+    auto driver = [&]() -> task<> {
+        task_group<> group(loop);
+        for(int i = 0; i < 100; ++i) {
+            group.spawn(work());
+        }
+        co_await group.join();
+    };
+
+    auto t = driver();
+    schedule_all(t);
+    EXPECT_EQ(count, 100);
+}
+
+#if KOTA_ENABLE_EXCEPTIONS
+// Synchronous exception during spawn (resume_and_drain path)
+TEST_CASE(sync_exception_on_spawn) {
+    auto thrower = []() -> task<> {
+        throw std::runtime_error("immediate");
+        co_return;
+    };
+
+    auto driver = [&]() -> task<> {
+        task_group<> group(loop);
+        group.spawn(thrower());
+        co_await group.join();
+    };
+
+    auto t = driver();
+    schedule_all(t);
+    EXPECT_TRUE(t->is_failed());
+    EXPECT_THROWS(t.result());
+}
+
+// cancel() while join() suspended, exception was already captured
+TEST_CASE(cancel_while_join_suspended_with_exception) {
+    task_group<>* group_ptr = nullptr;
+
+    auto thrower = [&]() -> task<> {
+        co_await sleep(1, loop);
+        throw std::runtime_error("boom");
+    };
+
+    auto slow = [&]() -> task<> {
+        co_await sleep(std::chrono::seconds(10), loop);
+    };
+
+    auto driver = [&]() -> task<> {
+        task_group<> group(loop);
+        group_ptr = &group;
+        group.spawn(thrower());
+        group.spawn(slow());
+        co_await group.join();
+    };
+
+    auto canceler = [&]() -> task<> {
+        co_await sleep(5, loop);
+        group_ptr->cancel();
+    };
+
+    auto t = driver();
+    auto c = canceler();
+    schedule_all(t, c);
+    EXPECT_TRUE(t->is_failed());
+    EXPECT_THROWS(t.result());
+}
+#endif
+
 };  // TEST_SUITE(task_group)
 
 }  // namespace kota

@@ -162,6 +162,7 @@ struct Peer<CodecT>::Self {
                            written.error().message);
                 outgoing_queue.clear();
                 fail_pending_requests(written.error().message);
+                transport->close();
                 break;
             }
         }

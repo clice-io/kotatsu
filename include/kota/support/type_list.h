@@ -145,21 +145,21 @@ template <typename List>
 constexpr inline std::size_t type_list_size_v = type_list_size<List>::value;
 
 template <typename List>
-struct type_list_to_aggregate;
+struct type_list_to_union;
 
 template <>
-struct type_list_to_aggregate<type_list<>> {
+struct type_list_to_union<type_list<>> {
     using type = void;
 };
 
 template <typename T>
-struct type_list_to_aggregate<type_list<T>> {
+struct type_list_to_union<type_list<T>> {
     using type = T;
 };
 
 template <typename... Ts>
     requires (sizeof...(Ts) > 1)
-struct type_list_to_aggregate<type_list<Ts...>> {
+struct type_list_to_union<type_list<Ts...>> {
     using type = std::variant<Ts...>;
 };
 

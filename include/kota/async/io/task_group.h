@@ -1,10 +1,13 @@
 #pragma once
 
 #include <cassert>
-#include <exception>
 #include <source_location>
 #include <type_traits>
 #include <vector>
+
+#if KOTA_ENABLE_EXCEPTIONS
+#include <exception>
+#endif
 
 #include "kota/support/config.h"
 #include "kota/support/type_list.h"
@@ -18,7 +21,7 @@ namespace detail {
 
 template <typename... Ts>
 using task_group_error_type_t =
-    typename type_list_to_aggregate<type_list_unique_t<type_list<Ts...>>>::type;
+    typename type_list_to_union<type_list_unique_t<type_list<Ts...>>>::type;
 
 }  // namespace detail
 
@@ -30,7 +33,7 @@ public:
                                            void,
                                            outcome<void, std::vector<error_type>, void>>;
 
-    explicit task_group(event_loop&) {}
+    explicit task_group([[maybe_unused]] event_loop& loop) {}
 
     task_group(const task_group&) = delete;
     task_group& operator=(const task_group&) = delete;
@@ -47,9 +50,9 @@ public:
 
     template <typename T, typename E, typename C>
         requires std::is_void_v<E> || is_one_of<E, Errors...>
-    void spawn(task<T, E, C>&& t) {
+    bool spawn(task<T, E, C>&& t) {
         if(stopped || phase == Phase::Settled) {
-            return;
+            return false;
         }
 
         auto* node = detail::node_from(t);
@@ -61,10 +64,11 @@ public:
         t.release();
         ++total;
         awaitees.push_back(node);
-        error_handlers.push_back({&extract_error<T, E>});
+        error_handlers.push_back(&extract_error<T, E>);
 
         auto handle = node->link_continuation(this, std::source_location::current());
         detail::resume_and_drain(handle);
+        return true;
     }
 
     void cancel() {
@@ -72,18 +76,7 @@ public:
             return;
         }
         stopped = true;
-        phase = Phase::Cancelling;
-        const std::size_t n = awaitees.size();
-        for(std::size_t i = 0; i < n; ++i) {
-            auto* child = awaitees[i];
-            if(child) {
-                child->async_node::cancel();
-            }
-        }
-
-        if(phase == Phase::Cancelling) {
-            phase = Phase::Open;
-        }
+        cancel_children();
 
         if(deferred != Deferred::None && awaiter) {
             phase = Phase::Settled;
@@ -121,6 +114,8 @@ private:
             group.awaiter = awaiter_node;
             group.state = Running;
 
+            // Defensive: in cooperative single-threaded scheduling this cannot
+            // differ from await_ready, but guards against future changes.
             if(group.completed >= group.total) {
                 group.phase = Phase::Settled;
                 awaiter_node->clear_awaitee();
@@ -175,7 +170,9 @@ private:
         conditional_t<std::is_void_v<error_type>, std::type_identity<void>, std::vector<error_type>>
             errors;
 
+#if KOTA_ENABLE_EXCEPTIONS
     std::vector<std::exception_ptr> exceptions;
+#endif
 };
 
 task_group(event_loop&) -> task_group<>;
