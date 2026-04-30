@@ -59,12 +59,7 @@ public:
     ~task_group() {
         for(auto* child: awaitees) {
             if(child) {
-                auto* t = static_cast<standard_task*>(child);
-                if(t->has_awaitee()) {
-                    t->detach_as_root();
-                } else {
-                    t->handle().destroy();
-                }
+                detail::destroy_or_detach(child);
             }
         }
     }

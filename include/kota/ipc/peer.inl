@@ -376,6 +376,7 @@ Result<void> Peer<CodecT>::close() {
                 source->cancel();
             }
         }
+        self->incoming_requests.clear();
     }
 
     // Fail pending outgoing requests.

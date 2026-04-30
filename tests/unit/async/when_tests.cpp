@@ -66,9 +66,6 @@ struct custom_error {
     friend bool operator==(const custom_error&, const custom_error&) = default;
 };
 
-template <typename Scope, typename TaskType>
-concept scope_spawnable = requires(Scope scope, TaskType task) { scope.spawn(std::move(task)); };
-
 template <typename Group, typename TaskType>
 concept group_spawnable = requires(Group group, TaskType task) { group.spawn(std::move(task)); };
 
@@ -1795,6 +1792,9 @@ TEST_CASE(child_self_cancel) {
 
     auto t = driver();
     schedule_all(t);
+    // Child self-cancel triggers fail-fast (cancels siblings) but the
+    // group itself finishes normally — InterceptCancel on spawned
+    // children means cancellation doesn't propagate as group failure.
     EXPECT_TRUE(t->is_finished());
     EXPECT_EQ(slow_done, 0);
 }
@@ -1893,8 +1893,7 @@ TEST_CASE(collects_multiple_errors) {
         group.spawn(failing(1, error::io_error));
         auto res = co_await group.join();
         EXPECT_TRUE(res.has_error());
-        EXPECT_GE(res.error().size(), 1u);
-        EXPECT_LE(res.error().size(), 3u);
+        EXPECT_EQ(res.error().size(), 1u);
     };
 
     auto t = driver();
@@ -2000,6 +1999,52 @@ TEST_CASE(empty_cancel) {
     auto t = driver();
     schedule_all(t);
     EXPECT_TRUE(t->is_finished());
+}
+
+TEST_CASE(detach_as_root_on_destroy) {
+    int op_destroyed = 0;
+
+    auto slow = [&]() -> task<> {
+        deferred_cancel_await op(op_destroyed);
+        co_await op;
+    };
+
+    {
+        task_group<> group(loop);
+        group.spawn(slow());
+    }
+
+    EXPECT_EQ(op_destroyed, 0);
+
+    deferred_cancel_await::finish_pending_cancel();
+    EXPECT_EQ(op_destroyed, 1);
+}
+
+TEST_CASE(detaches_until_quiescent) {
+    int op_destroyed = 0;
+
+    auto slow = [&]() -> task<> {
+        deferred_cancel_await op(op_destroyed);
+        co_await op;
+    };
+
+    auto fast_fail = [&]() -> task<int, error> {
+        co_await fail(error::connection_refused);
+    };
+
+    {
+        task_group<error> group(loop);
+        group.spawn(slow());
+        group.spawn(fast_fail());
+        // fast_fail completes synchronously with Failed → fail-fast cancels slow.
+        // slow's deferred_cancel_await on_cancel is noop → cancel doesn't complete.
+        // Group destructs: slow has pending awaitee → detach_as_root.
+    }
+
+    EXPECT_EQ(op_destroyed, 0);
+
+    deferred_cancel_await::finish_pending_cancel();
+    EXPECT_EQ(op_destroyed, 1);
 }
 
 };  // TEST_SUITE(task_group)
