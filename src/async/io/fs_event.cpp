@@ -301,7 +301,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
         }
     }
 
-    error init_platform(std::shared_ptr<Self>& s, event_loop& loop) {
+    error init_platform(std::shared_ptr<Self>& s) {
         inotify_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
         if(inotify_fd < 0) {
             return error::unknown_error;
@@ -314,7 +314,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
             return error::permission_denied;
         }
 
-        uv_loop_t& uv = loop;
+        uv_loop_t& uv = *loop;
         int rc = uv_poll_init(&uv, &poll_handle, inotify_fd);
         if(rc < 0) {
             ::close(inotify_fd);
@@ -497,7 +497,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
         shared->post_changes(shared, std::move(changes));
     }
 
-    error init_platform(std::shared_ptr<Self>& s, [[maybe_unused]] event_loop& loop) {
+    error init_platform(std::shared_ptr<Self>& s) {
         CFStringRef cf_path =
             CFStringCreateWithCString(nullptr, root_path.c_str(), kCFStringEncodingUTF8);
         if(!cf_path) {
@@ -751,7 +751,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
         }
     }
 
-    error init_platform(std::shared_ptr<Self>& s, [[maybe_unused]] event_loop& loop) {
+    error init_platform(std::shared_ptr<Self>& s) {
         std::wstring wpath;
         {
             int wlen = MultiByteToWideChar(CP_UTF8, 0, root_path.c_str(), -1, nullptr, 0);
@@ -857,7 +857,7 @@ result<fs_event> fs_event::create(std::string_view path, options opts, event_loo
 
     s->debounce_timer = timer::create(loop);
 
-    auto init_err = s->init_platform(s, loop);
+    auto init_err = s->init_platform(s);
     if(init_err != error{}) {
         return outcome_error(init_err);
     }
