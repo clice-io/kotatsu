@@ -585,11 +585,10 @@ void multi_score(typename Adapter::node_type node,
 }  // namespace detail
 
 template <typename Config, typename... Ts>
-std::size_t score_and_select(std::uint64_t live, meta::type_kind source_kind) {
-    constexpr std::size_t N = sizeof...(Ts);
+std::optional<std::size_t> score_and_select(std::uint64_t live, meta::type_kind source_kind) {
     constexpr meta::type_info_fn info_fns[] = {&meta::type_info_of<Ts, Config>...};
     std::size_t best_score = 0;
-    std::size_t best_idx = N;
+    std::optional<std::size_t> best_idx;
     std::uint64_t mask = live;
     while(mask) {
         std::size_t idx = static_cast<std::size_t>(std::countr_zero(mask));
@@ -600,11 +599,11 @@ std::size_t score_and_select(std::uint64_t live, meta::type_kind source_kind) {
         }
         mask &= mask - 1;
     }
-    return best_idx < N ? best_idx : static_cast<std::size_t>(std::countr_zero(live));
+    return best_idx;
 }
 
 template <typename Adapter, typename Config, typename... Ts>
-std::size_t select_variant_index(typename Adapter::node_type node) {
+std::optional<std::size_t> select_variant_index(typename Adapter::node_type node) {
     constexpr std::size_t N = sizeof...(Ts);
     static_assert(N <= 64, "variant with more than 64 alternatives is not supported");
 
@@ -626,7 +625,7 @@ std::size_t select_variant_index(typename Adapter::node_type node) {
     }
 
     if(live_count == 0)
-        return N;
+        return std::nullopt;
     if(live_count == 1)
         return static_cast<std::size_t>(std::countr_zero(live));
 
@@ -647,7 +646,7 @@ std::size_t select_variant_index(typename Adapter::node_type node) {
     detail::multi_score<Adapter>(node, candidates, cand_count, scores);
 
     std::size_t best_score = 0;
-    std::size_t best_idx = N;
+    std::optional<std::size_t> best_idx;
     {
         std::uint64_t mask = live;
         while(mask) {
@@ -660,16 +659,15 @@ std::size_t select_variant_index(typename Adapter::node_type node) {
         }
     }
 
-    if(best_idx < N)
+    if(best_idx)
         return best_idx;
 
     return score_and_select<Config, Ts...>(live, source_kind);
 }
 
 template <typename Config, typename... Ts>
-std::size_t select_variant_index(meta::type_kind source_kind) {
-    constexpr std::size_t N = sizeof...(Ts);
-    static_assert(N <= 64, "variant with more than 64 alternatives is not supported");
+std::optional<std::size_t> select_variant_index(meta::type_kind source_kind) {
+    static_assert(sizeof...(Ts) <= 64, "variant with more than 64 alternatives is not supported");
 
     std::uint64_t live = 0;
     std::size_t live_count = 0;
@@ -687,7 +685,7 @@ std::size_t select_variant_index(meta::type_kind source_kind) {
     }
 
     if(live_count == 0)
-        return N;
+        return std::nullopt;
     if(live_count == 1)
         return static_cast<std::size_t>(std::countr_zero(live));
 

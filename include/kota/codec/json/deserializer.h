@@ -297,8 +297,7 @@ public:
             return std::unexpected(json_type.error());
         }
 
-        constexpr std::size_t N = sizeof...(Ts);
-        std::size_t best = N;
+        std::optional<std::size_t> best;
         using adapter = detail::simdjson_source_adapter;
 
         if(*json_type == simdjson::ondemand::json_type::object) {
@@ -331,13 +330,13 @@ public:
                 map_to_kind(*json_type, number_type));
         }
 
-        if(best >= N) {
+        if(!best) {
             pending_object.reset();
             pending_array.reset();
             return mark_invalid(error_kind::type_mismatch);
         }
 
-        auto result = codec::deserialize_variant_at<error_type>(*this, value, best);
+        auto result = codec::deserialize_variant_at<error_type>(*this, value, *best);
         pending_object.reset();
         pending_array.reset();
         return result;

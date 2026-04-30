@@ -183,15 +183,14 @@ public:
             return std::unexpected(node.error());
         }
 
-        constexpr std::size_t N = sizeof...(Ts);
-        std::size_t best =
+        auto best =
             codec::select_variant_index<toml_source_adapter, config_type, Ts...>(*node);
 
-        if(best >= N) {
+        if(!best) {
             return mark_invalid(error_type::type_mismatch);
         }
 
-        return codec::deserialize_variant_at<error_type>(*this, value, best);
+        return codec::deserialize_variant_at<error_type>(*this, value, *best);
     }
 
     status_t deserialize_bool(bool& value) {
