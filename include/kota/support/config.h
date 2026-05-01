@@ -25,6 +25,12 @@
 #endif
 
 // [[msvc::no_unique_address]] corrupts coroutine frame layout under MSVC ASAN.
+// Even without ASAN, MSVC miscompiles the layout of classes that use this
+// attribute when those classes are stored inside a coroutine frame (local
+// variables, not just promise types). Only safe on types that never live in
+// a coroutine frame — e.g. outcome<>, which is embedded in the promise itself.
+// See: https://developercommunity.visualstudio.com/t/msvc::no_unique_address-nonconforman/10504173
+//      https://developercommunity.visualstudio.com/t/c20-coroutine-memory-corruption/1683791
 #if defined(__has_cpp_attribute)
 #if __has_cpp_attribute(msvc::no_unique_address) && !KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
 #define KOTA_NO_UNIQUE_ADDRESS [[msvc::no_unique_address]]

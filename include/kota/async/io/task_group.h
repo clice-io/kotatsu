@@ -165,7 +165,6 @@ private:
         }
     }
 
-    KOTA_NO_UNIQUE_ADDRESS
     std::
         conditional_t<std::is_void_v<error_type>, std::type_identity<void>, std::vector<error_type>>
             errors;
