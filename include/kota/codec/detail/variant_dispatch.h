@@ -558,21 +558,19 @@ void multi_score(typename Adapter::node_type node,
     }
 
     if(meta::is_object_kind(source_kind) && (struct_cands.size() + map_cands.size()) > 0) {
-        small_vector<bool, 4> struct_matched(struct_cands.size());
-        small_vector<std::string_view, 8> source_fields;
+        small_vector<std::uint64_t, 4> matched_fields(struct_cands.size());
         Adapter::for_each_field(
             node,
             [&](std::string_view name, typename Adapter::node_type child) {
-                source_fields.push_back(name);
                 small_vector<variant_candidate, 4> child_cands;
 
                 for(std::size_t si = 0; si < struct_cands.size(); ++si) {
                     auto& sc = struct_cands[si];
                     auto& info = static_cast<const meta::struct_type_info&>(*sc.type);
-                    for(const auto& f: info.fields) {
-                        if(field_name_matches(f, name)) {
-                            child_cands.push_back({sc.index, &f.type()});
-                            struct_matched[si] = true;
+                    for(std::size_t fi = 0; fi < info.fields.size(); ++fi) {
+                        if(field_name_matches(info.fields[fi], name)) {
+                            child_cands.push_back({sc.index, &info.fields[fi].type()});
+                            matched_fields[si] |= std::uint64_t{1} << fi;
                             break;
                         }
                     }
@@ -589,7 +587,7 @@ void multi_score(typename Adapter::node_type node,
             });
 
         for(std::size_t si = 0; si < struct_cands.size(); ++si) {
-            if(!struct_matched[si]) {
+            if(matched_fields[si] == 0) {
                 auto& info = static_cast<const meta::struct_type_info&>(*struct_cands[si].type);
                 if(!info.fields.empty() && scores[struct_cands[si].index] > 0)
                     scores[struct_cands[si].index] -= 1;
@@ -597,13 +595,11 @@ void multi_score(typename Adapter::node_type node,
             }
 
             auto& info = static_cast<const meta::struct_type_info&>(*struct_cands[si].type);
-            for(const auto& f: info.fields) {
+            for(std::size_t fi = 0; fi < info.fields.size(); ++fi) {
+                auto& f = info.fields[fi];
                 if(f.has_default || f.has_skip_if)
                     continue;
-                bool present = std::ranges::any_of(source_fields, [&](std::string_view name) {
-                    return field_name_matches(f, name);
-                });
-                if(!present) {
+                if(!(matched_fields[si] & (std::uint64_t{1} << fi))) {
                     scores[struct_cands[si].index] = 0;
                     break;
                 }
