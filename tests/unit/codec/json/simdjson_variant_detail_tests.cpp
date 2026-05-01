@@ -1156,6 +1156,54 @@ TEST_CASE(recursive_map_scoring) {
     EXPECT_EQ(std::get<std::map<std::string, std::string>>(out).at("a"), "x");
 }
 
+TEST_CASE(subset_with_required_field_missing) {
+    // Two structs sharing a common field, but the larger struct has a required
+    // field not present in the input.  The smaller struct (whose required fields
+    // are all satisfied) should win.
+    struct Partial {
+        int id;
+        std::string value;
+    };
+
+    struct Whole {
+        std::string value;
+    };
+
+    using V = std::variant<Partial, Whole>;
+
+    V out{};
+    // Only "value" present — Partial.id is required and missing → Whole should win
+    ASSERT_TRUE(from_json(R"({"value":"hello"})", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<Whole>(out).value, "hello");
+
+    // Both "id" and "value" present — Partial matches more fields → Partial wins
+    ASSERT_TRUE(from_json(R"({"id":42,"value":"hello"})", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<Partial>(out).id, 42);
+    EXPECT_EQ(std::get<Partial>(out).value, "hello");
+}
+
+TEST_CASE(subset_with_optional_field_missing) {
+    // When the missing field has skip_if (e.g. skip_if_none), it should NOT be penalized.
+    struct WithOptional {
+        std::string value;
+        skip_if_none<int> extra;
+    };
+
+    struct Plain {
+        std::string value;
+    };
+
+    using V = std::variant<WithOptional, Plain>;
+
+    V out{};
+    // "extra" is optional (has default) → WithOptional still viable, first wins on tie
+    ASSERT_TRUE(from_json(R"({"value":"hello"})", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<WithOptional>(out).value, "hello");
+}
+
 };  // TEST_SUITE(serde_variant_deep_dispatch)
 
 }  // namespace
