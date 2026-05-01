@@ -603,8 +603,10 @@ void multi_score(typename Adapter::node_type node,
                 bool present = std::ranges::any_of(source_fields, [&](std::string_view name) {
                     return field_name_matches(f, name);
                 });
-                if(!present && scores[struct_cands[si].index] > 0)
-                    scores[struct_cands[si].index] -= 1;
+                if(!present) {
+                    scores[struct_cands[si].index] = 0;
+                    break;
+                }
             }
         }
     }
