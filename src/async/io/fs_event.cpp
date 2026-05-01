@@ -184,6 +184,21 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
     }
 
     void process_inotify_events() {
+        struct raw_event {
+            std::string path;
+            uint32_t mask;
+            uint32_t cookie;
+            bool is_dir;
+            int wd;
+            bool consumed = false;
+        };
+
+        std::vector<raw_event> events;
+        std::unordered_map<uint32_t, size_t> move_from_cookies;
+
+        // Drain all available inotify events before processing so that
+        // cookie-paired IN_MOVED_FROM/IN_MOVED_TO are matched even if
+        // the kernel delivers them across separate read() buffers.
         constexpr size_t inotify_read_buf_size = 8192;
         alignas(struct inotify_event) char buf[inotify_read_buf_size];
         for(;;) {
@@ -195,18 +210,6 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
             }
             if(n == 0)
                 break;
-
-            struct raw_event {
-                std::string path;
-                uint32_t mask;
-                uint32_t cookie;
-                bool is_dir;
-                int wd;
-                bool consumed = false;
-            };
-
-            std::vector<raw_event> events;
-            std::unordered_map<uint32_t, size_t> move_from_cookies;
 
             for(char* p = buf; p < buf + n;) {
                 auto* ev = reinterpret_cast<struct inotify_event*>(p);
@@ -228,65 +231,64 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
                     move_from_cookies[ev->cookie] = events.size() - 1;
                 }
             }
+        }
 
-            for(size_t i = 0; i < events.size(); i++) {
-                auto& e = events[i];
-                if(e.consumed)
-                    continue;
+        for(size_t i = 0; i < events.size(); i++) {
+            auto& e = events[i];
+            if(e.consumed)
+                continue;
 
-                if(e.mask & IN_MOVED_TO) {
-                    auto it = move_from_cookies.find(e.cookie);
-                    if(it != move_from_cookies.end()) {
-                        auto& from = events[it->second];
-                        from.consumed = true;
-                        push_event(change{e.path, effect::rename, from.path});
-                        if(e.is_dir && recursive) {
-                            update_renamed_paths(from.path, e.path);
-                            scan_directory(e.path);
-                        }
-                    } else {
-                        push_event(change{e.path, effect::create, {}});
-                        if(e.is_dir && recursive) {
-                            scan_directory(e.path);
-                        }
+            if(e.mask & IN_MOVED_TO) {
+                auto it = move_from_cookies.find(e.cookie);
+                if(it != move_from_cookies.end()) {
+                    auto& from = events[it->second];
+                    from.consumed = true;
+                    push_event(change{e.path, effect::rename, from.path});
+                    if(e.is_dir && recursive) {
+                        update_renamed_paths(from.path, e.path);
+                        scan_directory(e.path);
                     }
-                } else if(e.mask & IN_CREATE) {
+                } else {
                     push_event(change{e.path, effect::create, {}});
                     if(e.is_dir && recursive) {
                         scan_directory(e.path);
                     }
-                } else if(e.mask & (IN_MODIFY | IN_ATTRIB)) {
-                    push_event(change{e.path, effect::modify, {}});
-                } else if(e.mask & IN_MOVED_FROM) {
-                    // Unmatched MOVED_FROM — file moved out of watched tree
-                    push_event(change{e.path, effect::destroy, {}});
-                    if(e.is_dir) {
-                        auto pit = path_to_wd.find(e.path);
-                        if(pit != path_to_wd.end()) {
-                            wd_to_path.erase(pit->second);
-                            path_to_wd.erase(pit);
-                        }
-                    }
-                } else if(e.mask & (IN_DELETE | IN_DELETE_SELF | IN_MOVE_SELF)) {
-                    bool is_self = (e.mask & (IN_DELETE_SELF | IN_MOVE_SELF)) != 0;
-                    if(!is_self || e.path == root_path) {
-                        push_event(change{e.path, effect::destroy, {}});
-                    }
-                    if(!is_self && e.is_dir) {
-                        auto pit = path_to_wd.find(e.path);
-                        if(pit != path_to_wd.end()) {
-                            wd_to_path.erase(pit->second);
-                            path_to_wd.erase(pit);
-                        }
+                }
+            } else if(e.mask & IN_CREATE) {
+                push_event(change{e.path, effect::create, {}});
+                if(e.is_dir && recursive) {
+                    scan_directory(e.path);
+                }
+            } else if(e.mask & (IN_MODIFY | IN_ATTRIB)) {
+                push_event(change{e.path, effect::modify, {}});
+            } else if(e.mask & IN_MOVED_FROM) {
+                push_event(change{e.path, effect::destroy, {}});
+                if(e.is_dir) {
+                    auto pit = path_to_wd.find(e.path);
+                    if(pit != path_to_wd.end()) {
+                        wd_to_path.erase(pit->second);
+                        path_to_wd.erase(pit);
                     }
                 }
-
-                if(e.mask & IN_IGNORED) {
-                    auto wit = wd_to_path.find(e.wd);
-                    if(wit != wd_to_path.end()) {
-                        path_to_wd.erase(wit->second);
-                        wd_to_path.erase(wit);
+            } else if(e.mask & (IN_DELETE | IN_DELETE_SELF | IN_MOVE_SELF)) {
+                bool is_self = (e.mask & (IN_DELETE_SELF | IN_MOVE_SELF)) != 0;
+                if(!is_self || e.path == root_path) {
+                    push_event(change{e.path, effect::destroy, {}});
+                }
+                if(!is_self && e.is_dir) {
+                    auto pit = path_to_wd.find(e.path);
+                    if(pit != path_to_wd.end()) {
+                        wd_to_path.erase(pit->second);
+                        path_to_wd.erase(pit);
                     }
+                }
+            }
+
+            if(e.mask & IN_IGNORED) {
+                auto wit = wd_to_path.find(e.wd);
+                if(wit != wd_to_path.end()) {
+                    path_to_wd.erase(wit->second);
+                    wd_to_path.erase(wit);
                 }
             }
         }
