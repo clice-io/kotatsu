@@ -11,6 +11,7 @@ env:
   CCACHE_BASEDIR: ${{ github.workspace }}
   SCCACHE_BASEDIRS: ${{ github.workspace }}
   CCACHE_COMPILERCHECK: content
+  CCACHE_SLOPPINESS: pch_defines,time_macros,locale
   CCACHE_MAXSIZE: 2G
   SCCACHE_CACHE_SIZE: 2G
 
@@ -18,6 +19,8 @@ jobs:
   build:
     name: ${{ matrix.os_label }} | ${{ matrix.toolchain }} | ${{ matrix.build_name }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      actions: write
     strategy:
       fail-fast: false
       # prettier-ignore
@@ -113,14 +116,10 @@ jobs:
             cpm-${{ runner.os }}-
 
       - name: Restore compiler cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.COMPILER_CACHE == 'sccache' && env.SCCACHE_DIR || env.CCACHE_DIR }}
-          key: ${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.build_name }}-${{ github.sha }}
-          restore-keys: |
-            ${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.build_name }}-
-            ${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-
-            ${{ env.COMPILER_CACHE }}-${{ runner.os }}-
+          key: ${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.build_name }}
 
       - name: Configure, build, and test
         shell: bash
@@ -170,6 +169,7 @@ jobs:
           "${build_dir}/unit_tests" --parallel
 
       - name: Show compiler cache stats
+        if: always()
         shell: bash
         run: |
           if [[ "${{ env.COMPILER_CACHE }}" == "ccache" ]]; then
@@ -178,3 +178,19 @@ jobs:
             sccache --show-stats || true
             sccache --stop-server || true
           fi
+
+      - name: Delete old compiler cache
+        if: always() && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          gh actions-cache delete "${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.build_name }}" \
+            --ref refs/heads/main --confirm || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Save compiler cache
+        if: always() && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.COMPILER_CACHE == 'sccache' && env.SCCACHE_DIR || env.CCACHE_DIR }}
+          key: ${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.build_name }}
