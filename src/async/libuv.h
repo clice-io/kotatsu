@@ -58,7 +58,6 @@ concept handle_like = is_one_of<bare_t<T>,
                                 uv_prepare_t,
                                 uv_check_t,
                                 uv_signal_t,
-                                uv_fs_event_t,
                                 uv_process_t,
                                 uv_async_t>;
 
@@ -296,24 +295,6 @@ ALWAYS_INLINE error queue_work(uv_loop_t& loop,
     assert(work_cb != nullptr && "uv::queue_work requires non-null work callback");
     // Errors: UV_EINVAL for invalid arguments.
     return status_to_error(::uv_queue_work(&loop, &req, work_cb, after_work_cb));
-}
-
-ALWAYS_INLINE error fs_event_init(uv_loop_t& loop, uv_fs_event_t& handle) noexcept {
-    return status_to_error(::uv_fs_event_init(&loop, &handle));
-}
-
-ALWAYS_INLINE error fs_event_start(uv_fs_event_t& handle,
-                                   uv_fs_event_cb cb,
-                                   const char* path,
-                                   unsigned flags) noexcept {
-    assert(cb != nullptr && path != nullptr &&
-           "uv::fs_event_start requires non-null callback and path");
-    // Errors: UV_EINVAL and backend/inotify errors.
-    return status_to_error(::uv_fs_event_start(&handle, cb, path, flags));
-}
-
-ALWAYS_INLINE error fs_event_stop(uv_fs_event_t& handle) noexcept {
-    return status_to_error(::uv_fs_event_stop(&handle));
 }
 
 template <stream_like S>

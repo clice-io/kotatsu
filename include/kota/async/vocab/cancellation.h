@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <utility>
 
@@ -14,23 +15,17 @@ public:
     class state {
     public:
         bool is_cancelled() const noexcept {
-            return cancelled;
+            return cancelled.load(std::memory_order_acquire);
         }
 
         void cancel() noexcept {
-            if(cancelled) {
+            bool expected = false;
+            if(!cancelled.compare_exchange_strong(expected,
+                                                  true,
+                                                  std::memory_order_acq_rel,
+                                                  std::memory_order_acquire)) {
                 return;
             }
-            cancelled = true;
-            // This event represents the sticky fact "cancellation has already
-            // happened", not the transient action "cancel whoever is currently
-            // waiting". That is why this uses set() instead of interrupt():
-            // future waiters must also observe the cancelled state
-            // immediately.
-            //
-            // Using interrupt() here introduces a lost-wakeup window between
-            // the pre-check in cancellation_token::wait() and the moment the
-            // event wait is actually linked.
             event.set();
         }
 
@@ -50,7 +45,7 @@ public:
         /// coroutine state `Cancelled`, which is what with_token(...) and other
         /// callers rely on.
         task<> wait() {
-            if(cancelled) {
+            if(cancelled.load(std::memory_order_acquire)) {
                 // Preserve cancellation semantics for already-fired tokens.
                 co_await kota::cancel();
             }
@@ -65,7 +60,7 @@ public:
 
     private:
         class event event;
-        bool cancelled = false;
+        std::atomic<bool> cancelled{false};
     };
 
     cancellation_token() noexcept = delete;
@@ -142,17 +137,21 @@ task<T, E, cancellation> with_token(task<T, E, C> inner_task, Tokens... tokens) 
         }
     }
 
-    using race_result_type = decltype(race_result);
-    static_assert(!std::is_void_v<typename race_result_type::cancel_type>);
-
-    if(race_result.is_cancelled()) {
-        co_await cancel();
-    }
-
+    // Guard value access with has_value() rather than relying on
+    // co_await cancel() making subsequent code unreachable — MSVC's
+    // coroutine codegen can fall through past a symmetric-transfer
+    // suspension, reaching the dereference on a cancelled outcome.
     if constexpr(!std::is_void_v<T>) {
-        auto& task_result = std::get<0>(*race_result);
-        co_return std::move(task_result);
+        if(race_result.has_value()) {
+            co_return std::move(std::get<0>(*race_result));
+        }
+    } else {
+        if(race_result.has_value()) {
+            co_return;
+        }
     }
+
+    co_await cancel();
 }
 
 }  // namespace kota
