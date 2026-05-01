@@ -19,8 +19,6 @@ jobs:
   build:
     name: ${{ matrix.os_label }} | ${{ matrix.toolchain }} | ${{ matrix.build_name }}
     runs-on: ${{ matrix.os }}
-    permissions:
-      actions: write
     strategy:
       fail-fast: false
       # prettier-ignore

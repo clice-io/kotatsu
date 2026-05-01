@@ -63,6 +63,9 @@ jobs:
   cmake:
     needs: changes
     if: ${{ needs.changes.outputs.cmake == 'true' }}
+    permissions:
+      contents: read
+      actions: write
     uses: ./.github/workflows/cmake.yml
 
   xmake:
