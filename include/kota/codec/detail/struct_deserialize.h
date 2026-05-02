@@ -13,6 +13,7 @@
 #include <variant>
 
 #include "kota/support/expected_try.h"
+#include "kota/support/string_match.h"
 #include "kota/support/type_list.h"
 #include "kota/support/type_traits.h"
 #include "kota/meta/attrs.h"
@@ -158,19 +159,56 @@ consteval bool schema_has_ambiguous_wire_names() {
 }
 
 template <typename T, typename Config>
-auto schema_lookup_field(std::string_view key) -> std::optional<std::size_t> {
+struct field_name_table {
     using schema = meta::virtual_schema<T, Config>;
-    for(std::size_t i = 0; i < schema::count; ++i) {
-        if(schema::fields[i].name == key) {
-            return i;
+
+    static consteval std::size_t compute_name_count() {
+        std::size_t count = 0;
+        for(std::size_t i = 0; i < schema::count; ++i) {
+            count += 1 + schema::fields[i].aliases.size();
         }
-        for(auto alias: schema::fields[i].aliases) {
-            if(alias == key) {
-                return i;
+        return count;
+    }
+
+    constexpr static std::size_t name_count = compute_name_count();
+
+    constexpr static auto names = [] {
+        std::array<std::string_view, name_count> result{};
+        std::size_t out = 0;
+        for(std::size_t i = 0; i < schema::count; ++i) {
+            result[out++] = schema::fields[i].name;
+            for(auto alias: schema::fields[i].aliases) {
+                result[out++] = alias;
             }
         }
+        return result;
+    }();
+
+    constexpr static auto slot_map = [] {
+        std::array<std::size_t, name_count> result{};
+        std::size_t out = 0;
+        for(std::size_t i = 0; i < schema::count; ++i) {
+            result[out++] = i;
+            for(std::size_t j = 0; j < schema::fields[i].aliases.size(); ++j) {
+                result[out++] = i;
+            }
+        }
+        return result;
+    }();
+};
+
+template <typename T, typename Config>
+auto schema_lookup_field(std::string_view key) -> std::optional<std::size_t> {
+    using table = field_name_table<T, Config>;
+    if constexpr(table::name_count == 0) {
+        return std::nullopt;
+    } else {
+        auto idx = string_match<table::names>(key);
+        if(idx) {
+            return table::slot_map[*idx];
+        }
+        return std::nullopt;
     }
-    return std::nullopt;
 }
 
 template <typename Slots, std::size_t I>
