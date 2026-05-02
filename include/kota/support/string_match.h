@@ -48,13 +48,15 @@ template <const auto& Names, std::size_t TargetLen, std::size_t... Is>
 constexpr auto match_in_length_group(std::string_view key, std::index_sequence<Is...>)
     -> std::optional<std::size_t> {
     std::optional<std::size_t> result;
-    (([&] {
+    (([&] -> bool {
          if constexpr(Names[Is].size() == TargetLen) {
-             if(!result && key == Names[Is]) {
+             if(key == Names[Is]) {
                  result = Is;
+                 return true;
              }
          }
-     }()),
+         return false;
+     }()) ||
      ...);
     return result;
 }
@@ -73,14 +75,16 @@ KOTA_ALWAYS_INLINE constexpr auto string_match(std::string_view key) -> std::opt
 
         return [&]<std::size_t... Ls>(std::index_sequence<Ls...>) -> std::optional<std::size_t> {
             std::optional<std::size_t> result;
-            (([&] {
+            (([&] -> bool {
                  if constexpr(Ls < lengths.count) {
-                     if(!result && key.size() == lengths.values[Ls]) {
+                     if(key.size() == lengths.values[Ls]) {
                          result = detail::match_in_length_group<Names, lengths.values[Ls]>(
                              key, std::make_index_sequence<N>{});
+                         return true;
                      }
                  }
-             }()),
+                 return false;
+             }()) ||
              ...);
             return result;
         }(std::make_index_sequence<N>{});
