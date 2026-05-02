@@ -79,7 +79,8 @@ KOTA_ALWAYS_INLINE constexpr auto string_match(std::string_view key) -> std::opt
                  if constexpr(Ls < lengths.count) {
                      if(key.size() == lengths.values[Ls]) {
                          result = detail::match_in_length_group<Names, lengths.values[Ls]>(
-                             key, std::make_index_sequence<N>{});
+                             key,
+                             std::make_index_sequence<N>{});
                          return true;
                      }
                  }

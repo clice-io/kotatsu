@@ -26,7 +26,6 @@
 #undef max
 #endif
 
-
 namespace kota {
 
 namespace uv {
@@ -187,7 +186,9 @@ KOTA_ALWAYS_INLINE inline void idle_stop(uv_idle_t& handle) noexcept {
     assert(rc == 0 && "uv::idle_stop failed");
 }
 
-KOTA_ALWAYS_INLINE inline void async_init(uv_loop_t& loop, uv_async_t& handle, uv_async_cb cb) noexcept {
+KOTA_ALWAYS_INLINE inline void async_init(uv_loop_t& loop,
+                                          uv_async_t& handle,
+                                          uv_async_cb cb) noexcept {
     [[maybe_unused]] int rc = ::uv_async_init(&loop, &handle, cb);
     assert(rc == 0 && "uv::async_init failed");
 }
@@ -235,9 +236,9 @@ KOTA_ALWAYS_INLINE inline void timer_init(uv_loop_t& loop, uv_timer_t& handle) n
 }
 
 KOTA_ALWAYS_INLINE inline void timer_start(uv_timer_t& handle,
-                               uv_timer_cb cb,
-                               std::uint64_t timeout,
-                               std::uint64_t repeat) noexcept {
+                                           uv_timer_cb cb,
+                                           std::uint64_t timeout,
+                                           std::uint64_t repeat) noexcept {
     assert(cb != nullptr && "uv::timer_start requires non-null callback");
     [[maybe_unused]] int rc = ::uv_timer_start(&handle, cb, timeout, repeat);
     assert(rc == 0 && "uv::timer_start failed");
@@ -249,8 +250,8 @@ KOTA_ALWAYS_INLINE inline void timer_stop(uv_timer_t& handle) noexcept {
 }
 
 KOTA_ALWAYS_INLINE inline error poll_init_socket(uv_loop_t& loop,
-                                     uv_poll_t& handle,
-                                     uv_os_sock_t socket) noexcept {
+                                                 uv_poll_t& handle,
+                                                 uv_os_sock_t socket) noexcept {
     return status_to_error(::uv_poll_init_socket(&loop, &handle, socket));
 }
 
@@ -268,7 +269,9 @@ KOTA_ALWAYS_INLINE inline error signal_init(uv_loop_t& loop, uv_signal_t& handle
     return status_to_error(::uv_signal_init(&loop, &handle));
 }
 
-KOTA_ALWAYS_INLINE inline error signal_start(uv_signal_t& handle, uv_signal_cb cb, int signum) noexcept {
+KOTA_ALWAYS_INLINE inline error signal_start(uv_signal_t& handle,
+                                             uv_signal_cb cb,
+                                             int signum) noexcept {
     assert(cb != nullptr && "uv::signal_start requires non-null callback");
     // Errors: UV_EINVAL for invalid signum/cb and backend register failures.
     return status_to_error(::uv_signal_start(&handle, cb, signum));
@@ -279,16 +282,18 @@ KOTA_ALWAYS_INLINE inline error signal_stop(uv_signal_t& handle) noexcept {
 }
 
 KOTA_ALWAYS_INLINE inline error queue_work(uv_loop_t& loop,
-                               uv_work_t& req,
-                               uv_work_cb work_cb,
-                               uv_after_work_cb after_work_cb) noexcept {
+                                           uv_work_t& req,
+                                           uv_work_cb work_cb,
+                                           uv_after_work_cb after_work_cb) noexcept {
     assert(work_cb != nullptr && "uv::queue_work requires non-null work callback");
     // Errors: UV_EINVAL for invalid arguments.
     return status_to_error(::uv_queue_work(&loop, &req, work_cb, after_work_cb));
 }
 
 template <stream_like S>
-KOTA_ALWAYS_INLINE inline error read_start(S& stream, uv_alloc_cb alloc_cb, uv_read_cb read_cb) noexcept {
+KOTA_ALWAYS_INLINE inline error read_start(S& stream,
+                                           uv_alloc_cb alloc_cb,
+                                           uv_read_cb read_cb) noexcept {
     assert(alloc_cb != nullptr && read_cb != nullptr &&
            "uv::read_start requires non-null callbacks");
     // Errors: UV_EINVAL / UV_EALREADY / UV_ENOTCONN
@@ -329,20 +334,18 @@ KOTA_ALWAYS_INLINE inline error pipe_open(uv_pipe_t& handle, uv_file fd) noexcep
     return status_to_error(::uv_pipe_open(&handle, fd));
 }
 
-KOTA_ALWAYS_INLINE inline error pipe_bind2(uv_pipe_t& handle,
-                               const char* name,
-                               std::size_t namelen,
-                               unsigned flags) noexcept {
+KOTA_ALWAYS_INLINE inline error
+    pipe_bind2(uv_pipe_t& handle, const char* name, std::size_t namelen, unsigned flags) noexcept {
     assert(name != nullptr && namelen > 0 && "uv::pipe_bind2 requires non-null non-empty name");
     return status_to_error(::uv_pipe_bind2(&handle, name, namelen, flags));
 }
 
 KOTA_ALWAYS_INLINE inline error pipe_connect2(uv_connect_t& req,
-                                  uv_pipe_t& handle,
-                                  const char* name,
-                                  std::size_t namelen,
-                                  unsigned flags,
-                                  uv_connect_cb cb) noexcept {
+                                              uv_pipe_t& handle,
+                                              const char* name,
+                                              std::size_t namelen,
+                                              unsigned flags,
+                                              uv_connect_cb cb) noexcept {
     assert(cb != nullptr && name != nullptr && namelen > 0 &&
            "uv::pipe_connect2 requires non-null callback and non-empty name");
     return status_to_error(::uv_pipe_connect2(&req, &handle, name, namelen, flags, cb));
@@ -356,15 +359,17 @@ KOTA_ALWAYS_INLINE inline error tcp_open(uv_tcp_t& handle, uv_os_sock_t sock) no
     return status_to_error(::uv_tcp_open(&handle, sock));
 }
 
-KOTA_ALWAYS_INLINE inline error tcp_bind(uv_tcp_t& handle, const sockaddr* addr, unsigned flags) noexcept {
+KOTA_ALWAYS_INLINE inline error tcp_bind(uv_tcp_t& handle,
+                                         const sockaddr* addr,
+                                         unsigned flags) noexcept {
     assert(addr != nullptr && "uv::tcp_bind requires non-null address");
     return status_to_error(::uv_tcp_bind(&handle, addr, flags));
 }
 
 KOTA_ALWAYS_INLINE inline error tcp_connect(uv_connect_t& req,
-                                uv_tcp_t& handle,
-                                const sockaddr* addr,
-                                uv_connect_cb cb) noexcept {
+                                            uv_tcp_t& handle,
+                                            const sockaddr* addr,
+                                            uv_connect_cb cb) noexcept {
     assert(addr != nullptr && cb != nullptr &&
            "uv::tcp_connect requires non-null address and callback");
     return status_to_error(::uv_tcp_connect(&req, &handle, addr, cb));
@@ -375,7 +380,8 @@ KOTA_ALWAYS_INLINE inline uv_handle_type guess_handle(uv_file file) noexcept {
 }
 
 template <stream_like S>
-KOTA_ALWAYS_INLINE inline result<std::size_t> try_write(S& stream, std::span<const uv_buf_t> bufs) noexcept {
+KOTA_ALWAYS_INLINE inline result<std::size_t> try_write(S& stream,
+                                                        std::span<const uv_buf_t> bufs) noexcept {
     assert(!bufs.empty() && "uv::try_write requires a non-empty buffer span");
     [[maybe_unused]] int rc =
         ::uv_try_write(as_stream(stream), bufs.data(), static_cast<unsigned>(bufs.size()));
@@ -390,10 +396,8 @@ KOTA_ALWAYS_INLINE inline error stream_set_blocking(S& stream, bool enabled) noe
     return status_to_error(::uv_stream_set_blocking(as_stream(stream), enabled ? 1 : 0));
 }
 
-KOTA_ALWAYS_INLINE inline error tty_init(uv_loop_t& loop,
-                             uv_tty_t& handle,
-                             uv_file fd,
-                             bool readable) noexcept {
+KOTA_ALWAYS_INLINE inline error
+    tty_init(uv_loop_t& loop, uv_tty_t& handle, uv_file fd, bool readable) noexcept {
     return status_to_error(::uv_tty_init(&loop, &handle, fd, readable ? 1 : 0));
 }
 
@@ -431,7 +435,9 @@ KOTA_ALWAYS_INLINE inline error udp_init(uv_loop_t& loop, uv_udp_t& handle) noex
     return status_to_error(::uv_udp_init(&loop, &handle));
 }
 
-KOTA_ALWAYS_INLINE inline error udp_init_ex(uv_loop_t& loop, uv_udp_t& handle, unsigned flags) noexcept {
+KOTA_ALWAYS_INLINE inline error udp_init_ex(uv_loop_t& loop,
+                                            uv_udp_t& handle,
+                                            unsigned flags) noexcept {
     return status_to_error(::uv_udp_init_ex(&loop, &handle, flags));
 }
 
@@ -439,7 +445,9 @@ KOTA_ALWAYS_INLINE inline error udp_open(uv_udp_t& handle, uv_os_sock_t sock) no
     return status_to_error(::uv_udp_open(&handle, sock));
 }
 
-KOTA_ALWAYS_INLINE inline error udp_bind(uv_udp_t& handle, const sockaddr* addr, unsigned flags) noexcept {
+KOTA_ALWAYS_INLINE inline error udp_bind(uv_udp_t& handle,
+                                         const sockaddr* addr,
+                                         unsigned flags) noexcept {
     assert(addr != nullptr && "uv::udp_bind requires non-null address");
     return status_to_error(::uv_udp_bind(&handle, addr, flags));
 }
@@ -449,8 +457,8 @@ KOTA_ALWAYS_INLINE inline error udp_connect(uv_udp_t& handle, const sockaddr* ad
 }
 
 KOTA_ALWAYS_INLINE inline error udp_recv_start(uv_udp_t& handle,
-                                   uv_alloc_cb alloc_cb,
-                                   uv_udp_recv_cb recv_cb) noexcept {
+                                               uv_alloc_cb alloc_cb,
+                                               uv_udp_recv_cb recv_cb) noexcept {
     assert(alloc_cb != nullptr && recv_cb != nullptr &&
            "uv::udp_recv_start requires non-null callbacks");
     return status_to_error(::uv_udp_recv_start(&handle, alloc_cb, recv_cb));
@@ -462,18 +470,18 @@ KOTA_ALWAYS_INLINE inline void udp_recv_stop(uv_udp_t& handle) noexcept {
 }
 
 KOTA_ALWAYS_INLINE inline error udp_send(uv_udp_send_t& req,
-                             uv_udp_t& handle,
-                             std::span<const uv_buf_t> bufs,
-                             const sockaddr* addr,
-                             uv_udp_send_cb cb) noexcept {
+                                         uv_udp_t& handle,
+                                         std::span<const uv_buf_t> bufs,
+                                         const sockaddr* addr,
+                                         uv_udp_send_cb cb) noexcept {
     assert(!bufs.empty() && "uv::udp_send requires a non-empty buffer span");
     return status_to_error(
         ::uv_udp_send(&req, &handle, bufs.data(), static_cast<unsigned>(bufs.size()), addr, cb));
 }
 
 KOTA_ALWAYS_INLINE inline result<std::size_t> udp_try_send(uv_udp_t& handle,
-                                               std::span<const uv_buf_t> bufs,
-                                               const sockaddr* addr) noexcept {
+                                                           std::span<const uv_buf_t> bufs,
+                                                           const sockaddr* addr) noexcept {
     assert(!bufs.empty() && "uv::udp_try_send requires a non-empty buffer span");
     [[maybe_unused]] int rc =
         ::uv_udp_try_send(&handle, bufs.data(), static_cast<unsigned>(bufs.size()), addr);
@@ -483,27 +491,31 @@ KOTA_ALWAYS_INLINE inline result<std::size_t> udp_try_send(uv_udp_t& handle,
     return static_cast<std::size_t>(rc);
 }
 
-KOTA_ALWAYS_INLINE inline error udp_getsockname(const uv_udp_t& handle, sockaddr& name, int& namelen) noexcept {
+KOTA_ALWAYS_INLINE inline error udp_getsockname(const uv_udp_t& handle,
+                                                sockaddr& name,
+                                                int& namelen) noexcept {
     return status_to_error(::uv_udp_getsockname(&handle, &name, &namelen));
 }
 
-KOTA_ALWAYS_INLINE inline error udp_getpeername(const uv_udp_t& handle, sockaddr& name, int& namelen) noexcept {
+KOTA_ALWAYS_INLINE inline error udp_getpeername(const uv_udp_t& handle,
+                                                sockaddr& name,
+                                                int& namelen) noexcept {
     return status_to_error(::uv_udp_getpeername(&handle, &name, &namelen));
 }
 
 KOTA_ALWAYS_INLINE inline error udp_set_membership(uv_udp_t& handle,
-                                       const char* multicast_addr,
-                                       const char* interface_addr,
-                                       uv_membership membership) noexcept {
+                                                   const char* multicast_addr,
+                                                   const char* interface_addr,
+                                                   uv_membership membership) noexcept {
     return status_to_error(
         ::uv_udp_set_membership(&handle, multicast_addr, interface_addr, membership));
 }
 
 KOTA_ALWAYS_INLINE inline error udp_set_source_membership(uv_udp_t& handle,
-                                              const char* multicast_addr,
-                                              const char* interface_addr,
-                                              const char* source_addr,
-                                              uv_membership membership) noexcept {
+                                                          const char* multicast_addr,
+                                                          const char* interface_addr,
+                                                          const char* source_addr,
+                                                          uv_membership membership) noexcept {
     return status_to_error(::uv_udp_set_source_membership(&handle,
                                                           multicast_addr,
                                                           interface_addr,
@@ -520,7 +532,7 @@ KOTA_ALWAYS_INLINE inline error udp_set_multicast_ttl(uv_udp_t& handle, int ttl)
 }
 
 KOTA_ALWAYS_INLINE inline error udp_set_multicast_interface(uv_udp_t& handle,
-                                                const char* interface_addr) noexcept {
+                                                            const char* interface_addr) noexcept {
     return status_to_error(::uv_udp_set_multicast_interface(&handle, interface_addr));
 }
 
@@ -574,12 +586,16 @@ KOTA_ALWAYS_INLINE inline error ip6_addr(const char* ip, int port, sockaddr_in6&
     return status_to_error(::uv_ip6_addr(ip, port, &out));
 }
 
-KOTA_ALWAYS_INLINE inline error ip4_name(const sockaddr_in& src, char* dst, std::size_t size) noexcept {
+KOTA_ALWAYS_INLINE inline error ip4_name(const sockaddr_in& src,
+                                         char* dst,
+                                         std::size_t size) noexcept {
     assert(dst != nullptr && size > 0 && "uv::ip4_name requires non-null destination and size > 0");
     return status_to_error(::uv_ip4_name(&src, dst, size));
 }
 
-KOTA_ALWAYS_INLINE inline error ip6_name(const sockaddr_in6& src, char* dst, std::size_t size) noexcept {
+KOTA_ALWAYS_INLINE inline error ip6_name(const sockaddr_in6& src,
+                                         char* dst,
+                                         std::size_t size) noexcept {
     assert(dst != nullptr && size > 0 && "uv::ip6_name requires non-null destination and size > 0");
     return status_to_error(::uv_ip6_name(&src, dst, size));
 }
@@ -593,10 +609,8 @@ KOTA_ALWAYS_INLINE inline void fs_req_cleanup(uv_fs_t& req) noexcept {
     ::uv_fs_req_cleanup(&req);
 }
 
-KOTA_ALWAYS_INLINE inline error fs_unlink(uv_loop_t& loop,
-                              uv_fs_t& req,
-                              const char* path,
-                              uv_fs_cb cb) noexcept {
+KOTA_ALWAYS_INLINE inline error
+    fs_unlink(uv_loop_t& loop, uv_fs_t& req, const char* path, uv_fs_cb cb) noexcept {
     assert(path != nullptr && "uv::fs_unlink requires non-null path");
     return status_to_error(::uv_fs_unlink(&loop, &req, path, cb));
 }
@@ -607,42 +621,37 @@ KOTA_ALWAYS_INLINE inline error
     return status_to_error(::uv_fs_mkdir(&loop, &req, path, mode, cb));
 }
 
-KOTA_ALWAYS_INLINE inline error fs_stat(uv_loop_t& loop, uv_fs_t& req, const char* path, uv_fs_cb cb) noexcept {
+KOTA_ALWAYS_INLINE inline error
+    fs_stat(uv_loop_t& loop, uv_fs_t& req, const char* path, uv_fs_cb cb) noexcept {
     assert(path != nullptr && "uv::fs_stat requires non-null path");
     return status_to_error(::uv_fs_stat(&loop, &req, path, cb));
 }
 
 KOTA_ALWAYS_INLINE inline error fs_copyfile(uv_loop_t& loop,
-                                uv_fs_t& req,
-                                const char* path,
-                                const char* new_path,
-                                int flags,
-                                uv_fs_cb cb) noexcept {
+                                            uv_fs_t& req,
+                                            const char* path,
+                                            const char* new_path,
+                                            int flags,
+                                            uv_fs_cb cb) noexcept {
     assert(path != nullptr && new_path != nullptr &&
            "uv::fs_copyfile requires non-null source and destination paths");
     return status_to_error(::uv_fs_copyfile(&loop, &req, path, new_path, flags, cb));
 }
 
-KOTA_ALWAYS_INLINE inline error fs_mkdtemp(uv_loop_t& loop,
-                               uv_fs_t& req,
-                               const char* tpl,
-                               uv_fs_cb cb) noexcept {
+KOTA_ALWAYS_INLINE inline error
+    fs_mkdtemp(uv_loop_t& loop, uv_fs_t& req, const char* tpl, uv_fs_cb cb) noexcept {
     assert(tpl != nullptr && "uv::fs_mkdtemp requires non-null template");
     return status_to_error(::uv_fs_mkdtemp(&loop, &req, tpl, cb));
 }
 
-KOTA_ALWAYS_INLINE inline error fs_mkstemp(uv_loop_t& loop,
-                               uv_fs_t& req,
-                               const char* tpl,
-                               uv_fs_cb cb) noexcept {
+KOTA_ALWAYS_INLINE inline error
+    fs_mkstemp(uv_loop_t& loop, uv_fs_t& req, const char* tpl, uv_fs_cb cb) noexcept {
     assert(tpl != nullptr && "uv::fs_mkstemp requires non-null template");
     return status_to_error(::uv_fs_mkstemp(&loop, &req, tpl, cb));
 }
 
-KOTA_ALWAYS_INLINE inline error fs_rmdir(uv_loop_t& loop,
-                             uv_fs_t& req,
-                             const char* path,
-                             uv_fs_cb cb) noexcept {
+KOTA_ALWAYS_INLINE inline error
+    fs_rmdir(uv_loop_t& loop, uv_fs_t& req, const char* path, uv_fs_cb cb) noexcept {
     assert(path != nullptr && "uv::fs_rmdir requires non-null path");
     return status_to_error(::uv_fs_rmdir(&loop, &req, path, cb));
 }
@@ -657,55 +666,50 @@ KOTA_ALWAYS_INLINE inline error fs_scandir_next(uv_fs_t& req, uv_dirent_t& ent) 
     return error(::uv_fs_scandir_next(&req, &ent));
 }
 
-KOTA_ALWAYS_INLINE inline error fs_opendir(uv_loop_t& loop,
-                               uv_fs_t& req,
-                               const char* path,
-                               uv_fs_cb cb) noexcept {
+KOTA_ALWAYS_INLINE inline error
+    fs_opendir(uv_loop_t& loop, uv_fs_t& req, const char* path, uv_fs_cb cb) noexcept {
     assert(path != nullptr && "uv::fs_opendir requires non-null path");
     return status_to_error(::uv_fs_opendir(&loop, &req, path, cb));
 }
 
-KOTA_ALWAYS_INLINE inline error fs_readdir(uv_loop_t& loop, uv_fs_t& req, uv_dir_t& dir, uv_fs_cb cb) noexcept {
+KOTA_ALWAYS_INLINE inline error
+    fs_readdir(uv_loop_t& loop, uv_fs_t& req, uv_dir_t& dir, uv_fs_cb cb) noexcept {
     return status_to_error(::uv_fs_readdir(&loop, &req, &dir, cb));
 }
 
-KOTA_ALWAYS_INLINE inline error fs_closedir(uv_loop_t& loop,
-                                uv_fs_t& req,
-                                uv_dir_t& dir,
-                                uv_fs_cb cb) noexcept {
+KOTA_ALWAYS_INLINE inline error
+    fs_closedir(uv_loop_t& loop, uv_fs_t& req, uv_dir_t& dir, uv_fs_cb cb) noexcept {
     return status_to_error(::uv_fs_closedir(&loop, &req, &dir, cb));
 }
 
-KOTA_ALWAYS_INLINE inline error fs_fstat(uv_loop_t& loop, uv_fs_t& req, uv_file file, uv_fs_cb cb) noexcept {
+KOTA_ALWAYS_INLINE inline error
+    fs_fstat(uv_loop_t& loop, uv_fs_t& req, uv_file file, uv_fs_cb cb) noexcept {
     return status_to_error(::uv_fs_fstat(&loop, &req, file, cb));
 }
 
-KOTA_ALWAYS_INLINE inline error fs_lstat(uv_loop_t& loop,
-                             uv_fs_t& req,
-                             const char* path,
-                             uv_fs_cb cb) noexcept {
+KOTA_ALWAYS_INLINE inline error
+    fs_lstat(uv_loop_t& loop, uv_fs_t& req, const char* path, uv_fs_cb cb) noexcept {
     assert(path != nullptr && "uv::fs_lstat requires non-null path");
     return status_to_error(::uv_fs_lstat(&loop, &req, path, cb));
 }
 
 KOTA_ALWAYS_INLINE inline error fs_rename(uv_loop_t& loop,
-                              uv_fs_t& req,
-                              const char* path,
-                              const char* new_path,
-                              uv_fs_cb cb) noexcept {
+                                          uv_fs_t& req,
+                                          const char* path,
+                                          const char* new_path,
+                                          uv_fs_cb cb) noexcept {
     assert(path != nullptr && new_path != nullptr &&
            "uv::fs_rename requires non-null source and destination paths");
     return status_to_error(::uv_fs_rename(&loop, &req, path, new_path, cb));
 }
 
-KOTA_ALWAYS_INLINE inline error fs_fsync(uv_loop_t& loop, uv_fs_t& req, uv_file file, uv_fs_cb cb) noexcept {
+KOTA_ALWAYS_INLINE inline error
+    fs_fsync(uv_loop_t& loop, uv_fs_t& req, uv_file file, uv_fs_cb cb) noexcept {
     return status_to_error(::uv_fs_fsync(&loop, &req, file, cb));
 }
 
-KOTA_ALWAYS_INLINE inline error fs_fdatasync(uv_loop_t& loop,
-                                 uv_fs_t& req,
-                                 uv_file file,
-                                 uv_fs_cb cb) noexcept {
+KOTA_ALWAYS_INLINE inline error
+    fs_fdatasync(uv_loop_t& loop, uv_fs_t& req, uv_file file, uv_fs_cb cb) noexcept {
     return status_to_error(::uv_fs_fdatasync(&loop, &req, file, cb));
 }
 
@@ -715,12 +719,12 @@ KOTA_ALWAYS_INLINE inline error
 }
 
 KOTA_ALWAYS_INLINE inline error fs_sendfile(uv_loop_t& loop,
-                                uv_fs_t& req,
-                                uv_file out_file,
-                                uv_file in_file,
-                                int64_t in_offset,
-                                std::size_t length,
-                                uv_fs_cb cb) noexcept {
+                                            uv_fs_t& req,
+                                            uv_file out_file,
+                                            uv_file in_file,
+                                            int64_t in_offset,
+                                            std::size_t length,
+                                            uv_fs_cb cb) noexcept {
     return status_to_error(::uv_fs_sendfile(&loop, &req, out_file, in_file, in_offset, length, cb));
 }
 
@@ -737,67 +741,63 @@ KOTA_ALWAYS_INLINE inline error
 }
 
 KOTA_ALWAYS_INLINE inline error fs_utime(uv_loop_t& loop,
-                             uv_fs_t& req,
-                             const char* path,
-                             double atime,
-                             double mtime,
-                             uv_fs_cb cb) noexcept {
+                                         uv_fs_t& req,
+                                         const char* path,
+                                         double atime,
+                                         double mtime,
+                                         uv_fs_cb cb) noexcept {
     assert(path != nullptr && "uv::fs_utime requires non-null path");
     return status_to_error(::uv_fs_utime(&loop, &req, path, atime, mtime, cb));
 }
 
 KOTA_ALWAYS_INLINE inline error fs_futime(uv_loop_t& loop,
-                              uv_fs_t& req,
-                              uv_file file,
-                              double atime,
-                              double mtime,
-                              uv_fs_cb cb) noexcept {
+                                          uv_fs_t& req,
+                                          uv_file file,
+                                          double atime,
+                                          double mtime,
+                                          uv_fs_cb cb) noexcept {
     return status_to_error(::uv_fs_futime(&loop, &req, file, atime, mtime, cb));
 }
 
 KOTA_ALWAYS_INLINE inline error fs_lutime(uv_loop_t& loop,
-                              uv_fs_t& req,
-                              const char* path,
-                              double atime,
-                              double mtime,
-                              uv_fs_cb cb) noexcept {
+                                          uv_fs_t& req,
+                                          const char* path,
+                                          double atime,
+                                          double mtime,
+                                          uv_fs_cb cb) noexcept {
     assert(path != nullptr && "uv::fs_lutime requires non-null path");
     return status_to_error(::uv_fs_lutime(&loop, &req, path, atime, mtime, cb));
 }
 
 KOTA_ALWAYS_INLINE inline error fs_link(uv_loop_t& loop,
-                            uv_fs_t& req,
-                            const char* path,
-                            const char* new_path,
-                            uv_fs_cb cb) noexcept {
+                                        uv_fs_t& req,
+                                        const char* path,
+                                        const char* new_path,
+                                        uv_fs_cb cb) noexcept {
     assert(path != nullptr && new_path != nullptr &&
            "uv::fs_link requires non-null source and destination paths");
     return status_to_error(::uv_fs_link(&loop, &req, path, new_path, cb));
 }
 
 KOTA_ALWAYS_INLINE inline error fs_symlink(uv_loop_t& loop,
-                               uv_fs_t& req,
-                               const char* path,
-                               const char* new_path,
-                               int flags,
-                               uv_fs_cb cb) noexcept {
+                                           uv_fs_t& req,
+                                           const char* path,
+                                           const char* new_path,
+                                           int flags,
+                                           uv_fs_cb cb) noexcept {
     assert(path != nullptr && new_path != nullptr &&
            "uv::fs_symlink requires non-null source and destination paths");
     return status_to_error(::uv_fs_symlink(&loop, &req, path, new_path, flags, cb));
 }
 
-KOTA_ALWAYS_INLINE inline error fs_readlink(uv_loop_t& loop,
-                                uv_fs_t& req,
-                                const char* path,
-                                uv_fs_cb cb) noexcept {
+KOTA_ALWAYS_INLINE inline error
+    fs_readlink(uv_loop_t& loop, uv_fs_t& req, const char* path, uv_fs_cb cb) noexcept {
     assert(path != nullptr && "uv::fs_readlink requires non-null path");
     return status_to_error(::uv_fs_readlink(&loop, &req, path, cb));
 }
 
-KOTA_ALWAYS_INLINE inline error fs_realpath(uv_loop_t& loop,
-                                uv_fs_t& req,
-                                const char* path,
-                                uv_fs_cb cb) noexcept {
+KOTA_ALWAYS_INLINE inline error
+    fs_realpath(uv_loop_t& loop, uv_fs_t& req, const char* path, uv_fs_cb cb) noexcept {
     assert(path != nullptr && "uv::fs_realpath requires non-null path");
     return status_to_error(::uv_fs_realpath(&loop, &req, path, cb));
 }
@@ -808,73 +808,72 @@ KOTA_ALWAYS_INLINE inline error
 }
 
 KOTA_ALWAYS_INLINE inline error fs_chown(uv_loop_t& loop,
-                             uv_fs_t& req,
-                             const char* path,
-                             uv_uid_t uid,
-                             uv_gid_t gid,
-                             uv_fs_cb cb) noexcept {
+                                         uv_fs_t& req,
+                                         const char* path,
+                                         uv_uid_t uid,
+                                         uv_gid_t gid,
+                                         uv_fs_cb cb) noexcept {
     assert(path != nullptr && "uv::fs_chown requires non-null path");
     return status_to_error(::uv_fs_chown(&loop, &req, path, uid, gid, cb));
 }
 
 KOTA_ALWAYS_INLINE inline error fs_fchown(uv_loop_t& loop,
-                              uv_fs_t& req,
-                              uv_file file,
-                              uv_uid_t uid,
-                              uv_gid_t gid,
-                              uv_fs_cb cb) noexcept {
+                                          uv_fs_t& req,
+                                          uv_file file,
+                                          uv_uid_t uid,
+                                          uv_gid_t gid,
+                                          uv_fs_cb cb) noexcept {
     return status_to_error(::uv_fs_fchown(&loop, &req, file, uid, gid, cb));
 }
 
 KOTA_ALWAYS_INLINE inline error fs_lchown(uv_loop_t& loop,
-                              uv_fs_t& req,
-                              const char* path,
-                              uv_uid_t uid,
-                              uv_gid_t gid,
-                              uv_fs_cb cb) noexcept {
+                                          uv_fs_t& req,
+                                          const char* path,
+                                          uv_uid_t uid,
+                                          uv_gid_t gid,
+                                          uv_fs_cb cb) noexcept {
     assert(path != nullptr && "uv::fs_lchown requires non-null path");
     return status_to_error(::uv_fs_lchown(&loop, &req, path, uid, gid, cb));
 }
 
-KOTA_ALWAYS_INLINE inline error fs_statfs(uv_loop_t& loop,
-                              uv_fs_t& req,
-                              const char* path,
-                              uv_fs_cb cb) noexcept {
+KOTA_ALWAYS_INLINE inline error
+    fs_statfs(uv_loop_t& loop, uv_fs_t& req, const char* path, uv_fs_cb cb) noexcept {
     assert(path != nullptr && "uv::fs_statfs requires non-null path");
     return status_to_error(::uv_fs_statfs(&loop, &req, path, cb));
 }
 
 KOTA_ALWAYS_INLINE inline error fs_open(uv_loop_t& loop,
-                            uv_fs_t& req,
-                            const char* path,
-                            int flags,
-                            int mode,
-                            uv_fs_cb cb) noexcept {
+                                        uv_fs_t& req,
+                                        const char* path,
+                                        int flags,
+                                        int mode,
+                                        uv_fs_cb cb) noexcept {
     assert(path != nullptr && "uv::fs_open requires non-null path");
     return status_to_error(::uv_fs_open(&loop, &req, path, flags, mode, cb));
 }
 
 KOTA_ALWAYS_INLINE inline error fs_read(uv_loop_t& loop,
-                            uv_fs_t& req,
-                            uv_file file,
-                            const uv_buf_t bufs[],
-                            unsigned int nbufs,
-                            int64_t offset,
-                            uv_fs_cb cb) noexcept {
+                                        uv_fs_t& req,
+                                        uv_file file,
+                                        const uv_buf_t bufs[],
+                                        unsigned int nbufs,
+                                        int64_t offset,
+                                        uv_fs_cb cb) noexcept {
     return status_to_error(::uv_fs_read(&loop, &req, file, bufs, nbufs, offset, cb));
 }
 
 KOTA_ALWAYS_INLINE inline error fs_write(uv_loop_t& loop,
-                             uv_fs_t& req,
-                             uv_file file,
-                             const uv_buf_t bufs[],
-                             unsigned int nbufs,
-                             int64_t offset,
-                             uv_fs_cb cb) noexcept {
+                                         uv_fs_t& req,
+                                         uv_file file,
+                                         const uv_buf_t bufs[],
+                                         unsigned int nbufs,
+                                         int64_t offset,
+                                         uv_fs_cb cb) noexcept {
     return status_to_error(::uv_fs_write(&loop, &req, file, bufs, nbufs, offset, cb));
 }
 
-KOTA_ALWAYS_INLINE inline error fs_close(uv_loop_t& loop, uv_fs_t& req, uv_file file, uv_fs_cb cb) noexcept {
+KOTA_ALWAYS_INLINE inline error
+    fs_close(uv_loop_t& loop, uv_fs_t& req, uv_file file, uv_fs_cb cb) noexcept {
     return status_to_error(::uv_fs_close(&loop, &req, file, cb));
 }
 
@@ -953,24 +952,25 @@ KOTA_ALWAYS_INLINE inline unsigned int available_parallelism() noexcept {
 
 // --- Synchronous fs wrappers (no event loop needed) ---
 
-KOTA_ALWAYS_INLINE inline int fs_open_sync(uv_fs_t& req, const char* path, int flags, int mode) noexcept {
+KOTA_ALWAYS_INLINE inline int
+    fs_open_sync(uv_fs_t& req, const char* path, int flags, int mode) noexcept {
     assert(path != nullptr && "uv::fs_open_sync requires non-null path");
     return ::uv_fs_open(nullptr, &req, path, flags, mode, nullptr);
 }
 
 KOTA_ALWAYS_INLINE inline int fs_read_sync(uv_fs_t& req,
-                               uv_file file,
-                               const uv_buf_t bufs[],
-                               unsigned int nbufs,
-                               int64_t offset) noexcept {
+                                           uv_file file,
+                                           const uv_buf_t bufs[],
+                                           unsigned int nbufs,
+                                           int64_t offset) noexcept {
     return ::uv_fs_read(nullptr, &req, file, bufs, nbufs, offset, nullptr);
 }
 
 KOTA_ALWAYS_INLINE inline int fs_write_sync(uv_fs_t& req,
-                                uv_file file,
-                                const uv_buf_t bufs[],
-                                unsigned int nbufs,
-                                int64_t offset) noexcept {
+                                            uv_file file,
+                                            const uv_buf_t bufs[],
+                                            unsigned int nbufs,
+                                            int64_t offset) noexcept {
     return ::uv_fs_write(nullptr, &req, file, bufs, nbufs, offset, nullptr);
 }
 

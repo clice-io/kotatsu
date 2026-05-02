@@ -198,13 +198,14 @@ public:
     }
 
     KOTA_ALWAYS_INLINE status_t deserialize_bool(bool& value) {
-        return read_value(value, [] KOTA_ALWAYS_INLINE (auto& src) { return src.get_bool(); });
+        return read_value(value, [] KOTA_ALWAYS_INLINE(auto& src) { return src.get_bool(); });
     }
 
     template <codec::int_like T>
     KOTA_ALWAYS_INLINE status_t deserialize_int(T& value) {
         std::int64_t parsed;
-        KOTA_EXPECTED_TRY(read_value(parsed, [] KOTA_ALWAYS_INLINE (auto& src) { return src.get_int64(); }));
+        KOTA_EXPECTED_TRY(
+            read_value(parsed, [] KOTA_ALWAYS_INLINE(auto& src) { return src.get_int64(); }));
         if(!std::in_range<T>(parsed)) [[unlikely]] {
             return mark_invalid(error_kind::number_out_of_range);
         }
@@ -215,7 +216,8 @@ public:
     template <codec::uint_like T>
     KOTA_ALWAYS_INLINE status_t deserialize_uint(T& value) {
         std::uint64_t parsed;
-        KOTA_EXPECTED_TRY(read_value(parsed, [] KOTA_ALWAYS_INLINE (auto& src) { return src.get_uint64(); }));
+        KOTA_EXPECTED_TRY(
+            read_value(parsed, [] KOTA_ALWAYS_INLINE(auto& src) { return src.get_uint64(); }));
         if(!std::in_range<T>(parsed)) [[unlikely]] {
             return mark_invalid(error_kind::number_out_of_range);
         }
@@ -226,7 +228,8 @@ public:
     template <codec::floating_like T>
     KOTA_ALWAYS_INLINE status_t deserialize_float(T& value) {
         double parsed;
-        KOTA_EXPECTED_TRY(read_value(parsed, [] KOTA_ALWAYS_INLINE (auto& src) { return src.get_double(); }));
+        KOTA_EXPECTED_TRY(
+            read_value(parsed, [] KOTA_ALWAYS_INLINE(auto& src) { return src.get_double(); }));
         if constexpr(!std::same_as<T, double>) {
             if(std::isfinite(parsed)) {
                 const auto v = static_cast<long double>(parsed);
@@ -242,7 +245,8 @@ public:
 
     status_t deserialize_char(char& value) {
         std::string_view text;
-        KOTA_EXPECTED_TRY(read_value(text, [] KOTA_ALWAYS_INLINE (auto& src) { return src.get_string(); }));
+        KOTA_EXPECTED_TRY(
+            read_value(text, [] KOTA_ALWAYS_INLINE(auto& src) { return src.get_string(); }));
         if(text.size() != 1) [[unlikely]] {
             return mark_invalid(error_kind::type_mismatch);
         }
@@ -252,7 +256,8 @@ public:
 
     KOTA_ALWAYS_INLINE status_t deserialize_str(std::string& value) {
         std::string_view text;
-        KOTA_EXPECTED_TRY(read_value(text, [] KOTA_ALWAYS_INLINE (auto& src) { return src.get_string(); }));
+        KOTA_EXPECTED_TRY(
+            read_value(text, [] KOTA_ALWAYS_INLINE(auto& src) { return src.get_string(); }));
         value.assign(text.data(), text.size());
         return {};
     }

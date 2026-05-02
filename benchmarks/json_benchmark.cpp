@@ -3,8 +3,8 @@
 #include <string>
 #include <vector>
 
-#include "benchmark/benchmark.h"
 #include "simdjson.h"
+#include "benchmark/benchmark.h"
 #include "kota/codec/json/json.h"
 
 namespace {
@@ -60,7 +60,7 @@ void BM_write(benchmark::State& state) {
     auto sample = *to_json(obj);
     auto len = sample.size();
     Serializer<> serializer(len);
-    for(auto _ : state) {
+    for(auto _: state) {
         serializer.clear();
         kota::codec::serialize(serializer, obj);
         benchmark::DoNotOptimize(serializer.view());
@@ -72,7 +72,7 @@ void BM_write(benchmark::State& state) {
 void BM_write_alloc(benchmark::State& state) {
     auto obj = *from_json<obj_t>(json_minified);
     auto len = to_json(obj)->size();
-    for(auto _ : state) {
+    for(auto _: state) {
         benchmark::DoNotOptimize(to_json(obj, len));
     }
     state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(len));
@@ -83,7 +83,7 @@ void BM_read(benchmark::State& state) {
     simdjson::padded_string padded(json_minified);
     auto len = json_minified.size();
     obj_t out{};
-    for(auto _ : state) {
+    for(auto _: state) {
         from_json(static_cast<simdjson::padded_string_view>(padded), out);
         benchmark::ClobberMemory();
     }
@@ -94,7 +94,7 @@ void BM_read(benchmark::State& state) {
 void BM_read_copy(benchmark::State& state) {
     auto len = json_minified.size();
     obj_t out{};
-    for(auto _ : state) {
+    for(auto _: state) {
         from_json(json_minified, out);
         benchmark::ClobberMemory();
     }
@@ -124,7 +124,8 @@ void simdjson_read_nested_object(simdjson::ondemand::object& obj, nested_object_
                     (void)std::move(elem_result).get(elem);
                     double d;
                     (void)elem.get_double().get(d);
-                    if(i < 3) v[i++] = d;
+                    if(i < 3)
+                        v[i++] = d;
                 }
                 out.v3s.push_back(v);
             }
@@ -227,11 +228,16 @@ void simdjson_read_obj(simdjson::ondemand::document& doc, obj_t& out) {
                 (void)f2.unescaped_key().get(k2);
                 std::string_view sv;
                 (void)f2.value().get_string().get(sv);
-                if(k2 == "name0") out.fixed_name_object.name0 = sv;
-                else if(k2 == "name1") out.fixed_name_object.name1 = sv;
-                else if(k2 == "name2") out.fixed_name_object.name2 = sv;
-                else if(k2 == "name3") out.fixed_name_object.name3 = sv;
-                else if(k2 == "name4") out.fixed_name_object.name4 = sv;
+                if(k2 == "name0")
+                    out.fixed_name_object.name0 = sv;
+                else if(k2 == "name1")
+                    out.fixed_name_object.name1 = sv;
+                else if(k2 == "name2")
+                    out.fixed_name_object.name2 = sv;
+                else if(k2 == "name3")
+                    out.fixed_name_object.name3 = sv;
+                else if(k2 == "name4")
+                    out.fixed_name_object.name4 = sv;
             }
         } else if(key == "another_object") {
             simdjson::ondemand::object obj;
@@ -267,7 +273,7 @@ void BM_simdjson_handwritten(benchmark::State& state) {
     simdjson::ondemand::parser parser;
     auto len = json_minified.size();
     obj_t out{};
-    for(auto _ : state) {
+    for(auto _: state) {
         simdjson::ondemand::document doc;
         (void)parser.iterate(padded).get(doc);
         simdjson_read_obj(doc, out);
@@ -281,7 +287,7 @@ void BM_simdjson_handwritten_no_reuse(benchmark::State& state) {
     simdjson::padded_string padded(json_minified);
     auto len = json_minified.size();
     obj_t out{};
-    for(auto _ : state) {
+    for(auto _: state) {
         simdjson::ondemand::parser parser;
         simdjson::ondemand::document doc;
         (void)parser.iterate(padded).get(doc);
@@ -293,13 +299,15 @@ void BM_simdjson_handwritten_no_reuse(benchmark::State& state) {
 }
 
 void sb_field(simdjson::builder::string_builder& sb, std::string_view name, bool first = false) {
-    if(!first) sb.append_comma();
+    if(!first)
+        sb.append_comma();
     sb.escape_and_append_with_quotes(name);
     sb.append_colon();
 }
 
 void sb_next(simdjson::builder::string_builder& sb, bool first = false) {
-    if(!first) sb.append_comma();
+    if(!first)
+        sb.append_comma();
 }
 
 void simdjson_write_obj(simdjson::builder::string_builder& sb, const obj_t& obj) {
@@ -332,19 +340,28 @@ void simdjson_write_obj(simdjson::builder::string_builder& sb, const obj_t& obj)
 
     sb_field(sb, "fixed_name_object");
     sb.start_object();
-    sb_field(sb, "name0", true); sb.escape_and_append_with_quotes(obj.fixed_name_object.name0);
-    sb_field(sb, "name1"); sb.escape_and_append_with_quotes(obj.fixed_name_object.name1);
-    sb_field(sb, "name2"); sb.escape_and_append_with_quotes(obj.fixed_name_object.name2);
-    sb_field(sb, "name3"); sb.escape_and_append_with_quotes(obj.fixed_name_object.name3);
-    sb_field(sb, "name4"); sb.escape_and_append_with_quotes(obj.fixed_name_object.name4);
+    sb_field(sb, "name0", true);
+    sb.escape_and_append_with_quotes(obj.fixed_name_object.name0);
+    sb_field(sb, "name1");
+    sb.escape_and_append_with_quotes(obj.fixed_name_object.name1);
+    sb_field(sb, "name2");
+    sb.escape_and_append_with_quotes(obj.fixed_name_object.name2);
+    sb_field(sb, "name3");
+    sb.escape_and_append_with_quotes(obj.fixed_name_object.name3);
+    sb_field(sb, "name4");
+    sb.escape_and_append_with_quotes(obj.fixed_name_object.name4);
     sb.end_object();
 
     sb_field(sb, "another_object");
     sb.start_object();
-    sb_field(sb, "string", true); sb.escape_and_append_with_quotes(obj.another_object.string);
-    sb_field(sb, "another_string"); sb.escape_and_append_with_quotes(obj.another_object.another_string);
-    sb_field(sb, "escaped_text"); sb.escape_and_append_with_quotes(obj.another_object.escaped_text);
-    sb_field(sb, "boolean"); sb.append(obj.another_object.boolean);
+    sb_field(sb, "string", true);
+    sb.escape_and_append_with_quotes(obj.another_object.string);
+    sb_field(sb, "another_string");
+    sb.escape_and_append_with_quotes(obj.another_object.another_string);
+    sb_field(sb, "escaped_text");
+    sb.escape_and_append_with_quotes(obj.another_object.escaped_text);
+    sb_field(sb, "boolean");
+    sb.append(obj.another_object.boolean);
     sb_field(sb, "nested_object");
     sb.start_object();
     sb_field(sb, "v3s", true);
@@ -353,13 +370,16 @@ void simdjson_write_obj(simdjson::builder::string_builder& sb, const obj_t& obj)
         sb_next(sb, i == 0);
         auto& v3 = obj.another_object.nested_object.v3s[i];
         sb.start_array();
-        sb.append(v3[0]); sb.append_comma();
-        sb.append(v3[1]); sb.append_comma();
+        sb.append(v3[0]);
+        sb.append_comma();
+        sb.append(v3[1]);
+        sb.append_comma();
         sb.append(v3[2]);
         sb.end_array();
     }
     sb.end_array();
-    sb_field(sb, "id"); sb.escape_and_append_with_quotes(obj.another_object.nested_object.id);
+    sb_field(sb, "id");
+    sb.escape_and_append_with_quotes(obj.another_object.nested_object.id);
     sb.end_object();
     sb.end_object();
 
@@ -371,10 +391,14 @@ void simdjson_write_obj(simdjson::builder::string_builder& sb, const obj_t& obj)
     }
     sb.end_array();
 
-    sb_field(sb, "string"); sb.escape_and_append_with_quotes(obj.string);
-    sb_field(sb, "number"); sb.append(obj.number);
-    sb_field(sb, "boolean"); sb.append(obj.boolean);
-    sb_field(sb, "another_bool"); sb.append(obj.another_bool);
+    sb_field(sb, "string");
+    sb.escape_and_append_with_quotes(obj.string);
+    sb_field(sb, "number");
+    sb.append(obj.number);
+    sb_field(sb, "boolean");
+    sb.append(obj.boolean);
+    sb_field(sb, "another_bool");
+    sb.append(obj.another_bool);
 
     sb.end_object();
 }
@@ -384,7 +408,7 @@ void BM_write_handwritten(benchmark::State& state) {
     auto sample = *to_json(obj);
     auto len = sample.size();
     simdjson::builder::string_builder sb(len);
-    for(auto _ : state) {
+    for(auto _: state) {
         sb.clear();
         simdjson_write_obj(sb, obj);
         std::string_view result;
