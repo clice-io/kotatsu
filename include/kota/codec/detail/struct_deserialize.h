@@ -38,7 +38,7 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
     -> std::expected<void, E>;
 
 template <typename Attrs, typename E, typename D, typename V>
-auto deserialize_slot_value(D& d, V& value) -> std::expected<void, E> {
+KOTA_ALWAYS_INLINE auto deserialize_slot_value(D& d, V& value) -> std::expected<void, E> {
     if constexpr(tuple_count_of_v<Attrs, meta::is_behavior_provider> > 0) {
         auto result = apply_deserialize_behavior<Attrs, V, E>(
             value,
@@ -328,7 +328,7 @@ auto struct_deserialize_by_position(D& d, T& v) -> std::expected<void, E> {
 }
 
 template <typename Config, typename E, typename D, typename T>
-auto struct_deserialize(D& d, T& v) -> std::expected<void, E> {
+KOTA_ALWAYS_INLINE auto struct_deserialize(D& d, T& v) -> std::expected<void, E> {
     if constexpr(D::field_mode_v == field_mode::by_name) {
         return struct_deserialize_by_name<Config, E>(d, v);
     } else if constexpr(D::field_mode_v == field_mode::by_position) {

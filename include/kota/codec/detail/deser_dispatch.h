@@ -14,6 +14,7 @@
 #include <variant>
 #include <vector>
 
+#include "kota/support/config.h"
 #include "kota/support/expected_try.h"
 #include "kota/support/ranges.h"
 #include "kota/support/type_traits.h"
@@ -42,12 +43,12 @@ struct StreamingDeserCtx {
     constexpr static auto backend_kind_v = backend_kind::streaming;
     constexpr static auto field_mode_v = D::field_mode_v;
 
-    result_type read_bool(bool& v) {
+    KOTA_ALWAYS_INLINE result_type read_bool(bool& v) {
         return d.deserialize_bool(v);
     }
 
     template <typename T>
-    result_type read_int(T& v) {
+    KOTA_ALWAYS_INLINE result_type read_int(T& v) {
         if constexpr(std::same_as<T, std::int64_t>) {
             return d.deserialize_int(v);
         } else {
@@ -62,7 +63,7 @@ struct StreamingDeserCtx {
     }
 
     template <typename T>
-    result_type read_uint(T& v) {
+    KOTA_ALWAYS_INLINE result_type read_uint(T& v) {
         if constexpr(std::same_as<T, std::uint64_t>) {
             return d.deserialize_uint(v);
         } else {
@@ -77,7 +78,7 @@ struct StreamingDeserCtx {
     }
 
     template <typename T>
-    result_type read_float(T& v) {
+    KOTA_ALWAYS_INLINE result_type read_float(T& v) {
         if constexpr(std::same_as<T, double>) {
             return d.deserialize_float(v);
         } else {
@@ -92,7 +93,7 @@ struct StreamingDeserCtx {
         return d.deserialize_char(v);
     }
 
-    result_type read_str(std::string& v) {
+    KOTA_ALWAYS_INLINE result_type read_str(std::string& v) {
         return d.deserialize_str(v);
     }
 
@@ -180,7 +181,7 @@ struct StreamingDeserCtx {
     }
 
     template <typename Config, typename V>
-    result_type read_tuple(V& v) {
+    KOTA_ALWAYS_INLINE result_type read_tuple(V& v) {
         using E = error_type;
         if constexpr(D::field_mode_v == field_mode::by_name) {
             KOTA_EXPECTED_TRY(d.begin_array());
@@ -239,7 +240,7 @@ struct StreamingDeserCtx {
     }
 
     template <typename Config, typename V>
-    result_type read_sequence(V& v) {
+    KOTA_ALWAYS_INLINE result_type read_sequence(V& v) {
         using element_t = std::ranges::range_value_t<V>;
         static_assert(std::default_initializable<element_t>,
                       "auto deserialization for ranges requires default-constructible elements");
@@ -363,13 +364,13 @@ struct StreamingDeserCtx {
     }
 
     template <typename Config, typename V>
-    result_type read_struct(V& v) {
+    KOTA_ALWAYS_INLINE result_type read_struct(V& v) {
         return struct_deserialize<Config, error_type>(d, v);
     }
 };
 
 template <typename Config, typename Ctx, typename Attrs, typename V>
-auto unified_deserialize(Ctx& ctx, V& v) -> typename Ctx::result_type {
+KOTA_ALWAYS_INLINE auto unified_deserialize(Ctx& ctx, V& v) -> typename Ctx::result_type {
     using U = std::remove_cvref_t<V>;
     using E = typename Ctx::error_type;
 

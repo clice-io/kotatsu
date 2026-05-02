@@ -5,6 +5,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <limits>
+#include <numeric>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -16,7 +18,6 @@
 #include "kota/codec/detail/backend.h"
 #include "kota/codec/detail/codec.h"
 #include "kota/codec/detail/config.h"
-#include "kota/codec/detail/narrow.h"
 #include "kota/codec/detail/variant_dispatch.h"
 #include "kota/codec/json/error.h"
 
@@ -195,50 +196,62 @@ public:
         return is_none;
     }
 
-    status_t deserialize_bool(bool& value) {
-        return read_scalar(value, [](auto& src) { return src.get_bool(); });
+    KOTA_ALWAYS_INLINE status_t deserialize_bool(bool& value) {
+        return read_value(value, [](auto& src) __attribute__((always_inline)) { return src.get_bool(); });
     }
 
     template <codec::int_like T>
-    status_t deserialize_int(T& value) {
-        return read_and_narrow<std::int64_t>(
-            value,
-            [](auto& src) { return src.get_int64(); },
-            [](auto p) {
-                return codec::detail::narrow_int<T>(p, error_type::number_out_of_range);
-            });
+    KOTA_ALWAYS_INLINE status_t deserialize_int(T& value) {
+        std::int64_t parsed;
+        KOTA_EXPECTED_TRY(read_value(parsed, [](auto& src) __attribute__((always_inline)) { return src.get_int64(); }));
+        if(!std::in_range<T>(parsed)) [[unlikely]] {
+            return mark_invalid(error_kind::number_out_of_range);
+        }
+        value = static_cast<T>(parsed);
+        return {};
     }
 
     template <codec::uint_like T>
-    status_t deserialize_uint(T& value) {
-        return read_and_narrow<std::uint64_t>(
-            value,
-            [](auto& src) { return src.get_uint64(); },
-            [](auto p) {
-                return codec::detail::narrow_uint<T>(p, error_type::number_out_of_range);
-            });
+    KOTA_ALWAYS_INLINE status_t deserialize_uint(T& value) {
+        std::uint64_t parsed;
+        KOTA_EXPECTED_TRY(read_value(parsed, [](auto& src) __attribute__((always_inline)) { return src.get_uint64(); }));
+        if(!std::in_range<T>(parsed)) [[unlikely]] {
+            return mark_invalid(error_kind::number_out_of_range);
+        }
+        value = static_cast<T>(parsed);
+        return {};
     }
 
     template <codec::floating_like T>
-    status_t deserialize_float(T& value) {
-        return read_and_narrow<double>(
-            value,
-            [](auto& src) { return src.get_double(); },
-            [](auto p) {
-                return codec::detail::narrow_float<T>(p, error_type::number_out_of_range);
-            });
+    KOTA_ALWAYS_INLINE status_t deserialize_float(T& value) {
+        double parsed;
+        KOTA_EXPECTED_TRY(read_value(parsed, [](auto& src) __attribute__((always_inline)) { return src.get_double(); }));
+        if constexpr(!std::same_as<T, double>) {
+            if(std::isfinite(parsed)) {
+                const auto v = static_cast<long double>(parsed);
+                if(v < static_cast<long double>((std::numeric_limits<T>::lowest)()) ||
+                   v > static_cast<long double>((std::numeric_limits<T>::max)())) [[unlikely]] {
+                    return mark_invalid(error_kind::number_out_of_range);
+                }
+            }
+        }
+        value = static_cast<T>(parsed);
+        return {};
     }
 
     status_t deserialize_char(char& value) {
-        return read_and_narrow<std::string_view>(
-            value,
-            [](auto& src) { return src.get_string(); },
-            [](auto p) { return codec::detail::narrow_char(p, error_type::type_mismatch); });
+        std::string_view text;
+        KOTA_EXPECTED_TRY(read_value(text, [](auto& src) __attribute__((always_inline)) { return src.get_string(); }));
+        if(text.size() != 1) [[unlikely]] {
+            return mark_invalid(error_kind::type_mismatch);
+        }
+        value = text.front();
+        return {};
     }
 
-    status_t deserialize_str(std::string& value) {
+    KOTA_ALWAYS_INLINE status_t deserialize_str(std::string& value) {
         std::string_view text;
-        KOTA_EXPECTED_TRY(read_scalar(text, [](auto& src) { return src.get_string(); }));
+        KOTA_EXPECTED_TRY(read_value(text, [](auto& src) __attribute__((always_inline)) { return src.get_string(); }));
         value.assign(text.data(), text.size());
         return {};
     }
@@ -565,24 +578,25 @@ private:
     }
 
     template <typename T, typename Fn>
-    status_t read_scalar(T& out, Fn&& fn) {
-        auto result = read_source<T>(std::forward<Fn>(fn));
-        if(!result) {
-            return std::unexpected(result.error());
+    KOTA_ALWAYS_INLINE status_t read_value(T& out, Fn&& fn) {
+        if(!is_valid) [[unlikely]] {
+            return std::unexpected(last_error);
         }
-        out = std::move(*result);
-        return {};
-    }
-
-    template <typename Parsed, typename T, typename Fn, typename NarrowFn>
-    status_t read_and_narrow(T& value, Fn&& fn, NarrowFn&& narrow_fn) {
-        Parsed parsed{};
-        KOTA_EXPECTED_TRY(read_scalar(parsed, std::forward<Fn>(fn)));
-        auto narrowed = std::forward<NarrowFn>(narrow_fn)(parsed);
-        if(!narrowed) {
-            return mark_invalid(narrowed.error());
+        simdjson::error_code err;
+        if(current_value != nullptr) {
+            err = fn(*current_value).get(out);
+        } else {
+            if(root_consumed) {
+                return mark_invalid();
+            }
+            err = fn(document).get(out);
+            if(err == simdjson::SUCCESS) {
+                root_consumed = true;
+            }
         }
-        value = *narrowed;
+        if(err != simdjson::SUCCESS) [[unlikely]] {
+            return mark_invalid(err);
+        }
         return {};
     }
 

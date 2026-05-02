@@ -2,6 +2,7 @@
 
 #include "backend.h"
 #include "config.h"
+#include "kota/support/config.h"
 #include "kota/codec/detail/deser_dispatch.h"
 #include "kota/codec/detail/ser_dispatch.h"
 
@@ -21,7 +22,7 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
 }
 
 template <deserializer_like D, typename V, typename E>
-constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
+KOTA_ALWAYS_INLINE constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
     using Deserde = deserialize_traits<D, V>;
 
     if constexpr(requires { Deserde::deserialize(d, v); }) {
