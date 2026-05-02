@@ -55,8 +55,6 @@ struct obj_t {
 constexpr std::string_view json_minified =
     R"({"fixed_object":{"int_array":[0,1,2,3,4,5,6],"float_array":[0.1,0.2,0.3,0.4,0.5,0.6],"double_array":[3288398.238,2.33e+24,28.9,0.928759872,0.22222848,0.1,0.2,0.3,0.4]},"fixed_name_object":{"name0":"James","name1":"Abraham","name2":"Susan","name3":"Frank","name4":"Alicia"},"another_object":{"string":"here is some text","another_string":"Hello World","escaped_text":"{\"some key\":\"some string value\"}","boolean":false,"nested_object":{"v3s":[[0.12345,0.23456,0.001345],[0.3894675,97.39827,297.92387],[18.18,87.289,2988.298]],"id":"298728949872"}},"string_array":["Cat","Dog","Elephant","Tiger"],"string":"Hello world","number":3.14,"boolean":true,"another_bool":false})";
 
-// --- Write benchmarks ---
-
 void BM_write(benchmark::State& state) {
     auto obj = *from_json<obj_t>(json_minified);
     auto sample = *to_json(obj);
@@ -81,8 +79,6 @@ void BM_write_alloc(benchmark::State& state) {
     state.SetLabel(std::to_string(len) + " B, with alloc");
 }
 
-// --- Read benchmarks ---
-
 void BM_read(benchmark::State& state) {
     simdjson::padded_string padded(json_minified);
     auto len = json_minified.size();
@@ -105,8 +101,6 @@ void BM_read_copy(benchmark::State& state) {
     state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(len));
     state.SetLabel(std::to_string(len) + " B, with copy");
 }
-
-// --- simdjson hand-written baseline: full field access, parser reused ---
 
 void simdjson_read_nested_object(simdjson::ondemand::object& obj, nested_object_t& out) {
     for(auto field_result: obj) {
@@ -297,8 +291,6 @@ void BM_simdjson_handwritten_no_reuse(benchmark::State& state) {
     state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(len));
     state.SetLabel(std::to_string(len) + " B, no parser reuse");
 }
-
-// --- Hand-written serialization baseline: string_builder reused ---
 
 void sb_field(simdjson::builder::string_builder& sb, std::string_view name, bool first = false) {
     if(!first) sb.append_comma();

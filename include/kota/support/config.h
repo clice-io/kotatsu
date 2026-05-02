@@ -85,12 +85,12 @@
 
 #if defined(NDEBUG)
 #if defined(_MSC_VER)
-#define KOTA_ALWAYS_INLINE __forceinline
+#define KOTA_ALWAYS_INLINE [[msvc::forceinline]]
 #elif defined(__GNUC__) || defined(__clang__)
-#define KOTA_ALWAYS_INLINE inline __attribute__((always_inline))
+#define KOTA_ALWAYS_INLINE [[gnu::always_inline]]
 #else
-#define KOTA_ALWAYS_INLINE inline
+#define KOTA_ALWAYS_INLINE
 #endif
 #else
-#define KOTA_ALWAYS_INLINE inline
+#define KOTA_ALWAYS_INLINE
 #endif
