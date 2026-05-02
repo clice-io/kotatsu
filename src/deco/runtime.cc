@@ -34,8 +34,8 @@ auto SubCommander::display_name_of(const decl::SubCommand& subcommand, std::stri
     return std::string(command);
 }
 
-SubCommander::SubCommander(std::string_view command_overview, std::string_view overview) :
-    command_overview(command_overview), overview(overview) {}
+SubCommander::SubCommander(std::string_view cmd_overview, std::string_view overview) :
+    command_overview(cmd_overview), overview(overview) {}
 
 auto SubCommander::add(const decl::SubCommand& subcommand, SubCommander::handler_fn_t handler)
     -> SubCommander& {
@@ -68,13 +68,13 @@ auto SubCommander::add(const decl::SubCommand& subcommand, SubCommander::handler
     return *this;
 }
 
-auto SubCommander::add(SubCommander::handler_fn_t default_handler) -> SubCommander& {
-    this->default_handler = std::move(default_handler);
+auto SubCommander::add(SubCommander::handler_fn_t handler) -> SubCommander& {
+    this->default_handler = std::move(handler);
     return *this;
 }
 
-auto SubCommander::when_err(SubCommander::error_fn_t error_handler) -> SubCommander& {
-    this->error_handler = std::move(error_handler);
+auto SubCommander::when_err(SubCommander::error_fn_t fn) -> SubCommander& {
+    this->error_handler = std::move(fn);
     return *this;
 }
 

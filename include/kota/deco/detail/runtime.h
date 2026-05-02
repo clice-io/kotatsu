@@ -916,8 +916,8 @@ class Command {
     }
 
 public:
-    explicit Command(std::string_view command_overview) :
-        command_overview(command_overview), command_name(default_command_name(command_overview)) {}
+    explicit Command(std::string_view overview) :
+        command_overview(overview), command_name(default_command_name(overview)) {}
 
     template <auto... Members, typename Fn>
     auto& after(Fn&& fn) {
@@ -1169,7 +1169,7 @@ class SubCommander {
     }
 
 public:
-    SubCommander(std::string_view command_overview, std::string_view overview = {});
+    SubCommander(std::string_view cmd_overview, std::string_view overview = {});
 
     auto add(const decl::SubCommand& subcommand, handler_fn_t handler) -> SubCommander&;
 
@@ -1194,15 +1194,15 @@ public:
         });
     }
 
-    auto add(handler_fn_t default_handler) -> SubCommander&;
+    auto add(handler_fn_t handler) -> SubCommander&;
 
     template <typename Handler>
         requires (!std::same_as<std::remove_cvref_t<Handler>, handler_fn_t> &&
                   (std::is_invocable_v<std::remove_cvref_t<Handler>&, std::span<std::string>> ||
                    std::is_invocable_v<std::remove_cvref_t<Handler>&, match_t> ||
                    std::is_invocable_v<std::remove_cvref_t<Handler>&, const match_t&>))
-    auto& add(Handler&& default_handler) {
-        return add(adapt_handler(std::forward<Handler>(default_handler)));
+    auto& add(Handler&& handler) {
+        return add(adapt_handler(std::forward<Handler>(handler)));
     }
 
     auto& render_with(text::Renderer renderer) {
@@ -1223,7 +1223,7 @@ public:
         return *this;
     }
 
-    auto when_err(error_fn_t error_handler) -> SubCommander&;
+    auto when_err(error_fn_t fn) -> SubCommander&;
     auto when_err(std::ostream& os) -> SubCommander&;
     void usage(std::ostream& os) const;
     auto match(std::span<std::string> argv) const -> std::expected<match_t, SubCommandError>;
