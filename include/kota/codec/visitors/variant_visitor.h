@@ -100,21 +100,24 @@ auto deserialize_externally_tagged(typename Backend::value_type& src, std::varia
 
 /// Internally tagged: {"type": "Circle", "radius": 5.0}
 /// Uses visit_object_keys to find the tag (which resets the iterator),
-/// then visit_object to deserialize the matched alternative.
+/// then re-parses the raw JSON to deserialize the matched alternative.
+/// The re-parse is necessary because simdjson's ondemand string buffer is
+/// append-only — the first scan pass consumes buffer space for unescaped
+/// keys/values, and re-iterating the same document for deserialization would
+/// overflow that buffer.
 template <typename Backend, typename TagAttr, typename... Ts>
 auto deserialize_internally_tagged(typename Backend::value_type& src, std::variant<Ts...>& out)
     -> typename Backend::error_type {
     using E = typename Backend::error_type;
     using value_type = typename Backend::value_type;
     constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
-    constexpr std::string_view tag_field = TagAttr::field_names[0];
 
-    struct tag_scanner {
+struct tag_scanner {
         std::string& tag_value;
         bool found = false;
 
         E on_field(std::string_view key, meta::type_kind, value_type& val) {
-            if(key == tag_field) {
+            if(key == TagAttr::field_names[0]) {
                 std::string_view sv;
                 auto err = Backend::read_string(val, sv);
                 if(err != Backend::success)

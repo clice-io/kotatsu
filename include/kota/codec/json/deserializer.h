@@ -5,15 +5,13 @@
 #include <expected>
 #include <format>
 #include <limits>
-#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <utility>
-#include <variant>
 
 #include "simdjson.h"
+#include "kota/support/config.h"
 #include "kota/support/expected_try.h"
 #include "kota/support/type_traits.h"
 #include "kota/meta/type_kind.h"
@@ -23,17 +21,37 @@
 
 namespace kota::codec::json {
 
-/// Thin wrapper that holds either a simdjson::ondemand::value* or document*,
-/// eliminating all scalar-document-root special casing in the backend.
+/// Tagged-pointer wrapper: holds either a simdjson::ondemand::value* or document*
+/// in a single pointer, using the low bit (both types are pointer-aligned) to
+/// distinguish them.  Eliminates all document-root special casing in the backend.
 struct json_source {
-    simdjson::ondemand::value* val_ = nullptr;
-    simdjson::ondemand::document* doc_ = nullptr;
+    KOTA_ALWAYS_INLINE explicit json_source(simdjson::ondemand::value& v)
+        : ptr(reinterpret_cast<uintptr_t>(&v)) {}
+    KOTA_ALWAYS_INLINE explicit json_source(simdjson::ondemand::document& d)
+        : ptr(reinterpret_cast<uintptr_t>(&d) | tag) {}
 
-    json_source() = default;
-    explicit json_source(simdjson::ondemand::value& v) : val_(&v) {}
-    explicit json_source(simdjson::ondemand::document& d) : doc_(&d) {}
+    KOTA_ALWAYS_INLINE static json_source null() { return json_source(uintptr_t{0}); }
 
-    bool is_document() const { return doc_ != nullptr; }
+    KOTA_ALWAYS_INLINE bool is_null() const { return ptr == 0; }
+    KOTA_ALWAYS_INLINE bool is_document() const { return (ptr & tag) != 0; }
+
+    KOTA_ALWAYS_INLINE simdjson::ondemand::document& doc() const {
+        return *reinterpret_cast<simdjson::ondemand::document*>(ptr & ~tag);
+    }
+    KOTA_ALWAYS_INLINE simdjson::ondemand::value& value() const {
+        return *reinterpret_cast<simdjson::ondemand::value*>(ptr);
+    }
+
+    template <typename F>
+    KOTA_ALWAYS_INLINE decltype(auto) apply(F&& f) const {
+        if(is_document()) { return f(doc()); }
+        return f(value());
+    }
+
+private:
+    uintptr_t ptr;
+    static constexpr uintptr_t tag = 1;
+    KOTA_ALWAYS_INLINE explicit json_source(uintptr_t raw) : ptr(raw) {}
 };
 
 struct simdjson_backend {
@@ -44,35 +62,30 @@ struct simdjson_backend {
     static constexpr error_type number_out_of_range = simdjson::NUMBER_OUT_OF_RANGE;
     static constexpr error_type invalid_state = simdjson::PARSER_IN_USE;
 
-    static error_type read_bool(value_type& src, bool& out) {
-        if(src.is_document()) return src.doc_->get_bool().get(out);
-        return src.val_->get_bool().get(out);
+    KOTA_ALWAYS_INLINE static error_type read_bool(value_type& src, bool& out) {
+        return src.apply([&](auto& s) { return s.get_bool().get(out); });
     }
 
-    static error_type read_int64(value_type& src, std::int64_t& out) {
-        if(src.is_document()) return src.doc_->get_int64().get(out);
-        return src.val_->get_int64().get(out);
+    KOTA_ALWAYS_INLINE static error_type read_int64(value_type& src, std::int64_t& out) {
+        return src.apply([&](auto& s) { return s.get_int64().get(out); });
     }
 
-    static error_type read_uint64(value_type& src, std::uint64_t& out) {
-        if(src.is_document()) return src.doc_->get_uint64().get(out);
-        return src.val_->get_uint64().get(out);
+    KOTA_ALWAYS_INLINE static error_type read_uint64(value_type& src, std::uint64_t& out) {
+        return src.apply([&](auto& s) { return s.get_uint64().get(out); });
     }
 
-    static error_type read_double(value_type& src, double& out) {
-        if(src.is_document()) return src.doc_->get_double().get(out);
-        return src.val_->get_double().get(out);
+    KOTA_ALWAYS_INLINE static error_type read_double(value_type& src, double& out) {
+        return src.apply([&](auto& s) { return s.get_double().get(out); });
     }
 
-    static error_type read_string(value_type& src, std::string_view& out) {
-        if(src.is_document()) return src.doc_->get_string().get(out);
-        return src.val_->get_string().get(out);
+    KOTA_ALWAYS_INLINE static error_type read_string(value_type& src, std::string_view& out) {
+        return src.apply([&](auto& s) { return s.get_string().get(out); });
     }
 
-    static error_type read_is_null(value_type& src, bool& is_null) {
+    KOTA_ALWAYS_INLINE static error_type read_is_null(value_type& src, bool& is_null) {
         if(src.is_document()) {
-            auto result = src.doc_->is_null();
-            if(result.error() != simdjson::SUCCESS) {
+            auto result = src.doc().is_null();
+            if(result.error() != simdjson::SUCCESS) [[unlikely]] {
                 is_null = false;
                 return simdjson::SUCCESS;
             }
@@ -81,84 +94,67 @@ struct simdjson_backend {
         }
         // Use type() instead of is_null() to avoid assert_at_non_root_start()
         // which fails on values obtained from doc.get_value() (depth == 1).
-        auto t = src.val_->type();
-        if(t.error() != simdjson::SUCCESS)
+        auto t = src.value().type();
+        if(t.error() != simdjson::SUCCESS) [[unlikely]] {
             return t.error();
+        }
         is_null = (t.value_unsafe() == simdjson::ondemand::json_type::null);
         return simdjson::SUCCESS;
     }
 
     template <typename Visitor>
-    static error_type visit_object(value_type& src, Visitor&& vis) {
-        simdjson::ondemand::object obj;
-        auto err = src.is_document()
-            ? src.doc_->get_object().get(obj)
-            : src.val_->get_object().get(obj);
-        if(err != simdjson::SUCCESS) [[unlikely]]
-            return err;
-        for(auto field_result: obj) {
-            simdjson::ondemand::field field;
-            err = std::move(field_result).get(field);
-            if(err != simdjson::SUCCESS) [[unlikely]]
-                return err;
-            std::string_view key;
-            err = field.unescaped_key().get(key);
-            if(err != simdjson::SUCCESS) [[unlikely]]
-                return err;
-            simdjson::ondemand::value val = field.value();
+    KOTA_ALWAYS_INLINE static error_type visit_object(value_type& src, Visitor&& vis) {
+        auto obj = src.apply([](auto& s) { return s.get_object(); });
+        if(obj.error()) [[unlikely]] { return obj.error(); }
+        for(auto entry : obj) {
+            if(entry.error()) [[unlikely]] { return entry.error(); }
+            auto key = entry.unescaped_key();
+            if(key.error()) [[unlikely]] { return key.error(); }
+            auto val = entry.value_unsafe().value();
             value_type field_src(val);
-            err = vis.visit_field(key, field_src);
-            if(err != simdjson::SUCCESS) [[unlikely]]
-                return err;
+            auto err = vis.visit_field(key.value_unsafe(), field_src);
+            if(err != simdjson::SUCCESS) [[unlikely]] { return err; }
         }
         return simdjson::SUCCESS;
     }
 
     template <typename Visitor>
-    static error_type visit_array(value_type& src, Visitor&& vis) {
-        simdjson::ondemand::array arr;
-        auto err = src.is_document()
-            ? src.doc_->get_array().get(arr)
-            : src.val_->get_array().get(arr);
-        if(err != simdjson::SUCCESS) [[unlikely]]
-            return err;
-        for(auto elem_result: arr) {
-            simdjson::ondemand::value elem;
-            err = std::move(elem_result).get(elem);
-            if(err != simdjson::SUCCESS) [[unlikely]]
-                return err;
-            value_type elem_src(elem);
-            err = vis.visit_element(elem_src);
-            if(err != simdjson::SUCCESS) [[unlikely]]
-                return err;
+    KOTA_ALWAYS_INLINE static error_type visit_array(value_type& src, Visitor&& vis) {
+        auto arr = src.apply([](auto& s) { return s.get_array(); });
+        if(arr.error()) [[unlikely]] { return arr.error(); }
+        for(auto elem : arr) {
+            if(elem.error()) [[unlikely]] { return elem.error(); }
+            auto val = elem.value_unsafe();
+            value_type elem_src(val);
+            auto err = vis.visit_element(elem_src);
+            if(err != simdjson::SUCCESS) [[unlikely]] { return err; }
         }
         return simdjson::SUCCESS;
     }
 
-    static meta::type_kind kind_of(value_type& src) {
-        if(!src.val_ && !src.doc_)
+    KOTA_ALWAYS_INLINE static meta::type_kind kind_of(value_type& src) {
+        if(src.is_null()) {
             return meta::type_kind::unknown;
-        simdjson::ondemand::json_type t;
-        auto err = src.is_document()
-            ? src.doc_->type().get(t)
-            : src.val_->type().get(t);
-        if(err != simdjson::SUCCESS)
+        }
+        auto t = src.apply([](auto& s) { return s.type(); });
+        if(t.error() != simdjson::SUCCESS) [[unlikely]] {
             return meta::type_kind::null;
-        switch(t) {
+        }
+        switch(t.value_unsafe()) {
             case simdjson::ondemand::json_type::object: return meta::type_kind::structure;
             case simdjson::ondemand::json_type::array: return meta::type_kind::array;
             case simdjson::ondemand::json_type::string: return meta::type_kind::string;
             case simdjson::ondemand::json_type::number: {
-                simdjson::ondemand::number_type nt;
-                auto nt_err = src.is_document()
-                    ? src.doc_->get_number_type().get(nt)
-                    : src.val_->get_number_type().get(nt);
-                if(nt_err != simdjson::SUCCESS)
+                auto nt = src.apply([](auto& s) { return s.get_number_type(); });
+                if(nt.error() != simdjson::SUCCESS) [[unlikely]] {
                     return meta::type_kind::int64;
-                if(nt == simdjson::ondemand::number_type::floating_point_number)
+                }
+                if(nt.value_unsafe() == simdjson::ondemand::number_type::floating_point_number) {
                     return meta::type_kind::float64;
-                if(nt == simdjson::ondemand::number_type::unsigned_integer)
+                }
+                if(nt.value_unsafe() == simdjson::ondemand::number_type::unsigned_integer) {
                     return meta::type_kind::uint64;
+                }
                 return meta::type_kind::int64;
             }
             case simdjson::ondemand::json_type::boolean: return meta::type_kind::boolean;
@@ -168,110 +164,79 @@ struct simdjson_backend {
     }
 
     template <typename Visitor>
-    static error_type visit_object_keys(value_type& src, Visitor&& vis) {
-        // Use count_fields to detect empty objects. Simdjson's ondemand
-        // API cannot re-start an empty object after get_object() (the
-        // iterator advances past '}' with no way to reset), so we bail
-        // early — there are no fields to score anyway.
-        std::size_t field_count = 0;
-        auto count_err = src.is_document()
-            ? src.doc_->count_fields().get(field_count)
-            : src.val_->count_fields().get(field_count);
-        if(count_err != simdjson::SUCCESS) [[unlikely]]
-            return count_err;
-        if(field_count == 0)
-            return simdjson::SUCCESS;
+    KOTA_ALWAYS_INLINE static error_type visit_object_keys(value_type& src, Visitor&& vis) {
+        auto count = src.apply([](auto& s) { return s.count_fields(); });
+        if(count.error()) [[unlikely]] { return count.error(); }
+        if(count.value_unsafe() == 0) { return simdjson::SUCCESS; }
 
-        simdjson::ondemand::object obj;
-        auto err = src.is_document()
-            ? src.doc_->get_object().get(obj)
-            : src.val_->get_object().get(obj);
-        if(err != simdjson::SUCCESS) [[unlikely]]
-            return err;
-        for(auto field_result: obj) {
-            simdjson::ondemand::field field;
-            err = std::move(field_result).get(field);
-            if(err != simdjson::SUCCESS) [[unlikely]]
-                return err;
-            std::string_view key;
-            err = field.unescaped_key().get(key);
-            if(err != simdjson::SUCCESS) [[unlikely]]
-                return err;
-            simdjson::ondemand::value val = field.value();
+        auto obj = src.apply([](auto& s) { return s.get_object(); });
+        if(obj.error()) [[unlikely]] { return obj.error(); }
+        for(auto entry : obj) {
+            if(entry.error()) [[unlikely]] { return entry.error(); }
+            auto key = entry.unescaped_key();
+            if(key.error()) [[unlikely]] { return key.error(); }
+            auto val = entry.value_unsafe().value();
             value_type field_src(val);
-            meta::type_kind kind = kind_of(field_src);
-            err = vis.on_field(key, kind, field_src);
-            if(err != simdjson::SUCCESS) [[unlikely]]
-                return err;
+            auto kind = kind_of(field_src);
+            auto err = vis.on_field(key.value_unsafe(), kind, field_src);
+            if(err != simdjson::SUCCESS) [[unlikely]] { return err; }
         }
-        {
-            bool reset_ok;
-            auto reset_err = obj.reset().get(reset_ok);
-            if(reset_err != simdjson::SUCCESS)
-                return reset_err;
-        }
-        return simdjson::SUCCESS;
-    }
-
-    /// Array key visitor for variant scoring.
-    /// Uses count_elements() to get the total (which rewinds the source),
-    /// then reports each element with unknown kind. Deep per-element type
-    /// scoring is not available because simdjson ondemand is forward-only
-    /// and iterating elements would consume the value. A null json_source
-    /// is passed for each element so that recursive kind_of returns unknown.
-    template <typename Visitor>
-    static error_type visit_array_keys(value_type& src, Visitor&& vis) {
-        std::size_t count = 0;
-        auto count_err = src.is_document()
-            ? src.doc_->count_elements().get(count)
-            : src.val_->count_elements().get(count);
-        if(count_err != simdjson::SUCCESS) [[unlikely]]
-            return count_err;
-        // count_elements() rewinds the source, so src remains consumable.
-        // Report the total count but unknown element kinds.
-        // Use a null json_source for elements since we cannot access
-        // individual element values without consuming the array.
-        value_type null_src;
-        for(std::size_t i = 0; i < count; ++i) {
-            auto err = vis.on_element(i, count, meta::type_kind::unknown, null_src);
-            if(err != simdjson::SUCCESS) [[unlikely]]
-                return err;
-        }
-        return simdjson::SUCCESS;
-    }
-
-    /// Capture the raw JSON text of a value. Consumes the value.
-    /// Returns the raw JSON string and an error code.
-    static auto capture_raw_json(value_type& src) -> std::pair<std::string, error_type> {
         if(src.is_document()) {
-            std::string_view raw;
-            auto err = src.doc_->raw_json().get(raw);
-            if(err != simdjson::SUCCESS)
-                return {{}, err};
-            return {std::string(raw), simdjson::SUCCESS};
+            src.doc().rewind();
+        } else {
+            auto r = obj.reset();
+            if(r.error()) [[unlikely]] { return r.error(); }
         }
+        return simdjson::SUCCESS;
+    }
+
+    template <typename Visitor>
+    KOTA_ALWAYS_INLINE static error_type visit_array_keys(value_type& src, Visitor&& vis) {
+        auto count = src.apply([](auto& s) { return s.count_elements(); });
+        if(count.error()) [[unlikely]] { return count.error(); }
+        auto n = count.value_unsafe();
+        if(n == 0) { return simdjson::SUCCESS; }
+
+        auto arr = src.apply([](auto& s) { return s.get_array(); });
+        if(arr.error()) [[unlikely]] { return arr.error(); }
+        std::size_t i = 0;
+        for(auto elem : arr) {
+            if(elem.error()) [[unlikely]] { return elem.error(); }
+            auto val = elem.value_unsafe();
+            value_type elem_src(val);
+            auto kind = kind_of(elem_src);
+            auto err = vis.on_element(i, n, kind, elem_src);
+            if(err != simdjson::SUCCESS) [[unlikely]] { return err; }
+            ++i;
+        }
+        if(src.is_document()) {
+            src.doc().rewind();
+        } else {
+            auto r = arr.count_elements();
+            if(r.error()) [[unlikely]] { return r.error(); }
+        }
+        return simdjson::SUCCESS;
+    }
+
+    KOTA_ALWAYS_INLINE static auto capture_raw_json(value_type& src)
+        -> std::pair<std::string, error_type> {
         std::string_view raw;
-        auto err = src.val_->raw_json().get(raw);
-        if(err != simdjson::SUCCESS)
-            return {{}, err};
+        auto err = src.apply([&](auto& s) { return s.raw_json().get(raw); });
+        if(err != simdjson::SUCCESS) [[unlikely]] { return {{}, err}; }
         return {std::string(raw), simdjson::SUCCESS};
     }
 
-    /// Re-parse captured raw JSON as a document and invoke a callback.
     template <typename Fn>
-    static auto with_reparsed(std::string_view raw_json, Fn&& fn) -> error_type {
+    KOTA_ALWAYS_INLINE static auto with_reparsed(std::string_view raw_json, Fn&& fn)
+        -> error_type {
         simdjson::padded_string padded(raw_json);
         simdjson::ondemand::parser parser;
         simdjson::ondemand::document doc;
         auto err = parser.iterate(padded).get(doc);
-        if(err != simdjson::SUCCESS)
-            return err;
+        if(err != simdjson::SUCCESS) [[unlikely]] { return err; }
         value_type src(doc);
         return fn(src);
     }
-
-    /// Error context helpers: store rich error info in the thread-local context.
-    /// The from_json entry point checks this after a failed deserialization.
 
     static void report_missing_field(std::string_view field_name) {
         detail::thread_error_context().set(json::error::missing_field(field_name));
