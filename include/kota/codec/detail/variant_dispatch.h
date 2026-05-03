@@ -6,7 +6,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
-#include <format>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -20,57 +19,11 @@
 #include "kota/meta/attrs.h"
 #include "kota/meta/schema.h"
 #include "kota/meta/struct.h"
-#include "kota/codec/content/document.h"
 #include "kota/codec/detail/common.h"
 #include "kota/codec/detail/config.h"
 #include "kota/codec/detail/struct_serialize.h"
 
 namespace kota::codec::detail {
-
-template <typename E, typename... Ts, typename Names, typename Reader>
-constexpr auto match_and_deserialize_alt(std::string_view tag_value,
-                                         const Names& names,
-                                         std::variant<Ts...>& value,
-                                         Reader&& reader) -> std::expected<void, E> {
-    bool matched = false;
-    std::expected<void, E> status{};
-
-    [&]<std::size_t... I>(std::index_sequence<I...>) {
-        (([&] {
-             if(matched || names[I] != tag_value) {
-                 return;
-             }
-             matched = true;
-
-             using alt_t = std::variant_alternative_t<I, std::variant<Ts...>>;
-             if constexpr(std::same_as<alt_t, std::monostate>) {
-                 std::monostate alt{};
-                 auto result = reader(alt);
-                 if(!result) {
-                     status = std::unexpected(result.error());
-                 } else {
-                     value.template emplace<I>();
-                 }
-             } else if constexpr(std::default_initializable<alt_t>) {
-                 alt_t alt{};
-                 auto result = reader(alt);
-                 if(!result) {
-                     status = std::unexpected(result.error());
-                 } else {
-                     value = std::move(alt);
-                 }
-             } else {
-                 status = std::unexpected(E::invalid_state);
-             }
-         }()),
-         ...);
-    }(std::make_index_sequence<sizeof...(Ts)>{});
-
-    if(!matched) {
-        return std::unexpected(E::custom(std::format("unknown variant tag '{}'", tag_value)));
-    }
-    return status;
-}
 
 template <typename E, typename S, typename... Ts, typename TagAttr>
 constexpr auto serialize_externally_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
@@ -157,145 +110,6 @@ constexpr auto serialize_internally_tagged(S& s, const std::variant<Ts...>& valu
             return s.end_object();
         },
         value);
-}
-
-template <typename E, typename D, typename... Ts, typename TagAttr>
-constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, TagAttr)
-    -> std::expected<void, E> {
-    constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
-
-    KOTA_EXPECTED_TRY(d.begin_object());
-
-    KOTA_EXPECTED_TRY_V(auto key, d.next_field());
-    if(!key.has_value()) {
-        return std::unexpected(E::custom("expected externally tagged variant key"));
-    }
-
-    KOTA_EXPECTED_TRY((match_and_deserialize_alt<E>(*key, names, value, [&](auto& alt) {
-        return codec::deserialize(d, alt);
-    })));
-
-    // Reject trailing fields — externally tagged must have exactly one key.
-    KOTA_EXPECTED_TRY_V(auto trailing, d.next_field());
-    if(trailing.has_value()) {
-        return std::unexpected(E::custom("externally tagged variant must have exactly one field"));
-    }
-
-    return d.end_object();
-}
-
-template <typename D>
-concept can_buffer_raw_field = requires(D& d) {
-    { d.buffer_raw_field_value() } -> std::same_as<typename D::template result_t<std::string>>;
-};
-
-template <typename E, typename D, typename... Ts, typename TagAttr>
-constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, TagAttr)
-    -> std::expected<void, E> {
-    constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
-
-    KOTA_EXPECTED_TRY(d.begin_object());
-
-    std::string tag_value;
-
-    auto deserialize_content_for_tag = [&](auto&& read_content_alt) -> std::expected<void, E> {
-        return match_and_deserialize_alt<E>(
-            tag_value,
-            names,
-            value,
-            std::forward<decltype(read_content_alt)>(read_content_alt));
-    };
-
-    auto read_content_direct = [&](auto& alt) -> std::expected<void, E> {
-        return codec::deserialize(d, alt);
-    };
-
-    if constexpr(can_buffer_raw_field<D>) {
-        std::optional<std::string> buffered_raw;
-        bool has_tag = false;
-        bool has_content = false;
-
-        while(true) {
-            KOTA_EXPECTED_TRY_V(auto field_key, d.next_field());
-            if(!field_key.has_value()) {
-                break;
-            }
-
-            if(*field_key == TagAttr::field_names[0]) {
-                if(has_tag) {
-                    return std::unexpected(E::duplicate_field(TagAttr::field_names[0]));
-                }
-                KOTA_EXPECTED_TRY(codec::deserialize(d, tag_value));
-                has_tag = true;
-            } else if(*field_key == TagAttr::field_names[1]) {
-                if(has_content) {
-                    return std::unexpected(E::duplicate_field(TagAttr::field_names[1]));
-                }
-                has_content = true;
-
-                if(has_tag) {
-                    KOTA_EXPECTED_TRY(deserialize_content_for_tag(read_content_direct));
-                } else {
-                    KOTA_EXPECTED_TRY_V(auto raw, d.buffer_raw_field_value());
-                    buffered_raw.emplace(std::move(raw));
-                }
-            } else {
-                KOTA_EXPECTED_TRY(d.skip_field_value());
-            }
-        }
-
-        if(!has_tag || !has_content) {
-            if(!has_tag) {
-                return std::unexpected(E::missing_field(TagAttr::field_names[0]));
-            }
-            return std::unexpected(E::missing_field(TagAttr::field_names[1]));
-        }
-
-        if(buffered_raw.has_value()) {
-            KOTA_EXPECTED_TRY(deserialize_content_for_tag([&](auto& alt) -> std::expected<void, E> {
-                return d.replay_buffered_field(*buffered_raw, alt);
-            }));
-        }
-
-        return d.end_object();
-    } else {
-        // Strict order: tag then content
-        KOTA_EXPECTED_TRY_V(auto key1, d.next_field());
-        if(!key1.has_value() || *key1 != TagAttr::field_names[0]) {
-            return std::unexpected(E::custom(
-                std::format("expected adjacent tag field '{}'", TagAttr::field_names[0])));
-        }
-        KOTA_EXPECTED_TRY(codec::deserialize(d, tag_value));
-
-        KOTA_EXPECTED_TRY_V(auto key2, d.next_field());
-        if(!key2.has_value() || *key2 != TagAttr::field_names[1]) {
-            return std::unexpected(E::custom(
-                std::format("expected adjacent content field '{}'", TagAttr::field_names[1])));
-        }
-        KOTA_EXPECTED_TRY(deserialize_content_for_tag(read_content_direct));
-
-        return d.end_object();
-    }
-}
-
-template <typename E, typename D, typename... Ts, typename TagAttr>
-constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, TagAttr)
-    -> std::expected<void, E> {
-    constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
-    constexpr std::string_view tag_field = TagAttr::field_names[0];
-
-    KOTA_EXPECTED_TRY_V(auto tag_value, d.scan_object_field(tag_field));
-
-    return match_and_deserialize_alt<E>(tag_value,
-                                        names,
-                                        value,
-                                        [&](auto& alt) -> std::expected<void, E> {
-                                            using alt_t = std::remove_cvref_t<decltype(alt)>;
-                                            static_assert(
-                                                meta::reflectable_class<alt_t>,
-                                                "internally_tagged requires struct alternatives");
-                                            return codec::deserialize(d, alt);
-                                        });
 }
 
 }  // namespace kota::codec::detail
@@ -408,49 +222,6 @@ constexpr bool accepts_kind(meta::type_kind source) noexcept {
         return kind_compatible(k, source);
     }
 }
-
-struct content_source_adapter {
-    using node_type = const content::Value*;
-
-    static meta::type_kind kind_of(node_type node) {
-        if(!node)
-            return meta::type_kind::null;
-        switch(node->kind()) {
-            case content::ValueKind::null_value: return meta::type_kind::null;
-            case content::ValueKind::boolean: return meta::type_kind::boolean;
-            case content::ValueKind::signed_int: return meta::type_kind::int64;
-            case content::ValueKind::unsigned_int: return meta::type_kind::uint64;
-            case content::ValueKind::floating: return meta::type_kind::float64;
-            case content::ValueKind::string: return meta::type_kind::string;
-            case content::ValueKind::array: return meta::type_kind::array;
-            case content::ValueKind::object: return meta::type_kind::structure;
-            default: return meta::type_kind::unknown;
-        }
-    }
-
-    template <typename Fn>
-    static void for_each_field(node_type node, Fn&& fn) {
-        if(!node)
-            return;
-        if(const auto* obj = node->get_object()) {
-            for(const auto& entry: *obj) {
-                fn(std::string_view(entry.key), &entry.value);
-            }
-        }
-    }
-
-    template <typename Fn>
-    static void for_each_element(node_type node, Fn&& fn) {
-        if(!node)
-            return;
-        if(const auto* arr = node->get_array()) {
-            std::size_t total = arr->size();
-            for(std::size_t i = 0; i < total; ++i) {
-                fn(i, total, &(*arr)[i]);
-            }
-        }
-    }
-};
 
 namespace detail {
 
@@ -677,63 +448,6 @@ std::optional<std::size_t> select_by_kind(std::uint64_t live, meta::type_kind so
 
 }  // namespace detail
 
-template <source_adapter Adapter, typename Config, typename... Ts>
-std::optional<std::size_t> select_variant_index(typename Adapter::node_type node) {
-    constexpr std::size_t N = sizeof...(Ts);
-    static_assert(N <= 64, "variant with more than 64 alternatives is not supported");
-
-    auto source_kind = Adapter::kind_of(node);
-
-    auto [live, live_count] = detail::build_live_mask<Ts...>(source_kind);
-
-    if(live_count == 0)
-        return std::nullopt;
-    if(live_count == 1)
-        return static_cast<std::size_t>(std::countr_zero(live));
-
-    constexpr meta::type_info_fn info_fns[] = {&meta::type_info_of<Ts, Config>...};
-    std::size_t scores[N] = {};
-
-    detail::variant_candidate candidates[64];
-    std::size_t cand_count = 0;
-    {
-        std::uint64_t mask = live;
-        while(mask) {
-            std::size_t idx = static_cast<std::size_t>(std::countr_zero(mask));
-            candidates[cand_count++] = {idx, &info_fns[idx]()};
-            mask &= mask - 1;
-        }
-    }
-
-    detail::multi_score<Adapter>(node, candidates, cand_count, scores);
-
-    std::size_t best_score = 0;
-    std::size_t best_count = 0;
-    std::optional<std::size_t> best_idx;
-    {
-        std::uint64_t mask = live;
-        while(mask) {
-            std::size_t idx = static_cast<std::size_t>(std::countr_zero(mask));
-            if(scores[idx] > best_score) {
-                best_score = scores[idx];
-                best_idx = idx;
-                best_count = 1;
-            } else if(scores[idx] == best_score) {
-                ++best_count;
-            }
-            mask &= mask - 1;
-        }
-    }
-
-    if(best_idx && best_count == 1)
-        return best_idx;
-
-    // Tied deep scores: fall back to kind_match_quality which prefers exact kind
-    // matches.  When struct and map tie (e.g. identical field types), declaration
-    // order among equal-quality candidates decides the winner.
-    return detail::select_by_kind<Config, Ts...>(live, source_kind);
-}
-
 template <typename Config, typename... Ts>
 std::optional<std::size_t> select_variant_index(meta::type_kind source_kind) {
     static_assert(sizeof...(Ts) <= 64, "variant with more than 64 alternatives is not supported");
@@ -746,28 +460,6 @@ std::optional<std::size_t> select_variant_index(meta::type_kind source_kind) {
         return static_cast<std::size_t>(std::countr_zero(live));
 
     return detail::select_by_kind<Config, Ts...>(live, source_kind);
-}
-
-template <typename E, typename D, typename... Ts>
-auto deserialize_variant_at(D& d, std::variant<Ts...>& value, std::size_t best)
-    -> std::expected<void, E> {
-    std::expected<void, E> result = std::unexpected(E::type_mismatch);
-    std::size_t idx = 0;
-    auto try_alt = [&](auto type_tag) {
-        if(idx++ != best)
-            return;
-        using alt_t = typename decltype(type_tag)::type;
-        alt_t candidate{};
-        auto status = codec::deserialize(d, candidate);
-        if(status) {
-            value = std::move(candidate);
-            result = {};
-        } else {
-            result = std::unexpected(status.error());
-        }
-    };
-    (try_alt(std::type_identity<Ts>{}), ...);
-    return result;
 }
 
 }  // namespace kota::codec
