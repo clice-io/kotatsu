@@ -13,7 +13,7 @@ std::expected<GlobCharSet, std::string> parse_bracket_charset(std::string_view s
         switch(s[i]) {
             case '\\': {
                 ++i;
-                if(i == e) {
+                if(i == e) [[unlikely]] {
                     return std::unexpected{"Invalid expansions: stray `\\`"};
                 }
                 if(s[i] != '/') {
@@ -32,12 +32,12 @@ std::expected<GlobCharSet, std::string> parse_bracket_charset(std::string_view s
                 ++i;
                 if(c_end == '\\') {
                     ++i;
-                    if(i == e) {
+                    if(i == e) [[unlikely]] {
                         return std::unexpected{"Invalid expansions: stray `\\`"};
                     }
                     c_end = s[i];
                 }
-                if(c_begin > c_end) {
+                if(c_begin > c_end) [[unlikely]] {
                     return std::unexpected{
                         std::format("Invalid expansion: `{}` is larger than `{}`", c_begin, c_end)};
                 }
@@ -81,7 +81,7 @@ std::expected<small_vector<std::string, 1>, std::string>
     for(size_t i = 0, e = s.size(); i != e; ++i) {
         if(s[i] == '[') {
             ++i;
-            if(i == e) {
+            if(i == e) [[unlikely]] {
                 return std::unexpected{"Invalid glob pattern, unmatched `[`"};
             }
             if(s[i] == ']') {
@@ -90,18 +90,18 @@ std::expected<small_vector<std::string, 1>, std::string>
             while(i != e && s[i] != ']') {
                 if(s[i] == '\\') {
                     ++i;
-                    if(i == e) {
+                    if(i == e) [[unlikely]] {
                         return std::unexpected{
                             "Invalid glob pattern, unmatched `[`, with stray `\\` inside"};
                     }
                 }
                 ++i;
             }
-            if(i == e) {
+            if(i == e) [[unlikely]] {
                 return std::unexpected{"Invalid glob pattern, unmatched `[`"};
             }
         } else if(s[i] == '{') {
-            if(current_be) {
+            if(current_be) [[unlikely]] {
                 return std::unexpected{"Nested brace expansions are not supported"};
             }
             current_be = &brace_expansions.emplace_back();
@@ -117,7 +117,7 @@ std::expected<small_vector<std::string, 1>, std::string>
             if(!current_be) {
                 continue;
             }
-            if(current_be->terms.empty() && i - term_begin == 0) {
+            if(current_be->terms.empty() && i - term_begin == 0) [[unlikely]] {
                 return std::unexpected{"Empty brace expression is not supported"};
             }
             current_be->terms.push_back(s.substr(term_begin, i - term_begin));
@@ -125,13 +125,13 @@ std::expected<small_vector<std::string, 1>, std::string>
             current_be = nullptr;
         } else if(s[i] == '\\') {
             ++i;
-            if(i == e) {
+            if(i == e) [[unlikely]] {
                 return std::unexpected{"Invalid glob pattern, stray `\\`"};
             }
         }
     }
 
-    if(current_be) {
+    if(current_be) [[unlikely]] {
         return std::unexpected{"Incomplete brace expansion"};
     }
 
@@ -144,7 +144,7 @@ std::expected<small_vector<std::string, 1>, std::string>
         subpattern_num *= be.terms.size();
     }
 
-    if(subpattern_num > max_subpattern_num) {
+    if(subpattern_num > max_subpattern_num) [[unlikely]] {
         return std::unexpected{"Too many brace expansions"};
     }
 
@@ -184,7 +184,7 @@ std::expected<GlobPattern, std::string> GlobPattern::create(std::string_view s,
 
     if(prefix_size == std::string_view::npos) {
         pat.prefix = std::string(s);
-        if(check_consecutive_slashes(pat.prefix)) {
+        if(check_consecutive_slashes(pat.prefix)) [[unlikely]] {
             return std::unexpected{"Multiple `/` is not allowed"};
         }
         return pat;
@@ -194,7 +194,7 @@ std::expected<GlobPattern, std::string> GlobPattern::create(std::string_view s,
         --prefix_size;
     }
     pat.prefix = std::string(s.substr(0, prefix_size));
-    if(check_consecutive_slashes(pat.prefix)) {
+    if(check_consecutive_slashes(pat.prefix)) [[unlikely]] {
         return std::unexpected{"Multiple `/` is not allowed"};
     }
     s = s.substr(pat.prefix_at_seg_end ? prefix_size + 1 : prefix_size);
@@ -218,58 +218,69 @@ std::expected<GlobPattern::SubGlobPattern, std::string>
     pat.pat.assign(s);
 
     size_t e = s.size();
+
+    // Helper to parse a bracket expression starting after the '['.
+    // Returns the index of the closing ']', or an error.
+    auto parse_bracket = [&](size_t i) -> std::expected<size_t, std::string> {
+        size_t j = i;
+        if(j == e) [[unlikely]] {
+            return std::unexpected{"Invalid glob pattern, unmatched `[`"};
+        }
+        if(s[j] == ']') {
+            ++j;
+        }
+        while(j != e && s[j] != ']') {
+            ++j;
+            if(s[j - 1] == '\\') {
+                if(j == e) [[unlikely]] {
+                    return std::unexpected{
+                        "Invalid glob pattern, unmatched `[` with stray `\\` inside"};
+                }
+                ++j;
+            }
+        }
+        if(j == e) [[unlikely]] {
+            return std::unexpected{"Invalid glob pattern, unmatched `[`"};
+        }
+
+        std::string_view chars = s.substr(i, j - i);
+        bool invert = s[i] == '^' || s[i] == '!';
+        auto bv = invert ? detail::parse_bracket_charset(chars.substr(1))
+                         : detail::parse_bracket_charset(chars);
+        if(!bv.has_value()) [[unlikely]] {
+            return std::unexpected{std::move(bv.error())};
+        }
+        if(invert) {
+            bv->flip();
+            bv->set('/', false);
+        }
+        pat.brackets.push_back(Bracket{j + 1, std::move(*bv)});
+        return j;
+    };
+
     for(size_t i = 0; i < e; ++i) {
         if(!current_gs) {
             current_gs = &glob_segments.emplace_back();
             current_gs->start = i;
         }
         if(s[i] == '[') {
-            ++i;
-            size_t j = i;
-            if(j == e) {
-                return std::unexpected{"Invalid glob pattern, unmatched `[`"};
+            auto result = parse_bracket(i + 1);
+            if(!result.has_value()) [[unlikely]] {
+                return std::unexpected{std::move(result.error())};
             }
-            if(s[j] == ']') {
-                ++j;
-            }
-            while(j != e && s[j] != ']') {
-                ++j;
-                if(s[j - 1] == '\\') {
-                    if(j == e) {
-                        return std::unexpected{
-                            "Invalid glob pattern, unmatched `[` with stray `\\` inside"};
-                    }
-                    ++j;
-                }
-            }
-            if(j == e) {
-                return std::unexpected{"Invalid glob pattern, unmatched `[`"};
-            }
-            std::string_view chars = s.substr(i, j - i);
-            bool invert = s[i] == '^' || s[i] == '!';
-            auto bv = invert ? detail::parse_bracket_charset(chars.substr(1))
-                             : detail::parse_bracket_charset(chars);
-            if(!bv.has_value()) {
-                return std::unexpected{std::move(bv.error())};
-            }
-            if(invert) {
-                bv->flip();
-                bv->set('/', false);
-            }
-            pat.brackets.push_back(Bracket{j + 1, std::move(*bv)});
-            i = j;
+            i = *result;
         } else if(s[i] == '\\') {
-            if(++i == e) {
+            if(++i == e) [[unlikely]] {
                 return std::unexpected{"Invalid glob pattern, stray `\\`"};
             }
         } else if(s[i] == '/') {
-            if(i > 0 && s[i - 1] == '/') {
+            if(i > 0 && s[i - 1] == '/') [[unlikely]] {
                 return std::unexpected{"Multiple `/` is not allowed"};
             }
             current_gs->end = i;
             current_gs = nullptr;
         } else if(s[i] == '*') {
-            if(i + 2 < e && s[i + 1] == '*' && s[i + 2] == '*') {
+            if(i + 2 < e && s[i + 1] == '*' && s[i + 2] == '*') [[unlikely]] {
                 return std::unexpected{"Multiple `*` is not allowed"};
             }
         }
@@ -350,31 +361,48 @@ bool GlobPattern::SubGlobPattern::match(std::string_view str) const {
             return pattern().find_first_not_of("*/", p - pat.data()) == std::string_view::npos;
         }
 
+        // Handle segment boundary first (early-continue)
+        if(p == seg_end && seg_end != p_end) {
+            if(wild_mode) {
+                ++current_glob_seg;
+                while(s != s_end && *s != '/') {
+                    ++s;
+                }
+                if(s != s_end && *s == '/') {
+                    ++s;
+                }
+                if(current_glob_seg >= seg_num) [[unlikely]] {
+                    return s == s_end;
+                }
+                auto [new_start, new_end] = segment_range(current_glob_seg);
+                p = new_start;
+                seg_start = new_start;
+                seg_end = new_end;
+                continue;
+            }
+            // non-wild segment transition
+            if(*seg_end != *s) {
+                return false;
+            }
+            while(s != s_end && *s == '/') {
+                ++s;
+            }
+            ++current_glob_seg;
+            if(current_glob_seg >= seg_num) [[unlikely]] {
+                break;
+            }
+            auto [new_start, new_end] = segment_range(current_glob_seg);
+            p = new_start;
+            seg_start = new_start;
+            seg_end = new_end;
+            continue;
+        }
+
         if(p != seg_end) {
             switch(*p) {
                 case '*': {
-                    if(p + 1 != p_end && *(p + 1) == '*') {
-                        p += 2;
-                        wild_mode = true;
-                        // Consume additional stars within this segment only
-                        while(p != seg_end && *p == '*') {
-                            ++p;
-                        }
-                        if(p == seg_end) {
-                            if(current_glob_seg + 1 == seg_num) {
-                                return true;
-                            }
-                            ++current_glob_seg;
-                            while(s != s_end && *s == '/') {
-                                ++s;
-                            }
-                            auto [new_start, new_end] = segment_range(current_glob_seg);
-                            p = new_start;
-                            seg_start = new_start;
-                            seg_end = new_end;
-                        }
-                        push_backtrack();
-                    } else {
+                    // Handle single `*` first (simpler case)
+                    if(p + 1 == p_end || *(p + 1) != '*') {
                         ++p;
                         wild_mode = false;
                         if(p == seg_end) {
@@ -397,7 +425,29 @@ bool GlobPattern::SubGlobPattern::match(std::string_view str) const {
                             seg_end = new_end;
                         }
                         push_backtrack();
+                        continue;
                     }
+                    // Handle `**` case
+                    p += 2;
+                    wild_mode = true;
+                    // Consume additional stars within this segment only
+                    while(p != seg_end && *p == '*') {
+                        ++p;
+                    }
+                    if(p == seg_end) {
+                        if(current_glob_seg + 1 == seg_num) {
+                            return true;
+                        }
+                        ++current_glob_seg;
+                        while(s != s_end && *s == '/') {
+                            ++s;
+                        }
+                        auto [new_start, new_end] = segment_range(current_glob_seg);
+                        p = new_start;
+                        seg_start = new_start;
+                        seg_end = new_end;
+                    }
+                    push_backtrack();
                     continue;
                 }
 
@@ -447,56 +497,20 @@ bool GlobPattern::SubGlobPattern::match(std::string_view str) const {
                     break;
                 }
             }
-
-        } else {
-            if(seg_end != p_end) {
-                if(wild_mode) {
-                    ++current_glob_seg;
-                    while(s != s_end && *s != '/') {
-                        ++s;
-                    }
-                    if(s != s_end && *s == '/') {
-                        ++s;
-                    }
-                    if(current_glob_seg >= seg_num) {
-                        return s == s_end;
-                    }
-                    auto [new_start, new_end] = segment_range(current_glob_seg);
-                    p = new_start;
-                    seg_start = new_start;
-                    seg_end = new_end;
-                    continue;
-                } else {
-                    if(*seg_end != *s) {
-                        return false;
-                    }
-                    while(s != s_end && *s == '/') {
-                        ++s;
-                    }
-                    ++current_glob_seg;
-                    if(current_glob_seg >= seg_num) {
-                        break;
-                    }
-                    auto [new_start, new_end] = segment_range(current_glob_seg);
-                    p = new_start;
-                    seg_start = new_start;
-                    seg_end = new_end;
-                    continue;
-                }
-            }
         }
+        // p == seg_end == p_end, or switch fell through: backtrack
 
-        if(backtrack_stack.empty()) {
+        if(backtrack_stack.empty()) [[unlikely]] {
             return false;
         }
 
-        if(++backtrack_iterations > max_backtrack_iterations) {
+        if(++backtrack_iterations > max_backtrack_iterations) [[unlikely]] {
             return false;
         }
 
         auto& state = backtrack_stack.back();
 
-        if(state.s >= s_end) {
+        if(state.s >= s_end) [[unlikely]] {
             backtrack_stack.pop_back();
             continue;
         }
@@ -508,7 +522,7 @@ bool GlobPattern::SubGlobPattern::match(std::string_view str) const {
         seg_start = state.seg_start;
         seg_end = state.seg_end;
 
-        if(s > s_end) {
+        if(s > s_end) [[unlikely]] {
             backtrack_stack.pop_back();
             continue;
         }
