@@ -267,213 +267,147 @@ struct simdjson_backend_with_config : simdjson_backend {
     using base_backend_type = simdjson_backend;
 };
 
+/// Scalar-only backend for deserializing scalar JSON documents directly.
+/// simdjson cannot convert scalar documents to ondemand::value, so this backend
+/// operates on ondemand::document& for scalar reads. Compound-type methods
+/// (visit_object, visit_array, etc.) are stubs that return errors — they exist
+/// only to satisfy template instantiation requirements and are never called at
+/// runtime for scalar documents.
+struct simdjson_scalar_backend {
+    using value_type = simdjson::ondemand::document;
+    using error_type = simdjson::error_code;
+    static constexpr error_type success = simdjson::SUCCESS;
+    static constexpr error_type type_mismatch = simdjson::INCORRECT_TYPE;
+    static constexpr error_type number_out_of_range = simdjson::NUMBER_OUT_OF_RANGE;
+    static constexpr error_type invalid_state = simdjson::PARSER_IN_USE;
+
+    using base_backend_type = simdjson_backend;
+
+    static error_type read_bool(value_type& v, bool& out) {
+        return v.get_bool().get(out);
+    }
+
+    static error_type read_int64(value_type& v, std::int64_t& out) {
+        return v.get_int64().get(out);
+    }
+
+    static error_type read_uint64(value_type& v, std::uint64_t& out) {
+        return v.get_uint64().get(out);
+    }
+
+    static error_type read_double(value_type& v, double& out) {
+        return v.get_double().get(out);
+    }
+
+    static error_type read_string(value_type& v, std::string_view& out) {
+        return v.get_string().get(out);
+    }
+
+    static error_type read_is_null(value_type& v, bool& is_null) {
+        auto result = v.is_null();
+        if(result.error() != simdjson::SUCCESS) {
+            is_null = false;
+            return simdjson::SUCCESS;
+        }
+        is_null = result.value_unsafe();
+        return simdjson::SUCCESS;
+    }
+
+    static meta::type_kind kind_of(value_type& src) {
+        simdjson::ondemand::json_type t;
+        if(src.type().get(t) != simdjson::SUCCESS)
+            return meta::type_kind::null;
+        switch(t) {
+            case simdjson::ondemand::json_type::object: return meta::type_kind::structure;
+            case simdjson::ondemand::json_type::array: return meta::type_kind::array;
+            case simdjson::ondemand::json_type::string: return meta::type_kind::string;
+            case simdjson::ondemand::json_type::number: {
+                simdjson::ondemand::number_type nt;
+                if(src.get_number_type().get(nt) != simdjson::SUCCESS)
+                    return meta::type_kind::int64;
+                if(nt == simdjson::ondemand::number_type::floating_point_number)
+                    return meta::type_kind::float64;
+                if(nt == simdjson::ondemand::number_type::unsigned_integer)
+                    return meta::type_kind::uint64;
+                return meta::type_kind::int64;
+            }
+            case simdjson::ondemand::json_type::boolean: return meta::type_kind::boolean;
+            case simdjson::ondemand::json_type::null: return meta::type_kind::null;
+            default: return meta::type_kind::unknown;
+        }
+    }
+
+    // Stubs for compound-type visitors — never called at runtime for scalar
+    // documents but required for template instantiation of deserialize<>.
+
+    template <typename Visitor>
+    static error_type visit_object(value_type&, Visitor&&) {
+        return type_mismatch;
+    }
+
+    template <typename Visitor>
+    static error_type visit_array(value_type&, Visitor&&) {
+        return type_mismatch;
+    }
+
+    template <typename Visitor>
+    static error_type visit_object_keys(value_type&, Visitor&&) {
+        return success;
+    }
+
+    template <typename Visitor>
+    static error_type visit_array_keys(value_type&, Visitor&&) {
+        return success;
+    }
+
+    static error_type scan_field(value_type&, std::string_view, std::string_view&) {
+        return type_mismatch;
+    }
+
+    // Error context helpers (same as simdjson_backend)
+
+    static void report_missing_field(std::string_view field_name) {
+        detail::thread_error_context().set(json::error::missing_field(field_name));
+    }
+
+    static void report_unknown_field(std::string_view field_name) {
+        detail::thread_error_context().set(json::error::unknown_field(field_name));
+    }
+
+    static void report_unknown_enum(std::string_view value) {
+        detail::thread_error_context().set(
+            json::error(error_kind::type_mismatch,
+                        std::format("unknown enum string value '{}'", value)));
+    }
+
+    static void report_prepend_field(std::string_view name) {
+        detail::thread_error_context().prepend_field(name);
+    }
+
+    static void report_prepend_index(std::size_t index) {
+        detail::thread_error_context().prepend_index(index);
+    }
+};
+
+/// Config-aware scalar backend variant.
+template <typename Config>
+struct simdjson_scalar_backend_with_config : simdjson_scalar_backend {
+    using config_type = Config;
+};
+
 namespace detail {
 
-/// Deserialize a scalar type directly from a simdjson document root.
-/// simdjson cannot convert scalar documents to value instances, so we read
-/// from the document directly for primitive types.
-template <typename Config, typename T>
-auto from_document_scalar(simdjson::ondemand::document& doc, T& out) -> simdjson::error_code {
-    using U = std::remove_cvref_t<T>;
-
-    if constexpr(std::same_as<U, bool>) {
-        return doc.get_bool().get(out);
-    } else if constexpr(meta::int_like<U>) {
-        std::int64_t v;
-        auto err = doc.get_int64().get(v);
-        if(err != simdjson::SUCCESS)
-            return err;
-        if constexpr(!std::same_as<U, std::int64_t>) {
-            if(!std::in_range<U>(v))
-                return simdjson::NUMBER_OUT_OF_RANGE;
-        }
-        out = static_cast<U>(v);
-        return simdjson::SUCCESS;
-    } else if constexpr(meta::uint_like<U>) {
-        std::uint64_t v;
-        auto err = doc.get_uint64().get(v);
-        if(err != simdjson::SUCCESS)
-            return err;
-        if constexpr(!std::same_as<U, std::uint64_t>) {
-            if(!std::in_range<U>(v))
-                return simdjson::NUMBER_OUT_OF_RANGE;
-        }
-        out = static_cast<U>(v);
-        return simdjson::SUCCESS;
-    } else if constexpr(meta::floating_like<U>) {
-        double d;
-        auto err = doc.get_double().get(d);
-        if(err != simdjson::SUCCESS)
-            return err;
-        out = static_cast<U>(d);
-        return simdjson::SUCCESS;
-    } else if constexpr(meta::char_like<U>) {
-        std::string_view sv;
-        auto err = doc.get_string().get(sv);
-        if(err != simdjson::SUCCESS)
-            return err;
-        if(sv.size() != 1)
-            return simdjson::INCORRECT_TYPE;
-        out = sv.front();
-        return simdjson::SUCCESS;
-    } else if constexpr(std::same_as<U, std::string> || std::derived_from<U, std::string>) {
-        std::string_view sv;
-        auto err = doc.get_string().get(sv);
-        if(err != simdjson::SUCCESS)
-            return err;
-        static_cast<std::string&>(out).assign(sv.data(), sv.size());
-        return simdjson::SUCCESS;
-    } else if constexpr(meta::null_like<U>) {
-        bool is_null;
-        auto null_err = doc.is_null().get(is_null);
-        if(null_err != simdjson::SUCCESS)
-            return null_err;
-        if(!is_null)
-            return simdjson::INCORRECT_TYPE;
-        out = U{};
-        return simdjson::SUCCESS;
-    } else if constexpr(std::is_enum_v<U>) {
-        using underlying_t = std::underlying_type_t<U>;
-        if constexpr(std::is_signed_v<underlying_t>) {
-            std::int64_t v;
-            auto err = doc.get_int64().get(v);
-            if(err != simdjson::SUCCESS)
-                return err;
-            if(v < static_cast<std::int64_t>(std::numeric_limits<underlying_t>::min()) ||
-               v > static_cast<std::int64_t>(std::numeric_limits<underlying_t>::max()))
-                return simdjson::NUMBER_OUT_OF_RANGE;
-            out = static_cast<U>(static_cast<underlying_t>(v));
-        } else {
-            std::uint64_t v;
-            auto err = doc.get_uint64().get(v);
-            if(err != simdjson::SUCCESS)
-                return err;
-            if(v > static_cast<std::uint64_t>(std::numeric_limits<underlying_t>::max()))
-                return simdjson::NUMBER_OUT_OF_RANGE;
-            out = static_cast<U>(static_cast<underlying_t>(v));
-        }
-        return simdjson::SUCCESS;
-    }
-    // Wrapper types: optional/unique_ptr/shared_ptr may wrap scalar types
-    else if constexpr(kota::is_specialization_of<std::optional, U>) {
-        bool is_null;
-        auto null_err = doc.is_null().get(is_null);
-        if(null_err != simdjson::SUCCESS)
-            return null_err;
-        if(is_null) {
-            out.reset();
-            return simdjson::SUCCESS;
-        }
-        out.emplace();
-        return from_document_scalar<Config>(doc, *out);
-    } else if constexpr(kota::is_specialization_of<std::unique_ptr, U>) {
-        bool is_null;
-        auto null_err = doc.is_null().get(is_null);
-        if(null_err != simdjson::SUCCESS)
-            return null_err;
-        if(is_null) {
-            out.reset();
-            return simdjson::SUCCESS;
-        }
-        using elem_t = typename U::element_type;
-        out = std::make_unique<elem_t>();
-        return from_document_scalar<Config>(doc, *out);
-    } else if constexpr(kota::is_specialization_of<std::shared_ptr, U>) {
-        bool is_null;
-        auto null_err = doc.is_null().get(is_null);
-        if(null_err != simdjson::SUCCESS)
-            return null_err;
-        if(is_null) {
-            out.reset();
-            return simdjson::SUCCESS;
-        }
-        using elem_t = typename U::element_type;
-        out = std::make_shared<elem_t>();
-        return from_document_scalar<Config>(doc, *out);
-    }
-    // Variant at document root: use document-level kind detection for scoring,
-    // then extract value for actual deserialization of compound alternatives.
-    else if constexpr(kota::is_specialization_of<std::variant, U>) {
-        // Determine the kind from the document root
-        simdjson::ondemand::json_type jtype;
-        auto err = doc.type().get(jtype);
-        if(err != simdjson::SUCCESS)
-            return err;
-
-        // For compound types (object/array), get_value() works and we can use
-        // the full visitor-based variant deserialization
-        if(jtype == simdjson::ondemand::json_type::object ||
-           jtype == simdjson::ondemand::json_type::array) {
-            simdjson::ondemand::value val;
-            err = doc.get_value().get(val);
-            if(err != simdjson::SUCCESS)
-                return err;
-            return codec::deserialize_variant_untagged<simdjson_backend_with_config<Config>, Config>(val, out);
-        }
-
-        // For scalar types, map the json type to a type_kind and use kind-based selection
-        return []<typename... Ts>(simdjson::ondemand::json_type jt,
-                                  simdjson::ondemand::document& d,
-                                  std::variant<Ts...>& v) -> simdjson::error_code {
-            auto map_kind = [](simdjson::ondemand::json_type t,
-                               simdjson::ondemand::document& dd) -> meta::type_kind {
-                switch(t) {
-                    case simdjson::ondemand::json_type::null: return meta::type_kind::null;
-                    case simdjson::ondemand::json_type::boolean: return meta::type_kind::boolean;
-                    case simdjson::ondemand::json_type::string: return meta::type_kind::string;
-                    case simdjson::ondemand::json_type::number: {
-                        simdjson::ondemand::number_type nt;
-                        if(dd.get_number_type().get(nt) != simdjson::SUCCESS)
-                            return meta::type_kind::int64;
-                        if(nt == simdjson::ondemand::number_type::floating_point_number)
-                            return meta::type_kind::float64;
-                        if(nt == simdjson::ondemand::number_type::unsigned_integer)
-                            return meta::type_kind::uint64;
-                        return meta::type_kind::int64;
-                    }
-                    default: return meta::type_kind::unknown;
-                }
-            };
-
-            auto source_kind = map_kind(jt, d);
-            auto idx = codec::select_variant_index<Config, Ts...>(source_kind);
-            if(!idx)
-                return simdjson::INCORRECT_TYPE;
-
-            // Deserialize the selected scalar alternative from the document root
-            simdjson::error_code result = simdjson::INCORRECT_TYPE;
-            [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                (void)((Is == *idx ? (result = [&] {
-                                          using alt_t = std::variant_alternative_t<
-                                              Is, std::variant<Ts...>>;
-                                          alt_t alt{};
-                                          auto e = from_document_scalar<Config>(d, alt);
-                                          if(e != simdjson::SUCCESS)
-                                              return e;
-                                          v = std::move(alt);
-                                          return simdjson::SUCCESS;
-                                      }(),
-                                      true)
-                                   : false) ||
-                        ...);
-            }(std::index_sequence_for<Ts...>{});
-            return result;
-        }(jtype, doc, out);
-    } else {
-        return simdjson::INCORRECT_TYPE;
-    }
-}
-
-/// Deserialize from a simdjson document root using the new visitor-based path.
+/// Deserialize from a simdjson document root using the visitor-based path.
 /// For compound types (objects/arrays), converts document to value via get_value()
-/// and delegates to deserialize<Backend>(). For scalar documents, reads directly
-/// from the document since simdjson cannot convert scalar docs to values.
+/// and delegates to deserialize<Backend>(). For scalar documents, uses the
+/// simdjson_scalar_backend which operates directly on the document.
 template <typename Config, typename T>
 auto from_document(simdjson::ondemand::parser& parser,
                    simdjson::ondemand::document& doc,
                    T& out,
                    simdjson::padded_string_view json) -> simdjson::error_code {
     using Backend = simdjson_backend_with_config<Config>;
+    using ScalarBackend = simdjson_scalar_backend_with_config<Config>;
     using U = std::remove_cvref_t<T>;
 
     simdjson::ondemand::value val;
@@ -510,7 +444,7 @@ auto from_document(simdjson::ondemand::parser& parser,
             }
             return simdjson::INCORRECT_TYPE;
         } else {
-            return from_document_scalar<Config>(doc, out);
+            return codec::deserialize<ScalarBackend>(doc, out);
         }
     }
 
