@@ -39,7 +39,7 @@ template <typename Backend, typename ArrayT>
 struct array_visitor {
     using E = typename Backend::error_type;
     using ElemT = typename ArrayT::value_type;
-    static constexpr std::size_t N = std::tuple_size_v<ArrayT>;
+    constexpr static std::size_t N = std::tuple_size_v<ArrayT>;
 
     ArrayT& out;
     std::size_t index = 0;
@@ -64,7 +64,7 @@ struct array_visitor {
 template <typename Backend, typename TupleT>
 struct tuple_visitor {
     using E = typename Backend::error_type;
-    static constexpr std::size_t N = std::tuple_size_v<TupleT>;
+    constexpr static std::size_t N = std::tuple_size_v<TupleT>;
 
     TupleT& out;
     std::size_t index = 0;
@@ -86,8 +86,10 @@ struct tuple_visitor {
 
 private:
     template <std::size_t... Is>
-    KOTA_ALWAYS_INLINE void visit_at(typename Backend::value_type& val, std::index_sequence<Is...>) {
-        (void)((Is == index ? (error = deserialize<Backend>(val, std::get<Is>(out)), true) : false) ||
+    KOTA_ALWAYS_INLINE void visit_at(typename Backend::value_type& val,
+                                     std::index_sequence<Is...>) {
+        (void)((Is == index ? (error = deserialize<Backend>(val, std::get<Is>(out)), true)
+                            : false) ||
                ...);
     }
 };

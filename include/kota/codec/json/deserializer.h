@@ -25,65 +25,87 @@ namespace kota::codec::json {
 /// in a single pointer, using the low bit (both types are pointer-aligned) to
 /// distinguish them.  Eliminates all document-root special casing in the backend.
 struct json_source {
-    KOTA_ALWAYS_INLINE explicit json_source(simdjson::ondemand::value& v)
-        : ptr(reinterpret_cast<uintptr_t>(&v)) {}
-    KOTA_ALWAYS_INLINE explicit json_source(simdjson::ondemand::document& d)
-        : ptr(reinterpret_cast<uintptr_t>(&d) | tag) {}
+    KOTA_ALWAYS_INLINE explicit json_source(simdjson::ondemand::value& v) :
+        ptr(reinterpret_cast<uintptr_t>(&v)) {}
 
-    KOTA_ALWAYS_INLINE static json_source null() { return json_source(uintptr_t{0}); }
+    KOTA_ALWAYS_INLINE explicit json_source(simdjson::ondemand::document& d) :
+        ptr(reinterpret_cast<uintptr_t>(&d) | tag) {}
 
-    KOTA_ALWAYS_INLINE bool is_null() const { return ptr == 0; }
-    KOTA_ALWAYS_INLINE bool is_document() const { return (ptr & tag) != 0; }
+    KOTA_ALWAYS_INLINE static json_source null() {
+        return json_source(uintptr_t{0});
+    }
+
+    KOTA_ALWAYS_INLINE bool is_null() const {
+        return ptr == 0;
+    }
+
+    KOTA_ALWAYS_INLINE bool is_document() const {
+        return (ptr & tag) != 0;
+    }
 
     KOTA_ALWAYS_INLINE simdjson::ondemand::document& doc() const {
         return *reinterpret_cast<simdjson::ondemand::document*>(ptr & ~tag);
     }
+
     KOTA_ALWAYS_INLINE simdjson::ondemand::value& value() const {
         return *reinterpret_cast<simdjson::ondemand::value*>(ptr);
     }
 
     template <typename F>
     KOTA_ALWAYS_INLINE decltype(auto) apply(F&& f) const {
-        if(is_document()) { return f(doc()); }
+        if(is_document()) {
+            return f(doc());
+        }
         return f(value());
     }
 
 private:
     uintptr_t ptr;
-    static constexpr uintptr_t tag = 1;
+    constexpr static uintptr_t tag = 1;
+
     KOTA_ALWAYS_INLINE explicit json_source(uintptr_t raw) : ptr(raw) {}
 };
 
 struct simdjson_backend {
     using value_type = json_source;
     using error_type = simdjson::error_code;
-    static constexpr error_type success = simdjson::SUCCESS;
-    static constexpr error_type type_mismatch = simdjson::INCORRECT_TYPE;
-    static constexpr error_type number_out_of_range = simdjson::NUMBER_OUT_OF_RANGE;
-    static constexpr error_type invalid_state = simdjson::PARSER_IN_USE;
+    constexpr static error_type success = simdjson::SUCCESS;
+    constexpr static error_type type_mismatch = simdjson::INCORRECT_TYPE;
+    constexpr static error_type number_out_of_range = simdjson::NUMBER_OUT_OF_RANGE;
+    constexpr static error_type invalid_state = simdjson::PARSER_IN_USE;
 
     KOTA_ALWAYS_INLINE static error_type read_bool(value_type& src, bool& out) {
-        if(src.is_document()) { return src.doc().get_bool().get(out); }
+        if(src.is_document()) {
+            return src.doc().get_bool().get(out);
+        }
         return src.value().get_bool().get(out);
     }
 
     KOTA_ALWAYS_INLINE static error_type read_int64(value_type& src, std::int64_t& out) {
-        if(src.is_document()) { return src.doc().get_int64().get(out); }
+        if(src.is_document()) {
+            return src.doc().get_int64().get(out);
+        }
         return src.value().get_int64().get(out);
     }
 
     KOTA_ALWAYS_INLINE static error_type read_uint64(value_type& src, std::uint64_t& out) {
-        if(src.is_document()) { return src.doc().get_uint64().get(out); }
+        if(src.is_document()) {
+            return src.doc().get_uint64().get(out);
+        }
         return src.value().get_uint64().get(out);
     }
 
     KOTA_ALWAYS_INLINE static error_type read_double(value_type& src, double& out) {
-        if(src.is_document()) { return src.doc().get_double().get(out); }
+        if(src.is_document()) {
+            return src.doc().get_double().get(out);
+        }
         return src.value().get_double().get(out);
     }
 
     KOTA_ALWAYS_INLINE static error_type read_string(value_type& src, std::string_view& out) {
-        if(src.is_document()) { return src.doc().get_string().get(out); }
+        if(src.is_document()) {
+            return src.doc().get_string().get(out);
+        }
         return src.value().get_string().get(out);
     }
 
@@ -110,15 +132,23 @@ struct simdjson_backend {
     template <typename Visitor>
     KOTA_ALWAYS_INLINE static error_type visit_object(value_type& src, Visitor&& vis) {
         auto obj = src.apply([](auto& s) { return s.get_object(); });
-        if(obj.error()) [[unlikely]] { return obj.error(); }
-        for(auto entry : obj) {
-            if(entry.error()) [[unlikely]] { return entry.error(); }
+        if(obj.error()) [[unlikely]] {
+            return obj.error();
+        }
+        for(auto entry: obj) {
+            if(entry.error()) [[unlikely]] {
+                return entry.error();
+            }
             auto key = entry.unescaped_key();
-            if(key.error()) [[unlikely]] { return key.error(); }
+            if(key.error()) [[unlikely]] {
+                return key.error();
+            }
             auto val = entry.value_unsafe().value();
             value_type field_src(val);
             auto err = vis.visit_field(key.value_unsafe(), field_src);
-            if(err != simdjson::SUCCESS) [[unlikely]] { return err; }
+            if(err != simdjson::SUCCESS) [[unlikely]] {
+                return err;
+            }
         }
         return simdjson::SUCCESS;
     }
@@ -126,13 +156,19 @@ struct simdjson_backend {
     template <typename Visitor>
     KOTA_ALWAYS_INLINE static error_type visit_array(value_type& src, Visitor&& vis) {
         auto arr = src.apply([](auto& s) { return s.get_array(); });
-        if(arr.error()) [[unlikely]] { return arr.error(); }
-        for(auto elem : arr) {
-            if(elem.error()) [[unlikely]] { return elem.error(); }
+        if(arr.error()) [[unlikely]] {
+            return arr.error();
+        }
+        for(auto elem: arr) {
+            if(elem.error()) [[unlikely]] {
+                return elem.error();
+            }
             auto val = elem.value_unsafe();
             value_type elem_src(val);
             auto err = vis.visit_element(elem_src);
-            if(err != simdjson::SUCCESS) [[unlikely]] { return err; }
+            if(err != simdjson::SUCCESS) [[unlikely]] {
+                return err;
+            }
         }
         return simdjson::SUCCESS;
     }
@@ -171,26 +207,40 @@ struct simdjson_backend {
     template <typename Visitor>
     KOTA_ALWAYS_INLINE static error_type visit_object_keys(value_type& src, Visitor&& vis) {
         auto count = src.apply([](auto& s) { return s.count_fields(); });
-        if(count.error()) [[unlikely]] { return count.error(); }
-        if(count.value_unsafe() == 0) { return simdjson::SUCCESS; }
+        if(count.error()) [[unlikely]] {
+            return count.error();
+        }
+        if(count.value_unsafe() == 0) {
+            return simdjson::SUCCESS;
+        }
 
         auto obj = src.apply([](auto& s) { return s.get_object(); });
-        if(obj.error()) [[unlikely]] { return obj.error(); }
-        for(auto entry : obj) {
-            if(entry.error()) [[unlikely]] { return entry.error(); }
+        if(obj.error()) [[unlikely]] {
+            return obj.error();
+        }
+        for(auto entry: obj) {
+            if(entry.error()) [[unlikely]] {
+                return entry.error();
+            }
             auto key = entry.unescaped_key();
-            if(key.error()) [[unlikely]] { return key.error(); }
+            if(key.error()) [[unlikely]] {
+                return key.error();
+            }
             auto val = entry.value_unsafe().value();
             value_type field_src(val);
             auto kind = kind_of(field_src);
             auto err = vis.on_field(key.value_unsafe(), kind, field_src);
-            if(err != simdjson::SUCCESS) [[unlikely]] { return err; }
+            if(err != simdjson::SUCCESS) [[unlikely]] {
+                return err;
+            }
         }
         if(src.is_document()) {
             src.doc().rewind();
         } else {
             auto r = obj.reset();
-            if(r.error()) [[unlikely]] { return r.error(); }
+            if(r.error()) [[unlikely]] {
+                return r.error();
+            }
         }
         return simdjson::SUCCESS;
     }
@@ -198,27 +248,39 @@ struct simdjson_backend {
     template <typename Visitor>
     KOTA_ALWAYS_INLINE static error_type visit_array_keys(value_type& src, Visitor&& vis) {
         auto count = src.apply([](auto& s) { return s.count_elements(); });
-        if(count.error()) [[unlikely]] { return count.error(); }
+        if(count.error()) [[unlikely]] {
+            return count.error();
+        }
         auto n = count.value_unsafe();
-        if(n == 0) { return simdjson::SUCCESS; }
+        if(n == 0) {
+            return simdjson::SUCCESS;
+        }
 
         auto arr = src.apply([](auto& s) { return s.get_array(); });
-        if(arr.error()) [[unlikely]] { return arr.error(); }
+        if(arr.error()) [[unlikely]] {
+            return arr.error();
+        }
         std::size_t i = 0;
-        for(auto elem : arr) {
-            if(elem.error()) [[unlikely]] { return elem.error(); }
+        for(auto elem: arr) {
+            if(elem.error()) [[unlikely]] {
+                return elem.error();
+            }
             auto val = elem.value_unsafe();
             value_type elem_src(val);
             auto kind = kind_of(elem_src);
             auto err = vis.on_element(i, n, kind, elem_src);
-            if(err != simdjson::SUCCESS) [[unlikely]] { return err; }
+            if(err != simdjson::SUCCESS) [[unlikely]] {
+                return err;
+            }
             ++i;
         }
         if(src.is_document()) {
             src.doc().rewind();
         } else {
             auto r = arr.count_elements();
-            if(r.error()) [[unlikely]] { return r.error(); }
+            if(r.error()) [[unlikely]] {
+                return r.error();
+            }
         }
         return simdjson::SUCCESS;
     }
@@ -227,18 +289,21 @@ struct simdjson_backend {
         -> std::pair<std::string, error_type> {
         std::string_view raw;
         auto err = src.apply([&](auto& s) { return s.raw_json().get(raw); });
-        if(err != simdjson::SUCCESS) [[unlikely]] { return {{}, err}; }
+        if(err != simdjson::SUCCESS) [[unlikely]] {
+            return {{}, err};
+        }
         return {std::string(raw), simdjson::SUCCESS};
     }
 
     template <typename Fn>
-    KOTA_ALWAYS_INLINE static auto with_reparsed(std::string_view raw_json, Fn&& fn)
-        -> error_type {
+    KOTA_ALWAYS_INLINE static auto with_reparsed(std::string_view raw_json, Fn&& fn) -> error_type {
         simdjson::padded_string padded(raw_json);
         simdjson::ondemand::parser parser;
         simdjson::ondemand::document doc;
         auto err = parser.iterate(padded).get(doc);
-        if(err != simdjson::SUCCESS) [[unlikely]] { return err; }
+        if(err != simdjson::SUCCESS) [[unlikely]] {
+            return err;
+        }
         value_type src(doc);
         return fn(src);
     }
@@ -306,9 +371,8 @@ inline source_location compute_location(std::string_view json, std::size_t byte_
 
 /// Locate the byte offset of a field value in the JSON string by navigating
 /// the path segments (field names and array indices) using simdjson re-parse.
-inline std::optional<std::size_t> locate_path_in_json(
-    simdjson::padded_string_view json,
-    const error& err) {
+inline std::optional<std::size_t> locate_path_in_json(simdjson::padded_string_view json,
+                                                      const error& err) {
     auto path = err.format_path();
     if(path.empty()) {
         return std::nullopt;
@@ -408,16 +472,15 @@ inline std::optional<std::size_t> locate_path_in_json(
 /// Build a rich serde_error from the thread-local error context and the raw
 /// simdjson error code. If the context has a pending error, use it. Otherwise
 /// fall back to constructing an error from the error code alone.
-inline error build_error(simdjson::error_code err,
-                         simdjson::padded_string_view json) {
+inline error build_error(simdjson::error_code err, simdjson::padded_string_view json) {
     auto& ctx = thread_error_context();
     auto pending = ctx.take();
     if(pending) {
         // Try to add source location for errors with a path
         auto byte_off = locate_path_in_json(json, *pending);
         if(byte_off) {
-            pending->set_location(compute_location(
-                std::string_view(json.data(), json.length()), *byte_off));
+            pending->set_location(
+                compute_location(std::string_view(json.data(), json.length()), *byte_off));
         }
         return std::move(*pending);
     }

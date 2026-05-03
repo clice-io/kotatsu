@@ -50,10 +50,10 @@ using IntTagRenamedVariant =
     annotation<std::variant<ShapeLine, ShapeRect>,
                meta::attrs::internally_tagged<"kind">::names<"line", "rect">>;
 
-// NB: named IntTagLabelHolder (not IntTagLabelHolder) to avoid a GCC 14 bug where
+// NB: named IntTagLabelHolder (not IntTagHolder) to avoid a GCC 14 bug where
 // two anonymous-namespace types with the same name produce identical mangled
 // names for template instantiations, causing the linker to merge unrelated
-// weak symbols.  simdjson_variant_detail_tests.cpp also defines IntTagLabelHolder.
+// weak symbols.  simdjson_variant_detail_tests.cpp also defines IntTagHolder.
 // See https://gcc.gnu.org/bugzilla/show_bug.cgi?id=70413
 struct IntTagLabelHolder {
     std::string label;

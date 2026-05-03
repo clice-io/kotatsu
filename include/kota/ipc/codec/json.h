@@ -47,6 +47,7 @@ struct deserialize_traits<json::simdjson_backend, ipc::protocol::Error> {
                 return Backend::success;
             }
         };
+
         error_visitor vis{out};
         return Backend::visit_object(val, vis);
     }

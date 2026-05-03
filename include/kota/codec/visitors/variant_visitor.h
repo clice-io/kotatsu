@@ -65,8 +65,8 @@ auto match_and_deserialize_alt(std::string_view tag_value,
 
 /// Externally tagged: {"Circle": {"radius": 5.0}}
 template <typename Backend, typename TagAttr, typename... Ts>
-auto deserialize_externally_tagged(typename Backend::value_type& src, std::variant<Ts...>& out)
-    -> typename Backend::error_type {
+auto deserialize_externally_tagged(typename Backend::value_type& src, std::variant<Ts...>& out) ->
+    typename Backend::error_type {
     using E = typename Backend::error_type;
     constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
 
@@ -80,11 +80,9 @@ auto deserialize_externally_tagged(typename Backend::value_type& src, std::varia
             if(found)
                 return Backend::type_mismatch;
             found = true;
-            err = detail::match_and_deserialize_alt<Backend>(
-                key,
-                tag_names,
-                out,
-                [&](auto& alt) { return deserialize<Backend>(val, alt); });
+            err = detail::match_and_deserialize_alt<Backend>(key, tag_names, out, [&](auto& alt) {
+                return deserialize<Backend>(val, alt);
+            });
             return err;
         }
     };
@@ -106,13 +104,13 @@ auto deserialize_externally_tagged(typename Backend::value_type& src, std::varia
 /// keys/values, and re-iterating the same document for deserialization would
 /// overflow that buffer.
 template <typename Backend, typename TagAttr, typename... Ts>
-auto deserialize_internally_tagged(typename Backend::value_type& src, std::variant<Ts...>& out)
-    -> typename Backend::error_type {
+auto deserialize_internally_tagged(typename Backend::value_type& src, std::variant<Ts...>& out) ->
+    typename Backend::error_type {
     using E = typename Backend::error_type;
     using value_type = typename Backend::value_type;
     constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
 
-struct tag_scanner {
+    struct tag_scanner {
         std::string& tag_value;
         bool found = false;
 
@@ -151,8 +149,8 @@ struct tag_scanner {
 
 /// Adjacently tagged: {"type": "Circle", "data": {"radius": 5.0}}
 template <typename Backend, typename TagAttr, typename... Ts>
-auto deserialize_adjacently_tagged(typename Backend::value_type& src, std::variant<Ts...>& out)
-    -> typename Backend::error_type {
+auto deserialize_adjacently_tagged(typename Backend::value_type& src, std::variant<Ts...>& out) ->
+    typename Backend::error_type {
     using E = typename Backend::error_type;
     using value_type = typename Backend::value_type;
     constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
@@ -162,9 +160,8 @@ auto deserialize_adjacently_tagged(typename Backend::value_type& src, std::varia
     constexpr bool has_reparse = requires(value_type& v) {
         { Backend::capture_raw_json(v) } -> std::same_as<std::pair<std::string, E>>;
         {
-            Backend::with_reparsed(
-                std::string_view{},
-                [](value_type&) -> E { return Backend::success; })
+            Backend::with_reparsed(std::string_view{},
+                                   [](value_type&) -> E { return Backend::success; })
         } -> std::same_as<E>;
     };
 

@@ -56,6 +56,14 @@ constexpr std::string_view json_minified =
 
 // -- handwritten simdjson helpers --
 
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-result"
+#elif defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4834)
+#endif
+
 void handwritten_read_nested(simdjson::ondemand::object& obj, nested_object_t& out) {
     for(auto field_result: obj) {
         simdjson::ondemand::field field;
@@ -411,6 +419,12 @@ BENCHMARK(BM_read);
 BENCHMARK(BM_read_handwritten);
 BENCHMARK(BM_write);
 BENCHMARK(BM_write_handwritten);
+
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#elif defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 }  // namespace
 

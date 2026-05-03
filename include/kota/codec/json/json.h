@@ -75,5 +75,4 @@ struct deserialize_traits<json::simdjson_backend, RawValue> {
     }
 };
 
-
 }  // namespace kota::codec

@@ -167,8 +167,7 @@ concept has_serialize_wire_impl =
     requires { typename kota::codec::serialize_traits<S, T>::wire_type; };
 
 template <typename D, typename T>
-concept has_decode_wire_impl =
-    requires { typename kota::codec::decode_traits<D, T>::wire_type; };
+concept has_decode_wire_impl = requires { typename kota::codec::decode_traits<D, T>::wire_type; };
 
 template <typename S, typename T>
 concept value_serialize_traits_impl = has_serialize_wire_impl<S, T> && requires(S& s, const T& v) {
@@ -219,7 +218,6 @@ template <typename D, typename T>
 concept value_decode_traits = detail::value_decode_traits_impl<D, std::remove_cvref_t<T>>;
 
 template <typename D, typename T>
-concept streaming_decode_traits =
-    detail::streaming_decode_traits_impl<D, std::remove_cvref_t<T>>;
+concept streaming_decode_traits = detail::streaming_decode_traits_impl<D, std::remove_cvref_t<T>>;
 
 }  // namespace kota::codec::arena

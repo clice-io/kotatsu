@@ -14,8 +14,8 @@
 
 #include "kota/support/expected_try.h"
 #include "kota/meta/type_kind.h"
-#include "kota/codec/deserialize.h"
 #include "kota/codec/bincode/error.h"
+#include "kota/codec/deserialize.h"
 
 namespace kota::codec::bincode {
 
@@ -67,12 +67,12 @@ struct bincode_backend {
     /// All reads advance the reader's offset.
     using value_type = byte_reader*;
     using error_type = error_kind;
-    static constexpr error_type success = error_kind::ok;
-    static constexpr error_type type_mismatch = error_kind::type_mismatch;
-    static constexpr error_type number_out_of_range = error_kind::number_out_of_range;
+    constexpr static error_type success = error_kind::ok;
+    constexpr static error_type type_mismatch = error_kind::type_mismatch;
+    constexpr static error_type number_out_of_range = error_kind::number_out_of_range;
 
     /// Marker: this backend uses positional struct layout (no field names).
-    static constexpr bool positional = true;
+    constexpr static bool positional = true;
 
     static error_type read_bool(value_type& v, bool& out) {
         std::uint8_t raw = 0;
@@ -118,8 +118,7 @@ struct bincode_backend {
             return err;
         if(v->offset + length > v->bytes.size())
             return error_kind::unexpected_eof;
-        out = std::string_view(
-            reinterpret_cast<const char*>(v->bytes.data() + v->offset), length);
+        out = std::string_view(reinterpret_cast<const char*>(v->bytes.data() + v->offset), length);
         v->offset += length;
         return success;
     }

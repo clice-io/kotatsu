@@ -27,7 +27,9 @@
 #endif
 
 namespace kota::codec::content {
+
 class Value;
+
 }  // namespace kota::codec::content
 
 namespace kota::codec::toml {
@@ -93,9 +95,9 @@ inline std::optional<codec::source_location> source_from_node(const ::toml::node
 struct toml_backend {
     using value_type = const ::toml::node*;
     using error_type = error_kind;
-    static constexpr error_type success = error_kind::ok;
-    static constexpr error_type type_mismatch = error_kind::type_mismatch;
-    static constexpr error_type number_out_of_range = error_kind::number_out_of_range;
+    constexpr static error_type success = error_kind::ok;
+    constexpr static error_type type_mismatch = error_kind::type_mismatch;
+    constexpr static error_type number_out_of_range = error_kind::number_out_of_range;
 
     static error_type read_bool(value_type& v, bool& out) {
         if(!v)
@@ -174,7 +176,6 @@ private:
     }
 
 public:
-
     static error_type read_is_null(value_type& v, bool& is_null) {
         is_null = (v == nullptr);
         return success;
@@ -278,8 +279,7 @@ public:
 
     static void report_unknown_enum(std::string_view value) {
         detail::thread_error_context().set(
-            error(error_kind::type_mismatch,
-                  std::format("unknown enum string value '{}'", value)));
+            error(error_kind::type_mismatch, std::format("unknown enum string value '{}'", value)));
     }
 
     static void report_prepend_field(std::string_view name) {
@@ -316,10 +316,10 @@ template <typename T>
 constexpr bool is_map_like_v = is_map_like<T>();
 
 template <typename T>
-constexpr bool root_table_v = (meta::reflectable_class<T> && !is_pair_v<T> && !is_tuple_v<T> &&
-                               !std::ranges::input_range<T>) ||
-                              is_map_like_v<T> || std::same_as<T, ::toml::table> ||
-                              std::same_as<T, content::Value>;
+constexpr bool root_table_v =
+    (meta::reflectable_class<T> && !is_pair_v<T> && !is_tuple_v<T> &&
+     !std::ranges::input_range<T>) ||
+    is_map_like_v<T> || std::same_as<T, ::toml::table> || std::same_as<T, content::Value>;
 
 template <typename T>
 auto select_root_node(const ::toml::table& table) -> const ::toml::node* {

@@ -3,8 +3,8 @@
 #include <string_view>
 #include <utility>
 
-#include "kota/codec/detail/spelling.h"
 #include "kota/support/ranges.h"
+#include "kota/codec/detail/spelling.h"
 
 namespace kota::codec {
 

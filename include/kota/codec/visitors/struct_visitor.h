@@ -10,11 +10,11 @@
 #include <utility>
 #include <variant>
 
+#include "kota/support/string_match.h"
 #include "kota/support/type_list.h"
 #include "kota/support/type_traits.h"
 #include "kota/meta/attrs.h"
 #include "kota/meta/schema.h"
-#include "kota/support/string_match.h"
 #include "kota/codec/detail/config.h"
 #include "kota/codec/detail/spelling.h"
 
@@ -135,21 +135,21 @@ template <typename Backend, typename T>
 auto deserialize(typename Backend::value_type& src, T& out) -> typename Backend::error_type;
 
 template <typename Backend, typename RawT, typename Attrs>
-auto deserialize_field(typename Backend::value_type& val, RawT& field_ref)
-    -> typename Backend::error_type;
+auto deserialize_field(typename Backend::value_type& val, RawT& field_ref) ->
+    typename Backend::error_type;
 
 // Forward declarations for tagged variant support
 template <typename Backend, typename Attrs, typename... Ts>
-auto deserialize_externally_tagged(typename Backend::value_type& src, std::variant<Ts...>& out)
-    -> typename Backend::error_type;
+auto deserialize_externally_tagged(typename Backend::value_type& src, std::variant<Ts...>& out) ->
+    typename Backend::error_type;
 
 template <typename Backend, typename Attrs, typename... Ts>
-auto deserialize_internally_tagged(typename Backend::value_type& src, std::variant<Ts...>& out)
-    -> typename Backend::error_type;
+auto deserialize_internally_tagged(typename Backend::value_type& src, std::variant<Ts...>& out) ->
+    typename Backend::error_type;
 
 template <typename Backend, typename Attrs, typename... Ts>
-auto deserialize_adjacently_tagged(typename Backend::value_type& src, std::variant<Ts...>& out)
-    -> typename Backend::error_type;
+auto deserialize_adjacently_tagged(typename Backend::value_type& src, std::variant<Ts...>& out) ->
+    typename Backend::error_type;
 
 /// struct_visitor: receives field key/value from backend, dispatches to the correct slot
 template <typename Backend, typename T, typename Config = meta::default_config>
@@ -225,8 +225,8 @@ private:
 
     template <std::size_t... Is>
     KOTA_ALWAYS_INLINE E dispatch_slot_impl(std::size_t slot_index,
-                         typename Backend::value_type& val,
-                         std::index_sequence<Is...>) {
+                                            typename Backend::value_type& val,
+                                            std::index_sequence<Is...>) {
         E err = Backend::type_mismatch;
         (void)((Is == slot_index ? (err = dispatch_slot_at<Is>(val), true) : false) || ...);
         return err;
@@ -248,8 +248,8 @@ private:
 
 /// deserialize_field: handles all field-level attribute dispatch
 template <typename Backend, typename RawT, typename Attrs>
-KOTA_ALWAYS_INLINE auto deserialize_field(typename Backend::value_type& val, RawT& field_ref)
-    -> typename Backend::error_type {
+KOTA_ALWAYS_INLINE auto deserialize_field(typename Backend::value_type& val, RawT& field_ref) ->
+    typename Backend::error_type {
     // 1. skip_if
     if constexpr(tuple_has_spec_v<Attrs, meta::behavior::skip_if>) {
         using pred = typename tuple_find_spec_t<Attrs, meta::behavior::skip_if>::predicate;
@@ -260,8 +260,7 @@ KOTA_ALWAYS_INLINE auto deserialize_field(typename Backend::value_type& val, Raw
 
     // 2. behavior::with<Adapter>
     if constexpr(tuple_has_spec_v<Attrs, meta::behavior::with>) {
-        using Adapter =
-            typename tuple_find_spec_t<Attrs, meta::behavior::with>::adapter;
+        using Adapter = typename tuple_find_spec_t<Attrs, meta::behavior::with>::adapter;
         if constexpr(requires {
                          Adapter::from_wire(std::declval<typename Adapter::wire_type>());
                      }) {
@@ -272,7 +271,7 @@ KOTA_ALWAYS_INLINE auto deserialize_field(typename Backend::value_type& val, Raw
                 return err;
             field_ref = Adapter::from_wire(std::move(wire));
             return Backend::success;
-        } else if constexpr(requires(typename Backend::value_type & v, RawT & r) {
+        } else if constexpr(requires(typename Backend::value_type& v, RawT& r) {
                                 Adapter::template deserialize<Backend>(v, r);
                             }) {
             return Adapter::template deserialize<Backend>(val, field_ref);
@@ -292,8 +291,7 @@ KOTA_ALWAYS_INLINE auto deserialize_field(typename Backend::value_type& val, Raw
     }
     // 4. behavior::enum_string<Policy>
     else if constexpr(tuple_has_spec_v<Attrs, meta::behavior::enum_string>) {
-        using Policy =
-            typename tuple_find_spec_t<Attrs, meta::behavior::enum_string>::policy;
+        using Policy = typename tuple_find_spec_t<Attrs, meta::behavior::enum_string>::policy;
         std::string_view text;
         auto err = Backend::read_string(val, text);
         if(err != Backend::success)
@@ -333,7 +331,7 @@ struct positional_struct_visitor {
     using E = typename Backend::error_type;
     using schema = meta::virtual_schema<T, Config>;
     using slots = typename schema::slots;
-    static constexpr std::size_t N = type_list_size_v<slots>;
+    constexpr static std::size_t N = type_list_size_v<slots>;
 
     T& out;
 
@@ -382,8 +380,8 @@ concept positional_backend = requires {
 
 /// deserialize_struct: entry point for struct deserialization
 template <typename Backend, typename T, typename Config = meta::default_config>
-KOTA_ALWAYS_INLINE auto deserialize_struct(typename Backend::value_type& src, T& out)
-    -> typename Backend::error_type {
+KOTA_ALWAYS_INLINE auto deserialize_struct(typename Backend::value_type& src, T& out) ->
+    typename Backend::error_type {
     if constexpr(positional_backend<Backend>) {
         // Positional backend: read fields in schema order
         positional_struct_visitor<Backend, T, Config> vis{out};

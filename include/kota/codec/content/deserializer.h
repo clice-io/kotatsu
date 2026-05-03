@@ -8,18 +8,18 @@
 
 #include "kota/support/expected_try.h"
 #include "kota/meta/type_kind.h"
-#include "kota/codec/deserialize.h"
 #include "kota/codec/content/document.h"
 #include "kota/codec/content/error.h"
+#include "kota/codec/deserialize.h"
 
 namespace kota::codec::content {
 
 struct content_backend {
     using value_type = const Value*;
     using error_type = error_kind;
-    static constexpr error_type success = error_kind::ok;
-    static constexpr error_type type_mismatch = error_kind::type_mismatch;
-    static constexpr error_type number_out_of_range = error_kind::number_out_of_range;
+    constexpr static error_type success = error_kind::ok;
+    constexpr static error_type type_mismatch = error_kind::type_mismatch;
+    constexpr static error_type number_out_of_range = error_kind::number_out_of_range;
 
     static error_type read_bool(value_type& v, bool& out) {
         if(!v)
@@ -158,7 +158,6 @@ struct content_backend {
         }
         return success;
     }
-
 };
 
 template <typename Config>
@@ -236,8 +235,8 @@ template <typename Backend>
         { Backend::kind_of(v) } -> std::same_as<meta::type_kind>;
     }
 struct deserialize_traits<Backend, content::Value> {
-    static auto read(typename Backend::value_type& val, content::Value& out)
-        -> typename Backend::error_type {
+    static auto read(typename Backend::value_type& val, content::Value& out) ->
+        typename Backend::error_type {
         auto kind = Backend::kind_of(val);
 
         if(kind == meta::type_kind::null) {
@@ -290,8 +289,10 @@ struct deserialize_traits<Backend, content::Value> {
         }
         if(meta::is_sequence_kind(kind)) {
             content::Array arr;
+
             struct array_visitor {
                 content::Array& arr;
+
                 typename Backend::error_type visit_element(typename Backend::value_type& elem) {
                     content::Value v;
                     auto err = deserialize_traits::read(elem, v);
@@ -301,6 +302,7 @@ struct deserialize_traits<Backend, content::Value> {
                     return Backend::success;
                 }
             };
+
             array_visitor vis{arr};
             auto err = Backend::visit_array(val, vis);
             if(err != Backend::success)
@@ -310,10 +312,12 @@ struct deserialize_traits<Backend, content::Value> {
         }
         if(meta::is_object_kind(kind)) {
             content::Object obj;
+
             struct object_visitor {
                 content::Object& obj;
+
                 typename Backend::error_type visit_field(std::string_view key,
-                                                        typename Backend::value_type& field_val) {
+                                                         typename Backend::value_type& field_val) {
                     content::Value v;
                     auto err = deserialize_traits::read(field_val, v);
                     if(err != Backend::success)
@@ -322,6 +326,7 @@ struct deserialize_traits<Backend, content::Value> {
                     return Backend::success;
                 }
             };
+
             object_visitor vis{obj};
             auto err = Backend::visit_object(val, vis);
             if(err != Backend::success)

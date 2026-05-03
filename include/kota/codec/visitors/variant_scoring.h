@@ -244,7 +244,8 @@ void multi_score(typename Adapter::node_type node,
                     for(std::size_t fi = 0; fi < info.fields.size(); ++fi) {
                         if(field_name_matches(info.fields[fi], name)) {
                             child_cands.push_back({sc.index, &info.fields[fi].type()});
-                            matched_fields[si] |= std::uint64_t{1} << fi;
+                            if(fi < 64)
+                                matched_fields[si] |= std::uint64_t{1} << fi;
                             break;
                         }
                     }
@@ -273,7 +274,7 @@ void multi_score(typename Adapter::node_type node,
                 auto& f = info.fields[fi];
                 if(f.has_default || f.has_skip_if)
                     continue;
-                if(!(matched_fields[si] & (std::uint64_t{1} << fi))) {
+                if(fi >= 64 || !(matched_fields[si] & (std::uint64_t{1} << fi))) {
                     scores[struct_cands[si].index] = 0;
                     break;
                 }
@@ -365,7 +366,6 @@ std::optional<std::size_t> select_variant_index(meta::type_kind source_kind) {
     return detail::select_by_kind<Config, Ts...>(live, source_kind);
 }
 
-
 template <typename Backend, typename T>
 auto deserialize(typename Backend::value_type& src, T& out) -> typename Backend::error_type;
 
@@ -387,6 +387,7 @@ struct backend_source_adapter {
     static void for_each_field(node_type n, Fn&& fn) {
         if(!n.val)
             return;
+
         struct key_collector {
             Fn& fn_ref;
             using node_t = node_type;
@@ -398,6 +399,7 @@ struct backend_source_adapter {
                 return Backend::success;
             }
         };
+
         key_collector collector{fn};
         Backend::visit_object_keys(*n.val, collector);
     }
@@ -406,6 +408,7 @@ struct backend_source_adapter {
     static void for_each_element(node_type n, Fn&& fn) {
         if(!n.val)
             return;
+
         struct elem_collector {
             Fn& fn_ref;
             using node_t = node_type;
@@ -418,6 +421,7 @@ struct backend_source_adapter {
                 return Backend::success;
             }
         };
+
         elem_collector collector{fn};
         Backend::visit_array_keys(*n.val, collector);
     }
@@ -456,8 +460,10 @@ auto select_variant_index(typename Backend::value_type& src) -> std::optional<st
             }
         }
 
-        detail::multi_score<adapter>(
-            typename adapter::node_type{&src}, candidates, cand_count, scores);
+        detail::multi_score<adapter>(typename adapter::node_type{&src},
+                                     candidates,
+                                     cand_count,
+                                     scores);
 
         std::size_t best_score = 0;
         std::optional<std::size_t> best_idx;
@@ -484,21 +490,24 @@ auto select_variant_index(typename Backend::value_type& src) -> std::optional<st
 /// deserialize_variant_at: deserialize into variant at index
 template <typename Backend, typename... Ts>
 auto deserialize_variant_at(std::size_t idx,
-                               typename Backend::value_type& src,
-                               std::variant<Ts...>& out) -> typename Backend::error_type {
+                            typename Backend::value_type& src,
+                            std::variant<Ts...>& out) -> typename Backend::error_type {
     using E = typename Backend::error_type;
     E err = Backend::type_mismatch;
     [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-        (void)((Is == idx ? (err = [&] {
-                                 using alt_t = std::variant_alternative_t<Is, std::variant<Ts...>>;
-                                 alt_t alt{};
-                                 auto e = deserialize<Backend>(src, alt);
-                                 if(e != Backend::success)
-                                     return e;
-                                 out = std::move(alt);
-                                 return Backend::success;
-                             }(),
-                             true)
+        (void)((Is == idx ? (
+                                err =
+                                    [&] {
+                                        using alt_t =
+                                            std::variant_alternative_t<Is, std::variant<Ts...>>;
+                                        alt_t alt{};
+                                        auto e = deserialize<Backend>(src, alt);
+                                        if(e != Backend::success)
+                                            return e;
+                                        out = std::move(alt);
+                                        return Backend::success;
+                                    }(),
+                                true)
                           : false) ||
                ...);
     }(std::index_sequence_for<Ts...>{});
@@ -509,8 +518,8 @@ auto deserialize_variant_at(std::size_t idx,
 /// Scoring uses visit_object_keys / visit_array_keys which internally reset
 /// the iterator, so the source remains consumable for deserialization.
 template <typename Backend, typename Config, typename... Ts>
-auto deserialize_variant_untagged(typename Backend::value_type& src, std::variant<Ts...>& out)
-    -> typename Backend::error_type {
+auto deserialize_variant_untagged(typename Backend::value_type& src, std::variant<Ts...>& out) ->
+    typename Backend::error_type {
     auto idx = select_variant_index<Backend, Config, Ts...>(src);
     if(!idx)
         return Backend::type_mismatch;
