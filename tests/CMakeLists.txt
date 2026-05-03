@@ -136,6 +136,7 @@ target_include_directories(unit_tests PRIVATE
 
 target_link_libraries(unit_tests PRIVATE
     kota::codec
+    kota::support
     kota::zest
     cpptrace::cpptrace
 )

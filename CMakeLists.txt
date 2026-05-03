@@ -321,6 +321,7 @@ if(KOTA_ENABLE_ZEST)
 endif()
 
 add_subdirectory(src/meta)
+add_subdirectory(src/support)
 add_subdirectory(src/codec)
 
 if(KOTA_ENABLE_OPTION)
