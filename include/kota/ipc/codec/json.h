@@ -11,9 +11,9 @@
 
 namespace kota::codec {
 
-/// custom_deserialize for protocol::Value: deserialize as underlying Variant
+/// deserialize_traits for protocol::Value: deserialize as underlying Variant
 template <>
-struct custom_deserialize<json::simdjson_backend, ipc::protocol::Value> {
+struct deserialize_traits<json::simdjson_backend, ipc::protocol::Value> {
     using Backend = json::simdjson_backend;
 
     static auto read(Backend::value_type& val, ipc::protocol::Value& out) -> Backend::error_type {
@@ -27,9 +27,9 @@ struct custom_deserialize<json::simdjson_backend, ipc::protocol::Value> {
     }
 };
 
-/// custom_deserialize for protocol::Error: manual field-by-field deserialization
+/// deserialize_traits for protocol::Error: manual field-by-field deserialization
 template <>
-struct custom_deserialize<json::simdjson_backend, ipc::protocol::Error> {
+struct deserialize_traits<json::simdjson_backend, ipc::protocol::Error> {
     using Backend = json::simdjson_backend;
 
     static auto read(Backend::value_type& val, ipc::protocol::Error& out) -> Backend::error_type {

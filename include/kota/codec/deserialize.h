@@ -35,9 +35,9 @@ namespace kota::codec {
 
 /// User extension point: specialize this to provide custom deserialization
 template <typename Backend, typename T>
-struct custom_deserialize;
+struct deserialize_traits;
 
-/// Helper: resolve the "canonical" backend type for custom_deserialize lookup.
+/// Helper: resolve the "canonical" backend type for deserialize_traits lookup.
 /// If Backend has a base_backend_type, use that; otherwise use Backend itself.
 template <typename Backend>
 struct canonical_backend {
@@ -54,10 +54,10 @@ template <typename Backend>
 using canonical_backend_t = typename canonical_backend<Backend>::type;
 
 template <typename Backend, typename T>
-concept has_custom_deserialize =
+concept has_deserialize_traits =
     requires(typename Backend::value_type& v, T& out) {
         {
-            custom_deserialize<canonical_backend_t<Backend>, T>::read(v, out)
+            deserialize_traits<canonical_backend_t<Backend>, T>::read(v, out)
         } -> std::same_as<typename Backend::error_type>;
     };
 
@@ -85,8 +85,8 @@ auto deserialize(typename Backend::value_type& src, T& out) -> typename Backend:
     using E = typename Backend::error_type;
 
     // 1. Custom deserialize
-    if constexpr(has_custom_deserialize<Backend, U>) {
-        return custom_deserialize<canonical_backend_t<Backend>, U>::read(src, out);
+    if constexpr(has_deserialize_traits<Backend, U>) {
+        return deserialize_traits<canonical_backend_t<Backend>, U>::read(src, out);
     }
     // 1b. Annotated types: unwrap annotation and recurse
     else if constexpr(meta::annotated_type<U>) {
@@ -367,7 +367,7 @@ auto deserialize(typename Backend::value_type& src, T& out) -> typename Backend:
     else {
         // Type not handled by the new visitor-based deserialization.
         // Return an error rather than static_assert so that struct fields
-        // with custom deserialize_traits (e.g. content::Value) gracefully
+        // with custom decode_traits (e.g. content::Value) gracefully
         // fail at runtime instead of preventing compilation.
         return Backend::type_mismatch;
     }

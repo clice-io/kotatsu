@@ -30,7 +30,7 @@ struct serialize_traits<bincode::Serializer<Config>, kota::ipc::protocol::Reques
 
 // Bincode deserialization: read int64 directly via new backend
 template <>
-struct custom_deserialize<bincode::bincode_backend, kota::ipc::protocol::RequestID> {
+struct deserialize_traits<bincode::bincode_backend, kota::ipc::protocol::RequestID> {
     static auto read(bincode::byte_reader*& v, kota::ipc::protocol::RequestID& id)
         -> bincode::error_kind {
         std::int64_t val = 0;

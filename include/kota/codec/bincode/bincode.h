@@ -21,9 +21,9 @@ struct serialize_traits<bincode::Serializer<Config>, RawValue> {
     }
 };
 
-/// custom_deserialize for RawValue: read length-prefixed bytes from bincode
+/// deserialize_traits for RawValue: read length-prefixed bytes from bincode
 template <>
-struct custom_deserialize<bincode::bincode_backend, RawValue> {
+struct deserialize_traits<bincode::bincode_backend, RawValue> {
     static auto read(bincode::byte_reader*& v, RawValue& value) -> bincode::error_kind {
         std::vector<std::byte> bytes;
         auto err = bincode::bincode_backend::read_bytes(v, bytes);

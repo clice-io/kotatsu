@@ -205,9 +205,9 @@ auto from_content(const Value& value) -> std::expected<T, error> {
 
 namespace kota::codec {
 
-/// custom_deserialize for content::Value: copy the value directly
+/// deserialize_traits for content::Value: copy the value directly
 template <>
-struct custom_deserialize<content::content_backend, content::Value> {
+struct deserialize_traits<content::content_backend, content::Value> {
     static auto read(const content::Value*& src, content::Value& out) -> content::error_kind {
         if(!src)
             return content::error_kind::type_mismatch;
@@ -216,9 +216,9 @@ struct custom_deserialize<content::content_backend, content::Value> {
     }
 };
 
-/// custom_deserialize for content::Array: extract array from value
+/// deserialize_traits for content::Array: extract array from value
 template <>
-struct custom_deserialize<content::content_backend, content::Array> {
+struct deserialize_traits<content::content_backend, content::Array> {
     static auto read(const content::Value*& src, content::Array& out) -> content::error_kind {
         if(!src)
             return content::error_kind::type_mismatch;
@@ -230,9 +230,9 @@ struct custom_deserialize<content::content_backend, content::Array> {
     }
 };
 
-/// custom_deserialize for content::Object: extract object from value
+/// deserialize_traits for content::Object: extract object from value
 template <>
-struct custom_deserialize<content::content_backend, content::Object> {
+struct deserialize_traits<content::content_backend, content::Object> {
     static auto read(const content::Value*& src, content::Object& out) -> content::error_kind {
         if(!src)
             return content::error_kind::type_mismatch;
@@ -241,6 +241,110 @@ struct custom_deserialize<content::content_backend, content::Object> {
             return content::error_kind::type_mismatch;
         out = *obj;
         return content::error_kind::ok;
+    }
+};
+
+/// Generic deserialize_traits for content::Value from any DOM backend with kind_of support.
+/// The full specialization for content_backend above takes priority (more efficient copy path).
+template <typename Backend>
+    requires requires(typename Backend::value_type& v) {
+        { Backend::kind_of(v) } -> std::same_as<meta::type_kind>;
+    }
+struct deserialize_traits<Backend, content::Value> {
+    static auto read(typename Backend::value_type& val, content::Value& out)
+        -> typename Backend::error_type {
+        auto kind = Backend::kind_of(val);
+
+        if(kind == meta::type_kind::null) {
+            bool is_null = false;
+            auto err = Backend::read_is_null(val, is_null);
+            if(err != Backend::success)
+                return err;
+            out = content::Value(nullptr);
+            return Backend::success;
+        }
+        if(kind == meta::type_kind::boolean) {
+            bool b = false;
+            auto err = Backend::read_bool(val, b);
+            if(err != Backend::success)
+                return err;
+            out = content::Value(b);
+            return Backend::success;
+        }
+        if(kind == meta::type_kind::uint64) {
+            std::uint64_t u = 0;
+            auto err = Backend::read_uint64(val, u);
+            if(err != Backend::success)
+                return err;
+            out = content::Value(u);
+            return Backend::success;
+        }
+        if(meta::is_integer_kind(kind)) {
+            std::int64_t i = 0;
+            auto err = Backend::read_int64(val, i);
+            if(err != Backend::success)
+                return err;
+            out = content::Value(i);
+            return Backend::success;
+        }
+        if(meta::is_floating_kind(kind)) {
+            double d = 0.0;
+            auto err = Backend::read_double(val, d);
+            if(err != Backend::success)
+                return err;
+            out = content::Value(d);
+            return Backend::success;
+        }
+        if(kind == meta::type_kind::string) {
+            std::string_view sv;
+            auto err = Backend::read_string(val, sv);
+            if(err != Backend::success)
+                return err;
+            out = content::Value(std::string(sv));
+            return Backend::success;
+        }
+        if(meta::is_sequence_kind(kind)) {
+            content::Array arr;
+            struct array_visitor {
+                content::Array& arr;
+                typename Backend::error_type visit_element(typename Backend::value_type& elem) {
+                    content::Value v;
+                    auto err = deserialize_traits::read(elem, v);
+                    if(err != Backend::success)
+                        return err;
+                    arr.push_back(std::move(v));
+                    return Backend::success;
+                }
+            };
+            array_visitor vis{arr};
+            auto err = Backend::visit_array(val, vis);
+            if(err != Backend::success)
+                return err;
+            out = content::Value(std::move(arr));
+            return Backend::success;
+        }
+        if(meta::is_object_kind(kind)) {
+            content::Object obj;
+            struct object_visitor {
+                content::Object& obj;
+                typename Backend::error_type visit_field(std::string_view key,
+                                                        typename Backend::value_type& field_val) {
+                    content::Value v;
+                    auto err = deserialize_traits::read(field_val, v);
+                    if(err != Backend::success)
+                        return err;
+                    obj.insert(std::string(key), std::move(v));
+                    return Backend::success;
+                }
+            };
+            object_visitor vis{obj};
+            auto err = Backend::visit_object(val, vis);
+            if(err != Backend::success)
+                return err;
+            out = content::Value(std::move(obj));
+            return Backend::success;
+        }
+        return Backend::type_mismatch;
     }
 };
 

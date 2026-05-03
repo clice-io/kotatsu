@@ -259,7 +259,7 @@ struct simdjson_backend {
 
 /// Config-aware simdjson backend: inherits all functionality from simdjson_backend
 /// but carries a config_type that deserialize() can extract for field renaming, etc.
-/// The base_backend_type allows custom_deserialize specializations for simdjson_backend
+/// The base_backend_type allows deserialize_traits specializations for simdjson_backend
 /// to be found when the config-aware variant is used.
 template <typename Config>
 struct simdjson_backend_with_config : simdjson_backend {
@@ -484,9 +484,9 @@ auto from_document(simdjson::ondemand::parser& parser,
 
     // Scalar documents cannot be converted to value — handle directly
     if(err == simdjson::SCALAR_DOCUMENT_AS_VALUE) {
-        // For types with custom_deserialize or annotated types, re-parse
+        // For types with deserialize_traits or annotated types, re-parse
         // the scalar wrapped in a JSON array to obtain a value instance.
-        if constexpr(codec::has_custom_deserialize<Backend, U> || meta::annotated_type<U>) {
+        if constexpr(codec::has_deserialize_traits<Backend, U> || meta::annotated_type<U>) {
             std::string wrapped;
             wrapped.reserve(json.length() + 2);
             wrapped += '[';

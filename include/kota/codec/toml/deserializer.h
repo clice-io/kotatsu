@@ -26,6 +26,10 @@
 #error "toml++/toml.hpp not found. Enable KOTA_CODEC_ENABLE_TOML or add tomlplusplus include paths."
 #endif
 
+namespace kota::codec::content {
+class Value;
+}  // namespace kota::codec::content
+
 namespace kota::codec::toml {
 
 namespace detail {
@@ -330,7 +334,8 @@ constexpr bool is_map_like_v = is_map_like<T>();
 template <typename T>
 constexpr bool root_table_v = (meta::reflectable_class<T> && !is_pair_v<T> && !is_tuple_v<T> &&
                                !std::ranges::input_range<T>) ||
-                              is_map_like_v<T> || std::same_as<T, ::toml::table>;
+                              is_map_like_v<T> || std::same_as<T, ::toml::table> ||
+                              std::same_as<T, content::Value>;
 
 template <typename T>
 auto select_root_node(const ::toml::table& table) -> const ::toml::node* {

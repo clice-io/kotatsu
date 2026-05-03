@@ -8,6 +8,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "kota/codec/content/deserializer.h"
+#include "kota/codec/content/document.h"
 #include "kota/codec/toml/deserializer.h"
 #include "kota/codec/toml/error.h"
 #include "kota/codec/toml/serializer.h"
@@ -80,9 +82,9 @@ struct serialize_traits<toml::Serializer<Config>, T> {
     }
 };
 
-/// custom_deserialize for ::toml::table: copy the table node directly
+/// deserialize_traits for ::toml::table: copy the table node directly
 template <>
-struct custom_deserialize<toml::toml_backend, ::toml::table> {
+struct deserialize_traits<toml::toml_backend, ::toml::table> {
     static auto read(const ::toml::node*& src, ::toml::table& out) -> toml::error_kind {
         if(!src)
             return toml::error_kind::type_mismatch;
@@ -94,9 +96,9 @@ struct custom_deserialize<toml::toml_backend, ::toml::table> {
     }
 };
 
-/// custom_deserialize for ::toml::array: copy the array node directly
+/// deserialize_traits for ::toml::array: copy the array node directly
 template <>
-struct custom_deserialize<toml::toml_backend, ::toml::array> {
+struct deserialize_traits<toml::toml_backend, ::toml::array> {
     static auto read(const ::toml::node*& src, ::toml::array& out) -> toml::error_kind {
         if(!src)
             return toml::error_kind::type_mismatch;

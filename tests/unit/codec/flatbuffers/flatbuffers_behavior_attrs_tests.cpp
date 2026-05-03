@@ -146,7 +146,7 @@ TEST_CASE(with_adapter_roundtrip_empty_optional) {
 }  // namespace kota::codec
 
 // ============================================================================
-// Type-level traits tests: codec::serialize_traits<T> / deserialize_traits<T>
+// Type-level traits tests: codec::serialize_traits<T> / decode_traits<T>
 // ----------------------------------------------------------------------------
 // Verifies that a type-level traits specialization propagates through the
 // arena codec dispatch AND the flatbuffers proxy layer, without requiring
@@ -200,7 +200,7 @@ private:
 }  // namespace kota_test_type_traits
 
 // Type-level traits specializations — partially specialize the primary
-// `kota::codec::serialize_traits<S, T>` / `deserialize_traits<D, T>`,
+// `kota::codec::serialize_traits<S, T>` / `decode_traits<D, T>`,
 // constrained so only arena backends pick up these specializations.
 namespace kota::codec {
 
@@ -216,7 +216,7 @@ struct serialize_traits<S, kota_test_type_traits::Tag> {
 
 template <typename D>
     requires arena::arena_deserializer_like<D>
-struct deserialize_traits<D, kota_test_type_traits::Tag> {
+struct decode_traits<D, kota_test_type_traits::Tag> {
     using wire_type = std::uint32_t;
 
     static auto deserialize(const D&, std::uint32_t wire) -> kota_test_type_traits::Tag {
@@ -236,7 +236,7 @@ struct serialize_traits<S, kota_test_type_traits::ByteBag> {
 
 template <typename D>
     requires arena::arena_deserializer_like<D>
-struct deserialize_traits<D, kota_test_type_traits::ByteBag> {
+struct decode_traits<D, kota_test_type_traits::ByteBag> {
     using wire_type = std::vector<std::byte>;
 
     static auto deserialize(const D&, std::vector<std::byte> wire)
@@ -338,7 +338,7 @@ TEST_CASE(type_traits_proxy_lazy_scalar_access) {
 
     // Proxy sees the wire type (uint32_t) — the user calls deserialize
     // themselves when they need the adapted type. Equivalent to:
-    //   deserialize_traits<Tag>::deserialize(root[&TypeTraitsRoot::root_tag])
+    //   decode_traits<Tag>::deserialize(root[&TypeTraitsRoot::root_tag])
     const std::uint32_t wire_tag = root[&TypeTraitsRoot::root_tag];
     EXPECT_EQ(wire_tag, 777U);
 
