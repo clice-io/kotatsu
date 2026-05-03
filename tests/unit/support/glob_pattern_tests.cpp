@@ -6,9 +6,10 @@ namespace kota {
 namespace {
 
 #define PATDEF(NAME, PAT)                                                                          \
-    auto Res##NAME = kota::GlobPattern::create(PAT, 100);                                         \
+    auto Res##NAME = kota::GlobPattern::create(PAT, 100);                                          \
     EXPECT_TRUE(Res##NAME.has_value());                                                            \
-    if(!Res##NAME.has_value()) return;                                                             \
+    if(!Res##NAME.has_value())                                                                     \
+        return;                                                                                    \
     auto NAME = std::move(*Res##NAME);
 
 TEST_SUITE(GlobPattern) {

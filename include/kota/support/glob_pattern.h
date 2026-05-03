@@ -241,7 +241,7 @@ inline std::expected<small_vector<std::string, 1>, std::string>
 }  // namespace detail
 
 inline std::expected<GlobPattern, std::string> GlobPattern::create(std::string_view s,
-                                                                    size_t max_subpattern_num) {
+                                                                   size_t max_subpattern_num) {
     GlobPattern pat;
     size_t prefix_size = s.find_first_of("?*[{\\");
     auto check_consecutive_slashes = [](std::string_view str) -> bool {
@@ -295,7 +295,7 @@ inline std::expected<GlobPattern, std::string> GlobPattern::create(std::string_v
 inline std::expected<GlobPattern::SubGlobPattern, std::string>
     GlobPattern::SubGlobPattern::create(std::string_view s) {
     SubGlobPattern pat;
-    small_vector<GlobSegment, 0> glob_segments;
+    small_vector<GlobSegment, 6> glob_segments;
     GlobSegment* current_gs = &glob_segments.emplace_back();
     current_gs->start = 0;
     pat.pat.assign(s);
