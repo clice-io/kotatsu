@@ -25,12 +25,7 @@ using IntTagShape =
     meta::annotation<std::variant<Circle, Rect>,
                      meta::attrs::internally_tagged<"type">::names<"circle", "rect">>;
 
-template <typename T>
-auto from_content(const content::Value& val, T& out) -> std::expected<void, content::error> {
-    content::Deserializer<> d(val);
-    KOTA_EXPECTED_TRY(codec::deserialize(d, out));
-    return d.finish();
-}
+using content::from_content;
 
 TEST_SUITE(serde_content_variant) {
 

@@ -80,33 +80,31 @@ struct serialize_traits<toml::Serializer<Config>, T> {
     }
 };
 
-template <typename Config>
-struct deserialize_traits<toml::Deserializer<Config>, ::toml::table> {
-    using error_type = toml::Deserializer<Config>::error_type;
-
-    static auto deserialize(toml::Deserializer<Config>& deserializer, ::toml::table& value)
-        -> std::expected<void, error_type> {
-        auto table = deserializer.capture_table();
-        if(!table) {
-            return std::unexpected(table.error());
-        }
-        value = std::move(*table);
-        return {};
+/// custom_deserialize for ::toml::table: copy the table node directly
+template <>
+struct custom_deserialize<toml::toml_backend, ::toml::table> {
+    static auto read(const ::toml::node*& src, ::toml::table& out) -> toml::error_kind {
+        if(!src)
+            return toml::error_kind::type_mismatch;
+        const auto* tbl = src->as_table();
+        if(!tbl)
+            return toml::error_kind::type_mismatch;
+        out = *tbl;
+        return toml::error_kind::ok;
     }
 };
 
-template <typename Config>
-struct deserialize_traits<toml::Deserializer<Config>, ::toml::array> {
-    using error_type = toml::Deserializer<Config>::error_type;
-
-    static auto deserialize(toml::Deserializer<Config>& deserializer, ::toml::array& value)
-        -> std::expected<void, error_type> {
-        auto array = deserializer.capture_array();
-        if(!array) {
-            return std::unexpected(array.error());
-        }
-        value = std::move(*array);
-        return {};
+/// custom_deserialize for ::toml::array: copy the array node directly
+template <>
+struct custom_deserialize<toml::toml_backend, ::toml::array> {
+    static auto read(const ::toml::node*& src, ::toml::array& out) -> toml::error_kind {
+        if(!src)
+            return toml::error_kind::type_mismatch;
+        const auto* arr = src->as_array();
+        if(!arr)
+            return toml::error_kind::type_mismatch;
+        out = *arr;
+        return toml::error_kind::ok;
     }
 };
 

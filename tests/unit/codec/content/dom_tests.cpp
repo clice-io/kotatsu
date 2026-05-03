@@ -407,14 +407,8 @@ TEST_CASE(content_deserializer_keeps_temporary_root_value_alive) {
     };
 
     dom_payload payload{};
-    content::Deserializer deserializer(make_dom());
-    ASSERT_TRUE(deserializer.valid());
-
-    auto status = codec::deserialize(deserializer, payload);
+    auto status = content::from_content(make_dom(), payload);
     ASSERT_TRUE(status.has_value());
-
-    auto finish = deserializer.finish();
-    ASSERT_TRUE(finish.has_value());
     EXPECT_EQ(payload, (dom_payload{.id = 7, .name = "alice"}));
 }
 

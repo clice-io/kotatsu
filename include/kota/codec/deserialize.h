@@ -61,6 +61,23 @@ concept has_custom_deserialize =
         } -> std::same_as<typename Backend::error_type>;
     };
 
+/// Indexed variant deserialization: read a uint32 index, then deserialize the selected alternative.
+/// Used by positional backends (e.g. bincode) where variants are tagged by integer index.
+template <typename Backend, typename... Ts>
+auto deserialize_variant_indexed(typename Backend::value_type& src, std::variant<Ts...>& out)
+    -> typename Backend::error_type;
+
+/// Positional tuple deserialization: read elements directly without array framing.
+template <typename Backend, typename TupleT, std::size_t... Is>
+auto deserialize_tuple_positional(typename Backend::value_type& src, TupleT& out,
+                                   std::index_sequence<Is...>)
+    -> typename Backend::error_type;
+
+/// Positional map deserialization: length-prefixed sequence of key-value pairs.
+template <typename Backend, typename MapT>
+auto deserialize_map_positional(typename Backend::value_type& src, MapT& out)
+    -> typename Backend::error_type;
+
 /// Core dispatch: deserialize<Backend>(source, T& out) -> Backend::error_type
 template <typename Backend, typename T>
 auto deserialize(typename Backend::value_type& src, T& out) -> typename Backend::error_type {
@@ -241,43 +258,68 @@ auto deserialize(typename Backend::value_type& src, T& out) -> typename Backend:
     }
     // 12. bytes (vector<byte>)
     else if constexpr(std::same_as<U, std::vector<std::byte>>) {
-        out.clear();
-        struct byte_visitor {
-            std::vector<std::byte>& out;
+        // Positional backends may have a dedicated read_bytes method
+        if constexpr(requires(typename Backend::value_type& v, std::vector<std::byte>& b) {
+                         { Backend::read_bytes(v, b) } -> std::same_as<E>;
+                     }) {
+            return Backend::read_bytes(src, out);
+        } else {
+            out.clear();
+            struct byte_visitor {
+                std::vector<std::byte>& out;
 
-            E visit_element(typename Backend::value_type& val) {
-                std::uint64_t byte_val = 0;
-                auto err = Backend::read_uint64(val, byte_val);
-                if(err != Backend::success)
-                    return err;
-                if(byte_val > 255)
-                    return Backend::number_out_of_range;
-                out.push_back(static_cast<std::byte>(static_cast<std::uint8_t>(byte_val)));
-                return Backend::success;
-            }
-        };
-        byte_visitor vis{out};
-        return Backend::visit_array(src, vis);
+                E visit_element(typename Backend::value_type& val) {
+                    std::uint64_t byte_val = 0;
+                    auto err = Backend::read_uint64(val, byte_val);
+                    if(err != Backend::success)
+                        return err;
+                    if(byte_val > 255)
+                        return Backend::number_out_of_range;
+                    out.push_back(static_cast<std::byte>(static_cast<std::uint8_t>(byte_val)));
+                    return Backend::success;
+                }
+            };
+            byte_visitor vis{out};
+            return Backend::visit_array(src, vis);
+        }
     }
-    // 13. Variant (untagged)
+    // 13. Variant (untagged or indexed)
     else if constexpr(is_specialization_of<std::variant, U>) {
-        return deserialize_variant_untagged<Backend, config::config_of<Backend>>(src, out);
+        // Positional backends use integer indices for variants
+        if constexpr(requires(typename Backend::value_type& v, std::uint32_t& idx) {
+                         { Backend::read_variant_index(v, idx) } -> std::same_as<E>;
+                     }) {
+            return deserialize_variant_indexed<Backend>(src, out);
+        } else {
+            return deserialize_variant_untagged<Backend, config::config_of<Backend>>(src, out);
+        }
     }
     // 14. Tuple (includes std::array, std::pair, std::tuple)
     else if constexpr(meta::tuple_like<U>) {
-        tuple_visitor<Backend, U> vis{out};
-        auto err = Backend::visit_array(src, vis);
-        if(err != Backend::success)
-            return err;
-        return vis.finish();
+        // Positional backends: read elements directly without array framing
+        if constexpr(positional_backend<Backend>) {
+            return deserialize_tuple_positional<Backend>(src, out,
+                std::make_index_sequence<std::tuple_size_v<U>>{});
+        } else {
+            tuple_visitor<Backend, U> vis{out};
+            auto err = Backend::visit_array(src, vis);
+            if(err != Backend::success)
+                return err;
+            return vis.finish();
+        }
     }
     // 15. Range types (sequence and map)
     else if constexpr(std::ranges::input_range<U>) {
         constexpr auto kind = format_kind<U>;
         if constexpr(kind == range_format::map) {
-            out.clear();
-            map_visitor<Backend, U> vis{out};
-            return Backend::visit_object(src, vis);
+            // Positional backends: maps are length-prefixed sequences of key-value pairs
+            if constexpr(positional_backend<Backend>) {
+                return deserialize_map_positional<Backend>(src, out);
+            } else {
+                out.clear();
+                map_visitor<Backend, U> vis{out};
+                return Backend::visit_object(src, vis);
+            }
         } else {
             if constexpr(requires { out.clear(); }) {
                 out.clear();
@@ -320,6 +362,87 @@ auto deserialize(typename Backend::value_type& src, T& out) -> typename Backend:
         // fail at runtime instead of preventing compilation.
         return Backend::type_mismatch;
     }
+}
+
+/// Implementation: indexed variant deserialization
+template <typename Backend, typename... Ts>
+auto deserialize_variant_indexed(typename Backend::value_type& src, std::variant<Ts...>& out)
+    -> typename Backend::error_type {
+    using E = typename Backend::error_type;
+    std::uint32_t index = 0;
+    auto err = Backend::read_variant_index(src, index);
+    if(err != Backend::success)
+        return err;
+
+    constexpr std::size_t variant_size = sizeof...(Ts);
+    if(index >= variant_size)
+        return Backend::type_mismatch;
+
+    E result = Backend::type_mismatch;
+    [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+        (void)((Is == index ? (result = [&] {
+                                   using alt_t = std::variant_alternative_t<Is, std::variant<Ts...>>;
+                                   if constexpr(std::same_as<alt_t, std::monostate>) {
+                                       out.template emplace<Is>();
+                                       return Backend::success;
+                                   } else if constexpr(std::default_initializable<alt_t>) {
+                                       alt_t alt{};
+                                       auto e = deserialize<Backend>(src, alt);
+                                       if(e != Backend::success)
+                                           return e;
+                                       out = std::move(alt);
+                                       return Backend::success;
+                                   } else {
+                                       return Backend::type_mismatch;
+                                   }
+                               }(),
+                               true)
+                            : false) ||
+               ...);
+    }(std::index_sequence_for<Ts...>{});
+    return result;
+}
+
+/// Implementation: positional tuple deserialization
+template <typename Backend, typename TupleT, std::size_t... Is>
+auto deserialize_tuple_positional(typename Backend::value_type& src, TupleT& out,
+                                   std::index_sequence<Is...>)
+    -> typename Backend::error_type {
+    typename Backend::error_type err = Backend::success;
+    (void)((err = deserialize<Backend>(src, std::get<Is>(out)), err == Backend::success) && ...);
+    return err;
+}
+
+/// Implementation: positional map deserialization
+template <typename Backend, typename MapT>
+auto deserialize_map_positional(typename Backend::value_type& src, MapT& out)
+    -> typename Backend::error_type {
+    using key_t = typename MapT::key_type;
+    using mapped_t = typename MapT::mapped_type;
+
+    if constexpr(requires { out.clear(); }) {
+        out.clear();
+    }
+
+    // Read via visit_array (which handles the length prefix)
+    struct map_pair_visitor {
+        MapT& out;
+
+        typename Backend::error_type visit_element(typename Backend::value_type& val) {
+            key_t key{};
+            auto err = deserialize<Backend>(val, key);
+            if(err != Backend::success)
+                return err;
+            mapped_t mapped{};
+            err = deserialize<Backend>(val, mapped);
+            if(err != Backend::success)
+                return err;
+            kota::detail::insert_map_entry(out, std::move(key), std::move(mapped));
+            return Backend::success;
+        }
+    };
+    map_pair_visitor vis{out};
+    return Backend::visit_array(src, vis);
 }
 
 }  // namespace kota::codec

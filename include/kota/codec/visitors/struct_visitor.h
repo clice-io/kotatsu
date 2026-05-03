@@ -1,5 +1,6 @@
 #pragma once
 
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -216,23 +217,82 @@ auto deserialize_field(typename Backend::value_type& val, RawT& field_ref)
     }
 }
 
+/// positional_struct_visitor: reads fields in schema order for positional backends (e.g. bincode)
+template <typename Backend, typename T, typename Config = meta::default_config>
+struct positional_struct_visitor {
+    using E = typename Backend::error_type;
+    using schema = meta::virtual_schema<T, Config>;
+    using slots = typename schema::slots;
+    static constexpr std::size_t N = type_list_size_v<slots>;
+
+    T& out;
+
+    E visit_all_positional(typename Backend::value_type& val) {
+        return visit_impl(val, std::make_index_sequence<N>{});
+    }
+
+private:
+    template <std::size_t... Is>
+    E visit_impl(typename Backend::value_type& val, std::index_sequence<Is...>) {
+        E err = Backend::success;
+        (void)((err = visit_at<Is>(val), err == Backend::success) && ...);
+        return err;
+    }
+
+    template <std::size_t I>
+    E visit_at(typename Backend::value_type& val) {
+        using slot_t = type_list_element_t<I, slots>;
+        using raw_t = std::remove_cv_t<typename slot_t::raw_type>;
+        using attrs_t = typename slot_t::attrs;
+
+        constexpr std::size_t offset = schema::fields[I].offset;
+        auto* base = reinterpret_cast<std::byte*>(std::addressof(out));
+        auto& field_ref = *reinterpret_cast<raw_t*>(base + offset);
+
+        // Handle skip_if: for positional formats, we still need to read and discard
+        if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
+            using pred = typename tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
+            if(meta::evaluate_skip_predicate<pred>(field_ref, false)) {
+                // Discard by reading into a temporary
+                raw_t discard{};
+                return deserialize<Backend>(val, discard);
+            }
+        }
+
+        return deserialize_field<Backend, raw_t, attrs_t>(val, field_ref);
+    }
+};
+
+/// Concept: backend supports positional struct layout
+template <typename Backend>
+concept positional_backend = requires {
+    { Backend::positional } -> std::convertible_to<bool>;
+    requires Backend::positional;
+};
+
 /// deserialize_struct: entry point for struct deserialization
 template <typename Backend, typename T, typename Config = meta::default_config>
 auto deserialize_struct(typename Backend::value_type& src, T& out)
     -> typename Backend::error_type {
-    // Detect ambiguous wire names (e.g. alias conflicts) at compile time.
-    if constexpr(detail::schema_has_ambiguous_wire_names<T, Config>()) {
-        if constexpr(requires { Backend::invalid_state; }) {
-            return Backend::invalid_state;
-        } else {
-            return Backend::type_mismatch;
-        }
+    if constexpr(positional_backend<Backend>) {
+        // Positional backend: read fields in schema order
+        positional_struct_visitor<Backend, T, Config> vis{out};
+        return Backend::visit_struct_positional(src, vis);
     } else {
-        struct_visitor<Backend, T, Config> vis{out};
-        auto err = Backend::visit_object(src, vis);
-        if(err != Backend::success)
-            return err;
-        return vis.finish();
+        // Detect ambiguous wire names (e.g. alias conflicts) at compile time.
+        if constexpr(detail::schema_has_ambiguous_wire_names<T, Config>()) {
+            if constexpr(requires { Backend::invalid_state; }) {
+                return Backend::invalid_state;
+            } else {
+                return Backend::type_mismatch;
+            }
+        } else {
+            struct_visitor<Backend, T, Config> vis{out};
+            auto err = Backend::visit_object(src, vis);
+            if(err != Backend::success)
+                return err;
+            return vis.finish();
+        }
     }
 }
 
