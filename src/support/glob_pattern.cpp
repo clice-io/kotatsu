@@ -1,20 +1,28 @@
 #include "kota/support/glob_pattern.h"
 
+#include <format>
+#include <optional>
+
 #include "kota/support/expected_try.h"
 
 namespace kota {
 
 namespace detail {
 
-std::expected<GlobCharSet, std::string> parse_bracket_charset(std::string_view s) {
+std::expected<GlobCharSet, GlobError> parse_bracket_charset(std::string_view s) {
     GlobCharSet bv{};
 
-    for(size_t i = 0, e = s.size(); i < e; ++i) {
+    for(uint32_t i = 0, e = static_cast<uint32_t>(s.size()); i < e; ++i) {
         switch(s[i]) {
             case '\\': {
+                auto backslash_pos = i;
                 ++i;
                 if(i == e) [[unlikely]] {
-                    return std::unexpected{"Invalid expansions: stray `\\`"};
+                    return std::unexpected{
+                        GlobError{GlobError::StrayBackslash,
+                                  backslash_pos, backslash_pos + 1,
+                                  "stray `\\`"}
+                    };
                 }
                 if(s[i] != '/') {
                     bv.set(static_cast<uint8_t>(s[i]), true);
@@ -27,19 +35,29 @@ std::expected<GlobCharSet, std::string> parse_bracket_charset(std::string_view s
                     bv.set('-', true);
                     break;
                 }
+                auto dash_pos = i;
                 char c_begin = s[i - 1];
                 char c_end = s[i + 1];
                 ++i;
                 if(c_end == '\\') {
+                    auto backslash_pos = i;
                     ++i;
                     if(i == e) [[unlikely]] {
-                        return std::unexpected{"Invalid expansions: stray `\\`"};
+                        return std::unexpected{
+                            GlobError{GlobError::StrayBackslash,
+                                      backslash_pos, backslash_pos + 1,
+                                      "stray `\\`"}
+                        };
                     }
                     c_end = s[i];
                 }
                 if(c_begin > c_end) [[unlikely]] {
                     return std::unexpected{
-                        std::format("Invalid expansion: `{}` is larger than `{}`", c_begin, c_end)};
+                        GlobError{GlobError::InvalidRange,
+                                  dash_pos - 1,
+                                  dash_pos + 2,
+                                  std::format("`{}` is larger than `{}`", c_begin, c_end)}
+                    };
                 }
                 for(int c = static_cast<uint8_t>(c_begin); c <= static_cast<uint8_t>(c_end); ++c) {
                     if(c != '/') {
@@ -60,7 +78,7 @@ std::expected<GlobCharSet, std::string> parse_bracket_charset(std::string_view s
     return bv;
 }
 
-std::expected<small_vector<std::string, 1>, std::string>
+std::expected<small_vector<std::string, 1>, GlobError>
     glob_parse_brace_expansions(std::string_view s, size_t max_subpattern_num) {
     small_vector<std::string, 1> subpatterns;
     subpatterns.emplace_back(s);
@@ -69,40 +87,57 @@ std::expected<small_vector<std::string, 1>, std::string>
     }
 
     struct BraceExpansion {
-        size_t start;
-        size_t length;
+        uint32_t start;
+        uint32_t length;
         small_vector<std::string_view, 2> terms;
     };
 
     small_vector<BraceExpansion, 0> brace_expansions;
 
     BraceExpansion* current_be = nullptr;
-    size_t term_begin = 0;
-    for(size_t i = 0, e = s.size(); i != e; ++i) {
+    uint32_t term_begin = 0;
+    for(uint32_t i = 0, e = static_cast<uint32_t>(s.size()); i != e; ++i) {
         if(s[i] == '[') {
+            auto bracket_pos = i;
             ++i;
             if(i == e) [[unlikely]] {
-                return std::unexpected{"Invalid glob pattern, unmatched `[`"};
+                return std::unexpected{
+                    GlobError{GlobError::UnmatchedBracket,
+                              bracket_pos, bracket_pos + 1,
+                              "unmatched `[`"}
+                };
             }
             if(s[i] == ']') {
                 ++i;
             }
             while(i != e && s[i] != ']') {
                 if(s[i] == '\\') {
+                    auto backslash_pos = i;
                     ++i;
                     if(i == e) [[unlikely]] {
                         return std::unexpected{
-                            "Invalid glob pattern, unmatched `[`, with stray `\\` inside"};
+                            GlobError{GlobError::StrayBackslash,
+                                      backslash_pos, backslash_pos + 1,
+                                      "unmatched `[` with stray `\\` inside"}
+                        };
                     }
                 }
                 ++i;
             }
             if(i == e) [[unlikely]] {
-                return std::unexpected{"Invalid glob pattern, unmatched `[`"};
+                return std::unexpected{
+                    GlobError{GlobError::UnmatchedBracket,
+                              bracket_pos, bracket_pos + 1,
+                              "unmatched `[`"}
+                };
             }
         } else if(s[i] == '{') {
             if(current_be) [[unlikely]] {
-                return std::unexpected{"Nested brace expansions are not supported"};
+                return std::unexpected{
+                    GlobError{GlobError::NestedBrace,
+                              i, i + 1,
+                              "nested brace expansions are not supported"}
+                };
             }
             current_be = &brace_expansions.emplace_back();
             current_be->start = i;
@@ -118,21 +153,36 @@ std::expected<small_vector<std::string, 1>, std::string>
                 continue;
             }
             if(current_be->terms.empty() && i - term_begin == 0) [[unlikely]] {
-                return std::unexpected{"Empty brace expression is not supported"};
+                return std::unexpected{
+                    GlobError{GlobError::EmptyBrace,
+                              current_be->start,
+                              i + 1,
+                              "empty brace expression"}
+                };
             }
             current_be->terms.push_back(s.substr(term_begin, i - term_begin));
             current_be->length = i - current_be->start + 1;
             current_be = nullptr;
         } else if(s[i] == '\\') {
+            auto backslash_pos = i;
             ++i;
             if(i == e) [[unlikely]] {
-                return std::unexpected{"Invalid glob pattern, stray `\\`"};
+                return std::unexpected{
+                    GlobError{GlobError::StrayBackslash,
+                              backslash_pos, backslash_pos + 1,
+                              "stray `\\`"}
+                };
             }
         }
     }
 
     if(current_be) [[unlikely]] {
-        return std::unexpected{"Incomplete brace expansion"};
+        return std::unexpected{
+            GlobError{GlobError::IncompleteBrace,
+                      current_be->start,
+                      current_be->start + 1,
+                      "incomplete brace expansion"}
+        };
     }
 
     size_t subpattern_num = 1;
@@ -145,7 +195,9 @@ std::expected<small_vector<std::string, 1>, std::string>
     }
 
     if(subpattern_num > max_subpattern_num) [[unlikely]] {
-        return std::unexpected{"Too many brace expansions"};
+        return std::unexpected{
+            GlobError{GlobError::TooManyExpansions, 0, 0, "too many brace expansions"}
+        };
     }
 
     for(auto& be: brace_expansions | std::views::reverse) {
@@ -163,29 +215,34 @@ std::expected<small_vector<std::string, 1>, std::string>
 
 }  // namespace detail
 
-std::expected<GlobPattern, std::string> GlobPattern::create(std::string_view s,
-                                                            size_t max_subpattern_num) {
+std::expected<GlobPattern, GlobError> GlobPattern::create(std::string_view s,
+                                                          size_t max_subpattern_num) {
     GlobPattern pat;
     size_t prefix_size = s.find_first_of("?*[{\\");
-    auto check_consecutive_slashes = [](std::string_view str) -> bool {
+    auto check_consecutive_slashes = [](std::string_view str) -> std::optional<uint32_t> {
         bool prev_was_slash = false;
-        for(char c: str) {
-            if(c == '/') {
+        for(uint32_t i = 0, e = static_cast<uint32_t>(str.size()); i < e; ++i) {
+            if(str[i] == '/') {
                 if(prev_was_slash) {
-                    return true;
+                    return i;
                 }
                 prev_was_slash = true;
             } else {
                 prev_was_slash = false;
             }
         }
-        return false;
+        return std::nullopt;
     };
 
     if(prefix_size == std::string_view::npos) {
         pat.prefix = std::string(s);
-        if(check_consecutive_slashes(pat.prefix)) [[unlikely]] {
-            return std::unexpected{"Multiple `/` is not allowed"};
+        if(auto pos = check_consecutive_slashes(pat.prefix)) [[unlikely]] {
+            return std::unexpected{
+                GlobError{GlobError::MultipleSlash,
+                          *pos - 1,
+                          *pos + 1,
+                          "multiple `/` is not allowed"}
+            };
         }
         return pat;
     }
@@ -194,8 +251,10 @@ std::expected<GlobPattern, std::string> GlobPattern::create(std::string_view s,
         --prefix_size;
     }
     pat.prefix = std::string(s.substr(0, prefix_size));
-    if(check_consecutive_slashes(pat.prefix)) [[unlikely]] {
-        return std::unexpected{"Multiple `/` is not allowed"};
+    if(auto pos = check_consecutive_slashes(pat.prefix)) [[unlikely]] {
+        return std::unexpected{
+            GlobError{GlobError::MultipleSlash, *pos - 1, *pos + 1, "multiple `/` is not allowed"}
+        };
     }
     s = s.substr(pat.prefix_at_seg_end ? prefix_size + 1 : prefix_size);
 
@@ -209,7 +268,7 @@ std::expected<GlobPattern, std::string> GlobPattern::create(std::string_view s,
     return pat;
 }
 
-std::expected<GlobPattern::SubGlobPattern, std::string>
+std::expected<GlobPattern::SubGlobPattern, GlobError>
     GlobPattern::SubGlobPattern::create(std::string_view s) {
     SubGlobPattern pat;
     small_vector<GlobSegment, 6> glob_segments;
@@ -217,14 +276,17 @@ std::expected<GlobPattern::SubGlobPattern, std::string>
     current_gs->start = 0;
     pat.pat.assign(s);
 
-    size_t e = s.size();
+    uint32_t e = static_cast<uint32_t>(s.size());
 
-    // Helper to parse a bracket expression starting after the '['.
-    // Returns the index of the closing ']', or an error.
-    auto parse_bracket = [&](size_t i) -> std::expected<size_t, std::string> {
-        size_t j = i;
+    auto parse_bracket = [&](uint32_t i) -> std::expected<uint32_t, GlobError> {
+        auto bracket_pos = i - 1;
+        uint32_t j = i;
         if(j == e) [[unlikely]] {
-            return std::unexpected{"Invalid glob pattern, unmatched `[`"};
+            return std::unexpected{
+                GlobError{GlobError::UnmatchedBracket,
+                          bracket_pos, bracket_pos + 1,
+                          "unmatched `[`"}
+            };
         }
         if(s[j] == ']') {
             ++j;
@@ -234,13 +296,20 @@ std::expected<GlobPattern::SubGlobPattern, std::string>
             if(s[j - 1] == '\\') {
                 if(j == e) [[unlikely]] {
                     return std::unexpected{
-                        "Invalid glob pattern, unmatched `[` with stray `\\` inside"};
+                        GlobError{GlobError::StrayBackslash,
+                                  j - 1,
+                                  j, "unmatched `[` with stray `\\` inside"}
+                    };
                 }
                 ++j;
             }
         }
         if(j == e) [[unlikely]] {
-            return std::unexpected{"Invalid glob pattern, unmatched `[`"};
+            return std::unexpected{
+                GlobError{GlobError::UnmatchedBracket,
+                          bracket_pos, bracket_pos + 1,
+                          "unmatched `[`"}
+            };
         }
 
         std::string_view chars = s.substr(i, j - i);
@@ -258,7 +327,7 @@ std::expected<GlobPattern::SubGlobPattern, std::string>
         return j;
     };
 
-    for(size_t i = 0; i < e; ++i) {
+    for(uint32_t i = 0; i < e; ++i) {
         if(!current_gs) {
             current_gs = &glob_segments.emplace_back();
             current_gs->start = i;
@@ -270,18 +339,30 @@ std::expected<GlobPattern::SubGlobPattern, std::string>
             }
             i = *result;
         } else if(s[i] == '\\') {
+            auto backslash_pos = i;
             if(++i == e) [[unlikely]] {
-                return std::unexpected{"Invalid glob pattern, stray `\\`"};
+                return std::unexpected{
+                    GlobError{GlobError::StrayBackslash,
+                              backslash_pos, backslash_pos + 1,
+                              "stray `\\`"}
+                };
             }
         } else if(s[i] == '/') {
             if(i > 0 && s[i - 1] == '/') [[unlikely]] {
-                return std::unexpected{"Multiple `/` is not allowed"};
+                return std::unexpected{
+                    GlobError{GlobError::MultipleSlash,
+                              i - 1,
+                              i + 1,
+                              "multiple `/` is not allowed"}
+                };
             }
             current_gs->end = i;
             current_gs = nullptr;
         } else if(s[i] == '*') {
             if(i + 2 < e && s[i + 1] == '*' && s[i + 2] == '*') [[unlikely]] {
-                return std::unexpected{"Multiple `*` is not allowed"};
+                return std::unexpected{
+                    GlobError{GlobError::MultipleStar, i, i + 3, "multiple `*` is not allowed"}
+                };
             }
         }
     }

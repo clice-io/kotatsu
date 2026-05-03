@@ -1,8 +1,8 @@
 #pragma once
 
 #include <bitset>
+#include <cstdint>
 #include <expected>
-#include <format>
 #include <limits>
 #include <ranges>
 #include <string>
@@ -13,13 +13,32 @@
 
 namespace kota {
 
+struct GlobError {
+    enum Kind : uint8_t {
+        UnmatchedBracket,
+        StrayBackslash,
+        NestedBrace,
+        EmptyBrace,
+        IncompleteBrace,
+        InvalidRange,
+        MultipleSlash,
+        MultipleStar,
+        TooManyExpansions,
+    };
+
+    Kind kind;
+    uint32_t begin;
+    uint32_t end;
+    std::string message;
+};
+
 namespace detail {
 
 using GlobCharSet = std::bitset<256>;
 
-std::expected<GlobCharSet, std::string> parse_bracket_charset(std::string_view s);
+std::expected<GlobCharSet, GlobError> parse_bracket_charset(std::string_view s);
 
-std::expected<small_vector<std::string, 1>, std::string>
+std::expected<small_vector<std::string, 1>, GlobError>
     glob_parse_brace_expansions(std::string_view s, size_t max_subpattern_num);
 
 }  // namespace detail
@@ -40,7 +59,7 @@ std::expected<small_vector<std::string, 1>, std::string>
 /// like UTF-8 are matched byte-by-byte.
 class GlobPattern {
 public:
-    [[nodiscard]] static std::expected<GlobPattern, std::string>
+    [[nodiscard]] static std::expected<GlobPattern, GlobError>
         create(std::string_view s, size_t max_subpattern_num = 100);
 
     [[nodiscard]] bool isTrivialMatchAll() const {
@@ -61,7 +80,7 @@ private:
     bool prefix_at_seg_end = false;
 
     struct SubGlobPattern {
-        [[nodiscard]] static std::expected<SubGlobPattern, std::string> create(std::string_view s);
+        [[nodiscard]] static std::expected<SubGlobPattern, GlobError> create(std::string_view s);
         [[nodiscard]] bool match(std::string_view str) const;
 
         [[nodiscard]] std::string_view pattern() const {
