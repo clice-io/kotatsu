@@ -15,6 +15,7 @@
 #include "kota/deco/deco.h"
 #include "kota/deco/detail/text.h"
 #include "kota/zest/detail/registry.h"
+#include "kota/zest/detail/snapshot.h"
 #include "kota/zest/run.h"
 
 namespace {
@@ -46,6 +47,9 @@ struct ZestCliOptions {
         help = "Number of worker threads for parallel mode (default: hardware_concurrency)";
         required = false)
     <unsigned> parallel_workers = 0;
+
+    DecoFlag(help = "Update snapshot files instead of comparing"; required = false)
+    update_snapshots = false;
 };
 
 auto to_runner_options(ZestCliOptions options)
@@ -58,6 +62,7 @@ auto to_runner_options(ZestCliOptions options)
     runner_options.only_failed_output = *options.only_failed;
     runner_options.parallel = *options.parallel;
     runner_options.parallel_workers = *options.parallel_workers;
+    runner_options.update_snapshots = *options.update_snapshots;
     if(options.test_filter_input.has_value()) {
         runner_options.filter = std::move(*options.test_filter_input);
     } else {
@@ -285,6 +290,7 @@ int Runner::run_tests(std::string_view filter) {
 }
 
 int Runner::run_tests(RunnerOptions options) {
+    set_update_snapshots(options.update_snapshots);
     const auto patterns = resolve_filter_patterns(options.filter);
     auto grouped_suites = group_suites(suites);
     const bool focus_mode = has_focused_tests(grouped_suites, patterns);

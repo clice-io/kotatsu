@@ -49,6 +49,7 @@ target_sources(kota_zest PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/trace.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/runner.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/expr.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/snapshot.cpp"
 )
 
 target_include_directories(kota_zest PUBLIC

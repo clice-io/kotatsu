@@ -1,6 +1,7 @@
 #pragma once
 
 #include "kota/zest/detail/registry.h"
+#include "kota/zest/detail/snapshot.h"
 #include "kota/support/fixed_string.h"
 
 namespace kota::zest {
@@ -50,6 +51,7 @@ struct TestSuiteDef {
 
         auto run_test = +[] -> TestState {
             current_test_state() = TestState::Passed;
+            reset_snapshot_context(TestName.data(), case_name.data(), path.data());
             Derived test;
             if constexpr(requires { test.setup(); }) {
                 test.setup();
