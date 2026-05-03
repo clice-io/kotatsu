@@ -14,6 +14,7 @@
 #include <variant>
 #include <vector>
 
+#include "kota/support/config.h"
 #include "kota/support/ranges.h"
 #include "kota/support/type_traits.h"
 #include "kota/meta/annotation.h"
@@ -80,7 +81,7 @@ auto deserialize_map_positional(typename Backend::value_type& src, MapT& out)
 
 /// Core dispatch: deserialize<Backend>(source, T& out) -> Backend::error_type
 template <typename Backend, typename T>
-auto deserialize(typename Backend::value_type& src, T& out) -> typename Backend::error_type {
+KOTA_ALWAYS_INLINE auto deserialize(typename Backend::value_type& src, T& out) -> typename Backend::error_type {
     using U = std::remove_cvref_t<T>;
     using E = typename Backend::error_type;
 

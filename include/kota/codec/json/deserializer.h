@@ -63,23 +63,28 @@ struct simdjson_backend {
     static constexpr error_type invalid_state = simdjson::PARSER_IN_USE;
 
     KOTA_ALWAYS_INLINE static error_type read_bool(value_type& src, bool& out) {
-        return src.apply([&](auto& s) { return s.get_bool().get(out); });
+        if(src.is_document()) { return src.doc().get_bool().get(out); }
+        return src.value().get_bool().get(out);
     }
 
     KOTA_ALWAYS_INLINE static error_type read_int64(value_type& src, std::int64_t& out) {
-        return src.apply([&](auto& s) { return s.get_int64().get(out); });
+        if(src.is_document()) { return src.doc().get_int64().get(out); }
+        return src.value().get_int64().get(out);
     }
 
     KOTA_ALWAYS_INLINE static error_type read_uint64(value_type& src, std::uint64_t& out) {
-        return src.apply([&](auto& s) { return s.get_uint64().get(out); });
+        if(src.is_document()) { return src.doc().get_uint64().get(out); }
+        return src.value().get_uint64().get(out);
     }
 
     KOTA_ALWAYS_INLINE static error_type read_double(value_type& src, double& out) {
-        return src.apply([&](auto& s) { return s.get_double().get(out); });
+        if(src.is_document()) { return src.doc().get_double().get(out); }
+        return src.value().get_double().get(out);
     }
 
     KOTA_ALWAYS_INLINE static error_type read_string(value_type& src, std::string_view& out) {
-        return src.apply([&](auto& s) { return s.get_string().get(out); });
+        if(src.is_document()) { return src.doc().get_string().get(out); }
+        return src.value().get_string().get(out);
     }
 
     KOTA_ALWAYS_INLINE static error_type read_is_null(value_type& src, bool& is_null) {

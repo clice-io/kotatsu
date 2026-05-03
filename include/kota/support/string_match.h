@@ -44,7 +44,7 @@ consteval auto compute_unique_lengths(const std::array<std::string_view, N>& nam
 }
 
 template <const auto& Names, std::size_t TargetLen, std::size_t... Is>
-constexpr auto match_in_length_group(std::string_view key, std::index_sequence<Is...>)
+KOTA_ALWAYS_INLINE constexpr auto match_in_length_group(std::string_view key, std::index_sequence<Is...>)
     -> std::optional<std::size_t> {
     std::optional<std::size_t> result;
     (([&] -> bool {

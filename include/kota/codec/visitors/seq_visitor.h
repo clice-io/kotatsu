@@ -5,6 +5,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "kota/support/config.h"
 #include "kota/support/ranges.h"
 
 namespace kota::codec {
@@ -19,7 +20,7 @@ struct seq_visitor {
     Container& out;
     std::size_t index = 0;
 
-    E visit_element(typename Backend::value_type& val) {
+    KOTA_ALWAYS_INLINE E visit_element(typename Backend::value_type& val) {
         ElemT element{};
         auto err = deserialize<Backend>(val, element);
         if(err != Backend::success) [[unlikely]] {
@@ -43,7 +44,7 @@ struct array_visitor {
     ArrayT& out;
     std::size_t index = 0;
 
-    E visit_element(typename Backend::value_type& val) {
+    KOTA_ALWAYS_INLINE E visit_element(typename Backend::value_type& val) {
         if(index >= N) [[unlikely]]
             return Backend::type_mismatch;
         auto err = deserialize<Backend>(val, out[index]);
@@ -53,7 +54,7 @@ struct array_visitor {
         return Backend::success;
     }
 
-    E finish() const {
+    KOTA_ALWAYS_INLINE E finish() const {
         if(index != N) [[unlikely]]
             return Backend::type_mismatch;
         return Backend::success;
@@ -69,7 +70,7 @@ struct tuple_visitor {
     std::size_t index = 0;
     E error = Backend::success;
 
-    E visit_element(typename Backend::value_type& val) {
+    KOTA_ALWAYS_INLINE E visit_element(typename Backend::value_type& val) {
         if(index >= N) [[unlikely]]
             return Backend::type_mismatch;
         visit_at(val, std::make_index_sequence<N>{});
@@ -77,7 +78,7 @@ struct tuple_visitor {
         return error;
     }
 
-    E finish() const {
+    KOTA_ALWAYS_INLINE E finish() const {
         if(index != N) [[unlikely]]
             return Backend::type_mismatch;
         return Backend::success;
@@ -85,7 +86,7 @@ struct tuple_visitor {
 
 private:
     template <std::size_t... Is>
-    void visit_at(typename Backend::value_type& val, std::index_sequence<Is...>) {
+    KOTA_ALWAYS_INLINE void visit_at(typename Backend::value_type& val, std::index_sequence<Is...>) {
         (void)((Is == index ? (error = deserialize<Backend>(val, std::get<Is>(out)), true) : false) ||
                ...);
     }

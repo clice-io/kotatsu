@@ -162,7 +162,7 @@ struct struct_visitor {
     T& out;
     std::uint64_t seen_fields = 0;
 
-    E visit_field(std::string_view key, typename Backend::value_type& val) {
+    KOTA_ALWAYS_INLINE E visit_field(std::string_view key, typename Backend::value_type& val) {
         using namespace kota;
 
         if constexpr(table::name_count == 0) {
@@ -198,7 +198,7 @@ struct struct_visitor {
         }
     }
 
-    E finish() {
+    KOTA_ALWAYS_INLINE E finish() {
         constexpr std::uint64_t required = detail::schema_required_field_mask<T, Config>();
         if constexpr(required != 0) {
             if((seen_fields & required) != required) [[unlikely]] {
@@ -218,13 +218,13 @@ struct struct_visitor {
     }
 
 private:
-    E dispatch_slot(std::size_t slot_index, typename Backend::value_type& val) {
+    KOTA_ALWAYS_INLINE E dispatch_slot(std::size_t slot_index, typename Backend::value_type& val) {
         constexpr std::size_t N = type_list_size_v<slots>;
         return dispatch_slot_impl(slot_index, val, std::make_index_sequence<N>{});
     }
 
     template <std::size_t... Is>
-    E dispatch_slot_impl(std::size_t slot_index,
+    KOTA_ALWAYS_INLINE E dispatch_slot_impl(std::size_t slot_index,
                          typename Backend::value_type& val,
                          std::index_sequence<Is...>) {
         E err = Backend::type_mismatch;
@@ -233,7 +233,7 @@ private:
     }
 
     template <std::size_t I>
-    E dispatch_slot_at(typename Backend::value_type& val) {
+    KOTA_ALWAYS_INLINE E dispatch_slot_at(typename Backend::value_type& val) {
         using slot_t = type_list_element_t<I, slots>;
         using raw_t = std::remove_cv_t<typename slot_t::raw_type>;
         using attrs_t = typename slot_t::attrs;
@@ -248,7 +248,7 @@ private:
 
 /// deserialize_field: handles all field-level attribute dispatch
 template <typename Backend, typename RawT, typename Attrs>
-auto deserialize_field(typename Backend::value_type& val, RawT& field_ref)
+KOTA_ALWAYS_INLINE auto deserialize_field(typename Backend::value_type& val, RawT& field_ref)
     -> typename Backend::error_type {
     // 1. skip_if
     if constexpr(tuple_has_spec_v<Attrs, meta::behavior::skip_if>) {
@@ -382,7 +382,7 @@ concept positional_backend = requires {
 
 /// deserialize_struct: entry point for struct deserialization
 template <typename Backend, typename T, typename Config = meta::default_config>
-auto deserialize_struct(typename Backend::value_type& src, T& out)
+KOTA_ALWAYS_INLINE auto deserialize_struct(typename Backend::value_type& src, T& out)
     -> typename Backend::error_type {
     if constexpr(positional_backend<Backend>) {
         // Positional backend: read fields in schema order

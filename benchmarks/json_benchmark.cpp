@@ -9,7 +9,6 @@
 
 namespace {
 
-using kota::codec::json::Deserializer;
 using kota::codec::json::Serializer;
 using kota::codec::json::from_json;
 using kota::codec::json::to_json;
@@ -55,79 +54,9 @@ struct obj_t {
 constexpr std::string_view json_minified =
     R"({"fixed_object":{"int_array":[0,1,2,3,4,5,6],"float_array":[0.1,0.2,0.3,0.4,0.5,0.6],"double_array":[3288398.238,2.33e+24,28.9,0.928759872,0.22222848,0.1,0.2,0.3,0.4]},"fixed_name_object":{"name0":"James","name1":"Abraham","name2":"Susan","name3":"Frank","name4":"Alicia"},"another_object":{"string":"here is some text","another_string":"Hello World","escaped_text":"{\"some key\":\"some string value\"}","boolean":false,"nested_object":{"v3s":[[0.12345,0.23456,0.001345],[0.3894675,97.39827,297.92387],[18.18,87.289,2988.298]],"id":"298728949872"}},"string_array":["Cat","Dog","Elephant","Tiger"],"string":"Hello world","number":3.14,"boolean":true,"another_bool":false})";
 
-void BM_write(benchmark::State& state) {
-    auto parsed = from_json<obj_t>(json_minified);
-    if(!parsed) {
-        state.SkipWithError("BM_write setup: from_json failed");
-        return;
-    }
-    auto obj = *parsed;
-    auto sample = to_json(obj);
-    if(!sample) {
-        state.SkipWithError("BM_write setup: to_json failed");
-        return;
-    }
-    auto len = sample->size();
-    Serializer<> serializer(len);
-    for(auto _: state) {
-        serializer.clear();
-        kota::codec::serialize(serializer, obj);
-        benchmark::DoNotOptimize(serializer.view());
-    }
-    state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(len));
-    state.SetLabel(std::to_string(len) + " B");
-}
+// -- handwritten simdjson helpers --
 
-void BM_write_alloc(benchmark::State& state) {
-    auto parsed = from_json<obj_t>(json_minified);
-    if(!parsed) {
-        state.SkipWithError("BM_write_alloc setup: from_json failed");
-        return;
-    }
-    auto obj = *parsed;
-    auto sample = to_json(obj);
-    if(!sample) {
-        state.SkipWithError("BM_write_alloc setup: to_json failed");
-        return;
-    }
-    auto len = sample->size();
-    for(auto _: state) {
-        benchmark::DoNotOptimize(to_json(obj, len));
-    }
-    state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(len));
-    state.SetLabel(std::to_string(len) + " B, with alloc");
-}
-
-void BM_read(benchmark::State& state) {
-    simdjson::padded_string padded(json_minified);
-    auto len = json_minified.size();
-    obj_t out{};
-    for(auto _: state) {
-        if(auto r = from_json(static_cast<simdjson::padded_string_view>(padded), out); !r) {
-            state.SkipWithError("BM_read: from_json failed");
-            break;
-        }
-        benchmark::ClobberMemory();
-    }
-    state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(len));
-    state.SetLabel(std::to_string(len) + " B");
-}
-
-void BM_read_copy(benchmark::State& state) {
-    auto len = json_minified.size();
-    obj_t out{};
-    for(auto _: state) {
-        if(auto r = from_json(json_minified, out); !r) {
-            state.SkipWithError("BM_read_copy: from_json failed");
-            break;
-        }
-        benchmark::ClobberMemory();
-    }
-    state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(len));
-    state.SetLabel(std::to_string(len) + " B, with copy");
-}
-
-void simdjson_read_nested_object(simdjson::ondemand::object& obj, nested_object_t& out) {
+void handwritten_read_nested(simdjson::ondemand::object& obj, nested_object_t& out) {
     for(auto field_result: obj) {
         simdjson::ondemand::field field;
         (void)std::move(field_result).get(field);
@@ -162,7 +91,7 @@ void simdjson_read_nested_object(simdjson::ondemand::object& obj, nested_object_
     }
 }
 
-void simdjson_read_another_object(simdjson::ondemand::object& obj, another_object_t& out) {
+void handwritten_read_another(simdjson::ondemand::object& obj, another_object_t& out) {
     for(auto field_result: obj) {
         simdjson::ondemand::field field;
         (void)std::move(field_result).get(field);
@@ -187,12 +116,12 @@ void simdjson_read_another_object(simdjson::ondemand::object& obj, another_objec
         } else if(key == "nested_object") {
             simdjson::ondemand::object nested;
             (void)field.value().get_object().get(nested);
-            simdjson_read_nested_object(nested, out.nested_object);
+            handwritten_read_nested(nested, out.nested_object);
         }
     }
 }
 
-void simdjson_read_obj(simdjson::ondemand::document& doc, obj_t& out) {
+void handwritten_read_obj(simdjson::ondemand::document& doc, obj_t& out) {
     simdjson::ondemand::object root;
     (void)doc.get_object().get(root);
     for(auto field_result: root) {
@@ -267,7 +196,7 @@ void simdjson_read_obj(simdjson::ondemand::document& doc, obj_t& out) {
         } else if(key == "another_object") {
             simdjson::ondemand::object obj;
             (void)field.value().get_object().get(obj);
-            simdjson_read_another_object(obj, out.another_object);
+            handwritten_read_another(obj, out.another_object);
         } else if(key == "string_array") {
             out.string_array.clear();
             simdjson::ondemand::array arr;
@@ -293,36 +222,6 @@ void simdjson_read_obj(simdjson::ondemand::document& doc, obj_t& out) {
     }
 }
 
-void BM_simdjson_handwritten(benchmark::State& state) {
-    simdjson::padded_string padded(json_minified);
-    simdjson::ondemand::parser parser;
-    auto len = json_minified.size();
-    obj_t out{};
-    for(auto _: state) {
-        simdjson::ondemand::document doc;
-        (void)parser.iterate(padded).get(doc);
-        simdjson_read_obj(doc, out);
-        benchmark::ClobberMemory();
-    }
-    state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(len));
-    state.SetLabel(std::to_string(len) + " B");
-}
-
-void BM_simdjson_handwritten_no_reuse(benchmark::State& state) {
-    simdjson::padded_string padded(json_minified);
-    auto len = json_minified.size();
-    obj_t out{};
-    for(auto _: state) {
-        simdjson::ondemand::parser parser;
-        simdjson::ondemand::document doc;
-        (void)parser.iterate(padded).get(doc);
-        simdjson_read_obj(doc, out);
-        benchmark::ClobberMemory();
-    }
-    state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(len));
-    state.SetLabel(std::to_string(len) + " B, no parser reuse");
-}
-
 void sb_field(simdjson::builder::string_builder& sb, std::string_view name, bool first = false) {
     if(!first)
         sb.append_comma();
@@ -335,7 +234,7 @@ void sb_next(simdjson::builder::string_builder& sb, bool first = false) {
         sb.append_comma();
 }
 
-void simdjson_write_obj(simdjson::builder::string_builder& sb, const obj_t& obj) {
+void handwritten_write_obj(simdjson::builder::string_builder& sb, const obj_t& obj) {
     sb.start_object();
 
     sb_field(sb, "fixed_object", true);
@@ -428,23 +327,78 @@ void simdjson_write_obj(simdjson::builder::string_builder& sb, const obj_t& obj)
     sb.end_object();
 }
 
-void BM_write_handwritten(benchmark::State& state) {
+// -- benchmarks --
+
+void BM_read(benchmark::State& state) {
+    simdjson::padded_string padded(json_minified);
+    auto len = json_minified.size();
+    obj_t out{};
+    for(auto _: state) {
+        if(auto r = from_json(static_cast<simdjson::padded_string_view>(padded), out); !r) {
+            state.SkipWithError("from_json failed");
+            break;
+        }
+        benchmark::ClobberMemory();
+    }
+    state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(len));
+    state.SetLabel(std::to_string(len) + " B");
+}
+
+void BM_read_handwritten(benchmark::State& state) {
+    simdjson::padded_string padded(json_minified);
+    auto len = json_minified.size();
+    obj_t out{};
+    for(auto _: state) {
+        simdjson::ondemand::parser parser;
+        simdjson::ondemand::document doc;
+        (void)parser.iterate(padded).get(doc);
+        handwritten_read_obj(doc, out);
+        benchmark::ClobberMemory();
+    }
+    state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(len));
+    state.SetLabel(std::to_string(len) + " B");
+}
+
+void BM_write(benchmark::State& state) {
     auto parsed = from_json<obj_t>(json_minified);
     if(!parsed) {
-        state.SkipWithError("BM_write_handwritten setup: from_json failed");
+        state.SkipWithError("setup: from_json failed");
         return;
     }
     auto obj = *parsed;
     auto sample = to_json(obj);
     if(!sample) {
-        state.SkipWithError("BM_write_handwritten setup: to_json failed");
+        state.SkipWithError("setup: to_json failed");
+        return;
+    }
+    auto len = sample->size();
+    Serializer<> serializer(len);
+    for(auto _: state) {
+        serializer.clear();
+        kota::codec::serialize(serializer, obj);
+        benchmark::DoNotOptimize(serializer.view());
+    }
+    state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(len));
+    state.SetLabel(std::to_string(len) + " B");
+}
+
+void BM_write_handwritten(benchmark::State& state) {
+    auto parsed = from_json<obj_t>(json_minified);
+    if(!parsed) {
+        state.SkipWithError("setup: from_json failed");
+        return;
+    }
+    auto obj = *parsed;
+    auto sample = to_json(obj);
+    if(!sample) {
+        state.SkipWithError("setup: to_json failed");
         return;
     }
     auto len = sample->size();
     simdjson::builder::string_builder sb(len);
     for(auto _: state) {
         sb.clear();
-        simdjson_write_obj(sb, obj);
+        handwritten_write_obj(sb, obj);
         std::string_view result;
         (void)sb.view().get(result);
         benchmark::DoNotOptimize(result);
@@ -453,13 +407,10 @@ void BM_write_handwritten(benchmark::State& state) {
     state.SetLabel(std::to_string(len) + " B");
 }
 
-BENCHMARK(BM_write);
-BENCHMARK(BM_write_alloc);
-BENCHMARK(BM_write_handwritten);
 BENCHMARK(BM_read);
-BENCHMARK(BM_read_copy);
-BENCHMARK(BM_simdjson_handwritten);
-BENCHMARK(BM_simdjson_handwritten_no_reuse);
+BENCHMARK(BM_read_handwritten);
+BENCHMARK(BM_write);
+BENCHMARK(BM_write_handwritten);
 
 }  // namespace
 
