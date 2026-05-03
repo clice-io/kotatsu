@@ -23,38 +23,65 @@
 
 namespace kota::codec::json {
 
+/// Thin wrapper that holds either a simdjson::ondemand::value* or document*,
+/// eliminating all scalar-document-root special casing in the backend.
+struct json_source {
+    simdjson::ondemand::value* val_ = nullptr;
+    simdjson::ondemand::document* doc_ = nullptr;
+
+    json_source() = default;
+    explicit json_source(simdjson::ondemand::value& v) : val_(&v) {}
+    explicit json_source(simdjson::ondemand::document& d) : doc_(&d) {}
+
+    bool is_document() const { return doc_ != nullptr; }
+};
+
 struct simdjson_backend {
-    using value_type = simdjson::ondemand::value;
+    using value_type = json_source;
     using error_type = simdjson::error_code;
     static constexpr error_type success = simdjson::SUCCESS;
     static constexpr error_type type_mismatch = simdjson::INCORRECT_TYPE;
     static constexpr error_type number_out_of_range = simdjson::NUMBER_OUT_OF_RANGE;
     static constexpr error_type invalid_state = simdjson::PARSER_IN_USE;
 
-    static error_type read_bool(value_type& v, bool& out) {
-        return v.get_bool().get(out);
+    static error_type read_bool(value_type& src, bool& out) {
+        if(src.is_document()) return src.doc_->get_bool().get(out);
+        return src.val_->get_bool().get(out);
     }
 
-    static error_type read_int64(value_type& v, std::int64_t& out) {
-        return v.get_int64().get(out);
+    static error_type read_int64(value_type& src, std::int64_t& out) {
+        if(src.is_document()) return src.doc_->get_int64().get(out);
+        return src.val_->get_int64().get(out);
     }
 
-    static error_type read_uint64(value_type& v, std::uint64_t& out) {
-        return v.get_uint64().get(out);
+    static error_type read_uint64(value_type& src, std::uint64_t& out) {
+        if(src.is_document()) return src.doc_->get_uint64().get(out);
+        return src.val_->get_uint64().get(out);
     }
 
-    static error_type read_double(value_type& v, double& out) {
-        return v.get_double().get(out);
+    static error_type read_double(value_type& src, double& out) {
+        if(src.is_document()) return src.doc_->get_double().get(out);
+        return src.val_->get_double().get(out);
     }
 
-    static error_type read_string(value_type& v, std::string_view& out) {
-        return v.get_string().get(out);
+    static error_type read_string(value_type& src, std::string_view& out) {
+        if(src.is_document()) return src.doc_->get_string().get(out);
+        return src.val_->get_string().get(out);
     }
 
-    static error_type read_is_null(value_type& v, bool& is_null) {
+    static error_type read_is_null(value_type& src, bool& is_null) {
+        if(src.is_document()) {
+            auto result = src.doc_->is_null();
+            if(result.error() != simdjson::SUCCESS) {
+                is_null = false;
+                return simdjson::SUCCESS;
+            }
+            is_null = result.value_unsafe();
+            return simdjson::SUCCESS;
+        }
         // Use type() instead of is_null() to avoid assert_at_non_root_start()
         // which fails on values obtained from doc.get_value() (depth == 1).
-        auto t = v.type();
+        auto t = src.val_->type();
         if(t.error() != simdjson::SUCCESS)
             return t.error();
         is_null = (t.value_unsafe() == simdjson::ondemand::json_type::null);
@@ -64,7 +91,9 @@ struct simdjson_backend {
     template <typename Visitor>
     static error_type visit_object(value_type& src, Visitor&& vis) {
         simdjson::ondemand::object obj;
-        auto err = src.get_object().get(obj);
+        auto err = src.is_document()
+            ? src.doc_->get_object().get(obj)
+            : src.val_->get_object().get(obj);
         if(err != simdjson::SUCCESS) [[unlikely]]
             return err;
         for(auto field_result: obj) {
@@ -76,8 +105,9 @@ struct simdjson_backend {
             err = field.unescaped_key().get(key);
             if(err != simdjson::SUCCESS) [[unlikely]]
                 return err;
-            value_type val = field.value();
-            err = vis.visit_field(key, val);
+            simdjson::ondemand::value val = field.value();
+            value_type field_src(val);
+            err = vis.visit_field(key, field_src);
             if(err != simdjson::SUCCESS) [[unlikely]]
                 return err;
         }
@@ -87,15 +117,18 @@ struct simdjson_backend {
     template <typename Visitor>
     static error_type visit_array(value_type& src, Visitor&& vis) {
         simdjson::ondemand::array arr;
-        auto err = src.get_array().get(arr);
+        auto err = src.is_document()
+            ? src.doc_->get_array().get(arr)
+            : src.val_->get_array().get(arr);
         if(err != simdjson::SUCCESS) [[unlikely]]
             return err;
         for(auto elem_result: arr) {
-            value_type elem;
+            simdjson::ondemand::value elem;
             err = std::move(elem_result).get(elem);
             if(err != simdjson::SUCCESS) [[unlikely]]
                 return err;
-            err = vis.visit_element(elem);
+            value_type elem_src(elem);
+            err = vis.visit_element(elem_src);
             if(err != simdjson::SUCCESS) [[unlikely]]
                 return err;
         }
@@ -104,7 +137,10 @@ struct simdjson_backend {
 
     static meta::type_kind kind_of(value_type& src) {
         simdjson::ondemand::json_type t;
-        if(src.type().get(t) != simdjson::SUCCESS)
+        auto err = src.is_document()
+            ? src.doc_->type().get(t)
+            : src.val_->type().get(t);
+        if(err != simdjson::SUCCESS)
             return meta::type_kind::null;
         switch(t) {
             case simdjson::ondemand::json_type::object: return meta::type_kind::structure;
@@ -112,7 +148,10 @@ struct simdjson_backend {
             case simdjson::ondemand::json_type::string: return meta::type_kind::string;
             case simdjson::ondemand::json_type::number: {
                 simdjson::ondemand::number_type nt;
-                if(src.get_number_type().get(nt) != simdjson::SUCCESS)
+                auto nt_err = src.is_document()
+                    ? src.doc_->get_number_type().get(nt)
+                    : src.val_->get_number_type().get(nt);
+                if(nt_err != simdjson::SUCCESS)
                     return meta::type_kind::int64;
                 if(nt == simdjson::ondemand::number_type::floating_point_number)
                     return meta::type_kind::float64;
@@ -129,7 +168,9 @@ struct simdjson_backend {
     template <typename Visitor>
     static error_type visit_object_keys(value_type& src, Visitor&& vis) {
         simdjson::ondemand::object obj;
-        auto err = src.get_object().get(obj);
+        auto err = src.is_document()
+            ? src.doc_->get_object().get(obj)
+            : src.val_->get_object().get(obj);
         if(err != simdjson::SUCCESS) [[unlikely]]
             return err;
         for(auto field_result: obj) {
@@ -141,9 +182,10 @@ struct simdjson_backend {
             err = field.unescaped_key().get(key);
             if(err != simdjson::SUCCESS) [[unlikely]]
                 return err;
-            value_type val = field.value();
-            meta::type_kind kind = kind_of(val);
-            err = vis.on_field(key, kind, val);
+            simdjson::ondemand::value val = field.value();
+            value_type field_src(val);
+            meta::type_kind kind = kind_of(field_src);
+            err = vis.on_field(key, kind, field_src);
             if(err != simdjson::SUCCESS) [[unlikely]]
                 return err;
         }
@@ -163,8 +205,12 @@ struct simdjson_backend {
     /// and iterating elements would consume the value.
     template <typename Visitor>
     static error_type visit_array_keys(value_type& src, Visitor&& vis) {
+        if(src.is_document()) {
+            // Documents don't have count_elements; not expected for array scoring
+            return type_mismatch;
+        }
         std::size_t count = 0;
-        auto count_err = src.count_elements().get(count);
+        auto count_err = src.val_->count_elements().get(count);
         if(count_err != simdjson::SUCCESS) [[unlikely]]
             return count_err;
         // count_elements() rewinds the value, so src remains consumable.
@@ -180,12 +226,22 @@ struct simdjson_backend {
     static error_type scan_field(value_type& src,
                                  std::string_view field_name,
                                  std::string_view& out) {
+        if(src.is_document()) {
+            // Documents need find_field via get_object path
+            simdjson::ondemand::object obj;
+            auto err = src.doc_->get_object().get(obj);
+            if(err != simdjson::SUCCESS) return err;
+            simdjson::ondemand::value val;
+            err = obj.find_field(field_name).get(val);
+            if(err != simdjson::SUCCESS) return err;
+            return val.get_string().get(out);
+        }
         // Use value::find_field which internally calls start_or_resume_object().
         // After reading the tag, calling find_field again or iterating the object
         // via value's [] operator will use start_or_resume_object() for correct
         // re-entry into the object.
         simdjson::ondemand::value val;
-        auto err = src.find_field(field_name).get(val);
+        auto err = src.val_->find_field(field_name).get(val);
         if(err != simdjson::SUCCESS)
             return err;
         return val.get_string().get(out);
@@ -194,8 +250,15 @@ struct simdjson_backend {
     /// Capture the raw JSON text of a value. Consumes the value.
     /// Returns the raw JSON string and an error code.
     static auto capture_raw_json(value_type& src) -> std::pair<std::string, error_type> {
+        if(src.is_document()) {
+            std::string_view raw;
+            auto err = src.doc_->raw_json().get(raw);
+            if(err != simdjson::SUCCESS)
+                return {{}, err};
+            return {std::string(raw), simdjson::SUCCESS};
+        }
         std::string_view raw;
-        auto err = src.raw_json().get(raw);
+        auto err = src.val_->raw_json().get(raw);
         if(err != simdjson::SUCCESS)
             return {{}, err};
         return {std::string(raw), simdjson::SUCCESS};
@@ -222,11 +285,12 @@ struct simdjson_backend {
         if(doc_err != simdjson::SUCCESS)
             return doc_err;
         for(auto elem_result: arr) {
-            value_type val;
+            simdjson::ondemand::value val;
             doc_err = std::move(elem_result).get(val);
             if(doc_err != simdjson::SUCCESS)
                 return doc_err;
-            return fn(val);
+            value_type src(val);
+            return fn(src);
         }
         return simdjson::INCORRECT_TYPE;
     }
@@ -267,193 +331,16 @@ struct simdjson_backend_with_config : simdjson_backend {
     using base_backend_type = simdjson_backend;
 };
 
-/// Scalar-only backend for deserializing scalar JSON documents directly.
-/// simdjson cannot convert scalar documents to ondemand::value, so this backend
-/// operates on ondemand::document& for scalar reads. Compound-type methods
-/// (visit_object, visit_array, etc.) are stubs that return errors — they exist
-/// only to satisfy template instantiation requirements and are never called at
-/// runtime for scalar documents.
-struct simdjson_scalar_backend {
-    using value_type = simdjson::ondemand::document;
-    using error_type = simdjson::error_code;
-    static constexpr error_type success = simdjson::SUCCESS;
-    static constexpr error_type type_mismatch = simdjson::INCORRECT_TYPE;
-    static constexpr error_type number_out_of_range = simdjson::NUMBER_OUT_OF_RANGE;
-    static constexpr error_type invalid_state = simdjson::PARSER_IN_USE;
-
-    using base_backend_type = simdjson_backend;
-
-    static error_type read_bool(value_type& v, bool& out) {
-        return v.get_bool().get(out);
-    }
-
-    static error_type read_int64(value_type& v, std::int64_t& out) {
-        return v.get_int64().get(out);
-    }
-
-    static error_type read_uint64(value_type& v, std::uint64_t& out) {
-        return v.get_uint64().get(out);
-    }
-
-    static error_type read_double(value_type& v, double& out) {
-        return v.get_double().get(out);
-    }
-
-    static error_type read_string(value_type& v, std::string_view& out) {
-        return v.get_string().get(out);
-    }
-
-    static error_type read_is_null(value_type& v, bool& is_null) {
-        auto result = v.is_null();
-        if(result.error() != simdjson::SUCCESS) {
-            is_null = false;
-            return simdjson::SUCCESS;
-        }
-        is_null = result.value_unsafe();
-        return simdjson::SUCCESS;
-    }
-
-    static meta::type_kind kind_of(value_type& src) {
-        simdjson::ondemand::json_type t;
-        if(src.type().get(t) != simdjson::SUCCESS)
-            return meta::type_kind::null;
-        switch(t) {
-            case simdjson::ondemand::json_type::object: return meta::type_kind::structure;
-            case simdjson::ondemand::json_type::array: return meta::type_kind::array;
-            case simdjson::ondemand::json_type::string: return meta::type_kind::string;
-            case simdjson::ondemand::json_type::number: {
-                simdjson::ondemand::number_type nt;
-                if(src.get_number_type().get(nt) != simdjson::SUCCESS)
-                    return meta::type_kind::int64;
-                if(nt == simdjson::ondemand::number_type::floating_point_number)
-                    return meta::type_kind::float64;
-                if(nt == simdjson::ondemand::number_type::unsigned_integer)
-                    return meta::type_kind::uint64;
-                return meta::type_kind::int64;
-            }
-            case simdjson::ondemand::json_type::boolean: return meta::type_kind::boolean;
-            case simdjson::ondemand::json_type::null: return meta::type_kind::null;
-            default: return meta::type_kind::unknown;
-        }
-    }
-
-    // Stubs for compound-type visitors — never called at runtime for scalar
-    // documents but required for template instantiation of deserialize<>.
-
-    template <typename Visitor>
-    static error_type visit_object(value_type&, Visitor&&) {
-        return type_mismatch;
-    }
-
-    template <typename Visitor>
-    static error_type visit_array(value_type&, Visitor&&) {
-        return type_mismatch;
-    }
-
-    template <typename Visitor>
-    static error_type visit_object_keys(value_type&, Visitor&&) {
-        return success;
-    }
-
-    template <typename Visitor>
-    static error_type visit_array_keys(value_type&, Visitor&&) {
-        return success;
-    }
-
-    static error_type scan_field(value_type&, std::string_view, std::string_view&) {
-        return type_mismatch;
-    }
-
-    // Error context helpers (same as simdjson_backend)
-
-    static void report_missing_field(std::string_view field_name) {
-        detail::thread_error_context().set(json::error::missing_field(field_name));
-    }
-
-    static void report_unknown_field(std::string_view field_name) {
-        detail::thread_error_context().set(json::error::unknown_field(field_name));
-    }
-
-    static void report_unknown_enum(std::string_view value) {
-        detail::thread_error_context().set(
-            json::error(error_kind::type_mismatch,
-                        std::format("unknown enum string value '{}'", value)));
-    }
-
-    static void report_prepend_field(std::string_view name) {
-        detail::thread_error_context().prepend_field(name);
-    }
-
-    static void report_prepend_index(std::size_t index) {
-        detail::thread_error_context().prepend_index(index);
-    }
-};
-
-/// Config-aware scalar backend variant.
-template <typename Config>
-struct simdjson_scalar_backend_with_config : simdjson_scalar_backend {
-    using config_type = Config;
-};
-
 namespace detail {
 
 /// Deserialize from a simdjson document root using the visitor-based path.
-/// For compound types (objects/arrays), converts document to value via get_value()
-/// and delegates to deserialize<Backend>(). For scalar documents, uses the
-/// simdjson_scalar_backend which operates directly on the document.
+/// Uses json_source to wrap the document, unifying scalar and compound handling.
 template <typename Config, typename T>
-auto from_document(simdjson::ondemand::parser& parser,
-                   simdjson::ondemand::document& doc,
-                   T& out,
-                   simdjson::padded_string_view json) -> simdjson::error_code {
+auto from_document(simdjson::ondemand::document& doc, T& out) -> simdjson::error_code {
     using Backend = simdjson_backend_with_config<Config>;
-    using ScalarBackend = simdjson_scalar_backend_with_config<Config>;
-    using U = std::remove_cvref_t<T>;
-
-    simdjson::ondemand::value val;
-    auto err = doc.get_value().get(val);
-    if(err == simdjson::SUCCESS) {
-        return codec::deserialize<Backend>(val, out);
-    }
-
-    // Scalar documents cannot be converted to value — handle directly
-    if(err == simdjson::SCALAR_DOCUMENT_AS_VALUE) {
-        // For types with deserialize_traits or annotated types, re-parse
-        // the scalar wrapped in a JSON array to obtain a value instance.
-        if constexpr(codec::has_deserialize_traits<Backend, U> || meta::annotated_type<U>) {
-            std::string wrapped;
-            wrapped.reserve(json.length() + 2);
-            wrapped += '[';
-            wrapped.append(json.data(), json.length());
-            wrapped += ']';
-            simdjson::padded_string padded_wrapped(wrapped);
-            simdjson::ondemand::document arr_doc;
-            auto doc_err = parser.iterate(padded_wrapped).get(arr_doc);
-            if(doc_err != simdjson::SUCCESS)
-                return doc_err;
-            simdjson::ondemand::array arr;
-            doc_err = arr_doc.get_array().get(arr);
-            if(doc_err != simdjson::SUCCESS)
-                return doc_err;
-            for(auto elem_result: arr) {
-                simdjson::ondemand::value elem;
-                doc_err = std::move(elem_result).get(elem);
-                if(doc_err != simdjson::SUCCESS)
-                    return doc_err;
-                return codec::deserialize<Backend>(elem, out);
-            }
-            return simdjson::INCORRECT_TYPE;
-        } else {
-            return codec::deserialize<ScalarBackend>(doc, out);
-        }
-    }
-
-    return err;
+    json_source src(doc);
+    return codec::deserialize<Backend>(src, out);
 }
-
-}  // namespace detail
-
-namespace detail {
 
 /// Compute line and column from a JSON string and a byte offset.
 inline source_location compute_location(std::string_view json, std::size_t byte_offset) {
@@ -605,7 +492,7 @@ auto from_json(simdjson::padded_string_view json, T& value) -> std::expected<voi
         return std::unexpected(error(make_error(doc_err)));
     }
 
-    auto err = detail::from_document<Config>(parser, doc, value, json);
+    auto err = detail::from_document<Config>(doc, value);
     if(err != simdjson::SUCCESS) {
         return std::unexpected(detail::build_error(err, json));
     }

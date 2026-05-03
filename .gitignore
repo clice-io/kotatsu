@@ -65,4 +65,4 @@ openspec/
 
 # Profiling data
 perf*.data
-perf*.data.old
+perf*.data.oldcore.*

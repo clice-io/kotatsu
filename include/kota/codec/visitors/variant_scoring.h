@@ -577,6 +577,28 @@ auto deserialize_variant_untagged(typename Backend::value_type& src, std::varian
             return Backend::success;
         });
 
+        // Check if any scoring produced non-zero results.
+        bool has_scores = false;
+        for(std::size_t i = 0; i < N; ++i) {
+            if(scores[i] > 0) { has_scores = true; break; }
+        }
+
+        // For scalar sources where scoring didn't apply (no object/array to
+        // score fields against), fall back to kind-based selection which uses
+        // score_type_info for proper precision ranking.
+        if(!has_scores) {
+            auto best_idx = detail::select_by_kind<Config, Ts...>(live, source_kind);
+            if(best_idx) {
+                auto err = Backend::with_reparsed(
+                    raw_json,
+                    [&](typename Backend::value_type& val) -> typename Backend::error_type {
+                        return deserialize_variant_at<Backend>(*best_idx, val, out);
+                    });
+                if(err == Backend::success)
+                    return Backend::success;
+            }
+        }
+
         // Build ranked list of alternatives by descending score.
         std::array<std::size_t, N> ranked{};
         std::size_t ranked_count = 0;

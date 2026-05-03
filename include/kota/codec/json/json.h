@@ -65,13 +65,12 @@ struct serialize_traits<json::Serializer<Config>, RawValue> {
 /// deserialize_traits for RawValue: captures the raw JSON text of a value
 template <>
 struct deserialize_traits<json::simdjson_backend, RawValue> {
-    static auto read(json::simdjson_backend::value_type& val, RawValue& out)
+    static auto read(json::simdjson_backend::value_type& src, RawValue& out)
         -> json::simdjson_backend::error_type {
-        std::string_view raw;
-        auto err = val.raw_json().get(raw);
+        auto [raw, err] = json::simdjson_backend::capture_raw_json(src);
         if(err != simdjson::SUCCESS)
             return err;
-        out.data.assign(raw.data(), raw.size());
+        out.data = std::move(raw);
         return simdjson::SUCCESS;
     }
 };
