@@ -62,7 +62,7 @@ public:
     [[nodiscard]] static std::expected<GlobPattern, GlobError>
         create(std::string_view s, size_t max_subpattern_num = 100);
 
-    [[nodiscard]] bool isTrivialMatchAll() const {
+    [[nodiscard]] bool is_trivial_match_all() const {
         if(!prefix.empty()) {
             return false;
         }
