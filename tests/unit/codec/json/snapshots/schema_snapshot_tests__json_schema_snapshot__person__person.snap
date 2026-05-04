@@ -1,0 +1,46 @@
+---
+source: schema_snapshot_tests.cpp
+created_at: 2026-05-04
+---
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string"
+        },
+        "age": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+        },
+        "addr": {
+            "$ref": "#/$defs/Address"
+        }
+    },
+    "required": [
+        "name",
+        "age",
+        "addr"
+    ],
+    "$defs": {
+        "Address": {
+            "type": "object",
+            "properties": {
+                "city": {
+                    "type": "string"
+                },
+                "zip": {
+                    "type": "integer",
+                    "minimum": -2147483648,
+                    "maximum": 2147483647
+                }
+            },
+            "required": [
+                "city",
+                "zip"
+            ]
+        }
+    }
+}
+

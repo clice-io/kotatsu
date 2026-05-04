@@ -16,6 +16,7 @@
 #include "kota/meta/type_info.h"
 #include "kota/codec/content/document.h"
 #include "kota/codec/content/serializer.h"
+#include "kota/codec/json/json.h"
 #include "kota/codec/json/serializer.h"
 
 namespace kota::codec::json {
@@ -419,12 +420,7 @@ inline std::expected<std::string, error> schema_string(const meta::type_info& ro
     if(!pretty) {
         return compact;
     }
-    simdjson::dom::parser parser;
-    simdjson::dom::element doc;
-    if(auto err = parser.parse(compact).get(doc)) {
-        return std::unexpected(error(make_error(err)));
-    }
-    return simdjson::prettify(doc);
+    return prettify(compact);
 }
 
 template <typename T>

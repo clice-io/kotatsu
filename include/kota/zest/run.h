@@ -15,6 +15,8 @@ struct RunnerOptions {
     bool parallel = false;
     /// Number of worker threads for parallel mode (0 = hardware_concurrency).
     unsigned parallel_workers = 0;
+    /// When true, snapshot files are created/overwritten instead of compared.
+    bool update_snapshots = false;
 };
 
 /// Parse CLI arguments into RunnerOptions and execute registered tests.

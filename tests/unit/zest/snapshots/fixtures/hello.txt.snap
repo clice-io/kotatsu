@@ -1,0 +1,6 @@
+---
+source: snapshot_tests.cpp
+created_at: 2026-05-04
+input_file: fixtures/hello.txt
+---
+hello world

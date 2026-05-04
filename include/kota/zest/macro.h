@@ -1,6 +1,7 @@
 #pragma once
 
 #include "kota/zest/detail/check.h"
+#include "kota/zest/detail/snapshot.h"
 #include "kota/zest/detail/suite.h"
 #include "kota/zest/detail/trace.h"
 
@@ -136,6 +137,22 @@
 #define CO_ASSERT_GT(...) ZEST_EXPECT_BINARY(>, !::kota::meta::gt(lhs, rhs), co_return, __VA_ARGS__)
 #define CO_ASSERT_GE(...)                                                                          \
     ZEST_EXPECT_BINARY(>=, !::kota::meta::ge(lhs, rhs), co_return, __VA_ARGS__)
+// clang-format on
+
+// clang-format off
+#define ZEST_SNAPSHOT_STR_IMPL(return_action, value, ...)                                          \
+    ZEST_CHECK_IMPL(::kota::zest::check_snapshot(value __VA_OPT__(, __VA_ARGS__)), return_action)
+
+#define EXPECT_SNAPSHOT(value, ...) ZEST_SNAPSHOT_STR_IMPL((void)0, value __VA_OPT__(,) __VA_ARGS__)
+#define ASSERT_SNAPSHOT(value, ...) ZEST_SNAPSHOT_STR_IMPL(return, value __VA_OPT__(,) __VA_ARGS__)
+#define CO_ASSERT_SNAPSHOT(value, ...) ZEST_SNAPSHOT_STR_IMPL(co_return, value __VA_OPT__(,) __VA_ARGS__)
+
+#define ZEST_SNAPSHOT_GLOB_IMPL(return_action, pattern, transform)                                 \
+    ZEST_CHECK_IMPL(::kota::zest::check_snapshot_glob(pattern, transform), return_action)
+
+#define EXPECT_SNAPSHOT_GLOB(pattern, transform) ZEST_SNAPSHOT_GLOB_IMPL((void)0, pattern, transform)
+#define ASSERT_SNAPSHOT_GLOB(pattern, transform) ZEST_SNAPSHOT_GLOB_IMPL(return, pattern, transform)
+#define CO_ASSERT_SNAPSHOT_GLOB(pattern, transform) ZEST_SNAPSHOT_GLOB_IMPL(co_return, pattern, transform)
 // clang-format on
 
 #ifdef __cpp_exceptions

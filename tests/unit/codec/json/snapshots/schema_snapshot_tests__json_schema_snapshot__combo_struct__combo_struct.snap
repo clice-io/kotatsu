@@ -1,0 +1,45 @@
+---
+source: schema_snapshot_tests.cpp
+created_at: 2026-05-04
+---
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string"
+        },
+        "age": {
+            "oneOf": [
+                {
+                    "type": "integer",
+                    "minimum": -2147483648,
+                    "maximum": 2147483647
+                },
+                {
+                    "type": "null"
+                }
+            ]
+        },
+        "tags": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "scores": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "integer",
+                "minimum": -2147483648,
+                "maximum": 2147483647
+            }
+        }
+    },
+    "required": [
+        "name",
+        "tags",
+        "scores"
+    ]
+}
+

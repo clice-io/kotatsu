@@ -1,0 +1,128 @@
+---
+source: schema_snapshot_tests.cpp
+created_at: 2026-05-04
+---
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+        "ext": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "integer": {
+                            "type": "integer",
+                            "minimum": -2147483648,
+                            "maximum": 2147483647
+                        }
+                    },
+                    "required": [
+                        "integer"
+                    ],
+                    "additionalProperties": false
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "text": {
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "text"
+                    ],
+                    "additionalProperties": false
+                }
+            ]
+        },
+        "in": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "radius": {
+                            "type": "integer",
+                            "minimum": -2147483648,
+                            "maximum": 2147483647
+                        },
+                        "kind": {
+                            "const": "circle"
+                        }
+                    },
+                    "required": [
+                        "radius",
+                        "kind"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "width": {
+                            "type": "integer",
+                            "minimum": -2147483648,
+                            "maximum": 2147483647
+                        },
+                        "height": {
+                            "type": "integer",
+                            "minimum": -2147483648,
+                            "maximum": 2147483647
+                        },
+                        "kind": {
+                            "const": "rect"
+                        }
+                    },
+                    "required": [
+                        "width",
+                        "height",
+                        "kind"
+                    ]
+                }
+            ]
+        },
+        "adj": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "const": "integer"
+                        },
+                        "value": {
+                            "type": "integer",
+                            "minimum": -2147483648,
+                            "maximum": 2147483647
+                        }
+                    },
+                    "required": [
+                        "type",
+                        "value"
+                    ],
+                    "additionalProperties": false
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "const": "text"
+                        },
+                        "value": {
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "type",
+                        "value"
+                    ],
+                    "additionalProperties": false
+                }
+            ]
+        }
+    },
+    "required": [
+        "ext",
+        "in",
+        "adj"
+    ]
+}
+

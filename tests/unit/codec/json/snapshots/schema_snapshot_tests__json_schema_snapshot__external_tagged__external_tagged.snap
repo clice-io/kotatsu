@@ -1,0 +1,36 @@
+---
+source: schema_snapshot_tests.cpp
+created_at: 2026-05-04
+---
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "oneOf": [
+        {
+            "type": "object",
+            "properties": {
+                "integer": {
+                    "type": "integer",
+                    "minimum": -2147483648,
+                    "maximum": 2147483647
+                }
+            },
+            "required": [
+                "integer"
+            ],
+            "additionalProperties": false
+        },
+        {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "text"
+            ],
+            "additionalProperties": false
+        }
+    ]
+}
+

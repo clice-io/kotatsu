@@ -1,0 +1,9 @@
+---
+source: snapshot_tests.cpp
+created_at: 2026-05-04
+---
+{
+    "alpha": 1,
+    "beta": 2
+}
+
