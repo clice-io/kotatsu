@@ -36,8 +36,8 @@ std::expected<GlobCharSet, GlobError> parse_bracket_charset(std::string_view s) 
                     break;
                 }
                 auto dash_pos = i;
-                char c_begin = s[i - 1];
-                char c_end = s[i + 1];
+                auto c_begin = static_cast<std::uint8_t>(s[i - 1]);
+                auto c_end = static_cast<std::uint8_t>(s[i + 1]);
                 ++i;
                 if(c_end == '\\') {
                     auto backslash_pos = i;
@@ -49,7 +49,7 @@ std::expected<GlobCharSet, GlobError> parse_bracket_charset(std::string_view s) 
                                       "stray `\\`"}
                         };
                     }
-                    c_end = s[i];
+                    c_end = static_cast<std::uint8_t>(s[i]);
                 }
                 if(c_begin > c_end) [[unlikely]] {
                     return std::unexpected{
@@ -59,9 +59,7 @@ std::expected<GlobCharSet, GlobError> parse_bracket_charset(std::string_view s) 
                                   std::format("`{}` is larger than `{}`", c_begin, c_end)}
                     };
                 }
-                for(int c = static_cast<std::uint8_t>(c_begin);
-                    c <= static_cast<std::uint8_t>(c_end);
-                    ++c) {
+                for(std::uint32_t c = c_begin; c <= c_end; ++c) {
                     if(c != '/') {
                         bv.set(static_cast<std::uint8_t>(c), true);
                     }
@@ -248,16 +246,16 @@ std::expected<GlobPattern, GlobError> GlobPattern::create(std::string_view s,
         }
         return pat;
     }
+    if(auto pos = check_consecutive_slashes(s.substr(0, prefix_size))) [[unlikely]] {
+        return std::unexpected{
+            GlobError{GlobError::MultipleSlash, *pos - 1, *pos + 1, "multiple `/` is not allowed"}
+        };
+    }
     if(prefix_size != 0 && s[prefix_size - 1] == '/') {
         pat.prefix_at_seg_end = true;
         --prefix_size;
     }
     pat.prefix = std::string(s.substr(0, prefix_size));
-    if(auto pos = check_consecutive_slashes(pat.prefix)) [[unlikely]] {
-        return std::unexpected{
-            GlobError{GlobError::MultipleSlash, *pos - 1, *pos + 1, "multiple `/` is not allowed"}
-        };
-    }
     s = s.substr(pat.prefix_at_seg_end ? prefix_size + 1 : prefix_size);
 
     KOTA_EXPECTED_TRY_V(auto sub_pats, detail::glob_parse_brace_expansions(s, max_subpattern_num));

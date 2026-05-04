@@ -23,6 +23,9 @@ TEST_CASE(pattern_sema) {
 
     auto pat3 = kota::GlobPattern::create("/foo/bar/baz/**////*.{c,cc}", 100);
     EXPECT_FALSE(pat3.has_value());
+
+    EXPECT_FALSE(kota::GlobPattern::create("foo//*.cc").has_value());
+    EXPECT_TRUE(kota::GlobPattern::create("/usr/bin/*.txt").has_value());
 }
 
 TEST_CASE(max_sub_glob) {
