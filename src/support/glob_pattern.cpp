@@ -1,13 +1,17 @@
 #include "kota/support/glob_pattern.h"
 
 #include <format>
+#include <limits>
 #include <optional>
+#include <ranges>
 
 #include "kota/support/expected_try.h"
 
 namespace kota {
 
-namespace detail {
+namespace {
+
+using GlobCharSet = std::bitset<256>;
 
 std::expected<GlobCharSet, GlobError> parse_bracket_charset(std::string_view s) {
     GlobCharSet bv{};
@@ -213,7 +217,7 @@ std::expected<small_vector<std::string, 1>, GlobError>
     return subpatterns;
 }
 
-}  // namespace detail
+}  // namespace
 
 std::expected<GlobPattern, GlobError> GlobPattern::create(std::string_view s,
                                                           size_t max_subpattern_num) {
@@ -258,7 +262,7 @@ std::expected<GlobPattern, GlobError> GlobPattern::create(std::string_view s,
     pat.prefix = std::string(s.substr(0, prefix_size));
     s = s.substr(pat.prefix_at_seg_end ? prefix_size + 1 : prefix_size);
 
-    KOTA_EXPECTED_TRY_V(auto sub_pats, detail::glob_parse_brace_expansions(s, max_subpattern_num));
+    KOTA_EXPECTED_TRY_V(auto sub_pats, glob_parse_brace_expansions(s, max_subpattern_num));
 
     for(auto& sub_pat: sub_pats) {
         KOTA_EXPECTED_TRY_V(auto res, SubGlobPattern::create(sub_pat));
@@ -314,8 +318,7 @@ std::expected<GlobPattern::SubGlobPattern, GlobError>
 
         std::string_view chars = s.substr(i, j - i);
         bool invert = s[i] == '^' || s[i] == '!';
-        auto bv = invert ? detail::parse_bracket_charset(chars.substr(1))
-                         : detail::parse_bracket_charset(chars);
+        auto bv = invert ? parse_bracket_charset(chars.substr(1)) : parse_bracket_charset(chars);
         if(!bv.has_value()) [[unlikely]] {
             return std::unexpected{std::move(bv.error())};
         }

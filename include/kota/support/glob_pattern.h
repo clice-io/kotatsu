@@ -3,8 +3,6 @@
 #include <bitset>
 #include <cstdint>
 #include <expected>
-#include <limits>
-#include <ranges>
 #include <string>
 #include <string_view>
 
@@ -31,17 +29,6 @@ struct GlobError {
     std::uint32_t end;
     std::string message;
 };
-
-namespace detail {
-
-using GlobCharSet = std::bitset<256>;
-
-std::expected<GlobCharSet, GlobError> parse_bracket_charset(std::string_view s);
-
-std::expected<small_vector<std::string, 1>, GlobError>
-    glob_parse_brace_expansions(std::string_view s, size_t max_subpattern_num);
-
-}  // namespace detail
 
 /// Glob pattern matcher supporting VS Code-style glob syntax.
 ///
@@ -89,7 +76,7 @@ private:
 
         struct Bracket {
             size_t next_offset;
-            detail::GlobCharSet bytes;
+            std::bitset<256> bytes;
         };
 
         small_vector<Bracket, 0> brackets;
