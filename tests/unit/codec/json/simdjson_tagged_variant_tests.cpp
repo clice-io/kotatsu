@@ -50,7 +50,12 @@ using IntTagRenamedVariant =
     annotation<std::variant<ShapeLine, ShapeRect>,
                meta::attrs::internally_tagged<"kind">::names<"line", "rect">>;
 
-struct IntTagHolder {
+// NB: named IntTagLabelHolder (not IntTagHolder) to avoid a GCC 14 bug where
+// two anonymous-namespace types with the same name produce identical mangled
+// names for template instantiations, causing the linker to merge unrelated
+// weak symbols.  simdjson_variant_detail_tests.cpp also defines IntTagHolder.
+// See https://gcc.gnu.org/bugzilla/show_bug.cgi?id=70413
+struct IntTagLabelHolder {
     std::string label;
     IntTagVariant shape;
 };
@@ -189,12 +194,12 @@ TEST_CASE(internally_tagged_rect_serialize) {
 }
 
 TEST_CASE(internally_tagged_in_struct) {
-    IntTagHolder input{.label = "my shape", .shape = ShapeCircle{.radius = 5.0}};
+    IntTagLabelHolder input{.label = "my shape", .shape = ShapeCircle{.radius = 5.0}};
     auto encoded = to_json(input);
     ASSERT_TRUE(encoded.has_value());
     EXPECT_EQ(*encoded, R"({"label":"my shape","shape":{"kind":"circle","radius":5.0}})");
 
-    IntTagHolder parsed{};
+    IntTagLabelHolder parsed{};
     auto status = from_json(*encoded, parsed);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(parsed, input);

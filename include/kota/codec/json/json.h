@@ -72,18 +72,16 @@ struct serialize_traits<json::Serializer<Config>, RawValue> {
     }
 };
 
-template <typename Config>
-struct deserialize_traits<json::Deserializer<Config>, RawValue> {
-    using error_type = typename json::Deserializer<Config>::error_type;
-
-    static auto deserialize(json::Deserializer<Config>& deserializer, RawValue& value)
-        -> std::expected<void, error_type> {
-        auto raw = deserializer.deserialize_raw_json_view();
-        if(!raw) {
-            return std::unexpected(raw.error());
-        }
-        value.data.assign(raw->data(), raw->size());
-        return {};
+/// deserialize_traits for RawValue: captures the raw JSON text of a value
+template <>
+struct deserialize_traits<json::simdjson_backend, RawValue> {
+    static auto read(json::simdjson_backend::value_type& src, RawValue& out)
+        -> json::simdjson_backend::error_type {
+        auto [raw, err] = json::simdjson_backend::capture_raw_json(src);
+        if(err != simdjson::SUCCESS)
+            return err;
+        out.data = std::move(raw);
+        return simdjson::SUCCESS;
     }
 };
 

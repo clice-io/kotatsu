@@ -1,10 +1,14 @@
 #pragma once
 
+#include <concepts>
+#include <cstddef>
+#include <format>
 #include <string>
 #include <string_view>
 
 #include "spelling.h"
 #include "kota/meta/type_info.h"
+#include "kota/codec/detail/error_context.h"
 
 namespace kota::codec::config {
 
@@ -51,6 +55,59 @@ inline std::string_view apply_enum_rename(bool is_serialize,
         return scratch;
     } else {
         return value;
+    }
+}
+
+/// Compile-time trait to detect whether error path collection is enabled.
+/// Defaults to true if Config::collect_error_path is not defined.
+template <typename Config>
+constexpr bool config_collect_error_path_v = [] {
+    if constexpr(requires {
+                     { Config::collect_error_path } -> std::convertible_to<bool>;
+                 }) {
+        return Config::collect_error_path;
+    } else {
+        return true;
+    }
+}();
+
+/// Convenience functions for visitors to report errors via the common context.
+/// Each checks the config before writing to the thread-local error context.
+
+template <typename Config>
+inline void error_set_missing_field(std::string_view field_name) {
+    if constexpr(config_collect_error_path_v<Config>) {
+        detail::thread_error_context().set_message(
+            std::format("missing required field '{}'", field_name));
+    }
+}
+
+template <typename Config>
+inline void error_set_unknown_field(std::string_view field_name) {
+    if constexpr(config_collect_error_path_v<Config>) {
+        detail::thread_error_context().set_message(std::format("unknown field '{}'", field_name));
+    }
+}
+
+template <typename Config>
+inline void error_set_unknown_enum(std::string_view value) {
+    if constexpr(config_collect_error_path_v<Config>) {
+        detail::thread_error_context().set_message(
+            std::format("unknown enum string value '{}'", value));
+    }
+}
+
+template <typename Config>
+inline void error_prepend_field(std::string_view name) {
+    if constexpr(config_collect_error_path_v<Config>) {
+        detail::thread_error_context().prepend_field(name);
+    }
+}
+
+template <typename Config>
+inline void error_prepend_index(std::size_t index) {
+    if constexpr(config_collect_error_path_v<Config>) {
+        detail::thread_error_context().prepend_index(index);
     }
 }
 

@@ -99,54 +99,17 @@ concept serializer_like =
         { s.end_object() } -> result_as<T, E>;
     };
 
-template <typename D, typename E = typename D::error_type>
-concept deserializer_like =
-    serde_error_like<E> && requires(D& d,
-                                    bool& b,
-                                    char& c,
-                                    std::int64_t& i64,
-                                    std::uint64_t& u64,
-                                    double& f64,
-                                    std::string& text,
-                                    std::vector<std::byte>& bytes,
-                                    std::variant<int, std::string>& variant_value) {
-        { d.deserialize_bool(b) } -> result_as<void, E>;
-        { d.deserialize_int(i64) } -> result_as<void, E>;
-        { d.deserialize_uint(u64) } -> result_as<void, E>;
-        { d.deserialize_float(f64) } -> result_as<void, E>;
-        { d.deserialize_char(c) } -> result_as<void, E>;
-        { d.deserialize_str(text) } -> result_as<void, E>;
-        { d.deserialize_bytes(bytes) } -> result_as<void, E>;
-
-        { d.deserialize_none() } -> result_as<bool, E>;
-        { d.deserialize_variant(variant_value) } -> result_as<void, E>;
-
-        // Streaming object interface
-        { d.begin_object() } -> result_as<void, E>;
-        { d.end_object() } -> result_as<void, E>;
-        { d.next_field() } -> result_as<std::optional<std::string_view>, E>;
-        { d.skip_field_value() } -> result_as<void, E>;
-
-        // Streaming array interface
-        { d.begin_array() } -> result_as<void, E>;
-        { d.next_element() } -> result_as<bool, E>;
-        { d.end_array() } -> result_as<void, E>;
-    };
-
 template <typename S, typename T>
 struct serialize_traits;
 
 template <typename D, typename T>
-struct deserialize_traits;
+struct decode_traits;
 
 template <serializer_like S,
           typename V,
           typename T = typename S::value_type,
           typename E = typename S::error_type>
 constexpr auto serialize(S& s, const V& v) -> std::expected<T, E>;
-
-template <deserializer_like D, typename V, typename E = typename D::error_type>
-constexpr auto deserialize(D& d, V& v) -> std::expected<void, E>;
 
 }  // namespace kota::codec
 
@@ -204,8 +167,7 @@ concept has_serialize_wire_impl =
     requires { typename kota::codec::serialize_traits<S, T>::wire_type; };
 
 template <typename D, typename T>
-concept has_deserialize_wire_impl =
-    requires { typename kota::codec::deserialize_traits<D, T>::wire_type; };
+concept has_decode_wire_impl = requires { typename kota::codec::decode_traits<D, T>::wire_type; };
 
 template <typename S, typename T>
 concept value_serialize_traits_impl = has_serialize_wire_impl<S, T> && requires(S& s, const T& v) {
@@ -220,20 +182,20 @@ concept streaming_serialize_traits_impl =
     requires(S& s, const T& v) { kota::codec::serialize_traits<S, T>::serialize(s, v); };
 
 template <typename D, typename T>
-concept value_deserialize_traits_impl =
-    has_deserialize_wire_impl<D, T> &&
-    requires(const D& d, typename kota::codec::deserialize_traits<D, T>::wire_type w) {
+concept value_decode_traits_impl =
+    has_decode_wire_impl<D, T> &&
+    requires(const D& d, typename kota::codec::decode_traits<D, T>::wire_type w) {
         {
-            kota::codec::deserialize_traits<D, T>::deserialize(d, std::move(w))
+            kota::codec::decode_traits<D, T>::deserialize(d, std::move(w))
         } -> std::convertible_to<T>;
     };
 
 template <typename D, typename T>
-concept streaming_deserialize_traits_impl =
-    has_deserialize_wire_impl<D, T> &&
+concept streaming_decode_traits_impl =
+    has_decode_wire_impl<D, T> &&
     requires(const D& d, typename D::TableView view, typename D::slot_id sid, T& out) {
         {
-            kota::codec::deserialize_traits<D, T>::deserialize(d, view, sid, out)
+            kota::codec::decode_traits<D, T>::deserialize(d, view, sid, out)
         } -> std::same_as<std::expected<void, typename D::error_type>>;
     };
 
@@ -243,7 +205,7 @@ template <typename S, typename T>
 concept has_serialize_traits = detail::has_serialize_wire_impl<S, std::remove_cvref_t<T>>;
 
 template <typename D, typename T>
-concept has_deserialize_traits = detail::has_deserialize_wire_impl<D, std::remove_cvref_t<T>>;
+concept has_decode_traits = detail::has_decode_wire_impl<D, std::remove_cvref_t<T>>;
 
 template <typename S, typename T>
 concept value_serialize_traits = detail::value_serialize_traits_impl<S, std::remove_cvref_t<T>>;
@@ -253,10 +215,9 @@ concept streaming_serialize_traits =
     detail::streaming_serialize_traits_impl<S, std::remove_cvref_t<T>>;
 
 template <typename D, typename T>
-concept value_deserialize_traits = detail::value_deserialize_traits_impl<D, std::remove_cvref_t<T>>;
+concept value_decode_traits = detail::value_decode_traits_impl<D, std::remove_cvref_t<T>>;
 
 template <typename D, typename T>
-concept streaming_deserialize_traits =
-    detail::streaming_deserialize_traits_impl<D, std::remove_cvref_t<T>>;
+concept streaming_decode_traits = detail::streaming_decode_traits_impl<D, std::remove_cvref_t<T>>;
 
 }  // namespace kota::codec::arena

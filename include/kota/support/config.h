@@ -82,3 +82,15 @@
 #define KOTA_CATCH_ALL() else
 #define KOTA_RETHROW() std::abort()
 #endif
+
+#if defined(NDEBUG)
+#if defined(__GNUC__) || defined(__clang__)
+#define KOTA_ALWAYS_INLINE [[gnu::always_inline]] inline
+#elif defined(_MSC_VER)
+#define KOTA_ALWAYS_INLINE [[msvc::forceinline]] inline
+#else
+#define KOTA_ALWAYS_INLINE inline
+#endif
+#else
+#define KOTA_ALWAYS_INLINE inline
+#endif

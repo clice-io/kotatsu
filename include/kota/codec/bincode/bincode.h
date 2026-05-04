@@ -21,19 +21,16 @@ struct serialize_traits<bincode::Serializer<Config>, RawValue> {
     }
 };
 
-template <typename Config>
-struct deserialize_traits<bincode::Deserializer<Config>, RawValue> {
-    using error_type = typename bincode::Deserializer<Config>::error_type;
-
-    static auto deserialize(bincode::Deserializer<Config>& deserializer, RawValue& value)
-        -> std::expected<void, error_type> {
+/// deserialize_traits for RawValue: read length-prefixed bytes from bincode
+template <>
+struct deserialize_traits<bincode::bincode_backend, RawValue> {
+    static auto read(bincode::byte_reader*& v, RawValue& value) -> bincode::error_kind {
         std::vector<std::byte> bytes;
-        auto status = deserializer.deserialize_bytes(bytes);
-        if(!status) {
-            return std::unexpected(status.error());
-        }
+        auto err = bincode::bincode_backend::read_bytes(v, bytes);
+        if(err != bincode::error_kind::ok)
+            return err;
         value.data.assign(reinterpret_cast<const char*>(bytes.data()), bytes.size());
-        return {};
+        return bincode::error_kind::ok;
     }
 };
 

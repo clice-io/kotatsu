@@ -28,20 +28,17 @@ struct serialize_traits<bincode::Serializer<Config>, kota::ipc::protocol::Reques
     }
 };
 
-// Bincode deserialization: read int64 directly
-template <typename Config>
-struct deserialize_traits<bincode::Deserializer<Config>, kota::ipc::protocol::RequestID> {
-    using error_type = typename bincode::Deserializer<Config>::error_type;
-
-    static auto deserialize(bincode::Deserializer<Config>& deserializer,
-                            kota::ipc::protocol::RequestID& id) -> std::expected<void, error_type> {
-        std::int64_t v = 0;
-        auto status = codec::deserialize(deserializer, v);
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-        id.emplace<std::int64_t>(v);
-        return {};
+// Bincode deserialization: read int64 directly via new backend
+template <>
+struct deserialize_traits<bincode::bincode_backend, kota::ipc::protocol::RequestID> {
+    static auto read(bincode::byte_reader*& v, kota::ipc::protocol::RequestID& id)
+        -> bincode::error_kind {
+        std::int64_t val = 0;
+        auto err = bincode::bincode_backend::read_int64(v, val);
+        if(err != bincode::error_kind::ok)
+            return err;
+        id.emplace<std::int64_t>(val);
+        return bincode::error_kind::ok;
     }
 };
 

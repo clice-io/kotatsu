@@ -366,11 +366,11 @@ auto decode_value_at(const B& d,
                 return {};
             });
         return *result;
-    } else if constexpr(arena::streaming_deserialize_traits<B, U>) {
-        using traits = kota::codec::deserialize_traits<B, std::remove_cvref_t<U>>;
+    } else if constexpr(arena::streaming_decode_traits<B, U>) {
+        using traits = kota::codec::decode_traits<B, std::remove_cvref_t<U>>;
         return traits::deserialize(d, view, sid, out);
-    } else if constexpr(arena::value_deserialize_traits<B, U>) {
-        using traits = kota::codec::deserialize_traits<B, std::remove_cvref_t<U>>;
+    } else if constexpr(arena::value_decode_traits<B, U>) {
+        using traits = kota::codec::decode_traits<B, std::remove_cvref_t<U>>;
         using wire_t = typename traits::wire_type;
         if(!view.has(sid)) {
             if(required) {
@@ -553,8 +553,8 @@ auto decode_sequence(const B& d,
     using element_t = std::ranges::range_value_t<U>;
     using element_clean_t = detail::clean_t<element_t>;
 
-    if constexpr(arena::value_deserialize_traits<B, element_clean_t>) {
-        using traits = kota::codec::deserialize_traits<B, element_clean_t>;
+    if constexpr(arena::value_decode_traits<B, element_clean_t>) {
+        using traits = kota::codec::decode_traits<B, element_clean_t>;
         using wire_t = typename traits::wire_type;
         if(!view.has(sid)) {
             if(required) {

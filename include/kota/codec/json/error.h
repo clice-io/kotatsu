@@ -63,6 +63,7 @@ constexpr auto make_error(simdjson::error_code error) noexcept -> error_kind {
         case simdjson::INDEX_OUT_OF_BOUNDS: return error_kind::index_out_of_bounds;
         case simdjson::NO_SUCH_FIELD: return error_kind::no_such_field;
         case simdjson::TAPE_ERROR: return error_kind::tape_error;
+        case simdjson::PARSER_IN_USE: return error_kind::invalid_state;
         default: return error_kind::unknown;
     }
 }

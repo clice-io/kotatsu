@@ -1,0 +1,97 @@
+#pragma once
+
+#include <cstddef>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+
+#include "kota/support/config.h"
+#include "kota/support/ranges.h"
+#include "kota/codec/detail/config.h"
+
+namespace kota::codec {
+
+template <typename Backend, typename T>
+auto deserialize(typename Backend::value_type& src, T& out) -> typename Backend::error_type;
+
+template <typename Backend, typename ElemT, typename Container>
+struct seq_visitor {
+    using E = typename Backend::error_type;
+
+    Container& out;
+    std::size_t index = 0;
+
+    KOTA_ALWAYS_INLINE E visit_element(typename Backend::value_type& val) {
+        ElemT element{};
+        auto err = deserialize<Backend>(val, element);
+        if(err != Backend::success) [[unlikely]] {
+            using seq_config = config::config_of<Backend>;
+            config::error_prepend_index<seq_config>(index);
+            return err;
+        }
+        kota::detail::append_sequence_element(out, std::move(element));
+        ++index;
+        return Backend::success;
+    }
+};
+
+template <typename Backend, typename ArrayT>
+struct array_visitor {
+    using E = typename Backend::error_type;
+    using ElemT = typename ArrayT::value_type;
+    constexpr static std::size_t N = std::tuple_size_v<ArrayT>;
+
+    ArrayT& out;
+    std::size_t index = 0;
+
+    KOTA_ALWAYS_INLINE E visit_element(typename Backend::value_type& val) {
+        if(index >= N) [[unlikely]]
+            return Backend::type_mismatch;
+        auto err = deserialize<Backend>(val, out[index]);
+        if(err != Backend::success)
+            return err;
+        ++index;
+        return Backend::success;
+    }
+
+    KOTA_ALWAYS_INLINE E finish() const {
+        if(index != N) [[unlikely]]
+            return Backend::type_mismatch;
+        return Backend::success;
+    }
+};
+
+template <typename Backend, typename TupleT>
+struct tuple_visitor {
+    using E = typename Backend::error_type;
+    constexpr static std::size_t N = std::tuple_size_v<TupleT>;
+
+    TupleT& out;
+    std::size_t index = 0;
+    E error = Backend::success;
+
+    KOTA_ALWAYS_INLINE E visit_element(typename Backend::value_type& val) {
+        if(index >= N) [[unlikely]]
+            return Backend::type_mismatch;
+        visit_at(val, std::make_index_sequence<N>{});
+        ++index;
+        return error;
+    }
+
+    KOTA_ALWAYS_INLINE E finish() const {
+        if(index != N) [[unlikely]]
+            return Backend::type_mismatch;
+        return Backend::success;
+    }
+
+private:
+    template <std::size_t... Is>
+    KOTA_ALWAYS_INLINE void visit_at(typename Backend::value_type& val,
+                                     std::index_sequence<Is...>) {
+        (void)((Is == index ? (error = deserialize<Backend>(val, std::get<Is>(out)), true)
+                            : false) ||
+               ...);
+    }
+};
+
+}  // namespace kota::codec

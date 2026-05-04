@@ -87,28 +87,28 @@ struct remove_smart_ptr<std::shared_ptr<T>> {
 template <typename T>
 using remove_smart_ptr_t = typename remove_smart_ptr<T>::type;
 
-// deserialize_traits substitution: if the user specialized
-// `codec::deserialize_traits<T>`, the proxy sees the declared `wire_type`
+// decode_traits substitution: if the user specialized
+// `codec::decode_traits<T>`, the proxy sees the declared `wire_type`
 // rather than T itself. Ensures `root[&Struct::field]` and
 // `map_view<K, V>` return views shaped by the wire type, keeping the lazy
 // read path consistent with the arena decode path.
 template <typename T>
-struct apply_deserialize_traits {
+struct apply_decode_traits {
     using type = T;
 };
 
 template <typename T>
-    requires arena::has_deserialize_traits<backend, T>
-struct apply_deserialize_traits<T> {
-    using type = typename kota::codec::deserialize_traits<backend, T>::wire_type;
+    requires arena::has_decode_traits<backend, T>
+struct apply_decode_traits<T> {
+    using type = typename kota::codec::decode_traits<backend, T>::wire_type;
 };
 
 template <typename T>
-using apply_deserialize_traits_t = typename apply_deserialize_traits<T>::type;
+using apply_decode_traits_t = typename apply_decode_traits<T>::type;
 
-// Full cleaning: annotation -> optional -> smart_ptr -> deserialize_traits
+// Full cleaning: annotation -> optional -> smart_ptr -> decode_traits
 template <typename T>
-using deep_clean_t = apply_deserialize_traits_t<remove_smart_ptr_t<clean_t<T>>>;
+using deep_clean_t = apply_decode_traits_t<remove_smart_ptr_t<clean_t<T>>>;
 
 template <typename T>
 struct scalar_storage {

@@ -9,6 +9,52 @@
 #include "kota/codec/detail/spelling.h"
 #include "kota/codec/json/json.h"
 
+namespace kota::codec {
+
+/// deserialize_traits for protocol::Value: deserialize as underlying Variant
+template <>
+struct deserialize_traits<json::simdjson_backend, ipc::protocol::Value> {
+    using Backend = json::simdjson_backend;
+
+    static auto read(Backend::value_type& val, ipc::protocol::Value& out) -> Backend::error_type {
+        ipc::protocol::Variant variant{};
+        auto err = codec::deserialize<Backend>(val, variant);
+        if(err != Backend::success)
+            return err;
+        std::visit([&](auto&& item) { out = std::forward<decltype(item)>(item); },
+                   std::move(variant));
+        return Backend::success;
+    }
+};
+
+/// deserialize_traits for protocol::Error: manual field-by-field deserialization
+template <>
+struct deserialize_traits<json::simdjson_backend, ipc::protocol::Error> {
+    using Backend = json::simdjson_backend;
+
+    static auto read(Backend::value_type& val, ipc::protocol::Error& out) -> Backend::error_type {
+        struct error_visitor {
+            ipc::protocol::Error& out;
+
+            Backend::error_type visit_field(std::string_view key, Backend::value_type& field_val) {
+                if(key == "code") {
+                    return codec::deserialize<Backend>(field_val, out.code);
+                } else if(key == "message") {
+                    return codec::deserialize<Backend>(field_val, out.message);
+                } else if(key == "data") {
+                    return codec::deserialize<Backend>(field_val, out.data);
+                }
+                return Backend::success;
+            }
+        };
+
+        error_visitor vis{out};
+        return Backend::visit_object(val, vis);
+    }
+};
+
+}  // namespace kota::codec
+
 namespace kota::ipc {
 
 struct lsp_config {

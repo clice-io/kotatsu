@@ -25,6 +25,7 @@
 #include "kota/codec/detail/config.h"
 #include "kota/codec/detail/spelling.h"
 #include "kota/codec/detail/struct_serialize.h"
+#include "kota/codec/detail/variant_dispatch.h"
 
 namespace kota::codec::detail {
 

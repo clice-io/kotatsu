@@ -60,20 +60,13 @@ struct WithFlattenField {
 
 TEST_SUITE(serde_bincode) {
 
-TEST_CASE(invalid_optional_tag_poison_deserializer) {
+TEST_CASE(invalid_optional_tag_produces_error) {
+    // Byte 0x02 is an invalid optional tag (valid: 0x00=None, 0x01=Some).
+    // The trailing 0x01 would be a valid bool, but should never be reached.
     const std::vector<std::uint8_t> bytes{2U, 1U};
-    bincode::Deserializer<> deserializer(bytes);
-
-    auto none = deserializer.deserialize_none();
-    ASSERT_FALSE(none.has_value());
-    EXPECT_EQ(none.error(), bincode::error_kind::type_mismatch);
-    EXPECT_FALSE(deserializer.valid());
-    EXPECT_EQ(deserializer.error(), bincode::error_kind::type_mismatch);
-
-    bool value = false;
-    auto status = deserializer.deserialize_bool(value);
-    ASSERT_FALSE(status.has_value());
-    EXPECT_EQ(status.error(), bincode::error_kind::type_mismatch);
+    auto result = bincode::from_bytes<std::optional<bool>>(bytes);
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), bincode::error_kind::type_mismatch);
 }
 
 TEST_CASE(struct_deserialize_respects_schema_skip) {

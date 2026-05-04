@@ -6,329 +6,214 @@
 #include <cstdint>
 #include <expected>
 #include <limits>
-#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
-#include <utility>
-#include <variant>
 #include <vector>
 
 #include "kota/support/expected_try.h"
+#include "kota/meta/type_kind.h"
 #include "kota/codec/bincode/error.h"
-#include "kota/codec/detail/backend.h"
-#include "kota/codec/detail/codec.h"
-#include "kota/codec/detail/config.h"
-#include "kota/codec/detail/narrow.h"
+#include "kota/codec/deserialize.h"
 
 namespace kota::codec::bincode {
 
-template <typename Config = config::default_config>
-class Deserializer {
-public:
-    using config_type = Config;
-    using error_type = bincode::error;
-
-    constexpr static auto backend_kind_v = backend_kind::streaming;
-    constexpr static auto field_mode_v = field_mode::by_position;
-
-    template <typename T>
-    using result_t = std::expected<T, error_type>;
-
-    using status_t = result_t<void>;
-
-    explicit Deserializer(std::span<const std::byte> bytes) : bytes(bytes) {}
-
-    explicit Deserializer(std::span<const std::uint8_t> bytes) :
-        bytes(reinterpret_cast<const std::byte*>(bytes.data()), bytes.size()) {}
-
-    explicit Deserializer(const std::vector<std::byte>& bytes) :
-        Deserializer(std::span<const std::byte>(bytes.data(), bytes.size())) {}
-
-    explicit Deserializer(const std::vector<std::uint8_t>& bytes) :
-        Deserializer(std::span<const std::uint8_t>(bytes.data(), bytes.size())) {}
-
-    [[nodiscard]] bool valid() const noexcept {
-        return is_valid;
-    }
-
-    [[nodiscard]] error_type error() const noexcept {
-        return last_error;
-    }
-
-    status_t finish() {
-        if(!is_valid) {
-            return std::unexpected(last_error);
-        }
-        if(offset != bytes.size()) {
-            return mark_invalid(error_kind::trailing_bytes);
-        }
-        return {};
-    }
-
-    status_t deserialize_bool(bool& value) {
-        KOTA_EXPECTED_TRY_V(auto parsed, read_u8());
-
-        if(parsed > 1U) {
-            return mark_invalid(error_type::type_mismatch);
-        }
-        value = parsed == 1U;
-        return {};
-    }
-
-    template <codec::int_like T>
-    status_t deserialize_int(T& value) {
-        KOTA_EXPECTED_TRY_V(auto parsed, read_integral<std::int64_t>());
-
-        auto narrowed = codec::detail::narrow_int<T>(parsed, error_type::number_out_of_range);
-        if(!narrowed) {
-            return mark_invalid(narrowed.error());
-        }
-        value = *narrowed;
-        return {};
-    }
-
-    template <codec::uint_like T>
-    status_t deserialize_uint(T& value) {
-        KOTA_EXPECTED_TRY_V(auto parsed, read_integral<std::uint64_t>());
-
-        auto narrowed = codec::detail::narrow_uint<T>(parsed, error_type::number_out_of_range);
-        if(!narrowed) {
-            return mark_invalid(narrowed.error());
-        }
-        value = *narrowed;
-        return {};
-    }
-
-    template <codec::floating_like T>
-    status_t deserialize_float(T& value) {
-        KOTA_EXPECTED_TRY_V(auto raw, read_integral<std::uint64_t>());
-
-        const double parsed = std::bit_cast<double>(raw);
-        auto narrowed = codec::detail::narrow_float<T>(parsed, error_type::number_out_of_range);
-        if(!narrowed) {
-            return mark_invalid(narrowed.error());
-        }
-        value = *narrowed;
-        return {};
-    }
-
-    status_t deserialize_char(char& value) {
-        KOTA_EXPECTED_TRY_V(auto parsed, read_u8());
-        value = static_cast<char>(parsed);
-        return {};
-    }
-
-    status_t deserialize_str(std::string& value) {
-        KOTA_EXPECTED_TRY_V(auto length, read_length());
-
-        if(offset + length > bytes.size()) {
-            return mark_invalid(error_kind::unexpected_eof);
-        }
-
-        if(length == 0) {
-            value.clear();
-            return {};
-        }
-
-        const auto* begin = reinterpret_cast<const char*>(bytes.data() + offset);
-        value.assign(begin, begin + length);
-        offset += length;
-        return {};
-    }
-
-    status_t deserialize_bytes(std::vector<std::byte>& value) {
-        KOTA_EXPECTED_TRY_V(auto length, read_length());
-
-        if(offset + length > bytes.size()) {
-            return mark_invalid(error_kind::unexpected_eof);
-        }
-
-        if(length == 0) {
-            value.clear();
-            return {};
-        }
-
-        value.assign(bytes.begin() + static_cast<std::ptrdiff_t>(offset),
-                     bytes.begin() + static_cast<std::ptrdiff_t>(offset + length));
-        offset += length;
-        return {};
-    }
-
-    result_t<bool> deserialize_none() {
-        KOTA_EXPECTED_TRY_V(auto tag, read_u8());
-
-        if(tag == 0U) {
-            return true;
-        }
-        if(tag == 1U) {
-            return false;
-        }
-        return mark_invalid(error_type::type_mismatch);
-    }
-
-    template <typename... Ts>
-    status_t deserialize_variant(std::variant<Ts...>& value) {
-        KOTA_EXPECTED_TRY_V(auto index, read_integral<std::uint32_t>());
-
-        constexpr std::size_t variant_size = sizeof...(Ts);
-        if(index >= variant_size) {
-            return mark_invalid(error_kind::invalid_variant_index);
-        }
-
-        std::expected<void, error_type> status{};
-        bool matched = false;
-
-        [&]<std::size_t... I>(std::index_sequence<I...>) {
-            (([&] {
-                 if(index != I) {
-                     return;
-                 }
-
-                 matched = true;
-                 status = deserialize_variant_alternative<I>(value);
-             }()),
-             ...);
-        }(std::make_index_sequence<variant_size>{});
-
-        if(!matched) {
-            return mark_invalid(error_kind::invalid_variant_index);
-        }
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-        return {};
-    }
-
-    status_t begin_object() {
-        return mark_invalid(error_kind::unsupported_operation);
-    }
-
-    status_t end_object() {
-        return mark_invalid(error_kind::unsupported_operation);
-    }
-
-    result_t<std::optional<std::string_view>> next_field() {
-        return mark_invalid(error_kind::unsupported_operation);
-    }
-
-    status_t skip_field_value() {
-        return mark_invalid(error_kind::unsupported_operation);
-    }
-
-    status_t begin_array() {
-        KOTA_EXPECTED_TRY_V(auto len, read_length());
-        array_stack.push_back(len);
-        return {};
-    }
-
-    result_t<bool> next_element() {
-        if(!is_valid) {
-            return std::unexpected(last_error);
-        }
-        if(array_stack.empty()) {
-            return mark_invalid(error_type::invalid_state);
-        }
-        if(array_stack.back() == 0) {
-            return false;
-        }
-        --array_stack.back();
-        return true;
-    }
-
-    status_t end_array() {
-        if(array_stack.empty()) {
-            return mark_invalid(error_type::invalid_state);
-        }
-        if(array_stack.back() != 0) {
-            return mark_invalid(error_type::invalid_state);
-        }
-        array_stack.pop_back();
-        return {};
-    }
-
-private:
-    template <std::size_t I, typename Variant>
-    status_t deserialize_variant_alternative(Variant& value) {
-        using alt_t = std::variant_alternative_t<I, Variant>;
-        if constexpr(std::same_as<alt_t, std::monostate>) {
-            value = std::monostate{};
-            return {};
-        } else if constexpr(std::default_initializable<alt_t>) {
-            alt_t alt{};
-            KOTA_EXPECTED_TRY(codec::deserialize(*this, alt));
-
-            value = std::move(alt);
-            return {};
-        } else {
-            return mark_invalid(error_type::invalid_state);
-        }
-    }
+/// Streaming byte reader state for bincode deserialization.
+struct byte_reader {
+    std::span<const std::byte> bytes;
+    std::size_t offset = 0;
 
     template <typename T>
         requires std::integral<T>
-    result_t<T> read_integral() {
-        if(!is_valid) {
-            return std::unexpected(last_error);
-        }
-
+    error_kind read_integral(T& out) {
         using unsigned_t = std::make_unsigned_t<T>;
-        if(offset + sizeof(unsigned_t) > bytes.size()) {
-            return mark_invalid(error_kind::unexpected_eof);
-        }
+        if(offset + sizeof(unsigned_t) > bytes.size())
+            return error_kind::unexpected_eof;
 
         unsigned_t raw = 0;
         for(std::size_t i = 0; i < sizeof(unsigned_t); ++i) {
-            const auto byte = std::to_integer<std::uint8_t>(bytes[offset + i]);
+            auto byte = std::to_integer<std::uint8_t>(bytes[offset + i]);
             raw |= (static_cast<unsigned_t>(byte) << (i * 8));
         }
-
         offset += sizeof(unsigned_t);
+
         if constexpr(std::signed_integral<T>) {
-            return std::bit_cast<T>(raw);
+            out = std::bit_cast<T>(raw);
         } else {
-            return static_cast<T>(raw);
+            out = static_cast<T>(raw);
         }
+        return error_kind::ok;
     }
 
-    result_t<std::uint8_t> read_u8() {
-        return read_integral<std::uint8_t>();
+    error_kind read_u8(std::uint8_t& out) {
+        return read_integral(out);
     }
 
-    result_t<std::size_t> read_length() {
-        KOTA_EXPECTED_TRY_V(auto raw, read_integral<std::uint64_t>());
+    error_kind read_length(std::size_t& out) {
+        std::uint64_t raw = 0;
+        auto err = read_integral(raw);
+        if(err != error_kind::ok)
+            return err;
+        if(raw > static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)()))
+            return error_kind::number_out_of_range;
+        out = static_cast<std::size_t>(raw);
+        return error_kind::ok;
+    }
+};
 
-        if(raw > static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)())) {
-            return mark_invalid(error_type::number_out_of_range);
+struct bincode_backend {
+    /// value_type is a pointer to the shared byte_reader state.
+    /// All reads advance the reader's offset.
+    using value_type = byte_reader*;
+    using error_type = error_kind;
+    constexpr static error_type success = error_kind::ok;
+    constexpr static error_type type_mismatch = error_kind::type_mismatch;
+    constexpr static error_type number_out_of_range = error_kind::number_out_of_range;
+
+    /// Marker: this backend uses positional struct layout (no field names).
+    constexpr static bool positional = true;
+
+    static error_type read_bool(value_type& v, bool& out) {
+        std::uint8_t raw = 0;
+        auto err = v->read_u8(raw);
+        if(err != success)
+            return err;
+        if(raw > 1U)
+            return type_mismatch;
+        out = raw == 1U;
+        return success;
+    }
+
+    static error_type read_int64(value_type& v, std::int64_t& out) {
+        return v->read_integral(out);
+    }
+
+    static error_type read_uint64(value_type& v, std::uint64_t& out) {
+        return v->read_integral(out);
+    }
+
+    static error_type read_double(value_type& v, double& out) {
+        std::uint64_t raw = 0;
+        auto err = v->read_integral(raw);
+        if(err != success)
+            return err;
+        out = std::bit_cast<double>(raw);
+        return success;
+    }
+
+    static error_type read_char(value_type& v, char& out) {
+        std::uint8_t byte = 0;
+        auto err = v->read_u8(byte);
+        if(err != success)
+            return err;
+        out = static_cast<char>(byte);
+        return success;
+    }
+
+    static error_type read_string(value_type& v, std::string_view& out) {
+        std::size_t length = 0;
+        auto err = v->read_length(length);
+        if(err != success)
+            return err;
+        if(v->offset + length > v->bytes.size())
+            return error_kind::unexpected_eof;
+        out = std::string_view(reinterpret_cast<const char*>(v->bytes.data() + v->offset), length);
+        v->offset += length;
+        return success;
+    }
+
+    static error_type read_is_null(value_type& v, bool& is_null) {
+        std::uint8_t tag = 0;
+        auto err = v->read_u8(tag);
+        if(err != success)
+            return err;
+        if(tag == 0U) {
+            is_null = true;
+            return success;
         }
-
-        return static_cast<std::size_t>(raw);
+        if(tag == 1U) {
+            is_null = false;
+            return success;
+        }
+        return type_mismatch;
     }
 
-    std::unexpected<error_type> mark_invalid(error_type error) {
-        is_valid = false;
-        last_error = error;
-        return std::unexpected(last_error);
+    /// Bincode does not have objects. This is unsupported.
+    template <typename Visitor>
+    static error_type visit_object(value_type&, Visitor&&) {
+        return error_kind::unsupported_operation;
     }
 
-private:
-    std::span<const std::byte> bytes{};
-    std::size_t offset = 0;
-    std::vector<std::size_t> array_stack;
-    bool is_valid = true;
-    error_type last_error = error_kind::ok;
+    /// Bincode arrays: length-prefixed, elements read sequentially.
+    template <typename Visitor>
+    static error_type visit_array(value_type& src, Visitor&& vis) {
+        std::size_t length = 0;
+        auto err = src->read_length(length);
+        if(err != success)
+            return err;
+        for(std::size_t i = 0; i < length; ++i) {
+            err = vis.visit_element(src);
+            if(err != success) [[unlikely]]
+                return err;
+        }
+        return success;
+    }
+
+    /// Positional struct: read fields in schema order.
+    /// The visitor's visit_field_positional(index, val) is called for each slot.
+    template <typename Visitor>
+    static error_type visit_struct_positional(value_type& src, Visitor&& vis) {
+        return vis.visit_all_positional(src);
+    }
+
+    /// Bincode variant: read a uint32 index, then deserialize the selected alternative.
+    static error_type read_variant_index(value_type& v, std::uint32_t& out) {
+        return v->read_integral(out);
+    }
+
+    /// Bincode does not have type introspection.
+    static meta::type_kind kind_of(value_type&) {
+        return meta::type_kind::unknown;
+    }
+
+    /// Bincode bytes: length-prefixed raw bytes.
+    static error_type read_bytes(value_type& v, std::vector<std::byte>& out) {
+        std::size_t length = 0;
+        auto err = v->read_length(length);
+        if(err != success)
+            return err;
+        if(v->offset + length > v->bytes.size())
+            return error_kind::unexpected_eof;
+        if(length == 0) {
+            out.clear();
+            return success;
+        }
+        out.assign(v->bytes.begin() + static_cast<std::ptrdiff_t>(v->offset),
+                   v->bytes.begin() + static_cast<std::ptrdiff_t>(v->offset + length));
+        v->offset += length;
+        return success;
+    }
+};
+
+template <typename Config>
+struct bincode_backend_with_config : bincode_backend {
+    using config_type = Config;
+    using base_backend_type = bincode_backend;
 };
 
 template <typename Config = config::default_config, typename T>
 auto from_bytes(std::span<const std::byte> bytes, T& value) -> std::expected<void, error> {
-    Deserializer<Config> deserializer(bytes);
-    if(!deserializer.valid()) {
-        return std::unexpected(deserializer.error());
+    using Backend = bincode_backend_with_config<Config>;
+    byte_reader reader{bytes, 0};
+    typename Backend::value_type src = &reader;
+    auto err = codec::deserialize<Backend>(src, value);
+    if(err != error_kind::ok) {
+        return std::unexpected(error(err));
     }
-
-    KOTA_EXPECTED_TRY(codec::deserialize(deserializer, value));
-    KOTA_EXPECTED_TRY(deserializer.finish());
+    if(reader.offset != bytes.size()) {
+        return std::unexpected(error(error_kind::trailing_bytes));
+    }
     return {};
 }
 
@@ -376,7 +261,5 @@ template <typename T, typename Config = config::default_config>
 auto from_bytes(const std::vector<std::uint8_t>& bytes) -> std::expected<T, error> {
     return from_bytes<T, Config>(std::span<const std::uint8_t>(bytes.data(), bytes.size()));
 }
-
-static_assert(codec::deserializer_like<Deserializer<>>);
 
 }  // namespace kota::codec::bincode

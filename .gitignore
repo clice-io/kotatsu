@@ -62,3 +62,7 @@ scripts/schema.json
 .codex/
 .claude/
 openspec/
+
+# Profiling data
+perf*.data
+perf*.data.oldcore.*

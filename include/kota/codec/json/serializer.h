@@ -94,7 +94,7 @@ public:
             value);
     }
 
-    result_t<value_type> serialize_bool(bool value) {
+    KOTA_ALWAYS_INLINE result_t<value_type> serialize_bool(bool value) {
         if(!before_value()) {
             return status();
         }
@@ -103,7 +103,7 @@ public:
         return status();
     }
 
-    result_t<value_type> serialize_int(std::int64_t value) {
+    KOTA_ALWAYS_INLINE result_t<value_type> serialize_int(std::int64_t value) {
         if(!before_value()) {
             return status();
         }
@@ -112,7 +112,7 @@ public:
         return status();
     }
 
-    result_t<value_type> serialize_uint(std::uint64_t value) {
+    KOTA_ALWAYS_INLINE result_t<value_type> serialize_uint(std::uint64_t value) {
         if(!before_value()) {
             return status();
         }
@@ -121,7 +121,7 @@ public:
         return status();
     }
 
-    result_t<value_type> serialize_float(double value) {
+    KOTA_ALWAYS_INLINE result_t<value_type> serialize_float(double value) {
         if(!before_value()) {
             return status();
         }
@@ -144,7 +144,7 @@ public:
         return status();
     }
 
-    result_t<value_type> serialize_str(std::string_view value) {
+    KOTA_ALWAYS_INLINE result_t<value_type> serialize_str(std::string_view value) {
         if(!before_value()) {
             return status();
         }
@@ -238,13 +238,13 @@ public:
     }
 
     template <typename F>
-    status_t serialize_field(std::string_view name, F&& writer) {
+    KOTA_ALWAYS_INLINE status_t serialize_field(std::string_view name, F&& writer) {
         KOTA_EXPECTED_TRY(field(name));
         return std::forward<F>(writer)();
     }
 
     template <typename F>
-    status_t serialize_element(F&& writer) {
+    KOTA_ALWAYS_INLINE status_t serialize_element(F&& writer) {
         return std::forward<F>(writer)();
     }
 
