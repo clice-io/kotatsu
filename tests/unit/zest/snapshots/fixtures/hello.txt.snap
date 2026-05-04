@@ -1,1 +1,5 @@
+---
+source: snapshot_tests.cpp
+input_file: fixtures/hello.txt
+---
 hello world

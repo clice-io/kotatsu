@@ -1,1 +1,5 @@
+---
+source: snapshot_tests.cpp
+input_file: fixtures/nested/deep.txt
+---
 nested content

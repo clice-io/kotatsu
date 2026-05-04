@@ -33,12 +33,43 @@ SnapshotContext& context() {
     return ctx;
 }
 
-std::optional<std::string> read_snap(const fs::path& path) {
+std::optional<std::string> read_snap_body(const fs::path& path) {
     std::ifstream file(path, std::ios::binary);
     if(!file) {
         return std::nullopt;
     }
-    return std::string(std::istreambuf_iterator<char>(file), {});
+    auto raw = std::string(std::istreambuf_iterator<char>(file), {});
+
+    constexpr std::string_view separator = "---\n";
+    if(!raw.starts_with(separator)) {
+        return raw;
+    }
+    auto end = raw.find(separator, separator.size());
+    if(end == std::string::npos) {
+        return raw;
+    }
+    auto body_start = end + separator.size();
+    auto body = raw.substr(body_start);
+    if(body.ends_with('\n')) {
+        body.pop_back();
+    }
+    return body;
+}
+
+std::string format_snap(std::string_view source,
+                        std::string_view input_file,
+                        std::string_view content) {
+    std::string result = "---\n";
+    result += std::format("source: {}\n", source);
+    if(!input_file.empty()) {
+        result += std::format("input_file: {}\n", input_file);
+    }
+    result += "---\n";
+    result += content;
+    if(!content.empty() && !content.ends_with('\n')) {
+        result += '\n';
+    }
+    return result;
 }
 
 bool write_snap(const fs::path& path, std::string_view content) {
@@ -55,11 +86,17 @@ fs::path snap_dir() {
     return fs::path(context().source_file).parent_path() / "snapshots";
 }
 
-bool check_impl(const fs::path& snap_path, std::string_view value, std::source_location loc) {
-    auto existing = read_snap(snap_path);
+bool check_impl(const fs::path& snap_path,
+                std::string_view value,
+                std::string_view input_file,
+                std::source_location loc) {
+    auto existing = read_snap_body(snap_path);
+
+    auto source = fs::path(loc.file_name()).filename().string();
+    auto formatted = format_snap(source, input_file, value);
 
     if(!existing) {
-        if(!write_snap(snap_path, value)) {
+        if(!write_snap(snap_path, formatted)) {
             std::println("[snapshot] failed to write {}", snap_path.string());
             return true;
         }
@@ -72,13 +109,13 @@ bool check_impl(const fs::path& snap_path, std::string_view value, std::source_l
     }
 
     if(g_update_snapshots.load(std::memory_order_relaxed)) {
-        write_snap(snap_path, value);
+        write_snap(snap_path, formatted);
         std::println("[snapshot] updated {}", snap_path.string());
         return false;
     }
 
     auto new_path = fs::path(snap_path.string() + ".new");
-    write_snap(new_path, value);
+    write_snap(new_path, formatted);
 
     std::println("[snapshot] mismatch: {}", snap_path.string());
     std::println("           new result: {}", new_path.string());
@@ -120,10 +157,10 @@ bool check_snapshot(std::string_view value, std::string_view name, std::source_l
         }
         ctx.unnamed_used = true;
         auto filename = std::format("{}__{}.snap", ctx.suite_name, ctx.test_name);
-        return check_impl(snap_dir() / filename, value, loc);
+        return check_impl(snap_dir() / filename, value, "", loc);
     }
 
-    return check_impl(snap_dir() / std::format("{}.snap", name), value, loc);
+    return check_impl(snap_dir() / std::format("{}.snap", name), value, "", loc);
 }
 
 bool check_snapshot_glob(std::string_view pattern,
@@ -184,7 +221,7 @@ bool check_snapshot_glob(std::string_view pattern,
         auto full_path = (base_dir / rel).string();
         auto value = transform(full_path);
         auto snap_path = snap_base / (rel.generic_string() + ".snap");
-        if(check_impl(snap_path, value, loc)) {
+        if(check_impl(snap_path, value, rel.generic_string(), loc)) {
             failed = true;
         }
     }
