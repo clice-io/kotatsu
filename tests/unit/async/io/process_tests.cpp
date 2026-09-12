@@ -198,7 +198,11 @@ TEST_CASE(spawn_pipe_stderr) {
             EXPECT_EQ(status->status, 0);
         }
 
+        // The child writes nothing to stdout, so read() reports EOF.
         EXPECT_TRUE(!stdout_out.has_value());
+        if(!stdout_out.has_value()) {
+            EXPECT_EQ(stdout_out.error(), error::end_of_file);
+        }
         EXPECT_TRUE(stderr_out.has_value());
 
         if(stderr_out.has_value()) {

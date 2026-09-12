@@ -83,29 +83,21 @@ struct basic_tick_await : uv::await_op<basic_tick_await<SelfT, HandleT>> {
         }
     }
 
+    /// wait() consumes queued ticks before awaiting, and on_fire/on_cancel
+    /// clear the waiter before completing — the awaiter itself has no
+    /// ready-state or cleanup of its own.
     bool await_ready() const noexcept {
-        return self && self->pending > 0;
+        return false;
     }
 
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
                       std::source_location loc = std::source_location::current()) noexcept {
-        if(!self) {
-            return waiting;
-        }
         self->waiter = this;
         return this->attach(waiting.promise(), loc);
     }
 
-    void await_resume() noexcept {
-        if(self && self->pending > 0) {
-            self->pending -= 1;
-        }
-
-        if(self) {
-            self->waiter = nullptr;
-        }
-    }
+    void await_resume() noexcept {}
 };
 
 using timer_await = basic_tick_await<timer::Self, uv_timer_t>;
@@ -126,11 +118,9 @@ struct signal_await : uv::await_op<signal_await> {
 
     static void on_cancel(io_op* op) {
         await_base::complete_cancel(op, [](auto& aw) {
-            if(aw.self) {
-                uv::signal_stop(aw.self->handle);
-                aw.self->waiter = nullptr;
-                aw.self->active = nullptr;
-            }
+            uv::signal_stop(aw.self->handle);
+            aw.self->waiter = nullptr;
+            aw.self->active = nullptr;
         });
     }
 
@@ -151,30 +141,21 @@ struct signal_await : uv::await_op<signal_await> {
         }
     }
 
+    /// See basic_tick_await: wait() owns the pending-tick fast path, and
+    /// on_fire/on_cancel clear waiter/active before completing.
     bool await_ready() const noexcept {
-        return self && self->pending > 0;
+        return false;
     }
 
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
                       std::source_location loc = std::source_location::current()) noexcept {
-        if(!self) {
-            return waiting;
-        }
         self->waiter = this;
         self->active = &result;
         return this->attach(waiting.promise(), loc);
     }
 
     error await_resume() noexcept {
-        if(self && self->pending > 0) {
-            self->pending -= 1;
-        }
-
-        if(self) {
-            self->waiter = nullptr;
-            self->active = nullptr;
-        }
         return result;
     }
 };
@@ -208,9 +189,7 @@ timer timer::create(event_loop& loop) {
 }
 
 void timer::start(std::chrono::milliseconds timeout, std::chrono::milliseconds repeat) {
-    if(!self) {
-        return;
-    }
+    assert(self && "timer object is invalid (moved-from or default-constructed)");
 
     auto& handle = self->handle;
     assert(timeout.count() >= 0 && "timer::start timeout must be non-negative");
@@ -223,17 +202,13 @@ void timer::start(std::chrono::milliseconds timeout, std::chrono::milliseconds r
 }
 
 void timer::stop() {
-    if(!self) {
-        return;
-    }
+    assert(self && "timer object is invalid (moved-from or default-constructed)");
 
     uv::timer_stop(self->handle);
 }
 
 task<> timer::wait() {
-    if(!self) {
-        co_return;
-    }
+    assert(self && "timer object is invalid (moved-from or default-constructed)");
 
     if(self->pending > 0) {
         self->pending -= 1;
@@ -241,6 +216,9 @@ task<> timer::wait() {
     }
 
     if(self->waiter != nullptr) {
+        // Contract violation: single waiter only. task<> has no error
+        // channel, so release builds degrade to an immediate (spurious)
+        // return rather than corrupting the armed waiter.
         assert(false && "timer::wait supports a single waiter at a time");
         co_return;
     }
@@ -259,38 +237,22 @@ result<signal> signal::create(event_loop& loop) {
 }
 
 error signal::start(int signum) {
-    if(!self) {
-        return error::invalid_argument;
-    }
+    assert(self && "signal object is invalid (moved-from or default-constructed)");
 
-    auto& handle = self->handle;
-    if(auto err = uv::signal_start(
-           handle,
-           [](uv_signal_t* h, int) { signal_await::on_fire(h); },
-           signum);
-       err) {
-        return err;
-    }
-
-    return {};
+    return uv::signal_start(
+        self->handle,
+        [](uv_signal_t* h, int) { signal_await::on_fire(h); },
+        signum);
 }
 
 error signal::stop() {
-    if(!self) {
-        return error::invalid_argument;
-    }
+    assert(self && "signal object is invalid (moved-from or default-constructed)");
 
-    if(auto err = uv::signal_stop(self->handle)) {
-        return err;
-    }
-
-    return {};
+    return uv::signal_stop(self->handle);
 }
 
 task<void, error> signal::wait() {
-    if(!self) {
-        co_await fail(error::invalid_argument);
-    }
+    assert(self && "signal object is invalid (moved-from or default-constructed)");
 
     if(self->pending > 0) {
         self->pending -= 1;
@@ -322,33 +284,26 @@ task<void, error> signal::wait() {
     }                                                                                              \
                                                                                                    \
     void WatcherType::start() {                                                                    \
-        if(!self) {                                                                                \
-            return;                                                                                \
-        }                                                                                          \
-                                                                                                   \
+        assert(self && #WatcherType " object is invalid (moved-from or default-constructed)");     \
         auto& handle = self->handle;                                                               \
         START_FN(handle, [](HandleType* h) { AwaiterType::on_fire(h); });                          \
     }                                                                                              \
                                                                                                    \
     void WatcherType::stop() {                                                                     \
-        if(!self) {                                                                                \
-            return;                                                                                \
-        }                                                                                          \
-                                                                                                   \
+        assert(self && #WatcherType " object is invalid (moved-from or default-constructed)");     \
         STOP_FN(self->handle);                                                                     \
     }                                                                                              \
                                                                                                    \
     task<> WatcherType::wait() {                                                                   \
-        if(!self) {                                                                                \
-            co_return;                                                                             \
-        }                                                                                          \
-                                                                                                   \
+        assert(self && #WatcherType " object is invalid (moved-from or default-constructed)");     \
         if(self->pending > 0) {                                                                    \
             self->pending -= 1;                                                                    \
             co_return;                                                                             \
         }                                                                                          \
                                                                                                    \
         if(self->waiter != nullptr) {                                                              \
+            /* Contract violation: single waiter only; release builds       */                     \
+            /* degrade to an immediate spurious return (no error channel).  */                     \
             assert(false && NameLiteral "::wait supports a single waiter at a time");              \
             co_return;                                                                             \
         }                                                                                          \

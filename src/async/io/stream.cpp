@@ -14,9 +14,7 @@ error ensure_reading(stream::Self* self,
                      stream::Self::read_mode mode,
                      uv_alloc_cb alloc_cb,
                      uv_read_cb read_cb) {
-    if(self == nullptr) {
-        return error::invalid_argument;
-    }
+    assert(self && "ensure_reading requires stream state");
 
     if(self->active_read_mode == mode) {
         return {};
@@ -44,13 +42,11 @@ struct stream_read_await : uv::await_op<stream_read_await> {
 
     static void on_cancel(io_op* op) {
         await_base::complete_cancel(op, [](auto& aw) {
-            if(aw.self) {
-                if(aw.self->active_read_mode != stream::Self::read_mode::none) {
-                    uv::read_stop(aw.self->stream);
-                    aw.self->active_read_mode = stream::Self::read_mode::none;
-                }
-                aw.self->reader.disarm();
+            if(aw.self->active_read_mode != stream::Self::read_mode::none) {
+                uv::read_stop(aw.self->stream);
+                aw.self->active_read_mode = stream::Self::read_mode::none;
             }
+            aw.self->reader.disarm();
         });
     }
 
@@ -68,10 +64,18 @@ struct stream_read_await : uv::await_op<stream_read_await> {
         }
     }
 
-    // When nread=0, it means no data was read but the stream is still alive (e.g., EAGAIN).
     static void on_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t*) {
         auto s = static_cast<stream::Self*>(stream->data);
         assert(s != nullptr && "on_read requires stream state in stream->data");
+
+        // No data but the stream is still alive (e.g. EAGAIN): keep waiting.
+        // Completing here would resume read()/read_chunk() with an empty
+        // buffer, breaking the "successful reads are never empty" contract.
+        if(nread == 0) {
+            return;
+        }
+
+        // EOF lands here as error::end_of_file (UV_EOF).
         if(auto err = uv::status_to_error(nread)) {
             uv::read_stop(*stream);
             s->active_read_mode = stream::Self::read_mode::none;
@@ -103,10 +107,6 @@ struct stream_read_await : uv::await_op<stream_read_await> {
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<Promise> waiting,
                       std::source_location loc = std::source_location::current()) noexcept {
-        if(!self) {
-            return waiting;
-        }
-
         // Buffered reads intentionally leave libuv reading across await boundaries so later
         // read_chunk()/read() calls can wait for more bytes without tearing the watcher down.
         // If we are already in buffered mode, there is nothing to restart. If another read style
@@ -139,13 +139,11 @@ struct stream_read_some_await : uv::await_op<stream_read_some_await> {
 
     static void on_cancel(io_op* op) {
         await_base::complete_cancel(op, [](auto& aw) {
-            if(aw.self) {
-                if(aw.self->active_read_mode != stream::Self::read_mode::none) {
-                    uv::read_stop(aw.self->stream);
-                    aw.self->active_read_mode = stream::Self::read_mode::none;
-                }
-                aw.self->reader.disarm();
+            if(aw.self->active_read_mode != stream::Self::read_mode::none) {
+                uv::read_stop(aw.self->stream);
+                aw.self->active_read_mode = stream::Self::read_mode::none;
             }
+            aw.self->reader.disarm();
         });
     }
 
@@ -180,16 +178,15 @@ struct stream_read_some_await : uv::await_op<stream_read_some_await> {
             return;
         }
 
-        if(nread == UV_EOF) {
-            aw->out = std::size_t{0};
-        } else if(auto err = uv::status_to_error(nread)) {
+        // EOF lands in the error branch as error::end_of_file (UV_EOF).
+        if(auto err = uv::status_to_error(nread)) {
             aw->out = outcome_error(err);
             aw->mark_cancelled_if(nread);
         } else if(nread > 0) {
             aw->out = static_cast<std::size_t>(nread);
         } else {
-            // nread=0 with no error means no data was read, but the stream is still alive (e.g.,
-            // EAGAIN).
+            // nread=0 with no error: no data read but the stream is still
+            // alive (e.g. EAGAIN); keep waiting.
             return;
         }
 
@@ -207,10 +204,6 @@ struct stream_read_some_await : uv::await_op<stream_read_some_await> {
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<Promise> waiting,
                       std::source_location loc = std::source_location::current()) noexcept {
-        if(!self) {
-            return waiting;
-        }
-
         self->reader.arm(*this);
         if(auto err = ensure_reading(self, stream::Self::read_mode::direct, on_alloc, on_read)) {
             out = outcome_error(err);
@@ -222,9 +215,7 @@ struct stream_read_some_await : uv::await_op<stream_read_some_await> {
     }
 
     result<std::size_t> await_resume() noexcept {
-        if(self) {
-            self->reader.disarm();
-        }
+        self->reader.disarm();
         return std::move(out);
     }
 };
@@ -244,11 +235,7 @@ struct stream_write_await : uv::await_op<stream_write_await> {
     stream_write_await(stream::Self* self, std::span<const char> data) :
         self(self), storage(data.begin(), data.end()) {}
 
-    static void on_cancel(io_op* op) {
-        auto* aw = static_cast<stream_write_await*>(op);
-        if(!aw->self) {
-            return;
-        }
+    static void on_cancel(io_op*) {
         // uv_write_t is not cancellable via uv_cancel().
         // Keep the request in-flight and wait for on_write() to retire it.
     }
@@ -278,10 +265,6 @@ struct stream_write_await : uv::await_op<stream_write_await> {
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
                       std::source_location loc = std::source_location::current()) noexcept {
-        if(!self) {
-            return waiting;
-        }
-
         self->writer.arm(*this);
         req.data = this;
 
@@ -297,9 +280,7 @@ struct stream_write_await : uv::await_op<stream_write_await> {
     }
 
     error await_resume() noexcept {
-        if(self) {
-            self->writer.disarm();
-        }
+        self->writer.disarm();
         return this->error_code;
     }
 };
@@ -338,8 +319,12 @@ handle_type guess_handle(int fd) {
 }
 
 task<std::string, error> stream::read() {
-    if(!self) {
-        co_await fail(error::invalid_argument);
+    assert(self && "stream object is invalid (moved-from or default-constructed)");
+
+    // A second concurrent read would silently overwrite the armed waiter,
+    // leaving the first reader suspended forever.
+    if(self->reader.has_waiter()) {
+        co_await fail(error::connection_already_in_progress);
     }
 
     if(self->buffer.readable_bytes() == 0) {
@@ -355,8 +340,10 @@ task<std::string, error> stream::read() {
 }
 
 task<std::size_t, error> stream::read_some(std::span<char> dst) {
-    if(!self) {
-        co_await fail(error::invalid_argument);
+    assert(self && "stream object is invalid (moved-from or default-constructed)");
+
+    if(self->reader.has_waiter()) {
+        co_await fail(error::connection_already_in_progress);
     }
 
     if(dst.empty()) {
@@ -375,8 +362,10 @@ task<std::size_t, error> stream::read_some(std::span<char> dst) {
 
 task<stream::chunk, error> stream::read_chunk() {
     chunk out{};
-    if(!self) {
-        co_await fail(error::invalid_argument);
+    assert(self && "stream object is invalid (moved-from or default-constructed)");
+
+    if(self->reader.has_waiter()) {
+        co_await fail(error::connection_already_in_progress);
     }
 
     if(self->buffer.readable_bytes() == 0) {
@@ -391,19 +380,13 @@ task<stream::chunk, error> stream::read_chunk() {
 }
 
 void stream::consume(std::size_t n) {
-    if(!self) {
-        return;
-    }
-
+    assert(self && "stream object is invalid (moved-from or default-constructed)");
     self->buffer.advance_read(n);
 }
 
 void stream::stop() {
-    // Runtime guard: match all other public methods. assert alone compiles
-    // out in NDEBUG builds, leaving UB on default-constructed/moved-from streams.
-    if(!self || !self->initialized()) {
-        return;
-    }
+    assert(self && self->initialized() &&
+           "stream object is invalid (moved-from or default-constructed)");
 
     // Capture the mode before resetting — we need it to pick the right
     // error-delivery path for the pending awaiter below.
@@ -435,7 +418,10 @@ void stream::stop() {
 }
 
 task<void, error> stream::write(std::span<const char> data) {
-    if(!self || !self->initialized() || data.empty()) {
+    assert(self && self->initialized() &&
+           "stream object is invalid (moved-from or default-constructed)");
+
+    if(data.empty()) {
         co_await fail(error::invalid_argument);
     }
 
@@ -450,9 +436,8 @@ task<void, error> stream::write(std::span<const char> data) {
 }
 
 result<std::size_t> stream::try_write(std::span<const char> data) {
-    if(!self || !self->initialized()) {
-        return outcome_error(error::invalid_argument);
-    }
+    assert(self && self->initialized() &&
+           "stream object is invalid (moved-from or default-constructed)");
 
     if(data.empty()) {
         return std::size_t{0};
@@ -472,31 +457,22 @@ result<std::size_t> stream::try_write(std::span<const char> data) {
 }
 
 bool stream::readable() const noexcept {
-    if(!self || !self->initialized()) {
-        return false;
-    }
-
+    assert(self && self->initialized() &&
+           "stream object is invalid (moved-from or default-constructed)");
     return uv::is_readable(self->stream);
 }
 
 bool stream::writable() const noexcept {
-    if(!self || !self->initialized()) {
-        return false;
-    }
-
+    assert(self && self->initialized() &&
+           "stream object is invalid (moved-from or default-constructed)");
     return uv::is_writable(self->stream);
 }
 
 error stream::set_blocking(bool enabled) {
-    if(!self || !self->initialized()) {
-        return error::invalid_argument;
-    }
+    assert(self && self->initialized() &&
+           "stream object is invalid (moved-from or default-constructed)");
 
-    if(auto err = uv::stream_set_blocking(self->stream, enabled)) {
-        return err;
-    }
-
-    return {};
+    return uv::stream_set_blocking(self->stream, enabled);
 }
 
 stream::stream(unique_handle<Self> self) noexcept : self(std::move(self)) {}

@@ -65,8 +65,10 @@ bool sync_primitive::cancel_waiter(wait_node& link) noexcept {
         link.parent = nullptr;
         return false;
     }
+    // The deferred resume re-enters the awaiting coroutine directly, so the
+    // awaiter's await_resume observes state == Cancelled and reports the
+    // interruption as a value; nothing consults the waiter's policy.
     link.state = async_node::Cancelled;
-    link.policy = static_cast<async_node::Policy>(link.policy | async_node::InterceptCancel);
     event_loop::current().defer_resume(*awaiting);
     return true;
 }

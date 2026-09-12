@@ -44,15 +44,24 @@ public:
     /// Raw libuv handle pointer, or nullptr if invalid.
     const void* handle() const noexcept;
 
-    /// Read available data into a std::string; waits for at least one read if empty.
+    /// Reads whatever is buffered, waiting until at least one byte arrives.
+    /// A successful read is never empty; EOF is reported as
+    /// error::end_of_file (like every other read failure).
+    ///
+    /// One read (of any flavor) may be pending at a time; a concurrent read
+    /// fails with error::connection_already_in_progress.
     task<std::string, error> read();
 
-    /// Read up to dst.size() bytes into dst; returns bytes read, 0 on EOF, or an error.
+    /// Reads up to dst.size() bytes into dst. A successful read carries at
+    /// least one byte (0 only for an empty dst); EOF is reported as
+    /// error::end_of_file.
     task<std::size_t, error> read_some(std::span<char> dst);
 
     using chunk = std::span<const char>;
 
-    /// Read a chunk view into the internal buffer; call consume() after processing.
+    /// Reads a chunk view into the internal buffer; call consume() after
+    /// processing. A successful chunk is never empty; EOF is reported as
+    /// error::end_of_file.
     task<chunk, error> read_chunk();
 
     /// Consume bytes from the internal buffer.
@@ -100,6 +109,10 @@ public:
     Self* operator->() noexcept;
 
     /// Accept one connection; only one pending accept is allowed at a time.
+    ///
+    /// Incoming connections are accepted eagerly and queued (without bound)
+    /// until accept() consumes them — call accept() promptly or stop() the
+    /// acceptor to avoid unbounded buffering.
     task<Stream, error> accept();
 
     /// Stop pending accept which will complete with error::operation_aborted. If no accept is

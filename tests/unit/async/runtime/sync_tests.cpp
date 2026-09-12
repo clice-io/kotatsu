@@ -25,6 +25,33 @@ TEST_CASE(mutex_try_lock) {
     m.unlock();
 }
 
+TEST_CASE(mutex_scoped_guard) {
+    mutex m;
+    int step = 0;
+
+    auto holder = [&]() -> task<> {
+        auto lock = co_await m.scoped();
+        EXPECT_EQ(step, 0);
+        step = 1;
+        co_await sleep(milliseconds{5}, loop);
+        // The lock is released when `lock` leaves scope.
+    };
+
+    auto waiter = [&]() -> task<> {
+        auto lock = co_await m.scoped();
+        EXPECT_EQ(step, 1);
+        step = 2;
+    };
+
+    auto h = holder();
+    auto w = waiter();
+    schedule_all(h, w);
+
+    EXPECT_EQ(step, 2);
+    EXPECT_TRUE(m.try_lock());
+    m.unlock();
+}
+
 TEST_CASE(mutex_lock_order) {
     mutex m;
     int step = 0;

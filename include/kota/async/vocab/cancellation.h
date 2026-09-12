@@ -94,6 +94,10 @@ public:
         cancel();
     }
 
+    /// Loop-affine: must be called on the thread running the event loop
+    /// that owns the waiting tasks — the wakeup resumes waiters through
+    /// that loop. Polling token.cancelled(), by contrast, is safe from any
+    /// thread (e.g. inside queue() workers).
     void cancel() noexcept {
         state->cancel();
     }

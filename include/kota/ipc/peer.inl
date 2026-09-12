@@ -346,7 +346,7 @@ task<> Peer<CodecT>::run() {
     auto read_loop = [&]() -> task<> {
         auto result = co_await read_and_dispatch().catch_cancel();
         if(result.is_cancelled()) {
-            request_group.cancel();
+            request_group.abort();
         }
         co_await request_group.join();
         self->closed = true;
@@ -435,8 +435,10 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
         timeout_source = std::make_shared<cancellation_source>();
         timeout_stop.emplace();
         if(self) {
-            self->loop.schedule(detail::cancel_after_timeout(
-                *opts.timeout, timeout_source, timeout_stop->token(), self->loop));
+            self->loop.schedule(detail::cancel_after_timeout(*opts.timeout,
+                                                             timeout_source,
+                                                             timeout_stop->token(),
+                                                             self->loop));
         }
     }
 
@@ -626,7 +628,7 @@ template <typename CodecT>
 template <typename Tag>
     requires detail::has_tag_request_traits_v<Tag>
 auto Peer<CodecT>::send_request(const typename protocol::RequestTraits<Tag>::Params& params,
-                                 request_options opts)
+                                request_options opts)
     -> task<typename protocol::RequestTraits<Tag>::Result, Error> {
     using Traits = protocol::RequestTraits<Tag>;
 

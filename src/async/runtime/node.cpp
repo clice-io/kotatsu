@@ -193,10 +193,11 @@ void async_node::resume() {
                 }
             }
             f->set_child(nullptr);
-            if(f->get_parent()) {
-                auto next = f->finalize();
-                resume_and_drain(next);
-            }
+            // finalize() handles every ownership case: parent attached →
+            // deliver the completion; detached root → destroy the frame
+            // (a pre-cancelled scheduled task would otherwise leak it);
+            // otherwise noop and the owning task object reclaims it.
+            resume_and_drain(f->finalize());
             return;
         }
         f->mark_executing();
@@ -287,6 +288,14 @@ std::coroutine_handle<> async_node::attach(async_node& parent_node, std::source_
     switch(this->kind) {
         case NodeKind::Task: {
             auto self = static_cast<task_frame*>(this);
+            if(self->state == Cancelled) {
+                // Cancelled before it ever started: never run the body,
+                // deliver the completion to the parent right away. The
+                // parent link stays null — the completion is already
+                // delivered here, and resume()/cancel() recognize a
+                // completed task by that.
+                return parent_node.on_child_complete(*self);
+            }
             self->state = Running;
             self->parent = &parent_node;
             return self->handle();
@@ -391,10 +400,11 @@ std::coroutine_handle<> async_node::on_child_complete(async_node& child) {
             assert(self->pending > 0 && "aggregate completed more children than it owns");
 
             const bool intercepts = self->policy & InterceptCancel;
-            // A cancelled child is a cancellation event unless the child
-            // intercepts its own cancellation while the aggregate does not.
-            const bool cancelled =
-                child.state == Cancelled && (intercepts || !(child.policy & InterceptCancel));
+            // A cancelled child is always a cancellation event: a child
+            // carries InterceptCancel iff its task type has a cancel
+            // channel, and any such child forces the aggregate to
+            // intercept as well (see the when_op constructor).
+            const bool cancelled = child.state == Cancelled;
 
             // The completing child is not counted off until below, so the
             // cancel cascades inside decide() cannot settle re-entrantly.

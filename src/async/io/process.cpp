@@ -51,10 +51,12 @@ struct process_await : uv::await_op<process_await> {
 
     explicit process_await(process::Self* self) : self(self) {}
 
+    /// cancel() already recorded the Cancelled state; killing the process
+    /// makes the exit callback fire, which delivers the (cancelled)
+    /// completion — structured completion stays intact.
     static void on_cancel(io_op* op) {
         auto* aw = static_cast<process_await*>(op);
-        if(aw && aw->self) {
-            aw->state = async_node::Cancelled;
+        if(aw->self) {
             uv::process_kill(aw->self->handle, SIGKILL);
         }
     }
@@ -70,9 +72,6 @@ struct process_await : uv::await_op<process_await> {
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
                       std::source_location loc = std::source_location::current()) noexcept {
-        if(!self) {
-            return waiting;
-        }
         self->arm(*this, result);
         return this->attach(waiting.promise(), loc);
     }
@@ -216,12 +215,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
 
     uv_opts.flags = to_uv_process_flags(opts.creation);
 
-    auto* self = out.proc.self.get();
-    if(self == nullptr) {
-        return outcome_error(error::invalid_argument);
-    }
-
-    auto& proc_handle = self->handle;
+    auto& proc_handle = out.proc.self->handle;
     if(auto err = uv::spawn(loop, proc_handle, uv_opts)) {
         return outcome_error(err);
     }
@@ -234,9 +228,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
 }
 
 task<process::wait_result> process::wait() {
-    if(!self) {
-        co_return outcome_error(error::invalid_argument);
-    }
+    assert(self && "process object is invalid (moved-from or default-constructed)");
 
     if(self->has_pending()) {
         co_return self->peek_pending();
@@ -250,23 +242,17 @@ task<process::wait_result> process::wait() {
 }
 
 int process::pid() const noexcept {
-    if(!self || !self->initialized()) {
-        return -1;
-    }
+    assert(self && self->initialized() &&
+           "process object is invalid (moved-from or default-constructed)");
 
     return self->handle.pid;
 }
 
 error process::kill(int signum) {
-    if(!self || !self->initialized()) {
-        return error::invalid_argument;
-    }
+    assert(self && self->initialized() &&
+           "process object is invalid (moved-from or default-constructed)");
 
-    if(auto err = uv::process_kill(self->handle, signum)) {
-        return err;
-    }
-
-    return {};
+    return uv::process_kill(self->handle, signum);
 }
 
 }  // namespace kota

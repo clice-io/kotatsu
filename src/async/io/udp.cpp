@@ -18,8 +18,9 @@ struct udp::Self : uv::handle<udp::Self, uv_udp_t> {
     std::vector<char> buffer;
     bool receiving = false;
 
-    uv::stored_delivery<error> send;
-    bool send_inflight = false;
+    /// One send in flight at a time; the waiter stays armed until on_send
+    /// delivers, so an armed waiter is also the in-flight marker.
+    uv::waiter_binding<error> send;
 };
 
 namespace {
@@ -115,13 +116,11 @@ struct udp_recv_await : uv::await_op<udp_recv_await> {
 
     static void on_cancel(io_op* op) {
         await_base::complete_cancel(op, [](auto& aw) {
-            if(aw.self && aw.self->receiving) {
+            if(aw.self->receiving) {
                 uv::udp_recv_stop(aw.self->handle);
                 aw.self->receiving = false;
             }
-            if(aw.self) {
-                aw.self->recv.disarm();
-            }
+            aw.self->recv.disarm();
         });
     }
 
@@ -133,6 +132,17 @@ struct udp_recv_await : uv::await_op<udp_recv_await> {
         buf->len = static_cast<decltype(buf->len)>(u->buffer.size());
     }
 
+    /// Backpressure: a datagram (or error) arriving with no recv() armed is
+    /// queued once and reading stops, so further datagrams wait in the
+    /// kernel buffer instead of growing the pending queue without bound.
+    /// The next recv() drains the queue and restarts reading.
+    static void stop_if_unconsumed(udp::Self& u) {
+        if(!u.recv.has_waiter() && u.receiving) {
+            uv::udp_recv_stop(u.handle);
+            u.receiving = false;
+        }
+    }
+
     static void on_read(uv_udp_t* handle,
                         ssize_t nread,
                         const uv_buf_t*,
@@ -141,8 +151,16 @@ struct udp_recv_await : uv::await_op<udp_recv_await> {
         auto* u = static_cast<udp::Self*>(handle->data);
         assert(u != nullptr && "on_read requires udp state in handle->data");
 
+        // libuv's "nothing left to read" notification (fires after each
+        // datagram burst): not a datagram, and distinct from an empty UDP
+        // packet, which arrives with a non-null addr.
+        if(nread == 0 && addr == nullptr) {
+            return;
+        }
+
         if(auto err = uv::status_to_error(nread)) {
             u->recv.mark_cancelled_if(nread);
+            stop_if_unconsumed(*u);
             u->recv.deliver(err);
             return;
         }
@@ -159,6 +177,7 @@ struct udp_recv_await : uv::await_op<udp_recv_await> {
             }
         }
 
+        stop_if_unconsumed(*u);
         u->recv.deliver(std::move(out));
     }
 
@@ -169,10 +188,6 @@ struct udp_recv_await : uv::await_op<udp_recv_await> {
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
                       std::source_location loc = std::source_location::current()) noexcept {
-        if(!self) {
-            return waiting;
-        }
-
         self->recv.arm(*this, outcome);
 
         if(!self->receiving) {
@@ -190,9 +205,7 @@ struct udp_recv_await : uv::await_op<udp_recv_await> {
     }
 
     result<udp::recv_result> await_resume() noexcept {
-        if(self) {
-            self->recv.disarm();
-        }
+        self->recv.disarm();
         return std::move(outcome);
     }
 };
@@ -214,11 +227,7 @@ struct udp_send_await : uv::await_op<udp_send_await> {
     udp_send_await(udp::Self* u, std::span<const char> data, std::optional<sockaddr_storage>&& d) :
         self(u), storage(data.begin(), data.end()), dest(std::move(d)) {}
 
-    static void on_cancel(io_op* op) {
-        auto* aw = static_cast<udp_send_await*>(op);
-        if(!aw->self) {
-            return;
-        }
+    static void on_cancel(io_op*) {
         // uv_udp_send_t is not cancellable via uv_cancel().
         // Keep the request in-flight and wait for on_send() to retire it.
     }
@@ -229,32 +238,23 @@ struct udp_send_await : uv::await_op<udp_send_await> {
         auto* u = static_cast<udp::Self*>(handle->data);
         assert(u != nullptr && "on_send requires udp state in handle->data");
 
-        u->send_inflight = false;
-
         u->send.mark_cancelled_if(status);
 
-        auto ec = uv::status_to_error(status);
-
-        u->send.deliver(std::move(ec));
+        // The awaiter stays armed until this completion, even when the
+        // awaiting task was cancelled (structured completion keeps its
+        // frame suspended), so the delivery cannot miss.
+        [[maybe_unused]] bool delivered = u->send.try_deliver(uv::status_to_error(status));
+        assert(delivered && "udp send completion requires an armed awaiter");
     }
 
-    bool await_ready() noexcept {
-        if(self && self->send.has_pending()) {
-            result = self->send.take_pending();
-            return true;
-        }
+    bool await_ready() const noexcept {
         return false;
     }
 
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
                       std::source_location loc = std::source_location::current()) noexcept {
-        if(!self) {
-            result = error::invalid_argument;
-            return waiting;
-        }
-
-        if(self->send.has_waiter() || self->send_inflight) {
+        if(self->send.has_waiter()) {
             result = error::connection_already_in_progress;
             return waiting;
         }
@@ -274,14 +274,11 @@ struct udp_send_await : uv::await_op<udp_send_await> {
             return waiting;
         }
 
-        self->send_inflight = true;
         return this->attach(waiting.promise(), loc);
     }
 
     error await_resume() noexcept {
-        if(self) {
-            self->send.disarm();
-        }
+        self->send.disarm();
         return result;
     }
 };
@@ -368,9 +365,7 @@ result<udp> udp::open(int fd, event_loop& loop) {
 }
 
 error udp::bind(std::string_view host, int port, bind_options options) {
-    if(!self) {
-        return error::invalid_argument;
-    }
+    assert(self && "udp object is invalid (moved-from or default-constructed)");
 
     auto uv_flags = to_uv_udp_bind_flags(options);
     if(!uv_flags) {
@@ -383,17 +378,11 @@ error udp::bind(std::string_view host, int port, bind_options options) {
     }
 
     const sockaddr* addr = reinterpret_cast<const sockaddr*>(&resolved->storage);
-    if(auto err = uv::udp_bind(self->handle, addr, uv_flags.value())) {
-        return err;
-    }
-
-    return {};
+    return uv::udp_bind(self->handle, addr, uv_flags.value());
 }
 
 error udp::connect(std::string_view host, int port) {
-    if(!self) {
-        return error::invalid_argument;
-    }
+    assert(self && "udp object is invalid (moved-from or default-constructed)");
 
     auto resolved = uv::resolve_addr(host, port);
     if(!resolved) {
@@ -401,29 +390,17 @@ error udp::connect(std::string_view host, int port) {
     }
 
     const sockaddr* addr = reinterpret_cast<const sockaddr*>(&resolved->storage);
-    if(auto err = uv::udp_connect(self->handle, addr)) {
-        return err;
-    }
-
-    return {};
+    return uv::udp_connect(self->handle, addr);
 }
 
 error udp::disconnect() {
-    if(!self) {
-        return error::invalid_argument;
-    }
+    assert(self && "udp object is invalid (moved-from or default-constructed)");
 
-    if(auto err = uv::udp_connect(self->handle, nullptr)) {
-        return err;
-    }
-
-    return {};
+    return uv::udp_connect(self->handle, nullptr);
 }
 
 task<void, error> udp::send(std::span<const char> data, std::string_view host, int port) {
-    if(!self) {
-        co_await fail(error::invalid_argument);
-    }
+    assert(self && "udp object is invalid (moved-from or default-constructed)");
 
     auto resolved = uv::resolve_addr(host, port);
     if(!resolved) {
@@ -438,9 +415,7 @@ task<void, error> udp::send(std::span<const char> data, std::string_view host, i
 }
 
 task<void, error> udp::send(std::span<const char> data) {
-    if(!self) {
-        co_await fail(error::invalid_argument);
-    }
+    assert(self && "udp object is invalid (moved-from or default-constructed)");
 
     if(auto err = co_await udp_send_await{self.get(), data, std::nullopt}) {
         co_await fail(std::move(err));
@@ -448,9 +423,7 @@ task<void, error> udp::send(std::span<const char> data) {
 }
 
 error udp::try_send(std::span<const char> data, std::string_view host, int port) {
-    if(!self) {
-        return error::invalid_argument;
-    }
+    assert(self && "udp object is invalid (moved-from or default-constructed)");
 
     auto resolved = uv::resolve_addr(host, port);
     if(!resolved) {
@@ -470,9 +443,7 @@ error udp::try_send(std::span<const char> data, std::string_view host, int port)
 }
 
 error udp::try_send(std::span<const char> data) {
-    if(!self) {
-        return error::invalid_argument;
-    }
+    assert(self && "udp object is invalid (moved-from or default-constructed)");
 
     uv_buf_t buf =
         uv::buf_init(const_cast<char*>(data.data()), static_cast<unsigned int>(data.size()));
@@ -485,9 +456,7 @@ error udp::try_send(std::span<const char> data) {
 }
 
 error udp::stop_recv() {
-    if(!self) {
-        return error::invalid_argument;
-    }
+    assert(self && "udp object is invalid (moved-from or default-constructed)");
 
     uv::udp_recv_stop(self->handle);
     self->receiving = false;
@@ -495,9 +464,7 @@ error udp::stop_recv() {
 }
 
 task<udp::recv_result, error> udp::recv() {
-    if(!self) {
-        co_await fail(error::invalid_argument);
-    }
+    assert(self && "udp object is invalid (moved-from or default-constructed)");
 
     if(self->recv.has_pending()) {
         co_return self->recv.take_pending();
@@ -511,9 +478,7 @@ task<udp::recv_result, error> udp::recv() {
 }
 
 result<udp::endpoint> udp::getsockname() const {
-    if(!self) {
-        return outcome_error(error::invalid_argument);
-    }
+    assert(self && "udp object is invalid (moved-from or default-constructed)");
 
     sockaddr_storage storage{};
     int len = sizeof(storage);
@@ -525,9 +490,7 @@ result<udp::endpoint> udp::getsockname() const {
 }
 
 result<udp::endpoint> udp::getpeername() const {
-    if(!self) {
-        return outcome_error(error::invalid_argument);
-    }
+    assert(self && "udp object is invalid (moved-from or default-constructed)");
 
     sockaddr_storage storage{};
     int len = sizeof(storage);
@@ -541,126 +504,77 @@ result<udp::endpoint> udp::getpeername() const {
 error udp::set_membership(std::string_view multicast_addr,
                           std::string_view interface_addr,
                           membership m) {
-    if(!self) {
-        return error::invalid_argument;
-    }
+    assert(self && "udp object is invalid (moved-from or default-constructed)");
 
     std::string multicast_storage(multicast_addr);
     std::string interface_storage(interface_addr);
-    if(auto err = uv::udp_set_membership(self->handle,
-                                         multicast_storage.c_str(),
-                                         interface_storage.c_str(),
-                                         m == membership::join ? UV_JOIN_GROUP : UV_LEAVE_GROUP)) {
-        return err;
-    }
-
-    return {};
+    return uv::udp_set_membership(self->handle,
+                                  multicast_storage.c_str(),
+                                  interface_storage.c_str(),
+                                  m == membership::join ? UV_JOIN_GROUP : UV_LEAVE_GROUP);
 }
 
 error udp::set_source_membership(std::string_view multicast_addr,
                                  std::string_view interface_addr,
                                  std::string_view source_addr,
                                  membership m) {
-    if(!self) {
-        return error::invalid_argument;
-    }
+    assert(self && "udp object is invalid (moved-from or default-constructed)");
 
     std::string multicast_storage(multicast_addr);
     std::string interface_storage(interface_addr);
     std::string source_storage(source_addr);
-    if(auto err =
-           uv::udp_set_source_membership(self->handle,
+    return uv::udp_set_source_membership(self->handle,
                                          multicast_storage.c_str(),
                                          interface_storage.c_str(),
                                          source_storage.c_str(),
-                                         m == membership::join ? UV_JOIN_GROUP : UV_LEAVE_GROUP)) {
-        return err;
-    }
-
-    return {};
+                                         m == membership::join ? UV_JOIN_GROUP : UV_LEAVE_GROUP);
 }
 
 error udp::set_multicast_loop(bool on) {
-    if(!self) {
-        return error::invalid_argument;
-    }
+    assert(self && "udp object is invalid (moved-from or default-constructed)");
 
-    if(auto err = uv::udp_set_multicast_loop(self->handle, on)) {
-        return err;
-    }
-
-    return {};
+    return uv::udp_set_multicast_loop(self->handle, on);
 }
 
 error udp::set_multicast_ttl(int ttl) {
-    if(!self) {
-        return error::invalid_argument;
-    }
+    assert(self && "udp object is invalid (moved-from or default-constructed)");
 
-    if(auto err = uv::udp_set_multicast_ttl(self->handle, ttl)) {
-        return err;
-    }
-
-    return {};
+    return uv::udp_set_multicast_ttl(self->handle, ttl);
 }
 
 error udp::set_multicast_interface(std::string_view interface_addr) {
-    if(!self) {
-        return error::invalid_argument;
-    }
+    assert(self && "udp object is invalid (moved-from or default-constructed)");
 
     std::string interface_storage(interface_addr);
-    if(auto err = uv::udp_set_multicast_interface(self->handle, interface_storage.c_str())) {
-        return err;
-    }
-
-    return {};
+    return uv::udp_set_multicast_interface(self->handle, interface_storage.c_str());
 }
 
 error udp::set_broadcast(bool on) {
-    if(!self) {
-        return error::invalid_argument;
-    }
+    assert(self && "udp object is invalid (moved-from or default-constructed)");
 
-    if(auto err = uv::udp_set_broadcast(self->handle, on)) {
-        return err;
-    }
-
-    return {};
+    return uv::udp_set_broadcast(self->handle, on);
 }
 
 error udp::set_ttl(int ttl) {
-    if(!self) {
-        return error::invalid_argument;
-    }
+    assert(self && "udp object is invalid (moved-from or default-constructed)");
 
-    if(auto err = uv::udp_set_ttl(self->handle, ttl)) {
-        return err;
-    }
-
-    return {};
+    return uv::udp_set_ttl(self->handle, ttl);
 }
 
 bool udp::using_recvmmsg() const {
-    if(!self) {
-        return false;
-    }
+    assert(self && "udp object is invalid (moved-from or default-constructed)");
 
     return uv::udp_using_recvmmsg(self->handle);
 }
 
 std::size_t udp::send_queue_size() const {
-    if(!self) {
-        return 0;
-    }
+    assert(self && "udp object is invalid (moved-from or default-constructed)");
 
     return uv::udp_get_send_queue_size(self->handle);
 }
 
 std::size_t udp::send_queue_count() const {
-    if(!self) {
-        return 0;
-    }
+    assert(self && "udp object is invalid (moved-from or default-constructed)");
 
     return uv::udp_get_send_queue_count(self->handle);
 }

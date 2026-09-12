@@ -13,9 +13,8 @@ result<console> console::open(int fd, console::options opts, event_loop& loop) {
 }
 
 error console::set_mode(mode value) {
-    if(!self || !self->initialized()) {
-        return error::invalid_argument;
-    }
+    assert(self && self->initialized() &&
+           "console object is invalid (moved-from or default-constructed)");
 
     uv_tty_mode_t uv_mode = UV_TTY_MODE_NORMAL;
     switch(value) {
@@ -25,24 +24,16 @@ error console::set_mode(mode value) {
         case mode::raw_vt: uv_mode = UV_TTY_MODE_RAW_VT; break;
     }
 
-    if(auto err = uv::tty_set_mode(self->tty, uv_mode)) {
-        return err;
-    }
-
-    return {};
+    return uv::tty_set_mode(self->tty, uv_mode);
 }
 
 error console::reset_mode() {
-    if(auto err = uv::tty_reset_mode()) {
-        return err;
-    }
-    return {};
+    return uv::tty_reset_mode();
 }
 
 result<console::winsize> console::get_winsize() const {
-    if(!self || !self->initialized()) {
-        return outcome_error(error::invalid_argument);
-    }
+    assert(self && self->initialized() &&
+           "console object is invalid (moved-from or default-constructed)");
 
     auto out = uv::tty_get_winsize(self->tty);
     if(!out) {

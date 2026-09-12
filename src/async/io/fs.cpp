@@ -526,12 +526,12 @@ task<int, error> fs::open(std::string_view path, int flags, int mode, event_loop
 
 task<std::size_t, error>
     fs::read(int fd, std::span<char> buf, std::int64_t offset, event_loop& loop) {
-    auto storage =
-        std::make_shared<uv_buf_t>(uv_buf_init(buf.data(), static_cast<unsigned int>(buf.size())));
-
+    // uv_fs_read copies the uv_buf_t descriptors into the request; only the
+    // underlying bytes (owned by the caller) must outlive the operation.
     return run_fs<std::size_t>(
-        [fd, storage, offset, &loop](uv_fs_t& req, uv_fs_cb cb) {
-            return uv::fs_read(loop, req, fd, storage.get(), 1, offset, cb);
+        [fd, buf, offset, &loop](uv_fs_t& req, uv_fs_cb cb) {
+            uv_buf_t uv_buf = uv_buf_init(buf.data(), static_cast<unsigned int>(buf.size()));
+            return uv::fs_read(loop, req, fd, &uv_buf, 1, offset, cb);
         },
         [](uv_fs_t& req) -> std::size_t { return static_cast<std::size_t>(req.result); },
         loop);
@@ -539,12 +539,11 @@ task<std::size_t, error>
 
 task<std::size_t, error>
     fs::write(int fd, std::span<const char> buf, std::int64_t offset, event_loop& loop) {
-    auto storage = std::make_shared<uv_buf_t>(
-        uv_buf_init(const_cast<char*>(buf.data()), static_cast<unsigned int>(buf.size())));
-
     return run_fs<std::size_t>(
-        [fd, storage, offset, &loop](uv_fs_t& req, uv_fs_cb cb) {
-            return uv::fs_write(loop, req, fd, storage.get(), 1, offset, cb);
+        [fd, buf, offset, &loop](uv_fs_t& req, uv_fs_cb cb) {
+            uv_buf_t uv_buf =
+                uv_buf_init(const_cast<char*>(buf.data()), static_cast<unsigned int>(buf.size()));
+            return uv::fs_write(loop, req, fd, &uv_buf, 1, offset, cb);
         },
         [](uv_fs_t& req) -> std::size_t { return static_cast<std::size_t>(req.result); },
         loop);

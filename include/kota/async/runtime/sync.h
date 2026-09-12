@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstddef>
 #include <source_location>
+#include <utility>
 
 #include "kota/async/runtime/node.h"
 #include "kota/async/runtime/task.h"
@@ -55,6 +56,18 @@ protected:
 
     bool cancel_waiter(wait_node& link) noexcept;
 
+    /// Pops waiters until one accepts the resume (waiters whose task was
+    /// already cancelled are skipped and dropped). Returns false if the
+    /// queue drained without a successful hand-off.
+    bool resume_one_waiter() noexcept {
+        while(auto* waiter = pop_waiter()) {
+            if(resume_waiter(*waiter)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /// Pops and processes every queued waiter.
     ///
     /// resume_waiter/cancel_waiter never run user code — they only tag the
@@ -84,6 +97,48 @@ public:
     mutex(const mutex&) = delete;
     mutex& operator=(const mutex&) = delete;
 
+    /// RAII ownership of a locked mutex, returned by co_await m.scoped().
+    /// Unlocks on destruction — including when the owning coroutine frame
+    /// is destroyed by cancellation while the guard is alive, which is the
+    /// only cancellation-safe way to hold this mutex across checkpoints.
+    class [[nodiscard]] guard {
+    public:
+        guard() noexcept = default;
+
+        explicit guard(mutex& m) noexcept : owner(&m) {}
+
+        guard(const guard&) = delete;
+        guard& operator=(const guard&) = delete;
+
+        guard(guard&& other) noexcept : owner(std::exchange(other.owner, nullptr)) {}
+
+        guard& operator=(guard&& other) noexcept {
+            if(this != &other) {
+                reset();
+                owner = std::exchange(other.owner, nullptr);
+            }
+            return *this;
+        }
+
+        ~guard() {
+            reset();
+        }
+
+        /// Unlocks now instead of at scope exit.
+        void reset() noexcept {
+            if(auto* m = std::exchange(owner, nullptr)) {
+                m->unlock();
+            }
+        }
+
+        explicit operator bool() const noexcept {
+            return owner != nullptr;
+        }
+
+    private:
+        mutex* owner = nullptr;
+    };
+
     struct lock_awaiter : wait_node {
         explicit lock_awaiter(mutex& owner) :
             wait_node(async_node::NodeKind::MutexWaiter), owner(&owner) {
@@ -108,7 +163,7 @@ public:
             abandon = nullptr;
         }
 
-    private:
+    protected:
         static void abandon_grant(void* context) noexcept {
             if(auto* owner = static_cast<mutex*>(context)) {
                 owner->unlock();
@@ -118,8 +173,31 @@ public:
         mutex* owner = nullptr;
     };
 
+    struct scoped_awaiter : lock_awaiter {
+        using lock_awaiter::lock_awaiter;
+
+        guard await_resume() noexcept {
+            lock_awaiter::await_resume();
+            return guard(*owner);
+        }
+    };
+
+    /// Acquires the lock and releases it manually via unlock().
+    ///
+    /// Cancellation warning: if this task is cancelled while holding the
+    /// lock, the frame finalizes at the next co_await and unlock() is never
+    /// reached — the mutex stays locked forever. Prefer scoped() whenever
+    /// the critical section contains a suspension point.
     lock_awaiter lock() noexcept {
         return lock_awaiter(*this);
+    }
+
+    /// Acquires the lock and returns a guard that unlocks on destruction.
+    ///
+    ///   auto lock = co_await m.scoped();
+    ///
+    scoped_awaiter scoped() noexcept {
+        return scoped_awaiter(*this);
     }
 
     bool try_lock() noexcept {
@@ -132,12 +210,11 @@ public:
 
     void unlock() noexcept {
         assert(locked && "mutex::unlock without lock");
-        while(auto* waiter = pop_waiter()) {
-            if(resume_waiter(*waiter)) {
-                return;
-            }
+        // Ownership transfers to the resumed waiter; only release the flag
+        // when nobody takes over.
+        if(!resume_one_waiter()) {
+            locked = false;
         }
-        locked = false;
     }
 
 private:
@@ -209,17 +286,9 @@ public:
     void release(std::ptrdiff_t n = 1) {
         assert(n >= 0 && "semaphore::release count must be non-negative");
         for(std::ptrdiff_t i = 0; i < n; ++i) {
-            bool transferred = false;
-            if(has_waiters()) {
-                while(auto* waiter = pop_waiter()) {
-                    if(resume_waiter(*waiter)) {
-                        transferred = true;
-                        break;
-                    }
-                }
-            }
-
-            if(!transferred) {
+            // Each released permit is handed to a waiter directly; only
+            // untaken permits raise the count.
+            if(!resume_one_waiter()) {
                 count += 1;
             }
         }
@@ -349,11 +418,7 @@ public:
     }
 
     void notify_one() {
-        while(auto* waiter = pop_waiter()) {
-            if(resume_waiter(*waiter)) {
-                break;
-            }
-        }
+        resume_one_waiter();
     }
 
     void notify_all() {

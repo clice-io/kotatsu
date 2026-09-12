@@ -394,6 +394,9 @@ protected:
         this->location = loc;
 
         assert(parent_node.is_task_frame() && "aggregate parent must be a task");
+        // Re-awaiting would re-attach children whose frames already
+        // completed (or are still running) — undefined behavior.
+        assert(pending == 0 && !settled && "aggregate ops are single-use; do not re-await");
 
         // Cancellation checkpoint: don't start any children under a parent
         // that is already cancelled. The unstarted child tasks are destroyed

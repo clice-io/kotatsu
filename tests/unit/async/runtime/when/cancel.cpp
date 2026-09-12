@@ -45,6 +45,32 @@ TEST_CASE(all_child_cancel_propagates) {
     EXPECT_EQ(slow_done, 0);
 }
 
+TEST_CASE(all_pre_cancelled_child) {
+    int first_ran = 0;
+    int second_ran = 0;
+
+    auto work = [](int& ran) -> task<int> {
+        ran += 1;
+        co_return 1;
+    };
+
+    // A child cancelled before the aggregate arms must neither run nor be
+    // "revived" by attach; the cancellation decides the aggregate and the
+    // sibling is cancelled before it starts.
+    auto combined = [&]() -> task<> {
+        auto doomed = work(first_ran);
+        doomed->cancel();
+        co_await when_all(std::move(doomed), work(second_ran));
+    };
+
+    auto task = combined();
+    run(task);
+
+    EXPECT_TRUE(task->is_cancelled());
+    EXPECT_EQ(first_ran, 0);
+    EXPECT_EQ(second_ran, 0);
+}
+
 TEST_CASE(any_child_cancel_propagates) {
     int cancel_started = 0;
     int slow_started = 0;

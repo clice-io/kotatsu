@@ -74,7 +74,7 @@ TEST_CASE(destroy_mixed_completed_and_pending) {
         group.spawn(sync_work());
         group.spawn(sync_work());
         group.spawn(pending_work());
-        group.cancel();
+        group.abort();
         co_await group.join();
     };
 
@@ -145,7 +145,7 @@ TEST_CASE(spawn_returns_false_after_cancel) {
     auto driver = [&]() -> task<> {
         task_group<> group(loop);
         EXPECT_TRUE(group.spawn(work()));
-        group.cancel();
+        group.abort();
         EXPECT_FALSE(group.spawn(work()));
         co_await group.join();
     };

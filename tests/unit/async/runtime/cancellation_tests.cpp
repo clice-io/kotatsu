@@ -485,6 +485,35 @@ TEST_CASE(cancel_waiting_on_mutex) {
     m.unlock();
 }
 
+TEST_CASE(cancel_releases_scoped_mutex) {
+    cancellation_source source;
+    mutex m;
+
+    auto holder = [&]() -> task<int> {
+        auto lock = co_await m.scoped();
+        co_await sleep(50, loop);
+        co_return 1;
+    };
+
+    auto canceler = [&]() -> task<> {
+        co_await sleep(1, loop);
+        source.cancel();
+    };
+
+    {
+        auto guarded = with_token(holder(), source.token());
+        auto cancel_task = canceler();
+        schedule_all(guarded, cancel_task);
+        EXPECT_FALSE(guarded.value().has_value());
+    }
+
+    // Destroying the cancelled task destroys the holder frame; the scoped
+    // guard in that frame releases the mutex (a manual lock()/unlock() pair
+    // would leak the lock here, since unlock() is never reached).
+    EXPECT_TRUE(m.try_lock());
+    m.unlock();
+}
+
 TEST_CASE(cancel_semaphore_waiter) {
     cancellation_source source;
     semaphore sem(0);

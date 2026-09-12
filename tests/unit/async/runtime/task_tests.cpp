@@ -76,6 +76,69 @@ TEST_CASE(up_cancel) {
     }
 }
 
+TEST_CASE(pre_cancel_await) {
+    static auto bar = [](int& x) -> task<int> {
+        x += 1;
+        co_return 1;
+    };
+
+    // Awaiting a task cancelled before it ever started must not run its
+    // body; the cancellation propagates to the awaiting task.
+    {
+        int x = 0;
+        bool after_await = false;
+        auto outer = [&]() -> task<> {
+            auto inner = bar(x);
+            inner->cancel();
+            co_await std::move(inner);
+            after_await = true;
+        };
+
+        auto task = outer();
+        run(task);
+        EXPECT_TRUE(task->is_cancelled());
+        EXPECT_EQ(x, 0);
+        EXPECT_FALSE(after_await);
+    }
+
+    // catch_cancel() observes the pre-cancellation as a value instead.
+    {
+        int x = 0;
+        bool cancelled_seen = false;
+        auto outer = [&]() -> task<> {
+            auto inner = bar(x);
+            inner->cancel();
+            auto res = co_await std::move(inner).catch_cancel();
+            cancelled_seen = res.is_cancelled();
+        };
+
+        auto task = outer();
+        run(task);
+        EXPECT_TRUE(task->is_finished());
+        EXPECT_TRUE(cancelled_seen);
+        EXPECT_EQ(x, 0);
+    }
+}
+
+TEST_CASE(pre_cancel_scheduled_root) {
+    static auto bar = [](int& x) -> task<int> {
+        x += 1;
+        co_return 1;
+    };
+
+    // A pre-cancelled task scheduled by rvalue (loop-owned root) must be
+    // finalized and its frame reclaimed without running the body.
+    int x = 0;
+    {
+        event_loop loop;
+        auto task = bar(x);
+        task->cancel();
+        loop.schedule(std::move(task));
+        loop.run();
+    }
+    EXPECT_EQ(x, 0);
+}
+
 TEST_CASE(down_cancel) {
     static auto bar1 = [](int& x) -> task<> {
         x += 1;

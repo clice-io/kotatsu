@@ -26,10 +26,6 @@ result<unsigned int> to_uv_pipe_flags(const pipe::options& opts) {
     return out;
 }
 
-result<unsigned int> to_uv_pipe_connect_flags(const pipe::options& opts) {
-    return to_uv_pipe_flags(opts);
-}
-
 result<unsigned int> to_uv_tcp_bind_flags(const tcp::options& opts) {
     unsigned int out = 0;
 #ifdef UV_TCP_IPV6ONLY
@@ -81,9 +77,6 @@ struct accept_await : uv::await_op<accept_await<Stream>> {
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
                       std::source_location loc = std::source_location::current()) noexcept {
-        if(!self) {
-            return waiting;
-        }
         self->arm(*this, outcome);
         return this->attach(waiting.promise(), loc);
     }
@@ -160,7 +153,7 @@ struct connect_await : uv::await_op<connect_await<Stream>> {
                 return;
             }
 
-            auto uv_flags = to_uv_pipe_connect_flags(opts);
+            auto uv_flags = to_uv_pipe_flags(opts);
             if(!uv_flags) {
                 ready = false;
                 outcome = outcome_error(uv_flags.error());
@@ -224,7 +217,7 @@ struct connect_await : uv::await_op<connect_await<Stream>> {
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
                       std::source_location loc = std::source_location::current()) noexcept {
-        if(!self || !ready) {
+        if(!ready) {
             return waiting;
         }
 
@@ -276,9 +269,7 @@ typename acceptor<Stream>::Self* acceptor<Stream>::operator->() noexcept {
 
 template <typename Stream>
 task<Stream, error> acceptor<Stream>::accept() {
-    if(!self) {
-        co_await fail(error::invalid_argument);
-    }
+    assert(self && "acceptor object is invalid (moved-from or default-constructed)");
 
     if(self->has_pending()) {
         co_return self->take_pending();
@@ -293,9 +284,7 @@ task<Stream, error> acceptor<Stream>::accept() {
 
 template <typename Stream>
 error acceptor<Stream>::stop() {
-    if(!self) {
-        return error::invalid_argument;
-    }
+    assert(self && "acceptor object is invalid (moved-from or default-constructed)");
 
     self->deliver(error::operation_aborted);
 
@@ -430,9 +419,7 @@ result<tcp::acceptor>
 }
 
 result<int> tcp::local_port(tcp::acceptor& acc) {
-    if(!acc.self) {
-        return outcome_error(error::invalid_argument);
-    }
+    assert(acc.self && "acceptor object is invalid (moved-from or default-constructed)");
 
     sockaddr_storage storage{};
     int namelen = sizeof(storage);

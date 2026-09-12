@@ -136,6 +136,11 @@ public:
 
     error stop_recv();
 
+    /// Receives one datagram; only one recv() may be pending at a time.
+    ///
+    /// Reading starts on first await and pauses whenever a datagram arrives
+    /// with no recv() pending: that datagram is queued, and later ones wait
+    /// in the kernel buffer until the queue is drained by the next recv().
     task<recv_result, error> recv();
 
 private:

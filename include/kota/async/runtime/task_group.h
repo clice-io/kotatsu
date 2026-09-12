@@ -75,7 +75,11 @@ public:
         return true;
     }
 
-    void cancel() {
+    /// Aborts the remaining children and lets join() resume normally with
+    /// the collected errors. Distinct from cancelling the group node
+    /// through the task tree (async_node::cancel), which settles the whole
+    /// group — and its joiner — as Cancelled.
+    void abort() {
         if(decided() || settled) {
             return;
         }

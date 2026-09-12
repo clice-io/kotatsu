@@ -122,7 +122,7 @@ public:
     /// Await process termination and fetch exit status.
     task<wait_result> wait();
 
-    /// Retrieve OS pid for the process; -1 if not started.
+    /// Retrieve the OS pid of the spawned child.
     int pid() const noexcept;
 
     /// Send a signal to the process.

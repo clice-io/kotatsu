@@ -292,6 +292,9 @@ event_loop::operator const uv_loop_t&() const noexcept {
 }
 
 int event_loop::run() {
+    // Nesting a different loop is supported (saved/restored below);
+    // re-entering the same loop is undefined behavior in libuv.
+    assert(current_loop != this && "event_loop::run() re-entered on the same loop");
     auto previous = current_loop;
     current_loop = this;
     const int result = uv::run(self->loop, UV_RUN_DEFAULT);

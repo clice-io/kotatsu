@@ -1,5 +1,5 @@
 // TEST_SUITE(task_group_cancel): cancellation semantics for task_group — child
-// self-cancel fail-fast, external token cancel, group.cancel() (idempotent,
+// self-cancel fail-fast, external token cancel, group.abort() (idempotent,
 // empty, while join suspended, from a running child), spawn-after-cancel, and
 // partial completion then cancel. Error/exception collection under cancel lives
 // in errors.cpp; frame lifetime in lifetime.cpp.
@@ -84,7 +84,7 @@ TEST_CASE(cancel) {
         task_group<> group(loop);
         group.spawn(slow(50));
         group.spawn(slow(50));
-        group.cancel();
+        group.abort();
         co_await group.join();
     };
 
@@ -104,7 +104,7 @@ TEST_CASE(spawn_after_cancel) {
     auto driver = [&]() -> task<> {
         task_group<> group(loop);
         group.spawn(work());
-        group.cancel();
+        group.abort();
         group.spawn(work());
         co_await group.join();
     };
@@ -125,9 +125,9 @@ TEST_CASE(cancel_idempotent) {
     auto driver = [&]() -> task<> {
         task_group<> group(loop);
         group.spawn(slow());
-        group.cancel();
-        group.cancel();
-        group.cancel();
+        group.abort();
+        group.abort();
+        group.abort();
         co_await group.join();
     };
 
@@ -139,7 +139,7 @@ TEST_CASE(cancel_idempotent) {
 TEST_CASE(empty_cancel) {
     auto driver = [&]() -> task<> {
         task_group<> group(loop);
-        group.cancel();
+        group.abort();
         co_await group.join();
     };
 
@@ -198,7 +198,7 @@ TEST_CASE(cancel_while_join_suspended) {
 
     auto canceler = [&]() -> task<> {
         co_await sleep(1, loop);
-        group_ptr->cancel();
+        group_ptr->abort();
     };
 
     auto t = driver();
@@ -234,7 +234,7 @@ TEST_CASE(partial_completion_then_cancel) {
 
     auto canceler = [&]() -> task<> {
         co_await sleep(5, loop);
-        group_ptr->cancel();
+        group_ptr->abort();
     };
 
     auto t = driver();
@@ -245,7 +245,7 @@ TEST_CASE(partial_completion_then_cancel) {
     EXPECT_EQ(slow_done, 0);
 }
 
-// A child task calls group.cancel() while running on the call stack.
+// A child task calls group.abort() while running on the call stack.
 // Without the child==self sentinel in cancel(), this causes double-finalize:
 // cancel() finalizes the running child immediately (child==nullptr, parent!=nullptr),
 // then when the coroutine reaches final_suspend, transition_await calls finalize() again.
@@ -255,7 +255,7 @@ TEST_CASE(cancel_from_running_child) {
 
     auto canceler = [&]() -> task<> {
         co_await sleep(1, loop);
-        group_ptr->cancel();
+        group_ptr->abort();
     };
 
     auto slow = [&]() -> task<> {

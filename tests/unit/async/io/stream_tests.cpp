@@ -111,6 +111,26 @@ task<std::string, error> read_some_from_pipe(pipe p) {
     co_return std::string(buf.data(), *n);
 }
 
+task<void, error> read_until_eof(pipe p, std::string& first, error& second, error& third) {
+    auto first_read = co_await p.read();
+    if(first_read.has_value()) {
+        first = *first_read;
+    }
+
+    auto second_read = co_await p.read();
+    if(!second_read.has_value()) {
+        second = second_read.error();
+    }
+
+    std::array<char, 8> buf{};
+    auto third_read = co_await p.read_some(std::span<char>(buf.data(), buf.size()));
+    if(!third_read.has_value()) {
+        third = third_read.error();
+    }
+
+    event_loop::current().stop();
+}
+
 task<std::pair<std::string, std::size_t>> read_chunk_from_pipe(pipe p) {
     auto view = co_await p.read_chunk();
     if(!view) {
@@ -330,6 +350,71 @@ TEST_CASE(read_some_fd) {
     if(result.has_value()) {
         EXPECT_EQ(*result, message);
     }
+}
+
+TEST_CASE(concurrent_read_rejected) {
+    int fds[2] = {-1, -1};
+    ASSERT_EQ(create_pipe(fds), 0);
+
+    auto pipe_res = pipe::open(fds[0], {}, loop);
+    ASSERT_TRUE(pipe_res.has_value());
+    auto p = std::move(*pipe_res);
+
+    std::string first;
+    error second{};
+
+    // The first reader arms and suspends (no data yet).
+    auto reader = [&]() -> task<> {
+        auto res = co_await p.read();
+        if(res.has_value()) {
+            first = *res;
+        }
+        event_loop::current().stop();
+    };
+
+    // A second concurrent read must fail fast instead of overwriting the
+    // armed waiter (which would leave the first reader suspended forever).
+    auto intruder = [&]() -> task<> {
+        auto res = co_await p.read();
+        if(!res.has_value()) {
+            second = res.error();
+        }
+
+        write_fd(fds[1], "x", 1);
+        close_fd(fds[1]);
+    };
+
+    auto t1 = reader();
+    auto t2 = intruder();
+    schedule_all(t1, t2);
+
+    EXPECT_EQ(second, error::connection_already_in_progress);
+    EXPECT_EQ(first, "x");
+}
+
+TEST_CASE(read_eof_reports_error) {
+    int fds[2] = {-1, -1};
+    ASSERT_EQ(create_pipe(fds), 0);
+
+    const std::string message = "kotatsu-eof";
+    ASSERT_EQ(write_fd(fds[1], message.data(), message.size()),
+              static_cast<ssize_t>(message.size()));
+    close_fd(fds[1]);
+
+    auto pipe_res = pipe::open(fds[0], {}, loop);
+    ASSERT_TRUE(pipe_res.has_value());
+
+    // A successful read is never empty; EOF surfaces as end_of_file on both
+    // read() and read_some().
+    std::string first;
+    error second{};
+    error third{};
+    auto reader = read_until_eof(std::move(*pipe_res), first, second, third);
+    schedule_all(reader);
+
+    EXPECT_EQ(first, message);
+    EXPECT_EQ(second, error::end_of_file);
+    EXPECT_EQ(third, error::end_of_file);
 }
 
 TEST_CASE(read_chunk_fd) {

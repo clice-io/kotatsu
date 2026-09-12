@@ -119,9 +119,9 @@ struct transition_await {
     std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> handle) const noexcept {
         auto& promise = handle.promise();
         if(state == async_node::Finished) {
-            if(promise.state == async_node::Failed) {
-                return promise.finalize();
-            }
+            // A task marked Failed never resumes its body (fail()/or_fail
+            // finalize at the await point), so it cannot reach this
+            // transition again.
             assert(
                 (promise.state == async_node::Running || promise.state == async_node::Cancelled) &&
                 "only a running or lazily-cancelled task can finish");
@@ -369,13 +369,9 @@ struct task_return_object {
 
     coroutine_handle handle;
 
-    operator task<T, E, void>() & noexcept;
+    operator task<T, E, void>() noexcept;
 
-    operator task<T, E, void>() && noexcept;
-
-    operator task<T, E, cancellation>() & noexcept;
-
-    operator task<T, E, cancellation>() && noexcept;
+    operator task<T, E, cancellation>() noexcept;
 };
 
 template <typename T, typename E, typename C>
@@ -595,29 +591,14 @@ private:
 };
 
 template <typename T, typename E>
-task_return_object<T, E>::operator task<T, E, void>() & noexcept {
+task_return_object<T, E>::operator task<T, E, void>() noexcept {
     auto out = task<T, E, void>(handle);
     handle = nullptr;
     return out;
 }
 
 template <typename T, typename E>
-task_return_object<T, E>::operator task<T, E, void>() && noexcept {
-    auto out = task<T, E, void>(handle);
-    handle = nullptr;
-    return out;
-}
-
-template <typename T, typename E>
-task_return_object<T, E>::operator task<T, E, cancellation>() & noexcept {
-    handle.promise().intercept_cancel();
-    auto out = task<T, E, cancellation>(handle);
-    handle = nullptr;
-    return out;
-}
-
-template <typename T, typename E>
-task_return_object<T, E>::operator task<T, E, cancellation>() && noexcept {
+task_return_object<T, E>::operator task<T, E, cancellation>() noexcept {
     handle.promise().intercept_cancel();
     auto out = task<T, E, cancellation>(handle);
     handle = nullptr;

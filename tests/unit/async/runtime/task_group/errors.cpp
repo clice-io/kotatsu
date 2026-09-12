@@ -180,7 +180,7 @@ TEST_CASE(cancel_while_join_suspended_with_error) {
 
     auto canceler = [&]() -> task<> {
         co_await sleep(5, loop);
-        group_ptr->cancel();
+        group_ptr->abort();
     };
 
     auto t = driver();
@@ -352,7 +352,7 @@ TEST_CASE(cancel_while_join_suspended_with_exception) {
 
     auto canceler = [&]() -> task<> {
         co_await sleep(5, loop);
-        group_ptr->cancel();
+        group_ptr->abort();
     };
 
     auto t = driver();

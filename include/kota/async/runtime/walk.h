@@ -44,7 +44,9 @@ public:
                 auto& task = static_cast<const task_frame&>(node);
                 if(!derived().visit_task(task))
                     return;
-                if(auto* child = task.get_child()) {
+                // An executing task stores itself as a sentinel child;
+                // that is not an edge.
+                if(auto* child = task.get_child(); child && child != &task) {
                     derived().visit_edge(&task, child);
                     walk_node(*child);
                 }
