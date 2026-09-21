@@ -213,7 +213,10 @@ else()
         $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>
     )
 
-    if(MINGW)
+    # GCC-based mingw: libstdc++'s <print> and <stacktrace> live in
+    # stdc++exp, and the runtime is linked statically. clang targeting
+    # mingw brings its own standard library and needs none of this.
+    if(MINGW AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         target_compile_options(kota_project_options INTERFACE -Wa,-mbig-obj)
         target_link_libraries(kota_project_options INTERFACE stdc++exp)
         target_link_options(kota_project_options INTERFACE
