@@ -213,7 +213,15 @@ else()
         $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>
     )
 
+    # mingw with libstdc++ (GCC, or clang on a GNU sysroot): <print> and
+    # <stacktrace> live in stdc++exp, and the runtime is linked statically.
+    # A libc++ toolchain (llvm-mingw) needs none of this, so the check is
+    # on the standard library in use rather than the compiler.
     if(MINGW)
+        include(CheckCXXSymbolExists)
+        check_cxx_symbol_exists(__GLIBCXX__ "version" KOTA_MINGW_LIBSTDCXX)
+    endif()
+    if(MINGW AND KOTA_MINGW_LIBSTDCXX)
         target_compile_options(kota_project_options INTERFACE -Wa,-mbig-obj)
         target_link_libraries(kota_project_options INTERFACE stdc++exp)
         target_link_options(kota_project_options INTERFACE
