@@ -1,3 +1,5 @@
+#include <filesystem>
+
 #include "kota/zest/zest.h"
 #include "kota/async/io/system.h"
 
@@ -84,6 +86,12 @@ TEST_CASE(home_directory_nonempty) {
     auto home = sys::home_directory();
     ASSERT_TRUE(home.has_value());
     EXPECT_TRUE(!home->empty());
+}
+
+TEST_CASE(executable_path_names_this_program) {
+    auto path = sys::executable_path();
+    ASSERT_TRUE(path.has_value());
+    EXPECT_EQ(std::filesystem::path(*path).stem().string(), "unit_tests");
 }
 
 TEST_CASE(temp_directory_nonempty) {
