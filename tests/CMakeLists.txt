@@ -13,7 +13,7 @@ file(GLOB_RECURSE TEST_SOURCES RELATIVE "${PROJECT_SOURCE_DIR}" CONFIGURE_DEPEND
 )
 
 set(TEST_BASE_SOURCES ${TEST_SOURCES})
-list(FILTER TEST_BASE_SOURCES INCLUDE REGEX "^tests/unit/(main\\.cpp|support/.*\\.cpp|meta/.*\\.cpp|zest/.*\\.cpp)$")
+list(FILTER TEST_BASE_SOURCES INCLUDE REGEX "^tests/unit/(main\\.cpp|support/.*\\.cpp|meta/.*\\.cpp|zest/.*\\.cpp|async/.*\\.cpp)$")
 list(TRANSFORM TEST_BASE_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
 target_sources(unit_tests PRIVATE ${TEST_BASE_SOURCES})
 
@@ -26,17 +26,6 @@ if(KOTA_ENABLE_DECO)
     )
 else()
     message(STATUS "KOTA_ENABLE_DECO=OFF: skipping tests/unit/deco/*")
-endif()
-
-if(KOTA_ENABLE_ASYNC)
-    set(TEST_ASYNC_SOURCES ${TEST_SOURCES})
-    list(FILTER TEST_ASYNC_SOURCES INCLUDE REGEX "^tests/unit/async/.*\\.cpp$")
-    list(TRANSFORM TEST_ASYNC_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
-    target_sources(unit_tests PRIVATE
-        ${TEST_ASYNC_SOURCES}
-    )
-else()
-    message(STATUS "KOTA_ENABLE_ASYNC=OFF: skipping tests/unit/async/*")
 endif()
 
 if(KOTA_CODEC_ENABLE_SIMDJSON)
@@ -111,7 +100,7 @@ else()
     message(STATUS "KOTA_ENABLE_HTTP=OFF: skipping tests/unit/http/*")
 endif()
 
-if(KOTA_ENABLE_ASYNC AND KOTA_CODEC_ENABLE_SIMDJSON)
+if(KOTA_CODEC_ENABLE_SIMDJSON)
     set(TEST_IPC_SOURCES ${TEST_SOURCES})
     list(FILTER TEST_IPC_SOURCES INCLUDE REGEX "^tests/unit/ipc/.*\\.cpp$")
     list(TRANSFORM TEST_IPC_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
@@ -123,7 +112,7 @@ if(KOTA_ENABLE_ASYNC AND KOTA_CODEC_ENABLE_SIMDJSON)
         kota::ipc::lsp
     )
 else()
-    message(STATUS "KOTA_ENABLE_ASYNC=OFF or KOTA_CODEC_ENABLE_SIMDJSON=OFF: skipping tests/unit/ipc/*")
+    message(STATUS "KOTA_CODEC_ENABLE_SIMDJSON=OFF: skipping tests/unit/ipc/*")
 endif()
 
 target_include_directories(unit_tests PRIVATE
@@ -133,6 +122,7 @@ target_include_directories(unit_tests PRIVATE
 )
 
 target_link_libraries(unit_tests PRIVATE
+    kota::async
     kota::codec
     kota::support
     kota::zest
@@ -142,12 +132,6 @@ target_link_libraries(unit_tests PRIVATE
 if(KOTA_ENABLE_DECO)
     target_link_libraries(unit_tests PRIVATE
         kota::deco
-    )
-endif()
-
-if(KOTA_ENABLE_ASYNC)
-    target_link_libraries(unit_tests PRIVATE
-        kota::async
     )
 endif()
 
@@ -197,3 +181,43 @@ add_test(NAME unit_tests COMMAND unit_tests
     "--snapshot-dir=tests/snapshots"
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 )
+
+# zest runs tests on worker processes it drives through kota::async, so the
+# checks are staged and a failed stage keeps the later ones from running:
+#   1. zest_bootstrap: the async tests covering what the worker pool uses run
+#      in this process, without the pool.
+#   2. zest_runner: the pool itself, end to end, against tests that crash,
+#      hang or exit early.
+#   3. unit_tests: everything, through the pool.
+add_test(NAME zest_bootstrap
+    COMMAND unit_tests
+        --no-isolation
+        "--test-filter={task,when_any,when_cancel,process_io,pipe,watcher_io,system_info}.*"
+        "--snapshot-dir=tests/snapshots"
+    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+)
+set_tests_properties(zest_bootstrap PROPERTIES FIXTURES_SETUP zest_async)
+
+add_executable(zest_runner_fixture
+    "${PROJECT_SOURCE_DIR}/tests/zest/runner_fixture.cpp"
+    "${PROJECT_SOURCE_DIR}/tests/unit/main.cpp"
+)
+set_target_properties(zest_runner_fixture PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${CMAKE_BINARY_DIR}"
+)
+target_link_libraries(zest_runner_fixture PRIVATE kota::zest)
+kota_apply_project_options(zest_runner_fixture)
+add_test(NAME zest_runner
+    COMMAND "${CMAKE_COMMAND}"
+        "-DFIXTURE=$<TARGET_FILE:zest_runner_fixture>"
+        -P "${PROJECT_SOURCE_DIR}/tests/zest/check_runner.cmake"
+)
+set_tests_properties(zest_runner PROPERTIES
+    FIXTURES_REQUIRED zest_async
+    FIXTURES_SETUP zest_pool
+)
+set_tests_properties(unit_tests PROPERTIES FIXTURES_REQUIRED "zest_async;zest_pool")

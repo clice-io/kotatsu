@@ -113,7 +113,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - `TEST_SUITE` / `TEST_CASE` registration with compile-time case attributes (skip / focus / serial) and `setup` / `teardown` hooks.
 - `EXPECT_*` / `ASSERT_*` and coroutine-aware `CO_ASSERT_*` helpers; binary comparisons go through `meta::eq` / `lt` / … so any reflectable type is printable and comparable.
 - Exception helpers: `CAUGHT(print, expr)` and `ZEST_EXPECT_THROWS(expr, Exception)`.
-- Default CLI runner: filter by `suite[.test]` with wildcards (`--test-filter=…`), optional `--parallel` / `--parallel-workers=N`, and `--verbose`.
+- Default CLI runner: filter by `suite[.test]` with wildcards (`--test-filter=…`) and `--verbose`. Tests run on a pool of worker processes (`--jobs=N`), so a crash or a hang past `--timeout` fails that test alone and a fresh worker takes over; `--no-isolation` runs everything in-process for debuggers.
 - Failure reporting uses `std::source_location` to point at the failing expression.
 
 ### `support` (`include/kota/support/*`)

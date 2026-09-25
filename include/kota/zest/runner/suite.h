@@ -69,8 +69,7 @@ struct TestSuiteDef {
     inline static bool _register_test_case = [] {
         constexpr auto case_name_ref = meta::member_name<test_body>();
 
-        auto run_test = +[] -> TestState {
-            current_test_state() = TestState::Passed;
+        auto run_test = +[] {
             constexpr auto sn = _suite_name();
             constexpr auto cn = meta::member_name<test_body>();
             auto cn_sv = strip_test_prefix(std::string_view(cn.data(), cn.size()));
@@ -85,8 +84,6 @@ struct TestSuiteDef {
             if constexpr(requires { test.teardown(); }) {
                 test.teardown();
             }
-
-            return current_test_state();
         };
 
         auto cn = strip_test_prefix(std::string_view(case_name_ref.data(), case_name_ref.size()));
@@ -97,12 +94,10 @@ struct TestSuiteDef {
     template <auto group_body, const char* path, std::size_t line, TestAttrs attrs = {}>
     inline static bool _register_case_group = [] {
         CaseRegistrar registrar = [](std::string name, std::function<void()> body) {
-            auto run = [name, body = std::move(body)]() -> TestState {
-                current_test_state() = TestState::Passed;
+            auto run = [name, body = std::move(body)] {
                 constexpr auto sn = _suite_name();
                 reset_snapshot_context(std::string_view(sn.data(), sn.size()), name, path);
                 body();
-                return current_test_state();
             };
             test_cases().emplace_back(std::move(name),
                                       path,

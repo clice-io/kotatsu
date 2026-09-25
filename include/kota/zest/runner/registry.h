@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -9,16 +11,19 @@
 
 namespace kota::zest {
 
-enum class TestState {
+enum class TestState : std::uint8_t {
     Passed,
     Skipped,
     Failed,
-    Fatal,
 };
 
 struct TestAttrs {
     bool skip = false;
+    /// When any selected test is focused, only focused tests run.
     bool focus = false;
+    /// Runs while no other test runs. Each test has a process of its own, so
+    /// this is for contention outside the process: fixed file or pipe names,
+    /// or timing that load disturbs.
     bool serial = false;
 };
 
@@ -27,7 +32,7 @@ struct TestCase {
     std::string path;
     std::size_t line;
     TestAttrs attrs;
-    std::function<TestState()> test;
+    std::function<void()> test;
 };
 
 struct TestSuite {
@@ -35,8 +40,10 @@ struct TestSuite {
     std::vector<TestCase> (*cases)();
 };
 
-inline TestState& current_test_state() {
-    thread_local TestState state = TestState::Passed;
+/// State of the running test. A process runs one test at a time, so a check
+/// that fails on a thread the test started still fails the test.
+inline std::atomic<TestState>& current_test_state() {
+    static std::atomic<TestState> state = TestState::Passed;
     return state;
 }
 
@@ -44,12 +51,10 @@ inline void failure() {
     current_test_state() = TestState::Failed;
 }
 
-inline void pass() {
-    current_test_state() = TestState::Passed;
-}
-
+/// Marks the running test skipped, unless one of its checks already failed.
 inline void skip() {
-    current_test_state() = TestState::Skipped;
+    auto state = TestState::Passed;
+    current_test_state().compare_exchange_strong(state, TestState::Skipped);
 }
 
 class Runner {
@@ -58,7 +63,7 @@ public:
 
     void add_suite(std::string_view suite, std::vector<TestCase> (*cases)());
 
-    int run_tests(Options options);
+    int run_tests(Options options, int argc, const char* const* argv);
 
 private:
     std::vector<TestSuite> suites;

@@ -22,8 +22,10 @@ namespace kota::zest {
 ///
 ///     // deco parses --test-filter, --snapshot-dir, AND --corpus-dir in one pass.
 ///     auto parsed = kota::deco::cli::parse<MyTestOptions>(args, renderer);
-///     kota::zest::run_tests(std::move(parsed->options.zest));
+///     kota::zest::run_tests(std::move(parsed->options.zest), argc, argv);
 ///
+/// Tests run in worker processes that re-execute the program with the original
+/// arguments, so the embedding `main` sees its own flags there too.
 struct Options {
     DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate, meta_var = "<PATTERN>";
                  help = "test name filter: SUITE or SUITE.TEST or SUITE.* or *";
@@ -36,13 +38,21 @@ struct Options {
     DecoFlag(help = "list all registered test cases and exit"; required = false)
     list_tests = false;
 
-    DecoFlag(help = "run test cases in parallel"; required = false)
-    parallel = false;
-
     DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate, meta_var = "<N>";
-                 help = "worker threads for parallel mode (0 = hardware_concurrency)";
+                 help = "worker processes running tests at once (0 = one per CPU)";
                  required = false)
-    <unsigned> parallel_workers = 0;
+    <unsigned> jobs = 0;
+
+    DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate, meta_var = "<SECONDS>";
+                 help = "kill a test that runs longer than this (0 = no limit)";
+                 required = false)
+    <unsigned> timeout = 60;
+
+    DecoFlag(help =
+                 "run tests one after another in this process, for debuggers: a crash "
+                 "ends the run and --timeout does not apply";
+             required = false)
+    no_isolation = false;
 
     DecoFlag(help = "update snapshot files instead of comparing"; required = false)
     update_snapshots = false;
@@ -54,6 +64,12 @@ struct Options {
                  help = "directory for snapshot files";
                  required = false)
     <std::string> snapshot_dir = "";
+
+    // run_tests reads this from argv itself; it is declared so that a worker's
+    // command line parses.
+    DecoFlag(help = "internal: serve tests to the runner that started this process";
+             required = false)
+    zest_worker = false;
 };
 
 /// Parse CLI arguments and run all registered tests.
@@ -68,7 +84,8 @@ int run_cli(int argc,
             char** argv,
             std::string_view command_overview = "unitest [options] Run unit tests");
 
-/// Run all registered tests with explicit configuration.
-int run_tests(Options options);
+/// Run all registered tests with explicit configuration. `argc`/`argv` are the
+/// program's own; tests re-execute the program with them.
+int run_tests(Options options, int argc, const char* const* argv);
 
 }  // namespace kota::zest

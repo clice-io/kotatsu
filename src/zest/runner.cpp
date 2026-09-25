@@ -1,18 +1,20 @@
 #include <algorithm>
-#include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <expected>
-#include <functional>
+#include <format>
 #include <print>
+#include <span>
 #include <string>
 #include <string_view>
 #include <thread>
-#include <unordered_map>
+#include <tuple>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
+#include "execution.h"
 #include "kota/deco/deco.h"
 #include "kota/zest/assert/trace.h"
 #include "kota/zest/runner/registry.h"
@@ -20,7 +22,28 @@
 #include "kota/zest/snapshot/snapshot.h"
 #include "kota/support/glob_pattern.h"
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#ifdef _MSC_VER
+#include <crtdbg.h>
+#include <cstdlib>
+#endif
+#endif
+
 namespace {
+
+using kota::zest::elapsed_since;
+using kota::zest::Entry;
+using kota::zest::Outcome;
+using kota::zest::Verdict;
+using std::chrono::milliseconds;
+using std::chrono::steady_clock;
 
 constexpr std::string_view wildcard_pattern = "*";
 constexpr std::string_view green = "\033[32m";
@@ -48,6 +71,7 @@ struct FailedTest {
     std::string name;
     std::string path;
     std::size_t line;
+    std::string reason;
 };
 
 struct RunSummary {
@@ -56,23 +80,24 @@ struct RunSummary {
     std::uint32_t passed = 0;
     std::uint32_t failed = 0;
     std::uint32_t skipped = 0;
-    std::chrono::milliseconds duration{0};
+    milliseconds duration{0};
     std::vector<FailedTest> failed_tests;
+    /// Workers that failed after their tests had all reported.
+    std::vector<std::string> worker_failures;
 };
 
-struct TestResult {
-    std::string display_name;
-    std::string path;
-    std::size_t line;
-    kota::zest::TestState state;
-    std::chrono::milliseconds duration;
-    std::string output;
-};
-
-using SuiteMap = std::unordered_map<std::string, std::vector<kota::zest::TestCase>>;
-
-auto make_display_name(std::string_view suite_name, std::string_view test_name) -> std::string {
-    return std::format("{}.{}", suite_name, test_name);
+/// A crash must end the test's process, not wait on a dialog nobody sees.
+void silence_crash_dialogs() {
+#ifdef _WIN32
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+#ifdef _MSC_VER
+    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+    _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+    _CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR);
+#endif
+#endif
 }
 
 auto resolve_filter_patterns(std::string_view filter)
@@ -121,64 +146,99 @@ auto resolve_filter_patterns(std::string_view filter)
     };
 }
 
-auto group_suites(const std::vector<kota::zest::TestSuite>& suites) -> SuiteMap {
-    SuiteMap grouped_suites;
+bool matches_filter(const Entry& entry, const FilterPatternSet& patterns) {
+    if(!patterns.suite.match(entry.suite)) {
+        return false;
+    }
+    return patterns.display.is_trivial_match_all() || patterns.display.match(entry.name);
+}
+
+auto collect_entries(std::span<const kota::zest::TestSuite> suites) -> std::vector<Entry> {
+    std::vector<Entry> entries;
     for(const auto& suite: suites) {
-        auto& target = grouped_suites[suite.name];
-        auto cases = suite.cases();
-        for(auto& test_case: cases) {
-            target.emplace_back(std::move(test_case));
+        for(auto& test_case: suite.cases()) {
+            auto name = std::format("{}.{}", suite.name, test_case.name);
+            entries.push_back(Entry{
+                .suite = suite.name,
+                .name = std::move(name),
+                .test_case = std::move(test_case),
+            });
         }
     }
-    return grouped_suites;
+    // Registration follows static initialization, whose order is unspecified.
+    // Cases of one TEST_CASE_GROUP share a line and keep the order they were
+    // added in.
+    std::ranges::stable_sort(entries, {}, [](const Entry& entry) {
+        return std::tie(entry.suite, entry.test_case.path, entry.test_case.line);
+    });
+    return entries;
 }
 
-bool matches_suite_filter(std::string_view suite_name, const FilterPatternSet& patterns) {
-    return patterns.suite.match(suite_name);
-}
-
-bool matches_test_filter(std::string_view suite_name,
-                         std::string_view test_name,
-                         const FilterPatternSet& patterns) {
-    if(patterns.display.is_trivial_match_all()) {
-        return true;
+void print_output(std::string_view output) {
+    while(output.ends_with('\n') || output.ends_with('\r')) {
+        output.remove_suffix(1);
     }
-    return patterns.display.match(make_display_name(suite_name, test_name));
+    if(!output.empty()) {
+        std::println("{}", output);
+    }
 }
 
-bool has_focused_tests(const SuiteMap& grouped_suites, const FilterPatternSet& patterns) {
-    for(const auto& [suite_name, test_cases]: grouped_suites) {
-        if(!matches_suite_filter(suite_name, patterns)) {
-            continue;
-        }
+/// Prints and tallies outcomes as they arrive.
+struct Reporter {
+    RunSummary& summary;
+    bool verbose;
 
-        for(const auto& test_case: test_cases) {
-            if(matches_test_filter(suite_name, test_case.name, patterns) && test_case.attrs.focus &&
-               !test_case.attrs.skip) {
-                return true;
-            }
+    void record(const Entry& entry, const Outcome& outcome) {
+        switch(outcome.verdict) {
+            case Verdict::Passed:
+                summary.passed += 1;
+                if(verbose) {
+                    print_output(outcome.output);
+                    std::println("{}[       OK ] {} ({} ms){}",
+                                 green,
+                                 entry.name,
+                                 outcome.duration.count(),
+                                 clear);
+                }
+                return;
+            case Verdict::Skipped:
+                summary.skipped += 1;
+                if(verbose) {
+                    print_output(outcome.output);
+                    std::println("{}[ SKIPPED  ] {}{}", yellow, entry.name, clear);
+                }
+                return;
+            case Verdict::Failed: fail(entry, outcome, "FAILED", ""); return;
+            case Verdict::Crashed:
+                fail(entry, outcome, "CRASHED", std::format("crashed: {}", outcome.detail));
+                return;
+            case Verdict::TimedOut: fail(entry, outcome, "TIMEOUT", "timed out"); return;
         }
     }
-    return false;
-}
 
-bool is_failure(kota::zest::TestState state) {
-    return state == kota::zest::TestState::Failed || state == kota::zest::TestState::Fatal;
-}
-
-void print_run_result(std::string_view display_name,
-                      bool failed,
-                      std::chrono::milliseconds duration,
-                      bool verbose) {
-    if(failed || verbose) {
-        std::println("{0}[   {1} ] {2} ({3} ms){4}",
-                     failed ? red : green,
-                     failed ? "FAILED" : "    OK",
-                     display_name,
-                     duration.count(),
+    void fail(const Entry& entry,
+              const Outcome& outcome,
+              std::string_view label,
+              std::string reason) {
+        print_output(outcome.output);
+        std::println("{}[{:>9} ] {} ({} ms){}",
+                     red,
+                     label,
+                     entry.name,
+                     outcome.duration.count(),
                      clear);
+        if(!outcome.detail.empty()) {
+            std::println("{}             {}{}", red, outcome.detail, clear);
+        }
+        summary.failed += 1;
+        summary.failed_tests.push_back(FailedTest{
+            .name = entry.name,
+            .path = entry.test_case.path,
+            .line = entry.test_case.line,
+            .reason = std::move(reason),
+        });
     }
-}
+};
 
 void print_summary(const RunSummary& summary) {
     std::println("{}[----------] Global test environment tear-down. {}", green, clear);
@@ -198,7 +258,11 @@ void print_summary(const RunSummary& summary) {
     if(summary.failed > 0) {
         std::println("{}[  FAILED  ] {} tests, listed below:{}", red, summary.failed, clear);
         for(const auto& failed: summary.failed_tests) {
-            std::println("{}[  FAILED  ] {}{}", red, failed.name, clear);
+            if(failed.reason.empty()) {
+                std::println("{}[  FAILED  ] {}{}", red, failed.name, clear);
+            } else {
+                std::println("{}[  FAILED  ] {} ({}){}", red, failed.name, failed.reason, clear);
+            }
             std::println("             at {}:{}", failed.path, failed.line);
         }
         std::println("{}{} FAILED TEST{}{}",
@@ -207,11 +271,36 @@ void print_summary(const RunSummary& summary) {
                      summary.failed == 1 ? "" : "S",
                      clear);
     }
+    for(const auto& failure: summary.worker_failures) {
+        std::println("{}[  FAILED  ] {}{}", red, failure, clear);
+    }
 }
 
 }  // namespace
 
 namespace kota::zest {
+
+Verdict verdict_of(TestState state) {
+    switch(state) {
+        case TestState::Passed: return Verdict::Passed;
+        case TestState::Skipped: return Verdict::Skipped;
+        case TestState::Failed: return Verdict::Failed;
+    }
+    std::unreachable();
+}
+
+TestState run_in_process(const Entry& entry) {
+    auto& state = current_test_state();
+    state = TestState::Passed;
+#ifdef __cpp_exceptions
+    if(trace_exception([&] { entry.test_case.test(); }, true)) {
+        failure();
+    }
+#else
+    entry.test_case.test();
+#endif
+    return state;
+}
 
 int run_cli(int argc, char** argv, std::string_view command_overview) {
     auto args = kota::deco::util::argvify(argc, argv);
@@ -226,7 +315,7 @@ int run_cli(int argc, char** argv, std::string_view command_overview) {
     auto parsed = command.invoke(args);
     if(!parsed.has_value()) {
         std::println(stderr, "Error parsing options: {}", parsed.error().message);
-        std::exit(1);
+        return 1;
     }
 
     auto& cli = parsed->options;
@@ -236,18 +325,18 @@ int run_cli(int argc, char** argv, std::string_view command_overview) {
 
     if(cli.test_filter_input.has_value() && !cli.zest.test_filter->empty()) {
         std::println(stderr, "Error: cannot use both positional filter and --test-filter");
-        std::exit(1);
+        return 1;
     }
 
     if(cli.test_filter_input.has_value()) {
         cli.zest.test_filter = std::move(*cli.test_filter_input);
     }
 
-    return run_tests(std::move(cli.zest));
+    return run_tests(std::move(cli.zest), argc, argv);
 }
 
-int run_tests(Options options) {
-    return Runner::instance().run_tests(std::move(options));
+int run_tests(Options options, int argc, const char* const* argv) {
+    return Runner::instance().run_tests(std::move(options), argc, argv);
 }
 
 Runner& Runner::instance() {
@@ -259,215 +348,136 @@ void Runner::add_suite(std::string_view name, std::vector<TestCase> (*cases)()) 
     suites.emplace_back(std::string(name), cases);
 }
 
-int Runner::run_tests(Options options) {
+int Runner::run_tests(Options options, int argc, const char* const* argv) {
+    silence_crash_dialogs();
     set_update_snapshots(*options.update_snapshots);
     set_snapshot_dir(*options.snapshot_dir);
 
-    auto patterns_result = resolve_filter_patterns(*options.test_filter);
-    if(!patterns_result) {
-        std::println("{}Error: invalid filter pattern: {}{}", red, patterns_result.error(), clear);
+    auto entries = collect_entries(suites);
+    // Read from argv rather than `options`, which the embedding program may
+    // have built itself: a worker that took itself for a runner would start
+    // workers of its own.
+    auto args = std::span(argv, static_cast<std::size_t>(argc));
+    if(std::ranges::any_of(args, [](std::string_view arg) { return arg == "--zest-worker"; })) {
+        return serve(entries);
+    }
+
+    // Workers find tests by name.
+    std::unordered_set<std::string_view> names;
+    for(const auto& entry: entries) {
+        if(!names.insert(entry.name).second) {
+            std::println("{}Error: more than one test is named {}{}", red, entry.name, clear);
+            return 1;
+        }
+    }
+
+    auto patterns = resolve_filter_patterns(*options.test_filter);
+    if(!patterns) {
+        std::println("{}Error: invalid filter pattern: {}{}", red, patterns.error(), clear);
         return 1;
     }
-    auto patterns = std::move(*patterns_result);
-    auto grouped_suites = group_suites(suites);
+
+    std::vector<const Entry*> matched;
+    for(const auto& entry: entries) {
+        if(matches_filter(entry, *patterns)) {
+            matched.push_back(&entry);
+        }
+    }
 
     if(*options.list_tests) {
-        for(const auto& [suite_name, test_cases]: grouped_suites) {
-            if(!matches_suite_filter(suite_name, patterns)) {
-                continue;
-            }
-            for(const auto& test_case: test_cases) {
-                if(!matches_test_filter(suite_name, test_case.name, patterns)) {
-                    continue;
-                }
-                std::println("{}", make_display_name(suite_name, test_case.name));
-            }
+        for(const auto* entry: matched) {
+            std::println("{}", entry->name);
         }
         return 0;
     }
 
-    const bool focus_mode = has_focused_tests(grouped_suites, patterns);
-
     const bool verbose = *options.verbose;
+    const bool focus_mode = std::ranges::any_of(matched, [](const Entry* entry) {
+        return entry->test_case.attrs.focus && !entry->test_case.attrs.skip;
+    });
 
     RunSummary summary;
+    std::vector<const Entry*> runnable;
+    std::unordered_set<std::string_view> active_suites;
+    for(const auto* entry: matched) {
+        const auto& attrs = entry->test_case.attrs;
+        if(focus_mode && !attrs.focus) {
+            summary.skipped += 1;
+            continue;
+        }
+        if(attrs.skip) {
+            if(verbose) {
+                std::println("{}[ SKIPPED  ] {}{}", yellow, entry->name, clear);
+            }
+            summary.skipped += 1;
+            continue;
+        }
+        active_suites.insert(entry->suite);
+        runnable.push_back(entry);
+    }
+    summary.suites = static_cast<std::uint32_t>(active_suites.size());
+    summary.tests = static_cast<std::uint32_t>(runnable.size());
 
     std::println("{}[----------] Global test environment set-up.{}", green, clear);
     if(focus_mode) {
         std::println("{}[  FOCUS   ] Running in focus-only mode.{}", yellow, clear);
     }
 
-    // Collect all runnable test cases.
-    struct RunnableTest {
-        std::string display_name;
-        std::string path;
-        std::size_t line;
-        bool serial;
-        std::function<TestState()> test;
-    };
-
-    std::vector<RunnableTest> runnable;
-    std::unordered_set<std::string> active_suites;
-
-    for(auto& [suite_name, test_cases]: grouped_suites) {
-        if(!matches_suite_filter(suite_name, patterns)) {
-            continue;
-        }
-
-        for(auto& test_case: test_cases) {
-            if(!matches_test_filter(suite_name, test_case.name, patterns)) {
-                continue;
-            }
-
-            const auto display_name = make_display_name(suite_name, test_case.name);
-
-            if(focus_mode && !test_case.attrs.focus) {
-                summary.skipped += 1;
-                continue;
-            }
-
-            if(test_case.attrs.skip) {
-                if(verbose) {
-                    std::println("{}[ SKIPPED  ] {}{}", yellow, display_name, clear);
-                }
-                summary.skipped += 1;
-                continue;
-            }
-
-            active_suites.insert(std::string(suite_name));
-            runnable.push_back(RunnableTest{
-                .display_name = display_name,
-                .path = test_case.path,
-                .line = test_case.line,
-                .serial = test_case.attrs.serial,
-                .test = std::move(test_case.test),
-            });
-        }
-    }
-
-    summary.suites = static_cast<std::uint32_t>(active_suites.size());
-    summary.tests = static_cast<std::uint32_t>(runnable.size());
-
-    auto run_single = [&](const RunnableTest& test, bool show_run_line) -> TestResult {
-        if(show_run_line && verbose) {
-            std::println("{}[ RUN      ] {}{}", green, test.display_name, clear);
-        }
-
-        using namespace std::chrono;
-        auto begin = system_clock::now();
-        auto state = test.test();
-        auto end = system_clock::now();
-
-        return TestResult{
-            .display_name = test.display_name,
-            .path = test.path,
-            .line = test.line,
-            .state = state,
-            .duration = duration_cast<milliseconds>(end - begin),
-            .output = {},
-        };
-    };
-
-    auto record_result = [&](const TestResult& result) {
-        if(result.state == TestState::Skipped) {
+    Reporter reporter{.summary = summary, .verbose = verbose};
+    auto begin = steady_clock::now();
+    if(*options.no_isolation) {
+        for(const auto* entry: runnable) {
             if(verbose) {
-                std::println("{}[ SKIPPED  ] {}{}", yellow, result.display_name, clear);
+                std::println("{}[ RUN      ] {}{}", green, entry->name, clear);
             }
-            summary.skipped += 1;
-            return;
-        }
-        const bool failed = is_failure(result.state);
-        if(failed && !result.output.empty()) {
-            std::println("{}", result.output);
-        }
-        print_run_result(result.display_name, failed, result.duration, verbose);
-        if(failed) {
-            summary.failed += 1;
-            summary.failed_tests.push_back(
-                FailedTest{result.display_name, result.path, result.line});
-        } else {
-            summary.passed += 1;
-        }
-    };
-
-    // Execute tests.
-    std::vector<TestResult> results(runnable.size());
-
-    if(*options.parallel) {
-        using namespace std::chrono;
-        auto wall_begin = system_clock::now();
-
-        // Partition: parallel-safe tests first, serial tests after.
-        std::vector<std::size_t> parallel_indices;
-        std::vector<std::size_t> serial_indices;
-        for(std::size_t i = 0; i < runnable.size(); ++i) {
-            if(runnable[i].serial) {
-                serial_indices.push_back(i);
-            } else {
-                parallel_indices.push_back(i);
-            }
-        }
-
-        // Run parallel-safe tests across the thread pool.
-        const unsigned pw = *options.parallel_workers;
-        const auto num_workers = std::min(
-            static_cast<std::size_t>(std::max(1u, pw ? pw : std::thread::hardware_concurrency())),
-            parallel_indices.size());
-
-        std::atomic<std::size_t> next_task{0};
-
-        auto worker = [&]() {
-            while(true) {
-                auto idx = next_task.fetch_add(1, std::memory_order_relaxed);
-                if(idx >= parallel_indices.size()) {
-                    break;
-                }
-                auto i = parallel_indices[idx];
-                results[i] = run_single(runnable[i], false);
-            }
-        };
-
-        {
-            std::vector<std::thread> pool;
-            pool.reserve(num_workers);
-            for(unsigned w = 0; w < num_workers; ++w) {
-                pool.emplace_back(worker);
-            }
-            for(auto& t: pool) {
-                t.join();
-            }
-        }
-
-        // Run serial tests sequentially after the parallel batch.
-        for(auto i: serial_indices) {
-            results[i] = run_single(runnable[i], false);
-        }
-
-        summary.duration = duration_cast<milliseconds>(system_clock::now() - wall_begin);
-
-        // Print all results in original order.
-        for(const auto& result: results) {
-            record_result(result);
+            auto test_begin = steady_clock::now();
+            auto verdict = verdict_of(run_in_process(*entry));
+            reporter.record(*entry,
+                            Outcome{.verdict = verdict, .duration = elapsed_since(test_begin)});
         }
     } else {
-        for(std::size_t i = 0; i < runnable.size(); ++i) {
-            results[i] = run_single(runnable[i], true);
-            record_result(results[i]);
-            summary.duration += results[i].duration;
+        auto jobs = *options.jobs;
+        if(jobs == 0) {
+            jobs = std::max(1u, std::thread::hardware_concurrency());
+        }
+        PoolOptions pool{
+            .args = {argv + 1, argv + argc},
+            .jobs = jobs,
+            .timeout = std::chrono::seconds(*options.timeout),
+        };
+        auto report = [&](const Entry& entry, const Outcome& outcome) {
+            reporter.record(entry, outcome);
+        };
+        auto ran = run_pool(runnable, pool, report);
+        if(!ran) {
+            print_output(ran.error().output);
+            std::println("{}Error: {}{}", red, ran.error().detail, clear);
+            return 1;
+        }
+        for(auto& failure: *ran) {
+            print_output(failure.output);
+            std::println("{}[   WORKER ] {}{}", red, failure.detail, clear);
+            summary.worker_failures.push_back(std::move(failure.detail));
         }
     }
+    summary.duration = elapsed_since(begin);
 
     if(*options.cleanup_snapshots) {
-        auto removed = cleanup_unused_snapshots();
-        if(removed > 0) {
+        // A test that failed early never checked its snapshots; they only
+        // look orphaned.
+        if(summary.failed != 0) {
+            std::println("[snapshot] cleanup skipped: some tests failed");
+        } else if(auto removed = cleanup_unused_snapshots(); removed > 0) {
             std::println("[snapshot] cleaned up {} orphaned file{}",
                          removed,
                          removed == 1 ? "" : "s");
         }
     }
 
+    // Workers finish in any order; the list reads the same every run.
+    std::ranges::sort(summary.failed_tests, {}, &FailedTest::name);
     print_summary(summary);
-    return summary.failed != 0;
+    return summary.failed != 0 || !summary.worker_failures.empty();
 }
 
 }  // namespace kota::zest
