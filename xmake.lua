@@ -199,6 +199,9 @@ if has_config("ztest") then
 		add_rules("cl-flags")
 		add_deps("support", "deco", "async")
 		add_packages("cpptrace", { public = true })
+		if is_plat("windows") then
+			add_syslinks("shell32")
+		end
 	end)
 end
 

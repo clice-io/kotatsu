@@ -29,6 +29,7 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#include <shellapi.h>
 #include <windows.h>
 #ifdef _MSC_VER
 #include <crtdbg.h>
@@ -95,6 +96,31 @@ void silence_crash_dialogs() {
     _CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE);
     _CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR);
 #endif
+#endif
+}
+
+/// This program's arguments after argv[0], which workers start with.
+std::vector<std::string> worker_args([[maybe_unused]] int argc,
+                                     [[maybe_unused]] const char* const* argv) {
+#ifdef _WIN32
+    // `argv` is in the ANSI code page, which may not hold every character of
+    // the command line; the wide one does, and workers are spawned from UTF-8.
+    int count = 0;
+    auto wide = CommandLineToArgvW(GetCommandLineW(), &count);
+    std::vector<std::string> args;
+    for(int i = 1; i < count; ++i) {
+        auto size = WideCharToMultiByte(CP_UTF8, 0, wide[i], -1, nullptr, 0, nullptr, nullptr);
+        std::string arg(static_cast<std::size_t>(size - 1), '\0');
+        WideCharToMultiByte(CP_UTF8, 0, wide[i], -1, arg.data(), size, nullptr, nullptr);
+        args.push_back(std::move(arg));
+    }
+    LocalFree(wide);
+    return args;
+#else
+    if(argc == 0) {
+        return {};
+    }
+    return {argv + 1, argv + argc};
 #endif
 }
 
@@ -436,7 +462,7 @@ int Runner::run_tests(Options options, int argc, const char* const* argv) {
             jobs = std::max(1u, std::thread::hardware_concurrency());
         }
         PoolOptions pool{
-            .args = {argv + 1, argv + argc},
+            .args = worker_args(argc, argv),
             .jobs = jobs,
             .timeout = std::chrono::seconds(*options.timeout),
         };

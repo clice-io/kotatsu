@@ -10,6 +10,7 @@
 #include <fstream>
 #include <iterator>
 #include <optional>
+#include <random>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -105,11 +106,16 @@ struct Worker {
     task<std::optional<TestState>> read_reply() {
         while(auto line = co_await read_line()) {
             std::string_view text = *line;
-            if(!text.starts_with(protocol::snapshot)) {
-                assert(text.starts_with(protocol::done));
+            if(text.starts_with(protocol::snapshot)) {
+                record_snapshot_access(text.substr(protocol::snapshot.size()));
+                continue;
+            }
+            // Test code runs in the worker and can garble the channel; any
+            // other line counts as the worker failing.
+            if(text.starts_with(protocol::done)) {
                 co_return protocol::parse_state(text.substr(protocol::done.size()));
             }
-            record_snapshot_access(text.substr(protocol::snapshot.size()));
+            break;
         }
         co_return std::nullopt;
     }
@@ -269,9 +275,9 @@ struct Pool {
         // is shown: a sanitizer reports during the test it catches, which may
         // well have passed.
         worker->channel = pipe{};
+        // Giving up on the wait kills the worker.
         auto status = co_await within(worker->wait(), options.timeout);
         if(!status) {
-            co_await worker->kill();
             failures.push_back(WorkerFailure{
                 .detail = "a worker did not exit within --timeout after its last test",
                 .output = worker->whole_output(),
@@ -300,11 +306,16 @@ std::expected<std::vector<WorkerFailure>, WorkerFailure>
         });
     }
 
+    // A directory of this run's own, which nobody can have planted files in.
     std::error_code error;
-    auto directory = stdfs::temp_directory_path(error);
-    if(!error) {
-        directory /= std::format("zest-{}", sys::pid());
-        stdfs::create_directories(directory, error);
+    auto base = stdfs::temp_directory_path(error);
+    stdfs::path directory;
+    std::random_device random;
+    while(!error) {
+        directory = base / std::format("zest-{}-{:08x}", sys::pid(), random());
+        if(stdfs::create_directory(directory, error)) {
+            break;
+        }
     }
     if(error) {
         return std::unexpected(WorkerFailure{

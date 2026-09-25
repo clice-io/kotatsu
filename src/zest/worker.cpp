@@ -126,14 +126,13 @@ std::string_view state_name(TestState state) {
     std::unreachable();
 }
 
-TestState parse_state(std::string_view name) {
+std::optional<TestState> parse_state(std::string_view name) {
     for(auto state: {TestState::Passed, TestState::Skipped, TestState::Failed}) {
         if(name == state_name(state)) {
             return state;
         }
     }
-    // Only a worker of this same program writes the name.
-    std::unreachable();
+    return std::nullopt;
 }
 
 std::optional<std::string> take_line(std::string& pending) {

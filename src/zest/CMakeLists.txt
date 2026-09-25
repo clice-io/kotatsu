@@ -67,6 +67,7 @@ target_link_libraries(kota_zest PUBLIC
 # Worker processes are started and driven through kota::async.
 target_link_libraries(kota_zest PRIVATE
     kota::async
+    $<$<PLATFORM_ID:Windows>:shell32>
 )
 
 kota_apply_project_options(kota_zest)
