@@ -45,7 +45,7 @@ public:
         }
     }
 
-    et::task<std::optional<std::string>> read_message() override {
+    et::task<std::optional<std::string>, et::ipc::Error> read_message() override {
         while(read_index >= incoming_messages.size()) {
             if(closed) {
                 co_return std::nullopt;

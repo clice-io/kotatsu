@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <format>
 #include <limits>
 #include <optional>
 #include <span>
@@ -16,7 +17,6 @@ namespace {
 // Guard against a broken sender that never produces \r\n\r\n —
 // without a cap the header buffer would grow until OOM.
 constexpr std::size_t max_header_bytes = 8 * 1024;
-constexpr std::size_t max_payload_bytes = 64 * 1024 * 1024;
 
 std::string_view trim_ascii(std::string_view value) {
     auto start = value.find_first_not_of(" \t");
@@ -72,9 +72,6 @@ std::optional<std::size_t> parse_content_length(std::string_view header) {
             parsed = parsed * 10 + digit;
         }
 
-        if(parsed > max_payload_bytes) {
-            return std::nullopt;
-        }
         return parsed;
     }
     return std::nullopt;
@@ -168,15 +165,32 @@ Result<std::unique_ptr<StreamTransport>> StreamTransport::open_tcp(int fd, event
     return std::make_unique<StreamTransport>(std::move(*channel));
 }
 
-task<std::optional<std::string>> StreamTransport::read_message() {
+task<std::optional<std::string>, Error> StreamTransport::read_message() {
     std::string header;
     std::optional<std::size_t> content_length;
+
+    // Every abnormal exit below leaves the framing out of sync, so the stream
+    // is finished either way and only the reason differs.
+    auto abort_read = [this](std::string reason) -> Error {
+        read_stream.stop();
+        return Error(std::move(reason));
+    };
 
     while(!content_length.has_value()) {
         auto chunk = co_await read_stream.read_chunk();
         if(!chunk) [[unlikely]] {
-            read_stream.stop();
-            co_return std::nullopt;
+            // End of input between frames is how a stream normally ends, and an
+            // aborted read is close() doing its job — neither is a failure.
+            // Ending mid-frame is, and it must not read as a closed peer.
+            if(chunk.error() == error::operation_aborted ||
+               (header.empty() && chunk.error() == error::end_of_file)) {
+                read_stream.stop();
+                co_return std::nullopt;
+            }
+            co_await fail(abort_read(
+                header.empty()
+                    ? std::format("stream read failed between frames: {}", chunk.error().message())
+                    : std::format("incomplete frame header: {}", chunk.error().message())));
         }
 
         const auto old_size = header.size();
@@ -185,8 +199,8 @@ task<std::optional<std::string>> StreamTransport::read_message() {
         auto marker = header.find("\r\n\r\n");
         if(marker == std::string::npos) {
             if(header.size() > max_header_bytes) [[unlikely]] {
-                read_stream.stop();
-                co_return std::nullopt;
+                co_await fail(
+                    abort_read(std::format("frame header exceeds {} bytes", max_header_bytes)));
             }
             read_stream.consume(chunk->size());
             continue;
@@ -194,8 +208,8 @@ task<std::optional<std::string>> StreamTransport::read_message() {
 
         const auto header_end = marker + 4;
         if(header_end > max_header_bytes) [[unlikely]] {
-            read_stream.stop();
-            co_return std::nullopt;
+            co_await fail(
+                abort_read(std::format("frame header exceeds {} bytes", max_header_bytes)));
         }
         const auto consumed_from_chunk = header_end > old_size ? header_end - old_size : 0;
         read_stream.consume(consumed_from_chunk);
@@ -203,9 +217,18 @@ task<std::optional<std::string>> StreamTransport::read_message() {
         auto view = std::string_view(header.data(), header_end);
         content_length = parse_content_length(view);
         if(!content_length.has_value()) [[unlikely]] {
-            read_stream.stop();
-            co_return std::nullopt;
+            co_await fail(abort_read("frame header carries no valid Content-Length"));
         }
+    }
+
+    // The payload is buffered whole, so the announced size is what has to be
+    // capped. Refusing it here keeps both sizes in the error, where a caller
+    // can act on them, instead of making an oversized message look like a
+    // peer that went away.
+    if(*content_length > max_payload_bytes) [[unlikely]] {
+        co_await fail(abort_read(std::format("frame payload of {} bytes exceeds the {} byte limit",
+                                             *content_length,
+                                             max_payload_bytes)));
     }
 
     std::string payload;
@@ -214,8 +237,14 @@ task<std::optional<std::string>> StreamTransport::read_message() {
     while(payload.size() < *content_length) {
         auto chunk = co_await read_stream.read_chunk();
         if(!chunk) [[unlikely]] {
-            read_stream.stop();
-            co_return std::nullopt;
+            if(chunk.error() == error::operation_aborted) {
+                read_stream.stop();
+                co_return std::nullopt;
+            }
+            co_await fail(abort_read(std::format("incomplete frame payload, got {} of {} bytes: {}",
+                                                 payload.size(),
+                                                 *content_length,
+                                                 chunk.error().message())));
         }
 
         const auto need = *content_length - payload.size();

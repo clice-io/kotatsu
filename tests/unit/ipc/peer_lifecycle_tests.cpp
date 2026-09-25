@@ -293,6 +293,35 @@ TEST_CASE(write_fail_closes_transport) {
     EXPECT_FALSE(request_result.error().message.empty());
 }
 
+// 5.15 transport read failure fails pending requests with the transport's reason
+TEST_CASE(read_failure_fails_pending_requests) {
+    auto transport = std::make_unique<ScriptedTransport>(std::vector<std::string>{}, nullptr);
+    auto* transport_ptr = transport.get();
+
+    event_loop loop;
+    JsonPeer peer(loop, std::move(transport));
+    Result<AddResult> request_result = outcome_error(Error("not completed"));
+
+    auto requester = [&]() -> task<> {
+        co_await sleep(1, loop);
+        request_result =
+            co_await peer.send_request<AddResult>("worker/build", CustomAddParams{.a = 1, .b = 2});
+    };
+
+    auto refuser = [&]() -> task<> {
+        co_await sleep(2, loop);
+        transport_ptr->fail_next_read(Error("frame refused"));
+    };
+
+    loop.schedule(peer.run());
+    loop.schedule(requester());
+    loop.schedule(refuser());
+    EXPECT_EQ(loop.run(), 0);
+
+    ASSERT_FALSE(request_result.has_value());
+    EXPECT_EQ(request_result.error().message, "frame refused");
+}
+
 };  // TEST_SUITE(ipc_peer_lifecycle)
 
 }  // namespace

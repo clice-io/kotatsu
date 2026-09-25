@@ -19,8 +19,8 @@ RecordingTransport::~RecordingTransport() {
     }
 }
 
-task<std::optional<std::string>> RecordingTransport::read_message() {
-    auto msg = co_await inner->read_message();
+task<std::optional<std::string>, Error> RecordingTransport::read_message() {
+    auto msg = co_await inner->read_message().or_fail();
     if(msg.has_value()) {
         write_record(*msg);
     }

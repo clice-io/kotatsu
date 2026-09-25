@@ -17,7 +17,7 @@ public:
     explicit FakeTransport(std::vector<std::string> incoming) :
         incoming_messages(std::move(incoming)) {}
 
-    task<std::optional<std::string>> read_message() override {
+    task<std::optional<std::string>, Error> read_message() override {
         if(read_index >= incoming_messages.size()) {
             co_return std::nullopt;
         }
@@ -50,12 +50,14 @@ public:
         }
     }
 
-    task<std::optional<std::string>> read_message() override {
-        if(closed) {
-            co_return std::nullopt;
-        }
-
-        while(read_index >= incoming_messages.size()) {
+    task<std::optional<std::string>, Error> read_message() override {
+        while(true) {
+            if(read_failure) {
+                co_await kota::fail(*std::exchange(read_failure, std::nullopt));
+            }
+            if(read_index < incoming_messages.size()) {
+                co_return incoming_messages[read_index++];
+            }
             if(closed) {
                 co_return std::nullopt;
             }
@@ -63,8 +65,6 @@ public:
             co_await readable.wait();
             readable.reset();
         }
-
-        co_return incoming_messages[read_index++];
     }
 
     task<void, Error> write_message(std::string_view payload) override {
@@ -80,6 +80,13 @@ public:
 
     void set_fail_writes(bool fail) {
         fail_writes = fail;
+    }
+
+    /// Make the next read fail with `reason`, the way a real transport reports
+    /// a frame it cannot deliver.
+    void fail_next_read(Error reason) {
+        read_failure = std::move(reason);
+        readable.set();
     }
 
     void push_incoming(std::string payload) {
@@ -105,6 +112,7 @@ private:
     event readable;
     bool closed = false;
     bool fail_writes = false;
+    std::optional<Error> read_failure;
 };
 
 inline std::string frame(std::string_view payload) {

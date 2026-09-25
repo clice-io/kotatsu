@@ -333,12 +333,22 @@ task<> Peer<CodecT>::run() {
     auto read_and_dispatch = [this, &request_group]() -> task<> {
         ET_IPC_LOG(self.get(), LogLevel::info, "{}", "read loop started");
         while(self->transport) {
-            auto payload = co_await self->transport->read_message();
-            if(!payload.has_value()) {
+            auto message = co_await self->transport->read_message();
+            if(message.has_error()) {
+                // The transport refused a frame or lost framing; either way it
+                // is done, but the reason is not "the peer went away".
+                ET_IPC_LOG(self.get(),
+                           LogLevel::error,
+                           "transport read failed: {}",
+                           message.error().message);
+                self->fail_pending_requests(message.error().message);
+                break;
+            }
+            if(!message->has_value()) {
                 self->fail_pending_requests("transport closed");
                 break;
             }
-            self->dispatch_incoming_message(*payload, request_group);
+            self->dispatch_incoming_message(**message, request_group);
         }
         ET_IPC_LOG(self.get(), LogLevel::info, "{}", "read loop ended");
     };

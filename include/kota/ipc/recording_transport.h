@@ -20,7 +20,7 @@ public:
     RecordingTransport(std::unique_ptr<Transport> transport, std::string path);
     ~RecordingTransport();
 
-    task<std::optional<std::string>> read_message() override;
+    task<std::optional<std::string>, Error> read_message() override;
     task<void, Error> write_message(std::string_view payload) override;
     Result<void> close_output() override;
     Result<void> close() override;
