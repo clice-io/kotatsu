@@ -383,9 +383,13 @@ int Runner::run_tests(Options options, int argc, const char* const* argv) {
         return 0;
     }
 
-    // Workers find tests by name.
+    // Workers find tests by name, sent one per line.
     std::unordered_set<std::string_view> names;
     for(const auto& entry: entries) {
+        if(entry.name.contains('\n')) {
+            std::println("{}Error: a test name spans lines: {}{}", red, entry.name, clear);
+            return 1;
+        }
         if(!names.insert(entry.name).second) {
             std::println("{}Error: more than one test is named {}{}", red, entry.name, clear);
             return 1;

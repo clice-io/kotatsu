@@ -164,7 +164,9 @@ struct Pool {
         // Each worker gets a fresh log: a killed worker's leftover children may
         // still be writing to the old one.
         auto log = directory / std::format("{}.log", started++);
-        auto fd = fs::sync::open(utf8(log), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+        // O_EXCL: names never repeat within a run, so a file already there
+        // was planted by someone else.
+        auto fd = fs::sync::open(utf8(log), O_WRONLY | O_CREAT | O_EXCL, 0600);
         if(!fd) {
             co_return std::unexpected(WorkerFailure{
                 .detail = std::format("cannot create {}: {}", utf8(log), fd.error().message()),
@@ -173,8 +175,11 @@ struct Pool {
 
         process::options spawn;
         spawn.file = executable;
+        // The flag goes right after argv[0], ahead of anything the program
+        // passes through untouched after `--`.
         spawn.args = options.args;
-        spawn.args.emplace_back(protocol::worker_flag);
+        spawn.args.emplace(spawn.args.begin() + std::min<std::size_t>(1, spawn.args.size()),
+                           protocol::worker_flag);
         spawn.streams = {
             process::stdio::pipe(true, true),
             process::stdio::from_fd(*fd),

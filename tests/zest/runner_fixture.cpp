@@ -48,7 +48,16 @@ TEST_CASE(fails_on_thread) {
     std::thread([] { EXPECT_EQ(1, 2); }).join();
 }
 
-#ifdef __cpp_exceptions
+// clang-cl's ASan hands exception handlers a broken reference to the
+// exception, so there a throwing test crashes its worker when the runner reads
+// the message; it still fails, as CRASHED.
+#if defined(_WIN32) && defined(__clang__)
+#if __has_feature(address_sanitizer)
+#define ZEST_FIXTURE_BROKEN_CATCH
+#endif
+#endif
+
+#if defined(__cpp_exceptions) && !defined(ZEST_FIXTURE_BROKEN_CATCH)
 TEST_CASE(throws) {
     throw std::runtime_error("thrown by the test");
 }

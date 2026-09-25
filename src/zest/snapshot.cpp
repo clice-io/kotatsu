@@ -49,7 +49,7 @@ void record_access(const fs::path& snap_path) {
 }
 
 SnapshotContext& context() {
-    static SnapshotContext ctx;
+    thread_local SnapshotContext ctx;
     return ctx;
 }
 

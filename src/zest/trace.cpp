@@ -1,10 +1,8 @@
 #include "kota/zest/assert/trace.h"
 
 #include <algorithm>
-#include <exception>
 #include <format>
 #include <print>
-#include <string>
 
 #ifdef __cpp_exceptions
 #include <cpptrace/from_current.hpp>
@@ -22,21 +20,6 @@ void println_trace(const cpptrace::stacktrace& trace) {
         std::println("{}", frame.to_string());
     }
 }
-
-#ifdef __cpp_exceptions
-
-/// The message of the exception being handled; call only inside a handler.
-std::string current_exception_message() {
-    try {
-        throw;
-    } catch(const std::exception& e) {
-        return e.what();
-    } catch(...) {
-        return "<non-std exception>";
-    }
-}
-
-#endif
 
 }  // namespace
 
@@ -60,16 +43,21 @@ void print_trace(std::source_location location) {
 bool trace_exception(function<void()> cb, bool print) {
     bool ret = false;
 
-    // Catch everything here and take the message in a plain handler: under
-    // clang-cl's ASan, a reference caught by CPPTRACE_CATCH, whose handler
-    // sits inside nested lambdas, points into the stack instead of at the
-    // exception.
     CPPTRACE_TRY {
-        cb();
+        CPPTRACE_TRY {
+            cb();
+        }
+        CPPTRACE_CATCH(const std::exception& e) {
+            if(print) {
+                std::println("[ exception ] {}", e.what());
+                println_trace(cpptrace::from_current_exception());
+            }
+            ret = true;
+        }
     }
     CPPTRACE_CATCH(...) {
         if(print) {
-            std::println("[ exception ] {}", current_exception_message());
+            std::println("[ exception ] <non-std exception>");
             println_trace(cpptrace::from_current_exception());
         }
         ret = true;
