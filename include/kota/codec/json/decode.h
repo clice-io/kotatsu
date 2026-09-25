@@ -305,7 +305,8 @@ struct Reader {
                         case NumberType::signed_integer: return type_kind::int64;
                         case NumberType::unsigned_integer: return type_kind::uint64;
                         case NumberType::floating_point_number: return type_kind::float64;
-                        case NumberType::big_integer: return type_kind::unknown;
+                        // Beyond 64 bits only a double holds it.
+                        case NumberType::big_integer: return type_kind::float64;
                     }
                     return type_kind::unknown;
                 }
