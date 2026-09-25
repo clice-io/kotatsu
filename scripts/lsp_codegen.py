@@ -410,7 +410,11 @@ def load_schema() -> dict:
         with urllib.request.urlopen(SCHEMA_URL, timeout=60) as response:
             payload = response.read()
         SCHEMA_PATH.parent.mkdir(parents=True, exist_ok=True)
-        SCHEMA_PATH.write_bytes(payload)
+        # Written aside and renamed, so an interrupted write never leaves a
+        # truncated cache that later runs would trust.
+        partial = SCHEMA_PATH.with_suffix(".partial")
+        partial.write_bytes(payload)
+        partial.replace(SCHEMA_PATH)
     return json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
 
