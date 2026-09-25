@@ -325,8 +325,10 @@ TEST_CASE(process_stat_child) {
 TEST_CASE(wait_cancel) {
     process::options opts;
 #ifdef _WIN32
-    opts.file = "cmd.exe";
-    opts.args = {opts.file, "/c", "ping -n 60 127.0.0.1 >nul"};
+    // ping itself, not through cmd.exe: killing cmd would leave ping running
+    // with this process's inherited handles for a minute.
+    opts.file = "ping.exe";
+    opts.args = {opts.file, "-n", "60", "127.0.0.1"};
 #else
     opts.file = "/bin/sleep";
     opts.args = {opts.file, "60"};
@@ -359,8 +361,8 @@ TEST_CASE(wait_cancel) {
 TEST_CASE(kill_ends_a_running_child) {
     process::options opts;
 #ifdef _WIN32
-    opts.file = "cmd.exe";
-    opts.args = {opts.file, "/c", "ping -n 60 127.0.0.1 >nul"};
+    opts.file = "ping.exe";
+    opts.args = {opts.file, "-n", "60", "127.0.0.1"};
 #else
     opts.file = "/bin/sleep";
     opts.args = {opts.file, "60"};
