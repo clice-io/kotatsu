@@ -1,5 +1,6 @@
 #include <cassert>
 #include <cstdio>
+#include <fcntl.h>
 #include <format>
 #include <optional>
 #include <string>
@@ -8,7 +9,6 @@
 #include <utility>
 
 #include "execution.h"
-#include "kota/zest/snapshot/snapshot.h"
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -17,12 +17,10 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
-#include <fcntl.h>
 #include <io.h>
 #include <windows.h>
 #else
 #include <cerrno>
-#include <fcntl.h>
 #include <unistd.h>
 #endif
 
@@ -128,13 +126,14 @@ std::string_view state_name(TestState state) {
     std::unreachable();
 }
 
-std::optional<TestState> parse_state(std::string_view name) {
+TestState parse_state(std::string_view name) {
     for(auto state: {TestState::Passed, TestState::Skipped, TestState::Failed}) {
         if(name == state_name(state)) {
             return state;
         }
     }
-    return std::nullopt;
+    // Only a worker of this same program writes the name.
+    std::unreachable();
 }
 
 std::optional<std::string> take_line(std::string& pending) {
@@ -149,7 +148,7 @@ std::optional<std::string> take_line(std::string& pending) {
 
 }  // namespace protocol
 
-int serve(std::span<const Entry> entries) {
+void serve(std::span<const Entry> entries) {
     auto channel = Channel::take_stdin();
 
     // Output goes to a file the runner reads after each test. Unbuffered, all
@@ -179,7 +178,6 @@ int serve(std::span<const Entry> entries) {
         reply += std::format("{}{}\n", protocol::done, protocol::state_name(state));
         channel.write(reply);
     }
-    return 0;
 }
 
 }  // namespace kota::zest

@@ -1,9 +1,9 @@
-# Runs zest_runner_fixture (path in FIXTURE) and checks that every misbehaving
-# test fails on its own while the run still completes.
+# Runs zest_runner_fixture (path in FIXTURE; scratch space in WORK_DIR) and
+# checks that every misbehaving test fails on its own while the run completes.
 
 function(run_fixture)
     execute_process(
-        COMMAND "${FIXTURE}" ${ARGN}
+        COMMAND ${ARGN}
         OUTPUT_VARIABLE output
         ERROR_VARIABLE output
         RESULT_VARIABLE code
@@ -25,40 +25,103 @@ function(expect_output text)
     endif()
 endfunction()
 
-run_fixture(--list-tests)
+# `text`, printed by a test, is shown before the status line starting with
+# `status` and after every other test's status line.
+function(expect_output_of status text)
+    string(FIND "${output}" "${text}" text_at)
+    string(FIND "${output}" "${status}" status_at)
+    if(text_at EQUAL -1 OR status_at EQUAL -1 OR text_at GREATER status_at)
+        message(FATAL_ERROR "expected `${text}` before `${status}`:\n${output}")
+    endif()
+    math(EXPR length "${status_at} - ${text_at}")
+    string(SUBSTRING "${output}" ${text_at} ${length} between)
+    string(FIND "${between}" "] fixture" other)
+    if(NOT other EQUAL -1)
+        message(FATAL_ERROR "`${text}` is not attributed to `${status}`:\n${output}")
+    endif()
+endfunction()
+
+string(ASCII 27 escape)
+set(ok "${escape}[32m[       OK ]")
+set(snapshots "${WORK_DIR}/snapshots")
+file(REMOVE_RECURSE "${WORK_DIR}")
+
+run_fixture("${FIXTURE}" --list-tests)
 string(FIND "${output}" "fixture.throws" at)
 if(at EQUAL -1)
-    set(failures 5)
+    set(failures 4)
 else()
-    set(failures 6)
+    set(failures 5)
 endif()
 
-# With two workers, each outlives some of the tests that
-# kill workers, so replacements must pick up where they left off.
-run_fixture(--jobs=2 --timeout=2 --verbose)
+# With two workers, each outlives some of the tests that kill workers, so
+# replacements must pick up where they left off.
+run_fixture("${FIXTURE}" --test-filter=fixture.* --jobs=2 --timeout=30 --verbose
+    "--snapshot-dir=${snapshots}" --cleanup-snapshots)
 expect_code(1)
-expect_output("[       OK ] fixture.passes (")
-string(ASCII 27 escape)
-expect_output("printed by fixture.prints\n${escape}[32m[       OK ] fixture.prints (")
-expect_output("[       OK ] fixture.case_0 (")
-expect_output("[       OK ] fixture.case_1 (")
-expect_output("[       OK ] fixture.case_2 (")
+expect_output("${ok} fixture.passes (")
+expect_output_of("${ok} fixture.prints (" "printed by fixture.prints")
+expect_output("${ok} fixture.case_0 (")
+expect_output("${ok} fixture.case_1 (")
+expect_output("${ok} fixture.case_2 (")
 expect_output("[ SKIPPED  ] fixture.skips")
 expect_output("[   FAILED ] fixture.fails (")
 expect_output("[   FAILED ] fixture.fails_on_thread (")
-expect_output("[  CRASHED ] fixture.aborts (")
+expect_output_of("[  CRASHED ] fixture.aborts (" "printed by fixture.aborts")
 expect_output("[  CRASHED ] fixture.exits_early (")
 expect_output("exit code 0 before the test finished")
-expect_output("[  TIMEOUT ] fixture.hangs (")
-if(failures EQUAL 6)
+if(failures EQUAL 5)
     expect_output("[   FAILED ] fixture.throws (")
     expect_output("thrown by the test")
 endif()
-expect_output("[  PASSED  ] 6 tests.")
 expect_output("[   WORKER ] a worker ended with exit code 3 after its last test")
+expect_output("[snapshot] cleanup skipped: some tests failed")
+expect_output("[  PASSED  ] 6 tests.")
 expect_output("[  SKIPPED ] 1 tests.")
 expect_output("[  FAILED  ] ${failures} tests, listed below:")
+# The serial test runs once everything else is done.
+set(serial_line "${ok} fixture.fails_at_exit (")
+string(FIND "${output}" "${serial_line}" serial_at)
+string(FIND "${output}" "Global test environment tear-down" teardown_at)
+string(LENGTH "${serial_line}" serial_length)
+math(EXPR after_serial "${serial_at} + ${serial_length}")
+math(EXPR between "${teardown_at} - ${after_serial}")
+string(SUBSTRING "${output}" ${after_serial} ${between} after)
+string(FIND "${after}" "] fixture." later)
+if(serial_at EQUAL -1 OR NOT later EQUAL -1)
+    message(FATAL_ERROR "fixture.fails_at_exit did not run last:\n${output}")
+endif()
 
-run_fixture(--no-isolation --test-filter=fixture.fails_on_thread)
+# One worker: the hang must not keep the next test from running.
+run_fixture("${FIXTURE}" --test-filter=fixture_hang.* --jobs=1 --timeout=2)
+expect_code(1)
+expect_output_of("[  TIMEOUT ] fixture_hang.hangs (" "printed by fixture_hang.hangs")
+expect_output("[  PASSED  ] 1 tests.")
+
+# Snapshots checked by different workers are all counted as checked: the
+# stale one is rewritten, and only the orphan is cleaned up.
+file(WRITE "${snapshots}/fixture_snapshot/checked.snap.yml" "stale")
+file(WRITE "${snapshots}/fixture_snapshot/orphan.snap.yml" "orphan")
+run_fixture("${FIXTURE}" --test-filter=fixture_snapshot.* --jobs=2 "--snapshot-dir=${snapshots}"
+    --update-snapshots --cleanup-snapshots)
+expect_code(0)
+expect_output("[snapshot] cleaned up 1 orphaned file")
+file(READ "${snapshots}/fixture_snapshot/checked.snap.yml" checked)
+string(FIND "${checked}" "fresh" fresh_at)
+if(fresh_at EQUAL -1 OR NOT EXISTS "${snapshots}/fixture_snapshot/also_checked.snap.yml"
+   OR EXISTS "${snapshots}/fixture_snapshot/orphan.snap.yml")
+    message(FATAL_ERROR "snapshots not updated and cleaned up as expected:\n${output}")
+endif()
+
+# The program's own flag reaches the workers, which here refuse to start.
+run_fixture("${FIXTURE}" --test-filter=fixture.passes --fail-worker-start)
+expect_code(1)
+expect_output("Error: a worker ended while starting with exit code 7")
+
+run_fixture("${CMAKE_COMMAND}" -E env ZEST_FIXTURE_DUPLICATE=1 "${FIXTURE}")
+expect_code(1)
+expect_output("more than one test is named fixture.passes")
+
+run_fixture("${FIXTURE}" --no-isolation --test-filter=fixture.fails_on_thread)
 expect_code(1)
 expect_output("[   FAILED ] fixture.fails_on_thread (")

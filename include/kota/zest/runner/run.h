@@ -44,7 +44,9 @@ struct Options {
     <unsigned> jobs = 0;
 
     DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate, meta_var = "<SECONDS>";
-                 help = "kill a test that runs longer than this (0 = no limit)";
+                 help =
+                     "kill a test, or a worker starting or exiting, that takes longer "
+                     "than this (0 = no limit)";
                  required = false)
     <unsigned> timeout = 60;
 

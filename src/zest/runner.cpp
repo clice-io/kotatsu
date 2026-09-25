@@ -36,12 +36,10 @@
 #endif
 #endif
 
+namespace kota::zest {
+
 namespace {
 
-using kota::zest::elapsed_since;
-using kota::zest::Entry;
-using kota::zest::Outcome;
-using kota::zest::Verdict;
 using std::chrono::milliseconds;
 using std::chrono::steady_clock;
 
@@ -52,7 +50,7 @@ constexpr std::string_view red = "\033[31m";
 constexpr std::string_view clear = "\033[0m";
 
 struct CliOptions {
-    kota::zest::Options zest;
+    Options zest;
 
     DecoFlag(help = "display this help and exit"; required = false; names = {"--help", "-h"})
     help = false;
@@ -153,7 +151,7 @@ bool matches_filter(const Entry& entry, const FilterPatternSet& patterns) {
     return patterns.display.is_trivial_match_all() || patterns.display.match(entry.name);
 }
 
-auto collect_entries(std::span<const kota::zest::TestSuite> suites) -> std::vector<Entry> {
+auto collect_entries(std::span<const TestSuite> suites) -> std::vector<Entry> {
     std::vector<Entry> entries;
     for(const auto& suite: suites) {
         for(auto& test_case: suite.cases()) {
@@ -278,8 +276,6 @@ void print_summary(const RunSummary& summary) {
 
 }  // namespace
 
-namespace kota::zest {
-
 Verdict verdict_of(TestState state) {
     switch(state) {
         case TestState::Passed: return Verdict::Passed;
@@ -358,8 +354,10 @@ int Runner::run_tests(Options options, int argc, const char* const* argv) {
     // have built itself: a worker that took itself for a runner would start
     // workers of its own.
     auto args = std::span(argv, static_cast<std::size_t>(argc));
-    if(std::ranges::any_of(args, [](std::string_view arg) { return arg == "--zest-worker"; })) {
-        return serve(entries);
+    if(std::ranges::any_of(args,
+                           [](std::string_view arg) { return arg == protocol::worker_flag; })) {
+        serve(entries);
+        return 0;
     }
 
     // Workers find tests by name.
@@ -397,6 +395,7 @@ int Runner::run_tests(Options options, int argc, const char* const* argv) {
     });
 
     RunSummary summary;
+    Reporter reporter{.summary = summary, .verbose = verbose};
     std::vector<const Entry*> runnable;
     std::unordered_set<std::string_view> active_suites;
     for(const auto* entry: matched) {
@@ -406,10 +405,7 @@ int Runner::run_tests(Options options, int argc, const char* const* argv) {
             continue;
         }
         if(attrs.skip) {
-            if(verbose) {
-                std::println("{}[ SKIPPED  ] {}{}", yellow, entry->name, clear);
-            }
-            summary.skipped += 1;
+            reporter.record(*entry, Outcome{.verdict = Verdict::Skipped, .duration = {}});
             continue;
         }
         active_suites.insert(entry->suite);
@@ -423,7 +419,6 @@ int Runner::run_tests(Options options, int argc, const char* const* argv) {
         std::println("{}[  FOCUS   ] Running in focus-only mode.{}", yellow, clear);
     }
 
-    Reporter reporter{.summary = summary, .verbose = verbose};
     auto begin = steady_clock::now();
     if(*options.no_isolation) {
         for(const auto* entry: runnable) {

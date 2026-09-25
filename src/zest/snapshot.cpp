@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "execution.h"
 #include "kota/support/glob_pattern.h"
 
 namespace kota::zest {

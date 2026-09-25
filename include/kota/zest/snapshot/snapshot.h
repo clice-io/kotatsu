@@ -4,7 +4,6 @@
 #include <source_location>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace kota::zest {
 
@@ -27,12 +26,6 @@ bool check_snapshot_glob(std::string_view base_dir,
                          std::string_view pattern,
                          const std::function<std::string(std::string_view)>& transform,
                          std::source_location loc = std::source_location::current());
-
-/// Snapshot files checked since the last call, for a worker to pass on.
-std::vector<std::string> take_accessed_snapshots();
-
-/// Counts `path` as checked, as if this process had checked it.
-void record_snapshot_access(std::string_view path);
 
 std::size_t cleanup_unused_snapshots();
 

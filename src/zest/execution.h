@@ -61,6 +61,9 @@ TestState run_in_process(const Entry& entry);
 /// The runner hangs up once it has no more tests, and the worker exits.
 namespace protocol {
 
+/// The flag a worker is started with.
+constexpr std::string_view worker_flag = "--zest-worker";
+
 constexpr std::string_view ready = "ready";
 constexpr std::string_view run = "run ";
 constexpr std::string_view snapshot = "snapshot ";
@@ -68,7 +71,7 @@ constexpr std::string_view done = "done ";
 
 std::string_view state_name(TestState state);
 
-std::optional<TestState> parse_state(std::string_view name);
+TestState parse_state(std::string_view name);
 
 /// Removes the first complete line from `pending` and returns it without its
 /// newline, or nothing while no line is complete.
@@ -76,15 +79,21 @@ std::optional<std::string> take_line(std::string& pending);
 
 }  // namespace protocol
 
+/// Snapshot files checked since the last call, which a worker passes on.
+std::vector<std::string> take_accessed_snapshots();
+
+/// Counts `path` as checked, as if this process had checked it.
+void record_snapshot_access(std::string_view path);
+
 /// The worker side: runs the tests the runner names until it hangs up.
-int serve(std::span<const Entry> entries);
+void serve(std::span<const Entry> entries);
 
 /// A worker that went wrong outside any test: it could not start, or it ended
 /// badly after its last test, as a leak check or a static destructor can make it.
 struct WorkerFailure {
     std::string detail;
-    /// Everything the worker printed.
-    std::string output;
+    /// What the worker printed.
+    std::string output = {};
 };
 
 struct PoolOptions {

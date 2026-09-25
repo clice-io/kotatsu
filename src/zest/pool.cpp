@@ -3,6 +3,7 @@
 #include <chrono>
 #include <csignal>
 #include <cstdint>
+#include <cstring>
 #include <fcntl.h>
 #include <filesystem>
 #include <format>
@@ -16,7 +17,6 @@
 #include <vector>
 
 #include "execution.h"
-#include "kota/zest/snapshot/snapshot.h"
 #include "kota/async/io/fs.h"
 #include "kota/async/io/loop.h"
 #include "kota/async/io/process.h"
@@ -25,10 +25,6 @@
 #include "kota/async/io/watcher.h"
 #include "kota/async/runtime/task.h"
 #include "kota/async/runtime/when.h"
-
-#ifndef _WIN32
-#include <cstring>
-#endif
 
 namespace kota::zest {
 
@@ -71,11 +67,7 @@ task<std::optional<T>> within(task<T> work, milliseconds timeout) {
     if(timeout.count() == 0) {
         co_return co_await std::move(work);
     }
-    auto deadline = [](milliseconds timeout) -> task<bool> {
-        co_await sleep(timeout);
-        co_return true;
-    };
-    auto first = co_await when_any(std::move(work), deadline(timeout));
+    auto first = co_await when_any(std::move(work), sleep(timeout));
     if(first.index() != 0) {
         co_return std::nullopt;
     }
@@ -113,14 +105,11 @@ struct Worker {
     task<std::optional<TestState>> read_reply() {
         while(auto line = co_await read_line()) {
             std::string_view text = *line;
-            if(text.starts_with(protocol::snapshot)) {
-                record_snapshot_access(text.substr(protocol::snapshot.size()));
-                continue;
-            }
-            if(text.starts_with(protocol::done)) {
+            if(!text.starts_with(protocol::snapshot)) {
+                assert(text.starts_with(protocol::done));
                 co_return protocol::parse_state(text.substr(protocol::done.size()));
             }
-            break;
+            record_snapshot_access(text.substr(protocol::snapshot.size()));
         }
         co_return std::nullopt;
     }
@@ -134,7 +123,7 @@ struct Worker {
         return output;
     }
 
-    /// Everything the worker has printed.
+    /// Everything the worker has printed, handed out or not.
     std::string whole_output() const {
         std::ifstream file(log, std::ios::binary);
         return {std::istreambuf_iterator<char>(file), {}};
@@ -173,7 +162,6 @@ struct Pool {
         if(!fd) {
             co_return std::unexpected(WorkerFailure{
                 .detail = std::format("cannot create {}: {}", utf8(log), fd.error().message()),
-                .output = {},
             });
         }
 
@@ -181,7 +169,7 @@ struct Pool {
         spawn.file = executable;
         spawn.args.push_back(executable);
         spawn.args.insert(spawn.args.end(), options.args.begin(), options.args.end());
-        spawn.args.push_back("--zest-worker");
+        spawn.args.emplace_back(protocol::worker_flag);
         spawn.streams = {
             process::stdio::pipe(true, true),
             process::stdio::from_fd(*fd),
@@ -192,7 +180,6 @@ struct Pool {
         if(!spawned) {
             co_return std::unexpected(WorkerFailure{
                 .detail = std::format("cannot start a worker: {}", spawned.error().message()),
-                .output = {},
             });
         }
 
@@ -209,7 +196,7 @@ struct Pool {
                 .detail =
                     ready ? std::format("a worker ended while starting with {}", describe(status))
                           : std::string("a worker did not start within --timeout"),
-                .output = worker.whole_output(),
+                .output = worker.take_output(),
             });
         }
         worker.take_output();
@@ -218,31 +205,39 @@ struct Pool {
 
     task<Outcome> run(Worker& worker, const Entry& entry) {
         auto begin = steady_clock::now();
-        auto command = std::format("{}{}\n", protocol::run, entry.name);
-
+        // A worker gone before the command arrives fails the write, and the
+        // read after it reports the crash.
+        [[maybe_unused]] auto written =
+            co_await worker.channel.write(std::format("{}{}\n", protocol::run, entry.name));
         // Outer: whether the worker answered in time. Inner: whether it
         // reported a state before going away.
-        std::optional<std::optional<TestState>> reply;
-        if(auto written = co_await worker.channel.write(command); written.has_value()) {
-            reply = co_await within(worker.read_reply(), options.timeout);
-        } else {
-            reply.emplace();
-        }
+        auto reply = co_await within(worker.read_reply(), options.timeout);
+        auto duration = elapsed_since(begin);
 
-        Outcome outcome{.verdict = Verdict::Crashed, .duration = elapsed_since(begin)};
         if(!reply) {
             co_await worker.kill();
-            outcome.verdict = Verdict::TimedOut;
-        } else if(*reply) {
-            outcome.verdict = verdict_of(**reply);
-        } else {
-            // Whatever broke the channel, the worker must be gone before its
-            // status says how it ended.
-            auto status = co_await worker.kill();
-            outcome.detail = std::format("{} before the test finished", describe(status));
+            co_return Outcome{
+                .verdict = Verdict::TimedOut,
+                .duration = duration,
+                .output = worker.take_output(),
+            };
         }
-        outcome.output = worker.take_output();
-        co_return outcome;
+        if(*reply) {
+            co_return Outcome{
+                .verdict = verdict_of(**reply),
+                .duration = duration,
+                .output = worker.take_output(),
+            };
+        }
+        // Whatever broke the channel, the worker must be gone before its
+        // status says how it ended.
+        auto status = co_await worker.kill();
+        co_return Outcome{
+            .verdict = Verdict::Crashed,
+            .duration = duration,
+            .output = worker.take_output(),
+            .detail = std::format("{} before the test finished", describe(status)),
+        };
     }
 
     /// Runs `tests` one after another on one worker at a time, starting a new
@@ -270,7 +265,9 @@ struct Pool {
         if(!worker) {
             co_return;
         }
-        // Hanging up tells the worker to exit.
+        // Hanging up tells the worker to exit. If it ends badly, all it printed
+        // is shown: a sanitizer reports during the test it catches, which may
+        // well have passed.
         worker->channel = pipe{};
         auto status = co_await within(worker->wait(), options.timeout);
         if(!status) {
@@ -300,7 +297,6 @@ std::expected<std::vector<WorkerFailure>, WorkerFailure>
         return std::unexpected(WorkerFailure{
             .detail = std::format("cannot find this program to start workers: {}",
                                   executable.error().message()),
-            .output = {},
         });
     }
 
@@ -314,7 +310,6 @@ std::expected<std::vector<WorkerFailure>, WorkerFailure>
         return std::unexpected(WorkerFailure{
             .detail =
                 std::format("cannot create a directory for worker output: {}", error.message()),
-            .output = {},
         });
     }
 

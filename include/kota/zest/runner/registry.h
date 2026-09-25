@@ -21,9 +21,9 @@ struct TestAttrs {
     bool skip = false;
     /// When any selected test is focused, only focused tests run.
     bool focus = false;
-    /// Runs while no other test runs. Each test has a process of its own, so
-    /// this is for contention outside the process: fixed file or pipe names,
-    /// or timing that load disturbs.
+    /// Runs while no other test runs. Tests running at once never share a
+    /// process, so this is for contention outside it: fixed file or pipe
+    /// names, or timing that load disturbs.
     bool serial = false;
 };
 

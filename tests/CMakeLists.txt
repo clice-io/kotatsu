@@ -1,5 +1,10 @@
 add_executable(unit_tests)
-set_target_properties(unit_tests PROPERTIES
+# zest's own runner checked end to end (see zest_runner below); it sits next to
+# unit_tests so that it finds the same runtime DLLs.
+add_executable(zest_runner_fixture "${PROJECT_SOURCE_DIR}/tests/zest/runner_fixture.cpp")
+target_link_libraries(zest_runner_fixture PRIVATE kota::zest)
+kota_apply_project_options(zest_runner_fixture)
+set_target_properties(unit_tests zest_runner_fixture PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
     RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}"
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}"
@@ -192,28 +197,16 @@ add_test(NAME unit_tests COMMAND unit_tests
 add_test(NAME zest_bootstrap
     COMMAND unit_tests
         --no-isolation
-        "--test-filter={task,when_any,when_cancel,process_io,pipe,watcher_io,system_info}.*"
+        "--test-filter={task,when_all,when_any,when_cancel,process_io,pipe,watcher_io,system_info}.*"
         "--snapshot-dir=tests/snapshots"
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 )
 set_tests_properties(zest_bootstrap PROPERTIES FIXTURES_SETUP zest_async)
 
-add_executable(zest_runner_fixture
-    "${PROJECT_SOURCE_DIR}/tests/zest/runner_fixture.cpp"
-    "${PROJECT_SOURCE_DIR}/tests/unit/main.cpp"
-)
-set_target_properties(zest_runner_fixture PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}"
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}"
-    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_BINARY_DIR}"
-    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${CMAKE_BINARY_DIR}"
-)
-target_link_libraries(zest_runner_fixture PRIVATE kota::zest)
-kota_apply_project_options(zest_runner_fixture)
 add_test(NAME zest_runner
     COMMAND "${CMAKE_COMMAND}"
         "-DFIXTURE=$<TARGET_FILE:zest_runner_fixture>"
+        "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/zest_runner"
         -P "${PROJECT_SOURCE_DIR}/tests/zest/check_runner.cmake"
 )
 set_tests_properties(zest_runner PROPERTIES

@@ -3,8 +3,11 @@
 #include <format>
 #include <print>
 #include <stdexcept>
+#include <string>
 #include <thread>
+#include <utility>
 
+#include "kota/deco/deco.h"
 #include "kota/zest/zest.h"
 
 // Tests that misbehave on purpose, for check_runner.cmake: each must fail on
@@ -33,11 +36,8 @@ TEST_CASE(skips) {
 }
 
 TEST_CASE(aborts) {
+    std::println("printed by fixture.aborts");
     std::abort();
-}
-
-TEST_CASE(hangs) {
-    std::this_thread::sleep_for(std::chrono::hours(1));
 }
 
 TEST_CASE(exits_early) {
@@ -64,10 +64,64 @@ TEST_CASE_GROUP(group) {
     for(int i = 0; i < 3; ++i) {
         add_case(std::format("case_{}", i), [] {});
     }
+    // Two tests of one name, which the runner must refuse.
+    if(std::getenv("ZEST_FIXTURE_DUPLICATE") != nullptr) {
+        add_case("passes", [] {});
+    }
 }
 
 };  // TEST_SUITE(fixture)
 
+// Run on their own with a short --timeout: a failing test spends a while
+// resolving its stack trace, which a short limit would cut off.
+TEST_SUITE(fixture_hang) {
+
+TEST_CASE(hangs) {
+    std::println("printed by fixture_hang.hangs");
+    std::this_thread::sleep_for(std::chrono::hours(1));
+}
+
+TEST_CASE(passes_after) {
+    EXPECT_EQ(1, 1);
+}
+
+};  // TEST_SUITE(fixture_hang)
+
+// Two workers each check one snapshot; the runner must count both as checked.
+TEST_SUITE(fixture_snapshot) {
+
+TEST_CASE(checked) {
+    EXPECT_SNAPSHOT("fresh");
+}
+
+TEST_CASE(also_checked) {
+    EXPECT_SNAPSHOT("fresh");
+}
+
+};  // TEST_SUITE(fixture_snapshot)
+
+struct FixtureOptions {
+    Options zest;
+
+    DecoFlag(help = "make every worker fail to start"; required = false)
+    fail_worker_start = false;
+};
+
 }  // namespace
 
 }  // namespace kota::zest
+
+// Embeds zest's options the way a downstream test program does, so that its
+// own flag has to reach the workers.
+int main(int argc, char** argv) {
+    auto args = kota::deco::util::argvify(argc, argv);
+    auto parsed = kota::deco::cli::parse<kota::zest::FixtureOptions>(args);
+    if(!parsed.has_value()) {
+        return 1;
+    }
+    auto& options = parsed->options;
+    if(*options.fail_worker_start && *options.zest.zest_worker) {
+        return 7;
+    }
+    return kota::zest::run_tests(std::move(options.zest), argc, argv);
+}
