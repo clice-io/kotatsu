@@ -29,8 +29,9 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
-#include <shellapi.h>
 #include <windows.h>
+// shellapi.h builds on the declarations windows.h makes.
+#include <shellapi.h>
 #ifdef _MSC_VER
 #include <crtdbg.h>
 #include <cstdlib>
