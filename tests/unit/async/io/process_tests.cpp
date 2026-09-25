@@ -1,9 +1,15 @@
+#include <csignal>
+#include <fcntl.h>
+#include <filesystem>
+#include <format>
 #include <span>
 #include <string>
+#include <system_error>
 #include <utility>
 
 #include "../loop_fixture.h"
 #include "kota/zest/zest.h"
+#include "kota/async/io/fs.h"
 #include "kota/async/io/system.h"
 
 namespace kota {
@@ -348,6 +354,65 @@ TEST_CASE(wait_cancel) {
 
     auto result = guarded.result();
     EXPECT_TRUE(result.is_cancelled());
+}
+
+TEST_CASE(kill_ends_a_running_child) {
+    process::options opts;
+#ifdef _WIN32
+    opts.file = "cmd.exe";
+    opts.args = {opts.file, "/c", "ping -n 60 127.0.0.1 >nul"};
+#else
+    opts.file = "/bin/sleep";
+    opts.args = {opts.file, "60"};
+#endif
+    opts.streams = {process::stdio::ignore(), process::stdio::ignore(), process::stdio::ignore()};
+
+    auto spawn_res = process::spawn(opts, loop);
+    ASSERT_TRUE(spawn_res.has_value());
+    EXPECT_FALSE(spawn_res->proc.kill(SIGTERM).has_error());
+
+    auto waiter = wait_for_exit(spawn_res->proc);
+    schedule_all(waiter);
+
+    auto status = waiter.result();
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(status->term_signal, SIGTERM);
+}
+
+TEST_CASE(spawn_stdout_to_fd) {
+    auto temp = sys::temp_directory();
+    ASSERT_TRUE(temp.has_value());
+    auto path = std::format("{}/kotatsu-stdout-fd-{}.txt", *temp, sys::pid());
+    auto fd = fs::sync::open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    ASSERT_TRUE(fd.has_value());
+
+    process::options opts;
+#ifdef _WIN32
+    opts.file = "cmd.exe";
+    opts.args = {opts.file, "/c", "echo kotatsu-fd"};
+    const std::string expected = "kotatsu-fd\r\n";
+#else
+    opts.file = "/bin/sh";
+    opts.args = {opts.file, "-c", "printf kotatsu-fd"};
+    const std::string expected = "kotatsu-fd";
+#endif
+    opts.streams = {process::stdio::ignore(),
+                    process::stdio::from_fd(*fd),
+                    process::stdio::ignore()};
+
+    auto spawn_res = process::spawn(opts, loop);
+    EXPECT_FALSE(fs::sync::close(*fd).has_error());
+    ASSERT_TRUE(spawn_res.has_value());
+
+    auto waiter = wait_for_exit(spawn_res->proc);
+    schedule_all(waiter);
+    EXPECT_TRUE(waiter.result().has_value());
+
+    auto written = fs::sync::read_to_string(path);
+    std::error_code ignored;
+    std::filesystem::remove(path, ignored);
+    ASSERT_TRUE(written.has_value());
+    EXPECT_EQ(*written, expected);
 }
 
 };  // TEST_SUITE(process_io)

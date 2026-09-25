@@ -359,9 +359,12 @@ TEST_CASE(fs_cancel_resume) {
         source.cancel();
         phase = 2;
 
+        // As in queue_cancel_resume: a pool thread freed before the target
+        // settles races uv_cancel for it.
+        co_await target_done.wait();
+
         release.store(true, std::memory_order_release);
 
-        co_await target_done.wait();
         while(blockers_done.load(std::memory_order_acquire) < blocker_count) {
             co_await sleep(1, loop);
         }
