@@ -68,6 +68,16 @@ struct annotation<T, Attrs...> : T {
 
     using T::T;
 
+    constexpr annotation() = default;
+
+    // An inherited constructor never copies or moves from T itself, so
+    // `.field = std::move(value)` needs these.
+    constexpr annotation(const T& raw)
+        requires std::copy_constructible<T>
+        : T(raw) {}
+
+    constexpr annotation(T&& raw) : T(std::move(raw)) {}
+
     template <typename U>
         requires (!std::same_as<std::remove_cvref_t<U>, annotation> && std::assignable_from<T&, U>)
     constexpr annotation& operator=(U&& raw) {
