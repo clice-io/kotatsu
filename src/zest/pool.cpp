@@ -164,7 +164,7 @@ struct Pool {
         // Each worker gets a fresh log: a killed worker's leftover children may
         // still be writing to the old one.
         auto log = directory / std::format("{}.log", started++);
-        auto fd = fs::sync::open(utf8(log), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        auto fd = fs::sync::open(utf8(log), O_WRONLY | O_CREAT | O_TRUNC, 0600);
         if(!fd) {
             co_return std::unexpected(WorkerFailure{
                 .detail = std::format("cannot create {}: {}", utf8(log), fd.error().message()),
@@ -173,8 +173,7 @@ struct Pool {
 
         process::options spawn;
         spawn.file = executable;
-        spawn.args.push_back(executable);
-        spawn.args.insert(spawn.args.end(), options.args.begin(), options.args.end());
+        spawn.args = options.args;
         spawn.args.emplace_back(protocol::worker_flag);
         spawn.streams = {
             process::stdio::pipe(true, true),
@@ -306,7 +305,8 @@ std::expected<std::vector<WorkerFailure>, WorkerFailure>
         });
     }
 
-    // A directory of this run's own, which nobody can have planted files in.
+    // A directory of this run's own, which nobody can have planted files in
+    // or can read test output from.
     std::error_code error;
     auto base = stdfs::temp_directory_path(error);
     stdfs::path directory;
@@ -314,6 +314,10 @@ std::expected<std::vector<WorkerFailure>, WorkerFailure>
     while(!error) {
         directory = base / std::format("zest-{}-{:08x}", sys::pid(), random());
         if(stdfs::create_directory(directory, error)) {
+            stdfs::permissions(directory,
+                               stdfs::perms::owner_all,
+                               stdfs::perm_options::replace,
+                               error);
             break;
         }
     }
@@ -327,7 +331,7 @@ std::expected<std::vector<WorkerFailure>, WorkerFailure>
 #ifdef SIGPIPE
     // A worker that dies between tests closes the channel under the next
     // command; the write should fail and report the crash, not kill the runner.
-    // Workers start with the default disposition again.
+    // libuv starts every child, workers included, with default dispositions.
     std::signal(SIGPIPE, SIG_IGN);
 #endif
 
@@ -347,7 +351,8 @@ std::expected<std::vector<WorkerFailure>, WorkerFailure>
     auto run_all = [&]() -> task<> {
         std::size_t next = 0;
         std::vector<task<>> workers;
-        auto count = std::min<std::size_t>(options.jobs, concurrent.size());
+        auto jobs = options.jobs != 0 ? options.jobs : std::max(1u, sys::parallelism());
+        auto count = std::min<std::size_t>(jobs, concurrent.size());
         for(std::size_t slot = 0; slot < count; ++slot) {
             workers.push_back(pool.drive(concurrent, next));
         }

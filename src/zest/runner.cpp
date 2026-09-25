@@ -8,7 +8,6 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <tuple>
 #include <unordered_set>
 #include <utility>
@@ -100,16 +99,16 @@ void silence_crash_dialogs() {
 #endif
 }
 
-/// This program's arguments after argv[0], which workers start with.
-std::vector<std::string> worker_args([[maybe_unused]] int argc,
-                                     [[maybe_unused]] const char* const* argv) {
+/// This program's argv, which workers start with.
+std::vector<std::string> program_args([[maybe_unused]] int argc,
+                                      [[maybe_unused]] const char* const* argv) {
 #ifdef _WIN32
     // `argv` is in the ANSI code page, which may not hold every character of
     // the command line; the wide one does, and workers are spawned from UTF-8.
     int count = 0;
     auto wide = CommandLineToArgvW(GetCommandLineW(), &count);
     std::vector<std::string> args;
-    for(int i = 1; i < count; ++i) {
+    for(int i = 0; i < count; ++i) {
         auto size = WideCharToMultiByte(CP_UTF8, 0, wide[i], -1, nullptr, 0, nullptr, nullptr);
         std::string arg(static_cast<std::size_t>(size - 1), '\0');
         WideCharToMultiByte(CP_UTF8, 0, wide[i], -1, arg.data(), size, nullptr, nullptr);
@@ -118,10 +117,7 @@ std::vector<std::string> worker_args([[maybe_unused]] int argc,
     LocalFree(wide);
     return args;
 #else
-    if(argc == 0) {
-        return {};
-    }
-    return {argv + 1, argv + argc};
+    return {argv, argv + argc};
 #endif
 }
 
@@ -458,13 +454,9 @@ int Runner::run_tests(Options options, int argc, const char* const* argv) {
                             Outcome{.verdict = verdict, .duration = elapsed_since(test_begin)});
         }
     } else {
-        auto jobs = *options.jobs;
-        if(jobs == 0) {
-            jobs = std::max(1u, std::thread::hardware_concurrency());
-        }
         PoolOptions pool{
-            .args = worker_args(argc, argv),
-            .jobs = jobs,
+            .args = program_args(argc, argv),
+            .jobs = *options.jobs,
             .timeout = std::chrono::seconds(*options.timeout),
         };
         auto report = [&](const Entry& entry, const Outcome& outcome) {

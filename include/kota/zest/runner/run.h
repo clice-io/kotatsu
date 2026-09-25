@@ -39,7 +39,7 @@ struct Options {
     list_tests = false;
 
     DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate, meta_var = "<N>";
-                 help = "worker processes running tests at once (0 = one per CPU)";
+                 help = "worker processes running tests at once (0 = one per available CPU)";
                  required = false)
     <unsigned> jobs = 0;
 

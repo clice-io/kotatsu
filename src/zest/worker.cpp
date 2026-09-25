@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <fcntl.h>
 #include <format>
+#include <iostream>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -169,6 +170,11 @@ void serve(std::span<const Entry> entries) {
         assert(test != tests.end());
 
         auto state = run_in_process(*test->second);
+        // All the test printed must be in the log before the runner reads it.
+        // std::cout buffers on its own once sync_with_stdio(false) is set.
+        std::cout.flush();
+        std::clog.flush();
+        std::fflush(nullptr);
 
         std::string reply;
         for(const auto& path: take_accessed_snapshots()) {

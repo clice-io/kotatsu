@@ -97,8 +97,10 @@ struct WorkerFailure {
 };
 
 struct PoolOptions {
-    /// This program's arguments without argv[0]; workers start with them.
+    /// This program's argv, argv[0] included: workers start with it, so a
+    /// program that reads its own name sees the same one there.
     std::vector<std::string> args;
+    /// Zero means one per CPU this process may use.
     unsigned jobs;
     /// Zero means no limit.
     std::chrono::milliseconds timeout;
