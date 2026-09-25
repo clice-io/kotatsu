@@ -24,12 +24,12 @@ TEST_CASE(known_string_enum_value) {
     auto content =
         from_string<protocol::MarkupContent, lsp_config>(R"({"kind":"markdown","value":"body"})");
     ASSERT_TRUE(content.has_value());
-    EXPECT_EQ(content->kind, protocol::MarkupKind::markdown);
+    EXPECT_EQ(content->kind, protocol::MarkupKind::Markdown);
 }
 
 TEST_CASE(string_enum_round_trip) {
     protocol::MarkupContent content{
-        .kind = protocol::MarkupKind::markdown,
+        .kind = protocol::MarkupKind::Markdown,
         .value = "body",
     };
     auto serialized = codec::json::to_string<lsp_config>(content);
@@ -86,7 +86,7 @@ TEST_CASE(initialize_unknown_enum_values) {
     auto params = from_string<protocol::InitializeParams, lsp_config>(payload);
     ASSERT_TRUE(params.has_value());
 
-    auto& init = params->lsp__initialize_params;
+    auto& init = *params;
     auto& caps = init.capabilities;
 
     ASSERT_TRUE(caps.workspace.has_value());
@@ -94,7 +94,7 @@ TEST_CASE(initialize_unknown_enum_values) {
     auto& edit = *caps.workspace->workspace_edit;
     ASSERT_TRUE(edit.resource_operations.has_value());
     ASSERT_EQ(edit.resource_operations->size(), 4U);
-    EXPECT_EQ((*edit.resource_operations)[0], protocol::ResourceOperationKind::create);
+    EXPECT_EQ((*edit.resource_operations)[0], protocol::ResourceOperationKind::Create);
     EXPECT_EQ((*edit.resource_operations)[3], "futureOperation");
     ASSERT_TRUE(edit.failure_handling.has_value());
     EXPECT_EQ(*edit.failure_handling, "futureFailureMode");

@@ -403,12 +403,12 @@ TEST_CASE(request_error_data) {
     JsonPeer peer(loop, std::move(transport));
 
     peer.on_request([&](RequestContext&, const AddParams&) -> RequestResult<AddParams> {
-        protocol::Object data;
-        data.insert_or_assign("detail", protocol::Value(std::string("invalid payload")));
-        data.insert_or_assign("index", protocol::Value(std::int64_t{-3}));
         co_await fail(protocol::ErrorCode::InvalidParams,
                       "forced invalid params",
-                      protocol::Value(std::move(data)));
+                      codec::dyn::Value{
+                          {"detail", "invalid payload"},
+                          {"index",  -3               }
+        });
     });
 
     loop.schedule(peer.run());
@@ -423,22 +423,10 @@ TEST_CASE(request_error_data) {
               static_cast<protocol::integer>(protocol::ErrorCode::InvalidParams));
     EXPECT_EQ(response->error.message, "forced invalid params");
     ASSERT_TRUE(response->error.data.has_value());
-
-    const auto& data_variant = static_cast<const protocol::Variant&>(*response->error.data);
-    const auto* object = std::get_if<protocol::Object>(&data_variant);
-    ASSERT_TRUE(object != nullptr);
-
-    auto detail_it = object->find("detail");
-    ASSERT_TRUE(detail_it != object->end());
-    const auto& detail_variant = static_cast<const protocol::Variant&>(detail_it->second);
-    ASSERT_TRUE(std::holds_alternative<std::string>(detail_variant));
-    EXPECT_EQ(std::get<std::string>(detail_variant), "invalid payload");
-
-    auto index_it = object->find("index");
-    ASSERT_TRUE(index_it != object->end());
-    const auto& index_variant = static_cast<const protocol::Variant&>(index_it->second);
-    ASSERT_TRUE(std::holds_alternative<std::int64_t>(index_variant));
-    EXPECT_EQ(std::get<std::int64_t>(index_variant), -3);
+    EXPECT_TRUE(*response->error.data == codec::dyn::Value{
+                                             {"detail", "invalid payload"},
+                                             {"index",  -3               }
+    });
 }
 
 TEST_CASE(outbound_error_data) {
@@ -473,22 +461,10 @@ TEST_CASE(outbound_error_data) {
     EXPECT_EQ(request_result.error().code, -32001);
     EXPECT_EQ(request_result.error().message, "remote failed");
     ASSERT_TRUE(request_result.error().data.has_value());
-
-    const auto& data_variant = static_cast<const protocol::Variant&>(*request_result.error().data);
-    const auto* object = std::get_if<protocol::Object>(&data_variant);
-    ASSERT_TRUE(object != nullptr);
-
-    auto detail_it = object->find("detail");
-    ASSERT_TRUE(detail_it != object->end());
-    const auto& detail_variant = static_cast<const protocol::Variant&>(detail_it->second);
-    ASSERT_TRUE(std::holds_alternative<std::string>(detail_variant));
-    EXPECT_EQ(std::get<std::string>(detail_variant), "bad state");
-
-    auto attempt_it = object->find("attempt");
-    ASSERT_TRUE(attempt_it != object->end());
-    const auto& attempt_variant = static_cast<const protocol::Variant&>(attempt_it->second);
-    ASSERT_TRUE(std::holds_alternative<std::int64_t>(attempt_variant));
-    EXPECT_EQ(std::get<std::int64_t>(attempt_variant), -1);
+    EXPECT_TRUE(*request_result.error().data == codec::dyn::Value{
+                                                    {"detail",  "bad state"},
+                                                    {"attempt", -1         }
+    });
 }
 
 TEST_CASE(bad_response_silent) {

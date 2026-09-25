@@ -87,7 +87,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
 
 ### `ipc/lsp` (`include/kota/ipc/lsp/*`)
 
-- C++ protocol model generated from the LSP TypeScript meta-model by `scripts/lsp_codegen.py` (named string types, enums, structs, and union variants).
+- C++ protocol model generated from the pinned LSP 3.18 meta-model by `scripts/lsp_codegen.py`: aggregates with inherited properties inlined, same-shaped variant alternatives told apart by their string literal members, and `LSPAny` as `codec::dyn::Value`. Regenerate with `pixi run lsp-codegen`; CI checks that the committed header is current.
 - LSP request / notification traits layered on top of `kota::ipc::protocol`.
 - `URI` parsing / manipulation with percent-encoding helpers and `from_file_path` factories.
 - `PositionMapper` for byte-offset ↔ LSP `{line, character}` conversion across UTF-8 / UTF-16 / UTF-32 position encodings.

@@ -354,6 +354,13 @@ TEST_CASE(round_trip_array_root) {
     EXPECT_EQ(*output, input);
 }
 
+TEST_CASE(integer_beyond_64_bits_reads_as_double) {
+    auto parsed = json::from_string<dyn::Value>(R"([18446744073709551616,-9223372036854775809])");
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_EQ((*parsed)[0].get_double(), 18446744073709551616.0);
+    EXPECT_EQ((*parsed)[1].get_double(), -9223372036854775809.0);
+}
+
 };  // TEST_SUITE(content_to_json)
 
 }  // namespace

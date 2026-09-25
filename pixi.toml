@@ -146,6 +146,8 @@ fd -H "^\\.clang-(format|tidy)$" -x prettier.bat --write --parser yaml
 
 [tasks]
 integration-test = "pytest tests/integration/ -v"
+# Regenerate include/kota/ipc/lsp/protocol.h; `--check` only verifies it.
+lsp-codegen = "python scripts/lsp_codegen.py"
 
 [tasks.configure]
 args = [{ arg = "preset", default = "debug" }]

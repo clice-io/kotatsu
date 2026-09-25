@@ -6,11 +6,10 @@
 #include <optional>
 #include <string>
 #include <type_traits>
-#include <unordered_map>
 #include <utility>
 #include <variant>
-#include <vector>
 
+#include "kota/codec/dyn/dyn.h"
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/decode.h"
 #include "kota/codec/visit/encode.h"
@@ -30,18 +29,6 @@ using decimal = double;
 using string = std::string;
 using null = std::nullptr_t;
 
-struct Value;
-
-using Array = std::vector<Value>;
-using Object = std::unordered_map<std::string, Value>;
-using Variant = std::
-    variant<Object, Array, std::string, std::int64_t, std::uint32_t, double, bool, std::nullptr_t>;
-
-struct Value : Variant {
-    using Variant::Variant;
-    using Variant::operator=;
-};
-
 using RequestID = std::variant<std::int64_t, std::string>;
 
 enum class ErrorCode : integer {
@@ -57,14 +44,14 @@ enum class ErrorCode : integer {
 struct Error {
     integer code = static_cast<integer>(ErrorCode::RequestFailed);
     string message;
-    std::optional<Value> data = {};
+    std::optional<codec::dyn::Value> data = {};
 
     Error() = default;
 
-    Error(integer code, string message, std::optional<Value> data = {}) :
+    Error(integer code, string message, std::optional<codec::dyn::Value> data = {}) :
         code(code), message(std::move(message)), data(std::move(data)) {}
 
-    Error(ErrorCode code, string message, std::optional<Value> data = {}) :
+    Error(ErrorCode code, string message, std::optional<codec::dyn::Value> data = {}) :
         Error(static_cast<integer>(code), std::move(message), std::move(data)) {}
 
     Error(string message) : message(std::move(message)) {}
@@ -115,15 +102,6 @@ struct formatter<kota::ipc::protocol::RequestID> {
 namespace kota::codec {
 
 template <typename Vis, typename Config>
-struct serialize_visit<Vis, kota::ipc::protocol::Value, Config> {
-    static bool visit(Vis& vis, const kota::ipc::protocol::Value& value) {
-        const auto& var = static_cast<const kota::ipc::protocol::Variant&>(value);
-        return std::visit([&](const auto& item) -> bool { return encode_value<Config>(vis, item); },
-                          var);
-    }
-};
-
-template <typename Vis, typename Config>
 struct serialize_visit<Vis, kota::ipc::protocol::Error, Config> {
     static bool visit(Vis& vis, const kota::ipc::protocol::Error& error) {
         return vis.visit_struct(error, [&](auto& sv) -> bool {
@@ -137,18 +115,6 @@ struct serialize_visit<Vis, kota::ipc::protocol::Error, Config> {
                 return encode_value<Config>(fv, error.data);
             });
         });
-    }
-};
-
-template <typename Vis, typename Config>
-struct deserialize_visit<Vis, kota::ipc::protocol::Value, Config> {
-    static bool visit(Vis& vis, kota::ipc::protocol::Value& value) {
-        kota::ipc::protocol::Variant variant{};
-        if(!decode_value<Config>(vis, variant))
-            return false;
-        std::visit([&](auto&& item) { value = std::forward<decltype(item)>(item); },
-                   std::move(variant));
-        return true;
     }
 };
 

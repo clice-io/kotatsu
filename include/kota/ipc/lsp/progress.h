@@ -27,17 +27,18 @@ public:
                        std::optional<std::string> message = {},
                        std::optional<protocol::uinteger> percentage = {},
                        bool cancellable = false) {
-        protocol::LSPObject value;
-        value.emplace("kind", protocol::LSPAny(std::string("begin")));
-        value.emplace("title", protocol::LSPAny(std::move(title)));
+        protocol::LSPObject value{
+            {"kind",  "begin"         },
+            {"title", std::move(title)}
+        };
         if(cancellable) {
-            value.emplace("cancellable", protocol::LSPAny(true));
+            value.insert("cancellable", true);
         }
         if(message) {
-            value.emplace("message", protocol::LSPAny(std::move(*message)));
+            value.insert("message", std::move(*message));
         }
         if(percentage) {
-            value.emplace("percentage", protocol::LSPAny(static_cast<std::int64_t>(*percentage)));
+            value.insert("percentage", *percentage);
         }
         return send_progress(std::move(value));
     }
@@ -46,26 +47,28 @@ public:
     Result<void> report(std::optional<std::string> message = {},
                         std::optional<protocol::uinteger> percentage = {},
                         std::optional<bool> cancellable = {}) {
-        protocol::LSPObject value;
-        value.emplace("kind", protocol::LSPAny(std::string("report")));
+        protocol::LSPObject value{
+            {"kind", "report"}
+        };
         if(cancellable) {
-            value.emplace("cancellable", protocol::LSPAny(*cancellable));
+            value.insert("cancellable", *cancellable);
         }
         if(message) {
-            value.emplace("message", protocol::LSPAny(std::move(*message)));
+            value.insert("message", std::move(*message));
         }
         if(percentage) {
-            value.emplace("percentage", protocol::LSPAny(static_cast<std::int64_t>(*percentage)));
+            value.insert("percentage", *percentage);
         }
         return send_progress(std::move(value));
     }
 
     /// Send $/progress with kind=end.
     Result<void> end(std::optional<std::string> message = {}) {
-        protocol::LSPObject value;
-        value.emplace("kind", protocol::LSPAny(std::string("end")));
+        protocol::LSPObject value{
+            {"kind", "end"}
+        };
         if(message) {
-            value.emplace("message", protocol::LSPAny(std::move(*message)));
+            value.insert("message", std::move(*message));
         }
         return send_progress(std::move(value));
     }
@@ -76,7 +79,7 @@ public:
 private:
     Result<void> send_progress(protocol::LSPObject value) {
         return peer.send_notification(
-            protocol::ProgressParams{token, protocol::LSPAny(std::move(value))});
+            protocol::ProgressParams{.token = token, .value = std::move(value)});
     }
 };
 
