@@ -379,6 +379,27 @@ TEST_CASE(kill_ends_a_running_child) {
     EXPECT_EQ(status->term_signal, SIGTERM);
 }
 
+TEST_CASE(kill_after_exit_signals_nothing) {
+    process::options opts;
+#ifdef _WIN32
+    opts.file = "cmd.exe";
+    opts.args = {opts.file, "/c", "exit 0"};
+#else
+    opts.file = "/bin/sh";
+    opts.args = {opts.file, "-c", "true"};
+#endif
+    opts.streams = {process::stdio::ignore(), process::stdio::ignore(), process::stdio::ignore()};
+
+    auto spawn_res = process::spawn(opts, loop);
+    ASSERT_TRUE(spawn_res.has_value());
+
+    auto waiter = wait_for_exit(spawn_res->proc);
+    schedule_all(waiter);
+    ASSERT_TRUE(waiter.result().has_value());
+
+    EXPECT_EQ(spawn_res->proc.kill(SIGTERM), error::no_such_process);
+}
+
 TEST_CASE(spawn_stdout_to_fd) {
     auto temp = sys::temp_directory();
     ASSERT_TRUE(temp.has_value());
