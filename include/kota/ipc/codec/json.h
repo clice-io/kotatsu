@@ -42,7 +42,8 @@ public:
     Result<T> deserialize_value(std::string_view raw,
                                 protocol::ErrorCode code = protocol::ErrorCode::RequestFailed) {
         if(raw.empty()) {
-            if constexpr(std::is_same_v<T, protocol::null> || std::is_same_v<T, protocol::Value>) {
+            if constexpr(std::is_same_v<T, protocol::null> ||
+                         std::is_same_v<T, codec::dyn::Value>) {
                 raw = "null";
             } else {
                 raw = "{}";

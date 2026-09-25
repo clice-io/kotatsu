@@ -29,6 +29,9 @@ jobs:
         run: pixi run format
         continue-on-error: true
 
+      - name: Check generated LSP protocol
+        run: python3 scripts/lsp_codegen.py --check
+
       - name: Auto correct
         uses: huacnlee/autocorrect-action@v2
         with:

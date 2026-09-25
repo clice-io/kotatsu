@@ -67,7 +67,7 @@ TEST_CASE(begin_report_end) {
         auto r = co_await reporter.create();
         EXPECT_TRUE(r.has_value());
         reporter.begin("Indexing", "Starting...", protocol::uinteger(0));
-        reporter.report("50% done", protocol::uinteger(50));
+        reporter.report("50% done", protocol::uinteger(50), false);
         reporter.end("Complete");
         tp->close();
     };
@@ -80,15 +80,17 @@ TEST_CASE(begin_report_end) {
     // outgoing[0] = create request, outgoing[1..3] = progress notifications
     ASSERT_GE(tp->outgoing().size(), 4U);
 
-    EXPECT_TRUE(tp->outgoing()[1].find(R"("method":"$/progress")") != std::string::npos);
-    EXPECT_TRUE(tp->outgoing()[1].find(R"("kind":"begin")") != std::string::npos);
-    EXPECT_TRUE(tp->outgoing()[1].find(R"("title":"Indexing")") != std::string::npos);
-
-    EXPECT_TRUE(tp->outgoing()[2].find(R"("method":"$/progress")") != std::string::npos);
-    EXPECT_TRUE(tp->outgoing()[2].find(R"("kind":"report")") != std::string::npos);
-
-    EXPECT_TRUE(tp->outgoing()[3].find(R"("method":"$/progress")") != std::string::npos);
-    EXPECT_TRUE(tp->outgoing()[3].find(R"("kind":"end")") != std::string::npos);
+    // begin omits a false `cancellable`; report keeps an explicit one, which
+    // there means "disable the cancel button" rather than "unchanged".
+    EXPECT_EQ(
+        tp->outgoing()[1],
+        R"({"jsonrpc":"2.0","method":"$/progress","params":{"token":42,"value":{"kind":"begin","title":"Indexing","message":"Starting...","percentage":0}}})");
+    EXPECT_EQ(
+        tp->outgoing()[2],
+        R"({"jsonrpc":"2.0","method":"$/progress","params":{"token":42,"value":{"kind":"report","cancellable":false,"message":"50% done","percentage":50}}})");
+    EXPECT_EQ(
+        tp->outgoing()[3],
+        R"({"jsonrpc":"2.0","method":"$/progress","params":{"token":42,"value":{"kind":"end","message":"Complete"}}})");
 }
 
 TEST_CASE(string_token) {

@@ -92,7 +92,7 @@ int main() {
     // textDocument/hover
     peer.on_request([](ipc::JsonPeer::RequestContext&,
                        const proto::HoverParams& p) -> ipc::RequestResult<proto::HoverParams> {
-        auto uri = p.text_document_position_params.text_document.uri;
+        auto uri = p.text_document.uri;
         if(uri == "file:///error") {
             co_return et::outcome_error(
                 proto::Error(static_cast<proto::integer>(-32600), "hover error triggered"));
@@ -100,7 +100,7 @@ int main() {
         co_return proto::Hover{
             .contents =
                 proto::MarkupContent{
-                                     .kind = proto::MarkupKind::markdown,
+                                     .kind = proto::MarkupKind::Markdown,
                                      .value = "stub hover",
                                      },
         };
@@ -110,7 +110,7 @@ int main() {
     peer.on_request(
         [&](ipc::JsonPeer::RequestContext&,
             const proto::CompletionParams& p) -> ipc::RequestResult<proto::CompletionParams> {
-            auto uri = p.text_document_position_params.text_document.uri;
+            auto uri = p.text_document.uri;
             if(uri == "file:///progress") {
                 lsp::ProgressReporter reporter(peer,
                                                proto::ProgressToken(std::string("test-progress")));
@@ -134,7 +134,7 @@ int main() {
            const proto::DefinitionParams& p) -> ipc::RequestResult<proto::DefinitionParams> {
             co_return proto::Definition{
                 proto::Location{
-                                .uri = p.text_document_position_params.text_document.uri,
+                                .uri = p.text_document.uri,
                                 .range = make_range(10, 0, 5),
                                 }
             };
@@ -144,7 +144,7 @@ int main() {
     peer.on_request(
         [](ipc::JsonPeer::RequestContext&,
            const proto::ReferenceParams& p) -> ipc::RequestResult<proto::ReferenceParams> {
-            auto uri = p.text_document_position_params.text_document.uri;
+            auto uri = p.text_document.uri;
             co_return std::vector<proto::Location>{
                 {uri, make_range(1, 0, 3)},
                 {uri, make_range(5, 0, 3)}
@@ -219,7 +219,7 @@ int main() {
     // textDocument/rename
     peer.on_request([](ipc::JsonPeer::RequestContext&,
                        const proto::RenameParams& p) -> ipc::RequestResult<proto::RenameParams> {
-        auto uri = p.text_document_position_params.text_document.uri;
+        auto uri = p.text_document.uri;
         co_return proto::WorkspaceEdit{
             .changes =
                 std::map<proto::DocumentUri, std::vector<proto::TextEdit>>{
@@ -252,11 +252,11 @@ int main() {
     peer.on_request(
         [](ipc::JsonPeer::RequestContext&,
            const proto::SelectionRangeParams&) -> ipc::RequestResult<proto::SelectionRangeParams> {
-            co_return std::vector<proto::SelectionRange>{
-                {
-                 .range = make_range(0, 0, 10),
-                 }
-            };
+            // SelectionRange owns its parent, so it is move-only, and an
+            // initializer_list can only be copied from.
+            std::vector<proto::SelectionRange> ranges;
+            ranges.push_back({.range = make_range(0, 0, 10)});
+            co_return ranges;
         });
 
     // textDocument/declaration
@@ -265,7 +265,7 @@ int main() {
            const proto::DeclarationParams& p) -> ipc::RequestResult<proto::DeclarationParams> {
             co_return proto::Declaration{
                 proto::Location{
-                                .uri = p.text_document_position_params.text_document.uri,
+                                .uri = p.text_document.uri,
                                 .range = make_range(5, 0, 10),
                                 }
             };
@@ -276,7 +276,7 @@ int main() {
                         -> ipc::RequestResult<proto::TypeDefinitionParams> {
         co_return proto::Definition{
             proto::Location{
-                            .uri = p.text_document_position_params.text_document.uri,
+                            .uri = p.text_document.uri,
                             .range = make_range(20, 0, 8),
                             }
         };
@@ -287,7 +287,7 @@ int main() {
                         -> ipc::RequestResult<proto::ImplementationParams> {
         co_return proto::Definition{
             proto::Location{
-                            .uri = p.text_document_position_params.text_document.uri,
+                            .uri = p.text_document.uri,
                             .range = make_range(30, 0, 12),
                             }
         };
