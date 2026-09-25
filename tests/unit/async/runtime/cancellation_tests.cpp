@@ -126,7 +126,7 @@ TEST_CASE(token_share_state) {
     EXPECT_TRUE(token_b.cancelled());
 }
 
-TEST_CASE(queue_cancel_resume, serial = true) {
+TEST_CASE(queue_cancel_resume) {
     cancellation_source source;
     event start_target;
     event target_submitted;
@@ -220,7 +220,7 @@ TEST_CASE(queue_cancel_resume, serial = true) {
     EXPECT_FALSE(target_started.load(std::memory_order_acquire));
 }
 
-TEST_CASE(queue_cancel_hook_signals_running_work, serial = true) {
+TEST_CASE(queue_cancel_hook_signals_running_work) {
     cancellation_source source;
     std::atomic<bool> started{false};
     std::atomic<bool> stop_flag{false};
@@ -263,7 +263,7 @@ TEST_CASE(queue_cancel_hook_signals_running_work, serial = true) {
     EXPECT_TRUE(observed_stop.load(std::memory_order_acquire));
 }
 
-TEST_CASE(queue_cancel_hook_runs_on_loop_thread, serial = true) {
+TEST_CASE(queue_cancel_hook_runs_on_loop_thread) {
     cancellation_source source;
     std::atomic<bool> started{false};
     std::atomic<bool> hook_on_loop_thread{false};
@@ -309,7 +309,7 @@ TEST_CASE(queue_cancel_hook_runs_on_loop_thread, serial = true) {
     EXPECT_TRUE(hook_on_loop_thread.load(std::memory_order_acquire));
 }
 
-TEST_CASE(fs_cancel_resume, serial = true) {
+TEST_CASE(fs_cancel_resume) {
     cancellation_source source;
     event start_target;
     event target_submitted;

@@ -80,14 +80,14 @@ TEST_CASE(glob_fixtures) {
     ASSERT_SNAPSHOT_GLOB(fixtures_dir(), "**/*.txt", read_file);
 }
 
-TEST_CASE(mismatch_detection, serial = true) {
+TEST_CASE(mismatch_detection) {
     EXPECT_FALSE(check_snapshot("original value", "mismatch_detect"));
     auto result = check_snapshot("different value", "mismatch_detect");
     EXPECT_TRUE(result);
     EXPECT_FALSE(check_snapshot("original value", "mismatch_detect"));
 }
 
-TEST_CASE(update_mode, serial = true) {
+TEST_CASE(update_mode) {
     EXPECT_FALSE(check_snapshot("version_a", "update_mode_v"));
     set_update_snapshots(true);
     auto result = check_snapshot("version_b", "update_mode_v");
