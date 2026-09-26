@@ -15,7 +15,7 @@
 #include <sys/socket.h>
 #endif
 
-#include "async/harness/fd_helpers.h"
+#include "async/harness/os.h"
 #include "kota/zest/zest.h"
 
 namespace kota {

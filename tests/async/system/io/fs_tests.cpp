@@ -9,8 +9,8 @@
 #include <sys/stat.h>
 #endif
 
-#include "async/harness/fd_helpers.h"
 #include "async/harness/loop_fixture.h"
+#include "async/harness/os.h"
 #include "kota/zest/zest.h"
 
 namespace kota {

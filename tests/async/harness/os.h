@@ -1,5 +1,8 @@
 #pragma once
 
+// Operating-system resources for system tests, made without going through
+// kota::async so that they can check it.
+
 #include <cstddef>
 
 #ifdef _WIN32
@@ -13,9 +16,9 @@ using ssize_t = SSIZE_T;
 
 namespace kota::test {
 
-// IMPORTANT: Windows pipes have a tiny buffer (4KB). If you write more than
-// that before the event loop starts reading, write_fd() will block and deadlock.
-// Always write from a separate std::thread when the data may exceed ~4KB.
+// Windows pipes have a 4 KB buffer: writing more than that before the loop
+// reads blocks write_fd() for good. Write from a std::thread when the data
+// may exceed it.
 
 #ifdef _WIN32
 inline int create_pipe(int fds[2]) {
@@ -26,7 +29,7 @@ inline int close_fd(int fd) {
     return _close(fd);
 }
 
-inline ssize_t write_fd(int fd, const char* data, size_t len) {
+inline ssize_t write_fd(int fd, const char* data, std::size_t len) {
     return _write(fd, data, static_cast<unsigned int>(len));
 }
 #else
@@ -38,7 +41,7 @@ inline int close_fd(int fd) {
     return ::close(fd);
 }
 
-inline ssize_t write_fd(int fd, const char* data, size_t len) {
+inline ssize_t write_fd(int fd, const char* data, std::size_t len) {
     return ::write(fd, data, len);
 }
 #endif

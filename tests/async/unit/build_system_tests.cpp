@@ -26,7 +26,7 @@ static CompileGraph make_test_graph() {
     return graph;
 }
 
-ZEST_SUITE(async_build_system, loop_fixture) {
+ZEST_SUITE(async_build_system, test::LoopFixture) {
 
 ZEST_CASE(normal_compilation_completes) {
     auto graph = make_test_graph();
@@ -37,8 +37,7 @@ ZEST_CASE(normal_compilation_completes) {
         EXPECT(*result);
     };
 
-    auto t = test();
-    schedule_all(t);
+    run(test());
 }
 
 ZEST_CASE(update_cancels_in_flight) {
@@ -55,9 +54,7 @@ ZEST_CASE(update_cancels_in_flight) {
         graph.update("parser.h");
     };
 
-    auto c = compiler();
-    auto u = updater();
-    schedule_all(c, u);
+    run(compiler(), updater());
 
     EXPECT(compile_cancelled);
 }
@@ -76,9 +73,7 @@ ZEST_CASE(chain_cancel_propagates) {
         graph.update("lexer.h");
     };
 
-    auto c = compiler();
-    auto u = updater();
-    schedule_all(c, u);
+    run(compiler(), updater());
 
     EXPECT(compile_cancelled);
 }
@@ -97,8 +92,7 @@ ZEST_CASE(recompile_after_update) {
         EXPECT(*result2);
     };
 
-    auto t = test();
-    schedule_all(t);
+    run(test());
 }
 
 ZEST_CASE(independent_compilations_unaffected) {
@@ -121,10 +115,7 @@ ZEST_CASE(independent_compilations_unaffected) {
         graph.update("parser.h");
     };
 
-    auto cp = compile_parser();
-    auto cc = compile_codegen();
-    auto u = updater();
-    schedule_all(cp, cc, u);
+    run(compile_parser(), compile_codegen(), updater());
 
     EXPECT(parser_cancelled);
     EXPECT(codegen_ok);
@@ -149,8 +140,7 @@ ZEST_CASE(shared_dependency_compiled_once) {
         co_await when_all(graph.compile("a.cpp", loop), graph.compile("b.cpp", loop));
     };
 
-    auto t = test();
-    schedule_all(t);
+    run(test());
 
     // common.h (1) + a.cpp (1) + b.cpp (1) = 3
     // Without dedup this would be 4 (common.h compiled twice).
