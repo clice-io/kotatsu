@@ -75,19 +75,17 @@ ZEST_CASE(char_beyond_255_fails) {
     char out = '\0';
     auto status = json::from_string(R"("Ā")", out);
     ASSERT(!status);
-    EXPECT(status.error().message == "character codepoint does not fit the target character type");
+    EXPECT(status.error().message == codec::invalid_char_message);
     auto three_bytes = json::from_string(R"("€")", out);
     ASSERT(!three_bytes);
-    EXPECT(three_bytes.error().message ==
-           "character codepoint does not fit the target character type");
+    EXPECT(three_bytes.error().message == codec::invalid_char_message);
 }
 
 ZEST_CASE(char_from_several_characters_fails) {
     char out = '\0';
     auto status = json::from_string(R"("xy")", out);
     ASSERT(!status);
-    EXPECT(status.error().message ==
-           "invalid type: expected single character, got multi-char string");
+    EXPECT(status.error().message == codec::invalid_char_message);
 }
 
 ZEST_CASE(byte_out_of_range_fails) {

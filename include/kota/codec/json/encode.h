@@ -11,6 +11,7 @@
 #include <type_traits>
 
 #include "kota/codec/json/type.h"
+#include "kota/codec/visit/common.h"
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/context.h"
 #include "kota/codec/visit/encode.h"
@@ -60,34 +61,7 @@ struct ValueWriter {
 
     template <typename T>
     bool visit_char(T v) {
-        // Through unsigned first: a negative char must map to its octet
-        // (0x80-0xFF), not sign-extend into an invalid codepoint.
-        char32_t cp = static_cast<std::make_unsigned_t<T>>(v);
-        if(cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
-            return scoped_context<rich_error>::fail(rich_error("invalid Unicode codepoint"));
-        }
-        char buf[4];
-        std::size_t len = 0;
-        if(cp < 0x80) {
-            buf[0] = static_cast<char>(cp);
-            len = 1;
-        } else if(cp < 0x800) {
-            buf[0] = static_cast<char>(0xC0 | (cp >> 6));
-            buf[1] = static_cast<char>(0x80 | (cp & 0x3F));
-            len = 2;
-        } else if(cp < 0x10000) {
-            buf[0] = static_cast<char>(0xE0 | (cp >> 12));
-            buf[1] = static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-            buf[2] = static_cast<char>(0x80 | (cp & 0x3F));
-            len = 3;
-        } else {
-            buf[0] = static_cast<char>(0xF0 | (cp >> 18));
-            buf[1] = static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
-            buf[2] = static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-            buf[3] = static_cast<char>(0x80 | (cp & 0x3F));
-            len = 4;
-        }
-        builder.escape_and_append_with_quotes(std::string_view(buf, len));
+        builder.escape_and_append_with_quotes(char_to_utf8(v));
         return true;
     }
 

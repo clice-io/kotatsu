@@ -9,6 +9,7 @@
 #include <string_view>
 
 #include "kota/codec/dyn/document.h"
+#include "kota/codec/visit/common.h"
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/context.h"
 #include "kota/codec/visit/encode.h"
@@ -68,15 +69,7 @@ struct ValueWriter {
 
     template <typename T>
     bool visit_char(T v) {
-        // The char's value, 0-255, is a codepoint, and a tree's strings are
-        // UTF-8: an octet above 0x7F takes two bytes, as json writes it.
-        auto codepoint = static_cast<unsigned char>(v);
-        if(codepoint < 0x80) {
-            output = dyn::Value(std::string(1, v));
-        } else {
-            output = dyn::Value(std::string{static_cast<char>(0xC0 | (codepoint >> 6)),
-                                            static_cast<char>(0x80 | (codepoint & 0x3F))});
-        }
+        output = dyn::Value(char_to_utf8(v));
         return true;
     }
 

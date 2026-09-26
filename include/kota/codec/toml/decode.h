@@ -12,6 +12,7 @@
 #include "kota/meta/type_info.h"
 #include "kota/meta/type_kind.h"
 #include "kota/codec/toml/type.h"
+#include "kota/codec/visit/common.h"
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/context.h"
 #include "kota/codec/visit/decode.h"
@@ -166,22 +167,12 @@ struct ValueReader {
         if(!val) {
             return fail_type("string");
         }
-        // One codepoint up to U+00FF, as ValueWriter::visit_char writes it: an
-        // ASCII byte, or the two UTF-8 bytes of U+0080 to U+00FF.
-        auto text = *val;
-        if(text.size() == 1 && static_cast<unsigned char>(text[0]) < 0x80) {
-            out = static_cast<T>(text[0]);
-            return true;
+        auto c = char_from_utf8(*val);
+        if(!c) {
+            return fail_with_location(std::string(invalid_char_message));
         }
-        if(text.size() == 2) {
-            auto lead = static_cast<unsigned char>(text[0]);
-            auto tail = static_cast<unsigned char>(text[1]);
-            if((lead == 0xC2 || lead == 0xC3) && (tail & 0xC0) == 0x80) {
-                out = static_cast<T>(((lead & 0x1F) << 6) | (tail & 0x3F));
-                return true;
-            }
-        }
-        return fail_with_location("expected single-character string for char");
+        out = *c;
+        return true;
     }
 
     template <typename T>

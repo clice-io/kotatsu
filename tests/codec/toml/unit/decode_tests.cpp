@@ -127,10 +127,10 @@ ZEST_CASE(char_beyond_255_fails) {
     char out = '\0';
     auto status = toml::from_string("__value = 'Ā'", out);
     ASSERT(!status);
-    EXPECT(status.error().message == "expected single-character string for char");
+    EXPECT(status.error().message == codec::invalid_char_message);
     auto several = toml::from_string("__value = 'xy'", out);
     ASSERT(!several);
-    EXPECT(several.error().message == "expected single-character string for char");
+    EXPECT(several.error().message == codec::invalid_char_message);
 }
 
 ZEST_CASE(char_from_a_lone_high_octet_fails) {
@@ -142,7 +142,7 @@ ZEST_CASE(char_from_a_lone_high_octet_fails) {
     char out = '\0';
     auto status = toml::from_toml(table, out);
     ASSERT(!status);
-    EXPECT(status.error().message == "expected single-character string for char");
+    EXPECT(status.error().message == codec::invalid_char_message);
 }
 
 ZEST_CASE(null_root_picks_monostate) {

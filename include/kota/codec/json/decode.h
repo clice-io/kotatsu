@@ -4,7 +4,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
-#include <limits>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -12,6 +11,7 @@
 
 #include "kota/support/numeric.h"
 #include "kota/codec/json/type.h"
+#include "kota/codec/visit/common.h"
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/context.h"
 #include "kota/codec/visit/decode.h"
@@ -57,37 +57,6 @@ struct steal {
 // allowing us to form pointers to the protected members.
 template struct steal<doc_iter_tag, doc_iter_ptr, &simdjson::ondemand::document::iter>;
 template struct steal<val_iter_tag, val_iter_ptr, &simdjson::ondemand::value::iter>;
-
-inline char32_t decode_first_codepoint(std::string_view sv) {
-    if(sv.empty())
-        return 0xFFFFFFFF;
-    auto b0 = static_cast<unsigned char>(sv[0]);
-    if(b0 < 0x80)
-        return static_cast<char32_t>(b0);
-    std::size_t len;
-    char32_t cp;
-    if((b0 & 0xE0) == 0xC0) {
-        len = 2;
-        cp = b0 & 0x1F;
-    } else if((b0 & 0xF0) == 0xE0) {
-        len = 3;
-        cp = b0 & 0x0F;
-    } else if((b0 & 0xF8) == 0xF0) {
-        len = 4;
-        cp = b0 & 0x07;
-    } else {
-        return 0xFFFFFFFF;
-    }
-    if(sv.size() < len)
-        return 0xFFFFFFFF;
-    for(std::size_t i = 1; i < len; ++i) {
-        auto b = static_cast<unsigned char>(sv[i]);
-        if((b & 0xC0) != 0x80)
-            return 0xFFFFFFFF;
-        cp = (cp << 6) | (b & 0x3F);
-    }
-    return cp;
-}
 
 }  // namespace detail
 
@@ -230,22 +199,11 @@ struct Reader {
         auto r = src.apply([&](auto& s) { return s.get_string(); });
         if(r.error())
             return fail_simdjson(r.error());
-        auto sv = r.value_unsafe();
-        char32_t cp = detail::decode_first_codepoint(sv);
-        if(cp == 0xFFFFFFFF) {
-            return fail_located(rich_error::invalid_type("single character", "multi-char string"));
+        auto c = char_from_utf8(r.value_unsafe());
+        if(!c) {
+            return fail_located(rich_error(std::string(invalid_char_message)));
         }
-        std::size_t cp_len = (cp < 0x80) ? 1 : (cp < 0x800) ? 2 : (cp < 0x10000) ? 3 : 4;
-        if(sv.size() != cp_len) {
-            return fail_located(rich_error::invalid_type("single character", "multi-char string"));
-        }
-        constexpr auto max_cp =
-            static_cast<char32_t>((std::numeric_limits<std::make_unsigned_t<T>>::max)());
-        if(cp > max_cp) {
-            return fail_located(
-                rich_error("character codepoint does not fit the target character type"));
-        }
-        out = static_cast<T>(cp);
+        out = *c;
         return true;
     }
 

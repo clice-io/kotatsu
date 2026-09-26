@@ -12,6 +12,7 @@
 #include "kota/support/numeric.h"
 #include "kota/meta/type_kind.h"
 #include "kota/codec/dyn/document.h"
+#include "kota/codec/visit/common.h"
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/context.h"
 #include "kota/codec/visit/decode.h"
@@ -83,22 +84,12 @@ struct ValueReader {
         if(!val) {
             return fail_type("string");
         }
-        // One codepoint up to U+00FF in UTF-8: a byte below 0x80, or a lead
-        // byte 0xC2 or 0xC3 and a continuation byte.
-        auto text = *val;
-        auto byte = [&](std::size_t at) {
-            return static_cast<unsigned char>(text[at]);
-        };
-        if(text.size() == 1 && byte(0) < 0x80) {
-            out = static_cast<T>(text[0]);
-            return true;
+        auto c = char_from_utf8(*val);
+        if(!c) {
+            return scoped_context<rich_error>::fail(rich_error(std::string(invalid_char_message)));
         }
-        if(text.size() == 2 && (byte(0) == 0xC2 || byte(0) == 0xC3) && (byte(1) & 0xC0) == 0x80) {
-            out = static_cast<T>(((byte(0) & 0x1F) << 6) | (byte(1) & 0x3F));
-            return true;
-        }
-        return scoped_context<rich_error>::fail(
-            rich_error("expected a single character up to U+00FF"));
+        out = *c;
+        return true;
     }
 
     template <typename T>
