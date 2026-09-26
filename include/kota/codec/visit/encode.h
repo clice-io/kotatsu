@@ -433,6 +433,8 @@ bool encode_value(Vis& vis, const T& value) {
                     using E = std::remove_cvref_t<decltype(value.error())>;
                     if constexpr(meta::kind_of<E>() != meta::type_kind::unknown) {
                         return encode_value<Config>(vis, value.error());
+                    } else if constexpr(requires(Vis& v, const E& e) { v.visit_opaque(e); }) {
+                        return vis.visit_opaque(value.error());
                     } else {
                         return vis.visit_null();
                     }
@@ -454,6 +456,10 @@ bool encode_value(Vis& vis, const T& value) {
         } else if constexpr(std::is_pointer_v<V> &&
                             requires(Vis& v, const V& p) { v.visit_pointer(p); }) {
             return vis.visit_pointer(value);
+        } else if constexpr(requires(Vis& v, const V& x) { v.visit_opaque(x); }) {
+            // Only a backend that can show any value, like the debug one,
+            // takes a type the schema knows nothing about.
+            return vis.visit_opaque(value);
         } else {
             static_assert(dependent_false<V>,
                           "cannot serialize this type; specialize serialize_visit to add support");
