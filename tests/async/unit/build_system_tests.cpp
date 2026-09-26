@@ -1,17 +1,25 @@
 #include <chrono>
+#include <tuple>
+#include <utility>
 
 #include "compile_graph.h"
 #include "async/harness/loop_fixture.h"
+#include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 
 namespace kota {
 
 namespace {
 
-using namespace std::chrono_literals;
+using namespace std::literals;
 
-static CompileGraph make_test_graph() {
-    CompileGraph graph([] { return 2ms; });
+/// The example's graph: main.cpp over parser and codegen, each over headers.
+/// `started` is set whenever a unit starts its work.
+CompileGraph make_test_graph(event& started) {
+    CompileGraph graph([&started] {
+        started.set();
+        return 2ms;
+    });
 
     graph.add_unit("ast.h");
     graph.add_unit("lexer.h");
@@ -29,121 +37,89 @@ static CompileGraph make_test_graph() {
 ZEST_SUITE(async_build_system, test::LoopFixture) {
 
 ZEST_CASE(normal_compilation_completes) {
-    auto graph = make_test_graph();
+    event started;
+    auto graph = make_test_graph(started);
 
-    auto test = [&]() -> task<> {
-        auto result = co_await graph.compile("main.cpp", loop).catch_cancel();
-        EXPECT(result);
-        EXPECT(*result);
-    };
-
-    run(test());
+    auto [compiled] = run(graph.compile("main.cpp", loop));
+    ASSERT(compiled.has_value());
+    EXPECT(*compiled);
 }
 
+// The update comes while main.cpp's first dependency, parser.h, is at work.
 ZEST_CASE(update_cancels_in_flight) {
-    auto graph = make_test_graph();
-    bool compile_cancelled = false;
-
-    auto compiler = [&]() -> task<> {
-        auto res = co_await graph.compile("main.cpp", loop).catch_cancel();
-        compile_cancelled = !res.has_value();
-    };
-
+    event started;
+    auto graph = make_test_graph(started);
     auto updater = [&]() -> task<> {
-        co_await sleep(1ms, loop);
+        co_await started.wait();
         graph.update("parser.h");
     };
 
-    run(compiler(), updater());
-
-    EXPECT(compile_cancelled);
+    auto [compiled, updated] = run(graph.compile("main.cpp", loop), updater());
+    EXPECT(compiled.is_cancelled());
 }
 
+// lexer.h has not started when it changes; parser.cpp, which depends on it,
+// is cancelled all the same.
 ZEST_CASE(chain_cancel_propagates) {
-    auto graph = make_test_graph();
-    bool compile_cancelled = false;
-
-    auto compiler = [&]() -> task<> {
-        auto res = co_await graph.compile("parser.cpp", loop).catch_cancel();
-        compile_cancelled = !res.has_value();
-    };
-
+    event started;
+    auto graph = make_test_graph(started);
     auto updater = [&]() -> task<> {
-        co_await sleep(1ms, loop);
+        co_await started.wait();
         graph.update("lexer.h");
     };
 
-    run(compiler(), updater());
-
-    EXPECT(compile_cancelled);
+    auto [compiled, updated] = run(graph.compile("parser.cpp", loop), updater());
+    EXPECT(compiled.is_cancelled());
 }
 
 ZEST_CASE(recompile_after_update) {
-    auto graph = make_test_graph();
-
-    auto test = [&]() -> task<> {
-        auto result1 = co_await graph.compile("lexer.cpp", loop).catch_cancel();
-        EXPECT(result1);
-        EXPECT(*result1);
-
+    event started;
+    auto graph = make_test_graph(started);
+    auto twice = [&]() -> task<std::pair<bool, bool>> {
+        bool first = co_await graph.compile("lexer.cpp", loop);
         graph.update("lexer.cpp");
-        auto result2 = co_await graph.compile("lexer.cpp", loop).catch_cancel();
-        EXPECT(result2);
-        EXPECT(*result2);
+        bool second = co_await graph.compile("lexer.cpp", loop);
+        co_return std::pair{first, second};
     };
 
-    run(test());
+    auto [compiled] = run(twice());
+    ASSERT(compiled.has_value());
+    EXPECT(*compiled == std::pair{true, true});
 }
 
 ZEST_CASE(independent_compilations_unaffected) {
-    auto graph = make_test_graph();
-    bool parser_cancelled = false;
-    bool codegen_ok = false;
-
-    auto compile_parser = [&]() -> task<> {
-        auto res = co_await graph.compile("parser.cpp", loop).catch_cancel();
-        parser_cancelled = !res.has_value();
-    };
-
-    auto compile_codegen = [&]() -> task<> {
-        auto res = co_await graph.compile("codegen.cpp", loop).catch_cancel();
-        codegen_ok = res.has_value() && *res;
-    };
-
+    event started;
+    auto graph = make_test_graph(started);
     auto updater = [&]() -> task<> {
-        co_await sleep(1ms, loop);
+        co_await started.wait();
         graph.update("parser.h");
     };
 
-    run(compile_parser(), compile_codegen(), updater());
-
-    EXPECT(parser_cancelled);
-    EXPECT(codegen_ok);
+    auto [parser, codegen, updated] =
+        run(graph.compile("parser.cpp", loop), graph.compile("codegen.cpp", loop), updater());
+    EXPECT(parser.is_cancelled());
+    ASSERT(codegen.has_value());
+    EXPECT(*codegen);
 }
 
+// a.cpp and b.cpp both depend on common.h, which is compiled once: three
+// compilations, not four.
 ZEST_CASE(shared_dependency_compiled_once) {
     int compile_count = 0;
-
-    // Use a side-effecting delay_fn to count actual compilations
     CompileGraph graph([&] {
         compile_count += 1;
         return 2ms;
     });
-
     graph.add_unit("common.h");
     graph.add_unit("a.cpp", {"common.h"});
     graph.add_unit("b.cpp", {"common.h"});
-
-    auto test = [&]() -> task<> {
-        // Both a.cpp and b.cpp depend on common.h.
-        // Without deduplication, common.h would be compiled twice.
-        co_await when_all(graph.compile("a.cpp", loop), graph.compile("b.cpp", loop));
+    auto both = [&]() -> task<std::tuple<bool, bool>> {
+        co_return co_await when_all(graph.compile("a.cpp", loop), graph.compile("b.cpp", loop));
     };
 
-    run(test());
-
-    // common.h (1) + a.cpp (1) + b.cpp (1) = 3
-    // Without dedup this would be 4 (common.h compiled twice).
+    auto [compiled] = run(both());
+    ASSERT(compiled.has_value());
+    EXPECT(*compiled == std::tuple{true, true});
     EXPECT(compile_count == 3);
 }
 
