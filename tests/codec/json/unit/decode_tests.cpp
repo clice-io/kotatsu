@@ -152,6 +152,51 @@ ZEST_CASE(dyn_value_reads) {
     EXPECT(json::to_string(*nested) == R"([1,"two",true,null,[3,{"k":[]}]])");
 }
 
+ZEST_CASE(dyn_value_takes_each_kind) {
+    // An integer lands on signed_int, or on unsigned_int above int64's
+    // maximum; a number with a point or beyond 64 bits on floating.
+    auto tree = json::from_string<dyn::Value>(
+        R"([null,true,42,-1,18446744073709551615,18446744073709551616,1.0,"x",[],{}])");
+    ASSERT(tree);
+    ASSERT(tree->is_array());
+    std::vector<dyn::ValueKind> kinds;
+    for(const auto& value: tree->as_array()) {
+        kinds.push_back(value.kind());
+    }
+    using enum dyn::ValueKind;
+    EXPECT(kinds == std::vector{null_value,
+                                boolean,
+                                signed_int,
+                                signed_int,
+                                unsigned_int,
+                                floating,
+                                floating,
+                                string,
+                                array,
+                                object});
+}
+
+ZEST_CASE(deep_document_roundtrip) {
+    // Sixteen levels, objects and arrays in turn, read into a tree and
+    // written back as they were.
+    constexpr int depth = 16;
+    std::string open;
+    std::string close;
+    for(int level = 0; level < depth; ++level) {
+        open += level % 2 == 0 ? R"({"k":)" : "[";
+        close.insert(0, level % 2 == 0 ? "}" : "]");
+    }
+    auto text = open + "1" + close;
+    auto tree = json::from_string<dyn::Value>(text);
+    ASSERT(tree);
+    auto cursor = tree->cursor();
+    for(int level = 0; level < depth; ++level) {
+        cursor = level % 2 == 0 ? cursor["k"] : cursor[0];
+    }
+    EXPECT(cursor.get_int() == std::int64_t{1});
+    EXPECT(json::to_string(*tree) == text);
+}
+
 ZEST_CASE(located_type_mismatch_fails) {
     test::Person out{};
     auto status = json::from_string(R"({
