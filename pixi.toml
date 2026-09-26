@@ -32,7 +32,7 @@ format = ["format"]
 # the dev environments and in `format`, which CI's format job uses. Node 24
 # runs `.ts` directly by stripping the types, so there is no build step.
 [dependencies]
-nodejs = ">=24"
+nodejs = "24.*"
 
 [feature.build.dependencies]
 python = "*"
