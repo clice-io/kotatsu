@@ -97,6 +97,38 @@ ZEST_CASE(connect_and_send) {
     EXPECT(!send_result.has_error());
 }
 
+// Once libuv has drained the socket it calls back with zero bytes from no
+// address; that is not a datagram and must not reach the next recv().
+ZEST_CASE(recv_after_drained_socket_waits_for_next_datagram) {
+    auto recv_sock = udp::create(loop);
+    ASSERT(recv_sock);
+    ASSERT(!recv_sock->bind("127.0.0.1", 0));
+    auto endpoint = recv_sock->getsockname();
+    ASSERT(endpoint);
+
+    auto send_sock = udp::create(loop);
+    ASSERT(send_sock);
+
+    auto exchange = [&]() -> task<std::pair<std::string, std::string>, error> {
+        std::string_view first = "first";
+        std::string_view second = "second";
+        co_await send_sock->send(first, endpoint->addr, endpoint->port).or_fail();
+        auto got_first = co_await recv_sock->recv().or_fail();
+        co_await send_sock->send(second, endpoint->addr, endpoint->port).or_fail();
+        auto got_second = co_await recv_sock->recv().or_fail();
+        event_loop::current().stop();
+        co_return std::pair{std::move(got_first.data), std::move(got_second.data)};
+    };
+
+    auto worker = exchange();
+    schedule_all(worker);
+
+    auto received = worker.result();
+    ASSERT(received);
+    EXPECT(received->first == "first");
+    EXPECT(received->second == "second");
+}
+
 };  // ZEST_SUITE(async_io_udp)
 
 }  // namespace kota

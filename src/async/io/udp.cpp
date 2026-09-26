@@ -147,6 +147,13 @@ struct udp_recv_await : uv::await_op<udp_recv_await> {
             return;
         }
 
+        // Zero bytes from no address is libuv reporting that the socket is
+        // drained (or releasing a recvmmsg buffer), not an empty datagram:
+        // an empty datagram always comes with its sender.
+        if(nread == 0 && addr == nullptr) {
+            return;
+        }
+
         udp::recv_result out{};
         out.data.assign(u->buffer.data(), u->buffer.data() + nread);
         out.flags = to_udp_recv_flags(flags);
