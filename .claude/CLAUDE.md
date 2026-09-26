@@ -19,16 +19,18 @@ CI workflow — never use xmake for local development.
 
 ## Testing
 
-- Unit tests: `pixi run test [preset]` (ctest; handles the snapshot dir).
-  Running `unit_tests` by hand — e.g. to pass `--test-filter` — must be done
-  from the repo root with `--snapshot-dir=tests/snapshots`, or snapshot tests
-  fail spuriously.
+- Tests live in `tests/<module>/`, split by level into `unit_tests` and
+  `system_tests` (the test-style skill). `pixi run test [preset]` runs them
+  all through ctest, which handles the snapshot dir. Running a test binary by
+  hand — e.g. to pass `--test-filter` — must be done from the repo root with
+  `--snapshot-dir=tests/snapshots`, or snapshot tests fail spuriously.
 - Integration tests: `pixi run integration-test`.
 
 ## Skills
 
 Read the relevant skill before acting: `cpp-style` before writing C++,
-`build`/`test` to build and run suites, `pr` before committing or opening a
-PR, `format` (`pixi run format`) before every commit, `codex` before
-delegating work to the codex CLI (plan/code review, debugging, test writing,
-scoped implementation).
+`test-style` before writing or moving tests, `build`/`test` to build and run
+suites, `pr` before committing or opening a PR, `format` (`pixi run format`)
+before every commit, `codex` before delegating work to the codex CLI
+(debugging, test writing, scoped implementation; reviews go to Opus
+subagents).

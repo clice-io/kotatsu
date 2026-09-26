@@ -16,9 +16,9 @@ The development flow is: branch off `main` → write code (discussing requiremen
 Never push anything unverified — "it compiles" is not verified, and CI is not a debugger.
 
 1. `pixi run format`.
-2. Both test suites pass locally (the test skill): unit tests via `pixi run test` (builds the `debug` preset and runs ctest, which handles the snapshot dir), and `pixi run integration-test`. Every failure on the branch is yours to fix now — even if it looks pre-existing (main is green), and never by skipping, disabling, or weakening the test.
+2. Both test suites pass locally (the test skill): the ctest suites via `pixi run test` (builds the `debug` preset and runs every stage, `unit_tests` and `system_tests` included; ctest handles the snapshot dir), and `pixi run integration-test`. Every failure on the branch is yours to fix now — even if it looks pre-existing (main is green), and never by skipping, disabling, or weakening the test.
 3. Read results from a full log, not a pipe: `cmd > /tmp/x.log 2>&1`, then the exit code and the log tail (`ninja: build stopped`, `FAILED`, the suite summary). `| tail` reports tail's exit code (a failed build looks green), `pipefail` + `| grep error` fails when there is nothing to find. Before running a suite, check the test binary is newer than your last source edit — a "1362 passed" on a stale binary verifies nothing.
-4. Long local runs (build, suites, codex) go through Bash `run_in_background`, which notifies on exit — not a detached script polled by timed wake-ups.
+4. Long local runs (build, suites) go through Bash `run_in_background`, which notifies on exit — not a detached script polled by timed wake-ups.
 5. A platform failure you can reproduce locally is fixed locally. With a Windows checkout reachable from WSL, build and run the failing suite there before pushing; CI is not a debugger.
 
 ## Pushing
@@ -29,8 +29,7 @@ Never push anything unverified — "it compiles" is not verified, and CI is not 
 
 Commit all work first — the review diff only sees commits, so a dirty worktree means the reviewer inspects an incomplete patch (`git status` must be clean). Then review the full diff (`git diff origin/main...HEAD` — never the local `main`, which goes stale) and fix everything confirmed before opening:
 
-1. **Primary: codex review** (the codex skill) — the canonical rules-aware review command: plain `codex exec` with gpt-6-astra at xhigh and a prompt that reads `.claude/CLAUDE.md` plus the cpp-style skill and reviews `git diff origin/main...HEAD` (the built-in `codex exec review --base` cannot take a prompt, so it never sees the repo rules). Treat findings as hypotheses: verify each concrete claim before fixing it.
-2. **Supplement** — when codex is unavailable, or as an extra pass on high-risk diffs: 3 parallel subagents reviewing independently — correctness (logic errors, edge cases, undefined behavior; coroutine lifetime and cancellation paths deserve extra suspicion), style (naming, cpp-style skill rules), tests (new functionality covered, no existing tests broken or weakened).
+Review with 3 parallel Opus subagents, each reviewing the diff independently and told to read `.claude/CLAUDE.md` and the relevant skills (cpp-style, test-style) first — correctness (logic errors, edge cases, undefined behavior; coroutine lifetime and cancellation paths deserve extra suspicion), style (naming, redundancy, the skills' rules), tests (new functionality covered, no existing tests broken or weakened). Do not use codex for reviews. Treat findings as hypotheses: verify each concrete claim before fixing it.
 
 ## Opening
 

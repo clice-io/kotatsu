@@ -63,3 +63,5 @@ scripts/schema.json
 .claude/*
 !.claude/skills/
 openspec/
+# Results of mismatched snapshots, written next to the snapshot.
+*.snap.yml.new

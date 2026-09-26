@@ -1,15 +1,14 @@
 ---
 name: codex
-description: Drive the codex CLI (GPT-6 astra) as a delegate — adversarial plan review, code review, debugging, test writing, scoped implementation. Read BEFORE invoking codex.
+description: Drive the codex CLI (GPT-6 astra) as a delegate — debugging, test writing, scoped implementation. Not for reviews, which go to Opus subagents. Read BEFORE invoking codex.
 ---
 
 # Codex Delegation
 
 `codex` is an installed CLI agent backed by GPT-6 astra — cheap, strong, and
-independent of this session's blind spots. Prefer it for: adversarial review of
-a design or plan, pre-PR code review, root-causing a bug, adding tests to probe
-behavior, and implementing well-scoped tasks. The independence is the value: it
-was not part of writing the thing it reviews.
+independent of this session's blind spots. Use it for root-causing a bug,
+adding tests to probe behavior, and implementing well-scoped tasks. Reviews of
+plans and code go to Opus subagents instead (the pr skill), not to codex.
 
 ## Invocation
 
@@ -47,25 +46,8 @@ codex exec -m gpt-6-astra -c model_reasoning_effort=xhigh \
   pasting content.
 - Codex does not auto-load `.claude/` docs — it discovers only `AGENTS.md`,
   which this repo does not have. Any run that should follow project rules
-  (review, test writing, implementation) must be told in the prompt which
+  (test writing, implementation) must be told in the prompt which
   rule files to read first, e.g. `.claude/CLAUDE.md` and the cpp-style skill.
-
-The canonical code-review invocation is the standard form with a prompt that
-loads the repo rules and reviews the branch diff:
-
-```bash
-codex exec -m gpt-6-astra -c model_reasoning_effort=xhigh \
-  --dangerously-bypass-approvals-and-sandbox -o /tmp/codex-review-<topic>.md \
-  "Read .claude/CLAUDE.md and .claude/skills/cpp-style/SKILL.md and apply
-their rules. Review the changes in 'git diff origin/main...HEAD' for
-correctness, style, and test coverage. Report ranked findings, each with
-file:line and a concrete failure scenario."
-```
-
-The built-in `codex exec review --base origin/main` collects the diff itself,
-but `--base` is mutually exclusive with the prompt argument, so it can never
-see the repo rules — use it only as a quick rules-blind supplementary pass
-(also `--uncommitted`, `--commit <sha>`).
 
 ## Multi-round sessions
 
@@ -104,11 +86,6 @@ only a fresh session recovers). Rules:
   carries no weight. Experience runs both ways — codex has correctly refuted
   arguments this side was sure of, and confidently asserted things a probe then
   disproved. The probe decides, never authority.
-- **Adversarial loop** (plans/designs): write the doc → codex attacks it
-  (demand concrete counterexamples, not general commentary) → probe each
-  counterexample → revise the doc, recording adopted and refuted findings →
-  `resume` the session for the next round. Stop when a round yields no new
-  confirmed finding.
 - **When codex edits code** (implementation, debug fixes, new tests): review
   its diff as you would a PR — you own what gets committed. Verification
   (build + suites) happens in the main session, and the hard rules (never
@@ -125,21 +102,17 @@ only a fresh session recovers). Rules:
 
 ## Recipes
 
-- **Plan review**: point it at the doc path; ask for attacks ranked by
-  severity, each with a minimal counterexample. Fold confirmed findings back
-  into the doc.
-- **Code review**: the canonical review command above — the primary
-  self-review pass of the pr skill.
 - **Debug**: give the failing test, the repro command, and the suspect area;
   ask for a root-cause hypothesis plus the experiment that would confirm it.
   Let it run the repro itself.
 - **Test writing**: point it at 2-3 neighboring test files as the template;
   ask it to add cases probing a specific behavior and report which outcomes
-  look wrong versus expected. Tell it to run tests via `pixi run test`, or
-  with `--snapshot-dir=tests/snapshots` when invoking `unit_tests` directly.
+  look wrong versus expected, following the test-style skill. Tell it to run
+  tests via `pixi run test`, or with `--snapshot-dir=tests/snapshots` when
+  invoking `unit_tests` or `system_tests` directly.
 - **Implementation**: a well-scoped task with acceptance criteria and pointers
-  to the 2-3 existing modules whose structure it should copy. Then review and
-  verify as above.
+  to the 2-3 existing modules whose structure it should copy. Then review the
+  result with Opus subagents (the pr skill) and verify it.
 
 ## Recovery
 

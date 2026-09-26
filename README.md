@@ -152,7 +152,10 @@ src/
   zest/        # Test runner implementation
 
 tests/
-  unit/        # Unit tests per module
+  <module>/    # Tests per module, mirroring include/kota/<module>/:
+               #   unit/ in memory, system/ touching the OS, harness/ helpers
+  fixtures/    # Types shared by several modules' tests
+  snapshots/   # Snapshot files, one directory per suite
   integration/ # Process-level IPC / LSP integration tests
 
 examples/
