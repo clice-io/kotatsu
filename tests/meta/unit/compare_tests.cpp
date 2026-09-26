@@ -761,10 +761,14 @@ ZEST_CASE(functor_sort) {
     // zest compares a check's operands with meta's comparisons, so the tests of
     // those check plain bools: a parenthesized check is not split.
     ASSERT((values.size() == 4U));
-    EXPECT((values[0].x == 1 && values[0].y == 2));
-    EXPECT((values[1].x == 1 && values[1].y == 3));
-    EXPECT((values[2].x == 1 && values[2].y == 4));
-    EXPECT((values[3].x == 2 && values[3].y == 1));
+    EXPECT((values[0].x == 1));
+    EXPECT((values[0].y == 2));
+    EXPECT((values[1].x == 1));
+    EXPECT((values[1].y == 3));
+    EXPECT((values[2].x == 1));
+    EXPECT((values[2].y == 4));
+    EXPECT((values[3].x == 2));
+    EXPECT((values[3].y == 1));
 }
 
 };  // ZEST_SUITE(meta_compare)

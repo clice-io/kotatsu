@@ -29,8 +29,6 @@ Tests are grouped by module, then by level. `tests/<module>/` mirrors `include/k
 tests/<module>/
   unit/<path mirroring the headers>/<stem>[_<aspect>]_tests.cpp
   system/...                  same shape
-  static/<rejection>.fail.cpp
-  fuzz/<target>.cpp, fuzz/corpus/<target>/
   harness/*.h                 helpers for this module's tests and the modules above
   CMakeLists.txt              kota_add_module_tests(LIBS <the module's libraries>)
 tests/fixtures/               types shared by several modules' tests

@@ -103,7 +103,7 @@ task<int, error> mkstemp_roundtrip(event_loop& loop) {
 
 }  // namespace
 
-ZEST_SUITE(fs_request_io, loop_fixture) {
+ZEST_SUITE(async_io_fs, loop_fixture) {
 
 ZEST_CASE(basic_roundtrip) {
     auto worker = fs_roundtrip(loop);
@@ -298,6 +298,6 @@ ZEST_CASE(statfs_basic) {
     EXPECT(*result == 1);
 }
 
-};  // ZEST_SUITE(fs_request_io)
+};  // ZEST_SUITE(async_io_fs)
 
 }  // namespace kota

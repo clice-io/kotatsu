@@ -13,7 +13,7 @@ namespace kota {
 
 namespace {
 
-ZEST_SUITE(yield, loop_fixture) {
+ZEST_SUITE(async_runtime_yield, loop_fixture) {
 
 // yield() resumes on the NEXT loop iteration: every deferred resume produced
 // in the current iteration (here: the event waiter woken by set()) runs
@@ -116,7 +116,7 @@ ZEST_CASE(spans_iteration_from_timer_callback) {
     EXPECT(order == (std::vector<int>{1, 2}));
 }
 
-};  // ZEST_SUITE(yield)
+};  // ZEST_SUITE(async_runtime_yield)
 
 }  // namespace
 

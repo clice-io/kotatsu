@@ -2,7 +2,7 @@
 // (only compiled when KOTA_ENABLE_EXCEPTIONS). Covers a throwing child cancelling
 // siblings, immediate throws, range overloads, nested/caught exceptions, empty
 // range, and exception beating an external cancel. Structured error (co_await
-// fail) propagation lives in errors.cpp.
+// fail) propagation lives in errors_tests.cpp.
 #include <stdexcept>
 
 #include "async/harness/loop_fixture.h"

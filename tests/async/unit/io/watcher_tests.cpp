@@ -49,7 +49,7 @@ task<> wait_timer_twice(timer& t) {
 
 }  // namespace
 
-ZEST_SUITE(watcher_io, loop_fixture) {
+ZEST_SUITE(async_io_watcher, loop_fixture) {
 
 ZEST_CASE(timer_wait) {
     auto t = timer::create(loop);
@@ -254,6 +254,6 @@ ZEST_CASE(signal_wait_cancel) {
 }
 #endif
 
-};  // ZEST_SUITE(watcher_io)
+};  // ZEST_SUITE(async_io_watcher)
 
 }  // namespace kota

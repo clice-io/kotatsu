@@ -2,7 +2,8 @@
 // single/three tasks, sleeping children, sync awaiters, and range overloads.
 // Also hosts the type-level result-type static_asserts for both when_all and
 // when_any (result computation, error/cancel dedup, void → nullopt_t).
-// Cancellation lives in cancel.cpp; errors in errors.cpp; when_any in any_values.cpp.
+// Cancellation lives in cancel_tests.cpp; errors in errors_tests.cpp; when_any in
+// any_values_tests.cpp.
 #include <utility>
 
 #include "async/harness/loop_fixture.h"

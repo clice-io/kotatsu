@@ -9,7 +9,7 @@ namespace kota {
 
 namespace {
 
-ZEST_SUITE(event_loop_relay, loop_fixture) {
+ZEST_SUITE(async_io_relay, loop_fixture) {
 
 ZEST_CASE(relay_keeps_loop_alive) {
     // A relay should keep the loop alive even with no other active handles.
@@ -328,7 +328,7 @@ ZEST_CASE(relay_send_and_destroy_during_drain_delivers) {
     EXPECT(second_ran);
 }
 
-};  // ZEST_SUITE(event_loop_relay)
+};  // ZEST_SUITE(async_io_relay)
 
 }  // namespace
 

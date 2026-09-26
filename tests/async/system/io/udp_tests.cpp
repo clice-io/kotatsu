@@ -40,7 +40,7 @@ task<void, error> send_connected(udp& sock, std::string_view payload, int& done)
 
 }  // namespace
 
-ZEST_SUITE(udp_io, loop_fixture) {
+ZEST_SUITE(async_io_udp, loop_fixture) {
 
 ZEST_CASE(send_and_recv) {
     auto recv_sock = udp::create(loop);
@@ -97,6 +97,6 @@ ZEST_CASE(connect_and_send) {
     EXPECT(!send_result.has_error());
 }
 
-};  // ZEST_SUITE(udp_io)
+};  // ZEST_SUITE(async_io_udp)
 
 }  // namespace kota

@@ -2,7 +2,7 @@
 // — child self-cancel propagation, parent → children propagation, catch_cancel
 // interception, external token cancel, structured completion waiting for
 // cancelled children, and the io-path cancellation checkpoint. Reentrant /
-// arm-phase / looping cancel scenarios live in reentrancy.cpp.
+// arm-phase / looping cancel scenarios live in reentrancy_tests.cpp.
 #include <utility>
 
 #include "async/harness/loop_fixture.h"

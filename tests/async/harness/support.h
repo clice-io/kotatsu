@@ -4,7 +4,7 @@
 // Provides the coroutine factories (ready_int/delayed_int/...) and the
 // deferred_cancel_await awaiter used to hold a child "cancelling" until a driver
 // finishes it. Anything used by only one file lives in that file instead.
-// Type-level result-type checks for when_all/when_any live in when/all_values.cpp.
+// Type-level result-type checks for when_all/when_any live in when/all_values_tests.cpp.
 
 #include <cassert>
 #include <coroutine>

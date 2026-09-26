@@ -24,7 +24,7 @@ task<void, error>
 
 }  // namespace
 
-ZEST_SUITE(work_request_io, loop_fixture) {
+ZEST_SUITE(async_io_work_request, loop_fixture) {
 
 ZEST_CASE(queue_runs) {
     std::atomic<int> flag{0};
@@ -77,6 +77,6 @@ ZEST_CASE(queue_on_cancel_unused_on_normal_completion) {
     EXPECT(!hook_ran.load());
 }
 
-};  // ZEST_SUITE(work_request_io)
+};  // ZEST_SUITE(async_io_work_request)
 
 }  // namespace kota

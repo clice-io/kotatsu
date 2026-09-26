@@ -259,7 +259,7 @@ int set_abortive_close(socket_t sock) {
 
 }  // namespace
 
-ZEST_SUITE(pipe, loop_fixture) {
+ZEST_SUITE(async_io_stream_pipe, loop_fixture) {
 
 ZEST_CASE(read_from_fd) {
     int fds[2] = {-1, -1};
@@ -438,9 +438,9 @@ ZEST_CASE(stop, serial = true) {
     EXPECT(task2->is_failed());
 }
 
-};  // ZEST_SUITE(pipe)
+};  // ZEST_SUITE(async_io_stream_pipe)
 
-ZEST_SUITE(tcp, loop_fixture) {
+ZEST_SUITE(async_io_stream_tcp, loop_fixture) {
 
 ZEST_CASE(accept_and_read) {
     auto acc_res = tcp::listen("127.0.0.1", 0, {}, loop);
@@ -554,6 +554,6 @@ ZEST_CASE(read_some_error) {
     EXPECT(!result);
 }
 
-};  // ZEST_SUITE(tcp)
+};  // ZEST_SUITE(async_io_stream_tcp)
 
 }  // namespace kota

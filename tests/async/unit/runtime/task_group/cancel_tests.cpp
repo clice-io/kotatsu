@@ -2,7 +2,7 @@
 // self-cancel fail-fast, external token cancel, group.cancel() (idempotent,
 // empty, while join suspended, from a running child), spawn-after-cancel, and
 // partial completion then cancel. Error/exception collection under cancel lives
-// in errors.cpp; frame lifetime in lifetime.cpp.
+// in errors_tests.cpp; frame lifetime in lifetime_tests.cpp.
 #include "async/harness/loop_fixture.h"
 #include "async/harness/support.h"
 #include "kota/zest/zest.h"
@@ -10,7 +10,7 @@
 
 namespace kota {
 
-ZEST_SUITE(task_group_cancel, loop_fixture) {
+ZEST_SUITE(async_runtime_task_group_cancel, loop_fixture) {
 
 ZEST_CASE(child_self_cancel) {
     int slow_done = 0;
@@ -277,6 +277,6 @@ ZEST_CASE(cancel_from_running_child) {
     EXPECT(slow_done == 0);
 }
 
-};  // ZEST_SUITE(task_group_cancel)
+};  // ZEST_SUITE(async_runtime_task_group_cancel)
 
 }  // namespace kota

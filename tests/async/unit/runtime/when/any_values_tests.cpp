@@ -1,7 +1,7 @@
 // ZEST_SUITE(async_runtime_when_any_values): basic value passing for when_any — first/second wins,
 // single task, sleeping children, sync awaiters, and range overloads. The
-// result-type static_asserts live in all_values.cpp; cancellation in cancel.cpp;
-// errors in errors.cpp.
+// result-type static_asserts live in all_values_tests.cpp; cancellation in cancel_tests.cpp;
+// errors in errors_tests.cpp.
 #include "async/harness/loop_fixture.h"
 #include "async/harness/support.h"
 #include "kota/zest/zest.h"

@@ -3,7 +3,7 @@
 // reentrant cancellation-token firing, looping tasks that must stop at the next
 // checkpoint when cancelled mid-loop, and the first_cancel_child bookkeeping
 // repros (sync child completing during arm + external cancel). Regular cancel
-// semantics live in cancel.cpp.
+// semantics live in cancel_tests.cpp.
 #include "async/harness/loop_fixture.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"

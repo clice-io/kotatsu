@@ -58,7 +58,7 @@ task<std::pair<result<std::string>, result<std::string>>> read_two_chunks(pipe p
 
 }  // namespace
 
-ZEST_SUITE(process_io, loop_fixture) {
+ZEST_SUITE(async_io_process, loop_fixture) {
 
 ZEST_SUITE_ATTRS(serial = true);
 
@@ -438,6 +438,6 @@ ZEST_CASE(spawn_stdout_to_fd) {
     EXPECT(*written == expected);
 }
 
-};  // ZEST_SUITE(process_io)
+};  // ZEST_SUITE(async_io_process)
 
 }  // namespace kota

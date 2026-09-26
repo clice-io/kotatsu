@@ -2,7 +2,7 @@
 // spawn after join/cancel is rejected, not-awaited groups still run children,
 // completed frames reclaimed eagerly (tombstone compaction), and structured
 // completion waiting for cancelled children's frames. Spawn/join basics in
-// basics.cpp; cancel semantics in cancel.cpp; errors in errors.cpp.
+// basics_tests.cpp; cancel semantics in cancel_tests.cpp; errors in errors_tests.cpp.
 #include "async/harness/loop_fixture.h"
 #include "async/harness/support.h"
 #include "kota/zest/zest.h"
@@ -10,7 +10,7 @@
 
 namespace kota {
 
-ZEST_SUITE(task_group_lifetime, loop_fixture) {
+ZEST_SUITE(async_runtime_task_group_lifetime, loop_fixture) {
 
 ZEST_CASE(spawn_after_join) {
     int count = 0;
@@ -208,6 +208,6 @@ ZEST_CASE(reclaims_completed_child_frames) {
     EXPECT(destroyed == 3);
 }
 
-};  // ZEST_SUITE(task_group_lifetime)
+};  // ZEST_SUITE(async_runtime_task_group_lifetime)
 
 }  // namespace kota

@@ -26,7 +26,7 @@ static CompileGraph make_test_graph() {
     return graph;
 }
 
-ZEST_SUITE(build_system, loop_fixture) {
+ZEST_SUITE(async_build_system, loop_fixture) {
 
 ZEST_CASE(normal_compilation_completes) {
     auto graph = make_test_graph();
@@ -157,7 +157,7 @@ ZEST_CASE(shared_dependency_compiled_once) {
     EXPECT(compile_count == 3);
 }
 
-};  // ZEST_SUITE(build_system)
+};  // ZEST_SUITE(async_build_system)
 
 }  // namespace
 

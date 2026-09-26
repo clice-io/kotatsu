@@ -2,7 +2,7 @@
 // cancelling tasks blocked on sync primitives (event/mutex/semaphore/cv),
 // multi-token / nested with_token, and cancellation checkpoints. Threadpool
 // cancel races (queue/fs) live here too. Aggregate cancel semantics live in
-// when/cancel.cpp; task_group cancel in task_group/cancel.cpp.
+// when/cancel_tests.cpp; task_group cancel in task_group/cancel_tests.cpp.
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
@@ -42,7 +42,7 @@ int uv_thread_pool_size_for_test() {
     return value;
 }
 
-ZEST_SUITE(cancellation, loop_fixture) {
+ZEST_SUITE(async_runtime_cancellation, loop_fixture) {
 
 ZEST_CASE(pass_through_value) {
     cancellation_source source;
@@ -892,7 +892,7 @@ ZEST_CASE(checkpoint_join_cancels_group) {
     EXPECT(slow_done == 0);
 }
 
-};  // ZEST_SUITE(cancellation)
+};  // ZEST_SUITE(async_runtime_cancellation)
 
 }  // namespace
 

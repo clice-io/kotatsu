@@ -14,7 +14,7 @@ namespace {
 
 using namespace std::chrono;
 
-ZEST_SUITE(sync_deferred, loop_fixture) {
+ZEST_SUITE(async_runtime_sync_deferred, loop_fixture) {
 
 // when_any: a holds mutex, sleeps, unlocks (defers b's resume), then co_returns
 // (winner). when_any cancels b synchronously. The deferred resume fires on a
@@ -392,7 +392,7 @@ ZEST_CASE(any_cancel_deferred_cv_wait) {
     m.unlock();
 }
 
-};  // ZEST_SUITE(sync_deferred)
+};  // ZEST_SUITE(async_runtime_sync_deferred)
 
 }  // namespace
 

@@ -63,8 +63,8 @@ set_target_properties(${kota_test_binaries} zest_runner_fixture PROPERTIES
 )
 
 if(KOTA_SANITIZE_ADDRESS AND MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    # clang-cl ASan uses a runtime DLL; copy it next to the test executables so
-    # `ctest` can run without requiring CI to tweak PATH.
+    # clang-cl ASan uses a runtime DLL; copy it next to each test executable so
+    # that any of them runs, from ctest or alone, without tweaking PATH.
     get_filename_component(kota_clang_compiler_dir "${CMAKE_C_COMPILER}" DIRECTORY)
     set(kota_asan_runtime_search_paths
         "${kota_clang_compiler_dir}"
@@ -84,12 +84,14 @@ if(KOTA_SANITIZE_ADDRESS AND MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         endforeach()
 
         if(kota_asan_runtime_path)
-            add_custom_command(TARGET unit_tests POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${kota_asan_runtime_path}"
-                    "$<TARGET_FILE_DIR:unit_tests>"
-                VERBATIM
-            )
+            foreach(binary IN LISTS kota_test_binaries ITEMS zest_runner_fixture)
+                add_custom_command(TARGET ${binary} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${kota_asan_runtime_path}"
+                        "$<TARGET_FILE_DIR:${binary}>"
+                    VERBATIM
+                )
+            endforeach()
         else()
             message(WARNING
                 "KOTA_SANITIZE_ADDRESS=ON, but ${kota_asan_runtime_name} was not found. "

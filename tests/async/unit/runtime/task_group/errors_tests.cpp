@@ -1,8 +1,8 @@
 // ZEST_SUITE(async_runtime_task_group_errors): error and exception propagation for task_group
 // — structured errors (fail-fast collects first, cancels siblings), mixed error
 // types, errors preserved across cancel, and (under KOTA_ENABLE_EXCEPTIONS) C++
-// exception propagation/precedence. Plain spawn/join lives in basics.cpp;
-// cancellation without errors in cancel.cpp.
+// exception propagation/precedence. Plain spawn/join lives in basics_tests.cpp;
+// cancellation without errors in cancel_tests.cpp.
 #include <stdexcept>
 #include <string>
 
@@ -13,7 +13,7 @@
 
 namespace kota {
 
-ZEST_SUITE(task_group_errors, loop_fixture) {
+ZEST_SUITE(async_runtime_task_group_errors, loop_fixture) {
 
 ZEST_CASE(returns_structured_error) {
     int slow_done = 0;
@@ -363,6 +363,6 @@ ZEST_CASE(cancel_while_join_suspended_with_exception) {
 }
 #endif
 
-};  // ZEST_SUITE(task_group_errors)
+};  // ZEST_SUITE(async_runtime_task_group_errors)
 
 }  // namespace kota

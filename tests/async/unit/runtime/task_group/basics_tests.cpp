@@ -1,8 +1,8 @@
 // ZEST_SUITE(async_runtime_task_group_basics): spawn/join and value passing for task_group
 // — basic spawns, empty join, sleeping children, nesting with when_all in both
 // directions, all-success with an error type, and stress with many tasks.
-// Cancellation lives in cancel.cpp; errors/exceptions in errors.cpp; frame
-// lifetime / settled-spawn rejection in lifetime.cpp.
+// Cancellation lives in cancel_tests.cpp; errors/exceptions in errors_tests.cpp; frame
+// lifetime / settled-spawn rejection in lifetime_tests.cpp.
 #include "async/harness/loop_fixture.h"
 #include "async/harness/support.h"
 #include "kota/zest/zest.h"
@@ -10,7 +10,7 @@
 
 namespace kota {
 
-ZEST_SUITE(task_group_basics, loop_fixture) {
+ZEST_SUITE(async_runtime_task_group_basics, loop_fixture) {
 
 ZEST_CASE(basic) {
     int count = 0;
@@ -212,6 +212,6 @@ ZEST_CASE(stress_many_tasks_with_sleep) {
     EXPECT(count == 100);
 }
 
-};  // ZEST_SUITE(task_group_basics)
+};  // ZEST_SUITE(async_runtime_task_group_basics)
 
 }  // namespace kota

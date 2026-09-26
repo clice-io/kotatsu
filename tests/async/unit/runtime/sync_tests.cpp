@@ -14,7 +14,7 @@ namespace {
 
 using namespace std::chrono;
 
-ZEST_SUITE(sync, loop_fixture) {
+ZEST_SUITE(async_runtime_sync, loop_fixture) {
 
 ZEST_CASE(mutex_try_lock) {
     mutex m;
@@ -277,7 +277,7 @@ ZEST_CASE(condition_variable_wait) {
     EXPECT(step == 3);
 }
 
-};  // ZEST_SUITE(sync)
+};  // ZEST_SUITE(async_runtime_sync)
 
 }  // namespace
 

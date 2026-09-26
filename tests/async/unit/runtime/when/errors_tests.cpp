@@ -2,7 +2,7 @@
 // when_all/when_any — first error cancels siblings, immediate errors, success
 // without false errors, mixed error types, range overloads, error-vs-cancel
 // priority, and error beating an external cancel. C++ exception propagation
-// lives in exceptions.cpp; cancellation semantics in cancel.cpp.
+// lives in exceptions_tests.cpp; cancellation semantics in cancel_tests.cpp.
 #include "async/harness/loop_fixture.h"
 #include "async/harness/support.h"
 #include "kota/zest/zest.h"
