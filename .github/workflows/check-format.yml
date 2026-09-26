@@ -29,8 +29,11 @@ jobs:
         run: pixi run format
         continue-on-error: true
 
+      - name: Type check TypeScript
+        run: pixi run -e format typecheck
+
       - name: Check generated LSP protocol
-        run: python3 scripts/lsp_codegen.py --check
+        run: pixi run -e format lsp-codegen --check
 
       - name: Auto correct
         uses: huacnlee/autocorrect-action@v2

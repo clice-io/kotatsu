@@ -54,9 +54,9 @@
 __pycache__/
 *.py[cod]
 
-# Generated/fetched LSP schema
-schema/lsp/schema.json
-scripts/schema.json
+# npm packages
+node_modules/
+
 /temp/
 
 .codex/
