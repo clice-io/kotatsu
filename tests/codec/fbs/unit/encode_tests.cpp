@@ -249,6 +249,11 @@ struct Optionals {
     std::optional<test::Address> addr;
 };
 
+struct NullPayload {
+    std::optional<std::monostate> none;
+    std::int32_t tail{};
+};
+
 struct Route {
     std::vector<test::Point> points;
     std::list<test::Point> waypoints;
@@ -536,6 +541,18 @@ ZEST_CASE(skipped_field_takes_no_slot) {
     EXPECT(root->GetField<std::int32_t>(slot(0), 0) == 3);
     EXPECT(root->GetField<std::int32_t>(slot(1), 0) == 5);
     EXPECT(root->GetOptionalFieldOffset(slot(2)) == 0U);
+}
+
+ZEST_CASE(engaged_optional_of_a_null_reads_back_disengaged) {
+    // A null payload leaves its slot absent, as a disengaged optional does,
+    // so nothing tells the two apart.
+    auto bytes = fbs::to_bytes(NullPayload{.none = std::monostate{}, .tail = 7});
+    ASSERT(bytes);
+    EXPECT(root_of(*bytes)->GetOptionalFieldOffset(slot(0)) == 0U);
+    auto decoded = fbs::from_bytes<NullPayload>(*bytes);
+    ASSERT(decoded);
+    EXPECT(!decoded->none);
+    EXPECT(decoded->tail == 7);
 }
 
 ZEST_CASE(empty_nullable_leaves_its_slot_absent) {
