@@ -103,27 +103,27 @@ task<int, error> mkstemp_roundtrip(event_loop& loop) {
 
 }  // namespace
 
-TEST_SUITE(fs_request_io, loop_fixture) {
+ZEST_SUITE(fs_request_io, loop_fixture){
 
-TEST_CASE(basic_roundtrip) {
-    auto worker = fs_roundtrip(loop);
-    schedule_all(worker);
+    ZEST_CASE(basic_roundtrip){auto worker = fs_roundtrip(loop);
+schedule_all(worker);
 
-    auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
-    EXPECT_EQ(*result, 1);
-}
+auto result = worker.result();
+EXPECT(result.has_value());
+EXPECT(*result == 1);
 
-TEST_CASE(mkstemp_and_access) {
+}  // namespace kota
+
+ZEST_CASE(mkstemp_and_access) {
     auto worker = mkstemp_roundtrip(loop);
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
-    EXPECT_EQ(*result, 1);
+    EXPECT(result.has_value());
+    EXPECT(*result == 1);
 }
 
-TEST_CASE(async_open_read_write_close) {
+ZEST_CASE(async_open_read_write_close) {
     auto worker = [](event_loop& ev) -> task<int, error> {
         auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-rw-XXXXXX").string();
         std::string dir = co_await fs::mkdtemp(dir_template, ev).or_fail();
@@ -157,13 +157,13 @@ TEST_CASE(async_open_read_write_close) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
-    EXPECT_EQ(*result, 1);
+    EXPECT(result.has_value());
+    EXPECT(*result == 1);
 }
 
 #ifndef _WIN32
 
-TEST_CASE(symlink_readlink_realpath) {
+ZEST_CASE(symlink_readlink_realpath) {
     auto worker = [](event_loop& loop) -> task<int, error> {
         auto dir_template =
             (std::filesystem::temp_directory_path() / "kotatsu-sym-XXXXXX").string();
@@ -205,11 +205,11 @@ TEST_CASE(symlink_readlink_realpath) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
-    EXPECT_EQ(*result, 1);
+    EXPECT(result.has_value());
+    EXPECT(*result == 1);
 }
 
-TEST_CASE(chown_fchown_lchown) {
+ZEST_CASE(chown_fchown_lchown) {
     auto worker = [](event_loop& loop) -> task<int, error> {
         auto dir_template =
             (std::filesystem::temp_directory_path() / "kotatsu-chown-XXXXXX").string();
@@ -250,11 +250,11 @@ TEST_CASE(chown_fchown_lchown) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
-    EXPECT_EQ(*result, 1);
+    EXPECT(result.has_value());
+    EXPECT(*result == 1);
 }
 
-TEST_CASE(fchmod) {
+ZEST_CASE(fchmod) {
     auto worker = [](event_loop& loop) -> task<int, error> {
         auto dir_template =
             (std::filesystem::temp_directory_path() / "kotatsu-fchmod-XXXXXX").string();
@@ -277,13 +277,13 @@ TEST_CASE(fchmod) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
-    EXPECT_EQ(*result, 1);
+    EXPECT(result.has_value());
+    EXPECT(*result == 1);
 }
 
 #endif  // !_WIN32
 
-TEST_CASE(statfs_basic) {
+ZEST_CASE(statfs_basic) {
     auto worker = [](event_loop& ev) -> task<int, error> {
         auto statfs_path = std::filesystem::temp_directory_path().string();
         auto stats = co_await fs::statfs(statfs_path, ev).or_fail();
@@ -294,10 +294,10 @@ TEST_CASE(statfs_basic) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
-    EXPECT_EQ(*result, 1);
+    EXPECT(result.has_value());
+    EXPECT(*result == 1);
 }
-
-};  // TEST_SUITE(fs_request_io)
+}
+;  // ZEST_SUITE(fs_request_io)
 
 }  // namespace kota

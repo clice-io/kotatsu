@@ -9,22 +9,23 @@ namespace kota {
 
 namespace {
 
-TEST_SUITE(event_loop_relay, loop_fixture) {
+ZEST_SUITE(event_loop_relay, loop_fixture){
 
-TEST_CASE(relay_keeps_loop_alive) {
-    // A relay should keep the loop alive even with no other active handles.
-    // Without the relay, the loop would exit immediately.
-    bool called = false;
+    ZEST_CASE(relay_keeps_loop_alive){
+        // A relay should keep the loop alive even with no other active handles.
+        // Without the relay, the loop would exit immediately.
+        bool called = false;
 
-    auto r = loop.create_relay();
-    std::thread worker([&, r = std::move(r)]() mutable { r.send([&] { called = true; }); });
+auto r = loop.create_relay();
+std::thread worker([&, r = std::move(r)]() mutable { r.send([&] { called = true; }); });
 
-    loop.run();
-    worker.join();
-    EXPECT_TRUE(called);
-}
+loop.run();
+worker.join();
+EXPECT(called);
 
-TEST_CASE(relay_cross_thread_send) {
+}  // namespace
+
+ZEST_CASE(relay_cross_thread_send) {
     int value = 0;
     std::thread worker;
 
@@ -43,10 +44,10 @@ TEST_CASE(relay_cross_thread_send) {
     auto task = t();
     schedule_all(task);
     worker.join();
-    EXPECT_EQ(value, 42);
+    EXPECT(value == 42);
 }
 
-TEST_CASE(relay_destroyed_without_send) {
+ZEST_CASE(relay_destroyed_without_send) {
     // Destroying a relay without calling send() should release the loop hold
     // and allow the loop to exit normally.
     bool task_finished = false;
@@ -62,10 +63,10 @@ TEST_CASE(relay_destroyed_without_send) {
 
     auto task = t();
     schedule_all(task);
-    EXPECT_TRUE(task_finished);
+    EXPECT(task_finished);
 }
 
-TEST_CASE(relay_move_semantics) {
+ZEST_CASE(relay_move_semantics) {
     bool called = false;
 
     auto r1 = loop.create_relay();
@@ -76,10 +77,10 @@ TEST_CASE(relay_move_semantics) {
 
     loop.run();
     worker.join();
-    EXPECT_TRUE(called);
+    EXPECT(called);
 }
 
-TEST_CASE(relay_multiple_send) {
+ZEST_CASE(relay_multiple_send) {
     int counter = 0;
 
     auto t = [&]() -> task<> {
@@ -96,10 +97,10 @@ TEST_CASE(relay_multiple_send) {
 
     auto task = t();
     schedule_all(task);
-    EXPECT_EQ(counter, 3);
+    EXPECT(counter == 3);
 }
 
-TEST_CASE(relay_send_with_noop) {
+ZEST_CASE(relay_send_with_noop) {
     // Sending a no-op callback and then destroying the relay should
     // release the loop hold without crashing.
     auto r = loop.create_relay();
@@ -110,7 +111,7 @@ TEST_CASE(relay_send_with_noop) {
     worker.join();
 }
 
-TEST_CASE(relay_concurrent_send) {
+ZEST_CASE(relay_concurrent_send) {
     constexpr int N = 4;
     constexpr int M = 25;
     std::atomic<int> counter{0};
@@ -138,10 +139,10 @@ TEST_CASE(relay_concurrent_send) {
 
     auto task = t();
     schedule_all(task);
-    EXPECT_EQ(counter.load(), N * M);
+    EXPECT(counter.load() == N * M);
 }
 
-TEST_CASE(relay_stress_cross_thread) {
+ZEST_CASE(relay_stress_cross_thread) {
     int counter = 0;
 
     auto r = loop.create_relay();
@@ -153,10 +154,10 @@ TEST_CASE(relay_stress_cross_thread) {
 
     loop.run();
     worker.join();
-    EXPECT_EQ(counter, 100);
+    EXPECT(counter == 100);
 }
 
-TEST_CASE(relay_send_after_move) {
+ZEST_CASE(relay_send_after_move) {
     bool called = false;
 
     auto t = [&]() -> task<> {
@@ -172,10 +173,10 @@ TEST_CASE(relay_send_after_move) {
 
     auto task = t();
     schedule_all(task);
-    EXPECT_TRUE(!called);
+    EXPECT(!called);
 }
 
-TEST_CASE(relay_callback_stops_loop) {
+ZEST_CASE(relay_callback_stops_loop) {
     bool stopped = false;
 
     auto r = loop.create_relay();
@@ -188,10 +189,10 @@ TEST_CASE(relay_callback_stops_loop) {
 
     loop.run();
     worker.join();
-    EXPECT_TRUE(stopped);
+    EXPECT(stopped);
 }
 
-TEST_CASE(relay_fifo_order) {
+ZEST_CASE(relay_fifo_order) {
     std::vector<int> order;
 
     auto t = [&]() -> task<> {
@@ -210,10 +211,10 @@ TEST_CASE(relay_fifo_order) {
 
     auto task = t();
     schedule_all(task);
-    EXPECT_EQ(order, (std::vector<int>{0, 1, 2, 3, 4}));
+    EXPECT(order == (std::vector<int>{0, 1, 2, 3, 4}));
 }
 
-TEST_CASE(relay_pending_callbacks_delivered_after_destroy) {
+ZEST_CASE(relay_pending_callbacks_delivered_after_destroy) {
     int counter = 0;
 
     auto t = [&]() -> task<> {
@@ -232,10 +233,10 @@ TEST_CASE(relay_pending_callbacks_delivered_after_destroy) {
 
     auto task = t();
     schedule_all(task);
-    EXPECT_EQ(counter, 2);
+    EXPECT(counter == 2);
 }
 
-TEST_CASE(relay_send_during_drain) {
+ZEST_CASE(relay_send_during_drain) {
     int counter = 0;
     relay* shared = nullptr;
 
@@ -255,10 +256,10 @@ TEST_CASE(relay_send_during_drain) {
 
     auto task = t();
     schedule_all(task);
-    EXPECT_EQ(counter, 2);
+    EXPECT(counter == 2);
 }
 
-TEST_CASE(relay_move_assign_releases_old) {
+ZEST_CASE(relay_move_assign_releases_old) {
     int old_counter = 0;
     int new_counter = 0;
 
@@ -278,11 +279,11 @@ TEST_CASE(relay_move_assign_releases_old) {
 
     auto task = t();
     schedule_all(task);
-    EXPECT_EQ(old_counter, 1);
-    EXPECT_EQ(new_counter, 1);
+    EXPECT(old_counter == 1);
+    EXPECT(new_counter == 1);
 }
 
-TEST_CASE(relay_multiple_keep_alive) {
+ZEST_CASE(relay_multiple_keep_alive) {
     // Two relays: destroying one should not release the loop hold while the
     // other is still alive.
     bool called = false;
@@ -297,7 +298,7 @@ TEST_CASE(relay_multiple_keep_alive) {
 
     loop.run();
     worker.join();
-    EXPECT_TRUE(called);
+    EXPECT(called);
 }
 
 // Regression: a producer that send()s and destroys its relay while the loop
@@ -305,7 +306,7 @@ TEST_CASE(relay_multiple_keep_alive) {
 // the drain until the worker has enqueued the second callback and dropped the
 // relay; the loop-hold release must observe the refilled queue and keep the
 // loop alive for one more drain.
-TEST_CASE(relay_send_and_destroy_during_drain_delivers) {
+ZEST_CASE(relay_send_and_destroy_during_drain_delivers) {
     std::atomic<bool> first_running{false};
     std::atomic<bool> second_sent{false};
     bool second_ran = false;
@@ -325,10 +326,10 @@ TEST_CASE(relay_send_and_destroy_during_drain_delivers) {
 
     loop.run();
     worker.join();
-    EXPECT_TRUE(second_ran);
+    EXPECT(second_ran);
 }
 
-};  // TEST_SUITE(event_loop_relay)
+};  // namespace kota
 
 }  // namespace
 

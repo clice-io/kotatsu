@@ -484,18 +484,18 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
     {                                                                                              \
         auto input = __VA_ARGS__;                                                                  \
         auto output = (rt)(input);                                                                 \
-        ASSERT_TRUE(output.has_value());                                                           \
-        EXPECT_EQ(input, *output);                                                                 \
+        ASSERT(output.has_value());                                                                \
+        EXPECT(input == *output);                                                                  \
     }
 
 #define SERDE_STANDARD_ASSERT_TEXT_DECODE_FAIL(decode_text, payload_literal, value)                \
     {                                                                                              \
         auto status = (decode_text)(payload_literal, value);                                       \
-        EXPECT_FALSE(status.has_value());                                                          \
+        EXPECT(!status.has_value());                                                               \
     }
 
 #define SERDE_STANDARD_TEST_CASES_PRIMITIVES(rt)                                                   \
-    TEST_CASE(standard_primitives_roundtrip) {                                                     \
+    ZEST_CASE(standard_primitives_roundtrip) {                                                     \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, true);                                                 \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::int32_t(-42));                                    \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::uint64_t(42));                                    \
@@ -506,7 +506,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
     }
 
 #define SERDE_STANDARD_TEST_CASES_NUMERIC_BOUNDARIES(rt)                                           \
-    TEST_CASE(standard_numeric_boundaries_roundtrip) {                                             \
+    ZEST_CASE(standard_numeric_boundaries_roundtrip) {                                             \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::numeric_limits<std::int8_t>::min());              \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::numeric_limits<std::int8_t>::max());              \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::numeric_limits<std::uint8_t>::min());             \
@@ -530,7 +530,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
     }
 
 #define SERDE_STANDARD_TEST_CASES_NUMERIC_BOUNDARIES_TOML_SAFE(rt)                                 \
-    TEST_CASE(standard_numeric_boundaries_roundtrip) {                                             \
+    ZEST_CASE(standard_numeric_boundaries_roundtrip) {                                             \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::numeric_limits<std::int8_t>::min());              \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::numeric_limits<std::int8_t>::max());              \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::numeric_limits<std::uint8_t>::min());             \
@@ -553,7 +553,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
     }
 
 #define SERDE_STANDARD_TEST_CASES_TUPLE_LIKE(rt)                                                   \
-    TEST_CASE(standard_tuple_like_roundtrip) {                                                     \
+    ZEST_CASE(standard_tuple_like_roundtrip) {                                                     \
         using basic_t = standard_case::Basic;                                                      \
         using scalar_tuple_t = standard_case::scalar_tuple;                                        \
         const scalar_tuple_t scalar_a{true,                                                        \
@@ -609,7 +609,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
     }
 
 #define SERDE_STANDARD_TEST_CASES_SEQUENCE_SET(rt)                                                 \
-    TEST_CASE(standard_sequence_set_roundtrip) {                                                   \
+    ZEST_CASE(standard_sequence_set_roundtrip) {                                                   \
         using basic_t = standard_case::Basic;                                                      \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::vector<int>{1, 2, 3, 5});                         \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::vector<std::uint64_t>{1ULL, 5ULL, 9ULL});         \
@@ -642,7 +642,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
     }
 
 #define SERDE_STANDARD_TEST_CASES_MAPS(rt)                                                         \
-    TEST_CASE(standard_map_roundtrip) {                                                            \
+    ZEST_CASE(standard_map_roundtrip) {                                                            \
         using basic_t = standard_case::Basic;                                                      \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt,                                                        \
                                         std::map<std::string, int>{                                \
@@ -691,7 +691,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
     }
 
 #define SERDE_STANDARD_TEST_CASES_OPTIONAL(rt)                                                     \
-    TEST_CASE(standard_optional_roundtrip) {                                                       \
+    ZEST_CASE(standard_optional_roundtrip) {                                                       \
         using basic_t = standard_case::Basic;                                                      \
         using scalar_tuple_t = standard_case::scalar_tuple;                                        \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, std::optional<int>{17});                               \
@@ -724,7 +724,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
     }
 
 #define SERDE_STANDARD_TEST_CASES_POINTERS(rt)                                                     \
-    TEST_CASE(standard_smart_pointers_roundtrip) {                                                 \
+    ZEST_CASE(standard_smart_pointers_roundtrip) {                                                 \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, standard_case::make_smart_pointers());                 \
         {                                                                                          \
             auto input = standard_case::make_smart_pointers();                                     \
@@ -732,8 +732,8 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             input.shared_basic.reset();                                                            \
             input.opt_shared.reset();                                                              \
             auto output = (rt)(input);                                                             \
-            ASSERT_TRUE(output.has_value());                                                       \
-            EXPECT_EQ(input, *output);                                                             \
+            ASSERT(output.has_value());                                                            \
+            EXPECT(input == *output);                                                              \
         }                                                                                          \
         {                                                                                          \
             auto input = standard_case::make_smart_pointers();                                     \
@@ -743,8 +743,8 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
                 standard_case::make_basic(true, 9, 0.9, "tail")));                                 \
             input.opt_shared = std::shared_ptr<standard_case::Basic>{};                            \
             auto output = (rt)(input);                                                             \
-            ASSERT_TRUE(output.has_value());                                                       \
-            EXPECT_EQ(input, *output);                                                             \
+            ASSERT(output.has_value());                                                            \
+            EXPECT(input == *output);                                                              \
         }                                                                                          \
         {                                                                                          \
             auto input = standard_case::make_smart_pointers();                                     \
@@ -753,16 +753,16 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             input.shared_basic = aliased;                                                          \
             input.shared_list = {aliased, aliased};                                                \
             auto output = (rt)(input);                                                             \
-            ASSERT_TRUE(output.has_value());                                                       \
-            ASSERT_EQ(output->shared_list.size(), 2U);                                             \
-            ASSERT_TRUE(output->shared_list[0] != nullptr);                                        \
-            ASSERT_TRUE(output->shared_list[1] != nullptr);                                        \
-            EXPECT_EQ(*output->shared_list[0], *output->shared_list[1]);                           \
+            ASSERT(output.has_value());                                                            \
+            ASSERT(output->shared_list.size() == 2U);                                              \
+            ASSERT(output->shared_list[0] != nullptr);                                             \
+            ASSERT(output->shared_list[1] != nullptr);                                             \
+            EXPECT(*output->shared_list[0] == *output->shared_list[1]);                            \
         }                                                                                          \
     }
 
 #define SERDE_STANDARD_TEST_CASES_POINTERS_FORMAT_SAFE(rt)                                         \
-    TEST_CASE(standard_smart_pointers_roundtrip) {                                                 \
+    ZEST_CASE(standard_smart_pointers_roundtrip) {                                                 \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, standard_case::make_smart_pointers());                 \
         {                                                                                          \
             auto input = standard_case::make_smart_pointers();                                     \
@@ -770,8 +770,8 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             input.shared_basic.reset();                                                            \
             input.opt_shared.reset();                                                              \
             auto output = (rt)(input);                                                             \
-            ASSERT_TRUE(output.has_value());                                                       \
-            EXPECT_EQ(input, *output);                                                             \
+            ASSERT(output.has_value());                                                            \
+            EXPECT(input == *output);                                                              \
         }                                                                                          \
         {                                                                                          \
             auto input = standard_case::make_smart_pointers();                                     \
@@ -780,11 +780,11 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             input.shared_basic = aliased;                                                          \
             input.shared_list = {aliased, aliased};                                                \
             auto output = (rt)(input);                                                             \
-            ASSERT_TRUE(output.has_value());                                                       \
-            ASSERT_EQ(output->shared_list.size(), 2U);                                             \
-            ASSERT_TRUE(output->shared_list[0] != nullptr);                                        \
-            ASSERT_TRUE(output->shared_list[1] != nullptr);                                        \
-            EXPECT_EQ(*output->shared_list[0], *output->shared_list[1]);                           \
+            ASSERT(output.has_value());                                                            \
+            ASSERT(output->shared_list.size() == 2U);                                              \
+            ASSERT(output->shared_list[0] != nullptr);                                             \
+            ASSERT(output->shared_list[1] != nullptr);                                             \
+            EXPECT(*output->shared_list[0] == *output->shared_list[1]);                            \
         }                                                                                          \
     }
 
@@ -792,15 +792,15 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
     SERDE_STANDARD_TEST_CASES_POINTERS_FORMAT_SAFE(rt)
 
 #define SERDE_STANDARD_TEST_CASES_POINTERS_TOML_SAFE(rt)                                           \
-    TEST_CASE(standard_smart_pointers_roundtrip) {                                                 \
+    ZEST_CASE(standard_smart_pointers_roundtrip) {                                                 \
         {                                                                                          \
             auto input = standard_case::make_smart_pointers();                                     \
             input.shared_list.erase(                                                               \
                 std::remove(input.shared_list.begin(), input.shared_list.end(), nullptr),          \
                 input.shared_list.end());                                                          \
             auto output = (rt)(input);                                                             \
-            ASSERT_TRUE(output.has_value());                                                       \
-            EXPECT_EQ(input, *output);                                                             \
+            ASSERT(output.has_value());                                                            \
+            EXPECT(input == *output);                                                              \
         }                                                                                          \
         {                                                                                          \
             auto input = standard_case::make_smart_pointers();                                     \
@@ -811,8 +811,8 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             input.shared_basic.reset();                                                            \
             input.opt_shared.reset();                                                              \
             auto output = (rt)(input);                                                             \
-            ASSERT_TRUE(output.has_value());                                                       \
-            EXPECT_EQ(input, *output);                                                             \
+            ASSERT(output.has_value());                                                            \
+            EXPECT(input == *output);                                                              \
         }                                                                                          \
         {                                                                                          \
             auto input = standard_case::make_smart_pointers();                                     \
@@ -822,29 +822,29 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             input.shared_empty.reset();                                                            \
             input.shared_list = {aliased, aliased};                                                \
             auto output = (rt)(input);                                                             \
-            ASSERT_TRUE(output.has_value());                                                       \
-            ASSERT_EQ(output->shared_list.size(), 2U);                                             \
-            ASSERT_TRUE(output->shared_list[0] != nullptr);                                        \
-            ASSERT_TRUE(output->shared_list[1] != nullptr);                                        \
-            EXPECT_EQ(*output->shared_list[0], *output->shared_list[1]);                           \
+            ASSERT(output.has_value());                                                            \
+            ASSERT(output->shared_list.size() == 2U);                                              \
+            ASSERT(output->shared_list[0] != nullptr);                                             \
+            ASSERT(output->shared_list[1] != nullptr);                                             \
+            EXPECT(*output->shared_list[0] == *output->shared_list[1]);                            \
         }                                                                                          \
     }
 
 #define SERDE_STANDARD_TEST_CASES_ATTRS(rt)                                                        \
-    TEST_CASE(standard_attrs_roundtrip) {                                                          \
+    ZEST_CASE(standard_attrs_roundtrip) {                                                          \
         using payload_t = standard_case::AttrPayload;                                              \
         {                                                                                          \
             auto input = standard_case::make_attr_payload();                                       \
             input.internal_id = 4242;                                                              \
             auto output = (rt)(input);                                                             \
-            ASSERT_TRUE(output.has_value());                                                       \
-            EXPECT_EQ(output->id, input.id);                                                       \
-            EXPECT_EQ(meta::annotated_value(output->display_name), std::string("alice"));          \
-            EXPECT_EQ(meta::annotated_value(output->internal_id), 1000);                           \
-            EXPECT_EQ(meta::annotated_value(output->note), std::optional<std::string>{"note"});    \
-            EXPECT_EQ(meta::annotated_value(output->profile),                                      \
-                      meta::annotated_value(input.profile));                                       \
-            EXPECT_EQ(meta::annotated_value(output->level), standard_case::AccessLevel::admin);    \
+            ASSERT(output.has_value());                                                            \
+            EXPECT(output->id == input.id);                                                        \
+            EXPECT(meta::annotated_value(output->display_name) == std::string("alice"));           \
+            EXPECT(meta::annotated_value(output->internal_id) == 1000);                            \
+            EXPECT(meta::annotated_value(output->note) == std::optional<std::string>{"note"});     \
+            EXPECT(meta::annotated_value(output->profile) ==                                       \
+                   meta::annotated_value(input.profile));                                          \
+            EXPECT(meta::annotated_value(output->level) == standard_case::AccessLevel::admin);     \
         }                                                                                          \
         {                                                                                          \
             payload_t input{};                                                                     \
@@ -855,13 +855,13 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             meta::annotated_value(input.profile).age = 21;                                         \
             input.level = standard_case::AccessLevel::guest;                                       \
             auto output = (rt)(input);                                                             \
-            ASSERT_TRUE(output.has_value());                                                       \
-            EXPECT_EQ(output->id, 9);                                                              \
-            EXPECT_EQ(meta::annotated_value(output->display_name), std::string("bob"));            \
-            EXPECT_EQ(meta::annotated_value(output->note), std::nullopt);                          \
-            EXPECT_EQ(meta::annotated_value(output->profile).first, "Bob");                        \
-            EXPECT_EQ(meta::annotated_value(output->profile).age, 21);                             \
-            EXPECT_EQ(meta::annotated_value(output->level), standard_case::AccessLevel::guest);    \
+            ASSERT(output.has_value());                                                            \
+            EXPECT(output->id == 9);                                                               \
+            EXPECT(meta::annotated_value(output->display_name) == std::string("bob"));             \
+            EXPECT(meta::annotated_value(output->note) == std::nullopt);                           \
+            EXPECT(meta::annotated_value(output->profile).first == "Bob");                         \
+            EXPECT(meta::annotated_value(output->profile).age == 21);                              \
+            EXPECT(meta::annotated_value(output->level) == standard_case::AccessLevel::guest);     \
         }                                                                                          \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, standard_case::make_renamed_struct_level_payload());   \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(                                                           \
@@ -873,7 +873,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
     }
 
 #define SERDE_STANDARD_TEST_CASES_TAGGED_VARIANTS(rt)                                              \
-    TEST_CASE(standard_tagged_variants_roundtrip) {                                                \
+    ZEST_CASE(standard_tagged_variants_roundtrip) {                                                \
         using ext_t = standard_case::TaggedExternalVariant;                                        \
         using adj_t = standard_case::TaggedAdjacentVariant;                                        \
         using int_t = standard_case::TaggedInternalVariant;                                        \
@@ -905,7 +905,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
 //   template <typename T>
 //   auto decode_text(std::string_view text, T& out) -> std::expected<void, E>;
 #define SERDE_STANDARD_TEST_CASES_ERROR_PATHS_TEXT(decode_text)                                    \
-    TEST_CASE(standard_error_paths_text) {                                                         \
+    ZEST_CASE(standard_error_paths_text) {                                                         \
         std::int32_t i32 = 0;                                                                      \
         SERDE_STANDARD_ASSERT_TEXT_DECODE_FAIL(decode_text, R"("bad-int")", i32);                  \
         standard_case::StrictRenamedStructLevelPayload strict{};                                   \
@@ -923,7 +923,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
     }
 
 #define SERDE_STANDARD_TEST_CASES_VARIANT(rt)                                                      \
-    TEST_CASE(standard_variant_roundtrip) {                                                        \
+    ZEST_CASE(standard_variant_roundtrip) {                                                        \
         using basic_t = standard_case::Basic;                                                      \
         using primary_variant_t = std::variant<std::monostate, int, double, std::string, basic_t>; \
         using nested_variant_t = std::                                                             \
@@ -953,7 +953,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
     }
 
 #define SERDE_STANDARD_TEST_CASES_VARIANT_FORMAT_SAFE(rt)                                          \
-    TEST_CASE(standard_variant_roundtrip) {                                                        \
+    ZEST_CASE(standard_variant_roundtrip) {                                                        \
         using basic_t = standard_case::Basic;                                                      \
         using primary_variant_t = std::variant<std::monostate, int, double, std::string, basic_t>; \
         using nested_variant_t =                                                                   \
@@ -995,7 +995,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
     SERDE_STANDARD_TEST_CASES_TAGGED_VARIANTS(rt)
 
 #define SERDE_STANDARD_TEST_CASES_COMPLEX(rt)                                                      \
-    TEST_CASE(standard_complex_roundtrip) {                                                        \
+    ZEST_CASE(standard_complex_roundtrip) {                                                        \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, standard_case::make_scalars());                        \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, standard_case::make_nested_containers());              \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, standard_case::make_empty_containers());               \
@@ -1006,22 +1006,22 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             input.nullables.opt_value.reset();                                                     \
             input.nullables.heap_allocated.reset();                                                \
             auto output = (rt)(input);                                                             \
-            ASSERT_TRUE(output.has_value());                                                       \
-            EXPECT_EQ(input, *output);                                                             \
+            ASSERT(output.has_value());                                                            \
+            EXPECT(input == *output);                                                              \
         }                                                                                          \
         {                                                                                          \
             auto input = standard_case::make_ultimate();                                           \
             input.adts.multi_variant = 123;                                                        \
             auto output = (rt)(input);                                                             \
-            ASSERT_TRUE(output.has_value());                                                       \
-            EXPECT_EQ(input, *output);                                                             \
+            ASSERT(output.has_value());                                                            \
+            EXPECT(input == *output);                                                              \
         }                                                                                          \
         {                                                                                          \
             auto input = standard_case::make_ultimate();                                           \
             input.adts.multi_variant = std::string("variant-text");                                \
             auto output = (rt)(input);                                                             \
-            ASSERT_TRUE(output.has_value());                                                       \
-            EXPECT_EQ(input, *output);                                                             \
+            ASSERT(output.has_value());                                                            \
+            EXPECT(input == *output);                                                              \
         }                                                                                          \
     }
 

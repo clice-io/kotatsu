@@ -1,4 +1,4 @@
-// TEST_SUITE(task_group_basics): spawn/join and value passing for task_group
+// ZEST_SUITE(task_group_basics): spawn/join and value passing for task_group
 // — basic spawns, empty join, sleeping children, nesting with when_all in both
 // directions, all-success with an error type, and stress with many tasks.
 // Cancellation lives in cancel.cpp; errors/exceptions in errors.cpp; frame
@@ -10,40 +10,40 @@
 
 namespace kota {
 
-TEST_SUITE(task_group_basics, loop_fixture) {
+ZEST_SUITE(task_group_basics, loop_fixture){
 
-TEST_CASE(basic) {
-    int count = 0;
+    ZEST_CASE(basic){int count = 0;
 
-    auto work = [&](int val) -> task<> {
-        count += val;
-        co_return;
-    };
+auto work = [&](int val) -> task<> {
+    count += val;
+    co_return;
+};
 
+auto driver = [&]() -> task<> {
+    task_group<> group(loop);
+    group.spawn(work(1));
+    group.spawn(work(10));
+    group.spawn(work(100));
+    co_await group.join();
+};
+
+auto t = driver();
+schedule_all(t);
+EXPECT(count == 111);
+
+}  // namespace kota
+
+ZEST_CASE(empty_join) {
     auto driver = [&]() -> task<> {
         task_group<> group(loop);
-        group.spawn(work(1));
-        group.spawn(work(10));
-        group.spawn(work(100));
         co_await group.join();
     };
 
     auto t = driver();
     schedule_all(t);
-    EXPECT_EQ(count, 111);
 }
 
-TEST_CASE(empty_join) {
-    auto driver = [&]() -> task<> {
-        task_group<> group(loop);
-        co_await group.join();
-    };
-
-    auto t = driver();
-    schedule_all(t);
-}
-
-TEST_CASE(multiple_spawns) {
+ZEST_CASE(multiple_spawns) {
     int count = 0;
 
     auto inc1 = [&]() -> task<> {
@@ -65,10 +65,10 @@ TEST_CASE(multiple_spawns) {
 
     auto t = driver();
     schedule_all(t);
-    EXPECT_EQ(count, 11);
+    EXPECT(count == 11);
 }
 
-TEST_CASE(with_sleep) {
+ZEST_CASE(with_sleep) {
     int count = 0;
 
     auto work = [&](int val, int ms) -> task<> {
@@ -86,10 +86,10 @@ TEST_CASE(with_sleep) {
 
     auto t = driver();
     schedule_all(t);
-    EXPECT_EQ(count, 111);
+    EXPECT(count == 111);
 }
 
-TEST_CASE(in_when_all) {
+ZEST_CASE(in_when_all) {
     int group_count = 0;
 
     auto grouped_work = [&]() -> task<int> {
@@ -117,11 +117,11 @@ TEST_CASE(in_when_all) {
 
     auto t = combined();
     schedule_all(t);
-    EXPECT_EQ(group_count, 3);
-    EXPECT_EQ(t.result(), 103);
+    EXPECT(group_count == 3);
+    EXPECT(t.result() == 103);
 }
 
-TEST_CASE(when_all_in_group) {
+ZEST_CASE(when_all_in_group) {
     int count = 0;
 
     auto pair_work = [&]() -> task<> {
@@ -146,10 +146,10 @@ TEST_CASE(when_all_in_group) {
 
     auto t = driver();
     schedule_all(t);
-    EXPECT_EQ(count, 6);
+    EXPECT(count == 6);
 }
 
-TEST_CASE(all_success_with_error_type) {
+ZEST_CASE(all_success_with_error_type) {
     auto ok = [&](int ms, int val) -> task<int, error> {
         co_await sleep(ms, loop);
         co_return val;
@@ -161,16 +161,16 @@ TEST_CASE(all_success_with_error_type) {
         group.spawn(ok(1, 20));
         group.spawn(ok(1, 30));
         auto res = co_await group.join();
-        EXPECT_TRUE(res.has_value());
+        EXPECT(res.has_value());
     };
 
     auto t = driver();
     schedule_all(t);
-    EXPECT_TRUE(t->is_finished());
+    EXPECT(t->is_finished());
 }
 
 // Stress test: 100+ tasks
-TEST_CASE(stress_many_tasks) {
+ZEST_CASE(stress_many_tasks) {
     int count = 0;
 
     auto work = [&]() -> task<> {
@@ -188,10 +188,10 @@ TEST_CASE(stress_many_tasks) {
 
     auto t = driver();
     schedule_all(t);
-    EXPECT_EQ(count, 200);
+    EXPECT(count == 200);
 }
 
-TEST_CASE(stress_many_tasks_with_sleep) {
+ZEST_CASE(stress_many_tasks_with_sleep) {
     int count = 0;
 
     auto work = [&]() -> task<> {
@@ -209,9 +209,9 @@ TEST_CASE(stress_many_tasks_with_sleep) {
 
     auto t = driver();
     schedule_all(t);
-    EXPECT_EQ(count, 100);
+    EXPECT(count == 100);
 }
-
-};  // TEST_SUITE(task_group_basics)
+}
+;  // ZEST_SUITE(task_group_basics)
 
 }  // namespace kota

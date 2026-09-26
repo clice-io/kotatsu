@@ -13,1291 +13,1291 @@ namespace {
 
 #define PATDEF(name, pat_str)                                                                      \
     auto _res_##name = kota::GlobPattern::create(pat_str, 100);                                    \
-    EXPECT_TRUE(_res_##name.has_value());                                                          \
+    EXPECT(_res_##name.has_value());                                                               \
     if(!_res_##name.has_value())                                                                   \
         return;                                                                                    \
     auto name = std::move(*_res_##name);
 
-TEST_SUITE(glob_pattern) {
+ZEST_SUITE(glob_pattern){
 
-TEST_CASE(pattern_sema) {
-    auto pat1 = kota::GlobPattern::create("**/****.{c,cc}", 100);
-    EXPECT_FALSE(pat1.has_value());
+    ZEST_CASE(pattern_sema){auto pat1 = kota::GlobPattern::create("**/****.{c,cc}", 100);
+EXPECT(!pat1.has_value());
 
-    auto pat2 = kota::GlobPattern::create("/foo/bar/baz////aaa.{c,cc}", 100);
-    EXPECT_FALSE(pat2.has_value());
+auto pat2 = kota::GlobPattern::create("/foo/bar/baz////aaa.{c,cc}", 100);
+EXPECT(!pat2.has_value());
 
-    auto pat3 = kota::GlobPattern::create("/foo/bar/baz/**////*.{c,cc}", 100);
-    EXPECT_FALSE(pat3.has_value());
+auto pat3 = kota::GlobPattern::create("/foo/bar/baz/**////*.{c,cc}", 100);
+EXPECT(!pat3.has_value());
 
-    EXPECT_FALSE(kota::GlobPattern::create("foo//*.cc").has_value());
-    EXPECT_TRUE(kota::GlobPattern::create("/usr/bin/*.txt").has_value());
-}
+EXPECT(!kota::GlobPattern::create("foo//*.cc").has_value());
+EXPECT(kota::GlobPattern::create("/usr/bin/*.txt").has_value());
 
-TEST_CASE(max_sub_glob) {
+}  // namespace
+
+ZEST_CASE(max_sub_glob) {
     auto pat1 = kota::GlobPattern::create("{AAA,BBB,AB*}");
-    EXPECT_TRUE(pat1.has_value());
-    EXPECT_TRUE(pat1->match("AAA"));
-    EXPECT_TRUE(pat1->match("BBB"));
-    EXPECT_TRUE(pat1->match("AB"));
-    EXPECT_TRUE(pat1->match("ABCD"));
-    EXPECT_FALSE(pat1->match("CCC"));
-    EXPECT_TRUE(pat1->match("ABCDE"));
+    EXPECT(pat1.has_value());
+    EXPECT(pat1->match("AAA"));
+    EXPECT(pat1->match("BBB"));
+    EXPECT(pat1->match("AB"));
+    EXPECT(pat1->match("ABCD"));
+    EXPECT(!pat1->match("CCC"));
+    EXPECT(pat1->match("ABCDE"));
 }
 
-TEST_CASE(simple) {
+ZEST_CASE(simple) {
     PATDEF(pat1, "node_modules")
-    EXPECT_TRUE(pat1.match("node_modules"));
-    EXPECT_FALSE(pat1.match("node_module"));
-    EXPECT_FALSE(pat1.match("/node_modules"));
-    EXPECT_FALSE(pat1.match("test/node_modules"));
+    EXPECT(pat1.match("node_modules"));
+    EXPECT(!pat1.match("node_module"));
+    EXPECT(!pat1.match("/node_modules"));
+    EXPECT(!pat1.match("test/node_modules"));
 
     PATDEF(pat2, "test.txt")
-    EXPECT_TRUE(pat2.match("test.txt"));
-    EXPECT_FALSE(pat2.match("test?txt"));
-    EXPECT_FALSE(pat2.match("/text.txt"));
-    EXPECT_FALSE(pat2.match("test/test.txt"));
+    EXPECT(pat2.match("test.txt"));
+    EXPECT(!pat2.match("test?txt"));
+    EXPECT(!pat2.match("/text.txt"));
+    EXPECT(!pat2.match("test/test.txt"));
 
     PATDEF(pat3, "test(.txt")
-    EXPECT_TRUE(pat3.match("test(.txt"));
-    EXPECT_FALSE(pat3.match("test?txt"));
+    EXPECT(pat3.match("test(.txt"));
+    EXPECT(!pat3.match("test?txt"));
 
     PATDEF(pat4, "qunit")
-    EXPECT_TRUE(pat4.match("qunit"));
-    EXPECT_FALSE(pat4.match("qunit.css"));
-    EXPECT_FALSE(pat4.match("test/qunit"));
+    EXPECT(pat4.match("qunit"));
+    EXPECT(!pat4.match("qunit.css"));
+    EXPECT(!pat4.match("test/qunit"));
 
     PATDEF(pat5, "/DNXConsoleApp/**/*.cs")
-    EXPECT_TRUE(pat5.match("/DNXConsoleApp/Program.cs"));
-    EXPECT_TRUE(pat5.match("/DNXConsoleApp/foo/Program.cs"));
+    EXPECT(pat5.match("/DNXConsoleApp/Program.cs"));
+    EXPECT(pat5.match("/DNXConsoleApp/foo/Program.cs"));
 }
 
-TEST_CASE(dot_hidden) {
+ZEST_CASE(dot_hidden) {
     PATDEF(pat1, ".*")
-    EXPECT_TRUE(pat1.match(".git"));
-    EXPECT_TRUE(pat1.match(".hidden.txt"));
-    EXPECT_FALSE(pat1.match("git"));
-    EXPECT_FALSE(pat1.match("hidden.txt"));
-    EXPECT_FALSE(pat1.match("path/.git"));
-    EXPECT_FALSE(pat1.match("path/.hidden.txt"));
+    EXPECT(pat1.match(".git"));
+    EXPECT(pat1.match(".hidden.txt"));
+    EXPECT(!pat1.match("git"));
+    EXPECT(!pat1.match("hidden.txt"));
+    EXPECT(!pat1.match("path/.git"));
+    EXPECT(!pat1.match("path/.hidden.txt"));
 
     PATDEF(pat2, "**/.*")
-    EXPECT_TRUE(pat2.match(".git"));
-    EXPECT_TRUE(pat2.match("/.git"));
-    EXPECT_TRUE(pat2.match(".hidden.txt"));
-    EXPECT_FALSE(pat2.match("git"));
-    EXPECT_FALSE(pat2.match("hidden.txt"));
-    EXPECT_TRUE(pat2.match("path/.git"));
-    EXPECT_TRUE(pat2.match("path/.hidden.txt"));
-    EXPECT_TRUE(pat2.match("/path/.git"));
-    EXPECT_TRUE(pat2.match("/path/.hidden.txt"));
-    EXPECT_FALSE(pat2.match("path/git"));
-    EXPECT_FALSE(pat2.match("pat.h/hidden.txt"));
+    EXPECT(pat2.match(".git"));
+    EXPECT(pat2.match("/.git"));
+    EXPECT(pat2.match(".hidden.txt"));
+    EXPECT(!pat2.match("git"));
+    EXPECT(!pat2.match("hidden.txt"));
+    EXPECT(pat2.match("path/.git"));
+    EXPECT(pat2.match("path/.hidden.txt"));
+    EXPECT(pat2.match("/path/.git"));
+    EXPECT(pat2.match("/path/.hidden.txt"));
+    EXPECT(!pat2.match("path/git"));
+    EXPECT(!pat2.match("pat.h/hidden.txt"));
 
     PATDEF(pat3, "._*")
-    EXPECT_TRUE(pat3.match("._git"));
-    EXPECT_TRUE(pat3.match("._hidden.txt"));
-    EXPECT_FALSE(pat3.match("git"));
-    EXPECT_FALSE(pat3.match("hidden.txt"));
-    EXPECT_FALSE(pat3.match("path/._git"));
-    EXPECT_FALSE(pat3.match("path/._hidden.txt"));
+    EXPECT(pat3.match("._git"));
+    EXPECT(pat3.match("._hidden.txt"));
+    EXPECT(!pat3.match("git"));
+    EXPECT(!pat3.match("hidden.txt"));
+    EXPECT(!pat3.match("path/._git"));
+    EXPECT(!pat3.match("path/._hidden.txt"));
 
     PATDEF(pat4, "**/._*")
-    EXPECT_TRUE(pat4.match("._git"));
-    EXPECT_TRUE(pat4.match("._hidden.txt"));
-    EXPECT_FALSE(pat4.match("git"));
-    EXPECT_FALSE(pat4.match("hidden._txt"));
-    EXPECT_TRUE(pat4.match("path/._git"));
-    EXPECT_TRUE(pat4.match("path/._hidden.txt"));
-    EXPECT_TRUE(pat4.match("/path/._git"));
-    EXPECT_TRUE(pat4.match("/path/._hidden.txt"));
-    EXPECT_FALSE(pat4.match("path/git"));
-    EXPECT_FALSE(pat4.match("pat.h/hidden._txt"));
+    EXPECT(pat4.match("._git"));
+    EXPECT(pat4.match("._hidden.txt"));
+    EXPECT(!pat4.match("git"));
+    EXPECT(!pat4.match("hidden._txt"));
+    EXPECT(pat4.match("path/._git"));
+    EXPECT(pat4.match("path/._hidden.txt"));
+    EXPECT(pat4.match("/path/._git"));
+    EXPECT(pat4.match("/path/._hidden.txt"));
+    EXPECT(!pat4.match("path/git"));
+    EXPECT(!pat4.match("pat.h/hidden._txt"));
 }
 
-TEST_CASE(escape_character) {
+ZEST_CASE(escape_character) {
     PATDEF(pat1, R"(\*star)")
-    EXPECT_TRUE(pat1.match("*star"));
+    EXPECT(pat1.match("*star"));
 
     PATDEF(pat2, R"(\{\*\})")
-    EXPECT_TRUE(pat2.match("{*}"));
+    EXPECT(pat2.match("{*}"));
 }
 
-TEST_CASE(bracket_expr) {
+ZEST_CASE(bracket_expr) {
     PATDEF(pat1, R"([a-zA-Z\]])")
-    EXPECT_TRUE(pat1.match(R"(])"));
-    EXPECT_FALSE(pat1.match(R"([)"));
-    EXPECT_TRUE(pat1.match(R"(s)"));
-    EXPECT_TRUE(pat1.match(R"(S)"));
-    EXPECT_FALSE(pat1.match(R"(0)"));
+    EXPECT(pat1.match(R"(])"));
+    EXPECT(!pat1.match(R"([)"));
+    EXPECT(pat1.match(R"(s)"));
+    EXPECT(pat1.match(R"(S)"));
+    EXPECT(!pat1.match(R"(0)"));
 
     PATDEF(pat2, R"([\\^a-zA-Z""\\])")
-    EXPECT_TRUE(pat2.match(R"(")"));
-    EXPECT_TRUE(pat2.match(R"(^)"));
-    EXPECT_TRUE(pat2.match(R"(\)"));
-    EXPECT_TRUE(pat2.match(R"(")"));
-    EXPECT_TRUE(pat2.match(R"(x)"));
-    EXPECT_TRUE(pat2.match(R"(X)"));
-    EXPECT_FALSE(pat2.match(R"(0)"));
+    EXPECT(pat2.match(R"(")"));
+    EXPECT(pat2.match(R"(^)"));
+    EXPECT(pat2.match(R"(\)"));
+    EXPECT(pat2.match(R"(")"));
+    EXPECT(pat2.match(R"(x)"));
+    EXPECT(pat2.match(R"(X)"));
+    EXPECT(!pat2.match(R"(0)"));
 
     PATDEF(pat3, R"([!0-9a-fA-F\-+\*])")
-    EXPECT_FALSE(pat3.match("1"));
-    EXPECT_FALSE(pat3.match("*"));
-    EXPECT_TRUE(pat3.match("s"));
-    EXPECT_TRUE(pat3.match("S"));
-    EXPECT_TRUE(pat3.match("H"));
-    EXPECT_TRUE(pat3.match("]"));
+    EXPECT(!pat3.match("1"));
+    EXPECT(!pat3.match("*"));
+    EXPECT(pat3.match("s"));
+    EXPECT(pat3.match("S"));
+    EXPECT(pat3.match("H"));
+    EXPECT(pat3.match("]"));
 
     PATDEF(pat4, R"([^\^0-9a-fA-F\-+\*])")
-    EXPECT_FALSE(pat4.match("1"));
-    EXPECT_FALSE(pat4.match("*"));
-    EXPECT_FALSE(pat4.match("^"));
-    EXPECT_TRUE(pat4.match("s"));
-    EXPECT_TRUE(pat4.match("S"));
-    EXPECT_TRUE(pat4.match("H"));
-    EXPECT_TRUE(pat4.match("]"));
+    EXPECT(!pat4.match("1"));
+    EXPECT(!pat4.match("*"));
+    EXPECT(!pat4.match("^"));
+    EXPECT(pat4.match("s"));
+    EXPECT(pat4.match("S"));
+    EXPECT(pat4.match("H"));
+    EXPECT(pat4.match("]"));
 
     PATDEF(pat5, R"([\*-\^])")
-    EXPECT_TRUE(pat5.match("*"));
-    EXPECT_FALSE(pat5.match("a"));
-    EXPECT_FALSE(pat5.match("z"));
-    EXPECT_TRUE(pat5.match("A"));
-    EXPECT_TRUE(pat5.match("Z"));
-    EXPECT_TRUE(pat5.match("\\"));
-    EXPECT_TRUE(pat5.match("^"));
-    EXPECT_TRUE(pat5.match("-"));
+    EXPECT(pat5.match("*"));
+    EXPECT(!pat5.match("a"));
+    EXPECT(!pat5.match("z"));
+    EXPECT(pat5.match("A"));
+    EXPECT(pat5.match("Z"));
+    EXPECT(pat5.match("\\"));
+    EXPECT(pat5.match("^"));
+    EXPECT(pat5.match("-"));
 
     PATDEF(pat6, "foo.[^0-9]")
-    EXPECT_FALSE(pat6.match("foo.5"));
-    EXPECT_FALSE(pat6.match("foo.8"));
-    EXPECT_FALSE(pat6.match("bar.5"));
-    EXPECT_TRUE(pat6.match("foo.f"));
+    EXPECT(!pat6.match("foo.5"));
+    EXPECT(!pat6.match("foo.8"));
+    EXPECT(!pat6.match("bar.5"));
+    EXPECT(pat6.match("foo.f"));
 
     PATDEF(pat7, "foo.[!0-9]")
-    EXPECT_FALSE(pat7.match("foo.5"));
-    EXPECT_FALSE(pat7.match("foo.8"));
-    EXPECT_FALSE(pat7.match("bar.5"));
-    EXPECT_TRUE(pat7.match("foo.f"));
+    EXPECT(!pat7.match("foo.5"));
+    EXPECT(!pat7.match("foo.8"));
+    EXPECT(!pat7.match("bar.5"));
+    EXPECT(pat7.match("foo.f"));
 
     PATDEF(pat8, "foo.[0!^*?]")
-    EXPECT_FALSE(pat8.match("foo.5"));
-    EXPECT_FALSE(pat8.match("foo.8"));
-    EXPECT_TRUE(pat8.match("foo.0"));
-    EXPECT_TRUE(pat8.match("foo.!"));
-    EXPECT_TRUE(pat8.match("foo.^"));
-    EXPECT_TRUE(pat8.match("foo.*"));
-    EXPECT_TRUE(pat8.match("foo.?"));
+    EXPECT(!pat8.match("foo.5"));
+    EXPECT(!pat8.match("foo.8"));
+    EXPECT(pat8.match("foo.0"));
+    EXPECT(pat8.match("foo.!"));
+    EXPECT(pat8.match("foo.^"));
+    EXPECT(pat8.match("foo.*"));
+    EXPECT(pat8.match("foo.?"));
 
     PATDEF(pat9, "foo[/]bar")
-    EXPECT_FALSE(pat9.match("foo/bar"));
+    EXPECT(!pat9.match("foo/bar"));
 
     PATDEF(pat10, "foo.[[]")
-    EXPECT_TRUE(pat10.match("foo.["));
+    EXPECT(pat10.match("foo.["));
 
     PATDEF(pat11, "foo.[]]")
-    EXPECT_TRUE(pat11.match("foo.]"));
+    EXPECT(pat11.match("foo.]"));
 
     PATDEF(pat12, "foo.[][!]")
-    EXPECT_TRUE(pat12.match("foo.]"));
-    EXPECT_TRUE(pat12.match("foo.["));
-    EXPECT_TRUE(pat12.match("foo.!"));
+    EXPECT(pat12.match("foo.]"));
+    EXPECT(pat12.match("foo.["));
+    EXPECT(pat12.match("foo.!"));
 
     PATDEF(pat13, "foo.[]-]")
-    EXPECT_TRUE(pat13.match("foo.]"));
-    EXPECT_TRUE(pat13.match("foo.-"));
+    EXPECT(pat13.match("foo.]"));
+    EXPECT(pat13.match("foo.-"));
 
     PATDEF(pat14, "foo.[0-9]")
-    EXPECT_TRUE(pat14.match("foo.5"));
-    EXPECT_TRUE(pat14.match("foo.8"));
-    EXPECT_FALSE(pat14.match("bar.5"));
-    EXPECT_FALSE(pat14.match("foo.f"));
+    EXPECT(pat14.match("foo.5"));
+    EXPECT(pat14.match("foo.8"));
+    EXPECT(!pat14.match("bar.5"));
+    EXPECT(!pat14.match("foo.f"));
 
     // A dash right after a completed range is a literal, not a new range
     // start chained off the previous range's end.
     PATDEF(pat15, "[a-c-e]")
-    EXPECT_TRUE(pat15.match("b"));
-    EXPECT_TRUE(pat15.match("-"));
-    EXPECT_TRUE(pat15.match("e"));
-    EXPECT_FALSE(pat15.match("d"));
+    EXPECT(pat15.match("b"));
+    EXPECT(pat15.match("-"));
+    EXPECT(pat15.match("e"));
+    EXPECT(!pat15.match("d"));
 }
 
-TEST_CASE(brace_expr) {
+ZEST_CASE(brace_expr) {
     PATDEF(pat1, "*foo[0-9a-z].{c,cpp,cppm,?pp}")
-    EXPECT_FALSE(pat1.match("foo1.cc"));
-    EXPECT_TRUE(pat1.match("foo2.cpp"));
-    EXPECT_TRUE(pat1.match("foo3.cppm"));
-    EXPECT_TRUE(pat1.match("foot.cppm"));
-    EXPECT_TRUE(pat1.match("foot.hpp"));
-    EXPECT_TRUE(pat1.match("foot.app"));
-    EXPECT_FALSE(pat1.match("fooD.cppm"));
-    EXPECT_FALSE(pat1.match("BarfooD.cppm"));
-    EXPECT_FALSE(pat1.match("foofooD.cppm"));
+    EXPECT(!pat1.match("foo1.cc"));
+    EXPECT(pat1.match("foo2.cpp"));
+    EXPECT(pat1.match("foo3.cppm"));
+    EXPECT(pat1.match("foot.cppm"));
+    EXPECT(pat1.match("foot.hpp"));
+    EXPECT(pat1.match("foot.app"));
+    EXPECT(!pat1.match("fooD.cppm"));
+    EXPECT(!pat1.match("BarfooD.cppm"));
+    EXPECT(!pat1.match("foofooD.cppm"));
 
     PATDEF(pat2, "proj/{build*,include,src}/*.{cc,cpp,h,hpp}")
-    EXPECT_TRUE(pat2.match("proj/include/foo.cc"));
-    EXPECT_TRUE(pat2.match("proj/include/bar.cpp"));
-    EXPECT_FALSE(pat2.match("proj/include/xxx/yyy/zzz/foo.cc"));
-    EXPECT_TRUE(pat2.match("proj/build-yyy/foo.h"));
-    EXPECT_TRUE(pat2.match("proj/build-xxx/foo.cpp"));
-    EXPECT_TRUE(pat2.match("proj/build/foo.cpp"));
-    EXPECT_FALSE(pat2.match("proj/build-xxx/xxx/yyy/zzz/foo.cpp"));
+    EXPECT(pat2.match("proj/include/foo.cc"));
+    EXPECT(pat2.match("proj/include/bar.cpp"));
+    EXPECT(!pat2.match("proj/include/xxx/yyy/zzz/foo.cc"));
+    EXPECT(pat2.match("proj/build-yyy/foo.h"));
+    EXPECT(pat2.match("proj/build-xxx/foo.cpp"));
+    EXPECT(pat2.match("proj/build/foo.cpp"));
+    EXPECT(!pat2.match("proj/build-xxx/xxx/yyy/zzz/foo.cpp"));
 
     PATDEF(pat3, "*.{html,js}")
-    EXPECT_TRUE(pat3.match("foo.js"));
-    EXPECT_TRUE(pat3.match("foo.html"));
-    EXPECT_FALSE(pat3.match("folder/foo.js"));
-    EXPECT_FALSE(pat3.match("/node_modules/foo.js"));
-    EXPECT_FALSE(pat3.match("foo.jss"));
-    EXPECT_FALSE(pat3.match("some.js/test"));
+    EXPECT(pat3.match("foo.js"));
+    EXPECT(pat3.match("foo.html"));
+    EXPECT(!pat3.match("folder/foo.js"));
+    EXPECT(!pat3.match("/node_modules/foo.js"));
+    EXPECT(!pat3.match("foo.jss"));
+    EXPECT(!pat3.match("some.js/test"));
 
     PATDEF(pat4, "*.{html}")
-    EXPECT_TRUE(pat4.match("foo.html"));
-    EXPECT_FALSE(pat4.match("foo.js"));
-    EXPECT_FALSE(pat4.match("folder/foo.js"));
-    EXPECT_FALSE(pat4.match("/node_modules/foo.js"));
-    EXPECT_FALSE(pat4.match("foo.jss"));
-    EXPECT_FALSE(pat4.match("some.js/test"));
+    EXPECT(pat4.match("foo.html"));
+    EXPECT(!pat4.match("foo.js"));
+    EXPECT(!pat4.match("folder/foo.js"));
+    EXPECT(!pat4.match("/node_modules/foo.js"));
+    EXPECT(!pat4.match("foo.jss"));
+    EXPECT(!pat4.match("some.js/test"));
 
     PATDEF(pat5, "{node_modules,testing}")
-    EXPECT_TRUE(pat5.match("node_modules"));
-    EXPECT_TRUE(pat5.match("testing"));
-    EXPECT_FALSE(pat5.match("node_module"));
-    EXPECT_FALSE(pat5.match("dtesting"));
+    EXPECT(pat5.match("node_modules"));
+    EXPECT(pat5.match("testing"));
+    EXPECT(!pat5.match("node_module"));
+    EXPECT(!pat5.match("dtesting"));
 
     PATDEF(pat6, "**/{foo,bar}")
-    EXPECT_TRUE(pat6.match("foo"));
-    EXPECT_TRUE(pat6.match("bar"));
-    EXPECT_TRUE(pat6.match("test/foo"));
-    EXPECT_TRUE(pat6.match("test/bar"));
-    EXPECT_TRUE(pat6.match("other/more/foo"));
-    EXPECT_TRUE(pat6.match("other/more/bar"));
-    EXPECT_TRUE(pat6.match("/foo"));
-    EXPECT_TRUE(pat6.match("/bar"));
-    EXPECT_TRUE(pat6.match("/test/foo"));
-    EXPECT_TRUE(pat6.match("/test/bar"));
-    EXPECT_TRUE(pat6.match("/other/more/foo"));
-    EXPECT_TRUE(pat6.match("/other/more/bar"));
+    EXPECT(pat6.match("foo"));
+    EXPECT(pat6.match("bar"));
+    EXPECT(pat6.match("test/foo"));
+    EXPECT(pat6.match("test/bar"));
+    EXPECT(pat6.match("other/more/foo"));
+    EXPECT(pat6.match("other/more/bar"));
+    EXPECT(pat6.match("/foo"));
+    EXPECT(pat6.match("/bar"));
+    EXPECT(pat6.match("/test/foo"));
+    EXPECT(pat6.match("/test/bar"));
+    EXPECT(pat6.match("/other/more/foo"));
+    EXPECT(pat6.match("/other/more/bar"));
 
     PATDEF(pat7, "{foo,bar}/**")
-    EXPECT_TRUE(pat7.match("foo"));
-    EXPECT_TRUE(pat7.match("bar"));
-    EXPECT_TRUE(pat7.match("bar/"));
-    EXPECT_TRUE(pat7.match("foo/test"));
-    EXPECT_TRUE(pat7.match("bar/test"));
-    EXPECT_TRUE(pat7.match("bar/test/"));
-    EXPECT_TRUE(pat7.match("foo/other/more"));
-    EXPECT_TRUE(pat7.match("bar/other/more"));
-    EXPECT_TRUE(pat7.match("bar/other/more/"));
+    EXPECT(pat7.match("foo"));
+    EXPECT(pat7.match("bar"));
+    EXPECT(pat7.match("bar/"));
+    EXPECT(pat7.match("foo/test"));
+    EXPECT(pat7.match("bar/test"));
+    EXPECT(pat7.match("bar/test/"));
+    EXPECT(pat7.match("foo/other/more"));
+    EXPECT(pat7.match("bar/other/more"));
+    EXPECT(pat7.match("bar/other/more/"));
 
     PATDEF(pat8, "{**/*.d.ts,**/*.js}")
-    EXPECT_TRUE(pat8.match("foo.js"));
-    EXPECT_TRUE(pat8.match("testing/foo.js"));
-    EXPECT_TRUE(pat8.match("/testing/foo.js"));
-    EXPECT_TRUE(pat8.match("foo.d.ts"));
-    EXPECT_TRUE(pat8.match("testing/foo.d.ts"));
-    EXPECT_TRUE(pat8.match("/testing/foo.d.ts"));
-    EXPECT_FALSE(pat8.match("foo.d"));
-    EXPECT_FALSE(pat8.match("testing/foo.d"));
-    EXPECT_FALSE(pat8.match("/testing/foo.d"));
+    EXPECT(pat8.match("foo.js"));
+    EXPECT(pat8.match("testing/foo.js"));
+    EXPECT(pat8.match("/testing/foo.js"));
+    EXPECT(pat8.match("foo.d.ts"));
+    EXPECT(pat8.match("testing/foo.d.ts"));
+    EXPECT(pat8.match("/testing/foo.d.ts"));
+    EXPECT(!pat8.match("foo.d"));
+    EXPECT(!pat8.match("testing/foo.d"));
+    EXPECT(!pat8.match("/testing/foo.d"));
 
     PATDEF(pat9, "{**/*.d.ts,**/*.js,path/simple.jgs}")
-    EXPECT_TRUE(pat9.match("foo.js"));
-    EXPECT_TRUE(pat9.match("testing/foo.js"));
-    EXPECT_TRUE(pat9.match("/testing/foo.js"));
-    EXPECT_TRUE(pat9.match("path/simple.jgs"));
-    EXPECT_FALSE(pat9.match("/path/simple.jgs"));
+    EXPECT(pat9.match("foo.js"));
+    EXPECT(pat9.match("testing/foo.js"));
+    EXPECT(pat9.match("/testing/foo.js"));
+    EXPECT(pat9.match("path/simple.jgs"));
+    EXPECT(!pat9.match("/path/simple.jgs"));
 
     PATDEF(pat10, "{**/*.d.ts,**/*.js,foo.[0-9]}")
-    EXPECT_TRUE(pat10.match("foo.5"));
-    EXPECT_TRUE(pat10.match("foo.8"));
-    EXPECT_FALSE(pat10.match("bar.5"));
-    EXPECT_FALSE(pat10.match("foo.f"));
-    EXPECT_TRUE(pat10.match("foo.js"));
+    EXPECT(pat10.match("foo.5"));
+    EXPECT(pat10.match("foo.8"));
+    EXPECT(!pat10.match("bar.5"));
+    EXPECT(!pat10.match("foo.f"));
+    EXPECT(pat10.match("foo.js"));
 
     PATDEF(pat11, "prefix/{**/*.d.ts,**/*.js,foo.[0-9]}")
-    EXPECT_TRUE(pat11.match("prefix/foo.5"));
-    EXPECT_TRUE(pat11.match("prefix/foo.8"));
-    EXPECT_FALSE(pat11.match("prefix/bar.5"));
-    EXPECT_FALSE(pat11.match("prefix/foo.f"));
-    EXPECT_TRUE(pat11.match("prefix/foo.js"));
+    EXPECT(pat11.match("prefix/foo.5"));
+    EXPECT(pat11.match("prefix/foo.8"));
+    EXPECT(!pat11.match("prefix/bar.5"));
+    EXPECT(!pat11.match("prefix/foo.f"));
+    EXPECT(pat11.match("prefix/foo.js"));
 
     // A bare single-star alternative remains segment-bounded.
     PATDEF(pat12, "{*,foo}")
-    EXPECT_TRUE(pat12.match("foo"));
-    EXPECT_TRUE(pat12.match("bar"));
-    EXPECT_FALSE(pat12.match("a/b"));
-    EXPECT_FALSE(pat12.match("/foo"));
+    EXPECT(pat12.match("foo"));
+    EXPECT(pat12.match("bar"));
+    EXPECT(!pat12.match("a/b"));
+    EXPECT(!pat12.match("/foo"));
 
     PATDEF(pat13, "{foo,**}")
-    EXPECT_TRUE(pat13.match("a/b/c"));
+    EXPECT(pat13.match("a/b/c"));
 
     // With a prefix the star arm is `a*`: segment-bounded as usual.
     PATDEF(pat14, "a{*,foo}")
-    EXPECT_TRUE(pat14.match("ab"));
-    EXPECT_TRUE(pat14.match("afoo"));
-    EXPECT_FALSE(pat14.match("a/b"));
+    EXPECT(pat14.match("ab"));
+    EXPECT(pat14.match("afoo"));
+    EXPECT(!pat14.match("a/b"));
 }
 
-TEST_CASE(globstar_prefix) {
+ZEST_CASE(globstar_prefix) {
     // **/* — match any path
     PATDEF(pat1, "**/*")
-    EXPECT_TRUE(pat1.match("foo"));
-    EXPECT_TRUE(pat1.match("foo/bar"));
-    EXPECT_TRUE(pat1.match("foo/bar/baz"));
+    EXPECT(pat1.match("foo"));
+    EXPECT(pat1.match("foo/bar"));
+    EXPECT(pat1.match("foo/bar/baz"));
 
     // **/[0-9]* — last segment starts with digit
     PATDEF(pat2, "**/[0-9]*")
-    EXPECT_TRUE(pat2.match("114514foo"));
-    EXPECT_FALSE(pat2.match("foo/bar/baz/xxx/yyy/zzz"));
-    EXPECT_FALSE(pat2.match("foo/bar/baz/xxx/yyy/zzz114514"));
-    EXPECT_TRUE(pat2.match("foo/bar/baz/xxx/yyy/114514"));
-    EXPECT_TRUE(pat2.match("foo/bar/baz/xxx/yyy/114514zzz"));
+    EXPECT(pat2.match("114514foo"));
+    EXPECT(!pat2.match("foo/bar/baz/xxx/yyy/zzz"));
+    EXPECT(!pat2.match("foo/bar/baz/xxx/yyy/zzz114514"));
+    EXPECT(pat2.match("foo/bar/baz/xxx/yyy/114514"));
+    EXPECT(pat2.match("foo/bar/baz/xxx/yyy/114514zzz"));
 
     // **/*[0-9] — last segment ends with digit
     PATDEF(pat3, "**/*[0-9]")
-    EXPECT_TRUE(pat3.match("foo5"));
-    EXPECT_FALSE(pat3.match("foo/bar/baz/xxx/yyy/zzz"));
-    EXPECT_TRUE(pat3.match("foo/bar/baz/xxx/yyy/zzz114514"));
+    EXPECT(pat3.match("foo5"));
+    EXPECT(!pat3.match("foo/bar/baz/xxx/yyy/zzz"));
+    EXPECT(pat3.match("foo/bar/baz/xxx/yyy/zzz114514"));
 
     // **/include/test/*.{cc,...} — globstar prefix with multi-segment literal
     PATDEF(pat4, "**/include/test/*.{cc,hh,c,h,cpp,hpp}")
-    EXPECT_TRUE(pat4.match("include/test/aaa.cc"));
-    EXPECT_TRUE(pat4.match("/include/test/aaa.cc"));
-    EXPECT_TRUE(pat4.match("xxx/yyy/include/test/aaa.cc"));
-    EXPECT_TRUE(pat4.match("include/foo/bar/baz/include/test/bbb.hh"));
-    EXPECT_TRUE(pat4.match("include/include/include/include/include/test/bbb.hpp"));
+    EXPECT(pat4.match("include/test/aaa.cc"));
+    EXPECT(pat4.match("/include/test/aaa.cc"));
+    EXPECT(pat4.match("xxx/yyy/include/test/aaa.cc"));
+    EXPECT(pat4.match("include/foo/bar/baz/include/test/bbb.hh"));
+    EXPECT(pat4.match("include/include/include/include/include/test/bbb.hpp"));
 
     // Embedded ** is a single-segment wildcard, as in VS Code and Git.
     PATDEF(pat5, "**include/test/*.{cc,hh,c,h,cpp,hpp}")
-    EXPECT_TRUE(pat5.match("include/test/fff.hpp"));
-    EXPECT_TRUE(pat5.match("xxx-yyy-include/test/fff.hpp"));
-    EXPECT_TRUE(pat5.match("xxx-yyy-include/test/.hpp"));
-    EXPECT_FALSE(pat5.match("/include/test/aaa.cc"));
-    EXPECT_FALSE(pat5.match("include/foo/bar/baz/include/test/bbb.hh"));
+    EXPECT(pat5.match("include/test/fff.hpp"));
+    EXPECT(pat5.match("xxx-yyy-include/test/fff.hpp"));
+    EXPECT(pat5.match("xxx-yyy-include/test/.hpp"));
+    EXPECT(!pat5.match("/include/test/aaa.cc"));
+    EXPECT(!pat5.match("include/foo/bar/baz/include/test/bbb.hh"));
 
     // **/*foo.{c,cpp} — globstar prefix with wildcard suffix
     PATDEF(pat6, "**/*foo.{c,cpp}")
-    EXPECT_TRUE(pat6.match("bar/foo.cpp"));
-    EXPECT_TRUE(pat6.match("bar/barfoo.cpp"));
-    EXPECT_TRUE(pat6.match("/foofoo.cpp"));
-    EXPECT_TRUE(pat6.match("foo/foo/foo/foo/foofoo.cpp"));
-    EXPECT_TRUE(pat6.match("foofoo.cpp"));
-    EXPECT_TRUE(pat6.match("barfoo.cpp"));
-    EXPECT_TRUE(pat6.match("foo.cpp"));
+    EXPECT(pat6.match("bar/foo.cpp"));
+    EXPECT(pat6.match("bar/barfoo.cpp"));
+    EXPECT(pat6.match("/foofoo.cpp"));
+    EXPECT(pat6.match("foo/foo/foo/foo/foofoo.cpp"));
+    EXPECT(pat6.match("foofoo.cpp"));
+    EXPECT(pat6.match("barfoo.cpp"));
+    EXPECT(pat6.match("foo.cpp"));
 
     // ** — matches everything
     PATDEF(pat7, "**")
-    EXPECT_TRUE(pat7.match("foo"));
-    EXPECT_TRUE(pat7.match("foo/bar/baz"));
-    EXPECT_TRUE(pat7.match("/"));
-    EXPECT_TRUE(pat7.match("foo.js"));
-    EXPECT_TRUE(pat7.match("folder/foo.js"));
-    EXPECT_TRUE(pat7.match("folder/foo/"));
-    EXPECT_TRUE(pat7.match("/node_modules/foo.js"));
-    EXPECT_TRUE(pat7.match("foo.jss"));
-    EXPECT_TRUE(pat7.match("some.js/test"));
+    EXPECT(pat7.match("foo"));
+    EXPECT(pat7.match("foo/bar/baz"));
+    EXPECT(pat7.match("/"));
+    EXPECT(pat7.match("foo.js"));
+    EXPECT(pat7.match("folder/foo.js"));
+    EXPECT(pat7.match("folder/foo/"));
+    EXPECT(pat7.match("/node_modules/foo.js"));
+    EXPECT(pat7.match("foo.jss"));
+    EXPECT(pat7.match("some.js/test"));
 
     // **/x — match literal at any depth
     PATDEF(pat8, "**/x")
-    EXPECT_TRUE(pat8.match("x"));
-    EXPECT_TRUE(pat8.match("/x"));
-    EXPECT_TRUE(pat8.match("/x/x/x/x/x"));
+    EXPECT(pat8.match("x"));
+    EXPECT(pat8.match("/x"));
+    EXPECT(pat8.match("/x/x/x/x/x"));
 
     // **/*.{cc,cpp} — extension match at any depth
     PATDEF(pat9, "**/*.{cc,cpp}")
-    EXPECT_TRUE(pat9.match("foo/bar/baz.cc"));
-    EXPECT_TRUE(pat9.match("foo/foo/foo.cpp"));
-    EXPECT_TRUE(pat9.match("foo/bar/.cc"));
+    EXPECT(pat9.match("foo/bar/baz.cc"));
+    EXPECT(pat9.match("foo/foo/foo.cpp"));
+    EXPECT(pat9.match("foo/bar/.cc"));
 
     // **/*?.{cc,cpp} — wildcard then question before extension
     PATDEF(pat10, "**/*?.{cc,cpp}")
-    EXPECT_TRUE(pat10.match("foo/bar/baz/xxx/yyy/zzz/aaa.cc"));
-    EXPECT_TRUE(pat10.match("foo/bar/baz/xxx/yyy/zzz/a.cc"));
-    EXPECT_FALSE(pat10.match("foo/bar/baz/xxx/yyy/zzz/.cc"));
+    EXPECT(pat10.match("foo/bar/baz/xxx/yyy/zzz/aaa.cc"));
+    EXPECT(pat10.match("foo/bar/baz/xxx/yyy/zzz/a.cc"));
+    EXPECT(!pat10.match("foo/bar/baz/xxx/yyy/zzz/.cc"));
 
     // **/?*.{cc,cpp} — question then wildcard before extension
     PATDEF(pat11, "**/?*.{cc,cpp}")
-    EXPECT_TRUE(pat11.match("foo/bar/baz/xxx/yyy/zzz/aaa.cc"));
-    EXPECT_TRUE(pat11.match("foo/bar/baz/xxx/yyy/zzz/a.cc"));
-    EXPECT_FALSE(pat11.match("foo/bar/baz/xxx/yyy/zzz/.cc"));
+    EXPECT(pat11.match("foo/bar/baz/xxx/yyy/zzz/aaa.cc"));
+    EXPECT(pat11.match("foo/bar/baz/xxx/yyy/zzz/a.cc"));
+    EXPECT(!pat11.match("foo/bar/baz/xxx/yyy/zzz/.cc"));
 
     // **/*.js — JS file at any depth
     PATDEF(pat12, "**/*.js")
-    EXPECT_TRUE(pat12.match("foo.js"));
-    EXPECT_TRUE(pat12.match("/foo.js"));
-    EXPECT_TRUE(pat12.match("folder/foo.js"));
-    EXPECT_TRUE(pat12.match("/node_modules/foo.js"));
-    EXPECT_FALSE(pat12.match("foo.jss"));
-    EXPECT_FALSE(pat12.match("some.js/test"));
-    EXPECT_FALSE(pat12.match("/some.js/test"));
+    EXPECT(pat12.match("foo.js"));
+    EXPECT(pat12.match("/foo.js"));
+    EXPECT(pat12.match("folder/foo.js"));
+    EXPECT(pat12.match("/node_modules/foo.js"));
+    EXPECT(!pat12.match("foo.jss"));
+    EXPECT(!pat12.match("some.js/test"));
+    EXPECT(!pat12.match("/some.js/test"));
 
     // **/project.json — exact filename at any depth
     PATDEF(pat13, "**/project.json")
-    EXPECT_TRUE(pat13.match("project.json"));
-    EXPECT_TRUE(pat13.match("/project.json"));
-    EXPECT_TRUE(pat13.match("some/folder/project.json"));
-    EXPECT_TRUE(pat13.match("/some/folder/project.json"));
-    EXPECT_FALSE(pat13.match("some/folder/file_project.json"));
-    EXPECT_FALSE(pat13.match("some/folder/fileproject.json"));
-    EXPECT_FALSE(pat13.match("some/rrproject.json"));
+    EXPECT(pat13.match("project.json"));
+    EXPECT(pat13.match("/project.json"));
+    EXPECT(pat13.match("some/folder/project.json"));
+    EXPECT(pat13.match("/some/folder/project.json"));
+    EXPECT(!pat13.match("some/folder/file_project.json"));
+    EXPECT(!pat13.match("some/folder/fileproject.json"));
+    EXPECT(!pat13.match("some/rrproject.json"));
 }
 
-TEST_CASE(globstar_suffix) {
+ZEST_CASE(globstar_suffix) {
     // x/** — everything under x/
     PATDEF(pat1, "x/**")
-    EXPECT_TRUE(pat1.match("x/"));
-    EXPECT_TRUE(pat1.match("x/foo/bar/baz"));
-    EXPECT_TRUE(pat1.match("x"));
+    EXPECT(pat1.match("x/"));
+    EXPECT(pat1.match("x/foo/bar/baz"));
+    EXPECT(pat1.match("x"));
 
     // test/** — everything under test/
     PATDEF(pat2, "test/**")
-    EXPECT_TRUE(pat2.match("test"));
-    EXPECT_TRUE(pat2.match("test/foo"));
-    EXPECT_TRUE(pat2.match("test/foo/"));
-    EXPECT_TRUE(pat2.match("test/foo.js"));
-    EXPECT_TRUE(pat2.match("test/other/foo.js"));
-    EXPECT_FALSE(pat2.match("est/other/foo.js"));
+    EXPECT(pat2.match("test"));
+    EXPECT(pat2.match("test/foo"));
+    EXPECT(pat2.match("test/foo/"));
+    EXPECT(pat2.match("test/foo.js"));
+    EXPECT(pat2.match("test/other/foo.js"));
+    EXPECT(!pat2.match("est/other/foo.js"));
 }
 
-TEST_CASE(globstar_middle) {
+ZEST_CASE(globstar_middle) {
     // test/**/*.js — JS files under test/ at any depth
     PATDEF(pat1, "test/**/*.js")
-    EXPECT_TRUE(pat1.match("test/foo.js"));
-    EXPECT_TRUE(pat1.match("test/other/foo.js"));
-    EXPECT_TRUE(pat1.match("test/other/more/foo.js"));
-    EXPECT_FALSE(pat1.match("test/foo.ts"));
-    EXPECT_FALSE(pat1.match("test/other/foo.ts"));
-    EXPECT_FALSE(pat1.match("test/other/more/foo.ts"));
+    EXPECT(pat1.match("test/foo.js"));
+    EXPECT(pat1.match("test/other/foo.js"));
+    EXPECT(pat1.match("test/other/more/foo.js"));
+    EXPECT(!pat1.match("test/foo.ts"));
+    EXPECT(!pat1.match("test/other/foo.ts"));
+    EXPECT(!pat1.match("test/other/more/foo.ts"));
 
     // some/**/*.js — JS files under some/ at any depth
     PATDEF(pat2, "some/**/*.js")
-    EXPECT_TRUE(pat2.match("some/foo.js"));
-    EXPECT_TRUE(pat2.match("some/folder/foo.js"));
-    EXPECT_FALSE(pat2.match("something/foo.js"));
-    EXPECT_FALSE(pat2.match("something/folder/foo.js"));
+    EXPECT(pat2.match("some/foo.js"));
+    EXPECT(pat2.match("some/folder/foo.js"));
+    EXPECT(!pat2.match("something/foo.js"));
+    EXPECT(!pat2.match("something/folder/foo.js"));
 
     // some/**/* — any file under some/ at any depth
     PATDEF(pat3, "some/**/*")
-    EXPECT_TRUE(pat3.match("some/foo.js"));
-    EXPECT_TRUE(pat3.match("some/folder/foo.js"));
-    EXPECT_FALSE(pat3.match("something/foo.js"));
-    EXPECT_FALSE(pat3.match("something/folder/foo.js"));
+    EXPECT(pat3.match("some/foo.js"));
+    EXPECT(pat3.match("some/folder/foo.js"));
+    EXPECT(!pat3.match("something/foo.js"));
+    EXPECT(!pat3.match("something/folder/foo.js"));
 }
 
-TEST_CASE(globstar_complex) {
+ZEST_CASE(globstar_complex) {
     // **/**/*.js — double globstar
     PATDEF(pat1, "**/**/*.js")
-    EXPECT_TRUE(pat1.match("foo.js"));
-    EXPECT_TRUE(pat1.match("/foo.js"));
-    EXPECT_TRUE(pat1.match("folder/foo.js"));
-    EXPECT_TRUE(pat1.match("/node_modules/foo.js"));
-    EXPECT_FALSE(pat1.match("foo.jss"));
-    EXPECT_FALSE(pat1.match("some.js/test"));
+    EXPECT(pat1.match("foo.js"));
+    EXPECT(pat1.match("/foo.js"));
+    EXPECT(pat1.match("folder/foo.js"));
+    EXPECT(pat1.match("/node_modules/foo.js"));
+    EXPECT(!pat1.match("foo.jss"));
+    EXPECT(!pat1.match("some.js/test"));
 
     // **/node_modules/**/*.js — scoped to node_modules
     PATDEF(pat2, "**/node_modules/**/*.js")
-    EXPECT_FALSE(pat2.match("foo.js"));
-    EXPECT_FALSE(pat2.match("folder/foo.js"));
-    EXPECT_TRUE(pat2.match("node_modules/foo.js"));
-    EXPECT_TRUE(pat2.match("/node_modules/foo.js"));
-    EXPECT_TRUE(pat2.match("node_modules/some/folder/foo.js"));
-    EXPECT_TRUE(pat2.match("/node_modules/some/folder/foo.js"));
-    EXPECT_FALSE(pat2.match("node_modules/some/folder/foo.ts"));
-    EXPECT_FALSE(pat2.match("foo.jss"));
-    EXPECT_FALSE(pat2.match("some.js/test"));
+    EXPECT(!pat2.match("foo.js"));
+    EXPECT(!pat2.match("folder/foo.js"));
+    EXPECT(pat2.match("node_modules/foo.js"));
+    EXPECT(pat2.match("/node_modules/foo.js"));
+    EXPECT(pat2.match("node_modules/some/folder/foo.js"));
+    EXPECT(pat2.match("/node_modules/some/folder/foo.js"));
+    EXPECT(!pat2.match("node_modules/some/folder/foo.ts"));
+    EXPECT(!pat2.match("foo.jss"));
+    EXPECT(!pat2.match("some.js/test"));
 
     // Brace with multiple globstar patterns
     PATDEF(pat3, "{**/node_modules/**,**/.git/**,**/bower_components/**}")
-    EXPECT_TRUE(pat3.match("node_modules"));
-    EXPECT_TRUE(pat3.match("/node_modules"));
-    EXPECT_TRUE(pat3.match("/node_modules/more"));
-    EXPECT_TRUE(pat3.match("some/test/node_modules"));
-    EXPECT_TRUE(pat3.match("/some/test/node_modules"));
-    EXPECT_TRUE(pat3.match("bower_components"));
-    EXPECT_TRUE(pat3.match("bower_components/more"));
-    EXPECT_TRUE(pat3.match("/bower_components"));
-    EXPECT_TRUE(pat3.match("some/test/bower_components"));
-    EXPECT_TRUE(pat3.match("/some/test/bower_components"));
-    EXPECT_TRUE(pat3.match(".git"));
-    EXPECT_TRUE(pat3.match("/.git"));
-    EXPECT_TRUE(pat3.match("some/test/.git"));
-    EXPECT_TRUE(pat3.match("/some/test/.git"));
-    EXPECT_FALSE(pat3.match("tempting"));
-    EXPECT_FALSE(pat3.match("/tempting"));
-    EXPECT_FALSE(pat3.match("some/test/tempting"));
-    EXPECT_FALSE(pat3.match("/some/test/tempting"));
+    EXPECT(pat3.match("node_modules"));
+    EXPECT(pat3.match("/node_modules"));
+    EXPECT(pat3.match("/node_modules/more"));
+    EXPECT(pat3.match("some/test/node_modules"));
+    EXPECT(pat3.match("/some/test/node_modules"));
+    EXPECT(pat3.match("bower_components"));
+    EXPECT(pat3.match("bower_components/more"));
+    EXPECT(pat3.match("/bower_components"));
+    EXPECT(pat3.match("some/test/bower_components"));
+    EXPECT(pat3.match("/some/test/bower_components"));
+    EXPECT(pat3.match(".git"));
+    EXPECT(pat3.match("/.git"));
+    EXPECT(pat3.match("some/test/.git"));
+    EXPECT(pat3.match("/some/test/.git"));
+    EXPECT(!pat3.match("tempting"));
+    EXPECT(!pat3.match("/tempting"));
+    EXPECT(!pat3.match("some/test/tempting"));
+    EXPECT(!pat3.match("/some/test/tempting"));
 
     // Brace with multiple globstar-prefixed patterns
     PATDEF(pat4, "{**/package.json,**/project.json}")
-    EXPECT_TRUE(pat4.match("package.json"));
-    EXPECT_TRUE(pat4.match("/package.json"));
-    EXPECT_FALSE(pat4.match("xpackage.json"));
-    EXPECT_FALSE(pat4.match("/xpackage.json"));
+    EXPECT(pat4.match("package.json"));
+    EXPECT(pat4.match("/package.json"));
+    EXPECT(!pat4.match("xpackage.json"));
+    EXPECT(!pat4.match("/xpackage.json"));
 }
 
-TEST_CASE(error_paths) {
+ZEST_CASE(error_paths) {
     // Unmatched '['
     auto e1 = kota::GlobPattern::create("foo.[a-z");
-    EXPECT_FALSE(e1.has_value());
+    EXPECT(!e1.has_value());
 
     // '[' as last character
     auto e2 = kota::GlobPattern::create("{a,[}");
-    EXPECT_FALSE(e2.has_value());
+    EXPECT(!e2.has_value());
 
     // Stray '\' at end of pattern
     auto e3 = kota::GlobPattern::create("foo\\");
-    EXPECT_FALSE(e3.has_value());
+    EXPECT(!e3.has_value());
 
     // Stray '\' at end inside brace
     auto e4 = kota::GlobPattern::create("{foo\\}");
-    EXPECT_FALSE(e4.has_value());
+    EXPECT(!e4.has_value());
 
     // Stray '\' inside bracket inside brace
     auto e5 = kota::GlobPattern::create("{[abc\\]}");
-    EXPECT_FALSE(e5.has_value());
+    EXPECT(!e5.has_value());
 
     // Empty brace expression {}
     auto e6 = kota::GlobPattern::create("foo.{}");
-    EXPECT_FALSE(e6.has_value());
+    EXPECT(!e6.has_value());
 
     // Nested braces
     auto e7 = kota::GlobPattern::create("{a,{b,c}}");
-    EXPECT_FALSE(e7.has_value());
+    EXPECT(!e7.has_value());
 
     // Incomplete brace expansion (unmatched '{')
     auto e8 = kota::GlobPattern::create("{foo,bar");
-    EXPECT_FALSE(e8.has_value());
+    EXPECT(!e8.has_value());
 
     // *** (triple star)
     auto e9 = kota::GlobPattern::create("***.js");
-    EXPECT_FALSE(e9.has_value());
+    EXPECT(!e9.has_value());
 
     // ** is valid (boundary)
     auto e10 = kota::GlobPattern::create("**.js");
-    EXPECT_TRUE(e10.has_value());
+    EXPECT(e10.has_value());
 
     // Multiple consecutive slashes in literal pattern
     auto e11 = kota::GlobPattern::create("foo//bar");
-    EXPECT_FALSE(e11.has_value());
+    EXPECT(!e11.has_value());
 
     // Multiple consecutive slashes at start
     auto e12 = kota::GlobPattern::create("//foo");
-    EXPECT_FALSE(e12.has_value());
+    EXPECT(!e12.has_value());
 
     // Multiple consecutive slashes after the literal prefix
     auto e13 = kota::GlobPattern::create("**/foo//*.cc");
-    EXPECT_FALSE(e13.has_value());
+    EXPECT(!e13.has_value());
 
     // Unmatched '[' after a wildcard
     auto e14 = kota::GlobPattern::create("*[");
-    EXPECT_FALSE(e14.has_value());
+    EXPECT(!e14.has_value());
 
     // '\' at end inside bracket inside brace
     auto e15 = kota::GlobPattern::create("{[\\]}");
-    EXPECT_FALSE(e15.has_value());
+    EXPECT(!e15.has_value());
 
     // Range start > end
     auto e16 = kota::GlobPattern::create("[z-a]");
-    EXPECT_FALSE(e16.has_value());
+    EXPECT(!e16.has_value());
 
     // Range end is stray backslash
     auto e17 = kota::GlobPattern::create("[a-\\]");
-    EXPECT_FALSE(e17.has_value());
+    EXPECT(!e17.has_value());
 
     // Brace expansion is textual: an arm starting with `/` right after the
     // literal prefix's separator spells `//`, escaped prefix or not.
     for(std::string_view source: {"a/{/}", "a/{/b}", "a/{b,/c}", R"(a\*/{/})"}) {
         auto res = kota::GlobPattern::create(source);
-        EXPECT_FALSE(res.has_value());
+        EXPECT(!res.has_value());
         if(!res.has_value()) {
-            EXPECT_EQ(res.error().kind, kota::GlobError::MultipleSlash);
+            EXPECT(res.error().kind == kota::GlobError::MultipleSlash);
         }
     }
-    EXPECT_TRUE(kota::GlobPattern::create("{/a}")->match("/a"));
-    EXPECT_TRUE(kota::GlobPattern::create("a{/b}")->match("a/b"));
+    EXPECT(kota::GlobPattern::create("{/a}")->match("/a"));
+    EXPECT(kota::GlobPattern::create("a{/b}")->match("a/b"));
 }
 
-TEST_CASE(empty_and_trivial) {
+ZEST_CASE(empty_and_trivial) {
     // Empty pattern matches only empty string
     PATDEF(pat1, "")
-    EXPECT_TRUE(pat1.match(""));
-    EXPECT_FALSE(pat1.match("foo"));
-    EXPECT_FALSE(pat1.match("/"));
+    EXPECT(pat1.match(""));
+    EXPECT(!pat1.match("foo"));
+    EXPECT(!pat1.match("/"));
 
     // Single character pattern
     PATDEF(pat2, "a")
-    EXPECT_TRUE(pat2.match("a"));
-    EXPECT_FALSE(pat2.match("b"));
-    EXPECT_FALSE(pat2.match("ab"));
-    EXPECT_FALSE(pat2.match(""));
+    EXPECT(pat2.match("a"));
+    EXPECT(!pat2.match("b"));
+    EXPECT(!pat2.match("ab"));
+    EXPECT(!pat2.match(""));
 
     // Slash-only pattern
     PATDEF(pat3, "/")
-    EXPECT_TRUE(pat3.match("/"));
-    EXPECT_FALSE(pat3.match(""));
-    EXPECT_FALSE(pat3.match("//"));
+    EXPECT(pat3.match("/"));
+    EXPECT(!pat3.match(""));
+    EXPECT(!pat3.match("//"));
 
     // Literal path with slashes (was rejected before bug fix)
     PATDEF(pat4, "foo/bar")
-    EXPECT_TRUE(pat4.match("foo/bar"));
-    EXPECT_FALSE(pat4.match("foo/baz"));
-    EXPECT_FALSE(pat4.match("foo/bar/baz"));
-    EXPECT_FALSE(pat4.match("foobar"));
+    EXPECT(pat4.match("foo/bar"));
+    EXPECT(!pat4.match("foo/baz"));
+    EXPECT(!pat4.match("foo/bar/baz"));
+    EXPECT(!pat4.match("foobar"));
 
     // Literal multi-segment path
     PATDEF(pat5, "a/b/c/d")
-    EXPECT_TRUE(pat5.match("a/b/c/d"));
-    EXPECT_FALSE(pat5.match("a/b/c"));
-    EXPECT_FALSE(pat5.match("a/b/c/d/e"));
+    EXPECT(pat5.match("a/b/c/d"));
+    EXPECT(!pat5.match("a/b/c"));
+    EXPECT(!pat5.match("a/b/c/d/e"));
 }
 
-TEST_CASE(is_trivial_match_all) {
+ZEST_CASE(is_trivial_match_all) {
     auto p1 = kota::GlobPattern::create("**");
-    EXPECT_TRUE(p1.has_value());
-    EXPECT_TRUE(p1->is_trivial_match_all());
+    EXPECT(p1.has_value());
+    EXPECT(p1->is_trivial_match_all());
 
     auto p2 = kota::GlobPattern::create("*");
-    EXPECT_TRUE(p2.has_value());
-    EXPECT_FALSE(p2->is_trivial_match_all());
+    EXPECT(p2.has_value());
+    EXPECT(!p2->is_trivial_match_all());
 
     auto p3 = kota::GlobPattern::create("**/*");
-    EXPECT_TRUE(p3.has_value());
-    EXPECT_FALSE(p3->is_trivial_match_all());
+    EXPECT(p3.has_value());
+    EXPECT(!p3->is_trivial_match_all());
 
     auto p4 = kota::GlobPattern::create("foo/**");
-    EXPECT_TRUE(p4.has_value());
-    EXPECT_FALSE(p4->is_trivial_match_all());
+    EXPECT(p4.has_value());
+    EXPECT(!p4->is_trivial_match_all());
 
     auto p5 = kota::GlobPattern::create("*.js");
-    EXPECT_TRUE(p5.has_value());
-    EXPECT_FALSE(p5->is_trivial_match_all());
+    EXPECT(p5.has_value());
+    EXPECT(!p5->is_trivial_match_all());
 
     auto p6 = kota::GlobPattern::create("{a,b}");
-    EXPECT_TRUE(p6.has_value());
-    EXPECT_FALSE(p6->is_trivial_match_all());
+    EXPECT(p6.has_value());
+    EXPECT(!p6->is_trivial_match_all());
 
     // The leading `/` is a real constraint even though the literal prefix
     // it leaves behind is empty.
     auto p7 = kota::GlobPattern::create("/*");
-    EXPECT_TRUE(p7.has_value());
-    EXPECT_FALSE(p7->is_trivial_match_all());
+    EXPECT(p7.has_value());
+    EXPECT(!p7->is_trivial_match_all());
 
     auto p8 = kota::GlobPattern::create("/**");
-    EXPECT_TRUE(p8.has_value());
-    EXPECT_FALSE(p8->is_trivial_match_all());
+    EXPECT(p8.has_value());
+    EXPECT(!p8->is_trivial_match_all());
 
     // Only a whole-segment ** brace arm is match-all.
     auto p9 = kota::GlobPattern::create("{*,foo}");
-    EXPECT_TRUE(p9.has_value());
-    EXPECT_FALSE(p9->is_trivial_match_all());
+    EXPECT(p9.has_value());
+    EXPECT(!p9->is_trivial_match_all());
 
     auto p10 = kota::GlobPattern::create("{foo,**}");
-    EXPECT_TRUE(p10.has_value());
-    EXPECT_TRUE(p10->is_trivial_match_all());
+    EXPECT(p10.has_value());
+    EXPECT(p10->is_trivial_match_all());
 
     // With a prefix the `*` arm means `a*`, which is segment-bounded.
     auto p11 = kota::GlobPattern::create("a{*,foo}");
-    EXPECT_TRUE(p11.has_value());
-    EXPECT_FALSE(p11->is_trivial_match_all());
+    EXPECT(p11.has_value());
+    EXPECT(!p11->is_trivial_match_all());
 
     auto p12 = kota::GlobPattern::create("{*.js,foo}");
-    EXPECT_TRUE(p12.has_value());
-    EXPECT_FALSE(p12->is_trivial_match_all());
+    EXPECT(p12.has_value());
+    EXPECT(!p12->is_trivial_match_all());
 }
 
-TEST_CASE(single_star) {
+ZEST_CASE(single_star) {
     PATDEF(pat1, "*")
-    EXPECT_TRUE(pat1.match("foo"));
-    EXPECT_TRUE(pat1.match("bar.txt"));
-    EXPECT_TRUE(pat1.match("a"));
+    EXPECT(pat1.match("foo"));
+    EXPECT(pat1.match("bar.txt"));
+    EXPECT(pat1.match("a"));
     // Like VS Code, a standalone single star is segment-bounded.
-    EXPECT_FALSE(pat1.match("foo/bar"));
-    EXPECT_FALSE(pat1.match("/foo"));
+    EXPECT(!pat1.match("foo/bar"));
+    EXPECT(!pat1.match("/foo"));
 
     // * in a segment
     PATDEF(pat2, "*/b")
-    EXPECT_TRUE(pat2.match("a/b"));
-    EXPECT_TRUE(pat2.match("foo/b"));
-    EXPECT_FALSE(pat2.match("a/c"));
-    EXPECT_FALSE(pat2.match("a/b/c"));
+    EXPECT(pat2.match("a/b"));
+    EXPECT(pat2.match("foo/b"));
+    EXPECT(!pat2.match("a/c"));
+    EXPECT(!pat2.match("a/b/c"));
 
     // ? in a segment
     PATDEF(pat3, "?/b")
-    EXPECT_TRUE(pat3.match("a/b"));
-    EXPECT_TRUE(pat3.match("x/b"));
-    EXPECT_FALSE(pat3.match("ab/b"));
-    EXPECT_FALSE(pat3.match("/b"));
+    EXPECT(pat3.match("a/b"));
+    EXPECT(pat3.match("x/b"));
+    EXPECT(!pat3.match("ab/b"));
+    EXPECT(!pat3.match("/b"));
 }
 
-TEST_CASE(star_stays_in_segment) {
+ZEST_CASE(star_stays_in_segment) {
     // Backtracking must not let a single * swallow a `/`.
     PATDEF(pat1, "**/a*.cc")
-    EXPECT_TRUE(pat1.match("x/ab.cc"));
-    EXPECT_TRUE(pat1.match("x/y/a.cc"));
-    EXPECT_FALSE(pat1.match("x/a/b.cc"));
-    EXPECT_FALSE(pat1.match("a/b.cc"));
+    EXPECT(pat1.match("x/ab.cc"));
+    EXPECT(pat1.match("x/y/a.cc"));
+    EXPECT(!pat1.match("x/a/b.cc"));
+    EXPECT(!pat1.match("a/b.cc"));
 
     PATDEF(pat2, "?*.cc")
-    EXPECT_TRUE(pat2.match("ab.cc"));
-    EXPECT_FALSE(pat2.match("a/.cc"));
-    EXPECT_FALSE(pat2.match("a/b.cc"));
+    EXPECT(pat2.match("ab.cc"));
+    EXPECT(!pat2.match("a/.cc"));
+    EXPECT(!pat2.match("a/b.cc"));
 
     // A terminal single star is bounded by its segment.
     PATDEF(pat3, "a*")
-    EXPECT_TRUE(pat3.match("abc"));
-    EXPECT_FALSE(pat3.match("abc/"));
-    EXPECT_FALSE(pat3.match("abc/d"));
+    EXPECT(pat3.match("abc"));
+    EXPECT(!pat3.match("abc/"));
+    EXPECT(!pat3.match("abc/d"));
 
     PATDEF(pat4, "foo/*")
-    EXPECT_TRUE(pat4.match("foo/bar"));
-    EXPECT_FALSE(pat4.match("foo/a/b"));
+    EXPECT(pat4.match("foo/bar"));
+    EXPECT(!pat4.match("foo/a/b"));
 }
 
-TEST_CASE(segment_boundary) {
+ZEST_CASE(segment_boundary) {
     // The input segment must end exactly where the pattern segment does; a
     // mismatch there backtracks into an earlier star instead of aborting.
     PATDEF(pat1, "*a/b")
-    EXPECT_TRUE(pat1.match("aa/b"));
-    EXPECT_TRUE(pat1.match("xya/b"));
-    EXPECT_FALSE(pat1.match("ab/b"));
+    EXPECT(pat1.match("aa/b"));
+    EXPECT(pat1.match("xya/b"));
+    EXPECT(!pat1.match("ab/b"));
 
     // One pattern `/` consumes exactly one input `/`.
     PATDEF(pat2, "?/b")
-    EXPECT_FALSE(pat2.match("a//b"));
+    EXPECT(!pat2.match("a//b"));
 
     PATDEF(pat3, "*/b")
-    EXPECT_FALSE(pat3.match("a//b"));
+    EXPECT(!pat3.match("a//b"));
 
     // A segment following `**` matches whole input segments; ** absorbs
     // full segments only.
     PATDEF(pat4, "**/a/b")
-    EXPECT_TRUE(pat4.match("a/b"));
-    EXPECT_TRUE(pat4.match("q/a/b"));
-    EXPECT_FALSE(pat4.match("aX/b"));
-    EXPECT_FALSE(pat4.match("q/aX/b"));
+    EXPECT(pat4.match("a/b"));
+    EXPECT(pat4.match("q/a/b"));
+    EXPECT(!pat4.match("aX/b"));
+    EXPECT(!pat4.match("q/aX/b"));
 
     PATDEF(pat5, "**/?x")
-    EXPECT_TRUE(pat5.match("ax"));
-    EXPECT_TRUE(pat5.match("aa/ax"));
-    EXPECT_FALSE(pat5.match("aax"));
+    EXPECT(pat5.match("ax"));
+    EXPECT(pat5.match("aa/ax"));
+    EXPECT(!pat5.match("aax"));
 }
 
-TEST_CASE(matches_empty_tail) {
+ZEST_CASE(matches_empty_tail) {
     // Star runs match empty input; a `/` does so only when absorbed by an
     // adjacent globstar.
     PATDEF(pat1, "foo/**")
-    EXPECT_TRUE(pat1.match("foo"));
-    EXPECT_TRUE(pat1.match("foo/a/b"));
+    EXPECT(pat1.match("foo"));
+    EXPECT(pat1.match("foo/a/b"));
 
     PATDEF(pat2, "foo/*")
-    EXPECT_FALSE(pat2.match("foo"));
+    EXPECT(!pat2.match("foo"));
 
     PATDEF(pat3, "*/*")
-    EXPECT_FALSE(pat3.match(""));
-    EXPECT_TRUE(pat3.match("a/b"));
+    EXPECT(!pat3.match(""));
+    EXPECT(pat3.match("a/b"));
 
     PATDEF(pat4, "?/*")
-    EXPECT_FALSE(pat4.match("a"));
-    EXPECT_TRUE(pat4.match("a/"));
+    EXPECT(!pat4.match("a"));
+    EXPECT(pat4.match("a/"));
 
     PATDEF(pat5, "**/*")
-    EXPECT_TRUE(pat5.match(""));
+    EXPECT(pat5.match(""));
 
     PATDEF(pat6, "x*/**")
-    EXPECT_TRUE(pat6.match("x"));
+    EXPECT(pat6.match("x"));
 
     PATDEF(pat7, "x*/*")
-    EXPECT_FALSE(pat7.match("x"));
+    EXPECT(!pat7.match("x"));
 
     PATDEF(pat8, "foo/{,x}")
-    EXPECT_FALSE(pat8.match("foo"));
-    EXPECT_TRUE(pat8.match("foo/"));
-    EXPECT_TRUE(pat8.match("foo/x"));
+    EXPECT(!pat8.match("foo"));
+    EXPECT(pat8.match("foo/"));
+    EXPECT(pat8.match("foo/x"));
 
     // Each globstar absorbs at most one separator, so a `/**/` between two
     // required segments still demands a real `/`.
     PATDEF(pat9, "x*/**/*")
-    EXPECT_FALSE(pat9.match("x"));
-    EXPECT_TRUE(pat9.match("x/y"));
+    EXPECT(!pat9.match("x"));
+    EXPECT(pat9.match("x/y"));
 
     PATDEF(pat10, "*a/**/*")
-    EXPECT_FALSE(pat10.match("aa"));
-    EXPECT_TRUE(pat10.match("aa/b"));
+    EXPECT(!pat10.match("aa"));
+    EXPECT(pat10.match("aa/b"));
 
     // A trailing globstar chain absorbs the separator after the prefix; any
     // non-globstar atom in the tail still demands real input.
     PATDEF(pat11, "foo/**/*")
-    EXPECT_FALSE(pat11.match("foo"));
-    EXPECT_TRUE(pat11.match("foo/a"));
+    EXPECT(!pat11.match("foo"));
+    EXPECT(pat11.match("foo/a"));
 
     PATDEF(pat12, "foo/**/bar")
-    EXPECT_FALSE(pat12.match("foo"));
-    EXPECT_TRUE(pat12.match("foo/bar"));
+    EXPECT(!pat12.match("foo"));
+    EXPECT(pat12.match("foo/bar"));
 
     // Prefix stripping must not change matches: `a/**/**` behaves exactly
     // like its brace-wrapped twin, whose arm keeps the leading literal.
     PATDEF(pat13, "a/**/**")
-    EXPECT_TRUE(pat13.match("a"));
-    EXPECT_TRUE(pat13.match("a/b"));
+    EXPECT(pat13.match("a"));
+    EXPECT(pat13.match("a/b"));
 
     PATDEF(pat13b, "{a/**/**}")
-    EXPECT_TRUE(pat13b.match("a"));
-    EXPECT_TRUE(pat13b.match("a/b"));
+    EXPECT(pat13b.match("a"));
+    EXPECT(pat13b.match("a/b"));
 
     // Brace arms expand into independent alternatives, so the `**` arm
     // absorbs the separator while the literal arm does not.
     PATDEF(pat14, "foo/{**,x}")
-    EXPECT_TRUE(pat14.match("foo"));
-    EXPECT_TRUE(pat14.match("foo/x"));
+    EXPECT(pat14.match("foo"));
+    EXPECT(pat14.match("foo/x"));
 
     // ** may match zero segments, letting later stars take the empty
     // segments around a bare `/`.
     PATDEF(pat15, "**/*/*")
-    EXPECT_TRUE(pat15.match("/"));
-    EXPECT_TRUE(pat15.match("a/b"));
-    EXPECT_FALSE(pat15.match(""));
+    EXPECT(pat15.match("/"));
+    EXPECT(pat15.match("a/b"));
+    EXPECT(!pat15.match(""));
 
     PATDEF(pat16, "x/**/*/*")
-    EXPECT_TRUE(pat16.match("x//"));
-    EXPECT_TRUE(pat16.match("x/a/b"));
-    EXPECT_FALSE(pat16.match("x/a"));
+    EXPECT(pat16.match("x//"));
+    EXPECT(pat16.match("x/a/b"));
+    EXPECT(!pat16.match("x/a"));
 }
 
-TEST_CASE(single_question) {
+ZEST_CASE(single_question) {
     PATDEF(pat1, "?")
-    EXPECT_TRUE(pat1.match("a"));
-    EXPECT_TRUE(pat1.match("z"));
-    EXPECT_TRUE(pat1.match("0"));
-    EXPECT_FALSE(pat1.match(""));
-    EXPECT_FALSE(pat1.match("ab"));
-    EXPECT_FALSE(pat1.match("/"));
+    EXPECT(pat1.match("a"));
+    EXPECT(pat1.match("z"));
+    EXPECT(pat1.match("0"));
+    EXPECT(!pat1.match(""));
+    EXPECT(!pat1.match("ab"));
+    EXPECT(!pat1.match("/"));
 
     PATDEF(pat2, "??")
-    EXPECT_TRUE(pat2.match("ab"));
-    EXPECT_TRUE(pat2.match("12"));
-    EXPECT_FALSE(pat2.match("a"));
-    EXPECT_FALSE(pat2.match("abc"));
+    EXPECT(pat2.match("ab"));
+    EXPECT(pat2.match("12"));
+    EXPECT(!pat2.match("a"));
+    EXPECT(!pat2.match("abc"));
 
     PATDEF(pat3, "?.?")
-    EXPECT_TRUE(pat3.match("a.b"));
-    EXPECT_FALSE(pat3.match("ab.c"));
-    EXPECT_FALSE(pat3.match("a.bc"));
+    EXPECT(pat3.match("a.b"));
+    EXPECT(!pat3.match("ab.c"));
+    EXPECT(!pat3.match("a.bc"));
 }
 
-TEST_CASE(star_matches_zero) {
+ZEST_CASE(star_matches_zero) {
     // * matches zero or more chars (doc says "zero or more")
     PATDEF(pat1, "*.cc")
-    EXPECT_TRUE(pat1.match(".cc"));
-    EXPECT_TRUE(pat1.match("foo.cc"));
-    EXPECT_FALSE(pat1.match("foo.cpp"));
+    EXPECT(pat1.match(".cc"));
+    EXPECT(pat1.match("foo.cc"));
+    EXPECT(!pat1.match("foo.cpp"));
 
     PATDEF(pat2, "*foo")
-    EXPECT_TRUE(pat2.match("foo"));
-    EXPECT_TRUE(pat2.match("barfoo"));
+    EXPECT(pat2.match("foo"));
+    EXPECT(pat2.match("barfoo"));
 }
 
-TEST_CASE(trailing_slash) {
+ZEST_CASE(trailing_slash) {
     // Pattern "foo/" — prefix is "foo/", no sub_globs
     // match("foo/") should be true (exact match)
     // match("foo") should be false (prefix doesn't match)
     PATDEF(pat1, "foo/")
-    EXPECT_TRUE(pat1.match("foo/"));
-    EXPECT_FALSE(pat1.match("foo"));
-    EXPECT_FALSE(pat1.match("foo/bar"));
+    EXPECT(pat1.match("foo/"));
+    EXPECT(!pat1.match("foo"));
+    EXPECT(!pat1.match("foo/bar"));
 }
 
-TEST_CASE(boundary_edge_cases) {
+ZEST_CASE(boundary_edge_cases) {
     // A leading ] is a literal member even after the negation operator.
     PATDEF(pat1, "[^]]")
-    EXPECT_TRUE(pat1.match("a"));
-    EXPECT_TRUE(pat1.match("0"));
-    EXPECT_FALSE(pat1.match("a]"));
-    EXPECT_FALSE(pat1.match("]"));
-    EXPECT_FALSE(pat1.match("/]"));
+    EXPECT(pat1.match("a"));
+    EXPECT(pat1.match("0"));
+    EXPECT(!pat1.match("a]"));
+    EXPECT(!pat1.match("]"));
+    EXPECT(!pat1.match("/]"));
 
     // {,a} — empty alternative in brace
     PATDEF(pat2, "{,a}")
-    EXPECT_TRUE(pat2.match("a"));
-    EXPECT_TRUE(pat2.match(""));
+    EXPECT(pat2.match("a"));
+    EXPECT(pat2.match(""));
 
     // {a\,b,c} — escaped comma treated as literal inside brace
     // The brace parser sees \ and skips next char, so {a\,b,c} has terms: "a\,b" and "c"
     // The arm parser then sees "a\,b" and treats \, as escaped comma
     PATDEF(pat3, R"({a\,b,c})")
-    EXPECT_TRUE(pat3.match("a,b"));
-    EXPECT_TRUE(pat3.match("c"));
-    EXPECT_FALSE(pat3.match("a"));
-    EXPECT_FALSE(pat3.match("b"));
+    EXPECT(pat3.match("a,b"));
+    EXPECT(pat3.match("c"));
+    EXPECT(!pat3.match("a"));
+    EXPECT(!pat3.match("b"));
 }
 
-TEST_CASE(match_empty_string) {
+ZEST_CASE(match_empty_string) {
     // ** matches any number of path segments including none
     PATDEF(pat1, "**")
-    EXPECT_TRUE(pat1.match(""));
+    EXPECT(pat1.match(""));
 
     PATDEF(pat2, "*")
-    EXPECT_TRUE(pat2.match(""));
+    EXPECT(pat2.match(""));
 
     PATDEF(pat3, "foo")
-    EXPECT_FALSE(pat3.match(""));
+    EXPECT(!pat3.match(""));
 
     PATDEF(pat4, "*.js")
-    EXPECT_FALSE(pat4.match(""));
+    EXPECT(!pat4.match(""));
 }
 
-TEST_CASE(inverted_bracket) {
+ZEST_CASE(inverted_bracket) {
     PATDEF(pat1, "[!a]")
-    EXPECT_TRUE(pat1.match("b"));
-    EXPECT_TRUE(pat1.match("z"));
-    EXPECT_TRUE(pat1.match("0"));
-    EXPECT_FALSE(pat1.match("a"));
+    EXPECT(pat1.match("b"));
+    EXPECT(pat1.match("z"));
+    EXPECT(pat1.match("0"));
+    EXPECT(!pat1.match("a"));
     // Critical: inverted bracket must NOT match '/'
-    EXPECT_FALSE(pat1.match("/"));
+    EXPECT(!pat1.match("/"));
 
     PATDEF(pat2, "[!0-9]")
-    EXPECT_TRUE(pat2.match("a"));
-    EXPECT_FALSE(pat2.match("5"));
-    EXPECT_FALSE(pat2.match("/"));
+    EXPECT(pat2.match("a"));
+    EXPECT(!pat2.match("5"));
+    EXPECT(!pat2.match("/"));
 
     PATDEF(pat3, "[^a-z]")
-    EXPECT_TRUE(pat3.match("0"));
-    EXPECT_TRUE(pat3.match("A"));
-    EXPECT_FALSE(pat3.match("a"));
-    EXPECT_FALSE(pat3.match("/"));
+    EXPECT(pat3.match("0"));
+    EXPECT(pat3.match("A"));
+    EXPECT(!pat3.match("a"));
+    EXPECT(!pat3.match("/"));
 }
 
-TEST_CASE(multiple_globstar) {
+ZEST_CASE(multiple_globstar) {
     PATDEF(pat1, "**/foo/**/bar")
-    EXPECT_TRUE(pat1.match("foo/bar"));
-    EXPECT_TRUE(pat1.match("a/foo/b/bar"));
-    EXPECT_TRUE(pat1.match("a/b/foo/c/d/e/bar"));
-    EXPECT_TRUE(pat1.match("/foo/bar"));
-    EXPECT_TRUE(pat1.match("x/y/foo/z/bar"));
-    EXPECT_FALSE(pat1.match("a/b/bar"));
-    EXPECT_FALSE(pat1.match("foo/baz"));
-    EXPECT_FALSE(pat1.match("foobar"));
+    EXPECT(pat1.match("foo/bar"));
+    EXPECT(pat1.match("a/foo/b/bar"));
+    EXPECT(pat1.match("a/b/foo/c/d/e/bar"));
+    EXPECT(pat1.match("/foo/bar"));
+    EXPECT(pat1.match("x/y/foo/z/bar"));
+    EXPECT(!pat1.match("a/b/bar"));
+    EXPECT(!pat1.match("foo/baz"));
+    EXPECT(!pat1.match("foobar"));
 
     PATDEF(pat2, "**/a/**/b/**/c")
-    EXPECT_TRUE(pat2.match("a/b/c"));
-    EXPECT_TRUE(pat2.match("x/a/y/b/z/c"));
-    EXPECT_FALSE(pat2.match("a/c"));
-    EXPECT_FALSE(pat2.match("a/b"));
+    EXPECT(pat2.match("a/b/c"));
+    EXPECT(pat2.match("x/a/y/b/z/c"));
+    EXPECT(!pat2.match("a/c"));
+    EXPECT(!pat2.match("a/b"));
 }
 
-TEST_CASE(max_subpattern_limit) {
+ZEST_CASE(max_subpattern_limit) {
     // {a,b} x {c,d} = 4 subpatterns, limit 2 => fail
     auto p1 = kota::GlobPattern::create("{a,b}.{c,d}", 2);
-    EXPECT_FALSE(p1.has_value());
+    EXPECT(!p1.has_value());
 
     // Same with limit 4 => succeed
     auto p2 = kota::GlobPattern::create("{a,b}.{c,d}", 4);
-    EXPECT_TRUE(p2.has_value());
+    EXPECT(p2.has_value());
 
     // Single brace with 3 terms, limit 2 => fail
     auto p3 = kota::GlobPattern::create("{a,b,c}", 2);
-    EXPECT_FALSE(p3.has_value());
+    EXPECT(!p3.has_value());
 
     // Limit 0 disables brace expansion, pattern kept as literal with braces
     auto p4 = kota::GlobPattern::create("{a,b}", 0);
-    EXPECT_TRUE(p4.has_value());
-    EXPECT_TRUE(p4->match("{a,b}"));
-    EXPECT_FALSE(p4->match("a"));
-    EXPECT_FALSE(p4->match("b"));
+    EXPECT(p4.has_value());
+    EXPECT(p4->match("{a,b}"));
+    EXPECT(!p4->match("a"));
+    EXPECT(!p4->match("b"));
 
     // Limit 1 means only 1 subpattern allowed; single brace with 1 term is OK
     auto p5 = kota::GlobPattern::create("{a}", 1);
-    EXPECT_TRUE(p5.has_value());
-    EXPECT_TRUE(p5->match("a"));
+    EXPECT(p5.has_value());
+    EXPECT(p5->match("a"));
 }
 
-TEST_CASE(bracket_at_start) {
+ZEST_CASE(bracket_at_start) {
     PATDEF(pat1, "[a-z]oo")
-    EXPECT_TRUE(pat1.match("foo"));
-    EXPECT_TRUE(pat1.match("boo"));
-    EXPECT_FALSE(pat1.match("Foo"));
-    EXPECT_FALSE(pat1.match("1oo"));
-    EXPECT_FALSE(pat1.match("aoo/bar"));
+    EXPECT(pat1.match("foo"));
+    EXPECT(pat1.match("boo"));
+    EXPECT(!pat1.match("Foo"));
+    EXPECT(!pat1.match("1oo"));
+    EXPECT(!pat1.match("aoo/bar"));
 
     PATDEF(pat2, "[0-9]*")
-    EXPECT_TRUE(pat2.match("1foo"));
-    EXPECT_TRUE(pat2.match("9"));
-    EXPECT_FALSE(pat2.match("a1"));
+    EXPECT(pat2.match("1foo"));
+    EXPECT(pat2.match("9"));
+    EXPECT(!pat2.match("a1"));
 }
 
-TEST_CASE(bracket_in_brace) {
+ZEST_CASE(bracket_in_brace) {
     PATDEF(pat1, "{[a-z]oo,[0-9]ar}")
-    EXPECT_TRUE(pat1.match("foo"));
-    EXPECT_TRUE(pat1.match("boo"));
-    EXPECT_TRUE(pat1.match("1ar"));
-    EXPECT_TRUE(pat1.match("9ar"));
-    EXPECT_FALSE(pat1.match("Foo"));
-    EXPECT_FALSE(pat1.match("bar"));
+    EXPECT(pat1.match("foo"));
+    EXPECT(pat1.match("boo"));
+    EXPECT(pat1.match("1ar"));
+    EXPECT(pat1.match("9ar"));
+    EXPECT(!pat1.match("Foo"));
+    EXPECT(!pat1.match("bar"));
 
     // Bracket with special chars inside brace
     PATDEF(pat2, R"({foo.[\*\?],bar})")
-    EXPECT_TRUE(pat2.match("foo.*"));
-    EXPECT_TRUE(pat2.match("foo.?"));
-    EXPECT_TRUE(pat2.match("bar"));
-    EXPECT_FALSE(pat2.match("foo.x"));
+    EXPECT(pat2.match("foo.*"));
+    EXPECT(pat2.match("foo.?"));
+    EXPECT(pat2.match("bar"));
+    EXPECT(!pat2.match("foo.x"));
 }
 
-TEST_CASE(question_with_globstar) {
+ZEST_CASE(question_with_globstar) {
     PATDEF(pat1, "**/?.js")
-    EXPECT_TRUE(pat1.match("a.js"));
-    EXPECT_TRUE(pat1.match("foo/b.js"));
-    EXPECT_TRUE(pat1.match("a/b/c.js"));
-    EXPECT_FALSE(pat1.match("ab.js"));
-    EXPECT_FALSE(pat1.match("foo/ab.js"));
-    EXPECT_FALSE(pat1.match(".js"));
+    EXPECT(pat1.match("a.js"));
+    EXPECT(pat1.match("foo/b.js"));
+    EXPECT(pat1.match("a/b/c.js"));
+    EXPECT(!pat1.match("ab.js"));
+    EXPECT(!pat1.match("foo/ab.js"));
+    EXPECT(!pat1.match(".js"));
 
     PATDEF(pat2, "**/?")
-    EXPECT_TRUE(pat2.match("a"));
-    EXPECT_TRUE(pat2.match("foo/a"));
-    EXPECT_TRUE(pat2.match("a/b/c/d"));
+    EXPECT(pat2.match("a"));
+    EXPECT(pat2.match("foo/a"));
+    EXPECT(pat2.match("a/b/c/d"));
     // ** absorbs whole segments only, so the two-char basename 'ab' does not
     // match: ? must start at a segment boundary like every other atom.
-    EXPECT_FALSE(pat2.match("ab"));
-    EXPECT_FALSE(pat2.match("foo/ab"));
+    EXPECT(!pat2.match("ab"));
+    EXPECT(!pat2.match("foo/ab"));
 }
 
-TEST_CASE(prefix_strip_boundary) {
+ZEST_CASE(prefix_strip_boundary) {
     // Stripping the literal prefix must not turn a mid-segment position
     // into a segment boundary: each pattern behaves exactly like its
     // brace-wrapped twin, whose arm keeps the leading literal.
     PATDEF(pat1, "a**/?")
-    EXPECT_FALSE(pat1.match("aa"));
-    EXPECT_FALSE(pat1.match("ab"));
-    EXPECT_FALSE(pat1.match("a"));
-    EXPECT_TRUE(pat1.match("a/c"));
-    EXPECT_TRUE(pat1.match("aa/c"));
+    EXPECT(!pat1.match("aa"));
+    EXPECT(!pat1.match("ab"));
+    EXPECT(!pat1.match("a"));
+    EXPECT(pat1.match("a/c"));
+    EXPECT(pat1.match("aa/c"));
 
     PATDEF(pat1b, "{a**/?}")
-    EXPECT_FALSE(pat1b.match("aa"));
-    EXPECT_FALSE(pat1b.match("ab"));
-    EXPECT_FALSE(pat1b.match("a"));
-    EXPECT_TRUE(pat1b.match("a/c"));
-    EXPECT_TRUE(pat1b.match("aa/c"));
+    EXPECT(!pat1b.match("aa"));
+    EXPECT(!pat1b.match("ab"));
+    EXPECT(!pat1b.match("a"));
+    EXPECT(pat1b.match("a/c"));
+    EXPECT(pat1b.match("aa/c"));
 
     PATDEF(pat2, "x**/y")
-    EXPECT_FALSE(pat2.match("xy"));
-    EXPECT_TRUE(pat2.match("x/y"));
-    EXPECT_TRUE(pat2.match("xx/y"));
+    EXPECT(!pat2.match("xy"));
+    EXPECT(pat2.match("x/y"));
+    EXPECT(pat2.match("xx/y"));
 
     PATDEF(pat3, "a**/[bc]")
-    EXPECT_FALSE(pat3.match("ab"));
-    EXPECT_TRUE(pat3.match("a/b"));
+    EXPECT(!pat3.match("ab"));
+    EXPECT(pat3.match("a/b"));
 
     PATDEF(pat4, R"(a**/\?)")
-    EXPECT_FALSE(pat4.match("a?"));
-    EXPECT_TRUE(pat4.match("a/?"));
+    EXPECT(!pat4.match("a?"));
+    EXPECT(pat4.match("a/?"));
 
     // Pattern segment 0 continues the prefix's input segment, so
     // mid-segment continuation there stays legal.
     PATDEF(pat5, "a?")
-    EXPECT_TRUE(pat5.match("ab"));
-    EXPECT_FALSE(pat5.match("a/"));
+    EXPECT(pat5.match("ab"));
+    EXPECT(!pat5.match("a/"));
 
     PATDEF(pat6, "a[bc]")
-    EXPECT_TRUE(pat6.match("ab"));
+    EXPECT(pat6.match("ab"));
 }
 
-TEST_CASE(globstar_slash) {
+ZEST_CASE(globstar_slash) {
     PATDEF(pat1, "**/")
-    EXPECT_TRUE(pat1.match("foo/bar"));
-    EXPECT_TRUE(pat1.match("foo"));
-    EXPECT_TRUE(pat1.match("/"));
+    EXPECT(pat1.match("foo/bar"));
+    EXPECT(pat1.match("foo"));
+    EXPECT(pat1.match("/"));
 
     // ** followed by literal after /
     PATDEF(pat2, "**/x")
-    EXPECT_TRUE(pat2.match("x"));
-    EXPECT_TRUE(pat2.match("/x"));
-    EXPECT_TRUE(pat2.match("a/b/c/x"));
-    EXPECT_FALSE(pat2.match("ax"));
-    EXPECT_FALSE(pat2.match("a/bx"));
+    EXPECT(pat2.match("x"));
+    EXPECT(pat2.match("/x"));
+    EXPECT(pat2.match("a/b/c/x"));
+    EXPECT(!pat2.match("ax"));
+    EXPECT(!pat2.match("a/bx"));
 
     // A leading `/` must be matched by the input.
     PATDEF(pat3, "/*")
-    EXPECT_TRUE(pat3.match("/foo"));
-    EXPECT_TRUE(pat3.match("/"));
-    EXPECT_FALSE(pat3.match("foo"));
-    EXPECT_FALSE(pat3.match("foo/bar"));
-    EXPECT_FALSE(pat3.match("/foo/bar"));
+    EXPECT(pat3.match("/foo"));
+    EXPECT(pat3.match("/"));
+    EXPECT(!pat3.match("foo"));
+    EXPECT(!pat3.match("foo/bar"));
+    EXPECT(!pat3.match("/foo/bar"));
 
     PATDEF(pat4, "/**")
-    EXPECT_TRUE(pat4.match("/foo"));
-    EXPECT_TRUE(pat4.match("/foo/bar"));
-    EXPECT_FALSE(pat4.match("foo"));
-    EXPECT_FALSE(pat4.match("foo/bar"));
+    EXPECT(pat4.match("/foo"));
+    EXPECT(pat4.match("/foo/bar"));
+    EXPECT(!pat4.match("foo"));
+    EXPECT(!pat4.match("foo/bar"));
 
     // A trailing `/` requires the input to end at that segment boundary; a
     // preceding `**` keeps retrying until the last segment lines up.
     PATDEF(pat5, "**/a/")
-    EXPECT_TRUE(pat5.match("a/"));
-    EXPECT_TRUE(pat5.match("x/a/"));
-    EXPECT_TRUE(pat5.match("a/a/"));
-    EXPECT_TRUE(pat5.match("a/b/a/"));
-    EXPECT_FALSE(pat5.match("a"));
-    EXPECT_FALSE(pat5.match("a/b/"));
-    EXPECT_FALSE(pat5.match("a/a"));
+    EXPECT(pat5.match("a/"));
+    EXPECT(pat5.match("x/a/"));
+    EXPECT(pat5.match("a/a/"));
+    EXPECT(pat5.match("a/b/a/"));
+    EXPECT(!pat5.match("a"));
+    EXPECT(!pat5.match("a/b/"));
+    EXPECT(!pat5.match("a/a"));
 }
 
-TEST_CASE(backslash_in_input) {
+ZEST_CASE(backslash_in_input) {
     // ? should match a single backslash in the input
     PATDEF(pat1, "?")
-    EXPECT_TRUE(pat1.match("\\"));
+    EXPECT(pat1.match("\\"));
 
     // * should match strings containing backslashes
     PATDEF(pat2, "*")
-    EXPECT_TRUE(pat2.match("a\\b"));
-    EXPECT_TRUE(pat2.match("\\"));
+    EXPECT(pat2.match("a\\b"));
+    EXPECT(pat2.match("\\"));
 
     // Literal match with no special meaning of \ in input
     PATDEF(pat3, "**/*.txt")
-    EXPECT_TRUE(pat3.match("path\\with\\backslash.txt"));
+    EXPECT(pat3.match("path\\with\\backslash.txt"));
 }
 
-TEST_CASE(globstar_intermediate) {
+ZEST_CASE(globstar_intermediate) {
     PATDEF(pat1, "**/*/foo")
-    EXPECT_TRUE(pat1.match("a/foo"));
-    EXPECT_TRUE(pat1.match("x/y/a/foo"));
-    EXPECT_FALSE(pat1.match("foo"));
+    EXPECT(pat1.match("a/foo"));
+    EXPECT(pat1.match("x/y/a/foo"));
+    EXPECT(!pat1.match("foo"));
 
     PATDEF(pat2, "**/*.js/**/test")
-    EXPECT_TRUE(pat2.match("foo.js/test"));
-    EXPECT_TRUE(pat2.match("foo.js/a/b/test"));
-    EXPECT_TRUE(pat2.match("a/foo.js/test"));
-    EXPECT_FALSE(pat2.match("foo/test"));
+    EXPECT(pat2.match("foo.js/test"));
+    EXPECT(pat2.match("foo.js/a/b/test"));
+    EXPECT(pat2.match("a/foo.js/test"));
+    EXPECT(!pat2.match("foo/test"));
 }
 
-TEST_CASE(unicode_question) {
+ZEST_CASE(unicode_question) {
     PATDEF(pat1, "?文.txt")
-    EXPECT_TRUE(pat1.match("中文.txt"));
-    EXPECT_FALSE(pat1.match("文.txt"));
-    EXPECT_FALSE(pat1.match("中中文.txt"));
+    EXPECT(pat1.match("中文.txt"));
+    EXPECT(!pat1.match("文.txt"));
+    EXPECT(!pat1.match("中中文.txt"));
 
     PATDEF(pat2, "?.txt")
-    EXPECT_TRUE(pat2.match("中.txt"));
-    EXPECT_TRUE(pat2.match("🚀.txt"));
-    EXPECT_FALSE(pat2.match("中文.txt"));
+    EXPECT(pat2.match("中.txt"));
+    EXPECT(pat2.match("🚀.txt"));
+    EXPECT(!pat2.match("中文.txt"));
 
     PATDEF(pat3, "??.txt")
-    EXPECT_TRUE(pat3.match("中文.txt"));
-    EXPECT_FALSE(pat3.match("中.txt"));
+    EXPECT(pat3.match("中文.txt"));
+    EXPECT(!pat3.match("中.txt"));
 }
 
-TEST_CASE(unicode_bracket) {
+ZEST_CASE(unicode_bracket) {
     PATDEF(pat1, "[中文].txt")
-    EXPECT_TRUE(pat1.match("中.txt"));
-    EXPECT_TRUE(pat1.match("文.txt"));
-    EXPECT_FALSE(pat1.match("英.txt"));
-    EXPECT_FALSE(pat1.match("a.txt"));
+    EXPECT(pat1.match("中.txt"));
+    EXPECT(pat1.match("文.txt"));
+    EXPECT(!pat1.match("英.txt"));
+    EXPECT(!pat1.match("a.txt"));
 
     // 中 (U+4E2D) lies inside the range 一 (U+4E00) .. 十 (U+5341).
     PATDEF(pat2, "[一-十].txt")
-    EXPECT_TRUE(pat2.match("中.txt"));
-    EXPECT_FALSE(pat2.match("a.txt"));
+    EXPECT(pat2.match("中.txt"));
+    EXPECT(!pat2.match("a.txt"));
 
     PATDEF(pat3, "[!一-十].txt")
-    EXPECT_FALSE(pat3.match("中.txt"));
-    EXPECT_TRUE(pat3.match("a.txt"));
+    EXPECT(!pat3.match("中.txt"));
+    EXPECT(pat3.match("a.txt"));
 
     PATDEF(pat4, "[a-z中]?")
-    EXPECT_TRUE(pat4.match("中文"));
-    EXPECT_TRUE(pat4.match("x文"));
-    EXPECT_FALSE(pat4.match("文文"));
+    EXPECT(pat4.match("中文"));
+    EXPECT(pat4.match("x文"));
+    EXPECT(!pat4.match("文文"));
 
     // α-γ then a literal dash then ε: the dash after a completed range
     // stays literal for multi-byte members too.
     PATDEF(pat5, "[α-γ-ε]")
-    EXPECT_TRUE(pat5.match("β"));
-    EXPECT_TRUE(pat5.match("-"));
-    EXPECT_TRUE(pat5.match("ε"));
-    EXPECT_FALSE(pat5.match("δ"));
+    EXPECT(pat5.match("β"));
+    EXPECT(pat5.match("-"));
+    EXPECT(pat5.match("ε"));
+    EXPECT(!pat5.match("δ"));
 }
 
-TEST_CASE(unicode_escape_star) {
+ZEST_CASE(unicode_escape_star) {
     PATDEF(pat1, "\\中.txt")
-    EXPECT_TRUE(pat1.match("中.txt"));
-    EXPECT_FALSE(pat1.match("文.txt"));
+    EXPECT(pat1.match("中.txt"));
+    EXPECT(!pat1.match("文.txt"));
 
     PATDEF(pat2, "*文.txt")
-    EXPECT_TRUE(pat2.match("中文.txt"));
-    EXPECT_TRUE(pat2.match("文.txt"));
-    EXPECT_FALSE(pat2.match("中英.txt"));
+    EXPECT(pat2.match("中文.txt"));
+    EXPECT(pat2.match("文.txt"));
+    EXPECT(!pat2.match("中英.txt"));
 
     PATDEF(pat3, "**/中.txt")
-    EXPECT_TRUE(pat3.match("a/b/中.txt"));
-    EXPECT_TRUE(pat3.match("中.txt"));
+    EXPECT(pat3.match("a/b/中.txt"));
+    EXPECT(pat3.match("中.txt"));
 }
 
-TEST_CASE(unicode_segments) {
+ZEST_CASE(unicode_segments) {
     PATDEF(pat1, "中/文.txt")
-    EXPECT_TRUE(pat1.match("中/文.txt"));
-    EXPECT_FALSE(pat1.match("中文.txt"));
+    EXPECT(pat1.match("中/文.txt"));
+    EXPECT(!pat1.match("中文.txt"));
 
     PATDEF(pat2, "*/文*")
-    EXPECT_TRUE(pat2.match("中/文x"));
-    EXPECT_FALSE(pat2.match("中/x文"));
+    EXPECT(pat2.match("中/文x"));
+    EXPECT(!pat2.match("中/x文"));
 
     // The stripped literal prefix ends mid-segment; segment 0 continues it.
     PATDEF(pat3, "中?")
-    EXPECT_TRUE(pat3.match("中文"));
-    EXPECT_FALSE(pat3.match("x文"));
+    EXPECT(pat3.match("中文"));
+    EXPECT(!pat3.match("x文"));
 }
 
-TEST_CASE(star_atom_alignment) {
+ZEST_CASE(star_atom_alignment) {
     // A star retry must extend by whole characters. Byte-wise stepping
     // would stop inside 中 and let `?`/`[!X]` consume its continuation
     // bytes as two extra characters, wrongly matching two-character
     // inputs against three-atom tails.
     PATDEF(pat1, "*?[!X]X")
-    EXPECT_FALSE(pat1.match("中X"));
-    EXPECT_TRUE(pat1.match("中aX"));
+    EXPECT(!pat1.match("中X"));
+    EXPECT(pat1.match("中aX"));
 
     PATDEF(pat2, "**/*?[!X]X")
-    EXPECT_FALSE(pat2.match("/中X"));
-    EXPECT_TRUE(pat2.match("/中aX"));
+    EXPECT(!pat2.match("/中X"));
+    EXPECT(pat2.match("/中aX"));
 
     PATDEF(pat3, "*?[!X]X/**")
-    EXPECT_FALSE(pat3.match("中X"));
-    EXPECT_TRUE(pat3.match("中aX"));
+    EXPECT(!pat3.match("中X"));
+    EXPECT(pat3.match("中aX"));
 }
 
-TEST_CASE(invalid_utf8_input) {
+ZEST_CASE(invalid_utf8_input) {
     // A path byte that does not decode counts as one character that only
     // wildcards and negated classes can cover.
     PATDEF(pat1, "*.txt")
-    EXPECT_TRUE(pat1.match("\xFF\xFE.txt"));
+    EXPECT(pat1.match("\xFF\xFE.txt"));
 
     PATDEF(pat2, "??.txt")
-    EXPECT_TRUE(pat2.match("\xFF\xFE.txt"));
+    EXPECT(pat2.match("\xFF\xFE.txt"));
 
     PATDEF(pat3, "?.txt")
-    EXPECT_FALSE(pat3.match("\xFF\xFE.txt"));
-    EXPECT_TRUE(pat3.match("\x80.txt"));
+    EXPECT(!pat3.match("\xFF\xFE.txt"));
+    EXPECT(pat3.match("\x80.txt"));
 
     PATDEF(pat4, "[!a].txt")
-    EXPECT_TRUE(pat4.match("\xFF.txt"));
-    EXPECT_FALSE(pat4.match("a.txt"));
+    EXPECT(pat4.match("\xFF.txt"));
+    EXPECT(!pat4.match("a.txt"));
 
     // é (U+00E9) never equals the raw Latin-1 byte E9, in any construct.
     PATDEF(pat5, "é.txt")
-    EXPECT_FALSE(pat5.match("\xE9.txt"));
+    EXPECT(!pat5.match("\xE9.txt"));
 
     PATDEF(pat6, "[é].txt")
-    EXPECT_FALSE(pat6.match("\xE9.txt"));
+    EXPECT(!pat6.match("\xE9.txt"));
 
     PATDEF(pat7, "[!é].txt")
-    EXPECT_TRUE(pat7.match("\xE9.txt"));
+    EXPECT(pat7.match("\xE9.txt"));
 }
 
-TEST_CASE(invalid_utf8_pattern) {
+ZEST_CASE(invalid_utf8_pattern) {
     auto expect_invalid = [](std::string_view pattern, std::uint32_t at) {
         auto res = kota::GlobPattern::create(pattern);
-        EXPECT_FALSE(res.has_value());
+        EXPECT(!res.has_value());
         if(!res.has_value()) {
-            EXPECT_EQ(res.error().kind, kota::GlobError::InvalidUtf8);
-            EXPECT_EQ(res.error().begin, at);
+            EXPECT(res.error().kind == kota::GlobError::InvalidUtf8);
+            EXPECT(res.error().begin == at);
         }
     };
 
@@ -1310,12 +1310,12 @@ TEST_CASE(invalid_utf8_pattern) {
     expect_invalid("a[\xFF]", 2);
 }
 
-TEST_CASE(escaped_slash) {
+ZEST_CASE(escaped_slash) {
     auto expect_rejected = [](std::string_view pattern) {
         auto res = kota::GlobPattern::create(pattern);
-        EXPECT_FALSE(res.has_value());
+        EXPECT(!res.has_value());
         if(!res.has_value()) {
-            EXPECT_EQ(res.error().kind, kota::GlobError::InvalidEscape);
+            EXPECT(res.error().kind == kota::GlobError::InvalidEscape);
         }
     };
 
@@ -1327,58 +1327,58 @@ TEST_CASE(escaped_slash) {
     // Escape parity: the first backslash escapes the second, the slash is
     // a real separator.
     PATDEF(pat1, R"(\\/)")
-    EXPECT_TRUE(pat1.match("\\/"));
+    EXPECT(pat1.match("\\/"));
 
     // Inside a class the slash is accepted but can never match.
     PATDEF(pat2, R"([\/])")
-    EXPECT_FALSE(pat2.match("/"));
-    EXPECT_FALSE(pat2.match("a"));
+    EXPECT(!pat2.match("/"));
+    EXPECT(!pat2.match("a"));
 }
 
-TEST_CASE(empty_class) {
-    EXPECT_FALSE(kota::GlobPattern::create("[]").has_value());
+ZEST_CASE(empty_class) {
+    EXPECT(!kota::GlobPattern::create("[]").has_value());
 
     PATDEF(pat1, "[]]")
-    EXPECT_TRUE(pat1.match("]"));
+    EXPECT(pat1.match("]"));
 
-    EXPECT_FALSE(kota::GlobPattern::create("[!]").has_value());
-    EXPECT_FALSE(kota::GlobPattern::create("[^]").has_value());
+    EXPECT(!kota::GlobPattern::create("[!]").has_value());
+    EXPECT(!kota::GlobPattern::create("[^]").has_value());
 
     PATDEF(pat3, "[!]]")
-    EXPECT_FALSE(pat3.match("a]"));
-    EXPECT_TRUE(pat3.match("a"));
-    EXPECT_FALSE(pat3.match("]"));
+    EXPECT(!pat3.match("a]"));
+    EXPECT(pat3.match("a"));
+    EXPECT(!pat3.match("]"));
 
     PATDEF(pat4, "{[!]],[]]}")
-    EXPECT_TRUE(pat4.match("a"));
-    EXPECT_TRUE(pat4.match("]"));
-    EXPECT_FALSE(pat4.match("/"));
+    EXPECT(pat4.match("a"));
+    EXPECT(pat4.match("]"));
+    EXPECT(!pat4.match("/"));
 }
 
-TEST_CASE(bracket_lookup) {
+ZEST_CASE(bracket_lookup) {
     // Disjoint ranges: membership must be found in the range whose upper
     // bound is the first to reach the probe.
     PATDEF(pat1, "[a-cx-z]")
-    EXPECT_TRUE(pat1.match("b"));
-    EXPECT_TRUE(pat1.match("y"));
-    EXPECT_FALSE(pat1.match("d"));
+    EXPECT(pat1.match("b"));
+    EXPECT(pat1.match("y"));
+    EXPECT(!pat1.match("d"));
 
     PATDEF(pat2, "[!a-cx-z]")
-    EXPECT_FALSE(pat2.match("b"));
-    EXPECT_TRUE(pat2.match("d"));
+    EXPECT(!pat2.match("b"));
+    EXPECT(pat2.match("d"));
 
     // Duplicates and overlaps coalesce without changing membership.
     PATDEF(pat3, "[aaa]")
-    EXPECT_TRUE(pat3.match("a"));
-    EXPECT_FALSE(pat3.match("b"));
+    EXPECT(pat3.match("a"));
+    EXPECT(!pat3.match("b"));
 
     PATDEF(pat4, "[a-mh-z]")
-    EXPECT_TRUE(pat4.match("h"));
-    EXPECT_TRUE(pat4.match("z"));
-    EXPECT_FALSE(pat4.match("A"));
+    EXPECT(pat4.match("h"));
+    EXPECT(pat4.match("z"));
+    EXPECT(!pat4.match("A"));
 }
 
-TEST_CASE(unbounded_unicode_retries) {
+ZEST_CASE(unbounded_unicode_retries) {
     // Crossing the old retry threshold must not turn a true match into false.
     // The general class plan and direct suffix plan have the same semantics.
     auto rocket_input = [](size_t count) {
@@ -1392,65 +1392,65 @@ TEST_CASE(unbounded_unicode_retries) {
     };
 
     PATDEF(pat1, "*[Z]")
-    EXPECT_TRUE(pat1.match(rocket_input(65535)));
-    EXPECT_TRUE(pat1.match(rocket_input(65536)));
-    EXPECT_TRUE(pat1.match(rocket_input(65537)));
+    EXPECT(pat1.match(rocket_input(65535)));
+    EXPECT(pat1.match(rocket_input(65536)));
+    EXPECT(pat1.match(rocket_input(65537)));
 
     PATDEF(pat2, "*Z")
-    EXPECT_TRUE(pat2.match(rocket_input(65537)));
+    EXPECT(pat2.match(rocket_input(65537)));
 }
 
-TEST_CASE(vscode_star_semantics) {
+ZEST_CASE(vscode_star_semantics) {
     PATDEF(single, "*")
-    EXPECT_TRUE(single.match(""));
-    EXPECT_FALSE(single.match("/"));
-    EXPECT_FALSE(single.match("x/y"));
+    EXPECT(single.match(""));
+    EXPECT(!single.match("/"));
+    EXPECT(!single.match("x/y"));
 
     for(std::string_view source: {"**.cpp", "a**b"}) {
         PATDEF(pattern, source)
-        EXPECT_FALSE(pattern.match("a/x/b.cpp"));
-        EXPECT_FALSE(pattern.match("a/x/b"));
+        EXPECT(!pattern.match("a/x/b.cpp"));
+        EXPECT(!pattern.match("a/x/b"));
     }
     PATDEF(embedded, "a**")
-    EXPECT_TRUE(embedded.match("a"));
-    EXPECT_TRUE(embedded.match("abc"));
-    EXPECT_FALSE(embedded.match("a/b"));
+    EXPECT(embedded.match("a"));
+    EXPECT(embedded.match("abc"));
+    EXPECT(!embedded.match("a/b"));
     PATDEF(embedded_slash, "a**/")
-    EXPECT_FALSE(embedded_slash.match("a"));
-    EXPECT_TRUE(embedded_slash.match("abc/"));
-    EXPECT_FALSE(embedded_slash.match("a/b/"));
+    EXPECT(!embedded_slash.match("a"));
+    EXPECT(embedded_slash.match("abc/"));
+    EXPECT(!embedded_slash.match("a/b/"));
 }
 
-TEST_CASE(compiled_string_predicates) {
+ZEST_CASE(compiled_string_predicates) {
     PATDEF(suffix, "**/*说明.cpp")
-    EXPECT_TRUE(suffix.match("文档/说明.cpp"));
-    EXPECT_FALSE(suffix.match("文档/说明.cpp/"));
+    EXPECT(suffix.match("文档/说明.cpp"));
+    EXPECT(!suffix.match("文档/说明.cpp/"));
     PATDEF(segment, "foo**.cpp")
-    EXPECT_TRUE(segment.match("foo.cpp"));
-    EXPECT_FALSE(segment.match("foo/x.cpp"));
+    EXPECT(segment.match("foo.cpp"));
+    EXPECT(!segment.match("foo/x.cpp"));
     PATDEF(path, "**/中/文")
-    EXPECT_TRUE(path.match("x/中/文"));
-    EXPECT_FALSE(path.match("x中/文"));
+    EXPECT(path.match("x/中/文"));
+    EXPECT(!path.match("x中/文"));
     PATDEF(tree, "**/中/文/**")
-    EXPECT_TRUE(tree.match("中/文"));
-    EXPECT_TRUE(tree.match("x/中/文/y"));
-    EXPECT_TRUE(tree.match("x中/文z/中/文/y"));
-    EXPECT_FALSE(tree.match("x中/文/y"));
-    EXPECT_FALSE(tree.match("中/文字/y"));
+    EXPECT(tree.match("中/文"));
+    EXPECT(tree.match("x/中/文/y"));
+    EXPECT(tree.match("x中/文z/中/文/y"));
+    EXPECT(!tree.match("x中/文/y"));
+    EXPECT(!tree.match("中/文字/y"));
     PATDEF(escaped, R"(**/\*.cpp)")
-    EXPECT_TRUE(escaped.match("x/*.cpp"));
-    EXPECT_FALSE(escaped.match("x/a.cpp"));
+    EXPECT(escaped.match("x/*.cpp"));
+    EXPECT(!escaped.match("x/a.cpp"));
     PATDEF(leading_slash, "/**/*.cpp")
-    EXPECT_TRUE(leading_slash.match("/x/a.cpp"));
-    EXPECT_FALSE(leading_slash.match("x/a.cpp"));
+    EXPECT(leading_slash.match("/x/a.cpp"));
+    EXPECT(!leading_slash.match("x/a.cpp"));
     PATDEF(basename_class, "src/**/test[0-9].cpp")
-    EXPECT_TRUE(basename_class.match("src/a/b/test1.cpp"));
-    EXPECT_FALSE(basename_class.match("src/test1.cpp/child"));
-    EXPECT_FALSE(basename_class.match("src/a/test10.cpp"));
-    EXPECT_FALSE(basename_class.match("other/test1.cpp"));
+    EXPECT(basename_class.match("src/a/b/test1.cpp"));
+    EXPECT(!basename_class.match("src/test1.cpp/child"));
+    EXPECT(!basename_class.match("src/a/test10.cpp"));
+    EXPECT(!basename_class.match("other/test1.cpp"));
 }
 
-TEST_CASE(packed_suffix_boundaries) {
+ZEST_CASE(packed_suffix_boundaries) {
     std::vector<std::string> literals = {"", "说明.cpp", "🚀", std::string("\0z", 2)};
     for(size_t length: {1, 7, 8, 9, 15, 16, 17, 24}) {
         literals.emplace_back(length, 'x');
@@ -1469,15 +1469,15 @@ TEST_CASE(packed_suffix_boundaries) {
                 auto storage = std::make_unique<char[]>(text.size());
                 std::copy(text.begin(), text.end(), storage.get());
                 std::string_view view(storage.get(), text.size());
-                EXPECT_EQ(recursive.match(view), view.ends_with(literal));
-                EXPECT_EQ(copied.match(view), view.ends_with(literal));
-                EXPECT_EQ(segment.match(view), view.ends_with(literal) && !view.contains('/'));
+                EXPECT(recursive.match(view) == view.ends_with(literal));
+                EXPECT(copied.match(view) == view.ends_with(literal));
+                EXPECT(segment.match(view) == (view.ends_with(literal) && !view.contains('/')));
             }
         }
     }
 }
 
-TEST_CASE(extension_set_boundaries) {
+ZEST_CASE(extension_set_boundaries) {
     for(size_t count: {15, 16, 17, 50, 100}) {
         std::vector<std::string> extensions = {".", ".中", ".🚀", ".abcdefg"};
         while(extensions.size() < count) {
@@ -1502,10 +1502,10 @@ TEST_CASE(extension_set_boundaries) {
                     bool expected = std::ranges::any_of(extensions, [&](const auto& suffix) {
                         return path.ends_with(suffix);
                     });
-                    EXPECT_EQ(moved.match(path), expected);
+                    EXPECT(moved.match(path) == expected);
                 }
             }
-            EXPECT_FALSE(moved.match("no_extension"));
+            EXPECT(!moved.match("no_extension"));
         };
         check();
         // These must select the general suffix set rather than treating the
@@ -1517,13 +1517,13 @@ TEST_CASE(extension_set_boundaries) {
     }
 }
 
-TEST_CASE(redundant_star_backtracking) {
+ZEST_CASE(redundant_star_backtracking) {
     // The first candidate matches through 'b' but fails at /x. Retrying
     // every distribution among the single stars used to exhaust the
     // budget before the globstar could reach the second candidate.
     PATDEF(pat1, "**/*a*a*a*ab/x")
-    EXPECT_TRUE(pat1.match(std::string(32, 'a') + "b/y/aaaab/x"));
-    EXPECT_FALSE(pat1.match(std::string(32, 'a') + "b/y/aaaab/y"));
+    EXPECT(pat1.match(std::string(32, 'a') + "b/y/aaaab/x"));
+    EXPECT(!pat1.match(std::string(32, 'a') + "b/y/aaaab/y"));
 
     // Dropping a star must preserve the bracket index of the newer state,
     // and Unicode characters must still be consumed as whole atoms.
@@ -1532,62 +1532,62 @@ TEST_CASE(redundant_star_backtracking) {
     for(size_t i = 0; i < 32; i += 1) {
         prefix += "中";
     }
-    EXPECT_TRUE(pat2.match(prefix + "b/y/中中中中b/x"));
-    EXPECT_FALSE(pat2.match(prefix + "b/y/中中中b/x"));
+    EXPECT(pat2.match(prefix + "b/y/中中中中b/x"));
+    EXPECT(!pat2.match(prefix + "b/y/中中中b/x"));
 
     PATDEF(pat3, "**/*a*a/**/b/x")
-    EXPECT_TRUE(pat3.match("aaaa/other/b/x"));
-    EXPECT_FALSE(pat3.match("aaaa/other/b/y"));
+    EXPECT(pat3.match("aaaa/other/b/x"));
+    EXPECT(!pat3.match("aaaa/other/b/y"));
 }
 
-TEST_CASE(globstar_boundary_retries) {
+ZEST_CASE(globstar_boundary_retries) {
     // Directory length must not spend one retry per character when the
     // next pattern segment can only start after a separator.
     auto long_directory = std::string(70000, 'a');
     PATDEF(pat1, "**/目标.cpp")
-    EXPECT_TRUE(pat1.match(long_directory + "/目标.cpp"));
-    EXPECT_FALSE(pat1.match(long_directory + "目标.cpp"));
+    EXPECT(pat1.match(long_directory + "/目标.cpp"));
+    EXPECT(!pat1.match(long_directory + "目标.cpp"));
 
     PATDEF(pat2, "源**/?.cpp")
-    EXPECT_TRUE(pat2.match("源" + long_directory + "/中.cpp"));
-    EXPECT_FALSE(pat2.match("源中.cpp"));
-    EXPECT_FALSE(pat2.match("源" + long_directory + "/中文.cpp"));
+    EXPECT(pat2.match("源" + long_directory + "/中.cpp"));
+    EXPECT(!pat2.match("源中.cpp"));
+    EXPECT(!pat2.match("源" + long_directory + "/中文.cpp"));
 
     PATDEF(pat3, "**/[!a].cpp")
-    EXPECT_TRUE(pat3.match(std::string("\xFF\x80/\xFE.cpp")));
-    EXPECT_FALSE(pat3.match(std::string("\xFF\x80\xFE.cpp")));
+    EXPECT(pat3.match(std::string("\xFF\x80/\xFE.cpp")));
+    EXPECT(!pat3.match(std::string("\xFF\x80\xFE.cpp")));
 
     PATDEF(pat4, "**/a/")
-    EXPECT_TRUE(pat4.match("a/a/"));
-    EXPECT_FALSE(pat4.match("a/a/x"));
+    EXPECT(pat4.match("a/a/"));
+    EXPECT(!pat4.match("a/a/x"));
 }
 
-TEST_CASE(completed_segment_retries) {
+ZEST_CASE(completed_segment_retries) {
     // A final star fixes the segment endpoint. Redistributing earlier stars
     // in already matched segments used to exhaust the budget before **
     // could reach the valid suffix.
     PATDEF(pat1, "**/*a*/*a*/*a*/c")
     auto segment = std::string(48, 'a') + '/';
-    EXPECT_TRUE(pat1.match(segment + segment + segment + "y/a/a/a/c"));
-    EXPECT_FALSE(pat1.match(segment + segment + segment + "y/a/a/a/d"));
+    EXPECT(pat1.match(segment + segment + segment + "y/a/a/a/c"));
+    EXPECT(!pat1.match(segment + segment + segment + "y/a/a/a/d"));
 
     PATDEF(pat2, "**/*a*/b")
-    EXPECT_TRUE(pat2.match(std::string(70000, 'a') + "/c/a/b"));
-    EXPECT_FALSE(pat2.match(std::string(70000, 'a') + "/c/a/c"));
+    EXPECT(pat2.match(std::string(70000, 'a') + "/c/a/b"));
+    EXPECT(!pat2.match(std::string(70000, 'a') + "/c/a/c"));
 
     PATDEF(pat3, "**/[中]*[文]*/[🚀]*/目标")
-    EXPECT_TRUE(pat3.match("中文/🚀/错/中文/🚀/目标"));
-    EXPECT_FALSE(pat3.match("中文/🚀/错/中文/x/目标"));
+    EXPECT(pat3.match("中文/🚀/错/中文/🚀/目标"));
+    EXPECT(!pat3.match("中文/🚀/错/中文/x/目标"));
 }
 
-TEST_CASE(latest_globstar_checkpoint) {
+ZEST_CASE(latest_globstar_checkpoint) {
     PATDEF(pat1, "**/a/**/b/**/c")
-    EXPECT_TRUE(pat1.match("a/x/a/b/y/b/c"));
-    EXPECT_FALSE(pat1.match("a/x/a/b/y/b/d"));
+    EXPECT(pat1.match("a/x/a/b/y/b/c"));
+    EXPECT(!pat1.match("a/x/a/b/y/b/d"));
 
     PATDEF(pat2, "**/[中]*[文]/**/[🚀]/目标")
-    EXPECT_TRUE(pat2.match("中文/中x文/🚀/错/🚀/目标"));
-    EXPECT_FALSE(pat2.match("中文/中x文/🚀/错/x/目标"));
+    EXPECT(pat2.match("中文/中x文/🚀/错/🚀/目标"));
+    EXPECT(!pat2.match("中文/中x文/🚀/错/x/目标"));
 
     // More checkpoints than the old stack's inline capacity, including a
     // deep copy of the compiled pattern. The new matcher has no stack.
@@ -1600,53 +1600,53 @@ TEST_CASE(latest_globstar_checkpoint) {
     source += "目标";
     PATDEF(pat3, source)
     auto copy = pat3;
-    EXPECT_TRUE(copy.match(input + "目标"));
-    EXPECT_FALSE(copy.match(input + "错"));
+    EXPECT(copy.match(input + "目标"));
+    EXPECT(!copy.match(input + "错"));
 }
 
-TEST_CASE(globstar_single_star_handover) {
+ZEST_CASE(globstar_single_star_handover) {
     PATDEF(pat1, "**/a*b")
-    EXPECT_TRUE(pat1.match(std::string(1000, 'a') + "/ab"));
-    EXPECT_FALSE(pat1.match(std::string(1000, 'a') + "/ac"));
+    EXPECT(pat1.match(std::string(1000, 'a') + "/ab"));
+    EXPECT(!pat1.match(std::string(1000, 'a') + "/ac"));
 
     PATDEF(pat2, "**/中*?b")
     std::string prefix;
     for(size_t i = 0; i < 1000; i += 1) {
         prefix += "中";
     }
-    EXPECT_TRUE(pat2.match(prefix + "/中🚀b"));
-    EXPECT_FALSE(pat2.match(prefix + "/中b"));
+    EXPECT(pat2.match(prefix + "/中🚀b"));
+    EXPECT(!pat2.match(prefix + "/中b"));
 
     // A pattern separator between the checkpoints prevents skipping: the
     // second 'a' must be reconsidered as the start of the whole suffix.
     PATDEF(pat3, "**/a/*b/c")
-    EXPECT_TRUE(pat3.match("a/a/b/c"));
+    EXPECT(pat3.match("a/a/b/c"));
 
     PATDEF(pat4, "**/[a/]*b")
-    EXPECT_TRUE(pat4.match("aaaa/ac/ab"));
-    EXPECT_FALSE(pat4.match("aaaa/ac/ac"));
+    EXPECT(pat4.match("aaaa/ac/ab"));
+    EXPECT(!pat4.match("aaaa/ac/ac"));
 }
 
-TEST_CASE(separator_token_boundaries) {
+ZEST_CASE(separator_token_boundaries) {
     // Slashes inside a character class must never be mistaken for pattern
     // separators when deriving boundaries directly from the pattern bytes.
     PATDEF(pat1, "**/[a/]b/目标")
-    EXPECT_TRUE(pat1.match("x/ab/目标"));
-    EXPECT_FALSE(pat1.match("x//b/目标"));
+    EXPECT(pat1.match("x/ab/目标"));
+    EXPECT(!pat1.match("x//b/目标"));
 
     PATDEF(pat2, R"(**/[\/]*/目标)")
-    EXPECT_FALSE(pat2.match("x//目标"));
+    EXPECT(!pat2.match("x//目标"));
 
     PATDEF(pat3, R"(**/\\/目标)")
-    EXPECT_TRUE(pat3.match("x/\\/目标"));
-    EXPECT_FALSE(pat3.match("x/目标"));
+    EXPECT(pat3.match("x/\\/目标"));
+    EXPECT(!pat3.match("x/目标"));
 
     PATDEF(pat4, "**/{中,文}/")
-    EXPECT_TRUE(pat4.match("x/中/文/"));
-    EXPECT_FALSE(pat4.match("x/中/文"));
+    EXPECT(pat4.match("x/中/文/"));
+    EXPECT(!pat4.match("x/中/文"));
 }
 
-TEST_CASE(generated_segment_reference) {
+ZEST_CASE(generated_segment_reference) {
     // Independent dynamic programming over generated tokens/atoms: no
     // production parser, decoder, prefix extraction or backtracking is
     // used by the oracle. This covers normalized paths, with whole-segment
@@ -1746,15 +1746,15 @@ TEST_CASE(generated_segment_reference) {
             }
             bool expected = source == "**" || previous.back();
             if(auto actual = pattern.match(input); actual != expected) {
-                EXPECT_EQ(std::format("{} / {} -> {}", source, input, actual),
-                          std::format("{} / {} -> {}", source, input, expected));
+                EXPECT(std::format("{} / {} -> {}", source, input, actual) ==
+                       std::format("{} / {} -> {}", source, input, expected));
                 return;
             }
         }
     }
 }
 
-TEST_CASE(compiled_segments_without_retry_cutoff) {
+ZEST_CASE(compiled_segments_without_retry_cutoff) {
     for(size_t width: {20, 80}) {
         for(size_t count: {80, 160}) {
             std::string source = "**/";
@@ -1768,145 +1768,145 @@ TEST_CASE(compiled_segments_without_retry_cutoff) {
             }
             input += 'Z';
             PATDEF(pattern, source)
-            EXPECT_TRUE(pattern.match(input));
+            EXPECT(pattern.match(input));
             input.back() = 'Y';
-            EXPECT_FALSE(pattern.match(input));
+            EXPECT(!pattern.match(input));
         }
     }
     // The segment matcher must not inherit the old per-byte retry cap either.
     PATDEF(long_segment, "{*a?Z,never}")
     std::string input(70000, 'b');
-    EXPECT_TRUE(long_segment.match(input + "a中Z"));
-    EXPECT_FALSE(long_segment.match(input + "a中Y"));
+    EXPECT(long_segment.match(input + "a中Z"));
+    EXPECT(!long_segment.match(input + "a中Y"));
 }
 
-TEST_CASE(compiled_segment_literals_and_copy) {
+ZEST_CASE(compiled_segment_literals_and_copy) {
     PATDEF(pattern, R"(src/*/test_\[中\]*.cpp)")
-    EXPECT_TRUE(pattern.match("src/目录/test_[中]文.cpp"));
-    EXPECT_TRUE(pattern.match("src//test_[中].cpp"));
-    EXPECT_FALSE(pattern.match("src/目录/sub/test_[中].cpp"));
-    EXPECT_FALSE(pattern.match("src/目录/test_中.cpp"));
+    EXPECT(pattern.match("src/目录/test_[中]文.cpp"));
+    EXPECT(pattern.match("src//test_[中].cpp"));
+    EXPECT(!pattern.match("src/目录/sub/test_[中].cpp"));
+    EXPECT(!pattern.match("src/目录/test_中.cpp"));
     auto copy = pattern;
     auto moved = std::move(copy);
-    EXPECT_TRUE(moved.match("src/x/test_[中].cpp"));
+    EXPECT(moved.match("src/x/test_[中].cpp"));
     pattern = *GlobPattern::create("other");
-    EXPECT_TRUE(moved.match("src/x/test_[中].cpp"));
+    EXPECT(moved.match("src/x/test_[中].cpp"));
     PATDEF(classes, "src/*/[中a]?*.cpp")
-    EXPECT_TRUE(classes.match(std::string("src/x/a") + '\xff' + ".cpp"));
-    EXPECT_FALSE(classes.match("src/x/a.cpp"));
+    EXPECT(classes.match(std::string("src/x/a") + '\xff' + ".cpp"));
+    EXPECT(!classes.match("src/x/a.cpp"));
 }
 
-TEST_CASE(escaped_literal_prefix_plans) {
+ZEST_CASE(escaped_literal_prefix_plans) {
     PATDEF(tree, R"(/work/项目\[demo\]/src/**/*.cpp)")
-    EXPECT_TRUE(tree.match("/work/项目[demo]/src/test.cpp"));
-    EXPECT_TRUE(tree.match("/work/项目[demo]/src/目录/test.cpp"));
-    EXPECT_FALSE(tree.match("/work/项目[demo]/srcx/test.cpp"));
-    EXPECT_FALSE(tree.match("/work/项目d/src/test.cpp"));
+    EXPECT(tree.match("/work/项目[demo]/src/test.cpp"));
+    EXPECT(tree.match("/work/项目[demo]/src/目录/test.cpp"));
+    EXPECT(!tree.match("/work/项目[demo]/srcx/test.cpp"));
+    EXPECT(!tree.match("/work/项目d/src/test.cpp"));
     PATDEF(exact, R"(\中\文\*\?\[\{\\)")
-    EXPECT_TRUE(exact.match("中文*?[{\\"));
-    EXPECT_FALSE(exact.match("中文*?[{\\x"));
-    EXPECT_FALSE(GlobPattern::create(R"(a\[//b)").has_value());
-    EXPECT_FALSE(GlobPattern::create(R"(a\[\/b)").has_value());
-    EXPECT_FALSE(GlobPattern::create(R"(a\[b\)").has_value());
+    EXPECT(exact.match("中文*?[{\\"));
+    EXPECT(!exact.match("中文*?[{\\x"));
+    EXPECT(!GlobPattern::create(R"(a\[//b)").has_value());
+    EXPECT(!GlobPattern::create(R"(a\[\/b)").has_value());
+    EXPECT(!GlobPattern::create(R"(a\[b\)").has_value());
     auto copy = tree;
     auto moved = std::move(copy);
-    EXPECT_TRUE(moved.match("/work/项目[demo]/src/test.cpp"));
+    EXPECT(moved.match("/work/项目[demo]/src/test.cpp"));
 }
 
-TEST_CASE(affix_and_brace_tree_plans) {
+ZEST_CASE(affix_and_brace_tree_plans) {
     PATDEF(affix, "**/foo*foo")
-    EXPECT_FALSE(affix.match("foo"));
-    EXPECT_FALSE(affix.match("foo/foo"));
-    EXPECT_TRUE(affix.match("foofoo"));
-    EXPECT_TRUE(affix.match("目录/foo中文foo"));
-    EXPECT_FALSE(affix.match("目录/foofoo/"));
+    EXPECT(!affix.match("foo"));
+    EXPECT(!affix.match("foo/foo"));
+    EXPECT(affix.match("foofoo"));
+    EXPECT(affix.match("目录/foo中文foo"));
+    EXPECT(!affix.match("目录/foofoo/"));
     PATDEF(prefix, "**/test_*")
-    EXPECT_TRUE(prefix.match("目录/test_"));
-    EXPECT_FALSE(prefix.match("目录/test_/child"));
+    EXPECT(prefix.match("目录/test_"));
+    EXPECT(!prefix.match("目录/test_/child"));
     PATDEF(arms, "{test_*.cpp,foo**foo}")
-    EXPECT_TRUE(arms.match("test_.cpp"));
-    EXPECT_TRUE(arms.match("foofoo"));
-    EXPECT_FALSE(arms.match("foo/foo"));
+    EXPECT(arms.match("test_.cpp"));
+    EXPECT(arms.match("foofoo"));
+    EXPECT(!arms.match("foo/foo"));
     PATDEF(tree, "{src,include}/**")
     for(std::string_view input: {"src", "src/", "src/中文.cpp", "include/a/b"}) {
-        EXPECT_TRUE(tree.match(input));
+        EXPECT(tree.match(input));
     }
     for(std::string_view input: {"", "/src", "srcx/a", "x/include/a"}) {
-        EXPECT_FALSE(tree.match(input));
+        EXPECT(!tree.match(input));
     }
     PATDEF(root, "{,src}/**")
-    EXPECT_TRUE(root.match(""));
-    EXPECT_TRUE(root.match("/foo"));
-    EXPECT_FALSE(root.match("foo"));
+    EXPECT(root.match(""));
+    EXPECT(root.match("/foo"));
+    EXPECT(!root.match("foo"));
     std::string source("**/中*\0文", 11);
     PATDEF(binary, source)
-    EXPECT_TRUE(binary.match(std::string("中\0文", 7)));
-    EXPECT_FALSE(binary.match("中文"));
+    EXPECT(binary.match(std::string("中\0文", 7)));
+    EXPECT(!binary.match("中文"));
 }
 
 // The wildcard and range cases below are ported from rust-lang/glob's
 // test suite (MIT/Apache-2.0).
-TEST_CASE(ported_wildcards) {
+ZEST_CASE(ported_wildcards) {
     PATDEF(pat1, "a*b")
-    EXPECT_TRUE(pat1.match("a_b"));
+    EXPECT(pat1.match("a_b"));
 
     PATDEF(pat2, "a*b*c")
-    EXPECT_TRUE(pat2.match("abc"));
-    EXPECT_FALSE(pat2.match("abcd"));
-    EXPECT_TRUE(pat2.match("a_b_c"));
-    EXPECT_TRUE(pat2.match("a___b___c"));
+    EXPECT(pat2.match("abc"));
+    EXPECT(!pat2.match("abcd"));
+    EXPECT(pat2.match("a_b_c"));
+    EXPECT(pat2.match("a___b___c"));
 
     PATDEF(pat3, "abc*abc*abc")
-    EXPECT_TRUE(pat3.match("abcabcabcabcabcabcabc"));
-    EXPECT_FALSE(pat3.match("abcabcabcabcabcabcabca"));
+    EXPECT(pat3.match("abcabcabcabcabcabcabc"));
+    EXPECT(!pat3.match("abcabcabcabcabcabcabca"));
 
     PATDEF(pat4, "a*a*a*a*a*a*a*a*a")
-    EXPECT_TRUE(pat4.match("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+    EXPECT(pat4.match("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
 
     PATDEF(pat5, "a*b[xyz]c*d")
-    EXPECT_TRUE(pat5.match("abxcdbxcddd"));
+    EXPECT(pat5.match("abxcdbxcddd"));
 }
 
-TEST_CASE(ported_ranges) {
+ZEST_CASE(ported_ranges) {
     PATDEF(pat1, "a[0-9]b")
     for(char digit = '0'; digit <= '9'; digit += 1) {
-        EXPECT_TRUE(pat1.match(std::string("a") + digit + "b"));
+        EXPECT(pat1.match(std::string("a") + digit + "b"));
     }
-    EXPECT_FALSE(pat1.match("a_b"));
+    EXPECT(!pat1.match("a_b"));
 
     PATDEF(pat2, "a[!0-9]b")
     for(char digit = '0'; digit <= '9'; digit += 1) {
-        EXPECT_FALSE(pat2.match(std::string("a") + digit + "b"));
+        EXPECT(!pat2.match(std::string("a") + digit + "b"));
     }
-    EXPECT_TRUE(pat2.match("a_b"));
+    EXPECT(pat2.match("a_b"));
 
     for(std::string_view p: {"[a-z123]", "[1a-z23]", "[123a-z]"}) {
         PATDEF(pat, p)
         for(char c = 'a'; c <= 'z'; c += 1) {
-            EXPECT_TRUE(pat.match(std::string_view(&c, 1)));
+            EXPECT(pat.match(std::string_view(&c, 1)));
         }
-        EXPECT_TRUE(pat.match("1"));
-        EXPECT_TRUE(pat.match("2"));
-        EXPECT_TRUE(pat.match("3"));
+        EXPECT(pat.match("1"));
+        EXPECT(pat.match("2"));
+        EXPECT(pat.match("3"));
     }
 
     for(std::string_view p: {"[abc-]", "[-abc]", "[a-c-]"}) {
         PATDEF(pat, p)
-        EXPECT_TRUE(pat.match("a"));
-        EXPECT_TRUE(pat.match("b"));
-        EXPECT_TRUE(pat.match("c"));
-        EXPECT_TRUE(pat.match("-"));
-        EXPECT_FALSE(pat.match("d"));
+        EXPECT(pat.match("a"));
+        EXPECT(pat.match("b"));
+        EXPECT(pat.match("c"));
+        EXPECT(pat.match("-"));
+        EXPECT(!pat.match("d"));
     }
 
     PATDEF(pat3, "[-]")
-    EXPECT_TRUE(pat3.match("-"));
+    EXPECT(pat3.match("-"));
 
     PATDEF(pat4, "[!-]")
-    EXPECT_FALSE(pat4.match("-"));
+    EXPECT(!pat4.match("-"));
 }
 
-};  // TEST_SUITE(glob_pattern)
+};  // namespace kota
 
 }  // namespace
 

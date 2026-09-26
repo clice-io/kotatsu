@@ -1,4 +1,4 @@
-// TEST_SUITE(task_group_lifetime): frame lifetime and settled-group behavior —
+// ZEST_SUITE(task_group_lifetime): frame lifetime and settled-group behavior —
 // spawn after join/cancel is rejected, not-awaited groups still run children,
 // completed frames reclaimed eagerly (tombstone compaction), and structured
 // completion waiting for cancelled children's frames. Spawn/join basics in
@@ -10,30 +10,30 @@
 
 namespace kota {
 
-TEST_SUITE(task_group_lifetime, loop_fixture) {
+ZEST_SUITE(task_group_lifetime, loop_fixture){
 
-TEST_CASE(spawn_after_join) {
-    int count = 0;
+    ZEST_CASE(spawn_after_join){int count = 0;
 
-    auto work = [&]() -> task<> {
-        count += 1;
-        co_return;
-    };
+auto work = [&]() -> task<> {
+    count += 1;
+    co_return;
+};
 
-    auto driver = [&]() -> task<> {
-        task_group<> group(loop);
-        group.spawn(work());
-        co_await group.join();
-        group.spawn(work());
-    };
+auto driver = [&]() -> task<> {
+    task_group<> group(loop);
+    group.spawn(work());
+    co_await group.join();
+    group.spawn(work());
+};
 
-    auto t = driver();
-    schedule_all(t);
-    EXPECT_TRUE(t->is_finished());
-    EXPECT_EQ(count, 1);
-}
+auto t = driver();
+schedule_all(t);
+EXPECT(t->is_finished());
+EXPECT(count == 1);
 
-TEST_CASE(not_awaited) {
+}  // namespace kota
+
+ZEST_CASE(not_awaited) {
     int count = 0;
 
     auto work = [&]() -> task<> {
@@ -47,10 +47,10 @@ TEST_CASE(not_awaited) {
         group.spawn(work());
     }
 
-    EXPECT_EQ(count, 2);
+    EXPECT(count == 2);
 }
 
-TEST_CASE(destroy_mixed_completed_and_pending) {
+ZEST_CASE(destroy_mixed_completed_and_pending) {
     int op_destroyed = 0;
     int sync_count = 0;
 
@@ -82,11 +82,11 @@ TEST_CASE(destroy_mixed_completed_and_pending) {
     auto finisher_task = finisher();
     schedule_all(runner_task, finisher_task);
 
-    EXPECT_EQ(sync_count, 2);
-    EXPECT_EQ(op_destroyed, 1);
+    EXPECT(sync_count == 2);
+    EXPECT(op_destroyed == 1);
 }
 
-TEST_CASE(group_waits_for_cancelled_children) {
+ZEST_CASE(group_waits_for_cancelled_children) {
     int op_destroyed = 0;
 
     auto slow = [&]() -> task<> {
@@ -108,17 +108,17 @@ TEST_CASE(group_waits_for_cancelled_children) {
         group.spawn(slow());
         group.spawn(fast_fail());
         auto result = co_await group.join();
-        EXPECT_TRUE(result.has_error());
+        EXPECT(result.has_error());
     };
 
     auto runner_task = runner();
     auto finisher_task = finisher();
     schedule_all(runner_task, finisher_task);
-    EXPECT_EQ(op_destroyed, 1);
+    EXPECT(op_destroyed == 1);
 }
 
 // spawn() returns bool indicating acceptance
-TEST_CASE(spawn_returns_false_after_settled) {
+ZEST_CASE(spawn_returns_false_after_settled) {
     bool accepted = true;
 
     auto work = [&]() -> task<> {
@@ -127,26 +127,26 @@ TEST_CASE(spawn_returns_false_after_settled) {
 
     auto driver = [&]() -> task<> {
         task_group<> group(loop);
-        EXPECT_TRUE(group.spawn(work()));
+        EXPECT(group.spawn(work()));
         co_await group.join();
         accepted = group.spawn(work());
     };
 
     auto t = driver();
     schedule_all(t);
-    EXPECT_FALSE(accepted);
+    EXPECT(!accepted);
 }
 
-TEST_CASE(spawn_returns_false_after_cancel) {
+ZEST_CASE(spawn_returns_false_after_cancel) {
     auto work = [&]() -> task<> {
         co_return;
     };
 
     auto driver = [&]() -> task<> {
         task_group<> group(loop);
-        EXPECT_TRUE(group.spawn(work()));
+        EXPECT(group.spawn(work()));
         group.cancel();
-        EXPECT_FALSE(group.spawn(work()));
+        EXPECT(!group.spawn(work()));
         co_await group.join();
     };
 
@@ -159,7 +159,7 @@ TEST_CASE(spawn_returns_false_after_cancel) {
 // failed children stay alive so join() can extract their errors. Also
 // exercises tombstone compaction: the third spawn triggers it, and the
 // error handler must stay paired with the failing child across the shift.
-TEST_CASE(reclaims_completed_child_frames) {
+ZEST_CASE(reclaims_completed_child_frames) {
     int destroyed = 0;
 
     struct probe {
@@ -188,26 +188,26 @@ TEST_CASE(reclaims_completed_child_frames) {
         task_group<error> group(loop);
         group.spawn(work(probe(&destroyed)));
         group.spawn(work(probe(&destroyed)));
-        EXPECT_EQ(destroyed, 2);
+        EXPECT(destroyed == 2);
 
         group.spawn(failing(probe(&destroyed)));
-        EXPECT_EQ(destroyed, 2);
+        EXPECT(destroyed == 2);
 
         auto res = co_await group.join();
-        EXPECT_TRUE(res.has_error());
-        EXPECT_EQ(res.error().size(), 1u);
-        EXPECT_EQ(res.error().front(), error::connection_refused);
-        EXPECT_EQ(destroyed, 2);
+        EXPECT(res.has_error());
+        EXPECT(res.error().size() == 1u);
+        EXPECT(res.error().front() == error::connection_refused);
+        EXPECT(destroyed == 2);
     };
 
     auto t = driver();
     schedule_all(t);
 
-    EXPECT_TRUE(t->is_finished());
+    EXPECT(t->is_finished());
     // ~task_group (at the end of driver's body) destroyed the failed child.
-    EXPECT_EQ(destroyed, 3);
+    EXPECT(destroyed == 3);
 }
-
-};  // TEST_SUITE(task_group_lifetime)
+}
+;  // ZEST_SUITE(task_group_lifetime)
 
 }  // namespace kota

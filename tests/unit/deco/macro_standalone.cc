@@ -28,20 +28,20 @@ struct StandaloneCfg {
     <std::string> output = "a.out";
 };
 
-TEST_SUITE(deco_macro_standalone) {
+ZEST_SUITE(deco_macro_standalone){
 
-TEST_CASE(DeclaresOptions) {
-    auto cmd = cli::command<StandaloneCfg>("app [OPTIONS]");
+    ZEST_CASE(DeclaresOptions){auto cmd = cli::command<StandaloneCfg>("app [OPTIONS]");
 
-    std::vector<std::string> args = {"--verbose", "--output", "b.out"};
-    auto res = cmd.invoke(args);
-    ASSERT_TRUE(res.has_value());
+std::vector<std::string> args = {"--verbose", "--output", "b.out"};
+auto res = cmd.invoke(args);
+ASSERT(res.has_value());
 
-    EXPECT_TRUE(res->options.verbose.value());
-    EXPECT_EQ(res->options.output.value(), "b.out");
-}
+EXPECT(res->options.verbose.value());
+EXPECT(res->options.output.value() == "b.out");
 
-};  // TEST_SUITE(deco_macro_standalone)
+}  // namespace
+
+};  // namespace kota::deco
 
 }  // namespace
 }  // namespace kota::deco

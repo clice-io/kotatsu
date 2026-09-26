@@ -48,32 +48,32 @@ struct NestedVariantField {
     std::string label;
 };
 
-TEST_SUITE(serde_toml_variant_untagged) {
+ZEST_SUITE(serde_toml_variant_untagged){
 
-TEST_CASE(int_vs_string) {
-    using V = std::variant<int, std::string>;
+    ZEST_CASE(int_vs_string){using V = std::variant<int, std::string>;
 
-    struct Holder {
-        V data;
-    };
+struct Holder {
+    V data;
+};
 
-    auto tbl_int = ::toml::table{
-        {"data", 42}
-    };
-    Holder out{};
-    ASSERT_TRUE(from_toml(tbl_int, out).has_value());
-    EXPECT_EQ(out.data.index(), 0U);
-    EXPECT_EQ(std::get<int>(out.data), 42);
+auto tbl_int = ::toml::table{
+    {"data", 42}
+};
+Holder out{};
+ASSERT(from_toml(tbl_int, out).has_value());
+EXPECT(out.data.index() == 0U);
+EXPECT(std::get<int>(out.data) == 42);
 
-    auto tbl_str = ::toml::table{
-        {"data", "hello"}
-    };
-    ASSERT_TRUE(from_toml(tbl_str, out).has_value());
-    EXPECT_EQ(out.data.index(), 1U);
-    EXPECT_EQ(std::get<std::string>(out.data), "hello");
-}
+auto tbl_str = ::toml::table{
+    {"data", "hello"}
+};
+ASSERT(from_toml(tbl_str, out).has_value());
+EXPECT(out.data.index() == 1U);
+EXPECT(std::get<std::string>(out.data) == "hello");
 
-TEST_CASE(int_before_double) {
+}  // namespace
+
+ZEST_CASE(int_before_double) {
     using V = std::variant<int, double>;
 
     struct Holder {
@@ -84,19 +84,19 @@ TEST_CASE(int_before_double) {
         {"num", 42}
     };
     Holder out{};
-    ASSERT_TRUE(from_toml(tbl, out).has_value());
-    EXPECT_EQ(out.num.index(), 0U);
-    EXPECT_EQ(std::get<int>(out.num), 42);
+    ASSERT(from_toml(tbl, out).has_value());
+    EXPECT(out.num.index() == 0U);
+    EXPECT(std::get<int>(out.num) == 42);
 
     auto tbl_f = ::toml::table{
         {"num", 3.14}
     };
-    ASSERT_TRUE(from_toml(tbl_f, out).has_value());
-    EXPECT_EQ(out.num.index(), 1U);
-    EXPECT_EQ(std::get<double>(out.num), 3.14);
+    ASSERT(from_toml(tbl_f, out).has_value());
+    EXPECT(out.num.index() == 1U);
+    EXPECT(std::get<double>(out.num) == 3.14);
 }
 
-TEST_CASE(double_from_integer_input) {
+ZEST_CASE(double_from_integer_input) {
     // No integer alternative exists: the widening pass lets the double
     // alternative claim integer input instead of failing outright.
     using V = std::variant<double, std::string>;
@@ -109,12 +109,12 @@ TEST_CASE(double_from_integer_input) {
         {"num", 42}
     };
     Holder out{};
-    ASSERT_TRUE(from_toml(tbl, out).has_value());
-    EXPECT_EQ(out.num.index(), 0U);
-    EXPECT_EQ(std::get<double>(out.num), 42.0);
+    ASSERT(from_toml(tbl, out).has_value());
+    EXPECT(out.num.index() == 0U);
+    EXPECT(std::get<double>(out.num) == 42.0);
 }
 
-TEST_CASE(optional_wrapper_before_int) {
+ZEST_CASE(optional_wrapper_before_int) {
     // A nullable wrapper is judged by its wrapped type: integer input lands
     // on the exact int alternative, not the earlier optional<double>.
     using V = std::variant<std::optional<double>, int>;
@@ -127,19 +127,19 @@ TEST_CASE(optional_wrapper_before_int) {
         {"num", 42}
     };
     Holder out{};
-    ASSERT_TRUE(from_toml(tbl, out).has_value());
-    EXPECT_EQ(out.num.index(), 1U);
-    EXPECT_EQ(std::get<int>(out.num), 42);
+    ASSERT(from_toml(tbl, out).has_value());
+    EXPECT(out.num.index() == 1U);
+    EXPECT(std::get<int>(out.num) == 42);
 
     auto tbl_f = ::toml::table{
         {"num", 3.14}
     };
-    ASSERT_TRUE(from_toml(tbl_f, out).has_value());
-    EXPECT_EQ(out.num.index(), 0U);
-    EXPECT_EQ(std::get<std::optional<double>>(out.num), 3.14);
+    ASSERT(from_toml(tbl_f, out).has_value());
+    EXPECT(out.num.index() == 0U);
+    EXPECT(std::get<std::optional<double>>(out.num) == 3.14);
 }
 
-TEST_CASE(nested_variant_before_int) {
+ZEST_CASE(nested_variant_before_int) {
     // A nested variant is as compatible as its alternatives: integer input
     // skips variant<double, string> in the exact pass and lands on int.
     using V = std::variant<std::variant<double, std::string>, int>;
@@ -152,19 +152,19 @@ TEST_CASE(nested_variant_before_int) {
         {"num", 42}
     };
     Holder out{};
-    ASSERT_TRUE(from_toml(tbl, out).has_value());
-    EXPECT_EQ(out.num.index(), 1U);
-    EXPECT_EQ(std::get<int>(out.num), 42);
+    ASSERT(from_toml(tbl, out).has_value());
+    EXPECT(out.num.index() == 1U);
+    EXPECT(std::get<int>(out.num) == 42);
 
     auto tbl_f = ::toml::table{
         {"num", 3.14}
     };
-    ASSERT_TRUE(from_toml(tbl_f, out).has_value());
-    EXPECT_EQ(out.num.index(), 0U);
-    EXPECT_EQ(std::get<double>(std::get<0>(out.num)), 3.14);
+    ASSERT(from_toml(tbl_f, out).has_value());
+    EXPECT(out.num.index() == 0U);
+    EXPECT(std::get<double>(std::get<0>(out.num)) == 3.14);
 }
 
-TEST_CASE(nested_widening_defers_to_outer_exact_match) {
+ZEST_CASE(nested_widening_defers_to_outer_exact_match) {
     // The exact pass admits the nested variant through its int8_t branch;
     // when that narrowing fails, the nested double must not widen ahead of
     // the outer int64_t, which matches the input exactly.
@@ -178,12 +178,12 @@ TEST_CASE(nested_widening_defers_to_outer_exact_match) {
         {"num", 1000}
     };
     Holder out{};
-    ASSERT_TRUE(from_toml(tbl, out).has_value());
-    EXPECT_EQ(out.num.index(), 1U);
-    EXPECT_EQ(std::get<std::int64_t>(out.num), 1000);
+    ASSERT(from_toml(tbl, out).has_value());
+    EXPECT(out.num.index() == 1U);
+    EXPECT(std::get<std::int64_t>(out.num) == 1000);
 }
 
-TEST_CASE(bool_vs_int) {
+ZEST_CASE(bool_vs_int) {
     using V = std::variant<bool, int>;
 
     struct Holder {
@@ -194,19 +194,19 @@ TEST_CASE(bool_vs_int) {
         {"data", true}
     };
     Holder out{};
-    ASSERT_TRUE(from_toml(tbl_bool, out).has_value());
-    EXPECT_EQ(out.data.index(), 0U);
-    EXPECT_EQ(std::get<bool>(out.data), true);
+    ASSERT(from_toml(tbl_bool, out).has_value());
+    EXPECT(out.data.index() == 0U);
+    EXPECT(std::get<bool>(out.data) == true);
 
     auto tbl_int = ::toml::table{
         {"data", 7}
     };
-    ASSERT_TRUE(from_toml(tbl_int, out).has_value());
-    EXPECT_EQ(out.data.index(), 1U);
-    EXPECT_EQ(std::get<int>(out.data), 7);
+    ASSERT(from_toml(tbl_int, out).has_value());
+    EXPECT(out.data.index() == 1U);
+    EXPECT(std::get<int>(out.data) == 7);
 }
 
-TEST_CASE(struct_deep_scoring) {
+ZEST_CASE(struct_deep_scoring) {
     using V = std::variant<IntHolder, StringHolder>;
 
     struct Holder {
@@ -217,19 +217,19 @@ TEST_CASE(struct_deep_scoring) {
         {"item", ::toml::table{{"value", 42}}}
     };
     Holder out{};
-    ASSERT_TRUE(from_toml(tbl_int, out).has_value());
-    EXPECT_EQ(out.item.index(), 0U);
-    EXPECT_EQ(std::get<IntHolder>(out.item).value, 42);
+    ASSERT(from_toml(tbl_int, out).has_value());
+    EXPECT(out.item.index() == 0U);
+    EXPECT(std::get<IntHolder>(out.item).value == 42);
 
     auto tbl_str = ::toml::table{
         {"item", ::toml::table{{"value", "hello"}}}
     };
-    ASSERT_TRUE(from_toml(tbl_str, out).has_value());
-    EXPECT_EQ(out.item.index(), 1U);
-    EXPECT_EQ(std::get<StringHolder>(out.item).value, "hello");
+    ASSERT(from_toml(tbl_str, out).has_value());
+    EXPECT(out.item.index() == 1U);
+    EXPECT(std::get<StringHolder>(out.item).value == "hello");
 }
 
-TEST_CASE(array_vs_table) {
+ZEST_CASE(array_vs_table) {
     using V = std::variant<std::vector<int>, std::map<std::string, int>>;
 
     struct Holder {
@@ -244,22 +244,22 @@ TEST_CASE(array_vs_table) {
         {"data", std::move(arr)}
     };
     Holder out{};
-    ASSERT_TRUE(from_toml(tbl_arr, out).has_value());
-    EXPECT_EQ(out.data.index(), 0U);
-    EXPECT_EQ(std::get<std::vector<int>>(out.data), std::vector<int>({1, 2, 3}));
+    ASSERT(from_toml(tbl_arr, out).has_value());
+    EXPECT(out.data.index() == 0U);
+    EXPECT(std::get<std::vector<int>>(out.data) == std::vector<int>({1, 2, 3}));
 
     auto tbl_map = ::toml::table{
         {"data", ::toml::table{{"a", 1}, {"b", 2}}}
     };
-    ASSERT_TRUE(from_toml(tbl_map, out).has_value());
-    EXPECT_EQ(out.data.index(), 1U);
+    ASSERT(from_toml(tbl_map, out).has_value());
+    EXPECT(out.data.index() == 1U);
     auto& m = std::get<std::map<std::string, int>>(out.data);
-    EXPECT_EQ(m.size(), 2U);
-    EXPECT_EQ(m["a"], 1);
-    EXPECT_EQ(m["b"], 2);
+    EXPECT(m.size() == 2U);
+    EXPECT(m["a"] == 1);
+    EXPECT(m["b"] == 2);
 }
 
-TEST_CASE(struct_vs_map_scoring) {
+ZEST_CASE(struct_vs_map_scoring) {
     using V = std::variant<Point, std::map<std::string, double>>;
 
     struct Holder {
@@ -270,19 +270,19 @@ TEST_CASE(struct_vs_map_scoring) {
         {"data", ::toml::table{{"x", 1.0}, {"y", 2.0}}}
     };
     Holder out{};
-    ASSERT_TRUE(from_toml(tbl_point, out).has_value());
-    EXPECT_EQ(out.data.index(), 0U);
-    EXPECT_EQ(std::get<Point>(out.data), (Point{1.0, 2.0}));
+    ASSERT(from_toml(tbl_point, out).has_value());
+    EXPECT(out.data.index() == 0U);
+    EXPECT(std::get<Point>(out.data) == (Point{1.0, 2.0}));
 
     auto tbl_map = ::toml::table{
         {"data", ::toml::table{{"foo", 3.0}}}
     };
-    ASSERT_TRUE(from_toml(tbl_map, out).has_value());
-    EXPECT_EQ(out.data.index(), 1U);
-    EXPECT_EQ(std::get<std::map<std::string, double>>(out.data).at("foo"), 3.0);
+    ASSERT(from_toml(tbl_map, out).has_value());
+    EXPECT(out.data.index() == 1U);
+    EXPECT(std::get<std::map<std::string, double>>(out.data).at("foo") == 3.0);
 }
 
-TEST_CASE(no_match_fails) {
+ZEST_CASE(no_match_fails) {
     using V = std::variant<int, std::string>;
 
     struct Holder {
@@ -293,45 +293,45 @@ TEST_CASE(no_match_fails) {
         {"data", true}
     };
     Holder out{};
-    EXPECT_FALSE(from_toml(tbl_bool, out).has_value());
+    EXPECT(!from_toml(tbl_bool, out).has_value());
 }
 
-TEST_CASE(roundtrip) {
+ZEST_CASE(roundtrip) {
     VariantField input{.value = 42};
     auto dom = to_toml(input);
-    ASSERT_TRUE(dom.has_value());
+    ASSERT(dom.has_value());
 
     VariantField out{};
-    ASSERT_TRUE(from_toml(*dom, out).has_value());
-    EXPECT_EQ(out.value.index(), 0U);
-    EXPECT_EQ(std::get<int>(out.value), 42);
+    ASSERT(from_toml(*dom, out).has_value());
+    EXPECT(out.value.index() == 0U);
+    EXPECT(std::get<int>(out.value) == 42);
 
     VariantField input2{.value = std::string("test")};
     dom = to_toml(input2);
-    ASSERT_TRUE(dom.has_value());
+    ASSERT(dom.has_value());
 
-    ASSERT_TRUE(from_toml(*dom, out).has_value());
-    EXPECT_EQ(out.value.index(), 1U);
-    EXPECT_EQ(std::get<std::string>(out.value), "test");
+    ASSERT(from_toml(*dom, out).has_value());
+    EXPECT(out.value.index() == 1U);
+    EXPECT(std::get<std::string>(out.value) == "test");
 }
 
-TEST_CASE(parse_text) {
+ZEST_CASE(parse_text) {
     struct Holder {
         std::variant<int, std::string> val;
     };
 
     auto result = from_string<Holder>("val = 99\n");
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result->val.index(), 0U);
-    EXPECT_EQ(std::get<int>(result->val), 99);
+    ASSERT(result.has_value());
+    EXPECT(result->val.index() == 0U);
+    EXPECT(std::get<int>(result->val) == 99);
 
     result = from_string<Holder>(R"(val = "abc")");
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result->val.index(), 1U);
-    EXPECT_EQ(std::get<std::string>(result->val), "abc");
+    ASSERT(result.has_value());
+    EXPECT(result->val.index() == 1U);
+    EXPECT(std::get<std::string>(result->val) == "abc");
 }
 
-TEST_CASE(empty_object_scoring) {
+ZEST_CASE(empty_object_scoring) {
     using V = std::variant<Point, std::map<std::string, int>>;
 
     struct Holder {
@@ -342,11 +342,11 @@ TEST_CASE(empty_object_scoring) {
         {"data", ::toml::table{}}
     };
     Holder out{};
-    ASSERT_TRUE(from_toml(tbl_empty, out).has_value());
-    EXPECT_EQ(out.data.index(), 1U);
+    ASSERT(from_toml(tbl_empty, out).has_value());
+    EXPECT(out.data.index() == 1U);
 }
 
-TEST_CASE(empty_array_scoring) {
+ZEST_CASE(empty_array_scoring) {
     using V = std::variant<std::vector<int>, std::string>;
 
     struct Holder {
@@ -358,12 +358,12 @@ TEST_CASE(empty_array_scoring) {
         {"data", std::move(arr)}
     };
     Holder out{};
-    ASSERT_TRUE(from_toml(tbl, out).has_value());
-    EXPECT_EQ(out.data.index(), 0U);
-    EXPECT_TRUE(std::get<std::vector<int>>(out.data).empty());
+    ASSERT(from_toml(tbl, out).has_value());
+    EXPECT(out.data.index() == 0U);
+    EXPECT(std::get<std::vector<int>>(out.data).empty());
 }
 
-TEST_CASE(field_subset_match) {
+ZEST_CASE(field_subset_match) {
     using V = std::variant<Point, Circle>;
 
     struct Holder {
@@ -374,36 +374,35 @@ TEST_CASE(field_subset_match) {
         {"shape", ::toml::table{{"radius", 5.0}}}
     };
     Holder out{};
-    ASSERT_TRUE(from_toml(tbl, out).has_value());
-    EXPECT_EQ(out.shape.index(), 1U);
-    EXPECT_EQ(std::get<Circle>(out.shape).radius, 5.0);
+    ASSERT(from_toml(tbl, out).has_value());
+    EXPECT(out.shape.index() == 1U);
+    EXPECT(std::get<Circle>(out.shape).radius == 5.0);
 
     auto tbl2 = ::toml::table{
         {"shape", ::toml::table{{"x", 1.0}, {"y", 2.0}}}
     };
-    ASSERT_TRUE(from_toml(tbl2, out).has_value());
-    EXPECT_EQ(out.shape.index(), 0U);
-    EXPECT_EQ(std::get<Point>(out.shape), (Point{1.0, 2.0}));
+    ASSERT(from_toml(tbl2, out).has_value());
+    EXPECT(out.shape.index() == 0U);
+    EXPECT(std::get<Point>(out.shape) == (Point{1.0, 2.0}));
 }
 
-};  // TEST_SUITE(serde_toml_variant_untagged)
+};  // namespace kota::codec
 
-TEST_SUITE(serde_toml_variant_internally_tagged) {
+ZEST_SUITE(serde_toml_variant_internally_tagged){
 
-TEST_CASE(circle_roundtrip) {
-    struct Holder {
-        IntTagShape shape;
-    };
+    ZEST_CASE(circle_roundtrip){struct Holder{IntTagShape shape;
+}
+;
 
-    auto tbl = ::toml::table{
-        {"shape", ::toml::table{{"type", "circle"}, {"radius", 5.0}}}
-    };
-    Holder out{};
-    ASSERT_TRUE(from_toml(tbl, out).has_value());
-    EXPECT_EQ(std::get<Circle>(out.shape), (Circle{.radius = 5.0}));
+auto tbl = ::toml::table{
+    {"shape", ::toml::table{{"type", "circle"}, {"radius", 5.0}}}
+};
+Holder out{};
+ASSERT(from_toml(tbl, out).has_value());
+EXPECT(std::get<Circle>(out.shape) == (Circle{.radius = 5.0}));
 }
 
-TEST_CASE(rect_roundtrip) {
+ZEST_CASE(rect_roundtrip) {
     struct Holder {
         IntTagShape shape;
     };
@@ -412,11 +411,11 @@ TEST_CASE(rect_roundtrip) {
         {"shape", ::toml::table{{"type", "rect"}, {"width", 3.0}, {"height", 4.0}}}
     };
     Holder out{};
-    ASSERT_TRUE(from_toml(tbl, out).has_value());
-    EXPECT_EQ(std::get<Rect>(out.shape), (Rect{3.0, 4.0}));
+    ASSERT(from_toml(tbl, out).has_value());
+    EXPECT(std::get<Rect>(out.shape) == (Rect{3.0, 4.0}));
 }
 
-TEST_CASE(unknown_tag_fails) {
+ZEST_CASE(unknown_tag_fails) {
     struct Holder {
         IntTagShape shape;
     };
@@ -425,10 +424,10 @@ TEST_CASE(unknown_tag_fails) {
         {"shape", ::toml::table{{"type", "pentagon"}, {"sides", 5}}}
     };
     Holder out{};
-    EXPECT_FALSE(from_toml(tbl, out).has_value());
+    EXPECT(!from_toml(tbl, out).has_value());
 }
 
-TEST_CASE(missing_tag_fails) {
+ZEST_CASE(missing_tag_fails) {
     struct Holder {
         IntTagShape shape;
     };
@@ -437,24 +436,24 @@ TEST_CASE(missing_tag_fails) {
         {"shape", ::toml::table{{"radius", 5.0}}}
     };
     Holder out{};
-    EXPECT_FALSE(from_toml(tbl, out).has_value());
+    EXPECT(!from_toml(tbl, out).has_value());
 }
 
-TEST_CASE(roundtrip_via_serialization) {
+ZEST_CASE(roundtrip_via_serialization) {
     struct Holder {
         IntTagShape shape;
     };
 
     Holder input{.shape = Circle{.radius = 7.0}};
     auto dom = to_toml(input);
-    ASSERT_TRUE(dom.has_value());
+    ASSERT(dom.has_value());
 
     Holder out{};
-    ASSERT_TRUE(from_toml(*dom, out).has_value());
-    EXPECT_EQ(std::get<Circle>(out.shape).radius, 7.0);
+    ASSERT(from_toml(*dom, out).has_value());
+    EXPECT(std::get<Circle>(out.shape).radius == 7.0);
 }
 
-TEST_CASE(vector_of_tagged) {
+ZEST_CASE(vector_of_tagged) {
     struct Holder {
         std::vector<IntTagShape> shapes;
     };
@@ -474,13 +473,13 @@ TEST_CASE(vector_of_tagged) {
     };
 
     Holder out{};
-    ASSERT_TRUE(from_toml(tbl, out).has_value());
-    ASSERT_EQ(out.shapes.size(), 2U);
-    EXPECT_EQ(std::get<Circle>(out.shapes[0]).radius, 1.0);
-    EXPECT_EQ(std::get<Rect>(out.shapes[1]), (Rect{2.0, 3.0}));
+    ASSERT(from_toml(tbl, out).has_value());
+    ASSERT(out.shapes.size() == 2U);
+    EXPECT(std::get<Circle>(out.shapes[0]).radius == 1.0);
+    EXPECT(std::get<Rect>(out.shapes[1]) == (Rect{2.0, 3.0}));
 }
 
-TEST_CASE(parse_text_internally_tagged) {
+ZEST_CASE(parse_text_internally_tagged) {
     struct Holder {
         IntTagShape shape;
     };
@@ -490,34 +489,33 @@ TEST_CASE(parse_text_internally_tagged) {
 type = "circle"
 radius = 2.5
 )");
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(std::get<Circle>(result->shape).radius, 2.5);
+    ASSERT(result.has_value());
+    EXPECT(std::get<Circle>(result->shape).radius == 2.5);
+}
+}
+;  // ZEST_SUITE(serde_toml_variant_internally_tagged)
+
+ZEST_SUITE(serde_toml_variant_externally_tagged){
+
+    ZEST_CASE(int_roundtrip){struct Holder{ExtTagShape data;
+}
+;
+
+auto tbl = ::toml::table{
+    {"data", ::toml::table{{"integer", 42}}}
+};
+Holder out{};
+ASSERT(from_toml(tbl, out).has_value());
+EXPECT(std::get<int>(out.data) == 42);
+
+Holder input{.data = 42};
+auto dom = to_toml(input);
+ASSERT(dom.has_value());
+ASSERT(from_toml(*dom, out).has_value());
+EXPECT(std::get<int>(out.data) == 42);
 }
 
-};  // TEST_SUITE(serde_toml_variant_internally_tagged)
-
-TEST_SUITE(serde_toml_variant_externally_tagged) {
-
-TEST_CASE(int_roundtrip) {
-    struct Holder {
-        ExtTagShape data;
-    };
-
-    auto tbl = ::toml::table{
-        {"data", ::toml::table{{"integer", 42}}}
-    };
-    Holder out{};
-    ASSERT_TRUE(from_toml(tbl, out).has_value());
-    EXPECT_EQ(std::get<int>(out.data), 42);
-
-    Holder input{.data = 42};
-    auto dom = to_toml(input);
-    ASSERT_TRUE(dom.has_value());
-    ASSERT_TRUE(from_toml(*dom, out).has_value());
-    EXPECT_EQ(std::get<int>(out.data), 42);
-}
-
-TEST_CASE(string_roundtrip) {
+ZEST_CASE(string_roundtrip) {
     struct Holder {
         ExtTagShape data;
     };
@@ -526,11 +524,11 @@ TEST_CASE(string_roundtrip) {
         {"data", ::toml::table{{"text", "hello"}}}
     };
     Holder out{};
-    ASSERT_TRUE(from_toml(tbl, out).has_value());
-    EXPECT_EQ(std::get<std::string>(out.data), "hello");
+    ASSERT(from_toml(tbl, out).has_value());
+    EXPECT(std::get<std::string>(out.data) == "hello");
 }
 
-TEST_CASE(unknown_tag_fails) {
+ZEST_CASE(unknown_tag_fails) {
     struct Holder {
         ExtTagShape data;
     };
@@ -539,33 +537,32 @@ TEST_CASE(unknown_tag_fails) {
         {"data", ::toml::table{{"unknown", 1}}}
     };
     Holder out{};
-    EXPECT_FALSE(from_toml(tbl, out).has_value());
+    EXPECT(!from_toml(tbl, out).has_value());
+}
+}
+;  // ZEST_SUITE(serde_toml_variant_externally_tagged)
+
+ZEST_SUITE(serde_toml_variant_adjacently_tagged){
+
+    ZEST_CASE(int_roundtrip){struct Holder{AdjTagShape data;
+}
+;
+
+auto tbl = ::toml::table{
+    {"data", ::toml::table{{"type", "integer"}, {"value", 42}}}
+};
+Holder out{};
+ASSERT(from_toml(tbl, out).has_value());
+EXPECT(std::get<int>(out.data) == 42);
+
+Holder input{.data = 42};
+auto dom = to_toml(input);
+ASSERT(dom.has_value());
+ASSERT(from_toml(*dom, out).has_value());
+EXPECT(std::get<int>(out.data) == 42);
 }
 
-};  // TEST_SUITE(serde_toml_variant_externally_tagged)
-
-TEST_SUITE(serde_toml_variant_adjacently_tagged) {
-
-TEST_CASE(int_roundtrip) {
-    struct Holder {
-        AdjTagShape data;
-    };
-
-    auto tbl = ::toml::table{
-        {"data", ::toml::table{{"type", "integer"}, {"value", 42}}}
-    };
-    Holder out{};
-    ASSERT_TRUE(from_toml(tbl, out).has_value());
-    EXPECT_EQ(std::get<int>(out.data), 42);
-
-    Holder input{.data = 42};
-    auto dom = to_toml(input);
-    ASSERT_TRUE(dom.has_value());
-    ASSERT_TRUE(from_toml(*dom, out).has_value());
-    EXPECT_EQ(std::get<int>(out.data), 42);
-}
-
-TEST_CASE(string_roundtrip) {
+ZEST_CASE(string_roundtrip) {
     struct Holder {
         AdjTagShape data;
     };
@@ -574,11 +571,11 @@ TEST_CASE(string_roundtrip) {
         {"data", ::toml::table{{"type", "text"}, {"value", "hello"}}}
     };
     Holder out{};
-    ASSERT_TRUE(from_toml(tbl, out).has_value());
-    EXPECT_EQ(std::get<std::string>(out.data), "hello");
+    ASSERT(from_toml(tbl, out).has_value());
+    EXPECT(std::get<std::string>(out.data) == "hello");
 }
 
-TEST_CASE(unknown_tag_fails) {
+ZEST_CASE(unknown_tag_fails) {
     struct Holder {
         AdjTagShape data;
     };
@@ -587,10 +584,10 @@ TEST_CASE(unknown_tag_fails) {
         {"data", ::toml::table{{"type", "unknown"}, {"value", 1}}}
     };
     Holder out{};
-    EXPECT_FALSE(from_toml(tbl, out).has_value());
+    EXPECT(!from_toml(tbl, out).has_value());
 }
 
-TEST_CASE(missing_tag_fails) {
+ZEST_CASE(missing_tag_fails) {
     struct Holder {
         AdjTagShape data;
     };
@@ -599,10 +596,10 @@ TEST_CASE(missing_tag_fails) {
         {"data", ::toml::table{{"value", 42}}}
     };
     Holder out{};
-    EXPECT_FALSE(from_toml(tbl, out).has_value());
+    EXPECT(!from_toml(tbl, out).has_value());
 }
 
-TEST_CASE(missing_content_fails) {
+ZEST_CASE(missing_content_fails) {
     struct Holder {
         AdjTagShape data;
     };
@@ -611,10 +608,10 @@ TEST_CASE(missing_content_fails) {
         {"data", ::toml::table{{"type", "integer"}}}
     };
     Holder out{};
-    EXPECT_FALSE(from_toml(tbl, out).has_value());
+    EXPECT(!from_toml(tbl, out).has_value());
 }
-
-};  // TEST_SUITE(serde_toml_variant_adjacently_tagged)
+}
+;  // ZEST_SUITE(serde_toml_variant_adjacently_tagged)
 
 }  // namespace
 

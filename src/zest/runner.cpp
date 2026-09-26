@@ -187,7 +187,7 @@ auto collect_entries(std::span<const TestSuite> suites) -> std::vector<Entry> {
         }
     }
     // Registration follows static initialization, whose order is unspecified.
-    // Cases of one TEST_CASE_GROUP share a line and keep the order they were
+    // Cases of one ZEST_CASE_GROUP share a line and keep the order they were
     // added in.
     std::ranges::stable_sort(entries, {}, [](const Entry& entry) {
         return std::tie(entry.suite, entry.test_case.path, entry.test_case.line);

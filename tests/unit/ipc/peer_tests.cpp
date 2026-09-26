@@ -45,69 +45,70 @@ task<> write_notification_then_response(int fd, event_loop& loop) {
     co_return;
 }
 
-TEST_SUITE(ipc_peer) {
+ZEST_SUITE(ipc_peer){
 
-TEST_CASE(traits_dispatch_order) {
-    auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
-        R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":2,"b":3}})",
-        R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"first"}})",
-        R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"second"}})",
-    });
-    auto* transport_ptr = transport.get();
+    ZEST_CASE(traits_dispatch_order){
+        auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
+            R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":2,"b":3}})",
+            R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"first"}})",
+            R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"second"}})",
+        });
+auto* transport_ptr = transport.get();
 
-    event_loop loop;
-    JsonPeer peer(loop, std::move(transport));
-    std::vector<std::string> order;
-    bool second_saw_first = false;
-    bool first_seen = false;
+event_loop loop;
+JsonPeer peer(loop, std::move(transport));
+std::vector<std::string> order;
+bool second_saw_first = false;
+bool first_seen = false;
 
-    peer.on_request([&](RequestContext&, const AddParams& params) -> RequestResult<AddParams> {
-        order.emplace_back("request");
-        co_return AddResult{.sum = params.a + params.b};
-    });
+peer.on_request([&](RequestContext&, const AddParams& params) -> RequestResult<AddParams> {
+    order.emplace_back("request");
+    co_return AddResult{.sum = params.a + params.b};
+});
 
-    peer.on_notification([&](const NoteParams& params) {
-        if(params.text == "first") {
-            first_seen = true;
-            order.emplace_back("note:first");
-            return;
-        }
-        if(params.text == "second") {
-            second_saw_first = first_seen;
-            order.emplace_back("note:second");
-        }
-    });
+peer.on_notification([&](const NoteParams& params) {
+    if(params.text == "first") {
+        first_seen = true;
+        order.emplace_back("note:first");
+        return;
+    }
+    if(params.text == "second") {
+        second_saw_first = first_seen;
+        order.emplace_back("note:second");
+    }
+});
 
-    loop.schedule(peer.run());
-    EXPECT_EQ(loop.run(), 0);
+loop.schedule(peer.run());
+EXPECT(loop.run() == 0);
 
-    ASSERT_EQ(order.size(), 3U);
-    EXPECT_EQ(order[0], "request");
-    EXPECT_EQ(order[1], "note:first");
-    EXPECT_EQ(order[2], "note:second");
-    EXPECT_TRUE(second_saw_first);
+ASSERT(order.size() == 3U);
+EXPECT(order[0] == "request");
+EXPECT(order[1] == "note:first");
+EXPECT(order[2] == "note:second");
+EXPECT(second_saw_first);
 
-    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = codec::json::from_string<Response>(transport_ptr->outgoing().front());
-    ASSERT_TRUE(response.has_value());
-    EXPECT_EQ(response->jsonrpc, "2.0");
-    EXPECT_EQ(std::get<std::int64_t>(response->id), 1);
-    ASSERT_TRUE(response->result.has_value());
-    EXPECT_EQ(response->result->sum, 5);
-}
+ASSERT(transport_ptr->outgoing().size() == 1U);
+auto response = codec::json::from_string<Response>(transport_ptr->outgoing().front());
+ASSERT(response.has_value());
+EXPECT(response->jsonrpc == "2.0");
+EXPECT(std::get<std::int64_t>(response->id) == 1);
+ASSERT(response->result.has_value());
+EXPECT(response->result->sum == 5);
 
-TEST_CASE(stream_note_response) {
+}  // namespace
+
+ZEST_CASE(stream_note_response) {
     event_loop loop;
 
     int incoming_fds[2] = {-1, -1};
     int outgoing_fds[2] = {-1, -1};
-    ASSERT_EQ(create_pipe(incoming_fds), 0);
-    ASSERT_EQ(create_pipe(outgoing_fds), 0);
+    ASSERT(create_pipe(incoming_fds) == 0);
+    ASSERT(create_pipe(outgoing_fds) == 0);
 
     auto input = pipe::open(incoming_fds[0], pipe::options{}, loop);
-    ASSERT_TRUE(input.has_value());
+    ASSERT(input.has_value());
     auto output = pipe::open(outgoing_fds[1], pipe::options{}, loop);
-    ASSERT_TRUE(output.has_value());
+    ASSERT(output.has_value());
 
     auto transport =
         std::make_unique<StreamTransport>(stream(std::move(*input)), stream(std::move(*output)));
@@ -125,17 +126,17 @@ TEST_CASE(stream_note_response) {
     loop.schedule(request);
     loop.schedule(remote);
 
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    ASSERT_TRUE(request_result.value.has_value());
-    EXPECT_EQ(request_result.value->sum, 9);
-    ASSERT_EQ(seen_notes.size(), 1U);
-    EXPECT_EQ(seen_notes.front(), "first");
+    ASSERT(request_result.value.has_value());
+    EXPECT(request_result.value->sum == 9);
+    ASSERT(seen_notes.size() == 1U);
+    EXPECT(seen_notes.front() == "first");
 
-    ASSERT_EQ(close_fd(outgoing_fds[0]), 0);
+    ASSERT(close_fd(outgoing_fds[0]) == 0);
 }
 
-TEST_CASE(peers_share_loop) {
+ZEST_CASE(peers_share_loop) {
     event_loop loop;
 
     auto transport1 = std::make_unique<FakeTransport>(std::vector<std::string>{
@@ -164,24 +165,24 @@ TEST_CASE(peers_share_loop) {
     loop.schedule(peer1.run());
     loop.schedule(peer2.run());
 
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    ASSERT_EQ(transport1_ptr->outgoing().size(), 1U);
+    ASSERT(transport1_ptr->outgoing().size() == 1U);
     auto response1 = codec::json::from_string<Response>(transport1_ptr->outgoing().front());
-    ASSERT_TRUE(response1.has_value());
-    EXPECT_EQ(std::get<std::int64_t>(response1->id), 11);
-    ASSERT_TRUE(response1->result.has_value());
-    EXPECT_EQ(response1->result->sum, 7);
+    ASSERT(response1.has_value());
+    EXPECT(std::get<std::int64_t>(response1->id) == 11);
+    ASSERT(response1->result.has_value());
+    EXPECT(response1->result->sum == 7);
 
-    ASSERT_EQ(transport2_ptr->outgoing().size(), 1U);
+    ASSERT(transport2_ptr->outgoing().size() == 1U);
     auto response2 = codec::json::from_string<Response>(transport2_ptr->outgoing().front());
-    ASSERT_TRUE(response2.has_value());
-    EXPECT_EQ(std::get<std::int64_t>(response2->id), 22);
-    ASSERT_TRUE(response2->result.has_value());
-    EXPECT_EQ(response2->result->sum, 21);
+    ASSERT(response2.has_value());
+    EXPECT(std::get<std::int64_t>(response2->id) == 22);
+    ASSERT(response2->result.has_value());
+    EXPECT(response2->result->sum == 21);
 }
 
-TEST_CASE(explicit_method) {
+ZEST_CASE(explicit_method) {
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":2,"method":"custom/add","params":{"a":7,"b":8}})",
         R"({"jsonrpc":"2.0","method":"custom/note","params":{"text":"hello"}})",
@@ -204,21 +205,21 @@ TEST_CASE(explicit_method) {
                          [&](const NoteParams& params) { notifications.push_back(params.text); });
 
     loop.schedule(peer.run());
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    EXPECT_EQ(request_method, "custom/add");
-    ASSERT_EQ(notifications.size(), 1U);
-    EXPECT_EQ(notifications.front(), "hello");
+    EXPECT(request_method == "custom/add");
+    ASSERT(notifications.size() == 1U);
+    EXPECT(notifications.front() == "hello");
 
-    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    ASSERT(transport_ptr->outgoing().size() == 1U);
     auto response = codec::json::from_string<Response>(transport_ptr->outgoing().front());
-    ASSERT_TRUE(response.has_value());
-    EXPECT_EQ(std::get<std::int64_t>(response->id), 2);
-    ASSERT_TRUE(response->result.has_value());
-    EXPECT_EQ(response->result->sum, 15);
+    ASSERT(response.has_value());
+    EXPECT(std::get<std::int64_t>(response->id) == 2);
+    ASSERT(response->result.has_value());
+    EXPECT(response->result->sum == 15);
 }
 
-TEST_CASE(request_notify_apis) {
+ZEST_CASE(request_notify_apis) {
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{
             R"({"jsonrpc":"2.0","id":7,"method":"test/add","params":{"a":2,"b":3}})",
@@ -272,51 +273,51 @@ TEST_CASE(request_notify_apis) {
     });
 
     loop.schedule(peer.run());
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    EXPECT_EQ(request_method, "test/add");
-    EXPECT_EQ(request_id, 7);
+    EXPECT(request_method == "test/add");
+    EXPECT(request_id == 7);
 
     const auto& outgoing = transport_ptr->outgoing();
-    ASSERT_EQ(outgoing.size(), 5U);
+    ASSERT(outgoing.size() == 5U);
 
     auto note_from_context = codec::json::from_string<Notification>(outgoing[0]);
-    ASSERT_TRUE(note_from_context.has_value());
-    EXPECT_EQ(note_from_context->jsonrpc, "2.0");
-    EXPECT_EQ(note_from_context->method, "client/note/context");
-    EXPECT_EQ(note_from_context->params.text, "context");
+    ASSERT(note_from_context.has_value());
+    EXPECT(note_from_context->jsonrpc == "2.0");
+    EXPECT(note_from_context->method == "client/note/context");
+    EXPECT(note_from_context->params.text == "context");
 
     auto note_from_peer = codec::json::from_string<Notification>(outgoing[1]);
-    ASSERT_TRUE(note_from_peer.has_value());
-    EXPECT_EQ(note_from_peer->jsonrpc, "2.0");
-    EXPECT_EQ(note_from_peer->method, "client/note/peer");
-    EXPECT_EQ(note_from_peer->params.text, "peer");
+    ASSERT(note_from_peer.has_value());
+    EXPECT(note_from_peer->jsonrpc == "2.0");
+    EXPECT(note_from_peer->method == "client/note/peer");
+    EXPECT(note_from_peer->params.text == "peer");
 
     auto request_from_context = codec::json::from_string<Request>(outgoing[2]);
-    ASSERT_TRUE(request_from_context.has_value());
-    EXPECT_EQ(request_from_context->jsonrpc, "2.0");
-    EXPECT_EQ(std::get<std::int64_t>(request_from_context->id), 1);
-    EXPECT_EQ(request_from_context->method, "client/add/context");
-    EXPECT_EQ(request_from_context->params.a, 2);
-    EXPECT_EQ(request_from_context->params.b, 3);
+    ASSERT(request_from_context.has_value());
+    EXPECT(request_from_context->jsonrpc == "2.0");
+    EXPECT(std::get<std::int64_t>(request_from_context->id) == 1);
+    EXPECT(request_from_context->method == "client/add/context");
+    EXPECT(request_from_context->params.a == 2);
+    EXPECT(request_from_context->params.b == 3);
 
     auto request_from_peer = codec::json::from_string<Request>(outgoing[3]);
-    ASSERT_TRUE(request_from_peer.has_value());
-    EXPECT_EQ(request_from_peer->jsonrpc, "2.0");
-    EXPECT_EQ(std::get<std::int64_t>(request_from_peer->id), 2);
-    EXPECT_EQ(request_from_peer->method, "client/add/peer");
-    EXPECT_EQ(request_from_peer->params.a, 3);
-    EXPECT_EQ(request_from_peer->params.b, 1);
+    ASSERT(request_from_peer.has_value());
+    EXPECT(request_from_peer->jsonrpc == "2.0");
+    EXPECT(std::get<std::int64_t>(request_from_peer->id) == 2);
+    EXPECT(request_from_peer->method == "client/add/peer");
+    EXPECT(request_from_peer->params.a == 3);
+    EXPECT(request_from_peer->params.b == 1);
 
     auto final_response = codec::json::from_string<Response>(outgoing[4]);
-    ASSERT_TRUE(final_response.has_value());
-    EXPECT_EQ(final_response->jsonrpc, "2.0");
-    EXPECT_EQ(std::get<std::int64_t>(final_response->id), 7);
-    ASSERT_TRUE(final_response->result.has_value());
-    EXPECT_EQ(final_response->result->sum, 13);
+    ASSERT(final_response.has_value());
+    EXPECT(final_response->jsonrpc == "2.0");
+    EXPECT(std::get<std::int64_t>(final_response->id) == 7);
+    ASSERT(final_response->result.has_value());
+    EXPECT(final_response->result->sum == 13);
 }
 
-TEST_CASE(request_notify_apis_failure) {
+ZEST_CASE(request_notify_apis_failure) {
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{
             R"({"jsonrpc":"2.0","id":7,"method":"test/add","params":{"a":2,"b":3}})",
@@ -349,25 +350,25 @@ TEST_CASE(request_notify_apis_failure) {
         });
 
     loop.schedule(peer.run());
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
     const auto& outgoing = transport_ptr->outgoing();
-    ASSERT_EQ(outgoing.size(), 2U);
+    ASSERT(outgoing.size() == 2U);
 
     auto nested_request = codec::json::from_string<Request>(outgoing[0]);
-    ASSERT_TRUE(nested_request.has_value());
-    EXPECT_EQ(nested_request->method, "client/add/context");
+    ASSERT(nested_request.has_value());
+    EXPECT(nested_request->method == "client/add/context");
 
     auto final_response = codec::json::from_string<ErrorResponse>(outgoing[1]);
-    ASSERT_TRUE(final_response.has_value());
-    EXPECT_NE(outgoing[1].find(R"("error")"), std::string::npos);
-    EXPECT_EQ(final_response->jsonrpc, "2.0");
-    EXPECT_EQ(std::get<std::int64_t>(final_response->id), 7);
-    EXPECT_EQ(final_response->error.code,
-              static_cast<protocol::integer>(protocol::ErrorCode::RequestFailed));
+    ASSERT(final_response.has_value());
+    EXPECT(outgoing[1].find(R"("error")") != std::string::npos);
+    EXPECT(final_response->jsonrpc == "2.0");
+    EXPECT(std::get<std::int64_t>(final_response->id) == 7);
+    EXPECT(final_response->error.code ==
+           static_cast<protocol::integer>(protocol::ErrorCode::RequestFailed));
 }
 
-TEST_CASE(request_error_code) {
+ZEST_CASE(request_error_code) {
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":10,"method":"test/add","params":{"a":2,"b":3}})",
     });
@@ -381,19 +382,19 @@ TEST_CASE(request_error_code) {
     });
 
     loop.schedule(peer.run());
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    ASSERT(transport_ptr->outgoing().size() == 1U);
     auto response = codec::json::from_string<ErrorResponse>(transport_ptr->outgoing().front());
-    ASSERT_TRUE(response.has_value());
-    EXPECT_EQ(response->jsonrpc, "2.0");
-    EXPECT_EQ(std::get<std::int64_t>(response->id), 10);
-    EXPECT_EQ(response->error.code,
-              static_cast<protocol::integer>(protocol::ErrorCode::InvalidParams));
-    EXPECT_EQ(response->error.message, "forced invalid params");
+    ASSERT(response.has_value());
+    EXPECT(response->jsonrpc == "2.0");
+    EXPECT(std::get<std::int64_t>(response->id) == 10);
+    EXPECT(response->error.code ==
+           static_cast<protocol::integer>(protocol::ErrorCode::InvalidParams));
+    EXPECT(response->error.message == "forced invalid params");
 }
 
-TEST_CASE(request_error_data) {
+ZEST_CASE(request_error_data) {
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":12,"method":"test/add","params":{"a":2,"b":3}})",
     });
@@ -412,24 +413,24 @@ TEST_CASE(request_error_data) {
     });
 
     loop.schedule(peer.run());
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    ASSERT(transport_ptr->outgoing().size() == 1U);
     auto response = codec::json::from_string<ErrorResponse>(transport_ptr->outgoing().front());
-    ASSERT_TRUE(response.has_value());
-    EXPECT_EQ(response->jsonrpc, "2.0");
-    EXPECT_EQ(std::get<std::int64_t>(response->id), 12);
-    EXPECT_EQ(response->error.code,
-              static_cast<protocol::integer>(protocol::ErrorCode::InvalidParams));
-    EXPECT_EQ(response->error.message, "forced invalid params");
-    ASSERT_TRUE(response->error.data.has_value());
-    EXPECT_TRUE(*response->error.data == codec::dyn::Value{
-                                             {"detail", "invalid payload"},
-                                             {"index",  -3               }
+    ASSERT(response.has_value());
+    EXPECT(response->jsonrpc == "2.0");
+    EXPECT(std::get<std::int64_t>(response->id) == 12);
+    EXPECT(response->error.code ==
+           static_cast<protocol::integer>(protocol::ErrorCode::InvalidParams));
+    EXPECT(response->error.message == "forced invalid params");
+    ASSERT(response->error.data.has_value());
+    EXPECT(*response->error.data == codec::dyn::Value{
+                                        {"detail", "invalid payload"},
+                                        {"index",  -3               }
     });
 }
 
-TEST_CASE(outbound_error_data) {
+ZEST_CASE(outbound_error_data) {
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{},
         [](std::string_view payload, ScriptedTransport& channel) {
@@ -455,19 +456,19 @@ TEST_CASE(outbound_error_data) {
     auto request_task = requester();
     loop.schedule(peer.run());
     loop.schedule(request_task);
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    ASSERT_FALSE(request_result.has_value());
-    EXPECT_EQ(request_result.error().code, -32001);
-    EXPECT_EQ(request_result.error().message, "remote failed");
-    ASSERT_TRUE(request_result.error().data.has_value());
-    EXPECT_TRUE(*request_result.error().data == codec::dyn::Value{
-                                                    {"detail",  "bad state"},
-                                                    {"attempt", -1         }
+    ASSERT(!request_result.has_value());
+    EXPECT(request_result.error().code == -32001);
+    EXPECT(request_result.error().message == "remote failed");
+    ASSERT(request_result.error().data.has_value());
+    EXPECT(*request_result.error().data == codec::dyn::Value{
+                                               {"detail",  "bad state"},
+                                               {"attempt", -1         }
     });
 }
 
-TEST_CASE(bad_response_silent) {
+ZEST_CASE(bad_response_silent) {
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{},
         [](std::string_view payload, ScriptedTransport& channel) {
@@ -493,13 +494,13 @@ TEST_CASE(bad_response_silent) {
     auto request_task = requester();
     loop.schedule(peer.run());
     loop.schedule(request_task);
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    ASSERT_FALSE(request_result.has_value());
-    EXPECT_FALSE(request_result.error().message.empty());
+    ASSERT(!request_result.has_value());
+    EXPECT(!request_result.error().message.empty());
 }
 
-TEST_CASE(bad_params_invalid) {
+ZEST_CASE(bad_params_invalid) {
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":11,"method":"test/add","params":"invalid"})",
     });
@@ -515,20 +516,20 @@ TEST_CASE(bad_params_invalid) {
     });
 
     loop.schedule(peer.run());
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    EXPECT_FALSE(invoked);
-    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    EXPECT(!invoked);
+    ASSERT(transport_ptr->outgoing().size() == 1U);
     auto response = codec::json::from_string<ErrorResponse>(transport_ptr->outgoing().front());
-    ASSERT_TRUE(response.has_value());
-    EXPECT_EQ(response->jsonrpc, "2.0");
-    EXPECT_EQ(std::get<std::int64_t>(response->id), 11);
-    EXPECT_EQ(response->error.code,
-              static_cast<protocol::integer>(protocol::ErrorCode::InvalidParams));
-    EXPECT_FALSE(response->error.message.empty());
+    ASSERT(response.has_value());
+    EXPECT(response->jsonrpc == "2.0");
+    EXPECT(std::get<std::int64_t>(response->id) == 11);
+    EXPECT(response->error.code ==
+           static_cast<protocol::integer>(protocol::ErrorCode::InvalidParams));
+    EXPECT(!response->error.message.empty());
 }
 
-TEST_CASE(malformed_parse_null) {
+ZEST_CASE(malformed_parse_null) {
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":1,"method":"test/add")",
     });
@@ -538,19 +539,18 @@ TEST_CASE(malformed_parse_null) {
     JsonPeer peer(loop, std::move(transport));
 
     loop.schedule(peer.run());
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    ASSERT(transport_ptr->outgoing().size() == 1U);
     auto response = codec::json::from_string<ErrorResponse>(transport_ptr->outgoing().front());
-    ASSERT_TRUE(response.has_value());
-    EXPECT_EQ(response->jsonrpc, "2.0");
-    EXPECT_EQ(std::get<std::int64_t>(response->id), 0);
-    EXPECT_EQ(response->error.code,
-              static_cast<protocol::integer>(protocol::ErrorCode::ParseError));
-    EXPECT_FALSE(response->error.message.empty());
+    ASSERT(response.has_value());
+    EXPECT(response->jsonrpc == "2.0");
+    EXPECT(std::get<std::int64_t>(response->id) == 0);
+    EXPECT(response->error.code == static_cast<protocol::integer>(protocol::ErrorCode::ParseError));
+    EXPECT(!response->error.message.empty());
 }
 
-TEST_CASE(invalid_request_null) {
+ZEST_CASE(invalid_request_null) {
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({})",
     });
@@ -560,19 +560,19 @@ TEST_CASE(invalid_request_null) {
     JsonPeer peer(loop, std::move(transport));
 
     loop.schedule(peer.run());
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    ASSERT(transport_ptr->outgoing().size() == 1U);
     auto response = codec::json::from_string<ErrorResponse>(transport_ptr->outgoing().front());
-    ASSERT_TRUE(response.has_value());
-    EXPECT_EQ(response->jsonrpc, "2.0");
-    EXPECT_EQ(std::get<std::int64_t>(response->id), 0);
-    EXPECT_EQ(response->error.code,
-              static_cast<protocol::integer>(protocol::ErrorCode::InvalidRequest));
-    EXPECT_EQ(response->error.message, "message must contain method or id");
+    ASSERT(response.has_value());
+    EXPECT(response->jsonrpc == "2.0");
+    EXPECT(std::get<std::int64_t>(response->id) == 0);
+    EXPECT(response->error.code ==
+           static_cast<protocol::integer>(protocol::ErrorCode::InvalidRequest));
+    EXPECT(response->error.message == "message must contain method or id");
 }
 
-TEST_CASE(string_id_request) {
+ZEST_CASE(string_id_request) {
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":"abc","method":"test/add","params":{"a":2,"b":3}})",
     });
@@ -586,15 +586,15 @@ TEST_CASE(string_id_request) {
     });
 
     loop.schedule(peer.run());
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    ASSERT(transport_ptr->outgoing().size() == 1U);
     auto& out = transport_ptr->outgoing().front();
-    EXPECT_TRUE(out.find(R"("id":"abc")") != std::string::npos);
-    EXPECT_TRUE(out.find(R"("sum":5)") != std::string::npos);
+    EXPECT(zest::contains(out, R"("id":"abc")"));
+    EXPECT(zest::contains(out, R"("sum":5)"));
 }
 
-TEST_CASE(cancel_inflight_request) {
+ZEST_CASE(cancel_inflight_request) {
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":21,"method":"test/add","params":{"a":2,"b":3}})",
         R"({"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id":21}})",
@@ -612,20 +612,20 @@ TEST_CASE(cancel_inflight_request) {
     });
 
     loop.schedule(peer.run());
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    EXPECT_FALSE(finished);
-    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    EXPECT(!finished);
+    ASSERT(transport_ptr->outgoing().size() == 1U);
     auto response = codec::json::from_string<ErrorResponse>(transport_ptr->outgoing().front());
-    ASSERT_TRUE(response.has_value());
-    EXPECT_EQ(response->jsonrpc, "2.0");
-    EXPECT_EQ(std::get<std::int64_t>(response->id), 21);
-    EXPECT_EQ(response->error.code,
-              static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
-    EXPECT_EQ(response->error.message, "request cancelled");
+    ASSERT(response.has_value());
+    EXPECT(response->jsonrpc == "2.0");
+    EXPECT(std::get<std::int64_t>(response->id) == 21);
+    EXPECT(response->error.code ==
+           static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
+    EXPECT(response->error.message == "request cancelled");
 }
 
-TEST_CASE(cancel_running_handler) {
+ZEST_CASE(cancel_running_handler) {
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{
             R"({"jsonrpc":"2.0","id":22,"method":"test/add","params":{"a":2,"b":3}})",
@@ -659,22 +659,22 @@ TEST_CASE(cancel_running_handler) {
     auto cancel_task = canceler();
     loop.schedule(peer.run());
     loop.schedule(cancel_task);
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    EXPECT_TRUE(started);
-    EXPECT_FALSE(completed);
+    EXPECT(started);
+    EXPECT(!completed);
 
-    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    ASSERT(transport_ptr->outgoing().size() == 1U);
     auto response = codec::json::from_string<ErrorResponse>(transport_ptr->outgoing().front());
-    ASSERT_TRUE(response.has_value());
-    EXPECT_EQ(response->jsonrpc, "2.0");
-    EXPECT_EQ(std::get<std::int64_t>(response->id), 22);
-    EXPECT_EQ(response->error.code,
-              static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
-    EXPECT_EQ(response->error.message, "request cancelled");
+    ASSERT(response.has_value());
+    EXPECT(response->jsonrpc == "2.0");
+    EXPECT(std::get<std::int64_t>(response->id) == 22);
+    EXPECT(response->error.code ==
+           static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
+    EXPECT(response->error.message == "request cancelled");
 }
 
-TEST_CASE(context_token_propagates) {
+ZEST_CASE(context_token_propagates) {
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{
             R"({"jsonrpc":"2.0","id":31,"method":"test/add","params":{"a":4,"b":5}})",
@@ -718,37 +718,37 @@ TEST_CASE(context_token_propagates) {
     auto watchdog_task = watchdog();
     loop.schedule(peer.run());
     loop.schedule(watchdog_task);
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    EXPECT_TRUE(started);
+    EXPECT(started);
 
     const auto& outgoing = transport_ptr->outgoing();
-    ASSERT_EQ(outgoing.size(), 3U);
+    ASSERT(outgoing.size() == 3U);
 
     auto nested_request = codec::json::from_string<Request>(outgoing[0]);
-    ASSERT_TRUE(nested_request.has_value());
-    EXPECT_EQ(nested_request->jsonrpc, "2.0");
-    EXPECT_EQ(std::get<std::int64_t>(nested_request->id), 1);
-    EXPECT_EQ(nested_request->method, "client/add/context");
-    EXPECT_EQ(nested_request->params.a, 4);
-    EXPECT_EQ(nested_request->params.b, 5);
+    ASSERT(nested_request.has_value());
+    EXPECT(nested_request->jsonrpc == "2.0");
+    EXPECT(std::get<std::int64_t>(nested_request->id) == 1);
+    EXPECT(nested_request->method == "client/add/context");
+    EXPECT(nested_request->params.a == 4);
+    EXPECT(nested_request->params.b == 5);
 
     auto nested_cancel = codec::json::from_string<CancelNotification>(outgoing[1]);
-    ASSERT_TRUE(nested_cancel.has_value());
-    EXPECT_EQ(nested_cancel->jsonrpc, "2.0");
-    EXPECT_EQ(nested_cancel->method, "$/cancelRequest");
-    EXPECT_EQ(std::get<std::int64_t>(nested_cancel->params.id), 1);
+    ASSERT(nested_cancel.has_value());
+    EXPECT(nested_cancel->jsonrpc == "2.0");
+    EXPECT(nested_cancel->method == "$/cancelRequest");
+    EXPECT(std::get<std::int64_t>(nested_cancel->params.id) == 1);
 
     auto final_error = codec::json::from_string<ErrorResponse>(outgoing[2]);
-    ASSERT_TRUE(final_error.has_value());
-    EXPECT_EQ(final_error->jsonrpc, "2.0");
-    EXPECT_EQ(std::get<std::int64_t>(final_error->id), 31);
-    EXPECT_EQ(final_error->error.code,
-              static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
-    EXPECT_EQ(final_error->error.message, "request cancelled");
+    ASSERT(final_error.has_value());
+    EXPECT(final_error->jsonrpc == "2.0");
+    EXPECT(std::get<std::int64_t>(final_error->id) == 31);
+    EXPECT(final_error->error.code ==
+           static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
+    EXPECT(final_error->error.message == "request cancelled");
 }
 
-TEST_CASE(outbound_cancel_request) {
+ZEST_CASE(outbound_cancel_request) {
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{},
         [](std::string_view payload, ScriptedTransport& channel) {
@@ -781,30 +781,30 @@ TEST_CASE(outbound_cancel_request) {
     loop.schedule(peer.run());
     loop.schedule(request_task);
     loop.schedule(cancel_task);
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    ASSERT_FALSE(request_result.has_value());
-    EXPECT_EQ(request_result.error().code,
-              static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
-    EXPECT_EQ(request_result.error().message, "request cancelled");
+    ASSERT(!request_result.has_value());
+    EXPECT(request_result.error().code ==
+           static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
+    EXPECT(request_result.error().message == "request cancelled");
 
     const auto& outgoing = transport_ptr->outgoing();
-    ASSERT_EQ(outgoing.size(), 2U);
+    ASSERT(outgoing.size() == 2U);
 
     auto request = codec::json::from_string<Request>(outgoing[0]);
-    ASSERT_TRUE(request.has_value());
-    EXPECT_EQ(request->jsonrpc, "2.0");
-    EXPECT_EQ(std::get<std::int64_t>(request->id), 1);
-    EXPECT_EQ(request->method, "worker/build");
+    ASSERT(request.has_value());
+    EXPECT(request->jsonrpc == "2.0");
+    EXPECT(std::get<std::int64_t>(request->id) == 1);
+    EXPECT(request->method == "worker/build");
 
     auto cancel = codec::json::from_string<CancelNotification>(outgoing[1]);
-    ASSERT_TRUE(cancel.has_value());
-    EXPECT_EQ(cancel->jsonrpc, "2.0");
-    EXPECT_EQ(cancel->method, "$/cancelRequest");
-    EXPECT_EQ(std::get<std::int64_t>(cancel->params.id), 1);
+    ASSERT(cancel.has_value());
+    EXPECT(cancel->jsonrpc == "2.0");
+    EXPECT(cancel->method == "$/cancelRequest");
+    EXPECT(std::get<std::int64_t>(cancel->params.id) == 1);
 }
 
-TEST_CASE(outbound_precancel) {
+ZEST_CASE(outbound_precancel) {
     auto transport = std::make_unique<ScriptedTransport>(std::vector<std::string>{}, nullptr);
     auto* transport_ptr = transport.get();
 
@@ -831,16 +831,16 @@ TEST_CASE(outbound_precancel) {
     loop.schedule(peer.run());
     loop.schedule(request_task);
     loop.schedule(close_task);
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    ASSERT_FALSE(request_result.has_value());
-    EXPECT_EQ(request_result.error().code,
-              static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
-    EXPECT_EQ(request_result.error().message, "request cancelled");
-    EXPECT_TRUE(transport_ptr->outgoing().empty());
+    ASSERT(!request_result.has_value());
+    EXPECT(request_result.error().code ==
+           static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
+    EXPECT(request_result.error().message == "request cancelled");
+    EXPECT(transport_ptr->outgoing().empty());
 }
 
-TEST_CASE(outbound_timeout_cancel) {
+ZEST_CASE(outbound_timeout_cancel) {
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{},
         [](std::string_view payload, ScriptedTransport& channel) {
@@ -865,26 +865,26 @@ TEST_CASE(outbound_timeout_cancel) {
     auto request_task = requester();
     loop.schedule(peer.run());
     loop.schedule(request_task);
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    ASSERT_FALSE(request_result.has_value());
-    EXPECT_EQ(request_result.error().code,
-              static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
-    EXPECT_EQ(request_result.error().message, "request timed out");
+    ASSERT(!request_result.has_value());
+    EXPECT(request_result.error().code ==
+           static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
+    EXPECT(request_result.error().message == "request timed out");
 
     const auto& outgoing = transport_ptr->outgoing();
-    ASSERT_EQ(outgoing.size(), 2U);
+    ASSERT(outgoing.size() == 2U);
 
     auto request = codec::json::from_string<Request>(outgoing[0]);
-    ASSERT_TRUE(request.has_value());
-    EXPECT_EQ(request->method, "worker/build");
+    ASSERT(request.has_value());
+    EXPECT(request->method == "worker/build");
 
     auto cancel = codec::json::from_string<CancelNotification>(outgoing[1]);
-    ASSERT_TRUE(cancel.has_value());
-    EXPECT_EQ(cancel->method, "$/cancelRequest");
+    ASSERT(cancel.has_value());
+    EXPECT(cancel->method == "$/cancelRequest");
 }
 
-TEST_CASE(zero_timeout_cancel) {
+ZEST_CASE(zero_timeout_cancel) {
     auto transport = std::make_unique<ScriptedTransport>(std::vector<std::string>{}, nullptr);
     auto* transport_ptr = transport.get();
 
@@ -910,13 +910,13 @@ TEST_CASE(zero_timeout_cancel) {
     loop.schedule(peer.run());
     loop.schedule(request_task);
     loop.schedule(close_task);
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    ASSERT_FALSE(request_result.has_value());
-    EXPECT_EQ(request_result.error().code,
-              static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
-    EXPECT_EQ(request_result.error().message, "request timed out");
-    EXPECT_TRUE(transport_ptr->outgoing().empty());
+    ASSERT(!request_result.has_value());
+    EXPECT(request_result.error().code ==
+           static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
+    EXPECT(request_result.error().message == "request timed out");
+    EXPECT(transport_ptr->outgoing().empty());
 }
 
 // Verify that completing a request before its timeout doesn't leak the timer coroutine frame.
@@ -924,7 +924,7 @@ TEST_CASE(zero_timeout_cancel) {
 // frame that was only released when the timer fired. If the request completed early and the peer
 // was closed, the timer task's coroutine frame (and its captured shared_ptrs) leaked.
 // ASan will catch this as a leak if the fix regresses.
-TEST_CASE(timeout_timer_cleanup_on_early_completion) {
+ZEST_CASE(timeout_timer_cleanup_on_early_completion) {
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{},
         [](std::string_view payload, ScriptedTransport& channel) {
@@ -949,14 +949,14 @@ TEST_CASE(timeout_timer_cleanup_on_early_completion) {
     auto request_task = requester();
     loop.schedule(peer.run());
     loop.schedule(request_task);
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    ASSERT_TRUE(request_result.has_value());
-    EXPECT_EQ(request_result->sum, 5);
+    ASSERT(request_result.has_value());
+    EXPECT(request_result->sum == 5);
 }
 
 // Handler returning task<codec::RawValue, Error> instead of RequestResult<Params>
-TEST_CASE(raw_value_return) {
+ZEST_CASE(raw_value_return) {
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":10,"b":20}})",
     });
@@ -972,54 +972,54 @@ TEST_CASE(raw_value_return) {
     });
 
     loop.schedule(peer.run());
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    ASSERT(transport_ptr->outgoing().size() == 1U);
     auto response = codec::json::from_string<Response>(transport_ptr->outgoing().front());
-    ASSERT_TRUE(response.has_value());
-    EXPECT_EQ(response->jsonrpc, "2.0");
-    EXPECT_EQ(std::get<std::int64_t>(response->id), 1);
-    ASSERT_TRUE(response->result.has_value());
-    EXPECT_EQ(response->result->sum, 30);
+    ASSERT(response.has_value());
+    EXPECT(response->jsonrpc == "2.0");
+    EXPECT(std::get<std::int64_t>(response->id) == 1);
+    ASSERT(response->result.has_value());
+    EXPECT(response->result->sum == 30);
 }
 
-};  // TEST_SUITE(ipc_peer)
+};  // namespace kota::ipc
 
 // ============================================================================
 // Group: Peer — camelCase rename for request params and results
 // ============================================================================
 
-TEST_SUITE(ipc_peer_camel_case) {
+ZEST_SUITE(ipc_peer_camel_case){
 
-// Incoming request with camelCase params → handler receives correct values
-// Outgoing response contains camelCase result
-TEST_CASE(request_params_result) {
-    auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
-        R"({"jsonrpc":"2.0","id":1,"method":"test/rangeAdd","params":{"firstValue":10,"secondValue":20}})",
-    });
-    auto* transport_ptr = transport.get();
-
-    event_loop loop;
-    JsonPeer peer(loop, std::move(transport));
-
-    peer.on_request(
-        [&](RequestContext&, const RangeAddParams& params) -> RequestResult<RangeAddParams> {
-            co_return RangeAddResult{.computed_sum = params.first_value + params.second_value};
+    // Incoming request with camelCase params → handler receives correct values
+    // Outgoing response contains camelCase result
+    ZEST_CASE(request_params_result){
+        auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
+            R"({"jsonrpc":"2.0","id":1,"method":"test/rangeAdd","params":{"firstValue":10,"secondValue":20}})",
         });
+auto* transport_ptr = transport.get();
 
-    loop.schedule(peer.run());
-    EXPECT_EQ(loop.run(), 0);
+event_loop loop;
+JsonPeer peer(loop, std::move(transport));
 
-    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    const auto& raw = transport_ptr->outgoing().front();
+peer.on_request([&](RequestContext&,
+                    const RangeAddParams& params) -> RequestResult<RangeAddParams> {
+    co_return RangeAddResult{.computed_sum = params.first_value + params.second_value};
+});
 
-    // Serialized form must use camelCase
-    EXPECT_TRUE(raw.find(R"("computedSum":30)") != std::string::npos);
-    EXPECT_TRUE(raw.find("computed_sum") == std::string::npos);
+loop.schedule(peer.run());
+EXPECT(loop.run() == 0);
+
+ASSERT(transport_ptr->outgoing().size() == 1U);
+const auto& raw = transport_ptr->outgoing().front();
+
+// Serialized form must use camelCase
+EXPECT(zest::contains(raw, R"("computedSum":30)"));
+EXPECT(!zest::contains(raw, "computed_sum"));
 }
 
 // Incoming notification with camelCase params
-TEST_CASE(notification_params) {
+ZEST_CASE(notification_params) {
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","method":"test/statusNote","params":{"displayName":"alice","retryCount":3}})",
     });
@@ -1035,14 +1035,14 @@ TEST_CASE(notification_params) {
     });
 
     loop.schedule(peer.run());
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    EXPECT_EQ(seen_name, "alice");
-    EXPECT_EQ(seen_count, 3);
+    EXPECT(seen_name == "alice");
+    EXPECT(seen_count == 3);
 }
 
 // Outgoing request serializes params in camelCase
-TEST_CASE(outbound_request) {
+ZEST_CASE(outbound_request) {
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{},
         [](std::string_view payload, ScriptedTransport& channel) {
@@ -1067,21 +1067,21 @@ TEST_CASE(outbound_request) {
     auto request_task = requester();
     loop.schedule(peer.run());
     loop.schedule(request_task);
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
     // Verify outgoing request used camelCase
-    ASSERT_GE(transport_ptr->outgoing().size(), 1U);
+    ASSERT(transport_ptr->outgoing().size() >= 1U);
     const auto& raw = transport_ptr->outgoing().front();
-    EXPECT_TRUE(raw.find(R"("firstValue":40)") != std::string::npos);
-    EXPECT_TRUE(raw.find(R"("secondValue":50)") != std::string::npos);
-    EXPECT_TRUE(raw.find("first_value") == std::string::npos);
+    EXPECT(zest::contains(raw, R"("firstValue":40)"));
+    EXPECT(zest::contains(raw, R"("secondValue":50)"));
+    EXPECT(!zest::contains(raw, "first_value"));
 
     // Verify response deserialized correctly
-    ASSERT_TRUE(request_result.has_value());
-    EXPECT_EQ(request_result->computed_sum, 99);
+    ASSERT(request_result.has_value());
+    EXPECT(request_result->computed_sum == 99);
 }
-
-};  // TEST_SUITE(ipc_peer_camel_case)
+}
+;  // ZEST_SUITE(ipc_peer_camel_case)
 
 }  // namespace
 }  // namespace kota::ipc

@@ -1,4 +1,4 @@
-// TEST_SUITE(task_group_errors): error and exception propagation for task_group
+// ZEST_SUITE(task_group_errors): error and exception propagation for task_group
 // — structured errors (fail-fast collects first, cancels siblings), mixed error
 // types, errors preserved across cancel, and (under KOTA_ENABLE_EXCEPTIONS) C++
 // exception propagation/precedence. Plain spawn/join lives in basics.cpp;
@@ -13,38 +13,38 @@
 
 namespace kota {
 
-TEST_SUITE(task_group_errors, loop_fixture) {
+ZEST_SUITE(task_group_errors, loop_fixture){
 
-TEST_CASE(returns_structured_error) {
-    int slow_done = 0;
+    ZEST_CASE(returns_structured_error){int slow_done = 0;
 
-    auto failing = [&]() -> task<int, error> {
-        co_await sleep(1, loop);
-        co_await fail(error::connection_refused);
-    };
+auto failing = [&]() -> task<int, error> {
+    co_await sleep(1, loop);
+    co_await fail(error::connection_refused);
+};
 
-    auto slow = [&]() -> task<> {
-        co_await sleep(50, loop);
-        slow_done += 1;
-    };
+auto slow = [&]() -> task<> {
+    co_await sleep(50, loop);
+    slow_done += 1;
+};
 
-    auto driver = [&]() -> task<> {
-        task_group<error> group(loop);
-        group.spawn(failing());
-        group.spawn(slow());
-        auto res = co_await group.join();
-        EXPECT_TRUE(res.has_error());
-        EXPECT_EQ(res.error().size(), 1u);
-        EXPECT_EQ(res.error()[0], error::connection_refused);
-    };
+auto driver = [&]() -> task<> {
+    task_group<error> group(loop);
+    group.spawn(failing());
+    group.spawn(slow());
+    auto res = co_await group.join();
+    EXPECT(res.has_error());
+    EXPECT(res.error().size() == 1u);
+    EXPECT(res.error()[0] == error::connection_refused);
+};
 
-    auto t = driver();
-    schedule_all(t);
-    EXPECT_TRUE(t->is_finished());
-    EXPECT_EQ(slow_done, 0);
-}
+auto t = driver();
+schedule_all(t);
+EXPECT(t->is_finished());
+EXPECT(slow_done == 0);
 
-TEST_CASE(mixed_error_types) {
+}  // namespace kota
+
+ZEST_CASE(mixed_error_types) {
     int slow_done = 0;
 
     auto failing = [&]() -> task<int, custom_error> {
@@ -62,18 +62,18 @@ TEST_CASE(mixed_error_types) {
         group.spawn(failing());
         group.spawn(slow());
         auto res = co_await group.join();
-        EXPECT_TRUE(res.has_error());
-        EXPECT_EQ(res.error().size(), 1u);
-        EXPECT_EQ(std::get<custom_error>(res.error()[0]), custom_error{7});
+        EXPECT(res.has_error());
+        EXPECT(res.error().size() == 1u);
+        EXPECT(std::get<custom_error>(res.error()[0]) == custom_error{7});
     };
 
     auto t = driver();
     schedule_all(t);
-    EXPECT_TRUE(t->is_finished());
-    EXPECT_EQ(slow_done, 0);
+    EXPECT(t->is_finished());
+    EXPECT(slow_done == 0);
 }
 
-TEST_CASE(direct_error_does_not_escape) {
+ZEST_CASE(direct_error_does_not_escape) {
     int slow_done = 0;
 
     auto failing = [&]() -> task<> {
@@ -99,12 +99,12 @@ TEST_CASE(direct_error_does_not_escape) {
 
     auto t = driver();
     schedule_all(t);
-    EXPECT_EQ(slow_done, 1);
+    EXPECT(slow_done == 1);
 }
 
 // Fail-fast cancels siblings after the first error, so the error vector
 // always contains exactly 1 entry.  Verify the value is correct.
-TEST_CASE(fail_fast_collects_first_error) {
+ZEST_CASE(fail_fast_collects_first_error) {
     auto failing = [&](int ms, error e) -> task<int, error> {
         co_await sleep(ms, loop);
         co_await fail(e);
@@ -116,17 +116,17 @@ TEST_CASE(fail_fast_collects_first_error) {
         group.spawn(failing(2, error::connection_reset_by_peer));
         group.spawn(failing(3, error::io_error));
         auto res = co_await group.join();
-        EXPECT_TRUE(res.has_error());
-        EXPECT_EQ(res.error().size(), 1u);
-        EXPECT_EQ(res.error().front(), error::connection_refused);
+        EXPECT(res.has_error());
+        EXPECT(res.error().size() == 1u);
+        EXPECT(res.error().front() == error::connection_refused);
     };
 
     auto t = driver();
     schedule_all(t);
-    EXPECT_TRUE(t->is_finished());
+    EXPECT(t->is_finished());
 }
 
-TEST_CASE(fail_fast_cancels_siblings) {
+ZEST_CASE(fail_fast_cancels_siblings) {
     int completed = 0;
 
     auto failing = [&]() -> task<int, error> {
@@ -146,16 +146,16 @@ TEST_CASE(fail_fast_cancels_siblings) {
         group.spawn(slow(100));
         group.spawn(slow(100));
         auto res = co_await group.join();
-        EXPECT_TRUE(res.has_error());
+        EXPECT(res.has_error());
     };
 
     auto t = driver();
     schedule_all(t);
-    EXPECT_EQ(completed, 0);
+    EXPECT(completed == 0);
 }
 
 // cancel() while join() suspended, with errors — errors collected before cancel
-TEST_CASE(cancel_while_join_suspended_with_error) {
+ZEST_CASE(cancel_while_join_suspended_with_error) {
     task_group<error>* group_ptr = nullptr;
 
     auto failing = [&]() -> task<int, error> {
@@ -173,9 +173,9 @@ TEST_CASE(cancel_while_join_suspended_with_error) {
         group.spawn(failing());
         group.spawn(slow());
         auto res = co_await group.join();
-        EXPECT_TRUE(res.has_error());
-        EXPECT_EQ(res.error().size(), 1u);
-        EXPECT_EQ(res.error().front(), error::connection_refused);
+        EXPECT(res.has_error());
+        EXPECT(res.error().size() == 1u);
+        EXPECT(res.error().front() == error::connection_refused);
     };
 
     auto canceler = [&]() -> task<> {
@@ -186,14 +186,14 @@ TEST_CASE(cancel_while_join_suspended_with_error) {
     auto t = driver();
     auto c = canceler();
     schedule_all(t, c);
-    EXPECT_TRUE(t->is_finished());
+    EXPECT(t->is_finished());
 }
 
 // A child that fails while the group is being cancelled externally must not
 // have its error swallowed by the cancellation: join() still resumes and
 // reports it (errors outrank cancellation), and the joiner finalizes as
 // cancelled afterwards.
-TEST_CASE(external_cancel_preserves_child_error) {
+ZEST_CASE(external_cancel_preserves_child_error) {
     bool observed = false;
     async_node* driver_node = nullptr;
 
@@ -208,9 +208,9 @@ TEST_CASE(external_cancel_preserves_child_error) {
         task_group<error> group(loop);
         group.spawn(child());
         auto res = co_await group.join();
-        EXPECT_TRUE(res.has_error());
-        EXPECT_EQ(res.error().size(), 1u);
-        EXPECT_EQ(res.error().front(), error::connection_refused);
+        EXPECT(res.has_error());
+        EXPECT(res.error().size() == 1u);
+        EXPECT(res.error().front() == error::connection_refused);
         observed = true;
     };
 
@@ -224,12 +224,12 @@ TEST_CASE(external_cancel_preserves_child_error) {
     driver_node = t.operator->();
     schedule_all(t, c);
 
-    EXPECT_TRUE(t->is_cancelled());
-    EXPECT_TRUE(observed);
+    EXPECT(t->is_cancelled());
+    EXPECT(observed);
 }
 
 #if KOTA_ENABLE_EXCEPTIONS
-TEST_CASE(exception_propagates) {
+ZEST_CASE(exception_propagates) {
     int slow_done = 0;
 
     auto thrower = [&]() -> task<> {
@@ -251,12 +251,12 @@ TEST_CASE(exception_propagates) {
 
     auto t = driver();
     schedule_all(t);
-    EXPECT_TRUE(t->is_failed());
+    EXPECT(t->is_failed());
     EXPECT_THROWS(t.result());
-    EXPECT_EQ(slow_done, 0);
+    EXPECT(slow_done == 0);
 }
 
-TEST_CASE(exception_takes_precedence_over_error) {
+ZEST_CASE(exception_takes_precedence_over_error) {
     auto thrower = [&]() -> task<int, error> {
         co_await sleep(1, loop);
         throw std::runtime_error("boom");
@@ -277,12 +277,12 @@ TEST_CASE(exception_takes_precedence_over_error) {
 
     auto t = driver();
     schedule_all(t);
-    EXPECT_TRUE(t->is_failed());
+    EXPECT(t->is_failed());
     EXPECT_THROWS(t.result());
 }
 
 #if !KOTA_WORKAROUND_WINDOWS_ASAN_COROUTINE_EXCEPTION
-TEST_CASE(only_first_exception_rethrown) {
+ZEST_CASE(only_first_exception_rethrown) {
     std::string caught_what;
 
     auto thrower = [&](int ms, const char* msg) -> task<> {
@@ -305,13 +305,13 @@ TEST_CASE(only_first_exception_rethrown) {
 
     auto t = driver();
     schedule_all(t);
-    EXPECT_TRUE(t->is_failed());
-    EXPECT_EQ(caught_what, "first");
+    EXPECT(t->is_failed());
+    EXPECT(caught_what == "first");
 }
 #endif  // !KOTA_WORKAROUND_WINDOWS_ASAN_COROUTINE_EXCEPTION
 
 // Synchronous exception during spawn (resume_and_drain path)
-TEST_CASE(sync_exception_on_spawn) {
+ZEST_CASE(sync_exception_on_spawn) {
     auto thrower = []() -> task<> {
         throw std::runtime_error("immediate");
         co_return;
@@ -325,12 +325,12 @@ TEST_CASE(sync_exception_on_spawn) {
 
     auto t = driver();
     schedule_all(t);
-    EXPECT_TRUE(t->is_failed());
+    EXPECT(t->is_failed());
     EXPECT_THROWS(t.result());
 }
 
 // cancel() while join() suspended, exception was already captured
-TEST_CASE(cancel_while_join_suspended_with_exception) {
+ZEST_CASE(cancel_while_join_suspended_with_exception) {
     task_group<>* group_ptr = nullptr;
 
     auto thrower = [&]() -> task<> {
@@ -358,11 +358,11 @@ TEST_CASE(cancel_while_join_suspended_with_exception) {
     auto t = driver();
     auto c = canceler();
     schedule_all(t, c);
-    EXPECT_TRUE(t->is_failed());
+    EXPECT(t->is_failed());
     EXPECT_THROWS(t.result());
 }
 #endif
-
-};  // TEST_SUITE(task_group_errors)
+}
+;  // ZEST_SUITE(task_group_errors)
 
 }  // namespace kota

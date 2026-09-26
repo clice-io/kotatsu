@@ -31,96 +31,96 @@ struct color_enum_string_tag {
 
 using color_enum_string = annotate<color_enum_string_tag>::type<color>;
 
-TEST_SUITE(serde_simdjson_error_message) {
+ZEST_SUITE(serde_simdjson_error_message){
 
-TEST_CASE(missing_required_field) {
-    person parsed{};
-    auto status = from_string(R"({"age": 25, "addr": {"city": "NY", "zip": 10001}})", parsed);
-    EXPECT_FALSE(status.has_value());
-    EXPECT_EQ(status.error().message, "missing required field 'name'");
-}
+    ZEST_CASE(missing_required_field){person parsed{};
+auto status = from_string(R"({"age": 25, "addr": {"city": "NY", "zip": 10001}})", parsed);
+EXPECT(!status.has_value());
+EXPECT(status.error().message == "missing required field 'name'");
 
-TEST_CASE(unknown_field_denied) {
+}  // namespace
+
+ZEST_CASE(unknown_field_denied) {
     strict_payload parsed{};
     auto status = from_string(R"({"id": 1, "name": "ok", "extra": true})", parsed);
-    EXPECT_FALSE(status.has_value());
-    EXPECT_EQ(status.error().message, "unknown field 'extra'");
+    EXPECT(!status.has_value());
+    EXPECT(status.error().message == "unknown field 'extra'");
 }
 
-TEST_CASE(nested_field_error_path) {
+ZEST_CASE(nested_field_error_path) {
     person parsed{};
     auto status =
         from_string(R"({"name": "alice", "age": 30, "addr": {"city": "NY", "zip": "wrong"}})",
                     parsed);
-    EXPECT_FALSE(status.has_value());
-    EXPECT_TRUE(status.error().message.find("type") != std::string::npos ||
-                status.error().message.find("invalid") != std::string::npos);
-    EXPECT_EQ(status.error().format_path(), "addr.zip");
+    EXPECT(!status.has_value());
+    EXPECT((status.error().message.find("type") != std::string::npos ||
+            status.error().message.find("invalid") != std::string::npos));
+    EXPECT(status.error().format_path() == "addr.zip");
 }
 
-TEST_CASE(sequence_element_error_path) {
+ZEST_CASE(sequence_element_error_path) {
     std::vector<int> parsed;
     auto status = from_string(R"([1, 2, "bad", 4])", parsed);
-    EXPECT_FALSE(status.has_value());
-    EXPECT_TRUE(status.error().message.find("type") != std::string::npos ||
-                status.error().message.find("invalid") != std::string::npos);
-    EXPECT_EQ(status.error().format_path(), "[2]");
+    EXPECT(!status.has_value());
+    EXPECT((status.error().message.find("type") != std::string::npos ||
+            status.error().message.find("invalid") != std::string::npos));
+    EXPECT(status.error().format_path() == "[2]");
 }
 
-TEST_CASE(nested_sequence_error_path) {
+ZEST_CASE(nested_sequence_error_path) {
     with_scores parsed{};
     auto status = from_string(R"({"name": "bob", "scores": [10, "bad", 30]})", parsed);
-    EXPECT_FALSE(status.has_value());
-    EXPECT_TRUE(status.error().message.find("type") != std::string::npos ||
-                status.error().message.find("invalid") != std::string::npos);
-    EXPECT_EQ(status.error().format_path(), "scores[1]");
+    EXPECT(!status.has_value());
+    EXPECT((status.error().message.find("type") != std::string::npos ||
+            status.error().message.find("invalid") != std::string::npos));
+    EXPECT(status.error().format_path() == "scores[1]");
 }
 
-TEST_CASE(enum_string_error_message) {
+ZEST_CASE(enum_string_error_message) {
     color_enum_string parsed = color::red;
     auto status = from_string(R"("yellow")", parsed);
-    EXPECT_FALSE(status.has_value());
-    EXPECT_TRUE(status.error().message.find("yellow") != std::string::npos);
+    EXPECT(!status.has_value());
+    EXPECT(zest::contains(status.error().message, "yellow"));
 }
 
-TEST_CASE(number_out_of_range) {
+ZEST_CASE(number_out_of_range) {
     std::uint8_t parsed = 0;
     auto status = from_string("300", parsed);
-    EXPECT_FALSE(status.has_value());
-    EXPECT_TRUE(status.error().message.find("range") != std::string::npos ||
-                status.error().message.find("out of") != std::string::npos);
+    EXPECT(!status.has_value());
+    EXPECT((status.error().message.find("range") != std::string::npos ||
+            status.error().message.find("out of") != std::string::npos));
 }
 
-TEST_CASE(error_has_location) {
+ZEST_CASE(error_has_location) {
     person parsed{};
     auto status = from_string(R"({
   "name": "alice",
   "age": "not_a_number"
 })",
                               parsed);
-    EXPECT_FALSE(status.has_value());
-    EXPECT_TRUE(status.error().message.find("type") != std::string::npos ||
-                status.error().message.find("invalid") != std::string::npos);
-    EXPECT_EQ(status.error().format_path(), "age");
-    EXPECT_TRUE(status.error().location.has_value());
-    EXPECT_EQ(status.error().location->line, 3u);
-    EXPECT_EQ(status.error().location->column, 10u);
-    EXPECT_EQ(status.error().location->byte_offset, 30u);
+    EXPECT(!status.has_value());
+    EXPECT((status.error().message.find("type") != std::string::npos ||
+            status.error().message.find("invalid") != std::string::npos));
+    EXPECT(status.error().format_path() == "age");
+    EXPECT(status.error().location.has_value());
+    EXPECT(status.error().location->line == 3u);
+    EXPECT(status.error().location->column == 10u);
+    EXPECT(status.error().location->byte_offset == 30u);
 }
 
-TEST_CASE(to_string_combines_all) {
+ZEST_CASE(to_string_combines_all) {
     person parsed{};
     auto status =
         from_string(R"({"name": "alice", "age": 30, "addr": {"city": "NY", "zip": "wrong"}})",
                     parsed);
-    EXPECT_FALSE(status.has_value());
+    EXPECT(!status.has_value());
     auto str = status.error().to_string();
-    EXPECT_TRUE(str.find("addr.zip") != std::string::npos);
-    EXPECT_TRUE(str.find("line 1") != std::string::npos);
-    EXPECT_TRUE(str.find("column 60") != std::string::npos);
+    EXPECT(zest::contains(str, "addr.zip"));
+    EXPECT(zest::contains(str, "line 1"));
+    EXPECT(zest::contains(str, "column 60"));
 }
 
-};  // TEST_SUITE(serde_simdjson_error_message)
+};  // namespace kota::codec
 
 }  // namespace
 

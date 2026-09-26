@@ -56,34 +56,34 @@ struct Wrapper {
     std::vector<SimpleVariant> items;
 };
 
-TEST_SUITE(simdjson_checkpoint_restore) {
+ZEST_SUITE(simdjson_checkpoint_restore){
 
-TEST_CASE(string_buffer_reclaimed) {
-    std::string big(16384, 'X');
-    std::string input = R"({"value":")" + big + R"("})";
+    ZEST_CASE(string_buffer_reclaimed){std::string big(16384, 'X');
+std::string input = R"({"value":")" + big + R"("})";
 
-    json::padded_string padded{std::string_view{input}};
-    json::ondemand::Parser parser;
-    json::ondemand::Document doc;
-    ASSERT_EQ(parser.iterate(padded).get(doc), json::success);
-    auto r = Reader{doc, padded.data(), padded.size()};
-    auto& ji = r.src.json_iter();
-    auto* buf_before = ji.string_buf_loc();
+json::padded_string padded{std::string_view{input}};
+json::ondemand::Parser parser;
+json::ondemand::Document doc;
+ASSERT(parser.iterate(padded).get(doc) == json::success);
+auto r = Reader{doc, padded.data(), padded.size()};
+auto& ji = r.src.json_iter();
+auto* buf_before = ji.string_buf_loc();
 
-    bool ok = r.try_read([&](Reader& sub) -> bool {
-        SimpleA a;
-        return decode_value<default_config<>>(sub, a);
-    });
-    EXPECT_FALSE(ok);
-    EXPECT_EQ(ji.string_buf_loc(), buf_before);
-}
+bool ok = r.try_read([&](Reader& sub) -> bool {
+    SimpleA a;
+    return decode_value<default_config<>>(sub, a);
+});
+EXPECT(!ok);
+EXPECT(ji.string_buf_loc() == buf_before);
 
-TEST_CASE(depth_restored) {
+}  // namespace
+
+ZEST_CASE(depth_restored) {
     auto input = R"({"value":"test"})";
     json::padded_string padded{std::string_view{input}};
     json::ondemand::Parser parser;
     json::ondemand::Document doc;
-    ASSERT_EQ(parser.iterate(padded).get(doc), json::success);
+    ASSERT(parser.iterate(padded).get(doc) == json::success);
     auto r = Reader{doc, padded.data(), padded.size()};
     auto& ji = r.src.json_iter();
     auto depth_before = ji.depth();
@@ -92,16 +92,16 @@ TEST_CASE(depth_restored) {
         SimpleA a;
         return decode_value<default_config<>>(sub, a);
     });
-    EXPECT_FALSE(ok);
-    EXPECT_EQ(ji.depth(), depth_before);
+    EXPECT(!ok);
+    EXPECT(ji.depth() == depth_before);
 }
 
-TEST_CASE(token_position_restored) {
+ZEST_CASE(token_position_restored) {
     auto input = R"({"value":"test"})";
     json::padded_string padded{std::string_view{input}};
     json::ondemand::Parser parser;
     json::ondemand::Document doc;
-    ASSERT_EQ(parser.iterate(padded).get(doc), json::success);
+    ASSERT(parser.iterate(padded).get(doc) == json::success);
     auto r = Reader{doc, padded.data(), padded.size()};
     auto& ji = r.src.json_iter();
     auto pos_before = ji.position();
@@ -110,18 +110,18 @@ TEST_CASE(token_position_restored) {
         SimpleA a;
         return decode_value<default_config<>>(sub, a);
     });
-    EXPECT_FALSE(ok);
-    EXPECT_EQ(ji.position(), pos_before);
+    EXPECT(!ok);
+    EXPECT(ji.position() == pos_before);
 }
 
-TEST_CASE(all_state_with_large_string) {
+ZEST_CASE(all_state_with_large_string) {
     std::string big(32768, 'Z');
     std::string input = R"({"data":")" + big + R"("})";
 
     json::padded_string padded{std::string_view{input}};
     json::ondemand::Parser parser;
     json::ondemand::Document doc;
-    ASSERT_EQ(parser.iterate(padded).get(doc), json::success);
+    ASSERT(parser.iterate(padded).get(doc) == json::success);
     auto r = Reader{doc, padded.data(), padded.size()};
     auto& ji = r.src.json_iter();
 
@@ -133,19 +133,19 @@ TEST_CASE(all_state_with_large_string) {
         HasRequired h;
         return decode_value<default_config<>>(sub, h);
     });
-    EXPECT_FALSE(ok);
+    EXPECT(!ok);
 
-    EXPECT_EQ(ji.position(), pos_before);
-    EXPECT_EQ(ji.string_buf_loc(), buf_before);
-    EXPECT_EQ(ji.depth(), depth_before);
+    EXPECT(ji.position() == pos_before);
+    EXPECT(ji.string_buf_loc() == buf_before);
+    EXPECT(ji.depth() == depth_before);
 }
 
-TEST_CASE(success_advances_state) {
+ZEST_CASE(success_advances_state) {
     auto input = R"({"value":"hello"})";
     json::padded_string padded{std::string_view{input}};
     json::ondemand::Parser parser;
     json::ondemand::Document doc;
-    ASSERT_EQ(parser.iterate(padded).get(doc), json::success);
+    ASSERT(parser.iterate(padded).get(doc) == json::success);
     auto r = Reader{doc, padded.data(), padded.size()};
     auto& ji = r.src.json_iter();
 
@@ -156,17 +156,17 @@ TEST_CASE(success_advances_state) {
         SimpleB b;
         return decode_value<default_config<>>(sub, b);
     });
-    EXPECT_TRUE(ok);
-    EXPECT_NE(ji.position(), pos_before);
-    EXPECT_NE(ji.string_buf_loc(), buf_before);
+    EXPECT(ok);
+    EXPECT(ji.position() != pos_before);
+    EXPECT(ji.string_buf_loc() != buf_before);
 }
 
-TEST_CASE(multiple_failures_no_drift) {
+ZEST_CASE(multiple_failures_no_drift) {
     auto input = R"({"value":"hello"})";
     json::padded_string padded{std::string_view{input}};
     json::ondemand::Parser parser;
     json::ondemand::Document doc;
-    ASSERT_EQ(parser.iterate(padded).get(doc), json::success);
+    ASSERT(parser.iterate(padded).get(doc) == json::success);
     auto r = Reader{doc, padded.data(), padded.size()};
     auto& ji = r.src.json_iter();
 
@@ -179,15 +179,15 @@ TEST_CASE(multiple_failures_no_drift) {
             SimpleA a;
             return decode_value<default_config<>>(sub, a);
         });
-        EXPECT_FALSE(ok);
+        EXPECT(!ok);
     }
 
-    EXPECT_EQ(ji.position(), pos_original);
-    EXPECT_EQ(ji.string_buf_loc(), buf_original);
-    EXPECT_EQ(ji.depth(), depth_original);
+    EXPECT(ji.position() == pos_original);
+    EXPECT(ji.string_buf_loc() == buf_original);
+    EXPECT(ji.depth() == depth_original);
 }
 
-TEST_CASE(variant_fallback_reclaims) {
+ZEST_CASE(variant_fallback_reclaims) {
     // variant<Nested, Shallow>: Nested fails (missing b, c), Shallow succeeds.
     // String buffer consumed during Nested attempt must be reclaimed.
     std::string big(8192, 'D');
@@ -195,23 +195,23 @@ TEST_CASE(variant_fallback_reclaims) {
 
     NestedVariant out;
     auto result = from_string<>(input, out);
-    ASSERT_TRUE(result.has_value());
-    ASSERT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<Shallow>(out).a.size(), 8192U);
+    ASSERT(result.has_value());
+    ASSERT(out.index() == 1U);
+    EXPECT(std::get<Shallow>(out).a.size() == 8192U);
 }
 
-TEST_CASE(variant_fallback_reclaims_256KB) {
+ZEST_CASE(variant_fallback_reclaims_256KB) {
     std::string big(256 * 1024, 'E');
     std::string input = R"({"a":")" + big + R"("})";
 
     NestedVariant out;
     auto result = from_string<>(input, out);
-    ASSERT_TRUE(result.has_value());
-    ASSERT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<Shallow>(out).a.size(), 256U * 1024U);
+    ASSERT(result.has_value());
+    ASSERT(out.index() == 1U);
+    EXPECT(std::get<Shallow>(out).a.size() == 256U * 1024U);
 }
 
-TEST_CASE(variant_first_alternative_succeeds) {
+ZEST_CASE(variant_first_alternative_succeeds) {
     // Sanity: when the first alternative matches, no checkpoint restore needed.
     std::string s1(4096, 'A');
     std::string s2(4096, 'B');
@@ -220,26 +220,26 @@ TEST_CASE(variant_first_alternative_succeeds) {
 
     NestedVariant out;
     auto result = from_string<>(input, out);
-    ASSERT_TRUE(result.has_value());
-    ASSERT_EQ(out.index(), 0U);
+    ASSERT(result.has_value());
+    ASSERT(out.index() == 0U);
     auto& n = std::get<Nested>(out);
-    EXPECT_EQ(n.a.size(), 4096U);
-    EXPECT_EQ(n.b.size(), 4096U);
-    EXPECT_EQ(n.c.size(), 4096U);
+    EXPECT(n.a.size() == 4096U);
+    EXPECT(n.b.size() == 4096U);
+    EXPECT(n.c.size() == 4096U);
 }
 
-TEST_CASE(value_level_variant) {
+ZEST_CASE(value_level_variant) {
     // Variant inside an array: try_read operates on a Value, not Document.
     auto input = R"({"items":[{"value":"world"}]})";
     Wrapper w;
     auto result = from_string<>(input, w);
-    ASSERT_TRUE(result.has_value());
-    ASSERT_EQ(w.items.size(), 1U);
-    ASSERT_EQ(w.items[0].index(), 1U);
-    EXPECT_EQ(std::get<SimpleB>(w.items[0]).value, "world");
+    ASSERT(result.has_value());
+    ASSERT(w.items.size() == 1U);
+    ASSERT(w.items[0].index() == 1U);
+    EXPECT(std::get<SimpleB>(w.items[0]).value == "world");
 }
 
-};  // TEST_SUITE(simdjson_checkpoint_restore)
+};  // namespace kota::codec
 
 }  // namespace
 

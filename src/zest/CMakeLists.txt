@@ -50,7 +50,7 @@ target_sources(kota_zest PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/runner.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/pool.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/worker.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/expr.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/check.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/snapshot.cpp"
 )
 

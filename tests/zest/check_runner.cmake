@@ -113,6 +113,19 @@ if(fresh_at EQUAL -1 OR NOT EXISTS "${snapshots}/fixture_snapshot/also_checked.s
     message(FATAL_ERROR "snapshots not updated and cleaned up as expected:\n${output}")
 endif()
 
+# A failed check shows its operands, a predicate's inputs, an unexpected's
+# error and the contexts in scope.
+run_fixture("${FIXTURE}" --test-filter=fixture_report.* --jobs=1)
+expect_code(1)
+expect_output("[ expect ] std::string(\"left\") == \"right\"")
+expect_output("lhs: \"left\"")
+expect_output("rhs: \"right\"")
+expect_output("haystack: \"haystack\"")
+expect_output("needle: \"needle\"")
+expect_output("got: \"boom\"")
+expect_output("context: while checking 42")
+expect_output("[  FAILED  ] 4 tests, listed below:")
+
 # The program's own flag reaches the workers, which here refuse to start.
 run_fixture("${FIXTURE}" --test-filter=fixture.passes --fail-worker-start)
 expect_code(1)

@@ -24,31 +24,31 @@ struct MyClang {
         _;
 };
 
-TEST_SUITE(deco_demos) {
+ZEST_SUITE(deco_demos){
 
-TEST_CASE(MyClang) {
-    auto cmd = cli::command<MyClang>("Clang [OPTIONS] inputs");
-    cmd.render_with(cli::text::ModernRenderer());
+    ZEST_CASE(MyClang){auto cmd = cli::command<MyClang>("Clang [OPTIONS] inputs");
+cmd.render_with(cli::text::ModernRenderer());
 
-    std::stringstream ss;
-    cmd.usage(ss);
-    EXPECT_TRUE(ss.str().contains("Clang [OPTIONS] inputs"));
-    EXPECT_TRUE(ss.str().contains("-o1"));
-    cmd.usage(std::cout);
+std::stringstream ss;
+cmd.usage(ss);
+EXPECT(ss.str().contains("Clang [OPTIONS] inputs"));
+EXPECT(ss.str().contains("-o1"));
+cmd.usage(std::cout);
 
-    std::vector<std::string> args = {"-o1", "--support-ext", "cc"};
-    auto res = cmd.invoke(args);
-    EXPECT_TRUE(res.has_value());
-    if(!res.has_value()) {
-        return;
-    }
-
-    auto opt = res->options;
-    EXPECT_TRUE(opt.optimize.value() == 1);
-    EXPECT_TRUE(opt.support_ext.value() == MyClang::Support::cc);
+std::vector<std::string> args = {"-o1", "--support-ext", "cc"};
+auto res = cmd.invoke(args);
+EXPECT(res.has_value());
+if(!res.has_value()) {
+    return;
 }
 
-};  // TEST_SUITE(deco_demos)
+auto opt = res->options;
+EXPECT(opt.optimize.value() == 1);
+EXPECT(opt.support_ext.value() == MyClang::Support::cc);
+
+}  // namespace
+
+};  // namespace kota::deco
 
 }  // namespace
 }  // namespace kota::deco

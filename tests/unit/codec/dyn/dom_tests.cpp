@@ -34,96 +34,96 @@ std::string make_large_object_json(int count) {
     return out;
 }
 
-TEST_SUITE(serde_content_dom) {
+ZEST_SUITE(serde_content_dom){
 
-TEST_CASE(construct_scalars) {
-    dyn::Value null_value{};
-    EXPECT_TRUE(null_value.is_null());
+    ZEST_CASE(construct_scalars){dyn::Value null_value{};
+EXPECT(null_value.is_null());
 
-    dyn::Value bool_value(true);
-    EXPECT_TRUE(bool_value.is_bool());
-    EXPECT_EQ(bool_value.as_bool(), true);
+dyn::Value bool_value(true);
+EXPECT(bool_value.is_bool());
+EXPECT(bool_value.as_bool() == true);
 
-    dyn::Value int_value(std::int64_t(-7));
-    EXPECT_TRUE(int_value.is_int());
-    EXPECT_EQ(int_value.as_int(), -7);
+dyn::Value int_value(std::int64_t(-7));
+EXPECT(int_value.is_int());
+EXPECT(int_value.as_int() == -7);
 
-    dyn::Value uint_value(std::uint64_t(42));
-    EXPECT_TRUE(uint_value.is_int());
-    EXPECT_EQ(uint_value.as_uint(), std::uint64_t(42));
+dyn::Value uint_value(std::uint64_t(42));
+EXPECT(uint_value.is_int());
+EXPECT(uint_value.as_uint() == std::uint64_t(42));
 
-    dyn::Value double_value(3.5);
-    EXPECT_TRUE(double_value.is_number());
-    EXPECT_EQ(double_value.as_double(), 3.5);
+dyn::Value double_value(3.5);
+EXPECT(double_value.is_number());
+EXPECT(double_value.as_double() == 3.5);
 
-    dyn::Value string_value("hello");
-    EXPECT_TRUE(string_value.is_string());
-    EXPECT_EQ(string_value.as_string(), "hello");
-}
+dyn::Value string_value("hello");
+EXPECT(string_value.is_string());
+EXPECT(string_value.as_string() == "hello");
 
-TEST_CASE(int_uint_cross_sign_access) {
+}  // namespace
+
+ZEST_CASE(int_uint_cross_sign_access) {
     dyn::Value big_uint(std::uint64_t{9223372036854775808ULL});
-    EXPECT_FALSE(big_uint.get_int().has_value());
-    ASSERT_TRUE(big_uint.get_uint().has_value());
-    EXPECT_EQ(*big_uint.get_uint(), std::uint64_t{9223372036854775808ULL});
+    EXPECT(!big_uint.get_int().has_value());
+    ASSERT(big_uint.get_uint().has_value());
+    EXPECT(*big_uint.get_uint() == std::uint64_t{9223372036854775808ULL});
 
     dyn::Value neg_int(std::int64_t{-1});
-    EXPECT_FALSE(neg_int.get_uint().has_value());
-    ASSERT_TRUE(neg_int.get_int().has_value());
-    EXPECT_EQ(*neg_int.get_int(), std::int64_t{-1});
+    EXPECT(!neg_int.get_uint().has_value());
+    ASSERT(neg_int.get_int().has_value());
+    EXPECT(*neg_int.get_int() == std::int64_t{-1});
 }
 
-TEST_CASE(parse_and_view_basic_via_json) {
+ZEST_CASE(parse_and_view_basic_via_json) {
     auto parsed = json::from_string<dyn::Value>(R"({"a":1,"b":"x","arr":[1,2]})");
-    ASSERT_TRUE(parsed.has_value());
+    ASSERT(parsed.has_value());
 
-    ASSERT_TRUE(parsed->is_object());
-    ASSERT_EQ((*parsed)["a"].as_int(), 1);
-    ASSERT_EQ((*parsed)["b"].as_string(), "x");
-    ASSERT_EQ((*parsed)["arr"][1].as_int(), 2);
-    EXPECT_FALSE((*parsed)["missing"].valid());
+    ASSERT(parsed->is_object());
+    ASSERT((*parsed)["a"].as_int() == 1);
+    ASSERT((*parsed)["b"].as_string() == "x");
+    ASSERT((*parsed)["arr"][1].as_int() == 2);
+    EXPECT(!(*parsed)["missing"].valid());
 }
 
-TEST_CASE(cursor_miss_describes_failure) {
+ZEST_CASE(cursor_miss_describes_failure) {
     auto parsed = json::from_string<dyn::Value>(R"({"a":{"b":[10,20]}})");
-    ASSERT_TRUE(parsed.has_value());
+    ASSERT(parsed.has_value());
 
     auto missing_key = (*parsed)["zzz"];
-    EXPECT_FALSE(missing_key.valid());
-    EXPECT_TRUE(missing_key.has_error());
-    EXPECT_EQ(missing_key.error(), R"(missing key "zzz")");
+    EXPECT(!missing_key.valid());
+    EXPECT(missing_key.has_error());
+    EXPECT(missing_key.error() == R"(missing key "zzz")");
 
     auto out_of_range = (*parsed)["a"]["b"][5];
-    EXPECT_FALSE(out_of_range.valid());
-    EXPECT_EQ(out_of_range.error(), "index 5 out of range (size 2)");
+    EXPECT(!out_of_range.valid());
+    EXPECT(out_of_range.error() == "index 5 out of range (size 2)");
 
     auto wrong_kind = (*parsed)["a"]["b"]["x"];
-    EXPECT_FALSE(wrong_kind.valid());
-    EXPECT_EQ(wrong_kind.error(), "expected object, got array");
+    EXPECT(!wrong_kind.valid());
+    EXPECT(wrong_kind.error() == "expected object, got array");
 }
 
-TEST_CASE(cursor_chain_appends_path) {
+ZEST_CASE(cursor_chain_appends_path) {
     auto parsed = json::from_string<dyn::Value>(R"({"a":1})");
-    ASSERT_TRUE(parsed.has_value());
+    ASSERT(parsed.has_value());
 
     auto deep = (*parsed)["missing"]["x"][3]["y"];
-    ASSERT_FALSE(deep.valid());
-    EXPECT_EQ(deep.error(), R"(missing key "missing" -> ["x"] -> [3] -> ["y"])");
+    ASSERT(!deep.valid());
+    EXPECT(deep.error() == R"(missing key "missing" -> ["x"] -> [3] -> ["y"])");
 }
 
-TEST_CASE(object_lookup_builds_lazy_index) {
+ZEST_CASE(object_lookup_builds_lazy_index) {
     auto json_text = make_large_object_json(32);
     auto parsed = json::from_string<dyn::Value>(json_text);
-    ASSERT_TRUE(parsed.has_value());
+    ASSERT(parsed.has_value());
 
-    ASSERT_TRUE(parsed->is_object());
+    ASSERT(parsed->is_object());
     for(int i = 0; i < 32; ++i) {
         std::string key = "k" + std::to_string(i);
-        ASSERT_EQ((*parsed)[key].as_int(), i);
+        ASSERT((*parsed)[key].as_int() == i);
     }
 }
 
-TEST_CASE(value_copy_is_deep) {
+ZEST_CASE(value_copy_is_deep) {
     dyn::Object obj;
     obj.insert("n", dyn::Value(std::int64_t(1)));
 
@@ -132,11 +132,11 @@ TEST_CASE(value_copy_is_deep) {
 
     original.as_object().assign("n", dyn::Value(std::int64_t(2)));
 
-    EXPECT_EQ(original.as_object().at("n").as_int(), 2);
-    EXPECT_EQ(copy.as_object().at("n").as_int(), 1);
+    EXPECT(original.as_object().at("n").as_int() == 2);
+    EXPECT(copy.as_object().at("n").as_int() == 1);
 }
 
-TEST_CASE(object_equality_is_order_insensitive) {
+ZEST_CASE(object_equality_is_order_insensitive) {
     dyn::Object a;
     a.insert("x", dyn::Value(std::int64_t(1)));
     a.insert("y", dyn::Value(std::int64_t(2)));
@@ -145,143 +145,143 @@ TEST_CASE(object_equality_is_order_insensitive) {
     b.insert("y", dyn::Value(std::int64_t(2)));
     b.insert("x", dyn::Value(std::int64_t(1)));
 
-    EXPECT_TRUE(a == b);
+    EXPECT(a == b);
 }
 
-TEST_CASE(mixed_struct_roundtrip_with_dynamic_dom) {
+ZEST_CASE(mixed_struct_roundtrip_with_dynamic_dom) {
     auto parsed = json::from_string<mixed_payload>(R"({"id":7,"extra":{"name":"alice","n":1}})");
-    ASSERT_TRUE(parsed.has_value());
-    ASSERT_EQ(parsed->id, 7);
+    ASSERT(parsed.has_value());
+    ASSERT(parsed->id == 7);
 
     auto& extra_object = parsed->extra.as_object();
-    EXPECT_EQ(extra_object.at("name").as_string(), "alice");
-    EXPECT_EQ(extra_object.at("n").as_int(), 1);
+    EXPECT(extra_object.at("name").as_string() == "alice");
+    EXPECT(extra_object.at("n").as_int() == 1);
 
     extra_object.assign("n", dyn::Value(std::int64_t(2)));
 
     auto encoded = json::to_string(*parsed);
-    ASSERT_TRUE(encoded.has_value());
+    ASSERT(encoded.has_value());
 
     auto reparsed = json::from_string<mixed_payload>(*encoded);
-    ASSERT_TRUE(reparsed.has_value());
-    EXPECT_EQ(reparsed->id, 7);
-    ASSERT_TRUE(reparsed->extra.is_object());
-    EXPECT_EQ(reparsed->extra["name"].as_string(), "alice");
-    EXPECT_EQ(reparsed->extra["n"].as_int(), 2);
+    ASSERT(reparsed.has_value());
+    EXPECT(reparsed->id == 7);
+    ASSERT(reparsed->extra.is_object());
+    EXPECT(reparsed->extra["name"].as_string() == "alice");
+    EXPECT(reparsed->extra["n"].as_int() == 2);
 }
 
-TEST_CASE(deep_nested_array_via_json_roundtrip) {
+ZEST_CASE(deep_nested_array_via_json_roundtrip) {
     constexpr int depth = 16;
     std::string text(depth, '[');
     text.push_back('1');
     text.append(depth, ']');
 
     auto parsed = json::from_string<dyn::Value>(text);
-    ASSERT_TRUE(parsed.has_value());
+    ASSERT(parsed.has_value());
 
     dyn::Cursor cursor = parsed->cursor();
     for(int i = 0; i < depth; ++i) {
-        ASSERT_TRUE(cursor.is_array());
-        ASSERT_EQ(cursor.as_array().size(), 1);
+        ASSERT(cursor.is_array());
+        ASSERT(cursor.as_array().size() == 1);
         cursor = cursor[0];
     }
-    ASSERT_TRUE(cursor.is_int());
-    EXPECT_EQ(cursor.as_int(), 1);
+    ASSERT(cursor.is_int());
+    EXPECT(cursor.as_int() == 1);
 
     auto encoded = json::to_string(*parsed);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, text);
+    ASSERT(encoded.has_value());
+    EXPECT(*encoded == text);
 }
 
-TEST_CASE(cursor_on_scalar_reports_type_mismatch) {
+ZEST_CASE(cursor_on_scalar_reports_type_mismatch) {
     dyn::Value int_val(std::int64_t(42));
     dyn::Value str_val("hello");
     dyn::Value bool_val(true);
     dyn::Value null_val(nullptr);
 
     auto r1 = int_val["key"];
-    EXPECT_FALSE(r1.valid());
-    EXPECT_EQ(r1.error(), "expected object, got signed_int");
+    EXPECT(!r1.valid());
+    EXPECT(r1.error() == "expected object, got signed_int");
 
     auto r2 = str_val[0];
-    EXPECT_FALSE(r2.valid());
-    EXPECT_EQ(r2.error(), "expected array, got string");
+    EXPECT(!r2.valid());
+    EXPECT(r2.error() == "expected array, got string");
 
     auto r3 = bool_val["x"];
-    EXPECT_FALSE(r3.valid());
-    EXPECT_EQ(r3.error(), "expected object, got boolean");
+    EXPECT(!r3.valid());
+    EXPECT(r3.error() == "expected object, got boolean");
 
     auto r4 = null_val[0];
-    EXPECT_FALSE(r4.valid());
-    EXPECT_EQ(r4.error(), "expected array, got null");
+    EXPECT(!r4.valid());
+    EXPECT(r4.error() == "expected array, got null");
 }
 
-TEST_CASE(default_cursor_chaining_builds_path) {
+ZEST_CASE(default_cursor_chaining_builds_path) {
     dyn::Cursor c;
-    EXPECT_FALSE(c.valid());
-    EXPECT_FALSE(c.has_error());
+    EXPECT(!c.valid());
+    EXPECT(!c.has_error());
 
     auto c1 = c["foo"];
-    EXPECT_FALSE(c1.valid());
-    EXPECT_EQ(c1.error(), R"(["foo"])");
+    EXPECT(!c1.valid());
+    EXPECT(c1.error() == R"(["foo"])");
 
     auto c2 = c1["bar"];
-    EXPECT_FALSE(c2.valid());
-    EXPECT_EQ(c2.error(), R"(["foo"] -> ["bar"])");
+    EXPECT(!c2.valid());
+    EXPECT(c2.error() == R"(["foo"] -> ["bar"])");
 
     auto c3 = c[0];
-    EXPECT_FALSE(c3.valid());
-    EXPECT_EQ(c3.error(), "[0]");
+    EXPECT(!c3.valid());
+    EXPECT(c3.error() == "[0]");
 
     auto c4 = c3["x"][1];
-    EXPECT_FALSE(c4.valid());
-    EXPECT_EQ(c4.error(), R"([0] -> ["x"] -> [1])");
+    EXPECT(!c4.valid());
+    EXPECT(c4.error() == R"([0] -> ["x"] -> [1])");
 }
 
-TEST_CASE(cursor_explicit_bool_conversion) {
+ZEST_CASE(cursor_explicit_bool_conversion) {
     dyn::Value val(std::int64_t(1));
     dyn::Cursor valid_c(val);
     dyn::Cursor invalid_c;
 
-    EXPECT_TRUE(static_cast<bool>(valid_c));
-    EXPECT_FALSE(static_cast<bool>(invalid_c));
+    EXPECT(static_cast<bool>(valid_c));
+    EXPECT(!static_cast<bool>(invalid_c));
 }
 
-TEST_CASE(cursor_get_accessors_on_invalid_return_nullopt) {
+ZEST_CASE(cursor_get_accessors_on_invalid_return_nullopt) {
     dyn::Cursor c;
-    EXPECT_FALSE(c.get_bool().has_value());
-    EXPECT_FALSE(c.get_int().has_value());
-    EXPECT_FALSE(c.get_uint().has_value());
-    EXPECT_FALSE(c.get_double().has_value());
-    EXPECT_FALSE(c.get_string().has_value());
-    EXPECT_EQ(c.get_array(), nullptr);
-    EXPECT_EQ(c.get_object(), nullptr);
+    EXPECT(!c.get_bool().has_value());
+    EXPECT(!c.get_int().has_value());
+    EXPECT(!c.get_uint().has_value());
+    EXPECT(!c.get_double().has_value());
+    EXPECT(!c.get_string().has_value());
+    EXPECT(c.get_array() == nullptr);
+    EXPECT(c.get_object() == nullptr);
 }
 
-TEST_CASE(empty_object_find_and_cursor_access) {
+ZEST_CASE(empty_object_find_and_cursor_access) {
     dyn::Object obj;
-    EXPECT_TRUE(obj.empty());
-    EXPECT_EQ(obj.size(), 0);
-    EXPECT_EQ(obj.find("anything"), nullptr);
-    EXPECT_FALSE(obj.contains("anything"));
+    EXPECT(obj.empty());
+    EXPECT(obj.size() == 0);
+    EXPECT(obj.find("anything") == nullptr);
+    EXPECT(!obj.contains("anything"));
 
     dyn::Value val(std::move(obj));
     auto c = val["key"];
-    EXPECT_FALSE(c.valid());
-    EXPECT_EQ(c.error(), R"(missing key "key")");
+    EXPECT(!c.valid());
+    EXPECT(c.error() == R"(missing key "key")");
 }
 
-TEST_CASE(empty_array_cursor_out_of_range) {
+ZEST_CASE(empty_array_cursor_out_of_range) {
     dyn::Array arr;
-    EXPECT_TRUE(arr.empty());
+    EXPECT(arr.empty());
 
     dyn::Value val(std::move(arr));
     auto c = val[0];
-    EXPECT_FALSE(c.valid());
-    EXPECT_EQ(c.error(), "index 0 out of range (size 0)");
+    EXPECT(!c.valid());
+    EXPECT(c.error() == "index 0 out of range (size 0)");
 }
 
-TEST_CASE(deep_nested_copy_is_independent) {
+ZEST_CASE(deep_nested_copy_is_independent) {
     dyn::Array inner_arr;
     inner_arr.push_back(dyn::Value(std::int64_t(1)));
     inner_arr.push_back(dyn::Value(std::int64_t(2)));
@@ -304,16 +304,16 @@ TEST_CASE(deep_nested_copy_is_independent) {
 
     // Copy should be unaffected
     auto& copy_data = copy.as_object().at("data").as_array()[0].as_object();
-    ASSERT_TRUE(copy_data.at("nums").is_array());
-    EXPECT_EQ(copy_data.at("nums").as_array().size(), 2);
-    EXPECT_EQ(copy_data.at("nums").as_array()[0].as_int(), 1);
-    EXPECT_EQ(copy_data.at("nums").as_array()[1].as_int(), 2);
+    ASSERT(copy_data.at("nums").is_array());
+    EXPECT(copy_data.at("nums").as_array().size() == 2);
+    EXPECT(copy_data.at("nums").as_array()[0].as_int() == 1);
+    EXPECT(copy_data.at("nums").as_array()[1].as_int() == 2);
 
     // Original should reflect mutation
-    EXPECT_TRUE(original.as_object().at("data").as_array()[0].as_object().at("nums").is_string());
+    EXPECT(original.as_object().at("data").as_array()[0].as_object().at("nums").is_string());
 }
 
-TEST_CASE(array_range_for_iteration) {
+ZEST_CASE(array_range_for_iteration) {
     dyn::Array arr;
     arr.push_back(dyn::Value(std::int64_t(10)));
     arr.push_back(dyn::Value(std::int64_t(20)));
@@ -323,10 +323,10 @@ TEST_CASE(array_range_for_iteration) {
     for(auto& val: arr) {
         sum += val.as_int();
     }
-    EXPECT_EQ(sum, 60);
+    EXPECT(sum == 60);
 }
 
-TEST_CASE(array_const_range_for_iteration) {
+ZEST_CASE(array_const_range_for_iteration) {
     dyn::Array arr;
     arr.push_back(dyn::Value("a"));
     arr.push_back(dyn::Value("b"));
@@ -337,10 +337,10 @@ TEST_CASE(array_const_range_for_iteration) {
     for(const auto& val: const_arr) {
         result += val.as_string();
     }
-    EXPECT_EQ(result, "abc");
+    EXPECT(result == "abc");
 }
 
-TEST_CASE(object_range_for_iteration) {
+ZEST_CASE(object_range_for_iteration) {
     dyn::Object obj;
     obj.insert("x", dyn::Value(std::int64_t(1)));
     obj.insert("y", dyn::Value(std::int64_t(2)));
@@ -352,11 +352,11 @@ TEST_CASE(object_range_for_iteration) {
         keys += key;
         sum += value.as_int();
     }
-    EXPECT_EQ(sum, 6);
-    EXPECT_EQ(keys, "xyz");
+    EXPECT(sum == 6);
+    EXPECT(keys == "xyz");
 }
 
-TEST_CASE(object_const_range_for_iteration) {
+ZEST_CASE(object_const_range_for_iteration) {
     dyn::Object obj;
     obj.insert("a", dyn::Value("hello"));
     obj.insert("b", dyn::Value("world"));
@@ -369,10 +369,10 @@ TEST_CASE(object_const_range_for_iteration) {
         result += value.as_string();
         result += ";";
     }
-    EXPECT_EQ(result, "a=hello;b=world;");
+    EXPECT(result == "a=hello;b=world;");
 }
 
-TEST_CASE(array_mutation_during_iteration) {
+ZEST_CASE(array_mutation_during_iteration) {
     dyn::Array arr;
     arr.push_back(dyn::Value(std::int64_t(1)));
     arr.push_back(dyn::Value(std::int64_t(2)));
@@ -382,12 +382,12 @@ TEST_CASE(array_mutation_during_iteration) {
         val = dyn::Value(val.as_int() * 10);
     }
 
-    EXPECT_EQ(arr[0].as_int(), 10);
-    EXPECT_EQ(arr[1].as_int(), 20);
-    EXPECT_EQ(arr[2].as_int(), 30);
+    EXPECT(arr[0].as_int() == 10);
+    EXPECT(arr[1].as_int() == 20);
+    EXPECT(arr[2].as_int() == 30);
 }
 
-TEST_CASE(object_mutation_during_iteration) {
+ZEST_CASE(object_mutation_during_iteration) {
     dyn::Object obj;
     obj.insert("a", dyn::Value(std::int64_t(1)));
     obj.insert("b", dyn::Value(std::int64_t(2)));
@@ -396,11 +396,11 @@ TEST_CASE(object_mutation_during_iteration) {
         value = dyn::Value(value.as_int() + 100);
     }
 
-    EXPECT_EQ(obj.at("a").as_int(), 101);
-    EXPECT_EQ(obj.at("b").as_int(), 102);
+    EXPECT(obj.at("a").as_int() == 101);
+    EXPECT(obj.at("b").as_int() == 102);
 }
 
-TEST_CASE(content_deserializer_keeps_temporary_root_value_alive) {
+ZEST_CASE(content_deserializer_keeps_temporary_root_value_alive) {
     auto make_dom = []() -> dyn::Value {
         auto parsed = json::from_string<dyn::Value>(R"({"id":7,"name":"alice"})");
         return parsed ? std::move(*parsed) : dyn::Value{};
@@ -408,11 +408,11 @@ TEST_CASE(content_deserializer_keeps_temporary_root_value_alive) {
 
     dom_payload payload{};
     auto status = dyn::from_dyn(make_dom(), payload);
-    ASSERT_TRUE(status.has_value());
-    EXPECT_EQ(payload, (dom_payload{.id = 7, .name = "alice"}));
+    ASSERT(status.has_value());
+    EXPECT(payload == (dom_payload{.id = 7, .name = "alice"}));
 }
 
-};  // TEST_SUITE(serde_content_dom)
+};  // namespace kota::codec
 
 }  // namespace
 

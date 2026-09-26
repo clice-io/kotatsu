@@ -99,22 +99,22 @@ SerializeOpt make_full_opt() {
     return opt;
 }
 
-TEST_SUITE(deco_serialize) {
+ZEST_SUITE(deco_serialize){
 
-TEST_CASE(optional_and_empty_values_are_not_generated) {
-    SerializeOpt opt{};
-    auto argv = ser::to_argv(opt);
-    EXPECT_TRUE(argv.empty());
+    ZEST_CASE(optional_and_empty_values_are_not_generated){SerializeOpt opt{};
+auto argv = ser::to_argv(opt);
+EXPECT(argv.empty());
 
-    opt.verbose = false;
-    opt.repeat = static_cast<std::uint32_t>(0);
-    opt.tags = std::vector<std::string>{};
-    opt.pair = std::vector<std::string>{};
-    auto argv2 = ser::to_argv(opt);
-    EXPECT_TRUE(argv2.empty());
-}
+opt.verbose = false;
+opt.repeat = static_cast<std::uint32_t>(0);
+opt.tags = std::vector<std::string>{};
+opt.pair = std::vector<std::string>{};
+auto argv2 = ser::to_argv(opt);
+EXPECT(argv2.empty());
 
-TEST_CASE(serializes_all_option_kinds_with_stable_order_and_roundtrip) {
+}  // namespace
+
+ZEST_CASE(serializes_all_option_kinds_with_stable_order_and_roundtrip) {
     auto opt = make_full_opt();
     auto argv = ser::to_argv(opt);
 
@@ -135,34 +135,34 @@ TEST_CASE(serializes_all_option_kinds_with_stable_order_and_roundtrip) {
                                                "--",
                                                "tail1",
                                                "tail2"};
-    EXPECT_TRUE(argv == expected);
+    EXPECT(argv == expected);
 
     auto parsed = cli::parse<SerializeOpt>(argv);
-    EXPECT_TRUE(parsed.has_value());
+    EXPECT(parsed.has_value());
     if(!parsed.has_value()) {
         return;
     }
     const auto& value = parsed->options;
-    EXPECT_TRUE(value.verbose.has_value() && *value.verbose);
-    EXPECT_TRUE(value.repeat.has_value() && *value.repeat == 2u);
-    EXPECT_TRUE(value.count.has_value() && *value.count == 7);
-    EXPECT_TRUE(value.joined_only.has_value() && *value.joined_only == 9);
-    EXPECT_TRUE(value.split_by_name.has_value() && *value.split_by_name == 3);
-    EXPECT_TRUE(value.auto_name_value.has_value() && *value.auto_name_value == 11);
-    EXPECT_TRUE(value.tags.has_value() && *value.tags == std::vector<std::string>{"a", "b"});
-    EXPECT_TRUE(value.pair.has_value() && *value.pair == std::vector<std::string>{"left", "right"});
-    EXPECT_TRUE(value.input.has_value() && *value.input == "main.cc");
-    EXPECT_TRUE(value.trailing.has_value() &&
-                *value.trailing == std::vector<std::string>{"tail1", "tail2"});
+    EXPECT((value.verbose.has_value() && *value.verbose));
+    EXPECT((value.repeat.has_value() && *value.repeat == 2u));
+    EXPECT((value.count.has_value() && *value.count == 7));
+    EXPECT((value.joined_only.has_value() && *value.joined_only == 9));
+    EXPECT((value.split_by_name.has_value() && *value.split_by_name == 3));
+    EXPECT((value.auto_name_value.has_value() && *value.auto_name_value == 11));
+    EXPECT((value.tags.has_value() && *value.tags == std::vector<std::string>{"a", "b"}));
+    EXPECT((value.pair.has_value() && *value.pair == std::vector<std::string>{"left", "right"}));
+    EXPECT((value.input.has_value() && *value.input == "main.cc"));
+    EXPECT((value.trailing.has_value() &&
+            *value.trailing == std::vector<std::string>{"tail1", "tail2"}));
 }
 
-TEST_CASE(category_filter_generates_only_selected_groups) {
+ZEST_CASE(category_filter_generates_only_selected_groups) {
     auto opt = make_full_opt();
 
     auto primary_only = ser::to_argv(opt, primary_category);
     const std::vector<std::string> expected_primary =
         {"-v", "-n", "-n", "--count", "7", "--joined9", "main.cc"};
-    EXPECT_TRUE(primary_only == expected_primary);
+    EXPECT(primary_only == expected_primary);
 
     const decl::Category* selected[] = {&secondary_category, &trailing_category};
     auto secondary_and_trailing =
@@ -177,10 +177,10 @@ TEST_CASE(category_filter_generates_only_selected_groups) {
                                                          "--",
                                                          "tail1",
                                                          "tail2"};
-    EXPECT_TRUE(secondary_and_trailing == expected_secondary);
+    EXPECT(secondary_and_trailing == expected_secondary);
 }
 
-TEST_CASE(trailing_pack_is_emitted_after_non_trailing_arguments) {
+ZEST_CASE(trailing_pack_is_emitted_after_non_trailing_arguments) {
     TrailingFirstOpt opt{};
     opt.trailing = std::vector<std::string>{"a", "b"};
     opt.dry_run = true;
@@ -188,27 +188,27 @@ TEST_CASE(trailing_pack_is_emitted_after_non_trailing_arguments) {
 
     auto argv = ser::to_argv(opt);
     const std::vector<std::string> expected = {"--dry-run", "front", "--", "a", "b"};
-    EXPECT_TRUE(argv == expected);
+    EXPECT(argv == expected);
 }
 
-TEST_CASE(vector_input_serializes_as_repeated_positional_arguments) {
+ZEST_CASE(vector_input_serializes_as_repeated_positional_arguments) {
     VectorInputSerializeOpt opt{};
     opt.inputs = std::vector<std::string>{"a.txt", "b.txt", "c.txt"};
 
     auto argv = ser::to_argv(opt);
     const std::vector<std::string> expected = {"a.txt", "b.txt", "c.txt"};
-    EXPECT_TRUE(argv == expected);
+    EXPECT(argv == expected);
 
     auto parsed = cli::parse<VectorInputSerializeOpt>(argv);
-    EXPECT_TRUE(parsed.has_value());
+    EXPECT(parsed.has_value());
     if(!parsed.has_value()) {
         return;
     }
-    EXPECT_TRUE(parsed->options.inputs.has_value());
-    EXPECT_TRUE(*parsed->options.inputs == expected);
+    EXPECT(parsed->options.inputs.has_value());
+    EXPECT(*parsed->options.inputs == expected);
 }
 
-};  // TEST_SUITE(deco_serialize)
+};  // namespace kota::deco
 
 }  // namespace
 }  // namespace kota::deco

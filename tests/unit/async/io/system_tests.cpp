@@ -5,114 +5,114 @@
 
 namespace kota {
 
-TEST_SUITE(system_info) {
+ZEST_SUITE(system_info){
 
-TEST_CASE(pid_positive) {
-    EXPECT_GT(sys::pid(), 0);
+    ZEST_CASE(pid_positive){EXPECT(sys::pid() > 0);
+
 }
 
-TEST_CASE(memory_sane) {
+ZEST_CASE(memory_sane) {
     auto info = sys::memory();
     // These may return 0 on platforms where the value is unknown.
     if(info.total != 0) {
-        EXPECT_TRUE(info.free <= info.total);
-        EXPECT_TRUE(info.available <= info.total);
+        EXPECT(info.free <= info.total);
+        EXPECT(info.available <= info.total);
     }
 }
 
-TEST_CASE(resident_memory) {
+ZEST_CASE(resident_memory) {
     auto rss = sys::resident_memory();
-    ASSERT_TRUE(rss.has_value());
-    EXPECT_TRUE(*rss > 0);
+    ASSERT(rss.has_value());
+    EXPECT(*rss > 0);
 }
 
-TEST_CASE(process_self) {
+ZEST_CASE(process_self) {
     auto stat = sys::process();
-    ASSERT_TRUE(stat.has_value());
-    EXPECT_EQ(stat->pid, sys::pid());
-    EXPECT_GT(stat->rss, std::size_t{0});
-    EXPECT_GT(stat->vsize, std::size_t{0});
-    EXPECT_GT(stat->max_rss, std::size_t{0});
+    ASSERT(stat.has_value());
+    EXPECT(stat->pid == sys::pid());
+    EXPECT(stat->rss > std::size_t{0});
+    EXPECT(stat->vsize > std::size_t{0});
+    EXPECT(stat->max_rss > std::size_t{0});
 }
 
-TEST_CASE(process_by_pid) {
+ZEST_CASE(process_by_pid) {
     auto pid = sys::pid();
     auto stat = sys::process(pid);
-    ASSERT_TRUE(stat.has_value());
-    EXPECT_EQ(stat->pid, pid);
-    EXPECT_GT(stat->rss, std::size_t{0});
+    ASSERT(stat.has_value());
+    EXPECT(stat->pid == pid);
+    EXPECT(stat->rss > std::size_t{0});
 }
 
-TEST_CASE(process_invalid_pid) {
+ZEST_CASE(process_invalid_pid) {
     auto stat = sys::process(999999999);
-    EXPECT_FALSE(stat.has_value());
+    EXPECT(!stat.has_value());
 }
 
-TEST_CASE(cpu_cores_populated) {
+ZEST_CASE(cpu_cores_populated) {
     auto cores = sys::cpu_cores();
-    ASSERT_TRUE(cores.has_value());
-    EXPECT_TRUE(!cores->empty());
+    ASSERT(cores.has_value());
+    EXPECT(!cores->empty());
     // speed_mhz may be 0 on some virtualized environments.
     for(auto& core: *cores) {
-        EXPECT_TRUE(!core.model.empty());
-        EXPECT_TRUE(core.speed_mhz >= 0);
+        EXPECT(!core.model.empty());
+        EXPECT(core.speed_mhz >= 0);
     }
 }
 
-TEST_CASE(parallelism_positive) {
-    EXPECT_TRUE(sys::parallelism() >= 1);
+ZEST_CASE(parallelism_positive) {
+    EXPECT(sys::parallelism() >= 1);
 }
 
-TEST_CASE(uname_populated) {
+ZEST_CASE(uname_populated) {
     auto name = sys::uname();
-    ASSERT_TRUE(name.has_value());
-    EXPECT_TRUE(!name->sysname.empty());
-    EXPECT_TRUE(!name->machine.empty());
+    ASSERT(name.has_value());
+    EXPECT(!name->sysname.empty());
+    EXPECT(!name->machine.empty());
 }
 
-TEST_CASE(hostname_nonempty) {
+ZEST_CASE(hostname_nonempty) {
     auto host = sys::hostname();
-    ASSERT_TRUE(host.has_value());
-    EXPECT_TRUE(!host->empty());
+    ASSERT(host.has_value());
+    EXPECT(!host->empty());
 }
 
-TEST_CASE(uptime_positive) {
+ZEST_CASE(uptime_positive) {
     auto up = sys::uptime();
-    ASSERT_TRUE(up.has_value());
-    EXPECT_TRUE(up->count() > 0);
+    ASSERT(up.has_value());
+    EXPECT(up->count() > 0);
 }
 
-TEST_CASE(home_directory_nonempty) {
+ZEST_CASE(home_directory_nonempty) {
     auto home = sys::home_directory();
-    ASSERT_TRUE(home.has_value());
-    EXPECT_TRUE(!home->empty());
+    ASSERT(home.has_value());
+    EXPECT(!home->empty());
 }
 
-TEST_CASE(executable_path_names_this_program) {
+ZEST_CASE(executable_path_names_this_program) {
     auto path = sys::executable_path();
-    ASSERT_TRUE(path.has_value());
-    EXPECT_EQ(std::filesystem::path(*path).stem().string(), "unit_tests");
+    ASSERT(path.has_value());
+    EXPECT(std::filesystem::path(*path).stem().string() == "unit_tests");
 }
 
-TEST_CASE(temp_directory_nonempty) {
+ZEST_CASE(temp_directory_nonempty) {
     auto tmp = sys::temp_directory();
-    ASSERT_TRUE(tmp.has_value());
-    EXPECT_TRUE(!tmp->empty());
+    ASSERT(tmp.has_value());
+    EXPECT(!tmp->empty());
 }
 
-TEST_CASE(priority_round_trip) {
+ZEST_CASE(priority_round_trip) {
     auto orig = sys::priority();
-    ASSERT_TRUE(orig.has_value());
+    ASSERT(orig.has_value());
 
     // Set to same value (no-op) — verifies the setter without altering state.
     auto err = sys::set_priority(*orig);
-    EXPECT_TRUE(!err.has_error());
+    EXPECT(!err.has_error());
 
     auto changed = sys::priority();
-    ASSERT_TRUE(changed.has_value());
-    EXPECT_EQ(*changed, *orig);
+    ASSERT(changed.has_value());
+    EXPECT(*changed == *orig);
 }
-
-};  // TEST_SUITE(system_info)
+}
+;  // ZEST_SUITE(system_info)
 
 }  // namespace kota

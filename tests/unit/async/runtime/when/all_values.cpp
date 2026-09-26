@@ -1,4 +1,4 @@
-// TEST_SUITE(when_all): basic value passing for when_all — tuples, void tasks,
+// ZEST_SUITE(when_all): basic value passing for when_all — tuples, void tasks,
 // single/three tasks, sleeping children, sync awaiters, and range overloads.
 // Also hosts the type-level result-type static_asserts for both when_all and
 // when_any (result computation, error/cancel dedup, void → nullopt_t).
@@ -88,30 +88,30 @@ static_assert(!group_spawnable<task_group<error>, task<int, custom_error>>);
 }  // namespace
 
 // ============================================================================
-// TEST_SUITE: when_all — basic value passing
+// ZEST_SUITE: when_all — basic value passing
 // ============================================================================
 
-TEST_SUITE(when_all) {
+ZEST_SUITE(when_all){
 
-TEST_CASE(values) {
-    auto a = []() -> task<int> {
+    ZEST_CASE(values){auto a = []() -> task<int> {
         co_return 1;
     };
 
-    auto b = []() -> task<int> {
-        co_return 2;
-    };
+auto b = []() -> task<int> {
+    co_return 2;
+};
 
-    auto combined = [&]() -> task<int> {
-        auto [x, y] = co_await when_all(a(), b());
-        co_return x + y;
-    };
+auto combined = [&]() -> task<int> {
+    auto [x, y] = co_await when_all(a(), b());
+    co_return x + y;
+};
 
-    auto [res] = run(combined());
-    EXPECT_EQ(res, 3);
-}
+auto [res] = run(combined());
+EXPECT(res == 3);
 
-TEST_CASE(void_tasks) {
+}  // namespace kota
+
+ZEST_CASE(void_tasks) {
     int count = 0;
 
     auto a = [&]() -> task<> {
@@ -129,10 +129,10 @@ TEST_CASE(void_tasks) {
     };
 
     run(combined());
-    EXPECT_EQ(count, 11);
+    EXPECT(count == 11);
 }
 
-TEST_CASE(single_task) {
+ZEST_CASE(single_task) {
     auto a = []() -> task<int> {
         co_return 42;
     };
@@ -143,10 +143,10 @@ TEST_CASE(single_task) {
     };
 
     auto [res] = run(combined());
-    EXPECT_EQ(res, 42);
+    EXPECT(res == 42);
 }
 
-TEST_CASE(three_tasks) {
+ZEST_CASE(three_tasks) {
     auto a = []() -> task<int> {
         co_return 1;
     };
@@ -163,10 +163,10 @@ TEST_CASE(three_tasks) {
     };
 
     auto [res] = run(combined());
-    EXPECT_EQ(res, 6);
+    EXPECT(res == 6);
 }
 
-TEST_CASE(with_sleep) {
+ZEST_CASE(with_sleep) {
     int slow_done = 0;
     int fast_done = 0;
 
@@ -188,12 +188,12 @@ TEST_CASE(with_sleep) {
     };
 
     auto [res] = run(combined());
-    EXPECT_EQ(res, 16);
-    EXPECT_EQ(slow_done, 1);
-    EXPECT_EQ(fast_done, 1);
+    EXPECT(res == 16);
+    EXPECT(slow_done == 1);
+    EXPECT(fast_done == 1);
 }
 
-TEST_CASE(accepts_sync_awaiters) {
+ZEST_CASE(accepts_sync_awaiters) {
     semaphore sem{0};
     int resumed = 0;
 
@@ -212,27 +212,27 @@ TEST_CASE(accepts_sync_awaiters) {
     auto release_task = releaser();
     run(task, release_task);
 
-    EXPECT_TRUE(task->is_finished());
-    EXPECT_EQ(task.result(), 7);
-    EXPECT_EQ(resumed, 1);
+    EXPECT(task->is_finished());
+    EXPECT(task.result() == 7);
+    EXPECT(resumed == 1);
 }
 
-TEST_CASE(range_values) {
+ZEST_CASE(range_values) {
     small_vector<task<int>> tasks;
     tasks.emplace_back(ready_int(3));
     tasks.emplace_back(ready_int(4));
 
     auto combined = [&]() -> task<int> {
         auto values = co_await when_all(std::move(tasks));
-        EXPECT_EQ(values.size(), 2U);
+        EXPECT(values.size() == 2U);
         co_return values[0] + values[1];
     };
 
     auto [sum] = run(combined());
-    EXPECT_EQ(sum, 7);
+    EXPECT(sum == 7);
 }
 
-TEST_CASE(range_empty) {
+ZEST_CASE(range_empty) {
     small_vector<task<int>> tasks;
 
     auto combined = [&]() -> task<std::size_t> {
@@ -241,25 +241,25 @@ TEST_CASE(range_empty) {
     };
 
     auto [size] = run(combined());
-    EXPECT_EQ(size, 0U);
+    EXPECT(size == 0U);
 }
 
-TEST_CASE(range_void) {
+ZEST_CASE(range_void) {
     small_vector<task<>> tasks;
     tasks.emplace_back(ready_void());
     tasks.emplace_back(ready_void());
 
     auto combined = [&]() -> task<std::size_t> {
         auto values = co_await when_all(std::move(tasks));
-        EXPECT_EQ(values.size(), 2U);
+        EXPECT(values.size() == 2U);
         co_return values.size();
     };
 
     auto [size] = run(combined());
-    EXPECT_EQ(size, 2U);
+    EXPECT(size == 2U);
 }
 
-TEST_CASE(range_sync_awaiters) {
+ZEST_CASE(range_sync_awaiters) {
     semaphore sem{0};
     small_vector<semaphore::acquire_awaiter> waits;
     waits.emplace_back(sem.acquire());
@@ -272,7 +272,7 @@ TEST_CASE(range_sync_awaiters) {
 
     auto combined = [&]() -> task<std::size_t> {
         auto values = co_await when_all(std::move(waits));
-        EXPECT_EQ(values.size(), 2U);
+        EXPECT(values.size() == 2U);
         co_return values.size();
     };
 
@@ -280,9 +280,9 @@ TEST_CASE(range_sync_awaiters) {
     auto release_task = releaser();
     run(task, release_task);
 
-    EXPECT_EQ(task.result(), 2U);
+    EXPECT(task.result() == 2U);
 }
-
-};  // TEST_SUITE(when_all)
+}
+;  // ZEST_SUITE(when_all)
 
 }  // namespace kota

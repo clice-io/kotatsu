@@ -1,4 +1,4 @@
-// TEST_SUITE(sync): core async synchronization primitives — mutex, event
+// ZEST_SUITE(sync): core async synchronization primitives — mutex, event
 // (set/wait, manual reset, interrupt), semaphore, condition_variable. Tests the
 // happy-path ordering and signalling. The deferred sync-resume mechanism (grant
 // abandonment on cancel, chained/same-tick deferred resumes) lives in
@@ -14,24 +14,24 @@ namespace {
 
 using namespace std::chrono;
 
-TEST_SUITE(sync, loop_fixture) {
+ZEST_SUITE(sync, loop_fixture){
 
-TEST_CASE(mutex_try_lock) {
-    mutex m;
-    EXPECT_TRUE(m.try_lock());
-    EXPECT_FALSE(m.try_lock());
-    m.unlock();
-    EXPECT_TRUE(m.try_lock());
-    m.unlock();
-}
+    ZEST_CASE(mutex_try_lock){mutex m;
+EXPECT(m.try_lock());
+EXPECT(!m.try_lock());
+m.unlock();
+EXPECT(m.try_lock());
+m.unlock();
 
-TEST_CASE(mutex_lock_order) {
+}  // namespace
+
+ZEST_CASE(mutex_lock_order) {
     mutex m;
     int step = 0;
 
     auto holder = [&]() -> task<> {
         co_await m.lock();
-        EXPECT_EQ(step, 0);
+        EXPECT(step == 0);
         step = 1;
         co_await sleep(milliseconds{5}, loop);
         m.unlock();
@@ -40,7 +40,7 @@ TEST_CASE(mutex_lock_order) {
     auto waiter = [&]() -> task<> {
         co_await sleep(milliseconds{1}, loop);
         co_await m.lock();
-        EXPECT_EQ(step, 1);
+        EXPECT(step == 1);
         step = 2;
         m.unlock();
         loop.stop();
@@ -50,10 +50,10 @@ TEST_CASE(mutex_lock_order) {
     auto t2 = waiter();
     schedule_all(t1, t2);
 
-    EXPECT_EQ(step, 2);
+    EXPECT(step == 2);
 }
 
-TEST_CASE(event_set_wait) {
+ZEST_CASE(event_set_wait) {
     event ev;
     int fired = 0;
 
@@ -72,10 +72,10 @@ TEST_CASE(event_set_wait) {
     auto t2 = setter();
     schedule_all(t1, t2);
 
-    EXPECT_EQ(fired, 1);
+    EXPECT(fired == 1);
 }
 
-TEST_CASE(manual_reset_all) {
+ZEST_CASE(manual_reset_all) {
     event ev(true);
     int count = 0;
 
@@ -91,10 +91,10 @@ TEST_CASE(manual_reset_all) {
     auto t2 = waiter();
     schedule_all(t1, t2);
 
-    EXPECT_EQ(count, 2);
+    EXPECT(count == 2);
 }
 
-TEST_CASE(event_interrupt) {
+ZEST_CASE(event_interrupt) {
     event ev;
     bool reached = false;
 
@@ -105,8 +105,8 @@ TEST_CASE(event_interrupt) {
 
     auto driver = [&]() -> task<> {
         auto result = co_await waiter().catch_cancel();
-        EXPECT_FALSE(result.has_value());
-        EXPECT_FALSE(reached);
+        EXPECT(!result.has_value());
+        EXPECT(!reached);
         loop.stop();
     };
 
@@ -120,13 +120,13 @@ TEST_CASE(event_interrupt) {
     schedule_all(t1, t2);
 }
 
-TEST_CASE(interrupt_many) {
+ZEST_CASE(interrupt_many) {
     event ev;
     int cancelled = 0;
 
     auto waiter = [&]() -> task<> {
         auto result = co_await ev.wait().catch_cancel();
-        EXPECT_FALSE(result.has_value());
+        EXPECT(!result.has_value());
         cancelled += 1;
         if(cancelled == 2) {
             loop.stop();
@@ -143,17 +143,17 @@ TEST_CASE(interrupt_many) {
     auto t3 = intr();
     schedule_all(t1, t2, t3);
 
-    EXPECT_EQ(cancelled, 2);
+    EXPECT(cancelled == 2);
 }
 
-TEST_CASE(interrupt_snapshot) {
+ZEST_CASE(interrupt_snapshot) {
     event ev;
     int cancelled = 0;
     bool second_wait_cancelled = false;
 
     auto waiter = [&]() -> task<> {
         auto first = co_await ev.wait().catch_cancel();
-        EXPECT_FALSE(first.has_value());
+        EXPECT(!first.has_value());
         cancelled += 1;
 
         auto second = co_await ev.wait().catch_cancel();
@@ -176,11 +176,11 @@ TEST_CASE(interrupt_snapshot) {
     auto t3 = setter();
     schedule_all(t1, t2, t3);
 
-    EXPECT_EQ(cancelled, 1);
-    EXPECT_FALSE(second_wait_cancelled);
+    EXPECT(cancelled == 1);
+    EXPECT(!second_wait_cancelled);
 }
 
-TEST_CASE(future_wait) {
+ZEST_CASE(future_wait) {
     event ev;
     bool fired = false;
 
@@ -194,7 +194,7 @@ TEST_CASE(future_wait) {
 
     auto setter = [&]() -> task<> {
         co_await sleep(milliseconds{1}, loop);
-        EXPECT_FALSE(fired);
+        EXPECT(!fired);
         ev.set();
     };
 
@@ -202,22 +202,22 @@ TEST_CASE(future_wait) {
     auto t2 = setter();
     schedule_all(t1, t2);
 
-    EXPECT_TRUE(fired);
+    EXPECT(fired);
 }
 
-TEST_CASE(signal_state) {
+ZEST_CASE(signal_state) {
     event ev;
-    EXPECT_FALSE(ev.is_set());
+    EXPECT(!ev.is_set());
     ev.interrupt();
-    EXPECT_FALSE(ev.is_set());
+    EXPECT(!ev.is_set());
 
     event set_ev(true);
-    EXPECT_TRUE(set_ev.is_set());
+    EXPECT(set_ev.is_set());
     set_ev.interrupt();
-    EXPECT_TRUE(set_ev.is_set());
+    EXPECT(set_ev.is_set());
 }
 
-TEST_CASE(semaphore_acquire_release) {
+ZEST_CASE(semaphore_acquire_release) {
     semaphore sem(1);
     int step = 0;
 
@@ -231,7 +231,7 @@ TEST_CASE(semaphore_acquire_release) {
     auto second = [&]() -> task<> {
         co_await sleep(milliseconds{1}, loop);
         co_await sem.acquire();
-        EXPECT_EQ(step, 1);
+        EXPECT(step == 1);
         step = 2;
         sem.release();
         loop.stop();
@@ -241,10 +241,10 @@ TEST_CASE(semaphore_acquire_release) {
     auto t2 = second();
     schedule_all(t1, t2);
 
-    EXPECT_EQ(step, 2);
+    EXPECT(step == 2);
 }
 
-TEST_CASE(condition_variable_wait) {
+ZEST_CASE(condition_variable_wait) {
     mutex m;
     condition_variable cv;
     bool ready = false;
@@ -274,10 +274,10 @@ TEST_CASE(condition_variable_wait) {
     auto t2 = notifier();
     schedule_all(t1, t2);
 
-    EXPECT_EQ(step, 3);
+    EXPECT(step == 3);
 }
 
-};  // TEST_SUITE(sync)
+};  // namespace kota
 
 }  // namespace
 

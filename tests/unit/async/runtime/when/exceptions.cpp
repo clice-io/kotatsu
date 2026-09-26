@@ -1,4 +1,4 @@
-// TEST_SUITE(when_exceptions): C++ exception propagation through when_all/when_any
+// ZEST_SUITE(when_exceptions): C++ exception propagation through when_all/when_any
 // (only compiled when KOTA_ENABLE_EXCEPTIONS). Covers a throwing child cancelling
 // siblings, immediate throws, range overloads, nested/caught exceptions, empty
 // range, and exception beating an external cancel. Structured error (co_await
@@ -14,40 +14,40 @@ namespace kota {
 
 #if KOTA_ENABLE_EXCEPTIONS
 
-TEST_SUITE(when_exceptions) {
+ZEST_SUITE(when_exceptions){
 
-TEST_CASE(all_exception_cancels_siblings) {
-    int slow_done = 0;
+    ZEST_CASE(all_exception_cancels_siblings){int slow_done = 0;
 
-    auto thrower = [&]() -> task<int> {
-        co_await sleep(1);
-        throw std::runtime_error("boom");
-        co_return 0;
-    };
+auto thrower = [&]() -> task<int> {
+    co_await sleep(1);
+    throw std::runtime_error("boom");
+    co_return 0;
+};
 
-    auto slow = [&]() -> task<int> {
-        co_await sleep(50);
-        slow_done += 1;
-        co_return 2;
-    };
+auto slow = [&]() -> task<int> {
+    co_await sleep(50);
+    slow_done += 1;
+    co_return 2;
+};
 
-    auto combined = [&]() -> task<int> {
-        auto [a, b] = co_await when_all(thrower(), slow());
-        co_return a + b;
-    };
+auto combined = [&]() -> task<int> {
+    auto [a, b] = co_await when_all(thrower(), slow());
+    co_return a + b;
+};
 
-    auto t = combined();
-    EXPECT_THROWS(run(t));
+auto t = combined();
+EXPECT_THROWS(run(t));
 
-    EXPECT_TRUE(t->is_failed());
-    EXPECT_THROWS(t.result());
-    EXPECT_EQ(slow_done, 0);
+EXPECT(t->is_failed());
+EXPECT_THROWS(t.result());
+EXPECT(slow_done == 0);
+
 }
 
 // A child that throws after the scope was cancelled must still deliver the
 // exception (previously the exception was silently swallowed by the
 // Cancelled finalization).
-TEST_CASE(all_exception_beats_external_cancel) {
+ZEST_CASE(all_exception_beats_external_cancel) {
     async_node* combined_node = nullptr;
 
     auto thrower = [&]() -> task<int> {
@@ -72,7 +72,7 @@ TEST_CASE(all_exception_beats_external_cancel) {
     EXPECT_THROWS(run(t));
 }
 
-TEST_CASE(all_exception_immediate) {
+ZEST_CASE(all_exception_immediate) {
     auto thrower = []() -> task<int> {
         throw std::runtime_error("immediate boom");
         co_return 0;
@@ -90,7 +90,7 @@ TEST_CASE(all_exception_immediate) {
     EXPECT_THROWS(run(combined()));
 }
 
-TEST_CASE(any_exception_cancels_siblings) {
+ZEST_CASE(any_exception_cancels_siblings) {
     int slow_done = 0;
 
     auto thrower = [&]() -> task<int> {
@@ -112,12 +112,12 @@ TEST_CASE(any_exception_cancels_siblings) {
     auto t = combined();
     EXPECT_THROWS(run(t));
 
-    EXPECT_TRUE(t->is_failed());
+    EXPECT(t->is_failed());
     EXPECT_THROWS(t.result());
-    EXPECT_EQ(slow_done, 0);
+    EXPECT(slow_done == 0);
 }
 
-TEST_CASE(all_range_exception) {
+ZEST_CASE(all_range_exception) {
     int slow_done = 0;
 
     auto thrower = [&]() -> task<int> {
@@ -143,12 +143,12 @@ TEST_CASE(all_range_exception) {
     auto t = combined();
     EXPECT_THROWS(run(t));
 
-    EXPECT_TRUE(t->is_failed());
+    EXPECT(t->is_failed());
     EXPECT_THROWS(t.result());
-    EXPECT_EQ(slow_done, 0);
+    EXPECT(slow_done == 0);
 }
 
-TEST_CASE(any_range_exception) {
+ZEST_CASE(any_range_exception) {
     int slow_done = 0;
 
     auto thrower = [&]() -> task<int> {
@@ -173,17 +173,17 @@ TEST_CASE(any_range_exception) {
     auto t = combined();
     EXPECT_THROWS(run(t));
 
-    EXPECT_TRUE(t->is_failed());
+    EXPECT(t->is_failed());
     EXPECT_THROWS(t.result());
-    EXPECT_EQ(slow_done, 0);
+    EXPECT(slow_done == 0);
 }
 
-TEST_CASE(any_range_empty_throws) {
+ZEST_CASE(any_range_empty_throws) {
     small_vector<task<int>> tasks;
     EXPECT_THROWS((void)when_any(std::move(tasks)));
 }
 
-TEST_CASE(nested_exception_propagates) {
+ZEST_CASE(nested_exception_propagates) {
     auto thrower = [&]() -> task<int> {
         co_await sleep(1);
         throw std::runtime_error("deep boom");
@@ -203,11 +203,11 @@ TEST_CASE(nested_exception_propagates) {
     auto t = outer();
     EXPECT_THROWS(run(t));
 
-    EXPECT_TRUE(t->is_failed());
+    EXPECT(t->is_failed());
     EXPECT_THROWS(t.result());
 }
 
-TEST_CASE(caught_exception_does_not_propagate) {
+ZEST_CASE(caught_exception_does_not_propagate) {
     auto thrower = [&]() -> task<int> {
         throw std::runtime_error("caught boom");
         co_return 0;
@@ -227,10 +227,10 @@ TEST_CASE(caught_exception_does_not_propagate) {
     };
 
     auto [res] = run(combined());
-    EXPECT_EQ(res, 41);
+    EXPECT(res == 41);
 }
 
-TEST_CASE(direct_co_await_rethrows) {
+ZEST_CASE(direct_co_await_rethrows) {
     auto thrower = []() -> task<int> {
         throw std::runtime_error("direct boom");
         co_return 0;
@@ -242,8 +242,8 @@ TEST_CASE(direct_co_await_rethrows) {
 
     EXPECT_THROWS(run(parent()));
 }
-
-};  // TEST_SUITE(when_exceptions)
+}
+;  // ZEST_SUITE(when_exceptions)
 
 #endif  // KOTA_ENABLE_EXCEPTIONS
 

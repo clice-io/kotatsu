@@ -1,4 +1,4 @@
-// TEST_SUITE(yield): cooperative yield(loop) scheduling — resumes on the NEXT
+// ZEST_SUITE(yield): cooperative yield(loop) scheduling — resumes on the NEXT
 // loop iteration after the current drain, cancellation while suspended on a
 // yield, the checkpoint on an already-cancelled task, and iteration-spanning
 // when enqueued from a timer callback. Direct task<> semantics live in
@@ -13,38 +13,38 @@ namespace kota {
 
 namespace {
 
-TEST_SUITE(yield, loop_fixture) {
+ZEST_SUITE(yield, loop_fixture){
 
-// yield() resumes on the NEXT loop iteration: every deferred resume produced
-// in the current iteration (here: the event waiter woken by set()) runs
-// strictly before the yielded task continues. This is the hand-over
-// guarantee that debounced-cancellation patterns rely on.
-TEST_CASE(runs_after_current_drain) {
-    event ev;
-    std::vector<int> order;
+    // yield() resumes on the NEXT loop iteration: every deferred resume produced
+    // in the current iteration (here: the event waiter woken by set()) runs
+    // strictly before the yielded task continues. This is the hand-over
+    // guarantee that debounced-cancellation patterns rely on.
+    ZEST_CASE(runs_after_current_drain){event ev;
+std::vector<int> order;
 
-    auto waiter = [&]() -> task<> {
-        co_await ev.wait();
-        order.push_back(1);
-    };
+auto waiter = [&]() -> task<> {
+    co_await ev.wait();
+    order.push_back(1);
+};
 
-    auto driver = [&]() -> task<> {
-        co_await sleep(1, loop);
-        ev.set();
-        co_await yield(loop);
-        order.push_back(2);
-    };
+auto driver = [&]() -> task<> {
+    co_await sleep(1, loop);
+    ev.set();
+    co_await yield(loop);
+    order.push_back(2);
+};
 
-    auto w = waiter();
-    auto d = driver();
-    schedule_all(w, d);
+auto w = waiter();
+auto d = driver();
+schedule_all(w, d);
 
-    EXPECT_EQ(order, (std::vector<int>{1, 2}));
-}
+EXPECT(order == (std::vector<int>{1, 2}));
+
+}  // namespace
 
 // A task suspended on yield() can be cancelled; the queued completion
 // delivers the cancellation on the next iteration.
-TEST_CASE(cancel_while_suspended) {
+ZEST_CASE(cancel_while_suspended) {
     async_node* worker_node = nullptr;
     bool resumed = false;
 
@@ -63,13 +63,13 @@ TEST_CASE(cancel_while_suspended) {
     worker_node = w.operator->();
     schedule_all(w, c);
 
-    EXPECT_TRUE(w->is_cancelled());
-    EXPECT_FALSE(resumed);
+    EXPECT(w->is_cancelled());
+    EXPECT(!resumed);
 }
 
 // Cancellation checkpoint: a task cancelled while executing that then
 // yields finalizes through the yield completion without resuming past it.
-TEST_CASE(checkpoint_on_cancelled_task) {
+ZEST_CASE(checkpoint_on_cancelled_task) {
     async_node* worker_node = nullptr;
     bool resumed = false;
 
@@ -83,14 +83,14 @@ TEST_CASE(checkpoint_on_cancelled_task) {
     worker_node = w.operator->();
     schedule_all(w);
 
-    EXPECT_TRUE(w->is_cancelled());
-    EXPECT_FALSE(resumed);
+    EXPECT(w->is_cancelled());
+    EXPECT(!resumed);
 }
 
 // A yield enqueued from a timer-phase callback must not resume in the same
 // iteration's idle phase: callbacks later in the enqueueing iteration (here
 // a check-phase watcher armed by a task scheduled alongside) run first.
-TEST_CASE(spans_iteration_from_timer_callback) {
+ZEST_CASE(spans_iteration_from_timer_callback) {
     std::vector<int> order;
     auto chk = check::create(loop);
 
@@ -113,10 +113,10 @@ TEST_CASE(spans_iteration_from_timer_callback) {
     auto w = worker();
     schedule_all(w);
 
-    EXPECT_EQ(order, (std::vector<int>{1, 2}));
+    EXPECT(order == (std::vector<int>{1, 2}));
 }
 
-};  // TEST_SUITE(yield)
+};  // namespace kota
 
 }  // namespace
 

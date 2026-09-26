@@ -259,98 +259,97 @@ int set_abortive_close(socket_t sock) {
 
 }  // namespace
 
-TEST_SUITE(pipe, loop_fixture) {
+ZEST_SUITE(pipe, loop_fixture){
 
-TEST_CASE(read_from_fd) {
-    int fds[2] = {-1, -1};
-    ASSERT_EQ(create_pipe(fds), 0);
+    ZEST_CASE(read_from_fd){int fds[2] = {-1, -1};
+ASSERT(create_pipe(fds) == 0);
 
-    const std::string message = "kotatsu-pipe";
-    ASSERT_EQ(write_fd(fds[1], message.data(), message.size()),
-              static_cast<ssize_t>(message.size()));
-    close_fd(fds[1]);
+const std::string message = "kotatsu-pipe";
+ASSERT(write_fd(fds[1], message.data(), message.size()) == static_cast<ssize_t>(message.size()));
+close_fd(fds[1]);
 
-    auto pipe_res = pipe::open(fds[0], {}, loop);
-    ASSERT_TRUE(pipe_res.has_value());
+auto pipe_res = pipe::open(fds[0], {}, loop);
+ASSERT(pipe_res.has_value());
 
-    auto reader = read_from_pipe(std::move(*pipe_res));
-    schedule_all(reader);
+auto reader = read_from_pipe(std::move(*pipe_res));
+schedule_all(reader);
 
-    auto result = reader.result();
-    EXPECT_TRUE(result.has_value());
-    if(result.has_value()) {
-        EXPECT_EQ(*result, message);
-    }
+auto result = reader.result();
+EXPECT(result.has_value());
+if(result.has_value()) {
+    EXPECT(*result == message);
 }
 
-TEST_CASE(read_some_fd) {
+}  // namespace kota
+
+ZEST_CASE(read_some_fd) {
     int fds[2] = {-1, -1};
-    ASSERT_EQ(create_pipe(fds), 0);
+    ASSERT(create_pipe(fds) == 0);
 
     const std::string message = "kotatsu-pipe-read-some";
-    ASSERT_EQ(write_fd(fds[1], message.data(), message.size()),
-              static_cast<ssize_t>(message.size()));
+    ASSERT(write_fd(fds[1], message.data(), message.size()) ==
+           static_cast<ssize_t>(message.size()));
     close_fd(fds[1]);
 
     auto pipe_res = pipe::open(fds[0], {}, loop);
-    ASSERT_TRUE(pipe_res.has_value());
+    ASSERT(pipe_res.has_value());
 
     auto reader = read_some_from_pipe(std::move(*pipe_res));
     schedule_all(reader);
 
     auto result = reader.result();
-    EXPECT_TRUE(result.has_value());
+    EXPECT(result.has_value());
     if(result.has_value()) {
-        EXPECT_EQ(*result, message);
+        EXPECT(*result == message);
     }
 }
 
-TEST_CASE(read_chunk_fd) {
+ZEST_CASE(read_chunk_fd) {
     int fds[2] = {-1, -1};
-    ASSERT_EQ(create_pipe(fds), 0);
+    ASSERT(create_pipe(fds) == 0);
 
     const std::string message = "kotatsu-pipe-read-view";
-    ASSERT_EQ(write_fd(fds[1], message.data(), message.size()),
-              static_cast<ssize_t>(message.size()));
+    ASSERT(write_fd(fds[1], message.data(), message.size()) ==
+           static_cast<ssize_t>(message.size()));
     close_fd(fds[1]);
 
     auto pipe_res = pipe::open(fds[0], {}, loop);
-    ASSERT_TRUE(pipe_res.has_value());
+    ASSERT(pipe_res.has_value());
 
     auto reader = read_chunk_from_pipe(std::move(*pipe_res));
     schedule_all(reader);
 
     auto result = reader.result();
-    EXPECT_EQ(result.first, message);
-    EXPECT_EQ(result.second, static_cast<std::size_t>(0));
+    EXPECT(result.first == message);
+    EXPECT(result.second == static_cast<std::size_t>(0));
 }
 
-TEST_CASE(read_chunk_then_read_some_fd) {
+ZEST_CASE(read_chunk_then_read_some_fd) {
     int fds[2] = {-1, -1};
-    ASSERT_EQ(create_pipe(fds), 0);
+    ASSERT(create_pipe(fds) == 0);
 
     event first_chunk_consumed;
     auto pipe_res = pipe::open(fds[0], {}, loop);
-    ASSERT_TRUE(pipe_res.has_value());
+    ASSERT(pipe_res.has_value());
 
     auto reader = read_chunk_then_some(std::move(*pipe_res), first_chunk_consumed);
     auto writer = write_two_pipe_chunks(fds[1], loop, first_chunk_consumed);
     schedule_all(reader, writer);
 
     auto [first, second] = reader.result();
-    ASSERT_TRUE(first.has_value());
-    ASSERT_TRUE(second.has_value());
-    EXPECT_EQ(*first, "kotatsu-chunk");
-    EXPECT_EQ(*second, "kotatsu-read-some");
+    ASSERT(first.has_value());
+    ASSERT(second.has_value());
+    EXPECT(*first == "kotatsu-chunk");
+    EXPECT(*second == "kotatsu-read-some");
 }
 
-TEST_CASE(connect_and_accept) {
+ZEST_CASE(connect_and_accept) {
 #ifdef _WIN32
     const std::string name = "\\\\.\\pipe\\kotatsu-test-pipe";
 #else
     std::string name = "kotatsu-test-pipe-XXXXXX";
     int fd = ::mkstemp(name.data());
-    ASSERT_TRUE(fd >= 0);
+    ASSERT(fd >= 0);
     close_fd(fd);
     ::unlink(name.c_str());
 #endif
@@ -358,7 +357,7 @@ TEST_CASE(connect_and_accept) {
     pipe::options opts{};
     opts.backlog = 16;
     auto acc_res = pipe::listen(name, opts, loop);
-    ASSERT_TRUE(acc_res.has_value());
+    ASSERT(acc_res.has_value());
 
     int done = 0;
     const std::string message = "kotatsu-pipe-connect";
@@ -369,20 +368,20 @@ TEST_CASE(connect_and_accept) {
     auto server_res = server.result();
     auto client_res = client.result();
 
-    EXPECT_TRUE(server_res.has_value());
-    EXPECT_FALSE(client_res.has_error());
+    EXPECT(server_res.has_value());
+    EXPECT(!client_res.has_error());
     if(server_res.has_value()) {
-        EXPECT_EQ(*server_res, message);
+        EXPECT(*server_res == message);
     }
 }
 
-TEST_CASE(connect_failure, serial = true) {
+ZEST_CASE(connect_failure, serial = true) {
 #ifdef _WIN32
     const std::string name = "\\\\.\\pipe\\kotatsu-test-pipe-missing";
 #else
     std::string name = "kotatsu-test-pipe-missing-XXXXXX";
     int fd = ::mkstemp(name.data());
-    ASSERT_TRUE(fd >= 0);
+    ASSERT(fd >= 0);
     close_fd(fd);
     ::unlink(name.c_str());
 #endif
@@ -392,16 +391,16 @@ TEST_CASE(connect_failure, serial = true) {
     schedule_all(client);
 
     auto client_res = client.result();
-    EXPECT_FALSE(client_res.has_value());
+    EXPECT(!client_res.has_value());
 }
 
-TEST_CASE(stop, serial = true) {
+ZEST_CASE(stop, serial = true) {
 #ifdef _WIN32
     const std::string name = "\\\\.\\pipe\\kotatsu-test-pipe-missing";
 #else
     std::string name = "kotatsu-test-pipe-missing-XXXXXX";
     int fd = ::mkstemp(name.data());
-    ASSERT_TRUE(fd >= 0);
+    ASSERT(fd >= 0);
     close_fd(fd);
     ::unlink(name.c_str());
 #endif
@@ -409,10 +408,10 @@ TEST_CASE(stop, serial = true) {
     pipe::options opts{};
     opts.backlog = 16;
     auto acc = pipe::listen(name, opts, loop);
-    ASSERT_TRUE(acc.has_value());
+    ASSERT(acc.has_value());
 
     auto err = acc->stop();
-    EXPECT_FALSE(err.has_error());
+    EXPECT(!err.has_error());
 
     auto task1 = [](acceptor<pipe>& acc) -> task<pipe, error> {
         auto res = co_await acc.accept();
@@ -423,7 +422,7 @@ TEST_CASE(stop, serial = true) {
     schedule_all(task1);
 
     auto res1 = task1.value().value();
-    EXPECT_TRUE(!res1.has_value() && res1.error() == error::operation_aborted);
+    EXPECT((!res1.has_value() && res1.error() == error::operation_aborted));
 
     auto task2 = [](acceptor<pipe>& acc) -> task<pipe, error> {
         event_loop::current().stop();
@@ -433,51 +432,50 @@ TEST_CASE(stop, serial = true) {
 
     schedule_all(task2);
 
-    EXPECT_TRUE(!task2->is_finished());
+    EXPECT(!task2->is_finished());
     acc->stop();
-    EXPECT_TRUE(task2->is_failed());
+    EXPECT(task2->is_failed());
+}
+}
+;  // ZEST_SUITE(pipe)
+
+ZEST_SUITE(tcp, loop_fixture){
+
+    ZEST_CASE(accept_and_read){auto acc_res = tcp::listen("127.0.0.1", 0, {}, loop);
+ASSERT(acc_res.has_value());
+auto bound = tcp::local_port(*acc_res);
+ASSERT(bound.has_value());
+int port = *bound;
+
+auto server = accept_and_read(std::move(*acc_res));
+
+socket_t client_fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+ASSERT(client_fd != invalid_socket);
+
+sockaddr_in addr{};
+addr.sin_family = AF_INET;
+addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+addr.sin_port = htons(static_cast<uint16_t>(port));
+
+ASSERT(::connect(client_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0);
+
+const std::string message = "kotatsu-tcp";
+ASSERT(::send(client_fd, message.data(), static_cast<int>(message.size()), 0) ==
+       static_cast<ssize_t>(message.size()));
+close_socket(client_fd);
+
+schedule_all(server);
+
+auto result = server.result();
+EXPECT(result.has_value());
+EXPECT(*result == message);
 }
 
-};  // TEST_SUITE(pipe)
-
-TEST_SUITE(tcp, loop_fixture) {
-
-TEST_CASE(accept_and_read) {
+ZEST_CASE(accept_already_waiting) {
     auto acc_res = tcp::listen("127.0.0.1", 0, {}, loop);
-    ASSERT_TRUE(acc_res.has_value());
+    ASSERT(acc_res.has_value());
     auto bound = tcp::local_port(*acc_res);
-    ASSERT_TRUE(bound.has_value());
-    int port = *bound;
-
-    auto server = accept_and_read(std::move(*acc_res));
-
-    socket_t client_fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    ASSERT_TRUE(client_fd != invalid_socket);
-
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    addr.sin_port = htons(static_cast<uint16_t>(port));
-
-    ASSERT_EQ(::connect(client_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
-
-    const std::string message = "kotatsu-tcp";
-    ASSERT_EQ(::send(client_fd, message.data(), static_cast<int>(message.size()), 0),
-              static_cast<ssize_t>(message.size()));
-    close_socket(client_fd);
-
-    schedule_all(server);
-
-    auto result = server.result();
-    EXPECT_TRUE(result.has_value());
-    EXPECT_EQ(*result, message);
-}
-
-TEST_CASE(accept_already_waiting) {
-    auto acc_res = tcp::listen("127.0.0.1", 0, {}, loop);
-    ASSERT_TRUE(acc_res.has_value());
-    auto bound = tcp::local_port(*acc_res);
-    ASSERT_TRUE(bound.has_value());
+    ASSERT(bound.has_value());
     int port = *bound;
 
     auto acc = std::move(*acc_res);
@@ -487,32 +485,32 @@ TEST_CASE(accept_already_waiting) {
     auto second = accept_once(acc, done);
 
     socket_t client_fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    ASSERT_TRUE(client_fd != invalid_socket);
+    ASSERT(client_fd != invalid_socket);
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     addr.sin_port = htons(static_cast<uint16_t>(port));
 
-    ASSERT_EQ(::connect(client_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
+    ASSERT(::connect(client_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0);
     close_socket(client_fd);
 
     schedule_all(first, second);
 
     auto first_res = first.result();
     auto second_res = second.result();
-    EXPECT_TRUE(first_res.has_value());
-    EXPECT_FALSE(second_res.has_value());
+    EXPECT(first_res.has_value());
+    EXPECT(!second_res.has_value());
     if(!second_res.has_value()) {
-        EXPECT_EQ(second_res.error().value(), error::connection_already_in_progress.value());
+        EXPECT(second_res.error().value() == error::connection_already_in_progress.value());
     }
 }
 
-TEST_CASE(connect_and_write) {
+ZEST_CASE(connect_and_write) {
     auto acc_res = tcp::listen("127.0.0.1", 0, {}, loop);
-    ASSERT_TRUE(acc_res.has_value());
+    ASSERT(acc_res.has_value());
     auto bound = tcp::local_port(*acc_res);
-    ASSERT_TRUE(bound.has_value());
+    ASSERT(bound.has_value());
     int port = *bound;
 
     int done = 0;
@@ -522,38 +520,38 @@ TEST_CASE(connect_and_write) {
 
     auto server_res = server.result();
     auto client_res = client.result();
-    EXPECT_TRUE(server_res.has_value());
-    EXPECT_EQ(*server_res, "kotatsu-tcp-connect");
-    EXPECT_FALSE(client_res.has_error());
+    EXPECT(server_res.has_value());
+    EXPECT(*server_res == "kotatsu-tcp-connect");
+    EXPECT(!client_res.has_error());
 }
 
-TEST_CASE(read_some_error) {
+ZEST_CASE(read_some_error) {
     auto acc_res = tcp::listen("127.0.0.1", 0, {}, loop);
-    ASSERT_TRUE(acc_res.has_value());
+    ASSERT(acc_res.has_value());
     auto bound = tcp::local_port(*acc_res);
-    ASSERT_TRUE(bound.has_value());
+    ASSERT(bound.has_value());
     int port = *bound;
 
     auto server = accept_and_read_some(std::move(*acc_res));
 
     socket_t client_fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    ASSERT_TRUE(client_fd != invalid_socket);
+    ASSERT(client_fd != invalid_socket);
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     addr.sin_port = htons(static_cast<uint16_t>(port));
 
-    ASSERT_EQ(::connect(client_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
-    ASSERT_EQ(set_abortive_close(client_fd), 0);
+    ASSERT(::connect(client_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0);
+    ASSERT(set_abortive_close(client_fd) == 0);
     close_socket(client_fd);
 
     schedule_all(server);
 
     auto result = server.result();
-    EXPECT_FALSE(result.has_value());
+    EXPECT(!result.has_value());
 }
-
-};  // TEST_SUITE(tcp)
+}
+;  // ZEST_SUITE(tcp)
 
 }  // namespace kota

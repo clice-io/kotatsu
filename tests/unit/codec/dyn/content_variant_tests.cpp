@@ -24,88 +24,88 @@ using Rect = meta::fixtures::Rect;
 KOTATSU_ANNOTATION(int_tag_shape_annotation, tag = "type", tag_names = {"circle", "rect"});
 using IntTagShape = meta::annotate<int_tag_shape_annotation>::type<std::variant<Circle, Rect>>;
 
-TEST_SUITE(serde_dyn_variant) {
+ZEST_SUITE(serde_dyn_variant){
 
-TEST_CASE(int_vs_string) {
-    using V = std::variant<int, std::string>;
+    ZEST_CASE(int_vs_string){using V = std::variant<int, std::string>;
 
-    V out{};
-    ASSERT_TRUE(dyn::from_dyn(dyn::Value(std::int64_t{42}), out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<int>(out), 42);
+V out{};
+ASSERT(dyn::from_dyn(dyn::Value(std::int64_t{42}), out).has_value());
+EXPECT(out.index() == 0U);
+EXPECT(std::get<int>(out) == 42);
 
-    ASSERT_TRUE(dyn::from_dyn(dyn::Value("hello"), out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<std::string>(out), "hello");
-}
+ASSERT(dyn::from_dyn(dyn::Value("hello"), out).has_value());
+EXPECT(out.index() == 1U);
+EXPECT(std::get<std::string>(out) == "hello");
 
-TEST_CASE(bool_vs_int) {
+}  // namespace
+
+ZEST_CASE(bool_vs_int) {
     using V = std::variant<bool, int>;
 
     V out{};
-    ASSERT_TRUE(dyn::from_dyn(dyn::Value(true), out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<bool>(out), true);
+    ASSERT(dyn::from_dyn(dyn::Value(true), out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<bool>(out) == true);
 
-    ASSERT_TRUE(dyn::from_dyn(dyn::Value(std::int64_t{7}), out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<int>(out), 7);
+    ASSERT(dyn::from_dyn(dyn::Value(std::int64_t{7}), out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<int>(out) == 7);
 }
 
-TEST_CASE(int_before_double) {
+ZEST_CASE(int_before_double) {
     using V = std::variant<int, double>;
 
     V out{};
-    ASSERT_TRUE(dyn::from_dyn(dyn::Value(std::int64_t{42}), out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<int>(out), 42);
+    ASSERT(dyn::from_dyn(dyn::Value(std::int64_t{42}), out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<int>(out) == 42);
 
-    ASSERT_TRUE(dyn::from_dyn(dyn::Value(3.14), out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<double>(out), 3.14);
+    ASSERT(dyn::from_dyn(dyn::Value(3.14), out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<double>(out) == 3.14);
 }
 
-TEST_CASE(int64_vs_uint64) {
+ZEST_CASE(int64_vs_uint64) {
     using V = std::variant<std::int64_t, std::uint64_t>;
 
     V out{};
-    ASSERT_TRUE(dyn::from_dyn(dyn::Value(std::int64_t{42}), out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<std::int64_t>(out), 42);
+    ASSERT(dyn::from_dyn(dyn::Value(std::int64_t{42}), out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<std::int64_t>(out) == 42);
 
-    ASSERT_TRUE(dyn::from_dyn(dyn::Value(std::uint64_t{UINT64_MAX}), out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<std::uint64_t>(out), UINT64_MAX);
+    ASSERT(dyn::from_dyn(dyn::Value(std::uint64_t{UINT64_MAX}), out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<std::uint64_t>(out) == UINT64_MAX);
 }
 
-TEST_CASE(monostate_matches_null) {
+ZEST_CASE(monostate_matches_null) {
     using V = std::variant<std::monostate, int>;
 
     V out = 42;
-    ASSERT_TRUE(dyn::from_dyn(dyn::Value(nullptr), out).has_value());
-    EXPECT_EQ(out.index(), 0U);
+    ASSERT(dyn::from_dyn(dyn::Value(nullptr), out).has_value());
+    EXPECT(out.index() == 0U);
 }
 
-TEST_CASE(struct_deep_scoring) {
+ZEST_CASE(struct_deep_scoring) {
     using V = std::variant<IntHolder, StringHolder>;
 
     dyn::Object obj_int;
     obj_int.insert("value", dyn::Value(std::int64_t{42}));
 
     V out{};
-    ASSERT_TRUE(dyn::from_dyn(dyn::Value(std::move(obj_int)), out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<IntHolder>(out).value, 42);
+    ASSERT(dyn::from_dyn(dyn::Value(std::move(obj_int)), out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<IntHolder>(out).value == 42);
 
     dyn::Object obj_str;
     obj_str.insert("value", dyn::Value("hello"));
 
-    ASSERT_TRUE(dyn::from_dyn(dyn::Value(std::move(obj_str)), out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<StringHolder>(out).value, "hello");
+    ASSERT(dyn::from_dyn(dyn::Value(std::move(obj_str)), out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<StringHolder>(out).value == "hello");
 }
 
-TEST_CASE(array_vs_object) {
+ZEST_CASE(array_vs_object) {
     using V = std::variant<std::vector<int>, std::map<std::string, int>>;
 
     dyn::Array arr;
@@ -113,20 +113,20 @@ TEST_CASE(array_vs_object) {
     arr.push_back(dyn::Value(std::int64_t{2}));
 
     V out{};
-    ASSERT_TRUE(dyn::from_dyn(dyn::Value(std::move(arr)), out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<std::vector<int>>(out), std::vector<int>({1, 2}));
+    ASSERT(dyn::from_dyn(dyn::Value(std::move(arr)), out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<std::vector<int>>(out) == std::vector<int>({1, 2}));
 
     dyn::Object obj;
     obj.insert("a", dyn::Value(std::int64_t{1}));
     obj.insert("b", dyn::Value(std::int64_t{2}));
 
-    ASSERT_TRUE(dyn::from_dyn(dyn::Value(std::move(obj)), out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<std::map<std::string, int>>(out).at("a"), 1);
+    ASSERT(dyn::from_dyn(dyn::Value(std::move(obj)), out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<std::map<std::string, int>>(out).at("a") == 1);
 }
 
-TEST_CASE(struct_vs_map_scoring) {
+ZEST_CASE(struct_vs_map_scoring) {
     using V = std::variant<Point, std::map<std::string, double>>;
 
     dyn::Object obj_point;
@@ -134,29 +134,29 @@ TEST_CASE(struct_vs_map_scoring) {
     obj_point.insert("y", dyn::Value(2.0));
 
     V out{};
-    ASSERT_TRUE(dyn::from_dyn(dyn::Value(std::move(obj_point)), out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<Point>(out), (Point{1.0, 2.0}));
+    ASSERT(dyn::from_dyn(dyn::Value(std::move(obj_point)), out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<Point>(out) == (Point{1.0, 2.0}));
 
     dyn::Object obj_map;
     obj_map.insert("foo", dyn::Value(3.0));
 
-    ASSERT_TRUE(dyn::from_dyn(dyn::Value(std::move(obj_map)), out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<std::map<std::string, double>>(out).at("foo"), 3.0);
+    ASSERT(dyn::from_dyn(dyn::Value(std::move(obj_map)), out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<std::map<std::string, double>>(out).at("foo") == 3.0);
 }
 
-TEST_CASE(no_match_fails) {
+ZEST_CASE(no_match_fails) {
     using V = std::variant<int, std::string>;
 
     V out{};
-    EXPECT_FALSE(dyn::from_dyn(dyn::Value(true), out).has_value());
+    EXPECT(!dyn::from_dyn(dyn::Value(true), out).has_value());
 
     dyn::Array arr;
-    EXPECT_FALSE(dyn::from_dyn(dyn::Value(std::move(arr)), out).has_value());
+    EXPECT(!dyn::from_dyn(dyn::Value(std::move(arr)), out).has_value());
 }
 
-TEST_CASE(internally_tagged) {
+ZEST_CASE(internally_tagged) {
     struct Holder {
         IntTagShape shape;
     };
@@ -169,113 +169,113 @@ TEST_CASE(internally_tagged) {
     root.insert("shape", dyn::Value(std::move(shape_obj)));
 
     Holder out{};
-    ASSERT_TRUE(dyn::from_dyn(dyn::Value(std::move(root)), out).has_value());
-    EXPECT_EQ(std::get<Circle>(out.shape).radius, 5.0);
+    ASSERT(dyn::from_dyn(dyn::Value(std::move(root)), out).has_value());
+    EXPECT(std::get<Circle>(out.shape).radius == 5.0);
 }
 
-TEST_CASE(empty_object_scoring) {
+ZEST_CASE(empty_object_scoring) {
     using V = std::variant<Point, std::map<std::string, int>>;
 
     dyn::Object empty;
 
     V out{};
-    ASSERT_TRUE(dyn::from_dyn(dyn::Value(std::move(empty)), out).has_value());
-    EXPECT_EQ(out.index(), 1U);
+    ASSERT(dyn::from_dyn(dyn::Value(std::move(empty)), out).has_value());
+    EXPECT(out.index() == 1U);
 }
 
-TEST_CASE(empty_array_scoring) {
+ZEST_CASE(empty_array_scoring) {
     using V = std::variant<std::vector<int>, std::string>;
 
     dyn::Array empty;
 
     V out{};
-    ASSERT_TRUE(dyn::from_dyn(dyn::Value(std::move(empty)), out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_TRUE(std::get<std::vector<int>>(out).empty());
+    ASSERT(dyn::from_dyn(dyn::Value(std::move(empty)), out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<std::vector<int>>(out).empty());
 }
 
-TEST_CASE(json_to_dyn_variant_roundtrip) {
+ZEST_CASE(json_to_dyn_variant_roundtrip) {
     using V = std::variant<int, std::string>;
 
     auto parsed = json::from_string<dyn::Value>(R"(42)");
-    ASSERT_TRUE(parsed.has_value());
+    ASSERT(parsed.has_value());
 
     V out{};
-    ASSERT_TRUE(dyn::from_dyn(*parsed, out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<int>(out), 42);
+    ASSERT(dyn::from_dyn(*parsed, out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<int>(out) == 42);
 }
 
-};  // TEST_SUITE(serde_dyn_variant)
+};  // namespace kota::codec
 
-TEST_SUITE(serde_dyn_peek_kind_trait) {
+ZEST_SUITE(serde_dyn_peek_kind_trait){
 
-TEST_CASE(json_to_dyn_scalars) {
-    auto test = [](std::string_view json_str, dyn::ValueKind expected_kind) -> bool {
-        auto parsed = json::from_string<dyn::Value>(json_str);
-        if(!parsed.has_value())
-            return false;
-        return parsed->kind() == expected_kind;
-    };
+    ZEST_CASE(json_to_dyn_scalars){
+        auto test = [](std::string_view json_str, dyn::ValueKind expected_kind) -> bool {
+            auto parsed = json::from_string<dyn::Value>(json_str);
+            if(!parsed.has_value())
+                return false;
+            return parsed->kind() == expected_kind;
+        };
 
-    EXPECT_TRUE(test("null", dyn::ValueKind::null_value));
-    EXPECT_TRUE(test("true", dyn::ValueKind::boolean));
-    EXPECT_TRUE(test("42", dyn::ValueKind::signed_int));
-    EXPECT_TRUE(test("18446744073709551615", dyn::ValueKind::unsigned_int));
-    EXPECT_TRUE(test("3.14", dyn::ValueKind::floating));
-    EXPECT_TRUE(test(R"("hello")", dyn::ValueKind::string));
+EXPECT(test("null", dyn::ValueKind::null_value));
+EXPECT(test("true", dyn::ValueKind::boolean));
+EXPECT(test("42", dyn::ValueKind::signed_int));
+EXPECT(test("18446744073709551615", dyn::ValueKind::unsigned_int));
+EXPECT(test("3.14", dyn::ValueKind::floating));
+EXPECT(test(R"("hello")", dyn::ValueKind::string));
 }
 
-TEST_CASE(json_to_dyn_array) {
+ZEST_CASE(json_to_dyn_array) {
     auto parsed = json::from_string<dyn::Value>(R"([1,2,3])");
-    ASSERT_TRUE(parsed.has_value());
-    ASSERT_TRUE(parsed->is_array());
+    ASSERT(parsed.has_value());
+    ASSERT(parsed->is_array());
     auto* arr = parsed->get_array();
-    ASSERT_NE(arr, nullptr);
-    ASSERT_EQ(arr->size(), 3U);
-    EXPECT_EQ((*arr)[0].as_int(), 1);
-    EXPECT_EQ((*arr)[1].as_int(), 2);
-    EXPECT_EQ((*arr)[2].as_int(), 3);
+    ASSERT(arr != nullptr);
+    ASSERT(arr->size() == 3U);
+    EXPECT((*arr)[0].as_int() == 1);
+    EXPECT((*arr)[1].as_int() == 2);
+    EXPECT((*arr)[2].as_int() == 3);
 }
 
-TEST_CASE(json_to_dyn_object) {
+ZEST_CASE(json_to_dyn_object) {
     auto parsed = json::from_string<dyn::Value>(R"({"a":1,"b":"two"})");
-    ASSERT_TRUE(parsed.has_value());
-    ASSERT_TRUE(parsed->is_object());
-    EXPECT_EQ((*parsed)["a"].as_int(), 1);
-    EXPECT_EQ((*parsed)["b"].as_string(), "two");
+    ASSERT(parsed.has_value());
+    ASSERT(parsed->is_object());
+    EXPECT((*parsed)["a"].as_int() == 1);
+    EXPECT((*parsed)["b"].as_string() == "two");
 }
 
-TEST_CASE(json_to_dyn_nested) {
+ZEST_CASE(json_to_dyn_nested) {
     auto parsed = json::from_string<dyn::Value>(R"({"items":[{"x":1},{"x":2}]})");
-    ASSERT_TRUE(parsed.has_value());
-    ASSERT_TRUE(parsed->is_object());
+    ASSERT(parsed.has_value());
+    ASSERT(parsed->is_object());
     auto items = (*parsed)["items"];
-    ASSERT_TRUE(items.valid());
-    EXPECT_EQ(items[0]["x"].as_int(), 1);
-    EXPECT_EQ(items[1]["x"].as_int(), 2);
+    ASSERT(items.valid());
+    EXPECT(items[0]["x"].as_int() == 1);
+    EXPECT(items[1]["x"].as_int() == 2);
 }
 
-TEST_CASE(json_to_dyn_struct) {
+ZEST_CASE(json_to_dyn_struct) {
     auto parsed = json::from_string<dyn::Value>(R"({"x":1.5,"y":2.5})");
-    ASSERT_TRUE(parsed.has_value());
+    ASSERT(parsed.has_value());
 
     Point point{};
-    ASSERT_TRUE(dyn::from_dyn(*parsed, point).has_value());
-    EXPECT_EQ(point, (Point{1.5, 2.5}));
+    ASSERT(dyn::from_dyn(*parsed, point).has_value());
+    EXPECT(point == (Point{1.5, 2.5}));
 }
 
-TEST_CASE(json_to_dyn_complex_roundtrip) {
+ZEST_CASE(json_to_dyn_complex_roundtrip) {
     auto dom =
         json::from_string<dyn::Value>(R"({"name":"test","scores":[1,2,3],"nested":{"flag":true}})");
-    ASSERT_TRUE(dom.has_value());
-    ASSERT_TRUE(dom->is_object());
-    EXPECT_EQ((*dom)["name"].as_string(), "test");
-    EXPECT_EQ((*dom)["scores"][0].as_int(), 1);
-    EXPECT_EQ((*dom)["nested"]["flag"].as_bool(), true);
+    ASSERT(dom.has_value());
+    ASSERT(dom->is_object());
+    EXPECT((*dom)["name"].as_string() == "test");
+    EXPECT((*dom)["scores"][0].as_int() == 1);
+    EXPECT((*dom)["nested"]["flag"].as_bool() == true);
 }
-
-};  // TEST_SUITE(serde_dyn_peek_kind_trait)
+}
+;  // ZEST_SUITE(serde_dyn_peek_kind_trait)
 
 }  // namespace
 
