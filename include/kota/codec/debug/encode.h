@@ -226,8 +226,9 @@ struct ValueWriter {
         return true;
     }
 
-    /// A value of a type the schema knows nothing about: formatted if it can
-    /// be, else named.
+    /// A value of a type the schema knows nothing about: std::error_code as its
+    /// category and message, a formattable type through std::format, anything
+    /// else by name.
     template <typename T>
     bool visit_opaque(const T& v) {
         if constexpr(std::is_same_v<T, std::error_code>) {

@@ -431,10 +431,11 @@ bool encode_value(Vis& vis, const T& value) {
                     }
                 } else {
                     using E = std::remove_cvref_t<decltype(value.error())>;
-                    if constexpr(meta::kind_of<E>() != meta::type_kind::unknown) {
+                    // An error of a type the schema does not know reaches only
+                    // a backend that shows any value.
+                    if constexpr(meta::kind_of<E>() != meta::type_kind::unknown ||
+                                 requires(Vis& v, const E& e) { v.visit_opaque(e); }) {
                         return encode_value<Config>(vis, value.error());
-                    } else if constexpr(requires(Vis& v, const E& e) { v.visit_opaque(e); }) {
-                        return vis.visit_opaque(value.error());
                     } else {
                         return vis.visit_null();
                     }
