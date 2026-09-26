@@ -100,12 +100,22 @@ struct ValueReader {
         if(!val) {
             return fail_type("string");
         }
-        if(val->size() != 1) {
-            return scoped_context<rich_error>::fail(
-                rich_error("expected single-character string for char"));
+        // One codepoint up to U+00FF in UTF-8: a byte below 0x80, or a lead
+        // byte 0xC2 or 0xC3 and a continuation byte.
+        auto text = *val;
+        auto byte = [&](std::size_t at) {
+            return static_cast<unsigned char>(text[at]);
+        };
+        if(text.size() == 1 && byte(0) < 0x80) {
+            out = static_cast<T>(text[0]);
+            return true;
         }
-        out = static_cast<T>((*val)[0]);
-        return true;
+        if(text.size() == 2 && (byte(0) == 0xC2 || byte(0) == 0xC3) && (byte(1) & 0xC0) == 0x80) {
+            out = static_cast<T>(((byte(0) & 0x1F) << 6) | (byte(1) & 0x3F));
+            return true;
+        }
+        return scoped_context<rich_error>::fail(
+            rich_error("expected a single character up to U+00FF"));
     }
 
     template <typename T>

@@ -3,6 +3,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -82,6 +83,33 @@ ZEST_CASE(null_from_non_null_fails) {
     auto fallback = dyn::from_dyn(dyn::Value(std::string("x")), choice);
     ASSERT(!fallback);
     EXPECT(fallback.error().message == "invalid type: expected null, got string");
+}
+
+ZEST_CASE(char_writes_its_codepoint) {
+    // The char's value, 0-255, is the codepoint, in UTF-8 as json writes it.
+    EXPECT(dyn::to_dyn('x') == dyn::Value("x"));
+    EXPECT(dyn::to_dyn(static_cast<char>(0xE9)) == dyn::Value("é"));
+    EXPECT(dyn::to_dyn(static_cast<char>(0xFF)) == dyn::Value("ÿ"));
+}
+
+ZEST_CASE(char_reads_one_codepoint_up_to_255) {
+    char out = '\0';
+    ASSERT(dyn::from_dyn(dyn::Value("é"), out));
+    EXPECT(out == static_cast<char>(0xE9));
+    ASSERT(dyn::from_dyn(dyn::Value("ÿ"), out));
+    EXPECT(out == static_cast<char>(0xFF));
+}
+
+ZEST_CASE(char_from_other_text_fails) {
+    // A lone octet above 0x7F is not UTF-8, "Ā" and "€" do not fit a char,
+    // and "xy" is two characters.
+    for(std::string_view text: {"\xE9", "Ā", "€", "xy", ""}) {
+        ZEST_CONTEXT("text: {}", text);
+        char out = '\0';
+        auto status = dyn::from_dyn(dyn::Value(text), out);
+        ASSERT(!status);
+        EXPECT(status.error().message == "expected a single character up to U+00FF");
+    }
 }
 
 ZEST_CASE(serialize_element_with_dom_subtree) {
