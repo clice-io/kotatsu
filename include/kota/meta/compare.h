@@ -69,25 +69,26 @@ using range_ref_t = std::ranges::range_reference_t<const std::remove_reference_t
 template <typename T>
 concept integer_like = std::is_enum_v<T> || standard_integer<T>;
 
-/// Compares two integers or enums by value, so a negative signed value is
-/// less than any unsigned one: `standard` for two standard integers (the
-/// std::cmp_* family), `builtin` for anything else, such as a char-backed enum.
-template <typename L, typename R, typename Standard, typename Builtin>
-constexpr bool compare_integers(L lhs, R rhs, Standard standard, Builtin builtin) {
-    auto value = [](auto v) {
-        using V = decltype(v);
-        if constexpr(std::is_enum_v<V>) {
-            return static_cast<std::underlying_type_t<V>>(v);
+/// An integer or enum as a standard integer, which the std::cmp_* family takes,
+/// so a negative value is less than any unsigned one. An enum's underlying type
+/// may be a character type or bool; it becomes the standard integer of its size
+/// and signedness.
+template <typename T>
+constexpr auto integer_value(T value) {
+    if constexpr(std::is_enum_v<T>) {
+        using U = std::underlying_type_t<T>;
+        auto underlying = static_cast<U>(value);
+        if constexpr(standard_integer<U>) {
+            return underlying;
+        } else if constexpr(std::is_same_v<U, bool>) {
+            return static_cast<unsigned char>(underlying);
+        } else if constexpr(std::is_signed_v<U>) {
+            return static_cast<std::make_signed_t<U>>(underlying);
         } else {
-            return v;
+            return static_cast<std::make_unsigned_t<U>>(underlying);
         }
-    };
-    auto l = value(lhs);
-    auto r = value(rhs);
-    if constexpr(standard_integer<decltype(l)> && standard_integer<decltype(r)>) {
-        return standard(l, r);
     } else {
-        return builtin(l, r);
+        return value;
     }
 }
 
@@ -393,11 +394,7 @@ constexpr bool compare_eq(const L& lhs, const R& rhs) {
             vr);
     } else if constexpr(eq_comparable_with<L, R>) {
         if constexpr(integer_like<L> && integer_like<R>) {
-            return compare_integers(
-                lhs,
-                rhs,
-                [](auto l, auto r) { return std::cmp_equal(l, r); },
-                [](auto l, auto r) { return static_cast<bool>(l == r); });
+            return std::cmp_equal(integer_value(lhs), integer_value(rhs));
         } else {
             return static_cast<bool>(lhs == rhs);
         }
@@ -431,11 +428,7 @@ constexpr bool compare_ne(const L& lhs, const R& rhs) {
 template <typename L, typename R>
 constexpr bool compare_lt(const L& lhs, const R& rhs) {
     if constexpr(integer_like<L> && integer_like<R> && lt_comparable_with<L, R>) {
-        return compare_integers(
-            lhs,
-            rhs,
-            [](auto l, auto r) { return std::cmp_less(l, r); },
-            [](auto l, auto r) { return static_cast<bool>(l < r); });
+        return std::cmp_less(integer_value(lhs), integer_value(rhs));
     } else if constexpr(takeover_range_lt<L, R>) {
         if constexpr(ordered_map_range<L> && ordered_map_range<R>) {
             return compare_map_lt(lhs, rhs);
@@ -532,11 +525,7 @@ constexpr bool compare_lt(const L& lhs, const R& rhs) {
 template <typename L, typename R>
 constexpr bool compare_le(const L& lhs, const R& rhs) {
     if constexpr(integer_like<L> && integer_like<R> && le_comparable_with<L, R>) {
-        return compare_integers(
-            lhs,
-            rhs,
-            [](auto l, auto r) { return std::cmp_less_equal(l, r); },
-            [](auto l, auto r) { return static_cast<bool>(l <= r); });
+        return std::cmp_less_equal(integer_value(lhs), integer_value(rhs));
     } else if constexpr(!takeover_range_le<L, R> && !variant_pair<L, R> &&
                         le_comparable_with<L, R>) {
         return static_cast<bool>(lhs <= rhs);
@@ -550,11 +539,7 @@ constexpr bool compare_le(const L& lhs, const R& rhs) {
 template <typename L, typename R>
 constexpr bool compare_gt(const L& lhs, const R& rhs) {
     if constexpr(integer_like<L> && integer_like<R> && gt_comparable_with<L, R>) {
-        return compare_integers(
-            lhs,
-            rhs,
-            [](auto l, auto r) { return std::cmp_greater(l, r); },
-            [](auto l, auto r) { return static_cast<bool>(l > r); });
+        return std::cmp_greater(integer_value(lhs), integer_value(rhs));
     } else if constexpr(!takeover_range_gt<L, R> && !variant_pair<L, R> &&
                         gt_comparable_with<L, R>) {
         return static_cast<bool>(lhs > rhs);
@@ -566,11 +551,7 @@ constexpr bool compare_gt(const L& lhs, const R& rhs) {
 template <typename L, typename R>
 constexpr bool compare_ge(const L& lhs, const R& rhs) {
     if constexpr(integer_like<L> && integer_like<R> && ge_comparable_with<L, R>) {
-        return compare_integers(
-            lhs,
-            rhs,
-            [](auto l, auto r) { return std::cmp_greater_equal(l, r); },
-            [](auto l, auto r) { return static_cast<bool>(l >= r); });
+        return std::cmp_greater_equal(integer_value(lhs), integer_value(rhs));
     } else if constexpr(!takeover_range_ge<L, R> && !variant_pair<L, R> &&
                         ge_comparable_with<L, R>) {
         return static_cast<bool>(lhs >= rhs);

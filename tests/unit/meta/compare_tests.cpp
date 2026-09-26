@@ -202,6 +202,18 @@ ZEST_CASE(mixed_sign_integers_compare_by_value) {
     EXPECT(!eq(-1, max));
 }
 
+// char is signed on some targets and unsigned on others; either way its
+// minimum is less than 1.
+enum char_backed : char { char_min = std::numeric_limits<char>::min() };
+
+ZEST_CASE(char_backed_enums_compare_by_value) {
+    EXPECT(lt(char_min, 1u));
+    EXPECT(le(char_min, 1u));
+    EXPECT(gt(1u, char_min));
+    EXPECT(ge(1u, char_min));
+    EXPECT(ne(char_min, std::numeric_limits<unsigned>::max()));
+}
+
 ZEST_CASE(string_native) {
     constexpr std::string_view view = "kotatsu";
     constexpr char literal[] = "kotatsu";
