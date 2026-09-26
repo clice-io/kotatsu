@@ -56,13 +56,16 @@ ZEST_CASE(repeating_timer_fires_until_stopped) {
     auto waiter = [&]() -> task<std::size_t> {
         co_await wait_three_times(t);
         t.stop();
+        // A fire can land between the third wake and the stop, and the timer
+        // keeps it for the next wait; take those first.
+        while((co_await when_any(t.wait(), yield())).index() == 0) {}
         auto next = co_await when_any(t.wait(), sleep(20ms));
         co_return next.index();
     };
 
     auto [result] = run(waiter());
     ASSERT(result.has_value());
-    // The stopped timer lost the race to the sleep.
+    // The stopped timer fired no more: it lost the race to the sleep.
     EXPECT(*result == 1U);
 }
 
