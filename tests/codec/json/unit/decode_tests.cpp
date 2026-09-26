@@ -103,10 +103,13 @@ ZEST_CASE(scalar_root_trailing_content_fails) {
 }
 
 ZEST_CASE(object_root_trailing_value_fails) {
-    test::Point out{};
+    // The document is checked before it is decoded, so `out` keeps its value.
+    test::Point out{.x = 5, .y = 6};
     auto status = json::from_string(R"({"x":1,"y":2} {"x":3})", out);
     ASSERT(!status);
     EXPECT(zest::starts_with(status.error().message, "TRAILING_CONTENT"));
+    EXPECT(out.x == 5);
+    EXPECT(out.y == 6);
 }
 
 ZEST_CASE(array_root_trailing_content_fails) {
