@@ -64,28 +64,29 @@ struct TaggedVariantStruct {
     meta::annotate<TaggedTag>::type<std::variant<int, std::string>> tv;
 };
 
-// One variant in each tagging, each with a monostate, a scalar and a struct
-// alternative (a struct alternative only, for internal tagging), followed by
-// the plain structs of the documents they encode to in a keyed backend.
+// One variant in each tagging, each with a monostate, a number, a text and a
+// struct alternative (struct alternatives only, for internal tagging),
+// followed by the plain structs of the documents they encode to in a keyed
+// backend.
 
 struct ExternalShapeTag {
     constexpr static auto spec =
         meta::make_struct_spec(meta::dsl::tagged = true,
-                               meta::dsl::tag_names = {"none", "number", "point"});
+                               meta::dsl::tag_names = {"none", "number", "text", "point"});
 };
 
 using ExternalShape =
-    meta::annotate<ExternalShapeTag>::type<std::variant<std::monostate, int, Point>>;
+    meta::annotate<ExternalShapeTag>::type<std::variant<std::monostate, int, std::string, Point>>;
 
 struct AdjacentShapeTag {
     constexpr static auto spec =
         meta::make_struct_spec(meta::dsl::tag = "t",
                                meta::dsl::content = "c",
-                               meta::dsl::tag_names = {"none", "number", "point"});
+                               meta::dsl::tag_names = {"none", "number", "text", "point"});
 };
 
 using AdjacentShape =
-    meta::annotate<AdjacentShapeTag>::type<std::variant<std::monostate, int, Point>>;
+    meta::annotate<AdjacentShapeTag>::type<std::variant<std::monostate, int, std::string, Point>>;
 
 struct InternalShapeTag {
     constexpr static auto spec =
@@ -96,7 +97,7 @@ struct InternalShapeTag {
 using InternalShape = meta::annotate<InternalShapeTag>::type<std::variant<Circle, Rect, Segment>>;
 
 /// The untagged variants the tagged ones become where tags do not apply.
-using BareShape = std::variant<std::monostate, int, Point>;
+using BareShape = std::variant<std::monostate, int, std::string, Point>;
 using BareFigure = std::variant<Circle, Rect, Segment>;
 
 struct NoneTagPlain {
@@ -125,9 +126,20 @@ struct AdjacentContentFirst {
     std::string t;
 };
 
+struct AdjacentWithExtraPlain {
+    std::string t;
+    bool extra;
+    int c;
+};
+
 struct CirclePlain {
     std::string kind;
     double radius;
+};
+
+struct CircleTagLastPlain {
+    double radius;
+    std::string kind;
 };
 
 struct CircleWithExtraPlain {

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cassert>
 #include <string>
 #include <string_view>
 
@@ -24,8 +23,8 @@ struct Json {
         .string_knobs = true,
         .dynamic_repr = true,
         .untrusted_input = true,
+        .format_tag = true,
     };
-    using format = codec::json::format;
     using Encoded = std::string;
 
     template <typename Config = void, typename T>
@@ -38,10 +37,11 @@ struct Json {
         return codec::json::from_string<Config>(text, out);
     }
 
+    /// Indented; text that does not parse, which only a broken encoder
+    /// writes, is shown as it is.
     static std::string render(const Encoded& text) {
         auto pretty = codec::json::prettify(text);
-        assert(pretty && "the encoder's output always parses");
-        return *pretty;
+        return pretty ? *pretty : text;
     }
 };
 

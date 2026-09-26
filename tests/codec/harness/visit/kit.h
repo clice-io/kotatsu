@@ -28,6 +28,7 @@
 #include <string_view>
 #include <utility>
 
+#include "fixtures/structs.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/compare.h"
 #include "kota/codec/visit/context.h"
@@ -60,12 +61,13 @@ struct Caps {
     /// Documents come from outside the program, so decoding garbage is in
     /// scope.
     bool untrusted_input = false;
+    /// A format tag scopes meta::repr specializations to the backend.
+    bool format_tag = false;
 };
 
 /// A backend adapter: its name and caps, its document type, encode and decode
 /// under a Config, and a readable rendering of a document for reports and
-/// snapshots. A backend with a format tag also names it `format`, which picks
-/// the format-scoped reprs.
+/// snapshots.
 template <typename B>
 concept Backend = requires(const typename B::Encoded& encoded, int& out) {
     { B::name } -> std::convertible_to<std::string_view>;
@@ -152,6 +154,18 @@ void reads(const Kit<B>& kit, std::string name, Plain plain, Expect expect) {
     });
 }
 
+/// reads with the value in a field: the document of Field{plain()} decodes,
+/// under Config, into Field<V>{expect()}. A backend that routes roots
+/// differently (toml) then reads the value as every other backend does.
+template <typename V, typename Config = void, Backend B, typename Plain, typename Expect>
+void reads_in_field(const Kit<B>& kit, std::string name, Plain plain, Expect expect) {
+    reads<Field<V>, Config>(
+        kit,
+        std::move(name),
+        [plain] { return Field<decltype(plain())>{plain()}; },
+        [expect] { return Field<V>{expect()}; });
+}
+
 /// The document plain() encodes to does not decode into T under Config.
 template <typename T, typename Config = void, Backend B, typename Plain>
 void read_fails(const Kit<B>& kit, std::string name, Plain plain, Failure failure) {
@@ -164,6 +178,16 @@ void read_fails(const Kit<B>& kit, std::string name, Plain plain, Failure failur
         ASSERT(!status);
         detail::check_failure(status.error(), failure);
     });
+}
+
+/// read_fails with the value in a field, as reads_in_field.
+template <typename V, Backend B, typename Plain>
+void read_in_field_fails(const Kit<B>& kit, std::string name, Plain plain, Failure failure) {
+    read_fails<Field<V>>(
+        kit,
+        std::move(name),
+        [plain] { return Field<decltype(plain())>{plain()}; },
+        failure);
 }
 
 /// make() does not encode under Config.
@@ -189,9 +213,9 @@ void snapshot(const Kit<B>& kit, std::string name, Make make) {
 /// Every prefix of make()'s document, and the document with any one unit
 /// changed, is rejected or decodes to a value whose document is stable: it
 /// decodes and encodes again to itself. Overreads are the sanitizers' to
-/// catch.
+/// catch. For backends with untrusted_input, whose documents are byte or
+/// character sequences.
 template <Backend B, typename Make>
-    requires (B::caps.untrusted_input)
 void hostile(const Kit<B>& kit, std::string name, Make make) {
     kit.add(std::move(name), [make] {
         using T = decltype(make());

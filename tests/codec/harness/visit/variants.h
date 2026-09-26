@@ -9,7 +9,6 @@
 #include <optional>
 #include <string>
 #include <tuple>
-#include <utility>
 #include <variant>
 #include <vector>
 
@@ -22,30 +21,6 @@
 #include "kota/meta/attrs.h"
 
 namespace kota::test {
-
-namespace detail {
-
-/// Reads plain() into Field<V> and expects Field<V>{expect}: the value stands
-/// in a field, so a backend routing roots differently probes the same way.
-template <typename V, typename Config = void, Backend B, typename Plain, typename Expect>
-void probes(const Kit<B>& kit, std::string name, Plain plain, Expect expect) {
-    reads<Field<V>, Config>(
-        kit,
-        std::move(name),
-        [plain] { return Field<decltype(plain())>{plain()}; },
-        [expect] { return Field<V>{expect()}; });
-}
-
-template <typename V, Backend B, typename Plain>
-void probe_fails(const Kit<B>& kit, std::string name, Plain plain, Failure failure) {
-    read_fails<Field<V>>(
-        kit,
-        std::move(name),
-        [plain] { return Field<decltype(plain())>{plain()}; },
-        failure);
-}
-
-}  // namespace detail
 
 template <Backend B>
 void variants(const Kit<B>& kit) {
@@ -73,6 +48,14 @@ void variants(const Kit<B>& kit) {
         return std::vector<std::optional<std::variant<int, std::string>>>{42, "text"};
     });
 
+    auto holder = [] {
+        return TaggedHolder{
+            .name = "h",
+            .ext = Point{.x = 1, .y = 2},
+            .adj = 7,
+            .in = Circle{.radius = 1.5}
+        };
+    };
     // Tags shape a keyed document; elsewhere a tagged variant travels as the
     // untagged one would.
     if constexpr(B::caps.self_describing) {
@@ -105,25 +88,14 @@ void variants(const Kit<B>& kit) {
             "internal_encodes_as_plain",
             [] { return InternalShape(Rect{.width = 2, .height = 3}); },
             [] { return RectPlain{.kind = "rect", .width = 2, .height = 3}; });
-        encodes_as(
-            kit,
-            "tagged_in_struct_encodes_as_plain",
-            [] {
-                return TaggedHolder{
-                    .name = "h",
-                    .ext = Point{.x = 1, .y = 2},
-                    .adj = 7,
-                    .in = Circle{.radius = 1.5}
-                };
-            },
-            [] {
-                return TaggedHolderPlain{
-                    .name = "h",
-                    .ext = {.point = {.x = 1, .y = 2}},
-                    .adj = {.t = "number", .c = 7},
-                    .in = {.kind = "circle", .radius = 1.5},
-                };
-            });
+        encodes_as(kit, "tagged_in_struct_encodes_as_plain", holder, [] {
+            return TaggedHolderPlain{
+                .name = "h",
+                .ext = {.point = {.x = 1, .y = 2}},
+                .adj = {.t = "number", .c = 7},
+                .in = {.kind = "circle", .radius = 1.5},
+            };
+        });
         encodes_as(
             kit,
             "default_tag_names_are_type_names",
@@ -153,25 +125,14 @@ void variants(const Kit<B>& kit) {
             [] { return InternalShape(Rect{.width = 2, .height = 3}); },
             [] { return BareFigure(Rect{.width = 2, .height = 3}); });
     }
-    encodes_as<NotHumanReadableConfig>(
-        kit,
-        "not_human_readable_ignores_tags",
-        [] {
-            return TaggedHolder{
-                .name = "h",
-                .ext = Point{.x = 1, .y = 2},
-                .adj = 7,
-                .in = Circle{.radius = 1.5}
-            };
-        },
-        [] {
-            return TaggedHolderBare{
-                .name = "h",
-                .ext = Point{.x = 1, .y = 2},
-                .adj = 7,
-                .in = Circle{.radius = 1.5}
-            };
-        });
+    encodes_as<NotHumanReadableConfig>(kit, "not_human_readable_ignores_tags", holder, [] {
+        return TaggedHolderBare{
+            .name = "h",
+            .ext = Point{.x = 1, .y = 2},
+            .adj = 7,
+            .in = Circle{.radius = 1.5}
+        };
+    });
     roundtrip(kit, "tagged_roundtrip", [] {
         TaggedHolder none{.name = "a", .ext = {}, .adj = {}, .in = Circle{.radius = 1.5}};
         TaggedHolder number{
@@ -180,13 +141,17 @@ void variants(const Kit<B>& kit) {
             .adj = 7,
             .in = Rect{.width = 2, .height = 3}
         };
+        TaggedHolder text{.name = "c",
+                          .ext = std::string(),
+                          .adj = std::string("text"),
+                          .in = Segment{.line_width = 5}};
         TaggedHolder point{
-            .name = "c",
+            .name = "d",
             .ext = Point{.x = 1, .y = 2},
             .adj = Point{.x = 3, .y = 4},
-            .in = Segment{.line_width = 5}
+            .in = Circle{.radius = 0}
         };
-        return std::vector<TaggedHolder>{none, number, point};
+        return std::vector<TaggedHolder>{none, number, text, point};
     });
     roundtrip(kit, "tagged_in_containers_roundtrip", [] {
         return TaggedContainers{
@@ -203,20 +168,18 @@ void variants(const Kit<B>& kit) {
     });
 
     if constexpr(B::caps.self_describing) {
-        using detail::probe_fails;
-        using detail::probes;
-
         // Tagged decoding: what a keyed document may and may not do.
         using Ints = std::map<std::string, int>;
-        probe_fails<ExternalShape>(kit,
-                                   "external_unknown_tag_fails",
-                                   [] {
-                                       return Ints{
-                                           {"bad", 42}
-                                       };
-                                   },
-                                   {.message = "unknown variant tag 'bad'", .path = "value"});
-        probe_fails<ExternalShape>(
+        read_in_field_fails<ExternalShape>(
+            kit,
+            "external_unknown_tag_fails",
+            [] {
+                return Ints{
+                    {"bad", 42}
+                };
+            },
+            {.message = "unknown variant tag 'bad'", .path = "value"});
+        read_in_field_fails<ExternalShape>(
             kit,
             "external_two_tags_fails",
             [] {
@@ -226,16 +189,16 @@ void variants(const Kit<B>& kit) {
                 };
             },
             {.message = "externally tagged variant: expected exactly one field", .path = "value"});
-        probe_fails<ExternalShape>(
+        read_in_field_fails<ExternalShape>(
             kit,
             "external_empty_object_fails",
             [] { return Empty{}; },
             {.message = "externally tagged variant: expected exactly one field", .path = "value"});
-        probe_fails<ExternalShape>(kit,
-                                   "external_not_an_object_fails",
-                                   [] { return 42; },
-                                   {.message = "", .path = "value"});
-        probes<AdjacentShape>(
+        read_in_field_fails<ExternalShape>(kit,
+                                           "external_not_an_object_fails",
+                                           [] { return 42; },
+                                           {.message = "", .path = "value"});
+        reads_in_field<AdjacentShape>(
             kit,
             "adjacent_content_before_tag_reads",
             [] {
@@ -244,12 +207,13 @@ void variants(const Kit<B>& kit) {
                     .t = "point"
                 };
             },
-            [] {
-                return AdjacentShape{
-                    Point{.x = 1, .y = 2}
-                };
-            });
-        probe_fails<AdjacentShape>(
+            [] { return AdjacentShape(Point{.x = 1, .y = 2}); });
+        reads_in_field<AdjacentShape>(
+            kit,
+            "adjacent_extra_fields_ignored",
+            [] { return AdjacentWithExtraPlain{.t = "number", .extra = true, .c = 5}; },
+            [] { return AdjacentShape{5}; });
+        read_in_field_fails<AdjacentShape>(
             kit,
             "adjacent_missing_tag_fails",
             [] {
@@ -258,7 +222,7 @@ void variants(const Kit<B>& kit) {
                 };
             },
             {.message = "adjacently tagged variant: missing tag field", .path = "value"});
-        probe_fails<AdjacentShape>(
+        read_in_field_fails<AdjacentShape>(
             kit,
             "adjacent_missing_content_fails",
             [] {
@@ -267,23 +231,26 @@ void variants(const Kit<B>& kit) {
                 };
             },
             {.message = "adjacently tagged variant: missing content field", .path = "value"});
-        probe_fails<AdjacentShape>(kit,
-                                   "adjacent_unknown_tag_fails",
-                                   [] { return AdjacentPlain<int>{.t = "bad", .c = 42}; },
-                                   {.message = "unknown variant tag 'bad'", .path = "value"});
-        probe_fails<AdjacentShape>(kit,
-                                   "adjacent_unknown_tag_after_content_fails",
-                                   [] { return AdjacentContentFirst<int>{.c = 42, .t = "bad"}; },
-                                   {.message = "unknown variant tag 'bad'", .path = "value"});
-        probe_fails<AdjacentShape>(kit,
-                                   "adjacent_not_an_object_fails",
-                                   [] { return 42; },
-                                   {.message = "", .path = "value"});
-        probe_fails<InternalShape>(kit,
-                                   "internal_unknown_tag_fails",
-                                   [] { return CirclePlain{.kind = "pentagon", .radius = 5}; },
-                                   {.message = "unknown variant tag 'pentagon'", .path = "value"});
-        probe_fails<InternalShape>(
+        read_in_field_fails<AdjacentShape>(
+            kit,
+            "adjacent_unknown_tag_fails",
+            [] { return AdjacentPlain<int>{.t = "bad", .c = 42}; },
+            {.message = "unknown variant tag 'bad'", .path = "value"});
+        read_in_field_fails<AdjacentShape>(
+            kit,
+            "adjacent_unknown_tag_after_content_fails",
+            [] { return AdjacentContentFirst<int>{.c = 42, .t = "bad"}; },
+            {.message = "unknown variant tag 'bad'", .path = "value"});
+        read_in_field_fails<AdjacentShape>(kit,
+                                           "adjacent_not_an_object_fails",
+                                           [] { return 42; },
+                                           {.message = "", .path = "value"});
+        read_in_field_fails<InternalShape>(
+            kit,
+            "internal_unknown_tag_fails",
+            [] { return CirclePlain{.kind = "pentagon", .radius = 5}; },
+            {.message = "unknown variant tag 'pentagon'", .path = "value"});
+        read_in_field_fails<InternalShape>(
             kit,
             "internal_missing_tag_fails",
             [] {
@@ -292,38 +259,50 @@ void variants(const Kit<B>& kit) {
                 };
             },
             {.message = "internally tagged variant: missing tag field", .path = "value"});
-        probe_fails<InternalShape>(
+        read_in_field_fails<InternalShape>(
             kit,
             "internal_empty_object_fails",
             [] { return Empty{}; },
             {.message = "internally tagged variant: missing tag field", .path = "value"});
-        probe_fails<InternalShape>(kit,
-                                   "internal_tag_not_a_string_fails",
-                                   [] {
-                                       return Ints{
-                                           {"kind",   1},
-                                           {"radius", 5}
-                                       };
-                                   },
-                                   {.message = "", .path = "value"});
-        probe_fails<InternalShape>(kit,
-                                   "internal_not_an_object_fails",
-                                   [] { return 42; },
-                                   {.message = "", .path = "value"});
-        probe_fails<InternalShape>(kit,
-                                   "internal_missing_required_field_fails",
-                                   [] { return CirclePlain{.kind = "rect", .radius = 5}; },
-                                   {.message = "missing required field 'width'", .path = "value"});
-        probes<InternalShape>(
+        read_in_field_fails<InternalShape>(kit,
+                                           "internal_tag_not_a_string_fails",
+                                           [] {
+                                               return Ints{
+                                                   {"kind",   1},
+                                                   {"radius", 5}
+                                               };
+                                           },
+                                           {.message = "", .path = "value"});
+        read_in_field_fails<InternalShape>(kit,
+                                           "internal_not_an_object_fails",
+                                           [] { return 42; },
+                                           {.message = "", .path = "value"});
+        read_in_field_fails<InternalShape>(
+            kit,
+            "internal_missing_required_field_fails",
+            [] { return CirclePlain{.kind = "rect", .radius = 5}; },
+            {.message = "missing required field 'width'", .path = "value"});
+        // The tag's position among the fields does not matter.
+        reads_in_field<InternalShape>(
+            kit,
+            "internal_tag_after_fields_reads",
+            [] { return CircleTagLastPlain{.radius = 2.5, .kind = "circle"}; },
+            [] { return InternalShape(Circle{.radius = 2.5}); });
+        read_in_field_fails<InternalShape>(
+            kit,
+            "internal_unknown_tag_after_fields_fails",
+            [] { return CircleTagLastPlain{.radius = 2.5, .kind = "pentagon"}; },
+            {.message = "unknown variant tag 'pentagon'", .path = "value"});
+        reads_in_field<InternalShape>(
             kit,
             "internal_extra_field_ignored",
             [] { return CircleWithExtraPlain{.kind = "circle", .radius = 1, .extra = "x"}; },
-            [] { return InternalShape{Circle{.radius = 1}}; });
-        probes<InternalShape, CamelConfig>(
+            [] { return InternalShape(Circle{.radius = 1}); });
+        reads_in_field<InternalShape, CamelConfig>(
             kit,
             "internal_alternatives_follow_field_rename",
             [] { return SegmentCamelPlain{.kind = "segment", .lineWidth = 7}; },
-            [] { return InternalShape{Segment{.line_width = 7}}; });
+            [] { return InternalShape(Segment{.line_width = 7}); });
     }
 }
 

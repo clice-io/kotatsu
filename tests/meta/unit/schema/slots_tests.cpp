@@ -5,7 +5,6 @@
 #include <variant>
 
 #include "fixtures/attrs.h"
-#include "fixtures/enums.h"
 #include "fixtures/structs.h"
 #include "fixtures/tagged.h"
 #include "kota/zest/zest.h"

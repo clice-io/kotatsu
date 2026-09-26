@@ -12,10 +12,10 @@
 #include <optional>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <variant>
 #include <vector>
 
-#include "fixtures/structs.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
 #include "kota/meta/repr.h"
@@ -235,16 +235,27 @@ struct SymbolPlain {
     std::string ver;
 };
 
+/// `maybe` starts engaged, so a null that did not reset it shows.
 struct ReprPlaces {
     std::vector<Relation> relations;
     std::map<Version, int> by_version;
-    std::optional<Version> maybe;
+    std::optional<Version> maybe = Version{.major = 9, .minor = 9};
 };
 
 struct ReprPlacesPlain {
     std::vector<std::uint32_t> relations;
     std::map<std::string, int> by_version;
     std::optional<std::string> maybe;
+};
+
+/// `stamp` starts nonzero, so a null read that did not reach Lamport's repr
+/// shows.
+struct Stamped {
+    Lamport stamp{.tick = 9};
+};
+
+struct StampedPlain {
+    std::optional<std::uint32_t> stamp;
 };
 
 struct DynamicPair {

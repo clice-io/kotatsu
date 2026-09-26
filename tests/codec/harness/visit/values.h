@@ -8,6 +8,7 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -48,6 +49,8 @@ void values(const Kit<B>& kit) {
     roundtrip(kit, "char_roundtrip", [] { return 'Z'; });
     roundtrip(kit, "string_roundtrip", [] { return std::string("hello"); });
     roundtrip(kit, "enum_roundtrip", [] { return SignedEnum::neg; });
+    roundtrip(kit, "unsigned_enum_roundtrip", [] { return UInt8Enum::c; });
+    roundtrip(kit, "char_enum_roundtrip", [] { return Letter::z; });
     roundtrip(kit, "monostate_roundtrip", [] { return std::monostate{}; });
 
     roundtrip(kit, "scalars_typical_roundtrip", [] { return Scalars::typical(); });
@@ -140,6 +143,34 @@ void values(const Kit<B>& kit) {
                                           "null_from_non_null_fails",
                                           [] { return Field<int>{0}; },
                                           {.message = "", .path = "value"});
+        read_fails<Field<Point>>(kit,
+                                 "struct_from_array_fails",
+                                 [] {
+                                     return Field<std::vector<int>>{
+                                         {1, 2}
+                                     };
+                                 },
+                                 {.message = "", .path = "value"});
+        read_fails<Field<std::vector<int>>>(kit,
+                                            "sequence_from_object_fails",
+                                            [] {
+                                                return Field<Point>{
+                                                    {.x = 1, .y = 2}
+                                                };
+                                            },
+                                            {.message = "", .path = "value"});
+        read_fails<Field<std::map<std::string, int>>>(kit,
+                                                      "map_from_array_fails",
+                                                      [] {
+                                                          return Field<std::vector<int>>{
+                                                              {1, 2}
+                                                          };
+                                                      },
+                                                      {.message = "", .path = "value"});
+        read_fails<Field<std::optional<int>>>(kit,
+                                              "optional_payload_mismatch_fails",
+                                              [] { return Field<std::string>{"x"}; },
+                                              {.message = "", .path = "value"});
     }
 }
 

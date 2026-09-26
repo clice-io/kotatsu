@@ -45,107 +45,85 @@ void attrs(const Kit<B>& kit) {
         return SkipsRawPointer{.id = 7, .raw = nullptr};
     });
 
-    encodes_as(
-        kit,
-        "rename_all_encodes_as_plain",
-        [] {
-            return RenamedRoot{
-                {.user_name = 7, .display_name = "ada"}
-            };
-        },
-        [] { return RenameTargetCamel{.userName = 7, .displayName = "ada"}; });
-    roundtrip(kit, "rename_all_roundtrip", [] {
+    auto renamed_root = [] {
         return RenamedRoot{
             {.user_name = 7, .display_name = "ada"}
         };
+    };
+    encodes_as(kit, "rename_all_encodes_as_plain", renamed_root, [] {
+        return RenameTargetCamel{.userName = 7, .displayName = "ada"};
     });
-    encodes_as(
-        kit,
-        "rename_all_on_field_encodes_as_plain",
-        [] {
-            return Field<meta::annotate<UpperSnakeStrictTag>::type<RenameTarget>>{
-                {{.user_name = 7, .display_name = "ada"}}};
-        },
-        [] {
-            return Field<RenameTargetUpperSnake>{
-                {.USER_NAME = 7, .DISPLAY_NAME = "ada"}
-            };
-        });
-    roundtrip(kit, "rename_all_on_field_roundtrip", [] {
-        return Field<meta::annotate<UpperSnakeStrictTag>::type<RenameTarget>>{
-            {{.user_name = 7, .display_name = "ada"}}};
+    roundtrip(kit, "rename_all_roundtrip", renamed_root);
+    using SnakeStrict = meta::annotate<UpperSnakeStrictTag>::type<RenameTarget>;
+    auto policy_on_field = [] {
+        return Field<SnakeStrict>{{{.user_name = 7, .display_name = "ada"}}};
+    };
+    encodes_as(kit, "rename_all_on_field_encodes_as_plain", policy_on_field, [] {
+        return Field<RenameTargetUpperSnake>{
+            {.USER_NAME = 7, .DISPLAY_NAME = "ada"}
+        };
     });
+    roundtrip(kit, "rename_all_on_field_roundtrip", policy_on_field);
     encodes_as<CamelConfig>(
         kit,
         "field_rename_encodes_as_plain",
         [] { return RenameAllTarget{.user_name = 7, .total_score = 1.5F, .item_id = "abc"}; },
         [] { return RenameAllTargetCamel{.userName = 7, .totalScore = 1.5F, .itemId = "abc"}; });
-    encodes_as<CamelConfig>(
-        kit,
-        "field_rename_reaches_nested_structs",
-        [] {
-            return NestedRenameTarget{
-                .request_id = 1,
-                .nested_info = {.user_name = 7, .total_score = 1.5F, .item_id = "abc"},
-            };
-        },
-        [] {
-            return NestedRenameTargetCamel{
-                .requestId = 1,
-                .nestedInfo = {.userName = 7, .totalScore = 1.5F, .itemId = "abc"},
-            };
-        });
-    roundtrip<CamelConfig>(kit, "field_rename_roundtrip", [] {
+    auto nested_rename = [] {
         return NestedRenameTarget{
             .request_id = 1,
             .nested_info = {.user_name = 7, .total_score = 1.5F, .item_id = "abc"},
         };
+    };
+    encodes_as<CamelConfig>(kit, "field_rename_reaches_nested_structs", nested_rename, [] {
+        return NestedRenameTargetCamel{
+            .requestId = 1,
+            .nestedInfo = {.userName = 7, .totalScore = 1.5F, .itemId = "abc"},
+        };
     });
-    encodes_as<CamelConfig>(
-        kit,
-        "rename_beats_field_rename",
-        [] { return MixedRenameStruct{.user_id = 7, .total_score = 1.5F, .item_name = "x"}; },
-        [] { return MixedRenameStructCamel{.ID = 7, .totalScore = 1.5F, .itemName = "x"}; });
-    reads<MixedRenameStruct, CamelConfig>(
-        kit,
-        "rename_beats_field_rename_reads",
-        [] { return MixedRenameStructCamel{.ID = 7, .totalScore = 1.5F, .itemName = "x"}; },
-        [] { return MixedRenameStruct{.user_id = 7, .total_score = 1.5F, .item_name = "x"}; });
+    roundtrip<CamelConfig>(kit, "field_rename_roundtrip", nested_rename);
+    auto mixed_rename = [] {
+        return MixedRenameStruct{.user_id = 7, .total_score = 1.5F, .item_name = "x"};
+    };
+    auto mixed_rename_plain = [] {
+        return MixedRenameStructCamel{.ID = 7, .totalScore = 1.5F, .itemName = "x"};
+    };
+    encodes_as<CamelConfig>(kit, "rename_beats_field_rename", mixed_rename, mixed_rename_plain);
+    reads<MixedRenameStruct, CamelConfig>(kit,
+                                          "rename_beats_field_rename_reads",
+                                          mixed_rename_plain,
+                                          mixed_rename);
 
-    encodes_as(
-        kit,
-        "flatten_encodes_as_plain",
-        [] { return Outer{.x = 1, .inner = {{.a = 2, .b = 3}}, .y = 4}; },
-        [] { return OuterPlain{.x = 1, .a = 2, .b = 3, .y = 4}; });
-    reads<Outer>(
-        kit,
-        "flatten_reads",
-        [] { return OuterPlain{.x = 1, .a = 2, .b = 3, .y = 4}; },
-        [] { return Outer{.x = 1, .inner = {{.a = 2, .b = 3}}, .y = 4}; });
-    encodes_as(
-        kit,
-        "deep_flatten_encodes_as_plain",
-        [] {
-            return DeepOuter{.head = 1, .mid = {{.m = 2, .deep = {{.p = 3, .q = 4}}}}, .tail = 5};
-        },
-        [] { return DeepOuterPlain{.head = 1, .m = 2, .p = 3, .q = 4, .tail = 5}; });
-    reads<DeepOuter>(
-        kit,
-        "deep_flatten_reads",
-        [] { return DeepOuterPlain{.head = 1, .m = 2, .p = 3, .q = 4, .tail = 5}; },
-        [] {
-            return DeepOuter{.head = 1, .mid = {{.m = 2, .deep = {{.p = 3, .q = 4}}}}, .tail = 5};
-        });
-    encodes_as(
-        kit,
-        "flatten_keeps_inner_rename",
-        [] { return FlattenOuterWithChildRename{{{.a = 1, .b = 2}}}; },
-        [] { return FlattenOuterWithChildRenamePlain{.renamed_a = 1, .b = 2}; });
-    reads<FlattenOuterWithChildRename>(
-        kit,
-        "flatten_keeps_inner_rename_reads",
-        [] { return FlattenOuterWithChildRenamePlain{.renamed_a = 1, .b = 2}; },
-        [] { return FlattenOuterWithChildRename{{{.a = 1, .b = 2}}}; });
+    auto outer = [] {
+        return Outer{.x = 1, .inner = {{.a = 2, .b = 3}}, .y = 4};
+    };
+    auto outer_plain = [] {
+        return OuterPlain{.x = 1, .a = 2, .b = 3, .y = 4};
+    };
+    encodes_as(kit, "flatten_encodes_as_plain", outer, outer_plain);
+    reads<Outer>(kit, "flatten_reads", outer_plain, outer);
+    auto deep = [] {
+        return DeepOuter{.head = 1, .mid = {{.m = 2, .deep = {{.p = 3, .q = 4}}}}, .tail = 5};
+    };
+    auto deep_plain = [] {
+        return DeepOuterPlain{.head = 1, .m = 2, .p = 3, .q = 4, .tail = 5};
+    };
+    encodes_as(kit, "deep_flatten_encodes_as_plain", deep, deep_plain);
+    reads<DeepOuter>(kit, "deep_flatten_reads", deep_plain, deep);
+    auto inner_rename = [] {
+        return FlattenOuterWithChildRename{{{.a = 1, .b = 2}}};
+    };
+    auto inner_rename_plain = [] {
+        return FlattenOuterWithChildRenamePlain{.renamed_a = 1, .b = 2};
+    };
+    encodes_as(kit, "flatten_keeps_inner_rename", inner_rename, inner_rename_plain);
+    reads<FlattenOuterWithChildRename>(kit,
+                                       "flatten_keeps_inner_rename_reads",
+                                       inner_rename_plain,
+                                       inner_rename);
+    auto inner_skip_plain = [] {
+        return FlattenOuterWithChildSkipPlain{.head = 1, .keep_a = 2, .keep_c = 3};
+    };
     encodes_as(
         kit,
         "flatten_keeps_inner_skip",
@@ -155,71 +133,67 @@ void attrs(const Kit<B>& kit) {
                 .inner = {{.keep_a = 2, .drop_b = 9, .keep_c = 3}},
             };
         },
-        [] { return FlattenOuterWithChildSkipPlain{.head = 1, .keep_a = 2, .keep_c = 3}; });
-    reads<FlattenOuterWithChildSkip>(
-        kit,
-        "flatten_keeps_inner_skip_reads",
-        [] { return FlattenOuterWithChildSkipPlain{.head = 1, .keep_a = 2, .keep_c = 3}; },
-        [] {
-            return FlattenOuterWithChildSkip{
-                .head = 1,
-                .inner = {{.keep_a = 2, .drop_b = 0, .keep_c = 3}},
-            };
-        });
+        inner_skip_plain);
+    reads<FlattenOuterWithChildSkip>(kit, "flatten_keeps_inner_skip_reads", inner_skip_plain, [] {
+        return FlattenOuterWithChildSkip{
+            .head = 1,
+            .inner = {{.keep_a = 2, .drop_b = 0, .keep_c = 3}},
+        };
+    });
 
-    encodes_as(
-        kit,
-        "as_encodes_as_plain",
-        [] {
-            return AsTargets{
-                .owner = UserId("ada"),
-                .samples = Samples({1, 2}),
-                .cell = GridIndex(Point{.x = 3, .y = 4}),
-            };
-        },
-        [] {
-            return AsTargetsPlain{
-                .owner = "ada",
-                .samples = {1,      2     },
-                .cell = {.x = 3, .y = 4}
-            };
-        });
-    roundtrip(kit, "as_roundtrip", [] {
+    auto as_targets = [] {
         return AsTargets{
             .owner = UserId("ada"),
             .samples = Samples({1, 2}),
             .cell = GridIndex(Point{.x = 3, .y = 4}),
         };
+    };
+    encodes_as(kit, "as_encodes_as_plain", as_targets, [] {
+        return AsTargetsPlain{
+            .owner = "ada",
+            .samples = {1,      2     },
+            .cell = {.x = 3, .y = 4}
+        };
     });
+    roundtrip(kit, "as_roundtrip", as_targets);
     using Decimal = meta::annotation<int, meta::behavior::with<DecimalText>>;
-    encodes_as(
-        kit,
-        "with_encodes_as_plain",
-        [] { return Field<Decimal>{42}; },
-        [] { return Field<std::string>{"42"}; });
-    roundtrip(kit, "with_roundtrip", [] { return Field<Decimal>{42}; });
-    encodes_as(
-        kit,
-        "enum_string_encodes_as_plain",
-        [] { return AccessGrant{.level = Access::read_only, .count = 2}; },
-        [] { return AccessGrantPlain{.level = "readOnly", .count = 2}; });
-    roundtrip(kit, "enum_string_roundtrip", [] {
-        return AccessGrant{.level = Access::full_control, .count = 2};
+    auto decimal = [] {
+        return Field<Decimal>{42};
+    };
+    encodes_as(kit, "with_encodes_as_plain", decimal, [] { return Field<std::string>{"42"}; });
+    roundtrip(kit, "with_roundtrip", decimal);
+    auto grant = [] {
+        return AccessGrant{.level = Access::read_only, .count = 2};
+    };
+    encodes_as(kit, "enum_string_encodes_as_plain", grant, [] {
+        return AccessGrantPlain{.level = "readOnly", .count = 2};
     });
-    encodes_as(
-        kit,
-        "enum_string_root_encodes_as_plain",
-        [] { return AccessName{Access::full_control}; },
-        [] { return std::string("fullControl"); });
-    roundtrip(kit, "enum_string_root_roundtrip", [] { return AccessName{Access::full_control}; });
-    encodes_as(
-        kit,
-        "description_is_transparent",
-        [] { return Documented{.id = 7, .name = "ada"}; },
-        [] { return StrictIdName{.id = 7, .name = "ada"}; });
-    roundtrip(kit, "description_roundtrip", [] { return Documented{.id = 7, .name = "ada"}; });
+    roundtrip(kit, "enum_string_roundtrip", grant);
+    auto access_name = [] {
+        return AccessName{Access::full_control};
+    };
+    encodes_as(kit, "enum_string_root_encodes_as_plain", access_name, [] {
+        return std::string("fullControl");
+    });
+    roundtrip(kit, "enum_string_root_roundtrip", access_name);
+    auto documented = [] {
+        return Documented{.id = 7, .name = "ada"};
+    };
+    encodes_as(kit, "description_is_transparent", documented, [] {
+        return StrictIdName{.id = 7, .name = "ada"};
+    });
+    roundtrip(kit, "description_roundtrip", documented);
 
     if constexpr(B::caps.absent_fields) {
+        auto kept = [] {
+            return Skippable{
+                .id = 1,
+                .note = "n",
+                .tags = {1, 2},
+                .generation = 5,
+                .score = 7
+            };
+        };
         encodes_as(
             kit,
             "skip_if_omits_matching_fields",
@@ -233,40 +207,8 @@ void attrs(const Kit<B>& kit) {
                 };
             },
             [] { return IdOnly{.id = 1}; });
-        encodes_as(
-            kit,
-            "skip_if_keeps_other_fields",
-            [] {
-                return Skippable{
-                    .id = 1,
-                    .note = "n",
-                    .tags = {1, 2},
-                    .generation = 5,
-                    .score = 7
-                };
-            },
-            [] {
-                return SkippablePlain{
-                    .id = 1,
-                    .note = "n",
-                    .tags = {1, 2},
-                    .generation = 5,
-                    .score = 7
-                };
-            });
-        reads<Skippable>(
-            kit,
-            "skip_if_absent_fields_read_default",
-            [] { return IdOnly{.id = 1}; },
-            [] {
-                return Skippable{.id = 1,
-                                 .note = std::nullopt,
-                                 .tags = {},
-                                 .generation = 0,
-                                 .score = 0};
-            });
-        roundtrip(kit, "skip_if_roundtrip", [] {
-            return Skippable{
+        encodes_as(kit, "skip_if_keeps_other_fields", kept, [] {
+            return SkippablePlain{
                 .id = 1,
                 .note = "n",
                 .tags = {1, 2},
@@ -274,6 +216,15 @@ void attrs(const Kit<B>& kit) {
                 .score = 7
             };
         });
+        // An absent field is left as the value it decodes into holds it.
+        reads<Skippable>(
+            kit,
+            "skip_if_absent_fields_left_alone",
+            [] { return IdOnly{.id = 1}; },
+            [] {
+                return Skippable{.id = 1, .note = "kept", .tags = {9}, .generation = 7, .score = 3};
+            });
+        roundtrip(kit, "skip_if_roundtrip", kept);
     }
 
     if constexpr(B::caps.string_knobs) {
@@ -373,41 +324,33 @@ void attrs(const Kit<B>& kit) {
                                       };
                                   },
                                   {.message = "missing required field 'version'", .path = ""});
-        reads<Point>(
-            kit,
-            "unknown_field_ignored",
-            [] {
-                return Ints{
-                    {"x",     1},
-                    {"y",     2},
-                    {"extra", 3}
-                };
-            },
-            [] { return Point{.x = 1, .y = 2}; });
+        auto with_extra = [] {
+            return Ints{
+                {"x",     1},
+                {"y",     2},
+                {"extra", 3}
+            };
+        };
+        reads<Point>(kit, "unknown_field_ignored", with_extra, [] {
+            return Point{.x = 1, .y = 2};
+        });
         read_fails<StrictRoot>(
             kit,
             "unknown_field_fails",
             [] { return RenameTargetWithExtra{.user_name = 7, .display_name = "ada", .extra = 1}; },
             {.message = "unknown field 'extra'", .path = ""});
         read_fails<Point, StrictConfig>(kit,
-                                        "unknown_field_fails_under_config",
-                                        [] {
-                                            return Ints{
-                                                {"x",     1},
-                                                {"y",     2},
-                                                {"extra", 3}
-                                            };
-                                        },
+                                        "unknown_field_under_config_fails",
+                                        with_extra,
                                         {.message = "unknown field 'extra'", .path = ""});
-        read_fails<Field<meta::annotate<UpperSnakeStrictTag>::type<RenameTarget>>>(
-            kit,
-            "rename_all_on_field_denies_unknown_fails",
-            [] {
-                return Field<RenameTargetUpperSnakeWithExtra>{
-                    {.USER_NAME = 7, .DISPLAY_NAME = "ada", .EXTRA = 1}
-                };
-            },
-            {.message = "unknown field 'EXTRA'", .path = "value"});
+        read_fails<Field<SnakeStrict>>(kit,
+                                       "rename_all_on_field_denies_unknown_fails",
+                                       [] {
+                                           return Field<RenameTargetUpperSnakeWithExtra>{
+                                               {.USER_NAME = 7, .DISPLAY_NAME = "ada", .EXTRA = 1}
+                                           };
+                                       },
+                                       {.message = "unknown field 'EXTRA'", .path = "value"});
         encodes_as(
             kit,
             "rename_all_on_untagged_variant_is_inert",
@@ -449,21 +392,18 @@ void attrs(const Kit<B>& kit) {
 
         // Leaf errors are the backend's to word; their paths are the protocol's.
         using Texts = std::map<std::string, std::string>;
+        auto texts_for_point = [] {
+            return Field<Texts>{
+                {{"x", "one"}, {"y", "two"}}
+            };
+        };
         read_fails<Field<Point>>(kit,
                                  "nested_field_mismatch_fails",
-                                 [] {
-                                     return Field<Texts>{
-                                         {{"x", "one"}, {"y", "two"}}
-                                     };
-                                 },
+                                 texts_for_point,
                                  {.message = "", .path = "value.x"});
         read_fails<Field<Point>, NoPathConfig>(kit,
-                                               "detailed_error_off_has_no_path",
-                                               [] {
-                                                   return Field<Texts>{
-                                                       {{"x", "one"}, {"y", "two"}}
-                                                   };
-                                               },
+                                               "detailed_error_off_fails_without_path",
+                                               texts_for_point,
                                                {.message = "", .path = ""});
         using IntOrText = std::variant<int, std::string>;
         read_fails<Field<std::vector<int>>>(kit,
@@ -492,23 +432,20 @@ void attrs(const Kit<B>& kit) {
             "map_key_negative_unsigned_fails",
             [] { return Field<Ints>{{{"-1", 1}}}; },
             {.message = "cannot parse map key '-1' as unsigned integer", .path = "value[0]"});
+        auto wide_key = [] {
+            return Field<Ints>{
+                {{"1", 1}, {"300", 2}}
+            };
+        };
         read_fails<Field<std::map<std::int8_t, int>>>(
             kit,
             "map_key_out_of_integer_range_fails",
-            [] {
-                return Field<Ints>{
-                    {{"1", 1}, {"300", 2}}
-                };
-            },
+            wide_key,
             {.message = "map key '300' out of integer range", .path = "value[1]"});
         read_fails<Field<std::map<std::uint8_t, int>>>(
             kit,
             "map_key_out_of_unsigned_range_fails",
-            [] {
-                return Field<Ints>{
-                    {{"1", 1}, {"300", 2}}
-                };
-            },
+            wide_key,
             {.message = "map key '300' out of unsigned integer range", .path = "value[1]"});
         read_fails<Field<std::tuple<int, int>>>(
             kit,

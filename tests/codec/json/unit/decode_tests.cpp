@@ -76,6 +76,10 @@ ZEST_CASE(char_beyond_255_fails) {
     auto status = json::from_string(R"("Ā")", out);
     ASSERT(!status);
     EXPECT(status.error().message == "character codepoint does not fit the target character type");
+    auto three_bytes = json::from_string(R"("€")", out);
+    ASSERT(!three_bytes);
+    EXPECT(three_bytes.error().message ==
+           "character codepoint does not fit the target character type");
 }
 
 ZEST_CASE(char_from_several_characters_fails) {
@@ -93,7 +97,7 @@ ZEST_CASE(byte_out_of_range_fails) {
     EXPECT(status.error().message == "byte value out of range");
 }
 
-ZEST_CASE(scalar_root_rejects_trailing_content) {
+ZEST_CASE(scalar_root_trailing_content_fails) {
     int out = 0;
     auto status = json::from_string("1 2", out);
     ASSERT(!status);
@@ -142,7 +146,7 @@ ZEST_CASE(dyn_value_reads) {
     EXPECT(json::to_string(*nested) == R"([1,"two",true,null,[3,{"k":[]}]])");
 }
 
-ZEST_CASE(type_mismatch_has_location) {
+ZEST_CASE(located_type_mismatch_fails) {
     test::Person out{};
     auto status = json::from_string(R"({
   "name": "alice",
@@ -158,7 +162,7 @@ ZEST_CASE(type_mismatch_has_location) {
     EXPECT(status.error().location->byte_offset == 30U);
 }
 
-ZEST_CASE(error_text_has_path_and_location) {
+ZEST_CASE(nested_type_mismatch_text_fails) {
     test::Person out{};
     auto status =
         json::from_string(R"({"name": "alice", "age": 30, "addr": {"city": "NY", "zip": "wrong"}})",

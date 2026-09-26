@@ -414,9 +414,10 @@ struct AccessGrantPlain {
     int count;
 };
 
+/// Skips a negative value when encoding; decoding never skips.
 struct IsNegative {
-    constexpr bool operator()(const int& v) const {
-        return v < 0;
+    constexpr bool operator()(const int& value, bool is_serialize) const {
+        return is_serialize && value < 0;
     }
 };
 
@@ -437,13 +438,15 @@ struct SkipIfNegative {
     constexpr static auto spec = meta::make_spec(meta::dsl::skip_if = meta::dsl::type<IsNegative>);
 };
 
-/// Every skip condition: the built-in ones and a predicate.
+/// Every skip condition: the built-in ones and a predicate. The initializers
+/// are not what a skip condition matches, so a decoder that resets a field it
+/// did not read shows.
 struct Skippable {
     int id;
-    meta::annotate<SkipWhenNone>::type<std::optional<std::string>> note;
-    meta::annotate<SkipWhenEmpty>::type<std::vector<int>> tags;
-    meta::annotate<SkipWhenDefault>::type<int> generation;
-    meta::annotate<SkipIfNegative>::type<int> score;
+    meta::annotate<SkipWhenNone>::type<std::optional<std::string>> note = "kept";
+    meta::annotate<SkipWhenEmpty>::type<std::vector<int>> tags = std::vector<int>{9};
+    meta::annotate<SkipWhenDefault>::type<int> generation = 7;
+    meta::annotate<SkipIfNegative>::type<int> score = 3;
 };
 
 struct SkippablePlain {

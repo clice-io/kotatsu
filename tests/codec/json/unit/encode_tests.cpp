@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "fixtures/enums.h"
 #include "fixtures/scalars.h"
 #include "fixtures/structs.h"
 #include "kota/zest/zest.h"
@@ -16,11 +17,6 @@
 namespace kota::codec {
 
 namespace {
-
-enum class Letter : char {
-    a = 'A',
-    z = 'Z',
-};
 
 struct Spliced {
     int id = 0;
@@ -64,7 +60,11 @@ ZEST_CASE(char_writes_its_codepoint) {
 }
 
 ZEST_CASE(char_backed_enum_writes_its_integer) {
-    EXPECT(json::to_string(Letter::a) == "65");
+    EXPECT(json::to_string(test::Letter::a) == "65");
+}
+
+ZEST_CASE(zero_writes_as_a_float) {
+    EXPECT(json::to_string(0.0) == "0.0");
 }
 
 ZEST_CASE(non_finite_writes_null) {
@@ -102,7 +102,7 @@ ZEST_CASE(prettify_indents) {
 )");
 }
 
-ZEST_CASE(prettify_rejects_invalid_text) {
+ZEST_CASE(prettify_invalid_text_fails) {
     auto pretty = json::prettify(R"({"a":)");
     ASSERT(!pretty);
     EXPECT(zest::starts_with(pretty.error().message, "TAPE_ERROR"));

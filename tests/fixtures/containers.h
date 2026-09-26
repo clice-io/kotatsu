@@ -26,35 +26,6 @@
 
 namespace kota::test {
 
-using VectorInt = std::vector<int>;
-using StdArrayInt3 = std::array<int, 3>;
-using DequeInt = std::deque<int>;
-
-using SetInt = std::set<int>;
-using UnorderedSetInt = std::unordered_set<int>;
-
-using MapStringInt = std::map<std::string, int>;
-using UnorderedMapStringInt = std::unordered_map<std::string, int>;
-using MultimapStringInt = std::multimap<std::string, int>;
-
-using OptionalInt = std::optional<int>;
-using OptionalOptionalInt = std::optional<std::optional<int>>;
-using UniquePtrInt = std::unique_ptr<int>;
-using SharedPtrString = std::shared_ptr<std::string>;
-
-using PairIntFloat = std::pair<int, float>;
-using TupleInt = std::tuple<int>;
-using TupleEmpty = std::tuple<>;
-using TupleIntDoubleString = std::tuple<int, double, std::string>;
-
-using VariantIntString = std::variant<int, std::string>;
-using VariantSingle = std::variant<int>;
-
-using VectorOfOptional = std::vector<std::optional<int>>;
-using MapToVector = std::map<std::string, std::vector<int>>;
-using SetOfVectorString = std::set<std::vector<std::string>>;
-using UniquePtrVector = std::unique_ptr<std::vector<int>>;
-
 /// Smart pointers equal by what they point to. meta::eq compares pointers by
 /// address, so fixtures holding them define operator== through this.
 template <typename Pointer>
