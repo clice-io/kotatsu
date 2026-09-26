@@ -151,7 +151,15 @@ ZEST_CASE(char_values) {
     EXPECT(to_string('\\') == R"('\\')");
     EXPECT(to_string('\n') == R"('\n')");
     EXPECT(to_string('\0') == R"('\0')");
+    EXPECT(to_string('\x01') == R"('\x01')");
 };
+
+ZEST_CASE(char_writes_its_codepoint) {
+    // The char's value, 0-255, is the codepoint, in UTF-8 as json writes it.
+    EXPECT(to_string(static_cast<char>(0xB5)) == "'µ'");
+    EXPECT(to_string(static_cast<char>(0xE9)) == "'é'");
+    EXPECT(to_string(static_cast<char>(0xFF)) == "'ÿ'");
+}
 
 ZEST_CASE(bytes_values) {
     std::byte data[] = {std::byte{0x00}, std::byte{0xab}, std::byte{0xff}};

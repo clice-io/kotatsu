@@ -109,13 +109,20 @@ struct Formatter {
             case '\r': out += "\\r"; break;
             case '\t': out += "\\t"; break;
             case '\0': out += "\\0"; break;
-            default:
-                if(static_cast<unsigned char>(c) < 0x20) {
-                    out += std::format("\\x{:02x}", static_cast<unsigned char>(c));
-                } else {
+            default: {
+                // The char's value, 0-255, is its codepoint, which the text
+                // holds in UTF-8 as the text codecs write it.
+                auto codepoint = static_cast<unsigned char>(c);
+                if(codepoint < 0x20) {
+                    out += std::format("\\x{:02x}", codepoint);
+                } else if(codepoint < 0x80) {
                     out += c;
+                } else {
+                    out += static_cast<char>(0xC0 | (codepoint >> 6));
+                    out += static_cast<char>(0x80 | (codepoint & 0x3F));
                 }
                 break;
+            }
         }
         out += '\'';
     }
