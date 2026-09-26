@@ -120,7 +120,7 @@ struct KeyCaptureVisitor;
 struct RootVisitor;
 
 template <typename Body>
-inline auto two_pass(builder_t& fbb, Body&& body) -> table_offset_t;
+inline bool two_pass(builder_t& fbb, Body&& body, uoffset_t& out_offset);
 
 struct AllocFieldVisitor : detail::VisitorBase {
     builder_t& fbb;
@@ -734,19 +734,19 @@ private:
     }
 };
 
+/// Writes the table body() describes: one pass allocates its children, the
+/// next writes its slots. A failure in either pass fails the encode; the
+/// table is closed either way, so the builder stays balanced.
 template <typename Body>
-auto two_pass(builder_t& fbb, Body&& body) -> table_offset_t {
+bool two_pass(builder_t& fbb, Body&& body, uoffset_t& out_offset) {
     AllocTableVisitor av{.fbb = fbb};
-    if(!body(av))
-        return table_offset_t{0};
+    KOTA_CODEC_TRY(body(av));
 
     auto start = fbb.StartTable();
     WriteTableVisitor wv{.fbb = fbb, .offsets = av.offsets};
-    if(!body(wv)) {
-        fbb.EndTable(start);
-        return table_offset_t{0};
-    }
-    return table_offset_t(fbb.EndTable(start));
+    const bool written = body(wv);
+    out_offset = fbb.EndTable(start);
+    return written;
 }
 
 /// The declared key type of a map-kind container.
@@ -785,9 +785,9 @@ inline bool
     WriteFieldVisitor payload_write{.fbb = fbb,
                                     .sid = payload_slot,
                                     .stored_offset = payload_alloc.stored_offset};
-    body(payload_write);
+    const bool written = body(payload_write);
     out_offset = fbb.EndTable(start);
-    return true;
+    return written;
 }
 
 template <typename Container, typename Body>
@@ -852,9 +852,7 @@ bool AllocFieldVisitor::visit_struct(const T&, Body&& body) {
         return true;
     } else {
         detail::assert_fields_reflected<T>();
-        auto off = two_pass(fbb, std::forward<Body>(body));
-        stored_offset = off.o;
-        return true;
+        return two_pass(fbb, std::forward<Body>(body), stored_offset);
     }
 }
 
@@ -865,9 +863,7 @@ bool AllocFieldVisitor::visit_seq(const Container& c, Body&& body) {
 
 template <typename T, typename Body>
 bool AllocFieldVisitor::visit_tuple(const T&, Body&& body) {
-    auto off = two_pass(fbb, std::forward<Body>(body));
-    stored_offset = off.o;
-    return true;
+    return two_pass(fbb, std::forward<Body>(body), stored_offset);
 }
 
 template <typename Container, typename Body>
@@ -883,15 +879,17 @@ bool AllocFieldVisitor::visit_variant(std::size_t index, Body&& body) {
 template <typename T, typename Body>
 bool TableElemVisitor::visit_struct(const T&, Body&& body) {
     detail::assert_fields_reflected<T>();
-    auto off = two_pass(fbb, std::forward<Body>(body));
-    table_offsets.push_back(off);
+    uoffset_t off = 0;
+    KOTA_CODEC_TRY(two_pass(fbb, std::forward<Body>(body), off));
+    table_offsets.push_back(table_offset_t(off));
     return true;
 }
 
 template <typename T, typename Body>
 bool TableElemVisitor::visit_tuple(const T&, Body&& body) {
-    auto off = two_pass(fbb, std::forward<Body>(body));
-    table_offsets.push_back(off);
+    uoffset_t off = 0;
+    KOTA_CODEC_TRY(two_pass(fbb, std::forward<Body>(body), off));
+    table_offsets.push_back(table_offset_t(off));
     return true;
 }
 
@@ -931,24 +929,27 @@ bool MapEntryCollector<Key>::visit_entry(KF&& key_fn, VF&& value_fn) {
     KeyCaptureVisitor<Key> capture;
     KOTA_CODEC_TRY(key_fn(capture));
 
-    auto table_off = two_pass(fbb, [&](auto& sv) -> bool {
+    auto entry = [&](auto& sv) -> bool {
         KOTA_CODEC_TRY(sv.visit_field(std::integral_constant<std::size_t, 0>{},
                                       std::string_view{"key"},
                                       [&](auto& kv) -> bool { return key_fn(kv); }));
-        KOTA_CODEC_TRY(sv.visit_field(std::integral_constant<std::size_t, 1>{},
-                                      std::string_view{"value"},
-                                      [&](auto& vv) -> bool { return value_fn(vv); }));
-        return true;
-    });
+        return sv.visit_field(std::integral_constant<std::size_t, 1>{},
+                              std::string_view{"value"},
+                              [&](auto& vv) -> bool { return value_fn(vv); });
+    };
+    uoffset_t table_off = 0;
+    KOTA_CODEC_TRY(two_pass(fbb, entry, table_off));
 
-    entries.emplace_back(std::move(capture.captured), table_off);
+    entries.emplace_back(std::move(capture.captured), table_offset_t(table_off));
     return true;
 }
 
 template <typename T, typename Body>
 bool RootVisitor::visit_struct(const T&, Body&& body) {
     detail::assert_fields_reflected<T>();
-    root_off = two_pass(fbb, std::forward<Body>(body));
+    uoffset_t off = 0;
+    KOTA_CODEC_TRY(two_pass(fbb, std::forward<Body>(body), off));
+    root_off = table_offset_t(off);
     return true;
 }
 
@@ -965,7 +966,9 @@ bool RootVisitor::visit_seq(const Container& c, Body&& body) {
 
 template <typename T, typename Body>
 bool RootVisitor::visit_tuple(const T&, Body&& body) {
-    root_off = two_pass(fbb, std::forward<Body>(body));
+    uoffset_t off = 0;
+    KOTA_CODEC_TRY(two_pass(fbb, std::forward<Body>(body), off));
+    root_off = table_offset_t(off);
     return true;
 }
 

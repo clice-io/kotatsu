@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <list>
 #include <map>
 #include <memory>
@@ -1754,6 +1755,50 @@ ZEST_CASE(from_verified_bytes_wraps_without_reverifying) {
     auto bytes = std::span<const std::byte>(reinterpret_cast<const std::byte*>(encoded->data()),
                                             encoded->size());
     EXPECT(table_view<person>::from_verified_bytes(bytes)[&person::id] == 7);
+}
+
+struct nan_error_config {
+    constexpr static auto nan_repr = codec::nan_repr::Error;
+};
+
+/// A string keeps it a table, whose fields the protocol visits one by one.
+struct labelled_reading {
+    double value = 0;
+    std::string unit;
+};
+
+struct reading_log {
+    std::vector<labelled_reading> readings;
+    std::map<std::string, labelled_reading> by_name;
+};
+
+ZEST_CASE(nested_table_encode_error_fails) {
+    // An error inside a nested table fails the encode instead of leaving an
+    // empty offset for the builder to trip over.
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const labelled_reading bad{.value = nan, .unit = "c"};
+
+    auto in_element = to_bytes<nan_error_config>(reading_log{
+        .readings = {{}, bad},
+        .by_name = {}
+    });
+    ASSERT(!in_element);
+    EXPECT(in_element.error().message == "NaN or Infinity is not allowed");
+    EXPECT(in_element.error().format_path() == "readings[1].value");
+
+    auto in_map_value =
+        to_bytes<nan_error_config>(reading_log{.readings = {}, .by_name = {{"a", bad}}});
+    ASSERT(!in_map_value);
+    EXPECT(in_map_value.error().message == "NaN or Infinity is not allowed");
+
+    auto in_root_tuple = to_bytes<nan_error_config>(std::tuple<int, labelled_reading>{1, bad});
+    ASSERT(!in_root_tuple);
+    EXPECT(in_root_tuple.error().message == "NaN or Infinity is not allowed");
+    EXPECT(in_root_tuple.error().format_path() == "[1].value");
+
+    auto at_root = to_bytes<nan_error_config>(bad);
+    ASSERT(!at_root);
+    EXPECT(at_root.error().format_path() == "value");
 }
 
 ZEST_CASE(struct_keyed_map_empty_and_single_entry) {
