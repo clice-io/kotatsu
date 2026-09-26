@@ -1,7 +1,9 @@
 #pragma once
 
-// What system tests take from the operating system: temporary directories,
-// raw pipes, and libuv's thread pool held busy.
+// What system tests take from the operating system without kota::async:
+// TempDir, read_file() and write_file(), stdin_reader() for a child that
+// runs until its stdin closes, create_pipe(), close_fd() and write_fd() on
+// raw descriptors, and BusyPool, which holds libuv's thread pool busy.
 
 #include <algorithm>
 #include <atomic>
@@ -119,29 +121,10 @@ inline ssize_t write_fd(int fd, const char* data, std::size_t len) {
 }
 #endif
 
-/// Threads in libuv's pool, read the way libuv reads UV_THREADPOOL_SIZE.
-inline int threadpool_size() {
-#ifdef _WIN32
-    char* value = nullptr;
-    std::size_t length = 0;
-    if(_dupenv_s(&value, &length, "UV_THREADPOOL_SIZE") != 0 || value == nullptr) {
-        return 4;
-    }
-    auto threads = static_cast<unsigned>(std::atoi(value));
-    std::free(value);
-#else
-    const char* value = std::getenv("UV_THREADPOOL_SIZE");
-    if(value == nullptr) {
-        return 4;
-    }
-    auto threads = static_cast<unsigned>(std::atoi(value));
-#endif
-    return static_cast<int>(std::clamp(threads, 1U, 1024U));
-}
-
 /// Keeps every thread of libuv's pool busy until release(), so that work
 /// queued meanwhile stays in the queue, where cancelling it dequeues it.
-struct BusyPool {
+class BusyPool {
+public:
     /// Takes every pool thread and sets `busy` once all are taken; ends once
     /// release() has let them go. Cancelling it releases them too.
     task<> hold(event& busy) {
@@ -169,8 +152,29 @@ struct BusyPool {
         }
     }
 
+private:
     std::latch gate{1};
     std::atomic<bool> released = false;
+
+    /// Threads in libuv's pool, read the way libuv reads UV_THREADPOOL_SIZE.
+    static int threadpool_size() {
+#ifdef _WIN32
+        char* value = nullptr;
+        std::size_t length = 0;
+        if(_dupenv_s(&value, &length, "UV_THREADPOOL_SIZE") != 0 || value == nullptr) {
+            return 4;
+        }
+        auto threads = static_cast<unsigned>(std::atoi(value));
+        std::free(value);
+#else
+        const char* value = std::getenv("UV_THREADPOOL_SIZE");
+        if(value == nullptr) {
+            return 4;
+        }
+        auto threads = static_cast<unsigned>(std::atoi(value));
+#endif
+        return static_cast<int>(std::clamp(threads, 1U, 1024U));
+    }
 };
 
 }  // namespace kota::test
