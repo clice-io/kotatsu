@@ -129,6 +129,42 @@ ZEST_CASE(recv_after_drained_socket_waits_for_next_datagram) {
     EXPECT(received->second == "second");
 }
 
+// The option flags are libuv enumerators, which #ifdef never saw: every
+// option used to fail with function_not_implemented.
+ZEST_CASE(options_are_honoured) {
+    auto first = udp::create(loop);
+    auto second = udp::create(loop);
+    ASSERT(first);
+    ASSERT(second);
+    udp::bind_options shared(false, true);
+    ASSERT(!first->bind("127.0.0.1", 0, shared));
+    auto endpoint = first->getsockname();
+    ASSERT(endpoint);
+    EXPECT(!second->bind("127.0.0.1", endpoint->port, shared));
+
+    auto batched = udp::create(udp::create_options(false, true), loop);
+    ASSERT(batched);
+    ASSERT(!batched->bind("127.0.0.1", 0));
+    auto batched_endpoint = batched->getsockname();
+    ASSERT(batched_endpoint);
+
+    auto exchange = [&]() -> task<udp::recv_result, error> {
+        co_await first->send(std::string_view("batched"), "127.0.0.1", batched_endpoint->port)
+            .or_fail();
+        auto received = co_await batched->recv().or_fail();
+        event_loop::current().stop();
+        co_return received;
+    };
+
+    auto worker = exchange();
+    schedule_all(worker);
+
+    auto received = worker.result();
+    ASSERT(received);
+    EXPECT(received->data == "batched");
+    EXPECT(received->flags.mmsg_chunk == batched->using_recvmmsg());
+}
+
 };  // ZEST_SUITE(async_io_udp)
 
 }  // namespace kota

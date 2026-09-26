@@ -33,73 +33,30 @@ static udp::Self::pointer make_udp_self() {
 }
 
 static result<unsigned int> to_uv_udp_init_flags(const udp::create_options& options) {
-    unsigned int out = 0;
-#ifdef UV_UDP_IPV6ONLY
-    if(options.ipv6_only) {
-        out |= UV_UDP_IPV6ONLY;
-    }
-#else
+    // uv_udp_init_ex() reads the low byte of its flags as the address family
+    // and has no IPv6-only flag; that one only exists for bind().
     if(options.ipv6_only) {
         return outcome_error(error::function_not_implemented);
     }
-#endif
-#ifdef UV_UDP_RECVMMSG
-    if(options.recvmmsg) {
-        out |= UV_UDP_RECVMMSG;
-    }
-#else
-    if(options.recvmmsg) {
-        return outcome_error(error::function_not_implemented);
-    }
-#endif
-    return out;
+    return options.recvmmsg ? static_cast<unsigned int>(UV_UDP_RECVMMSG) : 0U;
 }
 
-static result<unsigned int> to_uv_udp_bind_flags(const udp::bind_options& options) {
+static unsigned int to_uv_udp_bind_flags(const udp::bind_options& options) {
     unsigned int out = 0;
-#ifdef UV_UDP_IPV6ONLY
     if(options.ipv6_only) {
         out |= UV_UDP_IPV6ONLY;
     }
-#else
-    if(options.ipv6_only) {
-        return outcome_error(error::function_not_implemented);
-    }
-#endif
-#ifdef UV_UDP_REUSEADDR
     if(options.reuse_addr) {
         out |= UV_UDP_REUSEADDR;
     }
-#else
-    if(options.reuse_addr) {
-        return outcome_error(error::function_not_implemented);
-    }
-#endif
-#ifdef UV_UDP_REUSEPORT
     if(options.reuse_port) {
         out |= UV_UDP_REUSEPORT;
     }
-#else
-    if(options.reuse_port) {
-        return outcome_error(error::function_not_implemented);
-    }
-#endif
     return out;
 }
 
-static udp::recv_flags to_udp_recv_flags([[maybe_unused]] unsigned flags) {
-    udp::recv_flags out{};
-#ifdef UV_UDP_PARTIAL
-    if((flags & UV_UDP_PARTIAL) != 0) {
-        out.partial = true;
-    }
-#endif
-#ifdef UV_UDP_MMSG_CHUNK
-    if((flags & UV_UDP_MMSG_CHUNK) != 0) {
-        out.mmsg_chunk = true;
-    }
-#endif
-    return out;
+static udp::recv_flags to_udp_recv_flags(unsigned flags) {
+    return udp::recv_flags((flags & UV_UDP_PARTIAL) != 0, (flags & UV_UDP_MMSG_CHUNK) != 0);
 }
 
 struct udp_recv_await : uv::await_op<udp_recv_await> {
@@ -379,18 +336,13 @@ error udp::bind(std::string_view host, int port, bind_options options) {
         return error::invalid_argument;
     }
 
-    auto uv_flags = to_uv_udp_bind_flags(options);
-    if(!uv_flags) {
-        return uv_flags.error();
-    }
-
     auto resolved = uv::resolve_addr(host, port);
     if(!resolved) {
         return resolved.error();
     }
 
     const sockaddr* addr = reinterpret_cast<const sockaddr*>(&resolved->storage);
-    if(auto err = uv::udp_bind(self->handle, addr, uv_flags.value())) {
+    if(auto err = uv::udp_bind(self->handle, addr, to_uv_udp_bind_flags(options))) {
         return err;
     }
 

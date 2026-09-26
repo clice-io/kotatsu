@@ -58,7 +58,8 @@ public:
     };
 
     struct create_options {
-        /// Restrict socket to IPv6 only (ignore IPv4-mapped addresses).
+        /// Not supported: create() fails with function_not_implemented when
+        /// set. Pass bind_options::ipv6_only to bind() instead.
         bool ipv6_only;
 
         /// Enable recvmmsg batching when supported.

@@ -438,6 +438,26 @@ ZEST_CASE(stop, serial = true) {
     EXPECT(task2->is_failed());
 }
 
+// UV_PIPE_NO_TRUNCATE is a libuv enumerator, which #ifdef never saw: the
+// option used to fail with function_not_implemented.
+ZEST_CASE(no_truncate_option_is_honoured) {
+#ifdef _WIN32
+    const std::string name = "\\\\.\\pipe\\kotatsu-test-pipe-no-truncate";
+#else
+    std::string name = "kotatsu-test-pipe-no-truncate-XXXXXX";
+    int fd = ::mkstemp(name.data());
+    ASSERT(fd >= 0);
+    close_fd(fd);
+    ::unlink(name.c_str());
+#endif
+
+    auto acc = pipe::listen(name, pipe::options(false, true), loop);
+    EXPECT(acc);
+#ifndef _WIN32
+    ::unlink(name.c_str());
+#endif
+}
+
 };  // ZEST_SUITE(async_io_stream_pipe)
 
 ZEST_SUITE(async_io_stream_tcp, loop_fixture) {
@@ -552,6 +572,19 @@ ZEST_CASE(read_some_error) {
 
     auto result = server.result();
     EXPECT(!result);
+}
+
+// UV_TCP_REUSEPORT is a libuv enumerator, which #ifdef never saw: the option
+// used to fail with function_not_implemented everywhere. libuv supports it
+// where SO_REUSEPORT balances the load, and refuses it on macOS and Windows.
+ZEST_CASE(reuse_port_option_is_honoured) {
+    auto acc = tcp::listen("127.0.0.1", 0, tcp::options(false, true), loop);
+#if defined(__APPLE__) || defined(_WIN32)
+    ASSERT(!acc);
+    EXPECT(acc.error() == error::operation_not_supported_on_socket);
+#else
+    EXPECT(acc);
+#endif
 }
 
 };  // ZEST_SUITE(async_io_stream_tcp)
