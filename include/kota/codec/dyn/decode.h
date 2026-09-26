@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 #include "kota/support/numeric.h"
 #include "kota/meta/type_kind.h"
@@ -18,16 +19,13 @@
 namespace kota::codec::dyn {
 
 struct ValueReader {
-    const Value* node;
+    const Value& node;
     constexpr static bool data_driven = true;
     constexpr static bool human_readable = true;
     using error_type = rich_error;
 
     bool visit_bool(bool& out) {
-        if(!node) {
-            return fail_type("boolean");
-        }
-        auto val = node->get_bool();
+        auto val = node.get_bool();
         if(!val) {
             return fail_type("boolean");
         }
@@ -37,10 +35,7 @@ struct ValueReader {
 
     template <typename T>
     bool visit_int(T& out) {
-        if(!node) {
-            return fail_type("integer");
-        }
-        auto val = node->get_int();
+        auto val = node.get_int();
         if(!val) {
             return fail_type("integer");
         }
@@ -52,10 +47,7 @@ struct ValueReader {
 
     template <typename T>
     bool visit_uint(T& out) {
-        if(!node) {
-            return fail_type("integer");
-        }
-        auto val = node->get_uint();
+        auto val = node.get_uint();
         if(!val) {
             return fail_type("integer");
         }
@@ -67,10 +59,7 @@ struct ValueReader {
 
     template <typename T>
     bool visit_float(T& out) {
-        if(!node) {
-            return fail_type("float");
-        }
-        auto val = node->get_double();
+        auto val = node.get_double();
         if(!val) {
             return fail_type("float");
         }
@@ -80,10 +69,7 @@ struct ValueReader {
 
     template <typename T>
     bool visit_str(T& out) {
-        if(!node) {
-            return fail_type("string");
-        }
-        auto val = node->get_string();
+        auto val = node.get_string();
         if(!val) {
             return fail_type("string");
         }
@@ -93,10 +79,7 @@ struct ValueReader {
 
     template <typename T>
     bool visit_char(T& out) {
-        if(!node) {
-            return fail_type("string");
-        }
-        auto val = node->get_string();
+        auto val = node.get_string();
         if(!val) {
             return fail_type("string");
         }
@@ -120,10 +103,7 @@ struct ValueReader {
 
     template <typename T>
     bool visit_bytes(T& out) {
-        if(!node) {
-            return fail_type("array");
-        }
-        const auto* arr = node->get_array();
+        const auto* arr = node.get_array();
         if(!arr) {
             return fail_type("array");
         }
@@ -143,7 +123,7 @@ struct ValueReader {
     }
 
     bool peek_null() {
-        return node == nullptr || node->is_null();
+        return node.is_null();
     }
 
     bool visit_null() {
@@ -154,9 +134,7 @@ struct ValueReader {
     }
 
     meta::type_kind peek_kind() {
-        if(!node || node->is_null())
-            return meta::type_kind::null;
-        switch(node->kind()) {
+        switch(node.kind()) {
             case ValueKind::null_value: return meta::type_kind::null;
             case ValueKind::boolean: return meta::type_kind::boolean;
             case ValueKind::signed_int: return meta::type_kind::int64;
@@ -183,15 +161,12 @@ struct ValueReader {
 
     template <typename Callback>
     bool visit_struct(Callback&& cb) {
-        if(!node) {
-            return fail_type("object");
-        }
-        const auto* obj = node->get_object();
+        const auto* obj = node.get_object();
         if(!obj) {
             return fail_type("object");
         }
         for(const auto& [k, v]: *obj) {
-            ValueReader sub{&v};
+            ValueReader sub{v};
             KOTA_CODEC_TRY(cb(std::string_view(k), sub));
         }
         return true;
@@ -199,48 +174,32 @@ struct ValueReader {
 
     template <typename Callback>
     bool visit_seq(Callback&& cb) {
-        if(!node) {
-            return fail_type("array");
-        }
-        const auto* arr = node->get_array();
+        const auto* arr = node.get_array();
         if(!arr) {
             return fail_type("array");
         }
-        for(std::size_t i = 0; i < arr->size(); ++i) {
-            ValueReader sub{&(*arr)[i]};
+        for(const auto& element: *arr) {
+            ValueReader sub{element};
             KOTA_CODEC_TRY(cb(sub));
         }
         return true;
     }
 
+    /// A tuple is an array, read as a sequence.
     template <typename Callback>
     bool visit_tuple(Callback&& cb) {
-        if(!node) {
-            return fail_type("array");
-        }
-        const auto* arr = node->get_array();
-        if(!arr) {
-            return fail_type("array");
-        }
-        for(std::size_t i = 0; i < arr->size(); ++i) {
-            ValueReader sub{&(*arr)[i]};
-            KOTA_CODEC_TRY(cb(sub));
-        }
-        return true;
+        return visit_seq(std::forward<Callback>(cb));
     }
 
     template <typename Callback>
     bool visit_map(Callback&& cb) {
-        if(!node) {
-            return fail_type("object");
-        }
-        const auto* obj = node->get_object();
+        const auto* obj = node.get_object();
         if(!obj) {
             return fail_type("object");
         }
         for(const auto& [k, v]: *obj) {
             MapKeyReader<> kr{std::string_view(k)};
-            ValueReader vr{&v};
+            ValueReader vr{v};
             KOTA_CODEC_TRY(cb(kr, vr));
         }
         return true;
@@ -248,8 +207,8 @@ struct ValueReader {
 
 private:
     bool fail_type(std::string_view expected) {
-        auto got = node ? dyn::detail::kind_name(node->kind()) : std::string_view("null");
-        return scoped_context<rich_error>::fail(rich_error::invalid_type(expected, got));
+        return scoped_context<rich_error>::fail(
+            rich_error::invalid_type(expected, dyn::detail::kind_name(node.kind())));
     }
 };
 
@@ -259,7 +218,7 @@ template <typename Config = void, typename T>
 auto from_dyn(const Value& value, T& out) -> std::expected<void, rich_error> {
     rich_error err;
     scoped_context<rich_error> guard(err);
-    ValueReader vis{&value};
+    ValueReader vis{value};
     if(!decode_value<default_config<Config>>(vis, out)) {
         return std::unexpected(std::move(err));
     }
@@ -284,11 +243,7 @@ namespace kota::codec {
 template <typename Config>
 struct deserialize_visit<dyn::ValueReader, dyn::Value, Config> {
     static bool visit(dyn::ValueReader& vis, dyn::Value& value) {
-        if(vis.node) {
-            value = *vis.node;
-        } else {
-            value = dyn::Value(nullptr);
-        }
+        value = vis.node;
         return true;
     }
 };
@@ -296,13 +251,10 @@ struct deserialize_visit<dyn::ValueReader, dyn::Value, Config> {
 template <typename Config>
 struct deserialize_visit<dyn::ValueReader, dyn::Array, Config> {
     static bool visit(dyn::ValueReader& vis, dyn::Array& value) {
-        if(!vis.node) {
-            return scoped_context<rich_error>::fail(rich_error::invalid_type("array", "null"));
-        }
-        const auto* arr = vis.node->get_array();
+        const auto* arr = vis.node.get_array();
         if(!arr) {
             return scoped_context<rich_error>::fail(
-                rich_error::invalid_type("array", dyn::detail::kind_name(vis.node->kind())));
+                rich_error::invalid_type("array", dyn::detail::kind_name(vis.node.kind())));
         }
         value = *arr;
         return true;
@@ -312,13 +264,10 @@ struct deserialize_visit<dyn::ValueReader, dyn::Array, Config> {
 template <typename Config>
 struct deserialize_visit<dyn::ValueReader, dyn::Object, Config> {
     static bool visit(dyn::ValueReader& vis, dyn::Object& value) {
-        if(!vis.node) {
-            return scoped_context<rich_error>::fail(rich_error::invalid_type("object", "null"));
-        }
-        const auto* obj = vis.node->get_object();
+        const auto* obj = vis.node.get_object();
         if(!obj) {
             return scoped_context<rich_error>::fail(
-                rich_error::invalid_type("object", dyn::detail::kind_name(vis.node->kind())));
+                rich_error::invalid_type("object", dyn::detail::kind_name(vis.node.kind())));
         }
         value = *obj;
         return true;
