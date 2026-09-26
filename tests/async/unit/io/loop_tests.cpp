@@ -1,5 +1,6 @@
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -184,7 +185,8 @@ ZEST_CASE(failed_root_rethrows_through_result) {
     loop.schedule(root);
     loop.run();
     EXPECT(root->is_failed());
-    EXPECT_THROWS(root.result());
+    EXPECT(test::thrown([&] { root.result(); }) == "root");
+    EXPECT(test::thrown([&] { root.value(); }) == "root");
 }
 #endif
 
@@ -249,6 +251,17 @@ ZEST_CASE(kota_run_returns_every_value) {
     EXPECT(failed->error() == error::io_error);
 }
 
+#if KOTA_ENABLE_EXCEPTIONS
+ZEST_CASE(kota_run_rethrows_what_a_task_throws) {
+    auto thrower = []() -> task<int> {
+        throw std::runtime_error("from run");
+        co_return 0;
+    };
+
+    EXPECT(test::thrown([&] { kota::run(thrower()); }) == "from run");
+}
+#endif
+
 ZEST_CASE(relay_runs_callbacks_on_the_loop_in_order) {
     auto sender = [&]() -> task<std::vector<int>> {
         std::vector<int> order;
@@ -282,6 +295,19 @@ ZEST_CASE(relay_keeps_the_loop_running_until_the_last_is_gone) {
     second.send([&] {
         called = true;
         second = relay{};
+    });
+
+    EXPECT(loop.run() == 0);
+    EXPECT(called);
+}
+
+// The destructor lets the loop go as assigning over the relay does.
+ZEST_CASE(relay_destroyed_in_a_callback_lets_run_return) {
+    bool called = false;
+    std::optional<relay> held = loop.create_relay();
+    held->send([&] {
+        called = true;
+        held.reset();
     });
 
     EXPECT(loop.run() == 0);

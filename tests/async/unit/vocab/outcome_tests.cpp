@@ -18,7 +18,7 @@ ZEST_SUITE(async_vocab_outcome) {
 ZEST_CASE(value_is_the_ok_state) {
     Full o = 42;
     EXPECT(o.state() == Full::State::ok);
-    EXPECT(o.has_value());
+    ASSERT(o.has_value());
     EXPECT(!o.has_error());
     EXPECT(!o.is_cancelled());
     EXPECT(static_cast<bool>(o));
@@ -29,7 +29,7 @@ ZEST_CASE(value_is_the_ok_state) {
 ZEST_CASE(error_is_the_err_state) {
     Full o = outcome_error(error::invalid_argument);
     EXPECT(o.state() == Full::State::err);
-    EXPECT(o.has_error());
+    ASSERT(o.has_error());
     EXPECT(!o.has_value());
     EXPECT(!o.is_cancelled());
     EXPECT(!static_cast<bool>(o));
@@ -39,7 +39,7 @@ ZEST_CASE(error_is_the_err_state) {
 ZEST_CASE(cancellation_is_the_cancelled_state) {
     Full o = outcome_cancel(cancellation("shutting down"));
     EXPECT(o.state() == Full::State::cancelled);
-    EXPECT(o.is_cancelled());
+    ASSERT(o.is_cancelled());
     EXPECT(!o.has_value());
     EXPECT(!o.has_error());
     EXPECT(o.cancellation().reason() == "shutting down");
@@ -55,6 +55,7 @@ ZEST_CASE(void_value_is_ok) {
 
 ZEST_CASE(arrow_reaches_into_the_value) {
     outcome<std::string, error> o = std::string("kotatsu");
+    ASSERT(o.has_value());
     EXPECT(o->size() == 7U);
 
     const auto& constant = o;
@@ -64,22 +65,25 @@ ZEST_CASE(arrow_reaches_into_the_value) {
 
 ZEST_CASE(rvalue_accessors_move_out) {
     outcome<std::string, error, cancellation> value = std::string("payload");
+    ASSERT(value.has_value());
     EXPECT(zest::type_eq<decltype(std::move(value).value()), std::string&&>());
     std::string taken = std::move(value).value();
     EXPECT(taken == "payload");
 
     outcome<std::string, error, cancellation> failed = outcome_error(error::io_error);
+    ASSERT(failed.has_error());
     EXPECT(zest::type_eq<decltype(std::move(failed).error()), error&&>());
     EXPECT(std::move(failed).error() == error::io_error);
 
     outcome<std::string, error, cancellation> cancelled = outcome_cancel(cancellation("stop"));
+    ASSERT(cancelled.is_cancelled());
     cancellation why = std::move(cancelled).cancellation();
     EXPECT(why.reason() == "stop");
 }
 
 ZEST_CASE(outcome_without_channels_always_holds_a_value) {
     outcome<int> number = 3;
-    EXPECT(number.has_value());
+    ASSERT(number.has_value());
     EXPECT(static_cast<bool>(number));
     EXPECT(*number == 3);
 

@@ -6,11 +6,14 @@
 #include <cstdlib>
 #include <optional>
 #include <span>
+#include <stdexcept>
+#include <string>
 #include <tuple>
 #include <utility>
 
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
+#include "kota/support/config.h"
 #include "kota/async/async.h"
 
 namespace kota::test {
@@ -160,5 +163,19 @@ private:
         std::abort();
     }
 };
+
+#if KOTA_ENABLE_EXCEPTIONS
+/// The message of the `Exception` that `fn` throws, or nothing when it
+/// throws none; an exception of another type propagates and fails the test.
+template <typename Exception = std::runtime_error, typename Fn>
+std::optional<std::string> thrown(Fn&& fn) {
+    try {
+        std::forward<Fn>(fn)();
+    } catch(const Exception& e) {
+        return e.what();
+    }
+    return std::nullopt;
+}
+#endif
 
 }  // namespace kota::test

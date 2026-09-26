@@ -114,6 +114,30 @@ ZEST_CASE(cancelled_waiter_passes_on_a_handed_over_lock) {
     EXPECT(m.try_lock());
 }
 
+// The unlock hands the lock to the waiter and the token's cancel wakes
+// with_token, both in one turn: the hand-over, queued first, wins, and the
+// mutex is free afterwards either way.
+ZEST_CASE(unlock_and_token_cancel_in_one_turn_leave_the_mutex_free) {
+    mutex m;
+    ASSERT(m.try_lock());
+    cancellation_source source;
+    auto waiter = [&]() -> task<int> {
+        co_await m.lock();
+        m.unlock();
+        co_return 1;
+    };
+    auto release = [&]() -> task<> {
+        m.unlock();
+        source.cancel();
+        co_return;
+    };
+
+    auto [guarded, driver] = run(with_token(waiter(), source.token()), release());
+    ASSERT(guarded.has_value());
+    EXPECT(*guarded == 1);
+    EXPECT(m.try_lock());
+}
+
 };  // ZEST_SUITE(async_runtime_sync_mutex)
 
 }  // namespace

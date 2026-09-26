@@ -1,6 +1,7 @@
 #include <concepts>
 #include <cstddef>
 #include <optional>
+#include <stdexcept>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -33,6 +34,9 @@ ZEST_CASE(result_type_follows_the_children_channels) {
     EXPECT(zest::type_eq<any_result_t<task<int>, task<>>, std::variant<int, std::nullopt_t>>());
     EXPECT(zest::type_eq<any_result_t<task<int, error>, task<int>>,
                          outcome<std::variant<int, int>, error, void>>());
+    // One error type, however many children carry it.
+    EXPECT(zest::type_eq<any_result_t<task<int, error>, task<int, error>>,
+                         outcome<std::variant<int, int>, error, void>>());
     EXPECT(
         zest::type_eq<any_result_t<task<int, error>, task<int, CustomError>>,
                       outcome<std::variant<int, int>, std::variant<error, CustomError>, void>>());
@@ -42,6 +46,8 @@ ZEST_CASE(result_type_follows_the_children_channels) {
                          outcome<std::variant<int, std::nullopt_t>, error, cancellation>>());
     EXPECT(
         zest::type_eq<any_range_result_t<std::vector<task<int>>>, std::pair<std::size_t, int>>());
+    EXPECT(zest::type_eq<any_range_result_t<small_vector<semaphore::acquire_awaiter>>,
+                         std::pair<std::size_t, std::nullopt_t>>());
     STATIC_EXPECT(!std::constructible_from<when_any<>>);
 }
 
@@ -180,7 +186,8 @@ ZEST_CASE(range_of_awaiters_that_are_not_tasks) {
 #if KOTA_ENABLE_EXCEPTIONS
 ZEST_CASE(empty_range_fails) {
     small_vector<task<int>> tasks;
-    EXPECT_THROWS((void)when_any(std::move(tasks)));
+    EXPECT(
+        test::thrown<std::invalid_argument>([&] { (void)when_any(std::move(tasks)); }).has_value());
 }
 #endif
 

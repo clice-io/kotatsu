@@ -28,21 +28,20 @@ task<int, error> success(int value) {
 
 ZEST_SUITE(async_runtime_when_errors, test::LoopFixture) {
 
+// The failing child comes second, so the error is taken from its slot.
 ZEST_CASE(all_first_error_cancels_the_rest) {
     event gate;
     event go;
-    bool slow_finished = false;
     auto failing = [&]() -> task<int, error> {
         co_await go.wait();
         co_await fail(error::connection_refused);
     };
     auto slow = [&]() -> task<int, error> {
         co_await gate.wait();
-        slow_finished = true;
         co_return 42;
     };
     auto combined = [&]() -> task<result<std::tuple<int, int>>> {
-        co_return co_await when_all(failing(), slow());
+        co_return co_await when_all(slow(), failing());
     };
     auto driver = [&]() -> task<> {
         go.set();
@@ -53,7 +52,6 @@ ZEST_CASE(all_first_error_cancels_the_rest) {
     ASSERT(result.has_value());
     ASSERT(result->has_error());
     EXPECT(result->error() == error::connection_refused);
-    EXPECT(!slow_finished);
     EXPECT(gate.get_head() == nullptr);
 }
 
@@ -88,18 +86,16 @@ ZEST_CASE(all_success_has_no_error) {
 ZEST_CASE(any_first_error_wins_and_cancels_the_rest) {
     event gate;
     event go;
-    bool slow_finished = false;
     auto failing = [&]() -> task<int, error> {
         co_await go.wait();
         co_await fail(error::connection_refused);
     };
     auto slow = [&]() -> task<int, error> {
         co_await gate.wait();
-        slow_finished = true;
         co_return 42;
     };
     auto combined = [&]() -> task<result<std::variant<int, int>>> {
-        co_return co_await when_any(failing(), slow());
+        co_return co_await when_any(slow(), failing());
     };
     auto driver = [&]() -> task<> {
         go.set();
@@ -110,7 +106,7 @@ ZEST_CASE(any_first_error_wins_and_cancels_the_rest) {
     ASSERT(result.has_value());
     ASSERT(result->has_error());
     EXPECT(result->error() == error::connection_refused);
-    EXPECT(!slow_finished);
+    EXPECT(gate.get_head() == nullptr);
 }
 
 ZEST_CASE(any_first_of_several_errors_wins) {
@@ -127,10 +123,8 @@ ZEST_CASE(any_first_of_several_errors_wins) {
 
 ZEST_CASE(all_range_error_cancels_the_rest) {
     event gate;
-    bool slow_finished = false;
     auto slow = [&]() -> task<int, error> {
         co_await gate.wait();
-        slow_finished = true;
         co_return 42;
     };
     auto combined = [&]() -> task<result<small_vector<int>>> {
@@ -144,7 +138,7 @@ ZEST_CASE(all_range_error_cancels_the_rest) {
     ASSERT(result.has_value());
     ASSERT(result->has_error());
     EXPECT(result->error() == error::connection_refused);
-    EXPECT(!slow_finished);
+    EXPECT(gate.get_head() == nullptr);
 }
 
 ZEST_CASE(any_range_error_wins) {
@@ -189,7 +183,7 @@ ZEST_CASE(mixed_error_types_come_back_as_a_variant) {
     using AnyErrors = std::variant<CustomError, error>;
     event gate;
     auto custom = []() -> task<int, CustomError> {
-        co_await fail(CustomError{7});
+        co_await fail(CustomError{.code = 7});
     };
     auto slow = [&]() -> task<int, error> {
         co_await gate.wait();

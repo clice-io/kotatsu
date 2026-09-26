@@ -75,22 +75,34 @@ ZEST_CASE(from_a_timer_callback_waits_for_the_next_iteration) {
     EXPECT(order == std::vector{1, 2});
 }
 
+// A yield's cancel has nothing to undo: the yield stays queued, and its turn
+// ends the task cancelled, after cancel() has returned.
 ZEST_CASE(can_be_cancelled_while_suspended) {
     bool resumed = false;
+    bool ended = false;
     auto yielder = [&]() -> task<> {
         co_await yield();
         resumed = true;
     };
     auto target = yielder();
     auto* node = target.operator->();
-    auto cancel_it = [&]() -> task<> {
+    auto watched = [&]() -> task<bool> {
+        auto result = co_await std::move(target).catch_cancel();
+        ended = true;
+        co_return result.is_cancelled();
+    };
+    auto cancel_it = [&]() -> task<bool> {
         node->cancel();
-        co_return;
+        co_return ended;
     };
 
-    auto [yielded, driver] = run(std::move(target), cancel_it());
-    EXPECT(yielded.is_cancelled());
+    auto [cancelled, ended_in_cancel] = run(watched(), cancel_it());
+    ASSERT(cancelled.has_value());
+    EXPECT(*cancelled);
     EXPECT(!resumed);
+    ASSERT(ended_in_cancel.has_value());
+    EXPECT(!*ended_in_cancel);
+    EXPECT(ended);
 }
 
 // A task cancelled while it runs ends at its yield, once the queued yield

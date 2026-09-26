@@ -182,12 +182,8 @@ ZEST_CASE(all_error_stops_a_looping_sibling_at_its_next_await) {
     EXPECT(iterations == 1);
 }
 
-// The four cases below are repros of a bookkeeping bug: when_all with a
-// child that completes while the aggregate is being armed, next to two
-// with_token children whose token and event fire in various orders, once
-// read the cancelling child's index before it was recorded.
-
-ZEST_CASE(values_finished_before_a_late_cancel_are_kept) {
+// A token that fires once when_all has settled finds nothing left to cancel.
+ZEST_CASE(token_firing_after_all_settled_leaves_the_values) {
     event ev;
     cancellation_source source;
     auto request = [&]() -> task<int> {
@@ -197,24 +193,36 @@ ZEST_CASE(values_finished_before_a_late_cancel_are_kept) {
     auto done = []() -> task<> {
         co_return;
     };
+    bool settled = false;
     auto combined =
         [&]() -> task<outcome<std::tuple<int, int, std::nullopt_t>, void, cancellation>> {
-        co_return co_await when_all(with_token(request(), source.token()),
-                                    with_token(request(), source.token()),
-                                    done());
+        auto result = co_await when_all(with_token(request(), source.token()),
+                                        with_token(request(), source.token()),
+                                        done());
+        settled = true;
+        co_return result;
     };
-    auto trigger = [&]() -> task<> {
+    auto trigger = [&]() -> task<bool> {
         ev.set();
         co_await yield();
+        bool settled_first = settled;
         source.cancel();
+        co_return settled_first;
     };
 
-    auto [result, drove] = run(combined(), trigger());
+    auto [result, settled_first] = run(combined(), trigger());
+    ASSERT(settled_first.has_value());
+    EXPECT(*settled_first);
     ASSERT(result.has_value());
     ASSERT(result->has_value());
     EXPECT(std::get<0>(**result) == 42);
     EXPECT(std::get<1>(**result) == 42);
 }
+
+// The three cases below are repros of a bookkeeping bug: when_all with a
+// child that completes while the aggregate is being armed, next to two
+// with_token children whose token and event fire in various orders, once
+// read the cancelling child's index before it was recorded.
 
 ZEST_CASE(token_firing_before_the_event_cancels_all) {
     event ev;

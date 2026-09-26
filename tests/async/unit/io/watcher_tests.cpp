@@ -21,10 +21,13 @@ task<int> wait_three_times(Watcher& watcher) {
     co_return 3;
 }
 
+/// Counts every wake of `watcher` in `ticks`, setting `ticked` at the first.
 template <typename Watcher>
-task<> wait_forever(Watcher& watcher) {
+task<> count_ticks(Watcher& watcher, int& ticks, event& ticked) {
     while(true) {
         co_await watcher.wait();
+        ticks += 1;
+        ticked.set();
     }
 }
 
@@ -148,11 +151,10 @@ ZEST_CASE(tick_watchers_wake_every_iteration) {
     EXPECT(*prepared == 3);
     ASSERT(checked.has_value());
     EXPECT(*checked == 3);
-    on_idle.stop();
-    on_prepare.stop();
-    on_check.stop();
 }
 
+// Once every watcher has woken its waiter, the canceller stops the watchers,
+// so that only the cancel itself can end the waits pending on them.
 ZEST_CASE(tick_watcher_waits_can_be_cancelled) {
     auto on_idle = idle::create(loop);
     auto on_prepare = prepare::create(loop);
@@ -160,12 +162,19 @@ ZEST_CASE(tick_watcher_waits_can_be_cancelled) {
     on_idle.start();
     on_prepare.start();
     on_check.start();
-    auto idling = wait_forever(on_idle);
-    auto preparing = wait_forever(on_prepare);
-    auto checking = wait_forever(on_check);
+    int ticks[3] = {};
+    event ticked[3];
+    auto idling = count_ticks(on_idle, ticks[0], ticked[0]);
+    auto preparing = count_ticks(on_prepare, ticks[1], ticked[1]);
+    auto checking = count_ticks(on_check, ticks[2], ticked[2]);
     async_node* nodes[] = {idling.operator->(), preparing.operator->(), checking.operator->()};
     auto cancel_all = [&]() -> task<> {
-        co_await yield();
+        for(auto& first: ticked) {
+            co_await first.wait();
+        }
+        on_idle.stop();
+        on_prepare.stop();
+        on_check.stop();
         for(auto* node: nodes) {
             node->cancel();
         }
@@ -176,6 +185,9 @@ ZEST_CASE(tick_watcher_waits_can_be_cancelled) {
     EXPECT(idled.is_cancelled());
     EXPECT(prepared.is_cancelled());
     EXPECT(checked.is_cancelled());
+    EXPECT(ticks[0] > 0);
+    EXPECT(ticks[1] > 0);
+    EXPECT(ticks[2] > 0);
 }
 
 // A default-constructed watcher watches nothing: waits end at once, and a

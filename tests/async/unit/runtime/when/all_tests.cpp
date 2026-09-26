@@ -36,6 +36,8 @@ ZEST_CASE(result_type_follows_the_children_channels) {
     EXPECT(zest::type_eq<all_result_t<task<int>, task<>>, std::tuple<int, std::nullopt_t>>());
     EXPECT(zest::type_eq<all_result_t<task<int, error>, task<int>>,
                          outcome<std::tuple<int, int>, error, void>>());
+    EXPECT(zest::type_eq<all_result_t<task<int, error>, task<>>,
+                         outcome<std::tuple<int, std::nullopt_t>, error, void>>());
     EXPECT(zest::type_eq<all_result_t<task<int, error>, task<int, error>>,
                          outcome<std::tuple<int, int>, error, void>>());
     EXPECT(zest::type_eq<all_result_t<task<int, error>, task<int, CustomError>>,

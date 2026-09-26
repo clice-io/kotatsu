@@ -247,10 +247,8 @@ ZEST_CASE(catch_cancel_passes_values_and_errors_through) {
 
 ZEST_CASE(external_cancel_ends_a_suspended_task) {
     event gate;
-    bool after = false;
     auto worker = [&]() -> task<int> {
         co_await gate.wait();
-        after = true;
         co_return 1;
     };
     auto target = worker();
@@ -262,8 +260,25 @@ ZEST_CASE(external_cancel_ends_a_suspended_task) {
 
     auto [result, driver] = run(std::move(target), cancel_it());
     EXPECT(result.is_cancelled());
-    EXPECT(!after);
+    EXPECT(gate.get_head() == nullptr);
     EXPECT(driver.has_value());
+}
+
+ZEST_CASE(cancel_of_a_finished_task_changes_nothing) {
+    auto quick = []() -> task<int> {
+        co_return 1;
+    };
+    auto target = quick();
+    auto* node = target.operator->();
+    auto late = [&]() -> task<> {
+        co_await yield();
+        node->cancel();
+    };
+
+    auto [result, drove] = run(std::move(target), late());
+    ASSERT(result.has_value());
+    EXPECT(*result == 1);
+    EXPECT(drove.has_value());
 }
 
 // A task cancelled while it runs goes on until its next suspending co_await,
@@ -405,7 +420,7 @@ ZEST_CASE(exception_propagates_through_await) {
         co_return co_await thrower();
     };
 
-    EXPECT_THROWS(run(parent()));
+    EXPECT(test::thrown([&] { run(parent()); }) == "boom");
 }
 
 ZEST_CASE(parent_can_catch_a_child_exception) {
@@ -436,7 +451,7 @@ ZEST_CASE(or_fail_rethrows_a_child_exception) {
         co_return co_await child().or_fail();
     };
 
-    EXPECT_THROWS(run(parent()));
+    EXPECT(test::thrown([&] { run(parent()); }) == "or_fail child");
 }
 
 // Real errors outrank cancellation: an exception thrown after the task was
@@ -451,7 +466,7 @@ ZEST_CASE(exception_after_cancel_still_fails_the_task) {
     auto target = worker();
     self = target.operator->();
 
-    EXPECT_THROWS(run(std::move(target)));
+    EXPECT(test::thrown([&] { run(std::move(target)); }) == "after cancel");
 }
 
 #endif  // KOTA_ENABLE_EXCEPTIONS

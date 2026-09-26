@@ -137,22 +137,23 @@ ZEST_CASE(finished_children_are_reclaimed_at_once) {
 }
 
 // Structured completion: join() returns only once every cancelled child has
-// finished, however long its cancellation takes.
+// finished, however long its cancellation takes; the group frees the frames.
 ZEST_CASE(join_after_cancel_waits_for_pending_children) {
     test::PendingOp op;
+    auto frames = std::make_shared<int>();
     int finished = 0;
     bool joined = false;
     auto at_once = [&]() -> task<> {
         finished += 1;
         co_return;
     };
-    auto pending = [&]() -> task<> {
+    auto pending = [&](std::shared_ptr<int>) -> task<> {
         co_await op;
     };
     auto driver = [&]() -> task<> {
         task_group<> group(loop);
         group.spawn(at_once());
-        group.spawn(pending());
+        group.spawn(pending(frames));
         group.cancel();
         co_await group.join();
         joined = true;
@@ -170,12 +171,14 @@ ZEST_CASE(join_after_cancel_waits_for_pending_children) {
     EXPECT(!*joined_before);
     EXPECT(joined);
     EXPECT(finished == 1);
+    EXPECT(frames.use_count() == 1);
 }
 
 ZEST_CASE(join_after_an_error_waits_for_pending_children) {
     test::PendingOp op;
+    auto frames = std::make_shared<int>();
     bool joined = false;
-    auto pending = [&]() -> task<> {
+    auto pending = [&](std::shared_ptr<int>) -> task<> {
         co_await op;
     };
     auto failing = []() -> task<int, error> {
@@ -183,7 +186,7 @@ ZEST_CASE(join_after_an_error_waits_for_pending_children) {
     };
     auto driver = [&]() -> task<std::vector<error>> {
         task_group<error> group(loop);
-        group.spawn(pending());
+        group.spawn(pending(frames));
         group.spawn(failing());
         auto result = co_await group.join();
         joined = true;
@@ -204,6 +207,7 @@ ZEST_CASE(join_after_an_error_waits_for_pending_children) {
     EXPECT(op.is_cancelled());
     ASSERT(joined_before.has_value());
     EXPECT(!*joined_before);
+    EXPECT(frames.use_count() == 1);
 }
 
 };  // ZEST_SUITE(async_runtime_task_group_lifetime)

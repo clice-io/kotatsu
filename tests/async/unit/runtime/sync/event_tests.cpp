@@ -49,21 +49,23 @@ ZEST_CASE(set_resumes_waiters_after_the_setter_suspends) {
     EXPECT(order == std::vector{1, 2});
 }
 
+// A set event stays set: the first wait does not use it up for the second.
 ZEST_CASE(wait_on_a_set_event_does_not_suspend) {
     event ev(true);
     std::vector<int> order;
-    auto waiter = [&]() -> task<> {
+    auto waiter = [&](int id) -> task<> {
         co_await ev.wait();
-        order.push_back(1);
+        order.push_back(id);
     };
     auto other = [&]() -> task<> {
-        order.push_back(2);
+        order.push_back(3);
         co_return;
     };
 
-    auto [first, second] = run(waiter(), other());
+    auto [first, second, third] = run(waiter(1), waiter(2), other());
     EXPECT(first.has_value());
-    EXPECT(order == std::vector{1, 2});
+    EXPECT(second.has_value());
+    EXPECT(order == std::vector{1, 2, 3});
 }
 
 ZEST_CASE(reset_makes_waiters_wait_again) {
