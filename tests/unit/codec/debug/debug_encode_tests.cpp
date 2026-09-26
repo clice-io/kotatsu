@@ -89,6 +89,13 @@ ZEST_CASE(null_char_pointer) {
     EXPECT(to_string(null) == "null");
 }
 
+ZEST_CASE(char_arrays_end_with_the_array) {
+    const char unterminated[4] = {'K', 'O', 'T', 'A'};
+    const char padded[8] = "kota";
+    EXPECT(to_string(unterminated) == R"("KOTA")");
+    EXPECT(to_string(padded) == R"("kota")");
+}
+
 ZEST_CASE(bool_values) {
     EXPECT(to_string(true) == "true");
     EXPECT(to_string(false) == "false");

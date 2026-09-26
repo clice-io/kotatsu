@@ -291,6 +291,11 @@ bool encode_value(Vis& vis, const T& value) {
             } else {
                 return vis.visit_float(value);
             }
+        } else if constexpr(meta::str_like<V> && std::is_array_v<V>) {
+            // A char array need not end in a null character, so its text
+            // stops at the array's end.
+            std::string_view text(value, std::extent_v<V>);
+            return vis.visit_str(text.substr(0, text.find('\0')));
         } else if constexpr(meta::str_like<V>) {
             return vis.visit_str(value);
         } else if constexpr(kind == character) {
