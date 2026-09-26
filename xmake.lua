@@ -354,13 +354,13 @@ if has_config("test") and has_config("ztest") then
 		table.insert(test_modules, "codec")
 		table.insert(test_modules, "codec/bincode")
 		table.insert(test_modules, "codec/debug")
+		table.insert(test_modules, "codec/dyn")
 	end
 	if has_config("deco") then
 		table.insert(test_modules, "deco")
 	end
 	if has_config("codec") and has_config("codec_simdjson") then
 		table.insert(test_modules, "codec/json")
-		table.insert(test_modules, "codec/dyn")
 		table.insert(test_modules, "ipc")
 		table.insert(test_modules, "ipc/lsp")
 	end

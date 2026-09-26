@@ -41,7 +41,9 @@ struct Dyn {
         return codec::dyn::from_dyn<Config>(tree, out);
     }
 
-    /// The debug codec's indented text, which every tree has.
+    /// The debug codec's indented text, which every tree has. It shows no
+    /// integer's signedness and no point in a whole float; codec_dyn_encode
+    /// pins the kinds.
     static std::string render(const Encoded& tree) {
         auto text = codec::debug::to_string(tree, true);
         assert(text);

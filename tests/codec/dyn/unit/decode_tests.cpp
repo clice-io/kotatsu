@@ -1,0 +1,157 @@
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <map>
+#include <string>
+#include <string_view>
+#include <variant>
+#include <vector>
+
+#include "fixtures/structs.h"
+#include "kota/zest/zest.h"
+#include "kota/codec/dyn/dyn.h"
+
+namespace kota::codec {
+
+namespace {
+
+struct WithExtra {
+    int id;
+    dyn::Value extra;
+};
+
+ZEST_SUITE(codec_dyn_decode) {
+
+ZEST_CASE(tree_reads_itself) {
+    dyn::Value tree{
+        {"k", dyn::Array{std::int64_t{9}, "x"}}
+    };
+    EXPECT(dyn::from_dyn<dyn::Value>(tree) == tree);
+    EXPECT(dyn::from_dyn<dyn::Object>(tree) == tree.as_object());
+    EXPECT(dyn::from_dyn<dyn::Array>(tree.as_object().at("k")) == dyn::Array{std::int64_t{9}, "x"});
+}
+
+ZEST_CASE(tree_of_another_kind_fails) {
+    auto array = dyn::from_dyn<dyn::Array>(dyn::Value(std::int64_t{1}));
+    ASSERT(!array);
+    EXPECT(array.error().message == "invalid type: expected array, got signed_int");
+    auto object = dyn::from_dyn<dyn::Object>(dyn::Value("x"));
+    ASSERT(!object);
+    EXPECT(object.error().message == "invalid type: expected object, got string");
+}
+
+ZEST_CASE(tree_inside_a_value_reads_itself) {
+    // The tree is a temporary, which outlives the decode.
+    auto typed = dyn::from_dyn<WithExtra>(dyn::Value{
+        {"id",    std::int64_t{7}                                       },
+        {"extra", dyn::Object{{"name", "alice"}, {"n", std::int64_t{1}}}},
+    });
+    ASSERT(typed);
+    EXPECT(typed->id == 7);
+    EXPECT(typed->extra == (dyn::Value{
+                               {"name", "alice"        },
+                               {"n",    std::int64_t{1}},
+    }));
+}
+
+ZEST_CASE(duplicate_keys_last_wins) {
+    // A tree may hold a key twice. The reader visits every entry in order,
+    // so the last one wins, the one Object::find returns.
+    dyn::Object object;
+    object.insert("x", std::int64_t{1});
+    object.insert("y", std::int64_t{2});
+    object.insert("x", std::int64_t{3});
+    dyn::Value tree(object);
+
+    auto point = dyn::from_dyn<test::Point>(tree);
+    ASSERT(point);
+    EXPECT(point->x == 3);
+    auto map = dyn::from_dyn<std::map<std::string, int>>(tree);
+    ASSERT(map);
+    EXPECT(*map == (std::map<std::string, int>{
+                       {"x", 3},
+                       {"y", 2}
+    }));
+}
+
+ZEST_CASE(type_mismatch_fails) {
+    bool flag = false;
+    auto status = dyn::from_dyn(dyn::Value(std::int64_t{1}), flag);
+    ASSERT(!status);
+    EXPECT(status.error().message == "invalid type: expected boolean, got signed_int");
+}
+
+ZEST_CASE(null_from_non_null_fails) {
+    std::nullptr_t null = nullptr;
+    auto status = dyn::from_dyn(dyn::Value(std::int64_t{42}), null);
+    ASSERT(!status);
+    EXPECT(status.error().message == "invalid type: expected null, got signed_int");
+
+    // An untagged variant's last alternative decodes on the real reader when
+    // nothing else claims the value; a null alternative there must not
+    // swallow it.
+    std::variant<int, std::monostate> choice = 1;
+    auto fallback = dyn::from_dyn(dyn::Value(std::string("x")), choice);
+    ASSERT(!fallback);
+    EXPECT(fallback.error().message == "invalid type: expected null, got string");
+}
+
+ZEST_CASE(integers_read_across_signedness) {
+    std::int32_t signed_out = 0;
+    ASSERT(dyn::from_dyn(dyn::Value(std::uint64_t{7}), signed_out));
+    EXPECT(signed_out == 7);
+    std::uint8_t unsigned_out = 0;
+    ASSERT(dyn::from_dyn(dyn::Value(std::int64_t{7}), unsigned_out));
+    EXPECT(unsigned_out == 7U);
+}
+
+ZEST_CASE(integer_out_of_range_fails) {
+    // An integer that does not fit is out of range, whichever signedness
+    // the tree stores it with.
+    std::int8_t narrow = 0;
+    auto wide = dyn::from_dyn(dyn::Value(std::int64_t{300}), narrow);
+    ASSERT(!wide);
+    EXPECT(wide.error().message == "integer value out of range");
+    std::int64_t signed_out = 0;
+    auto too_big = dyn::from_dyn(dyn::Value(std::numeric_limits<std::uint64_t>::max()), signed_out);
+    ASSERT(!too_big);
+    EXPECT(too_big.error().message == "integer value out of range");
+    std::uint32_t unsigned_out = 0;
+    auto negative = dyn::from_dyn(dyn::Value(std::int64_t{-1}), unsigned_out);
+    ASSERT(!negative);
+    EXPECT(negative.error().message == "integer value out of range");
+}
+
+ZEST_CASE(byte_out_of_range_fails) {
+    std::vector<std::byte> bytes;
+    auto status =
+        dyn::from_dyn(dyn::Value(dyn::Array{std::uint64_t{0}, std::uint64_t{256}}), bytes);
+    ASSERT(!status);
+    EXPECT(status.error().message == "byte array element out of range [0, 255]");
+}
+
+ZEST_CASE(char_reads_one_codepoint_up_to_255) {
+    char out = '\0';
+    ASSERT(dyn::from_dyn(dyn::Value("é"), out));
+    EXPECT(out == static_cast<char>(0xE9));
+    ASSERT(dyn::from_dyn(dyn::Value("ÿ"), out));
+    EXPECT(out == static_cast<char>(0xFF));
+}
+
+ZEST_CASE(char_from_other_text_fails) {
+    // A lone octet above 0x7F is not UTF-8, "Ā" and "€" do not fit a char,
+    // and "xy" is two characters.
+    for(std::string_view text: {"\xE9", "Ā", "€", "xy", ""}) {
+        ZEST_CONTEXT("text: {}", text);
+        char out = '\0';
+        auto status = dyn::from_dyn(dyn::Value(text), out);
+        ASSERT(!status);
+        EXPECT(status.error().message == "expected a single character up to U+00FF");
+    }
+}
+
+};  // ZEST_SUITE(codec_dyn_decode)
+
+}  // namespace
+
+}  // namespace kota::codec
