@@ -366,14 +366,19 @@ ZEST_CASE(rich2_fixture_round_trips_both_paths) {
 }
 
 ZEST_CASE(monostate_alternative_round_trips_both_paths) {
-    // A selected monostate travels as an empty table at the payload slot;
-    // the views read the slot as a zero-size inline struct. Both must stay
-    // in bounds.
+    // A selected monostate is a null: its payload slot (after the tag at 4)
+    // is absent, and the views read it as the empty value. Both must stay in
+    // bounds.
     rich2 input = make_rich2();
     input.maybe = std::monostate{};
 
     auto encoded = fbs::to_bytes(input);
     ASSERT(encoded);
+    const auto* root_table = ::flatbuffers::GetRoot<::flatbuffers::Table>(encoded->data());
+    const auto* maybe = root_table->GetPointer<const ::flatbuffers::Table*>(22);
+    ASSERT(maybe != nullptr);
+    EXPECT(maybe->GetField<std::uint32_t>(4, 99) == 0U);
+    EXPECT(maybe->GetOptionalFieldOffset(6) == 0U);
 
     auto decoded = fbs::from_bytes<rich2>(*encoded);
     ASSERT(decoded);

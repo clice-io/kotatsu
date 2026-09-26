@@ -9,7 +9,6 @@
 #include <string>
 #include <string_view>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "kota/support/ranges.h"
@@ -455,47 +454,6 @@ struct TableElemVisitor : detail::VisitorBase {
     builder_t& fbb;
     std::vector<table_offset_t>& table_offsets;
 
-    // Scalar no-ops — should not be reached for table elements, but provide
-    // stubs to satisfy the visitor concept in edge cases (e.g. variant
-    // alternatives that are scalars).
-    bool visit_bool(bool) {
-        return true;
-    }
-
-    template <typename T>
-    bool visit_int(T) {
-        return true;
-    }
-
-    template <typename T>
-    bool visit_uint(T) {
-        return true;
-    }
-
-    template <typename T>
-    bool visit_float(T) {
-        return true;
-    }
-
-    template <typename T>
-    bool visit_char(T) {
-        return true;
-    }
-
-    bool visit_null() {
-        return true;
-    }
-
-    template <typename T>
-    bool visit_str(const T&) {
-        return true;
-    }
-
-    template <typename T>
-    bool visit_bytes(const T&) {
-        return true;
-    }
-
     template <typename T, typename Body>
     inline bool visit_struct(const T&, Body&& body);
 
@@ -589,9 +547,7 @@ using ordering_key_t = typename decltype(ordering_key_impl<K>())::type;
 /// Captures a map key as the ordering key its entry is sorted by. The events
 /// mirror how the key's resolved representation encodes: scalar keys fire
 /// exactly one scalar event, string keys fire visit_str, inline-struct keys
-/// fire visit_struct with the whole value. The visit_str guard exists
-/// because configs spelling non-finite floats as strings (nan_repr::String)
-/// instantiate visit_str for scalar keys too.
+/// fire visit_struct with the whole value.
 template <typename Key>
 struct KeyCaptureVisitor : detail::VisitorBase {
     Key captured{};
@@ -622,9 +578,7 @@ struct KeyCaptureVisitor : detail::VisitorBase {
 
     template <typename T>
     bool visit_str(const T& v) {
-        if constexpr(std::same_as<Key, std::string>) {
-            captured = std::string(std::string_view(v));
-        }
+        captured = std::string(std::string_view(v));
         return true;
     }
 
@@ -1016,43 +970,3 @@ auto to_bytes(const T& value, std::optional<std::size_t> initial_capacity = std:
 }
 
 }  // namespace kota::codec::fbs
-
-namespace kota::codec {
-
-// std::monostate is reflectable_class (aggregate with 0 fields), so the old
-// arena encoder wrote it as an empty table.  The decoder expects a table
-// reference at the payload slot, so we must match that layout.
-template <typename Config>
-struct serialize_visit<fbs::encode_detail::AllocFieldVisitor, std::monostate, Config> {
-    static bool visit(fbs::encode_detail::AllocFieldVisitor& vis, const std::monostate&) {
-        auto start = vis.fbb.StartTable();
-        vis.stored_offset = vis.fbb.EndTable(start);
-        return true;
-    }
-};
-
-template <typename Config>
-struct serialize_visit<fbs::encode_detail::WriteFieldVisitor, std::monostate, Config> {
-    static bool visit(fbs::encode_detail::WriteFieldVisitor& vis, const std::monostate&) {
-        vis.fbb.AddOffset(vis.sid, fbs::offset_t<void>(vis.stored_offset));
-        return true;
-    }
-};
-
-template <typename Config>
-struct serialize_visit<fbs::encode_detail::RootVisitor, std::monostate, Config> {
-    static bool visit(fbs::encode_detail::RootVisitor& vis, const std::monostate&) {
-        return vis.visit_null();
-    }
-};
-
-template <typename Config>
-struct serialize_visit<fbs::encode_detail::TableElemVisitor, std::monostate, Config> {
-    static bool visit(fbs::encode_detail::TableElemVisitor& vis, const std::monostate&) {
-        auto start = vis.fbb.StartTable();
-        vis.table_offsets.push_back(fbs::encode_detail::table_offset_t(vis.fbb.EndTable(start)));
-        return true;
-    }
-};
-
-}  // namespace kota::codec
