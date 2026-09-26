@@ -56,27 +56,27 @@ struct Wrapper {
     std::vector<SimpleVariant> items;
 };
 
-ZEST_SUITE(simdjson_checkpoint_restore){
+ZEST_SUITE(simdjson_checkpoint_restore) {
 
-    ZEST_CASE(string_buffer_reclaimed){std::string big(16384, 'X');
-std::string input = R"({"value":")" + big + R"("})";
+ZEST_CASE(string_buffer_reclaimed) {
+    std::string big(16384, 'X');
+    std::string input = R"({"value":")" + big + R"("})";
 
-json::padded_string padded{std::string_view{input}};
-json::ondemand::Parser parser;
-json::ondemand::Document doc;
-ASSERT(parser.iterate(padded).get(doc) == json::success);
-auto r = Reader{doc, padded.data(), padded.size()};
-auto& ji = r.src.json_iter();
-auto* buf_before = ji.string_buf_loc();
+    json::padded_string padded{std::string_view{input}};
+    json::ondemand::Parser parser;
+    json::ondemand::Document doc;
+    ASSERT(parser.iterate(padded).get(doc) == json::success);
+    auto r = Reader{doc, padded.data(), padded.size()};
+    auto& ji = r.src.json_iter();
+    auto* buf_before = ji.string_buf_loc();
 
-bool ok = r.try_read([&](Reader& sub) -> bool {
-    SimpleA a;
-    return decode_value<default_config<>>(sub, a);
-});
-EXPECT(!ok);
-EXPECT(ji.string_buf_loc() == buf_before);
-
-}  // namespace
+    bool ok = r.try_read([&](Reader& sub) -> bool {
+        SimpleA a;
+        return decode_value<default_config<>>(sub, a);
+    });
+    EXPECT(!ok);
+    EXPECT(ji.string_buf_loc() == buf_before);
+}
 
 ZEST_CASE(depth_restored) {
     auto input = R"({"value":"test"})";
@@ -195,7 +195,7 @@ ZEST_CASE(variant_fallback_reclaims) {
 
     NestedVariant out;
     auto result = from_string<>(input, out);
-    ASSERT(result.has_value());
+    ASSERT(result);
     ASSERT(out.index() == 1U);
     EXPECT(std::get<Shallow>(out).a.size() == 8192U);
 }
@@ -206,7 +206,7 @@ ZEST_CASE(variant_fallback_reclaims_256KB) {
 
     NestedVariant out;
     auto result = from_string<>(input, out);
-    ASSERT(result.has_value());
+    ASSERT(result);
     ASSERT(out.index() == 1U);
     EXPECT(std::get<Shallow>(out).a.size() == 256U * 1024U);
 }
@@ -220,7 +220,7 @@ ZEST_CASE(variant_first_alternative_succeeds) {
 
     NestedVariant out;
     auto result = from_string<>(input, out);
-    ASSERT(result.has_value());
+    ASSERT(result);
     ASSERT(out.index() == 0U);
     auto& n = std::get<Nested>(out);
     EXPECT(n.a.size() == 4096U);
@@ -233,13 +233,13 @@ ZEST_CASE(value_level_variant) {
     auto input = R"({"items":[{"value":"world"}]})";
     Wrapper w;
     auto result = from_string<>(input, w);
-    ASSERT(result.has_value());
+    ASSERT(result);
     ASSERT(w.items.size() == 1U);
     ASSERT(w.items[0].index() == 1U);
     EXPECT(std::get<SimpleB>(w.items[0]).value == "world");
 }
 
-};  // namespace kota::codec
+};  // ZEST_SUITE(simdjson_checkpoint_restore)
 
 }  // namespace
 

@@ -9,21 +9,20 @@ namespace kota {
 
 namespace {
 
-ZEST_SUITE(event_loop_relay, loop_fixture){
+ZEST_SUITE(event_loop_relay, loop_fixture) {
 
-    ZEST_CASE(relay_keeps_loop_alive){
-        // A relay should keep the loop alive even with no other active handles.
-        // Without the relay, the loop would exit immediately.
-        bool called = false;
+ZEST_CASE(relay_keeps_loop_alive) {
+    // A relay should keep the loop alive even with no other active handles.
+    // Without the relay, the loop would exit immediately.
+    bool called = false;
 
-auto r = loop.create_relay();
-std::thread worker([&, r = std::move(r)]() mutable { r.send([&] { called = true; }); });
+    auto r = loop.create_relay();
+    std::thread worker([&, r = std::move(r)]() mutable { r.send([&] { called = true; }); });
 
-loop.run();
-worker.join();
-EXPECT(called);
-
-}  // namespace
+    loop.run();
+    worker.join();
+    EXPECT(called);
+}
 
 ZEST_CASE(relay_cross_thread_send) {
     int value = 0;
@@ -329,7 +328,7 @@ ZEST_CASE(relay_send_and_destroy_during_drain_delivers) {
     EXPECT(second_ran);
 }
 
-};  // namespace kota
+};  // ZEST_SUITE(event_loop_relay)
 
 }  // namespace
 

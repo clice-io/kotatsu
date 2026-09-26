@@ -78,58 +78,57 @@ struct NotificationTraits<lsp::NoteParams> {
 namespace kota::ipc::lsp {
 namespace {
 
-ZEST_SUITE(language_jsonrpc_traits){
+ZEST_SUITE(language_jsonrpc_traits) {
 
-    ZEST_CASE(traits_dispatch_order){
-        auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
-            R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":2,"b":3}})",
-            R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"first"}})",
-            R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"second"}})",
+ZEST_CASE(traits_dispatch_order) {
+    auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
+        R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":2,"b":3}})",
+        R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"first"}})",
+        R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"second"}})",
+    });
+    auto* transport_ptr = transport.get();
+
+    event_loop loop;
+    JsonPeer peer(loop, std::move(transport));
+    std::vector<std::string> order;
+    bool second_saw_first = false;
+    bool first_seen = false;
+
+    peer.on_request(
+        [&](JsonPeer::RequestContext&, const AddParams& params) -> RequestResult<AddParams> {
+            order.emplace_back("request");
+            co_return AddResult{.sum = params.a + params.b};
         });
-auto* transport_ptr = transport.get();
 
-event_loop loop;
-JsonPeer peer(loop, std::move(transport));
-std::vector<std::string> order;
-bool second_saw_first = false;
-bool first_seen = false;
+    peer.on_notification([&](const NoteParams& params) {
+        if(params.text == "first") {
+            first_seen = true;
+            order.emplace_back("note:first");
+            return;
+        }
+        if(params.text == "second") {
+            second_saw_first = first_seen;
+            order.emplace_back("note:second");
+        }
+    });
 
-peer.on_request([&](JsonPeer::RequestContext&,
-                    const AddParams& params) -> RequestResult<AddParams> {
-    order.emplace_back("request");
-    co_return AddResult{.sum = params.a + params.b};
-});
+    loop.schedule(peer.run());
+    EXPECT(loop.run() == 0);
 
-peer.on_notification([&](const NoteParams& params) {
-    if(params.text == "first") {
-        first_seen = true;
-        order.emplace_back("note:first");
-        return;
-    }
-    if(params.text == "second") {
-        second_saw_first = first_seen;
-        order.emplace_back("note:second");
-    }
-});
+    ASSERT(order.size() == 3U);
+    EXPECT(order[0] == "request");
+    EXPECT(order[1] == "note:first");
+    EXPECT(order[2] == "note:second");
+    EXPECT(second_saw_first);
 
-loop.schedule(peer.run());
-EXPECT(loop.run() == 0);
-
-ASSERT(order.size() == 3U);
-EXPECT(order[0] == "request");
-EXPECT(order[1] == "note:first");
-EXPECT(order[2] == "note:second");
-EXPECT(second_saw_first);
-
-ASSERT(transport_ptr->outgoing().size() == 1U);
-auto response = codec::json::from_string<Response>(transport_ptr->outgoing().front());
-ASSERT(response.has_value());
-EXPECT(response->jsonrpc == "2.0");
-EXPECT(std::get<std::int64_t>(response->id) == 1);
-ASSERT(response->result.has_value());
-EXPECT(response->result->sum == 5);
-
-}  // namespace
+    ASSERT(transport_ptr->outgoing().size() == 1U);
+    auto response = codec::json::from_string<Response>(transport_ptr->outgoing().front());
+    ASSERT(response);
+    EXPECT(response->jsonrpc == "2.0");
+    EXPECT(std::get<std::int64_t>(response->id) == 1);
+    ASSERT(response->result);
+    EXPECT(response->result->sum == 5);
+}
 
 ZEST_CASE(explicit_method) {
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
@@ -162,9 +161,9 @@ ZEST_CASE(explicit_method) {
 
     ASSERT(transport_ptr->outgoing().size() == 1U);
     auto response = codec::json::from_string<Response>(transport_ptr->outgoing().front());
-    ASSERT(response.has_value());
+    ASSERT(response);
     EXPECT(std::get<std::int64_t>(response->id) == 2);
-    ASSERT(response->result.has_value());
+    ASSERT(response->result);
     EXPECT(response->result->sum == 15);
 }
 
@@ -230,19 +229,19 @@ ZEST_CASE(request_notify_apis) {
     ASSERT(outgoing.size() == 5U);
 
     auto note_from_context = codec::json::from_string<Notification>(outgoing[0]);
-    ASSERT(note_from_context.has_value());
+    ASSERT(note_from_context);
     EXPECT(note_from_context->jsonrpc == "2.0");
     EXPECT(note_from_context->method == "client/note/context");
     EXPECT(note_from_context->params.text == "context");
 
     auto note_from_server = codec::json::from_string<Notification>(outgoing[1]);
-    ASSERT(note_from_server.has_value());
+    ASSERT(note_from_server);
     EXPECT(note_from_server->jsonrpc == "2.0");
     EXPECT(note_from_server->method == "client/note/server");
     EXPECT(note_from_server->params.text == "server");
 
     auto request_from_context = codec::json::from_string<Request>(outgoing[2]);
-    ASSERT(request_from_context.has_value());
+    ASSERT(request_from_context);
     EXPECT(request_from_context->jsonrpc == "2.0");
     EXPECT(std::get<std::int64_t>(request_from_context->id) == 1);
     EXPECT(request_from_context->method == "client/add/context");
@@ -250,7 +249,7 @@ ZEST_CASE(request_notify_apis) {
     EXPECT(request_from_context->params.b == 3);
 
     auto request_from_server = codec::json::from_string<Request>(outgoing[3]);
-    ASSERT(request_from_server.has_value());
+    ASSERT(request_from_server);
     EXPECT(request_from_server->jsonrpc == "2.0");
     EXPECT(std::get<std::int64_t>(request_from_server->id) == 2);
     EXPECT(request_from_server->method == "client/add/server");
@@ -258,14 +257,14 @@ ZEST_CASE(request_notify_apis) {
     EXPECT(request_from_server->params.b == 1);
 
     auto final_response = codec::json::from_string<Response>(outgoing[4]);
-    ASSERT(final_response.has_value());
+    ASSERT(final_response);
     EXPECT(final_response->jsonrpc == "2.0");
     EXPECT(std::get<std::int64_t>(final_response->id) == 7);
-    ASSERT(final_response->result.has_value());
+    ASSERT(final_response->result);
     EXPECT(final_response->result->sum == 13);
 }
 
-};  // namespace kota::ipc::lsp
+};  // ZEST_SUITE(language_jsonrpc_traits)
 
 }  // namespace
 }  // namespace kota::ipc::lsp

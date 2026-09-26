@@ -10,28 +10,28 @@
 
 namespace kota {
 
-ZEST_SUITE(task_group_lifetime, loop_fixture){
+ZEST_SUITE(task_group_lifetime, loop_fixture) {
 
-    ZEST_CASE(spawn_after_join){int count = 0;
+ZEST_CASE(spawn_after_join) {
+    int count = 0;
 
-auto work = [&]() -> task<> {
-    count += 1;
-    co_return;
-};
+    auto work = [&]() -> task<> {
+        count += 1;
+        co_return;
+    };
 
-auto driver = [&]() -> task<> {
-    task_group<> group(loop);
-    group.spawn(work());
-    co_await group.join();
-    group.spawn(work());
-};
+    auto driver = [&]() -> task<> {
+        task_group<> group(loop);
+        group.spawn(work());
+        co_await group.join();
+        group.spawn(work());
+    };
 
-auto t = driver();
-schedule_all(t);
-EXPECT(t->is_finished());
-EXPECT(count == 1);
-
-}  // namespace kota
+    auto t = driver();
+    schedule_all(t);
+    EXPECT(t->is_finished());
+    EXPECT(count == 1);
+}
 
 ZEST_CASE(not_awaited) {
     int count = 0;
@@ -207,7 +207,7 @@ ZEST_CASE(reclaims_completed_child_frames) {
     // ~task_group (at the end of driver's body) destroyed the failed child.
     EXPECT(destroyed == 3);
 }
-}
-;  // ZEST_SUITE(task_group_lifetime)
+
+};  // ZEST_SUITE(task_group_lifetime)
 
 }  // namespace kota

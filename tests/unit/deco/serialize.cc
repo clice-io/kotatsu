@@ -99,20 +99,20 @@ SerializeOpt make_full_opt() {
     return opt;
 }
 
-ZEST_SUITE(deco_serialize){
+ZEST_SUITE(deco_serialize) {
 
-    ZEST_CASE(optional_and_empty_values_are_not_generated){SerializeOpt opt{};
-auto argv = ser::to_argv(opt);
-EXPECT(argv.empty());
+ZEST_CASE(optional_and_empty_values_are_not_generated) {
+    SerializeOpt opt{};
+    auto argv = ser::to_argv(opt);
+    EXPECT(argv.empty());
 
-opt.verbose = false;
-opt.repeat = static_cast<std::uint32_t>(0);
-opt.tags = std::vector<std::string>{};
-opt.pair = std::vector<std::string>{};
-auto argv2 = ser::to_argv(opt);
-EXPECT(argv2.empty());
-
-}  // namespace
+    opt.verbose = false;
+    opt.repeat = static_cast<std::uint32_t>(0);
+    opt.tags = std::vector<std::string>{};
+    opt.pair = std::vector<std::string>{};
+    auto argv2 = ser::to_argv(opt);
+    EXPECT(argv2.empty());
+}
 
 ZEST_CASE(serializes_all_option_kinds_with_stable_order_and_roundtrip) {
     auto opt = make_full_opt();
@@ -138,7 +138,7 @@ ZEST_CASE(serializes_all_option_kinds_with_stable_order_and_roundtrip) {
     EXPECT(argv == expected);
 
     auto parsed = cli::parse<SerializeOpt>(argv);
-    EXPECT(parsed.has_value());
+    EXPECT(parsed);
     if(!parsed.has_value()) {
         return;
     }
@@ -200,15 +200,15 @@ ZEST_CASE(vector_input_serializes_as_repeated_positional_arguments) {
     EXPECT(argv == expected);
 
     auto parsed = cli::parse<VectorInputSerializeOpt>(argv);
-    EXPECT(parsed.has_value());
+    EXPECT(parsed);
     if(!parsed.has_value()) {
         return;
     }
-    EXPECT(parsed->options.inputs.has_value());
+    EXPECT(parsed->options.inputs);
     EXPECT(*parsed->options.inputs == expected);
 }
 
-};  // namespace kota::deco
+};  // ZEST_SUITE(deco_serialize)
 
 }  // namespace
 }  // namespace kota::deco

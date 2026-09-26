@@ -135,54 +135,54 @@ struct nested_holder {
     <wide_payload> inner;
 };
 
-ZEST_SUITE(serde_annotate_macro){
+ZEST_SUITE(serde_annotate_macro) {
 
-    ZEST_CASE(defaulted_field_may_be_absent){defaulted_payload parsed{};
-auto status = from_string(R"({"id":1})", parsed);
-ASSERT(status.has_value());
-EXPECT(parsed.id == 1);
-EXPECT(parsed.retries == 3);
+ZEST_CASE(defaulted_field_may_be_absent) {
+    defaulted_payload parsed{};
+    auto status = from_string(R"({"id":1})", parsed);
+    ASSERT(status);
+    EXPECT(parsed.id == 1);
+    EXPECT(parsed.retries == 3);
 
-defaulted_payload strict{};
-auto missing_required = from_string(R"({"retries":9})", strict);
-EXPECT(!missing_required.has_value());
-
-}  // namespace
+    defaulted_payload strict{};
+    auto missing_required = from_string(R"({"retries":9})", strict);
+    EXPECT(!missing_required);
+}
 
 ZEST_CASE(custom_skip_predicate_applies) {
     custom_skip_payload input{};
     input.score = -5;
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({})");
 
     input.score = 5;
     encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"score":5})");
 }
 
 ZEST_CASE(builtin_skip_conditions_apply) {
     builtin_skip_payload input{};
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({})");
 
     input.tags = std::vector{1, 2};
     input.generation = 5;
     encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"tags":[1,2],"generation":5})");
 
     builtin_skip_payload parsed{};
     parsed.generation = 7;
     auto absent_ok = from_string(R"({})", parsed);
-    ASSERT(absent_ok.has_value());
+    ASSERT(absent_ok);
     EXPECT(parsed.tags.empty());
     EXPECT(parsed.generation == 7);
 
     auto status = from_string(R"({"tags":[3],"generation":9})", parsed);
-    ASSERT(status.has_value());
+    ASSERT(status);
     EXPECT(parsed.tags == std::vector{3});
     EXPECT(parsed.generation == 9);
 }
@@ -193,12 +193,12 @@ ZEST_CASE(with_adapter_and_as_target_roundtrip) {
     input.owner = user_id{"alice"};
 
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"encoded":"42","owner":"alice"})");
 
     adapted_payload parsed{};
     auto status = from_string(R"({"encoded":"17","owner":"bob"})", parsed);
-    ASSERT(status.has_value());
+    ASSERT(status);
     EXPECT(parsed.encoded == 17);
     EXPECT(parsed.owner.raw == "bob");
 }
@@ -206,24 +206,24 @@ ZEST_CASE(with_adapter_and_as_target_roundtrip) {
 ZEST_CASE(macro_works_outside_kota_namespace) {
     kotatsu_annotate_downstream::config input{};
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"compileCommands":0})");
 
     kotatsu_annotate_downstream::box<int> boxed{};
     auto status = from_string(R"({"v":7})", boxed);
-    ASSERT(status.has_value());
+    ASSERT(status);
     EXPECT(boxed.value == 7);
 }
 
 ZEST_CASE(named_annotation_tags_variant) {
     shape input{rect{2.5}};
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"kind":"rect","width":2.5})");
 
     shape parsed;
     auto status = from_string(R"({"kind":"circle","radius":1.5})", parsed);
-    ASSERT(status.has_value());
+    ASSERT(status);
     ASSERT(parsed.index() == 0u);
     EXPECT(std::get<circle>(parsed).radius == 1.5);
 }
@@ -232,17 +232,17 @@ ZEST_CASE(named_annotation_renames_and_denies_unknown) {
     camel_payload input;
     input.user_name = "alice";
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"userName":"alice","userAge":0})");
 
     camel_payload parsed;
     auto status = from_string(R"({"userName":"bob","userAge":3})", parsed);
-    ASSERT(status.has_value());
+    ASSERT(status);
     EXPECT(parsed.user_name == "bob");
     EXPECT(parsed.user_age == 3);
 
     auto unknown = from_string(R"({"userName":"bob","extra":1})", parsed);
-    EXPECT(!unknown.has_value());
+    EXPECT(!unknown);
 }
 
 ZEST_CASE(rename_all_on_untagged_variant_is_inert) {
@@ -254,7 +254,7 @@ ZEST_CASE(rename_all_on_untagged_variant_is_inert) {
         wide_payload{.user_name = "alice", .user_age = 1}
     };
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"user_name":"alice","user_age":1})");
 
     const auto& info =
@@ -267,12 +267,12 @@ ZEST_CASE(field_annotation_accepts_struct_entries) {
     shape_holder holder;
     holder.shape = circle{4.0};
     auto encoded = to_string(holder);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"shape":{"kind":"circle","radius":4.0}})");
 
     shape_holder parsed;
     auto status = from_string(R"({"shape":{"kind":"rect","width":6.0}})", parsed);
-    ASSERT(status.has_value());
+    ASSERT(status);
     ASSERT(parsed.shape.index() == 1u);
     EXPECT(std::get<rect>(parsed.shape).width == 6.0);
 }
@@ -281,17 +281,17 @@ ZEST_CASE(field_annotation_merges_struct_config) {
     nested_holder holder;
     holder.inner.user_name = "alice";
     auto encoded = to_string(holder);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"inner":{"USER_NAME":"alice","USER_AGE":0}})");
 
     nested_holder parsed;
     auto status = from_string(R"({"inner":{"USER_NAME":"bob","USER_AGE":2}})", parsed);
-    ASSERT(status.has_value());
+    ASSERT(status);
     EXPECT(parsed.inner.user_name == "bob");
     EXPECT(parsed.inner.user_age == 2);
 
     auto unknown = from_string(R"({"inner":{"USER_NAME":"bob","EXTRA":1}})", parsed);
-    EXPECT(!unknown.has_value());
+    EXPECT(!unknown);
 }
 
 ZEST_CASE(annotated_and_bare_use_share_type_info) {
@@ -301,7 +301,7 @@ ZEST_CASE(annotated_and_bare_use_share_type_info) {
     EXPECT(&meta::type_info_of<annotated>() == &meta::type_info_of<profile_info>());
 }
 
-};  // namespace kota::codec
+};  // ZEST_SUITE(serde_annotate_macro)
 
 }  // namespace
 

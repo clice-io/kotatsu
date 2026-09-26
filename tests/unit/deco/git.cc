@@ -52,40 +52,39 @@ std::vector<std::string> make_args(Args&&... args) {
     return argv;
 }
 
-ZEST_SUITE(deco_git){
+ZEST_SUITE(deco_git) {
 
-    ZEST_CASE(usage_lists_git_style_subcommands){
-        auto commit_command = cli::command<GitCommitOpt>("git commit [OPTIONS]");
-commit_command.matchAll([](GitCommitOpt) {});
+ZEST_CASE(usage_lists_git_style_subcommands) {
+    auto commit_command = cli::command<GitCommitOpt>("git commit [OPTIONS]");
+    commit_command.matchAll([](GitCommitOpt) {});
 
-auto clone_command = cli::command<GitCloneOpt>("git clone [OPTIONS]");
-clone_command.matchAll([](GitCloneOpt) {});
+    auto clone_command = cli::command<GitCloneOpt>("git clone [OPTIONS]");
+    clone_command.matchAll([](GitCloneOpt) {});
 
-cli::SubCommander git("git [--version] [--help] <command> [<args>]",
-                      "A fast, scalable, distributed version control system");
-git.add(
-       decl::SubCommand{
-           .name = "commit",
-           .description = "Record changes to the repository",
-       },
-       commit_command)
-    .add(
-        decl::SubCommand{
-            .name = "clone",
-            .description = "Clone a repository into a new directory",
-        },
-        clone_command);
+    cli::SubCommander git("git [--version] [--help] <command> [<args>]",
+                          "A fast, scalable, distributed version control system");
+    git.add(
+           decl::SubCommand{
+               .name = "commit",
+               .description = "Record changes to the repository",
+           },
+           commit_command)
+        .add(
+            decl::SubCommand{
+                .name = "clone",
+                .description = "Clone a repository into a new directory",
+            },
+            clone_command);
 
-std::stringstream ss;
-git.usage(ss);
-const auto usage = ss.str();
-EXPECT(zest::starts_with(usage, "A fast, scalable, distributed version control system"));
-EXPECT(usage.contains("Subcommands:"));
-EXPECT(usage.contains("commit"));
-EXPECT(usage.contains("clone"));
-EXPECT(!usage.contains("usage: git [--version] [--help] <command> [<args>]"));
-
-}  // namespace
+    std::stringstream ss;
+    git.usage(ss);
+    const auto usage = ss.str();
+    EXPECT(zest::starts_with(usage, "A fast, scalable, distributed version control system"));
+    EXPECT(usage.contains("Subcommands:"));
+    EXPECT(usage.contains("commit"));
+    EXPECT(usage.contains("clone"));
+    EXPECT(!usage.contains("usage: git [--version] [--help] <command> [<args>]"));
+}
 
 ZEST_CASE(clone_subcommand_parses_input_and_option) {
     std::string repo;
@@ -96,11 +95,11 @@ ZEST_CASE(clone_subcommand_parses_input_and_option) {
     auto clone_command = cli::command<GitCloneOpt>("git clone [OPTIONS] REPO");
     clone_command
         .matchAll([&](GitCloneOpt opt) {
-            EXPECT(opt.repo.has_value());
+            EXPECT(opt.repo);
             if(opt.repo.has_value()) {
                 repo = *opt.repo;
             }
-            EXPECT(opt.branch.has_value());
+            EXPECT(opt.branch);
             if(opt.branch.has_value()) {
                 branch = *opt.branch;
             }
@@ -191,7 +190,7 @@ ZEST_CASE(required_category_error_is_reported) {
     EXPECT(dispatch_err.contains("required <mode> (tag operation mode) is missing"));
 }
 
-};  // namespace kota::deco
+};  // ZEST_SUITE(deco_git)
 
 }  // namespace
 }  // namespace kota::deco

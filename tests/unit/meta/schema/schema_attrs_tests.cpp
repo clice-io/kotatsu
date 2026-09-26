@@ -12,44 +12,44 @@ namespace {
 
 namespace fx = ::kota::meta::fixtures;
 
-ZEST_SUITE(virtual_schema_schema_attrs){
+ZEST_SUITE(virtual_schema_schema_attrs) {
 
-    ZEST_CASE(simple_struct_fields){STATIC_EXPECT(virtual_schema<fx::SimpleStruct>::count == 3U);
+ZEST_CASE(simple_struct_fields) {
+    STATIC_EXPECT(virtual_schema<fx::SimpleStruct>::count == 3U);
 
-constexpr auto& fields = virtual_schema<fx::SimpleStruct>::fields;
+    constexpr auto& fields = virtual_schema<fx::SimpleStruct>::fields;
 
-STATIC_EXPECT(fields[0].name == "x");
-STATIC_EXPECT(fields[1].name == "name");
-STATIC_EXPECT(fields[2].name == "score");
+    STATIC_EXPECT(fields[0].name == "x");
+    STATIC_EXPECT(fields[1].name == "name");
+    STATIC_EXPECT(fields[2].name == "score");
 
-STATIC_EXPECT(fields[0].type().kind == type_kind::int32);
-STATIC_EXPECT(fields[1].type().kind == type_kind::string);
-STATIC_EXPECT(fields[2].type().kind == type_kind::float32);
+    STATIC_EXPECT(fields[0].type().kind == type_kind::int32);
+    STATIC_EXPECT(fields[1].type().kind == type_kind::string);
+    STATIC_EXPECT(fields[2].type().kind == type_kind::float32);
 
-STATIC_EXPECT(fields[0].physical_index == 0U);
-STATIC_EXPECT(fields[1].physical_index == 1U);
-STATIC_EXPECT(fields[2].physical_index == 2U);
+    STATIC_EXPECT(fields[0].physical_index == 0U);
+    STATIC_EXPECT(fields[1].physical_index == 1U);
+    STATIC_EXPECT(fields[2].physical_index == 2U);
 
-// Offsets: first at 0, strictly increasing
-STATIC_EXPECT(fields[0].offset == 0U);
-STATIC_EXPECT(fields[1].offset > fields[0].offset);
-STATIC_EXPECT(fields[2].offset > fields[1].offset);
+    // Offsets: first at 0, strictly increasing
+    STATIC_EXPECT(fields[0].offset == 0U);
+    STATIC_EXPECT(fields[1].offset > fields[0].offset);
+    STATIC_EXPECT(fields[2].offset > fields[1].offset);
 
-// All flags false for plain struct
-STATIC_EXPECT(!fields[0].has_default);
-STATIC_EXPECT(!fields[0].has_skip_if);
-STATIC_EXPECT(!fields[0].has_behavior);
-STATIC_EXPECT(fields[0].aliases.size() == 0U);
-STATIC_EXPECT(!fields[1].has_default);
-STATIC_EXPECT(!fields[1].has_skip_if);
-STATIC_EXPECT(!fields[1].has_behavior);
-STATIC_EXPECT(fields[1].aliases.size() == 0U);
-STATIC_EXPECT(!fields[2].has_default);
-STATIC_EXPECT(!fields[2].has_skip_if);
-STATIC_EXPECT(!fields[2].has_behavior);
-STATIC_EXPECT(fields[2].aliases.size() == 0U);
-
-}  // namespace
+    // All flags false for plain struct
+    STATIC_EXPECT(!fields[0].has_default);
+    STATIC_EXPECT(!fields[0].has_skip_if);
+    STATIC_EXPECT(!fields[0].has_behavior);
+    STATIC_EXPECT(fields[0].aliases.size() == 0U);
+    STATIC_EXPECT(!fields[1].has_default);
+    STATIC_EXPECT(!fields[1].has_skip_if);
+    STATIC_EXPECT(!fields[1].has_behavior);
+    STATIC_EXPECT(fields[1].aliases.size() == 0U);
+    STATIC_EXPECT(!fields[2].has_default);
+    STATIC_EXPECT(!fields[2].has_skip_if);
+    STATIC_EXPECT(!fields[2].has_behavior);
+    STATIC_EXPECT(fields[2].aliases.size() == 0U);
+}
 
 ZEST_CASE(rename_and_skip) {
     // AnnotatedStruct: user_id(rename<"id">), internal(skip), value
@@ -190,7 +190,7 @@ ZEST_CASE(tagged_field_type_info) {
     STATIC_EXPECT(adj.alt_names[1] == "text");
 }
 
-};  // namespace kota::meta
+};  // ZEST_SUITE(virtual_schema_schema_attrs)
 
 }  // namespace
 

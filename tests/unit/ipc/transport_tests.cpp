@@ -27,37 +27,38 @@ task<std::pair<std::optional<std::string>, std::optional<std::string>>>
     co_return std::pair{std::move(first), std::move(second)};
 }
 
-ZEST_SUITE(ipc_transport){
+ZEST_SUITE(ipc_transport) {
 
-    ZEST_CASE(consecutive_messages){event_loop loop;
+ZEST_CASE(consecutive_messages) {
+    event_loop loop;
 
-int fds[2] = {-1, -1};
-ASSERT(create_pipe(fds) == 0);
+    int fds[2] = {-1, -1};
+    ASSERT(create_pipe(fds) == 0);
 
-auto input = pipe::open(fds[0], pipe::options{}, loop);
-ASSERT(input.has_value());
+    auto input = pipe::open(fds[0], pipe::options{}, loop);
+    ASSERT(input);
 
-StreamTransport transport(stream(std::move(*input)));
+    StreamTransport transport(stream(std::move(*input)));
 
-const std::string first_payload =
-    R"({"jsonrpc":"2.0","method":"example/note","params":{"text":"first"}})";
-const std::string second_payload = R"({"jsonrpc":"2.0","id":1,"result":{"sum":9}})";
-const auto payload = frame(first_payload) + frame(second_payload);
+    const std::string first_payload =
+        R"({"jsonrpc":"2.0","method":"example/note","params":{"text":"first"}})";
+    const std::string second_payload = R"({"jsonrpc":"2.0","id":1,"result":{"sum":9}})";
+    const auto payload = frame(first_payload) + frame(second_payload);
 
-ASSERT(write_fd(fds[1], payload.data(), payload.size()) == static_cast<ssize_t>(payload.size()));
-ASSERT(close_fd(fds[1]) == 0);
+    ASSERT(write_fd(fds[1], payload.data(), payload.size()) ==
+           static_cast<ssize_t>(payload.size()));
+    ASSERT(close_fd(fds[1]) == 0);
 
-auto reader = read_two_messages(transport);
-loop.schedule(reader);
-loop.run();
+    auto reader = read_two_messages(transport);
+    loop.schedule(reader);
+    loop.run();
 
-const auto [first, second] = reader.result();
-ASSERT(first.has_value());
-ASSERT(second.has_value());
-EXPECT(*first == first_payload);
-EXPECT(*second == second_payload);
-
-}  // namespace
+    const auto [first, second] = reader.result();
+    ASSERT(first);
+    ASSERT(second);
+    EXPECT(*first == first_payload);
+    EXPECT(*second == second_payload);
+}
 
 // 6.1 Content-Length: 0 → empty string payload
 ZEST_CASE(empty_payload) {
@@ -67,7 +68,7 @@ ZEST_CASE(empty_payload) {
     ASSERT(create_pipe(fds) == 0);
 
     auto input = pipe::open(fds[0], pipe::options{}, loop);
-    ASSERT(input.has_value());
+    ASSERT(input);
 
     StreamTransport transport(stream(std::move(*input)));
 
@@ -84,7 +85,7 @@ ZEST_CASE(empty_payload) {
     loop.run();
 
     auto result = read_task.result();
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->empty());
 }
 
@@ -96,7 +97,7 @@ ZEST_CASE(header_too_large) {
     ASSERT(create_pipe(fds) == 0);
 
     auto input = pipe::open(fds[0], pipe::options{}, loop);
-    ASSERT(input.has_value());
+    ASSERT(input);
 
     StreamTransport transport(stream(std::move(*input)));
 
@@ -126,7 +127,7 @@ ZEST_CASE(header_too_large) {
     EXPECT(writer_done.load(std::memory_order_acquire));
 
     auto result = read_task.result();
-    EXPECT(!result.has_value());
+    EXPECT(!result);
 }
 
 // 6.4 Incomplete header (EOF before \r\n\r\n) → nullopt
@@ -137,7 +138,7 @@ ZEST_CASE(incomplete_header) {
     ASSERT(create_pipe(fds) == 0);
 
     auto input = pipe::open(fds[0], pipe::options{}, loop);
-    ASSERT(input.has_value());
+    ASSERT(input);
 
     StreamTransport transport(stream(std::move(*input)));
 
@@ -155,7 +156,7 @@ ZEST_CASE(incomplete_header) {
     loop.run();
 
     auto result = read_task.result();
-    EXPECT(!result.has_value());
+    EXPECT(!result);
 }
 
 // 6.5 Content-Length > actual body (EOF mid-body) → nullopt
@@ -166,7 +167,7 @@ ZEST_CASE(length_mismatch) {
     ASSERT(create_pipe(fds) == 0);
 
     auto input = pipe::open(fds[0], pipe::options{}, loop);
-    ASSERT(input.has_value());
+    ASSERT(input);
 
     StreamTransport transport(stream(std::move(*input)));
 
@@ -184,7 +185,7 @@ ZEST_CASE(length_mismatch) {
     loop.run();
 
     auto result = read_task.result();
-    EXPECT(!result.has_value());
+    EXPECT(!result);
 }
 
 // 6.6 Rapid sequential writes → all correctly read
@@ -195,7 +196,7 @@ ZEST_CASE(rapid_sequential) {
     ASSERT(create_pipe(fds) == 0);
 
     auto input = pipe::open(fds[0], pipe::options{}, loop);
-    ASSERT(input.has_value());
+    ASSERT(input);
 
     StreamTransport transport(stream(std::move(*input)));
 
@@ -242,7 +243,7 @@ ZEST_CASE(large_payload_single_chunk) {
     ASSERT(create_pipe(fds) == 0);
 
     auto input = pipe::open(fds[0], pipe::options{}, loop);
-    ASSERT(input.has_value());
+    ASSERT(input);
 
     StreamTransport transport(stream(std::move(*input)));
 
@@ -268,11 +269,11 @@ ZEST_CASE(large_payload_single_chunk) {
     writer.join();
 
     auto result = read_task.result();
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->size() == payload.size());
 }
 
-};  // namespace kota::ipc
+};  // ZEST_SUITE(ipc_transport)
 
 }  // namespace
 }  // namespace kota::ipc

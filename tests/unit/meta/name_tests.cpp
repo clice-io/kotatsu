@@ -173,30 +173,30 @@ constexpr auto full_templ = type_name<templ_t>(true);
 constexpr auto short_nested = type_name<nested_t>();
 constexpr auto full_nested = type_name<nested_t>(true);
 
-ZEST_SUITE(reflection){
+ZEST_SUITE(reflection) {
 
-    ZEST_CASE(type_name){EXPECT(type_name<int>() == "int");
+ZEST_CASE(type_name) {
+    EXPECT(type_name<int>() == "int");
 
-EXPECT(type_name<struct_x>() == "struct_x");
-EXPECT(type_name<class_x>() == "class_x");
-EXPECT(type_name<enum_x>() == "enum_x");
-EXPECT(type_name<union_x>() == "union_x");
+    EXPECT(type_name<struct_x>() == "struct_x");
+    EXPECT(type_name<class_x>() == "class_x");
+    EXPECT(type_name<enum_x>() == "enum_x");
+    EXPECT(type_name<union_x>() == "union_x");
 
-struct struct_y;
-class class_y;
-enum class enum_y;
-union union_y;
-EXPECT(type_name<struct_y>() == "struct_y");
-EXPECT(type_name<class_y>() == "class_y");
-EXPECT(type_name<enum_y>() == "enum_y");
-EXPECT(type_name<union_y>() == "union_y");
+    struct struct_y;
+    class class_y;
+    enum class enum_y;
+    union union_y;
+    EXPECT(type_name<struct_y>() == "struct_y");
+    EXPECT(type_name<class_y>() == "class_y");
+    EXPECT(type_name<enum_y>() == "enum_y");
+    EXPECT(type_name<union_y>() == "union_y");
 
-EXPECT(type_name<local_types::struct_z>() == "struct_z");
-EXPECT(type_name<local_types::class_z>() == "class_z");
-EXPECT(type_name<local_types::enum_z>() == "enum_z");
-EXPECT(type_name<local_types::union_z>() == "union_z");
-
-}  // namespace
+    EXPECT(type_name<local_types::struct_z>() == "struct_z");
+    EXPECT(type_name<local_types::class_z>() == "class_z");
+    EXPECT(type_name<local_types::enum_z>() == "enum_z");
+    EXPECT(type_name<local_types::union_z>() == "union_z");
+}
 
 ZEST_CASE(qualified_type_name) {
     EXPECT(short_outer == "Outer");
@@ -281,7 +281,7 @@ ZEST_CASE(enum_name_sparse_values) {
     EXPECT(enum_name<Left>() == "Left");
 }
 
-};  // namespace kota::meta
+};  // ZEST_SUITE(reflection)
 
 }  // namespace
 

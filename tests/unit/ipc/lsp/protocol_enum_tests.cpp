@@ -10,21 +10,20 @@ namespace {
 
 using codec::json::from_string;
 
-ZEST_SUITE(language_protocol_enums){
+ZEST_SUITE(language_protocol_enums) {
 
-    ZEST_CASE(unknown_string_enum_value){
-        auto content = from_string<protocol::MarkupContent, lsp_config>(
-            R"({"kind":"asciidoc","value":"body"})");
-ASSERT(content.has_value());
-EXPECT(content->kind == "asciidoc");
-EXPECT(content->value == "body");
-
-}  // namespace
+ZEST_CASE(unknown_string_enum_value) {
+    auto content =
+        from_string<protocol::MarkupContent, lsp_config>(R"({"kind":"asciidoc","value":"body"})");
+    ASSERT(content);
+    EXPECT(content->kind == "asciidoc");
+    EXPECT(content->value == "body");
+}
 
 ZEST_CASE(known_string_enum_value) {
     auto content =
         from_string<protocol::MarkupContent, lsp_config>(R"({"kind":"markdown","value":"body"})");
-    ASSERT(content.has_value());
+    ASSERT(content);
     EXPECT(content->kind == protocol::MarkupKind::Markdown);
 }
 
@@ -34,16 +33,16 @@ ZEST_CASE(string_enum_round_trip) {
         .value = "body",
     };
     auto serialized = codec::json::to_string<lsp_config>(content);
-    ASSERT(serialized.has_value());
+    ASSERT(serialized);
     EXPECT(*serialized == R"({"kind":"markdown","value":"body"})");
 }
 
 ZEST_CASE(unknown_value_round_trip) {
     constexpr std::string_view payload = R"({"kind":"asciidoc","value":"body"})";
     auto content = from_string<protocol::MarkupContent, lsp_config>(payload);
-    ASSERT(content.has_value());
+    ASSERT(content);
     auto serialized = codec::json::to_string<lsp_config>(*content);
-    ASSERT(serialized.has_value());
+    ASSERT(serialized);
     EXPECT(*serialized == payload);
 }
 
@@ -52,13 +51,13 @@ ZEST_CASE(int_enum_unknown_encode) {
         .value_set = std::vector{protocol::SymbolKind::File, protocol::SymbolKind(9999)},
     };
     auto serialized = codec::json::to_string<lsp_config>(options);
-    ASSERT(serialized.has_value());
+    ASSERT(serialized);
     EXPECT(*serialized == R"({"valueSet":[1,9999]})");
 }
 
 ZEST_CASE(string_literal_field_default) {
     auto serialized = codec::json::to_string<lsp_config>(protocol::FullDocumentDiagnosticReport{});
-    ASSERT(serialized.has_value());
+    ASSERT(serialized);
     EXPECT(*serialized == R"({"kind":"full","items":[]})");
 }
 
@@ -85,41 +84,41 @@ ZEST_CASE(initialize_unknown_enum_values) {
     })";
 
     auto params = from_string<protocol::InitializeParams, lsp_config>(payload);
-    ASSERT(params.has_value());
+    ASSERT(params);
 
     auto& init = *params;
     auto& caps = init.capabilities;
 
-    ASSERT(caps.workspace.has_value());
-    ASSERT(caps.workspace->workspace_edit.has_value());
+    ASSERT(caps.workspace);
+    ASSERT(caps.workspace->workspace_edit);
     auto& edit = *caps.workspace->workspace_edit;
-    ASSERT(edit.resource_operations.has_value());
+    ASSERT(edit.resource_operations);
     ASSERT(edit.resource_operations->size() == 4U);
     EXPECT((*edit.resource_operations)[0] == protocol::ResourceOperationKind::Create);
     EXPECT((*edit.resource_operations)[3] == "futureOperation");
-    ASSERT(edit.failure_handling.has_value());
+    ASSERT(edit.failure_handling);
     EXPECT(*edit.failure_handling == "futureFailureMode");
 
-    ASSERT(caps.workspace->symbol.has_value());
-    ASSERT(caps.workspace->symbol->symbol_kind.has_value());
+    ASSERT(caps.workspace->symbol);
+    ASSERT(caps.workspace->symbol->symbol_kind);
     auto& kinds = caps.workspace->symbol->symbol_kind->value_set;
-    ASSERT(kinds.has_value());
+    ASSERT(kinds);
     ASSERT(kinds->size() == 3U);
     EXPECT((*kinds)[0] == protocol::SymbolKind::File);
     EXPECT(static_cast<std::uint32_t>((*kinds)[1]) == 9999U);
     EXPECT(static_cast<std::uint32_t>((*kinds)[2]) == 4000000000U);
 
-    ASSERT(caps.text_document.has_value());
-    ASSERT(caps.text_document->hover.has_value());
+    ASSERT(caps.text_document);
+    ASSERT(caps.text_document->hover);
     auto& formats = caps.text_document->hover->content_format;
-    ASSERT(formats.has_value());
+    ASSERT(formats);
     EXPECT((*formats)[1] == "asciidoc");
 
-    ASSERT(init.trace.has_value());
+    ASSERT(init.trace);
     EXPECT(*init.trace == "compact");
 }
 
-};  // namespace kota::ipc::lsp
+};  // ZEST_SUITE(language_protocol_enums)
 
 }  // namespace
 }  // namespace kota::ipc::lsp

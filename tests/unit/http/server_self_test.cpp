@@ -337,23 +337,26 @@ task<std::string, http::error> recreate_manager_between_requests(http::bound_cli
 
 }  // namespace
 
-ZEST_SUITE(http_client, http_loop_fixture){
+ZEST_SUITE(http_client, http_loop_fixture) {
 
-    ZEST_CASE(client_defaults_preserve_manual_cookie_overrides){
-        test_http_server server(loop, [](const server_request& request) -> server_response {
-            return {.body = std::string(request.header("cookie"))};
-        });
-ASSERT(server.valid());
+ZEST_CASE(client_defaults_preserve_manual_cookie_overrides) {
+    test_http_server server(loop, [](const server_request& request) -> server_response {
+        return {.body = std::string(request.header("cookie"))};
+    });
+    ASSERT(server.valid());
 
-auto client = http::client().proxy("http://proxy.internal:9000").record_cookie(true);
+    auto client = http::client().proxy("http://proxy.internal:9000").record_cookie(true);
 
-auto req =
-    client.on(loop).get(server.url("/echo")).cookies("manual=1").no_proxy().timeout(25ms).send();
-auto result = run_task(*this, req);
-ASSERT(result.has_value());
-EXPECT(result->text() == "manual=1");
-
-}  // namespace kota
+    auto req = client.on(loop)
+                   .get(server.url("/echo"))
+                   .cookies("manual=1")
+                   .no_proxy()
+                   .timeout(25ms)
+                   .send();
+    auto result = run_task(*this, req);
+    ASSERT(result);
+    EXPECT(result->text() == "manual=1");
+}
 
 ZEST_CASE(client_defaults_can_be_configured_fluently) {
     test_http_server server(loop, [](const server_request& request) -> server_response {
@@ -371,16 +374,16 @@ ZEST_CASE(client_defaults_can_be_configured_fluently) {
 
     auto seed = client.on(loop).get(server.url("/seed")).send();
     auto seed_result = run_task(*this, seed);
-    ASSERT(seed_result.has_value());
+    ASSERT(seed_result);
 
     auto ua = client.on(loop).get(server.url("/ua")).send();
     auto ua_result = run_task(*this, ua);
-    ASSERT(ua_result.has_value());
+    ASSERT(ua_result);
     EXPECT(ua_result->text() == "late-bind");
 
     auto echo = client.on(loop).get(server.url("/echo")).send();
     auto echo_result = run_task(*this, echo);
-    ASSERT(echo_result.has_value());
+    ASSERT(echo_result);
     EXPECT(echo_result->bytes().empty());
 }
 
@@ -392,7 +395,7 @@ ZEST_CASE(temporary_client_can_dispatch_via_on) {
 
     auto req = http::client().record_cookie(false).on(loop).get(server.url("/via-on")).send();
     auto result = run_task(*this, req);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->text() == "/via-on");
 }
 
@@ -409,13 +412,13 @@ ZEST_CASE(request_builder_keeps_client_state_alive_after_client_destruction) {
         http::client client;
         auto seed = client.on(loop).get(server.url("/seed")).send();
         auto seed_result = run_task(*this, seed);
-        EXPECT(seed_result.has_value());
+        EXPECT(seed_result);
         return client.on(loop).get(server.url("/echo"));
     }();
 
     auto req = std::move(builder).send();
     auto result = run_task(*this, req);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->text() == "builder_cookie=1");
 }
 
@@ -432,13 +435,13 @@ ZEST_CASE(bound_client_keeps_client_state_alive_after_client_destruction) {
         http::client client;
         auto seed = client.on(loop).get(server.url("/seed")).send();
         auto seed_result = run_task(*this, seed);
-        EXPECT(seed_result.has_value());
+        EXPECT(seed_result);
         return client.on(loop);
     }();
 
     auto req = api.get(server.url("/echo")).send();
     auto result = run_task(*this, req);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->text() == "bound_cookie=1");
 }
 
@@ -453,7 +456,7 @@ ZEST_CASE(request_builder_json_sets_body_and_content_type) {
 
     auto req = client.on(loop).post(server.url("/json")).json(std::vector<int>{1, 2, 3}).send();
     auto result = run_task(*this, req);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->text() == "application/json|[1,2,3]");
 }
 #endif
@@ -507,14 +510,14 @@ ZEST_CASE(cookie_store_persists_and_response_headers_are_captured) {
 
     auto seed = client.on(loop).get(server.url("/seed")).send();
     auto seed_result = run_task(*this, seed);
-    ASSERT(seed_result.has_value());
+    ASSERT(seed_result);
     auto header = seed_result->header_value("x-test");
-    ASSERT(header.has_value());
+    ASSERT(header);
     EXPECT(*header == "seed");
 
     auto follow = client.on(loop).get(server.url("/echo-cookie")).send();
     auto follow_result = run_task(*this, follow);
-    ASSERT(follow_result.has_value());
+    ASSERT(follow_result);
     EXPECT(follow_result->text() == "session=alpha");
 }
 
@@ -533,16 +536,16 @@ ZEST_CASE(cookie_store_isolated_between_clients_on_same_loop) {
 
     auto seed = left.on(loop).get(server.url("/seed")).send();
     auto seed_result = run_task(*this, seed);
-    ASSERT(seed_result.has_value());
+    ASSERT(seed_result);
 
     auto right_check = right.on(loop).get(server.url("/echo-cookie")).send();
     auto right_result = run_task(*this, right_check);
-    ASSERT(right_result.has_value());
+    ASSERT(right_result);
     EXPECT(right_result->bytes().empty());
 
     auto left_check = left.on(loop).get(server.url("/echo-cookie")).send();
     auto left_result = run_task(*this, left_check);
-    ASSERT(left_result.has_value());
+    ASSERT(left_result);
     EXPECT(left_result->text() == "session=left");
 }
 
@@ -557,7 +560,7 @@ ZEST_CASE(request_cookie_string_is_forwarded_verbatim) {
 
     auto req = client.on(loop).get(server.url("/echo-cookie")).cookies("session=manual").send();
     auto result = run_task(*this, req);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->text() == "session=manual");
 }
 
@@ -575,13 +578,13 @@ ZEST_CASE(record_cookie_false_disables_store_but_keeps_manual_cookies) {
 
     auto seed = client.on(loop).get(server.url("/seed")).send();
     auto seed_result = run_task(*this, seed);
-    ASSERT(seed_result.has_value());
+    ASSERT(seed_result);
 
     client.record_cookie(false);
 
     auto req = client.on(loop).get(server.url("/echo-cookie")).cookies("manual=1").send();
     auto result = run_task(*this, req);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->text() == "manual=1");
 }
 
@@ -602,17 +605,17 @@ ZEST_CASE(record_cookie_false_disables_automatic_cookie_handling_for_future_requ
 
     auto seed = client.on(loop).get(server.url("/seed")).send();
     auto seed_result = run_task(*this, seed);
-    ASSERT(seed_result.has_value());
+    ASSERT(seed_result);
 
     client.record_cookie(false);
 
     auto disabled_seed = client.on(loop).get(server.url("/seed-disabled")).send();
     auto disabled_seed_result = run_task(*this, disabled_seed);
-    ASSERT(disabled_seed_result.has_value());
+    ASSERT(disabled_seed_result);
 
     auto req = client.on(loop).get(server.url("/echo-cookie")).send();
     auto result = run_task(*this, req);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->bytes().empty());
 }
 
@@ -632,7 +635,7 @@ ZEST_CASE(query_parameters_are_encoded_and_headers_are_upserted) {
                    .header("X-Test", "two")
                    .send();
     auto result = run_task(*this, req);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->text() == "/inspect?q=a%20b&path=x%2Fy|two");
 }
 
@@ -652,7 +655,7 @@ ZEST_CASE(form_request_sets_content_type_and_encodes_body) {
     })
                    .send();
     auto result = run_task(*this, req);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->text() == "application/x-www-form-urlencoded|name=alice&note=a%20b%2Bc");
 }
 
@@ -687,11 +690,11 @@ ZEST_CASE(head_request_captures_headers_and_skips_body) {
 
     auto req = client.on(loop).head(server.url("/only-headers")).send();
     auto result = run_task(*this, req);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->status == 200);
     EXPECT(result->bytes().empty());
     auto header = result->header_value("x-mode");
-    ASSERT(header.has_value());
+    ASSERT(header);
     EXPECT(*header == "head");
 }
 
@@ -711,7 +714,7 @@ ZEST_CASE(redirect_policy_follows_by_default_when_enabled) {
 
     auto req = client.on(loop).get(server.url("/jump")).send();
     auto result = run_task(*this, req);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->status == 200);
     EXPECT(result->text() == "final");
     EXPECT(result->url == server.url("/final"));
@@ -733,11 +736,11 @@ ZEST_CASE(redirect_policy_none_preserves_redirect_response) {
 
     auto req = client.on(loop).get(server.url("/jump")).send();
     auto result = run_task(*this, req);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->status == 302);
     EXPECT(result->text() == "redirect");
     auto location = result->header_value("location");
-    ASSERT(location.has_value());
+    ASSERT(location);
     EXPECT(*location == server.url("/final"));
 }
 
@@ -750,7 +753,7 @@ ZEST_CASE(custom_http_method_is_forwarded_verbatim) {
     http::client client;
     auto req = client.on(loop).request("OPTIONS", server.url("/caps")).send();
     auto result = run_task(*this, req);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->text() == "OPTIONS /caps");
 }
 
@@ -766,7 +769,7 @@ ZEST_CASE(custom_curl_string_option_can_override_user_agent) {
                    .curl_option(CURLOPT_USERAGENT, "curl-opt-agent/1.0")
                    .send();
     auto result = run_task(*this, req);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->text() == "curl-opt-agent/1.0");
 }
 
@@ -786,7 +789,7 @@ ZEST_CASE(custom_curl_long_option_can_override_redirect_behavior) {
     auto req =
         client.on(loop).get(server.url("/jump")).curl_option(CURLOPT_FOLLOWLOCATION, 0L).send();
     auto result = run_task(*this, req);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->status == 302);
     EXPECT(result->text() == "redirect");
 }
@@ -834,10 +837,10 @@ ZEST_CASE(many_concurrent_requests_complete) {
 
     for(int i = 0; i < count; ++i) {
         auto result = tasks[i].result();
-        ASSERT(result.has_value());
+        ASSERT(result);
         EXPECT(result->text() == std::format("/req/{}", i));
         auto target = result->header_value("x-target");
-        ASSERT(target.has_value());
+        ASSERT(target);
         EXPECT(*target == std::format("/req/{}", i));
     }
 }
@@ -854,13 +857,13 @@ ZEST_CASE(in_flight_request_survives_client_destruction) {
     std::optional<http::client> client(std::in_place);
     auto seed = client->on(loop).get(server.url("/seed")).send();
     auto seed_result = run_task(*this, seed);
-    ASSERT(seed_result.has_value());
+    ASSERT(seed_result);
 
     auto req = client->on(loop).get(server.url("/slow-cookie")).send();
     client.reset();
 
     auto result = run_task(*this, req);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->text() == "in_flight=1");
     EXPECT(http::manager::for_loop(loop).pending_requests() == std::size_t(0));
 }
@@ -874,7 +877,7 @@ ZEST_CASE(multiple_http_requests_can_be_coawaited_with_when_all) {
     http::client client;
     auto flow = when_all_fetch(client.on(loop), server.url("/left"), server.url("/right"));
     auto result = run_task(*this, flow);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(*result == "/left|/right");
 }
 
@@ -899,7 +902,7 @@ ZEST_CASE(http_requests_can_interleave_with_uv_events) {
     loop.run();
 
     auto result = flow.result();
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(*result == "/first|/second");
     EXPECT(http::manager::for_loop(loop).pending_requests() == std::size_t(0));
 }
@@ -934,7 +937,7 @@ ZEST_CASE(cancelled_request_does_not_break_following_requests) {
 
     auto next = client.on(loop).get(server.url("/ok")).send();
     auto next_result = run_task(*this, next);
-    ASSERT(next_result.has_value());
+    ASSERT(next_result);
     EXPECT(next_result->text() == "ok");
     EXPECT(http::manager::for_loop(loop).pending_requests() == std::size_t(0));
 }
@@ -959,13 +962,13 @@ ZEST_CASE(destroying_a_sibling_task_after_http_completion_keeps_manager_healthy)
     loop.run();
 
     auto flow_result = flow.result();
-    ASSERT(flow_result.has_value());
-    EXPECT(!sibling.has_value());
+    ASSERT(flow_result);
+    EXPECT(!sibling);
     EXPECT(http::manager::for_loop(loop).pending_requests() == std::size_t(0));
 
     auto next = client.on(loop).get(server.url("/after")).send();
     auto next_result = run_task(*this, next);
-    ASSERT(next_result.has_value());
+    ASSERT(next_result);
     EXPECT(next_result->text() == "/after");
 }
 
@@ -983,11 +986,11 @@ ZEST_CASE(http_completion_can_recreate_manager_inline) {
                                                   server.url("/first"),
                                                   server.url("/second"));
     auto result = run_task(*this, flow);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(*result == "/first|/second");
     EXPECT(http::manager::for_loop(loop).pending_requests() == std::size_t(0));
 }
-}
-;  // ZEST_SUITE(http_client)
+
+};  // ZEST_SUITE(http_client)
 
 }  // namespace kota

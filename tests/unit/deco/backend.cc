@@ -208,29 +208,28 @@ using Parsed = option::ParsedArg;
 using option::test::ParsedArgs;
 using option::test::parse_with;
 
-ZEST_SUITE(deco_backend){
+ZEST_SUITE(deco_backend) {
 
-    ZEST_CASE(storage_keeps_dummy_alignment_for_id_map){
-        const auto& built = detail::build_storage<ParseAllOpt>();
+ZEST_CASE(storage_keeps_dummy_alignment_for_id_map) {
+    const auto& built = detail::build_storage<ParseAllOpt>();
 
-EXPECT(built.opt_size() > 1);
-EXPECT(built.id_map().size() == built.option_infos().size() + 1);
-EXPECT(built.category_map().size() == built.id_map().size());
-EXPECT(built.id_map()[0] == nullptr);
-EXPECT(built.category_map()[0] == nullptr);
-EXPECT(built.option_infos().size() == built.opt_size());
-for(size_t i = 0; i < built.option_infos().size(); ++i) {
-    EXPECT(built.option_infos()[i].id == i + 1);
-    if(built.option_infos()[i].kind == option::Kind::Unknown) {
-        EXPECT(built.id_map()[i + 1] == nullptr);
-        EXPECT(built.category_map()[i + 1] == nullptr);
-    } else {
-        EXPECT(built.id_map()[i + 1] != nullptr);
-        EXPECT(built.category_map()[i + 1] != nullptr);
+    EXPECT(built.opt_size() > 1);
+    EXPECT(built.id_map().size() == built.option_infos().size() + 1);
+    EXPECT(built.category_map().size() == built.id_map().size());
+    EXPECT(built.id_map()[0] == nullptr);
+    EXPECT(built.category_map()[0] == nullptr);
+    EXPECT(built.option_infos().size() == built.opt_size());
+    for(size_t i = 0; i < built.option_infos().size(); ++i) {
+        EXPECT(built.option_infos()[i].id == i + 1);
+        if(built.option_infos()[i].kind == option::Kind::Unknown) {
+            EXPECT(built.id_map()[i + 1] == nullptr);
+            EXPECT(built.category_map()[i + 1] == nullptr);
+        } else {
+            EXPECT(built.id_map()[i + 1] != nullptr);
+            EXPECT(built.category_map()[i + 1] != nullptr);
+        }
     }
 }
-
-}  // namespace
 
 ZEST_CASE(parse_covers_flag_input_kv_comma_multi) {
     const auto& built = detail::build_storage<ParseAllOpt>();
@@ -248,7 +247,7 @@ ZEST_CASE(parse_covers_flag_input_kv_comma_multi) {
                                      "tail2"};
 
     auto parsed_args = parse_with(built, argv);
-    EXPECT(parsed_args.has_value());
+    EXPECT(parsed_args);
     if(!parsed_args.has_value()) {
         return;
     }
@@ -310,7 +309,7 @@ ZEST_CASE(parse_pack_covers_trailing_input_option) {
     std::vector<std::string> argv = {"-d", "--", "a", "b", "c"};
 
     auto parsed_args = parse_with(built, argv);
-    EXPECT(parsed_args.has_value());
+    EXPECT(parsed_args);
     if(!parsed_args.has_value()) {
         return;
     }
@@ -334,7 +333,7 @@ ZEST_CASE(parse_pack_covers_trailing_input_option) {
 ZEST_CASE(parse_input_and_pack_can_coexist) {
     const auto& built = detail::build_storage<InputThenPackOpt>();
     auto parsed_args = parse_with(built, {"front", "--", "a", "b"});
-    EXPECT(parsed_args.has_value());
+    EXPECT(parsed_args);
     if(!parsed_args.has_value()) {
         return;
     }
@@ -354,7 +353,7 @@ ZEST_CASE(parse_input_and_pack_can_coexist) {
 ZEST_CASE(parse_pack_then_input_rebinds_input_id_map) {
     const auto& built = detail::build_storage<PackThenInputOpt>();
     auto parsed_args = parse_with(built, {"front", "--", "a", "b"});
-    EXPECT(parsed_args.has_value());
+    EXPECT(parsed_args);
     if(!parsed_args.has_value()) {
         return;
     }
@@ -379,7 +378,7 @@ ZEST_CASE(parse_kv_supports_joined_and_separate_styles) {
     EXPECT(built.option_infos()[2].kind == option::Kind::Separate);
 
     auto joined_args = parse_with(built, {"--test=42"});
-    EXPECT(joined_args.has_value());
+    EXPECT(joined_args);
     if(!joined_args.has_value()) {
         return;
     }
@@ -392,7 +391,7 @@ ZEST_CASE(parse_kv_supports_joined_and_separate_styles) {
     EXPECT((*joined_args)[0].values[0] == "42");
 
     auto separate_args = parse_with(built, {"--a", "7"});
-    EXPECT(separate_args.has_value());
+    EXPECT(separate_args);
     if(!separate_args.has_value()) {
         return;
     }
@@ -412,7 +411,7 @@ ZEST_CASE(parse_kv_default_name_adds_joined_equals_alias_when_style_includes_joi
     EXPECT(built.option_infos()[2].kind == option::Kind::Joined);
 
     auto separate_args = parse_with(built, {"--level", "7"});
-    EXPECT(separate_args.has_value());
+    EXPECT(separate_args);
     if(!separate_args.has_value()) {
         return;
     }
@@ -425,7 +424,7 @@ ZEST_CASE(parse_kv_default_name_adds_joined_equals_alias_when_style_includes_joi
     EXPECT((*separate_args)[0].values[0] == "7");
 
     auto joined_args = parse_with(built, {"--level=42"});
-    EXPECT(joined_args.has_value());
+    EXPECT(joined_args);
     if(!joined_args.has_value()) {
         return;
     }
@@ -445,7 +444,7 @@ ZEST_CASE(parse_kv_alias_supports_joined_and_separate_styles) {
     EXPECT(built.option_infos()[2].kind == option::Kind::Separate);
 
     auto joined_args = parse_with(built, {"--target=42"});
-    EXPECT(joined_args.has_value());
+    EXPECT(joined_args);
     if(!joined_args.has_value()) {
         return;
     }
@@ -458,7 +457,7 @@ ZEST_CASE(parse_kv_alias_supports_joined_and_separate_styles) {
     EXPECT((*joined_args)[0].values[0] == "42");
 
     auto separate_args = parse_with(built, {"--target-alias", "7"});
-    EXPECT(separate_args.has_value());
+    EXPECT(separate_args);
     if(!separate_args.has_value()) {
         return;
     }
@@ -478,7 +477,7 @@ ZEST_CASE(parse_kv_alias_default_name_adds_joined_equals_alias_when_style_includ
     EXPECT(built.option_infos()[2].kind == option::Kind::Joined);
 
     auto separate_args = parse_with(built, {"--target-alias", "7"});
-    EXPECT(separate_args.has_value());
+    EXPECT(separate_args);
     if(!separate_args.has_value()) {
         return;
     }
@@ -491,7 +490,7 @@ ZEST_CASE(parse_kv_alias_default_name_adds_joined_equals_alias_when_style_includ
     EXPECT((*separate_args)[0].values[0] == "7");
 
     auto joined_args = parse_with(built, {"--target-alias=42"});
-    EXPECT(joined_args.has_value());
+    EXPECT(joined_args);
     if(!joined_args.has_value()) {
         return;
     }
@@ -516,7 +515,7 @@ ZEST_CASE(category_map_assigns_expected_categories_for_parsed_args) {
                                    "-P",
                                    "left",
                                    "right"});
-    EXPECT(parsed_args.has_value());
+    EXPECT(parsed_args);
     if(!parsed_args.has_value()) {
         return;
     }
@@ -550,8 +549,8 @@ ZEST_CASE(category_map_keeps_alias_category_consistent) {
     const auto& built = detail::build_storage<ParseAllOpt>();
     auto short_args = parse_with(built, {"-V"});
     auto long_args = parse_with(built, {"--version"});
-    EXPECT(short_args.has_value());
-    EXPECT(long_args.has_value());
+    EXPECT(short_args);
+    EXPECT(long_args);
     if(!short_args.has_value() || !long_args.has_value()) {
         return;
     }
@@ -567,7 +566,7 @@ ZEST_CASE(category_map_keeps_alias_category_consistent) {
 ZEST_CASE(category_map_supports_deep_nested_cfg_areas) {
     const auto& built = detail::build_storage<DeepCfgOpt>();
     auto parsed_args = parse_with(built, {"--top", "1", "--tail", "2", "-a", "3", "--mid", "4"});
-    EXPECT(parsed_args.has_value());
+    EXPECT(parsed_args);
     if(!parsed_args.has_value()) {
         return;
     }
@@ -594,7 +593,7 @@ ZEST_CASE(category_map_supports_deep_nested_cfg_areas) {
 ZEST_CASE(category_map_supports_multiple_exclusive_category_definitions) {
     const auto& built = detail::build_storage<MultiExclusiveCategoryOpt>();
     auto parsed_args = parse_with(built, {"--version", "--request"});
-    EXPECT(parsed_args.has_value());
+    EXPECT(parsed_args);
     if(!parsed_args.has_value()) {
         return;
     }
@@ -612,7 +611,7 @@ ZEST_CASE(alias_entries_have_backend_metadata_without_accessor) {
     auto parsed = parse_with(
         built,
         {"--optimize-one", "--define-alias-alt", "NAME=VALUE", "--pair-alias-alt", "a", "b"});
-    EXPECT(parsed.has_value());
+    EXPECT(parsed);
     if(!parsed.has_value()) {
         return;
     }
@@ -658,7 +657,7 @@ ZEST_CASE(visit_fields_applies_next_cfg_to_nested_struct_fields) {
     const auto& built = detail::build_storage<NextOnNestedOpt>();
 
     auto partial_nested_args = parse_with(built, {"--left", "1"});
-    EXPECT(partial_nested_args.has_value());
+    EXPECT(partial_nested_args);
     if(!partial_nested_args.has_value()) {
         return;
     }
@@ -689,7 +688,7 @@ ZEST_CASE(visit_fields_applies_next_cfg_to_nested_struct_fields) {
     EXPECT(tail_cfg_count == 1);
 }
 
-};  // namespace kota::deco
+};  // ZEST_SUITE(deco_backend)
 
 }  // namespace
 }  // namespace kota::deco

@@ -484,14 +484,14 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
     {                                                                                              \
         auto input = __VA_ARGS__;                                                                  \
         auto output = (rt)(input);                                                                 \
-        ASSERT(output.has_value());                                                                \
+        ASSERT(output);                                                                            \
         EXPECT(input == *output);                                                                  \
     }
 
 #define SERDE_STANDARD_ASSERT_TEXT_DECODE_FAIL(decode_text, payload_literal, value)                \
     {                                                                                              \
         auto status = (decode_text)(payload_literal, value);                                       \
-        EXPECT(!status.has_value());                                                               \
+        EXPECT(!status);                                                                           \
     }
 
 #define SERDE_STANDARD_TEST_CASES_PRIMITIVES(rt)                                                   \
@@ -732,7 +732,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             input.shared_basic.reset();                                                            \
             input.opt_shared.reset();                                                              \
             auto output = (rt)(input);                                                             \
-            ASSERT(output.has_value());                                                            \
+            ASSERT(output);                                                                        \
             EXPECT(input == *output);                                                              \
         }                                                                                          \
         {                                                                                          \
@@ -743,7 +743,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
                 standard_case::make_basic(true, 9, 0.9, "tail")));                                 \
             input.opt_shared = std::shared_ptr<standard_case::Basic>{};                            \
             auto output = (rt)(input);                                                             \
-            ASSERT(output.has_value());                                                            \
+            ASSERT(output);                                                                        \
             EXPECT(input == *output);                                                              \
         }                                                                                          \
         {                                                                                          \
@@ -753,7 +753,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             input.shared_basic = aliased;                                                          \
             input.shared_list = {aliased, aliased};                                                \
             auto output = (rt)(input);                                                             \
-            ASSERT(output.has_value());                                                            \
+            ASSERT(output);                                                                        \
             ASSERT(output->shared_list.size() == 2U);                                              \
             ASSERT(output->shared_list[0] != nullptr);                                             \
             ASSERT(output->shared_list[1] != nullptr);                                             \
@@ -770,7 +770,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             input.shared_basic.reset();                                                            \
             input.opt_shared.reset();                                                              \
             auto output = (rt)(input);                                                             \
-            ASSERT(output.has_value());                                                            \
+            ASSERT(output);                                                                        \
             EXPECT(input == *output);                                                              \
         }                                                                                          \
         {                                                                                          \
@@ -780,7 +780,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             input.shared_basic = aliased;                                                          \
             input.shared_list = {aliased, aliased};                                                \
             auto output = (rt)(input);                                                             \
-            ASSERT(output.has_value());                                                            \
+            ASSERT(output);                                                                        \
             ASSERT(output->shared_list.size() == 2U);                                              \
             ASSERT(output->shared_list[0] != nullptr);                                             \
             ASSERT(output->shared_list[1] != nullptr);                                             \
@@ -799,7 +799,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
                 std::remove(input.shared_list.begin(), input.shared_list.end(), nullptr),          \
                 input.shared_list.end());                                                          \
             auto output = (rt)(input);                                                             \
-            ASSERT(output.has_value());                                                            \
+            ASSERT(output);                                                                        \
             EXPECT(input == *output);                                                              \
         }                                                                                          \
         {                                                                                          \
@@ -811,7 +811,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             input.shared_basic.reset();                                                            \
             input.opt_shared.reset();                                                              \
             auto output = (rt)(input);                                                             \
-            ASSERT(output.has_value());                                                            \
+            ASSERT(output);                                                                        \
             EXPECT(input == *output);                                                              \
         }                                                                                          \
         {                                                                                          \
@@ -822,7 +822,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             input.shared_empty.reset();                                                            \
             input.shared_list = {aliased, aliased};                                                \
             auto output = (rt)(input);                                                             \
-            ASSERT(output.has_value());                                                            \
+            ASSERT(output);                                                                        \
             ASSERT(output->shared_list.size() == 2U);                                              \
             ASSERT(output->shared_list[0] != nullptr);                                             \
             ASSERT(output->shared_list[1] != nullptr);                                             \
@@ -837,7 +837,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             auto input = standard_case::make_attr_payload();                                       \
             input.internal_id = 4242;                                                              \
             auto output = (rt)(input);                                                             \
-            ASSERT(output.has_value());                                                            \
+            ASSERT(output);                                                                        \
             EXPECT(output->id == input.id);                                                        \
             EXPECT(meta::annotated_value(output->display_name) == std::string("alice"));           \
             EXPECT(meta::annotated_value(output->internal_id) == 1000);                            \
@@ -855,7 +855,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             meta::annotated_value(input.profile).age = 21;                                         \
             input.level = standard_case::AccessLevel::guest;                                       \
             auto output = (rt)(input);                                                             \
-            ASSERT(output.has_value());                                                            \
+            ASSERT(output);                                                                        \
             EXPECT(output->id == 9);                                                               \
             EXPECT(meta::annotated_value(output->display_name) == std::string("bob"));             \
             EXPECT(meta::annotated_value(output->note) == std::nullopt);                           \
@@ -1006,21 +1006,21 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             input.nullables.opt_value.reset();                                                     \
             input.nullables.heap_allocated.reset();                                                \
             auto output = (rt)(input);                                                             \
-            ASSERT(output.has_value());                                                            \
+            ASSERT(output);                                                                        \
             EXPECT(input == *output);                                                              \
         }                                                                                          \
         {                                                                                          \
             auto input = standard_case::make_ultimate();                                           \
             input.adts.multi_variant = 123;                                                        \
             auto output = (rt)(input);                                                             \
-            ASSERT(output.has_value());                                                            \
+            ASSERT(output);                                                                        \
             EXPECT(input == *output);                                                              \
         }                                                                                          \
         {                                                                                          \
             auto input = standard_case::make_ultimate();                                           \
             input.adts.multi_variant = std::string("variant-text");                                \
             auto output = (rt)(input);                                                             \
-            ASSERT(output.has_value());                                                            \
+            ASSERT(output);                                                                        \
             EXPECT(input == *output);                                                              \
         }                                                                                          \
     }

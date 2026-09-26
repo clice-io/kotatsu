@@ -42,19 +42,19 @@ int uv_thread_pool_size_for_test() {
     return value;
 }
 
-ZEST_SUITE(cancellation, loop_fixture){
+ZEST_SUITE(cancellation, loop_fixture) {
 
-    ZEST_CASE(pass_through_value){cancellation_source source;
+ZEST_CASE(pass_through_value) {
+    cancellation_source source;
 
-auto worker = []() -> task<int> {
-    co_return 42;
-};
+    auto worker = []() -> task<int> {
+        co_return 42;
+    };
 
-auto [result] = run(with_token(worker(), source.token()));
-ASSERT(result.has_value());
-EXPECT(*result == 42);
-
-}  // namespace
+    auto [result] = run(with_token(worker(), source.token()));
+    ASSERT(result);
+    EXPECT(*result == 42);
+}
 
 ZEST_CASE(pre_cancel_skip) {
     cancellation_source source;
@@ -67,7 +67,7 @@ ZEST_CASE(pre_cancel_skip) {
     };
 
     auto [result] = run(with_token(worker(), source.token()));
-    EXPECT(!result.has_value());
+    EXPECT(!result);
     EXPECT(started == 0);
 }
 
@@ -100,7 +100,7 @@ ZEST_CASE(cancel_in_flight) {
     schedule_all(guarded_task, cancel_task, release_task);
 
     auto result = guarded_task.value();
-    EXPECT(!result.has_value());
+    EXPECT(!result);
     EXPECT(started == 1);
     EXPECT(finished == 0);
 }
@@ -418,7 +418,7 @@ ZEST_CASE(cancel_waiting_on_event) {
 
     EXPECT(started);
     EXPECT(!finished);
-    EXPECT(!guarded.value().has_value());
+    EXPECT(!guarded.value());
 
     // Event remains usable after cancellation
     gate.set();
@@ -481,7 +481,7 @@ ZEST_CASE(cancel_waiting_on_mutex) {
 
     EXPECT(started);
     EXPECT(!acquired);
-    EXPECT(!guarded.value().has_value());
+    EXPECT(!guarded.value());
 
     // Mutex remains functional after cancellation
     EXPECT(m.try_lock());
@@ -512,7 +512,7 @@ ZEST_CASE(cancel_semaphore_waiter) {
 
     EXPECT(started);
     EXPECT(!acquired);
-    EXPECT(!guarded.value().has_value());
+    EXPECT(!guarded.value());
 
     // Semaphore remains usable
     sem.release();
@@ -546,7 +546,7 @@ ZEST_CASE(cancel_condition_variable_waiter) {
 
     EXPECT(started);
     EXPECT(!notified);
-    EXPECT(!guarded.value().has_value());
+    EXPECT(!guarded.value());
 }
 
 ZEST_CASE(cancel_multiple_registered_tasks) {
@@ -576,9 +576,9 @@ ZEST_CASE(cancel_multiple_registered_tasks) {
 
     EXPECT(started == 3);
     EXPECT(finished == 0);
-    EXPECT(!g1.value().has_value());
-    EXPECT(!g2.value().has_value());
-    EXPECT(!g3.value().has_value());
+    EXPECT(!g1.value());
+    EXPECT(!g2.value());
+    EXPECT(!g3.value());
 }
 
 ZEST_CASE(nested_with_token) {
@@ -602,7 +602,7 @@ ZEST_CASE(nested_with_token) {
         auto cancel_task = canceler();
         schedule_all(guarded, cancel_task);
 
-        EXPECT(!guarded.value().has_value());
+        EXPECT(!guarded.value());
     }
 
     // (b) Cancel inner -> inner task reports cancellation, outer observes it
@@ -626,7 +626,7 @@ ZEST_CASE(nested_with_token) {
         schedule_all(guarded, cancel_task);
 
         // Outer observes cancellation result from inner
-        EXPECT(!guarded.value().has_value());
+        EXPECT(!guarded.value());
         // But the outer source itself was NOT cancelled
         EXPECT(!outer_source.cancelled());
     }
@@ -644,7 +644,7 @@ ZEST_CASE(token_reuse_after_cancel) {
 
     // Create new task with already-cancelled token
     auto [result] = run(with_token(worker(), source.token()));
-    EXPECT(!result.has_value());
+    EXPECT(!result);
     EXPECT(started == 0);
 
     // registration.cancelled() returns true
@@ -673,7 +673,7 @@ ZEST_CASE(multi_token_cancel_first) {
     schedule_all(guarded, cancel_task);
 
     EXPECT(!finished);
-    EXPECT(!guarded.value().has_value());
+    EXPECT(!guarded.value());
     EXPECT(source1.cancelled());
     EXPECT(!source2.cancelled());
 }
@@ -700,7 +700,7 @@ ZEST_CASE(multi_token_cancel_second) {
     schedule_all(guarded, cancel_task);
 
     EXPECT(!finished);
-    EXPECT(!guarded.value().has_value());
+    EXPECT(!guarded.value());
     EXPECT(!source1.cancelled());
     EXPECT(source2.cancelled());
 }
@@ -717,7 +717,7 @@ ZEST_CASE(multi_token_pre_cancel) {
     };
 
     auto [result] = run(with_token(worker(), source1.token(), source2.token()));
-    EXPECT(!result.has_value());
+    EXPECT(!result);
     EXPECT(started == 0);
 }
 
@@ -730,7 +730,7 @@ ZEST_CASE(multi_token_pass_through) {
     };
 
     auto [result] = run(with_token(worker(), source1.token(), source2.token()));
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(*result == 99);
 }
 
@@ -892,7 +892,7 @@ ZEST_CASE(checkpoint_join_cancels_group) {
     EXPECT(slow_done == 0);
 }
 
-};  // namespace kota
+};  // ZEST_SUITE(cancellation)
 
 }  // namespace
 

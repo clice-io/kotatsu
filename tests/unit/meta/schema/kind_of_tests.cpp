@@ -19,25 +19,25 @@ namespace {
 
 namespace fx = ::kota::meta::fixtures;
 
-ZEST_SUITE(virtual_schema_kind_of){
+ZEST_SUITE(virtual_schema_kind_of) {
 
-    ZEST_CASE(scalars){STATIC_EXPECT(kind_of<bool>() == type_kind::boolean);
-STATIC_EXPECT(kind_of<std::int8_t>() == type_kind::int8);
-STATIC_EXPECT(kind_of<std::int16_t>() == type_kind::int16);
-STATIC_EXPECT(kind_of<int>() == type_kind::int32);
-STATIC_EXPECT(kind_of<std::int64_t>() == type_kind::int64);
-STATIC_EXPECT(kind_of<std::uint8_t>() == type_kind::uint8);
-STATIC_EXPECT(kind_of<std::uint16_t>() == type_kind::uint16);
-STATIC_EXPECT(kind_of<std::uint32_t>() == type_kind::uint32);
-STATIC_EXPECT(kind_of<std::uint64_t>() == type_kind::uint64);
-STATIC_EXPECT(kind_of<float>() == type_kind::float32);
-STATIC_EXPECT(kind_of<double>() == type_kind::float64);
-STATIC_EXPECT(kind_of<char>() == type_kind::character);
-STATIC_EXPECT(kind_of<std::string>() == type_kind::string);
-STATIC_EXPECT(kind_of<std::string_view>() == type_kind::string);
-STATIC_EXPECT(kind_of<std::nullptr_t>() == type_kind::null);
-
-}  // namespace
+ZEST_CASE(scalars) {
+    STATIC_EXPECT(kind_of<bool>() == type_kind::boolean);
+    STATIC_EXPECT(kind_of<std::int8_t>() == type_kind::int8);
+    STATIC_EXPECT(kind_of<std::int16_t>() == type_kind::int16);
+    STATIC_EXPECT(kind_of<int>() == type_kind::int32);
+    STATIC_EXPECT(kind_of<std::int64_t>() == type_kind::int64);
+    STATIC_EXPECT(kind_of<std::uint8_t>() == type_kind::uint8);
+    STATIC_EXPECT(kind_of<std::uint16_t>() == type_kind::uint16);
+    STATIC_EXPECT(kind_of<std::uint32_t>() == type_kind::uint32);
+    STATIC_EXPECT(kind_of<std::uint64_t>() == type_kind::uint64);
+    STATIC_EXPECT(kind_of<float>() == type_kind::float32);
+    STATIC_EXPECT(kind_of<double>() == type_kind::float64);
+    STATIC_EXPECT(kind_of<char>() == type_kind::character);
+    STATIC_EXPECT(kind_of<std::string>() == type_kind::string);
+    STATIC_EXPECT(kind_of<std::string_view>() == type_kind::string);
+    STATIC_EXPECT(kind_of<std::nullptr_t>() == type_kind::null);
+}
 
 ZEST_CASE(enums) {
     STATIC_EXPECT(kind_of<fx::Color>() == type_kind::enumeration);
@@ -57,7 +57,7 @@ ZEST_CASE(compounds) {
     STATIC_EXPECT(kind_of<fx::SimpleStruct>() == type_kind::structure);
 }
 
-};  // namespace kota::meta
+};  // ZEST_SUITE(virtual_schema_kind_of)
 
 }  // namespace
 

@@ -116,32 +116,32 @@ struct IntTagHolder {
     IntTagShape shape;
 };
 
-ZEST_SUITE(serde_variant_untagged){
+ZEST_SUITE(serde_variant_untagged) {
 
-    ZEST_CASE(bool_vs_int){using V = std::variant<bool, int>;
+ZEST_CASE(bool_vs_int) {
+    using V = std::variant<bool, int>;
 
-V v_bool = true;
-ASSERT(to_string(v_bool) == "true");
+    V v_bool = true;
+    ASSERT(to_string(v_bool) == "true");
 
-V v_int = 42;
-ASSERT(to_string(v_int) == "42");
+    V v_int = 42;
+    ASSERT(to_string(v_int) == "42");
 
-// bool JSON → bool alternative (not int)
-V out{};
-ASSERT(from_string("true", out).has_value());
-EXPECT(out.index() == 0U);
-EXPECT(std::get<bool>(out) == true);
+    // bool JSON → bool alternative (not int)
+    V out{};
+    ASSERT(from_string("true", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<bool>(out) == true);
 
-ASSERT(from_string("false", out).has_value());
-EXPECT(out.index() == 0U);
-EXPECT(std::get<bool>(out) == false);
+    ASSERT(from_string("false", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<bool>(out) == false);
 
-// integer JSON → int alternative (not bool)
-ASSERT(from_string("7", out).has_value());
-EXPECT(out.index() == 1U);
-EXPECT(std::get<int>(out) == 7);
-
-}  // namespace
+    // integer JSON → int alternative (not bool)
+    ASSERT(from_string("7", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<int>(out) == 7);
+}
 
 ZEST_CASE(int_before_double) {
     // When int comes before double, integer JSON should match int (first match wins)
@@ -388,7 +388,7 @@ ZEST_CASE(non_human_readable_config_ignores_tagging_in_probe) {
 
     V v = ExtSimple{1};
     auto encoded = to_string<non_hr_config>(v);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == "1");
 
     V out{};
@@ -427,7 +427,7 @@ ZEST_CASE(custom_decoder_wrapped_in_optional_probed_for_any_kind) {
     ASSERT(from_string(R"("text")", out).has_value());
     EXPECT(out.index() == 0U);
     auto& opt = std::get<std::optional<RawValue>>(out);
-    ASSERT(opt.has_value());
+    ASSERT(opt);
     EXPECT(opt->data == R"("text")");
 
     ASSERT(from_string("null", out).has_value());
@@ -507,7 +507,7 @@ ZEST_CASE(single_alternative) {
 
     V v = 42;
     auto encoded = to_string(v);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == "42");
 
     V out{};
@@ -650,58 +650,60 @@ ZEST_CASE(optional_variant) {
 
     OV out{};
     ASSERT(from_string("null", out).has_value());
-    EXPECT(!out.has_value());
+    EXPECT(!out);
 
     ASSERT(from_string("42", out).has_value());
-    ASSERT(out.has_value());
+    ASSERT(out);
     EXPECT(out->index() == 0U);
     EXPECT(std::get<int>(*out) == 42);
 
     ASSERT(from_string(R"("test")", out).has_value());
-    ASSERT(out.has_value());
+    ASSERT(out);
     EXPECT(out->index() == 1U);
     EXPECT(std::get<std::string>(*out) == "test");
 }
 
-};  // namespace kota::codec
+};  // ZEST_SUITE(serde_variant_untagged)
 
-ZEST_SUITE(serde_variant_ext){
+ZEST_SUITE(serde_variant_ext) {
 
-    ZEST_CASE(roundtrip_all_alternatives){{ExtWithStruct v = 42;
-auto encoded = to_string(v);
-ASSERT(encoded.has_value());
-EXPECT(*encoded == R"({"int":42})");
+ZEST_CASE(roundtrip_all_alternatives) {
+    {
+        ExtWithStruct v = 42;
+        auto encoded = to_string(v);
+        ASSERT(encoded);
+        EXPECT(*encoded == R"({"int":42})");
 
-ExtWithStruct out{};
-ASSERT(from_string(*encoded, out).has_value());
-EXPECT(std::get<int>(out) == 42);
-}
-{
-    ExtWithStruct v = Point{.x = 1.5, .y = 2.5};
-    auto encoded = to_string(v);
-    ASSERT(encoded.has_value());
-    EXPECT(*encoded == R"({"point":{"x":1.5,"y":2.5}})");
+        ExtWithStruct out{};
+        ASSERT(from_string(*encoded, out).has_value());
+        EXPECT(std::get<int>(out) == 42);
+    }
+    {
+        ExtWithStruct v = Point{.x = 1.5, .y = 2.5};
+        auto encoded = to_string(v);
+        ASSERT(encoded);
+        EXPECT(*encoded == R"({"point":{"x":1.5,"y":2.5}})");
 
-    ExtWithStruct out{};
-    ASSERT(from_string(*encoded, out).has_value());
-    EXPECT(std::get<Point>(out) == (Point{1.5, 2.5}));
-}
-{
-    ExtWithStruct v = Color{.r = 255, .g = 128, .b = 0};
-    auto encoded = to_string(v);
-    ASSERT(encoded.has_value());
-    EXPECT(*encoded == R"({"color":{"r":255,"g":128,"b":0}})");
+        ExtWithStruct out{};
+        ASSERT(from_string(*encoded, out).has_value());
+        EXPECT(std::get<Point>(out) == (Point{1.5, 2.5}));
+    }
+    {
+        ExtWithStruct v = Color{.r = 255, .g = 128, .b = 0};
+        auto encoded = to_string(v);
+        ASSERT(encoded);
+        EXPECT(*encoded == R"({"color":{"r":255,"g":128,"b":0}})");
 
-    ExtWithStruct out{};
-    ASSERT(from_string(*encoded, out).has_value());
-    EXPECT(std::get<Color>(out) == (Color{255, 128, 0}));
-}
+        ExtWithStruct out{};
+        ASSERT(from_string(*encoded, out).has_value());
+        EXPECT(std::get<Color>(out) == (Color{255, 128, 0}));
+    }
 }
 
 ZEST_CASE(monostate_roundtrip) {
     ExtWithMono v_none = std::monostate{};
     auto enc = to_string(v_none);
-    ASSERT(enc.has_value());
+    ASSERT(enc);
     EXPECT(*enc == R"({"none":null})");
 
     ExtWithMono out = 42;
@@ -710,7 +712,7 @@ ZEST_CASE(monostate_roundtrip) {
 
     ExtWithMono v_int = 7;
     enc = to_string(v_int);
-    ASSERT(enc.has_value());
+    ASSERT(enc);
     EXPECT(*enc == R"({"num":7})");
 
     ASSERT(from_string(*enc, out).has_value());
@@ -741,7 +743,7 @@ ZEST_CASE(in_holder_struct) {
         .item = Point{.x = 0.0, .y = 0.0}
     };
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"label":"origin","item":{"point":{"x":0.0,"y":0.0}}})");
 
     ExtHolder out{};
@@ -752,7 +754,7 @@ ZEST_CASE(in_holder_struct) {
 ZEST_CASE(in_vector) {
     std::vector<ExtSimple> vec = {ExtSimple{42}, ExtSimple{std::string("hi")}};
     auto encoded = to_string(vec);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"([{"num":42},{"str":"hi"}])");
 
     std::vector<ExtSimple> out;
@@ -765,52 +767,53 @@ ZEST_CASE(in_vector) {
 ZEST_CASE(in_optional) {
     std::optional<ExtSimple> present = ExtSimple{std::string("val")};
     auto encoded = to_string(present);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"str":"val"})");
 
     std::optional<ExtSimple> out;
     ASSERT(from_string(*encoded, out).has_value());
-    ASSERT(out.has_value());
+    ASSERT(out);
     EXPECT(std::get<std::string>(*out) == "val");
 
     std::optional<ExtSimple> absent;
     encoded = to_string(absent);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == "null");
 
     ASSERT(from_string("null", out).has_value());
-    EXPECT(!out.has_value());
+    EXPECT(!out);
 }
 
 ZEST_CASE(empty_string_value) {
     ExtSimple v = std::string("");
     auto encoded = to_string(v);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"str":""})");
 
     ExtSimple out{};
     ASSERT(from_string(*encoded, out).has_value());
     EXPECT(std::get<std::string>(out) == "");
 }
-}
-;  // ZEST_SUITE(serde_variant_ext)
 
-ZEST_SUITE(serde_variant_adj){
+};  // ZEST_SUITE(serde_variant_ext)
 
-    ZEST_CASE(roundtrip_int){AdjSimple v = 99;
-auto encoded = to_string(v);
-ASSERT(encoded.has_value());
-EXPECT(*encoded == R"({"t":"num","v":99})");
+ZEST_SUITE(serde_variant_adj) {
 
-AdjSimple out{};
-ASSERT(from_string(*encoded, out).has_value());
-EXPECT(std::get<int>(out) == 99);
+ZEST_CASE(roundtrip_int) {
+    AdjSimple v = 99;
+    auto encoded = to_string(v);
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"t":"num","v":99})");
+
+    AdjSimple out{};
+    ASSERT(from_string(*encoded, out).has_value());
+    EXPECT(std::get<int>(out) == 99);
 }
 
 ZEST_CASE(roundtrip_string) {
     AdjSimple v = std::string("abc");
     auto encoded = to_string(v);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"t":"str","v":"abc"})");
 
     AdjSimple out{};
@@ -821,7 +824,7 @@ ZEST_CASE(roundtrip_string) {
 ZEST_CASE(monostate) {
     AdjWithMono v = std::monostate{};
     auto encoded = to_string(v);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"tag":"nil","data":null})");
 
     AdjWithMono out = 42;
@@ -895,7 +898,7 @@ ZEST_CASE(not_an_object_fails) {
 ZEST_CASE(in_holder_struct) {
     AdjHolder input{.name = "test", .data = 42};
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"name":"test","data":{"t":"num","v":42}})");
 
     AdjHolder out{};
@@ -906,7 +909,7 @@ ZEST_CASE(in_holder_struct) {
 ZEST_CASE(in_vector) {
     std::vector<AdjSimple> vec = {AdjSimple{1}, AdjSimple{std::string("x")}};
     auto encoded = to_string(vec);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"([{"t":"num","v":1},{"t":"str","v":"x"}])");
 
     std::vector<AdjSimple> out;
@@ -921,7 +924,7 @@ ZEST_CASE(in_map) {
     m["a"] = AdjSimple{10};
     m["b"] = AdjSimple{std::string("val")};
     auto encoded = to_string(m);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     std::map<std::string, AdjSimple> out;
     ASSERT(from_string(*encoded, out).has_value());
@@ -929,25 +932,26 @@ ZEST_CASE(in_map) {
     EXPECT(std::get<int>(out["a"]) == 10);
     EXPECT(std::get<std::string>(out["b"]) == "val");
 }
-}
-;  // ZEST_SUITE(serde_variant_adj)
 
-ZEST_SUITE(serde_variant_int_tag){
+};  // ZEST_SUITE(serde_variant_adj)
 
-    ZEST_CASE(circle_roundtrip){IntTagShape v = Circle{.radius = 5.0};
-auto encoded = to_string(v);
-ASSERT(encoded.has_value());
-EXPECT(*encoded == R"({"type":"circle","radius":5.0})");
+ZEST_SUITE(serde_variant_int_tag) {
 
-IntTagShape out{};
-ASSERT(from_string(*encoded, out).has_value());
-EXPECT(std::get<Circle>(out) == (Circle{.radius = 5.0}));
+ZEST_CASE(circle_roundtrip) {
+    IntTagShape v = Circle{.radius = 5.0};
+    auto encoded = to_string(v);
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"type":"circle","radius":5.0})");
+
+    IntTagShape out{};
+    ASSERT(from_string(*encoded, out).has_value());
+    EXPECT(std::get<Circle>(out) == (Circle{.radius = 5.0}));
 }
 
 ZEST_CASE(rect_roundtrip) {
     IntTagShape v = Rect{.width = 3.0, .height = 4.0};
     auto encoded = to_string(v);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"type":"rect","width":3.0,"height":4.0})");
 
     IntTagShape out{};
@@ -977,9 +981,9 @@ ZEST_CASE(three_alternatives) {
     auto e1 = to_string(v1);
     auto e2 = to_string(v2);
     auto e3 = to_string(v3);
-    ASSERT(e1.has_value());
-    ASSERT(e2.has_value());
-    ASSERT(e3.has_value());
+    ASSERT(e1);
+    ASSERT(e2);
+    ASSERT(e3);
     EXPECT(*e1 == R"({"kind":"circle","radius":1.0})");
     EXPECT(*e2 == R"({"kind":"rect","width":2.0,"height":3.0})");
     EXPECT(*e3 == R"({"kind":"triangle","base":4.0,"height":5.0})");
@@ -1021,7 +1025,7 @@ ZEST_CASE(not_an_object_fails) {
 ZEST_CASE(in_holder_struct) {
     IntTagHolder input{.name = "shape1", .shape = Circle{.radius = 9.0}};
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"name":"shape1","shape":{"type":"circle","radius":9.0}})");
 
     IntTagHolder out{};
@@ -1035,7 +1039,7 @@ ZEST_CASE(in_vector) {
         IntTagShape{Rect{.width = 2.0, .height = 3.0}},
     };
     auto encoded = to_string(shapes);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     std::vector<IntTagShape> out;
     ASSERT(from_string(*encoded, out).has_value());
@@ -1049,23 +1053,23 @@ ZEST_CASE(in_optional) {
         Rect{.width = 1.0, .height = 2.0}
     };
     auto encoded = to_string(present);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"type":"rect","width":1.0,"height":2.0})");
 
     std::optional<IntTagShape> out;
     ASSERT(from_string(*encoded, out).has_value());
-    ASSERT(out.has_value());
+    ASSERT(out);
     EXPECT(std::get<Rect>(*out) == (Rect{1.0, 2.0}));
 
     ASSERT(from_string("null", out).has_value());
-    EXPECT(!out.has_value());
+    EXPECT(!out);
 }
 
 ZEST_CASE(missing_required_field_rejects_tagged_candidate) {
     // Missing non-optional field in a tagged variant should fail deserialization
     IntTagShape out{};
     auto result = from_string(R"({"type":"rect","width":5.0})", out);
-    EXPECT(!result.has_value());
+    EXPECT(!result);
 }
 
 ZEST_CASE(missing_required_field_rejects_untagged_variant_candidate) {
@@ -1078,36 +1082,36 @@ ZEST_CASE(missing_required_field_rejects_untagged_variant_candidate) {
     // This should fail because Rect needs both width+height, and Circle
     // doesn't match either (no "radius" field).
     auto result = from_string(R"({"width":5.0})", out);
-    EXPECT(!result.has_value());
+    EXPECT(!result);
 }
-}
-;  // ZEST_SUITE(serde_variant_int_tag)
+
+};  // ZEST_SUITE(serde_variant_int_tag)
 
 KOTATSU_ANNOTATION(nested_inner_annotation, tagged = true, tag_names = {"i", "s"});
 KOTATSU_ANNOTATION(nested_outer_annotation, tagged = true, tag_names = {"plain", "wrapped"});
 KOTATSU_ANNOTATION(vec_tagged_annotation, tag = "t", content = "v", tag_names = {"i", "s"});
 
-ZEST_SUITE(serde_variant_nested){
+ZEST_SUITE(serde_variant_nested) {
 
-    ZEST_CASE(variant_in_struct_in_variant){
-        // An externally tagged variant whose struct alternative contains another ext variant
-        using Inner = annotate<nested_inner_annotation>::type<std::variant<int, std::string>>;
+ZEST_CASE(variant_in_struct_in_variant) {
+    // An externally tagged variant whose struct alternative contains another ext variant
+    using Inner = annotate<nested_inner_annotation>::type<std::variant<int, std::string>>;
 
-struct Wrapper {
-    std::string id;
-    Inner val;
-};
+    struct Wrapper {
+        std::string id;
+        Inner val;
+    };
 
-using Outer = annotate<nested_outer_annotation>::type<std::variant<int, Wrapper>>;
+    using Outer = annotate<nested_outer_annotation>::type<std::variant<int, Wrapper>>;
 
-Outer v = Wrapper{.id = "w1", .val = std::string("inner")};
-auto encoded = to_string(v);
-ASSERT(encoded.has_value());
-EXPECT(*encoded == R"({"wrapped":{"id":"w1","val":{"s":"inner"}}})");
+    Outer v = Wrapper{.id = "w1", .val = std::string("inner")};
+    auto encoded = to_string(v);
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"wrapped":{"id":"w1","val":{"s":"inner"}}})");
 
-Outer out{};
-ASSERT(from_string(*encoded, out).has_value());
-EXPECT(out == v);
+    Outer out{};
+    ASSERT(from_string(*encoded, out).has_value());
+    EXPECT(out == v);
 }
 
 ZEST_CASE(vector_of_tagged_variants) {
@@ -1115,7 +1119,7 @@ ZEST_CASE(vector_of_tagged_variants) {
 
     std::vector<V> vec = {V{1}, V{std::string("a")}, V{2}, V{std::string("b")}};
     auto encoded = to_string(vec);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     std::vector<V> out;
     ASSERT(from_string(*encoded, out).has_value());
@@ -1134,7 +1138,7 @@ ZEST_CASE(map_of_internally_tagged) {
     };
 
     auto encoded = to_string(shapes);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     std::map<std::string, IntTagShape> out;
     ASSERT(from_string(*encoded, out).has_value());
@@ -1146,51 +1150,51 @@ ZEST_CASE(map_of_internally_tagged) {
 ZEST_CASE(optional_tagged_absent) {
     std::optional<ExtSimple> absent;
     auto encoded = to_string(absent);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == "null");
 
     std::optional<ExtSimple> out = ExtSimple{42};
     ASSERT(from_string("null", out).has_value());
-    EXPECT(!out.has_value());
+    EXPECT(!out);
 }
-}
-;  // ZEST_SUITE(serde_variant_nested)
+
+};  // ZEST_SUITE(serde_variant_nested)
 
 struct skip_if_none_extra_tag {
     constexpr static auto spec = make_spec(dsl::skip_if = skip_when::none);
 };
 
-ZEST_SUITE(serde_variant_deep_dispatch){
+ZEST_SUITE(serde_variant_deep_dispatch) {
 
-    ZEST_CASE(struct_with_variant_field_disambiguation){
-        // Two structs whose variant-typed fields accept different source kinds.
-        // Deep scoring should recurse into the variant field's alternatives.
-        struct HasIntOrString{std::variant<int, std::string> data;
-}
-;
+ZEST_CASE(struct_with_variant_field_disambiguation) {
+    // Two structs whose variant-typed fields accept different source kinds.
+    // Deep scoring should recurse into the variant field's alternatives.
+    struct HasIntOrString {
+        std::variant<int, std::string> data;
+    };
 
-struct HasBoolOrDouble {
-    std::variant<bool, double> data;
-};
+    struct HasBoolOrDouble {
+        std::variant<bool, double> data;
+    };
 
-using V = std::variant<HasIntOrString, HasBoolOrDouble>;
+    using V = std::variant<HasIntOrString, HasBoolOrDouble>;
 
-V out{};
-ASSERT(from_string(R"({"data":42})", out).has_value());
-EXPECT(out.index() == 0U);
-EXPECT(std::get<int>(std::get<HasIntOrString>(out).data) == 42);
+    V out{};
+    ASSERT(from_string(R"({"data":42})", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<int>(std::get<HasIntOrString>(out).data) == 42);
 
-ASSERT(from_string(R"({"data":true})", out).has_value());
-EXPECT(out.index() == 1U);
-EXPECT(std::get<bool>(std::get<HasBoolOrDouble>(out).data) == true);
+    ASSERT(from_string(R"({"data":true})", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<bool>(std::get<HasBoolOrDouble>(out).data) == true);
 
-ASSERT(from_string(R"({"data":"text"})", out).has_value());
-EXPECT(out.index() == 0U);
-EXPECT(std::get<std::string>(std::get<HasIntOrString>(out).data) == "text");
+    ASSERT(from_string(R"({"data":"text"})", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<std::string>(std::get<HasIntOrString>(out).data) == "text");
 
-ASSERT(from_string(R"({"data":3.14})", out).has_value());
-EXPECT(out.index() == 1U);
-EXPECT(std::get<double>(std::get<HasBoolOrDouble>(out).data) == 3.14);
+    ASSERT(from_string(R"({"data":3.14})", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<double>(std::get<HasBoolOrDouble>(out).data) == 3.14);
 }
 
 ZEST_CASE(vector_vs_tuple_by_length) {
@@ -1296,7 +1300,7 @@ ZEST_CASE(optional_wrapping_variant) {
     ASSERT(from_string("42", out).has_value());
     EXPECT(out.index() == 0U);
     auto& opt = std::get<std::optional<Inner>>(out);
-    ASSERT(opt.has_value());
+    ASSERT(opt);
     EXPECT(std::get<int>(*opt) == 42);
 }
 
@@ -1536,8 +1540,8 @@ ZEST_CASE(subset_with_optional_field_missing) {
     EXPECT(out.index() == 0U);
     EXPECT(std::get<WithOptional>(out).value == "hello");
 }
-}
-;  // ZEST_SUITE(serde_variant_deep_dispatch)
+
+};  // ZEST_SUITE(serde_variant_deep_dispatch)
 
 }  // namespace
 

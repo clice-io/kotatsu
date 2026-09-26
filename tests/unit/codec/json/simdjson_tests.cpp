@@ -49,70 +49,70 @@ enum class char_enum : char {
     z = 'Z',
 };
 
-ZEST_SUITE(serde_simdjson){
+ZEST_SUITE(serde_simdjson) {
 
-    ZEST_CASE(basic_roundtrip){ASSERT(to_string(true) == "true");
-ASSERT(to_string(static_cast<std::int64_t>(-7)) == "-7");
-ASSERT(to_string(static_cast<std::uint64_t>(42)) == "42");
-ASSERT(to_string(3.5) == "3.5");
-ASSERT(to_string('x') == R"("x")");
-ASSERT(to_string(std::string("ok")) == R"("ok")");
-ASSERT(to_string(nullptr) == "null");
+ZEST_CASE(basic_roundtrip) {
+    ASSERT(to_string(true) == "true");
+    ASSERT(to_string(static_cast<std::int64_t>(-7)) == "-7");
+    ASSERT(to_string(static_cast<std::uint64_t>(42)) == "42");
+    ASSERT(to_string(3.5) == "3.5");
+    ASSERT(to_string('x') == R"("x")");
+    ASSERT(to_string(std::string("ok")) == R"("ok")");
+    ASSERT(to_string(nullptr) == "null");
 
-bool b = false;
-ASSERT(from_string("true", b).has_value());
-EXPECT(b == true);
+    bool b = false;
+    ASSERT(from_string("true", b).has_value());
+    EXPECT(b == true);
 
-std::int64_t i = 0;
-ASSERT(from_string("-7", i).has_value());
-EXPECT(i == -7);
+    std::int64_t i = 0;
+    ASSERT(from_string("-7", i).has_value());
+    EXPECT(i == -7);
 
-std::uint64_t u = 0;
-ASSERT(from_string("42", u).has_value());
-EXPECT(u == 42U);
+    std::uint64_t u = 0;
+    ASSERT(from_string("42", u).has_value());
+    EXPECT(u == 42U);
 
-double f = 0.0;
-ASSERT(from_string("3.5", f).has_value());
-EXPECT(f == 3.5);
+    double f = 0.0;
+    ASSERT(from_string("3.5", f).has_value());
+    EXPECT(f == 3.5);
 
-char c = '\0';
-ASSERT(from_string(R"("x")", c).has_value());
-EXPECT(c == 'x');
+    char c = '\0';
+    ASSERT(from_string(R"("x")", c).has_value());
+    EXPECT(c == 'x');
 
-std::string s;
-ASSERT(from_string(R"("ok")", s).has_value());
-EXPECT(s == "ok");
+    std::string s;
+    ASSERT(from_string(R"("ok")", s).has_value());
+    EXPECT(s == "ok");
 
-std::nullptr_t n = nullptr;
-ASSERT(from_string("null", n).has_value());
-EXPECT(n == nullptr);
-
-}  // namespace
+    std::nullptr_t n = nullptr;
+    ASSERT(from_string("null", n).has_value());
+    EXPECT(n == nullptr);
+}
 
 ZEST_CASE(basic_errors) {
     bool b = false;
     auto bool_status = from_string("1", b);
-    EXPECT(!bool_status.has_value());
+    EXPECT(!bool_status);
 
     int i = 0;
     auto int_status = from_string(R"("7")", i);
-    EXPECT(!int_status.has_value());
+    EXPECT(!int_status);
 
     std::uint8_t u8 = 0;
     auto u8_status = from_string("300", u8);
-    EXPECT(!u8_status.has_value());
+    EXPECT(!u8_status);
 
     char c = '\0';
     auto char_status = from_string(R"("xy")", c);
-    EXPECT(!char_status.has_value());
+    EXPECT(!char_status);
 
     std::string s;
     auto str_status = from_string("null", s);
-    EXPECT(!str_status.has_value());
+    EXPECT(!str_status);
 
     std::nullptr_t n = nullptr;
     auto null_status = from_string("0", n);
-    EXPECT(!null_status.has_value());
+    EXPECT(!null_status);
 }
 
 ZEST_CASE(char_codepoint_range) {
@@ -158,16 +158,16 @@ ZEST_CASE(enum_roundtrip) {
 ZEST_CASE(enum_errors) {
     unsigned_enum unsigned_out = unsigned_enum::zero;
     auto negative_error = from_string("-1", unsigned_out);
-    EXPECT(!negative_error.has_value());
+    EXPECT(!negative_error);
     EXPECT(unsigned_out == unsigned_enum::zero);
 
     auto overflow_error = from_string("300", unsigned_out);
-    EXPECT(!overflow_error.has_value());
+    EXPECT(!overflow_error);
     EXPECT(unsigned_out == unsigned_enum::zero);
 
     signed_enum signed_out = signed_enum::high;
     auto type_error = from_string(R"("x")", signed_out);
-    EXPECT(!type_error.has_value());
+    EXPECT(!type_error);
     EXPECT(signed_out == signed_enum::high);
 }
 
@@ -200,56 +200,56 @@ ZEST_CASE(array_roundtrip) {
 ZEST_CASE(array_errors) {
     std::vector<int> ints;
     auto vector_shape_error = from_string(R"({"not":"array"})", ints);
-    EXPECT(!vector_shape_error.has_value());
+    EXPECT(!vector_shape_error);
 
     auto vector_element_error = from_string(R"([1,"x",3])", ints);
-    EXPECT(!vector_element_error.has_value());
+    EXPECT(!vector_element_error);
 
     std::tuple<int, std::string> pair{};
     auto tuple_length_error = from_string(R"([1])", pair);
-    EXPECT(!tuple_length_error.has_value());
+    EXPECT(!tuple_length_error);
 
     auto tuple_type_error = from_string(R"([1,2])", pair);
-    EXPECT(!tuple_type_error.has_value());
+    EXPECT(!tuple_type_error);
 
     // Too many elements for tuple
     std::tuple<int, int> t2{};
     auto tuple_too_long = from_string(R"([1,2,3])", t2);
-    EXPECT(!tuple_too_long.has_value());
+    EXPECT(!tuple_too_long);
 
     // Too many elements for pair
     std::pair<int, int> p2{};
     auto pair_too_long = from_string(R"([1,2,3])", p2);
-    EXPECT(!pair_too_long.has_value());
+    EXPECT(!pair_too_long);
 
     // Too few for pair
     auto pair_too_short = from_string(R"([1])", p2);
-    EXPECT(!pair_too_short.has_value());
+    EXPECT(!pair_too_short);
 
     // Empty array into non-empty tuple
     std::tuple<int> t1{};
     auto tuple_empty_src = from_string(R"([])", t1);
-    EXPECT(!tuple_empty_src.has_value());
+    EXPECT(!tuple_empty_src);
 
     // Non-empty array into empty tuple
     std::tuple<> t0{};
     auto tuple_empty_dst = from_string(R"([1])", t0);
-    EXPECT(!tuple_empty_dst.has_value());
+    EXPECT(!tuple_empty_dst);
 
     std::array<int, 2> fixed{};
     auto fixed_short = from_string(R"([1])", fixed);
-    EXPECT(!fixed_short.has_value());
+    EXPECT(!fixed_short);
 
     auto fixed_long = from_string(R"([1,2,3])", fixed);
-    EXPECT(!fixed_long.has_value());
+    EXPECT(!fixed_long);
 
     auto fixed_type = from_string(R"([1,"x"])", fixed);
-    EXPECT(!fixed_type.has_value());
+    EXPECT(!fixed_type);
 
     // Empty array into non-empty fixed array
     std::array<int, 1> fixed1{};
     auto fixed_empty_src = from_string(R"([])", fixed1);
-    EXPECT(!fixed_empty_src.has_value());
+    EXPECT(!fixed_empty_src);
 }
 
 ZEST_CASE(object_roundtrip) {
@@ -275,11 +275,11 @@ ZEST_CASE(object_errors) {
     person parsed{};
 
     auto shape_error = from_string(R"([1,2,3])", parsed);
-    EXPECT(!shape_error.has_value());
+    EXPECT(!shape_error);
 
     auto field_type_error =
         from_string(R"({"id":"bad","name":"alice","scores":[10,20],"active":true})", parsed);
-    EXPECT(!field_type_error.has_value());
+    EXPECT(!field_type_error);
 }
 
 ZEST_CASE(map_roundtrip) {
@@ -320,14 +320,14 @@ ZEST_CASE(map_uint64_key_roundtrip) {
 ZEST_CASE(map_errors) {
     std::map<std::string, int> by_name;
     auto shape_error = from_string(R"([1,2,3])", by_name);
-    EXPECT(!shape_error.has_value());
+    EXPECT(!shape_error);
 
     auto value_type_error = from_string(R"({"a":"x"})", by_name);
-    EXPECT(!value_type_error.has_value());
+    EXPECT(!value_type_error);
 
     std::map<int, int> by_id;
     auto key_parse_error = from_string(R"({"abc":1})", by_id);
-    ASSERT(!key_parse_error.has_value());
+    ASSERT(!key_parse_error);
     EXPECT(zest::contains(key_parse_error.error().message, "cannot parse map key 'abc'"));
 
     std::map<std::uint8_t, int> by_octet;
@@ -349,17 +349,17 @@ ZEST_CASE(optional_roundtrip) {
 
     std::optional<int> out = std::nullopt;
     ASSERT(from_string("42", out).has_value());
-    ASSERT(out.has_value());
+    ASSERT(out);
     EXPECT(*out == 42);
 
     ASSERT(from_string("null", out).has_value());
-    EXPECT(!out.has_value());
+    EXPECT(!out);
 }
 
 ZEST_CASE(optional_errors) {
     std::optional<int> out = std::nullopt;
     auto status = from_string(R"("x")", out);
-    EXPECT(!status.has_value());
+    EXPECT(!status);
 }
 
 ZEST_CASE(variant_roundtrip) {
@@ -407,20 +407,20 @@ ZEST_CASE(variant_deep_scoring_disambiguation) {
     object_variant out = object_int_value{.value = 0};
     // Deep scoring: "text" is string → object_string_value wins
     auto string_status = from_string(R"({"value":"text"})", out);
-    ASSERT(string_status.has_value());
+    ASSERT(string_status);
     EXPECT(out.index() == 1U);
     EXPECT(std::get<object_string_value>(out).value == "text");
 
     // Deep scoring: 42 is int → object_int_value wins
     auto int_status = from_string(R"({"value":42})", out);
-    ASSERT(int_status.has_value());
+    ASSERT(int_status);
     EXPECT(out.index() == 0U);
     EXPECT(std::get<object_int_value>(out).value == 42);
 
     using strict_variant = std::variant<int, bool>;
     strict_variant strict_out = 0;
     auto no_match_status = from_string(R"({"x":1})", strict_out);
-    EXPECT(!no_match_status.has_value());
+    EXPECT(!no_match_status);
 }
 
 ZEST_CASE(bytes_roundtrip) {
@@ -436,7 +436,7 @@ ZEST_CASE(bytes_roundtrip) {
     EXPECT(std::to_integer<int>(out[3]) == 255);
 
     auto range_error = from_string(R"([0,256])", out);
-    EXPECT(!range_error.has_value());
+    EXPECT(!range_error);
 }
 
 ZEST_CASE(misc_behavior) {
@@ -455,7 +455,7 @@ ZEST_CASE(misc_behavior) {
     ASSERT(from_value == std::vector<int>({7, 9}));
 }
 
-};  // namespace kota::codec
+};  // ZEST_SUITE(serde_simdjson)
 
 struct StrictStruct {
     int x{};
@@ -474,59 +474,60 @@ struct AllOptional {
     std::optional<std::string> b;
 };
 
-ZEST_SUITE(serde_required_fields){
+ZEST_SUITE(serde_required_fields) {
 
-    ZEST_CASE(missing_required_field_fails){// "name" is required (non-optional), missing → error
-                                            auto result = from_string<StrictStruct>(R"({"x": 42})");
-EXPECT(!result.has_value());
+ZEST_CASE(missing_required_field_fails) {
+    // "name" is required (non-optional), missing → error
+    auto result = from_string<StrictStruct>(R"({"x": 42})");
+    EXPECT(!result);
 }
 
 ZEST_CASE(all_required_fields_present_succeeds) {
     auto result = from_string<StrictStruct>(R"({"x": 42, "name": "hello"})");
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->x == 42);
     EXPECT(result->name == "hello");
 }
 
 ZEST_CASE(empty_json_object_fails_if_required_fields) {
     auto result = from_string<StrictStruct>(R"({})");
-    EXPECT(!result.has_value());
+    EXPECT(!result);
 }
 
 ZEST_CASE(optional_field_can_be_absent) {
     auto result = from_string<MixedStruct>(R"({"required_field": 7})");
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->required_field == 7);
-    EXPECT(!result->optional_field.has_value());
+    EXPECT(!result->optional_field);
     EXPECT(result->defaulted_field == std::string{});
 }
 
 ZEST_CASE(defaulted_field_can_be_absent) {
     auto result = from_string<MixedStruct>(R"({"required_field": 1})");
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->defaulted_field == std::string{});
 }
 
 ZEST_CASE(defaulted_field_present_is_used) {
     auto result = from_string<MixedStruct>(R"({"required_field": 1, "defaulted_field": "hi"})");
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->defaulted_field == std::string{"hi"});
 }
 
 ZEST_CASE(all_optional_struct_empty_object_succeeds) {
     auto result = from_string<AllOptional>(R"({})");
-    ASSERT(result.has_value());
-    EXPECT(!result->a.has_value());
-    EXPECT(!result->b.has_value());
+    ASSERT(result);
+    EXPECT(!result->a);
+    EXPECT(!result->b);
 }
 
 ZEST_CASE(unknown_fields_ignored_by_default) {
     auto result = from_string<StrictStruct>(R"({"x": 1, "name": "ok", "extra": true})");
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->x == 1);
 }
-}
-;  // ZEST_SUITE(serde_required_fields)
+
+};  // ZEST_SUITE(serde_required_fields)
 
 }  // namespace
 

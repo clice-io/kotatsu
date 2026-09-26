@@ -53,28 +53,28 @@ struct str_like_aggregate {
     }
 };
 
-ZEST_SUITE(serde_toml){
+ZEST_SUITE(serde_toml) {
 
-    ZEST_CASE(struct_roundtrip_with_dom){const person input{
+ZEST_CASE(struct_roundtrip_with_dom) {
+    const person input{
         .id = 7,
         .name = "alice",
         .scores = {1, 2, 3},
         .active = true,
     };
 
-auto dom = to_toml(input);
-ASSERT(dom.has_value());
-ASSERT(dom->contains("id"));
-ASSERT(dom->contains("name"));
-ASSERT(dom->contains("scores"));
-ASSERT(dom->contains("active"));
+    auto dom = to_toml(input);
+    ASSERT(dom.has_value());
+    ASSERT(dom->contains("id"));
+    ASSERT(dom->contains("name"));
+    ASSERT(dom->contains("scores"));
+    ASSERT(dom->contains("active"));
 
-person output{};
-auto status = from_toml(*dom, output);
-ASSERT(status.has_value());
-EXPECT(output == input);
-
-}  // namespace
+    person output{};
+    auto status = from_toml(*dom, output);
+    ASSERT(status);
+    EXPECT(output == input);
+}
 
 ZEST_CASE(parse_and_to_string_roundtrip) {
     constexpr std::string_view input = R"(
@@ -85,7 +85,7 @@ active = true
 )";
 
     auto parsed = from_string<person>(input);
-    ASSERT(parsed.has_value());
+    ASSERT(parsed);
     EXPECT(parsed->id == 9);
     EXPECT(parsed->name == "bob");
     EXPECT(parsed->scores == std::vector<int>({4, 5}));
@@ -95,7 +95,7 @@ active = true
     ASSERT(encoded.has_value());
 
     auto reparsed = from_string<person>(*encoded);
-    ASSERT(reparsed.has_value());
+    ASSERT(reparsed);
     EXPECT(*reparsed == *parsed);
 }
 
@@ -103,11 +103,11 @@ ZEST_CASE(to_string_and_from_string_with_config) {
     const task_entry input{.title = "write docs", .level = priority::high};
 
     auto text = to_string<string_enum_config>(input);
-    ASSERT(text.has_value());
+    ASSERT(text);
     EXPECT(zest::contains(*text, R"(level = 'high')"));
 
     auto parsed = from_string<task_entry, string_enum_config>(*text);
-    ASSERT(parsed.has_value());
+    ASSERT(parsed);
     EXPECT(*parsed == input);
 }
 
@@ -127,15 +127,15 @@ ZEST_CASE(dynamic_dom_field_roundtrip) {
 
     payload_with_extra output{};
     auto status = from_toml(*dom, output);
-    ASSERT(status.has_value());
+    ASSERT(status);
 
     EXPECT(output.id == 1);
     auto city = output.extra["city"].value<std::string_view>();
-    ASSERT(city.has_value());
+    ASSERT(city);
     EXPECT(*city == "shanghai");
 
     auto zip = output.extra["zip"].value<std::int64_t>();
-    ASSERT(zip.has_value());
+    ASSERT(zip);
     EXPECT(*zip == 200000);
 
     auto tags_out = output.extra["tags"].as_array();
@@ -153,7 +153,7 @@ ZEST_CASE(boxed_root_scalar_and_optional_none) {
 
     std::vector<int> decoded_values{};
     auto decode_values_status = from_toml(*encoded_values, decoded_values);
-    ASSERT(decode_values_status.has_value());
+    ASSERT(decode_values_status);
     EXPECT(decoded_values == values);
 
     const std::optional<int> none = std::nullopt;
@@ -163,8 +163,8 @@ ZEST_CASE(boxed_root_scalar_and_optional_none) {
 
     std::optional<int> decoded_none = 42;
     auto decode_none_status = from_toml(*encoded_none, decoded_none);
-    ASSERT(decode_none_status.has_value());
-    EXPECT(!decoded_none.has_value());
+    ASSERT(decode_none_status);
+    EXPECT(!decoded_none);
 }
 
 ZEST_CASE(shared_ptr_root_roundtrip) {
@@ -180,7 +180,7 @@ ZEST_CASE(shared_ptr_root_roundtrip) {
 
     std::shared_ptr<person> output;
     auto status = from_toml(*dom, output);
-    ASSERT(status.has_value());
+    ASSERT(status);
     ASSERT(output != nullptr);
     EXPECT(*output == *input);
 }
@@ -193,7 +193,7 @@ ZEST_CASE(null_shared_ptr_root) {
 
     auto output = std::make_shared<person>();
     auto status = from_toml(*dom, output);
-    ASSERT(status.has_value());
+    ASSERT(status);
     EXPECT(output == nullptr);
 }
 
@@ -210,7 +210,7 @@ ZEST_CASE(unique_ptr_root_roundtrip) {
 
     std::unique_ptr<person> output;
     auto status = from_toml(*dom, output);
-    ASSERT(status.has_value());
+    ASSERT(status);
     ASSERT(output != nullptr);
     EXPECT(*output == *input);
 }
@@ -229,8 +229,8 @@ ZEST_CASE(optional_root_present_roundtrip) {
 
     std::optional<person> output;
     auto status = from_toml(*dom, output);
-    ASSERT(status.has_value());
-    ASSERT(output.has_value());
+    ASSERT(status);
+    ASSERT(output);
     EXPECT(*output == *input);
 }
 
@@ -244,7 +244,7 @@ ZEST_CASE(pointer_to_scalar_root_boxes) {
 
     std::shared_ptr<int> output;
     auto status = from_toml(*dom, output);
-    ASSERT(status.has_value());
+    ASSERT(status);
     ASSERT(output != nullptr);
     EXPECT(*output == 7);
 }
@@ -261,7 +261,7 @@ ZEST_CASE(str_like_reflectable_root_boxes) {
 
     str_like_aggregate output;
     auto status = from_toml(*dom, output);
-    ASSERT(status.has_value());
+    ASSERT(status);
     EXPECT(output.value == "abc");
 
     const auto boxed = std::make_shared<str_like_aggregate>(input);
@@ -271,7 +271,7 @@ ZEST_CASE(str_like_reflectable_root_boxes) {
 
     std::shared_ptr<str_like_aggregate> ptr_output;
     auto ptr_status = from_toml(*ptr_dom, ptr_output);
-    ASSERT(ptr_status.has_value());
+    ASSERT(ptr_status);
     ASSERT(ptr_output != nullptr);
     EXPECT(ptr_output->value == "abc");
 }
@@ -294,14 +294,14 @@ ZEST_CASE(nullable_root_engaged_empty_table_rejected) {
 
     std::shared_ptr<map_t> output;
     auto status = from_toml(*dom, output);
-    ASSERT(status.has_value());
+    ASSERT(status);
     ASSERT(output != nullptr);
     EXPECT(*output == *filled);
 
     // The empty document stays reserved for the null pointer.
     output = std::make_shared<map_t>();
     status = from_toml(::toml::table{}, output);
-    ASSERT(status.has_value());
+    ASSERT(status);
     EXPECT(output == nullptr);
 }
 
@@ -319,7 +319,7 @@ ZEST_CASE(table_root_symmetry) {
 
     ::toml::table output;
     auto status = from_toml(*dom, output);
-    ASSERT(status.has_value());
+    ASSERT(status);
     // toml::table reads as a map to meta; its own operator== compares it.
     EXPECT((output == input));
 }
@@ -405,7 +405,7 @@ ZEST_CASE(tuple_length_errors) {
     }
 }
 
-};  // namespace kota::codec
+};  // ZEST_SUITE(serde_toml)
 
 }  // namespace
 
@@ -494,19 +494,19 @@ struct journal_entry {
     auto operator==(const journal_entry&) const -> bool = default;
 };
 
-ZEST_SUITE(serde_toml_format_scoped){
+ZEST_SUITE(serde_toml_format_scoped) {
 
-    ZEST_CASE(format_scoped_repr_selected_by_toml){const journal_entry input{.j = {.page = 41}};
+ZEST_CASE(format_scoped_repr_selected_by_toml) {
+    const journal_entry input{.j = {.page = 41}};
 
-auto text = toml::to_string(input);
-ASSERT(text.has_value());
-EXPECT(zest::contains(*text, "j = 41"));
+    auto text = toml::to_string(input);
+    ASSERT(text);
+    EXPECT(zest::contains(*text, "j = 41"));
 
-auto output = toml::from_string<journal_entry>(*text);
-ASSERT(output.has_value());
-EXPECT(*output == input);
-
-}  // namespace
+    auto output = toml::from_string<journal_entry>(*text);
+    ASSERT(output);
+    EXPECT(*output == input);
+}
 
 ZEST_CASE(map_keys_follow_toml_scoped_repr) {
     const std::map<journal, int> input{
@@ -515,13 +515,13 @@ ZEST_CASE(map_keys_follow_toml_scoped_repr) {
     };
 
     auto text = toml::to_string(input);
-    ASSERT(text.has_value());
+    ASSERT(text);
     // Keys travel through the toml-scoped integer repr, not the generic
     // textual one.
     EXPECT(!zest::contains(*text, "p7"));
 
     auto output = toml::from_string<std::map<journal, int>>(*text);
-    ASSERT(output.has_value());
+    ASSERT(output);
     EXPECT(*output == input);
 }
 
@@ -531,11 +531,11 @@ ZEST_CASE(top_level_scalar_repr_boxed_under_root_key) {
     const journal input{.page = 12};
 
     auto text = toml::to_string(input);
-    ASSERT(text.has_value());
+    ASSERT(text);
     EXPECT(!zest::contains(*text, "page"));
 
     auto output = toml::from_string<journal>(*text);
-    ASSERT(output.has_value());
+    ASSERT(output);
     EXPECT(*output == input);
 }
 
@@ -545,16 +545,16 @@ ZEST_CASE(top_level_table_shaped_repr_becomes_root) {
     const diary input{.page = 3};
 
     auto text = toml::to_string(input);
-    ASSERT(text.has_value());
+    ASSERT(text);
     EXPECT(zest::contains(*text, "page = 3"));
     EXPECT(!zest::contains(*text, std::string(toml::detail::boxed_root_key)));
 
     auto output = toml::from_string<diary>(*text);
-    ASSERT(output.has_value());
+    ASSERT(output);
     EXPECT(*output == input);
 }
 
-};  // namespace kota::codec
+};  // ZEST_SUITE(serde_toml_format_scoped)
 
 }  // namespace
 

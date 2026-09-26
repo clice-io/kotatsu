@@ -13,36 +13,36 @@
 
 namespace kota {
 
-ZEST_SUITE(task_group_errors, loop_fixture){
+ZEST_SUITE(task_group_errors, loop_fixture) {
 
-    ZEST_CASE(returns_structured_error){int slow_done = 0;
+ZEST_CASE(returns_structured_error) {
+    int slow_done = 0;
 
-auto failing = [&]() -> task<int, error> {
-    co_await sleep(1, loop);
-    co_await fail(error::connection_refused);
-};
+    auto failing = [&]() -> task<int, error> {
+        co_await sleep(1, loop);
+        co_await fail(error::connection_refused);
+    };
 
-auto slow = [&]() -> task<> {
-    co_await sleep(50, loop);
-    slow_done += 1;
-};
+    auto slow = [&]() -> task<> {
+        co_await sleep(50, loop);
+        slow_done += 1;
+    };
 
-auto driver = [&]() -> task<> {
-    task_group<error> group(loop);
-    group.spawn(failing());
-    group.spawn(slow());
-    auto res = co_await group.join();
-    EXPECT(res.has_error());
-    EXPECT(res.error().size() == 1u);
-    EXPECT(res.error()[0] == error::connection_refused);
-};
+    auto driver = [&]() -> task<> {
+        task_group<error> group(loop);
+        group.spawn(failing());
+        group.spawn(slow());
+        auto res = co_await group.join();
+        EXPECT(res.has_error());
+        EXPECT(res.error().size() == 1u);
+        EXPECT(res.error()[0] == error::connection_refused);
+    };
 
-auto t = driver();
-schedule_all(t);
-EXPECT(t->is_finished());
-EXPECT(slow_done == 0);
-
-}  // namespace kota
+    auto t = driver();
+    schedule_all(t);
+    EXPECT(t->is_finished());
+    EXPECT(slow_done == 0);
+}
 
 ZEST_CASE(mixed_error_types) {
     int slow_done = 0;
@@ -362,7 +362,7 @@ ZEST_CASE(cancel_while_join_suspended_with_exception) {
     EXPECT_THROWS(t.result());
 }
 #endif
-}
-;  // ZEST_SUITE(task_group_errors)
+
+};  // ZEST_SUITE(task_group_errors)
 
 }  // namespace kota

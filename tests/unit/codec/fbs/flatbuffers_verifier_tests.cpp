@@ -289,7 +289,7 @@ auto make_chain(std::size_t depth) -> node {
 template <typename T, typename Probe>
 void expect_hostile_bytes_contained(const T& input, Probe&& probe) {
     auto encoded = fbs::to_bytes(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     for(std::size_t len = 8; len < encoded->size(); ++len) {
         auto span = std::span<const std::uint8_t>(encoded->data(), len);
@@ -317,33 +317,33 @@ void expect_hostile_bytes_contained(const T& input, Probe&& probe) {
     }
 }
 
-ZEST_SUITE(serde_flatbuffers_verifier){
+ZEST_SUITE(serde_flatbuffers_verifier) {
 
-    ZEST_CASE(rich_fixture_round_trips_both_paths){const auto input = make_rich();
-auto encoded = fbs::to_bytes(input);
-ASSERT(encoded.has_value());
+ZEST_CASE(rich_fixture_round_trips_both_paths) {
+    const auto input = make_rich();
+    auto encoded = fbs::to_bytes(input);
+    ASSERT(encoded);
 
-auto decoded = fbs::from_bytes<rich>(*encoded);
-ASSERT(decoded.has_value());
-EXPECT(*decoded == input);
+    auto decoded = fbs::from_bytes<rich>(*encoded);
+    ASSERT(decoded);
+    EXPECT(*decoded == input);
 
-auto root = table_view<rich>::from_bytes(*encoded);
-ASSERT(root.valid());
-EXPECT(root[&rich::id] == 42);
-EXPECT(root[&rich::title] == "torture");
-EXPECT(root[&rich::tags].size() == 3U);
-EXPECT(root[&rich::index]["k2"][&inner::name] == "eight");
-EXPECT(root[&rich::which].get<1>() == "chosen");
-
-}  // namespace
+    auto root = table_view<rich>::from_bytes(*encoded);
+    ASSERT(root.valid());
+    EXPECT(root[&rich::id] == 42);
+    EXPECT(root[&rich::title] == "torture");
+    EXPECT(root[&rich::tags].size() == 3U);
+    EXPECT(root[&rich::index]["k2"][&inner::name] == "eight");
+    EXPECT(root[&rich::which].get<1>() == "chosen");
+}
 
 ZEST_CASE(rich2_fixture_round_trips_both_paths) {
     const auto input = make_rich2();
     auto encoded = fbs::to_bytes(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     auto decoded = fbs::from_bytes<rich2>(*encoded);
-    ASSERT(decoded.has_value());
+    ASSERT(decoded);
     EXPECT(*decoded == input);
 
     auto root = table_view<rich2>::from_bytes(*encoded);
@@ -373,10 +373,10 @@ ZEST_CASE(monostate_alternative_round_trips_both_paths) {
     input.maybe = std::monostate{};
 
     auto encoded = fbs::to_bytes(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     auto decoded = fbs::from_bytes<rich2>(*encoded);
-    ASSERT(decoded.has_value());
+    ASSERT(decoded);
     EXPECT(*decoded == input);
 
     auto root = table_view<rich2>::from_bytes(*encoded);
@@ -390,7 +390,7 @@ ZEST_CASE(weak_ptr_field_verifies_and_reads) {
     weak_holder input{.before = 5, .num = owner, .after = "tail"};
 
     auto encoded = fbs::to_bytes(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     auto root = table_view<weak_holder>::from_bytes(*encoded);
     ASSERT(root.valid());
@@ -402,7 +402,7 @@ ZEST_CASE(weak_ptr_field_verifies_and_reads) {
     owner.reset();
     ASSERT(input.num.expired());
     auto absent = fbs::to_bytes(input);
-    ASSERT(absent.has_value());
+    ASSERT(absent);
 
     auto root2 = table_view<weak_holder>::from_bytes(*absent);
     ASSERT(root2.valid());
@@ -415,7 +415,7 @@ ZEST_CASE(undersized_buffers_are_rejected) {
     for(std::size_t len = 0; len < tiny.size(); ++len) {
         auto span = std::span<const std::uint8_t>(tiny.data(), len);
         auto result = fbs::from_bytes<rich>(span);
-        ASSERT(!result.has_value());
+        ASSERT(!result);
         EXPECT(!table_view<rich>::from_bytes(span).valid());
     }
 }
@@ -435,7 +435,7 @@ ZEST_CASE(minimal_buffers_with_valid_identifier_are_rejected) {
 
 ZEST_CASE(wrong_identifier_is_rejected) {
     auto encoded = fbs::to_bytes(make_rich());
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     auto tampered = *encoded;
     tampered[4] ^= 0xFF;
@@ -446,7 +446,7 @@ ZEST_CASE(wrong_identifier_is_rejected) {
 
 ZEST_CASE(out_of_bounds_root_offset_is_rejected) {
     auto encoded = fbs::to_bytes(make_rich());
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     auto tampered = *encoded;
     tampered[0] = 0xFF;
@@ -523,7 +523,7 @@ ZEST_CASE(inline_struct_bool_byte_must_be_zero_or_one) {
     };
 
     auto encoded = fbs::to_bytes(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     ASSERT(fbs::from_bytes<with_bool_structs>(*encoded).has_value());
 
     // Locate the stored images through the raw accessors; slots follow
@@ -555,7 +555,7 @@ ZEST_CASE(inline_struct_bool_byte_must_be_zero_or_one) {
     auto flipped = *encoded;
     flipped[byte_at(items->Get(0), offsetof(bool_flags, ready))] = 0x01;
     auto decoded = fbs::from_bytes<with_bool_structs>(flipped);
-    ASSERT(decoded.has_value());
+    ASSERT(decoded);
     EXPECT(decoded->items[0].ready);
     auto root_view = table_view<with_bool_structs>::from_bytes(flipped);
     ASSERT(root_view.valid());
@@ -567,13 +567,13 @@ ZEST_CASE(recursion_depth_boundary) {
     // terminates cyclic offsets: a cycle is just an infinitely deep chain.
     // Straddle the cap so a change to per-table depth cost surfaces here.
     auto shallow = fbs::to_bytes(make_chain(60));
-    ASSERT(shallow.has_value());
+    ASSERT(shallow);
     node shallow_out{};
     EXPECT(fbs::from_bytes(*shallow, shallow_out).has_value());
     EXPECT(table_view<node>::from_bytes(*shallow).valid());
 
     auto deep = fbs::to_bytes(make_chain(70));
-    ASSERT(deep.has_value());
+    ASSERT(deep);
     node deep_out{};
     EXPECT(!fbs::from_bytes(*deep, deep_out).has_value());
     EXPECT(!table_view<node>::from_bytes(*deep).valid());
@@ -587,16 +587,16 @@ ZEST_CASE(imperative_adapter_cannot_overrun_vector) {
     auto shorted = fbs::to_bytes(greedy_seq{
         .nums = {1, 2}
     });
-    ASSERT(shorted.has_value());
+    ASSERT(shorted);
     EXPECT(!fbs::from_bytes<greedy_seq>(*shorted).has_value());
 
     const greedy_seq exact{
         .nums = {1, 2, 3, 4}
     };
     auto encoded = fbs::to_bytes(exact);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     auto decoded = fbs::from_bytes<greedy_seq>(*encoded);
-    ASSERT(decoded.has_value());
+    ASSERT(decoded);
     EXPECT(*decoded == exact);
 }
 
@@ -606,22 +606,22 @@ ZEST_CASE(imperative_adapter_cannot_overrun_map) {
     auto shorted = fbs::to_bytes(greedy_map{
         .entries = {{"a", 1}, {"b", 2}}
     });
-    ASSERT(shorted.has_value());
+    ASSERT(shorted);
     EXPECT(!fbs::from_bytes<greedy_map>(*shorted).has_value());
 
     const greedy_map exact{
         .entries = {{"a", 1}, {"b", 2}, {"c", 3}, {"d", 4}}
     };
     auto encoded = fbs::to_bytes(exact);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     auto decoded = fbs::from_bytes<greedy_map>(*encoded);
-    ASSERT(decoded.has_value());
+    ASSERT(decoded);
     EXPECT(*decoded == exact);
 }
 
 ZEST_CASE(byte_span_overload_rejects_hostile_input_too) {
     auto encoded = fbs::to_bytes(make_rich());
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     auto tampered = *encoded;
     tampered[0] = 0xFF;
@@ -636,7 +636,7 @@ ZEST_CASE(byte_span_overload_rejects_hostile_input_too) {
     EXPECT(!table_view<rich>::from_bytes(bytes).valid());
 }
 
-};  // namespace kota::codec
+};  // ZEST_SUITE(serde_flatbuffers_verifier)
 
 }  // namespace
 

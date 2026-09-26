@@ -17,42 +17,42 @@ struct LogEntry {
 
 using LogEntries = std::vector<LogEntry>;
 
-ZEST_SUITE(ipc_peer_logger){
+ZEST_SUITE(ipc_peer_logger) {
 
-    ZEST_CASE(trace_logs_traffic){
-        auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
-            R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":1,"b":2}})",
-        });
+ZEST_CASE(trace_logs_traffic) {
+    auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
+        R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":1,"b":2}})",
+    });
 
-event_loop loop;
-JsonPeer peer(loop, std::move(transport));
+    event_loop loop;
+    JsonPeer peer(loop, std::move(transport));
 
-LogEntries logs;
-peer.set_logger([&](LogLevel level, std::string msg) { logs.push_back({level, std::move(msg)}); },
-                LogLevel::trace);
+    LogEntries logs;
+    peer.set_logger(
+        [&](LogLevel level, std::string msg) { logs.push_back({level, std::move(msg)}); },
+        LogLevel::trace);
 
-peer.on_request([&](RequestContext&, const AddParams& p) -> RequestResult<AddParams> {
-    co_return AddResult{.sum = p.a + p.b};
-});
+    peer.on_request([&](RequestContext&, const AddParams& p) -> RequestResult<AddParams> {
+        co_return AddResult{.sum = p.a + p.b};
+    });
 
-loop.schedule(peer.run());
-EXPECT(loop.run() == 0);
+    loop.schedule(peer.run());
+    EXPECT(loop.run() == 0);
 
-// Should have trace logs for recv and send
-bool has_recv = false;
-bool has_send = false;
-for(const auto& entry: logs) {
-    if(entry.level == LogLevel::trace && entry.message.starts_with("recv:")) {
-        has_recv = true;
+    // Should have trace logs for recv and send
+    bool has_recv = false;
+    bool has_send = false;
+    for(const auto& entry: logs) {
+        if(entry.level == LogLevel::trace && entry.message.starts_with("recv:")) {
+            has_recv = true;
+        }
+        if(entry.level == LogLevel::trace && entry.message.starts_with("send:")) {
+            has_send = true;
+        }
     }
-    if(entry.level == LogLevel::trace && entry.message.starts_with("send:")) {
-        has_send = true;
-    }
+    EXPECT(has_recv);
+    EXPECT(has_send);
 }
-EXPECT(has_recv);
-EXPECT(has_send);
-
-}  // namespace
 
 ZEST_CASE(level_filtering) {
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
@@ -184,7 +184,7 @@ ZEST_CASE(read_loop_lifecycle) {
     EXPECT(has_ended);
 }
 
-};  // namespace kota::ipc
+};  // ZEST_SUITE(ipc_peer_logger)
 
 }  // namespace
 }  // namespace kota::ipc

@@ -34,48 +34,48 @@ std::string make_large_object_json(int count) {
     return out;
 }
 
-ZEST_SUITE(serde_content_dom){
+ZEST_SUITE(serde_content_dom) {
 
-    ZEST_CASE(construct_scalars){dyn::Value null_value{};
-EXPECT(null_value.is_null());
+ZEST_CASE(construct_scalars) {
+    dyn::Value null_value{};
+    EXPECT(null_value.is_null());
 
-dyn::Value bool_value(true);
-EXPECT(bool_value.is_bool());
-EXPECT(bool_value.as_bool() == true);
+    dyn::Value bool_value(true);
+    EXPECT(bool_value.is_bool());
+    EXPECT(bool_value.as_bool() == true);
 
-dyn::Value int_value(std::int64_t(-7));
-EXPECT(int_value.is_int());
-EXPECT(int_value.as_int() == -7);
+    dyn::Value int_value(std::int64_t(-7));
+    EXPECT(int_value.is_int());
+    EXPECT(int_value.as_int() == -7);
 
-dyn::Value uint_value(std::uint64_t(42));
-EXPECT(uint_value.is_int());
-EXPECT(uint_value.as_uint() == std::uint64_t(42));
+    dyn::Value uint_value(std::uint64_t(42));
+    EXPECT(uint_value.is_int());
+    EXPECT(uint_value.as_uint() == std::uint64_t(42));
 
-dyn::Value double_value(3.5);
-EXPECT(double_value.is_number());
-EXPECT(double_value.as_double() == 3.5);
+    dyn::Value double_value(3.5);
+    EXPECT(double_value.is_number());
+    EXPECT(double_value.as_double() == 3.5);
 
-dyn::Value string_value("hello");
-EXPECT(string_value.is_string());
-EXPECT(string_value.as_string() == "hello");
-
-}  // namespace
+    dyn::Value string_value("hello");
+    EXPECT(string_value.is_string());
+    EXPECT(string_value.as_string() == "hello");
+}
 
 ZEST_CASE(int_uint_cross_sign_access) {
     dyn::Value big_uint(std::uint64_t{9223372036854775808ULL});
-    EXPECT(!big_uint.get_int().has_value());
-    ASSERT(big_uint.get_uint().has_value());
+    EXPECT(!big_uint.get_int());
+    ASSERT(big_uint.get_uint());
     EXPECT(*big_uint.get_uint() == std::uint64_t{9223372036854775808ULL});
 
     dyn::Value neg_int(std::int64_t{-1});
-    EXPECT(!neg_int.get_uint().has_value());
-    ASSERT(neg_int.get_int().has_value());
+    EXPECT(!neg_int.get_uint());
+    ASSERT(neg_int.get_int());
     EXPECT(*neg_int.get_int() == std::int64_t{-1});
 }
 
 ZEST_CASE(parse_and_view_basic_via_json) {
     auto parsed = json::from_string<dyn::Value>(R"({"a":1,"b":"x","arr":[1,2]})");
-    ASSERT(parsed.has_value());
+    ASSERT(parsed);
 
     ASSERT(parsed->is_object());
     ASSERT((*parsed)["a"].as_int() == 1);
@@ -86,7 +86,7 @@ ZEST_CASE(parse_and_view_basic_via_json) {
 
 ZEST_CASE(cursor_miss_describes_failure) {
     auto parsed = json::from_string<dyn::Value>(R"({"a":{"b":[10,20]}})");
-    ASSERT(parsed.has_value());
+    ASSERT(parsed);
 
     auto missing_key = (*parsed)["zzz"];
     EXPECT(!missing_key.valid());
@@ -104,7 +104,7 @@ ZEST_CASE(cursor_miss_describes_failure) {
 
 ZEST_CASE(cursor_chain_appends_path) {
     auto parsed = json::from_string<dyn::Value>(R"({"a":1})");
-    ASSERT(parsed.has_value());
+    ASSERT(parsed);
 
     auto deep = (*parsed)["missing"]["x"][3]["y"];
     ASSERT(!deep.valid());
@@ -114,7 +114,7 @@ ZEST_CASE(cursor_chain_appends_path) {
 ZEST_CASE(object_lookup_builds_lazy_index) {
     auto json_text = make_large_object_json(32);
     auto parsed = json::from_string<dyn::Value>(json_text);
-    ASSERT(parsed.has_value());
+    ASSERT(parsed);
 
     ASSERT(parsed->is_object());
     for(int i = 0; i < 32; ++i) {
@@ -150,7 +150,7 @@ ZEST_CASE(object_equality_is_order_insensitive) {
 
 ZEST_CASE(mixed_struct_roundtrip_with_dynamic_dom) {
     auto parsed = json::from_string<mixed_payload>(R"({"id":7,"extra":{"name":"alice","n":1}})");
-    ASSERT(parsed.has_value());
+    ASSERT(parsed);
     ASSERT(parsed->id == 7);
 
     auto& extra_object = parsed->extra.as_object();
@@ -160,10 +160,10 @@ ZEST_CASE(mixed_struct_roundtrip_with_dynamic_dom) {
     extra_object.assign("n", dyn::Value(std::int64_t(2)));
 
     auto encoded = json::to_string(*parsed);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     auto reparsed = json::from_string<mixed_payload>(*encoded);
-    ASSERT(reparsed.has_value());
+    ASSERT(reparsed);
     EXPECT(reparsed->id == 7);
     ASSERT(reparsed->extra.is_object());
     EXPECT(reparsed->extra["name"].as_string() == "alice");
@@ -177,7 +177,7 @@ ZEST_CASE(deep_nested_array_via_json_roundtrip) {
     text.append(depth, ']');
 
     auto parsed = json::from_string<dyn::Value>(text);
-    ASSERT(parsed.has_value());
+    ASSERT(parsed);
 
     dyn::Cursor cursor = parsed->cursor();
     for(int i = 0; i < depth; ++i) {
@@ -189,7 +189,7 @@ ZEST_CASE(deep_nested_array_via_json_roundtrip) {
     EXPECT(cursor.as_int() == 1);
 
     auto encoded = json::to_string(*parsed);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == text);
 }
 
@@ -249,11 +249,11 @@ ZEST_CASE(cursor_explicit_bool_conversion) {
 
 ZEST_CASE(cursor_get_accessors_on_invalid_return_nullopt) {
     dyn::Cursor c;
-    EXPECT(!c.get_bool().has_value());
-    EXPECT(!c.get_int().has_value());
-    EXPECT(!c.get_uint().has_value());
-    EXPECT(!c.get_double().has_value());
-    EXPECT(!c.get_string().has_value());
+    EXPECT(!c.get_bool());
+    EXPECT(!c.get_int());
+    EXPECT(!c.get_uint());
+    EXPECT(!c.get_double());
+    EXPECT(!c.get_string());
     EXPECT(c.get_array() == nullptr);
     EXPECT(c.get_object() == nullptr);
 }
@@ -408,11 +408,11 @@ ZEST_CASE(content_deserializer_keeps_temporary_root_value_alive) {
 
     dom_payload payload{};
     auto status = dyn::from_dyn(make_dom(), payload);
-    ASSERT(status.has_value());
+    ASSERT(status);
     EXPECT(payload == (dom_payload{.id = 7, .name = "alice"}));
 }
 
-};  // namespace kota::codec
+};  // ZEST_SUITE(serde_content_dom)
 
 }  // namespace
 

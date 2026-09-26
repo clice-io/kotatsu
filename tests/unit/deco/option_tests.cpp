@@ -79,44 +79,44 @@ ParseOptions make_proxy_parse_options() {
     return opts;
 }
 
-ZEST_SUITE(option_parse_view){
+ZEST_SUITE(option_parse_view) {
 
-    ZEST_CASE(main_option_table_basic){auto table = make_main_opt_table();
-auto opts = make_main_parse_options();
-auto parsed =
-    parse_all(table,
-              split2vec("-p 1234 -s script::profile --dest=114514 -- /usr/bin/clang++ --version"),
-              opts);
+ZEST_CASE(main_option_table_basic) {
+    auto table = make_main_opt_table();
+    auto opts = make_main_parse_options();
+    auto parsed = parse_all(
+        table,
+        split2vec("-p 1234 -s script::profile --dest=114514 -- /usr/bin/clang++ --version"),
+        opts);
 
-EXPECT(parsed.errors.empty());
-ASSERT(parsed.args.size() == 5U);
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 5U);
 
-EXPECT(parsed.args[0].id == MAIN_OPT_UNKNOWN);
-EXPECT(parsed.args[0].spelling == "-p");
-EXPECT(parsed.args[0].index == 0U);
+    EXPECT(parsed.args[0].id == MAIN_OPT_UNKNOWN);
+    EXPECT(parsed.args[0].spelling == "-p");
+    EXPECT(parsed.args[0].index == 0U);
 
-EXPECT(parsed.args[1].id == MAIN_OPT_INPUT);
-EXPECT(parsed.args[1].spelling == "1234");
-EXPECT(parsed.args[1].index == 1U);
+    EXPECT(parsed.args[1].id == MAIN_OPT_INPUT);
+    EXPECT(parsed.args[1].spelling == "1234");
+    EXPECT(parsed.args[1].index == 1U);
 
-EXPECT(parsed.args[2].id == MAIN_OPT_SCRIPT);
-ASSERT(parsed.args[2].values.size() == 1U);
-EXPECT(parsed.args[2].values[0] == "script::profile");
-EXPECT(parsed.args[2].spelling == "-s");
-EXPECT(parsed.args[2].index == 2U);
+    EXPECT(parsed.args[2].id == MAIN_OPT_SCRIPT);
+    ASSERT(parsed.args[2].values.size() == 1U);
+    EXPECT(parsed.args[2].values[0] == "script::profile");
+    EXPECT(parsed.args[2].spelling == "-s");
+    EXPECT(parsed.args[2].index == 2U);
 
-EXPECT(parsed.args[3].id == MAIN_OPT_UNKNOWN);
-EXPECT(parsed.args[3].spelling == "--dest=114514");
-EXPECT(parsed.args[3].index == 4U);
+    EXPECT(parsed.args[3].id == MAIN_OPT_UNKNOWN);
+    EXPECT(parsed.args[3].spelling == "--dest=114514");
+    EXPECT(parsed.args[3].index == 4U);
 
-EXPECT(parsed.args[4].id == MAIN_OPT_INPUT);
-EXPECT(parsed.args[4].spelling == "--");
-ASSERT(parsed.args[4].values.size() == 2U);
-EXPECT(parsed.args[4].values[0] == "/usr/bin/clang++");
-EXPECT(parsed.args[4].values[1] == "--version");
-EXPECT(parsed.args[4].index == 5U);
-
-}  // namespace
+    EXPECT(parsed.args[4].id == MAIN_OPT_INPUT);
+    EXPECT(parsed.args[4].spelling == "--");
+    ASSERT(parsed.args[4].values.size() == 2U);
+    EXPECT(parsed.args[4].values[0] == "/usr/bin/clang++");
+    EXPECT(parsed.args[4].values[1] == "--version");
+    EXPECT(parsed.args[4].index == 5U);
+}
 
 ZEST_CASE(alias_resolves_to_canonical) {
     auto table = make_main_opt_table();
@@ -253,7 +253,7 @@ ZEST_CASE(unknown_prefix_match_not_treated_as_boundary) {
     EXPECT(parsed.args[1].values[0] == "1234");
 }
 
-};  // namespace kota::option
+};  // ZEST_SUITE(option_parse_view)
 
 enum GroupedOptionID {
     GROUPED_OPT_INVALID = 0,
@@ -463,19 +463,20 @@ OptTable make_alias_opt_table() {
     return OptTable(std::span<const Option>(kAliasOptInfos));
 }
 
-ZEST_SUITE(option_extended_coverage){
+ZEST_SUITE(option_extended_coverage) {
 
-    ZEST_CASE(ignore_case_controls_matching){auto strict_table = make_ignore_case_opt_table(false);
-auto parsed = parse_all(strict_table, split2vec("--HELP"));
-EXPECT(parsed.errors.empty());
-ASSERT(parsed.args.size() == 1U);
-EXPECT(parsed.args[0].id == IGNORE_CASE_OPT_UNKNOWN);
+ZEST_CASE(ignore_case_controls_matching) {
+    auto strict_table = make_ignore_case_opt_table(false);
+    auto parsed = parse_all(strict_table, split2vec("--HELP"));
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 1U);
+    EXPECT(parsed.args[0].id == IGNORE_CASE_OPT_UNKNOWN);
 
-auto ignore_case_table = make_ignore_case_opt_table(true);
-parsed = parse_all(ignore_case_table, split2vec("--HELP"));
-EXPECT(parsed.errors.empty());
-ASSERT(parsed.args.size() == 1U);
-EXPECT(parsed.args[0].id == IGNORE_CASE_OPT_HELP);
+    auto ignore_case_table = make_ignore_case_opt_table(true);
+    parsed = parse_all(ignore_case_table, split2vec("--HELP"));
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 1U);
+    EXPECT(parsed.args[0].id == IGNORE_CASE_OPT_HELP);
 }
 
 ZEST_CASE(grouped_short_option_parsing) {
@@ -680,17 +681,18 @@ ZEST_CASE(find_option_basic) {
     EXPECT(table.find_option("-s")->id() == MAIN_OPT_SCRIPT);
     EXPECT(!table.find_option("--nonexistent"));
 }
-}
-;  // ZEST_SUITE(option_extended_coverage)
 
-ZEST_SUITE(option_render){
+};  // ZEST_SUITE(option_extended_coverage)
 
-    auto collect(const OptTable& table, const ParsedArg& arg){std::vector<std::string> out;
-auto cb = [&](std::string_view sv) {
-    out.push_back(std::string(sv));
-};
-table.render(arg, cb);
-return out;
+ZEST_SUITE(option_render) {
+
+auto collect(const OptTable& table, const ParsedArg& arg) {
+    std::vector<std::string> out;
+    auto cb = [&](std::string_view sv) {
+        out.push_back(std::string(sv));
+    };
+    table.render(arg, cb);
+    return out;
 }
 
 ZEST_CASE(render_flag_separate) {
@@ -824,8 +826,8 @@ ZEST_CASE(render_override_flag_uses_joined_style) {
     ASSERT(rendered.size() == 1U);
     EXPECT(rendered[0] == "-r");
 }
-}
-;  // ZEST_SUITE(option_render)
+
+};  // ZEST_SUITE(option_render)
 
 }  // namespace
 }  // namespace kota::option

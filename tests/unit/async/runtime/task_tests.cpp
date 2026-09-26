@@ -14,51 +14,51 @@ namespace kota {
 
 namespace {
 
-ZEST_SUITE(task){
+ZEST_SUITE(task) {
 
-    ZEST_CASE(task_await){static auto foo = []() -> task<int> {
+ZEST_CASE(task_await) {
+    static auto foo = []() -> task<int> {
         co_return 1;
     };
 
-static auto foo1 = []() -> task<int> {
-    co_return co_await foo() + 1;
-};
+    static auto foo1 = []() -> task<int> {
+        co_return co_await foo() + 1;
+    };
 
-static auto foo2 = []() -> task<int> {
-    auto res = co_await foo();
-    auto res1 = co_await foo1();
-    co_return res + res1;
-};
+    static auto foo2 = []() -> task<int> {
+        auto res = co_await foo();
+        auto res1 = co_await foo1();
+        co_return res + res1;
+    };
 
 // Visual Studio issue:
 // https://developercommunity.visualstudio.com/t/Unable-to-destroy-C20-coroutine-in-fin/10657377
 #if !KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-{
-    event_loop loop;
-    loop.schedule(foo());
-    loop.run();
-}
+    {
+        event_loop loop;
+        loop.schedule(foo());
+        loop.run();
+    }
 #endif
 
-{
-    auto [res] = run(foo());
-    EXPECT(res == 1);
-}
+    {
+        auto [res] = run(foo());
+        EXPECT(res == 1);
+    }
 
-{
-    auto [res, res1] = run(foo(), foo1());
-    EXPECT(res == 1);
-    EXPECT(res1 == 2);
-}
+    {
+        auto [res, res1] = run(foo(), foo1());
+        EXPECT(res == 1);
+        EXPECT(res1 == 2);
+    }
 
-{
-    auto [res, res1, res2] = run(foo(), foo1(), foo2());
-    EXPECT(res == 1);
-    EXPECT(res1 == 2);
-    EXPECT(res2 == 3);
+    {
+        auto [res, res1, res2] = run(foo(), foo1(), foo2());
+        EXPECT(res == 1);
+        EXPECT(res1 == 2);
+        EXPECT(res2 == 3);
+    }
 }
-
-}  // namespace
 
 ZEST_CASE(up_cancel) {
     static auto bar = [](int& x) -> task<int> {
@@ -165,7 +165,7 @@ ZEST_CASE(dump_dot_basic) {
     EXPECT(checked);
 }
 
-};  // namespace kota
+};  // ZEST_SUITE(task)
 
 }  // namespace
 

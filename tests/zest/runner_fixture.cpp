@@ -18,10 +18,10 @@ namespace kota::zest {
 
 namespace {
 
-ZEST_SUITE(fixture){
+ZEST_SUITE(fixture) {
 
-    ZEST_CASE(passes){EXPECT(1 == 1);
-
+ZEST_CASE(passes) {
+    EXPECT(1 == 1);
 }
 
 ZEST_CASE(prints) {
@@ -80,26 +80,28 @@ ZEST_CASE_GROUP(group) {
     }
 }
 
-};  // namespace kota::zest
+};  // ZEST_SUITE(fixture)
 
 // Run on their own with a short --timeout: a failing test spends a while
 // resolving its stack trace, which a short limit would cut off.
-ZEST_SUITE(fixture_hang){
+ZEST_SUITE(fixture_hang) {
 
-    ZEST_CASE(hangs){std::println("printed by fixture_hang.hangs");
-std::this_thread::sleep_for(std::chrono::hours(1));
+ZEST_CASE(hangs) {
+    std::println("printed by fixture_hang.hangs");
+    std::this_thread::sleep_for(std::chrono::hours(1));
 }
 
 ZEST_CASE(passes_after) {
     EXPECT(1 == 1);
 }
-}
-;  // ZEST_SUITE(fixture_hang)
+
+};  // ZEST_SUITE(fixture_hang)
 
 // Failures whose reports check_runner.cmake reads line by line.
-ZEST_SUITE(fixture_report){
+ZEST_SUITE(fixture_report) {
 
-    ZEST_CASE(comparison){EXPECT(std::string("left") == "right");
+ZEST_CASE(comparison) {
+    EXPECT(std::string("left") == "right");
 }
 
 ZEST_CASE(predicate) {
@@ -113,22 +115,45 @@ ZEST_CASE(unexpected) {
 
 ZEST_CASE(in_context) {
     ZEST_CONTEXT("while checking {}", 42);
-    EXPECT(1 == 2);
+    {
+        ZEST_CONTEXT("inner");
+        EXPECT(1 == 2);
+    }
 }
+
+ZEST_CASE(negated_predicate) {
+    EXPECT(!contains(std::string("haystack"), "hay"));
 }
-;  // ZEST_SUITE(fixture_report)
+
+ZEST_CASE(static_failure) {
+    STATIC_EXPECT(1 + 1 == 3);
+}
+
+ZEST_CASE(stops_at_assert) {
+    ASSERT(1 == 2);
+    std::println("printed after a failed assert");
+}
+
+#ifdef __cpp_exceptions
+ZEST_CASE(throws_nothing) {
+    EXPECT_THROWS(std::string("no exception"));
+}
+#endif
+
+};  // ZEST_SUITE(fixture_report)
 
 // Two workers each check one snapshot; the runner must count both as checked.
-ZEST_SUITE(fixture_snapshot){
+ZEST_SUITE(fixture_snapshot) {
 
-    ZEST_CASE(checked){EXPECT_SNAPSHOT("fresh");
+ZEST_CASE(checked) {
+    EXPECT_SNAPSHOT("fresh");
 }
 
 ZEST_CASE(also_checked) {
     EXPECT_SNAPSHOT("fresh");
 }
-}
-;  // ZEST_SUITE(fixture_snapshot)
+
+};  // ZEST_SUITE(fixture_snapshot)
 
 struct FixtureOptions {
     Options zest;

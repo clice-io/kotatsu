@@ -7,17 +7,17 @@ namespace kota::ipc::lsp {
 namespace {
 
 // Throughout this suite: 你 is 3 UTF-8 bytes, 🙂 is 4.
-ZEST_SUITE(language_position){
+ZEST_SUITE(language_position) {
 
-    ZEST_CASE(utf16_column_counts){std::string_view content = "a你b\n";
-LineMap map(content, PositionEncoding::UTF16);
+ZEST_CASE(utf16_column_counts) {
+    std::string_view content = "a你b\n";
+    LineMap map(content, PositionEncoding::UTF16);
 
-auto position = map.to_position(4);
-ASSERT(position.has_value());
-ASSERT(position->line == 0U);
-ASSERT(position->character == 2U);
-
-}  // namespace
+    auto position = map.to_position(4);
+    ASSERT(position);
+    ASSERT(position->line == 0U);
+    ASSERT(position->character == 2U);
+}
 
 ZEST_CASE(round_trip_offsets) {
     std::string_view content = "a你b\nx🙂y";
@@ -27,9 +27,9 @@ ZEST_CASE(round_trip_offsets) {
         LineMap map(content, encoding);
         for(auto offset: offsets) {
             auto position = map.to_position(offset);
-            ASSERT(position.has_value());
+            ASSERT(position);
             auto mapped = map.to_offset(*position);
-            ASSERT(mapped.has_value());
+            ASSERT(mapped);
             ASSERT(*mapped == offset);
         }
     }
@@ -62,27 +62,27 @@ ZEST_CASE(position_offset_values) {
 
     for(const auto& sample: samples) {
         auto p8 = map8.to_position(sample.offset);
-        ASSERT(p8.has_value());
+        ASSERT(p8);
         EXPECT(p8->line == sample.line);
         EXPECT(p8->character == sample.utf8_character);
         auto o8 = map8.to_offset(*p8);
-        ASSERT(o8.has_value());
+        ASSERT(o8);
         EXPECT(*o8 == sample.offset);
 
         auto p16 = map16.to_position(sample.offset);
-        ASSERT(p16.has_value());
+        ASSERT(p16);
         EXPECT(p16->line == sample.line);
         EXPECT(p16->character == sample.utf16_character);
         auto o16 = map16.to_offset(*p16);
-        ASSERT(o16.has_value());
+        ASSERT(o16);
         EXPECT(*o16 == sample.offset);
 
         auto p32 = map32.to_position(sample.offset);
-        ASSERT(p32.has_value());
+        ASSERT(p32);
         EXPECT(p32->line == sample.line);
         EXPECT(p32->character == sample.utf32_character);
         auto o32 = map32.to_offset(*p32);
-        ASSERT(o32.has_value());
+        ASSERT(o32);
         EXPECT(*o32 == sample.offset);
     }
 }
@@ -126,9 +126,9 @@ ZEST_CASE(roundtrip_multiline_boundaries) {
         LineMap map(content, encoding);
         for(auto offset: boundaries) {
             auto position = map.to_position(offset);
-            ASSERT(position.has_value());
+            ASSERT(position);
             auto mapped = map.to_offset(*position);
-            ASSERT(mapped.has_value());
+            ASSERT(mapped);
             ASSERT(*mapped == offset);
         }
     }
@@ -164,9 +164,9 @@ ZEST_CASE(invalid_position_stability) {
             LineMap map(content, encoding);
             for(std::uint32_t offset = 0; offset <= content.size(); ++offset) {
                 auto position = map.to_position(offset);
-                ASSERT(position.has_value());
+                ASSERT(position);
                 auto mapped_offset = map.to_offset(*position);
-                ASSERT(mapped_offset.has_value());
+                ASSERT(mapped_offset);
                 EXPECT(*mapped_offset <= content.size());
             }
         }
@@ -236,11 +236,11 @@ ZEST_CASE(encoding_override) {
     LineMap map(content, PositionEncoding::UTF8);
 
     auto p_default = map.to_position(4);
-    ASSERT(p_default.has_value());
+    ASSERT(p_default);
     EXPECT(p_default->character == 4U);
 
     auto p_utf16 = map.to_position(4, PositionEncoding::UTF16);
-    ASSERT(p_utf16.has_value());
+    ASSERT(p_utf16);
     EXPECT(p_utf16->character == 2U);
 }
 
@@ -249,14 +249,14 @@ ZEST_CASE(to_range_basic) {
     LineMap map(content, PositionEncoding::UTF8);
 
     auto range = map.to_range(0, 3);
-    ASSERT(range.has_value());
+    ASSERT(range);
     EXPECT(range->start.line == 0U);
     EXPECT(range->start.character == 0U);
     EXPECT(range->end.line == 0U);
     EXPECT(range->end.character == 3U);
 
     auto cross_line = map.to_range(0, 5);
-    ASSERT(cross_line.has_value());
+    ASSERT(cross_line);
     EXPECT(cross_line->start.line == 0U);
     EXPECT(cross_line->end.line == 1U);
     EXPECT(cross_line->end.character == 1U);
@@ -271,7 +271,7 @@ ZEST_CASE(borrowed_line_starts) {
     EXPECT(map.line_starts().size() == starts.size());
 
     auto p = map.to_position(3);
-    ASSERT(p.has_value());
+    ASSERT(p);
     EXPECT(p->line == 1U);
     EXPECT(p->character == 0U);
 }
@@ -282,19 +282,19 @@ ZEST_CASE(move_semantics) {
 
     LineMap moved(std::move(map));
     auto p = moved.to_position(3);
-    ASSERT(p.has_value());
+    ASSERT(p);
     EXPECT(p->line == 1U);
     EXPECT(p->character == 0U);
 
     LineMap assigned(std::string_view("x"));
     assigned = std::move(moved);
     auto p2 = assigned.to_position(4);
-    ASSERT(p2.has_value());
+    ASSERT(p2);
     EXPECT(p2->line == 1U);
     EXPECT(p2->character == 1U);
 }
 
-};  // namespace kota::ipc::lsp
+};  // ZEST_SUITE(language_position)
 
 }  // namespace
 }  // namespace kota::ipc::lsp

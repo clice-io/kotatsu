@@ -24,13 +24,13 @@ struct bincode_adapter {
     }
 };
 
-ZEST_SUITE(serde_bincode_roundtrip){
+ZEST_SUITE(serde_bincode_roundtrip) {
 
-    ZEST_CASE_GROUP(standard_corpus){roundtrip::register_cases<bincode_adapter>(add_case);
+ZEST_CASE_GROUP(standard_corpus) {
+    roundtrip::register_cases<bincode_adapter>(add_case);
+}
 
-}  // namespace
-
-};  // namespace kota::codec
+};  // ZEST_SUITE(serde_bincode_roundtrip)
 
 }  // namespace
 

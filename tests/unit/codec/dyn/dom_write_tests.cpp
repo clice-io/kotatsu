@@ -9,23 +9,23 @@ namespace kota::codec {
 
 namespace {
 
-ZEST_SUITE(serde_content_dom_write){
+ZEST_SUITE(serde_content_dom_write) {
 
-    ZEST_CASE(value_reassignment_changes_kind){dyn::Value value(std::int64_t(1));
-ASSERT(value.is_int());
+ZEST_CASE(value_reassignment_changes_kind) {
+    dyn::Value value(std::int64_t(1));
+    ASSERT(value.is_int());
 
-value = dyn::Value("x");
-ASSERT(value.is_string());
-EXPECT(value.as_string() == "x");
+    value = dyn::Value("x");
+    ASSERT(value.is_string());
+    EXPECT(value.as_string() == "x");
 
-dyn::Array arr;
-arr.push_back(dyn::Value(std::int64_t(2)));
-value = dyn::Value(std::move(arr));
-ASSERT(value.is_array());
-EXPECT(value.as_array().size() == 1);
-EXPECT(value.as_array()[0].as_int() == 2);
-
-}  // namespace
+    dyn::Array arr;
+    arr.push_back(dyn::Value(std::int64_t(2)));
+    value = dyn::Value(std::move(arr));
+    ASSERT(value.is_array());
+    EXPECT(value.as_array().size() == 1);
+    EXPECT(value.as_array()[0].as_int() == 2);
+}
 
 ZEST_CASE(array_push_back_and_emplace_back) {
     dyn::Array array;
@@ -322,7 +322,7 @@ ZEST_CASE(duplicate_keys_find_returns_last_inserted) {
     EXPECT(obj.find("dup")->as_int() == 9);
 }
 
-};  // namespace kota::codec
+};  // ZEST_SUITE(serde_content_dom_write)
 
 }  // namespace
 

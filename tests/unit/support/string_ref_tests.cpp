@@ -6,13 +6,13 @@
 namespace kota {
 namespace {
 
-ZEST_SUITE(string_ref){
+ZEST_SUITE(string_ref) {
 
-    ZEST_CASE(std_format){EXPECT(std::format("{}", string_ref("abc")) == "abc");
-
+ZEST_CASE(std_format) {
+    EXPECT(std::format("{}", string_ref("abc")) == "abc");
 }
 
-};  // namespace kota
+};  // ZEST_SUITE(string_ref)
 
 }  // namespace
 }  // namespace kota

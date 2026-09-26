@@ -10,36 +10,36 @@
 
 namespace kota {
 
-ZEST_SUITE(task_group_cancel, loop_fixture){
+ZEST_SUITE(task_group_cancel, loop_fixture) {
 
-    ZEST_CASE(child_self_cancel){int slow_done = 0;
+ZEST_CASE(child_self_cancel) {
+    int slow_done = 0;
 
-auto canceler = [&]() -> task<> {
-    co_await sleep(1, loop);
-    co_await cancel();
-};
+    auto canceler = [&]() -> task<> {
+        co_await sleep(1, loop);
+        co_await cancel();
+    };
 
-auto slow = [&]() -> task<> {
-    co_await sleep(5, loop);
-    slow_done += 1;
-};
+    auto slow = [&]() -> task<> {
+        co_await sleep(5, loop);
+        slow_done += 1;
+    };
 
-auto driver = [&]() -> task<> {
-    task_group<> group(loop);
-    group.spawn(canceler());
-    group.spawn(slow());
-    co_await group.join();
-};
+    auto driver = [&]() -> task<> {
+        task_group<> group(loop);
+        group.spawn(canceler());
+        group.spawn(slow());
+        co_await group.join();
+    };
 
-auto t = driver();
-schedule_all(t);
-// Child self-cancel triggers fail-fast (cancels siblings) but the
-// group itself finishes normally — InterceptCancel on spawned
-// children means cancellation doesn't propagate as group failure.
-EXPECT(t->is_finished());
-EXPECT(slow_done == 0);
-
-}  // namespace kota
+    auto t = driver();
+    schedule_all(t);
+    // Child self-cancel triggers fail-fast (cancels siblings) but the
+    // group itself finishes normally — InterceptCancel on spawned
+    // children means cancellation doesn't propagate as group failure.
+    EXPECT(t->is_finished());
+    EXPECT(slow_done == 0);
+}
 
 ZEST_CASE(token_cancel) {
     cancellation_source source;
@@ -68,7 +68,7 @@ ZEST_CASE(token_cancel) {
     auto cancel_task = canceler();
     schedule_all(guarded, cancel_task);
 
-    EXPECT(!guarded.value().has_value());
+    EXPECT(!guarded.value());
     EXPECT(finished == 0);
 }
 
@@ -174,7 +174,7 @@ ZEST_CASE(external_cancel_sets_stopped) {
 
     auto cancel_task = canceler();
     schedule_all(guarded, cancel_task);
-    EXPECT(!guarded.value().has_value());
+    EXPECT(!guarded.value());
     EXPECT(finished == 0);
 }
 
@@ -276,7 +276,7 @@ ZEST_CASE(cancel_from_running_child) {
     EXPECT(t->is_finished());
     EXPECT(slow_done == 0);
 }
-}
-;  // ZEST_SUITE(task_group_cancel)
+
+};  // ZEST_SUITE(task_group_cancel)
 
 }  // namespace kota

@@ -49,15 +49,15 @@ task<> wait_timer_twice(timer& t) {
 
 }  // namespace
 
-ZEST_SUITE(watcher_io, loop_fixture){
+ZEST_SUITE(watcher_io, loop_fixture) {
 
-    ZEST_CASE(timer_wait){auto t = timer::create(loop);
-t.start(std::chrono::milliseconds{1}, std::chrono::milliseconds{0});
+ZEST_CASE(timer_wait) {
+    auto t = timer::create(loop);
+    t.start(std::chrono::milliseconds{1}, std::chrono::milliseconds{0});
 
-auto waiter = wait_timer(t);
-schedule_all(waiter);
-
-}  // namespace kota
+    auto waiter = wait_timer(t);
+    schedule_all(waiter);
+}
 
 ZEST_CASE(idle_wait) {
     auto w = idle::create(loop);
@@ -233,7 +233,7 @@ ZEST_CASE(signal_wait_cancel) {
     cancellation_source source;
 
     auto sig = signal::create(loop);
-    ASSERT(sig.has_value());
+    ASSERT(sig);
     ASSERT(!sig->start(SIGUSR1).has_error());
 
     auto worker = [&]() -> task<void, error, cancellation> {
@@ -253,7 +253,7 @@ ZEST_CASE(signal_wait_cancel) {
     sig->stop();
 }
 #endif
-}
-;  // ZEST_SUITE(watcher_io)
+
+};  // ZEST_SUITE(watcher_io)
 
 }  // namespace kota

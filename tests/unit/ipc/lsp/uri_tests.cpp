@@ -4,26 +4,26 @@
 namespace kota::ipc::lsp {
 namespace {
 
-ZEST_SUITE(language_uri){
+ZEST_SUITE(language_uri) {
 
-    ZEST_CASE(parse_full_uri){auto uri = URI::parse("https://example.com/a/b?x=1#frag");
-ASSERT(uri.has_value());
+ZEST_CASE(parse_full_uri) {
+    auto uri = URI::parse("https://example.com/a/b?x=1#frag");
+    ASSERT(uri);
 
-EXPECT(uri->scheme() == "https");
-EXPECT(uri->has_authority());
-EXPECT(uri->authority() == "example.com");
-EXPECT(uri->path() == "/a/b");
-EXPECT(uri->has_query());
-EXPECT(uri->query() == "x=1");
-EXPECT(uri->has_fragment());
-EXPECT(uri->fragment() == "frag");
-EXPECT(uri->str() == "https://example.com/a/b?x=1#frag");
-
-}  // namespace
+    EXPECT(uri->scheme() == "https");
+    EXPECT(uri->has_authority());
+    EXPECT(uri->authority() == "example.com");
+    EXPECT(uri->path() == "/a/b");
+    EXPECT(uri->has_query());
+    EXPECT(uri->query() == "x=1");
+    EXPECT(uri->has_fragment());
+    EXPECT(uri->fragment() == "frag");
+    EXPECT(uri->str() == "https://example.com/a/b?x=1#frag");
+}
 
 ZEST_CASE(parse_no_authority) {
     auto uri = URI::parse("mailto:user@example.com");
-    ASSERT(uri.has_value());
+    ASSERT(uri);
 
     EXPECT(uri->scheme() == "mailto");
     EXPECT(!uri->has_authority());
@@ -44,7 +44,7 @@ ZEST_CASE(percent_roundtrip) {
     EXPECT(encoded == "a%20b/c%3Fd");
 
     auto decoded = URI::percent_decode(encoded);
-    ASSERT(decoded.has_value());
+    ASSERT(decoded);
     EXPECT(*decoded == raw);
 }
 
@@ -62,24 +62,24 @@ ZEST_CASE(decode_invalid_input) {
 
 ZEST_CASE(file_path_roundtrip) {
     auto uri = URI::from_file_path("/tmp/a b.txt");
-    ASSERT(uri.has_value());
+    ASSERT(uri);
 
     EXPECT(uri->is_file());
     EXPECT(uri->str() == "file:///tmp/a%20b.txt");
 
     auto path = uri->file_path();
-    ASSERT(path.has_value());
+    ASSERT(path);
     EXPECT(*path == "/tmp/a b.txt");
 }
 
 ZEST_CASE(file_windows_roundtrip) {
     auto uri = URI::from_file_path("C:\\work\\a b.txt");
-    ASSERT(uri.has_value());
+    ASSERT(uri);
 
     EXPECT(uri->str() == "file:///C:/work/a%20b.txt");
 
     auto path = uri->file_path();
-    ASSERT(path.has_value());
+    ASSERT(path);
 
 #if defined(_WIN32)
     EXPECT(*path == "C:/work/a b.txt");
@@ -90,23 +90,23 @@ ZEST_CASE(file_windows_roundtrip) {
 
 ZEST_CASE(file_unc_roundtrip) {
     auto uri = URI::from_file_path("\\\\server\\share\\a b.txt");
-    ASSERT(uri.has_value());
+    ASSERT(uri);
 
     EXPECT(uri->str() == "file://server/share/a%20b.txt");
 
     auto path = uri->file_path();
-    ASSERT(path.has_value());
+    ASSERT(path);
     EXPECT(*path == "//server/share/a b.txt");
 }
 
 ZEST_CASE(file_unc_ipv6) {
     auto uri = URI::from_file_path("\\\\[::1]\\share\\a.txt");
-    ASSERT(uri.has_value());
+    ASSERT(uri);
 
     EXPECT(uri->str() == "file://[::1]/share/a.txt");
 
     auto path = uri->file_path();
-    ASSERT(path.has_value());
+    ASSERT(path);
     EXPECT(*path == "//[::1]/share/a.txt");
 }
 
@@ -122,41 +122,41 @@ ZEST_CASE(reject_unc_shareless) {
 
 ZEST_CASE(authority_handling) {
     auto local = URI::parse("file://localhost/tmp/a.txt");
-    ASSERT(local.has_value());
+    ASSERT(local);
     auto local_path = local->file_path();
-    ASSERT(local_path.has_value());
+    ASSERT(local_path);
     EXPECT(*local_path == "/tmp/a.txt");
 
     auto local_upper = URI::parse("file://LOCALHOST/tmp/a.txt");
-    ASSERT(local_upper.has_value());
+    ASSERT(local_upper);
     auto local_upper_path = local_upper->file_path();
-    ASSERT(local_upper_path.has_value());
+    ASSERT(local_upper_path);
     EXPECT(*local_upper_path == "/tmp/a.txt");
 
     auto remote = URI::parse("file://server/share/a.txt");
-    ASSERT(remote.has_value());
+    ASSERT(remote);
     auto remote_path = remote->file_path();
-    ASSERT(remote_path.has_value());
+    ASSERT(remote_path);
     EXPECT(*remote_path == "//server/share/a.txt");
 }
 
 ZEST_CASE(reject_bad_authority) {
     auto slash_host = URI::parse("file://server%2Fteam/share/a.txt");
-    ASSERT(slash_host.has_value());
-    EXPECT(!slash_host->file_path().has_value());
+    ASSERT(slash_host);
+    EXPECT(!slash_host->file_path());
 
     auto backslash_host = URI::parse("file://server%5Cteam/share/a.txt");
-    ASSERT(backslash_host.has_value());
-    EXPECT(!backslash_host->file_path().has_value());
+    ASSERT(backslash_host);
+    EXPECT(!backslash_host->file_path());
 }
 
 ZEST_CASE(non_file_path_fails) {
     auto uri = URI::parse("https://example.com/a.txt");
-    ASSERT(uri.has_value());
-    EXPECT(!uri->file_path().has_value());
+    ASSERT(uri);
+    EXPECT(!uri->file_path());
 }
 
-};  // namespace kota::ipc::lsp
+};  // ZEST_SUITE(language_uri)
 
 }  // namespace
 }  // namespace kota::ipc::lsp

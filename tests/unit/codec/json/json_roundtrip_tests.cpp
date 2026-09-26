@@ -25,13 +25,13 @@ struct json_adapter {
     }
 };
 
-ZEST_SUITE(serde_json_roundtrip){
+ZEST_SUITE(serde_json_roundtrip) {
 
-    ZEST_CASE_GROUP(standard_corpus){roundtrip::register_cases<json_adapter>(add_case);
+ZEST_CASE_GROUP(standard_corpus) {
+    roundtrip::register_cases<json_adapter>(add_case);
+}
 
-}  // namespace
-
-};  // namespace kota::codec
+};  // ZEST_SUITE(serde_json_roundtrip)
 
 }  // namespace
 

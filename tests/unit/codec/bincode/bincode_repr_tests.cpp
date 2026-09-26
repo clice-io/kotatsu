@@ -85,38 +85,38 @@ struct order {
     auto operator==(const order&) const -> bool = default;
 };
 
-ZEST_SUITE(serde_bincode_repr){
+ZEST_SUITE(serde_bincode_repr) {
 
-    ZEST_CASE(declarative_and_dynamic_repr_roundtrip){const order input{
+ZEST_CASE(declarative_and_dynamic_repr_roundtrip) {
+    const order input{
         .f = flavor::spicy,
         .payload = blob_bag{{std::byte{0xAB}, std::byte{0xCD}}},
         .note = "extra",
     };
 
-auto bytes = bincode::to_bytes(input);
-ASSERT(bytes.has_value());
+    auto bytes = bincode::to_bytes(input);
+    ASSERT(bytes);
 
-order output{};
-auto status = bincode::from_bytes(*bytes, output);
-ASSERT(status.has_value());
-EXPECT(output == input);
-
-}  // namespace
+    order output{};
+    auto status = bincode::from_bytes(*bytes, output);
+    ASSERT(status);
+    EXPECT(output == input);
+}
 
 ZEST_CASE(repr_dispatch_is_byte_visible) {
     // The enum travels as its mapped uint32 encoded value, byte-identical to
     // encoding that encoded value directly.
     auto via_repr = bincode::to_bytes(flavor::spicy);
     auto encoded = bincode::to_bytes(std::uint32_t{101});
-    ASSERT(via_repr.has_value());
-    ASSERT(encoded.has_value());
+    ASSERT(via_repr);
+    ASSERT(encoded);
     EXPECT(*via_repr == *encoded);
 
     // magic (u64-widened) + length prefix (u64) + 2 payload bytes.
     auto blob = bincode::to_bytes(blob_bag{
         {std::byte{0x01}, std::byte{0x02}}
     });
-    ASSERT(blob.has_value());
+    ASSERT(blob);
     EXPECT(blob->size() == 18U);
 }
 
@@ -124,15 +124,15 @@ ZEST_CASE(repr_reaches_sequence_elements) {
     const std::vector<flavor> input{flavor::spicy, flavor::plain, flavor::spicy};
 
     auto bytes = bincode::to_bytes(input);
-    ASSERT(bytes.has_value());
+    ASSERT(bytes);
 
     std::vector<flavor> output;
     auto status = bincode::from_bytes(*bytes, output);
-    ASSERT(status.has_value());
+    ASSERT(status);
     EXPECT(output == input);
 }
 
-};  // namespace kota::codec
+};  // ZEST_SUITE(serde_bincode_repr)
 
 }  // namespace
 
@@ -216,25 +216,25 @@ using kota_bincode_format_test::beacon;
 using kota_bincode_format_test::beacon_twin;
 using kota_bincode_format_test::channel_id;
 
-ZEST_SUITE(serde_bincode_format_scoped){
+ZEST_SUITE(serde_bincode_format_scoped) {
 
-    ZEST_CASE(format_scoped_repr_selected_by_bincode){const beacon input{.id = channel_id{7}};
+ZEST_CASE(format_scoped_repr_selected_by_bincode) {
+    const beacon input{.id = channel_id{7}};
 
-auto encoded = bincode::to_bytes(input);
-ASSERT(encoded.has_value());
+    auto encoded = bincode::to_bytes(input);
+    ASSERT(encoded);
 
-// The bytes hold the scoped uint32, not the length-prefixed string form.
-auto twin = bincode::from_bytes<beacon_twin>(*encoded);
-ASSERT(twin.has_value());
-EXPECT(twin->id == 7U);
+    // The bytes hold the scoped uint32, not the length-prefixed string form.
+    auto twin = bincode::from_bytes<beacon_twin>(*encoded);
+    ASSERT(twin);
+    EXPECT(twin->id == 7U);
 
-auto output = bincode::from_bytes<beacon>(*encoded);
-ASSERT(output.has_value());
-EXPECT(*output == input);
+    auto output = bincode::from_bytes<beacon>(*encoded);
+    ASSERT(output);
+    EXPECT(*output == input);
+}
 
-}  // namespace
-
-};  // namespace kota::codec
+};  // ZEST_SUITE(serde_bincode_format_scoped)
 
 }  // namespace
 

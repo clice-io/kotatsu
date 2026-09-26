@@ -9,33 +9,33 @@
 
 namespace kota {
 
-ZEST_SUITE(when_any){
+ZEST_SUITE(when_any) {
 
-    ZEST_CASE(first_wins){int a_count = 0;
-int b_count = 0;
+ZEST_CASE(first_wins) {
+    int a_count = 0;
+    int b_count = 0;
 
-auto a = [&]() -> task<int> {
-    a_count += 1;
-    co_return 10;
-};
+    auto a = [&]() -> task<int> {
+        a_count += 1;
+        co_return 10;
+    };
 
-auto b = [&]() -> task<int> {
-    b_count += 1;
-    co_return 20;
-};
+    auto b = [&]() -> task<int> {
+        b_count += 1;
+        co_return 20;
+    };
 
-auto combined = [&]() -> task<std::variant<int, int>> {
-    co_return co_await when_any(a(), b());
-};
+    auto combined = [&]() -> task<std::variant<int, int>> {
+        co_return co_await when_any(a(), b());
+    };
 
-auto [winner] = run(combined());
-EXPECT(winner.has_value());
-EXPECT(winner->index() == 0U);
-EXPECT(std::get<0>(*winner) == 10);
-EXPECT(a_count == 1);
-EXPECT(b_count == 0);
-
-}  // namespace kota
+    auto [winner] = run(combined());
+    EXPECT(winner);
+    EXPECT(winner->index() == 0U);
+    EXPECT(std::get<0>(*winner) == 10);
+    EXPECT(a_count == 1);
+    EXPECT(b_count == 0);
+}
 
 ZEST_CASE(single_task) {
     auto a = []() -> task<int> {
@@ -47,7 +47,7 @@ ZEST_CASE(single_task) {
     };
 
     auto [winner] = run(combined());
-    EXPECT(winner.has_value());
+    EXPECT(winner);
     EXPECT(winner->index() == 0U);
     EXPECT(std::get<0>(*winner) == 99);
 }
@@ -68,7 +68,7 @@ ZEST_CASE(second_wins) {
     };
 
     auto [winner] = run(combined());
-    EXPECT(winner.has_value());
+    EXPECT(winner);
     EXPECT(winner->index() == 1U);
     EXPECT(std::get<1>(*winner) == 2);
 }
@@ -94,7 +94,7 @@ ZEST_CASE(with_sleep) {
     };
 
     auto [winner] = run(combined());
-    EXPECT(winner.has_value());
+    EXPECT(winner);
     EXPECT(winner->index() == 0U);
     EXPECT(std::get<0>(*winner) == 1);
     EXPECT(fast_done == 1);
@@ -135,7 +135,7 @@ ZEST_CASE(range_values) {
     };
 
     auto [winner] = run(combined());
-    EXPECT(winner.has_value());
+    EXPECT(winner);
     EXPECT(winner->first == 1U);
     EXPECT(winner->second == 2);
 }
@@ -174,11 +174,11 @@ ZEST_CASE(range_single_element) {
     };
 
     auto [res] = run(combined());
-    ASSERT(res.has_value());
+    ASSERT(res);
     EXPECT(res->first == 0U);
     EXPECT(res->second == 42);
 }
-}
-;  // ZEST_SUITE(when_any)
+
+};  // ZEST_SUITE(when_any)
 
 }  // namespace kota

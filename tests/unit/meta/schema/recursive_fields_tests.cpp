@@ -25,18 +25,18 @@ namespace {
 
 namespace fx = ::kota::meta::fixtures;
 
-ZEST_SUITE(virtual_schema_recursive_first_access){
+ZEST_SUITE(virtual_schema_recursive_first_access) {
 
-    // Each test deliberately does NOT call type_info_of<T>() beforehand.
-    // This exercises the exact code path that previously failed on Clang.
+// Each test deliberately does NOT call type_info_of<T>() beforehand.
+// This exercises the exact code path that previously failed on Clang.
 
-    ZEST_CASE(tree_node_fields_without_prior_type_info){using S = virtual_schema<fx::TreeNode>;
-STATIC_EXPECT(S::count == 2U);
-STATIC_EXPECT(S::fields.size() == 2U);
-STATIC_EXPECT(S::fields[0].name == "value");
-STATIC_EXPECT(S::fields[1].name == "children");
-
-}  // namespace
+ZEST_CASE(tree_node_fields_without_prior_type_info) {
+    using S = virtual_schema<fx::TreeNode>;
+    STATIC_EXPECT(S::count == 2U);
+    STATIC_EXPECT(S::fields.size() == 2U);
+    STATIC_EXPECT(S::fields[0].name == "value");
+    STATIC_EXPECT(S::fields[1].name == "children");
+}
 
 ZEST_CASE(shared_node_fields_without_prior_type_info) {
     using S = virtual_schema<fx::SharedNode>;
@@ -81,7 +81,7 @@ ZEST_CASE(variant_branch_mutual_recursion_without_prior_type_info) {
     STATIC_EXPECT(S::fields[0].name == "nodes");
 }
 
-};  // namespace kota::meta
+};  // ZEST_SUITE(virtual_schema_recursive_first_access)
 
 }  // namespace
 

@@ -34,13 +34,13 @@ struct enum_string_color_tag {
 
 using enum_string_color = annotate<enum_string_color_tag>::type<color>;
 
-ZEST_SUITE(serde_toml_error_message){
+ZEST_SUITE(serde_toml_error_message) {
 
-    ZEST_CASE(map_key_parse_error){auto result = from_string<std::map<int, int>>("abc = 1");
-ASSERT(!result.has_value());
-EXPECT(zest::contains(result.error().message, "cannot parse map key 'abc'"));
-
-}  // namespace
+ZEST_CASE(map_key_parse_error) {
+    auto result = from_string<std::map<int, int>>("abc = 1");
+    ASSERT(!result);
+    EXPECT(zest::contains(result.error().message, "cannot parse map key 'abc'"));
+}
 
 ZEST_CASE(missing_required_field) {
     auto result = from_string<person>(R"(
@@ -49,7 +49,7 @@ age = 25
 city = "NY"
 zip = 10001
 )");
-    ASSERT(!result.has_value());
+    ASSERT(!result);
     auto& e = result.error();
     EXPECT(e.message == "missing required field 'name'");
 }
@@ -60,11 +60,11 @@ id = 1
 name = "ok"
 extra = true
 )");
-    ASSERT(!result.has_value());
+    ASSERT(!result);
     auto& e = result.error();
     EXPECT(e.message == "unknown field 'extra'");
     // The TOML backend attaches the offending value node's location.
-    ASSERT(e.location.has_value());
+    ASSERT(e.location);
     EXPECT(e.location->line == 4);
     EXPECT(e.location->column == 9);
 }
@@ -77,11 +77,11 @@ ZEST_CASE(syntax_error_has_location) {
 name = "alice
 age = 30
 )");
-    ASSERT(!result.has_value());
+    ASSERT(!result);
     auto& e = result.error();
     EXPECT(zest::starts_with(e.message, "TOML parse error: "));
     EXPECT(e.message.size() > std::string_view("TOML parse error: ").size());
-    ASSERT(e.location.has_value());
+    ASSERT(e.location);
     EXPECT(e.location->line == 2);
 }
 
@@ -93,7 +93,7 @@ age = 30
 city = "NY"
 zip = "wrong"
 )");
-    ASSERT(!result.has_value());
+    ASSERT(!result);
     auto& e = result.error();
     EXPECT(e.format_path() == "addr.zip");
     EXPECT((e.message.find("invalid type") != std::string::npos ||
@@ -108,7 +108,7 @@ ZEST_CASE(sequence_element_error_path) {
 name = "bob"
 scores = ["bad"]
 )");
-    ASSERT(!result.has_value());
+    ASSERT(!result);
     auto& e = result.error();
     EXPECT(e.format_path() == "scores[0]");
 }
@@ -118,7 +118,7 @@ ZEST_CASE(enum_string_error_message) {
     auto table = toml::parse_table(R"(__value = "purple")");
     ASSERT(table.has_value());
     auto status = toml::from_toml(*table, parsed);
-    ASSERT(!status.has_value());
+    ASSERT(!status);
     auto& e = status.error();
     EXPECT(zest::contains(e.message, "purple"));
 }
@@ -128,9 +128,9 @@ ZEST_CASE(error_has_location) {
 name = "alice"
 age = "not_a_number"
 )");
-    ASSERT(!result.has_value());
+    ASSERT(!result);
     auto& e = result.error();
-    EXPECT(e.location.has_value());
+    EXPECT(e.location);
     // "age" is on line 3 (line 1 is empty after the raw string opening)
     EXPECT(e.location->line == 3);
     EXPECT(e.location->column == 7);
@@ -144,7 +144,7 @@ age = 30
 city = "NY"
 zip = "wrong"
 )");
-    ASSERT(!result.has_value());
+    ASSERT(!result);
     auto& e = result.error();
     // to_string format: "message at path (line L, column C)"
     auto str = e.to_string();
@@ -153,7 +153,7 @@ zip = "wrong"
     EXPECT(zest::contains(str, "column 7"));
 }
 
-};  // namespace kota::codec
+};  // ZEST_SUITE(serde_toml_error_message)
 
 }  // namespace
 

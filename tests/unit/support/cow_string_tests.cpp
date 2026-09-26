@@ -64,11 +64,11 @@ constexpr bool constexpr_cow_string_operations() {
     return true;
 }
 
-ZEST_SUITE(cow_string){
+ZEST_SUITE(cow_string) {
 
-    ZEST_CASE(constexpr){static_assert(constexpr_cow_string_operations());
-
-}  // namespace
+ZEST_CASE(constexpr) {
+    static_assert(constexpr_cow_string_operations());
+}
 
 ZEST_CASE(default_construction) {
     cow_string s;
@@ -341,7 +341,7 @@ ZEST_CASE(release_borrowed_fits_inline) {
     EXPECT(ss.ref() == "hi");
 }
 
-};  // namespace kota
+};  // ZEST_SUITE(cow_string)
 
 }  // namespace
 }  // namespace kota

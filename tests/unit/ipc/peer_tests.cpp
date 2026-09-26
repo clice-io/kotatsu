@@ -45,57 +45,56 @@ task<> write_notification_then_response(int fd, event_loop& loop) {
     co_return;
 }
 
-ZEST_SUITE(ipc_peer){
+ZEST_SUITE(ipc_peer) {
 
-    ZEST_CASE(traits_dispatch_order){
-        auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
-            R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":2,"b":3}})",
-            R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"first"}})",
-            R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"second"}})",
-        });
-auto* transport_ptr = transport.get();
+ZEST_CASE(traits_dispatch_order) {
+    auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
+        R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":2,"b":3}})",
+        R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"first"}})",
+        R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"second"}})",
+    });
+    auto* transport_ptr = transport.get();
 
-event_loop loop;
-JsonPeer peer(loop, std::move(transport));
-std::vector<std::string> order;
-bool second_saw_first = false;
-bool first_seen = false;
+    event_loop loop;
+    JsonPeer peer(loop, std::move(transport));
+    std::vector<std::string> order;
+    bool second_saw_first = false;
+    bool first_seen = false;
 
-peer.on_request([&](RequestContext&, const AddParams& params) -> RequestResult<AddParams> {
-    order.emplace_back("request");
-    co_return AddResult{.sum = params.a + params.b};
-});
+    peer.on_request([&](RequestContext&, const AddParams& params) -> RequestResult<AddParams> {
+        order.emplace_back("request");
+        co_return AddResult{.sum = params.a + params.b};
+    });
 
-peer.on_notification([&](const NoteParams& params) {
-    if(params.text == "first") {
-        first_seen = true;
-        order.emplace_back("note:first");
-        return;
-    }
-    if(params.text == "second") {
-        second_saw_first = first_seen;
-        order.emplace_back("note:second");
-    }
-});
+    peer.on_notification([&](const NoteParams& params) {
+        if(params.text == "first") {
+            first_seen = true;
+            order.emplace_back("note:first");
+            return;
+        }
+        if(params.text == "second") {
+            second_saw_first = first_seen;
+            order.emplace_back("note:second");
+        }
+    });
 
-loop.schedule(peer.run());
-EXPECT(loop.run() == 0);
+    loop.schedule(peer.run());
+    EXPECT(loop.run() == 0);
 
-ASSERT(order.size() == 3U);
-EXPECT(order[0] == "request");
-EXPECT(order[1] == "note:first");
-EXPECT(order[2] == "note:second");
-EXPECT(second_saw_first);
+    ASSERT(order.size() == 3U);
+    EXPECT(order[0] == "request");
+    EXPECT(order[1] == "note:first");
+    EXPECT(order[2] == "note:second");
+    EXPECT(second_saw_first);
 
-ASSERT(transport_ptr->outgoing().size() == 1U);
-auto response = codec::json::from_string<Response>(transport_ptr->outgoing().front());
-ASSERT(response.has_value());
-EXPECT(response->jsonrpc == "2.0");
-EXPECT(std::get<std::int64_t>(response->id) == 1);
-ASSERT(response->result.has_value());
-EXPECT(response->result->sum == 5);
-
-}  // namespace
+    ASSERT(transport_ptr->outgoing().size() == 1U);
+    auto response = codec::json::from_string<Response>(transport_ptr->outgoing().front());
+    ASSERT(response);
+    EXPECT(response->jsonrpc == "2.0");
+    EXPECT(std::get<std::int64_t>(response->id) == 1);
+    ASSERT(response->result);
+    EXPECT(response->result->sum == 5);
+}
 
 ZEST_CASE(stream_note_response) {
     event_loop loop;
@@ -106,9 +105,9 @@ ZEST_CASE(stream_note_response) {
     ASSERT(create_pipe(outgoing_fds) == 0);
 
     auto input = pipe::open(incoming_fds[0], pipe::options{}, loop);
-    ASSERT(input.has_value());
+    ASSERT(input);
     auto output = pipe::open(outgoing_fds[1], pipe::options{}, loop);
-    ASSERT(output.has_value());
+    ASSERT(output);
 
     auto transport =
         std::make_unique<StreamTransport>(stream(std::move(*input)), stream(std::move(*output)));
@@ -128,7 +127,7 @@ ZEST_CASE(stream_note_response) {
 
     EXPECT(loop.run() == 0);
 
-    ASSERT(request_result.value.has_value());
+    ASSERT(request_result.value);
     EXPECT(request_result.value->sum == 9);
     ASSERT(seen_notes.size() == 1U);
     EXPECT(seen_notes.front() == "first");
@@ -169,16 +168,16 @@ ZEST_CASE(peers_share_loop) {
 
     ASSERT(transport1_ptr->outgoing().size() == 1U);
     auto response1 = codec::json::from_string<Response>(transport1_ptr->outgoing().front());
-    ASSERT(response1.has_value());
+    ASSERT(response1);
     EXPECT(std::get<std::int64_t>(response1->id) == 11);
-    ASSERT(response1->result.has_value());
+    ASSERT(response1->result);
     EXPECT(response1->result->sum == 7);
 
     ASSERT(transport2_ptr->outgoing().size() == 1U);
     auto response2 = codec::json::from_string<Response>(transport2_ptr->outgoing().front());
-    ASSERT(response2.has_value());
+    ASSERT(response2);
     EXPECT(std::get<std::int64_t>(response2->id) == 22);
-    ASSERT(response2->result.has_value());
+    ASSERT(response2->result);
     EXPECT(response2->result->sum == 21);
 }
 
@@ -213,9 +212,9 @@ ZEST_CASE(explicit_method) {
 
     ASSERT(transport_ptr->outgoing().size() == 1U);
     auto response = codec::json::from_string<Response>(transport_ptr->outgoing().front());
-    ASSERT(response.has_value());
+    ASSERT(response);
     EXPECT(std::get<std::int64_t>(response->id) == 2);
-    ASSERT(response->result.has_value());
+    ASSERT(response->result);
     EXPECT(response->result->sum == 15);
 }
 
@@ -282,19 +281,19 @@ ZEST_CASE(request_notify_apis) {
     ASSERT(outgoing.size() == 5U);
 
     auto note_from_context = codec::json::from_string<Notification>(outgoing[0]);
-    ASSERT(note_from_context.has_value());
+    ASSERT(note_from_context);
     EXPECT(note_from_context->jsonrpc == "2.0");
     EXPECT(note_from_context->method == "client/note/context");
     EXPECT(note_from_context->params.text == "context");
 
     auto note_from_peer = codec::json::from_string<Notification>(outgoing[1]);
-    ASSERT(note_from_peer.has_value());
+    ASSERT(note_from_peer);
     EXPECT(note_from_peer->jsonrpc == "2.0");
     EXPECT(note_from_peer->method == "client/note/peer");
     EXPECT(note_from_peer->params.text == "peer");
 
     auto request_from_context = codec::json::from_string<Request>(outgoing[2]);
-    ASSERT(request_from_context.has_value());
+    ASSERT(request_from_context);
     EXPECT(request_from_context->jsonrpc == "2.0");
     EXPECT(std::get<std::int64_t>(request_from_context->id) == 1);
     EXPECT(request_from_context->method == "client/add/context");
@@ -302,7 +301,7 @@ ZEST_CASE(request_notify_apis) {
     EXPECT(request_from_context->params.b == 3);
 
     auto request_from_peer = codec::json::from_string<Request>(outgoing[3]);
-    ASSERT(request_from_peer.has_value());
+    ASSERT(request_from_peer);
     EXPECT(request_from_peer->jsonrpc == "2.0");
     EXPECT(std::get<std::int64_t>(request_from_peer->id) == 2);
     EXPECT(request_from_peer->method == "client/add/peer");
@@ -310,10 +309,10 @@ ZEST_CASE(request_notify_apis) {
     EXPECT(request_from_peer->params.b == 1);
 
     auto final_response = codec::json::from_string<Response>(outgoing[4]);
-    ASSERT(final_response.has_value());
+    ASSERT(final_response);
     EXPECT(final_response->jsonrpc == "2.0");
     EXPECT(std::get<std::int64_t>(final_response->id) == 7);
-    ASSERT(final_response->result.has_value());
+    ASSERT(final_response->result);
     EXPECT(final_response->result->sum == 13);
 }
 
@@ -356,11 +355,11 @@ ZEST_CASE(request_notify_apis_failure) {
     ASSERT(outgoing.size() == 2U);
 
     auto nested_request = codec::json::from_string<Request>(outgoing[0]);
-    ASSERT(nested_request.has_value());
+    ASSERT(nested_request);
     EXPECT(nested_request->method == "client/add/context");
 
     auto final_response = codec::json::from_string<ErrorResponse>(outgoing[1]);
-    ASSERT(final_response.has_value());
+    ASSERT(final_response);
     EXPECT(outgoing[1].find(R"("error")") != std::string::npos);
     EXPECT(final_response->jsonrpc == "2.0");
     EXPECT(std::get<std::int64_t>(final_response->id) == 7);
@@ -386,7 +385,7 @@ ZEST_CASE(request_error_code) {
 
     ASSERT(transport_ptr->outgoing().size() == 1U);
     auto response = codec::json::from_string<ErrorResponse>(transport_ptr->outgoing().front());
-    ASSERT(response.has_value());
+    ASSERT(response);
     EXPECT(response->jsonrpc == "2.0");
     EXPECT(std::get<std::int64_t>(response->id) == 10);
     EXPECT(response->error.code ==
@@ -417,13 +416,13 @@ ZEST_CASE(request_error_data) {
 
     ASSERT(transport_ptr->outgoing().size() == 1U);
     auto response = codec::json::from_string<ErrorResponse>(transport_ptr->outgoing().front());
-    ASSERT(response.has_value());
+    ASSERT(response);
     EXPECT(response->jsonrpc == "2.0");
     EXPECT(std::get<std::int64_t>(response->id) == 12);
     EXPECT(response->error.code ==
            static_cast<protocol::integer>(protocol::ErrorCode::InvalidParams));
     EXPECT(response->error.message == "forced invalid params");
-    ASSERT(response->error.data.has_value());
+    ASSERT(response->error.data);
     EXPECT(*response->error.data == codec::dyn::Value{
                                         {"detail", "invalid payload"},
                                         {"index",  -3               }
@@ -458,10 +457,10 @@ ZEST_CASE(outbound_error_data) {
     loop.schedule(request_task);
     EXPECT(loop.run() == 0);
 
-    ASSERT(!request_result.has_value());
+    ASSERT(!request_result);
     EXPECT(request_result.error().code == -32001);
     EXPECT(request_result.error().message == "remote failed");
-    ASSERT(request_result.error().data.has_value());
+    ASSERT(request_result.error().data);
     EXPECT(*request_result.error().data == codec::dyn::Value{
                                                {"detail",  "bad state"},
                                                {"attempt", -1         }
@@ -496,7 +495,7 @@ ZEST_CASE(bad_response_silent) {
     loop.schedule(request_task);
     EXPECT(loop.run() == 0);
 
-    ASSERT(!request_result.has_value());
+    ASSERT(!request_result);
     EXPECT(!request_result.error().message.empty());
 }
 
@@ -521,7 +520,7 @@ ZEST_CASE(bad_params_invalid) {
     EXPECT(!invoked);
     ASSERT(transport_ptr->outgoing().size() == 1U);
     auto response = codec::json::from_string<ErrorResponse>(transport_ptr->outgoing().front());
-    ASSERT(response.has_value());
+    ASSERT(response);
     EXPECT(response->jsonrpc == "2.0");
     EXPECT(std::get<std::int64_t>(response->id) == 11);
     EXPECT(response->error.code ==
@@ -543,7 +542,7 @@ ZEST_CASE(malformed_parse_null) {
 
     ASSERT(transport_ptr->outgoing().size() == 1U);
     auto response = codec::json::from_string<ErrorResponse>(transport_ptr->outgoing().front());
-    ASSERT(response.has_value());
+    ASSERT(response);
     EXPECT(response->jsonrpc == "2.0");
     EXPECT(std::get<std::int64_t>(response->id) == 0);
     EXPECT(response->error.code == static_cast<protocol::integer>(protocol::ErrorCode::ParseError));
@@ -564,7 +563,7 @@ ZEST_CASE(invalid_request_null) {
 
     ASSERT(transport_ptr->outgoing().size() == 1U);
     auto response = codec::json::from_string<ErrorResponse>(transport_ptr->outgoing().front());
-    ASSERT(response.has_value());
+    ASSERT(response);
     EXPECT(response->jsonrpc == "2.0");
     EXPECT(std::get<std::int64_t>(response->id) == 0);
     EXPECT(response->error.code ==
@@ -617,7 +616,7 @@ ZEST_CASE(cancel_inflight_request) {
     EXPECT(!finished);
     ASSERT(transport_ptr->outgoing().size() == 1U);
     auto response = codec::json::from_string<ErrorResponse>(transport_ptr->outgoing().front());
-    ASSERT(response.has_value());
+    ASSERT(response);
     EXPECT(response->jsonrpc == "2.0");
     EXPECT(std::get<std::int64_t>(response->id) == 21);
     EXPECT(response->error.code ==
@@ -666,7 +665,7 @@ ZEST_CASE(cancel_running_handler) {
 
     ASSERT(transport_ptr->outgoing().size() == 1U);
     auto response = codec::json::from_string<ErrorResponse>(transport_ptr->outgoing().front());
-    ASSERT(response.has_value());
+    ASSERT(response);
     EXPECT(response->jsonrpc == "2.0");
     EXPECT(std::get<std::int64_t>(response->id) == 22);
     EXPECT(response->error.code ==
@@ -726,7 +725,7 @@ ZEST_CASE(context_token_propagates) {
     ASSERT(outgoing.size() == 3U);
 
     auto nested_request = codec::json::from_string<Request>(outgoing[0]);
-    ASSERT(nested_request.has_value());
+    ASSERT(nested_request);
     EXPECT(nested_request->jsonrpc == "2.0");
     EXPECT(std::get<std::int64_t>(nested_request->id) == 1);
     EXPECT(nested_request->method == "client/add/context");
@@ -734,13 +733,13 @@ ZEST_CASE(context_token_propagates) {
     EXPECT(nested_request->params.b == 5);
 
     auto nested_cancel = codec::json::from_string<CancelNotification>(outgoing[1]);
-    ASSERT(nested_cancel.has_value());
+    ASSERT(nested_cancel);
     EXPECT(nested_cancel->jsonrpc == "2.0");
     EXPECT(nested_cancel->method == "$/cancelRequest");
     EXPECT(std::get<std::int64_t>(nested_cancel->params.id) == 1);
 
     auto final_error = codec::json::from_string<ErrorResponse>(outgoing[2]);
-    ASSERT(final_error.has_value());
+    ASSERT(final_error);
     EXPECT(final_error->jsonrpc == "2.0");
     EXPECT(std::get<std::int64_t>(final_error->id) == 31);
     EXPECT(final_error->error.code ==
@@ -783,7 +782,7 @@ ZEST_CASE(outbound_cancel_request) {
     loop.schedule(cancel_task);
     EXPECT(loop.run() == 0);
 
-    ASSERT(!request_result.has_value());
+    ASSERT(!request_result);
     EXPECT(request_result.error().code ==
            static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
     EXPECT(request_result.error().message == "request cancelled");
@@ -792,13 +791,13 @@ ZEST_CASE(outbound_cancel_request) {
     ASSERT(outgoing.size() == 2U);
 
     auto request = codec::json::from_string<Request>(outgoing[0]);
-    ASSERT(request.has_value());
+    ASSERT(request);
     EXPECT(request->jsonrpc == "2.0");
     EXPECT(std::get<std::int64_t>(request->id) == 1);
     EXPECT(request->method == "worker/build");
 
     auto cancel = codec::json::from_string<CancelNotification>(outgoing[1]);
-    ASSERT(cancel.has_value());
+    ASSERT(cancel);
     EXPECT(cancel->jsonrpc == "2.0");
     EXPECT(cancel->method == "$/cancelRequest");
     EXPECT(std::get<std::int64_t>(cancel->params.id) == 1);
@@ -833,7 +832,7 @@ ZEST_CASE(outbound_precancel) {
     loop.schedule(close_task);
     EXPECT(loop.run() == 0);
 
-    ASSERT(!request_result.has_value());
+    ASSERT(!request_result);
     EXPECT(request_result.error().code ==
            static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
     EXPECT(request_result.error().message == "request cancelled");
@@ -867,7 +866,7 @@ ZEST_CASE(outbound_timeout_cancel) {
     loop.schedule(request_task);
     EXPECT(loop.run() == 0);
 
-    ASSERT(!request_result.has_value());
+    ASSERT(!request_result);
     EXPECT(request_result.error().code ==
            static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
     EXPECT(request_result.error().message == "request timed out");
@@ -876,11 +875,11 @@ ZEST_CASE(outbound_timeout_cancel) {
     ASSERT(outgoing.size() == 2U);
 
     auto request = codec::json::from_string<Request>(outgoing[0]);
-    ASSERT(request.has_value());
+    ASSERT(request);
     EXPECT(request->method == "worker/build");
 
     auto cancel = codec::json::from_string<CancelNotification>(outgoing[1]);
-    ASSERT(cancel.has_value());
+    ASSERT(cancel);
     EXPECT(cancel->method == "$/cancelRequest");
 }
 
@@ -912,7 +911,7 @@ ZEST_CASE(zero_timeout_cancel) {
     loop.schedule(close_task);
     EXPECT(loop.run() == 0);
 
-    ASSERT(!request_result.has_value());
+    ASSERT(!request_result);
     EXPECT(request_result.error().code ==
            static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
     EXPECT(request_result.error().message == "request timed out");
@@ -951,7 +950,7 @@ ZEST_CASE(timeout_timer_cleanup_on_early_completion) {
     loop.schedule(request_task);
     EXPECT(loop.run() == 0);
 
-    ASSERT(request_result.has_value());
+    ASSERT(request_result);
     EXPECT(request_result->sum == 5);
 }
 
@@ -976,46 +975,46 @@ ZEST_CASE(raw_value_return) {
 
     ASSERT(transport_ptr->outgoing().size() == 1U);
     auto response = codec::json::from_string<Response>(transport_ptr->outgoing().front());
-    ASSERT(response.has_value());
+    ASSERT(response);
     EXPECT(response->jsonrpc == "2.0");
     EXPECT(std::get<std::int64_t>(response->id) == 1);
-    ASSERT(response->result.has_value());
+    ASSERT(response->result);
     EXPECT(response->result->sum == 30);
 }
 
-};  // namespace kota::ipc
+};  // ZEST_SUITE(ipc_peer)
 
 // ============================================================================
 // Group: Peer — camelCase rename for request params and results
 // ============================================================================
 
-ZEST_SUITE(ipc_peer_camel_case){
+ZEST_SUITE(ipc_peer_camel_case) {
 
-    // Incoming request with camelCase params → handler receives correct values
-    // Outgoing response contains camelCase result
-    ZEST_CASE(request_params_result){
-        auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
-            R"({"jsonrpc":"2.0","id":1,"method":"test/rangeAdd","params":{"firstValue":10,"secondValue":20}})",
+// Incoming request with camelCase params → handler receives correct values
+// Outgoing response contains camelCase result
+ZEST_CASE(request_params_result) {
+    auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
+        R"({"jsonrpc":"2.0","id":1,"method":"test/rangeAdd","params":{"firstValue":10,"secondValue":20}})",
+    });
+    auto* transport_ptr = transport.get();
+
+    event_loop loop;
+    JsonPeer peer(loop, std::move(transport));
+
+    peer.on_request(
+        [&](RequestContext&, const RangeAddParams& params) -> RequestResult<RangeAddParams> {
+            co_return RangeAddResult{.computed_sum = params.first_value + params.second_value};
         });
-auto* transport_ptr = transport.get();
 
-event_loop loop;
-JsonPeer peer(loop, std::move(transport));
+    loop.schedule(peer.run());
+    EXPECT(loop.run() == 0);
 
-peer.on_request([&](RequestContext&,
-                    const RangeAddParams& params) -> RequestResult<RangeAddParams> {
-    co_return RangeAddResult{.computed_sum = params.first_value + params.second_value};
-});
+    ASSERT(transport_ptr->outgoing().size() == 1U);
+    const auto& raw = transport_ptr->outgoing().front();
 
-loop.schedule(peer.run());
-EXPECT(loop.run() == 0);
-
-ASSERT(transport_ptr->outgoing().size() == 1U);
-const auto& raw = transport_ptr->outgoing().front();
-
-// Serialized form must use camelCase
-EXPECT(zest::contains(raw, R"("computedSum":30)"));
-EXPECT(!zest::contains(raw, "computed_sum"));
+    // Serialized form must use camelCase
+    EXPECT(zest::contains(raw, R"("computedSum":30)"));
+    EXPECT(!zest::contains(raw, "computed_sum"));
 }
 
 // Incoming notification with camelCase params
@@ -1077,11 +1076,11 @@ ZEST_CASE(outbound_request) {
     EXPECT(!zest::contains(raw, "first_value"));
 
     // Verify response deserialized correctly
-    ASSERT(request_result.has_value());
+    ASSERT(request_result);
     EXPECT(request_result->computed_sum == 99);
 }
-}
-;  // ZEST_SUITE(ipc_peer_camel_case)
+
+};  // ZEST_SUITE(ipc_peer_camel_case)
 
 }  // namespace
 }  // namespace kota::ipc

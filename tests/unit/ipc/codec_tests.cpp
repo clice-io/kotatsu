@@ -28,20 +28,20 @@ const T& get(const IncomingMessage& msg) {
 // Group 1: JsonCodec — parse_message boundary tests
 // ============================================================================
 
-ZEST_SUITE(ipc_json_codec_parse){
+ZEST_SUITE(ipc_json_codec_parse) {
 
-    // 1.1 Valid request (method + integer id + params)
-    ZEST_CASE(valid_request){JsonCodec codec;
-auto msg =
-    codec.parse_message(R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":1,"b":2}})");
+// 1.1 Valid request (method + integer id + params)
+ZEST_CASE(valid_request) {
+    JsonCodec codec;
+    auto msg = codec.parse_message(
+        R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":1,"b":2}})");
 
-ASSERT(holds<IncomingRequest>(msg));
-auto& req = get<IncomingRequest>(msg);
-EXPECT(req.id == protocol::RequestID{std::int64_t(1)});
-EXPECT(req.method == "test/add");
-EXPECT(!req.params.empty());
-
-}  // namespace
+    ASSERT(holds<IncomingRequest>(msg));
+    auto& req = get<IncomingRequest>(msg);
+    EXPECT(req.id == protocol::RequestID{std::int64_t(1)});
+    EXPECT(req.method == "test/add");
+    EXPECT(!req.params.empty());
+}
 
 // 1.2 Valid notification (method, no id)
 ZEST_CASE(valid_notification) {
@@ -77,7 +77,7 @@ ZEST_CASE(valid_error_response) {
     EXPECT(err.id == protocol::RequestID{std::int64_t(7)});
     EXPECT(err.error.code == static_cast<protocol::integer>(protocol::ErrorCode::MethodNotFound));
     EXPECT(err.error.message == "method not found");
-    ASSERT(err.error.data.has_value());
+    ASSERT(err.error.data);
 }
 
 // 1.5 JSON parse failure (invalid JSON)
@@ -144,7 +144,7 @@ ZEST_CASE(nested_error_data) {
     auto& err = get<IncomingErrorResponse>(msg);
     EXPECT(err.error.code == static_cast<protocol::integer>(protocol::ErrorCode::RequestFailed));
     EXPECT(err.error.message == "fail");
-    ASSERT(err.error.data.has_value());
+    ASSERT(err.error.data);
 }
 
 // 1.11 Request with missing params → params is empty string
@@ -171,34 +171,36 @@ ZEST_CASE(string_id_accepted) {
     EXPECT(req.method == "test/foo");
 }
 
-};  // namespace kota::ipc
+};  // ZEST_SUITE(ipc_json_codec_parse)
 
 // ============================================================================
 // Group 1: BincodeCodec — parse_message boundary tests
 // ============================================================================
 
-ZEST_SUITE(ipc_bincode_codec_parse){
+ZEST_SUITE(ipc_bincode_codec_parse) {
 
-    // Helper: encode then parse to test the parse side via known-good encoding
-    // (Bincode has no hand-written payloads like JSON, so we roundtrip through encode)
+// Helper: encode then parse to test the parse side via known-good encoding
+// (Bincode has no hand-written payloads like JSON, so we roundtrip through encode)
 
-    // 1.1 Valid request
-    ZEST_CASE(valid_request){BincodeCodec codec;
-auto encoded = codec.encode_request(protocol::RequestID{std::int64_t(1)}, "test/add", R"({"a":1})");
-ASSERT(encoded.has_value());
+// 1.1 Valid request
+ZEST_CASE(valid_request) {
+    BincodeCodec codec;
+    auto encoded =
+        codec.encode_request(protocol::RequestID{std::int64_t(1)}, "test/add", R"({"a":1})");
+    ASSERT(encoded);
 
-auto msg = codec.parse_message(*encoded);
-ASSERT(holds<IncomingRequest>(msg));
-auto& req = get<IncomingRequest>(msg);
-EXPECT(req.id == protocol::RequestID{std::int64_t(1)});
-EXPECT(req.method == "test/add");
+    auto msg = codec.parse_message(*encoded);
+    ASSERT(holds<IncomingRequest>(msg));
+    auto& req = get<IncomingRequest>(msg);
+    EXPECT(req.id == protocol::RequestID{std::int64_t(1)});
+    EXPECT(req.method == "test/add");
 }
 
 // 1.2 Valid notification
 ZEST_CASE(valid_notification) {
     BincodeCodec codec;
     auto encoded = codec.encode_notification("$/progress", R"({"token":1})");
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     auto msg = codec.parse_message(*encoded);
     ASSERT(holds<IncomingNotification>(msg));
@@ -211,7 +213,7 @@ ZEST_CASE(valid_success_response) {
     BincodeCodec codec;
     auto encoded =
         codec.encode_success_response(protocol::RequestID{std::int64_t(42)}, R"({"sum":3})");
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     auto msg = codec.parse_message(*encoded);
     ASSERT(holds<IncomingResponse>(msg));
@@ -224,7 +226,7 @@ ZEST_CASE(valid_error_response) {
     BincodeCodec codec;
     Error error(protocol::ErrorCode::MethodNotFound, "method not found");
     auto encoded = codec.encode_error_response(protocol::RequestID{std::int64_t(7)}, error);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     auto msg = codec.parse_message(*encoded);
     ASSERT(holds<IncomingErrorResponse>(msg));
@@ -256,41 +258,42 @@ ZEST_CASE(empty_payload) {
 ZEST_CASE(request_empty_params) {
     BincodeCodec codec;
     auto encoded = codec.encode_request(protocol::RequestID{std::int64_t(1)}, "test/noparams", "");
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     auto msg = codec.parse_message(*encoded);
     ASSERT(holds<IncomingRequest>(msg));
     auto& req = get<IncomingRequest>(msg);
     EXPECT(req.params.empty());
 }
-}
-;  // ZEST_SUITE(ipc_bincode_codec_parse)
+
+};  // ZEST_SUITE(ipc_bincode_codec_parse)
 
 // ============================================================================
 // Group 2: Codec — encode/parse roundtrip consistency
 // ============================================================================
 
-ZEST_SUITE(ipc_json_codec_roundtrip){
+ZEST_SUITE(ipc_json_codec_roundtrip) {
 
-    // 2.1 encode_request → parse_message roundtrip
-    ZEST_CASE(request_roundtrip){JsonCodec codec;
-auto encoded =
-    codec.encode_request(protocol::RequestID{std::int64_t(99)}, "math/add", R"({"a":1,"b":2})");
-ASSERT(encoded.has_value());
+// 2.1 encode_request → parse_message roundtrip
+ZEST_CASE(request_roundtrip) {
+    JsonCodec codec;
+    auto encoded =
+        codec.encode_request(protocol::RequestID{std::int64_t(99)}, "math/add", R"({"a":1,"b":2})");
+    ASSERT(encoded);
 
-auto msg = codec.parse_message(*encoded);
-ASSERT(holds<IncomingRequest>(msg));
-auto& req = get<IncomingRequest>(msg);
-EXPECT(req.id == protocol::RequestID{std::int64_t(99)});
-EXPECT(req.method == "math/add");
-EXPECT(!req.params.empty());
+    auto msg = codec.parse_message(*encoded);
+    ASSERT(holds<IncomingRequest>(msg));
+    auto& req = get<IncomingRequest>(msg);
+    EXPECT(req.id == protocol::RequestID{std::int64_t(99)});
+    EXPECT(req.method == "math/add");
+    EXPECT(!req.params.empty());
 }
 
 // 2.2 encode_notification → parse_message roundtrip
 ZEST_CASE(notification_roundtrip) {
     JsonCodec codec;
     auto encoded = codec.encode_notification("log/info", R"({"text":"hello"})");
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     auto msg = codec.parse_message(*encoded);
     ASSERT(holds<IncomingNotification>(msg));
@@ -303,7 +306,7 @@ ZEST_CASE(success_response_roundtrip) {
     JsonCodec codec;
     auto encoded =
         codec.encode_success_response(protocol::RequestID{std::int64_t(10)}, R"({"value":42})");
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     auto msg = codec.parse_message(*encoded);
     ASSERT(holds<IncomingResponse>(msg));
@@ -316,7 +319,7 @@ ZEST_CASE(error_response_roundtrip) {
     JsonCodec codec;
     Error original(protocol::ErrorCode::InternalError, "something broke");
     auto encoded = codec.encode_error_response(protocol::RequestID{std::int64_t(20)}, original);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     auto msg = codec.parse_message(*encoded);
     ASSERT(holds<IncomingErrorResponse>(msg));
@@ -330,34 +333,35 @@ ZEST_CASE(error_response_roundtrip) {
 ZEST_CASE(empty_params_roundtrip) {
     JsonCodec codec;
     auto encoded = codec.encode_request(protocol::RequestID{std::int64_t(1)}, "test/empty", "");
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     auto msg = codec.parse_message(*encoded);
     ASSERT(holds<IncomingRequest>(msg));
 }
-}
-;  // ZEST_SUITE(ipc_json_codec_roundtrip)
 
-ZEST_SUITE(ipc_bincode_codec_roundtrip){
+};  // ZEST_SUITE(ipc_json_codec_roundtrip)
 
-    // 2.1 request roundtrip
-    ZEST_CASE(request_roundtrip){BincodeCodec codec;
-auto encoded =
-    codec.encode_request(protocol::RequestID{std::int64_t(99)}, "math/add", R"({"a":1})");
-ASSERT(encoded.has_value());
+ZEST_SUITE(ipc_bincode_codec_roundtrip) {
 
-auto msg = codec.parse_message(*encoded);
-ASSERT(holds<IncomingRequest>(msg));
-auto& req = get<IncomingRequest>(msg);
-EXPECT(req.id == protocol::RequestID{std::int64_t(99)});
-EXPECT(req.method == "math/add");
+// 2.1 request roundtrip
+ZEST_CASE(request_roundtrip) {
+    BincodeCodec codec;
+    auto encoded =
+        codec.encode_request(protocol::RequestID{std::int64_t(99)}, "math/add", R"({"a":1})");
+    ASSERT(encoded);
+
+    auto msg = codec.parse_message(*encoded);
+    ASSERT(holds<IncomingRequest>(msg));
+    auto& req = get<IncomingRequest>(msg);
+    EXPECT(req.id == protocol::RequestID{std::int64_t(99)});
+    EXPECT(req.method == "math/add");
 }
 
 // 2.2 notification roundtrip
 ZEST_CASE(notification_roundtrip) {
     BincodeCodec codec;
     auto encoded = codec.encode_notification("log/info", R"({"text":"hello"})");
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     auto msg = codec.parse_message(*encoded);
     ASSERT(holds<IncomingNotification>(msg));
@@ -370,7 +374,7 @@ ZEST_CASE(success_response_roundtrip) {
     BincodeCodec codec;
     auto encoded =
         codec.encode_success_response(protocol::RequestID{std::int64_t(10)}, R"({"value":42})");
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     auto msg = codec.parse_message(*encoded);
     ASSERT(holds<IncomingResponse>(msg));
@@ -383,7 +387,7 @@ ZEST_CASE(error_response_roundtrip) {
     BincodeCodec codec;
     Error original(protocol::ErrorCode::InternalError, "something broke");
     auto encoded = codec.encode_error_response(protocol::RequestID{std::int64_t(20)}, original);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     auto msg = codec.parse_message(*encoded);
     ASSERT(holds<IncomingErrorResponse>(msg));
@@ -397,15 +401,15 @@ ZEST_CASE(error_response_roundtrip) {
 ZEST_CASE(empty_params_roundtrip) {
     BincodeCodec codec;
     auto encoded = codec.encode_request(protocol::RequestID{std::int64_t(1)}, "test/empty", "");
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     auto msg = codec.parse_message(*encoded);
     ASSERT(holds<IncomingRequest>(msg));
     auto& req = get<IncomingRequest>(msg);
     EXPECT(req.params.empty());
 }
-}
-;  // ZEST_SUITE(ipc_bincode_codec_roundtrip)
+
+};  // ZEST_SUITE(ipc_bincode_codec_roundtrip)
 
 }  // namespace
 }  // namespace kota::ipc

@@ -103,23 +103,23 @@ task<int, error> mkstemp_roundtrip(event_loop& loop) {
 
 }  // namespace
 
-ZEST_SUITE(fs_request_io, loop_fixture){
+ZEST_SUITE(fs_request_io, loop_fixture) {
 
-    ZEST_CASE(basic_roundtrip){auto worker = fs_roundtrip(loop);
-schedule_all(worker);
+ZEST_CASE(basic_roundtrip) {
+    auto worker = fs_roundtrip(loop);
+    schedule_all(worker);
 
-auto result = worker.result();
-EXPECT(result.has_value());
-EXPECT(*result == 1);
-
-}  // namespace kota
+    auto result = worker.result();
+    EXPECT(result);
+    EXPECT(*result == 1);
+}
 
 ZEST_CASE(mkstemp_and_access) {
     auto worker = mkstemp_roundtrip(loop);
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT(result.has_value());
+    EXPECT(result);
     EXPECT(*result == 1);
 }
 
@@ -157,7 +157,7 @@ ZEST_CASE(async_open_read_write_close) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT(result.has_value());
+    EXPECT(result);
     EXPECT(*result == 1);
 }
 
@@ -205,7 +205,7 @@ ZEST_CASE(symlink_readlink_realpath) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT(result.has_value());
+    EXPECT(result);
     EXPECT(*result == 1);
 }
 
@@ -250,7 +250,7 @@ ZEST_CASE(chown_fchown_lchown) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT(result.has_value());
+    EXPECT(result);
     EXPECT(*result == 1);
 }
 
@@ -277,7 +277,7 @@ ZEST_CASE(fchmod) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT(result.has_value());
+    EXPECT(result);
     EXPECT(*result == 1);
 }
 
@@ -294,10 +294,10 @@ ZEST_CASE(statfs_basic) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT(result.has_value());
+    EXPECT(result);
     EXPECT(*result == 1);
 }
-}
-;  // ZEST_SUITE(fs_request_io)
+
+};  // ZEST_SUITE(fs_request_io)
 
 }  // namespace kota

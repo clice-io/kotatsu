@@ -1,6 +1,5 @@
 #include "kota/zest/assert/check.h"
 
-#include <cassert>
 #include <print>
 #include <string_view>
 #include <vector>
@@ -40,14 +39,16 @@ void print_line(std::string_view label, std::string_view text) {
 
 }  // namespace
 
-Context::Context(std::string message) : text(std::move(message)) {
+void Context::enter() {
     contexts().push_back(this);
 }
 
+// Not necessarily the innermost: coroutines interleave their contexts.
 Context::~Context() {
-    assert(!contexts().empty() && contexts().back() == this);
-    contexts().pop_back();
+    std::erase(contexts(), this);
 }
+
+namespace detail {
 
 void report_failure(std::string_view expression,
                     std::initializer_list<ReportLine> lines,
@@ -57,7 +58,7 @@ void report_failure(std::string_view expression,
         print_line(line.label, line.text);
     }
     for(const auto* context: contexts()) {
-        print_line("context", context->message());
+        print_line("context", context->message);
     }
     print_line("at", std::format("{}:{}", location.file_name(), location.line()));
     print_trace(location);
@@ -82,5 +83,7 @@ void check_throws(function<void()> body,
 }
 
 #endif
+
+}  // namespace detail
 
 }  // namespace kota::zest

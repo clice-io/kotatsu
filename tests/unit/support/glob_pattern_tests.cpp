@@ -18,25 +18,25 @@ namespace {
         return;                                                                                    \
     auto name = std::move(*_res_##name);
 
-ZEST_SUITE(glob_pattern){
+ZEST_SUITE(glob_pattern) {
 
-    ZEST_CASE(pattern_sema){auto pat1 = kota::GlobPattern::create("**/****.{c,cc}", 100);
-EXPECT(!pat1.has_value());
+ZEST_CASE(pattern_sema) {
+    auto pat1 = kota::GlobPattern::create("**/****.{c,cc}", 100);
+    EXPECT(!pat1);
 
-auto pat2 = kota::GlobPattern::create("/foo/bar/baz////aaa.{c,cc}", 100);
-EXPECT(!pat2.has_value());
+    auto pat2 = kota::GlobPattern::create("/foo/bar/baz////aaa.{c,cc}", 100);
+    EXPECT(!pat2);
 
-auto pat3 = kota::GlobPattern::create("/foo/bar/baz/**////*.{c,cc}", 100);
-EXPECT(!pat3.has_value());
+    auto pat3 = kota::GlobPattern::create("/foo/bar/baz/**////*.{c,cc}", 100);
+    EXPECT(!pat3);
 
-EXPECT(!kota::GlobPattern::create("foo//*.cc").has_value());
-EXPECT(kota::GlobPattern::create("/usr/bin/*.txt").has_value());
-
-}  // namespace
+    EXPECT(!kota::GlobPattern::create("foo//*.cc").has_value());
+    EXPECT(kota::GlobPattern::create("/usr/bin/*.txt").has_value());
+}
 
 ZEST_CASE(max_sub_glob) {
     auto pat1 = kota::GlobPattern::create("{AAA,BBB,AB*}");
-    EXPECT(pat1.has_value());
+    EXPECT(pat1);
     EXPECT(pat1->match("AAA"));
     EXPECT(pat1->match("BBB"));
     EXPECT(pat1->match("AB"));
@@ -538,77 +538,77 @@ ZEST_CASE(globstar_complex) {
 ZEST_CASE(error_paths) {
     // Unmatched '['
     auto e1 = kota::GlobPattern::create("foo.[a-z");
-    EXPECT(!e1.has_value());
+    EXPECT(!e1);
 
     // '[' as last character
     auto e2 = kota::GlobPattern::create("{a,[}");
-    EXPECT(!e2.has_value());
+    EXPECT(!e2);
 
     // Stray '\' at end of pattern
     auto e3 = kota::GlobPattern::create("foo\\");
-    EXPECT(!e3.has_value());
+    EXPECT(!e3);
 
     // Stray '\' at end inside brace
     auto e4 = kota::GlobPattern::create("{foo\\}");
-    EXPECT(!e4.has_value());
+    EXPECT(!e4);
 
     // Stray '\' inside bracket inside brace
     auto e5 = kota::GlobPattern::create("{[abc\\]}");
-    EXPECT(!e5.has_value());
+    EXPECT(!e5);
 
     // Empty brace expression {}
     auto e6 = kota::GlobPattern::create("foo.{}");
-    EXPECT(!e6.has_value());
+    EXPECT(!e6);
 
     // Nested braces
     auto e7 = kota::GlobPattern::create("{a,{b,c}}");
-    EXPECT(!e7.has_value());
+    EXPECT(!e7);
 
     // Incomplete brace expansion (unmatched '{')
     auto e8 = kota::GlobPattern::create("{foo,bar");
-    EXPECT(!e8.has_value());
+    EXPECT(!e8);
 
     // *** (triple star)
     auto e9 = kota::GlobPattern::create("***.js");
-    EXPECT(!e9.has_value());
+    EXPECT(!e9);
 
     // ** is valid (boundary)
     auto e10 = kota::GlobPattern::create("**.js");
-    EXPECT(e10.has_value());
+    EXPECT(e10);
 
     // Multiple consecutive slashes in literal pattern
     auto e11 = kota::GlobPattern::create("foo//bar");
-    EXPECT(!e11.has_value());
+    EXPECT(!e11);
 
     // Multiple consecutive slashes at start
     auto e12 = kota::GlobPattern::create("//foo");
-    EXPECT(!e12.has_value());
+    EXPECT(!e12);
 
     // Multiple consecutive slashes after the literal prefix
     auto e13 = kota::GlobPattern::create("**/foo//*.cc");
-    EXPECT(!e13.has_value());
+    EXPECT(!e13);
 
     // Unmatched '[' after a wildcard
     auto e14 = kota::GlobPattern::create("*[");
-    EXPECT(!e14.has_value());
+    EXPECT(!e14);
 
     // '\' at end inside bracket inside brace
     auto e15 = kota::GlobPattern::create("{[\\]}");
-    EXPECT(!e15.has_value());
+    EXPECT(!e15);
 
     // Range start > end
     auto e16 = kota::GlobPattern::create("[z-a]");
-    EXPECT(!e16.has_value());
+    EXPECT(!e16);
 
     // Range end is stray backslash
     auto e17 = kota::GlobPattern::create("[a-\\]");
-    EXPECT(!e17.has_value());
+    EXPECT(!e17);
 
     // Brace expansion is textual: an arm starting with `/` right after the
     // literal prefix's separator spells `//`, escaped prefix or not.
     for(std::string_view source: {"a/{/}", "a/{/b}", "a/{b,/c}", R"(a\*/{/})"}) {
         auto res = kota::GlobPattern::create(source);
-        EXPECT(!res.has_value());
+        EXPECT(!res);
         if(!res.has_value()) {
             EXPECT(res.error().kind == kota::GlobError::MultipleSlash);
         }
@@ -653,55 +653,55 @@ ZEST_CASE(empty_and_trivial) {
 
 ZEST_CASE(is_trivial_match_all) {
     auto p1 = kota::GlobPattern::create("**");
-    EXPECT(p1.has_value());
+    EXPECT(p1);
     EXPECT(p1->is_trivial_match_all());
 
     auto p2 = kota::GlobPattern::create("*");
-    EXPECT(p2.has_value());
+    EXPECT(p2);
     EXPECT(!p2->is_trivial_match_all());
 
     auto p3 = kota::GlobPattern::create("**/*");
-    EXPECT(p3.has_value());
+    EXPECT(p3);
     EXPECT(!p3->is_trivial_match_all());
 
     auto p4 = kota::GlobPattern::create("foo/**");
-    EXPECT(p4.has_value());
+    EXPECT(p4);
     EXPECT(!p4->is_trivial_match_all());
 
     auto p5 = kota::GlobPattern::create("*.js");
-    EXPECT(p5.has_value());
+    EXPECT(p5);
     EXPECT(!p5->is_trivial_match_all());
 
     auto p6 = kota::GlobPattern::create("{a,b}");
-    EXPECT(p6.has_value());
+    EXPECT(p6);
     EXPECT(!p6->is_trivial_match_all());
 
     // The leading `/` is a real constraint even though the literal prefix
     // it leaves behind is empty.
     auto p7 = kota::GlobPattern::create("/*");
-    EXPECT(p7.has_value());
+    EXPECT(p7);
     EXPECT(!p7->is_trivial_match_all());
 
     auto p8 = kota::GlobPattern::create("/**");
-    EXPECT(p8.has_value());
+    EXPECT(p8);
     EXPECT(!p8->is_trivial_match_all());
 
     // Only a whole-segment ** brace arm is match-all.
     auto p9 = kota::GlobPattern::create("{*,foo}");
-    EXPECT(p9.has_value());
+    EXPECT(p9);
     EXPECT(!p9->is_trivial_match_all());
 
     auto p10 = kota::GlobPattern::create("{foo,**}");
-    EXPECT(p10.has_value());
+    EXPECT(p10);
     EXPECT(p10->is_trivial_match_all());
 
     // With a prefix the `*` arm means `a*`, which is segment-bounded.
     auto p11 = kota::GlobPattern::create("a{*,foo}");
-    EXPECT(p11.has_value());
+    EXPECT(p11);
     EXPECT(!p11->is_trivial_match_all());
 
     auto p12 = kota::GlobPattern::create("{*.js,foo}");
-    EXPECT(p12.has_value());
+    EXPECT(p12);
     EXPECT(!p12->is_trivial_match_all());
 }
 
@@ -987,26 +987,26 @@ ZEST_CASE(multiple_globstar) {
 ZEST_CASE(max_subpattern_limit) {
     // {a,b} x {c,d} = 4 subpatterns, limit 2 => fail
     auto p1 = kota::GlobPattern::create("{a,b}.{c,d}", 2);
-    EXPECT(!p1.has_value());
+    EXPECT(!p1);
 
     // Same with limit 4 => succeed
     auto p2 = kota::GlobPattern::create("{a,b}.{c,d}", 4);
-    EXPECT(p2.has_value());
+    EXPECT(p2);
 
     // Single brace with 3 terms, limit 2 => fail
     auto p3 = kota::GlobPattern::create("{a,b,c}", 2);
-    EXPECT(!p3.has_value());
+    EXPECT(!p3);
 
     // Limit 0 disables brace expansion, pattern kept as literal with braces
     auto p4 = kota::GlobPattern::create("{a,b}", 0);
-    EXPECT(p4.has_value());
+    EXPECT(p4);
     EXPECT(p4->match("{a,b}"));
     EXPECT(!p4->match("a"));
     EXPECT(!p4->match("b"));
 
     // Limit 1 means only 1 subpattern allowed; single brace with 1 term is OK
     auto p5 = kota::GlobPattern::create("{a}", 1);
-    EXPECT(p5.has_value());
+    EXPECT(p5);
     EXPECT(p5->match("a"));
 }
 
@@ -1294,7 +1294,7 @@ ZEST_CASE(invalid_utf8_input) {
 ZEST_CASE(invalid_utf8_pattern) {
     auto expect_invalid = [](std::string_view pattern, std::uint32_t at) {
         auto res = kota::GlobPattern::create(pattern);
-        EXPECT(!res.has_value());
+        EXPECT(!res);
         if(!res.has_value()) {
             EXPECT(res.error().kind == kota::GlobError::InvalidUtf8);
             EXPECT(res.error().begin == at);
@@ -1313,7 +1313,7 @@ ZEST_CASE(invalid_utf8_pattern) {
 ZEST_CASE(escaped_slash) {
     auto expect_rejected = [](std::string_view pattern) {
         auto res = kota::GlobPattern::create(pattern);
-        EXPECT(!res.has_value());
+        EXPECT(!res);
         if(!res.has_value()) {
             EXPECT(res.error().kind == kota::GlobError::InvalidEscape);
         }
@@ -1906,7 +1906,7 @@ ZEST_CASE(ported_ranges) {
     EXPECT(!pat4.match("-"));
 }
 
-};  // namespace kota
+};  // ZEST_SUITE(glob_pattern)
 
 }  // namespace
 

@@ -25,53 +25,53 @@ namespace {
 
 namespace fx = ::kota::meta::fixtures;
 
-ZEST_SUITE(virtual_schema_type_info){
+ZEST_SUITE(virtual_schema_type_info) {
 
-    ZEST_CASE(scalar_helpers){// int32: signed integer, numeric, scalar
-                              constexpr auto int_info = type_info_of<int, default_config>();
-STATIC_EXPECT(int_info.kind == type_kind::int32);
-STATIC_EXPECT(int_info.is_integer());
-STATIC_EXPECT(int_info.is_signed_integer());
-STATIC_EXPECT(!int_info.is_unsigned_integer());
-STATIC_EXPECT(!int_info.is_floating());
-STATIC_EXPECT(int_info.is_numeric());
-STATIC_EXPECT(int_info.is_scalar());
+ZEST_CASE(scalar_helpers) {
+    // int32: signed integer, numeric, scalar
+    constexpr auto int_info = type_info_of<int, default_config>();
+    STATIC_EXPECT(int_info.kind == type_kind::int32);
+    STATIC_EXPECT(int_info.is_integer());
+    STATIC_EXPECT(int_info.is_signed_integer());
+    STATIC_EXPECT(!int_info.is_unsigned_integer());
+    STATIC_EXPECT(!int_info.is_floating());
+    STATIC_EXPECT(int_info.is_numeric());
+    STATIC_EXPECT(int_info.is_scalar());
 
-// uint64: unsigned integer, numeric, scalar
-constexpr auto u64_info = type_info_of<std::uint64_t, default_config>();
-STATIC_EXPECT(u64_info.is_integer());
-STATIC_EXPECT(!u64_info.is_signed_integer());
-STATIC_EXPECT(u64_info.is_unsigned_integer());
-STATIC_EXPECT(u64_info.is_numeric());
-STATIC_EXPECT(u64_info.is_scalar());
+    // uint64: unsigned integer, numeric, scalar
+    constexpr auto u64_info = type_info_of<std::uint64_t, default_config>();
+    STATIC_EXPECT(u64_info.is_integer());
+    STATIC_EXPECT(!u64_info.is_signed_integer());
+    STATIC_EXPECT(u64_info.is_unsigned_integer());
+    STATIC_EXPECT(u64_info.is_numeric());
+    STATIC_EXPECT(u64_info.is_scalar());
 
-// double: floating, numeric, scalar
-constexpr auto dbl_info = type_info_of<double, default_config>();
-STATIC_EXPECT(!dbl_info.is_integer());
-STATIC_EXPECT(dbl_info.is_floating());
-STATIC_EXPECT(dbl_info.is_numeric());
-STATIC_EXPECT(dbl_info.is_scalar());
+    // double: floating, numeric, scalar
+    constexpr auto dbl_info = type_info_of<double, default_config>();
+    STATIC_EXPECT(!dbl_info.is_integer());
+    STATIC_EXPECT(dbl_info.is_floating());
+    STATIC_EXPECT(dbl_info.is_numeric());
+    STATIC_EXPECT(dbl_info.is_scalar());
 
-// bool: scalar but not numeric
-constexpr auto bool_info = type_info_of<bool, default_config>();
-STATIC_EXPECT(bool_info.is_scalar());
-STATIC_EXPECT(!bool_info.is_numeric());
-STATIC_EXPECT(!bool_info.is_integer());
-STATIC_EXPECT(!bool_info.is_floating());
+    // bool: scalar but not numeric
+    constexpr auto bool_info = type_info_of<bool, default_config>();
+    STATIC_EXPECT(bool_info.is_scalar());
+    STATIC_EXPECT(!bool_info.is_numeric());
+    STATIC_EXPECT(!bool_info.is_integer());
+    STATIC_EXPECT(!bool_info.is_floating());
 
-// string: scalar but not numeric
-constexpr auto str_info = type_info_of<std::string, default_config>();
-STATIC_EXPECT(str_info.kind == type_kind::string);
-STATIC_EXPECT(str_info.is_scalar());
-STATIC_EXPECT(!str_info.is_numeric());
+    // string: scalar but not numeric
+    constexpr auto str_info = type_info_of<std::string, default_config>();
+    STATIC_EXPECT(str_info.kind == type_kind::string);
+    STATIC_EXPECT(str_info.is_scalar());
+    STATIC_EXPECT(!str_info.is_numeric());
 
-// enum: scalar but not numeric
-constexpr auto enum_info = type_info_of<fx::Color, default_config>();
-STATIC_EXPECT(enum_info.kind == type_kind::enumeration);
-STATIC_EXPECT(enum_info.is_scalar());
-STATIC_EXPECT(!enum_info.is_numeric());
-
-}  // namespace
+    // enum: scalar but not numeric
+    constexpr auto enum_info = type_info_of<fx::Color, default_config>();
+    STATIC_EXPECT(enum_info.kind == type_kind::enumeration);
+    STATIC_EXPECT(enum_info.is_scalar());
+    STATIC_EXPECT(!enum_info.is_numeric());
+}
 
 ZEST_CASE(compound_types) {
     // vector<int> -> array with int32 element
@@ -680,7 +680,7 @@ ZEST_CASE(recursive_cv_shares_storage) {
     STATIC_EXPECT(&arr.element() == &with_cv);
 }
 
-};  // namespace kota::meta
+};  // ZEST_SUITE(virtual_schema_type_info)
 
 }  // namespace
 

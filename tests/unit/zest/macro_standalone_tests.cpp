@@ -19,15 +19,15 @@ namespace {
 
 // Written against the macros already in scope from the standalone include above,
 // which is the order a module consumer ends up with.
-ZEST_SUITE(zest_macro_standalone){
+ZEST_SUITE(zest_macro_standalone) {
 
-    ZEST_CASE(macros_usable_without_declaration_headers){STATIC_EXPECT(1 + 1 == 2);
-ASSERT(true);
-EXPECT(std::string("a") == std::string("a"));
+ZEST_CASE(macros_usable_without_declaration_headers) {
+    STATIC_EXPECT(1 + 1 == 2);
+    ASSERT(true);
+    EXPECT(std::string("a") == std::string("a"));
+}
 
-}  // namespace
-
-};  // namespace kota::zest
+};  // ZEST_SUITE(zest_macro_standalone)
 
 }  // namespace
 

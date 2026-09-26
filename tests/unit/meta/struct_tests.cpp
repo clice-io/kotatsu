@@ -141,28 +141,28 @@ consteval bool field_count_robustness_check() {
            reflection<S6>::field_count == 6;
 }
 
-ZEST_SUITE(reflection){
+ZEST_SUITE(reflection) {
 
-    ZEST_CASE(field_addr_and_field_of){Point p{.x = 1, .c = 'A', .z = 2.5, .y = 4};
+ZEST_CASE(field_addr_and_field_of) {
+    Point p{.x = 1, .c = 'A', .z = 2.5, .y = 4};
 
-EXPECT(field_addr_of<0>(p) == &p.x);
-EXPECT(field_addr_of<1>(p) == &p.c);
-EXPECT(field_addr_of<2>(p) == &p.z);
-EXPECT(field_addr_of<3>(p) == &p.y);
+    EXPECT(field_addr_of<0>(p) == &p.x);
+    EXPECT(field_addr_of<1>(p) == &p.c);
+    EXPECT(field_addr_of<2>(p) == &p.z);
+    EXPECT(field_addr_of<3>(p) == &p.y);
 
-field_of<0>(p) = 11;
-field_of<3>(p) = 44;
-EXPECT(p.x == 11);
-EXPECT(p.y == 44);
+    field_of<0>(p) = 11;
+    field_of<3>(p) = 44;
+    EXPECT(p.x == 11);
+    EXPECT(p.y == 44);
 
-field<0, Point> fx{p};
-field<1, Point> fc{p};
-fx.value() = 21;
-fc.value() = 'Z';
-EXPECT(p.x == 21);
-EXPECT(p.c == 'Z');
-
-}  // namespace
+    field<0, Point> fx{p};
+    field<1, Point> fc{p};
+    fx.value() = 21;
+    fc.value() = 'Z';
+    EXPECT(p.x == 21);
+    EXPECT(p.c == 'Z');
+}
 
 ZEST_CASE(field_name_values) {
     EXPECT(field_names<Point>().size() == 4U);
@@ -392,7 +392,7 @@ ZEST_CASE(for_each_many36) {
     EXPECT(sum == 666);
 }
 
-};  // namespace kota::meta
+};  // ZEST_SUITE(reflection)
 
 }  // namespace
 

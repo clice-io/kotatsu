@@ -14,34 +14,34 @@ namespace kota {
 
 #if KOTA_ENABLE_EXCEPTIONS
 
-ZEST_SUITE(when_exceptions){
+ZEST_SUITE(when_exceptions) {
 
-    ZEST_CASE(all_exception_cancels_siblings){int slow_done = 0;
+ZEST_CASE(all_exception_cancels_siblings) {
+    int slow_done = 0;
 
-auto thrower = [&]() -> task<int> {
-    co_await sleep(1);
-    throw std::runtime_error("boom");
-    co_return 0;
-};
+    auto thrower = [&]() -> task<int> {
+        co_await sleep(1);
+        throw std::runtime_error("boom");
+        co_return 0;
+    };
 
-auto slow = [&]() -> task<int> {
-    co_await sleep(50);
-    slow_done += 1;
-    co_return 2;
-};
+    auto slow = [&]() -> task<int> {
+        co_await sleep(50);
+        slow_done += 1;
+        co_return 2;
+    };
 
-auto combined = [&]() -> task<int> {
-    auto [a, b] = co_await when_all(thrower(), slow());
-    co_return a + b;
-};
+    auto combined = [&]() -> task<int> {
+        auto [a, b] = co_await when_all(thrower(), slow());
+        co_return a + b;
+    };
 
-auto t = combined();
-EXPECT_THROWS(run(t));
+    auto t = combined();
+    EXPECT_THROWS(run(t));
 
-EXPECT(t->is_failed());
-EXPECT_THROWS(t.result());
-EXPECT(slow_done == 0);
-
+    EXPECT(t->is_failed());
+    EXPECT_THROWS(t.result());
+    EXPECT(slow_done == 0);
 }
 
 // A child that throws after the scope was cancelled must still deliver the
@@ -242,8 +242,8 @@ ZEST_CASE(direct_co_await_rethrows) {
 
     EXPECT_THROWS(run(parent()));
 }
-}
-;  // ZEST_SUITE(when_exceptions)
+
+};  // ZEST_SUITE(when_exceptions)
 
 #endif  // KOTA_ENABLE_EXCEPTIONS
 

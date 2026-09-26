@@ -13,34 +13,34 @@ namespace kota {
 
 namespace {
 
-ZEST_SUITE(yield, loop_fixture){
+ZEST_SUITE(yield, loop_fixture) {
 
-    // yield() resumes on the NEXT loop iteration: every deferred resume produced
-    // in the current iteration (here: the event waiter woken by set()) runs
-    // strictly before the yielded task continues. This is the hand-over
-    // guarantee that debounced-cancellation patterns rely on.
-    ZEST_CASE(runs_after_current_drain){event ev;
-std::vector<int> order;
+// yield() resumes on the NEXT loop iteration: every deferred resume produced
+// in the current iteration (here: the event waiter woken by set()) runs
+// strictly before the yielded task continues. This is the hand-over
+// guarantee that debounced-cancellation patterns rely on.
+ZEST_CASE(runs_after_current_drain) {
+    event ev;
+    std::vector<int> order;
 
-auto waiter = [&]() -> task<> {
-    co_await ev.wait();
-    order.push_back(1);
-};
+    auto waiter = [&]() -> task<> {
+        co_await ev.wait();
+        order.push_back(1);
+    };
 
-auto driver = [&]() -> task<> {
-    co_await sleep(1, loop);
-    ev.set();
-    co_await yield(loop);
-    order.push_back(2);
-};
+    auto driver = [&]() -> task<> {
+        co_await sleep(1, loop);
+        ev.set();
+        co_await yield(loop);
+        order.push_back(2);
+    };
 
-auto w = waiter();
-auto d = driver();
-schedule_all(w, d);
+    auto w = waiter();
+    auto d = driver();
+    schedule_all(w, d);
 
-EXPECT(order == (std::vector<int>{1, 2}));
-
-}  // namespace
+    EXPECT(order == (std::vector<int>{1, 2}));
+}
 
 // A task suspended on yield() can be cancelled; the queued completion
 // delivers the cancellation on the next iteration.
@@ -116,7 +116,7 @@ ZEST_CASE(spans_iteration_from_timer_callback) {
     EXPECT(order == (std::vector<int>{1, 2}));
 }
 
-};  // namespace kota
+};  // ZEST_SUITE(yield)
 
 }  // namespace
 

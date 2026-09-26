@@ -12,38 +12,38 @@
 
 namespace kota {
 
-ZEST_SUITE(when_cancel){
+ZEST_SUITE(when_cancel) {
 
-    ZEST_CASE(all_child_cancel_propagates){int cancel_started = 0;
-int slow_started = 0;
-int slow_done = 0;
+ZEST_CASE(all_child_cancel_propagates) {
+    int cancel_started = 0;
+    int slow_started = 0;
+    int slow_done = 0;
 
-auto canceler = [&]() -> task<int> {
-    cancel_started += 1;
-    co_await sleep(1);
-    co_await cancel();
-    co_return 1;
-};
+    auto canceler = [&]() -> task<int> {
+        cancel_started += 1;
+        co_await sleep(1);
+        co_await cancel();
+        co_return 1;
+    };
 
-auto slow = [&]() -> task<int> {
-    slow_started += 1;
-    co_await sleep(5);
-    slow_done += 1;
-    co_return 2;
-};
+    auto slow = [&]() -> task<int> {
+        slow_started += 1;
+        co_await sleep(5);
+        slow_done += 1;
+        co_return 2;
+    };
 
-auto combined = [&]() -> task<> {
-    co_await when_all(slow(), canceler());
-};
+    auto combined = [&]() -> task<> {
+        co_await when_all(slow(), canceler());
+    };
 
-auto task = combined();
-run(task);
+    auto task = combined();
+    run(task);
 
-EXPECT(task->is_cancelled());
-EXPECT(cancel_started == 1);
-EXPECT(slow_done == 0);
-
-}  // namespace kota
+    EXPECT(task->is_cancelled());
+    EXPECT(cancel_started == 1);
+    EXPECT(slow_done == 0);
+}
 
 ZEST_CASE(any_child_cancel_propagates) {
     int cancel_started = 0;
@@ -203,7 +203,7 @@ ZEST_CASE(all_token_cancel) {
     auto cancel_task = canceler();
     run(guarded, cancel_task);
 
-    EXPECT(!guarded.value().has_value());
+    EXPECT(!guarded.value());
     EXPECT(finished == 0);
 }
 
@@ -237,7 +237,7 @@ ZEST_CASE(any_token_cancel) {
     auto cancel_task = canceler();
     run(guarded, cancel_task);
 
-    EXPECT(!guarded.value().has_value());
+    EXPECT(!guarded.value());
     EXPECT(finished == 0);
 }
 
@@ -266,7 +266,7 @@ ZEST_CASE(all_waits_for_cancelled_children) {
 
     auto probe = [&]() -> task<> {
         auto res = co_await combined().catch_cancel();
-        EXPECT(!res.has_value());
+        EXPECT(!res);
     };
 
     auto probe_task = probe();
@@ -446,7 +446,7 @@ ZEST_CASE(checkpoint_cancels_io_op) {
 
     EXPECT(t->is_cancelled());
 }
-}
-;  // ZEST_SUITE(when_cancel)
+
+};  // ZEST_SUITE(when_cancel)
 
 }  // namespace kota

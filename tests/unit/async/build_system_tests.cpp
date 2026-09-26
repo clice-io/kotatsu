@@ -26,20 +26,20 @@ static CompileGraph make_test_graph() {
     return graph;
 }
 
-ZEST_SUITE(build_system, loop_fixture){
+ZEST_SUITE(build_system, loop_fixture) {
 
-    ZEST_CASE(normal_compilation_completes){auto graph = make_test_graph();
+ZEST_CASE(normal_compilation_completes) {
+    auto graph = make_test_graph();
 
-auto test = [&]() -> task<> {
-    auto result = co_await graph.compile("main.cpp", loop).catch_cancel();
-    EXPECT(result.has_value());
-    EXPECT(*result);
-};
+    auto test = [&]() -> task<> {
+        auto result = co_await graph.compile("main.cpp", loop).catch_cancel();
+        EXPECT(result);
+        EXPECT(*result);
+    };
 
-auto t = test();
-schedule_all(t);
-
-}  // namespace
+    auto t = test();
+    schedule_all(t);
+}
 
 ZEST_CASE(update_cancels_in_flight) {
     auto graph = make_test_graph();
@@ -88,12 +88,12 @@ ZEST_CASE(recompile_after_update) {
 
     auto test = [&]() -> task<> {
         auto result1 = co_await graph.compile("lexer.cpp", loop).catch_cancel();
-        EXPECT(result1.has_value());
+        EXPECT(result1);
         EXPECT(*result1);
 
         graph.update("lexer.cpp");
         auto result2 = co_await graph.compile("lexer.cpp", loop).catch_cancel();
-        EXPECT(result2.has_value());
+        EXPECT(result2);
         EXPECT(*result2);
     };
 
@@ -157,7 +157,7 @@ ZEST_CASE(shared_dependency_compiled_once) {
     EXPECT(compile_count == 3);
 }
 
-};  // namespace kota
+};  // ZEST_SUITE(build_system)
 
 }  // namespace
 

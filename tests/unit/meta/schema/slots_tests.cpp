@@ -53,24 +53,24 @@ namespace {
 
 namespace fx = ::kota::meta::fixtures;
 
-ZEST_SUITE(virtual_schema_slots){
+ZEST_SUITE(virtual_schema_slots) {
 
-    ZEST_CASE(simple_struct_slots){using slots = virtual_schema<fx::SimpleStruct>::slots;
-STATIC_EXPECT(type_list_size_v<slots> == 3U);
+ZEST_CASE(simple_struct_slots) {
+    using slots = virtual_schema<fx::SimpleStruct>::slots;
+    STATIC_EXPECT(type_list_size_v<slots> == 3U);
 
-using slot0 = type_list_element_t<0, slots>;
-using slot1 = type_list_element_t<1, slots>;
-using slot2 = type_list_element_t<2, slots>;
+    using slot0 = type_list_element_t<0, slots>;
+    using slot1 = type_list_element_t<1, slots>;
+    using slot2 = type_list_element_t<2, slots>;
 
-// raw_type matches field types
-STATIC_EXPECT(kind_of<slot0::raw_type>() == type_kind::int32);
-STATIC_EXPECT(kind_of<slot1::raw_type>() == type_kind::string);
-STATIC_EXPECT(kind_of<slot2::raw_type>() == type_kind::float32);
+    // raw_type matches field types
+    STATIC_EXPECT(kind_of<slot0::raw_type>() == type_kind::int32);
+    STATIC_EXPECT(kind_of<slot1::raw_type>() == type_kind::string);
+    STATIC_EXPECT(kind_of<slot2::raw_type>() == type_kind::float32);
 
-// attrs is empty tuple for plain fields
-EXPECT(zest::type_eq<slot0::attrs, std::tuple<>>());
-
-}  // namespace
+    // attrs is empty tuple for plain fields
+    EXPECT(zest::type_eq<slot0::attrs, std::tuple<>>());
+}
 
 ZEST_CASE(skip_and_flatten_slot_counts) {
     // skip removes "internal", leaving 2
@@ -136,7 +136,7 @@ ZEST_CASE(tagged_variant_slot) {
     STATIC_EXPECT(!std::is_same_v<slot0::attrs, std::tuple<>>);
 }
 
-};  // namespace kota::meta
+};  // ZEST_SUITE(virtual_schema_slots)
 
 }  // namespace
 

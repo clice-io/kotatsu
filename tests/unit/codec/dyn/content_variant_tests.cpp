@@ -24,20 +24,20 @@ using Rect = meta::fixtures::Rect;
 KOTATSU_ANNOTATION(int_tag_shape_annotation, tag = "type", tag_names = {"circle", "rect"});
 using IntTagShape = meta::annotate<int_tag_shape_annotation>::type<std::variant<Circle, Rect>>;
 
-ZEST_SUITE(serde_dyn_variant){
+ZEST_SUITE(serde_dyn_variant) {
 
-    ZEST_CASE(int_vs_string){using V = std::variant<int, std::string>;
+ZEST_CASE(int_vs_string) {
+    using V = std::variant<int, std::string>;
 
-V out{};
-ASSERT(dyn::from_dyn(dyn::Value(std::int64_t{42}), out).has_value());
-EXPECT(out.index() == 0U);
-EXPECT(std::get<int>(out) == 42);
+    V out{};
+    ASSERT(dyn::from_dyn(dyn::Value(std::int64_t{42}), out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<int>(out) == 42);
 
-ASSERT(dyn::from_dyn(dyn::Value("hello"), out).has_value());
-EXPECT(out.index() == 1U);
-EXPECT(std::get<std::string>(out) == "hello");
-
-}  // namespace
+    ASSERT(dyn::from_dyn(dyn::Value("hello"), out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<std::string>(out) == "hello");
+}
 
 ZEST_CASE(bool_vs_int) {
     using V = std::variant<bool, int>;
@@ -198,7 +198,7 @@ ZEST_CASE(json_to_dyn_variant_roundtrip) {
     using V = std::variant<int, std::string>;
 
     auto parsed = json::from_string<dyn::Value>(R"(42)");
-    ASSERT(parsed.has_value());
+    ASSERT(parsed);
 
     V out{};
     ASSERT(dyn::from_dyn(*parsed, out).has_value());
@@ -206,29 +206,29 @@ ZEST_CASE(json_to_dyn_variant_roundtrip) {
     EXPECT(std::get<int>(out) == 42);
 }
 
-};  // namespace kota::codec
+};  // ZEST_SUITE(serde_dyn_variant)
 
-ZEST_SUITE(serde_dyn_peek_kind_trait){
+ZEST_SUITE(serde_dyn_peek_kind_trait) {
 
-    ZEST_CASE(json_to_dyn_scalars){
-        auto test = [](std::string_view json_str, dyn::ValueKind expected_kind) -> bool {
-            auto parsed = json::from_string<dyn::Value>(json_str);
-            if(!parsed.has_value())
-                return false;
-            return parsed->kind() == expected_kind;
-        };
+ZEST_CASE(json_to_dyn_scalars) {
+    auto test = [](std::string_view json_str, dyn::ValueKind expected_kind) -> bool {
+        auto parsed = json::from_string<dyn::Value>(json_str);
+        if(!parsed.has_value())
+            return false;
+        return parsed->kind() == expected_kind;
+    };
 
-EXPECT(test("null", dyn::ValueKind::null_value));
-EXPECT(test("true", dyn::ValueKind::boolean));
-EXPECT(test("42", dyn::ValueKind::signed_int));
-EXPECT(test("18446744073709551615", dyn::ValueKind::unsigned_int));
-EXPECT(test("3.14", dyn::ValueKind::floating));
-EXPECT(test(R"("hello")", dyn::ValueKind::string));
+    EXPECT(test("null", dyn::ValueKind::null_value));
+    EXPECT(test("true", dyn::ValueKind::boolean));
+    EXPECT(test("42", dyn::ValueKind::signed_int));
+    EXPECT(test("18446744073709551615", dyn::ValueKind::unsigned_int));
+    EXPECT(test("3.14", dyn::ValueKind::floating));
+    EXPECT(test(R"("hello")", dyn::ValueKind::string));
 }
 
 ZEST_CASE(json_to_dyn_array) {
     auto parsed = json::from_string<dyn::Value>(R"([1,2,3])");
-    ASSERT(parsed.has_value());
+    ASSERT(parsed);
     ASSERT(parsed->is_array());
     auto* arr = parsed->get_array();
     ASSERT(arr != nullptr);
@@ -240,7 +240,7 @@ ZEST_CASE(json_to_dyn_array) {
 
 ZEST_CASE(json_to_dyn_object) {
     auto parsed = json::from_string<dyn::Value>(R"({"a":1,"b":"two"})");
-    ASSERT(parsed.has_value());
+    ASSERT(parsed);
     ASSERT(parsed->is_object());
     EXPECT((*parsed)["a"].as_int() == 1);
     EXPECT((*parsed)["b"].as_string() == "two");
@@ -248,7 +248,7 @@ ZEST_CASE(json_to_dyn_object) {
 
 ZEST_CASE(json_to_dyn_nested) {
     auto parsed = json::from_string<dyn::Value>(R"({"items":[{"x":1},{"x":2}]})");
-    ASSERT(parsed.has_value());
+    ASSERT(parsed);
     ASSERT(parsed->is_object());
     auto items = (*parsed)["items"];
     ASSERT(items.valid());
@@ -258,7 +258,7 @@ ZEST_CASE(json_to_dyn_nested) {
 
 ZEST_CASE(json_to_dyn_struct) {
     auto parsed = json::from_string<dyn::Value>(R"({"x":1.5,"y":2.5})");
-    ASSERT(parsed.has_value());
+    ASSERT(parsed);
 
     Point point{};
     ASSERT(dyn::from_dyn(*parsed, point).has_value());
@@ -268,14 +268,14 @@ ZEST_CASE(json_to_dyn_struct) {
 ZEST_CASE(json_to_dyn_complex_roundtrip) {
     auto dom =
         json::from_string<dyn::Value>(R"({"name":"test","scores":[1,2,3],"nested":{"flag":true}})");
-    ASSERT(dom.has_value());
+    ASSERT(dom);
     ASSERT(dom->is_object());
     EXPECT((*dom)["name"].as_string() == "test");
     EXPECT((*dom)["scores"][0].as_int() == 1);
     EXPECT((*dom)["nested"]["flag"].as_bool() == true);
 }
-}
-;  // ZEST_SUITE(serde_dyn_peek_kind_trait)
+
+};  // ZEST_SUITE(serde_dyn_peek_kind_trait)
 
 }  // namespace
 

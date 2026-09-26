@@ -142,7 +142,7 @@ IncludeCategories:
     SortPriority: 21
 
 ForEachMacros: ["REFLECTABLE_RECORD"]
-NamespaceMacros: [TEST_SUITE]
+NamespaceMacros: [ZEST_SUITE]
 StatementMacros:
   # Field-position annotation: always break between the macro and the
   # annotated declaration, so `<T> name;` gets its own line.

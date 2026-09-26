@@ -10,34 +10,34 @@
 
 namespace kota {
 
-ZEST_SUITE(when_reentrancy){
+ZEST_SUITE(when_reentrancy) {
 
-    // b resumes from sleep, calls ev.set() (deferred resume for a), then co_returns.
-    // b completes first — with deferred resume, the signaler finishes before the
-    // waiter runs.
-    ZEST_CASE(any_deferred_sync_resume_signaler_wins){event ev;
+// b resumes from sleep, calls ev.set() (deferred resume for a), then co_returns.
+// b completes first — with deferred resume, the signaler finishes before the
+// waiter runs.
+ZEST_CASE(any_deferred_sync_resume_signaler_wins) {
+    event ev;
 
-auto a = [&]() -> task<int> {
-    co_await ev.wait();
-    co_return 1;
-};
+    auto a = [&]() -> task<int> {
+        co_await ev.wait();
+        co_return 1;
+    };
 
-auto b = [&]() -> task<int> {
-    co_await sleep(1);
-    ev.set();
-    co_return 2;
-};
+    auto b = [&]() -> task<int> {
+        co_await sleep(1);
+        ev.set();
+        co_return 2;
+    };
 
-auto combined = [&]() -> task<std::variant<int, int>> {
-    co_return co_await when_any(a(), b());
-};
+    auto combined = [&]() -> task<std::variant<int, int>> {
+        co_return co_await when_any(a(), b());
+    };
 
-auto [winner] = run(combined());
-EXPECT(winner.has_value());
-EXPECT(winner->index() == 1U);
-EXPECT(std::get<1>(*winner) == 2);
-
-}  // namespace kota
+    auto [winner] = run(combined());
+    EXPECT(winner);
+    EXPECT(winner->index() == 1U);
+    EXPECT(std::get<1>(*winner) == 2);
+}
 
 // Semaphore variant: b releases, then completes before a resumes.
 ZEST_CASE(any_deferred_semaphore_release) {
@@ -59,7 +59,7 @@ ZEST_CASE(any_deferred_semaphore_release) {
     };
 
     auto [winner] = run(combined());
-    EXPECT(winner.has_value());
+    EXPECT(winner);
     EXPECT(winner->index() == 1U);
     EXPECT(std::get<1>(*winner) == 2);
 }
@@ -86,7 +86,7 @@ ZEST_CASE(any_deferred_mutex_unlock) {
     };
 
     auto [winner] = run(combined());
-    EXPECT(winner.has_value());
+    EXPECT(winner);
     EXPECT(winner->index() == 0U);
     EXPECT(std::get<0>(*winner) == 1);
 }
@@ -114,7 +114,7 @@ ZEST_CASE(any_deferred_cv_notify) {
     };
 
     auto [winner] = run(combined());
-    EXPECT(winner.has_value());
+    EXPECT(winner);
     EXPECT(winner->index() == 1U);
     EXPECT(std::get<1>(*winner) == 2);
 }
@@ -139,7 +139,7 @@ ZEST_CASE(any_reentrant_cancellation_token) {
     auto cancel_task = canceler();
     run(guarded, cancel_task);
 
-    EXPECT(!guarded.value().has_value());
+    EXPECT(!guarded.value());
 }
 
 // when_all variant: reentrancy during when_all should not cause issues either.
@@ -193,7 +193,7 @@ ZEST_CASE(any_deferred_event_multiple_waiters) {
     };
 
     auto [winner] = run(combined());
-    EXPECT(winner.has_value());
+    EXPECT(winner);
     EXPECT(winner->index() == 2U);
     EXPECT(std::get<2>(*winner) == 3);
 }
@@ -225,7 +225,7 @@ ZEST_CASE(any_reentrant_cancel_stops_looping_task) {
     };
 
     auto [winner] = run(combined());
-    EXPECT(winner.has_value());
+    EXPECT(winner);
     EXPECT(winner->index() == 0U);
     EXPECT(std::get<0>(*winner) == 1);
     EXPECT(loop_count < 10);
@@ -256,7 +256,7 @@ ZEST_CASE(any_reentrant_cancel_stops_looping_task_semaphore) {
     };
 
     auto [winner] = run(combined());
-    EXPECT(winner.has_value());
+    EXPECT(winner);
     EXPECT(winner->index() == 0U);
     EXPECT(std::get<0>(*winner) == 1);
     EXPECT(loop_count < 10);
@@ -287,7 +287,7 @@ ZEST_CASE(all_reentrant_cancel_stops_looping_task_on_error) {
     };
 
     auto [result] = run(combined());
-    EXPECT(result.has_value());
+    EXPECT(result);
     EXPECT(result->has_error());
     EXPECT(loop_count < 10);
 }
@@ -319,7 +319,7 @@ ZEST_CASE(any_reentrant_cancel_stops_after_multiple_awaits) {
     };
 
     auto [winner] = run(combined());
-    EXPECT(winner.has_value());
+    EXPECT(winner);
     EXPECT(winner->index() == 0U);
     EXPECT(step == 1);
 }
@@ -351,7 +351,7 @@ ZEST_CASE(any_reentrant_cancel_stops_looping_task_cv) {
     };
 
     auto [winner] = run(combined());
-    EXPECT(winner.has_value());
+    EXPECT(winner);
     EXPECT(winner->index() == 0U);
     EXPECT(std::get<0>(*winner) == 1);
     EXPECT(loop_count < 10);
@@ -539,7 +539,7 @@ ZEST_CASE(sync_driver_event_fires_cancel_cascade) {
     EXPECT(main_task->is_finished());
     EXPECT(got_cancel);
 }
-}
-;  // ZEST_SUITE(when_reentrancy)
+
+};  // ZEST_SUITE(when_reentrancy)
 
 }  // namespace kota

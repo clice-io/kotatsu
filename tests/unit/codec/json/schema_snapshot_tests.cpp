@@ -28,11 +28,11 @@ struct NestedContainers {
     std::map<std::string, std::vector<Point2i>> groups;
 };
 
-ZEST_SUITE(json_schema_snapshot){
+ZEST_SUITE(json_schema_snapshot) {
 
-    ZEST_CASE(person){ASSERT_SNAPSHOT(json::schema_string<Person>(true).value(), "person");
-
-}  // namespace
+ZEST_CASE(person) {
+    ASSERT_SNAPSHOT(json::schema_string<Person>(true).value(), "person");
+}
 
 ZEST_CASE(person_with_scores) {
     ASSERT_SNAPSHOT(json::schema_string<PersonWithScores>(true).value(), "person_with_scores");
@@ -62,7 +62,7 @@ ZEST_CASE(tagged_field_struct) {
     ASSERT_SNAPSHOT(json::schema_string<TaggedFieldStruct>(true).value(), "tagged_field_struct");
 }
 
-};  // namespace kota::codec
+};  // ZEST_SUITE(json_schema_snapshot)
 
 }  // namespace
 

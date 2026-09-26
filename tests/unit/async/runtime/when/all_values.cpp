@@ -91,25 +91,25 @@ static_assert(!group_spawnable<task_group<error>, task<int, custom_error>>);
 // ZEST_SUITE: when_all — basic value passing
 // ============================================================================
 
-ZEST_SUITE(when_all){
+ZEST_SUITE(when_all) {
 
-    ZEST_CASE(values){auto a = []() -> task<int> {
+ZEST_CASE(values) {
+    auto a = []() -> task<int> {
         co_return 1;
     };
 
-auto b = []() -> task<int> {
-    co_return 2;
-};
+    auto b = []() -> task<int> {
+        co_return 2;
+    };
 
-auto combined = [&]() -> task<int> {
-    auto [x, y] = co_await when_all(a(), b());
-    co_return x + y;
-};
+    auto combined = [&]() -> task<int> {
+        auto [x, y] = co_await when_all(a(), b());
+        co_return x + y;
+    };
 
-auto [res] = run(combined());
-EXPECT(res == 3);
-
-}  // namespace kota
+    auto [res] = run(combined());
+    EXPECT(res == 3);
+}
 
 ZEST_CASE(void_tasks) {
     int count = 0;
@@ -282,7 +282,7 @@ ZEST_CASE(range_sync_awaiters) {
 
     EXPECT(task.result() == 2U);
 }
-}
-;  // ZEST_SUITE(when_all)
+
+};  // ZEST_SUITE(when_all)
 
 }  // namespace kota

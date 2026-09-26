@@ -83,22 +83,23 @@ KOTATSU_ANNOTATION(strict_renamed_struct_level_annotation,
 using strict_renamed_struct_level_payload =
     annotate<strict_renamed_struct_level_annotation>::type<struct_level_payload>;
 
-ZEST_SUITE(serde_simdjson_attrs){
+ZEST_SUITE(serde_simdjson_attrs) {
 
-    ZEST_CASE(serialize_builtin_attrs){builtin_attr_payload input{};
-input.id = 7;
-input.display_name = "alice";
-input.internal_id = 999;
-input.note = std::nullopt;
-input.profile.first = "Alice";
-input.profile.age = 30;
-input.level = access_level::admin;
+ZEST_CASE(serialize_builtin_attrs) {
+    builtin_attr_payload input{};
+    input.id = 7;
+    input.display_name = "alice";
+    input.internal_id = 999;
+    input.note = std::nullopt;
+    input.profile.first = "Alice";
+    input.profile.age = 30;
+    input.level = access_level::admin;
 
-auto encoded = to_string(input);
-ASSERT(encoded.has_value());
-EXPECT(*encoded == R"({"id":7,"displayName":"alice","first":"Alice","age":30,"level":"admin"})");
-
-}  // namespace
+    auto encoded = to_string(input);
+    ASSERT(encoded);
+    EXPECT(*encoded ==
+           R"({"id":7,"displayName":"alice","first":"Alice","age":30,"level":"admin"})");
+}
 
 ZEST_CASE(deserialize_builtin_attrs) {
     builtin_attr_payload parsed{};
@@ -107,7 +108,7 @@ ZEST_CASE(deserialize_builtin_attrs) {
     auto status = from_string(
         R"({"id":9,"name":"bob","first":"Bob","age":21,"level":"viewer","internal_id":100,"note":"x"})",
         parsed);
-    ASSERT(status.has_value());
+    ASSERT(status);
 
     EXPECT(parsed.id == 9);
     EXPECT(parsed.display_name == "bob");
@@ -125,7 +126,7 @@ ZEST_CASE(deserialize_builtin_attrs_unknown_enum_fails) {
     auto status =
         from_string(R"({"id":9,"displayName":"bob","first":"Bob","age":21,"level":"super_admin"})",
                     parsed);
-    EXPECT(!status.has_value());
+    EXPECT(!status);
     EXPECT(parsed.level == access_level::admin);
 }
 
@@ -134,44 +135,44 @@ ZEST_CASE(rename_attr_serialization) {
     input.nickname = "neo";
 
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"handle":"neo"})");
 
     custom_rename_payload parsed{};
     auto status = from_string(R"({"handle":"trinity"})", parsed);
-    ASSERT(status.has_value());
+    ASSERT(status);
     EXPECT(parsed.nickname == "trinity");
 }
 
 ZEST_CASE(top_level_annotated_value_enum_string) {
     access_level_enum_string level = access_level::admin;
     auto encoded = to_string(level);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"("admin")");
 
     access_level_enum_string parsed = access_level::admin;
     auto status = from_string(R"("viewer")", parsed);
-    ASSERT(status.has_value());
+    ASSERT(status);
     EXPECT(parsed == access_level::viewer);
 }
 
 ZEST_CASE(top_level_annotated_value_enum_string_unknown_fails) {
     access_level_enum_string parsed = access_level::admin;
     auto status = from_string(R"("unknown")", parsed);
-    EXPECT(!status.has_value());
+    EXPECT(!status);
     EXPECT(parsed == access_level::admin);
 }
 
 ZEST_CASE(alias_conflict_fails_fast) {
     alias_conflict_payload parsed{};
     auto status = from_string(R"({"dup":1})", parsed);
-    EXPECT(!status.has_value());
+    EXPECT(!status);
 }
 
 ZEST_CASE(skip_field_does_not_require_deserializer) {
     skip_unsupported_payload parsed{};
     auto status = from_string(R"({"id":17})", parsed);
-    ASSERT(status.has_value());
+    ASSERT(status);
     EXPECT(parsed.id == 17);
     EXPECT(parsed.raw == nullptr);
 }
@@ -182,12 +183,12 @@ ZEST_CASE(annotated_struct_rename_all_applies) {
     input.login_count = 12;
 
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"userId":7,"loginCount":12})");
 
     renamed_struct_level_payload parsed{};
     auto status = from_string(R"({"userId":3,"loginCount":4})", parsed);
-    ASSERT(status.has_value());
+    ASSERT(status);
     EXPECT(parsed.user_id == 3);
     EXPECT(parsed.login_count == 4);
 }
@@ -196,24 +197,24 @@ ZEST_CASE(annotated_struct_deny_unknown_fields_applies) {
     strict_renamed_struct_level_payload parsed{};
 
     auto status = from_string(R"({"userId":3,"loginCount":4,"extra":9})", parsed);
-    EXPECT(!status.has_value());
+    EXPECT(!status);
     EXPECT(zest::contains(status.error().message, "unknown field"));
 }
 
 ZEST_CASE(description_attr_is_encoding_transparent) {
     documented_payload input{.id = 7, .name = "alice"};
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"id":7,"name":"alice"})");
 
     documented_payload parsed{};
     auto status = from_string(R"({"id":3,"name":"bob"})", parsed);
-    ASSERT(status.has_value());
+    ASSERT(status);
     EXPECT(parsed.id == 3);
     EXPECT(parsed.name == "bob");
 }
 
-};  // namespace kota::codec
+};  // ZEST_SUITE(serde_simdjson_attrs)
 
 }  // namespace
 

@@ -14,39 +14,39 @@ namespace {
 
 using namespace std::chrono;
 
-ZEST_SUITE(sync_deferred, loop_fixture){
+ZEST_SUITE(sync_deferred, loop_fixture) {
 
-    // when_any: a holds mutex, sleeps, unlocks (defers b's resume), then co_returns
-    // (winner). when_any cancels b synchronously. The deferred resume fires on a
-    // cancelled task — abandon_fn must release the transferred mutex lock.
-    ZEST_CASE(any_cancel_abandons_deferred_mutex_grant){mutex m;
+// when_any: a holds mutex, sleeps, unlocks (defers b's resume), then co_returns
+// (winner). when_any cancels b synchronously. The deferred resume fires on a
+// cancelled task — abandon_fn must release the transferred mutex lock.
+ZEST_CASE(any_cancel_abandons_deferred_mutex_grant) {
+    mutex m;
 
-auto a = [&]() -> task<int> {
-    co_await m.lock();
-    co_await sleep(milliseconds{1}, loop);
+    auto a = [&]() -> task<int> {
+        co_await m.lock();
+        co_await sleep(milliseconds{1}, loop);
+        m.unlock();
+        co_return 1;
+    };
+
+    auto b = [&]() -> task<int> {
+        co_await m.lock();
+        co_return 2;
+    };
+
+    auto combined = [&]() -> task<> {
+        auto winner = co_await when_any(a(), b());
+        EXPECT(winner.index() == 0U);
+        EXPECT(std::get<0>(winner) == 1);
+    };
+
+    auto t = combined();
+    schedule_all(t);
+
+    // Mutex must be usable — b's deferred lock grant was abandoned
+    EXPECT(m.try_lock());
     m.unlock();
-    co_return 1;
-};
-
-auto b = [&]() -> task<int> {
-    co_await m.lock();
-    co_return 2;
-};
-
-auto combined = [&]() -> task<> {
-    auto winner = co_await when_any(a(), b());
-    EXPECT(winner.index() == 0U);
-    EXPECT(std::get<0>(winner) == 1);
-};
-
-auto t = combined();
-schedule_all(t);
-
-// Mutex must be usable — b's deferred lock grant was abandoned
-EXPECT(m.try_lock());
-m.unlock();
-
-}  // namespace
+}
 
 // when_any: b releases semaphore (defers a's resume), then b co_returns (winner).
 // when_any cancels a — abandon_fn must release the semaphore slot.
@@ -130,8 +130,8 @@ ZEST_CASE(semaphore_slot_recovery_all_waiters_cancelled) {
     schedule_all(g1, g2, cancel_task);
 
     EXPECT(acquired_count == 0);
-    EXPECT(!g1.value().has_value());
-    EXPECT(!g2.value().has_value());
+    EXPECT(!g1.value());
+    EXPECT(!g2.value());
 
     // The released slot must still be available
     EXPECT(sem.try_acquire());
@@ -160,8 +160,8 @@ ZEST_CASE(semaphore_release_with_cancelled_waiters_recovers_slot) {
     auto driver_task = driver();
     schedule_all(g1, g2, driver_task);
 
-    EXPECT(!g1.value().has_value());
-    EXPECT(!g2.value().has_value());
+    EXPECT(!g1.value());
+    EXPECT(!g2.value());
 
     EXPECT(sem.try_acquire());
     EXPECT(sem.try_acquire());
@@ -292,7 +292,7 @@ ZEST_CASE(interrupt_after_cancel_is_safe) {
     auto driver_task = driver();
     schedule_all(guarded, driver_task);
 
-    EXPECT(!guarded.value().has_value());
+    EXPECT(!guarded.value());
 }
 
 // Multiple deferred resumes from the same unlock: a mutex with multiple waiters,
@@ -392,7 +392,7 @@ ZEST_CASE(any_cancel_deferred_cv_wait) {
     m.unlock();
 }
 
-};  // namespace kota
+};  // ZEST_SUITE(sync_deferred)
 
 }  // namespace
 

@@ -92,22 +92,22 @@ struct spec_struct {
     annotate<defaulted_tag>::type<int> retries = 0;
 };
 
-ZEST_SUITE(meta_spec){
+ZEST_SUITE(meta_spec) {
 
-    ZEST_CASE(make_spec_folds_values){constexpr const field_spec& spec = full_tag::spec.value;
-STATIC_EXPECT(spec.rename == "userId");
-STATIC_EXPECT(spec.description == "User identifier.");
-STATIC_EXPECT(spec.idx == 7u);
-STATIC_EXPECT(spec.alias.count == 2u);
-STATIC_EXPECT(spec.alias.storage[0] == "user_id");
-STATIC_EXPECT(spec.alias.storage[1] == "uid");
-STATIC_EXPECT(!spec.skip);
-STATIC_EXPECT(!spec.flatten);
-STATIC_EXPECT(!spec.defaulted);
-STATIC_EXPECT(spec.skip_if == skip_when::never);
-STATIC_EXPECT(std::tuple_size_v<decltype(full_tag::spec)::extras> == 0);
-
-}  // namespace
+ZEST_CASE(make_spec_folds_values) {
+    constexpr const field_spec& spec = full_tag::spec.value;
+    STATIC_EXPECT(spec.rename == "userId");
+    STATIC_EXPECT(spec.description == "User identifier.");
+    STATIC_EXPECT(spec.idx == 7u);
+    STATIC_EXPECT(spec.alias.count == 2u);
+    STATIC_EXPECT(spec.alias.storage[0] == "user_id");
+    STATIC_EXPECT(spec.alias.storage[1] == "uid");
+    STATIC_EXPECT(!spec.skip);
+    STATIC_EXPECT(!spec.flatten);
+    STATIC_EXPECT(!spec.defaulted);
+    STATIC_EXPECT(spec.skip_if == skip_when::never);
+    STATIC_EXPECT(std::tuple_size_v<decltype(full_tag::spec)::extras> == 0);
+}
 
 ZEST_CASE(make_spec_keeps_type_components_in_type) {
     STATIC_EXPECT(extras_tag::spec.value.description == "Converted field.");
@@ -260,7 +260,7 @@ ZEST_CASE(skip_when_evaluates_builtin_predicates) {
     STATIC_EXPECT(!evaluate_skip_when<skip_when::default_value>(0, false));
 }
 
-};  // namespace kota::meta
+};  // ZEST_SUITE(meta_spec)
 
 }  // namespace
 

@@ -68,23 +68,23 @@ struct EnumVectorDescOpt {
     <std::vector<DescEnum>> inputs;
 };
 
-ZEST_SUITE(deco_descriptor){
+ZEST_SUITE(deco_descriptor) {
 
-    ZEST_CASE(from_deco_option_renders_usage_style_text){DescOpt opt{};
+ZEST_CASE(from_deco_option_renders_usage_style_text) {
+    DescOpt opt{};
 
-EXPECT(desc::from_deco_option(opt.verbose) == "-v|--verbose");
-EXPECT(desc::from_deco_option(opt.output) == "-o|--output <FILE>");
-EXPECT(desc::from_deco_option(opt.include_dir) == "-I<DIR>|--include=<DIR>");
-EXPECT(desc::from_deco_option(opt.filter) == "--filter <PATTERN>|--filter=<PATTERN>");
-EXPECT(desc::from_deco_option(opt.tags) == "--tags,<TAG>[,<TAG>...]|-T,<TAG>[,<TAG>...]");
-EXPECT(desc::from_deco_option(opt.pair) == "--pair <VAL1> <VAL2>");
-EXPECT(desc::from_deco_option(opt.input) == "<INPUT>");
-EXPECT(desc::from_deco_option(opt.trailing) == "-- <ARG>...");
-EXPECT(desc::from_deco_option(opt.unnamed) == "--<flag>");
-EXPECT(desc::from_deco_option(opt.unnamed, false, "u") == "-u");
-EXPECT(desc::from_deco_option(opt.unnamed, false, "long_name") == "--long-name");
-
-}  // namespace
+    EXPECT(desc::from_deco_option(opt.verbose) == "-v|--verbose");
+    EXPECT(desc::from_deco_option(opt.output) == "-o|--output <FILE>");
+    EXPECT(desc::from_deco_option(opt.include_dir) == "-I<DIR>|--include=<DIR>");
+    EXPECT(desc::from_deco_option(opt.filter) == "--filter <PATTERN>|--filter=<PATTERN>");
+    EXPECT(desc::from_deco_option(opt.tags) == "--tags,<TAG>[,<TAG>...]|-T,<TAG>[,<TAG>...]");
+    EXPECT(desc::from_deco_option(opt.pair) == "--pair <VAL1> <VAL2>");
+    EXPECT(desc::from_deco_option(opt.input) == "<INPUT>");
+    EXPECT(desc::from_deco_option(opt.trailing) == "-- <ARG>...");
+    EXPECT(desc::from_deco_option(opt.unnamed) == "--<flag>");
+    EXPECT(desc::from_deco_option(opt.unnamed, false, "u") == "-u");
+    EXPECT(desc::from_deco_option(opt.unnamed, false, "long_name") == "--long-name");
+}
 
 ZEST_CASE(from_deco_option_renders_help_style_text) {
     DescOpt opt{};
@@ -147,7 +147,7 @@ ZEST_CASE(from_deco_option_infers_enum_meta_var_for_vector_results) {
     EXPECT(desc::from_deco_option(opt.inputs) == "<alpha|beta|gamma>...");
 }
 
-};  // namespace kota::deco
+};  // ZEST_SUITE(deco_descriptor)
 
 }  // namespace
 }  // namespace kota::deco

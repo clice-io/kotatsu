@@ -136,530 +136,530 @@ static_assert(!function<int(int)>::sbo_eligible<LargeTrackedCallable>);
 // --- Tests ---
 
 ZEST_SUITE(functional) {
-    // ===== function_ref tests =====
 
-    ZEST_CASE(function_ref_from_function_pointer) {
-        function_ref<int(int, int)> fn(free_add);
-        EXPECT(fn(3, 4) == 7);
-        EXPECT(fn(0, 0) == 0);
-        EXPECT(fn(-1, 1) == 0);
+// ===== function_ref tests =====
+
+ZEST_CASE(function_ref_from_function_pointer) {
+    function_ref<int(int, int)> fn(free_add);
+    EXPECT(fn(3, 4) == 7);
+    EXPECT(fn(0, 0) == 0);
+    EXPECT(fn(-1, 1) == 0);
+};
+
+ZEST_CASE(function_ref_from_stateless_lambda) {
+    // Stateless lambdas are convertible to function pointers,
+    // so this should go through the Sign* path in make().
+    auto lambda = +[](int a, int b) -> int {
+        return a * b;
     };
+    function_ref<int(int, int)> fn(lambda);
+    EXPECT(fn(3, 4) == 12);
+    EXPECT(fn(0, 5) == 0);
+};
 
-    ZEST_CASE(function_ref_from_stateless_lambda) {
-        // Stateless lambdas are convertible to function pointers,
-        // so this should go through the Sign* path in make().
-        auto lambda = +[](int a, int b) -> int {
-            return a * b;
-        };
-        function_ref<int(int, int)> fn(lambda);
-        EXPECT(fn(3, 4) == 12);
-        EXPECT(fn(0, 5) == 0);
+ZEST_CASE(function_ref_from_stateful_lambda) {
+    // Stateful lambda goes through the mem_fn<operator()> path in make().
+    int capture = 10;
+    auto lambda = [&capture](int x) -> int {
+        return capture + x;
     };
+    function_ref<int(int)> fn(lambda);
+    EXPECT(fn(5) == 15);
+    capture = 20;
+    EXPECT(fn(5) == 25);  // reflects changed capture
+};
 
-    ZEST_CASE(function_ref_from_stateful_lambda) {
-        // Stateful lambda goes through the mem_fn<operator()> path in make().
-        int capture = 10;
-        auto lambda = [&capture](int x) -> int {
-            return capture + x;
-        };
-        function_ref<int(int)> fn(lambda);
+ZEST_CASE(function_ref_from_pointer_and_mem_fn) {
+    Adder adder{100};
+    auto fn = bind_ref<&Adder::add>(adder);
+    EXPECT(fn(5) == 105);
+    EXPECT(fn(-100) == 0);
+};
+
+ZEST_CASE(function_ref_from_const_mem_fn) {
+    const Adder adder{42};
+    auto fn = bind_ref<&Adder::add_const>(adder);
+    EXPECT(fn(8) == 50);
+};
+
+ZEST_CASE(function_ref_from_const_callable_object) {
+    const SmallCallable sc{100};
+    function_ref<int(int)> fn(sc);
+    EXPECT(fn(23) == 123);
+};
+
+ZEST_CASE(function_ref_bind_ref_non_const) {
+    Adder adder{7};
+    auto fn = bind_ref<&Adder::add>(adder);
+    EXPECT(fn(3) == 10);
+};
+
+ZEST_CASE(function_ref_copy) {
+    function_ref<int(int, int)> fn(free_add);
+    function_ref<int(int, int)> fn2(fn);  // copy construct
+    EXPECT(fn2(10, 20) == 30);
+
+    function_ref<int(int, int)> fn3(free_add);
+    fn3 = fn;  // copy assign
+    EXPECT(fn3(1, 2) == 3);
+};
+
+ZEST_CASE(function_ref_move) {
+    function_ref<int(int, int)> fn(free_add);
+    function_ref<int(int, int)> fn2(std::move(fn));  // move construct
+    EXPECT(fn2(5, 6) == 11);
+
+    function_ref<int(int, int)> fn3(free_add);
+    fn3 = std::move(fn2);  // move assign
+    EXPECT(fn3(7, 8) == 15);
+};
+
+ZEST_CASE(function_ref_void_return) {
+    int result = 0;
+    auto setter = [&result](int v) {
+        result = v;
+    };
+    function_ref<void(int)> fn(setter);
+    fn(42);
+    EXPECT(result == 42);
+};
+
+ZEST_CASE(function_ref_callable_object) {
+    SmallCallable sc{100};
+    function_ref<int(int)> fn(sc);
+    EXPECT(fn(23) == 123);
+};
+
+// ===== function tests =====
+
+ZEST_CASE(function_from_function_pointer) {
+    function<int(int, int)> fn(free_add);
+    EXPECT(fn(3, 4) == 7);
+    EXPECT(fn(-5, 5) == 0);
+};
+
+ZEST_CASE(function_from_stateless_lambda) {
+    function<int(int)> fn(+[](int x) -> int { return x * x; });
+    EXPECT(fn(5) == 25);
+    EXPECT(fn(0) == 0);
+    EXPECT(fn(-3) == 9);
+};
+
+ZEST_CASE(function_from_small_lambda_sbo) {
+    // Small lambda uses SBO storage
+    int capture = 10;
+    auto lambda = [capture](int x) -> int {
+        return capture + x;
+    };
+    static_assert(sizeof(lambda) <= function<int(int)>::sbo_size);
+    function<int(int)> fn(std::move(lambda));
+    EXPECT(fn(5) == 15);
+    EXPECT(fn(-10) == 0);
+};
+
+ZEST_CASE(function_from_generic_lambda) {
+    function<int(int)> fn([offset = 7](auto x) -> int { return offset + x; });
+    EXPECT(fn(5) == 12);
+    EXPECT(fn(-7) == 0);
+};
+
+ZEST_CASE(function_from_large_lambda_heap) {
+    // Large lambda uses heap allocation
+    char padding[32] = {};
+    padding[0] = 'A';
+    int capture = 42;
+    auto lambda = [capture, padding](int x) -> int {
+        (void)padding;
+        return capture + x;
+    };
+    static_assert(sizeof(lambda) > function<int(int)>::sbo_size);
+    function<int(int)> fn(std::move(lambda));
+    EXPECT(fn(8) == 50);
+    EXPECT(fn(-42) == 0);
+};
+
+ZEST_CASE(function_from_mutable_lambda) {
+    function<int(int)> fn([sum = 0](int x) mutable -> int {
+        sum += x;
+        return sum;
+    });
+    EXPECT(fn(2) == 2);
+    EXPECT(fn(3) == 5);
+};
+
+ZEST_CASE(function_const_from_callable_object) {
+    const function<int(int) const> fn(SmallCallable{100});
+    EXPECT(fn(23) == 123);
+};
+
+ZEST_CASE(function_const_from_function_pointer) {
+    const function<int(int) const> fn(free_negate);
+    EXPECT(fn(5) == -5);
+};
+
+ZEST_CASE(function_const_rejects_mutable_lambda) {
+    auto lambda = [sum = 0](int x) mutable -> int {
+        sum += x;
+        return sum;
+    };
+    static_assert(!std::is_constructible_v<function<int(int) const>, decltype(lambda)>);
+    EXPECT(true);
+};
+
+ZEST_CASE(function_move_construct) {
+    int capture = 5;
+    function<int(int)> fn([capture](int x) -> int { return capture + x; });
+    function<int(int)> fn2(std::move(fn));
+    EXPECT(fn2(10) == 15);
+};
+
+ZEST_CASE(function_move_assign) {
+    function<int(int)> fn([](int x) -> int { return x + 1; });
+    function<int(int)> fn2([](int x) -> int { return x + 2; });
+    EXPECT(fn(10) == 11);
+    EXPECT(fn2(10) == 12);
+    fn2 = std::move(fn);
+    EXPECT(fn2(10) == 11);
+};
+
+ZEST_CASE(function_move_assign_large_to_large) {
+    // Move assign heap-allocated function to another heap-allocated function
+    // Exercises the deleter in operator=
+    char p1[32] = {};
+    char p2[32] = {};
+    int c1 = 1, c2 = 2;
+    auto lambda1 = [c1, p1](int x) -> int {
+        (void)p1;
+        return c1 + x;
+    };
+    auto lambda2 = [c2, p2](int x) -> int {
+        (void)p2;
+        return c2 + x;
+    };
+    static_assert(sizeof(lambda1) > function<int(int)>::sbo_size);
+    static_assert(sizeof(lambda2) > function<int(int)>::sbo_size);
+    function<int(int)> fn1(std::move(lambda1));
+    function<int(int)> fn2(std::move(lambda2));
+    EXPECT(fn1(10) == 11);
+    EXPECT(fn2(10) == 12);
+    fn2 = std::move(fn1);  // old fn2's heap memory should be freed
+    EXPECT(fn2(10) == 11);
+};
+
+ZEST_CASE(function_void_return) {
+    int result = 0;
+    function<void(int)> fn([&result](int v) { result = v; });
+    fn(99);
+    EXPECT(result == 99);
+};
+
+ZEST_CASE(function_accepts_move_only_value_argument) {
+    function<std::unique_ptr<int>(std::unique_ptr<int>)> fn(
+        [](std::unique_ptr<int> value) { return std::make_unique<int>(*value + 1); });
+    auto result = fn(std::make_unique<int>(41));
+    EXPECT(result != nullptr);
+    EXPECT(*result == 42);
+};
+
+ZEST_CASE(function_with_mem_fn_small) {
+    SmallCallable sc{50};
+    auto fn = bind<&SmallCallable::operator()>(sc);
+    EXPECT(fn(7) == 57);
+};
+
+ZEST_CASE(function_with_mem_fn_large) {
+    LargeCallable lc{50};
+    auto fn = bind<&LargeCallable::operator()>(lc);
+    EXPECT(fn(7) == 57);
+};
+
+ZEST_CASE(function_from_free_function_no_deleter) {
+    // function from raw function pointer should have no deleter
+    function<int(int)> fn(free_negate);
+    EXPECT(fn(5) == -5);
+    // Move it - exercises move with null deleter
+    function<int(int)> fn2(std::move(fn));
+    EXPECT(fn2(5) == -5);
+};
+
+ZEST_CASE(function_move_chain) {
+    // Chain of moves to verify no double-free or corruption
+    int val = 7;
+    function<int(int)> fn1([val](int x) -> int { return val * x; });
+    function<int(int)> fn2(std::move(fn1));
+    function<int(int)> fn3(std::move(fn2));
+    EXPECT(fn3(6) == 42);
+};
+
+ZEST_CASE(function_from_non_trivial_sbo) {
+    // Non-trivially-copyable object that fits in SBO
+    NonTrivialCallable nc{10};
+    function<int(int)> fn(std::move(nc));
+    EXPECT(fn(5) == 15);
+    EXPECT(fn(-10) == 0);
+};
+
+ZEST_CASE(function_move_non_trivial_sbo) {
+    NonTrivialCallable nc{20};
+    function<int(int)> fn1(std::move(nc));
+    EXPECT(fn1(5) == 25);
+    function<int(int)> fn2(std::move(fn1));
+    EXPECT(fn2(5) == 25);
+};
+
+ZEST_CASE(function_move_assign_non_trivial_sbo) {
+    NonTrivialCallable nc1{1};
+    NonTrivialCallable nc2{2};
+    function<int(int)> fn1(std::move(nc1));
+    function<int(int)> fn2(std::move(nc2));
+    EXPECT(fn1(10) == 11);
+    EXPECT(fn2(10) == 12);
+    fn2 = std::move(fn1);
+    EXPECT(fn2(10) == 11);
+};
+
+// ===== destructor correctness tests =====
+
+ZEST_CASE(sbo_destructor_once) {
+    int counter = 0;
+    {
+        TrackedCallable tc{&counter, 10};
+        EXPECT(counter == 1);
+        function<int(int)> fn(std::move(tc));
         EXPECT(fn(5) == 15);
-        capture = 20;
-        EXPECT(fn(5) == 25);  // reflects changed capture
-    };
+    }
+    EXPECT(counter == 0);
+};
 
-    ZEST_CASE(function_ref_from_pointer_and_mem_fn) {
-        Adder adder{100};
-        auto fn = bind_ref<&Adder::add>(adder);
-        EXPECT(fn(5) == 105);
-        EXPECT(fn(-100) == 0);
-    };
-
-    ZEST_CASE(function_ref_from_const_mem_fn) {
-        const Adder adder{42};
-        auto fn = bind_ref<&Adder::add_const>(adder);
-        EXPECT(fn(8) == 50);
-    };
-
-    ZEST_CASE(function_ref_from_const_callable_object) {
-        const SmallCallable sc{100};
-        function_ref<int(int)> fn(sc);
-        EXPECT(fn(23) == 123);
-    };
-
-    ZEST_CASE(function_ref_bind_ref_non_const) {
-        Adder adder{7};
-        auto fn = bind_ref<&Adder::add>(adder);
-        EXPECT(fn(3) == 10);
-    };
-
-    ZEST_CASE(function_ref_copy) {
-        function_ref<int(int, int)> fn(free_add);
-        function_ref<int(int, int)> fn2(fn);  // copy construct
-        EXPECT(fn2(10, 20) == 30);
-
-        function_ref<int(int, int)> fn3(free_add);
-        fn3 = fn;  // copy assign
-        EXPECT(fn3(1, 2) == 3);
-    };
-
-    ZEST_CASE(function_ref_move) {
-        function_ref<int(int, int)> fn(free_add);
-        function_ref<int(int, int)> fn2(std::move(fn));  // move construct
-        EXPECT(fn2(5, 6) == 11);
-
-        function_ref<int(int, int)> fn3(free_add);
-        fn3 = std::move(fn2);  // move assign
-        EXPECT(fn3(7, 8) == 15);
-    };
-
-    ZEST_CASE(function_ref_void_return) {
-        int result = 0;
-        auto setter = [&result](int v) {
-            result = v;
-        };
-        function_ref<void(int)> fn(setter);
-        fn(42);
-        EXPECT(result == 42);
-    };
-
-    ZEST_CASE(function_ref_callable_object) {
-        SmallCallable sc{100};
-        function_ref<int(int)> fn(sc);
-        EXPECT(fn(23) == 123);
-    };
-
-    // ===== function tests =====
-
-    ZEST_CASE(function_from_function_pointer) {
-        function<int(int, int)> fn(free_add);
-        EXPECT(fn(3, 4) == 7);
-        EXPECT(fn(-5, 5) == 0);
-    };
-
-    ZEST_CASE(function_from_stateless_lambda) {
-        function<int(int)> fn(+[](int x) -> int { return x * x; });
+ZEST_CASE(heap_destructor_once) {
+    int counter = 0;
+    {
+        LargeTrackedCallable ltc{&counter, 20};
+        EXPECT(counter == 1);
+        function<int(int)> fn(std::move(ltc));
         EXPECT(fn(5) == 25);
-        EXPECT(fn(0) == 0);
-        EXPECT(fn(-3) == 9);
-    };
+    }
+    EXPECT(counter == 0);
+};
 
-    ZEST_CASE(function_from_small_lambda_sbo) {
-        // Small lambda uses SBO storage
-        int capture = 10;
-        auto lambda = [capture](int x) -> int {
-            return capture + x;
-        };
-        static_assert(sizeof(lambda) <= function<int(int)>::sbo_size);
-        function<int(int)> fn(std::move(lambda));
-        EXPECT(fn(5) == 15);
-        EXPECT(fn(-10) == 0);
-    };
-
-    ZEST_CASE(function_from_generic_lambda) {
-        function<int(int)> fn([offset = 7](auto x) -> int { return offset + x; });
-        EXPECT(fn(5) == 12);
-        EXPECT(fn(-7) == 0);
-    };
-
-    ZEST_CASE(function_from_large_lambda_heap) {
-        // Large lambda uses heap allocation
-        char padding[32] = {};
-        padding[0] = 'A';
-        int capture = 42;
-        auto lambda = [capture, padding](int x) -> int {
-            (void)padding;
-            return capture + x;
-        };
-        static_assert(sizeof(lambda) > function<int(int)>::sbo_size);
-        function<int(int)> fn(std::move(lambda));
-        EXPECT(fn(8) == 50);
-        EXPECT(fn(-42) == 0);
-    };
-
-    ZEST_CASE(function_from_mutable_lambda) {
-        function<int(int)> fn([sum = 0](int x) mutable -> int {
-            sum += x;
-            return sum;
-        });
-        EXPECT(fn(2) == 2);
-        EXPECT(fn(3) == 5);
-    };
-
-    ZEST_CASE(function_const_from_callable_object) {
-        const function<int(int) const> fn(SmallCallable{100});
-        EXPECT(fn(23) == 123);
-    };
-
-    ZEST_CASE(function_const_from_function_pointer) {
-        const function<int(int) const> fn(free_negate);
-        EXPECT(fn(5) == -5);
-    };
-
-    ZEST_CASE(function_const_rejects_mutable_lambda) {
-        auto lambda = [sum = 0](int x) mutable -> int {
-            sum += x;
-            return sum;
-        };
-        static_assert(!std::is_constructible_v<function<int(int) const>, decltype(lambda)>);
-        EXPECT(true);
-    };
-
-    ZEST_CASE(function_move_construct) {
-        int capture = 5;
-        function<int(int)> fn([capture](int x) -> int { return capture + x; });
-        function<int(int)> fn2(std::move(fn));
-        EXPECT(fn2(10) == 15);
-    };
-
-    ZEST_CASE(function_move_assign) {
-        function<int(int)> fn([](int x) -> int { return x + 1; });
-        function<int(int)> fn2([](int x) -> int { return x + 2; });
-        EXPECT(fn(10) == 11);
-        EXPECT(fn2(10) == 12);
-        fn2 = std::move(fn);
-        EXPECT(fn2(10) == 11);
-    };
-
-    ZEST_CASE(function_move_assign_large_to_large) {
-        // Move assign heap-allocated function to another heap-allocated function
-        // Exercises the deleter in operator=
-        char p1[32] = {};
-        char p2[32] = {};
-        int c1 = 1, c2 = 2;
-        auto lambda1 = [c1, p1](int x) -> int {
-            (void)p1;
-            return c1 + x;
-        };
-        auto lambda2 = [c2, p2](int x) -> int {
-            (void)p2;
-            return c2 + x;
-        };
-        static_assert(sizeof(lambda1) > function<int(int)>::sbo_size);
-        static_assert(sizeof(lambda2) > function<int(int)>::sbo_size);
-        function<int(int)> fn1(std::move(lambda1));
-        function<int(int)> fn2(std::move(lambda2));
-        EXPECT(fn1(10) == 11);
-        EXPECT(fn2(10) == 12);
-        fn2 = std::move(fn1);  // old fn2's heap memory should be freed
-        EXPECT(fn2(10) == 11);
-    };
-
-    ZEST_CASE(function_void_return) {
-        int result = 0;
-        function<void(int)> fn([&result](int v) { result = v; });
-        fn(99);
-        EXPECT(result == 99);
-    };
-
-    ZEST_CASE(function_accepts_move_only_value_argument) {
-        function<std::unique_ptr<int>(std::unique_ptr<int>)> fn(
-            [](std::unique_ptr<int> value) { return std::make_unique<int>(*value + 1); });
-        auto result = fn(std::make_unique<int>(41));
-        EXPECT(result != nullptr);
-        EXPECT(*result == 42);
-    };
-
-    ZEST_CASE(function_with_mem_fn_small) {
-        SmallCallable sc{50};
-        auto fn = bind<&SmallCallable::operator()>(sc);
-        EXPECT(fn(7) == 57);
-    };
-
-    ZEST_CASE(function_with_mem_fn_large) {
-        LargeCallable lc{50};
-        auto fn = bind<&LargeCallable::operator()>(lc);
-        EXPECT(fn(7) == 57);
-    };
-
-    ZEST_CASE(function_from_free_function_no_deleter) {
-        // function from raw function pointer should have no deleter
-        function<int(int)> fn(free_negate);
-        EXPECT(fn(5) == -5);
-        // Move it - exercises move with null deleter
-        function<int(int)> fn2(std::move(fn));
-        EXPECT(fn2(5) == -5);
-    };
-
-    ZEST_CASE(function_move_chain) {
-        // Chain of moves to verify no double-free or corruption
-        int val = 7;
-        function<int(int)> fn1([val](int x) -> int { return val * x; });
+ZEST_CASE(move_construct_sbo_destructor) {
+    int counter = 0;
+    {
+        TrackedCallable tc{&counter, 7};
+        function<int(int)> fn1(std::move(tc));
         function<int(int)> fn2(std::move(fn1));
-        function<int(int)> fn3(std::move(fn2));
-        EXPECT(fn3(6) == 42);
-    };
+        EXPECT(fn2(3) == 10);
+    }
+    EXPECT(counter == 0);
+};
 
-    ZEST_CASE(function_from_non_trivial_sbo) {
-        // Non-trivially-copyable object that fits in SBO
-        NonTrivialCallable nc{10};
-        function<int(int)> fn(std::move(nc));
-        EXPECT(fn(5) == 15);
-        EXPECT(fn(-10) == 0);
-    };
-
-    ZEST_CASE(function_move_non_trivial_sbo) {
-        NonTrivialCallable nc{20};
-        function<int(int)> fn1(std::move(nc));
-        EXPECT(fn1(5) == 25);
+ZEST_CASE(move_construct_heap_destructor) {
+    int counter = 0;
+    {
+        LargeTrackedCallable ltc{&counter, 7};
+        function<int(int)> fn1(std::move(ltc));
         function<int(int)> fn2(std::move(fn1));
-        EXPECT(fn2(5) == 25);
-    };
+        EXPECT(fn2(3) == 10);
+    }
+    EXPECT(counter == 0);
+};
 
-    ZEST_CASE(function_move_assign_non_trivial_sbo) {
-        NonTrivialCallable nc1{1};
-        NonTrivialCallable nc2{2};
-        function<int(int)> fn1(std::move(nc1));
-        function<int(int)> fn2(std::move(nc2));
-        EXPECT(fn1(10) == 11);
-        EXPECT(fn2(10) == 12);
+ZEST_CASE(move_assign_sbo_destructor) {
+    int counter = 0;
+    {
+        TrackedCallable tc1{&counter, 1};
+        TrackedCallable tc2{&counter, 2};
+        function<int(int)> fn1(std::move(tc1));
+        function<int(int)> fn2(std::move(tc2));
         fn2 = std::move(fn1);
         EXPECT(fn2(10) == 11);
+    }
+    EXPECT(counter == 0);
+};
+
+ZEST_CASE(move_assign_heap_destructor) {
+    int counter = 0;
+    {
+        LargeTrackedCallable ltc1{&counter, 1};
+        LargeTrackedCallable ltc2{&counter, 2};
+        function<int(int)> fn1(std::move(ltc1));
+        function<int(int)> fn2(std::move(ltc2));
+        fn2 = std::move(fn1);
+        EXPECT(fn2(10) == 11);
+    }
+    EXPECT(counter == 0);
+};
+
+ZEST_CASE(heap_move_chain_destructor) {
+    int counter = 0;
+    {
+        LargeTrackedCallable ltc{&counter, 5};
+        function<int(int)> fn1(std::move(ltc));
+        function<int(int)> fn2(std::move(fn1));
+        function<int(int)> fn3(std::move(fn2));
+        function<int(int)> fn4(std::move(fn3));
+        EXPECT(fn4(10) == 15);
+    }
+    EXPECT(counter == 0);
+};
+
+// ===== cross-storage move assignment tests =====
+
+ZEST_CASE(move_assign_sbo_to_heap) {
+    int counter = 0;
+    {
+        TrackedCallable tc{&counter, 10};
+        LargeTrackedCallable ltc{&counter, 20};
+        function<int(int)> fn1(std::move(tc));
+        function<int(int)> fn2(std::move(ltc));
+        EXPECT(fn1(1) == 11);
+        EXPECT(fn2(1) == 21);
+        fn2 = std::move(fn1);
+        EXPECT(fn2(1) == 11);
+    }
+    EXPECT(counter == 0);
+};
+
+ZEST_CASE(move_assign_heap_to_sbo) {
+    int counter = 0;
+    {
+        LargeTrackedCallable ltc{&counter, 30};
+        TrackedCallable tc{&counter, 40};
+        function<int(int)> fn1(std::move(ltc));
+        function<int(int)> fn2(std::move(tc));
+        EXPECT(fn1(1) == 31);
+        EXPECT(fn2(1) == 41);
+        fn2 = std::move(fn1);
+        EXPECT(fn2(1) == 31);
+    }
+    EXPECT(counter == 0);
+};
+
+ZEST_CASE(move_assign_fnptr_to_sbo) {
+    int counter = 0;
+    {
+        TrackedCallable tc{&counter, 5};
+        function<int(int)> fn1(free_negate);
+        function<int(int)> fn2(std::move(tc));
+        EXPECT(fn1(3) == -3);
+        EXPECT(fn2(3) == 8);
+        fn2 = std::move(fn1);
+        EXPECT(fn2(3) == -3);
+    }
+    EXPECT(counter == 0);
+};
+
+ZEST_CASE(move_assign_sbo_to_fnptr) {
+    int counter = 0;
+    {
+        TrackedCallable tc{&counter, 5};
+        function<int(int)> fn1(std::move(tc));
+        function<int(int)> fn2(free_negate);
+        EXPECT(fn1(3) == 8);
+        EXPECT(fn2(3) == -3);
+        fn2 = std::move(fn1);
+        EXPECT(fn2(3) == 8);
+    }
+    EXPECT(counter == 0);
+};
+
+// ===== self-move assignment =====
+
+ZEST_CASE(self_move_assign_sbo) {
+    function<int(int)> fn([](int x) -> int { return x + 42; });
+    auto* ptr = &fn;
+    fn = std::move(*ptr);
+    EXPECT(fn(0) == 42);
+};
+
+ZEST_CASE(self_move_assign_heap) {
+    [[maybe_unused]] char padding[32]{};
+    int capture = 10;
+    auto lambda = [capture, padding](int x) -> int {
+        (void)padding;
+        return capture + x;
     };
+    static_assert(sizeof(lambda) > function<int(int)>::sbo_size);
+    function<int(int)> fn(std::move(lambda));
+    auto* ptr = &fn;
+    fn = std::move(*ptr);
+    EXPECT(fn(5) == 15);
+};
 
-    // ===== destructor correctness tests =====
+// ===== additional function_ref tests =====
 
-    ZEST_CASE(sbo_destructor_once) {
-        int counter = 0;
-        {
-            TrackedCallable tc{&counter, 10};
-            EXPECT(counter == 1);
-            function<int(int)> fn(std::move(tc));
-            EXPECT(fn(5) == 15);
-        }
-        EXPECT(counter == 0);
+ZEST_CASE(function_ref_mutable_lambda) {
+    int state = 0;
+    auto lambda = [&state](int x) -> int {
+        state += x;
+        return state;
     };
+    function_ref<int(int)> fn(lambda);
+    EXPECT(fn(5) == 5);
+    EXPECT(fn(3) == 8);
+    EXPECT(state == 8);
+};
 
-    ZEST_CASE(heap_destructor_once) {
-        int counter = 0;
-        {
-            LargeTrackedCallable ltc{&counter, 20};
-            EXPECT(counter == 1);
-            function<int(int)> fn(std::move(ltc));
-            EXPECT(fn(5) == 25);
-        }
-        EXPECT(counter == 0);
+ZEST_CASE(function_ref_reassign) {
+    function_ref<int(int, int)> fn(free_add);
+    EXPECT(fn(1, 2) == 3);
+    auto mul = [](int a, int b) -> int {
+        return a * b;
     };
+    function_ref<int(int, int)> fn2(mul);
+    fn = fn2;
+    EXPECT(fn(3, 4) == 12);
+};
 
-    ZEST_CASE(move_construct_sbo_destructor) {
-        int counter = 0;
-        {
-            TrackedCallable tc{&counter, 7};
-            function<int(int)> fn1(std::move(tc));
-            function<int(int)> fn2(std::move(fn1));
-            EXPECT(fn2(3) == 10);
-        }
-        EXPECT(counter == 0);
-    };
+ZEST_CASE(bind_ref_reflects_mutation) {
+    Adder adder{0};
+    auto fn = bind_ref<&Adder::add>(adder);
+    EXPECT(fn(5) == 5);
+    adder.base = 100;
+    EXPECT(fn(5) == 105);
+};
 
-    ZEST_CASE(move_construct_heap_destructor) {
-        int counter = 0;
-        {
-            LargeTrackedCallable ltc{&counter, 7};
-            function<int(int)> fn1(std::move(ltc));
-            function<int(int)> fn2(std::move(fn1));
-            EXPECT(fn2(3) == 10);
-        }
-        EXPECT(counter == 0);
-    };
+// ===== complex type tests =====
 
-    ZEST_CASE(move_assign_sbo_destructor) {
-        int counter = 0;
-        {
-            TrackedCallable tc1{&counter, 1};
-            TrackedCallable tc2{&counter, 2};
-            function<int(int)> fn1(std::move(tc1));
-            function<int(int)> fn2(std::move(tc2));
-            fn2 = std::move(fn1);
-            EXPECT(fn2(10) == 11);
-        }
-        EXPECT(counter == 0);
-    };
+ZEST_CASE(function_string_return) {
+    function<std::string(int)> fn([](int x) -> std::string { return "val=" + std::to_string(x); });
+    EXPECT(fn(42) == std::string("val=42"));
 
-    ZEST_CASE(move_assign_heap_destructor) {
-        int counter = 0;
-        {
-            LargeTrackedCallable ltc1{&counter, 1};
-            LargeTrackedCallable ltc2{&counter, 2};
-            function<int(int)> fn1(std::move(ltc1));
-            function<int(int)> fn2(std::move(ltc2));
-            fn2 = std::move(fn1);
-            EXPECT(fn2(10) == 11);
-        }
-        EXPECT(counter == 0);
-    };
+    function<std::string(int)> fn2(std::move(fn));
+    EXPECT(fn2(0) == std::string("val=0"));
+};
 
-    ZEST_CASE(heap_move_chain_destructor) {
-        int counter = 0;
-        {
-            LargeTrackedCallable ltc{&counter, 5};
-            function<int(int)> fn1(std::move(ltc));
-            function<int(int)> fn2(std::move(fn1));
-            function<int(int)> fn3(std::move(fn2));
-            function<int(int)> fn4(std::move(fn3));
-            EXPECT(fn4(10) == 15);
-        }
-        EXPECT(counter == 0);
-    };
+ZEST_CASE(function_multiple_args) {
+    function<int(int, int, int)> fn([](int a, int b, int c) -> int { return a + b + c; });
+    EXPECT(fn(1, 2, 3) == 6);
 
-    // ===== cross-storage move assignment tests =====
+    function<int(int, int, int)> fn2(std::move(fn));
+    EXPECT(fn2(10, 20, 30) == 60);
+};
 
-    ZEST_CASE(move_assign_sbo_to_heap) {
-        int counter = 0;
-        {
-            TrackedCallable tc{&counter, 10};
-            LargeTrackedCallable ltc{&counter, 20};
-            function<int(int)> fn1(std::move(tc));
-            function<int(int)> fn2(std::move(ltc));
-            EXPECT(fn1(1) == 11);
-            EXPECT(fn2(1) == 21);
-            fn2 = std::move(fn1);
-            EXPECT(fn2(1) == 11);
-        }
-        EXPECT(counter == 0);
-    };
+ZEST_CASE(bind_const_mem_fn) {
+    Adder adder{10};
+    auto fn = bind<&Adder::add_const>(adder);
+    EXPECT(fn(5) == 15);
+};
 
-    ZEST_CASE(move_assign_heap_to_sbo) {
-        int counter = 0;
-        {
-            LargeTrackedCallable ltc{&counter, 30};
-            TrackedCallable tc{&counter, 40};
-            function<int(int)> fn1(std::move(ltc));
-            function<int(int)> fn2(std::move(tc));
-            EXPECT(fn1(1) == 31);
-            EXPECT(fn2(1) == 41);
-            fn2 = std::move(fn1);
-            EXPECT(fn2(1) == 31);
-        }
-        EXPECT(counter == 0);
-    };
+// ===== mem_fn tests =====
 
-    ZEST_CASE(move_assign_fnptr_to_sbo) {
-        int counter = 0;
-        {
-            TrackedCallable tc{&counter, 5};
-            function<int(int)> fn1(free_negate);
-            function<int(int)> fn2(std::move(tc));
-            EXPECT(fn1(3) == -3);
-            EXPECT(fn2(3) == 8);
-            fn2 = std::move(fn1);
-            EXPECT(fn2(3) == -3);
-        }
-        EXPECT(counter == 0);
-    };
+ZEST_CASE(mem_fn_non_const) {
+    using MF = mem_fn<&Adder::add>;
+    static_assert(std::is_same_v<MF::ClassType, Adder>);
+    auto ptr = MF::get();
+    Adder a{10};
+    EXPECT((a.*ptr)(5) == 15);
+};
 
-    ZEST_CASE(move_assign_sbo_to_fnptr) {
-        int counter = 0;
-        {
-            TrackedCallable tc{&counter, 5};
-            function<int(int)> fn1(std::move(tc));
-            function<int(int)> fn2(free_negate);
-            EXPECT(fn1(3) == 8);
-            EXPECT(fn2(3) == -3);
-            fn2 = std::move(fn1);
-            EXPECT(fn2(3) == 8);
-        }
-        EXPECT(counter == 0);
-    };
-
-    // ===== self-move assignment =====
-
-    ZEST_CASE(self_move_assign_sbo) {
-        function<int(int)> fn([](int x) -> int { return x + 42; });
-        auto* ptr = &fn;
-        fn = std::move(*ptr);
-        EXPECT(fn(0) == 42);
-    };
-
-    ZEST_CASE(self_move_assign_heap) {
-        [[maybe_unused]] char padding[32]{};
-        int capture = 10;
-        auto lambda = [capture, padding](int x) -> int {
-            (void)padding;
-            return capture + x;
-        };
-        static_assert(sizeof(lambda) > function<int(int)>::sbo_size);
-        function<int(int)> fn(std::move(lambda));
-        auto* ptr = &fn;
-        fn = std::move(*ptr);
-        EXPECT(fn(5) == 15);
-    };
-
-    // ===== additional function_ref tests =====
-
-    ZEST_CASE(function_ref_mutable_lambda) {
-        int state = 0;
-        auto lambda = [&state](int x) -> int {
-            state += x;
-            return state;
-        };
-        function_ref<int(int)> fn(lambda);
-        EXPECT(fn(5) == 5);
-        EXPECT(fn(3) == 8);
-        EXPECT(state == 8);
-    };
-
-    ZEST_CASE(function_ref_reassign) {
-        function_ref<int(int, int)> fn(free_add);
-        EXPECT(fn(1, 2) == 3);
-        auto mul = [](int a, int b) -> int {
-            return a * b;
-        };
-        function_ref<int(int, int)> fn2(mul);
-        fn = fn2;
-        EXPECT(fn(3, 4) == 12);
-    };
-
-    ZEST_CASE(bind_ref_reflects_mutation) {
-        Adder adder{0};
-        auto fn = bind_ref<&Adder::add>(adder);
-        EXPECT(fn(5) == 5);
-        adder.base = 100;
-        EXPECT(fn(5) == 105);
-    };
-
-    // ===== complex type tests =====
-
-    ZEST_CASE(function_string_return) {
-        function<std::string(int)> fn(
-            [](int x) -> std::string { return "val=" + std::to_string(x); });
-        EXPECT(fn(42) == std::string("val=42"));
-
-        function<std::string(int)> fn2(std::move(fn));
-        EXPECT(fn2(0) == std::string("val=0"));
-    };
-
-    ZEST_CASE(function_multiple_args) {
-        function<int(int, int, int)> fn([](int a, int b, int c) -> int { return a + b + c; });
-        EXPECT(fn(1, 2, 3) == 6);
-
-        function<int(int, int, int)> fn2(std::move(fn));
-        EXPECT(fn2(10, 20, 30) == 60);
-    };
-
-    ZEST_CASE(bind_const_mem_fn) {
-        Adder adder{10};
-        auto fn = bind<&Adder::add_const>(adder);
-        EXPECT(fn(5) == 15);
-    };
-
-    // ===== mem_fn tests =====
-
-    ZEST_CASE(mem_fn_non_const) {
-        using MF = mem_fn<&Adder::add>;
-        static_assert(std::is_same_v<MF::ClassType, Adder>);
-        auto ptr = MF::get();
-        Adder a{10};
-        EXPECT((a.*ptr)(5) == 15);
-    };
-
-    ZEST_CASE(mem_fn_const) {
-        using MF = mem_fn<&Adder::add_const>;
-        static_assert(std::is_same_v<MF::ClassType, Adder>);
-        auto ptr = MF::get();
-        const Adder a{10};
-        EXPECT((a.*ptr)(5) == 15);
-    };
+ZEST_CASE(mem_fn_const) {
+    using MF = mem_fn<&Adder::add_const>;
+    static_assert(std::is_same_v<MF::ClassType, Adder>);
+    auto ptr = MF::get();
+    const Adder a{10};
+    EXPECT((a.*ptr)(5) == 15);
+};
 
 };  // ZEST_SUITE(functional)
 

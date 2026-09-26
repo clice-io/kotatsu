@@ -2,7 +2,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <utility>
+#include <type_traits>
 #include <vector>
 
 #include "kota/zest/zest.h"
@@ -23,16 +23,18 @@ std::expected<int, std::string> parse(std::string_view text) {
     return std::unexpected(std::string(text));
 }
 
-ZEST_SUITE(zest_check){
+ZEST_SUITE(zest_check) {
 
-    ZEST_CASE(comparison_splits_into_operands){auto split = (Decomposer{} << 1) == 2;
-EXPECT(!split.held);
-EXPECT(split.lhs == 1);
-EXPECT(split.rhs == 2);
-EXPECT(holds((Decomposer{} << 3) < 4));
-EXPECT(!holds((Decomposer{} << 4) <= 3));
-
-}  // namespace
+ZEST_CASE(comparison_splits_into_operands) {
+    int one = 1;
+    int two = 2;
+    auto split = (detail::Decomposer{} << one) == two;
+    EXPECT(!split.held);
+    EXPECT(&split.lhs == &one);
+    EXPECT(&split.rhs == &two);
+    EXPECT(detail::holds((detail::Decomposer{} << 3) < 4));
+    EXPECT(!detail::holds((detail::Decomposer{} << 4) <= 3));
+}
 
 ZEST_CASE(expected_and_optional_compare_by_value) {
     std::expected<int, std::string> ok = 42;
@@ -50,6 +52,34 @@ ZEST_CASE(expected_and_optional_compare_by_value) {
     EXPECT(none != 42);
 }
 
+ZEST_CASE(expected_and_optional_equality_both_ways) {
+    std::expected<int, std::string> ok_42 = 42;
+    std::expected<int, std::string> ok_7 = 7;
+    std::expected<int, std::string> err_boom = std::unexpected(std::string("boom"));
+    std::expected<int, std::string> err_boom_too = std::unexpected(std::string("boom"));
+    std::expected<int, std::string> err_oops = std::unexpected(std::string("oops"));
+    std::optional<int> some_42 = 42;
+    std::optional<int> some_7 = 7;
+    std::optional<int> none = std::nullopt;
+    std::optional<int> none_too = std::nullopt;
+
+    EXPECT(err_boom == err_boom_too);
+    EXPECT(err_boom != err_oops);
+    EXPECT(ok_42 != 7);
+    EXPECT(7 != ok_42);
+    EXPECT(none == none_too);
+    EXPECT(some_42 != some_7);
+    EXPECT(7 != some_42);
+    EXPECT(ok_7 != some_42);
+    EXPECT(some_42 != ok_7);
+    EXPECT(ok_42 != none);
+    EXPECT(none != ok_42);
+    EXPECT(err_boom != some_42);
+    EXPECT(some_42 != err_boom);
+    EXPECT(err_boom != none);
+    EXPECT(none != err_boom);
+}
+
 ZEST_CASE(unary_checks_convert_to_bool) {
     auto ok = parse("42");
     ASSERT(ok);
@@ -64,6 +94,7 @@ ZEST_CASE(orderings) {
     EXPECT(2 > 1);
     EXPECT(2 >= 2);
     EXPECT(std::string("alpha") < std::string("beta"));
+    EXPECT(-1 < 1u);
 }
 
 ZEST_CASE(operands_compare_structurally) {
@@ -89,6 +120,11 @@ ZEST_CASE(char_pointers_compare_as_text_against_text) {
     // Two pointers compare by address.
     EXPECT(pointer != copy.c_str());
     EXPECT(pointer == text.c_str());
+
+    // An array's text ends with the array, null character or not.
+    const char tag[4] = {'K', 'O', 'T', 'A'};
+    const char* kota = "KOTA";
+    EXPECT(kota == tag);
 }
 
 ZEST_CASE(temporaries_outlive_the_check) {
@@ -102,6 +138,8 @@ ZEST_CASE(predicates) {
     EXPECT(!contains(std::string("haystack"), "needle"));
     EXPECT(contains(std::vector<int>{1, 2, 3}, 2));
     EXPECT(!contains(std::vector<int>{1, 2, 3}, 4));
+    std::string owned = "b";
+    EXPECT(contains(std::vector<const char*>{"a", owned.c_str()}, "b"));
     EXPECT(starts_with(std::string("prefix-body"), "prefix"));
     EXPECT(ends_with(std::string("body-suffix"), "suffix"));
     EXPECT(type_eq<int, int>());
@@ -109,7 +147,8 @@ ZEST_CASE(predicates) {
 }
 
 ZEST_CASE(negation_keeps_the_explanation) {
-    auto match = contains(std::string("abc"), "x");
+    std::string text = "abc";
+    auto match = contains(text, "x");
     auto negated = !match;
     EXPECT(negated.held);
     EXPECT(negated.explain() == match.explain());
@@ -123,15 +162,15 @@ ZEST_CASE(static_checks) {
 }
 
 ZEST_CASE(contexts_nest_and_unwind) {
+    ZEST_CONTEXT("outer {}", 1);
     {
-        ZEST_CONTEXT("outer {}", 1);
         ZEST_CONTEXT("inner");
         EXPECT(1 == 1);
     }
-    EXPECT(true);
+    EXPECT(2 == 2);
 }
 
-};  // namespace kota::zest
+};  // ZEST_SUITE(zest_check)
 
 }  // namespace
 

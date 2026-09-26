@@ -75,8 +75,8 @@
 #define ZEST_CHECK(return_action, ...)                                                             \
     do {                                                                                           \
         ZEST_SPLIT_BEGIN                                                                           \
-        if(!::kota::zest::check(::kota::zest::Decomposer{} << __VA_ARGS__, #__VA_ARGS__))          \
-            [[unlikely]] {                                                                         \
+        if(!::kota::zest::detail::check(::kota::zest::detail::Decomposer{} << __VA_ARGS__,         \
+                                        #__VA_ARGS__)) [[unlikely]] {                              \
             return_action;                                                                         \
         }                                                                                          \
         ZEST_SPLIT_END                                                                             \
@@ -92,19 +92,21 @@
     do {                                                                                           \
         ZEST_SPLIT_BEGIN                                                                           \
         constexpr bool _zest_held =                                                                \
-            ::kota::zest::holds(::kota::zest::Decomposer{} << __VA_ARGS__);                        \
+            ::kota::zest::detail::holds(::kota::zest::detail::Decomposer{} << __VA_ARGS__);        \
         if(!_zest_held) {                                                                          \
-            ::kota::zest::check(::kota::zest::Decomposer{} << __VA_ARGS__, #__VA_ARGS__);          \
+            ::kota::zest::detail::fail(::kota::zest::detail::Decomposer{} << __VA_ARGS__,          \
+                                       #__VA_ARGS__);                                              \
         }                                                                                          \
         ZEST_SPLIT_END                                                                             \
     } while(0)
 
 // Adds a line to the report of every check that fails while it is in scope,
 // e.g. `ZEST_CONTEXT("called from {}:{}", loc.file_name(), loc.line())` in a
-// helper. Takes std::format arguments.
+// helper. Takes std::format arguments. Contexts belong to the thread, so one
+// held across a co_await also shows in the checks of whatever runs meanwhile.
 #define ZEST_CONTEXT(...)                                                                          \
-    ::kota::zest::Context ZEST_CONCAT(_zest_context_, __LINE__) {                                  \
-        std::format(__VA_ARGS__)                                                                   \
+    ::kota::zest::Context ZEST_CONCAT(_zest_context_, __COUNTER__) {                               \
+        __VA_ARGS__                                                                                \
     }
 
 // clang-format off
@@ -137,8 +139,10 @@
 
 #ifdef __cpp_exceptions
 
-#define EXPECT_THROWS(...) ::kota::zest::check_throws([&] { (__VA_ARGS__); }, #__VA_ARGS__, true)
-#define EXPECT_NOTHROWS(...) ::kota::zest::check_throws([&] { (__VA_ARGS__); }, #__VA_ARGS__, false)
+#define EXPECT_THROWS(...)                                                                         \
+    ::kota::zest::detail::check_throws([&] { (__VA_ARGS__); }, #__VA_ARGS__, true)
+#define EXPECT_NOTHROWS(...)                                                                       \
+    ::kota::zest::detail::check_throws([&] { (__VA_ARGS__); }, #__VA_ARGS__, false)
 
 #endif
 

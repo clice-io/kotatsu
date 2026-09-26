@@ -11,58 +11,57 @@ namespace {
 
 namespace fx = ::kota::meta::fixtures;
 
-ZEST_SUITE(virtual_schema_rename_all){
+ZEST_SUITE(virtual_schema_rename_all) {
 
-    ZEST_CASE(rename_policies){
-        // lower_camel
-        {constexpr auto& fields = virtual_schema<fx::RenameAllTarget, fx::CamelConfig>::fields;
-STATIC_EXPECT(fields[0].name == "userName");
-STATIC_EXPECT(fields[1].name == "totalScore");
-STATIC_EXPECT(fields[2].name == "itemId");
+ZEST_CASE(rename_policies) {
+    // lower_camel
+    {
+        constexpr auto& fields = virtual_schema<fx::RenameAllTarget, fx::CamelConfig>::fields;
+        STATIC_EXPECT(fields[0].name == "userName");
+        STATIC_EXPECT(fields[1].name == "totalScore");
+        STATIC_EXPECT(fields[2].name == "itemId");
+    }
 
-}  // namespace
+    // upper_camel (PascalCase)
+    {
+        constexpr auto& fields = virtual_schema<fx::RenameAllTarget, fx::PascalConfig>::fields;
+        STATIC_EXPECT(fields[0].name == "UserName");
+        STATIC_EXPECT(fields[1].name == "TotalScore");
+        STATIC_EXPECT(fields[2].name == "ItemId");
+    }
 
-// upper_camel (PascalCase)
-{
-    constexpr auto& fields = virtual_schema<fx::RenameAllTarget, fx::PascalConfig>::fields;
-    STATIC_EXPECT(fields[0].name == "UserName");
-    STATIC_EXPECT(fields[1].name == "TotalScore");
-    STATIC_EXPECT(fields[2].name == "ItemId");
+    // UPPER_SNAKE
+    {
+        constexpr auto& fields = virtual_schema<fx::RenameAllTarget, fx::UpperSnakeConfig>::fields;
+        STATIC_EXPECT(fields[0].name == "USER_NAME");
+        STATIC_EXPECT(fields[1].name == "TOTAL_SCORE");
+        STATIC_EXPECT(fields[2].name == "ITEM_ID");
+    }
+
+    // lower_snake (identity for already-snake_case)
+    {
+        constexpr auto& fields = virtual_schema<fx::RenameAllTarget, fx::LowerSnakeConfig>::fields;
+        STATIC_EXPECT(fields[0].name == "user_name");
+        STATIC_EXPECT(fields[1].name == "total_score");
+        STATIC_EXPECT(fields[2].name == "item_id");
+    }
+
+    // identity
+    {
+        constexpr auto& fields = virtual_schema<fx::RenameAllTarget, fx::IdentityConfig>::fields;
+        STATIC_EXPECT(fields[0].name == "user_name");
+        STATIC_EXPECT(fields[1].name == "total_score");
+        STATIC_EXPECT(fields[2].name == "item_id");
+    }
+
+    // default_config preserves names
+    {
+        constexpr auto& fields = virtual_schema<fx::RenameAllTarget, default_config>::fields;
+        STATIC_EXPECT(fields[0].name == "user_name");
+        STATIC_EXPECT(fields[1].name == "total_score");
+        STATIC_EXPECT(fields[2].name == "item_id");
+    }
 }
-
-// UPPER_SNAKE
-{
-    constexpr auto& fields = virtual_schema<fx::RenameAllTarget, fx::UpperSnakeConfig>::fields;
-    STATIC_EXPECT(fields[0].name == "USER_NAME");
-    STATIC_EXPECT(fields[1].name == "TOTAL_SCORE");
-    STATIC_EXPECT(fields[2].name == "ITEM_ID");
-}
-
-// lower_snake (identity for already-snake_case)
-{
-    constexpr auto& fields = virtual_schema<fx::RenameAllTarget, fx::LowerSnakeConfig>::fields;
-    STATIC_EXPECT(fields[0].name == "user_name");
-    STATIC_EXPECT(fields[1].name == "total_score");
-    STATIC_EXPECT(fields[2].name == "item_id");
-}
-
-// identity
-{
-    constexpr auto& fields = virtual_schema<fx::RenameAllTarget, fx::IdentityConfig>::fields;
-    STATIC_EXPECT(fields[0].name == "user_name");
-    STATIC_EXPECT(fields[1].name == "total_score");
-    STATIC_EXPECT(fields[2].name == "item_id");
-}
-
-// default_config preserves names
-{
-    constexpr auto& fields = virtual_schema<fx::RenameAllTarget, default_config>::fields;
-    STATIC_EXPECT(fields[0].name == "user_name");
-    STATIC_EXPECT(fields[1].name == "total_score");
-    STATIC_EXPECT(fields[2].name == "item_id");
-}
-
-}  // namespace kota::meta
 
 ZEST_CASE(explicit_rename_overrides_rename_all) {
     constexpr auto& fields = virtual_schema<fx::MixedRenameStruct, fx::CamelConfig>::fields;
@@ -90,8 +89,8 @@ ZEST_CASE(alias_unaffected_by_rename_all) {
     // Second field follows rename_all
     STATIC_EXPECT(fields[1].name == "totalScore");
 }
-}
-;  // ZEST_SUITE(virtual_schema_rename_all)
+
+};  // ZEST_SUITE(virtual_schema_rename_all)
 
 }  // namespace
 

@@ -54,40 +54,40 @@ auto roundtrip(const T& input) -> std::expected<T, rich_error> {
     return from_bytes<T>(*encoded);
 }
 
-ZEST_SUITE(fbs_decode_visitor){
+ZEST_SUITE(fbs_decode_visitor) {
 
-    ZEST_CASE(scalar_int32_roundtrip){std::int32_t input = 42;
-auto result = roundtrip(input);
-ASSERT(result.has_value());
-EXPECT(*result == 42);
-
-}  // namespace
+ZEST_CASE(scalar_int32_roundtrip) {
+    std::int32_t input = 42;
+    auto result = roundtrip(input);
+    ASSERT(result);
+    EXPECT(*result == 42);
+}
 
 ZEST_CASE(scalar_string_roundtrip) {
     std::string input = "hello world";
     auto result = roundtrip(input);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(*result == "hello world");
 }
 
 ZEST_CASE(scalar_bool_roundtrip) {
     bool input = true;
     auto result = roundtrip(input);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(*result == true);
 }
 
 ZEST_CASE(scalar_double_roundtrip) {
     double input = 3.14;
     auto result = roundtrip(input);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(*result == 3.14);
 }
 
 ZEST_CASE(simple_struct_roundtrip) {
     address input{.city = "tokyo", .zip = 100};
     auto result = roundtrip(input);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->city == "tokyo");
     EXPECT(result->zip == 100);
 }
@@ -101,7 +101,7 @@ ZEST_CASE(inline_struct_roundtrip) {
         .pos = {.x = 10, .y = 20}
     };
     auto result = roundtrip(input);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->pos.x == 10);
     EXPECT(result->pos.y == 20);
 }
@@ -109,7 +109,7 @@ ZEST_CASE(inline_struct_roundtrip) {
 ZEST_CASE(bare_inline_struct_roundtrip) {
     point input{.x = 42, .y = 99};
     auto result = roundtrip(input);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->x == 42);
     EXPECT(result->y == 99);
 }
@@ -129,7 +129,7 @@ ZEST_CASE(struct_with_nested_struct_and_vector_roundtrip) {
         .addr = {.city = "sh", .zip = 200000},
     };
     auto result = roundtrip(input);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->id == 7);
     EXPECT(result->name == "alice");
     ASSERT(result->scores.size() == 3U);
@@ -149,7 +149,7 @@ ZEST_CASE(struct_with_vector_roundtrip) {
         .addr = {.city = "sh", .zip = 200000},
     };
     auto result = roundtrip(input);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->id == 7);
     EXPECT(result->name == "alice");
     EXPECT(result->pos.x == 10);
@@ -165,7 +165,7 @@ ZEST_CASE(struct_with_vector_roundtrip) {
 ZEST_CASE(vector_of_strings_roundtrip) {
     std::vector<std::string> input{"hello", "world", "foo"};
     auto result = roundtrip(input);
-    ASSERT(result.has_value());
+    ASSERT(result);
     ASSERT(result->size() == 3U);
     EXPECT((*result)[0] == "hello");
     EXPECT((*result)[1] == "world");
@@ -175,7 +175,7 @@ ZEST_CASE(vector_of_strings_roundtrip) {
 ZEST_CASE(vector_of_ints_roundtrip) {
     std::vector<std::int32_t> input{10, 20, 30};
     auto result = roundtrip(input);
-    ASSERT(result.has_value());
+    ASSERT(result);
     ASSERT(result->size() == 3U);
     EXPECT((*result)[0] == 10);
     EXPECT((*result)[1] == 20);
@@ -189,8 +189,8 @@ ZEST_CASE(optional_present_roundtrip) {
 
     with_opt input{.value = 42};
     auto result = roundtrip(input);
-    ASSERT(result.has_value());
-    ASSERT(result->value.has_value());
+    ASSERT(result);
+    ASSERT(result->value);
     EXPECT(*result->value == 42);
 }
 
@@ -201,14 +201,14 @@ ZEST_CASE(optional_absent_roundtrip) {
 
     with_opt input{.value = std::nullopt};
     auto result = roundtrip(input);
-    ASSERT(result.has_value());
-    EXPECT(!result->value.has_value());
+    ASSERT(result);
+    EXPECT(!result->value);
 }
 
 ZEST_CASE(pair_roundtrip) {
     std::pair<std::int32_t, std::string> input{42, "hello"};
     auto result = roundtrip(input);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->first == 42);
     EXPECT(result->second == "hello");
 }
@@ -216,7 +216,7 @@ ZEST_CASE(pair_roundtrip) {
 ZEST_CASE(tuple_roundtrip) {
     std::tuple<std::int32_t, std::string, double> input{42, "hello", 3.14};
     auto result = roundtrip(input);
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(std::get<0>(*result) == 42);
     EXPECT(std::get<1>(*result) == "hello");
     EXPECT(std::get<2>(*result) == 3.14);
@@ -229,7 +229,7 @@ ZEST_CASE(variant_int_roundtrip) {
 
     with_var input{.value = 42};
     auto result = roundtrip(input);
-    ASSERT(result.has_value());
+    ASSERT(result);
     ASSERT(std::holds_alternative<std::int32_t>(result->value));
     EXPECT(std::get<std::int32_t>(result->value) == 42);
 }
@@ -241,7 +241,7 @@ ZEST_CASE(variant_string_roundtrip) {
 
     with_var input{.value = std::string("hello")};
     auto result = roundtrip(input);
-    ASSERT(result.has_value());
+    ASSERT(result);
     ASSERT(std::holds_alternative<std::string>(result->value));
     EXPECT(std::get<std::string>(result->value) == "hello");
 }
@@ -253,7 +253,7 @@ ZEST_CASE(map_roundtrip) {
         {"c", 3}
     };
     auto result = roundtrip(input);
-    ASSERT(result.has_value());
+    ASSERT(result);
     ASSERT(result->size() == 3U);
     EXPECT(result->at("a") == 1);
     EXPECT(result->at("b") == 2);
@@ -266,7 +266,7 @@ ZEST_CASE(vector_of_structs_roundtrip) {
         {.city = "osaka", .zip = 200},
     };
     auto result = roundtrip(input);
-    ASSERT(result.has_value());
+    ASSERT(result);
     ASSERT(result->size() == 2U);
     EXPECT((*result)[0].city == "tokyo");
     EXPECT((*result)[0].zip == 100);
@@ -274,7 +274,7 @@ ZEST_CASE(vector_of_structs_roundtrip) {
     EXPECT((*result)[1].zip == 200);
 }
 
-};  // namespace kota::codec
+};  // ZEST_SUITE(fbs_decode_visitor)
 
 // ---------------------------------------------------------------------------
 // Diagnostic tests: step-by-step encode → raw read → decode for failing cases
@@ -302,82 +302,83 @@ using scalar_tuple_t = std::tuple<bool,
                                   double,
                                   std::string>;
 
-ZEST_SUITE(fbs_decode_diagnostic){
+ZEST_SUITE(fbs_decode_diagnostic) {
 
-    ZEST_CASE(diag_pair_scalar_tuple){using pair_t = std::pair<scalar_tuple_t, scalar_tuple_t>;
-const scalar_tuple_t a{true,
-                       'q',
-                       std::int8_t(-12),
-                       std::uint8_t(210),
-                       std::int16_t(-1024),
-                       std::uint16_t(4096),
-                       std::int32_t(-123456),
-                       std::uint32_t(123456),
-                       std::int64_t(-9876543210LL),
-                       std::uint64_t(9876543210ULL),
-                       1.5F,
-                       -9.25,
-                       std::string("scalar-a")};
-const scalar_tuple_t b{false,
-                       'z',
-                       std::int8_t(-8),
-                       std::uint8_t(8),
-                       std::int16_t(-16),
-                       std::uint16_t(16),
-                       std::int32_t(-32),
-                       std::uint32_t(32),
-                       std::int64_t(-64),
-                       std::uint64_t(64),
-                       -0.75F,
-                       -12.125,
-                       std::string("scalar-b")};
+ZEST_CASE(diag_pair_scalar_tuple) {
+    using pair_t = std::pair<scalar_tuple_t, scalar_tuple_t>;
+    const scalar_tuple_t a{true,
+                           'q',
+                           std::int8_t(-12),
+                           std::uint8_t(210),
+                           std::int16_t(-1024),
+                           std::uint16_t(4096),
+                           std::int32_t(-123456),
+                           std::uint32_t(123456),
+                           std::int64_t(-9876543210LL),
+                           std::uint64_t(9876543210ULL),
+                           1.5F,
+                           -9.25,
+                           std::string("scalar-a")};
+    const scalar_tuple_t b{false,
+                           'z',
+                           std::int8_t(-8),
+                           std::uint8_t(8),
+                           std::int16_t(-16),
+                           std::uint16_t(16),
+                           std::int32_t(-32),
+                           std::uint32_t(32),
+                           std::int64_t(-64),
+                           std::uint64_t(64),
+                           -0.75F,
+                           -12.125,
+                           std::string("scalar-b")};
 
-pair_t input{a, b};
-auto encoded = fbs::to_bytes(input);
-ASSERT(encoded.has_value());
+    pair_t input{a, b};
+    auto encoded = fbs::to_bytes(input);
+    ASSERT(encoded);
 
-// Step 1: Read the root table
-const auto* data = encoded->data();
-const auto* root = ::flatbuffers::GetRoot<fbs::Table>(data);
-ASSERT(root != nullptr);
+    // Step 1: Read the root table
+    const auto* data = encoded->data();
+    const auto* root = ::flatbuffers::GetRoot<fbs::Table>(data);
+    ASSERT(root != nullptr);
 
-// Step 2: Check that root has 2 pointer fields (pair elements)
-bool has_field0 = root->GetOptionalFieldOffset(fbs::detail::first_field) != 0;
-bool has_field1 =
-    root->GetOptionalFieldOffset(fbs::detail::first_field + fbs::detail::field_step) != 0;
-EXPECT(has_field0);
-EXPECT(has_field1);
+    // Step 2: Check that root has 2 pointer fields (pair elements)
+    bool has_field0 = root->GetOptionalFieldOffset(fbs::detail::first_field) != 0;
+    bool has_field1 =
+        root->GetOptionalFieldOffset(fbs::detail::first_field + fbs::detail::field_step) != 0;
+    EXPECT(has_field0);
+    EXPECT(has_field1);
 
-// Step 3: Follow pointer for first element
-const auto* child0 = root->GetPointer<const fbs::Table*>(fbs::detail::first_field);
-ASSERT(child0 != nullptr);
+    // Step 3: Follow pointer for first element
+    const auto* child0 = root->GetPointer<const fbs::Table*>(fbs::detail::first_field);
+    ASSERT(child0 != nullptr);
 
-// Check first element's bool field (index 0)
-auto bool_val = child0->GetField<std::uint8_t>(fbs::detail::first_field, 0);
-EXPECT(bool_val == 1);  // true
+    // Check first element's bool field (index 0)
+    auto bool_val = child0->GetField<std::uint8_t>(fbs::detail::first_field, 0);
+    EXPECT(bool_val == 1);  // true
 
-// Check first element's int32 field (index 6)
-auto i32_val =
-    child0->GetField<std::int32_t>(fbs::detail::first_field + fbs::detail::field_step * 6, 0);
-EXPECT(i32_val == -123456);
+    // Check first element's int32 field (index 6)
+    auto i32_val =
+        child0->GetField<std::int32_t>(fbs::detail::first_field + fbs::detail::field_step * 6, 0);
+    EXPECT(i32_val == -123456);
 
-// Check first element's string field (index 12)
-const auto* str_ptr =
-    child0->GetPointer<const fbs::String*>(fbs::detail::first_field + fbs::detail::field_step * 12);
-ASSERT(str_ptr != nullptr);
-EXPECT(std::string_view(str_ptr->data(), str_ptr->size()) == "scalar-a");
+    // Check first element's string field (index 12)
+    const auto* str_ptr = child0->GetPointer<const fbs::String*>(fbs::detail::first_field +
+                                                                 fbs::detail::field_step * 12);
+    ASSERT(str_ptr != nullptr);
+    EXPECT(std::string_view(str_ptr->data(), str_ptr->size()) == "scalar-a");
 
-// Step 4: Decode roundtrip
-pair_t output{};
-auto decode_result = fbs::from_bytes(*encoded, output);
-ASSERT(decode_result.has_value());
-EXPECT(std::get<0>(output.first) == true);          // bool
-EXPECT(std::get<1>(output.first) == 'q');           // char
-EXPECT(std::get<6>(output.first) == -123456);       // int32
-EXPECT(std::get<12>(output.first) == "scalar-a");   // string
-EXPECT(std::get<0>(output.second) == false);        // bool
-EXPECT(std::get<12>(output.second) == "scalar-b");  // string
-EXPECT(input == output);
+    // Step 4: Decode roundtrip
+    pair_t output{};
+    auto decode_result = fbs::from_bytes(*encoded, output);
+    ASSERT(decode_result);
+    EXPECT(std::get<0>(output.first) == true);          // bool
+    EXPECT(std::get<1>(output.first) == 'q');           // char
+    EXPECT(std::get<6>(output.first) == -123456);       // int32
+    EXPECT(std::get<12>(output.first) == "scalar-a");   // string
+    EXPECT(std::get<0>(output.second) == false);        // bool
+    EXPECT(std::get<12>(output.second) == "scalar-b");  // string
+    EXPECT(input == output);
 }
 
 ZEST_CASE(diag_variant_vector_int) {
@@ -387,7 +388,7 @@ ZEST_CASE(diag_variant_vector_int) {
     };
 
     auto encoded = fbs::to_bytes(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     // Step 1: Read root table (variant table)
     const auto* data = encoded->data();
@@ -429,7 +430,7 @@ ZEST_CASE(diag_variant_vector_int) {
     // Step 6: Decode roundtrip
     var_t output{};
     auto decode_result = fbs::from_bytes(*encoded, output);
-    ASSERT(decode_result.has_value());
+    ASSERT(decode_result);
     ASSERT(std::holds_alternative<std::vector<int>>(output));
     auto& decoded_vec = std::get<std::vector<int>>(output);
     ASSERT(decoded_vec.size() == 3U);
@@ -443,7 +444,7 @@ ZEST_CASE(diag_variant_monostate) {
     var_t input{std::in_place_index<0>};
 
     auto encoded = fbs::to_bytes(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     const auto* data = encoded->data();
     const auto* root = ::flatbuffers::GetRoot<fbs::Table>(data);
@@ -454,7 +455,7 @@ ZEST_CASE(diag_variant_monostate) {
 
     var_t output{42};  // start with different value
     auto decode_result = fbs::from_bytes(*encoded, output);
-    ASSERT(decode_result.has_value());
+    ASSERT(decode_result);
     EXPECT(output.index() == 0U);
 }
 
@@ -465,7 +466,7 @@ ZEST_CASE(diag_variant_basic) {
     };
 
     auto encoded = fbs::to_bytes(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     const auto* data = encoded->data();
     const auto* root = ::flatbuffers::GetRoot<fbs::Table>(data);
@@ -476,7 +477,7 @@ ZEST_CASE(diag_variant_basic) {
 
     var_t output{};
     auto decode_result = fbs::from_bytes(*encoded, output);
-    ASSERT(decode_result.has_value());
+    ASSERT(decode_result);
     ASSERT(std::holds_alternative<Basic>(output));
     EXPECT(std::get<Basic>(output).is_valid == true);
     EXPECT(std::get<Basic>(output).i32 == 64);
@@ -488,7 +489,7 @@ ZEST_CASE(diag_tagged_ext_variant_int) {
     ext_t input{42};
 
     auto encoded = fbs::to_bytes(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     const auto* data = encoded->data();
     const auto* root = ::flatbuffers::GetRoot<fbs::Table>(data);
@@ -505,21 +506,21 @@ ZEST_CASE(diag_tagged_ext_variant_int) {
 
     ext_t output{};
     auto decode_result = fbs::from_bytes(*encoded, output);
-    ASSERT(decode_result.has_value());
+    ASSERT(decode_result);
     ASSERT(std::holds_alternative<int>(meta::annotated_value(output)));
     EXPECT(std::get<int>(meta::annotated_value(output)) == 42);
 }
 
 ZEST_CASE(diag_tuple_01_pair_int_string) {
     auto r = roundtrip(std::pair<int, std::string>{9, "pair"});
-    ASSERT(r.has_value());
+    ASSERT(r);
     EXPECT(r->first == 9);
     EXPECT(r->second == "pair");
 }
 
 ZEST_CASE(diag_tuple_02_pair_u64_bool) {
     auto r = roundtrip(std::pair<std::uint64_t, bool>{42ULL, true});
-    ASSERT(r.has_value());
+    ASSERT(r);
     EXPECT(r->first == 42ULL);
     EXPECT(r->second == true);
 }
@@ -529,14 +530,14 @@ ZEST_CASE(diag_tuple_03_pair_basic_basic) {
         Basic{true,  11,  1.5,  "lhs"},
         Basic{false, -22, -2.5, "rhs"}
     });
-    ASSERT(r.has_value());
+    ASSERT(r);
     EXPECT(r->first.i32 == 11);
     EXPECT(r->second.i32 == -22);
 }
 
 ZEST_CASE(diag_tuple_04_tuple_int_bool_string) {
     auto r = roundtrip(std::tuple<int, bool, std::string>{7, true, "tuple"});
-    ASSERT(r.has_value());
+    ASSERT(r);
     EXPECT(std::get<0>(*r) == 7);
     EXPECT(std::get<1>(*r) == true);
     EXPECT(std::get<2>(*r) == "tuple");
@@ -557,7 +558,7 @@ ZEST_CASE(diag_tuple_05_scalar_tuple) {
                          -9.25,
                          std::string("all-scalars-a")};
     auto r = roundtrip(input);
-    ASSERT(r.has_value());
+    ASSERT(r);
     EXPECT(input == *r);
 }
 
@@ -570,7 +571,7 @@ ZEST_CASE(diag_tuple_06_tuple_basic_array_pair) {
     };
 
     auto encoded = fbs::to_bytes(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     const auto* root = ::flatbuffers::GetRoot<fbs::Table>(encoded->data());
     ASSERT(root != nullptr);
@@ -595,7 +596,7 @@ ZEST_CASE(diag_tuple_06_tuple_basic_array_pair) {
     // Manual decode step-by-step
     T output{};
     auto decode_result = fbs::from_bytes(*encoded, output);
-    ASSERT(decode_result.has_value());
+    ASSERT(decode_result);
 
     // Check each tuple element
     EXPECT(std::get<0>(output).is_valid == true);
@@ -634,7 +635,7 @@ ZEST_CASE(diag_tuple_06_tuple_basic_array_pair) {
 
 ZEST_CASE(diag_tuple_07_array_int3) {
     auto r = roundtrip(std::array<int, 3>{4, 5, 6});
-    ASSERT(r.has_value());
+    ASSERT(r);
     EXPECT((*r)[0] == 4);
     EXPECT((*r)[1] == 5);
     EXPECT((*r)[2] == 6);
@@ -645,7 +646,7 @@ ZEST_CASE(diag_tuple_08_array_basic2) {
         Basic{true,  101,  10.1,  "arr-a"},
         Basic{false, -202, -20.2, "arr-b"}
     });
-    ASSERT(r.has_value());
+    ASSERT(r);
     EXPECT((*r)[0].i32 == 101);
     EXPECT((*r)[1].i32 == -202);
 }
@@ -680,7 +681,7 @@ ZEST_CASE(diag_tuple_09_pair_scalar_tuple_scalar_tuple) {
                            -12.125,
                            std::string("all-scalars-b")};
     auto r = roundtrip(pair_t{a, b});
-    ASSERT(r.has_value());
+    ASSERT(r);
     EXPECT(r->first == a);
     EXPECT(r->second == b);
 }
@@ -713,7 +714,7 @@ ZEST_CASE(diag_tuple_10_array_scalar_tuple2) {
                            -12.125,
                            std::string("all-scalars-b")};
     auto r = roundtrip(std::array<scalar_tuple_t, 2>{a, b});
-    ASSERT(r.has_value());
+    ASSERT(r);
     EXPECT((*r)[0] == a);
     EXPECT((*r)[1] == b);
 }
@@ -731,7 +732,7 @@ ZEST_CASE(diag_struct_with_array_field) {
         .s = "test"
     };
     auto r = roundtrip(input);
-    ASSERT(r.has_value());
+    ASSERT(r);
     EXPECT(r->x == 42);
     EXPECT(r->arr[0] == 1.5F);
     EXPECT(r->arr[1] == -2.25F);
@@ -741,7 +742,7 @@ ZEST_CASE(diag_struct_with_array_field) {
 
 ZEST_CASE(diag_complex_01_scalars) {
     auto r = roundtrip(standard_case::make_scalars());
-    ASSERT(r.has_value());
+    ASSERT(r);
     EXPECT(r->b == true);
     EXPECT(r->s == "hello scalars");
 }
@@ -749,21 +750,21 @@ ZEST_CASE(diag_complex_01_scalars) {
 ZEST_CASE(diag_complex_02_nested_containers) {
     auto input = standard_case::make_nested_containers();
     auto r = roundtrip(input);
-    ASSERT(r.has_value());
+    ASSERT(r);
     EXPECT(input == *r);
 }
 
 ZEST_CASE(diag_complex_03_empty_containers) {
     auto input = standard_case::make_empty_containers();
     auto r = roundtrip(input);
-    ASSERT(r.has_value());
+    ASSERT(r);
     EXPECT(input == *r);
 }
 
 ZEST_CASE(diag_complex_04_ultimate) {
     auto input = standard_case::make_ultimate();
     auto r = roundtrip(input);
-    ASSERT(r.has_value());
+    ASSERT(r);
     EXPECT(input.basic == r->basic);
     EXPECT(input.compound.string_list == r->compound.string_list);
     EXPECT(input.compound.fixed_array == r->compound.fixed_array);
@@ -779,7 +780,7 @@ ZEST_CASE(diag_complex_05_ultimate_monostate) {
     input.nullables.opt_value.reset();
     input.nullables.heap_allocated.reset();
     auto r = roundtrip(input);
-    ASSERT(r.has_value());
+    ASSERT(r);
     EXPECT(input == *r);
 }
 
@@ -787,7 +788,7 @@ ZEST_CASE(diag_complex_06_ultimate_int_variant) {
     auto input = standard_case::make_ultimate();
     input.adts.multi_variant = 123;
     auto r = roundtrip(input);
-    ASSERT(r.has_value());
+    ASSERT(r);
     EXPECT(input == *r);
 }
 
@@ -795,11 +796,11 @@ ZEST_CASE(diag_complex_07_ultimate_string_variant) {
     auto input = standard_case::make_ultimate();
     input.adts.multi_variant = std::string("variant-text");
     auto r = roundtrip(input);
-    ASSERT(r.has_value());
+    ASSERT(r);
     EXPECT(input == *r);
 }
-}
-;  // ZEST_SUITE(fbs_decode_diagnostic)
+
+};  // ZEST_SUITE(fbs_decode_diagnostic)
 
 }  // namespace
 

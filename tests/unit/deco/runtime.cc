@@ -445,22 +445,22 @@ struct CatterTrailing {
     <std::vector<std::string>> cmd;
 };
 
-ZEST_SUITE(cli_parse){
+ZEST_SUITE(cli_parse) {
 
-    ZEST_CASE(parsing){auto args = into_deco_args("-X", "POST", "--url", "https://example.com");
-auto res = cli::parse<WebCliOpt>(args);
-EXPECT(res.has_value());
+ZEST_CASE(parsing) {
+    auto args = into_deco_args("-X", "POST", "--url", "https://example.com");
+    auto res = cli::parse<WebCliOpt>(args);
+    EXPECT(res);
 
-const auto& opt = res->options;
-EXPECT(opt.request.method->type == Request::RequestType::Type::Post);
-EXPECT(opt.request.url->url == "https://example.com");
-
-}  // namespace
+    const auto& opt = res->options;
+    EXPECT(opt.request.method->type == Request::RequestType::Type::Post);
+    EXPECT(opt.request.url->url == "https://example.com");
+}
 
 ZEST_CASE(parse_result_exposes_options) {
     auto args = into_deco_args("-X", "POST", "--url", "https://example.com");
     auto res = cli::parse<WebCliOpt>(args);
-    EXPECT(res.has_value());
+    EXPECT(res);
     if(!res.has_value()) {
         return;
     }
@@ -471,32 +471,32 @@ ZEST_CASE(parse_result_exposes_options) {
 
 ZEST_CASE(parsing_builtin_enum) {
     auto res = cli::parse<BuiltinEnumCliOpt>(into_deco_args("--mode", "Debug"));
-    EXPECT(res.has_value());
+    EXPECT(res);
     if(!res.has_value()) {
         return;
     }
 
-    EXPECT(res->options.mode.has_value());
+    EXPECT(res->options.mode);
     EXPECT(res->options.mode.value() == BuiltinCliMode::Debug);
 }
 
 ZEST_CASE(parsing_builtin_enum_with_serde_spelling) {
     auto snake = cli::parse<BuiltinSpelledEnumCliOpt>(into_deco_args("--mode", "my_value"));
-    EXPECT(snake.has_value());
+    EXPECT(snake);
     if(!snake.has_value()) {
         return;
     }
     EXPECT(snake->options.mode.value() == BuiltinCliSpelledMode::myValue);
 
     auto keyword = cli::parse<BuiltinSpelledEnumCliOpt>(into_deco_args("--mode", "Delete"));
-    EXPECT(keyword.has_value());
+    EXPECT(keyword);
     if(!keyword.has_value()) {
         return;
     }
     EXPECT(keyword->options.mode.value() == BuiltinCliSpelledMode::Delete_);
 
     auto numeric = cli::parse<BuiltinSpelledEnumCliOpt>(into_deco_args("--mode", "123"));
-    EXPECT(numeric.has_value());
+    EXPECT(numeric);
     if(!numeric.has_value()) {
         return;
     }
@@ -506,7 +506,7 @@ ZEST_CASE(parsing_builtin_enum_with_serde_spelling) {
 ZEST_CASE(parsing_input_and_trailing) {
     auto args = into_deco_args("front", "--", "a", "b", "c");
     auto res = cli::parse<InputAndTrailingOpt>(args);
-    EXPECT(res.has_value());
+    EXPECT(res);
     if(!res.has_value()) {
         return;
     }
@@ -522,16 +522,16 @@ ZEST_CASE(parsing_input_and_trailing) {
 
 ZEST_CASE(parsing_trailing_requires_dash_dash_separator) {
     auto bad = cli::parse<TrailingOnlyOpt>(into_deco_args("front"));
-    EXPECT(!bad.has_value());
+    EXPECT(!bad);
     EXPECT(bad.error().type == cli::ParseError::Type::DecoParsing);
     EXPECT(bad.error().message.contains("unexpected input argument"));
 
     auto good = cli::parse<TrailingOnlyOpt>(into_deco_args("--", "a", "b"));
-    EXPECT(good.has_value());
+    EXPECT(good);
     if(!good.has_value()) {
         return;
     }
-    EXPECT(good->options.trailing.has_value());
+    EXPECT(good->options.trailing);
     EXPECT(good->options.trailing->size() == 2);
     EXPECT((*good->options.trailing)[0] == "a");
     EXPECT((*good->options.trailing)[1] == "b");
@@ -539,43 +539,43 @@ ZEST_CASE(parsing_trailing_requires_dash_dash_separator) {
 
 ZEST_CASE(when_error) {
     auto res = cli::parse<WebCliOpt>(into_deco_args("-X", "INVALID"));
-    EXPECT(!res.has_value());
+    EXPECT(!res);
     EXPECT((res.error().type == cli::ParseError::Type::IntoError &&
             res.error().message.contains("Invalid request type")));
 
     auto res2 = cli::parse<WebCliOpt>(into_deco_args("--url", "ftp://example.com"));
-    EXPECT(!res2.has_value());
+    EXPECT(!res2);
     EXPECT((res2.error().type == cli::ParseError::Type::IntoError &&
             res2.error().message.contains("Invalid URL")));
 
     auto res3 = cli::parse<WebCliOpt>(into_deco_args("--unknown"));
-    EXPECT(!res3.has_value());
+    EXPECT(!res3);
     EXPECT((res3.error().type == cli::ParseError::Type::BackendParsing &&
             res3.error().message.contains("unknown option")));
 
     auto res4 = cli::parse<WebCliOpt>(into_deco_args("-v", "--help"));
-    EXPECT(!res4.has_value());
+    EXPECT(!res4);
     EXPECT((res4.error().type == cli::ParseError::Type::DecoParsing &&
             res4.error().message.contains("exclusive")));
 
     auto res5 = cli::parse<WebCliOpt>(into_deco_args("-X", "GET"));
-    EXPECT(!res5.has_value());
+    EXPECT(!res5);
     EXPECT((res5.error().type == cli::ParseError::Type::DecoParsing &&
             res5.error().message.contains("required option")));
 
     auto res6 = cli::parse<WebCliOpt>(into_deco_args("--", "a", "b"));
-    EXPECT(!res6.has_value());
+    EXPECT(!res6);
     EXPECT((res6.error().type == cli::ParseError::Type::BackendParsing &&
             res6.error().message.contains("unknown option")));
 
     auto res7 = cli::parse<BuiltinEnumCliOpt>(into_deco_args("--mode", "Turbo"));
-    EXPECT(!res7.has_value());
+    EXPECT(!res7);
     EXPECT(res7.error().type == cli::ParseError::Type::IntoError);
     EXPECT(res7.error().message.contains("invalid enum value: Turbo"));
     EXPECT(res7.error().message.contains("supported: fast, slow, debug"));
 
     auto res8 = cli::parse<BuiltinSpelledEnumCliOpt>(into_deco_args("--mode", "nope"));
-    EXPECT(!res8.has_value());
+    EXPECT(!res8);
     EXPECT(res8.error().type == cli::ParseError::Type::IntoError);
     EXPECT(res8.error().message.contains("invalid enum value: nope"));
     EXPECT(res8.error().message.contains("supported: myValue, delete, v123"));
@@ -583,7 +583,7 @@ ZEST_CASE(when_error) {
 
 ZEST_CASE(parse_errors_include_location_context) {
     auto res = cli::parse<WebCliOpt>(into_deco_args("--unknown"));
-    EXPECT(!res.has_value());
+    EXPECT(!res);
     if(res.has_value()) {
         return;
     }
@@ -593,7 +593,7 @@ ZEST_CASE(parse_errors_include_location_context) {
     EXPECT(res.error().message.contains("^"));
 
     auto enum_res = cli::parse<BuiltinEnumCliOpt>(into_deco_args("--mode", "Turbo"));
-    EXPECT(!enum_res.has_value());
+    EXPECT(!enum_res);
     if(enum_res.has_value()) {
         return;
     }
@@ -610,7 +610,7 @@ ZEST_CASE(global_compatible_renderer_config_can_disable_positioned_diagnostics) 
     config::set(updated);
 
     auto res = cli::parse<WebCliOpt>(into_deco_args("--unknown"));
-    EXPECT(!res.has_value());
+    EXPECT(!res);
     if(res.has_value()) {
         return;
     }
@@ -623,7 +623,7 @@ ZEST_CASE(global_compatible_renderer_config_can_disable_positioned_diagnostics) 
 ZEST_CASE(parse_overload_accepts_custom_renderer) {
     auto renderer = make_custom_renderer();
     auto res = cli::parse<WebCliOpt>(into_deco_args("--unknown"), renderer);
-    EXPECT(!res.has_value());
+    EXPECT(!res);
     if(res.has_value()) {
         return;
     }
@@ -719,7 +719,7 @@ ZEST_CASE(invocation_exposes_trace_and_remaining_args) {
     auto command = cli::command<CatterSelf>("catter");
     command.after<&CatterSelf::script_internal>([](const auto& step) { return step.stop(); });
     auto res = command.invoke(args);
-    EXPECT(res.has_value());
+    EXPECT(res);
     if(!res.has_value()) {
         return;
     }
@@ -737,14 +737,14 @@ ZEST_CASE(option_callback_can_stop_early_with_current_result) {
     CallbackStopState::reset();
 
     auto res = cli::parse<CallbackStopOpt>(into_deco_args("script.lua"));
-    EXPECT(res.has_value());
+    EXPECT(res);
     if(!res.has_value()) {
         return;
     }
 
-    EXPECT(res->options.script.has_value());
+    EXPECT(res->options.script);
     EXPECT(*res->options.script == "script.lua");
-    EXPECT(!res->options.required_after_stop.has_value());
+    EXPECT(!res->options.required_after_stop);
     EXPECT(res->next_index == 1);
     EXPECT(CallbackStopState::arg_index == 0u);
     EXPECT(CallbackStopState::next_cursor == 1u);
@@ -757,14 +757,14 @@ ZEST_CASE(option_callback_can_restart_with_new_span) {
 
     auto res =
         cli::parse<CallbackRestartOpt>(into_deco_args("entry.cc", "--skip", "ignored", "-v"));
-    EXPECT(res.has_value());
+    EXPECT(res);
     if(!res.has_value()) {
         return;
     }
 
-    EXPECT(res->options.script.has_value());
+    EXPECT(res->options.script);
     EXPECT(*res->options.script == "entry.cc");
-    EXPECT(!res->options.skip.has_value());
+    EXPECT(!res->options.skip);
     EXPECT((res->options.verbose.has_value() && *res->options.verbose));
     EXPECT(res->next_index == 1);
     EXPECT(CallbackRestartState::arg_index == 0u);
@@ -776,12 +776,12 @@ ZEST_CASE(option_callback_can_restart_with_owned_argv) {
     CallbackRestartOwnedState::reset();
 
     auto res = cli::parse<CallbackRestartOwnedOpt>(into_deco_args("entry.cc"));
-    EXPECT(res.has_value());
+    EXPECT(res);
     if(!res.has_value()) {
         return;
     }
 
-    EXPECT(res->options.script.has_value());
+    EXPECT(res->options.script);
     EXPECT(*res->options.script == "entry.cc");
     EXPECT((res->options.verbose.has_value() && *res->options.verbose));
     EXPECT(res->argv().size() == 1u);
@@ -794,15 +794,15 @@ ZEST_CASE(option_callback_can_restart_with_owned_argv) {
 
 ZEST_CASE(alias_can_forward_and_restart_without_replaying_prefix) {
     auto res = cli::parse<AliasRuntimeOpt>(into_deco_args("-v", "-O1", "--target-alias", "dst"));
-    EXPECT(res.has_value());
+    EXPECT(res);
     if(!res.has_value()) {
         return;
     }
 
     EXPECT((res->options.verbose.has_value() && *res->options.verbose));
-    EXPECT(res->options.optimize.has_value());
+    EXPECT(res->options.optimize);
     EXPECT(*res->options.optimize == "1");
-    EXPECT(res->options.target.has_value());
+    EXPECT(res->options.target);
     EXPECT(*res->options.target == "dst");
     EXPECT(res->next_index == 2u);
 }
@@ -810,16 +810,16 @@ ZEST_CASE(alias_can_forward_and_restart_without_replaying_prefix) {
 ZEST_CASE(alias_static_forward_supports_comma_and_multi_shapes) {
     auto res = cli::parse<AliasRuntimeOpt>(
         into_deco_args("--tags-alias,a,b", "--pair-alias", "left", "right"));
-    EXPECT(res.has_value());
+    EXPECT(res);
     if(!res.has_value()) {
         return;
     }
 
-    EXPECT(res->options.tags.has_value());
+    EXPECT(res->options.tags);
     EXPECT(res->options.tags->size() == 2);
     EXPECT((*res->options.tags)[0] == "a");
     EXPECT((*res->options.tags)[1] == "b");
-    EXPECT(res->options.pair.has_value());
+    EXPECT(res->options.pair);
     EXPECT(res->options.pair->size() == 2);
     EXPECT((*res->options.pair)[0] == "left");
     EXPECT((*res->options.pair)[1] == "right");
@@ -827,7 +827,7 @@ ZEST_CASE(alias_static_forward_supports_comma_and_multi_shapes) {
 
 ZEST_CASE(alias_dynamic_with_context_preserves_preformatted_errors) {
     auto res = cli::parse<AliasRuntimeOpt>(into_deco_args("--ctx-fail"));
-    EXPECT(!res.has_value());
+    EXPECT(!res);
     if(res.has_value()) {
         return;
     }
@@ -856,15 +856,15 @@ ZEST_CASE(option_callback_can_restart_multiple_times_with_owned_argv) {
     CallbackRestartTwiceState::reset();
 
     auto res = cli::parse<CallbackRestartTwiceOpt>(into_deco_args("first.cc"));
-    EXPECT(res.has_value());
+    EXPECT(res);
     if(!res.has_value()) {
         return;
     }
 
     EXPECT(CallbackRestartTwiceState::restart_count == 2u);
-    EXPECT(res->options.script.has_value());
+    EXPECT(res->options.script);
     EXPECT(*res->options.script == "second.cc");
-    EXPECT(res->options.name.has_value());
+    EXPECT(res->options.name);
     EXPECT(*res->options.name == "final");
     EXPECT(res->argv().size() == 2u);
     EXPECT(res->argv()[0] == "--name");
@@ -873,14 +873,14 @@ ZEST_CASE(option_callback_can_restart_multiple_times_with_owned_argv) {
 
 ZEST_CASE(option_callback_supports_action_shortcut) {
     auto res = cli::parse<CallbackShortcutOpt>(into_deco_args("shortcut.lua"));
-    EXPECT(res.has_value());
+    EXPECT(res);
     if(!res.has_value()) {
         return;
     }
 
-    EXPECT(res->options.script.has_value());
+    EXPECT(res->options.script);
     EXPECT(*res->options.script == "shortcut.lua");
-    EXPECT(!res->options.required_after_stop.has_value());
+    EXPECT(!res->options.required_after_stop);
     EXPECT(res->next_index == 1);
 }
 
@@ -897,13 +897,13 @@ ZEST_CASE(command_after_runs_after_field_callback) {
     });
 
     auto res = command.invoke(into_deco_args("-v", "--rest", "tail"));
-    EXPECT(res.has_value());
+    EXPECT(res);
     if(!res.has_value()) {
         return;
     }
 
     EXPECT((res->options.verbose.has_value() && *res->options.verbose));
-    EXPECT(!res->options.rest.has_value());
+    EXPECT(!res->options.rest);
     EXPECT(res->next_index == 1);
     EXPECT(CallbackComposeState::count == 1u);
     EXPECT(command_count == 1u);
@@ -928,13 +928,13 @@ ZEST_CASE(command_after_supports_nested_member_paths) {
             });
 
     auto res = command.invoke(into_deco_args("--second-token", "other", "--first-token", "hit"));
-    EXPECT(res.has_value());
+    EXPECT(res);
     if(!res.has_value()) {
         return;
     }
 
-    EXPECT(res->options.first.leaf.token.has_value());
-    EXPECT(res->options.second.leaf.token.has_value());
+    EXPECT(res->options.first.leaf.token);
+    EXPECT(res->options.second.leaf.token);
     EXPECT(*res->options.first.leaf.token == "hit");
     EXPECT(*res->options.second.leaf.token == "other");
     EXPECT(hit_count == 1u);
@@ -961,31 +961,31 @@ ZEST_CASE(command_callbacks_can_capture_state_finalize_and_match_all) {
     EXPECT(seen == "entry:main.lua|default");
 }
 
-};  // namespace kota::deco
+};  // ZEST_SUITE(cli_parse)
 
-ZEST_SUITE(command_match){
+ZEST_SUITE(command_match) {
 
-    ZEST_CASE(match_dispatches_by_category){
-        auto command = cli::command<WebCliOpt>("webcli [OPTIONS]");
-std::stringstream ss;
-command.match(WebCliOpt::Cate::version_category, [&](auto) { ss << "Version 1.0.0"; })
-    .match(WebCliOpt::Cate::help_category, [&](auto) { command.usage(ss, true); })
-    .match(WebCliOpt::Cate::request_category,
-           [&](WebCliOpt opt) {
-               EXPECT(opt.request.method.has_value());
-               EXPECT(opt.request.url.has_value());
-           })
-    .on_error([&](auto err) { ss << "Error: " << err.message << "\n"; });
+ZEST_CASE(match_dispatches_by_category) {
+    auto command = cli::command<WebCliOpt>("webcli [OPTIONS]");
+    std::stringstream ss;
+    command.match(WebCliOpt::Cate::version_category, [&](auto) { ss << "Version 1.0.0"; })
+        .match(WebCliOpt::Cate::help_category, [&](auto) { command.usage(ss, true); })
+        .match(WebCliOpt::Cate::request_category,
+               [&](WebCliOpt opt) {
+                   EXPECT(opt.request.method);
+                   EXPECT(opt.request.url);
+               })
+        .on_error([&](auto err) { ss << "Error: " << err.message << "\n"; });
 
-command(into_deco_args("-v"));
-EXPECT(ss.str().contains("Version 1.0.0"));
+    command(into_deco_args("-v"));
+    EXPECT(ss.str().contains("Version 1.0.0"));
 
-ss.str("");
-command(into_deco_args("--help"));
-EXPECT(ss.str().contains("webcli [OPTIONS]"));
+    ss.str("");
+    command(into_deco_args("--help"));
+    EXPECT(ss.str().contains("webcli [OPTIONS]"));
 
-ss.str("");
-command(into_deco_args("-X", "GET", "--url", "https://example.com"));
+    ss.str("");
+    command(into_deco_args("-X", "GET", "--url", "https://example.com"));
 }
 
 ZEST_CASE(match_can_observe_invocation_context) {
@@ -1060,44 +1060,44 @@ ZEST_CASE(command_explicit_renderer_overrides_default_renderer) {
     command.usage(ss);
     EXPECT(ss.str() == "USAGE<webcli [OPTIONS]:help>");
 }
-}
-;  // ZEST_SUITE(command_match)
 
-ZEST_SUITE(subcommander){
+};  // ZEST_SUITE(command_match)
 
-    ZEST_CASE(dispatching_with_subcommand_and_default){
-        cli::SubCommander subcommander("catter [OPTIONS]");
-std::stringstream ss;
-subcommander
-    .add(
-        decl::SubCommand{
-            .name = "run",
-            .description = "Run task",
-        },
-        [&](std::span<std::string> args) {
-            ss << "run:";
+ZEST_SUITE(subcommander) {
+
+ZEST_CASE(dispatching_with_subcommand_and_default) {
+    cli::SubCommander subcommander("catter [OPTIONS]");
+    std::stringstream ss;
+    subcommander
+        .add(
+            decl::SubCommand{
+                .name = "run",
+                .description = "Run task",
+            },
+            [&](std::span<std::string> args) {
+                ss << "run:";
+                for(const auto& arg: args) {
+                    ss << arg << ",";
+                }
+            })
+        .add([&](std::span<std::string> args) {
+            ss << "default:";
             for(const auto& arg: args) {
                 ss << arg << ",";
             }
         })
-    .add([&](std::span<std::string> args) {
-        ss << "default:";
-        for(const auto& arg: args) {
-            ss << arg << ",";
-        }
-    })
-    .when_err([&](auto err) { ss << "err:" << err.message; });
+        .when_err([&](auto err) { ss << "err:" << err.message; });
 
-std::vector<std::string> run_args = {"run", "-v", "--dry"};
-subcommander(run_args);
-EXPECT(ss.str() == "run:-v,--dry,");
+    std::vector<std::string> run_args = {"run", "-v", "--dry"};
+    subcommander(run_args);
+    EXPECT(ss.str() == "run:-v,--dry,");
 
-ss.str("");
-ss.clear();
+    ss.str("");
+    ss.clear();
 
-std::vector<std::string> default_args = {"--help"};
-subcommander(default_args);
-EXPECT(ss.str() == "default:--help,");
+    std::vector<std::string> default_args = {"--help"};
+    subcommander(default_args);
+    EXPECT(ss.str() == "default:--help,");
 }
 
 ZEST_CASE(match_reports_subcommand_context) {
@@ -1110,7 +1110,7 @@ ZEST_CASE(match_reports_subcommand_context) {
         [](std::span<std::string>) {});
 
     auto match = subcommander.match(into_deco_args("run", "-v", "--dry"));
-    EXPECT(match.has_value());
+    EXPECT(match);
     if(!match.has_value()) {
         return;
     }
@@ -1145,8 +1145,8 @@ ZEST_CASE(dispatching_with_subcommand_command) {
     web_command
         .match(WebCliOpt::Cate::request_category,
                [&](WebCliOpt opt) {
-                   EXPECT(opt.request.method.has_value());
-                   EXPECT(opt.request.url.has_value());
+                   EXPECT(opt.request.method);
+                   EXPECT(opt.request.url);
                    ss << "request-ok";
                })
         .on_error([&](auto err) { ss << "dispatch-err:" << err.message; });
@@ -1262,8 +1262,8 @@ ZEST_CASE(subcommand_can_use_modern_renderer_config) {
     EXPECT(ss.str().contains("Overview text"));
     EXPECT(ss.str().contains("run"));
 }
-}
-;  // ZEST_SUITE(subcommander)
+
+};  // ZEST_SUITE(subcommander)
 
 struct CatterOpt {
     DECO_CFG_START(required = false)
@@ -1321,49 +1321,51 @@ struct CatterOpt {
     std::vector<std::string> script_args;
 };
 
-ZEST_SUITE(deco_cases_from_user){
+ZEST_SUITE(deco_cases_from_user) {
 
-    ZEST_CASE(catter_v2){ScopedDefaultRenderer restore;
-cli::text::set_default_renderer(cli::text::ModernRenderer());
-auto cli =
-    cli::command<CatterOpt>("catter [OPTIONS] [OPTIONS for script] -- [OPTIONS for command]");
-auto eat_script_args = [](auto& step) {
-    std::uint32_t idx = step.next_cursor();
-    std::span<std::string> original_argv = step.original_argv();
-    while(idx < original_argv.size() && original_argv[idx] != "--") {
-        step.options().script_args.push_back(original_argv[idx++]);
+ZEST_CASE(catter_v2) {
+    ScopedDefaultRenderer restore;
+    cli::text::set_default_renderer(cli::text::ModernRenderer());
+    auto cli =
+        cli::command<CatterOpt>("catter [OPTIONS] [OPTIONS for script] -- [OPTIONS for command]");
+    auto eat_script_args = [](auto& step) {
+        std::uint32_t idx = step.next_cursor();
+        std::span<std::string> original_argv = step.original_argv();
+        while(idx < original_argv.size() && original_argv[idx] != "--") {
+            step.options().script_args.push_back(original_argv[idx++]);
+        }
+        return step.seek(idx);
+    };
+    cli.after<&CatterOpt::external_script>(eat_script_args)
+        .after<&CatterOpt::internal_script>(eat_script_args)
+        .after<&CatterOpt::help>([](auto& step) {
+            step.usage(std::cerr);
+            return step.stop();
+        });
+
+    const auto script_path =
+        std::filesystem::temp_directory_path() / "kotatsu-catter-v2-script.tmp";
+    {
+        std::ofstream out(script_path);
+        out << "print('hello')\n";
     }
-    return step.seek(idx);
-};
-cli.after<&CatterOpt::external_script>(eat_script_args)
-    .after<&CatterOpt::internal_script>(eat_script_args)
-    .after<&CatterOpt::help>([](auto& step) {
-        step.usage(std::cerr);
-        return step.stop();
-    });
 
-const auto script_path = std::filesystem::temp_directory_path() / "kotatsu-catter-v2-script.tmp";
-{
-    std::ofstream out(script_path);
-    out << "print('hello')\n";
-}
+    auto res = cli.invoke(
+        into_deco_args("-s", script_path.string(), "--flag", "demo", "--", "make", "test"));
+    EXPECT(res);
+    if(!res.has_value()) {
+        std::filesystem::remove(script_path);
+        return;
+    }
 
-auto res =
-    cli.invoke(into_deco_args("-s", script_path.string(), "--flag", "demo", "--", "make", "test"));
-EXPECT(res.has_value());
-if(!res.has_value()) {
+    EXPECT(res->options.external_script);
+    EXPECT(res->options.script_args == std::vector<std::string>{"--flag", "demo"});
+    EXPECT(res->options.command);
+    EXPECT(*res->options.command == std::vector<std::string>{"make", "test"});
     std::filesystem::remove(script_path);
-    return;
 }
 
-EXPECT(res->options.external_script.has_value());
-EXPECT(res->options.script_args == std::vector<std::string>{"--flag", "demo"});
-EXPECT(res->options.command.has_value());
-EXPECT(*res->options.command == std::vector<std::string>{"make", "test"});
-std::filesystem::remove(script_path);
-}
-}
-;  // ZEST_SUITE(deco_cases_from_user)
+};  // ZEST_SUITE(deco_cases_from_user)
 
 }  // namespace
 }  // namespace kota::deco

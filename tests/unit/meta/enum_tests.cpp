@@ -68,32 +68,32 @@ static_assert(reflection<Edge8>::member_values[1] == Edge8::Max);
 static_assert(reflection<Edge8>::member_names[0] == "Min");
 static_assert(reflection<Edge8>::member_names[1] == "Max");
 
-ZEST_SUITE(reflection){
+ZEST_SUITE(reflection) {
 
-    ZEST_CASE(enum_member_names){EXPECT(enum_name(Color::Red) == "Red");
-EXPECT(enum_name(Color::Green) == "Green");
-EXPECT(enum_name(Color::Blue) == "Blue");
+ZEST_CASE(enum_member_names) {
+    EXPECT(enum_name(Color::Red) == "Red");
+    EXPECT(enum_name(Color::Green) == "Green");
+    EXPECT(enum_name(Color::Blue) == "Blue");
 
-EXPECT(enum_name(Plain::Zero) == "Zero");
-EXPECT(enum_name(Plain::One) == "One");
-EXPECT(enum_name(Plain::Two) == "Two");
+    EXPECT(enum_name(Plain::Zero) == "Zero");
+    EXPECT(enum_name(Plain::One) == "One");
+    EXPECT(enum_name(Plain::Two) == "Two");
 
-EXPECT(enum_name(Tiny::A) == "A");
-EXPECT(enum_name(Tiny::B) == "B");
-EXPECT(enum_name(Tiny::C) == "C");
+    EXPECT(enum_name(Tiny::A) == "A");
+    EXPECT(enum_name(Tiny::B) == "B");
+    EXPECT(enum_name(Tiny::C) == "C");
 
-EXPECT(enum_name(Sparse::Neg) == "Neg");
-EXPECT(enum_name(Sparse::Mid) == "Mid");
-EXPECT(enum_name(Sparse::High) == "High");
-EXPECT(enum_name(static_cast<Sparse>(42)) == "");
-EXPECT(enum_name(static_cast<Sparse>(42), "Unknown") == "Unknown");
+    EXPECT(enum_name(Sparse::Neg) == "Neg");
+    EXPECT(enum_name(Sparse::Mid) == "Mid");
+    EXPECT(enum_name(Sparse::High) == "High");
+    EXPECT(enum_name(static_cast<Sparse>(42)) == "");
+    EXPECT(enum_name(static_cast<Sparse>(42), "Unknown") == "Unknown");
 
-EXPECT(enum_name(Edge8::Min) == "Min");
-EXPECT(enum_name(Edge8::Max) == "Max");
+    EXPECT(enum_name(Edge8::Min) == "Min");
+    EXPECT(enum_name(Edge8::Max) == "Max");
+}
 
-}  // namespace
-
-};  // namespace kota::meta
+};  // ZEST_SUITE(reflection)
 
 }  // namespace
 

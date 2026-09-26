@@ -14,16 +14,16 @@ namespace {
 
 using namespace std::chrono;
 
-ZEST_SUITE(sync, loop_fixture){
+ZEST_SUITE(sync, loop_fixture) {
 
-    ZEST_CASE(mutex_try_lock){mutex m;
-EXPECT(m.try_lock());
-EXPECT(!m.try_lock());
-m.unlock();
-EXPECT(m.try_lock());
-m.unlock();
-
-}  // namespace
+ZEST_CASE(mutex_try_lock) {
+    mutex m;
+    EXPECT(m.try_lock());
+    EXPECT(!m.try_lock());
+    m.unlock();
+    EXPECT(m.try_lock());
+    m.unlock();
+}
 
 ZEST_CASE(mutex_lock_order) {
     mutex m;
@@ -105,7 +105,7 @@ ZEST_CASE(event_interrupt) {
 
     auto driver = [&]() -> task<> {
         auto result = co_await waiter().catch_cancel();
-        EXPECT(!result.has_value());
+        EXPECT(!result);
         EXPECT(!reached);
         loop.stop();
     };
@@ -126,7 +126,7 @@ ZEST_CASE(interrupt_many) {
 
     auto waiter = [&]() -> task<> {
         auto result = co_await ev.wait().catch_cancel();
-        EXPECT(!result.has_value());
+        EXPECT(!result);
         cancelled += 1;
         if(cancelled == 2) {
             loop.stop();
@@ -153,7 +153,7 @@ ZEST_CASE(interrupt_snapshot) {
 
     auto waiter = [&]() -> task<> {
         auto first = co_await ev.wait().catch_cancel();
-        EXPECT(!first.has_value());
+        EXPECT(!first);
         cancelled += 1;
 
         auto second = co_await ev.wait().catch_cancel();
@@ -277,7 +277,7 @@ ZEST_CASE(condition_variable_wait) {
     EXPECT(step == 3);
 }
 
-};  // namespace kota
+};  // ZEST_SUITE(sync)
 
 }  // namespace
 

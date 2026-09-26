@@ -30,11 +30,11 @@ std::string read_file(std::string_view path) {
     return std::string(std::istreambuf_iterator<char>(file), {});
 }
 
-ZEST_SUITE(snapshot){
+ZEST_SUITE(snapshot) {
 
-    ZEST_CASE(basic_named){ASSERT_SNAPSHOT("hello snapshot", "basic_named");
-
-}  // namespace
+ZEST_CASE(basic_named) {
+    ASSERT_SNAPSHOT("hello snapshot", "basic_named");
+}
 
 ZEST_CASE(unnamed) {
     ASSERT_SNAPSHOT("auto-named snapshot content");
@@ -146,7 +146,7 @@ ZEST_CASE(glob_empty_context) {
     EXPECT(result);
 }
 
-};  // namespace kota::zest
+};  // ZEST_SUITE(snapshot)
 
 }  // namespace
 

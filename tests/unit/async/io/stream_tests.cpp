@@ -259,28 +259,29 @@ int set_abortive_close(socket_t sock) {
 
 }  // namespace
 
-ZEST_SUITE(pipe, loop_fixture){
+ZEST_SUITE(pipe, loop_fixture) {
 
-    ZEST_CASE(read_from_fd){int fds[2] = {-1, -1};
-ASSERT(create_pipe(fds) == 0);
+ZEST_CASE(read_from_fd) {
+    int fds[2] = {-1, -1};
+    ASSERT(create_pipe(fds) == 0);
 
-const std::string message = "kotatsu-pipe";
-ASSERT(write_fd(fds[1], message.data(), message.size()) == static_cast<ssize_t>(message.size()));
-close_fd(fds[1]);
+    const std::string message = "kotatsu-pipe";
+    ASSERT(write_fd(fds[1], message.data(), message.size()) ==
+           static_cast<ssize_t>(message.size()));
+    close_fd(fds[1]);
 
-auto pipe_res = pipe::open(fds[0], {}, loop);
-ASSERT(pipe_res.has_value());
+    auto pipe_res = pipe::open(fds[0], {}, loop);
+    ASSERT(pipe_res);
 
-auto reader = read_from_pipe(std::move(*pipe_res));
-schedule_all(reader);
+    auto reader = read_from_pipe(std::move(*pipe_res));
+    schedule_all(reader);
 
-auto result = reader.result();
-EXPECT(result.has_value());
-if(result.has_value()) {
-    EXPECT(*result == message);
+    auto result = reader.result();
+    EXPECT(result);
+    if(result.has_value()) {
+        EXPECT(*result == message);
+    }
 }
-
-}  // namespace kota
 
 ZEST_CASE(read_some_fd) {
     int fds[2] = {-1, -1};
@@ -292,13 +293,13 @@ ZEST_CASE(read_some_fd) {
     close_fd(fds[1]);
 
     auto pipe_res = pipe::open(fds[0], {}, loop);
-    ASSERT(pipe_res.has_value());
+    ASSERT(pipe_res);
 
     auto reader = read_some_from_pipe(std::move(*pipe_res));
     schedule_all(reader);
 
     auto result = reader.result();
-    EXPECT(result.has_value());
+    EXPECT(result);
     if(result.has_value()) {
         EXPECT(*result == message);
     }
@@ -314,7 +315,7 @@ ZEST_CASE(read_chunk_fd) {
     close_fd(fds[1]);
 
     auto pipe_res = pipe::open(fds[0], {}, loop);
-    ASSERT(pipe_res.has_value());
+    ASSERT(pipe_res);
 
     auto reader = read_chunk_from_pipe(std::move(*pipe_res));
     schedule_all(reader);
@@ -330,15 +331,15 @@ ZEST_CASE(read_chunk_then_read_some_fd) {
 
     event first_chunk_consumed;
     auto pipe_res = pipe::open(fds[0], {}, loop);
-    ASSERT(pipe_res.has_value());
+    ASSERT(pipe_res);
 
     auto reader = read_chunk_then_some(std::move(*pipe_res), first_chunk_consumed);
     auto writer = write_two_pipe_chunks(fds[1], loop, first_chunk_consumed);
     schedule_all(reader, writer);
 
     auto [first, second] = reader.result();
-    ASSERT(first.has_value());
-    ASSERT(second.has_value());
+    ASSERT(first);
+    ASSERT(second);
     EXPECT(*first == "kotatsu-chunk");
     EXPECT(*second == "kotatsu-read-some");
 }
@@ -357,7 +358,7 @@ ZEST_CASE(connect_and_accept) {
     pipe::options opts{};
     opts.backlog = 16;
     auto acc_res = pipe::listen(name, opts, loop);
-    ASSERT(acc_res.has_value());
+    ASSERT(acc_res);
 
     int done = 0;
     const std::string message = "kotatsu-pipe-connect";
@@ -368,7 +369,7 @@ ZEST_CASE(connect_and_accept) {
     auto server_res = server.result();
     auto client_res = client.result();
 
-    EXPECT(server_res.has_value());
+    EXPECT(server_res);
     EXPECT(!client_res.has_error());
     if(server_res.has_value()) {
         EXPECT(*server_res == message);
@@ -391,7 +392,7 @@ ZEST_CASE(connect_failure, serial = true) {
     schedule_all(client);
 
     auto client_res = client.result();
-    EXPECT(!client_res.has_value());
+    EXPECT(!client_res);
 }
 
 ZEST_CASE(stop, serial = true) {
@@ -408,7 +409,7 @@ ZEST_CASE(stop, serial = true) {
     pipe::options opts{};
     opts.backlog = 16;
     auto acc = pipe::listen(name, opts, loop);
-    ASSERT(acc.has_value());
+    ASSERT(acc);
 
     auto err = acc->stop();
     EXPECT(!err.has_error());
@@ -436,46 +437,47 @@ ZEST_CASE(stop, serial = true) {
     acc->stop();
     EXPECT(task2->is_failed());
 }
-}
-;  // ZEST_SUITE(pipe)
 
-ZEST_SUITE(tcp, loop_fixture){
+};  // ZEST_SUITE(pipe)
 
-    ZEST_CASE(accept_and_read){auto acc_res = tcp::listen("127.0.0.1", 0, {}, loop);
-ASSERT(acc_res.has_value());
-auto bound = tcp::local_port(*acc_res);
-ASSERT(bound.has_value());
-int port = *bound;
+ZEST_SUITE(tcp, loop_fixture) {
 
-auto server = accept_and_read(std::move(*acc_res));
+ZEST_CASE(accept_and_read) {
+    auto acc_res = tcp::listen("127.0.0.1", 0, {}, loop);
+    ASSERT(acc_res);
+    auto bound = tcp::local_port(*acc_res);
+    ASSERT(bound);
+    int port = *bound;
 
-socket_t client_fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-ASSERT(client_fd != invalid_socket);
+    auto server = accept_and_read(std::move(*acc_res));
 
-sockaddr_in addr{};
-addr.sin_family = AF_INET;
-addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-addr.sin_port = htons(static_cast<uint16_t>(port));
+    socket_t client_fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ASSERT(client_fd != invalid_socket);
 
-ASSERT(::connect(client_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0);
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(static_cast<uint16_t>(port));
 
-const std::string message = "kotatsu-tcp";
-ASSERT(::send(client_fd, message.data(), static_cast<int>(message.size()), 0) ==
-       static_cast<ssize_t>(message.size()));
-close_socket(client_fd);
+    ASSERT(::connect(client_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0);
 
-schedule_all(server);
+    const std::string message = "kotatsu-tcp";
+    ASSERT(::send(client_fd, message.data(), static_cast<int>(message.size()), 0) ==
+           static_cast<ssize_t>(message.size()));
+    close_socket(client_fd);
 
-auto result = server.result();
-EXPECT(result.has_value());
-EXPECT(*result == message);
+    schedule_all(server);
+
+    auto result = server.result();
+    EXPECT(result);
+    EXPECT(*result == message);
 }
 
 ZEST_CASE(accept_already_waiting) {
     auto acc_res = tcp::listen("127.0.0.1", 0, {}, loop);
-    ASSERT(acc_res.has_value());
+    ASSERT(acc_res);
     auto bound = tcp::local_port(*acc_res);
-    ASSERT(bound.has_value());
+    ASSERT(bound);
     int port = *bound;
 
     auto acc = std::move(*acc_res);
@@ -499,8 +501,8 @@ ZEST_CASE(accept_already_waiting) {
 
     auto first_res = first.result();
     auto second_res = second.result();
-    EXPECT(first_res.has_value());
-    EXPECT(!second_res.has_value());
+    EXPECT(first_res);
+    EXPECT(!second_res);
     if(!second_res.has_value()) {
         EXPECT(second_res.error().value() == error::connection_already_in_progress.value());
     }
@@ -508,9 +510,9 @@ ZEST_CASE(accept_already_waiting) {
 
 ZEST_CASE(connect_and_write) {
     auto acc_res = tcp::listen("127.0.0.1", 0, {}, loop);
-    ASSERT(acc_res.has_value());
+    ASSERT(acc_res);
     auto bound = tcp::local_port(*acc_res);
-    ASSERT(bound.has_value());
+    ASSERT(bound);
     int port = *bound;
 
     int done = 0;
@@ -520,16 +522,16 @@ ZEST_CASE(connect_and_write) {
 
     auto server_res = server.result();
     auto client_res = client.result();
-    EXPECT(server_res.has_value());
+    EXPECT(server_res);
     EXPECT(*server_res == "kotatsu-tcp-connect");
     EXPECT(!client_res.has_error());
 }
 
 ZEST_CASE(read_some_error) {
     auto acc_res = tcp::listen("127.0.0.1", 0, {}, loop);
-    ASSERT(acc_res.has_value());
+    ASSERT(acc_res);
     auto bound = tcp::local_port(*acc_res);
-    ASSERT(bound.has_value());
+    ASSERT(bound);
     int port = *bound;
 
     auto server = accept_and_read_some(std::move(*acc_res));
@@ -549,9 +551,9 @@ ZEST_CASE(read_some_error) {
     schedule_all(server);
 
     auto result = server.result();
-    EXPECT(!result.has_value());
+    EXPECT(!result);
 }
-}
-;  // ZEST_SUITE(tcp)
+
+};  // ZEST_SUITE(tcp)
 
 }  // namespace kota

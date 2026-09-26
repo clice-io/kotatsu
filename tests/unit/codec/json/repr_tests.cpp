@@ -526,26 +526,28 @@ struct string_enum_config {
     [[maybe_unused]] constexpr static auto enum_repr = codec::enum_repr::String;
 };
 
-ZEST_SUITE(serde_json_repr){
+ZEST_SUITE(serde_json_repr) {
 
-    ZEST_CASE(declarative_repr_roundtrip){
-        const symbol input{.rel = relation::references, .ver = {.major = 1, .minor = 22}};
+ZEST_CASE(declarative_repr_roundtrip) {
+    const symbol input{
+        .rel = relation::references,
+        .ver = {.major = 1, .minor = 22}
+    };
 
-auto encoded = to_string(input);
-ASSERT(encoded.has_value());
-EXPECT(*encoded == R"({"rel":2,"ver":"1.22"})");
+    auto encoded = to_string(input);
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"rel":2,"ver":"1.22"})");
 
-symbol output{};
-auto status = from_string(*encoded, output);
-ASSERT(status.has_value());
-EXPECT(output == input);
-
-}  // namespace
+    symbol output{};
+    auto status = from_string(*encoded, output);
+    ASSERT(status);
+    EXPECT(output == input);
+}
 
 ZEST_CASE(repr_reaches_container_elements_and_map_keys) {
     std::vector<relation> rels{relation::defines, relation::declares};
     auto encoded = to_string(rels);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"([1,0])");
 
     std::vector<relation> parsed_rels;
@@ -558,7 +560,7 @@ ZEST_CASE(repr_reaches_container_elements_and_map_keys) {
         {{.major = 2, .minor = 5}, 25},
     };
     auto encoded_map = to_string(by_version);
-    ASSERT(encoded_map.has_value());
+    ASSERT(encoded_map);
     EXPECT(*encoded_map == R"({"1.0":10,"2.5":25})");
 
     std::map<version, int> parsed_map;
@@ -570,12 +572,12 @@ ZEST_CASE(field_annotation_beats_type_repr) {
     const packed_symbol input{.ver = {{.major = 3, .minor = 14}}};
 
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"ver":3014})");
 
     packed_symbol output{};
     auto status = from_string(*encoded, output);
-    ASSERT(status.has_value());
+    ASSERT(status);
     EXPECT(meta::annotated_value(output.ver) == (version{.major = 3, .minor = 14}));
 }
 
@@ -583,7 +585,7 @@ ZEST_CASE(one_directional_repr_encodes) {
     const audit_log input{.stamp = {.at = 1234567}};
 
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"stamp":1234567})");
 }
 
@@ -591,19 +593,19 @@ ZEST_CASE(imperative_repr_roundtrip) {
     const hex_id input{.v = 0xDEADBEEF};
 
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"("deadbeef")");
 
     hex_id output{};
     auto status = from_string(*encoded, output);
-    ASSERT(status.has_value());
+    ASSERT(status);
     EXPECT(output == input);
 }
 
 ZEST_CASE(dynamic_repr_roundtrip) {
     dynamic_holder as_int{.v = {.v = std::int64_t{42}}};
     auto encoded = to_string(as_int);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"v":42})");
 
     dynamic_holder output{};
@@ -612,7 +614,7 @@ ZEST_CASE(dynamic_repr_roundtrip) {
 
     dynamic_holder as_str{.v = {.v = std::string("free-form")}};
     encoded = to_string(as_str);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"v":"free-form"})");
 
     ASSERT(from_string(*encoded, output).has_value());
@@ -624,7 +626,7 @@ ZEST_CASE(repr_alternative_in_untagged_variant) {
     // pruning must judge compatibility against that, not the raw kind.
     std::variant<version, int> input = version{.major = 1, .minor = 22};
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"("1.22")");
 
     std::variant<version, int> output;
@@ -633,7 +635,7 @@ ZEST_CASE(repr_alternative_in_untagged_variant) {
 
     input = 7;
     encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     ASSERT(from_string(*encoded, output).has_value());
     EXPECT(output == input);
 }
@@ -643,7 +645,7 @@ ZEST_CASE(repr_inside_optional) {
         .v = version{.major = 1, .minor = 5}
     };
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"v":"1.5"})");
 
     maybe_version output{};
@@ -652,23 +654,23 @@ ZEST_CASE(repr_inside_optional) {
 
     input.v.reset();
     encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     output.v = version{.major = 9, .minor = 9};
     ASSERT(from_string(*encoded, output).has_value());
-    EXPECT(!output.v.has_value());
+    EXPECT(!output.v);
 }
 
 ZEST_CASE(repr_beats_enum_string_config) {
     // The repr'd enum still travels as its declared integer repr.
     auto encoded = to_string<string_enum_config>(relation::references);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == "2");
 }
 
 ZEST_CASE(imperative_with_adapter_roundtrip) {
     shouted input{.name = "loud"};
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"name":"LOUD"})");
 
     shouted output{};
@@ -680,7 +682,7 @@ ZEST_CASE(chained_repr_resolves_to_final_type) {
     const chained_holder input{.t = {.id = {.v = 7}}};
 
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"t":7})");
 
     chained_holder output{};
@@ -689,7 +691,7 @@ ZEST_CASE(chained_repr_resolves_to_final_type) {
 
     // The schema follows the chain to the final integer shape.
     auto schema = json::schema_string<chained_holder>();
-    ASSERT(schema.has_value());
+    ASSERT(schema);
     EXPECT(zest::contains(*schema, R"("t":{"type":"integer")"));
 }
 
@@ -714,14 +716,14 @@ ZEST_CASE(annotation_nested_in_repr_resolved_type) {
 
     const fee_schedule input{.fee = {.v = 250}};
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
 
     fee_schedule output{};
     ASSERT(from_string(*encoded, output).has_value());
     EXPECT(output == input);
 
     auto schema = json::schema_string<fee_schedule>();
-    ASSERT(schema.has_value());
+    ASSERT(schema);
     EXPECT(zest::contains(*schema, R"("fee":{"anyOf":[{"type":"number"},{"type":"null"}]})"));
 }
 
@@ -734,7 +736,7 @@ ZEST_CASE(annotated_repr_alternative_in_untagged_variant) {
     };
 
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == "3014");
 
     std::variant<packed_ver, std::string> output;
@@ -752,7 +754,7 @@ ZEST_CASE(structural_attrs_nested_in_repr_resolved_type) {
     };
 
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"r":{"startLine":3,"lineCount":4}})");
 
     range_doc output{};
@@ -764,7 +766,7 @@ ZEST_CASE(structural_attrs_nested_in_repr_resolved_type) {
 
     // The schema exposes the renamed properties and the unknown-field policy.
     auto schema = json::schema_string<range_doc>();
-    ASSERT(schema.has_value());
+    ASSERT(schema);
     EXPECT(zest::contains(*schema, R"("startLine")"));
     EXPECT(!zest::contains(*schema, R"("start_line")"));
     EXPECT(zest::contains(*schema, R"("additionalProperties":false)"));
@@ -776,7 +778,7 @@ ZEST_CASE(tagging_nested_in_repr_resolved_type) {
     const load_result input{.ok = false, .message = "missing"};
 
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"status":"err","value":{"message":"missing"}})");
 
     load_result output{};
@@ -790,7 +792,7 @@ ZEST_CASE(tagging_nested_in_repr_resolved_type) {
     EXPECT(vi.tag_field == std::string_view("status"));
 
     auto schema = json::schema_string<load_result>();
-    ASSERT(schema.has_value());
+    ASSERT(schema);
     EXPECT(zest::contains(*schema, R"("status":{"const":"err"})"));
 }
 
@@ -802,7 +804,7 @@ ZEST_CASE(outer_policy_reaches_tagged_repr_alternatives) {
     const strict_report input{.result = {{.ok = true, .bytes = 3, .message = {}}}};
 
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"result":{"status":"ok","value":{"byteCount":3}}})");
 
     strict_report output{};
@@ -824,7 +826,7 @@ ZEST_CASE(outer_policy_reaches_tagged_repr_alternatives) {
     EXPECT(ok_alt.fields[0].name == std::string_view("byteCount"));
 
     auto schema = json::schema_string<strict_report>();
-    ASSERT(schema.has_value());
+    ASSERT(schema);
     EXPECT(zest::contains(*schema, R"("byteCount")"));
     EXPECT(!zest::contains(*schema, R"("byte_count")"));
 }
@@ -837,7 +839,7 @@ ZEST_CASE(adapter_beats_variant_tagging_outside_fields) {
 
     adapted_tagged_choice input{7};
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"("i:7")");
 
     adapted_tagged_choice output{};
@@ -849,12 +851,12 @@ ZEST_CASE(nullable_repr_keeps_field_required) {
     // The encoded value may be null, but the property itself must be present:
     // requiredness follows the declared field type, which decode enforces.
     auto schema = json::schema_string<stamped>();
-    ASSERT(schema.has_value());
+    ASSERT(schema);
     EXPECT(zest::contains(*schema, R"("required":["s"])"));
 
     const stamped input{};  // tick == 0 travels as null
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     EXPECT(*encoded == R"({"s":null})");
 
     stamped output{.s = {.tick = 9}};
@@ -867,7 +869,7 @@ ZEST_CASE(nullable_repr_keeps_field_required) {
 
 ZEST_CASE(schema_follows_repr) {
     auto schema = json::schema_string<symbol>();
-    ASSERT(schema.has_value());
+    ASSERT(schema);
 
     // relation surfaces as its uint32 repr, version as a string.
     EXPECT(zest::contains(*schema, R"("rel":{"type":"integer")"));
@@ -876,11 +878,11 @@ ZEST_CASE(schema_follows_repr) {
 
     // A dynamic repr degrades to the "any" schema.
     auto dynamic_schema = json::schema_string<dynamic_holder>();
-    ASSERT(dynamic_schema.has_value());
+    ASSERT(dynamic_schema);
     EXPECT(zest::contains(*dynamic_schema, R"("v":{})"));
 }
 
-};  // namespace kota::codec
+};  // ZEST_SUITE(serde_json_repr)
 
 }  // namespace
 
@@ -951,23 +953,23 @@ struct journal_holder {
 static_assert(std::is_same_v<meta::resolved_repr_t<journal>, std::string>);
 static_assert(std::is_same_v<meta::resolved_repr_t<journal, json::format>, std::int64_t>);
 
-ZEST_SUITE(serde_json_format_scoped_repr){
+ZEST_SUITE(serde_json_format_scoped_repr) {
 
-    ZEST_CASE(json_backend_picks_json_scoped_repr){const journal_holder input{.j = {.page = 41}};
+ZEST_CASE(json_backend_picks_json_scoped_repr) {
+    const journal_holder input{.j = {.page = 41}};
 
-auto encoded = to_string(input);
-ASSERT(encoded.has_value());
-EXPECT(*encoded == R"({"j":41})");
+    auto encoded = to_string(input);
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"j":41})");
 
-journal_holder output{};
-ASSERT(from_string(*encoded, output).has_value());
-EXPECT(output == input);
-
-}  // namespace
+    journal_holder output{};
+    ASSERT(from_string(*encoded, output).has_value());
+    EXPECT(output == input);
+}
 
 ZEST_CASE(schema_follows_json_scoped_repr) {
     auto schema = json::schema_string<journal_holder>();
-    ASSERT(schema.has_value());
+    ASSERT(schema);
     EXPECT(zest::contains(*schema, R"("j":{"type":"integer")"));
 }
 
@@ -989,7 +991,7 @@ ZEST_CASE(map_keys_follow_json_scoped_repr) {
     };
 
     auto encoded = to_string(input);
-    ASSERT(encoded.has_value());
+    ASSERT(encoded);
     // Keys travel through the json-scoped integer repr, not the generic
     // textual one.
     EXPECT(*encoded == R"({"7":1,"19":2})");
@@ -999,7 +1001,7 @@ ZEST_CASE(map_keys_follow_json_scoped_repr) {
     EXPECT(output == input);
 }
 
-};  // namespace kota::codec
+};  // ZEST_SUITE(serde_json_format_scoped_repr)
 
 }  // namespace
 

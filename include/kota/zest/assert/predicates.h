@@ -21,13 +21,15 @@ namespace kota::zest {
 template <typename H, typename N>
 Match contains(const H& haystack, const N& needle) {
     bool held;
-    if constexpr(detail::is_text<H>) {
-        held = std::string_view(haystack).find(needle) != std::string_view::npos;
+    if constexpr(meta::str_like<H>) {
+        auto text = detail::as_text(haystack);
+        held = text && text->find(needle) != std::string_view::npos;
     } else {
-        held = std::ranges::any_of(haystack,
-                                   [&](const auto& element) { return meta::eq(element, needle); });
+        held = std::ranges::any_of(haystack, [&](const auto& element) {
+            return detail::relate<detail::Relation::Equal>(element, needle);
+        });
     }
-    return Match{held, [&] {
+    return Match{.held = held, .explain = [&] {
                      return std::format("haystack: {}\nneedle: {}",
                                         pretty_dump(haystack),
                                         pretty_dump(needle));
@@ -36,7 +38,8 @@ Match contains(const H& haystack, const N& needle) {
 
 template <typename T, typename P>
 Match starts_with(const T& text, const P& prefix) {
-    return Match{std::string_view(text).starts_with(prefix), [&] {
+    auto view = detail::as_text(text);
+    return Match{.held = view && view->starts_with(prefix), .explain = [&] {
                      return std::format("text: {}\nprefix: {}",
                                         pretty_dump(text),
                                         pretty_dump(prefix));
@@ -45,7 +48,8 @@ Match starts_with(const T& text, const P& prefix) {
 
 template <typename T, typename S>
 Match ends_with(const T& text, const S& suffix) {
-    return Match{std::string_view(text).ends_with(suffix), [&] {
+    auto view = detail::as_text(text);
+    return Match{.held = view && view->ends_with(suffix), .explain = [&] {
                      return std::format("text: {}\nsuffix: {}",
                                         pretty_dump(text),
                                         pretty_dump(suffix));
@@ -56,8 +60,12 @@ Match ends_with(const T& text, const S& suffix) {
 template <typename L, typename R>
 Match type_eq() {
     return Match{
-        std::is_same_v<L, R>,
-        [] { return std::format("lhs: {}\nrhs: {}", meta::type_name<L>(), meta::type_name<R>()); }};
+        .held = std::is_same_v<L, R>,
+        .explain =
+            [] {
+                return std::format("lhs: {}\nrhs: {}", meta::type_name<L>(), meta::type_name<R>());
+            },
+    };
 }
 
 }  // namespace kota::zest

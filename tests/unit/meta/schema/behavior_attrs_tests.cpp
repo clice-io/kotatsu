@@ -18,30 +18,30 @@ namespace {
 
 namespace fx = ::kota::meta::fixtures;
 
-ZEST_SUITE(virtual_schema_behavior_attrs){
+ZEST_SUITE(virtual_schema_behavior_attrs) {
 
-    ZEST_CASE(skip_if_and_as){STATIC_EXPECT(virtual_schema<fx::BehaviorStruct>::count == 3U);
+ZEST_CASE(skip_if_and_as) {
+    STATIC_EXPECT(virtual_schema<fx::BehaviorStruct>::count == 3U);
 
-constexpr auto& fields = virtual_schema<fx::BehaviorStruct>::fields;
+    constexpr auto& fields = virtual_schema<fx::BehaviorStruct>::fields;
 
-STATIC_EXPECT(fields[0].name == "maybe");
-STATIC_EXPECT(fields[1].name == "as_str");
-STATIC_EXPECT(fields[2].name == "plain");
+    STATIC_EXPECT(fields[0].name == "maybe");
+    STATIC_EXPECT(fields[1].name == "as_str");
+    STATIC_EXPECT(fields[2].name == "plain");
 
-// skip_if is not a behavior provider
-STATIC_EXPECT(fields[0].has_skip_if);
-STATIC_EXPECT(!fields[0].has_behavior);
+    // skip_if is not a behavior provider
+    STATIC_EXPECT(fields[0].has_skip_if);
+    STATIC_EXPECT(!fields[0].has_behavior);
 
-// as<string> is a behavior provider; encoded type becomes string
-STATIC_EXPECT(fields[1].has_behavior);
-STATIC_EXPECT(!fields[1].has_skip_if);
-STATIC_EXPECT(fields[1].type().kind == type_kind::string);
+    // as<string> is a behavior provider; encoded type becomes string
+    STATIC_EXPECT(fields[1].has_behavior);
+    STATIC_EXPECT(!fields[1].has_skip_if);
+    STATIC_EXPECT(fields[1].type().kind == type_kind::string);
 
-// plain field: no behavior flags
-STATIC_EXPECT(!fields[2].has_skip_if);
-STATIC_EXPECT(!fields[2].has_behavior);
-
-}  // namespace
+    // plain field: no behavior flags
+    STATIC_EXPECT(!fields[2].has_skip_if);
+    STATIC_EXPECT(!fields[2].has_behavior);
+}
 
 ZEST_CASE(with_adapter_type_info) {
     constexpr auto& fields = virtual_schema<fx::WithReprStruct>::fields;
@@ -123,7 +123,7 @@ ZEST_CASE(skip_if_combined_with_behavior) {
     }
 }
 
-};  // namespace kota::meta
+};  // ZEST_SUITE(virtual_schema_behavior_attrs)
 
 }  // namespace
 

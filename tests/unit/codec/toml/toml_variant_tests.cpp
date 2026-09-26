@@ -48,30 +48,30 @@ struct NestedVariantField {
     std::string label;
 };
 
-ZEST_SUITE(serde_toml_variant_untagged){
+ZEST_SUITE(serde_toml_variant_untagged) {
 
-    ZEST_CASE(int_vs_string){using V = std::variant<int, std::string>;
+ZEST_CASE(int_vs_string) {
+    using V = std::variant<int, std::string>;
 
-struct Holder {
-    V data;
-};
+    struct Holder {
+        V data;
+    };
 
-auto tbl_int = ::toml::table{
-    {"data", 42}
-};
-Holder out{};
-ASSERT(from_toml(tbl_int, out).has_value());
-EXPECT(out.data.index() == 0U);
-EXPECT(std::get<int>(out.data) == 42);
+    auto tbl_int = ::toml::table{
+        {"data", 42}
+    };
+    Holder out{};
+    ASSERT(from_toml(tbl_int, out).has_value());
+    EXPECT(out.data.index() == 0U);
+    EXPECT(std::get<int>(out.data) == 42);
 
-auto tbl_str = ::toml::table{
-    {"data", "hello"}
-};
-ASSERT(from_toml(tbl_str, out).has_value());
-EXPECT(out.data.index() == 1U);
-EXPECT(std::get<std::string>(out.data) == "hello");
-
-}  // namespace
+    auto tbl_str = ::toml::table{
+        {"data", "hello"}
+    };
+    ASSERT(from_toml(tbl_str, out).has_value());
+    EXPECT(out.data.index() == 1U);
+    EXPECT(std::get<std::string>(out.data) == "hello");
+}
 
 ZEST_CASE(int_before_double) {
     using V = std::variant<int, double>;
@@ -321,12 +321,12 @@ ZEST_CASE(parse_text) {
     };
 
     auto result = from_string<Holder>("val = 99\n");
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->val.index() == 0U);
     EXPECT(std::get<int>(result->val) == 99);
 
     result = from_string<Holder>(R"(val = "abc")");
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(result->val.index() == 1U);
     EXPECT(std::get<std::string>(result->val) == "abc");
 }
@@ -386,20 +386,21 @@ ZEST_CASE(field_subset_match) {
     EXPECT(std::get<Point>(out.shape) == (Point{1.0, 2.0}));
 }
 
-};  // namespace kota::codec
+};  // ZEST_SUITE(serde_toml_variant_untagged)
 
-ZEST_SUITE(serde_toml_variant_internally_tagged){
+ZEST_SUITE(serde_toml_variant_internally_tagged) {
 
-    ZEST_CASE(circle_roundtrip){struct Holder{IntTagShape shape;
-}
-;
+ZEST_CASE(circle_roundtrip) {
+    struct Holder {
+        IntTagShape shape;
+    };
 
-auto tbl = ::toml::table{
-    {"shape", ::toml::table{{"type", "circle"}, {"radius", 5.0}}}
-};
-Holder out{};
-ASSERT(from_toml(tbl, out).has_value());
-EXPECT(std::get<Circle>(out.shape) == (Circle{.radius = 5.0}));
+    auto tbl = ::toml::table{
+        {"shape", ::toml::table{{"type", "circle"}, {"radius", 5.0}}}
+    };
+    Holder out{};
+    ASSERT(from_toml(tbl, out).has_value());
+    EXPECT(std::get<Circle>(out.shape) == (Circle{.radius = 5.0}));
 }
 
 ZEST_CASE(rect_roundtrip) {
@@ -489,30 +490,31 @@ ZEST_CASE(parse_text_internally_tagged) {
 type = "circle"
 radius = 2.5
 )");
-    ASSERT(result.has_value());
+    ASSERT(result);
     EXPECT(std::get<Circle>(result->shape).radius == 2.5);
 }
-}
-;  // ZEST_SUITE(serde_toml_variant_internally_tagged)
 
-ZEST_SUITE(serde_toml_variant_externally_tagged){
+};  // ZEST_SUITE(serde_toml_variant_internally_tagged)
 
-    ZEST_CASE(int_roundtrip){struct Holder{ExtTagShape data;
-}
-;
+ZEST_SUITE(serde_toml_variant_externally_tagged) {
 
-auto tbl = ::toml::table{
-    {"data", ::toml::table{{"integer", 42}}}
-};
-Holder out{};
-ASSERT(from_toml(tbl, out).has_value());
-EXPECT(std::get<int>(out.data) == 42);
+ZEST_CASE(int_roundtrip) {
+    struct Holder {
+        ExtTagShape data;
+    };
 
-Holder input{.data = 42};
-auto dom = to_toml(input);
-ASSERT(dom.has_value());
-ASSERT(from_toml(*dom, out).has_value());
-EXPECT(std::get<int>(out.data) == 42);
+    auto tbl = ::toml::table{
+        {"data", ::toml::table{{"integer", 42}}}
+    };
+    Holder out{};
+    ASSERT(from_toml(tbl, out).has_value());
+    EXPECT(std::get<int>(out.data) == 42);
+
+    Holder input{.data = 42};
+    auto dom = to_toml(input);
+    ASSERT(dom.has_value());
+    ASSERT(from_toml(*dom, out).has_value());
+    EXPECT(std::get<int>(out.data) == 42);
 }
 
 ZEST_CASE(string_roundtrip) {
@@ -539,27 +541,28 @@ ZEST_CASE(unknown_tag_fails) {
     Holder out{};
     EXPECT(!from_toml(tbl, out).has_value());
 }
-}
-;  // ZEST_SUITE(serde_toml_variant_externally_tagged)
 
-ZEST_SUITE(serde_toml_variant_adjacently_tagged){
+};  // ZEST_SUITE(serde_toml_variant_externally_tagged)
 
-    ZEST_CASE(int_roundtrip){struct Holder{AdjTagShape data;
-}
-;
+ZEST_SUITE(serde_toml_variant_adjacently_tagged) {
 
-auto tbl = ::toml::table{
-    {"data", ::toml::table{{"type", "integer"}, {"value", 42}}}
-};
-Holder out{};
-ASSERT(from_toml(tbl, out).has_value());
-EXPECT(std::get<int>(out.data) == 42);
+ZEST_CASE(int_roundtrip) {
+    struct Holder {
+        AdjTagShape data;
+    };
 
-Holder input{.data = 42};
-auto dom = to_toml(input);
-ASSERT(dom.has_value());
-ASSERT(from_toml(*dom, out).has_value());
-EXPECT(std::get<int>(out.data) == 42);
+    auto tbl = ::toml::table{
+        {"data", ::toml::table{{"type", "integer"}, {"value", 42}}}
+    };
+    Holder out{};
+    ASSERT(from_toml(tbl, out).has_value());
+    EXPECT(std::get<int>(out.data) == 42);
+
+    Holder input{.data = 42};
+    auto dom = to_toml(input);
+    ASSERT(dom.has_value());
+    ASSERT(from_toml(*dom, out).has_value());
+    EXPECT(std::get<int>(out.data) == 42);
 }
 
 ZEST_CASE(string_roundtrip) {
@@ -610,8 +613,8 @@ ZEST_CASE(missing_content_fails) {
     Holder out{};
     EXPECT(!from_toml(tbl, out).has_value());
 }
-}
-;  // ZEST_SUITE(serde_toml_variant_adjacently_tagged)
+
+};  // ZEST_SUITE(serde_toml_variant_adjacently_tagged)
 
 }  // namespace
 

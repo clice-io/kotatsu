@@ -10,28 +10,28 @@
 
 namespace kota {
 
-ZEST_SUITE(task_group_basics, loop_fixture){
+ZEST_SUITE(task_group_basics, loop_fixture) {
 
-    ZEST_CASE(basic){int count = 0;
+ZEST_CASE(basic) {
+    int count = 0;
 
-auto work = [&](int val) -> task<> {
-    count += val;
-    co_return;
-};
+    auto work = [&](int val) -> task<> {
+        count += val;
+        co_return;
+    };
 
-auto driver = [&]() -> task<> {
-    task_group<> group(loop);
-    group.spawn(work(1));
-    group.spawn(work(10));
-    group.spawn(work(100));
-    co_await group.join();
-};
+    auto driver = [&]() -> task<> {
+        task_group<> group(loop);
+        group.spawn(work(1));
+        group.spawn(work(10));
+        group.spawn(work(100));
+        co_await group.join();
+    };
 
-auto t = driver();
-schedule_all(t);
-EXPECT(count == 111);
-
-}  // namespace kota
+    auto t = driver();
+    schedule_all(t);
+    EXPECT(count == 111);
+}
 
 ZEST_CASE(empty_join) {
     auto driver = [&]() -> task<> {
@@ -161,7 +161,7 @@ ZEST_CASE(all_success_with_error_type) {
         group.spawn(ok(1, 20));
         group.spawn(ok(1, 30));
         auto res = co_await group.join();
-        EXPECT(res.has_value());
+        EXPECT(res);
     };
 
     auto t = driver();
@@ -211,7 +211,7 @@ ZEST_CASE(stress_many_tasks_with_sleep) {
     schedule_all(t);
     EXPECT(count == 100);
 }
-}
-;  // ZEST_SUITE(task_group_basics)
+
+};  // ZEST_SUITE(task_group_basics)
 
 }  // namespace kota

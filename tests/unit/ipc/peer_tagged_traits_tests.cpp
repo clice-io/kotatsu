@@ -4,34 +4,33 @@
 namespace kota::ipc {
 namespace {
 
-ZEST_SUITE(ipc_peer_tagged_traits){
+ZEST_SUITE(ipc_peer_tagged_traits) {
 
-    // on_request<Tag> dispatches by tag's method name
-    ZEST_CASE(tagged_request_handler){
-        auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
-            R"({"jsonrpc":"2.0","id":1,"method":"test/taggedAdd","params":{"a":10,"b":20}})",
+// on_request<Tag> dispatches by tag's method name
+ZEST_CASE(tagged_request_handler) {
+    auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
+        R"({"jsonrpc":"2.0","id":1,"method":"test/taggedAdd","params":{"a":10,"b":20}})",
+    });
+    auto* transport_ptr = transport.get();
+
+    event_loop loop;
+    JsonPeer peer(loop, std::move(transport));
+
+    peer.on_request<TaggedAdd>(
+        [](RequestContext&, const AddParams& params) -> RequestResult<AddParams> {
+            co_return AddResult{.sum = params.a + params.b};
         });
-auto* transport_ptr = transport.get();
 
-event_loop loop;
-JsonPeer peer(loop, std::move(transport));
+    loop.schedule(peer.run());
+    EXPECT(loop.run() == 0);
 
-peer.on_request<TaggedAdd>([](RequestContext&,
-                              const AddParams& params) -> RequestResult<AddParams> {
-    co_return AddResult{.sum = params.a + params.b};
-});
-
-loop.schedule(peer.run());
-EXPECT(loop.run() == 0);
-
-ASSERT(transport_ptr->outgoing().size() == 1U);
-auto response = codec::json::from_string<Response>(transport_ptr->outgoing().front());
-ASSERT(response.has_value());
-EXPECT(std::get<std::int64_t>(response->id) == 1);
-ASSERT(response->result.has_value());
-EXPECT(response->result->sum == 30);
-
-}  // namespace
+    ASSERT(transport_ptr->outgoing().size() == 1U);
+    auto response = codec::json::from_string<Response>(transport_ptr->outgoing().front());
+    ASSERT(response);
+    EXPECT(std::get<std::int64_t>(response->id) == 1);
+    ASSERT(response->result);
+    EXPECT(response->result->sum == 30);
+}
 
 // on_notification<Tag> dispatches by tag's method name
 ZEST_CASE(tagged_notification_handler) {
@@ -87,24 +86,24 @@ ZEST_CASE(tagged_send_apis) {
     ASSERT(outgoing.size() == 3U);
 
     auto note = codec::json::from_string<Notification>(outgoing[0]);
-    ASSERT(note.has_value());
+    ASSERT(note);
     EXPECT(note->method == "test/taggedNote");
     EXPECT(note->params.text == "tagged");
 
     auto req = codec::json::from_string<Request>(outgoing[1]);
-    ASSERT(req.has_value());
+    ASSERT(req);
     EXPECT(req->method == "test/taggedAdd");
     EXPECT(req->params.a == 42);
     EXPECT(req->params.b == 58);
 
     auto resp = codec::json::from_string<Response>(outgoing[2]);
-    ASSERT(resp.has_value());
+    ASSERT(resp);
     EXPECT(std::get<std::int64_t>(resp->id) == 7);
-    ASSERT(resp->result.has_value());
+    ASSERT(resp->result);
     EXPECT(resp->result->sum == 99);
 }
 
-};  // namespace kota::ipc
+};  // ZEST_SUITE(ipc_peer_tagged_traits)
 
 }  // namespace
 }  // namespace kota::ipc

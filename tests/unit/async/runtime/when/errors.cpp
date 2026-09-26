@@ -10,34 +10,34 @@
 
 namespace kota {
 
-ZEST_SUITE(when_errors){
+ZEST_SUITE(when_errors) {
 
-    ZEST_CASE(all_error_cancels_siblings){int slow_done = 0;
+ZEST_CASE(all_error_cancels_siblings) {
+    int slow_done = 0;
 
-auto failing = [&]() -> task<int, error> {
-    co_await sleep(1);
-    co_await fail(error::connection_refused);
-};
+    auto failing = [&]() -> task<int, error> {
+        co_await sleep(1);
+        co_await fail(error::connection_refused);
+    };
 
-auto slow = [&]() -> task<int, error> {
-    co_await sleep(50);
-    slow_done += 1;
-    co_return 42;
-};
+    auto slow = [&]() -> task<int, error> {
+        co_await sleep(50);
+        slow_done += 1;
+        co_return 42;
+    };
 
-auto combined = [&]() -> task<> {
-    auto res = co_await when_all(failing(), slow());
-    EXPECT(res.has_error());
-    EXPECT(res.error() == error::connection_refused);
-};
+    auto combined = [&]() -> task<> {
+        auto res = co_await when_all(failing(), slow());
+        EXPECT(res.has_error());
+        EXPECT(res.error() == error::connection_refused);
+    };
 
-auto t = combined();
-run(t);
+    auto t = combined();
+    run(t);
 
-EXPECT(t->is_finished());
-EXPECT(slow_done == 0);
-
-}  // namespace kota
+    EXPECT(t->is_finished());
+    EXPECT(slow_done == 0);
+}
 
 ZEST_CASE(all_error_immediate) {
     auto failing = []() -> task<int, error> {
@@ -68,7 +68,7 @@ ZEST_CASE(all_success_no_false_error) {
 
     auto combined = [&]() -> task<> {
         auto res = co_await when_all(a(), b());
-        EXPECT(res.has_value());
+        EXPECT(res);
         auto [ra, rb] = *res;
         EXPECT(ra == 1);
         EXPECT(rb == 2);
@@ -216,7 +216,7 @@ ZEST_CASE(direct_co_await_returns_error) {
     };
 
     auto [res] = run(parent());
-    ASSERT(res.has_value());
+    ASSERT(res);
     EXPECT(res->has_error());
     EXPECT(res->error() == error::connection_refused);
 }
@@ -237,7 +237,7 @@ ZEST_CASE(nested_manual_propagation) {
     };
 
     auto [res] = run(parent());
-    ASSERT(res.has_value());
+    ASSERT(res);
     EXPECT(res->has_error());
     EXPECT(res->error() == error::connection_refused);
 }
@@ -412,7 +412,7 @@ ZEST_CASE(all_range_success_no_false_error) {
         tasks.emplace_back(return_value(2));
         tasks.emplace_back(return_value(3));
         auto res = co_await when_all(std::move(tasks));
-        EXPECT(res.has_value());
+        EXPECT(res);
         auto& vals = *res;
         EXPECT(vals.size() == 3);
         EXPECT(vals[0] == 1);
@@ -422,7 +422,7 @@ ZEST_CASE(all_range_success_no_false_error) {
 
     run(combined());
 }
-}
-;  // ZEST_SUITE(when_errors)
+
+};  // ZEST_SUITE(when_errors)
 
 }  // namespace kota
