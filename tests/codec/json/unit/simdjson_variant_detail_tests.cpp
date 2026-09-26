@@ -1005,7 +1005,25 @@ ZEST_CASE(unknown_tag_fails) {
 
 ZEST_CASE(missing_tag_fails) {
     IntTagShape out{};
-    EXPECT(!from_string(R"({"radius":5.0})", out).has_value());
+    auto status = from_string(R"({"radius":5.0})", out);
+    ASSERT(!status);
+    EXPECT(status.error().message == "internally tagged variant: missing tag field");
+}
+
+ZEST_CASE(empty_object_fails) {
+    IntTagShape out{};
+    auto status = from_string(R"({})", out);
+    ASSERT(!status);
+    EXPECT(status.error().message == "internally tagged variant: missing tag field");
+}
+
+ZEST_CASE(unknown_tag_after_data_fails) {
+    // The tag's position does not matter: the pre-lookup finds it anywhere,
+    // so an unusable one is reported for what it is.
+    IntTagShape out{};
+    auto status = from_string(R"({"sides":5,"type":"pentagon"})", out);
+    ASSERT(!status);
+    EXPECT(status.error().message == "unknown variant tag 'pentagon'");
 }
 
 ZEST_CASE(tag_not_a_string_fails) {

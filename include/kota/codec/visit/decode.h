@@ -437,8 +437,16 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
                 return true;
             }
             if(idx == npos) {
-                return scoped_context<typename Vis::error_type>::fail(
-                    rich_error("internally tagged variant: tag must appear before data fields"));
+                if constexpr(has_try_read<Vis>) {
+                    // The pre-lookup found no usable tag. Data fields cannot
+                    // be placed yet, and need not be: the tag's own entry
+                    // reports why it is unusable, and an absent tag is
+                    // reported after the pass, wherever the fields sit.
+                    return fv.visit_skip();
+                } else {
+                    return scoped_context<typename Vis::error_type>::fail(rich_error(
+                        "internally tagged variant: tag must appear before data fields"));
+                }
             }
             return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
                 bool r = true;
@@ -455,19 +463,23 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
             }(std::index_sequence_for<Ts...>{});
         });
 
-        if(result && idx != npos) {
-            result = [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
-                bool ok = true;
-                ((Is == idx ? void(ok = check_required_fields<
-                                       Config,
-                                       std::variant_alternative_t<Is, std::variant<Ts...>>,
-                                       Vis>(field_mask))
-                            : void()),
-                 ...);
-                return ok;
-            }(std::index_sequence_for<Ts...>{});
+        if(!result) {
+            return false;
         }
-        return result;
+        if(idx == npos) {
+            return scoped_context<typename Vis::error_type>::fail(
+                rich_error("internally tagged variant: missing tag field"));
+        }
+        return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
+            bool ok = true;
+            ((Is == idx ? void(ok = check_required_fields<
+                                   Config,
+                                   std::variant_alternative_t<Is, std::variant<Ts...>>,
+                                   Vis>(field_mask))
+                        : void()),
+             ...);
+            return ok;
+        }(std::index_sequence_for<Ts...>{});
     } else {
         // Schema-driven: struct_reader with find_field / visit_field
         return vis.visit_struct(var, [&](auto& sv) -> bool {
