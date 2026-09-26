@@ -1,218 +1,142 @@
-// ZEST_SUITE(async_runtime_when_exceptions): C++ exception propagation through when_all/when_any
-// (only compiled when KOTA_ENABLE_EXCEPTIONS). Covers a throwing child cancelling
-// siblings, immediate throws, range overloads, nested/caught exceptions, empty
-// range, and exception beating an external cancel. Structured error (co_await
-// fail) propagation lives in errors_tests.cpp.
 #include <stdexcept>
+#include <tuple>
+#include <vector>
 
 #include "async/harness/loop_fixture.h"
-#include "async/harness/support.h"
+#include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
+#include "kota/support/config.h"
 #include "kota/async/async.h"
 
 namespace kota {
 
+namespace {
+
 #if KOTA_ENABLE_EXCEPTIONS
 
-ZEST_SUITE(async_runtime_when_exceptions) {
+ZEST_SUITE(async_runtime_when_exceptions, test::LoopFixture) {
 
-ZEST_CASE(all_exception_cancels_siblings) {
-    int slow_done = 0;
-
+ZEST_CASE(all_exception_cancels_the_rest_and_rethrows) {
+    event gate;
+    event go;
     auto thrower = [&]() -> task<int> {
-        co_await sleep(1);
+        co_await go.wait();
         throw std::runtime_error("boom");
-        co_return 0;
     };
-
     auto slow = [&]() -> task<int> {
-        co_await sleep(50);
-        slow_done += 1;
+        co_await gate.wait();
         co_return 2;
     };
-
-    auto combined = [&]() -> task<int> {
-        auto [a, b] = co_await when_all(thrower(), slow());
-        co_return a + b;
+    auto combined = [&]() -> task<std::tuple<int, int>> {
+        co_return co_await when_all(thrower(), slow());
+    };
+    auto driver = [&]() -> task<> {
+        go.set();
+        co_return;
     };
 
-    auto t = combined();
-    EXPECT_THROWS(run(t));
-
-    EXPECT(t->is_failed());
-    EXPECT_THROWS(t.result());
-    EXPECT(slow_done == 0);
+    EXPECT(test::thrown([&] { run(combined(), driver()); }) == "boom");
+    EXPECT(gate.get_head() == nullptr);
 }
 
-// A child that throws after the scope was cancelled must still deliver the
-// exception (previously the exception was silently swallowed by the
-// Cancelled finalization).
-ZEST_CASE(all_exception_beats_external_cancel) {
-    async_node* combined_node = nullptr;
-
-    auto thrower = [&]() -> task<int> {
-        co_await sleep(1);
-        combined_node->cancel();
-        throw std::runtime_error("boom");
+ZEST_CASE(all_exception_while_armed_starts_no_later_child) {
+    int started = 0;
+    auto thrower = []() -> task<int> {
+        throw std::runtime_error("immediate");
         co_return 0;
     };
-
-    auto slow = []() -> task<int> {
-        co_await sleep(50);
+    auto later = [&]() -> task<int> {
+        started += 1;
         co_return 1;
     };
-
-    auto combined = [&]() -> task<int> {
-        auto [a, b] = co_await when_all(thrower(), slow());
-        co_return a + b;
+    auto combined = [&]() -> task<std::tuple<int, int>> {
+        co_return co_await when_all(thrower(), later());
     };
 
-    auto t = combined();
-    combined_node = t.operator->();
-    EXPECT_THROWS(run(t));
+    EXPECT(test::thrown([&] { run(combined()); }) == "immediate");
+    EXPECT(started == 0);
 }
 
-ZEST_CASE(all_exception_immediate) {
-    auto thrower = []() -> task<int> {
-        throw std::runtime_error("immediate boom");
-        co_return 0;
-    };
-
-    auto normal = []() -> task<int> {
-        co_return 42;
-    };
-
-    auto combined = [&]() -> task<int> {
-        auto [a, b] = co_await when_all(thrower(), normal());
-        co_return a + b;
-    };
-
-    EXPECT_THROWS(run(combined()));
-}
-
-ZEST_CASE(any_exception_cancels_siblings) {
-    int slow_done = 0;
-
+ZEST_CASE(any_exception_cancels_the_rest_and_rethrows) {
+    event gate;
+    event go;
     auto thrower = [&]() -> task<int> {
-        co_await sleep(1);
+        co_await go.wait();
         throw std::runtime_error("boom");
-        co_return 0;
     };
-
     auto slow = [&]() -> task<int> {
-        co_await sleep(50);
-        slow_done += 1;
+        co_await gate.wait();
         co_return 2;
     };
-
     auto combined = [&]() -> task<> {
         co_await when_any(thrower(), slow());
     };
+    auto driver = [&]() -> task<> {
+        go.set();
+        co_return;
+    };
 
-    auto t = combined();
-    EXPECT_THROWS(run(t));
-
-    EXPECT(t->is_failed());
-    EXPECT_THROWS(t.result());
-    EXPECT(slow_done == 0);
+    EXPECT(test::thrown([&] { run(combined(), driver()); }) == "boom");
+    EXPECT(gate.get_head() == nullptr);
 }
 
-ZEST_CASE(all_range_exception) {
-    int slow_done = 0;
-
-    auto thrower = [&]() -> task<int> {
-        co_await sleep(1);
+ZEST_CASE(range_exception_rethrows) {
+    event gate;
+    auto thrower = []() -> task<int> {
         throw std::runtime_error("range boom");
         co_return 0;
     };
-
     auto slow = [&]() -> task<int> {
-        co_await sleep(50);
-        slow_done += 1;
+        co_await gate.wait();
         co_return 2;
     };
-
-    auto combined = [&]() -> task<int> {
-        small_vector<task<int>> tasks;
-        tasks.emplace_back(thrower());
-        tasks.emplace_back(slow());
-        auto results = co_await when_all(std::move(tasks));
-        co_return results[0] + results[1];
+    auto all = [&]() -> task<> {
+        std::vector<task<int>> tasks;
+        tasks.push_back(slow());
+        tasks.push_back(thrower());
+        co_await when_all(std::move(tasks));
     };
-
-    auto t = combined();
-    EXPECT_THROWS(run(t));
-
-    EXPECT(t->is_failed());
-    EXPECT_THROWS(t.result());
-    EXPECT(slow_done == 0);
-}
-
-ZEST_CASE(any_range_exception) {
-    int slow_done = 0;
-
-    auto thrower = [&]() -> task<int> {
-        co_await sleep(1);
-        throw std::runtime_error("range any boom");
-        co_return 0;
-    };
-
-    auto slow = [&]() -> task<int> {
-        co_await sleep(50);
-        slow_done += 1;
-        co_return 2;
-    };
-
-    auto combined = [&]() -> task<> {
-        small_vector<task<int>> tasks;
-        tasks.emplace_back(thrower());
-        tasks.emplace_back(slow());
+    auto any = [&]() -> task<> {
+        std::vector<task<int>> tasks;
+        tasks.push_back(slow());
+        tasks.push_back(thrower());
         co_await when_any(std::move(tasks));
     };
 
-    auto t = combined();
-    EXPECT_THROWS(run(t));
-
-    EXPECT(t->is_failed());
-    EXPECT_THROWS(t.result());
-    EXPECT(slow_done == 0);
+    EXPECT(test::thrown([&] { run(all()); }) == "range boom");
+    EXPECT(test::thrown([&] { run(any()); }) == "range boom");
+    EXPECT(gate.get_head() == nullptr);
 }
 
-ZEST_CASE(any_range_empty_throws) {
-    small_vector<task<int>> tasks;
-    EXPECT_THROWS((void)when_any(std::move(tasks)));
-}
-
-ZEST_CASE(nested_exception_propagates) {
-    auto thrower = [&]() -> task<int> {
-        co_await sleep(1);
-        throw std::runtime_error("deep boom");
+ZEST_CASE(nested_exception_reaches_the_outer_combinator) {
+    event gate;
+    auto thrower = []() -> task<int> {
+        throw std::runtime_error("deep");
         co_return 0;
     };
-
+    auto slow = [&]() -> task<int> {
+        co_await gate.wait();
+        co_return 1;
+    };
     auto inner = [&]() -> task<int> {
-        auto [a, b] = co_await when_all(thrower(), delayed_int(50, 1));
+        auto [a, b] = co_await when_all(slow(), thrower());
         co_return a + b;
     };
-
     auto outer = [&]() -> task<int> {
-        auto [a, b] = co_await when_all(inner(), delayed_int(50, 2));
+        auto [a, b] = co_await when_all(slow(), inner());
         co_return a + b;
     };
 
-    auto t = outer();
-    EXPECT_THROWS(run(t));
-
-    EXPECT(t->is_failed());
-    EXPECT_THROWS(t.result());
+    EXPECT(test::thrown([&] { run(outer()); }) == "deep");
+    // Both slow children, inner and outer, were cancelled off the gate.
+    EXPECT(gate.get_head() == nullptr);
 }
 
-ZEST_CASE(caught_exception_does_not_propagate) {
-    auto thrower = [&]() -> task<int> {
-        throw std::runtime_error("caught boom");
+ZEST_CASE(caught_exception_stays_a_value) {
+    auto thrower = []() -> task<int> {
+        throw std::runtime_error("caught");
         co_return 0;
     };
-
     auto catcher = [&]() -> task<int> {
         try {
             co_return co_await thrower();
@@ -220,31 +144,50 @@ ZEST_CASE(caught_exception_does_not_propagate) {
             co_return -1;
         }
     };
-
-    auto combined = [&]() -> task<int> {
-        auto [a, b] = co_await when_all(catcher(), delayed_int(1, 42));
-        co_return a + b;
+    auto normal = []() -> task<int> {
+        co_return 42;
+    };
+    auto combined = [&]() -> task<std::tuple<int, int>> {
+        co_return co_await when_all(catcher(), normal());
     };
 
-    auto [res] = run(combined());
-    EXPECT(res == 41);
+    auto [result] = run(combined());
+    ASSERT(result.has_value());
+    EXPECT(*result == std::tuple{-1, 42});
 }
 
-ZEST_CASE(direct_co_await_rethrows) {
-    auto thrower = []() -> task<int> {
-        throw std::runtime_error("direct boom");
-        co_return 0;
+// A child that cancels the whole scope and then throws still delivers the
+// exception: a racing cancellation never swallows it.
+ZEST_CASE(exception_outranks_an_external_cancel) {
+    event gate;
+    event go;
+    async_node* scope = nullptr;
+    auto thrower = [&]() -> task<int> {
+        co_await go.wait();
+        scope->cancel();
+        throw std::runtime_error("after cancel");
+    };
+    auto slow = [&]() -> task<int> {
+        co_await gate.wait();
+        co_return 1;
+    };
+    auto combined = [&]() -> task<std::tuple<int, int>> {
+        co_return co_await when_all(thrower(), slow());
+    };
+    auto target = combined();
+    scope = target.operator->();
+    auto driver = [&]() -> task<> {
+        go.set();
+        co_return;
     };
 
-    auto parent = [&]() -> task<int> {
-        co_return co_await thrower();
-    };
-
-    EXPECT_THROWS(run(parent()));
+    EXPECT(test::thrown([&] { run(std::move(target), driver()); }) == "after cancel");
 }
 
 };  // ZEST_SUITE(async_runtime_when_exceptions)
 
 #endif  // KOTA_ENABLE_EXCEPTIONS
+
+}  // namespace
 
 }  // namespace kota

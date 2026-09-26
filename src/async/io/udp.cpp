@@ -18,88 +18,40 @@ struct udp::Self : uv::handle<udp::Self, uv_udp_t> {
     std::vector<char> buffer;
     bool receiving = false;
 
-    uv::stored_delivery<error> send;
-    bool send_inflight = false;
+    // Armed exactly while a send is in flight.
+    uv::waiter_binding<error> send;
 };
 
 namespace {
 
 constexpr std::size_t udp_recv_buffer_size = 64 * 1024;
 
-static udp::Self::pointer make_udp_self() {
+udp::Self::pointer make_udp_self() {
     auto self = udp::Self::make();
     self->buffer.resize(udp_recv_buffer_size);
     return self;
 }
 
-static result<unsigned int> to_uv_udp_init_flags(const udp::create_options& options) {
-    unsigned int out = 0;
-#ifdef UV_UDP_IPV6ONLY
-    if(options.ipv6_only) {
-        out |= UV_UDP_IPV6ONLY;
-    }
-#else
-    if(options.ipv6_only) {
-        return outcome_error(error::function_not_implemented);
-    }
-#endif
-#ifdef UV_UDP_RECVMMSG
-    if(options.recvmmsg) {
-        out |= UV_UDP_RECVMMSG;
-    }
-#else
-    if(options.recvmmsg) {
-        return outcome_error(error::function_not_implemented);
-    }
-#endif
-    return out;
+unsigned int to_uv_udp_init_flags(const udp::create_options& options) {
+    return options.recvmmsg ? static_cast<unsigned int>(UV_UDP_RECVMMSG) : 0U;
 }
 
-static result<unsigned int> to_uv_udp_bind_flags(const udp::bind_options& options) {
+unsigned int to_uv_udp_bind_flags(const udp::bind_options& options) {
     unsigned int out = 0;
-#ifdef UV_UDP_IPV6ONLY
     if(options.ipv6_only) {
         out |= UV_UDP_IPV6ONLY;
     }
-#else
-    if(options.ipv6_only) {
-        return outcome_error(error::function_not_implemented);
-    }
-#endif
-#ifdef UV_UDP_REUSEADDR
     if(options.reuse_addr) {
         out |= UV_UDP_REUSEADDR;
     }
-#else
-    if(options.reuse_addr) {
-        return outcome_error(error::function_not_implemented);
-    }
-#endif
-#ifdef UV_UDP_REUSEPORT
     if(options.reuse_port) {
         out |= UV_UDP_REUSEPORT;
     }
-#else
-    if(options.reuse_port) {
-        return outcome_error(error::function_not_implemented);
-    }
-#endif
     return out;
 }
 
-static udp::recv_flags to_udp_recv_flags([[maybe_unused]] unsigned flags) {
-    udp::recv_flags out{};
-#ifdef UV_UDP_PARTIAL
-    if((flags & UV_UDP_PARTIAL) != 0) {
-        out.partial = true;
-    }
-#endif
-#ifdef UV_UDP_MMSG_CHUNK
-    if((flags & UV_UDP_MMSG_CHUNK) != 0) {
-        out.mmsg_chunk = true;
-    }
-#endif
-    return out;
+udp::recv_flags to_udp_recv_flags(unsigned flags) {
+    return udp::recv_flags((flags & UV_UDP_PARTIAL) != 0, (flags & UV_UDP_MMSG_CHUNK) != 0);
 }
 
 struct udp_recv_await : uv::await_op<udp_recv_await> {
@@ -142,8 +94,21 @@ struct udp_recv_await : uv::await_op<udp_recv_await> {
         assert(u != nullptr && "on_read requires udp state in handle->data");
 
         if(auto err = uv::status_to_error(nread)) {
+#ifdef _WIN32
+            // libuv on Windows stops reading before it reports a receive
+            // error, so the next recv() has to start it again. Elsewhere it
+            // reads on, and stopping from this callback would trip libuv.
+            u->receiving = false;
+#endif
             u->recv.mark_cancelled_if(nread);
             u->recv.deliver(err);
+            return;
+        }
+
+        // Zero bytes from no address is libuv reporting that the socket is
+        // drained (or releasing a recvmmsg buffer), not an empty datagram:
+        // an empty datagram always comes with its sender.
+        if(nread == 0 && addr == nullptr) {
             return;
         }
 
@@ -200,10 +165,10 @@ struct udp_recv_await : uv::await_op<udp_recv_await> {
 struct udp_send_await : uv::await_op<udp_send_await> {
     using promise_t = task<void, error>::promise_type;
 
-    // UDP socket self that owns send waiter and inflight flags.
+    // UDP socket self that owns the send waiter.
     udp::Self* self;
-    // Owns outbound bytes until on_send() runs.
-    std::vector<char> storage;
+    // Owns the datagram until on_send() runs.
+    std::vector<char> payload;
     // libuv send request; req.handle gives us the socket on completion.
     uv_udp_send_t req{};
     // Optional destination for unconnected sockets.
@@ -212,16 +177,11 @@ struct udp_send_await : uv::await_op<udp_send_await> {
     error result;
 
     udp_send_await(udp::Self* u, std::span<const char> data, std::optional<sockaddr_storage>&& d) :
-        self(u), storage(data.begin(), data.end()), dest(std::move(d)) {}
+        self(u), payload(data.begin(), data.end()), dest(std::move(d)) {}
 
-    static void on_cancel(io_op* op) {
-        auto* aw = static_cast<udp_send_await*>(op);
-        if(!aw->self) {
-            return;
-        }
-        // uv_udp_send_t is not cancellable via uv_cancel().
-        // Keep the request in-flight and wait for on_send() to retire it.
-    }
+    // uv_udp_send_t cannot be cancelled: the send stays in flight and
+    // on_send() completes it.
+    static void on_cancel(io_op*) {}
 
     static void on_send(uv_udp_send_t* req, int status) {
         auto* handle = static_cast<uv_udp_t*>(req->handle);
@@ -229,20 +189,11 @@ struct udp_send_await : uv::await_op<udp_send_await> {
         auto* u = static_cast<udp::Self*>(handle->data);
         assert(u != nullptr && "on_send requires udp state in handle->data");
 
-        u->send_inflight = false;
-
         u->send.mark_cancelled_if(status);
-
-        auto ec = uv::status_to_error(status);
-
-        u->send.deliver(std::move(ec));
+        u->send.try_deliver(uv::status_to_error(status));
     }
 
-    bool await_ready() noexcept {
-        if(self && self->send.has_pending()) {
-            result = self->send.take_pending();
-            return true;
-        }
+    bool await_ready() const noexcept {
         return false;
     }
 
@@ -254,15 +205,15 @@ struct udp_send_await : uv::await_op<udp_send_await> {
             return waiting;
         }
 
-        if(self->send.has_waiter() || self->send_inflight) {
+        if(self->send.has_waiter()) {
             result = error::connection_already_in_progress;
             return waiting;
         }
 
         self->send.arm(*this, result);
 
-        uv_buf_t buf = uv::buf_init(storage.empty() ? nullptr : storage.data(),
-                                    static_cast<unsigned>(storage.size()));
+        uv_buf_t buf = uv::buf_init(payload.empty() ? nullptr : payload.data(),
+                                    static_cast<unsigned>(payload.size()));
 
         const sockaddr* addr =
             dest.has_value() ? reinterpret_cast<const sockaddr*>(&dest.value()) : nullptr;
@@ -274,14 +225,12 @@ struct udp_send_await : uv::await_op<udp_send_await> {
             return waiting;
         }
 
-        self->send_inflight = true;
         return this->attach(waiting.promise(), loc);
     }
 
+    // Nothing to disarm: delivery disarms before it completes the send, and
+    // a send refused while another is in flight never armed.
     error await_resume() noexcept {
-        if(self) {
-            self->send.disarm();
-        }
         return result;
     }
 };
@@ -332,22 +281,12 @@ static result<udp::endpoint> endpoint_from_sockaddr(const sockaddr* addr) {
 }
 
 result<udp> udp::create(event_loop& loop) {
-    auto self = make_udp_self();
-    if(auto err = uv::udp_init(loop, self->handle)) {
-        return outcome_error(err);
-    }
-
-    return udp(std::move(self));
+    return create(create_options{}, loop);
 }
 
 result<udp> udp::create(create_options options, event_loop& loop) {
     auto self = make_udp_self();
-    auto uv_flags = to_uv_udp_init_flags(options);
-    if(!uv_flags) {
-        return outcome_error(uv_flags.error());
-    }
-
-    if(auto err = uv::udp_init_ex(loop, self->handle, uv_flags.value())) {
+    if(auto err = uv::udp_init_ex(loop, self->handle, to_uv_udp_init_flags(options))) {
         return outcome_error(err);
     }
 
@@ -372,18 +311,13 @@ error udp::bind(std::string_view host, int port, bind_options options) {
         return error::invalid_argument;
     }
 
-    auto uv_flags = to_uv_udp_bind_flags(options);
-    if(!uv_flags) {
-        return uv_flags.error();
-    }
-
     auto resolved = uv::resolve_addr(host, port);
     if(!resolved) {
         return resolved.error();
     }
 
     const sockaddr* addr = reinterpret_cast<const sockaddr*>(&resolved->storage);
-    if(auto err = uv::udp_bind(self->handle, addr, uv_flags.value())) {
+    if(auto err = uv::udp_bind(self->handle, addr, to_uv_udp_bind_flags(options))) {
         return err;
     }
 

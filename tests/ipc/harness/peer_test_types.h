@@ -5,7 +5,7 @@
 #include <string>
 #include <string_view>
 
-#include "async/harness/fd_helpers.h"
+#include "async/harness/os.h"
 #include "ipc/harness/test_transport.h"
 #include "kota/ipc/codec/json.h"
 #include "kota/support/config.h"

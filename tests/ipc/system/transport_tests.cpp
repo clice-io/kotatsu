@@ -5,7 +5,7 @@
 #include <utility>
 #include <vector>
 
-#include "async/harness/fd_helpers.h"
+#include "async/harness/os.h"
 #include "ipc/harness/test_transport.h"
 #include "kota/ipc/transport.h"
 #include "kota/zest/zest.h"

@@ -406,10 +406,21 @@ public:
         }
 
         template <typename Promise>
-        auto await_suspend(
+        std::coroutine_handle<> await_suspend(
             std::coroutine_handle<Promise> h,
             std::source_location location = std::source_location::current()) noexcept {
-            return awaitee.h.promise().attach(h.promise(), location);
+            // A copy: attach() to a cancelled parent finalizes it, which can
+            // destroy the parent frame, this awaiter and the child with it.
+            auto child = awaitee.h;
+            auto next = child.promise().attach(h.promise(), location);
+            // Unless the parent was already cancelled, `next` is the child,
+            // which runs from here until it first suspends. Mark it executing
+            // so that a cancel() reaching it meanwhile waits for that
+            // suspension point instead of finalizing a frame on the stack.
+            if(next == child) {
+                child.promise().mark_executing();
+            }
+            return next;
         }
 
         auto await_resume() {
