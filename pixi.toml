@@ -28,6 +28,12 @@ windows-mingw = ["build", "windows-mingw"]
 windows-llvm = ["build", "windows-llvm"]
 format = ["format"]
 
+# Shared by every environment: the TypeScript tooling under scripts/ runs in
+# the dev environments and in `format`, which CI's format job uses. Node 24
+# runs `.ts` directly by stripping the types, so there is no build step.
+[dependencies]
+nodejs = ">=24"
+
 [feature.build.dependencies]
 python = "*"
 cmake = ">=3.25"
@@ -146,8 +152,23 @@ fd -H "^\\.clang-(format|tidy)$" -x prettier.bat --write --parser yaml
 
 [tasks]
 integration-test = "pytest tests/integration/ -v"
+
 # Regenerate include/kota/ipc/lsp/protocol.h; `--check` only verifies it.
-lsp-codegen = "python scripts/lsp_codegen.py"
+# Node's fetch honors HTTP(S)_PROXY only when told to.
+[tasks.lsp-codegen]
+cmd = "node scripts/lsp/codegen.ts"
+env = { NODE_USE_ENV_PROXY = "1" }
+
+# Installs the type checker (the scripts themselves need no npm packages);
+# skipped while the package files and node_modules are unchanged.
+[tasks.npm-ci]
+cmd = "npm ci"
+inputs = ["package.json", "package-lock.json"]
+outputs = ["node_modules/.package-lock.json"]
+
+[tasks.typecheck]
+cmd = "npx --no -- tsc"
+depends-on = ["npm-ci"]
 
 [tasks.configure]
 args = [{ arg = "preset", default = "debug" }]
