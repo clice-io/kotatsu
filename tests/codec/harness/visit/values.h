@@ -124,7 +124,9 @@ void values(const Kit<B>& kit) {
 
     roundtrip(kit, "everything_roundtrip", [] { return Everything::typical(); });
     roundtrip(kit, "everything_default_roundtrip", [] { return Everything{}; });
-    snapshot(kit, "lowering", [] { return Everything::typical(); });
+    if constexpr(!B::caps.builder_layout) {
+        snapshot(kit, "lowering", [] { return Everything::typical(); });
+    }
     if constexpr(B::caps.untrusted_input) {
         hostile(kit, "hostile_everything", [] { return Everything::typical(); });
     }

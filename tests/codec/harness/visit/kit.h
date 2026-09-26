@@ -64,6 +64,11 @@ struct Caps {
     bool untrusted_input = false;
     /// A format tag scopes meta::repr specializations to the backend.
     bool format_tag = false;
+    /// A third-party builder lays the document out (flatbuffers places
+    /// tables, vtables and padding as it sees fit), so a snapshot of it would
+    /// pin the builder's choices, not the format's rules: no lowering
+    /// snapshot.
+    bool builder_layout = false;
 };
 
 /// A backend adapter: its name and caps, its document type, encode and decode
@@ -213,9 +218,10 @@ void snapshot(const Kit<B>& kit, std::string name, Make make) {
 
 /// Every prefix of make()'s document, and the document with any one unit
 /// changed, is rejected or decodes to a value whose document is stable: it
-/// decodes and encodes again to itself. Overreads are the sanitizers' to
-/// catch. For backends with untrusted_input, whose documents are byte or
-/// character sequences.
+/// decodes and encodes again to itself, or, where the order of an unordered
+/// container is all that changed, to a document of an equal value.
+/// Overreads are the sanitizers' to catch. For backends with
+/// untrusted_input, whose documents are byte or character sequences.
 template <Backend B, typename Make>
 void hostile(const Kit<B>& kit, std::string name, Make make) {
     kit.add(std::move(name), [make] {
@@ -238,7 +244,12 @@ void hostile(const Kit<B>& kit, std::string name, Make make) {
             ASSERT(succeeds(B::decode(*first, again)));
             auto second = B::encode(again);
             ASSERT(succeeds(second));
-            EXPECT(*second == *first);
+            // A changed length can give an unordered container several
+            // elements, which re-encode in an iteration order a decode may
+            // change; then the value is what must hold.
+            if(*second != *first) {
+                EXPECT(meta::eq(again, decoded));
+            }
         };
         // One failure is enough to show; the rest would repeat it.
         auto failed = [] {

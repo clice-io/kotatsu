@@ -216,14 +216,35 @@ void attrs(const Kit<B>& kit) {
                 .score = 7
             };
         });
-        // An absent field is left as the value it decodes into holds it.
-        reads<Skippable>(
-            kit,
-            "skip_if_absent_fields_left_alone",
-            [] { return IdOnly{.id = 1}; },
-            [] {
-                return Skippable{.id = 1, .note = "kept", .tags = {9}, .generation = 7, .score = 3};
-            });
+        if constexpr(B::caps.self_describing) {
+            // A keyed decode never visits an absent field, which is left as
+            // the value it decodes into holds it.
+            reads<Skippable>(
+                kit,
+                "skip_if_absent_fields_left_alone",
+                [] { return IdOnly{.id = 1}; },
+                [] {
+                    return Skippable{.id = 1,
+                                     .note = "kept",
+                                     .tags = {9},
+                                     .generation = 7,
+                                     .score = 3};
+                });
+        } else {
+            // A slot decode visits every slot, and an absent one is how a
+            // null travels: the field reads as null, empty or zero.
+            reads<Skippable>(
+                kit,
+                "skip_if_absent_fields_read_as_null",
+                [] { return IdOnly{.id = 1}; },
+                [] {
+                    return Skippable{.id = 1,
+                                     .note = std::nullopt,
+                                     .tags = {},
+                                     .generation = 0,
+                                     .score = 0};
+                });
+        }
         roundtrip(kit, "skip_if_roundtrip", kept);
     }
 
