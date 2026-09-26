@@ -85,6 +85,35 @@ ZEST_CASE(scheduled_temporary_is_destroyed_by_the_loop) {
     EXPECT(loop.run() == 0);
     EXPECT(watch.expired());
 }
+
+// Cancelled while it runs, a root the loop owns ends at its next co_await:
+// awaiting the child finalizes the root, which destroys its frame, and the
+// child with it, before the await returns. ASan builds catch a read of the
+// freed child there.
+ZEST_CASE(scheduled_temporary_cancelled_while_running_ends_at_its_next_await) {
+    auto frame_alive = std::make_shared<int>();
+    std::weak_ptr<int> watch = frame_alive;
+    async_node* self = nullptr;
+    bool child_ran = false;
+    bool resumed = false;
+    auto child = [&]() -> task<> {
+        child_ran = true;
+        co_return;
+    };
+    auto make = [&](std::shared_ptr<int>) -> task<> {
+        self->cancel();
+        co_await child();
+        resumed = true;
+    };
+    auto root = make(std::move(frame_alive));
+    self = root.operator->();
+
+    loop.schedule(std::move(root));
+    EXPECT(loop.run() == 0);
+    EXPECT(watch.expired());
+    EXPECT(!child_ran);
+    EXPECT(!resumed);
+}
 #endif
 
 ZEST_CASE(task_cancelled_before_it_starts_never_runs) {
