@@ -48,9 +48,11 @@ void repr(const Kit<B>& kit) {
     });
     roundtrip(kit, "repr_in_elements_keys_and_optionals_roundtrip", places);
     // Decoding into a ReprPlaces whose `maybe` starts engaged: null resets it.
-    roundtrip(kit, "repr_in_empty_optional_roundtrip", [] {
-        return ReprPlaces{.relations = {}, .by_version = {}, .maybe = std::nullopt};
-    });
+    if constexpr(B::caps.null_elements) {
+        roundtrip(kit, "repr_in_empty_optional_roundtrip", [] {
+            return ReprPlaces{.relations = {}, .by_version = {}, .maybe = std::nullopt};
+        });
+    }
 
     using PackedVersion = meta::annotation<Version, meta::behavior::with<VersionAsNumber>>;
     auto packed = [] {
@@ -91,7 +93,9 @@ void repr(const Kit<B>& kit) {
     encodes_as(kit, "nullable_repr_encodes_as_plain", unstamped, [] {
         return StampedPlain{.stamp = std::nullopt};
     });
-    roundtrip(kit, "nullable_repr_roundtrip", unstamped);
+    if constexpr(B::caps.null_elements) {
+        roundtrip(kit, "nullable_repr_roundtrip", unstamped);
+    }
     roundtrip(kit, "nullable_repr_engaged_roundtrip", [] { return Stamped{.stamp = {.tick = 5}}; });
     auto fee = [] {
         return Field<BasisPoints>{{.v = 250}};
@@ -114,11 +118,18 @@ void repr(const Kit<B>& kit) {
     auto failed_load = [] {
         return LoadResult{.ok = false, .bytes = 0, .message = "missing"};
     };
-    // Tags shape a keyed document; elsewhere the variant travels by index.
+    // Tags shape a keyed document, where the value stands in a field as the
+    // variants area's tagged cases do; elsewhere the variant travels by index.
     if constexpr(B::caps.self_describing) {
-        encodes_as(kit, "tagging_in_repr_type_encodes_as_plain", failed_load, [] {
-            return LoadDocument{.status = "err", .value = {.message = "missing"}};
-        });
+        encodes_as(
+            kit,
+            "tagging_in_repr_type_encodes_as_plain",
+            [failed_load] { return Field<LoadResult>{failed_load()}; },
+            [] {
+                return Field<LoadDocument>{
+                    {.status = "err", .value = {.message = "missing"}}
+                };
+            });
     } else {
         encodes_as(kit, "tagging_in_repr_type_encodes_as_plain", failed_load, [] {
             return std::variant<LoadOk, LoadErr>{LoadErr{.message = "missing"}};

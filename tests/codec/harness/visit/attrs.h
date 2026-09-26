@@ -351,15 +351,20 @@ void attrs(const Kit<B>& kit) {
                                            };
                                        },
                                        {.message = "unknown field 'EXTRA'", .path = "value"});
+        // In a field, so a backend that routes roots by their declared shape
+        // (toml) places the variant as it places the struct.
         encodes_as(
             kit,
             "rename_all_on_untagged_variant_is_inert",
             [] {
-                return CamelChoice{
-                    RenameTarget{.user_name = 7, .display_name = "ada"}
-                };
+                return Field<CamelChoice>{
+                    CamelChoice{RenameTarget{.user_name = 7, .display_name = "ada"}}};
             },
-            [] { return RenameTarget{.user_name = 7, .display_name = "ada"}; });
+            [] {
+                return Field<RenameTarget>{
+                    {.user_name = 7, .display_name = "ada"}
+                };
+            });
         reads<AnnotatedStruct>(
             kit,
             "skipped_field_ignores_its_key",
@@ -372,14 +377,12 @@ void attrs(const Kit<B>& kit) {
                 "enum_repr_string_unknown_name_fails",
                 [] { return Field<std::string>{"nope"}; },
                 {.message = "unknown enum value 'nope'", .path = "value"});
-            // nan_repr::String only encodes: the names do not read back.
-            read_fails<NonFinite, NanStringConfig>(
-                kit,
-                "nan_string_read_fails",
-                [] {
-                    return NonFiniteNames{.nan = "NaN", .inf = "Infinity", .neg_inf = "-Infinity"};
-                },
-                {.message = "", .path = "nan"});
+            // nan_repr::String only encodes: the names do not read back. One
+            // name, so the path does not depend on the order of the keys.
+            read_fails<Field<double>, NanStringConfig>(kit,
+                                                       "nan_string_read_fails",
+                                                       [] { return Field<std::string>{"NaN"}; },
+                                                       {.message = "", .path = "value"});
         }
         read_fails<AccessGrant>(kit,
                                 "enum_string_unknown_name_fails",

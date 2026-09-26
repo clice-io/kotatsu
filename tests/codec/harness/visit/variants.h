@@ -36,7 +36,9 @@ void variants(const Kit<B>& kit) {
             Point2d{.x = 1, .y = 2}
         };
     });
-    roundtrip(kit, "untagged_null_roundtrip", [] { return Field<Untagged>{std::monostate{}}; });
+    if constexpr(B::caps.null_elements) {
+        roundtrip(kit, "untagged_null_roundtrip", [] { return Field<Untagged>{std::monostate{}}; });
+    }
     roundtrip(kit, "untagged_containers_roundtrip", [] {
         return std::vector<Containers>{
             std::tuple<int, std::string>{7, "seven"},
@@ -57,37 +59,47 @@ void variants(const Kit<B>& kit) {
         };
     };
     // Tags shape a keyed document; elsewhere a tagged variant travels as the
-    // untagged one would.
+    // untagged one would. On a keyed backend the variant stands in a field,
+    // as the plain struct does, so a backend that routes roots by their
+    // declared shape (toml) compares the two alike.
     if constexpr(B::caps.self_describing) {
         encodes_as(
             kit,
             "external_encodes_as_plain",
-            [] { return ExternalShape(Point{.x = 1, .y = 2}); },
+            [] { return Field<ExternalShape>{ExternalShape(Point{.x = 1, .y = 2})}; },
+            [] { return Field<PointTagPlain>{{.point = {.x = 1, .y = 2}}}; });
+        encodes_as(
+            kit,
+            "external_monostate_encodes_as_plain",
+            [] { return Field<ExternalShape>{ExternalShape{std::monostate{}}}; },
+            [] { return Field<NoneTagPlain>{}; });
+        encodes_as(
+            kit,
+            "adjacent_encodes_as_plain",
+            [] { return Field<AdjacentShape>{AdjacentShape{7}}; },
             [] {
-                return PointTagPlain{
-                    .point = {.x = 1, .y = 2}
+                return Field<AdjacentPlain<int>>{
+                    {.t = "number", .c = 7}
                 };
             });
         encodes_as(
             kit,
-            "external_monostate_encodes_as_plain",
-            [] { return ExternalShape{std::monostate{}}; },
-            [] { return NoneTagPlain{}; });
-        encodes_as(
-            kit,
-            "adjacent_encodes_as_plain",
-            [] { return AdjacentShape{7}; },
-            [] { return AdjacentPlain<int>{.t = "number", .c = 7}; });
-        encodes_as(
-            kit,
             "adjacent_monostate_encodes_as_plain",
-            [] { return AdjacentShape{std::monostate{}}; },
-            [] { return AdjacentPlain<std::nullptr_t>{.t = "none", .c = nullptr}; });
+            [] { return Field<AdjacentShape>{AdjacentShape{std::monostate{}}}; },
+            [] {
+                return Field<AdjacentPlain<std::nullptr_t>>{
+                    {.t = "none", .c = nullptr}
+                };
+            });
         encodes_as(
             kit,
             "internal_encodes_as_plain",
-            [] { return InternalShape(Rect{.width = 2, .height = 3}); },
-            [] { return RectPlain{.kind = "rect", .width = 2, .height = 3}; });
+            [] { return Field<InternalShape>{InternalShape(Rect{.width = 2, .height = 3})}; },
+            [] {
+                return Field<RectPlain>{
+                    {.kind = "rect", .width = 2, .height = 3}
+                };
+            });
         encodes_as(kit, "tagged_in_struct_encodes_as_plain", holder, [] {
             return TaggedHolderPlain{
                 .name = "h",
@@ -96,18 +108,12 @@ void variants(const Kit<B>& kit) {
                 .in = {.kind = "circle", .radius = 1.5},
             };
         });
+        using DefaultNamed = meta::annotate<TaggedTag>::type<std::variant<Circle, Rect>>;
         encodes_as(
             kit,
             "default_tag_names_are_type_names",
-            [] {
-                return meta::annotate<TaggedTag>::type<std::variant<Circle, Rect>>{
-                    Circle{.radius = 1.5}};
-            },
-            [] {
-                return std::map<std::string, Circle>{
-                    {"Circle", {.radius = 1.5}}
-                };
-            });
+            [] { return Field<DefaultNamed>{DefaultNamed{Circle{.radius = 1.5}}}; },
+            [] { return Field<std::map<std::string, Circle>>{{{"Circle", {.radius = 1.5}}}}; });
     } else {
         encodes_as(
             kit,
@@ -151,7 +157,12 @@ void variants(const Kit<B>& kit) {
             .adj = Point{.x = 3, .y = 4},
             .in = Circle{.radius = 0}
         };
-        return std::vector<TaggedHolder>{none, number, text, point};
+        // The monostate alternatives carry their null in a field.
+        if constexpr(B::caps.null_elements) {
+            return std::vector<TaggedHolder>{none, number, text, point};
+        } else {
+            return std::vector<TaggedHolder>{number, text, point};
+        }
     });
     roundtrip(kit, "tagged_in_containers_roundtrip", [] {
         return TaggedContainers{

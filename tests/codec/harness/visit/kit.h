@@ -48,7 +48,8 @@ struct Caps {
     bool absent_fields = false;
     /// uint64 above int64's maximum encodes.
     bool full_uint64 = false;
-    /// null as a sequence element or map value.
+    /// A null below the root reads back as null: as a sequence element, a map
+    /// value or a field's value.
     bool null_elements = false;
     /// NaN and infinities survive nan_repr::Passthrough.
     bool non_finite = false;
