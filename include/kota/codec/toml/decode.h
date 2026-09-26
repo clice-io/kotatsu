@@ -201,7 +201,10 @@ struct ValueReader {
     }
 
     bool visit_null() {
-        return node == nullptr;
+        if(peek_null()) {
+            return true;
+        }
+        return fail_type("null");
     }
 
     meta::type_kind peek_kind() {

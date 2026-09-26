@@ -405,6 +405,16 @@ ZEST_CASE(tuple_length_errors) {
     }
 }
 
+ZEST_CASE(null_from_non_null_fails) {
+    std::nullptr_t out = nullptr;
+    auto status = from_string("__value = 1", out);
+    ASSERT(!status);
+    EXPECT(status.error().message == "invalid type: expected null, got integer");
+    ASSERT(status.error().location);
+    EXPECT(status.error().location->line == 1U);
+    EXPECT(status.error().location->column == 11U);
+}
+
 };  // ZEST_SUITE(codec_toml)
 
 }  // namespace
