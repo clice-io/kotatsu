@@ -1,193 +1,465 @@
+#include <algorithm>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
+
+#ifndef _WIN32
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#endif
 
 #include "async/harness/loop_fixture.h"
+#include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
+#include "kota/async/async.h"
 
 namespace kota {
 
 namespace {
 
-bool bump_and_stop(int& done, int target) {
-    done += 1;
-    if(done == target) {
-        event_loop::current().stop();
-        return true;
+/// A socket bound to a loopback port of its own.
+struct Bound {
+    udp socket;
+    int port = 0;
+};
+
+result<Bound> bind_loopback(event_loop& loop, udp::create_options options = {}) {
+    auto created = udp::create(options, loop);
+    if(!created) {
+        return outcome_error(created.error());
     }
-    return false;
+    if(auto err = created->bind("127.0.0.1", 0)) {
+        return outcome_error(err);
+    }
+    auto name = created->getsockname();
+    if(!name) {
+        return outcome_error(name.error());
+    }
+    return Bound{std::move(*created), name->port};
 }
 
-task<udp::recv_result, error> recv_once(udp& sock, int& done) {
-    auto res = co_await sock.recv();
-    bump_and_stop(done, 2);
-    co_return res;
+ZEST_SUITE(async_io_udp, test::LoopFixture) {
+
+ZEST_CASE(datagram_arrives_with_its_sender) {
+    auto receiver = bind_loopback(loop);
+    auto sender = bind_loopback(loop);
+    ASSERT(receiver.has_value());
+    ASSERT(sender.has_value());
+    EXPECT(receiver->port > 0);
+
+    auto [sent, received] =
+        run(sender->socket.send(std::string_view("kotatsu-udp"), "127.0.0.1", receiver->port),
+            receiver->socket.recv());
+    EXPECT(sent.has_value());
+    ASSERT(received.has_value());
+    EXPECT(received->data == "kotatsu-udp");
+    EXPECT(received->addr == "127.0.0.1");
+    EXPECT(received->port == sender->port);
+    EXPECT(!received->flags.partial);
 }
 
-task<void, error>
-    send_to(udp& sock, std::string_view payload, std::string_view host, int port, int& done) {
-    std::span<const char> data(payload.data(), payload.size());
-    auto ec = co_await sock.send(data, host, port);
-    bump_and_stop(done, 2);
-    co_await or_fail(ec);
+ZEST_CASE(connected_socket_sends_to_its_peer) {
+    auto receiver = bind_loopback(loop);
+    auto sender = udp::create(loop);
+    ASSERT(receiver.has_value());
+    ASSERT(sender.has_value());
+    ASSERT(!sender->connect("127.0.0.1", receiver->port));
+    auto peer = sender->getpeername();
+    ASSERT(peer.has_value());
+    EXPECT(peer->port == receiver->port);
+
+    auto [sent, received] =
+        run(sender->send(std::string_view("kotatsu-connected")), receiver->socket.recv());
+    EXPECT(sent.has_value());
+    ASSERT(received.has_value());
+    EXPECT(received->data == "kotatsu-connected");
 }
 
-task<void, error> send_connected(udp& sock, std::string_view payload, int& done) {
-    std::span<const char> data(payload.data(), payload.size());
-    auto ec = co_await sock.send(data);
-    bump_and_stop(done, 2);
-    co_await or_fail(ec);
+ZEST_CASE(disconnect_forgets_the_peer) {
+    auto receiver = bind_loopback(loop);
+    auto sender = udp::create(loop);
+    ASSERT(receiver.has_value());
+    ASSERT(sender.has_value());
+    ASSERT(!sender->connect("127.0.0.1", receiver->port));
+
+    EXPECT(!sender->disconnect());
+    auto peer = sender->getpeername();
+    ASSERT(peer.has_error());
+    EXPECT(peer.error() == error::socket_is_not_connected);
 }
 
-}  // namespace
+ZEST_CASE(connect_twice_fails) {
+    auto receiver = bind_loopback(loop);
+    auto sender = udp::create(loop);
+    ASSERT(receiver.has_value());
+    ASSERT(sender.has_value());
+    ASSERT(!sender->connect("127.0.0.1", receiver->port));
 
-ZEST_SUITE(async_io_udp, loop_fixture) {
-
-ZEST_CASE(send_and_recv) {
-    auto recv_sock = udp::create(loop);
-    ASSERT(recv_sock);
-
-    auto bind_ec = recv_sock->bind("127.0.0.1", 0);
-    EXPECT(!static_cast<bool>(bind_ec));
-
-    auto endpoint = recv_sock->getsockname();
-    ASSERT(endpoint);
-
-    auto send_sock = udp::create(loop);
-    ASSERT(send_sock);
-
-    int done = 0;
-    auto receiver = recv_once(*recv_sock, done);
-    auto sender = send_to(*send_sock, "kotatsu-udp", endpoint->addr, endpoint->port, done);
-    schedule_all(receiver, sender);
-
-    auto recv_result = receiver.result();
-    EXPECT(recv_result);
-    EXPECT(recv_result->data == "kotatsu-udp");
-
-    auto send_result = sender.result();
-    EXPECT(!send_result.has_error());
+    EXPECT(sender->connect("127.0.0.1", receiver->port) == error::socket_is_already_connected);
 }
 
-ZEST_CASE(connect_and_send) {
-    auto recv_sock = udp::create(loop);
-    ASSERT(recv_sock);
+ZEST_CASE(disconnect_without_a_peer_fails) {
+    auto socket = udp::create(loop);
+    ASSERT(socket.has_value());
 
-    auto bind_ec = recv_sock->bind("127.0.0.1", 0);
-    EXPECT(!static_cast<bool>(bind_ec));
+    EXPECT(socket->disconnect() == error::socket_is_not_connected);
+}
 
-    auto endpoint = recv_sock->getsockname();
-    ASSERT(endpoint);
+ZEST_CASE(try_send_sends_at_once) {
+    auto receiver = bind_loopback(loop);
+    auto sender = udp::create(loop);
+    ASSERT(receiver.has_value());
+    ASSERT(sender.has_value());
 
-    auto send_sock = udp::create(loop);
-    ASSERT(send_sock);
+    EXPECT(!sender->try_send(std::string_view("unconnected"), "127.0.0.1", receiver->port));
+    ASSERT(!sender->connect("127.0.0.1", receiver->port));
+    EXPECT(!sender->try_send(std::string_view("connected")));
+    auto receive_two = [&]() -> task<std::vector<std::string>, error> {
+        std::vector<std::string> data;
+        for(int i = 0; i < 2; ++i) {
+            data.push_back((co_await receiver->socket.recv().or_fail()).data);
+        }
+        // UDP keeps no order, and loopback does reorder around connect().
+        std::ranges::sort(data);
+        co_return data;
+    };
 
-    auto conn_ec = send_sock->connect(endpoint->addr, endpoint->port);
-    EXPECT(!static_cast<bool>(conn_ec));
+    auto [received] = run(receive_two());
+    ASSERT(received.has_value());
+    EXPECT(*received == std::vector<std::string>{"connected", "unconnected"});
+}
 
-    int done = 0;
-    auto receiver = recv_once(*recv_sock, done);
-    auto sender = send_connected(*send_sock, "kotatsu-udp-connect", done);
-    schedule_all(receiver, sender);
+// An unconnected socket needs an address, a connected one refuses another,
+// and the address must parse.
+ZEST_CASE(send_to_the_wrong_destination_fails) {
+    auto unconnected = udp::create(loop);
+    auto connected = udp::create(loop);
+    ASSERT(unconnected.has_value());
+    ASSERT(connected.has_value());
+    ASSERT(!connected->connect("127.0.0.1", 9));
+    std::string_view data = "x";
 
-    auto recv_result = receiver.result();
-    EXPECT(recv_result);
-    EXPECT(recv_result->data == "kotatsu-udp-connect");
+    auto [no_address, second_address, unparsable] =
+        run(unconnected->send(data),
+            connected->send(data, "127.0.0.1", 9),
+            unconnected->send(data, "not-an-address", 9));
+    ASSERT(no_address.has_error());
+    EXPECT(no_address.error() == error::destination_address_required);
+    ASSERT(second_address.has_error());
+    EXPECT(second_address.error() == error::socket_is_already_connected);
+    ASSERT(unparsable.has_error());
+    EXPECT(unparsable.error() == error::invalid_argument);
+    EXPECT(unconnected->try_send(data) == error::destination_address_required);
+    EXPECT(unconnected->try_send(data, "not-an-address", 9) == error::invalid_argument);
+}
 
-    auto send_result = sender.result();
-    EXPECT(!send_result.has_error());
+// libuv cannot take a send back: a cancelled send still goes out, and its
+// task ends cancelled once it has. The sender binds on its first send.
+ZEST_CASE(cancelled_send_still_delivers) {
+    auto receiver = bind_loopback(loop);
+    auto sender = udp::create(loop);
+    ASSERT(receiver.has_value());
+    ASSERT(sender.has_value());
+    auto sending = sender->send(std::string_view("kept"), "127.0.0.1", receiver->port);
+    auto* node = sending.operator->();
+    auto cancel_it = [&]() -> task<> {
+        node->cancel();
+        co_return;
+    };
+
+    auto [sent, driver, received] = run(std::move(sending), cancel_it(), receiver->socket.recv());
+    EXPECT(sent.is_cancelled());
+    ASSERT(received.has_value());
+    EXPECT(received->data == "kept");
+}
+
+ZEST_CASE(second_send_while_one_is_in_flight_fails) {
+    auto receiver = bind_loopback(loop);
+    auto sender = bind_loopback(loop);
+    ASSERT(receiver.has_value());
+    ASSERT(sender.has_value());
+
+    auto [first, second] =
+        run(sender->socket.send(std::string_view("one"), "127.0.0.1", receiver->port),
+            sender->socket.send(std::string_view("two"), "127.0.0.1", receiver->port));
+    EXPECT(first.has_value());
+    ASSERT(second.has_error());
+    EXPECT(second.error() == error::connection_already_in_progress);
 }
 
 // Once libuv has drained the socket it calls back with zero bytes from no
 // address; that is not a datagram and must not reach the next recv().
-ZEST_CASE(recv_after_drained_socket_waits_for_next_datagram) {
-    auto recv_sock = udp::create(loop);
-    ASSERT(recv_sock);
-    ASSERT(!recv_sock->bind("127.0.0.1", 0));
-    auto endpoint = recv_sock->getsockname();
-    ASSERT(endpoint);
-
-    auto send_sock = udp::create(loop);
-    ASSERT(send_sock);
-
+ZEST_CASE(recv_after_a_drained_socket_waits_for_the_next_datagram) {
+    auto receiver = bind_loopback(loop);
+    auto sender = bind_loopback(loop);
+    ASSERT(receiver.has_value());
+    ASSERT(sender.has_value());
     auto exchange = [&]() -> task<std::pair<std::string, std::string>, error> {
-        std::string_view first = "first";
-        std::string_view second = "second";
-        co_await send_sock->send(first, endpoint->addr, endpoint->port).or_fail();
-        auto got_first = co_await recv_sock->recv().or_fail();
-        co_await send_sock->send(second, endpoint->addr, endpoint->port).or_fail();
-        auto got_second = co_await recv_sock->recv().or_fail();
-        event_loop::current().stop();
-        co_return std::pair{std::move(got_first.data), std::move(got_second.data)};
+        co_await sender->socket.send(std::string_view("first"), "127.0.0.1", receiver->port)
+            .or_fail();
+        auto first = co_await receiver->socket.recv().or_fail();
+        co_await sender->socket.send(std::string_view("second"), "127.0.0.1", receiver->port)
+            .or_fail();
+        auto second = co_await receiver->socket.recv().or_fail();
+        co_return std::pair{std::move(first.data), std::move(second.data)};
     };
 
-    auto worker = exchange();
-    schedule_all(worker);
-
-    auto received = worker.result();
-    ASSERT(received);
+    auto [received] = run(exchange());
+    ASSERT(received.has_value());
     EXPECT(received->first == "first");
     EXPECT(received->second == "second");
 }
 
-// The option flags are libuv enumerators, which #ifdef never saw: every
-// option used to fail with function_not_implemented.
-ZEST_CASE(options_are_honoured) {
-    auto first = udp::create(loop);
-    auto second = udp::create(loop);
-    ASSERT(first);
-    ASSERT(second);
-    udp::bind_options shared(false, true);
-    ASSERT(!first->bind("127.0.0.1", 0, shared));
-    auto endpoint = first->getsockname();
-    ASSERT(endpoint);
-    EXPECT(!second->bind("127.0.0.1", endpoint->port, shared));
-
-    auto batched = udp::create(udp::create_options(false, true), loop);
-    ASSERT(batched);
-    ASSERT(!batched->bind("127.0.0.1", 0));
-    auto batched_endpoint = batched->getsockname();
-    ASSERT(batched_endpoint);
-
-    auto exchange = [&]() -> task<udp::recv_result, error> {
-        co_await first->send(std::string_view("batched"), "127.0.0.1", batched_endpoint->port)
+// A datagram that arrives while no recv() waits is kept for the next one.
+ZEST_CASE(datagram_arriving_between_recvs_is_kept) {
+    auto receiver = bind_loopback(loop);
+    auto sender = bind_loopback(loop);
+    ASSERT(receiver.has_value());
+    ASSERT(sender.has_value());
+    auto exchange = [&]() -> task<std::vector<std::string>, error> {
+        co_await sender->socket.send(std::string_view("one"), "127.0.0.1", receiver->port)
             .or_fail();
-        auto received = co_await batched->recv().or_fail();
-        event_loop::current().stop();
-        co_return received;
+        co_await sender->socket.send(std::string_view("two"), "127.0.0.1", receiver->port)
+            .or_fail();
+        std::vector<std::string> data{(co_await receiver->socket.recv().or_fail()).data};
+        // Reading on, libuv delivers the second datagram while nothing waits.
+        co_await yield();
+        data.push_back((co_await receiver->socket.recv().or_fail()).data);
+        std::ranges::sort(data);
+        co_return data;
     };
 
-    auto worker = exchange();
-    schedule_all(worker);
-
-    auto received = worker.result();
-    ASSERT(received);
-    EXPECT(received->data == "batched");
-    EXPECT(received->flags.mmsg_chunk == batched->using_recvmmsg());
+    auto [received] = run(exchange());
+    ASSERT(received.has_value());
+    EXPECT(*received == std::vector<std::string>{"one", "two"});
 }
 
-// A send refused while another was in flight took that send's waiter, so
-// the first send never finished.
-ZEST_CASE(second_send_while_one_is_in_flight_fails) {
-    auto recv_sock = udp::create(loop);
-    ASSERT(recv_sock);
-    ASSERT(!recv_sock->bind("127.0.0.1", 0));
-    auto endpoint = recv_sock->getsockname();
-    ASSERT(endpoint);
-    auto send_sock = udp::create(loop);
-    ASSERT(send_sock);
+ZEST_CASE(empty_datagram_arrives_empty) {
+    auto receiver = bind_loopback(loop);
+    auto sender = bind_loopback(loop);
+    ASSERT(receiver.has_value());
+    ASSERT(sender.has_value());
 
-    int done = 0;
-    auto first = send_to(*send_sock, "one", endpoint->addr, endpoint->port, done);
-    auto second = send_to(*send_sock, "two", endpoint->addr, endpoint->port, done);
-    schedule_all(first, second);
-
-    ASSERT(done == 2);
-    EXPECT(!first.result().has_error());
-    auto refused = second.result();
-    ASSERT(refused.has_error());
-    EXPECT(refused.error() == error::connection_already_in_progress);
+    auto [sent, received] =
+        run(sender->socket.send(std::string_view(), "127.0.0.1", receiver->port),
+            receiver->socket.recv());
+    EXPECT(sent.has_value());
+    ASSERT(received.has_value());
+    EXPECT(received->data.empty());
+    EXPECT(received->port == sender->port);
 }
+
+// With the 64 KiB buffer udp keeps, a recvmmsg socket reads one datagram per
+// call, marks it as a chunk, and releases the buffer with another empty
+// callback.
+ZEST_CASE(recvmmsg_socket_receives_datagrams) {
+    auto receiver = bind_loopback(loop, udp::create_options(false, true));
+    auto sender = bind_loopback(loop);
+    ASSERT(receiver.has_value());
+    ASSERT(sender.has_value());
+    using Datagram = std::pair<std::string, bool>;
+    auto exchange = [&]() -> task<std::vector<Datagram>, error> {
+        co_await sender->socket.send(std::string_view("one"), "127.0.0.1", receiver->port)
+            .or_fail();
+        co_await sender->socket.send(std::string_view("two"), "127.0.0.1", receiver->port)
+            .or_fail();
+        std::vector<Datagram> datagrams;
+        for(int i = 0; i < 2; ++i) {
+            auto received = co_await receiver->socket.recv().or_fail();
+            datagrams.emplace_back(std::move(received.data), received.flags.mmsg_chunk);
+        }
+        std::ranges::sort(datagrams);
+        co_return datagrams;
+    };
+
+    auto [received] = run(exchange());
+    ASSERT(received.has_value());
+    const bool batched = receiver->socket.using_recvmmsg();
+    EXPECT(*received == std::vector<Datagram>{
+                            {"one", batched},
+                            {"two", batched}
+    });
+}
+
+ZEST_CASE(reuse_addr_lets_two_sockets_share_a_port) {
+    udp::bind_options shared(false, true);
+    auto first = udp::create(loop);
+    auto second = udp::create(loop);
+    ASSERT(first.has_value());
+    ASSERT(second.has_value());
+    ASSERT(!first->bind("127.0.0.1", 0, shared));
+    auto name = first->getsockname();
+    ASSERT(name.has_value());
+
+    EXPECT(!second->bind("127.0.0.1", name->port, shared));
+}
+
+// libuv supports reuse_port where SO_REUSEPORT balances the load, and
+// refuses it on macOS and Windows.
+ZEST_CASE(reuse_port_lets_two_sockets_share_a_port) {
+    udp::bind_options reuse_port(false, false, true);
+    auto first = udp::create(loop);
+    ASSERT(first.has_value());
+    auto bound = first->bind("127.0.0.1", 0, reuse_port);
+#if defined(__APPLE__) || defined(_WIN32)
+    EXPECT(bound == error::operation_not_supported_on_socket);
+#else
+    ASSERT(!bound);
+    auto name = first->getsockname();
+    ASSERT(name.has_value());
+    auto second = udp::create(loop);
+    ASSERT(second.has_value());
+    EXPECT(!second->bind("127.0.0.1", name->port, reuse_port));
+#endif
+}
+
+// Open question, kept to document current behaviour: libuv takes the
+// IPv6-only flag at bind(), so create() refuses it.
+ZEST_CASE(create_with_ipv6_only_fails) {
+    auto created = udp::create(udp::create_options(true, false), loop);
+    ASSERT(created.has_error());
+    EXPECT(created.error() == error::function_not_implemented);
+}
+
+ZEST_CASE(second_recv_while_one_is_pending_fails) {
+    auto receiver = bind_loopback(loop);
+    ASSERT(receiver.has_value());
+    auto first = receiver->socket.recv();
+    auto* node = first.operator->();
+    auto second_then_cancel = [&]() -> task<result<udp::recv_result>> {
+        auto second = co_await receiver->socket.recv();
+        node->cancel();
+        co_return second;
+    };
+
+    auto [pending, second] = run(std::move(first), second_then_cancel());
+    EXPECT(pending.is_cancelled());
+    ASSERT(second.has_value());
+    ASSERT(second->has_error());
+    EXPECT(second->error() == error::connection_already_in_progress);
+}
+
+ZEST_CASE(cancelled_recv_leaves_the_socket_usable) {
+    auto receiver = bind_loopback(loop);
+    auto sender = bind_loopback(loop);
+    ASSERT(receiver.has_value());
+    ASSERT(sender.has_value());
+    auto first = receiver->socket.recv();
+    auto* node = first.operator->();
+    auto cancel_then_exchange = [&]() -> task<std::string, error> {
+        node->cancel();
+        co_await sender->socket.send(std::string_view("after"), "127.0.0.1", receiver->port)
+            .or_fail();
+        auto received = co_await receiver->socket.recv().or_fail();
+        co_return std::move(received.data);
+    };
+
+    auto [cancelled, received] = run(std::move(first), cancel_then_exchange());
+    EXPECT(cancelled.is_cancelled());
+    ASSERT(received.has_value());
+    EXPECT(*received == "after");
+}
+
+// Open question, kept to document current behaviour: stop_recv() stops
+// reading but leaves a pending recv() waiting, where stream::stop() and
+// acceptor::stop() end theirs with operation_aborted. Only cancelling it
+// ends it.
+ZEST_CASE(stop_recv_leaves_a_pending_recv_waiting) {
+    auto receiver = bind_loopback(loop);
+    ASSERT(receiver.has_value());
+    bool ended = false;
+    auto waiting = [&]() -> task<result<udp::recv_result>> {
+        auto received = co_await receiver->socket.recv();
+        ended = true;
+        co_return received;
+    };
+    auto pending = waiting();
+    auto* node = pending.operator->();
+    auto stop_then_cancel = [&]() -> task<std::pair<error, bool>> {
+        auto stopped = receiver->socket.stop_recv();
+        co_await yield();
+        bool ended_by_stop = ended;
+        node->cancel();
+        co_return std::pair{stopped, ended_by_stop};
+    };
+
+    auto [cancelled, driver] = run(std::move(pending), stop_then_cancel());
+    EXPECT(cancelled.is_cancelled());
+    ASSERT(driver.has_value());
+    EXPECT(!driver->first);
+    EXPECT(!driver->second);
+}
+
+ZEST_CASE(bind_to_a_port_in_use_fails) {
+    auto taken = bind_loopback(loop);
+    auto other = udp::create(loop);
+    ASSERT(taken.has_value());
+    ASSERT(other.has_value());
+
+    EXPECT(other->bind("127.0.0.1", taken->port) == error::address_already_in_use);
+}
+
+ZEST_CASE(bind_to_an_unparsable_host_fails) {
+    auto socket = udp::create(loop);
+    ASSERT(socket.has_value());
+
+    EXPECT(socket->bind("not-an-address", 0) == error::invalid_argument);
+}
+
+ZEST_CASE(socket_options_can_be_set) {
+    auto bound = bind_loopback(loop);
+    ASSERT(bound.has_value());
+    auto& socket = bound->socket;
+
+    EXPECT(!socket.set_broadcast(true));
+    EXPECT(!socket.set_ttl(32));
+    EXPECT(!socket.set_multicast_loop(false));
+    EXPECT(!socket.set_multicast_ttl(4));
+    EXPECT(socket.send_queue_count() == 0U);
+    EXPECT(socket.send_queue_size() == 0U);
+}
+
+ZEST_CASE(socket_options_out_of_range_fail) {
+    auto bound = bind_loopback(loop);
+    ASSERT(bound.has_value());
+    auto& socket = bound->socket;
+
+    EXPECT(socket.set_ttl(0) == error::invalid_argument);
+    EXPECT(socket.set_membership("not-an-address", "", udp::membership::join) ==
+           error::invalid_argument);
+    EXPECT(socket.set_source_membership("not-an-address", "", "127.0.0.1", udp::membership::join) ==
+           error::invalid_argument);
+    EXPECT(socket.set_multicast_interface("not-an-address") == error::invalid_argument);
+}
+
+#ifndef _WIN32
+ZEST_CASE(open_wraps_a_bound_socket) {
+    int raw = ::socket(AF_INET, SOCK_DGRAM, 0);
+    ASSERT(raw >= 0);
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    ASSERT(::bind(raw, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0);
+    auto opened = udp::open(raw, loop);
+    ASSERT(opened.has_value());
+    auto name = opened->getsockname();
+    ASSERT(name.has_value());
+    auto sender = bind_loopback(loop);
+    ASSERT(sender.has_value());
+
+    auto [sent, received] =
+        run(sender->socket.send(std::string_view("opened"), "127.0.0.1", name->port),
+            opened->recv());
+    EXPECT(sent.has_value());
+    ASSERT(received.has_value());
+    EXPECT(received->data == "opened");
+}
+#endif
 
 };  // ZEST_SUITE(async_io_udp)
+
+}  // namespace
 
 }  // namespace kota

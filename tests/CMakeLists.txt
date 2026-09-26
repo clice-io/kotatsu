@@ -120,7 +120,7 @@ add_test(NAME zest_bootstrap_unit
 add_test(NAME zest_bootstrap_system
     COMMAND system_tests
         --no-isolation
-        "--test-filter={async_io_fs,async_io_process,async_io_stream_pipe,async_io_system}.*"
+        "--test-filter={async_io_fs,async_io_fs_sync,async_io_process,async_io_stream_pipe,async_io_system}.*"
         "--snapshot-dir=tests/snapshots"
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 )

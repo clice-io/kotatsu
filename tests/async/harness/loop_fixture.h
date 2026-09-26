@@ -116,18 +116,3 @@ private:
 };
 
 }  // namespace kota::test
-
-namespace kota {
-
-// The old way to drive a loop, kept until the last test using it is rewritten.
-struct loop_fixture {
-    event_loop loop;
-
-    template <typename... Tasks>
-    void schedule_all(Tasks&... tasks) {
-        (loop.schedule(tasks), ...);
-        loop.run();
-    }
-};
-
-}  // namespace kota
