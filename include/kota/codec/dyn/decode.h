@@ -7,6 +7,7 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 #include "kota/support/numeric.h"
 #include "kota/meta/type_kind.h"
@@ -33,13 +34,19 @@ struct ValueReader {
         return true;
     }
 
+    /// Either kind of integer node reads into a signed or an unsigned `out`;
+    /// only a value outside `out`'s range fails.
     template <typename T>
     bool visit_int(T& out) {
-        auto val = node.get_int();
-        if(!val) {
+        bool fits = false;
+        if(const auto* value = std::get_if<std::int64_t>(&node.variant())) {
+            fits = kota::narrow_int(*value, out);
+        } else if(const auto* value = std::get_if<std::uint64_t>(&node.variant())) {
+            fits = kota::narrow_int(*value, out);
+        } else {
             return fail_type("integer");
         }
-        if(!kota::narrow_int(*val, out)) {
+        if(!fits) {
             return scoped_context<rich_error>::fail(rich_error("integer value out of range"));
         }
         return true;
@@ -47,14 +54,7 @@ struct ValueReader {
 
     template <typename T>
     bool visit_uint(T& out) {
-        auto val = node.get_uint();
-        if(!val) {
-            return fail_type("integer");
-        }
-        if(!kota::narrow_int(*val, out)) {
-            return scoped_context<rich_error>::fail(rich_error("integer value out of range"));
-        }
-        return true;
+        return visit_int(out);
     }
 
     template <typename T>

@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <optional>
 #include <string>
@@ -83,6 +84,28 @@ ZEST_CASE(null_from_non_null_fails) {
     auto fallback = dyn::from_dyn(dyn::Value(std::string("x")), choice);
     ASSERT(!fallback);
     EXPECT(fallback.error().message == "invalid type: expected null, got string");
+}
+
+ZEST_CASE(integers_read_across_signedness) {
+    std::int32_t signed_out = 0;
+    ASSERT(dyn::from_dyn(dyn::Value(std::uint64_t{7}), signed_out));
+    EXPECT(signed_out == 7);
+    std::uint8_t unsigned_out = 0;
+    ASSERT(dyn::from_dyn(dyn::Value(std::int64_t{7}), unsigned_out));
+    EXPECT(unsigned_out == 7U);
+}
+
+ZEST_CASE(integer_of_other_signedness_out_of_range_fails) {
+    // An integer is an integer: one that does not fit is out of range, not
+    // of the wrong type.
+    std::int64_t signed_out = 0;
+    auto too_big = dyn::from_dyn(dyn::Value(std::numeric_limits<std::uint64_t>::max()), signed_out);
+    ASSERT(!too_big);
+    EXPECT(too_big.error().message == "integer value out of range");
+    std::uint32_t unsigned_out = 0;
+    auto negative = dyn::from_dyn(dyn::Value(std::int64_t{-1}), unsigned_out);
+    ASSERT(!negative);
+    EXPECT(negative.error().message == "integer value out of range");
 }
 
 ZEST_CASE(char_writes_its_codepoint) {
