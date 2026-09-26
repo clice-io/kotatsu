@@ -405,6 +405,44 @@ ZEST_CASE(tuple_length_errors) {
     }
 }
 
+ZEST_CASE(char_writes_its_codepoint) {
+    // The char's value, 0-255, is the codepoint: an octet above 0x7F becomes
+    // two bytes of UTF-8 instead of text toml++ cannot write.
+    EXPECT(to_string('x') == "__value = 'x'");
+    EXPECT(to_string(static_cast<char>(0xE9)) == "__value = 'é'");
+    EXPECT(to_string(static_cast<char>(0xFF)) == "__value = 'ÿ'");
+}
+
+ZEST_CASE(char_reads_one_codepoint_up_to_255) {
+    char out = '\0';
+    ASSERT(from_string("__value = 'é'", out));
+    EXPECT(out == static_cast<char>(0xE9));
+    ASSERT(from_string("__value = 'ÿ'", out));
+    EXPECT(out == static_cast<char>(0xFF));
+}
+
+ZEST_CASE(char_beyond_255_fails) {
+    char out = '\0';
+    auto status = from_string("__value = 'Ā'", out);
+    ASSERT(!status);
+    EXPECT(status.error().message == "expected single-character string for char");
+    auto several = from_string("__value = 'xy'", out);
+    ASSERT(!several);
+    EXPECT(several.error().message == "expected single-character string for char");
+}
+
+ZEST_CASE(char_from_a_lone_high_octet_fails) {
+    // A table built by hand can hold bytes that are not UTF-8, such as the
+    // lone octet this backend once wrote for a char above 0x7F.
+    ::toml::table tbl{
+        {"__value", "\xE9"}
+    };
+    char out = '\0';
+    auto status = from_toml(tbl, out);
+    ASSERT(!status);
+    EXPECT(status.error().message == "expected single-character string for char");
+}
+
 ZEST_CASE(null_from_non_null_fails) {
     std::nullptr_t out = nullptr;
     auto status = from_string("__value = 1", out);

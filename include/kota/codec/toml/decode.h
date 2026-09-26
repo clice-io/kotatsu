@@ -162,15 +162,26 @@ struct ValueReader {
         if(!node) {
             return fail_type("string");
         }
-        auto val = node->value<std::string>();
+        auto val = node->value<std::string_view>();
         if(!val) {
             return fail_type("string");
         }
-        if(val->size() != 1) {
-            return fail_with_location("expected single-character string for char");
+        // One codepoint up to U+00FF, as ValueWriter::visit_char writes it: an
+        // ASCII byte, or the two UTF-8 bytes of U+0080 to U+00FF.
+        auto text = *val;
+        if(text.size() == 1 && static_cast<unsigned char>(text[0]) < 0x80) {
+            out = static_cast<T>(text[0]);
+            return true;
         }
-        out = static_cast<T>((*val)[0]);
-        return true;
+        if(text.size() == 2) {
+            auto lead = static_cast<unsigned char>(text[0]);
+            auto tail = static_cast<unsigned char>(text[1]);
+            if((lead == 0xC2 || lead == 0xC3) && (tail & 0xC0) == 0x80) {
+                out = static_cast<T>(((lead & 0x1F) << 6) | (tail & 0x3F));
+                return true;
+            }
+        }
+        return fail_with_location("expected single-character string for char");
     }
 
     template <typename T>
