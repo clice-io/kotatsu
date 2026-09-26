@@ -104,16 +104,24 @@ ZEST_CASE(scalar_root_trailing_content_fails) {
     EXPECT(zest::starts_with(status.error().message, "TRAILING_CONTENT"));
 }
 
-ZEST_CASE(container_root_ignores_a_trailing_value) {
-    // Known gap: after an object or array root, from_string does not check
-    // that the document ended, so a second value that tokenizes is dropped
-    // silently. The case pins today's behaviour; it should fail with
-    // TRAILING_CONTENT like a scalar root does.
+ZEST_CASE(object_root_trailing_value_fails) {
     test::Point out{};
-    ASSERT(json::from_string(R"({"x":1,"y":2} {"x":3})", out));
-    EXPECT(out.x == 1);
+    auto status = json::from_string(R"({"x":1,"y":2} {"x":3})", out);
+    ASSERT(!status);
+    EXPECT(zest::starts_with(status.error().message, "TRAILING_CONTENT"));
+}
+
+ZEST_CASE(array_root_trailing_content_fails) {
     std::vector<int> list;
-    EXPECT(json::from_string("[1] ]", list));
+    auto status = json::from_string("[1] ]", list);
+    ASSERT(!status);
+    EXPECT(zest::starts_with(status.error().message, "TRAILING_CONTENT"));
+}
+
+ZEST_CASE(root_followed_by_whitespace_reads) {
+    std::vector<int> list;
+    ASSERT(json::from_string("[1, 2] \n\t ", list));
+    EXPECT(list == std::vector<int>{1, 2});
 }
 
 ZEST_CASE(integer_beyond_64_bits_reads_as_double) {

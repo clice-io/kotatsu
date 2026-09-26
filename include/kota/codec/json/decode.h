@@ -457,6 +457,14 @@ auto from_string(std::string_view json, T& out) -> std::expected<void, rich_erro
     if(!decode_value<default_config<Config>>(r, out)) {
         return std::unexpected(std::move(guard_error));
     }
+    // simdjson checks what follows a scalar root, not what follows an object
+    // or array, and the reader rewinds each container it walks; so walk the
+    // root once more and see that the document ends after it.
+    doc.rewind();
+    if(doc.raw_json().error() || !doc.at_end()) {
+        return std::unexpected(
+            rich_error(std::string(simdjson::error_message(simdjson::TRAILING_CONTENT))));
+    }
     return {};
 }
 
