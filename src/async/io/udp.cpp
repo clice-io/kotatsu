@@ -242,10 +242,10 @@ struct udp_send_await : uv::await_op<udp_send_await> {
         return this->attach(waiting.promise(), loc);
     }
 
+    // Nothing to disarm: delivery disarms before it completes the send, and
+    // a send refused while another is in flight never armed; disarming here
+    // took the waiter from the send in flight.
     error await_resume() noexcept {
-        if(self) {
-            self->send.disarm();
-        }
         return result;
     }
 };

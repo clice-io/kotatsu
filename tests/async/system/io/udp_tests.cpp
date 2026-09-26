@@ -165,6 +165,29 @@ ZEST_CASE(options_are_honoured) {
     EXPECT(received->flags.mmsg_chunk == batched->using_recvmmsg());
 }
 
+// A send refused while another was in flight took that send's waiter, so
+// the first send never finished.
+ZEST_CASE(second_send_while_one_is_in_flight_fails) {
+    auto recv_sock = udp::create(loop);
+    ASSERT(recv_sock);
+    ASSERT(!recv_sock->bind("127.0.0.1", 0));
+    auto endpoint = recv_sock->getsockname();
+    ASSERT(endpoint);
+    auto send_sock = udp::create(loop);
+    ASSERT(send_sock);
+
+    int done = 0;
+    auto first = send_to(*send_sock, "one", endpoint->addr, endpoint->port, done);
+    auto second = send_to(*send_sock, "two", endpoint->addr, endpoint->port, done);
+    schedule_all(first, second);
+
+    ASSERT(done == 2);
+    EXPECT(!first.result().has_error());
+    auto refused = second.result();
+    ASSERT(refused.has_error());
+    EXPECT(refused.error() == error::connection_already_in_progress);
+}
+
 };  // ZEST_SUITE(async_io_udp)
 
 }  // namespace kota
