@@ -2,8 +2,9 @@
 
 // What system tests take from the operating system without kota::async:
 // TempDir, read_file() and write_file(), stdin_reader() for a child that
-// runs until its stdin closes, create_pipe(), close_fd() and write_fd() on
-// raw descriptors, and BusyPool, which holds libuv's thread pool busy.
+// runs until its stdin closes and exit_status_of() for how it ended,
+// create_pipe(), close_fd() and write_fd() on raw descriptors, and
+// BusyPool, which holds libuv's thread pool busy.
 
 #include <algorithm>
 #include <atomic>
@@ -14,6 +15,7 @@
 #include <fstream>
 #include <iterator>
 #include <latch>
+#include <optional>
 #include <random>
 #include <string>
 #include <string_view>
@@ -89,6 +91,16 @@ inline process::options stdin_reader() {
                     process::stdio::ignore(),
                     process::stdio::ignore()};
     return opts;
+}
+
+/// The exit status that run() reports for a process::wait(), if the wait
+/// ended with one.
+template <typename Waited>
+std::optional<int> exit_status_of(const Waited& waited) {
+    if(!waited.has_value() || !waited->has_value()) {
+        return std::nullopt;
+    }
+    return (*waited)->status;
 }
 
 // Windows pipes have a 4 KB buffer: writing more than that before the loop

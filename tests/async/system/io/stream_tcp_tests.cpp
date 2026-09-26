@@ -58,6 +58,35 @@ socket_t connect_raw(int port) {
     return sock;
 }
 
+/// A raw socket, closed on every way out.
+struct RawSocket {
+    socket_t fd = invalid_socket;
+
+    RawSocket() = default;
+    RawSocket(const RawSocket&) = delete;
+    RawSocket& operator=(const RawSocket&) = delete;
+
+    ~RawSocket() {
+        if(fd != invalid_socket) {
+            close_socket(fd);
+        }
+    }
+};
+
+/// Binds `sock` to a loopback port the kernel picks, and returns the port,
+/// or 0 if it cannot.
+int bind_loopback_raw(socket_t sock) {
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socklen_t length = sizeof(addr);
+    if(::bind(sock, reinterpret_cast<sockaddr*>(&addr), length) != 0 ||
+       ::getsockname(sock, reinterpret_cast<sockaddr*>(&addr), &length) != 0) {
+        return 0;
+    }
+    return ntohs(addr.sin_port);
+}
+
 /// Closes `sock` with a reset instead of an orderly shutdown.
 int reset_socket(socket_t sock) {
     linger opt{};
@@ -86,7 +115,7 @@ result<Listener> listen_loopback(event_loop& loop) {
     if(!port) {
         return outcome_error(port.error());
     }
-    return Listener{std::move(*acceptor), *port};
+    return Listener{.acceptor = std::move(*acceptor), .port = *port};
 }
 
 ZEST_SUITE(async_io_stream_tcp, test::LoopFixture) {
@@ -250,6 +279,14 @@ ZEST_CASE(ipv6_only_listener_takes_ipv6_clients) {
     EXPECT(sent.has_value());
 }
 
+// libuv only makes an IPv6 socket IPv6-only; the flag on an IPv4 address is
+// refused rather than ignored.
+ZEST_CASE(ipv6_only_listen_on_an_ipv4_address_fails) {
+    auto listener = tcp::listen("127.0.0.1", 0, tcp::options(true), loop);
+    ASSERT(listener.has_error());
+    EXPECT(listener.error() == error::invalid_argument);
+}
+
 ZEST_CASE(listen_on_a_port_in_use_fails) {
     auto listener = listen_loopback(loop);
     ASSERT(listener.has_value());
@@ -269,10 +306,37 @@ ZEST_CASE(unparsable_host_fails) {
     EXPECT(connected.error() == error::invalid_argument);
 }
 
+ZEST_CASE(connect_to_a_closed_port_fails) {
+    int port = 0;
+    {
+        RawSocket bound;
+        bound.fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        ASSERT(bound.fd != invalid_socket);
+        port = bind_loopback_raw(bound.fd);
+    }
+    ASSERT(port > 0);
+
+    auto [connected] = run(tcp::connect("127.0.0.1", port, loop));
+    ASSERT(connected.has_error());
+    EXPECT(connected.error() == error::connection_refused);
+}
+
+// A raw listener that nobody accepts from, its backlog of 0 taken by one
+// connection: the kernel holds back any further connect, which then cannot
+// finish by itself, so only the cancel ends it. (A kota listener accepts
+// eagerly and would make room.) Windows refuses such a connection instead.
+#ifndef _WIN32
 ZEST_CASE(connect_can_be_cancelled) {
-    auto listener = listen_loopback(loop);
-    ASSERT(listener.has_value());
-    auto connecting = tcp::connect("127.0.0.1", listener->port, loop);
+    RawSocket listening;
+    listening.fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ASSERT(listening.fd != invalid_socket);
+    auto port = bind_loopback_raw(listening.fd);
+    ASSERT(port > 0);
+    ASSERT(::listen(listening.fd, 0) == 0);
+    RawSocket queued;
+    queued.fd = connect_raw(port);
+    ASSERT(queued.fd != invalid_socket);
+    auto connecting = tcp::connect("127.0.0.1", port, loop);
     auto* node = connecting.operator->();
     auto cancel_it = [&]() -> task<> {
         node->cancel();
@@ -282,6 +346,7 @@ ZEST_CASE(connect_can_be_cancelled) {
     auto [cancelled, driver] = run(std::move(connecting), cancel_it());
     EXPECT(cancelled.is_cancelled());
 }
+#endif
 
 ZEST_CASE(connection_before_accept_is_kept) {
     auto listener = listen_loopback(loop);

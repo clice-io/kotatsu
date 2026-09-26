@@ -45,14 +45,15 @@ ZEST_CASE(queue_runs_every_work) {
     EXPECT(ran.load() == 3);
 }
 
+// The hook runs on the loop thread, if at all.
 ZEST_CASE(cancel_hook_stays_unused_when_the_work_completes) {
-    std::atomic<bool> hook_ran = false;
-    auto work = queue([] { return 7; }, function<void()>([&] { hook_ran = true; }), loop);
+    bool hook_ran = false;
+    auto work = queue([] { return 7; }, [&] { hook_ran = true; }, loop);
 
     auto [result] = run(std::move(work));
     ASSERT(result.has_value());
     EXPECT(*result == 7);
-    EXPECT(!hook_ran.load());
+    EXPECT(!hook_ran);
 }
 
 // With every pool thread busy the work waits in the queue; cancelling it
@@ -61,7 +62,7 @@ ZEST_CASE(cancel_while_queued_drops_the_work) {
     test::BusyPool pool;
     event busy;
     std::atomic<bool> ran = false;
-    std::atomic<bool> hook_ran = false;
+    bool hook_ran = false;
     auto target = [&]() -> task<void, error> {
         co_await busy.wait();
         co_await queue([&] { ran = true; }, [&] { hook_ran = true; }).or_fail();
@@ -78,21 +79,24 @@ ZEST_CASE(cancel_while_queued_drops_the_work) {
     EXPECT(held.has_value());
     EXPECT(cancelled.is_cancelled());
     EXPECT(!ran.load());
-    EXPECT(!hook_ran.load());
+    EXPECT(!hook_ran);
 }
 
 // Running work cannot be dequeued: the hook, run on the loop thread, is how
-// it learns to return early, and the task ends cancelled once it has.
+// it learns to return early, and the task ends cancelled only once the work
+// has returned.
 ZEST_CASE(cancel_while_running_calls_the_hook) {
     const auto loop_thread = std::this_thread::get_id();
     event started;
     auto notify = loop.create_relay();
     std::binary_semaphore stop{0};
-    std::atomic<bool> hook_on_loop_thread = false;
+    std::atomic<bool> returned = false;
+    bool hook_on_loop_thread = false;
     auto work = queue(
         [&] {
             notify.send([&] { started.set(); });
             stop.acquire();
+            returned = true;
             return 1;
         },
         [&] {
@@ -101,14 +105,20 @@ ZEST_CASE(cancel_while_running_calls_the_hook) {
         },
         loop);
     auto* node = work.operator->();
+    auto settled = [&]() -> task<std::pair<bool, bool>> {
+        auto result = co_await std::move(work).catch_cancel();
+        co_return std::pair{result.is_cancelled(), returned.load()};
+    };
     auto cancel_it = [&]() -> task<> {
         co_await started.wait();
         node->cancel();
     };
 
-    auto [cancelled, driver] = run(std::move(work), cancel_it());
-    EXPECT(cancelled.is_cancelled());
-    EXPECT(hook_on_loop_thread.load());
+    auto [seen, driver] = run(settled(), cancel_it());
+    ASSERT(seen.has_value());
+    // Cancelled, with the work already returned.
+    EXPECT(*seen == std::pair{true, true});
+    EXPECT(hook_on_loop_thread);
 }
 
 };  // ZEST_SUITE(async_io_request)

@@ -1,3 +1,5 @@
+#include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <semaphore>
 #include <thread>
@@ -115,6 +117,28 @@ ZEST_CASE(callback_from_another_thread_can_stop_the_loop) {
     EXPECT(loop.run() != 0);
     sender.join();
     EXPECT(stopped);
+}
+
+// Letting go of one of two relays takes one hold off the loop, not all of
+// them: run() is still going when the thread holding the other looks, and
+// returns only once that relay goes with the thread. Showing that run() did
+// not return takes a wait; the 50 ms are how long it gets to.
+ZEST_CASE(loop_stays_held_while_one_of_two_relays_lives) {
+    std::atomic<bool> returned = false;
+    bool returned_early = false;
+    bool called = false;
+    std::thread holder([&, released = loop.create_relay(), held = loop.create_relay()]() mutable {
+        released = relay{};
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        returned_early = returned.load();
+        held.send([&] { called = true; });
+    });
+
+    EXPECT(loop.run() == 0);
+    returned = true;
+    holder.join();
+    EXPECT(!returned_early);
+    EXPECT(called);
 }
 
 // A producer that sends and drops its relay while the loop is running an

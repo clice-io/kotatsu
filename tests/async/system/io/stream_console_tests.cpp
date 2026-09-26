@@ -40,6 +40,12 @@ struct PseudoTerminal {
     PseudoTerminal(const PseudoTerminal&) = delete;
     PseudoTerminal& operator=(const PseudoTerminal&) = delete;
 
+    /// False where the system has no pseudo-terminal to hand out, as in some
+    /// containers; the cases skip there.
+    bool opened() const {
+        return terminal >= 0;
+    }
+
     ~PseudoTerminal() {
         if(terminal >= 0) {
             ::close(terminal);
@@ -95,7 +101,10 @@ ZEST_CASE(open_on_a_regular_file_fails) {
 
 ZEST_CASE(get_winsize_reports_the_terminal_size) {
     PseudoTerminal pty;
-    ASSERT(pty.terminal >= 0);
+    if(!pty.opened()) {
+        zest::skip();
+        return;
+    }
     ::winsize size{};
     size.ws_col = 80;
     size.ws_row = 24;
@@ -112,7 +121,10 @@ ZEST_CASE(get_winsize_reports_the_terminal_size) {
 
 ZEST_CASE(write_reaches_the_terminal) {
     PseudoTerminal pty;
-    ASSERT(pty.terminal >= 0);
+    if(!pty.opened()) {
+        zest::skip();
+        return;
+    }
     auto opened = console::open(pty.terminal, {}, loop);
     ASSERT(opened.has_value());
     auto print = [&]() -> task<void, error> {
@@ -127,7 +139,10 @@ ZEST_CASE(write_reaches_the_terminal) {
 // Raw mode hands over each key as it is typed rather than each line.
 ZEST_CASE(read_in_raw_mode_takes_a_key_without_a_newline) {
     PseudoTerminal pty;
-    ASSERT(pty.terminal >= 0);
+    if(!pty.opened()) {
+        zest::skip();
+        return;
+    }
     auto opened = console::open(pty.terminal, console::options(true), loop);
     ASSERT(opened.has_value());
     ASSERT(!opened->set_mode(console::mode::raw));

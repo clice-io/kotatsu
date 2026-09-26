@@ -37,7 +37,7 @@ result<Bound> bind_loopback(event_loop& loop, udp::create_options options = {}) 
     if(!name) {
         return outcome_error(name.error());
     }
-    return Bound{std::move(*created), name->port};
+    return Bound{.socket = std::move(*created), .port = name->port};
 }
 
 ZEST_SUITE(async_io_udp, test::LoopFixture) {
@@ -200,6 +200,9 @@ ZEST_CASE(recv_after_a_drained_socket_waits_for_the_next_datagram) {
         co_await sender->socket.send(std::string_view("first"), "127.0.0.1", receiver->port)
             .or_fail();
         auto first = co_await receiver->socket.recv().or_fail();
+        // Lets libuv finish the read that returned `first`, whose last call
+        // reports the drained socket, before anything else can arrive.
+        co_await yield();
         co_await sender->socket.send(std::string_view("second"), "127.0.0.1", receiver->port)
             .or_fail();
         auto second = co_await receiver->socket.recv().or_fail();
@@ -313,6 +316,14 @@ ZEST_CASE(reuse_port_lets_two_sockets_share_a_port) {
     ASSERT(second.has_value());
     EXPECT(!second->bind("127.0.0.1", name->port, reuse_port));
 #endif
+}
+
+// libuv only makes an IPv6 socket IPv6-only; the flag on an IPv4 address is
+// refused rather than ignored.
+ZEST_CASE(ipv6_only_bind_to_an_ipv4_address_fails) {
+    auto created = udp::create(loop);
+    ASSERT(created.has_value());
+    EXPECT(created->bind("127.0.0.1", 0, udp::bind_options(true)) == error::invalid_argument);
 }
 
 ZEST_CASE(second_recv_while_one_is_pending_fails) {
@@ -448,7 +459,7 @@ ZEST_CASE(socket_options_can_be_set) {
     EXPECT(socket.send_queue_size() == 0U);
 }
 
-ZEST_CASE(socket_options_out_of_range_fail) {
+ZEST_CASE(socket_options_out_of_range_fails) {
     auto bound = bind_loopback(loop);
     ASSERT(bound.has_value());
     auto& socket = bound->socket;

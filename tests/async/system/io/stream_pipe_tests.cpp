@@ -57,7 +57,7 @@ result<Ends> pipe_ends(event_loop& loop) {
     if(!reader || !writer) {
         return outcome_error(error::io_error);
     }
-    return Ends{std::move(*reader), std::move(*writer)};
+    return Ends{.reader = std::move(*reader), .writer = std::move(*writer)};
 }
 
 ZEST_SUITE(async_io_stream_pipe, test::LoopFixture) {
@@ -396,6 +396,8 @@ ZEST_CASE(connect_to_a_missing_name_fails) {
     EXPECT(result.error() == error::no_such_file_or_directory);
 }
 
+// The cancel closes the connection it interrupts at once: the listener's end
+// reads EOF while run() still holds the cancelled task's frame.
 ZEST_CASE(connect_can_be_cancelled) {
     test::TempDir dir;
     auto name = pipe_name(dir);
@@ -407,9 +409,16 @@ ZEST_CASE(connect_can_be_cancelled) {
         node->cancel();
         co_return;
     };
+    auto serve = [&]() -> task<result<std::string>, error> {
+        auto connection = co_await listener->accept().or_fail();
+        co_return co_await connection.read();
+    };
 
-    auto [cancelled, driver] = run(std::move(connecting), cancel_it());
+    auto [cancelled, driver, served] = run(std::move(connecting), cancel_it(), serve());
     EXPECT(cancelled.is_cancelled());
+    ASSERT(served.has_value());
+    ASSERT(served->has_error());
+    EXPECT(served->error() == error::end_of_file);
 }
 
 ZEST_CASE(listen_on_a_name_in_use_fails) {
@@ -446,6 +455,21 @@ ZEST_CASE(no_truncate_listens_and_connects) {
     EXPECT(served.has_value());
     EXPECT(connected.has_value());
 }
+
+// A socket path longer than sun_path is cut short to fit, unless no_truncate
+// has listen() fail instead. Windows never truncates pipe names.
+#ifndef _WIN32
+ZEST_CASE(listen_on_a_name_too_long_with_no_truncate_fails) {
+    test::TempDir dir;
+    auto name = dir.file(std::string(200, 'x'));
+
+    auto truncated = pipe::listen(name, {}, loop);
+    EXPECT(truncated.has_value());
+    auto refused = pipe::listen(name, pipe::options(false, true), loop);
+    ASSERT(refused.has_error());
+    EXPECT(refused.error() == error::invalid_argument);
+}
+#endif
 
 // stop() ends a pending accept with operation_aborted; with none pending,
 // the next accept gets it instead.

@@ -57,7 +57,7 @@ ZEST_CASE(process_describes_a_child) {
     // Closing its stdin ends the child.
     spawned->stdin_pipe = pipe{};
     auto [status] = run(spawned->proc.wait());
-    EXPECT(status.has_value());
+    EXPECT(test::exit_status_of(status) == 0);
     ASSERT(child.has_value());
     EXPECT(child->pid == pid);
     EXPECT(child->rss > 0U);
@@ -152,7 +152,7 @@ ZEST_CASE(priority_of_a_child_is_set) {
     // Closing its stdin ends the child.
     spawned->stdin_pipe = pipe{};
     auto [status] = run(spawned->proc.wait());
-    EXPECT(status.has_value());
+    EXPECT(test::exit_status_of(status) == 0);
     EXPECT(!set);
     ASSERT(read.has_value());
     EXPECT(*read == 10);

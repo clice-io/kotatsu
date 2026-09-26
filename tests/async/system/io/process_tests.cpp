@@ -53,13 +53,24 @@ ZEST_CASE(wait_reports_the_exit_code) {
     EXPECT(success->proc.pid() > 0);
 
     auto [succeeded, failed] = run(success->proc.wait(), failure->proc.wait());
+    EXPECT(test::exit_status_of(succeeded) == 0);
     ASSERT(succeeded.has_value());
     ASSERT(succeeded->has_value());
-    EXPECT((*succeeded)->status == 0);
     EXPECT((*succeeded)->term_signal == 0);
-    ASSERT(failed.has_value());
-    ASSERT(failed->has_value());
-    EXPECT((*failed)->status == 3);
+    EXPECT(test::exit_status_of(failed) == 3);
+}
+
+// With inherited stdio the child shares the test's own streams.
+ZEST_CASE(spawn_with_inherited_stdio_runs) {
+    auto opts = shell("exit 0");
+    opts.streams = {process::stdio::inherit(),
+                    process::stdio::inherit(),
+                    process::stdio::inherit()};
+    auto spawned = process::spawn(opts, loop);
+    ASSERT(spawned.has_value());
+
+    auto [status] = run(spawned->proc.wait());
+    EXPECT(test::exit_status_of(status) == 0);
 }
 
 ZEST_CASE(spawn_of_a_missing_file_fails) {
@@ -80,9 +91,7 @@ ZEST_CASE(stdout_pipe_carries_the_output) {
     auto [output, status] = run(spawned->stdout_pipe.read(), spawned->proc.wait());
     ASSERT(output.has_value());
     EXPECT(trim_newlines(*output) == "kotatsu-stdout");
-    ASSERT(status.has_value());
-    ASSERT(status->has_value());
-    EXPECT((*status)->status == 0);
+    EXPECT(test::exit_status_of(status) == 0);
 }
 
 ZEST_CASE(stderr_pipe_carries_the_errors) {
@@ -98,15 +107,12 @@ ZEST_CASE(stderr_pipe_carries_the_errors) {
     EXPECT(output.error() == error::end_of_file);
     ASSERT(errors.has_value());
     EXPECT(zest::contains(*errors, "kotatsu-stderr"));
-    EXPECT(status.has_value());
+    EXPECT(test::exit_status_of(status) == 0);
 }
 
 ZEST_CASE(stdin_pipe_feeds_the_child) {
-    process::options opts;
-    opts.file = by_platform("/bin/cat", "more.com");
-    opts.streams = {process::stdio::pipe(true, false),
-                    process::stdio::pipe(false, true),
-                    process::stdio::ignore()};
+    auto opts = test::stdin_reader();
+    opts.streams[1] = process::stdio::pipe(false, true);
     auto spawned = process::spawn(opts, loop);
     ASSERT(spawned.has_value());
     auto feed = [&]() -> task<void, error> {
@@ -119,9 +125,7 @@ ZEST_CASE(stdin_pipe_feeds_the_child) {
     EXPECT(fed.has_value());
     ASSERT(output.has_value());
     EXPECT(trim_newlines(*output) == "kotatsu-stdin");
-    ASSERT(status.has_value());
-    ASSERT(status->has_value());
-    EXPECT((*status)->status == 0);
+    EXPECT(test::exit_status_of(status) == 0);
 }
 
 ZEST_CASE(stdout_goes_to_a_given_descriptor) {
@@ -136,7 +140,7 @@ ZEST_CASE(stdout_goes_to_a_given_descriptor) {
     ASSERT(spawned.has_value());
 
     auto [status] = run(spawned->proc.wait());
-    EXPECT(status.has_value());
+    EXPECT(test::exit_status_of(status) == 0);
     EXPECT(trim_newlines(test::read_file(dir.path / "stdout.txt")) == "kotatsu-fd");
 }
 
@@ -152,7 +156,7 @@ ZEST_CASE(environment_and_directory_reach_the_child) {
     ASSERT(spawned.has_value());
 
     auto [status] = run(spawned->proc.wait());
-    EXPECT(status.has_value());
+    EXPECT(test::exit_status_of(status) == 0);
     EXPECT(trim_newlines(test::read_file(dir.path / "marker.txt")) == "42");
 }
 
@@ -173,9 +177,7 @@ ZEST_CASE(detached_child_still_reports_its_exit) {
     ASSERT(spawned.has_value());
 
     auto [status] = run(spawned->proc.wait());
-    ASSERT(status.has_value());
-    ASSERT(status->has_value());
-    EXPECT((*status)->status == 7);
+    EXPECT(test::exit_status_of(status) == 7);
 }
 
 ZEST_CASE(second_wait_while_one_is_pending_fails) {
@@ -183,8 +185,7 @@ ZEST_CASE(second_wait_while_one_is_pending_fails) {
     ASSERT(spawned.has_value());
 
     auto [first, second] = run(spawned->proc.wait(), spawned->proc.wait());
-    ASSERT(first.has_value());
-    EXPECT(first->has_value());
+    EXPECT(test::exit_status_of(first) == 0);
     ASSERT(second.has_value());
     ASSERT(second->has_error());
     EXPECT(second->error() == error::connection_already_in_progress);
@@ -227,7 +228,7 @@ ZEST_CASE(kill_with_an_invalid_signal_fails) {
     spawned->stdin_pipe = pipe{};
 
     auto [status] = run(spawned->proc.wait());
-    EXPECT(status.has_value());
+    EXPECT(test::exit_status_of(status) == 0);
 }
 
 ZEST_CASE(kill_after_the_exit_fails) {
@@ -235,7 +236,7 @@ ZEST_CASE(kill_after_the_exit_fails) {
     ASSERT(spawned.has_value());
 
     auto [status] = run(spawned->proc.wait());
-    EXPECT(status.has_value());
+    EXPECT(test::exit_status_of(status) == 0);
     EXPECT(spawned->proc.kill(SIGTERM) == error::no_such_process);
 }
 
@@ -283,7 +284,7 @@ ZEST_CASE(stdout_chunks_arrive_as_written) {
     ASSERT(chunks.has_value());
     EXPECT(chunks->first == "chunk-one");
     EXPECT(chunks->second == "chunk-two");
-    EXPECT(status.has_value());
+    EXPECT(test::exit_status_of(status) == 0);
 }
 #endif
 
