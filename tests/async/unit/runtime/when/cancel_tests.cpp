@@ -1,452 +1,329 @@
-// ZEST_SUITE(async_runtime_when_cancel): regular cancellation semantics for when_all/when_any
-// — child self-cancel propagation, parent → children propagation, catch_cancel
-// interception, external token cancel, structured completion waiting for
-// cancelled children, and the io-path cancellation checkpoint. Reentrant /
-// arm-phase / looping cancel scenarios live in reentrancy_tests.cpp.
-#include <utility>
+#include <tuple>
+#include <variant>
+#include <vector>
 
 #include "async/harness/loop_fixture.h"
-#include "async/harness/support.h"
+#include "async/harness/pending_op.h"
+#include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
 
 namespace kota {
 
-ZEST_SUITE(async_runtime_when_cancel) {
+namespace {
 
-ZEST_CASE(all_child_cancel_propagates) {
-    int cancel_started = 0;
-    int slow_started = 0;
-    int slow_done = 0;
+task<int> cancelled_value() {
+    co_await cancel();
+    co_return 0;
+}
 
+ZEST_SUITE(async_runtime_when_cancel, test::LoopFixture) {
+
+ZEST_CASE(all_child_cancel_cancels_the_rest) {
+    event gate;
+    event go;
+    bool slow_finished = false;
+    auto slow = [&]() -> task<int> {
+        co_await gate.wait();
+        slow_finished = true;
+        co_return 2;
+    };
     auto canceler = [&]() -> task<int> {
-        cancel_started += 1;
-        co_await sleep(1);
+        co_await go.wait();
         co_await cancel();
         co_return 1;
     };
-
-    auto slow = [&]() -> task<int> {
-        slow_started += 1;
-        co_await sleep(5);
-        slow_done += 1;
-        co_return 2;
-    };
-
     auto combined = [&]() -> task<> {
         co_await when_all(slow(), canceler());
     };
+    auto driver = [&]() -> task<> {
+        go.set();
+        co_return;
+    };
 
-    auto task = combined();
-    run(task);
-
-    EXPECT(task->is_cancelled());
-    EXPECT(cancel_started == 1);
-    EXPECT(slow_done == 0);
+    auto [result, drove] = run(combined(), driver());
+    EXPECT(result.is_cancelled());
+    EXPECT(!slow_finished);
+    EXPECT(gate.get_head() == nullptr);
 }
 
-ZEST_CASE(any_child_cancel_propagates) {
-    int cancel_started = 0;
-    int slow_started = 0;
-    int slow_done = 0;
+ZEST_CASE(all_child_cancelling_while_armed_starts_no_later_child) {
+    int started = 0;
+    auto later = [&]() -> task<int> {
+        started += 1;
+        co_return 1;
+    };
+    auto combined = [&]() -> task<> {
+        co_await when_all(cancelled_value(), later());
+    };
 
+    auto [result] = run(combined());
+    EXPECT(result.is_cancelled());
+    EXPECT(started == 0);
+}
+
+ZEST_CASE(any_child_cancel_cancels_the_rest) {
+    event gate;
+    event go;
+    bool slow_finished = false;
+    auto slow = [&]() -> task<int> {
+        co_await gate.wait();
+        slow_finished = true;
+        co_return 2;
+    };
     auto canceler = [&]() -> task<int> {
-        cancel_started += 1;
-        co_await sleep(1);
+        co_await go.wait();
         co_await cancel();
         co_return 1;
     };
-
-    auto slow = [&]() -> task<int> {
-        slow_started += 1;
-        co_await sleep(5);
-        slow_done += 1;
-        co_return 2;
-    };
-
     auto combined = [&]() -> task<> {
         co_await when_any(slow(), canceler());
     };
-
-    auto task = combined();
-    run(task);
-
-    EXPECT(task->is_cancelled());
-    EXPECT(cancel_started == 1);
-    EXPECT(slow_done == 0);
-}
-
-ZEST_CASE(any_all_children_cancel) {
-    auto canceler = [&]() -> task<int> {
-        co_await sleep(1);
-        co_await cancel();
-        co_return 0;
+    auto driver = [&]() -> task<> {
+        go.set();
+        co_return;
     };
 
-    auto combined = [&]() -> task<> {
-        co_await when_any(canceler(), canceler());
-    };
-
-    auto task = combined();
-    run(task);
-
-    EXPECT(task->is_cancelled());
+    auto [result, drove] = run(combined(), driver());
+    EXPECT(result.is_cancelled());
+    EXPECT(!slow_finished);
+    EXPECT(gate.get_head() == nullptr);
 }
 
-ZEST_CASE(all_catch_cancel_captures) {
-    int slow_done = 0;
-
-    auto canceler = [&]() -> task<int> {
-        co_await sleep(1);
-        co_await cancel();
+ZEST_CASE(any_child_cancelling_while_armed_starts_no_later_child) {
+    int started = 0;
+    auto later = [&]() -> task<int> {
+        started += 1;
         co_return 1;
     };
-
-    auto slow = [&]() -> task<int> {
-        co_await sleep(5);
-        slow_done += 1;
-        co_return 2;
-    };
-
     auto combined = [&]() -> task<> {
-        auto result = co_await when_all(slow(), canceler().catch_cancel());
-        EXPECT(result.is_cancelled());
+        co_await when_any(cancelled_value(), later());
     };
 
-    auto task = combined();
-    run(task);
-
-    EXPECT(task->is_finished());
-    EXPECT(slow_done == 0);
+    auto [result] = run(combined());
+    EXPECT(result.is_cancelled());
+    EXPECT(started == 0);
 }
 
-ZEST_CASE(any_catch_cancel_captures) {
-    int slow_done = 0;
-
-    auto canceler = [&]() -> task<int> {
-        co_await sleep(1);
-        co_await cancel();
-        co_return 1;
-    };
-
+ZEST_CASE(all_reports_an_intercepted_cancel) {
+    event gate;
+    bool slow_finished = false;
     auto slow = [&]() -> task<int> {
-        co_await sleep(5);
-        slow_done += 1;
+        co_await gate.wait();
+        slow_finished = true;
         co_return 2;
     };
-
-    auto combined = [&]() -> task<> {
-        auto result = co_await when_any(slow(), canceler().catch_cancel());
-        EXPECT(result.is_cancelled());
+    auto combined = [&]() -> task<bool> {
+        auto result = co_await when_all(slow(), cancelled_value().catch_cancel());
+        co_return result.is_cancelled();
     };
 
-    auto task = combined();
-    run(task);
-
-    EXPECT(task->is_finished());
-    EXPECT(slow_done == 0);
+    auto [result] = run(combined());
+    ASSERT(result.has_value());
+    EXPECT(*result);
+    EXPECT(!slow_finished);
 }
 
-ZEST_CASE(all_mixed_cancel_intercept) {
-    auto normal = [&]() -> task<int> {
-        co_await sleep(1);
+ZEST_CASE(any_reports_an_intercepted_cancel) {
+    event gate;
+    bool slow_finished = false;
+    auto slow = [&]() -> task<int> {
+        co_await gate.wait();
+        slow_finished = true;
+        co_return 2;
+    };
+    auto combined = [&]() -> task<bool> {
+        auto result = co_await when_any(slow(), cancelled_value().catch_cancel());
+        co_return result.is_cancelled();
+    };
+
+    auto [result] = run(combined());
+    ASSERT(result.has_value());
+    EXPECT(*result);
+    EXPECT(!slow_finished);
+}
+
+ZEST_CASE(cancel_handled_inside_a_child_is_a_value) {
+    auto handled = []() -> task<int> {
+        auto result = co_await cancelled_value().catch_cancel();
+        co_return result.is_cancelled() ? -1 : *result;
+    };
+    auto normal = []() -> task<int> {
         co_return 42;
     };
-
-    // Wrap self-cancelling in an intermediate task that handles the cancellation
-    auto self_cancelling = [&]() -> task<int> {
-        auto inner = []() -> task<int> {
-            co_await cancel();
-            co_return 0;
-        };
-        auto result = co_await inner().catch_cancel();
-        co_return result.has_value() ? *result : -1;
+    auto combined = [&]() -> task<std::tuple<int, int>> {
+        co_return co_await when_all(normal(), handled());
     };
 
-    auto combined = [&]() -> task<int> {
-        auto [a, b] = co_await when_all(normal(), self_cancelling());
-        co_return a;
-    };
-
-    auto [res] = run(combined());
-    EXPECT(res == 42);
+    auto [result] = run(combined());
+    ASSERT(result.has_value());
+    EXPECT(*result == std::tuple{42, -1});
 }
 
-ZEST_CASE(all_token_cancel) {
-    cancellation_source source;
+ZEST_CASE(all_external_cancel_reaches_every_child) {
+    event gates[2];
     int finished = 0;
-
-    auto slow1 = [&]() -> task<int> {
-        co_await sleep(10);
+    auto child = [&](int id) -> task<int> {
+        co_await gates[id].wait();
         finished += 1;
-        co_return 1;
+        co_return id;
+    };
+    auto combined = [&]() -> task<> {
+        co_await when_all(child(0), child(1));
+    };
+    auto target = combined();
+    auto* node = target.operator->();
+    auto cancel_it = [&]() -> task<> {
+        node->cancel();
+        co_return;
     };
 
-    auto slow2 = [&]() -> task<int> {
-        co_await sleep(10);
-        finished += 1;
-        co_return 2;
-    };
-
-    auto combined = [&]() -> task<int> {
-        auto [a, b] = co_await when_all(slow1(), slow2());
-        co_return a + b;
-    };
-
-    auto guarded = with_token(combined(), source.token());
-
-    auto canceler = [&]() -> task<> {
-        co_await sleep(1);
-        source.cancel();
-    };
-
-    auto cancel_task = canceler();
-    run(guarded, cancel_task);
-
-    EXPECT(!guarded.value());
+    auto [result, driver] = run(std::move(target), cancel_it());
+    EXPECT(result.is_cancelled());
     EXPECT(finished == 0);
+    EXPECT(gates[0].get_head() == nullptr);
+    EXPECT(gates[1].get_head() == nullptr);
 }
 
-ZEST_CASE(any_token_cancel) {
-    cancellation_source source;
+ZEST_CASE(any_external_cancel_reaches_every_child) {
+    event gates[2];
     int finished = 0;
-
-    auto slow1 = [&]() -> task<int> {
-        co_await sleep(10);
+    auto child = [&](int id) -> task<int> {
+        co_await gates[id].wait();
         finished += 1;
-        co_return 1;
+        co_return id;
+    };
+    auto combined = [&]() -> task<> {
+        co_await when_any(child(0), child(1));
+    };
+    auto target = combined();
+    auto* node = target.operator->();
+    auto cancel_it = [&]() -> task<> {
+        node->cancel();
+        co_return;
     };
 
-    auto slow2 = [&]() -> task<int> {
-        co_await sleep(10);
-        finished += 1;
-        co_return 2;
-    };
-
-    auto combined = [&]() -> task<std::variant<int, int>> {
-        co_return co_await when_any(slow1(), slow2());
-    };
-
-    auto guarded = with_token(combined(), source.token());
-
-    auto canceler = [&]() -> task<> {
-        co_await sleep(1);
-        source.cancel();
-    };
-
-    auto cancel_task = canceler();
-    run(guarded, cancel_task);
-
-    EXPECT(!guarded.value());
+    auto [result, driver] = run(std::move(target), cancel_it());
+    EXPECT(result.is_cancelled());
     EXPECT(finished == 0);
+    EXPECT(gates[0].get_head() == nullptr);
+    EXPECT(gates[1].get_head() == nullptr);
 }
 
-ZEST_CASE(all_waits_for_cancelled_children) {
-    int op_destroyed = 0;
-
-    auto slow = [&]() -> task<int> {
-        deferred_cancel_await op(op_destroyed);
-        co_await op;
+// The range overloads report a child's own cancellation the same way.
+ZEST_CASE(range_child_cancel_is_reported) {
+    event gate;
+    auto slow = [&]() -> task<int, void, cancellation> {
+        co_await gate.wait();
         co_return 2;
     };
-
-    auto canceler = []() -> task<int> {
+    auto cancelling = []() -> task<int, void, cancellation> {
+        co_await yield();
         co_await cancel();
         co_return 1;
     };
-
-    auto finisher = []() -> task<> {
-        co_await sleep(1);
-        deferred_cancel_await::finish_pending_cancel();
+    auto all = [&]() -> task<bool> {
+        std::vector<task<int, void, cancellation>> tasks;
+        tasks.push_back(slow());
+        tasks.push_back(cancelling());
+        co_return (co_await when_all(std::move(tasks))).is_cancelled();
+    };
+    auto any = [&]() -> task<bool> {
+        std::vector<task<int, void, cancellation>> tasks;
+        tasks.push_back(slow());
+        tasks.push_back(cancelling());
+        co_return (co_await when_any(std::move(tasks))).is_cancelled();
     };
 
-    auto combined = [&]() -> task<> {
-        co_await when_all(slow(), canceler());
-    };
-
-    auto probe = [&]() -> task<> {
-        auto res = co_await combined().catch_cancel();
-        EXPECT(!res);
-    };
-
-    auto probe_task = probe();
-    auto finisher_task = finisher();
-    run(probe_task, finisher_task);
-    EXPECT(op_destroyed == 1);
+    auto [all_cancelled, any_cancelled] = run(all(), any());
+    ASSERT(all_cancelled.has_value());
+    EXPECT(*all_cancelled);
+    ASSERT(any_cancelled.has_value());
+    EXPECT(*any_cancelled);
+    EXPECT(gate.get_head() == nullptr);
 }
 
-ZEST_CASE(any_waits_for_cancelled_children) {
-    int op_destroyed = 0;
-
+// Structured completion: the combinator returns only once every cancelled
+// child has finished, however long its cancellation takes.
+ZEST_CASE(all_waits_for_cancelled_children_to_finish) {
+    test::PendingOp op;
+    bool combined_done = false;
     auto slow = [&]() -> task<int> {
-        deferred_cancel_await op(op_destroyed);
         co_await op;
         co_return 2;
     };
+    auto all = [&]() -> task<> {
+        co_await when_all(slow(), cancelled_value());
+    };
+    auto combined = [&]() -> task<> {
+        co_await all().catch_cancel();
+        combined_done = true;
+    };
+    auto finisher = [&]() -> task<bool> {
+        bool done_before = combined_done;
+        op.complete();
+        co_return done_before;
+    };
 
+    auto [result, done_before] = run(combined(), finisher());
+    EXPECT(result.has_value());
+    EXPECT(op.is_cancelled());
+    ASSERT(done_before.has_value());
+    EXPECT(!*done_before);
+    EXPECT(combined_done);
+}
+
+ZEST_CASE(any_waits_for_cancelled_children_to_finish) {
+    test::PendingOp op;
+    bool combined_done = false;
+    auto slow = [&]() -> task<int> {
+        co_await op;
+        co_return 2;
+    };
     auto fast = []() -> task<int> {
         co_return 1;
     };
-
-    auto finisher = []() -> task<> {
-        co_await sleep(1);
-        deferred_cancel_await::finish_pending_cancel();
-    };
-
     auto combined = [&]() -> task<std::variant<int, int>> {
-        co_return co_await when_any(slow(), fast());
+        auto winner = co_await when_any(slow(), fast());
+        combined_done = true;
+        co_return winner;
+    };
+    auto finisher = [&]() -> task<bool> {
+        bool done_before = combined_done;
+        op.complete();
+        co_return done_before;
     };
 
-    auto task = combined();
-    auto finisher_task = finisher();
-    run(task, finisher_task);
-    EXPECT(task->is_finished());
-    auto winner = task.result();
-    EXPECT(winner.index() == 1U);
-    EXPECT(std::get<1>(winner) == 1);
-    EXPECT(op_destroyed == 1);
+    auto [result, done_before] = run(combined(), finisher());
+    ASSERT(result.has_value());
+    EXPECT(result->index() == 1U);
+    EXPECT(op.is_cancelled());
+    ASSERT(done_before.has_value());
+    EXPECT(!*done_before);
 }
 
-ZEST_CASE(all_sync_cancel) {
-    auto canceler = []() -> task<int> {
-        co_await cancel();
-        co_return 0;
+// Awaiting a combinator under a cancelled task starts none of its children.
+ZEST_CASE(checkpoint_starts_no_child) {
+    int started = 0;
+    async_node* self = nullptr;
+    auto child = [&]() -> task<> {
+        started += 1;
+        co_return;
     };
-
-    auto normal = []() -> task<int> {
-        co_return 42;
-    };
-
-    auto combined = [&]() -> task<> {
-        co_await when_all(canceler(), normal());
-    };
-
-    auto t = combined();
-    run(t);
-    EXPECT(t->is_cancelled());
-}
-
-ZEST_CASE(any_sync_cancel) {
-    auto canceler = []() -> task<int> {
-        co_await cancel();
-        co_return 0;
-    };
-
-    auto normal = []() -> task<int> {
-        co_return 42;
-    };
-
-    auto combined = [&]() -> task<> {
-        co_await when_any(canceler(), normal());
-    };
-
-    auto t = combined();
-    run(t);
-    EXPECT(t->is_cancelled());
-}
-
-ZEST_CASE(all_parent_cancel_propagates_to_children) {
-    int child1_done = 0;
-    int child2_done = 0;
-
-    auto child1 = [&]() -> task<int> {
-        co_await sleep(10);
-        child1_done += 1;
-        co_return 1;
-    };
-
-    auto child2 = [&]() -> task<int> {
-        co_await sleep(10);
-        child2_done += 1;
-        co_return 2;
-    };
-
-    auto parent = [&]() -> task<int> {
-        auto [a, b] = co_await when_all(child1(), child2());
-        co_return a + b;
-    };
-
-    auto canceler = []() -> task<int> {
-        co_await sleep(1);
-        co_await cancel();
-        co_return 0;
-    };
-
-    auto outer = [&]() -> task<> {
-        co_await when_all(parent(), canceler());
-    };
-
-    auto t = outer();
-    run(t);
-
-    EXPECT(t->is_cancelled());
-    EXPECT(child1_done == 0);
-    EXPECT(child2_done == 0);
-}
-
-ZEST_CASE(any_parent_cancel_propagates_to_children) {
-    int child1_done = 0;
-    int child2_done = 0;
-
-    auto child1 = [&]() -> task<int> {
-        co_await sleep(10);
-        child1_done += 1;
-        co_return 1;
-    };
-
-    auto child2 = [&]() -> task<int> {
-        co_await sleep(10);
-        child2_done += 1;
-        co_return 2;
-    };
-
-    auto parent = [&]() -> task<std::variant<int, int>> {
-        co_return co_await when_any(child1(), child2());
-    };
-
-    auto canceler = []() -> task<int> {
-        co_await sleep(1);
-        co_await cancel();
-        co_return 0;
-    };
-
-    auto outer = [&]() -> task<> {
-        co_await when_all(parent(), canceler());
-    };
-
-    auto t = outer();
-    run(t);
-
-    EXPECT(t->is_cancelled());
-    EXPECT(child1_done == 0);
-    EXPECT(child2_done == 0);
-}
-
-// Cancellation checkpoint on the io path: a task cancelled while executing
-// that then awaits an io operation has the operation cancelled at the
-// suspension point, and finalizes once the (asynchronous) cancel completes.
-ZEST_CASE(checkpoint_cancels_io_op) {
-    int destroyed = 0;
-    async_node* worker_node = nullptr;
-
     auto worker = [&]() -> task<> {
-        worker_node->cancel();
-        co_await deferred_cancel_await(destroyed);
+        self->cancel();
+        co_await when_all(child(), child());
     };
+    auto target = worker();
+    self = target.operator->();
 
-    auto driver = [&]() -> task<> {
-        co_await sleep(1);
-        deferred_cancel_await::finish_pending_cancel();
-    };
-
-    auto t = worker();
-    auto d = driver();
-    worker_node = t.operator->();
-    run(t, d);
-
-    EXPECT(t->is_cancelled());
+    auto [result] = run(std::move(target));
+    EXPECT(result.is_cancelled());
+    EXPECT(started == 0);
 }
 
 };  // ZEST_SUITE(async_runtime_when_cancel)
+
+}  // namespace
 
 }  // namespace kota

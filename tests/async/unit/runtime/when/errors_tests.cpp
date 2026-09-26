@@ -1,428 +1,276 @@
-// ZEST_SUITE(async_runtime_when_errors): structured error propagation (co_await fail) through
-// when_all/when_any — first error cancels siblings, immediate errors, success
-// without false errors, mixed error types, range overloads, error-vs-cancel
-// priority, and error beating an external cancel. C++ exception propagation
-// lives in exceptions_tests.cpp; cancellation semantics in cancel_tests.cpp.
+#include <cstddef>
+#include <optional>
+#include <tuple>
+#include <utility>
+#include <variant>
+#include <vector>
+
 #include "async/harness/loop_fixture.h"
-#include "async/harness/support.h"
+#include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
 
 namespace kota {
 
-ZEST_SUITE(async_runtime_when_errors) {
+namespace {
 
-ZEST_CASE(all_error_cancels_siblings) {
-    int slow_done = 0;
+struct CustomError {
+    int code = 0;
+};
 
+task<int, error> failure(error err) {
+    co_await fail(err);
+}
+
+task<int, error> success(int value) {
+    co_return value;
+}
+
+ZEST_SUITE(async_runtime_when_errors, test::LoopFixture) {
+
+ZEST_CASE(all_first_error_cancels_the_rest) {
+    event gate;
+    event go;
+    bool slow_finished = false;
     auto failing = [&]() -> task<int, error> {
-        co_await sleep(1);
+        co_await go.wait();
         co_await fail(error::connection_refused);
     };
-
     auto slow = [&]() -> task<int, error> {
-        co_await sleep(50);
-        slow_done += 1;
+        co_await gate.wait();
+        slow_finished = true;
         co_return 42;
     };
-
-    auto combined = [&]() -> task<> {
-        auto res = co_await when_all(failing(), slow());
-        EXPECT(res.has_error());
-        EXPECT(res.error() == error::connection_refused);
+    auto combined = [&]() -> task<result<std::tuple<int, int>>> {
+        co_return co_await when_all(failing(), slow());
     };
-
-    auto t = combined();
-    run(t);
-
-    EXPECT(t->is_finished());
-    EXPECT(slow_done == 0);
-}
-
-ZEST_CASE(all_error_immediate) {
-    auto failing = []() -> task<int, error> {
-        co_await fail(error::connection_refused);
-    };
-
-    auto normal = []() -> task<int, error> {
-        co_return 42;
-    };
-
-    auto combined = [&]() -> task<> {
-        auto res = co_await when_all(failing(), normal());
-        EXPECT(res.has_error());
-        EXPECT(res.error() == error::connection_refused);
-    };
-
-    run(combined());
-}
-
-ZEST_CASE(all_success_no_false_error) {
-    auto a = []() -> task<int, error> {
-        co_return 1;
-    };
-
-    auto b = []() -> task<int, error> {
-        co_return 2;
-    };
-
-    auto combined = [&]() -> task<> {
-        auto res = co_await when_all(a(), b());
-        EXPECT(res);
-        auto [ra, rb] = *res;
-        EXPECT(ra == 1);
-        EXPECT(rb == 2);
-    };
-
-    run(combined());
-}
-
-ZEST_CASE(all_mixed_error_and_void) {
-    auto failing = []() -> task<int, error> {
-        co_await fail(error::connection_refused);
-    };
-
-    auto void_task = []() -> task<> {
+    auto driver = [&]() -> task<> {
+        go.set();
         co_return;
     };
 
-    auto combined = [&]() -> task<> {
-        auto res = co_await when_all(failing(), void_task());
-        EXPECT(res.has_error());
-        EXPECT(res.error() == error::connection_refused);
-    };
-
-    run(combined());
+    auto [result, drove] = run(combined(), driver());
+    ASSERT(result.has_value());
+    ASSERT(result->has_error());
+    EXPECT(result->error() == error::connection_refused);
+    EXPECT(!slow_finished);
+    EXPECT(gate.get_head() == nullptr);
 }
 
-ZEST_CASE(all_operation_aborted) {
-    int slow_done = 0;
-
-    auto aborting = [&]() -> task<int, error> {
-        co_await fail(error::operation_aborted);
+ZEST_CASE(all_error_while_armed_starts_no_later_child) {
+    int started = 0;
+    auto later = [&]() -> task<int, error> {
+        started += 1;
+        co_return 1;
+    };
+    auto combined = [&]() -> task<result<std::tuple<int, int>>> {
+        co_return co_await when_all(failure(error::connection_refused), later());
     };
 
-    auto slow = [&]() -> task<int, error> {
-        co_await sleep(1);
-        slow_done += 1;
-        co_return 42;
-    };
-
-    auto combined = [&]() -> task<> {
-        auto res = co_await when_all(aborting(), slow());
-        EXPECT(res.has_error());
-        EXPECT(res.error() == error::operation_aborted);
-    };
-
-    auto t = combined();
-    run(t);
-
-    EXPECT(t->is_finished());
-    EXPECT(slow_done == 0);
+    auto [result] = run(combined());
+    ASSERT(result.has_value());
+    ASSERT(result->has_error());
+    EXPECT(result->error() == error::connection_refused);
+    EXPECT(started == 0);
 }
 
-ZEST_CASE(all_eof_error) {
-    int slow_done = 0;
-
-    auto eof_task = [&]() -> task<int, error> {
-        co_await fail(error::end_of_file);
+ZEST_CASE(all_success_has_no_error) {
+    auto combined = []() -> task<result<std::tuple<int, int>>> {
+        co_return co_await when_all(success(1), success(2));
     };
 
-    auto slow = [&]() -> task<int, error> {
-        co_await sleep(1);
-        slow_done += 1;
-        co_return 99;
-    };
-
-    auto combined = [&]() -> task<> {
-        auto res = co_await when_all(eof_task(), slow());
-        EXPECT(res.has_error());
-        EXPECT(res.error() == error::end_of_file);
-    };
-
-    auto t = combined();
-    run(t);
-
-    EXPECT(t->is_finished());
-    EXPECT(slow_done == 0);
+    auto [result] = run(combined());
+    ASSERT(result.has_value());
+    ASSERT(result->has_value());
+    EXPECT(**result == std::tuple{1, 2});
 }
 
-ZEST_CASE(any_error_cancels_siblings) {
-    int slow_done = 0;
-
+ZEST_CASE(any_first_error_wins_and_cancels_the_rest) {
+    event gate;
+    event go;
+    bool slow_finished = false;
     auto failing = [&]() -> task<int, error> {
-        co_await sleep(1);
+        co_await go.wait();
         co_await fail(error::connection_refused);
     };
-
     auto slow = [&]() -> task<int, error> {
-        co_await sleep(50);
-        slow_done += 1;
+        co_await gate.wait();
+        slow_finished = true;
         co_return 42;
     };
-
-    auto combined = [&]() -> task<> {
-        auto res = co_await when_any(failing(), slow());
-        EXPECT(res.has_error());
-        EXPECT(res.error() == error::connection_refused);
+    auto combined = [&]() -> task<result<std::variant<int, int>>> {
+        co_return co_await when_any(failing(), slow());
+    };
+    auto driver = [&]() -> task<> {
+        go.set();
+        co_return;
     };
 
-    auto t = combined();
-    run(t);
-
-    EXPECT(t->is_finished());
-    EXPECT(slow_done == 0);
+    auto [result, drove] = run(combined(), driver());
+    ASSERT(result.has_value());
+    ASSERT(result->has_error());
+    EXPECT(result->error() == error::connection_refused);
+    EXPECT(!slow_finished);
 }
 
-ZEST_CASE(all_range_error) {
-    auto combined = [&]() -> task<> {
-        small_vector<task<int, error>> tasks;
-        tasks.emplace_back(delayed_return_error(1, error::connection_refused));
-        tasks.emplace_back(delayed_return_value(50, 42));
-        auto res = co_await when_all(std::move(tasks));
-        EXPECT(res.has_error());
-        EXPECT(res.error() == error::connection_refused);
+ZEST_CASE(any_first_of_several_errors_wins) {
+    auto combined = []() -> task<result<std::variant<int, int>>> {
+        co_return co_await when_any(failure(error::connection_refused),
+                                    failure(error::end_of_file));
     };
 
-    auto t = combined();
-    run(t);
-
-    EXPECT(t->is_finished());
+    auto [result] = run(combined());
+    ASSERT(result.has_value());
+    ASSERT(result->has_error());
+    EXPECT(result->error() == error::connection_refused);
 }
 
-ZEST_CASE(any_range_error) {
-    auto combined = [&]() -> task<> {
-        small_vector<task<int, error>> tasks;
-        tasks.emplace_back(delayed_return_error(1, error::connection_refused));
-        tasks.emplace_back(delayed_return_value(50, 42));
-        auto res = co_await when_any(std::move(tasks));
-        EXPECT(res.has_error());
-        EXPECT(res.error() == error::connection_refused);
-    };
-
-    auto t = combined();
-    run(t);
-
-    EXPECT(t->is_finished());
-}
-
-ZEST_CASE(direct_co_await_returns_error) {
-    auto failing = []() -> task<int, error> {
-        co_await fail(error::connection_refused);
-    };
-
-    auto parent = [&]() -> task<int, error> {
-        co_return co_await failing();
-    };
-
-    auto [res] = run(parent());
-    ASSERT(res);
-    EXPECT(res->has_error());
-    EXPECT(res->error() == error::connection_refused);
-}
-
-ZEST_CASE(nested_manual_propagation) {
-    auto failing = [&]() -> task<int, error> {
-        co_await sleep(1);
-        co_await fail(error::connection_refused);
-    };
-
-    auto parent = [&]() -> task<int, error> {
-        auto res = co_await when_all(failing(), delayed_return_value(10, 42));
-        if(!res) {
-            co_await fail(std::move(res).error());
-        }
-        auto [a, b] = *res;
-        co_return a + b;
-    };
-
-    auto [res] = run(parent());
-    ASSERT(res);
-    EXPECT(res->has_error());
-    EXPECT(res->error() == error::connection_refused);
-}
-
-ZEST_CASE(with_token_returns_error) {
-    cancellation_source source;
-
-    auto failing = [&]() -> task<int, error> {
-        co_await sleep(1);
-        co_await fail(error::connection_refused);
-    };
-
-    auto wrapped = with_token(failing(), source.token());
-    run(wrapped);
-
-    auto res = wrapped.result();
-    EXPECT(res.has_error());
-    EXPECT(res.error() == error::connection_refused);
-}
-
-ZEST_CASE(with_token_cancels_error_task) {
-    cancellation_source source;
-
+ZEST_CASE(all_range_error_cancels_the_rest) {
+    event gate;
+    bool slow_finished = false;
     auto slow = [&]() -> task<int, error> {
-        co_await sleep(50);
+        co_await gate.wait();
+        slow_finished = true;
         co_return 42;
     };
-
-    auto canceler = [&]() -> task<> {
-        co_await sleep(1);
-        source.cancel();
+    auto combined = [&]() -> task<result<small_vector<int>>> {
+        std::vector<task<int, error>> tasks;
+        tasks.push_back(slow());
+        tasks.push_back(failure(error::connection_refused));
+        co_return co_await when_all(std::move(tasks));
     };
 
-    auto wrapped = with_token(slow(), source.token());
-    auto cancel_task = canceler();
-    run(wrapped, cancel_task);
-
-    EXPECT(wrapped.result().is_cancelled());
+    auto [result] = run(combined());
+    ASSERT(result.has_value());
+    ASSERT(result->has_error());
+    EXPECT(result->error() == error::connection_refused);
+    EXPECT(!slow_finished);
 }
 
-ZEST_CASE(all_mixed_error_types) {
-    int slow_done = 0;
-
-    auto failing = [&]() -> task<int, error> {
-        co_await sleep(1);
-        co_await fail(error::connection_refused);
-    };
-
-    auto slow = [&]() -> task<int, custom_error> {
-        co_await sleep(50);
-        slow_done += 1;
-        co_return 42;
-    };
-
-    auto combined = [&]() -> task<> {
-        auto res = co_await when_all(failing(), slow());
-        EXPECT(res.has_error());
-        EXPECT(std::get<error>(res.error()) == error::connection_refused);
-    };
-
-    auto t = combined();
-    run(t);
-
-    EXPECT(t->is_finished());
-    EXPECT(slow_done == 0);
-}
-
-ZEST_CASE(any_mixed_error_types) {
-    int slow_done = 0;
-
-    auto failing = [&]() -> task<int, custom_error> {
-        co_await sleep(1);
-        co_await fail(custom_error{7});
-    };
-
+ZEST_CASE(any_range_error_wins) {
+    event gate;
     auto slow = [&]() -> task<int, error> {
-        co_await sleep(50);
-        slow_done += 1;
+        co_await gate.wait();
         co_return 42;
     };
-
-    auto combined = [&]() -> task<> {
-        auto res = co_await when_any(failing(), slow());
-        EXPECT(res.has_error());
-        EXPECT(std::get<custom_error>(res.error()) == custom_error{7});
+    auto combined = [&]() -> task<result<std::pair<std::size_t, int>>> {
+        std::vector<task<int, error>> tasks;
+        tasks.push_back(slow());
+        tasks.push_back(failure(error::connection_refused));
+        co_return co_await when_any(std::move(tasks));
     };
 
-    auto t = combined();
-    run(t);
-
-    EXPECT(t->is_finished());
-    EXPECT(slow_done == 0);
+    auto [result] = run(combined());
+    ASSERT(result.has_value());
+    ASSERT(result->has_error());
+    EXPECT(result->error() == error::connection_refused);
+    EXPECT(gate.get_head() == nullptr);
 }
 
-ZEST_CASE(any_sync_all_error) {
-    auto fail_a = []() -> task<int, error> {
-        co_await fail(error::connection_refused);
+ZEST_CASE(all_range_success_has_no_error) {
+    auto combined = []() -> task<result<small_vector<int>>> {
+        std::vector<task<int, error>> tasks;
+        tasks.push_back(success(1));
+        tasks.push_back(success(2));
+        tasks.push_back(success(3));
+        co_return co_await when_all(std::move(tasks));
     };
 
-    auto fail_b = []() -> task<int, error> {
-        co_await fail(error::end_of_file);
-    };
-
-    auto combined = [&]() -> task<> {
-        auto res = co_await when_any(fail_a(), fail_b());
-        EXPECT(res.has_error());
-        // first child to complete wins — both are sync, so it's the first in order
-        EXPECT(res.error() == error::connection_refused);
-    };
-
-    run(combined());
+    auto [result] = run(combined());
+    ASSERT(result.has_value());
+    ASSERT(result->has_value());
+    auto& values = **result;
+    EXPECT(std::vector<int>(values.begin(), values.end()) == std::vector{1, 2, 3});
 }
 
-ZEST_CASE(error_vs_cancel_priority) {
-    auto failing = []() -> task<int, error, cancellation> {
-        co_await fail(error::connection_refused);
+ZEST_CASE(mixed_error_types_come_back_as_a_variant) {
+    // The error variant lists the children's error types in their order.
+    using AllErrors = std::variant<error, CustomError>;
+    using AnyErrors = std::variant<CustomError, error>;
+    event gate;
+    auto custom = []() -> task<int, CustomError> {
+        co_await fail(CustomError{7});
+    };
+    auto slow = [&]() -> task<int, error> {
+        co_await gate.wait();
+        co_return 42;
+    };
+    auto all = [&]() -> task<outcome<std::tuple<int, int>, AllErrors>> {
+        co_return co_await when_all(failure(error::connection_refused), custom());
+    };
+    auto any = [&]() -> task<outcome<std::variant<int, int>, AnyErrors>> {
+        co_return co_await when_any(custom(), slow());
     };
 
-    auto canceling = []() -> task<int, error, cancellation> {
+    auto [all_result, any_result] = run(all(), any());
+    ASSERT(all_result.has_value());
+    ASSERT(all_result->has_error());
+    ASSERT(std::holds_alternative<error>(all_result->error()));
+    EXPECT(std::get<error>(all_result->error()) == error::connection_refused);
+    ASSERT(any_result.has_value());
+    ASSERT(any_result->has_error());
+    ASSERT(std::holds_alternative<CustomError>(any_result->error()));
+    EXPECT(std::get<CustomError>(any_result->error()).code == 7);
+}
+
+// A sibling's cancel decides the outcome first; a child that fails while it
+// is being cancelled still turns it into its error.
+ZEST_CASE(error_outranks_a_sibling_cancel) {
+    event gate;
+    auto failing_when_cancelled = [&]() -> task<int, error, cancellation> {
+        co_await gate.wait().catch_cancel();
+        co_await fail(error::connection_refused);
+    };
+    auto cancelling = []() -> task<int, error, cancellation> {
         co_await cancel();
         co_return 0;
     };
-
-    auto combined = [&]() -> task<> {
-        auto res = co_await when_all(failing(), canceling());
-        // error outranks cancel
-        EXPECT(res.has_error());
-        EXPECT(res.error() == error::connection_refused);
+    auto combined = [&]() -> task<outcome<std::tuple<int, int>, error, cancellation>> {
+        co_return co_await when_all(failing_when_cancelled(), cancelling());
     };
 
-    run(combined());
+    auto [result] = run(combined());
+    ASSERT(result.has_value());
+    ASSERT(result->has_error());
+    EXPECT(result->error() == error::connection_refused);
 }
 
-// trio semantics: a racing external cancel never masks a child error. The
-// failing child cancels the whole scope synchronously and then fails; the
-// error must survive both the scope cancellation and the child's own
-// cancelled state.
-ZEST_CASE(all_error_beats_external_cancel) {
-    async_node* combined_node = nullptr;
-    bool checked = false;
-
+// A child that cancels the whole scope and then fails still reports its
+// error: a racing cancellation never masks a real error.
+ZEST_CASE(error_outranks_an_external_cancel) {
+    event gate;
+    event go;
+    async_node* scope = nullptr;
     auto failing = [&]() -> task<int, error, cancellation> {
-        co_await sleep(1);
-        combined_node->cancel();
+        co_await go.wait();
+        scope->cancel();
         co_await fail(error::connection_refused);
     };
-
     auto slow = [&]() -> task<int, error, cancellation> {
-        co_await sleep(50);
+        co_await gate.wait();
         co_return 1;
     };
-
+    std::optional<outcome<std::tuple<int, int>, error, cancellation>> seen;
     auto combined = [&]() -> task<> {
-        auto res = co_await when_all(failing(), slow());
-        EXPECT(res.has_error());
-        EXPECT(res.error() == error::connection_refused);
-        checked = true;
+        seen.emplace(co_await when_all(failing(), slow()));
+    };
+    auto target = combined();
+    scope = target.operator->();
+    auto driver = [&]() -> task<> {
+        go.set();
+        co_return;
     };
 
-    auto t = combined();
-    combined_node = t.operator->();
-    run(t);
-
-    EXPECT(checked);
-    EXPECT(t->is_cancelled());
-}
-
-ZEST_CASE(all_range_success_no_false_error) {
-    auto combined = [&]() -> task<> {
-        small_vector<task<int, error>> tasks;
-        tasks.emplace_back(return_value(1));
-        tasks.emplace_back(return_value(2));
-        tasks.emplace_back(return_value(3));
-        auto res = co_await when_all(std::move(tasks));
-        EXPECT(res);
-        auto& vals = *res;
-        EXPECT(vals.size() == 3);
-        EXPECT(vals[0] == 1);
-        EXPECT(vals[1] == 2);
-        EXPECT(vals[2] == 3);
-    };
-
-    run(combined());
+    auto [result, drove] = run(std::move(target), driver());
+    ASSERT(seen.has_value());
+    ASSERT(seen->has_error());
+    EXPECT(seen->error() == error::connection_refused);
+    // The scope still ends cancelled once it has seen the error.
+    EXPECT(result.is_cancelled());
 }
 
 };  // ZEST_SUITE(async_runtime_when_errors)
+
+}  // namespace
 
 }  // namespace kota

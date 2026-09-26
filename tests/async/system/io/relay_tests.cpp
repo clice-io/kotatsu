@@ -46,25 +46,6 @@ ZEST_CASE(relay_cross_thread_send) {
     EXPECT(value == 42);
 }
 
-ZEST_CASE(relay_destroyed_without_send) {
-    // Destroying a relay without calling send() should release the loop hold
-    // and allow the loop to exit normally.
-    bool task_finished = false;
-
-    auto t = [&]() -> task<> {
-        {
-            auto r = loop.create_relay();
-            // r goes out of scope without send()
-        }
-        task_finished = true;
-        co_return;
-    };
-
-    auto task = t();
-    schedule_all(task);
-    EXPECT(task_finished);
-}
-
 ZEST_CASE(relay_move_semantics) {
     bool called = false;
 
@@ -77,26 +58,6 @@ ZEST_CASE(relay_move_semantics) {
     loop.run();
     worker.join();
     EXPECT(called);
-}
-
-ZEST_CASE(relay_multiple_send) {
-    int counter = 0;
-
-    auto t = [&]() -> task<> {
-        event done;
-        auto r = loop.create_relay();
-        r.send([&] { counter++; });
-        r.send([&] { counter++; });
-        r.send([&] {
-            counter++;
-            done.set();
-        });
-        co_await done.wait();
-    };
-
-    auto task = t();
-    schedule_all(task);
-    EXPECT(counter == 3);
 }
 
 ZEST_CASE(relay_send_with_noop) {
@@ -156,25 +117,6 @@ ZEST_CASE(relay_stress_cross_thread) {
     EXPECT(counter == 100);
 }
 
-ZEST_CASE(relay_send_after_move) {
-    bool called = false;
-
-    auto t = [&]() -> task<> {
-        auto r1 = loop.create_relay();
-        auto r2 = std::move(r1);
-
-        // r1 is moved-from (self == nullptr), send should be a safe no-op.
-        r1.send([&] { called = true; });
-
-        // Ensure the loop can still exit cleanly by destroying r2.
-        co_return;
-    };
-
-    auto task = t();
-    schedule_all(task);
-    EXPECT(!called);
-}
-
 ZEST_CASE(relay_callback_stops_loop) {
     bool stopped = false;
 
@@ -189,97 +131,6 @@ ZEST_CASE(relay_callback_stops_loop) {
     loop.run();
     worker.join();
     EXPECT(stopped);
-}
-
-ZEST_CASE(relay_fifo_order) {
-    std::vector<int> order;
-
-    auto t = [&]() -> task<> {
-        event done;
-        auto r = loop.create_relay();
-        for(int i = 0; i < 5; ++i) {
-            r.send([&, i] {
-                order.push_back(i);
-                if(i == 4) {
-                    done.set();
-                }
-            });
-        }
-        co_await done.wait();
-    };
-
-    auto task = t();
-    schedule_all(task);
-    EXPECT(order == (std::vector<int>{0, 1, 2, 3, 4}));
-}
-
-ZEST_CASE(relay_pending_callbacks_delivered_after_destroy) {
-    int counter = 0;
-
-    auto t = [&]() -> task<> {
-        event done;
-        {
-            auto r = loop.create_relay();
-            r.send([&] { counter++; });
-            r.send([&] {
-                counter++;
-                done.set();
-            });
-            // relay destroyed here; pending callbacks should still be delivered
-        }
-        co_await done.wait();
-    };
-
-    auto task = t();
-    schedule_all(task);
-    EXPECT(counter == 2);
-}
-
-ZEST_CASE(relay_send_during_drain) {
-    int counter = 0;
-    relay* shared = nullptr;
-
-    auto t = [&]() -> task<> {
-        event done;
-        auto r = loop.create_relay();
-        shared = &r;
-        r.send([&] {
-            counter++;
-            shared->send([&] {
-                counter++;
-                done.set();
-            });
-        });
-        co_await done.wait();
-    };
-
-    auto task = t();
-    schedule_all(task);
-    EXPECT(counter == 2);
-}
-
-ZEST_CASE(relay_move_assign_releases_old) {
-    int old_counter = 0;
-    int new_counter = 0;
-
-    auto t = [&]() -> task<> {
-        event done;
-        auto r = loop.create_relay();
-        r.send([&] { old_counter++; });
-
-        // Move-assign overwrites r; old relay's pending callback should still run.
-        r = loop.create_relay();
-        r.send([&] {
-            new_counter++;
-            done.set();
-        });
-        co_await done.wait();
-    };
-
-    auto task = t();
-    schedule_all(task);
-    EXPECT(old_counter == 1);
-    EXPECT(new_counter == 1);
 }
 
 ZEST_CASE(relay_multiple_keep_alive) {

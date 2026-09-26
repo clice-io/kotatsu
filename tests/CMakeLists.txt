@@ -113,7 +113,7 @@ endif()
 add_test(NAME zest_bootstrap_unit
     COMMAND unit_tests
         --no-isolation
-        "--test-filter={support_functional,support_glob_pattern,meta_compare,meta_name,codec_debug_*,deco_*,async_runtime_task,async_runtime_when_*,async_io_watcher}.*"
+        "--test-filter={support_functional,support_glob_pattern,meta_compare,meta_name,codec_debug_*,deco_*,async_vocab_outcome,async_vocab_error,async_runtime_task,async_runtime_when_*,async_io_loop,async_io_watcher}.*"
         "--snapshot-dir=tests/snapshots"
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 )
