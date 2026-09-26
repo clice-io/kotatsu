@@ -126,33 +126,6 @@ struct queued_delivery : waiter_binding<ResultT> {
 };
 
 template <typename ResultT>
-struct stored_delivery : waiter_binding<ResultT> {
-    std::optional<ResultT> pending;
-
-    bool has_pending() const noexcept {
-        return pending.has_value();
-    }
-
-    ResultT take_pending() {
-        assert(pending.has_value() && "take_pending requires stored value");
-        auto out = std::move(*pending);
-        pending.reset();
-        return out;
-    }
-
-    void deliver(ResultT&& value) {
-        if(!this->try_deliver(std::move(value))) {
-            pending = std::move(value);
-        }
-    }
-
-    void deliver(error err)
-        requires (!std::same_as<ResultT, error>) {
-        deliver(ResultT(outcome_error(err)));
-    }
-};
-
-template <typename ResultT>
 struct latched_delivery : waiter_binding<ResultT> {
     std::optional<ResultT> pending;
 

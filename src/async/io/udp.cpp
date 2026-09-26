@@ -18,8 +18,8 @@ struct udp::Self : uv::handle<udp::Self, uv_udp_t> {
     std::vector<char> buffer;
     bool receiving = false;
 
-    uv::stored_delivery<error> send;
-    bool send_inflight = false;
+    // Armed exactly while a send is in flight.
+    uv::waiter_binding<error> send;
 };
 
 namespace {
@@ -164,7 +164,7 @@ struct udp_recv_await : uv::await_op<udp_recv_await> {
 struct udp_send_await : uv::await_op<udp_send_await> {
     using promise_t = task<void, error>::promise_type;
 
-    // UDP socket self that owns send waiter and inflight flags.
+    // UDP socket self that owns the send waiter.
     udp::Self* self;
     // Owns outbound bytes until on_send() runs.
     std::vector<char> storage;
@@ -178,14 +178,9 @@ struct udp_send_await : uv::await_op<udp_send_await> {
     udp_send_await(udp::Self* u, std::span<const char> data, std::optional<sockaddr_storage>&& d) :
         self(u), storage(data.begin(), data.end()), dest(std::move(d)) {}
 
-    static void on_cancel(io_op* op) {
-        auto* aw = static_cast<udp_send_await*>(op);
-        if(!aw->self) {
-            return;
-        }
-        // uv_udp_send_t is not cancellable via uv_cancel().
-        // Keep the request in-flight and wait for on_send() to retire it.
-    }
+    // uv_udp_send_t cannot be cancelled: the send stays in flight and
+    // on_send() completes it.
+    static void on_cancel(io_op*) {}
 
     static void on_send(uv_udp_send_t* req, int status) {
         auto* handle = static_cast<uv_udp_t*>(req->handle);
@@ -193,20 +188,11 @@ struct udp_send_await : uv::await_op<udp_send_await> {
         auto* u = static_cast<udp::Self*>(handle->data);
         assert(u != nullptr && "on_send requires udp state in handle->data");
 
-        u->send_inflight = false;
-
         u->send.mark_cancelled_if(status);
-
-        auto ec = uv::status_to_error(status);
-
-        u->send.deliver(std::move(ec));
+        u->send.try_deliver(uv::status_to_error(status));
     }
 
-    bool await_ready() noexcept {
-        if(self && self->send.has_pending()) {
-            result = self->send.take_pending();
-            return true;
-        }
+    bool await_ready() const noexcept {
         return false;
     }
 
@@ -218,7 +204,7 @@ struct udp_send_await : uv::await_op<udp_send_await> {
             return waiting;
         }
 
-        if(self->send.has_waiter() || self->send_inflight) {
+        if(self->send.has_waiter()) {
             result = error::connection_already_in_progress;
             return waiting;
         }
@@ -238,13 +224,11 @@ struct udp_send_await : uv::await_op<udp_send_await> {
             return waiting;
         }
 
-        self->send_inflight = true;
         return this->attach(waiting.promise(), loc);
     }
 
     // Nothing to disarm: delivery disarms before it completes the send, and
-    // a send refused while another is in flight never armed; disarming here
-    // took the waiter from the send in flight.
+    // a send refused while another is in flight never armed.
     error await_resume() noexcept {
         return result;
     }
