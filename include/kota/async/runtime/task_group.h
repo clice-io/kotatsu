@@ -71,6 +71,11 @@ public:
         error_handlers.push_back(&extract_error<T, E>);
 
         auto handle = node->attach(*this, std::source_location::current());
+        // The child runs from here until it first suspends; mark it executing
+        // so that a cancel() reaching it meanwhile (the child cancelling its
+        // own group, say) waits for that suspension point instead of
+        // finalizing a frame on the stack.
+        static_cast<task_frame*>(node)->mark_executing();
         async_node::resume_and_drain(handle);
         return true;
     }

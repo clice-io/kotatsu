@@ -111,6 +111,31 @@ ZEST_CASE(down_cancel) {
     }
 }
 
+// A task started by co_await runs until it first suspends. A cancel() that
+// reaches it meanwhile has to wait for its next suspension point; finalizing
+// it at once resumed the parent under the running child and freed its frame.
+ZEST_CASE(child_cancelled_before_its_first_suspension) {
+    async_node* child_node = nullptr;
+    bool child_finished = false;
+
+    auto child = [&]() -> task<int> {
+        child_node->cancel();
+        child_finished = true;
+        co_return 1;
+    };
+
+    auto parent = [&]() -> task<bool> {
+        auto started = child();
+        child_node = started.operator->();
+        auto result = co_await std::move(started).catch_cancel();
+        co_return result.is_cancelled() && child_finished;
+    };
+
+    auto [ended_in_order] = run(parent());
+    ASSERT(ended_in_order);
+    EXPECT(*ended_in_order);
+}
+
 #if KOTA_ENABLE_EXCEPTIONS
 ZEST_CASE(exception_propagation) {
     auto bar1 = []() -> task<> {

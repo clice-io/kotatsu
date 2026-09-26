@@ -277,6 +277,44 @@ ZEST_CASE(cancel_from_running_child) {
     EXPECT(slow_done == 0);
 }
 
+// spawn() runs the child until it first suspends. A child that cancels its
+// group meanwhile must not be finalized under its own feet, which resumed the
+// joiner before the child had finished and freed the child's frame.
+ZEST_CASE(child_cancels_the_group_before_its_first_suspension) {
+    task_group<>* group_ptr = nullptr;
+    event gate;
+    bool canceler_finished = false;
+    bool finished_before_join = false;
+
+    auto slow = [&]() -> task<> {
+        co_await gate.wait();
+    };
+
+    auto canceler = [&]() -> task<> {
+        group_ptr->cancel();
+        canceler_finished = true;
+        co_return;
+    };
+
+    auto driver = [&]() -> task<> {
+        task_group<> group(loop);
+        group_ptr = &group;
+        group.spawn(slow());
+        co_await group.join();
+        finished_before_join = canceler_finished;
+    };
+
+    auto spawner = [&]() -> task<> {
+        group_ptr->spawn(canceler());
+        co_return;
+    };
+
+    auto d = driver();
+    auto s = spawner();
+    schedule_all(d, s);
+    EXPECT(finished_before_join);
+}
+
 };  // ZEST_SUITE(async_runtime_task_group_cancel)
 
 }  // namespace kota
