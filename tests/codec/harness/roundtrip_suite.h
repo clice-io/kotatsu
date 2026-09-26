@@ -430,13 +430,13 @@ struct corpus<standard_case::Basic> {
 };
 
 template <>
-struct corpus<meta::fixtures::AllPrimitives> {
+struct corpus<test::Scalars> {
     static std::string name() {
         return "struct(AllPrimitives)";
     }
 
     static auto values() {
-        return std::vector<test_value<meta::fixtures::AllPrimitives>>{
+        return std::vector<test_value<test::Scalars>>{
             {.label = "default", .value = {}                           },
             {.label = "typical", .value = standard_case::make_scalars()},
         };
@@ -674,7 +674,7 @@ void register_cases(const ::kota::zest::CaseRegistrar& add_case) {
     register_list<Adapter>(add_case,
                            type_list<standard_case::Role,
                                      standard_case::Basic,
-                                     meta::fixtures::AllPrimitives,
+                                     test::Scalars,
                                      standard_case::Compound,
                                      standard_case::NestedContainers,
                                      standard_case::EmptyContainers,

@@ -1,8 +1,8 @@
 #include <string>
 #include <variant>
 
-#include "fixtures/schema/common.h"
-#include "fixtures/schema/tagged.h"
+#include "fixtures/structs.h"
+#include "fixtures/tagged.h"
 #include "kota/zest/zest.h"
 #include "kota/codec/json/json.h"
 
@@ -15,9 +15,9 @@ namespace {
 using json::from_string;
 using json::to_string;
 
-using ShapeCircle = meta::fixtures::Circle;
-using ShapeRect = meta::fixtures::Rect;
-using Basic = meta::fixtures::BoolInt;
+using ShapeCircle = test::Circle;
+using ShapeRect = test::Rect;
+using Basic = test::BoolInt;
 
 KOTATSU_ANNOTATION(ext_variant_annotation, tagged = true, tag_names = {"integer", "text", "basic"});
 using ExtVariant = annotate<ext_variant_annotation>::type<std::variant<int, std::string, Basic>>;

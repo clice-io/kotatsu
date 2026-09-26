@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "codec/harness/standard_case_suite.h"
-#include "fixtures/schema/common.h"
+#include "fixtures/structs.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/attrs.h"
 #include "kota/codec/fbs/decode.h"
@@ -26,8 +26,8 @@ namespace {
 using fbs::to_bytes;
 using fbs::from_bytes;
 
-using point = meta::fixtures::Point2i;
-using address = meta::fixtures::Address;
+using point = test::Point;
+using address = test::Address;
 
 struct ext_tag_annotation {
     constexpr static auto spec =

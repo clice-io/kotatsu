@@ -39,8 +39,8 @@
 #include <variant>
 #include <vector>
 
-#include "fixtures/schema/primitives.h"
-#include "fixtures/schema/tagged.h"
+#include "fixtures/scalars.h"
+#include "fixtures/tagged.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
 #include "kota/codec/macro.h"
@@ -49,9 +49,9 @@ namespace kota::codec::standard_case {
 
 using namespace meta;
 
-using AllPrimitives = meta::fixtures::AllPrimitives;
-using TaggedCircle = meta::fixtures::Circle;
-using TaggedRect = meta::fixtures::Rect;
+using AllPrimitives = test::Scalars;
+using TaggedCircle = test::Circle;
+using TaggedRect = test::Rect;
 
 struct Basic {
     bool is_valid{};

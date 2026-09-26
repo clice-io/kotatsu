@@ -1,11 +1,11 @@
 #pragma once
 
-// Enum fixtures — one per underlying type plus shape / value edge cases.
+// Enum fixtures: one per underlying type, plus shape and value edge cases.
 
 #include <cstdint>
 #include <limits>
 
-namespace kota::meta::fixtures {
+namespace kota::test {
 
 enum class Int8Enum : std::int8_t { a = -1, b = 0, c = 1 };
 enum class Int16Enum : std::int16_t { a = -100, b = 0, c = 100 };
@@ -42,4 +42,4 @@ enum class Color { red, green, blue };
 
 enum class SmallEnum : std::int8_t { a = 1, b = 2 };
 
-}  // namespace kota::meta::fixtures
+}  // namespace kota::test

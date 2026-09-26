@@ -11,7 +11,7 @@ created_at: 2026-05-18
             "additionalProperties": {
                 "type": "array",
                 "items": {
-                    "$ref": "#/$defs/Point2i"
+                    "$ref": "#/$defs/Point"
                 }
             }
         }
@@ -20,7 +20,7 @@ created_at: 2026-05-18
         "groups"
     ],
     "$defs": {
-        "Point2i": {
+        "Point": {
             "type": "object",
             "properties": {
                 "x": {

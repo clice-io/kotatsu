@@ -7,8 +7,8 @@
 #include <variant>
 #include <vector>
 
-#include "fixtures/schema/common.h"
-#include "fixtures/schema/tagged.h"
+#include "fixtures/structs.h"
+#include "fixtures/tagged.h"
 #include "kota/zest/zest.h"
 #include "kota/codec/toml/toml.h"
 
@@ -20,12 +20,12 @@ using toml::from_toml;
 using toml::from_string;
 using toml::to_toml;
 
-using Point = meta::fixtures::Point2d;
-using IntHolder = meta::fixtures::IntHolder;
-using StringHolder = meta::fixtures::StringHolder;
+using Point = test::Point2d;
+using IntHolder = test::Field<std::int32_t>;
+using StringHolder = test::Field<std::string>;
 
-using Circle = meta::fixtures::Circle;
-using Rect = meta::fixtures::Rect;
+using Circle = test::Circle;
+using Rect = test::Rect;
 
 KOTATSU_ANNOTATION(int_tag_shape_annotation, tag = "type", tag_names = {"circle", "rect"});
 using IntTagShape = meta::annotate<int_tag_shape_annotation>::type<std::variant<Circle, Rect>>;

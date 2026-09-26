@@ -1,6 +1,7 @@
 #include <string>
 
-#include "fixtures/schema/rename.h"
+#include "fixtures/attrs.h"
+#include "fixtures/configs.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/attrs.h"
 #include "kota/meta/schema.h"
@@ -9,7 +10,7 @@ namespace kota::meta {
 
 namespace {
 
-namespace fx = ::kota::meta::fixtures;
+namespace fx = ::kota::test;
 
 ZEST_SUITE(meta_schema_rename_all) {
 

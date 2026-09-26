@@ -7,9 +7,8 @@
 #include <variant>
 #include <vector>
 
-#include "fixtures/schema/common.h"
-#include "fixtures/schema/primitives.h"
-#include "fixtures/schema/tagged.h"
+#include "fixtures/structs.h"
+#include "fixtures/tagged.h"
 #include "kota/zest/zest.h"
 #include "kota/codec/json/json.h"
 
@@ -51,10 +50,10 @@ namespace {
 using json::from_string;
 using json::to_string;
 
-using Point = meta::fixtures::Point2d;
-using Color = meta::fixtures::Color3;
-using IntHolder = meta::fixtures::IntHolder;
-using StringHolder = meta::fixtures::StringHolder;
+using Point = test::Point2d;
+using Color = test::Color3;
+using IntHolder = test::Field<std::int32_t>;
+using StringHolder = test::Field<std::string>;
 
 KOTATSU_ANNOTATION(ext_simple_annotation, tagged = true, tag_names = {"num", "str"});
 using ExtSimple = annotate<ext_simple_annotation>::type<std::variant<int, std::string>>;
@@ -84,9 +83,9 @@ KOTATSU_ANNOTATION(adj_with_struct_annotation,
                    tag_names = {"int", "point"});
 using AdjWithStruct = annotate<adj_with_struct_annotation>::type<std::variant<int, Point>>;
 
-using Circle = meta::fixtures::Circle;
-using Rect = meta::fixtures::Rect;
-using Triangle = meta::fixtures::Triangle;
+using Circle = test::Circle;
+using Rect = test::Rect;
+using Triangle = test::Triangle;
 
 KOTATSU_ANNOTATION(int_tag_shape_annotation, tag = "type", tag_names = {"circle", "rect"});
 using IntTagShape = annotate<int_tag_shape_annotation>::type<std::variant<Circle, Rect>>;

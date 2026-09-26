@@ -1,6 +1,6 @@
 #pragma once
 
-// Recursive-type fixtures — self-referential shapes via vector / ptr /
+// Recursive-type fixtures: self-referential shapes via vector / ptr /
 // optional / map / variant.
 
 #include <map>
@@ -10,7 +10,7 @@
 #include <variant>
 #include <vector>
 
-namespace kota::meta::fixtures {
+namespace kota::test {
 
 struct TreeNode {
     std::string value;
@@ -52,4 +52,4 @@ struct MixedRecursive {
     std::map<std::string, std::vector<MixedRecursive>> grouped;
 };
 
-}  // namespace kota::meta::fixtures
+}  // namespace kota::test

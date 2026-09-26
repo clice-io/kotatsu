@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-#include "fixtures/schema/common.h"
+#include "fixtures/structs.h"
 #include "kota/zest/zest.h"
 #include "kota/codec/toml/toml.h"
 
@@ -24,7 +24,7 @@ using toml::from_toml;
 using toml::to_string;
 using toml::to_toml;
 
-using person = meta::fixtures::PersonWithScores;
+using person = test::PersonWithScores;
 
 struct payload_with_extra {
     int id = 0;

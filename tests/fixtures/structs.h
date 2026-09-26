@@ -1,12 +1,20 @@
 #pragma once
 
+// Plain struct fixtures: no attributes, only fields.
+
 #include <cstdint>
 #include <string>
 #include <vector>
 
-namespace kota::meta::fixtures {
+namespace kota::test {
 
-struct Point2i {
+/// Puts a value in a field position.
+template <typename T>
+struct Field {
+    T value;
+};
+
+struct Point {
     std::int32_t x;
     std::int32_t y;
 };
@@ -22,17 +30,18 @@ struct Color3 {
     std::int32_t b;
 };
 
-struct Triangle {
-    double base;
+struct Circle {
+    double radius;
+};
+
+struct Rect {
+    double width;
     double height;
 };
 
-struct IntHolder {
-    std::int32_t value;
-};
-
-struct StringHolder {
-    std::string value;
+struct Triangle {
+    double base;
+    double height;
 };
 
 struct BoolInt {
@@ -68,4 +77,14 @@ struct StrictIdName {
     std::string name;
 };
 
-}  // namespace kota::meta::fixtures
+struct SimpleStruct {
+    int x;
+    std::string name;
+    float score;
+};
+
+struct NestedStruct {
+    std::vector<SimpleStruct> items;
+};
+
+}  // namespace kota::test

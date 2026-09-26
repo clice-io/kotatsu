@@ -1,6 +1,6 @@
 #pragma once
 
-// Container fixtures — compound type_kind shapes without attrs.
+// Container fixtures: compound type_kind shapes without attrs.
 
 #include <array>
 #include <cstddef>
@@ -18,10 +18,9 @@
 #include <variant>
 #include <vector>
 
-#include "fixtures/schema/primitives.h"
 #include "kota/support/ranges.h"
 
-namespace kota::meta::fixtures {
+namespace kota::test {
 
 using VectorInt = std::vector<int>;
 using StdArrayInt3 = std::array<int, 3>;
@@ -52,11 +51,7 @@ using MapToVector = std::map<std::string, std::vector<int>>;
 using SetOfVectorString = std::set<std::vector<std::string>>;
 using UniquePtrVector = std::unique_ptr<std::vector<int>>;
 
-struct NestedStruct {
-    std::vector<SimpleStruct> items;
-};
-
-// An input_range whose reference type is itself — auto-detected as
+// An input_range whose reference type is itself, auto-detected as
 // range_format::disabled so it never looks like array / set / map.
 struct disabled_range;
 
@@ -98,4 +93,4 @@ inline auto disabled_range_iter::operator*() const -> disabled_range {
 static_assert(std::ranges::input_range<disabled_range>);
 static_assert(kota::format_kind<disabled_range> == kota::range_format::disabled);
 
-}  // namespace kota::meta::fixtures
+}  // namespace kota::test

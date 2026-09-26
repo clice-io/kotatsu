@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#include "fixtures/schema/common.h"
+#include "fixtures/structs.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
@@ -19,11 +19,11 @@ namespace {
 using toml::from_string;
 using toml::from_string;
 
-using person = meta::fixtures::Person;
-using with_scores = meta::fixtures::WithScores;
+using person = test::Person;
+using with_scores = test::WithScores;
 
 KOTATSU_ANNOTATION(strict_payload_annotation, deny_unknown_fields = true);
-using strict_payload = annotate<strict_payload_annotation>::type<meta::fixtures::StrictIdName>;
+using strict_payload = annotate<strict_payload_annotation>::type<test::StrictIdName>;
 
 enum class color { red, green, blue };
 

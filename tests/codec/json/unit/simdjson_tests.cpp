@@ -10,7 +10,7 @@
 #include <variant>
 #include <vector>
 
-#include "fixtures/schema/common.h"
+#include "fixtures/structs.h"
 #include "kota/zest/zest.h"
 #include "kota/codec/json/json.h"
 
@@ -24,7 +24,7 @@ using json::from_string;
 using json::from_string;
 using json::to_string;
 
-using person = meta::fixtures::PersonWithScores;
+using person = test::PersonWithScores;
 
 struct object_int_value {
     int value = 0;

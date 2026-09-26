@@ -17,7 +17,7 @@
 #include <variant>
 #include <vector>
 
-#include "fixtures/schema/common.h"
+#include "fixtures/structs.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/attrs.h"
 #include "kota/codec/fbs/fbs.h"
@@ -38,8 +38,8 @@ using fbs::variant_view;
 
 enum class color : std::int32_t { red = 0, green = 1, blue = 2 };
 
-using point = meta::fixtures::Point2i;
-using address = meta::fixtures::Address;
+using point = test::Point;
+using address = test::Address;
 
 struct person {
     std::int32_t id;
