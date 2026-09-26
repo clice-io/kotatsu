@@ -142,6 +142,12 @@ ZEST_CASE(predicates) {
     EXPECT(contains(std::vector<const char*>{"a", owned.c_str()}, "b"));
     EXPECT(starts_with(std::string("prefix-body"), "prefix"));
     EXPECT(ends_with(std::string("body-suffix"), "suffix"));
+    // A null pattern is no text; an array's text ends with the array.
+    const char* null = nullptr;
+    const char tail[2] = {'x', 't'};
+    EXPECT(!contains(std::string("text"), null));
+    EXPECT(!starts_with(std::string("text"), null));
+    EXPECT(ends_with(std::string("text"), tail));
     EXPECT(type_eq<int, int>());
     EXPECT(!type_eq<int, long>());
 }

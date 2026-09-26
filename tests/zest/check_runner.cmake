@@ -124,13 +124,14 @@ endif()
 
 # A failed check shows its operands, a predicate's inputs, an unexpected's
 # error and the contexts in scope, outermost first; a failed ASSERT ends its
-# test and a failed STATIC_EXPECT is reported like any other check.
+# test, a failed STATIC_EXPECT is reported like any other check, and a failed
+# snapshot shows its contexts too.
 run_fixture("${FIXTURE}" --list-tests --test-filter=fixture_report.*)
 string(FIND "${output}" "fixture_report.throws_nothing" at)
 if(at EQUAL -1)
-    set(report_failures 7)
-else()
     set(report_failures 8)
+else()
+    set(report_failures 9)
 endif()
 run_fixture("${FIXTURE}" --test-filter=fixture_report.* --jobs=1)
 expect_code(1)
@@ -146,7 +147,8 @@ expect_output("needle: \"hay\"")
 expect_output("[ expect ] 1 + 1 == 3")
 expect_output("lhs: 2")
 expect_no_output("printed after a failed assert")
-if(report_failures EQUAL 8)
+expect_output("context: while taking a snapshot")
+if(report_failures EQUAL 9)
     expect_output("[ expect ] std::string(\"no exception\")")
     expect_output("expected to throw")
 endif()

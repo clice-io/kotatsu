@@ -37,6 +37,12 @@ void print_line(std::string_view label, std::string_view text) {
     }
 }
 
+void print_contexts() {
+    for(const auto* context: contexts()) {
+        print_line("context", context->message);
+    }
+}
+
 }  // namespace
 
 void Context::enter() {
@@ -58,10 +64,14 @@ void report_failure(std::string_view expression,
     for(const auto& line: lines) {
         print_line(line.label, line.text);
     }
-    for(const auto* context: contexts()) {
-        print_line("context", context->message);
-    }
+    print_contexts();
     print_line("at", std::format("{}:{}", location.file_name(), location.line()));
+    print_trace(location);
+    failure();
+}
+
+void fail_reported(std::source_location location) {
+    print_contexts();
     print_trace(location);
     failure();
 }

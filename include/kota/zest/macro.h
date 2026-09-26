@@ -114,8 +114,7 @@
 #define ZEST_SNAPSHOT_STR_IMPL(return_action, value, ...)                                          \
     do {                                                                                           \
         if(::kota::zest::check_snapshot(value __VA_OPT__(, __VA_ARGS__))) [[unlikely]] {           \
-            ::kota::zest::print_trace(std::source_location::current());                            \
-            ::kota::zest::failure();                                                                \
+            ::kota::zest::detail::fail_reported(std::source_location::current());                  \
             return_action;                                                                          \
         }                                                                                           \
     } while(0)
@@ -127,8 +126,7 @@
 #define ZEST_SNAPSHOT_GLOB_IMPL(return_action, base_dir, pattern, transform)                        \
     do {                                                                                           \
         if(::kota::zest::check_snapshot_glob(base_dir, pattern, transform)) [[unlikely]] {         \
-            ::kota::zest::print_trace(std::source_location::current());                            \
-            ::kota::zest::failure();                                                                \
+            ::kota::zest::detail::fail_reported(std::source_location::current());                  \
             return_action;                                                                          \
         }                                                                                           \
     } while(0)
@@ -161,20 +159,17 @@
         auto _zest_snap_json = ::kota::codec::json::to_string(value);                              \
         if(!_zest_snap_json.has_value()) {                                                         \
             std::println("[snapshot] json serialization failed");                                   \
-            ::kota::zest::print_trace(std::source_location::current());                            \
-            ::kota::zest::failure();                                                                \
+            ::kota::zest::detail::fail_reported(std::source_location::current());                   \
             return_action;                                                                          \
         } else {                                                                                    \
             auto _zest_snap_pretty = ::kota::codec::json::prettify(*_zest_snap_json);              \
             if(!_zest_snap_pretty.has_value()) {                                                   \
                 std::println("[snapshot] json prettify failed");                                    \
-                ::kota::zest::print_trace(std::source_location::current());                        \
-                ::kota::zest::failure();                                                            \
+                ::kota::zest::detail::fail_reported(std::source_location::current());               \
                 return_action;                                                                      \
             } else if(::kota::zest::check_snapshot_expr(                                            \
                           *_zest_snap_pretty, #value __VA_OPT__(, __VA_ARGS__))) [[unlikely]] {     \
-                ::kota::zest::print_trace(std::source_location::current());                        \
-                ::kota::zest::failure();                                                            \
+                ::kota::zest::detail::fail_reported(std::source_location::current());               \
                 return_action;                                                                      \
             }                                                                                       \
         }                                                                                           \

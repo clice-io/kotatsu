@@ -78,6 +78,10 @@ void report_failure(std::string_view expression,
                     std::initializer_list<ReportLine> lines,
                     std::source_location location);
 
+/// Fails the running test for a check that printed its own report, such as a
+/// snapshot, adding the contexts in scope and the stack.
+void fail_reported(std::source_location location);
+
 template <typename U>
 constexpr void reject_logic() {
     static_assert(dependent_false<U>,

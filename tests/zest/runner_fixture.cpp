@@ -134,6 +134,12 @@ ZEST_CASE(stops_at_assert) {
     std::println("printed after a failed assert");
 }
 
+// Run without --snapshot-dir, which fails the snapshot.
+ZEST_CASE(snapshot_in_context) {
+    ZEST_CONTEXT("while taking a snapshot");
+    EXPECT_SNAPSHOT("unchecked");
+}
+
 #ifdef __cpp_exceptions
 ZEST_CASE(throws_nothing) {
     EXPECT_THROWS(std::string("no exception"));

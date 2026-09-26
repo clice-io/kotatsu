@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <format>
+#include <optional>
 #include <string_view>
 #include <type_traits>
 
@@ -16,6 +17,20 @@
 
 namespace kota::zest {
 
+namespace detail {
+
+/// What a text predicate looks for: text through as_text, or a character.
+template <typename P>
+constexpr auto as_pattern(const P& pattern) {
+    if constexpr(meta::str_like<P>) {
+        return as_text(pattern);
+    } else {
+        return std::optional<P>(pattern);
+    }
+}
+
+}  // namespace detail
+
 /// `needle` is in `haystack`: a substring or character of text, or an element
 /// of a range.
 template <typename H, typename N>
@@ -23,7 +38,8 @@ Match contains(const H& haystack, const N& needle) {
     bool held;
     if constexpr(meta::str_like<H>) {
         auto text = detail::as_text(haystack);
-        held = text && text->find(needle) != std::string_view::npos;
+        auto pattern = detail::as_pattern(needle);
+        held = text && pattern && text->find(*pattern) != std::string_view::npos;
     } else {
         held = std::ranges::any_of(haystack, [&](const auto& element) {
             return detail::relate<detail::Relation::Equal>(element, needle);
@@ -39,7 +55,8 @@ Match contains(const H& haystack, const N& needle) {
 template <typename T, typename P>
 Match starts_with(const T& text, const P& prefix) {
     auto view = detail::as_text(text);
-    return Match{.held = view && view->starts_with(prefix), .explain = [&] {
+    auto pattern = detail::as_pattern(prefix);
+    return Match{.held = view && pattern && view->starts_with(*pattern), .explain = [&] {
                      return std::format("text: {}\nprefix: {}",
                                         pretty_dump(text),
                                         pretty_dump(prefix));
@@ -49,7 +66,8 @@ Match starts_with(const T& text, const P& prefix) {
 template <typename T, typename S>
 Match ends_with(const T& text, const S& suffix) {
     auto view = detail::as_text(text);
-    return Match{.held = view && view->ends_with(suffix), .explain = [&] {
+    auto pattern = detail::as_pattern(suffix);
+    return Match{.held = view && pattern && view->ends_with(*pattern), .explain = [&] {
                      return std::format("text: {}\nsuffix: {}",
                                         pretty_dump(text),
                                         pretty_dump(suffix));
