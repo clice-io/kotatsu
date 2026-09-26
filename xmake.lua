@@ -347,54 +347,55 @@ target("kotatsu", function()
 end)
 
 if has_config("test") and has_config("ztest") then
-	target("unit_tests", function()
-		set_default(false)
-		set_kind("binary")
-		set_rundir("$(projectdir)")
-		add_rules("cl-flags")
-		add_includedirs("tests")
-		add_files(
-			"tests/unit/main.cpp",
-			"tests/unit/support/**.cpp",
-			"tests/unit/meta/**.cpp",
-			"tests/unit/zest/**.cpp",
-			"tests/unit/async/**.cpp"
-		)
-		add_includedirs("examples/build_system")
-		if has_config("option") then
-			add_files("tests/unit/option/**.cpp")
-		end
-		if has_config("deco") and has_config("option") then
-			add_files("tests/unit/deco/**.cc")
-		end
-		if has_config("codec") and has_config("codec_simdjson") then
-			add_files("tests/unit/codec/json/**.cpp")
-			-- Lets always-built suites opt into cases that need the JSON codec,
-			-- such as zest's EXPECT_SNAPSHOT_JSON tests.
-			add_defines("KOTA_TEST_HAS_JSON=1")
-		end
-		if has_config("codec") then
-			add_files("tests/unit/codec/dyn/**.cpp")
-		end
-		if has_config("codec") and has_config("codec_flatbuffers") then
-			add_files("tests/unit/codec/fbs/**.cpp")
-		end
-		if has_config("codec") and has_config("codec_toml") then
-			add_files("tests/unit/codec/toml/**.cpp")
-		end
-		if has_config("codec") then
-			add_files("tests/unit/codec/bincode/**.cpp")
-			add_files("tests/unit/codec/debug/**.cpp")
-		end
-		if has_config("codec") and has_config("codec_simdjson") then
-			add_files("tests/unit/ipc/**.cpp")
-		end
-		if has_config("http") then
-			add_files("tests/unit/http/**.cpp")
-		end
+	-- Mirrors tests/CMakeLists.txt: one binary per level, built from that
+	-- level's directory of every enabled module.
+	local test_modules = { "support", "meta", "async", "zest" }
+	if has_config("codec") then
+		table.insert(test_modules, "codec/bincode")
+		table.insert(test_modules, "codec/debug")
+	end
+	if has_config("deco") then
+		table.insert(test_modules, "deco")
+	end
+	if has_config("codec") and has_config("codec_simdjson") then
+		table.insert(test_modules, "codec/json")
+		table.insert(test_modules, "codec/dyn")
+		table.insert(test_modules, "ipc")
+		table.insert(test_modules, "ipc/lsp")
+	end
+	if has_config("codec") and has_config("codec_flatbuffers") then
+		table.insert(test_modules, "codec/fbs")
+	end
+	if has_config("codec") and has_config("codec_toml") then
+		table.insert(test_modules, "codec/toml")
+	end
+	if has_config("http") then
+		table.insert(test_modules, "http")
+	end
 
-		add_deps("kotatsu")
+	for _, level in ipairs({ "unit", "system" }) do
+		target(level .. "_tests", function()
+			set_default(false)
+			set_kind("binary")
+			set_rundir("$(projectdir)")
+			add_rules("cl-flags")
+			add_includedirs("tests")
+			add_files("tests/main.cpp")
+			for _, module in ipairs(test_modules) do
+				if os.isdir(path.join(os.scriptdir(), "tests", module, level)) then
+					add_files(path.join("tests", module, level, "**.cpp"))
+				end
+			end
+			add_includedirs("examples/build_system")
+			if has_config("codec") and has_config("codec_simdjson") then
+				-- Lets suites of other modules opt into cases that need the
+				-- JSON codec, such as zest's EXPECT_SNAPSHOT_JSON tests.
+				add_defines("KOTA_TEST_HAS_JSON=1")
+			end
 
-		add_tests("default", { runargs = { "--snapshot-dir=tests/snapshots" } })
-	end)
+			add_deps("kotatsu")
+
+			add_tests("default", { runargs = { "--snapshot-dir=tests/snapshots" } })
+		end)
+	end
 end
