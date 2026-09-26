@@ -10,6 +10,8 @@
 #include <variant>
 #include <vector>
 
+#include "fixtures/containers.h"
+
 namespace kota::test {
 
 struct TreeNode {
@@ -20,6 +22,10 @@ struct TreeNode {
 struct LinkedNode {
     int data;
     std::unique_ptr<LinkedNode> next;
+
+    bool operator==(const LinkedNode& other) const {
+        return data == other.data && same_pointee(next, other.next);
+    }
 };
 
 struct SharedNode {

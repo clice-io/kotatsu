@@ -2,6 +2,7 @@
 
 // Plain struct fixtures: no attributes, only fields.
 
+#include <compare>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -14,9 +15,13 @@ struct Field {
     T value;
 };
 
+struct Empty {};
+
 struct Point {
     std::int32_t x;
     std::int32_t y;
+
+    auto operator<=>(const Point&) const = default;
 };
 
 struct Point2d {
