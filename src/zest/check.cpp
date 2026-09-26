@@ -1,5 +1,6 @@
 #include "kota/zest/assert/check.h"
 
+#include <atomic>
 #include <print>
 #include <string_view>
 #include <vector>
@@ -11,9 +12,16 @@ namespace kota::zest {
 
 namespace {
 
-/// Contexts alive on this thread, outermost first.
-std::vector<const Context*>& contexts() {
-    thread_local std::vector<const Context*> stack;
+struct Entry {
+    std::uint64_t id;
+    std::string message;
+};
+
+/// Contexts entered on this thread and not yet ended, outermost first. It
+/// holds their messages rather than the contexts: one that ends on another
+/// thread, as a coroutine's may, is left here instead of dangling.
+std::vector<Entry>& contexts() {
+    thread_local std::vector<Entry> stack;
     return stack;
 }
 
@@ -38,21 +46,23 @@ void print_line(std::string_view label, std::string_view text) {
 }
 
 void print_contexts() {
-    for(const auto* context: contexts()) {
-        print_line("context", context->message);
+    for(const auto& context: contexts()) {
+        print_line("context", context.message);
     }
 }
 
 }  // namespace
 
-void Context::enter() {
-    stack = &contexts();
-    stack->push_back(this);
+std::uint64_t Context::enter(std::string message) {
+    static std::atomic<std::uint64_t> next_id = 0;
+    auto id = next_id.fetch_add(1, std::memory_order_relaxed);
+    contexts().push_back({id, std::move(message)});
+    return id;
 }
 
 // Not necessarily the innermost: coroutines interleave their contexts.
 Context::~Context() {
-    std::erase(*stack, this);
+    std::erase_if(contexts(), [this](const Entry& entry) { return entry.id == id; });
 }
 
 namespace detail {

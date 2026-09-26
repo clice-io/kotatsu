@@ -10,7 +10,6 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 #include "kota/support/functional.h"
 #include "kota/support/type_traits.h"
@@ -42,16 +41,12 @@ struct Match {
     }
 };
 
-/// Adds a line to the report of every check that fails while it is alive.
-/// Use it through ZEST_CONTEXT.
+/// Adds a line to the report of every check that fails on its thread while it
+/// is alive. Use it through ZEST_CONTEXT.
 struct Context {
-    std::string message;
-
     template <typename... Args>
     explicit Context(std::format_string<Args...> format, Args&&... args) :
-        message(std::format(format, std::forward<Args>(args)...)) {
-        enter();
-    }
+        id(enter(std::format(format, std::forward<Args>(args)...))) {}
 
     Context(const Context&) = delete;
     Context& operator=(const Context&) = delete;
@@ -59,10 +54,9 @@ struct Context {
     ~Context();
 
 private:
-    void enter();
+    static std::uint64_t enter(std::string message);
 
-    /// The stack of the thread that entered this context, which it leaves.
-    std::vector<const Context*>* stack = nullptr;
+    std::uint64_t id;
 };
 
 namespace detail {

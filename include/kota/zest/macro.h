@@ -104,7 +104,8 @@
 // e.g. `ZEST_CONTEXT("called from {}:{}", loc.file_name(), loc.line())` in a
 // helper. Takes std::format arguments. Contexts belong to the thread that
 // entered them, so one held across a co_await also shows in the checks of
-// whatever runs meanwhile on that thread.
+// whatever runs meanwhile on that thread, and one that ends on another thread
+// stays in that thread's reports.
 #define ZEST_CONTEXT(...)                                                                          \
     ::kota::zest::Context ZEST_CONCAT(_zest_context_, __COUNTER__) {                               \
         __VA_ARGS__                                                                                \
