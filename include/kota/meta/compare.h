@@ -420,7 +420,10 @@ constexpr bool compare_eq(const L& lhs, const R& rhs) {
 
 template <typename L, typename R>
 constexpr bool compare_ne(const L& lhs, const R& rhs) {
-    if constexpr(!takeover_range_ne<L, R> && !variant_pair<L, R> && ne_comparable_with<L, R>) {
+    if constexpr(standard_integer<L> && standard_integer<R>) {
+        return std::cmp_not_equal(lhs, rhs);
+    } else if constexpr(!takeover_range_ne<L, R> && !variant_pair<L, R> &&
+                        ne_comparable_with<L, R>) {
         return static_cast<bool>(lhs != rhs);
     } else {
         return !compare_eq(lhs, rhs);
@@ -429,7 +432,9 @@ constexpr bool compare_ne(const L& lhs, const R& rhs) {
 
 template <typename L, typename R>
 constexpr bool compare_lt(const L& lhs, const R& rhs) {
-    if constexpr(takeover_range_lt<L, R>) {
+    if constexpr(standard_integer<L> && standard_integer<R>) {
+        return std::cmp_less(lhs, rhs);
+    } else if constexpr(takeover_range_lt<L, R>) {
         if constexpr(ordered_map_range<L> && ordered_map_range<R>) {
             return compare_map_lt(lhs, rhs);
         } else if constexpr(map_range<L> && map_range<R>) {
@@ -526,7 +531,10 @@ template <typename L, typename R>
 constexpr bool compare_le(const L& lhs, const R& rhs) {
     // For a strict-weak-order comparator (<), `lhs <= rhs` is equivalent to `!(rhs < lhs)`.
     // This is also equivalent to `(lhs < rhs) || (lhs == rhs)`.
-    if constexpr(!takeover_range_le<L, R> && !variant_pair<L, R> && le_comparable_with<L, R>) {
+    if constexpr(standard_integer<L> && standard_integer<R>) {
+        return std::cmp_less_equal(lhs, rhs);
+    } else if constexpr(!takeover_range_le<L, R> && !variant_pair<L, R> &&
+                        le_comparable_with<L, R>) {
         return static_cast<bool>(lhs <= rhs);
     } else {
         return !compare_lt(rhs, lhs);
@@ -535,7 +543,10 @@ constexpr bool compare_le(const L& lhs, const R& rhs) {
 
 template <typename L, typename R>
 constexpr bool compare_gt(const L& lhs, const R& rhs) {
-    if constexpr(!takeover_range_gt<L, R> && !variant_pair<L, R> && gt_comparable_with<L, R>) {
+    if constexpr(standard_integer<L> && standard_integer<R>) {
+        return std::cmp_greater(lhs, rhs);
+    } else if constexpr(!takeover_range_gt<L, R> && !variant_pair<L, R> &&
+                        gt_comparable_with<L, R>) {
         return static_cast<bool>(lhs > rhs);
     } else {
         return compare_lt(rhs, lhs);
@@ -545,7 +556,10 @@ constexpr bool compare_gt(const L& lhs, const R& rhs) {
 template <typename L, typename R>
 constexpr bool compare_ge(const L& lhs, const R& rhs) {
     // Symmetric to <= : `lhs >= rhs` is `!(lhs < rhs)` under strict-weak-order semantics.
-    if constexpr(!takeover_range_ge<L, R> && !variant_pair<L, R> && ge_comparable_with<L, R>) {
+    if constexpr(standard_integer<L> && standard_integer<R>) {
+        return std::cmp_greater_equal(lhs, rhs);
+    } else if constexpr(!takeover_range_ge<L, R> && !variant_pair<L, R> &&
+                        ge_comparable_with<L, R>) {
         return static_cast<bool>(lhs >= rhs);
     } else {
         return !compare_lt(lhs, rhs);
