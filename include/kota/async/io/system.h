@@ -135,6 +135,9 @@ result<std::chrono::duration<double>> uptime();
 /// Query the current user's home directory.
 result<std::string> home_directory();
 
+/// Query the path of the running executable.
+result<std::string> executable_path();
+
 /// Query the system temporary directory.
 result<std::string> temp_directory();
 

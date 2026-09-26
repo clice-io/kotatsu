@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "execution.h"
 #include "kota/support/glob_pattern.h"
 
 namespace kota::zest {
@@ -469,6 +470,17 @@ bool check_snapshot_glob(std::string_view base_dir_str,
         }
     }
     return failed;
+}
+
+std::vector<std::string> take_accessed_snapshots() {
+    std::lock_guard lock(accessed_mutex);
+    std::vector<std::string> paths(accessed_snap_paths.begin(), accessed_snap_paths.end());
+    accessed_snap_paths.clear();
+    return paths;
+}
+
+void record_snapshot_access(std::string_view path) {
+    record_access(fs::path(path));
 }
 
 std::size_t cleanup_unused_snapshots() {

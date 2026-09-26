@@ -19,6 +19,10 @@ if has_config("ztest") and not has_config("deco") then
 	raise("ztest requires deco")
 end
 
+if has_config("ztest") and not has_config("async") then
+	raise("ztest requires async")
+end
+
 if has_config("http") and not has_config("async") then
 	raise("http requires async")
 end
@@ -193,8 +197,11 @@ if has_config("ztest") then
 		add_includedirs("include", { public = true })
 		add_headerfiles("include/(kota/zest/**)")
 		add_rules("cl-flags")
-		add_deps("support", "deco")
+		add_deps("support", "deco", "async")
 		add_packages("cpptrace", { public = true })
+		if is_plat("windows") then
+			add_syslinks("shell32")
+		end
 	end)
 end
 
@@ -350,12 +357,10 @@ if has_config("test") and has_config("ztest") then
 			"tests/unit/main.cpp",
 			"tests/unit/support/**.cpp",
 			"tests/unit/meta/**.cpp",
-			"tests/unit/zest/**.cpp"
+			"tests/unit/zest/**.cpp",
+			"tests/unit/async/**.cpp"
 		)
-		if has_config("async") then
-			add_files("tests/unit/async/**.cpp")
-			add_includedirs("examples/build_system")
-		end
+		add_includedirs("examples/build_system")
 		if has_config("option") then
 			add_files("tests/unit/option/**.cpp")
 		end
@@ -381,7 +386,7 @@ if has_config("test") and has_config("ztest") then
 			add_files("tests/unit/codec/bincode/**.cpp")
 			add_files("tests/unit/codec/debug/**.cpp")
 		end
-		if has_config("async") and has_config("codec") and has_config("codec_simdjson") then
+		if has_config("codec") and has_config("codec_simdjson") then
 			add_files("tests/unit/ipc/**.cpp")
 		end
 		if has_config("http") then

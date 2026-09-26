@@ -125,7 +125,9 @@ else()
 endif()
 
 if(KOTA_SANITIZE_UNDEFINED)
-    list(APPEND kota_sanitizer_compile_options "-fsanitize=undefined")
+    # Undefined behaviour ends the test, which then fails with the report as its
+    # output; a report the test survives would pass unseen in a worker's log.
+    list(APPEND kota_sanitizer_compile_options "-fsanitize=undefined" "-fno-sanitize-recover=undefined")
     list(APPEND kota_sanitizer_link_options "-fsanitize=undefined")
 endif()
 
@@ -317,6 +319,11 @@ if(KOTA_ENABLE_ZEST)
         message(STATUS "KOTA_ENABLE_ZEST=ON: enabling KOTA_ENABLE_DECO")
         set(KOTA_ENABLE_DECO ON CACHE BOOL "Enable deco parser headers and tests" FORCE)
     endif()
+
+    if(NOT KOTA_ENABLE_ASYNC)
+        message(STATUS "KOTA_ENABLE_ZEST=ON: enabling KOTA_ENABLE_ASYNC")
+        set(KOTA_ENABLE_ASYNC ON CACHE BOOL "Enable async kotatsu target and libuv dependency" FORCE)
+    endif()
 endif()
 
 add_subdirectory(src/meta)
@@ -353,6 +360,6 @@ if(KOTA_ENABLE_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
-if(KOTA_ENABLE_TEST AND BUILD_TESTING AND KOTA_ENABLE_ASYNC AND KOTA_CODEC_ENABLE_SIMDJSON)
+if(KOTA_ENABLE_TEST AND BUILD_TESTING AND KOTA_CODEC_ENABLE_SIMDJSON)
     add_subdirectory(tests/integration)
 endif()

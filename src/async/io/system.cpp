@@ -120,6 +120,23 @@ result<std::string> home_directory() {
                           1024);
 }
 
+result<std::string> executable_path() {
+    // uv_exepath truncates a long path instead of failing, so a result that
+    // fills the buffer may be cut short; grow until one does not.
+    std::string buf(1024, '\0');
+    while(true) {
+        std::size_t size = buf.size();
+        if(auto err = uv::exepath(buf.data(), size)) {
+            return outcome_error(err);
+        }
+        if(size + 1 < buf.size()) {
+            buf.resize(size);
+            return buf;
+        }
+        buf.resize(buf.size() * 2);
+    }
+}
+
 result<std::string> temp_directory() {
     return read_uv_string([](char* buf, std::size_t& size) { return uv::os_tmpdir(buf, size); },
                           1024);

@@ -262,6 +262,12 @@ error process::kill(int signum) {
         return error::invalid_argument;
     }
 
+    // Once the exit is observed libuv has reaped the child, and its pid may
+    // already belong to another process.
+    if(self->has_pending()) {
+        return error::no_such_process;
+    }
+
     if(auto err = uv::process_kill(self->handle, signum)) {
         return err;
     }

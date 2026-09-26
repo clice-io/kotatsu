@@ -125,7 +125,8 @@ public:
     /// Retrieve OS pid for the process; -1 if not started.
     int pid() const noexcept;
 
-    /// Send a signal to the process.
+    /// Send a signal to the process; fails with no_such_process once its exit
+    /// has been observed.
     error kill(int signum);
 
 private:

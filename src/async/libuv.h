@@ -924,6 +924,11 @@ ALWAYS_INLINE error os_homedir(char* buf, std::size_t& size) noexcept {
     return status_to_error(::uv_os_homedir(buf, &size));
 }
 
+ALWAYS_INLINE error exepath(char* buf, std::size_t& size) noexcept {
+    assert(buf != nullptr && "uv::exepath requires non-null buffer");
+    return status_to_error(::uv_exepath(buf, &size));
+}
+
 ALWAYS_INLINE error os_tmpdir(char* buf, std::size_t& size) noexcept {
     assert(buf != nullptr && "uv::os_tmpdir requires non-null buffer");
     return status_to_error(::uv_os_tmpdir(buf, &size));
