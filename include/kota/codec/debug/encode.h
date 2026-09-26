@@ -12,6 +12,7 @@
 
 #include "kota/meta/enum.h"
 #include "kota/meta/name.h"
+#include "kota/codec/visit/common.h"
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/context.h"
 #include "kota/codec/visit/encode.h"
@@ -110,16 +111,13 @@ struct Formatter {
             case '\t': out += "\\t"; break;
             case '\0': out += "\\0"; break;
             default: {
-                // The char's value, 0-255, is its codepoint, which the text
-                // holds in UTF-8 as the text codecs write it.
+                // Control characters print as escapes; any other char as the
+                // text codecs write it.
                 auto codepoint = static_cast<unsigned char>(c);
                 if(codepoint < 0x20) {
                     out += std::format("\\x{:02x}", codepoint);
-                } else if(codepoint < 0x80) {
-                    out += c;
                 } else {
-                    out += static_cast<char>(0xC0 | (codepoint >> 6));
-                    out += static_cast<char>(0x80 | (codepoint & 0x3F));
+                    out += char_to_utf8(c);
                 }
                 break;
             }
