@@ -4,6 +4,7 @@
 
 #include <compare>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -27,31 +28,50 @@ struct Point {
 struct Point2d {
     double x;
     double y;
+
+    auto operator==(const Point2d&) const -> bool = default;
 };
 
 struct Color3 {
     std::int32_t r;
     std::int32_t g;
     std::int32_t b;
+
+    auto operator==(const Color3&) const -> bool = default;
 };
 
 struct Circle {
     double radius;
+
+    auto operator==(const Circle&) const -> bool = default;
 };
 
 struct Rect {
     double width;
     double height;
+
+    auto operator==(const Rect&) const -> bool = default;
 };
 
-struct Triangle {
-    double base;
-    double height;
+struct Segment {
+    int line_width;
+
+    auto operator==(const Segment&) const -> bool = default;
 };
 
-struct BoolInt {
-    bool is_valid;
-    std::int32_t i32;
+/// Structs whose required fields overlap, for untagged probing.
+struct OneKey {
+    int a;
+};
+
+struct TwoKeys {
+    int a;
+    int b;
+};
+
+struct OneKeyMaybeTwo {
+    int a;
+    std::optional<int> b;
 };
 
 struct Address {

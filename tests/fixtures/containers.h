@@ -65,6 +65,22 @@ bool same_pointee(const Pointer& lhs, const Pointer& rhs) {
     return meta::eq(*lhs, *rhs);
 }
 
+/// A variant with a smart-pointer alternative, compared by pointee.
+template <typename Pointer, typename Other>
+struct PointerOr {
+    std::variant<Pointer, Other> value;
+
+    bool operator==(const PointerOr& other) const {
+        if(value.index() != other.value.index()) {
+            return false;
+        }
+        if(value.index() == 1) {
+            return meta::eq(std::get<1>(value), std::get<1>(other.value));
+        }
+        return same_pointee(std::get<0>(value), std::get<0>(other.value));
+    }
+};
+
 /// Every nullable kind, engaged or empty.
 struct Nullables {
     std::optional<int> number;

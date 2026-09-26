@@ -143,6 +143,14 @@ struct Journal {
     auto operator<=>(const Journal&) const = default;
 };
 
+/// A repr that declares an untagged variant: probing flows through it into
+/// the variant.
+struct BoxedScalar {
+    std::variant<std::int8_t, double> v;
+
+    auto operator==(const BoxedScalar&) const -> bool = default;
+};
+
 /// Adapters for behavior::with.
 struct VersionAsNumber {
     using type = std::uint32_t;
@@ -457,6 +465,19 @@ struct repr<test::LoadResult> {
             return {.ok = true, .bytes = ok->byte_count, .message = {}};
         }
         return {.ok = false, .bytes = 0, .message = std::get<test::LoadErr>(v).message};
+    }
+};
+
+template <>
+struct repr<test::BoxedScalar> {
+    using type = std::variant<std::int8_t, double>;
+
+    static type to(const test::BoxedScalar& b) {
+        return b.v;
+    }
+
+    static test::BoxedScalar from(type v) {
+        return {.v = v};
     }
 };
 

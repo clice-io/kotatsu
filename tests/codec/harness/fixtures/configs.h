@@ -37,4 +37,8 @@ struct NoPathConfig {
     constexpr static bool detailed_error = false;
 };
 
+struct NotHumanReadableConfig {
+    constexpr static bool human_readable = false;
+};
+
 }  // namespace kota::test

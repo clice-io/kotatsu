@@ -1,10 +1,13 @@
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <variant>
 
 #include "fixtures/attrs.h"
 #include "fixtures/configs.h"
 #include "fixtures/structs.h"
+#include "fixtures/tagged.h"
 #include "kota/zest/zest.h"
 #include "kota/codec/json/json.h"
 
@@ -57,6 +60,45 @@ ZEST_CASE(error_text_has_path_and_location) {
     ASSERT(!status);
     EXPECT(status.error().to_string() ==
            std::string(incorrect_type) + " at addr.zip (line 1, column 60)");
+}
+
+ZEST_CASE(raw_value_alternative_takes_any_kind) {
+    // RawValue decodes through a dispatch override that accepts any value, so
+    // probing never judges it by its declared shape.
+    std::variant<int, RawValue, bool> out;
+    ASSERT(json::from_string(R"("text")", out));
+    ASSERT(out.index() == 1U);
+    EXPECT(std::get<RawValue>(out).data == R"("text")");
+
+    ASSERT(json::from_string("7", out));
+    EXPECT(out.index() == 0U);
+}
+
+ZEST_CASE(optional_raw_value_alternative_takes_any_kind) {
+    std::variant<std::optional<RawValue>, int> out;
+    ASSERT(json::from_string(R"("text")", out));
+    ASSERT(out.index() == 0U);
+    const auto& raw = std::get<0>(out);
+    ASSERT(raw);
+    EXPECT(raw->data == R"("text")");
+
+    ASSERT(json::from_string("null", out));
+    ASSERT(out.index() == 0U);
+    EXPECT(!std::get<0>(out));
+}
+
+ZEST_CASE(adjacent_duplicate_tag_fails) {
+    test::AdjacentShape out;
+    auto status = json::from_string(R"({"t":"number","t":"point","c":42})", out);
+    ASSERT(!status);
+    EXPECT(status.error().message == "adjacently tagged variant: duplicate tag field");
+}
+
+ZEST_CASE(adjacent_duplicate_content_fails) {
+    test::AdjacentShape out;
+    auto status = json::from_string(R"({"t":"number","c":1,"c":2})", out);
+    ASSERT(!status);
+    EXPECT(status.error().message == "adjacently tagged variant: duplicate content field");
 }
 
 };  // ZEST_SUITE(codec_json_decode)
