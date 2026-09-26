@@ -32,8 +32,8 @@ ZEST_CASE(comparison_splits_into_operands) {
     EXPECT(!split.held);
     EXPECT(&split.lhs == &one);
     EXPECT(&split.rhs == &two);
-    EXPECT(detail::holds((detail::Decomposer{} << 3) < 4));
-    EXPECT(!detail::holds((detail::Decomposer{} << 4) <= 3));
+    EXPECT(((detail::Decomposer{} << 3) < 4).held);
+    EXPECT(!((detail::Decomposer{} << 4) <= 3).held);
 }
 
 ZEST_CASE(expected_and_optional_compare_by_value) {

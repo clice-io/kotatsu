@@ -40,12 +40,13 @@ void print_line(std::string_view label, std::string_view text) {
 }  // namespace
 
 void Context::enter() {
-    contexts().push_back(this);
+    stack = &contexts();
+    stack->push_back(this);
 }
 
 // Not necessarily the innermost: coroutines interleave their contexts.
 Context::~Context() {
-    std::erase(contexts(), this);
+    std::erase(*stack, this);
 }
 
 namespace detail {

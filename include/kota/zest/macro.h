@@ -87,23 +87,24 @@
 #define CO_ASSERT(...) ZEST_CHECK(co_return, __VA_ARGS__)
 
 // Evaluates the check at compile time and reports it at run time, so one wrong
-// constant fails its test instead of the build.
+// constant fails its test instead of the build. To show the operands, the
+// report evaluates them again, at run time.
 #define STATIC_EXPECT(...)                                                                         \
     do {                                                                                           \
         ZEST_SPLIT_BEGIN                                                                           \
-        constexpr bool _zest_held =                                                                \
-            ::kota::zest::detail::holds(::kota::zest::detail::Decomposer{} << __VA_ARGS__);        \
+        constexpr bool _zest_held = (::kota::zest::detail::Decomposer{} << __VA_ARGS__).holds();   \
         if(!_zest_held) {                                                                          \
-            ::kota::zest::detail::fail(::kota::zest::detail::Decomposer{} << __VA_ARGS__,          \
-                                       #__VA_ARGS__);                                              \
+            (::kota::zest::detail::Decomposer{} << __VA_ARGS__)                                    \
+                .fail(#__VA_ARGS__, std::source_location::current());                              \
         }                                                                                          \
         ZEST_SPLIT_END                                                                             \
     } while(0)
 
 // Adds a line to the report of every check that fails while it is in scope,
 // e.g. `ZEST_CONTEXT("called from {}:{}", loc.file_name(), loc.line())` in a
-// helper. Takes std::format arguments. Contexts belong to the thread, so one
-// held across a co_await also shows in the checks of whatever runs meanwhile.
+// helper. Takes std::format arguments. Contexts belong to the thread that
+// entered them, so one held across a co_await also shows in the checks of
+// whatever runs meanwhile on that thread.
 #define ZEST_CONTEXT(...)                                                                          \
     ::kota::zest::Context ZEST_CONCAT(_zest_context_, __COUNTER__) {                               \
         __VA_ARGS__                                                                                \

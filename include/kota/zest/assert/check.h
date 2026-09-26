@@ -10,6 +10,7 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "kota/support/functional.h"
 #include "kota/support/type_traits.h"
@@ -59,6 +60,9 @@ struct Context {
 
 private:
     void enter();
+
+    /// The stack of the thread that entered this context, which it leaves.
+    std::vector<const Context*>* stack = nullptr;
 };
 
 namespace detail {
@@ -161,6 +165,19 @@ struct Comparison {
     R&& rhs;
     bool held;
 
+    constexpr bool holds() const {
+        return held;
+    }
+
+    void fail(std::string_view expression, std::source_location location) const {
+        report_failure(expression,
+                       {
+                           {.label = "lhs", .text = pretty_dump(lhs)},
+                           {.label = "rhs", .text = pretty_dump(rhs)},
+        },
+                       location);
+    }
+
     // clang-format off
     template <typename U> constexpr void operator==(U&&) && { reject_chain<U>(); }
     template <typename U> constexpr void operator!=(U&&) && { reject_chain<U>(); }
@@ -177,36 +194,73 @@ struct Comparison {
     // clang-format on
 };
 
-/// The left operand of a check, or its whole expression when it compares
-/// nothing.
+/// Nests Operand so that argument-dependent lookup of an operator on it does
+/// not search the classes of `T`, as it would for a specialization Operand<T>.
+/// For a std::expected operand, that search finds the expected's `operator==`
+/// for any right-hand type, which some standard libraries then check against
+/// the operand itself, recursively.
 template <typename T>
-struct Operand {
-    T&& value;
+struct Captured {
+    /// The left operand of a check, or its whole expression when it compares
+    /// nothing.
+    struct Operand {
+        T&& value;
 
-    // clang-format off
-    template <typename R> constexpr auto operator==(R&& rhs) && { return compare<Relation::Equal>(std::forward<R>(rhs)); }
-    template <typename R> constexpr auto operator!=(R&& rhs) && { return compare<Relation::NotEqual>(std::forward<R>(rhs)); }
-    template <typename R> constexpr auto operator<(R&& rhs) && { return compare<Relation::Less>(std::forward<R>(rhs)); }
-    template <typename R> constexpr auto operator<=(R&& rhs) && { return compare<Relation::LessEqual>(std::forward<R>(rhs)); }
-    template <typename R> constexpr auto operator>(R&& rhs) && { return compare<Relation::Greater>(std::forward<R>(rhs)); }
-    template <typename R> constexpr auto operator>=(R&& rhs) && { return compare<Relation::GreaterEqual>(std::forward<R>(rhs)); }
-    template <typename U> constexpr void operator&&(U&&) && { reject_logic<U>(); }
-    template <typename U> constexpr void operator||(U&&) && { reject_logic<U>(); }
-    template <typename U> constexpr void operator&(U&&) && { reject_bitwise<U>(); }
-    template <typename U> constexpr void operator|(U&&) && { reject_bitwise<U>(); }
-    template <typename U> constexpr void operator^(U&&) && { reject_bitwise<U>(); }
-    template <typename U> constexpr void operator<<(U&&) && { reject_shift<U>(); }
-    template <typename U> constexpr void operator>>(U&&) && { reject_shift<U>(); }
+        constexpr bool holds() const {
+            if constexpr(std::is_same_v<std::remove_cvref_t<T>, Match>) {
+                return value.held;
+            } else {
+                return static_cast<bool>(value);
+            }
+        }
 
-    // clang-format on
+        void fail(std::string_view expression, std::source_location location) const {
+            using V = std::remove_cvref_t<T>;
+            if constexpr(std::is_same_v<V, Match>) {
+                report_failure(expression,
+                               {
+                                   {.label = "", .text = value.explain()}
+                },
+                               location);
+            } else if constexpr(std::is_same_v<V, bool>) {
+                report_failure(expression, {}, location);
+            } else {
+                report_failure(expression,
+                               {
+                                   {.label = "got", .text = pretty_dump(value)}
+                },
+                               location);
+            }
+        }
 
-private:
-    template <Relation Rel, typename R>
-    constexpr Comparison<T, R> compare(R&& rhs) {
-        bool held = relate<Rel>(std::as_const(value), std::as_const(rhs));
-        return Comparison<T, R>{std::forward<T>(value), std::forward<R>(rhs), held};
-    }
+        // clang-format off
+        template <typename R> constexpr auto operator==(R&& rhs) && { return compare<Relation::Equal>(std::forward<R>(rhs)); }
+        template <typename R> constexpr auto operator!=(R&& rhs) && { return compare<Relation::NotEqual>(std::forward<R>(rhs)); }
+        template <typename R> constexpr auto operator<(R&& rhs) && { return compare<Relation::Less>(std::forward<R>(rhs)); }
+        template <typename R> constexpr auto operator<=(R&& rhs) && { return compare<Relation::LessEqual>(std::forward<R>(rhs)); }
+        template <typename R> constexpr auto operator>(R&& rhs) && { return compare<Relation::Greater>(std::forward<R>(rhs)); }
+        template <typename R> constexpr auto operator>=(R&& rhs) && { return compare<Relation::GreaterEqual>(std::forward<R>(rhs)); }
+        template <typename U> constexpr void operator&&(U&&) && { reject_logic<U>(); }
+        template <typename U> constexpr void operator||(U&&) && { reject_logic<U>(); }
+        template <typename U> constexpr void operator&(U&&) && { reject_bitwise<U>(); }
+        template <typename U> constexpr void operator|(U&&) && { reject_bitwise<U>(); }
+        template <typename U> constexpr void operator^(U&&) && { reject_bitwise<U>(); }
+        template <typename U> constexpr void operator<<(U&&) && { reject_shift<U>(); }
+        template <typename U> constexpr void operator>>(U&&) && { reject_shift<U>(); }
+
+        // clang-format on
+
+    private:
+        template <Relation Rel, typename R>
+        constexpr Comparison<T, R> compare(R&& rhs) {
+            bool held = relate<Rel>(std::as_const(value), std::as_const(rhs));
+            return Comparison<T, R>{std::forward<T>(value), std::forward<R>(rhs), held};
+        }
+    };
 };
+
+template <typename T>
+using Operand = typename Captured<T>::Operand;
 
 /// Starts a check: `Decomposer{} << expr` captures the left operand of a
 /// top-level comparison in `expr`, or `expr` itself. Not `<=`: C++20 would also
@@ -218,65 +272,15 @@ struct Decomposer {
     }
 };
 
-template <typename T>
-constexpr bool holds(const Operand<T>& operand) {
-    if constexpr(std::is_same_v<std::remove_cvref_t<T>, Match>) {
-        return operand.value.held;
-    } else {
-        return static_cast<bool>(operand.value);
-    }
-}
-
-template <typename L, typename R>
-constexpr bool holds(const Comparison<L, R>& comparison) {
-    return comparison.held;
-}
-
-/// Reports `operand` as a failed check.
-template <typename T>
-void fail(Operand<T>&& operand,
-          std::string_view expression,
-          std::source_location location = std::source_location::current()) {
-    using V = std::remove_cvref_t<T>;
-    if constexpr(std::is_same_v<V, Match>) {
-        report_failure(expression,
-                       {
-                           {.label = "", .text = operand.value.explain()}
-        },
-                       location);
-    } else if constexpr(std::is_same_v<V, bool>) {
-        report_failure(expression, {}, location);
-    } else {
-        report_failure(expression,
-                       {
-                           {.label = "got", .text = pretty_dump(operand.value)}
-        },
-                       location);
-    }
-}
-
-/// Reports `comparison` as a failed check.
-template <typename L, typename R>
-void fail(Comparison<L, R>&& comparison,
-          std::string_view expression,
-          std::source_location location = std::source_location::current()) {
-    report_failure(expression,
-                   {
-                       {.label = "lhs", .text = pretty_dump(comparison.lhs)},
-                       {.label = "rhs", .text = pretty_dump(comparison.rhs)},
-    },
-                   location);
-}
-
 /// Reports `split` if it does not hold; returns whether it held.
 template <typename Split>
-bool check(Split&& split,
+bool check(const Split& split,
            std::string_view expression,
            std::source_location location = std::source_location::current()) {
-    if(holds(split)) {
+    if(split.holds()) {
         return true;
     }
-    fail(std::move(split), expression, location);
+    split.fail(expression, location);
     return false;
 }
 
