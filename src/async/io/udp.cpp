@@ -26,22 +26,17 @@ namespace {
 
 constexpr std::size_t udp_recv_buffer_size = 64 * 1024;
 
-static udp::Self::pointer make_udp_self() {
+udp::Self::pointer make_udp_self() {
     auto self = udp::Self::make();
     self->buffer.resize(udp_recv_buffer_size);
     return self;
 }
 
-static result<unsigned int> to_uv_udp_init_flags(const udp::create_options& options) {
-    // uv_udp_init_ex() reads the low byte of its flags as the address family
-    // and has no IPv6-only flag; that one only exists for bind().
-    if(options.ipv6_only) {
-        return outcome_error(error::function_not_implemented);
-    }
+unsigned int to_uv_udp_init_flags(const udp::create_options& options) {
     return options.recvmmsg ? static_cast<unsigned int>(UV_UDP_RECVMMSG) : 0U;
 }
 
-static unsigned int to_uv_udp_bind_flags(const udp::bind_options& options) {
+unsigned int to_uv_udp_bind_flags(const udp::bind_options& options) {
     unsigned int out = 0;
     if(options.ipv6_only) {
         out |= UV_UDP_IPV6ONLY;
@@ -55,7 +50,7 @@ static unsigned int to_uv_udp_bind_flags(const udp::bind_options& options) {
     return out;
 }
 
-static udp::recv_flags to_udp_recv_flags(unsigned flags) {
+udp::recv_flags to_udp_recv_flags(unsigned flags) {
     return udp::recv_flags((flags & UV_UDP_PARTIAL) != 0, (flags & UV_UDP_MMSG_CHUNK) != 0);
 }
 
@@ -166,8 +161,8 @@ struct udp_send_await : uv::await_op<udp_send_await> {
 
     // UDP socket self that owns the send waiter.
     udp::Self* self;
-    // Owns outbound bytes until on_send() runs.
-    std::vector<char> storage;
+    // Owns the datagram until on_send() runs.
+    std::vector<char> payload;
     // libuv send request; req.handle gives us the socket on completion.
     uv_udp_send_t req{};
     // Optional destination for unconnected sockets.
@@ -176,7 +171,7 @@ struct udp_send_await : uv::await_op<udp_send_await> {
     error result;
 
     udp_send_await(udp::Self* u, std::span<const char> data, std::optional<sockaddr_storage>&& d) :
-        self(u), storage(data.begin(), data.end()), dest(std::move(d)) {}
+        self(u), payload(data.begin(), data.end()), dest(std::move(d)) {}
 
     // uv_udp_send_t cannot be cancelled: the send stays in flight and
     // on_send() completes it.
@@ -211,8 +206,8 @@ struct udp_send_await : uv::await_op<udp_send_await> {
 
         self->send.arm(*this, result);
 
-        uv_buf_t buf = uv::buf_init(storage.empty() ? nullptr : storage.data(),
-                                    static_cast<unsigned>(storage.size()));
+        uv_buf_t buf = uv::buf_init(payload.empty() ? nullptr : payload.data(),
+                                    static_cast<unsigned>(payload.size()));
 
         const sockaddr* addr =
             dest.has_value() ? reinterpret_cast<const sockaddr*>(&dest.value()) : nullptr;
@@ -280,22 +275,12 @@ static result<udp::endpoint> endpoint_from_sockaddr(const sockaddr* addr) {
 }
 
 result<udp> udp::create(event_loop& loop) {
-    auto self = make_udp_self();
-    if(auto err = uv::udp_init(loop, self->handle)) {
-        return outcome_error(err);
-    }
-
-    return udp(std::move(self));
+    return create(create_options{}, loop);
 }
 
 result<udp> udp::create(create_options options, event_loop& loop) {
     auto self = make_udp_self();
-    auto uv_flags = to_uv_udp_init_flags(options);
-    if(!uv_flags) {
-        return outcome_error(uv_flags.error());
-    }
-
-    if(auto err = uv::udp_init_ex(loop, self->handle, uv_flags.value())) {
+    if(auto err = uv::udp_init_ex(loop, self->handle, to_uv_udp_init_flags(options))) {
         return outcome_error(err);
     }
 

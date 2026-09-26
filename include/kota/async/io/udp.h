@@ -57,16 +57,13 @@ public:
         leave  // leave multicast group
     };
 
+    /// Set with designated initializers: `udp::create({.recvmmsg = true})`.
+    /// A socket is made IPv6-only when it is bound (bind_options::ipv6_only).
     struct create_options {
-        /// Not supported: create() fails with function_not_implemented when
-        /// set. Pass bind_options::ipv6_only to bind() instead.
-        bool ipv6_only;
-
-        /// Enable recvmmsg batching when supported.
-        bool recvmmsg;
-
-        constexpr create_options(bool ipv6_only = false, bool recvmmsg = false) :
-            ipv6_only(ipv6_only), recvmmsg(recvmmsg) {}
+        /// Receive through recvmmsg(2) on Linux, FreeBSD and macOS; ignored
+        /// elsewhere. The receive buffer holds one datagram, so this reads
+        /// one per call all the same, reported with recv_flags::mmsg_chunk.
+        bool recvmmsg = false;
     };
 
     struct bind_options {
@@ -87,8 +84,7 @@ public:
 
     static result<udp> create(event_loop& loop = event_loop::current());
 
-    static result<udp> create(create_options options = create_options{},
-                              event_loop& loop = event_loop::current());
+    static result<udp> create(create_options options, event_loop& loop = event_loop::current());
 
     static result<udp> open(int fd, event_loop& loop = event_loop::current());
 

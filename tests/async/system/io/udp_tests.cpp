@@ -255,7 +255,7 @@ ZEST_CASE(empty_datagram_arrives_empty) {
 // call, marks it as a chunk, and releases the buffer with another empty
 // callback.
 ZEST_CASE(recvmmsg_socket_receives_datagrams) {
-    auto receiver = bind_loopback(loop, udp::create_options(false, true));
+    auto receiver = bind_loopback(loop, {.recvmmsg = true});
     auto sender = bind_loopback(loop);
     ASSERT(receiver.has_value());
     ASSERT(sender.has_value());
@@ -313,14 +313,6 @@ ZEST_CASE(reuse_port_lets_two_sockets_share_a_port) {
     ASSERT(second.has_value());
     EXPECT(!second->bind("127.0.0.1", name->port, reuse_port));
 #endif
-}
-
-// Open question, kept to document current behaviour: libuv takes the
-// IPv6-only flag at bind(), so create() refuses it.
-ZEST_CASE(create_with_ipv6_only_fails) {
-    auto created = udp::create(udp::create_options(true, false), loop);
-    ASSERT(created.has_error());
-    EXPECT(created.error() == error::function_not_implemented);
 }
 
 ZEST_CASE(second_recv_while_one_is_pending_fails) {
