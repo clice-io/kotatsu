@@ -64,7 +64,8 @@ struct Caps {
 
 /// A backend adapter: its name and caps, its document type, encode and decode
 /// under a Config, and a readable rendering of a document for reports and
-/// snapshots.
+/// snapshots. A backend with a format tag also names it `format`, which picks
+/// the format-scoped reprs.
 template <typename B>
 concept Backend = requires(const typename B::Encoded& encoded, int& out) {
     { B::name } -> std::convertible_to<std::string_view>;

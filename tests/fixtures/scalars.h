@@ -103,6 +103,33 @@ struct Strings {
     }
 };
 
+/// The values nan_repr decides about, with the documents its choices write.
+struct NonFinite {
+    double nan;
+    double inf;
+    double neg_inf;
+
+    static NonFinite typical() {
+        return {
+            .nan = std::numeric_limits<double>::quiet_NaN(),
+            .inf = std::numeric_limits<double>::infinity(),
+            .neg_inf = -std::numeric_limits<double>::infinity(),
+        };
+    }
+};
+
+struct NonFiniteNulls {
+    std::nullptr_t nan;
+    std::nullptr_t inf;
+    std::nullptr_t neg_inf;
+};
+
+struct NonFiniteNames {
+    std::string nan;
+    std::string inf;
+    std::string neg_inf;
+};
+
 struct Bytes {
     std::vector<std::byte> empty;
     std::vector<std::byte> octets;

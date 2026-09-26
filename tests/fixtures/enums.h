@@ -42,4 +42,7 @@ enum class Color { red, green, blue };
 
 enum class SmallEnum : std::int8_t { a = 1, b = 2 };
 
+/// Enumerator names of several words, so that rename policies show.
+enum class Access : std::uint8_t { read_only, full_control };
+
 }  // namespace kota::test

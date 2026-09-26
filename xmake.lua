@@ -351,6 +351,7 @@ if has_config("test") and has_config("ztest") then
 	-- level's directory of every enabled module.
 	local test_modules = { "support", "meta", "async", "zest" }
 	if has_config("codec") then
+		table.insert(test_modules, "codec")
 		table.insert(test_modules, "codec/bincode")
 		table.insert(test_modules, "codec/debug")
 	end
