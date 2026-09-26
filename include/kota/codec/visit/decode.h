@@ -563,8 +563,15 @@ bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
             if(key == content_key) {
                 ++content_count;
                 if(idx == npos) {
-                    return scoped_context<typename Vis::error_type>::fail(
-                        rich_error("adjacently tagged variant: content before tag"));
+                    if constexpr(has_try_read<Vis>) {
+                        // The pre-lookup found no usable tag, so the content
+                        // cannot be placed: the tag's own entry reports why,
+                        // and an absent tag is reported after the pass.
+                        return fv.visit_skip();
+                    } else {
+                        return scoped_context<typename Vis::error_type>::fail(
+                            rich_error("adjacently tagged variant: content before tag"));
+                    }
                 }
                 if(content_count > 1)
                     return fv.visit_skip();

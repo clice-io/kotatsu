@@ -858,7 +858,9 @@ ZEST_CASE(extra_unknown_fields_ignored) {
 ZEST_CASE(missing_tag_fails) {
     AdjSimple out{};
     // Only content, no tag
-    EXPECT(!from_string(R"({"v":42})", out).has_value());
+    auto status = from_string(R"({"v":42})", out);
+    ASSERT(!status);
+    EXPECT(status.error().message == "adjacently tagged variant: missing tag field");
 }
 
 ZEST_CASE(missing_content_fails) {
@@ -870,6 +872,15 @@ ZEST_CASE(missing_content_fails) {
 ZEST_CASE(unknown_tag_value_fails) {
     AdjSimple out{};
     EXPECT(!from_string(R"({"t":"unknown","v":42})", out).has_value());
+}
+
+ZEST_CASE(unknown_tag_after_content_fails) {
+    // The tag's position does not matter: the pre-lookup finds it anywhere,
+    // so an unusable one is reported for what it is.
+    AdjSimple out{};
+    auto status = from_string(R"({"v":42,"t":"unknown"})", out);
+    ASSERT(!status);
+    EXPECT(status.error().message == "unknown variant tag 'unknown'");
 }
 
 ZEST_CASE(duplicate_tag_fails) {
