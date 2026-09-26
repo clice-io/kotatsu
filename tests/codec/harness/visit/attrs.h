@@ -184,6 +184,15 @@ void attrs(const Kit<B>& kit) {
     });
     roundtrip(kit, "description_roundtrip", documented);
 
+    auto matching = [] {
+        return Skippable{
+            .id = 1,
+            .note = std::nullopt,
+            .tags = {},
+            .generation = 0,
+            .score = -5,
+        };
+    };
     if constexpr(B::caps.absent_fields) {
         auto kept = [] {
             return Skippable{
@@ -194,19 +203,7 @@ void attrs(const Kit<B>& kit) {
                 .score = 7
             };
         };
-        encodes_as(
-            kit,
-            "skip_if_omits_matching_fields",
-            [] {
-                return Skippable{
-                    .id = 1,
-                    .note = std::nullopt,
-                    .tags = {},
-                    .generation = 0,
-                    .score = -5,
-                };
-            },
-            [] { return IdOnly{.id = 1}; });
+        encodes_as(kit, "skip_if_omits_matching_fields", matching, [] { return IdOnly{.id = 1}; });
         encodes_as(kit, "skip_if_keeps_other_fields", kept, [] {
             return SkippablePlain{
                 .id = 1,
@@ -246,6 +243,10 @@ void attrs(const Kit<B>& kit) {
                 });
         }
         roundtrip(kit, "skip_if_roundtrip", kept);
+    } else {
+        // Nothing can mark a field absent, so skip_if omits nothing: a field
+        // it matches is written, and reads back over the initializer.
+        roundtrip(kit, "skip_if_matching_fields_roundtrip", matching);
     }
 
     if constexpr(B::caps.string_knobs) {

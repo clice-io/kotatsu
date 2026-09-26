@@ -209,7 +209,12 @@ void repr(const Kit<B>& kit) {
         encodes_as(kit, "dynamic_encodes_as_plain", dynamic, [] {
             return DynamicPairPlain{.number = 42, .text = "free"};
         });
-        roundtrip(kit, "dynamic_roundtrip", dynamic);
+        // DynamicBox decides what it reads by the kind of the value in front
+        // of it, which only a keyed document shows. Elsewhere a dynamic repr
+        // must frame what it writes, which the backend's own tests pin.
+        if constexpr(B::caps.self_describing) {
+            roundtrip(kit, "dynamic_roundtrip", dynamic);
+        }
     }
     if constexpr(B::caps.string_knobs) {
         encodes_as<EnumStringConfig>(
