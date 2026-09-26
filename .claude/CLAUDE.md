@@ -32,4 +32,5 @@ Read the relevant skill before acting: `cpp-style` before writing C++,
 `test-style` before writing or moving tests, `build`/`test` to build and run
 suites, `pr` before committing or opening a PR, `format` (`pixi run format`)
 before every commit, `codex` before delegating work to the codex CLI
-(plan/code review, debugging, test writing, scoped implementation).
+(debugging, test writing, scoped implementation; reviews go to Opus
+subagents).
