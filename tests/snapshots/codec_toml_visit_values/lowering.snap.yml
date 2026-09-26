@@ -1,0 +1,125 @@
+---
+source: kit.h
+created_at: 2026-09-26
+---
+color = 1
+
+[absent]
+
+[bytes]
+empty = []
+octets = [ 0, 1, 127, 255 ]
+
+[empty]
+
+[maps.by_color]
+0 = 1
+2 = 3
+
+[maps.by_id]
+-2 = 'minus two'
+0 = 'zero'
+7 = 'seven'
+
+[maps.by_name]
+a = 1
+b = 2
+
+[maps.by_wide_id]
+1 = 1
+9223372036854775809 = 2
+
+[maps.hashed]
+only = 1
+
+[maps.lists]
+a = [ 10, 20 ]
+b = []
+
+[maps.nested.none]
+
+[maps.nested.outer]
+inner = 1
+
+[maps.places.home]
+x = 1
+y = 2
+
+[present]
+list = [ 4, 5, 6 ]
+number = 17
+shared = 'shared'
+text = 'text'
+
+    [present.owned]
+    x = 1
+    y = -2
+
+    [present.table]
+    a = 1
+
+[scalars]
+b = true
+c = 'Z'
+f32 = 3.1400001049041748
+f64 = 2.7182818279999998
+i16 = -1000
+i32 = -100000
+i64 = -9999999999
+i8 = -42
+s = 'hello scalars'
+u16 = 50000
+u32 = 3000000000
+u64 = 10000000000
+u8 = 200
+
+[sequences]
+flags = [ true, false, true ]
+numbers = [ 1, 2, 3, 5 ]
+rows = [ [ 1, 2, 3 ], [], [ 6 ] ]
+triple = [ 4, 5, 6 ]
+words = [ 'alpha', 'beta', 'gamma' ]
+
+    [[sequences.points]]
+    x = 1
+    y = 2
+
+    [[sequences.points]]
+    x = -3
+    y = 4
+
+    [[sequences.tables]]
+    a = 1
+    b = 2
+
+    [[sequences.tables]]
+
+[sets]
+hashed = [ 42 ]
+numbers = [ 1, 3, 5, 7 ]
+words = [ 'alpha', 'beta', 'gamma' ]
+
+[strings]
+controls = """newline 
+ tab 	 return \r bell \u0007 unit \u001F"""
+empty = ''
+escapes = 'quote " backslash \ slash /'
+unicode = 'héllo, 世界'
+
+[tree]
+value = 'root'
+
+    [[tree.children]]
+    children = []
+    value = 'leaf'
+
+    [[tree.children]]
+    children = []
+    value = ''
+
+[tuples]
+mixed = [ 7, true, 'tuple' ]
+nested = [ { x = 1, y = 2 }, [ 3, 4 ] ]
+none = []
+pair = [ 42, -2.5 ]
+single = [ 7 ]
