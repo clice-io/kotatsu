@@ -56,7 +56,7 @@ struct Wrapper {
     std::vector<SimpleVariant> items;
 };
 
-ZEST_SUITE(codec_json_simdjson_checkpoint) {
+ZEST_SUITE(codec_json_decode_checkpoint) {
 
 ZEST_CASE(string_buffer_reclaimed) {
     std::string big(16384, 'X');
@@ -200,7 +200,7 @@ ZEST_CASE(variant_fallback_reclaims) {
     EXPECT(std::get<Shallow>(out).a.size() == 8192U);
 }
 
-ZEST_CASE(variant_fallback_reclaims_256KB) {
+ZEST_CASE(variant_fallback_reclaims_256kb) {
     std::string big(256 * 1024, 'E');
     std::string input = R"({"a":")" + big + R"("})";
 
@@ -239,7 +239,7 @@ ZEST_CASE(value_level_variant) {
     EXPECT(std::get<SimpleB>(w.items[0]).value == "world");
 }
 
-};  // ZEST_SUITE(codec_json_simdjson_checkpoint)
+};  // ZEST_SUITE(codec_json_decode_checkpoint)
 
 }  // namespace
 

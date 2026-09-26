@@ -6,6 +6,7 @@
 // wrappers and reprs over variants take part at the outer pass's level.
 // Backends that carry the alternative's index never probe.
 
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <map>

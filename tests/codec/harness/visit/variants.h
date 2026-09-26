@@ -4,21 +4,18 @@
 // not apply, and the errors of tagged decoding. How keyed documents pick an
 // untagged alternative is probing.h.
 
-#include <cstdint>
-#include <limits>
+#include <cstddef>
 #include <map>
-#include <memory>
 #include <optional>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <variant>
 #include <vector>
 
 #include "codec/harness/fixtures/configs.h"
-#include "codec/harness/fixtures/repr.h"
 #include "codec/harness/visit/kit.h"
 #include "fixtures/configs.h"
-#include "fixtures/containers.h"
 #include "fixtures/structs.h"
 #include "fixtures/tagged.h"
 #include "kota/meta/annotation.h"

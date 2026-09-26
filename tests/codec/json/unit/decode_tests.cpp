@@ -1,14 +1,17 @@
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <variant>
+#include <vector>
 
 #include "fixtures/attrs.h"
 #include "fixtures/configs.h"
 #include "fixtures/structs.h"
 #include "fixtures/tagged.h"
 #include "kota/zest/zest.h"
+#include "kota/codec/dyn/dyn.h"
 #include "kota/codec/json/json.h"
 
 namespace kota::codec {
@@ -34,6 +37,109 @@ ZEST_CASE(number_out_of_range_fails) {
     auto status = json::from_string("300", out);
     ASSERT(!status);
     EXPECT(status.error().message == "number out of range");
+}
+
+ZEST_CASE(type_mismatch_fails) {
+    // A leaf's type error is simdjson's own message.
+    bool flag = false;
+    auto status = json::from_string("1", flag);
+    ASSERT(!status);
+    EXPECT(status.error().message == incorrect_type);
+}
+
+ZEST_CASE(malformed_document_fails) {
+    std::vector<int> out;
+    auto status = json::from_string("[1 2]", out);
+    ASSERT(!status);
+    EXPECT(zest::starts_with(status.error().message, "TAPE_ERROR"));
+}
+
+ZEST_CASE(empty_document_fails) {
+    // Rejected before any reading starts, so there is no location.
+    std::vector<int> out;
+    auto status = json::from_string("", out);
+    ASSERT(!status);
+    EXPECT(status.error().message == "EMPTY: no JSON found");
+    EXPECT(!status.error().location);
+}
+
+ZEST_CASE(char_reads_one_codepoint_up_to_255) {
+    char out = '\0';
+    ASSERT(json::from_string(R"("é")", out));
+    EXPECT(out == static_cast<char>(0xE9));
+    ASSERT(json::from_string(R"("ÿ")", out));
+    EXPECT(out == static_cast<char>(0xFF));
+}
+
+ZEST_CASE(char_beyond_255_fails) {
+    char out = '\0';
+    auto status = json::from_string(R"("Ā")", out);
+    ASSERT(!status);
+    EXPECT(status.error().message == "character codepoint does not fit the target character type");
+}
+
+ZEST_CASE(char_from_several_characters_fails) {
+    char out = '\0';
+    auto status = json::from_string(R"("xy")", out);
+    ASSERT(!status);
+    EXPECT(status.error().message ==
+           "invalid type: expected single character, got multi-char string");
+}
+
+ZEST_CASE(byte_out_of_range_fails) {
+    std::vector<std::byte> out;
+    auto status = json::from_string("[0,256]", out);
+    ASSERT(!status);
+    EXPECT(status.error().message == "byte value out of range");
+}
+
+ZEST_CASE(scalar_root_rejects_trailing_content) {
+    int out = 0;
+    auto status = json::from_string("1 2", out);
+    ASSERT(!status);
+    EXPECT(zest::starts_with(status.error().message, "TRAILING_CONTENT"));
+}
+
+ZEST_CASE(container_root_ignores_a_trailing_value) {
+    // Known gap: after an object or array root, from_string does not check
+    // that the document ended, so a second value that tokenizes is dropped
+    // silently. The case pins today's behaviour; it should fail with
+    // TRAILING_CONTENT like a scalar root does.
+    test::Point out{};
+    ASSERT(json::from_string(R"({"x":1,"y":2} {"x":3})", out));
+    EXPECT(out.x == 1);
+    std::vector<int> list;
+    EXPECT(json::from_string("[1] ]", list));
+}
+
+ZEST_CASE(integer_beyond_64_bits_reads_as_double) {
+    auto parsed = json::from_string<dyn::Value>(R"([18446744073709551616,-9223372036854775809])");
+    ASSERT(parsed);
+    EXPECT((*parsed)[0].get_double() == 18446744073709551616.0);
+    EXPECT((*parsed)[1].get_double() == -9223372036854775809.0);
+}
+
+ZEST_CASE(dyn_value_reads) {
+    // Any document reads into a dyn::Value, which writes the same document
+    // and reads on into the typed value.
+    test::PersonWithScores typed{
+        .id = 7,
+        .name = "alice",
+        .scores = {10, 20},
+        .active = true
+    };
+    auto text = json::to_string(typed);
+    ASSERT(text);
+    auto tree = json::from_string<dyn::Value>(*text);
+    ASSERT(tree);
+    EXPECT(json::to_string(*tree) == *text);
+    auto again = dyn::from_dyn<test::PersonWithScores>(*tree);
+    ASSERT(again);
+    EXPECT(meta::eq(*again, typed));
+
+    auto nested = json::from_string<dyn::Value>(R"([1,"two",true,null,[3,{"k":[]}]])");
+    ASSERT(nested);
+    EXPECT(json::to_string(*nested) == R"([1,"two",true,null,[3,{"k":[]}]])");
 }
 
 ZEST_CASE(type_mismatch_has_location) {

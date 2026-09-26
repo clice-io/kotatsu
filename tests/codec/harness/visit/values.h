@@ -3,6 +3,7 @@
 // Values: every type_kind the protocol encodes and decodes, at the root and
 // inside composite structs, with the boundary values of each scalar kind.
 
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <map>
@@ -46,7 +47,7 @@ void values(const Kit<B>& kit) {
     roundtrip(kit, "float_roundtrip", [] { return 3.14F; });
     roundtrip(kit, "char_roundtrip", [] { return 'Z'; });
     roundtrip(kit, "string_roundtrip", [] { return std::string("hello"); });
-    roundtrip(kit, "enum_roundtrip", [] { return Color::blue; });
+    roundtrip(kit, "enum_roundtrip", [] { return SignedEnum::neg; });
     roundtrip(kit, "monostate_roundtrip", [] { return std::monostate{}; });
 
     roundtrip(kit, "scalars_typical_roundtrip", [] { return Scalars::typical(); });
@@ -131,6 +132,14 @@ void values(const Kit<B>& kit) {
                                        "int8_out_of_range_fails",
                                        [] { return Field<int>{300}; },
                                        {.message = "", .path = "value"});
+        read_fails<Field<UInt8Enum>>(kit,
+                                     "enum_out_of_range_fails",
+                                     [] { return Field<int>{300}; },
+                                     {.message = "", .path = "value"});
+        read_fails<Field<std::nullptr_t>>(kit,
+                                          "null_from_non_null_fails",
+                                          [] { return Field<int>{0}; },
+                                          {.message = "", .path = "value"});
     }
 }
 

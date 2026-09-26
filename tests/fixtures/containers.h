@@ -91,12 +91,13 @@ struct Nullables {
     std::shared_ptr<std::string> shared;
 
     static Nullables engaged() {
+        Point point{.x = 1, .y = -2};
         return {
             .number = 17,
             .text = "text",
             .list = std::vector<int>{4, 5, 6},
             .table = std::map<std::string, int>{{"a", 1}},
-            .owned = std::make_unique<Point>(1, -2),
+            .owned = std::make_unique<Point>(point),
             .shared = std::make_shared<std::string>("shared"),
         };
     }
@@ -199,7 +200,8 @@ struct NullElements {
 
     /// One object is pointed at twice: it travels as two copies.
     static NullElements typical() {
-        auto shared = std::make_shared<Point>(1, 2);
+        Point point{.x = 1, .y = 2};
+        auto shared = std::make_shared<Point>(point);
         return {
             .optionals = {1, std::nullopt, 3},
             .by_name = {{"a", 1}, {"b", std::nullopt}},
