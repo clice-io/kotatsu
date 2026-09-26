@@ -86,11 +86,6 @@ only a fresh session recovers). Rules:
   carries no weight. Experience runs both ways — codex has correctly refuted
   arguments this side was sure of, and confidently asserted things a probe then
   disproved. The probe decides, never authority.
-- **Adversarial loop** (plans/designs): write the doc → codex attacks it
-  (demand concrete counterexamples, not general commentary) → probe each
-  counterexample → revise the doc, recording adopted and refuted findings →
-  `resume` the session for the next round. Stop when a round yields no new
-  confirmed finding.
 - **When codex edits code** (implementation, debug fixes, new tests): review
   its diff as you would a PR — you own what gets committed. Verification
   (build + suites) happens in the main session, and the hard rules (never
@@ -112,8 +107,9 @@ only a fresh session recovers). Rules:
   Let it run the repro itself.
 - **Test writing**: point it at 2-3 neighboring test files as the template;
   ask it to add cases probing a specific behavior and report which outcomes
-  look wrong versus expected. Tell it to run tests via `pixi run test`, or
-  with `--snapshot-dir=tests/snapshots` when invoking `unit_tests` directly.
+  look wrong versus expected, following the test-style skill. Tell it to run
+  tests via `pixi run test`, or with `--snapshot-dir=tests/snapshots` when
+  invoking `unit_tests` or `system_tests` directly.
 - **Implementation**: a well-scoped task with acceptance criteria and pointers
   to the 2-3 existing modules whose structure it should copy. Then review the
   result with Opus subagents (the pr skill) and verify it.

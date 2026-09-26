@@ -1,6 +1,6 @@
 ---
 name: test-style
-description: How kotatsu's tests are organized and written — levels (static, unit, system, integration, fuzz), the module-first layout, dependency and trust rules, naming, zest checks, determinism. Read BEFORE writing, moving or reviewing any test.
+description: How kotatsu's tests are organized and written — levels (unit, system, integration), the module-first layout, dependency and trust rules, naming, zest checks, determinism. Read BEFORE writing, moving or reviewing any test.
 ---
 
 # kotatsu Test Style
@@ -11,15 +11,14 @@ A test's level is decided by what it touches, not by the module it tests.
 
 | Level       | May touch                                                                                              | Lives in                                  |
 | ----------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------- |
-| static      | the compiler only: code that must not compile                                                          | `tests/<module>/static/`                  |
-| unit        | the process's memory; an event loop and its timers count as memory                                     | `tests/<module>/unit/` → `unit_tests`     |
+| unit        | the process's memory; an event loop, its timers and in-memory transports count as memory               | `tests/<module>/unit/` → `unit_tests`     |
 | system      | the operating system: files, processes, sockets, pipes, signals, threads and thread pools, environment | `tests/<module>/system/` → `system_tests` |
-| fuzz        | untrusted input, coverage-guided                                                                       | `tests/<module>/fuzz/`                    |
 | integration | several programs talking over real protocols, black box                                                | `tests/integration/`                      |
 
-- A unit test may run an event loop, timers and in-memory transports; the moment it opens a file, spawns a process, binds a socket or starts a thread, it is a system test.
-- Compile-time facts that must hold are `STATIC_EXPECT` in a unit case; code that must be rejected is a static case, matched against our own `static_assert` message.
-- Nothing in any level reaches the network beyond loopback. Tests that need the internet, and long fuzz runs, are run by hand and are not part of any suite.
+- The moment a test opens a file, spawns a process, binds a socket, installs a signal handler or starts a thread, it is a system test. zest's own I/O does not count: printing, and reading or writing snapshots through its snapshot macros, are fine in a unit test.
+- Compile-time facts that must hold are `STATIC_EXPECT` in a unit case.
+- Nothing reaches the network beyond loopback. Tests that need the internet are not part of any suite.
+- zest's own runner check (`tests/zest/integration/`) is integration-level, but it runs from CMake as a bootstrap stage (see Trust), so it needs nothing beyond the build.
 
 ## Layout
 
@@ -27,7 +26,7 @@ Tests are grouped by module, then by level. `tests/<module>/` mirrors `include/k
 
 ```
 tests/<module>/
-  unit/<path mirroring the headers>/<stem>[_<aspect>]_tests.cpp
+  unit/<path mirroring the headers>/...
   system/...                  same shape
   harness/*.h                 helpers for this module's tests and the modules above
   CMakeLists.txt              kota_add_module_tests(LIBS <the module's libraries>)
@@ -36,38 +35,47 @@ tests/snapshots/<suite>/      snapshot files
 tests/integration/            cross-module tests with their own toolchain
 ```
 
+- The tests of header `<module>/a/b.h` are `unit/a/b_tests.cpp`. A large header's tests split by aspect, into `unit/a/b_<aspect>_tests.cpp` or into a directory `unit/a/b/<aspect>_tests.cpp`.
 - Build options are checked once, where `tests/CMakeLists.txt` (or the parent module's `CMakeLists.txt`) adds the module's directory. `xmake.lua` mirrors the module list.
-- One file tests one header, or one aspect of a large one (`<stem>_<aspect>_tests.cpp`).
 
 ## Dependencies
 
-Modules depend on each other in this order: support → meta → codec → deco; support → async → ipc → ipc/lsp; async and codec/json → http; zest on top of all of them.
+What each module's headers include, and so what its tests may use:
 
-- A module's tests include only their own module and the modules below it, including those modules' harnesses: `#include "async/harness/loop_fixture.h"`, rooted at `tests/`.
-- Tests use the public API. Never include a header from `src/` or anything from `examples/`.
+- `support`; `meta` on support; `deco` on meta.
+- `codec`: its core (`visit/`, `macro.h`) on meta; the backends `bincode`, `debug`, `dyn`, `toml` and `fbs` on the core; `json` on the core and `dyn`.
+- `async` on support; `ipc` on async and codec (`json`, `dyn`, `bincode`); `ipc/lsp` on ipc; `http` on async and codec `json`.
+- `zest` on all of the above that it checks, prints, parses or runs with. Every test includes zest; that is the one exception.
+
+Rules:
+
+- A module's tests include only what their module depends on, plus the harnesses of those modules: `#include "async/harness/loop_fixture.h"`, rooted at `tests/`. Shared fixtures in `tests/fixtures/` follow the same rule for the lowest module that uses them. The build does not enforce this; review does.
+- Tests use the public API: `include/kota/`, never a header from `src/` or anything from `examples/`.
 - Behaviour defined once in the library is tested once. Backends of one protocol share one suite through the module's harness; a backend's own files test only what is specific to that backend.
 
 ## Trust
 
-zest decides pass or fail with meta's comparisons, prints operands with the debug codec, parses its options with deco and drives its worker processes with kota::async. ctest therefore runs in stages, each needing the one before:
+zest decides pass or fail with meta's comparisons, prints operands with the debug codec, matches test filters with support's glob patterns, parses its options with deco and drives its worker processes with kota::async. ctest therefore runs in stages, each needing the one before:
 
 1. `zest_bootstrap_unit`, `zest_bootstrap_system`: the tests of what zest relies on, in this process, without the worker pool. Their filters are in `tests/CMakeLists.txt`.
-2. `zest_runner`: the worker pool end to end (`tests/zest/integration/`).
+2. `zest_runner`: the worker pool end to end.
 3. `unit_tests`, `system_tests`: everything.
 
-A test in a bootstrap suite must not judge itself with what it tests: meta's comparison tests use unary checks (`EXPECT(eq(a, b))`) or parenthesized plain bools (`EXPECT((a.x == 1))`), never a split comparison. A new suite covering something zest relies on joins a bootstrap filter.
+A test in a bootstrap suite must not judge itself with what it tests: meta's comparison tests use unary checks (`EXPECT(eq(a, b))`) or parenthesized plain bools (`EXPECT((a.x == 1))`), never a split comparison. A new suite covering something zest relies on joins a bootstrap filter; a renamed one updates it.
 
 ## Naming
 
 - Files: `<stem>[_<aspect>]_tests.cpp`, `.cpp` only.
-- Suites: `<module>_<path>_<stem>[_<aspect>]`, with the module path joined by `_`, the path under the level directory, and the stem without `_tests` or a leading repeat of the module's last part. For example, `tests/codec/toml/unit/toml_variant_tests.cpp` is `codec_toml_variant`, and `tests/async/unit/runtime/when/cancel_tests.cpp` is `async_runtime_when_cancel`. One suite per file, unique per binary; the suite name is also its snapshot directory.
-- Cases: `snake_case`, shaped `<subject>_<behaviour>`. No suite prefix, no numbering. A case about an error ends in `_fails`. Write `roundtrip`.
+- Suites: the file's path under `tests/`, without the level directory and the `_tests` suffix, its components joined by `_`, and a word dropped when it repeats the word before it. For example, `tests/codec/toml/unit/toml_variant_tests.cpp` is `codec_toml_variant`, `tests/meta/unit/schema/schema_attrs_tests.cpp` is `meta_schema_attrs`, and `tests/async/unit/runtime/when/cancel_tests.cpp` is `async_runtime_when_cancel`.
+- One suite per file. Suite names are unique across both binaries, since the suite name is also its snapshot directory: when one header has both unit and system tests, the system file names its aspect (`relay_threads_tests.cpp`).
+- Cases: `snake_case`, shaped `<subject>_<behaviour>`. No suite prefix, no numbering. A case about an error ends in `_fails`. Spell it `roundtrip`, not `round_trip`.
 - Fixture types are PascalCase.
 
 ## Namespaces
 
 - A test file puts its fixtures and suite in an anonymous namespace inside the namespace it tests: `namespace kota::ipc { namespace { ... } }`.
 - Harness headers use `namespace kota::test`.
+- Specializations of library templates (traits, `meta::repr`) are declared in the library's namespace, as C++ requires; the types they name stay in the test's anonymous namespace.
 - Test types never live in a library namespace outside an anonymous one. No `using namespace` at namespace scope except `std::literals`.
 
 ## Checks

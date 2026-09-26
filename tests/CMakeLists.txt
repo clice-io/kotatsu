@@ -5,8 +5,7 @@
 #   system/   touches the operating system: files, processes, sockets, pipes,
 #             threads; built into system_tests
 #   harness/  helpers for the module's tests and the modules above it
-# Modules are added in dependency order, so a module's tests see only its own
-# harness and those of the modules below it.
+# Modules are added in dependency order.
 
 set(kota_test_binaries unit_tests system_tests)
 
@@ -101,9 +100,10 @@ if(KOTA_SANITIZE_ADDRESS AND MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     endforeach()
 endif()
 
-# zest runs tests on worker processes it drives through kota::async, and checks
-# with meta's comparisons, the debug codec's printing and deco's parsing, so the
-# checks are staged and a failed stage keeps the later ones from running:
+# zest runs tests on worker processes it drives through kota::async, compares
+# with meta, prints with the debug codec, matches filters with support's glob
+# patterns and parses its options with deco, so the checks are staged and a
+# failed stage keeps the later ones from running:
 #   1. zest_bootstrap_*: the tests of what zest itself relies on run in this
 #      process, without the pool.
 #   2. zest_runner: the pool itself, end to end, against tests that crash,
@@ -112,14 +112,14 @@ endif()
 add_test(NAME zest_bootstrap_unit
     COMMAND unit_tests
         --no-isolation
-        "--test-filter={meta_compare,codec_debug_*,deco_*,async_runtime_task,async_runtime_when_*,async_io_watcher}.*"
+        "--test-filter={support_functional,support_glob_pattern,meta_compare,meta_name,codec_debug_*,deco_*,async_runtime_task,async_runtime_when_*,async_io_watcher}.*"
         "--snapshot-dir=tests/snapshots"
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 )
 add_test(NAME zest_bootstrap_system
     COMMAND system_tests
         --no-isolation
-        "--test-filter={async_io_process,async_io_stream_pipe,async_io_system}.*"
+        "--test-filter={async_io_fs,async_io_process,async_io_stream_pipe,async_io_system}.*"
         "--snapshot-dir=tests/snapshots"
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 )
@@ -137,7 +137,7 @@ add_test(NAME zest_runner
 set_tests_properties(zest_runner PROPERTIES
     FIXTURES_REQUIRED zest_async
     FIXTURES_SETUP zest_pool
-    LABELS integration
+    LABELS bootstrap
 )
 
 foreach(binary IN LISTS kota_test_binaries)

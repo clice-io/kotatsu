@@ -12,7 +12,7 @@ namespace {
 
 namespace fx = ::kota::meta::fixtures;
 
-ZEST_SUITE(meta_schema_schema_attrs) {
+ZEST_SUITE(meta_schema_attrs) {
 
 ZEST_CASE(simple_struct_fields) {
     STATIC_EXPECT(virtual_schema<fx::SimpleStruct>::count == 3U);
@@ -190,7 +190,7 @@ ZEST_CASE(tagged_field_type_info) {
     STATIC_EXPECT(adj.alt_names[1] == "text");
 }
 
-};  // ZEST_SUITE(meta_schema_schema_attrs)
+};  // ZEST_SUITE(meta_schema_attrs)
 
 }  // namespace
 
