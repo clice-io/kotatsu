@@ -18,7 +18,8 @@ namespace kota::codec::bincode {
 /// exactly the type and config that encoded the bytes. human_readable is
 /// false, so variants are never name-tagged. Wire-level details live on
 /// Writer (encode.h) and Reader (decode.h).
-/// - null (and disengaged optional/pointer) → one 0x00 byte
+/// - null (and disengaged optional/pointer) → one 0x00 byte; decode rejects
+///   other values
 /// - boolean → one byte, 0 or 1; decode rejects other values
 /// - integers → fixed 8-byte LE regardless of declared width; decode
 ///   range-checks when narrowing back

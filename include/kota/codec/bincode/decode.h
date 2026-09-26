@@ -179,7 +179,10 @@ struct Reader {
 
     bool visit_null() {
         KOTA_CODEC_TRY(check_remaining(1));
-        read_u8();  // consume the 0x00 tag
+        if(read_u8() != 0x00) {
+            return scoped_context<rich_error>::fail(
+                rich_error(std::string(error_message(error_kind::TypeMismatch))));
+        }
         return true;
     }
 

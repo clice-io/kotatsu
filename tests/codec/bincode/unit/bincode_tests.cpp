@@ -1,6 +1,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -82,6 +83,15 @@ ZEST_CASE(invalid_optional_tag_returns_error) {
     std::optional<bool> value;
     auto status = bincode::from_bytes(bytes, value);
     ASSERT(!status);
+}
+
+ZEST_CASE(null_from_non_zero_byte_fails) {
+    // A null is written as 0x00; any other byte is not one.
+    const std::vector<std::uint8_t> raw{5U};
+    std::nullptr_t value = nullptr;
+    auto status = bincode::from_bytes(std::span<const std::uint8_t>(raw), value);
+    ASSERT(!status);
+    EXPECT(status.error().message == "type mismatch");
 }
 
 ZEST_CASE(truncated_string_payload_returns_error) {
