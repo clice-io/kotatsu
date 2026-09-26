@@ -39,7 +39,7 @@
 #include <variant>
 #include <vector>
 
-#include "fixtures/scalars.h"
+#include "codec/harness/fixtures/scalars.h"
 #include "fixtures/tagged.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"

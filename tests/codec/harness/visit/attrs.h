@@ -14,12 +14,12 @@
 #include <vector>
 
 #include "codec/harness/fixtures/configs.h"
+#include "codec/harness/fixtures/scalars.h"
 #include "codec/harness/visit/kit.h"
 #include "fixtures/attrs.h"
 #include "fixtures/configs.h"
 #include "fixtures/containers.h"
 #include "fixtures/enums.h"
-#include "fixtures/scalars.h"
 #include "fixtures/structs.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"

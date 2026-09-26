@@ -7,8 +7,8 @@
 #include <string>
 #include <vector>
 
+#include "codec/harness/fixtures/scalars.h"
 #include "fixtures/enums.h"
-#include "fixtures/scalars.h"
 #include "fixtures/structs.h"
 #include "kota/zest/zest.h"
 #include "kota/codec/dyn/dyn.h"

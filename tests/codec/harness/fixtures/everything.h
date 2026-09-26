@@ -3,10 +3,10 @@
 // Everything: every value kind in one struct, for the backends' lowering
 // snapshots and their hostile-input sweeps.
 
+#include "codec/harness/fixtures/scalars.h"
 #include "fixtures/containers.h"
 #include "fixtures/enums.h"
 #include "fixtures/recursive.h"
-#include "fixtures/scalars.h"
 #include "fixtures/structs.h"
 
 namespace kota::test {
