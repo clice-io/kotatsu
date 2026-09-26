@@ -8,6 +8,8 @@ function(run_fixture)
         ERROR_VARIABLE output
         RESULT_VARIABLE code
     )
+    # Windows writes text with CRLF line ends.
+    string(REPLACE "\r" "" output "${output}")
     set(output "${output}" PARENT_SCOPE)
     set(code "${code}" PARENT_SCOPE)
 endfunction()
