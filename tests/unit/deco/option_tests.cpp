@@ -79,9 +79,9 @@ ParseOptions make_proxy_parse_options() {
     return opts;
 }
 
-TEST_SUITE(option_parse_view) {
+ZEST_SUITE(option_parse_view) {
 
-TEST_CASE(main_option_table_basic) {
+ZEST_CASE(main_option_table_basic) {
     auto table = make_main_opt_table();
     auto opts = make_main_parse_options();
     auto parsed = parse_all(
@@ -89,171 +89,171 @@ TEST_CASE(main_option_table_basic) {
         split2vec("-p 1234 -s script::profile --dest=114514 -- /usr/bin/clang++ --version"),
         opts);
 
-    EXPECT_TRUE(parsed.errors.empty());
-    ASSERT_EQ(parsed.args.size(), 5U);
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 5U);
 
-    EXPECT_EQ(parsed.args[0].id, MAIN_OPT_UNKNOWN);
-    EXPECT_EQ(parsed.args[0].spelling, "-p");
-    EXPECT_EQ(parsed.args[0].index, 0U);
+    EXPECT(parsed.args[0].id == MAIN_OPT_UNKNOWN);
+    EXPECT(parsed.args[0].spelling == "-p");
+    EXPECT(parsed.args[0].index == 0U);
 
-    EXPECT_EQ(parsed.args[1].id, MAIN_OPT_INPUT);
-    EXPECT_EQ(parsed.args[1].spelling, "1234");
-    EXPECT_EQ(parsed.args[1].index, 1U);
+    EXPECT(parsed.args[1].id == MAIN_OPT_INPUT);
+    EXPECT(parsed.args[1].spelling == "1234");
+    EXPECT(parsed.args[1].index == 1U);
 
-    EXPECT_EQ(parsed.args[2].id, MAIN_OPT_SCRIPT);
-    ASSERT_EQ(parsed.args[2].values.size(), 1U);
-    EXPECT_EQ(parsed.args[2].values[0], "script::profile");
-    EXPECT_EQ(parsed.args[2].spelling, "-s");
-    EXPECT_EQ(parsed.args[2].index, 2U);
+    EXPECT(parsed.args[2].id == MAIN_OPT_SCRIPT);
+    ASSERT(parsed.args[2].values.size() == 1U);
+    EXPECT(parsed.args[2].values[0] == "script::profile");
+    EXPECT(parsed.args[2].spelling == "-s");
+    EXPECT(parsed.args[2].index == 2U);
 
-    EXPECT_EQ(parsed.args[3].id, MAIN_OPT_UNKNOWN);
-    EXPECT_EQ(parsed.args[3].spelling, "--dest=114514");
-    EXPECT_EQ(parsed.args[3].index, 4U);
+    EXPECT(parsed.args[3].id == MAIN_OPT_UNKNOWN);
+    EXPECT(parsed.args[3].spelling == "--dest=114514");
+    EXPECT(parsed.args[3].index == 4U);
 
-    EXPECT_EQ(parsed.args[4].id, MAIN_OPT_INPUT);
-    EXPECT_EQ(parsed.args[4].spelling, "--");
-    ASSERT_EQ(parsed.args[4].values.size(), 2U);
-    EXPECT_EQ(parsed.args[4].values[0], "/usr/bin/clang++");
-    EXPECT_EQ(parsed.args[4].values[1], "--version");
-    EXPECT_EQ(parsed.args[4].index, 5U);
+    EXPECT(parsed.args[4].id == MAIN_OPT_INPUT);
+    EXPECT(parsed.args[4].spelling == "--");
+    ASSERT(parsed.args[4].values.size() == 2U);
+    EXPECT(parsed.args[4].values[0] == "/usr/bin/clang++");
+    EXPECT(parsed.args[4].values[1] == "--version");
+    EXPECT(parsed.args[4].index == 5U);
 }
 
-TEST_CASE(alias_resolves_to_canonical) {
+ZEST_CASE(alias_resolves_to_canonical) {
     auto table = make_main_opt_table();
     auto opts = make_main_parse_options();
     auto parsed = parse_all(table, split2vec("-h"), opts);
-    EXPECT_TRUE(parsed.errors.empty());
-    ASSERT_EQ(parsed.args.size(), 1U);
-    EXPECT_EQ(parsed.args[0].id, MAIN_OPT_HELP);
-    EXPECT_EQ(parsed.args[0].spelling, "-h");
-    EXPECT_EQ(parsed.args[0].values.size(), 0U);
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 1U);
+    EXPECT(parsed.args[0].id == MAIN_OPT_HELP);
+    EXPECT(parsed.args[0].spelling == "-h");
+    EXPECT(parsed.args[0].values.size() == 0U);
 }
 
-TEST_CASE(proxy_option_table_basic) {
+ZEST_CASE(proxy_option_table_basic) {
     auto table = make_proxy_opt_table();
     auto opts = make_proxy_parse_options();
 
     auto parsed = parse_all(table, split2vec("-p 1234"), opts);
-    EXPECT_TRUE(parsed.errors.empty());
-    ASSERT_EQ(parsed.args.size(), 1U);
-    EXPECT_EQ(parsed.args[0].id, PROXY_OPT_PARENT_ID);
-    ASSERT_EQ(parsed.args[0].values.size(), 1U);
-    EXPECT_EQ(parsed.args[0].values[0], "1234");
-    EXPECT_EQ(parsed.args[0].spelling, "-p");
-    EXPECT_EQ(parsed.args[0].index, 0U);
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 1U);
+    EXPECT(parsed.args[0].id == PROXY_OPT_PARENT_ID);
+    ASSERT(parsed.args[0].values.size() == 1U);
+    EXPECT(parsed.args[0].values[0] == "1234");
+    EXPECT(parsed.args[0].spelling == "-p");
+    EXPECT(parsed.args[0].index == 0U);
 
     parsed = parse_all(table, split2vec("--exec /bin/ls"), opts);
-    EXPECT_TRUE(parsed.errors.empty());
-    ASSERT_EQ(parsed.args.size(), 1U);
-    EXPECT_EQ(parsed.args[0].id, PROXY_OPT_EXEC);
-    ASSERT_EQ(parsed.args[0].values.size(), 1U);
-    EXPECT_EQ(parsed.args[0].values[0], "/bin/ls");
-    EXPECT_EQ(parsed.args[0].spelling, "--exec");
-    EXPECT_EQ(parsed.args[0].index, 0U);
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 1U);
+    EXPECT(parsed.args[0].id == PROXY_OPT_EXEC);
+    ASSERT(parsed.args[0].values.size() == 1U);
+    EXPECT(parsed.args[0].values[0] == "/bin/ls");
+    EXPECT(parsed.args[0].spelling == "--exec");
+    EXPECT(parsed.args[0].index == 0U);
 
     parsed =
         parse_all(table, split2vec("-p 12 --exec /usr/bin/clang++ -- clang++ --version"), opts);
-    EXPECT_TRUE(parsed.errors.empty());
-    ASSERT_EQ(parsed.args.size(), 3U);
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 3U);
 
-    EXPECT_EQ(parsed.args[0].id, PROXY_OPT_PARENT_ID);
-    ASSERT_EQ(parsed.args[0].values.size(), 1U);
-    EXPECT_EQ(parsed.args[0].values[0], "12");
-    EXPECT_EQ(parsed.args[0].index, 0U);
+    EXPECT(parsed.args[0].id == PROXY_OPT_PARENT_ID);
+    ASSERT(parsed.args[0].values.size() == 1U);
+    EXPECT(parsed.args[0].values[0] == "12");
+    EXPECT(parsed.args[0].index == 0U);
 
-    EXPECT_EQ(parsed.args[1].id, PROXY_OPT_EXEC);
-    ASSERT_EQ(parsed.args[1].values.size(), 1U);
-    EXPECT_EQ(parsed.args[1].values[0], "/usr/bin/clang++");
-    EXPECT_EQ(parsed.args[1].index, 2U);
+    EXPECT(parsed.args[1].id == PROXY_OPT_EXEC);
+    ASSERT(parsed.args[1].values.size() == 1U);
+    EXPECT(parsed.args[1].values[0] == "/usr/bin/clang++");
+    EXPECT(parsed.args[1].index == 2U);
 
-    EXPECT_EQ(parsed.args[2].id, PROXY_OPT_INPUT);
-    EXPECT_EQ(parsed.args[2].spelling, "--");
-    ASSERT_EQ(parsed.args[2].values.size(), 2U);
-    EXPECT_EQ(parsed.args[2].values[0], "clang++");
-    EXPECT_EQ(parsed.args[2].values[1], "--version");
-    EXPECT_EQ(parsed.args[2].index, 4U);
+    EXPECT(parsed.args[2].id == PROXY_OPT_INPUT);
+    EXPECT(parsed.args[2].spelling == "--");
+    ASSERT(parsed.args[2].values.size() == 2U);
+    EXPECT(parsed.args[2].values[0] == "clang++");
+    EXPECT(parsed.args[2].values[1] == "--version");
+    EXPECT(parsed.args[2].index == 4U);
 }
 
-TEST_CASE(proxy_missing_value_error) {
+ZEST_CASE(proxy_missing_value_error) {
     auto table = make_proxy_opt_table();
     auto opts = make_proxy_parse_options();
     auto parsed = parse_all(table, split2vec("-p"), opts);
-    EXPECT_EQ(parsed.args.size(), 0U);
-    ASSERT_EQ(parsed.errors.size(), 1U);
-    EXPECT_TRUE(std::string_view(parsed.errors[0].message).contains("missing"));
+    EXPECT(parsed.args.size() == 0U);
+    ASSERT(parsed.errors.size() == 1U);
+    EXPECT(std::string_view(parsed.errors[0].message).contains("missing"));
 }
 
-TEST_CASE(unknown_consumes_until_known) {
+ZEST_CASE(unknown_consumes_until_known) {
     auto table = make_proxy_opt_table();
     auto opts = make_proxy_parse_options();
     auto parsed = parse_all(table, split2vec("--unknown-cmd xxx yyy -p 1234"), opts);
 
-    EXPECT_TRUE(parsed.errors.empty());
-    ASSERT_EQ(parsed.args.size(), 2U);
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 2U);
 
-    EXPECT_EQ(parsed.args[0].id, PROXY_OPT_UNKNOWN);
-    EXPECT_EQ(parsed.args[0].spelling, "--unknown-cmd");
-    ASSERT_EQ(parsed.args[0].values.size(), 2U);
-    EXPECT_EQ(parsed.args[0].values[0], "xxx");
-    EXPECT_EQ(parsed.args[0].values[1], "yyy");
+    EXPECT(parsed.args[0].id == PROXY_OPT_UNKNOWN);
+    EXPECT(parsed.args[0].spelling == "--unknown-cmd");
+    ASSERT(parsed.args[0].values.size() == 2U);
+    EXPECT(parsed.args[0].values[0] == "xxx");
+    EXPECT(parsed.args[0].values[1] == "yyy");
 
-    EXPECT_EQ(parsed.args[1].id, PROXY_OPT_PARENT_ID);
-    ASSERT_EQ(parsed.args[1].values.size(), 1U);
-    EXPECT_EQ(parsed.args[1].values[0], "1234");
+    EXPECT(parsed.args[1].id == PROXY_OPT_PARENT_ID);
+    ASSERT(parsed.args[1].values.size() == 1U);
+    EXPECT(parsed.args[1].values[0] == "1234");
 }
 
-TEST_CASE(unknown_consumes_all_when_no_known_follows) {
+ZEST_CASE(unknown_consumes_all_when_no_known_follows) {
     auto table = make_proxy_opt_table();
     auto opts = make_proxy_parse_options();
     auto parsed = parse_all(table, split2vec("--unknown xxx yyy"), opts);
 
-    EXPECT_TRUE(parsed.errors.empty());
-    ASSERT_EQ(parsed.args.size(), 1U);
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 1U);
 
-    EXPECT_EQ(parsed.args[0].id, PROXY_OPT_UNKNOWN);
-    EXPECT_EQ(parsed.args[0].spelling, "--unknown");
-    ASSERT_EQ(parsed.args[0].values.size(), 2U);
-    EXPECT_EQ(parsed.args[0].values[0], "xxx");
-    EXPECT_EQ(parsed.args[0].values[1], "yyy");
+    EXPECT(parsed.args[0].id == PROXY_OPT_UNKNOWN);
+    EXPECT(parsed.args[0].spelling == "--unknown");
+    ASSERT(parsed.args[0].values.size() == 2U);
+    EXPECT(parsed.args[0].values[0] == "xxx");
+    EXPECT(parsed.args[0].values[1] == "yyy");
 }
 
-TEST_CASE(consecutive_unknown_prefixed) {
+ZEST_CASE(consecutive_unknown_prefixed) {
     auto table = make_proxy_opt_table();
     auto opts = make_proxy_parse_options();
     auto parsed = parse_all(table, split2vec("--unknown1 --unknown2 -p 1234"), opts);
 
-    EXPECT_TRUE(parsed.errors.empty());
-    ASSERT_EQ(parsed.args.size(), 2U);
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 2U);
 
-    EXPECT_EQ(parsed.args[0].id, PROXY_OPT_UNKNOWN);
-    EXPECT_EQ(parsed.args[0].spelling, "--unknown1");
-    ASSERT_EQ(parsed.args[0].values.size(), 1U);
-    EXPECT_EQ(parsed.args[0].values[0], "--unknown2");
+    EXPECT(parsed.args[0].id == PROXY_OPT_UNKNOWN);
+    EXPECT(parsed.args[0].spelling == "--unknown1");
+    ASSERT(parsed.args[0].values.size() == 1U);
+    EXPECT(parsed.args[0].values[0] == "--unknown2");
 
-    EXPECT_EQ(parsed.args[1].id, PROXY_OPT_PARENT_ID);
-    ASSERT_EQ(parsed.args[1].values.size(), 1U);
-    EXPECT_EQ(parsed.args[1].values[0], "1234");
+    EXPECT(parsed.args[1].id == PROXY_OPT_PARENT_ID);
+    ASSERT(parsed.args[1].values.size() == 1U);
+    EXPECT(parsed.args[1].values[0] == "1234");
 }
 
-TEST_CASE(unknown_prefix_match_not_treated_as_boundary) {
+ZEST_CASE(unknown_prefix_match_not_treated_as_boundary) {
     auto table = make_proxy_opt_table();
     auto opts = make_proxy_parse_options();
     auto parsed = parse_all(table, split2vec("--unknown --execute-thing -p 1234"), opts);
 
-    EXPECT_TRUE(parsed.errors.empty());
-    ASSERT_EQ(parsed.args.size(), 2U);
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 2U);
 
-    EXPECT_EQ(parsed.args[0].id, PROXY_OPT_UNKNOWN);
-    EXPECT_EQ(parsed.args[0].spelling, "--unknown");
-    ASSERT_EQ(parsed.args[0].values.size(), 1U);
-    EXPECT_EQ(parsed.args[0].values[0], "--execute-thing");
+    EXPECT(parsed.args[0].id == PROXY_OPT_UNKNOWN);
+    EXPECT(parsed.args[0].spelling == "--unknown");
+    ASSERT(parsed.args[0].values.size() == 1U);
+    EXPECT(parsed.args[0].values[0] == "--execute-thing");
 
-    EXPECT_EQ(parsed.args[1].id, PROXY_OPT_PARENT_ID);
-    ASSERT_EQ(parsed.args[1].values.size(), 1U);
-    EXPECT_EQ(parsed.args[1].values[0], "1234");
+    EXPECT(parsed.args[1].id == PROXY_OPT_PARENT_ID);
+    ASSERT(parsed.args[1].values.size() == 1U);
+    EXPECT(parsed.args[1].values[0] == "1234");
 }
 
-};  // TEST_SUITE(option_parse_view)
+};  // ZEST_SUITE(option_parse_view)
 
 enum GroupedOptionID {
     GROUPED_OPT_INVALID = 0,
@@ -463,55 +463,55 @@ OptTable make_alias_opt_table() {
     return OptTable(std::span<const Option>(kAliasOptInfos));
 }
 
-TEST_SUITE(option_extended_coverage) {
+ZEST_SUITE(option_extended_coverage) {
 
-TEST_CASE(ignore_case_controls_matching) {
+ZEST_CASE(ignore_case_controls_matching) {
     auto strict_table = make_ignore_case_opt_table(false);
     auto parsed = parse_all(strict_table, split2vec("--HELP"));
-    EXPECT_TRUE(parsed.errors.empty());
-    ASSERT_EQ(parsed.args.size(), 1U);
-    EXPECT_EQ(parsed.args[0].id, IGNORE_CASE_OPT_UNKNOWN);
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 1U);
+    EXPECT(parsed.args[0].id == IGNORE_CASE_OPT_UNKNOWN);
 
     auto ignore_case_table = make_ignore_case_opt_table(true);
     parsed = parse_all(ignore_case_table, split2vec("--HELP"));
-    EXPECT_TRUE(parsed.errors.empty());
-    ASSERT_EQ(parsed.args.size(), 1U);
-    EXPECT_EQ(parsed.args[0].id, IGNORE_CASE_OPT_HELP);
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 1U);
+    EXPECT(parsed.args[0].id == IGNORE_CASE_OPT_HELP);
 }
 
-TEST_CASE(grouped_short_option_parsing) {
+ZEST_CASE(grouped_short_option_parsing) {
     auto table = make_grouped_opt_table();
     auto opts = make_grouped_parse_options();
 
     auto parsed = parse_all(table, split2vec("-ab"), opts);
-    EXPECT_TRUE(parsed.errors.empty());
-    ASSERT_EQ(parsed.args.size(), 2U);
-    EXPECT_EQ(parsed.args[0].id, GROUPED_OPT_A);
-    EXPECT_EQ(parsed.args[1].id, GROUPED_OPT_B);
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 2U);
+    EXPECT(parsed.args[0].id == GROUPED_OPT_A);
+    EXPECT(parsed.args[1].id == GROUPED_OPT_B);
 }
 
-TEST_CASE(grouped_unknown_splits) {
+ZEST_CASE(grouped_unknown_splits) {
     auto table = make_grouped_opt_table();
     auto opts = make_grouped_parse_options();
 
     auto parsed = parse_all(table, split2vec("-zx"), opts);
-    EXPECT_TRUE(parsed.errors.empty());
-    ASSERT_EQ(parsed.args.size(), 2U);
-    EXPECT_EQ(parsed.args[0].id, GROUPED_OPT_UNKNOWN);
-    EXPECT_EQ(parsed.args[1].id, GROUPED_OPT_UNKNOWN);
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 2U);
+    EXPECT(parsed.args[0].id == GROUPED_OPT_UNKNOWN);
+    EXPECT(parsed.args[1].id == GROUPED_OPT_UNKNOWN);
 }
 
-TEST_CASE(grouped_equals_form_is_unknown) {
+ZEST_CASE(grouped_equals_form_is_unknown) {
     auto table = make_grouped_opt_table();
     auto opts = make_grouped_parse_options();
 
     auto parsed = parse_all(table, split2vec("-a=1"), opts);
-    EXPECT_TRUE(parsed.errors.empty());
-    ASSERT_EQ(parsed.args.size(), 1U);
-    EXPECT_EQ(parsed.args[0].id, GROUPED_OPT_UNKNOWN);
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 1U);
+    EXPECT(parsed.args[0].id == GROUPED_OPT_UNKNOWN);
 }
 
-TEST_CASE(visibility_filter_affects_matching) {
+ZEST_CASE(visibility_filter_affects_matching) {
     auto table = make_filter_opt_table();
 
     auto argv = split2vec("--hidden");
@@ -524,9 +524,9 @@ TEST_CASE(visibility_filter_affects_matching) {
         else
             default_vis.errors.push_back(result.error());
     }
-    EXPECT_TRUE(default_vis.errors.empty());
-    ASSERT_EQ(default_vis.args.size(), 1U);
-    EXPECT_EQ(default_vis.args[0].id, FILTER_OPT_UNKNOWN);
+    EXPECT(default_vis.errors.empty());
+    ASSERT(default_vis.args.size() == 1U);
+    EXPECT(default_vis.args[0].id == FILTER_OPT_UNKNOWN);
 
     argv = split2vec("--hidden");
     ParseCapture capture;
@@ -538,12 +538,12 @@ TEST_CASE(visibility_filter_affects_matching) {
         else
             capture.errors.push_back(result.error());
     }
-    EXPECT_TRUE(capture.errors.empty());
-    ASSERT_EQ(capture.args.size(), 1U);
-    EXPECT_EQ(capture.args[0].id, FILTER_OPT_HIDDEN);
+    EXPECT(capture.errors.empty());
+    ASSERT(capture.args.size() == 1U);
+    EXPECT(capture.args[0].id == FILTER_OPT_HIDDEN);
 }
 
-TEST_CASE(flag_filter_affects_matching) {
+ZEST_CASE(flag_filter_affects_matching) {
     auto table = make_filter_opt_table();
 
     auto argv = split2vec("--flagged");
@@ -556,9 +556,9 @@ TEST_CASE(flag_filter_affects_matching) {
         else
             include_capture.errors.push_back(result.error());
     }
-    EXPECT_TRUE(include_capture.errors.empty());
-    ASSERT_EQ(include_capture.args.size(), 1U);
-    EXPECT_EQ(include_capture.args[0].id, FILTER_OPT_FLAGGED);
+    EXPECT(include_capture.errors.empty());
+    ASSERT(include_capture.args.size() == 1U);
+    EXPECT(include_capture.args[0].id == FILTER_OPT_FLAGGED);
 
     argv = split2vec("--flagged");
     ParseCapture exclude_capture;
@@ -570,121 +570,121 @@ TEST_CASE(flag_filter_affects_matching) {
         else
             exclude_capture.errors.push_back(result.error());
     }
-    EXPECT_TRUE(exclude_capture.errors.empty());
-    ASSERT_EQ(exclude_capture.args.size(), 1U);
-    EXPECT_EQ(exclude_capture.args[0].id, FILTER_OPT_UNKNOWN);
+    EXPECT(exclude_capture.errors.empty());
+    ASSERT(exclude_capture.args.size() == 1U);
+    EXPECT(exclude_capture.args[0].id == FILTER_OPT_UNKNOWN);
 }
 
-TEST_CASE(option_kinds_parse_correctly) {
+ZEST_CASE(option_kinds_parse_correctly) {
     auto table = make_kinds_opt_table();
 
     auto parsed = parse_all(table, split2vec("-jabc"));
-    EXPECT_TRUE(parsed.errors.empty());
-    ASSERT_EQ(parsed.args.size(), 1U);
-    EXPECT_EQ(parsed.args[0].id, KINDS_OPT_JOINED);
-    ASSERT_EQ(parsed.args[0].values.size(), 1U);
-    EXPECT_EQ(parsed.args[0].values[0], "abc");
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 1U);
+    EXPECT(parsed.args[0].id == KINDS_OPT_JOINED);
+    ASSERT(parsed.args[0].values.size() == 1U);
+    EXPECT(parsed.args[0].values[0] == "abc");
 
     parsed = parse_all(table, split2vec("--list=a,,b,c"));
-    EXPECT_TRUE(parsed.errors.empty());
-    ASSERT_EQ(parsed.args.size(), 1U);
-    EXPECT_EQ(parsed.args[0].id, KINDS_OPT_COMMA_JOINED);
-    ASSERT_EQ(parsed.args[0].values.size(), 3U);
-    EXPECT_EQ(parsed.args[0].values[0], "=a");
-    EXPECT_EQ(parsed.args[0].values[1], "b");
-    EXPECT_EQ(parsed.args[0].values[2], "c");
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 1U);
+    EXPECT(parsed.args[0].id == KINDS_OPT_COMMA_JOINED);
+    ASSERT(parsed.args[0].values.size() == 3U);
+    EXPECT(parsed.args[0].values[0] == "=a");
+    EXPECT(parsed.args[0].values[1] == "b");
+    EXPECT(parsed.args[0].values[2] == "c");
 
     parsed = parse_all(table, split2vec("--pair left right"));
-    EXPECT_TRUE(parsed.errors.empty());
-    ASSERT_EQ(parsed.args.size(), 1U);
-    EXPECT_EQ(parsed.args[0].id, KINDS_OPT_MULTI_ARG);
-    ASSERT_EQ(parsed.args[0].values.size(), 2U);
-    EXPECT_EQ(parsed.args[0].values[0], "left");
-    EXPECT_EQ(parsed.args[0].values[1], "right");
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 1U);
+    EXPECT(parsed.args[0].id == KINDS_OPT_MULTI_ARG);
+    ASSERT(parsed.args[0].values.size() == 2U);
+    EXPECT(parsed.args[0].values[0] == "left");
+    EXPECT(parsed.args[0].values[1] == "right");
 
     parsed = parse_all(table, split2vec("-o2"));
-    EXPECT_TRUE(parsed.errors.empty());
-    ASSERT_EQ(parsed.args.size(), 1U);
-    EXPECT_EQ(parsed.args[0].id, KINDS_OPT_JOINED_OR_SEPARATE);
-    ASSERT_EQ(parsed.args[0].values.size(), 1U);
-    EXPECT_EQ(parsed.args[0].values[0], "2");
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 1U);
+    EXPECT(parsed.args[0].id == KINDS_OPT_JOINED_OR_SEPARATE);
+    ASSERT(parsed.args[0].values.size() == 1U);
+    EXPECT(parsed.args[0].values[0] == "2");
 
     parsed = parse_all(table, split2vec("-o 3"));
-    EXPECT_TRUE(parsed.errors.empty());
-    ASSERT_EQ(parsed.args.size(), 1U);
-    EXPECT_EQ(parsed.args[0].id, KINDS_OPT_JOINED_OR_SEPARATE);
-    ASSERT_EQ(parsed.args[0].values.size(), 1U);
-    EXPECT_EQ(parsed.args[0].values[0], "3");
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 1U);
+    EXPECT(parsed.args[0].id == KINDS_OPT_JOINED_OR_SEPARATE);
+    ASSERT(parsed.args[0].values.size() == 1U);
+    EXPECT(parsed.args[0].values[0] == "3");
 
     parsed = parse_all(table, split2vec("-x4 tail"));
-    EXPECT_TRUE(parsed.errors.empty());
-    ASSERT_EQ(parsed.args.size(), 1U);
-    EXPECT_EQ(parsed.args[0].id, KINDS_OPT_JOINED_AND_SEPARATE);
-    ASSERT_EQ(parsed.args[0].values.size(), 2U);
-    EXPECT_EQ(parsed.args[0].values[0], "4");
-    EXPECT_EQ(parsed.args[0].values[1], "tail");
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 1U);
+    EXPECT(parsed.args[0].id == KINDS_OPT_JOINED_AND_SEPARATE);
+    ASSERT(parsed.args[0].values.size() == 2U);
+    EXPECT(parsed.args[0].values[0] == "4");
+    EXPECT(parsed.args[0].values[1] == "tail");
 
     parsed = parse_all(table, split2vec("--rest one two"));
-    EXPECT_TRUE(parsed.errors.empty());
-    ASSERT_EQ(parsed.args.size(), 1U);
-    EXPECT_EQ(parsed.args[0].id, KINDS_OPT_REMAINING);
-    ASSERT_EQ(parsed.args[0].values.size(), 2U);
-    EXPECT_EQ(parsed.args[0].values[0], "one");
-    EXPECT_EQ(parsed.args[0].values[1], "two");
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 1U);
+    EXPECT(parsed.args[0].id == KINDS_OPT_REMAINING);
+    ASSERT(parsed.args[0].values.size() == 2U);
+    EXPECT(parsed.args[0].values[0] == "one");
+    EXPECT(parsed.args[0].values[1] == "two");
 
     parsed = parse_all(table, split2vec("--tailz one two"));
-    EXPECT_TRUE(parsed.errors.empty());
-    ASSERT_EQ(parsed.args.size(), 1U);
-    EXPECT_EQ(parsed.args[0].id, KINDS_OPT_REMAINING_JOINED);
-    ASSERT_EQ(parsed.args[0].values.size(), 3U);
-    EXPECT_EQ(parsed.args[0].values[0], "z");
-    EXPECT_EQ(parsed.args[0].values[1], "one");
-    EXPECT_EQ(parsed.args[0].values[2], "two");
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 1U);
+    EXPECT(parsed.args[0].id == KINDS_OPT_REMAINING_JOINED);
+    ASSERT(parsed.args[0].values.size() == 3U);
+    EXPECT(parsed.args[0].values[0] == "z");
+    EXPECT(parsed.args[0].values[1] == "one");
+    EXPECT(parsed.args[0].values[2] == "two");
 }
 
-TEST_CASE(option_matches_and_render_style) {
+ZEST_CASE(option_matches_and_render_style) {
     auto table = make_match_opt_table();
 
     const auto member = table.option(MATCH_OPT_MEMBER);
     const auto alias = table.option(MATCH_OPT_ALIAS_MEMBER);
-    EXPECT_TRUE(member->matches(MATCH_OPT_GROUP));
-    EXPECT_TRUE(alias->matches(MATCH_OPT_GROUP));
-    EXPECT_EQ(alias->unaliased_option().id(), MATCH_OPT_MEMBER);
+    EXPECT(member->matches(MATCH_OPT_GROUP));
+    EXPECT(alias->matches(MATCH_OPT_GROUP));
+    EXPECT(alias->unaliased_option().id() == MATCH_OPT_MEMBER);
 
-    EXPECT_EQ(table.option(MATCH_OPT_JOINED)->render_style(), RenderStyle::Joined);
-    EXPECT_EQ(table.option(MATCH_OPT_MEMBER)->render_style(), RenderStyle::Separate);
-    EXPECT_EQ(table.option(MATCH_OPT_OVERRIDE_FLAG)->render_style(), RenderStyle::Joined);
+    EXPECT(table.option(MATCH_OPT_JOINED)->render_style() == RenderStyle::Joined);
+    EXPECT(table.option(MATCH_OPT_MEMBER)->render_style() == RenderStyle::Separate);
+    EXPECT(table.option(MATCH_OPT_OVERRIDE_FLAG)->render_style() == RenderStyle::Joined);
 }
 
-TEST_CASE(flag_aliases_merge_values) {
+ZEST_CASE(flag_aliases_merge_values) {
     auto table = make_alias_opt_table();
     auto parsed = parse_all(table, split2vec("--trap-defaults --emit-llvm"));
 
-    EXPECT_TRUE(parsed.errors.empty());
-    ASSERT_EQ(parsed.args.size(), 2U);
+    EXPECT(parsed.errors.empty());
+    ASSERT(parsed.args.size() == 2U);
 
-    EXPECT_EQ(parsed.args[0].id, ALIAS_OPT_TRAP_EQ);
-    ASSERT_EQ(parsed.args[0].values.size(), 2U);
-    EXPECT_EQ(parsed.args[0].values[0], "all");
-    EXPECT_EQ(parsed.args[0].values[1], "undefined");
+    EXPECT(parsed.args[0].id == ALIAS_OPT_TRAP_EQ);
+    ASSERT(parsed.args[0].values.size() == 2U);
+    EXPECT(parsed.args[0].values[0] == "all");
+    EXPECT(parsed.args[0].values[1] == "undefined");
 
-    EXPECT_EQ(parsed.args[1].id, ALIAS_OPT_EMIT_EQ);
-    ASSERT_EQ(parsed.args[1].values.size(), 1U);
-    EXPECT_EQ(parsed.args[1].values[0], "");
+    EXPECT(parsed.args[1].id == ALIAS_OPT_EMIT_EQ);
+    ASSERT(parsed.args[1].values.size() == 1U);
+    EXPECT(parsed.args[1].values[0] == "");
 }
 
-TEST_CASE(find_option_basic) {
+ZEST_CASE(find_option_basic) {
     auto table = make_main_opt_table();
 
-    EXPECT_EQ(table.find_option("--help")->id(), MAIN_OPT_HELP);
-    EXPECT_EQ(table.find_option("-h")->id(), MAIN_OPT_HELP);
-    EXPECT_EQ(table.find_option("-s")->id(), MAIN_OPT_SCRIPT);
-    EXPECT_TRUE(!table.find_option("--nonexistent"));
+    EXPECT(table.find_option("--help")->id() == MAIN_OPT_HELP);
+    EXPECT(table.find_option("-h")->id() == MAIN_OPT_HELP);
+    EXPECT(table.find_option("-s")->id() == MAIN_OPT_SCRIPT);
+    EXPECT(!table.find_option("--nonexistent"));
 }
 
-};  // TEST_SUITE(option_extended_coverage)
+};  // ZEST_SUITE(option_extended_coverage)
 
-TEST_SUITE(option_render) {
+ZEST_SUITE(option_render) {
 
 auto collect(const OptTable& table, const ParsedArg& arg) {
     std::vector<std::string> out;
@@ -695,139 +695,139 @@ auto collect(const OptTable& table, const ParsedArg& arg) {
     return out;
 }
 
-TEST_CASE(render_flag_separate) {
+ZEST_CASE(render_flag_separate) {
     auto table = make_main_opt_table();
     auto parsed = parse_all(table, split2vec("--help"));
-    ASSERT_EQ(parsed.args.size(), 1U);
+    ASSERT(parsed.args.size() == 1U);
 
     auto rendered = collect(table, parsed.args[0]);
-    ASSERT_EQ(rendered.size(), 1U);
-    EXPECT_EQ(rendered[0], "--help");
+    ASSERT(rendered.size() == 1U);
+    EXPECT(rendered[0] == "--help");
 }
 
-TEST_CASE(render_alias_uses_canonical_name) {
+ZEST_CASE(render_alias_uses_canonical_name) {
     auto table = make_main_opt_table();
     auto parsed = parse_all(table, split2vec("-h"));
-    ASSERT_EQ(parsed.args.size(), 1U);
-    EXPECT_EQ(parsed.args[0].id, MAIN_OPT_HELP);
+    ASSERT(parsed.args.size() == 1U);
+    EXPECT(parsed.args[0].id == MAIN_OPT_HELP);
 
     auto rendered = collect(table, parsed.args[0]);
-    ASSERT_EQ(rendered.size(), 1U);
-    EXPECT_EQ(rendered[0], "--help");
+    ASSERT(rendered.size() == 1U);
+    EXPECT(rendered[0] == "--help");
 }
 
-TEST_CASE(render_separate_option) {
+ZEST_CASE(render_separate_option) {
     auto table = make_main_opt_table();
     auto opts = make_main_parse_options();
     auto parsed = parse_all(table, split2vec("-s script.py"), opts);
-    ASSERT_EQ(parsed.args.size(), 1U);
+    ASSERT(parsed.args.size() == 1U);
 
     auto rendered = collect(table, parsed.args[0]);
-    ASSERT_EQ(rendered.size(), 2U);
-    EXPECT_EQ(rendered[0], "-s");
-    EXPECT_EQ(rendered[1], "script.py");
+    ASSERT(rendered.size() == 2U);
+    EXPECT(rendered[0] == "-s");
+    EXPECT(rendered[1] == "script.py");
 }
 
-TEST_CASE(render_joined_option) {
+ZEST_CASE(render_joined_option) {
     auto table = make_kinds_opt_table();
     auto parsed = parse_all(table, split2vec("-jabc"));
-    ASSERT_EQ(parsed.args.size(), 1U);
+    ASSERT(parsed.args.size() == 1U);
 
     auto rendered = collect(table, parsed.args[0]);
-    ASSERT_EQ(rendered.size(), 1U);
-    EXPECT_EQ(rendered[0], "-jabc");
+    ASSERT(rendered.size() == 1U);
+    EXPECT(rendered[0] == "-jabc");
 }
 
-TEST_CASE(render_comma_joined_option) {
+ZEST_CASE(render_comma_joined_option) {
     auto table = make_kinds_opt_table();
     auto parsed = parse_all(table, split2vec("--list=a,b,c"));
-    ASSERT_EQ(parsed.args.size(), 1U);
+    ASSERT(parsed.args.size() == 1U);
 
     auto rendered = collect(table, parsed.args[0]);
-    ASSERT_EQ(rendered.size(), 1U);
-    EXPECT_EQ(rendered[0], "--list=a,b,c");
+    ASSERT(rendered.size() == 1U);
+    EXPECT(rendered[0] == "--list=a,b,c");
 }
 
-TEST_CASE(render_multi_arg_option) {
+ZEST_CASE(render_multi_arg_option) {
     auto table = make_kinds_opt_table();
     auto parsed = parse_all(table, split2vec("--pair left right"));
-    ASSERT_EQ(parsed.args.size(), 1U);
+    ASSERT(parsed.args.size() == 1U);
 
     auto rendered = collect(table, parsed.args[0]);
-    ASSERT_EQ(rendered.size(), 3U);
-    EXPECT_EQ(rendered[0], "--pair");
-    EXPECT_EQ(rendered[1], "left");
-    EXPECT_EQ(rendered[2], "right");
+    ASSERT(rendered.size() == 3U);
+    EXPECT(rendered[0] == "--pair");
+    EXPECT(rendered[1] == "left");
+    EXPECT(rendered[2] == "right");
 }
 
-TEST_CASE(render_joined_or_separate_as_joined) {
+ZEST_CASE(render_joined_or_separate_as_joined) {
     auto table = make_kinds_opt_table();
     auto parsed = parse_all(table, split2vec("-o2"));
-    ASSERT_EQ(parsed.args.size(), 1U);
+    ASSERT(parsed.args.size() == 1U);
 
     auto rendered = collect(table, parsed.args[0]);
-    ASSERT_EQ(rendered.size(), 2U);
-    EXPECT_EQ(rendered[0], "-o");
-    EXPECT_EQ(rendered[1], "2");
+    ASSERT(rendered.size() == 2U);
+    EXPECT(rendered[0] == "-o");
+    EXPECT(rendered[1] == "2");
 }
 
-TEST_CASE(render_joined_and_separate) {
+ZEST_CASE(render_joined_and_separate) {
     auto table = make_kinds_opt_table();
     auto parsed = parse_all(table, split2vec("-x4 tail"));
-    ASSERT_EQ(parsed.args.size(), 1U);
+    ASSERT(parsed.args.size() == 1U);
 
     auto rendered = collect(table, parsed.args[0]);
-    ASSERT_EQ(rendered.size(), 2U);
-    EXPECT_EQ(rendered[0], "-x4");
-    EXPECT_EQ(rendered[1], "tail");
+    ASSERT(rendered.size() == 2U);
+    EXPECT(rendered[0] == "-x4");
+    EXPECT(rendered[1] == "tail");
 }
 
-TEST_CASE(render_input_preserves_spelling) {
+ZEST_CASE(render_input_preserves_spelling) {
     auto table = make_main_opt_table();
     auto opts = make_main_parse_options();
     auto parsed = parse_all(table, split2vec("myfile.txt"), opts);
-    ASSERT_EQ(parsed.args.size(), 1U);
-    EXPECT_EQ(parsed.args[0].id, MAIN_OPT_INPUT);
+    ASSERT(parsed.args.size() == 1U);
+    EXPECT(parsed.args[0].id == MAIN_OPT_INPUT);
 
     auto rendered = collect(table, parsed.args[0]);
-    ASSERT_EQ(rendered.size(), 1U);
-    EXPECT_EQ(rendered[0], "myfile.txt");
+    ASSERT(rendered.size() == 1U);
+    EXPECT(rendered[0] == "myfile.txt");
 }
 
-TEST_CASE(render_unknown_preserves_spelling) {
+ZEST_CASE(render_unknown_preserves_spelling) {
     auto table = make_main_opt_table();
     auto opts = make_main_parse_options();
     auto parsed = parse_all(table, split2vec("--unknown-flag"), opts);
-    ASSERT_EQ(parsed.args.size(), 1U);
-    EXPECT_EQ(parsed.args[0].id, MAIN_OPT_UNKNOWN);
+    ASSERT(parsed.args.size() == 1U);
+    EXPECT(parsed.args[0].id == MAIN_OPT_UNKNOWN);
 
     auto rendered = collect(table, parsed.args[0]);
-    ASSERT_EQ(rendered.size(), 1U);
-    EXPECT_EQ(rendered[0], "--unknown-flag");
+    ASSERT(rendered.size() == 1U);
+    EXPECT(rendered[0] == "--unknown-flag");
 }
 
-TEST_CASE(render_alias_with_args) {
+ZEST_CASE(render_alias_with_args) {
     auto table = make_alias_opt_table();
     auto parsed = parse_all(table, split2vec("--trap-defaults"));
-    ASSERT_EQ(parsed.args.size(), 1U);
-    EXPECT_EQ(parsed.args[0].id, ALIAS_OPT_TRAP_EQ);
+    ASSERT(parsed.args.size() == 1U);
+    EXPECT(parsed.args[0].id == ALIAS_OPT_TRAP_EQ);
 
     auto rendered = collect(table, parsed.args[0]);
-    ASSERT_EQ(rendered.size(), 1U);
-    EXPECT_EQ(rendered[0], "--trap=all,undefined");
+    ASSERT(rendered.size() == 1U);
+    EXPECT(rendered[0] == "--trap=all,undefined");
 }
 
-TEST_CASE(render_override_flag_uses_joined_style) {
+ZEST_CASE(render_override_flag_uses_joined_style) {
     auto table = make_match_opt_table();
     auto parsed = parse_all(table, split2vec("-r"));
-    ASSERT_EQ(parsed.args.size(), 1U);
+    ASSERT(parsed.args.size() == 1U);
 
     auto rendered = collect(table, parsed.args[0]);
-    ASSERT_EQ(rendered.size(), 1U);
-    EXPECT_EQ(rendered[0], "-r");
+    ASSERT(rendered.size() == 1U);
+    EXPECT(rendered[0] == "-r");
 }
 
-};  // TEST_SUITE(option_render)
+};  // ZEST_SUITE(option_render)
 
 }  // namespace
 }  // namespace kota::option

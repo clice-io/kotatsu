@@ -78,9 +78,9 @@ struct NotificationTraits<lsp::NoteParams> {
 namespace kota::ipc::lsp {
 namespace {
 
-TEST_SUITE(language_jsonrpc_traits) {
+ZEST_SUITE(language_jsonrpc_traits) {
 
-TEST_CASE(traits_dispatch_order) {
+ZEST_CASE(traits_dispatch_order) {
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":2,"b":3}})",
         R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"first"}})",
@@ -113,24 +113,24 @@ TEST_CASE(traits_dispatch_order) {
     });
 
     loop.schedule(peer.run());
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    ASSERT_EQ(order.size(), 3U);
-    EXPECT_EQ(order[0], "request");
-    EXPECT_EQ(order[1], "note:first");
-    EXPECT_EQ(order[2], "note:second");
-    EXPECT_TRUE(second_saw_first);
+    ASSERT(order.size() == 3U);
+    EXPECT(order[0] == "request");
+    EXPECT(order[1] == "note:first");
+    EXPECT(order[2] == "note:second");
+    EXPECT(second_saw_first);
 
-    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    ASSERT(transport_ptr->outgoing().size() == 1U);
     auto response = codec::json::from_string<Response>(transport_ptr->outgoing().front());
-    ASSERT_TRUE(response.has_value());
-    EXPECT_EQ(response->jsonrpc, "2.0");
-    EXPECT_EQ(std::get<std::int64_t>(response->id), 1);
-    ASSERT_TRUE(response->result.has_value());
-    EXPECT_EQ(response->result->sum, 5);
+    ASSERT(response);
+    EXPECT(response->jsonrpc == "2.0");
+    EXPECT(std::get<std::int64_t>(response->id) == 1);
+    ASSERT(response->result);
+    EXPECT(response->result->sum == 5);
 }
 
-TEST_CASE(explicit_method) {
+ZEST_CASE(explicit_method) {
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":2,"method":"custom/add","params":{"a":7,"b":8}})",
         R"({"jsonrpc":"2.0","method":"custom/note","params":{"text":"hello"}})",
@@ -153,21 +153,21 @@ TEST_CASE(explicit_method) {
                          [&](const NoteParams& params) { notifications.push_back(params.text); });
 
     loop.schedule(peer.run());
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    EXPECT_EQ(request_method, "custom/add");
-    ASSERT_EQ(notifications.size(), 1U);
-    EXPECT_EQ(notifications.front(), "hello");
+    EXPECT(request_method == "custom/add");
+    ASSERT(notifications.size() == 1U);
+    EXPECT(notifications.front() == "hello");
 
-    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    ASSERT(transport_ptr->outgoing().size() == 1U);
     auto response = codec::json::from_string<Response>(transport_ptr->outgoing().front());
-    ASSERT_TRUE(response.has_value());
-    EXPECT_EQ(std::get<std::int64_t>(response->id), 2);
-    ASSERT_TRUE(response->result.has_value());
-    EXPECT_EQ(response->result->sum, 15);
+    ASSERT(response);
+    EXPECT(std::get<std::int64_t>(response->id) == 2);
+    ASSERT(response->result);
+    EXPECT(response->result->sum == 15);
 }
 
-TEST_CASE(request_notify_apis) {
+ZEST_CASE(request_notify_apis) {
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{
             R"({"jsonrpc":"2.0","id":7,"method":"test/add","params":{"a":2,"b":3}})",
@@ -220,51 +220,51 @@ TEST_CASE(request_notify_apis) {
     });
 
     loop.schedule(peer.run());
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    EXPECT_EQ(request_method, "test/add");
-    EXPECT_EQ(request_id, 7);
+    EXPECT(request_method == "test/add");
+    EXPECT(request_id == 7);
 
     const auto& outgoing = transport_ptr->outgoing();
-    ASSERT_EQ(outgoing.size(), 5U);
+    ASSERT(outgoing.size() == 5U);
 
     auto note_from_context = codec::json::from_string<Notification>(outgoing[0]);
-    ASSERT_TRUE(note_from_context.has_value());
-    EXPECT_EQ(note_from_context->jsonrpc, "2.0");
-    EXPECT_EQ(note_from_context->method, "client/note/context");
-    EXPECT_EQ(note_from_context->params.text, "context");
+    ASSERT(note_from_context);
+    EXPECT(note_from_context->jsonrpc == "2.0");
+    EXPECT(note_from_context->method == "client/note/context");
+    EXPECT(note_from_context->params.text == "context");
 
     auto note_from_server = codec::json::from_string<Notification>(outgoing[1]);
-    ASSERT_TRUE(note_from_server.has_value());
-    EXPECT_EQ(note_from_server->jsonrpc, "2.0");
-    EXPECT_EQ(note_from_server->method, "client/note/server");
-    EXPECT_EQ(note_from_server->params.text, "server");
+    ASSERT(note_from_server);
+    EXPECT(note_from_server->jsonrpc == "2.0");
+    EXPECT(note_from_server->method == "client/note/server");
+    EXPECT(note_from_server->params.text == "server");
 
     auto request_from_context = codec::json::from_string<Request>(outgoing[2]);
-    ASSERT_TRUE(request_from_context.has_value());
-    EXPECT_EQ(request_from_context->jsonrpc, "2.0");
-    EXPECT_EQ(std::get<std::int64_t>(request_from_context->id), 1);
-    EXPECT_EQ(request_from_context->method, "client/add/context");
-    EXPECT_EQ(request_from_context->params.a, 2);
-    EXPECT_EQ(request_from_context->params.b, 3);
+    ASSERT(request_from_context);
+    EXPECT(request_from_context->jsonrpc == "2.0");
+    EXPECT(std::get<std::int64_t>(request_from_context->id) == 1);
+    EXPECT(request_from_context->method == "client/add/context");
+    EXPECT(request_from_context->params.a == 2);
+    EXPECT(request_from_context->params.b == 3);
 
     auto request_from_server = codec::json::from_string<Request>(outgoing[3]);
-    ASSERT_TRUE(request_from_server.has_value());
-    EXPECT_EQ(request_from_server->jsonrpc, "2.0");
-    EXPECT_EQ(std::get<std::int64_t>(request_from_server->id), 2);
-    EXPECT_EQ(request_from_server->method, "client/add/server");
-    EXPECT_EQ(request_from_server->params.a, 3);
-    EXPECT_EQ(request_from_server->params.b, 1);
+    ASSERT(request_from_server);
+    EXPECT(request_from_server->jsonrpc == "2.0");
+    EXPECT(std::get<std::int64_t>(request_from_server->id) == 2);
+    EXPECT(request_from_server->method == "client/add/server");
+    EXPECT(request_from_server->params.a == 3);
+    EXPECT(request_from_server->params.b == 1);
 
     auto final_response = codec::json::from_string<Response>(outgoing[4]);
-    ASSERT_TRUE(final_response.has_value());
-    EXPECT_EQ(final_response->jsonrpc, "2.0");
-    EXPECT_EQ(std::get<std::int64_t>(final_response->id), 7);
-    ASSERT_TRUE(final_response->result.has_value());
-    EXPECT_EQ(final_response->result->sum, 13);
+    ASSERT(final_response);
+    EXPECT(final_response->jsonrpc == "2.0");
+    EXPECT(std::get<std::int64_t>(final_response->id) == 7);
+    ASSERT(final_response->result);
+    EXPECT(final_response->result->sum == 13);
 }
 
-};  // TEST_SUITE(language_jsonrpc_traits)
+};  // ZEST_SUITE(language_jsonrpc_traits)
 
 }  // namespace
 }  // namespace kota::ipc::lsp

@@ -12,9 +12,9 @@ namespace {
 
 using lsp::ProgressReporter;
 
-TEST_SUITE(ipc_progress) {
+ZEST_SUITE(ipc_progress) {
 
-TEST_CASE(create_sends_request) {
+ZEST_CASE(create_sends_request) {
     auto hook = [](std::string_view payload, ScriptedTransport& t) {
         if(payload.find(R"("method":"window/workDoneProgress/create")") != std::string_view::npos) {
             t.push_incoming(R"({"jsonrpc":"2.0","id":1,"result":null})");
@@ -41,14 +41,14 @@ TEST_CASE(create_sends_request) {
     auto req_task = requester();
     loop.schedule(peer.run());
     loop.schedule(req_task);
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    EXPECT_TRUE(create_result.has_value());
-    ASSERT_GE(tp->outgoing().size(), 1U);
-    EXPECT_TRUE(tp->outgoing()[0].find("window/workDoneProgress/create") != std::string::npos);
+    EXPECT(create_result);
+    ASSERT(tp->outgoing().size() >= 1U);
+    EXPECT(zest::contains(tp->outgoing()[0], "window/workDoneProgress/create"));
 }
 
-TEST_CASE(begin_report_end) {
+ZEST_CASE(begin_report_end) {
     auto hook = [](std::string_view payload, ScriptedTransport& t) {
         if(payload.find(R"("method":"window/workDoneProgress/create")") != std::string_view::npos) {
             t.push_incoming(R"({"jsonrpc":"2.0","id":1,"result":null})");
@@ -65,7 +65,7 @@ TEST_CASE(begin_report_end) {
     auto requester = [&]() -> task<> {
         ProgressReporter reporter(peer, protocol::ProgressToken(42));
         auto r = co_await reporter.create();
-        EXPECT_TRUE(r.has_value());
+        EXPECT(r);
         reporter.begin("Indexing", "Starting...", protocol::uinteger(0));
         reporter.report("50% done", protocol::uinteger(50), false);
         reporter.end("Complete");
@@ -75,25 +75,25 @@ TEST_CASE(begin_report_end) {
     auto req_task = requester();
     loop.schedule(peer.run());
     loop.schedule(req_task);
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
     // outgoing[0] = create request, outgoing[1..3] = progress notifications
-    ASSERT_GE(tp->outgoing().size(), 4U);
+    ASSERT(tp->outgoing().size() >= 4U);
 
     // begin omits a false `cancellable`; report keeps an explicit one, which
     // there means "disable the cancel button" rather than "unchanged".
-    EXPECT_EQ(
-        tp->outgoing()[1],
+    EXPECT(
+        tp->outgoing()[1] ==
         R"({"jsonrpc":"2.0","method":"$/progress","params":{"token":42,"value":{"kind":"begin","title":"Indexing","message":"Starting...","percentage":0}}})");
-    EXPECT_EQ(
-        tp->outgoing()[2],
+    EXPECT(
+        tp->outgoing()[2] ==
         R"({"jsonrpc":"2.0","method":"$/progress","params":{"token":42,"value":{"kind":"report","cancellable":false,"message":"50% done","percentage":50}}})");
-    EXPECT_EQ(
-        tp->outgoing()[3],
+    EXPECT(
+        tp->outgoing()[3] ==
         R"({"jsonrpc":"2.0","method":"$/progress","params":{"token":42,"value":{"kind":"end","message":"Complete"}}})");
 }
 
-TEST_CASE(string_token) {
+ZEST_CASE(string_token) {
     auto hook = [](std::string_view payload, ScriptedTransport& t) {
         if(payload.find(R"("method":"window/workDoneProgress/create")") != std::string_view::npos) {
             t.push_incoming(R"({"jsonrpc":"2.0","id":1,"result":null})");
@@ -110,7 +110,7 @@ TEST_CASE(string_token) {
     auto requester = [&]() -> task<> {
         ProgressReporter reporter(peer, protocol::ProgressToken(std::string("my-token")));
         auto r = co_await reporter.create();
-        EXPECT_TRUE(r.has_value());
+        EXPECT(r);
         reporter.begin("Building");
         reporter.end();
         tp->close();
@@ -119,13 +119,13 @@ TEST_CASE(string_token) {
     auto req_task = requester();
     loop.schedule(peer.run());
     loop.schedule(req_task);
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    ASSERT_GE(tp->outgoing().size(), 3U);
-    EXPECT_TRUE(tp->outgoing()[0].find(R"("my-token")") != std::string::npos);
+    ASSERT(tp->outgoing().size() >= 3U);
+    EXPECT(zest::contains(tp->outgoing()[0], R"("my-token")"));
 }
 
-TEST_CASE(create_failure) {
+ZEST_CASE(create_failure) {
     auto hook = [](std::string_view payload, ScriptedTransport& t) {
         if(payload.find(R"("method":"window/workDoneProgress/create")") != std::string_view::npos) {
             t.push_incoming(
@@ -153,13 +153,13 @@ TEST_CASE(create_failure) {
     auto req_task = requester();
     loop.schedule(peer.run());
     loop.schedule(req_task);
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    EXPECT_FALSE(create_result.has_value());
-    EXPECT_EQ(create_result.error().message, "not supported");
+    EXPECT(!create_result);
+    EXPECT(create_result.error().message == "not supported");
 }
 
-};  // TEST_SUITE(ipc_progress)
+};  // ZEST_SUITE(ipc_progress)
 
 }  // namespace
 }  // namespace kota::ipc

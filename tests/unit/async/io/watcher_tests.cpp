@@ -49,9 +49,9 @@ task<> wait_timer_twice(timer& t) {
 
 }  // namespace
 
-TEST_SUITE(watcher_io, loop_fixture) {
+ZEST_SUITE(watcher_io, loop_fixture) {
 
-TEST_CASE(timer_wait) {
+ZEST_CASE(timer_wait) {
     auto t = timer::create(loop);
     t.start(std::chrono::milliseconds{1}, std::chrono::milliseconds{0});
 
@@ -59,7 +59,7 @@ TEST_CASE(timer_wait) {
     schedule_all(waiter);
 }
 
-TEST_CASE(idle_wait) {
+ZEST_CASE(idle_wait) {
     auto w = idle::create(loop);
     w.start();
 
@@ -69,12 +69,12 @@ TEST_CASE(idle_wait) {
     w.stop();
 }
 
-TEST_CASE(sleep_once) {
+ZEST_CASE(sleep_once) {
     auto sleeper = wait_sleep(loop);
     schedule_all(sleeper);
 }
 
-TEST_CASE(timer_repeat_twice) {
+ZEST_CASE(timer_repeat_twice) {
     auto t = timer::create(loop);
     t.start(std::chrono::milliseconds{1}, std::chrono::milliseconds{1});
 
@@ -82,7 +82,7 @@ TEST_CASE(timer_repeat_twice) {
     schedule_all(waiter);
 }
 
-TEST_CASE(prepare_wait) {
+ZEST_CASE(prepare_wait) {
     auto w = prepare::create(loop);
     w.start();
 
@@ -92,7 +92,7 @@ TEST_CASE(prepare_wait) {
     w.stop();
 }
 
-TEST_CASE(check_wait) {
+ZEST_CASE(check_wait) {
     auto w = check::create(loop);
     w.start();
 
@@ -102,7 +102,7 @@ TEST_CASE(check_wait) {
     w.stop();
 }
 
-TEST_CASE(timer_wait_cancel) {
+ZEST_CASE(timer_wait_cancel) {
     auto t = timer::create(loop);
     t.start(std::chrono::milliseconds{60000}, std::chrono::milliseconds{0});
 
@@ -121,11 +121,11 @@ TEST_CASE(timer_wait_cancel) {
     auto cancel_task = canceler();
     schedule_all(guarded, cancel_task);
 
-    EXPECT_TRUE(guarded.result().is_cancelled());
+    EXPECT(guarded.result().is_cancelled());
     t.stop();
 }
 
-TEST_CASE(sleep_cancel) {
+ZEST_CASE(sleep_cancel) {
     cancellation_source source;
 
     auto worker = [&]() -> task<void, void, cancellation> {
@@ -141,10 +141,10 @@ TEST_CASE(sleep_cancel) {
     auto cancel_task = canceler();
     schedule_all(guarded, cancel_task);
 
-    EXPECT_TRUE(guarded.result().is_cancelled());
+    EXPECT(guarded.result().is_cancelled());
 }
 
-TEST_CASE(idle_wait_cancel) {
+ZEST_CASE(idle_wait_cancel) {
     cancellation_source source;
 
     auto w = idle::create(loop);
@@ -167,12 +167,12 @@ TEST_CASE(idle_wait_cancel) {
     auto cancel_task = canceler();
     schedule_all(guarded, cancel_task);
 
-    EXPECT_TRUE(guarded.result().is_cancelled());
-    EXPECT_GT(ticks, 0);
+    EXPECT(guarded.result().is_cancelled());
+    EXPECT(ticks > 0);
     w.stop();
 }
 
-TEST_CASE(prepare_wait_cancel) {
+ZEST_CASE(prepare_wait_cancel) {
     cancellation_source source;
 
     auto w = prepare::create(loop);
@@ -195,12 +195,12 @@ TEST_CASE(prepare_wait_cancel) {
     auto cancel_task = canceler();
     schedule_all(guarded, cancel_task);
 
-    EXPECT_TRUE(guarded.result().is_cancelled());
-    EXPECT_GT(ticks, 0);
+    EXPECT(guarded.result().is_cancelled());
+    EXPECT(ticks > 0);
     w.stop();
 }
 
-TEST_CASE(check_wait_cancel) {
+ZEST_CASE(check_wait_cancel) {
     cancellation_source source;
 
     auto w = check::create(loop);
@@ -223,18 +223,18 @@ TEST_CASE(check_wait_cancel) {
     auto cancel_task = canceler();
     schedule_all(guarded, cancel_task);
 
-    EXPECT_TRUE(guarded.result().is_cancelled());
-    EXPECT_GT(ticks, 0);
+    EXPECT(guarded.result().is_cancelled());
+    EXPECT(ticks > 0);
     w.stop();
 }
 
 #ifndef _WIN32
-TEST_CASE(signal_wait_cancel) {
+ZEST_CASE(signal_wait_cancel) {
     cancellation_source source;
 
     auto sig = signal::create(loop);
-    ASSERT_TRUE(sig.has_value());
-    ASSERT_FALSE(sig->start(SIGUSR1).has_error());
+    ASSERT(sig);
+    ASSERT(!sig->start(SIGUSR1).has_error());
 
     auto worker = [&]() -> task<void, error, cancellation> {
         co_await sig->wait();
@@ -249,11 +249,11 @@ TEST_CASE(signal_wait_cancel) {
     auto cancel_task = canceler();
     schedule_all(guarded, cancel_task);
 
-    EXPECT_TRUE(guarded.result().is_cancelled());
+    EXPECT(guarded.result().is_cancelled());
     sig->stop();
 }
 #endif
 
-};  // TEST_SUITE(watcher_io)
+};  // ZEST_SUITE(watcher_io)
 
 }  // namespace kota

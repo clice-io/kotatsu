@@ -24,20 +24,20 @@ task<void, error>
 
 }  // namespace
 
-TEST_SUITE(work_request_io, loop_fixture) {
+ZEST_SUITE(work_request_io, loop_fixture) {
 
-TEST_CASE(queue_runs) {
+ZEST_CASE(queue_runs) {
     std::atomic<int> flag{0};
 
     auto worker = wait_work(flag, loop);
     schedule_all(worker);
 
     auto ec = worker.result();
-    EXPECT_FALSE(ec.has_error());
-    EXPECT_EQ(flag.load(), 1);
+    EXPECT(!ec.has_error());
+    EXPECT(flag.load() == 1);
 }
 
-TEST_CASE(queue_runs_twice) {
+ZEST_CASE(queue_runs_twice) {
     std::atomic<int> flag{0};
     std::atomic<int> done{0};
 
@@ -47,12 +47,12 @@ TEST_CASE(queue_runs_twice) {
 
     auto ec1 = first.result();
     auto ec2 = second.result();
-    EXPECT_FALSE(ec1.has_error());
-    EXPECT_FALSE(ec2.has_error());
-    EXPECT_EQ(flag.load(), 2);
+    EXPECT(!ec1.has_error());
+    EXPECT(!ec2.has_error());
+    EXPECT(flag.load() == 2);
 }
 
-TEST_CASE(queue_on_cancel_unused_on_normal_completion) {
+ZEST_CASE(queue_on_cancel_unused_on_normal_completion) {
     std::atomic<bool> hook_ran{false};
     bool has_value = false;
     int value = 0;
@@ -72,11 +72,11 @@ TEST_CASE(queue_on_cancel_unused_on_normal_completion) {
     schedule_all(worker_task);
 
     // Without cancellation the hook must never fire.
-    EXPECT_TRUE(has_value);
-    EXPECT_EQ(value, 42);
-    EXPECT_FALSE(hook_ran.load());
+    EXPECT(has_value);
+    EXPECT(value == 42);
+    EXPECT(!hook_ran.load());
 }
 
-};  // TEST_SUITE(work_request_io)
+};  // ZEST_SUITE(work_request_io)
 
 }  // namespace kota

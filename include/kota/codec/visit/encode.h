@@ -291,6 +291,11 @@ bool encode_value(Vis& vis, const T& value) {
             } else {
                 return vis.visit_float(value);
             }
+        } else if constexpr(meta::str_like<V> && std::is_array_v<V>) {
+            // A char array need not end in a null character, so its text
+            // stops at the array's end.
+            std::string_view text(value, std::extent_v<V>);
+            return vis.visit_str(text.substr(0, text.find('\0')));
         } else if constexpr(meta::str_like<V>) {
             return vis.visit_str(value);
         } else if constexpr(kind == character) {
@@ -431,7 +436,10 @@ bool encode_value(Vis& vis, const T& value) {
                     }
                 } else {
                     using E = std::remove_cvref_t<decltype(value.error())>;
-                    if constexpr(meta::kind_of<E>() != meta::type_kind::unknown) {
+                    // An error of a type the schema does not know reaches only
+                    // a backend that shows any value.
+                    if constexpr(meta::kind_of<E>() != meta::type_kind::unknown ||
+                                 requires(Vis& v, const E& e) { v.visit_opaque(e); }) {
                         return encode_value<Config>(vis, value.error());
                     } else {
                         return vis.visit_null();
@@ -454,6 +462,10 @@ bool encode_value(Vis& vis, const T& value) {
         } else if constexpr(std::is_pointer_v<V> &&
                             requires(Vis& v, const V& p) { v.visit_pointer(p); }) {
             return vis.visit_pointer(value);
+        } else if constexpr(requires(Vis& v, const V& x) { v.visit_opaque(x); }) {
+            // Only a backend that can show any value, like the debug one,
+            // takes a type the schema knows nothing about.
+            return vis.visit_opaque(value);
         } else {
             static_assert(dependent_false<V>,
                           "cannot serialize this type; specialize serialize_visit to add support");

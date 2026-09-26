@@ -7,6 +7,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <type_traits>
 
 #include "kota/meta/enum.h"
@@ -156,6 +157,12 @@ struct ValueWriter {
 
     template <typename T>
     bool visit_str(const T& v) {
+        if constexpr(std::is_pointer_v<T>) {
+            if(v == nullptr) {
+                fmt.out += "null";
+                return true;
+            }
+        }
         fmt.write_escape_string(std::string_view(v));
         return true;
     }
@@ -215,6 +222,23 @@ struct ValueWriter {
             }
         } else {
             fmt.out += "null";
+        }
+        return true;
+    }
+
+    /// A value of a type the schema knows nothing about: std::error_code as its
+    /// category and message, a formattable type through std::format, anything
+    /// else by name.
+    template <typename T>
+    bool visit_opaque(const T& v) {
+        if constexpr(std::is_same_v<T, std::error_code>) {
+            fmt.out += std::format("{}: {}", v.category().name(), v.message());
+        } else if constexpr(std::formattable<T, char>) {
+            fmt.out += std::format("{}", v);
+        } else {
+            fmt.out += '<';
+            fmt.out += meta::type_name<T>();
+            fmt.out += '>';
         }
         return true;
     }

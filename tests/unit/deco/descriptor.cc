@@ -68,51 +68,51 @@ struct EnumVectorDescOpt {
     <std::vector<DescEnum>> inputs;
 };
 
-TEST_SUITE(deco_descriptor) {
+ZEST_SUITE(deco_descriptor) {
 
-TEST_CASE(from_deco_option_renders_usage_style_text) {
+ZEST_CASE(from_deco_option_renders_usage_style_text) {
     DescOpt opt{};
 
-    EXPECT_TRUE(desc::from_deco_option(opt.verbose) == "-v|--verbose");
-    EXPECT_TRUE(desc::from_deco_option(opt.output) == "-o|--output <FILE>");
-    EXPECT_TRUE(desc::from_deco_option(opt.include_dir) == "-I<DIR>|--include=<DIR>");
-    EXPECT_TRUE(desc::from_deco_option(opt.filter) == "--filter <PATTERN>|--filter=<PATTERN>");
-    EXPECT_TRUE(desc::from_deco_option(opt.tags) == "--tags,<TAG>[,<TAG>...]|-T,<TAG>[,<TAG>...]");
-    EXPECT_TRUE(desc::from_deco_option(opt.pair) == "--pair <VAL1> <VAL2>");
-    EXPECT_TRUE(desc::from_deco_option(opt.input) == "<INPUT>");
-    EXPECT_TRUE(desc::from_deco_option(opt.trailing) == "-- <ARG>...");
-    EXPECT_TRUE(desc::from_deco_option(opt.unnamed) == "--<flag>");
-    EXPECT_TRUE(desc::from_deco_option(opt.unnamed, false, "u") == "-u");
-    EXPECT_TRUE(desc::from_deco_option(opt.unnamed, false, "long_name") == "--long-name");
+    EXPECT(desc::from_deco_option(opt.verbose) == "-v|--verbose");
+    EXPECT(desc::from_deco_option(opt.output) == "-o|--output <FILE>");
+    EXPECT(desc::from_deco_option(opt.include_dir) == "-I<DIR>|--include=<DIR>");
+    EXPECT(desc::from_deco_option(opt.filter) == "--filter <PATTERN>|--filter=<PATTERN>");
+    EXPECT(desc::from_deco_option(opt.tags) == "--tags,<TAG>[,<TAG>...]|-T,<TAG>[,<TAG>...]");
+    EXPECT(desc::from_deco_option(opt.pair) == "--pair <VAL1> <VAL2>");
+    EXPECT(desc::from_deco_option(opt.input) == "<INPUT>");
+    EXPECT(desc::from_deco_option(opt.trailing) == "-- <ARG>...");
+    EXPECT(desc::from_deco_option(opt.unnamed) == "--<flag>");
+    EXPECT(desc::from_deco_option(opt.unnamed, false, "u") == "-u");
+    EXPECT(desc::from_deco_option(opt.unnamed, false, "long_name") == "--long-name");
 }
 
-TEST_CASE(from_deco_option_renders_help_style_text) {
+ZEST_CASE(from_deco_option_renders_help_style_text) {
     DescOpt opt{};
 
     const auto verbose_help = desc::from_deco_option(opt.verbose, true);
-    EXPECT_TRUE(verbose_help.find("-v, --verbose") != std::string::npos);
-    EXPECT_TRUE(verbose_help.find("Show version and exit") != std::string::npos);
+    EXPECT(zest::contains(verbose_help, "-v, --verbose"));
+    EXPECT(zest::contains(verbose_help, "Show version and exit"));
 
     const auto output_help = desc::from_deco_option(opt.output, true);
-    EXPECT_TRUE(output_help.find("-o, --output <FILE>") != std::string::npos);
-    EXPECT_TRUE(output_help.find("Write output to FILE") != std::string::npos);
+    EXPECT(zest::contains(output_help, "-o, --output <FILE>"));
+    EXPECT(zest::contains(output_help, "Write output to FILE"));
 
     const auto filter_help = desc::from_deco_option(opt.filter, true);
-    EXPECT_TRUE(filter_help.find("--filter <PATTERN>, --filter=<PATTERN>") != std::string::npos);
-    EXPECT_TRUE(filter_help.find("Filter tests") != std::string::npos);
+    EXPECT(zest::contains(filter_help, "--filter <PATTERN>, --filter=<PATTERN>"));
+    EXPECT(zest::contains(filter_help, "Filter tests"));
 
     const auto input_help = desc::from_deco_option(opt.input, true);
-    EXPECT_TRUE(input_help.find("<INPUT>") != std::string::npos);
-    EXPECT_TRUE(input_help.find("Input file") != std::string::npos);
+    EXPECT(zest::contains(input_help, "<INPUT>"));
+    EXPECT(zest::contains(input_help, "Input file"));
 
     VectorInputDescOpt vector_opt{};
-    EXPECT_TRUE(desc::from_deco_option(vector_opt.inputs) == "<INPUT>...");
+    EXPECT(desc::from_deco_option(vector_opt.inputs) == "<INPUT>...");
     const auto vector_input_help = desc::from_deco_option(vector_opt.inputs, true);
-    EXPECT_TRUE(vector_input_help.find("<INPUT>...") != std::string::npos);
-    EXPECT_TRUE(vector_input_help.find("Input files") != std::string::npos);
+    EXPECT(zest::contains(vector_input_help, "<INPUT>..."));
+    EXPECT(zest::contains(vector_input_help, "Input files"));
 }
 
-TEST_CASE(from_deco_option_uses_configured_help_layout_and_default_help) {
+ZEST_CASE(from_deco_option_uses_configured_help_layout_and_default_help) {
     DescOpt opt{};
     NoHelpDescOpt no_help_opt{};
     auto config = config::get();
@@ -120,34 +120,34 @@ TEST_CASE(from_deco_option_uses_configured_help_layout_and_default_help) {
     config.render.compatible.usage.default_help = "configured help text";
 
     const auto verbose_help = desc::from_deco_option(opt.verbose, true, {}, &config);
-    EXPECT_TRUE(verbose_help.find("-v, --verbose") != std::string::npos);
-    EXPECT_TRUE(verbose_help.find("\n") != std::string::npos);
-    EXPECT_TRUE(verbose_help.find("Show version and exit") != std::string::npos);
+    EXPECT(zest::contains(verbose_help, "-v, --verbose"));
+    EXPECT(zest::contains(verbose_help, "\n"));
+    EXPECT(zest::contains(verbose_help, "Show version and exit"));
 
     const auto no_help = desc::from_deco_option(no_help_opt.no_help_flag, true, {}, &config);
-    EXPECT_TRUE(no_help.find("configured help text") != std::string::npos);
+    EXPECT(zest::contains(no_help, "configured help text"));
 }
 
-TEST_CASE(from_deco_option_uses_override_config_for_non_option_help) {
+ZEST_CASE(from_deco_option_uses_override_config_for_non_option_help) {
     NoHelpDescOpt no_help_opt{};
     auto config = config::get();
     config.render.compatible.usage.default_help = "fallback from override";
 
     const auto no_help = desc::from_deco_option(no_help_opt.no_help_flag, true, {}, &config);
-    EXPECT_TRUE(no_help.find("fallback from override") != std::string::npos);
+    EXPECT(zest::contains(no_help, "fallback from override"));
 }
 
-TEST_CASE(from_deco_option_infers_enum_meta_var_for_vector_results) {
+ZEST_CASE(from_deco_option_infers_enum_meta_var_for_vector_results) {
     EnumVectorDescOpt opt{};
 
-    EXPECT_TRUE(desc::from_deco_option(opt.values, false, "values") ==
-                "--values,<alpha|beta|gamma>[,<alpha|beta|gamma>...]");
-    EXPECT_TRUE(desc::from_deco_option(opt.pair, false, "pair") ==
-                "--pair <alpha|beta|gamma> <alpha|beta|gamma>");
-    EXPECT_TRUE(desc::from_deco_option(opt.inputs) == "<alpha|beta|gamma>...");
+    EXPECT(desc::from_deco_option(opt.values, false, "values") ==
+           "--values,<alpha|beta|gamma>[,<alpha|beta|gamma>...]");
+    EXPECT(desc::from_deco_option(opt.pair, false, "pair") ==
+           "--pair <alpha|beta|gamma> <alpha|beta|gamma>");
+    EXPECT(desc::from_deco_option(opt.inputs) == "<alpha|beta|gamma>...");
 }
 
-};  // TEST_SUITE(deco_descriptor)
+};  // ZEST_SUITE(deco_descriptor)
 
 }  // namespace
 }  // namespace kota::deco

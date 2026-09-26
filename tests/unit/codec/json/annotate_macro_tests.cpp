@@ -135,117 +135,117 @@ struct nested_holder {
     <wide_payload> inner;
 };
 
-TEST_SUITE(serde_annotate_macro) {
+ZEST_SUITE(serde_annotate_macro) {
 
-TEST_CASE(defaulted_field_may_be_absent) {
+ZEST_CASE(defaulted_field_may_be_absent) {
     defaulted_payload parsed{};
     auto status = from_string(R"({"id":1})", parsed);
-    ASSERT_TRUE(status.has_value());
-    EXPECT_EQ(parsed.id, 1);
-    EXPECT_EQ(parsed.retries, 3);
+    ASSERT(status);
+    EXPECT(parsed.id == 1);
+    EXPECT(parsed.retries == 3);
 
     defaulted_payload strict{};
     auto missing_required = from_string(R"({"retries":9})", strict);
-    EXPECT_FALSE(missing_required.has_value());
+    EXPECT(!missing_required);
 }
 
-TEST_CASE(custom_skip_predicate_applies) {
+ZEST_CASE(custom_skip_predicate_applies) {
     custom_skip_payload input{};
     input.score = -5;
     auto encoded = to_string(input);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"({})");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({})");
 
     input.score = 5;
     encoded = to_string(input);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"({"score":5})");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"score":5})");
 }
 
-TEST_CASE(builtin_skip_conditions_apply) {
+ZEST_CASE(builtin_skip_conditions_apply) {
     builtin_skip_payload input{};
     auto encoded = to_string(input);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"({})");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({})");
 
     input.tags = std::vector{1, 2};
     input.generation = 5;
     encoded = to_string(input);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"({"tags":[1,2],"generation":5})");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"tags":[1,2],"generation":5})");
 
     builtin_skip_payload parsed{};
     parsed.generation = 7;
     auto absent_ok = from_string(R"({})", parsed);
-    ASSERT_TRUE(absent_ok.has_value());
-    EXPECT_TRUE(parsed.tags.empty());
-    EXPECT_EQ(parsed.generation, 7);
+    ASSERT(absent_ok);
+    EXPECT(parsed.tags.empty());
+    EXPECT(parsed.generation == 7);
 
     auto status = from_string(R"({"tags":[3],"generation":9})", parsed);
-    ASSERT_TRUE(status.has_value());
-    EXPECT_EQ(parsed.tags, std::vector{3});
-    EXPECT_EQ(parsed.generation, 9);
+    ASSERT(status);
+    EXPECT(parsed.tags == std::vector{3});
+    EXPECT(parsed.generation == 9);
 }
 
-TEST_CASE(with_adapter_and_as_target_roundtrip) {
+ZEST_CASE(with_adapter_and_as_target_roundtrip) {
     adapted_payload input{};
     input.encoded = 42;
     input.owner = user_id{"alice"};
 
     auto encoded = to_string(input);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"({"encoded":"42","owner":"alice"})");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"encoded":"42","owner":"alice"})");
 
     adapted_payload parsed{};
     auto status = from_string(R"({"encoded":"17","owner":"bob"})", parsed);
-    ASSERT_TRUE(status.has_value());
-    EXPECT_EQ(parsed.encoded, 17);
-    EXPECT_EQ(parsed.owner.raw, "bob");
+    ASSERT(status);
+    EXPECT(parsed.encoded == 17);
+    EXPECT(parsed.owner.raw == "bob");
 }
 
-TEST_CASE(macro_works_outside_kota_namespace) {
+ZEST_CASE(macro_works_outside_kota_namespace) {
     kotatsu_annotate_downstream::config input{};
     auto encoded = to_string(input);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"({"compileCommands":0})");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"compileCommands":0})");
 
     kotatsu_annotate_downstream::box<int> boxed{};
     auto status = from_string(R"({"v":7})", boxed);
-    ASSERT_TRUE(status.has_value());
-    EXPECT_EQ(boxed.value, 7);
+    ASSERT(status);
+    EXPECT(boxed.value == 7);
 }
 
-TEST_CASE(named_annotation_tags_variant) {
+ZEST_CASE(named_annotation_tags_variant) {
     shape input{rect{2.5}};
     auto encoded = to_string(input);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"({"kind":"rect","width":2.5})");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"kind":"rect","width":2.5})");
 
     shape parsed;
     auto status = from_string(R"({"kind":"circle","radius":1.5})", parsed);
-    ASSERT_TRUE(status.has_value());
-    ASSERT_EQ(parsed.index(), 0u);
-    EXPECT_EQ(std::get<circle>(parsed).radius, 1.5);
+    ASSERT(status);
+    ASSERT(parsed.index() == 0u);
+    EXPECT(std::get<circle>(parsed).radius == 1.5);
 }
 
-TEST_CASE(named_annotation_renames_and_denies_unknown) {
+ZEST_CASE(named_annotation_renames_and_denies_unknown) {
     camel_payload input;
     input.user_name = "alice";
     auto encoded = to_string(input);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"({"userName":"alice","userAge":0})");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"userName":"alice","userAge":0})");
 
     camel_payload parsed;
     auto status = from_string(R"({"userName":"bob","userAge":3})", parsed);
-    ASSERT_TRUE(status.has_value());
-    EXPECT_EQ(parsed.user_name, "bob");
-    EXPECT_EQ(parsed.user_age, 3);
+    ASSERT(status);
+    EXPECT(parsed.user_name == "bob");
+    EXPECT(parsed.user_age == 3);
 
     auto unknown = from_string(R"({"userName":"bob","extra":1})", parsed);
-    EXPECT_FALSE(unknown.has_value());
+    EXPECT(!unknown);
 }
 
-TEST_CASE(rename_all_on_untagged_variant_is_inert) {
+ZEST_CASE(rename_all_on_untagged_variant_is_inert) {
     // The codec merges rename_all into the config only when crossing a
     // reflectable annotated node; an untagged variant is not one, so its
     // alternatives encode with their declared names — and type_info must
@@ -254,54 +254,54 @@ TEST_CASE(rename_all_on_untagged_variant_is_inert) {
         wide_payload{.user_name = "alice", .user_age = 1}
     };
     auto encoded = to_string(input);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"({"user_name":"alice","user_age":1})");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"user_name":"alice","user_age":1})");
 
     const auto& info =
         static_cast<const meta::variant_type_info&>(meta::type_info_of<camel_choice>());
     const auto& alt = static_cast<const meta::struct_type_info&>(info.alternatives[0]());
-    EXPECT_EQ(alt.fields[0].name, "user_name");
+    EXPECT(alt.fields[0].name == "user_name");
 }
 
-TEST_CASE(field_annotation_accepts_struct_entries) {
+ZEST_CASE(field_annotation_accepts_struct_entries) {
     shape_holder holder;
     holder.shape = circle{4.0};
     auto encoded = to_string(holder);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"({"shape":{"kind":"circle","radius":4.0}})");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"shape":{"kind":"circle","radius":4.0}})");
 
     shape_holder parsed;
     auto status = from_string(R"({"shape":{"kind":"rect","width":6.0}})", parsed);
-    ASSERT_TRUE(status.has_value());
-    ASSERT_EQ(parsed.shape.index(), 1u);
-    EXPECT_EQ(std::get<rect>(parsed.shape).width, 6.0);
+    ASSERT(status);
+    ASSERT(parsed.shape.index() == 1u);
+    EXPECT(std::get<rect>(parsed.shape).width == 6.0);
 }
 
-TEST_CASE(field_annotation_merges_struct_config) {
+ZEST_CASE(field_annotation_merges_struct_config) {
     nested_holder holder;
     holder.inner.user_name = "alice";
     auto encoded = to_string(holder);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"({"inner":{"USER_NAME":"alice","USER_AGE":0}})");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"inner":{"USER_NAME":"alice","USER_AGE":0}})");
 
     nested_holder parsed;
     auto status = from_string(R"({"inner":{"USER_NAME":"bob","USER_AGE":2}})", parsed);
-    ASSERT_TRUE(status.has_value());
-    EXPECT_EQ(parsed.inner.user_name, "bob");
-    EXPECT_EQ(parsed.inner.user_age, 2);
+    ASSERT(status);
+    EXPECT(parsed.inner.user_name == "bob");
+    EXPECT(parsed.inner.user_age == 2);
 
     auto unknown = from_string(R"({"inner":{"USER_NAME":"bob","EXTRA":1}})", parsed);
-    EXPECT_FALSE(unknown.has_value());
+    EXPECT(!unknown);
 }
 
-TEST_CASE(annotated_and_bare_use_share_type_info) {
+ZEST_CASE(annotated_and_bare_use_share_type_info) {
     // The spec attr is a field-local attr: it must not fork the type_info
     // instance of the underlying type.
     using annotated = decltype(flattened_payload{}.profile);
-    EXPECT_EQ(&meta::type_info_of<annotated>(), &meta::type_info_of<profile_info>());
+    EXPECT(&meta::type_info_of<annotated>() == &meta::type_info_of<profile_info>());
 }
 
-};  // TEST_SUITE(serde_annotate_macro)
+};  // ZEST_SUITE(serde_annotate_macro)
 
 }  // namespace
 

@@ -58,11 +58,11 @@ task<std::pair<result<std::string>, result<std::string>>> read_two_chunks(pipe p
 
 }  // namespace
 
-TEST_SUITE(process_io, loop_fixture) {
+ZEST_SUITE(process_io, loop_fixture) {
 
-TEST_SUITE_ATTRS(serial = true);
+ZEST_SUITE_ATTRS(serial = true);
 
-TEST_CASE(spawn_wait_simple) {
+ZEST_CASE(spawn_wait_simple) {
     process::options opts;
 #ifdef _WIN32
     opts.file = "cmd.exe";
@@ -74,20 +74,20 @@ TEST_CASE(spawn_wait_simple) {
     opts.streams = {process::stdio::ignore(), process::stdio::ignore(), process::stdio::ignore()};
 
     auto spawn_res = process::spawn(opts, loop);
-    ASSERT_TRUE(spawn_res.has_value());
+    ASSERT(spawn_res);
 
-    EXPECT_TRUE(spawn_res->proc.pid() > 0);
+    EXPECT(spawn_res->proc.pid() > 0);
 
     auto worker = wait_for_exit(spawn_res->proc);
     schedule_all(worker);
 
     auto status = worker.result();
-    EXPECT_TRUE(status.has_value());
-    EXPECT_EQ(status->status, 0);
-    EXPECT_EQ(status->term_signal, 0);
+    EXPECT(status);
+    EXPECT(status->status == 0);
+    EXPECT(status->term_signal == 0);
 }
 
-TEST_CASE(spawn_pipe_stdout) {
+ZEST_CASE(spawn_pipe_stdout) {
     process::options opts;
 #ifdef _WIN32
     opts.file = "cmd.exe";
@@ -103,20 +103,20 @@ TEST_CASE(spawn_pipe_stdout) {
                     process::stdio::ignore()};
 
     auto spawn_res = process::spawn(opts, loop);
-    ASSERT_TRUE(spawn_res.has_value());
+    ASSERT(spawn_res);
 
     auto capture_stdout = [&]() -> task<void> {
         auto stdout_out = co_await spawn_res->stdout_pipe.read();
         auto status = co_await spawn_res->proc.wait();
 
-        EXPECT_TRUE(status.has_value());
+        EXPECT(status);
         if(status.has_value()) {
-            EXPECT_EQ(status->status, 0);
+            EXPECT(status->status == 0);
         }
 
-        EXPECT_TRUE(stdout_out.has_value());
+        EXPECT(stdout_out);
         if(stdout_out.has_value()) {
-            EXPECT_EQ(*stdout_out, expected);
+            EXPECT(*stdout_out == expected);
         }
 
         event_loop::current().stop();
@@ -126,7 +126,7 @@ TEST_CASE(spawn_pipe_stdout) {
     schedule_all(t);
 }
 
-TEST_CASE(spawn_pipe_stdio) {
+ZEST_CASE(spawn_pipe_stdio) {
     process::options opts;
 #ifdef _WIN32
     opts.file = "cmd.exe";
@@ -142,22 +142,22 @@ TEST_CASE(spawn_pipe_stdio) {
     const std::string payload = "kotatsu-stdin-payload\n";
 
     auto spawn_res = process::spawn(opts, loop);
-    ASSERT_TRUE(spawn_res.has_value());
+    ASSERT(spawn_res);
 
     auto write_stdin_capture_stdout = [&]() -> task<void> {
         std::span<const char> data(payload.data(), payload.size());
         auto write_err = co_await spawn_res->stdin_pipe.write(data);
-        EXPECT_FALSE(write_err.has_error());
+        EXPECT(!write_err.has_error());
 
         spawn_res->stdin_pipe = pipe{};
 
         auto stdout_out = co_await spawn_res->stdout_pipe.read();
         auto status = co_await spawn_res->proc.wait();
 
-        EXPECT_TRUE(stdout_out.has_value());
-        EXPECT_TRUE(status.has_value());
+        EXPECT(stdout_out);
+        EXPECT(status);
         if(status.has_value()) {
-            EXPECT_EQ(status->status, 0);
+            EXPECT(status->status == 0);
         }
 
         auto trim_newlines = [](std::string value) {
@@ -168,7 +168,7 @@ TEST_CASE(spawn_pipe_stdio) {
         };
 
         if(stdout_out.has_value()) {
-            EXPECT_EQ(trim_newlines(*stdout_out), trim_newlines(payload));
+            EXPECT(trim_newlines(*stdout_out) == trim_newlines(payload));
         }
 
         event_loop::current().stop();
@@ -178,7 +178,7 @@ TEST_CASE(spawn_pipe_stdio) {
     schedule_all(t);
 }
 
-TEST_CASE(spawn_pipe_stderr) {
+ZEST_CASE(spawn_pipe_stderr) {
     process::options opts;
 #ifdef _WIN32
     opts.file = "cmd.exe";
@@ -192,23 +192,23 @@ TEST_CASE(spawn_pipe_stderr) {
                     process::stdio::pipe(false, true)};
 
     auto spawn_res = process::spawn(opts, loop);
-    ASSERT_TRUE(spawn_res.has_value());
+    ASSERT(spawn_res);
 
     auto capture_stdout_stderr = [&]() -> task<void> {
         auto stdout_out = co_await spawn_res->stdout_pipe.read();
         auto stderr_out = co_await spawn_res->stderr_pipe.read();
         auto status = co_await spawn_res->proc.wait();
 
-        EXPECT_TRUE(status.has_value());
+        EXPECT(status);
         if(status.has_value()) {
-            EXPECT_EQ(status->status, 0);
+            EXPECT(status->status == 0);
         }
 
-        EXPECT_TRUE(!stdout_out.has_value());
-        EXPECT_TRUE(stderr_out.has_value());
+        EXPECT(!stdout_out);
+        EXPECT(stderr_out);
 
         if(stderr_out.has_value()) {
-            EXPECT_TRUE(stderr_out->find("kotatsu-stderr") != std::string::npos);
+            EXPECT(zest::contains(*stderr_out, "kotatsu-stderr"));
         }
 
         event_loop::current().stop();
@@ -218,7 +218,7 @@ TEST_CASE(spawn_pipe_stderr) {
     schedule_all(t);
 }
 
-TEST_CASE(spawn_pipe_stdout_read_chunk_twice) {
+ZEST_CASE(spawn_pipe_stdout_read_chunk_twice) {
 #ifdef _WIN32
     zest::skip();
     return;
@@ -231,20 +231,20 @@ TEST_CASE(spawn_pipe_stdout_read_chunk_twice) {
                     process::stdio::ignore()};
 
     auto spawn_res = process::spawn(opts, loop);
-    ASSERT_TRUE(spawn_res.has_value());
+    ASSERT(spawn_res);
 
     auto reader = read_two_chunks(std::move(spawn_res->stdout_pipe));
     schedule_all(reader);
 
     auto [first, second] = reader.result();
-    ASSERT_TRUE(first.has_value());
-    ASSERT_TRUE(second.has_value());
-    EXPECT_EQ(*first, "chunk-one");
-    EXPECT_EQ(*second, "chunk-two");
+    ASSERT(first);
+    ASSERT(second);
+    EXPECT(*first == "chunk-one");
+    EXPECT(*second == "chunk-two");
 #endif
 }
 
-TEST_CASE(spawn_invalid_file) {
+ZEST_CASE(spawn_invalid_file) {
     process::options opts;
 #ifdef _WIN32
     opts.file = "Z:\\nonexistent\\kotatsu-nope.exe";
@@ -253,10 +253,10 @@ TEST_CASE(spawn_invalid_file) {
 #endif
 
     auto spawn_res = process::spawn(opts, loop);
-    EXPECT_FALSE(spawn_res.has_value());
+    EXPECT(!spawn_res);
 }
 
-TEST_CASE(wait_twice) {
+ZEST_CASE(wait_twice) {
     process::options opts;
 #ifdef _WIN32
     opts.file = "cmd.exe";
@@ -268,7 +268,7 @@ TEST_CASE(wait_twice) {
     opts.streams = {process::stdio::ignore(), process::stdio::ignore(), process::stdio::ignore()};
 
     auto spawn_res = process::spawn(opts, loop);
-    ASSERT_TRUE(spawn_res.has_value());
+    ASSERT(spawn_res);
 
     int done = 0;
     auto first = wait_for_exit(spawn_res->proc, done, 2);
@@ -278,14 +278,14 @@ TEST_CASE(wait_twice) {
     auto first_result = first.result();
     auto second_result = second.result();
 
-    EXPECT_TRUE(first_result.has_value());
-    EXPECT_FALSE(second_result.has_value());
+    EXPECT(first_result);
+    EXPECT(!second_result);
     if(!second_result.has_value()) {
-        EXPECT_EQ(second_result.error().value(), error::connection_already_in_progress.value());
+        EXPECT(second_result.error().value() == error::connection_already_in_progress.value());
     }
 }
 
-TEST_CASE(process_stat_child) {
+ZEST_CASE(process_stat_child) {
     process::options opts;
 #ifdef _WIN32
     opts.file = "cmd.exe";
@@ -299,19 +299,19 @@ TEST_CASE(process_stat_child) {
                     process::stdio::ignore()};
 
     auto spawn_res = process::spawn(opts, loop);
-    ASSERT_TRUE(spawn_res.has_value());
+    ASSERT(spawn_res);
 
     auto pid = spawn_res->proc.pid();
-    EXPECT_GT(pid, 0);
+    EXPECT(pid > 0);
 
     auto verify = [&]() -> task<void> {
         auto data = co_await spawn_res->stdout_pipe.read();
-        EXPECT_TRUE(data.has_value());
+        EXPECT(data);
 
         auto stat = sys::process(pid);
-        CO_ASSERT_TRUE(stat.has_value());
-        EXPECT_EQ(stat->pid, pid);
-        EXPECT_GT(stat->rss, std::size_t{0});
+        CO_ASSERT(stat);
+        EXPECT(stat->pid == pid);
+        EXPECT(stat->rss > std::size_t{0});
 
         { auto drop = std::move(spawn_res->stdin_pipe); }
         co_await spawn_res->proc.wait();
@@ -322,7 +322,7 @@ TEST_CASE(process_stat_child) {
     schedule_all(task);
 }
 
-TEST_CASE(wait_cancel) {
+ZEST_CASE(wait_cancel) {
     process::options opts;
 #ifdef _WIN32
     // ping itself, not through cmd.exe: killing cmd would leave ping running
@@ -336,7 +336,7 @@ TEST_CASE(wait_cancel) {
     opts.streams = {process::stdio::ignore(), process::stdio::ignore(), process::stdio::ignore()};
 
     auto spawn_res = process::spawn(opts, loop);
-    ASSERT_TRUE(spawn_res.has_value());
+    ASSERT(spawn_res);
 
     cancellation_source source;
 
@@ -355,10 +355,10 @@ TEST_CASE(wait_cancel) {
     schedule_all(guarded, cancel_task);
 
     auto result = guarded.result();
-    EXPECT_TRUE(result.is_cancelled());
+    EXPECT(result.is_cancelled());
 }
 
-TEST_CASE(kill_ends_a_running_child) {
+ZEST_CASE(kill_ends_a_running_child) {
     process::options opts;
 #ifdef _WIN32
     opts.file = "ping.exe";
@@ -370,18 +370,18 @@ TEST_CASE(kill_ends_a_running_child) {
     opts.streams = {process::stdio::ignore(), process::stdio::ignore(), process::stdio::ignore()};
 
     auto spawn_res = process::spawn(opts, loop);
-    ASSERT_TRUE(spawn_res.has_value());
-    EXPECT_FALSE(spawn_res->proc.kill(SIGTERM).has_error());
+    ASSERT(spawn_res);
+    EXPECT(!spawn_res->proc.kill(SIGTERM).has_error());
 
     auto waiter = wait_for_exit(spawn_res->proc);
     schedule_all(waiter);
 
     auto status = waiter.result();
-    ASSERT_TRUE(status.has_value());
-    EXPECT_EQ(status->term_signal, SIGTERM);
+    ASSERT(status);
+    EXPECT(status->term_signal == SIGTERM);
 }
 
-TEST_CASE(kill_after_exit_signals_nothing) {
+ZEST_CASE(kill_after_exit_signals_nothing) {
     process::options opts;
 #ifdef _WIN32
     opts.file = "cmd.exe";
@@ -393,21 +393,21 @@ TEST_CASE(kill_after_exit_signals_nothing) {
     opts.streams = {process::stdio::ignore(), process::stdio::ignore(), process::stdio::ignore()};
 
     auto spawn_res = process::spawn(opts, loop);
-    ASSERT_TRUE(spawn_res.has_value());
+    ASSERT(spawn_res);
 
     auto waiter = wait_for_exit(spawn_res->proc);
     schedule_all(waiter);
-    ASSERT_TRUE(waiter.result().has_value());
+    ASSERT(waiter.result());
 
-    EXPECT_EQ(spawn_res->proc.kill(SIGTERM), error::no_such_process);
+    EXPECT(spawn_res->proc.kill(SIGTERM) == error::no_such_process);
 }
 
-TEST_CASE(spawn_stdout_to_fd) {
+ZEST_CASE(spawn_stdout_to_fd) {
     auto temp = sys::temp_directory();
-    ASSERT_TRUE(temp.has_value());
+    ASSERT(temp);
     auto path = std::format("{}/kotatsu-stdout-fd-{}.txt", *temp, sys::pid());
     auto fd = fs::sync::open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    ASSERT_TRUE(fd.has_value());
+    ASSERT(fd);
 
     process::options opts;
 #ifdef _WIN32
@@ -424,20 +424,20 @@ TEST_CASE(spawn_stdout_to_fd) {
                     process::stdio::ignore()};
 
     auto spawn_res = process::spawn(opts, loop);
-    EXPECT_FALSE(fs::sync::close(*fd).has_error());
-    ASSERT_TRUE(spawn_res.has_value());
+    EXPECT(!fs::sync::close(*fd).has_error());
+    ASSERT(spawn_res);
 
     auto waiter = wait_for_exit(spawn_res->proc);
     schedule_all(waiter);
-    EXPECT_TRUE(waiter.result().has_value());
+    EXPECT(waiter.result());
 
     auto written = fs::sync::read_to_string(path);
     std::error_code ignored;
     std::filesystem::remove(path, ignored);
-    ASSERT_TRUE(written.has_value());
-    EXPECT_EQ(*written, expected);
+    ASSERT(written);
+    EXPECT(*written == expected);
 }
 
-};  // TEST_SUITE(process_io)
+};  // ZEST_SUITE(process_io)
 
 }  // namespace kota

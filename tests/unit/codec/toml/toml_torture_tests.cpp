@@ -21,7 +21,7 @@ auto rt = []<typename T>(const T& input) -> std::expected<T, rich_error> {
     return from_string<T>(*encoded);
 };
 
-TEST_SUITE(serde_toml_standard) {
+ZEST_SUITE(serde_toml_standard) {
 
 SERDE_STANDARD_TEST_CASES_PRIMITIVES(rt)
 SERDE_STANDARD_TEST_CASES_NUMERIC_BOUNDARIES_TOML_SAFE(rt)
@@ -32,7 +32,7 @@ SERDE_STANDARD_TEST_CASES_OPTIONAL(rt)
 SERDE_STANDARD_TEST_CASES_POINTERS_TOML_SAFE(rt)
 SERDE_STANDARD_TEST_CASES_COMPLEX(rt)
 
-};  // TEST_SUITE(serde_toml_standard)
+};  // ZEST_SUITE(serde_toml_standard)
 
 }  // namespace
 

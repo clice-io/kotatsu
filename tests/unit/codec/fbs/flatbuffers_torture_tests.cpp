@@ -19,7 +19,7 @@ auto rt = []<typename T>(const T& input) -> std::expected<T, rich_error> {
     return fbs::from_bytes<T>(*encoded);
 };
 
-TEST_SUITE(serde_flatbuffers_standard) {
+ZEST_SUITE(serde_flatbuffers_standard) {
 
 SERDE_STANDARD_TEST_CASES_PRIMITIVES(rt)
 SERDE_STANDARD_TEST_CASES_NUMERIC_BOUNDARIES(rt)
@@ -32,7 +32,7 @@ SERDE_STANDARD_TEST_CASES_VARIANT_FORMAT_SAFE(rt)
 SERDE_STANDARD_TEST_CASES_TAGGED_VARIANTS(rt)
 SERDE_STANDARD_TEST_CASES_COMPLEX(rt)
 
-};  // TEST_SUITE(serde_flatbuffers_standard)
+};  // ZEST_SUITE(serde_flatbuffers_standard)
 
 }  // namespace
 

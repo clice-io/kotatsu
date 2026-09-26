@@ -1,5 +1,6 @@
 #include <chrono>
 #include <cstdlib>
+#include <expected>
 #include <format>
 #include <print>
 #include <stdexcept>
@@ -17,35 +18,35 @@ namespace kota::zest {
 
 namespace {
 
-TEST_SUITE(fixture) {
+ZEST_SUITE(fixture) {
 
-TEST_CASE(passes) {
-    EXPECT_EQ(1, 1);
+ZEST_CASE(passes) {
+    EXPECT(1 == 1);
 }
 
-TEST_CASE(prints) {
+ZEST_CASE(prints) {
     std::println("printed by fixture.prints");
 }
 
-TEST_CASE(fails) {
-    EXPECT_EQ(1, 2);
+ZEST_CASE(fails) {
+    EXPECT(1 == 2);
 }
 
-TEST_CASE(skips) {
+ZEST_CASE(skips) {
     skip();
 }
 
-TEST_CASE(aborts) {
+ZEST_CASE(aborts) {
     std::println("printed by fixture.aborts");
     std::abort();
 }
 
-TEST_CASE(exits_early) {
+ZEST_CASE(exits_early) {
     std::exit(0);
 }
 
-TEST_CASE(fails_on_thread) {
-    std::thread([] { EXPECT_EQ(1, 2); }).join();
+ZEST_CASE(fails_on_thread) {
+    std::thread([] { EXPECT(1 == 2); }).join();
 }
 
 // clang-cl's ASan hands exception handlers a broken reference to the
@@ -58,18 +59,18 @@ TEST_CASE(fails_on_thread) {
 #endif
 
 #if defined(__cpp_exceptions) && !defined(ZEST_FIXTURE_BROKEN_CATCH)
-TEST_CASE(throws) {
+ZEST_CASE(throws) {
     throw std::runtime_error("thrown by the test");
 }
 #endif
 
 // Passes, but its worker then exits badly, as a leak check would make it.
 // Serial, so that no crashing test shares its worker and skips the exit.
-TEST_CASE(fails_at_exit, serial = true) {
+ZEST_CASE(fails_at_exit, serial = true) {
     std::atexit([] { std::_Exit(3); });
 }
 
-TEST_CASE_GROUP(group) {
+ZEST_CASE_GROUP(group) {
     for(int i = 0; i < 3; ++i) {
         add_case(std::format("case_{}", i), [] {});
     }
@@ -79,35 +80,86 @@ TEST_CASE_GROUP(group) {
     }
 }
 
-};  // TEST_SUITE(fixture)
+};  // ZEST_SUITE(fixture)
 
 // Run on their own with a short --timeout: a failing test spends a while
 // resolving its stack trace, which a short limit would cut off.
-TEST_SUITE(fixture_hang) {
+ZEST_SUITE(fixture_hang) {
 
-TEST_CASE(hangs) {
+ZEST_CASE(hangs) {
     std::println("printed by fixture_hang.hangs");
     std::this_thread::sleep_for(std::chrono::hours(1));
 }
 
-TEST_CASE(passes_after) {
-    EXPECT_EQ(1, 1);
+ZEST_CASE(passes_after) {
+    EXPECT(1 == 1);
 }
 
-};  // TEST_SUITE(fixture_hang)
+};  // ZEST_SUITE(fixture_hang)
+
+// Failures whose reports check_runner.cmake reads line by line.
+ZEST_SUITE(fixture_report) {
+
+ZEST_CASE(comparison) {
+    EXPECT(std::string("left") == "right");
+}
+
+ZEST_CASE(predicate) {
+    EXPECT(contains(std::string("haystack"), "needle"));
+}
+
+ZEST_CASE(unexpected) {
+    std::expected<int, std::string> result = std::unexpected(std::string("boom"));
+    EXPECT(result);
+}
+
+ZEST_CASE(in_context) {
+    ZEST_CONTEXT("while checking {}", 42);
+    {
+        ZEST_CONTEXT("inner");
+        EXPECT(1 == 2);
+    }
+}
+
+ZEST_CASE(negated_predicate) {
+    EXPECT(!contains(std::string("haystack"), "hay"));
+}
+
+ZEST_CASE(static_failure) {
+    STATIC_EXPECT(1 + 1 == 3);
+}
+
+ZEST_CASE(stops_at_assert) {
+    ASSERT(1 == 2);
+    std::println("printed after a failed assert");
+}
+
+// Run without --snapshot-dir, which fails the snapshot.
+ZEST_CASE(snapshot_in_context) {
+    ZEST_CONTEXT("while taking a snapshot");
+    EXPECT_SNAPSHOT("unchecked");
+}
+
+#ifdef __cpp_exceptions
+ZEST_CASE(throws_nothing) {
+    EXPECT_THROWS(std::string("no exception"));
+}
+#endif
+
+};  // ZEST_SUITE(fixture_report)
 
 // Two workers each check one snapshot; the runner must count both as checked.
-TEST_SUITE(fixture_snapshot) {
+ZEST_SUITE(fixture_snapshot) {
 
-TEST_CASE(checked) {
+ZEST_CASE(checked) {
     EXPECT_SNAPSHOT("fresh");
 }
 
-TEST_CASE(also_checked) {
+ZEST_CASE(also_checked) {
     EXPECT_SNAPSHOT("fresh");
 }
 
-};  // TEST_SUITE(fixture_snapshot)
+};  // ZEST_SUITE(fixture_snapshot)
 
 struct FixtureOptions {
     Options zest;

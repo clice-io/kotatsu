@@ -1,6 +1,9 @@
 #include <expected>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <type_traits>
+#include <vector>
 
 #include "kota/zest/zest.h"
 
@@ -8,111 +11,172 @@ namespace kota::zest {
 
 namespace {
 
-TEST_SUITE(zest_check) {
+struct Point {
+    int x;
+    int y;
+};
 
-TEST_CASE(binary_equal_expected_and_expected) {
-    std::expected<int, std::string> ok_a = 42;
-    std::expected<int, std::string> ok_b = 42;
-    std::expected<int, std::string> ok_c = 7;
-    std::expected<int, std::string> err_a = std::unexpected(std::string("boom"));
-    std::expected<int, std::string> err_b = std::unexpected(std::string("boom"));
-    std::expected<int, std::string> err_c = std::unexpected(std::string("oops"));
-
-    EXPECT_EQ(ok_a, ok_b);
-    EXPECT_NE(ok_a, ok_c);
-    EXPECT_NE(ok_a, err_a);
-
-    EXPECT_EQ(err_a, err_b);
-    EXPECT_NE(err_a, err_c);
+std::expected<int, std::string> parse(std::string_view text) {
+    if(text == "42") {
+        return 42;
+    }
+    return std::unexpected(std::string(text));
 }
 
-TEST_CASE(binary_equal_expected_and_plain) {
+ZEST_SUITE(zest_check) {
+
+ZEST_CASE(comparison_splits_into_operands) {
+    int one = 1;
+    int two = 2;
+    auto split = (detail::Decomposer{} << one) == two;
+    EXPECT(!split.held);
+    EXPECT(&split.lhs == &one);
+    EXPECT(&split.rhs == &two);
+    EXPECT(((detail::Decomposer{} << 3) < 4).held);
+    EXPECT(!((detail::Decomposer{} << 4) <= 3).held);
+}
+
+ZEST_CASE(expected_and_optional_compare_by_value) {
     std::expected<int, std::string> ok = 42;
     std::expected<int, std::string> err = std::unexpected(std::string("boom"));
-
-    EXPECT_EQ(ok, 42);
-    EXPECT_EQ(42, ok);
-    EXPECT_NE(ok, 7);
-    EXPECT_NE(7, ok);
-    EXPECT_NE(err, 42);
-    EXPECT_NE(42, err);
-}
-
-TEST_CASE(binary_equal_optional_and_plain) {
     std::optional<int> some = 42;
     std::optional<int> none = std::nullopt;
 
-    EXPECT_EQ(some, 42);
-    EXPECT_EQ(42, some);
-    EXPECT_NE(some, 7);
-    EXPECT_NE(7, some);
-    EXPECT_NE(none, 42);
-    EXPECT_NE(42, none);
+    EXPECT(ok == 42);
+    EXPECT(42 == ok);
+    EXPECT(ok != err);
+    EXPECT(err != 42);
+    EXPECT(ok == some);
+    EXPECT(some == ok);
+    EXPECT(some != none);
+    EXPECT(none != 42);
 }
 
-TEST_CASE(binary_equal_optional_and_optional) {
-    std::optional<int> some_a = 42;
-    std::optional<int> some_b = 42;
-    std::optional<int> some_c = 7;
-    std::optional<int> none_a = std::nullopt;
-    std::optional<int> none_b = std::nullopt;
-
-    EXPECT_EQ(some_a, some_b);
-    EXPECT_NE(some_a, some_c);
-    EXPECT_NE(some_a, none_a);
-    EXPECT_NE(none_a, some_a);
-    EXPECT_EQ(none_a, none_b);
-}
-
-TEST_CASE(binary_equal_expected_and_optional) {
-    std::expected<int, std::string> exp_ok_42 = 42;
-    std::expected<int, std::string> exp_ok_7 = 7;
-    std::expected<int, std::string> exp_err = std::unexpected(std::string("boom"));
-
+ZEST_CASE(expected_and_optional_equality_both_ways) {
+    std::expected<int, std::string> ok_42 = 42;
+    std::expected<int, std::string> ok_7 = 7;
+    std::expected<int, std::string> err_boom = std::unexpected(std::string("boom"));
+    std::expected<int, std::string> err_boom_too = std::unexpected(std::string("boom"));
+    std::expected<int, std::string> err_oops = std::unexpected(std::string("oops"));
     std::optional<int> some_42 = 42;
     std::optional<int> some_7 = 7;
     std::optional<int> none = std::nullopt;
+    std::optional<int> none_too = std::nullopt;
 
-    EXPECT_EQ(exp_ok_42, some_42);
-    EXPECT_EQ(some_42, exp_ok_42);
-    EXPECT_NE(exp_ok_42, some_7);
-    EXPECT_NE(some_7, exp_ok_42);
-    EXPECT_NE(exp_ok_7, some_42);
-    EXPECT_NE(some_42, exp_ok_7);
-
-    EXPECT_NE(exp_ok_42, none);
-    EXPECT_NE(none, exp_ok_42);
-
-    EXPECT_NE(exp_err, some_42);
-    EXPECT_NE(some_42, exp_err);
-    EXPECT_NE(exp_err, none);
-    EXPECT_NE(none, exp_err);
+    EXPECT(err_boom == err_boom_too);
+    EXPECT(err_boom != err_oops);
+    EXPECT(ok_42 != 7);
+    EXPECT(7 != ok_42);
+    EXPECT(none == none_too);
+    EXPECT(some_42 != some_7);
+    EXPECT(7 != some_42);
+    EXPECT(ok_7 != some_42);
+    EXPECT(some_42 != ok_7);
+    EXPECT(ok_42 != none);
+    EXPECT(none != ok_42);
+    EXPECT(err_boom != some_42);
+    EXPECT(some_42 != err_boom);
+    EXPECT(err_boom != none);
+    EXPECT(none != err_boom);
 }
 
-TEST_CASE(binary_ordering_expect_macros) {
-    EXPECT_LT(1, 2);
-    EXPECT_LE(1, 1);
-    EXPECT_LE(1, 2);
-    EXPECT_GT(2, 1);
-    EXPECT_GE(2, 2);
-    EXPECT_GE(2, 1);
-
-    std::string a = "alpha";
-    std::string b = "beta";
-    EXPECT_LT(a, b);
-    EXPECT_GT(b, a);
+ZEST_CASE(unary_checks_convert_to_bool) {
+    auto ok = parse("42");
+    ASSERT(ok);
+    EXPECT(*ok == 42);
+    EXPECT(!parse("x"));
+    EXPECT(std::optional<int>(1));
 }
 
-TEST_CASE(binary_ordering_assert_macros) {
-    ASSERT_LT(3, 4);
-    ASSERT_LE(3, 3);
-    ASSERT_LE(3, 4);
-    ASSERT_GT(4, 3);
-    ASSERT_GE(4, 4);
-    ASSERT_GE(4, 3);
+ZEST_CASE(orderings) {
+    EXPECT(1 < 2);
+    EXPECT(1 <= 1);
+    EXPECT(2 > 1);
+    EXPECT(2 >= 2);
+    EXPECT(std::string("alpha") < std::string("beta"));
+    EXPECT(-1 < 1u);
 }
 
-};  // TEST_SUITE(zest_check)
+ZEST_CASE(operands_compare_structurally) {
+    EXPECT(Point{1, 2} == Point{1, 2});
+    EXPECT(Point{1, 2} != Point{2, 1});
+    EXPECT(std::vector<Point>{
+               {1, 2}
+    } == std::vector<Point>{{1, 2}});
+    EXPECT(std::size_t{3} == 3);
+}
+
+ZEST_CASE(char_pointers_compare_as_text_against_text) {
+    std::string text = "same";
+    std::string copy = text;
+    const char* pointer = text.c_str();
+    const char* null = nullptr;
+
+    EXPECT(pointer == "same");
+    EXPECT("same" == pointer);
+    EXPECT(pointer == std::string_view("same"));
+    EXPECT(pointer != "other");
+    EXPECT(null != "same");
+    // Two pointers compare by address.
+    EXPECT(pointer != copy.c_str());
+    EXPECT(pointer == text.c_str());
+
+    // An array's text ends with the array, null character or not.
+    const char tag[4] = {'K', 'O', 'T', 'A'};
+    const char* kota = "KOTA";
+    EXPECT(kota == tag);
+}
+
+ZEST_CASE(temporaries_outlive_the_check) {
+    EXPECT(std::string("a") + "b" == "ab");
+    EXPECT(parse("42").value() == 42);
+}
+
+ZEST_CASE(predicates) {
+    EXPECT(contains(std::string("haystack"), "st"));
+    EXPECT(contains(std::string_view("haystack"), 'k'));
+    EXPECT(!contains(std::string("haystack"), "needle"));
+    EXPECT(contains(std::vector<int>{1, 2, 3}, 2));
+    EXPECT(!contains(std::vector<int>{1, 2, 3}, 4));
+    std::string owned = "b";
+    EXPECT(contains(std::vector<const char*>{"a", owned.c_str()}, "b"));
+    EXPECT(starts_with(std::string("prefix-body"), "prefix"));
+    EXPECT(ends_with(std::string("body-suffix"), "suffix"));
+    // A null pattern is no text; an array's text ends with the array.
+    const char* null = nullptr;
+    const char tail[2] = {'x', 't'};
+    EXPECT(!contains(std::string("text"), null));
+    EXPECT(!starts_with(std::string("text"), null));
+    EXPECT(ends_with(std::string("text"), tail));
+    EXPECT(type_eq<int, int>());
+    EXPECT(!type_eq<int, long>());
+}
+
+ZEST_CASE(negation_keeps_the_explanation) {
+    std::string text = "abc";
+    auto match = contains(text, "x");
+    auto negated = !match;
+    EXPECT(negated.held);
+    EXPECT(negated.explain() == match.explain());
+}
+
+ZEST_CASE(static_checks) {
+    constexpr int answer = 42;
+    STATIC_EXPECT(answer == 42);
+    STATIC_EXPECT(sizeof(int) >= 2);
+    STATIC_EXPECT(std::is_integral_v<int>);
+}
+
+ZEST_CASE(contexts_nest_and_unwind) {
+    ZEST_CONTEXT("outer {}", 1);
+    {
+        ZEST_CONTEXT("inner");
+        EXPECT(1 == 1);
+    }
+    EXPECT(2 == 2);
+}
+
+};  // ZEST_SUITE(zest_check)
 
 }  // namespace
 

@@ -24,7 +24,7 @@ constexpr TestAttrs merge_attrs(TestAttrs suite, TestAttrs test_case) {
     };
 }
 
-/// Callback handed to TEST_CASE_GROUP bodies: each invocation registers one
+/// Callback handed to ZEST_CASE_GROUP bodies: each invocation registers one
 /// dynamically named test case inside the enclosing suite.
 using CaseRegistrar = std::function<void(std::string, std::function<void()>)>;
 

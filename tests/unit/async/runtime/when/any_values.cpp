@@ -1,4 +1,4 @@
-// TEST_SUITE(when_any): basic value passing for when_any — first/second wins,
+// ZEST_SUITE(when_any): basic value passing for when_any — first/second wins,
 // single task, sleeping children, sync awaiters, and range overloads. The
 // result-type static_asserts live in all_values.cpp; cancellation in cancel.cpp;
 // errors in errors.cpp.
@@ -9,9 +9,9 @@
 
 namespace kota {
 
-TEST_SUITE(when_any) {
+ZEST_SUITE(when_any) {
 
-TEST_CASE(first_wins) {
+ZEST_CASE(first_wins) {
     int a_count = 0;
     int b_count = 0;
 
@@ -30,14 +30,14 @@ TEST_CASE(first_wins) {
     };
 
     auto [winner] = run(combined());
-    EXPECT_TRUE(winner.has_value());
-    EXPECT_EQ(winner->index(), 0U);
-    EXPECT_EQ(std::get<0>(*winner), 10);
-    EXPECT_EQ(a_count, 1);
-    EXPECT_EQ(b_count, 0);
+    EXPECT(winner);
+    EXPECT(winner->index() == 0U);
+    EXPECT(std::get<0>(*winner) == 10);
+    EXPECT(a_count == 1);
+    EXPECT(b_count == 0);
 }
 
-TEST_CASE(single_task) {
+ZEST_CASE(single_task) {
     auto a = []() -> task<int> {
         co_return 99;
     };
@@ -47,12 +47,12 @@ TEST_CASE(single_task) {
     };
 
     auto [winner] = run(combined());
-    EXPECT_TRUE(winner.has_value());
-    EXPECT_EQ(winner->index(), 0U);
-    EXPECT_EQ(std::get<0>(*winner), 99);
+    EXPECT(winner);
+    EXPECT(winner->index() == 0U);
+    EXPECT(std::get<0>(*winner) == 99);
 }
 
-TEST_CASE(second_wins) {
+ZEST_CASE(second_wins) {
     auto slow = [&]() -> task<int> {
         co_await sleep(10);
         co_return 1;
@@ -68,12 +68,12 @@ TEST_CASE(second_wins) {
     };
 
     auto [winner] = run(combined());
-    EXPECT_TRUE(winner.has_value());
-    EXPECT_EQ(winner->index(), 1U);
-    EXPECT_EQ(std::get<1>(*winner), 2);
+    EXPECT(winner);
+    EXPECT(winner->index() == 1U);
+    EXPECT(std::get<1>(*winner) == 2);
 }
 
-TEST_CASE(with_sleep) {
+ZEST_CASE(with_sleep) {
     int fast_done = 0;
     int slow_done = 0;
 
@@ -94,14 +94,14 @@ TEST_CASE(with_sleep) {
     };
 
     auto [winner] = run(combined());
-    EXPECT_TRUE(winner.has_value());
-    EXPECT_EQ(winner->index(), 0U);
-    EXPECT_EQ(std::get<0>(*winner), 1);
-    EXPECT_EQ(fast_done, 1);
-    EXPECT_EQ(slow_done, 0);
+    EXPECT(winner);
+    EXPECT(winner->index() == 0U);
+    EXPECT(std::get<0>(*winner) == 1);
+    EXPECT(fast_done == 1);
+    EXPECT(slow_done == 0);
 }
 
-TEST_CASE(accepts_sync_awaiters) {
+ZEST_CASE(accepts_sync_awaiters) {
     semaphore slow{0};
     semaphore fast{0};
 
@@ -120,12 +120,12 @@ TEST_CASE(accepts_sync_awaiters) {
     auto release_task = releaser();
     run(task, release_task);
 
-    EXPECT_TRUE(task->is_finished());
+    EXPECT(task->is_finished());
     auto winner = task.result();
-    EXPECT_EQ(winner.index(), 1U);
+    EXPECT(winner.index() == 1U);
 }
 
-TEST_CASE(range_values) {
+ZEST_CASE(range_values) {
     small_vector<task<int>> tasks;
     tasks.emplace_back(delayed_int(10, 1));
     tasks.emplace_back(delayed_int(1, 2));
@@ -135,12 +135,12 @@ TEST_CASE(range_values) {
     };
 
     auto [winner] = run(combined());
-    EXPECT_TRUE(winner.has_value());
-    EXPECT_EQ(winner->first, 1U);
-    EXPECT_EQ(winner->second, 2);
+    EXPECT(winner);
+    EXPECT(winner->first == 1U);
+    EXPECT(winner->second == 2);
 }
 
-TEST_CASE(range_void) {
+ZEST_CASE(range_void) {
     semaphore slow{0};
     semaphore fast{0};
     small_vector<semaphore::acquire_awaiter> waits;
@@ -163,10 +163,10 @@ TEST_CASE(range_void) {
     run(task, release_task);
 
     auto winner = task.result();
-    EXPECT_EQ(winner.first, 1U);
+    EXPECT(winner.first == 1U);
 }
 
-TEST_CASE(range_single_element) {
+ZEST_CASE(range_single_element) {
     auto combined = []() -> task<std::pair<std::size_t, int>> {
         small_vector<task<int>> tasks;
         tasks.emplace_back(ready_int(42));
@@ -174,11 +174,11 @@ TEST_CASE(range_single_element) {
     };
 
     auto [res] = run(combined());
-    ASSERT_TRUE(res.has_value());
-    EXPECT_EQ(res->first, 0U);
-    EXPECT_EQ(res->second, 42);
+    ASSERT(res);
+    EXPECT(res->first == 0U);
+    EXPECT(res->second == 42);
 }
 
-};  // TEST_SUITE(when_any)
+};  // ZEST_SUITE(when_any)
 
 }  // namespace kota

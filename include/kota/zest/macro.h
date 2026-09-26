@@ -8,7 +8,10 @@
 // The kota::zest entities an expansion refers to only have to be visible where
 // the macro is used, not here. Include "kota/zest/zest.h" or import the module.
 
-#define TEST_SUITE(name, ...)                                                                      \
+#define ZEST_CONCAT_IMPL(a, b) a##b
+#define ZEST_CONCAT(a, b) ZEST_CONCAT_IMPL(a, b)
+
+#define ZEST_SUITE(name, ...)                                                                      \
     struct name##TEST : __VA_OPT__(__VA_ARGS__, )::kota::zest::TestSuiteDef<name##TEST>
 
 // clang-format off
@@ -21,10 +24,10 @@
     }()
 // clang-format on
 
-#define TEST_SUITE_ATTRS(...)                                                                      \
+#define ZEST_SUITE_ATTRS(...)                                                                      \
     constexpr static ::kota::zest::TestAttrs suite_attrs = ZEST_MAKE_ATTRS(__VA_ARGS__)
 
-#define TEST_CASE(name, ...)                                                                       \
+#define ZEST_CASE(name, ...)                                                                       \
     inline static constexpr char _zest_file_##name[] = __FILE__;                                   \
     void _register_##name() {                                                                      \
         (void)_register_suites<>;                                                                  \
@@ -36,9 +39,9 @@
 // Registers a group of dynamically named test cases. The body receives
 // `const ::kota::zest::CaseRegistrar& add_case` and is invoked once at static
 // init; call `add_case(name, body)` for each case to register. Unlike
-// TEST_CASE, the registered bodies run without a suite instance, so
+// ZEST_CASE, the registered bodies run without a suite instance, so
 // setup()/teardown() do not apply to them.
-#define TEST_CASE_GROUP(name, ...)                                                                 \
+#define ZEST_CASE_GROUP(name, ...)                                                                 \
     inline static constexpr char _zest_file_##name[] = __FILE__;                                   \
     void _register_##name() {                                                                      \
         (void)_register_suites<>;                                                                  \
@@ -48,120 +51,86 @@
     }                                                                                              \
     static void group_##name(const ::kota::zest::CaseRegistrar& add_case)
 
-#define ZEST_CHECK_IMPL(condition, return_action)                                                  \
+// A check reads `Decomposer{} << a == b` as `(Decomposer{} << a) == b` on
+// purpose, which is what these warnings are about.
+#if defined(__clang__)
+#define ZEST_SPLIT_BEGIN                                                                           \
+    _Pragma("clang diagnostic push")                                                               \
+        _Pragma("clang diagnostic ignored \"-Woverloaded-shift-op-parentheses\"")
+#define ZEST_SPLIT_END _Pragma("clang diagnostic pop")
+#elif defined(__GNUC__)
+#define ZEST_SPLIT_BEGIN                                                                           \
+    _Pragma("GCC diagnostic push") _Pragma("GCC diagnostic ignored \"-Wparentheses\"")
+#define ZEST_SPLIT_END _Pragma("GCC diagnostic pop")
+#else
+#define ZEST_SPLIT_BEGIN
+#define ZEST_SPLIT_END
+#endif
+
+// A check takes one expression. `Decomposer{} << expr` captures the operands of
+// a top-level comparison — `<<` binds tighter than any comparison and looser
+// than arithmetic, so `a + 1 == b` splits into `a + 1` and `b` — and the whole
+// check runs in one full-expression, so temporaries in the operands live until
+// it is reported.
+#define ZEST_CHECK(return_action, ...)                                                             \
     do {                                                                                           \
-        if(condition) [[unlikely]] {                                                               \
-            ::kota::zest::print_trace(std::source_location::current());                            \
-            ::kota::zest::failure();                                                               \
+        ZEST_SPLIT_BEGIN                                                                           \
+        if(!::kota::zest::detail::check(::kota::zest::detail::Decomposer{} << __VA_ARGS__,         \
+                                        #__VA_ARGS__)) [[unlikely]] {                              \
             return_action;                                                                         \
         }                                                                                          \
+        ZEST_SPLIT_END                                                                             \
     } while(0)
 
-#define ZEST_EXPECT_UNARY(expectation, failure_pred, return_action, ...)                           \
+#define EXPECT(...) ZEST_CHECK((void)0, __VA_ARGS__)
+#define ASSERT(...) ZEST_CHECK(return, __VA_ARGS__)
+#define CO_ASSERT(...) ZEST_CHECK(co_return, __VA_ARGS__)
+
+// Evaluates the check at compile time and reports it at run time, so one wrong
+// constant fails its test instead of the build. To show the operands, the
+// report evaluates them again, at run time.
+#define STATIC_EXPECT(...)                                                                         \
     do {                                                                                           \
-        auto failed = ([&](auto&& value) {                                                         \
-            return ::kota::zest::check_unary_failure((failure_pred),                               \
-                                                     #__VA_ARGS__,                                 \
-                                                     (expectation),                                \
-                                                     value);                                       \
-        }(__VA_ARGS__));                                                                           \
-        ZEST_CHECK_IMPL(failed, return_action);                                                    \
+        ZEST_SPLIT_BEGIN                                                                           \
+        constexpr bool _zest_held = (::kota::zest::detail::Decomposer{} << __VA_ARGS__).holds();   \
+        if(!_zest_held) {                                                                          \
+            (::kota::zest::detail::Decomposer{} << __VA_ARGS__)                                    \
+                .fail(#__VA_ARGS__, std::source_location::current());                              \
+        }                                                                                          \
+        ZEST_SPLIT_END                                                                             \
     } while(0)
 
-#define ZEST_EXPECT_BINARY(op_string, failure_pred, return_action, ...)                            \
-    do {                                                                                           \
-        auto failed = ([&](auto&& lhs, auto&& rhs) {                                               \
-            const auto exprs = ::kota::zest::parse_binary_exprs(#__VA_ARGS__);                     \
-            return ::kota::zest::check_binary_failure((failure_pred),                              \
-                                                      #op_string,                                  \
-                                                      exprs.lhs,                                   \
-                                                      exprs.rhs,                                   \
-                                                      lhs,                                         \
-                                                      rhs);                                        \
-        }(__VA_ARGS__));                                                                           \
-        ZEST_CHECK_IMPL(failed, return_action);                                                    \
-    } while(0)
-
-// STATIC variants wrap the failure predicate in std::bool_constant<> to force
-// constant evaluation. Macro args are spliced directly into the predicate, so
-// the predicate text uses `__VA_ARGS__` rather than the `lhs`/`rhs` identifiers
-// the runtime lambdas bind — STATIC has no double-eval concern to work around.
-#define ZEST_STATIC_EXPECT_UNARY(expectation, failure_pred, return_action, ...)                    \
-    ZEST_CHECK_IMPL(::kota::zest::check_unary_failure(std::bool_constant<(failure_pred)>(),        \
-                                                      #__VA_ARGS__,                                \
-                                                      (expectation),                               \
-                                                      (__VA_ARGS__)),                              \
-                    return_action)
-
-#define ZEST_STATIC_EXPECT_BINARY(op_string, failure_pred, return_action, ...)                     \
-    do {                                                                                           \
-        const auto exprs = ::kota::zest::parse_binary_exprs(#__VA_ARGS__);                         \
-        ZEST_CHECK_IMPL(::kota::zest::check_binary_failure(std::bool_constant<(failure_pred)>(),   \
-                                                           #op_string,                             \
-                                                           exprs.lhs,                              \
-                                                           exprs.rhs,                              \
-                                                           __VA_ARGS__),                           \
-                        return_action);                                                            \
-    } while(false)
-
-// clang-format off
-#define EXPECT_TRUE(...) ZEST_EXPECT_UNARY("true", !(value), (void)0, __VA_ARGS__)
-#define EXPECT_FALSE(...) ZEST_EXPECT_UNARY("false", (value), (void)0, __VA_ARGS__)
-#define EXPECT_EQ(...) ZEST_EXPECT_BINARY(==, !::kota::meta::eq(lhs, rhs), (void)0, __VA_ARGS__)
-#define EXPECT_NE(...) ZEST_EXPECT_BINARY(!=, ::kota::meta::eq(lhs, rhs), (void)0, __VA_ARGS__)
-#define EXPECT_LT(...) ZEST_EXPECT_BINARY(<, !::kota::meta::lt(lhs, rhs), (void)0, __VA_ARGS__)
-#define EXPECT_LE(...) ZEST_EXPECT_BINARY(<=, !::kota::meta::le(lhs, rhs), (void)0, __VA_ARGS__)
-#define EXPECT_GT(...) ZEST_EXPECT_BINARY(>, !::kota::meta::gt(lhs, rhs), (void)0, __VA_ARGS__)
-#define EXPECT_GE(...) ZEST_EXPECT_BINARY(>=, !::kota::meta::ge(lhs, rhs), (void)0, __VA_ARGS__)
-
-// EXPECT_TYPE_EQ(L, R) — forwards two type args to std::is_same_v; on mismatch,
-// prints both sides' type names via kota::meta::type_name for diagnostics.
-#define EXPECT_TYPE_EQ(...)                                                                        \
-    ZEST_CHECK_IMPL((::kota::zest::check_type_eq_failure<__VA_ARGS__>(#__VA_ARGS__)), (void)0)
-
-// clang-format off
-#define STATIC_EXPECT_TRUE(...) ZEST_STATIC_EXPECT_UNARY("true", !(__VA_ARGS__), (void)0, __VA_ARGS__)
-#define STATIC_EXPECT_FALSE(...) ZEST_STATIC_EXPECT_UNARY("false", (__VA_ARGS__), (void)0, __VA_ARGS__)
-#define STATIC_EXPECT_EQ(...) ZEST_STATIC_EXPECT_BINARY(==, !::kota::meta::eq(__VA_ARGS__), (void)0, __VA_ARGS__)
-#define STATIC_EXPECT_NE(...) ZEST_STATIC_EXPECT_BINARY(!=, ::kota::meta::eq(__VA_ARGS__), (void)0, __VA_ARGS__)
-#define STATIC_EXPECT_LT(...) ZEST_STATIC_EXPECT_BINARY(<, !::kota::meta::lt(__VA_ARGS__), (void)0, __VA_ARGS__)
-#define STATIC_EXPECT_LE(...) ZEST_STATIC_EXPECT_BINARY(<=, !::kota::meta::le(__VA_ARGS__), (void)0, __VA_ARGS__)
-#define STATIC_EXPECT_GT(...) ZEST_STATIC_EXPECT_BINARY(>, !::kota::meta::gt(__VA_ARGS__), (void)0, __VA_ARGS__)
-#define STATIC_EXPECT_GE(...) ZEST_STATIC_EXPECT_BINARY(>=, !::kota::meta::ge(__VA_ARGS__), (void)0, __VA_ARGS__)
-// clang-format on
-
-#define ASSERT_TRUE(...) ZEST_EXPECT_UNARY("true", !(value), return, __VA_ARGS__)
-#define ASSERT_FALSE(...) ZEST_EXPECT_UNARY("false", (value), return, __VA_ARGS__)
-#define ASSERT_EQ(...) ZEST_EXPECT_BINARY(==, !::kota::meta::eq(lhs, rhs), return, __VA_ARGS__)
-#define ASSERT_NE(...) ZEST_EXPECT_BINARY(!=, ::kota::meta::eq(lhs, rhs), return, __VA_ARGS__)
-#define ASSERT_LT(...) ZEST_EXPECT_BINARY(<, !::kota::meta::lt(lhs, rhs), return, __VA_ARGS__)
-#define ASSERT_LE(...) ZEST_EXPECT_BINARY(<=, !::kota::meta::le(lhs, rhs), return, __VA_ARGS__)
-#define ASSERT_GT(...) ZEST_EXPECT_BINARY(>, !::kota::meta::gt(lhs, rhs), return, __VA_ARGS__)
-#define ASSERT_GE(...) ZEST_EXPECT_BINARY(>=, !::kota::meta::ge(lhs, rhs), return, __VA_ARGS__)
-
-#define CO_ASSERT_TRUE(...) ZEST_EXPECT_UNARY("true", !(value), co_return, __VA_ARGS__)
-#define CO_ASSERT_FALSE(...) ZEST_EXPECT_UNARY("false", (value), co_return, __VA_ARGS__)
-#define CO_ASSERT_EQ(...)                                                                          \
-    ZEST_EXPECT_BINARY(==, !::kota::meta::eq(lhs, rhs), co_return, __VA_ARGS__)
-#define CO_ASSERT_NE(...) ZEST_EXPECT_BINARY(!=, ::kota::meta::eq(lhs, rhs), co_return, __VA_ARGS__)
-#define CO_ASSERT_LT(...) ZEST_EXPECT_BINARY(<, !::kota::meta::lt(lhs, rhs), co_return, __VA_ARGS__)
-#define CO_ASSERT_LE(...)                                                                          \
-    ZEST_EXPECT_BINARY(<=, !::kota::meta::le(lhs, rhs), co_return, __VA_ARGS__)
-#define CO_ASSERT_GT(...) ZEST_EXPECT_BINARY(>, !::kota::meta::gt(lhs, rhs), co_return, __VA_ARGS__)
-#define CO_ASSERT_GE(...)                                                                          \
-    ZEST_EXPECT_BINARY(>=, !::kota::meta::ge(lhs, rhs), co_return, __VA_ARGS__)
-// clang-format on
+// Adds a line to the report of every check that fails while it is in scope,
+// e.g. `ZEST_CONTEXT("called from {}:{}", loc.file_name(), loc.line())` in a
+// helper. Takes std::format arguments. Contexts belong to the thread that
+// entered them, so one held across a co_await also shows in the checks of
+// whatever runs meanwhile on that thread, and one that ends on another thread
+// stays in that thread's reports.
+#define ZEST_CONTEXT(...)                                                                          \
+    ::kota::zest::Context ZEST_CONCAT(_zest_context_, __COUNTER__) {                               \
+        __VA_ARGS__                                                                                \
+    }
 
 // clang-format off
 #define ZEST_SNAPSHOT_STR_IMPL(return_action, value, ...)                                          \
-    ZEST_CHECK_IMPL(::kota::zest::check_snapshot(value __VA_OPT__(, __VA_ARGS__)), return_action)
+    do {                                                                                           \
+        if(::kota::zest::check_snapshot(value __VA_OPT__(, __VA_ARGS__))) [[unlikely]] {           \
+            ::kota::zest::detail::fail_reported(std::source_location::current());                  \
+            return_action;                                                                          \
+        }                                                                                           \
+    } while(0)
 
 #define EXPECT_SNAPSHOT(value, ...) ZEST_SNAPSHOT_STR_IMPL((void)0, value __VA_OPT__(,) __VA_ARGS__)
 #define ASSERT_SNAPSHOT(value, ...) ZEST_SNAPSHOT_STR_IMPL(return, value __VA_OPT__(,) __VA_ARGS__)
 #define CO_ASSERT_SNAPSHOT(value, ...) ZEST_SNAPSHOT_STR_IMPL(co_return, value __VA_OPT__(,) __VA_ARGS__)
 
 #define ZEST_SNAPSHOT_GLOB_IMPL(return_action, base_dir, pattern, transform)                        \
-    ZEST_CHECK_IMPL(::kota::zest::check_snapshot_glob(base_dir, pattern, transform), return_action)
+    do {                                                                                           \
+        if(::kota::zest::check_snapshot_glob(base_dir, pattern, transform)) [[unlikely]] {         \
+            ::kota::zest::detail::fail_reported(std::source_location::current());                  \
+            return_action;                                                                          \
+        }                                                                                           \
+    } while(0)
 
 #define EXPECT_SNAPSHOT_GLOB(base_dir, pattern, transform) ZEST_SNAPSHOT_GLOB_IMPL((void)0, base_dir, pattern, transform)
 #define ASSERT_SNAPSHOT_GLOB(base_dir, pattern, transform) ZEST_SNAPSHOT_GLOB_IMPL(return, base_dir, pattern, transform)
@@ -170,22 +139,10 @@
 
 #ifdef __cpp_exceptions
 
-#define CAUGHT(print, ...) (::kota::zest::trace_exception([&]() { (__VA_ARGS__); }, print))
-
-#define ZEST_EXPECT_THROWS(expectation, failure_pred, return_action, ...)                          \
-    do {                                                                                           \
-        auto failed = ([&]() {                                                                     \
-            return ::kota::zest::check_throws_failure((failure_pred),                              \
-                                                      #__VA_ARGS__,                                \
-                                                      (expectation));                              \
-        }());                                                                                      \
-        ZEST_CHECK_IMPL(failed, return_action);                                                    \
-    } while(0)
-
-// clang-format off
-#define EXPECT_THROWS(...) ZEST_EXPECT_THROWS("throw exception", !CAUGHT(false, __VA_ARGS__), (void)0, __VA_ARGS__)
-#define EXPECT_NOTHROWS(...) ZEST_EXPECT_THROWS("not throw exception", CAUGHT(true, __VA_ARGS__), (void)0, __VA_ARGS__)
-// clang-format on
+#define EXPECT_THROWS(...)                                                                         \
+    ::kota::zest::detail::check_throws([&] { (__VA_ARGS__); }, #__VA_ARGS__, true)
+#define EXPECT_NOTHROWS(...)                                                                       \
+    ::kota::zest::detail::check_throws([&] { (__VA_ARGS__); }, #__VA_ARGS__, false)
 
 #endif
 
@@ -203,19 +160,18 @@
         auto _zest_snap_json = ::kota::codec::json::to_string(value);                              \
         if(!_zest_snap_json.has_value()) {                                                         \
             std::println("[snapshot] json serialization failed");                                   \
-            ::kota::zest::print_trace(std::source_location::current());                            \
-            ::kota::zest::failure();                                                                \
+            ::kota::zest::detail::fail_reported(std::source_location::current());                   \
             return_action;                                                                          \
         } else {                                                                                    \
             auto _zest_snap_pretty = ::kota::codec::json::prettify(*_zest_snap_json);              \
             if(!_zest_snap_pretty.has_value()) {                                                   \
                 std::println("[snapshot] json prettify failed");                                    \
-                ::kota::zest::print_trace(std::source_location::current());                        \
-                ::kota::zest::failure();                                                            \
+                ::kota::zest::detail::fail_reported(std::source_location::current());               \
                 return_action;                                                                      \
-            } else {                                                                                \
-                ZEST_CHECK_IMPL(::kota::zest::check_snapshot_expr(                                \
-                    *_zest_snap_pretty, #value __VA_OPT__(, __VA_ARGS__)), return_action);         \
+            } else if(::kota::zest::check_snapshot_expr(                                            \
+                          *_zest_snap_pretty, #value __VA_OPT__(, __VA_ARGS__))) [[unlikely]] {     \
+                ::kota::zest::detail::fail_reported(std::source_location::current());               \
+                return_action;                                                                      \
             }                                                                                       \
         }                                                                                           \
     } while(0)

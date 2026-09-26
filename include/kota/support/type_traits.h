@@ -26,11 +26,6 @@ concept eq_comparable_with = requires(const L& lhs, const R& rhs) {
 };
 
 template <typename L, typename R>
-concept ne_comparable_with = requires(const L& lhs, const R& rhs) {
-    { lhs != rhs } -> std::convertible_to<bool>;
-};
-
-template <typename L, typename R>
 concept lt_comparable_with = requires(const L& lhs, const R& rhs) {
     { lhs < rhs } -> std::convertible_to<bool>;
 };

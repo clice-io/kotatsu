@@ -8,10 +8,10 @@ namespace {
 // Group 5: Peer — lifecycle & error handling
 // ============================================================================
 
-TEST_SUITE(ipc_peer_lifecycle) {
+ZEST_SUITE(ipc_peer_lifecycle) {
 
 // 5.1 Transport read failure → pending requests receive error
-TEST_CASE(read_fail_pending) {
+ZEST_CASE(read_fail_pending) {
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{},
         [](std::string_view payload, ScriptedTransport& channel) {
@@ -33,44 +33,44 @@ TEST_CASE(read_fail_pending) {
     auto request_task = requester();
     loop.schedule(peer.run());
     loop.schedule(request_task);
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    ASSERT_FALSE(request_result.has_value());
-    EXPECT_FALSE(request_result.error().message.empty());
+    ASSERT(!request_result);
+    EXPECT(!request_result.error().message.empty());
 }
 
 // 5.4 close_output() on base Transport → returns unsupported error
-TEST_CASE(close_unsupported) {
+ZEST_CASE(close_unsupported) {
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{});
 
     event_loop loop;
     JsonPeer peer(loop, std::move(transport));
 
     auto close_result = peer.close_output();
-    ASSERT_FALSE(close_result.has_value());
+    ASSERT(!close_result);
 
     auto notify_result = peer.send_notification("test/note", NoteParams{.text = "hello"});
-    ASSERT_TRUE(notify_result.has_value());
+    ASSERT(notify_result);
 
     // Drain the write_loop coroutine scheduled by send_notification
     loop.run();
 }
 
 // 5.5 run() with null transport → immediate return
-TEST_CASE(null_transport) {
+ZEST_CASE(null_transport) {
     event_loop loop;
     JsonPeer peer(loop, nullptr);
 
     loop.schedule(peer.run());
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
     auto close_result = peer.close_output();
-    ASSERT_FALSE(close_result.has_value());
-    EXPECT_EQ(close_result.error().message, "transport is null");
+    ASSERT(!close_result);
+    EXPECT(close_result.error().message == "transport is null");
 }
 
 // 5.6 Double run() → second returns immediately
-TEST_CASE(double_run) {
+ZEST_CASE(double_run) {
     auto transport = std::make_unique<ScriptedTransport>(std::vector<std::string>{}, nullptr);
     auto* transport_ptr = transport.get();
 
@@ -86,11 +86,11 @@ TEST_CASE(double_run) {
     loop.schedule(peer.run());
     loop.schedule(peer.run());  // second run() returns immediately
     loop.schedule(close_task);
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 }
 
 // 5.7 close() stops the read loop
-TEST_CASE(close_stops_run) {
+ZEST_CASE(close_stops_run) {
     auto transport = std::make_unique<ScriptedTransport>(std::vector<std::string>{}, nullptr);
 
     event_loop loop;
@@ -104,11 +104,11 @@ TEST_CASE(close_stops_run) {
     auto close_task = closer();
     loop.schedule(peer.run());
     loop.schedule(close_task);
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 }
 
 // 5.8 close() fails pending outgoing requests
-TEST_CASE(close_fails_pending) {
+ZEST_CASE(close_fails_pending) {
     auto transport = std::make_unique<ScriptedTransport>(std::vector<std::string>{}, nullptr);
 
     event_loop loop;
@@ -128,14 +128,14 @@ TEST_CASE(close_fails_pending) {
     loop.schedule(peer.run());
     loop.schedule(requester());
     loop.schedule(closer());
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    ASSERT_FALSE(request_result.has_value());
-    EXPECT_EQ(request_result.error().message, "peer closed");
+    ASSERT(!request_result);
+    EXPECT(request_result.error().message == "peer closed");
 }
 
 // 5.9 close() cancels in-flight incoming requests (loop exits promptly, not after 10s)
-TEST_CASE(close_cancels_incoming) {
+ZEST_CASE(close_cancels_incoming) {
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{
             R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":1,"b":2}})",
@@ -159,20 +159,20 @@ TEST_CASE(close_cancels_incoming) {
     loop.schedule(peer.run());
     loop.schedule(closer());
     // If close() didn't cancel the handler, this would take ~10 seconds
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 }
 
 // 5.10 close() on null transport is a no-op
-TEST_CASE(close_null_transport) {
+ZEST_CASE(close_null_transport) {
     event_loop loop;
     JsonPeer peer(loop, nullptr);
 
     auto result = peer.close();
-    ASSERT_TRUE(result.has_value());
+    ASSERT(result);
 }
 
 // 5.11 close() is idempotent
-TEST_CASE(close_idempotent) {
+ZEST_CASE(close_idempotent) {
     auto transport = std::make_unique<ScriptedTransport>(std::vector<std::string>{}, nullptr);
 
     event_loop loop;
@@ -186,11 +186,11 @@ TEST_CASE(close_idempotent) {
 
     loop.schedule(peer.run());
     loop.schedule(closer());
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 }
 
 // 5.12 close() awaits all in-flight handlers via request_group.join()
-TEST_CASE(close_awaits_multiple_inflight_handlers) {
+ZEST_CASE(close_awaits_multiple_inflight_handlers) {
     int handlers_started = 0;
     int handlers_completed = 0;
 
@@ -214,20 +214,20 @@ TEST_CASE(close_awaits_multiple_inflight_handlers) {
 
     auto closer = [&]() -> task<> {
         co_await sleep(1, loop);
-        EXPECT_EQ(handlers_started, 3);
+        EXPECT(handlers_started == 3);
         peer.close();
     };
 
     loop.schedule(peer.run());
     loop.schedule(closer());
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    EXPECT_EQ(handlers_started, 3);
-    EXPECT_EQ(handlers_completed, 0);
+    EXPECT(handlers_started == 3);
+    EXPECT(handlers_completed == 0);
 }
 
 // 5.13 close() with mixed completed and in-flight handlers
-TEST_CASE(close_after_partial_completion) {
+ZEST_CASE(close_after_partial_completion) {
     int quick_done = 0;
     int slow_done = 0;
 
@@ -256,21 +256,21 @@ TEST_CASE(close_after_partial_completion) {
 
     auto closer = [&]() -> task<> {
         co_await sleep(5, loop);
-        EXPECT_EQ(quick_done, 1);
-        EXPECT_EQ(slow_done, 0);
+        EXPECT(quick_done == 1);
+        EXPECT(slow_done == 0);
         peer.close();
     };
 
     loop.schedule(peer.run());
     loop.schedule(closer());
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    EXPECT_EQ(quick_done, 1);
-    EXPECT_EQ(slow_done, 0);
+    EXPECT(quick_done == 1);
+    EXPECT(slow_done == 0);
 }
 
 // 5.14 write failure closes transport, ending the read loop
-TEST_CASE(write_fail_closes_transport) {
+ZEST_CASE(write_fail_closes_transport) {
     auto transport = std::make_unique<ScriptedTransport>(std::vector<std::string>{}, nullptr);
     auto* transport_ptr = transport.get();
 
@@ -287,13 +287,13 @@ TEST_CASE(write_fail_closes_transport) {
 
     loop.schedule(peer.run());
     loop.schedule(requester());
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    ASSERT_FALSE(request_result.has_value());
-    EXPECT_FALSE(request_result.error().message.empty());
+    ASSERT(!request_result);
+    EXPECT(!request_result.error().message.empty());
 }
 
-};  // TEST_SUITE(ipc_peer_lifecycle)
+};  // ZEST_SUITE(ipc_peer_lifecycle)
 
 }  // namespace
 }  // namespace kota::ipc

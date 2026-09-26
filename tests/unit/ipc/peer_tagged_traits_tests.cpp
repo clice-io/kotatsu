@@ -4,10 +4,10 @@
 namespace kota::ipc {
 namespace {
 
-TEST_SUITE(ipc_peer_tagged_traits) {
+ZEST_SUITE(ipc_peer_tagged_traits) {
 
 // on_request<Tag> dispatches by tag's method name
-TEST_CASE(tagged_request_handler) {
+ZEST_CASE(tagged_request_handler) {
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":1,"method":"test/taggedAdd","params":{"a":10,"b":20}})",
     });
@@ -22,18 +22,18 @@ TEST_CASE(tagged_request_handler) {
         });
 
     loop.schedule(peer.run());
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    ASSERT(transport_ptr->outgoing().size() == 1U);
     auto response = codec::json::from_string<Response>(transport_ptr->outgoing().front());
-    ASSERT_TRUE(response.has_value());
-    EXPECT_EQ(std::get<std::int64_t>(response->id), 1);
-    ASSERT_TRUE(response->result.has_value());
-    EXPECT_EQ(response->result->sum, 30);
+    ASSERT(response);
+    EXPECT(std::get<std::int64_t>(response->id) == 1);
+    ASSERT(response->result);
+    EXPECT(response->result->sum == 30);
 }
 
 // on_notification<Tag> dispatches by tag's method name
-TEST_CASE(tagged_notification_handler) {
+ZEST_CASE(tagged_notification_handler) {
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","method":"test/taggedNote","params":{"text":"hello tag"}})",
     });
@@ -45,13 +45,13 @@ TEST_CASE(tagged_notification_handler) {
     peer.on_notification<TaggedNote>([&](const NoteParams& params) { received = params.text; });
 
     loop.schedule(peer.run());
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
-    EXPECT_EQ(received, "hello tag");
+    EXPECT(received == "hello tag");
 }
 
 // send_request<Tag> and send_notification<Tag> use tag's method name
-TEST_CASE(tagged_send_apis) {
+ZEST_CASE(tagged_send_apis) {
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{
             R"({"jsonrpc":"2.0","id":7,"method":"test/add","params":{"a":1,"b":2}})",
@@ -80,30 +80,30 @@ TEST_CASE(tagged_send_apis) {
     });
 
     loop.schedule(peer.run());
-    EXPECT_EQ(loop.run(), 0);
+    EXPECT(loop.run() == 0);
 
     const auto& outgoing = transport_ptr->outgoing();
-    ASSERT_EQ(outgoing.size(), 3U);
+    ASSERT(outgoing.size() == 3U);
 
     auto note = codec::json::from_string<Notification>(outgoing[0]);
-    ASSERT_TRUE(note.has_value());
-    EXPECT_EQ(note->method, "test/taggedNote");
-    EXPECT_EQ(note->params.text, "tagged");
+    ASSERT(note);
+    EXPECT(note->method == "test/taggedNote");
+    EXPECT(note->params.text == "tagged");
 
     auto req = codec::json::from_string<Request>(outgoing[1]);
-    ASSERT_TRUE(req.has_value());
-    EXPECT_EQ(req->method, "test/taggedAdd");
-    EXPECT_EQ(req->params.a, 42);
-    EXPECT_EQ(req->params.b, 58);
+    ASSERT(req);
+    EXPECT(req->method == "test/taggedAdd");
+    EXPECT(req->params.a == 42);
+    EXPECT(req->params.b == 58);
 
     auto resp = codec::json::from_string<Response>(outgoing[2]);
-    ASSERT_TRUE(resp.has_value());
-    EXPECT_EQ(std::get<std::int64_t>(resp->id), 7);
-    ASSERT_TRUE(resp->result.has_value());
-    EXPECT_EQ(resp->result->sum, 99);
+    ASSERT(resp);
+    EXPECT(std::get<std::int64_t>(resp->id) == 7);
+    ASSERT(resp->result);
+    EXPECT(resp->result->sum == 99);
 }
 
-};  // TEST_SUITE(ipc_peer_tagged_traits)
+};  // ZEST_SUITE(ipc_peer_tagged_traits)
 
 }  // namespace
 }  // namespace kota::ipc

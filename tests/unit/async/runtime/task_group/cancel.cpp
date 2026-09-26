@@ -1,4 +1,4 @@
-// TEST_SUITE(task_group_cancel): cancellation semantics for task_group — child
+// ZEST_SUITE(task_group_cancel): cancellation semantics for task_group — child
 // self-cancel fail-fast, external token cancel, group.cancel() (idempotent,
 // empty, while join suspended, from a running child), spawn-after-cancel, and
 // partial completion then cancel. Error/exception collection under cancel lives
@@ -10,9 +10,9 @@
 
 namespace kota {
 
-TEST_SUITE(task_group_cancel, loop_fixture) {
+ZEST_SUITE(task_group_cancel, loop_fixture) {
 
-TEST_CASE(child_self_cancel) {
+ZEST_CASE(child_self_cancel) {
     int slow_done = 0;
 
     auto canceler = [&]() -> task<> {
@@ -37,11 +37,11 @@ TEST_CASE(child_self_cancel) {
     // Child self-cancel triggers fail-fast (cancels siblings) but the
     // group itself finishes normally — InterceptCancel on spawned
     // children means cancellation doesn't propagate as group failure.
-    EXPECT_TRUE(t->is_finished());
-    EXPECT_EQ(slow_done, 0);
+    EXPECT(t->is_finished());
+    EXPECT(slow_done == 0);
 }
 
-TEST_CASE(token_cancel) {
+ZEST_CASE(token_cancel) {
     cancellation_source source;
     int finished = 0;
 
@@ -68,11 +68,11 @@ TEST_CASE(token_cancel) {
     auto cancel_task = canceler();
     schedule_all(guarded, cancel_task);
 
-    EXPECT_FALSE(guarded.value().has_value());
-    EXPECT_EQ(finished, 0);
+    EXPECT(!guarded.value());
+    EXPECT(finished == 0);
 }
 
-TEST_CASE(cancel) {
+ZEST_CASE(cancel) {
     int finished = 0;
 
     auto slow = [&](int ms) -> task<> {
@@ -90,10 +90,10 @@ TEST_CASE(cancel) {
 
     auto t = driver();
     schedule_all(t);
-    EXPECT_EQ(finished, 0);
+    EXPECT(finished == 0);
 }
 
-TEST_CASE(spawn_after_cancel) {
+ZEST_CASE(spawn_after_cancel) {
     int count = 0;
 
     auto work = [&]() -> task<> {
@@ -111,10 +111,10 @@ TEST_CASE(spawn_after_cancel) {
 
     auto t = driver();
     schedule_all(t);
-    EXPECT_EQ(count, 1);
+    EXPECT(count == 1);
 }
 
-TEST_CASE(cancel_idempotent) {
+ZEST_CASE(cancel_idempotent) {
     int finished = 0;
 
     auto slow = [&]() -> task<> {
@@ -133,10 +133,10 @@ TEST_CASE(cancel_idempotent) {
 
     auto t = driver();
     schedule_all(t);
-    EXPECT_EQ(finished, 0);
+    EXPECT(finished == 0);
 }
 
-TEST_CASE(empty_cancel) {
+ZEST_CASE(empty_cancel) {
     auto driver = [&]() -> task<> {
         task_group<> group(loop);
         group.cancel();
@@ -145,10 +145,10 @@ TEST_CASE(empty_cancel) {
 
     auto t = driver();
     schedule_all(t);
-    EXPECT_TRUE(t->is_finished());
+    EXPECT(t->is_finished());
 }
 
-TEST_CASE(external_cancel_sets_stopped) {
+ZEST_CASE(external_cancel_sets_stopped) {
     cancellation_source source;
     int finished = 0;
 
@@ -174,12 +174,12 @@ TEST_CASE(external_cancel_sets_stopped) {
 
     auto cancel_task = canceler();
     schedule_all(guarded, cancel_task);
-    EXPECT_FALSE(guarded.value().has_value());
-    EXPECT_EQ(finished, 0);
+    EXPECT(!guarded.value());
+    EXPECT(finished == 0);
 }
 
 // cancel() called while join() is suspended — tests flush_deferred() fast path
-TEST_CASE(cancel_while_join_suspended) {
+ZEST_CASE(cancel_while_join_suspended) {
     int finished = 0;
     task_group<>* group_ptr = nullptr;
 
@@ -204,12 +204,12 @@ TEST_CASE(cancel_while_join_suspended) {
     auto t = driver();
     auto c = canceler();
     schedule_all(t, c);
-    EXPECT_TRUE(t->is_finished());
-    EXPECT_EQ(finished, 0);
+    EXPECT(t->is_finished());
+    EXPECT(finished == 0);
 }
 
 // Partial completion then external cancel then join completes
-TEST_CASE(partial_completion_then_cancel) {
+ZEST_CASE(partial_completion_then_cancel) {
     int fast_done = 0;
     int slow_done = 0;
     task_group<>* group_ptr = nullptr;
@@ -240,16 +240,16 @@ TEST_CASE(partial_completion_then_cancel) {
     auto t = driver();
     auto c = canceler();
     schedule_all(t, c);
-    EXPECT_TRUE(t->is_finished());
-    EXPECT_EQ(fast_done, 1);
-    EXPECT_EQ(slow_done, 0);
+    EXPECT(t->is_finished());
+    EXPECT(fast_done == 1);
+    EXPECT(slow_done == 0);
 }
 
 // A child task calls group.cancel() while running on the call stack.
 // Without the child==self sentinel in cancel(), this causes double-finalize:
 // cancel() finalizes the running child immediately (child==nullptr, parent!=nullptr),
 // then when the coroutine reaches final_suspend, transition_await calls finalize() again.
-TEST_CASE(cancel_from_running_child) {
+ZEST_CASE(cancel_from_running_child) {
     int slow_done = 0;
     task_group<>* group_ptr = nullptr;
 
@@ -273,10 +273,10 @@ TEST_CASE(cancel_from_running_child) {
 
     auto t = driver();
     schedule_all(t);
-    EXPECT_TRUE(t->is_finished());
-    EXPECT_EQ(slow_done, 0);
+    EXPECT(t->is_finished());
+    EXPECT(slow_done == 0);
 }
 
-};  // TEST_SUITE(task_group_cancel)
+};  // ZEST_SUITE(task_group_cancel)
 
 }  // namespace kota

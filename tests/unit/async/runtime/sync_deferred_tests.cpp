@@ -1,4 +1,4 @@
-// TEST_SUITE(sync_deferred): the deferred sync-resume mechanism. When a sync
+// ZEST_SUITE(sync_deferred): the deferred sync-resume mechanism. When a sync
 // primitive (mutex/semaphore/cv/event) hands off ownership to a waiter, the
 // resume is deferred; these tests cover a cancelled waiter abandoning the grant
 // (slot/lock recovery), same-tick and chained deferred resumes, and interrupt
@@ -14,12 +14,12 @@ namespace {
 
 using namespace std::chrono;
 
-TEST_SUITE(sync_deferred, loop_fixture) {
+ZEST_SUITE(sync_deferred, loop_fixture) {
 
 // when_any: a holds mutex, sleeps, unlocks (defers b's resume), then co_returns
 // (winner). when_any cancels b synchronously. The deferred resume fires on a
 // cancelled task — abandon_fn must release the transferred mutex lock.
-TEST_CASE(any_cancel_abandons_deferred_mutex_grant) {
+ZEST_CASE(any_cancel_abandons_deferred_mutex_grant) {
     mutex m;
 
     auto a = [&]() -> task<int> {
@@ -36,21 +36,21 @@ TEST_CASE(any_cancel_abandons_deferred_mutex_grant) {
 
     auto combined = [&]() -> task<> {
         auto winner = co_await when_any(a(), b());
-        EXPECT_EQ(winner.index(), 0U);
-        EXPECT_EQ(std::get<0>(winner), 1);
+        EXPECT(winner.index() == 0U);
+        EXPECT(std::get<0>(winner) == 1);
     };
 
     auto t = combined();
     schedule_all(t);
 
     // Mutex must be usable — b's deferred lock grant was abandoned
-    EXPECT_TRUE(m.try_lock());
+    EXPECT(m.try_lock());
     m.unlock();
 }
 
 // when_any: b releases semaphore (defers a's resume), then b co_returns (winner).
 // when_any cancels a — abandon_fn must release the semaphore slot.
-TEST_CASE(any_cancel_abandons_deferred_semaphore_grant) {
+ZEST_CASE(any_cancel_abandons_deferred_semaphore_grant) {
     semaphore sem(0);
 
     auto a = [&]() -> task<int> {
@@ -66,20 +66,20 @@ TEST_CASE(any_cancel_abandons_deferred_semaphore_grant) {
 
     auto combined = [&]() -> task<> {
         auto winner = co_await when_any(a(), b());
-        EXPECT_EQ(winner.index(), 1U);
-        EXPECT_EQ(std::get<1>(winner), 2);
+        EXPECT(winner.index() == 1U);
+        EXPECT(std::get<1>(winner) == 2);
     };
 
     auto t = combined();
     schedule_all(t);
 
     // Semaphore slot must be recovered
-    EXPECT_TRUE(sem.try_acquire());
+    EXPECT(sem.try_acquire());
 }
 
 // Mutex unlock + cancel race: both defer in the same tick. Regardless of which
 // fires first, the mutex must remain usable afterwards.
-TEST_CASE(mutex_cancel_and_deferred_resume_race) {
+ZEST_CASE(mutex_cancel_and_deferred_resume_race) {
     mutex m;
     cancellation_source source;
 
@@ -101,13 +101,13 @@ TEST_CASE(mutex_cancel_and_deferred_resume_race) {
     schedule_all(holder_task, guarded);
 
     // Regardless of outcome, the mutex must be usable
-    EXPECT_TRUE(m.try_lock());
+    EXPECT(m.try_lock());
     m.unlock();
 }
 
 // When all waiters on a semaphore are cancelled before release, the slot must
 // not be lost.
-TEST_CASE(semaphore_slot_recovery_all_waiters_cancelled) {
+ZEST_CASE(semaphore_slot_recovery_all_waiters_cancelled) {
     semaphore sem(0);
     cancellation_source source;
     int acquired_count = 0;
@@ -129,17 +129,17 @@ TEST_CASE(semaphore_slot_recovery_all_waiters_cancelled) {
     auto cancel_task = canceler();
     schedule_all(g1, g2, cancel_task);
 
-    EXPECT_EQ(acquired_count, 0);
-    EXPECT_FALSE(g1.value().has_value());
-    EXPECT_FALSE(g2.value().has_value());
+    EXPECT(acquired_count == 0);
+    EXPECT(!g1.value());
+    EXPECT(!g2.value());
 
     // The released slot must still be available
-    EXPECT_TRUE(sem.try_acquire());
+    EXPECT(sem.try_acquire());
 }
 
 // semaphore::release with active waiters that are all already cancelled —
 // the slot goes back to the count.
-TEST_CASE(semaphore_release_with_cancelled_waiters_recovers_slot) {
+ZEST_CASE(semaphore_release_with_cancelled_waiters_recovers_slot) {
     semaphore sem(0);
     cancellation_source source;
 
@@ -160,16 +160,16 @@ TEST_CASE(semaphore_release_with_cancelled_waiters_recovers_slot) {
     auto driver_task = driver();
     schedule_all(g1, g2, driver_task);
 
-    EXPECT_FALSE(g1.value().has_value());
-    EXPECT_FALSE(g2.value().has_value());
+    EXPECT(!g1.value());
+    EXPECT(!g2.value());
 
-    EXPECT_TRUE(sem.try_acquire());
-    EXPECT_TRUE(sem.try_acquire());
-    EXPECT_FALSE(sem.try_acquire());
+    EXPECT(sem.try_acquire());
+    EXPECT(sem.try_acquire());
+    EXPECT(!sem.try_acquire());
 }
 
 // Multiple sync primitives defer resumes in the same tick — all should fire.
-TEST_CASE(multiple_deferred_resumes_in_same_tick) {
+ZEST_CASE(multiple_deferred_resumes_in_same_tick) {
     event ev1;
     event ev2;
     int done_count = 0;
@@ -195,12 +195,12 @@ TEST_CASE(multiple_deferred_resumes_in_same_tick) {
     auto t3 = signaler();
     schedule_all(t1, t2, t3);
 
-    EXPECT_EQ(done_count, 2);
+    EXPECT(done_count == 2);
 }
 
 // A deferred resume triggers code that itself defers another resume (chained).
 // Both must complete within the same drain cycle.
-TEST_CASE(chained_deferred_resumes) {
+ZEST_CASE(chained_deferred_resumes) {
     event ev1;
     event ev2;
     int step = 0;
@@ -227,12 +227,12 @@ TEST_CASE(chained_deferred_resumes) {
     auto t3 = trigger();
     schedule_all(t1, t2, t3);
 
-    EXPECT_EQ(step, 2);
+    EXPECT(step == 2);
 }
 
 // Three events chained: A → B → C. Verifies the drain while-loop processes
 // items queued by earlier iterations.
-TEST_CASE(triple_chained_deferred_resumes) {
+ZEST_CASE(triple_chained_deferred_resumes) {
     event ev1;
     event ev2;
     event ev3;
@@ -267,12 +267,12 @@ TEST_CASE(triple_chained_deferred_resumes) {
     auto t4 = trigger();
     schedule_all(t1, t2, t3, t4);
 
-    EXPECT_EQ(step, 3);
+    EXPECT(step == 3);
 }
 
 // event::interrupt() defers cancel for each waiter. If a waiter is already
 // cancelled via cancellation_source, the interrupt should be safe.
-TEST_CASE(interrupt_after_cancel_is_safe) {
+ZEST_CASE(interrupt_after_cancel_is_safe) {
     event ev;
     cancellation_source source;
 
@@ -292,12 +292,12 @@ TEST_CASE(interrupt_after_cancel_is_safe) {
     auto driver_task = driver();
     schedule_all(guarded, driver_task);
 
-    EXPECT_FALSE(guarded.value().has_value());
+    EXPECT(!guarded.value());
 }
 
 // Multiple deferred resumes from the same unlock: a mutex with multiple waiters,
 // all should eventually acquire and release.
-TEST_CASE(mutex_multiple_waiters_all_resume) {
+ZEST_CASE(mutex_multiple_waiters_all_resume) {
     mutex m;
     int acquired_count = 0;
 
@@ -319,12 +319,12 @@ TEST_CASE(mutex_multiple_waiters_all_resume) {
     auto h = holder();
     schedule_all(h, w1, w2, w3);
 
-    EXPECT_EQ(acquired_count, 3);
+    EXPECT(acquired_count == 3);
 }
 
 // when_all with deferred resume: both children complete via deferred resume.
 // Verifies the aggregate settles correctly when completions arrive from drain.
-TEST_CASE(all_both_children_deferred) {
+ZEST_CASE(all_both_children_deferred) {
     event ev1;
     event ev2;
     int a_done = 0;
@@ -354,14 +354,14 @@ TEST_CASE(all_both_children_deferred) {
     auto s = signaler();
     schedule_all(c, s);
 
-    EXPECT_EQ(a_done, 1);
-    EXPECT_EQ(b_done, 1);
+    EXPECT(a_done == 1);
+    EXPECT(b_done == 1);
 }
 
 // CV notify inside when_any: notifier defers waiter's resume, then co_returns.
 // when_any cancels the waiter. The mutex held by the CV waiter must be released
 // properly (cv.wait re-acquires the mutex before resuming the waiter).
-TEST_CASE(any_cancel_deferred_cv_wait) {
+ZEST_CASE(any_cancel_deferred_cv_wait) {
     mutex m;
     condition_variable cv;
 
@@ -380,19 +380,19 @@ TEST_CASE(any_cancel_deferred_cv_wait) {
 
     auto combined = [&]() -> task<> {
         auto winner = co_await when_any(a(), b());
-        EXPECT_EQ(winner.index(), 1U);
-        EXPECT_EQ(std::get<1>(winner), 2);
+        EXPECT(winner.index() == 1U);
+        EXPECT(std::get<1>(winner) == 2);
     };
 
     auto t = combined();
     schedule_all(t);
 
     // Mutex must be usable after the cancelled CV wait
-    EXPECT_TRUE(m.try_lock());
+    EXPECT(m.try_lock());
     m.unlock();
 }
 
-};  // TEST_SUITE(sync_deferred)
+};  // ZEST_SUITE(sync_deferred)
 
 }  // namespace
 

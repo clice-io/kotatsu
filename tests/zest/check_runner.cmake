@@ -8,6 +8,8 @@ function(run_fixture)
         ERROR_VARIABLE output
         RESULT_VARIABLE code
     )
+    # Windows writes text with CRLF line ends.
+    string(REPLACE "\r" "" output "${output}")
     set(output "${output}" PARENT_SCOPE)
     set(code "${code}" PARENT_SCOPE)
 endfunction()
@@ -22,6 +24,13 @@ function(expect_output text)
     string(FIND "${output}" "${text}" at)
     if(at EQUAL -1)
         message(FATAL_ERROR "expected `${text}` in the output:\n${output}")
+    endif()
+endfunction()
+
+function(expect_no_output text)
+    string(FIND "${output}" "${text}" at)
+    if(NOT at EQUAL -1)
+        message(FATAL_ERROR "expected no `${text}` in the output:\n${output}")
     endif()
 endfunction()
 
@@ -112,6 +121,38 @@ if(fresh_at EQUAL -1 OR NOT EXISTS "${snapshots}/fixture_snapshot/also_checked.s
    OR EXISTS "${snapshots}/fixture_snapshot/orphan.snap.yml")
     message(FATAL_ERROR "snapshots not updated and cleaned up as expected:\n${output}")
 endif()
+
+# A failed check shows its operands, a predicate's inputs, an unexpected's
+# error and the contexts in scope, outermost first; a failed ASSERT ends its
+# test, a failed STATIC_EXPECT is reported like any other check, and a failed
+# snapshot shows its contexts too.
+run_fixture("${FIXTURE}" --list-tests --test-filter=fixture_report.*)
+string(FIND "${output}" "fixture_report.throws_nothing" at)
+if(at EQUAL -1)
+    set(report_failures 8)
+else()
+    set(report_failures 9)
+endif()
+run_fixture("${FIXTURE}" --test-filter=fixture_report.* --jobs=1)
+expect_code(1)
+expect_output("[ expect ] std::string(\"left\") == \"right\"")
+expect_output("lhs: \"left\"")
+expect_output("rhs: \"right\"")
+expect_output("haystack: \"haystack\"")
+expect_output("needle: \"needle\"")
+expect_output("got: \"boom\"")
+expect_output("context: while checking 42\n           context: inner")
+expect_output("[ expect ] !contains(std::string(\"haystack\"), \"hay\")")
+expect_output("needle: \"hay\"")
+expect_output("[ expect ] 1 + 1 == 3")
+expect_output("lhs: 2")
+expect_no_output("printed after a failed assert")
+expect_output("context: while taking a snapshot")
+if(report_failures EQUAL 9)
+    expect_output("[ expect ] std::string(\"no exception\")")
+    expect_output("expected to throw")
+endif()
+expect_output("[  FAILED  ] ${report_failures} tests, listed below:")
 
 # The program's own flag reaches the workers, which here refuse to start.
 run_fixture("${FIXTURE}" --test-filter=fixture.passes --fail-worker-start)

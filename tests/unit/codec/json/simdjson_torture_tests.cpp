@@ -17,7 +17,7 @@ auto rt = []<typename T>(const T& input) -> std::expected<T, rich_error> {
     return from_string<T>(*encoded);
 };
 
-TEST_SUITE(serde_simdjson_standard) {
+ZEST_SUITE(serde_simdjson_standard) {
 
 SERDE_STANDARD_TEST_CASES_PRIMITIVES(rt)
 SERDE_STANDARD_TEST_CASES_NUMERIC_BOUNDARIES(rt)
@@ -31,7 +31,7 @@ SERDE_STANDARD_TEST_CASES_ATTRS(rt)
 SERDE_STANDARD_TEST_CASES_TAGGED_VARIANTS(rt)
 SERDE_STANDARD_TEST_CASES_COMPLEX(rt)
 
-};  // TEST_SUITE(serde_simdjson_standard)
+};  // ZEST_SUITE(serde_simdjson_standard)
 
 }  // namespace
 

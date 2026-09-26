@@ -208,30 +208,30 @@ using Parsed = option::ParsedArg;
 using option::test::ParsedArgs;
 using option::test::parse_with;
 
-TEST_SUITE(deco_backend) {
+ZEST_SUITE(deco_backend) {
 
-TEST_CASE(storage_keeps_dummy_alignment_for_id_map) {
+ZEST_CASE(storage_keeps_dummy_alignment_for_id_map) {
     const auto& built = detail::build_storage<ParseAllOpt>();
 
-    EXPECT_TRUE(built.opt_size() > 1);
-    EXPECT_TRUE(built.id_map().size() == built.option_infos().size() + 1);
-    EXPECT_TRUE(built.category_map().size() == built.id_map().size());
-    EXPECT_TRUE(built.id_map()[0] == nullptr);
-    EXPECT_TRUE(built.category_map()[0] == nullptr);
-    EXPECT_TRUE(built.option_infos().size() == built.opt_size());
+    EXPECT(built.opt_size() > 1);
+    EXPECT(built.id_map().size() == built.option_infos().size() + 1);
+    EXPECT(built.category_map().size() == built.id_map().size());
+    EXPECT(built.id_map()[0] == nullptr);
+    EXPECT(built.category_map()[0] == nullptr);
+    EXPECT(built.option_infos().size() == built.opt_size());
     for(size_t i = 0; i < built.option_infos().size(); ++i) {
-        EXPECT_TRUE(built.option_infos()[i].id == i + 1);
+        EXPECT(built.option_infos()[i].id == i + 1);
         if(built.option_infos()[i].kind == option::Kind::Unknown) {
-            EXPECT_TRUE(built.id_map()[i + 1] == nullptr);
-            EXPECT_TRUE(built.category_map()[i + 1] == nullptr);
+            EXPECT(built.id_map()[i + 1] == nullptr);
+            EXPECT(built.category_map()[i + 1] == nullptr);
         } else {
-            EXPECT_TRUE(built.id_map()[i + 1] != nullptr);
-            EXPECT_TRUE(built.category_map()[i + 1] != nullptr);
+            EXPECT(built.id_map()[i + 1] != nullptr);
+            EXPECT(built.category_map()[i + 1] != nullptr);
         }
     }
 }
 
-TEST_CASE(parse_covers_flag_input_kv_comma_multi) {
+ZEST_CASE(parse_covers_flag_input_kv_comma_multi) {
     const auto& built = detail::build_storage<ParseAllOpt>();
     std::vector<std::string> argv = {"--version",
                                      "--opt42",
@@ -247,263 +247,263 @@ TEST_CASE(parse_covers_flag_input_kv_comma_multi) {
                                      "tail2"};
 
     auto parsed_args = parse_with(built, argv);
-    EXPECT_TRUE(parsed_args.has_value());
+    EXPECT(parsed_args);
     if(!parsed_args.has_value()) {
         return;
     }
     auto args = std::move(parsed_args.value());
     ParseAllOpt opt{};
 
-    EXPECT_TRUE(args.size() == 9);
+    EXPECT(args.size() == 9);
     if(args.size() != 9) {
         return;
     }
 
-    EXPECT_TRUE(args[0].spelling == "--version");
-    EXPECT_TRUE(args[0].values.empty());
-    EXPECT_TRUE(built.field_ptr_of(args[0].id, opt) == static_cast<void*>(&opt.verbose));
+    EXPECT(args[0].spelling == "--version");
+    EXPECT(args[0].values.empty());
+    EXPECT(built.field_ptr_of(args[0].id, opt) == static_cast<void*>(&opt.verbose));
 
-    EXPECT_TRUE(args[1].spelling == "--opt");
-    EXPECT_TRUE(args[1].values.size() == 1);
-    EXPECT_TRUE(args[1].values[0] == "42");
-    EXPECT_TRUE(built.field_ptr_of(args[1].id, opt) == static_cast<void*>(&opt.opt));
+    EXPECT(args[1].spelling == "--opt");
+    EXPECT(args[1].values.size() == 1);
+    EXPECT(args[1].values[0] == "42");
+    EXPECT(built.field_ptr_of(args[1].id, opt) == static_cast<void*>(&opt.opt));
 
-    EXPECT_TRUE(args[2].spelling == "--out-path");
-    EXPECT_TRUE(args[2].values.size() == 1);
-    EXPECT_TRUE(args[2].values[0] == "a.out");
-    EXPECT_TRUE(built.field_ptr_of(args[2].id, opt) == static_cast<void*>(&opt.nested.out_path));
-    EXPECT_TRUE(built.category_of(args[2].id) == &sharedCategory);
+    EXPECT(args[2].spelling == "--out-path");
+    EXPECT(args[2].values.size() == 1);
+    EXPECT(args[2].values[0] == "a.out");
+    EXPECT(built.field_ptr_of(args[2].id, opt) == static_cast<void*>(&opt.nested.out_path));
+    EXPECT((built.category_of(args[2].id) == &sharedCategory));
 
-    EXPECT_TRUE(args[3].spelling == "--T");
-    EXPECT_TRUE(args[3].values.size() == 2);
-    EXPECT_TRUE(args[3].values[0] == "x");
-    EXPECT_TRUE(args[3].values[1] == "y");
-    EXPECT_TRUE(built.field_ptr_of(args[3].id, opt) == static_cast<void*>(&opt.nested.tags));
+    EXPECT(args[3].spelling == "--T");
+    EXPECT(args[3].values.size() == 2);
+    EXPECT(args[3].values[0] == "x");
+    EXPECT(args[3].values[1] == "y");
+    EXPECT(built.field_ptr_of(args[3].id, opt) == static_cast<void*>(&opt.nested.tags));
 
-    EXPECT_TRUE(args[4].spelling == "-P");
-    EXPECT_TRUE(args[4].values.size() == 2);
-    EXPECT_TRUE(args[4].values[0] == "left");
-    EXPECT_TRUE(args[4].values[1] == "right");
-    EXPECT_TRUE(built.field_ptr_of(args[4].id, opt) == static_cast<void*>(&opt.pair));
+    EXPECT(args[4].spelling == "-P");
+    EXPECT(args[4].values.size() == 2);
+    EXPECT(args[4].values[0] == "left");
+    EXPECT(args[4].values[1] == "right");
+    EXPECT(built.field_ptr_of(args[4].id, opt) == static_cast<void*>(&opt.pair));
 
-    EXPECT_TRUE(args[5].spelling == "main.cc");
-    EXPECT_TRUE(args[5].values.empty());
-    EXPECT_TRUE(built.field_ptr_of(args[5].id, opt) == static_cast<void*>(&opt.input));
+    EXPECT(args[5].spelling == "main.cc");
+    EXPECT(args[5].values.empty());
+    EXPECT(built.field_ptr_of(args[5].id, opt) == static_cast<void*>(&opt.input));
 
-    EXPECT_TRUE(args[6].spelling == "--");
-    EXPECT_TRUE(args[6].values.empty());
-    EXPECT_TRUE(built.field_ptr_of(args[6].id, opt) == nullptr);
-    EXPECT_TRUE(built.category_of(args[6].id) == nullptr);
+    EXPECT(args[6].spelling == "--");
+    EXPECT(args[6].values.empty());
+    EXPECT(built.field_ptr_of(args[6].id, opt) == nullptr);
+    EXPECT(built.category_of(args[6].id) == nullptr);
 
-    EXPECT_TRUE(args[7].spelling == "tail1");
-    EXPECT_TRUE(args[7].values.empty());
-    EXPECT_TRUE(built.field_ptr_of(args[7].id, opt) == static_cast<void*>(&opt.input));
+    EXPECT(args[7].spelling == "tail1");
+    EXPECT(args[7].values.empty());
+    EXPECT(built.field_ptr_of(args[7].id, opt) == static_cast<void*>(&opt.input));
 
-    EXPECT_TRUE(args[8].spelling == "tail2");
-    EXPECT_TRUE(args[8].values.empty());
-    EXPECT_TRUE(built.field_ptr_of(args[8].id, opt) == static_cast<void*>(&opt.input));
+    EXPECT(args[8].spelling == "tail2");
+    EXPECT(args[8].values.empty());
+    EXPECT(built.field_ptr_of(args[8].id, opt) == static_cast<void*>(&opt.input));
 }
 
-TEST_CASE(parse_pack_covers_trailing_input_option) {
+ZEST_CASE(parse_pack_covers_trailing_input_option) {
     const auto& built = detail::build_storage<ParsePackOpt>();
     std::vector<std::string> argv = {"-d", "--", "a", "b", "c"};
 
     auto parsed_args = parse_with(built, argv);
-    EXPECT_TRUE(parsed_args.has_value());
+    EXPECT(parsed_args);
     if(!parsed_args.has_value()) {
         return;
     }
     auto args = std::move(parsed_args.value());
     ParsePackOpt opt{};
 
-    EXPECT_TRUE(args.size() == 2);
+    EXPECT(args.size() == 2);
 
-    EXPECT_TRUE(args[0].spelling == "-d");
-    EXPECT_TRUE(args[0].values.empty());
-    EXPECT_TRUE(built.field_ptr_of(args[0].id, opt) == static_cast<void*>(&opt.d));
+    EXPECT(args[0].spelling == "-d");
+    EXPECT(args[0].values.empty());
+    EXPECT(built.field_ptr_of(args[0].id, opt) == static_cast<void*>(&opt.d));
 
-    EXPECT_TRUE(args[1].spelling == "--");
-    EXPECT_TRUE(args[1].values.size() == 3);
-    EXPECT_TRUE(args[1].values[0] == "a");
-    EXPECT_TRUE(args[1].values[1] == "b");
-    EXPECT_TRUE(args[1].values[2] == "c");
-    EXPECT_TRUE(built.field_ptr_of(args[1].id, opt) == static_cast<void*>(&opt.pack));
+    EXPECT(args[1].spelling == "--");
+    EXPECT(args[1].values.size() == 3);
+    EXPECT(args[1].values[0] == "a");
+    EXPECT(args[1].values[1] == "b");
+    EXPECT(args[1].values[2] == "c");
+    EXPECT(built.field_ptr_of(args[1].id, opt) == static_cast<void*>(&opt.pack));
 }
 
-TEST_CASE(parse_input_and_pack_can_coexist) {
+ZEST_CASE(parse_input_and_pack_can_coexist) {
     const auto& built = detail::build_storage<InputThenPackOpt>();
     auto parsed_args = parse_with(built, {"front", "--", "a", "b"});
-    EXPECT_TRUE(parsed_args.has_value());
+    EXPECT(parsed_args);
     if(!parsed_args.has_value()) {
         return;
     }
     auto args = std::move(parsed_args.value());
     InputThenPackOpt opt{};
 
-    EXPECT_TRUE(args.size() == 2);
-    EXPECT_TRUE(!built.is_trailing_argument(args[0]));
-    EXPECT_TRUE(built.field_ptr_of(args[0].id, opt) == static_cast<void*>(&opt.input));
-    EXPECT_TRUE(built.category_of(args[0].id) == &inputCategory);
+    EXPECT(args.size() == 2);
+    EXPECT(!built.is_trailing_argument(args[0]));
+    EXPECT(built.field_ptr_of(args[0].id, opt) == static_cast<void*>(&opt.input));
+    EXPECT((built.category_of(args[0].id) == &inputCategory));
 
-    EXPECT_TRUE(built.is_trailing_argument(args[1]));
-    EXPECT_TRUE(built.trailing_ptr_of(opt) == static_cast<void*>(&opt.pack));
-    EXPECT_TRUE(built.trailing_category() == &trailingCategory);
+    EXPECT(built.is_trailing_argument(args[1]));
+    EXPECT(built.trailing_ptr_of(opt) == static_cast<void*>(&opt.pack));
+    EXPECT((built.trailing_category() == &trailingCategory));
 }
 
-TEST_CASE(parse_pack_then_input_rebinds_input_id_map) {
+ZEST_CASE(parse_pack_then_input_rebinds_input_id_map) {
     const auto& built = detail::build_storage<PackThenInputOpt>();
     auto parsed_args = parse_with(built, {"front", "--", "a", "b"});
-    EXPECT_TRUE(parsed_args.has_value());
+    EXPECT(parsed_args);
     if(!parsed_args.has_value()) {
         return;
     }
     auto args = std::move(parsed_args.value());
     PackThenInputOpt opt{};
 
-    EXPECT_TRUE(args.size() == 2);
-    EXPECT_TRUE(!built.is_trailing_argument(args[0]));
-    EXPECT_TRUE(built.field_ptr_of(args[0].id, opt) == static_cast<void*>(&opt.input));
-    EXPECT_TRUE(built.category_of(args[0].id) == &inputCategory);
+    EXPECT(args.size() == 2);
+    EXPECT(!built.is_trailing_argument(args[0]));
+    EXPECT(built.field_ptr_of(args[0].id, opt) == static_cast<void*>(&opt.input));
+    EXPECT((built.category_of(args[0].id) == &inputCategory));
 
-    EXPECT_TRUE(built.is_trailing_argument(args[1]));
-    EXPECT_TRUE(built.field_ptr_of(args[1].id, opt) == static_cast<void*>(&opt.input));
-    EXPECT_TRUE(built.trailing_ptr_of(opt) == static_cast<void*>(&opt.pack));
-    EXPECT_TRUE(built.trailing_category() == &trailingCategory);
+    EXPECT(built.is_trailing_argument(args[1]));
+    EXPECT(built.field_ptr_of(args[1].id, opt) == static_cast<void*>(&opt.input));
+    EXPECT(built.trailing_ptr_of(opt) == static_cast<void*>(&opt.pack));
+    EXPECT((built.trailing_category() == &trailingCategory));
 }
 
-TEST_CASE(parse_kv_supports_joined_and_separate_styles) {
+ZEST_CASE(parse_kv_supports_joined_and_separate_styles) {
     const auto& built = detail::build_storage<KVSplitStyleByNameOpt>();
-    EXPECT_TRUE(built.option_infos().size() == 3);
-    EXPECT_TRUE(built.option_infos()[1].kind == option::Kind::Joined);
-    EXPECT_TRUE(built.option_infos()[2].kind == option::Kind::Separate);
+    EXPECT(built.option_infos().size() == 3);
+    EXPECT(built.option_infos()[1].kind == option::Kind::Joined);
+    EXPECT(built.option_infos()[2].kind == option::Kind::Separate);
 
     auto joined_args = parse_with(built, {"--test=42"});
-    EXPECT_TRUE(joined_args.has_value());
+    EXPECT(joined_args);
     if(!joined_args.has_value()) {
         return;
     }
-    EXPECT_TRUE(joined_args->size() == 1);
+    EXPECT(joined_args->size() == 1);
     if(joined_args->size() != 1) {
         return;
     }
-    EXPECT_TRUE((*joined_args)[0].spelling == "--test=");
-    EXPECT_TRUE((*joined_args)[0].values.size() == 1);
-    EXPECT_TRUE((*joined_args)[0].values[0] == "42");
+    EXPECT((*joined_args)[0].spelling == "--test=");
+    EXPECT((*joined_args)[0].values.size() == 1);
+    EXPECT((*joined_args)[0].values[0] == "42");
 
     auto separate_args = parse_with(built, {"--a", "7"});
-    EXPECT_TRUE(separate_args.has_value());
+    EXPECT(separate_args);
     if(!separate_args.has_value()) {
         return;
     }
-    EXPECT_TRUE(separate_args->size() == 1);
+    EXPECT(separate_args->size() == 1);
     if(separate_args->size() != 1) {
         return;
     }
-    EXPECT_TRUE((*separate_args)[0].spelling == "--a");
-    EXPECT_TRUE((*separate_args)[0].values.size() == 1);
-    EXPECT_TRUE((*separate_args)[0].values[0] == "7");
+    EXPECT((*separate_args)[0].spelling == "--a");
+    EXPECT((*separate_args)[0].values.size() == 1);
+    EXPECT((*separate_args)[0].values[0] == "7");
 }
 
-TEST_CASE(parse_kv_default_name_adds_joined_equals_alias_when_style_includes_joined) {
+ZEST_CASE(parse_kv_default_name_adds_joined_equals_alias_when_style_includes_joined) {
     const auto& built = detail::build_storage<KVDefaultNameSplitStyleOpt>();
-    EXPECT_TRUE(built.option_infos().size() == 3);
-    EXPECT_TRUE(built.option_infos()[1].kind == option::Kind::Separate);
-    EXPECT_TRUE(built.option_infos()[2].kind == option::Kind::Joined);
+    EXPECT(built.option_infos().size() == 3);
+    EXPECT(built.option_infos()[1].kind == option::Kind::Separate);
+    EXPECT(built.option_infos()[2].kind == option::Kind::Joined);
 
     auto separate_args = parse_with(built, {"--level", "7"});
-    EXPECT_TRUE(separate_args.has_value());
+    EXPECT(separate_args);
     if(!separate_args.has_value()) {
         return;
     }
-    EXPECT_TRUE(separate_args->size() == 1);
+    EXPECT(separate_args->size() == 1);
     if(separate_args->size() != 1) {
         return;
     }
-    EXPECT_TRUE((*separate_args)[0].spelling == "--level");
-    EXPECT_TRUE((*separate_args)[0].values.size() == 1);
-    EXPECT_TRUE((*separate_args)[0].values[0] == "7");
+    EXPECT((*separate_args)[0].spelling == "--level");
+    EXPECT((*separate_args)[0].values.size() == 1);
+    EXPECT((*separate_args)[0].values[0] == "7");
 
     auto joined_args = parse_with(built, {"--level=42"});
-    EXPECT_TRUE(joined_args.has_value());
+    EXPECT(joined_args);
     if(!joined_args.has_value()) {
         return;
     }
-    EXPECT_TRUE(joined_args->size() == 1);
+    EXPECT(joined_args->size() == 1);
     if(joined_args->size() != 1) {
         return;
     }
-    EXPECT_TRUE((*joined_args)[0].spelling == "--level=");
-    EXPECT_TRUE((*joined_args)[0].values.size() == 1);
-    EXPECT_TRUE((*joined_args)[0].values[0] == "42");
+    EXPECT((*joined_args)[0].spelling == "--level=");
+    EXPECT((*joined_args)[0].values.size() == 1);
+    EXPECT((*joined_args)[0].values[0] == "42");
 }
 
-TEST_CASE(parse_kv_alias_supports_joined_and_separate_styles) {
+ZEST_CASE(parse_kv_alias_supports_joined_and_separate_styles) {
     const auto& built = detail::build_storage<KVAliasSplitStyleByNameOpt>();
-    EXPECT_TRUE(built.option_infos().size() == 3);
-    EXPECT_TRUE(built.option_infos()[1].kind == option::Kind::Joined);
-    EXPECT_TRUE(built.option_infos()[2].kind == option::Kind::Separate);
+    EXPECT(built.option_infos().size() == 3);
+    EXPECT(built.option_infos()[1].kind == option::Kind::Joined);
+    EXPECT(built.option_infos()[2].kind == option::Kind::Separate);
 
     auto joined_args = parse_with(built, {"--target=42"});
-    EXPECT_TRUE(joined_args.has_value());
+    EXPECT(joined_args);
     if(!joined_args.has_value()) {
         return;
     }
-    EXPECT_TRUE(joined_args->size() == 1);
+    EXPECT(joined_args->size() == 1);
     if(joined_args->size() != 1) {
         return;
     }
-    EXPECT_TRUE((*joined_args)[0].spelling == "--target=");
-    EXPECT_TRUE((*joined_args)[0].values.size() == 1);
-    EXPECT_TRUE((*joined_args)[0].values[0] == "42");
+    EXPECT((*joined_args)[0].spelling == "--target=");
+    EXPECT((*joined_args)[0].values.size() == 1);
+    EXPECT((*joined_args)[0].values[0] == "42");
 
     auto separate_args = parse_with(built, {"--target-alias", "7"});
-    EXPECT_TRUE(separate_args.has_value());
+    EXPECT(separate_args);
     if(!separate_args.has_value()) {
         return;
     }
-    EXPECT_TRUE(separate_args->size() == 1);
+    EXPECT(separate_args->size() == 1);
     if(separate_args->size() != 1) {
         return;
     }
-    EXPECT_TRUE((*separate_args)[0].spelling == "--target-alias");
-    EXPECT_TRUE((*separate_args)[0].values.size() == 1);
-    EXPECT_TRUE((*separate_args)[0].values[0] == "7");
+    EXPECT((*separate_args)[0].spelling == "--target-alias");
+    EXPECT((*separate_args)[0].values.size() == 1);
+    EXPECT((*separate_args)[0].values[0] == "7");
 }
 
-TEST_CASE(parse_kv_alias_default_name_adds_joined_equals_alias_when_style_includes_joined) {
+ZEST_CASE(parse_kv_alias_default_name_adds_joined_equals_alias_when_style_includes_joined) {
     const auto& built = detail::build_storage<KVAliasDefaultNameSplitStyleOpt>();
-    EXPECT_TRUE(built.option_infos().size() == 3);
-    EXPECT_TRUE(built.option_infos()[1].kind == option::Kind::Separate);
-    EXPECT_TRUE(built.option_infos()[2].kind == option::Kind::Joined);
+    EXPECT(built.option_infos().size() == 3);
+    EXPECT(built.option_infos()[1].kind == option::Kind::Separate);
+    EXPECT(built.option_infos()[2].kind == option::Kind::Joined);
 
     auto separate_args = parse_with(built, {"--target-alias", "7"});
-    EXPECT_TRUE(separate_args.has_value());
+    EXPECT(separate_args);
     if(!separate_args.has_value()) {
         return;
     }
-    EXPECT_TRUE(separate_args->size() == 1);
+    EXPECT(separate_args->size() == 1);
     if(separate_args->size() != 1) {
         return;
     }
-    EXPECT_TRUE((*separate_args)[0].spelling == "--target-alias");
-    EXPECT_TRUE((*separate_args)[0].values.size() == 1);
-    EXPECT_TRUE((*separate_args)[0].values[0] == "7");
+    EXPECT((*separate_args)[0].spelling == "--target-alias");
+    EXPECT((*separate_args)[0].values.size() == 1);
+    EXPECT((*separate_args)[0].values[0] == "7");
 
     auto joined_args = parse_with(built, {"--target-alias=42"});
-    EXPECT_TRUE(joined_args.has_value());
+    EXPECT(joined_args);
     if(!joined_args.has_value()) {
         return;
     }
-    EXPECT_TRUE(joined_args->size() == 1);
+    EXPECT(joined_args->size() == 1);
     if(joined_args->size() != 1) {
         return;
     }
-    EXPECT_TRUE((*joined_args)[0].spelling == "--target-alias=");
-    EXPECT_TRUE((*joined_args)[0].values.size() == 1);
-    EXPECT_TRUE((*joined_args)[0].values[0] == "42");
+    EXPECT((*joined_args)[0].spelling == "--target-alias=");
+    EXPECT((*joined_args)[0].values.size() == 1);
+    EXPECT((*joined_args)[0].values[0] == "42");
 }
 
-TEST_CASE(category_map_assigns_expected_categories_for_parsed_args) {
+ZEST_CASE(category_map_assigns_expected_categories_for_parsed_args) {
     const auto& built = detail::build_storage<ParseAllOpt>();
     auto parsed_args = parse_with(built,
                                   {"--version",
@@ -515,155 +515,155 @@ TEST_CASE(category_map_assigns_expected_categories_for_parsed_args) {
                                    "-P",
                                    "left",
                                    "right"});
-    EXPECT_TRUE(parsed_args.has_value());
+    EXPECT(parsed_args);
     if(!parsed_args.has_value()) {
         return;
     }
     const auto& args = parsed_args.value();
-    EXPECT_TRUE(args.size() == 6);
+    EXPECT(args.size() == 6);
 
     std::size_t default_count = 0;
     std::size_t shared_count = 0;
     std::size_t version_count = 0;
     for(const auto& arg: args) {
         const auto* category = built.category_of(arg.id);
-        EXPECT_TRUE(category != nullptr);
+        EXPECT(category != nullptr);
         const auto spelling = arg.spelling;
         if(spelling == "--version") {
-            EXPECT_TRUE(category == &versionCategory);
+            EXPECT((category == &versionCategory));
             version_count += 1;
         } else if(spelling == "main.cc") {
-            EXPECT_TRUE(category == &decl::default_category);
+            EXPECT((category == &decl::default_category));
             default_count += 1;
         } else {
-            EXPECT_TRUE(category == &sharedCategory);
+            EXPECT((category == &sharedCategory));
             shared_count += 1;
         }
     }
-    EXPECT_TRUE(default_count == 1);
-    EXPECT_TRUE(shared_count == 4);
-    EXPECT_TRUE(version_count == 1);
+    EXPECT(default_count == 1);
+    EXPECT(shared_count == 4);
+    EXPECT(version_count == 1);
 }
 
-TEST_CASE(category_map_keeps_alias_category_consistent) {
+ZEST_CASE(category_map_keeps_alias_category_consistent) {
     const auto& built = detail::build_storage<ParseAllOpt>();
     auto short_args = parse_with(built, {"-V"});
     auto long_args = parse_with(built, {"--version"});
-    EXPECT_TRUE(short_args.has_value());
-    EXPECT_TRUE(long_args.has_value());
+    EXPECT(short_args);
+    EXPECT(long_args);
     if(!short_args.has_value() || !long_args.has_value()) {
         return;
     }
-    EXPECT_TRUE(short_args->size() == 1);
-    EXPECT_TRUE(long_args->size() == 1);
+    EXPECT(short_args->size() == 1);
+    EXPECT(long_args->size() == 1);
     if(short_args->size() != 1 || long_args->size() != 1) {
         return;
     }
-    EXPECT_TRUE(built.category_of((*short_args)[0].id) == &versionCategory);
-    EXPECT_TRUE(built.category_of((*long_args)[0].id) == &versionCategory);
+    EXPECT((built.category_of((*short_args)[0].id) == &versionCategory));
+    EXPECT((built.category_of((*long_args)[0].id) == &versionCategory));
 }
 
-TEST_CASE(category_map_supports_deep_nested_cfg_areas) {
+ZEST_CASE(category_map_supports_deep_nested_cfg_areas) {
     const auto& built = detail::build_storage<DeepCfgOpt>();
     auto parsed_args = parse_with(built, {"--top", "1", "--tail", "2", "-a", "3", "--mid", "4"});
-    EXPECT_TRUE(parsed_args.has_value());
+    EXPECT(parsed_args);
     if(!parsed_args.has_value()) {
         return;
     }
     const auto& args = parsed_args.value();
-    EXPECT_TRUE(args.size() == 4);
+    EXPECT(args.size() == 4);
     std::size_t top_count = 0;
     std::size_t inner_count = 0;
     for(const auto& arg: args) {
         const auto* category = built.category_of(arg.id);
-        EXPECT_TRUE(category != nullptr);
+        EXPECT(category != nullptr);
         const auto spelling = arg.spelling;
         if(spelling == "--top" || spelling == "--tail") {
-            EXPECT_TRUE(category == &topCategory);
+            EXPECT((category == &topCategory));
             top_count += 1;
         } else if(spelling == "-a" || spelling == "--mid") {
-            EXPECT_TRUE(category == &innerCategory);
+            EXPECT((category == &innerCategory));
             inner_count += 1;
         }
     }
-    EXPECT_TRUE(top_count == 2);
-    EXPECT_TRUE(inner_count == 2);
+    EXPECT(top_count == 2);
+    EXPECT(inner_count == 2);
 }
 
-TEST_CASE(category_map_supports_multiple_exclusive_category_definitions) {
+ZEST_CASE(category_map_supports_multiple_exclusive_category_definitions) {
     const auto& built = detail::build_storage<MultiExclusiveCategoryOpt>();
     auto parsed_args = parse_with(built, {"--version", "--request"});
-    EXPECT_TRUE(parsed_args.has_value());
+    EXPECT(parsed_args);
     if(!parsed_args.has_value()) {
         return;
     }
-    EXPECT_TRUE(parsed_args->size() == 2);
+    EXPECT(parsed_args->size() == 2);
     if(parsed_args->size() != 2) {
         return;
     }
-    EXPECT_TRUE(built.category_of((*parsed_args)[0].id) == &versionCategory);
-    EXPECT_TRUE(built.category_of((*parsed_args)[1].id) == &requestCategory);
+    EXPECT((built.category_of((*parsed_args)[0].id) == &versionCategory));
+    EXPECT((built.category_of((*parsed_args)[1].id) == &requestCategory));
 }
 
-TEST_CASE(alias_entries_have_backend_metadata_without_accessor) {
+ZEST_CASE(alias_entries_have_backend_metadata_without_accessor) {
     const auto& built = detail::build_storage<AliasBackendOpt>();
 
     auto parsed = parse_with(
         built,
         {"--optimize-one", "--define-alias-alt", "NAME=VALUE", "--pair-alias-alt", "a", "b"});
-    EXPECT_TRUE(parsed.has_value());
+    EXPECT(parsed);
     if(!parsed.has_value()) {
         return;
     }
 
     AliasBackendOpt opt{};
-    EXPECT_TRUE(parsed->size() == 3);
+    EXPECT(parsed->size() == 3);
     if(parsed->size() != 3) {
         return;
     }
 
     const auto* flag_meta = built.alias_meta_of((*parsed)[0].id);
     using alias_meta_t = std::remove_cvref_t<decltype(*flag_meta)>;
-    EXPECT_TRUE(flag_meta != nullptr);
-    EXPECT_TRUE(built.is_alias_option_id((*parsed)[0].id));
-    EXPECT_TRUE(built.field_ptr_of((*parsed)[0].id, opt) == nullptr);
-    EXPECT_TRUE(built.category_of((*parsed)[0].id) == &versionCategory);
-    EXPECT_TRUE(flag_meta->kind == alias_meta_t::Kind::Flag);
-    EXPECT_TRUE(flag_meta->forward_kind == decl::AliasForwardField::Kind::Static);
-    EXPECT_TRUE(flag_meta->static_tokens.size() == 2);
-    EXPECT_TRUE(flag_meta->static_tokens[0] == "--optimize");
-    EXPECT_TRUE(flag_meta->static_tokens[1] == "1");
+    EXPECT(flag_meta != nullptr);
+    EXPECT(built.is_alias_option_id((*parsed)[0].id));
+    EXPECT(built.field_ptr_of((*parsed)[0].id, opt) == nullptr);
+    EXPECT((built.category_of((*parsed)[0].id) == &versionCategory));
+    EXPECT(flag_meta->kind == alias_meta_t::Kind::Flag);
+    EXPECT(flag_meta->forward_kind == decl::AliasForwardField::Kind::Static);
+    EXPECT(flag_meta->static_tokens.size() == 2);
+    EXPECT(flag_meta->static_tokens[0] == "--optimize");
+    EXPECT(flag_meta->static_tokens[1] == "1");
 
     const auto* kv_meta = built.alias_meta_of((*parsed)[1].id);
-    EXPECT_TRUE(kv_meta != nullptr);
-    EXPECT_TRUE(built.field_ptr_of((*parsed)[1].id, opt) == nullptr);
-    EXPECT_TRUE(built.category_of((*parsed)[1].id) == &sharedCategory);
-    EXPECT_TRUE(kv_meta->kind == alias_meta_t::Kind::KV);
-    EXPECT_TRUE(kv_meta->forward_kind == decl::AliasForwardField::Kind::Static);
-    EXPECT_TRUE(kv_meta->static_tokens.size() == 1);
-    EXPECT_TRUE(kv_meta->static_tokens[0] == "--define");
+    EXPECT(kv_meta != nullptr);
+    EXPECT(built.field_ptr_of((*parsed)[1].id, opt) == nullptr);
+    EXPECT((built.category_of((*parsed)[1].id) == &sharedCategory));
+    EXPECT(kv_meta->kind == alias_meta_t::Kind::KV);
+    EXPECT(kv_meta->forward_kind == decl::AliasForwardField::Kind::Static);
+    EXPECT(kv_meta->static_tokens.size() == 1);
+    EXPECT(kv_meta->static_tokens[0] == "--define");
 
     const auto* multi_meta = built.alias_meta_of((*parsed)[2].id);
-    EXPECT_TRUE(multi_meta != nullptr);
-    EXPECT_TRUE(built.field_ptr_of((*parsed)[2].id, opt) == nullptr);
-    EXPECT_TRUE(built.category_of((*parsed)[2].id) == &requestCategory);
-    EXPECT_TRUE(multi_meta->kind == alias_meta_t::Kind::Multi);
-    EXPECT_TRUE(multi_meta->forward_kind == decl::AliasForwardField::Kind::Dynamic);
-    EXPECT_TRUE(multi_meta->dynamic != nullptr);
-    EXPECT_TRUE(multi_meta->arg_num == 2);
+    EXPECT(multi_meta != nullptr);
+    EXPECT(built.field_ptr_of((*parsed)[2].id, opt) == nullptr);
+    EXPECT((built.category_of((*parsed)[2].id) == &requestCategory));
+    EXPECT(multi_meta->kind == alias_meta_t::Kind::Multi);
+    EXPECT(multi_meta->forward_kind == decl::AliasForwardField::Kind::Dynamic);
+    EXPECT(multi_meta->dynamic != nullptr);
+    EXPECT(multi_meta->arg_num == 2);
 }
 
-TEST_CASE(visit_fields_applies_next_cfg_to_nested_struct_fields) {
+ZEST_CASE(visit_fields_applies_next_cfg_to_nested_struct_fields) {
     const auto& built = detail::build_storage<NextOnNestedOpt>();
 
     auto partial_nested_args = parse_with(built, {"--left", "1"});
-    EXPECT_TRUE(partial_nested_args.has_value());
+    EXPECT(partial_nested_args);
     if(!partial_nested_args.has_value()) {
         return;
     }
 
-    EXPECT_TRUE(!partial_nested_args.value().empty());
-    EXPECT_TRUE(built.category_of(partial_nested_args.value()[0].id) == &sharedCategory);
+    EXPECT(!partial_nested_args.value().empty());
+    EXPECT((built.category_of(partial_nested_args.value()[0].id) == &sharedCategory));
 
     NextOnNestedOpt default_opt{};
     std::size_t nested_cfg_count = 0;
@@ -672,23 +672,23 @@ TEST_CASE(visit_fields_applies_next_cfg_to_nested_struct_fields) {
         built.visit_fields(default_opt,
                            [&](const auto&, const auto& cfg, std::string_view field_name, auto) {
                                if(field_name == "left" || field_name == "right") {
-                                   EXPECT_TRUE(cfg.required == false);
-                                   EXPECT_TRUE(cfg.category.ptr() == &sharedCategory);
+                                   EXPECT(cfg.required == false);
+                                   EXPECT((cfg.category.ptr() == &sharedCategory));
                                    nested_cfg_count += 1;
                                }
                                if(field_name == "tail") {
-                                   EXPECT_TRUE(cfg.required == false);
-                                   EXPECT_TRUE(cfg.category.ptr() == &decl::default_category);
+                                   EXPECT(cfg.required == false);
+                                   EXPECT((cfg.category.ptr() == &decl::default_category));
                                    tail_cfg_count += 1;
                                }
                                return true;
                            });
-    EXPECT_TRUE(visited);
-    EXPECT_TRUE(nested_cfg_count == 2);
-    EXPECT_TRUE(tail_cfg_count == 1);
+    EXPECT(visited);
+    EXPECT(nested_cfg_count == 2);
+    EXPECT(tail_cfg_count == 1);
 }
 
-};  // TEST_SUITE(deco_backend)
+};  // ZEST_SUITE(deco_backend)
 
 }  // namespace
 }  // namespace kota::deco

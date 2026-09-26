@@ -26,22 +26,22 @@ static CompileGraph make_test_graph() {
     return graph;
 }
 
-TEST_SUITE(build_system, loop_fixture) {
+ZEST_SUITE(build_system, loop_fixture) {
 
-TEST_CASE(normal_compilation_completes) {
+ZEST_CASE(normal_compilation_completes) {
     auto graph = make_test_graph();
 
     auto test = [&]() -> task<> {
         auto result = co_await graph.compile("main.cpp", loop).catch_cancel();
-        EXPECT_TRUE(result.has_value());
-        EXPECT_TRUE(*result);
+        EXPECT(result);
+        EXPECT(*result);
     };
 
     auto t = test();
     schedule_all(t);
 }
 
-TEST_CASE(update_cancels_in_flight) {
+ZEST_CASE(update_cancels_in_flight) {
     auto graph = make_test_graph();
     bool compile_cancelled = false;
 
@@ -59,10 +59,10 @@ TEST_CASE(update_cancels_in_flight) {
     auto u = updater();
     schedule_all(c, u);
 
-    EXPECT_TRUE(compile_cancelled);
+    EXPECT(compile_cancelled);
 }
 
-TEST_CASE(chain_cancel_propagates) {
+ZEST_CASE(chain_cancel_propagates) {
     auto graph = make_test_graph();
     bool compile_cancelled = false;
 
@@ -80,28 +80,28 @@ TEST_CASE(chain_cancel_propagates) {
     auto u = updater();
     schedule_all(c, u);
 
-    EXPECT_TRUE(compile_cancelled);
+    EXPECT(compile_cancelled);
 }
 
-TEST_CASE(recompile_after_update) {
+ZEST_CASE(recompile_after_update) {
     auto graph = make_test_graph();
 
     auto test = [&]() -> task<> {
         auto result1 = co_await graph.compile("lexer.cpp", loop).catch_cancel();
-        EXPECT_TRUE(result1.has_value());
-        EXPECT_TRUE(*result1);
+        EXPECT(result1);
+        EXPECT(*result1);
 
         graph.update("lexer.cpp");
         auto result2 = co_await graph.compile("lexer.cpp", loop).catch_cancel();
-        EXPECT_TRUE(result2.has_value());
-        EXPECT_TRUE(*result2);
+        EXPECT(result2);
+        EXPECT(*result2);
     };
 
     auto t = test();
     schedule_all(t);
 }
 
-TEST_CASE(independent_compilations_unaffected) {
+ZEST_CASE(independent_compilations_unaffected) {
     auto graph = make_test_graph();
     bool parser_cancelled = false;
     bool codegen_ok = false;
@@ -126,11 +126,11 @@ TEST_CASE(independent_compilations_unaffected) {
     auto u = updater();
     schedule_all(cp, cc, u);
 
-    EXPECT_TRUE(parser_cancelled);
-    EXPECT_TRUE(codegen_ok);
+    EXPECT(parser_cancelled);
+    EXPECT(codegen_ok);
 }
 
-TEST_CASE(shared_dependency_compiled_once) {
+ZEST_CASE(shared_dependency_compiled_once) {
     int compile_count = 0;
 
     // Use a side-effecting delay_fn to count actual compilations
@@ -154,10 +154,10 @@ TEST_CASE(shared_dependency_compiled_once) {
 
     // common.h (1) + a.cpp (1) + b.cpp (1) = 3
     // Without dedup this would be 4 (common.h compiled twice).
-    EXPECT_EQ(compile_count, 3);
+    EXPECT(compile_count == 3);
 }
 
-};  // TEST_SUITE(build_system)
+};  // ZEST_SUITE(build_system)
 
 }  // namespace
 

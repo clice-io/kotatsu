@@ -17,7 +17,7 @@ auto rt = []<typename T>(const T& input) -> std::expected<T, rich_error> {
     return from_dyn<T>(*encoded);
 };
 
-TEST_SUITE(serde_dyn_standard) {
+ZEST_SUITE(serde_dyn_standard) {
 
 SERDE_STANDARD_TEST_CASES_PRIMITIVES(rt)
 SERDE_STANDARD_TEST_CASES_NUMERIC_BOUNDARIES(rt)
@@ -29,7 +29,7 @@ SERDE_STANDARD_TEST_CASES_POINTERS_FORMAT_SAFE(rt)
 SERDE_STANDARD_TEST_CASES_VARIANT_FORMAT_SAFE(rt)
 SERDE_STANDARD_TEST_CASES_COMPLEX(rt)
 
-};  // TEST_SUITE(serde_dyn_standard)
+};  // ZEST_SUITE(serde_dyn_standard)
 
 }  // namespace
 

@@ -11,9 +11,9 @@
 //       static auto run(const T& value) -> std::expected<T, some_error>;  // encode + decode
 //   };
 //
-// and instantiates the generated corpus inside a TEST_SUITE:
+// and instantiates the generated corpus inside a ZEST_SUITE:
 //
-//   TEST_CASE_GROUP(standard_roundtrip) {
+//   ZEST_CASE_GROUP(standard_roundtrip) {
 //       roundtrip::register_cases<my_adapter>(add_case);
 //   }
 //

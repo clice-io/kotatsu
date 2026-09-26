@@ -1,4 +1,4 @@
-// TEST_SUITE(task): direct task<> semantics — co_await chaining, up/down
+// ZEST_SUITE(task): direct task<> semantics — co_await chaining, up/down
 // cancellation, exception propagation (co_await and or_fail), and dump_dot on a
 // live task node. Cooperative yield() ordering lives in yield_tests.cpp; the
 // aggregate combinators in when/.
@@ -14,9 +14,9 @@ namespace kota {
 
 namespace {
 
-TEST_SUITE(task) {
+ZEST_SUITE(task) {
 
-TEST_CASE(task_await) {
+ZEST_CASE(task_await) {
     static auto foo = []() -> task<int> {
         co_return 1;
     };
@@ -43,24 +43,24 @@ TEST_CASE(task_await) {
 
     {
         auto [res] = run(foo());
-        EXPECT_EQ(res, 1);
+        EXPECT(res == 1);
     }
 
     {
         auto [res, res1] = run(foo(), foo1());
-        EXPECT_EQ(res, 1);
-        EXPECT_EQ(res1, 2);
+        EXPECT(res == 1);
+        EXPECT(res1 == 2);
     }
 
     {
         auto [res, res1, res2] = run(foo(), foo1(), foo2());
-        EXPECT_EQ(res, 1);
-        EXPECT_EQ(res1, 2);
-        EXPECT_EQ(res2, 3);
+        EXPECT(res == 1);
+        EXPECT(res1 == 2);
+        EXPECT(res2 == 3);
     }
 }
 
-TEST_CASE(up_cancel) {
+ZEST_CASE(up_cancel) {
     static auto bar = [](int& x) -> task<int> {
         x += 1;
         co_return 1;
@@ -71,12 +71,12 @@ TEST_CASE(up_cancel) {
         auto task = bar(x);
         task->cancel();
         run(task);
-        EXPECT_TRUE(task->is_cancelled());
-        EXPECT_EQ(x, 0);
+        EXPECT(task->is_cancelled());
+        EXPECT(x == 0);
     }
 }
 
-TEST_CASE(down_cancel) {
+ZEST_CASE(down_cancel) {
     static auto bar1 = [](int& x) -> task<> {
         x += 1;
         co_await cancel();
@@ -91,8 +91,8 @@ TEST_CASE(down_cancel) {
         int x = 0;
         auto task = bar2(x);
         run(task);
-        EXPECT_TRUE(task->is_cancelled());
-        EXPECT_EQ(x, 1);
+        EXPECT(task->is_cancelled());
+        EXPECT(x == 1);
     }
 
     static auto bar3 = [](int& x) -> task<bool> {
@@ -105,14 +105,14 @@ TEST_CASE(down_cancel) {
         int x = 0;
         auto task = bar3(x);
         run(task);
-        EXPECT_TRUE(task->is_finished());
-        EXPECT_FALSE(task.result());
-        EXPECT_EQ(x, 2);
+        EXPECT(task->is_finished());
+        EXPECT(!task.result());
+        EXPECT(x == 2);
     }
 }
 
 #if KOTA_ENABLE_EXCEPTIONS
-TEST_CASE(exception_propagation) {
+ZEST_CASE(exception_propagation) {
     auto bar1 = []() -> task<> {
         throw std::runtime_error("Test exception");
         co_return;
@@ -126,7 +126,7 @@ TEST_CASE(exception_propagation) {
     EXPECT_THROWS(run(bar2()));
 }
 
-TEST_CASE(or_fail_rethrows_child_exception) {
+ZEST_CASE(or_fail_rethrows_child_exception) {
     auto child = []() -> task<int, error> {
         throw std::runtime_error("or_fail child exception");
         co_return 0;
@@ -140,7 +140,7 @@ TEST_CASE(or_fail_rethrows_child_exception) {
 }
 #endif
 
-TEST_CASE(dump_dot_basic) {
+ZEST_CASE(dump_dot_basic) {
     bool checked = false;
 
     auto inner = []() -> task<int> {
@@ -151,9 +151,9 @@ TEST_CASE(dump_dot_basic) {
         auto t = inner();
         auto* node = t.operator->();
         auto dot = dump_dot(*node);
-        EXPECT_TRUE(!dot.empty());
-        EXPECT_TRUE(dot.find("digraph") != std::string::npos);
-        EXPECT_TRUE(dot.find("Task") != std::string::npos);
+        EXPECT(!dot.empty());
+        EXPECT(zest::contains(dot, "digraph"));
+        EXPECT(zest::contains(dot, "Task"));
         checked = true;
         co_await std::move(t);
     };
@@ -162,10 +162,10 @@ TEST_CASE(dump_dot_basic) {
     event_loop loop;
     loop.schedule(t);
     loop.run();
-    EXPECT_TRUE(checked);
+    EXPECT(checked);
 }
 
-};  // TEST_SUITE(task)
+};  // ZEST_SUITE(task)
 
 }  // namespace
 

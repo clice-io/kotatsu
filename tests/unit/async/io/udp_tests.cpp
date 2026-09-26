@@ -40,20 +40,20 @@ task<void, error> send_connected(udp& sock, std::string_view payload, int& done)
 
 }  // namespace
 
-TEST_SUITE(udp_io, loop_fixture) {
+ZEST_SUITE(udp_io, loop_fixture) {
 
-TEST_CASE(send_and_recv) {
+ZEST_CASE(send_and_recv) {
     auto recv_sock = udp::create(loop);
-    ASSERT_TRUE(recv_sock.has_value());
+    ASSERT(recv_sock);
 
     auto bind_ec = recv_sock->bind("127.0.0.1", 0);
-    EXPECT_FALSE(static_cast<bool>(bind_ec));
+    EXPECT(!static_cast<bool>(bind_ec));
 
     auto endpoint = recv_sock->getsockname();
-    ASSERT_TRUE(endpoint.has_value());
+    ASSERT(endpoint);
 
     auto send_sock = udp::create(loop);
-    ASSERT_TRUE(send_sock.has_value());
+    ASSERT(send_sock);
 
     int done = 0;
     auto receiver = recv_once(*recv_sock, done);
@@ -61,28 +61,28 @@ TEST_CASE(send_and_recv) {
     schedule_all(receiver, sender);
 
     auto recv_result = receiver.result();
-    EXPECT_TRUE(recv_result.has_value());
-    EXPECT_EQ(recv_result->data, "kotatsu-udp");
+    EXPECT(recv_result);
+    EXPECT(recv_result->data == "kotatsu-udp");
 
     auto send_result = sender.result();
-    EXPECT_FALSE(send_result.has_error());
+    EXPECT(!send_result.has_error());
 }
 
-TEST_CASE(connect_and_send) {
+ZEST_CASE(connect_and_send) {
     auto recv_sock = udp::create(loop);
-    ASSERT_TRUE(recv_sock.has_value());
+    ASSERT(recv_sock);
 
     auto bind_ec = recv_sock->bind("127.0.0.1", 0);
-    EXPECT_FALSE(static_cast<bool>(bind_ec));
+    EXPECT(!static_cast<bool>(bind_ec));
 
     auto endpoint = recv_sock->getsockname();
-    ASSERT_TRUE(endpoint.has_value());
+    ASSERT(endpoint);
 
     auto send_sock = udp::create(loop);
-    ASSERT_TRUE(send_sock.has_value());
+    ASSERT(send_sock);
 
     auto conn_ec = send_sock->connect(endpoint->addr, endpoint->port);
-    EXPECT_FALSE(static_cast<bool>(conn_ec));
+    EXPECT(!static_cast<bool>(conn_ec));
 
     int done = 0;
     auto receiver = recv_once(*recv_sock, done);
@@ -90,13 +90,13 @@ TEST_CASE(connect_and_send) {
     schedule_all(receiver, sender);
 
     auto recv_result = receiver.result();
-    EXPECT_TRUE(recv_result.has_value());
-    EXPECT_EQ(recv_result->data, "kotatsu-udp-connect");
+    EXPECT(recv_result);
+    EXPECT(recv_result->data == "kotatsu-udp-connect");
 
     auto send_result = sender.result();
-    EXPECT_FALSE(send_result.has_error());
+    EXPECT(!send_result.has_error());
 }
 
-};  // TEST_SUITE(udp_io)
+};  // ZEST_SUITE(udp_io)
 
 }  // namespace kota

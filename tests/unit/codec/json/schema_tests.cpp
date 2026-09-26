@@ -836,7 +836,7 @@ void check_root_integer_schema() {
             R"({{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"integer","minimum":0,"maximum":{}}})",
             static_cast<std::uint64_t>(std::numeric_limits<T>::max()));
     }
-    EXPECT_EQ(result, expected);
+    EXPECT(result == expected);
 }
 
 template <typename Wrapper, typename T>
@@ -853,23 +853,22 @@ void check_wrapper_integer_schema() {
             R"({{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{{"v":{{"type":"integer","minimum":0,"maximum":{}}}}},"required":["v"]}})",
             static_cast<std::uint64_t>(std::numeric_limits<T>::max()));
     }
-    EXPECT_EQ(result, expected);
+    EXPECT(result == expected);
 }
 
-TEST_SUITE(serde_json_schema) {
+ZEST_SUITE(serde_json_schema) {
 
 // ---------------------------------------------------------------------------
 // Root scalars
 // ---------------------------------------------------------------------------
 
-TEST_CASE(root_bool) {
+ZEST_CASE(root_bool) {
     const auto result = json::schema_string<bool>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"boolean"})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"boolean"})");
 }
 
-TEST_CASE(root_integers) {
+ZEST_CASE(root_integers) {
     check_root_integer_schema<std::int8_t>();
     check_root_integer_schema<std::int16_t>();
     check_root_integer_schema<std::int32_t>();
@@ -880,44 +879,41 @@ TEST_CASE(root_integers) {
     check_root_integer_schema<std::uint64_t>();
 }
 
-TEST_CASE(root_floats) {
+ZEST_CASE(root_floats) {
     // The default nan_repr (Passthrough) hands non-finite values to the
     // writer, which emits null — so even the default schema admits null.
     const auto schema =
         R"({"$schema":"https://json-schema.org/draft/2020-12/schema","anyOf":[{"type":"number"},{"type":"null"}]})";
-    EXPECT_EQ(json::schema_string<float>().value(), schema);
-    EXPECT_EQ(json::schema_string<double>().value(), schema);
+    EXPECT(json::schema_string<float>().value() == schema);
+    EXPECT(json::schema_string<double>().value() == schema);
 }
 
-TEST_CASE(root_char) {
+ZEST_CASE(root_char) {
     const auto result = json::schema_string<char>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"string"})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"string"})");
 }
 
-TEST_CASE(root_string) {
+ZEST_CASE(root_string) {
     const auto result = json::schema_string<std::string>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"string"})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"string"})");
 }
 
 // ---------------------------------------------------------------------------
 // Scalar struct wrappers
 // ---------------------------------------------------------------------------
 
-TEST_CASE(scalar_wrapper_bool) {
+ZEST_CASE(scalar_wrapper_bool) {
     const auto result = json::schema_string<s_bool>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("v":{"type":"boolean"}},)"
-              R"("required":["v"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("v":{"type":"boolean"}},)"
+                     R"("required":["v"]})");
 }
 
-TEST_CASE(scalar_wrapper_integers) {
+ZEST_CASE(scalar_wrapper_integers) {
     check_wrapper_integer_schema<s_i8, std::int8_t>();
     check_wrapper_integer_schema<s_i16, std::int16_t>();
     check_wrapper_integer_schema<s_i32, std::int32_t>();
@@ -928,466 +924,434 @@ TEST_CASE(scalar_wrapper_integers) {
     check_wrapper_integer_schema<s_u64, std::uint64_t>();
 }
 
-TEST_CASE(scalar_wrapper_floats) {
+ZEST_CASE(scalar_wrapper_floats) {
     const auto schema =
         R"({"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"v":{"anyOf":[{"type":"number"},{"type":"null"}]}},"required":["v"]})";
-    EXPECT_EQ(json::schema_string<s_f32>().value(), schema);
-    EXPECT_EQ(json::schema_string<s_f64>().value(), schema);
+    EXPECT(json::schema_string<s_f32>().value() == schema);
+    EXPECT(json::schema_string<s_f64>().value() == schema);
 }
 
-TEST_CASE(scalar_wrapper_char) {
+ZEST_CASE(scalar_wrapper_char) {
     const auto result = json::schema_string<s_char>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("v":{"type":"string"}},)"
-              R"("required":["v"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("v":{"type":"string"}},)"
+                     R"("required":["v"]})");
 }
 
-TEST_CASE(scalar_wrapper_str) {
+ZEST_CASE(scalar_wrapper_str) {
     const auto result = json::schema_string<s_str>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("v":{"type":"string"}},)"
-              R"("required":["v"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("v":{"type":"string"}},)"
+                     R"("required":["v"]})");
 }
 
 // ---------------------------------------------------------------------------
 // Root enums
 // ---------------------------------------------------------------------------
 
-TEST_CASE(root_enum_color_i8) {
+ZEST_CASE(root_enum_color_i8) {
     const auto result = json::schema_string<color_i8>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"integer","minimum":-128,"maximum":127})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"integer","minimum":-128,"maximum":127})");
 }
 
-TEST_CASE(root_enum_single) {
+ZEST_CASE(root_enum_single) {
     const auto result = json::schema_string<single_enum>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"integer","minimum":-2147483648,"maximum":2147483647})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"integer","minimum":-2147483648,"maximum":2147483647})");
 }
 
-TEST_CASE(root_enum_status) {
+ZEST_CASE(root_enum_status) {
     const auto result = json::schema_string<status>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"integer","minimum":-2147483648,"maximum":2147483647})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"integer","minimum":-2147483648,"maximum":2147483647})");
 }
 
-TEST_CASE(root_enum_flag_u8) {
+ZEST_CASE(root_enum_flag_u8) {
     const auto result = json::schema_string<flag_u8>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"integer","minimum":0,"maximum":255})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"integer","minimum":0,"maximum":255})");
 }
 
-TEST_CASE(root_enum_level_i16) {
+ZEST_CASE(root_enum_level_i16) {
     const auto result = json::schema_string<level_i16>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"integer","minimum":-32768,"maximum":32767})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"integer","minimum":-32768,"maximum":32767})");
 }
 
-TEST_CASE(root_enum_value_outside_name_scan) {
+ZEST_CASE(root_enum_value_outside_name_scan) {
     // 65535 lies outside the [-128, 127] name-reflection scan, yet encodes
     // fine as a number — the schema must not reject it, so the numeric form
     // is the underlying integer's range rather than a reflected value list.
     enum class big_u16 : std::uint16_t { a = 0, c = 65535 };
     const auto encoded = json::to_string(big_u16::c);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, "65535");
+    ASSERT(encoded);
+    EXPECT(*encoded == "65535");
 
     const auto result = json::schema_string<big_u16>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"integer","minimum":0,"maximum":65535})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"integer","minimum":0,"maximum":65535})");
 }
 
 // ---------------------------------------------------------------------------
 // Containers
 // ---------------------------------------------------------------------------
 
-TEST_CASE(container_vec_i32) {
+ZEST_CASE(container_vec_i32) {
     const auto result = json::schema_string<s_vec_i32>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("v":{"type":"array",)"
-              R"("items":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}}},)"
-              R"("required":["v"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("v":{"type":"array",)"
+                     R"("items":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}}},)"
+                     R"("required":["v"]})");
 }
 
-TEST_CASE(container_set_i32) {
+ZEST_CASE(container_set_i32) {
     const auto result = json::schema_string<s_set_i32>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("v":{"type":"array",)"
-              R"("items":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"("uniqueItems":true}},)"
-              R"("required":["v"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("v":{"type":"array",)"
+                     R"("items":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"("uniqueItems":true}},)"
+                     R"("required":["v"]})");
 }
 
-TEST_CASE(container_map_str_i32) {
+ZEST_CASE(container_map_str_i32) {
     const auto result = json::schema_string<s_map_str_i32>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("v":{"type":"object",)"
-              R"("additionalProperties":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}}},)"
-              R"("required":["v"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("v":{"type":"object",)"
+                     R"("additionalProperties":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}}},)"
+                     R"("required":["v"]})");
 }
 
-TEST_CASE(container_vec_vec_i32) {
+ZEST_CASE(container_vec_vec_i32) {
     const auto result = json::schema_string<s_vec_vec_i32>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("v":{"type":"array",)"
-              R"("items":{"type":"array",)"
-              R"("items":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}}}},)"
-              R"("required":["v"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("v":{"type":"array",)"
+                     R"("items":{"type":"array",)"
+                     R"("items":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}}}},)"
+                     R"("required":["v"]})");
 }
 
-TEST_CASE(map_str_vec_i32) {
+ZEST_CASE(map_str_vec_i32) {
     const auto result = json::schema_string<s_map_str_vec_i32>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("v":{"type":"object",)"
-              R"("additionalProperties":{"type":"array",)"
-              R"("items":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}}}},)"
-              R"("required":["v"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("v":{"type":"object",)"
+                     R"("additionalProperties":{"type":"array",)"
+                     R"("items":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}}}},)"
+                     R"("required":["v"]})");
 }
 
 // ---------------------------------------------------------------------------
 // Tuple / Pair
 // ---------------------------------------------------------------------------
 
-TEST_CASE(tuple_pair) {
+ZEST_CASE(tuple_pair) {
     const auto result = json::schema_string<s_pair>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("v":{"type":"array",)"
-              R"("prefixItems":[)"
-              R"({"type":"string"},)"
-              R"({"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}],)"
-              R"("items":false,)"
-              R"("minItems":2,"maxItems":2}},)"
-              R"("required":["v"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("v":{"type":"array",)"
+                     R"("prefixItems":[)"
+                     R"({"type":"string"},)"
+                     R"({"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}],)"
+                     R"("items":false,)"
+                     R"("minItems":2,"maxItems":2}},)"
+                     R"("required":["v"]})");
 }
 
-TEST_CASE(tuple_triple) {
+ZEST_CASE(tuple_triple) {
     const auto result = json::schema_string<s_tuple>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("v":{"type":"array",)"
-              R"("prefixItems":[)"
-              R"({"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"({"type":"string"},)"
-              R"({"type":"boolean"}],)"
-              R"("items":false,)"
-              R"("minItems":3,"maxItems":3}},)"
-              R"("required":["v"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("v":{"type":"array",)"
+                     R"("prefixItems":[)"
+                     R"({"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"({"type":"string"},)"
+                     R"({"type":"boolean"}],)"
+                     R"("items":false,)"
+                     R"("minItems":3,"maxItems":3}},)"
+                     R"("required":["v"]})");
 }
 
-TEST_CASE(tuple_pair_in_struct) {
+ZEST_CASE(tuple_pair_in_struct) {
     const auto result = json::schema_string<with_pair_field>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("p":{"type":"array",)"
-              R"("prefixItems":[)"
-              R"({"type":"string"},)"
-              R"({"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}],)"
-              R"("items":false,)"
-              R"("minItems":2,"maxItems":2},)"
-              R"("name":{"type":"string"}},)"
-              R"("required":["p","name"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("p":{"type":"array",)"
+                     R"("prefixItems":[)"
+                     R"({"type":"string"},)"
+                     R"({"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}],)"
+                     R"("items":false,)"
+                     R"("minItems":2,"maxItems":2},)"
+                     R"("name":{"type":"string"}},)"
+                     R"("required":["p","name"]})");
 }
 
-TEST_CASE(tuple_in_struct) {
+ZEST_CASE(tuple_in_struct) {
     const auto result = json::schema_string<with_tuple_field>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("t":{"type":"array",)"
-              R"("prefixItems":[)"
-              R"({"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"({"type":"boolean"}],)"
-              R"("items":false,)"
-              R"("minItems":2,"maxItems":2},)"
-              R"("name":{"type":"string"}},)"
-              R"("required":["t","name"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("t":{"type":"array",)"
+                     R"("prefixItems":[)"
+                     R"({"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"({"type":"boolean"}],)"
+                     R"("items":false,)"
+                     R"("minItems":2,"maxItems":2},)"
+                     R"("name":{"type":"string"}},)"
+                     R"("required":["t","name"]})");
 }
 
 // ---------------------------------------------------------------------------
 // Basic structs
 // ---------------------------------------------------------------------------
 
-TEST_CASE(struct_empty) {
+ZEST_CASE(struct_empty) {
     const auto result = json::schema_string<empty_struct>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{}})");
 }
 
-TEST_CASE(struct_single_field) {
+ZEST_CASE(struct_single_field) {
     const auto result = json::schema_string<single_field>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("x":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["x"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("x":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["x"]})");
 }
 
-TEST_CASE(struct_point2d) {
+ZEST_CASE(struct_point2d) {
     const auto result = json::schema_string<point2d>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("x":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"("y":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["x","y"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("x":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"("y":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["x","y"]})");
 }
 
-TEST_CASE(struct_with_string) {
+ZEST_CASE(struct_with_string) {
     const auto result = json::schema_string<with_string>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("name":{"type":"string"},)"
-              R"("value":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["name","value"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("name":{"type":"string"},)"
+                     R"("value":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["name","value"]})");
 }
 
 // ---------------------------------------------------------------------------
 // Nested structs
 // ---------------------------------------------------------------------------
 
-TEST_CASE(nested_inner) {
+ZEST_CASE(nested_inner) {
     const auto result = json::schema_string<inner>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("a":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["a"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("a":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["a"]})");
 }
 
-TEST_CASE(nested_middle) {
+ZEST_CASE(nested_middle) {
     const auto result = json::schema_string<middle>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("i":{"$ref":"#/$defs/inner"},)"
-              R"("s":{"type":"string"}},)"
-              R"("required":["i","s"],)"
-              R"("$defs":{)"
-              R"("inner":{"type":"object",)"
-              R"("properties":{)"
-              R"("a":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["a"]}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("i":{"$ref":"#/$defs/inner"},)"
+                     R"("s":{"type":"string"}},)"
+                     R"("required":["i","s"],)"
+                     R"("$defs":{)"
+                     R"("inner":{"type":"object",)"
+                     R"("properties":{)"
+                     R"("a":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["a"]}}})");
 }
 
-TEST_CASE(nested_outer) {
+ZEST_CASE(nested_outer) {
     const auto result = json::schema_string<outer>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("m":{"$ref":"#/$defs/middle"},)"
-              R"("n":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["m","n"],)"
-              R"("$defs":{)"
-              R"("inner":{"type":"object",)"
-              R"("properties":{)"
-              R"("a":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["a"]},)"
-              R"("middle":{"type":"object",)"
-              R"("properties":{)"
-              R"("i":{"$ref":"#/$defs/inner"},)"
-              R"("s":{"type":"string"}},)"
-              R"("required":["i","s"]}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("m":{"$ref":"#/$defs/middle"},)"
+                     R"("n":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["m","n"],)"
+                     R"("$defs":{)"
+                     R"("inner":{"type":"object",)"
+                     R"("properties":{)"
+                     R"("a":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["a"]},)"
+                     R"("middle":{"type":"object",)"
+                     R"("properties":{)"
+                     R"("i":{"$ref":"#/$defs/inner"},)"
+                     R"("s":{"type":"string"}},)"
+                     R"("required":["i","s"]}}})");
 }
 
-TEST_CASE(nested_with_enum) {
+ZEST_CASE(nested_with_enum) {
     const auto result = json::schema_string<with_enum>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("c":{"type":"integer","minimum":-128,"maximum":127},)"
-              R"("name":{"type":"string"}},)"
-              R"("required":["c","name"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("c":{"type":"integer","minimum":-128,"maximum":127},)"
+                     R"("name":{"type":"string"}},)"
+                     R"("required":["c","name"]})");
 }
 
 // ---------------------------------------------------------------------------
 // Optional / pointer
 // ---------------------------------------------------------------------------
 
-TEST_CASE(optional_field) {
+ZEST_CASE(optional_field) {
     const auto result = json::schema_string<with_optional>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("name":{"type":"string"},)"
-              R"("age":{"anyOf":[{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"({"type":"null"}],"default":null}},)"
-              R"("required":["name"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("name":{"type":"string"},)"
+                     R"("age":{"anyOf":[{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"({"type":"null"}],"default":null}},)"
+                     R"("required":["name"]})");
 }
 
-TEST_CASE(unique_ptr_field) {
+ZEST_CASE(unique_ptr_field) {
     const auto result = json::schema_string<with_unique>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("name":{"type":"string"},)"
-              R"("ptr":{"anyOf":[{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"({"type":"null"}],"default":null}},)"
-              R"("required":["name"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("name":{"type":"string"},)"
+                     R"("ptr":{"anyOf":[{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"({"type":"null"}],"default":null}},)"
+                     R"("required":["name"]})");
 }
 
-TEST_CASE(shared_ptr_field) {
+ZEST_CASE(shared_ptr_field) {
     const auto result = json::schema_string<with_shared>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("name":{"type":"string"},)"
-              R"("ptr":{"anyOf":[{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"({"type":"null"}],"default":null}},)"
-              R"("required":["name"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("name":{"type":"string"},)"
+                     R"("ptr":{"anyOf":[{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"({"type":"null"}],"default":null}},)"
+                     R"("required":["name"]})");
 }
 
-TEST_CASE(all_optional_fields) {
+ZEST_CASE(all_optional_fields) {
     const auto result = json::schema_string<all_optional>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("a":{"anyOf":[{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"({"type":"null"}],"default":null},)"
-              R"("b":{"anyOf":[{"type":"string"},)"
-              R"({"type":"null"}],"default":null}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("a":{"anyOf":[{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"({"type":"null"}],"default":null},)"
+                     R"("b":{"anyOf":[{"type":"string"},)"
+                     R"({"type":"null"}],"default":null}}})");
 }
 
-TEST_CASE(all_ptr_types) {
+ZEST_CASE(all_ptr_types) {
     const auto result = json::schema_string<with_all_ptr>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("opt":{"anyOf":[{"type":"string"},)"
-              R"({"type":"null"}],"default":null},)"
-              R"("uniq":{"anyOf":[{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"({"type":"null"}],"default":null},)"
-              R"("shr":{"anyOf":[{"type":"boolean"},)"
-              R"({"type":"null"}],"default":null}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("opt":{"anyOf":[{"type":"string"},)"
+                     R"({"type":"null"}],"default":null},)"
+                     R"("uniq":{"anyOf":[{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"({"type":"null"}],"default":null},)"
+                     R"("shr":{"anyOf":[{"type":"boolean"},)"
+                     R"({"type":"null"}],"default":null}}})");
 }
 
 // ---------------------------------------------------------------------------
 // default_value attribute
 // ---------------------------------------------------------------------------
 
-TEST_CASE(attr_default_value) {
+ZEST_CASE(attr_default_value) {
     const auto result = json::schema_string<with_default>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("name":{"type":"string"},)"
-              R"("count":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647,"default":0}},)"
-              R"("required":["name"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("name":{"type":"string"},)"
+                     R"("count":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647,"default":0}},)"
+                     R"("required":["name"]})");
 }
 
-TEST_CASE(all_default_fields) {
+ZEST_CASE(all_default_fields) {
     const auto result = json::schema_string<all_default>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("x":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647,"default":0},)"
-              R"("y":{"type":"string","default":""}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("x":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647,"default":0},)"
+                     R"("y":{"type":"string","default":""}}})");
 }
 
 // ---------------------------------------------------------------------------
 // deny_unknown_fields
 // ---------------------------------------------------------------------------
 
-TEST_CASE(deny_unknown_struct) {
+ZEST_CASE(deny_unknown_struct) {
     const static field_info deny_fields[] = {
         {"name",  {}, 0, 0, type_info_of<std::string>,  false, false, false},
         {"count", {}, 0, 1, type_info_of<std::int32_t>, false, false, false},
@@ -1399,193 +1363,182 @@ TEST_CASE(deny_unknown_struct) {
         {deny_fields,          2            },
     };
     const auto result = json::schema_string(deny_info).value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("name":{"type":"string"},)"
-              R"("count":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["name","count"],)"
-              R"("additionalProperties":false})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("name":{"type":"string"},)"
+                     R"("count":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["name","count"],)"
+                     R"("additionalProperties":false})");
 }
 
 // ---------------------------------------------------------------------------
 // skip
 // ---------------------------------------------------------------------------
 
-TEST_CASE(attr_skip) {
+ZEST_CASE(attr_skip) {
     const auto result = json::schema_string<with_skip>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("visible":{"type":"string"}},)"
-              R"("required":["visible"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("visible":{"type":"string"}},)"
+                     R"("required":["visible"]})");
 }
 
-TEST_CASE(skip_and_default) {
+ZEST_CASE(skip_and_default) {
     const auto result = json::schema_string<skip_default>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("name":{"type":"string"},)"
-              R"("count":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647,"default":0}},)"
-              R"("required":["name"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("name":{"type":"string"},)"
+                     R"("count":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647,"default":0}},)"
+                     R"("required":["name"]})");
 }
 
 // A field the encoder may omit (built-in skip_when or a custom skip_if
 // predicate) is never required — the decoder accepts its absence.
-TEST_CASE(skip_if_fields_not_required) {
+ZEST_CASE(skip_if_fields_not_required) {
     const auto result = json::schema_string<with_skip_when>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("name":{"type":"string"},)"
-              R"("tags":{"type":"array",)"
-              R"("items":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("count":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"("note":{"type":"string"}},)"
-              R"("required":["name"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("name":{"type":"string"},)"
+                     R"("tags":{"type":"array",)"
+                     R"("items":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("count":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"("note":{"type":"string"}},)"
+                     R"("required":["name"]})");
 }
 
 // Two KOTATSU_ANNOTATE uses expand to distinct tags; identical untagged
 // struct specs must still collapse to one type_info instance and $defs entry.
-TEST_CASE(repeated_inline_struct_annotation_shares_def) {
+ZEST_CASE(repeated_inline_struct_annotation_shares_def) {
     const auto result = json::schema_string<repeated_child_annotation>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("left":{"$ref":"#/$defs/casing_child"},)"
-              R"("right":{"$ref":"#/$defs/casing_child"}},)"
-              R"("required":["left","right"],)"
-              R"("$defs":{)"
-              R"("casing_child":{"type":"object",)"
-              R"("properties":{)"
-              R"("firstValue":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["firstValue"]}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("left":{"$ref":"#/$defs/casing_child"},)"
+                     R"("right":{"$ref":"#/$defs/casing_child"}},)"
+                     R"("required":["left","right"],)"
+                     R"("$defs":{)"
+                     R"("casing_child":{"type":"object",)"
+                     R"("properties":{)"
+                     R"("firstValue":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["firstValue"]}}})");
 }
 
 // ---------------------------------------------------------------------------
 // flatten
 // ---------------------------------------------------------------------------
 
-TEST_CASE(attr_flatten) {
+ZEST_CASE(attr_flatten) {
     const auto result = json::schema_string<with_flatten>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("a":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"("b":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"("extra":{"type":"string"}},)"
-              R"("required":["a","b","extra"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("a":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"("b":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"("extra":{"type":"string"}},)"
+                     R"("required":["a","b","extra"]})");
 }
 
-TEST_CASE(flatten_with_optional) {
+ZEST_CASE(flatten_with_optional) {
     const auto result = json::schema_string<flatten_opt>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("x":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"("y":{"anyOf":[{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"({"type":"null"}],"default":null},)"
-              R"("tag":{"type":"string"}},)"
-              R"("required":["x","tag"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("x":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"("y":{"anyOf":[{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"({"type":"null"}],"default":null},)"
+                     R"("tag":{"type":"string"}},)"
+                     R"("required":["x","tag"]})");
 }
 
-TEST_CASE(flatten_with_rename) {
+ZEST_CASE(flatten_with_rename) {
     const auto result = json::schema_string<flatten_rename>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("alpha":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"("b":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"("extra":{"type":"string"}},)"
-              R"("required":["alpha","b","extra"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("alpha":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"("b":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"("extra":{"type":"string"}},)"
+                     R"("required":["alpha","b","extra"]})");
 }
 
 // ---------------------------------------------------------------------------
 // rename
 // ---------------------------------------------------------------------------
 
-TEST_CASE(attr_rename) {
+ZEST_CASE(attr_rename) {
     const auto result = json::schema_string<with_rename>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("my_field":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"("y":{"type":"string"}},)"
-              R"("required":["my_field","y"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("my_field":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"("y":{"type":"string"}},)"
+                     R"("required":["my_field","y"]})");
 }
 
 // ---------------------------------------------------------------------------
 // Variant (tag_mode::none)
 // ---------------------------------------------------------------------------
 
-TEST_CASE(variant_untagged) {
+ZEST_CASE(variant_untagged) {
     const auto result = json::schema_string<var_none>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("v":{"anyOf":[)"
-              R"({"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"({"type":"string"}]}},)"
-              R"("required":["v"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("v":{"anyOf":[)"
+                     R"({"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"({"type":"string"}]}},)"
+                     R"("required":["v"]})");
 }
 
-TEST_CASE(variant_three_alts) {
+ZEST_CASE(variant_three_alts) {
     const auto result = json::schema_string<var_three>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("v":{"anyOf":[)"
-              R"({"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"({"type":"string"},)"
-              R"({"type":"boolean"}]}},)"
-              R"("required":["v"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("v":{"anyOf":[)"
+                     R"({"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"({"type":"string"},)"
+                     R"({"type":"boolean"}]}},)"
+                     R"("required":["v"]})");
 }
 
 // ---------------------------------------------------------------------------
 // Variant (tag_mode::external)
 // ---------------------------------------------------------------------------
 
-TEST_CASE(variant_external_tag) {
+ZEST_CASE(variant_external_tag) {
     const static type_info_fn ext_alts[] = {
         type_info_of<std::int32_t>,
         type_info_of<std::string>,
@@ -1619,31 +1572,30 @@ TEST_CASE(variant_external_tag) {
         {&ext_field,           1         },
     };
     const auto result = json::schema_string(ext_wrap).value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("v":{"oneOf":[)"
-              R"({"type":"object",)"
-              R"("properties":{)"
-              R"("num":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["num"],)"
-              R"("additionalProperties":false},)"
-              R"({"type":"object",)"
-              R"("properties":{)"
-              R"("text":{"type":"string"}},)"
-              R"("required":["text"],)"
-              R"("additionalProperties":false}]}},)"
-              R"("required":["v"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("v":{"oneOf":[)"
+                     R"({"type":"object",)"
+                     R"("properties":{)"
+                     R"("num":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["num"],)"
+                     R"("additionalProperties":false},)"
+                     R"({"type":"object",)"
+                     R"("properties":{)"
+                     R"("text":{"type":"string"}},)"
+                     R"("required":["text"],)"
+                     R"("additionalProperties":false}]}},)"
+                     R"("required":["v"]})");
 }
 
 // ---------------------------------------------------------------------------
 // Variant (tag_mode::internal)
 // ---------------------------------------------------------------------------
 
-TEST_CASE(variant_internal_tag) {
+ZEST_CASE(variant_internal_tag) {
     const static type_info_fn int_alts[] = {
         type_info_of<point2d>,
         type_info_of<inner>,
@@ -1677,30 +1629,29 @@ TEST_CASE(variant_internal_tag) {
         {&int_field,           1         },
     };
     const auto result = json::schema_string(int_wrap).value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("v":{"oneOf":[)"
-              R"({"type":"object",)"
-              R"("properties":{)"
-              R"("x":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
-              R"("y":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
-              R"("type":{"const":"point"}},)"
-              R"("required":["x","y","type"]},)"
-              R"({"type":"object",)"
-              R"("properties":{)"
-              R"("a":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
-              R"("type":{"const":"inner"}},)"
-              R"("required":["a","type"]}]}},)"
-              R"("required":["v"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("v":{"oneOf":[)"
+                     R"({"type":"object",)"
+                     R"("properties":{)"
+                     R"("x":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
+                     R"("y":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
+                     R"("type":{"const":"point"}},)"
+                     R"("required":["x","y","type"]},)"
+                     R"({"type":"object",)"
+                     R"("properties":{)"
+                     R"("a":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
+                     R"("type":{"const":"inner"}},)"
+                     R"("required":["a","type"]}]}},)"
+                     R"("required":["v"]})");
 }
 
 // ---------------------------------------------------------------------------
 // Variant (tag_mode::adjacent)
 // ---------------------------------------------------------------------------
 
-TEST_CASE(variant_adjacent_tag) {
+ZEST_CASE(variant_adjacent_tag) {
     const static type_info_fn adj_alts[] = {
         type_info_of<std::int32_t>,
         type_info_of<std::string>,
@@ -1734,98 +1685,94 @@ TEST_CASE(variant_adjacent_tag) {
         {&adj_field,           1         },
     };
     const auto result = json::schema_string(adj_wrap).value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("v":{"oneOf":[)"
-              R"({"type":"object",)"
-              R"("properties":{)"
-              R"("t":{"const":"num"},)"
-              R"("c":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["t","c"],)"
-              R"("additionalProperties":false},)"
-              R"({"type":"object",)"
-              R"("properties":{)"
-              R"("t":{"const":"text"},)"
-              R"("c":{"type":"string"}},)"
-              R"("required":["t","c"],)"
-              R"("additionalProperties":false}]}},)"
-              R"("required":["v"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("v":{"oneOf":[)"
+                     R"({"type":"object",)"
+                     R"("properties":{)"
+                     R"("t":{"const":"num"},)"
+                     R"("c":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["t","c"],)"
+                     R"("additionalProperties":false},)"
+                     R"({"type":"object",)"
+                     R"("properties":{)"
+                     R"("t":{"const":"text"},)"
+                     R"("c":{"type":"string"}},)"
+                     R"("required":["t","c"],)"
+                     R"("additionalProperties":false}]}},)"
+                     R"("required":["v"]})");
 }
 
-TEST_CASE(root_external_variant) {
+ZEST_CASE(root_external_variant) {
     const auto result = json::schema_string<root_external_variant>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("oneOf":[)"
-              R"({"type":"object",)"
-              R"("properties":{)"
-              R"("integer":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["integer"],)"
-              R"("additionalProperties":false},)"
-              R"({"type":"object",)"
-              R"("properties":{)"
-              R"("text":{"type":"string"}},)"
-              R"("required":["text"],)"
-              R"("additionalProperties":false}]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("oneOf":[)"
+                     R"({"type":"object",)"
+                     R"("properties":{)"
+                     R"("integer":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["integer"],)"
+                     R"("additionalProperties":false},)"
+                     R"({"type":"object",)"
+                     R"("properties":{)"
+                     R"("text":{"type":"string"}},)"
+                     R"("required":["text"],)"
+                     R"("additionalProperties":false}]})");
 }
 
-TEST_CASE(root_internal_variant) {
+ZEST_CASE(root_internal_variant) {
     const auto result = json::schema_string<root_internal_variant>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("oneOf":[)"
-              R"({"type":"object",)"
-              R"("properties":{)"
-              R"("radius":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
-              R"("kind":{"const":"circle"}},)"
-              R"("required":["radius","kind"]},)"
-              R"({"type":"object",)"
-              R"("properties":{)"
-              R"("width":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
-              R"("height":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
-              R"("kind":{"const":"rect"}},)"
-              R"("required":["width","height","kind"]}]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("oneOf":[)"
+                     R"({"type":"object",)"
+                     R"("properties":{)"
+                     R"("radius":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
+                     R"("kind":{"const":"circle"}},)"
+                     R"("required":["radius","kind"]},)"
+                     R"({"type":"object",)"
+                     R"("properties":{)"
+                     R"("width":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
+                     R"("height":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
+                     R"("kind":{"const":"rect"}},)"
+                     R"("required":["width","height","kind"]}]})");
 }
 
-TEST_CASE(root_adjacent_variant) {
+ZEST_CASE(root_adjacent_variant) {
     const auto result = json::schema_string<root_adjacent_variant>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("oneOf":[)"
-              R"({"type":"object",)"
-              R"("properties":{)"
-              R"("type":{"const":"integer"},)"
-              R"("value":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["type","value"],)"
-              R"("additionalProperties":false},)"
-              R"({"type":"object",)"
-              R"("properties":{)"
-              R"("type":{"const":"text"},)"
-              R"("value":{"type":"string"}},)"
-              R"("required":["type","value"],)"
-              R"("additionalProperties":false}]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("oneOf":[)"
+                     R"({"type":"object",)"
+                     R"("properties":{)"
+                     R"("type":{"const":"integer"},)"
+                     R"("value":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["type","value"],)"
+                     R"("additionalProperties":false},)"
+                     R"({"type":"object",)"
+                     R"("properties":{)"
+                     R"("type":{"const":"text"},)"
+                     R"("value":{"type":"string"}},)"
+                     R"("required":["type","value"],)"
+                     R"("additionalProperties":false}]})");
 }
 
-TEST_CASE(opaque_root_returns_error) {
+ZEST_CASE(opaque_root_returns_error) {
     const auto result = json::schema_string<json_schema_opaque_root>();
-    EXPECT_TRUE(!result.has_value());
+    EXPECT(!result);
 }
 
-TEST_CASE(any_type_root) {
+ZEST_CASE(any_type_root) {
     const static type_info any_ti = {type_kind::any, "any"};
     const auto result = json::schema_string(any_ti).value();
-    EXPECT_EQ(result, R"({"$schema":"https://json-schema.org/draft/2020-12/schema"})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema"})");
 }
 
-TEST_CASE(any_type_field) {
+ZEST_CASE(any_type_field) {
     const static type_info any_ti = {type_kind::any, "any"};
     const static field_info any_fields[] = {
         {"data", {}, 0, 0, []() -> const type_info& { return any_ti; }, false, false, false},
@@ -1837,517 +1784,490 @@ TEST_CASE(any_type_field) {
         {any_fields,           1         },
     };
     const auto result = json::schema_string(any_struct).value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{"data":{}},)"
-              R"("required":["data"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{"data":{}},)"
+                     R"("required":["data"]})");
 }
 
 // ---------------------------------------------------------------------------
 // More containers
 // ---------------------------------------------------------------------------
 
-TEST_CASE(map_str_struct) {
+ZEST_CASE(map_str_struct) {
     const auto result = json::schema_string<map_str_struct>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("entries":{"type":"object",)"
-              R"("additionalProperties":{)"
-              R"("$ref":"#/$defs/point2d"}}},)"
-              R"("required":["entries"],)"
-              R"("$defs":{)"
-              R"("point2d":{"type":"object",)"
-              R"("properties":{)"
-              R"("x":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"("y":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["x","y"]}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("entries":{"type":"object",)"
+                     R"("additionalProperties":{)"
+                     R"("$ref":"#/$defs/point2d"}}},)"
+                     R"("required":["entries"],)"
+                     R"("$defs":{)"
+                     R"("point2d":{"type":"object",)"
+                     R"("properties":{)"
+                     R"("x":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"("y":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["x","y"]}}})");
 }
 
-TEST_CASE(map_str_enum) {
+ZEST_CASE(map_str_enum) {
     const auto result = json::schema_string<map_str_enum>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("entries":{"type":"object",)"
-              R"("additionalProperties":{)"
-              R"("type":"integer","minimum":-128,"maximum":127}}},)"
-              R"("required":["entries"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("entries":{"type":"object",)"
+                     R"("additionalProperties":{)"
+                     R"("type":"integer","minimum":-128,"maximum":127}}},)"
+                     R"("required":["entries"]})");
 }
 
-TEST_CASE(vec_optional_items) {
+ZEST_CASE(vec_optional_items) {
     const auto result = json::schema_string<vec_optional>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("v":{"type":"array",)"
-              R"("items":{"anyOf":[{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"({"type":"null"}]}}},)"
-              R"("required":["v"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("v":{"type":"array",)"
+                     R"("items":{"anyOf":[{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"({"type":"null"}]}}},)"
+                     R"("required":["v"]})");
 }
 
-TEST_CASE(optional_vec_field) {
+ZEST_CASE(optional_vec_field) {
     const auto result = json::schema_string<optional_vec>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("v":{"anyOf":[{"type":"array",)"
-              R"("items":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"({"type":"null"}],"default":null}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("v":{"anyOf":[{"type":"array",)"
+                     R"("items":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"({"type":"null"}],"default":null}}})");
 }
 
-TEST_CASE(vec_of_enum) {
+ZEST_CASE(vec_of_enum) {
     const auto result = json::schema_string<vec_enum>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("colors":{"type":"array",)"
-              R"("items":{)"
-              R"("type":"integer","minimum":-128,"maximum":127}}},)"
-              R"("required":["colors"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("colors":{"type":"array",)"
+                     R"("items":{)"
+                     R"("type":"integer","minimum":-128,"maximum":127}}},)"
+                     R"("required":["colors"]})");
 }
 
-TEST_CASE(set_of_string) {
+ZEST_CASE(set_of_string) {
     const auto result = json::schema_string<set_string>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("tags":{"type":"array",)"
-              R"("items":{"type":"string"},)"
-              R"("uniqueItems":true}},)"
-              R"("required":["tags"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("tags":{"type":"array",)"
+                     R"("items":{"type":"string"},)"
+                     R"("uniqueItems":true}},)"
+                     R"("required":["tags"]})");
 }
 
-TEST_CASE(vec_of_map) {
+ZEST_CASE(vec_of_map) {
     const auto result = json::schema_string<vec_map>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("items":{"type":"array",)"
-              R"("items":{"type":"object",)"
-              R"("additionalProperties":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}}}},)"
-              R"("required":["items"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("items":{"type":"array",)"
+                     R"("items":{"type":"object",)"
+                     R"("additionalProperties":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}}}},)"
+                     R"("required":["items"]})");
 }
 
-TEST_CASE(map_of_vec_struct) {
+ZEST_CASE(map_of_vec_struct) {
     const auto result = json::schema_string<map_vec_struct>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("groups":{"type":"object",)"
-              R"("additionalProperties":{"type":"array",)"
-              R"("items":{)"
-              R"("$ref":"#/$defs/point2d"}}}},)"
-              R"("required":["groups"],)"
-              R"("$defs":{)"
-              R"("point2d":{"type":"object",)"
-              R"("properties":{)"
-              R"("x":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"("y":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["x","y"]}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("groups":{"type":"object",)"
+                     R"("additionalProperties":{"type":"array",)"
+                     R"("items":{)"
+                     R"("$ref":"#/$defs/point2d"}}}},)"
+                     R"("required":["groups"],)"
+                     R"("$defs":{)"
+                     R"("point2d":{"type":"object",)"
+                     R"("properties":{)"
+                     R"("x":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"("y":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["x","y"]}}})");
 }
 
-TEST_CASE(deep_container_field) {
+ZEST_CASE(deep_container_field) {
     const auto result = json::schema_string<deep_container>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("data":{"type":"object",)"
-              R"("additionalProperties":{"type":"array",)"
-              R"("items":{"type":"object",)"
-              R"("additionalProperties":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}}}}},)"
-              R"("required":["data"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("data":{"type":"object",)"
+                     R"("additionalProperties":{"type":"array",)"
+                     R"("items":{"type":"object",)"
+                     R"("additionalProperties":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}}}}},)"
+                     R"("required":["data"]})");
 }
 
-TEST_CASE(map_of_map_field) {
+ZEST_CASE(map_of_map_field) {
     const auto result = json::schema_string<map_of_map>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("m":{"type":"object",)"
-              R"("additionalProperties":{"type":"object",)"
-              R"("additionalProperties":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}}}},)"
-              R"("required":["m"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("m":{"type":"object",)"
+                     R"("additionalProperties":{"type":"object",)"
+                     R"("additionalProperties":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}}}},)"
+                     R"("required":["m"]})");
 }
 
 // ---------------------------------------------------------------------------
 // Struct with pointer to struct
 // ---------------------------------------------------------------------------
 
-TEST_CASE(shared_ptr_to_struct) {
+ZEST_CASE(shared_ptr_to_struct) {
     const auto result = json::schema_string<shared_struct>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("name":{"type":"string"},)"
-              R"("point":{"anyOf":[{)"
-              R"("$ref":"#/$defs/point2d"},)"
-              R"({"type":"null"}],"default":null}},)"
-              R"("required":["name"],)"
-              R"("$defs":{)"
-              R"("point2d":{"type":"object",)"
-              R"("properties":{)"
-              R"("x":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"("y":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["x","y"]}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("name":{"type":"string"},)"
+                     R"("point":{"anyOf":[{)"
+                     R"("$ref":"#/$defs/point2d"},)"
+                     R"({"type":"null"}],"default":null}},)"
+                     R"("required":["name"],)"
+                     R"("$defs":{)"
+                     R"("point2d":{"type":"object",)"
+                     R"("properties":{)"
+                     R"("x":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"("y":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["x","y"]}}})");
 }
 
-TEST_CASE(optional_struct_field) {
+ZEST_CASE(optional_struct_field) {
     const auto result = json::schema_string<optional_struct>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("point":{"anyOf":[{)"
-              R"("$ref":"#/$defs/point2d"},)"
-              R"({"type":"null"}],"default":null},)"
-              R"("name":{"type":"string"}},)"
-              R"("required":["name"],)"
-              R"("$defs":{)"
-              R"("point2d":{"type":"object",)"
-              R"("properties":{)"
-              R"("x":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"("y":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["x","y"]}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("point":{"anyOf":[{)"
+                     R"("$ref":"#/$defs/point2d"},)"
+                     R"({"type":"null"}],"default":null},)"
+                     R"("name":{"type":"string"}},)"
+                     R"("required":["name"],)"
+                     R"("$defs":{)"
+                     R"("point2d":{"type":"object",)"
+                     R"("properties":{)"
+                     R"("x":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"("y":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["x","y"]}}})");
 }
 
 // ---------------------------------------------------------------------------
 // $defs dedup
 // ---------------------------------------------------------------------------
 
-TEST_CASE(defs_dedup_multi_ref) {
+ZEST_CASE(defs_dedup_multi_ref) {
     const auto result = json::schema_string<multi_ref>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("a":{)"
-              R"("$ref":"#/$defs/point2d"},)"
-              R"("b":{)"
-              R"("$ref":"#/$defs/point2d"},)"
-              R"("list":{"type":"array",)"
-              R"("items":{)"
-              R"("$ref":"#/$defs/point2d"}}},)"
-              R"("required":["a","b","list"],)"
-              R"("$defs":{)"
-              R"("point2d":{"type":"object",)"
-              R"("properties":{)"
-              R"("x":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"("y":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["x","y"]}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("a":{)"
+                     R"("$ref":"#/$defs/point2d"},)"
+                     R"("b":{)"
+                     R"("$ref":"#/$defs/point2d"},)"
+                     R"("list":{"type":"array",)"
+                     R"("items":{)"
+                     R"("$ref":"#/$defs/point2d"}}},)"
+                     R"("required":["a","b","list"],)"
+                     R"("$defs":{)"
+                     R"("point2d":{"type":"object",)"
+                     R"("properties":{)"
+                     R"("x":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"("y":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["x","y"]}}})");
 }
 
 // ---------------------------------------------------------------------------
 // Struct with enum fields
 // ---------------------------------------------------------------------------
 
-TEST_CASE(multi_enum_fields) {
+ZEST_CASE(multi_enum_fields) {
     const auto result = json::schema_string<multi_enum>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("c":{"type":"integer","minimum":-128,"maximum":127},)"
-              R"("s":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
-              R"("label":{"type":"string"}},)"
-              R"("required":["c","s","label"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("c":{"type":"integer","minimum":-128,"maximum":127},)"
+                     R"("s":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
+                     R"("label":{"type":"string"}},)"
+                     R"("required":["c","s","label"]})");
 }
 
-TEST_CASE(with_flag_enum) {
+ZEST_CASE(with_flag_enum) {
     const auto result = json::schema_string<with_flag>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("f":{"type":"integer","minimum":0,"maximum":255},)"
-              R"("name":{"type":"string"}},)"
-              R"("required":["f","name"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("f":{"type":"integer","minimum":0,"maximum":255},)"
+                     R"("name":{"type":"string"}},)"
+                     R"("required":["f","name"]})");
 }
 
-TEST_CASE(with_level_enum) {
+ZEST_CASE(with_level_enum) {
     const auto result = json::schema_string<with_level>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("l":{"type":"integer","minimum":-32768,"maximum":32767},)"
-              R"("v":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["l","v"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("l":{"type":"integer","minimum":-32768,"maximum":32767},)"
+                     R"("v":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["l","v"]})");
 }
 
 // ---------------------------------------------------------------------------
 // Nested struct with optional
 // ---------------------------------------------------------------------------
 
-TEST_CASE(optional_inner_field) {
+ZEST_CASE(optional_inner_field) {
     const auto result = json::schema_string<optional_inner>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("i":{"anyOf":[{)"
-              R"("$ref":"#/$defs/inner"},)"
-              R"({"type":"null"}],"default":null},)"
-              R"("name":{"type":"string"}},)"
-              R"("required":["name"],)"
-              R"("$defs":{)"
-              R"("inner":{"type":"object",)"
-              R"("properties":{)"
-              R"("a":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["a"]}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("i":{"anyOf":[{)"
+                     R"("$ref":"#/$defs/inner"},)"
+                     R"({"type":"null"}],"default":null},)"
+                     R"("name":{"type":"string"}},)"
+                     R"("required":["name"],)"
+                     R"("$defs":{)"
+                     R"("inner":{"type":"object",)"
+                     R"("properties":{)"
+                     R"("a":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["a"]}}})");
 }
 
 // ---------------------------------------------------------------------------
 // Variant in container
 // ---------------------------------------------------------------------------
 
-TEST_CASE(vec_of_variant) {
+ZEST_CASE(vec_of_variant) {
     const auto result = json::schema_string<vec_variant>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("items":{"type":"array",)"
-              R"("items":{"anyOf":[)"
-              R"({"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"({"type":"string"}]}}},)"
-              R"("required":["items"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("items":{"type":"array",)"
+                     R"("items":{"anyOf":[)"
+                     R"({"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"({"type":"string"}]}}},)"
+                     R"("required":["items"]})");
 }
 
 // ---------------------------------------------------------------------------
 // Combinations
 // ---------------------------------------------------------------------------
 
-TEST_CASE(combo_mixed_fields) {
+ZEST_CASE(combo_mixed_fields) {
     const auto result = json::schema_string<combo>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("color":{)"
-              R"("type":"integer","minimum":-128,"maximum":127},)"
-              R"("label":{"anyOf":[{"type":"string"},)"
-              R"({"type":"null"}],"default":null},)"
-              R"("values":{"type":"array",)"
-              R"("items":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("attrs":{"type":"object",)"
-              R"("additionalProperties":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}}},)"
-              R"("required":["color","values","attrs"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("color":{)"
+                     R"("type":"integer","minimum":-128,"maximum":127},)"
+                     R"("label":{"anyOf":[{"type":"string"},)"
+                     R"({"type":"null"}],"default":null},)"
+                     R"("values":{"type":"array",)"
+                     R"("items":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("attrs":{"type":"object",)"
+                     R"("additionalProperties":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}}},)"
+                     R"("required":["color","values","attrs"]})");
 }
 
-TEST_CASE(combo_nested_struct_refs) {
+ZEST_CASE(combo_nested_struct_refs) {
     const auto result = json::schema_string<nested_combo>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("point":{)"
-              R"("$ref":"#/$defs/point2d"},)"
-              R"("color":{)"
-              R"("type":"integer","minimum":-128,"maximum":127},)"
-              R"("points":{"type":"array",)"
-              R"("items":{)"
-              R"("$ref":"#/$defs/point2d"}},)"
-              R"("named_points":{"type":"object",)"
-              R"("additionalProperties":{)"
-              R"("$ref":"#/$defs/point2d"}}},)"
-              R"("required":[)"
-              R"("point","color","points","named_points"],)"
-              R"("$defs":{)"
-              R"("point2d":{"type":"object",)"
-              R"("properties":{)"
-              R"("x":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"("y":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["x","y"]}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("point":{)"
+                     R"("$ref":"#/$defs/point2d"},)"
+                     R"("color":{)"
+                     R"("type":"integer","minimum":-128,"maximum":127},)"
+                     R"("points":{"type":"array",)"
+                     R"("items":{)"
+                     R"("$ref":"#/$defs/point2d"}},)"
+                     R"("named_points":{"type":"object",)"
+                     R"("additionalProperties":{)"
+                     R"("$ref":"#/$defs/point2d"}}},)"
+                     R"("required":[)"
+                     R"("point","color","points","named_points"],)"
+                     R"("$defs":{)"
+                     R"("point2d":{"type":"object",)"
+                     R"("properties":{)"
+                     R"("x":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"("y":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["x","y"]}}})");
 }
 
-TEST_CASE(combo_vec_of_struct) {
+ZEST_CASE(combo_vec_of_struct) {
     const auto result = json::schema_string<vec_of_struct>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("items":{"type":"array",)"
-              R"("items":{)"
-              R"("$ref":"#/$defs/point2d"}}},)"
-              R"("required":["items"],)"
-              R"("$defs":{)"
-              R"("point2d":{"type":"object",)"
-              R"("properties":{)"
-              R"("x":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"("y":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["x","y"]}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("items":{"type":"array",)"
+                     R"("items":{)"
+                     R"("$ref":"#/$defs/point2d"}}},)"
+                     R"("required":["items"],)"
+                     R"("$defs":{)"
+                     R"("point2d":{"type":"object",)"
+                     R"("properties":{)"
+                     R"("x":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"("y":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["x","y"]}}})");
 }
 
-TEST_CASE(combo_deep_nesting) {
+ZEST_CASE(combo_deep_nesting) {
     const auto result = json::schema_string<deep_outer>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("dm":{)"
-              R"("$ref":"#/$defs/deep_middle"},)"
-              R"("n":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["dm","n"],)"
-              R"("$defs":{)"
-              R"("deep_inner":{"type":"object",)"
-              R"("properties":{)"
-              R"("c":{)"
-              R"("type":"integer","minimum":-128,"maximum":127},)"
-              R"("v":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["c","v"]},)"
-              R"("deep_middle":{"type":"object",)"
-              R"("properties":{)"
-              R"("di":{)"
-              R"("$ref":"#/$defs/deep_inner"},)"
-              R"("s":{"type":"string"}},)"
-              R"("required":["di","s"]}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("dm":{)"
+                     R"("$ref":"#/$defs/deep_middle"},)"
+                     R"("n":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["dm","n"],)"
+                     R"("$defs":{)"
+                     R"("deep_inner":{"type":"object",)"
+                     R"("properties":{)"
+                     R"("c":{)"
+                     R"("type":"integer","minimum":-128,"maximum":127},)"
+                     R"("v":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["c","v"]},)"
+                     R"("deep_middle":{"type":"object",)"
+                     R"("properties":{)"
+                     R"("di":{)"
+                     R"("$ref":"#/$defs/deep_inner"},)"
+                     R"("s":{"type":"string"}},)"
+                     R"("required":["di","s"]}}})");
 }
 
-TEST_CASE(combo_multi_map) {
+ZEST_CASE(combo_multi_map) {
     const auto result = json::schema_string<multi_map>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("a":{"type":"object",)"
-              R"("additionalProperties":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("b":{"type":"object",)"
-              R"("additionalProperties":{"type":"string"}}},)"
-              R"("required":["a","b"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("a":{"type":"object",)"
+                     R"("additionalProperties":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("b":{"type":"object",)"
+                     R"("additionalProperties":{"type":"string"}}},)"
+                     R"("required":["a","b"]})");
 }
 
-TEST_CASE(combo_many_fields) {
+ZEST_CASE(combo_many_fields) {
     const auto result = json::schema_string<many_fields>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("a":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"("b":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"("c":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"("d":{"type":"string"},)"
-              R"("e":{"type":"boolean"},)"
-              R"("f":{"anyOf":[{"type":"number"},{"type":"null"}]}},)"
-              R"("required":["a","b","c","d","e","f"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("a":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"("b":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"("c":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"("d":{"type":"string"},)"
+                     R"("e":{"type":"boolean"},)"
+                     R"("f":{"anyOf":[{"type":"number"},{"type":"null"}]}},)"
+                     R"("required":["a","b","c","d","e","f"]})");
 }
 
-TEST_CASE(combo_set_of_struct) {
+ZEST_CASE(combo_set_of_struct) {
     const auto result = json::schema_string<set_of_struct>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("ids":{"type":"array",)"
-              R"("items":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"("uniqueItems":true},)"
-              R"("name":{"type":"string"}},)"
-              R"("required":["ids","name"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("ids":{"type":"array",)"
+                     R"("items":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"("uniqueItems":true},)"
+                     R"("name":{"type":"string"}},)"
+                     R"("required":["ids","name"]})");
 }
 
-TEST_CASE(combo_trivial_nested) {
+ZEST_CASE(combo_trivial_nested) {
     const auto result = json::schema_string<trivial_nested>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("p":{)"
-              R"("$ref":"#/$defs/point2d"},)"
-              R"("z":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["p","z"],)"
-              R"("$defs":{)"
-              R"("point2d":{"type":"object",)"
-              R"("properties":{)"
-              R"("x":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"("y":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["x","y"]}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("p":{)"
+                     R"("$ref":"#/$defs/point2d"},)"
+                     R"("z":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["p","z"],)"
+                     R"("$defs":{)"
+                     R"("point2d":{"type":"object",)"
+                     R"("properties":{)"
+                     R"("x":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"("y":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["x","y"]}}})");
 }
 
 // ---------------------------------------------------------------------------
 // Self-referential struct
 // ---------------------------------------------------------------------------
 
-TEST_CASE(self_referential_struct) {
+ZEST_CASE(self_referential_struct) {
     static struct_type_info self_info = {
         {type_kind::structure, "self_ref"},
         false,
@@ -2370,20 +2290,19 @@ TEST_CASE(self_referential_struct) {
     self_info.fields = {self_fields, 2};
 
     const auto result = json::schema_string(self_info).value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("value":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
-              R"("next":{"anyOf":[{"$ref":"#"},{"type":"null"}]}},)"
-              R"("required":["value"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("value":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
+                     R"("next":{"anyOf":[{"$ref":"#"},{"type":"null"}]}},)"
+                     R"("required":["value"]})");
 }
 
 // ---------------------------------------------------------------------------
 // Empty enum
 // ---------------------------------------------------------------------------
 
-TEST_CASE(empty_enum) {
+ZEST_CASE(empty_enum) {
     const static enum_type_info empty_ei = {
         {type_kind::enumeration, "empty_enum"},
         {},
@@ -2391,16 +2310,15 @@ TEST_CASE(empty_enum) {
         type_kind::int32,
     };
     const auto result = json::schema_string(empty_ei).value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"integer","minimum":-2147483648,"maximum":2147483647})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"integer","minimum":-2147483648,"maximum":2147483647})");
 }
 
 // ---------------------------------------------------------------------------
 // Variant nesting variant
 // ---------------------------------------------------------------------------
 
-TEST_CASE(variant_of_variant) {
+ZEST_CASE(variant_of_variant) {
     const static type_info_fn inner_alts[] = {
         type_info_of<std::string>,
         type_info_of<bool>,
@@ -2428,20 +2346,19 @@ TEST_CASE(variant_of_variant) {
     };
 
     const auto result = json::schema_string(outer_var).value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("anyOf":[)"
-              R"({"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
-              R"({"anyOf":[)"
-              R"({"type":"string"},)"
-              R"({"type":"boolean"}]}]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("anyOf":[)"
+                     R"({"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
+                     R"({"anyOf":[)"
+                     R"({"type":"string"},)"
+                     R"({"type":"boolean"}]}]})");
 }
 
 // ---------------------------------------------------------------------------
 // Field ordering stability
 // ---------------------------------------------------------------------------
 
-TEST_CASE(field_ordering_stability) {
+ZEST_CASE(field_ordering_stability) {
     const static field_info ordered_fields[] = {
         {"zebra",  {}, 0, 0, type_info_of<std::string>,  false, false, false},
         {"alpha",  {}, 0, 1, type_info_of<std::int32_t>, false, false, false},
@@ -2455,15 +2372,14 @@ TEST_CASE(field_ordering_stability) {
         {ordered_fields,       4               },
     };
     const auto result = json::schema_string(ordered_info).value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("zebra":{"type":"string"},)"
-              R"("alpha":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
-              R"("middle":{"type":"boolean"},)"
-              R"("beta":{"anyOf":[{"type":"number"},{"type":"null"}]}},)"
-              R"("required":["zebra","alpha","middle","beta"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("zebra":{"type":"string"},)"
+                     R"("alpha":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
+                     R"("middle":{"type":"boolean"},)"
+                     R"("beta":{"anyOf":[{"type":"number"},{"type":"null"}]}},)"
+                     R"("required":["zebra","alpha","middle","beta"]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -2474,26 +2390,25 @@ struct with_monostate {
     std::variant<std::monostate, std::int32_t, std::string> v;
 };
 
-TEST_CASE(variant_with_monostate) {
+ZEST_CASE(variant_with_monostate) {
     const auto result = json::schema_string<with_monostate>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("v":{"anyOf":[)"
-              R"({"type":"null"},)"
-              R"({"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"({"type":"string"}]}},)"
-              R"("required":["v"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("v":{"anyOf":[)"
+                     R"({"type":"null"},)"
+                     R"({"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"({"type":"string"}]}},)"
+                     R"("required":["v"]})");
 }
 
 // ---------------------------------------------------------------------------
 // Mutual recursion
 // ---------------------------------------------------------------------------
 
-TEST_CASE(mutual_recursion) {
+ZEST_CASE(mutual_recursion) {
     static struct_type_info info_a = {
         {type_kind::structure, "node_a"},
         false,
@@ -2528,26 +2443,25 @@ TEST_CASE(mutual_recursion) {
     info_b.fields = {fields_b, 2};
 
     const auto result = json::schema_string(info_a).value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("value":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
-              R"("b":{"anyOf":[{"$ref":"#/$defs/node_b"},{"type":"null"}]}},)"
-              R"("required":["value"],)"
-              R"("$defs":{)"
-              R"("node_b":{"type":"object",)"
-              R"("properties":{)"
-              R"("name":{"type":"string"},)"
-              R"("a":{"anyOf":[{"$ref":"#"},{"type":"null"}]}},)"
-              R"("required":["name"]}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("value":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
+                     R"("b":{"anyOf":[{"$ref":"#/$defs/node_b"},{"type":"null"}]}},)"
+                     R"("required":["value"],)"
+                     R"("$defs":{)"
+                     R"("node_b":{"type":"object",)"
+                     R"("properties":{)"
+                     R"("name":{"type":"string"},)"
+                     R"("a":{"anyOf":[{"$ref":"#"},{"type":"null"}]}},)"
+                     R"("required":["name"]}}})");
 }
 
 // ---------------------------------------------------------------------------
 // Bytes type
 // ---------------------------------------------------------------------------
 
-TEST_CASE(bytes_field) {
+ZEST_CASE(bytes_field) {
     const static type_info bytes_ti = {type_kind::bytes, "bytes"};
     const static field_info bytes_fields[] = {
         {"data", {}, 0, 0, []() -> const type_info& { return bytes_ti; }, false, false, false},
@@ -2559,145 +2473,136 @@ TEST_CASE(bytes_field) {
         {bytes_fields,         1           },
     };
     const auto result = json::schema_string(bytes_struct).value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("data":{"type":"array",)"
-              R"("items":{"type":"integer",)"
-              R"("minimum":0,)"
-              R"("maximum":255}}},)"
-              R"("required":["data"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("data":{"type":"array",)"
+                     R"("items":{"type":"integer",)"
+                     R"("minimum":0,)"
+                     R"("maximum":255}}},)"
+                     R"("required":["data"]})");
 }
 
 // ---------------------------------------------------------------------------
 // description
 // ---------------------------------------------------------------------------
 
-TEST_CASE(description_on_scalar_field) {
+ZEST_CASE(description_on_scalar_field) {
     const auto result = json::schema_string<desc_scalar>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("threads":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647,)"
-              R"("description":"Number of worker threads."},)"
-              R"("name":{"type":"string"}},)"
-              R"("required":["threads","name"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("threads":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647,)"
+                     R"("description":"Number of worker threads."},)"
+                     R"("name":{"type":"string"}},)"
+                     R"("required":["threads","name"]})");
 }
 
-TEST_CASE(description_on_optional_field) {
+ZEST_CASE(description_on_optional_field) {
     const auto result = json::schema_string<desc_optional>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("label":{"anyOf":[{"type":"string"},)"
-              R"({"type":"null"}],)"
-              R"("description":"Optional display label.","default":null}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("label":{"anyOf":[{"type":"string"},)"
+                     R"({"type":"null"}],)"
+                     R"("description":"Optional display label.","default":null}}})");
 }
 
-TEST_CASE(description_on_struct_ref_field) {
+ZEST_CASE(description_on_struct_ref_field) {
     const auto result = json::schema_string<desc_struct_ref>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("anchor":{"$ref":"#/$defs/point2d",)"
-              R"("description":"Anchor position."}},)"
-              R"("required":["anchor"],)"
-              R"("$defs":{)"
-              R"("point2d":{"type":"object",)"
-              R"("properties":{)"
-              R"("x":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"("y":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["x","y"]}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("anchor":{"$ref":"#/$defs/point2d",)"
+                     R"("description":"Anchor position."}},)"
+                     R"("required":["anchor"],)"
+                     R"("$defs":{)"
+                     R"("point2d":{"type":"object",)"
+                     R"("properties":{)"
+                     R"("x":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"("y":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["x","y"]}}})");
 }
 
-TEST_CASE(description_through_flatten) {
+ZEST_CASE(description_through_flatten) {
     const auto result = json::schema_string<desc_flatten>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("count":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647,)"
-              R"("description":"Inherited counter."},)"
-              R"("tag":{"type":"string"}},)"
-              R"("required":["count","tag"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("count":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647,)"
+                     R"("description":"Inherited counter."},)"
+                     R"("tag":{"type":"string"}},)"
+                     R"("required":["count","tag"]})");
 }
 
-TEST_CASE(description_with_rename) {
+ZEST_CASE(description_with_rename) {
     const auto result = json::schema_string<desc_rename>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("max_size":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647,)"
-              R"("description":"Maximum size in bytes."}},)"
-              R"("required":["max_size"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("max_size":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647,)"
+                     R"("description":"Maximum size in bytes."}},)"
+                     R"("required":["max_size"]})");
 }
 
-TEST_CASE(description_with_default_value) {
+ZEST_CASE(description_with_default_value) {
     const auto result = json::schema_string<desc_default>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("retries":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647,)"
-              R"("description":"Retry limit.","default":0}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("retries":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647,)"
+                     R"("description":"Retry limit.","default":0}}})");
 }
 
-TEST_CASE(described_and_bare_struct_share_def) {
+ZEST_CASE(described_and_bare_struct_share_def) {
     const auto result = json::schema_string<desc_shared_ref>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("origin":{"$ref":"#/$defs/point2d"},)"
-              R"("anchor":{"$ref":"#/$defs/point2d",)"
-              R"("description":"Anchor position."}},)"
-              R"("required":["origin","anchor"],)"
-              R"("$defs":{)"
-              R"("point2d":{"type":"object",)"
-              R"("properties":{)"
-              R"("x":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"("y":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["x","y"]}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("origin":{"$ref":"#/$defs/point2d"},)"
+                     R"("anchor":{"$ref":"#/$defs/point2d",)"
+                     R"("description":"Anchor position."}},)"
+                     R"("required":["origin","anchor"],)"
+                     R"("$defs":{)"
+                     R"("point2d":{"type":"object",)"
+                     R"("properties":{)"
+                     R"("x":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"("y":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["x","y"]}}})");
 }
 
-TEST_CASE(description_in_internal_tagged_alternative) {
+ZEST_CASE(description_in_internal_tagged_alternative) {
     const auto result = json::schema_string<desc_internal_variant>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("oneOf":[)"
-              R"({"type":"object",)"
-              R"("properties":{)"
-              R"("radius":{"anyOf":[{"type":"number"},{"type":"null"}],)"
-              R"("description":"Radius in meters."},)"
-              R"("kind":{"const":"circle"}},)"
-              R"("required":["radius","kind"]},)"
-              R"({"type":"object",)"
-              R"("properties":{)"
-              R"("width":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
-              R"("height":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
-              R"("kind":{"const":"rect"}},)"
-              R"("required":["width","height","kind"]}]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("oneOf":[)"
+                     R"({"type":"object",)"
+                     R"("properties":{)"
+                     R"("radius":{"anyOf":[{"type":"number"},{"type":"null"}],)"
+                     R"("description":"Radius in meters."},)"
+                     R"("kind":{"const":"circle"}},)"
+                     R"("required":["radius","kind"]},)"
+                     R"({"type":"object",)"
+                     R"("properties":{)"
+                     R"("width":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
+                     R"("height":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
+                     R"("kind":{"const":"rect"}},)"
+                     R"("required":["width","height","kind"]}]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -2708,31 +2613,29 @@ struct string_enum_config {
     [[maybe_unused]] constexpr static auto enum_repr = codec::enum_repr::String;
 };
 
-TEST_CASE(enum_names_under_string_config) {
+ZEST_CASE(enum_names_under_string_config) {
     const auto result = json::schema_string<color_i8, string_enum_config>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("enum":["red","green","blue"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("enum":["red","green","blue"]})");
 }
 
-TEST_CASE(unnamed_enum_value_rejected_under_string_config) {
+ZEST_CASE(unnamed_enum_value_rejected_under_string_config) {
     // A representable value without a reflected member name has no string
     // spelling: the encoder rejects it, so the schema's enum list of
     // reflected names stays exhaustive.
     const auto encoded = json::to_string<string_enum_config>(static_cast<color_i8>(42));
-    EXPECT_FALSE(encoded.has_value());
+    EXPECT(!encoded);
 }
 
-TEST_CASE(schema_agrees_with_encoder_on_enums) {
+ZEST_CASE(schema_agrees_with_encoder_on_enums) {
     // Under the default config the encoder emits the numeric value, so the
     // schema constrains the same numeric form.
     const auto encoded = json::to_string(with_enum{.c = color_i8::green, .name = "g"});
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_TRUE(encoded->find(R"("c":1)") != std::string::npos);
+    ASSERT(encoded);
+    EXPECT(zest::contains(*encoded, R"("c":1)"));
 
     const auto schema = json::schema_string<with_enum>().value();
-    EXPECT_TRUE(schema.find(R"("c":{"type":"integer","minimum":-128,"maximum":127})") !=
-                std::string::npos);
+    EXPECT(zest::contains(schema, R"("c":{"type":"integer","minimum":-128,"maximum":127})"));
 }
 
 struct renamed_enum_config {
@@ -2740,17 +2643,16 @@ struct renamed_enum_config {
     using enum_rename = naming::rename_policy::upper_snake;
 };
 
-TEST_CASE(schema_agrees_with_encoder_on_enum_rename) {
+ZEST_CASE(schema_agrees_with_encoder_on_enum_rename) {
     // The schema lists the spellings the encoder writes under the same
     // config, not the raw reflected names.
     const auto encoded = json::to_string<renamed_enum_config>(color_i8::green);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"("GREEN")");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"("GREEN")");
 
     const auto result = json::schema_string<color_i8, renamed_enum_config>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("enum":["RED","GREEN","BLUE"]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("enum":["RED","GREEN","BLUE"]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -2765,64 +2667,61 @@ struct nan_string_config {
     [[maybe_unused]] constexpr static auto nan_repr = codec::nan_repr::String;
 };
 
-TEST_CASE(schema_agrees_with_encoder_on_nan_passthrough) {
+ZEST_CASE(schema_agrees_with_encoder_on_nan_passthrough) {
     // The default Passthrough forwards the non-finite value to the writer,
     // whose only JSON spelling for it is null — the schema must admit that.
     const auto encoded = json::to_string(std::numeric_limits<double>::quiet_NaN());
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, "null");
+    ASSERT(encoded);
+    EXPECT(*encoded == "null");
 
     const auto result = json::schema_string<double>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("anyOf":[{"type":"number"},{"type":"null"}]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("anyOf":[{"type":"number"},{"type":"null"}]})");
 }
 
-TEST_CASE(schema_agrees_with_encoder_on_nan_null) {
+ZEST_CASE(schema_agrees_with_encoder_on_nan_null) {
     const auto encoded = json::to_string<nan_null_config>(std::numeric_limits<double>::quiet_NaN());
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, "null");
+    ASSERT(encoded);
+    EXPECT(*encoded == "null");
 
     const auto result = json::schema_string<double, nan_null_config>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("anyOf":[{"type":"number"},{"type":"null"}]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("anyOf":[{"type":"number"},{"type":"null"}]})");
 }
 
-TEST_CASE(schema_agrees_with_encoder_on_nan_string) {
+ZEST_CASE(schema_agrees_with_encoder_on_nan_string) {
     const auto encoded = json::to_string<nan_string_config>(std::numeric_limits<float>::infinity());
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"("Infinity")");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"("Infinity")");
 
     const auto result = json::schema_string<float, nan_string_config>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("anyOf":[{"type":"number"},)"
-              R"({"enum":["NaN","Infinity","-Infinity"]}]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("anyOf":[{"type":"number"},)"
+                     R"({"enum":["NaN","Infinity","-Infinity"]}]})");
 }
 
 struct nan_error_config {
     [[maybe_unused]] constexpr static auto nan_repr = codec::nan_repr::Error;
 };
 
-TEST_CASE(schema_agrees_with_encoder_on_long_double_overflow) {
+ZEST_CASE(schema_agrees_with_encoder_on_long_double_overflow) {
     // A finite long double beyond double's range narrows to infinity in the
     // document, so the nan_repr policy judges the narrowed value: String
     // spells it, Error rejects it — never a null the schema does not admit.
     constexpr long double big = std::numeric_limits<long double>::max();
     if constexpr(big > static_cast<long double>(std::numeric_limits<double>::max())) {
         const auto spelled = json::to_string<nan_string_config>(big);
-        ASSERT_TRUE(spelled.has_value());
-        EXPECT_EQ(*spelled, R"("Infinity")");
+        ASSERT(spelled);
+        EXPECT(*spelled == R"("Infinity")");
 
         const auto negative = json::to_string<nan_string_config>(-big);
-        ASSERT_TRUE(negative.has_value());
-        EXPECT_EQ(*negative, R"("-Infinity")");
+        ASSERT(negative);
+        EXPECT(*negative == R"("-Infinity")");
 
-        EXPECT_FALSE(json::to_string<nan_error_config>(big).has_value());
+        EXPECT(!json::to_string<nan_error_config>(big).has_value());
     } else {
         // long double is double: the value stays a finite number.
-        EXPECT_TRUE(json::to_string<nan_error_config>(big).has_value());
+        EXPECT(json::to_string<nan_error_config>(big).has_value());
     }
 }
 
@@ -2834,40 +2733,38 @@ struct non_hr_config {
     [[maybe_unused]] constexpr static bool human_readable = false;
 };
 
-TEST_CASE(schema_agrees_with_encoder_on_non_human_readable) {
+ZEST_CASE(schema_agrees_with_encoder_on_non_human_readable) {
     // A non-human-readable config bypasses tagging and encodes the underlying
     // variant, so the schema describes the untagged alternatives.
     const auto encoded = json::to_string<non_hr_config>(root_external_variant{7});
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, "7");
+    ASSERT(encoded);
+    EXPECT(*encoded == "7");
 
     const auto result = json::schema_string<root_external_variant, non_hr_config>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("anyOf":[)"
-              R"({"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"({"type":"string"}]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("anyOf":[)"
+                     R"({"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647},)"
+                     R"({"type":"string"}]})");
 }
 
 // ---------------------------------------------------------------------------
 // overlapping untagged alternatives
 // ---------------------------------------------------------------------------
 
-TEST_CASE(untagged_overlap_validates_as_any_of) {
+ZEST_CASE(untagged_overlap_validates_as_any_of) {
     // A numeric enum's underlying range overlaps the int alternative: both
     // branches match the same document, so exactly-one (oneOf) semantics
     // would reject every value the encoder emits — anyOf must apply.
     using overlapping = std::variant<color_i8, std::int32_t>;
     const auto result = json::schema_string<overlapping>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("anyOf":[)"
-              R"({"type":"integer","minimum":-128,"maximum":127},)"
-              R"({"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}]})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("anyOf":[)"
+                     R"({"type":"integer","minimum":-128,"maximum":127},)"
+                     R"({"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -2879,292 +2776,285 @@ struct camel_deny_config {
     [[maybe_unused]] constexpr static bool deny_unknown_fields = true;
 };
 
-TEST_CASE(schema_agrees_with_encoder_on_config) {
+ZEST_CASE(schema_agrees_with_encoder_on_config) {
     // The schema must accept what to_string under the same config emits:
     // renamed field names and the unknown-field policy.
     const auto encoded = json::to_string<camel_deny_config>(casing_child{.first_value = 7});
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"({"firstValue":7})");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"firstValue":7})");
 
     const auto result = json::schema_string<casing_child, camel_deny_config>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("firstValue":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
-              R"("required":["firstValue"],)"
-              R"("additionalProperties":false})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("firstValue":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["firstValue"],)"
+                     R"("additionalProperties":false})");
 }
 
 // ---------------------------------------------------------------------------
 // default annotations from a default-constructed instance
 // ---------------------------------------------------------------------------
 
-TEST_CASE(defaults_annotated) {
+ZEST_CASE(defaults_annotated) {
     const auto result = json::schema_string<defaults_root>().value();
     // Non-required root fields carry the value a default-constructed
     // instance encodes.
-    EXPECT_TRUE(result.find(R"("enabled":{"type":"boolean","default":true})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"({"type":"null"}],"default":null})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("default":[]})") != std::string::npos);
+    EXPECT(zest::contains(result, R"("enabled":{"type":"boolean","default":true})"));
+    EXPECT(zest::contains(result, R"({"type":"null"}],"default":null})"));
+    EXPECT(zest::contains(result, R"("default":[]})"));
     // The shared defaults_leaf $def is annotated once, inside $defs; the ref
     // sites stay bare.
-    EXPECT_TRUE(result.find(R"("pool":{"$ref":"#/$defs/defaults_leaf"})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("mirror":{"$ref":"#/$defs/defaults_leaf"})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("name":{"type":"string","default":"worker"})") != std::string::npos);
+    EXPECT(zest::contains(result, R"("pool":{"$ref":"#/$defs/defaults_leaf"})"));
+    EXPECT(zest::contains(result, R"("mirror":{"$ref":"#/$defs/defaults_leaf"})"));
+    EXPECT(zest::contains(result, R"("maximum":2147483647,"default":4})"));
+    EXPECT(zest::contains(result, R"("name":{"type":"string","default":"worker"})"));
 }
 
-TEST_CASE(defaults_skip_condition) {
+ZEST_CASE(defaults_skip_condition) {
     // The empty vector triggers skip_if at encode time, so the default
     // document has no such property to annotate from.
     const auto result = json::schema_string<defaults_skipped>().value();
-    EXPECT_TRUE(result.find(R"("tags")") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("default")") == std::string::npos);
+    EXPECT(zest::contains(result, R"("tags")"));
+    EXPECT(!zest::contains(result, R"("default")"));
 }
 
-TEST_CASE(defaults_shared_def_shows_fresh_values) {
+ZEST_CASE(defaults_shared_def_shows_fresh_values) {
     // The shared $def body always describes a fresh defaults_leaf — threads
     // 4, name "worker" — even though mirror's member initializer overrides
     // threads to 9 at its site: both sites are required, so the override has
     // no schema position and is not represented.
     const auto result = json::schema_string<defaults_shared_override>().value();
-    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("name":{"type":"string","default":"worker"})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
+    EXPECT(zest::contains(result, R"("maximum":2147483647,"default":4})"));
+    EXPECT(zest::contains(result, R"("name":{"type":"string","default":"worker"})"));
+    EXPECT(!zest::contains(result, R"("default":9)"));
 }
 
-TEST_CASE(defaults_non_required_ref_sites) {
+ZEST_CASE(defaults_non_required_ref_sites) {
     // Non-required refs to a shared $def each carry their whole encoded
     // object as the property default, so the per-site member initializer
     // survives and takes precedence at its site; the $def body keeps
     // describing a fresh defaults_leaf.
     const auto result = json::schema_string<defaults_ref_sites>().value();
-    EXPECT_TRUE(
-        result.find(
-            R"("pool":{"$ref":"#/$defs/defaults_leaf","default":{"threads":4,"name":"worker"}})") !=
-        std::string::npos);
-    EXPECT_TRUE(
-        result.find(
-            R"("mirror":{"$ref":"#/$defs/defaults_leaf","default":{"threads":9,"name":"worker"}})") !=
-        std::string::npos);
-    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("name":{"type":"string","default":"worker"})") != std::string::npos);
+    EXPECT(zest::contains(
+        result,
+        R"("pool":{"$ref":"#/$defs/defaults_leaf","default":{"threads":4,"name":"worker"}})"));
+    EXPECT(zest::contains(
+        result,
+        R"("mirror":{"$ref":"#/$defs/defaults_leaf","default":{"threads":9,"name":"worker"}})"));
+    EXPECT(zest::contains(result, R"("maximum":2147483647,"default":4})"));
+    EXPECT(zest::contains(result, R"("name":{"type":"string","default":"worker"})"));
 }
 
-TEST_CASE(defaults_engaged_override_carries_site_default) {
+ZEST_CASE(defaults_engaged_override_carries_site_default) {
     // The nullable site carries the enclosing instance's whole encoded
     // object — the engaged override rides the site default, which takes
     // precedence there — while the $def body keeps describing a fresh
     // defaults_leaf.
     const auto result = json::schema_string<defaults_engaged_override>().value();
-    EXPECT_TRUE(result.find(R"("default":{"threads":9,"name":"worker"})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("name":{"type":"string","default":"worker"})") != std::string::npos);
+    EXPECT(zest::contains(result, R"("default":{"threads":9,"name":"worker"})"));
+    EXPECT(zest::contains(result, R"("maximum":2147483647,"default":4})"));
+    EXPECT(zest::contains(result, R"("name":{"type":"string","default":"worker"})"));
 }
 
-TEST_CASE(defaults_in_place_override_not_represented) {
+ZEST_CASE(defaults_in_place_override_not_represented) {
     // The override sits two required in-place levels down (root member
     // initializer → mid.leaf.threads): required sites carry no site default,
     // so the override has no schema position — the leaf $def stays exact for
     // a fresh defaults_leaf.
     const auto result = json::schema_string<defaults_cascade_root>().value();
-    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("name":{"type":"string","default":"worker"})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
+    EXPECT(zest::contains(result, R"("maximum":2147483647,"default":4})"));
+    EXPECT(zest::contains(result, R"("name":{"type":"string","default":"worker"})"));
+    EXPECT(!zest::contains(result, R"("default":9)"));
 }
 
-TEST_CASE(defaults_tuple_element_def_shows_fresh_values) {
+ZEST_CASE(defaults_tuple_element_def_shows_fresh_values) {
     // Tuple elements have no per-element default position, so the required
     // entry's override is not represented; the element type's $def describes
     // a fresh defaults_leaf.
     const auto result = json::schema_string<defaults_tuple_override>().value();
-    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("name":{"type":"string","default":"worker"})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
+    EXPECT(zest::contains(result, R"("maximum":2147483647,"default":4})"));
+    EXPECT(zest::contains(result, R"("name":{"type":"string","default":"worker"})"));
+    EXPECT(!zest::contains(result, R"("default":9)"));
 }
 
-TEST_CASE(defaults_nullable_root) {
+ZEST_CASE(defaults_nullable_root) {
     // A nullable root unwraps to the struct body, but its default instance
     // encodes to null — a document with no properties to annotate from, not
     // a crash.
     const auto opt = json::schema_string<std::optional<defaults_leaf>>().value();
-    EXPECT_TRUE(opt.find(R"("threads")") != std::string::npos);
-    EXPECT_TRUE(opt.find(R"("default")") == std::string::npos);
+    EXPECT(zest::contains(opt, R"("threads")"));
+    EXPECT(!zest::contains(opt, R"("default")"));
 
     const auto ptr = json::schema_string<std::unique_ptr<defaults_leaf>>().value();
-    EXPECT_TRUE(ptr.find(R"("default")") == std::string::npos);
+    EXPECT(!zest::contains(ptr, R"("default")"));
 }
 
-TEST_CASE(defaults_engaged_optional) {
+ZEST_CASE(defaults_engaged_optional) {
     // An engaged optional lands its whole encoded value as the default on
     // the anyOf wrapper, and the struct's $def — reachable only through the
     // nullable field — still carries the fresh instance's own defaults.
     const auto result = json::schema_string<defaults_engaged>().value();
-    EXPECT_TRUE(result.find(R"("default":5)") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("default":{"threads":4,"name":"worker"})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("name":{"type":"string","default":"worker"})") != std::string::npos);
+    EXPECT(zest::contains(result, R"("default":5)"));
+    EXPECT(zest::contains(result, R"("default":{"threads":4,"name":"worker"})"));
+    EXPECT(zest::contains(result, R"("name":{"type":"string","default":"worker"})"));
 }
 
-TEST_CASE(defaults_recursive_root) {
+ZEST_CASE(defaults_recursive_root) {
     // A self-referential root terminates: the pointer self-reference sits
     // inside an anyOf wrapper, which is a leaf for the walk, and carries the
     // disengaged pointer's null.
     const auto result = json::schema_string<defaults_node>().value();
-    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":1})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("next":{"anyOf":[{"$ref":"#"},{"type":"null"}],"default":null})") !=
-                std::string::npos);
+    EXPECT(zest::contains(result, R"("maximum":2147483647,"default":1})"));
+    EXPECT(zest::contains(result,
+                          R"("next":{"anyOf":[{"$ref":"#"},{"type":"null"}],"default":null})"));
 }
 
-TEST_CASE(defaults_internal_tagged_variant_member) {
+ZEST_CASE(defaults_internal_tagged_variant_member) {
     // Every internal-tagged branch takes its defaults from a freshly
     // constructed alternative — what decode emplaces before reading fields —
     // so selected and unselected alternatives alike keep their own
     // initializers.
     const auto result = json::schema_string<defaults_variant_holder>().value();
-    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":3})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("default":9)") != std::string::npos);
+    EXPECT(zest::contains(result, R"("maximum":2147483647,"default":3})"));
+    EXPECT(zest::contains(result, R"("default":9)"));
 }
 
-TEST_CASE(defaults_tagged_variant_root) {
+ZEST_CASE(defaults_tagged_variant_root) {
     // The same applies to a tagged variant at the root, whose oneOf is
     // merged into the top-level schema object.
     const auto result = json::schema_string<defaults_internal_variant>().value();
-    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":3})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("default":9)") != std::string::npos);
+    EXPECT(zest::contains(result, R"("maximum":2147483647,"default":3})"));
+    EXPECT(zest::contains(result, R"("default":9)"));
 }
 
-TEST_CASE(defaults_adjacent_tagged_variant) {
+ZEST_CASE(defaults_adjacent_tagged_variant) {
     // Adjacent tagging routes each alternative behind the content property,
     // a struct $ref: both alternatives' $defs carry their fresh defaults.
     const auto result = json::schema_string<defaults_adjacent_variant>().value();
-    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":3})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("default":9)") != std::string::npos);
+    EXPECT(zest::contains(result, R"("maximum":2147483647,"default":3})"));
+    EXPECT(zest::contains(result, R"("default":9)"));
 }
 
-TEST_CASE(defaults_external_tagged_variant) {
+ZEST_CASE(defaults_external_tagged_variant) {
     // External tagging nests each alternative's schema behind its name; the
     // struct $defs under both branches carry their fresh defaults.
     const auto result = json::schema_string<defaults_external_variant>().value();
-    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":3})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("default":9)") != std::string::npos);
+    EXPECT(zest::contains(result, R"("maximum":2147483647,"default":3})"));
+    EXPECT(zest::contains(result, R"("default":9)"));
 }
 
-TEST_CASE(defaults_container_elements) {
+ZEST_CASE(defaults_container_elements) {
     // Required containers carry no site default, but struct $defs reachable
     // only through containers — array elements, tuple slots, map values —
     // still carry the fresh defaults of their own types.
     const auto result = json::schema_string<defaults_containers>().value();
-    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":7})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("beta":{"type":"string","default":"cell"})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("gamma":{"type":"boolean","default":true})") != std::string::npos);
+    EXPECT(zest::contains(result, R"("maximum":2147483647,"default":7})"));
+    EXPECT(zest::contains(result, R"("beta":{"type":"string","default":"cell"})"));
+    EXPECT(zest::contains(result, R"("gamma":{"type":"boolean","default":true})"));
     // The required container properties themselves stay bare.
-    EXPECT_TRUE(
-        result.find(R"("pool":{"type":"array","items":{"$ref":"#/$defs/defaults_elem_a"}})") !=
-        std::string::npos);
+    EXPECT(zest::contains(result,
+                          R"("pool":{"type":"array","items":{"$ref":"#/$defs/defaults_elem_a"}})"));
 }
 
-TEST_CASE(defaults_container_root) {
+ZEST_CASE(defaults_container_root) {
     // A container root merges its schema shape (std::array reflects as a
     // tuple: prefixItems) into the top-level object; the element $def still
     // carries its fresh defaults.
     const auto result = json::schema_string<std::array<defaults_elem_a, 2>>().value();
-    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":7})") != std::string::npos);
+    EXPECT(zest::contains(result, R"("maximum":2147483647,"default":7})"));
 }
 
-TEST_CASE(defaults_sequence_element_override_stays_local) {
+ZEST_CASE(defaults_sequence_element_override_stays_local) {
     // decode value-initializes every sequence element before reading its
     // fields, so the shared $def carries defaults_leaf's own initializers —
     // the root's per-element override must not leak into it.
     const auto result = json::schema_string<defaults_seq_override>().value();
-    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
+    EXPECT(zest::contains(result, R"("maximum":2147483647,"default":4})"));
+    EXPECT(!zest::contains(result, R"("default":9)"));
 }
 
-TEST_CASE(defaults_variant_holder_override_stays_local) {
+ZEST_CASE(defaults_variant_holder_override_stays_local) {
     // decode emplaces a fresh alternative before reading its fields, so the
     // branch carries defaults_alt_a's own initializer — the holder's member
     // initializer must not leak into the branch default.
     const auto result = json::schema_string<defaults_variant_override>().value();
-    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":3})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("default":8)") == std::string::npos);
+    EXPECT(zest::contains(result, R"("maximum":2147483647,"default":3})"));
+    EXPECT(!zest::contains(result, R"("default":8)"));
 }
 
-TEST_CASE(defaults_recursive_root_with_elements) {
+ZEST_CASE(defaults_recursive_root_with_elements) {
     // A default instance may carry elements of the root type itself (the
     // element initializer bottoms out by overriding kids to empty); the
     // pass never follows the emitted root self-reference, so it terminates
     // and the per-element override leaks into no default.
     const auto result = json::schema_string<defaults_cyclic>().value();
-    EXPECT_TRUE(result.find(R"("$ref":"#")") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":1})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("default":2)") == std::string::npos);
+    EXPECT(zest::contains(result, R"("$ref":"#")"));
+    EXPECT(zest::contains(result, R"("maximum":2147483647,"default":1})"));
+    EXPECT(!zest::contains(result, R"("default":2)"));
 }
 
-TEST_CASE(defaults_repr_backed_root_unannotated) {
+ZEST_CASE(defaults_repr_backed_root_unannotated) {
     // The decoder reads the representation, not a json_schema_reprd_root:
     // the defaults pass covers only types decode reads directly, so the
     // repr-routed root keeps the representation's schema shape without any
     // default.
     const auto result = json::schema_string<json_schema_reprd_root>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("total":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("total":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}}})");
 }
 
-TEST_CASE(defaults_declarative_repr_unannotated) {
+ZEST_CASE(defaults_declarative_repr_unannotated) {
     // Encode and decode disagree behind the repr (a fresh root encodes
     // n = 9, decode value-initializes n = 4): rather than guess, the
     // repr-routed root carries no default at all.
     const auto result = json::schema_string<json_schema_reprd_shifted>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("n":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("n":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}}})");
 }
 
-TEST_CASE(defaults_follow_slot_rename_all) {
+ZEST_CASE(defaults_follow_slot_rename_all) {
     // A rename_all spec on the field slot renames the child $def's
     // properties; the fresh document is encoded under the same merged
     // config, so the renamed property still pairs with its default.
     const auto result = json::schema_string<renamed_defaults_holder>().value();
-    EXPECT_TRUE(result.find(R"("firstValue")") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
+    EXPECT(zest::contains(result, R"("firstValue")"));
+    EXPECT(zest::contains(result, R"("maximum":2147483647,"default":4})"));
 }
 
-TEST_CASE(defaults_annotated_root_rename_all) {
+ZEST_CASE(defaults_annotated_root_rename_all) {
     // A structural annotation on the root itself shapes the fresh document
     // the same way it shapes the schema: the fresh root encodes under the
     // resolution's merged config, so the renamed property still pairs with
     // its default.
     const auto result = json::schema_string<renamed_defaults_root>().value();
-    EXPECT_TRUE(result.find(R"("firstValue")") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("first_value")") == std::string::npos);
+    EXPECT(zest::contains(result, R"("firstValue")"));
+    EXPECT(zest::contains(result, R"("maximum":2147483647,"default":4})"));
+    EXPECT(!zest::contains(result, R"("first_value")"));
 }
 
-TEST_CASE(defaults_imperative_repr_unannotated) {
+ZEST_CASE(defaults_imperative_repr_unannotated) {
     // repr_decode's imperative branch never constructs the declared
     // representation — deserialize reads the caller's value in place — so
     // what an absent property leaves behind is the repr's business and the
     // repr-routed root carries no default.
     const auto result = json::schema_string<json_schema_imperative_root>().value();
-    EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("type":"object",)"
-              R"("properties":{)"
-              R"("n":{"type":"integer",)"
-              R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}}})");
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("n":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}}})");
 }
 
 struct defaults_enum_config {
@@ -3172,21 +3062,20 @@ struct defaults_enum_config {
     using field_rename = naming::rename_policy::lower_camel;
 };
 
-TEST_CASE(defaults_enum_and_rename_with_config) {
+ZEST_CASE(defaults_enum_and_rename_with_config) {
     // The default rides through the real encoder: the enum's String repr and
     // the field rename both shape the annotated value and its property name.
     const auto result = json::schema_string<defaults_with_enum, defaults_enum_config>().value();
-    EXPECT_TRUE(result.find(R"("logLevel":{"enum":["Low","High"],"default":"High"})") !=
-                std::string::npos);
+    EXPECT(zest::contains(result, R"("logLevel":{"enum":["Low","High"],"default":"High"})"));
 }
 
-TEST_CASE(defaults_type_erased_absent) {
+ZEST_CASE(defaults_type_erased_absent) {
     // The type-erased entry has no T to default-construct, so no defaults.
     const auto result = json::schema_string(type_info_of<defaults_root>()).value();
-    EXPECT_TRUE(result.find(R"("default")") == std::string::npos);
+    EXPECT(!zest::contains(result, R"("default")"));
 }
 
-};  // TEST_SUITE(serde_json_schema)
+};  // ZEST_SUITE(serde_json_schema)
 
 }  // namespace
 

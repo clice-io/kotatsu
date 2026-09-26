@@ -24,31 +24,31 @@ struct MyClang {
         _;
 };
 
-TEST_SUITE(deco_demos) {
+ZEST_SUITE(deco_demos) {
 
-TEST_CASE(MyClang) {
+ZEST_CASE(MyClang) {
     auto cmd = cli::command<MyClang>("Clang [OPTIONS] inputs");
     cmd.render_with(cli::text::ModernRenderer());
 
     std::stringstream ss;
     cmd.usage(ss);
-    EXPECT_TRUE(ss.str().contains("Clang [OPTIONS] inputs"));
-    EXPECT_TRUE(ss.str().contains("-o1"));
+    EXPECT(ss.str().contains("Clang [OPTIONS] inputs"));
+    EXPECT(ss.str().contains("-o1"));
     cmd.usage(std::cout);
 
     std::vector<std::string> args = {"-o1", "--support-ext", "cc"};
     auto res = cmd.invoke(args);
-    EXPECT_TRUE(res.has_value());
+    EXPECT(res);
     if(!res.has_value()) {
         return;
     }
 
     auto opt = res->options;
-    EXPECT_TRUE(opt.optimize.value() == 1);
-    EXPECT_TRUE(opt.support_ext.value() == MyClang::Support::cc);
+    EXPECT(opt.optimize.value() == 1);
+    EXPECT(opt.support_ext.value() == MyClang::Support::cc);
 }
 
-};  // TEST_SUITE(deco_demos)
+};  // ZEST_SUITE(deco_demos)
 
 }  // namespace
 }  // namespace kota::deco

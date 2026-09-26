@@ -11,23 +11,23 @@ namespace kota::meta {
 
 namespace {
 
-TEST_SUITE(meta_annotation) {
+ZEST_SUITE(meta_annotation) {
 
-TEST_CASE(class_wrapper_takes_the_wrapped_value) {
+ZEST_CASE(class_wrapper_takes_the_wrapped_value) {
     std::optional<std::string> text = "a";
     annotation<std::optional<std::string>> copied = text;
-    ASSERT_TRUE(copied.has_value());
-    EXPECT_EQ(*copied, "a");
+    ASSERT(copied);
+    EXPECT(*copied == "a");
 
     annotation<std::unique_ptr<int>> owned = std::make_unique<int>(1);
-    ASSERT_TRUE(owned != nullptr);
-    EXPECT_EQ(*owned, 1);
+    ASSERT(owned != nullptr);
+    EXPECT(*owned == 1);
 
     static_assert(
         !std::is_constructible_v<annotation<std::unique_ptr<int>>, const std::unique_ptr<int>&>);
 }
 
-};  // TEST_SUITE(meta_annotation)
+};  // ZEST_SUITE(meta_annotation)
 
 }  // namespace
 

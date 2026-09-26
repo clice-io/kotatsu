@@ -110,9 +110,9 @@ All public APIs live under the `kota::` namespace, public headers under `include
 ### `zest` test framework (`include/kota/zest/*`)
 
 - Minimal unit test framework used throughout this repository.
-- `TEST_SUITE` / `TEST_CASE` registration with compile-time case attributes (skip / focus / serial) and `setup` / `teardown` hooks.
-- `EXPECT_*` / `ASSERT_*` and coroutine-aware `CO_ASSERT_*` helpers; binary comparisons go through `meta::eq` / `lt` / … so any reflectable type is printable and comparable.
-- Exception helpers: `CAUGHT(print, expr)` and `ZEST_EXPECT_THROWS(expr, Exception)`.
+- `ZEST_SUITE` / `ZEST_CASE` / `ZEST_CASE_GROUP` registration with compile-time case attributes (skip / focus / serial) and `setup` / `teardown` hooks.
+- One check macro per failure mode — `EXPECT(expr)`, `ASSERT(expr)`, coroutine-aware `CO_ASSERT(expr)` and compile-time `STATIC_EXPECT(expr)` — that splits a top-level comparison and shows both operands when it fails: `EXPECT(parse(text) == expected)`. Comparisons go through `meta::eq` / `lt` / …, so reflectable types compare and print without `operator==`; `ASSERT(result)` on a `std::expected` shows its error.
+- The predicates `contains`, `starts_with`, `ends_with` and `type_eq` report their inputs (`EXPECT(!contains(log, "error"))`), and `ZEST_CONTEXT("…", args…)` adds a line to every check failing inside its scope; `EXPECT_THROWS` / `EXPECT_NOTHROWS` check exceptions.
 - Default CLI runner: filter by `suite[.test]` with wildcards (`--test-filter=…`) and `--verbose`. Tests run on a pool of worker processes (`--jobs=N`), so a crash or a hang past `--timeout` fails that test alone and a fresh worker takes over; `--no-isolation` runs everything in-process for debuggers.
 - Failure reporting uses `std::source_location` to point at the failing expression.
 

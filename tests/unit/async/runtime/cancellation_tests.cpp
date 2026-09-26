@@ -42,9 +42,9 @@ int uv_thread_pool_size_for_test() {
     return value;
 }
 
-TEST_SUITE(cancellation, loop_fixture) {
+ZEST_SUITE(cancellation, loop_fixture) {
 
-TEST_CASE(pass_through_value) {
+ZEST_CASE(pass_through_value) {
     cancellation_source source;
 
     auto worker = []() -> task<int> {
@@ -52,11 +52,11 @@ TEST_CASE(pass_through_value) {
     };
 
     auto [result] = run(with_token(worker(), source.token()));
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(*result, 42);
+    ASSERT(result);
+    EXPECT(*result == 42);
 }
 
-TEST_CASE(pre_cancel_skip) {
+ZEST_CASE(pre_cancel_skip) {
     cancellation_source source;
     source.cancel();
 
@@ -67,11 +67,11 @@ TEST_CASE(pre_cancel_skip) {
     };
 
     auto [result] = run(with_token(worker(), source.token()));
-    EXPECT_FALSE(result.has_value());
-    EXPECT_EQ(started, 0);
+    EXPECT(!result);
+    EXPECT(started == 0);
 }
 
-TEST_CASE(cancel_in_flight) {
+ZEST_CASE(cancel_in_flight) {
     cancellation_source source;
     event gate;
     int started = 0;
@@ -100,33 +100,33 @@ TEST_CASE(cancel_in_flight) {
     schedule_all(guarded_task, cancel_task, release_task);
 
     auto result = guarded_task.value();
-    EXPECT_FALSE(result.has_value());
-    EXPECT_EQ(started, 1);
-    EXPECT_EQ(finished, 0);
+    EXPECT(!result);
+    EXPECT(started == 1);
+    EXPECT(finished == 0);
 }
 
-TEST_CASE(destructor_cancels_tokens) {
+ZEST_CASE(destructor_cancels_tokens) {
     std::optional<cancellation_source> source(std::in_place);
     auto token = source->token();
-    EXPECT_FALSE(token.cancelled());
+    EXPECT(!token.cancelled());
     source.reset();
-    EXPECT_TRUE(token.cancelled());
+    EXPECT(token.cancelled());
 }
 
-TEST_CASE(token_share_state) {
+ZEST_CASE(token_share_state) {
     cancellation_source source;
     auto token_a = source.token();
     auto token_b = token_a;
 
-    EXPECT_FALSE(token_a.cancelled());
-    EXPECT_FALSE(token_b.cancelled());
+    EXPECT(!token_a.cancelled());
+    EXPECT(!token_b.cancelled());
 
     source.cancel();
-    EXPECT_TRUE(token_a.cancelled());
-    EXPECT_TRUE(token_b.cancelled());
+    EXPECT(token_a.cancelled());
+    EXPECT(token_b.cancelled());
 }
 
-TEST_CASE(queue_cancel_resume) {
+ZEST_CASE(queue_cancel_resume) {
     cancellation_source source;
     event start_target;
     event target_submitted;
@@ -152,7 +152,7 @@ TEST_CASE(queue_cancel_resume) {
                 }
             },
             loop);
-        EXPECT_FALSE(ec.has_error());
+        EXPECT(!ec.has_error());
         blockers_done.fetch_add(1, std::memory_order_release);
     };
 
@@ -211,16 +211,16 @@ TEST_CASE(queue_cancel_resume) {
     loop.schedule(cancel_task);
     loop.run();
 
-    EXPECT_TRUE(target_cancelled);
+    EXPECT(target_cancelled);
     // Structured completion: with_token uses when_any internally, which
     // now waits for all children (including the cancelled inner task).
     // The target resumes after source.cancel() returns and the event
     // loop completes the cancellation, so phase has already advanced to 2.
-    EXPECT_EQ(observed_phase, 2);
-    EXPECT_FALSE(target_started.load(std::memory_order_acquire));
+    EXPECT(observed_phase == 2);
+    EXPECT(!target_started.load(std::memory_order_acquire));
 }
 
-TEST_CASE(queue_cancel_hook_signals_running_work) {
+ZEST_CASE(queue_cancel_hook_signals_running_work) {
     cancellation_source source;
     std::atomic<bool> started{false};
     std::atomic<bool> stop_flag{false};
@@ -259,11 +259,11 @@ TEST_CASE(queue_cancel_hook_signals_running_work) {
 
     // The work was already running when the token fired: uv_cancel can't
     // dequeue it, so the on_cancel hook is the only way it returns.
-    EXPECT_TRUE(cancelled);
-    EXPECT_TRUE(observed_stop.load(std::memory_order_acquire));
+    EXPECT(cancelled);
+    EXPECT(observed_stop.load(std::memory_order_acquire));
 }
 
-TEST_CASE(queue_cancel_hook_runs_on_loop_thread) {
+ZEST_CASE(queue_cancel_hook_runs_on_loop_thread) {
     cancellation_source source;
     std::atomic<bool> started{false};
     std::atomic<bool> hook_on_loop_thread{false};
@@ -305,11 +305,11 @@ TEST_CASE(queue_cancel_hook_runs_on_loop_thread) {
 
     // Blocking-style work: the fn sleeps on a semaphore that only the hook
     // releases, and the hook must run on the loop thread.
-    EXPECT_TRUE(cancelled);
-    EXPECT_TRUE(hook_on_loop_thread.load(std::memory_order_acquire));
+    EXPECT(cancelled);
+    EXPECT(hook_on_loop_thread.load(std::memory_order_acquire));
 }
 
-TEST_CASE(fs_cancel_resume) {
+ZEST_CASE(fs_cancel_resume) {
     cancellation_source source;
     event start_target;
     event target_submitted;
@@ -334,7 +334,7 @@ TEST_CASE(fs_cancel_resume) {
                 }
             },
             loop);
-        EXPECT_FALSE(ec.has_error());
+        EXPECT(!ec.has_error());
         blockers_done.fetch_add(1, std::memory_order_release);
     };
 
@@ -388,13 +388,13 @@ TEST_CASE(fs_cancel_resume) {
     loop.schedule(cancel_task);
     loop.run();
 
-    EXPECT_TRUE(target_cancelled);
+    EXPECT(target_cancelled);
     // Structured completion: target resumes after the cancelled fs::stat
     // completes via the event loop, so phase has already advanced to 2.
-    EXPECT_EQ(observed_phase, 2);
+    EXPECT(observed_phase == 2);
 }
 
-TEST_CASE(cancel_waiting_on_event) {
+ZEST_CASE(cancel_waiting_on_event) {
     cancellation_source source;
     event gate;
     bool started = false;
@@ -416,16 +416,16 @@ TEST_CASE(cancel_waiting_on_event) {
     auto cancel_task = canceler();
     schedule_all(guarded, cancel_task);
 
-    EXPECT_TRUE(started);
-    EXPECT_FALSE(finished);
-    EXPECT_FALSE(guarded.value().has_value());
+    EXPECT(started);
+    EXPECT(!finished);
+    EXPECT(!guarded.value());
 
     // Event remains usable after cancellation
     gate.set();
-    EXPECT_TRUE(gate.is_set());
+    EXPECT(gate.is_set());
 }
 
-TEST_CASE(wait_sync_primitive) {
+ZEST_CASE(wait_sync_primitive) {
     event gate;
 
     auto worker = [&]() -> task<> {
@@ -436,20 +436,20 @@ TEST_CASE(wait_sync_primitive) {
     blocked->resume();
 
     auto waiting_dot = dump_dot(blocked);
-    EXPECT_NE(waiting_dot.find("Task"), std::string::npos);
-    EXPECT_NE(waiting_dot.find("EventWaiter"), std::string::npos);
-    EXPECT_NE(waiting_dot.find("Event"), std::string::npos);
+    EXPECT(waiting_dot.find("Task") != std::string::npos);
+    EXPECT(waiting_dot.find("EventWaiter") != std::string::npos);
+    EXPECT(waiting_dot.find("Event") != std::string::npos);
 
     blocked->cancel();
 
     auto cancelled_dot = dump_dot(blocked);
-    EXPECT_EQ(cancelled_dot.find("EventWaiter"), std::string::npos);
+    EXPECT(cancelled_dot.find("EventWaiter") == std::string::npos);
 
     gate.set();
-    EXPECT_TRUE(gate.is_set());
+    EXPECT(gate.is_set());
 }
 
-TEST_CASE(cancel_waiting_on_mutex) {
+ZEST_CASE(cancel_waiting_on_mutex) {
     cancellation_source source;
     mutex m;
     bool started = false;
@@ -479,16 +479,16 @@ TEST_CASE(cancel_waiting_on_mutex) {
     auto cancel_task = canceler();
     schedule_all(holder_task, guarded, cancel_task);
 
-    EXPECT_TRUE(started);
-    EXPECT_FALSE(acquired);
-    EXPECT_FALSE(guarded.value().has_value());
+    EXPECT(started);
+    EXPECT(!acquired);
+    EXPECT(!guarded.value());
 
     // Mutex remains functional after cancellation
-    EXPECT_TRUE(m.try_lock());
+    EXPECT(m.try_lock());
     m.unlock();
 }
 
-TEST_CASE(cancel_semaphore_waiter) {
+ZEST_CASE(cancel_semaphore_waiter) {
     cancellation_source source;
     semaphore sem(0);
     bool started = false;
@@ -510,16 +510,16 @@ TEST_CASE(cancel_semaphore_waiter) {
     auto cancel_task = canceler();
     schedule_all(guarded, cancel_task);
 
-    EXPECT_TRUE(started);
-    EXPECT_FALSE(acquired);
-    EXPECT_FALSE(guarded.value().has_value());
+    EXPECT(started);
+    EXPECT(!acquired);
+    EXPECT(!guarded.value());
 
     // Semaphore remains usable
     sem.release();
-    EXPECT_TRUE(sem.try_acquire());
+    EXPECT(sem.try_acquire());
 }
 
-TEST_CASE(cancel_condition_variable_waiter) {
+ZEST_CASE(cancel_condition_variable_waiter) {
     cancellation_source source;
     mutex m;
     condition_variable cv;
@@ -544,12 +544,12 @@ TEST_CASE(cancel_condition_variable_waiter) {
     auto cancel_task = canceler();
     schedule_all(guarded, cancel_task);
 
-    EXPECT_TRUE(started);
-    EXPECT_FALSE(notified);
-    EXPECT_FALSE(guarded.value().has_value());
+    EXPECT(started);
+    EXPECT(!notified);
+    EXPECT(!guarded.value());
 }
 
-TEST_CASE(cancel_multiple_registered_tasks) {
+ZEST_CASE(cancel_multiple_registered_tasks) {
     cancellation_source source;
     event gate1, gate2, gate3;
     int started = 0;
@@ -574,14 +574,14 @@ TEST_CASE(cancel_multiple_registered_tasks) {
     auto cancel_task = canceler();
     schedule_all(g1, g2, g3, cancel_task);
 
-    EXPECT_EQ(started, 3);
-    EXPECT_EQ(finished, 0);
-    EXPECT_FALSE(g1.value().has_value());
-    EXPECT_FALSE(g2.value().has_value());
-    EXPECT_FALSE(g3.value().has_value());
+    EXPECT(started == 3);
+    EXPECT(finished == 0);
+    EXPECT(!g1.value());
+    EXPECT(!g2.value());
+    EXPECT(!g3.value());
 }
 
-TEST_CASE(nested_with_token) {
+ZEST_CASE(nested_with_token) {
     // (a) Cancel outer -> entire chain cancelled
     {
         cancellation_source outer_source;
@@ -602,7 +602,7 @@ TEST_CASE(nested_with_token) {
         auto cancel_task = canceler();
         schedule_all(guarded, cancel_task);
 
-        EXPECT_FALSE(guarded.value().has_value());
+        EXPECT(!guarded.value());
     }
 
     // (b) Cancel inner -> inner task reports cancellation, outer observes it
@@ -626,13 +626,13 @@ TEST_CASE(nested_with_token) {
         schedule_all(guarded, cancel_task);
 
         // Outer observes cancellation result from inner
-        EXPECT_FALSE(guarded.value().has_value());
+        EXPECT(!guarded.value());
         // But the outer source itself was NOT cancelled
-        EXPECT_FALSE(outer_source.cancelled());
+        EXPECT(!outer_source.cancelled());
     }
 }
 
-TEST_CASE(token_reuse_after_cancel) {
+ZEST_CASE(token_reuse_after_cancel) {
     cancellation_source source;
     source.cancel();
 
@@ -644,14 +644,14 @@ TEST_CASE(token_reuse_after_cancel) {
 
     // Create new task with already-cancelled token
     auto [result] = run(with_token(worker(), source.token()));
-    EXPECT_FALSE(result.has_value());
-    EXPECT_EQ(started, 0);
+    EXPECT(!result);
+    EXPECT(started == 0);
 
     // registration.cancelled() returns true
-    EXPECT_TRUE(source.cancelled());
+    EXPECT(source.cancelled());
 }
 
-TEST_CASE(multi_token_cancel_first) {
+ZEST_CASE(multi_token_cancel_first) {
     cancellation_source source1;
     cancellation_source source2;
     event gate;
@@ -672,13 +672,13 @@ TEST_CASE(multi_token_cancel_first) {
     auto cancel_task = canceler();
     schedule_all(guarded, cancel_task);
 
-    EXPECT_FALSE(finished);
-    EXPECT_FALSE(guarded.value().has_value());
-    EXPECT_TRUE(source1.cancelled());
-    EXPECT_FALSE(source2.cancelled());
+    EXPECT(!finished);
+    EXPECT(!guarded.value());
+    EXPECT(source1.cancelled());
+    EXPECT(!source2.cancelled());
 }
 
-TEST_CASE(multi_token_cancel_second) {
+ZEST_CASE(multi_token_cancel_second) {
     cancellation_source source1;
     cancellation_source source2;
     event gate;
@@ -699,13 +699,13 @@ TEST_CASE(multi_token_cancel_second) {
     auto cancel_task = canceler();
     schedule_all(guarded, cancel_task);
 
-    EXPECT_FALSE(finished);
-    EXPECT_FALSE(guarded.value().has_value());
-    EXPECT_FALSE(source1.cancelled());
-    EXPECT_TRUE(source2.cancelled());
+    EXPECT(!finished);
+    EXPECT(!guarded.value());
+    EXPECT(!source1.cancelled());
+    EXPECT(source2.cancelled());
 }
 
-TEST_CASE(multi_token_pre_cancel) {
+ZEST_CASE(multi_token_pre_cancel) {
     cancellation_source source1;
     cancellation_source source2;
     source2.cancel();
@@ -717,11 +717,11 @@ TEST_CASE(multi_token_pre_cancel) {
     };
 
     auto [result] = run(with_token(worker(), source1.token(), source2.token()));
-    EXPECT_FALSE(result.has_value());
-    EXPECT_EQ(started, 0);
+    EXPECT(!result);
+    EXPECT(started == 0);
 }
 
-TEST_CASE(multi_token_pass_through) {
+ZEST_CASE(multi_token_pass_through) {
     cancellation_source source1;
     cancellation_source source2;
 
@@ -730,11 +730,11 @@ TEST_CASE(multi_token_pass_through) {
     };
 
     auto [result] = run(with_token(worker(), source1.token(), source2.token()));
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(*result, 99);
+    ASSERT(result);
+    EXPECT(*result == 99);
 }
 
-TEST_CASE(nested_with_token_same_token_cancel) {
+ZEST_CASE(nested_with_token_same_token_cancel) {
     cancellation_source source;
     auto token = source.token();
     event gate;
@@ -764,7 +764,7 @@ TEST_CASE(nested_with_token_same_token_cancel) {
 // Exercises the void-returning with_token cancellation path — the MSVC
 // coroutine codegen can fall through past co_await cancel() and reach
 // undefined behavior when dereferencing a cancelled race_result.
-TEST_CASE(cancel_void_task_in_flight) {
+ZEST_CASE(cancel_void_task_in_flight) {
     cancellation_source source;
     event gate;
     bool started = false;
@@ -785,10 +785,10 @@ TEST_CASE(cancel_void_task_in_flight) {
     auto cancel_task = canceler();
     schedule_all(guarded, cancel_task);
 
-    EXPECT_TRUE(started);
-    EXPECT_FALSE(finished);
-    EXPECT_TRUE(source.cancelled());
-    EXPECT_TRUE(guarded.result().is_cancelled());
+    EXPECT(started);
+    EXPECT(!finished);
+    EXPECT(source.cancelled());
+    EXPECT(guarded.result().is_cancelled());
 }
 
 // ============================================================================
@@ -799,7 +799,7 @@ TEST_CASE(cancel_void_task_in_flight) {
 
 // Pure-compute awaits (no event loop round trip) are checkpoints too.
 // Before checkpoint semantics this loop ran all 100 iterations.
-TEST_CASE(checkpoint_stops_pure_compute_loop) {
+ZEST_CASE(checkpoint_stops_pure_compute_loop) {
     int loop_count = 0;
     async_node* worker_node = nullptr;
 
@@ -821,12 +821,12 @@ TEST_CASE(checkpoint_stops_pure_compute_loop) {
     worker_node = t.operator->();
     schedule_all(t);
 
-    EXPECT_EQ(loop_count, 3);
-    EXPECT_TRUE(t->is_cancelled());
+    EXPECT(loop_count == 3);
+    EXPECT(t->is_cancelled());
 }
 
 // Awaiting an aggregate under a cancelled parent must not start any child.
-TEST_CASE(checkpoint_skips_when_all_children) {
+ZEST_CASE(checkpoint_skips_when_all_children) {
     bool child_ran = false;
     async_node* worker_node = nullptr;
 
@@ -844,12 +844,12 @@ TEST_CASE(checkpoint_skips_when_all_children) {
     worker_node = t.operator->();
     schedule_all(t);
 
-    EXPECT_FALSE(child_ran);
-    EXPECT_TRUE(t->is_cancelled());
+    EXPECT(!child_ran);
+    EXPECT(t->is_cancelled());
 }
 
 // A cancelled task never enters a sync primitive's wait queue.
-TEST_CASE(checkpoint_skips_event_wait) {
+ZEST_CASE(checkpoint_skips_event_wait) {
     event ev;
     async_node* worker_node = nullptr;
 
@@ -862,13 +862,13 @@ TEST_CASE(checkpoint_skips_event_wait) {
     worker_node = t.operator->();
     schedule_all(t);
 
-    EXPECT_TRUE(t->is_cancelled());
-    EXPECT_EQ(ev.get_head(), nullptr);
+    EXPECT(t->is_cancelled());
+    EXPECT(ev.get_head() == nullptr);
 }
 
 // join() under a cancelled parent cancels the group's children and waits for
 // them to complete (structured completion) before propagating the cancel.
-TEST_CASE(checkpoint_join_cancels_group) {
+ZEST_CASE(checkpoint_join_cancels_group) {
     int slow_done = 0;
     async_node* worker_node = nullptr;
 
@@ -888,11 +888,11 @@ TEST_CASE(checkpoint_join_cancels_group) {
     worker_node = t.operator->();
     schedule_all(t);
 
-    EXPECT_TRUE(t->is_cancelled());
-    EXPECT_EQ(slow_done, 0);
+    EXPECT(t->is_cancelled());
+    EXPECT(slow_done == 0);
 }
 
-};  // TEST_SUITE(cancellation)
+};  // ZEST_SUITE(cancellation)
 
 }  // namespace
 

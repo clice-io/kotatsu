@@ -61,9 +61,9 @@ struct WithFlattenField {
     int third{};
 };
 
-TEST_SUITE(serde_bincode) {
+ZEST_SUITE(serde_bincode) {
 
-TEST_CASE(invalid_optional_tag_returns_error) {
+ZEST_CASE(invalid_optional_tag_returns_error) {
     // An optional tag byte of 2 is invalid (only 0 = none, 1 = some are valid).
     // Attempting to decode an optional<bool> from this should fail.
     const std::vector<std::uint8_t> raw{2U, 1U};
@@ -71,21 +71,21 @@ TEST_CASE(invalid_optional_tag_returns_error) {
         std::span<const std::byte>(reinterpret_cast<const std::byte*>(raw.data()), raw.size());
     std::optional<bool> value;
     auto status = bincode::from_bytes(bytes, value);
-    ASSERT_FALSE(status.has_value());
+    ASSERT(!status);
 }
 
-TEST_CASE(truncated_string_payload_returns_error) {
+ZEST_CASE(truncated_string_payload_returns_error) {
     auto bytes = bincode::to_bytes(std::string("hello"));
-    ASSERT_TRUE(bytes.has_value());
+    ASSERT(bytes);
 
     auto truncated = std::span<const std::byte>(*bytes).first(bytes->size() - 3);
     std::string value;
     auto status = bincode::from_bytes(truncated, value);
-    ASSERT_FALSE(status.has_value());
-    EXPECT_EQ(status.error().message, "unexpected eof");
+    ASSERT(!status);
+    EXPECT(status.error().message == "unexpected eof");
 }
 
-TEST_CASE(oversized_length_prefix_returns_error) {
+ZEST_CASE(oversized_length_prefix_returns_error) {
     // A string length prefix of uint64::max with no payload behind it must be
     // rejected as EOF, never used to size a read.
     const std::vector<std::uint8_t> raw(8, 0xFF);
@@ -93,51 +93,51 @@ TEST_CASE(oversized_length_prefix_returns_error) {
         std::span<const std::byte>(reinterpret_cast<const std::byte*>(raw.data()), raw.size());
     std::string value;
     auto status = bincode::from_bytes(bytes, value);
-    ASSERT_FALSE(status.has_value());
-    EXPECT_EQ(status.error().message, "unexpected eof");
+    ASSERT(!status);
+    EXPECT(status.error().message == "unexpected eof");
 }
 
-TEST_CASE(struct_deserialize_respects_schema_skip) {
+ZEST_CASE(struct_deserialize_respects_schema_skip) {
     PlainPair plain{.first = 11, .second = 22};
     auto bytes = bincode::to_bytes(plain);
-    ASSERT_TRUE(bytes.has_value());
+    ASSERT(bytes);
 
     WithSkippedField decoded{};
     auto status = bincode::from_bytes(*bytes, decoded);
-    ASSERT_TRUE(status.has_value());
-    EXPECT_EQ(decoded.first, 11);
-    EXPECT_EQ(annotated_value(decoded.skipped), 77);
-    EXPECT_EQ(decoded.second, 22);
+    ASSERT(status);
+    EXPECT(decoded.first == 11);
+    EXPECT(annotated_value(decoded.skipped) == 77);
+    EXPECT(decoded.second == 22);
 }
 
-TEST_CASE(struct_deserialize_respects_skip_if) {
+ZEST_CASE(struct_deserialize_respects_skip_if) {
     PlainTriple plain{.first = 1, .second = 2, .third = 3};
     auto bytes = bincode::to_bytes(plain);
-    ASSERT_TRUE(bytes.has_value());
+    ASSERT(bytes);
 
     WithSkipIfField decoded{};
     auto status = bincode::from_bytes(*bytes, decoded);
-    ASSERT_TRUE(status.has_value());
-    EXPECT_EQ(decoded.first, 1);
-    EXPECT_EQ(annotated_value(decoded.skipped), 88);
-    EXPECT_EQ(decoded.third, 3);
+    ASSERT(status);
+    EXPECT(decoded.first == 1);
+    EXPECT(annotated_value(decoded.skipped) == 88);
+    EXPECT(decoded.third == 3);
 }
 
-TEST_CASE(struct_deserialize_respects_flatten) {
+ZEST_CASE(struct_deserialize_respects_flatten) {
     PlainFlattened plain{.first = 10, .x = 20, .y = 30, .third = 40};
     auto bytes = bincode::to_bytes(plain);
-    ASSERT_TRUE(bytes.has_value());
+    ASSERT(bytes);
 
     WithFlattenField decoded{};
     auto status = bincode::from_bytes(*bytes, decoded);
-    ASSERT_TRUE(status.has_value());
-    EXPECT_EQ(decoded.first, 10);
-    EXPECT_EQ(annotated_value(decoded.inner).x, 20);
-    EXPECT_EQ(annotated_value(decoded.inner).y, 30);
-    EXPECT_EQ(decoded.third, 40);
+    ASSERT(status);
+    EXPECT(decoded.first == 10);
+    EXPECT(annotated_value(decoded.inner).x == 20);
+    EXPECT(annotated_value(decoded.inner).y == 30);
+    EXPECT(decoded.third == 40);
 }
 
-};  // TEST_SUITE(serde_bincode)
+};  // ZEST_SUITE(serde_bincode)
 
 }  // namespace
 

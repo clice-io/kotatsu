@@ -289,13 +289,13 @@ auto make_chain(std::size_t depth) -> node {
 template <typename T, typename Probe>
 void expect_hostile_bytes_contained(const T& input, Probe&& probe) {
     auto encoded = fbs::to_bytes(input);
-    ASSERT_TRUE(encoded.has_value());
+    ASSERT(encoded);
 
     for(std::size_t len = 8; len < encoded->size(); ++len) {
         auto span = std::span<const std::uint8_t>(encoded->data(), len);
         auto result = fbs::from_bytes<T>(span);
         if(result.has_value()) {
-            EXPECT_EQ(*result, input);
+            EXPECT(*result == input);
         }
         auto root = table_view<T>::from_bytes(span);
         if(root.valid()) {
@@ -317,55 +317,55 @@ void expect_hostile_bytes_contained(const T& input, Probe&& probe) {
     }
 }
 
-TEST_SUITE(serde_flatbuffers_verifier) {
+ZEST_SUITE(serde_flatbuffers_verifier) {
 
-TEST_CASE(rich_fixture_round_trips_both_paths) {
+ZEST_CASE(rich_fixture_round_trips_both_paths) {
     const auto input = make_rich();
     auto encoded = fbs::to_bytes(input);
-    ASSERT_TRUE(encoded.has_value());
+    ASSERT(encoded);
 
     auto decoded = fbs::from_bytes<rich>(*encoded);
-    ASSERT_TRUE(decoded.has_value());
-    EXPECT_EQ(*decoded, input);
+    ASSERT(decoded);
+    EXPECT(*decoded == input);
 
     auto root = table_view<rich>::from_bytes(*encoded);
-    ASSERT_TRUE(root.valid());
-    EXPECT_EQ(root[&rich::id], 42);
-    EXPECT_EQ(root[&rich::title], "torture");
-    EXPECT_EQ(root[&rich::tags].size(), 3U);
-    EXPECT_EQ(root[&rich::index]["k2"][&inner::name], "eight");
-    EXPECT_EQ(root[&rich::which].get<1>(), "chosen");
+    ASSERT(root.valid());
+    EXPECT(root[&rich::id] == 42);
+    EXPECT(root[&rich::title] == "torture");
+    EXPECT(root[&rich::tags].size() == 3U);
+    EXPECT(root[&rich::index]["k2"][&inner::name] == "eight");
+    EXPECT(root[&rich::which].get<1>() == "chosen");
 }
 
-TEST_CASE(rich2_fixture_round_trips_both_paths) {
+ZEST_CASE(rich2_fixture_round_trips_both_paths) {
     const auto input = make_rich2();
     auto encoded = fbs::to_bytes(input);
-    ASSERT_TRUE(encoded.has_value());
+    ASSERT(encoded);
 
     auto decoded = fbs::from_bytes<rich2>(*encoded);
-    ASSERT_TRUE(decoded.has_value());
-    EXPECT_EQ(*decoded, input);
+    ASSERT(decoded);
+    EXPECT(*decoded == input);
 
     auto root = table_view<rich2>::from_bytes(*encoded);
-    ASSERT_TRUE(root.valid());
-    EXPECT_TRUE(root[&rich2::level] == grade::mid);
-    EXPECT_EQ(root[&rich2::tag], 'k');
-    EXPECT_TRUE(root[&rich2::flag] == std::byte{0x5A});
-    EXPECT_EQ(root[&rich2::pos].y, 4);
-    EXPECT_EQ(root[&rich2::extra][&inner::name], "boxed");
-    EXPECT_EQ(root[&rich2::names][std::uint64_t{8}], "eight");
-    EXPECT_EQ(root[&rich2::grid][0][1], 2);
-    EXPECT_EQ(root[&rich2::uniq].size(), 2U);
-    EXPECT_EQ(root[&rich2::maybe].index(), 1U);
-    EXPECT_EQ(root[&rich2::maybe].get<1>()[&inner::a], 1);
-    EXPECT_EQ(root[&rich2::mixed].get<1>().get<2>(), 23);
+    ASSERT(root.valid());
+    EXPECT(root[&rich2::level] == grade::mid);
+    EXPECT(root[&rich2::tag] == 'k');
+    EXPECT(root[&rich2::flag] == std::byte{0x5A});
+    EXPECT(root[&rich2::pos].y == 4);
+    EXPECT(root[&rich2::extra][&inner::name] == "boxed");
+    EXPECT(root[&rich2::names][std::uint64_t{8}] == "eight");
+    EXPECT(root[&rich2::grid][0][1] == 2);
+    EXPECT(root[&rich2::uniq].size() == 2U);
+    EXPECT(root[&rich2::maybe].index() == 1U);
+    EXPECT(root[&rich2::maybe].get<1>()[&inner::a] == 1);
+    EXPECT(root[&rich2::mixed].get<1>().get<2>() == 23);
     // Behavior attrs reroute the slot: as<int64> reads back the widened cell,
     // enum_string reads back the enumerator's name.
-    EXPECT_EQ(root[&rich2::widened], 1234);
-    EXPECT_EQ(root[&rich2::level_name], "high");
+    EXPECT(root[&rich2::widened] == 1234);
+    EXPECT(root[&rich2::level_name] == "high");
 }
 
-TEST_CASE(monostate_alternative_round_trips_both_paths) {
+ZEST_CASE(monostate_alternative_round_trips_both_paths) {
     // A selected monostate travels as an empty table at the payload slot;
     // the views read the slot as a zero-size inline struct. Both must stay
     // in bounds.
@@ -373,54 +373,54 @@ TEST_CASE(monostate_alternative_round_trips_both_paths) {
     input.maybe = std::monostate{};
 
     auto encoded = fbs::to_bytes(input);
-    ASSERT_TRUE(encoded.has_value());
+    ASSERT(encoded);
 
     auto decoded = fbs::from_bytes<rich2>(*encoded);
-    ASSERT_TRUE(decoded.has_value());
-    EXPECT_EQ(*decoded, input);
+    ASSERT(decoded);
+    EXPECT(*decoded == input);
 
     auto root = table_view<rich2>::from_bytes(*encoded);
-    ASSERT_TRUE(root.valid());
-    EXPECT_EQ(root[&rich2::maybe].index(), 0U);
+    ASSERT(root.valid());
+    EXPECT(root[&rich2::maybe].index() == 0U);
     [[maybe_unused]] auto unit = root[&rich2::maybe].get<0>();
 }
 
-TEST_CASE(weak_ptr_field_verifies_and_reads) {
+ZEST_CASE(weak_ptr_field_verifies_and_reads) {
     auto owner = std::make_shared<std::int32_t>(77);
     weak_holder input{.before = 5, .num = owner, .after = "tail"};
 
     auto encoded = fbs::to_bytes(input);
-    ASSERT_TRUE(encoded.has_value());
+    ASSERT(encoded);
 
     auto root = table_view<weak_holder>::from_bytes(*encoded);
-    ASSERT_TRUE(root.valid());
-    EXPECT_EQ(root[&weak_holder::before], 5);
-    EXPECT_EQ(root[&weak_holder::num], 77);
-    EXPECT_EQ(root[&weak_holder::after], "tail");
+    ASSERT(root.valid());
+    EXPECT(root[&weak_holder::before] == 5);
+    EXPECT(root[&weak_holder::num] == 77);
+    EXPECT(root[&weak_holder::after] == "tail");
 
     // An expired weak_ptr leaves its slot absent; the view reads the default.
     owner.reset();
-    ASSERT_TRUE(input.num.expired());
+    ASSERT(input.num.expired());
     auto absent = fbs::to_bytes(input);
-    ASSERT_TRUE(absent.has_value());
+    ASSERT(absent);
 
     auto root2 = table_view<weak_holder>::from_bytes(*absent);
-    ASSERT_TRUE(root2.valid());
-    EXPECT_EQ(root2[&weak_holder::num], 0);
+    ASSERT(root2.valid());
+    EXPECT(root2[&weak_holder::num] == 0);
 }
 
-TEST_CASE(undersized_buffers_are_rejected) {
+ZEST_CASE(undersized_buffers_are_rejected) {
     // Anything below root-uoffset + identifier cannot be a flatbuffer.
     std::vector<std::uint8_t> tiny(8, 0xAB);
     for(std::size_t len = 0; len < tiny.size(); ++len) {
         auto span = std::span<const std::uint8_t>(tiny.data(), len);
         auto result = fbs::from_bytes<rich>(span);
-        ASSERT_FALSE(result.has_value());
-        EXPECT_FALSE(table_view<rich>::from_bytes(span).valid());
+        ASSERT(!result);
+        EXPECT(!table_view<rich>::from_bytes(span).valid());
     }
 }
 
-TEST_CASE(minimal_buffers_with_valid_identifier_are_rejected) {
+ZEST_CASE(minimal_buffers_with_valid_identifier_are_rejected) {
     // Smallest spans that pass the size and identifier gates; the root
     // offset then points into the identifier or at the buffer end.
     const std::array<std::uint8_t, 8> into_identifier = {4, 0, 0, 0, 'E', 'V', 'T', 'O'};
@@ -428,25 +428,25 @@ TEST_CASE(minimal_buffers_with_valid_identifier_are_rejected) {
 
     for(const auto& raw: {into_identifier, at_end}) {
         auto span = std::span<const std::uint8_t>(raw.data(), raw.size());
-        EXPECT_FALSE(fbs::from_bytes<rich>(span).has_value());
-        EXPECT_FALSE(table_view<rich>::from_bytes(span).valid());
+        EXPECT(!fbs::from_bytes<rich>(span).has_value());
+        EXPECT(!table_view<rich>::from_bytes(span).valid());
     }
 }
 
-TEST_CASE(wrong_identifier_is_rejected) {
+ZEST_CASE(wrong_identifier_is_rejected) {
     auto encoded = fbs::to_bytes(make_rich());
-    ASSERT_TRUE(encoded.has_value());
+    ASSERT(encoded);
 
     auto tampered = *encoded;
     tampered[4] ^= 0xFF;
 
-    EXPECT_FALSE(fbs::from_bytes<rich>(tampered).has_value());
-    EXPECT_FALSE(table_view<rich>::from_bytes(tampered).valid());
+    EXPECT(!fbs::from_bytes<rich>(tampered).has_value());
+    EXPECT(!table_view<rich>::from_bytes(tampered).valid());
 }
 
-TEST_CASE(out_of_bounds_root_offset_is_rejected) {
+ZEST_CASE(out_of_bounds_root_offset_is_rejected) {
     auto encoded = fbs::to_bytes(make_rich());
-    ASSERT_TRUE(encoded.has_value());
+    ASSERT(encoded);
 
     auto tampered = *encoded;
     tampered[0] = 0xFF;
@@ -454,11 +454,11 @@ TEST_CASE(out_of_bounds_root_offset_is_rejected) {
     tampered[2] = 0xFF;
     tampered[3] = 0x7F;
 
-    EXPECT_FALSE(fbs::from_bytes<rich>(tampered).has_value());
-    EXPECT_FALSE(table_view<rich>::from_bytes(tampered).valid());
+    EXPECT(!fbs::from_bytes<rich>(tampered).has_value());
+    EXPECT(!table_view<rich>::from_bytes(tampered).valid());
 }
 
-TEST_CASE(hostile_bytes_never_read_out_of_bounds_rich) {
+ZEST_CASE(hostile_bytes_never_read_out_of_bounds_rich) {
     expect_hostile_bytes_contained(make_rich(), [](const table_view<rich>& root) {
         [[maybe_unused]] auto title = root[&rich::title];
         auto tags = root[&rich::tags];
@@ -475,7 +475,7 @@ TEST_CASE(hostile_bytes_never_read_out_of_bounds_rich) {
     });
 }
 
-TEST_CASE(hostile_bytes_never_read_out_of_bounds_rich2) {
+ZEST_CASE(hostile_bytes_never_read_out_of_bounds_rich2) {
     expect_hostile_bytes_contained(make_rich2(), [](const table_view<rich2>& root) {
         [[maybe_unused]] auto level = root[&rich2::level];
         [[maybe_unused]] auto pos = root[&rich2::pos];
@@ -496,7 +496,7 @@ TEST_CASE(hostile_bytes_never_read_out_of_bounds_rich2) {
     });
 }
 
-TEST_CASE(hostile_bytes_never_read_out_of_bounds_struct_keyed_map) {
+ZEST_CASE(hostile_bytes_never_read_out_of_bounds_struct_keyed_map) {
     struct_keyed input;
     input.hits.emplace(occ_key{.begin = 1, .end = 5, .target = 9}, 1);
     input.hits.emplace(occ_key{.begin = 1, .end = 6, .target = 0}, 2);
@@ -515,7 +515,7 @@ TEST_CASE(hostile_bytes_never_read_out_of_bounds_struct_keyed_map) {
     });
 }
 
-TEST_CASE(inline_struct_bool_byte_must_be_zero_or_one) {
+ZEST_CASE(inline_struct_bool_byte_must_be_zero_or_one) {
     const with_bool_structs input{
         .solo = {.ready = true,               .code = 7                          },
         .items = {{.ready = false, .code = 1}, {.ready = true, .code = 2}         },
@@ -523,8 +523,8 @@ TEST_CASE(inline_struct_bool_byte_must_be_zero_or_one) {
     };
 
     auto encoded = fbs::to_bytes(input);
-    ASSERT_TRUE(encoded.has_value());
-    ASSERT_TRUE(fbs::from_bytes<with_bool_structs>(*encoded).has_value());
+    ASSERT(encoded);
+    ASSERT(fbs::from_bytes<with_bool_structs>(*encoded).has_value());
 
     // Locate the stored images through the raw accessors; slots follow
     // declaration order (solo=4, items=6, deep=8).
@@ -533,7 +533,7 @@ TEST_CASE(inline_struct_bool_byte_must_be_zero_or_one) {
     const auto* solo = root->GetStruct<const bool_flags*>(4);
     const auto* items = root->GetPointer<const ::flatbuffers::Vector<const bool_flags*>*>(6);
     const auto* deep = root->GetStruct<const nested_bool*>(8);
-    ASSERT_TRUE(solo != nullptr && items != nullptr && deep != nullptr);
+    ASSERT((solo != nullptr && items != nullptr && deep != nullptr));
 
     const auto byte_at = [&](const void* stored, std::size_t offset) {
         return static_cast<std::size_t>(static_cast<const std::uint8_t*>(stored) - data) + offset;
@@ -547,39 +547,39 @@ TEST_CASE(inline_struct_bool_byte_must_be_zero_or_one) {
          byte_at(deep, offsetof(nested_bool, inner) + offsetof(bool_flags, ready))}) {
         auto tampered = *encoded;
         tampered[pos] = 0x02;
-        EXPECT_FALSE(fbs::from_bytes<with_bool_structs>(tampered).has_value());
-        EXPECT_FALSE(table_view<with_bool_structs>::from_bytes(tampered).valid());
+        EXPECT(!fbs::from_bytes<with_bool_structs>(tampered).has_value());
+        EXPECT(!table_view<with_bool_structs>::from_bytes(tampered).valid());
     }
 
     // The boundary value 1 stays a valid image and reads back as true.
     auto flipped = *encoded;
     flipped[byte_at(items->Get(0), offsetof(bool_flags, ready))] = 0x01;
     auto decoded = fbs::from_bytes<with_bool_structs>(flipped);
-    ASSERT_TRUE(decoded.has_value());
-    EXPECT_TRUE(decoded->items[0].ready);
+    ASSERT(decoded);
+    EXPECT(decoded->items[0].ready);
     auto root_view = table_view<with_bool_structs>::from_bytes(flipped);
-    ASSERT_TRUE(root_view.valid());
-    EXPECT_TRUE(root_view[&with_bool_structs::items][0].ready);
+    ASSERT(root_view.valid());
+    EXPECT(root_view[&with_bool_structs::items][0].ready);
 }
 
-TEST_CASE(recursion_depth_boundary) {
+ZEST_CASE(recursion_depth_boundary) {
     // The verifier's depth cap (flatbuffers default 64) is also what
     // terminates cyclic offsets: a cycle is just an infinitely deep chain.
     // Straddle the cap so a change to per-table depth cost surfaces here.
     auto shallow = fbs::to_bytes(make_chain(60));
-    ASSERT_TRUE(shallow.has_value());
+    ASSERT(shallow);
     node shallow_out{};
-    EXPECT_TRUE(fbs::from_bytes(*shallow, shallow_out).has_value());
-    EXPECT_TRUE(table_view<node>::from_bytes(*shallow).valid());
+    EXPECT(fbs::from_bytes(*shallow, shallow_out).has_value());
+    EXPECT(table_view<node>::from_bytes(*shallow).valid());
 
     auto deep = fbs::to_bytes(make_chain(70));
-    ASSERT_TRUE(deep.has_value());
+    ASSERT(deep);
     node deep_out{};
-    EXPECT_FALSE(fbs::from_bytes(*deep, deep_out).has_value());
-    EXPECT_FALSE(table_view<node>::from_bytes(*deep).valid());
+    EXPECT(!fbs::from_bytes(*deep, deep_out).has_value());
+    EXPECT(!table_view<node>::from_bytes(*deep).valid());
 }
 
-TEST_CASE(imperative_adapter_cannot_overrun_vector) {
+ZEST_CASE(imperative_adapter_cannot_overrun_vector) {
     using kota_fbs_verifier_test::greedy_seq;
 
     // The adapter reads four elements unconditionally; a valid two-element
@@ -587,41 +587,41 @@ TEST_CASE(imperative_adapter_cannot_overrun_vector) {
     auto shorted = fbs::to_bytes(greedy_seq{
         .nums = {1, 2}
     });
-    ASSERT_TRUE(shorted.has_value());
-    EXPECT_FALSE(fbs::from_bytes<greedy_seq>(*shorted).has_value());
+    ASSERT(shorted);
+    EXPECT(!fbs::from_bytes<greedy_seq>(*shorted).has_value());
 
     const greedy_seq exact{
         .nums = {1, 2, 3, 4}
     };
     auto encoded = fbs::to_bytes(exact);
-    ASSERT_TRUE(encoded.has_value());
+    ASSERT(encoded);
     auto decoded = fbs::from_bytes<greedy_seq>(*encoded);
-    ASSERT_TRUE(decoded.has_value());
-    EXPECT_EQ(*decoded, exact);
+    ASSERT(decoded);
+    EXPECT(*decoded == exact);
 }
 
-TEST_CASE(imperative_adapter_cannot_overrun_map) {
+ZEST_CASE(imperative_adapter_cannot_overrun_map) {
     using kota_fbs_verifier_test::greedy_map;
 
     auto shorted = fbs::to_bytes(greedy_map{
         .entries = {{"a", 1}, {"b", 2}}
     });
-    ASSERT_TRUE(shorted.has_value());
-    EXPECT_FALSE(fbs::from_bytes<greedy_map>(*shorted).has_value());
+    ASSERT(shorted);
+    EXPECT(!fbs::from_bytes<greedy_map>(*shorted).has_value());
 
     const greedy_map exact{
         .entries = {{"a", 1}, {"b", 2}, {"c", 3}, {"d", 4}}
     };
     auto encoded = fbs::to_bytes(exact);
-    ASSERT_TRUE(encoded.has_value());
+    ASSERT(encoded);
     auto decoded = fbs::from_bytes<greedy_map>(*encoded);
-    ASSERT_TRUE(decoded.has_value());
-    EXPECT_EQ(*decoded, exact);
+    ASSERT(decoded);
+    EXPECT(*decoded == exact);
 }
 
-TEST_CASE(byte_span_overload_rejects_hostile_input_too) {
+ZEST_CASE(byte_span_overload_rejects_hostile_input_too) {
     auto encoded = fbs::to_bytes(make_rich());
-    ASSERT_TRUE(encoded.has_value());
+    ASSERT(encoded);
 
     auto tampered = *encoded;
     tampered[0] = 0xFF;
@@ -632,11 +632,11 @@ TEST_CASE(byte_span_overload_rejects_hostile_input_too) {
     auto bytes = std::span<const std::byte>(reinterpret_cast<const std::byte*>(tampered.data()),
                                             tampered.size());
     rich sink{};
-    EXPECT_FALSE(fbs::from_bytes(bytes, sink).has_value());
-    EXPECT_FALSE(table_view<rich>::from_bytes(bytes).valid());
+    EXPECT(!fbs::from_bytes(bytes, sink).has_value());
+    EXPECT(!table_view<rich>::from_bytes(bytes).valid());
 }
 
-};  // TEST_SUITE(serde_flatbuffers_verifier)
+};  // ZEST_SUITE(serde_flatbuffers_verifier)
 
 }  // namespace
 

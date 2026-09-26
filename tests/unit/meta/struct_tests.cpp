@@ -141,112 +141,112 @@ consteval bool field_count_robustness_check() {
            reflection<S6>::field_count == 6;
 }
 
-TEST_SUITE(reflection) {
+ZEST_SUITE(reflection) {
 
-TEST_CASE(field_addr_and_field_of) {
+ZEST_CASE(field_addr_and_field_of) {
     Point p{.x = 1, .c = 'A', .z = 2.5, .y = 4};
 
-    EXPECT_EQ(field_addr_of<0>(p), &p.x);
-    EXPECT_EQ(field_addr_of<1>(p), &p.c);
-    EXPECT_EQ(field_addr_of<2>(p), &p.z);
-    EXPECT_EQ(field_addr_of<3>(p), &p.y);
+    EXPECT(field_addr_of<0>(p) == &p.x);
+    EXPECT(field_addr_of<1>(p) == &p.c);
+    EXPECT(field_addr_of<2>(p) == &p.z);
+    EXPECT(field_addr_of<3>(p) == &p.y);
 
     field_of<0>(p) = 11;
     field_of<3>(p) = 44;
-    EXPECT_EQ(p.x, 11);
-    EXPECT_EQ(p.y, 44);
+    EXPECT(p.x == 11);
+    EXPECT(p.y == 44);
 
     field<0, Point> fx{p};
     field<1, Point> fc{p};
     fx.value() = 21;
     fc.value() = 'Z';
-    EXPECT_EQ(p.x, 21);
-    EXPECT_EQ(p.c, 'Z');
+    EXPECT(p.x == 21);
+    EXPECT(p.c == 'Z');
 }
 
-TEST_CASE(field_name_values) {
-    EXPECT_EQ(field_names<Point>().size(), 4U);
-    EXPECT_EQ(field_name<0, Point>(), "x");
-    EXPECT_EQ(field_name<1, Point>(), "c");
-    EXPECT_EQ(field_name<2, Point>(), "z");
-    EXPECT_EQ(field_name<3, Point>(), "y");
+ZEST_CASE(field_name_values) {
+    EXPECT(field_names<Point>().size() == 4U);
+    EXPECT(field_name<0, Point>() == "x");
+    EXPECT(field_name<1, Point>() == "c");
+    EXPECT(field_name<2, Point>() == "z");
+    EXPECT(field_name<3, Point>() == "y");
 
-    EXPECT_EQ(field_names<Empty>().size(), 1U);
-    EXPECT_EQ(field_names<Empty>()[0], "PLACEHOLDER");
+    EXPECT(field_names<Empty>().size() == 1U);
+    EXPECT(field_names<Empty>()[0] == "PLACEHOLDER");
 
-    EXPECT_EQ(field_names<Many36>().size(), 36U);
-    EXPECT_EQ(field_name<0, Many36>(), "f01");
-    EXPECT_EQ(field_name<35, Many36>(), "f36");
+    EXPECT(field_names<Many36>().size() == 36U);
+    EXPECT(field_name<0, Many36>() == "f01");
+    EXPECT(field_name<35, Many36>() == "f36");
 
-    EXPECT_EQ(field<0, Point>::name(), "x");
-    EXPECT_EQ(field<1, Point>::name(), "c");
-    EXPECT_EQ(field<2, Point>::name(), "z");
-    EXPECT_EQ(field<3, Point>::name(), "y");
+    EXPECT(field<0, Point>::name() == "x");
+    EXPECT(field<1, Point>::name() == "c");
+    EXPECT(field<2, Point>::name() == "z");
+    EXPECT(field<3, Point>::name() == "y");
 }
 
-TEST_CASE(reflection_static_values) {
-    EXPECT_EQ(reflection<Point>::field_count, 4U);
-    EXPECT_EQ(reflection<Empty>::field_count, 0U);
-    EXPECT_EQ(reflection<Many36>::field_count, 36U);
-    EXPECT_EQ(field_count_robustness_check<MoveOnly>(), true);
-    EXPECT_EQ(field_count_robustness_check<FromIntOnly>(), true);
+ZEST_CASE(reflection_static_values) {
+    EXPECT(reflection<Point>::field_count == 4U);
+    EXPECT(reflection<Empty>::field_count == 0U);
+    EXPECT(reflection<Many36>::field_count == 36U);
+    EXPECT(field_count_robustness_check<MoveOnly>() == true);
+    EXPECT(field_count_robustness_check<FromIntOnly>() == true);
 
-    EXPECT_EQ(std::tuple_size_v<point_rvalue_refs>, 4U);
-    EXPECT_EQ(std::is_rvalue_reference_v<std::tuple_element_t<0, point_rvalue_refs>>, true);
-    EXPECT_EQ(std::is_rvalue_reference_v<std::tuple_element_t<1, point_rvalue_refs>>, true);
-    EXPECT_EQ(std::is_rvalue_reference_v<std::tuple_element_t<2, point_rvalue_refs>>, true);
-    EXPECT_EQ(std::is_rvalue_reference_v<std::tuple_element_t<3, point_rvalue_refs>>, true);
+    EXPECT(std::tuple_size_v<point_rvalue_refs> == 4U);
+    EXPECT(std::is_rvalue_reference_v<std::tuple_element_t<0, point_rvalue_refs>> == true);
+    EXPECT(std::is_rvalue_reference_v<std::tuple_element_t<1, point_rvalue_refs>> == true);
+    EXPECT(std::is_rvalue_reference_v<std::tuple_element_t<2, point_rvalue_refs>> == true);
+    EXPECT(std::is_rvalue_reference_v<std::tuple_element_t<3, point_rvalue_refs>> == true);
 
-    EXPECT_EQ(field<0, Point>::index(), 0U);
-    EXPECT_EQ(field<1, Point>::index(), 1U);
-    EXPECT_EQ(field<2, Point>::index(), 2U);
-    EXPECT_EQ(field<3, Point>::index(), 3U);
+    EXPECT(field<0, Point>::index() == 0U);
+    EXPECT(field<1, Point>::index() == 1U);
+    EXPECT(field<2, Point>::index() == 2U);
+    EXPECT(field<3, Point>::index() == 3U);
 }
 
-TEST_CASE(field_offset_values) {
-    EXPECT_EQ(field_offset<Layout>(0), offsetof(Layout, a));
-    EXPECT_EQ(field_offset<Layout>(1), offsetof(Layout, b));
-    EXPECT_EQ(field_offset<Layout>(2), offsetof(Layout, bb));
-    EXPECT_EQ(field_offset<Layout>(3), offsetof(Layout, c));
-    EXPECT_EQ(field_offset(&Layout::a), offsetof(Layout, a));
-    EXPECT_EQ(field_offset(&Layout::b), offsetof(Layout, b));
-    EXPECT_EQ(field_offset(&Layout::bb), offsetof(Layout, bb));
-    EXPECT_EQ(field_offset(&Layout::c), offsetof(Layout, c));
+ZEST_CASE(field_offset_values) {
+    EXPECT(field_offset<Layout>(0) == offsetof(Layout, a));
+    EXPECT(field_offset<Layout>(1) == offsetof(Layout, b));
+    EXPECT(field_offset<Layout>(2) == offsetof(Layout, bb));
+    EXPECT(field_offset<Layout>(3) == offsetof(Layout, c));
+    EXPECT(field_offset(&Layout::a) == offsetof(Layout, a));
+    EXPECT(field_offset(&Layout::b) == offsetof(Layout, b));
+    EXPECT(field_offset(&Layout::bb) == offsetof(Layout, bb));
+    EXPECT(field_offset(&Layout::c) == offsetof(Layout, c));
 
-    EXPECT_EQ(field_offset<Packed>(0), offsetof(Packed, a));
-    EXPECT_EQ(field_offset<Packed>(1), offsetof(Packed, b));
-    EXPECT_EQ(field_offset<Packed>(2), offsetof(Packed, bb));
-    EXPECT_EQ(field_offset<Packed>(3), offsetof(Packed, c));
-    EXPECT_EQ(field_offset<Packed>(4), offsetof(Packed, d));
-    EXPECT_EQ(field_offset<Packed>(5), offsetof(Packed, e));
-    EXPECT_EQ(field_offset(&Packed::a), offsetof(Packed, a));
-    EXPECT_EQ(field_offset(&Packed::b), offsetof(Packed, b));
-    EXPECT_EQ(field_offset(&Packed::bb), offsetof(Packed, bb));
-    EXPECT_EQ(field_offset(&Packed::c), offsetof(Packed, c));
-    EXPECT_EQ(field_offset(&Packed::d), offsetof(Packed, d));
-    EXPECT_EQ(field_offset(&Packed::e), offsetof(Packed, e));
-    EXPECT_EQ(field_offset<NoUniqueAddress>(1), offsetof(NoUniqueAddress, e));
-    EXPECT_EQ(field_offset(&NoUniqueAddress::e), offsetof(NoUniqueAddress, e));
-    EXPECT_EQ(field_offset(&NoDefault::x), offsetof(NoDefault, x));
-    EXPECT_EQ(field_offset(&NoDefault::y), offsetof(NoDefault, y));
+    EXPECT(field_offset<Packed>(0) == offsetof(Packed, a));
+    EXPECT(field_offset<Packed>(1) == offsetof(Packed, b));
+    EXPECT(field_offset<Packed>(2) == offsetof(Packed, bb));
+    EXPECT(field_offset<Packed>(3) == offsetof(Packed, c));
+    EXPECT(field_offset<Packed>(4) == offsetof(Packed, d));
+    EXPECT(field_offset<Packed>(5) == offsetof(Packed, e));
+    EXPECT(field_offset(&Packed::a) == offsetof(Packed, a));
+    EXPECT(field_offset(&Packed::b) == offsetof(Packed, b));
+    EXPECT(field_offset(&Packed::bb) == offsetof(Packed, bb));
+    EXPECT(field_offset(&Packed::c) == offsetof(Packed, c));
+    EXPECT(field_offset(&Packed::d) == offsetof(Packed, d));
+    EXPECT(field_offset(&Packed::e) == offsetof(Packed, e));
+    EXPECT(field_offset<NoUniqueAddress>(1) == offsetof(NoUniqueAddress, e));
+    EXPECT(field_offset(&NoUniqueAddress::e) == offsetof(NoUniqueAddress, e));
+    EXPECT(field_offset(&NoDefault::x) == offsetof(NoDefault, x));
+    EXPECT(field_offset(&NoDefault::y) == offsetof(NoDefault, y));
 
-    EXPECT_EQ(field<0, Point>::offset(), offsetof(Point, x));
-    EXPECT_EQ(field<1, Point>::offset(), offsetof(Point, c));
-    EXPECT_EQ(field<2, Point>::offset(), offsetof(Point, z));
-    EXPECT_EQ(field<3, Point>::offset(), offsetof(Point, y));
+    EXPECT(field<0, Point>::offset() == offsetof(Point, x));
+    EXPECT(field<1, Point>::offset() == offsetof(Point, c));
+    EXPECT(field<2, Point>::offset() == offsetof(Point, z));
+    EXPECT(field<3, Point>::offset() == offsetof(Point, y));
 }
 
-TEST_CASE(field_refs_lvalue) {
+ZEST_CASE(field_refs_lvalue) {
     Point p{.x = 3, .c = 'b', .z = 1.0, .y = 5};
     auto refs = field_refs(p);
 
     std::get<0>(refs) = 13;
     std::get<3>(refs) = 15;
-    EXPECT_EQ(p.x, 13);
-    EXPECT_EQ(p.y, 15);
+    EXPECT(p.x == 13);
+    EXPECT(p.y == 15);
 }
 
-TEST_CASE(for_each_void_callback) {
+ZEST_CASE(for_each_void_callback) {
     Point p{.x = 1, .c = 'a', .z = 2.0, .y = 3};
 
     std::array<std::string_view, 4> names{};
@@ -259,19 +259,19 @@ TEST_CASE(for_each_void_callback) {
         ++visited;
     });
 
-    EXPECT_TRUE(all_ok);
-    EXPECT_EQ(visited, 4U);
-    EXPECT_EQ(names[0], "x");
-    EXPECT_EQ(names[1], "c");
-    EXPECT_EQ(names[2], "z");
-    EXPECT_EQ(names[3], "y");
-    EXPECT_EQ(offsets[0], offsetof(Point, x));
-    EXPECT_EQ(offsets[1], offsetof(Point, c));
-    EXPECT_EQ(offsets[2], offsetof(Point, z));
-    EXPECT_EQ(offsets[3], offsetof(Point, y));
+    EXPECT(all_ok);
+    EXPECT(visited == 4U);
+    EXPECT(names[0] == "x");
+    EXPECT(names[1] == "c");
+    EXPECT(names[2] == "z");
+    EXPECT(names[3] == "y");
+    EXPECT(offsets[0] == offsetof(Point, x));
+    EXPECT(offsets[1] == offsetof(Point, c));
+    EXPECT(offsets[2] == offsetof(Point, z));
+    EXPECT(offsets[3] == offsetof(Point, y));
 }
 
-TEST_CASE(for_each_bool_short_circuit) {
+ZEST_CASE(for_each_bool_short_circuit) {
     Point p{.x = 1, .c = 'a', .z = 2.0, .y = 3};
 
     std::size_t visited = 0;
@@ -280,11 +280,11 @@ TEST_CASE(for_each_bool_short_circuit) {
         return f.index() < 2;
     });
 
-    EXPECT_FALSE(all_ok);
-    EXPECT_EQ(visited, 3U);
+    EXPECT(!all_ok);
+    EXPECT(visited == 3U);
 }
 
-TEST_CASE(for_each_bool_all_true) {
+ZEST_CASE(for_each_bool_all_true) {
     Point p{.x = 1, .c = 'a', .z = 2.0, .y = 3};
 
     std::size_t visited = 0;
@@ -293,11 +293,11 @@ TEST_CASE(for_each_bool_all_true) {
         return f.index() <= 3;
     });
 
-    EXPECT_TRUE(all_ok);
-    EXPECT_EQ(visited, 4U);
+    EXPECT(all_ok);
+    EXPECT(visited == 4U);
 }
 
-TEST_CASE(for_each_int_return_short_circuit) {
+ZEST_CASE(for_each_int_return_short_circuit) {
     Point p{.x = 1, .c = 'a', .z = 2.0, .y = 3};
 
     std::size_t visited = 0;
@@ -306,11 +306,11 @@ TEST_CASE(for_each_int_return_short_circuit) {
         return f.index() == 0 ? 1 : 0;
     });
 
-    EXPECT_FALSE(all_ok);
-    EXPECT_EQ(visited, 2U);
+    EXPECT(!all_ok);
+    EXPECT(visited == 2U);
 }
 
-TEST_CASE(for_each_mutation_void_return) {
+ZEST_CASE(for_each_mutation_void_return) {
     Point p{.x = 1, .c = 'a', .z = 2.0, .y = 3};
 
     const bool all_ok = for_each(p, [](auto f) {
@@ -320,12 +320,12 @@ TEST_CASE(for_each_mutation_void_return) {
         }
     });
 
-    EXPECT_TRUE(all_ok);
-    EXPECT_EQ(p.x, 10);
-    EXPECT_EQ(p.y, 30);
+    EXPECT(all_ok);
+    EXPECT(p.x == 10);
+    EXPECT(p.y == 30);
 }
 
-TEST_CASE(for_each_empty_object) {
+ZEST_CASE(for_each_empty_object) {
     Empty e{};
     std::size_t visited = 0;
     const bool all_ok = for_each(e, [&](auto) {
@@ -333,11 +333,11 @@ TEST_CASE(for_each_empty_object) {
         return true;
     });
 
-    EXPECT_TRUE(all_ok);
-    EXPECT_EQ(visited, 0U);
+    EXPECT(all_ok);
+    EXPECT(visited == 0U);
 }
 
-TEST_CASE(for_each_many36) {
+ZEST_CASE(for_each_many36) {
     Many36 v{
         .f01 = 1,
         .f02 = 2,
@@ -387,12 +387,12 @@ TEST_CASE(for_each_many36) {
         ++visited;
     });
 
-    EXPECT_TRUE(all_ok);
-    EXPECT_EQ(visited, 36U);
-    EXPECT_EQ(sum, 666);
+    EXPECT(all_ok);
+    EXPECT(visited == 36U);
+    EXPECT(sum == 666);
 }
 
-};  // TEST_SUITE(reflection)
+};  // ZEST_SUITE(reflection)
 
 }  // namespace
 

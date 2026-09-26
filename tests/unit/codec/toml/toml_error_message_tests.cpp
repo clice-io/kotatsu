@@ -34,42 +34,42 @@ struct enum_string_color_tag {
 
 using enum_string_color = annotate<enum_string_color_tag>::type<color>;
 
-TEST_SUITE(serde_toml_error_message) {
+ZEST_SUITE(serde_toml_error_message) {
 
-TEST_CASE(map_key_parse_error) {
+ZEST_CASE(map_key_parse_error) {
     auto result = from_string<std::map<int, int>>("abc = 1");
-    ASSERT_FALSE(result.has_value());
-    EXPECT_TRUE(result.error().message.find("cannot parse map key 'abc'") != std::string::npos);
+    ASSERT(!result);
+    EXPECT(zest::contains(result.error().message, "cannot parse map key 'abc'"));
 }
 
-TEST_CASE(missing_required_field) {
+ZEST_CASE(missing_required_field) {
     auto result = from_string<person>(R"(
 age = 25
 [addr]
 city = "NY"
 zip = 10001
 )");
-    ASSERT_FALSE(result.has_value());
+    ASSERT(!result);
     auto& e = result.error();
-    EXPECT_EQ(e.message, "missing required field 'name'");
+    EXPECT(e.message == "missing required field 'name'");
 }
 
-TEST_CASE(unknown_field_denied) {
+ZEST_CASE(unknown_field_denied) {
     auto result = from_string<strict_payload>(R"(
 id = 1
 name = "ok"
 extra = true
 )");
-    ASSERT_FALSE(result.has_value());
+    ASSERT(!result);
     auto& e = result.error();
-    EXPECT_EQ(e.message, "unknown field 'extra'");
+    EXPECT(e.message == "unknown field 'extra'");
     // The TOML backend attaches the offending value node's location.
-    ASSERT_TRUE(e.location.has_value());
-    EXPECT_EQ(e.location->line, 4);
-    EXPECT_EQ(e.location->column, 9);
+    ASSERT(e.location);
+    EXPECT(e.location->line == 4);
+    EXPECT(e.location->column == 9);
 }
 
-TEST_CASE(syntax_error_has_location) {
+ZEST_CASE(syntax_error_has_location) {
     // Unterminated string — a tokenizer-level error, reported by parse_table
     // through toml++'s parse_result (toml++ is pinned to TOML_EXCEPTIONS=0,
     // see kota/codec/toml/type.h).
@@ -77,15 +77,15 @@ TEST_CASE(syntax_error_has_location) {
 name = "alice
 age = 30
 )");
-    ASSERT_FALSE(result.has_value());
+    ASSERT(!result);
     auto& e = result.error();
-    EXPECT_TRUE(e.message.starts_with("TOML parse error: "));
-    EXPECT_TRUE(e.message.size() > std::string_view("TOML parse error: ").size());
-    ASSERT_TRUE(e.location.has_value());
-    EXPECT_EQ(e.location->line, 2);
+    EXPECT(zest::starts_with(e.message, "TOML parse error: "));
+    EXPECT(e.message.size() > std::string_view("TOML parse error: ").size());
+    ASSERT(e.location);
+    EXPECT(e.location->line == 2);
 }
 
-TEST_CASE(nested_field_error_path) {
+ZEST_CASE(nested_field_error_path) {
     auto result = from_string<person>(R"(
 name = "alice"
 age = 30
@@ -93,14 +93,14 @@ age = 30
 city = "NY"
 zip = "wrong"
 )");
-    ASSERT_FALSE(result.has_value());
+    ASSERT(!result);
     auto& e = result.error();
-    EXPECT_EQ(e.format_path(), "addr.zip");
-    EXPECT_TRUE(e.message.find("invalid type") != std::string::npos ||
-                e.message.find("type") != std::string::npos);
+    EXPECT(e.format_path() == "addr.zip");
+    EXPECT((e.message.find("invalid type") != std::string::npos ||
+            e.message.find("type") != std::string::npos));
 }
 
-TEST_CASE(sequence_element_error_path) {
+ZEST_CASE(sequence_element_error_path) {
     // TOML does not allow mixed-type arrays, so we use a struct with a vector
     // field and provide a table array where an element has the wrong type.
     // Instead, we use a TOML array with string elements for an int vector field.
@@ -108,35 +108,35 @@ TEST_CASE(sequence_element_error_path) {
 name = "bob"
 scores = ["bad"]
 )");
-    ASSERT_FALSE(result.has_value());
+    ASSERT(!result);
     auto& e = result.error();
-    EXPECT_EQ(e.format_path(), "scores[0]");
+    EXPECT(e.format_path() == "scores[0]");
 }
 
-TEST_CASE(enum_string_error_message) {
+ZEST_CASE(enum_string_error_message) {
     enum_string_color parsed = color::red;
     auto table = toml::parse_table(R"(__value = "purple")");
-    ASSERT_TRUE(table.has_value());
+    ASSERT(table.has_value());
     auto status = toml::from_toml(*table, parsed);
-    ASSERT_FALSE(status.has_value());
+    ASSERT(!status);
     auto& e = status.error();
-    EXPECT_TRUE(e.message.find("purple") != std::string::npos);
+    EXPECT(zest::contains(e.message, "purple"));
 }
 
-TEST_CASE(error_has_location) {
+ZEST_CASE(error_has_location) {
     auto result = from_string<person>(R"(
 name = "alice"
 age = "not_a_number"
 )");
-    ASSERT_FALSE(result.has_value());
+    ASSERT(!result);
     auto& e = result.error();
-    EXPECT_TRUE(e.location.has_value());
+    EXPECT(e.location);
     // "age" is on line 3 (line 1 is empty after the raw string opening)
-    EXPECT_EQ(e.location->line, 3);
-    EXPECT_EQ(e.location->column, 7);
+    EXPECT(e.location->line == 3);
+    EXPECT(e.location->column == 7);
 }
 
-TEST_CASE(to_string_combines_all) {
+ZEST_CASE(to_string_combines_all) {
     auto result = from_string<person>(R"(
 name = "alice"
 age = 30
@@ -144,16 +144,16 @@ age = 30
 city = "NY"
 zip = "wrong"
 )");
-    ASSERT_FALSE(result.has_value());
+    ASSERT(!result);
     auto& e = result.error();
     // to_string format: "message at path (line L, column C)"
     auto str = e.to_string();
-    EXPECT_TRUE(str.find("addr.zip") != std::string::npos);
-    EXPECT_TRUE(str.find("line 6") != std::string::npos);
-    EXPECT_TRUE(str.find("column 7") != std::string::npos);
+    EXPECT(zest::contains(str, "addr.zip"));
+    EXPECT(zest::contains(str, "line 6"));
+    EXPECT(zest::contains(str, "column 7"));
 }
 
-};  // TEST_SUITE(serde_toml_error_message)
+};  // ZEST_SUITE(serde_toml_error_message)
 
 }  // namespace
 

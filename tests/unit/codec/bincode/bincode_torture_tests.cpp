@@ -20,7 +20,7 @@ auto rt = []<typename T>(const T& input) -> std::expected<T, bincode::error> {
     return from_bytes<T>(*encoded);
 };
 
-TEST_SUITE(serde_bincode_standard) {
+ZEST_SUITE(serde_bincode_standard) {
 
 SERDE_STANDARD_TEST_CASES_PRIMITIVES(rt)
 SERDE_STANDARD_TEST_CASES_NUMERIC_BOUNDARIES(rt)
@@ -32,7 +32,7 @@ SERDE_STANDARD_TEST_CASES_POINTERS(rt)
 SERDE_STANDARD_TEST_CASES_VARIANT(rt)
 SERDE_STANDARD_TEST_CASES_COMPLEX(rt)
 
-};  // TEST_SUITE(serde_bincode_standard)
+};  // ZEST_SUITE(serde_bincode_standard)
 
 }  // namespace
 

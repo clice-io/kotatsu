@@ -53,9 +53,9 @@ struct str_like_aggregate {
     }
 };
 
-TEST_SUITE(serde_toml) {
+ZEST_SUITE(serde_toml) {
 
-TEST_CASE(struct_roundtrip_with_dom) {
+ZEST_CASE(struct_roundtrip_with_dom) {
     const person input{
         .id = 7,
         .name = "alice",
@@ -64,19 +64,19 @@ TEST_CASE(struct_roundtrip_with_dom) {
     };
 
     auto dom = to_toml(input);
-    ASSERT_TRUE(dom.has_value());
-    ASSERT_TRUE(dom->contains("id"));
-    ASSERT_TRUE(dom->contains("name"));
-    ASSERT_TRUE(dom->contains("scores"));
-    ASSERT_TRUE(dom->contains("active"));
+    ASSERT(dom.has_value());
+    ASSERT(dom->contains("id"));
+    ASSERT(dom->contains("name"));
+    ASSERT(dom->contains("scores"));
+    ASSERT(dom->contains("active"));
 
     person output{};
     auto status = from_toml(*dom, output);
-    ASSERT_TRUE(status.has_value());
-    EXPECT_EQ(output, input);
+    ASSERT(status);
+    EXPECT(output == input);
 }
 
-TEST_CASE(parse_and_to_string_roundtrip) {
+ZEST_CASE(parse_and_to_string_roundtrip) {
     constexpr std::string_view input = R"(
 id = 9
 name = "bob"
@@ -85,33 +85,33 @@ active = true
 )";
 
     auto parsed = from_string<person>(input);
-    ASSERT_TRUE(parsed.has_value());
-    EXPECT_EQ(parsed->id, 9);
-    EXPECT_EQ(parsed->name, "bob");
-    EXPECT_EQ(parsed->scores, std::vector<int>({4, 5}));
-    EXPECT_EQ(parsed->active, true);
+    ASSERT(parsed);
+    EXPECT(parsed->id == 9);
+    EXPECT(parsed->name == "bob");
+    EXPECT(parsed->scores == std::vector<int>({4, 5}));
+    EXPECT(parsed->active == true);
 
     auto encoded = to_string(*parsed);
-    ASSERT_TRUE(encoded.has_value());
+    ASSERT(encoded.has_value());
 
     auto reparsed = from_string<person>(*encoded);
-    ASSERT_TRUE(reparsed.has_value());
-    EXPECT_EQ(*reparsed, *parsed);
+    ASSERT(reparsed);
+    EXPECT(*reparsed == *parsed);
 }
 
-TEST_CASE(to_string_and_from_string_with_config) {
+ZEST_CASE(to_string_and_from_string_with_config) {
     const task_entry input{.title = "write docs", .level = priority::high};
 
     auto text = to_string<string_enum_config>(input);
-    ASSERT_TRUE(text.has_value());
-    EXPECT_TRUE(text->find(R"(level = 'high')") != std::string::npos);
+    ASSERT(text);
+    EXPECT(zest::contains(*text, R"(level = 'high')"));
 
     auto parsed = from_string<task_entry, string_enum_config>(*text);
-    ASSERT_TRUE(parsed.has_value());
-    EXPECT_EQ(*parsed, input);
+    ASSERT(parsed);
+    EXPECT(*parsed == input);
 }
 
-TEST_CASE(dynamic_dom_field_roundtrip) {
+ZEST_CASE(dynamic_dom_field_roundtrip) {
     payload_with_extra input{};
     input.id = 1;
     input.extra.insert_or_assign("city", "shanghai");
@@ -123,51 +123,51 @@ TEST_CASE(dynamic_dom_field_roundtrip) {
     input.extra.insert_or_assign("tags", std::move(tags));
 
     auto dom = to_toml(input);
-    ASSERT_TRUE(dom.has_value());
+    ASSERT(dom.has_value());
 
     payload_with_extra output{};
     auto status = from_toml(*dom, output);
-    ASSERT_TRUE(status.has_value());
+    ASSERT(status);
 
-    EXPECT_EQ(output.id, 1);
+    EXPECT(output.id == 1);
     auto city = output.extra["city"].value<std::string_view>();
-    ASSERT_TRUE(city.has_value());
-    EXPECT_EQ(*city, "shanghai");
+    ASSERT(city);
+    EXPECT(*city == "shanghai");
 
     auto zip = output.extra["zip"].value<std::int64_t>();
-    ASSERT_TRUE(zip.has_value());
-    EXPECT_EQ(*zip, 200000);
+    ASSERT(zip);
+    EXPECT(*zip == 200000);
 
     auto tags_out = output.extra["tags"].as_array();
-    ASSERT_TRUE(tags_out != nullptr);
-    ASSERT_EQ(tags_out->size(), 2U);
-    EXPECT_EQ((*tags_out)[0].value<std::string_view>().value_or(""), "a");
-    EXPECT_EQ((*tags_out)[1].value<std::string_view>().value_or(""), "b");
+    ASSERT(tags_out != nullptr);
+    ASSERT(tags_out->size() == 2U);
+    EXPECT((*tags_out)[0].value<std::string_view>().value_or("") == "a");
+    EXPECT((*tags_out)[1].value<std::string_view>().value_or("") == "b");
 }
 
-TEST_CASE(boxed_root_scalar_and_optional_none) {
+ZEST_CASE(boxed_root_scalar_and_optional_none) {
     const std::vector<int> values{3, 5, 8};
     auto encoded_values = to_toml(values);
-    ASSERT_TRUE(encoded_values.has_value());
-    ASSERT_TRUE(encoded_values->contains("__value"));
+    ASSERT(encoded_values.has_value());
+    ASSERT(encoded_values->contains("__value"));
 
     std::vector<int> decoded_values{};
     auto decode_values_status = from_toml(*encoded_values, decoded_values);
-    ASSERT_TRUE(decode_values_status.has_value());
-    EXPECT_EQ(decoded_values, values);
+    ASSERT(decode_values_status);
+    EXPECT(decoded_values == values);
 
     const std::optional<int> none = std::nullopt;
     auto encoded_none = to_toml(none);
-    ASSERT_TRUE(encoded_none.has_value());
-    EXPECT_TRUE(encoded_none->empty());
+    ASSERT(encoded_none.has_value());
+    EXPECT(encoded_none->empty());
 
     std::optional<int> decoded_none = 42;
     auto decode_none_status = from_toml(*encoded_none, decoded_none);
-    ASSERT_TRUE(decode_none_status.has_value());
-    EXPECT_FALSE(decoded_none.has_value());
+    ASSERT(decode_none_status);
+    EXPECT(!decoded_none);
 }
 
-TEST_CASE(shared_ptr_root_roundtrip) {
+ZEST_CASE(shared_ptr_root_roundtrip) {
     const auto input = std::make_shared<person>(person{
         .id = 3,
         .name = "carol",
@@ -176,28 +176,28 @@ TEST_CASE(shared_ptr_root_roundtrip) {
     });
 
     auto dom = to_toml(input);
-    ASSERT_TRUE(dom.has_value());
+    ASSERT(dom.has_value());
 
     std::shared_ptr<person> output;
     auto status = from_toml(*dom, output);
-    ASSERT_TRUE(status.has_value());
-    ASSERT_TRUE(output != nullptr);
-    EXPECT_EQ(*output, *input);
+    ASSERT(status);
+    ASSERT(output != nullptr);
+    EXPECT(*output == *input);
 }
 
-TEST_CASE(null_shared_ptr_root) {
+ZEST_CASE(null_shared_ptr_root) {
     const std::shared_ptr<person> input;
     auto dom = to_toml(input);
-    ASSERT_TRUE(dom.has_value());
-    EXPECT_TRUE(dom->empty());
+    ASSERT(dom.has_value());
+    EXPECT(dom->empty());
 
     auto output = std::make_shared<person>();
     auto status = from_toml(*dom, output);
-    ASSERT_TRUE(status.has_value());
-    EXPECT_TRUE(output == nullptr);
+    ASSERT(status);
+    EXPECT(output == nullptr);
 }
 
-TEST_CASE(unique_ptr_root_roundtrip) {
+ZEST_CASE(unique_ptr_root_roundtrip) {
     auto input = std::make_unique<person>(person{
         .id = 8,
         .name = "dave",
@@ -206,16 +206,16 @@ TEST_CASE(unique_ptr_root_roundtrip) {
     });
 
     auto dom = to_toml(input);
-    ASSERT_TRUE(dom.has_value());
+    ASSERT(dom.has_value());
 
     std::unique_ptr<person> output;
     auto status = from_toml(*dom, output);
-    ASSERT_TRUE(status.has_value());
-    ASSERT_TRUE(output != nullptr);
-    EXPECT_EQ(*output, *input);
+    ASSERT(status);
+    ASSERT(output != nullptr);
+    EXPECT(*output == *input);
 }
 
-TEST_CASE(optional_root_present_roundtrip) {
+ZEST_CASE(optional_root_present_roundtrip) {
     const std::optional<person> input = person{
         .id = 4,
         .name = "erin",
@@ -224,59 +224,59 @@ TEST_CASE(optional_root_present_roundtrip) {
     };
 
     auto dom = to_toml(input);
-    ASSERT_TRUE(dom.has_value());
-    EXPECT_FALSE(dom->contains("__value"));
+    ASSERT(dom.has_value());
+    EXPECT(!dom->contains("__value"));
 
     std::optional<person> output;
     auto status = from_toml(*dom, output);
-    ASSERT_TRUE(status.has_value());
-    ASSERT_TRUE(output.has_value());
-    EXPECT_EQ(*output, *input);
+    ASSERT(status);
+    ASSERT(output);
+    EXPECT(*output == *input);
 }
 
-TEST_CASE(pointer_to_scalar_root_boxes) {
+ZEST_CASE(pointer_to_scalar_root_boxes) {
     // A scalar pointee routes through the boxed root key, same as a bare
     // scalar root.
     const auto input = std::make_shared<int>(7);
     auto dom = to_toml(input);
-    ASSERT_TRUE(dom.has_value());
-    EXPECT_TRUE(dom->contains("__value"));
+    ASSERT(dom.has_value());
+    EXPECT(dom->contains("__value"));
 
     std::shared_ptr<int> output;
     auto status = from_toml(*dom, output);
-    ASSERT_TRUE(status.has_value());
-    ASSERT_TRUE(output != nullptr);
-    EXPECT_EQ(*output, 7);
+    ASSERT(status);
+    ASSERT(output != nullptr);
+    EXPECT(*output == 7);
 }
 
-TEST_CASE(str_like_reflectable_root_boxes) {
+ZEST_CASE(str_like_reflectable_root_boxes) {
     // str-like wins over reflection in the codec's kind test, so this
     // aggregate encodes as a string and the root boxes it — the decode-side
     // routing must classify by the same kind, not by reflection alone,
     // both for a bare root and through a pointer root.
     const str_like_aggregate input{.value = "abc"};
     auto dom = to_toml(input);
-    ASSERT_TRUE(dom.has_value());
-    EXPECT_TRUE(dom->contains("__value"));
+    ASSERT(dom.has_value());
+    EXPECT(dom->contains("__value"));
 
     str_like_aggregate output;
     auto status = from_toml(*dom, output);
-    ASSERT_TRUE(status.has_value());
-    EXPECT_EQ(output.value, "abc");
+    ASSERT(status);
+    EXPECT(output.value == "abc");
 
     const auto boxed = std::make_shared<str_like_aggregate>(input);
     auto ptr_dom = to_toml(boxed);
-    ASSERT_TRUE(ptr_dom.has_value());
-    EXPECT_TRUE(ptr_dom->contains("__value"));
+    ASSERT(ptr_dom.has_value());
+    EXPECT(ptr_dom->contains("__value"));
 
     std::shared_ptr<str_like_aggregate> ptr_output;
     auto ptr_status = from_toml(*ptr_dom, ptr_output);
-    ASSERT_TRUE(ptr_status.has_value());
-    ASSERT_TRUE(ptr_output != nullptr);
-    EXPECT_EQ(ptr_output->value, "abc");
+    ASSERT(ptr_status);
+    ASSERT(ptr_output != nullptr);
+    EXPECT(ptr_output->value == "abc");
 }
 
-TEST_CASE(nullable_root_engaged_empty_table_rejected) {
+ZEST_CASE(nullable_root_engaged_empty_table_rejected) {
     // TOML has no null: a null root is the empty document, so an engaged
     // pointer whose pointee serializes to an empty table has no
     // representation of its own — encoding fails loudly instead of
@@ -284,46 +284,47 @@ TEST_CASE(nullable_root_engaged_empty_table_rejected) {
     using map_t = std::map<std::string, int>;
 
     const auto empty_map = std::make_shared<map_t>();
-    EXPECT_FALSE(to_toml(empty_map).has_value());
+    EXPECT(!to_toml(empty_map).has_value());
 
     const auto filled = std::make_shared<map_t>(map_t{
         {"a", 1}
     });
     auto dom = to_toml(filled);
-    ASSERT_TRUE(dom.has_value());
+    ASSERT(dom.has_value());
 
     std::shared_ptr<map_t> output;
     auto status = from_toml(*dom, output);
-    ASSERT_TRUE(status.has_value());
-    ASSERT_TRUE(output != nullptr);
-    EXPECT_EQ(*output, *filled);
+    ASSERT(status);
+    ASSERT(output != nullptr);
+    EXPECT(*output == *filled);
 
     // The empty document stays reserved for the null pointer.
     output = std::make_shared<map_t>();
     status = from_toml(::toml::table{}, output);
-    ASSERT_TRUE(status.has_value());
-    EXPECT_TRUE(output == nullptr);
+    ASSERT(status);
+    EXPECT(output == nullptr);
 }
 
-TEST_CASE(table_root_symmetry) {
+ZEST_CASE(table_root_symmetry) {
     ::toml::table input;
     input.insert_or_assign("city", "shanghai");
     input.insert_or_assign("zip", 200000);
 
     // A raw table root becomes the document root itself, not a boxed value.
     auto dom = to_toml(input);
-    ASSERT_TRUE(dom.has_value());
-    EXPECT_FALSE(dom->contains("__value"));
-    EXPECT_EQ((*dom)["city"].value<std::string_view>().value_or(""), "shanghai");
-    EXPECT_EQ((*dom)["zip"].value<std::int64_t>().value_or(0), 200000);
+    ASSERT(dom.has_value());
+    EXPECT(!dom->contains("__value"));
+    EXPECT((*dom)["city"].value<std::string_view>().value_or("") == "shanghai");
+    EXPECT((*dom)["zip"].value<std::int64_t>().value_or(0) == 200000);
 
     ::toml::table output;
     auto status = from_toml(*dom, output);
-    ASSERT_TRUE(status.has_value());
-    EXPECT_TRUE(output == input);
+    ASSERT(status);
+    // toml::table reads as a map to meta; its own operator== compares it.
+    EXPECT((output == input));
 }
 
-TEST_CASE(tuple_length_errors) {
+ZEST_CASE(tuple_length_errors) {
     // Helper: wrap a toml::array in a boxed root table (__value = arr)
     auto boxed = [](::toml::array arr) {
         ::toml::table tbl;
@@ -335,76 +336,76 @@ TEST_CASE(tuple_length_errors) {
     {
         auto tbl = boxed(::toml::array{1, 2, 3});
         std::tuple<int, int> t{};
-        EXPECT_FALSE(from_toml(tbl, t).has_value());
+        EXPECT(!from_toml(tbl, t).has_value());
     }
 
     // Too few elements for tuple<int,int>
     {
         auto tbl = boxed(::toml::array{1});
         std::tuple<int, int> t{};
-        EXPECT_FALSE(from_toml(tbl, t).has_value());
+        EXPECT(!from_toml(tbl, t).has_value());
     }
 
     // Too many elements for pair<int,int>
     {
         auto tbl = boxed(::toml::array{1, 2, 3});
         std::pair<int, int> p{};
-        EXPECT_FALSE(from_toml(tbl, p).has_value());
+        EXPECT(!from_toml(tbl, p).has_value());
     }
 
     // Too few elements for pair
     {
         auto tbl = boxed(::toml::array{1});
         std::pair<int, int> p{};
-        EXPECT_FALSE(from_toml(tbl, p).has_value());
+        EXPECT(!from_toml(tbl, p).has_value());
     }
 
     // Empty array into non-empty tuple
     {
         auto tbl = boxed(::toml::array{});
         std::tuple<int> t{};
-        EXPECT_FALSE(from_toml(tbl, t).has_value());
+        EXPECT(!from_toml(tbl, t).has_value());
     }
 
     // Non-empty array into empty tuple
     {
         auto tbl = boxed(::toml::array{1});
         std::tuple<> t{};
-        EXPECT_FALSE(from_toml(tbl, t).has_value());
+        EXPECT(!from_toml(tbl, t).has_value());
     }
 
     // Too many elements for array<int,2>
     {
         auto tbl = boxed(::toml::array{1, 2, 3});
         std::array<int, 2> a{};
-        EXPECT_FALSE(from_toml(tbl, a).has_value());
+        EXPECT(!from_toml(tbl, a).has_value());
     }
 
     // Too few elements for array<int,2>
     {
         auto tbl = boxed(::toml::array{1});
         std::array<int, 2> a{};
-        EXPECT_FALSE(from_toml(tbl, a).has_value());
+        EXPECT(!from_toml(tbl, a).has_value());
     }
 
     // Exact match still works
     {
         auto tbl = boxed(::toml::array{1, 2});
         std::tuple<int, int> t{};
-        ASSERT_TRUE(from_toml(tbl, t).has_value());
-        EXPECT_EQ(std::get<0>(t), 1);
-        EXPECT_EQ(std::get<1>(t), 2);
+        ASSERT(from_toml(tbl, t).has_value());
+        EXPECT(std::get<0>(t) == 1);
+        EXPECT(std::get<1>(t) == 2);
     }
 
     // Type mismatch within tuple
     {
         auto tbl = boxed(::toml::array{1, "x"});
         std::tuple<int, int> t{};
-        EXPECT_FALSE(from_toml(tbl, t).has_value());
+        EXPECT(!from_toml(tbl, t).has_value());
     }
 }
 
-};  // TEST_SUITE(serde_toml)
+};  // ZEST_SUITE(serde_toml)
 
 }  // namespace
 
@@ -493,67 +494,67 @@ struct journal_entry {
     auto operator==(const journal_entry&) const -> bool = default;
 };
 
-TEST_SUITE(serde_toml_format_scoped) {
+ZEST_SUITE(serde_toml_format_scoped) {
 
-TEST_CASE(format_scoped_repr_selected_by_toml) {
+ZEST_CASE(format_scoped_repr_selected_by_toml) {
     const journal_entry input{.j = {.page = 41}};
 
     auto text = toml::to_string(input);
-    ASSERT_TRUE(text.has_value());
-    EXPECT_TRUE(text->find("j = 41") != std::string::npos);
+    ASSERT(text);
+    EXPECT(zest::contains(*text, "j = 41"));
 
     auto output = toml::from_string<journal_entry>(*text);
-    ASSERT_TRUE(output.has_value());
-    EXPECT_EQ(*output, input);
+    ASSERT(output);
+    EXPECT(*output == input);
 }
 
-TEST_CASE(map_keys_follow_toml_scoped_repr) {
+ZEST_CASE(map_keys_follow_toml_scoped_repr) {
     const std::map<journal, int> input{
         {journal{.page = 7},  1},
         {journal{.page = 19}, 2},
     };
 
     auto text = toml::to_string(input);
-    ASSERT_TRUE(text.has_value());
+    ASSERT(text);
     // Keys travel through the toml-scoped integer repr, not the generic
     // textual one.
-    EXPECT_TRUE(text->find("p7") == std::string::npos);
+    EXPECT(!zest::contains(*text, "p7"));
 
     auto output = toml::from_string<std::map<journal, int>>(*text);
-    ASSERT_TRUE(output.has_value());
-    EXPECT_EQ(*output, input);
+    ASSERT(output);
+    EXPECT(*output == input);
 }
 
-TEST_CASE(top_level_scalar_repr_boxed_under_root_key) {
+ZEST_CASE(top_level_scalar_repr_boxed_under_root_key) {
     // journal's toml repr is a scalar, so the root routing must box it under
     // the root key instead of dumping raw struct fields into the table.
     const journal input{.page = 12};
 
     auto text = toml::to_string(input);
-    ASSERT_TRUE(text.has_value());
-    EXPECT_TRUE(text->find("page") == std::string::npos);
+    ASSERT(text);
+    EXPECT(!zest::contains(*text, "page"));
 
     auto output = toml::from_string<journal>(*text);
-    ASSERT_TRUE(output.has_value());
-    EXPECT_EQ(*output, input);
+    ASSERT(output);
+    EXPECT(*output == input);
 }
 
-TEST_CASE(top_level_table_shaped_repr_becomes_root) {
+ZEST_CASE(top_level_table_shaped_repr_becomes_root) {
     // diary's toml repr resolves to a struct: the represented fields form the
     // root table directly.
     const diary input{.page = 3};
 
     auto text = toml::to_string(input);
-    ASSERT_TRUE(text.has_value());
-    EXPECT_TRUE(text->find("page = 3") != std::string::npos);
-    EXPECT_TRUE(text->find(std::string(toml::detail::boxed_root_key)) == std::string::npos);
+    ASSERT(text);
+    EXPECT(zest::contains(*text, "page = 3"));
+    EXPECT(!zest::contains(*text, std::string(toml::detail::boxed_root_key)));
 
     auto output = toml::from_string<diary>(*text);
-    ASSERT_TRUE(output.has_value());
-    EXPECT_EQ(*output, input);
+    ASSERT(output);
+    EXPECT(*output == input);
 }
 
-};  // TEST_SUITE(serde_toml_format_scoped)
+};  // ZEST_SUITE(serde_toml_format_scoped)
 
 }  // namespace
 

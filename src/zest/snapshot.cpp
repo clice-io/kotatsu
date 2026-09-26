@@ -324,14 +324,14 @@ bool check_snapshot(std::string_view value, std::string_view name, std::source_l
     }
 
     if(ctx.suite_name.empty()) {
-        std::println("[snapshot] error: no snapshot context (used outside TEST_CASE?)");
+        std::println("[snapshot] error: no snapshot context (used outside ZEST_CASE?)");
         std::println("           at {}:{}", loc.file_name(), loc.line());
         return true;
     }
 
     if(name.empty()) {
         if(ctx.unnamed_used) {
-            std::println("[snapshot] error: duplicate unnamed snapshot in same TEST_CASE");
+            std::println("[snapshot] error: duplicate unnamed snapshot in same ZEST_CASE");
             std::println(
                 "           use ASSERT_SNAPSHOT(value, \"name\") for additional snapshots");
             std::println("           at {}:{}", loc.file_name(), loc.line());
@@ -365,14 +365,14 @@ bool check_snapshot_expr(std::string_view value,
     }
 
     if(ctx.suite_name.empty()) {
-        std::println("[snapshot] error: no snapshot context (used outside TEST_CASE?)");
+        std::println("[snapshot] error: no snapshot context (used outside ZEST_CASE?)");
         std::println("           at {}:{}", loc.file_name(), loc.line());
         return true;
     }
 
     if(name.empty()) {
         if(ctx.unnamed_used) {
-            std::println("[snapshot] error: duplicate unnamed snapshot in same TEST_CASE");
+            std::println("[snapshot] error: duplicate unnamed snapshot in same ZEST_CASE");
             std::println(
                 "           use ASSERT_SNAPSHOT(value, \"name\") for additional snapshots");
             std::println("           at {}:{}", loc.file_name(), loc.line());
@@ -406,7 +406,7 @@ bool check_snapshot_glob(std::string_view base_dir_str,
     }
 
     if(ctx.suite_name.empty()) {
-        std::println("[snapshot] error: no snapshot context (used outside TEST_CASE?)");
+        std::println("[snapshot] error: no snapshot context (used outside ZEST_CASE?)");
         std::println("           at {}:{}", loc.file_name(), loc.line());
         return true;
     }

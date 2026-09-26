@@ -116,198 +116,198 @@ struct IntTagHolder {
     IntTagShape shape;
 };
 
-TEST_SUITE(serde_variant_untagged) {
+ZEST_SUITE(serde_variant_untagged) {
 
-TEST_CASE(bool_vs_int) {
+ZEST_CASE(bool_vs_int) {
     using V = std::variant<bool, int>;
 
     V v_bool = true;
-    ASSERT_EQ(to_string(v_bool), "true");
+    ASSERT(to_string(v_bool) == "true");
 
     V v_int = 42;
-    ASSERT_EQ(to_string(v_int), "42");
+    ASSERT(to_string(v_int) == "42");
 
     // bool JSON → bool alternative (not int)
     V out{};
-    ASSERT_TRUE(from_string("true", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<bool>(out), true);
+    ASSERT(from_string("true", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<bool>(out) == true);
 
-    ASSERT_TRUE(from_string("false", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<bool>(out), false);
+    ASSERT(from_string("false", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<bool>(out) == false);
 
     // integer JSON → int alternative (not bool)
-    ASSERT_TRUE(from_string("7", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<int>(out), 7);
+    ASSERT(from_string("7", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<int>(out) == 7);
 }
 
-TEST_CASE(int_before_double) {
+ZEST_CASE(int_before_double) {
     // When int comes before double, integer JSON should match int (first match wins)
     using V = std::variant<int, double>;
 
     V out{};
-    ASSERT_TRUE(from_string("42", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<int>(out), 42);
+    ASSERT(from_string("42", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<int>(out) == 42);
 
     // Floating-point JSON can only match double
-    ASSERT_TRUE(from_string("3.14", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<double>(out), 3.14);
+    ASSERT(from_string("3.14", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<double>(out) == 3.14);
 }
 
-TEST_CASE(double_before_int) {
+ZEST_CASE(double_before_int) {
     // Even when double comes first, integer JSON matches int (more precise kind match).
     // Floating-point JSON still matches double.
     using V = std::variant<double, int>;
 
     V out{};
-    ASSERT_TRUE(from_string("42", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<int>(out), 42);
+    ASSERT(from_string("42", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<int>(out) == 42);
 
-    ASSERT_TRUE(from_string("3.14", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<double>(out), 3.14);
+    ASSERT(from_string("3.14", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<double>(out) == 3.14);
 }
 
-TEST_CASE(double_from_integer_input) {
+ZEST_CASE(double_from_integer_input) {
     // No integer alternative exists: the widening pass lets the double
     // alternative claim integer input instead of failing outright.
     using V = std::variant<double, std::string>;
 
     V out{};
-    ASSERT_TRUE(from_string("5", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<double>(out), 5.0);
+    ASSERT(from_string("5", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<double>(out) == 5.0);
 
-    ASSERT_TRUE(from_string("3.14", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<double>(out), 3.14);
+    ASSERT(from_string("3.14", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<double>(out) == 3.14);
 
-    ASSERT_TRUE(from_string(R"("x")", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<std::string>(out), "x");
+    ASSERT(from_string(R"("x")", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<std::string>(out) == "x");
 }
 
-TEST_CASE(widening_when_float_family_is_last) {
+ZEST_CASE(widening_when_float_family_is_last) {
     // The widen pass claims the value through a fork even when the float
     // alternative is last (previously only the unconditional fallback did).
     using V = std::variant<std::string, double>;
     V out;
-    ASSERT_TRUE(from_string("5", out).has_value());
-    ASSERT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<double>(out), 5.0);
+    ASSERT(from_string("5", out).has_value());
+    ASSERT(out.index() == 1U);
+    EXPECT(std::get<double>(out) == 5.0);
 
-    ASSERT_TRUE(from_string(R"("x")", out).has_value());
-    ASSERT_EQ(out.index(), 0U);
+    ASSERT(from_string(R"("x")", out).has_value());
+    ASSERT(out.index() == 0U);
 }
 
-TEST_CASE(float32_alternative_from_integer_input) {
+ZEST_CASE(float32_alternative_from_integer_input) {
     using V = std::variant<float, std::string>;
     V out;
-    ASSERT_TRUE(from_string("5", out).has_value());
-    ASSERT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<float>(out), 5.0F);
+    ASSERT(from_string("5", out).has_value());
+    ASSERT(out.index() == 0U);
+    EXPECT(std::get<float>(out) == 5.0F);
 }
 
-TEST_CASE(optional_wrapper_before_int) {
+ZEST_CASE(optional_wrapper_before_int) {
     // A nullable wrapper is judged by its wrapped type: integer input lands
     // on the exact int alternative, not the earlier optional<double>. Null
     // still engages the wrapper itself.
     using V = std::variant<std::optional<double>, int>;
 
     V out{};
-    ASSERT_TRUE(from_string("42", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<int>(out), 42);
+    ASSERT(from_string("42", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<int>(out) == 42);
 
-    ASSERT_TRUE(from_string("3.14", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<std::optional<double>>(out), 3.14);
+    ASSERT(from_string("3.14", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<std::optional<double>>(out) == 3.14);
 
-    ASSERT_TRUE(from_string("null", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_FALSE(std::get<std::optional<double>>(out).has_value());
+    ASSERT(from_string("null", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(!std::get<std::optional<double>>(out).has_value());
 }
 
-TEST_CASE(nested_variant_before_int) {
+ZEST_CASE(nested_variant_before_int) {
     // A nested variant is as compatible as its alternatives: integer input
     // skips variant<double, string> in the exact pass and lands on int.
     using V = std::variant<std::variant<double, std::string>, int>;
 
     V out{};
-    ASSERT_TRUE(from_string("42", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<int>(out), 42);
+    ASSERT(from_string("42", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<int>(out) == 42);
 
-    ASSERT_TRUE(from_string("3.14", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<double>(std::get<0>(out)), 3.14);
+    ASSERT(from_string("3.14", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<double>(std::get<0>(out)) == 3.14);
 
-    ASSERT_TRUE(from_string(R"("x")", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<std::string>(std::get<0>(out)), "x");
+    ASSERT(from_string(R"("x")", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<std::string>(std::get<0>(out)) == "x");
 }
 
-TEST_CASE(nested_widening_defers_to_outer_exact_match) {
+ZEST_CASE(nested_widening_defers_to_outer_exact_match) {
     // The exact pass admits the nested variant through its int8_t branch;
     // when that narrowing fails, the nested double must not widen ahead of
     // the outer int64_t, which matches the input exactly.
     using V = std::variant<std::variant<std::int8_t, double>, std::int64_t>;
 
     V out{};
-    ASSERT_TRUE(from_string("1000", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<std::int64_t>(out), 1000);
+    ASSERT(from_string("1000", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<std::int64_t>(out) == 1000);
 
     // Values that fit int8_t still land on the nested exact branch.
-    ASSERT_TRUE(from_string("7", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<std::int8_t>(std::get<0>(out)), 7);
+    ASSERT(from_string("7", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<std::int8_t>(std::get<0>(out)) == 7);
 }
 
-TEST_CASE(wrapped_nested_widening_defers_to_outer_exact_match) {
+ZEST_CASE(wrapped_nested_widening_defers_to_outer_exact_match) {
     // The outer pass level flows through nullable wrappers: the double nested
     // under optional must not widen ahead of the outer int64_t, while null
     // still engages the wrapper itself.
     using V = std::variant<std::optional<std::variant<std::int8_t, double>>, std::int64_t>;
 
     V out{};
-    ASSERT_TRUE(from_string("1000", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<std::int64_t>(out), 1000);
+    ASSERT(from_string("1000", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<std::int64_t>(out) == 1000);
 
-    ASSERT_TRUE(from_string("7", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<std::int8_t>(*std::get<0>(out)), 7);
+    ASSERT(from_string("7", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<std::int8_t>(*std::get<0>(out)) == 7);
 
-    ASSERT_TRUE(from_string("null", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_FALSE(std::get<0>(out).has_value());
+    ASSERT(from_string("null", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(!std::get<0>(out).has_value());
 }
 
-TEST_CASE(pointer_wrapped_nested_widening_defers_to_outer_exact_match) {
+ZEST_CASE(pointer_wrapped_nested_widening_defers_to_outer_exact_match) {
     // Same pass propagation through a smart-pointer wrapper, and the widen
     // pass still reaches the wrapped double when no exact match remains.
     using nested_t = std::variant<std::int8_t, double>;
     using V = std::variant<std::unique_ptr<nested_t>, std::int64_t>;
 
     V out{};
-    ASSERT_TRUE(from_string("1000", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<std::int64_t>(out), 1000);
+    ASSERT(from_string("1000", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<std::int64_t>(out) == 1000);
 
     using W = std::variant<std::unique_ptr<nested_t>, std::string>;
     W wide{};
-    ASSERT_TRUE(from_string("1000", wide).has_value());
-    EXPECT_EQ(wide.index(), 0U);
-    EXPECT_EQ(std::get<double>(*std::get<0>(wide)), 1000.0);
+    ASSERT(from_string("1000", wide).has_value());
+    EXPECT(wide.index() == 0U);
+    EXPECT(std::get<double>(*std::get<0>(wide)) == 1000.0);
 }
 
-TEST_CASE(repr_nested_widening_defers_to_outer_exact_match) {
+ZEST_CASE(repr_nested_widening_defers_to_outer_exact_match) {
     // An alternative whose meta::repr declares an untagged variant re-enters
     // the outer pass level like a bare nested variant: its double must not
     // widen ahead of the outer int64_t, which matches the input exactly.
@@ -315,72 +315,72 @@ TEST_CASE(repr_nested_widening_defers_to_outer_exact_match) {
     using V = std::variant<Box, std::int64_t>;
 
     V out{};
-    ASSERT_TRUE(from_string("1000", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<std::int64_t>(out), 1000);
+    ASSERT(from_string("1000", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<std::int64_t>(out) == 1000);
 
     // Values that fit int8_t still land on the repr's exact branch.
-    ASSERT_TRUE(from_string("7", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<std::int8_t>(std::get<Box>(out).v), 7);
+    ASSERT(from_string("7", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<std::int8_t>(std::get<Box>(out).v) == 7);
 
     // With no outer exact alternative left, the widen pass still reaches the
     // repr's double.
     using W = std::variant<Box, std::string>;
     W wide{};
-    ASSERT_TRUE(from_string("1000", wide).has_value());
-    EXPECT_EQ(wide.index(), 0U);
-    EXPECT_EQ(std::get<double>(std::get<Box>(wide).v), 1000.0);
+    ASSERT(from_string("1000", wide).has_value());
+    EXPECT(wide.index() == 0U);
+    EXPECT(std::get<double>(std::get<Box>(wide).v) == 1000.0);
 }
 
-TEST_CASE(wrapped_repr_nested_widening_defers_to_outer_exact_match) {
+ZEST_CASE(wrapped_repr_nested_widening_defers_to_outer_exact_match) {
     // The pass level flows through nullable wrappers into the repr chain,
     // while null still engages the wrapper itself.
     using Box = kota_variant_repr_test::boxed_scalar;
     using V = std::variant<std::optional<Box>, std::int64_t>;
 
     V out{};
-    ASSERT_TRUE(from_string("1000", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<std::int64_t>(out), 1000);
+    ASSERT(from_string("1000", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<std::int64_t>(out) == 1000);
 
-    ASSERT_TRUE(from_string("7", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<std::int8_t>(std::get<0>(out)->v), 7);
+    ASSERT(from_string("7", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<std::int8_t>(std::get<0>(out)->v) == 7);
 
-    ASSERT_TRUE(from_string("null", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_FALSE(std::get<0>(out).has_value());
+    ASSERT(from_string("null", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(!std::get<0>(out).has_value());
 }
 
-TEST_CASE(nested_widening_still_reachable_in_widen_pass) {
+ZEST_CASE(nested_widening_still_reachable_in_widen_pass) {
     // With no outer exact alternative left, the widen pass re-probes the
     // nested variant and its double claims the value the int8_t rejected.
     using V = std::variant<std::variant<std::int8_t, double>, std::string>;
 
     V out{};
-    ASSERT_TRUE(from_string("1000", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<double>(std::get<0>(out)), 1000.0);
+    ASSERT(from_string("1000", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<double>(std::get<0>(out)) == 1000.0);
 }
 
-TEST_CASE(tagged_nested_variant_keeps_object_shape) {
+ZEST_CASE(tagged_nested_variant_keeps_object_shape) {
     // A tagged nested variant is classified by its object document shape,
     // not by its scalar alternatives: {"num":1} engages ExtSimple's tagged
     // decoder, while a bare scalar skips it and lands on int.
     using V = std::variant<ExtSimple, int>;
 
     V out{};
-    ASSERT_TRUE(from_string(R"({"num":1})", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<int>(std::get<ExtSimple>(out)), 1);
+    ASSERT(from_string(R"({"num":1})", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<int>(std::get<ExtSimple>(out)) == 1);
 
-    ASSERT_TRUE(from_string("7", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<int>(out), 7);
+    ASSERT(from_string("7", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<int>(out) == 7);
 }
 
-TEST_CASE(non_human_readable_config_ignores_tagging_in_probe) {
+ZEST_CASE(non_human_readable_config_ignores_tagging_in_probe) {
     // A non-human-readable config skips the tagged decoders and reads the
     // underlying variant directly, so the kind probe must classify ExtSimple
     // by its alternatives' kinds rather than as an object.
@@ -388,134 +388,134 @@ TEST_CASE(non_human_readable_config_ignores_tagging_in_probe) {
 
     V v = ExtSimple{1};
     auto encoded = to_string<non_hr_config>(v);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, "1");
+    ASSERT(encoded);
+    EXPECT(*encoded == "1");
 
     V out{};
-    ASSERT_TRUE(from_string<non_hr_config>("1", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<int>(std::get<ExtSimple>(out)), 1);
+    ASSERT(from_string<non_hr_config>("1", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<int>(std::get<ExtSimple>(out)) == 1);
 
-    ASSERT_TRUE(from_string<non_hr_config>("true", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<bool>(out), true);
+    ASSERT(from_string<non_hr_config>("true", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<bool>(out) == true);
 }
 
-TEST_CASE(custom_decoder_alternative_probed_for_any_kind) {
+ZEST_CASE(custom_decoder_alternative_probed_for_any_kind) {
     // RawValue decodes through a deserialize_visit override that accepts any
     // JSON value, so the kind probe must not judge it by its declared struct
     // shape — even when it is neither first nor last.
     using V = std::variant<int, RawValue, bool>;
 
     V out{};
-    ASSERT_TRUE(from_string(R"("text")", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<RawValue>(out).data, R"("text")");
+    ASSERT(from_string(R"("text")", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<RawValue>(out).data == R"("text")");
 
-    ASSERT_TRUE(from_string("7", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<int>(out), 7);
+    ASSERT(from_string("7", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<int>(out) == 7);
 }
 
-TEST_CASE(custom_decoder_wrapped_in_optional_probed_for_any_kind) {
+ZEST_CASE(custom_decoder_wrapped_in_optional_probed_for_any_kind) {
     // The wrapper recursion must surface the wrapped type's dispatch
     // override, not its declared shape: a string still reaches
     // optional<RawValue> instead of falling through to int and failing.
     using V = std::variant<std::optional<RawValue>, int>;
 
     V out{};
-    ASSERT_TRUE(from_string(R"("text")", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
+    ASSERT(from_string(R"("text")", out).has_value());
+    EXPECT(out.index() == 0U);
     auto& opt = std::get<std::optional<RawValue>>(out);
-    ASSERT_TRUE(opt.has_value());
-    EXPECT_EQ(opt->data, R"("text")");
+    ASSERT(opt);
+    EXPECT(opt->data == R"("text")");
 
-    ASSERT_TRUE(from_string("null", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_FALSE(std::get<std::optional<RawValue>>(out).has_value());
+    ASSERT(from_string("null", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(!std::get<std::optional<RawValue>>(out).has_value());
 }
 
-TEST_CASE(adjacently_tagged_nested_variant_keeps_object_shape) {
+ZEST_CASE(adjacently_tagged_nested_variant_keeps_object_shape) {
     using V = std::variant<AdjSimple, std::string>;
 
     V out{};
-    ASSERT_TRUE(from_string(R"({"t":"str","v":"inner"})", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<std::string>(std::get<AdjSimple>(out)), "inner");
+    ASSERT(from_string(R"({"t":"str","v":"inner"})", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<std::string>(std::get<AdjSimple>(out)) == "inner");
 
-    ASSERT_TRUE(from_string(R"("plain")", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<std::string>(out), "plain");
+    ASSERT(from_string(R"("plain")", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<std::string>(out) == "plain");
 }
 
-TEST_CASE(monostate_matches_null) {
+ZEST_CASE(monostate_matches_null) {
     using V = std::variant<std::monostate, int, std::string>;
 
     V out = 42;  // start non-null
-    ASSERT_TRUE(from_string("null", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_TRUE(std::holds_alternative<std::monostate>(out));
+    ASSERT(from_string("null", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::holds_alternative<std::monostate>(out));
 }
 
-TEST_CASE(string_vs_int) {
+ZEST_CASE(string_vs_int) {
     using V = std::variant<std::string, int>;
 
     V out{};
-    ASSERT_TRUE(from_string(R"("hello")", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<std::string>(out), "hello");
+    ASSERT(from_string(R"("hello")", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<std::string>(out) == "hello");
 
-    ASSERT_TRUE(from_string("99", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<int>(out), 99);
+    ASSERT(from_string("99", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<int>(out) == 99);
 }
 
-TEST_CASE(array_vs_object) {
+ZEST_CASE(array_vs_object) {
     using V = std::variant<std::vector<int>, std::map<std::string, int>>;
 
     V out{};
-    ASSERT_TRUE(from_string("[1,2,3]", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<std::vector<int>>(out), std::vector<int>({1, 2, 3}));
+    ASSERT(from_string("[1,2,3]", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<std::vector<int>>(out) == std::vector<int>({1, 2, 3}));
 
-    ASSERT_TRUE(from_string(R"({"a":1,"b":2})", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
+    ASSERT(from_string(R"({"a":1,"b":2})", out).has_value());
+    EXPECT(out.index() == 1U);
     auto& m = std::get<std::map<std::string, int>>(out);
-    EXPECT_EQ(m.size(), 2U);
-    EXPECT_EQ(m["a"], 1);
-    EXPECT_EQ(m["b"], 2);
+    EXPECT(m.size() == 2U);
+    EXPECT(m["a"] == 1);
+    EXPECT(m["b"] == 2);
 }
 
-TEST_CASE(scalar_vs_array_vs_object) {
+ZEST_CASE(scalar_vs_array_vs_object) {
     using V = std::variant<int, std::vector<int>, Point>;
 
     V out{};
-    ASSERT_TRUE(from_string("5", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
+    ASSERT(from_string("5", out).has_value());
+    EXPECT(out.index() == 0U);
 
-    ASSERT_TRUE(from_string("[1,2]", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<std::vector<int>>(out), std::vector<int>({1, 2}));
+    ASSERT(from_string("[1,2]", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<std::vector<int>>(out) == std::vector<int>({1, 2}));
 
-    ASSERT_TRUE(from_string(R"({"x":1.0,"y":2.0})", out).has_value());
-    EXPECT_EQ(out.index(), 2U);
-    EXPECT_EQ(std::get<Point>(out), (Point{1.0, 2.0}));
+    ASSERT(from_string(R"({"x":1.0,"y":2.0})", out).has_value());
+    EXPECT(out.index() == 2U);
+    EXPECT(std::get<Point>(out) == (Point{1.0, 2.0}));
 }
 
-TEST_CASE(single_alternative) {
+ZEST_CASE(single_alternative) {
     using V = std::variant<int>;
 
     V v = 42;
     auto encoded = to_string(v);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, "42");
+    ASSERT(encoded);
+    EXPECT(*encoded == "42");
 
     V out{};
-    ASSERT_TRUE(from_string("99", out).has_value());
-    EXPECT_EQ(std::get<int>(out), 99);
+    ASSERT(from_string("99", out).has_value());
+    EXPECT(std::get<int>(out) == 99);
 }
 
-TEST_CASE(struct_deep_scoring) {
+ZEST_CASE(struct_deep_scoring) {
     // Two struct types with the same field name but different field types.
     // Deep scoring matches the correct alternative by recursively comparing field types.
     using V = std::variant<IntHolder, StringHolder>;
@@ -523,35 +523,35 @@ TEST_CASE(struct_deep_scoring) {
     V out{};
     // Deep scoring: "hello" is string → StringHolder.value (string) scores higher than
     // IntHolder.value (int)
-    ASSERT_TRUE(from_string(R"({"value":"hello"})", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<StringHolder>(out).value, "hello");
+    ASSERT(from_string(R"({"value":"hello"})", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<StringHolder>(out).value == "hello");
 
     // Deep scoring: 42 is int → IntHolder.value (int) scores higher than
     // StringHolder.value (string)
-    ASSERT_TRUE(from_string(R"({"value":42})", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<IntHolder>(out).value, 42);
+    ASSERT(from_string(R"({"value":42})", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<IntHolder>(out).value == 42);
 }
 
-TEST_CASE(no_matching_type_fails) {
+ZEST_CASE(no_matching_type_fails) {
     using V = std::variant<int, std::string>;
 
     V out{};
     // JSON array doesn't match int or string
-    EXPECT_FALSE(from_string("[1]", out).has_value());
+    EXPECT(!from_string("[1]", out).has_value());
 
     // JSON object doesn't match int or string
-    EXPECT_FALSE(from_string(R"({"a":1})", out).has_value());
+    EXPECT(!from_string(R"({"a":1})", out).has_value());
 
     // JSON bool doesn't match int or string
-    EXPECT_FALSE(from_string("true", out).has_value());
+    EXPECT(!from_string("true", out).has_value());
 
     // JSON null doesn't match int or string
-    EXPECT_FALSE(from_string("null", out).has_value());
+    EXPECT(!from_string("null", out).has_value());
 }
 
-TEST_CASE(variant_roundtrip_all_scalars) {
+ZEST_CASE(variant_roundtrip_all_scalars) {
     using V = std::variant<std::monostate, bool, int, double, std::string>;
 
     auto check = [](V input) -> bool {
@@ -565,416 +565,415 @@ TEST_CASE(variant_roundtrip_all_scalars) {
         return out == input;
     };
 
-    EXPECT_TRUE(check(std::monostate{}));
-    EXPECT_TRUE(check(true));
-    EXPECT_TRUE(check(42));
-    EXPECT_TRUE(check(3.14));
-    EXPECT_TRUE(check(std::string("test")));
+    EXPECT(check(std::monostate{}));
+    EXPECT(check(true));
+    EXPECT(check(42));
+    EXPECT(check(3.14));
+    EXPECT(check(std::string("test")));
 }
 
-TEST_CASE(nested_variant) {
+ZEST_CASE(nested_variant) {
     using Inner = std::variant<int, std::string>;
     using Outer = std::variant<Inner, double>;
 
     Outer out{};
     // integer → Inner accepts int, double accepts int; Inner is variant so recurse
     // Inner's int alternative matches exactly → selects Inner
-    ASSERT_TRUE(from_string("42", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
+    ASSERT(from_string("42", out).has_value());
+    EXPECT(out.index() == 0U);
     auto& inner = std::get<Inner>(out);
-    EXPECT_EQ(inner.index(), 0U);
-    EXPECT_EQ(std::get<int>(inner), 42);
+    EXPECT(inner.index() == 0U);
+    EXPECT(std::get<int>(inner) == 42);
 
     // string → only Inner accepts string
-    ASSERT_TRUE(from_string(R"("hello")", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
+    ASSERT(from_string(R"("hello")", out).has_value());
+    EXPECT(out.index() == 0U);
     auto& inner2 = std::get<Inner>(out);
-    EXPECT_EQ(inner2.index(), 1U);
-    EXPECT_EQ(std::get<std::string>(inner2), "hello");
+    EXPECT(inner2.index() == 1U);
+    EXPECT(std::get<std::string>(inner2) == "hello");
 
     // floating → double accepts float, Inner's int doesn't, Inner's string doesn't
-    ASSERT_TRUE(from_string("3.14", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<double>(out), 3.14);
+    ASSERT(from_string("3.14", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<double>(out) == 3.14);
 }
 
-TEST_CASE(nested_variant_no_match_falls_through) {
+ZEST_CASE(nested_variant_no_match_falls_through) {
     using Inner = std::variant<int, std::string>;
     using Outer = std::variant<Inner, bool>;
 
     Outer out{};
     // bool → Inner doesn't accept bool (int doesn't, string doesn't), bool does
-    ASSERT_TRUE(from_string("true", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<bool>(out), true);
+    ASSERT(from_string("true", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<bool>(out) == true);
 
     // object → neither Inner nor bool accepts object
-    EXPECT_FALSE(from_string(R"({"x":1})", out).has_value());
+    EXPECT(!from_string(R"({"x":1})", out).has_value());
 }
 
-TEST_CASE(int64_vs_uint64) {
+ZEST_CASE(int64_vs_uint64) {
     using V = std::variant<std::int64_t, std::uint64_t>;
 
     V out{};
     // positive integer within int64 range → both accept, but numeric tiebreaker
     // should prefer the exact source kind
-    ASSERT_TRUE(from_string("42", out).has_value());
+    ASSERT(from_string("42", out).has_value());
     // simdjson parses 42 as signed_integer → int64
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<std::int64_t>(out), 42);
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<std::int64_t>(out) == 42);
 
     // large unsigned → simdjson parses as unsigned_integer → uint64
-    ASSERT_TRUE(from_string("18446744073709551615", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<std::uint64_t>(out), UINT64_MAX);
+    ASSERT(from_string("18446744073709551615", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<std::uint64_t>(out) == UINT64_MAX);
 }
 
-TEST_CASE(uint64_before_int64) {
+ZEST_CASE(uint64_before_int64) {
     using V = std::variant<std::uint64_t, std::int64_t>;
 
     V out{};
     // large unsigned → uint64
-    ASSERT_TRUE(from_string("18446744073709551615", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<std::uint64_t>(out), UINT64_MAX);
+    ASSERT(from_string("18446744073709551615", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<std::uint64_t>(out) == UINT64_MAX);
 
     // negative → only int64 accepts
-    ASSERT_TRUE(from_string("-1", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<std::int64_t>(out), -1);
+    ASSERT(from_string("-1", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<std::int64_t>(out) == -1);
 }
 
-TEST_CASE(optional_variant) {
+ZEST_CASE(optional_variant) {
     using V = std::variant<int, std::string>;
     using OV = std::optional<V>;
 
     OV out{};
-    ASSERT_TRUE(from_string("null", out).has_value());
-    EXPECT_FALSE(out.has_value());
+    ASSERT(from_string("null", out).has_value());
+    EXPECT(!out);
 
-    ASSERT_TRUE(from_string("42", out).has_value());
-    ASSERT_TRUE(out.has_value());
-    EXPECT_EQ(out->index(), 0U);
-    EXPECT_EQ(std::get<int>(*out), 42);
+    ASSERT(from_string("42", out).has_value());
+    ASSERT(out);
+    EXPECT(out->index() == 0U);
+    EXPECT(std::get<int>(*out) == 42);
 
-    ASSERT_TRUE(from_string(R"("test")", out).has_value());
-    ASSERT_TRUE(out.has_value());
-    EXPECT_EQ(out->index(), 1U);
-    EXPECT_EQ(std::get<std::string>(*out), "test");
+    ASSERT(from_string(R"("test")", out).has_value());
+    ASSERT(out);
+    EXPECT(out->index() == 1U);
+    EXPECT(std::get<std::string>(*out) == "test");
 }
 
-};  // TEST_SUITE(serde_variant_untagged)
+};  // ZEST_SUITE(serde_variant_untagged)
 
-TEST_SUITE(serde_variant_ext) {
+ZEST_SUITE(serde_variant_ext) {
 
-TEST_CASE(roundtrip_all_alternatives) {
+ZEST_CASE(roundtrip_all_alternatives) {
     {
         ExtWithStruct v = 42;
         auto encoded = to_string(v);
-        ASSERT_TRUE(encoded.has_value());
-        EXPECT_EQ(*encoded, R"({"int":42})");
+        ASSERT(encoded);
+        EXPECT(*encoded == R"({"int":42})");
 
         ExtWithStruct out{};
-        ASSERT_TRUE(from_string(*encoded, out).has_value());
-        EXPECT_EQ(std::get<int>(out), 42);
+        ASSERT(from_string(*encoded, out).has_value());
+        EXPECT(std::get<int>(out) == 42);
     }
     {
         ExtWithStruct v = Point{.x = 1.5, .y = 2.5};
         auto encoded = to_string(v);
-        ASSERT_TRUE(encoded.has_value());
-        EXPECT_EQ(*encoded, R"({"point":{"x":1.5,"y":2.5}})");
+        ASSERT(encoded);
+        EXPECT(*encoded == R"({"point":{"x":1.5,"y":2.5}})");
 
         ExtWithStruct out{};
-        ASSERT_TRUE(from_string(*encoded, out).has_value());
-        EXPECT_EQ(std::get<Point>(out), (Point{1.5, 2.5}));
+        ASSERT(from_string(*encoded, out).has_value());
+        EXPECT(std::get<Point>(out) == (Point{1.5, 2.5}));
     }
     {
         ExtWithStruct v = Color{.r = 255, .g = 128, .b = 0};
         auto encoded = to_string(v);
-        ASSERT_TRUE(encoded.has_value());
-        EXPECT_EQ(*encoded, R"({"color":{"r":255,"g":128,"b":0}})");
+        ASSERT(encoded);
+        EXPECT(*encoded == R"({"color":{"r":255,"g":128,"b":0}})");
 
         ExtWithStruct out{};
-        ASSERT_TRUE(from_string(*encoded, out).has_value());
-        EXPECT_EQ(std::get<Color>(out), (Color{255, 128, 0}));
+        ASSERT(from_string(*encoded, out).has_value());
+        EXPECT(std::get<Color>(out) == (Color{255, 128, 0}));
     }
 }
 
-TEST_CASE(monostate_roundtrip) {
+ZEST_CASE(monostate_roundtrip) {
     ExtWithMono v_none = std::monostate{};
     auto enc = to_string(v_none);
-    ASSERT_TRUE(enc.has_value());
-    EXPECT_EQ(*enc, R"({"none":null})");
+    ASSERT(enc);
+    EXPECT(*enc == R"({"none":null})");
 
     ExtWithMono out = 42;
-    ASSERT_TRUE(from_string(*enc, out).has_value());
-    EXPECT_TRUE(std::holds_alternative<std::monostate>(out));
+    ASSERT(from_string(*enc, out).has_value());
+    EXPECT(std::holds_alternative<std::monostate>(out));
 
     ExtWithMono v_int = 7;
     enc = to_string(v_int);
-    ASSERT_TRUE(enc.has_value());
-    EXPECT_EQ(*enc, R"({"num":7})");
+    ASSERT(enc);
+    EXPECT(*enc == R"({"num":7})");
 
-    ASSERT_TRUE(from_string(*enc, out).has_value());
-    EXPECT_EQ(std::get<int>(out), 7);
+    ASSERT(from_string(*enc, out).has_value());
+    EXPECT(std::get<int>(out) == 7);
 }
 
-TEST_CASE(unknown_tag_fails) {
+ZEST_CASE(unknown_tag_fails) {
     ExtSimple out{};
-    EXPECT_FALSE(from_string(R"({"bad":42})", out).has_value());
+    EXPECT(!from_string(R"({"bad":42})", out).has_value());
 }
 
-TEST_CASE(empty_object_fails) {
+ZEST_CASE(empty_object_fails) {
     ExtSimple out{};
-    EXPECT_FALSE(from_string(R"({})", out).has_value());
+    EXPECT(!from_string(R"({})", out).has_value());
 }
 
-TEST_CASE(not_an_object_fails) {
+ZEST_CASE(not_an_object_fails) {
     ExtSimple out{};
-    EXPECT_FALSE(from_string("42", out).has_value());
-    EXPECT_FALSE(from_string(R"("str")", out).has_value());
-    EXPECT_FALSE(from_string("[1]", out).has_value());
-    EXPECT_FALSE(from_string("null", out).has_value());
+    EXPECT(!from_string("42", out).has_value());
+    EXPECT(!from_string(R"("str")", out).has_value());
+    EXPECT(!from_string("[1]", out).has_value());
+    EXPECT(!from_string("null", out).has_value());
 }
 
-TEST_CASE(in_holder_struct) {
+ZEST_CASE(in_holder_struct) {
     ExtHolder input{
         .label = "origin",
         .item = Point{.x = 0.0, .y = 0.0}
     };
     auto encoded = to_string(input);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"({"label":"origin","item":{"point":{"x":0.0,"y":0.0}}})");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"label":"origin","item":{"point":{"x":0.0,"y":0.0}}})");
 
     ExtHolder out{};
-    ASSERT_TRUE(from_string(*encoded, out).has_value());
-    EXPECT_EQ(out, input);
+    ASSERT(from_string(*encoded, out).has_value());
+    EXPECT(out == input);
 }
 
-TEST_CASE(in_vector) {
+ZEST_CASE(in_vector) {
     std::vector<ExtSimple> vec = {ExtSimple{42}, ExtSimple{std::string("hi")}};
     auto encoded = to_string(vec);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"([{"num":42},{"str":"hi"}])");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"([{"num":42},{"str":"hi"}])");
 
     std::vector<ExtSimple> out;
-    ASSERT_TRUE(from_string(*encoded, out).has_value());
-    ASSERT_EQ(out.size(), 2U);
-    EXPECT_EQ(std::get<int>(out[0]), 42);
-    EXPECT_EQ(std::get<std::string>(out[1]), "hi");
+    ASSERT(from_string(*encoded, out).has_value());
+    ASSERT(out.size() == 2U);
+    EXPECT(std::get<int>(out[0]) == 42);
+    EXPECT(std::get<std::string>(out[1]) == "hi");
 }
 
-TEST_CASE(in_optional) {
+ZEST_CASE(in_optional) {
     std::optional<ExtSimple> present = ExtSimple{std::string("val")};
     auto encoded = to_string(present);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"({"str":"val"})");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"str":"val"})");
 
     std::optional<ExtSimple> out;
-    ASSERT_TRUE(from_string(*encoded, out).has_value());
-    ASSERT_TRUE(out.has_value());
-    EXPECT_EQ(std::get<std::string>(*out), "val");
+    ASSERT(from_string(*encoded, out).has_value());
+    ASSERT(out);
+    EXPECT(std::get<std::string>(*out) == "val");
 
     std::optional<ExtSimple> absent;
     encoded = to_string(absent);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, "null");
+    ASSERT(encoded);
+    EXPECT(*encoded == "null");
 
-    ASSERT_TRUE(from_string("null", out).has_value());
-    EXPECT_FALSE(out.has_value());
+    ASSERT(from_string("null", out).has_value());
+    EXPECT(!out);
 }
 
-TEST_CASE(empty_string_value) {
+ZEST_CASE(empty_string_value) {
     ExtSimple v = std::string("");
     auto encoded = to_string(v);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"({"str":""})");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"str":""})");
 
     ExtSimple out{};
-    ASSERT_TRUE(from_string(*encoded, out).has_value());
-    EXPECT_EQ(std::get<std::string>(out), "");
+    ASSERT(from_string(*encoded, out).has_value());
+    EXPECT(std::get<std::string>(out) == "");
 }
 
-};  // TEST_SUITE(serde_variant_ext)
+};  // ZEST_SUITE(serde_variant_ext)
 
-TEST_SUITE(serde_variant_adj) {
+ZEST_SUITE(serde_variant_adj) {
 
-TEST_CASE(roundtrip_int) {
+ZEST_CASE(roundtrip_int) {
     AdjSimple v = 99;
     auto encoded = to_string(v);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"({"t":"num","v":99})");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"t":"num","v":99})");
 
     AdjSimple out{};
-    ASSERT_TRUE(from_string(*encoded, out).has_value());
-    EXPECT_EQ(std::get<int>(out), 99);
+    ASSERT(from_string(*encoded, out).has_value());
+    EXPECT(std::get<int>(out) == 99);
 }
 
-TEST_CASE(roundtrip_string) {
+ZEST_CASE(roundtrip_string) {
     AdjSimple v = std::string("abc");
     auto encoded = to_string(v);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"({"t":"str","v":"abc"})");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"t":"str","v":"abc"})");
 
     AdjSimple out{};
-    ASSERT_TRUE(from_string(*encoded, out).has_value());
-    EXPECT_EQ(std::get<std::string>(out), "abc");
+    ASSERT(from_string(*encoded, out).has_value());
+    EXPECT(std::get<std::string>(out) == "abc");
 }
 
-TEST_CASE(monostate) {
+ZEST_CASE(monostate) {
     AdjWithMono v = std::monostate{};
     auto encoded = to_string(v);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"({"tag":"nil","data":null})");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"tag":"nil","data":null})");
 
     AdjWithMono out = 42;
-    ASSERT_TRUE(from_string(*encoded, out).has_value());
-    EXPECT_TRUE(std::holds_alternative<std::monostate>(out));
+    ASSERT(from_string(*encoded, out).has_value());
+    EXPECT(std::holds_alternative<std::monostate>(out));
 }
 
-TEST_CASE(content_before_tag) {
+ZEST_CASE(content_before_tag) {
     // Value field appears before tag field — requires buffering
     AdjSimple out{};
-    ASSERT_TRUE(from_string(R"({"v":42,"t":"num"})", out).has_value());
-    EXPECT_EQ(std::get<int>(out), 42);
+    ASSERT(from_string(R"({"v":42,"t":"num"})", out).has_value());
+    EXPECT(std::get<int>(out) == 42);
 
-    ASSERT_TRUE(from_string(R"({"v":"hello","t":"str"})", out).has_value());
-    EXPECT_EQ(std::get<std::string>(out), "hello");
+    ASSERT(from_string(R"({"v":"hello","t":"str"})", out).has_value());
+    EXPECT(std::get<std::string>(out) == "hello");
 }
 
-TEST_CASE(content_before_tag_struct) {
+ZEST_CASE(content_before_tag_struct) {
     // Struct content buffered before tag is known
     AdjWithStruct out{};
-    ASSERT_TRUE(from_string(R"({"value":{"x":1.0,"y":2.0},"type":"point"})", out).has_value());
-    EXPECT_EQ(std::get<Point>(out), (Point{1.0, 2.0}));
+    ASSERT(from_string(R"({"value":{"x":1.0,"y":2.0},"type":"point"})", out).has_value());
+    EXPECT(std::get<Point>(out) == (Point{1.0, 2.0}));
 }
 
-TEST_CASE(extra_unknown_fields_ignored) {
+ZEST_CASE(extra_unknown_fields_ignored) {
     // Unknown fields alongside tag and content should be skipped
     AdjSimple out{};
-    ASSERT_TRUE(from_string(R"({"t":"num","extra":true,"v":5,"other":"x"})", out).has_value());
-    EXPECT_EQ(std::get<int>(out), 5);
+    ASSERT(from_string(R"({"t":"num","extra":true,"v":5,"other":"x"})", out).has_value());
+    EXPECT(std::get<int>(out) == 5);
 }
 
-TEST_CASE(missing_tag_fails) {
+ZEST_CASE(missing_tag_fails) {
     AdjSimple out{};
     // Only content, no tag
-    EXPECT_FALSE(from_string(R"({"v":42})", out).has_value());
+    EXPECT(!from_string(R"({"v":42})", out).has_value());
 }
 
-TEST_CASE(missing_content_fails) {
+ZEST_CASE(missing_content_fails) {
     AdjSimple out{};
     // Only tag, no content
-    EXPECT_FALSE(from_string(R"({"t":"num"})", out).has_value());
+    EXPECT(!from_string(R"({"t":"num"})", out).has_value());
 }
 
-TEST_CASE(unknown_tag_value_fails) {
+ZEST_CASE(unknown_tag_value_fails) {
     AdjSimple out{};
-    EXPECT_FALSE(from_string(R"({"t":"unknown","v":42})", out).has_value());
+    EXPECT(!from_string(R"({"t":"unknown","v":42})", out).has_value());
 }
 
-TEST_CASE(duplicate_tag_fails) {
+ZEST_CASE(duplicate_tag_fails) {
     AdjSimple out{};
-    EXPECT_FALSE(from_string(R"({"t":"num","t":"str","v":42})", out).has_value());
+    EXPECT(!from_string(R"({"t":"num","t":"str","v":42})", out).has_value());
 }
 
-TEST_CASE(duplicate_content_fails) {
+ZEST_CASE(duplicate_content_fails) {
     AdjSimple out{};
-    EXPECT_FALSE(from_string(R"({"t":"num","v":1,"v":2})", out).has_value());
+    EXPECT(!from_string(R"({"t":"num","v":1,"v":2})", out).has_value());
 }
 
-TEST_CASE(empty_object_fails) {
+ZEST_CASE(empty_object_fails) {
     AdjSimple out{};
-    EXPECT_FALSE(from_string(R"({})", out).has_value());
+    EXPECT(!from_string(R"({})", out).has_value());
 }
 
-TEST_CASE(not_an_object_fails) {
+ZEST_CASE(not_an_object_fails) {
     AdjSimple out{};
-    EXPECT_FALSE(from_string("42", out).has_value());
-    EXPECT_FALSE(from_string(R"("str")", out).has_value());
-    EXPECT_FALSE(from_string("[1]", out).has_value());
+    EXPECT(!from_string("42", out).has_value());
+    EXPECT(!from_string(R"("str")", out).has_value());
+    EXPECT(!from_string("[1]", out).has_value());
 }
 
-TEST_CASE(in_holder_struct) {
+ZEST_CASE(in_holder_struct) {
     AdjHolder input{.name = "test", .data = 42};
     auto encoded = to_string(input);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"({"name":"test","data":{"t":"num","v":42}})");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"name":"test","data":{"t":"num","v":42}})");
 
     AdjHolder out{};
-    ASSERT_TRUE(from_string(*encoded, out).has_value());
-    EXPECT_EQ(out, input);
+    ASSERT(from_string(*encoded, out).has_value());
+    EXPECT(out == input);
 }
 
-TEST_CASE(in_vector) {
+ZEST_CASE(in_vector) {
     std::vector<AdjSimple> vec = {AdjSimple{1}, AdjSimple{std::string("x")}};
     auto encoded = to_string(vec);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"([{"t":"num","v":1},{"t":"str","v":"x"}])");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"([{"t":"num","v":1},{"t":"str","v":"x"}])");
 
     std::vector<AdjSimple> out;
-    ASSERT_TRUE(from_string(*encoded, out).has_value());
-    ASSERT_EQ(out.size(), 2U);
-    EXPECT_EQ(std::get<int>(out[0]), 1);
-    EXPECT_EQ(std::get<std::string>(out[1]), "x");
+    ASSERT(from_string(*encoded, out).has_value());
+    ASSERT(out.size() == 2U);
+    EXPECT(std::get<int>(out[0]) == 1);
+    EXPECT(std::get<std::string>(out[1]) == "x");
 }
 
-TEST_CASE(in_map) {
+ZEST_CASE(in_map) {
     std::map<std::string, AdjSimple> m;
     m["a"] = AdjSimple{10};
     m["b"] = AdjSimple{std::string("val")};
     auto encoded = to_string(m);
-    ASSERT_TRUE(encoded.has_value());
+    ASSERT(encoded);
 
     std::map<std::string, AdjSimple> out;
-    ASSERT_TRUE(from_string(*encoded, out).has_value());
-    ASSERT_EQ(out.size(), 2U);
-    EXPECT_EQ(std::get<int>(out["a"]), 10);
-    EXPECT_EQ(std::get<std::string>(out["b"]), "val");
+    ASSERT(from_string(*encoded, out).has_value());
+    ASSERT(out.size() == 2U);
+    EXPECT(std::get<int>(out["a"]) == 10);
+    EXPECT(std::get<std::string>(out["b"]) == "val");
 }
 
-};  // TEST_SUITE(serde_variant_adj)
+};  // ZEST_SUITE(serde_variant_adj)
 
-TEST_SUITE(serde_variant_int_tag) {
+ZEST_SUITE(serde_variant_int_tag) {
 
-TEST_CASE(circle_roundtrip) {
+ZEST_CASE(circle_roundtrip) {
     IntTagShape v = Circle{.radius = 5.0};
     auto encoded = to_string(v);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"({"type":"circle","radius":5.0})");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"type":"circle","radius":5.0})");
 
     IntTagShape out{};
-    ASSERT_TRUE(from_string(*encoded, out).has_value());
-    EXPECT_EQ(std::get<Circle>(out), (Circle{.radius = 5.0}));
+    ASSERT(from_string(*encoded, out).has_value());
+    EXPECT(std::get<Circle>(out) == (Circle{.radius = 5.0}));
 }
 
-TEST_CASE(rect_roundtrip) {
+ZEST_CASE(rect_roundtrip) {
     IntTagShape v = Rect{.width = 3.0, .height = 4.0};
     auto encoded = to_string(v);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"({"type":"rect","width":3.0,"height":4.0})");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"type":"rect","width":3.0,"height":4.0})");
 
     IntTagShape out{};
-    ASSERT_TRUE(from_string(*encoded, out).has_value());
-    EXPECT_EQ(std::get<Rect>(out), (Rect{3.0, 4.0}));
+    ASSERT(from_string(*encoded, out).has_value());
+    EXPECT(std::get<Rect>(out) == (Rect{3.0, 4.0}));
 }
 
-TEST_CASE(tag_not_first_in_input) {
+ZEST_CASE(tag_not_first_in_input) {
     // Tag field comes after other fields — deserialization via DOM should still work
     IntTagShape out{};
-    ASSERT_TRUE(from_string(R"({"radius":2.5,"type":"circle"})", out).has_value());
-    EXPECT_EQ(std::get<Circle>(out), (Circle{.radius = 2.5}));
+    ASSERT(from_string(R"({"radius":2.5,"type":"circle"})", out).has_value());
+    EXPECT(std::get<Circle>(out) == (Circle{.radius = 2.5}));
 }
 
-TEST_CASE(extra_fields_ignored) {
+ZEST_CASE(extra_fields_ignored) {
     // Extra fields in the object should be silently ignored
     IntTagShape out{};
-    ASSERT_TRUE(
-        from_string(R"({"type":"circle","radius":1.0,"extra":"ignored"})", out).has_value());
-    EXPECT_EQ(std::get<Circle>(out), (Circle{.radius = 1.0}));
+    ASSERT(from_string(R"({"type":"circle","radius":1.0,"extra":"ignored"})", out).has_value());
+    EXPECT(std::get<Circle>(out) == (Circle{.radius = 1.0}));
 }
 
-TEST_CASE(three_alternatives) {
+ZEST_CASE(three_alternatives) {
     IntTagTriShape v1 = Circle{.radius = 1.0};
     IntTagTriShape v2 = Rect{.width = 2.0, .height = 3.0};
     IntTagTriShape v3 = Triangle{.base = 4.0, .height = 5.0};
@@ -982,98 +981,98 @@ TEST_CASE(three_alternatives) {
     auto e1 = to_string(v1);
     auto e2 = to_string(v2);
     auto e3 = to_string(v3);
-    ASSERT_TRUE(e1.has_value());
-    ASSERT_TRUE(e2.has_value());
-    ASSERT_TRUE(e3.has_value());
-    EXPECT_EQ(*e1, R"({"kind":"circle","radius":1.0})");
-    EXPECT_EQ(*e2, R"({"kind":"rect","width":2.0,"height":3.0})");
-    EXPECT_EQ(*e3, R"({"kind":"triangle","base":4.0,"height":5.0})");
+    ASSERT(e1);
+    ASSERT(e2);
+    ASSERT(e3);
+    EXPECT(*e1 == R"({"kind":"circle","radius":1.0})");
+    EXPECT(*e2 == R"({"kind":"rect","width":2.0,"height":3.0})");
+    EXPECT(*e3 == R"({"kind":"triangle","base":4.0,"height":5.0})");
 
     IntTagTriShape out{};
-    ASSERT_TRUE(from_string(*e1, out).has_value());
-    EXPECT_EQ(std::get<Circle>(out).radius, 1.0);
+    ASSERT(from_string(*e1, out).has_value());
+    EXPECT(std::get<Circle>(out).radius == 1.0);
 
-    ASSERT_TRUE(from_string(*e2, out).has_value());
-    EXPECT_EQ(std::get<Rect>(out), (Rect{2.0, 3.0}));
+    ASSERT(from_string(*e2, out).has_value());
+    EXPECT(std::get<Rect>(out) == (Rect{2.0, 3.0}));
 
-    ASSERT_TRUE(from_string(*e3, out).has_value());
-    EXPECT_EQ(std::get<Triangle>(out), (Triangle{4.0, 5.0}));
+    ASSERT(from_string(*e3, out).has_value());
+    EXPECT(std::get<Triangle>(out) == (Triangle{4.0, 5.0}));
 }
 
-TEST_CASE(unknown_tag_fails) {
+ZEST_CASE(unknown_tag_fails) {
     IntTagShape out{};
-    EXPECT_FALSE(from_string(R"({"type":"pentagon","sides":5})", out).has_value());
+    EXPECT(!from_string(R"({"type":"pentagon","sides":5})", out).has_value());
 }
 
-TEST_CASE(missing_tag_fails) {
+ZEST_CASE(missing_tag_fails) {
     IntTagShape out{};
-    EXPECT_FALSE(from_string(R"({"radius":5.0})", out).has_value());
+    EXPECT(!from_string(R"({"radius":5.0})", out).has_value());
 }
 
-TEST_CASE(tag_not_a_string_fails) {
+ZEST_CASE(tag_not_a_string_fails) {
     IntTagShape out{};
-    EXPECT_FALSE(from_string(R"({"type":1,"radius":5.0})", out).has_value());
+    EXPECT(!from_string(R"({"type":1,"radius":5.0})", out).has_value());
 }
 
-TEST_CASE(not_an_object_fails) {
+ZEST_CASE(not_an_object_fails) {
     IntTagShape out{};
-    EXPECT_FALSE(from_string("42", out).has_value());
-    EXPECT_FALSE(from_string(R"("circle")", out).has_value());
-    EXPECT_FALSE(from_string("[1]", out).has_value());
-    EXPECT_FALSE(from_string("null", out).has_value());
+    EXPECT(!from_string("42", out).has_value());
+    EXPECT(!from_string(R"("circle")", out).has_value());
+    EXPECT(!from_string("[1]", out).has_value());
+    EXPECT(!from_string("null", out).has_value());
 }
 
-TEST_CASE(in_holder_struct) {
+ZEST_CASE(in_holder_struct) {
     IntTagHolder input{.name = "shape1", .shape = Circle{.radius = 9.0}};
     auto encoded = to_string(input);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"({"name":"shape1","shape":{"type":"circle","radius":9.0}})");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"name":"shape1","shape":{"type":"circle","radius":9.0}})");
 
     IntTagHolder out{};
-    ASSERT_TRUE(from_string(*encoded, out).has_value());
-    EXPECT_EQ(out, input);
+    ASSERT(from_string(*encoded, out).has_value());
+    EXPECT(out == input);
 }
 
-TEST_CASE(in_vector) {
+ZEST_CASE(in_vector) {
     std::vector<IntTagShape> shapes = {
         IntTagShape{Circle{.radius = 1.0}},
         IntTagShape{Rect{.width = 2.0, .height = 3.0}},
     };
     auto encoded = to_string(shapes);
-    ASSERT_TRUE(encoded.has_value());
+    ASSERT(encoded);
 
     std::vector<IntTagShape> out;
-    ASSERT_TRUE(from_string(*encoded, out).has_value());
-    ASSERT_EQ(out.size(), 2U);
-    EXPECT_EQ(std::get<Circle>(out[0]).radius, 1.0);
-    EXPECT_EQ(std::get<Rect>(out[1]), (Rect{2.0, 3.0}));
+    ASSERT(from_string(*encoded, out).has_value());
+    ASSERT(out.size() == 2U);
+    EXPECT(std::get<Circle>(out[0]).radius == 1.0);
+    EXPECT(std::get<Rect>(out[1]) == (Rect{2.0, 3.0}));
 }
 
-TEST_CASE(in_optional) {
+ZEST_CASE(in_optional) {
     std::optional<IntTagShape> present = IntTagShape{
         Rect{.width = 1.0, .height = 2.0}
     };
     auto encoded = to_string(present);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"({"type":"rect","width":1.0,"height":2.0})");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"type":"rect","width":1.0,"height":2.0})");
 
     std::optional<IntTagShape> out;
-    ASSERT_TRUE(from_string(*encoded, out).has_value());
-    ASSERT_TRUE(out.has_value());
-    EXPECT_EQ(std::get<Rect>(*out), (Rect{1.0, 2.0}));
+    ASSERT(from_string(*encoded, out).has_value());
+    ASSERT(out);
+    EXPECT(std::get<Rect>(*out) == (Rect{1.0, 2.0}));
 
-    ASSERT_TRUE(from_string("null", out).has_value());
-    EXPECT_FALSE(out.has_value());
+    ASSERT(from_string("null", out).has_value());
+    EXPECT(!out);
 }
 
-TEST_CASE(missing_required_field_rejects_tagged_candidate) {
+ZEST_CASE(missing_required_field_rejects_tagged_candidate) {
     // Missing non-optional field in a tagged variant should fail deserialization
     IntTagShape out{};
     auto result = from_string(R"({"type":"rect","width":5.0})", out);
-    EXPECT_FALSE(result.has_value());
+    EXPECT(!result);
 }
 
-TEST_CASE(missing_required_field_rejects_untagged_variant_candidate) {
+ZEST_CASE(missing_required_field_rejects_untagged_variant_candidate) {
     // In untagged variant probing, a missing required field should reject
     // the candidate and try the next alternative.
     // Circle has field "radius", Rect has "width" + "height".
@@ -1083,18 +1082,18 @@ TEST_CASE(missing_required_field_rejects_untagged_variant_candidate) {
     // This should fail because Rect needs both width+height, and Circle
     // doesn't match either (no "radius" field).
     auto result = from_string(R"({"width":5.0})", out);
-    EXPECT_FALSE(result.has_value());
+    EXPECT(!result);
 }
 
-};  // TEST_SUITE(serde_variant_int_tag)
+};  // ZEST_SUITE(serde_variant_int_tag)
 
 KOTATSU_ANNOTATION(nested_inner_annotation, tagged = true, tag_names = {"i", "s"});
 KOTATSU_ANNOTATION(nested_outer_annotation, tagged = true, tag_names = {"plain", "wrapped"});
 KOTATSU_ANNOTATION(vec_tagged_annotation, tag = "t", content = "v", tag_names = {"i", "s"});
 
-TEST_SUITE(serde_variant_nested) {
+ZEST_SUITE(serde_variant_nested) {
 
-TEST_CASE(variant_in_struct_in_variant) {
+ZEST_CASE(variant_in_struct_in_variant) {
     // An externally tagged variant whose struct alternative contains another ext variant
     using Inner = annotate<nested_inner_annotation>::type<std::variant<int, std::string>>;
 
@@ -1107,31 +1106,31 @@ TEST_CASE(variant_in_struct_in_variant) {
 
     Outer v = Wrapper{.id = "w1", .val = std::string("inner")};
     auto encoded = to_string(v);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, R"({"wrapped":{"id":"w1","val":{"s":"inner"}}})");
+    ASSERT(encoded);
+    EXPECT(*encoded == R"({"wrapped":{"id":"w1","val":{"s":"inner"}}})");
 
     Outer out{};
-    ASSERT_TRUE(from_string(*encoded, out).has_value());
-    EXPECT_EQ(out, v);
+    ASSERT(from_string(*encoded, out).has_value());
+    EXPECT(out == v);
 }
 
-TEST_CASE(vector_of_tagged_variants) {
+ZEST_CASE(vector_of_tagged_variants) {
     using V = annotate<vec_tagged_annotation>::type<std::variant<int, std::string>>;
 
     std::vector<V> vec = {V{1}, V{std::string("a")}, V{2}, V{std::string("b")}};
     auto encoded = to_string(vec);
-    ASSERT_TRUE(encoded.has_value());
+    ASSERT(encoded);
 
     std::vector<V> out;
-    ASSERT_TRUE(from_string(*encoded, out).has_value());
-    ASSERT_EQ(out.size(), 4U);
-    EXPECT_EQ(std::get<int>(out[0]), 1);
-    EXPECT_EQ(std::get<std::string>(out[1]), "a");
-    EXPECT_EQ(std::get<int>(out[2]), 2);
-    EXPECT_EQ(std::get<std::string>(out[3]), "b");
+    ASSERT(from_string(*encoded, out).has_value());
+    ASSERT(out.size() == 4U);
+    EXPECT(std::get<int>(out[0]) == 1);
+    EXPECT(std::get<std::string>(out[1]) == "a");
+    EXPECT(std::get<int>(out[2]) == 2);
+    EXPECT(std::get<std::string>(out[3]) == "b");
 }
 
-TEST_CASE(map_of_internally_tagged) {
+ZEST_CASE(map_of_internally_tagged) {
     std::map<std::string, IntTagShape> shapes;
     shapes["c"] = IntTagShape{Circle{.radius = 1.0}};
     shapes["r"] = IntTagShape{
@@ -1139,35 +1138,35 @@ TEST_CASE(map_of_internally_tagged) {
     };
 
     auto encoded = to_string(shapes);
-    ASSERT_TRUE(encoded.has_value());
+    ASSERT(encoded);
 
     std::map<std::string, IntTagShape> out;
-    ASSERT_TRUE(from_string(*encoded, out).has_value());
-    ASSERT_EQ(out.size(), 2U);
-    EXPECT_EQ(std::get<Circle>(out["c"]).radius, 1.0);
-    EXPECT_EQ(std::get<Rect>(out["r"]), (Rect{2.0, 3.0}));
+    ASSERT(from_string(*encoded, out).has_value());
+    ASSERT(out.size() == 2U);
+    EXPECT(std::get<Circle>(out["c"]).radius == 1.0);
+    EXPECT(std::get<Rect>(out["r"]) == (Rect{2.0, 3.0}));
 }
 
-TEST_CASE(optional_tagged_absent) {
+ZEST_CASE(optional_tagged_absent) {
     std::optional<ExtSimple> absent;
     auto encoded = to_string(absent);
-    ASSERT_TRUE(encoded.has_value());
-    EXPECT_EQ(*encoded, "null");
+    ASSERT(encoded);
+    EXPECT(*encoded == "null");
 
     std::optional<ExtSimple> out = ExtSimple{42};
-    ASSERT_TRUE(from_string("null", out).has_value());
-    EXPECT_FALSE(out.has_value());
+    ASSERT(from_string("null", out).has_value());
+    EXPECT(!out);
 }
 
-};  // TEST_SUITE(serde_variant_nested)
+};  // ZEST_SUITE(serde_variant_nested)
 
 struct skip_if_none_extra_tag {
     constexpr static auto spec = make_spec(dsl::skip_if = skip_when::none);
 };
 
-TEST_SUITE(serde_variant_deep_dispatch) {
+ZEST_SUITE(serde_variant_deep_dispatch) {
 
-TEST_CASE(struct_with_variant_field_disambiguation) {
+ZEST_CASE(struct_with_variant_field_disambiguation) {
     // Two structs whose variant-typed fields accept different source kinds.
     // Deep scoring should recurse into the variant field's alternatives.
     struct HasIntOrString {
@@ -1181,41 +1180,41 @@ TEST_CASE(struct_with_variant_field_disambiguation) {
     using V = std::variant<HasIntOrString, HasBoolOrDouble>;
 
     V out{};
-    ASSERT_TRUE(from_string(R"({"data":42})", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<int>(std::get<HasIntOrString>(out).data), 42);
+    ASSERT(from_string(R"({"data":42})", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<int>(std::get<HasIntOrString>(out).data) == 42);
 
-    ASSERT_TRUE(from_string(R"({"data":true})", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<bool>(std::get<HasBoolOrDouble>(out).data), true);
+    ASSERT(from_string(R"({"data":true})", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<bool>(std::get<HasBoolOrDouble>(out).data) == true);
 
-    ASSERT_TRUE(from_string(R"({"data":"text"})", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<std::string>(std::get<HasIntOrString>(out).data), "text");
+    ASSERT(from_string(R"({"data":"text"})", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<std::string>(std::get<HasIntOrString>(out).data) == "text");
 
-    ASSERT_TRUE(from_string(R"({"data":3.14})", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<double>(std::get<HasBoolOrDouble>(out).data), 3.14);
+    ASSERT(from_string(R"({"data":3.14})", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<double>(std::get<HasBoolOrDouble>(out).data) == 3.14);
 }
 
-TEST_CASE(vector_vs_tuple_by_length) {
+ZEST_CASE(vector_vs_tuple_by_length) {
     // Tuple requires exact element count; vector accepts any length.
     // Deep scoring uses element count to disambiguate.
     using V = std::variant<std::tuple<int, std::string>, std::vector<int>>;
 
     V out{};
-    ASSERT_TRUE(from_string(R"([1,2,3])", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<std::vector<int>>(out), std::vector<int>({1, 2, 3}));
+    ASSERT(from_string(R"([1,2,3])", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<std::vector<int>>(out) == std::vector<int>({1, 2, 3}));
 
-    ASSERT_TRUE(from_string(R"([42,"hello"])", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
+    ASSERT(from_string(R"([42,"hello"])", out).has_value());
+    EXPECT(out.index() == 0U);
     auto& [i, s] = std::get<std::tuple<int, std::string>>(out);
-    EXPECT_EQ(i, 42);
-    EXPECT_EQ(s, "hello");
+    EXPECT(i == 42);
+    EXPECT(s == "hello");
 }
 
-TEST_CASE(triple_nested_variant) {
+ZEST_CASE(triple_nested_variant) {
     // Three levels of variant nesting.
     using L0 = std::variant<bool, std::string>;
     using L1 = std::variant<L0, int>;
@@ -1224,143 +1223,143 @@ TEST_CASE(triple_nested_variant) {
     L2 out{};
 
     // bool → L0 has bool (exact), L1 recurses to L0, L2 recurses to L1
-    ASSERT_TRUE(from_string("true", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
+    ASSERT(from_string("true", out).has_value());
+    EXPECT(out.index() == 0U);
     auto& l1 = std::get<L1>(out);
-    EXPECT_EQ(l1.index(), 0U);
+    EXPECT(l1.index() == 0U);
     auto& l0 = std::get<L0>(l1);
-    EXPECT_EQ(l0.index(), 0U);
-    EXPECT_EQ(std::get<bool>(l0), true);
+    EXPECT(l0.index() == 0U);
+    EXPECT(std::get<bool>(l0) == true);
 
     // string → only L0 has string
-    ASSERT_TRUE(from_string(R"("abc")", out).has_value());
+    ASSERT(from_string(R"("abc")", out).has_value());
     auto& l1s = std::get<L1>(out);
     auto& l0s = std::get<L0>(l1s);
-    EXPECT_EQ(std::get<std::string>(l0s), "abc");
+    EXPECT(std::get<std::string>(l0s) == "abc");
 
     // integer → L1 has int (exact match, quality 3), double has widening (quality 1)
-    ASSERT_TRUE(from_string("99", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
+    ASSERT(from_string("99", out).has_value());
+    EXPECT(out.index() == 0U);
     auto& l1i = std::get<L1>(out);
-    EXPECT_EQ(l1i.index(), 1U);
-    EXPECT_EQ(std::get<int>(l1i), 99);
+    EXPECT(l1i.index() == 1U);
+    EXPECT(std::get<int>(l1i) == 99);
 
     // floating → only double accepts float
-    ASSERT_TRUE(from_string("2.5", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<double>(out), 2.5);
+    ASSERT(from_string("2.5", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<double>(out) == 2.5);
 }
 
-TEST_CASE(variant_of_containers) {
+ZEST_CASE(variant_of_containers) {
     // Variant choosing between different container types.
     using V = std::variant<std::vector<int>, std::map<std::string, int>>;
 
     V out{};
-    ASSERT_TRUE(from_string("[10,20]", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<std::vector<int>>(out), std::vector<int>({10, 20}));
+    ASSERT(from_string("[10,20]", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<std::vector<int>>(out) == std::vector<int>({10, 20}));
 
-    ASSERT_TRUE(from_string(R"({"a":1})", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<std::map<std::string, int>>(out).at("a"), 1);
+    ASSERT(from_string(R"({"a":1})", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<std::map<std::string, int>>(out).at("a") == 1);
 }
 
-TEST_CASE(struct_vs_map_object_scoring) {
+ZEST_CASE(struct_vs_map_object_scoring) {
     // First-match-wins: Point is tried first; if required fields are present it wins.
     using V = std::variant<Point, std::map<std::string, double>>;
 
     V out{};
     // Point fields "x","y" present → try_read succeeds → Point selected
-    ASSERT_TRUE(from_string(R"({"x":1.0,"y":2.0})", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<Point>(out), (Point{1.0, 2.0}));
+    ASSERT(from_string(R"({"x":1.0,"y":2.0})", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<Point>(out) == (Point{1.0, 2.0}));
 
     // Point requires x,y which are missing → try_read fails → falls through to map
-    ASSERT_TRUE(from_string(R"({"foo":3.0})", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<std::map<std::string, double>>(out).at("foo"), 3.0);
+    ASSERT(from_string(R"({"foo":3.0})", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<std::map<std::string, double>>(out).at("foo") == 3.0);
 }
 
-TEST_CASE(optional_wrapping_variant) {
+ZEST_CASE(optional_wrapping_variant) {
     // optional<variant> and variant side by side
     using Inner = std::variant<int, std::string>;
     using V = std::variant<std::optional<Inner>, bool>;
 
     V out{};
     // null → optional accepts null
-    ASSERT_TRUE(from_string("null", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_FALSE(std::get<std::optional<Inner>>(out).has_value());
+    ASSERT(from_string("null", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(!std::get<std::optional<Inner>>(out).has_value());
 
     // bool → only bool alternative matches
-    ASSERT_TRUE(from_string("true", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<bool>(out), true);
+    ASSERT(from_string("true", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<bool>(out) == true);
 
     // integer → optional<variant<int,string>> recurses and finds int
-    ASSERT_TRUE(from_string("42", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
+    ASSERT(from_string("42", out).has_value());
+    EXPECT(out.index() == 0U);
     auto& opt = std::get<std::optional<Inner>>(out);
-    ASSERT_TRUE(opt.has_value());
-    EXPECT_EQ(std::get<int>(*opt), 42);
+    ASSERT(opt);
+    EXPECT(std::get<int>(*opt) == 42);
 }
 
-TEST_CASE(shared_ptr_wrapping_variant) {
+ZEST_CASE(shared_ptr_wrapping_variant) {
     using Inner = std::variant<int, std::string>;
     using V = std::variant<std::shared_ptr<Inner>, bool>;
 
     V out{};
     // null → shared_ptr accepts null
-    ASSERT_TRUE(from_string("null", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<std::shared_ptr<Inner>>(out), nullptr);
+    ASSERT(from_string("null", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<std::shared_ptr<Inner>>(out) == nullptr);
 
     // string → recurse through shared_ptr to variant
-    ASSERT_TRUE(from_string(R"("hello")", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
+    ASSERT(from_string(R"("hello")", out).has_value());
+    EXPECT(out.index() == 0U);
     auto ptr = std::get<std::shared_ptr<Inner>>(out);
-    ASSERT_NE(ptr, nullptr);
-    EXPECT_EQ(std::get<std::string>(*ptr), "hello");
+    ASSERT(ptr != nullptr);
+    EXPECT(std::get<std::string>(*ptr) == "hello");
 }
 
-TEST_CASE(int_width_ordering) {
+ZEST_CASE(int_width_ordering) {
     // First-match-wins: the narrowest type that can hold the value is selected.
     using V = std::variant<std::int8_t, std::int16_t, std::int32_t, std::int64_t>;
 
     V out{};
     // 42 fits in int8_t → first alternative wins
-    ASSERT_TRUE(from_string("42", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<std::int8_t>(out), 42);
+    ASSERT(from_string("42", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<std::int8_t>(out) == 42);
 
     // 200 overflows int8_t → falls through to int16_t
-    ASSERT_TRUE(from_string("200", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<std::int16_t>(out), 200);
+    ASSERT(from_string("200", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<std::int16_t>(out) == 200);
 
     // 40000 overflows int16_t → falls through to int32_t
-    ASSERT_TRUE(from_string("40000", out).has_value());
-    EXPECT_EQ(out.index(), 2U);
-    EXPECT_EQ(std::get<std::int32_t>(out), 40000);
+    ASSERT(from_string("40000", out).has_value());
+    EXPECT(out.index() == 2U);
+    EXPECT(std::get<std::int32_t>(out) == 40000);
 
     // 3000000000 overflows int32_t → falls through to int64_t
-    ASSERT_TRUE(from_string("3000000000", out).has_value());
-    EXPECT_EQ(out.index(), 3U);
-    EXPECT_EQ(std::get<std::int64_t>(out), 3000000000);
+    ASSERT(from_string("3000000000", out).has_value());
+    EXPECT(out.index() == 3U);
+    EXPECT(std::get<std::int64_t>(out) == 3000000000);
 }
 
-TEST_CASE(mixed_numeric_precision) {
+ZEST_CASE(mixed_numeric_precision) {
     // First-match-wins: float is tried before double.
     using V = std::variant<float, double>;
 
     V out{};
     // 1.5 is representable in float → first alternative wins
-    ASSERT_TRUE(from_string("1.5", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<float>(out), 1.5f);
+    ASSERT(from_string("1.5", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<float>(out) == 1.5f);
 }
 
-TEST_CASE(variant_roundtrip_complex) {
+ZEST_CASE(variant_roundtrip_complex) {
     // Roundtrip through serialization preserves the correct alternative.
     using V = std::
         variant<std::monostate, bool, std::int64_t, double, std::string, std::vector<int>, Point>;
@@ -1376,52 +1375,52 @@ TEST_CASE(variant_roundtrip_complex) {
         return out.index() == expected_index;
     };
 
-    EXPECT_TRUE(roundtrip(std::monostate{}, 0));
-    EXPECT_TRUE(roundtrip(true, 1));
-    EXPECT_TRUE(roundtrip(std::int64_t{42}, 2));
-    EXPECT_TRUE(roundtrip(3.14, 3));
-    EXPECT_TRUE(roundtrip(std::string("test"), 4));
-    EXPECT_TRUE(roundtrip(std::vector<int>{1, 2, 3}, 5));
-    EXPECT_TRUE(roundtrip(Point{1.0, 2.0}, 6));
+    EXPECT(roundtrip(std::monostate{}, 0));
+    EXPECT(roundtrip(true, 1));
+    EXPECT(roundtrip(std::int64_t{42}, 2));
+    EXPECT(roundtrip(3.14, 3));
+    EXPECT(roundtrip(std::string("test"), 4));
+    EXPECT(roundtrip(std::vector<int>{1, 2, 3}, 5));
+    EXPECT(roundtrip(Point{1.0, 2.0}, 6));
 }
 
-TEST_CASE(two_structs_different_field_count) {
+ZEST_CASE(two_structs_different_field_count) {
     // First-match-wins: Color is tried first.
     using V = std::variant<Color, Point>;
 
     V out{};
     // Color requires r,g,b — all present → try_read succeeds
-    ASSERT_TRUE(from_string(R"({"r":1,"g":2,"b":3})", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<Color>(out), (Color{1, 2, 3}));
+    ASSERT(from_string(R"({"r":1,"g":2,"b":3})", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<Color>(out) == (Color{1, 2, 3}));
 
     // Color requires r,g,b which are missing → try_read fails → falls through to Point
-    ASSERT_TRUE(from_string(R"({"x":1.0,"y":2.0})", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<Point>(out), (Point{1.0, 2.0}));
+    ASSERT(from_string(R"({"x":1.0,"y":2.0})", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<Point>(out) == (Point{1.0, 2.0}));
 }
 
-TEST_CASE(empty_object_scoring) {
+ZEST_CASE(empty_object_scoring) {
     using V = std::variant<Point, std::map<std::string, int>>;
 
     V out{};
     // Empty object has no matching struct fields → map wins
-    ASSERT_TRUE(from_string(R"({})", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_TRUE(std::get<std::map<std::string, int>>(out).empty());
+    ASSERT(from_string(R"({})", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<std::map<std::string, int>>(out).empty());
 }
 
-TEST_CASE(empty_array_scoring) {
+ZEST_CASE(empty_array_scoring) {
     using V = std::variant<std::vector<int>, std::string>;
 
     V out{};
     // Empty array → vector accepts it
-    ASSERT_TRUE(from_string(R"([])", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_TRUE(std::get<std::vector<int>>(out).empty());
+    ASSERT(from_string(R"([])", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<std::vector<int>>(out).empty());
 }
 
-TEST_CASE(same_field_same_type_struct_tie) {
+ZEST_CASE(same_field_same_type_struct_tie) {
     // Two structs with identical field names and types — first wins
     struct A {
         int value;
@@ -1434,28 +1433,28 @@ TEST_CASE(same_field_same_type_struct_tie) {
     using V = std::variant<A, B>;
 
     V out{};
-    ASSERT_TRUE(from_string(R"({"value":1})", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<A>(out).value, 1);
+    ASSERT(from_string(R"({"value":1})", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<A>(out).value == 1);
 }
 
-TEST_CASE(variant_wrapper_no_inflation) {
+ZEST_CASE(variant_wrapper_no_inflation) {
     // variant<variant<double, int>, int> facing integer source:
     // The nested variant should NOT score higher than the direct int.
     using Inner = std::variant<double, int>;
     using V = std::variant<Inner, int>;
 
     V out{};
-    ASSERT_TRUE(from_string("42", out).has_value());
+    ASSERT(from_string("42", out).has_value());
     // Both alternatives accept int. The nested variant's best inner match (int)
     // should score the same as the direct int. First one wins on tie.
-    EXPECT_EQ(out.index(), 0U);
+    EXPECT(out.index() == 0U);
     auto& inner = std::get<Inner>(out);
-    EXPECT_EQ(inner.index(), 1U);
-    EXPECT_EQ(std::get<int>(inner), 42);
+    EXPECT(inner.index() == 1U);
+    EXPECT(std::get<int>(inner) == 42);
 }
 
-TEST_CASE(field_subset_superset_matching) {
+ZEST_CASE(field_subset_superset_matching) {
     // First-match-wins: place more-specific struct first to prefer it.
     struct StructA {
         int a;
@@ -1470,31 +1469,31 @@ TEST_CASE(field_subset_superset_matching) {
     using V = std::variant<StructAB, StructA>;
 
     V out{};
-    ASSERT_TRUE(from_string(R"({"a":1,"b":2})", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<StructAB>(out).a, 1);
-    EXPECT_EQ(std::get<StructAB>(out).b, 2);
+    ASSERT(from_string(R"({"a":1,"b":2})", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<StructAB>(out).a == 1);
+    EXPECT(std::get<StructAB>(out).b == 2);
 
     // {a} alone — StructAB requires field "b" → try_read fails → falls through to StructA
-    ASSERT_TRUE(from_string(R"({"a":1})", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<StructA>(out).a, 1);
+    ASSERT(from_string(R"({"a":1})", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<StructA>(out).a == 1);
 }
 
-TEST_CASE(recursive_map_scoring) {
+ZEST_CASE(recursive_map_scoring) {
     using V = std::variant<std::map<std::string, int>, std::map<std::string, std::string>>;
 
     V out{};
-    ASSERT_TRUE(from_string(R"({"a":1,"b":2})", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<std::map<std::string, int>>(out).at("a"), 1);
+    ASSERT(from_string(R"({"a":1,"b":2})", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<std::map<std::string, int>>(out).at("a") == 1);
 
-    ASSERT_TRUE(from_string(R"({"a":"x","b":"y"})", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<std::map<std::string, std::string>>(out).at("a"), "x");
+    ASSERT(from_string(R"({"a":"x","b":"y"})", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<std::map<std::string, std::string>>(out).at("a") == "x");
 }
 
-TEST_CASE(subset_with_required_field_missing) {
+ZEST_CASE(subset_with_required_field_missing) {
     // Two structs sharing a common field, but the larger struct has a required
     // field not present in the input.  The smaller struct (whose required fields
     // are all satisfied) should win.
@@ -1511,18 +1510,18 @@ TEST_CASE(subset_with_required_field_missing) {
 
     V out{};
     // Only "value" present — Partial.id is required and missing → Whole should win
-    ASSERT_TRUE(from_string(R"({"value":"hello"})", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<Whole>(out).value, "hello");
+    ASSERT(from_string(R"({"value":"hello"})", out).has_value());
+    EXPECT(out.index() == 1U);
+    EXPECT(std::get<Whole>(out).value == "hello");
 
     // Both "id" and "value" present — Partial matches more fields → Partial wins
-    ASSERT_TRUE(from_string(R"({"id":42,"value":"hello"})", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<Partial>(out).id, 42);
-    EXPECT_EQ(std::get<Partial>(out).value, "hello");
+    ASSERT(from_string(R"({"id":42,"value":"hello"})", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<Partial>(out).id == 42);
+    EXPECT(std::get<Partial>(out).value == "hello");
 }
 
-TEST_CASE(subset_with_optional_field_missing) {
+ZEST_CASE(subset_with_optional_field_missing) {
     // When the missing field has a skip_if condition, it should NOT be penalized.
     struct WithOptional {
         std::string value;
@@ -1537,12 +1536,12 @@ TEST_CASE(subset_with_optional_field_missing) {
 
     V out{};
     // "extra" is optional (has default) → WithOptional still viable, first wins on tie
-    ASSERT_TRUE(from_string(R"({"value":"hello"})", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<WithOptional>(out).value, "hello");
+    ASSERT(from_string(R"({"value":"hello"})", out).has_value());
+    EXPECT(out.index() == 0U);
+    EXPECT(std::get<WithOptional>(out).value == "hello");
 }
 
-};  // TEST_SUITE(serde_variant_deep_dispatch)
+};  // ZEST_SUITE(serde_variant_deep_dispatch)
 
 }  // namespace
 
