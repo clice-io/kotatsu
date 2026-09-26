@@ -191,7 +191,11 @@ async function metaModelBytes(): Promise<Uint8Array> {
     return cached;
   }
   console.error(`fetching ${SOURCE_URL}`);
-  const response = await fetch(SOURCE_URL);
+  // A stalled server fails the download rather than hanging the run; the
+  // signal also bounds reading the body.
+  const response = await fetch(SOURCE_URL, {
+    signal: AbortSignal.timeout(60_000),
+  });
   if (!response.ok) {
     throw new Error(`fetching ${SOURCE_URL}: HTTP ${response.status}`);
   }
