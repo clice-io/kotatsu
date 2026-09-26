@@ -1,8 +1,10 @@
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <optional>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "kota/zest/zest.h"
@@ -65,6 +67,21 @@ ZEST_CASE(map_key_parse_error) {
 
     std::map<int, int> by_id;
     EXPECT(!dyn::from_dyn(*encoded, by_id).has_value());
+}
+
+ZEST_CASE(null_from_non_null_fails) {
+    std::nullptr_t null = nullptr;
+    auto status = dyn::from_dyn(dyn::Value(std::int64_t{42}), null);
+    ASSERT(!status);
+    EXPECT(status.error().message == "invalid type: expected null, got signed_int");
+
+    // An untagged variant's last alternative decodes on the real reader when
+    // nothing else claims the value; a null alternative there must not
+    // swallow it.
+    std::variant<int, std::monostate> choice = 1;
+    auto fallback = dyn::from_dyn(dyn::Value(std::string("x")), choice);
+    ASSERT(!fallback);
+    EXPECT(fallback.error().message == "invalid type: expected null, got string");
 }
 
 ZEST_CASE(serialize_element_with_dom_subtree) {
