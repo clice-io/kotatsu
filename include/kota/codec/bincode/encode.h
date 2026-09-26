@@ -22,6 +22,9 @@ struct Writer {
     using error_type = rich_error;
     using format = bincode::format;
     constexpr static bool human_readable = false;
+    /// Struct fields are concatenated with no marker, so skip_if never omits
+    /// one: decode reads every field in order.
+    constexpr static bool writes_every_field = true;
 
     template <typename T>
         requires std::integral<T>

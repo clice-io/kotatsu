@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -52,6 +53,15 @@ struct WithSkipIfField {
     int first{};
     annotation<int, behavior::skip_if<SkipOnDeserialize>> skipped = 88;
     int third{};
+};
+
+struct WithSkippableFields {
+    KOTATSU_ANNOTATE(skip_if = skip_when::none)
+    <std::optional<int>> absent;
+    KOTATSU_ANNOTATE(skip_if = skip_when::empty)
+    <std::string> empty;
+    annotation<std::optional<int>, behavior::skip_if<pred::optional_none>> none;
+    int last{};
 };
 
 struct WithFlattenField {
@@ -121,6 +131,21 @@ ZEST_CASE(struct_deserialize_respects_skip_if) {
     EXPECT(decoded.first == 1);
     EXPECT(annotated_value(decoded.skipped) == 88);
     EXPECT(decoded.third == 3);
+}
+
+ZEST_CASE(skip_if_fields_are_written) {
+    // Nothing in bincode could mark a field absent, so skip_if leaves every
+    // field in place and the next one reads from where it belongs.
+    WithSkippableFields value{};
+    value.last = 7;
+    auto bytes = bincode::to_bytes(value);
+    ASSERT(bytes);
+    // The two absent optionals take a presence byte each, the empty string
+    // its length prefix, and the last field its 8 bytes.
+    EXPECT(bytes->size() == 1 + 8 + 1 + 8);
+    WithSkippableFields decoded{};
+    ASSERT(bincode::from_bytes(*bytes, decoded));
+    EXPECT(decoded.last == 7);
 }
 
 ZEST_CASE(struct_deserialize_respects_flatten) {

@@ -83,6 +83,18 @@ constexpr bool is_layout_computed() {
     }
 }
 
+/// True when the visitor writes a struct's fields back to back with nothing
+/// marking which are present (bincode). It cannot leave a field out, so
+/// skip_if does not apply: every field is written, and decode reads it back.
+template <typename Vis>
+constexpr bool writes_every_field() {
+    if constexpr(requires { Vis::writes_every_field; }) {
+        return Vis::writes_every_field;
+    } else {
+        return false;
+    }
+}
+
 /// Config > Vis > true. Determines text vs binary serialization strategy for user-defined types.
 template <typename Config, typename Vis>
 constexpr bool is_human_readable() {
