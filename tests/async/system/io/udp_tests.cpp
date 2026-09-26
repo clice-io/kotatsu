@@ -384,6 +384,41 @@ ZEST_CASE(stop_recv_leaves_a_pending_recv_waiting) {
     EXPECT(!driver->second);
 }
 
+// Linux reports the ICMP port unreachable that answers a connected socket
+// to its next read. libuv on Windows ignores that error for udp but stops
+// reading on others, which recv() must start again.
+#ifdef __linux__
+ZEST_CASE(recv_after_a_receive_error_reads_again) {
+    int port = 0;
+    {
+        auto closed = bind_loopback(loop);
+        ASSERT(closed.has_value());
+        port = closed->port;
+    }
+    auto client = bind_loopback(loop);
+    ASSERT(client.has_value());
+    ASSERT(!client->socket.connect("127.0.0.1", port));
+    auto refused = [&]() -> task<result<udp::recv_result>, error> {
+        co_await client->socket.send(std::string_view("anyone?")).or_fail();
+        co_return co_await client->socket.recv();
+    };
+
+    auto [first] = run(refused());
+    ASSERT(first.has_value());
+    ASSERT(first->has_error());
+    EXPECT(first->error() == error::connection_refused);
+
+    auto peer = udp::create(loop);
+    ASSERT(peer.has_value());
+    ASSERT(!peer->bind("127.0.0.1", port));
+    auto [sent, second] =
+        run(peer->send(std::string_view("here"), "127.0.0.1", client->port), client->socket.recv());
+    EXPECT(sent.has_value());
+    ASSERT(second.has_value());
+    EXPECT(second->data == "here");
+}
+#endif
+
 ZEST_CASE(bind_to_a_port_in_use_fails) {
     auto taken = bind_loopback(loop);
     auto other = udp::create(loop);

@@ -94,6 +94,12 @@ struct udp_recv_await : uv::await_op<udp_recv_await> {
         assert(u != nullptr && "on_read requires udp state in handle->data");
 
         if(auto err = uv::status_to_error(nread)) {
+#ifdef _WIN32
+            // libuv on Windows stops reading before it reports a receive
+            // error, so the next recv() has to start it again. Elsewhere it
+            // reads on, and stopping from this callback would trip libuv.
+            u->receiving = false;
+#endif
             u->recv.mark_cancelled_if(nread);
             u->recv.deliver(err);
             return;
