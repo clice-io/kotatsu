@@ -9,6 +9,7 @@
 #include "../libuv.h"
 #include "kota/support/functional.h"
 #include "kota/async/runtime/node.h"
+#include "kota/async/runtime/task.h"
 
 namespace kota {
 
