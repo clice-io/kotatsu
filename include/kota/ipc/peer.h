@@ -81,14 +81,21 @@ public:
 
     ~Peer();
 
+    /// Reads and dispatches messages and writes what is sent, until the input
+    /// ends and every handler has finished, or until close(). Every pending
+    /// request has failed by the time it returns. Called once.
     task<> run();
 
-    /// Gracefully shut down the peer: cancel in-flight incoming requests,
-    /// fail pending outgoing requests, discard queued messages, and close
-    /// the transport so that run() exits.
+    /// Shuts the peer down: cancels the running handlers, fails pending
+    /// requests, discards queued messages and closes the transport, so that
+    /// run() returns. Later sends fail; calls after the first do nothing.
     Result<void> close();
 
-    Result<void> close_output();
+    /// Half-closes: what is queued is still written, then the transport's
+    /// output closes, which the remote reads as the end of its input. Sends
+    /// fail from now on; the input stays open, so handlers keep running, but
+    /// their answers are dropped.
+    void close_output();
 
     void set_logger(LogCallback callback, LogLevel min_level = LogLevel::info);
 

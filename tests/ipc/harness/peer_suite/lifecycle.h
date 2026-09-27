@@ -6,6 +6,7 @@
 
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "ipc/harness/peer_fixture.h"
@@ -182,31 +183,131 @@ void peer_lifecycle(const PeerKit<A>& kit) {
 
     kit.add("write_failure_fails_pending_requests_and_closes_the_transport", [](Fixture& f) {
         f.remote.fail_writes();
+        auto ask = [&]() -> task<std::pair<ipc::Error, ipc::Result<void>>> {
+            auto asked = co_await f.peer.send_request(AddParams{});
+            co_return std::pair{asked.has_error() ? asked.error() : ipc::Error("no error"),
+                                f.peer.send_notification(NoteParams{.text = "after"})};
+        };
 
-        auto [ran, asked] = f.run(f.peer.run(), f.peer.send_request(AddParams{}));
+        auto [ran, asked] = f.run(f.peer.run(), ask());
         EXPECT(ran.has_value());
-        ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::RequestFailed);
-        EXPECT(asked.error().message == "write failed");
+        ASSERT(asked.has_value());
+        auto& [failure, after] = *asked;
+        EXPECT(code_of(failure) == ErrorCode::RequestFailed);
+        EXPECT(failure.message == "write failed");
+        ASSERT(after.has_error());
+        EXPECT(code_of(after.error()) == ErrorCode::RequestFailed);
         EXPECT(f.remote.closed());
     });
 
     kit.add("close_output_ends_the_remote_input_and_keeps_reading", [](Fixture& f) {
         std::vector<std::string> seen;
         f.peer.on_notification([&](const NoteParams& params) { seen.push_back(params.text); });
-        auto closed = f.peer.close_output();
+        f.peer.close_output();
         f.remote.send(notification<A>("test/note", NoteParams{.text = "after"}));
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
         EXPECT(ran.has_value());
-        ASSERT(closed.has_value());
         EXPECT(f.remote.output_ended());
         EXPECT(!f.remote.closed());
         EXPECT(seen == std::vector<std::string>{"after"});
     });
 
-    kit.add("cancelling_run_cancels_running_handlers", [](Fixture& f) {
+    kit.add("close_output_writes_queued_messages_first", [](Fixture& f) {
+        auto sent = f.peer.send_notification(NoteParams{.text = "queued"});
+        f.peer.close_output();
+        f.remote.end_input();
+
+        auto [ran] = f.run(f.peer.run());
+        EXPECT(ran.has_value());
+        EXPECT(sent.has_value());
+        const auto& written = f.written();
+        ASSERT(written.size() == 1U);
+        EXPECT(written[0].method == "test/note");
+        EXPECT(f.remote.output_ended());
+    });
+
+    kit.add("send_after_close_output_fails", [](Fixture& f) {
+        std::vector<std::string> seen;
+        f.peer.on_notification([&](const NoteParams& params) { seen.push_back(params.text); });
+        f.peer.close_output();
+        auto sent = f.peer.send_notification(NoteParams{.text = "late"});
+        f.remote.send(notification<A>("test/note", NoteParams{.text = "after"}));
+        f.remote.end_input();
+
+        auto [ran, asked] = f.run(f.peer.run(), f.peer.send_request(AddParams{}));
+        EXPECT(ran.has_value());
+        ASSERT(sent.has_error());
+        EXPECT(code_of(sent.error()) == ErrorCode::RequestFailed);
+        ASSERT(asked.has_error());
+        EXPECT(code_of(asked.error()) == ErrorCode::RequestFailed);
+        EXPECT(seen == std::vector<std::string>{"after"});
+        EXPECT(f.written().empty());
+    });
+
+    // A handler still running when the peer's output closes finishes, but
+    // its answer is dropped.
+    kit.add("answer_after_close_output_is_dropped", [](Fixture& f) {
+        event started;
+        event release;
+        f.peer.on_request([&](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
+            started.set();
+            co_await release.wait();
+            co_return AddResult{};
+        });
+        auto remote = [&]() -> task<> {
+            f.remote.send(request<A>(1, "test/add", AddParams{}));
+            co_await started.wait();
+            f.peer.close_output();
+            co_await f.next();
+            release.set();
+            f.remote.end_input();
+        };
+
+        auto [ran, scripted] = f.run(f.peer.run(), remote());
+        EXPECT(ran.has_value());
+        EXPECT(f.remote.output_ended());
+        EXPECT(f.written().empty());
+    });
+
+    // The request is pending when the input ends and fails with it; the
+    // handler runs on and its own request fails at once, since nothing
+    // could answer it.
+    kit.add("request_after_end_of_input_fails", [](Fixture& f) {
+        event started;
+        event input_ended;
+        event release;
+        std::optional<ipc::Error> failure;
+        f.peer.on_request([&](Context& context, const AddParams&) -> ipc::RequestResult<AddParams> {
+            started.set();
+            co_await release.wait();
+            auto nested = co_await context->send_request(AddParams{});
+            if(nested.has_error()) {
+                failure = nested.error();
+            }
+            co_return AddResult{};
+        });
+        auto probe = [&]() -> task<> {
+            co_await f.peer.send_request(AddParams{});
+            input_ended.set();
+        };
+        auto remote = [&]() -> task<> {
+            f.remote.send(request<A>(1, "test/add", AddParams{}));
+            co_await started.wait();
+            f.remote.end_input();
+            co_await input_ended.wait();
+            release.set();
+        };
+
+        auto [ran, probed, scripted] = f.run(f.peer.run(), probe(), remote());
+        EXPECT(ran.has_value());
+        ASSERT(failure.has_value());
+        EXPECT(code_of(*failure) == ErrorCode::RequestFailed);
+        EXPECT(failure->message == "peer input closed");
+    });
+
+    kit.add("cancelling_run_cancels_running_handlers_and_fails_pending_requests", [](Fixture& f) {
         bool completed = false;
         event started;
         event never;
@@ -220,12 +321,17 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         auto remote = [&]() -> task<> {
             f.remote.send(request<A>(1, "test/add", AddParams{}));
             co_await started.wait();
+            co_await f.next();
             source.cancel();
         };
 
-        auto [ran, scripted] = f.run(with_token(f.peer.run(), source.token()), remote());
+        auto [ran, asked, scripted] = f.run(with_token(f.peer.run(), source.token()),
+                                            f.peer.send_request(AddParams{}),
+                                            remote());
         EXPECT(ran.is_cancelled());
         EXPECT(!completed);
+        ASSERT(asked.has_error());
+        EXPECT(code_of(asked.error()) == ErrorCode::RequestFailed);
     });
 
     kit.add("two_peers_answer_on_one_loop", [](Fixture& f) {
@@ -254,81 +360,6 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         EXPECT(answer->id == RequestID(22));
         EXPECT(sum_of<A>(*answer) == 21);
     });
-}
-
-/// Once the input has ended no answer can arrive, so a request a handler
-/// sends then fails at once instead of waiting for good. The probe request
-/// fails only when the peer reads the end of its input, so the handler is
-/// released after that.
-template <CodecAdapter A>
-void request_from_a_handler_after_end_of_input_fails() {
-    PeerFixture<A> f;
-    event started;
-    event input_ended;
-    event release;
-    std::optional<ipc::Error> failure;
-    f.peer.on_request([&](typename PeerFixture<A>::Context& context,
-                          const AddParams&) -> ipc::RequestResult<AddParams> {
-        started.set();
-        co_await release.wait();
-        auto nested = co_await context->send_request(AddParams{});
-        if(nested.has_error()) {
-            failure = nested.error();
-        }
-        co_return AddResult{};
-    });
-    auto probe = [&]() -> task<> {
-        co_await f.peer.send_request(AddParams{});
-        input_ended.set();
-    };
-    auto remote = [&]() -> task<> {
-        f.remote.send(request<A>(1, "test/add", AddParams{}));
-        co_await started.wait();
-        f.remote.end_input();
-        co_await input_ended.wait();
-        release.set();
-    };
-
-    auto [ran, probed, scripted] = f.run(f.peer.run(), probe(), remote());
-    EXPECT(ran.has_value());
-    ASSERT(failure.has_value());
-    EXPECT(code_of(*failure) == ipc::protocol::ErrorCode::RequestFailed);
-}
-
-/// close_output() half-closes after what is queued has been written.
-template <CodecAdapter A>
-void close_output_writes_queued_messages_first() {
-    PeerFixture<A> f;
-    auto sent = f.peer.send_notification(NoteParams{.text = "queued"});
-    auto closed = f.peer.close_output();
-    f.remote.end_input();
-
-    auto [ran] = f.run(f.peer.run());
-    EXPECT(ran.has_value());
-    ASSERT(sent.has_value());
-    ASSERT(closed.has_value());
-    const auto& written = f.written();
-    ASSERT(written.size() == 1U);
-    EXPECT(written[0].method == "test/note");
-    EXPECT(f.remote.output_ended());
-}
-
-/// After close_output() a send fails at once, and the input stays open.
-template <CodecAdapter A>
-void send_after_close_output_fails() {
-    PeerFixture<A> f;
-    std::vector<std::string> seen;
-    f.peer.on_notification([&](const NoteParams& params) { seen.push_back(params.text); });
-    ASSERT(f.peer.close_output().has_value());
-    auto sent = f.peer.send_notification(NoteParams{.text = "late"});
-    f.remote.send(notification<A>("test/note", NoteParams{.text = "after"}));
-    f.remote.end_input();
-
-    auto [ran] = f.run(f.peer.run());
-    EXPECT(ran.has_value());
-    ASSERT(sent.has_error());
-    EXPECT(code_of(sent.error()) == ipc::protocol::ErrorCode::RequestFailed);
-    EXPECT(seen == std::vector<std::string>{"after"});
 }
 
 }  // namespace kota::test

@@ -90,9 +90,10 @@ ZEST_CASE(bincode_peers_talk_over_pipes) {
 }
 
 // A notification larger than the pipe holds, which the test reads only once,
-// is still being written when the peer closes.
-// Not in the plan: the write ends with ECANCELED, which the stream reports as
-// a cancellation rather than an error, so it cancels run() and its awaiter.
+// is still being written when the peer closes. The write then fails with
+// operation_aborted, which the peer takes like any failed write.
+// Waits for the async rewrite: today the stream reports the aborted write as
+// a cancellation of the writer, which cancels run().
 ZEST_CASE(close_during_a_write_ends_run, skip = true) {
     auto output = pipe_ends(loop);
     auto input = pipe_ends(loop);
@@ -117,9 +118,9 @@ ZEST_CASE(close_during_a_write_ends_run, skip = true) {
     EXPECT(*closed);
 }
 
-// P1.3: close_output() on a peer over one TCP stream drops the stream under
-// the pending read, which is never woken, so run() never returns.
-ZEST_CASE(close_output_on_a_shared_stream_ends_run, skip = true) {
+// One TCP stream cannot half-close yet, so closing its output closes it and
+// ends run().
+ZEST_CASE(close_output_on_a_shared_stream_ends_run) {
     auto listener = tcp::listen("127.0.0.1", 0, {}, loop);
     ASSERT(listener.has_value());
     auto port = tcp::local_port(*listener);
@@ -136,15 +137,14 @@ ZEST_CASE(close_output_on_a_shared_stream_ends_run, skip = true) {
         }
         co_return received;
     };
-    auto closer = [&]() -> task<bool> {
-        co_return peer.close_output().has_value();
+    auto closer = [&]() -> task<> {
+        peer.close_output();
+        co_return;
     };
 
     auto [ran, drained, closed] = run(peer.run(), drain(), closer());
     EXPECT(ran.has_value());
     EXPECT(drained.has_value());
-    ASSERT(closed.has_value());
-    EXPECT(*closed);
 }
 
 };  // ZEST_SUITE(ipc_peer_stream)

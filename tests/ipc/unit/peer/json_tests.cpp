@@ -53,22 +53,6 @@ ZEST_CASE(error_data_crosses_between_peers) {
     test::error_data_crosses_between_peers<test::JsonAdapter>();
 }
 
-// N1: a request sent after the input ended waits for an answer for good.
-ZEST_CASE(request_from_a_handler_after_end_of_input_fails, skip = true) {
-    test::request_from_a_handler_after_end_of_input_fails<test::JsonAdapter>();
-}
-
-// N4: close_output() closes at once, so the queued message fails to write.
-ZEST_CASE(close_output_writes_queued_messages_first, skip = true) {
-    test::close_output_writes_queued_messages_first<test::JsonAdapter>();
-}
-
-// N4: a send after close_output() is queued, fails to write, and the failure
-// closes the input too.
-ZEST_CASE(send_after_close_output_fails, skip = true) {
-    test::send_after_close_output_fails<test::JsonAdapter>();
-}
-
 ZEST_CASE(object_without_method_or_id_is_answered_with_invalid_request) {
     Fixture f;
     f.remote.send("{}");

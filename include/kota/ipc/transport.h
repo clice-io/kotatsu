@@ -41,6 +41,9 @@ public:
 
     task<void, Error> write_message(std::string_view payload) override;
 
+    /// The remote reads the end of its input. A transport over one stream
+    /// (connect_tcp) cannot close only one direction of it: there this is
+    /// close(), and the input ends too.
     Result<void> close_output() override;
 
     Result<void> close() override;

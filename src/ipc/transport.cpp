@@ -244,8 +244,7 @@ task<void, Error> StreamTransport::write_message(std::string_view payload) {
 
 Result<void> StreamTransport::close_output() {
     if(shared_stream) {
-        read_stream = stream{};
-        return {};
+        return close();
     }
 
     write_stream = stream{};

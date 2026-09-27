@@ -4,6 +4,7 @@
 #include "kota/ipc/peer.h"
 #endif
 
+#include <cassert>
 #include <deque>
 #include <format>
 #include <functional>
@@ -117,8 +118,21 @@ struct Peer<CodecT>::Self {
     std::unordered_map<protocol::RequestID, std::shared_ptr<PendingRequest>> pending_requests;
     std::unordered_map<protocol::RequestID, std::shared_ptr<cancellation_source>> incoming_requests;
 
-    bool running = false;
+    /// Answers can still arrive: the read loop has not ended. Once it has,
+    /// a new request fails at once, since nothing could answer it.
+    bool input_open = true;
+    /// Messages can still be written. Once not, every send fails at once.
+    bool output_open = true;
+    /// close_output() was called: what is queued is written, then the
+    /// transport's output closes.
+    bool closing_output = false;
+    /// close() or a failed write closed the transport.
     bool closed = false;
+    /// The read loop has ended and every handler has finished, so no more
+    /// answers are queued.
+    bool answers_done = false;
+    /// run() was called; it is called once.
+    bool started = false;
     event write_event;
 
     LogCallback logger;
@@ -127,8 +141,25 @@ struct Peer<CodecT>::Self {
     explicit Self(event_loop& external_loop, CodecT codec_arg) :
         loop(external_loop), codec(std::move(codec_arg)) {}
 
-    void enqueue_outgoing(std::string payload) {
+    /// Why a message cannot be sent now, if it cannot; a request also needs
+    /// the input open for its answer.
+    std::optional<Error> unsendable(bool expects_answer) const {
         if(closed) {
+            return Error("peer closed");
+        }
+        if(!output_open || closing_output) {
+            return Error("peer output closed");
+        }
+        if(expects_answer && !input_open) {
+            return Error("peer input closed");
+        }
+        return std::nullopt;
+    }
+
+    /// Queues `payload`; an answer the output can no longer take is dropped.
+    void enqueue_outgoing(std::string payload) {
+        if(!output_open || closing_output) {
+            ET_IPC_LOG(this, LogLevel::debug, "dropped, the output is closed: {}", payload);
             return;
         }
         ET_IPC_LOG(this, LogLevel::trace, "send: {}", payload);
@@ -136,10 +167,15 @@ struct Peer<CodecT>::Self {
         write_event.set();
     }
 
+    /// Writes what is queued until the output closes, or until the answers
+    /// are done and the queue is empty.
     task<> write_loop() {
         while(true) {
             if(outgoing_queue.empty()) {
-                if(closed) {
+                if(closing_output) {
+                    finish_output();
+                }
+                if(!output_open || answers_done) {
                     break;
                 }
                 write_event.reset();
@@ -149,23 +185,61 @@ struct Peer<CodecT>::Self {
 
             auto payload = std::move(outgoing_queue.front());
             outgoing_queue.pop_front();
-
-            if(!transport) {
-                break;
-            }
-
             auto written = co_await transport->write_message(payload);
             if(!written) {
-                ET_IPC_LOG(this,
-                           LogLevel::error,
-                           "transport write failed: {}",
-                           written.error().message);
-                outgoing_queue.clear();
-                fail_pending_requests(written.error().message);
-                transport->close();
+                fail_output(written.error().message);
                 break;
             }
         }
+        output_open = false;
+    }
+
+    /// Half-closes the transport once close_output()'s queue is written.
+    void finish_output() {
+        closing_output = false;
+        output_open = false;
+        if(auto closed_output = transport->close_output(); !closed_output) {
+            ET_IPC_LOG(this,
+                       LogLevel::error,
+                       "closing the output failed: {}",
+                       closed_output.error().message);
+        }
+    }
+
+    /// A write failed: nothing more can be written or answered, so every
+    /// pending request fails and the transport closes, which ends the read
+    /// loop too.
+    void fail_output(const std::string& message) {
+        ET_IPC_LOG(this, LogLevel::error, "transport write failed: {}", message);
+        output_open = false;
+        closing_output = false;
+        outgoing_queue.clear();
+        fail_pending_requests(message);
+        // A close() that caused the failure has closed the transport already.
+        if(closed) {
+            return;
+        }
+        closed = true;
+        if(auto result = transport->close(); !result) {
+            ET_IPC_LOG(this,
+                       LogLevel::error,
+                       "closing the transport failed: {}",
+                       result.error().message);
+        }
+    }
+
+    /// The read loop ended: nothing can answer a pending request any more.
+    void end_input() {
+        input_open = false;
+        fail_pending_requests("transport closed");
+    }
+
+    task<> read_loop(task_group<>& handlers) {
+        ET_IPC_LOG(this, LogLevel::info, "{}", "read loop started");
+        while(auto payload = co_await transport->read_message()) {
+            dispatch_incoming_message(*payload, handlers);
+        }
+        ET_IPC_LOG(this, LogLevel::info, "{}", "read loop ended");
     }
 
     void send_error(const std::optional<protocol::RequestID>& id, const Error& error) {
@@ -323,6 +397,7 @@ struct Peer<CodecT>::Self {
 template <typename CodecT>
 Peer<CodecT>::Peer(event_loop& loop, std::unique_ptr<Transport> transport, CodecT codec) :
     self(std::make_unique<Self>(loop, std::move(codec))) {
+    assert(transport && "Peer requires a transport");
     self->transport = std::move(transport);
 }
 
@@ -331,49 +406,37 @@ Peer<CodecT>::~Peer() = default;
 
 template <typename CodecT>
 task<> Peer<CodecT>::run() {
-    if(!self || !self->transport || self->running) {
-        co_return;
-    }
+    assert(!self->started && "Peer::run() is called once");
+    self->started = true;
 
-    self->running = true;
+    task_group<> handlers(self->loop);
 
-    task_group<> request_group(self->loop);
-
-    auto read_and_dispatch = [this, &request_group]() -> task<> {
-        ET_IPC_LOG(self.get(), LogLevel::info, "{}", "read loop started");
-        while(self->transport) {
-            auto payload = co_await self->transport->read_message();
-            if(!payload.has_value()) {
-                self->fail_pending_requests("transport closed");
-                break;
-            }
-            self->dispatch_incoming_message(*payload, request_group);
-        }
-        ET_IPC_LOG(self.get(), LogLevel::info, "{}", "read loop ended");
-    };
-
+    // Pending requests fail as soon as the input ends, before the handlers
+    // still running finish and before run() returns.
     auto read_loop = [&]() -> task<> {
-        auto result = co_await read_and_dispatch().catch_cancel();
-        if(result.is_cancelled()) {
-            request_group.cancel();
+        auto read = co_await self->read_loop(handlers).catch_cancel();
+        self->end_input();
+        if(read.is_cancelled()) {
+            handlers.cancel();
         }
-        co_await request_group.join();
-        self->closed = true;
+        co_await handlers.join();
+        self->answers_done = true;
         self->write_event.set();
     };
 
     co_await when_all(read_loop(), self->write_loop());
-
-    self->running = false;
 }
 
 template <typename CodecT>
 Result<void> Peer<CodecT>::close() {
-    if(!self || !self->transport || self->closed) {
+    if(self->closed) {
         return {};
     }
 
     self->closed = true;
+    self->input_open = false;
+    self->output_open = false;
+    self->closing_output = false;
     ET_IPC_LOG(self.get(), LogLevel::info, "{}", "peer closing");
 
     // Cancel in-flight incoming requests. Copy sources first because
@@ -403,12 +466,11 @@ Result<void> Peer<CodecT>::close() {
 }
 
 template <typename CodecT>
-Result<void> Peer<CodecT>::close_output() {
-    if(!self || !self->transport) {
-        return outcome_error(Error("transport is null"));
+void Peer<CodecT>::close_output() {
+    if(self->output_open && !self->closing_output) {
+        self->closing_output = true;
+        self->write_event.set();
     }
-
-    return self->transport->close_output();
 }
 
 template <typename CodecT>
@@ -443,14 +505,14 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
 
         timeout_source = std::make_shared<cancellation_source>();
         timeout_stop.emplace();
-        if(self) {
-            self->loop.schedule(detail::cancel_after_timeout(
-                *opts.timeout, timeout_source, timeout_stop->token(), self->loop));
-        }
+        self->loop.schedule(detail::cancel_after_timeout(*opts.timeout,
+                                                         timeout_source,
+                                                         timeout_stop->token(),
+                                                         self->loop));
     }
 
-    if(!self || !self->transport || self->closed) {
-        co_await fail("transport is null");
+    if(auto unsendable = self->unsendable(true)) {
+        co_await fail(std::move(*unsendable));
     }
 
     if(opts.token && opts.token->cancelled()) {
@@ -514,8 +576,8 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
 
 template <typename CodecT>
 Result<void> Peer<CodecT>::send_notification_impl(std::string_view method, std::string params) {
-    if(!self || !self->transport || self->closed) {
-        return outcome_error(Error("transport is null"));
+    if(auto unsendable = self->unsendable(false)) {
+        return outcome_error(std::move(*unsendable));
     }
 
     auto notification_encoded = self->codec.encode_notification(method, params);
