@@ -94,7 +94,7 @@ void peer_link(const PeerKit<A>& kit) {
         event never;
         f.b.on_request([&](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
             started.set();
-            auto waited = co_await never.wait().catch_cancel();
+            auto waited = co_await wait_for(never).catch_cancel();
             if(waited.is_cancelled()) {
                 cancelled.set();
             }

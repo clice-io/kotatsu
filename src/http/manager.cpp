@@ -31,6 +31,15 @@ auto& managers() {
     return table;
 }
 
+/// Closes `handle` unless it is closing already.
+template <typename Handle>
+void close_handle(Handle& handle, uv_close_cb done) {
+    auto* base = reinterpret_cast<uv_handle_t*>(&handle);
+    if(!::uv_is_closing(base)) {
+        ::uv_close(base, done);
+    }
+}
+
 }  // namespace
 
 struct manager::timer_context {
@@ -48,7 +57,7 @@ manager::manager(event_loop& loop, curl::multi_handle handle) noexcept :
     bound_loop(&loop), multi(std::move(handle)) {
     timer = new timer_context();
     timer->owner = this;
-    uv::timer_init(loop, timer->handle);
+    ::uv_timer_init(loop.native_handle(), &timer->handle);
     timer->handle.data = timer;
 }
 
@@ -236,13 +245,20 @@ manager::socket_context* manager::ensure_socket(curl_socket_t socket) noexcept {
     context->socket = socket;
     context->owner = this;
 
-    if(auto err = uv::poll_init_socket(loop(), context->handle, static_cast<uv_os_sock_t>(socket));
-       err) {
-        delete context;
+    context->handle.data = context;
+    if(::uv_poll_init_socket(loop().native_handle(),
+                             &context->handle,
+                             static_cast<uv_os_sock_t>(socket)) != 0) {
+        // libuv on Windows can fail once it has listed the handle on the
+        // loop, which then has to close it.
+        if(context->handle.loop != nullptr) {
+            ::uv_close(reinterpret_cast<uv_handle_t*>(&context->handle), on_uv_socket_close);
+        } else {
+            delete context;
+        }
         return nullptr;
     }
 
-    context->handle.data = context;
     sockets.emplace(socket, context);
     return context;
 }
@@ -268,8 +284,7 @@ void manager::update_socket(curl_socket_t socket, int action, void* socketp) noe
                 events |= UV_READABLE;
             }
 
-            [[maybe_unused]] auto err =
-                uv::poll_start(context->handle, events, &manager::on_uv_socket);
+            ::uv_poll_start(&context->handle, events, &manager::on_uv_socket);
             return;
         }
 
@@ -286,11 +301,9 @@ void manager::update_socket(curl_socket_t socket, int action, void* socketp) noe
 
             sockets.erase(context->socket);
             context->owner = nullptr;
-            [[maybe_unused]] auto err = uv::poll_stop(context->handle);
+            ::uv_poll_stop(&context->handle);
             [[maybe_unused]] auto assign = curl::multi_assign(multi.get(), socket, nullptr);
-            if(!uv::is_closing(context->handle)) {
-                uv::close(context->handle, &manager::on_uv_socket_close);
-            }
+            close_handle(context->handle, &manager::on_uv_socket_close);
             return;
         }
 
@@ -304,7 +317,7 @@ void manager::update_timeout(long timeout_ms) noexcept {
     }
 
     if(timeout_ms < 0) {
-        uv::timer_stop(timer->handle);
+        ::uv_timer_stop(&timer->handle);
         return;
     }
 
@@ -312,10 +325,10 @@ void manager::update_timeout(long timeout_ms) noexcept {
         timeout_ms = 1;
     }
 
-    uv::timer_start(timer->handle,
-                    &manager::on_uv_timeout,
-                    static_cast<std::uint64_t>(timeout_ms),
-                    0);
+    ::uv_timer_start(&timer->handle,
+                     &manager::on_uv_timeout,
+                     static_cast<std::uint64_t>(timeout_ms),
+                     0);
 }
 
 void manager::close_watchers() noexcept {
@@ -324,20 +337,16 @@ void manager::close_watchers() noexcept {
             continue;
         }
         context->owner = nullptr;
-        [[maybe_unused]] auto stop = uv::poll_stop(context->handle);
+        ::uv_poll_stop(&context->handle);
         [[maybe_unused]] auto assign = curl::multi_assign(multi.get(), context->socket, nullptr);
-        if(!uv::is_closing(context->handle)) {
-            uv::close(context->handle, &manager::on_uv_socket_close);
-        }
+        close_handle(context->handle, &manager::on_uv_socket_close);
     }
     sockets.clear();
 
     if(timer) {
         timer->owner = nullptr;
-        uv::timer_stop(timer->handle);
-        if(!uv::is_closing(timer->handle)) {
-            uv::close(timer->handle, &manager::on_uv_timer_close);
-        }
+        ::uv_timer_stop(&timer->handle);
+        close_handle(timer->handle, &manager::on_uv_timer_close);
         timer = nullptr;
     }
 }

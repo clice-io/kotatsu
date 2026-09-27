@@ -21,7 +21,7 @@ ZEST_CASE(child_cancel_cancels_the_siblings) {
         co_await cancel();
     };
     auto driver = [&]() -> task<> {
-        task_group<> group(loop);
+        task_group<> group;
         group.spawn(slow());
         group.spawn(canceler());
         co_await group.join();
@@ -30,7 +30,7 @@ ZEST_CASE(child_cancel_cancels_the_siblings) {
     auto [result] = run(driver());
     EXPECT(result.has_value());
     // The gate is never set: its wait went because the cancel reached it.
-    EXPECT(gate.get_head() == nullptr);
+    EXPECT(!gate.has_waiters());
 }
 
 ZEST_CASE(cancel_before_join_cancels_every_child) {
@@ -39,7 +39,7 @@ ZEST_CASE(cancel_before_join_cancels_every_child) {
         co_await gate.wait();
     };
     auto driver = [&]() -> task<> {
-        task_group<> group(loop);
+        task_group<> group;
         group.spawn(slow());
         group.spawn(slow());
         group.cancel();
@@ -49,12 +49,12 @@ ZEST_CASE(cancel_before_join_cancels_every_child) {
 
     auto [result] = run(driver());
     EXPECT(result.has_value());
-    EXPECT(gate.get_head() == nullptr);
+    EXPECT(!gate.has_waiters());
 }
 
 ZEST_CASE(cancel_of_an_empty_group_lets_join_complete) {
     auto driver = [&]() -> task<> {
-        task_group<> group(loop);
+        task_group<> group;
         group.cancel();
         co_await group.join();
     };
@@ -76,7 +76,7 @@ ZEST_CASE(cancel_while_join_waits_cancels_the_rest) {
         co_await slow_gate.wait();
     };
     auto driver = [&]() -> task<> {
-        task_group<> group(loop);
+        task_group<> group;
         group_ptr = &group;
         group.spawn(fast());
         group.spawn(slow());
@@ -91,7 +91,7 @@ ZEST_CASE(cancel_while_join_waits_cancels_the_rest) {
     auto [result, drove] = run(driver(), canceler());
     EXPECT(result.has_value());
     EXPECT(fast_finished == 1);
-    EXPECT(slow_gate.get_head() == nullptr);
+    EXPECT(!slow_gate.has_waiters());
 }
 
 ZEST_CASE(child_can_cancel_its_group_after_suspending) {
@@ -105,7 +105,7 @@ ZEST_CASE(child_can_cancel_its_group_after_suspending) {
         group_ptr->cancel();
     };
     auto driver = [&]() -> task<> {
-        task_group<> group(loop);
+        task_group<> group;
         group_ptr = &group;
         group.spawn(canceler());
         group.spawn(slow());
@@ -114,7 +114,7 @@ ZEST_CASE(child_can_cancel_its_group_after_suspending) {
 
     auto [result] = run(driver());
     EXPECT(result.has_value());
-    EXPECT(gate.get_head() == nullptr);
+    EXPECT(!gate.has_waiters());
 }
 
 // spawn() runs a child until it first suspends; one that cancels its group
@@ -133,7 +133,7 @@ ZEST_CASE(child_cancelling_its_group_runs_to_its_first_suspension) {
         co_return;
     };
     auto driver = [&]() -> task<bool> {
-        task_group<> group(loop);
+        task_group<> group;
         group_ptr = &group;
         group.spawn(slow());
         co_await group.join();
@@ -155,43 +155,41 @@ ZEST_CASE(joiner_cancel_cancels_the_children) {
         co_await gate.wait();
     };
     auto driver = [&]() -> task<> {
-        task_group<> group(loop);
+        task_group<> group;
         group.spawn(slow());
         group.spawn(slow());
         co_await group.join();
     };
     auto target = driver();
-    auto* node = target.operator->();
     auto cancel_it = [&]() -> task<> {
-        node->cancel();
+        target.cancel();
         co_return;
     };
 
-    auto [result, drove] = run(std::move(target), cancel_it());
+    auto [result, drove] = run(target, cancel_it());
     EXPECT(result.is_cancelled());
-    EXPECT(gate.get_head() == nullptr);
+    EXPECT(!gate.has_waiters());
 }
 
 // join() under a cancelled task cancels the children and waits for them
 // before the cancellation goes on.
 ZEST_CASE(checkpoint_join_cancels_the_group) {
     event gate;
-    async_node* self = nullptr;
+    task<> target;
     auto slow = [&]() -> task<> {
         co_await gate.wait();
     };
     auto worker = [&]() -> task<> {
-        task_group<> group(loop);
+        task_group<> group;
         group.spawn(slow());
-        self->cancel();
+        target.cancel();
         co_await group.join();
     };
-    auto target = worker();
-    self = target.operator->();
+    target = worker();
 
-    auto [result] = run(std::move(target));
+    auto [result] = run(target);
     EXPECT(result.is_cancelled());
-    EXPECT(gate.get_head() == nullptr);
+    EXPECT(!gate.has_waiters());
 }
 
 };  // ZEST_SUITE(async_runtime_task_group_cancel)

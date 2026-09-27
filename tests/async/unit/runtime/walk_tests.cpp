@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstddef>
 #include <ranges>
 #include <utility>
@@ -7,6 +8,7 @@
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
+#include "kota/async/runtime/walk.h"
 
 namespace kota {
 
@@ -15,17 +17,21 @@ namespace {
 /// Records what a walk visits.
 struct Collector : async_visitor<Collector> {
     std::vector<async_node::NodeKind> nodes;
+    std::vector<const void*> tasks;
+    std::vector<const void*> waiters;
     std::vector<sync_primitive::Kind> resources;
     std::vector<std::pair<const void*, const void*>> edges;
     bool enter_aggregates = true;
 
     bool visit_task(const task_frame& node) {
         nodes.push_back(node.kind);
+        tasks.push_back(&node);
         return true;
     }
 
     bool visit_wait_node(const wait_node& node) {
         nodes.push_back(node.kind);
+        waiters.push_back(&node);
         return true;
     }
 
@@ -34,9 +40,8 @@ struct Collector : async_visitor<Collector> {
         return enter_aggregates;
     }
 
-    bool visit_io(const io_op& node) {
+    void visit_io(const io_op& node) {
         nodes.push_back(node.kind);
-        return true;
     }
 
     bool visit_sync(const sync_primitive& resource) {
@@ -50,6 +55,14 @@ struct Collector : async_visitor<Collector> {
 
     bool has_edge(const void* from, const void* to) const {
         return std::ranges::contains(edges, std::pair{from, to});
+    }
+
+    /// Some waiter and `resource` are linked both ways: the waiter names the
+    /// resource, and the resource lists the waiter in its queue.
+    bool linked_both_ways(const void* resource) const {
+        return std::ranges::any_of(waiters, [&](const void* waiter) {
+            return has_edge(waiter, resource) && has_edge(resource, waiter);
+        });
     }
 
     std::size_t count(async_node::NodeKind kind) const {
@@ -76,47 +89,26 @@ ZEST_CASE(visitor_walks_down_to_the_resources) {
         co_await when_all(on_event(), on_mutex());
     };
     auto target = combined();
-    auto* node = target.operator->();
 
-    // Checked while the waiters are alive: a waiter and its resource are
-    // linked both ways, the resource listing its queue.
-    struct Links {
-        bool event_waiter_to_event = false;
-        bool event_to_event_waiter = false;
-        bool mutex_waiter_to_mutex = false;
-        bool mutex_to_mutex_waiter = false;
-    };
-
-    auto inspect = [&]() -> task<std::pair<Collector, Links>> {
+    // Walked while the waiters are alive.
+    auto inspect = [&]() -> task<Collector> {
         Collector collector;
-        collector.walk_node(*node);
-        const void* event_waiter = gate.get_head();
-        const void* mutex_waiter = lock.get_head();
-        Links links{
-            .event_waiter_to_event = collector.has_edge(event_waiter, &gate),
-            .event_to_event_waiter = collector.has_edge(&gate, event_waiter),
-            .mutex_waiter_to_mutex = collector.has_edge(mutex_waiter, &lock),
-            .mutex_to_mutex_waiter = collector.has_edge(&lock, mutex_waiter),
-        };
+        collector.walk(target);
         gate.set();
         lock.unlock();
-        co_return std::pair{std::move(collector), links};
+        co_return collector;
     };
 
-    auto [combined_result, walked] = run(std::move(target), inspect());
+    auto [combined_result, walked] = run(target, inspect());
     EXPECT(combined_result.has_value());
     ASSERT(walked.has_value());
-    auto& [collector, links] = *walked;
-    EXPECT(collector.count(Kind::WhenAll) == 1U);
-    EXPECT(collector.count(Kind::EventWaiter) == 1U);
-    EXPECT(collector.count(Kind::MutexWaiter) == 1U);
-    EXPECT(collector.count(Kind::Task) >= 3U);
-    EXPECT(zest::contains(collector.resources, sync_primitive::Kind::Event));
-    EXPECT(zest::contains(collector.resources, sync_primitive::Kind::Mutex));
-    EXPECT(links.event_waiter_to_event);
-    EXPECT(links.event_to_event_waiter);
-    EXPECT(links.mutex_waiter_to_mutex);
-    EXPECT(links.mutex_to_mutex_waiter);
+    EXPECT(walked->count(Kind::WhenAll) == 1U);
+    EXPECT(walked->count(Kind::Waiter) == 2U);
+    EXPECT(walked->count(Kind::Task) == 3U);
+    EXPECT(zest::contains(walked->resources, sync_primitive::Kind::Event));
+    EXPECT(zest::contains(walked->resources, sync_primitive::Kind::Mutex));
+    EXPECT(walked->linked_both_ways(&gate));
+    EXPECT(walked->linked_both_ways(&lock));
 }
 
 ZEST_CASE(visitor_skips_the_children_of_a_node_it_rejects) {
@@ -128,20 +120,19 @@ ZEST_CASE(visitor_skips_the_children_of_a_node_it_rejects) {
         co_await when_all(waiter(), waiter());
     };
     auto target = combined();
-    auto* node = target.operator->();
     auto inspect = [&]() -> task<Collector> {
         Collector collector;
         collector.enter_aggregates = false;
-        collector.walk_node(*node);
+        collector.walk(target);
         gate.set();
         co_return collector;
     };
 
-    auto [combined_result, walked] = run(std::move(target), inspect());
+    auto [combined_result, walked] = run(target, inspect());
     EXPECT(combined_result.has_value());
     ASSERT(walked.has_value());
     EXPECT(walked->count(Kind::WhenAll) == 1U);
-    EXPECT(walked->count(Kind::EventWaiter) == 0U);
+    EXPECT(walked->count(Kind::Waiter) == 0U);
     EXPECT(walked->resources.empty());
 }
 
@@ -154,21 +145,20 @@ ZEST_CASE(walk_visits_a_shared_resource_once) {
         co_await when_all(waiter(), waiter());
     };
     auto target = combined();
-    auto* node = target.operator->();
     auto inspect = [&]() -> task<std::vector<std::size_t>> {
         Collector collector;
-        collector.walk_node(*node);
+        collector.walk(target);
         std::vector<std::size_t> events{collector.resources.size()};
-        collector.walk_node(*node);
+        collector.walk(target);
         events.push_back(collector.resources.size());
         collector.reset();
-        collector.walk_node(*node);
+        collector.walk(target);
         events.push_back(collector.resources.size());
         gate.set();
         co_return events;
     };
 
-    auto [combined_result, sizes] = run(std::move(target), inspect());
+    auto [combined_result, sizes] = run(target, inspect());
     EXPECT(combined_result.has_value());
     ASSERT(sizes.has_value());
     // Two waiters share the event: once per walk, again only after reset().
@@ -183,35 +173,29 @@ ZEST_CASE(waiter_links_its_task_and_its_resource) {
         lock.unlock();
     };
     auto target = waiter();
-    auto* node = target.operator->();
 
-    // Checked while the waiter is queued: it names its resource and its task,
-    // and a task names no resource.
-    struct Links {
-        bool queued = false;
-        bool waiter_to_mutex = false;
-        bool waiter_to_task = false;
-        bool task_to_nothing = false;
-    };
-
-    auto inspect = [&]() -> task<Links> {
-        const auto* queued = lock.get_head();
-        Links links{.queued = queued != nullptr, .task_to_nothing = get_resource(*node) == nullptr};
-        if(queued) {
-            links.waiter_to_mutex = get_resource(*queued) == &lock;
-            links.waiter_to_task = get_parent(*queued) == node;
-        }
+    // Walked while the waiter is queued: the task points at its waiter, the
+    // waiter at its resource, and the task at no resource.
+    auto inspect = [&]() -> task<std::pair<Collector, bool>> {
+        Collector collector;
+        collector.walk(target);
+        bool queued = lock.has_waiters();
         lock.unlock();
-        co_return links;
+        co_return std::pair{std::move(collector), queued};
     };
 
-    auto [waited, links] = run(std::move(target), inspect());
+    auto [waited, walked] = run(target, inspect());
     EXPECT(waited.has_value());
-    ASSERT(links.has_value());
-    ASSERT(links->queued);
-    EXPECT(links->waiter_to_mutex);
-    EXPECT(links->waiter_to_task);
-    EXPECT(links->task_to_nothing);
+    ASSERT(walked.has_value());
+    auto& [collector, queued] = *walked;
+    ASSERT(queued);
+    ASSERT(collector.tasks.size() == 1U);
+    ASSERT(collector.waiters.size() == 1U);
+    const void* task = collector.tasks.front();
+    const void* waiting = collector.waiters.front();
+    EXPECT(collector.has_edge(task, waiting));
+    EXPECT(collector.has_edge(waiting, &lock));
+    EXPECT(!collector.has_edge(task, &lock));
 }
 
 };  // ZEST_SUITE(async_runtime_walk)

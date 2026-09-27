@@ -1,93 +1,47 @@
 #include "kota/async/io/request.h"
 
-#include <cassert>
+#include <utility>
 
 #include "awaiter.h"
-#include "kota/async/io/loop.h"
-#include "kota/async/runtime/task.h"
-#include "kota/async/vocab/error.h"
 
 namespace kota {
 
 namespace {
 
-struct work_op : uv::await_op<work_op> {
-    using promise_t = task<void, error>::promise_type;
+/// Work on libuv's thread pool. Its status is 0, or ECANCELED once the work
+/// was dequeued by a cancel, which ended the task already: nothing reads it.
+struct work_op : uv::request_op<work_op, uv_work_t> {
+    uv_loop_t* loop;
+    function<void()> work;
+    function<void()> hook;
 
-    // libuv request object; req.data points back to this awaiter.
-    uv_work_t req{};
-    // User-supplied function executed on libuv's worker thread.
-    function<void()> fn;
-    // Invoked on the loop thread when the awaiting task is cancelled, so an
-    // already-running fn can observe cancellation and return early. Always
-    // set; the hook-less overload passes a no-op.
-    function<void()> cancel_hook;
-    // Completion status consumed by await_resume().
-    error result;
+    work_op(uv_loop_t* loop, function<void()> work, function<void()> hook) :
+        loop(loop), work(std::move(work)), hook(std::move(hook)) {}
 
-    work_op(function<void()> fn, function<void()> cancel_hook) :
-        fn(std::move(fn)), cancel_hook(std::move(cancel_hook)) {}
+    bool start() noexcept {
+        // uv_queue_work fails only without a work callback.
+        ::uv_queue_work(loop, &req, run, on_done);
+        return true;
+    }
 
-    static void on_cancel(io_op* op) {
-        auto* self = static_cast<work_op*>(op);
-        // Dequeue first so the hook cannot indirectly free a pool thread that
-        // would pick this work up before uv_cancel runs. If dequeuing fails
-        // the work is running (or just finished); the hook tells it to return
-        // early.
-        if(uv::cancel(self->req)) {
-            self->cancel_hook();
+    void cancel() noexcept {
+        // Dequeue first, so that the hook cannot make room on the pool for
+        // this very work before uv_cancel runs. Failing that, the work runs
+        // (or just ran), and the hook tells it to return early.
+        if(::uv_cancel(reinterpret_cast<uv_req_t*>(&req)) != 0) {
+            hook();
         }
     }
 
-    bool await_ready() const noexcept {
-        return false;
-    }
-
-    std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<promise_t> waiting,
-                      std::source_location loc = std::source_location::current()) noexcept {
-        return this->attach(waiting.promise(), loc);
-    }
-
-    error await_resume() noexcept {
-        return result;
+    static void run(uv_work_t* req) {
+        static_cast<work_op*>(static_cast<request_op*>(req->data))->work();
     }
 };
 
 }  // namespace
 
-task<void, error> queue(function<void()> fn, function<void()> on_cancel, event_loop& loop) {
-    work_op op(std::move(fn), std::move(on_cancel));
-
-    auto work_cb = [](uv_work_t* req) {
-        auto* holder = static_cast<work_op*>(req->data);
-        assert(holder != nullptr && "work_cb requires operation in req->data");
-        holder->fn();
-    };
-
-    auto after_cb = [](uv_work_t* req, int status) {
-        auto* holder = static_cast<work_op*>(req->data);
-        assert(holder != nullptr && "after_cb requires operation in req->data");
-
-        holder->mark_cancelled_if(status);
-        holder->result = uv::status_to_error(status);
-        holder->complete();
-    };
-
-    op.result.clear();
-    op.req.data = &op;
-
-    if(auto err = uv::queue_work(loop, op.req, work_cb, after_cb)) {
-        co_await fail(err);
-    }
-
-    if(auto err = co_await op) {
-        co_await fail(std::move(err));
-    }
-}
-
-task<void, error> queue(function<void()> fn, event_loop& loop) {
-    return queue(std::move(fn), function<void()>([] {}), loop);
+task<> detail::run_on_pool(function<void()> work, function<void()> on_cancel, event_loop& loop) {
+    co_await work_op(loop.native_handle(), std::move(work), std::move(on_cancel));
 }
 
 }  // namespace kota

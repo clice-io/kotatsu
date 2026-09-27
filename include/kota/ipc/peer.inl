@@ -170,7 +170,7 @@ struct Peer<CodecT>::Self {
                 }
                 write_event.reset();
                 // Cancelled with run(): nothing more is written.
-                auto woken = co_await write_event.wait().catch_cancel();
+                auto woken = co_await wait_for(write_event).catch_cancel();
                 if(woken.is_cancelled()) {
                     break;
                 }
@@ -313,6 +313,11 @@ struct Peer<CodecT>::Self {
             return;
         }
         enqueue_outgoing(std::move(*notification));
+    }
+
+    /// Waits for `signal`: a task, whose cancellation its awaiter can catch.
+    static task<> wait_for(event& signal) {
+        co_await signal.wait();
     }
 
     static task<Ending> answered(std::shared_ptr<PendingRequest> pending) {
@@ -512,7 +517,7 @@ task<> Peer<CodecT>::run() {
     assert(!self->started && "Peer::run() is called once");
     self->started = true;
 
-    task_group<> handlers(self->loop);
+    task_group<> handlers;
 
     // Pending requests fail as soon as the input ends, before the handlers
     // still running finish and before run() returns. A connection that went

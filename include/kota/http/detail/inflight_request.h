@@ -26,7 +26,7 @@ public:
     bool prepare() noexcept;
     bool bind_runtime(void* opaque) noexcept;
     void clear_runtime_binding() noexcept;
-    outcome<response, error, cancellation> finish() noexcept;
+    outcome<response, error> finish() noexcept;
 
     static std::size_t on_write(char* data, std::size_t size, std::size_t count, void* userdata);
     static std::size_t on_header(char* data, std::size_t size, std::size_t count, void* userdata);

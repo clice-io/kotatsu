@@ -32,6 +32,11 @@
 
 namespace kota::test {
 
+/// Waits for `signal`: a task, whose cancellation its awaiter can catch.
+inline task<> wait_for(event& signal) {
+    co_await signal.wait();
+}
+
 template <CodecAdapter A>
 struct PeerFixture : LoopFixture {
     using Peer = ipc::Peer<typename A::Codec>;

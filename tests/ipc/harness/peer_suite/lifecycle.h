@@ -224,7 +224,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         event never;
         bool cancelled = false;
         f.peer.on_request([&](Context& context, const AddParams&) -> ipc::RequestResult<AddParams> {
-            co_await never.wait().catch_cancel();
+            co_await wait_for(never).catch_cancel();
             cancelled = context.cancelled();
             co_return AddResult{};
         });

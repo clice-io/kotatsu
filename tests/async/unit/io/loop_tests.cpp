@@ -47,7 +47,7 @@ ZEST_CASE(scheduled_reference_stays_with_the_caller) {
 
     loop.schedule(root);
     EXPECT(loop.run() == 0);
-    ASSERT(root->is_finished());
+    ASSERT(root.done());
     EXPECT(root.result() == 7);
 }
 
@@ -67,7 +67,7 @@ ZEST_CASE(task_scheduled_while_running_runs_on_a_later_turn) {
 
     loop.schedule(root);
     EXPECT(loop.run() == 0);
-    EXPECT(scheduled->is_finished());
+    EXPECT(scheduled.done());
     EXPECT(order == std::vector{1, 2});
 }
 
@@ -87,49 +87,144 @@ ZEST_CASE(scheduled_temporary_is_destroyed_by_the_loop) {
     EXPECT(watch.expired());
 }
 
-// Cancelled while it runs, a root the loop owns ends at its next co_await:
-// awaiting the child finalizes the root, which destroys its frame, and the
-// child with it, before the await returns. ASan builds catch a read of the
-// freed child there.
-ZEST_CASE(scheduled_temporary_cancelled_while_running_ends_at_its_next_await) {
+// A child that ends cancelled ends a root the loop owns at its co_await: the
+// child's end destroys the root's frame, and the child with it, before the
+// await returns. ASan builds catch a read of the freed child there.
+ZEST_CASE(scheduled_temporary_ended_by_a_cancelled_child_is_destroyed) {
     auto frame_alive = std::make_shared<int>();
     std::weak_ptr<int> watch = frame_alive;
-    async_node* self = nullptr;
     bool child_ran = false;
     bool resumed = false;
     auto child = [&]() -> task<> {
         child_ran = true;
-        co_return;
+        co_await cancel();
     };
     auto make = [&](std::shared_ptr<int>) -> task<> {
-        self->cancel();
         co_await child();
         resumed = true;
     };
-    auto root = make(std::move(frame_alive));
-    self = root.operator->();
 
-    loop.schedule(std::move(root));
+    loop.schedule(make(std::move(frame_alive)));
     EXPECT(loop.run() == 0);
     EXPECT(watch.expired());
-    EXPECT(!child_ran);
+    EXPECT(child_ran);
     EXPECT(!resumed);
 }
 #endif
 
-ZEST_CASE(task_cancelled_before_it_starts_never_runs) {
-    bool ran = false;
+// A loop that goes before its roots' turn frees the ones it owns, a root its
+// caller dropped first included, and leaves a root its caller keeps to it.
+ZEST_CASE(roots_that_never_ran_go_with_their_loop) {
+    auto frames = std::make_shared<int>();
+    auto work = [](std::shared_ptr<int>) -> task<> {
+        co_return;
+    };
+    task<> kept = work(frames);
+    {
+        event_loop other;
+        other.schedule(work(frames));
+        other.schedule(kept);
+        task<> dropped = work(frames);
+        other.schedule(dropped);
+    }
+    EXPECT(frames.use_count() == 2);
+    kept = task<>();
+    EXPECT(frames.use_count() == 1);
+}
+
+// A root cancelled before its first turn never runs, whether the cancel
+// comes before it is scheduled or after, from a root the turn runs first.
+ZEST_CASE(root_cancelled_before_its_first_turn_never_runs) {
+    int ran = 0;
     auto make = [&]() -> task<int> {
-        ran = true;
+        ran += 1;
         co_return 1;
     };
-    auto root = make();
-    root->cancel();
+    auto early = make();
+    auto late = make();
+    early.cancel();
+    auto canceller = [&]() -> task<> {
+        late.cancel();
+        co_return;
+    };
+    auto first = canceller();
 
-    loop.schedule(root);
+    loop.schedule(early);
+    loop.schedule(first);
+    loop.schedule(late);
     loop.run();
-    EXPECT(root->is_cancelled());
+    EXPECT(early.is_cancelled());
+    EXPECT(late.is_cancelled());
+    EXPECT(ran == 0);
+}
+
+// A root the loop owns and that was cancelled before its first turn never
+// runs, and the loop still frees it. Its frame holds a copy of `frame`, which
+// tells when it goes.
+ZEST_CASE(owned_root_cancelled_before_it_starts_is_freed) {
+    auto frame = std::make_shared<int>();
+    std::weak_ptr<int> watch = frame;
+    bool ran = false;
+    auto make = [&](std::shared_ptr<int>) -> task<> {
+        ran = true;
+        co_return;
+    };
+    auto owned = make(std::move(frame));
+    owned.cancel();
+
+    loop.schedule(std::move(owned));
+    EXPECT(!watch.expired());
+    loop.run();
+    EXPECT(watch.expired());
     EXPECT(!ran);
+}
+
+// A scheduled root its caller drops before the loop starts it is let go: it
+// never runs, and the loop frees it on the turn it would have started.
+ZEST_CASE(scheduled_root_dropped_before_its_turn_is_let_go) {
+    auto frame = std::make_shared<int>();
+    std::weak_ptr<int> watch = frame;
+    bool ran = false;
+    auto make = [&](std::shared_ptr<int>) -> task<> {
+        ran = true;
+        co_return;
+    };
+    {
+        auto root = make(std::move(frame));
+        loop.schedule(root);
+    }
+    EXPECT(!watch.expired());
+
+    EXPECT(loop.run() == 0);
+    EXPECT(watch.expired());
+    EXPECT(!ran);
+}
+
+// A running root its caller drops is let go too: the drop cancels it, which
+// ends its wait on the event, and the loop frees it as it ends.
+ZEST_CASE(running_root_dropped_by_its_caller_is_let_go) {
+    auto frame = std::make_shared<int>();
+    std::weak_ptr<int> watch = frame;
+    event never;
+    bool resumed = false;
+    auto make = [&](std::shared_ptr<int>) -> task<> {
+        co_await never.wait();
+        resumed = true;
+    };
+    std::optional<task<>> root(make(std::move(frame)));
+    auto dropper = [&]() -> task<> {
+        root.reset();
+        co_return;
+    };
+    auto dropping = dropper();
+
+    loop.schedule(*root);
+    loop.schedule(dropping);
+    EXPECT(loop.run() == 0);
+    EXPECT(dropping.done());
+    EXPECT(watch.expired());
+    EXPECT(!resumed);
+    EXPECT(!never.has_waiters());
 }
 
 ZEST_CASE(finished_roots_report_through_result) {
@@ -168,9 +263,7 @@ ZEST_CASE(cancelled_roots_report_through_value_and_result) {
     loop.schedule(without_channel);
     loop.schedule(with_channel);
     loop.run();
-    EXPECT(without_channel->is_cancelled());
-    // Without a cancel channel, value() is all a cancelled root can report.
-    EXPECT(!without_channel.value().has_value());
+    EXPECT(without_channel.is_cancelled());
     EXPECT(with_channel.result().is_cancelled());
 }
 
@@ -185,9 +278,8 @@ ZEST_CASE(failed_root_rethrows_through_result, skip = test::exceptions_unreadabl
 
     loop.schedule(root);
     loop.run();
-    EXPECT(root->is_failed());
+    EXPECT(root.done());
     EXPECT(test::thrown([&] { root.result(); }) == "root");
-    EXPECT(test::thrown([&] { root.value(); }) == "root");
 }
 #endif
 
@@ -208,10 +300,10 @@ ZEST_CASE(stop_ends_run_with_work_still_pending) {
     loop.schedule(stopping);
     // run() says whether work was left when it returned.
     EXPECT(loop.run() != 0);
-    EXPECT(!pending->is_finished());
+    EXPECT(!pending.done());
     EXPECT(!resumed);
-    pending->cancel();
-    EXPECT(pending->is_cancelled());
+    pending.cancel();
+    EXPECT(pending.is_cancelled());
 }
 
 ZEST_CASE(on_destroy_callbacks_run_when_the_loop_goes) {
@@ -223,6 +315,27 @@ ZEST_CASE(on_destroy_callbacks_run_when_the_loop_goes) {
         EXPECT(called == 0);
     }
     EXPECT(called == 11);
+}
+
+// The loop closes the handles still open when it goes, and a wait pending on
+// one stays pending: nothing that loop queues runs any more. The timer is
+// freed by its own destructor afterwards, which lets the wait go, and the
+// wait's cancel ends it. The sanitizer builds catch a use of the freed timer
+// or a leak there.
+ZEST_CASE(wait_on_a_handle_outliving_its_loop_ends_when_cancelled) {
+    std::optional<event_loop> own(std::in_place);
+    auto t = timer::create(*own);
+    auto waiting = t.wait();
+
+    own->schedule(waiting);
+    // The timer never started, so nothing keeps this loop running.
+    EXPECT(own->run() == 0);
+    ASSERT(!waiting.done());
+    own.reset();
+    t = timer();
+    EXPECT(!waiting.done());
+    waiting.cancel();
+    EXPECT(waiting.is_cancelled());
 }
 
 // The loop drops what relays sent but it never delivered.
@@ -247,9 +360,8 @@ ZEST_CASE(kota_run_returns_every_value) {
     auto [value, failed] = kota::run(one(), failing());
     ASSERT(value.has_value());
     EXPECT(*value == 1);
-    ASSERT(failed.has_value());
-    ASSERT(failed->has_error());
-    EXPECT(failed->error() == error::io_error);
+    ASSERT(failed.has_error());
+    EXPECT(failed.error() == error::io_error);
 }
 
 #if KOTA_ENABLE_EXCEPTIONS

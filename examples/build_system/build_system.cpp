@@ -26,7 +26,7 @@ static CompileGraph build_graph() {
 static task<> run_shell(event_loop& loop) {
     auto graph = build_graph();
 
-    auto stdin_result = console::open(0, console::options(true));
+    auto stdin_result = console::open(0, {.readable = true});
     if(!stdin_result.has_value()) {
         std::fprintf(stderr, "Failed to open stdin\n");
         co_return;

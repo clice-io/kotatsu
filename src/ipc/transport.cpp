@@ -115,8 +115,9 @@ Result<void> StreamTransport::close_output() {
     return release_stdout();
 }
 
-// Stopping the read may resume the read loop at once, which can end the
-// peer's run() and let its owner destroy the peer and this transport: the
+// Stopping the read ends the read loop, which can end the peer's run() and
+// let its owner destroy the peer and this transport; the runtime resumes it
+// later, but should it resume it at once, nothing here is touched after: the
 // read stream is moved out first, and the stop comes last. The write stream
 // goes before stdout is released: closing it takes fd 1 out of the loop's
 // poll set by number, which would no longer find it once fd 1 is the null

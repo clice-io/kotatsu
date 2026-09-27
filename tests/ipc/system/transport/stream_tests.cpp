@@ -265,8 +265,9 @@ ZEST_CASE(write_to_the_read_end_fails) {
 ZEST_CASE(connect_tcp_exchanges_messages) {
     auto listener = tcp::listen("127.0.0.1", 0, {}, loop);
     ASSERT(listener.has_value());
-    auto port = tcp::local_port(*listener);
-    ASSERT(port.has_value());
+    auto name = listener->getsockname();
+    ASSERT(name.has_value());
+    const int port = name->port;
     auto serve = [&]() -> task<std::optional<std::string>> {
         auto connection = co_await listener->accept();
         if(!connection) {
@@ -278,7 +279,7 @@ ZEST_CASE(connect_tcp_exchanges_messages) {
         co_return request ? std::optional(std::move(*request)) : std::nullopt;
     };
     auto ask = [&]() -> task<std::optional<std::string>, Error> {
-        auto client = co_await StreamTransport::connect_tcp("127.0.0.1", *port, loop).or_fail();
+        auto client = co_await StreamTransport::connect_tcp("127.0.0.1", port, loop).or_fail();
         co_await client->write_message("ping").or_fail();
         auto answer = co_await client->read_message();
         co_return answer ? std::optional(std::move(*answer)) : std::nullopt;

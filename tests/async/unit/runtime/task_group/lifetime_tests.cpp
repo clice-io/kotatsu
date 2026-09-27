@@ -1,4 +1,5 @@
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -37,7 +38,7 @@ ZEST_CASE(spawn_after_join_fails) {
         co_return;
     };
     auto driver = [&]() -> task<std::vector<bool>> {
-        task_group<> group(loop);
+        task_group<> group;
         std::vector<bool> accepted{group.spawn(work())};
         co_await group.join();
         accepted.push_back(group.spawn(work()));
@@ -57,7 +58,7 @@ ZEST_CASE(spawn_after_cancel_fails) {
         co_return;
     };
     auto driver = [&]() -> task<std::vector<bool>> {
-        task_group<> group(loop);
+        task_group<> group;
         std::vector<bool> accepted{group.spawn(work())};
         group.cancel();
         accepted.push_back(group.spawn(work()));
@@ -71,6 +72,36 @@ ZEST_CASE(spawn_after_cancel_fails) {
     EXPECT(started == 1);
 }
 
+// A child that fails, or ends cancelled, cancels its siblings, and the group
+// takes no child after that.
+ZEST_CASE(spawn_after_a_child_ended_the_group_fails) {
+    int started = 0;
+    auto work = [&]() -> task<void, error> {
+        started += 1;
+        co_return;
+    };
+    auto failing = []() -> task<void, error> {
+        co_await fail(error::connection_refused);
+    };
+    auto cancelling = []() -> task<void, error> {
+        co_await cancel();
+    };
+    auto after = [&](task<void, error> ender) -> task<bool> {
+        task_group<error> group;
+        group.spawn(std::move(ender));
+        bool accepted = group.spawn(work());
+        [[maybe_unused]] auto joined = co_await group.join();
+        co_return accepted;
+    };
+
+    auto [after_failure, after_cancel] = run(after(failing()), after(cancelling()));
+    ASSERT(after_failure.has_value());
+    EXPECT(!*after_failure);
+    ASSERT(after_cancel.has_value());
+    EXPECT(!*after_cancel);
+    EXPECT(started == 0);
+}
+
 // A group whose children all finished while being spawned may go without a
 // join().
 ZEST_CASE(group_of_finished_children_needs_no_join) {
@@ -81,7 +112,7 @@ ZEST_CASE(group_of_finished_children_needs_no_join) {
     };
 
     {
-        task_group<> group(loop);
+        task_group<> group;
         group.spawn(work());
         group.spawn(work());
     }
@@ -89,11 +120,93 @@ ZEST_CASE(group_of_finished_children_needs_no_join) {
     EXPECT(finished == 2);
 }
 
-// A finished child's frame goes at once instead of waiting for the group; a
-// failed child stays until join() has taken its error. The third spawn also
-// compacts the slots of the reclaimed children, and its error must still be
-// matched to it. Each frame holds a copy of `frames`, so its use count tells
-// how many are alive.
+// Destroying a group whose children still run lets them go: each is
+// cancelled, and its frame goes once it has ended.
+ZEST_CASE(destroying_the_group_cancels_its_running_children) {
+    event gate;
+    auto frames = std::make_shared<int>();
+    bool resumed = false;
+    auto waiting = [&](std::shared_ptr<int>) -> task<> {
+        co_await gate.wait();
+        resumed = true;
+    };
+    auto driver = [&]() -> task<> {
+        {
+            task_group<> group;
+            group.spawn(waiting(frames));
+        }
+        co_return;
+    };
+
+    auto [result] = run(driver());
+    EXPECT(result.has_value());
+    EXPECT(!resumed);
+    EXPECT(!gate.has_waiters());
+    EXPECT(frames.use_count() == 1);
+}
+
+// The destructor's cancel resumes a child that catches it, which runs on
+// inside the destructor to its next suspending co_await; the group refuses
+// what that child spawns meanwhile.
+ZEST_CASE(child_the_destructor_resumes_cannot_spawn) {
+    event gate;
+    task_group<>* dying = nullptr;
+    std::optional<bool> spawned;
+    auto waiting = [&]() -> task<> {
+        co_await gate.wait();
+    };
+    auto sibling = []() -> task<> {
+        co_return;
+    };
+    auto child = [&]() -> task<> {
+        co_await waiting().catch_cancel();
+        spawned = dying->spawn(sibling());
+    };
+    auto driver = [&]() -> task<> {
+        {
+            task_group<> group;
+            dying = &group;
+            group.spawn(child());
+        }
+        co_return;
+    };
+
+    auto [result] = run(driver());
+    EXPECT(result.has_value());
+    ASSERT(spawned.has_value());
+    EXPECT(!*spawned);
+}
+
+// A child let go keeps its frame until its cancellation completes, however
+// long after the group is gone that is.
+ZEST_CASE(destroyed_group_child_is_freed_once_its_cancel_completes) {
+    test::PendingOp op;
+    auto frames = std::make_shared<int>();
+    auto pending = [&](std::shared_ptr<int>) -> task<void, error> {
+        co_await op;
+    };
+    auto driver = [&]() -> task<long> {
+        {
+            task_group<error> group;
+            group.spawn(pending(frames));
+        }
+        co_return frames.use_count() - 1;
+    };
+    auto finisher = [&]() -> task<> {
+        op.complete();
+        co_return;
+    };
+
+    auto [alive, finished] = run(driver(), finisher());
+    ASSERT(alive.has_value());
+    EXPECT(*alive == 1);
+    EXPECT(op.cancel_requested());
+    EXPECT(frames.use_count() == 1);
+}
+
+// Every child's frame goes as soon as the child ends, a failed one too, whose
+// error the group has taken by then. Each frame holds a copy of `frames`, so
+// its use count tells how many are alive.
 ZEST_CASE(finished_children_are_reclaimed_at_once) {
     auto frames = std::make_shared<int>();
     auto work = [](std::shared_ptr<int>) -> task<> {
@@ -107,12 +220,11 @@ ZEST_CASE(finished_children_are_reclaimed_at_once) {
         long alive_after_two = -1;
         long alive_after_failing = -1;
         std::vector<error> errors;
-        long alive_after_join = -1;
     };
 
     auto driver = [&]() -> task<Seen> {
         Seen seen;
-        task_group<error> group(loop);
+        task_group<error> group;
         group.spawn(work(frames));
         group.spawn(work(frames));
         seen.alive_after_two = frames.use_count() - 1;
@@ -122,18 +234,43 @@ ZEST_CASE(finished_children_are_reclaimed_at_once) {
         if(joined.has_error()) {
             seen.errors = std::move(joined).error();
         }
-        seen.alive_after_join = frames.use_count() - 1;
         co_return seen;
     };
 
     auto [result] = run(driver());
     ASSERT(result.has_value());
     EXPECT(result->alive_after_two == 0);
-    EXPECT(result->alive_after_failing == 1);
+    EXPECT(result->alive_after_failing == 0);
     EXPECT(result->errors == std::vector{error::connection_refused});
-    EXPECT(result->alive_after_join == 1);
-    // The group's destructor released the failed child.
-    EXPECT(frames.use_count() == 1);
+}
+
+// A child cancelled before it is spawned never runs: it ends cancelled at
+// once, which cancels its siblings as any child's cancellation does.
+ZEST_CASE(child_cancelled_before_spawn_never_runs) {
+    event gate;
+    bool ran = false;
+    auto slow = [&]() -> task<> {
+        co_await gate.wait();
+    };
+    auto work = [&]() -> task<> {
+        ran = true;
+        co_return;
+    };
+    auto driver = [&]() -> task<bool> {
+        task_group<> group;
+        group.spawn(slow());
+        auto cancelled = work();
+        cancelled.cancel();
+        bool accepted = group.spawn(std::move(cancelled));
+        co_await group.join();
+        co_return accepted;
+    };
+
+    auto [result] = run(driver());
+    ASSERT(result.has_value());
+    EXPECT(*result);
+    EXPECT(!ran);
+    EXPECT(!gate.has_waiters());
 }
 
 // Structured completion: join() returns only once every cancelled child has
@@ -151,7 +288,7 @@ ZEST_CASE(join_after_cancel_waits_for_pending_children) {
         co_await op;
     };
     auto driver = [&]() -> task<> {
-        task_group<> group(loop);
+        task_group<> group;
         group.spawn(at_once());
         group.spawn(pending(frames));
         group.cancel();
@@ -166,7 +303,7 @@ ZEST_CASE(join_after_cancel_waits_for_pending_children) {
 
     auto [result, joined_before] = run(driver(), finisher());
     EXPECT(result.has_value());
-    EXPECT(op.is_cancelled());
+    EXPECT(op.cancel_requested());
     ASSERT(joined_before.has_value());
     EXPECT(!*joined_before);
     EXPECT(joined);
@@ -185,7 +322,7 @@ ZEST_CASE(join_after_an_error_waits_for_pending_children) {
         co_await fail(error::connection_refused);
     };
     auto driver = [&]() -> task<std::vector<error>> {
-        task_group<error> group(loop);
+        task_group<error> group;
         group.spawn(pending(frames));
         group.spawn(failing());
         auto result = co_await group.join();
@@ -204,7 +341,7 @@ ZEST_CASE(join_after_an_error_waits_for_pending_children) {
     auto [result, joined_before] = run(driver(), finisher());
     ASSERT(result.has_value());
     EXPECT(*result == std::vector{error::connection_refused});
-    EXPECT(op.is_cancelled());
+    EXPECT(op.cancel_requested());
     ASSERT(joined_before.has_value());
     EXPECT(!*joined_before);
     EXPECT(frames.use_count() == 1);

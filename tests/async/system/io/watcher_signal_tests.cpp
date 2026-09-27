@@ -1,6 +1,9 @@
 #include <csignal>
+#include <cstddef>
+#include <optional>
 #include <utility>
 
+#include "async/harness/io.h"
 #include "async/harness/loop_fixture.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
@@ -31,40 +34,96 @@ ZEST_CASE(every_raised_signal_wakes_one_wait) {
     EXPECT(!sig->stop());
 }
 
+// A signal raised while nobody waits is kept for the next wait(), also across
+// a start() on the signal watched already, and dropped by a start() that
+// switches to another. The loop reads a raised signal on its way to the
+// yield's turn.
+ZEST_CASE(switching_to_another_signal_drops_the_kept_fires) {
+    auto sig = signal::create(loop);
+    ASSERT(sig.has_value());
+    ASSERT(!sig->start(SIGUSR1));
+    auto waiter = [&]() -> task<std::pair<std::size_t, std::size_t>, error> {
+        ::raise(SIGUSR1);
+        co_await yield();
+        EXPECT(!sig->start(SIGUSR1));
+        auto kept = co_await test::winner(sig->wait(), yield()).or_fail();
+        ::raise(SIGUSR1);
+        co_await yield();
+        EXPECT(!sig->start(SIGUSR2));
+        auto dropped = co_await test::winner(sig->wait(), yield()).or_fail();
+        co_return std::pair{kept, dropped};
+    };
+
+    auto [result] = run(waiter());
+    ASSERT(result.has_value());
+    EXPECT(result->first == 0U);
+    EXPECT(result->second == 1U);
+    EXPECT(!sig->stop());
+}
+
+// The first wait is withdrawn once the second has failed.
 ZEST_CASE(second_wait_while_one_is_pending_fails) {
     auto sig = signal::create(loop);
     ASSERT(sig.has_value());
     ASSERT(!sig->start(SIGUSR1));
-    auto first = sig->wait();
-    auto* node = first.operator->();
-    auto second_then_cancel = [&]() -> task<result<void>> {
-        auto second = co_await sig->wait();
-        node->cancel();
-        co_return second;
+    auto wait_twice = [&]() -> task<error> {
+        auto both = co_await when_any(sig->wait(), sig->wait());
+        co_return both.has_error() ? both.error() : error();
     };
 
-    auto [pending, second] = run(std::move(first), second_then_cancel());
-    EXPECT(pending.is_cancelled());
+    auto [second] = run(wait_twice());
     ASSERT(second.has_value());
-    ASSERT(second->has_error());
-    EXPECT(second->error() == error::connection_already_in_progress);
+    EXPECT(*second == error::resource_busy_or_locked);
     EXPECT(!sig->stop());
 }
 
+// Nothing raises the signal, so only the cancel can end the wait.
 ZEST_CASE(wait_can_be_cancelled) {
     auto sig = signal::create(loop);
     ASSERT(sig.has_value());
     ASSERT(!sig->start(SIGUSR1));
-    auto waiting = sig->wait();
-    auto* node = waiting.operator->();
-    auto cancel_it = [&]() -> task<> {
-        node->cancel();
+    auto race = [&]() -> task<std::size_t, error> {
+        auto first = co_await or_fail(co_await when_any(sig->wait(), yield()));
+        co_return first.index();
+    };
+
+    auto [result] = run(race());
+    ASSERT(result.has_value());
+    EXPECT(*result == 1U);
+    EXPECT(!sig->stop());
+}
+
+// Were the signal no longer watched, SIGUSR1 would end the process.
+ZEST_CASE(cancelled_wait_leaves_the_signal_watched) {
+    auto sig = signal::create(loop);
+    ASSERT(sig.has_value());
+    ASSERT(!sig->start(SIGUSR1));
+    auto waiter = [&]() -> task<std::size_t, error> {
+        auto first = co_await or_fail(co_await when_any(sig->wait(), yield()));
+        ::raise(SIGUSR1);
+        co_await sig->wait().or_fail();
+        co_return first.index();
+    };
+
+    auto [result] = run(waiter());
+    ASSERT(result.has_value());
+    EXPECT(*result == 1U);
+    EXPECT(!sig->stop());
+}
+
+ZEST_CASE(wait_ended_by_destroying_its_signal_fails) {
+    auto created = signal::create(loop);
+    ASSERT(created.has_value());
+    ASSERT(!created->start(SIGUSR1));
+    std::optional<signal> sig = std::move(*created);
+    auto destroy = [&]() -> task<> {
+        sig.reset();
         co_return;
     };
 
-    auto [cancelled, driver] = run(std::move(waiting), cancel_it());
-    EXPECT(cancelled.is_cancelled());
-    EXPECT(!sig->stop());
+    auto [waited, destroyed] = run(sig->wait(), destroy());
+    ASSERT(waited.has_error());
+    EXPECT(waited.error() == error::operation_aborted);
 }
 
 ZEST_CASE(start_with_an_invalid_signal_fails) {

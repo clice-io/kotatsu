@@ -105,6 +105,14 @@ endif()
 run_fixture("${FIXTURE}" --test-filter=fixture_hang.* --jobs=1 --timeout=2)
 expect_code(1)
 expect_output_of("[  TIMEOUT ] fixture_hang.hangs (" "printed by fixture_hang.hangs")
+expect_output("[  PASSED  ] 2 tests.")
+
+# A worker that does not exit after its last test is killed once --timeout
+# has passed, and reported.
+run_fixture("${CMAKE_COMMAND}" -E env ZEST_FIXTURE_HANG_AT_EXIT=1
+    "${FIXTURE}" --test-filter=fixture_hang.hangs_at_exit --timeout=2)
+expect_code(1)
+expect_output("[   WORKER ] a worker did not exit within --timeout after its last test")
 expect_output("[  PASSED  ] 1 tests.")
 
 # Snapshots checked by different workers are all counted as checked: the

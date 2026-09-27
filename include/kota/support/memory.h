@@ -182,7 +182,7 @@ constexpr T* construct(T* p, U&& val) noexcept(is_uninitialized_memcpyable_v<T, 
         if(std::is_constant_evaluated()) {
             return construct_at_impl(p, std::forward<U>(val));
         }
-        std::memcpy(p, std::addressof(val), sizeof(T));
+        std::memcpy(static_cast<void*>(p), std::addressof(val), sizeof(T));
         return std::launder(p);
     } else {
         return construct_at_impl(p, std::forward<U>(val));
@@ -469,7 +469,9 @@ constexpr T* uninitialized_copy(Range&& range, T* dest) {
 
         const std::size_t num_copy = range_length(range);
         if(num_copy != 0) {
-            std::memcpy(dest, iterator_address(std::ranges::begin(range)), num_copy * sizeof(T));
+            std::memcpy(static_cast<void*>(dest),
+                        iterator_address(std::ranges::begin(range)),
+                        num_copy * sizeof(T));
         }
         return dest + static_cast<std::ptrdiff_t>(num_copy);
     } else {
@@ -483,7 +485,7 @@ constexpr T* uninitialized_relocate(Range&& range, T* dest) {
                  std::same_as<std::remove_cv_t<std::ranges::range_value_t<Range>>, T>) {
         const std::size_t count = range_length(range);
         if(count != 0 && !std::is_constant_evaluated()) {
-            std::memcpy(dest, std::ranges::data(range), count * sizeof(T));
+            std::memcpy(static_cast<void*>(dest), std::ranges::data(range), count * sizeof(T));
         } else if(count != 0) {
             uninitialized_copy<T>(std::forward<Range>(range), dest);
         }

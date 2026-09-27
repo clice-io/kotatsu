@@ -17,21 +17,21 @@
 namespace kota::sys {
 
 int pid() noexcept {
-    return static_cast<int>(uv::os_getpid());
+    return static_cast<int>(::uv_os_getpid());
 }
 
 memory_info memory() {
     memory_info info;
-    info.total = uv::get_total_memory();
-    info.free = uv::get_free_memory();
-    info.available = uv::get_available_memory();
-    info.constrained = uv::get_constrained_memory();
+    info.total = ::uv_get_total_memory();
+    info.free = ::uv_get_free_memory();
+    info.available = ::uv_get_available_memory();
+    info.constrained = ::uv_get_constrained_memory();
     return info;
 }
 
 result<std::size_t> resident_memory() {
     std::size_t rss = 0;
-    if(auto err = uv::resident_set_memory(rss)) {
+    if(auto err = error(::uv_resident_set_memory(&rss))) {
         return outcome_error(err);
     }
     return rss;
@@ -40,7 +40,7 @@ result<std::size_t> resident_memory() {
 result<std::vector<cpu_core>> cpu_cores() {
     uv_cpu_info_t* infos = nullptr;
     int count = 0;
-    if(auto err = uv::cpu_info(infos, count)) {
+    if(auto err = error(::uv_cpu_info(&infos, &count))) {
         return outcome_error(err);
     }
 
@@ -49,7 +49,7 @@ result<std::vector<cpu_core>> cpu_cores() {
         int n;
 
         ~guard() {
-            uv::free_cpu_info(p, n);
+            ::uv_free_cpu_info(p, n);
         }
     } cleanup{infos, count};
 
@@ -71,19 +71,19 @@ result<std::vector<cpu_core>> cpu_cores() {
 }
 
 unsigned int parallelism() {
-    return uv::available_parallelism();
+    return ::uv_available_parallelism();
 }
 
 result<uname_info> uname() {
     uv_utsname_t buf{};
-    if(auto err = uv::os_uname(buf)) {
+    if(auto err = error(::uv_os_uname(&buf))) {
         return outcome_error(err);
     }
     return uname_info{buf.sysname, buf.release, buf.version, buf.machine};
 }
 
-/// Helper: call a libuv string-returning function with stack buffer,
-/// retry with heap allocation on UV_ENOBUFS.
+/// Calls a libuv function that writes a string into a buffer, and calls it
+/// again with a buffer as large as it asks for if the first was too small.
 template <typename Fn>
 static result<std::string> read_uv_string(Fn&& fn, std::size_t initial_size) {
     std::string buf(initial_size, '\0');
@@ -103,21 +103,22 @@ static result<std::string> read_uv_string(Fn&& fn, std::size_t initial_size) {
 
 result<std::string> hostname() {
     return read_uv_string(
-        [](char* buf, std::size_t& size) { return uv::os_gethostname(buf, size); },
+        [](char* buf, std::size_t& size) { return error(::uv_os_gethostname(buf, &size)); },
         256);
 }
 
 result<std::chrono::duration<double>> uptime() {
     double value = 0;
-    if(auto err = uv::uptime(value)) {
+    if(auto err = error(::uv_uptime(&value))) {
         return outcome_error(err);
     }
     return std::chrono::duration<double>(value);
 }
 
 result<std::string> home_directory() {
-    return read_uv_string([](char* buf, std::size_t& size) { return uv::os_homedir(buf, size); },
-                          1024);
+    return read_uv_string(
+        [](char* buf, std::size_t& size) { return error(::uv_os_homedir(buf, &size)); },
+        1024);
 }
 
 result<std::string> executable_path() {
@@ -126,7 +127,7 @@ result<std::string> executable_path() {
     std::string buf(1024, '\0');
     while(true) {
         std::size_t size = buf.size();
-        if(auto err = uv::exepath(buf.data(), size)) {
+        if(auto err = error(::uv_exepath(buf.data(), &size))) {
             return outcome_error(err);
         }
         if(size + 1 < buf.size()) {
@@ -138,20 +139,21 @@ result<std::string> executable_path() {
 }
 
 result<std::string> temp_directory() {
-    return read_uv_string([](char* buf, std::size_t& size) { return uv::os_tmpdir(buf, size); },
-                          1024);
+    return read_uv_string(
+        [](char* buf, std::size_t& size) { return error(::uv_os_tmpdir(buf, &size)); },
+        1024);
 }
 
 result<int> priority(int pid) {
     int value = 0;
-    if(auto err = uv::os_getpriority(static_cast<uv_pid_t>(pid), value)) {
+    if(auto err = error(::uv_os_getpriority(static_cast<uv_pid_t>(pid), &value))) {
         return outcome_error(err);
     }
     return value;
 }
 
 error set_priority(int value, int pid) {
-    return uv::os_setpriority(static_cast<uv_pid_t>(pid), value);
+    return error(::uv_os_setpriority(static_cast<uv_pid_t>(pid), value));
 }
 
 result<process_stat> process(int pid) {
@@ -240,7 +242,7 @@ result<process_stat> process(int pid) {
 
     if(is_self) {
         uv_rusage_t ru{};
-        if(!uv::getrusage(ru)) {
+        if(::uv_getrusage(&ru) == 0) {
             stat.max_rss = static_cast<std::size_t>(ru.ru_maxrss) * 1024;  // KB → bytes
             stat.voluntary_context_switches = ru.ru_nvcsw;
             stat.involuntary_context_switches = ru.ru_nivcsw;
@@ -264,7 +266,7 @@ result<process_stat> process(int pid) {
 
     if(is_self) {
         uv_rusage_t ru{};
-        if(!uv::getrusage(ru)) {
+        if(::uv_getrusage(&ru) == 0) {
             stat.max_rss = ru.ru_maxrss;  // bytes on macOS
             stat.involuntary_context_switches = ru.ru_nivcsw;
         }

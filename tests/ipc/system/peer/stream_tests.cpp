@@ -116,9 +116,11 @@ ZEST_CASE(close_during_a_write_ends_run) {
     EXPECT(*closed);
 }
 
-// Closing stops the pending read, which resumes the read loop and ends run()
-// before close() returns; its owner then destroys the peer, and close() must
-// touch nothing of it after (under ASan, it would be a use after free).
+// Closing stops the pending read, which ends the read loop and run(); an
+// owner that destroys the peer as soon as run() returns must find close()
+// done with it (under ASan, touching it after would be a use after free).
+// The runtime resumes the read loop after close() returns today, but the
+// transport does not count on it.
 ZEST_CASE(peer_destroyed_as_close_ends_run) {
     auto output = pipe_ends(loop);
     auto input = pipe_ends(loop);
@@ -127,19 +129,14 @@ ZEST_CASE(peer_destroyed_as_close_ends_run) {
     auto peer = std::make_unique<JsonPeer>(
         loop,
         std::make_unique<StreamTransport>(std::move(input->reader), std::move(output->writer)));
-    bool destroyed_in_close = false;
-    bool closing = false;
     auto owner = [&]() -> task<> {
         co_await peer->run();
-        destroyed_in_close = closing;
         peer.reset();
     };
     // The owner's run() is reading by the time the closer starts: tasks run
     // in order until they first suspend.
     auto closer = [&]() -> task<> {
-        closing = true;
         auto closed = peer->close();
-        closing = false;
         EXPECT(closed.has_value());
         co_return;
     };
@@ -148,7 +145,6 @@ ZEST_CASE(peer_destroyed_as_close_ends_run) {
     EXPECT(owned.has_value());
     EXPECT(done.has_value());
     EXPECT(peer == nullptr);
-    EXPECT(destroyed_in_close);
 }
 
 // One TCP stream cannot half-close yet, so closing its output closes it and
@@ -156,10 +152,11 @@ ZEST_CASE(peer_destroyed_as_close_ends_run) {
 ZEST_CASE(close_output_on_a_shared_stream_ends_run) {
     auto listener = tcp::listen("127.0.0.1", 0, {}, loop);
     ASSERT(listener.has_value());
-    auto port = tcp::local_port(*listener);
-    ASSERT(port.has_value());
+    auto name = listener->getsockname();
+    ASSERT(name.has_value());
+    const int port = name->port;
     auto [accepted, connected] =
-        run(listener->accept(), StreamTransport::connect_tcp("127.0.0.1", *port, loop));
+        run(listener->accept(), StreamTransport::connect_tcp("127.0.0.1", port, loop));
     ASSERT(accepted.has_value());
     ASSERT(connected.has_value());
     JsonPeer peer(loop, std::move(*connected));

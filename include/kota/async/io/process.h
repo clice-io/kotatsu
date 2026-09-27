@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "kota/async/io/loop.h"
 #include "kota/async/io/stream.h"
 #include "kota/async/runtime/task.h"
 #include "kota/async/vocab/error.h"
@@ -12,8 +13,17 @@
 
 namespace kota {
 
-class event_loop;
-
+/// A child process.
+///
+/// wait() waits for the child to exit; the exit status stays, and every
+/// later wait() returns it at once. One wait() may be pending at a time; a
+/// second fails with error::resource_busy_or_locked. Cancelling a wait only
+/// abandons the wait: the child runs on, and a later wait() still gets its
+/// exit status. To end the child, kill() it. Destroying the process ends a
+/// pending wait with error::operation_aborted and leaves the child running.
+///
+/// A default-constructed or moved-from process is inert: what can fail fails
+/// with error::invalid_argument.
 class process {
 public:
     process() noexcept;
@@ -26,9 +36,6 @@ public:
 
     ~process();
 
-    struct Self;
-    Self* operator->() noexcept;
-
     struct exit_status {
         /// Exit code reported by the child.
         int64_t status;
@@ -38,11 +45,15 @@ public:
     };
 
     struct stdio {
-        enum class kind {
-            inherit,  // inherit parent's stdio
-            ignore,   // discard this stream
-            fd,       // inherit a specific file descriptor
-            pipe      // create a pipe
+        enum class kind : std::uint8_t {
+            /// Inherit the parent's stream.
+            inherit,
+            /// Discard the stream.
+            ignore,
+            /// Inherit a given file descriptor.
+            fd,
+            /// Create a pipe.
+            pipe,
         };
 
         /// How this stream should be configured for the child.
@@ -110,31 +121,32 @@ public:
         std::array<stdio, 3> streams = {stdio::inherit(), stdio::inherit(), stdio::inherit()};
     };
 
-    using wait_result = result<exit_status>;
-
-    /// Launch the process; creates pipes as requested in options.
     struct spawn_result;
 
-    /// Spawn a child process within the given loop.
+    /// Launches the child, with the pipes `opts` asks for.
     static result<spawn_result> spawn(const options& opts,
                                       event_loop& loop = event_loop::current());
 
-    /// Await process termination and fetch exit status.
-    task<wait_result> wait();
+    /// Waits for the child to exit.
+    task<exit_status, error> wait();
 
-    /// Retrieve OS pid for the process; -1 if not started.
+    /// The OS process id; -1 for an inert process.
     int pid() const noexcept;
 
-    /// Send a signal to the process; fails with no_such_process once its exit
+    /// Sends a signal to the child; fails with no_such_process once its exit
     /// has been observed.
     error kill(int signum);
 
 private:
-    explicit process(unique_handle<Self> self) noexcept;
+    struct Self;
 
-    unique_handle<Self> self;
+    explicit process(detail::unique_handle<Self> self) noexcept;
+
+    detail::unique_handle<Self> self;
 };
 
+/// A launched child, with the parent's end of each pipe it asked for; the
+/// other pipes are inert.
 struct process::spawn_result {
     process proc;
 

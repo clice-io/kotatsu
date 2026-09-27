@@ -22,9 +22,8 @@ decltype(auto) get_awaiter(T&& value) {
 template <typename T>
 using awaiter_t = decltype(get_awaiter(std::declval<T>()));
 
-struct await_probe_promise : async_node {
-    await_probe_promise() : async_node(NodeKind::Task) {}
-};
+/// Stands in for a task's promise when checking what can be awaited in one.
+struct await_probe_promise : task_frame {};
 
 using await_probe_handle = std::coroutine_handle<await_probe_promise>;
 

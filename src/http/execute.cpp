@@ -1,5 +1,4 @@
 #include <memory>
-#include <source_location>
 
 #include "../async/io/awaiter.h"
 #include "kota/http/detail/inflight_request.h"
@@ -49,83 +48,59 @@ struct inflight_request_state : std::enable_shared_from_this<inflight_request_st
     }
 };
 
-struct request_awaiter : uv::await_op<request_awaiter> {
-    using promise_t = task<response, error>::promise_type;
-    using result_type = outcome<response, error, cancellation>;
-
+struct request_awaiter : uv::uv_op<request_awaiter> {
     inflight_request_ref state;
 
     request_awaiter(manager& manager, inflight_request_ref request_state) :
         state(std::move(request_state)) {
         state->mgr = &manager;
-        state->awaiter = this;
     }
 
     ~request_awaiter() {
-        if(!state) {
-            return;
-        }
-
         state->detach_from_multi();
         state->release_request();
         state->awaiter = nullptr;
         state->mgr = nullptr;
     }
 
-    static void on_cancel(io_op* op) {
-        uv::await_op<request_awaiter>::complete_cancel(op, [](request_awaiter& self) {
-            self.state->detach_from_multi();
-            self.state->release_request();
-            self.state->completed = true;
-        });
-    }
-
-    void start() noexcept {
-        if(state->completed || state->request_released || !state->request.easy) {
-            return;
-        }
-
+    /// Hands the request to curl; false if the request has ended already.
+    /// Arming curl's timeout can end it: arming finishes other requests,
+    /// whose tasks may start more. So the op becomes the request's awaiter
+    /// only after that, as nothing may resume it before it is attached.
+    bool start() noexcept {
         if(!state->request.bind_runtime(inflight_request_opaque(state))) {
             if(state->request.result.kind == error_kind::curl &&
                curl::ok(state->request.result.curl_code)) {
                 state->request.result = error::invalid_request("request runtime binding failed");
             }
             state->completed = true;
-            return;
+            return false;
         }
 
         if(auto err = state->mgr->add_request(state->request.easy.get()); !curl::ok(err)) {
             state->request.fail(error::from_curl(curl::to_easy_error(err)));
             state->completed = true;
-            return;
+            return false;
         }
 
         state->registered = true;
         state->mgr->drive_timeout_arming(inflight_request_opaque(state));
+        if(state->completed) {
+            return false;
+        }
+        state->awaiter = this;
+        return true;
     }
 
-    bool await_ready() const noexcept {
-        return state->completed;
-    }
-
-    std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<promise_t> waiting,
-                      std::source_location loc = std::source_location::current()) noexcept {
-        return this->attach(waiting.promise(), loc);
-    }
-
-    result_type await_resume() noexcept {
+    void cancel() noexcept {
         state->detach_from_multi();
+        state->release_request();
+        state->completed = true;
+        complete();
+    }
 
-        if(static_cast<async_node&>(*this).state == async_node::Cancelled) {
-            return result_type(outcome_cancel(cancellation("http request cancelled")));
-        }
-
-        if(state->request_released) {
-            return result_type(
-                outcome_error(error::invalid_request("request state already released")));
-        }
-
+    outcome<response, error> await_resume() noexcept {
+        state->detach_from_multi();
         return state->request.finish();
     }
 };
@@ -193,14 +168,7 @@ task<response, error> execute_request(http::request request, event_loop& loop) {
         co_await fail(std::move(manager.error()));
     }
 
-    request_awaiter awaiter(manager->get(), std::move(state));
-    awaiter.start();
-    auto result = co_await awaiter;
-
-    if(result.is_cancelled()) {
-        co_await cancel();
-    }
-
+    auto result = co_await request_awaiter(manager->get(), std::move(state));
     if(result.has_error()) {
         co_await fail(std::move(result).error());
     }
