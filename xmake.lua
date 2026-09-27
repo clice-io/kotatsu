@@ -84,6 +84,14 @@ if is_plat("mingw") then
 		add_syslinks("stdc++exp")
 		add_ldflags("-static-libgcc", "-static-libstdc++", "-Wl,--allow-multiple-definition")
 		add_shflags("-static-libgcc", "-static-libstdc++", "-Wl,--allow-multiple-definition")
+		-- The dependencies too: a tool they build and run (flatc) would load
+		-- whichever libstdc++-6.dll comes first in PATH.
+		add_requireconfs("**|cmake", {
+			configs = {
+				ldflags = "-static-libgcc -static-libstdc++",
+				shflags = "-static-libgcc -static-libstdc++",
+			},
+		})
 	end
 end
 
