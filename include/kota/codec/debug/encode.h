@@ -73,7 +73,8 @@ struct Formatter {
         out += '"';
     }
 
-    /// Any other char prints as the text codecs write it.
+    /// A char literal: escaped as write_escape escapes it, or else written
+    /// as the text codecs write a char (one codepoint, in UTF-8).
     void write_escape_char(char c) {
         out += '\'';
         if(!write_escape(c, '\'')) {

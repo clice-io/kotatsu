@@ -2,7 +2,8 @@
 
 // meta::repr fixtures meta's tests read as well: reprs whose declared type
 // carries a behavior attr, struct policies or a tagging spec, an adapter
-// over a tagged variant, and a repr scoped to every format tag.
+// over a tagged variant, a repr scoped to every format tag, and a variant
+// whose type has a repr under a tagging spec.
 
 #include <charconv>
 #include <cstdint>

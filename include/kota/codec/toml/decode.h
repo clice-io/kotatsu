@@ -5,10 +5,10 @@
 #include <cstdint>
 #include <expected>
 #include <format>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 #include "kota/support/expected_try.h"
 #include "kota/support/numeric.h"
@@ -80,20 +80,21 @@ struct ValueReader {
     }
 
     bool visit_bool(bool& out) {
-        if(!node || !node->is_boolean()) {
+        const auto* flag = as<bool>();
+        if(!flag) {
             return fail_type("boolean");
         }
-        out = *node->value<bool>();
+        out = flag->get();
         return true;
     }
 
     template <typename T>
     bool visit_int(T& out) {
-        if(!node || !node->is_integer()) {
+        const auto* number = as<std::int64_t>();
+        if(!number) {
             return fail_type("integer");
         }
-        auto val = *node->value<std::int64_t>();
-        if(!kota::narrow_int(val, out)) {
+        if(!kota::narrow_int(number->get(), out)) {
             return fail_with_location("integer value out of range");
         }
         return true;
@@ -106,12 +107,12 @@ struct ValueReader {
 
     template <typename T>
     bool visit_float(T& out) {
-        if(node && node->is_floating_point()) {
-            out = static_cast<T>(*node->value<double>());
+        if(const auto* real = as<double>()) {
+            out = static_cast<T>(real->get());
             return true;
         }
-        if(node && node->is_integer()) {
-            out = static_cast<T>(*node->value<std::int64_t>());
+        if(const auto* number = as<std::int64_t>()) {
+            out = static_cast<T>(number->get());
             return true;
         }
         return fail_type("float");
@@ -119,21 +120,21 @@ struct ValueReader {
 
     template <typename T>
     bool visit_str(T& out) {
-        auto val = value<std::string>();
-        if(!val) {
+        const auto* text = as<std::string>();
+        if(!text) {
             return fail_type("string");
         }
-        out = T(std::move(*val));
+        out = T(text->get());
         return true;
     }
 
     template <typename T>
     bool visit_char(T& out) {
-        auto val = value<std::string_view>();
-        if(!val) {
+        const auto* text = as<std::string>();
+        if(!text) {
             return fail_type("string");
         }
-        auto c = char_from_utf8(*val);
+        auto c = char_from_utf8(text->get());
         if(!c) {
             return fail_with_location(std::string(invalid_char_message));
         }
@@ -143,7 +144,7 @@ struct ValueReader {
 
     template <typename T>
     bool visit_bytes(T& out) {
-        const auto* arr = as_array();
+        const auto* arr = as<Array>();
         if(!arr) {
             return fail_type("array");
         }
@@ -192,7 +193,7 @@ struct ValueReader {
 
     template <typename Callback>
     bool visit_struct(Callback&& cb) {
-        const auto* tbl = as_table();
+        const auto* tbl = as<Table>();
         if(!tbl) {
             return fail_type("table");
         }
@@ -205,7 +206,7 @@ struct ValueReader {
 
     template <typename Callback>
     bool visit_seq(Callback&& cb) {
-        const auto* arr = as_array();
+        const auto* arr = as<Array>();
         if(!arr) {
             return fail_type("array");
         }
@@ -240,17 +241,12 @@ struct ValueReader {
     }
 
 private:
-    const Table* as_table() const {
-        return node ? node->as_table() : nullptr;
-    }
-
-    const Array* as_array() const {
-        return node ? node->as_array() : nullptr;
-    }
-
+    /// The node as a T (a Table, an Array, or the value node holding a T),
+    /// or null when it is absent or holds something else; fail_type reports
+    /// either.
     template <typename T>
-    std::optional<T> value() const {
-        return node ? node->value<T>() : std::nullopt;
+    auto as() const -> decltype(std::declval<const Node&>().template as<T>()) {
+        return node ? node->template as<T>() : nullptr;
     }
 
     void attach_location(rich_error& err) {

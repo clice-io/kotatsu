@@ -206,10 +206,6 @@ consteval void assert_tuple_slots_fit() {
     }
 }
 
-}  // namespace detail
-
-namespace detail {
-
 /// A scalar whose native object representation is exactly its buffer cell.
 /// long double is excluded: everywhere else in this backend it lowers to a
 /// double cell (scalar_cell), because its native image is ABI-specific and

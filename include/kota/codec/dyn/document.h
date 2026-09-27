@@ -497,12 +497,12 @@ public:
                                           : std::format("{} -> [{}]", message, index));
     }
 
+private:
+    friend class Value;
+
     void assert_valid() const {
         assert(ptr != nullptr);
     }
-
-private:
-    friend class Value;
 
     static Cursor make_error(std::string text) noexcept {
         Cursor c;

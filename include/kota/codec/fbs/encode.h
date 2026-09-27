@@ -436,7 +436,7 @@ struct TableCollector {
 
     template <typename F>
     bool visit_element(F&& writer) {
-        TableVisitor<ElementPlace> ev{.fbb = fbb, .place = {table_offsets}};
+        TableVisitor<ElementPlace> ev{.fbb = fbb, .place = {.offsets = table_offsets}};
         return writer(ev);
     }
 
@@ -857,7 +857,7 @@ auto to_bytes(const T& value, std::optional<std::size_t> initial_capacity = std:
     builder_t fbb(initial_capacity.value_or(1024));
     table_offset_t root{0};
     encode_detail::RootVisitor vis{
-        {.fbb = fbb, .place = {root}}
+        {.fbb = fbb, .place = {.root = root}}
     };
     KOTA_EXPECTED_TRY(codec::detail::run_encode<Config>(vis, value));
 
