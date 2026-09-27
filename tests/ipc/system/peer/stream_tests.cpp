@@ -94,8 +94,8 @@ ZEST_CASE(bincode_peers_talk_over_pipes) {
 // A notification larger than the connection buffers, which the test reads
 // only once, is still being written when the peer closes. Closing aborts the
 // write, and run() ends as it does after any close(). The output is a TCP
-// connection: a socket aborts a pending write everywhere, where a Windows
-// anonymous pipe writes blocking and its close waits for the write.
+// connection: a socket aborts a pending write, where a Windows anonymous
+// pipe writes blocking and its close waits for the write.
 ZEST_CASE(close_during_a_write_ends_run) {
     auto input = pipe_ends(loop);
     ASSERT(input.has_value());
@@ -125,13 +125,14 @@ ZEST_CASE(close_during_a_write_ends_run) {
     EXPECT(ran.has_value());
     ASSERT(closed.has_value());
     EXPECT(*closed);
-    // What had gone out before the close is all there is, and the end comes
-    // (or a reset, where closing a socket with unsent data resets it): the
-    // write was cut.
+    // What had gone out before the close is all there is: the write was cut.
+    // Windows' loopback buffers take the whole notification, so there the
+    // write has ended before the close.
+#ifndef _WIN32
     auto [rest] = run(test::read_to_end(*accepted));
-    if(rest.has_value()) {
-        EXPECT(rest->size() < size);
-    }
+    ASSERT(rest.has_value());
+    EXPECT(rest->size() < size);
+#endif
 }
 
 // Closing stops the pending read, which ends the read loop and run(); an
