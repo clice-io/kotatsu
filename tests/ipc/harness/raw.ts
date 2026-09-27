@@ -10,6 +10,20 @@ const SEPARATOR = "\r\n\r\n";
 /** A JSON-RPC message as it came, its members not yet checked. */
 export type Message = Record<string, unknown>;
 
+/** `payload` in a frame as kotatsu writes one. */
+export function frameText(payload: string): Buffer {
+  const bytes = Buffer.from(payload);
+  return Buffer.concat([
+    Buffer.from(`Content-Length: ${bytes.length}${SEPARATOR}`),
+    bytes,
+  ]);
+}
+
+/** `message` in its frame. */
+export function frame(message: object): Buffer {
+  return frameText(JSON.stringify(message));
+}
+
 export class RawChannel {
   readonly #output: Writable;
   #input = Buffer.alloc(0);
@@ -30,9 +44,18 @@ export class RawChannel {
 
   /** Writes `message` in its frame. */
   send(message: object): void {
-    const payload = Buffer.from(JSON.stringify(message));
-    this.#output.write(`Content-Length: ${payload.length}${SEPARATOR}`);
-    this.#output.write(payload);
+    this.#output.write(frame(message));
+  }
+
+  /** Writes `bytes` as they are, framed or not; resolves once they are written. */
+  write(bytes: Uint8Array): Promise<void> {
+    // An error means the driver has exited, which the test checks.
+    return new Promise((resolve) => this.#output.write(bytes, () => resolve()));
+  }
+
+  /** Ends the output, which the driver reads as the end of its input. */
+  end(): void {
+    this.#output.end();
   }
 
   /**
