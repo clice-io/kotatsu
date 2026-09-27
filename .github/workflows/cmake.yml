@@ -39,6 +39,10 @@ jobs:
           - { os_label: windows, os: windows-2025, toolchain: mingw,       preset: relwithdebinfo }
           - { os_label: windows, os: windows-2025, toolchain: mingw,       preset: no-exceptions-no-rtti }
 
+          # Windows - MinGW with libc++ (xclang)
+          - { os_label: windows, os: windows-2025, toolchain: xclang,      preset: debug }
+          - { os_label: windows, os: windows-2025, toolchain: xclang,      preset: relwithdebinfo }
+
           # Linux - GCC
           - { os_label: linux,   os: ubuntu-24.04, toolchain: gcc,         preset: debug }
           - { os_label: linux,   os: ubuntu-24.04, toolchain: gcc,         preset: relwithdebinfo }
@@ -80,6 +84,8 @@ jobs:
               echo "PIXI_ENV=windows-llvm"; echo "CC=clang-cl"; echo "CXX=clang-cl"; echo "COMPILER_CACHE=sccache"; echo "CACHE_KEY=windows-clang-cl"; echo "NEEDS_MSVC_ENV=true" ;;
             windows-mingw)
               echo "PIXI_ENV=windows-mingw"; echo "CC=gcc"; echo "CXX=g++"; echo "COMPILER_CACHE=sccache"; echo "CACHE_KEY=windows-mingw" ;;
+            windows-xclang)
+              echo "PIXI_ENV=windows-xclang"; echo "CC=clang"; echo "CXX=clang++"; echo "COMPILER_CACHE=sccache"; echo "CACHE_KEY=windows-xclang" ;;
           esac >> "$GITHUB_ENV"
 
       - name: Checkout repository
