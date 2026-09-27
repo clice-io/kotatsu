@@ -284,12 +284,10 @@ bool encode_value(Vis& vis, const T& value) {
                 // side can never map back, so fail loudly instead.
                 auto raw = meta::enum_name(value);
                 if(raw.empty()) {
-                    using U = std::underlying_type_t<T>;
-                    using wide =
-                        std::conditional_t<std::is_signed_v<U>, std::int64_t, std::uint64_t>;
+                    // Unary plus keeps a char-sized underlying value a number.
                     return scoped_context<rich_error>::fail(
                         rich_error(std::format("enum value {} has no reflected name",
-                                               static_cast<wide>(value))));
+                                               +std::to_underlying(value))));
                 }
                 auto name = apply_enum_rename<Config>(true, raw);
                 std::string_view sv(name);
