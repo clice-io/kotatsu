@@ -168,7 +168,8 @@ struct Peer<CodecT>::Self {
                 }
                 write_event.reset();
                 // Cancelled with run(): nothing more is written.
-                if((co_await write_event.wait().catch_cancel()).is_cancelled()) {
+                auto woken = co_await write_event.wait().catch_cancel();
+                if(woken.is_cancelled()) {
                     break;
                 }
                 continue;
@@ -316,7 +317,8 @@ struct Peer<CodecT>::Self {
 
     /// The ending that comes first; the others are cancelled with the wait.
     static task<Ending> first_of(std::vector<task<Ending>> waits) {
-        co_return (co_await when_any(std::move(waits))).second;
+        auto first = co_await when_any(std::move(waits));
+        co_return first.second;
     }
 
     void complete_pending_request(const protocol::RequestID& id, Result<std::string>&& response) {
