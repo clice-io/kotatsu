@@ -13,6 +13,7 @@ import {
   type Schema,
   type Type,
 } from "../../../../scripts/lsp/metamodel.ts";
+import { anyChar } from "../../../harness/fuzz.ts";
 import { deviations } from "./known_deviations.ts";
 
 // Structures deeper than this leave their optional properties out, and
@@ -39,8 +40,9 @@ function inRange(value: Json, range: { min: number; max: number }): boolean {
   );
 }
 
-// Unicode text; a lone surrogate is no text, and JSON has no way to carry it.
-const text = fc.string({ unit: "grapheme", maxLength: 8 });
+// Text of any code point, control characters among them; a lone surrogate
+// is no text, and JSON has no way to carry it.
+const text = fc.string({ unit: anyChar, maxLength: 8 });
 
 const BASE: Record<BaseTypes, fc.Arbitrary<Json>> = {
   integer: fc.integer(INT32),

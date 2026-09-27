@@ -26,7 +26,13 @@ import { test, type TestContext } from "node:test";
 import fc from "fast-check";
 
 import type { Driver } from "../../harness/driver.ts";
-import { FUZZ_TIMEOUT, fuzz, roundtrip, within } from "../../harness/fuzz.ts";
+import {
+  anyChar,
+  FUZZ_TIMEOUT,
+  fuzz,
+  roundtrip,
+  within,
+} from "../../harness/fuzz.ts";
 import { probe } from "../harness/jsonrpc_driver.ts";
 import { errorOf, frameText, resultOf, type Message } from "../harness/raw.ts";
 import { Session } from "../harness/session.ts";
@@ -48,10 +54,10 @@ type Command = fc.AsyncCommand<Model, Real>;
 
 // Text of any code point, control characters and those past ASCII included:
 // Content-Length counts bytes, and JSON escapes control characters.
-const text = fc.string({ unit: "binary" });
+const text = fc.string({ unit: anyChar });
 
 function json(depthSize?: fc.DepthSize) {
-  return fc.jsonValue({ depthSize, stringUnit: "binary" });
+  return fc.jsonValue({ depthSize, stringUnit: anyChar });
 }
 
 // A JSON-RPC request's params: structured.

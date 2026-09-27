@@ -20,7 +20,13 @@ import { test, type TestContext } from "node:test";
 import fc from "fast-check";
 
 import type { Driver } from "../../harness/driver.ts";
-import { FUZZ_TIMEOUT, fuzz, roundtrip, within } from "../../harness/fuzz.ts";
+import {
+  anyChar,
+  FUZZ_TIMEOUT,
+  fuzz,
+  roundtrip,
+  within,
+} from "../../harness/fuzz.ts";
 import { echo, probe } from "../harness/jsonrpc_driver.ts";
 import { errorOf, frame, resultOf, type Message } from "../harness/raw.ts";
 import { Session } from "../harness/session.ts";
@@ -59,7 +65,7 @@ function framed(payload: string, spelling: Header): Buffer {
 
 // Any code point, control characters and those past ASCII included: the
 // header counts bytes.
-const notJson = fc.string({ unit: "binary" }).filter((text) => {
+const notJson = fc.string({ unit: anyChar }).filter((text) => {
   try {
     JSON.parse(text);
     return false;
@@ -79,7 +85,7 @@ const frames = fc.array(
       {
         weight: 4,
         arbitrary: fc
-          .array(fc.jsonValue({ depthSize: "small", stringUnit: "binary" }))
+          .array(fc.jsonValue({ depthSize: "small", stringUnit: anyChar }))
           .map((params) => ({ params })),
       },
       {
@@ -307,7 +313,7 @@ test("any_input_ends_cleanly", { timeout: FUZZ_TIMEOUT }, (t) =>
         fc.oneof(
           fc.uint8Array({ maxLength: 512 }),
           fc
-            .jsonValue({ depthSize: "small", stringUnit: "binary" })
+            .jsonValue({ depthSize: "small", stringUnit: anyChar })
             .map((params) =>
               frame({ jsonrpc: "2.0", id: 1, method: "test/echo", params }),
             ),

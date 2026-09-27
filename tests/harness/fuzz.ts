@@ -6,32 +6,49 @@
 import fc from "fast-check";
 
 const SEED = Number(process.env.KOTA_FUZZ_SEED ?? 20260927);
+/** A long run by hand: KOTA_FUZZ_RUNS is set. */
+const BY_HAND = process.env.KOTA_FUZZ_RUNS !== undefined;
 /** The runs of a property, 100 unless overridden. */
 export const RUNS = Number(process.env.KOTA_FUZZ_RUNS ?? 100);
 
-/** A test's timeout that leaves room for the default runs of a fuzz test. */
-export const FUZZ_TIMEOUT = 180_000;
+/**
+ * A fuzz test's timeout, which leaves room for the default runs; a long run
+ * by hand has none.
+ */
+export const FUZZ_TIMEOUT = BY_HAND ? Infinity : 180_000;
 
 /**
- * Checks `property` over `runs` runs, within the test's timeout: no run, and
- * no step of shrinking a failure, starts after 40% of it, and one still going
- * at 60% is cut short, which leaves the rest for a slow leg's drivers to start
- * and end. A failure found by then is reported with its counterexample, shrunk
- * as far as the time allowed; a leg too slow for all the runs passes on those
- * it made.
+ * Checks `property` over `runs` runs, the run still going once `timeLimit`
+ * ms have passed cut short: by default 60% of the test's timeout, which
+ * leaves the rest for a slow leg's drivers to end. A failure found by then is
+ * reported with its counterexample, shrunk as far as the time allowed; with
+ * none, a leg too slow for all the runs passes on those it made. A long run
+ * by hand has no time limit.
  */
 export async function fuzz<T>(
   property: fc.IAsyncPropertyWithHooks<T>,
   runs = RUNS,
+  timeLimit = FUZZ_TIMEOUT * 0.6,
 ): Promise<void> {
   await fc.assert(property, {
     seed: SEED,
     numRuns: runs,
-    skipAllAfterTimeLimit: FUZZ_TIMEOUT * 0.4,
-    interruptAfterTimeLimit: FUZZ_TIMEOUT * 0.6,
-    markInterruptAsFailure: false,
+    ...(Number.isFinite(timeLimit)
+      ? { interruptAfterTimeLimit: timeLimit, markInterruptAsFailure: false }
+      : {}),
   });
 }
+
+/**
+ * A character for fc.string's unit and fc.jsonValue's stringUnit: half the
+ * time ASCII, control characters, quotes, backslashes and brackets among
+ * it, and half any code point but a lone surrogate. `unit: "binary"` alone
+ * almost never draws ASCII.
+ */
+export const anyChar: fc.Arbitrary<string> = fc.oneof(
+  fc.string({ unit: "binary-ascii", minLength: 1, maxLength: 1 }),
+  fc.string({ unit: "binary", minLength: 1, maxLength: 1 }),
+);
 
 /** `value` as the other side reads it: what JSON.stringify writes. */
 export function roundtrip(value: unknown): unknown {
