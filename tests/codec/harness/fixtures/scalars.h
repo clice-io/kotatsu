@@ -118,6 +118,18 @@ struct NonFinite {
     }
 };
 
+struct Infinities {
+    double inf;
+    double neg_inf;
+
+    static Infinities typical() {
+        return {
+            .inf = std::numeric_limits<double>::infinity(),
+            .neg_inf = -std::numeric_limits<double>::infinity(),
+        };
+    }
+};
+
 struct NonFiniteNulls {
     std::nullptr_t nan;
     std::nullptr_t inf;

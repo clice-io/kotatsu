@@ -284,10 +284,9 @@ void attrs(const Kit<B>& kit) {
     // nan_repr::Null shows only where Passthrough keeps the values; where
     // Passthrough already writes null, the two configs write alike.
     if constexpr(B::caps.non_finite) {
-        roundtrip(kit, "infinity_roundtrip", [] {
-            return std::vector<double>{std::numeric_limits<double>::infinity(),
-                                       -std::numeric_limits<double>::infinity()};
-        });
+        // In fields rather than an array: toml++ 3.4.0 lays an array out by
+        // the log10 of each float, which is undefined for an infinity.
+        roundtrip(kit, "infinity_roundtrip", [] { return Infinities::typical(); });
         encodes_as<NanNullConfig>(
             kit,
             "nan_null_encodes_as_null",
