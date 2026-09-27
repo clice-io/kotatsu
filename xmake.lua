@@ -88,8 +88,8 @@ if is_plat("mingw") then
 		-- whichever libstdc++-6.dll comes first in PATH.
 		add_requireconfs("**|cmake", {
 			configs = {
-				ldflags = "-static-libgcc -static-libstdc++",
-				shflags = "-static-libgcc -static-libstdc++",
+				ldflags = { "-static-libgcc", "-static-libstdc++" },
+				shflags = { "-static-libgcc", "-static-libstdc++" },
 			},
 		})
 	end
