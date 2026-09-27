@@ -124,7 +124,13 @@ ZEST_CASE(byte_out_of_range_fails) {
 }
 
 ZEST_CASE(char_reads_one_codepoint_up_to_255) {
+    // Two bytes of UTF-8 under either lead byte: C2 for U+0080-U+00BF, C3
+    // above.
     char out = '\0';
+    ASSERT(dyn::from_dyn(dyn::Value("\xC2\x80"), out));
+    EXPECT(out == static_cast<char>(0x80));
+    ASSERT(dyn::from_dyn(dyn::Value("§"), out));
+    EXPECT(out == static_cast<char>(0xA7));
     ASSERT(dyn::from_dyn(dyn::Value("é"), out));
     EXPECT(out == static_cast<char>(0xE9));
     ASSERT(dyn::from_dyn(dyn::Value("ÿ"), out));
@@ -132,9 +138,10 @@ ZEST_CASE(char_reads_one_codepoint_up_to_255) {
 }
 
 ZEST_CASE(char_from_other_text_fails) {
-    // A lone octet above 0x7F is not UTF-8, "Ā" and "€" do not fit a char,
-    // and "xy" is two characters.
-    for(std::string_view text: {"\xE9", "Ā", "€", "xy", ""}) {
+    // A lone octet above 0x7F is not UTF-8, nor is a lead byte followed by
+    // one that does not continue it; "Ā" and "€" do not fit a char, and "xy"
+    // is two characters.
+    for(std::string_view text: {"\xE9", "\xC3\x28", "Ā", "€", "xy", ""}) {
         ZEST_CONTEXT("text: {}", text);
         char out = '\0';
         auto status = dyn::from_dyn(dyn::Value(text), out);

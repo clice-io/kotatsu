@@ -145,6 +145,11 @@ ZEST_CASE(char_values) {
 ZEST_CASE(char_writes_its_codepoint) {
     // The char's value, 0-255, is the codepoint, in UTF-8 as json writes it.
     EXPECT(to_string(static_cast<char>(0xB5)) == "'µ'");
+    // 0x80-0x9F are C1 controls, which print as their codepoints like the
+    // rest; DEL, 0x7F, prints as the byte it is.
+    EXPECT(to_string(static_cast<char>(0x80)) == "'\xC2\x80'");
+    EXPECT(to_string(static_cast<char>(0x9F)) == "'\xC2\x9F'");
+    EXPECT(to_string('\x7F') == "'\x7F'");
     EXPECT(to_string(static_cast<char>(0xE9)) == "'é'");
     EXPECT(to_string(static_cast<char>(0xFF)) == "'ÿ'");
 }

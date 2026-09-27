@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -116,7 +117,13 @@ ZEST_CASE(null_from_non_null_fails) {
 }
 
 ZEST_CASE(char_reads_one_codepoint_up_to_255) {
+    // Two bytes of UTF-8 under either lead byte: C2 for U+0080-U+00BF, C3
+    // above.
     char out = '\0';
+    ASSERT(toml::from_string(R"(__value = "\u0080")", out));
+    EXPECT(out == static_cast<char>(0x80));
+    ASSERT(toml::from_string("__value = '§'", out));
+    EXPECT(out == static_cast<char>(0xA7));
     ASSERT(toml::from_string("__value = 'é'", out));
     EXPECT(out == static_cast<char>(0xE9));
     ASSERT(toml::from_string("__value = 'ÿ'", out));
@@ -133,16 +140,20 @@ ZEST_CASE(char_beyond_255_fails) {
     EXPECT(several.error().message == codec::invalid_char_message);
 }
 
-ZEST_CASE(char_from_a_lone_high_octet_fails) {
-    // A table built by hand can hold bytes that are not UTF-8, such as the
-    // lone octet this backend once wrote for a char above 0x7F.
-    toml::Table table{
-        {"__value", "\xE9"}
-    };
-    char out = '\0';
-    auto status = toml::from_toml(table, out);
-    ASSERT(!status);
-    EXPECT(status.error().message == codec::invalid_char_message);
+ZEST_CASE(char_from_bytes_that_are_not_utf8_fails) {
+    // A table built by hand can hold bytes that are not UTF-8: the lone
+    // octet this backend once wrote for a char above 0x7F, or a lead byte
+    // followed by one that does not continue it.
+    for(std::string_view text: {"\xE9", "\xC3\x28"}) {
+        ZEST_CONTEXT("text: {}", text);
+        toml::Table table{
+            {"__value", text}
+        };
+        char out = '\0';
+        auto status = toml::from_toml(table, out);
+        ASSERT(!status);
+        EXPECT(status.error().message == codec::invalid_char_message);
+    }
 }
 
 ZEST_CASE(null_root_picks_monostate) {

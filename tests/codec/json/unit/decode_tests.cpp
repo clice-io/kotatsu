@@ -64,7 +64,13 @@ ZEST_CASE(empty_document_fails) {
 }
 
 ZEST_CASE(char_reads_one_codepoint_up_to_255) {
+    // Two bytes of UTF-8 under either lead byte: C2 for U+0080-U+00BF, C3
+    // above.
     char out = '\0';
+    ASSERT(json::from_string(R"("\u0080")", out));
+    EXPECT(out == static_cast<char>(0x80));
+    ASSERT(json::from_string(R"("§")", out));
+    EXPECT(out == static_cast<char>(0xA7));
     ASSERT(json::from_string(R"("é")", out));
     EXPECT(out == static_cast<char>(0xE9));
     ASSERT(json::from_string(R"("ÿ")", out));
@@ -79,6 +85,14 @@ ZEST_CASE(char_beyond_255_fails) {
     auto three_bytes = json::from_string(R"("€")", out);
     ASSERT(!three_bytes);
     EXPECT(three_bytes.error().message == codec::invalid_char_message);
+}
+
+ZEST_CASE(char_with_a_bad_continuation_byte_fails) {
+    // simdjson checks the document is UTF-8 before anything reads it.
+    char out = '\0';
+    auto status = json::from_string("\"\xC3\x28\"", out);
+    ASSERT(!status);
+    EXPECT(status.error().message == "UTF8_ERROR: The input is not valid UTF-8");
 }
 
 ZEST_CASE(char_from_several_characters_fails) {
