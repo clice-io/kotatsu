@@ -92,7 +92,8 @@ int main() {
         auto uri = p.text_document.uri;
         if(uri == "file:///error") {
             co_return et::outcome_error(
-                proto::Error(static_cast<proto::integer>(-32600), "hover error triggered"));
+                proto::Error(static_cast<proto::integer>(proto::LSPErrorCodes::RequestFailed),
+                             "hover error triggered"));
         }
         co_return proto::Hover{
             .contents =

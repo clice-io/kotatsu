@@ -5,6 +5,7 @@ import { test } from "node:test";
 
 import {
   ErrorCodes,
+  LSPErrorCodes,
   SemanticTokensRequest,
 } from "vscode-languageserver-protocol";
 
@@ -16,7 +17,7 @@ test(
     stub.driver.expectLog(/^\[error\] error response: hover error triggered$/);
     // The stub's hover fails for this URI.
     await assert.rejects(stub.hover("file:///error"), {
-      code: ErrorCodes.InvalidRequest,
+      code: LSPErrorCodes.RequestFailed,
       message: "hover error triggered",
     });
   }),
