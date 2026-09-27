@@ -104,7 +104,7 @@ public:
     struct Self;
 
     /// The libuv loop underneath, for code that runs libuv handles of its
-    /// own on this loop.
+    /// own on this loop. Its `data` belongs to the event_loop.
     uv_loop_t* native_handle() noexcept;
 
     int run();

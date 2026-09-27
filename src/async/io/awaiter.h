@@ -191,6 +191,7 @@ struct owned_handle {
             delete self;
             return;
         }
+        assert(!::uv_is_closing(&handle) && "destroyed while the loop closes it on its way out");
         self->slot.abort(*handle.loop, error::operation_aborted);
         ::uv_close(&handle,
                    [](uv_handle_t* closed) { delete static_cast<Derived*>(closed->data); });

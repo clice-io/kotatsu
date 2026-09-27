@@ -499,6 +499,24 @@ ZEST_CASE(recv_after_a_receive_error_reads_again) {
 }
 #endif
 
+ZEST_CASE(inert_socket_fails) {
+    udp inert;
+    std::string_view data = "x";
+
+    auto [received, sent] = run(inert.recv(), inert.send(data, "127.0.0.1", 9));
+    ASSERT(received.has_error());
+    EXPECT(received.error() == error::invalid_argument);
+    ASSERT(sent.has_error());
+    EXPECT(sent.error() == error::invalid_argument);
+    EXPECT(inert.bind("127.0.0.1", 0) == error::invalid_argument);
+    EXPECT(inert.try_send(data) == error::invalid_argument);
+    EXPECT(inert.stop() == error::invalid_argument);
+    EXPECT(inert.set_ttl(32) == error::invalid_argument);
+    auto name = inert.getsockname();
+    ASSERT(name.has_error());
+    EXPECT(name.error() == error::invalid_argument);
+}
+
 ZEST_CASE(bind_to_a_port_in_use_fails) {
     auto taken = bind_loopback(loop);
     auto other = udp::create(loop);

@@ -296,6 +296,18 @@ ZEST_CASE(write_and_shutdown_after_a_shutdown_fail) {
     EXPECT(failed->second == error::broken_pipe);
 }
 
+ZEST_CASE(inert_acceptor_fails) {
+    tcp::acceptor inert;
+
+    auto [accepted] = run(inert.accept());
+    ASSERT(accepted.has_error());
+    EXPECT(accepted.error() == error::invalid_argument);
+    EXPECT(inert.stop() == error::invalid_argument);
+    auto name = inert.getsockname();
+    ASSERT(name.has_error());
+    EXPECT(name.error() == error::invalid_argument);
+}
+
 ZEST_CASE(second_accept_while_one_is_pending_fails) {
     auto listener = listen_loopback(loop);
     ASSERT(listener.has_value());
