@@ -45,10 +45,10 @@ public:
         }
     }
 
-    et::task<std::optional<std::string>> read_message() override {
+    et::task<std::string, ipc::ReadError> read_message() override {
         while(read_index >= incoming_messages.size()) {
             if(closed) {
-                co_return std::nullopt;
+                co_await et::fail(ipc::ReadError{.kind = ipc::ReadError::Kind::Closed});
             }
 
             co_await readable.wait();
@@ -69,6 +69,10 @@ public:
     void push_incoming(std::string payload) {
         incoming_messages.push_back(std::move(payload));
         readable.set();
+    }
+
+    ipc::Result<void> close_output() override {
+        return {};
     }
 
     ipc::Result<void> close() override {

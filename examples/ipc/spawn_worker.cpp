@@ -89,10 +89,7 @@ et::task<void> run_parent_session(ipc::JsonPeer& peer,
                      build_result->resolved_header);
     }
 
-    auto close_status = peer.close_output();
-    if(!close_status && outcome.error.empty()) {
-        outcome.error = "closing worker output failed: " + close_status.error().message;
-    }
+    peer.close_output();
 
     auto child_status = co_await child.wait();
     if(!child_status) {

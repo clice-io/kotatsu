@@ -2,10 +2,11 @@
 #include <memory>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <variant>
 
+#include "kota/ipc/codec.h"
 #include "kota/ipc/codec/json.h"
+#include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/ipc/lsp/protocol.h"
 
@@ -26,7 +27,7 @@ ZEST_CASE(literal_encodes_its_text) {
     EXPECT(*serialized == R"({"kind":"create","uri":"file:///a"})");
 }
 
-ZEST_CASE(literal_rejects_other_input) {
+ZEST_CASE(literal_of_other_text_fails) {
     for(auto payload: {R"({"kind":"delete","uri":"file:///a"})",
                        R"({"kind":1,"uri":"file:///a"})",
                        R"({"uri":"file:///a"})"}) {
@@ -114,7 +115,7 @@ ZEST_CASE(inherited_properties_are_members) {
     EXPECT(std::get<std::string>(*params->work_done_token) == "t");
 }
 
-ZEST_CASE(self_containing_structure_round_trip) {
+ZEST_CASE(self_containing_structure_roundtrip) {
     constexpr protocol::Range range{
         .start = {.line = 0, .character = 0},
         .end = {.line = 0, .character = 1}
@@ -136,7 +137,7 @@ ZEST_CASE(self_containing_structure_round_trip) {
     EXPECT(decoded->parent->range.end.character == 1U);
 }
 
-ZEST_CASE(nested_structure_round_trip) {
+ZEST_CASE(nested_structure_roundtrip) {
     auto payload = std::format(
         R"({{"name":"outer","kind":5,"range":{0},"selectionRange":{0},"children":[{{"name":"inner","kind":6,"range":{0},"selectionRange":{0}}}]}})",
         range_json);
@@ -195,10 +196,59 @@ ZEST_CASE(nullable_result) {
 }
 
 ZEST_CASE(parameterless_methods) {
-    static_assert(
-        std::is_same_v<protocol::RequestTraits<protocol::ShutdownParams>::Result, protocol::null>);
+    EXPECT(
+        zest::type_eq<protocol::RequestTraits<protocol::ShutdownParams>::Result, protocol::null>());
     EXPECT(protocol::RequestTraits<protocol::ShutdownParams>::method == "shutdown");
     EXPECT(protocol::NotificationTraits<protocol::ExitParams>::method == "exit");
+}
+
+// Clients send the params of shutdown and exit as null, or leave them out
+// (P4.4, fixed when the protocol was generated anew).
+ZEST_CASE(parameterless_methods_read_null_params) {
+    JsonCodec codec;
+    for(std::string_view payload: {
+            R"({"jsonrpc":"2.0","id":1,"method":"shutdown","params":null})",
+            R"({"jsonrpc":"2.0","id":1,"method":"shutdown"})",
+        }) {
+        ZEST_CONTEXT("payload: {}", payload);
+        auto parsed = codec.parse_message(payload);
+        const auto* request = std::get_if<IncomingRequest>(&parsed);
+        ASSERT(request != nullptr);
+        EXPECT(codec.deserialize_value<protocol::ShutdownParams>(request->params).has_value());
+    }
+    auto parsed = codec.parse_message(R"({"jsonrpc":"2.0","method":"exit","params":null})");
+    const auto* notification = std::get_if<IncomingNotification>(&parsed);
+    ASSERT(notification != nullptr);
+    EXPECT(codec.deserialize_value<protocol::ExitParams>(notification->params).has_value());
+}
+
+// P4.1: an untagged variant takes the first alternative the input decodes
+// into, and TextEdit ignores the annotationId it does not have.
+ZEST_CASE(untagged_variant_takes_the_alternative_the_input_fills, skip = true) {
+    auto edit = from_string<protocol::TextDocumentEdit, lsp_config>(std::format(
+        R"({{"textDocument":{{"uri":"file:///a","version":null}},"edits":[{{"range":{},"newText":"x","annotationId":"a"}}]}})",
+        range_json));
+    ASSERT(edit);
+    ASSERT(edit->edits.size() == 1U);
+    EXPECT(std::holds_alternative<protocol::AnnotatedTextEdit>(edit->edits[0]));
+}
+
+// P4.2: `cancellable` is an optional_bool, which omits false; in a report,
+// false disables the cancel button, where leaving it out keeps the button as
+// it is.
+ZEST_CASE(tri_state_bool_writes_false, skip = true) {
+    auto serialized = to_string<lsp_config>(protocol::WorkDoneProgressReport{.cancellable = false});
+    ASSERT(serialized);
+    EXPECT(zest::contains(*serialized, R"("cancellable":false)"));
+}
+
+// P4.3: an optional nullable member reads an explicit null as absent.
+ZEST_CASE(optional_nullable_member_reads_null_as_present, skip = true) {
+    auto params = from_string<protocol::InitializeParams, lsp_config>(
+        R"({"processId":null,"rootUri":null,"capabilities":{},"workspaceFolders":null})");
+    ASSERT(params);
+    ASSERT(params->workspace_folders.has_value());
+    EXPECT(!params->workspace_folders->has_value());
 }
 
 };  // ZEST_SUITE(ipc_lsp_protocol_model)

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <concepts>
 #include <span>
 #include <string>
 
@@ -40,9 +39,12 @@ struct deserialize_visit<bincode::Reader, kota::ipc::protocol::RequestID, Config
 
 namespace kota::ipc {
 
-class BincodeCodec {
-public:
+struct BincodeCodec {
     IncomingMessage parse_message(std::string_view payload);
+
+    /// Reads what it can from `prefix`, the first bytes of a message too
+    /// large to read whole.
+    MessageHead peek(std::string_view prefix);
 
     Result<std::string> encode_request(const protocol::RequestID& id,
                                        std::string_view method,
@@ -53,7 +55,9 @@ public:
     Result<std::string> encode_success_response(const protocol::RequestID& id,
                                                 std::string_view result);
 
-    Result<std::string> encode_error_response(const protocol::RequestID& id, const Error& error);
+    /// Without an id, the error answers a message whose id could not be read.
+    Result<std::string> encode_error_response(const std::optional<protocol::RequestID>& id,
+                                              const Error& error);
 
     template <typename T>
     Result<std::string> serialize_value(const T& value) {
@@ -65,16 +69,11 @@ public:
         return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
     }
 
+    /// Empty bytes decode only into a value without fields, as params
+    /// without fields are written.
     template <typename T>
     Result<T> deserialize_value(std::string_view raw,
                                 protocol::ErrorCode code = protocol::ErrorCode::RequestFailed) {
-        if(raw.empty()) {
-            if constexpr(std::default_initializable<T>) {
-                return T{};
-            } else {
-                return outcome_error(Error(code, "empty params"));
-            }
-        }
         auto bytes_span =
             std::span<const std::byte>(reinterpret_cast<const std::byte*>(raw.data()), raw.size());
         T value{};

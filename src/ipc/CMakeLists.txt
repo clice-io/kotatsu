@@ -2,6 +2,7 @@ add_library(kota_ipc STATIC)
 add_library(kota::ipc ALIAS kota_ipc)
 
 target_sources(kota_ipc PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/framing.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/transport.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/recording_transport.cpp"
 )

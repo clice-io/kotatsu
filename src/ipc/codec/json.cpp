@@ -4,22 +4,12 @@
 #include <string_view>
 
 #include "kota/ipc/codec/json.h"
+#include "kota/codec/dyn/dyn.h"
 #include "kota/codec/macro.h"
 
 namespace kota::ipc {
 
 namespace {
-
-template <typename T>
-Result<std::string>
-    serialize_json_value(const T& value,
-                         protocol::ErrorCode code = protocol::ErrorCode::InternalError) {
-    auto serialized = codec::json::to_string(value);
-    if(!serialized) {
-        return outcome_error(Error(code, serialized.error().to_string()));
-    }
-    return std::move(*serialized);
-}
 
 struct outgoing_request_message {
     std::string jsonrpc = "2.0";
@@ -42,69 +32,245 @@ struct outgoing_success_response_message {
 
 struct outgoing_error_response_message {
     std::string jsonrpc = "2.0";
-    protocol::RequestID id;
+    /// Written as null when the error answers a message whose id is unknown.
+    std::optional<protocol::RequestID> id;
     Error error;
 };
 
 struct json_rpc_incoming {
-    std::optional<protocol::RequestID> id;
+    // RawValue, not optional<RequestID>, so that a null id stays apart from
+    // a missing one: absent → empty(), null → "null" text.
+    KOTATSU_ANNOTATE(defaulted = true)
+    <codec::RawValue> id;
     std::optional<std::string> method;
     std::optional<codec::RawValue> params;
     // Not optional<RawValue> because "result": null is a valid success
-    // response — optional would lose it as nullopt. A defaulted RawValue
-    // keeps absent → empty(), null → "null" text.
+    // response — optional would lose it as nullopt.
     KOTATSU_ANNOTATE(defaulted = true)
     <codec::RawValue> result;
     std::optional<Error> error;
 };
+
+/// The request id `raw`, an id member as written, holds: nothing for a null,
+/// or for a value that is neither an integer nor a string.
+std::optional<protocol::RequestID> read_id(std::string_view raw) {
+    auto id = codec::json::from_string<protocol::RequestID>(raw);
+    if(!id) {
+        return std::nullopt;
+    }
+    return std::move(*id);
+}
+
+/// Reads JSON from the front of text that may stop anywhere.
+struct PrefixReader {
+    std::string_view text;
+    std::size_t at = 0;
+
+    bool ended() const {
+        return at >= text.size();
+    }
+
+    void skip_space() {
+        while(!ended() &&
+              (text[at] == ' ' || text[at] == '\t' || text[at] == '\r' || text[at] == '\n')) {
+            ++at;
+        }
+    }
+
+    bool take(char c) {
+        skip_space();
+        if(ended() || text[at] != c) {
+            return false;
+        }
+        ++at;
+        return true;
+    }
+
+    /// The string at the front, quotes included, if it ends before the text.
+    std::optional<std::string_view> string() {
+        skip_space();
+        if(ended() || text[at] != '"') {
+            return std::nullopt;
+        }
+        const auto start = at++;
+        while(!ended()) {
+            const char c = text[at++];
+            if(c == '\\') {
+                ++at;
+            } else if(c == '"') {
+                return text.substr(start, at - start);
+            }
+        }
+        return std::nullopt;
+    }
+
+    /// The value at the front, if it ends before the text: a scalar ends at
+    /// the delimiter after it.
+    std::optional<std::string_view> value() {
+        skip_space();
+        const auto start = at;
+        if(ended()) {
+            return std::nullopt;
+        }
+        if(text[at] == '"') {
+            return string();
+        }
+        if(text[at] == '{' || text[at] == '[') {
+            int depth = 0;
+            while(!ended()) {
+                const char c = text[at];
+                if(c == '"') {
+                    if(!string()) {
+                        return std::nullopt;
+                    }
+                    continue;
+                }
+                ++at;
+                if(c == '{' || c == '[') {
+                    ++depth;
+                } else if((c == '}' || c == ']') && --depth == 0) {
+                    return text.substr(start, at - start);
+                }
+            }
+            return std::nullopt;
+        }
+        while(!ended() && std::string_view(",}] \t\r\n").find(text[at]) == std::string_view::npos) {
+            ++at;
+        }
+        if(ended()) {
+            return std::nullopt;
+        }
+        return text.substr(start, at - start);
+    }
+};
+
+/// What to make of a message whose envelope did not decode. Text that is no
+/// JSON is a parse error; JSON that is no message object is an invalid
+/// request (batches are not supported). An object is read again, leniently,
+/// for the id it names: a request (it has a method) is answered as invalid
+/// under that id, and a response fails the request it answers, or is only
+/// logged when its id cannot be read.
+IncomingMessage read_malformed(std::string_view payload, std::string reason) {
+    auto document = codec::json::from_string<codec::dyn::Value>(payload);
+    if(!document) {
+        return IncomingParseError{std::nullopt,
+                                  Error(protocol::ErrorCode::ParseError, std::move(reason))};
+    }
+    const auto* object = document->get_object();
+    if(object == nullptr) {
+        return IncomingParseError{std::nullopt,
+                                  Error(protocol::ErrorCode::InvalidRequest,
+                                        document->is_array() ? "batch messages are not supported"
+                                                             : "message must be an object")};
+    }
+
+    std::optional<protocol::RequestID> id;
+    if(const auto* member = object->find("id")) {
+        if(auto number = member->get_int()) {
+            id = *number;
+        } else if(auto text = member->get_string()) {
+            id = std::string(*text);
+        }
+    }
+    if(object->contains("method")) {
+        return IncomingParseError{std::move(id),
+                                  Error(protocol::ErrorCode::InvalidRequest, std::move(reason))};
+    }
+    return IncomingErrorResponse{
+        std::move(id),
+        Error(protocol::ErrorCode::InvalidRequest, "malformed response: " + reason)};
+}
 
 }  // namespace
 
 IncomingMessage JsonCodec::parse_message(std::string_view payload) {
     auto envelope = codec::json::from_string<json_rpc_incoming>(payload);
     if(!envelope) {
-        return IncomingParseError{
-            Error(protocol::ErrorCode::ParseError, envelope.error().to_string())};
+        return read_malformed(payload, envelope.error().to_string());
     }
 
-    auto raw_params =
-        envelope->params.has_value() ? std::move(envelope->params->data) : std::string{};
+    const bool has_id = !envelope->id.empty();
+    auto id = has_id ? read_id(envelope->id.data) : std::nullopt;
 
-    // Has method → request or notification
     if(envelope->method.has_value()) {
-        if(envelope->id.has_value()) {
-            return IncomingRequest{*envelope->id,
-                                   std::move(*envelope->method),
-                                   std::move(raw_params)};
+        auto params =
+            envelope->params.has_value() ? std::move(envelope->params->data) : std::string{};
+        if(!has_id) {
+            return IncomingNotification{std::move(*envelope->method), std::move(params)};
         }
-        return IncomingNotification{std::move(*envelope->method), std::move(raw_params)};
+        if(!id) {
+            return IncomingParseError{std::nullopt,
+                                      Error(protocol::ErrorCode::InvalidRequest,
+                                            "request id must be an integer or a string")};
+        }
+        return IncomingRequest{std::move(*id), std::move(*envelope->method), std::move(params)};
     }
 
-    // No method + has id → response
-    if(envelope->id.has_value()) {
-        auto has_result = !envelope->result.empty();
-        auto has_error = envelope->error.has_value();
-
-        if(has_error && !has_result) {
-            return IncomingErrorResponse{*envelope->id, std::move(*envelope->error)};
-        }
-        if(has_result && !has_error) {
-            return IncomingResponse{*envelope->id, std::move(envelope->result.data)};
-        }
-        return IncomingErrorResponse{*envelope->id,
+    const bool has_result = !envelope->result.empty();
+    const bool has_error = envelope->error.has_value();
+    if(!has_id && !has_result && !has_error) {
+        return IncomingParseError{
+            std::nullopt,
+            Error(protocol::ErrorCode::InvalidRequest, "message must contain method or id")};
+    }
+    if(has_result == has_error) {
+        return IncomingErrorResponse{std::move(id),
                                      Error(protocol::ErrorCode::InvalidRequest,
                                            "response must contain exactly one of result or error")};
     }
+    if(has_error) {
+        return IncomingErrorResponse{std::move(id), std::move(*envelope->error)};
+    }
+    if(!id) {
+        return IncomingErrorResponse{std::nullopt,
+                                     Error(protocol::ErrorCode::InvalidRequest,
+                                           "response id must be an integer or a string")};
+    }
+    return IncomingResponse{std::move(*id), std::move(envelope->result.data)};
+}
 
-    // No method + no valid id → invalid
-    return IncomingParseError{
-        Error(protocol::ErrorCode::InvalidRequest, "message must contain method or id")};
+/// Members are read in order until the prefix ends, so a writer that puts a
+/// request's id after its method, past the prefix, reads as a notification.
+/// kotatsu, like vscode-jsonrpc, writes the id first.
+MessageHead JsonCodec::peek(std::string_view prefix) {
+    PrefixReader reader{prefix};
+    std::optional<protocol::RequestID> id;
+    bool has_method = false;
+    bool answers = false;
+    if(reader.take('{')) {
+        while(auto key = reader.string()) {
+            if(!reader.take(':')) {
+                break;
+            }
+            has_method = has_method || *key == R"("method")";
+            answers = answers || *key == R"("result")" || *key == R"("error")";
+            auto value = reader.value();
+            if(!value) {
+                break;
+            }
+            if(*key == R"("id")") {
+                id = read_id(*value);
+            }
+            if(!reader.take(',')) {
+                break;
+            }
+        }
+    }
+
+    if(has_method) {
+        return {.kind = id ? MessageHead::Kind::Request : MessageHead::Kind::Notification,
+                .id = id};
+    }
+    if(answers) {
+        return {.kind = MessageHead::Kind::Response, .id = id};
+    }
+    return {};
 }
 
 Result<std::string> JsonCodec::encode_request(const protocol::RequestID& id,
                                               std::string_view method,
                                               std::string_view params) {
-    return serialize_json_value(outgoing_request_message{
+    return serialize_value(outgoing_request_message{
         .id = id,
         .method = std::string(method),
         .params = codec::RawValue{std::string(params)},
@@ -113,7 +279,7 @@ Result<std::string> JsonCodec::encode_request(const protocol::RequestID& id,
 
 Result<std::string> JsonCodec::encode_notification(std::string_view method,
                                                    std::string_view params) {
-    return serialize_json_value(outgoing_notification_message{
+    return serialize_value(outgoing_notification_message{
         .method = std::string(method),
         .params = codec::RawValue{std::string(params)},
     });
@@ -121,15 +287,15 @@ Result<std::string> JsonCodec::encode_notification(std::string_view method,
 
 Result<std::string> JsonCodec::encode_success_response(const protocol::RequestID& id,
                                                        std::string_view result) {
-    return serialize_json_value(outgoing_success_response_message{
+    return serialize_value(outgoing_success_response_message{
         .id = id,
         .result = codec::RawValue{std::string(result)},
     });
 }
 
-Result<std::string> JsonCodec::encode_error_response(const protocol::RequestID& id,
+Result<std::string> JsonCodec::encode_error_response(const std::optional<protocol::RequestID>& id,
                                                      const Error& error) {
-    return serialize_json_value(outgoing_error_response_message{
+    return serialize_value(outgoing_error_response_message{
         .id = id,
         .error = error,
     });
