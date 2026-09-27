@@ -251,15 +251,9 @@ bool encode_value(Vis& vis, const T& value) {
             return vis.visit_null();
         } else if constexpr(kind == optional || kind == pointer) {
             if constexpr(is_specialization_of<std::weak_ptr, T>) {
-                auto sp = value.lock();
-                if constexpr(requires(Vis& v, const decltype(sp)& p) { v.visit_pointer(p); }) {
-                    return vis.visit_pointer(sp);
-                } else {
-                    if(sp) {
-                        return encode_value<Config>(vis, *sp);
-                    }
-                    return vis.visit_null();
-                }
+                // A weak pointer writes what the shared pointer it locks to
+                // would, presence marker included.
+                return encode_value<Config>(vis, value.lock());
             } else if constexpr(kind == pointer &&
                                 requires(Vis& v, const T& p) { v.visit_pointer(p); }) {
                 return vis.visit_pointer(value);
