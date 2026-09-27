@@ -397,108 +397,84 @@ bool fail_unusable_tag(Reader& tag) {
 }
 
 /// Internal tagged: { "tag": "TagName", ...fields... }
-/// Two paths: data-driven, which looks the tag up before placing fields, and
-/// schema-driven, which reads the tag as the first field.
+/// The tag is looked up before any field is placed, so it may follow them.
 template <typename Config, typename SpecAttr, typename Vis, typename... Ts>
 bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
+    static_assert(data_driven<Vis> && has_try_read<Vis>,
+                  "a tagged variant decodes through a data-driven visitor with try_read");
     constexpr std::string_view tag_key = SpecAttr::value.tag;
     constexpr auto names = meta::resolve_tag_names<SpecAttr, Ts...>();
     constexpr std::size_t npos = sizeof...(Ts);
 
     std::size_t idx = npos;
 
-    if constexpr(data_driven<Vis>) {
-        static_assert(has_try_read<Vis>, "a data-driven visitor must support try_read");
-        // Look the tag up first, so that fields before it can be placed.
-        vis.try_read([&](auto& fork) -> bool {
-            fork.visit_struct([&](std::string_view key, auto& fv) -> bool {
-                if(key == tag_key) {
-                    std::string name;
-                    fv.visit_str(name);
-                    idx = find_tag_index(std::string_view(name), names);
-                    return false;
-                }
-                return true;
-            });
-            return false;
-        });
-        if(idx != npos)
-            emplace_variant_by_index(var, idx);
-
-        std::uint64_t field_mask = 0;
-        bool result = vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
+    // Look the tag up first, so that fields before it can be placed.
+    vis.try_read([&](auto& fork) -> bool {
+        fork.visit_struct([&](std::string_view key, auto& fv) -> bool {
             if(key == tag_key) {
-                if(idx != npos)
-                    return fv.visit_skip();
-                return fail_unusable_tag<Vis>(fv);
+                std::string name;
+                fv.visit_str(name);
+                idx = find_tag_index(std::string_view(name), names);
+                return false;
             }
-            if(idx == npos) {
-                // Without a usable tag data fields cannot be placed, and need
-                // not be: the tag's own entry reports why it is unusable, and
-                // an absent tag is reported after the pass.
-                return fv.visit_skip();
-            }
-            return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
-                bool r = true;
-                ((Is == idx
-                      ? void(r = match_field<Config,
-                                             std::variant_alternative_t<Is, std::variant<Ts...>>>(
-                                 key,
-                                 fv,
-                                 std::get<Is>(var),
-                                 &field_mask))
-                      : void()),
-                 ...);
-                return r;
-            }(std::index_sequence_for<Ts...>{});
+            return true;
         });
+        return false;
+    });
+    if(idx != npos)
+        emplace_variant_by_index(var, idx);
 
-        if(!result) {
-            return false;
+    std::uint64_t field_mask = 0;
+    bool result = vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
+        if(key == tag_key) {
+            if(idx != npos)
+                return fv.visit_skip();
+            return fail_unusable_tag<Vis>(fv);
         }
         if(idx == npos) {
-            return scoped_context<typename Vis::error_type>::fail(
-                rich_error("internally tagged variant: missing tag field"));
+            // Without a usable tag data fields cannot be placed, and need
+            // not be: the tag's own entry reports why it is unusable, and
+            // an absent tag is reported after the pass.
+            return fv.visit_skip();
         }
         return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
-            bool ok = true;
-            ((Is == idx ? void(ok = check_required_fields<
-                                   Config,
-                                   std::variant_alternative_t<Is, std::variant<Ts...>>,
-                                   Vis>(field_mask))
+            bool r = true;
+            ((Is == idx ? void(r = match_field<Config,
+                                               std::variant_alternative_t<Is, std::variant<Ts...>>>(
+                                   key,
+                                   fv,
+                                   std::get<Is>(var),
+                                   &field_mask))
                         : void()),
              ...);
-            return ok;
+            return r;
         }(std::index_sequence_for<Ts...>{});
-    } else {
-        return vis.visit_struct(var, [&](auto& sv) -> bool {
-            std::string tag_value;
-            KOTA_CODEC_TRY(sv.visit_field(std::size_t(0), tag_key, [&](auto& tv) -> bool {
-                return tv.visit_str(tag_value);
-            }));
+    });
 
-            idx = find_tag_index(tag_value, names);
-            if(idx >= npos) {
-                return scoped_context<typename Vis::error_type>::fail(
-                    rich_error(std::string("unknown variant tag '") + tag_value + "'"));
-            }
-
-            return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
-                bool ok = false;
-                ((Is == idx ? (var.template emplace<Is>(),
-                               ok = decode_struct_fields<Config>(sv, std::get<Is>(var)),
-                               true)
-                            : false) ||
-                 ...);
-                return ok;
-            }(std::index_sequence_for<Ts...>{});
-        });
+    if(!result) {
+        return false;
     }
+    if(idx == npos) {
+        return scoped_context<typename Vis::error_type>::fail(
+            rich_error("internally tagged variant: missing tag field"));
+    }
+    return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
+        bool ok = true;
+        ((Is == idx
+              ? void(ok = check_required_fields<Config,
+                                                std::variant_alternative_t<Is, std::variant<Ts...>>,
+                                                Vis>(field_mask))
+              : void()),
+         ...);
+        return ok;
+    }(std::index_sequence_for<Ts...>{});
 }
 
 /// Adjacent tagged: { "t": "TagName", "c": value }
 template <typename Config, typename SpecAttr, typename Vis, typename... Ts>
 bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
+    static_assert(data_driven<Vis> && has_try_read<Vis>,
+                  "a tagged variant decodes through a data-driven visitor with try_read");
     constexpr std::string_view tag_key = SpecAttr::value.tag;
     constexpr std::string_view content_key = SpecAttr::value.content;
     constexpr auto names = meta::resolve_tag_names<SpecAttr, Ts...>();
@@ -506,84 +482,64 @@ bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
 
     std::size_t idx = npos;
 
-    if constexpr(data_driven<Vis>) {
-        static_assert(has_try_read<Vis>, "a data-driven visitor must support try_read");
-        // Look the tag up first, so that content before it can be placed.
-        vis.try_read([&](auto& fork) -> bool {
-            fork.visit_struct([&](std::string_view key, auto& fv) -> bool {
-                if(key == tag_key) {
-                    std::string name;
-                    fv.visit_str(name);
-                    idx = find_tag_index(std::string_view(name), names);
-                    return false;
-                }
-                return true;
-            });
-            return false;
-        });
-
-        std::size_t tag_count = 0;
-        std::size_t content_count = 0;
-
-        bool result = vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
+    // Look the tag up first, so that content before it can be placed.
+    vis.try_read([&](auto& fork) -> bool {
+        fork.visit_struct([&](std::string_view key, auto& fv) -> bool {
             if(key == tag_key) {
-                ++tag_count;
-                if(idx != npos)
-                    return fv.visit_skip();
-                return fail_unusable_tag<Vis>(fv);
+                std::string name;
+                fv.visit_str(name);
+                idx = find_tag_index(std::string_view(name), names);
+                return false;
             }
-            if(key == content_key) {
-                ++content_count;
-                if(idx == npos) {
-                    // Without a usable tag the content cannot be placed: the
-                    // tag's own entry reports why, and an absent tag is
-                    // reported after the pass.
-                    return fv.visit_skip();
-                }
-                if(content_count > 1)
-                    return fv.visit_skip();
-                return construct_and_visit<Config>(fv, var, idx);
-            }
-            return fv.visit_skip();
+            return true;
         });
+        return false;
+    });
 
-        if(!result)
-            return false;
-        if(idx == npos) {
-            return scoped_context<typename Vis::error_type>::fail(
-                rich_error("adjacently tagged variant: missing tag field"));
-        }
-        if(content_count == 0) {
-            return scoped_context<typename Vis::error_type>::fail(
-                rich_error("adjacently tagged variant: missing content field"));
-        }
-        if(tag_count > 1) {
-            return scoped_context<typename Vis::error_type>::fail(
-                rich_error("adjacently tagged variant: duplicate tag field"));
-        }
-        if(content_count > 1) {
-            return scoped_context<typename Vis::error_type>::fail(
-                rich_error("adjacently tagged variant: duplicate content field"));
-        }
-        return true;
-    } else {
-        return vis.visit_struct(var, [&](auto& sv) -> bool {
-            std::string tag_value;
-            KOTA_CODEC_TRY(sv.visit_field(std::size_t(0), tag_key, [&](auto& tv) -> bool {
-                return tv.visit_str(tag_value);
-            }));
+    std::size_t tag_count = 0;
+    std::size_t content_count = 0;
 
-            idx = find_tag_index(tag_value, names);
-            if(idx >= npos) {
-                return scoped_context<typename Vis::error_type>::fail(
-                    rich_error(std::string("unknown variant tag '") + tag_value + "'"));
+    bool result = vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
+        if(key == tag_key) {
+            ++tag_count;
+            if(idx != npos)
+                return fv.visit_skip();
+            return fail_unusable_tag<Vis>(fv);
+        }
+        if(key == content_key) {
+            ++content_count;
+            if(idx == npos) {
+                // Without a usable tag the content cannot be placed: the
+                // tag's own entry reports why, and an absent tag is
+                // reported after the pass.
+                return fv.visit_skip();
             }
+            if(content_count > 1)
+                return fv.visit_skip();
+            return construct_and_visit<Config>(fv, var, idx);
+        }
+        return fv.visit_skip();
+    });
 
-            return sv.visit_field(std::size_t(1), content_key, [&](auto& cv) -> bool {
-                return construct_and_visit<Config>(cv, var, idx);
-            });
-        });
+    if(!result)
+        return false;
+    if(idx == npos) {
+        return scoped_context<typename Vis::error_type>::fail(
+            rich_error("adjacently tagged variant: missing tag field"));
     }
+    if(content_count == 0) {
+        return scoped_context<typename Vis::error_type>::fail(
+            rich_error("adjacently tagged variant: missing content field"));
+    }
+    if(tag_count > 1) {
+        return scoped_context<typename Vis::error_type>::fail(
+            rich_error("adjacently tagged variant: duplicate tag field"));
+    }
+    if(content_count > 1) {
+        return scoped_context<typename Vis::error_type>::fail(
+            rich_error("adjacently tagged variant: duplicate content field"));
+    }
+    return true;
 }
 
 template <typename Config, typename Vis, typename T>

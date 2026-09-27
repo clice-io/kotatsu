@@ -68,9 +68,8 @@ struct ScalarReader : detail::VisitorBase {
 
     template <typename U, typename Body>
     bool visit_struct(U& out, Body&&) {
-        if constexpr(std::is_same_v<std::remove_const_t<U>, T>) {
-            out = value;
-        }
+        static_assert(std::is_same_v<U, T>);
+        out = value;
         return true;
     }
 };
