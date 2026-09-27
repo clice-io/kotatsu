@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -30,7 +31,7 @@ struct bincode_error {
     std::optional<protocol::RequestID> id;
     std::int32_t code = 0;
     std::string message;
-    codec::RawValue data;
+    std::optional<codec::dyn::Value> data;
 };
 
 using bincode_envelope =
@@ -64,23 +65,34 @@ IncomingMessage BincodeCodec::parse_message(std::string_view payload) {
     auto status = codec::bincode::from_bytes(bytes_span, envelope);
     if(!status) {
         return IncomingParseError{
-            std::nullopt,
-            Error(protocol::ErrorCode::ParseError, status.error().to_string())};
+            .id = std::nullopt,
+            .error = Error(protocol::ErrorCode::ParseError, status.error().to_string()),
+        };
     }
 
     return std::visit(
         [](auto&& v) -> IncomingMessage {
             using T = std::remove_cvref_t<decltype(v)>;
             if constexpr(std::is_same_v<T, bincode_request>) {
-                return IncomingRequest{v.id, std::move(v.method), std::move(v.params.data)};
+                return IncomingRequest{
+                    .id = v.id,
+                    .method = std::move(v.method),
+                    .params = std::move(v.params.data),
+                };
             } else if constexpr(std::is_same_v<T, bincode_notification>) {
-                return IncomingNotification{std::move(v.method), std::move(v.params.data)};
+                return IncomingNotification{
+                    .method = std::move(v.method),
+                    .params = std::move(v.params.data),
+                };
             } else if constexpr(std::is_same_v<T, bincode_success>) {
-                return IncomingResponse{v.id, std::move(v.result.data)};
+                return IncomingResponse{.id = v.id, .result = std::move(v.result.data)};
             } else if constexpr(std::is_same_v<T, bincode_error>) {
                 return IncomingErrorResponse{
-                    std::move(v.id),
-                    Error(static_cast<protocol::integer>(v.code), std::move(v.message))};
+                    .id = std::move(v.id),
+                    .error = Error(static_cast<protocol::integer>(v.code),
+                                   std::move(v.message),
+                                   std::move(v.data)),
+                };
             }
         },
         std::move(envelope));
@@ -133,10 +145,10 @@ Result<std::string>
     BincodeCodec::encode_error_response(const std::optional<protocol::RequestID>& id,
                                         const Error& error) {
     return serialize_value(bincode_envelope(bincode_error{
-        id,
-        static_cast<std::int32_t>(error.code),
-        error.message,
-        codec::RawValue{},
+        .id = id,
+        .code = static_cast<std::int32_t>(error.code),
+        .message = error.message,
+        .data = error.data,
     }));
 }
 

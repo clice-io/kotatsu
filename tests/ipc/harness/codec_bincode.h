@@ -20,8 +20,8 @@
 namespace kota::test {
 
 // Mirrors of BincodeCodec's envelopes: an envelope is the index of its
-// alternative, then its fields in order, with an id as an int64 and a
-// params, result or data blob as length-prefixed bytes.
+// alternative, then its fields in order, with an id as an int64, a params or
+// result blob as length-prefixed bytes, and error data as a dynamic value.
 
 struct BincodeRequest {
     std::int64_t id = 0;
@@ -43,16 +43,14 @@ struct BincodeError {
     std::optional<std::int64_t> id;
     std::int32_t code = 0;
     std::string message;
-    codec::RawValue data;
+    std::optional<codec::dyn::Value> data;
 };
 
 using BincodeEnvelope =
     std::variant<BincodeRequest, BincodeNotification, BincodeResult, BincodeError>;
 
 /// BincodeCodec for the ipc kits. The remote's messages are the mirrors
-/// above, encoded by the bincode codec itself. Error data has no encoding in
-/// this format yet (P1.5), so error_response writes none and read leaves it
-/// empty.
+/// above, encoded by the bincode codec itself.
 struct BincodeAdapter {
     using Codec = ipc::BincodeCodec;
     constexpr static std::string_view name = "bincode";
@@ -116,7 +114,7 @@ struct BincodeAdapter {
             .id = number,
             .code = error.code,
             .message = error.message,
-            .data = {},
+            .data = error.data,
         }));
     }
 
@@ -149,6 +147,7 @@ struct BincodeAdapter {
                     }
                     message.error.code = alternative.code;
                     message.error.message = std::move(alternative.message);
+                    message.error.data = std::move(alternative.data);
                 }
                 return message;
             },

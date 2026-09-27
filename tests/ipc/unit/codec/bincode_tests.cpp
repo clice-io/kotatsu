@@ -29,9 +29,7 @@ ZEST_CASE_GROUP(protocol) {
     test::codec_protocol(test::CodecKit<test::BincodeAdapter>{add_case});
 }
 
-// P1.5: encode_error_response writes an empty blob for Error::data, and
-// parse_message ignores the blob.
-ZEST_CASE(error_response_roundtrip_keeps_the_data, skip = true) {
+ZEST_CASE(error_response_roundtrip_keeps_the_data) {
     test::error_response_roundtrip_keeps_the_data<test::BincodeAdapter>();
 }
 

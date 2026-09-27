@@ -47,8 +47,7 @@ ZEST_CASE_GROUP(unreadable) {
     test::peer_unreadable(Kit{add_case});
 }
 
-// P1.5: BincodeCodec drops Error::data.
-ZEST_CASE(error_data_crosses_between_peers, skip = true) {
+ZEST_CASE(error_data_crosses_between_peers) {
     test::error_data_crosses_between_peers<test::BincodeAdapter>();
 }
 
