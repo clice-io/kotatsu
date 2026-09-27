@@ -5,6 +5,7 @@
 #include <map>
 #include <span>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "codec/harness/fixtures/enums.h"
@@ -24,6 +25,53 @@ struct Spliced {
     int id = 0;
     RawValue payload;
 };
+
+/// Travels as "f<page>", and in json as the page itself: its json-scoped
+/// repr names json's own format tag.
+struct Folio {
+    int page = 0;
+};
+
+/// A format tag no backend declares.
+struct OtherFormat {};
+
+}  // namespace
+
+}  // namespace kota::codec
+
+namespace kota::meta {
+
+template <>
+struct repr<codec::Folio> {
+    using type = std::string;
+
+    static type to(const codec::Folio& folio) {
+        return "f" + std::to_string(folio.page);
+    }
+
+    static codec::Folio from(const std::string& text) {
+        return {.page = std::stoi(text.substr(1))};
+    }
+};
+
+template <>
+struct repr<codec::Folio, codec::json::format> {
+    using type = std::int64_t;
+
+    static type to(const codec::Folio& folio) {
+        return folio.page;
+    }
+
+    static codec::Folio from(type page) {
+        return {.page = static_cast<int>(page)};
+    }
+};
+
+}  // namespace kota::meta
+
+namespace kota::codec {
+
+namespace {
 
 ZEST_SUITE(codec_json_encode) {
 
@@ -145,6 +193,17 @@ ZEST_CASE(dyn_value_encodes_as_typed) {
     EXPECT(json::to_string(dyn::Object{
                {"x", std::int64_t{10}}
     }) == R"({"x":10})");
+}
+
+ZEST_CASE(json_scoped_repr_applies_to_json_only) {
+    STATIC_EXPECT(std::is_same_v<meta::resolved_repr_t<Folio, json::format>, std::int64_t>);
+    STATIC_EXPECT(std::is_same_v<meta::resolved_repr_t<Folio, OtherFormat>, std::string>);
+    auto text = json::to_string(test::Field<Folio>{{.page = 41}});
+    ASSERT(text);
+    EXPECT(*text == R"({"value":41})");
+    auto read = json::from_string<test::Field<Folio>>(*text);
+    ASSERT(read);
+    EXPECT(read->value.page == 41);
 }
 
 ZEST_CASE(everything_lowering) {
