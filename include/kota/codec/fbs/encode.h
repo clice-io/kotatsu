@@ -172,14 +172,7 @@ struct AllocTableVisitor : detail::VisitorBase {
 
     template <typename F>
     bool visit_element(F&& writer) {
-        AllocFieldVisitor fv{.fbb = fbb};
-        KOTA_CODEC_TRY(writer(fv));
-        if(offsets.size() <= next_idx) {
-            offsets.resize(next_idx + 1, 0);
-        }
-        offsets[next_idx] = fv.stored_offset;
-        ++next_idx;
-        return true;
+        return visit_field(next_idx++, std::string_view{}, std::forward<F>(writer));
     }
 };
 
@@ -225,14 +218,12 @@ struct WriteFieldVisitor : detail::VisitorBase {
 
     template <typename T>
     bool visit_str(const T&) {
-        fbb.AddOffset(sid, offset_t<void>(stored_offset));
-        return true;
+        return add_offset();
     }
 
     template <typename T>
     bool visit_bytes(const T&) {
-        fbb.AddOffset(sid, offset_t<void>(stored_offset));
-        return true;
+        return add_offset();
     }
 
     template <typename T, typename Body>
@@ -240,32 +231,35 @@ struct WriteFieldVisitor : detail::VisitorBase {
         if constexpr(can_inline_struct_v<T>) {
             const auto image = struct_image(value);
             fbb.AddStruct(sid, &image);
+            return true;
         } else {
-            fbb.AddOffset(sid, offset_t<void>(stored_offset));
+            return add_offset();
         }
-        return true;
     }
 
     template <typename Container, typename Body>
     bool visit_seq(const Container&, Body&&) {
-        fbb.AddOffset(sid, offset_t<void>(stored_offset));
-        return true;
+        return add_offset();
     }
 
     template <typename T, typename Body>
     bool visit_tuple(const T&, Body&&) {
-        fbb.AddOffset(sid, offset_t<void>(stored_offset));
-        return true;
+        return add_offset();
     }
 
     template <typename Container, typename Body>
     bool visit_map(const Container&, Body&&) {
-        fbb.AddOffset(sid, offset_t<void>(stored_offset));
-        return true;
+        return add_offset();
     }
 
     template <typename Body>
     bool visit_variant(std::size_t, Body&&) {
+        return add_offset();
+    }
+
+private:
+    /// Points the slot at what the allocation pass built for it.
+    bool add_offset() {
         fbb.AddOffset(sid, offset_t<void>(stored_offset));
         return true;
     }
@@ -287,11 +281,7 @@ struct WriteTableVisitor : detail::VisitorBase {
 
     template <typename F>
     bool visit_element(F&& writer) {
-        const slot_id sid = detail::field_slot(next_idx);
-        const auto off = (next_idx < offsets.size()) ? offsets[next_idx] : uoffset_t{0};
-        WriteFieldVisitor wv{.fbb = fbb, .sid = sid, .stored_offset = off};
-        ++next_idx;
-        return writer(wv);
+        return visit_field(next_idx++, std::string_view{}, std::forward<F>(writer));
     }
 };
 
@@ -333,7 +323,6 @@ template <typename T>
 struct ScalarCollector {
     builder_t& fbb;
     std::vector<T> elems{};
-    uoffset_t result_offset = 0;
 
     template <typename F>
     bool visit_element(F&& writer) {
@@ -341,10 +330,8 @@ struct ScalarCollector {
         return writer(ev);
     }
 
-    bool finish() {
-        auto off = fbb.CreateVector(elems.data(), elems.size());
-        result_offset = off.o;
-        return true;
+    uoffset_t finish() {
+        return fbb.CreateVector(elems.data(), elems.size()).o;
     }
 };
 
@@ -363,7 +350,6 @@ struct StringElemVisitor : detail::VisitorBase {
 struct StringCollector {
     builder_t& fbb;
     std::vector<string_offset_t> refs{};
-    uoffset_t result_offset = 0;
 
     template <typename F>
     bool visit_element(F&& writer) {
@@ -371,10 +357,8 @@ struct StringCollector {
         return writer(ev);
     }
 
-    bool finish() {
-        auto off = fbb.CreateVector(refs.data(), refs.size());
-        result_offset = off.o;
-        return true;
+    uoffset_t finish() {
+        return fbb.CreateVector(refs.data(), refs.size()).o;
     }
 };
 
@@ -396,7 +380,6 @@ template <typename T>
 struct InlineStructCollector {
     builder_t& fbb;
     std::vector<StructImage<T>> elems{};
-    uoffset_t result_offset = 0;
 
     template <typename F>
     bool visit_element(F&& writer) {
@@ -404,21 +387,23 @@ struct InlineStructCollector {
         return writer(ev);
     }
 
-    bool finish() {
+    uoffset_t finish() {
         // The builder only memcpys the elements' bytes, but StructImage's
         // single-parameter template shape would match flatbuffers'
         // IndirectHelper<OffsetT<T>> specialization, so hand it the struct
         // type the images stand in for.
-        auto off =
-            fbb.CreateVectorOfStructs(reinterpret_cast<const T*>(elems.data()), elems.size());
-        result_offset = off.o;
-        return true;
+        return fbb.CreateVectorOfStructs(reinterpret_cast<const T*>(elems.data()), elems.size()).o;
     }
 };
 
-struct TableElemVisitor : detail::VisitorBase {
+/// Writes a value into a position that must hold a table (the root, an
+/// element of a table vector) and hands the table's offset to Place: a
+/// struct, tuple or variant writes its own table; a sequence or map, which
+/// no table position holds directly, is boxed in a one-field table.
+template <typename Place>
+struct TableVisitor : detail::VisitorBase {
     builder_t& fbb;
-    std::vector<table_offset_t>& table_offsets;
+    Place place;
 
     template <typename T, typename Body>
     bool visit_struct(const T&, Body&& body);
@@ -436,28 +421,33 @@ struct TableElemVisitor : detail::VisitorBase {
     bool visit_map(const Container& m, Body&& body);
 };
 
+/// Places each element's table in the vector being collected.
+struct ElementPlace {
+    std::vector<table_offset_t>& offsets;
+
+    void operator()(table_offset_t table) const {
+        offsets.push_back(table);
+    }
+};
+
 struct TableCollector {
     builder_t& fbb;
     std::vector<table_offset_t> table_offsets{};
-    uoffset_t result_offset = 0;
 
     template <typename F>
     bool visit_element(F&& writer) {
-        TableElemVisitor ev{.fbb = fbb, .table_offsets = table_offsets};
+        TableVisitor<ElementPlace> ev{.fbb = fbb, .place = {table_offsets}};
         return writer(ev);
     }
 
-    bool finish() {
-        auto off = fbb.CreateVector(table_offsets.data(), table_offsets.size());
-        result_offset = off.o;
-        return true;
+    uoffset_t finish() {
+        return fbb.CreateVector(table_offsets.data(), table_offsets.size()).o;
     }
 };
 
 struct BoxedTableCollector {
     builder_t& fbb;
     std::vector<table_offset_t> table_offsets{};
-    uoffset_t result_offset = 0;
 
     template <typename F>
     bool visit_element(F&& writer) {
@@ -473,10 +463,8 @@ struct BoxedTableCollector {
         return true;
     }
 
-    bool finish() {
-        auto off = fbb.CreateVector(table_offsets.data(), table_offsets.size());
-        result_offset = off.o;
-        return true;
+    uoffset_t finish() {
+        return fbb.CreateVector(table_offsets.data(), table_offsets.size()).o;
     }
 };
 
@@ -573,83 +561,78 @@ struct MapEntryCollector {
     bool visit_entry(KF&& key_fn, VF&& value_fn);
 };
 
-struct RootVisitor : detail::VisitorBase {
-    builder_t& fbb;
-    table_offset_t root_off{0};
+/// Wraps an offset (a string, vector or map vector) in a one-field table,
+/// the form a table position gives a value that is not a table.
+inline table_offset_t box_offset(builder_t& fbb, uoffset_t inner) {
+    auto start = fbb.StartTable();
+    fbb.AddOffset(detail::first_field, offset_t<void>(inner));
+    return table_offset_t(fbb.EndTable(start));
+}
 
+/// Places the root table, the one Finish points the buffer at.
+struct RootPlace {
+    table_offset_t& root;
+
+    void operator()(table_offset_t table) const {
+        root = table;
+    }
+};
+
+/// The root is always a table: a table-shaped value writes its own, and a
+/// scalar, string, byte blob or null is boxed in a one-field table (a null
+/// root is an empty one).
+struct RootVisitor : TableVisitor<RootPlace> {
     bool visit_bool(bool v) {
-        return box_root_scalar<std::uint8_t>(static_cast<std::uint8_t>(v));
+        return box_scalar<std::uint8_t>(static_cast<std::uint8_t>(v));
     }
 
     template <typename T>
     bool visit_int(T v) {
-        return box_root_scalar<T>(v);
+        return box_scalar<T>(v);
     }
 
     template <typename T>
     bool visit_uint(T v) {
-        return box_root_scalar<T>(v);
+        return box_scalar<T>(v);
     }
 
     template <typename T>
     bool visit_float(T v) {
         using cell_t = proxy_detail::scalar_cell_t<T>;
-        return box_root_scalar<cell_t>(static_cast<cell_t>(v));
+        return box_scalar<cell_t>(static_cast<cell_t>(v));
     }
 
     template <typename T>
     bool visit_char(T v) {
-        return box_root_scalar<std::int8_t>(static_cast<std::int8_t>(v));
+        return box_scalar<std::int8_t>(static_cast<std::int8_t>(v));
     }
 
     template <typename T>
     bool visit_str(const T& v) {
         std::string_view sv(v);
-        auto str_off = fbb.CreateString(sv.data(), sv.size());
-        auto start = fbb.StartTable();
-        fbb.AddOffset(detail::first_field, str_off);
-        root_off = table_offset_t(fbb.EndTable(start));
+        place(box_offset(fbb, fbb.CreateString(sv.data(), sv.size()).o));
         return true;
     }
 
     template <typename T>
     bool visit_bytes(const T& v) {
         auto data = reinterpret_cast<const std::uint8_t*>(std::data(v));
-        auto len = std::size(v);
-        auto vec_off = fbb.CreateVector(data, len);
-        auto start = fbb.StartTable();
-        fbb.AddOffset(detail::first_field, vec_off);
-        root_off = table_offset_t(fbb.EndTable(start));
+        place(box_offset(fbb, fbb.CreateVector(data, std::size(v)).o));
         return true;
     }
 
     bool visit_null() {
         auto start = fbb.StartTable();
-        root_off = table_offset_t(fbb.EndTable(start));
+        place(table_offset_t(fbb.EndTable(start)));
         return true;
     }
 
-    template <typename T, typename Body>
-    bool visit_struct(const T&, Body&& body);
-
-    template <typename Container, typename Body>
-    bool visit_seq(const Container& c, Body&& body);
-
-    template <typename T, typename Body>
-    bool visit_tuple(const T&, Body&& body);
-
-    template <typename Container, typename Body>
-    bool visit_map(const Container& m, Body&& body);
-
-    template <typename Body>
-    bool visit_variant(std::size_t index, Body&& body);
-
 private:
     template <typename T>
-    bool box_root_scalar(T v) {
+    bool box_scalar(T v) {
         auto start = fbb.StartTable();
         fbb.AddElement<T>(detail::first_field, v);
-        root_off = table_offset_t(fbb.EndTable(start));
+        place(table_offset_t(fbb.EndTable(start)));
         return true;
     }
 };
@@ -678,7 +661,7 @@ bool encode_sorted_map(builder_t& fbb, Body&& body, uoffset_t& out_offset) {
     MapEntryCollector<ordering_key_t<Key>> coll{.fbb = fbb};
     KOTA_CODEC_TRY(body(coll));
 
-    std::sort(coll.entries.begin(), coll.entries.end(), [](const auto& a, const auto& b) {
+    std::ranges::sort(coll.entries, [](const auto& a, const auto& b) {
         return proxy_detail::ordering_less(a.first, b.first);
     });
 
@@ -724,8 +707,7 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
 
     auto collect = [&](auto coll) -> bool {
         KOTA_CODEC_TRY(body(coll));
-        KOTA_CODEC_TRY(coll.finish());
-        out_offset = coll.result_offset;
+        out_offset = coll.finish();
         return true;
     };
 
@@ -795,51 +777,50 @@ bool AllocFieldVisitor::visit_variant(std::size_t index, Body&& body) {
     return encode_variant_table(fbb, index, std::forward<Body>(body), stored_offset);
 }
 
+template <typename Place>
 template <typename T, typename Body>
-bool TableElemVisitor::visit_struct(const T&, Body&& body) {
+bool TableVisitor<Place>::visit_struct(const T&, Body&& body) {
     detail::assert_fields_reflected<T>();
     uoffset_t off = 0;
     KOTA_CODEC_TRY(two_pass(fbb, std::forward<Body>(body), off));
-    table_offsets.push_back(table_offset_t(off));
+    place(table_offset_t(off));
     return true;
 }
 
+template <typename Place>
 template <typename T, typename Body>
-bool TableElemVisitor::visit_tuple(const T&, Body&& body) {
+bool TableVisitor<Place>::visit_tuple(const T&, Body&& body) {
     detail::assert_slots_fit<std::tuple_size_v<T>>();
     uoffset_t off = 0;
     KOTA_CODEC_TRY(two_pass(fbb, std::forward<Body>(body), off));
-    table_offsets.push_back(table_offset_t(off));
+    place(table_offset_t(off));
     return true;
 }
 
+template <typename Place>
 template <typename Body>
-bool TableElemVisitor::visit_variant(std::size_t index, Body&& body) {
+bool TableVisitor<Place>::visit_variant(std::size_t index, Body&& body) {
     uoffset_t off = 0;
     KOTA_CODEC_TRY(encode_variant_table(fbb, index, std::forward<Body>(body), off));
-    table_offsets.push_back(table_offset_t(off));
+    place(table_offset_t(off));
     return true;
 }
 
+template <typename Place>
 template <typename Container, typename Body>
-bool TableElemVisitor::visit_seq(const Container& c, Body&& body) {
-    uoffset_t inner_offset = 0;
-    KOTA_CODEC_TRY(seq_encode_impl(fbb, c, std::forward<Body>(body), inner_offset));
-
-    auto start = fbb.StartTable();
-    fbb.AddOffset(detail::first_field, offset_t<void>(inner_offset));
-    table_offsets.push_back(table_offset_t(fbb.EndTable(start)));
+bool TableVisitor<Place>::visit_seq(const Container& c, Body&& body) {
+    uoffset_t vec_off = 0;
+    KOTA_CODEC_TRY(seq_encode_impl(fbb, c, std::forward<Body>(body), vec_off));
+    place(box_offset(fbb, vec_off));
     return true;
 }
 
+template <typename Place>
 template <typename Container, typename Body>
-bool TableElemVisitor::visit_map(const Container&, Body&& body) {
+bool TableVisitor<Place>::visit_map(const Container&, Body&& body) {
     uoffset_t vec_off = 0;
     KOTA_CODEC_TRY(encode_sorted_map<map_key_t<Container>>(fbb, std::forward<Body>(body), vec_off));
-
-    auto start = fbb.StartTable();
-    fbb.AddOffset(detail::first_field, offset_t<void>(vec_off));
-    table_offsets.push_back(table_offset_t(fbb.EndTable(start)));
+    place(box_offset(fbb, vec_off));
     return true;
 }
 
@@ -864,54 +845,6 @@ bool MapEntryCollector<Key>::visit_entry(KF&& key_fn, VF&& value_fn) {
     return true;
 }
 
-template <typename T, typename Body>
-bool RootVisitor::visit_struct(const T&, Body&& body) {
-    detail::assert_fields_reflected<T>();
-    uoffset_t off = 0;
-    KOTA_CODEC_TRY(two_pass(fbb, std::forward<Body>(body), off));
-    root_off = table_offset_t(off);
-    return true;
-}
-
-template <typename Container, typename Body>
-bool RootVisitor::visit_seq(const Container& c, Body&& body) {
-    uoffset_t inner_offset = 0;
-    KOTA_CODEC_TRY(seq_encode_impl(fbb, c, std::forward<Body>(body), inner_offset));
-
-    auto start = fbb.StartTable();
-    fbb.AddOffset(detail::first_field, offset_t<void>(inner_offset));
-    root_off = table_offset_t(fbb.EndTable(start));
-    return true;
-}
-
-template <typename T, typename Body>
-bool RootVisitor::visit_tuple(const T&, Body&& body) {
-    detail::assert_slots_fit<std::tuple_size_v<T>>();
-    uoffset_t off = 0;
-    KOTA_CODEC_TRY(two_pass(fbb, std::forward<Body>(body), off));
-    root_off = table_offset_t(off);
-    return true;
-}
-
-template <typename Container, typename Body>
-bool RootVisitor::visit_map(const Container&, Body&& body) {
-    uoffset_t vec_off = 0;
-    KOTA_CODEC_TRY(encode_sorted_map<map_key_t<Container>>(fbb, std::forward<Body>(body), vec_off));
-
-    auto start = fbb.StartTable();
-    fbb.AddOffset(detail::first_field, offset_t<void>(vec_off));
-    root_off = table_offset_t(fbb.EndTable(start));
-    return true;
-}
-
-template <typename Body>
-bool RootVisitor::visit_variant(std::size_t index, Body&& body) {
-    uoffset_t off = 0;
-    KOTA_CODEC_TRY(encode_variant_table(fbb, index, std::forward<Body>(body), off));
-    root_off = table_offset_t(off);
-    return true;
-}
-
 }  // namespace encode_detail
 
 /// Encodes `value` as a finished FlatBuffers buffer (root table + "EVTO"
@@ -922,10 +855,13 @@ auto to_bytes(const T& value, std::optional<std::size_t> initial_capacity = std:
     detail::assert_config_layout_stable<Config>();
 
     builder_t fbb(initial_capacity.value_or(1024));
-    encode_detail::RootVisitor vis{.fbb = fbb};
+    table_offset_t root{0};
+    encode_detail::RootVisitor vis{
+        {.fbb = fbb, .place = {root}}
+    };
     KOTA_EXPECTED_TRY(codec::detail::run_encode<Config>(vis, value));
 
-    fbb.Finish(vis.root_off, detail::buffer_identifier);
+    fbb.Finish(root, detail::buffer_identifier);
     const auto* begin = fbb.GetBufferPointer();
     return std::vector<std::uint8_t>(begin, begin + fbb.GetSize());
 }
