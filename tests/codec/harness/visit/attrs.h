@@ -180,6 +180,13 @@ void attrs(const Kit<B>& kit) {
     };
     encodes_as(kit, "with_encodes_as_plain", decimal, [] { return Field<std::string>{"42"}; });
     roundtrip(kit, "with_roundtrip", decimal);
+    auto maybe_decimal = [] {
+        return Field<std::optional<Decimal>>{Decimal{42}};
+    };
+    encodes_as(kit, "with_in_optional_encodes_as_plain", maybe_decimal, [] {
+        return Field<std::optional<std::string>>{"42"};
+    });
+    roundtrip(kit, "with_in_optional_roundtrip", maybe_decimal);
     auto grant = [] {
         return AccessGrant{.level = Access::read_only, .count = 2};
     };

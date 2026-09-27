@@ -179,9 +179,15 @@ void repr(const Kit<B>& kit) {
             {{.page = 2}, 20}
         };
     };
+    auto journal_list = [] {
+        return std::vector<Journal>{{.page = 3}, {.page = 9}};
+    };
     if constexpr(B::caps.format_tag) {
         encodes_as(kit, "format_scoped_repr_encodes_as_plain", journal, [] {
             return Field<std::int64_t>{41};
+        });
+        encodes_as(kit, "format_scoped_repr_elements_encode_as_plain", journal_list, [] {
+            return std::vector<std::int64_t>{3, 9};
         });
         encodes_as(kit, "format_scoped_map_keys_encode_as_plain", journals, [] {
             return std::map<std::int64_t, int>{
@@ -193,6 +199,9 @@ void repr(const Kit<B>& kit) {
         encodes_as(kit, "format_scoped_repr_encodes_as_plain", journal, [] {
             return Field<std::string>{"p41"};
         });
+        encodes_as(kit, "format_scoped_repr_elements_encode_as_plain", journal_list, [] {
+            return std::vector<std::string>{"p3", "p9"};
+        });
         encodes_as(kit, "format_scoped_map_keys_encode_as_plain", journals, [] {
             return std::map<std::string, int>{
                 {"p1", 10},
@@ -201,6 +210,7 @@ void repr(const Kit<B>& kit) {
         });
     }
     roundtrip(kit, "format_scoped_repr_roundtrip", journal);
+    roundtrip(kit, "format_scoped_repr_elements_roundtrip", journal_list);
     roundtrip(kit, "format_scoped_map_keys_roundtrip", journals);
 
     if constexpr(!B::caps.layout_computed) {

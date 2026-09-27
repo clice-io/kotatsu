@@ -3,13 +3,16 @@
 // Values: every type_kind the protocol encodes and decodes, at the root and
 // inside composite structs, with the boundary values of each scalar kind.
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <variant>
@@ -96,6 +99,36 @@ void values(const Kit<B>& kit) {
             };
         });
     roundtrip(kit, "tuples_roundtrip", [] { return Tuples::typical(); });
+    // Tuple-likes at the root and as elements, which a backend may lay out
+    // otherwise than as fields.
+    roundtrip(kit, "tuple_root_roundtrip", [] {
+        return std::tuple<int, std::string, double>{7, "seven", 2.5};
+    });
+    roundtrip(kit, "pair_root_roundtrip", [] {
+        return std::pair<std::string, Point>{
+            "p",
+            {.x = 1, .y = 2}
+        };
+    });
+    roundtrip(kit, "array_root_roundtrip", [] { return std::array<int, 3>{1, 2, 3}; });
+    roundtrip(kit, "tuple_elements_roundtrip", [] {
+        return std::vector<std::tuple<int, std::string>>{
+            {1, "one"},
+            {2, "two"}
+        };
+    });
+    roundtrip(kit, "array_elements_roundtrip", [] {
+        return std::vector<std::array<int, 2>>{
+            {1, 2},
+            {3, 4}
+        };
+    });
+    roundtrip(kit, "pair_set_roundtrip", [] {
+        return std::set<std::pair<int, std::string>>{
+            {1, "one"},
+            {2, "two"}
+        };
+    });
     if constexpr(B::caps.nested_nulls) {
         roundtrip(kit, "null_elements_roundtrip", [] { return NullElements::typical(); });
     } else {

@@ -41,6 +41,16 @@ void variants(const Kit<B>& kit) {
     if constexpr(B::caps.nested_nulls) {
         roundtrip(kit, "untagged_null_roundtrip", [] { return Field<Untagged>{std::monostate{}}; });
     }
+    // Decoded over another alternative, which the decode must replace.
+    roundtrip_over(
+        kit,
+        "untagged_over_another_alternative_roundtrip",
+        [] {
+            return Field<Untagged>{
+                Point2d{.x = 1, .y = 2}
+            };
+        },
+        [] { return Field<Untagged>{std::string("other")}; });
     roundtrip(kit, "untagged_containers_roundtrip", [] {
         return std::vector<Containers>{
             std::tuple<int, std::string>{7, "seven"},
