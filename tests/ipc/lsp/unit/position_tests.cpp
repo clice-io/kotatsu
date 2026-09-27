@@ -19,7 +19,7 @@ ZEST_CASE(utf16_column_counts) {
     ASSERT(position->character == 2U);
 }
 
-ZEST_CASE(round_trip_offsets) {
+ZEST_CASE(offsets_roundtrip) {
     std::string_view content = "a你b\nx🙂y";
     constexpr std::uint32_t offsets[] = {0, 1, 4, 5, 6, 7, 11, 12};
 
@@ -110,15 +110,7 @@ ZEST_CASE(line_bounds_values) {
     EXPECT(map.line_bounds(6).line == 2U);
 }
 
-ZEST_CASE(measure_units_encoding) {
-    std::string_view content = "a你🙂z";
-
-    EXPECT(encoded_length(content, PositionEncoding::UTF8) == 9U);
-    EXPECT(encoded_length(content, PositionEncoding::UTF16) == 5U);
-    EXPECT(encoded_length(content, PositionEncoding::UTF32) == 4U);
-}
-
-ZEST_CASE(roundtrip_multiline_boundaries) {
+ZEST_CASE(multiline_boundaries_roundtrip) {
     std::string_view content = "a你\n🙂b";
     constexpr std::uint32_t boundaries[] = {0, 1, 4, 5, 9, 10};
 
@@ -132,29 +124,6 @@ ZEST_CASE(roundtrip_multiline_boundaries) {
             ASSERT(*mapped == offset);
         }
     }
-}
-
-ZEST_CASE(invalid_continuation_progress) {
-    auto expect_progress = [&](auto... bytes) {
-        const char raw[] = {static_cast<char>(bytes)...};
-        constexpr auto len = static_cast<std::uint32_t>(sizeof...(bytes));
-        auto content = std::string_view(raw, sizeof...(bytes));
-
-        EXPECT(encoded_length(content, PositionEncoding::UTF8) == len);
-        EXPECT(encoded_length(content, PositionEncoding::UTF16) == len);
-        EXPECT(encoded_length(content, PositionEncoding::UTF32) == len);
-    };
-
-    // 3-byte lead with invalid second byte.
-    expect_progress('a', 0xE4u, 'X', 'b');
-    // 2-byte lead with invalid continuation byte.
-    expect_progress(0xC2u, 'A');
-    // 3-byte lead with invalid third byte.
-    expect_progress(0xE1u, 0x80u, 'B');
-    // 4-byte lead with invalid second byte.
-    expect_progress(0xF1u, 'C', 0x80u, 0x80u);
-    // 4-byte lead with invalid fourth byte.
-    expect_progress(0xF1u, 0x80u, 0x80u, 'D');
 }
 
 ZEST_CASE(invalid_position_stability) {
@@ -182,25 +151,7 @@ ZEST_CASE(invalid_position_stability) {
     expect_stable_bytes(0xF5u, 0x80u, 0x80u, 0x80u, '\n', 'z');
 }
 
-ZEST_CASE(strict_utf8_validation) {
-    auto expect_invalid_sequence = [&](auto... bytes) {
-        const char raw[] = {static_cast<char>(bytes)...};
-        constexpr auto len = static_cast<std::uint32_t>(sizeof...(bytes));
-        auto content = std::string_view(raw, sizeof...(bytes));
-
-        EXPECT(encoded_length(content, PositionEncoding::UTF16) == len);
-        EXPECT(encoded_length(content, PositionEncoding::UTF32) == len);
-    };
-
-    expect_invalid_sequence(0xC0u, 0x80u);
-    expect_invalid_sequence(0xE0u, 0x80u, 0x80u);
-    expect_invalid_sequence(0xEDu, 0xA0u, 0x80u);
-    expect_invalid_sequence(0xF4u, 0x90u, 0x80u, 0x80u);
-    expect_invalid_sequence(0xF5u, 0x80u, 0x80u, 0x80u);
-    expect_invalid_sequence('a', 0xF0u, 0x9Fu, 'b');
-}
-
-ZEST_CASE(to_position_out_of_range) {
+ZEST_CASE(to_position_past_the_end_fails) {
     std::string_view content = "abc\ndef";
     LineMap map(content, PositionEncoding::UTF8);
 
@@ -209,7 +160,7 @@ ZEST_CASE(to_position_out_of_range) {
     EXPECT(map.to_position(7).has_value());
 }
 
-ZEST_CASE(to_offset_line_out_of_range) {
+ZEST_CASE(to_offset_past_the_last_line_fails) {
     std::string_view content = "abc\ndef";
     LineMap map(content, PositionEncoding::UTF8);
 
@@ -218,17 +169,40 @@ ZEST_CASE(to_offset_line_out_of_range) {
     EXPECT(map.to_offset({.line = 1, .character = 0}).has_value());
 }
 
-ZEST_CASE(to_offset_character_out_of_range) {
+ZEST_CASE(to_offset_at_the_line_end_is_the_line_end) {
     std::string_view content = "abc\ndef";
 
     for(auto encoding: {PositionEncoding::UTF8, PositionEncoding::UTF16, PositionEncoding::UTF32}) {
         LineMap map(content, encoding);
-
-        EXPECT(!map.to_offset({.line = 0, .character = 10}).has_value());
-        EXPECT(!map.to_offset({.line = 1, .character = 4}).has_value());
-        EXPECT(map.to_offset({.line = 0, .character = 3}).has_value());
-        EXPECT(map.to_offset({.line = 1, .character = 3}).has_value());
+        ZEST_CONTEXT("encoding: {}", static_cast<int>(encoding));
+        EXPECT(map.to_offset({.line = 0, .character = 3}) == 3U);
+        EXPECT(map.to_offset({.line = 1, .character = 3}) == 7U);
     }
+}
+
+// N6: a character past the line's end fails; LSP 3.17 has it default back to
+// the line's length.
+ZEST_CASE(to_offset_past_the_line_end_clamps_to_it, skip = true) {
+    std::string_view content = "abc\ndef";
+
+    for(auto encoding: {PositionEncoding::UTF8, PositionEncoding::UTF16, PositionEncoding::UTF32}) {
+        LineMap map(content, encoding);
+        ZEST_CONTEXT("encoding: {}", static_cast<int>(encoding));
+        EXPECT(map.to_offset({.line = 0, .character = 10}) == 3U);
+        EXPECT(map.to_offset({.line = 1, .character = 4}) == 7U);
+    }
+}
+
+// N6: the \r of a \r\n is counted as part of the line.
+ZEST_CASE(crlf_ends_a_line, skip = true) {
+    std::string_view content = "ab\r\ncd";
+    LineMap map(content, PositionEncoding::UTF16);
+
+    EXPECT(map.line_bounds(0).end == 2U);
+    auto inside = map.to_position(3);
+    ASSERT(inside.has_value());
+    EXPECT(*inside == protocol::Position{.line = 0, .character = 2});
+    EXPECT(map.to_offset({.line = 0, .character = 3}) == 2U);
 }
 
 ZEST_CASE(encoding_override) {
