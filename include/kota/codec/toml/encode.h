@@ -10,8 +10,7 @@
 #include <string_view>
 #include <type_traits>
 
-#include "kota/meta/type_info.h"
-#include "kota/meta/type_kind.h"
+#include "kota/support/expected_try.h"
 #include "kota/codec/toml/type.h"
 #include "kota/codec/visit/common.h"
 #include "kota/codec/visit/config.h"
@@ -194,11 +193,8 @@ bool ValueWriter<Sink>::visit_map(const Container&, Body&& body) {
 
 template <typename Sink>
 template <typename T, typename Body>
-bool ValueWriter<Sink>::visit_tuple(const T&, Body&& body) {
-    Array arr;
-    ArraySeqWriter sw{arr};
-    KOTA_CODEC_TRY(body(sw));
-    return sink.emit(std::move(arr));
+bool ValueWriter<Sink>::visit_tuple(const T& value, Body&& body) {
+    return visit_seq(value, std::forward<Body>(body));
 }
 
 template <typename F>
@@ -233,11 +229,7 @@ auto to_toml(const T& value) -> std::expected<Table, toml::error> {
     // (annotations and toml-scoped meta::repr included), not the declared
     // type: a struct whose repr is a scalar is boxed under the root key, and
     // a repr that resolves to a table shape becomes the root table.
-    using resolved_t = meta::resolved_repr_t<T, format>;
-    constexpr auto kind = meta::kind_of<resolved_t>();
-
-    if constexpr(std::is_same_v<resolved_t, T> &&
-                 (kind == meta::type_kind::optional || kind == meta::type_kind::pointer)) {
+    if constexpr(detail::nullable_root_v<T>) {
         if(value) {
             auto engaged = to_toml<Config>(*value);
             // A null root is the empty document (TOML has no null), so an
@@ -253,28 +245,15 @@ auto to_toml(const T& value) -> std::expected<Table, toml::error> {
         }
         return Table{};
     } else {
-        using Cfg = default_config<Config>;
-        rich_error err;
-        scoped_context<rich_error> guard(err);
         Table root;
-
-        bool ok;
-        // Table-shaped values become the root table itself — including a raw
-        // toml::Table, whose serialize_visit emits it verbatim (its range
-        // kind would otherwise box it while the decode side reads the root).
-        if constexpr(kind == meta::type_kind::structure || kind == meta::type_kind::map ||
-                     std::same_as<resolved_t, Table>) {
+        if constexpr(detail::root_table_v<T>) {
             ValueWriter<RootSink> vw{{root}};
-            ok = encode_value<Cfg>(vw, value);
+            KOTA_EXPECTED_TRY(codec::detail::run_encode<Config>(vw, value));
         } else {
             TableValueWriter vw{
                 {root, std::string(detail::boxed_root_key)}
             };
-            ok = encode_value<Cfg>(vw, value);
-        }
-
-        if(!ok) {
-            return std::unexpected(std::move(err));
+            KOTA_EXPECTED_TRY(codec::detail::run_encode<Config>(vw, value));
         }
         return root;
     }
@@ -283,13 +262,9 @@ auto to_toml(const T& value) -> std::expected<Table, toml::error> {
 /// Encodes `value` as TOML text (to_toml rendered through toml++).
 template <typename Config = void, typename T>
 auto to_string(const T& value) -> std::expected<std::string, error> {
-    auto table = to_toml<Config>(value);
-    if(!table) {
-        return std::unexpected(table.error());
-    }
-
+    KOTA_EXPECTED_TRY_V(auto table, to_toml<Config>(value));
     std::ostringstream out;
-    out << *table;
+    out << table;
     return out.str();
 }
 

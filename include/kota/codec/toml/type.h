@@ -1,7 +1,12 @@
 #pragma once
 
+#include <cstddef>
+#include <optional>
 #include <string_view>
+#include <type_traits>
 
+#include "kota/meta/type_info.h"
+#include "kota/meta/type_kind.h"
 #include "kota/codec/visit/context.h"
 
 // kotatsu's TOML backend converts every toml++ failure into std::expected /
@@ -69,6 +74,38 @@ using error = rich_error;
 namespace detail {
 
 constexpr inline std::string_view boxed_root_key = "__value";
+
+/// Whether a T value is the document's root table itself rather than a value
+/// boxed under boxed_root_key: judged on the representation the dispatch
+/// resolves (annotations and toml-scoped reprs included), with kind_of's
+/// test, where str-like or tuple-like wins over reflection. A raw Table is
+/// its own root even though its range kind would box it.
+template <typename T>
+constexpr bool root_table_v = [] {
+    using R = meta::resolved_repr_t<T, format>;
+    constexpr auto kind = meta::kind_of<R>();
+    return kind == meta::type_kind::structure || kind == meta::type_kind::map ||
+           std::is_same_v<R, Table>;
+}();
+
+/// Whether T is a nullable root (an optional or pointer with no repr of its
+/// own): absent, it is the empty document; present, the root is routed by
+/// the value it wraps.
+template <typename T>
+constexpr bool nullable_root_v = std::is_same_v<meta::resolved_repr_t<T, format>, T> &&
+                                 (meta::kind_of<T>() == meta::type_kind::optional ||
+                                  meta::kind_of<T>() == meta::type_kind::pointer);
+
+/// Where a toml++ node or parse error starts, when toml++ recorded it.
+inline std::optional<rich_error::source_location> location_of(const ::toml::source_region& src) {
+    if(src.begin.line == 0) {
+        return std::nullopt;
+    }
+    return rich_error::source_location{
+        .line = static_cast<std::size_t>(src.begin.line),
+        .column = static_cast<std::size_t>(src.begin.column),
+    };
+}
 
 }  // namespace detail
 
