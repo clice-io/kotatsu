@@ -63,7 +63,7 @@ using verifier_t = ::flatbuffers::Verifier;
 ///   enums, or nested inline structs) may instead inline as fixed-size
 ///   structs inside vectors, with padding bytes encoded as zero and bool
 ///   bytes verified on decode
-/// - array/set → vector; element storage follows element_layout (proxy.h):
+/// - array/set → vector; elements are laid out per element_layout (proxy.h):
 ///   scalar cells, strings, inline structs, tables (tuple-, variant-, and
 ///   other table-shaped elements use their own layouts), or boxed tables
 ///   for nullable elements and nested containers / byte blobs
@@ -112,7 +112,7 @@ constexpr voffset_t first_field = 4;
 constexpr voffset_t field_step = 2;
 
 /// FlatBuffers computes every slot's layout statically from the type, so a
-/// config knob that re-routes values to a different wire shape cannot apply.
+/// config knob that re-routes values to a different layout cannot apply.
 /// Rejecting them here keeps the layout a pure function of the type — which
 /// is also what lets the config-less zero-copy views and their verifier read
 /// any buffer this backend produced.
@@ -172,7 +172,7 @@ inline auto variant_payload_voffset(std::size_t index) -> object_result_t<voffse
 
 namespace schema_detail {
 
-/// A scalar whose native object representation is exactly its wire cell.
+/// A scalar whose native object representation is exactly its buffer cell.
 /// long double is excluded: everywhere else in this backend it lowers to a
 /// double cell (scalar_cell), because its native image is ABI-specific and
 /// can carry internal padding (x86's 80-bit format leaves 6 of 16 bytes

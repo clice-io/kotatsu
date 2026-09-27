@@ -303,8 +303,7 @@ auto from_bytes(std::span<const std::uint8_t> data) -> std::expected<T, bincode:
 
 namespace kota::codec {
 
-// std::monostate is null_like, but in bincode variant payloads it should read nothing
-// (the old Deserializer skipped monostate payloads entirely).
+// std::monostate reads no byte, since the encoder writes none for it.
 template <typename Config>
 struct deserialize_visit<bincode::Reader, std::monostate, Config> {
     static bool visit(bincode::Reader& /*vis*/, std::monostate& /*value*/) {

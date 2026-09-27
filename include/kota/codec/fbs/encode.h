@@ -58,7 +58,7 @@ void copy_field_bytes(const T& value, std::byte* image) {
 }
 
 /// An inline struct's buffer image: T's size and alignment, byte-typed
-/// storage. The bytes stay byte-typed all the way to the builder because a
+/// contents. The bytes stay byte-typed all the way to the builder because a
 /// copy of T itself may not survive intact — T's trivial copy operations
 /// copy members, not the object representation, so sanitized padding could
 /// come back unspecified (and the builder's push_small copies by

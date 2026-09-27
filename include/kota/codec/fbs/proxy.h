@@ -524,7 +524,7 @@ bool verify_field(verifier_t& v, const Table* tbl, slot_id slot);
 template <typename T>
 bool verify_table(verifier_t& v, const Table* tbl);
 
-/// Verify one struct field slot: behavior attrs re-route the wire type
+/// Verify one struct field slot: behavior attrs re-route the encoded type
 /// exactly as meta's repr resolver does (with > as > enum_string), then the
 /// resolved view type classifies the slot.
 template <typename Slot>
