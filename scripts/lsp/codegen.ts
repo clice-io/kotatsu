@@ -227,51 +227,6 @@ class Generator extends Schema {
     }
   }
 
-  /** Whether the structure `name` derives from the structure `base`. */
-  derives(name: string, base: string): boolean {
-    const structure = this.structures.get(name);
-    return (
-      structure !== undefined &&
-      [...(structure.extends ?? []), ...(structure.mixins ?? [])].some(
-        (parent) =>
-          parent.kind === "reference" &&
-          (parent.name === base || this.derives(parent.name, base)),
-      )
-    );
-  }
-
-  /**
-   * The alternatives, each structure moved before the first one it derives
-   * from; an untagged variant reads the first alternative a value fits.
-   */
-  derivedFirst(items: Type[]): Type[] {
-    const ordered: Type[] = [];
-    for (const item of items) {
-      const base =
-        item.kind === "reference"
-          ? ordered.findIndex(
-              (earlier) =>
-                earlier.kind === "reference" &&
-                this.derives(item.name, earlier.name),
-            )
-          : -1;
-      ordered.splice(base < 0 ? ordered.length : base, 0, item);
-    }
-    return ordered;
-  }
-
-  /** Whether null is among the values of `t`. */
-  admitsNull(t: Type): boolean {
-    if (t.kind === "reference") {
-      const alias = this.aliases.get(t.name);
-      return alias !== undefined && this.admitsNull(alias.type);
-    }
-    return (
-      isBase(t, "null") ||
-      (t.kind === "or" && t.items.some((item) => this.admitsNull(item)))
-    );
-  }
-
   declaration(owner: string, prop: Property): string {
     const name = memberName(prop.name);
     const t = prop.type;

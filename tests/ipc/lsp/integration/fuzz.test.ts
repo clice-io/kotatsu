@@ -27,8 +27,7 @@ import { errorOf } from "../../harness/raw.ts";
 import { Session } from "../../harness/session.ts";
 import { ProtocolValues } from "../harness/protocol_values.ts";
 
-const model = await loadMetaModel();
-const schema = new Schema(model);
+const schema = new Schema(await loadMetaModel());
 const values = new ProtocolValues(schema);
 
 // What lsp_stub_server answers, besides the lifecycle.
@@ -76,20 +75,19 @@ type Sent = { method: string; params: unknown; request: boolean };
 // A message a client may send, with params of its type.
 const message: fc.Arbitrary<Sent> = fc.oneof(
   ...[
-    ...model.requests.map((item) => ({ ...item, request: true })),
-    ...model.notifications.map((item) => ({ ...item, request: false })),
+    ...schema.requests.map((item) => ({ ...item, request: true })),
+    ...schema.notifications.map((item) => ({ ...item, request: false })),
   ]
     .filter(
       (item) =>
         item.messageDirection !== "serverToClient" &&
         !LIFECYCLE.has(item.method),
     )
-    .map(({ method, params, request }) => {
-      assert.ok(!Array.isArray(params));
-      const drawn =
-        params === undefined ? fc.constant(undefined) : values.of(params);
-      return drawn.map((value): Sent => ({ method, params: value, request }));
-    }),
+    .map(({ method, params, request }) =>
+      values
+        .of(params)
+        .map((value): Sent => ({ method, params: value, request })),
+    ),
 );
 
 async function probe(session: Session): Promise<void> {

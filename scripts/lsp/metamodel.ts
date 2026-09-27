@@ -230,6 +230,7 @@ function byName<T extends { name: string }>(items: T[]): Map<string, T> {
 /** A request or notification, with the params type its traits are keyed by. */
 export interface Message {
   method: string;
+  messageDirection: MessageDirection;
   params: Type;
   result?: Type;
 }
@@ -275,12 +276,12 @@ export class Schema {
   }
 
   #withParams(message: Request | Notification): Message {
-    const { method, params } = message;
+    const { method, messageDirection, params } = message;
     if (Array.isArray(params)) {
       throw new SchemaError(`method \`${method}\` takes positional params`);
     }
     if (params !== undefined) {
-      return { method, params };
+      return { method, messageDirection, params };
     }
     const name = paramsName(message);
     if (this.structures.has(name)) {
@@ -291,7 +292,7 @@ export class Schema {
       properties: [],
       documentation: `Params of \`${method}\`, which takes none.`,
     });
-    return { method, params: { kind: "reference", name } };
+    return { method, messageDirection, params: { kind: "reference", name } };
   }
 
   structure(name: string): Structure {
@@ -300,6 +301,62 @@ export class Schema {
       throw new SchemaError(`\`${name}\` is not a structure`);
     }
     return structure;
+  }
+
+  /** The structures `name` inherits from, by `extends` and `mixins`. */
+  parents(name: string): string[] {
+    const structure = this.structure(name);
+    return [...(structure.extends ?? []), ...(structure.mixins ?? [])].map(
+      (parent) => {
+        if (parent.kind !== "reference") {
+          throw new SchemaError(`${name} inherits a \`${parent.kind}\` type`);
+        }
+        return parent.name;
+      },
+    );
+  }
+
+  /** Whether the structure `name` derives from the structure `base`. */
+  derives(name: string, base: string): boolean {
+    return (
+      this.structures.has(name) &&
+      this.parents(name).some(
+        (parent) => parent === base || this.derives(parent, base),
+      )
+    );
+  }
+
+  /**
+   * The alternatives, each structure moved before the first one it derives
+   * from, as protocol.h lists them: an untagged variant reads the first
+   * alternative a value fits.
+   */
+  derivedFirst(items: Type[]): Type[] {
+    const ordered: Type[] = [];
+    for (const item of items) {
+      const base =
+        item.kind === "reference"
+          ? ordered.findIndex(
+              (earlier) =>
+                earlier.kind === "reference" &&
+                this.derives(item.name, earlier.name),
+            )
+          : -1;
+      ordered.splice(base < 0 ? ordered.length : base, 0, item);
+    }
+    return ordered;
+  }
+
+  /** Whether null is among the values of `t`. */
+  admitsNull(t: Type): boolean {
+    if (t.kind === "reference") {
+      const alias = this.aliases.get(t.name);
+      return alias !== undefined && this.admitsNull(alias.type);
+    }
+    return (
+      isBase(t, "null") ||
+      (t.kind === "or" && t.items.some((item) => this.admitsNull(item)))
+    );
   }
 
   /**
@@ -314,14 +371,8 @@ export class Schema {
     }
     const structure = this.structure(name);
     const merged = new Map<string, Property>();
-    for (const parent of [
-      ...(structure.extends ?? []),
-      ...(structure.mixins ?? []),
-    ]) {
-      if (parent.kind !== "reference") {
-        throw new SchemaError(`${name} inherits a \`${parent.kind}\` type`);
-      }
-      for (const prop of this.properties(parent.name)) {
+    for (const parent of this.parents(name)) {
+      for (const prop of this.properties(parent)) {
         const seen = merged.get(prop.name);
         if (seen !== undefined && !isDeepStrictEqual(seen, prop)) {
           throw new SchemaError(

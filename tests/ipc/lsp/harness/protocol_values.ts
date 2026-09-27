@@ -85,7 +85,10 @@ export class ProtocolValues {
       case "stringLiteral":
         return fc.constant(t.value);
       case "or": {
-        const alternatives = t.items.map((item, i) =>
+        // In protocol.h's order, in which an earlier alternative that reads a
+        // value takes it.
+        const items = this.#schema.derivedFirst(t.items);
+        const alternatives = items.map((item, i) =>
           this.of(item, depth).map((value): [number, Json] => [i, value]),
         );
         return fc
@@ -93,9 +96,7 @@ export class ProtocolValues {
           .filter(
             ([i, value]) =>
               !deviations.shadowedAlternatives ||
-              !t.items
-                .slice(0, i)
-                .some((earlier) => this.reads(earlier, value)),
+              !items.slice(0, i).some((earlier) => this.reads(earlier, value)),
           )
           .map(([, value]) => value);
       }
