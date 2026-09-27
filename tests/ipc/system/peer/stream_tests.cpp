@@ -90,11 +90,9 @@ ZEST_CASE(bincode_peers_talk_over_pipes) {
 }
 
 // A notification larger than the pipe holds, which the test reads only once,
-// is still being written when the peer closes. The write then fails with
-// operation_aborted, which the peer takes like any failed write.
-// Waits for the async rewrite: today the stream reports the aborted write as
-// a cancellation of the writer, which cancels run().
-ZEST_CASE(close_during_a_write_ends_run, skip = true) {
+// is still being written when the peer closes. The write ends when the
+// stream closes, and run() ends as it does after any close().
+ZEST_CASE(close_during_a_write_ends_run) {
     auto output = pipe_ends(loop);
     auto input = pipe_ends(loop);
     ASSERT(output.has_value());
