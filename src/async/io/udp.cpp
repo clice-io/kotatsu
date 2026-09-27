@@ -125,7 +125,9 @@ udp udp::create(event_loop& loop) {
 
 udp udp::create(create_options options, event_loop& loop) {
     auto self = Self::make();
-    ::uv_udp_init_ex(loop.native_handle(), &self->udp, options.recvmmsg ? UV_UDP_RECVMMSG : 0U);
+    ::uv_udp_init_ex(loop.native_handle(),
+                     &self->udp,
+                     options.recvmmsg ? static_cast<unsigned int>(UV_UDP_RECVMMSG) : 0U);
     return udp(std::move(self));
 }
 

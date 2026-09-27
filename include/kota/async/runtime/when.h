@@ -81,8 +81,10 @@ public:
         for(auto&& awaitable: range) {
             tasks.emplace_back(normalize(std::move(awaitable)));
         }
-        if(!All && tasks.empty()) {
-            KOTA_THROW(std::invalid_argument("when_any(range) requires a non-empty range"));
+        if constexpr(!All) {
+            if(tasks.empty()) {
+                KOTA_THROW(std::invalid_argument("when_any(range) requires a non-empty range"));
+            }
         }
         intercept = !std::is_void_v<cancel_type>;
     }

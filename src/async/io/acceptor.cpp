@@ -130,7 +130,7 @@ struct connect_op : uv::request_op<connect_op, uv_connect_t> {
 };
 
 unsigned int pipe_flags(const pipe::options& opts) {
-    return opts.no_truncate ? UV_PIPE_NO_TRUNCATE : 0U;
+    return opts.no_truncate ? static_cast<unsigned int>(UV_PIPE_NO_TRUNCATE) : 0U;
 }
 
 }  // namespace

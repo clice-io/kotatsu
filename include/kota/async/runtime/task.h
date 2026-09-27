@@ -85,10 +85,11 @@ template <typename Outcome>
 concept or_fail_result = is_outcome_v<Outcome> && std::is_void_v<typename Outcome::cancel_type> &&
                          (!std::is_void_v<typename Outcome::error_type>);
 
-/// What or_fail(outcome) gives to co_await.
-template <typename Outcome>
+/// What or_fail(outcome) gives to co_await: a reference to the outcome, so it
+/// must be awaited at once, like std::forward_as_tuple.
+template <typename Ref>
 struct or_fail_await {
-    Outcome result;
+    Ref result;
 };
 
 /// What task::or_fail() gives to co_await.
@@ -215,11 +216,14 @@ struct task_promise : task_frame, promise_result<T, E> {
     }
 
     /// co_await or_fail(outcome): end with its error, or resume with its value.
-    template <typename Outcome>
-    auto await_transform(or_fail_await<Outcome>&& awaited)
-        requires (!std::is_void_v<E>) && std::constructible_from<E, typename Outcome::error_type> {
+    template <typename Ref>
+    auto await_transform(or_fail_await<Ref>&& awaited)
+        requires (!std::is_void_v<E>) &&
+                 std::constructible_from<E, typename std::remove_cvref_t<Ref>::error_type> {
+        // Refers to the outcome instead of holding it: MSVC gives up the tail
+        // call of symmetric transfer from an await that holds a large one.
         struct awaiter {
-            Outcome result;
+            Ref result;
             /// The task to end; null when the outcome has a value.
             task_promise* failing;
 
@@ -232,17 +236,17 @@ struct task_promise : task_frame, promise_result<T, E> {
             }
 
             auto await_resume() {
-                if constexpr(!std::is_void_v<typename Outcome::value_type>) {
-                    return std::move(*result);
+                if constexpr(!std::is_void_v<typename std::remove_cvref_t<Ref>::value_type>) {
+                    return *std::forward<Ref>(result);
                 }
             }
         };
 
         if(awaited.result.has_error()) {
-            this->value.emplace(outcome_error(E(std::move(awaited.result).error())));
-            return awaiter{std::move(awaited.result), this};
+            this->value.emplace(outcome_error(E(std::forward<Ref>(awaited.result).error())));
+            return awaiter{std::forward<Ref>(awaited.result), this};
         }
-        return awaiter{std::move(awaited.result), nullptr};
+        return awaiter{std::forward<Ref>(awaited.result), nullptr};
     }
 
     /// co_await task.or_fail(): end with the child's error without resuming.
@@ -342,7 +346,7 @@ auto fail(Args&&... args) {
 template <typename Outcome>
     requires detail::or_fail_result<std::remove_cvref_t<Outcome>>
 auto or_fail(Outcome&& result) {
-    return detail::or_fail_await<std::remove_cvref_t<Outcome>>{std::forward<Outcome>(result)};
+    return detail::or_fail_await<Outcome&&>{std::forward<Outcome>(result)};
 }
 
 /// A lazily started coroutine. It starts once: when it is awaited, spawned into

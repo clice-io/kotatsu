@@ -23,7 +23,8 @@ template <typename First, typename Second>
 task<std::size_t, error> winner(First first, Second second) {
     auto won = co_await when_any(std::move(first), std::move(second));
     if constexpr(is_outcome_v<decltype(won)>) {
-        co_return (co_await or_fail(std::move(won))).index();
+        auto picked = co_await or_fail(std::move(won));
+        co_return picked.index();
     } else {
         co_return won.index();
     }

@@ -40,11 +40,22 @@ task<T, E, C> normalize(task<T, E, C> t) {
     return t;
 }
 
+// The frame keeps the awaitable, whose type may be local to the caller's
+// translation unit; GCC would warn that the frame type uses it.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsubobject-linkage"
+#endif
+
 template <awaitable Awaitable>
     requires (!is_task_v<Awaitable>)
 normalized_task_t<Awaitable> normalize(Awaitable awaitable) {
     co_return co_await std::move(awaitable);
 }
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 template <typename T>
 struct keep_non_void : std::bool_constant<!std::is_void_v<T>> {};
