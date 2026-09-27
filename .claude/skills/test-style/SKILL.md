@@ -69,8 +69,8 @@ Rules:
 - Cases are named like zest cases: `snake_case`, shaped `<subject>_<behaviour>`, `_fails` for an error. A file's comment says what its cases have in common.
 - No sleeps: wait for the message or the exit that says it happened. The runner's timeout (`--test-timeout` in `kota_add_integration_tests`) bounds each test, driver included.
 - A randomized test runs on fast-check through `fuzz()` (`ipc/harness/fuzz.ts`): a fixed seed, reported with the shrunk counterexample; `KOTA_FUZZ_SEED` and `KOTA_FUZZ_RUNS` override the seed and the 100 runs for long runs by hand. A run that stalls fails through `within()` before the test times out, and a run that fails kills its driver and reports its stderr.
-- LSP's types are drawn from the pinned metaModel (`ipc/lsp/harness/protocol_values.ts`), which also says whether protocol.h reads a value. Where kotatsu reads LSP otherwise, `ipc/lsp/harness/known_deviations.ts` has an entry naming the finding or "design"; the fix of a finding deletes its entry, and the tests then check it.
-- Behaviour the library owes but does not have yet is a case written for the correct behaviour, skipped with the finding that fixes it (`{ skip: "P1.2: ..." }`); the fix removes the skip.
+- LSP's types are drawn from the pinned metaModel (`ipc/lsp/harness/protocol_values.ts`), which also says whether protocol.h reads a value. Where kotatsu reads LSP otherwise, `ipc/lsp/harness/known_deviations.ts` has an entry marked "bug" or "design" that says how; the fix of a bug deletes its entry, and the tests then check it.
+- Behaviour the library owes but does not have yet is a case written for the correct behaviour, skipped with the reason, in words rather than a plan's numbering (`{ skip: "an error response drops its data" }`); the fix removes the skip.
 
 ## Trust
 

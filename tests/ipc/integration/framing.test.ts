@@ -8,7 +8,7 @@
 //   ends the connection cleanly: what came before is answered, nothing after,
 //   and the driver exits with 0;
 // - a frame larger than the limit is skipped, and fails what it concerns as
-//   far as its first bytes tell (D1): a request is answered MessageTooLarge
+//   far as its first bytes tell: a request is answered MessageTooLarge
 //   (-32010), a response fails the request it answers, a notification is
 //   dropped, and anything else fails every pending request; the connection
 //   goes on;
