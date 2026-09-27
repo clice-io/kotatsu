@@ -91,28 +91,33 @@ ZEST_CASE(bincode_peers_talk_over_pipes) {
     talk_over_pipes<BincodeCodec>(*this);
 }
 
-// A notification larger than the pipe holds, which the test reads only once,
-// is still being written when the peer closes. Where the stream can abort the
-// write it ends at once; a Windows pipe writes blocking, so there it ends
-// once the remote has read the rest. Either way run() ends, as it does after
-// any close().
+// A notification larger than the connection buffers, which the test reads
+// only once, is still being written when the peer closes. Closing aborts the
+// write, and run() ends as it does after any close(). The output is a TCP
+// connection: a socket aborts a pending write everywhere, where a Windows
+// anonymous pipe writes blocking and its close waits for the write.
 ZEST_CASE(close_during_a_write_ends_run) {
-    auto output = pipe_ends(loop);
     auto input = pipe_ends(loop);
-    ASSERT(output.has_value());
     ASSERT(input.has_value());
+    auto listener = tcp::listen("127.0.0.1", 0, {}, loop);
+    ASSERT(listener.has_value());
+    auto name = listener->getsockname();
+    ASSERT(name.has_value());
+    auto [accepted, connected] =
+        run(listener->accept(), tcp::connect("127.0.0.1", name->port, loop));
+    ASSERT(accepted.has_value());
+    ASSERT(connected.has_value());
     JsonPeer peer(
         loop,
-        std::make_unique<StreamTransport>(std::move(input->reader), std::move(output->writer)));
+        std::make_unique<StreamTransport>(std::move(input->reader), stream(std::move(*connected))));
+    constexpr std::size_t size = 16 << 20;
     auto closer = [&]() -> task<bool> {
-        auto sent = peer.send_notification(NoteParams{.text = std::string(1024 * 1024, 'x')});
+        auto sent = peer.send_notification(NoteParams{.text = std::string(size, 'x')});
         // The first bytes arriving show the write has started; read_some
-        // reads no more than asked, so the pipe stays full.
+        // reads no more than asked, so the connection stays full.
         std::array<char, 16> first{};
-        co_await output->reader.read_some(first);
+        co_await accepted->read_some(first);
         peer.close();
-        auto rest = co_await test::read_to_end(output->reader);
-        static_cast<void>(rest);
         co_return sent.has_value();
     };
 
@@ -120,6 +125,13 @@ ZEST_CASE(close_during_a_write_ends_run) {
     EXPECT(ran.has_value());
     ASSERT(closed.has_value());
     EXPECT(*closed);
+    // What had gone out before the close is all there is, and the end comes
+    // (or a reset, where closing a socket with unsent data resets it): the
+    // write was cut.
+    auto [rest] = run(test::read_to_end(*accepted));
+    if(rest.has_value()) {
+        EXPECT(rest->size() < size);
+    }
 }
 
 // Closing stops the pending read, which ends the read loop and run(); an
