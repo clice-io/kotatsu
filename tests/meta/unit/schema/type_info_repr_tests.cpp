@@ -100,6 +100,13 @@ ZEST_CASE(adapter_beats_tagging_in_resolution) {
     EXPECT(zest::type_eq<resolved_repr_t<test::AdaptedChoice>, std::string>());
 }
 
+ZEST_CASE(tagging_beats_the_variants_repr_in_resolution) {
+    EXPECT(zest::type_eq<resolved_repr_t<test::TaggedStampOrNote>, test::StampOrNote>());
+    EXPECT(resolves_to_tagged_variant<test::TaggedStampOrNote>);
+    // Untagged, the variant's repr applies.
+    EXPECT(zest::type_eq<resolved_repr_t<test::StampOrNote>, std::string>());
+}
+
 ZEST_CASE(format_scoped_repr_resolves_under_its_format) {
     EXPECT(zest::type_eq<resolved_repr_t<test::Journal>, std::string>());
     EXPECT(zest::type_eq<resolved_repr_t<test::Journal, TestFormat>, std::int64_t>());

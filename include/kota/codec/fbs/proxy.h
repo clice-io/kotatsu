@@ -474,8 +474,9 @@ template <typename T>
 bool verify_table(verifier_t& v, const Table* tbl);
 
 /// Verify one struct field slot: behavior attrs re-route the encoded type
-/// exactly as meta's repr resolver does (with > as > enum_string), then the
-/// resolved view type classifies the slot.
+/// exactly as meta's repr resolver does (with > as > enum_string > variant
+/// tagging, which keeps the variant itself), then the resolved view type
+/// classifies the slot.
 template <typename Slot>
 bool verify_slot(verifier_t& v, const Table* tbl, slot_id slot) {
     using raw_t = std::remove_cv_t<typename Slot::raw_type>;
@@ -489,6 +490,8 @@ bool verify_slot(verifier_t& v, const Table* tbl, slot_id slot) {
         return verify_field<deep_clean_t<target>>(v, tbl, slot);
     } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::enum_string>) {
         return verify_field<std::string_view>(v, tbl, slot);
+    } else if constexpr(meta::struct_spec_of<attrs_t>.tagging != meta::tag_mode::none) {
+        return verify_field<raw_t>(v, tbl, slot);
     } else {
         return verify_field<deep_clean_t<raw_t>>(v, tbl, slot);
     }

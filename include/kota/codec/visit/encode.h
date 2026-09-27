@@ -75,63 +75,88 @@ bool repr_encode(Vis& vis, const V& value) {
     }
 }
 
+/// Encodes a variant without tags: the alternative index and payload on a
+/// backend with native variants, the bare payload otherwise.
+template <typename Config, typename Vis, typename... Ts>
+bool encode_untagged_variant(Vis& vis, const std::variant<Ts...>& var) {
+    if constexpr(requires(Vis& v) {
+                     v.visit_variant(std::size_t{}, [](auto&) -> bool { return true; });
+                 }) {
+        return vis.visit_variant(var.index(), [&](auto& pv) -> bool {
+            return std::visit(
+                [&](const auto& alt) -> bool { return encode_value<Config>(pv, alt); },
+                var);
+        });
+    } else {
+        return std::visit([&](const auto& alt) -> bool { return encode_value<Config>(vis, alt); },
+                          var);
+    }
+}
+
 /// Encodes a variant in one of the three tagged shapes selected by the
 /// spec's meta::tag_mode (tag names resolve through resolve_tag_names):
 /// - external:  { "TagName": payload }
 /// - internal:  { "<tag>": "TagName", ...payload fields } — requires every
 ///   alternative to be a struct, whose fields are spliced in after the tag
 /// - adjacent:  { "<tag>": "TagName", "<content>": payload }
-/// Tagging only applies on human-readable backends; binary backends encode
-/// the alternative index instead (see the backend's visit_variant).
+/// Tagging only applies on human-readable backends; elsewhere the variant is
+/// encoded untagged (a binary backend writes the alternative index). Either
+/// way the variant is written as itself: a repr of its type does not apply.
 template <typename Config, typename SpecAttr, typename Vis, typename Var>
 bool encode_tagged_variant(Vis& vis, const Var& var) {
-    // MSVC mis-handles uncaptured constexpr locals inside the nested generic
-    // lambdas below (C3861/ICE), so the spec is read via SpecAttr each time.
-    return [&]<typename... Ts>(const std::variant<Ts...>&) -> bool {
-        constexpr auto names = meta::resolve_tag_names<SpecAttr, Ts...>();
-        std::string_view tag_name = names[var.index()];
+    if constexpr(!is_human_readable<Config, Vis>()) {
+        return encode_untagged_variant<Config>(vis, var);
+    } else {
+        // MSVC mis-handles uncaptured constexpr locals inside the nested
+        // generic lambdas below (C3861/ICE), so the spec is read via SpecAttr
+        // each time.
+        return [&]<typename... Ts>(const std::variant<Ts...>&) -> bool {
+            constexpr auto names = meta::resolve_tag_names<SpecAttr, Ts...>();
+            std::string_view tag_name = names[var.index()];
 
-        if constexpr(SpecAttr::value.tagging == meta::tag_mode::external) {
-            return vis.visit_struct(var, [&](auto& sv) -> bool {
-                return sv.visit_field(std::size_t(0), tag_name, [&](auto& pv) -> bool {
-                    return std::visit(
-                        [&](const auto& alt) -> bool { return encode_value<Config>(pv, alt); },
-                        var);
-                });
-            });
-        } else if constexpr(SpecAttr::value.tagging == meta::tag_mode::internal) {
-            return std::visit(
-                [&](const auto& alt) -> bool {
-                    using alt_t = std::remove_cvref_t<decltype(alt)>;
-                    static_assert(meta::reflectable_class<alt_t>,
-                                  "internally tagged requires struct alternatives");
-                    return vis.visit_struct(alt, [&](auto& sv) -> bool {
-                        KOTA_CODEC_TRY(sv.visit_field(
-                            std::size_t(0),
-                            SpecAttr::value.tag,
-                            [&](auto& tv) -> bool { return tv.visit_str(tag_name); }));
-                        return encode_struct_fields<Config>(sv, alt);
-                    });
-                },
-                var);
-        } else {
-            static_assert(SpecAttr::value.tagging == meta::tag_mode::adjacent);
-            return vis.visit_struct(var, [&](auto& sv) -> bool {
-                KOTA_CODEC_TRY(
-                    sv.visit_field(std::size_t(0), SpecAttr::value.tag, [&](auto& tv) -> bool {
-                        return tv.visit_str(tag_name);
-                    }));
-                return sv.visit_field(
-                    std::size_t(1),
-                    SpecAttr::value.content,
-                    [&](auto& cv) -> bool {
+            if constexpr(SpecAttr::value.tagging == meta::tag_mode::external) {
+                return vis.visit_struct(var, [&](auto& sv) -> bool {
+                    return sv.visit_field(std::size_t(0), tag_name, [&](auto& pv) -> bool {
                         return std::visit(
-                            [&](const auto& alt) -> bool { return encode_value<Config>(cv, alt); },
+                            [&](const auto& alt) -> bool { return encode_value<Config>(pv, alt); },
                             var);
                     });
-            });
-        }
-    }(var);
+                });
+            } else if constexpr(SpecAttr::value.tagging == meta::tag_mode::internal) {
+                return std::visit(
+                    [&](const auto& alt) -> bool {
+                        using alt_t = std::remove_cvref_t<decltype(alt)>;
+                        static_assert(meta::reflectable_class<alt_t>,
+                                      "internally tagged requires struct alternatives");
+                        return vis.visit_struct(alt, [&](auto& sv) -> bool {
+                            KOTA_CODEC_TRY(sv.visit_field(
+                                std::size_t(0),
+                                SpecAttr::value.tag,
+                                [&](auto& tv) -> bool { return tv.visit_str(tag_name); }));
+                            return encode_struct_fields<Config>(sv, alt);
+                        });
+                    },
+                    var);
+            } else {
+                static_assert(SpecAttr::value.tagging == meta::tag_mode::adjacent);
+                return vis.visit_struct(var, [&](auto& sv) -> bool {
+                    KOTA_CODEC_TRY(
+                        sv.visit_field(std::size_t(0), SpecAttr::value.tag, [&](auto& tv) -> bool {
+                            return tv.visit_str(tag_name);
+                        }));
+                    return sv.visit_field(std::size_t(1),
+                                          SpecAttr::value.content,
+                                          [&](auto& cv) -> bool {
+                                              return std::visit(
+                                                  [&](const auto& alt) -> bool {
+                                                      return encode_value<Config>(cv, alt);
+                                                  },
+                                                  var);
+                                          });
+                });
+            }
+        }(var);
+    }
 }
 
 /// Encodes a value under a node's attributes (a struct field's, or an
@@ -155,12 +180,8 @@ bool encode_with_attrs(Vis& vis, const T& value) {
     } else if constexpr(meta::struct_spec_of<Attrs>.tagging != meta::tag_mode::none) {
         static_assert(is_specialization_of<std::variant, T>,
                       "a tagging attribute requires a std::variant");
-        if constexpr(is_human_readable<Config, Vis>()) {
-            using spec_attr = tuple_find_t<Attrs, meta::is_struct_spec_attr>;
-            return encode_tagged_variant<Config, spec_attr>(vis, value);
-        } else {
-            return encode_value<Config>(vis, value);
-        }
+        using spec_attr = tuple_find_t<Attrs, meta::is_struct_spec_attr>;
+        return encode_tagged_variant<Config, spec_attr>(vis, value);
     } else {
         return encode_value<meta::node_config_t<Config, T, Attrs>>(vis, value);
     }
@@ -368,19 +389,8 @@ bool encode_value(Vis& vis, const T& value) {
                         return vis.visit_null();
                     }
                 }
-            } else if constexpr(requires(Vis& v) {
-                                    v.visit_variant(std::size_t{},
-                                                    [](auto&) -> bool { return true; });
-                                }) {
-                return vis.visit_variant(value.index(), [&](auto& pv) -> bool {
-                    return std::visit(
-                        [&](const auto& alt) -> bool { return encode_value<Config>(pv, alt); },
-                        value);
-                });
             } else {
-                return std::visit(
-                    [&](const auto& alt) -> bool { return encode_value<Config>(vis, alt); },
-                    value);
+                return detail::encode_untagged_variant<Config>(vis, value);
             }
         } else if constexpr(std::is_pointer_v<T> &&
                             requires(Vis& v, const T& p) { v.visit_pointer(p); }) {

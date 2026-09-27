@@ -44,7 +44,8 @@ struct schema_options {
     codec::nan_repr nan = default_config<>::nan_repr;
     /// A non-human-readable config bypasses variant tagging and encodes the
     /// underlying untagged variant (the is_human_readable gate in
-    /// encode_value), so the schema must drop the tag shape the same way.
+    /// encode_tagged_variant), so the schema must drop the tag shape the same
+    /// way.
     bool human_readable = true;
 };
 

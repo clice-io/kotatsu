@@ -280,8 +280,10 @@ struct resolved_repr {
 
 /// Precedence mirrors the codec dispatch (encode_with_attrs /
 /// decode_with_attrs): behavior::with wins over behavior::as, which wins over
-/// behavior::enum_string; the type's repr applies only when no behavior attr
-/// provides the representation, and within it the config's format tag selects
+/// behavior::enum_string, which wins over a tagging spec on a std::variant:
+/// a tagged variant is read and written as that variant, whatever repr its
+/// type has. The type's repr applies only when none of these does, and
+/// within it the config's format tag selects
 /// a format-scoped specialization over the format-agnostic one — the same
 /// choice the dispatch makes from the visitor's format tag. Every chosen
 /// representation re-enters the resolver, so chained reprs and annotations
@@ -307,14 +309,14 @@ constexpr auto resolve_repr() {
         return resolve_repr<target, Config>();
     } else if constexpr(tuple_has_spec_v<attrs_t, behavior::enum_string>) {
         return resolved_repr<std::string_view, std::tuple<>, Config>{};
-    } else if constexpr(has_repr<raw_t, format_of_t<Config>>) {
-        using chosen = repr_for<raw_t, format_of_t<Config>>;
-        return resolve_repr<declared_repr_t<chosen>, node_config_t<Config, raw_t, attrs_t>>();
     } else if constexpr(is_specialization_of<std::variant, raw_t> &&
                         struct_spec_of<attrs_t>.tagging != tag_mode::none) {
         return resolved_repr<raw_t,
                              std::tuple<tuple_find_t<attrs_t, is_struct_spec_attr>>,
                              Config>{};
+    } else if constexpr(has_repr<raw_t, format_of_t<Config>>) {
+        using chosen = repr_for<raw_t, format_of_t<Config>>;
+        return resolve_repr<declared_repr_t<chosen>, node_config_t<Config, raw_t, attrs_t>>();
     } else {
         return resolved_repr<raw_t, std::tuple<>, node_config_t<Config, raw_t, attrs_t>>{};
     }

@@ -190,12 +190,10 @@ bool decode_with_attrs(Vis& vis, T& out) {
     } else if constexpr(meta::struct_spec_of<Attrs>.tagging != meta::tag_mode::none) {
         static_assert(is_specialization_of<std::variant, T>,
                       "a tagging attribute requires a std::variant");
-        if constexpr(is_human_readable<Config, Vis>()) {
-            using spec_attr = tuple_find_t<Attrs, meta::is_struct_spec_attr>;
-            return decode_variant<Config, spec_attr>(vis, out);
-        } else {
-            return decode_value<Config>(vis, out);
-        }
+        // decode_variant reads the variant as itself, tagged or not; a repr
+        // of its type does not apply.
+        using spec_attr = tuple_find_t<Attrs, meta::is_struct_spec_attr>;
+        return decode_variant<Config, spec_attr>(vis, out);
     } else {
         return decode_value<meta::node_config_t<Config, T, Attrs>>(vis, out);
     }

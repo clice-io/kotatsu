@@ -154,6 +154,16 @@ void repr(const Kit<B>& kit) {
     };
     encodes_as(kit, "adapter_beats_tagging", adapted, [] { return std::string("i:7"); });
     roundtrip(kit, "adapter_beats_tagging_roundtrip", adapted);
+    // Tagging beats the repr of the variant's type, tags or no tags: the
+    // tagged variant is written as the variant, as a twin without the repr
+    // is, and not as the repr's text.
+    auto tagged_stamp = [] {
+        return Field<TaggedStampOrNote>{TaggedStampOrNote{Stamp{.n = 1}}};
+    };
+    encodes_as(kit, "tagging_beats_the_variants_repr", tagged_stamp, [] {
+        return Field<TaggedStampTwinOrNote>{TaggedStampTwinOrNote{StampTwin{.n = 1}}};
+    });
+    roundtrip(kit, "tagging_beats_the_variants_repr_roundtrip", tagged_stamp);
     roundtrip(kit, "repr_alternative_roundtrip", [] {
         return std::vector<std::variant<Version, int>>{
             Version{.major = 1, .minor = 22},
