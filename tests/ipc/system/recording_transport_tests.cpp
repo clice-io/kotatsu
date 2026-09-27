@@ -118,9 +118,7 @@ ZEST_CASE(unopenable_file_still_passes_messages_on) {
     EXPECT(!std::filesystem::exists(missing));
 }
 
-// P1.1: write_message awaits the inner write and drops its outcome, so a
-// failed write reads as a success.
-ZEST_CASE(write_failure_reaches_the_caller, skip = true) {
+ZEST_CASE(write_failure_reaches_the_caller) {
     remote.fail_writes();
 
     auto [written] = run(transport.write_message("hello"));

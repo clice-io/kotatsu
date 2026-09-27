@@ -28,7 +28,7 @@ task<std::optional<std::string>> RecordingTransport::read_message() {
 }
 
 task<void, Error> RecordingTransport::write_message(std::string_view payload) {
-    co_await inner->write_message(payload);
+    co_await inner->write_message(payload).or_fail();
 }
 
 Result<void> RecordingTransport::close_output() {
