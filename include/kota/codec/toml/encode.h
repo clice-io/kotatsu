@@ -21,17 +21,6 @@
 
 namespace kota::codec::toml {
 
-template <typename Sink>
-struct ValueWriter;
-struct TableSink;
-struct ArraySink;
-struct TableWriter;
-struct ArraySeqWriter;
-struct MapWriter;
-
-using TableValueWriter = ValueWriter<TableSink>;
-using ArrayValueWriter = ValueWriter<ArraySink>;
-
 struct TableSink {
     Table& tbl;
     std::string key;
@@ -139,38 +128,41 @@ struct ValueWriter {
     }
 
     template <typename T, typename Body>
-    inline bool visit_struct(const T&, Body&& body);
+    bool visit_struct(const T&, Body&& body);
 
     template <typename Container, typename Body>
-    inline bool visit_seq(const Container&, Body&& body);
+    bool visit_seq(const Container&, Body&& body);
 
     template <typename Container, typename Body>
-    inline bool visit_map(const Container&, Body&& body);
+    bool visit_map(const Container&, Body&& body);
 
     template <typename T, typename Body>
-    inline bool visit_tuple(const T&, Body&& body);
+    bool visit_tuple(const T&, Body&& body);
 };
+
+using TableValueWriter = ValueWriter<TableSink>;
+using ArrayValueWriter = ValueWriter<ArraySink>;
 
 struct TableWriter {
     Table& tbl;
     using error_type = rich_error;
 
     template <typename F>
-    inline bool visit_field(std::size_t /*index*/, std::string_view name, F&& writer);
+    bool visit_field(std::size_t /*index*/, std::string_view name, F&& writer);
 };
 
 struct ArraySeqWriter {
     Array& arr;
 
     template <typename F>
-    inline bool visit_element(F&& writer);
+    bool visit_element(F&& writer);
 };
 
 struct MapWriter {
     Table& tbl;
 
     template <typename KF, typename VF>
-    inline bool visit_entry(KF&& key_fn, VF&& value_fn);
+    bool visit_entry(KF&& key_fn, VF&& value_fn);
 };
 
 template <typename Sink>
@@ -237,15 +229,14 @@ bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
 /// Encodes `value` as a toml::Table DOM (to_string renders it as text).
 template <typename Config = void, typename T>
 auto to_toml(const T& value) -> std::expected<Table, toml::error> {
-    using V = T;
     // Root routing follows the representation the codec dispatch resolves
     // (annotations and toml-scoped meta::repr included), not the declared
     // type: a struct whose repr is a scalar is boxed under the root key, and
     // a repr that resolves to a table shape becomes the root table.
-    using resolved_t = meta::resolved_repr_t<V, format>;
+    using resolved_t = meta::resolved_repr_t<T, format>;
     constexpr auto kind = meta::kind_of<resolved_t>();
 
-    if constexpr(std::is_same_v<resolved_t, V> &&
+    if constexpr(std::is_same_v<resolved_t, T> &&
                  (kind == meta::type_kind::optional || kind == meta::type_kind::pointer)) {
         if(value) {
             auto engaged = to_toml<Config>(*value);
