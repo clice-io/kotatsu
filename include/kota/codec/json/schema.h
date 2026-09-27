@@ -132,11 +132,9 @@ private:
     }
 
     result_t make_schema(const meta::type_info* ti) {
-        if(ti->kind == tk::optional || ti->kind == tk::pointer) {
-            return make_nullable(ti);
-        }
-
         switch(ti->kind) {
+            case tk::optional:
+            case tk::pointer: return make_nullable(ti);
             case tk::null:
                 return dyn::Value{
                     {"type", "null"}
@@ -197,12 +195,38 @@ private:
         return {};
     }
 
+    /// The property an internally tagged alternative's object carries next to
+    /// its struct's own fields.
+    struct InternalTag {
+        std::string_view field;
+        std::string_view alt_name;
+    };
+
+    /// A struct's object schema, written into target; with a tag, the object
+    /// also carries the tag property, required after the struct's own
+    /// required fields.
     std::expected<void, error> add_struct_body(dyn::Object& target,
-                                               const meta::struct_type_info* si) {
+                                               const meta::struct_type_info* si,
+                                               const InternalTag* tag = nullptr) {
         target.insert("type", "object");
         KOTA_EXPECTED_TRY_V(auto props, make_properties(si));
+        dyn::Array required;
+        for(const auto& f: si->fields) {
+            if(is_required(f)) {
+                required.push_back(dyn::Value(f.name));
+            }
+        }
+        if(tag) {
+            props.get_object()->insert(std::string(tag->field),
+                                       dyn::Value{
+                                           {"const", tag->alt_name}
+            });
+            required.push_back(dyn::Value(tag->field));
+        }
         target.insert("properties", std::move(props));
-        add_required(target, si);
+        if(!required.empty()) {
+            target.insert("required", std::move(required));
+        }
         if(si->deny_unknown) {
             target.insert("additionalProperties", false);
         }
@@ -384,18 +408,6 @@ private:
         return !f.has_default && !f.has_skip_if && !f.nullable;
     }
 
-    static void add_required(dyn::Object& target, const meta::struct_type_info* si) {
-        dyn::Array required;
-        for(const auto& f: si->fields) {
-            if(is_required(f)) {
-                required.push_back(dyn::Value(f.name));
-            }
-        }
-        if(!required.empty()) {
-            target.insert("required", std::move(required));
-        }
-    }
-
     static dyn::Value make_tag_const(std::string_view tag_field, std::string_view alt_name) {
         return {
             {"properties", {{std::string(tag_field), {{"const", alt_name}}}}},
@@ -407,42 +419,27 @@ private:
                                   std::string_view tag_field,
                                   std::string_view alt_name) {
         ti = unwrap(ti);
-        if(ti->kind == tk::structure) {
-            auto* si = static_cast<const meta::struct_type_info*>(ti);
-            KOTA_EXPECTED_TRY_V(auto props, make_properties(si));
-            auto* props_obj = props.get_object();
-            props_obj->insert(std::string(tag_field),
-                              dyn::Value{
-                                  {"const", alt_name}
-            });
-            dyn::Object obj;
-            obj.insert("type", "object");
-            if(mark_alternatives) {
-                obj.insert(std::string(alternative_marker),
-                           kota::naming::normalize_identifier(ti->type_name));
-            }
-            obj.insert("properties", std::move(props));
-            dyn::Array required;
-            for(const auto& f: si->fields) {
-                if(is_required(f)) {
-                    required.push_back(dyn::Value(f.name));
-                }
-            }
-            required.push_back(dyn::Value(tag_field));
-            obj.insert("required", std::move(required));
-            if(si->deny_unknown) {
-                obj.insert("additionalProperties", false);
-            }
-            return dyn::Value(std::move(obj));
+        if(ti->kind != tk::structure) {
+            KOTA_EXPECTED_TRY_V(auto schema, make_schema(ti));
+            return dyn::Value{
+                {"allOf",
+                 dyn::Array{
+                     std::move(schema),
+                     make_tag_const(tag_field, alt_name),
+                 }},
+            };
         }
-        KOTA_EXPECTED_TRY_V(auto schema, make_schema(ti));
-        return dyn::Value{
-            {"allOf",
-             dyn::Array{
-                 std::move(schema),
-                 make_tag_const(tag_field, alt_name),
-             }},
-        };
+        dyn::Object obj;
+        InternalTag tag{.field = tag_field, .alt_name = alt_name};
+        KOTA_EXPECTED_TRY(
+            add_struct_body(obj, static_cast<const meta::struct_type_info*>(ti), &tag));
+        // The body is inlined here rather than $def'd, so it names its type
+        // for the default-annotation sweep, which removes the marker.
+        if(mark_alternatives) {
+            obj.insert(std::string(alternative_marker),
+                       kota::naming::normalize_identifier(ti->type_name));
+        }
+        return dyn::Value(std::move(obj));
     }
 
     result_t make_variant(const meta::type_info* ti) {
