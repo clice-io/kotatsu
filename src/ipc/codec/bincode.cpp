@@ -36,6 +36,24 @@ struct bincode_error {
 using bincode_envelope =
     std::variant<bincode_request, bincode_notification, bincode_success, bincode_error>;
 
+// The envelopes' first fields, as far as they tell a message's kind and id.
+
+struct request_head {
+    protocol::RequestID id;
+};
+
+struct notification_head {};
+
+struct success_head {
+    protocol::RequestID id;
+};
+
+struct error_head {
+    std::optional<protocol::RequestID> id;
+};
+
+using envelope_head = std::variant<request_head, notification_head, success_head, error_head>;
+
 }  // namespace
 
 IncomingMessage BincodeCodec::parse_message(std::string_view payload) {
@@ -66,6 +84,30 @@ IncomingMessage BincodeCodec::parse_message(std::string_view payload) {
             }
         },
         std::move(envelope));
+}
+
+MessageHead BincodeCodec::peek(std::string_view prefix) {
+    codec::rich_error error;
+    codec::scoped_context<codec::rich_error> guard(error);
+    codec::bincode::Reader reader{
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(prefix.data()),
+                                   prefix.size())};
+    envelope_head head;
+    if(!codec::decode_value<codec::default_config<>>(reader, head)) {
+        return {};
+    }
+    return std::visit(
+        [](auto& fields) -> MessageHead {
+            using T = std::remove_cvref_t<decltype(fields)>;
+            if constexpr(std::is_same_v<T, request_head>) {
+                return {.kind = MessageHead::Kind::Request, .id = std::move(fields.id)};
+            } else if constexpr(std::is_same_v<T, notification_head>) {
+                return {.kind = MessageHead::Kind::Notification};
+            } else {
+                return {.kind = MessageHead::Kind::Response, .id = std::move(fields.id)};
+            }
+        },
+        head);
 }
 
 Result<std::string> BincodeCodec::encode_request(const protocol::RequestID& id,

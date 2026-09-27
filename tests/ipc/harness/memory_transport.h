@@ -14,6 +14,7 @@
 
 #include <cassert>
 #include <deque>
+#include <expected>
 #include <memory>
 #include <optional>
 #include <string>
@@ -28,13 +29,14 @@ namespace kota::test {
 
 /// One direction of an in-memory link: the messages written and not yet
 /// read, in order, and whether the writing side has ended it.
+template <typename Message>
 struct Channel {
-    std::deque<std::string> messages;
+    std::deque<Message> messages;
     bool ended = false;
     event changed;
 
     /// Queues `message`, unless the channel has ended.
-    void push(std::string message) {
+    void push(Message message) {
         if(ended) {
             return;
         }
@@ -50,7 +52,7 @@ struct Channel {
 
     /// The next message, or nothing once the channel has ended and every
     /// message was read.
-    task<std::optional<std::string>> pop() {
+    task<std::optional<Message>> pop() {
         while(messages.empty() && !ended) {
             changed.reset();
             co_await changed.wait();
@@ -64,12 +66,15 @@ struct Channel {
     }
 };
 
+/// What the peer reads next: a message, or a frame it cannot read.
+using Delivery = std::expected<std::string, ipc::ReadError>;
+
 /// Both directions of the link between a MemoryTransport and its Remote.
 struct Link {
     /// What the remote sends and the peer reads.
-    Channel inbound;
+    Channel<Delivery> inbound;
     /// What the peer writes and the remote receives.
-    Channel outbound;
+    Channel<std::string> outbound;
     /// Writes by the peer fail.
     bool writes_fail = false;
     /// The peer called close() on its transport.
@@ -81,8 +86,16 @@ class MemoryTransport final : public ipc::Transport {
 public:
     explicit MemoryTransport(std::shared_ptr<Link> link) : link(std::move(link)) {}
 
-    task<std::optional<std::string>> read_message() override {
-        co_return co_await link->inbound.pop();
+    task<std::string, ipc::ReadError> read_message() override {
+        auto delivery = co_await link->inbound.pop();
+        if(!delivery) {
+            co_await fail(
+                ipc::ReadError{.kind = ipc::ReadError::Kind::Closed, .message = "input ended"});
+        }
+        if(!*delivery) {
+            co_await fail(std::move(*delivery).error());
+        }
+        co_return std::move(**delivery);
     }
 
     /// Fails once the remote made writes fail, or once the output is closed,
@@ -135,6 +148,12 @@ public:
     /// Delivers `payload` to the peer's next read.
     void send(std::string payload) {
         link->inbound.push(std::move(payload));
+    }
+
+    /// Makes the peer's next read fail with `error`, as a frame it cannot
+    /// read would.
+    void send_unreadable(ipc::ReadError error) {
+        link->inbound.push(std::unexpected(std::move(error)));
     }
 
     /// Ends the peer's input after what was sent: its read loop sees the end.

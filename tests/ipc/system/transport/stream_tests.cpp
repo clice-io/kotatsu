@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <expected>
 #include <format>
 #include <memory>
 #include <optional>
@@ -50,7 +51,7 @@ struct Feed {
     int writer = -1;
 };
 
-std::optional<Feed> feed(event_loop& loop) {
+std::optional<Feed> feed(event_loop& loop, std::size_t max_payload = default_max_payload) {
     int fds[2] = {-1, -1};
     if(test::create_pipe(fds) != 0) {
         return std::nullopt;
@@ -60,27 +61,34 @@ std::optional<Feed> feed(event_loop& loop) {
         test::close_fd(fds[1]);
         return std::nullopt;
     }
-    return Feed{.transport = std::make_unique<StreamTransport>(stream(std::move(*reader))),
-                .writer = fds[1]};
+    return Feed{
+        .transport = std::make_unique<StreamTransport>(stream(std::move(*reader)), max_payload),
+        .writer = fds[1],
+    };
 }
 
 struct StreamFixture : test::LoopFixture {
     /// What one read_message() returns from a pipe that holds `text` and was
     /// closed after it.
-    std::optional<std::string> read_after(std::string_view text) {
-        auto input = feed(loop);
+    std::expected<std::string, ReadError>
+        read_after(std::string_view text, std::size_t max_payload = default_max_payload) {
+        auto input = feed(loop, max_payload);
         if(!input) {
             ZEST_CONTEXT("cannot make a pipe");
             // Reports the failure: there is no pipe here.
             EXPECT(input.has_value());
-            return std::nullopt;
+            return std::unexpected(ReadError{});
         }
         auto written = test::write_fd(input->writer, text.data(), text.size());
         test::close_fd(input->writer);
         EXPECT(written == static_cast<ssize_t>(text.size()));
         auto [read] = run(input->transport->read_message());
-        EXPECT(read.has_value());
-        return read.has_value() ? std::move(*read) : std::nullopt;
+        // Reports the failure: nothing here cancels the read.
+        EXPECT(!read.is_cancelled());
+        if(!read.has_value()) {
+            return std::unexpected(read.has_error() ? std::move(read).error() : ReadError{});
+        }
+        return std::move(*read);
     }
 };
 
@@ -143,19 +151,6 @@ ZEST_CASE(empty_payload_reads_as_empty) {
     EXPECT(read_after("Content-Length: 0\r\n\r\n") == std::string());
 }
 
-ZEST_CASE(header_name_is_case_insensitive) {
-    EXPECT(read_after("content-length: 5\r\n\r\nhello") == "hello");
-}
-
-ZEST_CASE(other_headers_are_ignored) {
-    EXPECT(read_after("Content-Type: application/vscode-jsonrpc; charset=utf-8\r\n"
-                      "Content-Length: 5\r\n\r\nhello") == "hello");
-}
-
-ZEST_CASE(first_of_two_content_lengths_counts) {
-    EXPECT(read_after("Content-Length: 5\r\nContent-Length: 2\r\n\r\nhello") == "hello");
-}
-
 // Windows pipes hold 4 KB, so the 10 KB frame is written from a thread while
 // the loop reads; the header is small and the chunk holding it is not.
 ZEST_CASE(large_payload_reads_whole) {
@@ -173,53 +168,50 @@ ZEST_CASE(large_payload_reads_whole) {
     writer.join();
     EXPECT(written == static_cast<ssize_t>(data.size()));
     ASSERT(read.has_value());
-    ASSERT(read->has_value());
-    EXPECT((*read)->size() == payload.size());
+    EXPECT(read->size() == payload.size());
 }
 
-ZEST_CASE(end_before_a_message_reads_as_the_end) {
-    EXPECT(read_after("") == std::nullopt);
+// The input ends between messages or inside one alike.
+ZEST_CASE(end_of_input_is_closed) {
+    for(std::string_view text: {"", "Content-Length: 10\r\n", "Content-Length: 100\r\n\r\nhello"}) {
+        ZEST_CONTEXT("input: {} bytes", text.size());
+        auto read = read_after(text);
+        ASSERT(!read.has_value());
+        EXPECT(read.error().kind == ReadError::Kind::Closed);
+    }
 }
 
-ZEST_CASE(end_inside_the_header_fails) {
-    EXPECT(read_after("Content-Length: 10\r\n") == std::nullopt);
+// How headers are read is ipc_framing's; here a header that cannot be read
+// reaches the reader through a pipe.
+ZEST_CASE(unreadable_header_is_malformed) {
+    auto read = read_after("Content-Length: 5x\r\n\r\nhello");
+    ASSERT(!read.has_value());
+    EXPECT(read.error().kind == ReadError::Kind::Malformed);
 }
 
-ZEST_CASE(end_inside_the_payload_fails) {
-    EXPECT(read_after("Content-Length: 100\r\n\r\nhello") == std::nullopt);
-}
-
-ZEST_CASE(missing_content_length_fails) {
-    EXPECT(read_after("Content-Type: text/plain\r\n\r\nhello") == std::nullopt);
-}
-
-ZEST_CASE(non_numeric_content_length_fails) {
-    EXPECT(read_after("Content-Length: 5x\r\n\r\nhello") == std::nullopt);
-}
-
-ZEST_CASE(overflowing_content_length_fails) {
-    EXPECT(read_after("Content-Length: 99999999999999999999999\r\n\r\nhello") == std::nullopt);
-}
-
-// The header limit is 8 KB; the padding passes it before the blank line.
-// Written from a thread, as above.
-ZEST_CASE(header_past_the_limit_fails) {
-    auto input = feed(loop);
+// A frame over the transport's limit is skipped, and the next one reads.
+ZEST_CASE(oversized_message_is_skipped_and_reading_goes_on) {
+    auto input = feed(loop, 8);
     ASSERT(input.has_value());
-    std::string data = "Content-Length: 5\r\nX-Padding: ";
-    data.append(9000, 'A');
-    data += "\r\n\r\nhello";
-    ssize_t written = 0;
-    std::thread writer([&] {
-        written = test::write_fd(input->writer, data.data(), data.size());
-        test::close_fd(input->writer);
-    });
+    const auto data = frame("0123456789") + frame("next");
+    ASSERT(test::write_fd(input->writer, data.data(), data.size()) ==
+           static_cast<ssize_t>(data.size()));
+    ASSERT(test::close_fd(input->writer) == 0);
 
-    auto [read] = run(input->transport->read_message());
-    writer.join();
-    EXPECT(written == static_cast<ssize_t>(data.size()));
+    auto read_twice = [&]() -> task<std::pair<ReadError, std::string>, ReadError> {
+        auto skipped = co_await input->transport->read_message();
+        auto next = co_await input->transport->read_message().or_fail();
+        co_return std::pair{skipped.has_error() ? std::move(skipped).error() : ReadError{},
+                            std::move(next)};
+    };
+
+    auto [read] = run(read_twice());
     ASSERT(read.has_value());
-    EXPECT(*read == std::nullopt);
+    auto& [skipped, next] = *read;
+    EXPECT(skipped.kind == ReadError::Kind::Oversized);
+    EXPECT(skipped.size == 10U);
+    EXPECT(skipped.prefix == "0123456789");
+    EXPECT(next == "next");
 }
 
 ZEST_CASE(close_wakes_a_pending_read) {
@@ -231,8 +223,8 @@ ZEST_CASE(close_wakes_a_pending_read) {
     };
 
     auto [read, closed] = run(transport.read_message(), closer());
-    ASSERT(read.has_value());
-    EXPECT(*read == std::nullopt);
+    ASSERT(read.has_error());
+    EXPECT(read.error().kind == ReadError::Kind::Closed);
     ASSERT(closed.has_value());
     EXPECT(*closed);
 }
@@ -283,12 +275,13 @@ ZEST_CASE(connect_tcp_exchanges_messages) {
         StreamTransport server(stream(std::move(*connection)));
         auto request = co_await server.read_message();
         co_await server.write_message("pong");
-        co_return request;
+        co_return request ? std::optional(std::move(*request)) : std::nullopt;
     };
     auto ask = [&]() -> task<std::optional<std::string>, Error> {
         auto client = co_await StreamTransport::connect_tcp("127.0.0.1", *port, loop).or_fail();
         co_await client->write_message("ping").or_fail();
-        co_return co_await client->read_message();
+        auto answer = co_await client->read_message();
+        co_return answer ? std::optional(std::move(*answer)) : std::nullopt;
     };
 
     auto [served, asked] = run(serve(), ask());

@@ -6,6 +6,7 @@
 #include "ipc/harness/peer_suite/link.h"
 #include "ipc/harness/peer_suite/requests.h"
 #include "ipc/harness/peer_suite/timeout.h"
+#include "ipc/harness/peer_suite/unreadable.h"
 #include "kota/ipc/codec/bincode.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
@@ -40,6 +41,10 @@ ZEST_CASE_GROUP(lifecycle) {
 
 ZEST_CASE_GROUP(link) {
     test::peer_link(Kit{add_case});
+}
+
+ZEST_CASE_GROUP(unreadable) {
+    test::peer_unreadable(Kit{add_case});
 }
 
 // P1.5: BincodeCodec drops Error::data.

@@ -61,6 +61,89 @@ std::optional<protocol::RequestID> read_id(std::string_view raw) {
     return std::move(*id);
 }
 
+/// Reads JSON from the front of text that may stop anywhere.
+struct PrefixReader {
+    std::string_view text;
+    std::size_t at = 0;
+
+    bool ended() const {
+        return at >= text.size();
+    }
+
+    void skip_space() {
+        while(!ended() &&
+              (text[at] == ' ' || text[at] == '\t' || text[at] == '\r' || text[at] == '\n')) {
+            ++at;
+        }
+    }
+
+    bool take(char c) {
+        skip_space();
+        if(ended() || text[at] != c) {
+            return false;
+        }
+        ++at;
+        return true;
+    }
+
+    /// The string at the front, quotes included, if it ends before the text.
+    std::optional<std::string_view> string() {
+        skip_space();
+        if(ended() || text[at] != '"') {
+            return std::nullopt;
+        }
+        const auto start = at++;
+        while(!ended()) {
+            const char c = text[at++];
+            if(c == '\\') {
+                ++at;
+            } else if(c == '"') {
+                return text.substr(start, at - start);
+            }
+        }
+        return std::nullopt;
+    }
+
+    /// The value at the front, if it ends before the text: a scalar ends at
+    /// the delimiter after it.
+    std::optional<std::string_view> value() {
+        skip_space();
+        const auto start = at;
+        if(ended()) {
+            return std::nullopt;
+        }
+        if(text[at] == '"') {
+            return string();
+        }
+        if(text[at] == '{' || text[at] == '[') {
+            int depth = 0;
+            while(!ended()) {
+                const char c = text[at];
+                if(c == '"') {
+                    if(!string()) {
+                        return std::nullopt;
+                    }
+                    continue;
+                }
+                ++at;
+                if(c == '{' || c == '[') {
+                    ++depth;
+                } else if((c == '}' || c == ']') && --depth == 0) {
+                    return text.substr(start, at - start);
+                }
+            }
+            return std::nullopt;
+        }
+        while(!ended() && std::string_view(",}] \t\r\n").find(text[at]) == std::string_view::npos) {
+            ++at;
+        }
+        if(ended()) {
+            return std::nullopt;
+        }
+        return text.substr(start, at - start);
+    }
+};
+
 /// What to make of a message whose envelope did not decode. Text that is no
 /// JSON is a parse error; JSON that is no message object is an invalid
 /// request (batches are not supported). An object is read again, leniently,
@@ -144,6 +227,44 @@ IncomingMessage JsonCodec::parse_message(std::string_view payload) {
                                            "response id must be an integer or a string")};
     }
     return IncomingResponse{std::move(*id), std::move(envelope->result.data)};
+}
+
+/// Members are read in order until the prefix ends, so a writer that puts a
+/// request's id after its method, past the prefix, reads as a notification.
+/// kotatsu, like vscode-jsonrpc, writes the id first.
+MessageHead JsonCodec::peek(std::string_view prefix) {
+    PrefixReader reader{prefix};
+    std::optional<protocol::RequestID> id;
+    bool has_method = false;
+    bool answers = false;
+    if(reader.take('{')) {
+        while(auto key = reader.string()) {
+            if(!reader.take(':')) {
+                break;
+            }
+            has_method = has_method || *key == R"("method")";
+            answers = answers || *key == R"("result")" || *key == R"("error")";
+            auto value = reader.value();
+            if(!value) {
+                break;
+            }
+            if(*key == R"("id")") {
+                id = read_id(*value);
+            }
+            if(!reader.take(',')) {
+                break;
+            }
+        }
+    }
+
+    if(has_method) {
+        return {.kind = id ? MessageHead::Kind::Request : MessageHead::Kind::Notification,
+                .id = id};
+    }
+    if(answers) {
+        return {.kind = MessageHead::Kind::Response, .id = id};
+    }
+    return {};
 }
 
 Result<std::string> JsonCodec::encode_request(const protocol::RequestID& id,

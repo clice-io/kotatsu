@@ -203,7 +203,7 @@ struct Peer<CodecT>::Self {
         output_open = false;
         closing_output = false;
         outgoing_queue.clear();
-        fail_pending_requests(message);
+        fail_pending_requests(Error(message));
         // A close() that caused the failure has closed the transport already.
         if(closed) {
             return;
@@ -215,17 +215,44 @@ struct Peer<CodecT>::Self {
     }
 
     /// The read loop ended: nothing can answer a pending request any more.
-    void end_input() {
+    void end_input(const Error& why) {
         input_open = false;
-        fail_pending_requests("transport closed");
+        fail_pending_requests(why);
     }
 
-    task<> read_loop(task_group<>& handlers) {
+    /// Reads and dispatches until the input ends, and returns why it ended:
+    /// Closed or Malformed.
+    task<ReadError> read_loop(task_group<>& handlers) {
         log(LogLevel::info, "read loop started");
-        while(auto payload = co_await transport->read_message()) {
-            dispatch_incoming_message(*payload, handlers);
+        while(true) {
+            auto message = co_await transport->read_message();
+            if(message) {
+                dispatch_incoming_message(*message, handlers);
+            } else if(message.error().kind == ReadError::Kind::Oversized) {
+                skip_oversized(message.error());
+            } else {
+                log(LogLevel::info, "read loop ended: {}", message.error().message);
+                co_return std::move(message).error();
+            }
         }
-        log(LogLevel::info, "read loop ended");
+    }
+
+    /// A message too large to read fails what it concerns, as far as its
+    /// first bytes tell: a request is answered, a response fails the request
+    /// it answers, a notification is dropped. Unknown, it could have been
+    /// any pending request's answer, so every pending request fails.
+    void skip_oversized(const ReadError& skipped) {
+        log(LogLevel::warn, "skipped: {}", skipped.message);
+        Error too_large(protocol::ErrorCode::MessageTooLarge, skipped.message);
+        auto head = codec.peek(skipped.prefix);
+        using Kind = MessageHead::Kind;
+        if(head.kind == Kind::Request) {
+            send_error(head.id, too_large);
+        } else if(head.kind == Kind::Response && head.id) {
+            complete_pending_request(*head.id, outcome_error(std::move(too_large)));
+        } else if(head.kind != Kind::Notification) {
+            fail_pending_requests(too_large);
+        }
     }
 
     /// A result as it came in, read as T. A RawValue takes it as it is, the
@@ -286,7 +313,7 @@ struct Peer<CodecT>::Self {
         pending->ready.set();
     }
 
-    void fail_pending_requests(const std::string& message) {
+    void fail_pending_requests(const Error& error) {
         if(pending_requests.empty()) {
             return;
         }
@@ -294,14 +321,14 @@ struct Peer<CodecT>::Self {
         log(LogLevel::error,
             "failing {} pending request(s): {}",
             pending_requests.size(),
-            message);
+            error.message);
 
         auto values = pending_requests | std::views::values;
         std::vector<std::shared_ptr<PendingRequest>> pending(values.begin(), values.end());
         pending_requests.clear();
 
         for(auto& state: pending) {
-            state->response = outcome_error(Error(message));
+            state->response = outcome_error(error);
             state->ready.set();
         }
     }
@@ -427,11 +454,14 @@ task<> Peer<CodecT>::run() {
     task_group<> handlers(self->loop);
 
     // Pending requests fail as soon as the input ends, before the handlers
-    // still running finish and before run() returns.
+    // still running finish and before run() returns. A connection that went
+    // away and a frame that cannot be read both fail them with
+    // RequestFailed.
     auto read_loop = [&]() -> task<> {
-        auto read = co_await self->read_loop(handlers).catch_cancel();
-        self->end_input();
-        if(read.is_cancelled()) {
+        auto ended = co_await self->read_loop(handlers).catch_cancel();
+        const bool malformed = ended.has_value() && ended->kind == ReadError::Kind::Malformed;
+        self->end_input(Error(malformed ? ended->message : "transport closed"));
+        if(ended.is_cancelled()) {
             handlers.cancel();
         }
         co_await handlers.join();
@@ -463,7 +493,7 @@ Result<void> Peer<CodecT>::close() {
     }
     self->incoming_requests.clear();
 
-    self->fail_pending_requests("peer closed");
+    self->fail_pending_requests(Error("peer closed"));
     self->outgoing_queue.clear();
     self->write_event.set();
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <variant>
@@ -44,6 +45,20 @@ struct IncomingErrorResponse {
 struct IncomingParseError {
     std::optional<protocol::RequestID> id;
     Error error;
+};
+
+/// What the first bytes of a message tell of it, when the rest is not read.
+struct MessageHead {
+    enum class Kind : std::uint8_t {
+        Unknown,
+        Request,
+        Notification,
+        Response,
+    };
+
+    Kind kind = Kind::Unknown;
+    /// The id of a request, or of the request a response answers.
+    std::optional<protocol::RequestID> id = {};
 };
 
 using IncomingMessage = std::variant<IncomingRequest,

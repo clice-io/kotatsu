@@ -105,6 +105,15 @@ ZEST_CASE(close_output_reaches_the_inner_transport) {
     EXPECT(!remote.closed());
 }
 
+ZEST_CASE(unreadable_message_is_passed_on_unrecorded) {
+    remote.send_unreadable(ReadError{.kind = ReadError::Kind::Oversized, .message = "too large"});
+
+    auto [read] = run(transport.read_message());
+    ASSERT(read.has_error());
+    EXPECT(read.error().kind == ReadError::Kind::Oversized);
+    EXPECT(test::read_file(path).empty());
+}
+
 // A file that cannot be opened loses the recording, not the messages.
 ZEST_CASE(unopenable_file_still_passes_messages_on) {
     test::Remote other;

@@ -305,6 +305,46 @@ void codec_protocol(const CodecKit<A>& kit) {
         EXPECT(code_of(failure->error) == ErrorCode::ParseError);
     });
 
+    // A message too large to read shows only its first bytes, cut here
+    // inside its last member.
+    auto cut = [](std::string message) {
+        return message.substr(0, message.size() - 16);
+    };
+    auto long_note = [] {
+        return NoteParams{.text = std::string(64, 'x')};
+    };
+
+    kit.add("peek_reads_a_request_head", [cut, long_note] {
+        Codec codec;
+        auto head = codec.peek(cut(request<A>(5, "test/note", long_note())));
+        EXPECT(head.kind == ipc::MessageHead::Kind::Request);
+        EXPECT(head.id == RequestID(5));
+    });
+
+    kit.add("peek_reads_a_notification_head", [cut, long_note] {
+        Codec codec;
+        auto head = codec.peek(cut(notification<A>("test/note", long_note())));
+        EXPECT(head.kind == ipc::MessageHead::Kind::Notification);
+        EXPECT(!head.id.has_value());
+    });
+
+    kit.add("peek_reads_a_response_head", [cut, long_note] {
+        Codec codec;
+        auto result = codec.peek(cut(response<A>(9, long_note())));
+        EXPECT(result.kind == ipc::MessageHead::Kind::Response);
+        EXPECT(result.id == RequestID(9));
+        auto error = codec.peek(A::error_response(4, ipc::Error(ErrorCode::InternalError, "x")));
+        EXPECT(error.kind == ipc::MessageHead::Kind::Response);
+        EXPECT(error.id == RequestID(4));
+    });
+
+    kit.add("peek_of_bytes_that_start_no_message_knows_nothing", [] {
+        Codec codec;
+        auto head = codec.peek("??");
+        EXPECT(head.kind == ipc::MessageHead::Kind::Unknown);
+        EXPECT(!head.id.has_value());
+    });
+
     kit.add("serialize_value_writes_what_the_codec_writes", [] {
         Codec codec;
         auto serialized = codec.serialize_value(AddParams{.a = 1, .b = 2});

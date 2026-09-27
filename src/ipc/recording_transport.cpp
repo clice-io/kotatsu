@@ -19,12 +19,10 @@ RecordingTransport::~RecordingTransport() {
     }
 }
 
-task<std::optional<std::string>> RecordingTransport::read_message() {
-    auto msg = co_await inner->read_message();
-    if(msg.has_value()) {
-        write_record(*msg);
-    }
-    co_return msg;
+task<std::string, ReadError> RecordingTransport::read_message() {
+    auto message = co_await inner->read_message().or_fail();
+    write_record(message);
+    co_return message;
 }
 
 task<void, Error> RecordingTransport::write_message(std::string_view payload) {

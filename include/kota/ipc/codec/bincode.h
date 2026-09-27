@@ -42,6 +42,10 @@ namespace kota::ipc {
 struct BincodeCodec {
     IncomingMessage parse_message(std::string_view payload);
 
+    /// Reads what it can from `prefix`, the first bytes of a message too
+    /// large to read whole.
+    MessageHead peek(std::string_view prefix);
+
     Result<std::string> encode_request(const protocol::RequestID& id,
                                        std::string_view method,
                                        std::string_view params);

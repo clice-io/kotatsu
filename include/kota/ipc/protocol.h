@@ -38,6 +38,9 @@ enum class ErrorCode : integer {
     InvalidParams = -32602,
     InternalError = -32603,
     RequestFailed = -32000,
+    /// A message larger than the transport reads: the request it was, or
+    /// that it answered, fails with this.
+    MessageTooLarge = -32010,
     RequestCancelled = -32800,
 };
 
