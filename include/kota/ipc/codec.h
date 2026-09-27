@@ -6,11 +6,17 @@
 #include <variant>
 
 #include "kota/ipc/protocol.h"
+#include "kota/support/spelling.h"
 #include "kota/async/async.h"
 
 namespace kota::ipc {
 
 using Error = protocol::Error;
+
+/// LSP's member names: lower camel case, as JsonCodec writes them.
+struct lsp_config {
+    using field_rename = codec::rename_policy::lower_camel;
+};
 
 template <typename T>
 using Result = outcome<T, Error>;

@@ -151,10 +151,11 @@ Result<void> StreamTransport::close() {
 // it closes a duplicate of the handle), so the pipe or file behind stdout
 // stays open until fd 1 lets go of it: pointing fd 1 at the null device does.
 Result<void> StreamTransport::release_stdout() {
+    // Released once; one that fails is tried again by the next call, as
+    // close() makes after a failed close_output().
     if(!over_stdout) {
         return {};
     }
-    over_stdout = false;
     // Not inherited by a child spawned meanwhile by another thread; dup2
     // leaves fd 1 inheritable, as stdout is.
 #ifdef _WIN32
@@ -179,6 +180,7 @@ Result<void> StreamTransport::release_stdout() {
         return outcome_error(
             Error("releasing stdout failed: " + std::generic_category().message(error)));
     }
+    over_stdout = false;
     return {};
 }
 

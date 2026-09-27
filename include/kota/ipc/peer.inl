@@ -160,6 +160,9 @@ struct Peer<CodecT>::Self {
     /// or when nothing more will be written: the input has ended and every
     /// answer is out, and the remote reads the end of its input.
     task<> write_loop() {
+        // run() was cancelled from outside: nothing will use the transport
+        // again, so it closes, and the remote reads the end.
+        bool cancelled = false;
         while(true) {
             if(outgoing_queue.empty()) {
                 if(closing_output || (answers_done && output_open)) {
@@ -172,6 +175,7 @@ struct Peer<CodecT>::Self {
                 // Cancelled with run(): nothing more is written.
                 auto woken = co_await wait_for(write_event).catch_cancel();
                 if(woken.is_cancelled()) {
+                    cancelled = true;
                     break;
                 }
                 continue;
@@ -181,6 +185,7 @@ struct Peer<CodecT>::Self {
             outgoing_queue.pop_front();
             auto written = co_await transport->write_message(payload).catch_cancel();
             if(written.is_cancelled()) {
+                cancelled = true;
                 break;
             }
             if(written.has_error()) {
@@ -189,6 +194,12 @@ struct Peer<CodecT>::Self {
             }
         }
         output_open = false;
+        if(cancelled && !closed) {
+            closed = true;
+            if(auto result = transport->close(); !result) {
+                log(LogLevel::error, "closing the transport failed: {}", result.error().message);
+            }
+        }
     }
 
     /// Half-closes the transport once the queue is written. A half-close

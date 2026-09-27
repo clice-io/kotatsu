@@ -392,6 +392,20 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         EXPECT(code_of(asked.error()) == ErrorCode::RequestFailed);
     });
 
+    // Nothing can use the peer again once run() is cancelled, so its
+    // transport closes, and the remote reads the end.
+    kit.add("cancelling_run_closes_the_transport", [](Fixture& f) {
+        cancellation_source source;
+        auto canceller = [&]() -> task<> {
+            source.cancel();
+            co_return;
+        };
+
+        auto [ran, cancelled] = f.run(with_token(f.peer.run(), source.token()), canceller());
+        EXPECT(ran.is_cancelled());
+        EXPECT(f.remote.closed());
+    });
+
     kit.add("two_peers_answer_on_one_loop", [](Fixture& f) {
         Remote other_remote;
         typename Fixture::Peer other(f.loop, other_remote.transport());

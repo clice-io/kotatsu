@@ -4,7 +4,7 @@
 #include <string>
 #include <utility>
 
-#include "kota/ipc/codec/json.h"
+#include "kota/ipc/codec.h"
 #include "kota/ipc/peer.h"
 #include "kota/codec/dyn/dyn.h"
 #include "kota/ipc/lsp/protocol.h"
