@@ -40,10 +40,10 @@ struct ValueReader {
     template <typename T>
     bool visit_int(T& out) {
         bool fits = false;
-        if(const auto* value = std::get_if<std::int64_t>(&node.variant())) {
-            fits = kota::narrow_int(*value, out);
-        } else if(const auto* value = std::get_if<std::uint64_t>(&node.variant())) {
-            fits = kota::narrow_int(*value, out);
+        if(const auto* signed_value = std::get_if<std::int64_t>(&node.variant())) {
+            fits = kota::narrow_int(*signed_value, out);
+        } else if(const auto* unsigned_value = std::get_if<std::uint64_t>(&node.variant())) {
+            fits = kota::narrow_int(*unsigned_value, out);
         } else {
             return fail_type("integer");
         }
