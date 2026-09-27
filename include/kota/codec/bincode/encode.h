@@ -28,7 +28,6 @@ namespace kota::codec::bincode {
 /// non-self-describing.
 struct Writer {
     std::vector<std::byte>& buf;
-    using error_type = rich_error;
     using format = bincode::format;
     constexpr static bool human_readable = false;
     /// Struct fields are concatenated with no marker, so skip_if never omits

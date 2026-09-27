@@ -105,7 +105,6 @@ struct Reader {
     std::size_t buf_size;
     constexpr static bool data_driven = true;
     constexpr static bool human_readable = true;
-    using error_type = rich_error;
     using format = json::format;
 
     Reader(ondemand::Document& d, const char* base, std::size_t size) :

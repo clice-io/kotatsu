@@ -53,7 +53,6 @@ struct MapAccess {
 struct Reader {
     std::span<const std::byte> data;
     std::size_t pos = 0;
-    using error_type = rich_error;
     using format = bincode::format;
     constexpr static bool human_readable = false;
 

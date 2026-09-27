@@ -22,7 +22,6 @@ namespace kota::codec {
 template <typename Format = void>
 struct MapKeyReader {
     std::string_view str;
-    using error_type = rich_error;
     using format = Format;
 
     template <typename T>
@@ -63,7 +62,6 @@ private:
 template <typename Sink, typename Format = void>
 struct MapKeyWriter {
     Sink sink;
-    using error_type = rich_error;
     using format = Format;
 
     template <typename T>

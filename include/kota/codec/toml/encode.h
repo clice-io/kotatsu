@@ -73,7 +73,6 @@ struct RootSink {
 template <typename Sink>
 struct ValueWriter {
     Sink sink;
-    using error_type = rich_error;
     using format = toml::format;
     constexpr static bool human_readable = true;
 
@@ -144,7 +143,6 @@ using ArrayValueWriter = ValueWriter<ArraySink>;
 
 struct TableWriter {
     Table& tbl;
-    using error_type = rich_error;
 
     template <typename F>
     bool visit_field(std::size_t /*index*/, std::string_view name, F&& writer);

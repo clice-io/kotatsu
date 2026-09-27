@@ -94,7 +94,6 @@ namespace detail {
 /// drives: a binary backend whose output layout is computed statically (so
 /// meta::dynamic reprs are rejected at compile time).
 struct VisitorBase {
-    using error_type = rich_error;
     using format = fbs::format;
     constexpr static bool human_readable = false;
     constexpr static bool layout_computed = true;

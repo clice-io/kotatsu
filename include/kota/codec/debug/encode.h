@@ -121,7 +121,6 @@ struct Formatter {
 
 struct ValueWriter {
     Formatter& fmt;
-    using error_type = rich_error;
     constexpr static bool human_readable = true;
 
     bool visit_bool(bool v) {
@@ -246,7 +245,6 @@ struct ValueWriter {
 
 struct StructWriter {
     Formatter& fmt;
-    using error_type = rich_error;
     bool first = true;
 
     template <typename F>

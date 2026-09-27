@@ -25,7 +25,6 @@ struct ValueReader {
     const Value& node;
     constexpr static bool data_driven = true;
     constexpr static bool human_readable = true;
-    using error_type = rich_error;
 
     bool visit_bool(bool& out) {
         auto val = node.get_bool();
@@ -141,8 +140,8 @@ struct ValueReader {
 
     template <typename F>
     bool try_read(F&& fn) {
-        error_type discard_err;
-        scoped_context<error_type> guard(discard_err);
+        rich_error discard_err;
+        scoped_context<rich_error> guard(discard_err);
         ValueReader fork{node};
         return fn(fork);
     }

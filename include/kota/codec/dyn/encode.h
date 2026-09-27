@@ -26,7 +26,6 @@ namespace kota::codec::dyn {
 
 struct ValueWriter {
     dyn::Value& output;
-    using error_type = rich_error;
     constexpr static bool human_readable = true;
 
     bool visit_bool(bool v) {
@@ -101,7 +100,6 @@ struct ValueWriter {
 
 struct StructWriter {
     dyn::Object& obj;
-    using error_type = rich_error;
 
     template <typename F>
     bool visit_field(std::size_t /*index*/, std::string_view name, F&& writer);
