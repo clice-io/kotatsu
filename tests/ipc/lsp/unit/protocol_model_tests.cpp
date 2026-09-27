@@ -5,12 +5,14 @@
 #include <string>
 #include <string_view>
 #include <variant>
+#include <vector>
 
 #include "kota/ipc/codec.h"
 #include "kota/ipc/codec/json.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/codec/bincode/bincode.h"
+#include "kota/codec/dyn/dyn.h"
 #include "kota/ipc/lsp/protocol.h"
 
 namespace kota::ipc::lsp {
@@ -273,6 +275,25 @@ ZEST_CASE(required_nullable_member_absent_fails) {
     EXPECT(zest::contains(params.error().to_string(), "processId"));
 }
 
+// Real LSP payloads nest up to about 130 levels: a SelectionRange parent
+// chain, say.
+ZEST_CASE(nesting_of_real_payloads_is_read) {
+    JsonCodec codec;
+    std::string chain;
+    for(int level = 0; level < 125; ++level) {
+        chain += R"({"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":1}})";
+        chain += level + 1 < 125 ? R"(,"parent":)" : "";
+    }
+    chain += std::string(125, '}');
+    auto parsed =
+        codec.parse_message(std::format(R"({{"jsonrpc":"2.0","id":1,"result":[{}]}})", chain));
+    const auto* response = std::get_if<IncomingResponse>(&parsed);
+    ASSERT(response != nullptr);
+    auto ranges = codec.deserialize_value<std::vector<protocol::SelectionRange>>(response->result);
+    ASSERT(ranges.has_value());
+    EXPECT(ranges->size() == 1U);
+}
+
 // Bincode writes every field, an absent optional member's too, and reads its
 // three states back.
 ZEST_CASE(optional_nullable_member_roundtrips_through_bincode) {
@@ -290,6 +311,22 @@ ZEST_CASE(optional_nullable_member_roundtrips_through_bincode) {
     }
 }
 
+// dyn has no format of its own: a present null stays present through it.
+ZEST_CASE(optional_nullable_member_roundtrips_through_dyn) {
+    for(auto active: {protocol::optional_nullable<protocol::nullable<protocol::uinteger>>{},
+                      protocol::optional_nullable<protocol::nullable<protocol::uinteger>>{
+                          protocol::nullable<protocol::uinteger>{}},
+                      protocol::optional_nullable<protocol::nullable<protocol::uinteger>>{
+                          protocol::nullable<protocol::uinteger>{2U}}}) {
+        protocol::SignatureInformation info{.label = "f(int)", .active_parameter = active};
+        auto value = codec::dyn::to_dyn(info);
+        ASSERT(value);
+        auto back = codec::dyn::from_dyn<protocol::SignatureInformation>(*value);
+        ASSERT(back);
+        EXPECT((back->active_parameter == info.active_parameter));
+    }
+}
+
 struct NullableMembers {
     protocol::nullable<protocol::integer> required;
     protocol::optional_nullable<protocol::nullable<protocol::integer>> optional;
@@ -301,7 +338,7 @@ ZEST_CASE(nullable_members_compare) {
     NullableMembers a{.required = 1, .optional = protocol::nullable<protocol::integer>{}};
     NullableMembers b = a;
     EXPECT((a == b));
-    b.optional = {};
+    b.optional.reset();
     EXPECT(!(a == b));
 }
 

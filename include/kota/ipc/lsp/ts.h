@@ -137,11 +137,11 @@ namespace protocol = kota::ipc::protocol;
 
 }  // namespace kota::ipc::lsp
 
-namespace kota::codec::json {
+namespace kota::codec::bincode {
 
 struct format;
 
-}  // namespace kota::codec::json
+}  // namespace kota::codec::bincode
 
 namespace kota::meta {
 
@@ -160,11 +160,10 @@ struct repr<ipc::protocol::nullable<T>> {
     }
 };
 
-/// In JSON, read and written as its value, so that null reaches T; absence
-/// is the field's, which optional_nullable leaves out, so it is never written
-/// empty.
+/// Read and written as its value, so that null reaches T; absence is the
+/// field's, which optional_nullable leaves out, so it is never written empty.
 template <typename T>
-struct repr<ipc::protocol::detail::present_optional<T>, codec::json::format> {
+struct repr<ipc::protocol::detail::present_optional<T>> {
     using type = T;
 
     const static type& to(const ipc::protocol::detail::present_optional<T>& value) {
@@ -176,10 +175,10 @@ struct repr<ipc::protocol::detail::present_optional<T>, codec::json::format> {
     }
 };
 
-/// Elsewhere, as the std::optional it is: a format that writes every field
-/// (bincode) writes the empty one too.
+/// In bincode, which writes every field, the empty one too, as the
+/// std::optional it is.
 template <typename T>
-struct repr<ipc::protocol::detail::present_optional<T>> {
+struct repr<ipc::protocol::detail::present_optional<T>, codec::bincode::format> {
     using type = std::optional<T>;
 
     const static type& to(const ipc::protocol::detail::present_optional<T>& value) {
