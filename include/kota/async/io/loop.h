@@ -1,20 +1,26 @@
 #pragma once
 
+#include <coroutine>
 #include <memory>
 #include <source_location>
 #include <tuple>
+#include <utility>
 
 #include "kota/support/functional.h"
+#include "kota/async/runtime/node.h"
+#include "kota/async/runtime/task.h"
 
 struct uv_loop_s;
 using uv_loop_t = uv_loop_s;
 
 namespace kota {
 
-class async_node;
+namespace detail {
 
-template <typename T = void, typename E = void, typename C = void>
-class task;
+/// How the io layer reaches the event loop behind a libuv loop.
+struct loop_access;
+
+}  // namespace detail
 
 /// A thread-safe relay for posting callbacks to an event loop.
 ///
@@ -72,11 +78,10 @@ public:
     /// mutex acquisition order.
     void send(function<void()> callback);
 
-    /// Opaque implementation detail. Defined in loop.cpp.
-    struct Self;
-
 private:
     friend class event_loop;
+
+    struct Self;
 
     explicit relay(Self* p) noexcept;
 
@@ -100,23 +105,18 @@ public:
     /// Returns true if a loop is running on the current thread.
     static bool has_current() noexcept;
 
-    /// Opaque implementation detail. Defined in loop.cpp.
-    struct Self;
+    /// The libuv loop underneath, for code that runs libuv handles of its
+    /// own on this loop. Its `data` belongs to the event_loop.
+    uv_loop_t* native_handle() noexcept;
 
-    /// Internal accessor for the implementation struct.
-    Self* operator->() {
-        return self.get();
-    }
-
-    friend class async_node;
-
-public:
-    operator uv_loop_t&() noexcept;
-
-    operator const uv_loop_t&() const noexcept;
-
+    /// Runs the loop on this thread until it has nothing left to wait for, or
+    /// stop() ends it; tasks that wait on nothing but each other or a sync
+    /// primitive do not keep it running. Tasks a sync primitive woke while
+    /// the loop did not run resume first. Returns 0, or non-zero when stop()
+    /// ended it with work left.
     int run();
 
+    /// Makes run() return once the current loop iteration is over.
     void stop();
 
     /// Creates a relay that keeps this event loop alive until destroyed.
@@ -133,46 +133,85 @@ public:
     /// release handles tied to this loop.
     void on_destroy(function<void()> callback);
 
-    /// Schedules a task for execution on this event loop.
-    /// If the task is passed by rvalue (temporary), the loop takes ownership
-    /// (sets root=true). The task will be destroyed after it completes.
+    /// Schedules a task to start on this event loop's next turn. Passed as an
+    /// rvalue, the task is the loop's, which destroys it once it ends; passed
+    /// as an lvalue, it stays with the caller, who can still cancel() it and
+    /// read its result() once it ends. Destroying it before it ends lets it
+    /// go: it is cancelled, and the loop frees it once it ends. A task
+    /// cancelled before it starts never runs.
     template <typename Task>
     void schedule(Task&& task, std::source_location location = std::source_location::current()) {
-        auto& promise = task.h.promise();
-        if constexpr(std::is_rvalue_reference_v<Task&&>) {
-            promise.root = true;
-            task.release();
-        }
-
-        schedule(static_cast<async_node&>(promise), location);
+        schedule(
+            detail::task_access::make_root(task, std::is_rvalue_reference_v<Task&&>, location));
     }
 
-    /// Queues a node for deferred resumption.
-    ///
-    /// Unlike schedule(), this does not check or modify the node's state.
-    /// Used by sync primitives to defer waiter resumes instead of resuming
-    /// inline (which would cause reentrancy).
-    void defer_resume(async_node& node);
-
-    /// Drains all deferred resumes. The runtime calls this after the outermost
-    /// coroutine resume returns; a check handle is kept as a fallback so queued
-    /// resumes still run before the next loop iteration.
-    void drain_deferred();
-
 private:
-    void schedule(async_node& frame, std::source_location location);
+    friend class async_node;
+    friend class wait_node;
+    friend struct detail::loop_access;
+
+    struct Self;
+
+    void schedule(task_frame& root);
+
+    /// Queues the task of a wait a sync primitive granted, to resume once
+    /// whatever runs now has suspended instead of inline.
+    void defer_resume(wait_node& waiter);
+
+    /// Resumes the queued tasks, in the order they were queued. The runtime
+    /// calls this after the outermost coroutine resumption returns; run()
+    /// calls it for what was queued while the loop did not run, and a check
+    /// handle for what a libuv callback queued outside any resumption.
+    void drain_deferred();
 
     std::unique_ptr<Self> self;
 };
 
-/// Convenience: creates a loop, schedules all tasks, runs to completion,
-/// and returns a tuple of their values (via task::value()).
+/// Awaitable returned by yield(): resumes on a later iteration of the loop,
+/// after everything that was due when it suspended, whichever callback it
+/// suspended from: the callbacks, the tasks woken and the tasks scheduled.
+///
+/// This is the primitive for "let the current cascade settle, then decide"
+/// patterns (debounced cancellation, coalesced re-checks). Unlike sleep(0) it
+/// allocates no timer and does not depend on the order of libuv's phases.
+struct yield_awaiter : private io_op {
+    explicit yield_awaiter(event_loop& loop) noexcept;
+
+    bool await_ready() const noexcept {
+        return false;
+    }
+
+    template <typename Promise>
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<Promise> waiting,
+                      std::source_location location = std::source_location::current()) noexcept {
+        return suspend(waiting.promise(), location);
+    }
+
+    void await_resume() const noexcept {}
+
+private:
+    /// Enqueues on the loop, then attaches.
+    std::coroutine_handle<> suspend(task_frame& waiting, std::source_location location) noexcept;
+
+    event_loop* loop = nullptr;
+};
+
+/// Suspends until the next event-loop iteration.
+inline yield_awaiter yield(event_loop& loop = event_loop::current()) {
+    return yield_awaiter(loop);
+}
+
+/// Convenience: creates a loop, schedules all tasks, runs it until it has no
+/// work left and returns what each task ended with: its value, its error, or
+/// that it was cancelled. Rethrows what a task threw. Every task must have
+/// ended by then.
 template <typename... Tasks>
-auto run(Tasks&&... tasks) {
+auto run(Tasks... tasks) {
     event_loop loop;
     (loop.schedule(tasks), ...);
     loop.run();
-    return std::tuple(std::move(tasks.value())...);
+    return std::tuple(std::move(tasks).catch_cancel().result()...);
 }
 
 }  // namespace kota

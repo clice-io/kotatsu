@@ -1,8 +1,6 @@
 #pragma once
 
-#include <string>
 #include <string_view>
-#include <utility>
 
 #include "kota/async/vocab/outcome.h"
 
@@ -130,17 +128,8 @@ private:
     int code = 0;
 };
 
-struct cancellation {
-    std::string message;
-
-    cancellation() noexcept = default;
-
-    explicit cancellation(std::string reason) : message(std::move(reason)) {}
-
-    std::string_view reason() const noexcept {
-        return message;
-    }
-};
+/// What a cancel channel carries: that the task ended cancelled, and no more.
+struct cancellation {};
 
 /// result<T>: value-or-error (no cancel channel). I/O functions use this.
 template <typename T>

@@ -3,20 +3,17 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "kota/async/io/loop.h"
 #include "kota/async/runtime/task.h"
 #include "kota/async/vocab/error.h"
-#include "kota/async/vocab/owned.h"
 
-namespace kota {
-
-class event_loop;
-
-namespace fs {
+namespace kota::fs {
 
 using file_time = std::chrono::time_point<std::chrono::system_clock, std::chrono::nanoseconds>;
 
@@ -76,15 +73,19 @@ struct mkstemp_result {
 };
 
 struct dirent {
-    enum class type {
-        unknown,      // type not known
-        file,         // regular file
-        dir,          // directory
-        link,         // symlink
-        fifo,         // FIFO/pipe
-        socket,       // socket
-        char_device,  // character device
-        block_device  // block device
+    enum class type : std::uint8_t {
+        /// The file system did not say.
+        unknown,
+        /// A regular file.
+        file,
+        dir,
+        /// A symbolic link.
+        link,
+        /// A FIFO (named pipe).
+        fifo,
+        socket,
+        char_device,
+        block_device,
     };
     std::string name;
     type kind = type::unknown;
@@ -97,29 +98,33 @@ struct copyfile_options {
     /// Try to clone via copy-on-write if supported.
     bool clone = false;
 
-    /// Force clone (may fall back to copy on failure).
+    /// Clone via copy-on-write, and fail where that is not supported.
     bool clone_force = false;
 };
 
+/// A directory opened by opendir() for readdir(), closed when dropped.
+///
+/// A default-constructed or moved-from handle is inert: readdir() fails
+/// with error::invalid_argument.
 class dir_handle {
 public:
-    dir_handle() = default;
+    dir_handle() noexcept;
+
     dir_handle(dir_handle&& other) noexcept;
     dir_handle& operator=(dir_handle&& other) noexcept;
 
     dir_handle(const dir_handle&) = delete;
     dir_handle& operator=(const dir_handle&) = delete;
 
-    bool valid() const noexcept;
-    void* native_handle() const noexcept;
-    void reset() noexcept;
-
-    static dir_handle from_native(void* ptr);
+    ~dir_handle();
 
 private:
-    explicit dir_handle(void* ptr);
+    friend task<dir_handle, error> opendir(std::string_view path, event_loop& loop);
+    friend task<std::vector<dirent>, error> readdir(dir_handle& dir, event_loop& loop);
 
-    void* dir = nullptr;
+    struct Self;
+
+    std::unique_ptr<Self> self;
 };
 
 /// Remove a file.
@@ -138,9 +143,11 @@ task<void, error> copyfile(std::string_view path,
                            event_loop& loop = event_loop::current());
 
 /// Create a unique temporary directory from a template (must end with "XXXXXX").
+/// Cancelled too late to stop it, it removes the directory it made.
 task<std::string, error> mkdtemp(std::string_view tpl, event_loop& loop = event_loop::current());
 
 /// Create a unique temporary file from a template (must end with "XXXXXX").
+/// Cancelled too late to stop it, it closes and removes the file it made.
 task<mkstemp_result, error> mkstemp(std::string_view tpl, event_loop& loop = event_loop::current());
 
 /// Remove an empty directory.
@@ -153,11 +160,9 @@ task<std::vector<dirent>, error> scandir(std::string_view path,
 /// Open a directory for iterative reading.
 task<dir_handle, error> opendir(std::string_view path, event_loop& loop = event_loop::current());
 
-/// Read a batch of entries from an opened directory.
+/// Read the next batch of entries from an opened directory; an empty batch
+/// once all have been read.
 task<std::vector<dirent>, error> readdir(dir_handle& dir, event_loop& loop = event_loop::current());
-
-/// Close an opened directory handle.
-task<void, error> closedir(dir_handle& dir, event_loop& loop = event_loop::current());
 
 /// Get file status by file descriptor.
 task<file_stats, error> fstat(int fd, event_loop& loop = event_loop::current());
@@ -312,6 +317,4 @@ result<std::string> read_to_string(std::string_view path);
 
 }  // namespace sync
 
-}  // namespace fs
-
-}  // namespace kota
+}  // namespace kota::fs

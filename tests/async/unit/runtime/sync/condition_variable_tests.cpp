@@ -1,4 +1,6 @@
 #include <cstddef>
+#include <mutex>
+#include <utility>
 #include <vector>
 
 #include "async/harness/loop_fixture.h"
@@ -9,6 +11,12 @@
 namespace kota {
 
 namespace {
+
+/// Awaits `waiter` and resumes even when it is cancelled, so that its frame,
+/// and a guard in it, goes as soon as it ends.
+task<> owner(task<> waiter) {
+    co_await std::move(waiter).catch_cancel();
+}
 
 ZEST_SUITE(async_runtime_sync_condition_variable, test::LoopFixture) {
 
@@ -116,27 +124,27 @@ ZEST_CASE(cancelled_waiter_leaves_the_queue) {
     std::vector<int> woken;
     auto waiter = [&](int id) -> task<> {
         co_await m.lock();
+        std::lock_guard guard(m, std::adopt_lock);
         co_await cv.wait(m);
         woken.push_back(id);
-        m.unlock();
     };
-    auto first = waiter(1);
-    auto* first_node = first.operator->();
+    auto first = owner(waiter(1));
     auto driver = [&]() -> task<> {
-        first_node->cancel();
+        first.cancel();
         cv.notify_one();
         co_return;
     };
 
-    auto [cancelled, second, drove] = run(std::move(first), waiter(2), driver());
+    auto [cancelled, second, drove] = run(first, owner(waiter(2)), driver());
     EXPECT(cancelled.is_cancelled());
     EXPECT(second.has_value());
     EXPECT(woken == std::vector{2});
 }
 
-// Cancelled after being notified but before it ran, a waiter never takes the
-// mutex back: the caller is cancelled too, so the mutex stays free.
-ZEST_CASE(waiter_cancelled_after_notify_leaves_the_mutex_free) {
+// Like std::condition_variable, a wait ends holding the mutex on every way
+// out: one cancelled after it was notified, before it ran, takes the mutex back
+// too.
+ZEST_CASE(waiter_cancelled_after_notify_ends_holding_the_mutex) {
     mutex m;
     condition_variable cv;
     auto waiter = [&]() -> task<> {
@@ -145,49 +153,146 @@ ZEST_CASE(waiter_cancelled_after_notify_leaves_the_mutex_free) {
         m.unlock();
     };
     auto target = waiter();
-    auto* node = target.operator->();
     auto driver = [&]() -> task<> {
         cv.notify_one();
-        node->cancel();
+        target.cancel();
         co_return;
     };
 
-    auto [cancelled, drove] = run(std::move(target), driver());
+    auto [cancelled, drove] = run(target, driver());
     EXPECT(cancelled.is_cancelled());
-    EXPECT(m.try_lock());
+    EXPECT(!m.try_lock());
 }
 
-// Open question, kept to document current behaviour: a notification handed
-// to a waiter that is cancelled before it runs is lost, where mutex and
-// semaphore pass a handed-over grant on to the next waiter.
-ZEST_CASE(notify_one_to_a_waiter_cancelled_before_it_runs_is_lost) {
+// The cancel of a wait is delivered only once the wait holds the mutex
+// again, so a guard in the waiting frame unlocks it when the frame goes.
+ZEST_CASE(cancelled_wait_takes_the_mutex_back_before_it_ends) {
+    mutex m;
+    condition_variable cv;
+    cancellation_source source;
+    bool ended = false;
+    auto waiter = [&]() -> task<> {
+        co_await m.lock();
+        std::lock_guard guard(m, std::adopt_lock);
+        co_await cv.wait(m);
+    };
+    auto guarded = [&]() -> task<bool> {
+        auto result = co_await with_token(waiter(), source.token());
+        ended = true;
+        co_return result.is_cancelled();
+    };
+
+    struct Seen {
+        bool ended_while_held = true;
+        bool ended_after_unlock = false;
+        bool free_after = false;
+    };
+
+    auto driver = [&]() -> task<Seen> {
+        Seen seen;
+        // The waiter gave the mutex up to wait; take it, then cancel the wait.
+        co_await m.lock();
+        source.cancel();
+        co_await yield();
+        seen.ended_while_held = ended;
+        // Hands the mutex to the cancelled wait, which ends with it; the guard
+        // unlocks it as the waiter's frame goes.
+        m.unlock();
+        co_await yield();
+        seen.ended_after_unlock = ended;
+        seen.free_after = m.try_lock();
+        co_return seen;
+    };
+
+    auto [cancelled, seen] = run(guarded(), driver());
+    ASSERT(cancelled.has_value());
+    EXPECT(*cancelled);
+    ASSERT(seen.has_value());
+    EXPECT(!seen->ended_while_held);
+    EXPECT(seen->ended_after_unlock);
+    EXPECT(seen->free_after);
+}
+
+// A task cancelled before it waits does not wait: it goes on holding the
+// mutex it came with.
+ZEST_CASE(wait_under_a_cancelled_task_keeps_the_mutex) {
+    mutex m;
+    condition_variable cv;
+    task<> target;
+    auto waiter = [&]() -> task<> {
+        co_await m.lock();
+        target.cancel();
+        co_await cv.wait(m);
+    };
+    target = waiter();
+
+    auto [result] = run(target);
+    EXPECT(result.is_cancelled());
+    EXPECT(!cv.has_waiters());
+    EXPECT(!m.try_lock());
+}
+
+// notify_one() hands its notification to the first waiter before that waiter
+// runs. A waiter cancelled in between passes it on to the next one, as mutex
+// and semaphore pass on what they hand over.
+ZEST_CASE(notify_one_to_a_waiter_cancelled_before_it_runs_passes_it_on) {
     mutex m;
     condition_variable cv;
     std::vector<int> woken;
     auto waiter = [&](int id) -> task<> {
         co_await m.lock();
+        std::lock_guard guard(m, std::adopt_lock);
         co_await cv.wait(m);
         woken.push_back(id);
-        m.unlock();
     };
-    auto first = waiter(1);
-    auto* first_node = first.operator->();
-    auto second = waiter(2);
-    auto* second_node = second.operator->();
+    auto first = owner(waiter(1));
     auto driver = [&]() -> task<std::size_t> {
         cv.notify_one();
-        first_node->cancel();
+        first.cancel();
         co_await yield();
-        auto woken_by_one = woken.size();
-        second_node->cancel();
-        co_return woken_by_one;
+        co_return woken.size();
     };
 
-    auto [cancelled, waiting, woken_by_one] = run(std::move(first), std::move(second), driver());
+    auto [cancelled, second, woken_by_one] = run(first, owner(waiter(2)), driver());
     EXPECT(cancelled.is_cancelled());
-    EXPECT(waiting.is_cancelled());
+    EXPECT(second.has_value());
     ASSERT(woken_by_one.has_value());
-    EXPECT(*woken_by_one == 0U);
+    EXPECT(*woken_by_one == 1U);
+    EXPECT(woken == std::vector{2});
+}
+
+// A notified waiter that waits for the mutex again and is cancelled then
+// passes the notification on too, and still ends only once it holds the
+// mutex.
+ZEST_CASE(waiter_cancelled_while_it_waits_for_the_mutex_passes_the_notification_on) {
+    mutex m;
+    condition_variable cv;
+    std::vector<int> woken;
+    auto waiter = [&](int id) -> task<> {
+        co_await m.lock();
+        std::lock_guard guard(m, std::adopt_lock);
+        co_await cv.wait(m);
+        woken.push_back(id);
+    };
+    auto first = owner(waiter(1));
+    auto driver = [&]() -> task<std::size_t> {
+        co_await m.lock();
+        // The notified waiter waits for the mutex, and so does the one it
+        // passes the notification on to.
+        cv.notify_one();
+        first.cancel();
+        co_await yield();
+        auto woken_while_held = woken.size();
+        m.unlock();
+        co_return woken_while_held;
+    };
+
+    auto [cancelled, second, woken_while_held] = run(first, owner(waiter(2)), driver());
+    EXPECT(cancelled.is_cancelled());
+    EXPECT(second.has_value());
+    ASSERT(woken_while_held.has_value());
+    EXPECT(*woken_while_held == 0U);
+    EXPECT(woken == std::vector{2});
 }
 
 };  // ZEST_SUITE(async_runtime_sync_condition_variable)

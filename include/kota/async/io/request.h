@@ -1,51 +1,47 @@
 #pragma once
 
 #include <optional>
+#include <type_traits>
 
-#include "kota/support/function_traits.h"
 #include "kota/support/functional.h"
 #include "kota/async/io/loop.h"
 #include "kota/async/runtime/task.h"
-#include "kota/async/vocab/error.h"
 
 namespace kota {
 
-/// Run work on libuv's worker pool and complete when finished or with an error.
-task<void, error> queue(function<void()> fn, event_loop& loop = event_loop::current());
+namespace detail {
 
-/// Run work on libuv's worker pool, with a hook for chaining cancellation.
-///
-/// If the awaiting task is cancelled while the work is still queued, the work
-/// is dequeued, `fn` never runs, and the hook is not invoked. If `fn` is
-/// already running on a pool thread it cannot be interrupted; `on_cancel` is
-/// how it learns it should return early — the task settles as cancelled once
-/// `fn` returns.
-///
-/// `on_cancel` runs on the loop thread, at most once, and can still fire
-/// after `fn` has already finished. Keep it cheap and idempotent, and only
-/// touch state that is safe to share with the concurrently running `fn` —
-/// the typical shape is setting an atomic flag that `fn` polls.
-task<void, error> queue(function<void()> fn,
-                        function<void()> on_cancel,
-                        event_loop& loop = event_loop::current());
+/// Runs `work` on the thread pool of `loop`; see queue().
+task<> run_on_pool(function<void()> work, function<void()> on_cancel, event_loop& loop);
 
-/// Run work on libuv's worker pool and return either its value or an error.
-template <typename Fn, typename R = callable_return_t<Fn>>
-    requires std::is_invocable_v<Fn> && (!std::is_void_v<R>)
-task<R, error> queue(Fn fn, event_loop& loop = event_loop::current()) {
-    std::optional<R> ret;
-    co_await queue(function<void()>([&] { ret.emplace(fn()); }), loop).or_fail();
-    co_return std::move(*ret);
+}  // namespace detail
+
+/// Runs `fn` on libuv's thread pool and returns what it returns.
+///
+/// If the awaiting task is cancelled while `fn` is still queued, `fn` is
+/// dequeued and never runs, and `on_cancel` is not called. Once `fn` runs it
+/// cannot be interrupted: `on_cancel` is how it learns it should return
+/// early, and the task ends cancelled once `fn` has returned.
+///
+/// `on_cancel` runs on the loop thread, at most once, and can still run
+/// after `fn` has already finished. Keep it cheap, and only touch state that
+/// is safe to share with the concurrently running `fn`: the typical shape is
+/// setting an atomic flag that `fn` polls.
+template <typename Fn, typename R = std::invoke_result_t<Fn&>>
+task<R> queue(Fn fn, function<void()> on_cancel = [] {}, event_loop& loop = event_loop::current()) {
+    if constexpr(std::is_void_v<R>) {
+        co_await detail::run_on_pool(std::move(fn), std::move(on_cancel), loop);
+    } else {
+        std::optional<R> value;
+        co_await detail::run_on_pool([&] { value.emplace(fn()); }, std::move(on_cancel), loop);
+        co_return std::move(*value);
+    }
 }
 
-/// Value-returning variant of the cancellation-hook overload.
-template <typename Fn, typename R = callable_return_t<Fn>>
-    requires std::is_invocable_v<Fn> && (!std::is_void_v<R>)
-task<R, error> queue(Fn fn, function<void()> on_cancel, event_loop& loop = event_loop::current()) {
-    std::optional<R> ret;
-    co_await queue(function<void()>([&] { ret.emplace(fn()); }), std::move(on_cancel), loop)
-        .or_fail();
-    co_return std::move(*ret);
+/// Runs `fn` on the thread pool of `loop`, with no cancellation hook.
+template <typename Fn>
+task<std::invoke_result_t<Fn&>> queue(Fn fn, event_loop& loop) {
+    return queue(std::move(fn), [] {}, loop);
 }
 
 }  // namespace kota

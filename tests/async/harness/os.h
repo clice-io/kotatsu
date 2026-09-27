@@ -98,10 +98,10 @@ inline process::options stdin_reader() {
 /// ended with one.
 template <typename Waited>
 std::optional<std::int64_t> exit_status_of(const Waited& waited) {
-    if(!waited.has_value() || !waited->has_value()) {
+    if(!waited.has_value()) {
         return std::nullopt;
     }
-    return (*waited)->status;
+    return waited->status;
 }
 
 // Windows pipes have a 4 KB buffer: writing more than that before the loop
@@ -144,7 +144,7 @@ public:
         const int threads = threadpool_size();
         std::atomic<int> taken = 0;
         auto notify = event_loop::current().create_relay();
-        std::vector<task<void, error>> works;
+        std::vector<task<>> works;
         for(int i = 0; i < threads; ++i) {
             works.push_back(queue(
                 [&] {

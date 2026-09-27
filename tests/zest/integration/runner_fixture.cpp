@@ -95,6 +95,14 @@ ZEST_CASE(passes_after) {
     EXPECT(1 == 1);
 }
 
+// Passes, but under ZEST_FIXTURE_HANG_AT_EXIT its worker then hangs on its
+// way out, until the runner kills it.
+ZEST_CASE(hangs_at_exit) {
+    if(std::getenv("ZEST_FIXTURE_HANG_AT_EXIT") != nullptr) {
+        std::atexit([] { std::this_thread::sleep_for(std::chrono::hours(1)); });
+    }
+}
+
 };  // ZEST_SUITE(fixture_hang)
 
 // Failures whose reports check_runner.cmake reads line by line.

@@ -14,7 +14,6 @@
 #include <utility>
 #include <vector>
 
-#include "../../../src/async/io/awaiter.h"
 #include "async/harness/loop_fixture.h"
 #include "kota/http/detail/client.h"
 #include "kota/http/detail/manager.h"
@@ -203,14 +202,13 @@ public:
         }
 
         acceptor = std::move(*listener);
-        auto local_port = tcp::local_port(acceptor);
-        if(!local_port) {
+        auto name = acceptor.getsockname();
+        if(!name) {
             acceptor.stop();
             return;
         }
 
-        port = *local_port;
-        uv::unref(acceptor->stream);
+        port = name->port;
         server_task = serve();
         loop->schedule(server_task);
     }
@@ -286,11 +284,19 @@ struct http_loop_fixture : test::LoopFixture {
     }
 };
 
+/// Runs `task` until it ends; the test server's listener keeps the loop
+/// running meanwhile.
 template <typename Task>
 auto run_task(http_loop_fixture& fixture, Task& task) {
-    fixture.loop.schedule(task);
-    fixture.loop.run();
-    return task.result();
+    auto [result] = fixture.run(task);
+    return result;
+}
+
+/// Keeps what fetching `url` ends with in `slot`.
+task<> fetch_into(http::bound_client api,
+                  std::string url,
+                  std::optional<test::run_result_t<task<http::response, http::error>>>& slot) {
+    slot.emplace(co_await api.get(std::move(url)).send().catch_cancel());
 }
 
 task<std::string, http::error> when_all_fetch(http::bound_client api,
@@ -322,6 +328,8 @@ task<void, http::error>
                                 std::optional<task<http::response, http::error>>& sibling) {
     auto first = co_await api.get(std::move(first_url)).send().or_fail();
     EXPECT(first.text() == "/first");
+    // The sibling was scheduled and still runs: dropping it cancels it, and
+    // the loop frees it once it has ended.
     sibling.reset();
 }
 
@@ -820,23 +828,28 @@ ZEST_CASE(many_concurrent_requests_complete) {
     ASSERT(server.valid());
 
     http::client client;
-    std::vector<task<http::response, http::error>> tasks;
-    tasks.reserve(count);
+    std::vector<std::optional<test::run_result_t<task<http::response, http::error>>>> results(
+        count);
+    std::vector<task<>> fetches;
+    fetches.reserve(count);
 
     for(int i = 0; i < count; ++i) {
-        tasks.push_back(client.on(loop).get(server.url(std::format("/req/{}", i))).send());
+        fetches.push_back(
+            fetch_into(client.on(loop), server.url(std::format("/req/{}", i)), results[i]));
     }
 
-    for(auto& task: tasks) {
-        loop.schedule(task);
-    }
-    loop.run();
+    auto fetch_all = [&]() -> task<> {
+        co_await when_all(std::move(fetches));
+    };
 
+    auto [fetched] = run(fetch_all());
+    EXPECT(fetched.has_value());
     EXPECT(seen.load() == count);
     EXPECT(http::manager::for_loop(loop).pending_requests() == std::size_t(0));
 
     for(int i = 0; i < count; ++i) {
-        auto result = tasks[i].result();
+        ASSERT(results[i].has_value());
+        auto& result = *results[i];
         ASSERT(result);
         EXPECT(result->text() == std::format("/req/{}", i));
         auto target = result->header_value("x-target");
@@ -897,11 +910,7 @@ ZEST_CASE(http_requests_can_interleave_with_uv_events) {
     };
     auto release_gate = release_gate_fn();
 
-    loop.schedule(flow);
-    loop.schedule(release_gate);
-    loop.run();
-
-    auto result = flow.result();
+    auto [result, released] = run(std::move(flow), std::move(release_gate));
     ASSERT(result);
     EXPECT(*result == "/first|/second");
     EXPECT(http::manager::for_loop(loop).pending_requests() == std::size_t(0));
@@ -919,20 +928,19 @@ ZEST_CASE(cancelled_request_does_not_break_following_requests) {
 
     http::client client;
 
-    auto request = client.on(loop).get(server.url("/slow")).send().catch_cancel();
-    auto cancel_after = [](task<http::response, http::error, cancellation>* pending,
-                           event_loop& ev) -> task<> {
-        co_await sleep(20ms, ev);
-        (*pending)->cancel();
+    // The sleep ends first, and when_any cancels the request in flight.
+    auto race = [&]() -> task<std::size_t, http::error> {
+        auto first =
+            co_await when_any(client.on(loop).get(server.url("/slow")).send(), sleep(20ms, loop));
+        if(first.has_error()) {
+            co_await fail(std::move(first).error());
+        }
+        co_return first->index();
     };
-    auto canceler = cancel_after(&request, loop);
 
-    loop.schedule(request);
-    loop.schedule(canceler);
-    loop.run();
-
-    auto cancelled = request.result();
-    EXPECT(cancelled.is_cancelled());
+    auto [raced] = run(race());
+    ASSERT(raced.has_value());
+    EXPECT(*raced == 1U);
     EXPECT(http::manager::for_loop(loop).pending_requests() == std::size_t(0));
 
     auto next = client.on(loop).get(server.url("/ok")).send();
@@ -957,12 +965,9 @@ ZEST_CASE(destroying_a_sibling_task_after_http_completion_keeps_manager_healthy)
         client.on(loop).get(server.url("/second")).send());
     auto flow = destroy_sibling_after_first(client.on(loop), server.url("/first"), sibling);
 
-    loop.schedule(flow);
     loop.schedule(*sibling);
-    loop.run();
-
-    auto flow_result = flow.result();
-    ASSERT(flow_result);
+    auto [flow_result] = run(std::move(flow));
+    ASSERT(flow_result.has_value());
     EXPECT(!sibling);
     EXPECT(http::manager::for_loop(loop).pending_requests() == std::size_t(0));
 

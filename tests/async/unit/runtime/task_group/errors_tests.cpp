@@ -17,6 +17,12 @@ struct CustomError {
     int code = 0;
 };
 
+/// Waits on `gate` in a task of its own, whose cancellation the caller can
+/// catch.
+task<> wait_on(event& gate) {
+    co_await gate.wait();
+}
+
 ZEST_SUITE(async_runtime_task_group_errors, test::LoopFixture) {
 
 ZEST_CASE(join_reports_the_first_error_and_cancels_the_rest) {
@@ -31,7 +37,7 @@ ZEST_CASE(join_reports_the_first_error_and_cancels_the_rest) {
         co_await slow_gate.wait();
     };
     auto driver = [&]() -> task<std::vector<error>> {
-        task_group<error> group(loop);
+        task_group<error> group;
         group.spawn(failing(first_gate, error::connection_refused));
         group.spawn(failing(second_gate, error::connection_reset_by_peer));
         group.spawn(slow());
@@ -51,8 +57,36 @@ ZEST_CASE(join_reports_the_first_error_and_cancels_the_rest) {
     EXPECT(*result == std::vector{error::connection_refused});
     // Neither gate is ever set: their waits went because the error's cancel
     // reached them.
-    EXPECT(second_gate.get_head() == nullptr);
-    EXPECT(slow_gate.get_head() == nullptr);
+    EXPECT(!second_gate.has_waiters());
+    EXPECT(!slow_gate.has_waiters());
+}
+
+// The children the first error cancels fail too; join() reports every error
+// in the order the children failed, not the order they were spawned in.
+ZEST_CASE(join_reports_errors_in_the_order_the_children_failed) {
+    event gate;
+    auto failing_when_cancelled = [&]() -> task<void, error> {
+        co_await wait_on(gate).catch_cancel();
+        co_await fail(error::connection_reset_by_peer);
+    };
+    auto failing = []() -> task<void, error> {
+        co_await yield();
+        co_await fail(error::connection_refused);
+    };
+    auto driver = [&]() -> task<std::vector<error>> {
+        task_group<error> group;
+        group.spawn(failing_when_cancelled());
+        group.spawn(failing());
+        auto joined = co_await group.join();
+        if(joined.has_error()) {
+            co_return std::move(joined).error();
+        }
+        co_return std::vector<error>{};
+    };
+
+    auto [result] = run(driver());
+    ASSERT(result.has_value());
+    EXPECT(*result == std::vector{error::connection_refused, error::connection_reset_by_peer});
 }
 
 ZEST_CASE(join_reports_errors_of_mixed_types) {
@@ -66,7 +100,7 @@ ZEST_CASE(join_reports_errors_of_mixed_types) {
         co_await gate.wait();
     };
     auto driver = [&]() -> task<std::vector<Errors>> {
-        task_group<error, CustomError> group(loop);
+        task_group<error, CustomError> group;
         group.spawn(failing());
         group.spawn(slow());
         auto joined = co_await group.join();
@@ -98,7 +132,7 @@ ZEST_CASE(error_handled_inside_a_child_does_not_reach_the_group) {
         sibling_finished = true;
     };
     auto driver = [&]() -> task<> {
-        task_group<> group(loop);
+        task_group<> group;
         group.spawn(handling());
         group.spawn(sibling());
         co_await group.join();
@@ -116,13 +150,13 @@ ZEST_CASE(child_error_survives_an_external_cancel) {
     event gate;
     std::vector<error> reported;
     auto child = [&]() -> task<void, error> {
-        auto waited = co_await gate.wait().catch_cancel();
+        auto waited = co_await wait_on(gate).catch_cancel();
         if(waited.is_cancelled()) {
             co_await fail(error::connection_refused);
         }
     };
     auto driver = [&]() -> task<> {
-        task_group<error> group(loop);
+        task_group<error> group;
         group.spawn(child());
         auto joined = co_await group.join();
         if(joined.has_error()) {
@@ -130,13 +164,12 @@ ZEST_CASE(child_error_survives_an_external_cancel) {
         }
     };
     auto target = driver();
-    auto* node = target.operator->();
     auto cancel_it = [&]() -> task<> {
-        node->cancel();
+        target.cancel();
         co_return;
     };
 
-    auto [result, drove] = run(std::move(target), cancel_it());
+    auto [result, drove] = run(target, cancel_it());
     EXPECT(reported == std::vector{error::connection_refused});
     EXPECT(result.is_cancelled());
 }
@@ -154,14 +187,14 @@ ZEST_CASE(exception_fails_the_joiner_and_cancels_the_rest, skip = test::exceptio
         co_await gate.wait();
     };
     auto driver = [&]() -> task<> {
-        task_group<> group(loop);
+        task_group<> group;
         group.spawn(thrower());
         group.spawn(slow());
         co_await group.join();
     };
 
     EXPECT(test::thrown([&] { run(driver()); }) == "group boom");
-    EXPECT(gate.get_head() == nullptr);
+    EXPECT(!gate.has_waiters());
 }
 
 // Reads what was thrown; see test::exceptions_unreadable.
@@ -171,7 +204,7 @@ ZEST_CASE(exception_thrown_while_spawning_reaches_join, skip = test::exceptions_
         co_return;
     };
     auto driver = [&]() -> task<> {
-        task_group<> group(loop);
+        task_group<> group;
         group.spawn(thrower());
         co_await group.join();
     };
@@ -183,7 +216,7 @@ ZEST_CASE(exception_thrown_while_spawning_reaches_join, skip = test::exceptions_
 ZEST_CASE(exception_outranks_an_error, skip = test::exceptions_unreadable) {
     event gate;
     auto thrower = [&]() -> task<int, error> {
-        co_await gate.wait().catch_cancel();
+        co_await wait_on(gate).catch_cancel();
         throw std::runtime_error("boom");
     };
     auto failing = []() -> task<int, error> {
@@ -191,7 +224,7 @@ ZEST_CASE(exception_outranks_an_error, skip = test::exceptions_unreadable) {
         co_await fail(error::connection_refused);
     };
     auto driver = [&]() -> task<> {
-        task_group<error> group(loop);
+        task_group<error> group;
         group.spawn(thrower());
         group.spawn(failing());
         [[maybe_unused]] auto joined = co_await group.join();
@@ -201,21 +234,18 @@ ZEST_CASE(exception_outranks_an_error, skip = test::exceptions_unreadable) {
 }
 
 #if !KOTA_WORKAROUND_WINDOWS_ASAN_COROUTINE_EXCEPTION
-// Open question, kept to document current behaviour: the children the
-// first exception cancels throw too, and join() rethrows the exception of
-// the earliest-spawned child that threw, not the first one thrown, where
-// when_all rethrows the first child to fail.
+// The children the first exception cancels throw too; join() rethrows the
+// first one thrown, as when_all does, not that of the first child spawned.
 // Reads what was thrown; see test::exceptions_unreadable.
-ZEST_CASE(join_rethrows_the_exception_of_the_first_child_spawned,
-          skip = test::exceptions_unreadable) {
+ZEST_CASE(join_rethrows_the_first_exception_thrown, skip = test::exceptions_unreadable) {
     event gates[3];
     const char* names[] = {"first spawned", "first thrown", "third spawned"};
     auto thrower = [&](int id) -> task<> {
-        co_await gates[id].wait().catch_cancel();
+        co_await wait_on(gates[id]).catch_cancel();
         throw std::runtime_error(names[id]);
     };
     auto driver = [&]() -> task<> {
-        task_group<> group(loop);
+        task_group<> group;
         group.spawn(thrower(0));
         group.spawn(thrower(1));
         group.spawn(thrower(2));
@@ -226,7 +256,7 @@ ZEST_CASE(join_rethrows_the_exception_of_the_first_child_spawned,
         co_return;
     };
 
-    EXPECT(test::thrown([&] { run(driver(), trigger()); }) == "first spawned");
+    EXPECT(test::thrown([&] { run(driver(), trigger()); }) == "first thrown");
 }
 #endif  // !KOTA_WORKAROUND_WINDOWS_ASAN_COROUTINE_EXCEPTION
 
