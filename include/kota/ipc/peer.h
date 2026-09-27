@@ -137,6 +137,13 @@ private:
 
     Result<void> send_notification_impl(std::string_view method, std::string params);
 
+    /// Register a callback whose signature the caller has checked.
+    template <typename Callback>
+    void on_request_impl(std::string_view method, Callback&& callback);
+
+    template <typename Callback>
+    void on_notification_impl(std::string_view method, Callback&& callback);
+
     struct Self;
     std::unique_ptr<Self> self;
 };

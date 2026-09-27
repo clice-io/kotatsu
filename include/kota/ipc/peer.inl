@@ -66,10 +66,6 @@ consteval void validate_notification_callback_signature() {
 
 }  // namespace detail
 
-// ---------------------------------------------------------------------------
-// Peer<CodecT>::Self
-// ---------------------------------------------------------------------------
-
 template <typename CodecT>
 struct Peer<CodecT>::Self {
     using RequestCallback = std::function<
@@ -481,10 +477,6 @@ struct Peer<CodecT>::Self {
     }
 };
 
-// ---------------------------------------------------------------------------
-// Peer<CodecT> non-template methods
-// ---------------------------------------------------------------------------
-
 template <typename CodecT>
 Peer<CodecT>::Peer(event_loop& loop, std::unique_ptr<Transport> transport, CodecT codec) :
     self(std::make_unique<Self>(loop, std::move(transport), std::move(codec))) {
@@ -622,9 +614,7 @@ Result<void> Peer<CodecT>::send_notification_impl(std::string_view method, std::
     return {};
 }
 
-// ---------------------------------------------------------------------------
-// Peer<CodecT> template methods
-// ---------------------------------------------------------------------------
+// The typed members: they encode params and decode results for the ones above.
 
 template <typename CodecT>
 template <typename Params>
@@ -679,14 +669,19 @@ void Peer<CodecT>::on_request(Callback&& callback) {
             std::is_same_v<Ret, task<codec::RawValue, Error>>,
         "request callback return type should be RequestResult<Params> " "or task<codec::RawValue, Error>");
 
-    on_request(protocol::RequestTraits<Params>::method, std::forward<Callback>(callback));
+    on_request_impl(protocol::RequestTraits<Params>::method, std::forward<Callback>(callback));
 }
 
 template <typename CodecT>
 template <typename Callback>
 void Peer<CodecT>::on_request(std::string_view method, Callback&& callback) {
     detail::validate_request_callback_signature<Callback, Peer>();
+    on_request_impl(method, std::forward<Callback>(callback));
+}
 
+template <typename CodecT>
+template <typename Callback>
+void Peer<CodecT>::on_request_impl(std::string_view method, Callback&& callback) {
     using Params = detail::callback_param_t<Callback, 1>;
     auto wrapped = [cb = std::forward<Callback>(callback),
                     method_name = std::string(method),
@@ -732,14 +727,20 @@ void Peer<CodecT>::on_notification(Callback&& callback) {
     static_assert(detail::has_notification_traits_v<Params>,
                   "on_notification(callback) requires NotificationTraits<Params>");
 
-    on_notification(protocol::NotificationTraits<Params>::method, std::forward<Callback>(callback));
+    on_notification_impl(protocol::NotificationTraits<Params>::method,
+                         std::forward<Callback>(callback));
 }
 
 template <typename CodecT>
 template <typename Callback>
 void Peer<CodecT>::on_notification(std::string_view method, Callback&& callback) {
     detail::validate_notification_callback_signature<Callback>();
+    on_notification_impl(method, std::forward<Callback>(callback));
+}
 
+template <typename CodecT>
+template <typename Callback>
+void Peer<CodecT>::on_notification_impl(std::string_view method, Callback&& callback) {
     using Params = detail::callback_param_t<Callback, 0>;
     auto wrapped = [cb = std::forward<Callback>(callback), peer = this](std::string_view params_raw) {
         auto& state = *peer->self;
