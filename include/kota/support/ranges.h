@@ -132,66 +132,41 @@ concept unordered_map_range = map_range<T> && unordered_associative_range<T>;
 namespace detail {
 
 template <typename Container, typename Element>
-concept sequence_insertable = requires(Container& container, Element&& element) {
-    container.emplace_back(std::forward<Element>(element));
-} || requires(Container& container, Element&& element) {
-    container.push_back(std::forward<Element>(element));
-} || requires(Container& container, Element&& element) {
-    container.insert(container.end(), std::forward<Element>(element));
-} || requires(Container& container, Element&& element) {
-    container.insert(std::forward<Element>(element));
-};
-
-template <typename Container, typename Element>
-constexpr bool append_sequence_element(Container& container, Element&& element) {
+constexpr void append_sequence_element(Container& container, Element&& element) {
     if constexpr(requires { container.emplace_back(std::forward<Element>(element)); }) {
         container.emplace_back(std::forward<Element>(element));
-        return true;
     } else if constexpr(requires { container.push_back(std::forward<Element>(element)); }) {
         container.push_back(std::forward<Element>(element));
-        return true;
     } else if constexpr(requires {
                             container.insert(container.end(), std::forward<Element>(element));
                         }) {
         container.insert(container.end(), std::forward<Element>(element));
-        return true;
     } else if constexpr(requires { container.insert(std::forward<Element>(element)); }) {
         container.insert(std::forward<Element>(element));
-        return true;
     } else {
-        return false;
+        static_assert(dependent_false<Container>,
+                      "the container has no emplace_back, push_back or insert to append with");
     }
 }
 
 template <typename Map, typename Key, typename Mapped>
-concept map_insertable = requires(Map& map, Key&& key, Mapped&& value) {
-    map.insert_or_assign(std::forward<Key>(key), std::forward<Mapped>(value));
-} || requires(Map& map, Key&& key, Mapped&& value) {
-    map.emplace(std::forward<Key>(key), std::forward<Mapped>(value));
-} || requires(Map& map, Key&& key, Mapped&& value) {
-    map.insert(typename Map::value_type{std::forward<Key>(key), std::forward<Mapped>(value)});
-};
-
-template <typename Map, typename Key, typename Mapped>
-constexpr bool insert_map_entry(Map& map, Key&& key, Mapped&& value) {
+constexpr void insert_map_entry(Map& map, Key&& key, Mapped&& value) {
     if constexpr(requires {
                      map.insert_or_assign(std::forward<Key>(key), std::forward<Mapped>(value));
                  }) {
         map.insert_or_assign(std::forward<Key>(key), std::forward<Mapped>(value));
-        return true;
     } else if constexpr(requires {
                             map.emplace(std::forward<Key>(key), std::forward<Mapped>(value));
                         }) {
         map.emplace(std::forward<Key>(key), std::forward<Mapped>(value));
-        return true;
     } else if constexpr(requires {
                             map.insert(typename Map::value_type{std::forward<Key>(key),
                                                                 std::forward<Mapped>(value)});
                         }) {
         map.insert(typename Map::value_type{std::forward<Key>(key), std::forward<Mapped>(value)});
-        return true;
     } else {
-        return false;
+        static_assert(dependent_false<Map>,
+                      "the map has no insert_or_assign, emplace or insert to add an entry with");
     }
 }
 
