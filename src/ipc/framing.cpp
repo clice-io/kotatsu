@@ -65,18 +65,33 @@ std::string frame(std::string_view payload) {
 
 FrameParser::FrameParser(std::size_t max_payload) : max_payload(max_payload) {}
 
+std::optional<std::size_t> FrameParser::header_end(std::string_view next) const {
+    constexpr std::string_view blank_line = "\r\n\r\n";
+    // A blank line that begins in what earlier calls read, earliest first.
+    for(std::size_t before = std::min<std::size_t>(3, header.size()); before > 0; --before) {
+        if(header.ends_with(blank_line.substr(0, before)) &&
+           next.starts_with(blank_line.substr(before))) {
+            return blank_line.size() - before;
+        }
+    }
+    if(auto at = next.find(blank_line); at != std::string_view::npos) {
+        return at + blank_line.size();
+    }
+    return std::nullopt;
+}
+
 FrameParser::Step FrameParser::feed(std::string_view input) {
     std::size_t consumed = 0;
     auto malformed = [&] {
         return Step{
             .consumed = consumed,
             .frame =
-                std::unexpected(ReadError{.kind = ReadError::Kind::Malformed, .message = header}),
+                std::unexpected(ReadError{.kind = ReadError::Kind::Malformed, .message = failure}),
         };
     };
     auto break_with = [&](std::string reason) {
         phase = Phase::Broken;
-        header = std::move(reason);
+        failure = std::move(reason);
         return malformed();
     };
 
@@ -85,31 +100,33 @@ FrameParser::Step FrameParser::feed(std::string_view input) {
             case Phase::Broken: return malformed();
 
             case Phase::Header: {
-                const auto old_size = header.size();
-                // The blank line may begin in what an earlier call read.
-                const auto scan_from = old_size < 3 ? 0 : old_size - 3;
-                header.append(input.substr(consumed));
-                const auto marker = header.find("\r\n\r\n", scan_from);
-                if(marker == std::string::npos) {
-                    consumed = input.size();
+                // Only the header's own bytes are copied, and no more than one
+                // past the limit, which tells a header that is too long:
+                // copying the whole input would copy the frames after this
+                // one again for each of them.
+                const auto window = input.substr(consumed, max_header_size + 1 - header.size());
+                const auto end = header_end(window);
+                if(!end) {
+                    header.append(window);
+                    consumed += window.size();
                     if(header.size() > max_header_size) {
                         return break_with(std::format("header exceeds {} bytes", max_header_size));
                     }
                     return {.consumed = consumed, .frame = std::nullopt};
                 }
 
-                const auto header_end = marker + 4;
-                consumed += header_end - old_size;
-                if(header_end > max_header_size) {
+                header.append(window.substr(0, *end));
+                consumed += *end;
+                if(header.size() > max_header_size) {
                     return break_with(std::format("header exceeds {} bytes", max_header_size));
                 }
-                header.resize(header_end);
                 auto length = content_length(header);
                 if(!length) {
                     return break_with(std::move(length).error());
                 }
                 header.clear();
                 payload.clear();
+                prefix.clear();
                 remaining = *length;
                 if(*length > max_payload) {
                     phase = Phase::Skip;
@@ -135,8 +152,8 @@ FrameParser::Step FrameParser::feed(std::string_view input) {
 
             case Phase::Skip: {
                 const auto take = std::min(remaining, input.size() - consumed);
-                const auto keep = std::min(take, skipped_prefix_size - payload.size());
-                payload.append(input.substr(consumed, keep));
+                const auto keep = std::min(take, skipped_prefix_size - prefix.size());
+                prefix.append(input.substr(consumed, keep));
                 consumed += take;
                 remaining -= take;
                 if(remaining != 0) {
@@ -152,7 +169,7 @@ FrameParser::Step FrameParser::feed(std::string_view input) {
                                         skipped_size,
                                         max_payload),
                         .size = skipped_size,
-                        .prefix = std::move(payload),
+                        .prefix = std::move(prefix),
                     }),
                 };
             }

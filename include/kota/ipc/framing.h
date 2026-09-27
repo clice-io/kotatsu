@@ -65,6 +65,10 @@ public:
     Step feed(std::string_view input);
 
 private:
+    /// How many bytes of `next`, which follows the header read so far, it
+    /// takes to end the header with its blank line, if they do.
+    std::optional<std::size_t> header_end(std::string_view next) const;
+
     enum class Phase : std::uint8_t {
         Header,
         Payload,
@@ -74,10 +78,14 @@ private:
 
     std::size_t max_payload;
     Phase phase = Phase::Header;
-    /// The header read so far, or the error once Broken.
+    /// The header read so far.
     std::string header;
-    /// The payload read so far, or the prefix of the one being skipped.
+    /// The payload read so far.
     std::string payload;
+    /// The first bytes of the payload being skipped.
+    std::string prefix;
+    /// Why the input is Broken.
+    std::string failure;
     std::size_t remaining = 0;
     std::size_t skipped_size = 0;
 };

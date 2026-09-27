@@ -151,6 +151,24 @@ ZEST_CASE(header_past_the_limit_is_malformed) {
     EXPECT(long_block.error().kind == ReadError::Kind::Malformed);
 }
 
+// A header block of exactly the limit is read; the limit applies to the
+// header alone, however much input follows it.
+ZEST_CASE(header_at_the_limit_is_read) {
+    std::string header = "Content-Length: 2\r\nX-Padding: ";
+    header.append(FrameParser::max_header_size - header.size() - 4, 'A');
+    header += "\r\n\r\n";
+    ASSERT(header.size() == FrameParser::max_header_size);
+    FrameParser parser;
+    auto read = read_pieces(parser, {header + "ok" + std::string(100000, 'B')});
+    ASSERT(!read.frames.empty());
+    EXPECT(read.frames[0] == "ok");
+}
+
+// Of two Content-Length headers, the first counts.
+ZEST_CASE(first_of_duplicate_content_lengths_counts) {
+    EXPECT(first_frame("Content-Length: 2\r\nContent-Length: 5\r\n\r\nokay!") == "ok");
+}
+
 // Nothing after a header that cannot be read can be found: the parser
 // keeps reporting it and takes nothing more.
 ZEST_CASE(malformed_frame_stays_malformed) {
