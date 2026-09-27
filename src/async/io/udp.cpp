@@ -191,9 +191,10 @@ task<void, error> udp::send(std::span<const char> data, std::string_view host, i
     }
 
     auto addr = co_await or_fail(uv::resolve_addr(host, port));
-    if(auto err = co_await send_op(&self->udp,
-                                   uv::buffer_of(data),
-                                   reinterpret_cast<const sockaddr*>(&addr))) {
+    // A named op: MSVC's ASan build gives up the tail call of symmetric
+    // transfer from an await on a temporary this large.
+    send_op op(&self->udp, uv::buffer_of(data), reinterpret_cast<const sockaddr*>(&addr));
+    if(auto err = co_await op) {
         co_await fail(err);
     }
 }
@@ -203,7 +204,10 @@ task<void, error> udp::send(std::span<const char> data) {
         co_await fail(error::invalid_argument);
     }
 
-    if(auto err = co_await send_op(&self->udp, uv::buffer_of(data), nullptr)) {
+    // A named op: MSVC's ASan build gives up the tail call of symmetric
+    // transfer from an await on a temporary this large.
+    send_op op(&self->udp, uv::buffer_of(data), nullptr);
+    if(auto err = co_await op) {
         co_await fail(err);
     }
 }

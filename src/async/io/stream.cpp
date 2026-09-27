@@ -188,7 +188,10 @@ task<void, error> stream::write(std::span<const char> data) {
         co_await fail(error::value_too_large_for_defined_data_type);
     }
 
-    if(auto err = co_await write_op(&self->stream, uv::buffer_of(data))) {
+    // A named op: MSVC's ASan build gives up the tail call of symmetric
+    // transfer from an await on a temporary this large.
+    write_op op(&self->stream, uv::buffer_of(data));
+    if(auto err = co_await op) {
         co_await fail(err);
     }
 }
