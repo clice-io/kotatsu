@@ -6,21 +6,23 @@
 import fc from "fast-check";
 
 const SEED = Number(process.env.KOTA_FUZZ_SEED ?? 20260927);
-const RUNS = Number(process.env.KOTA_FUZZ_RUNS ?? 100);
+/** The runs of a property, 100 unless overridden. */
+export const RUNS = Number(process.env.KOTA_FUZZ_RUNS ?? 100);
 
 /** A test's timeout that leaves room for the default runs of a fuzz test. */
 export const FUZZ_TIMEOUT = 180_000;
 
 /**
- * Checks `property` over the runs. Shrinking a failure stops after about
+ * Checks `property` over `runs` runs. Shrinking a failure stops after about
  * half the test's timeout, so the failure is reported rather than timed out.
  */
 export async function fuzz<T>(
   property: fc.IAsyncPropertyWithHooks<T>,
+  runs = RUNS,
 ): Promise<void> {
   await fc.assert(property, {
     seed: SEED,
-    numRuns: RUNS,
+    numRuns: runs,
     interruptAfterTimeLimit: FUZZ_TIMEOUT / 2,
     markInterruptAsFailure: true,
   });

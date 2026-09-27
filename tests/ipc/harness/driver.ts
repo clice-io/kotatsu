@@ -19,6 +19,7 @@ import {
   type MessageWriter,
 } from "vscode-jsonrpc/node";
 
+import { JsonLines } from "./jsonl.ts";
 import { RawChannel } from "./raw.ts";
 
 // Each sanitizer ends a report with its SUMMARY line; UBSan starts one with
@@ -148,6 +149,10 @@ export class Driver {
 
   raw(): RawChannel {
     return new RawChannel(this.#child.stdout, this.#child.stdin);
+  }
+
+  jsonLines(): JsonLines {
+    return new JsonLines(this.#child.stdout, this.#child.stdin);
   }
 
   /** Lets the driver log a warn or error line matching `pattern`. */
