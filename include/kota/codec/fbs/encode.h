@@ -763,7 +763,7 @@ bool AllocFieldVisitor::visit_seq(const Container& c, Body&& body) {
 
 template <typename T, typename Body>
 bool AllocFieldVisitor::visit_tuple(const T&, Body&& body) {
-    detail::assert_slots_fit<std::tuple_size_v<T>>();
+    detail::assert_tuple_slots_fit<T>();
     return two_pass(fbb, std::forward<Body>(body), stored_offset);
 }
 
@@ -790,7 +790,7 @@ bool TableVisitor<Place>::visit_struct(const T&, Body&& body) {
 template <typename Place>
 template <typename T, typename Body>
 bool TableVisitor<Place>::visit_tuple(const T&, Body&& body) {
-    detail::assert_slots_fit<std::tuple_size_v<T>>();
+    detail::assert_tuple_slots_fit<T>();
     uoffset_t off = 0;
     KOTA_CODEC_TRY(two_pass(fbb, std::forward<Body>(body), off));
     place(table_offset_t(off));

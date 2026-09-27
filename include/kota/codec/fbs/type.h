@@ -196,6 +196,16 @@ consteval void assert_slots_fit() {
                   "vtable slot; this type has more than a flatbuffers table can address");
 }
 
+/// assert_slots_fit for a table written or read as a tuple: one slot per
+/// element. An imperative repr may drive visit_tuple over an object that is
+/// not tuple-like; its slots are its own business.
+template <typename T>
+consteval void assert_tuple_slots_fit() {
+    if constexpr(meta::tuple_like<T>) {
+        assert_slots_fit<std::tuple_size_v<T>>();
+    }
+}
+
 }  // namespace detail
 
 namespace detail {

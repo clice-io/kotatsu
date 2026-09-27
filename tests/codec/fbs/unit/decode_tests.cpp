@@ -45,6 +45,21 @@ struct GreedyMap {
     auto operator==(const GreedyMap&) const -> bool = default;
 };
 
+/// Read back through visit_tuple over itself, though it is not tuple-like.
+struct LabeledCount {
+    std::int32_t count = 0;
+    std::string label;
+
+    auto operator==(const LabeledCount&) const -> bool = default;
+};
+
+struct HoldsLabeledCount {
+    LabeledCount entry;
+    std::int32_t after = 0;
+
+    auto operator==(const HoldsLabeledCount&) const -> bool = default;
+};
+
 }  // namespace
 
 }  // namespace kota::codec
@@ -97,6 +112,23 @@ struct repr<codec::GreedyMap> {
                 g.entries.emplace(std::move(key), value);
             }
             return true;
+        });
+    }
+};
+
+template <>
+struct repr<codec::LabeledCount> {
+    using type = std::tuple<std::int32_t, std::string>;
+
+    static type to(const codec::LabeledCount& c) {
+        return {c.count, c.label};
+    }
+
+    template <typename Config>
+    static bool deserialize(auto& vis, codec::LabeledCount& c) {
+        return vis.visit_tuple(c, [&](auto& sv) -> bool {
+            return sv.visit_element([&](auto& ev) -> bool { return ev.visit_int(c.count); }) &&
+                   sv.visit_element([&](auto& ev) -> bool { return ev.visit_str(c.label); });
         });
     }
 };
@@ -536,6 +568,27 @@ ZEST_CASE(imperative_adapter_cannot_read_past_a_map) {
     auto decoded = fbs::from_bytes<GreedyMap>(*encoded);
     ASSERT(decoded);
     EXPECT(*decoded == exact);
+}
+
+ZEST_CASE(imperative_adapter_reads_a_tuple_table_over_its_own_type) {
+    // visit_tuple over a type that is not tuple-like: its slots are the
+    // adapter's business, at the root and in a field.
+    const LabeledCount root{.count = 3, .label = "three"};
+    auto root_bytes = fbs::to_bytes(root);
+    ASSERT(root_bytes);
+    auto root_back = fbs::from_bytes<LabeledCount>(*root_bytes);
+    ASSERT(root_back);
+    EXPECT(*root_back == root);
+
+    const HoldsLabeledCount holder{
+        .entry = {.count = 5, .label = "five"},
+        .after = 9
+    };
+    auto holder_bytes = fbs::to_bytes(holder);
+    ASSERT(holder_bytes);
+    auto holder_back = fbs::from_bytes<HoldsLabeledCount>(*holder_bytes);
+    ASSERT(holder_back);
+    EXPECT(*holder_back == holder);
 }
 
 };  // ZEST_SUITE(codec_fbs_decode)

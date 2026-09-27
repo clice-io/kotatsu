@@ -337,7 +337,7 @@ struct RootReader : FieldReader {
 
     template <typename U, typename Body>
     bool visit_tuple(U&, Body&& body) {
-        detail::assert_slots_fit<std::tuple_size_v<std::remove_const_t<U>>>();
+        detail::assert_tuple_slots_fit<std::remove_const_t<U>>();
         TableFieldReader tfr{.tbl = tbl, .verifier = verifier};
         return body(tfr);
     }
@@ -383,7 +383,7 @@ bool FieldReader::visit_seq([[maybe_unused]] T& out, Body&& body) {
 
 template <typename T, typename Body>
 bool FieldReader::visit_tuple(T&, Body&& body) {
-    detail::assert_slots_fit<std::tuple_size_v<std::remove_const_t<T>>>();
+    detail::assert_tuple_slots_fit<std::remove_const_t<T>>();
     return enter_table(std::forward<Body>(body), "tuple field");
 }
 
