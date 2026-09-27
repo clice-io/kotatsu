@@ -1,5 +1,6 @@
 #pragma once
 
+#include <concepts>
 #include <cstddef>
 #include <memory>
 #include <string_view>
@@ -28,14 +29,15 @@ struct FieldAt {
 
     constexpr static std::string_view name = schema::fields[I].name;
 
-    static type& of(T& object) {
-        auto* base = reinterpret_cast<std::byte*>(std::addressof(object));
-        return *reinterpret_cast<type*>(base + schema::fields[I].offset);
-    }
-
-    const static type& of(const T& object) {
-        const auto* base = reinterpret_cast<const std::byte*>(std::addressof(object));
-        return *reinterpret_cast<const type*>(base + schema::fields[I].offset);
+    /// The field inside object, as const as object is.
+    template <typename Object>
+        requires std::same_as<std::remove_const_t<Object>, T>
+    static auto& of(Object& object) {
+        constexpr bool is_const = std::is_const_v<Object>;
+        using byte_t = std::conditional_t<is_const, const std::byte, std::byte>;
+        using field_t = std::conditional_t<is_const, const type, type>;
+        auto* base = reinterpret_cast<byte_t*>(std::addressof(object));
+        return *reinterpret_cast<field_t*>(base + schema::fields[I].offset);
     }
 };
 
@@ -59,43 +61,23 @@ bool skipped(const T& value, bool is_serialize) {
     }
 }
 
-/// When a step fails, prepends where it was (a field name or an element
-/// index) to the active error's path; returns ok. Config::detailed_error
+/// When a step fails, prepends where it was, a field name or an element
+/// index, to the active error's path; returns ok. Config::detailed_error
 /// turns the tracking off.
-template <typename Config>
-bool trace_path(bool ok, std::string_view field) {
+template <typename Config, typename Step>
+bool trace_path(bool ok, const Step& at) {
     if constexpr(Config::detailed_error) {
         if(!ok) {
             if(auto* e = scoped_context<rich_error>::try_current()) {
-                e->prepend_field(field);
+                if constexpr(std::is_convertible_v<const Step&, std::string_view>) {
+                    e->prepend_field(at);
+                } else {
+                    e->prepend_index(at);
+                }
             }
         }
     }
     return ok;
-}
-
-template <typename Config>
-bool trace_path(bool ok, std::size_t index) {
-    if constexpr(Config::detailed_error) {
-        if(!ok) {
-            if(auto* e = scoped_context<rich_error>::try_current()) {
-                e->prepend_index(index);
-            }
-        }
-    }
-    return ok;
-}
-
-/// Calls f with std::integral_constant<std::size_t, I> for the I equal to
-/// the runtime index, which must be below N, and returns f's result.
-template <std::size_t N, typename F>
-bool with_index(std::size_t index, F&& f) {
-    return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-        bool result = false;
-        (void)((Is == index && ((result = f(std::integral_constant<std::size_t, Is>{})), true)) ||
-               ...);
-        return result;
-    }(std::make_index_sequence<N>{});
 }
 
 }  // namespace kota::codec::detail

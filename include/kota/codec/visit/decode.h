@@ -88,6 +88,18 @@ bool repr_decode(Vis& vis, V& out) {
 template <typename Vis>
 concept data_driven = requires { requires Vis::data_driven; };
 
+/// Calls f with std::integral_constant<std::size_t, I> for the I equal to
+/// the runtime index, which must be below N, and returns f's result.
+template <std::size_t N, typename F>
+bool with_index(std::size_t index, F&& f) {
+    return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+        bool result = false;
+        (void)((Is == index && ((result = f(std::integral_constant<std::size_t, Is>{})), true)) ||
+               ...);
+        return result;
+    }(std::make_index_sequence<N>{});
+}
+
 /// Ensure an optional/pointer is allocated before writing into it.
 template <typename T>
 void ensure_allocated(T& out) {
@@ -119,7 +131,13 @@ bool construct_and_visit(Vis& vis, std::variant<Ts...>& out, std::size_t index) 
     });
 }
 
-/// True when the visitor supports peeking the source data kind without consuming.
+/// True when the visitor can tell the kind of the value ahead without
+/// consuming it. A reader answers with the kinds a document can hold, as
+/// untagged variant probing and dyn::Value decoding expect: null, boolean,
+/// int64 (and uint64 for an integer beyond int64), float64, string, array,
+/// structure for any object or table, and unknown for anything else (a TOML
+/// date, a value it cannot classify). The narrower and container kinds of
+/// type_kind (int8, float32, set, map, tuple, ...) are never returned.
 template <typename Vis>
 concept has_peek_kind = requires(Vis& v) {
     { v.peek_kind() } -> std::same_as<meta::type_kind>;
@@ -204,12 +222,9 @@ template <typename Config, std::size_t I, typename Vis, typename T>
 bool decode_field_value(Vis& vis, T& out) {
     using field = FieldAt<Config, I, T>;
     auto& field_ref = field::of(out);
-    // Only a skip_if predicate can hold while decoding: skip_when conditions
-    // judge a value being written.
-    if constexpr(tuple_has_spec_v<typename field::attrs, meta::behavior::skip_if>) {
-        if(skipped<typename field::attrs>(field_ref, false)) {
-            return true;
-        }
+    // A keyed entry the field skips is passed over unread.
+    if(skipped<typename field::attrs>(field_ref, false)) {
+        return true;
     }
     return trace_path<Config>(decode_with_attrs<Config, typename field::attrs>(vis, field_ref),
                               field::name);
@@ -387,9 +402,7 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
     std::uint64_t field_mask = 0;
     bool result = vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
         if(key == tag_key) {
-            if(idx != npos)
-                return true;
-            return fail_unusable_tag(fv);
+            return idx != npos || fail_unusable_tag(fv);
         }
         if(idx == npos) {
             // Without a usable tag data fields cannot be placed, and need
@@ -439,20 +452,12 @@ bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
     bool result = vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
         if(key == tag_key) {
             ++tag_count;
-            if(idx != npos)
-                return true;
-            return fail_unusable_tag(fv);
+            return idx != npos || fail_unusable_tag(fv);
         }
-        if(key == content_key) {
-            ++content_count;
-            if(idx == npos) {
-                // Without a usable tag the content cannot be placed: the
-                // tag's own entry reports why, and an absent tag is
-                // reported after the pass.
-                return true;
-            }
-            if(content_count > 1)
-                return true;
+        // Without a usable tag the content cannot be placed: the tag's own
+        // entry reports why, and an absent tag is reported after the pass.
+        // A duplicate content entry is reported after the pass too.
+        if(key == content_key && ++content_count == 1 && idx != npos) {
             return construct_and_visit<Config>(fv, var, idx);
         }
         return true;
@@ -686,23 +691,24 @@ bool decode_untagged_variant(Vis& vis, std::variant<Ts...>& out) {
 template <typename Config, std::size_t I, typename Vis, typename T>
 bool decode_one_field(Vis& vis, T& out) {
     using field = FieldAt<Config, I, T>;
-    constexpr auto idx = std::integral_constant<std::size_t, I>{};
+    using attrs = typename field::attrs;
     auto& field_ref = field::of(out);
 
-    if constexpr(tuple_has_spec_v<typename field::attrs, meta::behavior::skip_if>) {
-        if(skipped<typename field::attrs>(field_ref, false)) {
-            // The document still holds the field, written through its
-            // attrs; read it the same way, into a value nobody keeps.
-            typename field::type discard{};
-            return vis.visit_field(idx, field::name, [&](auto& fv) -> bool {
-                return decode_with_attrs<Config, typename field::attrs>(fv, discard);
-            });
-        }
-    }
-
-    bool ok = vis.visit_field(idx, field::name, [&](auto& fv) -> bool {
-        return decode_with_attrs<Config, typename field::attrs>(fv, field_ref);
-    });
+    // A positional document still holds a field skipped on decode, written
+    // through its attrs: it is read the same way, into a value nobody keeps.
+    // Only a skip_if predicate can hold while decoding, and only then must
+    // the field's type default-construct.
+    bool ok = vis.visit_field(std::integral_constant<std::size_t, I>{},
+                              field::name,
+                              [&](auto& fv) -> bool {
+                                  if constexpr(tuple_has_spec_v<attrs, meta::behavior::skip_if>) {
+                                      if(skipped<attrs>(field_ref, false)) {
+                                          typename field::type discard{};
+                                          return decode_with_attrs<Config, attrs>(fv, discard);
+                                      }
+                                  }
+                                  return decode_with_attrs<Config, attrs>(fv, field_ref);
+                              });
     return trace_path<Config>(ok, field::name);
 }
 
