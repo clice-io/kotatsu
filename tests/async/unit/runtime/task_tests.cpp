@@ -1,3 +1,4 @@
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -56,6 +57,38 @@ ZEST_CASE(await_of_a_void_child_resumes_after_it) {
     auto [result] = run(parent());
     EXPECT(result.has_value());
     EXPECT(order == std::vector{1, 2});
+}
+
+// Awaited as an lvalue, a task keeps its frame: its owner can still ask it
+// what it ended with, and the frame goes with the owner.
+ZEST_CASE(await_of_an_lvalue_keeps_the_frame) {
+    auto frame = std::make_shared<int>();
+    std::weak_ptr<int> watch = frame;
+    auto child = [](std::shared_ptr<int>) -> task<int> {
+        co_return 5;
+    };
+
+    struct Seen {
+        int value = 0;
+        bool alive_after_await = false;
+        bool done = false;
+    };
+
+    auto parent = [&]() -> task<Seen> {
+        auto kept = child(std::move(frame));
+        Seen seen;
+        seen.value = co_await kept;
+        seen.alive_after_await = !watch.expired();
+        seen.done = kept.done();
+        co_return seen;
+    };
+
+    auto [result] = run(parent());
+    ASSERT(result.has_value());
+    EXPECT(result->value == 5);
+    EXPECT(result->alive_after_await);
+    EXPECT(result->done);
+    EXPECT(watch.expired());
 }
 
 ZEST_CASE(fail_ends_the_task_with_the_error) {
@@ -252,16 +285,19 @@ ZEST_CASE(external_cancel_ends_a_suspended_task) {
         co_return 1;
     };
     auto target = worker();
-    auto* node = target.operator->();
-    auto cancel_it = [&]() -> task<> {
-        node->cancel();
-        co_return;
+    auto cancel_it = [&]() -> task<bool> {
+        bool done_before = target.done();
+        target.cancel();
+        co_return done_before;
     };
 
-    auto [result, driver] = run(std::move(target), cancel_it());
+    auto [result, done_before] = run(target, cancel_it());
     EXPECT(result.is_cancelled());
-    EXPECT(gate.get_head() == nullptr);
-    EXPECT(driver.has_value());
+    EXPECT(target.done());
+    EXPECT(target.is_cancelled());
+    EXPECT(!gate.has_waiters());
+    ASSERT(done_before.has_value());
+    EXPECT(!*done_before);
 }
 
 ZEST_CASE(cancel_of_a_finished_task_changes_nothing) {
@@ -269,15 +305,16 @@ ZEST_CASE(cancel_of_a_finished_task_changes_nothing) {
         co_return 1;
     };
     auto target = quick();
-    auto* node = target.operator->();
     auto late = [&]() -> task<> {
         co_await yield();
-        node->cancel();
+        target.cancel();
     };
 
-    auto [result, drove] = run(std::move(target), late());
+    auto [result, drove] = run(target, late());
     ASSERT(result.has_value());
     EXPECT(*result == 1);
+    EXPECT(!target.is_cancelled());
+    EXPECT(target.result() == 1);
     EXPECT(drove.has_value());
 }
 
@@ -285,7 +322,7 @@ ZEST_CASE(cancel_of_a_finished_task_changes_nothing) {
 // which ends it instead of starting new work.
 ZEST_CASE(checkpoint_starts_no_child_after_cancel) {
     int started = 0;
-    async_node* self = nullptr;
+    task<> target;
     auto child = [&]() -> task<> {
         started += 1;
         co_return;
@@ -293,31 +330,29 @@ ZEST_CASE(checkpoint_starts_no_child_after_cancel) {
     auto worker = [&]() -> task<> {
         for(int i = 0; i < 100; ++i) {
             if(i == 3) {
-                self->cancel();
+                target.cancel();
             }
             co_await child();
         }
     };
-    auto target = worker();
-    self = target.operator->();
+    target = worker();
 
-    auto [result] = run(std::move(target));
+    auto [result] = run(target);
     EXPECT(result.is_cancelled());
     EXPECT(started == 3);
 }
 
 ZEST_CASE(checkpoint_waits_for_the_cancelled_operation) {
     test::PendingOp op;
-    async_node* self = nullptr;
     bool worker_done = false;
+    task<void, void, cancellation> target;
     auto worker = [&]() -> task<> {
-        self->cancel();
+        target.cancel();
         co_await op;
     };
-    auto target = worker();
-    self = target.operator->();
+    target = worker().catch_cancel();
     auto observe = [&]() -> task<> {
-        co_await std::move(target).catch_cancel();
+        co_await target;
         worker_done = true;
     };
     auto finish = [&]() -> task<bool> {
@@ -335,29 +370,27 @@ ZEST_CASE(checkpoint_waits_for_the_cancelled_operation) {
 }
 
 ZEST_CASE(error_after_cancel_is_still_reported) {
-    async_node* self = nullptr;
+    task<int, error> target;
     auto worker = [&]() -> task<int, error> {
-        self->cancel();
+        target.cancel();
         co_await fail(error::io_error);
     };
-    auto target = worker();
-    self = target.operator->();
+    target = worker();
 
-    auto [result] = run(std::move(target));
+    auto [result] = run(target);
     ASSERT(result.has_error());
     EXPECT(result.error() == error::io_error);
 }
 
 ZEST_CASE(value_after_cancel_is_dropped) {
-    async_node* self = nullptr;
+    task<int> target;
     auto worker = [&]() -> task<int> {
-        self->cancel();
+        target.cancel();
         co_return 1;
     };
-    auto target = worker();
-    self = target.operator->();
+    target = worker();
 
-    auto [result] = run(std::move(target));
+    auto [result] = run(target);
     EXPECT(result.is_cancelled());
 }
 
@@ -365,19 +398,18 @@ ZEST_CASE(value_after_cancel_is_dropped) {
 // reaches it meanwhile waits for that point instead of resuming the parent
 // under the running child.
 ZEST_CASE(child_cancelled_before_it_suspends_runs_to_that_point) {
-    async_node* child_node = nullptr;
+    task<int, void, cancellation> started;
     bool child_finished = false;
     auto child = [&]() -> task<int> {
-        child_node->cancel();
+        started.cancel();
         child_finished = true;
         co_return 1;
     };
     // What the parent sees when it resumes: the child's outcome, and whether
     // the child had run to its end by then.
     auto parent = [&]() -> task<std::pair<bool, bool>> {
-        auto started = child();
-        child_node = started.operator->();
-        auto result = co_await std::move(started).catch_cancel();
+        started = child().catch_cancel();
+        auto result = co_await started;
         co_return std::pair{result.is_cancelled(), child_finished};
     };
 
@@ -387,26 +419,94 @@ ZEST_CASE(child_cancelled_before_it_suspends_runs_to_that_point) {
     EXPECT(result->second);
 }
 
-// Open question, kept to document current behaviour: cancel() on a task that
-// has not started only marks it, and awaiting it afterwards starts it as if it
-// had never been cancelled. A scheduled root cancelled the same way never runs
-// (async_io_loop.task_cancelled_before_it_starts_never_runs).
-ZEST_CASE(awaiting_a_task_cancelled_before_it_started_runs_it) {
+// A task cancelled before it starts never runs: it ends cancelled at once,
+// which cancels the task awaiting it unless that one catches it.
+ZEST_CASE(awaiting_a_task_cancelled_before_it_started_never_runs_it) {
     bool ran = false;
+    bool resumed = false;
     auto child = [&]() -> task<int> {
         ran = true;
         co_return 1;
     };
-    auto parent = [&]() -> task<int> {
+    auto catching = [&]() -> task<bool> {
         auto pending = child();
-        pending->cancel();
-        co_return co_await std::move(pending);
+        pending.cancel();
+        auto result = co_await std::move(pending).catch_cancel();
+        co_return result.is_cancelled();
+    };
+    auto plain = [&]() -> task<int> {
+        auto pending = child();
+        pending.cancel();
+        auto value = co_await std::move(pending);
+        resumed = true;
+        co_return value;
     };
 
-    auto [result] = run(parent());
-    ASSERT(result.has_value());
-    EXPECT(*result == 1);
-    EXPECT(ran);
+    auto [caught, cancelled] = run(catching(), plain());
+    ASSERT(caught.has_value());
+    EXPECT(*caught);
+    EXPECT(cancelled.is_cancelled());
+    EXPECT(!ran);
+    EXPECT(!resumed);
+}
+
+ZEST_CASE(cancel_of_a_task_that_has_not_started_only_marks_it) {
+    bool ran = false;
+    auto work = [&]() -> task<> {
+        ran = true;
+        co_return;
+    };
+    auto pending = work();
+    pending.cancel();
+
+    EXPECT(!pending.done());
+    EXPECT(!ran);
+}
+
+// A root cancelled before its first turn never runs, and the loop still frees
+// one it owns. Its frame holds a copy of `frame`, which tells when it goes.
+ZEST_CASE(scheduled_root_cancelled_before_it_starts_never_runs) {
+    auto frame = std::make_shared<int>();
+    std::weak_ptr<int> watch = frame;
+    int ran = 0;
+    auto make = [&](std::shared_ptr<int>) -> task<> {
+        ran += 1;
+        co_return;
+    };
+    auto owned = make(std::move(frame));
+    auto kept = make(nullptr);
+    owned.cancel();
+    kept.cancel();
+
+    loop.schedule(std::move(owned));
+    loop.schedule(kept);
+    EXPECT(!watch.expired());
+    loop.run();
+    EXPECT(watch.expired());
+    EXPECT(kept.is_cancelled());
+    EXPECT(ran == 0);
+}
+
+// A root cancelled after it was scheduled, before its first turn, never runs
+// either.
+ZEST_CASE(root_cancelled_between_schedule_and_its_turn_never_runs) {
+    bool ran = false;
+    auto make = [&]() -> task<> {
+        ran = true;
+        co_return;
+    };
+    auto root = make();
+    auto canceller = [&]() -> task<> {
+        root.cancel();
+        co_return;
+    };
+    auto first = canceller();
+
+    loop.schedule(first);
+    loop.schedule(root);
+    loop.run();
+    EXPECT(root.is_cancelled());
+    EXPECT(!ran);
 }
 
 #if KOTA_ENABLE_EXCEPTIONS
@@ -461,16 +561,15 @@ ZEST_CASE(or_fail_rethrows_a_child_exception, skip = test::exceptions_unreadable
 // cancelled still fails it.
 // Reads what was thrown; see test::exceptions_unreadable.
 ZEST_CASE(exception_after_cancel_still_fails_the_task, skip = test::exceptions_unreadable) {
-    async_node* self = nullptr;
+    task<> target;
     auto worker = [&]() -> task<> {
-        self->cancel();
+        target.cancel();
         throw std::runtime_error("after cancel");
         co_return;
     };
-    auto target = worker();
-    self = target.operator->();
+    target = worker();
 
-    EXPECT(test::thrown([&] { run(std::move(target)); }) == "after cancel");
+    EXPECT(test::thrown([&] { run(target); }) == "after cancel");
 }
 
 #endif  // KOTA_ENABLE_EXCEPTIONS

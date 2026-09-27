@@ -37,7 +37,7 @@ ZEST_CASE(all_exception_cancels_the_rest_and_rethrows, skip = test::exceptions_u
     };
 
     EXPECT(test::thrown([&] { run(combined(), driver()); }) == "boom");
-    EXPECT(gate.get_head() == nullptr);
+    EXPECT(!gate.has_waiters());
 }
 
 // Reads what was thrown; see test::exceptions_unreadable.
@@ -80,7 +80,7 @@ ZEST_CASE(any_exception_cancels_the_rest_and_rethrows, skip = test::exceptions_u
     };
 
     EXPECT(test::thrown([&] { run(combined(), driver()); }) == "boom");
-    EXPECT(gate.get_head() == nullptr);
+    EXPECT(!gate.has_waiters());
 }
 
 // Reads what was thrown; see test::exceptions_unreadable.
@@ -109,7 +109,7 @@ ZEST_CASE(range_exception_rethrows, skip = test::exceptions_unreadable) {
 
     EXPECT(test::thrown([&] { run(all()); }) == "range boom");
     EXPECT(test::thrown([&] { run(any()); }) == "range boom");
-    EXPECT(gate.get_head() == nullptr);
+    EXPECT(!gate.has_waiters());
 }
 
 // Reads what was thrown; see test::exceptions_unreadable.
@@ -134,7 +134,7 @@ ZEST_CASE(nested_exception_reaches_the_outer_combinator, skip = test::exceptions
 
     EXPECT(test::thrown([&] { run(outer()); }) == "deep");
     // Both slow children, inner and outer, were cancelled off the gate.
-    EXPECT(gate.get_head() == nullptr);
+    EXPECT(!gate.has_waiters());
 }
 
 ZEST_CASE(caught_exception_stays_a_value) {
@@ -167,10 +167,10 @@ ZEST_CASE(caught_exception_stays_a_value) {
 ZEST_CASE(exception_outranks_an_external_cancel, skip = test::exceptions_unreadable) {
     event gate;
     event go;
-    async_node* scope = nullptr;
+    task<std::tuple<int, int>> target;
     auto thrower = [&]() -> task<int> {
         co_await go.wait();
-        scope->cancel();
+        target.cancel();
         throw std::runtime_error("after cancel");
     };
     auto slow = [&]() -> task<int> {
@@ -180,14 +180,13 @@ ZEST_CASE(exception_outranks_an_external_cancel, skip = test::exceptions_unreada
     auto combined = [&]() -> task<std::tuple<int, int>> {
         co_return co_await when_all(thrower(), slow());
     };
-    auto target = combined();
-    scope = target.operator->();
+    target = combined();
     auto driver = [&]() -> task<> {
         go.set();
         co_return;
     };
 
-    EXPECT(test::thrown([&] { run(std::move(target), driver()); }) == "after cancel");
+    EXPECT(test::thrown([&] { run(target, driver()); }) == "after cancel");
 }
 
 };  // ZEST_SUITE(async_runtime_when_exceptions)

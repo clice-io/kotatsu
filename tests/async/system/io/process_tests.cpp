@@ -245,13 +245,12 @@ ZEST_CASE(cancelled_wait_kills_the_child) {
     auto spawned = process::spawn(test::stdin_reader(), loop);
     ASSERT(spawned.has_value());
     auto waiting = spawned->proc.wait();
-    auto* node = waiting.operator->();
     auto cancel_it = [&]() -> task<> {
-        node->cancel();
+        waiting.cancel();
         co_return;
     };
 
-    auto [cancelled, driver] = run(std::move(waiting), cancel_it());
+    auto [cancelled, driver] = run(waiting, cancel_it());
     EXPECT(cancelled.is_cancelled());
     auto [status] = run(spawned->proc.wait());
     ASSERT(status.has_value());

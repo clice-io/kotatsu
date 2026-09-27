@@ -113,7 +113,7 @@ ZEST_CASE(with_token_cancels_the_task_in_flight) {
     auto [guarded, driver] = run(with_token(worker(), source.token()), fire());
     EXPECT(guarded.is_cancelled());
     EXPECT(started == 1);
-    EXPECT(gate.get_head() == nullptr);
+    EXPECT(!gate.has_waiters());
     EXPECT(driver.has_value());
 }
 
@@ -135,7 +135,7 @@ ZEST_CASE(with_token_cancels_a_void_task_in_flight) {
     auto [guarded, driver] = run(with_token(worker(), source.token()), fire());
     EXPECT(guarded.is_cancelled());
     EXPECT(started);
-    EXPECT(gate.get_head() == nullptr);
+    EXPECT(!gate.has_waiters());
     EXPECT(driver.has_value());
 }
 
@@ -160,7 +160,7 @@ ZEST_CASE(with_token_cancels_on_any_of_its_tokens) {
         EXPECT(guarded.is_cancelled());
         EXPECT(started);
         // The cancel reached the worker's wait, not only the wrapper.
-        EXPECT(gate.get_head() == nullptr);
+        EXPECT(!gate.has_waiters());
         EXPECT(driver.has_value());
     }
 }
@@ -189,7 +189,7 @@ ZEST_CASE(one_token_cancels_every_task_it_guards) {
     EXPECT(third.is_cancelled());
     EXPECT(started == 3);
     for(auto& gate: gates) {
-        EXPECT(gate.get_head() == nullptr);
+        EXPECT(!gate.has_waiters());
     }
     EXPECT(driver.has_value());
 }
@@ -214,7 +214,7 @@ ZEST_CASE(outer_token_cancels_a_nested_with_token) {
     EXPECT(guarded.is_cancelled());
     EXPECT(started);
     // The cancel went through the inner wrapper to the worker's wait.
-    EXPECT(gate.get_head() == nullptr);
+    EXPECT(!gate.has_waiters());
     EXPECT(driver.has_value());
 }
 
@@ -237,7 +237,7 @@ ZEST_CASE(inner_token_cancel_reaches_the_outer_as_cancellation) {
         run(with_token(with_token(worker(), inner.token()), outer.token()), fire());
     EXPECT(guarded.is_cancelled());
     EXPECT(started);
-    EXPECT(gate.get_head() == nullptr);
+    EXPECT(!gate.has_waiters());
     EXPECT(driver.has_value());
 }
 

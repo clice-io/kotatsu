@@ -2,13 +2,13 @@
 ///
 /// Constructs a graph that exercises all NodeKind variants at once:
 ///   Task, Mutex, Semaphore, Event, ConditionVariable,
-///   MutexWaiter, EventWaiter, WhenAll, WhenAny, SystemIO
+///   Waiter, WhenAll, WhenAny, TaskGroup, SystemIO
 ///
 /// Every sync primitive has multiple waiters queued so the waiter linked-list
 /// is clearly visible in the rendered graph.
 ///
 /// After 5 ms an observer task (buried in the middle of the tree) calls
-/// dump_dot(), which walks UP to the root and then renders the full graph.
+/// dump_dot() on the root task, which renders the full graph.
 ///
 /// Usage:
 ///   ./dump_dot > graph.dot
@@ -31,41 +31,41 @@ static event evt{false};  // starts unset → all waiters block
 static condition_variable cv;
 static mutex cv_mtx;  // dedicated mutex for cv.wait()
 
-// The observer stores its own node pointer here so it can call dump_dot()
+// main() stores the root task here so the observer can call dump_dot() on it
 // from the middle of the tree.
-static async_node* observer_node = nullptr;
+static task<>* root_task = nullptr;
 
 // ---------------------------------------------------------------------------
 // Leaf helpers — each one blocks on a different primitive.
 // ---------------------------------------------------------------------------
 
-/// Holds the mutex and sleeps → all contenders queue as MutexWaiter.
+/// Holds the mutex and sleeps → all contenders queue as Waiters.
 task<> mtx_holder(event_loop& loop) {
     co_await mtx.lock();
     co_await sleep(100ms, loop);
     mtx.unlock();
 }
 
-/// Tries to lock the same mutex → blocks as MutexWaiter.
+/// Tries to lock the same mutex → blocks as a Waiter.
 task<> mtx_contender(event_loop& loop) {
     co_await mtx.lock();
     co_await sleep(10ms, loop);
     mtx.unlock();
 }
 
-/// Blocks on the semaphore → produces an EventWaiter.
+/// Blocks on the semaphore → produces a Waiter.
 task<> sem_acquirer(event_loop& loop) {
     co_await sem.acquire();
     co_await sleep(10ms, loop);
 }
 
-/// Blocks on the event → produces an EventWaiter.
+/// Blocks on the event → produces a Waiter.
 task<> evt_waiter(event_loop& loop) {
     co_await evt.wait();
     co_await sleep(10ms, loop);
 }
 
-/// Blocks on condition_variable.wait(cv_mtx) → produces an EventWaiter on cv.
+/// Blocks on condition_variable.wait(cv_mtx) → produces a Waiter on cv.
 /// Each cv_waiter needs its own lock/unlock cycle; cv_mtx is acquired then
 /// released inside cv.wait(), so multiple waiters can enter sequentially
 /// as long as each one gets the lock before the snapshot.
@@ -95,8 +95,8 @@ task<int> fast_work(event_loop& loop) {
 
 task<> observer(event_loop& loop) {
     co_await sleep(5ms, loop);
-    if(observer_node) {
-        std::println("{}", dump_dot(*observer_node));
+    if(root_task) {
+        std::println("{}", dump_dot(*root_task));
     }
     // Keep alive until everything else finishes.
     co_await sleep(300ms, loop);
@@ -106,7 +106,7 @@ task<> observer(event_loop& loop) {
 // Composite branches — exercise when_all, when_any, task_group.
 // ---------------------------------------------------------------------------
 
-/// when_all branch: 1 holder + 3 contenders → Mutex has 3 MutexWaiters.
+/// when_all branch: 1 holder + 3 contenders → Mutex has 3 Waiters.
 task<> branch_mutex(event_loop& loop) {
     co_await when_all(mtx_holder(loop),
                       mtx_contender(loop),
@@ -122,7 +122,7 @@ task<std::variant<int, int>> branch_when_any(event_loop& loop) {
 /// task_group branch: dynamically spawns tasks that block on sem / event / cv.
 /// Multiple waiters per primitive to demonstrate the waiter linked-list.
 task<> branch_task_group(event_loop& loop) {
-    task_group<> group(loop);
+    task_group<> group;
 
     // 3 acquirers on the semaphore (all block — count is 0).
     group.spawn(sem_acquirer(loop));
@@ -164,7 +164,6 @@ task<> branch_cancel(event_loop& loop) {
 
 task<> driver(event_loop& loop) {
     auto obs = observer(loop);
-    observer_node = obs.operator->();
 
     // Release blocked primitives after the snapshot.
     auto releaser = [&]() -> task<> {
@@ -183,7 +182,7 @@ task<> driver(event_loop& loop) {
     //         ├─ branch_mutex (Task)
     //         │    └─ WhenAll
     //         │         ├─ mtx_holder (Task → SystemIO)  [holds mutex]
-    //         │         ├─ mtx_contender ×3 (Task → MutexWaiter)
+    //         │         ├─ mtx_contender ×3 (Task → Waiter)
     //         │         └─ Mutex (ellipse, 3 waiters linked)
     //         ├─ branch_when_any (Task)
     //         │    └─ WhenAny
@@ -191,11 +190,11 @@ task<> driver(event_loop& loop) {
     //         │         └─ fast_work (Task → SystemIO)
     //         ├─ branch_task_group (Task)
     //         │    └─ task_group (spawned tasks)
-    //         │         ├─ sem_acquirer ×3 (Task → EventWaiter)
+    //         │         ├─ sem_acquirer ×3 (Task → Waiter)
     //         │         │   └─ Semaphore (ellipse, 3 waiters linked)
-    //         │         ├─ evt_waiter ×3 (Task → EventWaiter)
+    //         │         ├─ evt_waiter ×3 (Task → Waiter)
     //         │         │   └─ Event (ellipse, 3 waiters linked)
-    //         │         └─ cv_waiter ×2 (Task → EventWaiter on cv)
+    //         │         └─ cv_waiter ×2 (Task → Waiter on cv)
     //         │             └─ ConditionVariable (ellipse, 2 waiters linked)
     //         └─ branch_cancel (Task)
     //              └─ WhenAll
@@ -213,6 +212,7 @@ task<> driver(event_loop& loop) {
 int main() {
     event_loop loop;
     auto t = driver(loop);
+    root_task = &t;
     loop.schedule(t);
     loop.run();
     return 0;

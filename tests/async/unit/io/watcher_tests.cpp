@@ -90,13 +90,12 @@ ZEST_CASE(timer_wait_can_be_cancelled) {
         co_await t.wait();
     };
     auto target = waiter();
-    auto* node = target.operator->();
     auto cancel_it = [&]() -> task<> {
-        node->cancel();
+        target.cancel();
         co_return;
     };
 
-    auto [waited, driver] = run(std::move(target), cancel_it());
+    auto [waited, driver] = run(target, cancel_it());
     EXPECT(waited.is_cancelled());
 }
 
@@ -126,13 +125,12 @@ ZEST_CASE(sleep_can_be_cancelled) {
         co_await sleep(1h);
     };
     auto target = sleeper();
-    auto* node = target.operator->();
     auto cancel_it = [&]() -> task<> {
-        node->cancel();
+        target.cancel();
         co_return;
     };
 
-    auto [slept, driver] = run(std::move(target), cancel_it());
+    auto [slept, driver] = run(target, cancel_it());
     EXPECT(slept.is_cancelled());
 }
 
@@ -170,7 +168,6 @@ ZEST_CASE(tick_watcher_waits_can_be_cancelled) {
     auto idling = count_ticks(on_idle, ticks[0], ticked[0]);
     auto preparing = count_ticks(on_prepare, ticks[1], ticked[1]);
     auto checking = count_ticks(on_check, ticks[2], ticked[2]);
-    async_node* nodes[] = {idling.operator->(), preparing.operator->(), checking.operator->()};
     auto cancel_all = [&]() -> task<> {
         for(auto& first: ticked) {
             co_await first.wait();
@@ -178,13 +175,12 @@ ZEST_CASE(tick_watcher_waits_can_be_cancelled) {
         on_idle.stop();
         on_prepare.stop();
         on_check.stop();
-        for(auto* node: nodes) {
-            node->cancel();
-        }
+        idling.cancel();
+        preparing.cancel();
+        checking.cancel();
     };
 
-    auto [idled, prepared, checked, driver] =
-        run(std::move(idling), std::move(preparing), std::move(checking), cancel_all());
+    auto [idled, prepared, checked, driver] = run(idling, preparing, checking, cancel_all());
     EXPECT(idled.is_cancelled());
     EXPECT(prepared.is_cancelled());
     EXPECT(checked.is_cancelled());

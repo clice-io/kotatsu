@@ -72,7 +72,7 @@ ZEST_CASE(first_child_to_finish_wins) {
     ASSERT(result->index() == 1U);
     EXPECT(std::get<1>(*result) == 10);
     EXPECT(finished == 1);
-    EXPECT(gates[0].get_head() == nullptr);
+    EXPECT(!gates[0].has_waiters());
 }
 
 ZEST_CASE(synchronous_winner_keeps_later_children_from_starting) {
@@ -119,7 +119,7 @@ ZEST_CASE(accepts_awaiters_that_are_not_tasks) {
     auto [result, driver] = run(combined(), releaser());
     ASSERT(result.has_value());
     EXPECT(result->index() == 1U);
-    EXPECT(slow.get_head() == nullptr);
+    EXPECT(!slow.has_waiters());
 }
 
 ZEST_CASE(range_reports_the_winner_index) {
@@ -180,7 +180,7 @@ ZEST_CASE(range_of_awaiters_that_are_not_tasks) {
     auto [result, driver] = run(combined(), releaser());
     ASSERT(result.has_value());
     EXPECT(*result == 1U);
-    EXPECT(slow.get_head() == nullptr);
+    EXPECT(!slow.has_waiters());
 }
 
 #if KOTA_ENABLE_EXCEPTIONS

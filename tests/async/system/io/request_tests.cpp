@@ -68,14 +68,13 @@ ZEST_CASE(cancel_while_queued_drops_the_work) {
         co_await queue([&] { ran = true; }, [&] { hook_ran = true; }).or_fail();
     };
     auto work = target();
-    auto* node = work.operator->();
     auto cancel_it = [&]() -> task<> {
         co_await busy.wait();
-        node->cancel();
+        work.cancel();
         pool.release();
     };
 
-    auto [held, cancelled, driver] = run(pool.hold(busy), std::move(work), cancel_it());
+    auto [held, cancelled, driver] = run(pool.hold(busy), work, cancel_it());
     EXPECT(held.has_value());
     EXPECT(cancelled.is_cancelled());
     EXPECT(!ran.load());
@@ -93,25 +92,25 @@ ZEST_CASE(cancel_while_running_calls_the_hook) {
     std::atomic<bool> returned = false;
     bool hook_on_loop_thread = false;
     auto work = queue(
-        [&] {
-            notify.send([&] { started.set(); });
-            stop.acquire();
-            returned = true;
-            return 1;
-        },
-        [&] {
-            hook_on_loop_thread = std::this_thread::get_id() == loop_thread;
-            stop.release();
-        },
-        loop);
-    auto* node = work.operator->();
+                    [&] {
+                        notify.send([&] { started.set(); });
+                        stop.acquire();
+                        returned = true;
+                        return 1;
+                    },
+                    [&] {
+                        hook_on_loop_thread = std::this_thread::get_id() == loop_thread;
+                        stop.release();
+                    },
+                    loop)
+                    .catch_cancel();
     auto settled = [&]() -> task<std::pair<bool, bool>> {
-        auto result = co_await std::move(work).catch_cancel();
+        auto result = co_await work;
         co_return std::pair{result.is_cancelled(), returned.load()};
     };
     auto cancel_it = [&]() -> task<> {
         co_await started.wait();
-        node->cancel();
+        work.cancel();
     };
 
     auto [seen, driver] = run(settled(), cancel_it());

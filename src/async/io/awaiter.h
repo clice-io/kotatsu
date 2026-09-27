@@ -37,12 +37,7 @@ struct single_waiter {
 
     template <typename StatusT>
     bool mark_cancelled_if(StatusT status) noexcept {
-        if(waiter == nullptr || !is_cancelled_status(status)) {
-            return false;
-        }
-
-        waiter->state = async_node::Cancelled;
-        return true;
+        return waiter != nullptr && is_cancelled_status(status);
     }
 };
 
@@ -73,9 +68,9 @@ struct waiter_binding : single_waiter {
     }
 };
 
-template <typename Derived, async_node::NodeKind Kind = async_node::NodeKind::SystemIO>
+template <typename Derived>
 struct await_op : io_op {
-    await_op() : io_op(Kind) {
+    await_op() {
         this->action = &Derived::on_cancel;
     }
 
@@ -89,12 +84,7 @@ struct await_op : io_op {
 
     template <typename StatusT>
     bool mark_cancelled_if(StatusT status) noexcept {
-        if(!is_cancelled_status(status)) {
-            return false;
-        }
-
-        this->state = async_node::Cancelled;
-        return true;
+        return is_cancelled_status(status);
     }
 };
 

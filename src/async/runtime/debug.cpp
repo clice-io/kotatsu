@@ -11,8 +11,7 @@ namespace kota {
 static std::string_view async_kind_name(async_node::NodeKind k) {
     switch(k) {
         case async_node::NodeKind::Task: return "Task";
-        case async_node::NodeKind::MutexWaiter: return "MutexWaiter";
-        case async_node::NodeKind::EventWaiter: return "EventWaiter";
+        case async_node::NodeKind::Waiter: return "Waiter";
         case async_node::NodeKind::WhenAll: return "WhenAll";
         case async_node::NodeKind::WhenAny: return "WhenAny";
         case async_node::NodeKind::TaskGroup: return "TaskGroup";
@@ -23,11 +22,11 @@ static std::string_view async_kind_name(async_node::NodeKind k) {
 
 static std::string_view state_name(async_node::State s) {
     switch(s) {
-        case async_node::Pending: return "Pending";
-        case async_node::Running: return "Running";
-        case async_node::Cancelled: return "Cancelled";
-        case async_node::Finished: return "Finished";
-        case async_node::Failed: return "Failed";
+        case async_node::State::Pending: return "Pending";
+        case async_node::State::Running: return "Running";
+        case async_node::State::Succeeded: return "Succeeded";
+        case async_node::State::Failed: return "Failed";
+        case async_node::State::Cancelled: return "Cancelled";
     }
     return "Unknown";
 }
@@ -55,53 +54,6 @@ static std::string_view basename(const char* path) {
     return pos != std::string_view::npos ? sv.substr(pos + 1) : sv;
 }
 
-static void emit_async_node(const async_node* node, std::string& out) {
-    auto file = basename(node->location.file_name());
-    std::string label;
-    if(!file.empty()) {
-        label = std::format(R"({}
-{}
-{}:{})",
-                            async_kind_name(node->kind),
-                            state_name(node->state),
-                            file,
-                            node->location.line());
-    } else {
-        label = std::format(R"({}
-{})",
-                            async_kind_name(node->kind),
-                            state_name(node->state));
-    }
-
-    std::string_view shape = "box";
-    std::string_view color = "white";
-
-    if(node->is_task_frame()) {
-        switch(node->state) {
-            case async_node::Running: color = R"("#90EE90")"; break;
-            case async_node::Finished: color = R"("#D3D3D3")"; break;
-            case async_node::Cancelled: color = R"("#FFB6C1")"; break;
-            case async_node::Failed: color = R"("#FFA07A")"; break;
-            default: break;
-        }
-    } else if(node->is_aggregate_op()) {
-        shape = "diamond";
-        color = R"("#D8BFD8")";
-    } else if(node->kind == async_node::NodeKind::SystemIO) {
-        color = R"("#FFFFE0")";
-    } else if(node->is_wait_node()) {
-        color = R"("#FFDAB9")";
-    }
-
-    std::format_to(std::back_inserter(out),
-                   R"(  {} [label="{}", shape={}, style=filled, fillcolor={}];
-)",
-                   node_id(node),
-                   label,
-                   shape,
-                   color);
-}
-
 static void emit_sync_node(const sync_primitive* resource, std::string& out) {
     auto file = basename(resource->location.file_name());
     std::string label;
@@ -126,24 +78,28 @@ static void emit_sync_node(const sync_primitive* resource, std::string& out) {
 struct dot_emitter : async_visitor<dot_emitter> {
     std::string out;
 
+    const static async_node& root_of(const async_node& node) {
+        const auto* root = &node;
+        while(auto* parent = parent_of(*root)) {
+            root = parent;
+        }
+        return *root;
+    }
+
     bool visit_task(const task_frame& node) {
-        emit_async_node(&node, out);
-        return true;
+        return emit(node);
     }
 
     bool visit_wait_node(const wait_node& node) {
-        emit_async_node(&node, out);
-        return true;
+        return emit(node);
     }
 
     bool visit_aggregate(const aggregate_op& node) {
-        emit_async_node(&node, out);
-        return true;
+        return emit(node);
     }
 
     bool visit_io(const io_op& node) {
-        emit_async_node(&node, out);
-        return true;
+        return emit(node);
     }
 
     bool visit_sync(const sync_primitive& resource) {
@@ -158,14 +114,62 @@ struct dot_emitter : async_visitor<dot_emitter> {
                        node_id(from),
                        node_id(to));
     }
+
+private:
+    bool emit(const async_node& node) {
+        const auto& location = location_of(node);
+        const auto state = state_of(node);
+        auto file = basename(location.file_name());
+        std::string label;
+        if(!file.empty()) {
+            label = std::format(R"({}
+{}
+{}:{})",
+                                async_kind_name(node.kind),
+                                state_name(state),
+                                file,
+                                location.line());
+        } else {
+            label = std::format(R"({}
+{})",
+                                async_kind_name(node.kind),
+                                state_name(state));
+        }
+
+        std::string_view shape = "box";
+        std::string_view color = "white";
+        switch(node.kind) {
+            case async_node::NodeKind::Task:
+                switch(state) {
+                    case async_node::State::Pending: break;
+                    case async_node::State::Running: color = R"("#90EE90")"; break;
+                    case async_node::State::Succeeded: color = R"("#D3D3D3")"; break;
+                    case async_node::State::Failed: color = R"("#FFA07A")"; break;
+                    case async_node::State::Cancelled: color = R"("#FFB6C1")"; break;
+                }
+                break;
+            case async_node::NodeKind::Waiter: color = R"("#FFDAB9")"; break;
+            case async_node::NodeKind::WhenAll:
+            case async_node::NodeKind::WhenAny:
+            case async_node::NodeKind::TaskGroup:
+                shape = "diamond";
+                color = R"("#D8BFD8")";
+                break;
+            case async_node::NodeKind::SystemIO: color = R"("#FFFFE0")"; break;
+        }
+
+        std::format_to(std::back_inserter(out),
+                       R"(  {} [label="{}", shape={}, style=filled, fillcolor={}];
+)",
+                       node_id(&node),
+                       label,
+                       shape,
+                       color);
+        return true;
+    }
 };
 
-std::string dump_dot(const async_node& root) {
-    const auto* node = &root;
-    while(auto* p = get_parent(*node)) {
-        node = p;
-    }
-
+std::string dump_dot(const async_node& node) {
     dot_emitter emitter;
     emitter.out += R"(digraph async_graph {
 )";
@@ -174,7 +178,7 @@ std::string dump_dot(const async_node& root) {
     emitter.out += R"(  node [fontname="Helvetica", fontsize=10];
 )";
 
-    emitter.walk_node(*node);
+    emitter.walk_node(dot_emitter::root_of(node));
 
     emitter.out += R"(}
 )";

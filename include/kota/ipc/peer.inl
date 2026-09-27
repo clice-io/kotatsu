@@ -328,7 +328,7 @@ task<> Peer<CodecT>::run() {
 
     self->running = true;
 
-    task_group<> request_group(self->loop);
+    task_group<> request_group;
 
     auto read_and_dispatch = [this, &request_group]() -> task<> {
         ET_IPC_LOG(self.get(), LogLevel::info, "{}", "read loop started");

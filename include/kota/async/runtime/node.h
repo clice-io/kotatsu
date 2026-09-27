@@ -1,330 +1,220 @@
 #pragma once
 
-#include <algorithm>
-#include <cassert>
 #include <coroutine>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <exception>
-#include <limits>
 #include <source_location>
-#include <vector>
+#include <span>
 
 #include "kota/support/config.h"
 
 namespace kota {
 
-class sync_primitive;
+class event_loop;
 class task_frame;
+class aggregate_op;
+class wait_node;
+class io_op;
 
-/// Type-erased base for all coroutine-related nodes in the task tree.
-///
-/// This hierarchy models awaitable runtime entities only.
-/// Shared sync resources (mutex/event/semaphore/cv) live outside it and are
-/// referenced by wait_node nodes while a task is blocked on them.
+template <typename T, typename E, typename C>
+class task;
+
+template <typename Derived>
+class async_visitor;
+
+namespace detail {
+
+struct task_access;
+
+}
+
+/// Base of the nodes of the task tree: tasks, the aggregates when_all,
+/// when_any and task_group, waits on sync primitives, and pending I/O. Every
+/// node points at the node awaiting it; a suspended task points at the node it
+/// awaits, and an aggregate lists its running children.
 class async_node {
 public:
     enum class NodeKind : std::uint8_t {
         Task,
-
-        /// Wait queue entries — wait_node subclasses.
-        /// Semaphore and CV reuse EventWaiter (identical cancel semantics).
-        MutexWaiter,
-        EventWaiter,
-
-        /// Aggregate operations — when_all / when_any / task_group.
+        /// A task's wait on a mutex, semaphore, event or condition variable.
+        Waiter,
         WhenAll,
         WhenAny,
         TaskGroup,
-
-        /// Pending libuv I/O — timers, signals, fs, network, etc.
+        /// Pending I/O: timers, signals, fs, network, ...
         SystemIO,
     };
 
-    enum Policy : uint8_t {
-        None = 0,
-        /// Reserved for future use.
-        ExplicitCancel = 1 << 0,
-        /// When set, cancellation of this node does NOT fail upward.
-        /// The parent resumes normally and can inspect the cancelled state.
-        /// Used by catch_cancel() and with_token().
-        InterceptCancel = 1 << 1,
-    };
-
-    enum State : uint8_t {
+    /// Where a node is in its life; the last three are final.
+    enum class State : std::uint8_t {
+        /// Not started yet.
         Pending,
+        /// Started and not finished.
         Running,
-        Cancelled,
-        Finished,
+        Succeeded,
+        /// Ended with an error or an exception.
         Failed,
+        Cancelled,
     };
 
     const NodeKind kind;
 
-    Policy policy = None;
+protected:
+    friend class task_frame;
+    friend class aggregate_op;
+    friend class wait_node;
+    friend class io_op;
+    template <typename Derived>
+    friend class async_visitor;
 
-    State state = Pending;
+    explicit async_node(NodeKind kind) noexcept : kind(kind) {}
 
-    std::source_location location;
-
-    bool is_task_frame() const noexcept {
-        return kind == NodeKind::Task;
+    bool done() const noexcept {
+        return state >= State::Succeeded;
     }
 
-    bool is_wait_node() const noexcept {
-        return NodeKind::MutexWaiter <= kind && kind <= NodeKind::EventWaiter;
-    }
-
-    bool is_aggregate_op() const noexcept {
-        return NodeKind::WhenAll <= kind && kind <= NodeKind::TaskGroup;
-    }
-
-    bool is_finished() const noexcept {
-        return state == Finished;
-    }
-
-    bool is_cancelled() const noexcept {
-        return state == Cancelled;
-    }
-
-    bool is_failed() const noexcept {
-        return state == Failed;
-    }
-
-    // Keep this out-of-line. clang -O3 miscompiles direct promise policy writes in
-    // coroutine return-object conversions, which can drop InterceptCancel. See also
-    // https://github.com/llvm/llvm-project/issues/105595. Fixed in clang 21.
-    void intercept_cancel() noexcept;
-
+    /// Cancels this node and what it waits on; later calls do nothing. A task
+    /// that has not started only records it: it never runs. A running task
+    /// records it and ends at its next suspending co_await. A suspended one
+    /// passes it on to what it awaits and ends once that has.
     void cancel();
 
-    void resume();
-
-    std::coroutine_handle<> attach(async_node& parent, std::source_location location);
-
-    std::coroutine_handle<> finalize();
-
-private:
-    /// Cancellation-checkpoint path of attach(): the awaiting task was
-    /// cancelled while it was executing, so instead of starting new work
-    /// under it, finalize it at this suspension point.
-    std::coroutine_handle<> attach_cancelled(task_frame& parent);
-
-public:
+    /// Delivers the completion of `child`, which this node awaits; returns the
+    /// coroutine to resume next.
     std::coroutine_handle<> on_child_complete(async_node& child);
 
+    /// Resumes `handle`, then, unless it runs inside another resumption, the
+    /// tasks sync primitives woke meanwhile.
     static void resume_and_drain(std::coroutine_handle<> handle);
 
-protected:
-    explicit async_node(NodeKind k) : kind(k) {}
+    State state = State::Pending;
 
-public:
-    std::exception_ptr propagated_exception;
+    /// cancel() has reached this node.
+    bool cancel_requested = false;
+
+    /// This node ending cancelled resumes its parent, which sees the
+    /// cancellation as a value, instead of cancelling the parent too.
+    bool intercept = false;
+
+    /// The node awaiting this one: null before it starts, once it has
+    /// completed, and for a root task.
+    async_node* parent = nullptr;
+
+    /// Where this node was awaited, spawned or scheduled.
+    std::source_location location;
 };
 
+/// The part of a task's promise that does not depend on its result type: the
+/// task's place in the tree and its life from start to end.
 class task_frame : public async_node {
 protected:
     friend class async_node;
+    friend class aggregate_op;
+    friend class wait_node;
+    friend class io_op;
+    friend struct detail::task_access;
+    template <typename T, typename E, typename C>
+    friend class task;
+    template <typename Derived>
+    friend class async_visitor;
 
-    explicit task_frame() : async_node(NodeKind::Task) {}
+    /// Moves the error of `child`, a task that failed without throwing, into
+    /// `parent`: the task awaiting it through or_fail(), or its aggregate.
+    using error_hook = void (*)(task_frame& child, async_node& parent);
 
-public:
-    bool root = false;
+    task_frame() noexcept : async_node(NodeKind::Task) {}
 
-    /// Optional hook invoked when a child task fails, allowing the parent to
-    /// intercept the error before normal resumption. Used by or_fail_task_await
-    /// to propagate errors directly without resuming the parent coroutine.
-    using error_hook = std::coroutine_handle<> (*)(async_node& child, async_node& parent);
-
-    std::coroutine_handle<> handle() {
+    std::coroutine_handle<> handle() const noexcept {
         return std::coroutine_handle<>::from_address(address);
     }
 
-    bool has_child() const noexcept {
-        return child != nullptr;
+    bool threw() const noexcept {
+#if KOTA_ENABLE_EXCEPTIONS
+        return exception != nullptr;
+#else
+        return false;
+#endif
     }
 
-    void set_child(async_node* node) noexcept {
-        child = node;
-    }
+    /// Starts this task: under `parent`, or as a root when that is null. A task
+    /// cancelled before it starts never runs; it ends cancelled at once.
+    /// Returns the coroutine to resume next: this task, or what its end
+    /// resumes.
+    std::coroutine_handle<> start(async_node* parent);
 
-    /// A task's child pointer distinguishes three situations:
-    ///   - child == some node: suspended, awaiting that node;
-    ///   - child == this (sentinel): the coroutine is executing on the stack
-    ///     (or scheduled to); cancel() must not finalize it — the frame
-    ///     observes `state == Cancelled` at its next suspension point;
-    ///   - child == nullptr: idle — not executing and awaiting nothing.
-    bool is_executing() const noexcept {
-        return child == this;
-    }
+    /// The cancellation checkpoint of every suspending co_await: a cancel that
+    /// reached this task while it ran ends it here, before it starts new work.
+    /// Returns what to resume instead, or null when no cancel is pending.
+    std::coroutine_handle<> checkpoint();
 
-    void mark_executing() noexcept {
-        child = this;
-    }
+    /// Starts `child` as the task this one awaits; returns the coroutine to
+    /// resume next.
+    std::coroutine_handle<> await_task(task_frame& child,
+                                       bool intercept,
+                                       error_hook hook,
+                                       std::source_location location);
 
-    void set_error_hook(error_hook fn) noexcept {
-        error_hook_fn = fn;
-    }
+    /// Ends this task in `end` and delivers that to its parent; a root the
+    /// event loop owns is destroyed. Returns the coroutine to resume next.
+    std::coroutine_handle<> finish(State end);
 
-    error_hook get_error_hook() const noexcept {
-        return error_hook_fn;
-    }
+    /// Resumes this task, which a sync primitive woke, or ends it cancelled
+    /// when a cancel reached it since.
+    void resume_woken();
 
-    void clear_error_hook() noexcept {
-        error_hook_fn = nullptr;
-    }
-
-    const async_node* get_parent() const noexcept {
-        return parent;
-    }
-
-    const async_node* get_child() const noexcept {
-        return child;
-    }
-
-protected:
-    /// Stores the raw address of the coroutine frame (handle).
-    ///
-    /// Theoretically, this is redundant because the promise object is embedded
-    /// within the coroutine frame. However, deriving the frame address from `this`
-    /// (via `from_promise`) requires knowing the concrete Promise type to account
-    /// for the opaque compiler overhead (e.g., resume/destroy function pointers)
-    /// located before the promise.
-    ///
-    /// Since this base class is type-erased, we cannot calculate that offset dynamically
-    /// and must explicitly cache the handle address here (costing 1 pointer size).
+    /// The coroutine frame. The promise knows its own handle, but this
+    /// type-erased base cannot derive the frame address from `this`.
     void* address = nullptr;
 
-private:
-    async_node* parent = nullptr;
-
+    /// What this task awaits while it is suspended; null while it runs.
     async_node* child = nullptr;
 
-    error_hook error_hook_fn = nullptr;
+    /// Links in the list of running children of the aggregate this task is a
+    /// child of.
+    task_frame* prev_sibling = nullptr;
+    task_frame* next_sibling = nullptr;
+
+    error_hook hook = nullptr;
+
+    /// The event loop owns the frame and destroys it once the task ends.
+    bool root = false;
+
+#if KOTA_ENABLE_EXCEPTIONS
+    std::exception_ptr exception;
+#endif
 };
 
-class wait_node : public async_node {
-public:
-    friend class async_node;
-    friend class sync_primitive;
-
-    explicit wait_node(NodeKind k) : async_node(k) {}
-
-    const async_node* get_parent() const noexcept {
-        return parent;
-    }
-
-    const sync_primitive* get_resource() const noexcept {
-        return resource;
-    }
-
-    const wait_node* get_next() const noexcept {
-        return next;
-    }
-
-protected:
-    using abandon_fn = void (*)(void*) noexcept;
-
-    /// The sync_primitive this waiter is queued on (nullptr if not queued).
-    sync_primitive* resource = nullptr;
-
-    /// Intrusive doubly-linked list pointers for the sync_primitive's wait queue.
-    wait_node* prev = nullptr;
-    wait_node* next = nullptr;
-
-    async_node* parent = nullptr;
-
-    void* abandon_context = nullptr;
-
-    abandon_fn abandon = nullptr;
-};
-
-/// Base for when_all / when_any / task_group.
-///
-/// The aggregate settles (delivers its outcome to the parent) exactly when
-/// `pending` drops to zero. `pending` counts unfinished children plus one pin
-/// for every stack frame that is still iterating over `children` (the arming
-/// loop in await_suspend and every cancel cascade). Re-entrant child
-/// completions during those loops therefore only decrement the counter; they
-/// can never resume the parent from inside a loop that still touches this
-/// object.
-///
-/// The outcome itself is not latched as a separate "what to deliver" value;
-/// it is derived in settle() from `decision`, `state` and the attribution
-/// indices, so the delivered outcome and its attribution cannot diverge.
+/// Base of when_all, when_any and task_group. An aggregate settles, which
+/// delivers its outcome to the task awaiting it, once `pending` drops to zero.
+/// `pending` counts the children that have not finished plus one pin for every
+/// stack frame still walking the children, so a child that finishes inside
+/// such a walk never settles the aggregate under it. What the aggregate
+/// settles as follows from what happened, in this order: a child failed, it
+/// was cancelled (by a child, or from outside), or it succeeded.
 class aggregate_op : public async_node {
 protected:
     friend class async_node;
+    template <typename Derived>
+    friend class async_visitor;
 
-    explicit aggregate_op(NodeKind k) : async_node(k) {}
+    using error_hook = task_frame::error_hook;
 
-public:
-    const async_node* get_parent() const noexcept {
-        return parent;
-    }
-
-    const std::vector<async_node*>& get_children() const noexcept {
-        return children;
-    }
-
-protected:
-    /// The first event that picked this aggregate's outcome. Latched once,
-    /// with one exception: a child error upgrades any earlier decision,
-    /// because an error must never be dropped silently.
-    ///
-    /// An external cancel() is tracked separately as `state == Cancelled`
-    /// (set by cancel() before it dispatches on the node kind). settle()
-    /// treats it like a Cancel decision: it upgrades a plain Resume, but a
-    /// child error still outranks it.
+    /// What settles the aggregate. The first decision counts, except that an
+    /// error replaces any other: errors are never dropped.
     enum class Decision : std::uint8_t {
-        /// Undecided. A when_all whose children all succeed settles as
-        /// success without ever recording a decision.
         None,
-
-        /// Resume the parent normally (when_any winner; task_group child
-        /// failure, which is reported via join() instead).
+        /// Resume the awaiting task: a when_any child won, or a task_group
+        /// child was cancelled or task_group::cancel() called.
         Resume,
-
-        /// A child's un-intercepted cancellation cancels the aggregate.
+        /// A when_all or when_any child was cancelled.
         Cancel,
-
-        /// A child failed with a structured error or exception.
+        /// A child failed.
         Error,
     };
 
-    /// Sentinel value for when_any: no winner yet.
-    constexpr static std::size_t npos = (std::numeric_limits<std::size_t>::max)();
-
-    async_node* parent = nullptr;
-
-    std::vector<async_node*> children;
-
-    /// Unfinished children plus active stack pins. Zero means "safe to settle".
-    std::size_t pending = 0;
-
-    /// Index of the first child to finish (when_any only).
-    std::size_t winner = npos;
-
-    /// Index of the first child to finish with a structured error or exception.
-    std::size_t first_error_child = npos;
-
-    /// Index of the first child to finish with cancellation.
-    std::size_t first_cancel_child = npos;
-
-    Decision decision = Decision::None;
-
-    /// Set once the outcome has been delivered to the parent.
-    bool settled = false;
-
-    /// Number of tombstoned (null) slots in `children` left behind by eager
-    /// child-frame reclamation. Used by task_group only: completed children
-    /// that join() will never inspect again are destroyed on completion
-    /// instead of accumulating until the group is destroyed.
-    std::size_t reclaimed = 0;
-
-    /// Keeps `pending` above zero while a loop over `children` is on the
-    /// stack. The holder must call settle_if_idle() after the pin dies.
+    /// Keeps `pending` above zero while a walk over the children is on the
+    /// stack. The holder settles once the pin is gone.
     struct pin {
         aggregate_op& op;
 
@@ -332,134 +222,115 @@ protected:
             op.pending += 1;
         }
 
+        pin(const pin&) = delete;
+        pin& operator=(const pin&) = delete;
+
         ~pin() {
             op.pending -= 1;
         }
     };
 
-    /// True once an outcome has been picked (or an external cancel arrived);
-    /// implies the children cancel cascade has already been triggered.
+    explicit aggregate_op(NodeKind kind) noexcept : async_node(kind) {}
+
+    /// An outcome has been picked, or a cancel came from outside; either way
+    /// the children have been cancelled.
     bool decided() const noexcept {
-        return decision != Decision::None || state == Cancelled;
+        return decision != Decision::None || cancel_requested;
     }
 
-    /// Latches `d` as the outcome and cancels the remaining children.
-    ///
-    /// The caller must guarantee `pending > 0` for the duration of the
-    /// cascade — either by holding a pin, or by being the completion handler
-    /// of a child that has not been counted off yet.
-    void decide(Decision d) {
-        decision = d;
-        cancel_children();
-    }
+    /// Sets the hook `child` reports its error through, if it fails.
+    static task_frame& watch(task_frame& child, error_hook hook) noexcept;
 
-    /// Cancels every child that has not reached a terminal state yet.
-    /// Idempotent: terminal children ignore cancel(). Null slots are
-    /// tombstones of reclaimed task_group children.
-    void cancel_children() {
-        for(auto* child: children) {
-            if(child) {
-                child->cancel();
-            }
-        }
-    }
+    /// when_all and when_any: starts `children` under this aggregate, which
+    /// `waiting` awaits. Under a cancelled task none of them starts. Returns
+    /// the coroutine to resume next.
+    std::coroutine_handle<> arm(task_frame& waiting,
+                                std::span<task_frame* const> children,
+                                std::source_location location);
 
-    std::size_t find_child_index(const async_node& child) const {
-        auto it = std::ranges::find(children, &child);
-        assert(it != children.end() && "child not found in aggregate");
-        if(it == children.end())
-            std::abort();
-        return static_cast<std::size_t>(it - children.begin());
-    }
+    /// task_group: starts `child` and runs it until it first suspends.
+    void spawn(task_frame& child, std::source_location location);
 
-    /// Rethrows the propagated exception if one was captured from a failed child.
-    void rethrow_if_propagated() {
+    /// task_group: makes `waiting` await this group until every child has
+    /// ended. Returns the coroutine to resume next.
+    std::coroutine_handle<> await_children(task_frame& waiting, std::source_location location);
+
+    /// task_group::cancel(): cancels every child; the group settles as usual.
+    void stop();
+
+    /// Records the completion of `child` and settles when it was the last.
+    std::coroutine_handle<> child_completed(task_frame& child);
+
+    /// Records `d` as what settles the aggregate; the first decision cancels
+    /// the children still running.
+    void decide(Decision d);
+
+    /// Cancels every running child.
+    void cancel_children();
+
+    /// A cancel from outside: cancels every child, then settles if they have
+    /// all finished. Returns the coroutine to resume next.
+    std::coroutine_handle<> cancel_all();
+
+    /// What the aggregate settles as.
+    State settled_state() const noexcept;
+
+    /// Settles when every child has finished and no pin is held, if a task
+    /// awaits the aggregate. Returns the coroutine to resume next.
+    std::coroutine_handle<> settle_if_idle();
+
+    /// The running children, in the order they started.
+    task_frame* head = nullptr;
+    task_frame* tail = nullptr;
+
+    std::size_t pending = 0;
+
+    /// when_any: the child that finished first.
+    task_frame* winner = nullptr;
+
+    Decision decision = Decision::None;
+
 #if KOTA_ENABLE_EXCEPTIONS
-        if(propagated_exception) {
-            std::rethrow_exception(propagated_exception);
-        }
+    /// The first exception a child threw. It outranks any error.
+    std::exception_ptr exception;
 #endif
-    }
 
-    /// Settles if all children completed, no pins are held, and a parent is
-    /// attached (a task_group settles only after join()). Returns the
-    /// coroutine to resume, or noop.
-    std::coroutine_handle<> settle_if_idle() noexcept;
-
-    /// Delivers the final outcome to the parent. Runs exactly once.
-    std::coroutine_handle<> settle() noexcept;
-
-    std::coroutine_handle<> arm_and_resume(async_node& parent_node,
-                                           std::source_location loc) noexcept {
-        this->location = loc;
-
-        assert(parent_node.is_task_frame() && "aggregate parent must be a task");
-
-        // Cancellation checkpoint: don't start any children under a parent
-        // that is already cancelled. The unstarted child tasks are destroyed
-        // together with the parent frame that owns this aggregate.
-        if(parent_node.state == Cancelled) {
-            auto* p = static_cast<task_frame*>(&parent_node);
-            p->set_child(nullptr);
-            return p->finalize();
-        }
-
-        static_cast<task_frame*>(&parent_node)->set_child(this);
-
-        parent = &parent_node;
-        pending = children.size();
-        winner = npos;
-        first_error_child = npos;
-        first_cancel_child = npos;
-        decision = Decision::None;
-        settled = false;
-        propagated_exception = nullptr;
-        state = Running;
-
-        {
-            pin held(*this);
-
-            for(auto* child: children) {
-                assert(child && "aggregate contains a null child");
-                child->attach(*this, location);
-            }
-
-            for(auto* child: children) {
-                if(decided()) {
-                    // A synchronous completion already picked the outcome and
-                    // cancelled the remaining children; resuming a cancelled
-                    // child would deliver a second completion.
-                    break;
-                }
-                child->resume();
-            }
-        }
-
-        // If every child completed synchronously, resume the parent now via
-        // symmetric transfer.
-        return settle_if_idle();
-    }
+private:
+    void link(task_frame& child) noexcept;
+    void unlink(task_frame& child) noexcept;
 };
 
+/// Base of a pending I/O operation, the extension point for awaiting what
+/// completes through a callback. Set `action` to what cancels the operation,
+/// call attach() from await_suspend and complete() once the operation is
+/// over, whether it succeeded, failed or was cancelled.
 class io_op : public async_node {
+public:
+    /// Ends the operation and resumes the task awaiting it. An operation that
+    /// cancel() reached stays cancelled, whatever it finished with.
+    void complete() noexcept;
+
+    /// Whether cancel() has reached the operation.
+    bool is_cancelled() const noexcept {
+        return cancel_requested;
+    }
+
 protected:
     friend class async_node;
 
     using on_cancel = void (*)(io_op* self);
 
-    explicit io_op(NodeKind k = NodeKind::SystemIO) : async_node(k) {}
+    io_op() noexcept : async_node(NodeKind::SystemIO) {}
 
-    /// Callback invoked when this operation is cancelled (e.g. to close a uv handle).
+    /// Makes `waiting` await this operation. Under a cancelled task the
+    /// operation, which may already be in flight, is cancelled at once; its
+    /// completion then ends the task, which may destroy this operation, so
+    /// await_suspend must touch nothing after.
+    std::coroutine_handle<> attach(task_frame& waiting, std::source_location location) noexcept;
+
+    /// Cancels the operation. cancel() marks the operation cancelled before it
+    /// calls this; the operation still has to complete().
     on_cancel action = nullptr;
-
-    async_node* parent = nullptr;
-
-public:
-    void complete() noexcept;
-
-    const async_node* get_parent() const noexcept {
-        return parent;
-    }
 };
 
 }  // namespace kota

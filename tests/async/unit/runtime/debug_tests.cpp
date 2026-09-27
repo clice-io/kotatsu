@@ -12,6 +12,8 @@ namespace {
 
 ZEST_SUITE(async_runtime_debug, test::LoopFixture) {
 
+// A cancel does not end a task that has not started: it still draws as
+// pending.
 ZEST_CASE(dump_dot_draws_a_task_that_has_not_started) {
     auto make = []() -> task<int> {
         co_return 1;
@@ -23,29 +25,27 @@ ZEST_CASE(dump_dot_draws_a_task_that_has_not_started) {
     EXPECT(zest::contains(dot, "Task\nPending"));
     EXPECT(zest::ends_with(dot, "}\n"));
 
-    pending->cancel();
-    EXPECT(zest::contains(dump_dot(pending), "Task\nCancelled"));
+    pending.cancel();
+    EXPECT(zest::contains(dump_dot(pending), "Task\nPending"));
 }
 
-// Drawn while the task is blocked: once it ends, run() frees its frame.
 ZEST_CASE(dump_dot_follows_a_blocked_task_to_its_resource) {
     event gate;
     auto waiter = [&]() -> task<> {
         co_await gate.wait();
     };
     auto target = waiter();
-    auto* node = target.operator->();
     auto inspect = [&]() -> task<std::string> {
-        auto dot = dump_dot(*node);
+        auto dot = dump_dot(target);
         gate.set();
         co_return dot;
     };
 
-    auto [waited, dot] = run(std::move(target), inspect());
+    auto [waited, dot] = run(target, inspect());
     EXPECT(waited.has_value());
     ASSERT(dot.has_value());
     EXPECT(zest::contains(*dot, "Task\nRunning"));
-    EXPECT(zest::contains(*dot, "EventWaiter"));
+    EXPECT(zest::contains(*dot, "Waiter"));
     EXPECT(zest::contains(*dot, R"(label="Event)"));
     EXPECT(zest::contains(*dot, "debug_tests.cpp:"));
     EXPECT(zest::contains(*dot, "->"));
@@ -63,7 +63,7 @@ ZEST_CASE(dump_dot_drops_the_wait_of_a_cancelled_task) {
     std::string cancelled;
     auto inspect = [&]() -> task<> {
         blocked = dump_dot(root);
-        root->cancel();
+        root.cancel();
         cancelled = dump_dot(root);
         co_return;
     };
@@ -72,9 +72,9 @@ ZEST_CASE(dump_dot_drops_the_wait_of_a_cancelled_task) {
     loop.schedule(root);
     loop.schedule(inspector);
     loop.run();
-    EXPECT(zest::contains(blocked, "EventWaiter"));
+    EXPECT(zest::contains(blocked, "Waiter"));
     EXPECT(zest::contains(cancelled, "Task\nCancelled"));
-    EXPECT(!zest::contains(cancelled, "EventWaiter"));
+    EXPECT(!zest::contains(cancelled, "Waiter"));
 }
 
 ZEST_CASE(dump_dot_labels_aggregates_and_io) {
@@ -89,19 +89,18 @@ ZEST_CASE(dump_dot_labels_aggregates_and_io) {
         co_await when_any(branch(), sleeper());
     };
     auto combined = [&]() -> task<> {
-        task_group<> group(loop);
+        task_group<> group;
         group.spawn(branch());
         co_await when_all(race(), group.join());
     };
     auto target = combined();
-    auto* node = target.operator->();
     auto inspect = [&]() -> task<std::string> {
-        auto dot = dump_dot(*node);
+        auto dot = dump_dot(target);
         gate.set();
         co_return dot;
     };
 
-    auto [combined_result, dot] = run(std::move(target), inspect());
+    auto [combined_result, dot] = run(target, inspect());
     EXPECT(combined_result.has_value());
     ASSERT(dot.has_value());
     EXPECT(zest::contains(*dot, "WhenAll"));

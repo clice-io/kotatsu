@@ -54,7 +54,6 @@ struct process_await : uv::await_op<process_await> {
     static void on_cancel(io_op* op) {
         auto* aw = static_cast<process_await*>(op);
         if(aw && aw->self) {
-            aw->state = async_node::Cancelled;
             uv::process_kill(aw->self->handle, SIGKILL);
         }
     }

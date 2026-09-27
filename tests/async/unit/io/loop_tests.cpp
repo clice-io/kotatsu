@@ -47,7 +47,7 @@ ZEST_CASE(scheduled_reference_stays_with_the_caller) {
 
     loop.schedule(root);
     EXPECT(loop.run() == 0);
-    ASSERT(root->is_finished());
+    ASSERT(root.done());
     EXPECT(root.result() == 7);
 }
 
@@ -67,7 +67,7 @@ ZEST_CASE(task_scheduled_while_running_runs_on_a_later_turn) {
 
     loop.schedule(root);
     EXPECT(loop.run() == 0);
-    EXPECT(scheduled->is_finished());
+    EXPECT(scheduled.done());
     EXPECT(order == std::vector{1, 2});
 }
 
@@ -87,32 +87,27 @@ ZEST_CASE(scheduled_temporary_is_destroyed_by_the_loop) {
     EXPECT(watch.expired());
 }
 
-// Cancelled while it runs, a root the loop owns ends at its next co_await:
-// awaiting the child finalizes the root, which destroys its frame, and the
-// child with it, before the await returns. ASan builds catch a read of the
-// freed child there.
-ZEST_CASE(scheduled_temporary_cancelled_while_running_ends_at_its_next_await) {
+// A child that ends cancelled ends a root the loop owns at its co_await: the
+// child's end destroys the root's frame, and the child with it, before the
+// await returns. ASan builds catch a read of the freed child there.
+ZEST_CASE(scheduled_temporary_ended_by_a_cancelled_child_is_destroyed) {
     auto frame_alive = std::make_shared<int>();
     std::weak_ptr<int> watch = frame_alive;
-    async_node* self = nullptr;
     bool child_ran = false;
     bool resumed = false;
     auto child = [&]() -> task<> {
         child_ran = true;
-        co_return;
+        co_await cancel();
     };
     auto make = [&](std::shared_ptr<int>) -> task<> {
-        self->cancel();
         co_await child();
         resumed = true;
     };
-    auto root = make(std::move(frame_alive));
-    self = root.operator->();
 
-    loop.schedule(std::move(root));
+    loop.schedule(make(std::move(frame_alive)));
     EXPECT(loop.run() == 0);
     EXPECT(watch.expired());
-    EXPECT(!child_ran);
+    EXPECT(child_ran);
     EXPECT(!resumed);
 }
 #endif
@@ -124,11 +119,11 @@ ZEST_CASE(task_cancelled_before_it_starts_never_runs) {
         co_return 1;
     };
     auto root = make();
-    root->cancel();
+    root.cancel();
 
     loop.schedule(root);
     loop.run();
-    EXPECT(root->is_cancelled());
+    EXPECT(root.is_cancelled());
     EXPECT(!ran);
 }
 
@@ -168,9 +163,7 @@ ZEST_CASE(cancelled_roots_report_through_value_and_result) {
     loop.schedule(without_channel);
     loop.schedule(with_channel);
     loop.run();
-    EXPECT(without_channel->is_cancelled());
-    // Without a cancel channel, value() is all a cancelled root can report.
-    EXPECT(!without_channel.value().has_value());
+    EXPECT(without_channel.is_cancelled());
     EXPECT(with_channel.result().is_cancelled());
 }
 
@@ -185,9 +178,8 @@ ZEST_CASE(failed_root_rethrows_through_result, skip = test::exceptions_unreadabl
 
     loop.schedule(root);
     loop.run();
-    EXPECT(root->is_failed());
+    EXPECT(root.done());
     EXPECT(test::thrown([&] { root.result(); }) == "root");
-    EXPECT(test::thrown([&] { root.value(); }) == "root");
 }
 #endif
 
@@ -208,10 +200,10 @@ ZEST_CASE(stop_ends_run_with_work_still_pending) {
     loop.schedule(stopping);
     // run() says whether work was left when it returned.
     EXPECT(loop.run() != 0);
-    EXPECT(!pending->is_finished());
+    EXPECT(!pending.done());
     EXPECT(!resumed);
-    pending->cancel();
-    EXPECT(pending->is_cancelled());
+    pending.cancel();
+    EXPECT(pending.is_cancelled());
 }
 
 ZEST_CASE(on_destroy_callbacks_run_when_the_loop_goes) {
@@ -247,9 +239,8 @@ ZEST_CASE(kota_run_returns_every_value) {
     auto [value, failed] = kota::run(one(), failing());
     ASSERT(value.has_value());
     EXPECT(*value == 1);
-    ASSERT(failed.has_value());
-    ASSERT(failed->has_error());
-    EXPECT(failed->error() == error::io_error);
+    ASSERT(failed.has_error());
+    EXPECT(failed.error() == error::io_error);
 }
 
 #if KOTA_ENABLE_EXCEPTIONS

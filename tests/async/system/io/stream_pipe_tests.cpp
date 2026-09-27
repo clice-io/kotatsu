@@ -226,13 +226,12 @@ ZEST_CASE(cancelled_write_still_delivers) {
     auto ends = pipe_ends(loop);
     ASSERT(ends.has_value());
     auto writing = ends->writer.write(std::string_view("kept"));
-    auto* node = writing.operator->();
     auto cancel_it = [&]() -> task<> {
-        node->cancel();
+        writing.cancel();
         co_return;
     };
 
-    auto [written, driver, received] = run(std::move(writing), cancel_it(), ends->reader.read());
+    auto [written, driver, received] = run(writing, cancel_it(), ends->reader.read());
     EXPECT(written.is_cancelled());
     ASSERT(received.has_value());
     EXPECT(*received == "kept");
@@ -321,14 +320,12 @@ ZEST_CASE(cancelled_reads_leave_the_pipe_usable) {
     std::array<char, 8> buffer{};
     auto buffered = ends->reader.read();
     auto direct = ends->reader.read_some(buffer);
-    auto* buffered_node = buffered.operator->();
-    auto* direct_node = direct.operator->();
     auto cancel_buffered = [&]() -> task<> {
-        buffered_node->cancel();
+        buffered.cancel();
         co_return;
     };
     auto cancel_direct = [&]() -> task<> {
-        direct_node->cancel();
+        direct.cancel();
         co_return;
     };
     auto exchange = [&]() -> task<std::string, error> {
@@ -336,9 +333,9 @@ ZEST_CASE(cancelled_reads_leave_the_pipe_usable) {
         co_return co_await ends->reader.read().or_fail();
     };
 
-    auto [first, first_driver] = run(std::move(buffered), cancel_buffered());
+    auto [first, first_driver] = run(buffered, cancel_buffered());
     EXPECT(first.is_cancelled());
-    auto [second, second_driver] = run(std::move(direct), cancel_direct());
+    auto [second, second_driver] = run(direct, cancel_direct());
     EXPECT(second.is_cancelled());
     auto [received] = run(exchange());
     ASSERT(received.has_value());
@@ -404,9 +401,8 @@ ZEST_CASE(connect_can_be_cancelled) {
     auto listener = pipe::listen(name, {}, loop);
     ASSERT(listener.has_value());
     auto connecting = pipe::connect(name, {}, loop);
-    auto* node = connecting.operator->();
     auto cancel_it = [&]() -> task<> {
-        node->cancel();
+        connecting.cancel();
         co_return;
     };
     auto serve = [&]() -> task<result<std::string>, error> {
@@ -414,7 +410,7 @@ ZEST_CASE(connect_can_be_cancelled) {
         co_return co_await connection.read();
     };
 
-    auto [cancelled, driver, served] = run(std::move(connecting), cancel_it(), serve());
+    auto [cancelled, driver, served] = run(connecting, cancel_it(), serve());
     EXPECT(cancelled.is_cancelled());
     ASSERT(served.has_value());
     ASSERT(served->has_error());

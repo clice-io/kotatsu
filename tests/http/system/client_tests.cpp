@@ -923,7 +923,7 @@ ZEST_CASE(cancelled_request_does_not_break_following_requests) {
     auto cancel_after = [](task<http::response, http::error, cancellation>* pending,
                            event_loop& ev) -> task<> {
         co_await sleep(20ms, ev);
-        (*pending)->cancel();
+        pending->cancel();
     };
     auto canceler = cancel_after(&request, loop);
 

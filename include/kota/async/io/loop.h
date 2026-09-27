@@ -3,6 +3,8 @@
 #include <memory>
 #include <source_location>
 #include <tuple>
+#include <type_traits>
+#include <utility>
 
 #include "kota/support/functional.h"
 
@@ -12,9 +14,20 @@ using uv_loop_t = uv_loop_s;
 namespace kota {
 
 class async_node;
+class task_frame;
+class wait_node;
 
 template <typename T = void, typename E = void, typename C = void>
 class task;
+
+namespace detail {
+
+/// Readies `task` to start as a root, and hands its frame over to the event
+/// loop when `owned`. Defined in task.h.
+template <typename Task>
+task_frame& make_root(Task& task, bool owned, std::source_location location) noexcept;
+
+}  // namespace detail
 
 /// A thread-safe relay for posting callbacks to an event loop.
 ///
@@ -108,8 +121,6 @@ public:
         return self.get();
     }
 
-    friend class async_node;
-
 public:
     operator uv_loop_t&() noexcept;
 
@@ -133,46 +144,43 @@ public:
     /// release handles tied to this loop.
     void on_destroy(function<void()> callback);
 
-    /// Schedules a task for execution on this event loop.
-    /// If the task is passed by rvalue (temporary), the loop takes ownership
-    /// (sets root=true). The task will be destroyed after it completes.
+    /// Schedules a task to start on this event loop's next turn. Passed as an
+    /// rvalue, the task is the loop's, which destroys it once it ends; passed
+    /// as an lvalue, it stays with the caller, who can still cancel() it and
+    /// read its result() once it ends. A task cancelled before it starts
+    /// never runs.
     template <typename Task>
     void schedule(Task&& task, std::source_location location = std::source_location::current()) {
-        auto& promise = task.h.promise();
-        if constexpr(std::is_rvalue_reference_v<Task&&>) {
-            promise.root = true;
-            task.release();
-        }
-
-        schedule(static_cast<async_node&>(promise), location);
+        schedule(detail::make_root(task, std::is_rvalue_reference_v<Task&&>, location));
     }
 
-    /// Queues a node for deferred resumption.
-    ///
-    /// Unlike schedule(), this does not check or modify the node's state.
-    /// Used by sync primitives to defer waiter resumes instead of resuming
-    /// inline (which would cause reentrancy).
-    void defer_resume(async_node& node);
-
-    /// Drains all deferred resumes. The runtime calls this after the outermost
-    /// coroutine resume returns; a check handle is kept as a fallback so queued
-    /// resumes still run before the next loop iteration.
-    void drain_deferred();
-
 private:
-    void schedule(async_node& frame, std::source_location location);
+    friend class async_node;
+    friend class wait_node;
+
+    void schedule(task_frame& root);
+
+    /// Queues a task a sync primitive woke, to resume once whatever runs now
+    /// has suspended instead of inline.
+    void defer_resume(task_frame& task);
+
+    /// Resumes the queued tasks. The runtime calls this after the outermost
+    /// coroutine resumption returns; a check handle is kept as a fallback so
+    /// they still run before the next loop iteration.
+    void drain_deferred();
 
     std::unique_ptr<Self> self;
 };
 
-/// Convenience: creates a loop, schedules all tasks, runs to completion,
-/// and returns a tuple of their values (via task::value()).
+/// Convenience: creates a loop, schedules all tasks, runs it until they have
+/// ended and returns what each ended with: its value, its error, or that it was
+/// cancelled. Rethrows what a task threw.
 template <typename... Tasks>
-auto run(Tasks&&... tasks) {
+auto run(Tasks... tasks) {
     event_loop loop;
     (loop.schedule(tasks), ...);
     loop.run();
-    return std::tuple(std::move(tasks.value())...);
+    return std::tuple(std::move(tasks).catch_cancel().result()...);
 }
 
 }  // namespace kota

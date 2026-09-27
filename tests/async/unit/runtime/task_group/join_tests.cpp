@@ -20,7 +20,7 @@ ZEST_CASE(join_waits_for_every_child) {
         sum += value;
     };
     auto driver = [&]() -> task<int> {
-        task_group<> group(loop);
+        task_group<> group;
         group.spawn(child(1, gates[0]));
         group.spawn(child(10, gates[1]));
         group.spawn(child(100, gates[2]));
@@ -48,7 +48,7 @@ ZEST_CASE(spawn_runs_the_child_until_it_suspends) {
         order.push_back(3);
     };
     auto driver = [&]() -> task<> {
-        task_group<> group(loop);
+        task_group<> group;
         group.spawn(child());
         order.push_back(2);
         co_await group.join();
@@ -66,7 +66,7 @@ ZEST_CASE(children_that_finish_at_once_are_joined) {
         co_return;
     };
     auto driver = [&]() -> task<int> {
-        task_group<> group(loop);
+        task_group<> group;
         group.spawn(child(1));
         group.spawn(child(10));
         co_await group.join();
@@ -80,7 +80,7 @@ ZEST_CASE(children_that_finish_at_once_are_joined) {
 
 ZEST_CASE(join_of_an_empty_group_completes_at_once) {
     auto driver = [&]() -> task<> {
-        task_group<> group(loop);
+        task_group<> group;
         co_await group.join();
     };
 
@@ -94,7 +94,7 @@ ZEST_CASE(join_of_an_error_group_without_failures_has_no_error) {
         co_return value;
     };
     auto driver = [&]() -> task<bool> {
-        task_group<error> group(loop);
+        task_group<error> group;
         group.spawn(child(10));
         group.spawn(child(20));
         auto joined = co_await group.join();
@@ -113,7 +113,7 @@ ZEST_CASE(group_joins_inside_when_all) {
         grouped += 1;
     };
     auto grouped_work = [&]() -> task<int> {
-        task_group<> group(loop);
+        task_group<> group;
         for(int i = 0; i < 3; ++i) {
             group.spawn(work());
         }
@@ -144,7 +144,7 @@ ZEST_CASE(children_can_await_when_all) {
         sum += x + y;
     };
     auto driver = [&]() -> task<int> {
-        task_group<> group(loop);
+        task_group<> group;
         group.spawn(pair());
         group.spawn(pair());
         co_await group.join();
@@ -167,7 +167,7 @@ ZEST_CASE(many_children_are_all_joined) {
         finished += 1;
     };
     auto driver = [&]() -> task<int> {
-        task_group<> group(loop);
+        task_group<> group;
         for(int i = 0; i < 200; ++i) {
             group.spawn(at_once());
             group.spawn(later());
