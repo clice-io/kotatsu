@@ -53,10 +53,6 @@ ZEST_CASE(raw_value_result_is_sent_as_it_is) {
     test::raw_value_result_is_sent_as_it_is<test::JsonAdapter>();
 }
 
-ZEST_CASE(request_without_params_is_answered_with_invalid_params) {
-    test::request_without_params_is_answered_with_invalid_params<test::JsonAdapter>();
-}
-
 ZEST_CASE(error_data_crosses_between_peers) {
     test::error_data_crosses_between_peers<test::JsonAdapter>();
 }

@@ -25,10 +25,6 @@ ZEST_CASE(error_response_roundtrip_keeps_the_data) {
     test::error_response_roundtrip_keeps_the_data<test::JsonAdapter>();
 }
 
-ZEST_CASE(deserialize_value_of_nothing_into_fields_fails) {
-    test::deserialize_value_of_nothing_into_fields_fails<test::JsonAdapter>();
-}
-
 ZEST_CASE(encode_error_response_writes_the_data) {
     JsonCodec codec;
     codec::dyn::Value data{

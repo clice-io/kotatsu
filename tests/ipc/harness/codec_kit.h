@@ -339,22 +339,19 @@ void codec_protocol(const CodecKit<A>& kit) {
         EXPECT(code_of(given.error()) == ErrorCode::InvalidParams);
     });
 
-    // What a params-less message carries reads as params without fields.
+    // What a params-less message carries reads as params without fields,
+    // and only as those: nothing is not params with fields.
     kit.add("deserialize_value_of_nothing_reads_empty_params", [] {
         Codec codec;
         EXPECT(codec.template deserialize_value<EmptyParams>("").has_value());
     });
-}
 
-/// Nothing is not params with fields: reading it fails rather than making up
-/// a default value.
-template <CodecAdapter A>
-void deserialize_value_of_nothing_into_fields_fails() {
-    typename A::Codec codec;
-    auto value =
-        codec.template deserialize_value<AddParams>("", ipc::protocol::ErrorCode::InvalidParams);
-    ASSERT(!value.has_value());
-    EXPECT(code_of(value.error()) == ipc::protocol::ErrorCode::InvalidParams);
+    kit.add("deserialize_value_of_nothing_into_fields_fails", [] {
+        Codec codec;
+        auto value = codec.template deserialize_value<AddParams>("", ErrorCode::InvalidParams);
+        ASSERT(!value.has_value());
+        EXPECT(code_of(value.error()) == ErrorCode::InvalidParams);
+    });
 }
 
 /// An error's data survives its codec.

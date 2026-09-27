@@ -48,11 +48,6 @@ ZEST_CASE(raw_value_result_is_sent_as_it_is, skip = true) {
     test::raw_value_result_is_sent_as_it_is<test::BincodeAdapter>();
 }
 
-// N5: empty params decode as a default AddParams, and the handler runs.
-ZEST_CASE(request_without_params_is_answered_with_invalid_params, skip = true) {
-    test::request_without_params_is_answered_with_invalid_params<test::BincodeAdapter>();
-}
-
 // P1.5: BincodeCodec drops Error::data.
 ZEST_CASE(error_data_crosses_between_peers, skip = true) {
     test::error_data_crosses_between_peers<test::BincodeAdapter>();

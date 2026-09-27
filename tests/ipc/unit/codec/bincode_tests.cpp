@@ -35,11 +35,6 @@ ZEST_CASE(error_response_roundtrip_keeps_the_data, skip = true) {
     test::error_response_roundtrip_keeps_the_data<test::BincodeAdapter>();
 }
 
-// N5: deserialize_value returns a default T for empty bytes.
-ZEST_CASE(deserialize_value_of_nothing_into_fields_fails, skip = true) {
-    test::deserialize_value_of_nothing_into_fields_fails<test::BincodeAdapter>();
-}
-
 ZEST_CASE(truncated_message_fails) {
     auto message = encoded_request();
     ASSERT(!message.empty());

@@ -248,6 +248,25 @@ void peer_dispatch(const PeerKit<A>& kit) {
         EXPECT(code_of(written[0].error) == ErrorCode::InvalidParams);
     });
 
+    // A handler whose params have fields gets no made-up params.
+    kit.add("request_without_params_is_answered_with_invalid_params", [](Fixture& f) {
+        bool called = false;
+        f.peer.on_request([&](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
+            called = true;
+            co_return AddResult{};
+        });
+        f.remote.send(A::request_raw(1, "test/add", ""));
+        f.remote.end_input();
+
+        auto [ran] = f.run(f.peer.run());
+        EXPECT(ran.has_value());
+        EXPECT(!called);
+        const auto& written = f.written();
+        ASSERT(written.size() == 1U);
+        EXPECT(written[0].kind == Message::Kind::Error);
+        EXPECT(code_of(written[0].error) == ErrorCode::InvalidParams);
+    });
+
     kit.add("notification_params_that_do_not_decode_are_dropped", [](Fixture& f) {
         bool called = false;
         f.peer.on_notification([&](const NoteParams&) { called = true; });
@@ -318,29 +337,6 @@ void peer_dispatch(const PeerKit<A>& kit) {
         EXPECT(ran.has_value());
         EXPECT(f.written().empty());
     });
-}
-
-/// A request without params for a handler whose params have fields is
-/// refused, rather than handled with made-up params.
-template <CodecAdapter A>
-void request_without_params_is_answered_with_invalid_params() {
-    PeerFixture<A> f;
-    bool called = false;
-    f.peer.on_request(
-        [&](typename PeerFixture<A>::Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
-            called = true;
-            co_return AddResult{};
-        });
-    f.remote.send(A::request_raw(1, "test/add", ""));
-    f.remote.end_input();
-
-    auto [ran] = f.run(f.peer.run());
-    EXPECT(ran.has_value());
-    EXPECT(!called);
-    const auto& written = f.written();
-    ASSERT(written.size() == 1U);
-    EXPECT(written[0].kind == Message::Kind::Error);
-    EXPECT(code_of(written[0].error) == ipc::protocol::ErrorCode::InvalidParams);
 }
 
 /// A handler that returns a RawValue has written its result itself: the
