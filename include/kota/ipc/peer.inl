@@ -171,14 +171,20 @@ struct Peer<CodecT>::Self {
                     break;
                 }
                 write_event.reset();
-                co_await write_event.wait();
+                // Cancelled with run(): nothing more is written.
+                if((co_await write_event.wait().catch_cancel()).is_cancelled()) {
+                    break;
+                }
                 continue;
             }
 
             auto payload = std::move(outgoing_queue.front());
             outgoing_queue.pop_front();
-            auto written = co_await transport->write_message(payload);
-            if(!written) {
+            auto written = co_await transport->write_message(payload).catch_cancel();
+            if(written.is_cancelled()) {
+                break;
+            }
+            if(written.has_error()) {
                 fail_output(written.error().message);
                 break;
             }
@@ -310,6 +316,11 @@ struct Peer<CodecT>::Self {
     static task<Ending> expired(std::chrono::milliseconds timeout, event_loop& loop) {
         co_await sleep(timeout, loop);
         co_return Ending::TimedOut;
+    }
+
+    /// The ending that comes first; the others are cancelled with the wait.
+    static task<Ending> first_of(std::vector<task<Ending>> waits) {
+        co_return (co_await when_any(std::move(waits))).second;
     }
 
     void complete_pending_request(const protocol::RequestID& id, Result<std::string>&& response) {
@@ -571,7 +582,7 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
     self->enqueue_outgoing(std::move(*encoded));
 
     // The answer, the caller's cancellation or the deadline, whichever comes
-    // first; the others are cancelled with the wait.
+    // first.
     std::vector<task<Ending>> waits;
     waits.push_back(Self::answered(pending));
     if(opts.token) {
@@ -580,14 +591,18 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
     if(opts.timeout) {
         waits.push_back(Self::expired(*opts.timeout, self->loop));
     }
-    auto ending = (co_await when_any(std::move(waits))).second;
+    auto ending = co_await Self::first_of(std::move(waits)).catch_cancel();
 
     // An answer that came in the same turn as the cancellation still counts.
     if(!pending->response) {
         self->pending_requests.erase(id);
         self->send_cancel_request(id);
-        co_await fail(protocol::ErrorCode::RequestCancelled,
-                      ending == Ending::TimedOut ? "request timed out" : "request cancelled");
+        if(ending.has_value()) {
+            co_await fail(protocol::ErrorCode::RequestCancelled,
+                          *ending == Ending::TimedOut ? "request timed out" : "request cancelled");
+        }
+        // Whoever awaited the request was cancelled, rather than the request.
+        co_await cancel();
     }
     co_return co_await or_fail(std::move(*pending->response));
 }

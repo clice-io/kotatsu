@@ -246,6 +246,64 @@ void peer_cancel(const PeerKit<A>& kit) {
         EXPECT(code_of(asked.error()) == ErrorCode::RequestCancelled);
         EXPECT(f.written().size() == 2U);
     });
+
+    // The task awaiting the request is cancelled, not the request: the
+    // remote is told all the same, and the answer it may still send goes
+    // nowhere.
+    kit.add("send_request_whose_caller_is_cancelled_sends_cancel_request", [](Fixture& f) {
+        cancellation_source source;
+        auto ask = [&]() -> task<AddResult, ipc::Error> {
+            co_return co_await f.peer.template send_request<AddResult>("worker/build", AddParams{})
+                .or_fail();
+        };
+        auto remote = [&]() -> task<> {
+            co_await f.next();
+            source.cancel();
+            co_await f.next();
+            f.remote.send(response<A>(1, AddResult{.sum = 1}));
+            f.remote.end_input();
+        };
+
+        auto [ran, asked, scripted] =
+            f.run(f.peer.run(), with_token(ask(), source.token()), remote());
+        EXPECT(ran.has_value());
+        EXPECT(asked.is_cancelled());
+        const auto& written = f.written();
+        ASSERT(written.size() == 2U);
+        EXPECT(written[1].method == "$/cancelRequest");
+        auto cancelled = decoded<CancelRequestParams, A>(written[1].body);
+        ASSERT(cancelled.has_value());
+        EXPECT(cancelled->id == RequestID(1));
+    });
+
+    // Once run() is cancelled, here while a handler runs, nothing more can
+    // be sent.
+    kit.add("sending_after_run_is_cancelled_fails", [](Fixture& f) {
+        cancellation_source source;
+        event started;
+        event never;
+        f.peer.on_request([&](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
+            started.set();
+            co_await never.wait();
+            co_return AddResult{};
+        });
+        f.remote.send(request<A>(1, "test/add", AddParams{}));
+        auto stop = [&]() -> task<> {
+            co_await started.wait();
+            source.cancel();
+        };
+
+        auto [ran, stopped] = f.run(with_token(f.peer.run(), source.token()), stop());
+        EXPECT(ran.is_cancelled());
+        EXPECT(stopped.has_value());
+        EXPECT(f.peer.send_notification(NoteParams{.text = "late"}).has_error());
+        auto [asked] = f.run(f.peer.send_request(AddParams{}));
+        EXPECT(asked.has_error());
+        // At most the cancelled handler's answer.
+        for(const auto& message: f.written()) {
+            EXPECT(message.id == RequestID(1));
+        }
+    });
 }
 
 }  // namespace kota::test
