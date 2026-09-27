@@ -400,8 +400,10 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
     }
 
     std::uint64_t field_mask = 0;
+    std::size_t tag_count = 0;
     bool result = vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
         if(key == tag_key) {
+            ++tag_count;
             return idx != npos || fail_unusable_tag(fv);
         }
         if(idx == npos) {
@@ -426,6 +428,10 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
     if(idx == npos) {
         return scoped_context<rich_error>::fail(
             rich_error("internally tagged variant: missing tag field"));
+    }
+    if(tag_count > 1) {
+        return scoped_context<rich_error>::fail(
+            rich_error("internally tagged variant: duplicate tag field"));
     }
     return with_index<sizeof...(Ts)>(idx, [&](auto i) {
         constexpr std::size_t I = decltype(i)::value;
@@ -862,7 +868,7 @@ bool decode_value(Vis& vis, T& out) {
                 constexpr std::size_t expected = std::tuple_size_v<V>;
                 std::size_t idx = 0;
                 bool seq_ok = vis.visit_tuple([&](auto& ev) -> bool {
-                    if(idx >= expected) {
+                    if(idx == expected) {
                         return scoped_context<rich_error>::fail(rich_error(
                             std::format("too many elements for tuple (expected {})", expected)));
                     }
