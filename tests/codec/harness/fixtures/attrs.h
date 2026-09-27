@@ -280,6 +280,21 @@ struct CellSkippedOnDecodePlain {
     int after;
 };
 
+/// Skips an empty text. It takes only the value, so it speaks for encoding.
+struct IsEmptyText {
+    bool operator()(const std::string& text) const {
+        return text.empty();
+    }
+};
+
+struct SkipsEmptyText {
+    meta::annotation<std::string, meta::behavior::skip_if<IsEmptyText>> text;
+};
+
+struct TextPlain {
+    std::string text;
+};
+
 using AccessName =
     meta::annotation<Access, meta::behavior::enum_string<naming::rename_policy::lower_camel>>;
 

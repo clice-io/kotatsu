@@ -194,6 +194,10 @@ struct enum_string {
     using policy = Policy;
 };
 
+/// Omits a field when Pred holds for its value. A predicate taking
+/// (const Value&, bool is_serialize) decides for encoding and decoding
+/// alike; one taking only the value speaks for encoding, and a decode never
+/// skips on it.
 template <typename Pred>
 struct skip_if {
     using predicate = Pred;
@@ -224,7 +228,7 @@ constexpr bool evaluate_skip_predicate(const Value& value, bool is_serialize) {
     } else if constexpr(requires {
                             { Pred{}(value) } -> std::convertible_to<bool>;
                         }) {
-        return static_cast<bool>(Pred{}(value));
+        return is_serialize && static_cast<bool>(Pred{}(value));
     } else {
         static_assert(
             dependent_false<Pred>,

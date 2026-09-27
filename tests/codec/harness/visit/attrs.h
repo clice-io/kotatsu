@@ -223,6 +223,14 @@ void attrs(const Kit<B>& kit) {
             };
         },
         [] { return CellSkippedOnDecode{.cell = {}, .after = 7}; });
+    // A one-argument predicate judges the value being written: a decode
+    // reads the field whatever the value it decodes into holds, here the
+    // empty text the predicate matches.
+    reads<SkipsEmptyText>(
+        kit,
+        "one_argument_skip_if_reads_its_field",
+        [] { return TextPlain{.text = "x"}; },
+        [] { return SkipsEmptyText{.text = std::string("x")}; });
     if constexpr(B::caps.absent_fields) {
         auto kept = [] {
             return Skippable{
