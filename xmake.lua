@@ -70,6 +70,23 @@ if is_plat("windows", "mingw") then
 	add_defines("NOMINMAX", "WIN32_LEAN_AND_MEAN")
 end
 
+-- mingw with libstdc++ (GCC, or clang on a GNU sysroot): <print> and
+-- <stacktrace> live in stdc++exp, and the runtime is linked statically. A
+-- libc++ toolchain needs none of this, so, as in CMakeLists.txt, the check is
+-- on the standard library in use rather than the compiler.
+if is_plat("mingw") then
+	option("mingw_libstdcxx", function()
+		set_showmenu(false)
+		add_cxxsnippets("libstdcxx", "#include <cstddef>\n#ifndef __GLIBCXX__\n#error libc++\n#endif")
+	end)
+	if has_config("mingw_libstdcxx") then
+		add_cxxflags("-Wa,-mbig-obj")
+		add_syslinks("stdc++exp")
+		add_ldflags("-static-libgcc", "-static-libstdc++", "-Wl,--allow-multiple-definition")
+		add_shflags("-static-libgcc", "-static-libstdc++", "-Wl,--allow-multiple-definition")
+	end
+end
+
 if has_config("async") then
 	add_requires("libuv v1.52.0")
 end

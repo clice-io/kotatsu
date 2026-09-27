@@ -27,6 +27,10 @@ jobs:
             toolchain: xclang
             pixi_env: windows-xclang
             config_args: "--plat=mingw --toolchain=llvm --sdk=$env:CONDA_PREFIX/opt/xclang"
+          - os: windows-2025
+            toolchain: mingw
+            pixi_env: windows-mingw
+            config_args: "--plat=mingw --toolchain=mingw --mingw=$env:CONDA_PREFIX/Library"
 
     runs-on: ${{ matrix.target.os }}
 
