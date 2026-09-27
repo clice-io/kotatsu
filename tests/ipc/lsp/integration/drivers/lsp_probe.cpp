@@ -1,5 +1,5 @@
-// Answers questions about kota::ipc::lsp's URIs and positions, for
-// differential.test.ts to put the same questions to VS Code's libraries. It
+// Answers questions about kota::ipc::lsp's URIs and positions, for uri.test.ts
+// and position.test.ts to put the same questions to VS Code's libraries. It
 // reads one JSON object a line and answers each with one:
 //
 //   {"fromFilePath": "<path>"}             {"uri": "<text>"} or {"error": "..."}

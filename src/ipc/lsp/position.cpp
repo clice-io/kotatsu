@@ -5,12 +5,10 @@
 
 namespace kota::ipc::lsp {
 
-namespace {
-
 /// A bit for each line of `content`, split at '\n' as build_line_starts
 /// splits it, set when the line holds a byte past ASCII; the words end at the
 /// last line with one.
-std::vector<std::uint64_t> find_non_ascii_lines(std::string_view content) {
+static std::vector<std::uint64_t> find_non_ascii_lines(std::string_view content) {
     std::vector<std::uint64_t> bits;
     std::size_t line = 0;
     std::size_t at = 0;
@@ -31,8 +29,6 @@ std::vector<std::uint64_t> find_non_ascii_lines(std::string_view content) {
         ++line;
     }
 }
-
-}  // namespace
 
 LineMap::LineMap(std::string_view content, PositionEncoding encoding) :
     source(content), starts(build_line_starts(content)),
