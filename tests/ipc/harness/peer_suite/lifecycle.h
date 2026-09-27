@@ -200,6 +200,29 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         EXPECT(f.remote.closed());
     });
 
+    // The handler's answer could not be written: it is cancelled, and run()
+    // ends without waiting for it.
+    kit.add("write_failure_cancels_running_handlers", [](Fixture& f) {
+        event never;
+        bool cancelled = false;
+        f.peer.on_request([&](Context& context, const AddParams&) -> ipc::RequestResult<AddParams> {
+            co_await never.wait().catch_cancel();
+            cancelled = context.cancelled();
+            co_return AddResult{};
+        });
+        f.remote.fail_writes();
+        f.remote.send(request<A>(1, "test/add", AddParams{}));
+        auto ask = [&]() -> task<> {
+            co_await f.peer.send_request(AddParams{});
+        };
+
+        auto [ran, asked] = f.run(f.peer.run(), ask());
+        EXPECT(ran.has_value());
+        EXPECT(asked.has_value());
+        EXPECT(cancelled);
+        EXPECT(f.remote.closed());
+    });
+
     kit.add("close_output_ends_the_remote_input_and_keeps_reading", [](Fixture& f) {
         std::vector<std::string> seen;
         f.peer.on_notification([&](const NoteParams& params) { seen.push_back(params.text); });

@@ -209,9 +209,23 @@ struct Peer<CodecT>::Self {
             return;
         }
         closed = true;
+        // Their answers could not be written.
+        cancel_handlers();
         if(auto result = transport->close(); !result) {
             log(LogLevel::error, "closing the transport failed: {}", result.error().message);
         }
+    }
+
+    /// Cancels every running request handler.
+    void cancel_handlers() {
+        // Copy the sources first: cancel() may resume handlers, which erase
+        // their entries.
+        auto values = incoming_requests | std::views::values;
+        std::vector<std::shared_ptr<cancellation_source>> sources(values.begin(), values.end());
+        for(auto& source: sources) {
+            source->cancel();
+        }
+        incoming_requests.clear();
     }
 
     /// The read loop ended: nothing can answer a pending request any more.
@@ -506,15 +520,7 @@ Result<void> Peer<CodecT>::close() {
     self->output_open = false;
     self->closing_output = false;
     self->log(LogLevel::info, "peer closing");
-
-    // Copy the sources first: cancel() may resume handlers, which erase
-    // their entries.
-    auto values = self->incoming_requests | std::views::values;
-    std::vector<std::shared_ptr<cancellation_source>> sources(values.begin(), values.end());
-    for(auto& source: sources) {
-        source->cancel();
-    }
-    self->incoming_requests.clear();
+    self->cancel_handlers();
 
     self->fail_pending_requests(Error("peer closed"));
     self->outgoing_queue.clear();
