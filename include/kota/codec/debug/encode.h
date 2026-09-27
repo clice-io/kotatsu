@@ -126,12 +126,6 @@ struct Formatter {
     }
 };
 
-struct ValueWriter;
-struct StructWriter;
-struct SeqWriter;
-struct KeyWriter;
-struct MapWriter;
-
 struct ValueWriter {
     Formatter& fmt;
     using error_type = rich_error;
@@ -249,16 +243,16 @@ struct ValueWriter {
     }
 
     template <typename T, typename Body>
-    inline bool visit_struct(const T&, Body&& body);
+    bool visit_struct(const T&, Body&& body);
 
     template <typename Container, typename Body>
-    inline bool visit_seq(const Container&, Body&& body);
+    bool visit_seq(const Container&, Body&& body);
 
     template <typename Container, typename Body>
-    inline bool visit_map(const Container&, Body&& body);
+    bool visit_map(const Container&, Body&& body);
 
     template <typename T, typename Body>
-    inline bool visit_tuple(const T&, Body&& body);
+    bool visit_tuple(const T&, Body&& body);
 };
 
 struct StructWriter {
@@ -267,7 +261,7 @@ struct StructWriter {
     bool first = true;
 
     template <typename F>
-    inline bool visit_field(std::size_t index, std::string_view name, F&& writer);
+    bool visit_field(std::size_t index, std::string_view name, F&& writer);
 };
 
 struct SeqWriter {
@@ -275,7 +269,7 @@ struct SeqWriter {
     bool first = true;
 
     template <typename F>
-    inline bool visit_element(F&& writer);
+    bool visit_element(F&& writer);
 };
 
 struct TupleWriter {
@@ -284,17 +278,15 @@ struct TupleWriter {
     std::size_t count = 0;
 
     template <typename F>
-    inline bool visit_element(F&& writer);
+    bool visit_element(F&& writer);
 };
-
-struct KeyWriter : ValueWriter {};
 
 struct MapWriter {
     Formatter& fmt;
     bool first = true;
 
     template <typename KF, typename VF>
-    inline bool visit_entry(KF&& key_fn, VF&& value_fn);
+    bool visit_entry(KF&& key_fn, VF&& value_fn);
 };
 
 template <typename T, typename Body>
@@ -379,7 +371,7 @@ bool SeqWriter::visit_element(F&& writer) {
 template <typename KF, typename VF>
 bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
     fmt.write_separator(first);
-    KeyWriter kw{fmt};
+    ValueWriter kw{fmt};
     KOTA_CODEC_TRY(key_fn(kw));
     fmt.out += ": ";
     ValueWriter vw{fmt};
