@@ -1,34 +1,30 @@
 // Drivers are the programs integration tests spawn. kota_add_integration_tests
 // (tests/CMakeLists.txt) builds each one and passes its path in KOTA_<NAME>. A
-// test talks to a driver over its stdio, through a JSON-RPC connection or on
-// the raw wire, and ends by checking how the driver exited.
+// test talks to a driver over its stdio, in the driver's protocol (ipc's
+// harness has JSON-RPC's) or in JSON lines, and ends by checking how the
+// driver exited.
 
 import assert from "node:assert/strict";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
 import { existsSync } from "node:fs";
+import type { Readable, Writable } from "node:stream";
 import type { TestContext } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
-import {
-  createMessageConnection,
-  StreamMessageReader,
-  StreamMessageWriter,
-  type MessageConnection,
-  type MessageReader,
-  type MessageWriter,
-} from "vscode-jsonrpc/node";
-
 import { JsonLines } from "./jsonl.ts";
-import { RawChannel } from "./raw.ts";
 
 // Each sanitizer ends a report with its SUMMARY line; UBSan starts one with
 // the source location and "runtime error:".
 const SANITIZER_REPORT =
   /^SUMMARY: \w*Sanitizer|^\S+:\d+:\d+: runtime error: /m;
 
-// A driver logs through test::stderr_logger (ipc/harness/stderr_logger.h).
+// A driver logs a line to stderr as "[level] message", as ipc's
+// test::stderr_logger (ipc/harness/stderr_logger.h) does.
 const PROBLEM = /^\[(?:warn|error)\] .*$/gm;
+
+/** Warn or error lines a test lets the driver log. */
+type Allowance = { pattern: RegExp; left: number };
 
 function driverPath(name: string): string {
   const variable = `KOTA_${name.toUpperCase()}`;
@@ -53,7 +49,7 @@ export class Driver {
   readonly #child: ChildProcessWithoutNullStreams;
   readonly #exited: Promise<Exit>;
   readonly #stderrEnded: Promise<unknown>;
-  readonly #expectedLogs: RegExp[] = [];
+  readonly #allowances: Allowance[] = [];
   #stderr = "";
   #checked = false;
 
@@ -90,82 +86,28 @@ export class Driver {
     return driver;
   }
 
-  /**
-   * A JSON-RPC connection over the driver's stdio, not yet listening. Its
-   * end() closes the driver's input after everything sent before it. Once
-   * the driver's output ends and every message it sent has been handled, the
-   * connection is disposed, which fails the requests still waiting for an
-   * answer.
-   */
-  connect(): MessageConnection {
-    let received = 0;
-    let handled = 0;
-    let ended = false;
-    const reader = new StreamMessageReader(this.#child.stdout);
-    const counted: MessageReader = {
-      onError: reader.onError,
-      onClose: reader.onClose,
-      onPartialMessage: reader.onPartialMessage,
-      listen: (callback) =>
-        reader.listen((message) => {
-          received += 1;
-          callback(message);
-        }),
-      dispose: () => reader.dispose(),
-    };
-    // vscode-jsonrpc writes each message on a later tick, one after another,
-    // but ends the stream at once; waiting for the last write keeps end() from
-    // cutting off what was sent before it.
-    const writer = new StreamMessageWriter(this.#child.stdin);
-    let written = Promise.resolve();
-    const ordered: MessageWriter = {
-      onError: writer.onError,
-      onClose: writer.onClose,
-      write: (message) => (written = writer.write(message)),
-      end: () => {
-        const end = () => writer.end();
-        written.then(end, end);
-      },
-      dispose: () => writer.dispose(),
-    };
-    const connection = createMessageConnection(counted, ordered, undefined, {
-      messageStrategy: {
-        handleMessage: (message, next) => {
-          try {
-            next(message);
-          } finally {
-            handled += 1;
-            disposeIfDrained();
-          }
-        },
-      },
-    });
-    // The connection's own onClose also fires when the driver's input closes,
-    // and messages may still wait in its queue; only the reader tells that
-    // nothing more comes.
-    reader.onClose(() => {
-      ended = true;
-      disposeIfDrained();
-    });
-    function disposeIfDrained() {
-      if (ended && handled === received) {
-        connection.dispose();
-      }
-    }
-    return connection;
+  /** The driver's input, for a channel in its protocol. */
+  get stdin(): Writable {
+    return this.#child.stdin;
   }
 
-  raw(): RawChannel {
-    return new RawChannel(this.#child.stdout, this.#child.stdin);
+  /** The driver's output, for a channel in its protocol. */
+  get stdout(): Readable {
+    return this.#child.stdout;
   }
 
   jsonLines(): JsonLines {
     return new JsonLines(this.#child.stdout, this.#child.stdin);
   }
 
-  /** Lets the driver log a warn or error line matching `pattern`. */
-  expectLog(pattern: RegExp): void {
-    this.#expectedLogs.push(pattern);
+  /**
+   * Lets the driver log `count` warn or error lines matching `pattern`: one
+   * for what the test is about to do, unless it says more, and Infinity for
+   * input that may make the driver log anything. A line takes the first
+   * allowance it matches that has one left.
+   */
+  expectLog(pattern: RegExp, count = 1): void {
+    this.#allowances.push({ pattern, left: count });
   }
 
   /**
@@ -183,9 +125,16 @@ export class Driver {
       SANITIZER_REPORT,
       `a sanitizer report; ${stderr}`,
     );
-    const unexpected = (this.#stderr.match(PROBLEM) ?? []).filter(
-      (line) => !this.#expectedLogs.some((pattern) => pattern.test(line)),
-    );
+    const unexpected = (this.#stderr.match(PROBLEM) ?? []).filter((line) => {
+      const allowance = this.#allowances.find(
+        ({ pattern, left }) => left > 0 && pattern.test(line),
+      );
+      if (allowance === undefined) {
+        return true;
+      }
+      allowance.left -= 1;
+      return false;
+    });
     assert.deepEqual(unexpected, [], `unexpected log lines; ${stderr}`);
     assert.deepEqual(
       exit,
@@ -216,6 +165,25 @@ export class Driver {
   async kill(): Promise<void> {
     this.#checked = true;
     await this.#end();
+  }
+
+  /**
+   * Runs `body`, which ends with expectExit(); if it fails, kills the driver
+   * and fails with its stderr, for a test the driver outlives, such as a run
+   * of a fuzz test.
+   */
+  async reported<T>(body: () => Promise<T>): Promise<T> {
+    try {
+      return await body();
+    } catch (error) {
+      await this.kill();
+      throw new Error(
+        `${String(error)}\n${this.name}'s stderr:\n${this.#stderr}`,
+        {
+          cause: error,
+        },
+      );
+    }
   }
 
   async #abandon(): Promise<void> {

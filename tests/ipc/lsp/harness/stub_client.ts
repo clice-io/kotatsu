@@ -22,7 +22,8 @@ import {
   type WorkDoneProgressReport,
 } from "vscode-languageserver-protocol";
 
-import { Driver } from "../../harness/driver.ts";
+import { Driver } from "../../../harness/driver.ts";
+import { connect } from "../../harness/connection.ts";
 
 export const TEST_URI = "file:///tmp/test.cpp";
 export const POSITION = { line: 0, character: 0 };
@@ -39,7 +40,7 @@ export class StubClient {
 
   private constructor(driver: Driver) {
     this.driver = driver;
-    this.connection = driver.connect();
+    this.connection = connect(driver);
     this.connection.onNotification(
       PublishDiagnosticsNotification.type,
       ({ uri, diagnostics }) => this.#diagnostics.deliver(uri, diagnostics),

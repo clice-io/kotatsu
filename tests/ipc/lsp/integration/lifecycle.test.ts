@@ -1,30 +1,30 @@
 // The server's lifecycle: what initialize reports, and how shutdown and exit
-// end the server. Those two are watched on the raw wire, where what the server
-// does not send shows too.
+// end the server. Those two are watched on a raw channel, where what the
+// server does not send shows too.
 
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 
 import { TextDocumentSyncKind } from "vscode-languageserver-protocol";
 
-import { Driver } from "../../harness/driver.ts";
-import type { RawChannel } from "../../harness/raw.ts";
+import { Driver } from "../../../harness/driver.ts";
+import { RawChannel } from "../../harness/raw.ts";
 import { withStub } from "../harness/stub_client.ts";
 
 async function initialized(t: TestContext): Promise<[Driver, RawChannel]> {
   const driver = await Driver.spawn(t, "lsp_stub_server");
-  const wire = driver.raw();
-  wire.send({
+  const channel = RawChannel.of(driver);
+  channel.send({
     jsonrpc: "2.0",
     id: 1,
     method: "initialize",
     params: { processId: null, rootUri: null, capabilities: {} },
   });
-  const response = await wire.receive();
+  const response = await channel.receive();
   assert.equal(response?.id, 1);
   assert.ok(response.result);
-  wire.send({ jsonrpc: "2.0", method: "initialized", params: {} });
-  return [driver, wire];
+  channel.send({ jsonrpc: "2.0", method: "initialized", params: {} });
+  return [driver, channel];
 }
 
 test(
@@ -44,22 +44,22 @@ test(
 );
 
 test("exit_after_shutdown_exits_zero", async (t) => {
-  const [driver, wire] = await initialized(t);
-  wire.send({ jsonrpc: "2.0", id: 2, method: "shutdown" });
-  assert.deepEqual(await wire.receive(), {
+  const [driver, channel] = await initialized(t);
+  channel.send({ jsonrpc: "2.0", id: 2, method: "shutdown" });
+  assert.deepEqual(await channel.receive(), {
     jsonrpc: "2.0",
     id: 2,
     result: null,
   });
-  wire.send({ jsonrpc: "2.0", method: "exit" });
+  channel.send({ jsonrpc: "2.0", method: "exit" });
   // No answer: the server closes its output and ends.
-  assert.equal(await wire.receive(), undefined);
+  assert.equal(await channel.receive(), undefined);
   await driver.expectExit(0);
 });
 
 test("exit_without_shutdown_exits_one", async (t) => {
-  const [driver, wire] = await initialized(t);
-  wire.send({ jsonrpc: "2.0", method: "exit" });
-  assert.equal(await wire.receive(), undefined);
+  const [driver, channel] = await initialized(t);
+  channel.send({ jsonrpc: "2.0", method: "exit" });
+  assert.equal(await channel.receive(), undefined);
   await driver.expectExit(1);
 });

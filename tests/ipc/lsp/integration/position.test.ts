@@ -13,9 +13,9 @@ import { test, type TestContext } from "node:test";
 import fc from "fast-check";
 import { TextDocument } from "vscode-languageserver-textdocument";
 
-import { Driver } from "../../harness/driver.ts";
-import { FUZZ_TIMEOUT, fuzz, within } from "../../harness/fuzz.ts";
-import type { JsonLines } from "../../harness/jsonl.ts";
+import { Driver } from "../../../harness/driver.ts";
+import { FUZZ_TIMEOUT, fuzz, within } from "../../../harness/fuzz.ts";
+import type { JsonLines } from "../../../harness/jsonl.ts";
 import { deviations } from "../harness/known_deviations.ts";
 
 // Text made of ASCII, a two-byte and a four-byte (surrogate pair) character,

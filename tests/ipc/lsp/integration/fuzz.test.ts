@@ -1,7 +1,7 @@
 // lsp_stub_server under random use: fast-check draws an initialize request and
 // a sequence of client messages, every method the metaModel lets a client
 // send with params drawn from its metaModel type (protocol_values.ts), and
-// checks on the raw wire that:
+// checks on a raw channel that:
 //
 // - every request gets exactly one response, with its id: a result of the
 //   method's metaModel result type for what the stub serves, MethodNotFound
@@ -21,9 +21,9 @@ import {
   Schema,
   type Type,
 } from "../../../../scripts/lsp/metamodel.ts";
-import { Driver } from "../../harness/driver.ts";
-import { FUZZ_TIMEOUT, fuzz, within } from "../../harness/fuzz.ts";
-import type { Message } from "../../harness/raw.ts";
+import type { Driver } from "../../../harness/driver.ts";
+import { FUZZ_TIMEOUT, fuzz, within } from "../../../harness/fuzz.ts";
+import { errorOf } from "../../harness/raw.ts";
 import { Session } from "../../harness/session.ts";
 import { ProtocolValues } from "../harness/protocol_values.ts";
 
@@ -92,10 +92,6 @@ const message: fc.Arbitrary<Sent> = fc.oneof(
     }),
 );
 
-function errorCode(response: Message): unknown {
-  return (response.error as { code?: unknown } | undefined)?.code;
-}
-
 async function probe(session: Session): Promise<void> {
   // A notification's decoding fails in the log only; the probe comes after.
   const response = await within(
@@ -140,7 +136,7 @@ async function send(
     );
   } else {
     driver.expectLog(/^\[error\] error response: method not found: /);
-    assert.equal(errorCode(response), -32601, where);
+    assert.equal(errorOf(response).code, -32601, where);
   }
   await probe(session);
 }
@@ -150,11 +146,10 @@ async function run(
   initialize: unknown,
   messages: Sent[],
 ): Promise<void> {
-  const driver = await Driver.spawn(t, "lsp_stub_server");
   // The stub asks the client to create progress only for file:///progress,
   // which the drawn text is too short to be, so the session answers nothing.
-  const session = new Session(driver.raw());
-  try {
+  const [driver, session] = await Session.spawn(t, "lsp_stub_server");
+  await driver.reported(async () => {
     const initialized = await within(
       session.request("initialize", initialize),
       "initialize",
@@ -169,15 +164,7 @@ async function run(
     session.notify("exit");
     await within(session.ended, "end of the stub's output");
     await driver.expectExit(0);
-  } catch (error) {
-    await driver.kill();
-    throw new Error(
-      `${String(error)}\n${driver.name}'s stderr:\n${driver.stderr}`,
-      {
-        cause: error,
-      },
-    );
-  }
+  });
 }
 
 test("stub_serves_random_messages", { timeout: FUZZ_TIMEOUT }, (t) =>

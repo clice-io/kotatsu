@@ -21,15 +21,15 @@ import {
   Schema,
   type Type,
 } from "../../../../scripts/lsp/metamodel.ts";
-import { Driver } from "../../harness/driver.ts";
+import { Driver } from "../../../harness/driver.ts";
 import {
   FUZZ_TIMEOUT,
   fuzz,
   roundtrip,
   RUNS,
   within,
-} from "../../harness/fuzz.ts";
-import type { JsonLines } from "../../harness/jsonl.ts";
+} from "../../../harness/fuzz.ts";
+import type { JsonLines } from "../../../harness/jsonl.ts";
 import { ProtocolValues } from "../harness/protocol_values.ts";
 
 const schema = new Schema(await loadMetaModel());

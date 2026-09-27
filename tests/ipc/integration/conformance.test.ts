@@ -1,6 +1,6 @@
 // jsonrpc_driver against the client VS Code uses, vscode-jsonrpc: each of the
 // driver's methods as that client sees it. What no conforming client sends,
-// and close_output, are checked on the raw wire.
+// and close_output, are checked on a raw channel.
 
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
@@ -12,14 +12,21 @@ import {
   type MessageConnection,
 } from "vscode-jsonrpc/node";
 
-import { Driver } from "../harness/driver.ts";
-import { frame, frameText, type Message } from "../harness/raw.ts";
+import { Driver } from "../../harness/driver.ts";
+import { connect } from "../harness/connection.ts";
+import { echo, probe } from "../harness/jsonrpc_driver.ts";
+import {
+  errorOf,
+  frame,
+  frameText,
+  resultOf,
+  type Message,
+} from "../harness/raw.ts";
 import { Session } from "../harness/session.ts";
 
 async function connected(t: TestContext): Promise<[Driver, MessageConnection]> {
   const driver = await Driver.spawn(t, "jsonrpc_driver");
-  const connection = driver.connect();
-  return [driver, connection];
+  return [driver, connect(driver)];
 }
 
 /** Ends the driver's input and checks that it exits with 0. */
@@ -190,18 +197,10 @@ test("answers_in_flight_at_input_end_are_delivered", async (t) => {
   await driver.expectExit(0);
 });
 
-// On the raw wire.
+// On a raw channel.
 
-const echo = (id: number) => ({
-  jsonrpc: "2.0",
-  id,
-  method: "test/echo",
-  params: [id],
-});
-
-async function wired(t: TestContext): Promise<[Driver, Session]> {
-  const driver = await Driver.spawn(t, "jsonrpc_driver");
-  return [driver, new Session(driver.raw())];
+function spawn(t: TestContext) {
+  return Session.spawn(t, "jsonrpc_driver");
 }
 
 /** The driver's answers to `payloads`, which it gives in order, before the probe's. */
@@ -210,63 +209,50 @@ async function answersTo(
   payloads: string[],
 ): Promise<Message[]> {
   for (const payload of payloads) {
-    await session.wire.write(frameText(payload));
+    await session.channel.write(frameText(payload));
   }
-  assert.deepEqual((await session.request("test/echo", ["probe"])).result, [
-    "probe",
-  ]);
-  return session.strays.splice(0);
-}
-
-async function end(driver: Driver, session: Session): Promise<void> {
-  session.wire.end();
-  await session.ended;
-  await driver.expectExit(0);
+  return probe(session);
 }
 
 test("close_output_ends_the_output", async (t) => {
-  const [driver, session] = await wired(t);
+  const [driver, session] = await spawn(t);
   const first = session.expect(1);
-  session.wire.send(echo(1));
-  assert.deepEqual((await first).result, [1]);
+  session.channel.send(echo(1));
+  assert.deepEqual(resultOf(await first), [1]);
   session.notify("test/closeOutput");
   await session.ended;
-  await end(driver, session);
+  await session.finish(driver);
 });
 
 test("answers_queued_before_close_output_are_delivered", async (t) => {
-  const [driver, session] = await wired(t);
+  const [driver, session] = await spawn(t);
   const answers = [1, 2, 3].map((id) => session.expect(id));
-  await session.wire.write(
+  await session.channel.write(
     Buffer.concat([
       ...[1, 2, 3].map((id) => frame(echo(id))),
       frame({ jsonrpc: "2.0", method: "test/closeOutput" }),
     ]),
   );
-  assert.deepEqual(
-    (await Promise.all(answers)).map((answer) => answer.result),
-    [[1], [2], [3]],
-  );
+  assert.deepEqual((await Promise.all(answers)).map(resultOf), [[1], [2], [3]]);
   await session.ended;
-  await end(driver, session);
+  await session.finish(driver);
 });
 
 test("bad_json_answers_parse_error_with_null_id", async (t) => {
-  const [driver, session] = await wired(t);
+  const [driver, session] = await spawn(t);
   driver.expectLog(/^\[error\] error response: /);
   const [answer] = await answersTo(session, ["{"]);
   assert.deepEqual(
-    [answer?.id, (answer?.error as { code?: unknown })?.code],
+    [answer?.id, answer && errorOf(answer).code],
     [null, -32700],
   );
-  await end(driver, session);
+  await session.finish(driver);
 });
 
 // Answered with the id when the message has one it can be answered by, and
 // with null otherwise.
 test("json_that_is_no_request_answers_invalid_request", async (t) => {
-  const [driver, session] = await wired(t);
-  driver.expectLog(/^\[error\] error response: /);
+  const [driver, session] = await spawn(t);
   const answered: [string, number | null][] = [
     ["42", null],
     ['"text"', null],
@@ -276,22 +262,20 @@ test("json_that_is_no_request_answers_invalid_request", async (t) => {
     [JSON.stringify({ jsonrpc: "2.0", id: 1.5, method: "test/echo" }), null],
     [JSON.stringify({ jsonrpc: "2.0", id: 99, method: 5 }), 99],
   ];
+  driver.expectLog(/^\[error\] error response: /, answered.length);
   const answers = await answersTo(
     session,
     answered.map(([payload]) => payload),
   );
   assert.deepEqual(
-    answers.map((answer) => [
-      answer.id,
-      (answer.error as { code?: unknown })?.code,
-    ]),
+    answers.map((answer) => [answer.id, errorOf(answer).code]),
     answered.map(([, id]) => [id, -32600]),
   );
-  await end(driver, session);
+  await session.finish(driver);
 });
 
 test("null_id_request_answers_invalid_request", async (t) => {
-  const [driver, session] = await wired(t);
+  const [driver, session] = await spawn(t);
   driver.expectLog(/^\[error\] error response: /);
   const payload = JSON.stringify({
     jsonrpc: "2.0",
@@ -301,38 +285,36 @@ test("null_id_request_answers_invalid_request", async (t) => {
   });
   const answers = await answersTo(session, [payload]);
   assert.deepEqual(
-    answers.map((answer) => [
-      answer.id,
-      (answer.error as { code?: unknown })?.code,
-    ]),
+    answers.map((answer) => [answer.id, errorOf(answer).code]),
     [[null, -32600]],
   );
-  await end(driver, session);
+  await session.finish(driver);
 });
 
 test("error_response_without_id_is_not_answered", async (t) => {
-  const [driver, session] = await wired(t);
-  driver.expectLog(/^\[warn\] error response without an id: invalid$/);
+  const [driver, session] = await spawn(t);
+  driver.expectLog(/^\[warn\] error response without an id: invalid$/, 2);
   const error = { code: -32600, message: "invalid" };
   const answers = await answersTo(session, [
     JSON.stringify({ jsonrpc: "2.0", id: null, error }),
     JSON.stringify({ jsonrpc: "2.0", error }),
   ]);
   assert.deepEqual(answers, []);
-  await end(driver, session);
+  await session.finish(driver);
 });
 
 test("malformed_error_response_fails_its_request", async (t) => {
-  const driver = await Driver.spawn(t, "jsonrpc_driver");
-  const session = new Session(driver.raw(), (request) => ({
-    jsonrpc: "2.0",
-    id: request.id,
-    error: { code: "E1", message: "not an integer code" },
-  }));
+  const [driver, session] = await Session.spawn(t, "jsonrpc_driver", {
+    answer: (request) => ({
+      jsonrpc: "2.0",
+      id: request.id,
+      error: { code: "E1", message: "not an integer code" },
+    }),
+  });
   const answer = await session.request("test/call", {
     method: "client/refuse",
     params: {},
   });
-  assert.ok("error" in (answer.result as object));
-  await end(driver, session);
+  assert.ok("error" in (resultOf(answer) as object));
+  await session.finish(driver);
 });

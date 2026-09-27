@@ -1,6 +1,6 @@
 // Model-based fuzzing of JSON-RPC against jsonrpc_driver. fast-check draws a
-// sequence of client actions and runs it on a fresh driver over the raw wire,
-// checking:
+// sequence of client actions and runs it on a fresh driver over a raw
+// channel, checking:
 //
 // - every request gets exactly one response, with its id;
 // - echo answers its params; fail answers its error; a cancelled sleep
@@ -25,9 +25,10 @@ import { test, type TestContext } from "node:test";
 
 import fc from "fast-check";
 
-import { Driver } from "../harness/driver.ts";
-import { FUZZ_TIMEOUT, fuzz, roundtrip, within } from "../harness/fuzz.ts";
-import { frameText, type Message } from "../harness/raw.ts";
+import type { Driver } from "../../harness/driver.ts";
+import { FUZZ_TIMEOUT, fuzz, roundtrip, within } from "../../harness/fuzz.ts";
+import { probe } from "../harness/jsonrpc_driver.ts";
+import { errorOf, frameText, resultOf, type Message } from "../harness/raw.ts";
 import { Session } from "../harness/session.ts";
 
 type Model = { sleeping: number[] };
@@ -45,38 +46,27 @@ type Real = {
 
 type Command = fc.AsyncCommand<Model, Real>;
 
+// Text of any code point, control characters and those past ASCII included:
+// Content-Length counts bytes, and JSON escapes control characters.
+const text = fc.string({ unit: "binary" });
+
+function json(depthSize?: fc.DepthSize) {
+  return fc.jsonValue({ depthSize, stringUnit: "binary" });
+}
+
 // A JSON-RPC request's params: structured.
 const params = fc.oneof(
-  fc.dictionary(fc.string(), fc.jsonValue({ depthSize: "small" })),
-  fc.array(fc.jsonValue({ depthSize: "small" })),
+  fc.dictionary(text, json("small")),
+  fc.array(json("small")),
 );
 
-// A line of text, so that a log line quoting it stays one line.
-const line = fc.string().filter((text) => !/[\r\n]/.test(text));
+// A line of text, so that a log line quoting it stays one line: none of the
+// line ends a regular expression's ^ and $ see.
+const line = text.filter((value) => !/[\r\n\u2028\u2029]/.test(value));
 
-function resultOf(response: Message): unknown {
-  assert.ok(!("error" in response), `an error: ${JSON.stringify(response)}`);
-  assert.ok("result" in response, `no result: ${JSON.stringify(response)}`);
-  return response.result;
-}
-
-function errorOf(response: Message): Record<string, unknown> {
-  assert.ok(!("result" in response), `a result: ${JSON.stringify(response)}`);
-  const error = response.error;
-  assert.ok(
-    typeof error === "object" && error !== null,
-    `no error: ${JSON.stringify(response)}`,
-  );
-  return error as Record<string, unknown>;
-}
-
-async function probe(real: Real): Promise<void> {
-  const response = await within(
-    real.session.request("test/echo", ["probe"]),
-    "probe answer",
-  );
-  assert.deepEqual(resultOf(response), ["probe"]);
-  assert.deepEqual(real.session.strays, []);
+// The driver still serves, and has sent nothing the session did not ask for.
+async function stillServes(real: Real): Promise<void> {
+  assert.deepEqual(await probe(real.session), []);
 }
 
 class Echo implements Command {
@@ -91,7 +81,7 @@ class Echo implements Command {
       "echo",
     );
     assert.deepEqual(resultOf(response), roundtrip(this.params));
-    await probe(real);
+    await stillServes(real);
   }
   toString = () => `echo ${JSON.stringify(this.params)}`;
 }
@@ -115,7 +105,7 @@ class Sleep implements Command {
     // Handled when the run awaits it, at its end.
     checked.catch(() => {});
     real.settled.push(checked);
-    await probe(real);
+    await stillServes(real);
   }
   toString = () => `sleep ${this.ms}`;
 }
@@ -131,7 +121,7 @@ class Cancel implements Command {
     real.driver.expectLog(/^\[error\] error response: request cancelled$/);
     real.cancelled.add(id);
     real.session.notify("$/cancelRequest", { id });
-    await probe(real);
+    await stillServes(real);
   }
   toString = () => `cancel sleep #${this.pick}`;
 }
@@ -158,7 +148,7 @@ class Fail implements Command {
       { code, message },
       { code: this.code, message: this.message },
     );
-    await probe(real);
+    await stillServes(real);
   }
   toString = () => `fail ${this.code} ${JSON.stringify(this.message)}`;
 }
@@ -176,7 +166,7 @@ class UnknownMethod implements Command {
       "unknown method",
     );
     assert.equal(errorOf(response).code, -32601);
-    await probe(real);
+    await stillServes(real);
   }
   toString = () => `request ${JSON.stringify(this.method)}`;
 }
@@ -197,7 +187,7 @@ class BadParams implements Command {
       "bad params",
     );
     assert.equal(errorOf(response).code, -32602);
-    await probe(real);
+    await stillServes(real);
   }
   toString = () => `sleep with ${JSON.stringify(this.params)}`;
 }
@@ -211,7 +201,7 @@ class UnknownNotification implements Command {
   async run(_: Model, real: Real) {
     real.driver.expectLog(/^\[warn\] unhandled notification: /);
     real.session.notify(this.method, {});
-    await probe(real);
+    await stillServes(real);
   }
   toString = () => `notify ${JSON.stringify(this.method)}`;
 }
@@ -242,7 +232,7 @@ class Notify implements Command {
       notes.map((note) => note.params),
       Array.from({ length: this.count }, () => roundtrip(this.params)),
     );
-    await probe(real);
+    await stillServes(real);
   }
   toString = () => `notify ${this.count} x ${JSON.stringify(this.params)}`;
 }
@@ -305,15 +295,17 @@ class Call implements Command {
         assert.equal(cancels.length, 1);
       }
     }
-    await probe(real);
+    await stillServes(real);
   }
   toString = () => `call answered ${JSON.stringify(this.policy)}`;
 }
 
-function answer(real: Real) {
+// Answers the driver's request in a test/call as its policy says, keeping the
+// request under its tag.
+function answer(calls: Map<number, Message>) {
   return (request: Message): object | undefined => {
     const { tag, policy } = request.params as { tag: number; policy: Policy };
-    real.calls.set(tag, request);
+    calls.set(tag, request);
     switch (policy.kind) {
       case "result":
         return { jsonrpc: "2.0", id: request.id, result: policy.value };
@@ -357,10 +349,10 @@ const junk: fc.Arbitrary<Junk> = fc.oneof(
   fc
     .oneof(
       fc.integer(),
-      fc.string(),
+      text,
       fc.boolean(),
       fc.constant(null),
-      fc.array(fc.jsonValue()),
+      fc.array(json()),
     )
     .map((value) => ({ payload: JSON.stringify(value), code: -32600 })),
   // A request whose id is neither an integer nor a string, or null.
@@ -370,7 +362,7 @@ const junk: fc.Arbitrary<Junk> = fc.oneof(
       fc.double({ noInteger: true, noDefaultInfinity: true, noNaN: true }),
       fc.constant(null),
       fc.array(fc.integer()),
-      fc.dictionary(fc.string(), fc.integer()),
+      fc.dictionary(text, fc.integer()),
     )
     .map((id) => ({
       payload: JSON.stringify({
@@ -399,24 +391,20 @@ class Garbage implements Command {
   }
   check = () => true;
   async run(_: Model, real: Real) {
-    real.driver.expectLog(/^\[(?:warn|error)\] /);
-    await real.session.wire.write(frameText(this.junk.payload));
-    const replies = await this.#repliesAfterProbe(real);
     const { code } = this.junk;
+    real.driver.expectLog(
+      code === undefined
+        ? /^\[warn\] error response without an id: /
+        : /^\[error\] error response: /,
+    );
+    await real.session.channel.write(frameText(this.junk.payload));
+    // The driver answers in order, so its answer to the garbage, if any,
+    // comes before the probe's, as a stray.
+    const replies = await probe(real.session);
     assert.deepEqual(
       replies.map((reply) => ({ id: reply.id, code: errorOf(reply).code })),
       code === undefined ? [] : [{ id: null, code }],
     );
-  }
-  // The driver answers in order, so its answer to the garbage, if any, comes
-  // before the probe's, as a stray.
-  async #repliesAfterProbe(real: Real): Promise<Message[]> {
-    const response = await within(
-      real.session.request("test/echo", ["probe"]),
-      "probe answer",
-    );
-    assert.deepEqual(resultOf(response), ["probe"]);
-    return real.session.strays.splice(0);
   }
   toString = () => `garbage ${JSON.stringify(this.junk.payload)}`;
 }
@@ -428,30 +416,23 @@ const valid: fc.Arbitrary<Command>[] = [
   fc
     .tuple(fc.integer({ min: -(2 ** 31), max: 2 ** 31 - 1 }), line)
     .map(([code, message]) => new Fail(code, message)),
-  fc.string().map((name) => new UnknownMethod(`unknown/${name}`)),
+  text.map((name) => new UnknownMethod(`unknown/${name}`)),
   fc
-    .oneof(
-      fc.record({ ms: fc.string() }),
-      fc.string(),
-      fc.boolean(),
-      fc.array(fc.string()),
-    )
+    .oneof(fc.record({ ms: text }), text, fc.boolean(), fc.array(text))
     .map((value) => new BadParams(value)),
-  fc.string().map((name) => new UnknownNotification(`unknown/${name}`)),
+  text.map((name) => new UnknownNotification(`unknown/${name}`)),
   fc
     .tuple(params, fc.integer({ min: 0, max: 3 }))
     .map(([value, count]) => new Notify(value, count)),
   fc
     .oneof(
-      fc
-        .jsonValue({ depthSize: "small" })
-        .map((value): Policy => ({ kind: "result", value })),
+      json("small").map((value): Policy => ({ kind: "result", value })),
       fc
         .record(
           {
             code: fc.integer({ min: -(2 ** 31), max: 2 ** 31 - 1 }),
             message: line,
-            data: fc.jsonValue({ depthSize: "small" }),
+            data: json("small"),
           },
           { requiredKeys: ["code", "message"] },
         )
@@ -466,32 +447,24 @@ async function runCommands(
   t: TestContext,
   commands: Iterable<Command>,
 ): Promise<void> {
-  const driver = await Driver.spawn(t, "jsonrpc_driver");
-  try {
+  const calls = new Map<number, Message>();
+  const [driver, session] = await Session.spawn(t, "jsonrpc_driver", {
+    answer: answer(calls),
+  });
+  await driver.reported(async () => {
     const real: Real = {
       driver,
-      session: undefined as unknown as Session,
+      session,
       cancelled: new Set(),
       settled: [],
-      calls: new Map(),
+      calls,
       nextTag: 0,
     };
-    real.session = new Session(driver.raw(), answer(real));
     await fc.asyncModelRun(() => ({ model: { sleeping: [] }, real }), commands);
     await Promise.all(real.settled);
-    assert.deepEqual(real.session.strays, []);
-    real.session.wire.end();
-    await within(real.session.ended, "end of the driver's output");
-    await driver.expectExit(0);
-  } catch (error) {
-    await driver.kill();
-    throw new Error(
-      `${String(error)}\n${driver.name}'s stderr:\n${driver.stderr}`,
-      {
-        cause: error,
-      },
-    );
-  }
+    assert.deepEqual(session.strays, []);
+    await session.finish(driver);
+  });
 }
 
 test("protocol_holds_in_random_use", { timeout: FUZZ_TIMEOUT }, (t) =>

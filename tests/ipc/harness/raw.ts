@@ -1,14 +1,34 @@
-// JSON-RPC's base protocol at the byte level, for tests that watch the wire
-// itself rather than go through a client: each message is framed by a
-// Content-Length header.
+// JSON-RPC's base protocol at the byte level, for tests that watch the bytes
+// a driver reads and writes rather than go through a client: each message is
+// framed by a Content-Length header.
 
 import assert from "node:assert/strict";
 import type { Readable, Writable } from "node:stream";
+
+import type { Driver } from "../../harness/driver.ts";
 
 const SEPARATOR = "\r\n\r\n";
 
 /** A JSON-RPC message as it came, its members not yet checked. */
 export type Message = Record<string, unknown>;
+
+/** The result of `response`, which must be a success. */
+export function resultOf(response: Message): unknown {
+  assert.ok(!("error" in response), `an error: ${JSON.stringify(response)}`);
+  assert.ok("result" in response, `no result: ${JSON.stringify(response)}`);
+  return response.result;
+}
+
+/** The error of `response`, which must be an error response. */
+export function errorOf(response: Message): Record<string, unknown> {
+  assert.ok(!("result" in response), `a result: ${JSON.stringify(response)}`);
+  const error = response.error;
+  assert.ok(
+    typeof error === "object" && error !== null,
+    `no error: ${JSON.stringify(response)}`,
+  );
+  return error as Record<string, unknown>;
+}
 
 /** `payload` in a frame as kotatsu writes one. */
 export function frameText(payload: string): Buffer {
@@ -29,6 +49,11 @@ export class RawChannel {
   #input = Buffer.alloc(0);
   #ended = false;
   #wake: (() => void) | undefined;
+
+  /** A channel over `driver`'s stdio. */
+  static of(driver: Driver): RawChannel {
+    return new RawChannel(driver.stdout, driver.stdin);
+  }
 
   constructor(input: Readable, output: Writable) {
     this.#output = output;

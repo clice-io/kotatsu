@@ -4,13 +4,17 @@
 // handler. A response it cannot pair, a second one to an id or one to an id
 // never sent, is kept as a stray.
 
-import type { Message, RawChannel } from "./raw.ts";
+import type { TestContext } from "node:test";
+
+import { Driver } from "../../harness/driver.ts";
+import { within } from "../../harness/fuzz.ts";
+import { RawChannel, type Message } from "./raw.ts";
 
 /** Answers a request from the driver with a message, or leaves it unanswered. */
 export type Answer = (request: Message) => object | undefined;
 
 export class Session {
-  readonly wire: RawChannel;
+  readonly channel: RawChannel;
   readonly notifications: Message[] = [];
   readonly strays: Message[] = [];
   /** Resolves once the driver's output ends. */
@@ -19,10 +23,20 @@ export class Session {
   readonly #waiting = new Map<string, PromiseWithResolvers<Message>>();
   #nextId = 1;
 
-  constructor(wire: RawChannel, answer: Answer = () => undefined) {
-    this.wire = wire;
+  constructor(channel: RawChannel, answer: Answer = () => undefined) {
+    this.channel = channel;
     this.#answer = answer;
     this.ended = this.#read();
+  }
+
+  /** Spawns the driver `name` with `args`, and a session over its stdio. */
+  static async spawn(
+    t: TestContext,
+    name: string,
+    { args = [], answer }: { args?: string[]; answer?: Answer } = {},
+  ): Promise<[Driver, Session]> {
+    const driver = await Driver.spawn(t, name, args);
+    return [driver, new Session(RawChannel.of(driver), answer)];
   }
 
   /** Sends a request with a fresh id; `response` is its response. */
@@ -32,7 +46,7 @@ export class Session {
   ): { id: number; response: Promise<Message> } {
     const id = this.#nextId++;
     const response = this.expect(id);
-    this.wire.send({ jsonrpc: "2.0", id, method, params });
+    this.channel.send({ jsonrpc: "2.0", id, method, params });
     return { id, response };
   }
 
@@ -42,7 +56,7 @@ export class Session {
   }
 
   notify(method: string, params?: unknown): void {
-    this.wire.send({ jsonrpc: "2.0", method, params });
+    this.channel.send({ jsonrpc: "2.0", method, params });
   }
 
   /**
@@ -61,11 +75,21 @@ export class Session {
     return waiting.promise;
   }
 
+  /**
+   * Ends the driver's input, then waits for its output to end and checks
+   * that it exits with 0.
+   */
+  async finish(driver: Driver): Promise<void> {
+    this.channel.end();
+    await within(this.ended, "end of the driver's output");
+    await driver.expectExit(0);
+  }
+
   async #read(): Promise<void> {
     for (
-      let message = await this.wire.receive();
+      let message = await this.channel.receive();
       message;
-      message = await this.wire.receive()
+      message = await this.channel.receive()
     ) {
       this.#dispatch(message);
     }
@@ -81,7 +105,7 @@ export class Session {
       if ("id" in message) {
         const reply = this.#answer(message);
         if (reply !== undefined) {
-          this.wire.send(reply);
+          this.channel.send(reply);
         }
       } else {
         this.notifications.push(message);

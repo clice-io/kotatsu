@@ -14,9 +14,9 @@ import { test, type TestContext } from "node:test";
 import fc from "fast-check";
 import { URI } from "vscode-uri";
 
-import { Driver } from "../../harness/driver.ts";
-import { FUZZ_TIMEOUT, fuzz, within } from "../../harness/fuzz.ts";
-import type { JsonLines } from "../../harness/jsonl.ts";
+import { Driver } from "../../../harness/driver.ts";
+import { FUZZ_TIMEOUT, fuzz, within } from "../../../harness/fuzz.ts";
+import type { JsonLines } from "../../../harness/jsonl.ts";
 
 // Windows paths (drive letters, backslashes, what fsPath makes of them) are
 // not drawn yet.
