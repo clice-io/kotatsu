@@ -197,6 +197,10 @@ ZEST_CASE(engaged_nullable_root_is_its_value) {
     ASSERT(read);
     ASSERT(*read != nullptr);
     EXPECT(**read == point);
+    auto optional = toml::from_string<std::optional<test::Point>>("x = 1\ny = 2");
+    ASSERT(optional);
+    ASSERT(optional->has_value());
+    EXPECT(**optional == point);
     auto number = toml::from_string<std::shared_ptr<int>>("__value = 7");
     ASSERT(number);
     ASSERT(*number != nullptr);

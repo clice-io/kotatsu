@@ -42,7 +42,10 @@ age = 30
 )",
                                     out);
     ASSERT(!status);
-    EXPECT(zest::starts_with(status.error().message, "TOML parse error: "));
+    // toml++'s description follows the prefix.
+    constexpr std::string_view prefix = "TOML parse error: ";
+    EXPECT(zest::starts_with(status.error().message, prefix));
+    EXPECT(status.error().message.size() > prefix.size());
     ASSERT(status.error().location);
     EXPECT(status.error().location->line == 2U);
 }

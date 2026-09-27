@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "codec/harness/fixtures/structs.h"
+#include "codec/harness/fixtures/tagged.h"
 #include "kota/zest/zest.h"
 #include "kota/codec/dyn/dyn.h"
 
@@ -65,6 +66,29 @@ ZEST_CASE(duplicate_keys_last_wins) {
                        {"x", 3},
                        {"y", 2}
     }));
+}
+
+ZEST_CASE(adjacent_duplicate_tag_fails) {
+    // A tree may hold a key twice, as json text may.
+    dyn::Object object;
+    object.insert("t", "number");
+    object.insert("t", "point");
+    object.insert("c", std::int64_t{42});
+    test::AdjacentShape out;
+    auto status = dyn::from_dyn(dyn::Value(object), out);
+    ASSERT(!status);
+    EXPECT(status.error().message == "adjacently tagged variant: duplicate tag field");
+}
+
+ZEST_CASE(adjacent_duplicate_content_fails) {
+    dyn::Object object;
+    object.insert("t", "number");
+    object.insert("c", std::int64_t{1});
+    object.insert("c", std::int64_t{2});
+    test::AdjacentShape out;
+    auto status = dyn::from_dyn(dyn::Value(object), out);
+    ASSERT(!status);
+    EXPECT(status.error().message == "adjacently tagged variant: duplicate content field");
 }
 
 ZEST_CASE(type_mismatch_fails) {

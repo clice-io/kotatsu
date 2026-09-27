@@ -46,6 +46,16 @@ ZEST_CASE(scalars_hold_their_kind) {
     EXPECT(text.get_string() == "hello");
 }
 
+ZEST_CASE(as_accessors_read_their_own_kind) {
+    // The get_ accessors convert between the number kinds; the as_ ones read
+    // the kind the value holds.
+    EXPECT(dyn::Value(true).as_bool());
+    EXPECT(dyn::Value(std::int64_t{-7}).as_int() == -7);
+    EXPECT(dyn::Value(std::uint64_t{18446744073709551615ULL}).as_uint() == 18446744073709551615ULL);
+    EXPECT(dyn::Value(3.5).as_double() == 3.5);
+    EXPECT(dyn::Value("hello").as_string() == "hello");
+}
+
 ZEST_CASE(integer_accessors_cross_signedness_in_range) {
     dyn::Value big(std::uint64_t{9223372036854775808ULL});
     EXPECT(big.is_int());

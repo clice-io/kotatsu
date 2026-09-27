@@ -161,11 +161,16 @@ ZEST_CASE(assign_after_lookup_is_found) {
         ZEST_CONTEXT("{} entries", size);
         auto object = numbered(size);
         EXPECT(lookup(object, "k5") == std::int64_t{5});
+        // An existing key's value is replaced in place, and the lookups
+        // after it go through the index the first one built.
         object.assign("k5", std::int64_t{50});
-        object.assign("new", std::int64_t{99});
         EXPECT(lookup(object, "k5") == std::int64_t{50});
-        EXPECT(lookup(object, "new") == std::int64_t{99});
         EXPECT(lookup(object, "k0") == std::int64_t{0});
+        EXPECT(lookup(object, key(size - 1)) == std::int64_t{size - 1});
+        EXPECT(object.size() == static_cast<std::size_t>(size));
+        object.assign("new", std::int64_t{99});
+        EXPECT(lookup(object, "new") == std::int64_t{99});
+        EXPECT(lookup(object, "k5") == std::int64_t{50});
         EXPECT(object.size() == static_cast<std::size_t>(size + 1));
     }
 }
