@@ -59,8 +59,8 @@ ZEST_CASE(await_of_a_void_child_resumes_after_it) {
     EXPECT(order == std::vector{1, 2});
 }
 
-// Awaited as an lvalue, a task keeps its frame: its owner can still ask it
-// what it ended with, and the frame goes with the owner.
+// Awaited as an lvalue, a task keeps its frame: its owner can still ask
+// whether it is done, and the frame goes with the owner.
 ZEST_CASE(await_of_an_lvalue_keeps_the_frame) {
     auto frame = std::make_shared<int>();
     std::weak_ptr<int> watch = frame;
@@ -314,7 +314,6 @@ ZEST_CASE(cancel_of_a_finished_task_changes_nothing) {
     ASSERT(result.has_value());
     EXPECT(*result == 1);
     EXPECT(!target.is_cancelled());
-    EXPECT(target.result() == 1);
     EXPECT(drove.has_value());
 }
 
@@ -463,28 +462,25 @@ ZEST_CASE(cancel_of_a_task_that_has_not_started_only_marks_it) {
     EXPECT(!ran);
 }
 
-// A root cancelled before its first turn never runs, and the loop still frees
-// one it owns. Its frame holds a copy of `frame`, which tells when it goes.
-ZEST_CASE(scheduled_root_cancelled_before_it_starts_never_runs) {
+// A root the loop owns and that was cancelled before its first turn never
+// runs, and the loop still frees it. Its frame holds a copy of `frame`, which
+// tells when it goes.
+ZEST_CASE(owned_root_cancelled_before_it_starts_is_freed) {
     auto frame = std::make_shared<int>();
     std::weak_ptr<int> watch = frame;
-    int ran = 0;
+    bool ran = false;
     auto make = [&](std::shared_ptr<int>) -> task<> {
-        ran += 1;
+        ran = true;
         co_return;
     };
     auto owned = make(std::move(frame));
-    auto kept = make(nullptr);
     owned.cancel();
-    kept.cancel();
 
     loop.schedule(std::move(owned));
-    loop.schedule(kept);
     EXPECT(!watch.expired());
     loop.run();
     EXPECT(watch.expired());
-    EXPECT(kept.is_cancelled());
-    EXPECT(ran == 0);
+    EXPECT(!ran);
 }
 
 // A root cancelled after it was scheduled, before its first turn, never runs

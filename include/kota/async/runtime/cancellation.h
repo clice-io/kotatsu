@@ -14,8 +14,6 @@ namespace kota {
 /// it to. Copies share the source's state and outlive the source.
 class cancellation_token {
 public:
-    cancellation_token() = delete;
-
     bool cancelled() const noexcept {
         return fired->is_set();
     }

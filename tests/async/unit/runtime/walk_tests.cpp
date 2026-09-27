@@ -40,9 +40,8 @@ struct Collector : async_visitor<Collector> {
         return enter_aggregates;
     }
 
-    bool visit_io(const io_op& node) {
+    void visit_io(const io_op& node) {
         nodes.push_back(node.kind);
-        return true;
     }
 
     bool visit_sync(const sync_primitive& resource) {
@@ -105,7 +104,7 @@ ZEST_CASE(visitor_walks_down_to_the_resources) {
     ASSERT(walked.has_value());
     EXPECT(walked->count(Kind::WhenAll) == 1U);
     EXPECT(walked->count(Kind::Waiter) == 2U);
-    EXPECT(walked->count(Kind::Task) >= 3U);
+    EXPECT(walked->count(Kind::Task) == 3U);
     EXPECT(zest::contains(walked->resources, sync_primitive::Kind::Event));
     EXPECT(zest::contains(walked->resources, sync_primitive::Kind::Mutex));
     EXPECT(walked->linked_both_ways(&gate));

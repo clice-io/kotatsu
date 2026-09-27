@@ -89,6 +89,30 @@ ZEST_CASE(child_cancelled_before_it_started_never_runs) {
     EXPECT(ran == 1);
 }
 
+// The first decision cancels every child not started yet, those behind a
+// child cancelled before it started included.
+ZEST_CASE(cancel_reaches_children_behind_one_cancelled_before_it_started) {
+    event gate;
+    auto ready = []() -> task<int> {
+        co_return 1;
+    };
+    auto slow = [&]() -> task<int> {
+        co_await gate.wait();
+        co_return 2;
+    };
+    auto combined = [&]() -> task<std::size_t> {
+        auto cancelled = ready();
+        cancelled.cancel();
+        auto winner = co_await when_any(ready(), std::move(cancelled), slow());
+        co_return winner.index();
+    };
+
+    auto [result] = run(combined());
+    ASSERT(result.has_value());
+    EXPECT(*result == 0U);
+    EXPECT(!gate.has_waiters());
+}
+
 ZEST_CASE(any_child_cancel_cancels_the_rest) {
     event gate;
     event go;

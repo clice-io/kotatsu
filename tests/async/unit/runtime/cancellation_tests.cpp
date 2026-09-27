@@ -13,7 +13,7 @@ task<int> ready(int value) {
     co_return value;
 }
 
-ZEST_SUITE(async_vocab_cancellation, test::LoopFixture) {
+ZEST_SUITE(async_runtime_cancellation, test::LoopFixture) {
 
 ZEST_CASE(cancel_reaches_every_token) {
     cancellation_source source;
@@ -265,7 +265,7 @@ ZEST_CASE(nested_with_token_sharing_one_token_cancels_the_inner_task) {
     EXPECT(driver.has_value());
 }
 
-};  // ZEST_SUITE(async_vocab_cancellation)
+};  // ZEST_SUITE(async_runtime_cancellation)
 
 }  // namespace
 

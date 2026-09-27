@@ -322,6 +322,8 @@ task<void, http::error>
                                 std::optional<task<http::response, http::error>>& sibling) {
     auto first = co_await api.get(std::move(first_url)).send().or_fail();
     EXPECT(first.text() == "/first");
+    // A task must not be destroyed while it runs: end it first.
+    sibling->cancel();
     sibling.reset();
 }
 

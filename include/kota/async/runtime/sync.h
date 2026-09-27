@@ -73,13 +73,6 @@ private:
 /// notification to the next waiter on it.
 class wait_node : public async_node {
 public:
-    explicit wait_node(sync_primitive& owner) noexcept :
-        async_node(NodeKind::Waiter), owner(&owner) {}
-
-    /// A condition variable wait: it unlocks `relock` while it waits and locks
-    /// it again before it ends, cancelled or not.
-    wait_node(condition_variable& owner, mutex& relock) noexcept;
-
     bool await_ready() noexcept;
 
     template <typename Promise>
@@ -94,8 +87,19 @@ public:
 private:
     friend class async_node;
     friend class sync_primitive;
+    friend class mutex;
+    friend class semaphore;
+    friend class event;
+    friend class condition_variable;
     template <typename Derived>
     friend class async_visitor;
+
+    explicit wait_node(sync_primitive& owner) noexcept :
+        async_node(NodeKind::Waiter), owner(&owner) {}
+
+    /// A condition variable wait: it unlocks `relock` while it waits and locks
+    /// it again before it ends, cancelled or not.
+    wait_node(condition_variable& owner, mutex& relock) noexcept;
 
     std::coroutine_handle<> wait(task_frame& waiting, std::source_location location) noexcept;
 
@@ -117,11 +121,10 @@ private:
 
     wait_node* prev = nullptr;
     wait_node* next = nullptr;
-
-    /// A condition variable wait has been notified.
-    bool notified = false;
 };
 
+/// Mutual exclusion between tasks, handed from each unlock() to the first
+/// task waiting in lock().
 class mutex : public sync_primitive {
 public:
     using lock_awaiter = wait_node;
@@ -129,10 +132,12 @@ public:
     explicit mutex(std::source_location location = std::source_location::current()) noexcept :
         sync_primitive(Kind::Mutex, location) {}
 
+    /// Locks the mutex; waits for it while another task holds it.
     lock_awaiter lock() noexcept {
         return lock_awaiter(*this);
     }
 
+    /// Locks the mutex if it is free.
     bool try_lock() noexcept {
         if(locked) {
             return false;
@@ -153,6 +158,8 @@ private:
     bool locked = false;
 };
 
+/// A counting semaphore: release() adds units, acquire() takes one, and a
+/// task waits in acquire() while there is none.
 class semaphore : public sync_primitive {
 public:
     using acquire_awaiter = wait_node;
@@ -163,10 +170,12 @@ public:
         assert(initial >= 0 && "semaphore initial count must be non-negative");
     }
 
+    /// Takes a unit; waits for one while there is none.
     acquire_awaiter acquire() noexcept {
         return acquire_awaiter(*this);
     }
 
+    /// Takes a unit if there is one.
     bool try_acquire() noexcept {
         if(count <= 0) {
             return false;
@@ -189,6 +198,7 @@ private:
     std::ptrdiff_t count;
 };
 
+/// A flag tasks wait on until it is set; it stays set until reset().
 class event : public sync_primitive {
 public:
     using wait_awaiter = wait_node;
@@ -208,6 +218,7 @@ public:
         wake_all();
     }
 
+    /// Clears the event; later waits wait for the next set().
     void reset() noexcept {
         signaled = false;
     }
@@ -220,6 +231,7 @@ private:
     bool signaled;
 };
 
+/// Waits for a notification under a mutex, like std::condition_variable.
 class condition_variable : public sync_primitive {
 public:
     using wait_awaiter = wait_node;

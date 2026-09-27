@@ -34,19 +34,21 @@ void async_node::resume_and_drain(std::coroutine_handle<> handle) {
 
     const bool outermost = !std::exchange(draining, true);
     handle.resume();
+    if(!outermost) {
+        return;
+    }
+    if(event_loop::has_current()) {
+        event_loop::current().drain_deferred();
+    }
 #if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    // Only now is no frame that ended still on the stack.
     while(!pending_frame_destroys.empty()) {
         for(auto frame: std::exchange(pending_frame_destroys, {})) {
             frame.destroy();
         }
     }
 #endif
-    if(outermost) {
-        if(event_loop::has_current()) {
-            event_loop::current().drain_deferred();
-        }
-        draining = false;
-    }
+    draining = false;
 }
 
 void async_node::cancel() {
@@ -78,6 +80,13 @@ void async_node::cancel() {
             break;
         }
     }
+}
+
+void async_node::awaited_by(task_frame& waiting, std::source_location location) noexcept {
+    this->location = location;
+    parent = &waiting;
+    waiting.child = this;
+    state = State::Running;
 }
 
 std::coroutine_handle<> async_node::on_child_complete(async_node& child) {
@@ -133,9 +142,8 @@ std::coroutine_handle<> task_frame::await_task(task_frame& awaited,
 
 std::coroutine_handle<> task_frame::finish(State end) {
     state = end;
-    child = nullptr;
     if(parent == nullptr) {
-        if(root) {
+        if(owned_by_loop) {
             destroy_frame(handle());
         }
         return std::noop_coroutine();
@@ -144,13 +152,9 @@ std::coroutine_handle<> task_frame::finish(State end) {
 }
 
 void task_frame::resume_woken() {
-    if(cancel_requested) {
-        // The waiter handed its grant on when the cancel reached it.
-        resume_and_drain(finish(State::Cancelled));
-        return;
-    }
     child = nullptr;
-    resume_and_drain(handle());
+    // A waiter the cancel reached after its grant has handed the grant on.
+    resume_and_drain(cancel_requested ? finish(State::Cancelled) : handle());
 }
 
 void detail::task_access::run_root(task_frame& root) {
@@ -187,10 +191,7 @@ std::coroutine_handle<> aggregate_op::arm(task_frame& waiting,
         // None of the children starts; they go with the aggregate.
         return ended;
     }
-    this->location = location;
-    parent = &waiting;
-    waiting.child = this;
-    state = State::Running;
+    awaited_by(waiting, location);
     pending = children.size();
     for(auto* child: children) {
         child->location = location;
@@ -217,10 +218,7 @@ void aggregate_op::spawn(task_frame& child, std::source_location location) {
 
 std::coroutine_handle<> aggregate_op::await_children(task_frame& waiting,
                                                      std::source_location location) {
-    this->location = location;
-    parent = &waiting;
-    waiting.child = this;
-    state = State::Running;
+    awaited_by(waiting, location);
     if(waiting.cancel_requested) {
         // The checkpoint. The children already run, so they cannot just be
         // dropped: cancel them, and settling once they have ended ends the
@@ -235,11 +233,8 @@ void aggregate_op::stop() {
     if(decided() || done()) {
         return;
     }
-    {
-        pin held(*this);
-        decide(Decision::Resume);
-    }
-    resume_and_drain(settle_if_idle());
+    decision = Decision::Resume;
+    resume_and_drain(cancel_all());
 }
 
 std::coroutine_handle<> aggregate_op::child_completed(task_frame& child) {
@@ -299,8 +294,14 @@ void aggregate_op::decide(Decision d) {
 void aggregate_op::cancel_children() {
     // Cancelling one child can end any of them, which unlinks it and may even
     // destroy it, so every step takes the head afresh after moving it to the
-    // tail. The pass is over once the head is a child already cancelled.
-    while(head != nullptr && !head->cancel_requested) {
+    // tail. The children not reached yet stay ahead of the ones that were, and
+    // none is added meanwhile, so as many steps as there are children reach
+    // them all; a child cancelled twice ignores the second cancel.
+    std::size_t count = 0;
+    for(auto* child = head; child != nullptr; child = child->next_sibling) {
+        count += 1;
+    }
+    for(; count > 0 && head != nullptr; --count) {
         auto& child = *head;
         unlink(child);
         link(child);
@@ -335,10 +336,7 @@ std::coroutine_handle<> aggregate_op::settle_if_idle() {
 }
 
 std::coroutine_handle<> io_op::attach(task_frame& waiting, std::source_location location) noexcept {
-    this->location = location;
-    parent = &waiting;
-    waiting.child = this;
-    state = State::Running;
+    awaited_by(waiting, location);
     if(waiting.cancel_requested) {
         // The checkpoint. The operation may already be in flight, so it cannot
         // just be dropped: cancel it, and its completion ends the task.

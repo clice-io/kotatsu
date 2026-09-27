@@ -41,8 +41,9 @@ public:
     }
 
     /// Starts `child` and runs it until it first suspends. Refused, returning
-    /// false, once the group has been cancelled, a child has failed or join()
-    /// has returned.
+    /// false, once the children are being cancelled (by cancel(), by a child
+    /// that failed or was cancelled, or by a cancel of the task awaiting
+    /// join()) or join() has returned.
     template <typename T, typename E, typename C>
         requires std::is_void_v<E> || is_one_of<E, Errors...>
     bool spawn(task<T, E, C>&& child,
@@ -64,8 +65,10 @@ public:
         stop();
     }
 
-    /// Waits until every child has ended. Rethrows the first exception a
-    /// child threw.
+    /// Waits until every child has ended, then rethrows the first exception a
+    /// child threw, or gives the errors. Awaited by a task that gets
+    /// cancelled, it cancels the children, waits for them all the same, and
+    /// the task ends cancelled unless a child failed. Awaited once.
     auto join() noexcept {
         return join_awaiter{*this};
     }
@@ -108,7 +111,7 @@ private:
     template <typename T, typename E>
     static void take_error(task_frame& child, async_node& group) {
         static_cast<task_group&>(group).errors.emplace_back(
-            static_cast<task_promise_object<T, E>&>(child).take_error());
+            static_cast<typename task<T, E>::promise_type&>(child).take_error());
     }
 
     std::

@@ -3,7 +3,6 @@
 #include <memory>
 #include <source_location>
 #include <tuple>
-#include <type_traits>
 #include <utility>
 
 #include "kota/support/functional.h"
@@ -16,18 +15,6 @@ namespace kota {
 class async_node;
 class task_frame;
 class wait_node;
-
-template <typename T = void, typename E = void, typename C = void>
-class task;
-
-namespace detail {
-
-/// Readies `task` to start as a root, and hands its frame over to the event
-/// loop when `owned`. Defined in task.h.
-template <typename Task>
-task_frame& make_root(Task& task, bool owned, std::source_location location) noexcept;
-
-}  // namespace detail
 
 /// A thread-safe relay for posting callbacks to an event loop.
 ///
@@ -121,6 +108,8 @@ public:
         return self.get();
     }
 
+    friend class async_node;
+
 public:
     operator uv_loop_t&() noexcept;
 
@@ -148,14 +137,11 @@ public:
     /// rvalue, the task is the loop's, which destroys it once it ends; passed
     /// as an lvalue, it stays with the caller, who can still cancel() it and
     /// read its result() once it ends. A task cancelled before it starts
-    /// never runs.
+    /// never runs. Defined in task.h.
     template <typename Task>
-    void schedule(Task&& task, std::source_location location = std::source_location::current()) {
-        schedule(detail::make_root(task, std::is_rvalue_reference_v<Task&&>, location));
-    }
+    void schedule(Task&& task, std::source_location location = std::source_location::current());
 
 private:
-    friend class async_node;
     friend class wait_node;
 
     void schedule(task_frame& root);
@@ -172,9 +158,10 @@ private:
     std::unique_ptr<Self> self;
 };
 
-/// Convenience: creates a loop, schedules all tasks, runs it until they have
-/// ended and returns what each ended with: its value, its error, or that it was
-/// cancelled. Rethrows what a task threw.
+/// Convenience: creates a loop, schedules all tasks, runs it until it has no
+/// work left and returns what each task ended with: its value, its error, or
+/// that it was cancelled. Rethrows what a task threw. Every task must have
+/// ended by then.
 template <typename... Tasks>
 auto run(Tasks... tasks) {
     event_loop loop;

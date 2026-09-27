@@ -19,10 +19,13 @@
 
 namespace kota {
 
-template <typename T, typename E>
-struct task_promise_object;
+template <typename T = void, typename E = void, typename C = void>
+class task;
 
 namespace detail {
+
+template <typename T, typename E>
+struct task_promise;
 
 /// How the library reaches into tasks and their frames.
 struct task_access {
@@ -56,7 +59,7 @@ struct task_access {
         task_frame& root = task.h.promise();
         assert(root.state == async_node::State::Pending && "a task starts once");
         root.location = location;
-        root.root = owned;
+        root.owned_by_loop = owned;
         if(owned) {
             task.h = nullptr;
         }
@@ -70,15 +73,30 @@ struct task_access {
     static void resume_woken(task_frame& task);
 };
 
-template <typename Task>
-task_frame& make_root(Task& task, bool owned, std::source_location location) noexcept {
-    return task_access::make_root(task, owned, location);
-}
+/// What cancel() gives to co_await.
+struct cancel_await {};
 
-/// Carrier for task::or_fail(); await_transform turns it into an
-/// or_fail_task_await.
+/// What fail() gives to co_await: forwarding references to the arguments
+/// of the error, so it must be awaited at once, like std::forward_as_tuple.
+template <typename... Args>
+struct fail_await {
+    std::tuple<Args&&...> args;
+};
+
+/// An outcome with an error channel and no cancel channel.
+template <typename Outcome>
+concept or_fail_result = is_outcome_v<Outcome> && std::is_void_v<typename Outcome::cancel_type> &&
+                         (!std::is_void_v<typename Outcome::error_type>);
+
+/// What or_fail(outcome) gives to co_await.
+template <typename Outcome>
+struct or_fail_await {
+    Outcome result;
+};
+
+/// What task::or_fail() gives to co_await.
 template <typename Task>
-struct or_fail_proxy {
+struct or_fail_task {
     Task inner;
 };
 
@@ -117,67 +135,17 @@ private:
     }
 };
 
-}  // namespace detail
-
-/// co_await cancel(): ends the task cancelled at once.
-struct cancel_await {};
-
-inline cancel_await cancel() noexcept {
-    return {};
-}
-
-/// Carrier for or_fail(); transformed by await_transform in the promise.
-template <typename Outcome>
-struct or_fail_await {
-    Outcome result;
-};
-
-/// An outcome-like type that carries an error channel (no cancel channel).
-template <typename Outcome>
-concept or_fail_result = is_outcome_v<std::remove_cvref_t<Outcome>> &&
-                         std::is_void_v<typename std::remove_cvref_t<Outcome>::cancel_type> &&
-                         (!std::is_void_v<typename std::remove_cvref_t<Outcome>::error_type>);
-
-/// Propagate the error channel of a non-task outcome; resume with its value on success.
-///
-///   auto value = co_await or_fail(some_result);  // propagates error or unwraps value
-///
-template <typename Outcome>
-    requires or_fail_result<Outcome>
-auto or_fail(Outcome&& result) {
-    return or_fail_await<std::remove_cvref_t<Outcome>>{std::forward<Outcome>(result)};
-}
-
-/// Carrier for fail(); holds forwarding references to the error constructor args.
-/// Must be consumed immediately via co_await (same lifetime constraint as
-/// std::forward_as_tuple).
-template <typename... Args>
-struct fail_await {
-    std::tuple<Args&&...> args;
-};
-
-/// Construct an error and end the current task with it.
-///
-///   co_await fail(error_code, "message");  // replaces co_return outcome_error(...)
-///
-template <typename... Args>
-auto fail(Args&&... args) {
-    return fail_await<Args...>{std::forward_as_tuple(std::forward<Args>(args)...)};
-}
-
 /// Where a task's co_return puts its value.
 template <typename T, typename E>
 struct promise_result {
     std::optional<outcome<T, E>> value;
 
     template <typename U>
-    void return_value(U&& val) noexcept {
+    void return_value(U&& val) {
         value.emplace(std::forward<U>(val));
     }
 };
 
-/// Void-value tasks complete successfully via `co_return;`.
-/// Use `co_await fail(...)` or `co_await or_fail(...)` to propagate errors.
 template <typename E>
 struct promise_result<void, E> {
     std::optional<outcome<void, E>> value;
@@ -189,7 +157,7 @@ struct promise_result<void, E> {
 
 template <typename T, typename E>
 struct task_return_object {
-    std::coroutine_handle<task_promise_object<T, E>> handle;
+    std::coroutine_handle<task_promise<T, E>> handle;
 
     template <typename C>
     operator task<T, E, C>() const noexcept {
@@ -197,16 +165,17 @@ struct task_return_object {
     }
 };
 
+/// The promise of every task<T, E, C>, whatever its cancel channel.
 template <typename T, typename E>
-struct task_promise_object : task_frame, promise_result<T, E> {
+struct task_promise : task_frame, promise_result<T, E> {
     using error_type = E;
 
-    task_promise_object() noexcept {
-        this->address = std::coroutine_handle<task_promise_object>::from_promise(*this).address();
+    task_promise() noexcept {
+        this->address = std::coroutine_handle<task_promise>::from_promise(*this).address();
     }
 
     task_return_object<T, E> get_return_object() noexcept {
-        return {std::coroutine_handle<task_promise_object>::from_promise(*this)};
+        return {std::coroutine_handle<task_promise>::from_promise(*this)};
     }
 
     std::suspend_always initial_suspend() const noexcept {
@@ -240,7 +209,7 @@ struct task_promise_object : task_frame, promise_result<T, E> {
 
     /// co_await fail(args...): end with the error they make.
     template <typename... Args>
-    auto await_transform(fail_await<Args...>&& fail) noexcept
+    auto await_transform(fail_await<Args...>&& fail)
         requires (!std::is_void_v<E>) && std::constructible_from<E, Args...> {
         this->value.emplace(outcome_error(std::apply(
             [](auto&&... forwarded) { return E(std::forward<decltype(forwarded)>(forwarded)...); },
@@ -250,24 +219,22 @@ struct task_promise_object : task_frame, promise_result<T, E> {
 
     /// co_await or_fail(outcome): end with its error, or resume with its value.
     template <typename Outcome>
-    auto await_transform(or_fail_await<Outcome>&& awaited) noexcept
-        requires (!std::is_void_v<E>) &&
-                 or_fail_result<Outcome> && std::constructible_from<E, typename Outcome::error_type>
-    {
+    auto await_transform(or_fail_await<Outcome>&& awaited)
+        requires (!std::is_void_v<E>) && std::constructible_from<E, typename Outcome::error_type> {
         struct awaiter {
             Outcome result;
             /// The task to end; null when the outcome has a value.
-            task_promise_object* failing;
+            task_promise* failing;
 
             bool await_ready() const noexcept {
                 return failing == nullptr;
             }
 
             std::coroutine_handle<> await_suspend(std::coroutine_handle<>) const noexcept {
-                return finish_await{*failing, State::Failed}.await_suspend({});
+                return failing->finish(State::Failed);
             }
 
-            decltype(auto) await_resume() noexcept {
+            auto await_resume() {
                 if constexpr(!std::is_void_v<typename Outcome::value_type>) {
                     return std::move(*result);
                 }
@@ -283,10 +250,9 @@ struct task_promise_object : task_frame, promise_result<T, E> {
 
     /// co_await task.or_fail(): end with the child's error without resuming.
     template <typename ChildT, typename ChildE>
-    auto await_transform(detail::or_fail_proxy<task<ChildT, ChildE, void>>&& wrapped) noexcept
+    auto await_transform(or_fail_task<task<ChildT, ChildE>>&& wrapped) noexcept
         requires (!std::is_void_v<E>) && std::constructible_from<E, ChildE> {
-        return detail::or_fail_task_await<task_promise_object, task<ChildT, ChildE, void>>{
-            std::move(wrapped.inner)};
+        return or_fail_task_await<task_promise, task<ChildT, ChildE>>{std::move(wrapped.inner)};
     }
 
     /// Pass-through for all other awaitables.
@@ -327,7 +293,7 @@ struct task_promise_object : task_frame, promise_result<T, E> {
 private:
     /// Ends the task in `end` from a suspension point.
     struct finish_await {
-        task_promise_object& promise;
+        task_promise& promise;
         State end;
 
         bool await_ready() const noexcept {
@@ -352,11 +318,40 @@ private:
     }
 };
 
-/// A lazily started coroutine: it runs once awaited, spawned into a
-/// task_group, or scheduled on an event loop. What awaiting it gives follows
+}  // namespace detail
+
+/// co_await cancel(): ends the current task cancelled at once.
+inline detail::cancel_await cancel() noexcept {
+    return {};
+}
+
+/// co_await fail(args...): ends the current task with the error made from
+/// `args`, which must be awaited at once.
+///
+///   co_await fail(error_code, "message");  // replaces co_return outcome_error(...)
+///
+template <typename... Args>
+auto fail(Args&&... args) {
+    return detail::fail_await<Args...>{std::forward_as_tuple(std::forward<Args>(args)...)};
+}
+
+/// co_await or_fail(result): ends the current task with the error of
+/// `result`, or goes on with its value.
+///
+///   auto value = co_await or_fail(some_result);
+///
+template <typename Outcome>
+    requires detail::or_fail_result<std::remove_cvref_t<Outcome>>
+auto or_fail(Outcome&& result) {
+    return detail::or_fail_await<std::remove_cvref_t<Outcome>>{std::forward<Outcome>(result)};
+}
+
+/// A lazily started coroutine. It starts once: when it is awaited, spawned into
+/// a task_group or scheduled on an event loop. What awaiting it gives follows
 /// its channels: T alone when E and C are void, `outcome<T, E>` with an error
 /// channel, `outcome<T, E, cancellation>` with a cancel channel. Without a
 /// cancel channel a task that ends cancelled cancels the task awaiting it too.
+/// A task must not be destroyed while it runs.
 template <typename T, typename E, typename C>
 class task {
 public:
@@ -367,7 +362,7 @@ public:
     using error_type = E;
     using cancel_type = C;
 
-    using promise_type = task_promise_object<T, E>;
+    using promise_type = detail::task_promise<T, E>;
 
     task() noexcept = default;
 
@@ -389,8 +384,9 @@ public:
     }
 
     /// Awaits the task, which keeps its frame: that lives on until this task
-    /// object goes, so the task can still be cancelled or asked while another
-    /// awaits it.
+    /// object goes, so the task can still be cancelled or asked whether it is
+    /// done while another awaits it. The await takes what the task ended with;
+    /// result() does not give it again.
     auto operator co_await() & noexcept {
         return awaiter<task&>{*this};
     }
@@ -407,7 +403,7 @@ public:
     ///
     auto or_fail() && noexcept
         requires (!std::is_void_v<E>) && std::is_void_v<C> {
-        return detail::or_fail_proxy<task>{std::move(*this)};
+        return detail::or_fail_task<task>{std::move(*this)};
     }
 
     /// The same task with a cancel channel: its cancellation becomes a value for
@@ -420,6 +416,7 @@ public:
     /// goes on to its next suspending co_await and ends there; one that is
     /// suspended passes the cancel on to what it awaits and ends once that has.
     /// It ends cancelled unless it fails first. A finished task stays as it is.
+    /// What ends at once resumes whoever awaits it before cancel() returns.
     void cancel() {
         h.promise().cancel();
     }
@@ -446,7 +443,7 @@ private:
     template <typename, typename, typename>
     friend class task;
     template <typename, typename>
-    friend struct task_return_object;
+    friend struct detail::task_return_object;
 
     using coroutine_handle = std::coroutine_handle<promise_type>;
 
@@ -504,5 +501,10 @@ private:
 
     coroutine_handle h;
 };
+
+template <typename Task>
+void event_loop::schedule(Task&& task, std::source_location location) {
+    schedule(detail::task_access::make_root(task, std::is_rvalue_reference_v<Task&&>, location));
+}
 
 }  // namespace kota

@@ -80,6 +80,9 @@ protected:
     /// passes it on to what it awaits and ends once that has.
     void cancel();
 
+    /// Records that `waiting` awaits this node, from `location`.
+    void awaited_by(task_frame& waiting, std::source_location location) noexcept;
+
     /// Delivers the completion of `child`, which this node awaits; returns the
     /// coroutine to resume next.
     std::coroutine_handle<> on_child_complete(async_node& child);
@@ -178,7 +181,7 @@ protected:
     error_hook hook = nullptr;
 
     /// The event loop owns the frame and destroys it once the task ends.
-    bool root = false;
+    bool owned_by_loop = false;
 
 #if KOTA_ENABLE_EXCEPTIONS
     std::exception_ptr exception;

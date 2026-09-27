@@ -3,6 +3,7 @@
 #include <format>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "kota/async/runtime/walk.h"
 
@@ -17,7 +18,7 @@ static std::string_view async_kind_name(async_node::NodeKind k) {
         case async_node::NodeKind::TaskGroup: return "TaskGroup";
         case async_node::NodeKind::SystemIO: return "SystemIO";
     }
-    return "Unknown";
+    std::unreachable();
 }
 
 static std::string_view state_name(async_node::State s) {
@@ -28,7 +29,7 @@ static std::string_view state_name(async_node::State s) {
         case async_node::State::Failed: return "Failed";
         case async_node::State::Cancelled: return "Cancelled";
     }
-    return "Unknown";
+    std::unreachable();
 }
 
 static std::string_view sync_kind_name(sync_primitive::Kind k) {
@@ -38,7 +39,7 @@ static std::string_view sync_kind_name(sync_primitive::Kind k) {
         case sync_primitive::Kind::Semaphore: return "Semaphore";
         case sync_primitive::Kind::ConditionVariable: return "ConditionVariable";
     }
-    return "Unknown";
+    std::unreachable();
 }
 
 static std::string node_id(const void* node) {
@@ -98,8 +99,8 @@ struct dot_emitter : async_visitor<dot_emitter> {
         return emit(node);
     }
 
-    bool visit_io(const io_op& node) {
-        return emit(node);
+    void visit_io(const io_op& node) {
+        emit(node);
     }
 
     bool visit_sync(const sync_primitive& resource) {

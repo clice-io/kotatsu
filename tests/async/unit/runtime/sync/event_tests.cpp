@@ -132,10 +132,10 @@ ZEST_CASE(wait_under_a_cancelled_task_does_not_queue) {
 // cancelled, and the event stays set for the others.
 ZEST_CASE(waiter_cancelled_after_set_ends_cancelled) {
     event ev;
-    bool reached = false;
+    int reached = 0;
     auto waiter = [&]() -> task<> {
         co_await ev.wait();
-        reached = true;
+        reached += 1;
     };
     auto target = waiter();
     auto set_then_cancel = [&]() -> task<> {
@@ -147,7 +147,7 @@ ZEST_CASE(waiter_cancelled_after_set_ends_cancelled) {
     auto [cancelled, other, driver] = run(target, waiter(), set_then_cancel());
     EXPECT(cancelled.is_cancelled());
     EXPECT(other.has_value());
-    EXPECT(reached);
+    EXPECT(reached == 1);
     EXPECT(ev.is_set());
 }
 

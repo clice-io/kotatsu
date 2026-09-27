@@ -71,6 +71,36 @@ ZEST_CASE(spawn_after_cancel_fails) {
     EXPECT(started == 1);
 }
 
+// A child that fails, or ends cancelled, cancels its siblings, and the group
+// takes no child after that.
+ZEST_CASE(spawn_after_a_child_ended_the_group_fails) {
+    int started = 0;
+    auto work = [&]() -> task<void, error> {
+        started += 1;
+        co_return;
+    };
+    auto failing = []() -> task<void, error> {
+        co_await fail(error::connection_refused);
+    };
+    auto cancelling = []() -> task<void, error> {
+        co_await cancel();
+    };
+    auto after = [&](task<void, error> ender) -> task<bool> {
+        task_group<error> group;
+        group.spawn(std::move(ender));
+        bool accepted = group.spawn(work());
+        [[maybe_unused]] auto joined = co_await group.join();
+        co_return accepted;
+    };
+
+    auto [after_failure, after_cancel] = run(after(failing()), after(cancelling()));
+    ASSERT(after_failure.has_value());
+    EXPECT(!*after_failure);
+    ASSERT(after_cancel.has_value());
+    EXPECT(!*after_cancel);
+    EXPECT(started == 0);
+}
+
 // A group whose children all finished while being spawned may go without a
 // join().
 ZEST_CASE(group_of_finished_children_needs_no_join) {

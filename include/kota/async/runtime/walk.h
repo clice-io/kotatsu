@@ -13,7 +13,7 @@ namespace kota {
 /// wait on and the other waiters queued there. `Derived` gets a visit_* call
 /// for every node and primitive, once per walk, and a visit_edge() call for
 /// every link it follows; a visit_* returning false keeps the walk out of what
-/// lies below that node.
+/// lies below that node. Pending I/O has nothing below it.
 template <typename Derived>
 class async_visitor {
 public:
@@ -102,9 +102,7 @@ protected:
         return true;
     }
 
-    bool visit_io(const io_op&) {
-        return true;
-    }
+    void visit_io(const io_op&) {}
 
     bool visit_sync(const sync_primitive&) {
         return true;

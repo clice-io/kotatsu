@@ -261,6 +261,40 @@ ZEST_CASE(notify_one_to_a_waiter_cancelled_before_it_runs_passes_it_on) {
     EXPECT(woken == std::vector{2});
 }
 
+// A notified waiter that waits for the mutex again and is cancelled then
+// passes the notification on too, and still ends only once it holds the
+// mutex.
+ZEST_CASE(waiter_cancelled_while_it_waits_for_the_mutex_passes_the_notification_on) {
+    mutex m;
+    condition_variable cv;
+    std::vector<int> woken;
+    auto waiter = [&](int id) -> task<> {
+        co_await m.lock();
+        std::lock_guard guard(m, std::adopt_lock);
+        co_await cv.wait(m);
+        woken.push_back(id);
+    };
+    auto first = owner(waiter(1));
+    auto driver = [&]() -> task<std::size_t> {
+        co_await m.lock();
+        // The notified waiter waits for the mutex, and so does the one it
+        // passes the notification on to.
+        cv.notify_one();
+        first.cancel();
+        co_await yield();
+        auto woken_while_held = woken.size();
+        m.unlock();
+        co_return woken_while_held;
+    };
+
+    auto [cancelled, second, woken_while_held] = run(first, owner(waiter(2)), driver());
+    EXPECT(cancelled.is_cancelled());
+    EXPECT(second.has_value());
+    ASSERT(woken_while_held.has_value());
+    EXPECT(*woken_while_held == 0U);
+    EXPECT(woken == std::vector{2});
+}
+
 };  // ZEST_SUITE(async_runtime_sync_condition_variable)
 
 }  // namespace

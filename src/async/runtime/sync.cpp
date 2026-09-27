@@ -54,10 +54,7 @@ std::coroutine_handle<> wait_node::wait(task_frame& waiting,
         // A condition variable wait ends here still holding its mutex.
         return ended;
     }
-    this->location = location;
-    parent = &waiting;
-    waiting.child = this;
-    state = State::Running;
+    awaited_by(waiting, location);
     if(relock != nullptr) {
         relock->unlock();
     }
@@ -69,7 +66,6 @@ void wait_node::grant(sync_primitive& from) {
     if(relock != nullptr && &from == owner) {
         // A notification. Like a thread woken from std::condition_variable,
         // the wait now needs the mutex back.
-        notified = true;
         if(!relock->try_lock()) {
             relock->insert(*this);
             return;
@@ -80,8 +76,8 @@ void wait_node::grant(sync_primitive& from) {
 
 void wait_node::cancel_wait() {
     if(queue != owner) {
-        // Granted, or a notified condition variable wait queued on its mutex.
-        // Its task learns of the cancel when it is woken.
+        // Granted, or a notified condition variable wait queued on its mutex
+        // again. Its task learns of the cancel when it is woken.
         give_back();
         return;
     }
@@ -103,10 +99,9 @@ void wait_node::give_back() {
         case sync_primitive::Kind::Semaphore: static_cast<semaphore*>(owner)->release(); break;
         case sync_primitive::Kind::Event: break;
         case sync_primitive::Kind::ConditionVariable:
-            // The wait keeps its mutex, which it holds or waits for.
-            if(std::exchange(notified, false)) {
-                static_cast<condition_variable*>(owner)->notify_one();
-            }
+            // The notification; the wait keeps its mutex, which it holds or
+            // waits for.
+            static_cast<condition_variable*>(owner)->notify_one();
             break;
     }
 }

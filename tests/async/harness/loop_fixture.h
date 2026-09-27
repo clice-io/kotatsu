@@ -138,11 +138,11 @@ private:
     /// A task the test keeps is awaited through one that ends as it does.
     template <typename T, typename E>
     static caught_t<task<T, E>> catching(task<T, E>& kept) {
-        return forward(kept).catch_cancel();
+        return await_kept(kept).catch_cancel();
     }
 
     template <typename T, typename E>
-    static task<T, E> forward(task<T, E>& kept) {
+    static task<T, E> await_kept(task<T, E>& kept) {
         if constexpr(!std::is_void_v<T>) {
             co_return co_await kept;
         } else if constexpr(!std::is_void_v<E>) {
