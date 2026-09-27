@@ -120,14 +120,14 @@ ZEST_CASE(frames_read_the_same_in_random_pieces) {
     }
 }
 
-ZEST_CASE(missing_content_length_is_malformed) {
+ZEST_CASE(missing_content_length_fails) {
     auto read = first_frame("Content-Type: text/plain\r\n\r\nhello");
     ASSERT(!read.has_value());
     EXPECT(read.error().kind == ReadError::Kind::Malformed);
     EXPECT(read.error().message == "missing Content-Length");
 }
 
-ZEST_CASE(unreadable_content_length_is_malformed) {
+ZEST_CASE(unreadable_content_length_fails) {
     for(std::string_view length: {"", "5x", "-1", "+5", "0x10", "99999999999999999999999"}) {
         ZEST_CONTEXT("Content-Length: {}", length);
         auto read = first_frame(std::format("Content-Length: {}\r\n\r\nhello", length));
@@ -137,7 +137,7 @@ ZEST_CASE(unreadable_content_length_is_malformed) {
     }
 }
 
-ZEST_CASE(header_past_the_limit_is_malformed) {
+ZEST_CASE(header_past_the_limit_fails) {
     std::string unended(FrameParser::max_header_size + 1, 'A');
     auto read = first_frame(unended);
     ASSERT(!read.has_value());

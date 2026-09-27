@@ -183,7 +183,7 @@ ZEST_CASE(end_of_input_is_closed) {
 
 // How headers are read is ipc_framing's; here a header that cannot be read
 // reaches the reader through a pipe.
-ZEST_CASE(unreadable_header_is_malformed) {
+ZEST_CASE(unreadable_header_fails) {
     auto read = read_after("Content-Length: 5x\r\n\r\nhello");
     ASSERT(!read.has_value());
     EXPECT(read.error().kind == ReadError::Kind::Malformed);
@@ -252,7 +252,7 @@ ZEST_CASE(write_frames_the_payload) {
 }
 
 // A pipe's read end is not writable, so the write fails without a signal.
-ZEST_CASE(write_failure_is_an_error) {
+ZEST_CASE(write_to_the_read_end_fails) {
     auto ends = pipe_ends(loop);
     ASSERT(ends.has_value());
     StreamTransport transport(stream(std::move(ends->writer)), stream(std::move(ends->reader)));
@@ -291,7 +291,7 @@ ZEST_CASE(connect_tcp_exchanges_messages) {
     EXPECT(*asked == "pong");
 }
 
-ZEST_CASE(connect_tcp_failure_is_an_error) {
+ZEST_CASE(connect_tcp_to_a_bad_address_fails) {
     auto [connected] = run(StreamTransport::connect_tcp("not-an-address", 80, loop));
     ASSERT(connected.has_error());
     EXPECT(connected.error().message == error::invalid_argument.message());

@@ -69,7 +69,7 @@ test("unknown_method_fails", async (t) => {
   await finish(driver, connection);
 });
 
-test("wrong_params_fail", async (t) => {
+test("request_with_wrong_params_fails", async (t) => {
   const [driver, connection] = await connected(t);
   connection.listen();
   driver.expectLog(

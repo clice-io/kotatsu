@@ -58,7 +58,7 @@ ZEST_CASE(unknown_alternative_fails) {
     EXPECT(code_of(failure->error) == ErrorCode::ParseError);
 }
 
-ZEST_CASE(trailing_bytes_fail) {
+ZEST_CASE(trailing_bytes_fails) {
     auto message = encoded_request();
     ASSERT(!message.empty());
     message.push_back('\0');
