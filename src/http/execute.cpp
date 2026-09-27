@@ -49,8 +49,7 @@ struct inflight_request_state : std::enable_shared_from_this<inflight_request_st
     }
 };
 
-struct request_awaiter : uv::await_op<request_awaiter> {
-    using promise_t = task<response, error>::promise_type;
+struct request_awaiter : uv::uv_op<request_awaiter> {
     using result_type = outcome<response, error, cancellation>;
 
     inflight_request_ref state;
@@ -72,17 +71,11 @@ struct request_awaiter : uv::await_op<request_awaiter> {
         state->mgr = nullptr;
     }
 
-    static void on_cancel(io_op* op) {
-        uv::await_op<request_awaiter>::complete_cancel(op, [](request_awaiter& self) {
-            self.state->detach_from_multi();
-            self.state->release_request();
-            self.state->completed = true;
-        });
-    }
-
-    void start() noexcept {
+    /// Hands the request to curl; false if it has ended already, which it
+    /// may have while curl was armed.
+    bool start() noexcept {
         if(state->completed || state->request_released || !state->request.easy) {
-            return;
+            return !state->completed;
         }
 
         if(!state->request.bind_runtime(inflight_request_opaque(state))) {
@@ -91,35 +84,29 @@ struct request_awaiter : uv::await_op<request_awaiter> {
                 state->request.result = error::invalid_request("request runtime binding failed");
             }
             state->completed = true;
-            return;
+            return false;
         }
 
         if(auto err = state->mgr->add_request(state->request.easy.get()); !curl::ok(err)) {
             state->request.fail(error::from_curl(curl::to_easy_error(err)));
             state->completed = true;
-            return;
+            return false;
         }
 
         state->registered = true;
         state->mgr->drive_timeout_arming(inflight_request_opaque(state));
+        return !state->completed;
     }
 
-    bool await_ready() const noexcept {
-        return state->completed;
-    }
-
-    std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<promise_t> waiting,
-                      std::source_location loc = std::source_location::current()) noexcept {
-        return this->attach(waiting.promise(), loc);
+    void cancel() noexcept {
+        state->detach_from_multi();
+        state->release_request();
+        state->completed = true;
+        complete();
     }
 
     result_type await_resume() noexcept {
         state->detach_from_multi();
-
-        if(static_cast<async_node&>(*this).state == async_node::Cancelled) {
-            return result_type(outcome_cancel(cancellation("http request cancelled")));
-        }
 
         if(state->request_released) {
             return result_type(
@@ -193,9 +180,7 @@ task<response, error> execute_request(http::request request, event_loop& loop) {
         co_await fail(std::move(manager.error()));
     }
 
-    request_awaiter awaiter(manager->get(), std::move(state));
-    awaiter.start();
-    auto result = co_await awaiter;
+    auto result = co_await request_awaiter(manager->get(), std::move(state));
 
     if(result.is_cancelled()) {
         co_await cancel();

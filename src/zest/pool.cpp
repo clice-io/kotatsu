@@ -279,9 +279,10 @@ struct Pool {
         // is shown: a sanitizer reports during the test it catches, which may
         // well have passed.
         worker->channel = pipe{};
-        // Giving up on the wait kills the worker.
         auto status = co_await within(worker->wait(), options.timeout);
         if(!status) {
+            // Giving up on the wait leaves the worker running.
+            co_await worker->kill();
             failures.push_back(WorkerFailure{
                 .detail = "a worker did not exit within --timeout after its last test",
                 .output = worker->whole_output(),

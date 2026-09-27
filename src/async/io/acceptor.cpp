@@ -1,229 +1,58 @@
-#include <cassert>
-#include <type_traits>
+#include <cstddef>
 #include <utility>
 
-#include "awaiter.h"
-#include "kota/async/io/loop.h"
+#include "stream_self.h"
+#include "kota/support/functional.h"
 
 namespace kota {
 
-namespace {
-
-template <typename T>
-constexpr inline bool always_false_v = false;
-
-unsigned int to_uv_pipe_flags(const pipe::options& opts) {
-    return opts.no_truncate ? static_cast<unsigned int>(UV_PIPE_NO_TRUNCATE) : 0U;
-}
-
-unsigned int to_uv_tcp_bind_flags(const tcp::options& opts) {
-    unsigned int out = 0;
-    if(opts.ipv6_only) {
-        out |= UV_TCP_IPV6ONLY;
-    }
-    if(opts.reuse_port) {
-        out |= UV_TCP_REUSEPORT;
-    }
-    return out;
-}
-
 template <typename Stream>
-struct accept_await : uv::await_op<accept_await<Stream>> {
-    using await_base = uv::await_op<accept_await<Stream>>;
-    using promise_t = task<Stream, error>::promise_type;
-    using self_t = typename acceptor<Stream>::Self;
+struct acceptor<Stream>::Self : uv::owned_handle<Self> {
+    union {
+        uv_handle_t handle;
+        uv_stream_t stream;
+        uv_pipe_t pipe;
+        uv_tcp_t tcp;
+    };
 
-    // Acceptor self used for waiter registration and pending queueing.
-    self_t* self;
-    // Result slot populated by connection callbacks.
-    result<Stream> outcome = outcome_error(error());
+    /// The pending accept.
+    uv::waiter_slot<Stream> slot;
 
-    explicit accept_await(self_t* acceptor) : self(acceptor) {}
+    /// Connections that arrived while no accept() waited, which libuv holds
+    /// until uv_accept() takes them: on Unix it stops listening meanwhile,
+    /// so the kernel's backlog holds the rest.
+    std::size_t ready = 0;
 
-    static void on_cancel(io_op* op) {
-        await_base::complete_cancel(op, [](auto& aw) {
-            if(aw.self) {
-                aw.self->disarm();
+    /// What ended listening; only libuv on Windows reports that.
+    error failed;
+
+    result<Stream> accept_one() {
+        auto client = stream::Self::make();
+        if constexpr(std::same_as<Stream, kota::pipe>) {
+            ::uv_pipe_init(stream.loop, &client->pipe, pipe.ipc);
+        } else {
+            ::uv_tcp_init(stream.loop, &client->tcp);
+        }
+        if(auto err = error(::uv_accept(&stream, &client->stream))) {
+            return outcome_error(err);
+        }
+        return Stream(std::move(client));
+    }
+
+    static void on_connection(uv_stream_t* server, int status) {
+        auto* self = static_cast<Self*>(server->data);
+        if(status < 0) {
+            self->failed = uv::status_to_error(status);
+            if(self->slot.waiting()) {
+                self->slot.deliver(outcome_error(self->failed));
             }
-        });
-    }
-
-    bool await_ready() const noexcept {
-        return false;
-    }
-
-    std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<promise_t> waiting,
-                      std::source_location loc = std::source_location::current()) noexcept {
-        if(!self) {
-            return waiting;
+        } else if(self->slot.waiting()) {
+            self->slot.deliver(self->accept_one());
+        } else {
+            self->ready += 1;
         }
-        self->arm(*this, outcome);
-        return this->attach(waiting.promise(), loc);
-    }
-
-    result<Stream> await_resume() noexcept {
-        if(self) {
-            self->disarm();
-        }
-        return std::move(outcome);
     }
 };
-
-template <typename Stream>
-void on_connection(uv_stream_t* server, int status) {
-    using self_t = typename acceptor<Stream>::Self;
-
-    assert(server != nullptr && "on_connection requires non-null server");
-    auto* listener = static_cast<self_t*>(server->data);
-    assert(listener != nullptr && "on_connection requires listener state in server->data");
-
-    if(auto err = uv::status_to_error(status)) {
-        listener->deliver(err);
-        return;
-    }
-
-    auto self = stream::Self::make();
-    error err{};
-    if constexpr(std::is_same_v<Stream, pipe>) {
-        err = uv::pipe_init(*server->loop, self->pipe, listener->pipe_ipc);
-    } else if constexpr(std::is_same_v<Stream, tcp>) {
-        err = uv::tcp_init(*server->loop, self->tcp);
-    } else {
-        static_assert(always_false_v<Stream>, "unsupported accept stream type");
-    }
-
-    if(!err) {
-        err = uv::accept(*server, self->stream);
-    }
-
-    if(err) {
-        listener->deliver(err);
-    } else {
-        listener->deliver(Stream(std::move(self)));
-    }
-}
-
-template <typename Stream>
-struct connect_await : uv::await_op<connect_await<Stream>> {
-    using await_base = uv::await_op<connect_await<Stream>>;
-    using promise_t = task<Stream, error>::promise_type;
-    using self_ptr = stream::Self::pointer;
-
-    // Candidate stream self; reset on cancel to close the handle.
-    self_ptr self;
-    // libuv connect request; req.data points back to this awaiter.
-    uv_connect_t req{};
-    // Pipe name kept alive for uv_pipe_connect2().
-    std::string name;
-    // Pipe connect flags.
-    unsigned int flags = 0;
-    // Resolved peer address for uv_tcp_connect().
-    sockaddr_storage addr{};
-    // Result slot returned from await_resume().
-    result<Stream> outcome = outcome_error(error());
-    // Constructor-level validation flag.
-    bool ready = true;
-
-    connect_await(self_ptr self, std::string_view name, pipe::options opts) :
-        self(std::move(self)), name(name) {
-        if constexpr(std::is_same_v<Stream, pipe>) {
-            if(this->name.empty()) {
-                ready = false;
-                outcome = outcome_error(error::invalid_argument);
-                return;
-            }
-
-            flags = to_uv_pipe_flags(opts);
-        } else {
-            static_assert(always_false_v<Stream>, "pipe constructor requires Stream=pipe");
-        }
-    }
-
-    connect_await(self_ptr self, std::string_view host, int port) : self(std::move(self)) {
-        if constexpr(std::is_same_v<Stream, tcp>) {
-            auto resolved = uv::resolve_addr(host, port);
-            if(!resolved) {
-                ready = false;
-                outcome = outcome_error(resolved.error());
-                return;
-            }
-            addr = resolved->storage;
-        } else {
-            static_assert(always_false_v<Stream>, "tcp constructor requires Stream=tcp");
-        }
-    }
-
-    static void on_cancel(io_op* op) {
-        auto* aw = static_cast<connect_await*>(op);
-        if(aw->self) {
-            // uv_connect_t can't be cancelled; close handle to trigger UV_ECANCELED callback.
-            aw->self.reset();
-        }
-    }
-
-    static void on_connect(uv_connect_t* req, int status) {
-        auto* aw = static_cast<connect_await*>(req->data);
-        assert(aw != nullptr && "on_connect requires awaiter in req->data");
-
-        aw->mark_cancelled_if(status);
-
-        if(auto err = uv::status_to_error(status)) {
-            aw->outcome = outcome_error(err);
-        } else if(aw->self) {
-            if constexpr(std::is_same_v<Stream, pipe>) {
-                aw->outcome = pipe(std::move(aw->self));
-            } else if constexpr(std::is_same_v<Stream, tcp>) {
-                aw->outcome = tcp(std::move(aw->self));
-            } else {
-                static_assert(always_false_v<Stream>, "unsupported connect stream type");
-            }
-        } else {
-            aw->outcome = outcome_error(error::invalid_argument);
-        }
-
-        aw->complete();
-    }
-
-    bool await_ready() const noexcept {
-        return false;
-    }
-
-    std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<promise_t> waiting,
-                      std::source_location loc = std::source_location::current()) noexcept {
-        if(!self || !ready) {
-            return waiting;
-        }
-
-        req.data = this;
-
-        error err{};
-        if constexpr(std::is_same_v<Stream, pipe>) {
-            err = uv::pipe_connect2(req, self->pipe, name.c_str(), name.size(), flags, on_connect);
-        } else if constexpr(std::is_same_v<Stream, tcp>) {
-            err = uv::tcp_connect(req,
-                                  self->tcp,
-                                  reinterpret_cast<const sockaddr*>(&addr),
-                                  on_connect);
-        } else {
-            static_assert(always_false_v<Stream>, "unsupported connect stream type");
-        }
-
-        if(err) {
-            outcome = outcome_error(err);
-            return waiting;
-        }
-
-        return this->attach(waiting.promise(), loc);
-    }
-
-    result<Stream> await_resume() noexcept {
-        return std::move(outcome);
-    }
-};
-
-}  // namespace
 
 template <typename Stream>
 acceptor<Stream>::acceptor() noexcept = default;
@@ -238,9 +67,7 @@ template <typename Stream>
 acceptor<Stream>::~acceptor() = default;
 
 template <typename Stream>
-typename acceptor<Stream>::Self* acceptor<Stream>::operator->() noexcept {
-    return self.get();
-}
+acceptor<Stream>::acceptor(unique_handle<Self> self) noexcept : self(std::move(self)) {}
 
 template <typename Stream>
 task<Stream, error> acceptor<Stream>::accept() {
@@ -248,15 +75,16 @@ task<Stream, error> acceptor<Stream>::accept() {
         co_await fail(error::invalid_argument);
     }
 
-    if(self->has_pending()) {
-        co_return self->take_pending();
+    if(self->failed) {
+        co_await fail(self->failed);
     }
 
-    if(self->has_waiter()) {
-        co_await fail(error::connection_already_in_progress);
+    if(self->ready > 0) {
+        self->ready -= 1;
+        co_return self->accept_one();
     }
 
-    co_return co_await accept_await<Stream>{self.get()};
+    co_return co_await self->slot.wait();
 }
 
 template <typename Stream>
@@ -265,147 +93,168 @@ error acceptor<Stream>::stop() {
         return error::invalid_argument;
     }
 
-    self->deliver(error::operation_aborted);
-
+    self->slot.abort(*self->handle.loop, error::operation_aborted);
     return {};
 }
 
 template <typename Stream>
-acceptor<Stream>::acceptor(unique_handle<Self> self) noexcept : self(std::move(self)) {}
+result<endpoint> acceptor<Stream>::getsockname() const
+    requires std::same_as<Stream, tcp> {
+    if(!self) {
+        return outcome_error(error::invalid_argument);
+    }
+
+    sockaddr_storage name{};
+    int length = sizeof(name);
+    if(auto err =
+           error(::uv_tcp_getsockname(&self->tcp, reinterpret_cast<sockaddr*>(&name), &length))) {
+        return outcome_error(err);
+    }
+    return uv::endpoint_of(reinterpret_cast<const sockaddr&>(name));
+}
 
 template class acceptor<pipe>;
 template class acceptor<tcp>;
 
-result<pipe> pipe::open(int fd, pipe::options opts, event_loop& loop) {
-    auto pipe_res = create(opts, loop);
-    if(!pipe_res) {
-        return outcome_error(pipe_res.error());
+namespace {
+
+/// Connects a new stream: `submit` hands the request to libuv. Cancelling
+/// closes the stream, which makes libuv end the connect with ECANCELED.
+template <typename Stream>
+struct connect_op : uv::request_op<connect_op<Stream>, uv_connect_t> {
+    Stream& connection;
+    function_ref<int(uv_connect_t*, uv_connect_cb)> submit;
+
+    connect_op(Stream& connection, function_ref<int(uv_connect_t*, uv_connect_cb)> submit) :
+        connection(connection), submit(submit) {}
+
+    bool start() noexcept {
+        this->req.data = this;
+        return this->submitted(submit(&this->req, &connect_op::on_done));
     }
 
-    auto& handle = pipe_res->self->pipe;
-    if(auto err = uv::pipe_open(handle, fd)) {
-        return outcome_error(err);
+    void cancel() noexcept {
+        connection = Stream();
     }
+};
 
-    return std::move(*pipe_res);
+unsigned int pipe_flags(const pipe::options& opts) {
+    return opts.no_truncate ? UV_PIPE_NO_TRUNCATE : 0U;
 }
 
-result<pipe::acceptor> pipe::listen(std::string_view name, pipe::options opts, event_loop& loop) {
-    auto self = pipe::acceptor::Self::make();
-    if(auto err = uv::pipe_init(loop, self->pipe, opts.ipc ? 1 : 0)) {
+}  // namespace
+
+pipe::pipe(unique_handle<Self> self) noexcept : stream(std::move(self)) {}
+
+pipe pipe::create(options opts, event_loop& loop) {
+    auto self = Self::make();
+    ::uv_pipe_init(loop.native_handle(), &self->pipe, opts.ipc);
+    return pipe(std::move(self));
+}
+
+result<pipe> pipe::open(int fd, event_loop& loop) {
+    return open(fd, options{}, loop);
+}
+
+result<pipe> pipe::open(int fd, options opts, event_loop& loop) {
+    auto opened = create(opts, loop);
+    if(auto err = error(::uv_pipe_open(&opened.self->pipe, fd))) {
         return outcome_error(err);
     }
+    return opened;
+}
 
-    auto& acc = *self;
-    acc.pipe_ipc = opts.ipc ? 1 : 0;
-    auto& handle = acc.pipe;
+task<pipe, error> pipe::connect(std::string_view name, event_loop& loop) {
+    return connect(name, options{}, loop);
+}
 
+task<pipe, error> pipe::connect(std::string_view name, options opts, event_loop& loop) {
+    auto connection = create(opts, loop);
+    auto* handle = &connection.self->pipe;
+    auto submit = [&](uv_connect_t* req, uv_connect_cb done) {
+        return ::uv_pipe_connect2(req, handle, name.data(), name.size(), pipe_flags(opts), done);
+    };
+    if(auto err = co_await connect_op<pipe>(connection, submit)) {
+        co_await fail(err);
+    }
+    co_return std::move(connection);
+}
+
+result<pipe::acceptor> pipe::listen(std::string_view name, event_loop& loop) {
+    return listen(name, options{}, loop);
+}
+
+result<pipe::acceptor> pipe::listen(std::string_view name, options opts, event_loop& loop) {
+    // An empty name would autobind to an abstract socket on Linux.
     if(name.empty()) {
         return outcome_error(error::invalid_argument);
     }
 
-    if(auto err = uv::pipe_bind2(handle, name.data(), name.size(), to_uv_pipe_flags(opts))) {
+    auto self = acceptor::Self::make();
+    ::uv_pipe_init(loop.native_handle(), &self->pipe, opts.ipc);
+    if(auto err = error(::uv_pipe_bind2(&self->pipe, name.data(), name.size(), pipe_flags(opts)))) {
         return outcome_error(err);
     }
-
-    if(auto err = uv::listen(handle, opts.backlog, on_connection<pipe>)) {
+    if(auto err = error(::uv_listen(&self->stream, opts.backlog, acceptor::Self::on_connection))) {
         return outcome_error(err);
     }
-
-    return pipe::acceptor(std::move(self));
-}
-
-pipe::pipe(unique_handle<Self> self) noexcept : stream(std::move(self)) {}
-
-result<pipe> pipe::create(pipe::options opts, event_loop& loop) {
-    auto self = Self::make();
-    if(auto err = uv::pipe_init(loop, self->pipe, opts.ipc ? 1 : 0)) {
-        return outcome_error(err);
-    }
-
-    return pipe(std::move(self));
-}
-
-task<pipe, error> pipe::connect(std::string_view name, pipe::options opts, event_loop& loop) {
-    auto self = Self::make();
-    if(auto err = uv::pipe_init(loop, self->pipe, opts.ipc ? 1 : 0)) {
-        co_await fail(err);
-    }
-
-    co_return co_await connect_await<pipe>{std::move(self), name, opts};
+    return acceptor(std::move(self));
 }
 
 tcp::tcp(unique_handle<Self> self) noexcept : stream(std::move(self)) {}
 
 result<tcp> tcp::open(int fd, event_loop& loop) {
     auto self = Self::make();
-    if(auto err = uv::tcp_init(loop, self->tcp)) {
+    ::uv_tcp_init(loop.native_handle(), &self->tcp);
+    if(auto err = error(::uv_tcp_open(&self->tcp, fd))) {
         return outcome_error(err);
     }
-
-    if(auto err = uv::tcp_open(self->tcp, fd)) {
-        return outcome_error(err);
-    }
-
     return tcp(std::move(self));
 }
 
 task<tcp, error> tcp::connect(std::string_view host, int port, event_loop& loop) {
+    auto addr = co_await or_fail(uv::resolve_addr(host, port));
     auto self = Self::make();
-    if(auto err = uv::tcp_init(loop, self->tcp)) {
+    ::uv_tcp_init(loop.native_handle(), &self->tcp);
+    auto* handle = &self->tcp;
+    tcp connection(std::move(self));
+    auto submit = [&](uv_connect_t* req, uv_connect_cb done) {
+        return ::uv_tcp_connect(req, handle, reinterpret_cast<const sockaddr*>(&addr), done);
+    };
+    if(auto err = co_await connect_op<tcp>(connection, submit)) {
         co_await fail(err);
     }
-
-    co_return co_await connect_await<tcp>{std::move(self), host, port};
+    co_return std::move(connection);
 }
 
-result<tcp::acceptor>
-    tcp::listen(std::string_view host, int port, tcp::options opts, event_loop& loop) {
-    auto self = tcp::acceptor::Self::make();
-    if(auto err = uv::tcp_init(loop, self->tcp)) {
-        return outcome_error(err);
-    }
-
-    auto& acc = *self;
-    auto& handle = acc.tcp;
-
-    auto resolved = uv::resolve_addr(host, port);
-    if(!resolved) {
-        return outcome_error(resolved.error());
-    }
-
-    ::sockaddr* addr_ptr = reinterpret_cast<sockaddr*>(&resolved->storage);
-
-    if(auto err = uv::tcp_bind(handle, addr_ptr, to_uv_tcp_bind_flags(opts))) {
-        return outcome_error(err);
-    }
-
-    if(auto err = uv::listen(handle, opts.backlog, on_connection<tcp>)) {
-        return outcome_error(err);
-    }
-
-    return tcp::acceptor(std::move(self));
+result<tcp::acceptor> tcp::listen(std::string_view host, int port, event_loop& loop) {
+    return listen(host, port, options{}, loop);
 }
 
-result<int> tcp::local_port(tcp::acceptor& acc) {
-    if(!acc.self) {
-        return outcome_error(error::invalid_argument);
+result<tcp::acceptor> tcp::listen(std::string_view host, int port, options opts, event_loop& loop) {
+    auto addr = uv::resolve_addr(host, port);
+    if(!addr) {
+        return outcome_error(addr.error());
     }
 
-    sockaddr_storage storage{};
-    int namelen = sizeof(storage);
-    int err = uv_tcp_getsockname(&acc->tcp, reinterpret_cast<sockaddr*>(&storage), &namelen);
-    if(err != 0) {
-        return outcome_error(uv::status_to_error(err));
+    unsigned int flags = 0;
+    if(opts.ipv6_only) {
+        flags |= UV_TCP_IPV6ONLY;
+    }
+    if(opts.reuse_port) {
+        flags |= UV_TCP_REUSEPORT;
     }
 
-    if(storage.ss_family == AF_INET) {
-        return ntohs(reinterpret_cast<sockaddr_in*>(&storage)->sin_port);
-    } else if(storage.ss_family == AF_INET6) {
-        return ntohs(reinterpret_cast<sockaddr_in6*>(&storage)->sin6_port);
+    auto self = acceptor::Self::make();
+    ::uv_tcp_init(loop.native_handle(), &self->tcp);
+    if(auto err =
+           error(::uv_tcp_bind(&self->tcp, reinterpret_cast<const sockaddr*>(&*addr), flags))) {
+        return outcome_error(err);
     }
-
-    return outcome_error(error::invalid_argument);
+    if(auto err = error(::uv_listen(&self->stream, opts.backlog, acceptor::Self::on_connection))) {
+        return outcome_error(err);
+    }
+    return acceptor(std::move(self));
 }
 
 }  // namespace kota

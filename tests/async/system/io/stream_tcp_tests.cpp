@@ -107,15 +107,21 @@ struct Listener {
 };
 
 result<Listener> listen_loopback(event_loop& loop) {
-    auto acceptor = tcp::listen("127.0.0.1", 0, {}, loop);
+    auto acceptor = tcp::listen("127.0.0.1", 0, loop);
     if(!acceptor) {
         return outcome_error(acceptor.error());
     }
-    auto port = tcp::local_port(*acceptor);
-    if(!port) {
-        return outcome_error(port.error());
+    auto name = acceptor->getsockname();
+    if(!name) {
+        return outcome_error(name.error());
     }
-    return Listener{.acceptor = std::move(*acceptor), .port = *port};
+    return Listener{.acceptor = std::move(*acceptor), .port = name->port};
+}
+
+/// A task that finishes at once: when_any cancels what it races as soon as
+/// that has started.
+task<> finished() {
+    co_return;
 }
 
 ZEST_SUITE(async_io_stream_tcp, test::LoopFixture) {
@@ -197,80 +203,107 @@ ZEST_CASE(read_after_the_peer_resets_fails) {
     EXPECT(received->error() == error::connection_reset_by_peer);
 }
 
+// The reset arrives while the reader holds the data sent before it, and is
+// reported once that is read. Windows drops the data a reset overtakes.
+#ifndef _WIN32
+ZEST_CASE(reset_after_data_is_reported_after_the_data) {
+    auto listener = listen_loopback(loop);
+    ASSERT(listener.has_value());
+    auto sock = connect_raw(listener->port);
+    ASSERT(sock != invalid_socket);
+    ASSERT(::send(sock, "data", 4, 0) == 4);
+    ASSERT(reset_socket(sock) == 0);
+    auto serve = [&]() -> task<std::pair<std::string, result<std::string>>, error> {
+        auto connection = co_await listener->acceptor.accept().or_fail();
+        auto data = co_await connection.read().or_fail();
+        // The reset arrives while the loop turns and nothing reads.
+        co_await yield();
+        auto after = co_await connection.read();
+        co_return std::pair{std::move(data), std::move(after)};
+    };
+
+    auto [received] = run(serve());
+    ASSERT(received.has_value());
+    EXPECT(received->first == "data");
+    ASSERT(received->second.has_error());
+    EXPECT(received->second.error() == error::connection_reset_by_peer);
+}
+#endif
+
 ZEST_CASE(second_accept_while_one_is_pending_fails) {
     auto listener = listen_loopback(loop);
     ASSERT(listener.has_value());
-    auto first = listener->acceptor.accept();
-    auto* node = first.operator->();
-    auto second_then_cancel = [&]() -> task<result<tcp>> {
+    auto second_then_connect = [&]() -> task<error> {
         auto second = co_await listener->acceptor.accept();
-        node->cancel();
-        co_return second;
+        auto connected = co_await tcp::connect("127.0.0.1", listener->port);
+        EXPECT(connected.has_value());
+        co_return second.has_error() ? second.error() : error();
     };
 
-    auto [pending, second] = run(std::move(first), second_then_cancel());
-    EXPECT(pending.is_cancelled());
+    auto [first, second] = run(listener->acceptor.accept(), second_then_connect());
+    EXPECT(first.has_value());
     ASSERT(second.has_value());
-    ASSERT(second->has_error());
-    EXPECT(second->error() == error::connection_already_in_progress);
+    EXPECT(*second == error::resource_busy_or_locked);
 }
 
+// No client connects before the yield, so only the cancel can end the first
+// accept.
 ZEST_CASE(cancelled_accept_leaves_the_listener_usable) {
     auto listener = listen_loopback(loop);
     ASSERT(listener.has_value());
-    auto pending = listener->acceptor.accept();
-    auto* node = pending.operator->();
-    auto cancel_then_serve = [&]() -> task<std::string, error> {
-        node->cancel();
+    auto cancel_then_serve = [&]() -> task<std::pair<std::size_t, std::string>, error> {
+        auto first = co_await or_fail(co_await when_any(listener->acceptor.accept(), yield()));
         auto connection = co_await listener->acceptor.accept().or_fail();
-        co_return co_await connection.read().or_fail();
+        co_return std::pair{first.index(), co_await connection.read().or_fail()};
     };
     auto client = [&]() -> task<void, error> {
+        co_await yield();
         auto connection = co_await tcp::connect("127.0.0.1", listener->port).or_fail();
         co_await connection.write(std::string_view("after")).or_fail();
     };
 
-    auto [cancelled, received, sent] = run(std::move(pending), cancel_then_serve(), client());
-    EXPECT(cancelled.is_cancelled());
+    auto [received, sent] = run(cancel_then_serve(), client());
     ASSERT(received.has_value());
-    EXPECT(*received == "after");
+    EXPECT(received->first == 1U);
+    EXPECT(received->second == "after");
     EXPECT(sent.has_value());
 }
 
 // libuv supports reuse_port where SO_REUSEPORT balances the load, and
 // refuses it on macOS and Windows.
 ZEST_CASE(reuse_port_lets_two_listeners_share_a_port) {
-    tcp::options reuse_port(false, true);
+    const tcp::options reuse_port{.reuse_port = true};
     auto first = tcp::listen("127.0.0.1", 0, reuse_port, loop);
 #if defined(__APPLE__) || defined(_WIN32)
     ASSERT(first.has_error());
     EXPECT(first.error() == error::operation_not_supported_on_socket);
 #else
     ASSERT(first.has_value());
-    auto port = tcp::local_port(*first);
-    ASSERT(port.has_value());
-    auto second = tcp::listen("127.0.0.1", *port, reuse_port, loop);
+    auto name = first->getsockname();
+    ASSERT(name.has_value());
+    auto second = tcp::listen("127.0.0.1", name->port, reuse_port, loop);
     EXPECT(second.has_value());
 #endif
 }
 
 // Skipped where the host has no IPv6 loopback, as some containers do not.
 ZEST_CASE(ipv6_only_listener_takes_ipv6_clients) {
-    auto listener = tcp::listen("::1", 0, tcp::options(true), loop);
+    auto listener = tcp::listen("::1", 0, {.ipv6_only = true}, loop);
     if(!listener && (listener.error() == error::address_not_available ||
                      listener.error() == error::address_family_not_supported)) {
         zest::skip();
         return;
     }
     ASSERT(listener.has_value());
-    auto port = tcp::local_port(*listener);
-    ASSERT(port.has_value());
+    auto name = listener->getsockname();
+    ASSERT(name.has_value());
+    EXPECT(name->addr == "::1");
     auto serve = [&]() -> task<std::string, error> {
         auto connection = co_await listener->accept().or_fail();
         co_return co_await connection.read().or_fail();
     };
     auto client = [&]() -> task<void, error> {
-        auto connection = co_await tcp::connect("::1", *port).or_fail();
+        auto connection = co_await tcp::connect("::1", name->port).or_fail();
         co_await connection.write(std::string_view("over-ipv6")).or_fail();
     };
 
@@ -283,7 +316,7 @@ ZEST_CASE(ipv6_only_listener_takes_ipv6_clients) {
 // libuv only makes an IPv6 socket IPv6-only; the flag on an IPv4 address is
 // refused rather than ignored.
 ZEST_CASE(ipv6_only_listen_on_an_ipv4_address_fails) {
-    auto listener = tcp::listen("127.0.0.1", 0, tcp::options(true), loop);
+    auto listener = tcp::listen("127.0.0.1", 0, {.ipv6_only = true}, loop);
     ASSERT(listener.has_error());
     EXPECT(listener.error() == error::invalid_argument);
 }
@@ -292,13 +325,13 @@ ZEST_CASE(listen_on_a_port_in_use_fails) {
     auto listener = listen_loopback(loop);
     ASSERT(listener.has_value());
 
-    auto taken = tcp::listen("127.0.0.1", listener->port, {}, loop);
+    auto taken = tcp::listen("127.0.0.1", listener->port, loop);
     ASSERT(taken.has_error());
     EXPECT(taken.error() == error::address_already_in_use);
 }
 
 ZEST_CASE(unparsable_host_fails) {
-    auto listened = tcp::listen("not-an-address", 0, {}, loop);
+    auto listened = tcp::listen("not-an-address", 0, loop);
     ASSERT(listened.has_error());
     EXPECT(listened.error() == error::invalid_argument);
 
@@ -324,8 +357,8 @@ ZEST_CASE(connect_to_a_closed_port_fails) {
 
 // A raw listener that nobody accepts from, its backlog of 0 taken by one
 // connection: the kernel holds back any further connect, which then cannot
-// finish by itself, so only the cancel ends it. (A kota listener accepts
-// eagerly and would make room.) Windows refuses such a connection instead.
+// finish by itself, so only the cancel ends it. Windows refuses such a
+// connection instead.
 #ifndef _WIN32
 ZEST_CASE(connect_can_be_cancelled) {
     RawSocket listening;
@@ -337,15 +370,15 @@ ZEST_CASE(connect_can_be_cancelled) {
     RawSocket queued;
     queued.fd = connect_raw(port);
     ASSERT(queued.fd != invalid_socket);
-    auto connecting = tcp::connect("127.0.0.1", port, loop);
-    auto* node = connecting.operator->();
-    auto cancel_it = [&]() -> task<> {
-        node->cancel();
-        co_return;
+    auto cancel_at_once = [&]() -> task<std::size_t, error> {
+        auto first =
+            co_await or_fail(co_await when_any(tcp::connect("127.0.0.1", port, loop), finished()));
+        co_return first.index();
     };
 
-    auto [cancelled, driver] = run(std::move(connecting), cancel_it());
-    EXPECT(cancelled.is_cancelled());
+    auto [raced] = run(cancel_at_once());
+    ASSERT(raced.has_value());
+    EXPECT(*raced == 1U);
 }
 #endif
 

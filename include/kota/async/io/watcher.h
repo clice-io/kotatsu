@@ -2,201 +2,128 @@
 
 #include <chrono>
 
+#include "kota/async/io/loop.h"
 #include "kota/async/runtime/task.h"
 #include "kota/async/vocab/error.h"
 #include "kota/async/vocab/owned.h"
 
 namespace kota {
 
-class event_loop;
-
-class timer {
+/// What timer, signal, idle, prepare and check share: a libuv watcher that
+/// fires once started, and the one task waiting for it.
+///
+/// wait() waits for the next fire. A fire nobody waited for is kept for the
+/// next wait(): a signal counts every one, the others keep one, however
+/// many happened. One wait() may be pending at a time; a second fails with
+/// error::resource_busy_or_locked. Cancelling a wait only withdraws it: the
+/// watcher runs on. Destroying the watcher ends a pending wait with
+/// error::operation_aborted.
+///
+/// A default-constructed or moved-from watcher is inert: everything fails
+/// with error::invalid_argument.
+class watcher {
 public:
-    timer() noexcept;
+    watcher() noexcept;
 
-    timer(const timer&) = delete;
-    timer& operator=(const timer&) = delete;
+    watcher(const watcher&) = delete;
+    watcher& operator=(const watcher&) = delete;
 
-    timer(timer&& other) noexcept;
-    timer& operator=(timer&& other) noexcept;
+    watcher(watcher&& other) noexcept;
+    watcher& operator=(watcher&& other) noexcept;
 
-    ~timer();
+    ~watcher();
 
+    /// Stops firing until the next start(); a pending wait() keeps waiting
+    /// for that.
+    error stop();
+
+    /// Waits for the next fire.
+    task<void, error> wait();
+
+protected:
     struct Self;
-    Self* operator->() noexcept;
+
+    explicit watcher(unique_handle<Self> self) noexcept;
+
+    unique_handle<Self> self;
+};
+
+/// Fires once `timeout` after start(), then every `repeat`, if not zero.
+class timer : public watcher {
+public:
+    timer() noexcept = default;
 
     static timer create(event_loop& loop = event_loop::current());
 
-    void start(std::chrono::milliseconds timeout, std::chrono::milliseconds repeat = {});
-
-    void stop();
-
-    task<> wait();
+    /// Starts the timer, or restarts it with the new times.
+    error start(std::chrono::milliseconds timeout, std::chrono::milliseconds repeat = {});
 
 private:
-    explicit timer(unique_handle<Self> self) noexcept;
+    using watcher::watcher;
 
-    unique_handle<Self> self;
+    friend task<> sleep(std::chrono::milliseconds timeout, event_loop& loop);
 };
 
-class signal {
+/// Fires when the process receives a signal.
+class signal : public watcher {
 public:
-    signal() noexcept;
-
-    signal(const signal&) = delete;
-    signal& operator=(const signal&) = delete;
-
-    signal(signal&& other) noexcept;
-    signal& operator=(signal&& other) noexcept;
-
-    ~signal();
-
-    struct Self;
-    Self* operator->() noexcept;
+    signal() noexcept = default;
 
     static result<signal> create(event_loop& loop = event_loop::current());
 
+    /// Watches `signum`, or switches to it; fails with invalid_argument for
+    /// a number that names no signal.
     error start(int signum);
 
-    error stop();
-
-    task<void, error> wait();
-
 private:
-    explicit signal(unique_handle<Self> self) noexcept;
-
-    unique_handle<Self> self;
+    using watcher::watcher;
 };
 
-class idle {
+/// Fires once on every loop iteration in which the loop does not block
+/// waiting for I/O; a running idle watcher keeps it from blocking.
+class idle : public watcher {
 public:
-    idle() noexcept;
-
-    idle(const idle&) = delete;
-    idle& operator=(const idle&) = delete;
-
-    idle(idle&& other) noexcept;
-    idle& operator=(idle&& other) noexcept;
-
-    ~idle();
-
-    struct Self;
-    Self* operator->() noexcept;
+    idle() noexcept = default;
 
     static idle create(event_loop& loop = event_loop::current());
 
-    void start();
-
-    void stop();
-
-    task<> wait();
+    error start();
 
 private:
-    explicit idle(unique_handle<Self> self) noexcept;
-
-    unique_handle<Self> self;
+    using watcher::watcher;
 };
 
-class prepare {
+/// Fires once on every loop iteration, right before the loop polls for I/O.
+class prepare : public watcher {
 public:
-    prepare() noexcept;
-
-    prepare(const prepare&) = delete;
-    prepare& operator=(const prepare&) = delete;
-
-    prepare(prepare&& other) noexcept;
-    prepare& operator=(prepare&& other) noexcept;
-
-    ~prepare();
-
-    struct Self;
-    Self* operator->() noexcept;
+    prepare() noexcept = default;
 
     static prepare create(event_loop& loop = event_loop::current());
 
-    void start();
-
-    void stop();
-
-    task<> wait();
+    error start();
 
 private:
-    explicit prepare(unique_handle<Self> self) noexcept;
-
-    unique_handle<Self> self;
+    using watcher::watcher;
 };
 
-class check {
+/// Fires once on every loop iteration, right after the loop polled for I/O.
+class check : public watcher {
 public:
-    check() noexcept;
-
-    check(const check&) = delete;
-    check& operator=(const check&) = delete;
-
-    check(check&& other) noexcept;
-    check& operator=(check&& other) noexcept;
-
-    ~check();
-
-    struct Self;
-    Self* operator->() noexcept;
+    check() noexcept = default;
 
     static check create(event_loop& loop = event_loop::current());
 
-    void start();
-
-    void stop();
-
-    task<> wait();
+    error start();
 
 private:
-    explicit check(unique_handle<Self> self) noexcept;
-
-    unique_handle<Self> self;
+    using watcher::watcher;
 };
 
+/// Resumes after `timeout`.
 task<> sleep(std::chrono::milliseconds timeout, event_loop& loop = event_loop::current());
 
 inline task<> sleep(int ms, event_loop& loop = event_loop::current()) {
     return sleep(std::chrono::milliseconds{ms}, loop);
-}
-
-/// Awaitable returned by yield(): suspends and resumes no earlier than the
-/// next event-loop iteration, strictly after every callback, deferred resume
-/// and scheduled task that existed when it was enqueued — regardless of
-/// which callback phase (timer, idle, poll, check) performed the enqueue.
-///
-/// This is the primitive for "let the current cascade settle, then decide"
-/// patterns (debounced cancellation, coalesced re-checks). Unlike sleep(0) it
-/// allocates no timer and does not depend on libuv timer-phase ordering, and
-/// unlike the internal deferred-resume queue it never resumes within the
-/// current drain cycle.
-struct yield_awaiter : io_op {
-    explicit yield_awaiter(event_loop& loop) noexcept;
-
-    bool await_ready() const noexcept {
-        return false;
-    }
-
-    template <typename Promise>
-    std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<Promise> h,
-                      std::source_location location = std::source_location::current()) noexcept {
-        return suspend(h.promise(), location);
-    }
-
-    void await_resume() const noexcept {}
-
-private:
-    /// Enqueues on the loop's yield queue, then attaches. Defined in loop.cpp.
-    std::coroutine_handle<> suspend(async_node& parent_node, std::source_location loc) noexcept;
-
-    event_loop* loop = nullptr;
-};
-
-/// Suspends until the next event-loop iteration.
-inline yield_awaiter yield(event_loop& loop = event_loop::current()) {
-    return yield_awaiter(loop);
 }
 
 }  // namespace kota

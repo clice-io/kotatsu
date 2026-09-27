@@ -143,7 +143,7 @@ ZEST_CASE(read_in_raw_mode_takes_a_key_without_a_newline) {
         zest::skip();
         return;
     }
-    auto opened = console::open(pty.terminal, console::options(true), loop);
+    auto opened = console::open(pty.terminal, {.readable = true}, loop);
     ASSERT(opened.has_value());
     ASSERT(!opened->set_mode(console::mode::raw));
     ASSERT(::write(pty.controller, "k", 1) == 1);

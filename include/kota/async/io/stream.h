@@ -1,28 +1,46 @@
 #pragma once
 
+#include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <string>
 #include <string_view>
 
+#include "kota/async/io/endpoint.h"
+#include "kota/async/io/loop.h"
 #include "kota/async/runtime/task.h"
 #include "kota/async/vocab/error.h"
 #include "kota/async/vocab/owned.h"
 
 namespace kota {
 
-class event_loop;
-
 template <typename Stream>
 class acceptor;
 
+class tcp;
+
 /// Stream handle classification for file descriptors.
-enum class handle_type { unknown, file, tty, pipe, tcp, udp };
+enum class handle_type : std::uint8_t { unknown, file, tty, pipe, tcp, udp };
 
 /// Guess the handle type for a file descriptor.
 handle_type guess_handle(int fd);
 
-/// Base stream wrapper for pipe, TCP, and console handles.
+/// What pipe, tcp and console share: a byte stream.
+///
+/// Reading is buffered: the stream reads ahead into a 64 KiB buffer of its
+/// own while a read is pending or data sits unconsumed, and stops once the
+/// buffer is full until a reader has drained it. The end of the stream or a
+/// read error is reported once the bytes read before it are consumed, and
+/// from then on to every read. One read may be pending at a time; a second
+/// fails with error::resource_busy_or_locked. Cancelling a read only
+/// withdraws it: what arrives stays buffered for the next one. Destroying
+/// the stream ends a pending read with error::operation_aborted.
+///
+/// Writes may overlap: libuv sends them in the order they were made.
+///
+/// A default-constructed or moved-from stream is inert: everything fails
+/// with error::invalid_argument.
 class stream {
 public:
     stream() noexcept;
@@ -35,53 +53,62 @@ public:
 
     ~stream();
 
-    struct Self;
-    Self* operator->() noexcept;
-
-    /// Raw libuv handle pointer, or nullptr if invalid.
-    void* handle() noexcept;
-
-    /// Raw libuv handle pointer, or nullptr if invalid.
-    const void* handle() const noexcept;
-
-    /// Read available data into a std::string; waits for at least one read if empty.
+    /// Reads what is buffered, waiting for data if nothing is.
     task<std::string, error> read();
 
-    /// Read up to dst.size() bytes into dst; returns bytes read, 0 on EOF, or an error.
+    /// Reads up to dst.size() bytes into dst; returns how many, 0 at the end
+    /// of the stream or for an empty dst.
     task<std::size_t, error> read_some(std::span<char> dst);
 
     using chunk = std::span<const char>;
 
-    /// Read a chunk view into the internal buffer; call consume() after processing.
+    /// Shows buffered bytes, waiting for data if nothing is buffered; they
+    /// stay buffered until consume() drops them.
     task<chunk, error> read_chunk();
 
-    /// Consume bytes from the internal buffer.
+    /// Drops the first `n` buffered bytes; `n` must not exceed what
+    /// read_chunk() showed.
     void consume(std::size_t n);
 
-    /// Stop active reads and abort any pending read waiter.
-    void stop();
+    /// Stops reading ahead and ends a pending read with
+    /// error::operation_aborted. What is buffered stays; the next read
+    /// starts reading again.
+    error stop();
 
-    /// Write data to the stream; only one writer at a time.
+    /// Writes `data`, which must stay alive until the write completes. A
+    /// cancelled write still goes out: libuv cannot take it back, and the
+    /// task ends once it has.
     task<void, error> write(std::span<const char> data);
 
-    /// Try a non-blocking write; returns bytes written or error.
+    /// Writes what fits without waiting; returns how much that was.
     result<std::size_t> try_write(std::span<const char> data);
 
-    /// Check whether the stream is readable.
     bool readable() const noexcept;
 
-    /// Check whether the stream is writable.
     bool writable() const noexcept;
 
     /// Enable or disable blocking I/O on the stream.
     error set_blocking(bool enabled);
 
 protected:
+    struct Self;
+
     explicit stream(unique_handle<Self> self) noexcept;
 
     unique_handle<Self> self;
+
+private:
+    template <typename Stream>
+    friend class acceptor;
 };
 
+/// A listener that hands out the connections it receives.
+///
+/// Connections that arrive while nobody accepts wait in the listen backlog.
+/// One accept() may be pending at a time; a second fails with
+/// error::resource_busy_or_locked. Cancelling an accept only withdraws it.
+/// Destroying the acceptor ends a pending accept with
+/// error::operation_aborted.
 template <typename Stream>
 class acceptor {
 public:
@@ -95,20 +122,22 @@ public:
 
     ~acceptor();
 
-    struct Self;
-    /// Internal access; null when invalid.
-    Self* operator->() noexcept;
-
-    /// Accept one connection; only one pending accept is allowed at a time.
+    /// Accepts the next connection.
     task<Stream, error> accept();
 
-    /// Stop pending accept which will complete with error::operation_aborted. If no accept is
-    /// pending, the next accept() will complete with error instead.
+    /// Ends a pending accept() with error::operation_aborted; the listener
+    /// goes on listening for the next accept().
     error stop();
+
+    /// The address and port the listener is bound to.
+    result<endpoint> getsockname() const
+        requires std::same_as<Stream, tcp>;
 
 private:
     friend class pipe;
     friend class tcp;
+
+    struct Self;
 
     explicit acceptor(unique_handle<Self> self) noexcept;
 
@@ -132,40 +161,46 @@ public:
 
         /// Listen backlog size.
         int backlog = 128;
-
-        constexpr options(bool ipc = false, bool no_truncate = false, int backlog = 128) :
-            ipc(ipc), no_truncate(no_truncate), backlog(backlog) {}
     };
 
+    // The functions taking options come in pairs: a nested struct with
+    // default member initializers cannot be a default argument within its
+    // enclosing class.
+
     /// Wrap an existing file descriptor.
-    static result<pipe> open(int fd,
-                             options opts = options(),
-                             event_loop& loop = event_loop::current());
+    static result<pipe> open(int fd, event_loop& loop = event_loop::current());
+
+    static result<pipe> open(int fd, options opts, event_loop& loop = event_loop::current());
 
     /// Connect to a named pipe.
     static task<pipe, error> connect(std::string_view name,
-                                     options opts = options(),
+                                     event_loop& loop = event_loop::current());
+
+    static task<pipe, error> connect(std::string_view name,
+                                     options opts,
                                      event_loop& loop = event_loop::current());
 
     /// Listen on a named pipe.
+    static result<acceptor> listen(std::string_view name, event_loop& loop = event_loop::current());
+
     static result<acceptor> listen(std::string_view name,
-                                   options opts = options(),
+                                   options opts,
                                    event_loop& loop = event_loop::current());
+
+private:
+    friend class kota::acceptor<pipe>;
+    friend class process;
 
     explicit pipe(unique_handle<Self> self) noexcept;
 
-private:
-    friend class process;
-
-    static result<pipe> create(options opts = options(), event_loop& loop = event_loop::current());
+    static pipe create(options opts, event_loop& loop);
 };
 
-/// TCP socket wrapper.
+/// TCP socket wrapper. Hosts are numeric IPv4 or IPv6 addresses; names are
+/// not looked up.
 class tcp : public stream {
 public:
     tcp() noexcept = default;
-
-    explicit tcp(unique_handle<Self> self) noexcept;
 
     using acceptor = kota::acceptor<tcp>;
 
@@ -178,9 +213,6 @@ public:
 
         /// Listen backlog size.
         int backlog = 128;
-
-        constexpr options(bool ipv6_only = false, bool reuse_port = false, int backlog = 128) :
-            ipv6_only(ipv6_only), reuse_port(reuse_port), backlog(backlog) {}
     };
 
     /// Wrap an existing socket descriptor.
@@ -194,11 +226,17 @@ public:
     /// Listen on a TCP host/port.
     static result<acceptor> listen(std::string_view host,
                                    int port,
-                                   options opts = options(),
                                    event_loop& loop = event_loop::current());
 
-    /// Query the local address/port of a listening acceptor.
-    static result<int> local_port(acceptor& acc);
+    static result<acceptor> listen(std::string_view host,
+                                   int port,
+                                   options opts,
+                                   event_loop& loop = event_loop::current());
+
+private:
+    friend class kota::acceptor<tcp>;
+
+    explicit tcp(unique_handle<Self> self) noexcept;
 };
 
 /// TTY/console wrapper.
@@ -214,21 +252,19 @@ public:
         int height = 0;
     };
 
-    enum class mode { normal, raw, io, raw_vt };
+    enum class mode : std::uint8_t { normal, raw, io, raw_vt };
 
-    enum class vterm_state { supported, unsupported };
+    enum class vterm_state : std::uint8_t { supported, unsupported };
 
     struct options {
         /// Whether the TTY is readable (stdin).
         bool readable = false;
-
-        constexpr options(bool readable = false) : readable(readable) {}
     };
 
     /// Wrap a console file descriptor.
-    static result<console> open(int fd,
-                                options opts = options(),
-                                event_loop& loop = event_loop::current());
+    static result<console> open(int fd, event_loop& loop = event_loop::current());
+
+    static result<console> open(int fd, options opts, event_loop& loop = event_loop::current());
 
     /// Set TTY/console mode.
     error set_mode(mode value);
