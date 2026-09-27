@@ -7,8 +7,7 @@
 #include "kota/ipc/lsp/progress.h"
 #include "kota/ipc/lsp/protocol.h"
 
-namespace et = kota;
-namespace ipc = et::ipc;
+namespace ipc = kota::ipc;
 namespace lsp = ipc::lsp;
 namespace proto = ipc::protocol;
 
@@ -51,7 +50,7 @@ auto make_capabilities() -> proto::ServerCapabilities {
 }  // namespace
 
 int main() {
-    et::event_loop loop;
+    kota::event_loop loop;
     auto transport = ipc::StreamTransport::open_stdio(loop);
     if(!transport) {
         std::println(stderr, "failed to open stdio: {}", transport.error().message);
@@ -91,7 +90,7 @@ int main() {
                        const proto::HoverParams& p) -> ipc::RequestResult<proto::HoverParams> {
         auto uri = p.text_document.uri;
         if(uri == "file:///error") {
-            co_return et::outcome_error(
+            co_return kota::outcome_error(
                 proto::Error(static_cast<proto::integer>(proto::LSPErrorCodes::RequestFailed),
                              "hover error triggered"));
         }
@@ -114,7 +113,7 @@ int main() {
                                                proto::ProgressToken(std::string("test-progress")));
                 auto create_result = co_await reporter.create();
                 if(create_result.has_error()) {
-                    co_return et::outcome_error(create_result.error());
+                    co_return kota::outcome_error(create_result.error());
                 }
                 reporter.begin("Indexing", "starting...", 0);
                 reporter.report("halfway...", 50);

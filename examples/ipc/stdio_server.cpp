@@ -4,8 +4,7 @@
 
 #include "kota/ipc/codec/json.h"
 
-namespace et = kota;
-namespace ipc = et::ipc;
+namespace ipc = kota::ipc;
 
 namespace {
 
@@ -25,7 +24,7 @@ struct LogParams {
 }  // namespace
 
 int main() {
-    et::event_loop loop;
+    kota::event_loop loop;
     auto transport = ipc::StreamTransport::open_stdio(loop);
     if(!transport) {
         std::println(stderr, "failed to open stdio transport: {}", transport.error().message);

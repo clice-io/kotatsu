@@ -9,8 +9,7 @@
 #include "kota/ipc/codec/json.h"
 #include "kota/async/async.h"
 
-namespace et = kota;
-namespace ipc = et::ipc;
+namespace ipc = kota::ipc;
 
 namespace {
 
@@ -32,8 +31,8 @@ struct WorkerLog {
     std::string text;
 };
 
-et::task<BuildResult, ipc::Error> handle_build_request(ipc::JsonPeer::RequestContext& context,
-                                                       const BuildParams& params) {
+kota::task<BuildResult, ipc::Error> handle_build_request(ipc::JsonPeer::RequestContext& context,
+                                                         const BuildParams& params) {
     auto log_status =
         context->send_notification("worker/log",
                                    WorkerLog{
@@ -41,7 +40,7 @@ et::task<BuildResult, ipc::Error> handle_build_request(ipc::JsonPeer::RequestCon
                                        .text = "preparing compile command for " + params.source,
                                    });
     if(!log_status) {
-        co_return et::outcome_error(log_status.error());
+        co_return kota::outcome_error(log_status.error());
     }
 
     co_return BuildResult{
@@ -64,10 +63,10 @@ struct WorkerOutcome {
     std::string error;
 };
 
-et::task<void> run_parent_session(ipc::JsonPeer& peer,
-                                  et::process child,
-                                  WorkerPlan plan,
-                                  WorkerOutcome& outcome) {
+kota::task<void> run_parent_session(ipc::JsonPeer& peer,
+                                    kota::process child,
+                                    WorkerPlan plan,
+                                    WorkerOutcome& outcome) {
     outcome.worker_name = plan.worker_name;
 
     auto build_result =
@@ -113,7 +112,7 @@ et::task<void> run_parent_session(ipc::JsonPeer& peer,
 }
 
 int run_worker() {
-    et::event_loop loop;
+    kota::event_loop loop;
     auto transport = ipc::StreamTransport::open_stdio(loop);
     if(!transport) {
         std::println(stderr, "failed to open stdio transport: {}", transport.error().message);
@@ -129,7 +128,7 @@ int run_worker() {
 }
 
 int run_parent(std::string self_path) {
-    et::event_loop loop;
+    kota::event_loop loop;
 
     const std::vector<WorkerPlan> plans = {
         {
@@ -157,16 +156,16 @@ int run_parent(std::string self_path) {
     peers.reserve(plans.size());
 
     for(std::size_t index = 0; index < plans.size(); ++index) {
-        et::process::options opts;
+        kota::process::options opts;
         opts.file = self_path;
         opts.args = {self_path, "--worker"};
         opts.streams = {
-            et::process::stdio::pipe(true, false),
-            et::process::stdio::pipe(false, true),
-            et::process::stdio::inherit(),
+            kota::process::stdio::pipe(true, false),
+            kota::process::stdio::pipe(false, true),
+            kota::process::stdio::inherit(),
         };
 
-        auto spawned = et::process::spawn(opts, loop);
+        auto spawned = kota::process::spawn(opts, loop);
         if(!spawned) {
             std::println(stderr,
                          "failed to spawn {}: {}",
