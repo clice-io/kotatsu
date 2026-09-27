@@ -18,7 +18,7 @@ A test's level is decided by what it touches, not by the module it tests.
 - The moment a test opens a file, spawns a process, binds a socket, installs a signal handler or starts a thread, it is a system test. zest's own I/O does not count: printing, and reading or writing snapshots through its snapshot macros, are fine in a unit test.
 - Compile-time facts that must hold are `STATIC_EXPECT` in a unit case.
 - Nothing reaches the network beyond loopback. Tests that need the internet are not part of any suite.
-- zest's own runner check (`tests/zest/integration/`) is integration-level, but it runs from CMake as a bootstrap stage (see Trust), so it needs nothing beyond the build.
+- zest's own runner check (`tests/zest/integration/`) is integration-level, but it is the one integration test in C++ and CMake rather than TypeScript: it runs from CMake as a bootstrap stage (see Trust), so it needs nothing beyond the build.
 
 ## Layout
 
@@ -28,9 +28,10 @@ Tests are grouped by module, then by level. `tests/<module>/` mirrors `include/k
 tests/<module>/
   unit/<path mirroring the headers>/...
   system/...                  same shape
-  integration/*.test.ts       integration tests, TypeScript
+  integration/*.test.ts       integration tests, TypeScript; nothing else but drivers/
   integration/drivers/*.cpp   the programs they spawn, one per file
-  harness/*.h, harness/*.ts   helpers for this module's tests and the modules above
+  harness/*.h, harness/*.ts   helpers for this module's tests and the modules above,
+                              integration tests' helpers included
   CMakeLists.txt              kota_add_module_tests(LIBS <the module's libraries>)
                               kota_add_integration_tests(LIBS ...) if it has integration/
 tests/fixtures/               types shared by several modules' tests
@@ -61,8 +62,9 @@ Rules:
 - An integration test is a TypeScript file on node's test runner (`node:test`, `node:assert/strict`), run by node directly (type stripping, no build step) and type-checked by `pixi run typecheck`. Its npm packages are the root `package.json`'s devDependencies (`vscode-jsonrpc`, `vscode-languageserver-protocol`), installed by `pixi run npm-ci`.
 - A driver is a C++ program under test, `integration/drivers/<name>.cpp`, linked against the module's libraries by `kota_add_integration_tests`. ctest passes its path in `KOTA_<NAME>`; a test whose driver is unset or missing fails, it never skips.
 - All of a module's `integration/*.test.ts` are one ctest test, `<module>_integration` (label `integration`); it needs nothing from zest and runs beside the other stages.
-- ipc's harness (`ipc/harness/driver.ts`) spawns a driver and talks to it over its stdio, through a vscode-jsonrpc connection or on the raw wire (`raw.ts`). `Driver.spawn` takes the test's context: a driver the test did not finish with is killed, and its stderr printed, when the test ends.
-- Every test ends with `expectExit(code)`, which checks the exit code and fails on a sanitizer report in the driver's stderr.
+- ipc's harness (`ipc/harness/driver.ts`) spawns a driver and talks to it over its stdio, through a vscode-jsonrpc connection or on the raw wire (`raw.ts`). `Driver.spawn` takes the test's context: a driver the test did not finish with is killed when the test ends, and how it ended printed with its stderr.
+- A driver logs through `test::stderr_logger()` (`ipc/harness/stderr_logger.h`), one `[<level>] <message>` line each.
+- Every test ends with `expectExit(code)`, which checks the exit code and fails on a sanitizer report in the driver's stderr, and on a warn or error line the case did not declare with `expectLog(pattern)`: a message the driver drops with a warning fails the case that sent it.
 - Cases are named like zest cases: `snake_case`, shaped `<subject>_<behaviour>`, `_fails` for an error. A file's comment says what its cases have in common.
 - No sleeps: wait for the message or the exit that says it happened. The runner's timeout (`--test-timeout` in `kota_add_integration_tests`) bounds each test, driver included.
 
@@ -119,8 +121,8 @@ A test in a bootstrap suite must not judge itself with what it tests: meta's com
 ./build/debug/unit_tests --snapshot-dir=tests/snapshots --test-filter='codec_json_*'
 ```
 
-`pixi run integration-test [preset]` runs only the integration tests. To run some by hand, do what ctest does, from the repo root with the driver's path set, and filter by name:
+`pixi run integration-test [preset]` runs only the integration tests. To run some by hand, do what ctest does (`ctest -N -V -L integration` prints its command), from the repo root with the driver's path set (`lsp_stub_server.exe` on Windows), and filter by name:
 
 ```bash
-KOTA_LSP_STUB_SERVER=build/debug/lsp_stub_server pixi run node --test --test-name-pattern='^hover_' tests/ipc/lsp/integration/requests.test.ts
+KOTA_LSP_STUB_SERVER=build/debug/lsp_stub_server pixi run node --import ./tests/check_npm_packages.ts --test --test-timeout=20000 --test-name-pattern='^hover_' tests/ipc/lsp/integration/requests.test.ts
 ```

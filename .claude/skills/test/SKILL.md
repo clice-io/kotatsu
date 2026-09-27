@@ -16,10 +16,10 @@ Filtering tests means invoking a binary directly — replicate what ctest does (
 ./build/<preset>/system_tests --snapshot-dir=tests/snapshots --test-filter='async_io_*'
 ```
 
-(`Suite.*` and bare positional patterns also work.) Rerun integration tests by running node the way ctest does — from the repo root, through pixi (the host node is not the project's), with the driver's path set — and add a name pattern:
+(`Suite.*` and bare positional patterns also work.) Rerun integration tests by running node the way ctest does (`ctest --preset <preset> -N -V -L integration` prints its command and environment) — from the repo root, through pixi (the host node is not the project's), with the driver's path set (`.exe` on Windows) — and add a name pattern:
 
 ```bash
-KOTA_LSP_STUB_SERVER=build/<preset>/lsp_stub_server pixi run node --test --test-name-pattern='^hover_' tests/ipc/lsp/integration/requests.test.ts
+KOTA_LSP_STUB_SERVER=build/<preset>/lsp_stub_server pixi run node --import ./tests/check_npm_packages.ts --test --test-timeout=20000 --test-name-pattern='^hover_' tests/ipc/lsp/integration/requests.test.ts
 ```
 
 Rules:
