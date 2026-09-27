@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <variant>
 
@@ -31,11 +32,17 @@ struct IncomingResponse {
 };
 
 struct IncomingErrorResponse {
-    protocol::RequestID id;
+    /// Absent when the response names no request, as the answer to a message
+    /// its sender could not read does; such a response is never answered.
+    std::optional<protocol::RequestID> id;
     Error error;
 };
 
+/// A message that is no valid request, notification or response: it is
+/// answered with `error`, under the id of the request it was meant to be when
+/// that id could be read.
 struct IncomingParseError {
+    std::optional<protocol::RequestID> id;
     Error error;
 };
 

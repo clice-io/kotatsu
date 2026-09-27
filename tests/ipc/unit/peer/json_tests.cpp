@@ -61,17 +61,6 @@ ZEST_CASE(error_data_crosses_between_peers) {
     test::error_data_crosses_between_peers<test::JsonAdapter>();
 }
 
-// P1.2: the reply to an unparsable message carries id 0 instead of null.
-ZEST_CASE(unparsable_message_is_answered_without_an_id, skip = true) {
-    test::unparsable_message_is_answered_without_an_id<test::JsonAdapter>();
-}
-
-// P1.2: an error response with a null id is taken for an invalid request and
-// answered.
-ZEST_CASE(error_response_without_an_id_is_not_answered, skip = true) {
-    test::error_response_without_an_id_is_not_answered<test::JsonAdapter>();
-}
-
 // N1: a request sent after the input ended waits for an answer for good.
 ZEST_CASE(request_from_a_handler_after_end_of_input_fails, skip = true) {
     test::request_from_a_handler_after_end_of_input_fails<test::JsonAdapter>();
@@ -88,7 +77,6 @@ ZEST_CASE(send_after_close_output_fails, skip = true) {
     test::send_after_close_output_fails<test::JsonAdapter>();
 }
 
-// The id of an invalid request is answered by the P1.2 cases above.
 ZEST_CASE(object_without_method_or_id_is_answered_with_invalid_request) {
     Fixture f;
     f.remote.send("{}");
@@ -101,10 +89,11 @@ ZEST_CASE(object_without_method_or_id_is_answered_with_invalid_request) {
     EXPECT(written[0].kind == Message::Kind::Error);
     EXPECT(code_of(written[0].error) == ErrorCode::InvalidRequest);
     EXPECT(written[0].error.message == "message must contain method or id");
+    EXPECT(!written[0].id.has_value());
 }
 
-// P1.2: a request with a null id is dispatched as a notification.
-ZEST_CASE(request_with_a_null_id_is_answered_with_invalid_request, skip = true) {
+// LSP allows no null request id; JSON-RPC answers one as an invalid request.
+ZEST_CASE(request_with_a_null_id_is_answered_with_invalid_request) {
     Fixture f;
     bool called = false;
     f.peer.on_request([&](Fixture::Context&, const AddParams&) -> RequestResult<AddParams> {

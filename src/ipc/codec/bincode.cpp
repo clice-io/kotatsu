@@ -54,6 +54,7 @@ IncomingMessage BincodeCodec::parse_message(std::string_view payload) {
     auto status = codec::bincode::from_bytes(bytes_span, envelope);
     if(!status) {
         return IncomingParseError{
+            std::nullopt,
             Error(protocol::ErrorCode::ParseError, status.error().to_string())};
     }
 
@@ -67,9 +68,8 @@ IncomingMessage BincodeCodec::parse_message(std::string_view payload) {
             } else if constexpr(std::is_same_v<T, bincode_success>) {
                 return IncomingResponse{v.id, std::move(v.result.data)};
             } else if constexpr(std::is_same_v<T, bincode_error>) {
-                auto id = v.id.has_value() ? *v.id : protocol::RequestID{};
                 return IncomingErrorResponse{
-                    id,
+                    std::move(v.id),
                     Error(static_cast<protocol::integer>(v.code), std::move(v.message))};
             }
         },
@@ -94,11 +94,11 @@ Result<std::string> BincodeCodec::encode_success_response(const protocol::Reques
     return encode_envelope(bincode_success{id, codec::RawValue{std::string(result)}});
 }
 
-Result<std::string> BincodeCodec::encode_error_response(const protocol::RequestID& id,
-                                                        const Error& error) {
-    std::optional<protocol::RequestID> encoded_id = id;
+Result<std::string>
+    BincodeCodec::encode_error_response(const std::optional<protocol::RequestID>& id,
+                                        const Error& error) {
     return encode_envelope(bincode_error{
-        encoded_id,
+        id,
         static_cast<std::int32_t>(error.code),
         error.message,
         codec::RawValue{},

@@ -294,8 +294,9 @@ void peer_dispatch(const PeerKit<A>& kit) {
         EXPECT(code_of(written[0].error) == ErrorCode::InternalError);
     });
 
-    // Where the reply goes is the case below, which waits for P1.2.
-    kit.add("unparsable_message_is_answered_with_a_parse_error", [](Fixture& f) {
+    // The reply answers no request, so it carries no id: a null one in
+    // JSON-RPC.
+    kit.add("unparsable_message_is_answered_with_a_parse_error_without_an_id", [](Fixture& f) {
         f.remote.send(std::string(A::garbage));
         f.remote.end_input();
 
@@ -305,23 +306,18 @@ void peer_dispatch(const PeerKit<A>& kit) {
         ASSERT(written.size() == 1U);
         EXPECT(written[0].kind == Message::Kind::Error);
         EXPECT(code_of(written[0].error) == ErrorCode::ParseError);
+        EXPECT(!written[0].id.has_value());
     });
-}
 
-/// The reply to a message that does not parse answers no request, so it
-/// carries no id: a null one in JSON-RPC.
-template <CodecAdapter A>
-void unparsable_message_is_answered_without_an_id() {
-    PeerFixture<A> f;
-    f.remote.send(std::string(A::garbage));
-    f.remote.end_input();
+    // Two peers would otherwise trade such errors for good.
+    kit.add("error_response_without_an_id_is_not_answered", [](Fixture& f) {
+        f.remote.send(A::error_response(std::nullopt, ipc::Error(ErrorCode::ParseError, "bad")));
+        f.remote.end_input();
 
-    auto [ran] = f.run(f.peer.run());
-    EXPECT(ran.has_value());
-    const auto& written = f.written();
-    ASSERT(written.size() == 1U);
-    EXPECT(written[0].kind == Message::Kind::Error);
-    EXPECT(!written[0].id.has_value());
+        auto [ran] = f.run(f.peer.run());
+        EXPECT(ran.has_value());
+        EXPECT(f.written().empty());
+    });
 }
 
 /// A request without params for a handler whose params have fields is
@@ -345,20 +341,6 @@ void request_without_params_is_answered_with_invalid_params() {
     ASSERT(written.size() == 1U);
     EXPECT(written[0].kind == Message::Kind::Error);
     EXPECT(code_of(written[0].error) == ipc::protocol::ErrorCode::InvalidParams);
-}
-
-/// An error response that answers no request is not answered in turn:
-/// two peers would otherwise trade such errors for good.
-template <CodecAdapter A>
-void error_response_without_an_id_is_not_answered() {
-    PeerFixture<A> f;
-    f.remote.send(
-        A::error_response(std::nullopt, ipc::Error(ipc::protocol::ErrorCode::ParseError, "bad")));
-    f.remote.end_input();
-
-    auto [ran] = f.run(f.peer.run());
-    EXPECT(ran.has_value());
-    EXPECT(f.written().empty());
 }
 
 /// A handler that returns a RawValue has written its result itself: the

@@ -42,21 +42,34 @@ struct outgoing_success_response_message {
 
 struct outgoing_error_response_message {
     std::string jsonrpc = "2.0";
-    protocol::RequestID id;
+    /// Written as null when the error answers a message whose id is unknown.
+    std::optional<protocol::RequestID> id;
     Error error;
 };
 
 struct json_rpc_incoming {
-    std::optional<protocol::RequestID> id;
+    // RawValue, not optional<RequestID>, so that a null id stays apart from
+    // a missing one: absent → empty(), null → "null" text.
+    KOTATSU_ANNOTATE(defaulted = true)
+    <codec::RawValue> id;
     std::optional<std::string> method;
     std::optional<codec::RawValue> params;
     // Not optional<RawValue> because "result": null is a valid success
-    // response — optional would lose it as nullopt. A defaulted RawValue
-    // keeps absent → empty(), null → "null" text.
+    // response — optional would lose it as nullopt.
     KOTATSU_ANNOTATE(defaulted = true)
     <codec::RawValue> result;
     std::optional<Error> error;
 };
+
+/// The request id `raw`, an id member as written, holds: nothing for a null,
+/// or for a value that is neither an integer nor a string.
+std::optional<protocol::RequestID> read_id(std::string_view raw) {
+    auto id = codec::json::from_string<protocol::RequestID>(raw);
+    if(!id) {
+        return std::nullopt;
+    }
+    return std::move(*id);
+}
 
 }  // namespace
 
@@ -64,41 +77,48 @@ IncomingMessage JsonCodec::parse_message(std::string_view payload) {
     auto envelope = codec::json::from_string<json_rpc_incoming>(payload);
     if(!envelope) {
         return IncomingParseError{
+            std::nullopt,
             Error(protocol::ErrorCode::ParseError, envelope.error().to_string())};
     }
 
-    auto raw_params =
-        envelope->params.has_value() ? std::move(envelope->params->data) : std::string{};
+    const bool has_id = !envelope->id.empty();
+    auto id = has_id ? read_id(envelope->id.data) : std::nullopt;
 
-    // Has method → request or notification
     if(envelope->method.has_value()) {
-        if(envelope->id.has_value()) {
-            return IncomingRequest{*envelope->id,
-                                   std::move(*envelope->method),
-                                   std::move(raw_params)};
+        auto params =
+            envelope->params.has_value() ? std::move(envelope->params->data) : std::string{};
+        if(!has_id) {
+            return IncomingNotification{std::move(*envelope->method), std::move(params)};
         }
-        return IncomingNotification{std::move(*envelope->method), std::move(raw_params)};
+        if(!id) {
+            return IncomingParseError{std::nullopt,
+                                      Error(protocol::ErrorCode::InvalidRequest,
+                                            "request id must be an integer or a string")};
+        }
+        return IncomingRequest{std::move(*id), std::move(*envelope->method), std::move(params)};
     }
 
-    // No method + has id → response
-    if(envelope->id.has_value()) {
-        auto has_result = !envelope->result.empty();
-        auto has_error = envelope->error.has_value();
-
-        if(has_error && !has_result) {
-            return IncomingErrorResponse{*envelope->id, std::move(*envelope->error)};
-        }
-        if(has_result && !has_error) {
-            return IncomingResponse{*envelope->id, std::move(envelope->result.data)};
-        }
-        return IncomingErrorResponse{*envelope->id,
+    const bool has_result = !envelope->result.empty();
+    const bool has_error = envelope->error.has_value();
+    if(!has_id && !has_result && !has_error) {
+        return IncomingParseError{
+            std::nullopt,
+            Error(protocol::ErrorCode::InvalidRequest, "message must contain method or id")};
+    }
+    if(has_result == has_error) {
+        return IncomingErrorResponse{std::move(id),
                                      Error(protocol::ErrorCode::InvalidRequest,
                                            "response must contain exactly one of result or error")};
     }
-
-    // No method + no valid id → invalid
-    return IncomingParseError{
-        Error(protocol::ErrorCode::InvalidRequest, "message must contain method or id")};
+    if(has_error) {
+        return IncomingErrorResponse{std::move(id), std::move(*envelope->error)};
+    }
+    if(!id) {
+        return IncomingErrorResponse{std::nullopt,
+                                     Error(protocol::ErrorCode::InvalidRequest,
+                                           "response id must be an integer or a string")};
+    }
+    return IncomingResponse{std::move(*id), std::move(envelope->result.data)};
 }
 
 Result<std::string> JsonCodec::encode_request(const protocol::RequestID& id,
@@ -127,7 +147,7 @@ Result<std::string> JsonCodec::encode_success_response(const protocol::RequestID
     });
 }
 
-Result<std::string> JsonCodec::encode_error_response(const protocol::RequestID& id,
+Result<std::string> JsonCodec::encode_error_response(const std::optional<protocol::RequestID>& id,
                                                      const Error& error) {
     return serialize_json_value(outgoing_error_response_message{
         .id = id,

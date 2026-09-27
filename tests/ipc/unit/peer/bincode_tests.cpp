@@ -42,10 +42,6 @@ ZEST_CASE_GROUP(link) {
     test::peer_link(Kit{add_case});
 }
 
-ZEST_CASE(error_response_without_an_id_is_not_answered) {
-    test::error_response_without_an_id_is_not_answered<test::BincodeAdapter>();
-}
-
 // BincodeCodec encodes the RawValue as a length-prefixed blob, so the
 // requester gets the result wrapped once more.
 ZEST_CASE(raw_value_result_is_sent_as_it_is, skip = true) {
@@ -60,11 +56,6 @@ ZEST_CASE(request_without_params_is_answered_with_invalid_params, skip = true) {
 // P1.5: BincodeCodec drops Error::data.
 ZEST_CASE(error_data_crosses_between_peers, skip = true) {
     test::error_data_crosses_between_peers<test::BincodeAdapter>();
-}
-
-// P1.2: the reply to an unparsable message carries id 0 instead of none.
-ZEST_CASE(unparsable_message_is_answered_without_an_id, skip = true) {
-    test::unparsable_message_is_answered_without_an_id<test::BincodeAdapter>();
 }
 
 // N1: a request sent after the input ended waits for an answer for good.

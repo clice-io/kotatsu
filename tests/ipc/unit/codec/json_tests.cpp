@@ -108,7 +108,25 @@ ZEST_CASE(object_without_method_or_id_is_an_invalid_request) {
     auto parsed = codec.parse_message("{}");
     const auto* failure = std::get_if<IncomingParseError>(&parsed);
     ASSERT(failure != nullptr);
+    EXPECT(!failure->id.has_value());
     EXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
+}
+
+ZEST_CASE(request_with_a_null_id_is_an_invalid_request) {
+    JsonCodec codec;
+    auto parsed = codec.parse_message(R"({"jsonrpc":"2.0","id":null,"method":"test/add"})");
+    const auto* failure = std::get_if<IncomingParseError>(&parsed);
+    ASSERT(failure != nullptr);
+    EXPECT(!failure->id.has_value());
+    EXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
+}
+
+ZEST_CASE(result_with_a_null_id_answers_no_request) {
+    JsonCodec codec;
+    auto parsed = codec.parse_message(R"({"jsonrpc":"2.0","id":null,"result":1})");
+    const auto* response = std::get_if<IncomingErrorResponse>(&parsed);
+    ASSERT(response != nullptr);
+    EXPECT(!response->id.has_value());
 }
 
 // N3: JSON that parses but is no message is reported as a ParseError.

@@ -168,7 +168,7 @@ struct Peer<CodecT>::Self {
         }
     }
 
-    void send_error(const protocol::RequestID& id, const Error& error) {
+    void send_error(const std::optional<protocol::RequestID>& id, const Error& error) {
         ET_IPC_LOG(this, LogLevel::error, "error response: {}", error.message);
         auto response = codec.encode_error_response(id, error);
         if(response) {
@@ -298,9 +298,18 @@ struct Peer<CodecT>::Self {
                 } else if constexpr(std::is_same_v<T, IncomingResponse>) {
                     complete_pending_request(m.id, Result<std::string>(std::move(m.result)));
                 } else if constexpr(std::is_same_v<T, IncomingErrorResponse>) {
-                    complete_pending_request(m.id, outcome_error(std::move(m.error)));
+                    // An error that answers no request is not answered in
+                    // turn, or two peers would trade such errors for good.
+                    if(m.id) {
+                        complete_pending_request(*m.id, outcome_error(std::move(m.error)));
+                    } else {
+                        ET_IPC_LOG(this,
+                                   LogLevel::warn,
+                                   "error response without an id: {}",
+                                   m.error.message);
+                    }
                 } else if constexpr(std::is_same_v<T, IncomingParseError>) {
-                    send_error(protocol::RequestID{}, m.error);
+                    send_error(m.id, m.error);
                 }
             },
             msg);

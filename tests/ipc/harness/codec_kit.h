@@ -203,6 +203,18 @@ void codec_protocol(const CodecKit<A>& kit) {
         EXPECT(message->error.message == "something broke");
     });
 
+    kit.add("encode_error_response_without_an_id_writes_none", [] {
+        Codec codec;
+        auto encoded =
+            codec.encode_error_response(std::nullopt, ipc::Error(ErrorCode::ParseError, "bad"));
+        ASSERT(encoded.has_value());
+        auto message = A::read(*encoded);
+        ASSERT(message.has_value());
+        EXPECT(message->kind == Message::Kind::Error);
+        EXPECT(!message->id.has_value());
+        EXPECT(code_of(message->error) == ErrorCode::ParseError);
+    });
+
     kit.add("parse_message_reads_a_request", [] {
         Codec codec;
         auto params = A::encode(AddParams{.a = 1, .b = 2});
@@ -255,6 +267,16 @@ void codec_protocol(const CodecKit<A>& kit) {
         EXPECT(response->error.message == "method not found");
     });
 
+    kit.add("parse_message_reads_an_error_without_an_id", [] {
+        Codec codec;
+        auto parsed = codec.parse_message(
+            A::error_response(std::nullopt, ipc::Error(ErrorCode::ParseError, "bad")));
+        const auto* response = std::get_if<ipc::IncomingErrorResponse>(&parsed);
+        ASSERT(response != nullptr);
+        EXPECT(!response->id.has_value());
+        EXPECT(code_of(response->error) == ErrorCode::ParseError);
+    });
+
     kit.add("request_with_empty_params_roundtrip", [] {
         Codec codec;
         auto encoded = codec.encode_request(1, "test/empty", "");
@@ -272,6 +294,7 @@ void codec_protocol(const CodecKit<A>& kit) {
         const auto* failure = std::get_if<ipc::IncomingParseError>(&parsed);
         ASSERT(failure != nullptr);
         EXPECT(code_of(failure->error) == ErrorCode::ParseError);
+        EXPECT(!failure->id.has_value());
     });
 
     kit.add("parse_message_of_nothing_fails", [] {

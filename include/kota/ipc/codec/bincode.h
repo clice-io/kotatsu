@@ -53,7 +53,9 @@ public:
     Result<std::string> encode_success_response(const protocol::RequestID& id,
                                                 std::string_view result);
 
-    Result<std::string> encode_error_response(const protocol::RequestID& id, const Error& error);
+    /// Without an id, the error answers a message whose id could not be read.
+    Result<std::string> encode_error_response(const std::optional<protocol::RequestID>& id,
+                                              const Error& error);
 
     template <typename T>
     Result<std::string> serialize_value(const T& value) {
