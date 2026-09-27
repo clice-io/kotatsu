@@ -23,6 +23,10 @@ jobs:
             toolchain: default
             pixi_env: macos-clang
             config_args: "--toolchain=clang"
+          - os: windows-2025
+            toolchain: xclang
+            pixi_env: windows-xclang
+            config_args: "--plat=mingw --toolchain=llvm --sdk=$CONDA_PREFIX/opt/xclang"
 
     runs-on: ${{ matrix.target.os }}
 
@@ -49,6 +53,7 @@ jobs:
           locked: true
 
       - name: Configure
+        shell: bash
         run: >
           xmake config --clean --yes
           --mode=${{ matrix.mode }}

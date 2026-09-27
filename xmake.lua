@@ -2,7 +2,7 @@
 set_project("kotatsu")
 
 add_rules("mode.debug", "mode.release", "mode.releasedbg")
-set_allowedplats("windows", "linux", "macosx")
+set_allowedplats("windows", "mingw", "linux", "macosx")
 
 option("dev", { default = true })
 option("test", { default = true })
@@ -32,8 +32,9 @@ if has_config("dev") then
 	set_policy("package.install_only", true)
 	set_policy("build.ccache", true)
 	-- Keep Windows toolchains aligned with third-party prebuilt packages (e.g. cpptrace),
-	-- otherwise ASan-specific /failifmismatch metadata can break linking.
-	if is_mode("debug") and not is_plat("windows") then
+	-- otherwise ASan-specific /failifmismatch metadata can break linking. MinGW
+	-- toolchains ship no ASan runtime.
+	if is_mode("debug") and not is_plat("windows", "mingw") then
 		set_policy("build.sanitizer.address", true)
 	end
 
@@ -65,7 +66,7 @@ end
 
 set_languages("c++23")
 
-if is_plat("windows") then
+if is_plat("windows", "mingw") then
 	add_defines("NOMINMAX", "WIN32_LEAN_AND_MEAN")
 end
 
@@ -199,7 +200,7 @@ if has_config("ztest") then
 		add_rules("cl-flags")
 		add_deps("support", "deco", "async")
 		add_packages("cpptrace", { public = true })
-		if is_plat("windows") then
+		if is_plat("windows", "mingw") then
 			add_syslinks("shell32")
 		end
 	end)
