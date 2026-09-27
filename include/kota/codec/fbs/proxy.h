@@ -22,7 +22,6 @@
 #include "kota/meta/struct.h"
 #include "kota/meta/type_kind.h"
 #include "kota/codec/fbs/type.h"
-#include "kota/codec/visit/encode.h"
 
 namespace kota::codec::fbs {
 

@@ -17,7 +17,6 @@
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/context.h"
 #include "kota/codec/visit/decode.h"
-#include "kota/codec/visit/encode.h"
 
 namespace kota::codec::fbs {
 

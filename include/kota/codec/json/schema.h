@@ -25,7 +25,6 @@
 #include "kota/meta/type_info.h"
 #include "kota/codec/dyn/decode.h"
 #include "kota/codec/dyn/document.h"
-#include "kota/codec/dyn/encode.h"
 #include "kota/codec/json/json.h"
 #include "kota/codec/visit/config.h"
 
