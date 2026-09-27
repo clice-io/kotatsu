@@ -178,8 +178,7 @@ bool encode_with_attrs(Vis& vis, const T& value) {
         auto renamed = policy{}(true, meta::enum_name(value));
         return vis.visit_str(std::string_view(renamed));
     } else if constexpr(meta::struct_spec_of<Attrs>.tagging != meta::tag_mode::none) {
-        static_assert(is_specialization_of<std::variant, T>,
-                      "a tagging attribute requires a std::variant");
+        static_assert(taggable<T>, "a tagging attribute requires a std::variant");
         using spec_attr = tuple_find_t<Attrs, meta::is_struct_spec_attr>;
         return encode_tagged_variant<Config, spec_attr>(vis, value);
     } else {
@@ -429,7 +428,7 @@ namespace detail {
 /// encode_value under default_config<Config> inside a fresh error context.
 template <typename Config, typename Vis, typename T>
 std::expected<void, rich_error> run_encode(Vis& vis, const T& value) {
-    assert_human_readable_allowed<default_config<Config>, Vis>();
+    detail::assert_human_readable_allowed<default_config<Config>, Vis>();
     rich_error err;
     scoped_context<rich_error> guard(err);
     if(!encode_value<default_config<Config>>(vis, value)) {

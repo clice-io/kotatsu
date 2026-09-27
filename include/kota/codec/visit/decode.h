@@ -188,8 +188,7 @@ bool decode_with_attrs(Vis& vis, T& out) {
             return policy{}(false, name);
         });
     } else if constexpr(meta::struct_spec_of<Attrs>.tagging != meta::tag_mode::none) {
-        static_assert(is_specialization_of<std::variant, T>,
-                      "a tagging attribute requires a std::variant");
+        static_assert(taggable<T>, "a tagging attribute requires a std::variant");
         // decode_variant reads the variant as itself, tagged or not; a repr
         // of its type does not apply.
         using spec_attr = tuple_find_t<Attrs, meta::is_struct_spec_attr>;
@@ -953,7 +952,7 @@ namespace detail {
 /// under default_config<Config> inside a fresh error context.
 template <typename Config, typename Vis, typename T>
 std::expected<void, rich_error> run_decode(Vis& vis, T& out) {
-    assert_human_readable_allowed<default_config<Config>, Vis>();
+    detail::assert_human_readable_allowed<default_config<Config>, Vis>();
     rich_error err;
     scoped_context<rich_error> guard(err);
     if(!decode_value<default_config<Config>>(vis, out)) {

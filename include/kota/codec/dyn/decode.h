@@ -21,6 +21,16 @@
 
 namespace kota::codec::dyn {
 
+namespace detail {
+
+/// Fails with the type error for a node that is not an `expected`.
+inline bool fail_type(const Value& node, std::string_view expected) {
+    return scoped_context<rich_error>::fail(
+        rich_error::invalid_type(expected, kind_name(node.kind())));
+}
+
+}  // namespace detail
+
 struct ValueReader {
     const Value& node;
     constexpr static bool data_driven = true;
@@ -192,10 +202,9 @@ struct ValueReader {
         return true;
     }
 
-    /// Fails with the type error for a node that is not an `expected`.
+private:
     bool fail_type(std::string_view expected) {
-        return scoped_context<rich_error>::fail(
-            rich_error::invalid_type(expected, dyn::detail::kind_name(node.kind())));
+        return detail::fail_type(node, expected);
     }
 };
 
@@ -232,7 +241,7 @@ struct deserialize_visit<dyn::ValueReader, dyn::Array, Config> {
     static bool visit(dyn::ValueReader& vis, dyn::Array& value) {
         const auto* arr = vis.node.get_array();
         if(!arr) {
-            return vis.fail_type("array");
+            return dyn::detail::fail_type(vis.node, "array");
         }
         value = *arr;
         return true;
@@ -244,7 +253,7 @@ struct deserialize_visit<dyn::ValueReader, dyn::Object, Config> {
     static bool visit(dyn::ValueReader& vis, dyn::Object& value) {
         const auto* obj = vis.node.get_object();
         if(!obj) {
-            return vis.fail_type("object");
+            return dyn::detail::fail_type(vis.node, "object");
         }
         value = *obj;
         return true;

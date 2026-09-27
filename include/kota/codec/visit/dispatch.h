@@ -5,9 +5,11 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 #include "context.h"
 #include "kota/support/type_list.h"
+#include "kota/support/type_traits.h"
 #include "kota/meta/attrs.h"
 #include "kota/meta/schema.h"
 
@@ -36,6 +38,11 @@ struct FieldAt {
         return *reinterpret_cast<const type*>(base + schema::fields[I].offset);
     }
 };
+
+/// Whether a node of type T can carry a tagging spec: only a std::variant
+/// has alternatives to tag.
+template <typename T>
+concept taggable = is_specialization_of<std::variant, T>;
 
 /// Whether a field's skip condition (a behavior::skip_if predicate or a
 /// skip_when spec) holds for value, when encoding or when decoding.
