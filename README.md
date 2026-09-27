@@ -166,6 +166,7 @@ examples/
 
 scripts/
   lsp/             # LSP meta-model tooling (TypeScript, run by Node)
-    metamodel.ts   # Pinned meta-model: types, download, sha256-checked cache
+    metaModel.json # The pinned meta-model, sha256-checked
+    metamodel.ts   # Its types, and the schema codegen and the tests read
     codegen.ts     # Meta-model -> C++ protocol header generator
 ```

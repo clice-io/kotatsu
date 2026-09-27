@@ -23,19 +23,20 @@
 
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { isDeepStrictEqual, parseArgs } from "node:util";
+import { parseArgs } from "node:util";
 
 import {
   COMMIT,
+  Schema,
+  SchemaError,
   VERSION,
+  isBase,
   loadMetaModel,
+  sortedBy,
   type BaseTypes,
   type Enumeration,
   type EnumerationEntry,
-  type MetaModel,
-  type Notification,
   type Property,
-  type Request,
   type Structure,
   type Type,
   type TypeAlias,
@@ -80,18 +81,6 @@ const CPP_KEYWORDS = new Set([
   "true", "try", "typedef", "typeid", "typename", "union", "unsigned", "using",
   "virtual", "void", "volatile", "wchar_t", "while", "xor", "xor_eq",
 ]);
-
-/** The metaModel uses a construct this generator does not map. */
-class SchemaError extends Error {
-  override name = "SchemaError";
-}
-
-/** A request or notification, with the params type its traits are keyed by. */
-interface Message {
-  method: string;
-  params: Type;
-  result?: Type;
-}
 
 function identifier(name: string): string {
   if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(name) || CPP_KEYWORDS.has(name)) {
@@ -157,140 +146,7 @@ function separated(blocks: string[][]): string[] {
   return blocks.flatMap((block, i) => (i === 0 ? block : ["", ...block]));
 }
 
-function byName<T extends { name: string }>(items: T[]): Map<string, T> {
-  return new Map(items.map((item) => [item.name, item]));
-}
-
-/**
- * Items in code unit order of their key, which unlike localeCompare does not
- * depend on the locale.
- */
-function sortedBy<T>(items: Iterable<T>, key: (item: T) => string): T[] {
-  return [...items].sort((a, b) => {
-    const [x, y] = [key(a), key(b)];
-    return x < y ? -1 : x > y ? 1 : 0;
-  });
-}
-
-function isBase(t: Type, name: BaseTypes): boolean {
-  return t.kind === "base" && t.name === name;
-}
-
-/** Name of the empty params structure of a method that takes none. */
-function paramsName(message: Request | Notification): string {
-  const typeName = message.typeName ?? "";
-  for (const suffix of ["Request", "Notification"]) {
-    if (typeName.endsWith(suffix)) {
-      return typeName.slice(0, -suffix.length) + "Params";
-    }
-  }
-  throw new SchemaError(
-    `method \`${message.method}\` has an unexpected type name`,
-  );
-}
-
-class Generator {
-  readonly structures: Map<string, Structure>;
-  readonly enumerations: Map<string, Enumeration>;
-  readonly aliases: Map<string, TypeAlias>;
-  readonly requests: Message[];
-  readonly notifications: Message[];
-  readonly #properties = new Map<string, Property[]>();
-
-  constructor(model: MetaModel) {
-    this.structures = byName(model.structures);
-    this.enumerations = byName(model.enumerations);
-    this.aliases = byName(model.typeAliases);
-    this.requests = sortedBy(model.requests, (item) => item.method).map(
-      (request) => ({ ...this.withParams(request), result: request.result }),
-    );
-    this.notifications = sortedBy(
-      model.notifications,
-      (item) => item.method,
-    ).map((notification) => this.withParams(notification));
-  }
-
-  /**
-   * The message with its params type; one that takes none gets an empty
-   * params structure.
-   */
-  withParams(message: Request | Notification): Message {
-    const { method, params } = message;
-    if (Array.isArray(params)) {
-      throw new SchemaError(`method \`${method}\` takes positional params`);
-    }
-    if (params !== undefined) {
-      return { method, params };
-    }
-    const name = paramsName(message);
-    if (this.structures.has(name)) {
-      throw new SchemaError(`params structure \`${name}\` already exists`);
-    }
-    this.structures.set(name, {
-      name,
-      properties: [],
-      documentation: `Params of \`${method}\`, which takes none.`,
-    });
-    return { method, params: { kind: "reference", name } };
-  }
-
-  structure(name: string): Structure {
-    const structure = this.structures.get(name);
-    if (structure === undefined) {
-      throw new SchemaError(`\`${name}\` is not a structure`);
-    }
-    return structure;
-  }
-
-  properties(name: string): Property[] {
-    const cached = this.#properties.get(name);
-    if (cached !== undefined) {
-      return cached;
-    }
-    const structure = this.structure(name);
-    const merged = new Map<string, Property>();
-    for (const parent of [
-      ...(structure.extends ?? []),
-      ...(structure.mixins ?? []),
-    ]) {
-      if (parent.kind !== "reference") {
-        throw new SchemaError(`${name} inherits a \`${parent.kind}\` type`);
-      }
-      for (const prop of this.properties(parent.name)) {
-        const seen = merged.get(prop.name);
-        if (seen !== undefined && !isDeepStrictEqual(seen, prop)) {
-          throw new SchemaError(
-            `${name}: parents disagree on \`${prop.name}\``,
-          );
-        }
-        merged.set(prop.name, prop);
-      }
-    }
-    for (const prop of structure.properties) {
-      const inherited = merged.get(prop.name);
-      // The one redeclaration the spec makes narrows a string to a literal
-      // (`ResourceOperation.kind` in CreateFile and friends).
-      if (
-        inherited !== undefined &&
-        !(
-          isBase(inherited.type, "string") &&
-          prop.type.kind === "stringLiteral" &&
-          prop.optional === inherited.optional
-        )
-      ) {
-        throw new SchemaError(
-          `${name}.${prop.name} does not narrow its parent's`,
-        );
-      }
-      // Setting an existing key keeps its position: the narrowed property
-      // stays where the parent declared it.
-      merged.set(prop.name, prop);
-    }
-    const properties = [...merged.values()];
-    this.#properties.set(name, properties);
-    return properties;
-  }
-
+class Generator extends Schema {
   render(t: Type): string {
     switch (t.kind) {
       case "base":
