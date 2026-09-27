@@ -227,6 +227,8 @@ ZEST_CASE(read_after_draining_a_full_buffer_waits_for_data) {
     };
     auto write_tail = [&]() -> task<ssize_t> {
         co_await drained.wait();
+        // Not before libuv has found the pipe empty, on this turn.
+        co_await yield();
         auto written = test::write_fd(fds[1], "tail", 4);
         test::close_fd(fds[1]);
         co_return written;
