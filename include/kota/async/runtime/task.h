@@ -68,6 +68,10 @@ struct task_access {
 
     /// Starts a root the event loop scheduled.
     static void run_root(task_frame& root);
+
+    /// Lets go of a root whose loop goes before its turn: the frame is freed
+    /// when the loop owns it, and left to its owner otherwise.
+    static void drop_root(task_frame& root);
 };
 
 /// What cancel() gives to co_await.

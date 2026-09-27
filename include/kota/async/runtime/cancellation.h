@@ -37,6 +37,8 @@ private:
 };
 
 /// Cancels the tasks its tokens guard, once: on cancel() or when it goes.
+/// Like the tasks, it belongs to their loop's thread; cancel from another
+/// thread by posting cancel() through a relay.
 class cancellation_source {
 public:
     cancellation_source() : fired(std::make_shared<event>()) {}

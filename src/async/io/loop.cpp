@@ -4,6 +4,7 @@
 #include <cassert>
 #include <deque>
 #include <mutex>
+#include <utility>
 #include <vector>
 
 #include "../libuv.h"
@@ -266,6 +267,11 @@ event_loop::~event_loop() {
     {
         std::lock_guard lock(self->mutex);
         self->queue.clear();
+    }
+
+    // Roots scheduled but never started.
+    for(auto* root: std::exchange(self->tasks, {})) {
+        detail::task_access::drop_root(*root);
     }
 
     auto callbacks = std::move(self->destroy_callbacks);

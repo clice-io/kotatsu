@@ -155,6 +155,15 @@ void detail::task_access::run_root(task_frame& root) {
     task_frame::resume_and_drain(root.start(nullptr));
 }
 
+void detail::task_access::drop_root(task_frame& root) {
+    if(root.owned_by_loop) {
+        // Never started, so not at its final suspension: nothing to defer.
+        root.handle().destroy();
+    } else {
+        root.scheduled = false;
+    }
+}
+
 void aggregate_op::abandon_children() {
     // A child the cancel ends at once, or resumes when it catches that, may
     // run on here; it must not add to the group.

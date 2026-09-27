@@ -15,7 +15,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
   - `when_any(...)` — race children; the winner cancels the rest.
   - `task_group` — spawn a dynamic fan-out of tasks that start immediately, then join.
 - Cooperative cancellation model:
-  - `cancellation_token` / `cancellation_source` for thread-safe external triggering.
+  - `cancellation_token` / `cancellation_source` for cancelling from outside the tasks, on their loop's thread (post from other threads through a `relay`).
   - `with_token(task, tokens...)` races a task against one or more tokens.
   - `co_await cancel()` explicitly transitions a task to cancelled.
   - `.catch_cancel()` converts cancellation into an explicit `outcome` channel.

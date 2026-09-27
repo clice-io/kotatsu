@@ -23,7 +23,8 @@ struct acceptor<Stream>::Self : uv::owned_handle<Self> {
     /// so the kernel's backlog holds the rest.
     std::size_t ready = 0;
 
-    /// What ended listening; only libuv on Windows reports that.
+    /// What ended listening. libuv on Unix never reports an accept error (it
+    /// retries); on Windows an error stops listening, so it stays.
     error ended;
 
     result<Stream> accept_one() {

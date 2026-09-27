@@ -112,6 +112,26 @@ ZEST_CASE(scheduled_temporary_ended_by_a_cancelled_child_is_destroyed) {
 }
 #endif
 
+// A loop that goes before its roots' turn frees the ones it owns, a root its
+// caller dropped first included, and leaves a root its caller keeps to it.
+ZEST_CASE(roots_that_never_ran_go_with_their_loop) {
+    auto frames = std::make_shared<int>();
+    auto work = [](std::shared_ptr<int>) -> task<> {
+        co_return;
+    };
+    task<> kept = work(frames);
+    {
+        event_loop other;
+        other.schedule(work(frames));
+        other.schedule(kept);
+        task<> dropped = work(frames);
+        other.schedule(dropped);
+    }
+    EXPECT(frames.use_count() == 2);
+    kept = task<>();
+    EXPECT(frames.use_count() == 1);
+}
+
 // A root cancelled before its first turn never runs, whether the cancel
 // comes before it is scheduled or after, from a root the turn runs first.
 ZEST_CASE(root_cancelled_before_its_first_turn_never_runs) {

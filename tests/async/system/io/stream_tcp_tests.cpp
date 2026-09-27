@@ -256,7 +256,9 @@ ZEST_CASE(shutdown_lets_the_peer_read_to_the_end_and_answer) {
 
 // The server never reads, so more than the loopback buffers hold is still
 // going out when the client's stream closes: libuv ends the write, which
-// fails it with operation_aborted rather than cancelling its task.
+// fails it with operation_aborted rather than cancelling its task. Windows
+// takes the whole write off the caller at once, so nothing is left to end.
+#ifndef _WIN32
 ZEST_CASE(write_ended_by_closing_its_stream_fails) {
     auto listener = listen_loopback(loop);
     ASSERT(listener.has_value());
@@ -280,6 +282,7 @@ ZEST_CASE(write_ended_by_closing_its_stream_fails) {
     ASSERT(written.has_error());
     EXPECT(written.error() == error::operation_aborted);
 }
+#endif
 
 // A second shutdown, even one made while the first is still pending, fails,
 // and so does a write after them.

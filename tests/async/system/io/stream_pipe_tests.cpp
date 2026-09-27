@@ -233,6 +233,46 @@ ZEST_CASE(read_after_draining_a_full_buffer_waits_for_data) {
 }
 #endif
 
+// Once the unread bytes wrap around the stream's buffer, read() takes them
+// all, not only the piece up to the buffer's end.
+#ifdef __linux__
+ZEST_CASE(read_takes_what_wraps_around_the_buffer) {
+    int fds[2] = {-1, -1};
+    ASSERT(test::create_pipe(fds) == 0);
+    const std::string first(48 * 1024, 'a');
+    const std::string second(40 * 1024, 'b');
+    // A user past pipe-user-pages-soft gets smaller pipes, which the writes
+    // below would block on for good.
+    if(::fcntl(fds[1], F_GETPIPE_SZ) < static_cast<int>(first.size())) {
+        test::close_fd(fds[0]);
+        test::close_fd(fds[1]);
+        zest::skip();
+        return;
+    }
+    ASSERT(test::write_fd(fds[1], first.data(), first.size()) ==
+           static_cast<ssize_t>(first.size()));
+    auto reader = pipe::open(fds[0], loop);
+    ASSERT(reader.has_value());
+    auto read_around = [&]() -> task<std::pair<std::size_t, std::string>, error> {
+        // One read takes all the pipe holds.
+        auto held = co_await reader->read_chunk().or_fail();
+        reader->consume(40 * 1024);
+        test::write_fd(fds[1], second.data(), second.size());
+        // libuv reads it on this turn: up to the buffer's end, then from its
+        // start.
+        co_await yield();
+        auto all = co_await reader->read().or_fail();
+        co_return std::pair{held.size(), std::move(all)};
+    };
+
+    auto [read] = run(read_around());
+    test::close_fd(fds[1]);
+    ASSERT(read.has_value());
+    EXPECT(read->first == first.size());
+    EXPECT(read->second == std::string(8 * 1024, 'a') + second);
+}
+#endif
+
 // The reader looks at what arrives without consuming it until the buffer is
 // full, then drains it all: reading stops while the buffer is full and picks
 // up once it is drained, losing nothing of a MiB.

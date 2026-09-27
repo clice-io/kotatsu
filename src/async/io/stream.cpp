@@ -117,9 +117,13 @@ task<std::string, error> stream::read() {
         co_await fail(err);
     }
 
-    auto chunk = self->buffer.readable();
-    std::string out(chunk.begin(), chunk.end());
-    self->buffer.consume(chunk.size());
+    // The unread bytes lie in two pieces once they wrap around the ring.
+    std::string out;
+    while(!self->buffer.empty()) {
+        auto chunk = self->buffer.readable();
+        out.append(chunk.begin(), chunk.end());
+        self->buffer.consume(chunk.size());
+    }
     co_return out;
 }
 
