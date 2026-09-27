@@ -4,7 +4,9 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <limits>
+#include <span>
 #include <type_traits>
 #include <utility>
 
@@ -143,6 +145,35 @@ inline auto make_verifier(const std::uint8_t* data, std::size_t size) -> verifie
     verifier_t::Options opts;
     opts.max_tables = static_cast<uoffset_t>(size / 4 + 16);
     return verifier_t(data, size, opts);
+}
+
+/// A buffer's root table and the verifier that checks everything under it.
+struct OpenedBuffer {
+    verifier_t verifier;
+    const Table* root;
+};
+
+/// The checks every reader of a buffer starts with: room for the root
+/// offset and the "EVTO" identifier (the smallest well-formed buffer),
+/// a size below flatbuffers' maximum, the identifier, and an in-bounds
+/// root offset. The root table itself is left for the caller to verify.
+inline auto open_root(std::span<const std::byte> buf) -> std::expected<OpenedBuffer, rich_error> {
+    if(buf.size() < 2 * sizeof(uoffset_t)) {
+        return std::unexpected(rich_error("buffer too small"));
+    }
+    if(buf.size() >= FLATBUFFERS_MAX_BUFFER_SIZE) {
+        return std::unexpected(rich_error("buffer too large"));
+    }
+    const auto* data = reinterpret_cast<const std::uint8_t*>(buf.data());
+    if(!::flatbuffers::BufferHasIdentifier(data, buffer_identifier)) {
+        return std::unexpected(rich_error("invalid buffer identifier"));
+    }
+    OpenedBuffer opened{.verifier = make_verifier(data, buf.size()), .root = nullptr};
+    if(opened.verifier.VerifyOffset(0) == 0) {
+        return std::unexpected(rich_error("buffer verification failed: root offset"));
+    }
+    opened.root = ::flatbuffers::GetRoot<Table>(data);
+    return opened;
 }
 
 /// The vtable slot of a table's index-th field: a struct field, a tuple

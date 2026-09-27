@@ -1039,33 +1039,17 @@ public:
     /// verification yields an invalid view. Table nesting deeper than the
     /// flatbuffers default of 64 is rejected, as are buffers at or above
     /// flatbuffers' maximum buffer size (just under 2 GiB).
-    static auto from_bytes(std::span<const std::uint8_t> bytes) -> table_view {
-        static_assert(std::is_same_v<proxy_detail::apply_repr_t<object_type>, object_type>,
-                      "table_view reads T's own table layout; a type whose fbs representation "
-                      "differs from itself cannot be viewed — decode it with from_bytes instead");
-
-        // Root uoffset plus the 4-byte identifier: the smallest well-formed buffer.
-        if(bytes.size() < 2 * sizeof(uoffset_t) || bytes.size() >= FLATBUFFERS_MAX_BUFFER_SIZE) {
+    static auto from_bytes(std::span<const std::byte> bytes) -> table_view {
+        assert_viewable();
+        auto opened = detail::open_root(bytes);
+        if(!opened || !proxy_detail::verify_table<object_type>(opened->verifier, opened->root)) {
             return {};
         }
-        const auto* data = bytes.data();
-        if(!::flatbuffers::BufferHasIdentifier(data, detail::buffer_identifier)) {
-            return {};
-        }
-        auto verifier = detail::make_verifier(data, bytes.size());
-        if(verifier.VerifyOffset(0) == 0) {
-            return {};
-        }
-        const auto* root = ::flatbuffers::GetRoot<Table>(data);
-        if(!proxy_detail::verify_table<object_type>(verifier, root)) {
-            return {};
-        }
-        return table_view(view_type(root));
+        return table_view(view_type(opened->root));
     }
 
-    static auto from_bytes(std::span<const std::byte> bytes) -> table_view {
-        const auto* data = reinterpret_cast<const std::uint8_t*>(bytes.data());
-        return from_bytes(std::span<const std::uint8_t>(data, bytes.size()));
+    static auto from_bytes(std::span<const std::uint8_t> bytes) -> table_view {
+        return from_bytes(std::as_bytes(bytes));
     }
 
     /// Wraps a buffer that already passed from_bytes verification, without
@@ -1073,9 +1057,7 @@ public:
     /// opened and constructs views per query. The caller owns that contract —
     /// on unverified bytes the view reads out of bounds.
     static auto from_verified_bytes(std::span<const std::uint8_t> bytes) -> table_view {
-        static_assert(std::is_same_v<proxy_detail::apply_repr_t<object_type>, object_type>,
-                      "table_view reads T's own table layout; a type whose fbs representation "
-                      "differs from itself cannot be viewed — decode it with from_bytes instead");
+        assert_viewable();
         return table_view(view_type(::flatbuffers::GetRoot<Table>(bytes.data())));
     }
 
@@ -1135,6 +1117,12 @@ public:
     }
 
 private:
+    static consteval void assert_viewable() {
+        static_assert(std::is_same_v<proxy_detail::apply_repr_t<object_type>, object_type>,
+                      "table_view reads T's own table layout; a type whose fbs representation "
+                      "differs from itself cannot be viewed — decode it with from_bytes instead");
+    }
+
     view_type view;
 };
 

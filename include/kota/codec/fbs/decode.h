@@ -502,31 +502,11 @@ template <typename Config = void, typename T>
 auto from_bytes(std::span<const std::byte> buf, T& out) -> std::expected<void, rich_error> {
     detail::assert_config_layout_stable<Config>();
 
-    // Root uoffset plus the 4-byte identifier: the smallest well-formed buffer.
-    if(buf.size() < 2 * sizeof(uoffset_t)) {
-        return std::unexpected(rich_error("buffer too small"));
-    }
-    if(buf.size() >= FLATBUFFERS_MAX_BUFFER_SIZE) {
-        return std::unexpected(rich_error("buffer too large"));
-    }
-
-    const auto* data = reinterpret_cast<const std::uint8_t*>(buf.data());
-    auto size = buf.size();
-
-    if(!::flatbuffers::BufferHasIdentifier(data, detail::buffer_identifier)) {
-        return std::unexpected(rich_error("invalid buffer identifier"));
-    }
-
-    auto verifier = detail::make_verifier(data, size);
-    if(verifier.VerifyOffset(0) == 0) {
-        return std::unexpected(rich_error("buffer verification failed: root offset"));
-    }
-    const auto* root = ::flatbuffers::GetRoot<Table>(data);
-    if(!root->VerifyTableStart(verifier)) {
+    KOTA_EXPECTED_TRY_V(auto opened, detail::open_root(buf));
+    if(!opened.root->VerifyTableStart(opened.verifier)) {
         return std::unexpected(rich_error("buffer verification failed: root table"));
     }
-
-    decode_detail::RootReader vis(root, &verifier);
+    decode_detail::RootReader vis(opened.root, &opened.verifier);
     return codec::detail::run_decode<Config>(vis, out);
 }
 
