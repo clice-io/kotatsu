@@ -151,13 +151,20 @@ test("call_timing_out_cancels_the_client_request", async (t) => {
   // The client answers once cancelled, which the driver no longer waits for.
   driver.expectLog(/^\[warn\] orphan response for id=1$/);
   const cancelled = Promise.withResolvers<void>();
+  // The $/cancelRequest may be read before the request is handled, when the
+  // token is cancelled already and onCancellationRequested never fires.
   connection.onRequest("client/stall", (_, token) => {
-    return new Promise((resolve) =>
-      token.onCancellationRequested(() => {
+    return new Promise((resolve) => {
+      const answer = () => {
         cancelled.resolve();
         resolve(null);
-      }),
-    );
+      };
+      if (token.isCancellationRequested) {
+        answer();
+      } else {
+        token.onCancellationRequested(answer);
+      }
+    });
   });
   connection.listen();
   const outcome = await connection.sendRequest("test/call", {
