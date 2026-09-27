@@ -40,34 +40,76 @@ function(kota_add_module_tests)
     endforeach()
 endfunction()
 
+# The integration tests run on node, which runs TypeScript without a build
+# step from 22.18 on. Without it they are left out, which only a build of all
+# tests refuses.
+find_program(KOTA_NODE node)
+set(kota_node_problem "")
+if(NOT KOTA_NODE)
+    set(kota_node_problem "node was not found")
+else()
+    execute_process(COMMAND "${KOTA_NODE}" --version
+        RESULT_VARIABLE kota_node_status
+        OUTPUT_VARIABLE kota_node_version
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    string(REGEX REPLACE "^v" "" kota_node_version "${kota_node_version}")
+    if(NOT kota_node_status EQUAL 0 OR NOT kota_node_version)
+        set(kota_node_problem "${KOTA_NODE} --version failed")
+    elseif(kota_node_version VERSION_LESS 22.18)
+        set(kota_node_problem "${KOTA_NODE} is node ${kota_node_version}, older than 22.18")
+    endif()
+endif()
+if(kota_node_problem)
+    if(KOTA_BUILD_ALL_TESTS)
+        message(FATAL_ERROR
+            "The integration tests need node 22.18 or newer, but ${kota_node_problem}; "
+            "configure through pixi (pixi run build)."
+        )
+    endif()
+    message(STATUS "Leaving out the integration tests: ${kota_node_problem}.")
+endif()
+
+# A plain Debug build, unoptimized and without sanitizers, compiles the
+# largest translation units fastest and in the least memory.
+if(CMAKE_BUILD_TYPE STREQUAL "Debug"
+    AND NOT (KOTA_SANITIZE_ADDRESS OR KOTA_SANITIZE_MEMORY OR KOTA_SANITIZE_THREAD OR KOTA_SANITIZE_UNDEFINED))
+    set(kota_plain_debug ON)
+else()
+    set(kota_plain_debug OFF)
+endif()
+
 # Adds the calling module's integration tests, integration/*.test.ts, as one
 # ctest test that node runs from the repo root; their npm packages come from
 # the root package.json (`pixi run npm-ci`). Each integration/drivers/<name>.cpp
 # builds the driver <name>, linked against the module's libraries LIBS; the
 # tests find its path in the environment variable KOTA_<NAME>, and so the path
-# of each program PROGRAMS names, targets built elsewhere.
+# of each program PROGRAMS names, targets built elsewhere. DEBUG_ONLY names
+# files under integration/, tests and drivers, that only a plain Debug build
+# builds and runs; elsewhere such a driver is left out of the default build.
 function(kota_add_integration_tests)
-    cmake_parse_arguments(PARSE_ARGV 0 arg "" "" "LIBS;PROGRAMS")
-
-    # Node runs TypeScript without a build step from 22.18 on.
-    find_program(KOTA_NODE node)
-    if(NOT KOTA_NODE)
-        message(FATAL_ERROR "The integration tests need node; configure through pixi (pixi run build).")
+    cmake_parse_arguments(PARSE_ARGV 0 arg "" "" "LIBS;PROGRAMS;DEBUG_ONLY")
+    if(kota_node_problem)
+        return()
     endif()
-    execute_process(COMMAND "${KOTA_NODE}" --version OUTPUT_VARIABLE node_version OUTPUT_STRIP_TRAILING_WHITESPACE)
-    string(REGEX REPLACE "^v" "" node_version "${node_version}")
-    if(node_version VERSION_LESS 22.18)
-        message(FATAL_ERROR
-            "The integration tests need node 22.18 or newer, but ${KOTA_NODE} is ${node_version}; "
-            "configure through pixi (pixi run build)."
-        )
+
+    set(left_out "")
+    if(NOT kota_plain_debug)
+        foreach(file IN LISTS arg_DEBUG_ONLY)
+            list(APPEND left_out "${CMAKE_CURRENT_SOURCE_DIR}/integration/${file}")
+        endforeach()
     endif()
 
     set(programs "")
     file(GLOB drivers CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/integration/drivers/*.cpp")
     foreach(source IN LISTS drivers)
         get_filename_component(driver "${source}" NAME_WE)
-        add_executable(${driver} "${source}")
+        if(source IN_LIST left_out)
+            add_executable(${driver} EXCLUDE_FROM_ALL "${source}")
+        else()
+            add_executable(${driver} "${source}")
+            list(APPEND programs ${driver})
+        endif()
         target_include_directories(${driver} PRIVATE "${PROJECT_SOURCE_DIR}/tests")
         target_link_libraries(${driver} PRIVATE ${arg_LIBS})
         kota_apply_project_options(${driver})
@@ -75,7 +117,6 @@ function(kota_add_integration_tests)
             target_compile_options(${driver} PRIVATE /bigobj)
         endif()
         set_property(GLOBAL APPEND PROPERTY kota_integration_drivers ${driver})
-        list(APPEND programs ${driver})
     endforeach()
     set_property(GLOBAL APPEND PROPERTY kota_integration_programs ${arg_PROGRAMS})
 
@@ -90,6 +131,9 @@ function(kota_add_integration_tests)
     file(GLOB tests CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/integration/*.test.ts")
     if(NOT tests)
         message(FATAL_ERROR "${CMAKE_CURRENT_SOURCE_DIR}/integration has no *.test.ts.")
+    endif()
+    if(left_out)
+        list(REMOVE_ITEM tests ${left_out})
     endif()
     # A test that hangs fails at --test-timeout, its drivers killed; TIMEOUT
     # only catches the runner itself hanging.
