@@ -23,15 +23,6 @@ namespace kota::codec::fbs {
 
 namespace decode_detail {
 
-using fbs::Table;
-using fbs::String;
-using fbs::Vector;
-using fbs::voffset_t;
-using fbs::uoffset_t;
-using fbs::verifier_t;
-
-struct FieldReader;
-
 // Readers bounds-check every raw buffer access against the verifier before
 // performing it, so decoding cannot read outside the buffer no matter how
 // the dispatch drives the visit (reprs, adapters, any Config). Table
@@ -247,19 +238,19 @@ struct FieldReader : detail::VisitorBase {
     }
 
     template <typename T, typename Body>
-    inline bool visit_struct(T& out, Body&& body);
+    bool visit_struct(T& out, Body&& body);
 
     template <typename T, typename Body>
-    inline bool visit_seq(T& out, Body&& body);
+    bool visit_seq(T& out, Body&& body);
 
     template <typename T, typename Body>
-    inline bool visit_tuple(T& out, Body&& body);
+    bool visit_tuple(T& out, Body&& body);
 
     template <typename T, typename Body>
-    inline bool visit_map(T& out, Body&& body);
+    bool visit_map(T& out, Body&& body);
 
     template <typename Body>
-    inline bool visit_variant(Body&& body);
+    bool visit_variant(Body&& body);
 
 private:
     // Reads one fixed-width cell after bounds-checking it; an absent slot

@@ -6,10 +6,10 @@
 #include <cstdint>
 #include <expected>
 #include <limits>
-#include <optional>
 #include <type_traits>
 #include <utility>
 
+#include "kota/support/type_traits.h"
 #include "kota/meta/repr.h"
 #include "kota/meta/type_kind.h"
 #include "kota/codec/visit/config.h"
@@ -171,12 +171,6 @@ inline auto variant_payload_voffset(std::size_t index) -> object_result_t<voffse
 }  // namespace detail
 
 namespace schema_detail {
-
-template <typename T>
-constexpr bool is_optional_v = false;
-
-template <typename T>
-constexpr bool is_optional_v<std::optional<T>> = true;
 
 /// A scalar whose native object representation is exactly its wire cell.
 /// long double is excluded: everywhere else in this backend it lowers to a

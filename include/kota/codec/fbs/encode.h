@@ -24,8 +24,6 @@ namespace kota::codec::fbs {
 
 namespace encode_detail {
 
-using fbs::builder_t;
-using fbs::table_offset_t;
 using proxy_detail::slot_id;
 
 /// The bytes an inline struct's fields occupy, recursing into nested inline
@@ -89,38 +87,6 @@ auto wire_image(const T& value) -> WireImage<T> {
     return image;
 }
 
-struct AllocFieldVisitor;
-struct AllocTableVisitor;
-struct WriteFieldVisitor;
-struct WriteTableVisitor;
-
-template <typename T>
-struct ScalarElemVisitor;
-template <typename T>
-struct ScalarCollector;
-
-struct StringElemVisitor;
-struct StringCollector;
-
-template <typename T>
-struct InlineStructElemVisitor;
-template <typename T>
-struct InlineStructCollector;
-
-struct TableElemVisitor;
-struct TableCollector;
-struct BoxedTableCollector;
-
-template <typename Key>
-struct MapEntryCollector;
-template <typename Key>
-struct KeyCaptureVisitor;
-
-struct RootVisitor;
-
-template <typename Body>
-inline bool two_pass(builder_t& fbb, Body&& body, uoffset_t& out_offset);
-
 struct AllocFieldVisitor : detail::VisitorBase {
     builder_t& fbb;
     uoffset_t stored_offset = 0;
@@ -171,19 +137,19 @@ struct AllocFieldVisitor : detail::VisitorBase {
     }
 
     template <typename T, typename Body>
-    inline bool visit_struct(const T&, Body&& body);
+    bool visit_struct(const T&, Body&& body);
 
     template <typename Container, typename Body>
-    inline bool visit_seq(const Container& c, Body&& body);
+    bool visit_seq(const Container& c, Body&& body);
 
     template <typename T, typename Body>
-    inline bool visit_tuple(const T&, Body&& body);
+    bool visit_tuple(const T&, Body&& body);
 
     template <typename Container, typename Body>
-    inline bool visit_map(const Container& m, Body&& body);
+    bool visit_map(const Container& m, Body&& body);
 
     template <typename Body>
-    inline bool visit_variant(std::size_t index, Body&& body);
+    bool visit_variant(std::size_t index, Body&& body);
 };
 
 struct AllocTableVisitor : detail::VisitorBase {
@@ -455,19 +421,19 @@ struct TableElemVisitor : detail::VisitorBase {
     std::vector<table_offset_t>& table_offsets;
 
     template <typename T, typename Body>
-    inline bool visit_struct(const T&, Body&& body);
+    bool visit_struct(const T&, Body&& body);
 
     template <typename T, typename Body>
-    inline bool visit_tuple(const T&, Body&& body);
+    bool visit_tuple(const T&, Body&& body);
 
     template <typename Body>
-    inline bool visit_variant(std::size_t index, Body&& body);
+    bool visit_variant(std::size_t index, Body&& body);
 
     template <typename Container, typename Body>
-    inline bool visit_seq(const Container& c, Body&& body);
+    bool visit_seq(const Container& c, Body&& body);
 
     template <typename Container, typename Body>
-    inline bool visit_map(const Container& m, Body&& body);
+    bool visit_map(const Container& m, Body&& body);
 };
 
 struct TableCollector {
@@ -604,7 +570,7 @@ struct MapEntryCollector {
     std::vector<std::pair<Key, table_offset_t>> entries{};
 
     template <typename KF, typename VF>
-    inline bool visit_entry(KF&& key_fn, VF&& value_fn);
+    bool visit_entry(KF&& key_fn, VF&& value_fn);
 };
 
 struct RootVisitor : detail::VisitorBase {
@@ -664,19 +630,19 @@ struct RootVisitor : detail::VisitorBase {
     }
 
     template <typename T, typename Body>
-    inline bool visit_struct(const T&, Body&& body);
+    bool visit_struct(const T&, Body&& body);
 
     template <typename Container, typename Body>
-    inline bool visit_seq(const Container& c, Body&& body);
+    bool visit_seq(const Container& c, Body&& body);
 
     template <typename T, typename Body>
-    inline bool visit_tuple(const T&, Body&& body);
+    bool visit_tuple(const T&, Body&& body);
 
     template <typename Container, typename Body>
-    inline bool visit_map(const Container& m, Body&& body);
+    bool visit_map(const Container& m, Body&& body);
 
     template <typename Body>
-    inline bool visit_variant(std::size_t index, Body&& body);
+    bool visit_variant(std::size_t index, Body&& body);
 
 private:
     template <typename T>
@@ -708,7 +674,7 @@ template <typename Container>
 using map_key_t = kota::map_entry_key_t<std::ranges::range_value_t<Container>>;
 
 template <typename Key, typename Body>
-inline bool encode_sorted_map(builder_t& fbb, Body&& body, uoffset_t& out_offset) {
+bool encode_sorted_map(builder_t& fbb, Body&& body, uoffset_t& out_offset) {
     MapEntryCollector<ordering_key_t<Key>> coll{.fbb = fbb};
     KOTA_CODEC_TRY(body(coll));
 
@@ -726,8 +692,7 @@ inline bool encode_sorted_map(builder_t& fbb, Body&& body, uoffset_t& out_offset
 }
 
 template <typename Body>
-inline bool
-    encode_variant_table(builder_t& fbb, std::size_t index, Body&& body, uoffset_t& out_offset) {
+bool encode_variant_table(builder_t& fbb, std::size_t index, Body&& body, uoffset_t& out_offset) {
     AllocFieldVisitor payload_alloc{.fbb = fbb};
     KOTA_CODEC_TRY(body(payload_alloc));
 
@@ -957,7 +922,7 @@ auto to_bytes(const T& value, std::optional<std::size_t> initial_capacity = std:
     rich_error err;
     scoped_context<rich_error> guard(err);
 
-    encode_detail::builder_t fbb(initial_capacity.value_or(1024));
+    builder_t fbb(initial_capacity.value_or(1024));
     encode_detail::RootVisitor vis{.fbb = fbb};
 
     if(!encode_value<default_config<Config>>(vis, value)) {
