@@ -222,12 +222,6 @@ struct Reader {
         return body(ctx);
     }
 
-    template <typename KF, typename VF>
-    bool visit_entry(KF&& key_reader, VF&& value_reader) {
-        KOTA_CODEC_TRY(key_reader(*this));
-        return value_reader(*this);
-    }
-
     template <typename Body>
     bool visit_variant(Body&& body) {
         KOTA_CODEC_TRY(check_remaining(sizeof(std::uint32_t)));
