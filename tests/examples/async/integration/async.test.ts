@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { Driver } from "../../ipc/harness/driver.ts";
+import { Driver } from "../../../harness/driver.ts";
 
 test("async_basics_runs_every_demo", async (t) => {
   const example = await Driver.spawn(t, "async_basics");

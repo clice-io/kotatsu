@@ -22,7 +22,7 @@ A test's level is decided by what it touches, not by the module it tests.
 
 ## Layout
 
-Tests are grouped by module, then by level. `tests/<module>/` mirrors `include/kota/<module>/`; the modules are `support`, `meta`, `codec` with one directory per backend (`codec/json`, `codec/toml`, `codec/fbs`, `codec/bincode`, `codec/dyn`, `codec/debug`), `deco`, `async`, `ipc` with `ipc/lsp`, `http` and `zest`. `tests/examples/` holds the tests of `examples/`: unit tests of what an example builds on, and the example programs run end to end.
+Tests are grouped by module, then by level. `tests/<module>/` mirrors `include/kota/<module>/`; the modules are `support`, `meta`, `codec` with one directory per backend (`codec/json`, `codec/toml`, `codec/fbs`, `codec/bincode`, `codec/dyn`, `codec/debug`), `deco`, `async`, `ipc` with `ipc/lsp`, `http` and `zest`. `tests/examples/` holds the tests of `examples/`, by the module an example shows (`tests/examples/async/`, `tests/examples/ipc/`): unit tests of what an example builds on, and the example programs run end to end. `tests/harness/` holds what every module's integration tests share.
 
 ```
 tests/<module>/
@@ -33,8 +33,10 @@ tests/<module>/
   harness/*.h, harness/*.ts   helpers for this module's tests and the modules above,
                               integration tests' helpers included
   CMakeLists.txt              kota_add_module_tests(LIBS <the module's libraries>)
-                              kota_add_integration_tests(LIBS ... PROGRAMS ...) if it
-                              has integration/; PROGRAMS are targets built elsewhere
+                              kota_add_integration_tests(LIBS ... PROGRAMS ...
+                              DEBUG_ONLY ...) if it has integration/; PROGRAMS are
+                              targets built elsewhere
+tests/harness/*.ts            what every module's integration tests share
 tests/fixtures/               types shared by several modules' tests
 tests/snapshots/<suite>/      snapshot files
 ```
@@ -61,14 +63,14 @@ Rules:
 ## Integration tests
 
 - An integration test is a TypeScript file on node's test runner (`node:test`, `node:assert/strict`), run by node directly (type stripping, no build step) and type-checked by `pixi run typecheck`. Its npm packages are the root `package.json`'s devDependencies (`vscode-jsonrpc`, `vscode-languageserver-protocol`, `vscode-uri`, `vscode-languageserver-textdocument`, `fast-check`), installed by `pixi run npm-ci`.
-- A driver is a C++ program under test, `integration/drivers/<name>.cpp`, linked against the module's libraries by `kota_add_integration_tests`; an example it runs is named in `PROGRAMS`. ctest passes each one's path in `KOTA_<NAME>`; a test whose driver is unset or missing fails, it never skips.
+- A driver is a C++ program under test, `integration/drivers/<name>.cpp`, linked against the module's libraries by `kota_add_integration_tests`; an example it runs is named in `PROGRAMS`. ctest passes each one's path in `KOTA_<NAME>`; a test whose driver is unset or missing fails, it never skips. A driver too heavy to build outside a plain Debug build, and the tests that run it, are named in `DEBUG_ONLY`.
 - All of a module's `integration/*.test.ts` are one ctest test, `<module>_integration` (label `integration`); it needs nothing from zest and runs beside the other stages.
-- ipc's harness (`ipc/harness/driver.ts`) spawns a driver and talks to it over its stdio: through a vscode-jsonrpc connection, on the raw wire (`raw.ts`, and `session.ts`, which pairs responses with requests and keeps the strays), or in JSON lines (`jsonl.ts`) for a driver that is no JSON-RPC peer. `Driver.spawn` takes the test's context: a driver the test did not finish with is killed when the test ends, and how it ended printed with its stderr.
-- A driver logs through `test::stderr_logger()` (`ipc/harness/stderr_logger.h`), one `[<level>] <message>` line each.
-- Every test ends with `expectExit(code)`, which checks the exit code and fails on a sanitizer report in the driver's stderr, and on a warn or error line the case did not declare with `expectLog(pattern)`: a message the driver drops with a warning fails the case that sent it.
+- `Driver` (`tests/harness/driver.ts`) spawns a driver and hands its stdio to a channel in its protocol: JSON lines (`tests/harness/jsonl.ts`) for a driver that is no JSON-RPC peer; in ipc's harness, a vscode-jsonrpc connection (`connection.ts`), or a raw channel (`raw.ts`, and `session.ts`, which pairs responses with requests and keeps the strays; `jsonrpc_driver.ts` has what jsonrpc_driver's tests share). `Driver.spawn` takes the test's context: a driver the test did not finish with is killed when the test ends, and how it ended printed with its stderr.
+- A driver logs one `[<level>] <message>` line each to stderr, ipc's through `test::stderr_logger()` (`ipc/harness/stderr_logger.h`).
+- Every test ends with `expectExit(code)`, which checks the exit code and fails on a sanitizer report in the driver's stderr, and on a warn or error line the case did not declare with `expectLog(pattern, count)`: a message the driver drops with a warning fails the case that sent it. An allowance covers the lines the next step logs, one unless it says more, so it never switches the check off for the rest of the driver's run; only input that may make a driver log anything takes `Infinity`.
 - Cases are named like zest cases: `snake_case`, shaped `<subject>_<behaviour>`, `_fails` for an error. A file's comment says what its cases have in common.
 - No sleeps: wait for the message or the exit that says it happened. The runner's timeout (`--test-timeout` in `kota_add_integration_tests`) bounds each test, driver included.
-- A randomized test runs on fast-check through `fuzz()` (`ipc/harness/fuzz.ts`): a fixed seed, reported with the shrunk counterexample; `KOTA_FUZZ_SEED` and `KOTA_FUZZ_RUNS` override the seed and the 100 runs for long runs by hand. A run that stalls fails through `within()` before the test times out, and a run that fails kills its driver and reports its stderr.
+- A randomized test runs on fast-check through `fuzz()` (`tests/harness/fuzz.ts`): a fixed seed, reported with the shrunk counterexample; `KOTA_FUZZ_SEED` and `KOTA_FUZZ_RUNS` override the seed and the 100 runs for long runs by hand. A run that stalls fails through `within()` before the test times out, and a run that fails kills its driver and reports its stderr (`Driver.reported`). Strings are drawn over every code point (`unit: "binary"`), not just printable ASCII.
 - LSP's types are drawn from the pinned metaModel (`ipc/lsp/harness/protocol_values.ts`), which also says whether protocol.h reads a value. Where kotatsu reads LSP otherwise, `ipc/lsp/harness/known_deviations.ts` has an entry marked "bug" or "design" that says how; the fix of a bug deletes its entry, and the tests then check it.
 - Behaviour the library owes but does not have yet is a case written for the correct behaviour, skipped with the reason, in words rather than a plan's numbering (`{ skip: "an error response drops its data" }`); the fix removes the skip.
 

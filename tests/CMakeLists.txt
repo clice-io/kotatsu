@@ -9,7 +9,8 @@
 #             programs talking over real protocols: TypeScript tests on
 #             node's test runner, and the drivers they spawn
 # Modules are added in dependency order; examples/ holds the tests of the
-# examples, last.
+# examples, by module, last. harness/ here holds what every module's
+# integration tests share.
 
 set(kota_test_binaries unit_tests system_tests)
 
@@ -167,7 +168,9 @@ if(KOTA_ENABLE_HTTP)
     add_subdirectory(http)
 endif()
 add_subdirectory(zest)
-add_subdirectory(examples)
+if(KOTA_ENABLE_EXAMPLES)
+    add_subdirectory(examples)
+endif()
 
 # The test executables, zest's runner fixture and the integration drivers sit
 # together in the build root so that they find the same runtime DLLs.

@@ -3,11 +3,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { Driver } from "../../ipc/harness/driver.ts";
+import { Driver } from "../../../harness/driver.ts";
+import { connect } from "../../../ipc/harness/connection.ts";
 
 test("jsonrpc_server_serves_its_methods", async (t) => {
   const example = await Driver.spawn(t, "jsonrpc_server");
-  const connection = example.connect();
+  const connection = connect(example);
   connection.listen();
   assert.deepEqual(
     await connection.sendRequest("example/add", { a: 2, b: 3 }),
