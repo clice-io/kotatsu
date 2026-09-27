@@ -414,6 +414,7 @@ namespace detail {
 /// encode_value under default_config<Config> inside a fresh error context.
 template <typename Config, typename Vis, typename T>
 std::expected<void, rich_error> run_encode(Vis& vis, const T& value) {
+    assert_human_readable_allowed<default_config<Config>, Vis>();
     rich_error err;
     scoped_context<rich_error> guard(err);
     if(!encode_value<default_config<Config>>(vis, value)) {

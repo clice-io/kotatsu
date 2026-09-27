@@ -95,6 +95,18 @@ constexpr bool is_human_readable() {
     }
 }
 
+/// A config may turn a human-readable backend's name tags off, never a
+/// binary backend's on: a binary visitor writes no field names, so a tagged
+/// variant would encode as a struct its decoder does not read.
+template <typename Config, typename Vis>
+consteval void assert_human_readable_allowed() {
+    if constexpr(requires { Vis::human_readable; }) {
+        static_assert(Vis::human_readable || !is_human_readable<Config, Vis>(),
+                      "Config::human_readable = true on a binary backend: only a human-readable "
+                      "backend's tagging can be configured, and only off");
+    }
+}
+
 template <typename Config>
 std::string apply_enum_rename(bool is_serialize, std::string_view name) {
     if constexpr(requires { typename Config::enum_rename; }) {
