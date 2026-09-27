@@ -9,6 +9,7 @@
 
 #include "name.h"
 #include "spec.h"
+#include "struct.h"
 #include "kota/support/naming.h"
 #include "kota/support/tuple_traits.h"
 #include "kota/support/type_traits.h"
@@ -160,6 +161,14 @@ using merged_config_t =
     typename detail::merge_config_impl<Base,
                                        struct_spec_of<AttrsTuple>.rename_all,
                                        struct_spec_of<AttrsTuple>.deny_unknown_fields>::type;
+
+/// The config a node of type T carrying AttrsTuple (a field's attrs, or an
+/// annotation's) is read and written under: its rename_all /
+/// deny_unknown_fields merge onto Config when T is a reflectable struct, the
+/// only kind those policies act on, and are inert on every other node.
+template <typename Config, typename T, typename AttrsTuple>
+using node_config_t =
+    std::conditional_t<reflectable_class<T>, merged_config_t<Config, AttrsTuple>, Config>;
 
 /// Resolve serialized names for variant alternatives: the annotation's
 /// tag_names when provided (count must match), meta::type_name of each

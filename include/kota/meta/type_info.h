@@ -278,8 +278,8 @@ struct resolved_repr {
     using config = Config;
 };
 
-/// Precedence mirrors the codec dispatch (encode_value / encode_one_field):
-/// behavior::with wins over behavior::as, which wins over
+/// Precedence mirrors the codec dispatch (encode_with_attrs /
+/// decode_with_attrs): behavior::with wins over behavior::as, which wins over
 /// behavior::enum_string; the type's repr applies only when no behavior attr
 /// provides the representation, and within it the config's format tag selects
 /// a format-scoped specialization over the format-agnostic one — the same
@@ -287,10 +287,9 @@ struct resolved_repr {
 /// representation re-enters the resolver, so chained reprs and annotations
 /// nested inside representation types resolve to the final type, matching the
 /// codec's recursive re-dispatch on the converted value. The rename_all /
-/// deny_unknown_fields of reflectable annotated nodes merge into the carried
-/// config through merged_config_t — the same primitive and the same
-/// reflectable_class gate
-/// the codec dispatch uses — so the resulting type_info describes the
+/// deny_unknown_fields of annotated nodes merge into the carried config
+/// through node_config_t, the same alias the codec dispatch uses, so the
+/// resulting type_info describes the
 /// documents the codec actually reads and writes. A tagged variant keeps its
 /// tagging spec attr; the spec's own rename_all/deny stay inert for the
 /// alternatives, exactly as in the codec, where the tagging branch is taken
@@ -310,20 +309,14 @@ constexpr auto resolve_repr() {
         return resolved_repr<std::string_view, std::tuple<>, Config>{};
     } else if constexpr(has_repr<raw_t, format_of_t<Config>>) {
         using chosen = repr_for<raw_t, format_of_t<Config>>;
-        if constexpr(reflectable_class<raw_t>) {
-            return resolve_repr<declared_repr_t<chosen>, merged_config_t<Config, attrs_t>>();
-        } else {
-            return resolve_repr<declared_repr_t<chosen>, Config>();
-        }
+        return resolve_repr<declared_repr_t<chosen>, node_config_t<Config, raw_t, attrs_t>>();
     } else if constexpr(is_specialization_of<std::variant, raw_t> &&
                         struct_spec_of<attrs_t>.tagging != tag_mode::none) {
         return resolved_repr<raw_t,
                              std::tuple<tuple_find_t<attrs_t, is_struct_spec_attr>>,
                              Config>{};
-    } else if constexpr(reflectable_class<raw_t>) {
-        return resolved_repr<raw_t, std::tuple<>, merged_config_t<Config, attrs_t>>{};
     } else {
-        return resolved_repr<raw_t, std::tuple<>, Config>{};
+        return resolved_repr<raw_t, std::tuple<>, node_config_t<Config, raw_t, attrs_t>>{};
     }
 }
 

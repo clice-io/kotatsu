@@ -168,8 +168,50 @@ std::size_t find_tag_index(std::string_view name, const std::array<std::string_v
     return N;
 }
 
-/// Core behavior-attribute dispatch for a single struct field.
-/// Shared by decode_field_value (data-driven) and decode_one_field (schema-driven).
+/// Decodes a value under a node's attributes (a struct field's, or an
+/// annotation's), mirroring encode_with_attrs: behavior::with >
+/// behavior::as > behavior::enum_string > variant tagging > the rename_all /
+/// deny_unknown_fields merge.
+template <typename Config, typename Attrs, typename Vis, typename T>
+bool decode_with_attrs(Vis& vis, T& out) {
+    if constexpr(tuple_has_spec_v<Attrs, meta::behavior::with>) {
+        using adapter = typename tuple_find_spec_t<Attrs, meta::behavior::with>::adapter;
+        return repr_decode<adapter, Config>(vis, out);
+    } else if constexpr(tuple_has_spec_v<Attrs, meta::behavior::as>) {
+        using target = typename tuple_find_spec_t<Attrs, meta::behavior::as>::target;
+        target converted{};
+        KOTA_CODEC_TRY(decode_value<Config>(vis, converted));
+        out = T(std::move(converted));
+        return true;
+    } else if constexpr(tuple_has_spec_v<Attrs, meta::behavior::enum_string>) {
+        using policy = typename tuple_find_spec_t<Attrs, meta::behavior::enum_string>::policy;
+        static_assert(std::is_enum_v<T>, "behavior::enum_string requires an enum type");
+        std::string name_str;
+        KOTA_CODEC_TRY(vis.visit_str(name_str));
+        auto renamed = policy{}(false, name_str);
+        auto val = meta::enum_value<T>(renamed);
+        if(val) {
+            out = *val;
+            return true;
+        }
+        return scoped_context<typename Vis::error_type>::fail(
+            rich_error(std::string("unknown enum value '") + name_str + "'"));
+    } else if constexpr(meta::struct_spec_of<Attrs>.tagging != meta::tag_mode::none) {
+        static_assert(is_specialization_of<std::variant, T>,
+                      "a tagging attribute requires a std::variant");
+        if constexpr(is_human_readable<Config, Vis>()) {
+            using spec_attr = tuple_find_t<Attrs, meta::is_struct_spec_attr>;
+            return decode_variant<Config, spec_attr>(vis, out);
+        } else {
+            return decode_value<Config>(vis, out);
+        }
+    } else {
+        return decode_value<meta::node_config_t<Config, T, Attrs>>(vis, out);
+    }
+}
+
+/// Decodes struct field I of out through its attributes. Shared by
+/// decode_field_value (data-driven) and decode_one_field (schema-driven).
 template <typename Config, std::size_t I, typename Vis, typename T>
 bool decode_field_inner(Vis& vis, T& out) {
     using schema = meta::virtual_schema<T, Config>;
@@ -181,45 +223,7 @@ bool decode_field_inner(Vis& vis, T& out) {
     constexpr std::size_t offset = schema::fields[I].offset;
     auto* base = reinterpret_cast<std::byte*>(std::addressof(out));
     auto& field_ref = *reinterpret_cast<raw_t*>(base + offset);
-
-    if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
-        using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
-        return repr_decode<adapter, Config>(vis, field_ref);
-    } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
-        using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
-        target converted{};
-        KOTA_CODEC_TRY(decode_value<Config>(vis, converted));
-        field_ref = raw_t(std::move(converted));
-        return true;
-    } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::enum_string>) {
-        using policy = typename tuple_find_spec_t<attrs_t, meta::behavior::enum_string>::policy;
-        static_assert(std::is_enum_v<raw_t>, "behavior::enum_string requires an enum type");
-        std::string name_str;
-        KOTA_CODEC_TRY(vis.visit_str(name_str));
-        auto renamed = policy{}(false, name_str);
-        auto val = meta::enum_value<raw_t>(renamed);
-        if(val) {
-            field_ref = *val;
-            return true;
-        }
-        return scoped_context<typename Vis::error_type>::fail(
-            rich_error(std::string("unknown enum value '") + name_str + "'"));
-    } else if constexpr(meta::struct_spec_of<attrs_t>.tagging != meta::tag_mode::none) {
-        static_assert(meta::kind_of<raw_t>() == meta::type_kind::variant,
-                      "tagged attribute requires a variant type");
-        if constexpr(!is_human_readable<Config, Vis>()) {
-            return decode_value<Config>(vis, field_ref);
-        } else {
-            using spec_attr = tuple_find_t<attrs_t, meta::is_struct_spec_attr>;
-            return decode_variant<Config, spec_attr>(vis, field_ref);
-        }
-    } else if constexpr(meta::reflectable_class<raw_t> &&
-                        (meta::struct_spec_of<attrs_t>.rename_all != naming::casing::identity ||
-                         meta::struct_spec_of<attrs_t>.deny_unknown_fields)) {
-        return decode_value<meta::merged_config_t<Config, attrs_t>>(vis, field_ref);
-    } else {
-        return decode_value<Config>(vis, field_ref);
-    }
+    return decode_with_attrs<Config, attrs_t>(vis, field_ref);
 }
 
 /// Decode a field's value applying behavior transforms, without visit_field wrapping.
@@ -823,49 +827,8 @@ bool decode_value(Vis& vis, T& out) {
                       "keep exactly one");
         return deserialize_visit<Vis, V, Config>::visit(vis, out);
     } else if constexpr(meta::annotated_type<V>) {
-        using attrs_t = typename V::attrs;
-        auto&& inner = meta::annotated_value(out);
-        using inner_t = std::remove_cvref_t<decltype(inner)>;
-
-        if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
-            // Behavior precedence (with > as > enum_string, all above variant
-            // tagging) mirrors decode_field_inner and meta's repr resolver.
-            using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
-            return detail::repr_decode<adapter, Config>(vis, inner);
-        } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
-            using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
-            target converted{};
-            KOTA_CODEC_TRY(decode_value<Config>(vis, converted));
-            inner = inner_t(std::move(converted));
-            return true;
-        } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::enum_string>) {
-            using policy = typename tuple_find_spec_t<attrs_t, meta::behavior::enum_string>::policy;
-            static_assert(std::is_enum_v<inner_t>, "behavior::enum_string requires an enum type");
-            std::string name_str;
-            KOTA_CODEC_TRY(vis.visit_str(name_str));
-            auto renamed = policy{}(false, name_str);
-            auto val = meta::enum_value<inner_t>(renamed);
-            if(val) {
-                inner = *val;
-                return true;
-            }
-            return scoped_context<typename Vis::error_type>::fail(
-                rich_error(std::string("unknown enum value '") + name_str + "'"));
-        } else if constexpr(is_specialization_of<std::variant, inner_t> &&
-                            meta::struct_spec_of<attrs_t>.tagging != meta::tag_mode::none) {
-            if constexpr(!is_human_readable<Config, Vis>()) {
-                return decode_value<Config>(vis, inner);
-            } else {
-                using spec_attr = tuple_find_t<attrs_t, meta::is_struct_spec_attr>;
-                return decode_variant<Config, spec_attr>(vis, inner);
-            }
-        } else if constexpr(meta::reflectable_class<inner_t> &&
-                            (meta::struct_spec_of<attrs_t>.rename_all != naming::casing::identity ||
-                             meta::struct_spec_of<attrs_t>.deny_unknown_fields)) {
-            return decode_value<meta::merged_config_t<Config, attrs_t>>(vis, inner);
-        } else {
-            return decode_value<Config>(vis, inner);
-        }
+        return detail::decode_with_attrs<Config, typename V::attrs>(vis,
+                                                                    meta::annotated_value(out));
     } else if constexpr(meta::has_repr<V, meta::format_of_t<Vis>>) {
         return detail::repr_decode<meta::repr_for<V, meta::format_of_t<Vis>>, Config>(vis, out);
     } else {

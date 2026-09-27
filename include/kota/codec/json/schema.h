@@ -683,15 +683,6 @@ schema_options options_of() {
     };
 }
 
-/// The config a slot's subtree resolves and encodes under: a rename_all /
-/// deny_unknown spec on a reflectable struct field merges into the carried
-/// config — the same gate the codec dispatch and meta's repr resolver apply
-/// — and stays inert on every other slot kind.
-template <typename Config, typename Slot>
-using slot_config_t = std::conditional_t<meta::reflectable_class<typename Slot::raw_type>,
-                                         meta::merged_config_t<Config, typename Slot::attrs>,
-                                         Config>;
-
 /// True when decode reads a T value directly: T resolves to itself, or is a
 /// structural meta::annotate wrapper whose resolution is the wrapped type —
 /// a plain wrapper, no repr. Anything routed through a meta::repr makes
@@ -713,7 +704,10 @@ void collect_fresh(FreshDefaults& out);
 
 template <typename Config, typename... Slots>
 void collect_fresh_slots(FreshDefaults& out, kota::type_list<Slots...>) {
-    (collect_fresh<typename Slots::raw_type, slot_config_t<Config, Slots>>(out), ...);
+    (collect_fresh<typename Slots::raw_type,
+                   meta::node_config_t<Config, typename Slots::raw_type, typename Slots::attrs>>(
+         out),
+     ...);
 }
 
 template <typename Config, typename... Ts>
