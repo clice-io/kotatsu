@@ -9,6 +9,7 @@
 #include <utility>
 #include <variant>
 
+#include "kota/support/expected_try.h"
 #include "kota/support/numeric.h"
 #include "kota/meta/type_kind.h"
 #include "kota/codec/dyn/document.h"
@@ -196,7 +197,7 @@ struct ValueReader {
         return true;
     }
 
-private:
+    /// Fails with the type error for a node that is not an `expected`.
     bool fail_type(std::string_view expected) {
         return scoped_context<rich_error>::fail(
             rich_error::invalid_type(expected, dyn::detail::kind_name(node.kind())));
@@ -207,23 +208,15 @@ private:
 /// overload, into a default-constructed T).
 template <typename Config = void, typename T>
 auto from_dyn(const Value& value, T& out) -> std::expected<void, rich_error> {
-    rich_error err;
-    scoped_context<rich_error> guard(err);
     ValueReader vis{value};
-    if(!decode_value<default_config<Config>>(vis, out)) {
-        return std::unexpected(std::move(err));
-    }
-    return {};
+    return codec::detail::run_decode<Config>(vis, out);
 }
 
 template <typename T, typename Config = void>
     requires std::default_initializable<T>
 auto from_dyn(const Value& value) -> std::expected<T, rich_error> {
     T out{};
-    auto result = from_dyn<Config>(value, out);
-    if(!result) {
-        return std::unexpected(std::move(result).error());
-    }
+    KOTA_EXPECTED_TRY(from_dyn<Config>(value, out));
     return out;
 }
 
@@ -244,8 +237,7 @@ struct deserialize_visit<dyn::ValueReader, dyn::Array, Config> {
     static bool visit(dyn::ValueReader& vis, dyn::Array& value) {
         const auto* arr = vis.node.get_array();
         if(!arr) {
-            return scoped_context<rich_error>::fail(
-                rich_error::invalid_type("array", dyn::detail::kind_name(vis.node.kind())));
+            return vis.fail_type("array");
         }
         value = *arr;
         return true;
@@ -257,8 +249,7 @@ struct deserialize_visit<dyn::ValueReader, dyn::Object, Config> {
     static bool visit(dyn::ValueReader& vis, dyn::Object& value) {
         const auto* obj = vis.node.get_object();
         if(!obj) {
-            return scoped_context<rich_error>::fail(
-                rich_error::invalid_type("object", dyn::detail::kind_name(vis.node.kind())));
+            return vis.fail_type("object");
         }
         value = *obj;
         return true;
@@ -308,23 +299,13 @@ struct deserialize_visit<Vis, dyn::Value, Config> {
             }
             case meta::type_kind::array: {
                 dyn::Array arr;
-                KOTA_CODEC_TRY(vis.visit_seq([&](auto& ev) -> bool {
-                    dyn::Value elem;
-                    KOTA_CODEC_TRY(decode_value<Config>(ev, elem));
-                    arr.push_back(std::move(elem));
-                    return true;
-                }));
+                KOTA_CODEC_TRY((deserialize_visit<Vis, dyn::Array, Config>::visit(vis, arr)));
                 value = dyn::Value(std::move(arr));
                 return true;
             }
             case meta::type_kind::structure: {
                 dyn::Object obj;
-                KOTA_CODEC_TRY(vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
-                    dyn::Value field_val;
-                    KOTA_CODEC_TRY(decode_value<Config>(fv, field_val));
-                    obj.insert(std::string(key), std::move(field_val));
-                    return true;
-                }));
+                KOTA_CODEC_TRY((deserialize_visit<Vis, dyn::Object, Config>::visit(vis, obj)));
                 value = dyn::Value(std::move(obj));
                 return true;
             }

@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 
+#include "kota/support/expected_try.h"
 #include "kota/codec/dyn/document.h"
 #include "kota/codec/visit/common.h"
 #include "kota/codec/visit/config.h"
@@ -148,12 +149,8 @@ bool ValueWriter::visit_map(const Container&, Body&& body) {
 }
 
 template <typename T, typename Body>
-bool ValueWriter::visit_tuple(const T&, Body&& body) {
-    dyn::Array arr;
-    SeqWriter sw{arr};
-    KOTA_CODEC_TRY(body(sw));
-    output = dyn::Value(std::move(arr));
-    return true;
+bool ValueWriter::visit_tuple(const T& value, Body&& body) {
+    return visit_seq(value, std::forward<Body>(body));
 }
 
 template <typename F>
@@ -190,13 +187,9 @@ bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
 /// interchange representation; see the header comment).
 template <typename Config = void, typename T>
 auto to_dyn(const T& value) -> std::expected<dyn::Value, rich_error> {
-    rich_error err;
-    scoped_context<rich_error> guard(err);
     dyn::Value result;
     ValueWriter vis{result};
-    if(!encode_value<default_config<Config>>(vis, value)) {
-        return std::unexpected(std::move(err));
-    }
+    KOTA_EXPECTED_TRY(codec::detail::run_encode<Config>(vis, value));
     return result;
 }
 
