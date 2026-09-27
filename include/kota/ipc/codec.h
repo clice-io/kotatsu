@@ -41,10 +41,12 @@ struct IncomingErrorResponse {
 
 /// A message that is no valid request, notification or response: it is
 /// answered with `error`, under the id of the request it was meant to be when
-/// that id could be read.
+/// that id could be read. A notification that cannot be read is never
+/// answered; the error is only logged.
 struct IncomingParseError {
     std::optional<protocol::RequestID> id;
     Error error;
+    bool notification = false;
 };
 
 /// What the first bytes of a message tell of it, when the rest is not read.
@@ -57,7 +59,8 @@ struct MessageHead {
     };
 
     Kind kind = Kind::Unknown;
-    /// The id of a request, or of the request a response answers.
+    /// The id of a request, or of the request a response answers. A
+    /// Response without one names no request: its id is null.
     std::optional<protocol::RequestID> id = {};
 };
 

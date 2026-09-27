@@ -68,6 +68,24 @@ void peer_unreadable(const PeerKit<A>& kit) {
         EXPECT(second->sum == 2);
     });
 
+    // An error response whose id is null answers none of the peer's
+    // requests, as one read whole would not.
+    kit.add("oversized_error_response_without_an_id_fails_no_request", [](Fixture& f) {
+        auto remote = [&]() -> task<> {
+            co_await f.next();
+            f.remote.send_unreadable(too_large(
+                A::error_response(std::nullopt, ipc::Error(ErrorCode::ParseError, "unreadable"))));
+            f.remote.send(response<A>(1, AddResult{.sum = 1}));
+            f.remote.end_input();
+        };
+
+        auto [ran, asked, scripted] =
+            f.run(f.peer.run(), f.peer.send_request(AddParams{}), remote());
+        EXPECT(ran.has_value());
+        ASSERT(asked.has_value());
+        EXPECT(asked->sum == 1);
+    });
+
     kit.add("oversized_notification_is_dropped", [](Fixture& f) {
         auto remote = [&]() -> task<> {
             co_await f.next();

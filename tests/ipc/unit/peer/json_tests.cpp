@@ -1,3 +1,5 @@
+#include <string>
+
 #include "ipc/harness/codec_json.h"
 #include "ipc/harness/peer_fixture.h"
 #include "ipc/harness/peer_suite/cancel.h"
@@ -130,6 +132,21 @@ ZEST_CASE(request_with_a_malformed_member_is_answered_with_its_id) {
     EXPECT(written[0].kind == Message::Kind::Error);
     EXPECT(written[0].id == protocol::RequestID(5));
     EXPECT(code_of(written[0].error) == ErrorCode::InvalidRequest);
+}
+
+// JSON-RPC never answers a notification, even one it cannot read.
+ZEST_CASE(deeply_nested_notification_is_dropped) {
+    Fixture f;
+    bool called = false;
+    f.peer.on_notification([&](const test::NoteParams&) { called = true; });
+    auto deep = std::string(50000, '[') + std::string(50000, ']');
+    f.remote.send(R"({"jsonrpc":"2.0","method":"test/note","params":)" + deep + "}");
+    f.remote.end_input();
+
+    auto [ran] = f.run(f.peer.run());
+    EXPECT(ran.has_value());
+    EXPECT(!called);
+    EXPECT(f.written().empty());
 }
 
 };  // ZEST_SUITE(ipc_peer_json)

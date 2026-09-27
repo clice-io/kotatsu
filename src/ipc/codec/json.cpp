@@ -14,9 +14,15 @@ namespace kota::ipc {
 namespace {
 
 /// Messages whose arrays and objects nest deeper than this are not read:
-/// reading a value recurses once per level, so a deep enough message would
-/// overflow the stack.
-constexpr std::size_t max_nesting = 128;
+/// decoding a value recurses once per level, so a deep enough message would
+/// overflow the stack. Real LSP payloads nest up to about 130 levels (a
+/// SelectionRange parent chain of about 125, a DocumentSymbol tree of about
+/// 63 symbols at two levels each). An LSPAny, such as an error's data, which
+/// the envelope decodes, costs the most stack: about 2 KiB a level in a
+/// debug build, so a 1 MiB stack (Windows' default) overflows past about 517
+/// levels; about 800 bytes optimized. This keeps twice the deepest real
+/// payload, and half a 1 MiB stack in a debug build.
+constexpr std::size_t max_nesting = 256;
 
 struct outgoing_request_message {
     std::string jsonrpc = "2.0";
@@ -151,38 +157,15 @@ struct PrefixReader {
     }
 };
 
-/// Whether `payload`'s arrays and objects nest deeper than max_nesting,
-/// counted without regard to whether it is valid JSON.
-bool nests_too_deeply(std::string_view payload) {
-    std::size_t depth = 0;
-    bool in_string = false;
-    for(std::size_t at = 0; at < payload.size(); ++at) {
-        const char c = payload[at];
-        if(in_string) {
-            if(c == '\\') {
-                ++at;
-            } else if(c == '"') {
-                in_string = false;
-            }
-        } else if(c == '"') {
-            in_string = true;
-        } else if(c == '[' || c == '{') {
-            if(++depth > max_nesting) {
-                return true;
-            }
-        } else if((c == ']' || c == '}') && depth > 0) {
-            --depth;
-        }
-    }
-    return false;
-}
-
-/// Checks JSON's grammar (RFC 8259) without reading values: a number of any
-/// size is JSON, where simdjson refuses integers past 64 bits. It keeps its
-/// own stack rather than recursing, however deep the value.
+/// Checks JSON's grammar (RFC 8259) without reading values, and measures
+/// how deeply the value nests. A number of any size is JSON, where simdjson
+/// refuses integers past 64 bits. It keeps its own stack rather than
+/// recursing, however deep the value.
 struct JsonChecker {
     std::string_view text;
     std::size_t at = 0;
+    /// The deepest the arrays and objects nest.
+    std::size_t depth = 0;
 
     bool ended() const {
         return at >= text.size();
@@ -300,6 +283,7 @@ struct JsonChecker {
             }
             const char c = text[at];
             if(c == '[' || c == '{') {
+                depth = std::max(depth, open.size() + 1);
                 ++at;
                 skip_space();
                 if(!take(c == '[' ? ']' : '}')) {
@@ -341,63 +325,80 @@ struct JsonChecker {
     }
 };
 
-/// Whether `payload` is one JSON value.
-bool is_json(std::string_view payload) {
-    return JsonChecker{.text = payload}.check();
+/// A key as written, quotes included, read as its name: "m\u0065thod" is the
+/// key method.
+std::string key_name(std::string_view quoted) {
+    if(quoted.find('\\') == std::string_view::npos) {
+        return std::string(quoted.substr(1, quoted.size() - 2));
+    }
+    auto name = codec::json::from_string<std::string>(quoted);
+    return name ? std::move(*name) : std::string();
 }
+
+/// The members that tell what kind of message an object is.
+struct HeadMembers {
+    /// The id, when it names one: an integer or a string.
+    std::optional<protocol::RequestID> id;
+    /// An id member was read, whatever its value.
+    bool has_id = false;
+    bool has_method = false;
+    bool method_is_string = false;
+    /// A result or error member was read.
+    bool answers = false;
+
+    /// A response whose id member was not read is Unknown: it could answer
+    /// any request.
+    MessageHead head() const {
+        using Kind = MessageHead::Kind;
+        if(has_method) {
+            return {.kind = has_id ? Kind::Request : Kind::Notification, .id = id};
+        }
+        return {.kind = answers && has_id ? Kind::Response : Kind::Unknown, .id = id};
+    }
+};
 
 /// The members of the object at the front of `text` that tell what kind of
 /// message it is, read in order without decoding their values: until `text`
 /// ends, or until a member cannot be read.
-MessageHead read_head(std::string_view text) {
+HeadMembers read_head(std::string_view text) {
     PrefixReader reader{text};
-    std::optional<protocol::RequestID> id;
-    bool has_method = false;
-    bool answers = false;
-    if(reader.take('{')) {
-        while(auto key = reader.string()) {
-            if(!reader.take(':')) {
-                break;
-            }
-            has_method = has_method || *key == R"("method")";
-            answers = answers || *key == R"("result")" || *key == R"("error")";
-            auto value = reader.value();
-            if(!value) {
-                break;
-            }
-            if(*key == R"("id")") {
-                id = read_id(*value);
-            }
-            if(!reader.take(',')) {
-                break;
-            }
+    HeadMembers members;
+    if(!reader.take('{')) {
+        return members;
+    }
+    while(auto key = reader.string()) {
+        if(!reader.take(':')) {
+            break;
+        }
+        const auto name = key_name(*key);
+        members.has_method = members.has_method || name == "method";
+        members.answers = members.answers || name == "result" || name == "error";
+        members.has_id = members.has_id || name == "id";
+        auto value = reader.value();
+        if(!value) {
+            break;
+        }
+        if(name == "id") {
+            members.id = read_id(*value);
+        } else if(name == "method") {
+            members.method_is_string = value->starts_with('"');
+        }
+        if(!reader.take(',')) {
+            break;
         }
     }
-
-    if(has_method) {
-        return {.kind = id ? MessageHead::Kind::Request : MessageHead::Kind::Notification,
-                .id = id};
-    }
-    if(answers) {
-        return {.kind = MessageHead::Kind::Response, .id = id};
-    }
-    return {.kind = MessageHead::Kind::Unknown, .id = id};
+    return members;
 }
 
-/// What to make of a message that is not read as a whole: its envelope did
-/// not decode, or it nests too deeply. Text that is no JSON is a parse error;
-/// JSON that is no message object is an invalid request (batches are not
-/// supported). An object's members are read for the id it names, without
-/// decoding their values: a request (it has a method) is answered as invalid
-/// under that id, and a response fails the request it answers, or is only
-/// logged when its id cannot be read.
+/// What to make of JSON that is not read as a whole: its envelope did not
+/// decode, or it nests too deeply. JSON that is no message object is an
+/// invalid request (batches are not supported). An object's members are read
+/// for the id it names, without decoding their values: a request (it has a
+/// method, and an id member) is answered as invalid under that id, a
+/// notification (a string method and no id) is never answered, and a
+/// response fails the request it answers, or is only logged when its id
+/// cannot be read.
 IncomingMessage read_malformed(std::string_view payload, std::string reason) {
-    if(!is_json(payload)) {
-        return IncomingParseError{
-            .id = std::nullopt,
-            .error = Error(protocol::ErrorCode::ParseError, std::move(reason)),
-        };
-    }
     PrefixReader reader{payload};
     if(!reader.take('{')) {
         return IncomingParseError{
@@ -408,16 +409,16 @@ IncomingMessage read_malformed(std::string_view payload, std::string reason) {
         };
     }
 
-    auto head = read_head(payload);
-    using Kind = MessageHead::Kind;
-    if(head.kind == Kind::Request || head.kind == Kind::Notification) {
+    auto members = read_head(payload);
+    if(members.has_method) {
         return IncomingParseError{
-            .id = std::move(head.id),
+            .id = std::move(members.id),
             .error = Error(protocol::ErrorCode::InvalidRequest, std::move(reason)),
+            .notification = !members.has_id && members.method_is_string,
         };
     }
     return IncomingErrorResponse{
-        .id = std::move(head.id),
+        .id = std::move(members.id),
         .error = Error(protocol::ErrorCode::InvalidRequest, "malformed response: " + reason),
     };
 }
@@ -425,7 +426,18 @@ IncomingMessage read_malformed(std::string_view payload, std::string reason) {
 }  // namespace
 
 IncomingMessage JsonCodec::parse_message(std::string_view payload) {
-    if(nests_too_deeply(payload)) {
+    // simdjson does not check the members it skips, so the grammar is checked
+    // first, in a pass that also measures the nesting: text that is no JSON
+    // is a parse error wherever it breaks.
+    JsonChecker checker{.text = payload};
+    if(!checker.check()) {
+        return IncomingParseError{
+            .id = std::nullopt,
+            .error = Error(protocol::ErrorCode::ParseError,
+                           std::format("invalid JSON at byte {}", checker.at)),
+        };
+    }
+    if(checker.depth > max_nesting) {
         return read_malformed(payload,
                               std::format("message nests deeper than {} levels", max_nesting));
     }
@@ -490,10 +502,11 @@ IncomingMessage JsonCodec::parse_message(std::string_view payload) {
 }
 
 /// Members are read in order until the prefix ends, so a writer that puts a
-/// request's id after its method, past the prefix, reads as a notification.
-/// kotatsu, like vscode-jsonrpc, writes the id first.
+/// request's id after its method, past the prefix, reads as a notification,
+/// and a response's id after its result as Unknown. kotatsu, like
+/// vscode-jsonrpc, writes the id first.
 MessageHead JsonCodec::peek(std::string_view prefix) {
-    return read_head(prefix);
+    return read_head(prefix).head();
 }
 
 Result<std::string> JsonCodec::encode_request(const protocol::RequestID& id,

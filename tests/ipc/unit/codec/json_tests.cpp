@@ -233,6 +233,17 @@ ZEST_CASE(deeply_nested_array_is_an_invalid_request) {
     }
 }
 
+ZEST_CASE(deeply_nested_notification_is_never_answered) {
+    JsonCodec codec;
+    auto deep = std::string(50000, '[') + std::string(50000, ']');
+    auto parsed = codec.parse_message(
+        std::format(R"({{"jsonrpc":"2.0","method":"test/note","params":{}}})", deep));
+    const auto* failure = std::get_if<IncomingParseError>(&parsed);
+    ASSERT(failure != nullptr);
+    EXPECT(failure->notification);
+    EXPECT(!failure->id.has_value());
+}
+
 ZEST_CASE(request_with_deeply_nested_params_is_invalid_under_its_id) {
     JsonCodec codec;
     auto deep = std::string(50000, '[') + std::string(50000, ']');
@@ -254,6 +265,61 @@ ZEST_CASE(response_with_deeply_nested_error_data_fails_its_request) {
     ASSERT(response != nullptr);
     EXPECT(response->id == protocol::RequestID(3));
     EXPECT(code_of(response->error) == ErrorCode::InvalidRequest);
+}
+
+// A key with escapes names the member it spells.
+ZEST_CASE(escaped_member_names_are_read) {
+    JsonCodec codec;
+    auto head = codec.peek(R"({"jsonrpc":"2.0","\u0069d":3,"m\u0065thod":"test/echo","params":[)");
+    EXPECT(head.kind == MessageHead::Kind::Request);
+    EXPECT(head.id == protocol::RequestID(3));
+
+    auto deep = std::string(50000, '[') + std::string(50000, ']');
+    auto parsed = codec.parse_message(
+        std::format(R"({{"jsonrpc":"2.0","\u0069d":7,"m\u0065thod":"test/echo","params":{}}})",
+                    deep));
+    const auto* failure = std::get_if<IncomingParseError>(&parsed);
+    ASSERT(failure != nullptr);
+    EXPECT(!failure->notification);
+    EXPECT(failure->id == protocol::RequestID(7));
+}
+
+// Which request a response answers is unknown until its id is read.
+ZEST_CASE(peek_of_a_response_whose_id_is_past_the_prefix_knows_no_kind) {
+    JsonCodec codec;
+    auto head = codec.peek(R"({"jsonrpc":"2.0","result":["a very long)");
+    EXPECT(head.kind == MessageHead::Kind::Unknown);
+    auto null_id = codec.peek(R"({"jsonrpc":"2.0","id":null,"error":{"code":1,"message":"a very)");
+    EXPECT(null_id.kind == MessageHead::Kind::Response);
+    EXPECT(!null_id.id.has_value());
+}
+
+// JSON-RPC's invalid request objects: an id that is no integer or string
+// makes no notification, nor does a method that is no string.
+ZEST_CASE(malformed_request_objects_are_answered) {
+    JsonCodec codec;
+    auto deep = std::string(50000, '[') + std::string(50000, ']');
+    for(auto head: {R"("id":true,"method":"test/echo")", R"("method":5)"}) {
+        auto payload = std::format(R"({{"jsonrpc":"2.0",{},"params":{}}})", head, deep);
+        ZEST_CONTEXT("head: {}", head);
+        auto parsed = codec.parse_message(payload);
+        const auto* failure = std::get_if<IncomingParseError>(&parsed);
+        ASSERT(failure != nullptr);
+        EXPECT(!failure->notification);
+        EXPECT(!failure->id.has_value());
+        EXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
+    }
+}
+
+// simdjson does not check the members it skips; the grammar is checked
+// first.
+ZEST_CASE(invalid_member_the_envelope_skips_is_a_parse_error) {
+    JsonCodec codec;
+    auto parsed = codec.parse_message(R"({"jsonrpc":"2.0","id":1,"method":"x","extra":tru})");
+    const auto* failure = std::get_if<IncomingParseError>(&parsed);
+    ASSERT(failure != nullptr);
+    EXPECT(!failure->id.has_value());
+    EXPECT(code_of(failure->error) == ErrorCode::ParseError);
 }
 
 // Brackets inside a string are text, not nesting.

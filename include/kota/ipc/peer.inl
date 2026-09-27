@@ -256,8 +256,9 @@ struct Peer<CodecT>::Self {
 
     /// A message too large to read fails what it concerns, as far as its
     /// first bytes tell: a request is answered, a response fails the request
-    /// it answers, a notification is dropped. Unknown, it could have been
-    /// any pending request's answer, so every pending request fails.
+    /// it answers, and a notification, or a response whose id names no
+    /// request, is dropped. Unknown, it could have been any pending request's
+    /// answer, so every pending request fails.
     void skip_oversized(const ReadError& skipped) {
         log(LogLevel::warn, "skipped: {}", skipped.message);
         Error too_large(protocol::ErrorCode::MessageTooLarge, skipped.message);
@@ -267,7 +268,7 @@ struct Peer<CodecT>::Self {
             send_error(head.id, too_large);
         } else if(head.kind == Kind::Response && head.id) {
             complete_pending_request(*head.id, outcome_error(std::move(too_large)));
-        } else if(head.kind != Kind::Notification) {
+        } else if(head.kind == Kind::Unknown) {
             fail_pending_requests(too_large);
         }
     }
@@ -472,7 +473,11 @@ struct Peer<CodecT>::Self {
                         log(LogLevel::warn, "error response without an id: {}", m.error.message);
                     }
                 } else if constexpr(std::is_same_v<T, IncomingParseError>) {
-                    send_error(m.id, m.error);
+                    if(m.notification) {
+                        log(LogLevel::warn, "dropped a notification: {}", m.error.message);
+                    } else {
+                        send_error(m.id, m.error);
+                    }
                 }
             },
             msg);
