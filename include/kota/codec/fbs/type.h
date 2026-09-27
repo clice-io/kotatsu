@@ -168,7 +168,7 @@ consteval void assert_slots_fit() {
 
 }  // namespace detail
 
-namespace schema_detail {
+namespace detail {
 
 /// A scalar whose native object representation is exactly its buffer cell.
 /// long double is excluded: everywhere else in this backend it lowers to a
@@ -196,10 +196,37 @@ template <typename T>
 constexpr bool has_fixed_underlying_v = requires { T{0}; };
 
 template <typename T>
-struct schema_struct_trait;
+consteval bool inline_struct_field();
 
+/// can_inline_struct_v's test.
 template <typename T>
-constexpr bool is_schema_struct_field_v = [] {
+consteval bool inline_struct() {
+    // Trivially copyable is the exact bound the memcpy image needs; default
+    // member initializers (which break std::is_trivial) are fine. Decode
+    // restores an inline struct by whole-object assignment, which trivially
+    // copyable alone does not promise: deleted assignment operators and
+    // const members are admitted. Such a struct stays table-shaped, where
+    // its fields decode individually.
+    if constexpr(!meta::reflectable_class<T> || !std::is_trivially_copyable_v<T> ||
+                 !std::is_copy_assignable_v<T> || !std::is_standard_layout_v<T>) {
+        return false;
+    } else if constexpr(!fields_reflected_v<T>) {
+        // The padding sanitization would see no fields and zero the entire
+        // image, so a struct whose fields reflection cannot see never joins a
+        // memcpy image — and, recursing through inline_struct_field, neither
+        // does any struct containing one. The table paths then reject it
+        // outright (assert_fields_reflected).
+        return false;
+    } else {
+        return []<std::size_t... I>(std::index_sequence<I...>) {
+            return (inline_struct_field<meta::field_type<T, I>>() && ...);
+        }(std::make_index_sequence<meta::field_count<T>()>{});
+    }
+}
+
+/// Whether a field of type T can be part of an inline struct's image.
+template <typename T>
+consteval bool inline_struct_field() {
     // meta::field_type yields const-qualified types, so strip cv before
     // matching.
     using U = std::remove_cv_t<T>;
@@ -228,50 +255,18 @@ constexpr bool is_schema_struct_field_v = [] {
         return has_fixed_underlying_v<U>;
     } else if constexpr(is_scalar_field_v<U>) {
         return true;
-    } else if constexpr(meta::reflectable_class<U>) {
-        return schema_struct_trait<U>::value;
     } else {
-        return false;
+        return inline_struct<U>();
     }
-}();
+}
 
-template <typename T>
-struct schema_struct_trait {
-    static consteval bool fields_supported() {
-        if constexpr(!meta::reflectable_class<T>) {
-            return false;
-        } else if constexpr(!fields_reflected_v<T>) {
-            // The padding sanitization would see no fields and zero the
-            // entire image, so a struct whose fields reflection cannot see
-            // never joins a memcpy image — and, recursing through this
-            // trait, neither does any struct containing one. The table paths
-            // then reject it outright (assert_fields_reflected).
-            return false;
-        } else {
-            return []<std::size_t... I>(std::index_sequence<I...>) {
-                return (is_schema_struct_field_v<meta::field_type<T, I>> && ...);
-            }(std::make_index_sequence<meta::field_count<T>()>{});
-        }
-    }
-
-    // Trivially copyable is the exact bound the memcpy image needs; default
-    // member initializers (which break std::is_trivial) are fine. Decode
-    // restores an inline struct by whole-object assignment, which trivially
-    // copyable alone does not promise: deleted assignment operators and
-    // const members are admitted. Such a struct stays table-shaped, where
-    // its fields decode individually.
-    constexpr static bool value = meta::reflectable_class<T> && std::is_trivially_copyable_v<T> &&
-                                  std::is_copy_assignable_v<T> && std::is_standard_layout_v<T> &&
-                                  fields_supported();
-};
-
-}  // namespace schema_detail
+}  // namespace detail
 
 /// Whether a struct lowers to an inline fixed-size FlatBuffers struct — a
 /// verbatim memcpy image — instead of a table: trivially copyable,
 /// assignable, standard-layout, and every field (recursively) an
 /// unannotated scalar, fixed-underlying-type enum, or such a struct.
 template <typename T>
-constexpr bool can_inline_struct_v = schema_detail::schema_struct_trait<T>::value;
+constexpr bool can_inline_struct_v = detail::inline_struct<T>();
 
 }  // namespace kota::codec::fbs
