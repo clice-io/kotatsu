@@ -8,7 +8,7 @@ license-file = "LICENSE"
 readme = "README.md"
 documentation = "https://clice.io"
 repository = "https://github.com/clice-io/kotatsu"
-channels = ["conda-forge"]
+channels = ["conda-forge", "https://conda.clice.io"]
 platforms = ["win-64", "linux-64", "osx-arm64"]
 
 [environments]
@@ -26,6 +26,7 @@ macos-clang = ["build", "macos-clang"]
 windows-msvc = ["build", "windows-msvc"]
 windows-mingw = ["build", "windows-mingw"]
 windows-llvm = ["build", "windows-llvm"]
+windows-xclang = ["build", "windows-xclang"]
 format = ["format"]
 
 # Shared by every environment: the TypeScript tooling under scripts/ runs in
@@ -106,6 +107,12 @@ sccache = "*"
 
 [feature.windows-llvm.target.win-64.activation]
 scripts = ["scripts/activate_windows_llvm.bat"]
+
+# MinGW with libc++ rather than libstdc++: xclang (clice-io/xclang), whose
+# clang targets x86_64-w64-mingw32 with its own libc++ and runtimes.
+[feature.windows-xclang.target.win-64.dependencies]
+xclang = "==23.1.2.2"
+sccache = "*"
 
 # ============================================================================== #
 #                                    FORMAT                                      #

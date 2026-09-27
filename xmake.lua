@@ -2,7 +2,7 @@
 set_project("kotatsu")
 
 add_rules("mode.debug", "mode.release", "mode.releasedbg")
-set_allowedplats("windows", "linux", "macosx")
+set_allowedplats("windows", "mingw", "linux", "macosx")
 
 option("dev", { default = true })
 option("test", { default = true })
@@ -32,8 +32,9 @@ if has_config("dev") then
 	set_policy("package.install_only", true)
 	set_policy("build.ccache", true)
 	-- Keep Windows toolchains aligned with third-party prebuilt packages (e.g. cpptrace),
-	-- otherwise ASan-specific /failifmismatch metadata can break linking.
-	if is_mode("debug") and not is_plat("windows") then
+	-- otherwise ASan-specific /failifmismatch metadata can break linking. MinGW
+	-- toolchains ship no ASan runtime.
+	if is_mode("debug") and not is_plat("windows", "mingw") then
 		set_policy("build.sanitizer.address", true)
 	end
 
@@ -65,8 +66,33 @@ end
 
 set_languages("c++23")
 
-if is_plat("windows") then
+if is_plat("windows", "mingw") then
 	add_defines("NOMINMAX", "WIN32_LEAN_AND_MEAN")
+end
+
+-- mingw with libstdc++ (GCC, or clang on a GNU sysroot): <print> and
+-- <stacktrace> live in stdc++exp, and the runtime is linked statically. A
+-- libc++ toolchain needs none of this, so, as in CMakeLists.txt, the check is
+-- on the standard library in use rather than the compiler.
+if is_plat("mingw") then
+	option("mingw_libstdcxx", function()
+		set_showmenu(false)
+		add_cxxsnippets("libstdcxx", "#include <cstddef>\n#ifndef __GLIBCXX__\n#error libc++\n#endif")
+	end)
+	if has_config("mingw_libstdcxx") then
+		add_cxxflags("-Wa,-mbig-obj")
+		add_syslinks("stdc++exp")
+		add_ldflags("-static-libgcc", "-static-libstdc++", "-Wl,--allow-multiple-definition")
+		add_shflags("-static-libgcc", "-static-libstdc++", "-Wl,--allow-multiple-definition")
+		-- The dependencies too: a tool they build and run (flatc) would load
+		-- whichever libstdc++-6.dll comes first in PATH.
+		add_requireconfs("**|cmake", {
+			configs = {
+				ldflags = { "-static-libgcc", "-static-libstdc++" },
+				shflags = { "-static-libgcc", "-static-libstdc++" },
+			},
+		})
+	end
 end
 
 if has_config("async") then
@@ -199,7 +225,7 @@ if has_config("ztest") then
 		add_rules("cl-flags")
 		add_deps("support", "deco", "async")
 		add_packages("cpptrace", { public = true })
-		if is_plat("windows") then
+		if is_plat("windows", "mingw") then
 			add_syslinks("shell32")
 		end
 	end)
