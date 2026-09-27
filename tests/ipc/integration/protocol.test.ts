@@ -15,10 +15,10 @@
 // - at the end of its input the driver answers what is in flight and exits
 //   with 0.
 //
-// Garbage (bad JSON, JSON that is no message, an id of the wrong type or null,
-// an error response without id) must leave the connection usable. How the
-// driver answers it is checked by the last property, skipped until the library
-// answers as JSON-RPC specifies.
+// A second property mixes in garbage (bad JSON, JSON that is no message, an
+// id of the wrong type or null, an error response without id), which must be
+// answered as JSON-RPC says, with an error and a null id or not at all, and
+// leave the connection usable.
 
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
@@ -394,27 +394,19 @@ const junk: fc.Arbitrary<Junk> = fc.oneof(
 
 class Garbage implements Command {
   readonly junk: Junk;
-  readonly strict: boolean;
-  constructor(junk: Junk, strict: boolean) {
+  constructor(junk: Junk) {
     this.junk = junk;
-    this.strict = strict;
   }
   check = () => true;
   async run(_: Model, real: Real) {
     real.driver.expectLog(/^\[(?:warn|error)\] /);
     await real.session.wire.write(frameText(this.junk.payload));
     const replies = await this.#repliesAfterProbe(real);
-    if (this.strict) {
-      const { code } = this.junk;
-      assert.deepEqual(
-        replies.map((reply) => ({ id: reply.id, code: errorOf(reply).code })),
-        code === undefined ? [] : [{ id: null, code }],
-      );
-    } else {
-      // Answered with one error, whatever its id, or not at all.
-      assert.ok(replies.length <= 1);
-      replies.forEach(errorOf);
-    }
+    const { code } = this.junk;
+    assert.deepEqual(
+      replies.map((reply) => ({ id: reply.id, code: errorOf(reply).code })),
+      code === undefined ? [] : [{ id: null, code }],
+    );
   }
   // The driver answers in order, so its answer to the garbage, if any, comes
   // before the probe's, as a stray.
@@ -510,31 +502,14 @@ test("protocol_holds_in_random_use", { timeout: FUZZ_TIMEOUT }, (t) =>
   ),
 );
 
-test("garbage_keeps_connection_usable", { timeout: FUZZ_TIMEOUT }, (t) =>
-  fuzz(
-    fc.asyncProperty(
-      fc.commands(
-        [...valid, junk.map((message) => new Garbage(message, false))],
-        {
-          maxCommands: 30,
-        },
-      ),
-      (commands) => runCommands(t, commands),
-    ),
-  ),
-);
-
 test(
   "garbage_is_answered_as_jsonrpc_specifies",
-  {
-    timeout: FUZZ_TIMEOUT,
-    skip: "P1.2, N3, D5: garbage is answered with id 0, bad ids and non-messages with -32700, a null id as a notification, and an error without id is answered",
-  },
+  { timeout: FUZZ_TIMEOUT },
   (t) =>
     fuzz(
       fc.asyncProperty(
-        fc.commands([junk.map((message) => new Garbage(message, true))], {
-          maxCommands: 10,
+        fc.commands([...valid, junk.map((message) => new Garbage(message))], {
+          maxCommands: 30,
         }),
         (commands) => runCommands(t, commands),
       ),

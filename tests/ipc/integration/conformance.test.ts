@@ -1,7 +1,6 @@
 // jsonrpc_driver against the client VS Code uses, vscode-jsonrpc: each of the
-// driver's methods as that client sees it. Answers the library owes but does
-// not give yet are checked on the raw wire, skipped with the finding that
-// fixes them.
+// driver's methods as that client sees it. What no conforming client sends,
+// and close_output, are checked on the raw wire.
 
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
@@ -255,104 +254,88 @@ test(
   },
 );
 
-test(
-  "bad_json_answers_parse_error_with_null_id",
-  { skip: "P1.2: answered with id 0" },
-  async (t) => {
-    const [driver, session] = await wired(t);
-    driver.expectLog(/^\[error\] error response: /);
-    const [answer] = await answersTo(session, ["{"]);
-    assert.deepEqual(
-      [answer?.id, (answer?.error as { code?: unknown })?.code],
-      [null, -32700],
-    );
-    await end(driver, session);
-  },
-);
+test("bad_json_answers_parse_error_with_null_id", async (t) => {
+  const [driver, session] = await wired(t);
+  driver.expectLog(/^\[error\] error response: /);
+  const [answer] = await answersTo(session, ["{"]);
+  assert.deepEqual(
+    [answer?.id, (answer?.error as { code?: unknown })?.code],
+    [null, -32700],
+  );
+  await end(driver, session);
+});
 
-test(
-  "json_that_is_no_request_answers_invalid_request",
-  { skip: "N3, P1.2: answered with ParseError (-32700) and id 0" },
-  async (t) => {
-    const [driver, session] = await wired(t);
-    driver.expectLog(/^\[error\] error response: /);
-    const payloads = [
-      "42",
-      '"text"',
-      "[]",
-      JSON.stringify([echo(1)]),
-      JSON.stringify({ jsonrpc: "2.0", id: true, method: "test/echo" }),
-      JSON.stringify({ jsonrpc: "2.0", id: 1.5, method: "test/echo" }),
-      JSON.stringify({ jsonrpc: "2.0", id: 1, method: 5 }),
-    ];
-    const answers = await answersTo(session, payloads);
-    assert.deepEqual(
-      answers.map((answer) => [
-        answer.id,
-        (answer.error as { code?: unknown })?.code,
-      ]),
-      payloads.map(() => [null, -32600]),
-    );
-    await end(driver, session);
-  },
-);
+// Answered with the id when the message has one it can be answered by, and
+// with null otherwise.
+test("json_that_is_no_request_answers_invalid_request", async (t) => {
+  const [driver, session] = await wired(t);
+  driver.expectLog(/^\[error\] error response: /);
+  const answered: [string, number | null][] = [
+    ["42", null],
+    ['"text"', null],
+    ["[]", null],
+    [JSON.stringify([echo(1)]), null],
+    [JSON.stringify({ jsonrpc: "2.0", id: true, method: "test/echo" }), null],
+    [JSON.stringify({ jsonrpc: "2.0", id: 1.5, method: "test/echo" }), null],
+    [JSON.stringify({ jsonrpc: "2.0", id: 99, method: 5 }), 99],
+  ];
+  const answers = await answersTo(
+    session,
+    answered.map(([payload]) => payload),
+  );
+  assert.deepEqual(
+    answers.map((answer) => [
+      answer.id,
+      (answer.error as { code?: unknown })?.code,
+    ]),
+    answered.map(([, id]) => [id, -32600]),
+  );
+  await end(driver, session);
+});
 
-test(
-  "null_id_request_answers_invalid_request",
-  { skip: "D5: a null id reads as a notification" },
-  async (t) => {
-    const [driver, session] = await wired(t);
-    driver.expectLog(/^\[error\] error response: /);
-    const payload = JSON.stringify({
-      jsonrpc: "2.0",
-      id: null,
-      method: "test/echo",
-      params: [],
-    });
-    const answers = await answersTo(session, [payload]);
-    assert.deepEqual(
-      answers.map((answer) => [
-        answer.id,
-        (answer.error as { code?: unknown })?.code,
-      ]),
-      [[null, -32600]],
-    );
-    await end(driver, session);
-  },
-);
+test("null_id_request_answers_invalid_request", async (t) => {
+  const [driver, session] = await wired(t);
+  driver.expectLog(/^\[error\] error response: /);
+  const payload = JSON.stringify({
+    jsonrpc: "2.0",
+    id: null,
+    method: "test/echo",
+    params: [],
+  });
+  const answers = await answersTo(session, [payload]);
+  assert.deepEqual(
+    answers.map((answer) => [
+      answer.id,
+      (answer.error as { code?: unknown })?.code,
+    ]),
+    [[null, -32600]],
+  );
+  await end(driver, session);
+});
 
-test(
-  "error_response_without_id_is_not_answered",
-  { skip: "P1.2: answered with an error with id 0" },
-  async (t) => {
-    const [driver, session] = await wired(t);
-    const error = { code: -32600, message: "invalid" };
-    const answers = await answersTo(session, [
-      JSON.stringify({ jsonrpc: "2.0", id: null, error }),
-      JSON.stringify({ jsonrpc: "2.0", error }),
-    ]);
-    assert.deepEqual(answers, []);
-    await end(driver, session);
-  },
-);
+test("error_response_without_id_is_not_answered", async (t) => {
+  const [driver, session] = await wired(t);
+  driver.expectLog(/^\[warn\] error response without an id: invalid$/);
+  const error = { code: -32600, message: "invalid" };
+  const answers = await answersTo(session, [
+    JSON.stringify({ jsonrpc: "2.0", id: null, error }),
+    JSON.stringify({ jsonrpc: "2.0", error }),
+  ]);
+  assert.deepEqual(answers, []);
+  await end(driver, session);
+});
 
-test(
-  "malformed_error_response_fails_its_request",
-  {
-    skip: "N2: the response is taken for a parse error, and the request waits forever",
-  },
-  async (t) => {
-    const driver = await Driver.spawn(t, "jsonrpc_driver");
-    const session = new Session(driver.raw(), (request) => ({
-      jsonrpc: "2.0",
-      id: request.id,
-      error: { code: "E1", message: "not an integer code" },
-    }));
-    const answer = await session.request("test/call", {
-      method: "client/refuse",
-      params: {},
-    });
-    assert.ok("error" in (answer.result as object));
-    await end(driver, session);
-  },
-);
+test("malformed_error_response_fails_its_request", async (t) => {
+  const driver = await Driver.spawn(t, "jsonrpc_driver");
+  const session = new Session(driver.raw(), (request) => ({
+    jsonrpc: "2.0",
+    id: request.id,
+    error: { code: "E1", message: "not an integer code" },
+  }));
+  const answer = await session.request("test/call", {
+    method: "client/refuse",
+    params: {},
+  });
+  assert.ok("error" in (answer.result as object));
+  await end(driver, session);
+});
