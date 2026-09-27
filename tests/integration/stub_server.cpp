@@ -86,8 +86,8 @@ int main() {
     // initialized
     peer.on_notification([](const proto::InitializedParams&) {});
 
-    // exit
-    peer.on_notification([&](const proto::ExitParams&) { loop.stop(); });
+    // exit: closing the peer ends run(), and with it the loop.
+    peer.on_notification([&](const proto::ExitParams&) { peer.close(); });
 
     // textDocument/hover
     peer.on_request([](ipc::JsonPeer::RequestContext&,
@@ -370,5 +370,7 @@ int main() {
     peer.on_notification([](const proto::DidSaveTextDocumentParams&) {});
 
     loop.schedule(peer.run());
-    return loop.run();
+    loop.run();
+    // LSP's exit code: 0 if a shutdown request came first, 1 otherwise.
+    return shutdown_requested ? 0 : 1;
 }
