@@ -256,7 +256,7 @@ bool MapAccess::visit_entry(KF&& key_reader, VF&& value_reader) {
 /// The whole buffer must be consumed; leftover bytes are an error.
 /// Overloads: std::byte / uint8_t spans, into an out-param or returning T.
 template <typename Config = void, typename T>
-auto from_bytes(std::span<const std::byte> data, T& out) -> std::expected<void, bincode::error> {
+auto from_bytes(std::span<const std::byte> data, T& out) -> std::expected<void, rich_error> {
     Reader r{data};
     KOTA_EXPECTED_TRY(codec::detail::run_decode<Config>(r, out));
     if(r.pos != data.size()) {
@@ -266,13 +266,13 @@ auto from_bytes(std::span<const std::byte> data, T& out) -> std::expected<void, 
 }
 
 template <typename Config = void, typename T>
-auto from_bytes(std::span<const std::uint8_t> data, T& out) -> std::expected<void, bincode::error> {
+auto from_bytes(std::span<const std::uint8_t> data, T& out) -> std::expected<void, rich_error> {
     return from_bytes<Config>(std::as_bytes(data), out);
 }
 
 template <typename T, typename Config = void>
     requires std::default_initializable<T>
-auto from_bytes(std::span<const std::byte> data) -> std::expected<T, bincode::error> {
+auto from_bytes(std::span<const std::byte> data) -> std::expected<T, rich_error> {
     T value{};
     KOTA_EXPECTED_TRY(from_bytes<Config>(data, value));
     return value;
@@ -280,7 +280,7 @@ auto from_bytes(std::span<const std::byte> data) -> std::expected<T, bincode::er
 
 template <typename T, typename Config = void>
     requires std::default_initializable<T>
-auto from_bytes(std::span<const std::uint8_t> data) -> std::expected<T, bincode::error> {
+auto from_bytes(std::span<const std::uint8_t> data) -> std::expected<T, rich_error> {
     return from_bytes<T, Config>(std::as_bytes(data));
 }
 

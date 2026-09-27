@@ -199,7 +199,7 @@ bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
 /// output.
 template <typename Config = void, typename T>
 auto to_string(const T& value, std::optional<std::size_t> initial_capacity = std::nullopt)
-    -> std::expected<std::string, json::error> {
+    -> std::expected<std::string, rich_error> {
     StringBuilder builder(initial_capacity.value_or(StringBuilder::DEFAULT_INITIAL_CAPACITY));
     ValueWriter vis{builder};
     KOTA_EXPECTED_TRY(codec::detail::run_encode<Config>(vis, value));

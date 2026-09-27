@@ -27,8 +27,6 @@
 
 namespace kota::codec::debug {
 
-using error = rich_error;
-
 struct Formatter {
     std::string& out;
     bool pretty = false;
@@ -357,7 +355,7 @@ bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
 /// Renders `value` as Rust-Debug-style text; `pretty` switches from
 /// single-line output to 4-space-indented multiline.
 template <typename Config = void, typename T>
-auto to_string(const T& value, bool pretty = false) -> std::expected<std::string, error> {
+auto to_string(const T& value, bool pretty = false) -> std::expected<std::string, rich_error> {
     std::string result;
     Formatter fmt{result, pretty};
     ValueWriter vis{fmt};

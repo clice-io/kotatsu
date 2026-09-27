@@ -69,8 +69,6 @@ using Table = ::toml::table;
 using Array = ::toml::array;
 using Node = ::toml::node;
 
-using error = rich_error;
-
 namespace detail {
 
 constexpr inline std::string_view boxed_root_key = "__value";

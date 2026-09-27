@@ -14,7 +14,7 @@ namespace kota::codec::json {
 
 /// Reformats JSON text with indentation; the input is parsed (and thus
 /// validated) but not decoded into any type.
-inline std::expected<std::string, error> prettify(std::string_view json) {
+inline std::expected<std::string, rich_error> prettify(std::string_view json) {
     simdjson::dom::parser parser;
     simdjson::dom::element doc;
     auto padded = simdjson::padded_string(json);

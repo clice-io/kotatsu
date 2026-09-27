@@ -61,7 +61,7 @@ constexpr inline std::string_view alternative_marker = "x-kota-alternative";
 
 class SchemaEmitter {
     using tk = meta::type_kind;
-    using result_t = std::expected<dyn::Value, error>;
+    using result_t = std::expected<dyn::Value, rich_error>;
 
 public:
     explicit SchemaEmitter(const schema_options& opts, bool mark_alternatives = false) :
@@ -106,7 +106,7 @@ private:
         return kota::naming::normalize_identifier(vi->alternatives[i]().type_name);
     }
 
-    std::expected<std::string_view, error> def_name(const meta::type_info* ti) {
+    std::expected<std::string_view, rich_error> def_name(const meta::type_info* ti) {
         auto it = def_names.find(ti);
         if(it != def_names.end()) {
             return std::string_view(it->second);
@@ -181,7 +181,8 @@ private:
         }
     }
 
-    std::expected<void, error> merge_schema_fields(dyn::Object& target, const meta::type_info* ti) {
+    std::expected<void, rich_error> merge_schema_fields(dyn::Object& target,
+                                                        const meta::type_info* ti) {
         ti = unwrap(ti);
         if(ti->kind == tk::structure) {
             return add_struct_body(target, static_cast<const meta::struct_type_info*>(ti));
@@ -205,9 +206,9 @@ private:
     /// A struct's object schema, written into target; with a tag, the object
     /// also carries the tag property, required after the struct's own
     /// required fields.
-    std::expected<void, error> add_struct_body(dyn::Object& target,
-                                               const meta::struct_type_info* si,
-                                               const InternalTag* tag = nullptr) {
+    std::expected<void, rich_error> add_struct_body(dyn::Object& target,
+                                                    const meta::struct_type_info* si,
+                                                    const InternalTag* tag = nullptr) {
         target.insert("type", "object");
         KOTA_EXPECTED_TRY_V(auto props, make_properties(si));
         dyn::Array required;
@@ -374,7 +375,7 @@ private:
         };
     }
 
-    std::expected<void, error> ensure_struct_def(const meta::type_info* ti) {
+    std::expected<void, rich_error> ensure_struct_def(const meta::type_info* ti) {
         if(!emitted.insert(ti).second) {
             return {};
         }
@@ -767,14 +768,14 @@ void collect_fresh(FreshDefaults& out) {
 
 }  // namespace detail
 
-inline std::expected<dyn::Value, error> schema(const meta::type_info& root,
-                                               const schema_options& options = {}) {
+inline std::expected<dyn::Value, rich_error> schema(const meta::type_info& root,
+                                                    const schema_options& options = {}) {
     return detail::SchemaEmitter{options}.emit(root);
 }
 
 namespace detail {
 
-inline std::expected<std::string, error> stringify(dyn::Value value, bool pretty) {
+inline std::expected<std::string, rich_error> stringify(dyn::Value value, bool pretty) {
     KOTA_EXPECTED_TRY_V(auto compact, to_string(std::move(value)));
     if(!pretty) {
         return compact;
@@ -803,7 +804,7 @@ inline std::expected<std::string, error> stringify(dyn::Value value, bool pretty
 /// representation still reflects as kind unknown — keeps reporting the
 /// emission error at runtime.
 template <typename T, typename Config = void>
-std::expected<dyn::Value, error> schema() {
+std::expected<dyn::Value, rich_error> schema() {
     using resolved = meta::resolved_repr_t<T, format>;
     constexpr bool annotate_defaults = std::default_initializable<T> &&
                                        meta::kind_of<resolved>() != meta::type_kind::unknown &&
@@ -822,15 +823,15 @@ std::expected<dyn::Value, error> schema() {
     return result;
 }
 
-inline std::expected<std::string, error> schema_string(const meta::type_info& root,
-                                                       bool pretty = false,
-                                                       const schema_options& options = {}) {
+inline std::expected<std::string, rich_error> schema_string(const meta::type_info& root,
+                                                            bool pretty = false,
+                                                            const schema_options& options = {}) {
     KOTA_EXPECTED_TRY_V(auto value, schema(root, options));
     return detail::stringify(std::move(value), pretty);
 }
 
 template <typename T, typename Config = void>
-std::expected<std::string, error> schema_string(bool pretty = false) {
+std::expected<std::string, rich_error> schema_string(bool pretty = false) {
     KOTA_EXPECTED_TRY_V(auto value, (schema<T, Config>()));
     return detail::stringify(std::move(value), pretty);
 }

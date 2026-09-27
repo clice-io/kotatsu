@@ -57,8 +57,6 @@ using padded_string = simdjson::padded_string;
 
 constexpr inline auto success = simdjson::SUCCESS;
 
-using error = rich_error;
-
 namespace detail {
 
 /// simdjson's message for an error code, as a rich_error.

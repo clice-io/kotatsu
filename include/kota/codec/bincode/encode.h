@@ -158,7 +158,7 @@ struct Writer {
 /// Encodes `value` as a bincode byte buffer. Decode requires the same T and
 /// Config — the format carries no self-description.
 template <typename Config = void, typename T>
-auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, bincode::error> {
+auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, rich_error> {
     std::vector<std::byte> buf;
     Writer vis{buf};
     KOTA_EXPECTED_TRY(codec::detail::run_encode<Config>(vis, value));

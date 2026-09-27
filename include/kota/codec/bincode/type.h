@@ -56,6 +56,4 @@ constexpr std::string_view error_message(error_kind error) {
     std::unreachable();
 }
 
-using error = rich_error;
-
 }  // namespace kota::codec::bincode

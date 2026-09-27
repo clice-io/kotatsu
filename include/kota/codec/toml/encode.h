@@ -222,7 +222,7 @@ bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
 
 /// Encodes `value` as a toml::Table DOM (to_string renders it as text).
 template <typename Config = void, typename T>
-auto to_toml(const T& value) -> std::expected<Table, toml::error> {
+auto to_toml(const T& value) -> std::expected<Table, rich_error> {
     // Root routing follows the representation the codec dispatch resolves
     // (annotations and toml-scoped meta::repr included), not the declared
     // type: a struct whose repr is a scalar is boxed under the root key, and
@@ -259,7 +259,7 @@ auto to_toml(const T& value) -> std::expected<Table, toml::error> {
 
 /// Encodes `value` as TOML text (to_toml rendered through toml++).
 template <typename Config = void, typename T>
-auto to_string(const T& value) -> std::expected<std::string, error> {
+auto to_string(const T& value) -> std::expected<std::string, rich_error> {
     KOTA_EXPECTED_TRY_V(auto table, to_toml<Config>(value));
     std::ostringstream out;
     out << table;
