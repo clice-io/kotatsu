@@ -11,13 +11,16 @@
 //                     or {error}
 //   test/closeOutput  notification: closes the output
 //
-// It exits with 0 when its input ends.
+// `--max-payload=<bytes>` lowers the size of the largest frame it reads from
+// the default. It exits with 0 when its input ends.
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <print>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "ipc/harness/stderr_logger.h"
@@ -113,9 +116,15 @@ void serve(ipc::JsonPeer& peer) {
 }  // namespace
 }  // namespace kota::test
 
-int main() {
+int main(int argc, char** argv) {
+    std::size_t max_payload = kota::ipc::default_max_payload;
+    constexpr std::string_view option = "--max-payload=";
+    if(argc > 1 && std::string_view(argv[1]).starts_with(option)) {
+        max_payload = std::stoull(argv[1] + option.size());
+    }
+
     kota::event_loop loop;
-    auto transport = kota::ipc::StreamTransport::open_stdio(loop);
+    auto transport = kota::ipc::StreamTransport::open_stdio(loop, max_payload);
     if(!transport) {
         std::println(stderr, "[error] open_stdio: {}", transport.error().message);
         return 1;

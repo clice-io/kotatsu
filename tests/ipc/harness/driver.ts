@@ -72,11 +72,19 @@ export class Driver {
   }
 
   /**
-   * Spawns the driver `name`. If the test ends before it checked the driver's
-   * exit, because it failed, the driver is killed and how it ended printed.
+   * Spawns the driver `name` with `args`. If the test ends before it checked
+   * the driver's exit, because it failed, the driver is killed and how it
+   * ended printed.
    */
-  static async spawn(t: TestContext, name: string): Promise<Driver> {
-    const driver = new Driver(name, spawn(driverPath(name), { stdio: "pipe" }));
+  static async spawn(
+    t: TestContext,
+    name: string,
+    args: string[] = [],
+  ): Promise<Driver> {
+    const driver = new Driver(
+      name,
+      spawn(driverPath(name), args, { stdio: "pipe" }),
+    );
     t.after(() => driver.#abandon());
     await once(driver.#child, "spawn");
     return driver;
