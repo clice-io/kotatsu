@@ -389,8 +389,20 @@ bool decode_externally_tagged(Vis& vis, std::variant<Ts...>& var) {
     return result;
 }
 
+/// Fails on the tag entry a data-driven look-ahead found no alternative for.
+/// The look-ahead read this same entry, so reading it again either fails as a
+/// string (a tag that is not one) or yields a name no alternative has.
+template <typename Vis, typename Reader>
+bool fail_unusable_tag(Reader& tag) {
+    std::string name;
+    KOTA_CODEC_TRY(tag.visit_str(name));
+    return scoped_context<typename Vis::error_type>::fail(
+        rich_error(std::string("unknown variant tag '") + name + "'"));
+}
+
 /// Internal tagged: { "tag": "TagName", ...fields... }
-/// Three paths: try_read pre-lookup, streaming (tag first), schema-driven (struct_reader).
+/// Two paths: data-driven, which looks the tag up before placing fields, and
+/// schema-driven (struct_reader).
 template <typename Config, typename SpecAttr, typename Vis, typename... Ts>
 bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
     constexpr std::string_view tag_key = SpecAttr::value.tag;
@@ -399,8 +411,9 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
 
     std::size_t idx = npos;
 
-    // Pre-lookup: try_read + data-driven scan for tag field
-    if constexpr(has_try_read<Vis> && data_driven<Vis>) {
+    if constexpr(data_driven<Vis>) {
+        static_assert(has_try_read<Vis>, "a data-driven visitor must support try_read");
+        // Look the tag up first, so that fields before it can be placed.
         vis.try_read([&](auto& fork) -> bool {
             fork.visit_struct([&](std::string_view key, auto& fv) -> bool {
                 if(key == tag_key) {
@@ -413,10 +426,6 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
             });
             return false;
         });
-    }
-
-    if constexpr(data_driven<Vis>) {
-        // Data-driven main pass
         if(idx != npos)
             emplace_variant_by_index(var, idx);
 
@@ -425,20 +434,13 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
             if(key == tag_key) {
                 if(idx != npos)
                     return fv.visit_skip();
-                // Streaming: resolve tag inline (must be first)
-                std::string tag_value;
-                KOTA_CODEC_TRY(fv.visit_str(tag_value));
-                idx = find_tag_index(tag_value, names);
-                if(idx >= npos) {
-                    return scoped_context<typename Vis::error_type>::fail(
-                        rich_error(std::string("unknown variant tag '") + tag_value + "'"));
-                }
-                emplace_variant_by_index(var, idx);
-                return true;
+                return fail_unusable_tag<Vis>(fv);
             }
             if(idx == npos) {
-                return scoped_context<typename Vis::error_type>::fail(
-                    rich_error("internally tagged variant: tag must appear before data fields"));
+                // Without a usable tag data fields cannot be placed, and need
+                // not be: the tag's own entry reports why it is unusable, and
+                // an absent tag is reported after the pass.
+                return fv.visit_skip();
             }
             return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
                 bool r = true;
@@ -455,19 +457,23 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
             }(std::index_sequence_for<Ts...>{});
         });
 
-        if(result && idx != npos) {
-            result = [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
-                bool ok = true;
-                ((Is == idx ? void(ok = check_required_fields<
-                                       Config,
-                                       std::variant_alternative_t<Is, std::variant<Ts...>>,
-                                       Vis>(field_mask))
-                            : void()),
-                 ...);
-                return ok;
-            }(std::index_sequence_for<Ts...>{});
+        if(!result) {
+            return false;
         }
-        return result;
+        if(idx == npos) {
+            return scoped_context<typename Vis::error_type>::fail(
+                rich_error("internally tagged variant: missing tag field"));
+        }
+        return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
+            bool ok = true;
+            ((Is == idx ? void(ok = check_required_fields<
+                                   Config,
+                                   std::variant_alternative_t<Is, std::variant<Ts...>>,
+                                   Vis>(field_mask))
+                        : void()),
+             ...);
+            return ok;
+        }(std::index_sequence_for<Ts...>{});
     } else {
         // Schema-driven: struct_reader with find_field / visit_field
         return vis.visit_struct(var, [&](auto& sv) -> bool {
@@ -513,8 +519,9 @@ bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
 
     std::size_t idx = npos;
 
-    // Pre-lookup tag via try_read
-    if constexpr(has_try_read<Vis> && data_driven<Vis>) {
+    if constexpr(data_driven<Vis>) {
+        static_assert(has_try_read<Vis>, "a data-driven visitor must support try_read");
+        // Look the tag up first, so that content before it can be placed.
         vis.try_read([&](auto& fork) -> bool {
             fork.visit_struct([&](std::string_view key, auto& fv) -> bool {
                 if(key == tag_key) {
@@ -527,9 +534,7 @@ bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
             });
             return false;
         });
-    }
 
-    if constexpr(data_driven<Vis>) {
         std::size_t tag_count = 0;
         std::size_t content_count = 0;
 
@@ -538,21 +543,15 @@ bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
                 ++tag_count;
                 if(idx != npos)
                     return fv.visit_skip();
-                std::string tag_value;
-                KOTA_CODEC_TRY(fv.visit_str(tag_value));
-                idx = find_tag_index(tag_value, names);
-                if(idx >= npos) {
-                    return scoped_context<typename Vis::error_type>::fail(
-                        rich_error(std::string("unknown variant tag '") + tag_value + "'"));
-                }
-                emplace_variant_by_index(var, idx);
-                return true;
+                return fail_unusable_tag<Vis>(fv);
             }
             if(key == content_key) {
                 ++content_count;
                 if(idx == npos) {
-                    return scoped_context<typename Vis::error_type>::fail(
-                        rich_error("adjacently tagged variant: content before tag"));
+                    // Without a usable tag the content cannot be placed: the
+                    // tag's own entry reports why, and an absent tag is
+                    // reported after the pass.
+                    return fv.visit_skip();
                 }
                 if(content_count > 1)
                     return fv.visit_skip();

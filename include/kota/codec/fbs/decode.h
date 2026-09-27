@@ -10,7 +10,6 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "kota/codec/fbs/proxy.h"
@@ -349,9 +348,7 @@ struct RootReader : FieldReader {
 template <typename T, typename Body>
 bool FieldReader::visit_struct(T& out, Body&& body) {
     using V = std::remove_const_t<T>;
-    if constexpr(std::same_as<V, std::monostate>) {
-        return true;
-    } else if constexpr(can_inline_struct_v<V>) {
+    if constexpr(can_inline_struct_v<V>) {
         if(!tbl->VerifyField<V>(*verifier, slot, alignof(V)))
             return fail_verify("inline struct field");
         const auto* ptr = tbl->GetStruct<const V*>(slot);

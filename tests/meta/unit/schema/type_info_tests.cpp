@@ -10,12 +10,12 @@
 #include <variant>
 #include <vector>
 
-#include "fixtures/schema/containers.h"
-#include "fixtures/schema/enums.h"
-#include "fixtures/schema/primitives.h"
-#include "fixtures/schema/recursive.h"
-#include "fixtures/schema/schema_attrs.h"
-#include "fixtures/schema/tagged.h"
+#include "fixtures/attrs.h"
+#include "fixtures/containers.h"
+#include "fixtures/enums.h"
+#include "fixtures/recursive.h"
+#include "fixtures/structs.h"
+#include "fixtures/tagged.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/schema.h"
 
@@ -23,7 +23,7 @@ namespace kota::meta {
 
 namespace {
 
-namespace fx = ::kota::meta::fixtures;
+namespace fx = ::kota::test;
 
 ZEST_SUITE(meta_schema_type_info) {
 
@@ -458,9 +458,9 @@ ZEST_CASE(recursive_mixed_deep) {
 }
 
 ZEST_CASE(disabled_range_type_info_is_unknown) {
-    STATIC_EXPECT(kind_of<fx::disabled_range>() == type_kind::unknown);
+    STATIC_EXPECT(kind_of<fx::DisabledRange>() == type_kind::unknown);
 
-    constexpr auto info = type_info_of<fx::disabled_range, default_config>();
+    constexpr auto info = type_info_of<fx::DisabledRange, default_config>();
     STATIC_EXPECT(info.kind == type_kind::unknown);
 }
 

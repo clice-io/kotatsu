@@ -1,0 +1,215 @@
+---
+source: encode_tests.cpp
+created_at: 2026-09-26
+---
+{
+    "scalars": {
+        "b": true,
+        "i8": -42,
+        "i16": -1000,
+        "i32": -100000,
+        "i64": -9999999999,
+        "u8": 200,
+        "u16": 50000,
+        "u32": 3000000000,
+        "u64": 10000000000,
+        "f32": 3.140000104904175,
+        "f64": 2.718281828,
+        "c": "Z",
+        "s": "hello scalars"
+    },
+    "strings": {
+        "empty": "",
+        "unicode": "héllo, 世界",
+        "escapes": "quote \" backslash \\ slash /",
+        "controls": "newline \n tab \t return \r bell \u0007 unit \u001f"
+    },
+    "bytes": {
+        "empty": [],
+        "octets": [
+            0,
+            1,
+            127,
+            255
+        ]
+    },
+    "color": 1,
+    "present": {
+        "number": 17,
+        "text": "text",
+        "list": [
+            4,
+            5,
+            6
+        ],
+        "table": {
+            "a": 1
+        },
+        "owned": {
+            "x": 1,
+            "y": -2
+        },
+        "shared": "shared",
+        "nested": {
+            "x": 3,
+            "y": 4
+        }
+    },
+    "absent": {
+        "number": null,
+        "text": null,
+        "list": null,
+        "table": null,
+        "owned": null,
+        "shared": null,
+        "nested": null
+    },
+    "sequences": {
+        "numbers": [
+            1,
+            2,
+            3,
+            5
+        ],
+        "triple": [
+            4,
+            5,
+            6
+        ],
+        "words": [
+            "alpha",
+            "beta",
+            "gamma"
+        ],
+        "flags": [
+            true,
+            false,
+            true
+        ],
+        "rows": [
+            [
+                1,
+                2,
+                3
+            ],
+            [],
+            [
+                6
+            ]
+        ],
+        "points": [
+            {
+                "x": 1,
+                "y": 2
+            },
+            {
+                "x": -3,
+                "y": 4
+            }
+        ],
+        "tables": [
+            {
+                "a": 1,
+                "b": 2
+            },
+            {}
+        ]
+    },
+    "sets": {
+        "numbers": [
+            1,
+            3,
+            5,
+            7
+        ],
+        "words": [
+            "alpha",
+            "beta",
+            "gamma"
+        ],
+        "hashed": [
+            42
+        ]
+    },
+    "maps": {
+        "by_name": {
+            "a": 1,
+            "b": 2
+        },
+        "by_id": {
+            "-2": "minus two",
+            "0": "zero",
+            "7": "seven"
+        },
+        "by_wide_id": {
+            "1": 1,
+            "9223372036854775809": 2
+        },
+        "by_color": {
+            "0": 1,
+            "2": 3
+        },
+        "places": {
+            "home": {
+                "x": 1,
+                "y": 2
+            }
+        },
+        "lists": {
+            "a": [
+                10,
+                20
+            ],
+            "b": []
+        },
+        "nested": {
+            "none": {},
+            "outer": {
+                "inner": 1
+            }
+        },
+        "hashed": {
+            "only": 1
+        }
+    },
+    "tuples": {
+        "none": [],
+        "single": [
+            7
+        ],
+        "mixed": [
+            7,
+            true,
+            "tuple"
+        ],
+        "pair": [
+            42,
+            -2.5
+        ],
+        "nested": [
+            {
+                "x": 1,
+                "y": 2
+            },
+            [
+                3,
+                4
+            ]
+        ]
+    },
+    "tree": {
+        "value": "root",
+        "children": [
+            {
+                "value": "leaf",
+                "children": []
+            },
+            {
+                "value": "",
+                "children": []
+            }
+        ]
+    },
+    "empty": {}
+}
+

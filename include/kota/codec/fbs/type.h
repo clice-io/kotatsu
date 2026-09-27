@@ -72,9 +72,12 @@ using verifier_t = ::flatbuffers::Verifier;
 ///   ordering key mirrors find_entry (strings lexicographic, enums by
 ///   underlying value, scalars by value) so lookups can binary-search
 /// - variant → table with the u32 alternative index at the first slot and
-///   the payload at the slot for that alternative (variant_payload_voffset)
+///   the payload at the slot for that alternative (variant_payload_voffset);
+///   a null alternative such as std::monostate leaves that slot absent
 /// - optional/pointer → disengaged fields simply leave their slot absent;
-///   as vector elements they degrade to boxed tables
+///   as vector elements they degrade to boxed tables. A null payload leaves
+///   the slot absent too, so an engaged optional<std::monostate> reads back
+///   disengaged
 struct format {};
 
 enum class object_error_code : std::uint8_t {

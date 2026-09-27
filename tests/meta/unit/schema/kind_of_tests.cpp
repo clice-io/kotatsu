@@ -8,8 +8,8 @@
 #include <variant>
 #include <vector>
 
-#include "fixtures/schema/enums.h"
-#include "fixtures/schema/primitives.h"
+#include "fixtures/enums.h"
+#include "fixtures/structs.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/type_kind.h"
 
@@ -17,7 +17,7 @@ namespace kota::meta {
 
 namespace {
 
-namespace fx = ::kota::meta::fixtures;
+namespace fx = ::kota::test;
 
 ZEST_SUITE(meta_schema_kind_of) {
 

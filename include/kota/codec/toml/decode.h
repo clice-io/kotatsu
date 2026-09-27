@@ -12,6 +12,7 @@
 #include "kota/meta/type_info.h"
 #include "kota/meta/type_kind.h"
 #include "kota/codec/toml/type.h"
+#include "kota/codec/visit/common.h"
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/context.h"
 #include "kota/codec/visit/decode.h"
@@ -162,14 +163,15 @@ struct ValueReader {
         if(!node) {
             return fail_type("string");
         }
-        auto val = node->value<std::string>();
+        auto val = node->value<std::string_view>();
         if(!val) {
             return fail_type("string");
         }
-        if(val->size() != 1) {
-            return fail_with_location("expected single-character string for char");
+        auto c = char_from_utf8(*val);
+        if(!c) {
+            return fail_with_location(std::string(invalid_char_message));
         }
-        out = static_cast<T>((*val)[0]);
+        out = *c;
         return true;
     }
 
@@ -201,7 +203,10 @@ struct ValueReader {
     }
 
     bool visit_null() {
-        return node == nullptr;
+        if(peek_null()) {
+            return true;
+        }
+        return fail_type("null");
     }
 
     meta::type_kind peek_kind() {

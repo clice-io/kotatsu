@@ -1,7 +1,6 @@
-#include "fixtures/schema/containers.h"
-#include "fixtures/schema/primitives.h"
-#include "fixtures/schema/schema_attrs.h"
-#include "fixtures/schema/tagged.h"
+#include "fixtures/attrs.h"
+#include "fixtures/structs.h"
+#include "fixtures/tagged.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/attrs.h"
 #include "kota/meta/schema.h"
@@ -10,7 +9,7 @@ namespace kota::meta {
 
 namespace {
 
-namespace fx = ::kota::meta::fixtures;
+namespace fx = ::kota::test;
 
 ZEST_SUITE(meta_schema_attrs) {
 

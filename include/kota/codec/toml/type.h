@@ -46,7 +46,8 @@ namespace kota::codec::toml {
 /// - integers → TOML integer (int64); a uint64 above int64::max fails
 /// - float32/float64 → TOML float; nan_repr::Passthrough hands the raw
 ///   value to toml++ (TOML has nan/inf literals)
-/// - character → one-character string
+/// - character → single-codepoint string (the char's value 0-255 encoded as
+///   UTF-8); decode accepts exactly one codepoint ≤ 255
 /// - string → TOML string
 /// - bytes → array of integer octets; decode range-checks each into [0, 255]
 /// - enumeration → underlying integer, or the renamed name under

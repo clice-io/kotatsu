@@ -4,8 +4,8 @@
 #include <type_traits>
 #include <variant>
 
-#include "fixtures/schema/behavior_attrs.h"
-#include "fixtures/schema/tagged.h"
+#include "fixtures/attrs.h"
+#include "fixtures/tagged.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/attrs.h"
 #include "kota/meta/schema.h"
@@ -16,7 +16,7 @@ using kota::type_list_element_t;
 
 namespace {
 
-namespace fx = ::kota::meta::fixtures;
+namespace fx = ::kota::test;
 
 ZEST_SUITE(meta_schema_behavior_attrs) {
 

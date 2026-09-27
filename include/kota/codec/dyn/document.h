@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "kota/support/config.h"
+#include "kota/codec/visit/encode.h"
 
 namespace kota::codec::dyn {
 
@@ -770,3 +771,19 @@ inline bool Object::operator==(const Object& other) const {
 }
 
 }  // namespace kota::codec::dyn
+
+namespace kota::codec {
+
+/// Any visitor encodes a tree as the value it holds. Declared with the type,
+/// so that every translation unit that sees a Value also sees how it encodes:
+/// one that did not would print it as opaque, and differ from the others.
+template <typename Vis, typename Config>
+struct serialize_visit<Vis, dyn::Value, Config> {
+    static bool visit(Vis& vis, const dyn::Value& value) {
+        return std::visit(
+            [&](const auto& stored) -> bool { return encode_value<Config>(vis, stored); },
+            value.variant());
+    }
+};
+
+}  // namespace kota::codec

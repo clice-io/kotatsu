@@ -9,6 +9,7 @@
 #include <string_view>
 
 #include "kota/codec/dyn/document.h"
+#include "kota/codec/visit/common.h"
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/context.h"
 #include "kota/codec/visit/encode.h"
@@ -68,7 +69,7 @@ struct ValueWriter {
 
     template <typename T>
     bool visit_char(T v) {
-        output = dyn::Value(std::string(1, static_cast<char>(v)));
+        output = dyn::Value(char_to_utf8(v));
         return true;
     }
 
@@ -207,15 +208,6 @@ auto to_dyn(const T& value) -> std::expected<dyn::Value, rich_error> {
 }  // namespace kota::codec::dyn
 
 namespace kota::codec {
-
-template <typename Vis, typename Config>
-struct serialize_visit<Vis, dyn::Value, Config> {
-    static bool visit(Vis& vis, const dyn::Value& value) {
-        return std::visit(
-            [&](const auto& stored) -> bool { return encode_value<Config>(vis, stored); },
-            value.variant());
-    }
-};
 
 template <typename Config>
 struct serialize_visit<dyn::ValueWriter, dyn::Value, Config> {

@@ -9,7 +9,6 @@
 #include <string>
 #include <string_view>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "kota/support/ranges.h"
@@ -120,7 +119,7 @@ struct KeyCaptureVisitor;
 struct RootVisitor;
 
 template <typename Body>
-inline auto two_pass(builder_t& fbb, Body&& body) -> table_offset_t;
+inline bool two_pass(builder_t& fbb, Body&& body, uoffset_t& out_offset);
 
 struct AllocFieldVisitor : detail::VisitorBase {
     builder_t& fbb;
@@ -455,47 +454,6 @@ struct TableElemVisitor : detail::VisitorBase {
     builder_t& fbb;
     std::vector<table_offset_t>& table_offsets;
 
-    // Scalar no-ops — should not be reached for table elements, but provide
-    // stubs to satisfy the visitor concept in edge cases (e.g. variant
-    // alternatives that are scalars).
-    bool visit_bool(bool) {
-        return true;
-    }
-
-    template <typename T>
-    bool visit_int(T) {
-        return true;
-    }
-
-    template <typename T>
-    bool visit_uint(T) {
-        return true;
-    }
-
-    template <typename T>
-    bool visit_float(T) {
-        return true;
-    }
-
-    template <typename T>
-    bool visit_char(T) {
-        return true;
-    }
-
-    bool visit_null() {
-        return true;
-    }
-
-    template <typename T>
-    bool visit_str(const T&) {
-        return true;
-    }
-
-    template <typename T>
-    bool visit_bytes(const T&) {
-        return true;
-    }
-
     template <typename T, typename Body>
     inline bool visit_struct(const T&, Body&& body);
 
@@ -589,9 +547,7 @@ using ordering_key_t = typename decltype(ordering_key_impl<K>())::type;
 /// Captures a map key as the ordering key its entry is sorted by. The events
 /// mirror how the key's resolved representation encodes: scalar keys fire
 /// exactly one scalar event, string keys fire visit_str, inline-struct keys
-/// fire visit_struct with the whole value. The visit_str guard exists
-/// because configs spelling non-finite floats as strings (nan_repr::String)
-/// instantiate visit_str for scalar keys too.
+/// fire visit_struct with the whole value.
 template <typename Key>
 struct KeyCaptureVisitor : detail::VisitorBase {
     Key captured{};
@@ -622,9 +578,7 @@ struct KeyCaptureVisitor : detail::VisitorBase {
 
     template <typename T>
     bool visit_str(const T& v) {
-        if constexpr(std::same_as<Key, std::string>) {
-            captured = std::string(std::string_view(v));
-        }
+        captured = std::string(std::string_view(v));
         return true;
     }
 
@@ -734,19 +688,19 @@ private:
     }
 };
 
+/// Writes the table body() describes: one pass allocates its children, the
+/// next writes its slots. A failure in either pass fails the encode; the
+/// table is closed either way, so the builder stays balanced.
 template <typename Body>
-auto two_pass(builder_t& fbb, Body&& body) -> table_offset_t {
+bool two_pass(builder_t& fbb, Body&& body, uoffset_t& out_offset) {
     AllocTableVisitor av{.fbb = fbb};
-    if(!body(av))
-        return table_offset_t{0};
+    KOTA_CODEC_TRY(body(av));
 
     auto start = fbb.StartTable();
     WriteTableVisitor wv{.fbb = fbb, .offsets = av.offsets};
-    if(!body(wv)) {
-        fbb.EndTable(start);
-        return table_offset_t{0};
-    }
-    return table_offset_t(fbb.EndTable(start));
+    const bool written = body(wv);
+    out_offset = fbb.EndTable(start);
+    return written;
 }
 
 /// The declared key type of a map-kind container.
@@ -785,9 +739,9 @@ inline bool
     WriteFieldVisitor payload_write{.fbb = fbb,
                                     .sid = payload_slot,
                                     .stored_offset = payload_alloc.stored_offset};
-    body(payload_write);
+    const bool written = body(payload_write);
     out_offset = fbb.EndTable(start);
-    return true;
+    return written;
 }
 
 template <typename Container, typename Body>
@@ -852,9 +806,7 @@ bool AllocFieldVisitor::visit_struct(const T&, Body&& body) {
         return true;
     } else {
         detail::assert_fields_reflected<T>();
-        auto off = two_pass(fbb, std::forward<Body>(body));
-        stored_offset = off.o;
-        return true;
+        return two_pass(fbb, std::forward<Body>(body), stored_offset);
     }
 }
 
@@ -865,9 +817,7 @@ bool AllocFieldVisitor::visit_seq(const Container& c, Body&& body) {
 
 template <typename T, typename Body>
 bool AllocFieldVisitor::visit_tuple(const T&, Body&& body) {
-    auto off = two_pass(fbb, std::forward<Body>(body));
-    stored_offset = off.o;
-    return true;
+    return two_pass(fbb, std::forward<Body>(body), stored_offset);
 }
 
 template <typename Container, typename Body>
@@ -883,15 +833,17 @@ bool AllocFieldVisitor::visit_variant(std::size_t index, Body&& body) {
 template <typename T, typename Body>
 bool TableElemVisitor::visit_struct(const T&, Body&& body) {
     detail::assert_fields_reflected<T>();
-    auto off = two_pass(fbb, std::forward<Body>(body));
-    table_offsets.push_back(off);
+    uoffset_t off = 0;
+    KOTA_CODEC_TRY(two_pass(fbb, std::forward<Body>(body), off));
+    table_offsets.push_back(table_offset_t(off));
     return true;
 }
 
 template <typename T, typename Body>
 bool TableElemVisitor::visit_tuple(const T&, Body&& body) {
-    auto off = two_pass(fbb, std::forward<Body>(body));
-    table_offsets.push_back(off);
+    uoffset_t off = 0;
+    KOTA_CODEC_TRY(two_pass(fbb, std::forward<Body>(body), off));
+    table_offsets.push_back(table_offset_t(off));
     return true;
 }
 
@@ -931,24 +883,27 @@ bool MapEntryCollector<Key>::visit_entry(KF&& key_fn, VF&& value_fn) {
     KeyCaptureVisitor<Key> capture;
     KOTA_CODEC_TRY(key_fn(capture));
 
-    auto table_off = two_pass(fbb, [&](auto& sv) -> bool {
+    auto entry = [&](auto& sv) -> bool {
         KOTA_CODEC_TRY(sv.visit_field(std::integral_constant<std::size_t, 0>{},
                                       std::string_view{"key"},
                                       [&](auto& kv) -> bool { return key_fn(kv); }));
-        KOTA_CODEC_TRY(sv.visit_field(std::integral_constant<std::size_t, 1>{},
-                                      std::string_view{"value"},
-                                      [&](auto& vv) -> bool { return value_fn(vv); }));
-        return true;
-    });
+        return sv.visit_field(std::integral_constant<std::size_t, 1>{},
+                              std::string_view{"value"},
+                              [&](auto& vv) -> bool { return value_fn(vv); });
+    };
+    uoffset_t table_off = 0;
+    KOTA_CODEC_TRY(two_pass(fbb, entry, table_off));
 
-    entries.emplace_back(std::move(capture.captured), table_off);
+    entries.emplace_back(std::move(capture.captured), table_offset_t(table_off));
     return true;
 }
 
 template <typename T, typename Body>
 bool RootVisitor::visit_struct(const T&, Body&& body) {
     detail::assert_fields_reflected<T>();
-    root_off = two_pass(fbb, std::forward<Body>(body));
+    uoffset_t off = 0;
+    KOTA_CODEC_TRY(two_pass(fbb, std::forward<Body>(body), off));
+    root_off = table_offset_t(off);
     return true;
 }
 
@@ -965,7 +920,9 @@ bool RootVisitor::visit_seq(const Container& c, Body&& body) {
 
 template <typename T, typename Body>
 bool RootVisitor::visit_tuple(const T&, Body&& body) {
-    root_off = two_pass(fbb, std::forward<Body>(body));
+    uoffset_t off = 0;
+    KOTA_CODEC_TRY(two_pass(fbb, std::forward<Body>(body), off));
+    root_off = table_offset_t(off);
     return true;
 }
 
@@ -1013,43 +970,3 @@ auto to_bytes(const T& value, std::optional<std::size_t> initial_capacity = std:
 }
 
 }  // namespace kota::codec::fbs
-
-namespace kota::codec {
-
-// std::monostate is reflectable_class (aggregate with 0 fields), so the old
-// arena encoder wrote it as an empty table.  The decoder expects a table
-// reference at the payload slot, so we must match that layout.
-template <typename Config>
-struct serialize_visit<fbs::encode_detail::AllocFieldVisitor, std::monostate, Config> {
-    static bool visit(fbs::encode_detail::AllocFieldVisitor& vis, const std::monostate&) {
-        auto start = vis.fbb.StartTable();
-        vis.stored_offset = vis.fbb.EndTable(start);
-        return true;
-    }
-};
-
-template <typename Config>
-struct serialize_visit<fbs::encode_detail::WriteFieldVisitor, std::monostate, Config> {
-    static bool visit(fbs::encode_detail::WriteFieldVisitor& vis, const std::monostate&) {
-        vis.fbb.AddOffset(vis.sid, fbs::offset_t<void>(vis.stored_offset));
-        return true;
-    }
-};
-
-template <typename Config>
-struct serialize_visit<fbs::encode_detail::RootVisitor, std::monostate, Config> {
-    static bool visit(fbs::encode_detail::RootVisitor& vis, const std::monostate&) {
-        return vis.visit_null();
-    }
-};
-
-template <typename Config>
-struct serialize_visit<fbs::encode_detail::TableElemVisitor, std::monostate, Config> {
-    static bool visit(fbs::encode_detail::TableElemVisitor& vis, const std::monostate&) {
-        auto start = vis.fbb.StartTable();
-        vis.table_offsets.push_back(fbs::encode_detail::table_offset_t(vis.fbb.EndTable(start)));
-        return true;
-    }
-};
-
-}  // namespace kota::codec

@@ -13,6 +13,7 @@
 #include "kota/meta/type_info.h"
 #include "kota/meta/type_kind.h"
 #include "kota/codec/toml/type.h"
+#include "kota/codec/visit/common.h"
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/context.h"
 #include "kota/codec/visit/encode.h"
@@ -122,7 +123,9 @@ struct ValueWriter {
 
     template <typename T>
     bool visit_char(T v) {
-        return sink.emit(std::string(1, static_cast<char>(v)));
+        // A lone octet above 0x7F is not UTF-8, and toml++ would write an
+        // empty string in its place.
+        return sink.emit(char_to_utf8(v));
     }
 
     template <typename T>

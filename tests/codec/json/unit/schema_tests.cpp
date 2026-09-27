@@ -12,6 +12,9 @@
 #include <variant>
 #include <vector>
 
+#include "codec/harness/fixtures/repr.h"
+#include "codec/harness/fixtures/structs.h"
+#include "fixtures/repr.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/attrs.h"
 #include "kota/meta/schema.h"
@@ -3073,6 +3076,73 @@ ZEST_CASE(defaults_type_erased_absent) {
     // The type-erased entry has no T to default-construct, so no defaults.
     const auto result = json::schema_string(type_info_of<defaults_root>()).value();
     EXPECT(!zest::contains(result, R"("default")"));
+}
+
+// ---------------------------------------------------------------------------
+// meta::repr: the schema describes the document the encoder writes, which the
+// codec kit's repr area pins.
+// ---------------------------------------------------------------------------
+
+ZEST_CASE(schema_follows_repr) {
+    auto schema = json::schema_string<test::Symbol>();
+    ASSERT(schema);
+    EXPECT(zest::contains(*schema, R"("rel":{"type":"integer")"));
+    EXPECT(zest::contains(*schema, R"("ver":{"type":"string"})"));
+    EXPECT(!zest::contains(*schema, "enum"));
+}
+
+ZEST_CASE(schema_of_dynamic_repr_is_any) {
+    auto schema = json::schema_string<test::DynamicPair>();
+    ASSERT(schema);
+    EXPECT(zest::contains(*schema, R"("number":{})"));
+}
+
+ZEST_CASE(schema_follows_chained_repr) {
+    auto schema = json::schema_string<test::Field<test::Ticket>>();
+    ASSERT(schema);
+    EXPECT(zest::contains(*schema, R"("value":{"type":"integer")"));
+}
+
+ZEST_CASE(schema_follows_annotation_in_repr_type) {
+    auto schema = json::schema_string<test::Field<test::BasisPoints>>();
+    ASSERT(schema);
+    EXPECT(zest::contains(*schema, R"("value":{"anyOf":[{"type":"number"},{"type":"null"}]})"));
+}
+
+ZEST_CASE(schema_follows_struct_attrs_in_repr_type) {
+    auto schema = json::schema_string<test::Field<test::LineRange>>();
+    ASSERT(schema);
+    EXPECT(zest::contains(*schema, R"("startLine")"));
+    EXPECT(!zest::contains(*schema, R"("start_line")"));
+    EXPECT(zest::contains(*schema, R"("additionalProperties":false)"));
+}
+
+ZEST_CASE(schema_follows_tagging_in_repr_type) {
+    auto schema = json::schema_string<test::LoadResult>();
+    ASSERT(schema);
+    EXPECT(zest::contains(*schema, R"("status":{"const":"err"})"));
+}
+
+ZEST_CASE(schema_follows_outer_policy_on_repr_alternatives) {
+    auto schema =
+        json::schema_string<test::Field<annotate<test::StrictCamelTag>::type<test::LoadResult>>>();
+    ASSERT(schema);
+    EXPECT(zest::contains(*schema, R"("byteCount")"));
+    EXPECT(!zest::contains(*schema, R"("byte_count")"));
+}
+
+ZEST_CASE(schema_keeps_nullable_repr_field_required) {
+    auto schema = json::schema_string<test::Field<test::Lamport>>();
+    ASSERT(schema);
+    EXPECT(zest::contains(*schema, R"("required":["value"])"));
+}
+
+ZEST_CASE(schema_follows_json_scoped_repr) {
+    EXPECT(zest::type_eq<resolved_repr_t<test::Journal>, std::string>());
+    EXPECT(zest::type_eq<resolved_repr_t<test::Journal, json::format>, std::int64_t>());
+    auto schema = json::schema_string<test::Field<test::Journal>>();
+    ASSERT(schema);
+    EXPECT(zest::contains(*schema, R"("value":{"type":"integer")"));
 }
 
 };  // ZEST_SUITE(codec_json_schema)

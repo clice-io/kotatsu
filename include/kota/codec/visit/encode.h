@@ -138,15 +138,19 @@ bool encode_one_field(Vis& vis, const T& value) {
     const auto* base = reinterpret_cast<const std::byte*>(std::addressof(value));
     const auto& field_ref = *reinterpret_cast<const raw_t*>(base + offset);
 
-    if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
-        using pred = typename tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
-        if(meta::evaluate_skip_predicate<pred>(field_ref, true)) {
-            return true;
-        }
-    } else if constexpr(constexpr auto when = meta::spec_of<attrs_t>.skip_if;
-                        when != meta::skip_when::never) {
-        if(meta::evaluate_skip_when<when>(field_ref, true)) {
-            return true;
+    // A visitor that writes every field has nothing to mark one absent, so
+    // skip_if omits fields only elsewhere.
+    if constexpr(!writes_every_field<Vis>()) {
+        if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
+            using pred = typename tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
+            if(meta::evaluate_skip_predicate<pred>(field_ref, true)) {
+                return true;
+            }
+        } else if constexpr(constexpr auto when = meta::spec_of<attrs_t>.skip_if;
+                            when != meta::skip_when::never) {
+            if(meta::evaluate_skip_when<when>(field_ref, true)) {
+                return true;
+            }
         }
     }
 

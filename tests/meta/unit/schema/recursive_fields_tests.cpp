@@ -15,7 +15,7 @@
 #include <variant>
 #include <vector>
 
-#include "fixtures/schema/recursive.h"
+#include "fixtures/recursive.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/schema.h"
 
@@ -23,7 +23,7 @@ namespace kota::meta {
 
 namespace {
 
-namespace fx = ::kota::meta::fixtures;
+namespace fx = ::kota::test;
 
 ZEST_SUITE(meta_schema_recursive_fields) {
 
