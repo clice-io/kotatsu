@@ -66,7 +66,7 @@ void copy_field_bytes(const T& value, std::byte* image) {
 /// assignment). A byte array has no padding: copying it preserves every
 /// byte.
 template <typename T>
-struct alignas(T) WireImage {
+struct alignas(T) StructImage {
     std::byte bytes[sizeof(T)];
 };
 
@@ -77,9 +77,9 @@ struct alignas(T) WireImage {
 /// is unspecified). A padding-free struct's image is its whole object
 /// representation.
 template <typename T>
-auto wire_image(const T& value) -> WireImage<T> {
+auto struct_image(const T& value) -> StructImage<T> {
     static_assert(can_inline_struct_v<T>);
-    WireImage<T> image{};
+    StructImage<T> image{};
     if constexpr(has_padding_v<T>) {
         copy_field_bytes(value, image.bytes);
     } else {
@@ -238,7 +238,7 @@ struct WriteFieldVisitor : detail::VisitorBase {
     template <typename T, typename Body>
     bool visit_struct(const T& value, Body&&) {
         if constexpr(can_inline_struct_v<T>) {
-            const auto image = wire_image(value);
+            const auto image = struct_image(value);
             fbb.AddStruct(sid, &image);
         } else {
             fbb.AddOffset(sid, offset_t<void>(stored_offset));
@@ -380,14 +380,14 @@ struct StringCollector {
 
 template <typename T>
 struct InlineStructElemVisitor : detail::VisitorBase {
-    std::vector<WireImage<T>>& elems;
+    std::vector<StructImage<T>>& elems;
 
     // The dispatch calls visit_struct for structures. For inline structs the
     // sanitized image is simply appended to the element vector.
     template <typename U, typename Body>
     bool visit_struct(const U& value, Body&&) {
         static_assert(std::is_same_v<U, T>);
-        elems.push_back(wire_image(value));
+        elems.push_back(struct_image(value));
         return true;
     }
 };
@@ -395,7 +395,7 @@ struct InlineStructElemVisitor : detail::VisitorBase {
 template <typename T>
 struct InlineStructCollector {
     builder_t& fbb;
-    std::vector<WireImage<T>> elems{};
+    std::vector<StructImage<T>> elems{};
     uoffset_t result_offset = 0;
 
     template <typename F>
@@ -405,7 +405,7 @@ struct InlineStructCollector {
     }
 
     bool finish() {
-        // The builder only memcpys the elements' bytes, but WireImage's
+        // The builder only memcpys the elements' bytes, but StructImage's
         // single-parameter template shape would match flatbuffers'
         // IndirectHelper<OffsetT<T>> specialization, so hand it the struct
         // type the images stand in for.
@@ -750,7 +750,7 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
         return collect(BoxedTableCollector{.fbb = fbb});
     } else if constexpr(layout == inline_struct) {
         // A padded element's native bytes must not be copied wholesale (see
-        // wire_image); such vectors build their elements one by one.
+        // struct_image); such vectors build their elements one by one.
         if constexpr(identity && contiguous && !has_padding_v<repr_t>) {
             out_offset = fbb.CreateVectorOfStructs(std::ranges::data(c), std::ranges::size(c)).o;
             return true;
