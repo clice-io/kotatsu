@@ -77,6 +77,8 @@ struct Link {
     Channel<std::string> outbound;
     /// Writes by the peer fail.
     bool writes_fail = false;
+    /// The peer's close_output() fails.
+    bool close_output_fails = false;
     /// The peer called close() on its transport.
     bool closed = false;
 };
@@ -110,8 +112,12 @@ public:
         link->outbound.push(std::string(payload));
     }
 
-    /// Ends what the remote receives; the input stays open.
+    /// Ends what the remote receives; the input stays open. Fails, and ends
+    /// nothing, once the remote made it fail.
     ipc::Result<void> close_output() override {
+        if(link->close_output_fails) {
+            return outcome_error(ipc::Error("close_output failed"));
+        }
         link->outbound.end();
         return {};
     }
@@ -164,6 +170,11 @@ public:
     /// Makes every later write by the peer fail.
     void fail_writes() {
         link->writes_fail = true;
+    }
+
+    /// Makes the peer's close_output() fail.
+    void fail_close_output() {
+        link->close_output_fails = true;
     }
 
     /// The next message the peer wrote, waiting for it; nothing once the

@@ -57,6 +57,24 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         EXPECT(sum_of<A>(written[0]) == 3);
     });
 
+    // Nothing more is written once the input has ended and every answer is
+    // out, so the remote reads the end of its input.
+    kit.add("end_of_input_ends_the_output_once_answered", [](Fixture& f) {
+        f.peer.on_request([](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
+            co_return AddResult{.sum = params.a + params.b};
+        });
+        f.remote.send(request<A>(1, "test/add", AddParams{.a = 1, .b = 2}));
+        f.remote.end_input();
+
+        auto [ran] = f.run(f.peer.run());
+        EXPECT(ran.has_value());
+        const auto& written = f.written();
+        ASSERT(written.size() == 1U);
+        EXPECT(sum_of<A>(written[0]) == 3);
+        EXPECT(f.remote.output_ended());
+        EXPECT(!f.remote.closed());
+    });
+
     kit.add("close_ends_run", [](Fixture& f) {
         auto closer = [&]() -> task<ipc::Result<void>> {
             co_return f.peer.close();
@@ -249,6 +267,23 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         ASSERT(written.size() == 1U);
         EXPECT(written[0].method == "test/note");
         EXPECT(f.remote.output_ended());
+    });
+
+    // A half-close that fails leaves the remote without the end of its
+    // input, so the peer closes the connection.
+    kit.add("failed_close_output_fails_pending_requests_and_closes_the_transport", [](Fixture& f) {
+        f.remote.fail_close_output();
+        auto closer = [&]() -> task<> {
+            co_await f.next();
+            f.peer.close_output();
+        };
+
+        auto [ran, asked, scripted] =
+            f.run(f.peer.run(), f.peer.send_request(AddParams{}), closer());
+        EXPECT(ran.has_value());
+        ASSERT(asked.has_error());
+        EXPECT(code_of(asked.error()) == ErrorCode::RequestFailed);
+        EXPECT(f.remote.closed());
     });
 
     kit.add("send_after_close_output_fails", [](Fixture& f) {

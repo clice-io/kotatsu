@@ -155,15 +155,17 @@ struct Peer<CodecT>::Self {
         write_event.set();
     }
 
-    /// Writes what is queued until the output closes, or until the answers
-    /// are done and the queue is empty.
+    /// Writes what is queued until the output closes. Once the queue is
+    /// empty, it half-closes the transport when close_output() asked for it,
+    /// or when nothing more will be written: the input has ended and every
+    /// answer is out, and the remote reads the end of its input.
     task<> write_loop() {
         while(true) {
             if(outgoing_queue.empty()) {
-                if(closing_output) {
+                if(closing_output || (answers_done && output_open)) {
                     finish_output();
                 }
-                if(!output_open || answers_done) {
+                if(!output_open) {
                     break;
                 }
                 write_event.reset();
@@ -182,27 +184,29 @@ struct Peer<CodecT>::Self {
                 break;
             }
             if(written.has_error()) {
-                fail_output(written.error().message);
+                fail_output("transport write failed", written.error().message);
                 break;
             }
         }
         output_open = false;
     }
 
-    /// Half-closes the transport once close_output()'s queue is written.
+    /// Half-closes the transport once the queue is written. A half-close
+    /// that fails leaves the remote waiting for the end of its input, so it
+    /// fails the output as a write does.
     void finish_output() {
         closing_output = false;
         output_open = false;
         if(auto closed_output = transport->close_output(); !closed_output) {
-            log(LogLevel::error, "closing the output failed: {}", closed_output.error().message);
+            fail_output("closing the output failed", closed_output.error().message);
         }
     }
 
-    /// A write failed: nothing more can be written or answered, so every
-    /// pending request fails and the transport closes, which ends the read
-    /// loop too.
-    void fail_output(const std::string& message) {
-        log(LogLevel::error, "transport write failed: {}", message);
+    /// A write or a half-close failed: nothing more can be written or
+    /// answered, so every pending request fails and the transport closes,
+    /// which ends the read loop too.
+    void fail_output(std::string_view what, const std::string& message) {
+        log(LogLevel::error, "{}: {}", what, message);
         output_open = false;
         closing_output = false;
         outgoing_queue.clear();
@@ -292,12 +296,22 @@ struct Peer<CodecT>::Self {
         }
     }
 
-    /// Tells the remote that the request `id` is no longer awaited.
+    /// Tells the remote that the request `id` is no longer awaited. It is a
+    /// courtesy: one the codec cannot encode is logged and not sent.
     void send_cancel_request(const protocol::RequestID& id) {
         auto params = codec.serialize_value(protocol::CancelRequestParams{id});
-        assert(params && "a request id always encodes");
+        if(!params) {
+            log(LogLevel::error, "$/cancelRequest for id={} not sent: {}", id, params.error().message);
+            return;
+        }
         auto notification = codec.encode_notification("$/cancelRequest", *params);
-        assert(notification && "$/cancelRequest always encodes");
+        if(!notification) {
+            log(LogLevel::error,
+                "$/cancelRequest for id={} not sent: {}",
+                id,
+                notification.error().message);
+            return;
+        }
         enqueue_outgoing(std::move(*notification));
     }
 
