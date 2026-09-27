@@ -1,0 +1,120 @@
+#pragma once
+
+// Timeouts on send_request, alone and with a cancellation token. The remote
+// never answers the requests that time out; a timeout is the subject here, so
+// these cases wait for real time, as little as they can.
+
+#include <chrono>
+
+#include "ipc/harness/peer_fixture.h"
+#include "kota/zest/zest.h"
+#include "kota/async/async.h"
+
+namespace kota::test {
+
+template <Wire W>
+void peer_timeout(const PeerKit<W>& kit) {
+    using Fixture = PeerFixture<W>;
+    using ipc::protocol::CancelRequestParams;
+    using ipc::protocol::ErrorCode;
+    using namespace std::chrono_literals;
+
+    kit.add("send_request_times_out_and_sends_cancel_request", [](Fixture& f) {
+        auto ask = [&]() -> task<AddResult, ipc::Error> {
+            co_return co_await f.peer.send_request(AddParams{}, {.timeout = 10ms}).or_fail();
+        };
+        auto remote = [&]() -> task<> {
+            co_await f.next();
+            co_await f.next();
+            f.remote.end_input();
+        };
+
+        auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
+        EXPECT(ran.has_value());
+        ASSERT(asked.has_error());
+        EXPECT(code_of(asked.error()) == ErrorCode::RequestCancelled);
+        EXPECT(asked.error().message == "request timed out");
+        const auto& written = f.written();
+        ASSERT(written.size() == 2U);
+        EXPECT(written[0].id == RequestID(1));
+        EXPECT(written[1].method == "$/cancelRequest");
+        auto cancelled = decoded<CancelRequestParams, W>(written[1].body);
+        ASSERT(cancelled.has_value());
+        EXPECT(cancelled->id == RequestID(1));
+    });
+
+    kit.add("zero_timeout_fails_without_writing", [](Fixture& f) {
+        auto ask = [&]() -> task<AddResult, ipc::Error> {
+            f.remote.end_input();
+            co_return co_await f.peer.send_request(AddParams{}, {.timeout = 0ms}).or_fail();
+        };
+
+        auto [ran, asked] = f.run(f.peer.run(), ask());
+        EXPECT(ran.has_value());
+        ASSERT(asked.has_error());
+        EXPECT(code_of(asked.error()) == ErrorCode::RequestCancelled);
+        EXPECT(asked.error().message == "request timed out");
+        EXPECT(f.written().empty());
+    });
+
+    // The timer stops with the request: a leaked one shows under ASan.
+    kit.add("answer_before_the_timeout_wins", [](Fixture& f) {
+        auto ask = [&]() -> task<AddResult, ipc::Error> {
+            co_return co_await f.peer.send_request(AddParams{.a = 2, .b = 3}, {.timeout = 1min})
+                .or_fail();
+        };
+        auto remote = [&]() -> task<> {
+            co_await f.next();
+            f.remote.send(response<W>(1, AddResult{.sum = 5}));
+            f.remote.end_input();
+        };
+
+        auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
+        EXPECT(ran.has_value());
+        ASSERT(asked.has_value());
+        EXPECT(asked->sum == 5);
+    });
+
+    kit.add("token_before_the_timeout_reports_cancelled", [](Fixture& f) {
+        cancellation_source source;
+        auto ask = [&]() -> task<AddResult, ipc::Error> {
+            co_return co_await f.peer
+                .send_request(AddParams{}, {.token = source.token(), .timeout = 1min})
+                .or_fail();
+        };
+        auto remote = [&]() -> task<> {
+            co_await f.next();
+            source.cancel();
+            co_await f.next();
+            f.remote.end_input();
+        };
+
+        auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
+        EXPECT(ran.has_value());
+        ASSERT(asked.has_error());
+        EXPECT(code_of(asked.error()) == ErrorCode::RequestCancelled);
+        EXPECT(asked.error().message == "request cancelled");
+    });
+
+    kit.add("timeout_before_the_token_reports_timed_out", [](Fixture& f) {
+        cancellation_source source;
+        auto ask = [&]() -> task<AddResult, ipc::Error> {
+            co_return co_await f.peer
+                .send_request(AddParams{}, {.token = source.token(), .timeout = 10ms})
+                .or_fail();
+        };
+        auto remote = [&]() -> task<> {
+            co_await f.next();
+            co_await f.next();
+            f.remote.end_input();
+        };
+
+        auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
+        EXPECT(ran.has_value());
+        ASSERT(asked.has_error());
+        EXPECT(code_of(asked.error()) == ErrorCode::RequestCancelled);
+        EXPECT(asked.error().message == "request timed out");
+    });
+}
+
+}  // namespace kota::test
