@@ -119,6 +119,58 @@ ZEST_CASE(group_of_finished_children_needs_no_join) {
     EXPECT(finished == 2);
 }
 
+// Destroying a group whose children still run lets them go: each is
+// cancelled, and its frame goes once it has ended.
+ZEST_CASE(destroying_the_group_cancels_its_running_children) {
+    event gate;
+    auto frames = std::make_shared<int>();
+    bool resumed = false;
+    auto waiting = [&](std::shared_ptr<int>) -> task<> {
+        co_await gate.wait();
+        resumed = true;
+    };
+    auto driver = [&]() -> task<> {
+        {
+            task_group<> group;
+            group.spawn(waiting(frames));
+        }
+        co_return;
+    };
+
+    auto [result] = run(driver());
+    EXPECT(result.has_value());
+    EXPECT(!resumed);
+    EXPECT(!gate.has_waiters());
+    EXPECT(frames.use_count() == 1);
+}
+
+// A child let go keeps its frame until its cancellation completes, however
+// long after the group is gone that is.
+ZEST_CASE(destroyed_group_child_is_freed_once_its_cancel_completes) {
+    test::PendingOp op;
+    auto frames = std::make_shared<int>();
+    auto pending = [&](std::shared_ptr<int>) -> task<void, error> {
+        co_await op;
+    };
+    auto driver = [&]() -> task<long> {
+        {
+            task_group<error> group;
+            group.spawn(pending(frames));
+        }
+        co_return frames.use_count() - 1;
+    };
+    auto finisher = [&]() -> task<> {
+        op.complete();
+        co_return;
+    };
+
+    auto [alive, finished] = run(driver(), finisher());
+    ASSERT(alive.has_value());
+    EXPECT(*alive == 1);
+    EXPECT(op.is_cancelled());
+    EXPECT(frames.use_count() == 1);
+}
+
 // Every child's frame goes as soon as the child ends, a failed one too, whose
 // error the group has taken by then. Each frame holds a copy of `frames`, so
 // its use count tells how many are alive.

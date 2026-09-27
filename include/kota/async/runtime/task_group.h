@@ -36,8 +36,11 @@ public:
     task_group(const task_group&) = delete;
     task_group& operator=(const task_group&) = delete;
 
+    /// Children still running are let go: each is cancelled and ends on its
+    /// own, and what it failed with is dropped. Until then they may still use
+    /// what they reference; co_await join() to wait for them.
     ~task_group() {
-        assert(head == nullptr && "task_group destroyed while children run; co_await join() first");
+        abandon_children();
     }
 
     /// Starts `child` and runs it until it first suspends. Refused, returning

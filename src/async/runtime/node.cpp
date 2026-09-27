@@ -165,6 +165,17 @@ void detail::task_access::resume_woken(task_frame& task) {
     task.resume_woken();
 }
 
+void aggregate_op::abandon_children() {
+    while(auto* child = head) {
+        unlink(*child);
+        child->parent = nullptr;
+        child->hook = nullptr;
+        child->owned_by_loop = true;
+        // May end the child, and free it, at once.
+        child->cancel();
+    }
+}
+
 void aggregate_op::link(task_frame& child) noexcept {
     child.prev_sibling = tail;
     child.next_sibling = nullptr;

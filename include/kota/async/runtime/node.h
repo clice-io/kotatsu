@@ -261,6 +261,11 @@ protected:
     /// task_group::cancel(): cancels every child; the group settles as usual.
     void stop();
 
+    /// ~task_group: lets every running child go. Each is cancelled, ends on
+    /// its own, and is freed by the event loop then; what it failed with is
+    /// dropped.
+    void abandon_children();
+
     /// Records the completion of `child` and settles when it was the last.
     std::coroutine_handle<> child_completed(task_frame& child);
 
