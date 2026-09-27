@@ -5,6 +5,7 @@ on:
 
 env:
   CPM_SOURCE_CACHE: ${{ github.workspace }}/.cache/cpm
+  npm_config_cache: ${{ github.workspace }}/.cache/npm
   CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
   SCCACHE_DIR: ${{ github.workspace }}/.cache/sccache
   CCACHE_BASEDIR: ${{ github.workspace }}
@@ -111,6 +112,18 @@ jobs:
           key: cpm-${{ runner.os }}-${{ hashFiles('pixi.lock', '.github/workflows/cmake.yml', 'CMakePresets.json', 'CMakeLists.txt', 'src/**/CMakeLists.txt') }}
           restore-keys: |
             cpm-${{ runner.os }}-
+
+      # The integration tests, which ctest runs, import npm packages.
+      - name: Restore npm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.npm_config_cache }}
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            npm-${{ runner.os }}-
+
+      - name: Install npm packages
+        run: pixi run -e ${{ env.PIXI_ENV }} npm-ci
 
       - name: Restore compiler cache
         uses: actions/cache/restore@v4

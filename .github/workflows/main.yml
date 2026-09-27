@@ -38,6 +38,9 @@ jobs:
               - 'CMakeLists.txt'
               - 'CMakePresets.json'
               - 'pixi.toml'
+              - 'package*.json'
+              - 'tsconfig.json'
+              - 'scripts/lsp/**'
               - '.github/workflows/main.yml'
               - '.github/workflows/cmake.yml'
             xmake:
