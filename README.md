@@ -72,13 +72,15 @@ All public APIs live under the `kota::` namespace, public headers under `include
 ### `ipc` (`include/kota/ipc/*`)
 
 - JSON-RPC 2.0 protocol model with typed request / notification traits, structured errors (`Error { code, message, data }`), and the full set of spec error codes (including LSP-aligned `RequestCancelled`).
-- Transport abstraction for framed message IO: `Transport` interface, `StreamTransport` over stdio / TCP / arbitrary fds, and a `RecordingTransport` decorator that captures traffic to JSONL for replay testing.
+- Transport abstraction for framed message IO: `Transport` interface, `StreamTransport` over stdio (`open_stdio`), a TCP connection (`connect_tcp`) or any pair of async streams, and a `RecordingTransport` decorator that captures traffic to JSONL for replay testing.
+- The LSP base protocol's framing in `framing.h`: `frame()` writes a `Content-Length` header, and `FrameParser` reads frames from input split anywhere. A frame larger than the transport's limit (64 MiB by default) is skipped, not buffered, and reading goes on; the peer fails only what the frame's first bytes say it concerns: a request is answered with `MessageTooLarge` (-32010), a response fails the request it answers, a notification is dropped, and a message of no kind it can tell fails every pending request.
 - Codec-parametric typed peer runtime (`Peer<Codec>`) supporting request dispatch, notifications, and nested RPC; predefined peers for JSON (with LSP camelCase policy) and Bincode codecs.
 - Externally-driven execution model: callers own the event loop, schedule the peer's run loop, and drive shutdown explicitly.
 - `std::expected`-based result type (`ipc::Result<T>`) with protocol validation aligned with the JSON-RPC spec:
   - malformed payloads map to `ParseError` with null id
-  - structurally invalid messages map to `InvalidRequest` with null id
+  - structurally invalid messages map to `InvalidRequest`, answered under the request's id when it can be read, and with null id otherwise
   - parameter decode failures map to `InvalidParams`
+  - a handler that throws is answered with `InternalError`
 - Cancellation integration with the `async` runtime:
   - inbound `$/cancelRequest` cancels the matching in-flight handler and reports `RequestCancelled`
   - outbound requests accept an optional cancellation token and/or timeout; cancelling a still-pending request sends `$/cancelRequest` to the peer
@@ -90,7 +92,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - C++ protocol model generated from the pinned LSP 3.18 meta-model by `scripts/lsp/codegen.ts`: aggregates with inherited properties inlined, same-shaped variant alternatives told apart by their string literal members, and `LSPAny` as `codec::dyn::Value`. Regenerate with `pixi run lsp-codegen`; CI checks that the committed header is current.
 - LSP request / notification traits layered on top of `kota::ipc::protocol`.
 - `URI` parsing / manipulation with percent-encoding helpers and `from_file_path` factories.
-- `PositionMapper` for byte-offset ↔ LSP `{line, character}` conversion across UTF-8 / UTF-16 / UTF-32 position encodings.
+- `LineMap` for byte-offset ↔ LSP `{line, character}` conversion across UTF-8 / UTF-16 / UTF-32 position encodings.
 - `ProgressReporter` helper for `$/progress` work-done notifications.
 
 ### `option` (`include/kota/option/*`)
