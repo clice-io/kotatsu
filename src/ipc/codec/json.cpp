@@ -1,15 +1,21 @@
 #include "kota/codec/json/json.h"
 
+#include <algorithm>
+#include <format>
 #include <string>
 #include <string_view>
 
 #include "kota/ipc/codec/json.h"
-#include "kota/codec/dyn/dyn.h"
 #include "kota/codec/macro.h"
 
 namespace kota::ipc {
 
 namespace {
+
+/// Messages whose arrays and objects nest deeper than this are not read:
+/// reading a value recurses once per level, so a deep enough message would
+/// overflow the stack.
+constexpr std::size_t max_nesting = 128;
 
 struct outgoing_request_message {
     std::string jsonrpc = "2.0";
@@ -144,46 +150,126 @@ struct PrefixReader {
     }
 };
 
-/// What to make of a message whose envelope did not decode. Text that is no
-/// JSON is a parse error; JSON that is no message object is an invalid
-/// request (batches are not supported). An object is read again, leniently,
-/// for the id it names: a request (it has a method) is answered as invalid
+/// Whether `payload`'s arrays and objects nest deeper than max_nesting,
+/// counted without regard to whether it is valid JSON.
+bool nests_too_deeply(std::string_view payload) {
+    std::size_t depth = 0;
+    bool in_string = false;
+    for(std::size_t at = 0; at < payload.size(); ++at) {
+        const char c = payload[at];
+        if(in_string) {
+            if(c == '\\') {
+                ++at;
+            } else if(c == '"') {
+                in_string = false;
+            }
+        } else if(c == '"') {
+            in_string = true;
+        } else if(c == '[' || c == '{') {
+            if(++depth > max_nesting) {
+                return true;
+            }
+        } else if((c == ']' || c == '}') && depth > 0) {
+            --depth;
+        }
+    }
+    return false;
+}
+
+/// Whether `payload` is one JSON value, checked by simdjson's DOM parser,
+/// which keeps its own stack rather than recursing, however deep the value.
+bool is_json(std::string_view payload) {
+    simdjson::dom::parser parser;
+    if(parser.allocate(payload.size(), std::max<std::size_t>(payload.size(), 1)) !=
+       simdjson::SUCCESS) {
+        return false;
+    }
+    return parser.parse(payload.data(), payload.size()).error() == simdjson::SUCCESS;
+}
+
+/// The members of the object at the front of `text` that tell what kind of
+/// message it is, read in order without decoding their values: until `text`
+/// ends, or until a member cannot be read.
+MessageHead read_head(std::string_view text) {
+    PrefixReader reader{text};
+    std::optional<protocol::RequestID> id;
+    bool has_method = false;
+    bool answers = false;
+    if(reader.take('{')) {
+        while(auto key = reader.string()) {
+            if(!reader.take(':')) {
+                break;
+            }
+            has_method = has_method || *key == R"("method")";
+            answers = answers || *key == R"("result")" || *key == R"("error")";
+            auto value = reader.value();
+            if(!value) {
+                break;
+            }
+            if(*key == R"("id")") {
+                id = read_id(*value);
+            }
+            if(!reader.take(',')) {
+                break;
+            }
+        }
+    }
+
+    if(has_method) {
+        return {.kind = id ? MessageHead::Kind::Request : MessageHead::Kind::Notification,
+                .id = id};
+    }
+    if(answers) {
+        return {.kind = MessageHead::Kind::Response, .id = id};
+    }
+    return {.kind = MessageHead::Kind::Unknown, .id = id};
+}
+
+/// What to make of a message that is not read as a whole: its envelope did
+/// not decode, or it nests too deeply. Text that is no JSON is a parse error;
+/// JSON that is no message object is an invalid request (batches are not
+/// supported). An object's members are read for the id it names, without
+/// decoding their values: a request (it has a method) is answered as invalid
 /// under that id, and a response fails the request it answers, or is only
 /// logged when its id cannot be read.
 IncomingMessage read_malformed(std::string_view payload, std::string reason) {
-    auto document = codec::json::from_string<codec::dyn::Value>(payload);
-    if(!document) {
-        return IncomingParseError{std::nullopt,
-                                  Error(protocol::ErrorCode::ParseError, std::move(reason))};
+    if(!is_json(payload)) {
+        return IncomingParseError{
+            .id = std::nullopt,
+            .error = Error(protocol::ErrorCode::ParseError, std::move(reason)),
+        };
     }
-    const auto* object = document->get_object();
-    if(object == nullptr) {
-        return IncomingParseError{std::nullopt,
-                                  Error(protocol::ErrorCode::InvalidRequest,
-                                        document->is_array() ? "batch messages are not supported"
-                                                             : "message must be an object")};
+    PrefixReader reader{payload};
+    if(!reader.take('{')) {
+        return IncomingParseError{
+            .id = std::nullopt,
+            .error = Error(protocol::ErrorCode::InvalidRequest,
+                           reader.take('[') ? "batch messages are not supported"
+                                            : "message must be an object"),
+        };
     }
 
-    std::optional<protocol::RequestID> id;
-    if(const auto* member = object->find("id")) {
-        if(auto number = member->get_int()) {
-            id = *number;
-        } else if(auto text = member->get_string()) {
-            id = std::string(*text);
-        }
-    }
-    if(object->contains("method")) {
-        return IncomingParseError{std::move(id),
-                                  Error(protocol::ErrorCode::InvalidRequest, std::move(reason))};
+    auto head = read_head(payload);
+    using Kind = MessageHead::Kind;
+    if(head.kind == Kind::Request || head.kind == Kind::Notification) {
+        return IncomingParseError{
+            .id = std::move(head.id),
+            .error = Error(protocol::ErrorCode::InvalidRequest, std::move(reason)),
+        };
     }
     return IncomingErrorResponse{
-        std::move(id),
-        Error(protocol::ErrorCode::InvalidRequest, "malformed response: " + reason)};
+        .id = std::move(head.id),
+        .error = Error(protocol::ErrorCode::InvalidRequest, "malformed response: " + reason),
+    };
 }
 
 }  // namespace
 
 IncomingMessage JsonCodec::parse_message(std::string_view payload) {
+    if(nests_too_deeply(payload)) {
+        return read_malformed(payload,
+                              std::format("message nests deeper than {} levels", max_nesting));
+    }
     auto envelope = codec::json::from_string<json_rpc_incoming>(payload);
     if(!envelope) {
         return read_malformed(payload, envelope.error().to_string());
@@ -233,38 +319,7 @@ IncomingMessage JsonCodec::parse_message(std::string_view payload) {
 /// request's id after its method, past the prefix, reads as a notification.
 /// kotatsu, like vscode-jsonrpc, writes the id first.
 MessageHead JsonCodec::peek(std::string_view prefix) {
-    PrefixReader reader{prefix};
-    std::optional<protocol::RequestID> id;
-    bool has_method = false;
-    bool answers = false;
-    if(reader.take('{')) {
-        while(auto key = reader.string()) {
-            if(!reader.take(':')) {
-                break;
-            }
-            has_method = has_method || *key == R"("method")";
-            answers = answers || *key == R"("result")" || *key == R"("error")";
-            auto value = reader.value();
-            if(!value) {
-                break;
-            }
-            if(*key == R"("id")") {
-                id = read_id(*value);
-            }
-            if(!reader.take(',')) {
-                break;
-            }
-        }
-    }
-
-    if(has_method) {
-        return {.kind = id ? MessageHead::Kind::Request : MessageHead::Kind::Notification,
-                .id = id};
-    }
-    if(answers) {
-        return {.kind = MessageHead::Kind::Response, .id = id};
-    }
-    return {};
+    return read_head(prefix);
 }
 
 Result<std::string> JsonCodec::encode_request(const protocol::RequestID& id,

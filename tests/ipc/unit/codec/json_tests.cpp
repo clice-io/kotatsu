@@ -1,3 +1,5 @@
+#include <format>
+#include <string>
 #include <string_view>
 #include <variant>
 
@@ -165,6 +167,54 @@ ZEST_CASE(response_with_a_malformed_error_keeps_its_id) {
         EXPECT(response->id == protocol::RequestID(1));
         EXPECT(code_of(response->error) == ErrorCode::InvalidRequest);
     }
+}
+
+// Reading a value recurses once per level, so a message nested deeper than
+// the codec reads is judged without reading its values; at 50000 levels,
+// reading it would overflow the stack.
+ZEST_CASE(deeply_nested_array_is_an_invalid_request) {
+    JsonCodec codec;
+    for(std::size_t depth: {2000U, 50000U}) {
+        ZEST_CONTEXT("depth: {}", depth);
+        auto parsed = codec.parse_message(std::string(depth, '[') + std::string(depth, ']'));
+        const auto* failure = std::get_if<IncomingParseError>(&parsed);
+        ASSERT(failure != nullptr);
+        EXPECT(!failure->id.has_value());
+        EXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
+    }
+}
+
+ZEST_CASE(request_with_deeply_nested_params_is_invalid_under_its_id) {
+    JsonCodec codec;
+    auto deep = std::string(50000, '[') + std::string(50000, ']');
+    auto parsed = codec.parse_message(
+        std::format(R"({{"jsonrpc":"2.0","id":7,"method":"test/echo","params":{}}})", deep));
+    const auto* failure = std::get_if<IncomingParseError>(&parsed);
+    ASSERT(failure != nullptr);
+    EXPECT(failure->id == protocol::RequestID(7));
+    EXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
+}
+
+ZEST_CASE(response_with_deeply_nested_error_data_fails_its_request) {
+    JsonCodec codec;
+    auto deep = std::string(50000, '[') + std::string(50000, ']');
+    auto parsed = codec.parse_message(
+        std::format(R"({{"jsonrpc":"2.0","id":3,"error":{{"code":1,"message":"m","data":{}}}}})",
+                    deep));
+    const auto* response = std::get_if<IncomingErrorResponse>(&parsed);
+    ASSERT(response != nullptr);
+    EXPECT(response->id == protocol::RequestID(3));
+    EXPECT(code_of(response->error) == ErrorCode::InvalidRequest);
+}
+
+// Brackets inside a string are text, not nesting.
+ZEST_CASE(brackets_inside_strings_do_not_nest) {
+    JsonCodec codec;
+    auto parsed = codec.parse_message(
+        std::format(R"({{"jsonrpc":"2.0","id":1,"method":"test/echo","params":["{}\"{}"]}})",
+                    std::string(1000, '['),
+                    std::string(1000, '{')));
+    EXPECT(std::holds_alternative<IncomingRequest>(parsed));
 }
 
 };  // ZEST_SUITE(ipc_codec_json)
