@@ -9,11 +9,13 @@
 #include <string>
 #include <string_view>
 #include <tuple>
+#include <utility>
 #include <variant>
 #include <vector>
 
 #include "kota/ipc/protocol.h"
 #include "kota/meta/annotation.h"
+#include "kota/meta/repr.h"
 #include "kota/codec/dyn/dyn.h"
 
 // The C++ spelling of the LSP metaModel's TypeScript type constructs, which
@@ -33,6 +35,11 @@ struct skip_none_tag {
     constexpr static auto spec = meta::make_spec(meta::dsl::skip_if = meta::skip_when::none);
 };
 
+struct skip_none_defaulted_tag {
+    constexpr static auto spec =
+        meta::make_spec(meta::dsl::skip_if = meta::skip_when::none, meta::dsl::defaulted = true);
+};
+
 template <std::size_t N>
 struct LiteralText {
     char text[N];
@@ -44,21 +51,51 @@ struct LiteralText {
 
 }  // namespace detail
 
-/// `undefined | boolean`: absent reads as false and false is omitted.
+/// `T | null`: null or a value, but present. Unlike a plain std::optional, a
+/// structure whose required property of this type is missing fails to read.
+template <typename T>
+struct nullable : std::optional<T> {
+    using std::optional<T>::optional;
+    using std::optional<T>::operator=;
+
+    constexpr nullable() = default;
+
+    constexpr nullable(std::optional<T> value) : std::optional<T>(std::move(value)) {}
+};
+
+namespace detail {
+
+/// A std::optional<T> whose value is present even when it is null, for a T
+/// that has null among its values.
+template <typename T>
+struct present_optional : std::optional<T> {
+    using std::optional<T>::optional;
+    using std::optional<T>::operator=;
+
+    constexpr present_optional() = default;
+};
+
+}  // namespace detail
+
+/// `undefined | boolean` where absent means false: false is omitted. The
+/// booleans for which absent means something else are `optional<boolean>`.
 using optional_bool = meta::annotate<detail::skip_default_tag>::type<bool>;
 
 /// `undefined | T`.
 template <typename T>
 using optional = meta::annotate<detail::skip_none_tag>::type<std::optional<T>>;
 
+/// `undefined | T` for a T that has null among its values (a nullable<U>, or
+/// LSPAny): absent is omitted, and null reads as a present null rather than as
+/// absent.
+template <typename T>
+using optional_nullable =
+    meta::annotate<detail::skip_none_defaulted_tag>::type<detail::present_optional<T>>;
+
 /// `undefined | T` where T is the enclosing structure itself, which a
 /// by-value member cannot hold.
 template <typename T>
 using optional_ptr = meta::annotate<detail::skip_default_tag>::type<std::unique_ptr<T>>;
-
-/// `T | null`.
-template <typename T>
-using nullable = std::optional<T>;
 
 /// `A | B | ...`, decoded as the first alternative the input fits.
 using std::variant;
@@ -84,6 +121,40 @@ namespace kota::ipc::lsp {
 namespace protocol = kota::ipc::protocol;
 
 }  // namespace kota::ipc::lsp
+
+namespace kota::meta {
+
+/// Read and written as the std::optional it is; being no std::optional to the
+/// codec, it is required in a structure.
+template <typename T>
+struct repr<ipc::protocol::nullable<T>> {
+    using type = std::optional<T>;
+
+    const static type& to(const ipc::protocol::nullable<T>& value) {
+        return value;
+    }
+
+    static ipc::protocol::nullable<T> from(type value) {
+        return value;
+    }
+};
+
+/// Read and written as its value, so that null reaches T; absence is the
+/// field's, which optional_nullable leaves out.
+template <typename T>
+struct repr<ipc::protocol::detail::present_optional<T>> {
+    using type = T;
+
+    const static type& to(const ipc::protocol::detail::present_optional<T>& value) {
+        return *value;
+    }
+
+    static ipc::protocol::detail::present_optional<T> from(type value) {
+        return ipc::protocol::detail::present_optional<T>(std::move(value));
+    }
+};
+
+}  // namespace kota::meta
 
 namespace kota::codec {
 

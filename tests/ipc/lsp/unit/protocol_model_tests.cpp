@@ -222,9 +222,10 @@ ZEST_CASE(parameterless_methods_read_null_params) {
     EXPECT(codec.deserialize_value<protocol::ExitParams>(notification->params).has_value());
 }
 
-// P4.1: an untagged variant takes the first alternative the input decodes
-// into, and TextEdit ignores the annotationId it does not have.
-ZEST_CASE(untagged_variant_takes_the_alternative_the_input_fills, skip = true) {
+// An untagged variant lists a structure before the one it derives from
+// (P4.1), so an edit with an annotationId reads as the AnnotatedTextEdit it is,
+// not as a TextEdit that drops the id.
+ZEST_CASE(untagged_variant_takes_the_alternative_the_input_fills) {
     auto edit = from_string<protocol::TextDocumentEdit, lsp_config>(std::format(
         R"({{"textDocument":{{"uri":"file:///a","version":null}},"edits":[{{"range":{},"newText":"x","annotationId":"a"}}]}})",
         range_json));
@@ -233,22 +234,42 @@ ZEST_CASE(untagged_variant_takes_the_alternative_the_input_fills, skip = true) {
     EXPECT(std::holds_alternative<protocol::AnnotatedTextEdit>(edit->edits[0]));
 }
 
-// P4.2: `cancellable` is an optional_bool, which omits false; in a report,
-// false disables the cancel button, where leaving it out keeps the button as
-// it is.
-ZEST_CASE(tri_state_bool_writes_false, skip = true) {
+// In a report, `cancellable: false` disables the cancel button, where leaving
+// it out keeps the button as it is, so false is written (P4.2).
+ZEST_CASE(tri_state_bool_writes_false) {
     auto serialized = to_string<lsp_config>(protocol::WorkDoneProgressReport{.cancellable = false});
     ASSERT(serialized);
     EXPECT(zest::contains(*serialized, R"("cancellable":false)"));
 }
 
-// P4.3: an optional nullable member reads an explicit null as absent.
-ZEST_CASE(optional_nullable_member_reads_null_as_present, skip = true) {
+// An optional member whose type admits null reads null as present (P4.3).
+ZEST_CASE(optional_nullable_member_reads_null_as_present) {
     auto params = from_string<protocol::InitializeParams, lsp_config>(
         R"({"processId":null,"rootUri":null,"capabilities":{},"workspaceFolders":null})");
     ASSERT(params);
     ASSERT(params->workspace_folders.has_value());
     EXPECT(!params->workspace_folders->has_value());
+}
+
+// So is an optional LSPAny, such as `data` (P4.3): an item carries its null
+// back to the server.
+ZEST_CASE(optional_any_member_reads_null_as_present) {
+    auto item = from_string<protocol::CompletionItem, lsp_config>(R"({"label":"a","data":null})");
+    ASSERT(item);
+    ASSERT(item->data.has_value());
+    EXPECT(item->data->is_null());
+    auto written = to_string<lsp_config>(*item);
+    ASSERT(written);
+    EXPECT(*written == R"({"label":"a","data":null})");
+}
+
+// A required `T | null` must be present (P4.1): null is a value, absent is
+// not.
+ZEST_CASE(required_nullable_member_absent_fails) {
+    auto params = from_string<protocol::InitializeParams, lsp_config>(
+        R"({"rootUri":null,"capabilities":{}})");
+    ASSERT(!params);
+    EXPECT(zest::contains(params.error().to_string(), "processId"));
 }
 
 };  // ZEST_SUITE(ipc_lsp_protocol_model)

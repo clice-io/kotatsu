@@ -1590,7 +1590,7 @@ struct ExecutionSummary {
 
     /// Whether the execution was successful or
     /// not if known by the client.
-    optional_bool success = {};
+    optional<boolean> success = {};
 };
 
 /// Params of `exit`, which takes none.
@@ -2565,7 +2565,7 @@ struct WorkDoneProgressBegin {
     /// Controls if a cancel button should show to allow the user to cancel the
     /// long running operation. Clients that don't support cancellation are allowed
     /// to ignore the setting.
-    optional_bool cancellable = {};
+    optional<boolean> cancellable = {};
 
     /// Optional, more detailed associated progress message. Contains
     /// complementary information to the `title`.
@@ -2602,7 +2602,7 @@ struct WorkDoneProgressReport {
     ///
     /// Clients that don't support cancellation or don't support controlling the button's
     /// enablement state are allowed to ignore the property.
-    optional_bool cancellable = {};
+    optional<boolean> cancellable = {};
 
     /// Optional, more detailed associated progress message. Contains
     /// complementary information to the `title`.
@@ -3566,7 +3566,7 @@ struct Registration {
     string method;
 
     /// Options necessary for the registration.
-    optional<LSPAny> register_options = {};
+    optional_nullable<LSPAny> register_options = {};
 };
 
 /// Client capabilities specific to regular expressions.
@@ -3910,7 +3910,7 @@ struct WorkspaceFoldersInitializeParams {
     /// configured.
     ///
     /// @since 3.6.0
-    optional<nullable<std::vector<WorkspaceFolder>>> workspace_folders = {};
+    optional_nullable<nullable<std::vector<WorkspaceFolder>>> workspace_folders = {};
 };
 
 /// Client capabilities for a {@link WorkspaceSymbolRequest}.
@@ -4000,7 +4000,7 @@ struct CallHierarchyItem {
 
     /// A data entry field that is preserved between a call hierarchy prepare and
     /// incoming calls or outgoing calls requests.
-    optional<LSPAny> data = {};
+    optional_nullable<LSPAny> data = {};
 };
 
 /// The Client Capabilities of a {@link CodeActionRequest}.
@@ -4091,7 +4091,7 @@ struct CodeLens {
 
     /// A data entry field that is preserved on a code lens item between
     /// a {@link CodeLensRequest} and a {@link CodeLensResolveRequest}
-    optional<LSPAny> data = {};
+    optional_nullable<LSPAny> data = {};
 };
 
 /// Represents a color range from a document.
@@ -4189,7 +4189,7 @@ struct DocumentLink {
 
     /// A data entry field that is preserved on a document link between a
     /// DocumentLinkRequest and a DocumentLinkResolveRequest.
-    optional<LSPAny> data = {};
+    optional_nullable<LSPAny> data = {};
 };
 
 /// The parameters of a {@link DocumentRangeFormattingRequest}.
@@ -4615,7 +4615,7 @@ struct SemanticTokensClientCapabilities {
     /// specified.
     ///
     /// @since 3.17.0
-    optional_bool augments_syntax_tokens = {};
+    optional<boolean> augments_syntax_tokens = {};
 };
 
 /// @since 3.16.0
@@ -4703,7 +4703,7 @@ struct SignatureInformation {
     /// `SignatureHelp.activeParameter`.
     ///
     /// @since 3.16.0
-    optional<nullable<uinteger>> active_parameter = {};
+    optional_nullable<nullable<uinteger>> active_parameter = {};
 };
 
 /// An interactive text edit.
@@ -4775,7 +4775,7 @@ struct TypeHierarchyItem {
     /// supertypes or subtypes requests. It could also be used to identify the
     /// type hierarchy in the server, helping improve the performance on
     /// resolving supertypes and subtypes.
-    optional<LSPAny> data = {};
+    optional_nullable<LSPAny> data = {};
 };
 
 struct WindowClientCapabilities {
@@ -5118,7 +5118,7 @@ struct CompletionItem {
 
     /// A data entry field that is preserved on a completion item between a
     /// {@link CompletionRequest} and a {@link CompletionResolveRequest}.
-    optional<LSPAny> data = {};
+    optional_nullable<LSPAny> data = {};
 };
 
 /// In many cases the items of an actual completion result share the same
@@ -5160,7 +5160,7 @@ struct CompletionItemDefaults {
     /// A default data value.
     ///
     /// @since 3.17.0
-    optional<LSPAny> data = {};
+    optional_nullable<LSPAny> data = {};
 };
 
 /// The declaration of a symbol representation as one or many {@link Location locations}.
@@ -5406,7 +5406,7 @@ struct SignatureHelp {
     ///
     /// Since version 3.16.0 the `SignatureInformation` itself provides a
     /// `activeParameter` property and it should be used instead of this one.
-    optional<nullable<uinteger>> active_parameter = {};
+    optional_nullable<nullable<uinteger>> active_parameter = {};
 };
 
 /// Represents information about programming constructs like variables, classes,
@@ -5597,7 +5597,7 @@ struct TextDocumentEdit {
     ///
     /// @since 3.18.0 - support for SnippetTextEdit. This is guarded using a
     /// client capability.
-    std::vector<variant<TextEdit, AnnotatedTextEdit, SnippetTextEdit>> edits;
+    std::vector<variant<AnnotatedTextEdit, TextEdit, SnippetTextEdit>> edits;
 };
 
 /// A document filter where `language` is required field.
@@ -5714,7 +5714,7 @@ struct WorkspaceSymbol {
 
     /// A data entry field that is preserved on a workspace symbol between a
     /// workspace symbol request and a workspace symbol resolve request.
-    optional<LSPAny> data = {};
+    optional_nullable<LSPAny> data = {};
 };
 
 /// Defines the capabilities provided by the client.
@@ -5739,7 +5739,7 @@ struct ClientCapabilities {
     optional<GeneralClientCapabilities> general = {};
 
     /// Experimental client capabilities.
-    optional<LSPAny> experimental = {};
+    optional_nullable<LSPAny> experimental = {};
 };
 
 /// Represents a collection of {@link CompletionItem completion items} to be presented
@@ -5835,7 +5835,7 @@ struct Diagnostic {
     /// notification and `textDocument/codeAction` request.
     ///
     /// @since 3.16.0
-    optional<LSPAny> data = {};
+    optional_nullable<LSPAny> data = {};
 };
 
 /// The change text document notification's parameters.
@@ -5934,7 +5934,7 @@ struct InlayHint {
 
     /// A data entry field that is preserved on an inlay hint between
     /// a `textDocument/inlayHint` and a `inlayHint/resolve` request.
-    optional<LSPAny> data = {};
+    optional_nullable<LSPAny> data = {};
 };
 
 /// A parameter literal used in inline completion requests.
@@ -6121,7 +6121,7 @@ struct CodeAction {
     /// a `textDocument/codeAction` and a `codeAction/resolve` request.
     ///
     /// @since 3.16.0
-    optional<LSPAny> data = {};
+    optional_nullable<LSPAny> data = {};
 
     /// Tags for this code action.
     ///
@@ -6197,7 +6197,7 @@ struct InitializeParams {
     /// if no folder is open.
     ///
     /// @deprecated in favour of rootUri.
-    optional<nullable<string>> root_path = {};
+    optional_nullable<nullable<string>> root_path = {};
 
     /// The rootUri of the workspace. Is null if no
     /// folder is open. If both `rootPath` and `rootUri` are set
@@ -6210,7 +6210,7 @@ struct InitializeParams {
     ClientCapabilities capabilities;
 
     /// User provided initialization options.
-    optional<LSPAny> initialization_options = {};
+    optional_nullable<LSPAny> initialization_options = {};
 
     /// The initial trace setting. If omitted trace is disabled ('off').
     optional<TraceValue> trace = {};
@@ -6222,7 +6222,7 @@ struct InitializeParams {
     /// configured.
     ///
     /// @since 3.6.0
-    optional<nullable<std::vector<WorkspaceFolder>>> workspace_folders = {};
+    optional_nullable<nullable<std::vector<WorkspaceFolder>>> workspace_folders = {};
 };
 
 /// A notebook cell text document filter denotes a cell text
@@ -6353,7 +6353,7 @@ struct WorkspaceOptions {
     /// The server supports the `workspace/textDocumentContent` request.
     ///
     /// @since 3.18.0
-    optional<variant<TextDocumentContentOptions, TextDocumentContentRegistrationOptions>> text_document_content = {};
+    optional<variant<TextDocumentContentRegistrationOptions, TextDocumentContentOptions>> text_document_content = {};
 };
 
 /// The parameters of a {@link CodeActionRequest}.
@@ -7058,7 +7058,7 @@ struct ServerCapabilities {
     /// Defines how notebook documents are synced.
     ///
     /// @since 3.17.0
-    optional<variant<NotebookDocumentSyncOptions, NotebookDocumentSyncRegistrationOptions>> notebook_document_sync = {};
+    optional<variant<NotebookDocumentSyncRegistrationOptions, NotebookDocumentSyncOptions>> notebook_document_sync = {};
 
     /// The server provides completion support.
     optional<CompletionOptions> completion_provider = {};
@@ -7070,16 +7070,16 @@ struct ServerCapabilities {
     optional<SignatureHelpOptions> signature_help_provider = {};
 
     /// The server provides Goto Declaration support.
-    optional<variant<boolean, DeclarationOptions, DeclarationRegistrationOptions>> declaration_provider = {};
+    optional<variant<boolean, DeclarationRegistrationOptions, DeclarationOptions>> declaration_provider = {};
 
     /// The server provides goto definition support.
     optional<variant<boolean, DefinitionOptions>> definition_provider = {};
 
     /// The server provides Goto Type Definition support.
-    optional<variant<boolean, TypeDefinitionOptions, TypeDefinitionRegistrationOptions>> type_definition_provider = {};
+    optional<variant<boolean, TypeDefinitionRegistrationOptions, TypeDefinitionOptions>> type_definition_provider = {};
 
     /// The server provides Goto Implementation support.
-    optional<variant<boolean, ImplementationOptions, ImplementationRegistrationOptions>> implementation_provider = {};
+    optional<variant<boolean, ImplementationRegistrationOptions, ImplementationOptions>> implementation_provider = {};
 
     /// The server provides find references support.
     optional<variant<boolean, ReferenceOptions>> references_provider = {};
@@ -7102,7 +7102,7 @@ struct ServerCapabilities {
     optional<DocumentLinkOptions> document_link_provider = {};
 
     /// The server provides color provider support.
-    optional<variant<boolean, DocumentColorOptions, DocumentColorRegistrationOptions>> color_provider = {};
+    optional<variant<boolean, DocumentColorRegistrationOptions, DocumentColorOptions>> color_provider = {};
 
     /// The server provides workspace symbol support.
     optional<variant<boolean, WorkspaceSymbolOptions>> workspace_symbol_provider = {};
@@ -7122,10 +7122,10 @@ struct ServerCapabilities {
     optional<variant<boolean, RenameOptions>> rename_provider = {};
 
     /// The server provides folding provider support.
-    optional<variant<boolean, FoldingRangeOptions, FoldingRangeRegistrationOptions>> folding_range_provider = {};
+    optional<variant<boolean, FoldingRangeRegistrationOptions, FoldingRangeOptions>> folding_range_provider = {};
 
     /// The server provides selection range support.
-    optional<variant<boolean, SelectionRangeOptions, SelectionRangeRegistrationOptions>> selection_range_provider = {};
+    optional<variant<boolean, SelectionRangeRegistrationOptions, SelectionRangeOptions>> selection_range_provider = {};
 
     /// The server provides execute command support.
     optional<ExecuteCommandOptions> execute_command_provider = {};
@@ -7133,42 +7133,42 @@ struct ServerCapabilities {
     /// The server provides call hierarchy support.
     ///
     /// @since 3.16.0
-    optional<variant<boolean, CallHierarchyOptions, CallHierarchyRegistrationOptions>> call_hierarchy_provider = {};
+    optional<variant<boolean, CallHierarchyRegistrationOptions, CallHierarchyOptions>> call_hierarchy_provider = {};
 
     /// The server provides linked editing range support.
     ///
     /// @since 3.16.0
-    optional<variant<boolean, LinkedEditingRangeOptions, LinkedEditingRangeRegistrationOptions>> linked_editing_range_provider = {};
+    optional<variant<boolean, LinkedEditingRangeRegistrationOptions, LinkedEditingRangeOptions>> linked_editing_range_provider = {};
 
     /// The server provides semantic tokens support.
     ///
     /// @since 3.16.0
-    optional<variant<SemanticTokensOptions, SemanticTokensRegistrationOptions>> semantic_tokens_provider = {};
+    optional<variant<SemanticTokensRegistrationOptions, SemanticTokensOptions>> semantic_tokens_provider = {};
 
     /// The server provides moniker support.
     ///
     /// @since 3.16.0
-    optional<variant<boolean, MonikerOptions, MonikerRegistrationOptions>> moniker_provider = {};
+    optional<variant<boolean, MonikerRegistrationOptions, MonikerOptions>> moniker_provider = {};
 
     /// The server provides type hierarchy support.
     ///
     /// @since 3.17.0
-    optional<variant<boolean, TypeHierarchyOptions, TypeHierarchyRegistrationOptions>> type_hierarchy_provider = {};
+    optional<variant<boolean, TypeHierarchyRegistrationOptions, TypeHierarchyOptions>> type_hierarchy_provider = {};
 
     /// The server provides inline values.
     ///
     /// @since 3.17.0
-    optional<variant<boolean, InlineValueOptions, InlineValueRegistrationOptions>> inline_value_provider = {};
+    optional<variant<boolean, InlineValueRegistrationOptions, InlineValueOptions>> inline_value_provider = {};
 
     /// The server provides inlay hints.
     ///
     /// @since 3.17.0
-    optional<variant<boolean, InlayHintOptions, InlayHintRegistrationOptions>> inlay_hint_provider = {};
+    optional<variant<boolean, InlayHintRegistrationOptions, InlayHintOptions>> inlay_hint_provider = {};
 
     /// The server has support for pull model diagnostics.
     ///
     /// @since 3.17.0
-    optional<variant<DiagnosticOptions, DiagnosticRegistrationOptions>> diagnostic_provider = {};
+    optional<variant<DiagnosticRegistrationOptions, DiagnosticOptions>> diagnostic_provider = {};
 
     /// Inline completion options used during static registration.
     ///
@@ -7179,7 +7179,7 @@ struct ServerCapabilities {
     optional<WorkspaceOptions> workspace = {};
 
     /// Experimental server capabilities.
-    optional<LSPAny> experimental = {};
+    optional_nullable<LSPAny> experimental = {};
 };
 
 /// The result returned from an initialize request.

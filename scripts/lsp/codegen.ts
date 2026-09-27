@@ -10,10 +10,14 @@
 //   `mixins`) inlined, so members are reached and designated directly; a
 //   property a structure redeclares narrows the inherited one in place.
 // - `LSPAny` / `LSPObject` / `LSPArray` alias the codec's dynamic value types.
-// - `T | null` is `nullable<T>` (over a `variant` for several alternatives), an
-//   optional property is `optional<T>`, an optional boolean is `optional_bool`
-//   (absent reads as false), and an optional property holding its own
-//   structure is `optional_ptr<T>`.
+// - `T | null` is `nullable<T>` (over a `variant` for several alternatives),
+//   which a structure requires present; an optional property is `optional<T>`,
+//   or `optional_nullable<T>` when null is among its values, so that null does
+//   not read as absent; an optional boolean is `optional_bool` (absent reads as
+//   false) but for the few TRI_STATE_BOOLEANS, `optional<boolean>`; and an
+//   optional property holding its own structure is `optional_ptr<T>`.
+// - an untagged variant lists a structure before the ones it derives from, so
+//   that a value reads as the most derived alternative it fills.
 // - a string literal type is `Literal<"...">`, which decodes only its own text
 //   so untagged variants tell their alternatives apart by it.
 // - enumerations keep unknown values: integer ones are `enum class` over the
@@ -30,6 +34,7 @@ import {
   COMMIT,
   Schema,
   SchemaError,
+  TRI_STATE_BOOLEANS,
   VERSION,
   isBase,
   loadMetaModel,
@@ -65,8 +70,10 @@ const DYNAMIC_TYPES = new Map([
 ]);
 
 // An optional boolean becomes `optional_bool`, which reads absence as false;
-// a property documented to default to true would silently flip.
+// a property documented to default to true would silently flip, and one whose
+// documentation gives undefined a meaning of its own has to be tri-state.
 const DEFAULT_TRUE = /defaults? (?:to|is) true|true by default/i;
+const UNDEFINED = /undefined/i;
 
 // prettier-ignore
 const CPP_KEYWORDS = new Set([
@@ -149,6 +156,9 @@ function separated(blocks: string[][]): string[] {
 }
 
 class Generator extends Schema {
+  // The TRI_STATE_BOOLEANS met, each of which must be.
+  readonly #triState = new Set<string>();
+
   render(t: Type): string {
     switch (t.kind) {
       case "base":
@@ -175,9 +185,9 @@ class Generator extends Schema {
       case "tuple":
         return `std::tuple<${t.items.map((item) => this.render(item)).join(", ")}>`;
       case "or": {
-        const alternatives = t.items
-          .filter((item) => !isBase(item, "null"))
-          .map((item) => this.render(item));
+        const alternatives = this.derivedFirst(
+          t.items.filter((item) => !isBase(item, "null")),
+        ).map((item) => this.render(item));
         const rendered =
           alternatives.length === 1
             ? alternatives[0]
@@ -217,6 +227,51 @@ class Generator extends Schema {
     }
   }
 
+  /** Whether the structure `name` derives from the structure `base`. */
+  derives(name: string, base: string): boolean {
+    const structure = this.structures.get(name);
+    return (
+      structure !== undefined &&
+      [...(structure.extends ?? []), ...(structure.mixins ?? [])].some(
+        (parent) =>
+          parent.kind === "reference" &&
+          (parent.name === base || this.derives(parent.name, base)),
+      )
+    );
+  }
+
+  /**
+   * The alternatives, each structure moved before the first one it derives
+   * from; an untagged variant reads the first alternative a value fits.
+   */
+  derivedFirst(items: Type[]): Type[] {
+    const ordered: Type[] = [];
+    for (const item of items) {
+      const base =
+        item.kind === "reference"
+          ? ordered.findIndex(
+              (earlier) =>
+                earlier.kind === "reference" &&
+                this.derives(item.name, earlier.name),
+            )
+          : -1;
+      ordered.splice(base < 0 ? ordered.length : base, 0, item);
+    }
+    return ordered;
+  }
+
+  /** Whether null is among the values of `t`. */
+  admitsNull(t: Type): boolean {
+    if (t.kind === "reference") {
+      const alias = this.aliases.get(t.name);
+      return alias !== undefined && this.admitsNull(alias.type);
+    }
+    return (
+      isBase(t, "null") ||
+      (t.kind === "or" && t.items.some((item) => this.admitsNull(item)))
+    );
+  }
+
   declaration(owner: string, prop: Property): string {
     const name = memberName(prop.name);
     const t = prop.type;
@@ -229,10 +284,22 @@ class Generator extends Schema {
       return `optional_ptr<${owner}> ${name} = {};`;
     }
     if (prop.optional && isBase(t, "boolean")) {
+      if (TRI_STATE_BOOLEANS.has(`${owner}.${prop.name}`)) {
+        this.#triState.add(`${owner}.${prop.name}`);
+        return `optional<boolean> ${name} = {};`;
+      }
       if (DEFAULT_TRUE.test(prop.documentation ?? "")) {
         throw new SchemaError(`${owner}.${prop.name} defaults to true`);
       }
+      if (UNDEFINED.test(prop.documentation ?? "")) {
+        throw new SchemaError(
+          `${owner}.${prop.name} gives undefined a meaning; make it tri-state`,
+        );
+      }
       return `optional_bool ${name} = {};`;
+    }
+    if (prop.optional && this.admitsNull(t)) {
+      return `optional_nullable<${this.render(t)}> ${name} = {};`;
     }
     if (prop.optional) {
       return `optional<${this.render(t)}> ${name} = {};`;
@@ -419,6 +486,11 @@ class Generator extends Schema {
       }),
       this.emitTraits(),
     ];
+    for (const name of TRI_STATE_BOOLEANS) {
+      if (!this.#triState.has(name)) {
+        throw new SchemaError(`${name} is no optional boolean`);
+      }
+    }
     return [
       "#pragma once",
       "",

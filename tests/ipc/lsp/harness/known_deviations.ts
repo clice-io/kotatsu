@@ -10,9 +10,6 @@
 
 export type Deviation =
   | "shadowedAlternatives"
-  | "absentRequiredNullable"
-  | "triStateFalse"
-  | "nullOptionalNullable"
   | "falseOptionalBoolean"
   | "nullOptional"
   | "openEnumerations"
@@ -24,28 +21,18 @@ export type Deviation =
 
 export const deviations: Partial<Record<Deviation, string>> = {
   shadowedAlternatives:
-    "P4.1: an untagged variant reads a value as its first alternative that " +
-    "reads it, and drops what that one lacks: TextEdit before " +
-    "AnnotatedTextEdit, the 16 XOptions before XRegistrationOptions in " +
-    "ServerCapabilities, SymbolInformation before WorkspaceSymbol.",
-  absentRequiredNullable:
-    "P4.1: a required property whose type admits null may be absent " +
-    "(check_required_fields asks nothing of a std::optional).",
-  triStateFalse:
-    "P4.2: ExecutionSummary.success, WorkDoneProgressBegin.cancellable, " +
-    "WorkDoneProgressReport.cancellable and " +
-    "SemanticTokensClientCapabilities.augmentsSyntaxTokens drop false, which " +
-    "is not the same as absent for them.",
-  nullOptionalNullable:
-    "P4.3: an optional property whose type admits null reads null as absent: " +
-    "optional<nullable<T>> (workspaceFolders twice, activeParameter twice, " +
-    "rootPath), and every optional LSPAny (data, initializationOptions, " +
-    "experimental, ...).",
+    "P4.1, the rest: an untagged variant reads a value as its first " +
+    "alternative that reads it, and drops what that one lacks. Derived " +
+    "structures come first now, but unrelated ones still read each other's " +
+    "values: TextDocumentFilter before NotebookCellTextDocumentFilter in " +
+    "DocumentFilter, SymbolInformation before WorkspaceSymbol in the result " +
+    "of workspace/symbol.",
   falseOptionalBoolean:
     "design (D2.2): an optional boolean reads absent as false, so it writes " +
-    "false as absent.",
+    "false as absent; but for the TRI_STATE_BOOLEANS (metamodel.ts).",
   nullOptional:
-    "design: an optional property reads null as absent, but for a boolean.",
+    "design: an optional property reads null as absent, but for a boolean " +
+    "that reads absent as false.",
   openEnumerations:
     "design: an enumeration reads values it does not know, of its base type, " +
     "so that a newer peer's values do not fail the whole message.",
@@ -64,11 +51,3 @@ export const deviations: Partial<Record<Deviation, string>> = {
     "a surrogate pair, which is no place in the text; VS Code answers the " +
     "offset between them.",
 };
-
-/** The optional booleans for which false and absent differ (P4.2, D2.2). */
-export const TRI_STATE_BOOLEANS = new Set([
-  "ExecutionSummary.success",
-  "WorkDoneProgressBegin.cancellable",
-  "WorkDoneProgressReport.cancellable",
-  "SemanticTokensClientCapabilities.augmentsSyntaxTokens",
-]);

@@ -7,12 +7,13 @@ import fc from "fast-check";
 
 import {
   isBase,
+  TRI_STATE_BOOLEANS,
   type BaseTypes,
   type Property,
   type Schema,
   type Type,
 } from "../../../../scripts/lsp/metamodel.ts";
-import { deviations, TRI_STATE_BOOLEANS } from "./known_deviations.ts";
+import { deviations } from "./known_deviations.ts";
 
 // Structures deeper than this leave their optional properties out, and
 // arrays and maps are empty, which ends every recursion the spec has.
@@ -205,56 +206,14 @@ export class ProtocolValues {
     return fc.record(model, { requiredKeys });
   }
 
-  /**
-   * Whether `t` is `T | null`, which protocol.h holds in a std::optional
-   * (nullable<T>).
-   */
-  isNullable(t: Type): boolean {
-    if (t.kind === "reference") {
-      // LSPAny's alternatives include null, but protocol.h holds it in a
-      // codec::dyn::Value.
-      const alias = this.#schema.aliases.get(t.name);
-      return (
-        alias !== undefined &&
-        t.name !== "LSPAny" &&
-        this.isNullable(alias.type)
-      );
-    }
-    return t.kind === "or" && t.items.some((item) => isBase(item, "null"));
-  }
-
-  /** Whether `t` has null among its values. */
-  admitsNull(t: Type): boolean {
-    switch (t.kind) {
-      case "base":
-        return t.name === "null";
-      case "or":
-        return t.items.some((item) => this.admitsNull(item));
-      case "reference": {
-        if (t.name === "LSPAny") {
-          return true;
-        }
-        const alias = this.#schema.aliases.get(t.name);
-        return alias !== undefined && this.admitsNull(alias.type);
-      }
-      default:
-        return false;
-    }
-  }
-
   #property(owner: string, prop: Property, depth: number): fc.Arbitrary<Json> {
-    if (prop.optional && isBase(prop.type, "boolean")) {
-      const differs = TRI_STATE_BOOLEANS.has(`${owner}.${prop.name}`)
-        ? !deviations.triStateFalse
-        : !deviations.falseOptionalBoolean;
-      return differs ? fc.boolean() : fc.constant(true);
-    }
     if (
       prop.optional &&
-      this.admitsNull(prop.type) &&
-      deviations.nullOptionalNullable
+      isBase(prop.type, "boolean") &&
+      !TRI_STATE_BOOLEANS.has(`${owner}.${prop.name}`) &&
+      deviations.falseOptionalBoolean
     ) {
-      return this.of(prop.type, depth).filter((value) => value !== null);
+      return fc.constant(true);
     }
     return this.of(prop.type, depth);
   }
@@ -290,17 +249,16 @@ export class ProtocolValues {
     }
     return properties.every((prop) => {
       if (!(prop.name in value)) {
-        return (
-          prop.optional === true ||
-          (this.isNullable(prop.type) &&
-            deviations.absentRequiredNullable !== undefined)
-        );
+        return prop.optional === true;
       }
       const member = value[prop.name];
+      const readsAbsentAsFalse =
+        isBase(prop.type, "boolean") &&
+        !TRI_STATE_BOOLEANS.has(`${name}.${prop.name}`);
       if (
         member === null &&
         prop.optional &&
-        !isBase(prop.type, "boolean") &&
+        !readsAbsentAsFalse &&
         deviations.nullOptional
       ) {
         return true;

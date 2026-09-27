@@ -191,6 +191,18 @@ export async function loadMetaModel(): Promise<MetaModel> {
   return JSON.parse(new TextDecoder().decode(bytes)) as MetaModel;
 }
 
+/**
+ * The optional booleans for which absent does not mean false. protocol.h
+ * keeps these three states (`optional<boolean>`), and writes every other
+ * optional boolean's false as absent (`optional_bool`).
+ */
+export const TRI_STATE_BOOLEANS = new Set([
+  "ExecutionSummary.success",
+  "WorkDoneProgressBegin.cancellable",
+  "WorkDoneProgressReport.cancellable",
+  "SemanticTokensClientCapabilities.augmentsSyntaxTokens",
+]);
+
 /** The metaModel uses a construct the tools here do not handle. */
 export class SchemaError extends Error {
   override name = "SchemaError";
