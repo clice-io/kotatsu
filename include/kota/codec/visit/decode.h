@@ -4,6 +4,7 @@
 #include <bit>
 #include <concepts>
 #include <cstddef>
+#include <expected>
 #include <format>
 #include <memory>
 #include <optional>
@@ -943,5 +944,21 @@ bool decode_struct_fields(Vis& vis, T& out) {
         return (detail::decode_one_field<Config, Is>(vis, out) && ...);
     }(std::make_index_sequence<N>{});
 }
+
+namespace detail {
+
+/// A backend's decode entry point, bar building its visitor: decode_value
+/// under default_config<Config> inside a fresh error context.
+template <typename Config, typename Vis, typename T>
+std::expected<void, rich_error> run_decode(Vis& vis, T& out) {
+    rich_error err;
+    scoped_context<rich_error> guard(err);
+    if(!decode_value<default_config<Config>>(vis, out)) {
+        return std::unexpected(std::move(err));
+    }
+    return {};
+}
+
+}  // namespace detail
 
 }  // namespace kota::codec

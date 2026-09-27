@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include "kota/codec/visit/context.h"
 
 #if __has_include(<simdjson.h>)
@@ -56,5 +58,14 @@ using padded_string = simdjson::padded_string;
 constexpr inline auto success = simdjson::SUCCESS;
 
 using error = rich_error;
+
+namespace detail {
+
+/// simdjson's message for an error code, as a rich_error.
+inline rich_error simdjson_error(simdjson::error_code ec) {
+    return rich_error(std::string(simdjson::error_message(ec)));
+}
+
+}  // namespace detail
 
 }  // namespace kota::codec::json

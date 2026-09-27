@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <format>
 #include <ranges>
 #include <string_view>
@@ -408,5 +409,21 @@ bool encode_struct_fields(Vis& vis, const T& value) {
         return (detail::encode_one_field<Config, Is>(vis, value) && ...);
     }(std::make_index_sequence<N>{});
 }
+
+namespace detail {
+
+/// A backend's encode entry point, bar building its visitor and output:
+/// encode_value under default_config<Config> inside a fresh error context.
+template <typename Config, typename Vis, typename T>
+std::expected<void, rich_error> run_encode(Vis& vis, const T& value) {
+    rich_error err;
+    scoped_context<rich_error> guard(err);
+    if(!encode_value<default_config<Config>>(vis, value)) {
+        return std::unexpected(std::move(err));
+    }
+    return {};
+}
+
+}  // namespace detail
 
 }  // namespace kota::codec
