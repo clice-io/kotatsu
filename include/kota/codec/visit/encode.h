@@ -263,9 +263,14 @@ bool encode_value(Vis& vis, const T& value) {
             std::string_view text(value, std::extent_v<T>);
             return vis.visit_str(text.substr(0, text.find('\0')));
         } else if constexpr(meta::str_like<T> && std::is_pointer_v<T>) {
-            // A null C string holds no text at all: it writes null.
+            // A null C string holds no text at all: it writes null, where
+            // the visitor can write one; a map key writer cannot.
             if(value == nullptr) {
-                return vis.visit_null();
+                if constexpr(requires { vis.visit_null(); }) {
+                    return vis.visit_null();
+                } else {
+                    return scoped_context<rich_error>::fail(rich_error("null C string map key"));
+                }
             }
             return vis.visit_str(value);
         } else if constexpr(meta::str_like<T>) {

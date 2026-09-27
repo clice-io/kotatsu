@@ -65,6 +65,18 @@ void values(const Kit<B>& kit) {
         "null_c_string_encodes_as_null",
         [] { return Field<const char*>{nullptr}; },
         [] { return Field<std::nullptr_t>{nullptr}; });
+    encodes_as(
+        kit,
+        "c_string_map_key_encodes_as_string_key",
+        [] { return Field<std::map<const char*, int>>{{{"k", 1}}}; },
+        [] { return Field<std::map<std::string, int>>{{{"k", 1}}}; });
+    if constexpr(B::caps.self_describing) {
+        // A keyed document's map key is text, with no null to write.
+        write_fails(kit,
+                    "null_c_string_map_key_fails",
+                    [] { return Field<std::map<const char*, int>>{{{nullptr, 1}}}; },
+                    {.message = "null C string map key", .path = "value[0]"});
+    }
     roundtrip(kit, "enum_roundtrip", [] { return SignedEnum::neg; });
     roundtrip(kit, "unsigned_enum_roundtrip", [] { return UInt8Enum::c; });
     roundtrip(kit, "char_enum_roundtrip", [] { return Letter::z; });
