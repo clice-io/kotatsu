@@ -77,6 +77,12 @@ struct NullableFields {
     std::weak_ptr<std::int32_t> watched;
 };
 
+/// A tagged variant whose type has a repr, in a table.
+struct HoldsTaggedStamp {
+    test::TaggedStampOrNote stamp;
+    std::int32_t after = 0;
+};
+
 struct Choices {
     std::variant<std::int32_t, std::string> scalar;
     std::variant<std::monostate, test::Address> table;
@@ -262,6 +268,31 @@ ZEST_CASE(variant_view_reads_the_held_alternative) {
     EXPECT(list[0].index() == 0U);
     EXPECT(list[0].get<0>() == 7);
     EXPECT(list[1].get<1>() == "seven");
+}
+
+ZEST_CASE(tagged_variant_with_a_repr_reads_as_the_variant) {
+    // The tag wins over the variant type's repr (a text): the field is a
+    // variant table, which the verifier and the view read as one.
+    auto stamped = fbs::to_bytes(HoldsTaggedStamp{
+        .stamp = test::TaggedStampOrNote{test::Stamp{.n = 4}},
+        .after = 9,
+    });
+    ASSERT(stamped);
+    auto root = table_view<HoldsTaggedStamp>::from_bytes(*stamped);
+    ASSERT(root.valid());
+    auto stamp = root[&HoldsTaggedStamp::stamp];
+    EXPECT(stamp.index() == 0U);
+    EXPECT(stamp.get<0>().n == 4);
+    EXPECT(root[&HoldsTaggedStamp::after] == 9);
+
+    auto noted = fbs::to_bytes(HoldsTaggedStamp{
+        .stamp = test::TaggedStampOrNote{std::string("memo")},
+        .after = 1,
+    });
+    ASSERT(noted);
+    auto note = table_view<HoldsTaggedStamp>::from_bytes(*noted)[&HoldsTaggedStamp::stamp];
+    EXPECT(note.index() == 1U);
+    EXPECT(note.get<1>() == "memo");
 }
 
 ZEST_CASE(variant_view_reads_a_monostate_alternative) {

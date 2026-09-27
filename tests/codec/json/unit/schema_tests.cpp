@@ -3123,6 +3123,14 @@ ZEST_CASE(schema_follows_tagging_in_repr_type) {
     EXPECT(zest::contains(*schema, R"("status":{"const":"err"})"));
 }
 
+ZEST_CASE(schema_of_tagged_variant_ignores_its_types_repr) {
+    // The tag wins over the variant type's repr, as in the encoder.
+    auto schema = json::schema_string<test::Field<test::TaggedStampOrNote>>();
+    ASSERT(schema);
+    EXPECT(zest::contains(*schema, R"("t":{"const":"stamp"})"));
+    EXPECT(zest::contains(*schema, R"("t":{"const":"note"})"));
+}
+
 ZEST_CASE(schema_follows_outer_policy_on_repr_alternatives) {
     auto schema =
         json::schema_string<test::Field<annotate<test::StrictCamelTag>::type<test::LoadResult>>>();

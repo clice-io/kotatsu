@@ -280,26 +280,29 @@ struct resolved_repr {
 
 /// Precedence mirrors the codec dispatch (encode_with_attrs /
 /// decode_with_attrs): behavior::with wins over behavior::as, which wins over
-/// behavior::enum_string, which wins over a tagging spec on a std::variant:
-/// a tagged variant is read and written as that variant, whatever repr its
-/// type has. The type's repr applies only when none of these does, and
-/// within it the config's format tag selects
-/// a format-scoped specialization over the format-agnostic one — the same
-/// choice the dispatch makes from the visitor's format tag. Every chosen
-/// representation re-enters the resolver, so chained reprs and annotations
-/// nested inside representation types resolve to the final type, matching the
-/// codec's recursive re-dispatch on the converted value. The rename_all /
-/// deny_unknown_fields of annotated nodes merge into the carried config
-/// through node_config_t, the same alias the codec dispatch uses, so the
-/// resulting type_info describes the
-/// documents the codec actually reads and writes. A tagged variant keeps its
-/// tagging spec attr; the spec's own rename_all/deny stay inert for the
-/// alternatives, exactly as in the codec, where the tagging branch is taken
-/// before the config merge.
+/// behavior::enum_string, which wins over a tagging spec on a std::variant (a
+/// tagged variant is read and written as that variant, whatever repr its
+/// type has). The type's repr applies only when none of these does, and the
+/// config's format tag selects a format-scoped specialization over the
+/// format-agnostic one, as the dispatch does from the visitor's format tag.
+/// Every chosen representation re-enters the resolver, so chained reprs and
+/// annotations nested inside representation types resolve to the final type,
+/// matching the codec's recursive re-dispatch on the converted value. The
+/// rename_all / deny_unknown_fields of annotated nodes merge into the carried
+/// config through node_config_t, the alias the dispatch uses, so the
+/// resulting type_info describes the documents the codec reads and writes. A
+/// tagged variant keeps its tagging spec attr; the spec's own rename_all /
+/// deny stay inert for the alternatives, as in the codec, where the tagging
+/// branch is taken before the config merge.
 template <typename T, typename Config = default_config>
-constexpr auto resolve_repr() {
-    using raw_t = typename unwrap_annotated<T>::raw_type;
-    using attrs_t = typename unwrap_annotated<T>::attrs;
+constexpr auto resolve_repr();
+
+/// resolve_repr over a type given as its raw type and attrs, as a struct
+/// field's slot holds it.
+template <typename Raw, typename Attrs, typename Config = default_config>
+constexpr auto resolve_node() {
+    using raw_t = Raw;
+    using attrs_t = Attrs;
 
     if constexpr(tuple_has_spec_v<attrs_t, behavior::with>) {
         using adapter = typename tuple_find_spec_t<attrs_t, behavior::with>::adapter;
@@ -320,6 +323,13 @@ constexpr auto resolve_repr() {
     } else {
         return resolved_repr<raw_t, std::tuple<>, node_config_t<Config, raw_t, attrs_t>>{};
     }
+}
+
+template <typename T, typename Config>
+constexpr auto resolve_repr() {
+    return resolve_node<typename unwrap_annotated<T>::raw_type,
+                        typename unwrap_annotated<T>::attrs,
+                        Config>();
 }
 
 template <typename T, typename AttrsT, typename Config, type_kind Kind = kind_of<T>()>

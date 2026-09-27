@@ -473,27 +473,18 @@ bool verify_field(verifier_t& v, const Table* tbl, slot_id slot);
 template <typename T>
 bool verify_table(verifier_t& v, const Table* tbl);
 
-/// Verify one struct field slot: behavior attrs re-route the encoded type
-/// exactly as meta's repr resolver does (with > as > enum_string > variant
-/// tagging, which keeps the variant itself), then the resolved view type
-/// classifies the slot.
+/// Verify one struct field slot as the type meta's resolver gives its raw
+/// type and attrs, the type the dispatch wrote. A tagged variant is that
+/// variant itself; anything else still has its nullable wrappers peeled.
 template <typename Slot>
 bool verify_slot(verifier_t& v, const Table* tbl, slot_id slot) {
-    using raw_t = std::remove_cv_t<typename Slot::raw_type>;
-    using attrs_t = typename Slot::attrs;
-
-    if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
-        using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
-        return verify_field<deep_clean_t<meta::declared_repr_t<adapter>>>(v, tbl, slot);
-    } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
-        using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
-        return verify_field<deep_clean_t<target>>(v, tbl, slot);
-    } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::enum_string>) {
-        return verify_field<std::string_view>(v, tbl, slot);
-    } else if constexpr(meta::struct_spec_of<attrs_t>.tagging != meta::tag_mode::none) {
-        return verify_field<raw_t>(v, tbl, slot);
+    using resolved = decltype(meta::detail::resolve_node<std::remove_cv_t<typename Slot::raw_type>,
+                                                         typename Slot::attrs,
+                                                         meta::format_config<format>>());
+    if constexpr(std::is_same_v<typename resolved::tag_attrs, std::tuple<>>) {
+        return verify_field<deep_clean_t<typename resolved::type>>(v, tbl, slot);
     } else {
-        return verify_field<deep_clean_t<raw_t>>(v, tbl, slot);
+        return verify_field<typename resolved::type>(v, tbl, slot);
     }
 }
 
