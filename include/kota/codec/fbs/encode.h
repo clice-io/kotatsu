@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "kota/support/expected_try.h"
 #include "kota/support/ranges.h"
 #include "kota/meta/repr.h"
 #include "kota/meta/type_kind.h"
@@ -919,15 +920,9 @@ auto to_bytes(const T& value, std::optional<std::size_t> initial_capacity = std:
     -> std::expected<std::vector<std::uint8_t>, rich_error> {
     detail::assert_config_layout_stable<Config>();
 
-    rich_error err;
-    scoped_context<rich_error> guard(err);
-
     builder_t fbb(initial_capacity.value_or(1024));
     encode_detail::RootVisitor vis{.fbb = fbb};
-
-    if(!encode_value<default_config<Config>>(vis, value)) {
-        return std::unexpected(std::move(err));
-    }
+    KOTA_EXPECTED_TRY(codec::detail::run_encode<Config>(vis, value));
 
     fbb.Finish(vis.root_off, detail::buffer_identifier);
     const auto* begin = fbb.GetBufferPointer();

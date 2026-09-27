@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "kota/support/expected_try.h"
 #include "kota/codec/fbs/proxy.h"
 #include "kota/codec/fbs/type.h"
 #include "kota/codec/visit/config.h"
@@ -546,43 +547,27 @@ auto from_bytes(std::span<const std::byte> buf, T& out) -> std::expected<void, r
         return std::unexpected(rich_error("buffer verification failed: root table"));
     }
 
-    rich_error err;
-    scoped_context<rich_error> guard(err);
-
     decode_detail::RootReader vis(root, &verifier);
-    if(!decode_value<default_config<Config>>(vis, out)) {
-        return std::unexpected(std::move(err));
-    }
-    return {};
+    return codec::detail::run_decode<Config>(vis, out);
 }
 
 template <typename Config = void, typename T>
 auto from_bytes(std::span<const std::uint8_t> buf, T& out) -> std::expected<void, rich_error> {
-    auto bytes =
-        std::span<const std::byte>(reinterpret_cast<const std::byte*>(buf.data()), buf.size());
-    return from_bytes<Config>(bytes, out);
-}
-
-template <typename T, typename Config = void>
-    requires std::default_initializable<T>
-auto from_bytes(std::span<const std::uint8_t> buf) -> std::expected<T, rich_error> {
-    T value{};
-    auto result = from_bytes<Config>(buf, value);
-    if(!result) {
-        return std::unexpected(result.error());
-    }
-    return value;
+    return from_bytes<Config>(std::as_bytes(buf), out);
 }
 
 template <typename T, typename Config = void>
     requires std::default_initializable<T>
 auto from_bytes(std::span<const std::byte> buf) -> std::expected<T, rich_error> {
     T value{};
-    auto result = from_bytes<Config>(buf, value);
-    if(!result) {
-        return std::unexpected(result.error());
-    }
+    KOTA_EXPECTED_TRY(from_bytes<Config>(buf, value));
     return value;
+}
+
+template <typename T, typename Config = void>
+    requires std::default_initializable<T>
+auto from_bytes(std::span<const std::uint8_t> buf) -> std::expected<T, rich_error> {
+    return from_bytes<T, Config>(std::as_bytes(buf));
 }
 
 }  // namespace kota::codec::fbs
