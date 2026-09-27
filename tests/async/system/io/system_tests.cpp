@@ -128,15 +128,11 @@ ZEST_CASE(priority_is_read_and_set) {
 
 // Windows answers a pid it cannot open with ERROR_INVALID_PARAMETER.
 ZEST_CASE(priority_of_a_missing_pid_fails) {
-#ifdef _WIN32
-    const auto missing = error::invalid_argument;
-#else
-    const auto missing = error::no_such_process;
-#endif
+    // Windows reports the pid OpenProcess rejects as ESRCH too.
     auto read = sys::priority(missing_pid);
     ASSERT(read.has_error());
-    EXPECT(read.error() == missing);
-    EXPECT(sys::set_priority(0, missing_pid) == missing);
+    EXPECT(read.error() == error::no_such_process);
+    EXPECT(sys::set_priority(0, missing_pid) == error::no_such_process);
 }
 
 // Lowering a child's priority needs no privilege; Windows maps the value to

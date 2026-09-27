@@ -89,7 +89,14 @@
       "inherits": "base",
       "configurePreset": "asan-ubsan"
     },
-    { "name": "tsan", "inherits": "base", "configurePreset": "tsan" },
+    {
+      "name": "tsan",
+      "inherits": "base",
+      "configurePreset": "tsan",
+      "environment": {
+        "TSAN_OPTIONS": "suppressions=${sourceDir}/tests/tsan.supp"
+      }
+    },
     {
       "name": "no-exceptions",
       "inherits": "base",

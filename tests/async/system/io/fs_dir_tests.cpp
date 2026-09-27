@@ -82,11 +82,11 @@ ZEST_CASE(mkdtemp_makes_a_new_directory_each_time) {
     EXPECT(zest::starts_with(*first, dir.file("tmp-")));
 }
 
-ZEST_CASE(mkdtemp_without_a_template_fails) {
+ZEST_CASE(mkdtemp_in_a_missing_directory_fails) {
     test::TempDir dir;
-    auto [result] = run(fs::mkdtemp(dir.file("tmp"), loop));
+    auto [result] = run(fs::mkdtemp(dir.file("missing/tmpXXXXXX"), loop));
     ASSERT(result.has_error());
-    EXPECT(result.error() == error::invalid_argument);
+    EXPECT(result.error() == error::no_such_file_or_directory);
 }
 
 ZEST_CASE(scandir_lists_the_entries_with_their_kind) {

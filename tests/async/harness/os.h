@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <format>
@@ -96,7 +97,7 @@ inline process::options stdin_reader() {
 /// The exit status that run() reports for a process::wait(), if the wait
 /// ended with one.
 template <typename Waited>
-std::optional<int> exit_status_of(const Waited& waited) {
+std::optional<std::int64_t> exit_status_of(const Waited& waited) {
     if(!waited.has_value() || !waited->has_value()) {
         return std::nullopt;
     }
