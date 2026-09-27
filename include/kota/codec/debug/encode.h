@@ -146,12 +146,6 @@ struct ValueWriter {
 
     template <typename T>
     bool visit_str(const T& v) {
-        if constexpr(std::is_pointer_v<T>) {
-            if(v == nullptr) {
-                fmt.out += "null";
-                return true;
-            }
-        }
         fmt.write_escape_string(std::string_view(v));
         return true;
     }

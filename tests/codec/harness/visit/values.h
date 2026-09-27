@@ -54,6 +54,17 @@ void values(const Kit<B>& kit) {
     // in two bytes of UTF-8 above 0x7F.
     roundtrip(kit, "char_above_ascii_roundtrip", [] { return static_cast<char>(0x80); });
     roundtrip(kit, "string_roundtrip", [] { return std::string("hello"); });
+    // A C string writes its text; a null one has no text and writes null.
+    encodes_as(
+        kit,
+        "c_string_encodes_as_string",
+        [] { return Field<const char*>{"text"}; },
+        [] { return Field<std::string>{"text"}; });
+    encodes_as(
+        kit,
+        "null_c_string_encodes_as_null",
+        [] { return Field<const char*>{nullptr}; },
+        [] { return Field<std::nullptr_t>{nullptr}; });
     roundtrip(kit, "enum_roundtrip", [] { return SignedEnum::neg; });
     roundtrip(kit, "unsigned_enum_roundtrip", [] { return UInt8Enum::c; });
     roundtrip(kit, "char_enum_roundtrip", [] { return Letter::z; });

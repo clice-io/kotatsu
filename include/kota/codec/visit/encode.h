@@ -241,6 +241,12 @@ bool encode_value(Vis& vis, const T& value) {
             // stops at the array's end.
             std::string_view text(value, std::extent_v<T>);
             return vis.visit_str(text.substr(0, text.find('\0')));
+        } else if constexpr(meta::str_like<T> && std::is_pointer_v<T>) {
+            // A null C string holds no text at all: it writes null.
+            if(value == nullptr) {
+                return vis.visit_null();
+            }
+            return vis.visit_str(value);
         } else if constexpr(meta::str_like<T>) {
             return vis.visit_str(value);
         } else if constexpr(kind == character) {
