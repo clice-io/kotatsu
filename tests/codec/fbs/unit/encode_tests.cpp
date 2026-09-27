@@ -447,9 +447,13 @@ struct LabelledReading {
     std::string unit;
 };
 
+using NumberedReading = std::tuple<int, LabelledReading>;
+
 struct ReadingLog {
     std::vector<LabelledReading> readings;
     std::map<std::string, LabelledReading> by_name;
+    NumberedReading numbered;
+    std::vector<NumberedReading> numbered_list;
 };
 
 /// Inline: its doubles travel as the struct's image.
@@ -1052,18 +1056,37 @@ ZEST_CASE(nested_table_encode_error_fails) {
     // null offset for the builder to trip over.
     const LabelledReading bad{.value = std::numeric_limits<double>::quiet_NaN(), .unit = "c"};
 
-    auto in_element = fbs::to_bytes<test::NanErrorConfig>(ReadingLog{
-        .readings = {{}, bad},
-        .by_name = {}
-    });
+    ReadingLog element;
+    element.readings = {{}, bad};
+    auto in_element = fbs::to_bytes<test::NanErrorConfig>(element);
     ASSERT(!in_element);
     EXPECT(in_element.error().message == "NaN or Infinity is not allowed");
     EXPECT(in_element.error().format_path() == "readings[1].value");
 
-    auto in_map_value =
-        fbs::to_bytes<test::NanErrorConfig>(ReadingLog{.readings = {}, .by_name = {{"a", bad}}});
+    ReadingLog map_value;
+    map_value.by_name = {
+        {"a", bad}
+    };
+    auto in_map_value = fbs::to_bytes<test::NanErrorConfig>(map_value);
     ASSERT(!in_map_value);
     EXPECT(in_map_value.error().message == "NaN or Infinity is not allowed");
+
+    ReadingLog tuple_field;
+    tuple_field.numbered = {1, bad};
+    auto in_tuple_field = fbs::to_bytes<test::NanErrorConfig>(tuple_field);
+    ASSERT(!in_tuple_field);
+    EXPECT(in_tuple_field.error().message == "NaN or Infinity is not allowed");
+    EXPECT(in_tuple_field.error().format_path() == "numbered[1].value");
+
+    ReadingLog tuple_element;
+    tuple_element.numbered_list = {
+        NumberedReading{1, {} },
+        NumberedReading{2, bad}
+    };
+    auto in_tuple_element = fbs::to_bytes<test::NanErrorConfig>(tuple_element);
+    ASSERT(!in_tuple_element);
+    EXPECT(in_tuple_element.error().message == "NaN or Infinity is not allowed");
+    EXPECT(in_tuple_element.error().format_path() == "numbered_list[1][1].value");
 
     auto in_root_tuple =
         fbs::to_bytes<test::NanErrorConfig>(std::tuple<int, LabelledReading>{1, bad});

@@ -4,6 +4,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -44,6 +45,10 @@ struct Profile {
     test::SignedEnum sign;
     bool active;
     long double ratio;
+    char initial;
+    std::byte flag;
+    std::set<std::int32_t> tags;
+    std::vector<long double> samples;
 };
 
 auto make_profile() -> Profile {
@@ -56,6 +61,10 @@ auto make_profile() -> Profile {
         .sign = test::SignedEnum::neg,
         .active = true,
         .ratio = 2.5L,
+        .initial = 'k',
+        .flag = std::byte{0x5A},
+        .tags = {5, 9},
+        .samples = {1.5L, -2.25L},
     };
 }
 
@@ -126,6 +135,7 @@ struct Reprs {
     std::vector<test::Journal> journals;
     std::vector<test::Lamport> stamps;
     std::map<test::Relation, std::int32_t> by_relation;
+    std::map<std::string, test::Relation> relation_by_name;
     PackedVersion packed;
     std::optional<Decimal> maybe_decimal;
     meta::annotation<std::int32_t, meta::behavior::as<std::int64_t>> widened;
@@ -154,6 +164,15 @@ ZEST_CASE(table_view_reads_every_field_kind) {
     EXPECT(root[&Profile::sign] == test::SignedEnum::neg);
     EXPECT(root[&Profile::active]);
     EXPECT(root[&Profile::ratio] == 2.5L);
+    EXPECT(root[&Profile::initial] == 'k');
+    EXPECT(root[&Profile::flag] == std::byte{0x5A});
+    auto tags = root[&Profile::tags];
+    ASSERT(tags.size() == 2U);
+    EXPECT(tags[1] == 9);
+    // A long double element is a double cell, read back as a long double.
+    auto samples = root[&Profile::samples];
+    ASSERT(samples.size() == 2U);
+    EXPECT(samples[1] == -2.25L);
 }
 
 ZEST_CASE(invalid_view_reads_defaults) {
@@ -347,6 +366,11 @@ ZEST_CASE(map_view_looks_up_string_keys) {
     EXPECT(!by_name.find(std::string("missing")));
     EXPECT(by_name.contains(std::string("alpha")));
     EXPECT(!by_name.contains(std::string("missing")));
+    // A table value reads as a nested view; a missing one as an invalid view.
+    auto places = table_view<MapFields>::from_bytes(*bytes)[&MapFields::places];
+    ASSERT(places.valid());
+    EXPECT(places["work"][&test::Address::city] == "la");
+    EXPECT(!places["nowhere"].valid());
 }
 
 ZEST_CASE(map_view_looks_up_transparently) {
@@ -443,6 +467,7 @@ ZEST_CASE(views_read_what_reprs_and_attrs_carry) {
         .journals = {{.page = 3}, {.page = 9}},
         .stamps = {{.tick = 7}, {.tick = 0}},
         .by_relation = {{test::Relation::defines, 10}, {test::Relation::references, 20}},
+        .relation_by_name = {{"a", test::Relation::declares}, {"b", test::Relation::references}},
         .packed = {{.major = 3, .minor = 14}},
         .maybe_decimal = Decimal{12},
         .widened = 1234,
@@ -460,6 +485,7 @@ ZEST_CASE(views_read_what_reprs_and_attrs_carry) {
     EXPECT(root[&Reprs::stamps][0] == 7U);
     EXPECT(root[&Reprs::stamps][1] == 0U);
     EXPECT(root[&Reprs::by_relation][102U] == 20);
+    EXPECT(root[&Reprs::relation_by_name]["b"] == 102U);
     EXPECT(root[&Reprs::packed] == 3014U);
     EXPECT(root[&Reprs::maybe_decimal] == "12");
     EXPECT(root[&Reprs::widened] == 1234);

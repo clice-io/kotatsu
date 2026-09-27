@@ -209,6 +209,10 @@ struct Node {
     std::unique_ptr<Node> next;
 };
 
+struct MaybeAddress {
+    std::variant<std::monostate, test::Address> maybe;
+};
+
 auto make_chain(std::size_t depth) -> Node {
     Node head{.value = 0, .next = nullptr};
     Node* tail = &head;
@@ -447,6 +451,32 @@ ZEST_CASE(inline_struct_bool_byte_other_than_zero_or_one_fails) {
     auto view = table_view<WithBoolStructs>::from_bytes(flipped);
     ASSERT(view.valid());
     EXPECT(view[&WithBoolStructs::items][0].ready);
+}
+
+ZEST_CASE(monostate_payload_written_as_an_empty_table_reads) {
+    // The encoder once wrote a variant's monostate payload as an empty table
+    // at the alternative's slot; it now leaves the slot absent. A buffer
+    // written the old way still reads, eagerly and through the views.
+    ::flatbuffers::FlatBufferBuilder builder;
+    auto empty = builder.EndTable(builder.StartTable());
+    auto choice_start = builder.StartTable();
+    builder.AddElement<std::uint32_t>(4, 0);
+    builder.AddOffset(6, ::flatbuffers::Offset<void>(empty));
+    auto choice = builder.EndTable(choice_start);
+    auto root_start = builder.StartTable();
+    builder.AddOffset(4, ::flatbuffers::Offset<void>(choice));
+    builder.Finish(::flatbuffers::Offset<fbs::Table>(builder.EndTable(root_start)), "EVTO");
+    const std::span<const std::uint8_t> bytes(builder.GetBufferPointer(), builder.GetSize());
+
+    // Decoded over the other alternative, which the monostate replaces.
+    MaybeAddress decoded{
+        .maybe = test::Address{.city = "x", .zip = 1}
+    };
+    ASSERT(fbs::from_bytes(bytes, decoded));
+    EXPECT(decoded.maybe.index() == 0U);
+    auto root = table_view<MaybeAddress>::from_bytes(bytes);
+    ASSERT(root.valid());
+    EXPECT(root[&MaybeAddress::maybe].index() == 0U);
 }
 
 ZEST_CASE(nesting_deeper_than_64_tables_fails) {
