@@ -1,20 +1,18 @@
 #pragma once
 
+#include <coroutine>
 #include <memory>
 #include <source_location>
 #include <tuple>
 #include <utility>
 
 #include "kota/support/functional.h"
+#include "kota/async/runtime/node.h"
 
 struct uv_loop_s;
 using uv_loop_t = uv_loop_s;
 
 namespace kota {
-
-class async_node;
-class task_frame;
-class wait_node;
 
 /// A thread-safe relay for posting callbacks to an event loop.
 ///
@@ -103,17 +101,9 @@ public:
     /// Opaque implementation detail. Defined in loop.cpp.
     struct Self;
 
-    /// Internal accessor for the implementation struct.
-    Self* operator->() {
-        return self.get();
-    }
-
-    friend class async_node;
-
-public:
-    operator uv_loop_t&() noexcept;
-
-    operator const uv_loop_t&() const noexcept;
+    /// The libuv loop underneath, for code that runs libuv handles of its
+    /// own on this loop. Its `data` belongs to the event_loop.
+    uv_loop_t* native_handle() noexcept;
 
     int run();
 
@@ -142,6 +132,7 @@ public:
     void schedule(Task&& task, std::source_location location = std::source_location::current());
 
 private:
+    friend class async_node;
     friend class wait_node;
 
     void schedule(task_frame& root);
@@ -157,6 +148,44 @@ private:
 
     std::unique_ptr<Self> self;
 };
+
+/// Awaitable returned by yield(): suspends and resumes no earlier than the
+/// next event-loop iteration, strictly after every callback, deferred resume
+/// and scheduled task that existed when it was enqueued — regardless of
+/// which callback phase (timer, idle, poll, check) performed the enqueue.
+///
+/// This is the primitive for "let the current cascade settle, then decide"
+/// patterns (debounced cancellation, coalesced re-checks). Unlike sleep(0) it
+/// allocates no timer and does not depend on libuv timer-phase ordering, and
+/// unlike the internal deferred-resume queue it never resumes within the
+/// current drain cycle.
+struct yield_awaiter : io_op {
+    explicit yield_awaiter(event_loop& loop) noexcept;
+
+    bool await_ready() const noexcept {
+        return false;
+    }
+
+    template <typename Promise>
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<Promise> h,
+                      std::source_location location = std::source_location::current()) noexcept {
+        return suspend(h.promise(), location);
+    }
+
+    void await_resume() const noexcept {}
+
+private:
+    /// Enqueues on the loop, then attaches. Defined in loop.cpp.
+    std::coroutine_handle<> suspend(task_frame& parent_node, std::source_location loc) noexcept;
+
+    event_loop* loop = nullptr;
+};
+
+/// Suspends until the next event-loop iteration.
+inline yield_awaiter yield(event_loop& loop = event_loop::current()) {
+    return yield_awaiter(loop);
+}
 
 /// Convenience: creates a loop, schedules all tasks, runs it until it has no
 /// work left and returns what each task ended with: its value, its error, or

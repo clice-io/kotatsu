@@ -1,4 +1,5 @@
 #include <atomic>
+#include <cstddef>
 #include <semaphore>
 #include <thread>
 #include <utility>
@@ -57,33 +58,38 @@ ZEST_CASE(cancel_hook_stays_unused_when_the_work_completes) {
 }
 
 // With every pool thread busy the work waits in the queue; cancelling it
-// there dequeues it, so it never runs and the hook is not called.
+// there dequeues it, so it never runs and the hook is not called. Once the
+// pool is busy, the work is queued first and the trigger then ends, which
+// makes when_any cancel the work.
 ZEST_CASE(cancel_while_queued_drops_the_work) {
     test::BusyPool pool;
     event busy;
     std::atomic<bool> ran = false;
     bool hook_ran = false;
-    auto target = [&]() -> task<void, error> {
+    auto target = [&]() -> task<> {
         co_await busy.wait();
-        co_await queue([&] { ran = true; }, [&] { hook_ran = true; }).or_fail();
+        co_await queue([&] { ran = true; }, [&] { hook_ran = true; });
     };
-    auto work = target();
-    auto cancel_it = [&]() -> task<> {
+    auto trigger = [&]() -> task<> {
         co_await busy.wait();
-        work.cancel();
+    };
+    auto cancel_queued = [&]() -> task<std::size_t> {
+        auto first = co_await when_any(target(), trigger());
         pool.release();
+        co_return first.index();
     };
 
-    auto [held, cancelled, driver] = run(pool.hold(busy), work, cancel_it());
+    auto [held, raced] = run(pool.hold(busy), cancel_queued());
     EXPECT(held.has_value());
-    EXPECT(cancelled.is_cancelled());
+    ASSERT(raced.has_value());
+    EXPECT(*raced == 1U);
     EXPECT(!ran.load());
     EXPECT(!hook_ran);
 }
 
 // Running work cannot be dequeued: the hook, run on the loop thread, is how
 // it learns to return early, and the task ends cancelled only once the work
-// has returned.
+// has returned, which is when when_any returns.
 ZEST_CASE(cancel_while_running_calls_the_hook) {
     const auto loop_thread = std::this_thread::get_id();
     event started;
@@ -91,32 +97,25 @@ ZEST_CASE(cancel_while_running_calls_the_hook) {
     std::binary_semaphore stop{0};
     std::atomic<bool> returned = false;
     bool hook_on_loop_thread = false;
-    auto work = queue(
-                    [&] {
-                        notify.send([&] { started.set(); });
-                        stop.acquire();
-                        returned = true;
-                        return 1;
-                    },
-                    [&] {
-                        hook_on_loop_thread = std::this_thread::get_id() == loop_thread;
-                        stop.release();
-                    },
-                    loop)
-                    .catch_cancel();
-    auto settled = [&]() -> task<std::pair<bool, bool>> {
-        auto result = co_await work;
-        co_return std::pair{result.is_cancelled(), returned.load()};
+    auto work = [&] {
+        notify.send([&] { started.set(); });
+        stop.acquire();
+        returned = true;
+        return 1;
     };
-    auto cancel_it = [&]() -> task<> {
-        co_await started.wait();
-        work.cancel();
+    auto hook = [&] {
+        hook_on_loop_thread = std::this_thread::get_id() == loop_thread;
+        stop.release();
+    };
+    auto cancel_running = [&]() -> task<std::pair<std::size_t, bool>> {
+        auto first = co_await when_any(queue(work, hook), started.wait());
+        co_return std::pair{first.index(), returned.load()};
     };
 
-    auto [seen, driver] = run(settled(), cancel_it());
+    auto [seen] = run(cancel_running());
     ASSERT(seen.has_value());
     // Cancelled, with the work already returned.
-    EXPECT(*seen == std::pair{true, true});
+    EXPECT(*seen == std::pair<std::size_t, bool>{1, true});
     EXPECT(hook_on_loop_thread);
 }
 

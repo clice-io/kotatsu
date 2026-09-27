@@ -1,5 +1,7 @@
 #include <csignal>
+#include <cstddef>
 #include <fcntl.h>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -13,10 +15,6 @@
 namespace kota {
 
 namespace {
-
-// What process::wait() sends a child when it is cancelled: SIGKILL, which
-// libuv also reads as 9 on Windows, where <csignal> has no SIGKILL.
-constexpr int kill_signal = 9;
 
 constexpr std::string_view by_platform([[maybe_unused]] std::string_view posix,
                                        [[maybe_unused]] std::string_view windows) {
@@ -55,8 +53,7 @@ ZEST_CASE(wait_reports_the_exit_code) {
     auto [succeeded, failed] = run(success->proc.wait(), failure->proc.wait());
     EXPECT(test::exit_status_of(succeeded) == 0);
     ASSERT(succeeded.has_value());
-    ASSERT(succeeded->has_value());
-    EXPECT((*succeeded)->term_signal == 0);
+    EXPECT(succeeded->term_signal == 0);
     EXPECT(test::exit_status_of(failed) == 3);
 }
 
@@ -186,15 +183,15 @@ ZEST_CASE(second_wait_while_one_is_pending_fails) {
 
     auto [first, second] = run(spawned->proc.wait(), spawned->proc.wait());
     EXPECT(test::exit_status_of(first) == 0);
-    ASSERT(second.has_value());
-    ASSERT(second->has_error());
-    EXPECT(second->error() == error::connection_already_in_progress);
+    ASSERT(second.has_error());
+    EXPECT(second.error() == error::resource_busy_or_locked);
 }
 
 ZEST_CASE(wait_after_the_exit_returns_the_same_status) {
     auto spawned = process::spawn(shell("exit 5"), loop);
     ASSERT(spawned.has_value());
-    auto wait_twice = [&]() -> task<std::pair<process::wait_result, process::wait_result>> {
+    using waited = result<process::exit_status>;
+    auto wait_twice = [&]() -> task<std::pair<waited, waited>> {
         auto first = co_await spawned->proc.wait();
         auto second = co_await spawned->proc.wait();
         co_return std::pair{std::move(first), std::move(second)};
@@ -216,8 +213,7 @@ ZEST_CASE(kill_ends_a_running_child) {
 
     auto [status] = run(spawned->proc.wait());
     ASSERT(status.has_value());
-    ASSERT(status->has_value());
-    EXPECT((*status)->term_signal == SIGTERM);
+    EXPECT(status->term_signal == SIGTERM);
 }
 
 ZEST_CASE(kill_with_an_invalid_signal_fails) {
@@ -240,22 +236,51 @@ ZEST_CASE(kill_after_the_exit_fails) {
     EXPECT(spawned->proc.kill(SIGTERM) == error::no_such_process);
 }
 
-// Cancelling wait() kills the child, and a later wait() reports that.
-ZEST_CASE(cancelled_wait_kills_the_child) {
+// Cancelling wait() only abandons the wait: the child runs on until its
+// stdin closes, and exits by itself, which a later wait() reports. The child
+// runs until then, so only the cancel can end the first wait.
+ZEST_CASE(cancelled_wait_leaves_the_child_running) {
     auto spawned = process::spawn(test::stdin_reader(), loop);
     ASSERT(spawned.has_value());
-    auto waiting = spawned->proc.wait();
-    auto cancel_it = [&]() -> task<> {
-        waiting.cancel();
+    auto race = [&]() -> task<std::size_t, error> {
+        auto first = co_await or_fail(co_await when_any(spawned->proc.wait(), yield()));
+        co_return first.index();
+    };
+
+    auto [cancelled] = run(race());
+    ASSERT(cancelled.has_value());
+    EXPECT(*cancelled == 1U);
+    spawned->stdin_pipe = pipe{};
+    auto [status] = run(spawned->proc.wait());
+    ASSERT(status.has_value());
+    EXPECT(status->status == 0);
+    EXPECT(status->term_signal == 0);
+}
+
+// The child is not killed and runs on until its stdin closes.
+ZEST_CASE(destroying_a_process_ends_its_wait) {
+    auto spawned = process::spawn(test::stdin_reader(), loop);
+    ASSERT(spawned.has_value());
+    std::optional<process> proc = std::move(spawned->proc);
+    auto destroy = [&]() -> task<> {
+        proc.reset();
+        spawned->stdin_pipe = pipe{};
         co_return;
     };
 
-    auto [cancelled, driver] = run(waiting, cancel_it());
-    EXPECT(cancelled.is_cancelled());
-    auto [status] = run(spawned->proc.wait());
-    ASSERT(status.has_value());
-    ASSERT(status->has_value());
-    EXPECT((*status)->term_signal == kill_signal);
+    auto [waited, destroyed] = run(proc->wait(), destroy());
+    ASSERT(waited.has_error());
+    EXPECT(waited.error() == error::operation_aborted);
+}
+
+ZEST_CASE(inert_process_fails) {
+    process inert;
+
+    auto [waited] = run(inert.wait());
+    ASSERT(waited.has_error());
+    EXPECT(waited.error() == error::invalid_argument);
+    EXPECT(inert.kill(SIGTERM) == error::invalid_argument);
+    EXPECT(inert.pid() == -1);
 }
 
 #ifndef _WIN32

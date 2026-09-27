@@ -1,5 +1,7 @@
 #include <array>
+#include <cerrno>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <fcntl.h>
 #include <filesystem>
@@ -302,7 +304,9 @@ ZEST_CASE(bad_descriptor_fails) {
 }
 
 // With every pool thread busy the request waits in the queue; cancelling it
-// there dequeues it, so the directory is never made.
+// there dequeues it, so the directory is never made. Once the pool is busy,
+// the request is queued first and the trigger then ends, which makes
+// when_any cancel the request.
 ZEST_CASE(cancel_while_queued_drops_the_request) {
     test::TempDir dir;
     test::BusyPool pool;
@@ -311,18 +315,55 @@ ZEST_CASE(cancel_while_queued_drops_the_request) {
         co_await busy.wait();
         co_await fs::mkdir(dir.file("never"), 0755).or_fail();
     };
-    auto request = target();
-    auto cancel_it = [&]() -> task<> {
+    auto trigger = [&]() -> task<> {
         co_await busy.wait();
-        request.cancel();
+    };
+    auto cancel_queued = [&]() -> task<std::size_t, error> {
+        auto first = co_await or_fail(co_await when_any(target(), trigger()));
         pool.release();
+        co_return first.index();
     };
 
-    auto [held, cancelled, driver] = run(pool.hold(busy), request, cancel_it());
+    auto [held, raced] = run(pool.hold(busy), cancel_queued());
     EXPECT(held.has_value());
-    EXPECT(cancelled.is_cancelled());
+    ASSERT(raced.has_value());
+    EXPECT(*raced == 1U);
     EXPECT(!std::filesystem::exists(dir.path / "never"));
 }
+
+#ifndef _WIN32
+// Opening a FIFO to read holds open() on its pool thread until a writer comes.
+// The writer's non-blocking open succeeds only once that reader waits, and
+// ends the race at once: the cancel comes too late to dequeue the open, which
+// then succeeds. The descriptor it made is closed rather than lost, so the
+// FIFO is left without a reader, which a second writer's open reports. The
+// writer polls, as nothing signals that the pool thread has started the open.
+ZEST_CASE(open_cancelled_too_late_closes_what_it_opened) {
+    test::TempDir dir;
+    const auto fifo = dir.file("fifo");
+    ASSERT(::mkfifo(fifo.c_str(), 0600) == 0);
+    int writer = -1;
+    auto open_writer = [&]() -> task<> {
+        while((writer = ::open(fifo.c_str(), O_WRONLY | O_NONBLOCK)) < 0) {
+            co_await sleep(1);
+        }
+    };
+    auto race = [&]() -> task<std::size_t, error> {
+        auto first = co_await or_fail(co_await when_any(fs::open(fifo, O_RDONLY), open_writer()));
+        co_return first.index();
+    };
+
+    auto [raced] = run(race());
+    ASSERT(raced.has_value());
+    EXPECT(*raced == 1U);
+    ASSERT(writer >= 0);
+    EXPECT(::close(writer) == 0);
+    const int again = ::open(fifo.c_str(), O_WRONLY | O_NONBLOCK);
+    const int reason = errno;
+    EXPECT(again == -1);
+    EXPECT(reason == ENXIO);
+}
+#endif
 
 #ifndef _WIN32
 

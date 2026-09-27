@@ -18,20 +18,6 @@ kota_add_git_dependency(
         UBSAN OFF
 )
 
-if(WIN32)
-    target_compile_definitions(uv_a PRIVATE _CRT_SECURE_NO_WARNINGS)
-endif()
-
-if(NOT MSVC AND TARGET uv_a)
-    target_compile_options(uv_a PRIVATE
-        "-Wno-unused-function"
-        "-Wno-unused-variable"
-        "-Wno-unused-but-set-variable"
-        "-Wno-deprecated-declarations"
-        "-Wno-missing-braces"
-    )
-endif()
-
 add_library(kota_async STATIC)
 add_library(kota::async ALIAS kota_async)
 
@@ -40,13 +26,13 @@ target_sources(kota_async PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/runtime/node.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/runtime/sync.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/vocab/error.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/vocab/ringbuffer.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/io/acceptor.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/io/console.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/io/fs.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/io/loop.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/io/process.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/io/request.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/io/ring_buffer.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/io/stream.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/io/system.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/io/udp.cpp"

@@ -11,7 +11,7 @@ std::string_view error::message() const {
         return "operation aborted";
     }
 
-    auto msg = uv::strerror(code);
+    std::string_view msg = ::uv_strerror(code);
     if(!msg.empty()) {
         return msg;
     }

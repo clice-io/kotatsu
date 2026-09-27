@@ -273,6 +273,41 @@ ZEST_CASE(large_payload_single_chunk) {
     EXPECT(result->size() == payload.size());
 }
 
+// A transport that reads and writes one stream drops it on close_output(),
+// which ends the read still waiting on it instead of leaving it hanging.
+ZEST_CASE(close_output_of_a_shared_stream_ends_a_pending_read) {
+    event_loop loop;
+
+    int fds[2] = {-1, -1};
+    ASSERT(create_pipe(fds) == 0);
+
+    auto input = pipe::open(fds[0], pipe::options{}, loop);
+    ASSERT(input);
+
+    StreamTransport transport(stream(std::move(*input)));
+
+    bool ended = false;
+    auto reader = [&]() -> task<std::optional<std::string>> {
+        auto message = co_await transport.read_message();
+        ended = true;
+        co_return message;
+    };
+    auto closer = [&]() -> task<> {
+        EXPECT(transport.close_output().has_value());
+        co_return;
+    };
+
+    auto read_task = reader();
+    auto close_task = closer();
+    loop.schedule(read_task);
+    loop.schedule(close_task);
+    loop.run();
+    EXPECT(close_fd(fds[1]) == 0);
+
+    ASSERT(ended);
+    EXPECT(!read_task.result().has_value());
+}
+
 };  // ZEST_SUITE(ipc_transport)
 
 }  // namespace

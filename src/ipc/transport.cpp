@@ -253,7 +253,6 @@ Result<void> StreamTransport::close_output() {
 }
 
 Result<void> StreamTransport::close() {
-    read_stream.stop();
     read_stream = stream{};
     if(!shared_stream) {
         write_stream = stream{};

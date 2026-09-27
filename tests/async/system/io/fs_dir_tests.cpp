@@ -1,5 +1,7 @@
 #include <algorithm>
+#include <cstddef>
 #include <filesystem>
+#include <iterator>
 #include <string>
 #include <utility>
 #include <vector>
@@ -24,6 +26,13 @@ Entries sorted(std::vector<fs::dirent> entries) {
     std::ranges::sort(out);
     return out;
 }
+
+#ifndef _WIN32
+/// How many descriptors this process has open; Windows has no list of them.
+std::ptrdiff_t open_descriptors() {
+    return std::ranges::distance(std::filesystem::directory_iterator("/dev/fd"));
+}
+#endif
 
 ZEST_SUITE(async_io_fs_dir, test::LoopFixture) {
 
@@ -109,7 +118,7 @@ ZEST_CASE(scandir_of_a_missing_directory_fails) {
     EXPECT(result.error() == error::no_such_file_or_directory);
 }
 
-ZEST_CASE(opendir_readdir_and_closedir_walk_a_directory) {
+ZEST_CASE(opendir_and_readdir_walk_a_directory) {
     test::TempDir dir;
     test::write_file(dir.path / "a.txt", "x");
     test::write_file(dir.path / "b.txt", "x");
@@ -123,7 +132,6 @@ ZEST_CASE(opendir_readdir_and_closedir_walk_a_directory) {
             }
             entries.insert(entries.end(), batch.begin(), batch.end());
         }
-        co_await fs::closedir(handle).or_fail();
         co_return entries;
     };
 
@@ -142,34 +150,42 @@ ZEST_CASE(opendir_of_a_missing_directory_fails) {
     EXPECT(result.error() == error::no_such_file_or_directory);
 }
 
-// closedir() leaves the handle empty; reading or closing it again fails.
-ZEST_CASE(closed_directory_handle_fails) {
+// A moved-from handle is as inert as a default-constructed one.
+ZEST_CASE(readdir_of_an_inert_handle_fails) {
     test::TempDir dir;
-
-    struct Seen {
-        bool valid_after_close = true;
-        error read_again;
-        error close_again;
-    };
-
-    auto close_twice = [&]() -> task<Seen, error> {
-        Seen seen;
+    auto read_moved_from = [&]() -> task<std::vector<fs::dirent>, error> {
         auto handle = co_await fs::opendir(dir.path.string()).or_fail();
-        co_await fs::closedir(handle).or_fail();
-        seen.valid_after_close = handle.valid();
-        auto again = co_await fs::readdir(handle);
-        seen.read_again = again.has_error() ? again.error() : error();
-        auto closed = co_await fs::closedir(handle);
-        seen.close_again = closed.has_error() ? closed.error() : error();
-        co_return seen;
+        auto taken = std::move(handle);
+        co_return co_await fs::readdir(handle);
+    };
+    fs::dir_handle inert;
+
+    auto [moved_from, never_opened] = run(read_moved_from(), fs::readdir(inert, loop));
+    ASSERT(moved_from.has_error());
+    EXPECT(moved_from.error() == error::invalid_argument);
+    ASSERT(never_opened.has_error());
+    EXPECT(never_opened.error() == error::invalid_argument);
+}
+
+// A handle closes its directory when it is dropped, or when another is moved
+// over it.
+#ifndef _WIN32
+ZEST_CASE(dir_handle_closes_its_directory_when_dropped) {
+    test::TempDir dir;
+    const auto before = open_descriptors();
+    auto open_two = [&]() -> task<std::ptrdiff_t, error> {
+        auto first = co_await fs::opendir(dir.path.string()).or_fail();
+        auto second = co_await fs::opendir(dir.path.string()).or_fail();
+        first = std::move(second);
+        co_return open_descriptors();
     };
 
-    auto [result] = run(close_twice());
-    ASSERT(result.has_value());
-    EXPECT(!result->valid_after_close);
-    EXPECT(result->read_again == error::invalid_argument);
-    EXPECT(result->close_again == error::invalid_argument);
+    auto [while_open] = run(open_two());
+    ASSERT(while_open.has_value());
+    EXPECT(*while_open == before + 1);
+    EXPECT(open_descriptors() == before);
 }
+#endif
 
 };  // ZEST_SUITE(async_io_fs_dir)
 
