@@ -1,7 +1,6 @@
 #pragma once
 
 #include <chrono>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -19,32 +18,20 @@ namespace kota::ipc {
 template <typename Codec>
 class Peer;
 
-namespace detail {
-
-template <typename Tag>
-constexpr bool has_tag_request_traits_v = requires {
-    typename protocol::RequestTraits<Tag>::Params;
-    typename protocol::RequestTraits<Tag>::Result;
-    protocol::RequestTraits<Tag>::method;
-};
-
-template <typename Tag>
-constexpr bool has_tag_notification_traits_v = requires {
-    typename protocol::NotificationTraits<Tag>::Params;
-    protocol::NotificationTraits<Tag>::method;
-};
-
-}  // namespace detail
-
+/// What a request handler knows of the request it answers.
 template <typename PeerT>
 struct basic_request_context {
-    std::string_view method{};
+    std::string_view method;
     protocol::RequestID id;
     PeerT& peer;
+    /// Fires when the remote cancels the request or the peer closes.
     cancellation_token cancellation;
 
-    basic_request_context(PeerT& peer, const protocol::RequestID& id, cancellation_token token) :
-        id(id), peer(peer), cancellation(std::move(token)) {}
+    basic_request_context(PeerT& peer,
+                          std::string_view method,
+                          const protocol::RequestID& id,
+                          cancellation_token token) :
+        method(method), id(id), peer(peer), cancellation(std::move(token)) {}
 
     bool cancelled() const noexcept {
         return cancellation.cancelled();
@@ -63,15 +50,27 @@ template <typename Params, typename ResultT = typename protocol::RequestTraits<P
 using RequestResult = task<ResultT, Error>;
 
 struct request_options {
+    /// Cancels the request: it fails with RequestCancelled and the remote is
+    /// sent $/cancelRequest.
     std::optional<cancellation_token> token = std::nullopt;
+    /// Cancels the request the same way once it has waited this long.
     std::optional<std::chrono::milliseconds> timeout = std::nullopt;
 };
 
+/// One end of a JSON-RPC connection over a transport, in a codec's
+/// encoding: it dispatches the requests and notifications it reads to their
+/// handlers, answers the requests, and sends requests and notifications of
+/// its own.
+///
+/// A handler returns RequestResult<Params> or, for a result it has encoded
+/// itself, task<codec::RawValue, Error>; a request whose result type is
+/// codec::RawValue gets the result as the codec wrote it.
 template <typename Codec>
 class Peer {
 public:
     using RequestContext = basic_request_context<Peer>;
 
+    /// `transport` must not be null.
     Peer(event_loop& loop, std::unique_ptr<Transport> transport, Codec codec = {});
 
     Peer(const Peer&) = delete;
@@ -99,6 +98,7 @@ public:
 
     void set_logger(LogCallback callback, LogLevel min_level = LogLevel::info);
 
+    /// Sends the request RequestTraits<Params> names.
     template <typename Params>
     RequestResult<Params> send_request(const Params& params, request_options opts = {});
 
@@ -107,56 +107,30 @@ public:
                                       const Params& params,
                                       request_options opts = {});
 
+    /// Sends the notification NotificationTraits<Params> names.
     template <typename Params>
     Result<void> send_notification(const Params& params);
 
     template <typename Params>
     Result<void> send_notification(std::string_view method, const Params& params);
 
+    /// Handles the requests RequestTraits of the callback's params names;
+    /// the callback is `(RequestContext&, const Params&) -> RequestResult<Params>`.
     template <typename Callback>
     void on_request(Callback&& callback);
 
     template <typename Callback>
     void on_request(std::string_view method, Callback&& callback);
 
+    /// Handles the notifications NotificationTraits of the callback's params
+    /// names; the callback is `(const Params&) -> void`.
     template <typename Callback>
     void on_notification(Callback&& callback);
 
     template <typename Callback>
     void on_notification(std::string_view method, Callback&& callback);
 
-    template <typename Tag>
-        requires detail::has_tag_request_traits_v<Tag>
-    auto send_request(const typename protocol::RequestTraits<Tag>::Params& params,
-                      request_options opts = {})
-        -> task<typename protocol::RequestTraits<Tag>::Result, Error>;
-
-    template <typename Tag>
-        requires detail::has_tag_notification_traits_v<Tag>
-    Result<void>
-        send_notification(const typename protocol::NotificationTraits<Tag>::Params& params);
-
-    template <typename Tag, typename Callback>
-    void on_request(Callback&& callback);
-
-    template <typename Tag, typename Callback>
-    void on_notification(Callback&& callback);
-
 private:
-    template <typename Params, typename Callback>
-    void bind_request_callback(std::string_view method, Callback&& callback);
-
-    template <typename Params, typename Callback>
-    void bind_notification_callback(std::string_view method, Callback&& callback);
-
-    using RequestCallback = std::function<
-        task<std::string, Error>(const protocol::RequestID&, std::string_view, cancellation_token)>;
-    using NotificationCallback = std::function<void(std::string_view)>;
-
-    void register_request_callback(std::string_view method, RequestCallback callback);
-
-    void register_notification_callback(std::string_view method, NotificationCallback callback);
-
     task<std::string, Error> send_request_impl(std::string_view method,
                                                std::string params,
                                                request_options opts);

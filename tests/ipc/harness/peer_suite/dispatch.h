@@ -93,26 +93,6 @@ void peer_dispatch(const PeerKit<A>& kit) {
         EXPECT(f.written().empty());
     });
 
-    kit.add("tagged_handlers_answer_the_tag_method", [](Fixture& f) {
-        std::vector<std::string> notes;
-        f.peer.template on_request<TaggedAdd>(
-            [](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
-                co_return AddResult{.sum = params.a + params.b};
-            });
-        f.peer.template on_notification<TaggedNote>(
-            [&](const NoteParams& params) { notes.push_back(params.text); });
-        f.remote.send(request<A>(1, "test/taggedAdd", AddParams{.a = 10, .b = 20}));
-        f.remote.send(notification<A>("test/taggedNote", NoteParams{.text = "hello tag"}));
-        f.remote.end_input();
-
-        auto [ran] = f.run(f.peer.run());
-        EXPECT(ran.has_value());
-        EXPECT(notes == std::vector<std::string>{"hello tag"});
-        const auto& written = f.written();
-        ASSERT(written.size() == 1U);
-        EXPECT(sum_of<A>(written[0]) == 30);
-    });
-
     // A handler runs until it first suspends before the peer reads on, so
     // handlers start in the order their messages arrived.
     kit.add("handlers_start_in_arrival_order", [](Fixture& f) {

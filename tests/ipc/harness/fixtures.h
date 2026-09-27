@@ -34,11 +34,6 @@ struct EmptyParams {};
 /// A value no codec can write: encoding it fails.
 struct Unwritable {};
 
-/// A tag whose traits name their params, for the tag-based overloads.
-struct TaggedAdd {};
-
-struct TaggedNote {};
-
 }  // namespace kota::test
 
 namespace kota::ipc::protocol {
@@ -52,19 +47,6 @@ struct RequestTraits<test::AddParams> {
 template <>
 struct NotificationTraits<test::NoteParams> {
     constexpr inline static std::string_view method = "test/note";
-};
-
-template <>
-struct RequestTraits<test::TaggedAdd> {
-    using Params = test::AddParams;
-    using Result = test::AddResult;
-    constexpr inline static std::string_view method = "test/taggedAdd";
-};
-
-template <>
-struct NotificationTraits<test::TaggedNote> {
-    using Params = test::NoteParams;
-    constexpr inline static std::string_view method = "test/taggedNote";
 };
 
 }  // namespace kota::ipc::protocol

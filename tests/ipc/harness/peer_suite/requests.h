@@ -65,32 +65,6 @@ void peer_requests(const PeerKit<A>& kit) {
         EXPECT(written[0].method == "test/add");
     });
 
-    kit.add("send_by_tag_names_the_tag_method", [](Fixture& f) {
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
-            co_await or_fail(
-                f.peer.template send_notification<TaggedNote>(NoteParams{.text = "tagged"}));
-            co_return co_await f.peer.template send_request<TaggedAdd>(AddParams{.a = 42, .b = 58})
-                .or_fail();
-        };
-        auto remote = [&]() -> task<> {
-            co_await f.next();
-            co_await f.next();
-            f.remote.send(response<A>(1, AddResult{.sum = 100}));
-            f.remote.end_input();
-        };
-
-        auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
-        EXPECT(ran.has_value());
-        ASSERT(asked.has_value());
-        EXPECT(asked->sum == 100);
-        const auto& written = f.written();
-        ASSERT(written.size() == 2U);
-        EXPECT(written[0].kind == Message::Kind::Notification);
-        EXPECT(written[0].method == "test/taggedNote");
-        EXPECT(written[1].kind == Message::Kind::Request);
-        EXPECT(written[1].method == "test/taggedAdd");
-    });
-
     kit.add("send_request_returns_the_error_response", [](Fixture& f) {
         auto ask = [&]() -> task<AddResult, ipc::Error> {
             co_return co_await f.peer.template send_request<AddResult>("worker/build", AddParams{})
