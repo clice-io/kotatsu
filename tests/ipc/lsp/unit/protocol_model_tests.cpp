@@ -1,5 +1,7 @@
+#include <cstddef>
 #include <format>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -8,6 +10,7 @@
 #include "kota/ipc/codec/json.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
+#include "kota/codec/bincode/bincode.h"
 #include "kota/ipc/lsp/protocol.h"
 
 namespace kota::ipc::lsp {
@@ -270,6 +273,38 @@ ZEST_CASE(required_nullable_member_absent_fails) {
         R"({"rootUri":null,"capabilities":{}})");
     ASSERT(!params);
     EXPECT(zest::contains(params.error().to_string(), "processId"));
+}
+
+// Bincode writes every field, an absent optional member's too, and reads its
+// three states back.
+ZEST_CASE(optional_nullable_member_roundtrips_through_bincode) {
+    for(auto active: {protocol::optional_nullable<protocol::nullable<protocol::uinteger>>{},
+                      protocol::optional_nullable<protocol::nullable<protocol::uinteger>>{
+                          protocol::nullable<protocol::uinteger>{}},
+                      protocol::optional_nullable<protocol::nullable<protocol::uinteger>>{
+                          protocol::nullable<protocol::uinteger>{2U}}}) {
+        protocol::SignatureInformation info{.label = "f(int)", .active_parameter = active};
+        auto bytes = codec::bincode::to_bytes(info);
+        ASSERT(bytes);
+        protocol::SignatureInformation back{};
+        ASSERT(codec::bincode::from_bytes(std::span<const std::byte>(*bytes), back));
+        EXPECT((back.active_parameter == info.active_parameter));
+    }
+}
+
+struct NullableMembers {
+    protocol::nullable<protocol::integer> required;
+    protocol::optional_nullable<protocol::nullable<protocol::integer>> optional;
+
+    bool operator==(const NullableMembers&) const = default;
+};
+
+ZEST_CASE(nullable_members_compare) {
+    NullableMembers a{.required = 1, .optional = protocol::nullable<protocol::integer>{}};
+    NullableMembers b = a;
+    EXPECT((a == b));
+    b.optional = {};
+    EXPECT(!(a == b));
 }
 
 };  // ZEST_SUITE(ipc_lsp_protocol_model)

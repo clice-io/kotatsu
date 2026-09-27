@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <concepts>
 #include <cstddef>
 #include <format>
 #include <map>
@@ -61,6 +62,14 @@ struct nullable : std::optional<T> {
     constexpr nullable() = default;
 
     constexpr nullable(std::optional<T> value) : std::optional<T>(std::move(value)) {}
+
+    /// std::optional's comparisons all match two of these, none better.
+    template <std::same_as<nullable> L, std::same_as<nullable> R>
+        requires requires(const std::optional<T>& value) { value == value; }
+    friend constexpr bool operator==(const L& lhs, const R& rhs) {
+        return static_cast<const std::optional<T>&>(lhs) ==
+               static_cast<const std::optional<T>&>(rhs);
+    }
 };
 
 namespace detail {
@@ -72,7 +81,13 @@ struct present_optional : std::optional<T> {
     using std::optional<T>::optional;
     using std::optional<T>::operator=;
 
-    constexpr present_optional() = default;
+    /// std::optional's comparisons all match two of these, none better.
+    template <std::same_as<present_optional> L, std::same_as<present_optional> R>
+        requires requires(const std::optional<T>& value) { value == value; }
+    friend constexpr bool operator==(const L& lhs, const R& rhs) {
+        return static_cast<const std::optional<T>&>(lhs) ==
+               static_cast<const std::optional<T>&>(rhs);
+    }
 };
 
 }  // namespace detail
@@ -122,6 +137,12 @@ namespace protocol = kota::ipc::protocol;
 
 }  // namespace kota::ipc::lsp
 
+namespace kota::codec::json {
+
+struct format;
+
+}  // namespace kota::codec::json
+
 namespace kota::meta {
 
 /// Read and written as the std::optional it is; being no std::optional to the
@@ -139,10 +160,11 @@ struct repr<ipc::protocol::nullable<T>> {
     }
 };
 
-/// Read and written as its value, so that null reaches T; absence is the
-/// field's, which optional_nullable leaves out.
+/// In JSON, read and written as its value, so that null reaches T; absence
+/// is the field's, which optional_nullable leaves out, so it is never written
+/// empty.
 template <typename T>
-struct repr<ipc::protocol::detail::present_optional<T>> {
+struct repr<ipc::protocol::detail::present_optional<T>, codec::json::format> {
     using type = T;
 
     const static type& to(const ipc::protocol::detail::present_optional<T>& value) {
@@ -151,6 +173,25 @@ struct repr<ipc::protocol::detail::present_optional<T>> {
 
     static ipc::protocol::detail::present_optional<T> from(type value) {
         return ipc::protocol::detail::present_optional<T>(std::move(value));
+    }
+};
+
+/// Elsewhere, as the std::optional it is: a format that writes every field
+/// (bincode) writes the empty one too.
+template <typename T>
+struct repr<ipc::protocol::detail::present_optional<T>> {
+    using type = std::optional<T>;
+
+    const static type& to(const ipc::protocol::detail::present_optional<T>& value) {
+        return value;
+    }
+
+    static ipc::protocol::detail::present_optional<T> from(type value) {
+        ipc::protocol::detail::present_optional<T> read;
+        if(value) {
+            read = std::move(*value);
+        }
+        return read;
     }
 };
 
