@@ -232,10 +232,15 @@ auto root_of(const Buffer& bytes) -> const fbs::Table* {
     return ::flatbuffers::GetRoot<fbs::Table>(bytes.data());
 }
 
-/// The key of entry `index` of the map stored at `field` of `table`.
+/// The key of entry `index` of the map stored at `field` of `table`; nothing
+/// when there is no such map or entry.
 template <typename Key>
-auto entry_key(const fbs::Table* table, std::size_t field, std::size_t index) -> Key {
+auto entry_key(const fbs::Table* table, std::size_t field, std::size_t index)
+    -> std::optional<Key> {
     const auto* entries = table->GetPointer<const EntryVector*>(slot(field));
+    if(entries == nullptr || index >= entries->size()) {
+        return std::nullopt;
+    }
     return entries->Get(static_cast<fbs::uoffset_t>(index))->GetField<Key>(slot(0), Key{});
 }
 
@@ -660,8 +665,10 @@ ZEST_CASE(nullable_and_container_elements_are_boxed) {
     EXPECT(maybe->Get(1)->GetOptionalFieldOffset(slot(0)) == 0U);
     const auto* blobs = root_of(*bytes)->GetPointer<const EntryVector*>(slot(1));
     ASSERT(blobs != nullptr);
+    ASSERT(blobs->size() == 2U);
     const auto* first = blobs->Get(0)->GetPointer<const fbs::Vector<std::uint8_t>*>(slot(0));
     ASSERT(first != nullptr);
+    ASSERT(first->size() == 1U);
     EXPECT(first->Get(0) == 0xAAU);
 }
 
@@ -810,6 +817,7 @@ ZEST_CASE(table_shaped_structs_roundtrip) {
     };
     auto check = [](const auto& input) {
         using T = std::remove_cvref_t<decltype(input)>;
+        ZEST_CONTEXT("{}", meta::type_name<T>());
         auto bytes = fbs::to_bytes(input);
         ASSERT(bytes);
         EXPECT(solo_is_a_table(*bytes));
@@ -901,12 +909,14 @@ ZEST_CASE(inline_struct_padding_is_zero) {
     const auto* root = root_of(*noisy_bytes);
     const auto* items = root->GetPointer<const fbs::Vector<const Padded*>*>(slot(0));
     ASSERT(items != nullptr);
+    ASSERT(items->size() == 1U);
     EXPECT(padding_is_zero(items->Get(0)));
     const auto* solo = root->GetStruct<const Padded*>(slot(1));
     ASSERT(solo != nullptr);
     EXPECT(padding_is_zero(solo));
     const auto* entries = root->GetPointer<const EntryVector*>(slot(2));
     ASSERT(entries != nullptr);
+    ASSERT(entries->size() == 1U);
     const auto* key = entries->Get(0)->GetStruct<const Padded*>(slot(0));
     ASSERT(key != nullptr);
     EXPECT(padding_is_zero(key));
@@ -954,9 +964,11 @@ ZEST_CASE(string_repr_elements_are_strings) {
     const auto* root = root_of(*bytes);
     const auto* groups = root->GetPointer<const fbs::Vector<fbs::offset_t<fbs::String>>*>(slot(0));
     ASSERT(groups != nullptr);
+    ASSERT(groups->size() == 3U);
     EXPECT(groups->Get(0)->str() == "10,20");
     const auto* numbers = root->GetPointer<const fbs::Vector<fbs::offset_t<fbs::String>>*>(slot(1));
     ASSERT(numbers != nullptr);
+    ASSERT(numbers->size() == 2U);
     EXPECT(numbers->Get(1)->str() == "-3");
     auto decoded = fbs::from_bytes<Lists>(*bytes);
     ASSERT(decoded);
@@ -1011,7 +1023,10 @@ ZEST_CASE(nullable_null_and_bytes_repr_elements_are_boxed) {
     EXPECT(markers->size() == 3U);
     const auto* blobs = root->GetPointer<const EntryVector*>(slot(2));
     ASSERT(blobs != nullptr);
-    EXPECT(blobs->Get(0)->GetPointer<const fbs::Vector<std::uint8_t>*>(slot(0))->size() == 2U);
+    ASSERT(blobs->size() == 2U);
+    const auto* first_blob = blobs->Get(0)->GetPointer<const fbs::Vector<std::uint8_t>*>(slot(0));
+    ASSERT(first_blob != nullptr);
+    EXPECT(first_blob->size() == 2U);
 
     auto decoded = fbs::from_bytes<Lists>(*bytes);
     ASSERT(decoded);

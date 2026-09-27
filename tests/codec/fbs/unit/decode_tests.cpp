@@ -417,6 +417,7 @@ ZEST_CASE(inline_struct_bool_byte_other_than_zero_or_one_fails) {
     ASSERT(solo != nullptr);
     const auto* items = root->GetPointer<const fbs::Vector<const BoolFlags*>*>(6);
     ASSERT(items != nullptr);
+    ASSERT(items->size() == 2U);
     const auto* deep = root->GetStruct<const NestedBool*>(8);
     ASSERT(deep != nullptr);
     auto byte_at = [&](const void* stored, std::size_t offset) {

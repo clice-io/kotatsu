@@ -139,7 +139,7 @@ ZEST_CASE(char_from_other_text_fails) {
         char out = '\0';
         auto status = dyn::from_dyn(dyn::Value(text), out);
         ASSERT(!status);
-        EXPECT(status.error().message == "expected a single character up to U+00FF");
+        EXPECT(status.error().message == codec::invalid_char_message);
     }
 }
 
