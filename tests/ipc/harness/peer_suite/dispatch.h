@@ -4,6 +4,7 @@
 // notifications to their handlers, and what it answers.
 
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -333,6 +334,94 @@ void peer_dispatch(const PeerKit<A>& kit) {
         EXPECT(ran.has_value());
         EXPECT(f.written().empty());
     });
+
+#if KOTA_ENABLE_EXCEPTIONS
+    // Request 1's handler throws while request 2's is running; both are
+    // answered, and so is request 3, read after the throw.
+    kit.add("throwing_request_handler_is_answered_with_internal_error", [](Fixture& f) {
+        event release;
+        f.peer.on_request([&](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
+            if(params.a == 1) {
+                throw std::runtime_error("boom");
+            }
+            if(params.a == 2) {
+                co_await release.wait();
+            }
+            co_return AddResult{.sum = params.a + params.b};
+        });
+        auto remote = [&]() -> task<> {
+            f.remote.send(request<A>(2, "test/add", AddParams{.a = 2, .b = 0}));
+            f.remote.send(request<A>(1, "test/add", AddParams{.a = 1, .b = 0}));
+            co_await f.next();
+            release.set();
+            co_await f.next();
+            f.remote.send(request<A>(3, "test/add", AddParams{.a = 3, .b = 0}));
+            co_await f.next();
+            f.remote.end_input();
+        };
+
+        auto [ran, scripted] = f.run(f.peer.run(), remote());
+        EXPECT(ran.has_value());
+        EXPECT(scripted.has_value());
+        const auto& written = f.written();
+        ASSERT(written.size() == 3U);
+        EXPECT(written[0].id == RequestID(1));
+        EXPECT(written[0].kind == Message::Kind::Error);
+        EXPECT(code_of(written[0].error) == ErrorCode::InternalError);
+        EXPECT(written[1].id == RequestID(2));
+        EXPECT(sum_of<A>(written[1]) == 2);
+        EXPECT(written[2].id == RequestID(3));
+        EXPECT(sum_of<A>(written[2]) == 3);
+    });
+
+    // The notification's handler throws while a request's is running.
+    kit.add("throwing_notification_handler_leaves_the_peer_serving", [](Fixture& f) {
+        event release;
+        f.peer.on_request([&](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
+            co_await release.wait();
+            co_return AddResult{.sum = params.a + params.b};
+        });
+        f.peer.on_notification([](const NoteParams&) { throw std::runtime_error("boom"); });
+        auto remote = [&]() -> task<> {
+            f.remote.send(request<A>(1, "test/add", AddParams{.a = 1, .b = 2}));
+            f.remote.send(notification<A>("test/note", NoteParams{.text = "throw"}));
+            release.set();
+            co_await f.next();
+            f.remote.end_input();
+        };
+
+        auto [ran, scripted] = f.run(f.peer.run(), remote());
+        EXPECT(ran.has_value());
+        EXPECT(scripted.has_value());
+        const auto& written = f.written();
+        ASSERT(written.size() == 1U);
+        EXPECT(written[0].id == RequestID(1));
+        EXPECT(sum_of<A>(written[0]) == 3);
+    });
+
+    // With nothing else running, a throwing notification handler does not end
+    // run(), and the peer's own request is still answered.
+    kit.add("throwing_notification_handler_does_not_end_run", [](Fixture& f) {
+        f.peer.on_notification([](const NoteParams&) { throw std::runtime_error("boom"); });
+        auto ask = [&]() -> task<AddResult, ipc::Error> {
+            co_return co_await f.peer
+                .template send_request<AddResult>("worker/build", AddParams{.a = 2, .b = 3})
+                .or_fail();
+        };
+        auto remote = [&]() -> task<> {
+            co_await f.next();
+            f.remote.send(notification<A>("test/note", NoteParams{.text = "throw"}));
+            f.remote.send(response<A>(1, AddResult{.sum = 5}));
+            f.remote.end_input();
+        };
+
+        auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
+        EXPECT(ran.has_value());
+        EXPECT(scripted.has_value());
+        ASSERT(asked.has_value());
+        EXPECT(asked->sum == 5);
+    });
+#endif
 }
 
 }  // namespace kota::test

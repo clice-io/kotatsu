@@ -347,10 +347,18 @@ struct Peer<CodecT>::Self {
             return;
         }
 
-        if(auto it = notification_callbacks.find(method); it != notification_callbacks.end()) {
-            it->second(params);
-        } else {
+        auto it = notification_callbacks.find(method);
+        if(it == notification_callbacks.end()) {
             log(LogLevel::warn, "unhandled notification: {}", method);
+            return;
+        }
+        // A notification has no answer to carry the failure, so it is
+        // logged; the peer goes on reading.
+        KOTA_TRY {
+            it->second(params);
+        }
+        KOTA_CATCH_ALL() {
+            log(LogLevel::error, "notification handler for {} threw", method);
         }
     }
 
@@ -375,15 +383,30 @@ struct Peer<CodecT>::Self {
         auto callback = it->second;
         auto cancel_source = std::make_shared<cancellation_source>();
         incoming_requests.insert_or_assign(id, cancel_source);
-        handlers.spawn(
-            run_request(id, std::move(callback), std::string(params), cancel_source->token()));
+        if(!handlers.spawn(run_request(id,
+                                       std::move(callback),
+                                       std::string(params),
+                                       cancel_source->token()))) {
+            // The handlers are being cancelled: run() is ending.
+            incoming_requests.erase(id);
+            send_error(id, Error(protocol::ErrorCode::RequestCancelled, "request cancelled"));
+        }
     }
 
     task<> run_request(protocol::RequestID id,
                        RequestCallback callback,
                        std::string params,
                        cancellation_token token) {
-        auto guarded_result = co_await with_token(callback(id, params, token), token);
+        outcome<std::string, Error, cancellation> guarded_result = outcome_error(Error());
+        // A handler that throws is answered InternalError; the exception
+        // does not reach the other handlers, nor run().
+        KOTA_TRY {
+            guarded_result = co_await with_token(callback(id, params, token), token);
+        }
+        KOTA_CATCH_ALL() {
+            guarded_result =
+                outcome_error(Error(protocol::ErrorCode::InternalError, "request handler threw"));
+        }
         incoming_requests.erase(id);
 
         if(guarded_result.is_cancelled()) {
