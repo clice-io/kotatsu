@@ -389,6 +389,17 @@ bool decode_externally_tagged(Vis& vis, std::variant<Ts...>& var) {
     return result;
 }
 
+/// Fails on the tag entry a data-driven look-ahead found no alternative for.
+/// The look-ahead read this same entry, so reading it again either fails as a
+/// string (a tag that is not one) or yields a name no alternative has.
+template <typename Vis, typename Reader>
+bool fail_unusable_tag(Reader& tag) {
+    std::string name;
+    KOTA_CODEC_TRY(tag.visit_str(name));
+    return scoped_context<typename Vis::error_type>::fail(
+        rich_error(std::string("unknown variant tag '") + name + "'"));
+}
+
 /// Internal tagged: { "tag": "TagName", ...fields... }
 /// Two paths: data-driven, which looks the tag up before placing fields, and
 /// schema-driven (struct_reader).
@@ -423,16 +434,7 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
             if(key == tag_key) {
                 if(idx != npos)
                     return fv.visit_skip();
-                // The lookup found no usable tag; reading it again reports why.
-                std::string tag_value;
-                KOTA_CODEC_TRY(fv.visit_str(tag_value));
-                idx = find_tag_index(tag_value, names);
-                if(idx >= npos) {
-                    return scoped_context<typename Vis::error_type>::fail(
-                        rich_error(std::string("unknown variant tag '") + tag_value + "'"));
-                }
-                emplace_variant_by_index(var, idx);
-                return true;
+                return fail_unusable_tag<Vis>(fv);
             }
             if(idx == npos) {
                 // Without a usable tag data fields cannot be placed, and need
@@ -541,16 +543,7 @@ bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
                 ++tag_count;
                 if(idx != npos)
                     return fv.visit_skip();
-                // The lookup found no usable tag; reading it again reports why.
-                std::string tag_value;
-                KOTA_CODEC_TRY(fv.visit_str(tag_value));
-                idx = find_tag_index(tag_value, names);
-                if(idx >= npos) {
-                    return scoped_context<typename Vis::error_type>::fail(
-                        rich_error(std::string("unknown variant tag '") + tag_value + "'"));
-                }
-                emplace_variant_by_index(var, idx);
-                return true;
+                return fail_unusable_tag<Vis>(fv);
             }
             if(key == content_key) {
                 ++content_count;
