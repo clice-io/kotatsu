@@ -46,13 +46,27 @@ endfunction()
 # tests find its path in the environment variable KOTA_<NAME>.
 function(kota_add_integration_tests)
     cmake_parse_arguments(PARSE_ARGV 0 arg "" "" "LIBS")
-    find_program(KOTA_NODE node REQUIRED)
+
+    # Node runs TypeScript without a build step from 22.18 on.
+    find_program(KOTA_NODE node)
+    if(NOT KOTA_NODE)
+        message(FATAL_ERROR "The integration tests need node; configure through pixi (pixi run build).")
+    endif()
+    execute_process(COMMAND "${KOTA_NODE}" --version OUTPUT_VARIABLE node_version OUTPUT_STRIP_TRAILING_WHITESPACE)
+    string(REGEX REPLACE "^v" "" node_version "${node_version}")
+    if(node_version VERSION_LESS 22.18)
+        message(FATAL_ERROR
+            "The integration tests need node 22.18 or newer, but ${KOTA_NODE} is ${node_version}; "
+            "configure through pixi (pixi run build)."
+        )
+    endif()
 
     set(environment "")
     file(GLOB drivers CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/integration/drivers/*.cpp")
     foreach(source IN LISTS drivers)
         get_filename_component(driver "${source}" NAME_WE)
         add_executable(${driver} "${source}")
+        target_include_directories(${driver} PRIVATE "${PROJECT_SOURCE_DIR}/tests")
         target_link_libraries(${driver} PRIVATE ${arg_LIBS})
         kota_apply_project_options(${driver})
         if(MSVC)
@@ -66,18 +80,24 @@ function(kota_add_integration_tests)
     file(RELATIVE_PATH module "${PROJECT_SOURCE_DIR}/tests" "${CMAKE_CURRENT_SOURCE_DIR}")
     string(REPLACE "/" "_" name "${module}_integration")
     file(GLOB tests CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/integration/*.test.ts")
+    if(NOT tests)
+        message(FATAL_ERROR "${CMAKE_CURRENT_SOURCE_DIR}/integration has no *.test.ts.")
+    endif()
+    # A test that hangs fails at --test-timeout, its drivers killed; TIMEOUT
+    # only catches the runner itself hanging.
     add_test(NAME ${name}
         COMMAND "${KOTA_NODE}"
             --import ./tests/check_npm_packages.ts
             --test
             --test-reporter=spec
-            --test-timeout=60000
+            --test-timeout=20000
             ${tests}
         WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
     )
     set_tests_properties(${name} PROPERTIES
         ENVIRONMENT "${environment}"
         LABELS integration
+        TIMEOUT 600
     )
 endfunction()
 
