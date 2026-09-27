@@ -186,6 +186,16 @@ export class Driver {
     );
   }
 
+  /** Everything the driver writes to stdout, once it closes it. */
+  async output(): Promise<string> {
+    this.#child.stdout.setEncoding("utf8");
+    let text = "";
+    for await (const chunk of this.#child.stdout) {
+      text += chunk;
+    }
+    return text;
+  }
+
   /** What the driver has written to stderr so far. */
   get stderr(): string {
     return this.#stderr;

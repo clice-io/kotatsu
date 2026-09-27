@@ -34,7 +34,7 @@ CompileGraph make_test_graph(event& started) {
     return graph;
 }
 
-ZEST_SUITE(async_build_system, test::LoopFixture) {
+ZEST_SUITE(examples_build_system, test::LoopFixture) {
 
 ZEST_CASE(normal_compilation_completes) {
     event started;
@@ -123,7 +123,7 @@ ZEST_CASE(shared_dependency_compiled_once) {
     EXPECT(compile_count == 3);
 }
 
-};  // ZEST_SUITE(async_build_system)
+};  // ZEST_SUITE(examples_build_system)
 
 }  // namespace
 
