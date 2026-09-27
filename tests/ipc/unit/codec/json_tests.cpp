@@ -145,6 +145,55 @@ ZEST_CASE(json_that_is_no_message_is_an_invalid_request) {
     }
 }
 
+// JSON has numbers of any size, which simdjson does not read.
+ZEST_CASE(json_with_numbers_past_64_bits_is_an_invalid_request) {
+    JsonCodec codec;
+    for(std::string_view payload: {
+            "-9223372036854776000",
+            "[18446744073709551616]",
+            R"([{"":1e400}])",
+            R"({"jsonrpc":"2.0","method":99999999999999999999999})",
+        }) {
+        ZEST_CONTEXT("payload: {}", payload);
+        auto parsed = codec.parse_message(payload);
+        const auto* failure = std::get_if<IncomingParseError>(&parsed);
+        ASSERT(failure != nullptr);
+        EXPECT(!failure->id.has_value());
+        EXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
+    }
+}
+
+ZEST_CASE(text_that_is_no_json_is_a_parse_error) {
+    JsonCodec codec;
+    for(std::string_view payload: {
+            "",
+            " ",
+            "01",
+            "-",
+            "1.",
+            "1e",
+            "tru",
+            "[1,]",
+            "[1 2]",
+            "{,}",
+            R"({"a" 1})",
+            R"({"a":1,})",
+            R"({"a":1}x)",
+            R"(["\x"])",
+            R"(["\u12"])",
+            "[\"\t\"]",
+            "[\"\xff\"]",
+            "[[]",
+        }) {
+        ZEST_CONTEXT("payload: {}", payload);
+        auto parsed = codec.parse_message(payload);
+        const auto* failure = std::get_if<IncomingParseError>(&parsed);
+        ASSERT(failure != nullptr);
+        EXPECT(!failure->id.has_value());
+        EXPECT(code_of(failure->error) == ErrorCode::ParseError);
+    }
+}
+
 ZEST_CASE(request_with_a_malformed_member_keeps_its_id) {
     JsonCodec codec;
     auto parsed = codec.parse_message(R"({"jsonrpc":"2.0","id":5,"method":7})");

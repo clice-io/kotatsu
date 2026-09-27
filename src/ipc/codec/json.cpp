@@ -4,6 +4,7 @@
 #include <format>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "kota/ipc/codec/json.h"
 #include "kota/codec/macro.h"
@@ -176,15 +177,173 @@ bool nests_too_deeply(std::string_view payload) {
     return false;
 }
 
-/// Whether `payload` is one JSON value, checked by simdjson's DOM parser,
-/// which keeps its own stack rather than recursing, however deep the value.
-bool is_json(std::string_view payload) {
-    simdjson::dom::parser parser;
-    if(parser.allocate(payload.size(), std::max<std::size_t>(payload.size(), 1)) !=
-       simdjson::SUCCESS) {
+/// Checks JSON's grammar (RFC 8259) without reading values: a number of any
+/// size is JSON, where simdjson refuses integers past 64 bits. It keeps its
+/// own stack rather than recursing, however deep the value.
+struct JsonChecker {
+    std::string_view text;
+    std::size_t at = 0;
+
+    bool ended() const {
+        return at >= text.size();
+    }
+
+    void skip_space() {
+        while(!ended() &&
+              (text[at] == ' ' || text[at] == '\t' || text[at] == '\r' || text[at] == '\n')) {
+            ++at;
+        }
+    }
+
+    bool take(char c) {
+        if(ended() || text[at] != c) {
+            return false;
+        }
+        ++at;
+        return true;
+    }
+
+    bool take_word(std::string_view word) {
+        if(!text.substr(at).starts_with(word)) {
+            return false;
+        }
+        at += word.size();
+        return true;
+    }
+
+    static bool is_digit(char c) {
+        return c >= '0' && c <= '9';
+    }
+
+    static bool is_hex(char c) {
+        return is_digit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+    }
+
+    bool digits() {
+        const auto start = at;
+        while(!ended() && is_digit(text[at])) {
+            ++at;
+        }
+        return at > start;
+    }
+
+    /// A string, its opening quote next.
+    bool string() {
+        if(!take('"')) {
+            return false;
+        }
+        while(!ended()) {
+            const auto c = static_cast<unsigned char>(text[at++]);
+            if(c == '"') {
+                return true;
+            }
+            if(c < 0x20) {
+                return false;
+            }
+            if(c != '\\') {
+                continue;
+            }
+            if(ended()) {
+                return false;
+            }
+            const char escaped = text[at++];
+            if(escaped == 'u') {
+                for(int i = 0; i < 4; ++i) {
+                    if(ended() || !is_hex(text[at++])) {
+                        return false;
+                    }
+                }
+            } else if(std::string_view(R"("\/bfnrt)").find(escaped) == std::string_view::npos) {
+                return false;
+            }
+        }
         return false;
     }
-    return parser.parse(payload.data(), payload.size()).error() == simdjson::SUCCESS;
+
+    bool number() {
+        take('-');
+        if(!take('0') && !digits()) {
+            return false;
+        }
+        if(take('.') && !digits()) {
+            return false;
+        }
+        if(take('e') || take('E')) {
+            if(!take('+')) {
+                take('-');
+            }
+            return digits();
+        }
+        return true;
+    }
+
+    /// A key and its colon, in an object.
+    bool key() {
+        skip_space();
+        if(!string()) {
+            return false;
+        }
+        skip_space();
+        return take(':');
+    }
+
+    bool check() {
+        if(!simdjson::validate_utf8(text.data(), text.size())) {
+            return false;
+        }
+        // The arrays and objects around the next value.
+        std::vector<char> open;
+        while(true) {
+            skip_space();
+            if(ended()) {
+                return false;
+            }
+            const char c = text[at];
+            if(c == '[' || c == '{') {
+                ++at;
+                skip_space();
+                if(!take(c == '[' ? ']' : '}')) {
+                    open.push_back(c);
+                    if(c == '{' && !key()) {
+                        return false;
+                    }
+                    continue;
+                }
+            } else if(c == '"') {
+                if(!string()) {
+                    return false;
+                }
+            } else if(c == '-' || is_digit(c)) {
+                if(!number()) {
+                    return false;
+                }
+            } else if(!take_word("true") && !take_word("false") && !take_word("null")) {
+                return false;
+            }
+            // A value ended: close what it ends, up to the next value.
+            while(true) {
+                skip_space();
+                if(open.empty()) {
+                    return ended();
+                }
+                if(take(',')) {
+                    if(open.back() == '{' && !key()) {
+                        return false;
+                    }
+                    break;
+                }
+                if(!take(open.back() == '[' ? ']' : '}')) {
+                    return false;
+                }
+                open.pop_back();
+            }
+        }
+    }
+};
+
+/// Whether `payload` is one JSON value.
+bool is_json(std::string_view payload) {
+    return JsonChecker{.text = payload}.check();
 }
 
 /// The members of the object at the front of `text` that tell what kind of
