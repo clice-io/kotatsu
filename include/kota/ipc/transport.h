@@ -55,7 +55,8 @@ public:
     /// close(), and the input ends too. Over stdio (open_stdio), the process's
     /// stdout is pointed at the null device, as closing a stream over it
     /// leaves it open; the remote reads the end once nothing else holds it,
-    /// such as a child that inherited it or a stderr sharing it.
+    /// such as a child that inherited it, a stderr sharing it, or stdin when
+    /// both are one socket.
     Result<void> close_output() override;
 
     Result<void> close() override;

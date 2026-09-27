@@ -18,32 +18,6 @@ namespace kota::ipc {
 
 namespace {
 
-/// Points the descriptor `fd` at the null device, which lets go of what it
-/// referred to.
-Result<void> point_at_null_device(int fd) {
-#ifdef _WIN32
-    const int null = _open("NUL", _O_WRONLY);
-#else
-    const int null = ::open("/dev/null", O_WRONLY);
-#endif
-    if(null < 0) {
-        return outcome_error(
-            Error("opening the null device failed: " + std::generic_category().message(errno)));
-    }
-#ifdef _WIN32
-    const int replaced = _dup2(null, fd);
-    _close(null);
-#else
-    const int replaced = ::dup2(null, fd);
-    ::close(null);
-#endif
-    if(replaced < 0) {
-        return outcome_error(
-            Error("releasing stdout failed: " + std::generic_category().message(errno)));
-    }
-    return {};
-}
-
 /// `opened` as a stream, or its error as an ipc error.
 template <typename Handle>
 Result<stream> as_stream(result<Handle> opened) {
@@ -158,13 +132,37 @@ Result<void> StreamTransport::close() {
 
 // libuv never closes fds 0 to 2 when it closes a stream over one (on Windows
 // it closes a duplicate of the handle), so the pipe or file behind stdout
-// stays open until fd 1 lets go of it.
+// stays open until fd 1 lets go of it: pointing fd 1 at the null device does.
 Result<void> StreamTransport::release_stdout() {
     if(!over_stdout) {
         return {};
     }
     over_stdout = false;
-    return point_at_null_device(1);
+    // Not inherited by a child spawned meanwhile by another thread; dup2
+    // leaves fd 1 inheritable, as stdout is.
+#ifdef _WIN32
+    const int null = _open("NUL", _O_WRONLY | _O_NOINHERIT);
+#else
+    const int null = ::open("/dev/null", O_WRONLY | O_CLOEXEC);
+#endif
+    if(null < 0) {
+        return outcome_error(
+            Error("opening the null device failed: " + std::generic_category().message(errno)));
+    }
+#ifdef _WIN32
+    const int replaced = _dup2(null, 1);
+    const int error = errno;
+    _close(null);
+#else
+    const int replaced = ::dup2(null, 1);
+    const int error = errno;
+    ::close(null);
+#endif
+    if(replaced < 0) {
+        return outcome_error(
+            Error("releasing stdout failed: " + std::generic_category().message(error)));
+    }
+    return {};
 }
 
 }  // namespace kota::ipc
