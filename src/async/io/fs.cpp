@@ -211,6 +211,8 @@ dirent::type kind_of(uv_dirent_type_t type) {
 std::vector<dirent> scanned_of(uv_fs_t& req) {
     std::vector<dirent> out;
     uv_dirent_t entry;
+    // It fails only when the scan did, which the caller has ruled out; past
+    // the last entry it reports UV_EOF.
     while(::uv_fs_scandir_next(&req, &entry) == 0) {
         out.push_back({.name = entry.name, .kind = kind_of(entry.type)});
     }

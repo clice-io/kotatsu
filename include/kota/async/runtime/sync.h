@@ -19,7 +19,8 @@ class condition_variable;
 /// resumes once whatever runs has suspended. A mutex, semaphore or condition
 /// variable must not go while tasks wait on it, nor before the tasks it woke
 /// have resumed: one cancelled in between hands what it was granted back to
-/// it. An event may go once it is set.
+/// it. An event may go once it is set. A waiting task resumes on its event
+/// loop, so a primitive must not grant a wait whose loop has gone.
 class sync_primitive {
 public:
     enum class Kind : std::uint8_t {
