@@ -9,7 +9,8 @@
 //   test/call         request {method, params, timeoutMs}: sends the client
 //                     that request, and answers with how it ended, {result}
 //                     or {error}
-//   test/closeOutput  notification: closes the output
+//   test/closeOutput  notification: closes the output, once what is queued is
+//                     written
 //
 // `--max-payload=<bytes>` lowers the size of the largest frame it reads from
 // the default. It exits with 0 when its input ends.
@@ -106,11 +107,8 @@ void serve(ipc::JsonPeer& peer) {
                         co_return CallOutcome{.result = std::move(*result), .error = std::nullopt};
                     });
 
-    peer.on_notification("test/closeOutput", [&peer](const CloseOutputParams&) {
-        if(auto closed = peer.close_output(); !closed) {
-            std::println(stderr, "[error] close_output: {}", closed.error().message);
-        }
-    });
+    peer.on_notification("test/closeOutput",
+                         [&peer](const CloseOutputParams&) { peer.close_output(); });
 }
 
 }  // namespace
