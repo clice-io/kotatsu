@@ -9,6 +9,7 @@
 
 #include "name.h"
 #include "spec.h"
+#include "struct.h"
 #include "kota/support/naming.h"
 #include "kota/support/tuple_traits.h"
 #include "kota/support/type_traits.h"
@@ -161,6 +162,14 @@ using merged_config_t =
                                        struct_spec_of<AttrsTuple>.rename_all,
                                        struct_spec_of<AttrsTuple>.deny_unknown_fields>::type;
 
+/// The config a node of type T carrying AttrsTuple (a field's attrs, or an
+/// annotation's) is read and written under: its rename_all /
+/// deny_unknown_fields merge onto Config when T is a reflectable struct, the
+/// only kind those policies act on, and are inert on every other node.
+template <typename Config, typename T, typename AttrsTuple>
+using node_config_t =
+    std::conditional_t<reflectable_class<T>, merged_config_t<Config, AttrsTuple>, Config>;
+
 /// Resolve serialized names for variant alternatives: the annotation's
 /// tag_names when provided (count must match), meta::type_name of each
 /// alternative otherwise.
@@ -171,7 +180,7 @@ constexpr auto resolve_tag_names() {
         static_assert(spec.tag_names.count == sizeof...(Ts),
                       "tagged: number of custom names must match variant alternatives");
         std::array<std::string_view, sizeof...(Ts)> names{};
-        std::ranges::copy_n(spec.tag_names.storage.begin(), sizeof...(Ts), names.begin());
+        std::ranges::copy_n(spec.tag_names.names().begin(), sizeof...(Ts), names.begin());
         return names;
     } else {
         return std::array<std::string_view, sizeof...(Ts)>{type_name<Ts>()...};
@@ -185,6 +194,10 @@ struct enum_string {
     using policy = Policy;
 };
 
+/// Omits a field when Pred holds for its value. A predicate taking
+/// (const Value&, bool is_serialize) decides for encoding and decoding
+/// alike; one taking only the value speaks for encoding, and a decode never
+/// skips on it.
 template <typename Pred>
 struct skip_if {
     using predicate = Pred;
@@ -215,7 +228,7 @@ constexpr bool evaluate_skip_predicate(const Value& value, bool is_serialize) {
     } else if constexpr(requires {
                             { Pred{}(value) } -> std::convertible_to<bool>;
                         }) {
-        return static_cast<bool>(Pred{}(value));
+        return is_serialize && static_cast<bool>(Pred{}(value));
     } else {
         static_assert(
             dependent_false<Pred>,

@@ -210,7 +210,34 @@ void attrs(const Kit<B>& kit) {
             .score = -5,
         };
     };
+    // A field skipped on decode is still in the document, written through
+    // its attrs: a positional decode reads past it the same way, and the
+    // field it decodes into keeps its value.
+    reads<CellSkippedOnDecode>(
+        kit,
+        "skip_if_on_decode_reads_past_its_as_field",
+        [] {
+            return CellSkippedOnDecodePlain{
+                .cell = {.x = 1, .y = 2},
+                .after = 7
+            };
+        },
+        [] { return CellSkippedOnDecode{.cell = {}, .after = 7}; });
+    // A one-argument predicate judges the value being written: a decode
+    // reads the field whatever the value it decodes into holds, here the
+    // empty text the predicate matches.
+    reads<SkipsEmptyText>(
+        kit,
+        "one_argument_skip_if_reads_its_field",
+        [] { return TextPlain{.text = "x"}; },
+        [] { return SkipsEmptyText{.text = std::string("x")}; });
     if constexpr(B::caps.absent_fields) {
+        // ...and, encoding, it leaves out the value it matches.
+        encodes_as(
+            kit,
+            "one_argument_skip_if_omits_matching_field",
+            [] { return SkipsEmptyText{.text = std::string()}; },
+            [] { return Empty{}; });
         auto kept = [] {
             return Skippable{
                 .id = 1,

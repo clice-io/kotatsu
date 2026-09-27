@@ -9,7 +9,9 @@
 #include <string_view>
 #include <system_error>
 #include <type_traits>
+#include <utility>
 
+#include "kota/support/expected_try.h"
 #include "kota/meta/enum.h"
 #include "kota/meta/name.h"
 #include "kota/codec/visit/common.h"
@@ -25,8 +27,6 @@
 
 namespace kota::codec::debug {
 
-using error = rich_error;
-
 struct Formatter {
     std::string& out;
     bool pretty = false;
@@ -40,38 +40,54 @@ struct Formatter {
             out += "    ";
     }
 
+    /// Appends c as an escape inside a literal delimited by `quote`, the way
+    /// Rust's Debug spells it; false when c needs none.
+    bool write_escape(char c, char quote) {
+        switch(c) {
+            case '\\': out += "\\\\"; return true;
+            case '\n': out += "\\n"; return true;
+            case '\r': out += "\\r"; return true;
+            case '\t': out += "\\t"; return true;
+            case '\0': out += "\\0"; return true;
+            default: break;
+        }
+        if(c == quote) {
+            out += '\\';
+            out += c;
+            return true;
+        }
+        if(auto codepoint = static_cast<unsigned char>(c); codepoint < 0x20) {
+            out += std::format("\\x{:02x}", codepoint);
+            return true;
+        }
+        return false;
+    }
+
     void write_escape_string(std::string_view sv) {
         out += '"';
         for(char c: sv) {
-            switch(c) {
-                case '"': out += "\\\""; break;
-                case '\\': out += "\\\\"; break;
-                case '\n': out += "\\n"; break;
-                case '\r': out += "\\r"; break;
-                case '\t': out += "\\t"; break;
-                case '\0': out += "\\0"; break;
-                default:
-                    if(static_cast<unsigned char>(c) < 0x20) {
-                        out += std::format("\\x{:02x}", static_cast<unsigned char>(c));
-                    } else {
-                        out += c;
-                    }
-                    break;
+            if(!write_escape(c, '"')) {
+                out += c;
             }
         }
         out += '"';
     }
 
-    void write_separator(bool& first) {
-        if(pretty) {
-            out += ',';
-            if(first)
-                out.pop_back();
-            newline_indent();
-        } else {
-            if(!first)
-                out += ", ";
+    /// A char literal: escaped as write_escape escapes it, or else written
+    /// as the text codecs write a char (one codepoint, in UTF-8).
+    void write_escape_char(char c) {
+        out += '\'';
+        if(!write_escape(c, '\'')) {
+            out += char_to_utf8(c);
         }
+        out += '\'';
+    }
+
+    void write_separator(bool& first) {
+        if(!first) {
+            out += pretty ? "," : ", ";
+        }
+        newline_indent();
         first = false;
     }
 
@@ -100,41 +116,10 @@ struct Formatter {
         out += close;
         return true;
     }
-
-    void write_escape_char(char c) {
-        out += '\'';
-        switch(c) {
-            case '\'': out += "\\'"; break;
-            case '\\': out += "\\\\"; break;
-            case '\n': out += "\\n"; break;
-            case '\r': out += "\\r"; break;
-            case '\t': out += "\\t"; break;
-            case '\0': out += "\\0"; break;
-            default: {
-                // Control characters print as escapes; any other char as the
-                // text codecs write it.
-                auto codepoint = static_cast<unsigned char>(c);
-                if(codepoint < 0x20) {
-                    out += std::format("\\x{:02x}", codepoint);
-                } else {
-                    out += char_to_utf8(c);
-                }
-                break;
-            }
-        }
-        out += '\'';
-    }
 };
-
-struct ValueWriter;
-struct StructWriter;
-struct SeqWriter;
-struct KeyWriter;
-struct MapWriter;
 
 struct ValueWriter {
     Formatter& fmt;
-    using error_type = rich_error;
     constexpr static bool human_readable = true;
 
     bool visit_bool(bool v) {
@@ -162,19 +147,13 @@ struct ValueWriter {
 
     template <typename T>
     bool visit_str(const T& v) {
-        if constexpr(std::is_pointer_v<T>) {
-            if(v == nullptr) {
-                fmt.out += "null";
-                return true;
-            }
-        }
         fmt.write_escape_string(std::string_view(v));
         return true;
     }
 
     template <typename T>
     bool visit_char(T v) {
-        fmt.write_escape_char(static_cast<char>(v));
+        fmt.write_escape_char(v);
         return true;
     }
 
@@ -205,12 +184,8 @@ struct ValueWriter {
         fmt.out += "::";
         auto name = meta::enum_name(v);
         if(name.empty()) {
-            using U = std::underlying_type_t<T>;
-            if constexpr(std::is_signed_v<U>) {
-                fmt.out += std::to_string(static_cast<std::int64_t>(v));
-            } else {
-                fmt.out += std::to_string(static_cast<std::uint64_t>(v));
-            }
+            // Unary plus keeps a char-sized underlying value a number.
+            fmt.out += std::format("{}", +std::to_underlying(v));
         } else {
             fmt.out += name;
         }
@@ -249,25 +224,24 @@ struct ValueWriter {
     }
 
     template <typename T, typename Body>
-    inline bool visit_struct(const T&, Body&& body);
+    bool visit_struct(const T&, Body&& body);
 
     template <typename Container, typename Body>
-    inline bool visit_seq(const Container&, Body&& body);
+    bool visit_seq(const Container&, Body&& body);
 
     template <typename Container, typename Body>
-    inline bool visit_map(const Container&, Body&& body);
+    bool visit_map(const Container&, Body&& body);
 
     template <typename T, typename Body>
-    inline bool visit_tuple(const T&, Body&& body);
+    bool visit_tuple(const T&, Body&& body);
 };
 
 struct StructWriter {
     Formatter& fmt;
-    using error_type = rich_error;
     bool first = true;
 
     template <typename F>
-    inline bool visit_field(std::size_t index, std::string_view name, F&& writer);
+    bool visit_field(std::size_t index, std::string_view name, F&& writer);
 };
 
 struct SeqWriter {
@@ -275,7 +249,7 @@ struct SeqWriter {
     bool first = true;
 
     template <typename F>
-    inline bool visit_element(F&& writer);
+    bool visit_element(F&& writer);
 };
 
 struct TupleWriter {
@@ -284,43 +258,30 @@ struct TupleWriter {
     std::size_t count = 0;
 
     template <typename F>
-    inline bool visit_element(F&& writer);
+    bool visit_element(F&& writer);
 };
-
-struct KeyWriter : ValueWriter {};
 
 struct MapWriter {
     Formatter& fmt;
     bool first = true;
 
     template <typename KF, typename VF>
-    inline bool visit_entry(KF&& key_fn, VF&& value_fn);
+    bool visit_entry(KF&& key_fn, VF&& value_fn);
 };
 
 template <typename T, typename Body>
 bool ValueWriter::visit_struct(const T&, Body&& body) {
     fmt.out += meta::type_name<T>();
+    fmt.out += ' ';
     if(fmt.pretty) {
-        fmt.out += " {";
-        fmt.indent++;
-        StructWriter sw{fmt};
-        KOTA_CODEC_TRY(body(sw));
-        if(!sw.first) {
-            fmt.out += ',';
-            fmt.indent--;
-            fmt.newline_indent();
-        } else {
-            fmt.indent--;
-        }
-        fmt.out += '}';
-    } else {
-        fmt.out += " { ";
-        StructWriter sw{fmt};
-        KOTA_CODEC_TRY(body(sw));
-        if(!sw.first)
-            fmt.out += ' ';
-        fmt.out += '}';
+        return fmt.write_block<StructWriter>('{', '}', std::forward<Body>(body));
     }
+    fmt.out += "{ ";
+    StructWriter sw{fmt};
+    KOTA_CODEC_TRY(body(sw));
+    if(!sw.first)
+        fmt.out += ' ';
+    fmt.out += '}';
     return true;
 }
 
@@ -379,7 +340,7 @@ bool SeqWriter::visit_element(F&& writer) {
 template <typename KF, typename VF>
 bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
     fmt.write_separator(first);
-    KeyWriter kw{fmt};
+    ValueWriter kw{fmt};
     KOTA_CODEC_TRY(key_fn(kw));
     fmt.out += ": ";
     ValueWriter vw{fmt};
@@ -389,15 +350,11 @@ bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
 /// Renders `value` as Rust-Debug-style text; `pretty` switches from
 /// single-line output to 4-space-indented multiline.
 template <typename Config = void, typename T>
-auto to_string(const T& value, bool pretty = false) -> std::expected<std::string, error> {
-    rich_error err;
-    scoped_context<rich_error> guard(err);
+auto to_string(const T& value, bool pretty = false) -> std::expected<std::string, rich_error> {
     std::string result;
     Formatter fmt{result, pretty};
     ValueWriter vis{fmt};
-    if(!encode_value<default_config<Config>>(vis, value)) {
-        return std::unexpected(std::move(err));
-    }
+    KOTA_EXPECTED_TRY(detail::run_encode<Config>(vis, value));
     return result;
 }
 

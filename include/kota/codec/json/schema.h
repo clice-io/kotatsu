@@ -25,7 +25,6 @@
 #include "kota/meta/type_info.h"
 #include "kota/codec/dyn/decode.h"
 #include "kota/codec/dyn/document.h"
-#include "kota/codec/dyn/encode.h"
 #include "kota/codec/json/json.h"
 #include "kota/codec/visit/config.h"
 
@@ -45,7 +44,8 @@ struct schema_options {
     codec::nan_repr nan = default_config<>::nan_repr;
     /// A non-human-readable config bypasses variant tagging and encodes the
     /// underlying untagged variant (the is_human_readable gate in
-    /// encode_value), so the schema must drop the tag shape the same way.
+    /// encode_tagged_variant), so the schema must drop the tag shape the same
+    /// way.
     bool human_readable = true;
 };
 
@@ -62,7 +62,7 @@ constexpr inline std::string_view alternative_marker = "x-kota-alternative";
 
 class SchemaEmitter {
     using tk = meta::type_kind;
-    using result_t = std::expected<dyn::Value, error>;
+    using result_t = std::expected<dyn::Value, rich_error>;
 
 public:
     explicit SchemaEmitter(const schema_options& opts, bool mark_alternatives = false) :
@@ -107,7 +107,7 @@ private:
         return kota::naming::normalize_identifier(vi->alternatives[i]().type_name);
     }
 
-    std::expected<std::string_view, error> def_name(const meta::type_info* ti) {
+    std::expected<std::string_view, rich_error> def_name(const meta::type_info* ti) {
         auto it = def_names.find(ti);
         if(it != def_names.end()) {
             return std::string_view(it->second);
@@ -133,11 +133,9 @@ private:
     }
 
     result_t make_schema(const meta::type_info* ti) {
-        if(ti->kind == tk::optional || ti->kind == tk::pointer) {
-            return make_nullable(ti);
-        }
-
         switch(ti->kind) {
+            case tk::optional:
+            case tk::pointer: return make_nullable(ti);
             case tk::null:
                 return dyn::Value{
                     {"type", "null"}
@@ -184,7 +182,8 @@ private:
         }
     }
 
-    std::expected<void, error> merge_schema_fields(dyn::Object& target, const meta::type_info* ti) {
+    std::expected<void, rich_error> merge_schema_fields(dyn::Object& target,
+                                                        const meta::type_info* ti) {
         ti = unwrap(ti);
         if(ti->kind == tk::structure) {
             return add_struct_body(target, static_cast<const meta::struct_type_info*>(ti));
@@ -198,12 +197,38 @@ private:
         return {};
     }
 
-    std::expected<void, error> add_struct_body(dyn::Object& target,
-                                               const meta::struct_type_info* si) {
+    /// The property an internally tagged alternative's object carries next to
+    /// its struct's own fields.
+    struct InternalTag {
+        std::string_view field;
+        std::string_view alt_name;
+    };
+
+    /// A struct's object schema, written into target; with a tag, the object
+    /// also carries the tag property, required after the struct's own
+    /// required fields.
+    std::expected<void, rich_error> add_struct_body(dyn::Object& target,
+                                                    const meta::struct_type_info* si,
+                                                    const InternalTag* tag = nullptr) {
         target.insert("type", "object");
         KOTA_EXPECTED_TRY_V(auto props, make_properties(si));
+        dyn::Array required;
+        for(const auto& f: si->fields) {
+            if(is_required(f)) {
+                required.push_back(dyn::Value(f.name));
+            }
+        }
+        if(tag) {
+            props.get_object()->insert(std::string(tag->field),
+                                       dyn::Value{
+                                           {"const", tag->alt_name}
+            });
+            required.push_back(dyn::Value(tag->field));
+        }
         target.insert("properties", std::move(props));
-        add_required(target, si);
+        if(!required.empty()) {
+            target.insert("required", std::move(required));
+        }
         if(si->deny_unknown) {
             target.insert("additionalProperties", false);
         }
@@ -351,7 +376,7 @@ private:
         };
     }
 
-    std::expected<void, error> ensure_struct_def(const meta::type_info* ti) {
+    std::expected<void, rich_error> ensure_struct_def(const meta::type_info* ti) {
         if(!emitted.insert(ti).second) {
             return {};
         }
@@ -385,18 +410,6 @@ private:
         return !f.has_default && !f.has_skip_if && !f.nullable;
     }
 
-    static void add_required(dyn::Object& target, const meta::struct_type_info* si) {
-        dyn::Array required;
-        for(const auto& f: si->fields) {
-            if(is_required(f)) {
-                required.push_back(dyn::Value(f.name));
-            }
-        }
-        if(!required.empty()) {
-            target.insert("required", std::move(required));
-        }
-    }
-
     static dyn::Value make_tag_const(std::string_view tag_field, std::string_view alt_name) {
         return {
             {"properties", {{std::string(tag_field), {{"const", alt_name}}}}},
@@ -408,42 +421,27 @@ private:
                                   std::string_view tag_field,
                                   std::string_view alt_name) {
         ti = unwrap(ti);
-        if(ti->kind == tk::structure) {
-            auto* si = static_cast<const meta::struct_type_info*>(ti);
-            KOTA_EXPECTED_TRY_V(auto props, make_properties(si));
-            auto* props_obj = props.get_object();
-            props_obj->insert(std::string(tag_field),
-                              dyn::Value{
-                                  {"const", alt_name}
-            });
-            dyn::Object obj;
-            obj.insert("type", "object");
-            if(mark_alternatives) {
-                obj.insert(std::string(alternative_marker),
-                           kota::naming::normalize_identifier(ti->type_name));
-            }
-            obj.insert("properties", std::move(props));
-            dyn::Array required;
-            for(const auto& f: si->fields) {
-                if(is_required(f)) {
-                    required.push_back(dyn::Value(f.name));
-                }
-            }
-            required.push_back(dyn::Value(tag_field));
-            obj.insert("required", std::move(required));
-            if(si->deny_unknown) {
-                obj.insert("additionalProperties", false);
-            }
-            return dyn::Value(std::move(obj));
+        if(ti->kind != tk::structure) {
+            KOTA_EXPECTED_TRY_V(auto schema, make_schema(ti));
+            return dyn::Value{
+                {"allOf",
+                 dyn::Array{
+                     std::move(schema),
+                     make_tag_const(tag_field, alt_name),
+                 }},
+            };
         }
-        KOTA_EXPECTED_TRY_V(auto schema, make_schema(ti));
-        return dyn::Value{
-            {"allOf",
-             dyn::Array{
-                 std::move(schema),
-                 make_tag_const(tag_field, alt_name),
-             }},
-        };
+        dyn::Object obj;
+        InternalTag tag{.field = tag_field, .alt_name = alt_name};
+        KOTA_EXPECTED_TRY(
+            add_struct_body(obj, static_cast<const meta::struct_type_info*>(ti), &tag));
+        // The body is inlined here rather than $def'd, so it names its type
+        // for the default-annotation sweep, which removes the marker.
+        if(mark_alternatives) {
+            obj.insert(std::string(alternative_marker),
+                       kota::naming::normalize_identifier(ti->type_name));
+        }
+        return dyn::Value(std::move(obj));
     }
 
     result_t make_variant(const meta::type_info* ti) {
@@ -684,15 +682,6 @@ schema_options options_of() {
     };
 }
 
-/// The config a slot's subtree resolves and encodes under: a rename_all /
-/// deny_unknown spec on a reflectable struct field merges into the carried
-/// config — the same gate the codec dispatch and meta's repr resolver apply
-/// — and stays inert on every other slot kind.
-template <typename Config, typename Slot>
-using slot_config_t = std::conditional_t<meta::reflectable_class<typename Slot::raw_type>,
-                                         meta::merged_config_t<Config, typename Slot::attrs>,
-                                         Config>;
-
 /// True when decode reads a T value directly: T resolves to itself, or is a
 /// structural meta::annotate wrapper whose resolution is the wrapped type —
 /// a plain wrapper, no repr. Anything routed through a meta::repr makes
@@ -714,7 +703,10 @@ void collect_fresh(FreshDefaults& out);
 
 template <typename Config, typename... Slots>
 void collect_fresh_slots(FreshDefaults& out, kota::type_list<Slots...>) {
-    (collect_fresh<typename Slots::raw_type, slot_config_t<Config, Slots>>(out), ...);
+    (collect_fresh<typename Slots::raw_type,
+                   meta::node_config_t<Config, typename Slots::raw_type, typename Slots::attrs>>(
+         out),
+     ...);
 }
 
 template <typename Config, typename... Ts>
@@ -777,14 +769,14 @@ void collect_fresh(FreshDefaults& out) {
 
 }  // namespace detail
 
-inline std::expected<dyn::Value, error> schema(const meta::type_info& root,
-                                               const schema_options& options = {}) {
+inline std::expected<dyn::Value, rich_error> schema(const meta::type_info& root,
+                                                    const schema_options& options = {}) {
     return detail::SchemaEmitter{options}.emit(root);
 }
 
 namespace detail {
 
-inline std::expected<std::string, error> stringify(dyn::Value value, bool pretty) {
+inline std::expected<std::string, rich_error> stringify(dyn::Value value, bool pretty) {
     KOTA_EXPECTED_TRY_V(auto compact, to_string(std::move(value)));
     if(!pretty) {
         return compact;
@@ -813,7 +805,7 @@ inline std::expected<std::string, error> stringify(dyn::Value value, bool pretty
 /// representation still reflects as kind unknown — keeps reporting the
 /// emission error at runtime.
 template <typename T, typename Config = void>
-std::expected<dyn::Value, error> schema() {
+std::expected<dyn::Value, rich_error> schema() {
     using resolved = meta::resolved_repr_t<T, format>;
     constexpr bool annotate_defaults = std::default_initializable<T> &&
                                        meta::kind_of<resolved>() != meta::type_kind::unknown &&
@@ -832,15 +824,15 @@ std::expected<dyn::Value, error> schema() {
     return result;
 }
 
-inline std::expected<std::string, error> schema_string(const meta::type_info& root,
-                                                       bool pretty = false,
-                                                       const schema_options& options = {}) {
+inline std::expected<std::string, rich_error> schema_string(const meta::type_info& root,
+                                                            bool pretty = false,
+                                                            const schema_options& options = {}) {
     KOTA_EXPECTED_TRY_V(auto value, schema(root, options));
     return detail::stringify(std::move(value), pretty);
 }
 
 template <typename T, typename Config = void>
-std::expected<std::string, error> schema_string(bool pretty = false) {
+std::expected<std::string, rich_error> schema_string(bool pretty = false) {
     KOTA_EXPECTED_TRY_V(auto value, (schema<T, Config>()));
     return detail::stringify(std::move(value), pretty);
 }

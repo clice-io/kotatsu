@@ -80,6 +80,17 @@ ZEST_CASE(adjacent_duplicate_tag_fails) {
     EXPECT(status.error().message == "adjacently tagged variant: duplicate tag field");
 }
 
+ZEST_CASE(internal_duplicate_tag_fails) {
+    dyn::Object object;
+    object.insert("kind", "circle");
+    object.insert("kind", "rect");
+    object.insert("radius", 1.0);
+    test::InternalShape out;
+    auto status = dyn::from_dyn(dyn::Value(object), out);
+    ASSERT(!status);
+    EXPECT(status.error().message == "internally tagged variant: duplicate tag field");
+}
+
 ZEST_CASE(adjacent_duplicate_content_fails) {
     dyn::Object object;
     object.insert("t", "number");

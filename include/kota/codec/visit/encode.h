@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <format>
 #include <ranges>
 #include <string_view>
@@ -12,6 +13,7 @@
 
 #include "config.h"
 #include "context.h"
+#include "dispatch.h"
 #include "kota/support/type_list.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
@@ -24,11 +26,18 @@
 
 namespace kota::codec {
 
-/// Backend-internal dispatch override for one (visitor, type) pair. Not a
-/// user extension point: declare a type's representation via meta::repr, or
-/// per-field via behavior::with — those are visible to schema consumers, a
-/// serialize_visit specialization is not.
-template <typename Vis, typename T, typename Config = default_config<>, typename = void>
+/// How a visitor writes one type, overridden per backend or protocol:
+/// specialize it for one visitor type, or for every visitor a constraint
+/// admits, with a static visit(Vis&, const T&) returning bool. The backends
+/// use it for their own document types (json RawValue, toml tables,
+/// dyn::Value) and protocol layers for types they shape themselves (ipc's
+/// Error and Literal). A specialization is consulted before everything
+/// else, annotations and meta::repr included, and a type may not have both
+/// a specialization and a meta::repr for the visitor's format. To say how a
+/// type of your own is represented, prefer meta::repr (or behavior::with on
+/// a field): those are visible to schema consumers (type_info, the JSON
+/// schema, the fbs views), a specialization is not.
+template <typename Vis, typename T, typename Config>
 struct serialize_visit {};
 
 template <typename Config, typename Vis, typename T>
@@ -46,7 +55,7 @@ template <typename Repr, typename Config, typename Vis, typename V>
 bool repr_encode(Vis& vis, const V& value) {
     using declared_t = meta::declared_repr_t<Repr>;
     if constexpr(std::is_same_v<declared_t, meta::dynamic>) {
-        static_assert(!is_layout_computed<Vis>(),
+        static_assert(!layout_computed<Vis>,
                       "this backend computes the output layout statically and cannot encode a "
                       "meta::dynamic repr");
     }
@@ -66,208 +75,165 @@ bool repr_encode(Vis& vis, const V& value) {
     }
 }
 
+/// Encodes a variant without tags: the alternative index and payload on a
+/// backend with native variants, the bare payload otherwise.
+template <typename Config, typename Vis, typename... Ts>
+bool encode_untagged_variant(Vis& vis, const std::variant<Ts...>& var) {
+    if constexpr(requires(Vis& v) {
+                     v.visit_variant(std::size_t{}, [](auto&) -> bool { return true; });
+                 }) {
+        return vis.visit_variant(var.index(), [&](auto& pv) -> bool {
+            return std::visit(
+                [&](const auto& alt) -> bool { return encode_value<Config>(pv, alt); },
+                var);
+        });
+    } else {
+        return std::visit([&](const auto& alt) -> bool { return encode_value<Config>(vis, alt); },
+                          var);
+    }
+}
+
 /// Encodes a variant in one of the three tagged shapes selected by the
 /// spec's meta::tag_mode (tag names resolve through resolve_tag_names):
 /// - external:  { "TagName": payload }
 /// - internal:  { "<tag>": "TagName", ...payload fields } — requires every
 ///   alternative to be a struct, whose fields are spliced in after the tag
 /// - adjacent:  { "<tag>": "TagName", "<content>": payload }
-/// Tagging only applies on human-readable backends; binary backends encode
-/// the alternative index instead (see the backend's visit_variant).
+/// Tagging only applies on human-readable backends; elsewhere the variant is
+/// encoded untagged (a binary backend writes the alternative index). Either
+/// way the variant is written as itself: a repr of its type does not apply.
 template <typename Config, typename SpecAttr, typename Vis, typename Var>
 bool encode_tagged_variant(Vis& vis, const Var& var) {
-    // MSVC mis-handles uncaptured constexpr locals inside the nested generic
-    // lambdas below (C3861/ICE), so the spec is read via SpecAttr each time.
-    return [&]<typename... Ts>(const std::variant<Ts...>&) -> bool {
-        constexpr auto names = meta::resolve_tag_names<SpecAttr, Ts...>();
-        std::string_view tag_name = names[var.index()];
+    if constexpr(!is_human_readable<Config, Vis>()) {
+        return encode_untagged_variant<Config>(vis, var);
+    } else {
+        // MSVC mis-handles uncaptured constexpr locals inside the nested
+        // generic lambdas below (C3861/ICE), so the spec is read via SpecAttr
+        // each time.
+        return [&]<typename... Ts>(const std::variant<Ts...>&) -> bool {
+            constexpr auto names = meta::resolve_tag_names<SpecAttr, Ts...>();
+            std::string_view tag_name = names[var.index()];
 
-        if constexpr(SpecAttr::value.tagging == meta::tag_mode::external) {
-            return vis.visit_struct(var, [&](auto& sv) -> bool {
-                return sv.visit_field(std::size_t(0), tag_name, [&](auto& pv) -> bool {
-                    return std::visit(
-                        [&](const auto& alt) -> bool { return encode_value<Config>(pv, alt); },
-                        var);
-                });
-            });
-        } else if constexpr(SpecAttr::value.tagging == meta::tag_mode::internal) {
-            return std::visit(
-                [&](const auto& alt) -> bool {
-                    using alt_t = std::remove_cvref_t<decltype(alt)>;
-                    static_assert(meta::reflectable_class<alt_t>,
-                                  "internally tagged requires struct alternatives");
-                    return vis.visit_struct(alt, [&](auto& sv) -> bool {
-                        KOTA_CODEC_TRY(sv.visit_field(
-                            std::size_t(0),
-                            SpecAttr::value.tag,
-                            [&](auto& tv) -> bool { return tv.visit_str(tag_name); }));
-                        return encode_struct_fields<Config>(sv, alt);
-                    });
-                },
-                var);
-        } else {
-            static_assert(SpecAttr::value.tagging == meta::tag_mode::adjacent);
-            return vis.visit_struct(var, [&](auto& sv) -> bool {
-                KOTA_CODEC_TRY(
-                    sv.visit_field(std::size_t(0), SpecAttr::value.tag, [&](auto& tv) -> bool {
-                        return tv.visit_str(tag_name);
-                    }));
-                return sv.visit_field(
-                    std::size_t(1),
-                    SpecAttr::value.content,
-                    [&](auto& cv) -> bool {
+            if constexpr(SpecAttr::value.tagging == meta::tag_mode::external) {
+                return vis.visit_struct(var, [&](auto& sv) -> bool {
+                    return sv.visit_field(std::size_t(0), tag_name, [&](auto& pv) -> bool {
                         return std::visit(
-                            [&](const auto& alt) -> bool { return encode_value<Config>(cv, alt); },
+                            [&](const auto& alt) -> bool { return encode_value<Config>(pv, alt); },
                             var);
                     });
-            });
-        }
-    }(var);
+                });
+            } else if constexpr(SpecAttr::value.tagging == meta::tag_mode::internal) {
+                return std::visit(
+                    [&](const auto& alt) -> bool {
+                        using alt_t = std::remove_cvref_t<decltype(alt)>;
+                        static_assert(meta::reflectable_class<alt_t>,
+                                      "internally tagged requires struct alternatives");
+                        return vis.visit_struct(alt, [&](auto& sv) -> bool {
+                            KOTA_CODEC_TRY(sv.visit_field(
+                                std::size_t(0),
+                                SpecAttr::value.tag,
+                                [&](auto& tv) -> bool { return tv.visit_str(tag_name); }));
+                            return encode_struct_fields<Config>(sv, alt);
+                        });
+                    },
+                    var);
+            } else {
+                static_assert(SpecAttr::value.tagging == meta::tag_mode::adjacent);
+                return vis.visit_struct(var, [&](auto& sv) -> bool {
+                    KOTA_CODEC_TRY(
+                        sv.visit_field(std::size_t(0), SpecAttr::value.tag, [&](auto& tv) -> bool {
+                            return tv.visit_str(tag_name);
+                        }));
+                    return sv.visit_field(std::size_t(1),
+                                          SpecAttr::value.content,
+                                          [&](auto& cv) -> bool {
+                                              return std::visit(
+                                                  [&](const auto& alt) -> bool {
+                                                      return encode_value<Config>(cv, alt);
+                                                  },
+                                                  var);
+                                          });
+                });
+            }
+        }(var);
+    }
+}
+
+/// Encodes a value under a node's attributes (a struct field's, or an
+/// annotation's): behavior::with > behavior::as > behavior::enum_string >
+/// variant tagging > the rename_all / deny_unknown_fields merge, the
+/// precedence meta's repr resolver replays.
+template <typename Config, typename Attrs, typename Vis, typename T>
+bool encode_with_attrs(Vis& vis, const T& value) {
+    if constexpr(tuple_has_spec_v<Attrs, meta::behavior::with>) {
+        using adapter = typename tuple_find_spec_t<Attrs, meta::behavior::with>::adapter;
+        return repr_encode<adapter, Config>(vis, value);
+    } else if constexpr(tuple_has_spec_v<Attrs, meta::behavior::as>) {
+        using target = typename tuple_find_spec_t<Attrs, meta::behavior::as>::target;
+        target converted(value);
+        return encode_value<Config>(vis, converted);
+    } else if constexpr(tuple_has_spec_v<Attrs, meta::behavior::enum_string>) {
+        using policy = typename tuple_find_spec_t<Attrs, meta::behavior::enum_string>::policy;
+        static_assert(std::is_enum_v<T>, "behavior::enum_string requires an enum type");
+        auto renamed = policy{}(true, meta::enum_name(value));
+        return vis.visit_str(std::string_view(renamed));
+    } else if constexpr(meta::struct_spec_of<Attrs>.tagging != meta::tag_mode::none) {
+        static_assert(taggable<T>, "a tagging attribute requires a std::variant");
+        using spec_attr = tuple_find_t<Attrs, meta::is_struct_spec_attr>;
+        return encode_tagged_variant<Config, spec_attr>(vis, value);
+    } else {
+        return encode_value<meta::node_config_t<Config, T, Attrs>>(vis, value);
+    }
 }
 
 /// Encode a single struct field, applying behavior transforms if present.
 template <typename Config, std::size_t I, typename Vis, typename T>
 bool encode_one_field(Vis& vis, const T& value) {
-    using schema = meta::virtual_schema<T, Config>;
-    using slots = typename schema::slots;
-    using slot_t = type_list_element_t<I, slots>;
-    using raw_t = typename slot_t::raw_type;
-    using attrs_t = typename slot_t::attrs;
-
-    constexpr std::size_t offset = schema::fields[I].offset;
-    const auto* base = reinterpret_cast<const std::byte*>(std::addressof(value));
-    const auto& field_ref = *reinterpret_cast<const raw_t*>(base + offset);
+    using field = FieldAt<Config, I, T>;
+    const auto& field_ref = field::of(value);
 
     // A visitor that writes every field has nothing to mark one absent, so
     // skip_if omits fields only elsewhere.
-    if constexpr(!writes_every_field<Vis>()) {
-        if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
-            using pred = typename tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
-            if(meta::evaluate_skip_predicate<pred>(field_ref, true)) {
-                return true;
-            }
-        } else if constexpr(constexpr auto when = meta::spec_of<attrs_t>.skip_if;
-                            when != meta::skip_when::never) {
-            if(meta::evaluate_skip_when<when>(field_ref, true)) {
-                return true;
-            }
+    if constexpr(!writes_every_field<Vis>) {
+        if(skipped<typename field::attrs>(field_ref, true)) {
+            return true;
         }
     }
 
-    constexpr auto idx = std::integral_constant<std::size_t, I>{};
-    std::string_view name = schema::fields[I].name;
-
-    bool ok;
-    if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
-        using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
-        ok = vis.visit_field(idx, name, [&](auto& fv) -> bool {
-            return repr_encode<adapter, Config>(fv, field_ref);
-        });
-    } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
-        using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
-        target converted(field_ref);
-        ok = vis.visit_field(idx, name, [&](auto& fv) -> bool {
-            return encode_value<Config>(fv, converted);
-        });
-    } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::enum_string>) {
-        using policy = typename tuple_find_spec_t<attrs_t, meta::behavior::enum_string>::policy;
-        static_assert(std::is_enum_v<raw_t>, "behavior::enum_string requires an enum type");
-        auto renamed = policy{}(true, meta::enum_name(field_ref));
-        std::string_view sv(renamed);
-        ok = vis.visit_field(idx, name, [&](auto& fv) -> bool { return fv.visit_str(sv); });
-    } else if constexpr(meta::struct_spec_of<attrs_t>.tagging != meta::tag_mode::none) {
-        static_assert(meta::kind_of<raw_t>() == meta::type_kind::variant,
-                      "tagged attribute requires a variant type");
-        if constexpr(!is_human_readable<Config, Vis>()) {
-            ok = vis.visit_field(idx, name, [&](auto& fv) -> bool {
-                return encode_value<Config>(fv, field_ref);
-            });
-        } else {
-            using spec_attr = tuple_find_t<attrs_t, meta::is_struct_spec_attr>;
-            ok = vis.visit_field(idx, name, [&](auto& fv) -> bool {
-                return encode_tagged_variant<Config, spec_attr>(fv, field_ref);
-            });
-        }
-    } else if constexpr(meta::reflectable_class<raw_t> &&
-                        (meta::struct_spec_of<attrs_t>.rename_all != naming::casing::identity ||
-                         meta::struct_spec_of<attrs_t>.deny_unknown_fields)) {
-        ok = vis.visit_field(idx, name, [&](auto& fv) -> bool {
-            return encode_value<meta::merged_config_t<Config, attrs_t>>(fv, field_ref);
-        });
-    } else {
-        ok = vis.visit_field(idx, name, [&](auto& fv) -> bool {
-            return encode_value<Config>(fv, field_ref);
-        });
-    }
-
-    if constexpr(Config::detailed_error) {
-        if(!ok) {
-            if(auto* e = scoped_context<typename Vis::error_type>::try_current())
-                e->prepend_field(name);
-        }
-    }
-    return ok;
+    bool ok =
+        vis.visit_field(std::integral_constant<std::size_t, I>{},
+                        field::name,
+                        [&](auto& fv) -> bool {
+                            return encode_with_attrs<Config, typename field::attrs>(fv, field_ref);
+                        });
+    return trace_path<Config>(ok, field::name);
 }
 
 }  // namespace detail
 
 template <typename Config, typename Vis, typename T>
 bool encode_value(Vis& vis, const T& value) {
-    using V = T;
-
-    if constexpr(requires(Vis& v, const V& val) {
-                     serialize_visit<Vis, V, Config>::visit(v, val);
+    if constexpr(requires(Vis& v, const T& val) {
+                     serialize_visit<Vis, T, Config>::visit(v, val);
                  }) {
-        static_assert(!meta::has_repr<V, meta::format_of_t<Vis>>,
+        static_assert(!meta::has_repr<T, meta::format_of_t<Vis>>,
                       "type has both a serialize_visit specialization and a meta::repr; "
                       "keep exactly one");
-        return serialize_visit<Vis, V, Config>::visit(vis, value);
-    } else if constexpr(meta::annotated_type<V>) {
-        using attrs_t = typename V::attrs;
-        auto&& inner = meta::annotated_value(value);
-        using inner_t = std::remove_cvref_t<decltype(inner)>;
-
-        if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
-            // Behavior precedence (with > as > enum_string, all above variant
-            // tagging) mirrors encode_one_field and meta's repr resolver.
-            using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
-            return detail::repr_encode<adapter, Config>(vis, inner);
-        } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
-            using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
-            target converted(inner);
-            return encode_value<Config>(vis, converted);
-        } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::enum_string>) {
-            using policy = typename tuple_find_spec_t<attrs_t, meta::behavior::enum_string>::policy;
-            static_assert(std::is_enum_v<inner_t>, "behavior::enum_string requires an enum type");
-            auto renamed = policy{}(true, meta::enum_name(inner));
-            std::string_view sv(renamed);
-            return vis.visit_str(sv);
-        } else if constexpr(is_specialization_of<std::variant, inner_t> &&
-                            meta::struct_spec_of<attrs_t>.tagging != meta::tag_mode::none) {
-            if constexpr(!is_human_readable<Config, Vis>()) {
-                return encode_value<Config>(vis, inner);
-            } else {
-                using spec_attr = tuple_find_t<attrs_t, meta::is_struct_spec_attr>;
-                return detail::encode_tagged_variant<Config, spec_attr>(vis, inner);
-            }
-        } else if constexpr(meta::reflectable_class<inner_t> &&
-                            (meta::struct_spec_of<attrs_t>.rename_all != naming::casing::identity ||
-                             meta::struct_spec_of<attrs_t>.deny_unknown_fields)) {
-            return encode_value<meta::merged_config_t<Config, attrs_t>>(vis, inner);
-        } else {
-            return encode_value<Config>(vis, inner);
-        }
-    } else if constexpr(meta::has_repr<V, meta::format_of_t<Vis>>) {
-        return detail::repr_encode<meta::repr_for<V, meta::format_of_t<Vis>>, Config>(vis, value);
+        return serialize_visit<Vis, T, Config>::visit(vis, value);
+    } else if constexpr(meta::annotated_type<T>) {
+        return detail::encode_with_attrs<Config, typename T::attrs>(vis,
+                                                                    meta::annotated_value(value));
+    } else if constexpr(meta::has_repr<T, meta::format_of_t<Vis>>) {
+        return detail::repr_encode<meta::repr_for<T, meta::format_of_t<Vis>>, Config>(vis, value);
     } else {
-        constexpr auto kind = meta::kind_of<V>();
+        constexpr auto kind = meta::kind_of<T>();
         using enum meta::type_kind;
 
         if constexpr(kind == boolean) {
             return vis.visit_bool(value);
-        } else if constexpr(meta::int_like<V>) {
+        } else if constexpr(meta::int_like<T>) {
             return vis.visit_int(value);
-        } else if constexpr(meta::uint_like<V>) {
+        } else if constexpr(meta::uint_like<T>) {
             return vis.visit_uint(value);
         } else if constexpr(kind == float32 || kind == float64) {
             if constexpr(Config::nan_repr != nan_repr::Passthrough) {
@@ -276,31 +242,37 @@ bool encode_value(Vis& vis, const T& value) {
                 // double's range lands in the document as infinity and must
                 // take the non-finite path here.
                 double narrowed = static_cast<double>(value);
-                if(std::isnan(narrowed) || std::isinf(narrowed)) {
+                if(!std::isfinite(narrowed)) {
                     if constexpr(Config::nan_repr == nan_repr::Null) {
                         return vis.visit_null();
                     } else if constexpr(Config::nan_repr == nan_repr::String) {
                         return vis.visit_str(std::isnan(narrowed) ? "NaN"
                                              : narrowed > 0       ? "Infinity"
                                                                   : "-Infinity");
-                    } else if constexpr(Config::nan_repr == nan_repr::Error) {
-                        return scoped_context<typename Vis::error_type>::fail(
-                            rich_error("NaN or Infinity is not allowed"));
                     } else {
-                        static_assert(dependent_false<V>, "unknown nan_repr value");
+                        return scoped_context<rich_error>::fail(
+                            rich_error("NaN or Infinity is not allowed"));
                     }
-                } else {
-                    return vis.visit_float(value);
                 }
-            } else {
-                return vis.visit_float(value);
             }
-        } else if constexpr(meta::str_like<V> && std::is_array_v<V>) {
+            return vis.visit_float(value);
+        } else if constexpr(meta::str_like<T> && std::is_array_v<T>) {
             // A char array need not end in a null character, so its text
             // stops at the array's end.
-            std::string_view text(value, std::extent_v<V>);
+            std::string_view text(value, std::extent_v<T>);
             return vis.visit_str(text.substr(0, text.find('\0')));
-        } else if constexpr(meta::str_like<V>) {
+        } else if constexpr(meta::str_like<T> && std::is_pointer_v<T>) {
+            // A null C string holds no text at all: it writes null, where
+            // the visitor can write one; a map key writer cannot.
+            if(value == nullptr) {
+                if constexpr(requires { vis.visit_null(); }) {
+                    return vis.visit_null();
+                } else {
+                    return scoped_context<rich_error>::fail(rich_error("null C string map key"));
+                }
+            }
+            return vis.visit_str(value);
+        } else if constexpr(meta::str_like<T>) {
             return vis.visit_str(value);
         } else if constexpr(kind == character) {
             return vis.visit_char(value);
@@ -309,18 +281,12 @@ bool encode_value(Vis& vis, const T& value) {
         } else if constexpr(kind == null) {
             return vis.visit_null();
         } else if constexpr(kind == optional || kind == pointer) {
-            if constexpr(is_specialization_of<std::weak_ptr, V>) {
-                auto sp = value.lock();
-                if constexpr(requires(Vis& v, const decltype(sp)& p) { v.visit_pointer(p); }) {
-                    return vis.visit_pointer(sp);
-                } else {
-                    if(sp) {
-                        return encode_value<Config>(vis, *sp);
-                    }
-                    return vis.visit_null();
-                }
+            if constexpr(is_specialization_of<std::weak_ptr, T>) {
+                // A weak pointer writes what the shared pointer it locks to
+                // would, presence marker included.
+                return encode_value<Config>(vis, value.lock());
             } else if constexpr(kind == pointer &&
-                                requires(Vis& v, const V& p) { v.visit_pointer(p); }) {
+                                requires(Vis& v, const T& p) { v.visit_pointer(p); }) {
                 return vis.visit_pointer(value);
             } else {
                 if(value) {
@@ -343,12 +309,10 @@ bool encode_value(Vis& vis, const T& value) {
                 // side can never map back, so fail loudly instead.
                 auto raw = meta::enum_name(value);
                 if(raw.empty()) {
-                    using U = std::underlying_type_t<V>;
-                    using wide =
-                        std::conditional_t<std::is_signed_v<U>, std::int64_t, std::uint64_t>;
-                    return scoped_context<typename Vis::error_type>::fail(
+                    // Unary plus keeps a char-sized underlying value a number.
+                    return scoped_context<rich_error>::fail(
                         rich_error(std::format("enum value {} has no reflected name",
-                                               static_cast<wide>(value))));
+                                               +std::to_underlying(value))));
                 }
                 auto name = apply_enum_rename<Config>(true, raw);
                 std::string_view sv(name);
@@ -356,7 +320,7 @@ bool encode_value(Vis& vis, const T& value) {
             } else if constexpr(requires { vis.visit_enum(value); }) {
                 return vis.visit_enum(value);
             } else {
-                using U = std::underlying_type_t<V>;
+                using U = std::underlying_type_t<T>;
                 if constexpr(std::is_signed_v<U>) {
                     return vis.visit_int(static_cast<U>(value));
                 } else {
@@ -365,7 +329,7 @@ bool encode_value(Vis& vis, const T& value) {
             }
         } else if constexpr(kind == array || kind == set) {
             return vis.visit_seq(value, [&](auto& sv) -> bool {
-                using element_t = std::ranges::range_value_t<V>;
+                using element_t = std::ranges::range_value_t<T>;
                 std::size_t idx = 0;
                 for(const auto& elem: value) {
                     bool ok = sv.visit_element([&](auto& ev) -> bool {
@@ -379,13 +343,7 @@ bool encode_value(Vis& vis, const T& value) {
                             return encode_value<Config>(ev, static_cast<element_t>(elem));
                         }
                     });
-                    if(!ok) {
-                        if constexpr(Config::detailed_error) {
-                            if(auto* e = scoped_context<typename Vis::error_type>::try_current())
-                                e->prepend_index(idx);
-                        }
-                        return false;
-                    }
+                    KOTA_CODEC_TRY(detail::trace_path<Config>(ok, idx));
                     ++idx;
                 }
                 return true;
@@ -393,20 +351,12 @@ bool encode_value(Vis& vis, const T& value) {
         } else if constexpr(kind == tuple) {
             return vis.visit_tuple(value, [&](auto& sv) -> bool {
                 return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                    return ([&] {
-                        bool ok = sv.visit_element([&](auto& ev) -> bool {
-                            return encode_value<Config>(ev, std::get<Is>(value));
-                        });
-                        if constexpr(Config::detailed_error) {
-                            if(!ok) {
-                                if(auto* e =
-                                       scoped_context<typename Vis::error_type>::try_current())
-                                    e->prepend_index(Is);
-                            }
-                        }
-                        return ok;
-                    }() && ...);
-                }(std::make_index_sequence<std::tuple_size_v<V>>{});
+                    return (detail::trace_path<Config>(sv.visit_element([&](auto& ev) -> bool {
+                                return encode_value<Config>(ev, std::get<Is>(value));
+                            }),
+                                                       Is) &&
+                            ...);
+                }(std::make_index_sequence<std::tuple_size_v<T>>{});
             });
         } else if constexpr(kind == map) {
             return vis.visit_map(value, [&](auto& mv) -> bool {
@@ -415,13 +365,7 @@ bool encode_value(Vis& vis, const T& value) {
                     bool ok = mv.visit_entry(
                         [&](auto& kv) -> bool { return encode_value<Config>(kv, k); },
                         [&](auto& vv) -> bool { return encode_value<Config>(vv, v); });
-                    if(!ok) {
-                        if constexpr(Config::detailed_error) {
-                            if(auto* e = scoped_context<typename Vis::error_type>::try_current())
-                                e->prepend_index(idx);
-                        }
-                        return false;
-                    }
+                    KOTA_CODEC_TRY(detail::trace_path<Config>(ok, idx));
                     ++idx;
                 }
                 return true;
@@ -431,9 +375,9 @@ bool encode_value(Vis& vis, const T& value) {
                 return encode_struct_fields<Config>(sv, value);
             });
         } else if constexpr(kind == variant) {
-            if constexpr(is_expected_v<V>) {
+            if constexpr(is_expected_v<T>) {
                 if(value.has_value()) {
-                    if constexpr(!std::is_void_v<typename V::value_type>) {
+                    if constexpr(!std::is_void_v<typename T::value_type>) {
                         return encode_value<Config>(vis, *value);
                     } else {
                         return vis.visit_null();
@@ -449,29 +393,18 @@ bool encode_value(Vis& vis, const T& value) {
                         return vis.visit_null();
                     }
                 }
-            } else if constexpr(requires(Vis& v) {
-                                    v.visit_variant(std::size_t{},
-                                                    [](auto&) -> bool { return true; });
-                                }) {
-                return vis.visit_variant(value.index(), [&](auto& pv) -> bool {
-                    return std::visit(
-                        [&](const auto& alt) -> bool { return encode_value<Config>(pv, alt); },
-                        value);
-                });
             } else {
-                return std::visit(
-                    [&](const auto& alt) -> bool { return encode_value<Config>(vis, alt); },
-                    value);
+                return detail::encode_untagged_variant<Config>(vis, value);
             }
-        } else if constexpr(std::is_pointer_v<V> &&
-                            requires(Vis& v, const V& p) { v.visit_pointer(p); }) {
+        } else if constexpr(std::is_pointer_v<T> &&
+                            requires(Vis& v, const T& p) { v.visit_pointer(p); }) {
             return vis.visit_pointer(value);
-        } else if constexpr(requires(Vis& v, const V& x) { v.visit_opaque(x); }) {
+        } else if constexpr(requires(Vis& v, const T& x) { v.visit_opaque(x); }) {
             // Only a backend that can show any value, like the debug one,
             // takes a type the schema knows nothing about.
             return vis.visit_opaque(value);
         } else {
-            static_assert(dependent_false<V>,
+            static_assert(dependent_false<T>,
                           "cannot serialize this type; specialize serialize_visit to add support");
             return false;
         }
@@ -488,5 +421,22 @@ bool encode_struct_fields(Vis& vis, const T& value) {
         return (detail::encode_one_field<Config, Is>(vis, value) && ...);
     }(std::make_index_sequence<N>{});
 }
+
+namespace detail {
+
+/// A backend's encode entry point, bar building its visitor and output:
+/// encode_value under default_config<Config> inside a fresh error context.
+template <typename Config, typename Vis, typename T>
+std::expected<void, rich_error> run_encode(Vis& vis, const T& value) {
+    detail::assert_human_readable_allowed<default_config<Config>, Vis>();
+    rich_error err;
+    scoped_context<rich_error> guard(err);
+    if(!encode_value<default_config<Config>>(vis, value)) {
+        return std::unexpected(std::move(err));
+    }
+    return {};
+}
+
+}  // namespace detail
 
 }  // namespace kota::codec

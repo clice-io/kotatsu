@@ -9,6 +9,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "kota/support/expected_try.h"
 #include "kota/support/numeric.h"
 #include "kota/codec/json/type.h"
 #include "kota/codec/visit/common.h"
@@ -104,7 +105,6 @@ struct Reader {
     std::size_t buf_size;
     constexpr static bool data_driven = true;
     constexpr static bool human_readable = true;
-    using error_type = rich_error;
     using format = json::format;
 
     Reader(ondemand::Document& d, const char* base, std::size_t size) :
@@ -140,7 +140,7 @@ struct Reader {
     }
 
     bool fail_simdjson(simdjson::error_code ec) {
-        return fail_located(rich_error(std::string(simdjson::error_message(ec))));
+        return fail_located(detail::simdjson_error(ec));
     }
 
     template <typename F>
@@ -276,10 +276,6 @@ struct Reader {
         });
     }
 
-    bool visit_skip() {
-        return true;
-    }
-
     template <typename Callback>
     bool visit_struct(Callback&& cb) {
         auto r = src.apply([&](auto& s) { return s.get_object(); });
@@ -305,7 +301,6 @@ struct Reader {
                 break;
             }
         }
-        obj.reset();
         return ok;
     }
 
@@ -328,40 +323,19 @@ struct Reader {
                 break;
             }
         }
-        arr.reset();
         return ok;
     }
 
+    /// An object read with MapKeyReader keys.
     template <typename Callback>
     bool visit_map(Callback&& cb) {
-        auto r = src.apply([&](auto& s) { return s.get_object(); });
-        if(r.error())
-            return fail_simdjson(r.error());
-        auto& obj = r.value_unsafe();
-        bool ok = true;
-        for(auto field_result: obj) {
-            if(field_result.error()) {
-                ok = fail_simdjson(field_result.error());
-                break;
-            }
-            auto field = std::move(field_result).value_unsafe();
-            auto key = field.unescaped_key();
-            if(key.error()) {
-                ok = fail_simdjson(key.error());
-                break;
-            }
-            auto fv = std::move(field).value();
-            MapKeyReader<format> kr{key.value_unsafe()};
-            Reader vr{fv, buf_base, buf_size};
-            if(!cb(kr, vr)) {
-                ok = false;
-                break;
-            }
-        }
-        obj.reset();
-        return ok;
+        return visit_struct([&](std::string_view key, Reader& value) {
+            MapKeyReader<format> kr{key};
+            return cb(kr, value);
+        });
     }
 
+    /// A tuple is an array, read as a sequence.
     template <typename Callback>
     bool visit_tuple(Callback&& cb) {
         return visit_seq(std::forward<Callback>(cb));
@@ -383,8 +357,8 @@ struct Reader {
 /// is defaulted and safe — unlike the move assignment which nulls the parser pointer.
 template <typename F>
 bool Reader::try_read(F&& fn) {
-    error_type discard_err;
-    scoped_context<error_type> guard(discard_err);
+    rich_error discard_err;
+    scoped_context<rich_error> guard(discard_err);
 
     simdjson::ondemand::json_iterator checkpoint(src.json_iter());
 
@@ -403,40 +377,29 @@ auto from_string(std::string_view json, T& out) -> std::expected<void, rich_erro
     ondemand::Parser parser;
     ondemand::Document doc;
 
-    auto ec = parser.iterate(padded).get(doc);
-    if(ec != success) {
-        return std::unexpected(rich_error(std::string(simdjson::error_message(ec))));
+    if(auto ec = parser.iterate(padded).get(doc); ec != success) {
+        return std::unexpected(detail::simdjson_error(ec));
     }
     // simdjson checks what follows a scalar root, not what follows an object
     // or array: walk the root first and see that the document ends after it,
     // so that trailing content fails before anything reaches `out`.
     if(auto root = doc.raw_json(); root.error()) {
-        return std::unexpected(rich_error(std::string(simdjson::error_message(root.error()))));
+        return std::unexpected(detail::simdjson_error(root.error()));
     }
     if(!doc.at_end()) {
-        return std::unexpected(
-            rich_error(std::string(simdjson::error_message(simdjson::TRAILING_CONTENT))));
+        return std::unexpected(detail::simdjson_error(simdjson::TRAILING_CONTENT));
     }
     doc.rewind();
 
-    rich_error guard_error;
-    scoped_context<rich_error> guard(guard_error);
-
     Reader r{doc, padded.data(), padded.size()};
-    if(!decode_value<default_config<Config>>(r, out)) {
-        return std::unexpected(std::move(guard_error));
-    }
-    return {};
+    return codec::detail::run_decode<Config>(r, out);
 }
 
 template <typename T, typename Config = void>
     requires std::default_initializable<T>
 auto from_string(std::string_view json) -> std::expected<T, rich_error> {
     T value{};
-    auto result = from_string<Config>(json, value);
-    if(!result) {
-        return std::unexpected(std::move(result).error());
-    }
+    KOTA_EXPECTED_TRY(from_string<Config>(json, value));
     return value;
 }
 

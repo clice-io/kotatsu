@@ -156,16 +156,16 @@ private:
 
 class Value {
 public:
-    using storage_t = std::variant<std::monostate,
-                                   bool,
-                                   std::int64_t,
-                                   std::uint64_t,
-                                   double,
-                                   std::string,
-                                   Array,
-                                   Object>;
+    using variant_type = std::variant<std::monostate,
+                                      bool,
+                                      std::int64_t,
+                                      std::uint64_t,
+                                      double,
+                                      std::string,
+                                      Array,
+                                      Object>;
 
-    Value() noexcept : storage(std::monostate{}) {}
+    Value() noexcept : data(std::monostate{}) {}
 
     Value(const Value&) = default;
     Value(Value&&) noexcept = default;
@@ -173,25 +173,25 @@ public:
     auto operator=(Value&&) noexcept -> Value& = default;
     ~Value() = default;
 
-    Value(std::nullptr_t) noexcept : storage(std::monostate{}) {}
+    Value(std::nullptr_t) noexcept : data(std::monostate{}) {}
 
-    Value(bool v) noexcept : storage(v) {}
+    Value(bool v) noexcept : data(v) {}
 
-    Value(std::int64_t v) noexcept : storage(v) {}
+    Value(std::int64_t v) noexcept : data(v) {}
 
-    Value(std::uint64_t v) noexcept : storage(v) {}
+    Value(std::uint64_t v) noexcept : data(v) {}
 
-    Value(double v) noexcept : storage(v) {}
+    Value(double v) noexcept : data(v) {}
 
-    Value(const char* v) : storage(std::string(v)) {}
+    Value(const char* v) : data(std::string(v)) {}
 
-    Value(std::string_view v) : storage(std::string(v)) {}
+    Value(std::string_view v) : data(std::string(v)) {}
 
-    Value(std::string v) : storage(std::move(v)) {}
+    Value(std::string v) : data(std::move(v)) {}
 
-    Value(Array v) : storage(std::move(v)) {}
+    Value(Array v) : data(std::move(v)) {}
 
-    Value(Object v) : storage(std::move(v)) {}
+    Value(Object v) : data(std::move(v)) {}
 
     Value(std::initializer_list<Object::entry> entries);
 
@@ -200,57 +200,57 @@ public:
                   !std::same_as<T, std::int64_t> && !std::same_as<T, std::uint64_t>)
     Value(T v) noexcept {
         if constexpr(std::is_signed_v<T>) {
-            storage = static_cast<std::int64_t>(v);
+            data = static_cast<std::int64_t>(v);
         } else {
-            storage = static_cast<std::uint64_t>(v);
+            data = static_cast<std::uint64_t>(v);
         }
     }
 
     [[nodiscard]] ValueKind kind() const noexcept {
-        return static_cast<ValueKind>(storage.index());
+        return static_cast<ValueKind>(data.index());
     }
 
     [[nodiscard]] bool is_null() const noexcept {
-        return std::holds_alternative<std::monostate>(storage);
+        return std::holds_alternative<std::monostate>(data);
     }
 
     [[nodiscard]] bool is_bool() const noexcept {
-        return std::holds_alternative<bool>(storage);
+        return std::holds_alternative<bool>(data);
     }
 
     [[nodiscard]] bool is_int() const noexcept {
-        return std::holds_alternative<std::int64_t>(storage) ||
-               std::holds_alternative<std::uint64_t>(storage);
+        return std::holds_alternative<std::int64_t>(data) ||
+               std::holds_alternative<std::uint64_t>(data);
     }
 
     [[nodiscard]] bool is_number() const noexcept {
-        return is_int() || std::holds_alternative<double>(storage);
+        return is_int() || std::holds_alternative<double>(data);
     }
 
     [[nodiscard]] bool is_string() const noexcept {
-        return std::holds_alternative<std::string>(storage);
+        return std::holds_alternative<std::string>(data);
     }
 
     [[nodiscard]] bool is_array() const noexcept {
-        return std::holds_alternative<Array>(storage);
+        return std::holds_alternative<Array>(data);
     }
 
     [[nodiscard]] bool is_object() const noexcept {
-        return std::holds_alternative<Object>(storage);
+        return std::holds_alternative<Object>(data);
     }
 
     [[nodiscard]] std::optional<bool> get_bool() const noexcept {
-        if(const auto* p = std::get_if<bool>(&storage)) {
+        if(const auto* p = std::get_if<bool>(&data)) {
             return *p;
         }
         return std::nullopt;
     }
 
     [[nodiscard]] std::optional<std::int64_t> get_int() const noexcept {
-        if(const auto* p = std::get_if<std::int64_t>(&storage)) {
+        if(const auto* p = std::get_if<std::int64_t>(&data)) {
             return *p;
         }
-        if(const auto* p = std::get_if<std::uint64_t>(&storage)) {
+        if(const auto* p = std::get_if<std::uint64_t>(&data)) {
             if(*p <= static_cast<std::uint64_t>((std::numeric_limits<std::int64_t>::max)())) {
                 return static_cast<std::int64_t>(*p);
             }
@@ -259,10 +259,10 @@ public:
     }
 
     [[nodiscard]] std::optional<std::uint64_t> get_uint() const noexcept {
-        if(const auto* p = std::get_if<std::uint64_t>(&storage)) {
+        if(const auto* p = std::get_if<std::uint64_t>(&data)) {
             return *p;
         }
-        if(const auto* p = std::get_if<std::int64_t>(&storage)) {
+        if(const auto* p = std::get_if<std::int64_t>(&data)) {
             if(*p >= 0) {
                 return static_cast<std::uint64_t>(*p);
             }
@@ -271,76 +271,76 @@ public:
     }
 
     [[nodiscard]] std::optional<double> get_double() const noexcept {
-        if(const auto* p = std::get_if<double>(&storage)) {
+        if(const auto* p = std::get_if<double>(&data)) {
             return *p;
         }
-        if(const auto* p = std::get_if<std::int64_t>(&storage)) {
+        if(const auto* p = std::get_if<std::int64_t>(&data)) {
             return static_cast<double>(*p);
         }
-        if(const auto* p = std::get_if<std::uint64_t>(&storage)) {
+        if(const auto* p = std::get_if<std::uint64_t>(&data)) {
             return static_cast<double>(*p);
         }
         return std::nullopt;
     }
 
     [[nodiscard]] std::optional<std::string_view> get_string() const noexcept {
-        if(const auto* p = std::get_if<std::string>(&storage)) {
+        if(const auto* p = std::get_if<std::string>(&data)) {
             return std::string_view(*p);
         }
         return std::nullopt;
     }
 
     [[nodiscard]] const Array* get_array() const noexcept {
-        return std::get_if<Array>(&storage);
+        return std::get_if<Array>(&data);
     }
 
     [[nodiscard]] Array* get_array() noexcept {
-        return std::get_if<Array>(&storage);
+        return std::get_if<Array>(&data);
     }
 
     [[nodiscard]] const Object* get_object() const noexcept {
-        return std::get_if<Object>(&storage);
+        return std::get_if<Object>(&data);
     }
 
     [[nodiscard]] Object* get_object() noexcept {
-        return std::get_if<Object>(&storage);
+        return std::get_if<Object>(&data);
     }
 
     [[nodiscard]] bool as_bool() const {
-        return std::get<bool>(storage);
+        return std::get<bool>(data);
     }
 
     [[nodiscard]] std::int64_t as_int() const {
-        return std::get<std::int64_t>(storage);
+        return std::get<std::int64_t>(data);
     }
 
     [[nodiscard]] std::uint64_t as_uint() const {
-        return std::get<std::uint64_t>(storage);
+        return std::get<std::uint64_t>(data);
     }
 
     [[nodiscard]] double as_double() const {
-        return std::get<double>(storage);
+        return std::get<double>(data);
     }
 
     [[nodiscard]] std::string_view as_string() const {
-        const auto& s = std::get<std::string>(storage);
+        const auto& s = std::get<std::string>(data);
         return std::string_view(s);
     }
 
     [[nodiscard]] const Array& as_array() const {
-        return std::get<Array>(storage);
+        return std::get<Array>(data);
     }
 
     [[nodiscard]] Array& as_array() {
-        return std::get<Array>(storage);
+        return std::get<Array>(data);
     }
 
     [[nodiscard]] const Object& as_object() const {
-        return std::get<Object>(storage);
+        return std::get<Object>(data);
     }
 
     [[nodiscard]] Object& as_object() {
-        return std::get<Object>(storage);
+        return std::get<Object>(data);
     }
 
     [[nodiscard]] Cursor cursor() const noexcept;
@@ -348,19 +348,19 @@ public:
     [[nodiscard]] Cursor operator[](std::string_view key) const;
     [[nodiscard]] Cursor operator[](std::size_t index) const;
 
-    [[nodiscard]] const storage_t& variant() const noexcept {
-        return storage;
+    [[nodiscard]] const variant_type& variant() const noexcept {
+        return data;
     }
 
     bool operator==(const Value& other) const {
-        return storage == other.storage;
+        return data == other.data;
     }
 
 private:
-    storage_t storage;
+    variant_type data;
 };
 
-inline Value::Value(std::initializer_list<Object::entry> entries) : storage(Object(entries)) {}
+inline Value::Value(std::initializer_list<Object::entry> entries) : data(Object(entries)) {}
 
 class Cursor {
 public:
@@ -497,12 +497,12 @@ public:
                                           : std::format("{} -> [{}]", message, index));
     }
 
+private:
+    friend class Value;
+
     void assert_valid() const {
         assert(ptr != nullptr);
     }
-
-private:
-    friend class Value;
 
     static Cursor make_error(std::string text) noexcept {
         Cursor c;

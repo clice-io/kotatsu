@@ -103,7 +103,7 @@ struct deserialize_visit<Vis, ipc::protocol::Literal<Text>, Config> {
         if(text == expected) {
             return true;
         }
-        return scoped_context<typename Vis::error_type>::fail(
+        return scoped_context<rich_error>::fail(
             rich_error(std::format(R"(expected "{}", got "{}")", expected, text)));
     }
 };

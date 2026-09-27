@@ -272,6 +272,13 @@ ZEST_CASE(adjacent_duplicate_tag_fails) {
     EXPECT(status.error().message == "adjacently tagged variant: duplicate tag field");
 }
 
+ZEST_CASE(internal_duplicate_tag_fails) {
+    test::InternalShape out;
+    auto status = json::from_string(R"({"kind":"circle","kind":"rect","radius":1})", out);
+    ASSERT(!status);
+    EXPECT(status.error().message == "internally tagged variant: duplicate tag field");
+}
+
 ZEST_CASE(adjacent_duplicate_content_fails) {
     test::AdjacentShape out;
     auto status = json::from_string(R"({"t":"number","c":1,"c":2})", out);

@@ -172,7 +172,7 @@ template <typename T, std::size_t I, typename Policy>
 struct renamed_name_static {
     constexpr static std::size_t len = apply_rename_cx<Policy>(meta::field_name<I, T>()).size();
 
-    constexpr static auto storage = [] {
+    constexpr static auto chars = [] {
         auto renamed = apply_rename_cx<Policy>(meta::field_name<I, T>());
         std::array<char, len> arr{};
         for(std::size_t i = 0; i < len; ++i)
@@ -180,7 +180,7 @@ struct renamed_name_static {
         return arr;
     }();
 
-    constexpr static std::string_view value{storage.data(), storage.size()};
+    constexpr static std::string_view value{chars.data(), chars.size()};
 };
 
 template <typename Config>
@@ -278,27 +278,31 @@ struct resolved_repr {
     using config = Config;
 };
 
-/// Precedence mirrors the codec dispatch (encode_value / encode_one_field):
-/// behavior::with wins over behavior::as, which wins over
-/// behavior::enum_string; the type's repr applies only when no behavior attr
-/// provides the representation, and within it the config's format tag selects
-/// a format-scoped specialization over the format-agnostic one — the same
-/// choice the dispatch makes from the visitor's format tag. Every chosen
-/// representation re-enters the resolver, so chained reprs and annotations
-/// nested inside representation types resolve to the final type, matching the
-/// codec's recursive re-dispatch on the converted value. The rename_all /
-/// deny_unknown_fields of reflectable annotated nodes merge into the carried
-/// config through merged_config_t — the same primitive and the same
-/// reflectable_class gate
-/// the codec dispatch uses — so the resulting type_info describes the
-/// documents the codec actually reads and writes. A tagged variant keeps its
-/// tagging spec attr; the spec's own rename_all/deny stay inert for the
-/// alternatives, exactly as in the codec, where the tagging branch is taken
-/// before the config merge.
+/// Precedence mirrors the codec dispatch (encode_with_attrs /
+/// decode_with_attrs): behavior::with wins over behavior::as, which wins over
+/// behavior::enum_string, which wins over a tagging spec on a std::variant (a
+/// tagged variant is read and written as that variant, whatever repr its
+/// type has). The type's repr applies only when none of these does, and the
+/// config's format tag selects a format-scoped specialization over the
+/// format-agnostic one, as the dispatch does from the visitor's format tag.
+/// Every chosen representation re-enters the resolver, so chained reprs and
+/// annotations nested inside representation types resolve to the final type,
+/// matching the codec's recursive re-dispatch on the converted value. The
+/// rename_all / deny_unknown_fields of annotated nodes merge into the carried
+/// config through node_config_t, the alias the dispatch uses, so the
+/// resulting type_info describes the documents the codec reads and writes. A
+/// tagged variant keeps its tagging spec attr; the spec's own rename_all /
+/// deny stay inert for the alternatives, as in the codec, where the tagging
+/// branch is taken before the config merge.
 template <typename T, typename Config = default_config>
-constexpr auto resolve_repr() {
-    using raw_t = typename unwrap_annotated<T>::raw_type;
-    using attrs_t = typename unwrap_annotated<T>::attrs;
+constexpr auto resolve_repr();
+
+/// resolve_repr over a type given as its raw type and attrs, as a struct
+/// field's slot holds it.
+template <typename Raw, typename Attrs, typename Config = default_config>
+constexpr auto resolve_node() {
+    using raw_t = Raw;
+    using attrs_t = Attrs;
 
     if constexpr(tuple_has_spec_v<attrs_t, behavior::with>) {
         using adapter = typename tuple_find_spec_t<attrs_t, behavior::with>::adapter;
@@ -308,23 +312,24 @@ constexpr auto resolve_repr() {
         return resolve_repr<target, Config>();
     } else if constexpr(tuple_has_spec_v<attrs_t, behavior::enum_string>) {
         return resolved_repr<std::string_view, std::tuple<>, Config>{};
-    } else if constexpr(has_repr<raw_t, format_of_t<Config>>) {
-        using chosen = repr_for<raw_t, format_of_t<Config>>;
-        if constexpr(reflectable_class<raw_t>) {
-            return resolve_repr<declared_repr_t<chosen>, merged_config_t<Config, attrs_t>>();
-        } else {
-            return resolve_repr<declared_repr_t<chosen>, Config>();
-        }
     } else if constexpr(is_specialization_of<std::variant, raw_t> &&
                         struct_spec_of<attrs_t>.tagging != tag_mode::none) {
         return resolved_repr<raw_t,
                              std::tuple<tuple_find_t<attrs_t, is_struct_spec_attr>>,
                              Config>{};
-    } else if constexpr(reflectable_class<raw_t>) {
-        return resolved_repr<raw_t, std::tuple<>, merged_config_t<Config, attrs_t>>{};
+    } else if constexpr(has_repr<raw_t, format_of_t<Config>>) {
+        using chosen = repr_for<raw_t, format_of_t<Config>>;
+        return resolve_repr<declared_repr_t<chosen>, node_config_t<Config, raw_t, attrs_t>>();
     } else {
-        return resolved_repr<raw_t, std::tuple<>, Config>{};
+        return resolved_repr<raw_t, std::tuple<>, node_config_t<Config, raw_t, attrs_t>>{};
     }
+}
+
+template <typename T, typename Config>
+constexpr auto resolve_repr() {
+    return resolve_node<typename unwrap_annotated<T>::raw_type,
+                        typename unwrap_annotated<T>::attrs,
+                        Config>();
 }
 
 template <typename T, typename AttrsT, typename Config, type_kind Kind = kind_of<T>()>
@@ -413,7 +418,7 @@ struct variant_info_node<std::variant<Ts...>, Config, AttrsTuple> {
     constexpr static std::array<type_info_fn, sizeof...(Ts)> alternatives = {
         type_info_of<Ts, Config>...};
 
-    // Backing storage is always sizeof...(Ts) (>=1 since variant must have alternatives);
+    // The backing array is always sizeof...(Ts) (>=1 since variant must have alternatives);
     // for non-tagged variants the elements stay default-constructed and the consumer
     // span below is explicitly given size 0, so no element is ever read.
     constexpr static auto alt_names = [] {

@@ -1,10 +1,20 @@
 #pragma once
 
+#include <bit>
+#include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
+#include <iterator>
+#include <ranges>
+#include <span>
+#include <string_view>
+#include <type_traits>
 #include <vector>
 
+#include "kota/support/expected_try.h"
 #include "kota/codec/bincode/type.h"
+#include "kota/codec/dyn/document.h"
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/encode.h"
 
@@ -13,13 +23,12 @@ namespace kota::codec::bincode {
 /// Streams values into `buf` in bincode's fixed little-endian layout (see
 /// the `# Lowerings` table on bincode::format in type.h). Everything is
 /// widened before writing — ints to int64/uint64, floats to double — so a
-/// value's wire size never depends on its declared width; Reader narrows
+/// value's encoded size never depends on its declared width; Reader narrows
 /// back with range checks. Containers write only a u64 element count and
 /// structs write nothing at all, which is what makes the format
 /// non-self-describing.
 struct Writer {
     std::vector<std::byte>& buf;
-    using error_type = rich_error;
     using format = bincode::format;
     constexpr static bool human_readable = false;
     /// Struct fields are concatenated with no marker, so skip_if never omits
@@ -39,6 +48,12 @@ struct Writer {
 
     void write_u8(std::uint8_t value) {
         buf.push_back(static_cast<std::byte>(value));
+    }
+
+    /// A string or byte sequence: u64 length prefix, then the bytes.
+    void write_blob(std::span<const std::byte> bytes) {
+        write_le(static_cast<std::uint64_t>(bytes.size()));
+        buf.insert(buf.end(), bytes.begin(), bytes.end());
     }
 
     bool visit_bool(bool v) {
@@ -75,19 +90,13 @@ struct Writer {
     template <typename T>
     bool visit_str(const T& v) {
         std::string_view sv(v);
-        write_le(static_cast<std::uint64_t>(sv.size()));
-        buf.insert(buf.end(),
-                   reinterpret_cast<const std::byte*>(sv.data()),
-                   reinterpret_cast<const std::byte*>(sv.data() + sv.size()));
+        write_blob(std::as_bytes(std::span(sv.data(), sv.size())));
         return true;
     }
 
     template <typename T>
     bool visit_bytes(const T& v) {
-        auto data = reinterpret_cast<const std::byte*>(std::data(v));
-        auto len = std::size(v);
-        write_le(static_cast<std::uint64_t>(len));
-        buf.insert(buf.end(), data, data + len);
+        write_blob(std::as_bytes(std::span(std::data(v), std::size(v))));
         return true;
     }
 
@@ -150,14 +159,10 @@ struct Writer {
 /// Encodes `value` as a bincode byte buffer. Decode requires the same T and
 /// Config — the format carries no self-description.
 template <typename Config = void, typename T>
-auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, bincode::error> {
-    rich_error err;
-    scoped_context<rich_error> guard(err);
+auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, rich_error> {
     std::vector<std::byte> buf;
     Writer vis{buf};
-    if(!encode_value<default_config<Config>>(vis, value)) {
-        return std::unexpected(std::move(err));
-    }
+    KOTA_EXPECTED_TRY(codec::detail::run_encode<Config>(vis, value));
     return buf;
 }
 
@@ -165,12 +170,27 @@ auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, bincode::
 
 namespace kota::codec {
 
-// std::monostate is null_like, but in bincode variant payloads it should write nothing
-// (the old Serializer skipped monostate payloads entirely).
+// std::monostate has a single value, so unlike other null-like types it
+// writes no byte at all, wherever it appears.
 template <typename Config>
 struct serialize_visit<bincode::Writer, std::monostate, Config> {
     static bool visit(bincode::Writer& /*vis*/, const std::monostate& /*value*/) {
         return true;
+    }
+};
+
+/// A bincode document does not say what a value is, so a dyn::Value writes
+/// its ValueKind as one byte before what it holds (see bincode::format).
+/// Declared in bincode's own header, which includes the type, so every
+/// translation unit that can write bincode sees it rather than dyn's
+/// untagged form, whose bytes cannot be read back.
+template <typename Config>
+struct serialize_visit<bincode::Writer, dyn::Value, Config> {
+    static bool visit(bincode::Writer& vis, const dyn::Value& value) {
+        vis.write_u8(static_cast<std::uint8_t>(value.kind()));
+        return std::visit(
+            [&](const auto& stored) -> bool { return encode_value<Config>(vis, stored); },
+            value.variant());
     }
 };
 

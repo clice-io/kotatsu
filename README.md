@@ -48,26 +48,26 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - Type classification (`type_kind.h`): a `type_kind` enum plus companion concepts such as `int_like`, `uint_like`, `str_like`, `bytes_like`, `tuple_like`.
 - Runtime type metadata (`type_info.h`): typed descriptors (`struct_type_info`, `enum_type_info`, `tuple_type_info`, `variant_type_info`, `array_type_info`, `map_type_info`, `optional_type_info`) accessible through `type_info_of<T, Config>()`.
 - Reflection-powered comparison (`compare.h`): transparent `eq` / `ne` / `lt` / `le` / `gt` / `ge` functors that recursively handle aggregates, variants, optionals, and ranges.
-- Attribute markers for the codec layer (`annotation.h`, `attrs.h`):
-  - field values (`spec.h`): `rename`, `alias`, `description`, `idx`, `skip`, `flatten`, `defaulted`, built-in `skip_if` conditions — declared with `KOTATSU_ANNOTATE(...)` and stored in one constexpr `field_spec` per annotation, so strings never enter mangled names
-  - struct/variant values (`spec.h`): `rename_all`, `deny_unknown_fields`, variant tagging (`tagged`/`tag`/`content`/`tag_names`) — declared with `KOTATSU_ANNOTATION(name, ...)` and stored in one constexpr `struct_spec` per annotation
-  - type attributes: `hint`, and behaviors `enum_string`, `skip_if<Pred>`, `with<Adapter>`, `as<Target>`
-  - attach via the macros or the `annotation<T, Attrs...>` wrapper (three kinds: wrap / inherit / inherit-use)
-- Compile-time schema IR (`schema.h`): `virtual_schema<T, Config>` produces `field_slot<RawType, ReprType, BehaviorAttrs>` entries that codec backends consume, with flattening and skipping resolved up-front.
+- Attributes for the codec layer (`spec.h`, `attrs.h`, `annotation.h`):
+  - field values: `rename`, `alias`, `description`, `skip`, `flatten`, `defaulted`, `skip_if` (a built-in `skip_when` condition or a predicate type), and `idx`, which is metadata only: it reaches `field_info`, but no backend lays fields out by it
+  - struct/variant values: `rename_all`, `deny_unknown_fields`, and variant tagging (`tagged` / `tag` / `content` / `tag_names`) in external, internal or adjacent form
+  - behaviors: `as<Target>` (travel as another type), `with<Adapter>` (a per-field representation), `enum_string<Policy>`, `skip_if<Pred>`; a predicate taking only the value applies when encoding, one taking `(value, is_serialize)` decides both ways
+  - declared with `KOTATSU_ANNOTATE(...)` on a field or `KOTATSU_ANNOTATION(name, ...)` for a reusable tag (both in `kota/codec/macro.h`), or with `annotate<Tag>::type<T>` / `annotation<T, Attrs...>` (which wrap, inherit or inherit-and-use T as its kind requires); the strings live in one constexpr spec per annotation, so they never enter mangled names
+- Type representations (`repr.h`): specializing `repr<T>` or `repr<T, Format>` says what a type travels as, declaratively (`to` / `from`) or imperatively (`serialize` / `deserialize` over the visitor); a repr declaring `meta::dynamic` covers shapes known only at run time (not on FlatBuffers). Reprs chain, and a format-scoped one wins for its backend.
+- Compile-time schema (`schema.h`, `type_info.h`): `virtual_schema<T, Config>` lists a struct's slots (`field_slot<RawType, BehaviorAttrs>`) and `field_info` table with flattening and skipping resolved up front; `type_info_of<T, Config>()` gives runtime descriptors (struct, enum, tuple, variant, array, map, optional) that follow reprs and attributes (`resolved_repr_t`) exactly as the codec does.
 
 ### `codec` (`include/kota/codec/*`)
 
-- Attribute-driven schema framework:
-  - User types participate by being reflectable aggregates and optionally wearing `meta::annotation<T, Attrs...>` for per-field or struct-level customization.
-  - A compile-time field-lookup table and behavior-dispatch layer are built from `meta::virtual_schema<T, Config>`; backends consume field slots rather than re-deriving layout.
-  - `codec::serialize(s, v)` / `codec::deserialize(d, v)` dispatch on annotations first, then on `meta::type_kind`, giving a single entry point whose behavior is controlled entirely by types and attributes.
-- Generic trait contract: `serialize_traits<S, V>` / `deserialize_traits<D, V>` with `std::expected<…, error>` return. The `serializer_like` / `deserializer_like` concepts spell out the full visitor surface (null, bool, int, uint, float, char, str, bytes, optional, seq, tuple, map, struct, plus external / internal / adjacent variant tagging).
-- Structured error model: a shared `rich_error` type carrying a message, the navigation path from the root to the error site, and an optional source location (line / column / byte offset); every backend exposes it as its `error` alias.
+- One visitor protocol shared by every backend (`codec/visit/`): `encode_value` / `decode_value` dispatch on a backend override (`serialize_visit` / `deserialize_visit`, specialized per visitor, as ipc does for its protocol types), then annotations and `meta::repr`, then `meta::type_kind`. A backend is a visitor; text backends read data-driven (by key, with speculative `try_read` for untagged variants), binary backends positionally.
+- Attributes and config apply the same on every backend: renames and aliases, skipping, flattening, defaults and required fields, `as` / `with` / `enum_string`, tagged variants (a tag wins over the variant type's own repr) and untagged ones picked by probing the input. `default_config<UserConfig>` supplies `enum_repr`, `nan_repr`, `deny_unknown_fields`, `detailed_error`, and takes `field_rename` / `enum_rename` policies; `human_readable = false` turns tagging off on a text backend (a binary backend cannot turn it on).
+- Errors: every encode and decode entry point returns `std::expected<…, rich_error>` (a FlatBuffers view that fails verification is an invalid view instead); a `rich_error` carries the message, the path from the root to the failing value (`a.b[3]`), and a source location where the backend knows one.
 - Backends:
-  - JSON (`codec/json/`): a high-throughput streaming backend built on simdjson, with a portable `content::Value` DOM (pure `std::variant`) for structured in-memory access.
-  - Bincode (`codec/bincode/`): compact length-prefixed binary format, read and write.
-  - TOML (`codec/toml/`): `tomlplusplus`-backed, read and write.
-  - FlatBuffers (`codec/flatbuffers/`): binary serialization plus compile-time `.fbs` schema emission from annotated structs.
+  - JSON (`codec/json/`): simdjson-based `to_string` / `from_string`, `prettify`, `RawValue` for pass-through JSON, and JSON Schema generation (`schema<T>()`) that agrees with what the encoder writes.
+  - TOML (`codec/toml/`): toml++-based `to_toml` / `from_toml` and `to_string` / `from_string`; values that are not tables are boxed under a root key.
+  - dyn (`codec/dyn/`): `dyn::Value`, an ordered DOM (null, bool, signed and unsigned integers, double, string, `Array`, `Object`) with `Cursor` navigation; `to_dyn` / `from_dyn`. JSON, TOML and bincode read and write it as a document of their own (bincode behind a kind byte); JSON Schema generation and the LSP model use it.
+  - Bincode (`codec/bincode/`): compact little-endian `to_bytes` / `from_bytes`, not self-describing: decode with the type and config that encoded.
+  - FlatBuffers (`codec/fbs/`): `to_bytes` / `from_bytes` with the layout computed from the type (no `.fbs` files), a decoder that verifies every access, and zero-copy views (`table_view`, `array_view`, `map_view`, `variant_view`, `tuple_view`) over a buffer verified once.
+  - debug (`codec/debug/`): Rust-Debug-style `to_string` for logs and test output; encode-only.
 
 ### `ipc` (`include/kota/ipc/*`)
 

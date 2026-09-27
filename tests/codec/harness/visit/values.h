@@ -54,6 +54,38 @@ void values(const Kit<B>& kit) {
     // in two bytes of UTF-8 above 0x7F.
     roundtrip(kit, "char_above_ascii_roundtrip", [] { return static_cast<char>(0x80); });
     roundtrip(kit, "string_roundtrip", [] { return std::string("hello"); });
+    // A C string writes its text; a null one has no text and writes null.
+    encodes_as(
+        kit,
+        "c_string_encodes_as_string",
+        [] { return Field<const char*>{"text"}; },
+        [] { return Field<std::string>{"text"}; });
+    encodes_as(
+        kit,
+        "null_c_string_encodes_as_null",
+        [] { return Field<const char*>{nullptr}; },
+        [] { return Field<std::nullptr_t>{nullptr}; });
+    // A weak pointer writes what the shared pointer it locks to writes.
+    encodes_as(
+        kit,
+        "weak_ptr_encodes_as_shared_ptr",
+        [] {
+            const static auto owner = std::make_shared<int>(7);
+            return Field<std::weak_ptr<int>>{owner};
+        },
+        [] { return Field<std::shared_ptr<int>>{std::make_shared<int>(7)}; });
+    encodes_as(
+        kit,
+        "c_string_map_key_encodes_as_string_key",
+        [] { return Field<std::map<const char*, int>>{{{"k", 1}}}; },
+        [] { return Field<std::map<std::string, int>>{{{"k", 1}}}; });
+    if constexpr(B::caps.self_describing) {
+        // A keyed document's map key is text, with no null to write.
+        write_fails(kit,
+                    "null_c_string_map_key_fails",
+                    [] { return Field<std::map<const char*, int>>{{{nullptr, 1}}}; },
+                    {.message = "null C string map key", .path = "value[0]"});
+    }
     roundtrip(kit, "enum_roundtrip", [] { return SignedEnum::neg; });
     roundtrip(kit, "unsigned_enum_roundtrip", [] { return UInt8Enum::c; });
     roundtrip(kit, "char_enum_roundtrip", [] { return Letter::z; });

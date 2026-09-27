@@ -75,25 +75,13 @@ struct default_config :
 /// Such backends cannot carry a meta::dynamic repr: there is no layout to
 /// compute.
 template <typename Vis>
-constexpr bool is_layout_computed() {
-    if constexpr(requires { Vis::layout_computed; }) {
-        return Vis::layout_computed;
-    } else {
-        return false;
-    }
-}
+concept layout_computed = requires { requires Vis::layout_computed; };
 
 /// True when the visitor writes a struct's fields back to back with nothing
 /// marking which are present (bincode). It cannot leave a field out, so
 /// skip_if does not apply: every field is written, and decode reads it back.
 template <typename Vis>
-constexpr bool writes_every_field() {
-    if constexpr(requires { Vis::writes_every_field; }) {
-        return Vis::writes_every_field;
-    } else {
-        return false;
-    }
-}
+concept writes_every_field = requires { requires Vis::writes_every_field; };
 
 /// Config > Vis > true. Determines text vs binary serialization strategy for user-defined types.
 template <typename Config, typename Vis>
@@ -106,6 +94,25 @@ constexpr bool is_human_readable() {
         return true;
     }
 }
+
+namespace detail {
+
+/// Whether Config's human_readable fits the visitor: a config may turn a
+/// human-readable backend's name tags off, never a binary backend's on, since
+/// a binary visitor writes no field names and a tagged variant would encode
+/// as a struct its decoder does not read.
+template <typename Config, typename Vis>
+concept human_readable_allowed =
+    !requires { Vis::human_readable; } || Vis::human_readable || !is_human_readable<Config, Vis>();
+
+template <typename Config, typename Vis>
+consteval void assert_human_readable_allowed() {
+    static_assert(human_readable_allowed<Config, Vis>,
+                  "Config::human_readable = true on a binary backend: only a human-readable "
+                  "backend's tagging can be configured, and only off");
+}
+
+}  // namespace detail
 
 template <typename Config>
 std::string apply_enum_rename(bool is_serialize, std::string_view name) {

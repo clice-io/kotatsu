@@ -22,7 +22,6 @@
 #include "kota/meta/struct.h"
 #include "kota/meta/type_kind.h"
 #include "kota/codec/fbs/type.h"
-#include "kota/codec/visit/encode.h"
 
 namespace kota::codec::fbs {
 
@@ -74,13 +73,7 @@ private:
 };
 
 template <typename T>
-constexpr bool is_string_like_v = meta::str_like<T>;
-
-template <typename T>
-constexpr bool is_range_like_v = std::ranges::input_range<T> && !is_string_like_v<T>;
-
-template <typename T>
-constexpr bool is_tuple_like_v = meta::tuple_like<T>;
+constexpr bool is_range_like_v = std::ranges::input_range<T> && !meta::str_like<T>;
 
 template <typename T>
 constexpr bool is_scalar_v =
@@ -152,13 +145,13 @@ consteval element_layout element_layout_of() {
        k == meta::type_kind::map || k == meta::type_kind::bytes) {
         return element_layout::boxed;
     }
-    if(is_string_like_v<repr_t>) {
+    if(meta::str_like<repr_t>) {
         return element_layout::string;
     }
     if(is_scalar_v<repr_t>) {
         return element_layout::scalar;
     }
-    if(can_inline_struct_v<repr_t> && !is_tuple_like_v<repr_t>) {
+    if(can_inline_struct_v<repr_t> && !meta::tuple_like<repr_t>) {
         return element_layout::inline_struct;
     }
     return element_layout::table;
@@ -226,23 +219,6 @@ auto field_index(Member Object::* member) -> std::size_t {
     return fields.size();
 }
 
-// Any voffset >= vtable_size makes GetOptionalFieldOffset return 0 (absent).
-constexpr inline slot_id invalid_slot = std::numeric_limits<slot_id>::max();
-
-inline auto field_slot(std::size_t index) -> slot_id {
-    auto r = detail::field_voffset(index);
-    return r.has_value() ? *r : invalid_slot;
-}
-
-inline auto variant_tag_slot() -> slot_id {
-    return detail::first_field;
-}
-
-inline auto variant_payload_slot(std::size_t index) -> slot_id {
-    auto r = detail::variant_payload_voffset(index);
-    return r.has_value() ? *r : invalid_slot;
-}
-
 /// The typed flatbuffers vector pointer an element layout is read through;
 /// boxed and table layouts share the table-offset vector shape.
 template <typename Element, element_layout Layout = element_layout_of<Element>()>
@@ -276,12 +252,6 @@ constexpr bool is_map_range_v = [] {
         return false;
     }
 }();
-
-template <typename T, typename = void>
-struct field_return_type;
-
-template <typename T>
-using field_return_type_t = typename field_return_type<T>::type;
 
 template <typename T>
 struct variant_view_for;
@@ -336,77 +306,55 @@ struct map_view_for<T> {
 template <typename T>
 using map_view_for_t = typename map_view_for<T>::type;
 
-// Uses partial specialization to avoid eagerly instantiating type aliases for non-matching
-// branches.
-template <typename T, typename>
-struct field_return_type {
-    using type = table_view<T>;
-};
+/// The view type a sequence or map reads as.
+template <typename T>
+consteval auto range_view_impl() {
+    if constexpr(is_map_range_v<T>) {
+        return std::type_identity<map_view_for_t<T>>{};
+    } else {
+        // The raw element type is kept: array_view itself distinguishes the
+        // element layout (on the unpeeled representation) from the peeled
+        // view type.
+        return std::type_identity<array_view<std::remove_cvref_t<std::ranges::range_value_t<T>>>>{};
+    }
+}
+
+/// The type read_field returns for a value of view type T. Only the chosen
+/// branch's alias is instantiated.
+template <typename T>
+consteval auto field_return_impl() {
+    if constexpr(meta::str_like<T>) {
+        return std::type_identity<std::string_view>{};
+    } else if constexpr(is_specialization_of<std::variant, T>) {
+        return std::type_identity<variant_view_for_t<T>>{};
+    } else if constexpr(meta::tuple_like<T>) {
+        return std::type_identity<tuple_view_for_t<T>>{};
+    } else if constexpr(is_scalar_v<T> || can_inline_struct_v<T>) {
+        return std::type_identity<T>{};
+    } else if constexpr(is_range_like_v<T>) {
+        return range_view_impl<T>();
+    } else {
+        return std::type_identity<table_view<T>>{};
+    }
+}
 
 template <typename T>
-struct field_return_type<T, std::enable_if_t<is_string_like_v<T>>> {
-    using type = std::string_view;
-};
+using field_return_type_t = typename decltype(field_return_impl<T>())::type;
 
-template <typename T>
-struct field_return_type<T,
-                         std::enable_if_t<!is_string_like_v<T> && !is_tuple_like_v<T> &&
-                                          (is_scalar_v<T> || can_inline_struct_v<T>)>> {
-    using type = T;
-};
-
-template <typename T>
-struct field_return_type<T, std::enable_if_t<is_specialization_of<std::variant, T>>> {
-    using type = variant_view_for_t<T>;
-};
-
-template <typename T>
-struct field_return_type<
-    T,
-    std::enable_if_t<!is_specialization_of<std::variant, T> && is_tuple_like_v<T>>> {
-    using type = tuple_view_for_t<T>;
-};
-
-template <typename T>
-struct field_return_type<T, std::enable_if_t<is_map_range_v<T>>> {
-    using type = map_view_for_t<T>;
-};
-
-template <typename T>
-struct field_return_type<
-    T,
-    std::enable_if_t<!is_string_like_v<T> && !is_scalar_v<T> && !can_inline_struct_v<T> &&
-                     !is_specialization_of<std::variant, T> && !is_tuple_like_v<T> &&
-                     !is_map_range_v<T> && is_range_like_v<T>>> {
-    // The raw element type is kept: array_view itself distinguishes the
-    // element layout (on the unpeeled representation) from the peeled view type.
-    using type = array_view<std::remove_cvref_t<std::ranges::range_value_t<T>>>;
-};
-
-template <typename Member,
-          typename CleanMember = deep_clean_t<Member>,
-          bool IsRange = is_range_like_v<CleanMember> && !is_tuple_like_v<CleanMember>>
-struct member_return_impl;
-
-template <typename Member, typename CleanMember>
-    requires is_map_range_v<CleanMember>
-struct member_return_impl<Member, CleanMember, true> {
-    using type = map_view_for_t<CleanMember>;
-};
-
-template <typename Member, typename CleanMember>
-    requires (!is_map_range_v<CleanMember>)
-struct member_return_impl<Member, CleanMember, true> {
-    using type = array_view<std::remove_cvref_t<std::ranges::range_value_t<CleanMember>>>;
-};
-
-template <typename Member, typename CleanMember>
-struct member_return_impl<Member, CleanMember, false> {
-    using type = field_return_type_t<CleanMember>;
-};
+/// A struct member's view type: its cleaned type's, except that a member
+/// that is a sequence or map reads as one even if its type could inline.
+template <typename Member>
+consteval auto member_return_impl() {
+    using clean_t = deep_clean_t<Member>;
+    if constexpr(is_range_like_v<clean_t> && !meta::tuple_like<clean_t>) {
+        return range_view_impl<clean_t>();
+    } else {
+        return std::type_identity<field_return_type_t<clean_t>>{};
+    }
+}
 
 template <typename Member>
-using member_return_t = typename member_return_impl<Member>::type;
+using member_return_t = typename decltype(member_return_impl<Member>())::type;
 
 // Unchecked read: returns {} on miss rather than reporting errors.
 template <typename T>
@@ -430,13 +378,13 @@ auto read_field(table_ref view, slot_id field) -> field_return_type_t<T> {
         } else {
             return static_cast<T>(view.template get_scalar<double>(field));
         }
-    } else if constexpr(is_string_like_v<T>) {
+    } else if constexpr(meta::str_like<T>) {
         const auto* text = table->template GetPointer<const String*>(field);
         if(text == nullptr) {
             return {};
         }
         return std::string_view(text->data(), text->size());
-    } else if constexpr(is_specialization_of<std::variant, T> || is_tuple_like_v<T>) {
+    } else if constexpr(is_specialization_of<std::variant, T> || meta::tuple_like<T>) {
         // Table-shaped like the trailing else, but ordered before the range
         // branch: std::array is both tuple-like and range-like and must read
         // as a table.
@@ -525,24 +473,18 @@ bool verify_field(verifier_t& v, const Table* tbl, slot_id slot);
 template <typename T>
 bool verify_table(verifier_t& v, const Table* tbl);
 
-/// Verify one struct field slot: behavior attrs re-route the wire type
-/// exactly as meta's repr resolver does (with > as > enum_string), then the
-/// resolved view type classifies the slot.
+/// Verify one struct field slot as the type meta's resolver gives its raw
+/// type and attrs, the type the dispatch wrote. A tagged variant is that
+/// variant itself; anything else still has its nullable wrappers peeled.
 template <typename Slot>
 bool verify_slot(verifier_t& v, const Table* tbl, slot_id slot) {
-    using raw_t = std::remove_cv_t<typename Slot::raw_type>;
-    using attrs_t = typename Slot::attrs;
-
-    if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
-        using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
-        return verify_field<deep_clean_t<meta::declared_repr_t<adapter>>>(v, tbl, slot);
-    } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
-        using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
-        return verify_field<deep_clean_t<target>>(v, tbl, slot);
-    } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::enum_string>) {
-        return verify_field<std::string_view>(v, tbl, slot);
+    using resolved = decltype(meta::detail::resolve_node<std::remove_cv_t<typename Slot::raw_type>,
+                                                         typename Slot::attrs,
+                                                         meta::format_config<format>>());
+    if constexpr(std::is_same_v<typename resolved::tag_attrs, std::tuple<>>) {
+        return verify_field<deep_clean_t<typename resolved::type>>(v, tbl, slot);
     } else {
-        return verify_field<deep_clean_t<raw_t>>(v, tbl, slot);
+        return verify_field<typename resolved::type>(v, tbl, slot);
     }
 }
 
@@ -551,19 +493,22 @@ bool verify_table(verifier_t& v, const Table* tbl) {
     if(!tbl->VerifyTableStart(v)) {
         return false;
     }
+    using detail::field_slot;
     bool ok;
     if constexpr(is_specialization_of<std::variant, T>) {
+        detail::assert_slots_fit<std::variant_size_v<T> + 1>();
         // variant_view::get<I>() is reachable for every alternative
         // regardless of the stored tag, so every payload slot must verify.
-        ok = tbl->VerifyField<std::uint32_t>(v, variant_tag_slot(), alignof(std::uint32_t)) &&
+        ok = tbl->VerifyField<std::uint32_t>(v, field_slot(0), alignof(std::uint32_t)) &&
              [&]<std::size_t... Is>(std::index_sequence<Is...>) {
                  return (verify_field<deep_clean_t<std::variant_alternative_t<Is, T>>>(
                              v,
                              tbl,
-                             variant_payload_slot(Is)) &&
+                             field_slot(Is + 1)) &&
                          ...);
              }(std::make_index_sequence<std::variant_size_v<T>>{});
-    } else if constexpr(is_tuple_like_v<T>) {
+    } else if constexpr(meta::tuple_like<T>) {
+        detail::assert_slots_fit<std::tuple_size_v<T>>();
         ok = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
             return (
                 verify_field<deep_clean_t<std::tuple_element_t<Is, T>>>(v, tbl, field_slot(Is)) &&
@@ -572,6 +517,7 @@ bool verify_table(verifier_t& v, const Table* tbl) {
     } else {
         detail::assert_fields_reflected<T>();
         using slots = typename object_schema<T>::slots;
+        detail::assert_slots_fit<type_list_size_v<slots>>();
         ok = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
             return (verify_slot<type_list_element_t<Is, slots>>(v, tbl, field_slot(Is)) && ...);
         }(std::make_index_sequence<type_list_size_v<slots>>{});
@@ -594,10 +540,10 @@ bool verify_field(verifier_t& v, const Table* tbl, slot_id slot) {
     } else if constexpr(meta::floating_like<T>) {
         using cell_t = scalar_cell_t<T>;
         return tbl->VerifyField<cell_t>(v, slot, alignof(cell_t));
-    } else if constexpr(is_string_like_v<T>) {
+    } else if constexpr(meta::str_like<T>) {
         return tbl->VerifyOffset(v, slot) &&
                v.VerifyString(tbl->template GetPointer<const String*>(slot));
-    } else if constexpr(is_specialization_of<std::variant, T> || is_tuple_like_v<T>) {
+    } else if constexpr(is_specialization_of<std::variant, T> || meta::tuple_like<T>) {
         // Table-shaped like the trailing else, but ordered before the range
         // branch to match read_field: std::array is both tuple-like and
         // range-like and travels as a table.
@@ -627,8 +573,8 @@ bool verify_field(verifier_t& v, const Table* tbl, slot_id slot) {
             if(!entry->VerifyTableStart(v)) {
                 return false;
             }
-            const bool ok = verify_field<clean_key_t>(v, entry, field_slot(0)) &&
-                            verify_field<clean_mapped_t>(v, entry, field_slot(1));
+            const bool ok = verify_field<clean_key_t>(v, entry, detail::field_slot(0)) &&
+                            verify_field<clean_mapped_t>(v, entry, detail::field_slot(1));
             v.EndTable();
             if(!ok) {
                 return false;
@@ -863,7 +809,7 @@ public:
             return sizeof...(Ts);
         }
         return static_cast<std::size_t>(
-            view.template get_scalar<std::uint32_t>(proxy_detail::variant_tag_slot()));
+            view.template get_scalar<std::uint32_t>(detail::field_slot(0)));
     }
 
     template <std::size_t I>
@@ -878,7 +824,7 @@ public:
             return return_t{};
         }
 
-        return proxy_detail::read_field<clean_alt_t>(view, proxy_detail::variant_payload_slot(I));
+        return proxy_detail::read_field<clean_alt_t>(view, detail::field_slot(I + 1));
     }
 
     constexpr auto raw() const noexcept -> const Table* {
@@ -918,7 +864,7 @@ public:
             return return_t{};
         }
 
-        return proxy_detail::read_field<clean_element_t>(view, proxy_detail::field_slot(I));
+        return proxy_detail::read_field<clean_element_t>(view, detail::field_slot(I));
     }
 
     constexpr auto raw() const noexcept -> const Table* {
@@ -973,7 +919,7 @@ public:
         if(!entry.valid()) {
             return value_return_t{};
         }
-        return proxy_detail::read_field<clean_v>(entry, proxy_detail::field_slot(1));
+        return proxy_detail::read_field<clean_v>(entry, detail::field_slot(1));
     }
 
     template <typename U = K>
@@ -1011,7 +957,7 @@ private:
             auto mid = lo + (hi - lo) / 2;
             const auto* entry = vector->template GetAs<Table>(static_cast<uoffset_t>(mid));
             auto entry_key = proxy_detail::read_field<clean_k>(proxy_detail::table_ref(entry),
-                                                               proxy_detail::field_slot(0));
+                                                               detail::field_slot(0));
             if(proxy_detail::ordering_less(entry_key, key)) {
                 lo = mid + 1;
             } else {
@@ -1025,7 +971,7 @@ private:
 
         const auto* entry = vector->template GetAs<Table>(static_cast<uoffset_t>(lo));
         auto entry_view = proxy_detail::table_ref(entry);
-        auto entry_key = proxy_detail::read_field<clean_k>(entry_view, proxy_detail::field_slot(0));
+        auto entry_key = proxy_detail::read_field<clean_k>(entry_view, detail::field_slot(0));
         if(proxy_detail::ordering_equal(entry_key, key)) {
             return entry_view;
         }
@@ -1053,33 +999,17 @@ public:
     /// verification yields an invalid view. Table nesting deeper than the
     /// flatbuffers default of 64 is rejected, as are buffers at or above
     /// flatbuffers' maximum buffer size (just under 2 GiB).
-    static auto from_bytes(std::span<const std::uint8_t> bytes) -> table_view {
-        static_assert(std::is_same_v<proxy_detail::apply_repr_t<object_type>, object_type>,
-                      "table_view reads T's own table layout; a type whose fbs representation "
-                      "differs from itself cannot be viewed — decode it with from_bytes instead");
-
-        // Root uoffset plus the 4-byte identifier: the smallest well-formed buffer.
-        if(bytes.size() < 2 * sizeof(uoffset_t) || bytes.size() >= FLATBUFFERS_MAX_BUFFER_SIZE) {
+    static auto from_bytes(std::span<const std::byte> bytes) -> table_view {
+        assert_viewable();
+        auto opened = detail::open_root(bytes);
+        if(!opened || !proxy_detail::verify_table<object_type>(opened->verifier, opened->root)) {
             return {};
         }
-        const auto* data = bytes.data();
-        if(!::flatbuffers::BufferHasIdentifier(data, detail::buffer_identifier)) {
-            return {};
-        }
-        auto verifier = detail::make_verifier(data, bytes.size());
-        if(verifier.VerifyOffset(0) == 0) {
-            return {};
-        }
-        const auto* root = ::flatbuffers::GetRoot<Table>(data);
-        if(!proxy_detail::verify_table<object_type>(verifier, root)) {
-            return {};
-        }
-        return table_view(view_type(root));
+        return table_view(view_type(opened->root));
     }
 
-    static auto from_bytes(std::span<const std::byte> bytes) -> table_view {
-        const auto* data = reinterpret_cast<const std::uint8_t*>(bytes.data());
-        return from_bytes(std::span<const std::uint8_t>(data, bytes.size()));
+    static auto from_bytes(std::span<const std::uint8_t> bytes) -> table_view {
+        return from_bytes(std::as_bytes(bytes));
     }
 
     /// Wraps a buffer that already passed from_bytes verification, without
@@ -1087,9 +1017,7 @@ public:
     /// opened and constructs views per query. The caller owns that contract —
     /// on unverified bytes the view reads out of bounds.
     static auto from_verified_bytes(std::span<const std::uint8_t> bytes) -> table_view {
-        static_assert(std::is_same_v<proxy_detail::apply_repr_t<object_type>, object_type>,
-                      "table_view reads T's own table layout; a type whose fbs representation "
-                      "differs from itself cannot be viewed — decode it with from_bytes instead");
+        assert_viewable();
         return table_view(view_type(::flatbuffers::GetRoot<Table>(bytes.data())));
     }
 
@@ -1121,7 +1049,7 @@ public:
         if(index >= proxy_detail::field_slot_count<object_type>()) {
             return false;
         }
-        return view.has(proxy_detail::field_slot(index));
+        return view.has(detail::field_slot(index));
     }
 
     template <typename Member>
@@ -1145,10 +1073,16 @@ public:
             return return_t{};
         }
 
-        return proxy_detail::read_field<member_type>(view, proxy_detail::field_slot(index));
+        return proxy_detail::read_field<member_type>(view, detail::field_slot(index));
     }
 
 private:
+    static consteval void assert_viewable() {
+        static_assert(std::is_same_v<proxy_detail::apply_repr_t<object_type>, object_type>,
+                      "table_view reads T's own table layout; a type whose fbs representation "
+                      "differs from itself cannot be viewed — decode it with from_bytes instead");
+    }
+
     view_type view;
 };
 

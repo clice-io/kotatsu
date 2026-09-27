@@ -4,12 +4,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <format>
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
+#include "kota/support/expected_try.h"
 #include "kota/support/numeric.h"
-#include "kota/meta/type_info.h"
 #include "kota/meta/type_kind.h"
 #include "kota/codec/toml/type.h"
 #include "kota/codec/visit/common.h"
@@ -40,40 +42,21 @@ inline std::string_view node_type_name(const Node* node) {
     return "unknown";
 }
 
-template <typename T>
-constexpr bool root_table_v = [] {
-    // Judge the shape of the representation the codec dispatch resolves
-    // (annotations and toml-scoped meta::repr included) with the same kind
-    // test to_toml's root routing applies — in kind_of, str-like or
-    // tuple-like wins over reflection, so a bare reflectable check would
-    // claim the root table for values the encoder boxes.
-    using R = meta::resolved_repr_t<T, format>;
-    constexpr auto kind = meta::kind_of<R>();
-    return kind == meta::type_kind::structure || kind == meta::type_kind::map ||
-           std::same_as<R, Table>;
-}();
-
+/// The node from_toml reads a T from, routed as to_toml wrote it. Empty
+/// always means null for a nullable root: to_toml rejects an engaged value
+/// whose serialization would be the empty document.
 template <typename T>
 auto select_root_node(const Table& tbl) -> const Node* {
-    using U = std::remove_cvref_t<T>;
-    constexpr auto kind = meta::kind_of<U>();
-
-    // Nullable roots mirror to_toml's unwrapping: an absent value is the
-    // empty document, a present one routes by the shape of what it wraps.
-    // Empty always means null here — to_toml rejects an engaged value whose
-    // serialization would be the empty document.
-    if constexpr((kind == meta::type_kind::optional || kind == meta::type_kind::pointer) &&
-                 std::is_same_v<meta::resolved_repr_t<U, format>, U>) {
+    if constexpr(nullable_root_v<T>) {
         if(tbl.empty()) {
             return nullptr;
         }
-        using value_t = std::remove_cvref_t<decltype(*std::declval<U&>())>;
-        if constexpr(root_table_v<value_t>) {
+        if constexpr(root_table_v<std::remove_cvref_t<decltype(*std::declval<T&>())>>) {
             return std::addressof(static_cast<const Node&>(tbl));
         } else {
             return tbl.get(boxed_root_key);
         }
-    } else if constexpr(root_table_v<U>) {
+    } else if constexpr(root_table_v<T>) {
         return std::addressof(static_cast<const Node&>(tbl));
     } else {
         return tbl.get(boxed_root_key);
@@ -86,32 +69,32 @@ struct ValueReader {
     const Node* node;
     constexpr static bool data_driven = true;
     constexpr static bool human_readable = true;
-    using error_type = rich_error;
     using format = toml::format;
 
     template <typename F>
     bool try_read(F&& fn) {
-        error_type discard_err;
-        scoped_context<error_type> guard(discard_err);
+        rich_error discard_err;
+        scoped_context<rich_error> guard(discard_err);
         ValueReader fork{node};
         return fn(fork);
     }
 
     bool visit_bool(bool& out) {
-        if(!node || !node->is_boolean()) {
+        const auto* flag = as<bool>();
+        if(!flag) {
             return fail_type("boolean");
         }
-        out = *node->value<bool>();
+        out = flag->get();
         return true;
     }
 
     template <typename T>
     bool visit_int(T& out) {
-        if(!node || !node->is_integer()) {
+        const auto* number = as<std::int64_t>();
+        if(!number) {
             return fail_type("integer");
         }
-        auto val = *node->value<std::int64_t>();
-        if(!kota::narrow_int(val, out)) {
+        if(!kota::narrow_int(number->get(), out)) {
             return fail_with_location("integer value out of range");
         }
         return true;
@@ -119,27 +102,17 @@ struct ValueReader {
 
     template <typename T>
     bool visit_uint(T& out) {
-        if(!node || !node->is_integer()) {
-            return fail_type("integer");
-        }
-        auto val = *node->value<std::int64_t>();
-        if(!kota::narrow_int(val, out)) {
-            return fail_with_location("integer value out of range");
-        }
-        return true;
+        return visit_int(out);
     }
 
     template <typename T>
     bool visit_float(T& out) {
-        if(!node) {
-            return fail_type("float");
-        }
-        if(node->is_floating_point()) {
-            out = static_cast<T>(*node->value<double>());
+        if(const auto* real = as<double>()) {
+            out = static_cast<T>(real->get());
             return true;
         }
-        if(node->is_integer()) {
-            out = static_cast<T>(*node->value<std::int64_t>());
+        if(const auto* number = as<std::int64_t>()) {
+            out = static_cast<T>(number->get());
             return true;
         }
         return fail_type("float");
@@ -147,27 +120,21 @@ struct ValueReader {
 
     template <typename T>
     bool visit_str(T& out) {
-        if(!node) {
+        const auto* text = as<std::string>();
+        if(!text) {
             return fail_type("string");
         }
-        auto val = node->value<std::string>();
-        if(!val) {
-            return fail_type("string");
-        }
-        out = T(std::move(*val));
+        out = T(text->get());
         return true;
     }
 
     template <typename T>
     bool visit_char(T& out) {
-        if(!node) {
+        const auto* text = as<std::string>();
+        if(!text) {
             return fail_type("string");
         }
-        auto val = node->value<std::string_view>();
-        if(!val) {
-            return fail_type("string");
-        }
-        auto c = char_from_utf8(*val);
+        auto c = char_from_utf8(text->get());
         if(!c) {
             return fail_with_location(std::string(invalid_char_message));
         }
@@ -177,10 +144,7 @@ struct ValueReader {
 
     template <typename T>
     bool visit_bytes(T& out) {
-        if(!node) {
-            return fail_type("array");
-        }
-        const auto* arr = node->as_array();
+        const auto* arr = as<Array>();
         if(!arr) {
             return fail_type("array");
         }
@@ -229,10 +193,7 @@ struct ValueReader {
 
     template <typename Callback>
     bool visit_struct(Callback&& cb) {
-        if(!node) {
-            return fail_type("table");
-        }
-        const auto* tbl = node->as_table();
+        const auto* tbl = as<Table>();
         if(!tbl) {
             return fail_type("table");
         }
@@ -245,10 +206,7 @@ struct ValueReader {
 
     template <typename Callback>
     bool visit_seq(Callback&& cb) {
-        if(!node) {
-            return fail_type("array");
-        }
-        const auto* arr = node->as_array();
+        const auto* arr = as<Array>();
         if(!arr) {
             return fail_type("array");
         }
@@ -259,41 +217,19 @@ struct ValueReader {
         return true;
     }
 
+    /// A table read with MapKeyReader keys.
     template <typename Callback>
     bool visit_map(Callback&& cb) {
-        if(!node) {
-            return fail_type("table");
-        }
-        const auto* tbl = node->as_table();
-        if(!tbl) {
-            return fail_type("table");
-        }
-        for(const auto& [k, v]: *tbl) {
-            MapKeyReader<format> kr{std::string_view(k)};
-            ValueReader vr{&v};
-            KOTA_CODEC_TRY(cb(kr, vr));
-        }
-        return true;
+        return visit_struct([&](std::string_view key, ValueReader& value) {
+            MapKeyReader<format> kr{key};
+            return cb(kr, value);
+        });
     }
 
+    /// A tuple is an array, read as a sequence.
     template <typename Callback>
     bool visit_tuple(Callback&& cb) {
-        if(!node) {
-            return fail_type("array");
-        }
-        const auto* arr = node->as_array();
-        if(!arr) {
-            return fail_type("array");
-        }
-        for(std::size_t i = 0; i < arr->size(); ++i) {
-            ValueReader sub{arr->get(i)};
-            KOTA_CODEC_TRY(cb(sub));
-        }
-        return true;
-    }
-
-    bool visit_skip() {
-        return true;  // nothing to consume in a DOM backend
+        return visit_seq(std::forward<Callback>(cb));
     }
 
     /// Backend hook used by data-driven struct decoding: fail an unknown field
@@ -305,16 +241,17 @@ struct ValueReader {
     }
 
 private:
+    /// The node as a T (a Table, an Array, or the value node holding a T),
+    /// or null when it is absent or holds something else; fail_type reports
+    /// either.
+    template <typename T>
+    auto as() const -> decltype(std::declval<const Node&>().template as<T>()) {
+        return node ? node->template as<T>() : nullptr;
+    }
+
     void attach_location(rich_error& err) {
         if(node) {
-            auto src = node->source();
-            if(src.begin.line != 0) {
-                err.set_location({
-                    static_cast<std::size_t>(src.begin.line),
-                    static_cast<std::size_t>(src.begin.column),
-                    0,
-                });
-            }
+            err.location = detail::location_of(node->source());
         }
     }
 
@@ -341,15 +278,8 @@ inline auto parse_table(std::string_view text) -> std::expected<Table, rich_erro
     auto parsed = ::toml::parse(text);
     if(!parsed) {
         const auto& e = parsed.error();
-        rich_error err(std::string("TOML parse error: ") + std::string(e.description()));
-        auto src = e.source();
-        if(src.begin.line != 0) {
-            err.set_location({
-                static_cast<std::size_t>(src.begin.line),
-                static_cast<std::size_t>(src.begin.column),
-                0,
-            });
-        }
+        rich_error err(std::format("TOML parse error: {}", e.description()));
+        err.location = detail::location_of(e.source());
         return std::unexpected(std::move(err));
     }
     return std::move(parsed).table();
@@ -359,39 +289,23 @@ inline auto parse_table(std::string_view text) -> std::expected<Table, rich_erro
 /// to_toml produced it (root table vs boxed `__value` key).
 template <typename Config = void, typename T>
 auto from_toml(const Table& tbl, T& out) -> std::expected<void, rich_error> {
-    using V = std::remove_const_t<T>;
-    const auto* root = detail::select_root_node<V>(tbl);
-
-    using Cfg = default_config<Config>;
-    rich_error err;
-    scoped_context<rich_error> guard(err);
-
-    ValueReader reader{root};
-    if(!decode_value<Cfg>(reader, out)) {
-        return std::unexpected(std::move(err));
-    }
-    return {};
+    ValueReader reader{detail::select_root_node<T>(tbl)};
+    return codec::detail::run_decode<Config>(reader, out);
 }
 
 /// Decodes TOML text into `out` (or, in the value-returning overload, into a
 /// default-constructed T): parse_table followed by from_toml.
 template <typename Config = void, typename T>
 auto from_string(std::string_view text, T& out) -> std::expected<void, rich_error> {
-    auto table = parse_table(text);
-    if(!table) {
-        return std::unexpected(std::move(table).error());
-    }
-    return from_toml<Config>(*table, out);
+    KOTA_EXPECTED_TRY_V(auto table, parse_table(text));
+    return from_toml<Config>(table, out);
 }
 
 template <typename T, typename Config = void>
     requires std::default_initializable<T>
 auto from_string(std::string_view text) -> std::expected<T, rich_error> {
     T value{};
-    auto result = from_string<Config>(text, value);
-    if(!result) {
-        return std::unexpected(std::move(result).error());
-    }
+    KOTA_EXPECTED_TRY(from_string<Config>(text, value));
     return value;
 }
 

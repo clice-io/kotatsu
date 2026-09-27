@@ -1,3 +1,7 @@
+#include <cstdint>
+#include <memory>
+#include <vector>
+
 #include "codec/bincode/harness/backend.h"
 #include "codec/harness/fixtures/everything.h"
 #include "kota/zest/zest.h"
@@ -15,6 +19,26 @@ ZEST_CASE(everything_lowering) {
     auto document = bincode::to_bytes(test::Everything::typical());
     ASSERT(document);
     EXPECT_SNAPSHOT(test::Bincode::render(*document));
+}
+
+ZEST_CASE(weak_ptr_writes_like_shared_ptr) {
+    // A weak pointer writes what the shared pointer it locks to writes,
+    // presence byte included, live or expired.
+    auto owner = std::make_shared<std::int32_t>(7);
+    std::weak_ptr<std::int32_t> live = owner;
+    std::weak_ptr<std::int32_t> expired = std::make_shared<std::int32_t>(1);
+
+    auto live_bytes = bincode::to_bytes(live);
+    auto owner_bytes = bincode::to_bytes(owner);
+    ASSERT(live_bytes);
+    ASSERT(owner_bytes);
+    EXPECT(*live_bytes == *owner_bytes);
+    ASSERT(!live_bytes->empty());
+    EXPECT(live_bytes->front() == std::byte{0x01});
+
+    auto expired_bytes = bincode::to_bytes(expired);
+    ASSERT(expired_bytes);
+    EXPECT(*expired_bytes == std::vector<std::byte>{std::byte{0x00}});
 }
 
 };  // ZEST_SUITE(codec_bincode_encode)

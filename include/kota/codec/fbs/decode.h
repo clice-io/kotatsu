@@ -12,25 +12,16 @@
 #include <utility>
 #include <vector>
 
+#include "kota/support/expected_try.h"
 #include "kota/codec/fbs/proxy.h"
 #include "kota/codec/fbs/type.h"
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/context.h"
 #include "kota/codec/visit/decode.h"
-#include "kota/codec/visit/encode.h"
 
 namespace kota::codec::fbs {
 
 namespace decode_detail {
-
-using fbs::Table;
-using fbs::String;
-using fbs::Vector;
-using fbs::voffset_t;
-using fbs::uoffset_t;
-using fbs::verifier_t;
-
-struct FieldReader;
 
 // Readers bounds-check every raw buffer access against the verifier before
 // performing it, so decoding cannot read outside the buffer no matter how
@@ -78,27 +69,32 @@ struct ScalarReader : detail::VisitorBase {
 
     template <typename U, typename Body>
     bool visit_struct(U& out, Body&&) {
-        if constexpr(std::is_same_v<std::remove_const_t<U>, T>) {
-            out = value;
-        }
+        static_assert(std::is_same_v<U, T>);
+        out = value;
         return true;
     }
 };
+
+/// Stores text read from the buffer into a string-like out.
+template <typename T>
+void assign_text(T& out, std::string_view text) {
+    if constexpr(std::same_as<T, std::string>) {
+        out.assign(text.data(), text.size());
+    } else if constexpr(std::same_as<T, std::string_view>) {
+        out = text;
+    } else if constexpr(std::constructible_from<T, const char*, std::size_t>) {
+        out = T(text.data(), text.size());
+    } else {
+        out = T(text);
+    }
+}
 
 struct StringReader : detail::VisitorBase {
     std::string_view value;
 
     template <typename T>
     bool visit_str(T& out) {
-        if constexpr(std::same_as<T, std::string>) {
-            out.assign(value.data(), value.size());
-        } else if constexpr(std::same_as<T, std::string_view>) {
-            out = value;
-        } else if constexpr(std::constructible_from<T, const char*, std::size_t>) {
-            out = T(value.data(), value.size());
-        } else {
-            out = T(value);
-        }
+        assign_text(out, value);
         return true;
     }
 };
@@ -169,26 +165,22 @@ struct FieldReader : detail::VisitorBase {
     }
 
     bool visit_bool(bool& out) {
-        return read_cell<std::uint8_t>(out, "bool field");
+        return read_cell(out, "bool field");
     }
 
     template <typename T>
     bool visit_int(T& out) {
-        return read_cell<T>(out, "integer field");
+        return read_cell(out, "integer field");
     }
 
     template <typename T>
     bool visit_uint(T& out) {
-        return read_cell<T>(out, "integer field");
+        return read_cell(out, "integer field");
     }
 
     template <typename T>
     bool visit_float(T& out) {
-        if constexpr(std::same_as<T, float> || std::same_as<T, double>) {
-            return read_cell<T>(out, "float field");
-        } else {
-            return read_cell<double>(out, "float field");
-        }
+        return read_cell(out, "float field");
     }
 
     template <typename T>
@@ -204,22 +196,13 @@ struct FieldReader : detail::VisitorBase {
             }
             return true;
         }
-        if constexpr(std::same_as<T, std::string>) {
-            out.assign(text->data(), text->size());
-        } else if constexpr(std::same_as<T, std::string_view>) {
-            out = std::string_view(text->data(), text->size());
-        } else if constexpr(std::constructible_from<T, const char*, std::size_t>) {
-            out = T(text->data(), text->size());
-        } else {
-            std::string_view sv(text->data(), text->size());
-            out = T(sv);
-        }
+        assign_text(out, std::string_view(text->data(), text->size()));
         return true;
     }
 
     template <typename T>
     bool visit_char(T& out) {
-        return read_cell<std::int8_t>(out, "char field");
+        return read_cell(out, "char field");
     }
 
     template <typename T>
@@ -231,12 +214,7 @@ struct FieldReader : detail::VisitorBase {
             return fail_verify("bytes field");
         if(vec == nullptr)
             return true;
-        if constexpr(std::same_as<T, std::vector<std::byte>>) {
-            out.resize(vec->size());
-            for(std::size_t i = 0; i < vec->size(); ++i) {
-                out[i] = static_cast<std::byte>(vec->Get(static_cast<uoffset_t>(i)));
-            }
-        } else if constexpr(std::same_as<T, std::span<const std::byte>>) {
+        if constexpr(std::same_as<T, std::span<const std::byte>>) {
             out = std::span<const std::byte>(reinterpret_cast<const std::byte*>(vec->data()),
                                              vec->size());
         } else {
@@ -247,29 +225,48 @@ struct FieldReader : detail::VisitorBase {
     }
 
     template <typename T, typename Body>
-    inline bool visit_struct(T& out, Body&& body);
+    bool visit_struct(T& out, Body&& body);
 
     template <typename T, typename Body>
-    inline bool visit_seq(T& out, Body&& body);
+    bool visit_seq(T& out, Body&& body);
 
     template <typename T, typename Body>
-    inline bool visit_tuple(T& out, Body&& body);
+    bool visit_tuple(T& out, Body&& body);
 
     template <typename T, typename Body>
-    inline bool visit_map(T& out, Body&& body);
+    bool visit_map(T& out, Body&& body);
 
     template <typename Body>
-    inline bool visit_variant(Body&& body);
+    bool visit_variant(Body&& body);
 
 private:
-    // Reads one fixed-width cell after bounds-checking it; an absent slot
-    // reads as the zero cell, like every scalar access in this backend.
-    template <typename Cell, typename T>
+    // Reads a scalar's fixed-width cell (scalar_cell_t, as the encoder wrote
+    // it) after bounds-checking it; an absent slot reads as the zero cell,
+    // like every scalar access in this backend.
+    template <typename T>
     bool read_cell(T& out, std::string_view what) {
-        if(!tbl->VerifyField<Cell>(*verifier, slot, alignof(Cell)))
+        using cell_t = proxy_detail::scalar_cell_t<T>;
+        if(!tbl->VerifyField<cell_t>(*verifier, slot, alignof(cell_t)))
             return fail_verify(what);
-        out = static_cast<T>(tbl->GetField<Cell>(slot, Cell{}));
+        out = static_cast<T>(tbl->GetField<cell_t>(slot, cell_t{}));
         return true;
+    }
+
+    // Reads the table this reader designates through body with a
+    // TableFieldReader; an absent table leaves out as it was.
+    template <typename Body>
+    bool enter_table(Body&& body, std::string_view what) {
+        const Table* child = nullptr;
+        bool entered = false;
+        if(!follow_table(child, entered, what))
+            return false;
+        if(child == nullptr)
+            return true;
+        TableFieldReader tfr{.tbl = child, .verifier = verifier};
+        const bool ok = body(tfr);
+        if(entered)
+            verifier->EndTable();
+        return ok;
     }
 
     // Follows the table this reader designates into `out`. slot == 0
@@ -300,14 +297,28 @@ private:
 
 template <typename Idx, typename F>
 bool TableFieldReader::visit_field(Idx, std::string_view, F&& reader) {
-    const voffset_t vid = detail::first_field + detail::field_step * static_cast<voffset_t>(Idx{});
+    const voffset_t vid = detail::field_slot(Idx{});
     FieldReader fr{.tbl = tbl, .slot = vid, .verifier = verifier};
     return reader(fr);
 }
 
+/// Reads a variant's table: the u32 alternative index at the first slot,
+/// then the payload at that alternative's slot.
+template <typename Body>
+bool read_variant_table(const Table* tbl, verifier_t* verifier, Body&& body) {
+    if(!tbl->VerifyField<std::uint32_t>(*verifier, detail::first_field, alignof(std::uint32_t)))
+        return fail_verify("variant tag");
+    auto index = static_cast<std::size_t>(tbl->GetField<std::uint32_t>(detail::first_field, 0));
+    // A hostile tag can name a slot past the table, or wrap; safe because
+    // construct_and_visit rejects any out-of-range index before the payload
+    // reader is used.
+    FieldReader pv{.tbl = tbl, .slot = detail::field_slot(index + 1), .verifier = verifier};
+    return body(index, pv);
+}
+
 template <typename F>
 bool TableFieldReader::visit_element(F&& reader) {
-    const voffset_t vid = detail::first_field + detail::field_step * static_cast<voffset_t>(idx);
+    const voffset_t vid = detail::field_slot(idx);
     FieldReader fr{.tbl = tbl, .slot = vid, .verifier = verifier};
     ++idx;
     return reader(fr);
@@ -326,22 +337,14 @@ struct RootReader : FieldReader {
 
     template <typename U, typename Body>
     bool visit_tuple(U&, Body&& body) {
+        detail::assert_tuple_slots_fit<std::remove_const_t<U>>();
         TableFieldReader tfr{.tbl = tbl, .verifier = verifier};
         return body(tfr);
     }
 
     template <typename Body>
     bool visit_variant(Body&& body) {
-        if(!tbl->VerifyField<std::uint32_t>(*verifier, detail::first_field, alignof(std::uint32_t)))
-            return fail_verify("variant tag");
-        auto tag = tbl->GetField<std::uint32_t>(detail::first_field, 0);
-        auto index = static_cast<std::size_t>(tag);
-        // A hostile tag can wrap this cast; safe because construct_and_visit
-        // rejects any out-of-range index before the payload reader is used.
-        const voffset_t payload_slot = static_cast<voffset_t>(
-            detail::first_field + detail::field_step * static_cast<voffset_t>(index + 1));
-        FieldReader pv{.tbl = tbl, .slot = payload_slot, .verifier = verifier};
-        return body(index, pv);
+        return read_variant_table(tbl, verifier, std::forward<Body>(body));
     }
 };
 
@@ -359,17 +362,7 @@ bool FieldReader::visit_struct(T& out, Body&& body) {
         return true;
     } else {
         detail::assert_fields_reflected<V>();
-        const Table* child = nullptr;
-        bool entered = false;
-        if(!follow_table(child, entered, "struct field"))
-            return false;
-        if(child == nullptr)
-            return true;
-        TableFieldReader tfr{.tbl = child, .verifier = verifier};
-        const bool ok = body(tfr);
-        if(entered)
-            verifier->EndTable();
-        return ok;
+        return enter_table(std::forward<Body>(body), "struct field");
     }
 }
 
@@ -390,17 +383,8 @@ bool FieldReader::visit_seq([[maybe_unused]] T& out, Body&& body) {
 
 template <typename T, typename Body>
 bool FieldReader::visit_tuple(T&, Body&& body) {
-    const Table* child = nullptr;
-    bool entered = false;
-    if(!follow_table(child, entered, "tuple field"))
-        return false;
-    if(child == nullptr)
-        return true;
-    TableFieldReader tfr{.tbl = child, .verifier = verifier};
-    const bool ok = body(tfr);
-    if(entered)
-        verifier->EndTable();
-    return ok;
+    detail::assert_tuple_slots_fit<std::remove_const_t<T>>();
+    return enter_table(std::forward<Body>(body), "tuple field");
 }
 
 template <typename T, typename Body>
@@ -424,20 +408,7 @@ bool FieldReader::visit_variant(Body&& body) {
     if(var_table == nullptr) {
         return scoped_context<rich_error>::fail(rich_error("null variant table"));
     }
-    const bool ok = [&] {
-        if(!var_table->VerifyField<std::uint32_t>(*verifier,
-                                                  detail::first_field,
-                                                  alignof(std::uint32_t)))
-            return fail_verify("variant tag");
-        auto tag = var_table->GetField<std::uint32_t>(detail::first_field, 0);
-        auto index = static_cast<std::size_t>(tag);
-        // A hostile tag can wrap this cast; safe because construct_and_visit
-        // rejects any out-of-range index before the payload reader is used.
-        const voffset_t payload_slot = static_cast<voffset_t>(
-            detail::first_field + detail::field_step * static_cast<voffset_t>(index + 1));
-        FieldReader pv{.tbl = var_table, .slot = payload_slot, .verifier = verifier};
-        return body(index, pv);
-    }();
+    const bool ok = read_variant_table(var_table, verifier, std::forward<Body>(body));
     if(entered)
         verifier->EndTable();
     return ok;
@@ -509,9 +480,7 @@ bool MapReader::visit_entry(KF&& key_fn, VF&& val_fn) {
     const bool ok = [&] {
         FieldReader kr{.tbl = entry, .slot = detail::first_field, .verifier = verifier};
         KOTA_CODEC_TRY(key_fn(kr));
-        FieldReader vr{.tbl = entry,
-                       .slot = detail::first_field + detail::field_step,
-                       .verifier = verifier};
+        FieldReader vr{.tbl = entry, .slot = detail::field_slot(1), .verifier = verifier};
         return val_fn(vr);
     }();
     verifier->EndTable();
@@ -533,67 +502,31 @@ template <typename Config = void, typename T>
 auto from_bytes(std::span<const std::byte> buf, T& out) -> std::expected<void, rich_error> {
     detail::assert_config_layout_stable<Config>();
 
-    // Root uoffset plus the 4-byte identifier: the smallest well-formed buffer.
-    if(buf.size() < 2 * sizeof(uoffset_t)) {
-        return std::unexpected(rich_error("buffer too small"));
-    }
-    if(buf.size() >= FLATBUFFERS_MAX_BUFFER_SIZE) {
-        return std::unexpected(rich_error("buffer too large"));
-    }
-
-    const auto* data = reinterpret_cast<const std::uint8_t*>(buf.data());
-    auto size = buf.size();
-
-    if(!::flatbuffers::BufferHasIdentifier(data, detail::buffer_identifier)) {
-        return std::unexpected(rich_error("invalid buffer identifier"));
-    }
-
-    auto verifier = detail::make_verifier(data, size);
-    if(verifier.VerifyOffset(0) == 0) {
-        return std::unexpected(rich_error("buffer verification failed: root offset"));
-    }
-    const auto* root = ::flatbuffers::GetRoot<Table>(data);
-    if(!root->VerifyTableStart(verifier)) {
+    KOTA_EXPECTED_TRY_V(auto opened, detail::open_root(buf));
+    if(!opened.root->VerifyTableStart(opened.verifier)) {
         return std::unexpected(rich_error("buffer verification failed: root table"));
     }
-
-    rich_error err;
-    scoped_context<rich_error> guard(err);
-
-    decode_detail::RootReader vis(root, &verifier);
-    if(!decode_value<default_config<Config>>(vis, out)) {
-        return std::unexpected(std::move(err));
-    }
-    return {};
+    decode_detail::RootReader vis(opened.root, &opened.verifier);
+    return codec::detail::run_decode<Config>(vis, out);
 }
 
 template <typename Config = void, typename T>
 auto from_bytes(std::span<const std::uint8_t> buf, T& out) -> std::expected<void, rich_error> {
-    auto bytes =
-        std::span<const std::byte>(reinterpret_cast<const std::byte*>(buf.data()), buf.size());
-    return from_bytes<Config>(bytes, out);
-}
-
-template <typename T, typename Config = void>
-    requires std::default_initializable<T>
-auto from_bytes(std::span<const std::uint8_t> buf) -> std::expected<T, rich_error> {
-    T value{};
-    auto result = from_bytes<Config>(buf, value);
-    if(!result) {
-        return std::unexpected(result.error());
-    }
-    return value;
+    return from_bytes<Config>(std::as_bytes(buf), out);
 }
 
 template <typename T, typename Config = void>
     requires std::default_initializable<T>
 auto from_bytes(std::span<const std::byte> buf) -> std::expected<T, rich_error> {
     T value{};
-    auto result = from_bytes<Config>(buf, value);
-    if(!result) {
-        return std::unexpected(result.error());
-    }
+    KOTA_EXPECTED_TRY(from_bytes<Config>(buf, value));
     return value;
+}
+
+template <typename T, typename Config = void>
+    requires std::default_initializable<T>
+auto from_bytes(std::span<const std::uint8_t> buf) -> std::expected<T, rich_error> {
+    return from_bytes<T, Config>(std::as_bytes(buf));
 }
 
 }  // namespace kota::codec::fbs

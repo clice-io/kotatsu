@@ -2,7 +2,8 @@
 
 // meta::repr fixtures meta's tests read as well: reprs whose declared type
 // carries a behavior attr, struct policies or a tagging spec, an adapter
-// over a tagged variant, and a repr scoped to every format tag.
+// over a tagged variant, a repr scoped to every format tag, and a variant
+// whose type has a repr under a tagging spec.
 
 #include <charconv>
 #include <cstdint>
@@ -99,9 +100,55 @@ struct ChoiceTag {
 using AdaptedChoice = meta::annotate<ChoiceTag>::type<std::variant<int, std::string>,
                                                       meta::behavior::with<ChoiceText>>;
 
+/// A variant whose type has a repr (one text), and the same variant under a
+/// tagging spec: the tagging wins, so the tagged one travels as the variant.
+struct Stamp {
+    int n = 0;
+
+    auto operator==(const Stamp&) const -> bool = default;
+};
+
+using StampOrNote = std::variant<Stamp, std::string>;
+
+struct StampTag {
+    constexpr static auto spec = meta::make_struct_spec(meta::dsl::tag = "t",
+                                                        meta::dsl::content = "c",
+                                                        meta::dsl::tag_names = {"stamp", "note"});
+};
+
+using TaggedStampOrNote = meta::annotate<StampTag>::type<StampOrNote>;
+
+/// StampOrNote's shape without its repr.
+struct StampTwin {
+    int n = 0;
+};
+
+using TaggedStampTwinOrNote = meta::annotate<StampTag>::type<std::variant<StampTwin, std::string>>;
+
 }  // namespace kota::test
 
 namespace kota::meta {
+
+template <>
+struct repr<test::StampOrNote> {
+    using type = std::string;
+
+    static std::string to(const test::StampOrNote& v) {
+        if(const auto* stamp = std::get_if<test::Stamp>(&v)) {
+            return std::format("#{}", stamp->n);
+        }
+        return std::get<std::string>(v);
+    }
+
+    static test::StampOrNote from(const std::string& text) {
+        if(text.starts_with("#")) {
+            int n = 0;
+            std::from_chars(text.data() + 1, text.data() + text.size(), n);
+            return test::Stamp{.n = n};
+        }
+        return text;
+    }
+};
 
 template <>
 struct repr<test::BasisPoints> {

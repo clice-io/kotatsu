@@ -1,11 +1,15 @@
 #pragma once
 
 #include <array>
+#include <bit>
 #include <concepts>
 #include <cstddef>
+#include <expected>
+#include <format>
 #include <memory>
 #include <optional>
 #include <ranges>
+#include <span>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -15,6 +19,7 @@
 
 #include "config.h"
 #include "context.h"
+#include "dispatch.h"
 #include "kota/support/ranges.h"
 #include "kota/support/type_list.h"
 #include "kota/meta/annotation.h"
@@ -28,11 +33,12 @@
 
 namespace kota::codec {
 
-/// Backend-internal dispatch override for one (visitor, type) pair. Not a
-/// user extension point: declare a type's representation via meta::repr,
-/// or per-field via behavior::with — those are visible to schema consumers,
-/// a deserialize_visit specialization is not.
-template <typename Vis, typename T, typename Config = default_config<>, typename = void>
+/// How a visitor reads one type, overridden per backend or protocol; the
+/// decode counterpart of serialize_visit (see there), with a static
+/// visit(Vis&, T&) returning bool. It is consulted before annotations and
+/// meta::repr, and untagged variant probing always tries an alternative that
+/// has one, whatever its declared shape.
+template <typename Vis, typename T, typename Config>
 struct deserialize_visit {};
 
 template <typename Config, typename Vis, typename T>
@@ -53,7 +59,7 @@ template <typename Repr, typename Config, typename Vis, typename V>
 bool repr_decode(Vis& vis, V& out) {
     using declared_t = meta::declared_repr_t<Repr>;
     if constexpr(std::is_same_v<declared_t, meta::dynamic>) {
-        static_assert(!is_layout_computed<Vis>(),
+        static_assert(!layout_computed<Vis>,
                       "this backend computes the output layout statically and cannot decode a "
                       "meta::dynamic repr");
     }
@@ -82,6 +88,18 @@ bool repr_decode(Vis& vis, V& out) {
 template <typename Vis>
 concept data_driven = requires { requires Vis::data_driven; };
 
+/// Calls f with std::integral_constant<std::size_t, I> for the I equal to
+/// the runtime index, which must be below N, and returns f's result.
+template <std::size_t N, typename F>
+bool with_index(std::size_t index, F&& f) {
+    return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+        bool result = false;
+        (void)((Is == index && ((result = f(std::integral_constant<std::size_t, Is>{})), true)) ||
+               ...);
+        return result;
+    }(std::make_index_sequence<N>{});
+}
+
 /// Ensure an optional/pointer is allocated before writing into it.
 template <typename T>
 void ensure_allocated(T& out) {
@@ -103,34 +121,23 @@ void ensure_allocated(T& out) {
 /// Construct the I-th alternative of a variant and decode into it.
 template <typename Config, typename Vis, typename... Ts>
 bool construct_and_visit(Vis& vis, std::variant<Ts...>& out, std::size_t index) {
-    return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
-        bool ok = false;
-        bool found = ((Is == index ? (out.template emplace<Is>(),
-                                      ok = decode_value<Config>(vis, std::get<Is>(out)),
-                                      true)
-                                   : false) ||
-                      ...);
-        if(!found) {
-            return scoped_context<typename Vis::error_type>::fail(
-                rich_error("invalid variant index " + std::to_string(index)));
-        }
-        return ok;
-    }(std::index_sequence_for<Ts...>{});
+    if(index >= sizeof...(Ts)) {
+        return scoped_context<rich_error>::fail(
+            rich_error(std::format("invalid variant index {}", index)));
+    }
+    return with_index<sizeof...(Ts)>(index, [&](auto i) {
+        constexpr std::size_t I = decltype(i)::value;
+        return decode_value<Config>(vis, out.template emplace<I>());
+    });
 }
 
-/// Assign a tuple element by runtime index (data-driven tuple decoding).
-template <typename Config, typename Vis, typename Tuple>
-bool assign_tuple_element(Vis& vis, Tuple& out, std::size_t idx) {
-    return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
-        bool ok = false;
-        [[maybe_unused]] bool found =
-            ((Is == idx ? (ok = decode_value<Config>(vis, std::get<Is>(out)), true) : false) ||
-             ...);
-        return ok;
-    }(std::make_index_sequence<std::tuple_size_v<Tuple>>{});
-}
-
-/// True when the visitor supports peeking the source data kind without consuming.
+/// True when the visitor can tell the kind of the value ahead without
+/// consuming it. A reader answers with the kinds a document can hold, as
+/// untagged variant probing and dyn::Value decoding expect: null, boolean,
+/// int64 (and uint64 for an integer beyond int64), float64, string, array,
+/// structure for any object or table, and unknown for anything else (a TOML
+/// date, a value it cannot classify). The narrower and container kinds of
+/// type_kind (int8, float32, set, map, tuple, ...) are never returned.
 template <typename Vis>
 concept has_peek_kind = requires(Vis& v) {
     { v.peek_kind() } -> std::same_as<meta::type_kind>;
@@ -152,73 +159,60 @@ template <typename Vis>
 concept has_native_variant =
     requires(Vis& v) { v.visit_variant([](std::size_t, auto&) -> bool { return true; }); };
 
-template <typename... Ts>
-void emplace_variant_by_index(std::variant<Ts...>& var, std::size_t idx) {
-    [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-        ((Is == idx ? void(var.template emplace<Is>()) : void()), ...);
-    }(std::index_sequence_for<Ts...>{});
-}
-
+/// The alternative a tag names; N when it names none.
 template <std::size_t N>
 std::size_t find_tag_index(std::string_view name, const std::array<std::string_view, N>& names) {
-    for(std::size_t i = 0; i < N; ++i) {
-        if(names[i] == name)
-            return i;
-    }
-    return N;
+    return static_cast<std::size_t>(std::ranges::find(names, name) - names.begin());
 }
 
-/// Core behavior-attribute dispatch for a single struct field.
-/// Shared by decode_field_value (data-driven) and decode_one_field (schema-driven).
-template <typename Config, std::size_t I, typename Vis, typename T>
-bool decode_field_inner(Vis& vis, T& out) {
-    using schema = meta::virtual_schema<T, Config>;
-    using slots = typename schema::slots;
-    using slot_t = type_list_element_t<I, slots>;
-    using raw_t = std::remove_cv_t<typename slot_t::raw_type>;
-    using attrs_t = typename slot_t::attrs;
+/// Fails with the error for a tag that names no alternative.
+inline bool fail_unknown_tag(std::string_view name) {
+    return scoped_context<rich_error>::fail(
+        rich_error(std::format("unknown variant tag '{}'", name)));
+}
 
-    constexpr std::size_t offset = schema::fields[I].offset;
-    auto* base = reinterpret_cast<std::byte*>(std::addressof(out));
-    auto& field_ref = *reinterpret_cast<raw_t*>(base + offset);
+/// Reads an enum as its name, rename(name) spelling the enumerator.
+template <typename E, typename Vis, typename Rename>
+bool decode_enum_name(Vis& vis, E& out, Rename rename) {
+    std::string name;
+    KOTA_CODEC_TRY(vis.visit_str(name));
+    if(auto value = meta::enum_value<E>(rename(name))) {
+        out = *value;
+        return true;
+    }
+    return scoped_context<rich_error>::fail(
+        rich_error(std::format("unknown enum value '{}'", name)));
+}
 
-    if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
-        using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
-        return repr_decode<adapter, Config>(vis, field_ref);
-    } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
-        using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
+/// Decodes a value under a node's attributes (a struct field's, or an
+/// annotation's), mirroring encode_with_attrs: behavior::with >
+/// behavior::as > behavior::enum_string > variant tagging > the rename_all /
+/// deny_unknown_fields merge.
+template <typename Config, typename Attrs, typename Vis, typename T>
+bool decode_with_attrs(Vis& vis, T& out) {
+    if constexpr(tuple_has_spec_v<Attrs, meta::behavior::with>) {
+        using adapter = typename tuple_find_spec_t<Attrs, meta::behavior::with>::adapter;
+        return repr_decode<adapter, Config>(vis, out);
+    } else if constexpr(tuple_has_spec_v<Attrs, meta::behavior::as>) {
+        using target = typename tuple_find_spec_t<Attrs, meta::behavior::as>::target;
         target converted{};
         KOTA_CODEC_TRY(decode_value<Config>(vis, converted));
-        field_ref = raw_t(std::move(converted));
+        out = T(std::move(converted));
         return true;
-    } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::enum_string>) {
-        using policy = typename tuple_find_spec_t<attrs_t, meta::behavior::enum_string>::policy;
-        static_assert(std::is_enum_v<raw_t>, "behavior::enum_string requires an enum type");
-        std::string name_str;
-        KOTA_CODEC_TRY(vis.visit_str(name_str));
-        auto renamed = policy{}(false, name_str);
-        auto val = meta::enum_value<raw_t>(renamed);
-        if(val) {
-            field_ref = *val;
-            return true;
-        }
-        return scoped_context<typename Vis::error_type>::fail(
-            rich_error(std::string("unknown enum value '") + name_str + "'"));
-    } else if constexpr(meta::struct_spec_of<attrs_t>.tagging != meta::tag_mode::none) {
-        static_assert(meta::kind_of<raw_t>() == meta::type_kind::variant,
-                      "tagged attribute requires a variant type");
-        if constexpr(!is_human_readable<Config, Vis>()) {
-            return decode_value<Config>(vis, field_ref);
-        } else {
-            using spec_attr = tuple_find_t<attrs_t, meta::is_struct_spec_attr>;
-            return decode_variant<Config, spec_attr>(vis, field_ref);
-        }
-    } else if constexpr(meta::reflectable_class<raw_t> &&
-                        (meta::struct_spec_of<attrs_t>.rename_all != naming::casing::identity ||
-                         meta::struct_spec_of<attrs_t>.deny_unknown_fields)) {
-        return decode_value<meta::merged_config_t<Config, attrs_t>>(vis, field_ref);
+    } else if constexpr(tuple_has_spec_v<Attrs, meta::behavior::enum_string>) {
+        using policy = typename tuple_find_spec_t<Attrs, meta::behavior::enum_string>::policy;
+        static_assert(std::is_enum_v<T>, "behavior::enum_string requires an enum type");
+        return decode_enum_name(vis, out, [](std::string_view name) {
+            return policy{}(false, name);
+        });
+    } else if constexpr(meta::struct_spec_of<Attrs>.tagging != meta::tag_mode::none) {
+        static_assert(taggable<T>, "a tagging attribute requires a std::variant");
+        // decode_variant reads the variant as itself, tagged or not; a repr
+        // of its type does not apply.
+        using spec_attr = tuple_find_t<Attrs, meta::is_struct_spec_attr>;
+        return decode_variant<Config, spec_attr>(vis, out);
     } else {
-        return decode_value<Config>(vis, field_ref);
+        return decode_value<meta::node_config_t<Config, T, Attrs>>(vis, out);
     }
 }
 
@@ -226,142 +220,108 @@ bool decode_field_inner(Vis& vis, T& out) {
 /// Used by match_field (data-driven path) where the field reader is already provided.
 template <typename Config, std::size_t I, typename Vis, typename T>
 bool decode_field_value(Vis& vis, T& out) {
-    using schema = meta::virtual_schema<T, Config>;
-    using slots = typename schema::slots;
-    using slot_t = type_list_element_t<I, slots>;
-    using raw_t = std::remove_cv_t<typename slot_t::raw_type>;
-    using attrs_t = typename slot_t::attrs;
-
-    std::string_view name = schema::fields[I].name;
-
-    if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
-        constexpr std::size_t offset = schema::fields[I].offset;
-        auto* base = reinterpret_cast<std::byte*>(std::addressof(out));
-        auto& field_ref = *reinterpret_cast<raw_t*>(base + offset);
-        using pred = typename tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
-        if(meta::evaluate_skip_predicate<pred>(field_ref, false)) {
-            if constexpr(requires { vis.visit_skip(); }) {
-                return vis.visit_skip();
-            } else {
-                return true;
-            }
-        }
+    using field = FieldAt<Config, I, T>;
+    auto& field_ref = field::of(out);
+    // A keyed entry the field skips is passed over unread.
+    if(skipped<typename field::attrs>(field_ref, false)) {
+        return true;
     }
-
-    bool ok = decode_field_inner<Config, I>(vis, out);
-
-    if constexpr(Config::detailed_error) {
-        if(!ok) {
-            if(auto* e = scoped_context<typename Vis::error_type>::try_current())
-                e->prepend_field(name);
-        }
-    }
-    return ok;
+    return trace_path<Config>(decode_with_attrs<Config, typename field::attrs>(vis, field_ref),
+                              field::name);
 }
 
-/// Data-driven field matching: look up key in virtual_schema fields and decode the matching field.
-/// If field_mask is provided, sets the bit corresponding to the matched field index.
+/// The slot whose name or alias is key; fields.size() when none is.
+inline std::size_t find_field_slot(std::span<const meta::field_info> fields, std::string_view key) {
+    for(std::size_t i = 0; i < fields.size(); ++i) {
+        if(fields[i].name == key ||
+           std::ranges::find(fields[i].aliases, key) != fields[i].aliases.end()) {
+            return i;
+        }
+    }
+    return fields.size();
+}
+
+/// Data-driven field matching: decodes the slot key names into out, or
+/// skips (or rejects) an unknown key. Sets the slot's bit in field_mask
+/// when given.
 template <typename Config, typename T, typename Vis>
 bool match_field(std::string_view key, Vis& reader, T& out, std::uint64_t* field_mask = nullptr) {
     using schema = meta::virtual_schema<T, Config>;
-    using slots = typename schema::slots;
-    constexpr std::size_t N = type_list_size_v<slots>;
+    constexpr std::size_t N = type_list_size_v<typename schema::slots>;
     static_assert(N <= 64, "struct field count exceeds field_mask capacity (max 64 fields)");
 
-    return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
-        bool matched = false;
-        bool result = true;
-        (void)((!matched && ([&] {
-                   constexpr auto& fi = schema::fields[Is];
-                   bool found = fi.name == key;
-                   if(!found) {
-                       for(auto alias: fi.aliases) {
-                           if(alias == key) {
-                               found = true;
-                               break;
-                           }
-                       }
-                   }
-                   if(found) {
-                       matched = true;
-                       if(field_mask)
-                           *field_mask |= (1ULL << Is);
-                       result = decode_field_value<Config, Is>(reader, out);
-                   }
-                   return found;
-               }())) ||
-               ...);
-
-        if(!matched) {
-            if constexpr(Config::deny_unknown_fields || schema::deny_unknown) {
-                // Prefer the backend hook so DOM backends (e.g. TOML) can attach
-                // the offending node's source location to the error.
-                if constexpr(requires {
-                                 { reader.fail_unknown_field(key) } -> std::same_as<bool>;
-                             }) {
-                    return reader.fail_unknown_field(key);
-                } else {
-                    return scoped_context<typename Vis::error_type>::fail(
-                        rich_error::unknown_field(key));
-                }
+    std::size_t slot = find_field_slot(schema::fields, key);
+    if(slot == N) {
+        if constexpr(Config::deny_unknown_fields || schema::deny_unknown) {
+            // Prefer the backend hook so DOM backends (e.g. TOML) can attach
+            // the offending node's source location to the error.
+            if constexpr(requires {
+                             { reader.fail_unknown_field(key) } -> std::same_as<bool>;
+                         }) {
+                return reader.fail_unknown_field(key);
             } else {
-                return reader.visit_skip();
+                return scoped_context<rich_error>::fail(rich_error::unknown_field(key));
             }
+        } else {
+            // An entry the callback does not read is simply passed over: the
+            // data-driven readers move to the next entry either way.
+            return true;
         }
-        return result;
-    }(std::make_index_sequence<N>{});
+    }
+
+    if(field_mask) {
+        *field_mask |= std::uint64_t{1} << slot;
+    }
+    return with_index<N>(slot, [&](auto i) {
+        return decode_field_value<Config, decltype(i)::value>(reader, out);
+    });
 }
 
-/// After data-driven struct decode, validate that all required fields were present.
-/// A field is required if it is not optional/pointer/null, has no skip
-/// condition, and is not marked defaulted.
-template <typename Config, typename T, typename Vis>
+/// Whether the input must carry a slot: its type is not nullable (seen
+/// through annotations), and neither its attrs nor, for an annotated type,
+/// that annotation give it a default or a skip condition.
+template <typename Slot>
+constexpr bool slot_required = [] {
+    using raw_t = std::remove_cv_t<typename Slot::raw_type>;
+    using attrs_t = typename Slot::attrs;
+    constexpr auto kind = meta::kind_of<raw_t>();
+    if(kind == meta::type_kind::optional || kind == meta::type_kind::pointer ||
+       kind == meta::type_kind::null) {
+        return false;
+    }
+    if(tuple_has_spec_v<attrs_t, meta::behavior::skip_if> ||
+       meta::spec_of<attrs_t>.skip_if != meta::skip_when::never ||
+       meta::spec_of<attrs_t>.defaulted) {
+        return false;
+    }
+    if constexpr(meta::annotated_type<raw_t>) {
+        return !meta::spec_of<typename raw_t::attrs>.defaulted;
+    } else {
+        return true;
+    }
+}();
+
+/// Bit I set when slot I of T under Config is required.
+template <typename Config, typename T>
+constexpr std::uint64_t required_mask = []<typename... Slots>(type_list<Slots...>) {
+    static_assert(sizeof...(Slots) <= 64,
+                  "struct field count exceeds field_mask capacity (max 64 fields)");
+    std::uint64_t mask = 0;
+    std::size_t i = 0;
+    ((mask |= std::uint64_t{slot_required<Slots>} << i++), ...);
+    return mask;
+}(typename meta::virtual_schema<T, Config>::slots{});
+
+/// After data-driven struct decode, fails on the first required field the
+/// input left out.
+template <typename Config, typename T>
 bool check_required_fields(std::uint64_t field_mask) {
-    using schema = meta::virtual_schema<T, Config>;
-    using slots = typename schema::slots;
-    constexpr std::size_t N = type_list_size_v<slots>;
-    static_assert(N <= 64, "struct field count exceeds field_mask capacity (max 64 fields)");
-
-    return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
-        return (([&] {
-                    if(field_mask & (1ULL << Is))
-                        return true;
-                    using slot_t = type_list_element_t<Is, slots>;
-                    using raw_t = std::remove_cv_t<typename slot_t::raw_type>;
-                    using attrs_t = typename slot_t::attrs;
-
-                    [[maybe_unused]] constexpr auto kind = meta::kind_of<raw_t>();
-                    if constexpr(kind == meta::type_kind::optional ||
-                                 kind == meta::type_kind::pointer ||
-                                 kind == meta::type_kind::null) {
-                        return true;
-                    } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if> ||
-                                        meta::spec_of<attrs_t>.skip_if != meta::skip_when::never ||
-                                        meta::spec_of<attrs_t>.defaulted) {
-                        return true;
-                    } else if constexpr(meta::annotated_type<raw_t>) {
-                        using inner_attrs = typename raw_t::attrs;
-                        if constexpr(meta::spec_of<inner_attrs>.defaulted) {
-                            return true;
-                        } else {
-                            using inner_t = meta::annotated_underlying_t<raw_t>;
-                            constexpr auto inner_kind = meta::kind_of<inner_t>();
-                            if constexpr(inner_kind == meta::type_kind::optional ||
-                                         inner_kind == meta::type_kind::pointer ||
-                                         inner_kind == meta::type_kind::null) {
-                                return true;
-                            } else {
-                                return scoped_context<typename Vis::error_type>::fail(
-                                    rich_error::missing_field(schema::fields[Is].name));
-                            }
-                        }
-                    } else {
-                        return scoped_context<typename Vis::error_type>::fail(
-                            rich_error::missing_field(schema::fields[Is].name));
-                    }
-                }()) &&
-                ...);
-    }(std::make_index_sequence<N>{});
+    std::uint64_t missing = required_mask<Config, T> & ~field_mask;
+    if(missing == 0) {
+        return true;
+    }
+    return scoped_context<rich_error>::fail(rich_error::missing_field(
+        meta::virtual_schema<T, Config>::fields[std::countr_zero(missing)].name));
 }
 
 /// External tagged: { "TagName": value }
@@ -371,19 +331,18 @@ bool decode_externally_tagged(Vis& vis, std::variant<Ts...>& var) {
     bool found = false;
     bool result = vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
         if(found) {
-            return scoped_context<typename Vis::error_type>::fail(
+            return scoped_context<rich_error>::fail(
                 rich_error("externally tagged variant: expected exactly one field"));
         }
         found = true;
         auto idx = find_tag_index(key, names);
         if(idx >= sizeof...(Ts)) {
-            return scoped_context<typename Vis::error_type>::fail(
-                rich_error(std::string("unknown variant tag '") + std::string(key) + "'"));
+            return fail_unknown_tag(key);
         }
         return construct_and_visit<Config>(fv, var, idx);
     });
     if(result && !found) {
-        return scoped_context<typename Vis::error_type>::fail(
+        return scoped_context<rich_error>::fail(
             rich_error("externally tagged variant: expected exactly one field"));
     }
     return result;
@@ -392,211 +351,143 @@ bool decode_externally_tagged(Vis& vis, std::variant<Ts...>& var) {
 /// Fails on the tag entry a data-driven look-ahead found no alternative for.
 /// The look-ahead read this same entry, so reading it again either fails as a
 /// string (a tag that is not one) or yields a name no alternative has.
-template <typename Vis, typename Reader>
+template <typename Reader>
 bool fail_unusable_tag(Reader& tag) {
     std::string name;
     KOTA_CODEC_TRY(tag.visit_str(name));
-    return scoped_context<typename Vis::error_type>::fail(
-        rich_error(std::string("unknown variant tag '") + name + "'"));
+    return fail_unknown_tag(name);
+}
+
+/// Looks up, without consuming anything, the alternative the tag entry
+/// names, so that entries before the tag can be placed; N when the tag is
+/// absent or names no alternative.
+template <typename Vis, std::size_t N>
+std::size_t peek_tag_index(Vis& vis,
+                           std::string_view tag_key,
+                           const std::array<std::string_view, N>& names) {
+    std::size_t idx = N;
+    vis.try_read([&](auto& fork) -> bool {
+        fork.visit_struct([&](std::string_view key, auto& fv) -> bool {
+            if(key == tag_key) {
+                std::string name;
+                fv.visit_str(name);
+                idx = find_tag_index(name, names);
+                return false;
+            }
+            return true;
+        });
+        return false;
+    });
+    return idx;
 }
 
 /// Internal tagged: { "tag": "TagName", ...fields... }
-/// Two paths: data-driven, which looks the tag up before placing fields, and
-/// schema-driven (struct_reader).
+/// The tag is looked up before any field is placed, so it may follow them.
 template <typename Config, typename SpecAttr, typename Vis, typename... Ts>
 bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
+    static_assert(data_driven<Vis> && has_try_read<Vis>,
+                  "a tagged variant decodes through a data-driven visitor with try_read");
     constexpr std::string_view tag_key = SpecAttr::value.tag;
     constexpr auto names = meta::resolve_tag_names<SpecAttr, Ts...>();
     constexpr std::size_t npos = sizeof...(Ts);
 
-    std::size_t idx = npos;
-
-    if constexpr(data_driven<Vis>) {
-        static_assert(has_try_read<Vis>, "a data-driven visitor must support try_read");
-        // Look the tag up first, so that fields before it can be placed.
-        vis.try_read([&](auto& fork) -> bool {
-            fork.visit_struct([&](std::string_view key, auto& fv) -> bool {
-                if(key == tag_key) {
-                    std::string name;
-                    fv.visit_str(name);
-                    idx = find_tag_index(std::string_view(name), names);
-                    return false;
-                }
-                return true;
-            });
-            return false;
-        });
-        if(idx != npos)
-            emplace_variant_by_index(var, idx);
-
-        std::uint64_t field_mask = 0;
-        bool result = vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
-            if(key == tag_key) {
-                if(idx != npos)
-                    return fv.visit_skip();
-                return fail_unusable_tag<Vis>(fv);
-            }
-            if(idx == npos) {
-                // Without a usable tag data fields cannot be placed, and need
-                // not be: the tag's own entry reports why it is unusable, and
-                // an absent tag is reported after the pass.
-                return fv.visit_skip();
-            }
-            return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
-                bool r = true;
-                ((Is == idx
-                      ? void(r = match_field<Config,
-                                             std::variant_alternative_t<Is, std::variant<Ts...>>>(
-                                 key,
-                                 fv,
-                                 std::get<Is>(var),
-                                 &field_mask))
-                      : void()),
-                 ...);
-                return r;
-            }(std::index_sequence_for<Ts...>{});
-        });
-
-        if(!result) {
-            return false;
-        }
-        if(idx == npos) {
-            return scoped_context<typename Vis::error_type>::fail(
-                rich_error("internally tagged variant: missing tag field"));
-        }
-        return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
-            bool ok = true;
-            ((Is == idx ? void(ok = check_required_fields<
-                                   Config,
-                                   std::variant_alternative_t<Is, std::variant<Ts...>>,
-                                   Vis>(field_mask))
-                        : void()),
-             ...);
-            return ok;
-        }(std::index_sequence_for<Ts...>{});
-    } else {
-        // Schema-driven: struct_reader with find_field / visit_field
-        return vis.visit_struct(var, [&](auto& sv) -> bool {
-            std::string tag_value;
-            if constexpr(requires {
-                             sv.find_field(std::string_view{}, [](auto&) -> bool { return true; });
-                         }) {
-                KOTA_CODEC_TRY(sv.find_field(tag_key, [&](auto& tv) -> bool {
-                    return tv.visit_str(tag_value);
-                }));
-            } else {
-                KOTA_CODEC_TRY(sv.visit_field(std::size_t(0), tag_key, [&](auto& tv) -> bool {
-                    return tv.visit_str(tag_value);
-                }));
-            }
-
-            idx = find_tag_index(tag_value, names);
-            if(idx >= npos) {
-                return scoped_context<typename Vis::error_type>::fail(
-                    rich_error(std::string("unknown variant tag '") + tag_value + "'"));
-            }
-
-            return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
-                bool ok = false;
-                ((Is == idx ? (var.template emplace<Is>(),
-                               ok = decode_struct_fields<Config>(sv, std::get<Is>(var)),
-                               true)
-                            : false) ||
-                 ...);
-                return ok;
-            }(std::index_sequence_for<Ts...>{});
+    std::size_t idx = peek_tag_index(vis, tag_key, names);
+    if(idx != npos) {
+        with_index<sizeof...(Ts)>(idx, [&](auto i) {
+            var.template emplace<decltype(i)::value>();
+            return true;
         });
     }
+
+    std::uint64_t field_mask = 0;
+    std::size_t tag_count = 0;
+    bool result = vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
+        if(key == tag_key) {
+            ++tag_count;
+            return idx != npos || fail_unusable_tag(fv);
+        }
+        if(idx == npos) {
+            // Without a usable tag data fields cannot be placed, and need
+            // not be: the tag's own entry reports why it is unusable, and
+            // an absent tag is reported after the pass.
+            return true;
+        }
+        return with_index<sizeof...(Ts)>(idx, [&](auto i) {
+            constexpr std::size_t I = decltype(i)::value;
+            return match_field<Config, std::variant_alternative_t<I, std::variant<Ts...>>>(
+                key,
+                fv,
+                std::get<I>(var),
+                &field_mask);
+        });
+    });
+
+    if(!result) {
+        return false;
+    }
+    if(idx == npos) {
+        return scoped_context<rich_error>::fail(
+            rich_error("internally tagged variant: missing tag field"));
+    }
+    if(tag_count > 1) {
+        return scoped_context<rich_error>::fail(
+            rich_error("internally tagged variant: duplicate tag field"));
+    }
+    return with_index<sizeof...(Ts)>(idx, [&](auto i) {
+        constexpr std::size_t I = decltype(i)::value;
+        return check_required_fields<Config, std::variant_alternative_t<I, std::variant<Ts...>>>(
+            field_mask);
+    });
 }
 
 /// Adjacent tagged: { "t": "TagName", "c": value }
 template <typename Config, typename SpecAttr, typename Vis, typename... Ts>
 bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
+    static_assert(data_driven<Vis> && has_try_read<Vis>,
+                  "a tagged variant decodes through a data-driven visitor with try_read");
     constexpr std::string_view tag_key = SpecAttr::value.tag;
     constexpr std::string_view content_key = SpecAttr::value.content;
     constexpr auto names = meta::resolve_tag_names<SpecAttr, Ts...>();
     constexpr std::size_t npos = sizeof...(Ts);
 
-    std::size_t idx = npos;
+    std::size_t idx = peek_tag_index(vis, tag_key, names);
 
-    if constexpr(data_driven<Vis>) {
-        static_assert(has_try_read<Vis>, "a data-driven visitor must support try_read");
-        // Look the tag up first, so that content before it can be placed.
-        vis.try_read([&](auto& fork) -> bool {
-            fork.visit_struct([&](std::string_view key, auto& fv) -> bool {
-                if(key == tag_key) {
-                    std::string name;
-                    fv.visit_str(name);
-                    idx = find_tag_index(std::string_view(name), names);
-                    return false;
-                }
-                return true;
-            });
-            return false;
-        });
+    std::size_t tag_count = 0;
+    std::size_t content_count = 0;
 
-        std::size_t tag_count = 0;
-        std::size_t content_count = 0;
-
-        bool result = vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
-            if(key == tag_key) {
-                ++tag_count;
-                if(idx != npos)
-                    return fv.visit_skip();
-                return fail_unusable_tag<Vis>(fv);
-            }
-            if(key == content_key) {
-                ++content_count;
-                if(idx == npos) {
-                    // Without a usable tag the content cannot be placed: the
-                    // tag's own entry reports why, and an absent tag is
-                    // reported after the pass.
-                    return fv.visit_skip();
-                }
-                if(content_count > 1)
-                    return fv.visit_skip();
-                return construct_and_visit<Config>(fv, var, idx);
-            }
-            return fv.visit_skip();
-        });
-
-        if(!result)
-            return false;
-        if(idx == npos) {
-            return scoped_context<typename Vis::error_type>::fail(
-                rich_error("adjacently tagged variant: missing tag field"));
+    bool result = vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
+        if(key == tag_key) {
+            ++tag_count;
+            return idx != npos || fail_unusable_tag(fv);
         }
-        if(content_count == 0) {
-            return scoped_context<typename Vis::error_type>::fail(
-                rich_error("adjacently tagged variant: missing content field"));
-        }
-        if(tag_count > 1) {
-            return scoped_context<typename Vis::error_type>::fail(
-                rich_error("adjacently tagged variant: duplicate tag field"));
-        }
-        if(content_count > 1) {
-            return scoped_context<typename Vis::error_type>::fail(
-                rich_error("adjacently tagged variant: duplicate content field"));
+        // Without a usable tag the content cannot be placed: the tag's own
+        // entry reports why, and an absent tag is reported after the pass.
+        // A duplicate content entry is reported after the pass too.
+        if(key == content_key && ++content_count == 1 && idx != npos) {
+            return construct_and_visit<Config>(fv, var, idx);
         }
         return true;
-    } else {
-        return vis.visit_struct(var, [&](auto& sv) -> bool {
-            std::string tag_value;
-            KOTA_CODEC_TRY(sv.visit_field(std::size_t(0), tag_key, [&](auto& tv) -> bool {
-                return tv.visit_str(tag_value);
-            }));
+    });
 
-            idx = find_tag_index(tag_value, names);
-            if(idx >= npos) {
-                return scoped_context<typename Vis::error_type>::fail(
-                    rich_error(std::string("unknown variant tag '") + tag_value + "'"));
-            }
-
-            return sv.visit_field(std::size_t(1), content_key, [&](auto& cv) -> bool {
-                return construct_and_visit<Config>(cv, var, idx);
-            });
-        });
+    if(!result)
+        return false;
+    if(idx == npos) {
+        return scoped_context<rich_error>::fail(
+            rich_error("adjacently tagged variant: missing tag field"));
     }
+    if(content_count == 0) {
+        return scoped_context<rich_error>::fail(
+            rich_error("adjacently tagged variant: missing content field"));
+    }
+    if(tag_count > 1) {
+        return scoped_context<rich_error>::fail(
+            rich_error("adjacently tagged variant: duplicate tag field"));
+    }
+    if(content_count > 1) {
+        return scoped_context<rich_error>::fail(
+            rich_error("adjacently tagged variant: duplicate content field"));
+    }
+    return true;
 }
 
 template <typename Config, typename Vis, typename T>
@@ -787,78 +678,44 @@ bool untagged_variant_pass(Vis& vis,
 
 template <typename Config, typename Vis, typename... Ts>
 bool decode_untagged_variant(Vis& vis, std::variant<Ts...>& out) {
-    if constexpr(has_try_read<Vis>) {
-        if constexpr(has_peek_kind<Vis>) {
-            // Exact-kind pass first, so an integer picks an int alternative
-            // over an earlier float one; the widening pass then admits the
-            // conversions the decoders themselves perform (visit_float from
-            // integer input). The last alternative runs once more on the real
-            // visitor so its error surfaces when nothing claims the value.
-            auto src_kind = vis.peek_kind();
-            constexpr std::size_t last = sizeof...(Ts) - 1;
-            return untagged_variant_pass<Config>(vis, out, src_kind, false) ||
-                   untagged_variant_pass<Config>(vis, out, src_kind, true) ||
-                   construct_and_visit<Config>(vis, out, last);
-        } else {
-            return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
-                [[maybe_unused]] constexpr std::size_t last = sizeof...(Ts) - 1;
-                return (([&] {
-                            if constexpr(Is == last) {
-                                return construct_and_visit<Config>(vis, out, Is);
-                            } else {
-                                return vis.try_read([&](auto& fork) -> bool {
-                                    return construct_and_visit<Config>(fork, out, Is);
-                                });
-                            }
-                        }()) ||
-                        ...);
-            }(std::index_sequence_for<Ts...>{});
-        }
-    } else {
-        static_assert(
-            has_try_read<Vis>,
-            "untagged variant decode requires a visitor with try_read or peek_kind support");
-        return false;
-    }
+    static_assert(has_try_read<Vis> && has_peek_kind<Vis>,
+                  "untagged variant decode requires a visitor with try_read and peek_kind");
+    // Exact-kind pass first, so an integer picks an int alternative over an
+    // earlier float one; the widening pass then admits the conversions the
+    // decoders themselves perform (visit_float from integer input). The last
+    // alternative runs once more on the real visitor so its error surfaces
+    // when nothing claims the value.
+    auto src_kind = vis.peek_kind();
+    constexpr std::size_t last = sizeof...(Ts) - 1;
+    return untagged_variant_pass<Config>(vis, out, src_kind, false) ||
+           untagged_variant_pass<Config>(vis, out, src_kind, true) ||
+           construct_and_visit<Config>(vis, out, last);
 }
 
 /// Decode a single struct field, applying behavior transforms if present.
 /// Mirrors encode_one_field: wraps the decode in vis.visit_field(idx, name, ...).
 template <typename Config, std::size_t I, typename Vis, typename T>
 bool decode_one_field(Vis& vis, T& out) {
-    using schema = meta::virtual_schema<T, Config>;
-    using slots = typename schema::slots;
-    using slot_t = type_list_element_t<I, slots>;
-    using raw_t = std::remove_cv_t<typename slot_t::raw_type>;
-    using attrs_t = typename slot_t::attrs;
+    using field = FieldAt<Config, I, T>;
+    using attrs = typename field::attrs;
+    auto& field_ref = field::of(out);
 
-    constexpr auto idx = std::integral_constant<std::size_t, I>{};
-    std::string_view name = schema::fields[I].name;
-
-    if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
-        constexpr std::size_t offset = schema::fields[I].offset;
-        auto* base = reinterpret_cast<std::byte*>(std::addressof(out));
-        auto& field_ref = *reinterpret_cast<raw_t*>(base + offset);
-        using pred = typename tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
-        if(meta::evaluate_skip_predicate<pred>(field_ref, false)) {
-            raw_t discard{};
-            return vis.visit_field(idx, name, [&](auto& fv) -> bool {
-                return decode_value<Config>(fv, discard);
-            });
-        }
-    }
-
-    bool ok = vis.visit_field(idx, name, [&](auto& fv) -> bool {
-        return decode_field_inner<Config, I>(fv, out);
-    });
-
-    if constexpr(Config::detailed_error) {
-        if(!ok) {
-            if(auto* e = scoped_context<typename Vis::error_type>::try_current())
-                e->prepend_field(name);
-        }
-    }
-    return ok;
+    // A positional document still holds a field skipped on decode, written
+    // through its attrs: it is read the same way, into a value nobody keeps.
+    // Only a skip_if predicate can hold while decoding, and only then must
+    // the field's type default-construct.
+    bool ok = vis.visit_field(std::integral_constant<std::size_t, I>{},
+                              field::name,
+                              [&](auto& fv) -> bool {
+                                  if constexpr(tuple_has_spec_v<attrs, meta::behavior::skip_if>) {
+                                      if(skipped<attrs>(field_ref, false)) {
+                                          typename field::type discard{};
+                                          return decode_with_attrs<Config, attrs>(fv, discard);
+                                      }
+                                  }
+                                  return decode_with_attrs<Config, attrs>(fv, field_ref);
+                              });
+    return trace_path<Config>(ok, field::name);
 }
 
 }  // namespace detail
@@ -901,49 +758,8 @@ bool decode_value(Vis& vis, T& out) {
                       "keep exactly one");
         return deserialize_visit<Vis, V, Config>::visit(vis, out);
     } else if constexpr(meta::annotated_type<V>) {
-        using attrs_t = typename V::attrs;
-        auto&& inner = meta::annotated_value(out);
-        using inner_t = std::remove_cvref_t<decltype(inner)>;
-
-        if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
-            // Behavior precedence (with > as > enum_string, all above variant
-            // tagging) mirrors decode_field_inner and meta's repr resolver.
-            using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
-            return detail::repr_decode<adapter, Config>(vis, inner);
-        } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
-            using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
-            target converted{};
-            KOTA_CODEC_TRY(decode_value<Config>(vis, converted));
-            inner = inner_t(std::move(converted));
-            return true;
-        } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::enum_string>) {
-            using policy = typename tuple_find_spec_t<attrs_t, meta::behavior::enum_string>::policy;
-            static_assert(std::is_enum_v<inner_t>, "behavior::enum_string requires an enum type");
-            std::string name_str;
-            KOTA_CODEC_TRY(vis.visit_str(name_str));
-            auto renamed = policy{}(false, name_str);
-            auto val = meta::enum_value<inner_t>(renamed);
-            if(val) {
-                inner = *val;
-                return true;
-            }
-            return scoped_context<typename Vis::error_type>::fail(
-                rich_error(std::string("unknown enum value '") + name_str + "'"));
-        } else if constexpr(is_specialization_of<std::variant, inner_t> &&
-                            meta::struct_spec_of<attrs_t>.tagging != meta::tag_mode::none) {
-            if constexpr(!is_human_readable<Config, Vis>()) {
-                return decode_value<Config>(vis, inner);
-            } else {
-                using spec_attr = tuple_find_t<attrs_t, meta::is_struct_spec_attr>;
-                return decode_variant<Config, spec_attr>(vis, inner);
-            }
-        } else if constexpr(meta::reflectable_class<inner_t> &&
-                            (meta::struct_spec_of<attrs_t>.rename_all != naming::casing::identity ||
-                             meta::struct_spec_of<attrs_t>.deny_unknown_fields)) {
-            return decode_value<meta::merged_config_t<Config, attrs_t>>(vis, inner);
-        } else {
-            return decode_value<Config>(vis, inner);
-        }
+        return detail::decode_with_attrs<Config, typename V::attrs>(vis,
+                                                                    meta::annotated_value(out));
     } else if constexpr(meta::has_repr<V, meta::format_of_t<Vis>>) {
         return detail::repr_decode<meta::repr_for<V, meta::format_of_t<Vis>>, Config>(vis, out);
     } else {
@@ -982,16 +798,9 @@ bool decode_value(Vis& vis, T& out) {
             }
         } else if constexpr(kind == enumeration) {
             if constexpr(Config::enum_repr == enum_repr::String) {
-                std::string name_str;
-                KOTA_CODEC_TRY(vis.visit_str(name_str));
-                auto renamed = apply_enum_rename<Config>(false, name_str);
-                auto val = meta::enum_value<V>(renamed);
-                if(val) {
-                    out = *val;
-                    return true;
-                }
-                return scoped_context<typename Vis::error_type>::fail(
-                    rich_error(std::string("unknown enum value '") + name_str + "'"));
+                return detail::decode_enum_name(vis, out, [](std::string_view name) {
+                    return apply_enum_rename<Config>(false, name);
+                });
             } else if constexpr(requires { vis.visit_enum(out); }) {
                 return vis.visit_enum(out);
             } else {
@@ -1015,7 +824,7 @@ bool decode_value(Vis& vis, T& out) {
                     return detail::match_field<Config, V>(key, fv, out, &field_mask);
                 });
                 if(result) {
-                    result = detail::check_required_fields<Config, V, Vis>(field_mask);
+                    result = detail::check_required_fields<Config, V>(field_mask);
                 }
                 return result;
             } else {
@@ -1032,14 +841,7 @@ bool decode_value(Vis& vis, T& out) {
                 std::size_t idx = 0;
                 return vis.visit_seq([&](auto& ev) -> bool {
                     element_t item{};
-                    bool ok = decode_value<Config>(ev, item);
-                    if(!ok) {
-                        if constexpr(Config::detailed_error) {
-                            if(auto* e = scoped_context<typename Vis::error_type>::try_current())
-                                e->prepend_index(idx);
-                        }
-                        return false;
-                    }
+                    KOTA_CODEC_TRY(detail::trace_path<Config>(decode_value<Config>(ev, item), idx));
                     kota::detail::append_sequence_element(out, std::move(item));
                     ++idx;
                     return true;
@@ -1054,14 +856,7 @@ bool decode_value(Vis& vis, T& out) {
                         element_t item{};
                         bool ok = sv.visit_element(
                             [&](auto& ev) -> bool { return decode_value<Config>(ev, item); });
-                        if(!ok) {
-                            if constexpr(Config::detailed_error) {
-                                if(auto* e =
-                                       scoped_context<typename Vis::error_type>::try_current())
-                                    e->prepend_index(idx);
-                            }
-                            return false;
-                        }
+                        KOTA_CODEC_TRY(detail::trace_path<Config>(ok, idx));
                         kota::detail::append_sequence_element(out, std::move(item));
                         ++idx;
                     }
@@ -1072,53 +867,35 @@ bool decode_value(Vis& vis, T& out) {
             if constexpr(detail::data_driven<Vis>) {
                 constexpr std::size_t expected = std::tuple_size_v<V>;
                 std::size_t idx = 0;
-                bool seq_ok = vis.visit_tuple([&]([[maybe_unused]] auto& ev) -> bool {
-                    if constexpr(expected == 0) {
-                        return scoped_context<typename Vis::error_type>::fail(
-                            rich_error("too many elements for tuple (expected 0)"));
-                    } else {
-                        if(idx >= expected) {
-                            return scoped_context<typename Vis::error_type>::fail(
-                                rich_error("too many elements for tuple (expected " +
-                                           std::to_string(expected) + ")"));
-                        }
-                        bool ok = detail::assign_tuple_element<Config>(ev, out, idx);
-                        if(!ok) {
-                            if constexpr(Config::detailed_error) {
-                                if(auto* e =
-                                       scoped_context<typename Vis::error_type>::try_current())
-                                    e->prepend_index(idx);
-                            }
-                            return false;
-                        }
-                        ++idx;
-                        return true;
+                bool seq_ok = vis.visit_tuple([&](auto& ev) -> bool {
+                    if(idx == expected) {
+                        return scoped_context<rich_error>::fail(rich_error(
+                            std::format("too many elements for tuple (expected {})", expected)));
                     }
+                    bool ok = detail::with_index<std::tuple_size_v<V>>(idx, [&](auto i) {
+                        return decode_value<Config>(ev, std::get<decltype(i)::value>(out));
+                    });
+                    KOTA_CODEC_TRY(detail::trace_path<Config>(ok, idx));
+                    ++idx;
+                    return true;
                 });
                 if(!seq_ok)
                     return false;
                 if(idx != expected) {
-                    return scoped_context<typename Vis::error_type>::fail(rich_error(
-                        "too few elements for tuple (expected " + std::to_string(expected) +
-                        ", got " + std::to_string(idx) + ")"));
+                    return scoped_context<rich_error>::fail(
+                        rich_error(std::format("too few elements for tuple (expected {}, got {})",
+                                               expected,
+                                               idx)));
                 }
                 return true;
             } else {
                 return vis.visit_tuple(out, [&](auto& sv) -> bool {
                     return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                        return ([&] {
-                            bool ok = sv.visit_element([&](auto& ev) -> bool {
-                                return decode_value<Config>(ev, std::get<Is>(out));
-                            });
-                            if constexpr(Config::detailed_error) {
-                                if(!ok) {
-                                    if(auto* e =
-                                           scoped_context<typename Vis::error_type>::try_current())
-                                        e->prepend_index(Is);
-                                }
-                            }
-                            return ok;
-                        }() && ...);
+                        return (detail::trace_path<Config>(sv.visit_element([&](auto& ev) -> bool {
+                                    return decode_value<Config>(ev, std::get<Is>(out));
+                                }),
+                                                           Is) &&
+                                ...);
                     }(std::make_index_sequence<std::tuple_size_v<V>>{});
                 });
             }
@@ -1133,23 +910,9 @@ bool decode_value(Vis& vis, T& out) {
                 std::size_t idx = 0;
                 return vis.visit_map([&](auto& kv, auto& vv) -> bool {
                     key_t key{};
-                    bool ok = decode_value<Config>(kv, key);
-                    if(!ok) {
-                        if constexpr(Config::detailed_error) {
-                            if(auto* e = scoped_context<typename Vis::error_type>::try_current())
-                                e->prepend_index(idx);
-                        }
-                        return false;
-                    }
+                    KOTA_CODEC_TRY(detail::trace_path<Config>(decode_value<Config>(kv, key), idx));
                     mapped_t val{};
-                    ok = decode_value<Config>(vv, val);
-                    if(!ok) {
-                        if constexpr(Config::detailed_error) {
-                            if(auto* e = scoped_context<typename Vis::error_type>::try_current())
-                                e->prepend_index(idx);
-                        }
-                        return false;
-                    }
+                    KOTA_CODEC_TRY(detail::trace_path<Config>(decode_value<Config>(vv, val), idx));
                     kota::detail::insert_map_entry(out, std::move(key), std::move(val));
                     ++idx;
                     return true;
@@ -1166,14 +929,7 @@ bool decode_value(Vis& vis, T& out) {
                         bool ok = sv.visit_entry(
                             [&](auto& kv) -> bool { return decode_value<Config>(kv, key); },
                             [&](auto& vv) -> bool { return decode_value<Config>(vv, val); });
-                        if(!ok) {
-                            if constexpr(Config::detailed_error) {
-                                if(auto* e =
-                                       scoped_context<typename Vis::error_type>::try_current())
-                                    e->prepend_index(idx);
-                            }
-                            return false;
-                        }
+                        KOTA_CODEC_TRY(detail::trace_path<Config>(ok, idx));
                         kota::detail::insert_map_entry(out, std::move(key), std::move(val));
                         ++idx;
                     }
@@ -1201,5 +957,22 @@ bool decode_struct_fields(Vis& vis, T& out) {
         return (detail::decode_one_field<Config, Is>(vis, out) && ...);
     }(std::make_index_sequence<N>{});
 }
+
+namespace detail {
+
+/// A backend's decode entry point, bar building its visitor: decode_value
+/// under default_config<Config> inside a fresh error context.
+template <typename Config, typename Vis, typename T>
+std::expected<void, rich_error> run_decode(Vis& vis, T& out) {
+    detail::assert_human_readable_allowed<default_config<Config>, Vis>();
+    rich_error err;
+    scoped_context<rich_error> guard(err);
+    if(!decode_value<default_config<Config>>(vis, out)) {
+        return std::unexpected(std::move(err));
+    }
+    return {};
+}
+
+}  // namespace detail
 
 }  // namespace kota::codec

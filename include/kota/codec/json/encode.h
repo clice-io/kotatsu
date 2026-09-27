@@ -10,6 +10,7 @@
 #include <string_view>
 #include <type_traits>
 
+#include "kota/support/expected_try.h"
 #include "kota/codec/json/type.h"
 #include "kota/codec/visit/common.h"
 #include "kota/codec/visit/config.h"
@@ -21,7 +22,6 @@ namespace kota::codec::json {
 
 struct ValueWriter {
     StringBuilder& builder;
-    using error_type = rich_error;
     using format = json::format;
     constexpr static bool human_readable = true;
 
@@ -99,7 +99,6 @@ struct ValueWriter {
 
 struct StructWriter {
     StringBuilder& builder;
-    using error_type = rich_error;
     bool first = true;
 
     template <typename F>
@@ -160,12 +159,8 @@ bool ValueWriter::visit_map(const Container&, Body&& body) {
 }
 
 template <typename T, typename Body>
-bool ValueWriter::visit_tuple(const T&, Body&& body) {
-    builder.start_array();
-    SeqWriter sw{builder};
-    KOTA_CODEC_TRY(body(sw));
-    builder.end_array();
-    return true;
+bool ValueWriter::visit_tuple(const T& value, Body&& body) {
+    return visit_seq(value, std::forward<Body>(body));
 }
 
 template <typename F>
@@ -204,14 +199,10 @@ bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
 /// output.
 template <typename Config = void, typename T>
 auto to_string(const T& value, std::optional<std::size_t> initial_capacity = std::nullopt)
-    -> std::expected<std::string, json::error> {
-    rich_error err;
-    scoped_context<rich_error> guard(err);
+    -> std::expected<std::string, rich_error> {
     StringBuilder builder(initial_capacity.value_or(StringBuilder::DEFAULT_INITIAL_CAPACITY));
     ValueWriter vis{builder};
-    if(!encode_value<default_config<Config>>(vis, value)) {
-        return std::unexpected(std::move(err));
-    }
+    KOTA_EXPECTED_TRY(codec::detail::run_encode<Config>(vis, value));
     std::string_view sv;
     auto ec = builder.view().get(sv);
     if(ec != success) {
