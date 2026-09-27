@@ -184,7 +184,8 @@ ZEST_CASE(range_of_awaiters_that_are_not_tasks) {
 }
 
 #if KOTA_ENABLE_EXCEPTIONS
-ZEST_CASE(empty_range_fails) {
+// Reads what was thrown; see test::exceptions_unreadable.
+ZEST_CASE(empty_range_fails, skip = test::exceptions_unreadable) {
     small_vector<task<int>> tasks;
     EXPECT(
         test::thrown<std::invalid_argument>([&] { (void)when_any(std::move(tasks)); }).has_value());

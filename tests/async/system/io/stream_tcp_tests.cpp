@@ -148,14 +148,15 @@ ZEST_CASE(try_write_writes_at_once) {
         auto connection = co_await listener->acceptor.accept().or_fail();
         co_return co_await connection.read().or_fail();
     };
-    auto client = [&]() -> task<std::size_t, error> {
+    auto client = [&]() -> task<result<std::size_t>, error> {
         auto connection = co_await tcp::connect("127.0.0.1", listener->port).or_fail();
-        co_return co_await or_fail(connection.try_write(std::string_view("now")));
+        co_return connection.try_write(std::string_view("now"));
     };
 
     auto [received, written] = run(serve(), client());
     ASSERT(written.has_value());
-    EXPECT(*written == 3U);
+    ASSERT(written->has_value());
+    EXPECT(**written == 3U);
     ASSERT(received.has_value());
     EXPECT(*received == "now");
 }

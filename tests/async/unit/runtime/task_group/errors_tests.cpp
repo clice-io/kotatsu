@@ -143,7 +143,8 @@ ZEST_CASE(child_error_survives_an_external_cancel) {
 
 #if KOTA_ENABLE_EXCEPTIONS
 
-ZEST_CASE(exception_fails_the_joiner_and_cancels_the_rest) {
+// Reads what was thrown; see test::exceptions_unreadable.
+ZEST_CASE(exception_fails_the_joiner_and_cancels_the_rest, skip = test::exceptions_unreadable) {
     event gate;
     auto thrower = []() -> task<> {
         co_await yield();
@@ -163,7 +164,8 @@ ZEST_CASE(exception_fails_the_joiner_and_cancels_the_rest) {
     EXPECT(gate.get_head() == nullptr);
 }
 
-ZEST_CASE(exception_thrown_while_spawning_reaches_join) {
+// Reads what was thrown; see test::exceptions_unreadable.
+ZEST_CASE(exception_thrown_while_spawning_reaches_join, skip = test::exceptions_unreadable) {
     auto thrower = []() -> task<> {
         throw std::runtime_error("at once");
         co_return;
@@ -177,7 +179,8 @@ ZEST_CASE(exception_thrown_while_spawning_reaches_join) {
     EXPECT(test::thrown([&] { run(driver()); }) == "at once");
 }
 
-ZEST_CASE(exception_outranks_an_error) {
+// Reads what was thrown; see test::exceptions_unreadable.
+ZEST_CASE(exception_outranks_an_error, skip = test::exceptions_unreadable) {
     event gate;
     auto thrower = [&]() -> task<int, error> {
         co_await gate.wait().catch_cancel();
@@ -202,7 +205,9 @@ ZEST_CASE(exception_outranks_an_error) {
 // first exception cancels throw too, and join() rethrows the exception of
 // the earliest-spawned child that threw, not the first one thrown, where
 // when_all rethrows the first child to fail.
-ZEST_CASE(join_rethrows_the_exception_of_the_first_child_spawned) {
+// Reads what was thrown; see test::exceptions_unreadable.
+ZEST_CASE(join_rethrows_the_exception_of_the_first_child_spawned,
+          skip = test::exceptions_unreadable) {
     event gates[3];
     const char* names[] = {"first spawned", "first thrown", "third spawned"};
     auto thrower = [&](int id) -> task<> {

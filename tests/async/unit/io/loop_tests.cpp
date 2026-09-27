@@ -175,7 +175,8 @@ ZEST_CASE(cancelled_roots_report_through_value_and_result) {
 }
 
 #if KOTA_ENABLE_EXCEPTIONS
-ZEST_CASE(failed_root_rethrows_through_result) {
+// Reads what was thrown; see test::exceptions_unreadable.
+ZEST_CASE(failed_root_rethrows_through_result, skip = test::exceptions_unreadable) {
     auto thrower = []() -> task<int> {
         throw std::runtime_error("root");
         co_return 0;
@@ -252,7 +253,8 @@ ZEST_CASE(kota_run_returns_every_value) {
 }
 
 #if KOTA_ENABLE_EXCEPTIONS
-ZEST_CASE(kota_run_rethrows_what_a_task_throws) {
+// Reads what was thrown; see test::exceptions_unreadable.
+ZEST_CASE(kota_run_rethrows_what_a_task_throws, skip = test::exceptions_unreadable) {
     auto thrower = []() -> task<int> {
         throw std::runtime_error("from run");
         co_return 0;

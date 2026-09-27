@@ -16,7 +16,8 @@ namespace {
 
 ZEST_SUITE(async_runtime_when_exceptions, test::LoopFixture) {
 
-ZEST_CASE(all_exception_cancels_the_rest_and_rethrows) {
+// Reads what was thrown; see test::exceptions_unreadable.
+ZEST_CASE(all_exception_cancels_the_rest_and_rethrows, skip = test::exceptions_unreadable) {
     event gate;
     event go;
     auto thrower = [&]() -> task<int> {
@@ -39,7 +40,8 @@ ZEST_CASE(all_exception_cancels_the_rest_and_rethrows) {
     EXPECT(gate.get_head() == nullptr);
 }
 
-ZEST_CASE(all_exception_while_armed_starts_no_later_child) {
+// Reads what was thrown; see test::exceptions_unreadable.
+ZEST_CASE(all_exception_while_armed_starts_no_later_child, skip = test::exceptions_unreadable) {
     int started = 0;
     auto thrower = []() -> task<int> {
         throw std::runtime_error("immediate");
@@ -57,7 +59,8 @@ ZEST_CASE(all_exception_while_armed_starts_no_later_child) {
     EXPECT(started == 0);
 }
 
-ZEST_CASE(any_exception_cancels_the_rest_and_rethrows) {
+// Reads what was thrown; see test::exceptions_unreadable.
+ZEST_CASE(any_exception_cancels_the_rest_and_rethrows, skip = test::exceptions_unreadable) {
     event gate;
     event go;
     auto thrower = [&]() -> task<int> {
@@ -80,7 +83,8 @@ ZEST_CASE(any_exception_cancels_the_rest_and_rethrows) {
     EXPECT(gate.get_head() == nullptr);
 }
 
-ZEST_CASE(range_exception_rethrows) {
+// Reads what was thrown; see test::exceptions_unreadable.
+ZEST_CASE(range_exception_rethrows, skip = test::exceptions_unreadable) {
     event gate;
     auto thrower = []() -> task<int> {
         throw std::runtime_error("range boom");
@@ -108,7 +112,8 @@ ZEST_CASE(range_exception_rethrows) {
     EXPECT(gate.get_head() == nullptr);
 }
 
-ZEST_CASE(nested_exception_reaches_the_outer_combinator) {
+// Reads what was thrown; see test::exceptions_unreadable.
+ZEST_CASE(nested_exception_reaches_the_outer_combinator, skip = test::exceptions_unreadable) {
     event gate;
     auto thrower = []() -> task<int> {
         throw std::runtime_error("deep");
@@ -158,7 +163,8 @@ ZEST_CASE(caught_exception_stays_a_value) {
 
 // A child that cancels the whole scope and then throws still delivers the
 // exception: a racing cancellation never swallows it.
-ZEST_CASE(exception_outranks_an_external_cancel) {
+// Reads what was thrown; see test::exceptions_unreadable.
+ZEST_CASE(exception_outranks_an_external_cancel, skip = test::exceptions_unreadable) {
     event gate;
     event go;
     async_node* scope = nullptr;
