@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#include "fixtures/structs.h"
+#include "codec/harness/fixtures/structs.h"
 #include "fixtures/tagged.h"
 #include "kota/zest/zest.h"
 #include "kota/codec/json/schema.h"

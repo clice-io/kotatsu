@@ -16,11 +16,13 @@
 #include <variant>
 #include <vector>
 
+#include "codec/fbs/harness/struct_keys.h"
+#include "codec/harness/fixtures/attrs.h"
 #include "codec/harness/fixtures/configs.h"
+#include "codec/harness/fixtures/enums.h"
 #include "codec/harness/fixtures/repr.h"
-#include "fixtures/attrs.h"
-#include "fixtures/enums.h"
-#include "fixtures/structs.h"
+#include "codec/harness/fixtures/structs.h"
+#include "fixtures/repr.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
@@ -217,7 +219,7 @@ namespace kota::codec {
 
 namespace {
 
-using Bytes = std::vector<std::uint8_t>;
+using Buffer = std::vector<std::uint8_t>;
 using EntryVector = fbs::Vector<fbs::offset_t<fbs::Table>>;
 
 /// The voffset of a table's field `index`: type.h puts them at 4, 6, 8, ...
@@ -226,7 +228,7 @@ constexpr fbs::voffset_t slot(std::size_t index) {
     return static_cast<fbs::voffset_t>(4 + 2 * index);
 }
 
-auto root_of(const Bytes& bytes) -> const fbs::Table* {
+auto root_of(const Buffer& bytes) -> const fbs::Table* {
     return ::flatbuffers::GetRoot<fbs::Table>(bytes.data());
 }
 
@@ -358,7 +360,7 @@ struct Placed {
 };
 
 /// The solo field of a Placed<T> is stored as a table rather than inline.
-bool solo_is_a_table(const Bytes& bytes) {
+bool solo_is_a_table(const Buffer& bytes) {
     return root_of(bytes)->GetPointer<const fbs::Table*>(slot(1)) != nullptr;
 }
 
@@ -415,23 +417,8 @@ bool padding_is_zero(const Padded* stored) {
     return true;
 }
 
-/// Sentinel defaults break std::is_trivial but not trivial copyability.
-struct SentinelRange {
-    std::uint32_t begin = static_cast<std::uint32_t>(-1);
-    std::uint32_t end = static_cast<std::uint32_t>(-1);
-
-    friend bool operator==(const SentinelRange&, const SentinelRange&) = default;
-};
-
-/// The signed field pins the ordering to field values: -2 sorts before 3
-/// field by field, after it byte by byte.
-struct OccurrenceKey {
-    SentinelRange range;
-    std::uint64_t target = 0;
-    std::int32_t weight = 0;
-
-    friend bool operator==(const OccurrenceKey&, const OccurrenceKey&) = default;
-};
+using test::OccurrenceKey;
+using test::SentinelRange;
 
 /// The reverse of the reflected field order: the encoder must sort by its
 /// own ordering, not trust the container's.
@@ -742,7 +729,7 @@ ZEST_CASE(struct_keyed_map_entries_sort_field_by_field) {
 
     // The entry vector is sorted; the entry tables themselves sit wherever
     // the builder placed them, in the container's order.
-    for(const Bytes* bytes: {&*ordered_bytes, &*hashed_bytes}) {
+    for(const Buffer* bytes: {&*ordered_bytes, &*hashed_bytes}) {
         const auto* entries = root_of(*bytes)->GetPointer<const EntryVector*>(slot(0));
         ASSERT(entries != nullptr);
         ASSERT(entries->size() == keys.size());

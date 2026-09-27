@@ -13,7 +13,8 @@
 #include <vector>
 
 #include "codec/harness/fixtures/repr.h"
-#include "fixtures/structs.h"
+#include "codec/harness/fixtures/structs.h"
+#include "fixtures/repr.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/attrs.h"
 #include "kota/meta/schema.h"

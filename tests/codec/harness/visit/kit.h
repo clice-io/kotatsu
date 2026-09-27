@@ -30,7 +30,7 @@
 #include <string_view>
 #include <utility>
 
-#include "fixtures/structs.h"
+#include "codec/harness/fixtures/structs.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/compare.h"
 #include "kota/codec/visit/context.h"

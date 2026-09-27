@@ -12,7 +12,8 @@
 #include <variant>
 #include <vector>
 
-#include "fixtures/structs.h"
+#include "codec/fbs/harness/struct_keys.h"
+#include "codec/harness/fixtures/structs.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
@@ -107,7 +108,9 @@ namespace kota::codec {
 namespace {
 
 using fbs::table_view;
+using test::OccurrenceKey;
 using test::Point;
+using test::StructKeyed;
 
 struct Inner {
     std::int32_t a = 0;
@@ -118,9 +121,12 @@ struct Inner {
 
 enum class Grade : std::int32_t { low, mid, high };
 
-/// One field of every layout the verifier classifies: scalars, strings,
-/// string, table, scalar and inline-struct vectors, a map, an optional, a
-/// variant, bytes and a tuple.
+/// One field of every layout the verifier classifies: scalar, enum, char,
+/// byte and long double cells, strings, string, table, scalar and
+/// inline-struct vectors, nested vectors, a set, string- and integer-keyed
+/// maps, an inline struct, optionals of a scalar and of a table, variants
+/// with a monostate and with a table, bytes, tuples with an std::array, and
+/// the two slot-rerouting behavior attrs.
 struct Rich {
     std::int32_t id = 0;
     std::string title;
@@ -133,6 +139,20 @@ struct Rich {
     std::variant<std::int32_t, std::string, Inner> which;
     std::vector<std::byte> blob;
     std::tuple<std::int32_t, std::string> pair_like;
+    Grade level = Grade::low;
+    char tag = 'x';
+    std::byte flag{0};
+    long double ratio = 0.0L;
+    Point pos;
+    std::optional<Inner> extra;
+    std::unordered_map<std::uint64_t, std::string> names;
+    std::vector<std::vector<std::int32_t>> grid;
+    std::set<std::int32_t> uniq;
+    std::variant<std::monostate, Inner> maybe;
+    std::tuple<std::int32_t, std::array<std::int32_t, 3>> mixed;
+    meta::annotation<std::int32_t, meta::behavior::as<std::int64_t>> widened{0};
+    meta::annotation<Grade, meta::behavior::enum_string<naming::rename_policy::identity>>
+        level_name{Grade::low};
 
     auto operator==(const Rich&) const -> bool = default;
 };
@@ -150,34 +170,6 @@ auto make_rich() -> Rich {
         .which = std::string("chosen"),
         .blob = {std::byte{0xDE}, std::byte{0xAD}, std::byte{0xBE}, std::byte{0xEF}},
         .pair_like = {5, "five"},
-    };
-}
-
-/// The shapes Rich leaves out: enum, char and byte cells, a long double, an
-/// inline struct field, an optional table, an integer-keyed map, nested
-/// vectors, a set, a monostate alternative, std::array in a tuple, and the
-/// two slot-rerouting behavior attrs.
-struct Rich2 {
-    Grade level = Grade::low;
-    char tag = 'x';
-    std::byte flag{0};
-    long double ratio = 0.0L;
-    Point pos;
-    std::optional<Inner> extra;
-    std::unordered_map<std::uint64_t, std::string> names;
-    std::vector<std::vector<std::int32_t>> grid;
-    std::set<std::int32_t> uniq;
-    std::variant<std::monostate, Inner> maybe;
-    std::tuple<std::int32_t, std::array<std::int32_t, 3>> mixed;
-    meta::annotation<std::int32_t, meta::behavior::as<std::int64_t>> widened{0};
-    meta::annotation<Grade, meta::behavior::enum_string<naming::rename_policy::identity>>
-        level_name{Grade::low};
-
-    auto operator==(const Rich2&) const -> bool = default;
-};
-
-auto make_rich2() -> Rich2 {
-    return {
         .level = Grade::mid,
         .tag = 'k',
         .flag = std::byte{0x5A},
@@ -193,28 +185,6 @@ auto make_rich2() -> Rich2 {
         .level_name = {Grade::high},
     };
 }
-
-struct OccurrenceKey {
-    std::uint32_t begin = static_cast<std::uint32_t>(-1);
-    std::uint32_t end = static_cast<std::uint32_t>(-1);
-    std::uint64_t target = 0;
-
-    friend bool operator==(const OccurrenceKey&, const OccurrenceKey&) = default;
-};
-
-struct OccurrenceKeyLess {
-    bool operator()(const OccurrenceKey& a, const OccurrenceKey& b) const {
-        return std::tie(a.begin, a.end, a.target) < std::tie(b.begin, b.end, b.target);
-    }
-};
-
-/// The entry vector holds inline-struct key cells the binary search reads,
-/// so tampered bytes reach both the keys and the values.
-struct StructKeyed {
-    std::map<OccurrenceKey, std::int32_t, OccurrenceKeyLess> hits;
-
-    friend bool operator==(const StructKeyed&, const StructKeyed&) = default;
-};
 
 /// Bool-bearing inline structs, one nesting the bool a level down so the
 /// validator's offsets add up.
@@ -364,35 +334,48 @@ ZEST_CASE(hostile_bytes_stay_in_bounds) {
         [[maybe_unused]] auto hit = root[&Rich::index]["k1"];
         [[maybe_unused]] auto chosen = root[&Rich::which].get<1>();
         [[maybe_unused]] auto second = root[&Rich::pair_like].get<1>();
-    });
-}
-
-ZEST_CASE(hostile_bytes_stay_in_bounds_for_the_other_shapes) {
-    expect_hostile_bytes_contained(make_rich2(), [](const table_view<Rich2>& root) {
-        [[maybe_unused]] auto level = root[&Rich2::level];
-        [[maybe_unused]] auto pos = root[&Rich2::pos];
-        [[maybe_unused]] auto extra_name = root[&Rich2::extra][&Inner::name];
-        [[maybe_unused]] auto lookup = root[&Rich2::names][std::uint64_t{7}];
-        auto grid = root[&Rich2::grid];
+        [[maybe_unused]] auto level = root[&Rich::level];
+        [[maybe_unused]] auto pos = root[&Rich::pos];
+        [[maybe_unused]] auto extra_name = root[&Rich::extra][&Inner::name];
+        [[maybe_unused]] auto lookup = root[&Rich::names][std::uint64_t{7}];
+        auto grid = root[&Rich::grid];
         for(std::size_t i = 0; i < grid.size(); ++i) {
             auto row = grid[i];
             for(std::size_t j = 0; j < row.size(); ++j) {
                 [[maybe_unused]] auto cell = row[j];
             }
         }
-        [[maybe_unused]] auto uniq_size = root[&Rich2::uniq].size();
-        [[maybe_unused]] auto payload = root[&Rich2::maybe].get<1>();
-        [[maybe_unused]] auto element = root[&Rich2::mixed].get<1>().get<0>();
-        [[maybe_unused]] auto widened = root[&Rich2::widened];
-        [[maybe_unused]] auto level_name = root[&Rich2::level_name];
+        [[maybe_unused]] auto uniq_size = root[&Rich::uniq].size();
+        [[maybe_unused]] auto payload = root[&Rich::maybe].get<1>();
+        [[maybe_unused]] auto element = root[&Rich::mixed].get<1>().get<0>();
+        [[maybe_unused]] auto widened = root[&Rich::widened];
+        [[maybe_unused]] auto level_name = root[&Rich::level_name];
     });
 }
 
 ZEST_CASE(hostile_bytes_stay_in_bounds_for_struct_keys) {
     StructKeyed input;
-    input.hits.emplace(OccurrenceKey{.begin = 1, .end = 5, .target = 9}, 1);
-    input.hits.emplace(OccurrenceKey{.begin = 1, .end = 6, .target = 0}, 2);
-    input.hits.emplace(OccurrenceKey{.begin = 2, .end = 0, .target = 3}, 3);
+    input.hits.emplace(
+        OccurrenceKey{
+            .range = {.begin = 1, .end = 5},
+            .target = 9,
+            .weight = -2
+    },
+        1);
+    input.hits.emplace(
+        OccurrenceKey{
+            .range = {.begin = 1, .end = 6},
+            .target = 0,
+            .weight = 3
+    },
+        2);
+    input.hits.emplace(
+        OccurrenceKey{
+            .range = {.begin = 2, .end = 0},
+            .target = 3,
+            .weight = 0
+    },
+        3);
     expect_hostile_bytes_contained(input, [](const table_view<StructKeyed>& root) {
         auto hits = root[&StructKeyed::hits];
         for(std::size_t i = 0; i < hits.size(); ++i) {
@@ -401,9 +384,16 @@ ZEST_CASE(hostile_bytes_stay_in_bounds_for_struct_keys) {
             [[maybe_unused]] auto value = entry.get<1>();
         }
         // The binary search walks tampered key cells.
-        [[maybe_unused]] auto hit = hits[OccurrenceKey{.begin = 1, .end = 5, .target = 9}];
-        [[maybe_unused]] bool present =
-            hits.contains(OccurrenceKey{.begin = 9, .end = 9, .target = 9});
+        [[maybe_unused]] auto hit = hits[OccurrenceKey{
+            .range = {.begin = 1, .end = 5},
+            .target = 9,
+            .weight = -2
+        }];
+        [[maybe_unused]] bool present = hits.contains(OccurrenceKey{
+            .range = {.begin = 9, .end = 9},
+            .target = 9,
+            .weight = 9
+        });
     });
 }
 

@@ -13,6 +13,8 @@
 #include <vector>
 
 #include "codec/harness/fixtures/configs.h"
+#include "codec/harness/fixtures/structs.h"
+#include "codec/harness/fixtures/tagged.h"
 #include "codec/harness/visit/kit.h"
 #include "fixtures/configs.h"
 #include "fixtures/structs.h"

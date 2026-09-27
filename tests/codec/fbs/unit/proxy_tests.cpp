@@ -13,10 +13,13 @@
 #include <variant>
 #include <vector>
 
+#include "codec/fbs/harness/struct_keys.h"
+#include "codec/harness/fixtures/attrs.h"
+#include "codec/harness/fixtures/containers.h"
+#include "codec/harness/fixtures/enums.h"
 #include "codec/harness/fixtures/repr.h"
-#include "fixtures/attrs.h"
-#include "fixtures/enums.h"
-#include "fixtures/structs.h"
+#include "codec/harness/fixtures/structs.h"
+#include "fixtures/repr.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
@@ -56,7 +59,7 @@ auto make_profile() -> Profile {
     };
 }
 
-struct Nullables {
+struct NullableFields {
     std::optional<std::int32_t> number;
     std::optional<std::string> text;
     std::optional<test::Address> addr;
@@ -71,7 +74,7 @@ struct Choices {
     std::vector<std::variant<std::int32_t, std::string>> list;
 };
 
-struct Tuples {
+struct TupleFields {
     std::pair<std::int32_t, std::string> pair;
     std::tuple<std::int32_t, std::string, double> triple;
     std::pair<std::string, test::Address> keyed;
@@ -88,7 +91,7 @@ struct Lists {
     std::vector<std::vector<std::int32_t>> grid;
 };
 
-struct Maps {
+struct MapFields {
     std::map<std::string, std::int32_t> by_name;
     std::map<std::int32_t, std::string> by_id;
     std::map<std::string, test::Address> places;
@@ -97,7 +100,7 @@ struct Maps {
     std::map<std::string, std::int32_t> none;
 };
 
-auto make_maps() -> Maps {
+auto make_map_fields() -> MapFields {
     return {
         .by_name = {{"alpha", 1}, {"beta", 2}, {"gamma", 3}},
         .by_id = {{-7, "minus"}, {2, "two"}, {10, "ten"}, {30, "thirty"}},
@@ -110,25 +113,8 @@ auto make_maps() -> Maps {
     };
 }
 
-/// Ordered field by field; the signed weight makes that differ from the
-/// byte order.
-struct OccurrenceKey {
-    std::uint32_t begin = 0;
-    std::uint64_t target = 0;
-    std::int32_t weight = 0;
-
-    friend bool operator==(const OccurrenceKey&, const OccurrenceKey&) = default;
-};
-
-struct OccurrenceKeyLess {
-    bool operator()(const OccurrenceKey& a, const OccurrenceKey& b) const {
-        return std::tie(a.begin, a.target, a.weight) < std::tie(b.begin, b.target, b.weight);
-    }
-};
-
-struct StructKeyed {
-    std::map<OccurrenceKey, std::int32_t, OccurrenceKeyLess> hits;
-};
+using test::OccurrenceKey;
+using test::StructKeyed;
 
 using Decimal = meta::annotation<int, meta::behavior::with<test::DecimalText>>;
 using PackedVersion = meta::annotation<test::Version, meta::behavior::with<test::VersionAsNumber>>;
@@ -182,7 +168,7 @@ ZEST_CASE(invalid_view_reads_defaults) {
 
 ZEST_CASE(nullable_fields_peel_to_their_value) {
     auto owner = std::make_shared<std::int32_t>(77);
-    Nullables engaged{
+    NullableFields engaged{
         .number = 42,
         .text = "hello",
         .addr = test::Address{.city = "paris",  .zip = 75000},
@@ -194,37 +180,37 @@ ZEST_CASE(nullable_fields_peel_to_their_value) {
     };
     auto bytes = fbs::to_bytes(engaged);
     ASSERT(bytes);
-    auto root = table_view<Nullables>::from_bytes(*bytes);
+    auto root = table_view<NullableFields>::from_bytes(*bytes);
     ASSERT(root.valid());
-    EXPECT(root.has(&Nullables::number));
-    EXPECT(root[&Nullables::number] == 42);
-    EXPECT(root[&Nullables::text] == "hello");
-    EXPECT(root[&Nullables::addr][&test::Address::city] == "paris");
-    EXPECT(root[&Nullables::owned][&test::Address::zip] == 10115);
-    EXPECT(root[&Nullables::shared][&test::Address::city] == "london");
-    EXPECT(root[&Nullables::watched] == 77);
+    EXPECT(root.has(&NullableFields::number));
+    EXPECT(root[&NullableFields::number] == 42);
+    EXPECT(root[&NullableFields::text] == "hello");
+    EXPECT(root[&NullableFields::addr][&test::Address::city] == "paris");
+    EXPECT(root[&NullableFields::owned][&test::Address::zip] == 10115);
+    EXPECT(root[&NullableFields::shared][&test::Address::city] == "london");
+    EXPECT(root[&NullableFields::watched] == 77);
 }
 
 ZEST_CASE(absent_nullable_fields_read_defaults) {
     // An expired weak_ptr writes nothing, like an empty optional.
     std::weak_ptr<std::int32_t> expired = std::make_shared<std::int32_t>(1);
-    auto bytes = fbs::to_bytes(Nullables{.number = std::nullopt,
-                                         .text = std::nullopt,
-                                         .addr = std::nullopt,
-                                         .owned = nullptr,
-                                         .shared = nullptr,
-                                         .watched = expired});
+    auto bytes = fbs::to_bytes(NullableFields{.number = std::nullopt,
+                                              .text = std::nullopt,
+                                              .addr = std::nullopt,
+                                              .owned = nullptr,
+                                              .shared = nullptr,
+                                              .watched = expired});
     ASSERT(bytes);
-    auto root = table_view<Nullables>::from_bytes(*bytes);
+    auto root = table_view<NullableFields>::from_bytes(*bytes);
     ASSERT(root.valid());
-    EXPECT(!root.has(&Nullables::number));
-    EXPECT(root[&Nullables::number] == 0);
-    EXPECT(!root.has(&Nullables::text));
-    EXPECT(root[&Nullables::text] == "");
-    EXPECT(!root[&Nullables::addr].valid());
-    EXPECT(!root[&Nullables::owned].valid());
-    EXPECT(!root.has(&Nullables::shared));
-    EXPECT(root[&Nullables::watched] == 0);
+    EXPECT(!root.has(&NullableFields::number));
+    EXPECT(root[&NullableFields::number] == 0);
+    EXPECT(!root.has(&NullableFields::text));
+    EXPECT(root[&NullableFields::text] == "");
+    EXPECT(!root[&NullableFields::addr].valid());
+    EXPECT(!root[&NullableFields::owned].valid());
+    EXPECT(!root.has(&NullableFields::shared));
+    EXPECT(root[&NullableFields::watched] == 0);
 }
 
 ZEST_CASE(skipped_member_has_no_slot) {
@@ -272,7 +258,7 @@ ZEST_CASE(variant_view_reads_a_monostate_alternative) {
 }
 
 ZEST_CASE(tuple_view_reads_elements) {
-    auto bytes = fbs::to_bytes(Tuples{
+    auto bytes = fbs::to_bytes(TupleFields{
         .pair = {42, "hello"},
         .triple = {7, "world", 3.14},
         .keyed = {"key", {.city = "nyc", .zip = 10001}},
@@ -280,17 +266,17 @@ ZEST_CASE(tuple_view_reads_elements) {
         .nested = {11, {21, 22, 23}},
     });
     ASSERT(bytes);
-    auto root = table_view<Tuples>::from_bytes(*bytes);
+    auto root = table_view<TupleFields>::from_bytes(*bytes);
     ASSERT(root.valid());
-    EXPECT(root[&Tuples::pair].get<0>() == 42);
-    EXPECT(root[&Tuples::pair].get<1>() == "hello");
-    EXPECT(root[&Tuples::triple].get<2>() == 3.14);
-    EXPECT(root[&Tuples::keyed].get<1>()[&test::Address::zip] == 10001);
-    auto rows = root[&Tuples::rows];
+    EXPECT(root[&TupleFields::pair].get<0>() == 42);
+    EXPECT(root[&TupleFields::pair].get<1>() == "hello");
+    EXPECT(root[&TupleFields::triple].get<2>() == 3.14);
+    EXPECT(root[&TupleFields::keyed].get<1>()[&test::Address::zip] == 10001);
+    auto rows = root[&TupleFields::rows];
     ASSERT(rows.size() == 2U);
     EXPECT(rows[1].get<1>() == "c");
     // std::array is tuple-like: a tuple_view too.
-    EXPECT(root[&Tuples::nested].get<1>().get<2>() == 23);
+    EXPECT(root[&TupleFields::nested].get<1>().get<2>() == 23);
 }
 
 ZEST_CASE(array_view_reads_each_element_layout) {
@@ -331,26 +317,26 @@ ZEST_CASE(array_view_out_of_range_reads_default) {
 }
 
 ZEST_CASE(map_view_reads_entries_in_key_order) {
-    auto bytes = fbs::to_bytes(make_maps());
+    auto bytes = fbs::to_bytes(make_map_fields());
     ASSERT(bytes);
-    auto root = table_view<Maps>::from_bytes(*bytes);
+    auto root = table_view<MapFields>::from_bytes(*bytes);
     ASSERT(root.valid());
-    auto by_name = root[&Maps::by_name];
+    auto by_name = root[&MapFields::by_name];
     ASSERT(by_name.size() == 3U);
     EXPECT(by_name.at(0).get<0>() == "alpha");
     EXPECT(by_name.at(2).get<1>() == 3);
-    auto places = root[&Maps::places];
+    auto places = root[&MapFields::places];
     ASSERT(places.size() == 2U);
     EXPECT(places.at(1).get<0>() == "work");
     EXPECT(places.at(1).get<1>()[&test::Address::zip] == 90001);
-    EXPECT(root[&Maps::none].empty());
+    EXPECT(root[&MapFields::none].empty());
     EXPECT(!by_name.at(3).valid());
 }
 
 ZEST_CASE(map_view_looks_up_string_keys) {
-    auto bytes = fbs::to_bytes(make_maps());
+    auto bytes = fbs::to_bytes(make_map_fields());
     ASSERT(bytes);
-    auto by_name = table_view<Maps>::from_bytes(*bytes)[&Maps::by_name];
+    auto by_name = table_view<MapFields>::from_bytes(*bytes)[&MapFields::by_name];
     ASSERT(by_name.valid());
     EXPECT(by_name[std::string("beta")] == 2);
     EXPECT(by_name[std::string("missing")] == 0);
@@ -364,9 +350,9 @@ ZEST_CASE(map_view_looks_up_string_keys) {
 }
 
 ZEST_CASE(map_view_looks_up_transparently) {
-    auto bytes = fbs::to_bytes(make_maps());
+    auto bytes = fbs::to_bytes(make_map_fields());
     ASSERT(bytes);
-    auto by_name = table_view<Maps>::from_bytes(*bytes)[&Maps::by_name];
+    auto by_name = table_view<MapFields>::from_bytes(*bytes)[&MapFields::by_name];
     ASSERT(by_name.valid());
     EXPECT(by_name["beta"] == 2);
     EXPECT(by_name.contains("alpha"));
@@ -382,20 +368,20 @@ ZEST_CASE(map_view_looks_up_integer_and_enum_keys) {
     // The binary search compares numbers as numbers (2 before 10), unsigned
     // keys as unsigned, and enums by their underlying value, as the encoder
     // sorted them.
-    auto bytes = fbs::to_bytes(make_maps());
+    auto bytes = fbs::to_bytes(make_map_fields());
     ASSERT(bytes);
-    auto root = table_view<Maps>::from_bytes(*bytes);
+    auto root = table_view<MapFields>::from_bytes(*bytes);
     ASSERT(root.valid());
-    auto by_id = root[&Maps::by_id];
+    auto by_id = root[&MapFields::by_id];
     EXPECT(by_id[-7] == "minus");
     EXPECT(by_id[2] == "two");
     EXPECT(by_id[10] == "ten");
     EXPECT(by_id[30] == "thirty");
     EXPECT(by_id[99] == "");
-    auto by_sign = root[&Maps::by_sign];
+    auto by_sign = root[&MapFields::by_sign];
     EXPECT(by_sign[test::SignedEnum::neg] == 1);
     EXPECT(by_sign[test::SignedEnum::pos] == 3);
-    auto by_wide_id = root[&Maps::by_wide_id];
+    auto by_wide_id = root[&MapFields::by_wide_id];
     EXPECT(by_wide_id[42U] == 3);
     EXPECT(by_wide_id[0x8000000000000001ULL] == 2);
 }
@@ -403,9 +389,9 @@ ZEST_CASE(map_view_looks_up_integer_and_enum_keys) {
 ZEST_CASE(map_view_looks_up_struct_keys) {
     const std::array<OccurrenceKey, 3> keys{
         {
-         {.begin = 1, .target = 9, .weight = -2},
-         {.begin = 1, .target = 9, .weight = 3},
-         {.begin = 2, .target = 0, .weight = 0},
+         {.range = {.begin = 1, .end = 0}, .target = 9, .weight = -2},
+         {.range = {.begin = 1, .end = 0}, .target = 9, .weight = 3},
+         {.range = {.begin = 2, .end = 0}, .target = 0, .weight = 0},
          }
     };
     StructKeyed input;
@@ -423,10 +409,23 @@ ZEST_CASE(map_view_looks_up_struct_keys) {
     ASSERT(found);
     EXPECT(found->get<0>() == keys[1]);
     // Misses before the first entry, between two, and after the last.
-    EXPECT(!hits.contains(OccurrenceKey{.begin = 0, .target = 0, .weight = 0}));
-    EXPECT(!hits.contains(OccurrenceKey{.begin = 1, .target = 9, .weight = 0}));
-    EXPECT(!hits.contains(OccurrenceKey{.begin = 9, .target = 0, .weight = 0}));
-    EXPECT(!hits.find(OccurrenceKey{.begin = 1, .target = 9, .weight = 0}));
+    const OccurrenceKey between{
+        .range = {.begin = 1, .end = 0},
+        .target = 9,
+        .weight = 0
+    };
+    EXPECT(!hits.contains(OccurrenceKey{
+        .range = {.begin = 0, .end = 0},
+        .target = 0,
+        .weight = 0
+    }));
+    EXPECT(!hits.contains(between));
+    EXPECT(!hits.contains(OccurrenceKey{
+        .range = {.begin = 9, .end = 0},
+        .target = 0,
+        .weight = 0
+    }));
+    EXPECT(!hits.find(between));
 
     auto empty = fbs::to_bytes(StructKeyed{});
     ASSERT(empty);

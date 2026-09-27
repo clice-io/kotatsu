@@ -5,7 +5,7 @@
 #include <string_view>
 #include <variant>
 
-#include "fixtures/attrs.h"
+#include "codec/harness/fixtures/attrs.h"
 #include "fixtures/structs.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/annotation.h"

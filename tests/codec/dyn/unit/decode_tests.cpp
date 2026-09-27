@@ -7,18 +7,13 @@
 #include <variant>
 #include <vector>
 
-#include "fixtures/structs.h"
+#include "codec/harness/fixtures/structs.h"
 #include "kota/zest/zest.h"
 #include "kota/codec/dyn/dyn.h"
 
 namespace kota::codec {
 
 namespace {
-
-struct WithExtra {
-    int id;
-    dyn::Value extra;
-};
 
 ZEST_SUITE(codec_dyn_decode) {
 
@@ -42,13 +37,11 @@ ZEST_CASE(tree_of_another_kind_fails) {
 
 ZEST_CASE(tree_inside_a_value_reads_itself) {
     // The tree is a temporary, which outlives the decode.
-    auto typed = dyn::from_dyn<WithExtra>(dyn::Value{
-        {"id",    std::int64_t{7}                                       },
-        {"extra", dyn::Object{{"name", "alice"}, {"n", std::int64_t{1}}}},
+    auto typed = dyn::from_dyn<test::Field<dyn::Value>>(dyn::Value{
+        {"value", dyn::Object{{"name", "alice"}, {"n", std::int64_t{1}}}},
     });
     ASSERT(typed);
-    EXPECT(typed->id == 7);
-    EXPECT(typed->extra == (dyn::Value{
+    EXPECT(typed->value == (dyn::Value{
                                {"name", "alice"        },
                                {"n",    std::int64_t{1}},
     }));

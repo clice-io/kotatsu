@@ -458,9 +458,9 @@ ZEST_CASE(recursive_mixed_deep) {
 }
 
 ZEST_CASE(disabled_range_type_info_is_unknown) {
-    STATIC_EXPECT(kind_of<fx::disabled_range>() == type_kind::unknown);
+    STATIC_EXPECT(kind_of<fx::DisabledRange>() == type_kind::unknown);
 
-    constexpr auto info = type_info_of<fx::disabled_range, default_config>();
+    constexpr auto info = type_info_of<fx::DisabledRange, default_config>();
     STATIC_EXPECT(info.kind == type_kind::unknown);
 }
 

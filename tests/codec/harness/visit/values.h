@@ -15,13 +15,13 @@
 #include <variant>
 #include <vector>
 
+#include "codec/harness/fixtures/containers.h"
+#include "codec/harness/fixtures/enums.h"
 #include "codec/harness/fixtures/everything.h"
 #include "codec/harness/fixtures/scalars.h"
+#include "codec/harness/fixtures/structs.h"
 #include "codec/harness/visit/kit.h"
-#include "fixtures/containers.h"
-#include "fixtures/enums.h"
 #include "fixtures/recursive.h"
-#include "fixtures/structs.h"
 
 namespace kota::test {
 

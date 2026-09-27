@@ -18,11 +18,12 @@
 #include <vector>
 
 #include "codec/harness/fixtures/configs.h"
+#include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/repr.h"
+#include "codec/harness/fixtures/structs.h"
+#include "codec/harness/fixtures/tagged.h"
 #include "codec/harness/visit/kit.h"
-#include "fixtures/containers.h"
 #include "fixtures/structs.h"
-#include "fixtures/tagged.h"
 
 namespace kota::test {
 

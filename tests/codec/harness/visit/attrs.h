@@ -13,14 +13,15 @@
 #include <variant>
 #include <vector>
 
+#include "codec/harness/fixtures/attrs.h"
 #include "codec/harness/fixtures/configs.h"
+#include "codec/harness/fixtures/containers.h"
+#include "codec/harness/fixtures/enums.h"
 #include "codec/harness/fixtures/scalars.h"
+#include "codec/harness/fixtures/structs.h"
 #include "codec/harness/visit/kit.h"
 #include "fixtures/attrs.h"
 #include "fixtures/configs.h"
-#include "fixtures/containers.h"
-#include "fixtures/enums.h"
-#include "fixtures/structs.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
 

@@ -4,21 +4,16 @@
 #include <vector>
 
 #include "codec/dyn/harness/backend.h"
+#include "codec/harness/fixtures/enums.h"
 #include "codec/harness/fixtures/everything.h"
 #include "codec/harness/fixtures/scalars.h"
-#include "fixtures/enums.h"
-#include "fixtures/structs.h"
+#include "codec/harness/fixtures/structs.h"
 #include "kota/zest/zest.h"
 #include "kota/codec/dyn/dyn.h"
 
 namespace kota::codec {
 
 namespace {
-
-struct WithExtra {
-    int id;
-    dyn::Value extra;
-};
 
 ZEST_SUITE(codec_dyn_encode) {
 
@@ -82,16 +77,14 @@ ZEST_CASE(tree_writes_itself) {
 }
 
 ZEST_CASE(tree_inside_a_value_writes_itself) {
-    WithExtra typed{
-        .id = 7,
-        .extra = {{"name", "alice"}, {"n", std::int64_t{1}}},
+    test::Field<dyn::Value> typed{
+        .value = {{"name", "alice"}, {"n", std::int64_t{1}}},
     };
     EXPECT(dyn::to_dyn(typed) == (dyn::Value{
-                                     {"id",    std::int64_t{7}},
-                                     {"extra", typed.extra    },
+                                     {"value", typed.value},
     }));
-    EXPECT(dyn::to_dyn(std::vector<dyn::Value>{typed.extra, nullptr}) ==
-           dyn::Value(dyn::Array{typed.extra, nullptr}));
+    EXPECT(dyn::to_dyn(std::vector<dyn::Value>{typed.value, nullptr}) ==
+           dyn::Value(dyn::Array{typed.value, nullptr}));
 }
 
 ZEST_CASE(everything_lowering) {

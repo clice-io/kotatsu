@@ -7,10 +7,10 @@
 
 #include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/repr.h"
+#include "codec/harness/fixtures/structs.h"
+#include "codec/harness/fixtures/tagged.h"
 #include "fixtures/attrs.h"
 #include "fixtures/configs.h"
-#include "fixtures/structs.h"
-#include "fixtures/tagged.h"
 #include "kota/zest/zest.h"
 #include "kota/codec/toml/toml.h"
 

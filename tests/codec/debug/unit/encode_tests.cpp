@@ -15,8 +15,8 @@
 #include <vector>
 
 #include "codec/harness/fixtures/configs.h"
+#include "codec/harness/fixtures/structs.h"
 #include "fixtures/enums.h"
-#include "fixtures/structs.h"
 #include "kota/zest/zest.h"
 #include "kota/codec/debug/encode.h"
 

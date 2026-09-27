@@ -2,6 +2,8 @@
 #include <string>
 #include <variant>
 
+#include "fixtures/attrs.h"
+#include "fixtures/repr.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/schema.h"
 
@@ -25,11 +27,6 @@ struct DenyOnly {
     constexpr static auto spec = make_struct_spec(dsl::deny_unknown_fields = true);
 };
 
-struct StrictCamel {
-    constexpr static auto spec = make_struct_spec(dsl::rename_all = naming::casing::lower_camel,
-                                                  dsl::deny_unknown_fields = true);
-};
-
 /// "camel, then deny" across two chained reprs, and both on one.
 struct DenyStep {};
 
@@ -37,42 +34,8 @@ struct ChainedPolicies {};
 
 struct FlatPolicies {};
 
-/// A declared representation that is itself annotated with a behavior attr.
-struct BasisPoints {};
-
-struct LoadOk {
-    int byte_count = 0;
-};
-
-struct LoadErr {
-    std::string message;
-};
-
-struct LoadTag {
-    constexpr static auto spec = make_struct_spec(dsl::tag = "status",
-                                                  dsl::content = "value",
-                                                  dsl::tag_names = {"ok", "err"});
-};
-
-/// A declared representation that is a tagged variant.
-struct LoadResult {};
-
-struct ChoiceText {
-    using type = std::string;
-};
-
-struct ChoiceTag {
-    constexpr static auto spec =
-        make_struct_spec(dsl::tag = "t", dsl::content = "c", dsl::tag_names = {"num", "text"});
-};
-
-struct Journal {};
-
+/// A format tag no backend declares.
 struct TestFormat {};
-
-struct RenameTarget {
-    int user_name = 0;
-};
 
 }  // namespace
 
@@ -88,27 +51,7 @@ struct repr<ChainedPolicies> {
 
 template <>
 struct repr<FlatPolicies> {
-    using type = annotate<StrictCamel>::type<MergePoint>;
-};
-
-template <>
-struct repr<BasisPoints> {
-    using type = annotation<int, behavior::as<double>>;
-};
-
-template <>
-struct repr<LoadResult> {
-    using type = annotate<LoadTag>::type<std::variant<LoadOk, LoadErr>>;
-};
-
-template <>
-struct repr<Journal> {
-    using type = std::string;
-};
-
-template <>
-struct repr<Journal, TestFormat> {
-    using type = std::int64_t;
+    using type = annotate<test::StrictCamelTag>::type<MergePoint>;
 };
 
 namespace {
@@ -130,11 +73,11 @@ ZEST_CASE(equivalent_merge_chains_share_type_info) {
 }
 
 ZEST_CASE(annotation_in_declared_repr_resolves) {
-    EXPECT(zest::type_eq<resolved_repr_t<BasisPoints>, double>());
+    EXPECT(zest::type_eq<resolved_repr_t<test::BasisPoints>, double>());
 }
 
 ZEST_CASE(tagging_in_declared_repr_reaches_type_info) {
-    const auto& info = type_info_of<LoadResult>();
+    const auto& info = type_info_of<test::LoadResult>();
     ASSERT(info.kind == type_kind::variant);
     const auto& variant = static_cast<const variant_type_info&>(info);
     EXPECT(variant.tagging == tag_mode::adjacent);
@@ -142,7 +85,7 @@ ZEST_CASE(tagging_in_declared_repr_reaches_type_info) {
 }
 
 ZEST_CASE(outer_policy_reaches_repr_alternatives) {
-    const auto& info = type_info_of<annotate<StrictCamel>::type<LoadResult>>();
+    const auto& info = type_info_of<annotate<test::StrictCamelTag>::type<test::LoadResult>>();
     ASSERT(info.kind == type_kind::variant);
     const auto& variant = static_cast<const variant_type_info&>(info);
     EXPECT(variant.tagging == tag_mode::adjacent);
@@ -154,26 +97,24 @@ ZEST_CASE(outer_policy_reaches_repr_alternatives) {
 }
 
 ZEST_CASE(adapter_beats_tagging_in_resolution) {
-    using choice =
-        annotate<ChoiceTag>::type<std::variant<int, std::string>, behavior::with<ChoiceText>>;
-    EXPECT(zest::type_eq<resolved_repr_t<choice>, std::string>());
+    EXPECT(zest::type_eq<resolved_repr_t<test::AdaptedChoice>, std::string>());
 }
 
 ZEST_CASE(format_scoped_repr_resolves_under_its_format) {
-    EXPECT(zest::type_eq<resolved_repr_t<Journal>, std::string>());
-    EXPECT(zest::type_eq<resolved_repr_t<Journal, TestFormat>, std::int64_t>());
+    EXPECT(zest::type_eq<resolved_repr_t<test::Journal>, std::string>());
+    EXPECT(zest::type_eq<resolved_repr_t<test::Journal, TestFormat>, std::int64_t>());
 }
 
 ZEST_CASE(rename_all_on_untagged_variant_is_inert) {
     // rename_all merges only at a reflected struct; an untagged variant is not
     // one, so its alternatives keep their names.
-    using choice = annotate<CamelOnly>::type<std::variant<RenameTarget, int>>;
+    using choice = annotate<CamelOnly>::type<std::variant<test::RenameTarget, int>>;
     const auto& erased = type_info_of<choice>();
     ASSERT(erased.kind == type_kind::variant);
     const auto& info = static_cast<const variant_type_info&>(erased);
     ASSERT(info.alternatives.size() == 2U);
     const auto& alternative = static_cast<const struct_type_info&>(info.alternatives[0]());
-    ASSERT(alternative.fields.size() == 1U);
+    ASSERT(alternative.fields.size() == 2U);
     EXPECT(alternative.fields[0].name == "user_name");
 }
 

@@ -9,11 +9,12 @@
 #include <vector>
 
 #include "codec/harness/fixtures/everything.h"
-#include "codec/harness/fixtures/repr.h"
 #include "codec/harness/fixtures/scalars.h"
+#include "codec/harness/fixtures/structs.h"
+#include "codec/harness/fixtures/tagged.h"
 #include "codec/toml/harness/backend.h"
+#include "fixtures/repr.h"
 #include "fixtures/structs.h"
-#include "fixtures/tagged.h"
 #include "kota/zest/zest.h"
 #include "kota/codec/toml/toml.h"
 
