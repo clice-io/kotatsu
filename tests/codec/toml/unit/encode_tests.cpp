@@ -8,8 +8,10 @@
 #include <variant>
 #include <vector>
 
+#include "codec/harness/fixtures/everything.h"
 #include "codec/harness/fixtures/repr.h"
 #include "codec/harness/fixtures/scalars.h"
+#include "codec/toml/harness/backend.h"
 #include "fixtures/structs.h"
 #include "fixtures/tagged.h"
 #include "kota/zest/zest.h"
@@ -284,6 +286,13 @@ ZEST_CASE(to_toml_builds_the_table) {
     auto boxed = toml::to_toml(7);
     ASSERT(boxed.has_value());
     EXPECT((*boxed)["__value"].value<std::int64_t>() == 7);
+}
+
+ZEST_CASE(everything_lowering) {
+    // How each kind lowers into TOML text, in one document.
+    auto document = toml::to_string(test::Everything::typical());
+    ASSERT(document);
+    EXPECT_SNAPSHOT(test::Toml::render(*document));
 }
 
 };  // ZEST_SUITE(codec_toml_encode)

@@ -45,55 +45,72 @@ void attrs(const Kit<B>& kit) {
         return SkipsRawPointer{.id = 7, .raw = nullptr};
     });
 
+    // A positional document carries the same values in the same order
+    // whatever they are called, so names are checked where they travel, in a
+    // keyed document, and the roundtrips run everywhere.
     auto renamed_root = [] {
         return RenamedRoot{
             {.user_name = 7, .display_name = "ada"}
         };
     };
-    encodes_as(kit, "rename_all_encodes_as_plain", renamed_root, [] {
-        return RenameTargetCamel{.userName = 7, .displayName = "ada"};
-    });
     roundtrip(kit, "rename_all_roundtrip", renamed_root);
     using SnakeStrict = meta::annotate<UpperSnakeStrictTag>::type<RenameTarget>;
     auto policy_on_field = [] {
         return Field<SnakeStrict>{{{.user_name = 7, .display_name = "ada"}}};
     };
-    encodes_as(kit, "rename_all_on_field_encodes_as_plain", policy_on_field, [] {
-        return Field<RenameTargetUpperSnake>{
-            {.USER_NAME = 7, .DISPLAY_NAME = "ada"}
-        };
-    });
     roundtrip(kit, "rename_all_on_field_roundtrip", policy_on_field);
-    encodes_as<CamelConfig>(
-        kit,
-        "field_rename_encodes_as_plain",
-        [] { return RenameAllTarget{.user_name = 7, .total_score = 1.5F, .item_id = "abc"}; },
-        [] { return RenameAllTargetCamel{.userName = 7, .totalScore = 1.5F, .itemId = "abc"}; });
     auto nested_rename = [] {
         return NestedRenameTarget{
             .request_id = 1,
             .nested_info = {.user_name = 7, .total_score = 1.5F, .item_id = "abc"},
         };
     };
-    encodes_as<CamelConfig>(kit, "field_rename_reaches_nested_structs", nested_rename, [] {
-        return NestedRenameTargetCamel{
-            .requestId = 1,
-            .nestedInfo = {.userName = 7, .totalScore = 1.5F, .itemId = "abc"},
-        };
-    });
     roundtrip<CamelConfig>(kit, "field_rename_roundtrip", nested_rename);
-    auto mixed_rename = [] {
-        return MixedRenameStruct{.user_id = 7, .total_score = 1.5F, .item_name = "x"};
+    auto documented = [] {
+        return Documented{.id = 7, .name = "ada"};
     };
-    auto mixed_rename_plain = [] {
-        return MixedRenameStructCamel{.ID = 7, .totalScore = 1.5F, .itemName = "x"};
-    };
-    encodes_as<CamelConfig>(kit, "rename_beats_field_rename", mixed_rename, mixed_rename_plain);
-    reads<MixedRenameStruct, CamelConfig>(kit,
-                                          "rename_beats_field_rename_reads",
-                                          mixed_rename_plain,
-                                          mixed_rename);
+    roundtrip(kit, "description_roundtrip", documented);
+    if constexpr(B::caps.self_describing) {
+        encodes_as(kit, "rename_all_encodes_as_plain", renamed_root, [] {
+            return RenameTargetCamel{.userName = 7, .displayName = "ada"};
+        });
+        encodes_as(kit, "rename_all_on_field_encodes_as_plain", policy_on_field, [] {
+            return Field<RenameTargetUpperSnake>{
+                {.USER_NAME = 7, .DISPLAY_NAME = "ada"}
+            };
+        });
+        encodes_as<CamelConfig>(
+            kit,
+            "field_rename_encodes_as_plain",
+            [] { return RenameAllTarget{.user_name = 7, .total_score = 1.5F, .item_id = "abc"}; },
+            [] {
+                return RenameAllTargetCamel{.userName = 7, .totalScore = 1.5F, .itemId = "abc"};
+            });
+        encodes_as<CamelConfig>(kit, "field_rename_reaches_nested_structs", nested_rename, [] {
+            return NestedRenameTargetCamel{
+                .requestId = 1,
+                .nestedInfo = {.userName = 7, .totalScore = 1.5F, .itemId = "abc"},
+            };
+        });
+        auto mixed_rename = [] {
+            return MixedRenameStruct{.user_id = 7, .total_score = 1.5F, .item_name = "x"};
+        };
+        auto mixed_rename_plain = [] {
+            return MixedRenameStructCamel{.ID = 7, .totalScore = 1.5F, .itemName = "x"};
+        };
+        encodes_as<CamelConfig>(kit, "rename_beats_field_rename", mixed_rename, mixed_rename_plain);
+        reads<MixedRenameStruct, CamelConfig>(kit,
+                                              "rename_beats_field_rename_reads",
+                                              mixed_rename_plain,
+                                              mixed_rename);
+        encodes_as(kit, "description_is_transparent", documented, [] {
+            return StrictIdName{.id = 7, .name = "ada"};
+        });
+    }
 
+    // Flattening shows wherever a nested struct is framed: in a keyed
+    // document and in fbs's tables. bincode concatenates a nested struct's
+    // fields either way, so there these cases hold whatever flatten does.
     auto outer = [] {
         return Outer{.x = 1, .inner = {{.a = 2, .b = 3}}, .y = 4};
     };
@@ -176,14 +193,6 @@ void attrs(const Kit<B>& kit) {
         return std::string("fullControl");
     });
     roundtrip(kit, "enum_string_root_roundtrip", access_name);
-    auto documented = [] {
-        return Documented{.id = 7, .name = "ada"};
-    };
-    encodes_as(kit, "description_is_transparent", documented, [] {
-        return StrictIdName{.id = 7, .name = "ada"};
-    });
-    roundtrip(kit, "description_roundtrip", documented);
-
     auto matching = [] {
         return Skippable{
             .id = 1,
@@ -213,9 +222,10 @@ void attrs(const Kit<B>& kit) {
                 .score = 7
             };
         });
+        // A keyed decode never visits an absent field, which is left as the
+        // value it decodes into holds it; what a slot decode reads for an
+        // absent slot is the backend's own.
         if constexpr(B::caps.self_describing) {
-            // A keyed decode never visits an absent field, which is left as
-            // the value it decodes into holds it.
             reads<Skippable>(
                 kit,
                 "skip_if_absent_fields_left_alone",
@@ -227,20 +237,6 @@ void attrs(const Kit<B>& kit) {
                                      .generation = 7,
                                      .score = 3};
                 });
-        } else {
-            // A slot decode visits every slot, and an absent one is how a
-            // null travels: the field reads as null, empty or zero.
-            reads<Skippable>(
-                kit,
-                "skip_if_absent_fields_read_as_null",
-                [] { return IdOnly{.id = 1}; },
-                [] {
-                    return Skippable{.id = 1,
-                                     .note = std::nullopt,
-                                     .tags = {},
-                                     .generation = 0,
-                                     .score = 0};
-                });
         }
         roundtrip(kit, "skip_if_roundtrip", kept);
     } else {
@@ -249,7 +245,7 @@ void attrs(const Kit<B>& kit) {
         roundtrip(kit, "skip_if_matching_fields_roundtrip", matching);
     }
 
-    if constexpr(B::caps.string_knobs) {
+    if constexpr(!B::caps.layout_computed) {
         encodes_as<EnumStringConfig>(
             kit,
             "enum_repr_string_encodes_as_plain",
@@ -277,11 +273,18 @@ void attrs(const Kit<B>& kit) {
             [] { return NonFinite::typical(); },
             [] { return NonFiniteNames{.nan = "NaN", .inf = "Infinity", .neg_inf = "-Infinity"}; });
     }
+    // nan_repr::Null shows only where Passthrough keeps the values; where
+    // Passthrough already writes null, the two configs write alike.
     if constexpr(B::caps.non_finite) {
         roundtrip(kit, "infinity_roundtrip", [] {
             return std::vector<double>{std::numeric_limits<double>::infinity(),
                                        -std::numeric_limits<double>::infinity()};
         });
+        encodes_as<NanNullConfig>(
+            kit,
+            "nan_null_encodes_as_null",
+            [] { return NonFinite::typical(); },
+            [] { return NonFiniteNulls{}; });
     } else {
         encodes_as(
             kit,
@@ -289,11 +292,6 @@ void attrs(const Kit<B>& kit) {
             [] { return NonFinite::typical(); },
             [] { return NonFiniteNulls{}; });
     }
-    encodes_as<NanNullConfig>(
-        kit,
-        "nan_null_encodes_as_null",
-        [] { return NonFinite::typical(); },
-        [] { return NonFiniteNulls{}; });
     write_fails<NanErrorConfig>(kit,
                                 "nan_error_fails",
                                 [] { return NonFinite::typical(); },
@@ -365,14 +363,15 @@ void attrs(const Kit<B>& kit) {
                                         "unknown_field_under_config_fails",
                                         with_extra,
                                         {.message = "unknown field 'extra'", .path = ""});
-        read_fails<Field<SnakeStrict>>(kit,
-                                       "rename_all_on_field_denies_unknown_fails",
-                                       [] {
-                                           return Field<RenameTargetUpperSnakeWithExtra>{
-                                               {.USER_NAME = 7, .DISPLAY_NAME = "ada", .EXTRA = 1}
-                                           };
-                                       },
-                                       {.message = "unknown field 'EXTRA'", .path = "value"});
+        read_in_field_fails<SnakeStrict>(kit,
+                                         "rename_all_on_field_denies_unknown_fails",
+                                         [] {
+                                             return RenameTargetUpperSnakeWithExtra{.USER_NAME = 7,
+                                                                                    .DISPLAY_NAME =
+                                                                                        "ada",
+                                                                                    .EXTRA = 1};
+                                         },
+                                         {.message = "unknown field 'EXTRA'", .path = "value"});
         // In a field, so a backend that routes roots by their declared shape
         // (toml) places the variant as it places the struct.
         encodes_as(
@@ -393,18 +392,18 @@ void attrs(const Kit<B>& kit) {
             [] { return AnnotatedWithInternal{.id = 7, .internal = "input", .value = 2.5F}; },
             [] { return AnnotatedStruct{.user_id = 7, .internal = "kept", .value = 2.5F}; });
 
-        if constexpr(B::caps.string_knobs) {
-            read_fails<Field<Access>, EnumStringConfig>(
+        if constexpr(!B::caps.layout_computed) {
+            read_in_field_fails<Access, EnumStringConfig>(
                 kit,
                 "enum_repr_string_unknown_name_fails",
-                [] { return Field<std::string>{"nope"}; },
+                [] { return std::string("nope"); },
                 {.message = "unknown enum value 'nope'", .path = "value"});
             // nan_repr::String only encodes: the names do not read back. One
             // name, so the path does not depend on the order of the keys.
-            read_fails<Field<double>, NanStringConfig>(kit,
-                                                       "nan_string_read_fails",
-                                                       [] { return Field<std::string>{"NaN"}; },
-                                                       {.message = "", .path = "value"});
+            read_in_field_fails<double, NanStringConfig>(kit,
+                                                         "nan_string_read_fails",
+                                                         [] { return std::string("NaN"); },
+                                                         {.message = "", .path = "value"});
         }
         read_fails<AccessGrant>(kit,
                                 "enum_string_unknown_name_fails",
@@ -418,87 +417,87 @@ void attrs(const Kit<B>& kit) {
         // Leaf errors are the backend's to word; their paths are the protocol's.
         using Texts = std::map<std::string, std::string>;
         auto texts_for_point = [] {
-            return Field<Texts>{
-                {{"x", "one"}, {"y", "two"}}
+            return Texts{
+                {"x", "one"},
+                {"y", "two"}
             };
         };
-        read_fails<Field<Point>>(kit,
-                                 "nested_field_mismatch_fails",
-                                 texts_for_point,
-                                 {.message = "", .path = "value.x"});
-        read_fails<Field<Point>, NoPathConfig>(kit,
-                                               "detailed_error_off_fails_without_path",
-                                               texts_for_point,
-                                               {.message = "", .path = ""});
+        read_in_field_fails<Point>(kit,
+                                   "nested_field_mismatch_fails",
+                                   texts_for_point,
+                                   {.message = "", .path = "value.x"});
+        read_in_field_fails<Point, NoPathConfig>(kit,
+                                                 "detailed_error_off_fails_without_path",
+                                                 texts_for_point,
+                                                 {.message = "", .path = ""});
         using IntOrText = std::variant<int, std::string>;
-        read_fails<Field<std::vector<int>>>(kit,
-                                            "element_mismatch_fails",
-                                            [] {
-                                                return Field<std::vector<IntOrText>>{
-                                                    {1, "two", 3}
-                                                };
-                                            },
-                                            {.message = "", .path = "value[1]"});
-        read_fails<Field<Ints>>(kit,
-                                "map_value_mismatch_fails",
-                                [] {
-                                    return Field<std::map<std::string, IntOrText>>{
-                                        {{"a", 1}, {"b", "two"}}
-                                    };
-                                },
-                                {.message = "", .path = "value[1]"});
-        read_fails<Field<std::map<int, int>>>(
+        read_in_field_fails<std::vector<int>>(kit,
+                                              "element_mismatch_fails",
+                                              [] { return std::vector<IntOrText>{1, "two", 3}; },
+                                              {.message = "", .path = "value[1]"});
+        read_in_field_fails<Ints>(kit,
+                                  "map_value_mismatch_fails",
+                                  [] {
+                                      return std::map<std::string, IntOrText>{
+                                          {"a", 1    },
+                                          {"b", "two"}
+                                      };
+                                  },
+                                  {.message = "", .path = "value[1]"});
+        read_in_field_fails<std::map<int, int>>(
             kit,
             "map_key_not_integer_fails",
-            [] { return Field<Ints>{{{"abc", 1}}}; },
+            [] {
+                return Ints{
+                    {"abc", 1}
+                };
+            },
             {.message = "cannot parse map key 'abc' as integer", .path = "value[0]"});
-        read_fails<Field<std::map<std::uint32_t, int>>>(
+        read_in_field_fails<std::map<std::uint32_t, int>>(
             kit,
             "map_key_negative_unsigned_fails",
-            [] { return Field<Ints>{{{"-1", 1}}}; },
+            [] {
+                return Ints{
+                    {"-1", 1}
+                };
+            },
             {.message = "cannot parse map key '-1' as unsigned integer", .path = "value[0]"});
         auto wide_key = [] {
-            return Field<Ints>{
-                {{"1", 1}, {"300", 2}}
+            return Ints{
+                {"1",   1},
+                {"300", 2}
             };
         };
-        read_fails<Field<std::map<std::int8_t, int>>>(
+        read_in_field_fails<std::map<std::int8_t, int>>(
             kit,
             "map_key_out_of_integer_range_fails",
             wide_key,
             {.message = "map key '300' out of integer range", .path = "value[1]"});
-        read_fails<Field<std::map<std::uint8_t, int>>>(
+        read_in_field_fails<std::map<std::uint8_t, int>>(
             kit,
             "map_key_out_of_unsigned_range_fails",
             wide_key,
             {.message = "map key '300' out of unsigned integer range", .path = "value[1]"});
-        read_fails<Field<std::tuple<int, int>>>(
+        read_in_field_fails<std::tuple<int, int>>(
             kit,
             "tuple_too_long_fails",
-            [] {
-                return Field<std::vector<int>>{
-                    {1, 2, 3}
-                };
-            },
+            [] { return std::vector<int>{1, 2, 3}; },
             {.message = "too many elements for tuple (expected 2)", .path = "value"});
-        read_fails<Field<std::tuple<int, int>>>(
+        read_in_field_fails<std::tuple<int, int>>(
             kit,
             "tuple_too_short_fails",
-            [] { return Field<std::vector<int>>{{1}}; },
+            [] { return std::vector<int>{1}; },
             {.message = "too few elements for tuple (expected 2, got 1)", .path = "value"});
-        read_fails<Field<std::tuple<>>>(
+        read_in_field_fails<std::tuple<>>(
             kit,
             "empty_tuple_too_long_fails",
-            [] { return Field<std::vector<int>>{{1}}; },
+            [] { return std::vector<int>{1}; },
             {.message = "too many elements for tuple (expected 0)", .path = "value"});
-        read_fails<Field<std::tuple<int, int>>>(kit,
-                                                "tuple_element_mismatch_fails",
-                                                [] {
-                                                    return Field<std::tuple<int, std::string>>{
-                                                        {1, "two"}
-                                                    };
-                                                },
-                                                {.message = "", .path = "value[1]"});
+        read_in_field_fails<std::tuple<int, int>>(
+            kit,
+            "tuple_element_mismatch_fails",
+            [] { return std::tuple<int, std::string>{1, "two"}; },
+            {.message = "", .path = "value[1]"});
     }
 }
 

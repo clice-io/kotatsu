@@ -7,7 +7,9 @@
 #include <string>
 #include <vector>
 
+#include "codec/harness/fixtures/everything.h"
 #include "codec/harness/fixtures/scalars.h"
+#include "codec/json/harness/backend.h"
 #include "fixtures/enums.h"
 #include "fixtures/structs.h"
 #include "kota/zest/zest.h"
@@ -143,6 +145,13 @@ ZEST_CASE(dyn_value_encodes_as_typed) {
     EXPECT(json::to_string(dyn::Object{
                {"x", std::int64_t{10}}
     }) == R"({"x":10})");
+}
+
+ZEST_CASE(everything_lowering) {
+    // How each kind lowers into JSON text, in one document.
+    auto document = json::to_string(test::Everything::typical());
+    ASSERT(document);
+    EXPECT_SNAPSHOT(test::Json::render(*document));
 }
 
 };  // ZEST_SUITE(codec_json_encode)

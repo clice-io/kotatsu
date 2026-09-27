@@ -12,16 +12,12 @@ namespace kota::test {
 struct Json {
     constexpr static std::string_view name = "json";
     /// Not non_finite: JSON has no literal for NaN or the infinities, so the
-    /// writer emits null for them even under nan_repr::Passthrough. Not
-    /// struct_keys: map keys are object keys, and MapKeyWriter writes only
-    /// strings and integers.
+    /// writer emits null for them even under nan_repr::Passthrough.
     constexpr static Caps caps{
         .self_describing = true,
         .absent_fields = true,
         .full_uint64 = true,
-        .null_elements = true,
-        .string_knobs = true,
-        .dynamic_repr = true,
+        .nested_nulls = true,
         .untrusted_input = true,
         .format_tag = true,
     };

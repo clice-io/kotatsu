@@ -36,7 +36,7 @@ void variants(const Kit<B>& kit) {
             Point2d{.x = 1, .y = 2}
         };
     });
-    if constexpr(B::caps.null_elements) {
+    if constexpr(B::caps.nested_nulls) {
         roundtrip(kit, "untagged_null_roundtrip", [] { return Field<Untagged>{std::monostate{}}; });
     }
     roundtrip(kit, "untagged_containers_roundtrip", [] {
@@ -114,31 +114,23 @@ void variants(const Kit<B>& kit) {
             "default_tag_names_are_type_names",
             [] { return Field<DefaultNamed>{DefaultNamed{Circle{.radius = 1.5}}}; },
             [] { return Field<std::map<std::string, Circle>>{{{"Circle", {.radius = 1.5}}}}; });
-    } else {
-        encodes_as(
-            kit,
-            "external_encodes_as_plain",
-            [] { return ExternalShape(Point{.x = 1, .y = 2}); },
-            [] { return BareShape(Point{.x = 1, .y = 2}); });
-        encodes_as(
-            kit,
-            "adjacent_encodes_as_plain",
-            [] { return AdjacentShape{7}; },
-            [] { return BareShape{7}; });
-        encodes_as(
-            kit,
-            "internal_encodes_as_plain",
-            [] { return InternalShape(Rect{.width = 2, .height = 3}); },
-            [] { return BareFigure(Rect{.width = 2, .height = 3}); });
     }
-    encodes_as<NotHumanReadableConfig>(kit, "not_human_readable_ignores_tags", holder, [] {
+    // Where a document is not human readable, each tagging travels as the
+    // bare variant: a positional backend always, a keyed one under a config
+    // that says so.
+    auto bare = [] {
         return TaggedHolderBare{
             .name = "h",
             .ext = Point{.x = 1, .y = 2},
             .adj = 7,
             .in = Circle{.radius = 1.5}
         };
-    });
+    };
+    if constexpr(B::caps.self_describing) {
+        encodes_as<NotHumanReadableConfig>(kit, "not_human_readable_ignores_tags", holder, bare);
+    } else {
+        encodes_as(kit, "tags_ignored_encodes_as_bare", holder, bare);
+    }
     roundtrip(kit, "tagged_roundtrip", [] {
         TaggedHolder none{.name = "a", .ext = {}, .adj = {}, .in = Circle{.radius = 1.5}};
         TaggedHolder number{
@@ -158,7 +150,7 @@ void variants(const Kit<B>& kit) {
             .in = Circle{.radius = 0}
         };
         // The monostate alternatives carry their null in a field.
-        if constexpr(B::caps.null_elements) {
+        if constexpr(B::caps.nested_nulls) {
             return std::vector<TaggedHolder>{none, number, text, point};
         } else {
             return std::vector<TaggedHolder>{number, text, point};

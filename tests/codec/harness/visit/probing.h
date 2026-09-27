@@ -115,7 +115,7 @@ void probing(const Kit<B>& kit) {
     // The null alternatives come second, so a null that did not reach them
     // would leave the first one. A null input stands in a field, so these
     // cases need a backend that reads a null field back.
-    if constexpr(B::caps.null_elements) {
+    if constexpr(B::caps.nested_nulls) {
         reads_in_field<std::variant<int, std::monostate, std::string>>(
             kit,
             "null_input_picks_monostate",
@@ -127,7 +127,7 @@ void probing(const Kit<B>& kit) {
         "integer_input_skips_optional_double",
         [] { return 42; },
         [] { return std::variant<std::optional<double>, int>{42}; });
-    if constexpr(B::caps.null_elements) {
+    if constexpr(B::caps.nested_nulls) {
         reads_in_field<std::variant<int, std::optional<double>>>(
             kit,
             "null_input_engages_optional",
@@ -356,7 +356,7 @@ void probing(const Kit<B>& kit) {
         "pointer_nested_variant_takes_its_kinds",
         [] { return Field<std::string>{"hello"}; },
         [] { return PointerOr<SharedInner, bool>{std::make_shared<Inner>("hello")}; });
-    if constexpr(B::caps.null_elements) {
+    if constexpr(B::caps.nested_nulls) {
         reads<PointerOr<SharedInner, bool>>(
             kit,
             "null_input_engages_pointer",
@@ -427,7 +427,7 @@ void probing(const Kit<B>& kit) {
                                                         "untagged_object_no_match_fails",
                                                         [] { return Point{.x = 1, .y = 2}; },
                                                         {.message = "", .path = "value"});
-    if constexpr(B::caps.null_elements) {
+    if constexpr(B::caps.nested_nulls) {
         read_in_field_fails<std::variant<int, std::string>>(kit,
                                                             "untagged_null_no_match_fails",
                                                             [] { return nullptr; },

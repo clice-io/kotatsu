@@ -15,8 +15,7 @@ struct Dyn {
     constexpr static std::string_view name = "dyn";
     /// Not non_finite: the writer stores null for NaN and the infinities
     /// even under nan_repr::Passthrough, as json writes them. Not
-    /// struct_keys: object keys are strings, and MapKeyWriter writes only
-    /// strings and integers. Not untrusted_input: a tree is built in memory,
+    /// untrusted_input: a tree is built in memory,
     /// by the program or by a reader that has checked its own input, so
     /// there is no text or byte sequence to garble. Not format_tag: the tree
     /// is the interchange between formats, so only format-agnostic reprs
@@ -25,9 +24,7 @@ struct Dyn {
         .self_describing = true,
         .absent_fields = true,
         .full_uint64 = true,
-        .null_elements = true,
-        .string_knobs = true,
-        .dynamic_repr = true,
+        .nested_nulls = true,
     };
     using Encoded = codec::dyn::Value;
 

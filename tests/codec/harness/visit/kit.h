@@ -23,6 +23,8 @@
 #include <concepts>
 #include <cstddef>
 #include <expected>
+#include <format>
+#include <print>
 #include <ranges>
 #include <string>
 #include <string_view>
@@ -38,37 +40,38 @@ namespace kota::test {
 /// What a backend's documents can carry. Declared by the adapter rather than
 /// derived from the library's traits, so the library does not judge itself.
 struct Caps {
-    /// Keyed documents (json, toml, dyn): fields travel by name, so alias,
-    /// defaulted, deny_unknown_fields and required fields apply; tagged
-    /// variants take object shapes and untagged ones decode by probing; a
-    /// document written from one type can be read as another.
+    /// Keyed documents (json, toml, dyn): fields travel by name, so rename,
+    /// alias, defaulted, deny_unknown_fields and required fields apply;
+    /// tagged variants take object shapes and untagged ones decode by
+    /// probing; a map is an object, so its keys are text or numbers, never
+    /// structs. A positional backend reads by slot or position with the type
+    /// that wrote the document, and writes a map key as a value.
     bool self_describing = false;
-    /// A field can be absent (key or slot), so skip_if omits it and decode
-    /// keeps the default.
+    /// A field can be absent from the document (a key or a slot), so skip_if
+    /// omits the field it matches. What reading an absent field yields
+    /// depends on how the backend visits fields; the cases say which.
     bool absent_fields = false;
     /// uint64 above int64's maximum encodes.
     bool full_uint64 = false;
-    /// A null below the root reads back as null: as a sequence element, a map
-    /// value or a field's value.
-    bool null_elements = false;
+    /// A null below the root reads back as null, as a sequence element, a
+    /// map value or a field's value, rather than failing or reading as
+    /// absent.
+    bool nested_nulls = false;
     /// NaN and infinities survive nan_repr::Passthrough.
     bool non_finite = false;
-    /// Reflected structs as map keys.
-    bool struct_keys = false;
-    /// enum_repr::String and nan_repr::String compile.
-    bool string_knobs = false;
-    /// meta::dynamic reprs compile.
-    bool dynamic_repr = false;
+    /// The layout is a function of the type alone (fbs), so nothing that
+    /// shapes a document by the value or the config compiles:
+    /// enum_repr::String, nan_repr::String and meta::dynamic reprs.
+    bool layout_computed = false;
     /// Documents come from outside the program, so decoding garbage is in
-    /// scope.
+    /// scope: the hostile sweep applies.
     bool untrusted_input = false;
+    /// Why the hostile sweep cannot run although untrusted_input holds: a
+    /// dependency that fails on some garbage worse than by rejecting it. The
+    /// case stays registered and reports itself skipped with this reason.
+    std::string_view hostile_gap = {};
     /// A format tag scopes meta::repr specializations to the backend.
     bool format_tag = false;
-    /// A third-party builder lays the document out (flatbuffers places
-    /// tables, vtables and padding as it sees fit), so a snapshot of it would
-    /// pin the builder's choices, not the format's rules: no lowering
-    /// snapshot.
-    bool builder_layout = false;
 };
 
 /// A backend adapter: its name and caps, its document type, encode and decode
@@ -187,9 +190,9 @@ void read_fails(const Kit<B>& kit, std::string name, Plain plain, Failure failur
 }
 
 /// read_fails with the value in a field, as reads_in_field.
-template <typename V, Backend B, typename Plain>
+template <typename V, typename Config = void, Backend B, typename Plain>
 void read_in_field_fails(const Kit<B>& kit, std::string name, Plain plain, Failure failure) {
-    read_fails<Field<V>>(
+    read_fails<Field<V>, Config>(
         kit,
         std::move(name),
         [plain] { return Field<decltype(plain())>{plain()}; },
@@ -206,16 +209,6 @@ void write_fails(const Kit<B>& kit, std::string name, Make make, Failure failure
     });
 }
 
-/// The rendered document make() encodes to matches the case's snapshot.
-template <Backend B, typename Make>
-void snapshot(const Kit<B>& kit, std::string name, Make make) {
-    kit.add(std::move(name), [make] {
-        auto encoded = B::encode(make());
-        ASSERT(succeeds(encoded));
-        EXPECT_SNAPSHOT(B::render(*encoded));
-    });
-}
-
 /// Every prefix of make()'s document, and the document with any one unit
 /// changed, is rejected or decodes to a value whose document is stable: it
 /// decodes and encodes again to itself, or, where the order of an unordered
@@ -224,6 +217,13 @@ void snapshot(const Kit<B>& kit, std::string name, Make make) {
 /// untrusted_input, whose documents are byte or character sequences.
 template <Backend B, typename Make>
 void hostile(const Kit<B>& kit, std::string name, Make make) {
+    if constexpr(!B::caps.hostile_gap.empty()) {
+        kit.add(std::move(name), [] {
+            std::println("skipped: {}", B::caps.hostile_gap);
+            zest::skip();
+        });
+        return;
+    }
     kit.add(std::move(name), [make] {
         using T = decltype(make());
         using Encoded = typename B::Encoded;
@@ -271,6 +271,20 @@ void hostile(const Kit<B>& kit, std::string name, Make make) {
             }
         }
     });
+}
+
+/// A byte document in hex, sixteen bytes a line after the offset of the
+/// first: how the binary backends render their documents.
+template <typename Bytes>
+std::string hex_dump(const Bytes& bytes) {
+    std::string text;
+    for(std::size_t at = 0; at < bytes.size(); ++at) {
+        if(at % 16 == 0) {
+            text += std::format("{}{:04x}:", at == 0 ? "" : "\n", at);
+        }
+        text += std::format(" {:02x}", static_cast<unsigned>(bytes[at]));
+    }
+    return text;
 }
 
 }  // namespace kota::test

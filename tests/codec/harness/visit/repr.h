@@ -48,7 +48,7 @@ void repr(const Kit<B>& kit) {
     });
     roundtrip(kit, "repr_in_elements_keys_and_optionals_roundtrip", places);
     // Decoding into a ReprPlaces whose `maybe` starts engaged: null resets it.
-    if constexpr(B::caps.null_elements) {
+    if constexpr(B::caps.nested_nulls) {
         roundtrip(kit, "repr_in_empty_optional_roundtrip", [] {
             return ReprPlaces{.relations = {}, .by_version = {}, .maybe = std::nullopt};
         });
@@ -93,7 +93,7 @@ void repr(const Kit<B>& kit) {
     encodes_as(kit, "nullable_repr_encodes_as_plain", unstamped, [] {
         return StampedPlain{.stamp = std::nullopt};
     });
-    if constexpr(B::caps.null_elements) {
+    if constexpr(B::caps.nested_nulls) {
         roundtrip(kit, "nullable_repr_roundtrip", unstamped);
     }
     roundtrip(kit, "nullable_repr_engaged_roundtrip", [] { return Stamped{.stamp = {.tick = 5}}; });
@@ -202,7 +202,7 @@ void repr(const Kit<B>& kit) {
     roundtrip(kit, "format_scoped_repr_roundtrip", journal);
     roundtrip(kit, "format_scoped_map_keys_roundtrip", journals);
 
-    if constexpr(B::caps.dynamic_repr) {
+    if constexpr(!B::caps.layout_computed) {
         auto dynamic = [] {
             return DynamicPair{.number = {.v = std::int64_t{42}}, .text = {.v = "free"}};
         };
@@ -216,7 +216,7 @@ void repr(const Kit<B>& kit) {
             roundtrip(kit, "dynamic_roundtrip", dynamic);
         }
     }
-    if constexpr(B::caps.string_knobs) {
+    if constexpr(!B::caps.layout_computed) {
         encodes_as<EnumStringConfig>(
             kit,
             "repr_beats_enum_string_config",
@@ -230,22 +230,20 @@ void repr(const Kit<B>& kit) {
                             "nullable_repr_keeps_field_required_fails",
                             [] { return Empty{}; },
                             {.message = "missing required field 'stamp'", .path = ""});
-        read_fails<Field<LineRange>>(kit,
-                                     "struct_attrs_in_repr_type_deny_unknown_fails",
-                                     [] {
-                                         return Field<LineSpanCamelWithExtra>{
-                                             {.startLine = 3, .lineCount = 4, .x = 1}
-                                         };
-                                     },
-                                     {.message = "unknown field 'x'", .path = "value"});
-        read_fails<Field<StrictLoad>>(kit,
-                                      "outer_policy_denies_unknown_in_alternative_fails",
-                                      [] {
-                                          return Field<LoadOkDocument<ByteCountCamelWithExtra>>{
-                                              {.status = "ok", .value = {.byteCount = 3, .x = 1}}
-                                          };
-                                      },
-                                      {.message = "unknown field 'x'", .path = "value"});
+        read_in_field_fails<LineRange>(
+            kit,
+            "struct_attrs_in_repr_type_deny_unknown_fails",
+            [] { return LineSpanCamelWithExtra{.startLine = 3, .lineCount = 4, .x = 1}; },
+            {.message = "unknown field 'x'", .path = "value"});
+        read_in_field_fails<StrictLoad>(kit,
+                                        "outer_policy_denies_unknown_in_alternative_fails",
+                                        [] {
+                                            return LoadOkDocument<ByteCountCamelWithExtra>{
+                                                .status = "ok",
+                                                .value = {.byteCount = 3, .x = 1}
+                                            };
+                                        },
+                                        {.message = "unknown field 'x'", .path = "value"});
         // Untagged probing judges an alternative by the repr the backend's
         // format selects.
         using JournalOrNumber = std::variant<Journal, std::int64_t>;

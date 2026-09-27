@@ -86,7 +86,7 @@ void values(const Kit<B>& kit) {
             };
         });
     roundtrip(kit, "tuples_roundtrip", [] { return Tuples::typical(); });
-    if constexpr(B::caps.null_elements) {
+    if constexpr(B::caps.nested_nulls) {
         roundtrip(kit, "null_elements_roundtrip", [] { return NullElements::typical(); });
     } else {
         write_fails(kit,
@@ -94,7 +94,8 @@ void values(const Kit<B>& kit) {
                     [] { return NullElements::typical(); },
                     {.message = "", .path = "optionals[1]"});
     }
-    if constexpr(B::caps.struct_keys) {
+    // A keyed document's map is an object, whose keys are text.
+    if constexpr(!B::caps.self_describing) {
         roundtrip(kit, "struct_keys_roundtrip", [] {
             return std::map<Point, int>{
                 {{.x = 1, .y = 2},  1},
@@ -124,55 +125,40 @@ void values(const Kit<B>& kit) {
 
     roundtrip(kit, "everything_roundtrip", [] { return Everything::typical(); });
     roundtrip(kit, "everything_default_roundtrip", [] { return Everything{}; });
-    if constexpr(!B::caps.builder_layout) {
-        snapshot(kit, "lowering", [] { return Everything::typical(); });
-    }
     if constexpr(B::caps.untrusted_input) {
         hostile(kit, "hostile_everything", [] { return Everything::typical(); });
     }
 
     if constexpr(B::caps.self_describing) {
         // The leaf error is the backend's to word; its path is the protocol's.
-        read_fails<Field<std::int8_t>>(kit,
-                                       "int8_out_of_range_fails",
-                                       [] { return Field<int>{300}; },
+        read_in_field_fails<std::int8_t>(kit,
+                                         "int8_out_of_range_fails",
+                                         [] { return 300; },
+                                         {.message = "", .path = "value"});
+        read_in_field_fails<UInt8Enum>(kit,
+                                       "enum_out_of_range_fails",
+                                       [] { return 300; },
                                        {.message = "", .path = "value"});
-        read_fails<Field<UInt8Enum>>(kit,
-                                     "enum_out_of_range_fails",
-                                     [] { return Field<int>{300}; },
-                                     {.message = "", .path = "value"});
-        read_fails<Field<std::nullptr_t>>(kit,
-                                          "null_from_non_null_fails",
-                                          [] { return Field<int>{0}; },
-                                          {.message = "", .path = "value"});
-        read_fails<Field<Point>>(kit,
-                                 "struct_from_array_fails",
-                                 [] {
-                                     return Field<std::vector<int>>{
-                                         {1, 2}
-                                     };
-                                 },
-                                 {.message = "", .path = "value"});
-        read_fails<Field<std::vector<int>>>(kit,
-                                            "sequence_from_object_fails",
-                                            [] {
-                                                return Field<Point>{
-                                                    {.x = 1, .y = 2}
-                                                };
-                                            },
+        read_in_field_fails<std::nullptr_t>(kit,
+                                            "null_from_non_null_fails",
+                                            [] { return 0; },
                                             {.message = "", .path = "value"});
-        read_fails<Field<std::map<std::string, int>>>(kit,
-                                                      "map_from_array_fails",
-                                                      [] {
-                                                          return Field<std::vector<int>>{
-                                                              {1, 2}
-                                                          };
-                                                      },
-                                                      {.message = "", .path = "value"});
-        read_fails<Field<std::optional<int>>>(kit,
-                                              "optional_payload_mismatch_fails",
-                                              [] { return Field<std::string>{"x"}; },
+        read_in_field_fails<Point>(kit,
+                                   "struct_from_array_fails",
+                                   [] { return std::vector<int>{1, 2}; },
+                                   {.message = "", .path = "value"});
+        read_in_field_fails<std::vector<int>>(kit,
+                                              "sequence_from_object_fails",
+                                              [] { return Point{.x = 1, .y = 2}; },
                                               {.message = "", .path = "value"});
+        read_in_field_fails<std::map<std::string, int>>(kit,
+                                                        "map_from_array_fails",
+                                                        [] { return std::vector<int>{1, 2}; },
+                                                        {.message = "", .path = "value"});
+        read_in_field_fails<std::optional<int>>(kit,
+                                                "optional_payload_mismatch_fails",
+                                                [] { return std::string("x"); },
+                                                {.message = "", .path = "value"});
     }
 }
 

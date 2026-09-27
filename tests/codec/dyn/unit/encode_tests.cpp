@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#include "codec/dyn/harness/backend.h"
+#include "codec/harness/fixtures/everything.h"
 #include "codec/harness/fixtures/scalars.h"
 #include "fixtures/enums.h"
 #include "fixtures/structs.h"
@@ -90,6 +92,13 @@ ZEST_CASE(tree_inside_a_value_writes_itself) {
     }));
     EXPECT(dyn::to_dyn(std::vector<dyn::Value>{typed.extra, nullptr}) ==
            dyn::Value(dyn::Array{typed.extra, nullptr}));
+}
+
+ZEST_CASE(everything_lowering) {
+    // How each kind lowers into a tree, in one document.
+    auto document = dyn::to_dyn(test::Everything::typical());
+    ASSERT(document);
+    EXPECT_SNAPSHOT(test::Dyn::render(*document));
 }
 
 };  // ZEST_SUITE(codec_dyn_encode)
