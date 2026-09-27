@@ -364,11 +364,12 @@ ZEST_CASE(cancelled_write_still_delivers) {
     EXPECT(*received == "kept");
 }
 
-// Nothing reads the pipe, so the write is still going out when its stream
-// closes: libuv ends it, which fails the write rather than cancelling it.
-// Windows writes an anonymous pipe from a thread that the close cannot stop.
+// Nothing reads the pipe, so the write is still going out, and the shutdown
+// waits behind it, when their stream closes: libuv ends both, which fails
+// them rather than cancelling them. Windows writes an anonymous pipe from a
+// thread that the close cannot stop.
 #ifndef _WIN32
-ZEST_CASE(write_ended_by_closing_its_stream_fails) {
+ZEST_CASE(write_and_shutdown_ended_by_closing_their_stream_fail) {
     auto ends = pipe_ends(loop);
     ASSERT(ends.has_value());
     const std::string large(4 * 1024 * 1024, 'x');
@@ -377,9 +378,12 @@ ZEST_CASE(write_ended_by_closing_its_stream_fails) {
         ends->writer = pipe{};
     };
 
-    auto [written, closed] = run(ends->writer.write(large), close_it());
+    auto [written, shut, closed] =
+        run(ends->writer.write(large), ends->writer.shutdown(), close_it());
     ASSERT(written.has_error());
     EXPECT(written.error() == error::operation_aborted);
+    ASSERT(shut.has_error());
+    EXPECT(shut.error() == error::operation_aborted);
 }
 #endif
 
@@ -651,6 +655,60 @@ ZEST_CASE(listen_on_a_name_too_long_with_no_truncate_fails) {
     auto refused = pipe::listen(name, {.no_truncate = true}, loop);
     ASSERT(refused.has_error());
     EXPECT(refused.error() == error::invalid_argument);
+}
+#endif
+
+// The shutdown waits for the writes made with it; the listener's end reads
+// them, then the end. It goes once it has, which ends the stream here too.
+ZEST_CASE(shutdown_lets_the_peer_read_to_the_end) {
+    test::TempDir dir;
+    auto name = pipe_name(dir);
+    auto listener = pipe::listen(name, loop);
+    ASSERT(listener.has_value());
+    auto serve = [&]() -> task<std::string, error> {
+        auto connection = co_await listener->accept().or_fail();
+        co_return co_await read_all(connection).or_fail();
+    };
+    auto client = [&]() -> task<std::string, error> {
+        auto connection = co_await pipe::connect(name, loop).or_fail();
+        co_await or_fail(co_await when_all(connection.write(std::string_view("first")),
+                                           connection.write(std::string_view("second")),
+                                           connection.shutdown()));
+        co_return co_await read_all(connection).or_fail();
+    };
+
+    auto [served, left] = run(serve(), client());
+    ASSERT(served.has_value());
+    EXPECT(*served == "firstsecond");
+    ASSERT(left.has_value());
+    EXPECT(left->empty());
+}
+
+// Where a pipe can be half closed, the listener's end answers after reading
+// to the end, and the answer still arrives. libuv on Windows closes the whole
+// pipe instead, as stream::shutdown() says.
+#ifndef _WIN32
+ZEST_CASE(shutdown_leaves_the_peer_free_to_answer) {
+    test::TempDir dir;
+    auto name = pipe_name(dir);
+    auto listener = pipe::listen(name, loop);
+    ASSERT(listener.has_value());
+    auto serve = [&]() -> task<void, error> {
+        auto connection = co_await listener->accept().or_fail();
+        auto request = co_await read_all(connection).or_fail();
+        co_await connection.write(request + "-answered").or_fail();
+    };
+    auto client = [&]() -> task<std::string, error> {
+        auto connection = co_await pipe::connect(name, loop).or_fail();
+        co_await connection.write(std::string_view("asked")).or_fail();
+        co_await connection.shutdown().or_fail();
+        co_return co_await read_all(connection).or_fail();
+    };
+
+    auto [served, answer] = run(serve(), client());
+    EXPECT(served.has_value());
+    ASSERT(answer.has_value());
+    EXPECT(*answer == "asked-answered");
 }
 #endif
 

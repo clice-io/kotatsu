@@ -34,7 +34,7 @@ inline error status_to_error(std::int64_t status) noexcept {
 /// A libuv buffer over `data`, cut to the first 4 GiB - 1 bytes: libuv takes
 /// the length as an unsigned int.
 inline uv_buf_t buffer_of(std::span<const char> data) noexcept {
-    auto length = std::min<std::size_t>(data.size(), std::numeric_limits<unsigned int>::max());
+    auto length = std::min<std::size_t>(data.size(), (std::numeric_limits<unsigned int>::max)());
     return ::uv_buf_init(const_cast<char*>(data.data()), static_cast<unsigned int>(length));
 }
 

@@ -124,6 +124,21 @@ task<> finished() {
     co_return;
 }
 
+/// Everything `connection` reads until the peer's end.
+task<std::string, error> read_to_end(stream& connection) {
+    std::string all;
+    while(true) {
+        auto piece = co_await connection.read();
+        if(!piece) {
+            if(piece.error() != error::end_of_file) {
+                co_await fail(piece.error());
+            }
+            co_return all;
+        }
+        all += *piece;
+    }
+}
+
 ZEST_SUITE(async_io_stream_tcp, test::LoopFixture) {
 
 ZEST_CASE(both_ends_write_and_read) {
@@ -229,6 +244,57 @@ ZEST_CASE(reset_after_data_is_reported_after_the_data) {
     EXPECT(received->second.error() == error::connection_reset_by_peer);
 }
 #endif
+
+// The shutdown waits for the writes made with it; the server reads them,
+// then the end, and answers on the half the client left open.
+ZEST_CASE(shutdown_lets_the_peer_read_to_the_end_and_answer) {
+    auto listener = listen_loopback(loop);
+    ASSERT(listener.has_value());
+    auto serve = [&]() -> task<std::string, error> {
+        auto connection = co_await listener->acceptor.accept().or_fail();
+        auto request = co_await read_to_end(connection).or_fail();
+        co_await connection.write(request + "-answered").or_fail();
+        co_return request;
+    };
+    auto client = [&]() -> task<std::string, error> {
+        auto connection = co_await tcp::connect("127.0.0.1", listener->port).or_fail();
+        co_await or_fail(co_await when_all(connection.write(std::string_view("first")),
+                                           connection.write(std::string_view("second")),
+                                           connection.shutdown()));
+        co_return co_await read_to_end(connection).or_fail();
+    };
+
+    auto [served, answer] = run(serve(), client());
+    ASSERT(served.has_value());
+    EXPECT(*served == "firstsecond");
+    ASSERT(answer.has_value());
+    EXPECT(*answer == "firstsecond-answered");
+}
+
+// A second shutdown, even one made while the first is still pending, fails,
+// and so does a write after them.
+ZEST_CASE(write_and_shutdown_after_a_shutdown_fail) {
+    auto listener = listen_loopback(loop);
+    ASSERT(listener.has_value());
+    auto serve = [&]() -> task<std::string, error> {
+        auto connection = co_await listener->acceptor.accept().or_fail();
+        co_return co_await read_to_end(connection).or_fail();
+    };
+    auto client = [&]() -> task<std::pair<error, error>, error> {
+        auto connection = co_await tcp::connect("127.0.0.1", listener->port).or_fail();
+        auto shut = co_await when_all(connection.shutdown(), connection.shutdown());
+        auto written = co_await connection.write(std::string_view("late"));
+        co_return std::pair{shut.has_error() ? shut.error() : error(),
+                            written.has_error() ? written.error() : error()};
+    };
+
+    auto [served, failed] = run(serve(), client());
+    ASSERT(served.has_value());
+    EXPECT(served->empty());
+    ASSERT(failed.has_value());
+    EXPECT(failed->first == error::socket_is_not_connected);
+    EXPECT(failed->second == error::broken_pipe);
+}
 
 ZEST_CASE(second_accept_while_one_is_pending_fails) {
     auto listener = listen_loopback(loop);

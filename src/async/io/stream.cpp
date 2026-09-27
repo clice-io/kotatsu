@@ -25,6 +25,22 @@ struct write_op : uv::request_op<write_op, uv_write_t> {
     void cancel() noexcept {}
 };
 
+/// libuv shuts the write side once the writes before it have gone out,
+/// whatever happens to its task, and ends it with ECANCELED if the stream
+/// closes first.
+struct shutdown_op : uv::request_op<shutdown_op, uv_shutdown_t> {
+    uv_stream_t* stream;
+
+    explicit shutdown_op(uv_stream_t* stream) noexcept : stream(stream) {}
+
+    bool start() noexcept {
+        req.data = this;
+        return submitted(::uv_shutdown(&req, stream, on_done));
+    }
+
+    void cancel() noexcept {}
+};
+
 }  // namespace
 
 void stream::Self::on_alloc(uv_handle_t* handle, std::size_t, uv_buf_t* buf) {
@@ -171,7 +187,7 @@ task<void, error> stream::write(std::span<const char> data) {
     }
 
     // A write goes out whole, and libuv takes no more than this at once.
-    if(data.size() > std::numeric_limits<unsigned int>::max()) {
+    if(data.size() > (std::numeric_limits<unsigned int>::max)()) {
         co_await fail(error::value_too_large_for_defined_data_type);
     }
 
@@ -185,12 +201,28 @@ result<std::size_t> stream::try_write(std::span<const char> data) {
         return outcome_error(error::invalid_argument);
     }
 
+    // Nothing is written at once everywhere, even where libuv refuses every
+    // try_write, as it does for pipes on Windows.
+    if(data.empty()) {
+        return std::size_t{0};
+    }
+
     auto buf = uv::buffer_of(data);
     auto written = ::uv_try_write(&self->stream, &buf, 1);
     if(written < 0) {
         return outcome_error(error(written));
     }
     return static_cast<std::size_t>(written);
+}
+
+task<void, error> stream::shutdown() {
+    if(!self) {
+        co_await fail(error::invalid_argument);
+    }
+
+    if(auto err = co_await shutdown_op(&self->stream)) {
+        co_await fail(err);
+    }
 }
 
 bool stream::readable() const noexcept {

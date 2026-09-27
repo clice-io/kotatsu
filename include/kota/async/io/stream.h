@@ -83,6 +83,19 @@ public:
     /// Writes what fits without waiting; returns how much that was.
     result<std::size_t> try_write(std::span<const char> data);
 
+    /// Shuts the write side once the writes made before it have gone out:
+    /// the peer reads them, then the end of the stream, and reading here
+    /// goes on until the peer's own end. From the call on, write() fails
+    /// with error::broken_pipe and shutdown() with
+    /// error::socket_is_not_connected. Like a write, a cancelled shutdown
+    /// still happens, and the task ends once it has.
+    ///
+    /// libuv emulates this for pipes on Windows, which cannot be half
+    /// closed: it closes a pipe that only writes at once, and one that also
+    /// reads once a read here has waited 50 ms for data; the peer cannot
+    /// answer after that.
+    task<void, error> shutdown();
+
     bool readable() const noexcept;
 
     bool writable() const noexcept;
