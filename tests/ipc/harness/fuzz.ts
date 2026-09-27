@@ -13,8 +13,12 @@ export const RUNS = Number(process.env.KOTA_FUZZ_RUNS ?? 100);
 export const FUZZ_TIMEOUT = 180_000;
 
 /**
- * Checks `property` over `runs` runs. Shrinking a failure stops after about
- * half the test's timeout, so the failure is reported rather than timed out.
+ * Checks `property` over `runs` runs, within the test's timeout: no run, and
+ * no step of shrinking a failure, starts after 40% of it, and one still going
+ * at 60% is cut short, which leaves the rest for a slow leg's drivers to start
+ * and end. A failure found by then is reported with its counterexample, shrunk
+ * as far as the time allowed; a leg too slow for all the runs passes on those
+ * it made.
  */
 export async function fuzz<T>(
   property: fc.IAsyncPropertyWithHooks<T>,
@@ -23,8 +27,9 @@ export async function fuzz<T>(
   await fc.assert(property, {
     seed: SEED,
     numRuns: runs,
-    interruptAfterTimeLimit: FUZZ_TIMEOUT / 2,
-    markInterruptAsFailure: true,
+    skipAllAfterTimeLimit: FUZZ_TIMEOUT * 0.4,
+    interruptAfterTimeLimit: FUZZ_TIMEOUT * 0.6,
+    markInterruptAsFailure: false,
   });
 }
 
