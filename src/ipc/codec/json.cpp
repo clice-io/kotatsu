@@ -11,17 +11,6 @@ namespace kota::ipc {
 
 namespace {
 
-template <typename T>
-Result<std::string>
-    serialize_json_value(const T& value,
-                         protocol::ErrorCode code = protocol::ErrorCode::InternalError) {
-    auto serialized = codec::json::to_string(value);
-    if(!serialized) {
-        return outcome_error(Error(code, serialized.error().to_string()));
-    }
-    return std::move(*serialized);
-}
-
 struct outgoing_request_message {
     std::string jsonrpc = "2.0";
     protocol::RequestID id;
@@ -160,7 +149,7 @@ IncomingMessage JsonCodec::parse_message(std::string_view payload) {
 Result<std::string> JsonCodec::encode_request(const protocol::RequestID& id,
                                               std::string_view method,
                                               std::string_view params) {
-    return serialize_json_value(outgoing_request_message{
+    return serialize_value(outgoing_request_message{
         .id = id,
         .method = std::string(method),
         .params = codec::RawValue{std::string(params)},
@@ -169,7 +158,7 @@ Result<std::string> JsonCodec::encode_request(const protocol::RequestID& id,
 
 Result<std::string> JsonCodec::encode_notification(std::string_view method,
                                                    std::string_view params) {
-    return serialize_json_value(outgoing_notification_message{
+    return serialize_value(outgoing_notification_message{
         .method = std::string(method),
         .params = codec::RawValue{std::string(params)},
     });
@@ -177,7 +166,7 @@ Result<std::string> JsonCodec::encode_notification(std::string_view method,
 
 Result<std::string> JsonCodec::encode_success_response(const protocol::RequestID& id,
                                                        std::string_view result) {
-    return serialize_json_value(outgoing_success_response_message{
+    return serialize_value(outgoing_success_response_message{
         .id = id,
         .result = codec::RawValue{std::string(result)},
     });
@@ -185,7 +174,7 @@ Result<std::string> JsonCodec::encode_success_response(const protocol::RequestID
 
 Result<std::string> JsonCodec::encode_error_response(const std::optional<protocol::RequestID>& id,
                                                      const Error& error) {
-    return serialize_json_value(outgoing_error_response_message{
+    return serialize_value(outgoing_error_response_message{
         .id = id,
         .error = error,
     });

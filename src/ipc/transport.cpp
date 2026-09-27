@@ -80,58 +80,28 @@ std::optional<std::size_t> parse_content_length(std::string_view header) {
     return std::nullopt;
 }
 
-std::string to_error_text(error err) {
-    return std::string(err.message());
-}
-
-Result<stream> to_stream(result<tcp> socket) {
-    if(!socket) {
-        return outcome_error(Error(to_error_text(socket.error())));
+/// `opened` as a stream, or its error as an ipc error.
+template <typename Handle>
+Result<stream> as_stream(result<Handle> opened) {
+    if(!opened) {
+        return outcome_error(Error(std::string(opened.error().message())));
     }
-    return stream(std::move(*socket));
+    return stream(std::move(*opened));
 }
 
 Result<stream> open_stdio_stream(int fd, bool readable, event_loop& loop) {
     switch(guess_handle(fd)) {
-        case handle_type::tty: {
-            auto opened = console::open(fd, console::options{readable}, loop);
-            if(!opened) {
-                return outcome_error(Error(to_error_text(opened.error())));
-            }
-            return stream(std::move(*opened));
-        }
-
+        case handle_type::tty:
+            return as_stream(console::open(fd, console::options{readable}, loop));
         case handle_type::pipe:
         case handle_type::file:
-        case handle_type::unknown: {
-            auto opened = pipe::open(fd, pipe::options{}, loop);
-            if(!opened) {
-                return outcome_error(Error(to_error_text(opened.error())));
-            }
-            return stream(std::move(*opened));
-        }
-
-        case handle_type::tcp: {
-            auto opened = tcp::open(fd, loop);
-            if(!opened) {
-                return outcome_error(Error(to_error_text(opened.error())));
-            }
-            return stream(std::move(*opened));
-        }
-
+        case handle_type::unknown: return as_stream(pipe::open(fd, pipe::options{}, loop));
+        case handle_type::tcp: return as_stream(tcp::open(fd, loop));
         default: return outcome_error(Error("unsupported stdio handle type"));
     }
 }
 
 }  // namespace
-
-Result<void> Transport::close_output() {
-    return outcome_error(Error("transport does not support closing output"));
-}
-
-Result<void> Transport::close() {
-    return outcome_error(Error("transport does not support close"));
-}
 
 StreamTransport::StreamTransport(stream input, stream output) :
     read_stream(std::move(input)), write_stream(std::move(output)) {}
@@ -157,15 +127,7 @@ task<std::unique_ptr<StreamTransport>, Error> StreamTransport::connect_tcp(std::
                                                                            int port,
                                                                            event_loop& loop) {
     auto connected = co_await tcp::connect(host, port, loop);
-    co_return std::make_unique<StreamTransport>(co_await or_fail(to_stream(std::move(connected))));
-}
-
-Result<std::unique_ptr<StreamTransport>> StreamTransport::open_tcp(int fd, event_loop& loop) {
-    auto channel = to_stream(tcp::open(fd, loop));
-    if(!channel) {
-        return outcome_error(channel.error());
-    }
-    return std::make_unique<StreamTransport>(std::move(*channel));
+    co_return std::make_unique<StreamTransport>(co_await or_fail(as_stream(std::move(connected))));
 }
 
 task<std::optional<std::string>> StreamTransport::read_message() {

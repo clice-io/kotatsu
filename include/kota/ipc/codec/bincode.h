@@ -39,8 +39,7 @@ struct deserialize_visit<bincode::Reader, kota::ipc::protocol::RequestID, Config
 
 namespace kota::ipc {
 
-class BincodeCodec {
-public:
+struct BincodeCodec {
     IncomingMessage parse_message(std::string_view payload);
 
     Result<std::string> encode_request(const protocol::RequestID& id,

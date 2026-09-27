@@ -56,7 +56,7 @@ struct Error {
 
     Error(string message) : message(std::move(message)) {}
 
-    Error(const char* message) : message(message == nullptr ? "" : message) {}
+    Error(const char* message) : message(message) {}
 };
 
 struct CancelRequestParams {

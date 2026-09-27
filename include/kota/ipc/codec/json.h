@@ -13,8 +13,7 @@ struct lsp_config {
     using field_rename = codec::rename_policy::lower_camel;
 };
 
-class JsonCodec {
-public:
+struct JsonCodec {
     IncomingMessage parse_message(std::string_view payload);
 
     Result<std::string> encode_request(const protocol::RequestID& id,

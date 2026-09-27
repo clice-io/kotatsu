@@ -71,6 +71,10 @@ public:
         readable.set();
     }
 
+    ipc::Result<void> close_output() override {
+        return {};
+    }
+
     ipc::Result<void> close() override {
         closed = true;
         readable.set();

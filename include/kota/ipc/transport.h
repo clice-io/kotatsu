@@ -10,18 +10,21 @@
 
 namespace kota::ipc {
 
+/// Carries whole messages between a Peer and its remote.
 class Transport {
 public:
     virtual ~Transport() = default;
 
+    /// The next message, or nothing once the input has ended.
     virtual task<std::optional<std::string>> read_message() = 0;
 
     virtual task<void, Error> write_message(std::string_view payload) = 0;
 
-    virtual Result<void> close_output();
+    /// Ends the output; the remote reads the end of its input.
+    virtual Result<void> close_output() = 0;
 
-    /// Close both input and output, aborting any pending read.
-    virtual Result<void> close();
+    /// Closes both input and output, ending any pending read.
+    virtual Result<void> close() = 0;
 };
 
 class StreamTransport : public Transport {
@@ -34,8 +37,6 @@ public:
     static task<std::unique_ptr<StreamTransport>, Error> connect_tcp(std::string_view host,
                                                                      int port,
                                                                      event_loop& loop);
-
-    static Result<std::unique_ptr<StreamTransport>> open_tcp(int fd, event_loop& loop);
 
     task<std::optional<std::string>> read_message() override;
 

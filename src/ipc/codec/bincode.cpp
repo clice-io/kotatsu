@@ -36,14 +36,6 @@ struct bincode_error {
 using bincode_envelope =
     std::variant<bincode_request, bincode_notification, bincode_success, bincode_error>;
 
-Result<std::string> encode_envelope(const bincode_envelope& envelope) {
-    auto bytes = codec::bincode::to_bytes(envelope);
-    if(!bytes) {
-        return outcome_error(Error(protocol::ErrorCode::InternalError, bytes.error().to_string()));
-    }
-    return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
-}
-
 }  // namespace
 
 IncomingMessage BincodeCodec::parse_message(std::string_view payload) {
@@ -79,30 +71,31 @@ IncomingMessage BincodeCodec::parse_message(std::string_view payload) {
 Result<std::string> BincodeCodec::encode_request(const protocol::RequestID& id,
                                                  std::string_view method,
                                                  std::string_view params) {
-    return encode_envelope(
-        bincode_request{id, std::string(method), codec::RawValue{std::string(params)}});
+    return serialize_value(bincode_envelope(
+        bincode_request{id, std::string(method), codec::RawValue{std::string(params)}}));
 }
 
 Result<std::string> BincodeCodec::encode_notification(std::string_view method,
                                                       std::string_view params) {
-    return encode_envelope(
-        bincode_notification{std::string(method), codec::RawValue{std::string(params)}});
+    return serialize_value(bincode_envelope(
+        bincode_notification{std::string(method), codec::RawValue{std::string(params)}}));
 }
 
 Result<std::string> BincodeCodec::encode_success_response(const protocol::RequestID& id,
                                                           std::string_view result) {
-    return encode_envelope(bincode_success{id, codec::RawValue{std::string(result)}});
+    return serialize_value(
+        bincode_envelope(bincode_success{id, codec::RawValue{std::string(result)}}));
 }
 
 Result<std::string>
     BincodeCodec::encode_error_response(const std::optional<protocol::RequestID>& id,
                                         const Error& error) {
-    return encode_envelope(bincode_error{
+    return serialize_value(bincode_envelope(bincode_error{
         id,
         static_cast<std::int32_t>(error.code),
         error.message,
         codec::RawValue{},
-    });
+    }));
 }
 
 template class Peer<BincodeCodec>;
