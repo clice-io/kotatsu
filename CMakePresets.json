@@ -8,6 +8,7 @@
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "KOTA_BUILD_ALL_TESTS": "ON",
+        "KOTA_ENABLE_EXAMPLES": "ON",
         "KOTA_USE_CPM_FOR_TESTS": "ON",
         "KOTA_ENABLE_CCACHE": "ON",
         "CPM_SOURCE_CACHE": "${sourceDir}/.cache/cpm"

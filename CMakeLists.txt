@@ -350,12 +350,13 @@ if(KOTA_ENABLE_ZEST AND (NOT KOTA_ENABLE_TEST OR BUILD_TESTING))
     add_subdirectory(src/zest)
 endif()
 
+# Before the tests, which run some of the examples.
+if(KOTA_ENABLE_EXAMPLES)
+    add_subdirectory(examples)
+endif()
+
 if(KOTA_ENABLE_TEST AND BUILD_TESTING)
     add_subdirectory(tests)
 elseif(KOTA_ENABLE_TEST)
     message(STATUS "BUILD_TESTING=OFF: skipping tests")
-endif()
-
-if(KOTA_ENABLE_EXAMPLES)
-    add_subdirectory(examples)
 endif()
