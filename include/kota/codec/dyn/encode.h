@@ -209,15 +209,6 @@ auto to_dyn(const T& value) -> std::expected<dyn::Value, rich_error> {
 
 namespace kota::codec {
 
-template <typename Vis, typename Config>
-struct serialize_visit<Vis, dyn::Value, Config> {
-    static bool visit(Vis& vis, const dyn::Value& value) {
-        return std::visit(
-            [&](const auto& stored) -> bool { return encode_value<Config>(vis, stored); },
-            value.variant());
-    }
-};
-
 template <typename Config>
 struct serialize_visit<dyn::ValueWriter, dyn::Value, Config> {
     static bool visit(dyn::ValueWriter& vis, const dyn::Value& value) {
