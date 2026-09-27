@@ -117,14 +117,19 @@ Result<void> StreamTransport::close_output() {
 
 // Stopping the read may resume the read loop at once, which can end the
 // peer's run() and let its owner destroy the peer and this transport: the
-// streams are moved out first, and the stop comes last.
+// read stream is moved out first, and the stop comes last. The write stream
+// goes before stdout is released: closing it takes fd 1 out of the loop's
+// poll set by number, which would no longer find it once fd 1 is the null
+// device, and the pipe left in the set would wake the loop for good.
+// Destroying a stream resumes nothing at once; its close callbacks come
+// later.
 Result<void> StreamTransport::close() {
     auto reading = std::move(read_stream);
     if(shared_stream) {
         reading.stop();
         return {};
     }
-    auto writing = std::move(write_stream);
+    write_stream = stream{};
     auto released = release_stdout();
     reading.stop();
     return released;
