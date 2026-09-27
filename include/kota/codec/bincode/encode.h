@@ -1,9 +1,18 @@
 #pragma once
 
+#include <bit>
+#include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
+#include <iterator>
+#include <ranges>
+#include <span>
+#include <string_view>
+#include <type_traits>
 #include <vector>
 
+#include "kota/support/expected_try.h"
 #include "kota/codec/bincode/type.h"
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/encode.h"
@@ -41,6 +50,12 @@ struct Writer {
         buf.push_back(static_cast<std::byte>(value));
     }
 
+    /// A string or byte sequence: u64 length prefix, then the bytes.
+    void write_blob(std::span<const std::byte> bytes) {
+        write_le(static_cast<std::uint64_t>(bytes.size()));
+        buf.insert(buf.end(), bytes.begin(), bytes.end());
+    }
+
     bool visit_bool(bool v) {
         write_u8(v ? 1 : 0);
         return true;
@@ -75,19 +90,13 @@ struct Writer {
     template <typename T>
     bool visit_str(const T& v) {
         std::string_view sv(v);
-        write_le(static_cast<std::uint64_t>(sv.size()));
-        buf.insert(buf.end(),
-                   reinterpret_cast<const std::byte*>(sv.data()),
-                   reinterpret_cast<const std::byte*>(sv.data() + sv.size()));
+        write_blob(std::as_bytes(std::span(sv.data(), sv.size())));
         return true;
     }
 
     template <typename T>
     bool visit_bytes(const T& v) {
-        auto data = reinterpret_cast<const std::byte*>(std::data(v));
-        auto len = std::size(v);
-        write_le(static_cast<std::uint64_t>(len));
-        buf.insert(buf.end(), data, data + len);
+        write_blob(std::as_bytes(std::span(std::data(v), std::size(v))));
         return true;
     }
 
@@ -151,13 +160,9 @@ struct Writer {
 /// Config — the format carries no self-description.
 template <typename Config = void, typename T>
 auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, bincode::error> {
-    rich_error err;
-    scoped_context<rich_error> guard(err);
     std::vector<std::byte> buf;
     Writer vis{buf};
-    if(!encode_value<default_config<Config>>(vis, value)) {
-        return std::unexpected(std::move(err));
-    }
+    KOTA_EXPECTED_TRY(codec::detail::run_encode<Config>(vis, value));
     return buf;
 }
 

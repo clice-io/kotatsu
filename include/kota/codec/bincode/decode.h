@@ -10,6 +10,7 @@
 #include <string>
 #include <type_traits>
 
+#include "kota/support/expected_try.h"
 #include "kota/support/numeric.h"
 #include "kota/codec/bincode/type.h"
 #include "kota/codec/visit/config.h"
@@ -59,14 +60,13 @@ struct Reader {
     bool check_remaining(std::uint64_t n) {
         assert(pos <= data.size());
         if(n > data.size() - pos) {
-            return scoped_context<rich_error>::fail(
-                rich_error(std::string(error_message(error_kind::UnexpectedEof))));
+            return fail(error_kind::UnexpectedEof);
         }
         return true;
     }
 
-    uint8_t read_u8() {
-        auto byte = std::to_integer<uint8_t>(data[pos]);
+    std::uint8_t read_u8() {
+        auto byte = std::to_integer<std::uint8_t>(data[pos]);
         ++pos;
         return byte;
     }
@@ -77,7 +77,7 @@ struct Reader {
         using unsigned_t = std::make_unsigned_t<T>;
         unsigned_t raw = 0;
         for(std::size_t i = 0; i < sizeof(unsigned_t); ++i) {
-            auto byte = std::to_integer<uint8_t>(data[pos + i]);
+            auto byte = std::to_integer<std::uint8_t>(data[pos + i]);
             raw |= (static_cast<unsigned_t>(byte) << (i * 8));
         }
         pos += sizeof(unsigned_t);
@@ -92,8 +92,7 @@ struct Reader {
         KOTA_CODEC_TRY(check_remaining(1));
         auto byte = read_u8();
         if(byte > 1U) {
-            return scoped_context<rich_error>::fail(
-                rich_error(std::string(error_message(error_kind::TypeMismatch))));
+            return fail(error_kind::TypeMismatch);
         }
         out = byte == 1U;
         return true;
@@ -104,8 +103,7 @@ struct Reader {
         KOTA_CODEC_TRY(check_remaining(sizeof(std::int64_t)));
         auto raw = read_le<std::int64_t>();
         if(!kota::narrow_int(raw, out)) {
-            return scoped_context<rich_error>::fail(
-                rich_error(std::string(error_message(error_kind::NumberOutOfRange))));
+            return fail(error_kind::NumberOutOfRange);
         }
         return true;
     }
@@ -115,8 +113,7 @@ struct Reader {
         KOTA_CODEC_TRY(check_remaining(sizeof(std::uint64_t)));
         auto raw = read_le<std::uint64_t>();
         if(!kota::narrow_int(raw, out)) {
-            return scoped_context<rich_error>::fail(
-                rich_error(std::string(error_message(error_kind::NumberOutOfRange))));
+            return fail(error_kind::NumberOutOfRange);
         }
         return true;
     }
@@ -171,8 +168,7 @@ struct Reader {
             return true;
         }
         if(byte != 0x01) {
-            return scoped_context<rich_error>::fail(
-                rich_error(std::string(error_message(error_kind::TypeMismatch))));
+            return fail(error_kind::TypeMismatch);
         }
         return body(*this);
     }
@@ -180,8 +176,7 @@ struct Reader {
     bool visit_null() {
         KOTA_CODEC_TRY(check_remaining(1));
         if(read_u8() != 0x00) {
-            return scoped_context<rich_error>::fail(
-                rich_error(std::string(error_message(error_kind::TypeMismatch))));
+            return fail(error_kind::TypeMismatch);
         }
         return true;
     }
@@ -228,6 +223,11 @@ struct Reader {
         auto index = read_le<std::uint32_t>();
         return body(static_cast<std::size_t>(index), *this);
     }
+
+private:
+    static bool fail(error_kind kind) {
+        return scoped_context<rich_error>::fail(rich_error(std::string(error_message(kind))));
+    }
 };
 
 inline bool SeqAccess::has_element() {
@@ -258,12 +258,8 @@ bool MapAccess::visit_entry(KF&& key_reader, VF&& value_reader) {
 /// Overloads: std::byte / uint8_t spans, into an out-param or returning T.
 template <typename Config = void, typename T>
 auto from_bytes(std::span<const std::byte> data, T& out) -> std::expected<void, bincode::error> {
-    rich_error err;
-    scoped_context<rich_error> guard(err);
     Reader r{data};
-    if(!decode_value<default_config<Config>>(r, out)) {
-        return std::unexpected(std::move(err));
-    }
+    KOTA_EXPECTED_TRY(codec::detail::run_decode<Config>(r, out));
     if(r.pos != data.size()) {
         return std::unexpected(rich_error(std::string(error_message(error_kind::TrailingBytes))));
     }
@@ -272,31 +268,21 @@ auto from_bytes(std::span<const std::byte> data, T& out) -> std::expected<void, 
 
 template <typename Config = void, typename T>
 auto from_bytes(std::span<const std::uint8_t> data, T& out) -> std::expected<void, bincode::error> {
-    return from_bytes<Config>(
-        std::span<const std::byte>(reinterpret_cast<const std::byte*>(data.data()), data.size()),
-        out);
+    return from_bytes<Config>(std::as_bytes(data), out);
 }
 
 template <typename T, typename Config = void>
     requires std::default_initializable<T>
 auto from_bytes(std::span<const std::byte> data) -> std::expected<T, bincode::error> {
     T value{};
-    auto result = from_bytes<Config>(data, value);
-    if(!result) {
-        return std::unexpected(result.error());
-    }
+    KOTA_EXPECTED_TRY(from_bytes<Config>(data, value));
     return value;
 }
 
 template <typename T, typename Config = void>
     requires std::default_initializable<T>
 auto from_bytes(std::span<const std::uint8_t> data) -> std::expected<T, bincode::error> {
-    T value{};
-    auto result = from_bytes<Config>(data, value);
-    if(!result) {
-        return std::unexpected(result.error());
-    }
-    return value;
+    return from_bytes<T, Config>(std::as_bytes(data));
 }
 
 }  // namespace kota::codec::bincode
