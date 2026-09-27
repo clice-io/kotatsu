@@ -44,7 +44,7 @@ tests/integration/            cross-module tests with their own toolchain
 What each module's headers include, and so what its tests may use:
 
 - `support`; `meta` on support; `deco` on meta.
-- `codec`: its core (`visit/`, `macro.h`) on meta; the backends `bincode`, `debug`, `dyn`, `toml` and `fbs` on the core; `json` on the core and `dyn`.
+- `codec`: its core (`visit/`, `macro.h`) on meta; the backends `debug`, `dyn`, `toml` and `fbs` on the core; `bincode` and `json` on the core and `dyn`.
 - `async` on support; `ipc` on async and codec (`json`, `dyn`, `bincode`); `ipc/lsp` on ipc; `http` on async and codec `json`.
 - `zest` on all of the above that it checks, prints, parses or runs with. Every test includes zest; that is the one exception.
 

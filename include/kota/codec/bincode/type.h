@@ -32,6 +32,9 @@ namespace kota::codec::bincode {
 /// - variant → u32 LE alternative index + payload
 /// - optional/pointer → presence byte (0x00 / 0x01) + payload when engaged
 /// - RawValue → stored as a bytes blob (length prefix + raw)
+/// - dyn::Value → its ValueKind as one byte, then what it holds as above (an
+///   array as a sequence of Values, an object as a map from strings to
+///   Values); decode rejects an unknown kind and nesting deeper than 1024
 struct format {};
 
 }  // namespace kota::codec::bincode

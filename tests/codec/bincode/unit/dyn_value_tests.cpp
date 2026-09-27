@@ -9,8 +9,7 @@
 #include "kota/codec/bincode/bincode.h"
 #include "kota/codec/dyn/document.h"
 
-// dyn::Value's bincode form, declared with the type in document.h: a kind
-// byte, then what the value holds.
+// dyn::Value in bincode: a kind byte, then what the value holds.
 
 namespace kota::codec {
 
@@ -21,6 +20,18 @@ std::vector<std::byte> bytes(std::initializer_list<unsigned> values) {
     for(unsigned value: values) {
         out.push_back(static_cast<std::byte>(value));
     }
+    return out;
+}
+
+/// `levels` arrays each holding the next, around a null: a kind byte and a
+/// one-element count per array.
+std::vector<std::byte> nested_arrays(std::size_t levels) {
+    std::vector<std::byte> out;
+    for(std::size_t i = 0; i < levels; ++i) {
+        auto level = bytes({0x06, 1, 0, 0, 0, 0, 0, 0, 0});
+        out.insert(out.end(), level.begin(), level.end());
+    }
+    out.push_back(std::byte{0x00});
     return out;
 }
 
@@ -38,7 +49,7 @@ dyn::Value every_kind() {
     };
 }
 
-ZEST_SUITE(codec_dyn_document_bincode) {
+ZEST_SUITE(codec_bincode_dyn_value) {
 
 ZEST_CASE(value_writes_its_kind_first) {
     auto null = bincode::to_bytes(dyn::Value(nullptr));
@@ -76,13 +87,63 @@ ZEST_CASE(unknown_kind_fails) {
     EXPECT(decoded.error().message == "invalid dyn::Value kind 8");
 }
 
+ZEST_CASE(object_roundtrip) {
+    dyn::Object object{
+        {"b", std::int64_t{2} },
+        {"a", dyn::Array{true}}
+    };
+    auto encoded = bincode::to_bytes(object);
+    ASSERT(encoded);
+    auto decoded = bincode::from_bytes<dyn::Object>(std::span<const std::byte>(*encoded));
+    ASSERT(decoded);
+    EXPECT(*decoded == object);
+}
+
+ZEST_CASE(object_entry_error_names_its_index) {
+    // One entry: key "a", then a value of unknown kind.
+    auto decoded = bincode::from_bytes<dyn::Object>(std::span<const std::byte>(
+        bytes({1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 'a', 0x09})));
+    ASSERT(!decoded);
+    EXPECT(decoded.error().message == "invalid dyn::Value kind 9");
+    EXPECT(decoded.error().format_path() == "[0]");
+}
+
+ZEST_CASE(nested_arrays_roundtrip) {
+    // Deep, but well within the limit: a deeper tree is left to the
+    // failure cases, since a Value's destructor recurses.
+    auto document = nested_arrays(100);
+    auto decoded = bincode::from_bytes<dyn::Value>(std::span<const std::byte>(document));
+    ASSERT(decoded);
+    auto again = bincode::to_bytes(*decoded);
+    ASSERT(again);
+    EXPECT(*again == document);
+}
+
+ZEST_CASE(nesting_past_the_limit_fails) {
+    // 1024 arrays put the null 1025 Values deep.
+    auto document = nested_arrays(1024);
+    auto decoded = bincode::from_bytes<dyn::Value>(std::span<const std::byte>(document));
+    ASSERT(!decoded);
+    EXPECT(decoded.error().message == "dyn::Value nested deeper than 1024 levels");
+    EXPECT(decoded.error().path.size() == 1024);
+}
+
+ZEST_CASE(hostile_nesting_fails) {
+    // 40000 nested arrays, 360 KB: far past any stack a recursive read
+    // could use, and past the limit long before the end.
+    auto document = nested_arrays(40000);
+    auto decoded = bincode::from_bytes<dyn::Value>(std::span<const std::byte>(document));
+    ASSERT(!decoded);
+    EXPECT(decoded.error().message == "dyn::Value nested deeper than 1024 levels");
+}
+
 ZEST_CASE(missing_kind_fails) {
     auto decoded = bincode::from_bytes<dyn::Value>(std::span<const std::byte>());
     ASSERT(!decoded);
     EXPECT(decoded.error().message == "unexpected eof");
 }
 
-};  // ZEST_SUITE(codec_dyn_document_bincode)
+};  // ZEST_SUITE(codec_bincode_dyn_value)
 
 }  // namespace
 

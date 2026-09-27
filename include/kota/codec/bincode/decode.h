@@ -6,14 +6,19 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <format>
+#include <iterator>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <vector>
 
 #include "kota/support/expected_try.h"
 #include "kota/support/numeric.h"
 #include "kota/codec/bincode/type.h"
+#include "kota/codec/dyn/document.h"
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/context.h"
 #include "kota/codec/visit/decode.h"
@@ -304,6 +309,167 @@ template <typename Config>
 struct deserialize_visit<bincode::Reader, std::monostate, Config> {
     static bool visit(bincode::Reader& /*vis*/, std::monostate& /*value*/) {
         return true;
+    }
+};
+
+/// A dyn::Value, read by the ValueKind byte its encoder wrote first (see
+/// bincode::format). Arrays and objects are filled from an explicit stack
+/// rather than by recursion, and a failed read releases what it built the
+/// same way, so no input can run the call stack out; nesting is still
+/// bounded, as simdjson bounds JSON's.
+template <typename Config>
+struct deserialize_visit<bincode::Reader, dyn::Value, Config> {
+    constexpr static std::size_t max_depth = 1024;
+
+    static bool visit(bincode::Reader& vis, dyn::Value& root) {
+        if(fill(vis, root)) {
+            return true;
+        }
+        release(root);
+        return false;
+    }
+
+private:
+    static bool fill(bincode::Reader& vis, dyn::Value& root) {
+        /// A container still being filled: the next child's index, and how
+        /// many children are left to read.
+        struct Open {
+            dyn::Value* node;
+            std::size_t index;
+            std::uint64_t remaining;
+        };
+
+        std::vector<Open> open;
+        dyn::Value* target = &root;
+        while(true) {
+            if(open.size() == max_depth) {
+                return fail_inside(
+                    open,
+                    rich_error(std::format("dyn::Value nested deeper than {} levels", max_depth)));
+            }
+            std::uint64_t children = 0;
+            if(!read_node(vis, *target, children)) {
+                return fail_inside(open);
+            }
+            if(children != 0) {
+                open.push_back({.node = target, .index = 0, .remaining = children});
+            }
+            while(!open.empty() && open.back().remaining == 0) {
+                open.pop_back();
+            }
+            if(open.empty()) {
+                return true;
+            }
+            // Only the innermost container grows; every pointer on the stack
+            // is to an ancestor of the slot being filled, which no insertion
+            // moves.
+            auto& parent = open.back();
+            --parent.remaining;
+            ++parent.index;
+            if(auto* array = parent.node->get_array()) {
+                target = &array->emplace_back();
+            } else {
+                std::string key;
+                if(!decode_value<Config>(vis, key)) {
+                    return fail_inside(open);
+                }
+                auto* object = parent.node->get_object();
+                object->insert(std::move(key), dyn::Value());
+                target = &std::prev(object->end())->second;
+            }
+        }
+    }
+
+    /// Reads one value: a scalar or string whole, an array or object as an
+    /// empty container whose child count is returned.
+    static bool read_node(bincode::Reader& vis, dyn::Value& out, std::uint64_t& children) {
+        KOTA_CODEC_TRY(vis.check_remaining(1));
+        switch(const auto kind = vis.read_u8(); static_cast<dyn::ValueKind>(kind)) {
+            case dyn::ValueKind::null_value: out = dyn::Value(nullptr); return true;
+            case dyn::ValueKind::boolean: return read_as<bool>(vis, out);
+            case dyn::ValueKind::signed_int: return read_as<std::int64_t>(vis, out);
+            case dyn::ValueKind::unsigned_int: return read_as<std::uint64_t>(vis, out);
+            case dyn::ValueKind::floating: return read_as<double>(vis, out);
+            case dyn::ValueKind::string: return read_as<std::string>(vis, out);
+            case dyn::ValueKind::array:
+                KOTA_CODEC_TRY(decode_value<Config>(vis, children));
+                out = dyn::Value(dyn::Array{});
+                return true;
+            case dyn::ValueKind::object:
+                KOTA_CODEC_TRY(decode_value<Config>(vis, children));
+                out = dyn::Value(dyn::Object{});
+                return true;
+            default:
+                return scoped_context<rich_error>::fail(
+                    rich_error(std::format("invalid dyn::Value kind {}", kind)));
+        }
+    }
+
+    template <typename T>
+    static bool read_as(bincode::Reader& vis, dyn::Value& out) {
+        T held{};
+        KOTA_CODEC_TRY(decode_value<Config>(vis, held));
+        out = dyn::Value(std::move(held));
+        return true;
+    }
+
+    /// Destroys a tree one node at a time: a Value's own destructor recurses
+    /// through its children.
+    static void release(dyn::Value& root) {
+        std::vector<dyn::Value> pending;
+        pending.push_back(std::move(root));
+        root = dyn::Value(nullptr);
+        while(!pending.empty()) {
+            dyn::Value node = std::move(pending.back());
+            pending.pop_back();
+            if(auto* array = node.get_array()) {
+                for(auto& child: *array) {
+                    pending.push_back(std::move(child));
+                }
+            } else if(auto* object = node.get_object()) {
+                for(auto& entry: *object) {
+                    pending.push_back(std::move(entry.second));
+                }
+            }
+        }
+    }
+
+    /// Fails the read in progress: with error when given (the failed read
+    /// set it otherwise), and with the index of each open container's
+    /// current child on the path, innermost first.
+    template <typename Open>
+    static bool fail_inside(const std::vector<Open>& open, std::optional<rich_error> error = {}) {
+        if(error) {
+            scoped_context<rich_error>::fail(std::move(*error));
+        }
+        for(auto frame = open.rbegin(); frame != open.rend(); ++frame) {
+            detail::trace_path<Config>(false, frame->index - 1);
+        }
+        return false;
+    }
+};
+
+/// A bare object: its entry count, then each key and Value, the way the
+/// generic map encoding writes it. Object keeps its entries in order with
+/// insert(), which the generic map decoding does not know.
+template <typename Config>
+struct deserialize_visit<bincode::Reader, dyn::Object, Config> {
+    static bool visit(bincode::Reader& vis, dyn::Object& object) {
+        object.clear();
+        return vis.visit_map(object, [&](auto& entries) -> bool {
+            std::size_t idx = 0;
+            while(entries.has_entry()) {
+                std::string key;
+                dyn::Value item;
+                bool ok = entries.visit_entry(
+                    [&](auto& kr) -> bool { return decode_value<Config>(kr, key); },
+                    [&](auto& vr) -> bool { return decode_value<Config>(vr, item); });
+                KOTA_CODEC_TRY(detail::trace_path<Config>(ok, idx));
+                object.insert(std::move(key), std::move(item));
+                ++idx;
+            }
+            return true;
+        });
     }
 };
 

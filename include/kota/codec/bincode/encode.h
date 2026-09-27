@@ -14,6 +14,7 @@
 
 #include "kota/support/expected_try.h"
 #include "kota/codec/bincode/type.h"
+#include "kota/codec/dyn/document.h"
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/encode.h"
 
@@ -175,6 +176,21 @@ template <typename Config>
 struct serialize_visit<bincode::Writer, std::monostate, Config> {
     static bool visit(bincode::Writer& /*vis*/, const std::monostate& /*value*/) {
         return true;
+    }
+};
+
+/// A bincode document does not say what a value is, so a dyn::Value writes
+/// its ValueKind as one byte before what it holds (see bincode::format).
+/// Declared in bincode's own header, which includes the type, so every
+/// translation unit that can write bincode sees it rather than dyn's
+/// untagged form, whose bytes cannot be read back.
+template <typename Config>
+struct serialize_visit<bincode::Writer, dyn::Value, Config> {
+    static bool visit(bincode::Writer& vis, const dyn::Value& value) {
+        vis.write_u8(static_cast<std::uint8_t>(value.kind()));
+        return std::visit(
+            [&](const auto& stored) -> bool { return encode_value<Config>(vis, stored); },
+            value.variant());
     }
 };
 
