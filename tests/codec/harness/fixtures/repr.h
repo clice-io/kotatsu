@@ -25,7 +25,8 @@
 
 namespace kota::test {
 
-/// Travels as a fixed-width integer, overriding the enum dispatch.
+/// Travels as a fixed-width integer 100 above the enumerator, overriding
+/// the enum dispatch; the offset shows a repr that was not applied.
 enum class Relation : std::uint8_t {
     declares,
     defines,
@@ -227,11 +228,11 @@ struct repr<test::Relation> {
     using type = std::uint32_t;
 
     static type to(test::Relation r) {
-        return static_cast<type>(r);
+        return static_cast<type>(r) + 100;
     }
 
     static test::Relation from(type v) {
-        return static_cast<test::Relation>(v);
+        return static_cast<test::Relation>(v - 100);
     }
 };
 

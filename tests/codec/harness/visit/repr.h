@@ -30,7 +30,7 @@ void repr(const Kit<B>& kit) {
         };
     };
     encodes_as(kit, "declarative_encodes_as_plain", symbol, [] {
-        return SymbolPlain{.rel = 2, .ver = "1.22"};
+        return SymbolPlain{.rel = 102, .ver = "1.22"};
     });
     roundtrip(kit, "declarative_roundtrip", symbol);
     auto places = [] {
@@ -42,7 +42,7 @@ void repr(const Kit<B>& kit) {
     };
     encodes_as(kit, "repr_in_elements_keys_and_optionals", places, [] {
         return ReprPlacesPlain{
-            .relations = {1,           0          },
+            .relations = {101,         100        },
             .by_version = {{"1.0", 10}, {"2.5", 25}},
             .maybe = "1.5",
         };
@@ -222,7 +222,7 @@ void repr(const Kit<B>& kit) {
             kit,
             "repr_beats_enum_string_config",
             [] { return Relation::references; },
-            [] { return std::uint32_t{2}; });
+            [] { return std::uint32_t{102}; });
     }
 
     if constexpr(B::caps.self_describing) {

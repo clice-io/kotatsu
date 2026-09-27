@@ -452,14 +452,14 @@ ZEST_CASE(views_read_what_reprs_and_attrs_carry) {
     ASSERT(bytes);
     auto root = table_view<Reprs>::from_bytes(*bytes);
     ASSERT(root.valid());
-    EXPECT(root[&Reprs::relation] == 2U);
+    EXPECT(root[&Reprs::relation] == 102U);
     EXPECT(root[&Reprs::hex] == "0000beef");
     EXPECT(root[&Reprs::journal] == 41);
     EXPECT(root[&Reprs::journals][1] == 9);
     // A null repr is boxed; absent, it reads as the inner default.
     EXPECT(root[&Reprs::stamps][0] == 7U);
     EXPECT(root[&Reprs::stamps][1] == 0U);
-    EXPECT(root[&Reprs::by_relation][2U] == 20);
+    EXPECT(root[&Reprs::by_relation][102U] == 20);
     EXPECT(root[&Reprs::packed] == 3014U);
     EXPECT(root[&Reprs::maybe_decimal] == "12");
     EXPECT(root[&Reprs::widened] == 1234);
