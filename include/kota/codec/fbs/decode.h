@@ -75,20 +75,26 @@ struct ScalarReader : detail::VisitorBase {
     }
 };
 
+/// Stores text read from the buffer into a string-like out.
+template <typename T>
+void assign_text(T& out, std::string_view text) {
+    if constexpr(std::same_as<T, std::string>) {
+        out.assign(text.data(), text.size());
+    } else if constexpr(std::same_as<T, std::string_view>) {
+        out = text;
+    } else if constexpr(std::constructible_from<T, const char*, std::size_t>) {
+        out = T(text.data(), text.size());
+    } else {
+        out = T(text);
+    }
+}
+
 struct StringReader : detail::VisitorBase {
     std::string_view value;
 
     template <typename T>
     bool visit_str(T& out) {
-        if constexpr(std::same_as<T, std::string>) {
-            out.assign(value.data(), value.size());
-        } else if constexpr(std::same_as<T, std::string_view>) {
-            out = value;
-        } else if constexpr(std::constructible_from<T, const char*, std::size_t>) {
-            out = T(value.data(), value.size());
-        } else {
-            out = T(value);
-        }
+        assign_text(out, value);
         return true;
     }
 };
@@ -159,26 +165,22 @@ struct FieldReader : detail::VisitorBase {
     }
 
     bool visit_bool(bool& out) {
-        return read_cell<std::uint8_t>(out, "bool field");
+        return read_cell(out, "bool field");
     }
 
     template <typename T>
     bool visit_int(T& out) {
-        return read_cell<T>(out, "integer field");
+        return read_cell(out, "integer field");
     }
 
     template <typename T>
     bool visit_uint(T& out) {
-        return read_cell<T>(out, "integer field");
+        return read_cell(out, "integer field");
     }
 
     template <typename T>
     bool visit_float(T& out) {
-        if constexpr(std::same_as<T, float> || std::same_as<T, double>) {
-            return read_cell<T>(out, "float field");
-        } else {
-            return read_cell<double>(out, "float field");
-        }
+        return read_cell(out, "float field");
     }
 
     template <typename T>
@@ -194,22 +196,13 @@ struct FieldReader : detail::VisitorBase {
             }
             return true;
         }
-        if constexpr(std::same_as<T, std::string>) {
-            out.assign(text->data(), text->size());
-        } else if constexpr(std::same_as<T, std::string_view>) {
-            out = std::string_view(text->data(), text->size());
-        } else if constexpr(std::constructible_from<T, const char*, std::size_t>) {
-            out = T(text->data(), text->size());
-        } else {
-            std::string_view sv(text->data(), text->size());
-            out = T(sv);
-        }
+        assign_text(out, std::string_view(text->data(), text->size()));
         return true;
     }
 
     template <typename T>
     bool visit_char(T& out) {
-        return read_cell<std::int8_t>(out, "char field");
+        return read_cell(out, "char field");
     }
 
     template <typename T>
@@ -221,12 +214,7 @@ struct FieldReader : detail::VisitorBase {
             return fail_verify("bytes field");
         if(vec == nullptr)
             return true;
-        if constexpr(std::same_as<T, std::vector<std::byte>>) {
-            out.resize(vec->size());
-            for(std::size_t i = 0; i < vec->size(); ++i) {
-                out[i] = static_cast<std::byte>(vec->Get(static_cast<uoffset_t>(i)));
-            }
-        } else if constexpr(std::same_as<T, std::span<const std::byte>>) {
+        if constexpr(std::same_as<T, std::span<const std::byte>>) {
             out = std::span<const std::byte>(reinterpret_cast<const std::byte*>(vec->data()),
                                              vec->size());
         } else {
@@ -252,14 +240,33 @@ struct FieldReader : detail::VisitorBase {
     bool visit_variant(Body&& body);
 
 private:
-    // Reads one fixed-width cell after bounds-checking it; an absent slot
-    // reads as the zero cell, like every scalar access in this backend.
-    template <typename Cell, typename T>
+    // Reads a scalar's fixed-width cell (scalar_cell_t, as the encoder wrote
+    // it) after bounds-checking it; an absent slot reads as the zero cell,
+    // like every scalar access in this backend.
+    template <typename T>
     bool read_cell(T& out, std::string_view what) {
-        if(!tbl->VerifyField<Cell>(*verifier, slot, alignof(Cell)))
+        using cell_t = proxy_detail::scalar_cell_t<T>;
+        if(!tbl->VerifyField<cell_t>(*verifier, slot, alignof(cell_t)))
             return fail_verify(what);
-        out = static_cast<T>(tbl->GetField<Cell>(slot, Cell{}));
+        out = static_cast<T>(tbl->GetField<cell_t>(slot, cell_t{}));
         return true;
+    }
+
+    // Reads the table this reader designates through body with a
+    // TableFieldReader; an absent table leaves out as it was.
+    template <typename Body>
+    bool enter_table(Body&& body, std::string_view what) {
+        const Table* child = nullptr;
+        bool entered = false;
+        if(!follow_table(child, entered, what))
+            return false;
+        if(child == nullptr)
+            return true;
+        TableFieldReader tfr{.tbl = child, .verifier = verifier};
+        const bool ok = body(tfr);
+        if(entered)
+            verifier->EndTable();
+        return ok;
     }
 
     // Follows the table this reader designates into `out`. slot == 0
@@ -295,6 +302,20 @@ bool TableFieldReader::visit_field(Idx, std::string_view, F&& reader) {
     return reader(fr);
 }
 
+/// Reads a variant's table: the u32 alternative index at the first slot,
+/// then the payload at that alternative's slot.
+template <typename Body>
+bool read_variant_table(const Table* tbl, verifier_t* verifier, Body&& body) {
+    if(!tbl->VerifyField<std::uint32_t>(*verifier, detail::first_field, alignof(std::uint32_t)))
+        return fail_verify("variant tag");
+    auto index = static_cast<std::size_t>(tbl->GetField<std::uint32_t>(detail::first_field, 0));
+    // A hostile tag can name a slot past the table, or wrap; safe because
+    // construct_and_visit rejects any out-of-range index before the payload
+    // reader is used.
+    FieldReader pv{.tbl = tbl, .slot = detail::field_slot(index + 1), .verifier = verifier};
+    return body(index, pv);
+}
+
 template <typename F>
 bool TableFieldReader::visit_element(F&& reader) {
     const voffset_t vid = detail::field_slot(idx);
@@ -323,15 +344,7 @@ struct RootReader : FieldReader {
 
     template <typename Body>
     bool visit_variant(Body&& body) {
-        if(!tbl->VerifyField<std::uint32_t>(*verifier, detail::first_field, alignof(std::uint32_t)))
-            return fail_verify("variant tag");
-        auto tag = tbl->GetField<std::uint32_t>(detail::first_field, 0);
-        auto index = static_cast<std::size_t>(tag);
-        // A hostile tag can name a slot past the table, or wrap; safe because
-        // construct_and_visit rejects any out-of-range index before the
-        // payload reader is used.
-        FieldReader pv{.tbl = tbl, .slot = detail::field_slot(index + 1), .verifier = verifier};
-        return body(index, pv);
+        return read_variant_table(tbl, verifier, std::forward<Body>(body));
     }
 };
 
@@ -349,17 +362,7 @@ bool FieldReader::visit_struct(T& out, Body&& body) {
         return true;
     } else {
         detail::assert_fields_reflected<V>();
-        const Table* child = nullptr;
-        bool entered = false;
-        if(!follow_table(child, entered, "struct field"))
-            return false;
-        if(child == nullptr)
-            return true;
-        TableFieldReader tfr{.tbl = child, .verifier = verifier};
-        const bool ok = body(tfr);
-        if(entered)
-            verifier->EndTable();
-        return ok;
+        return enter_table(std::forward<Body>(body), "struct field");
     }
 }
 
@@ -381,17 +384,7 @@ bool FieldReader::visit_seq([[maybe_unused]] T& out, Body&& body) {
 template <typename T, typename Body>
 bool FieldReader::visit_tuple(T&, Body&& body) {
     detail::assert_slots_fit<std::tuple_size_v<std::remove_const_t<T>>>();
-    const Table* child = nullptr;
-    bool entered = false;
-    if(!follow_table(child, entered, "tuple field"))
-        return false;
-    if(child == nullptr)
-        return true;
-    TableFieldReader tfr{.tbl = child, .verifier = verifier};
-    const bool ok = body(tfr);
-    if(entered)
-        verifier->EndTable();
-    return ok;
+    return enter_table(std::forward<Body>(body), "tuple field");
 }
 
 template <typename T, typename Body>
@@ -415,21 +408,7 @@ bool FieldReader::visit_variant(Body&& body) {
     if(var_table == nullptr) {
         return scoped_context<rich_error>::fail(rich_error("null variant table"));
     }
-    const bool ok = [&] {
-        if(!var_table->VerifyField<std::uint32_t>(*verifier,
-                                                  detail::first_field,
-                                                  alignof(std::uint32_t)))
-            return fail_verify("variant tag");
-        auto tag = var_table->GetField<std::uint32_t>(detail::first_field, 0);
-        auto index = static_cast<std::size_t>(tag);
-        // A hostile tag can name a slot past the table, or wrap; safe because
-        // construct_and_visit rejects any out-of-range index before the
-        // payload reader is used.
-        FieldReader pv{.tbl = var_table,
-                       .slot = detail::field_slot(index + 1),
-                       .verifier = verifier};
-        return body(index, pv);
-    }();
+    const bool ok = read_variant_table(var_table, verifier, std::forward<Body>(body));
     if(entered)
         verifier->EndTable();
     return ok;
