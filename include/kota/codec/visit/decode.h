@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <bit>
 #include <concepts>
 #include <cstddef>
 #include <format>
@@ -267,56 +268,51 @@ bool match_field(std::string_view key, Vis& reader, T& out, std::uint64_t* field
     }(std::make_index_sequence<N>{});
 }
 
-/// After data-driven struct decode, validate that all required fields were present.
-/// A field is required if it is not optional/pointer/null, has no skip
-/// condition, and is not marked defaulted.
+/// Whether the input must carry a slot: its type is not nullable (seen
+/// through annotations), and neither its attrs nor, for an annotated type,
+/// that annotation give it a default or a skip condition.
+template <typename Slot>
+constexpr bool slot_required = [] {
+    using raw_t = std::remove_cv_t<typename Slot::raw_type>;
+    using attrs_t = typename Slot::attrs;
+    constexpr auto kind = meta::kind_of<raw_t>();
+    if(kind == meta::type_kind::optional || kind == meta::type_kind::pointer ||
+       kind == meta::type_kind::null) {
+        return false;
+    }
+    if(tuple_has_spec_v<attrs_t, meta::behavior::skip_if> ||
+       meta::spec_of<attrs_t>.skip_if != meta::skip_when::never ||
+       meta::spec_of<attrs_t>.defaulted) {
+        return false;
+    }
+    if constexpr(meta::annotated_type<raw_t>) {
+        return !meta::spec_of<typename raw_t::attrs>.defaulted;
+    } else {
+        return true;
+    }
+}();
+
+/// Bit I set when slot I of T under Config is required.
+template <typename Config, typename T>
+constexpr std::uint64_t required_mask = []<typename... Slots>(type_list<Slots...>) {
+    static_assert(sizeof...(Slots) <= 64,
+                  "struct field count exceeds field_mask capacity (max 64 fields)");
+    std::uint64_t mask = 0;
+    std::size_t i = 0;
+    ((mask |= std::uint64_t{slot_required<Slots>} << i++), ...);
+    return mask;
+}(typename meta::virtual_schema<T, Config>::slots{});
+
+/// After data-driven struct decode, fails on the first required field the
+/// input left out.
 template <typename Config, typename T>
 bool check_required_fields(std::uint64_t field_mask) {
-    using schema = meta::virtual_schema<T, Config>;
-    using slots = typename schema::slots;
-    constexpr std::size_t N = type_list_size_v<slots>;
-    static_assert(N <= 64, "struct field count exceeds field_mask capacity (max 64 fields)");
-
-    return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
-        return (([&] {
-                    if(field_mask & (1ULL << Is))
-                        return true;
-                    using slot_t = type_list_element_t<Is, slots>;
-                    using raw_t = std::remove_cv_t<typename slot_t::raw_type>;
-                    using attrs_t = typename slot_t::attrs;
-
-                    [[maybe_unused]] constexpr auto kind = meta::kind_of<raw_t>();
-                    if constexpr(kind == meta::type_kind::optional ||
-                                 kind == meta::type_kind::pointer ||
-                                 kind == meta::type_kind::null) {
-                        return true;
-                    } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if> ||
-                                        meta::spec_of<attrs_t>.skip_if != meta::skip_when::never ||
-                                        meta::spec_of<attrs_t>.defaulted) {
-                        return true;
-                    } else if constexpr(meta::annotated_type<raw_t>) {
-                        using inner_attrs = typename raw_t::attrs;
-                        if constexpr(meta::spec_of<inner_attrs>.defaulted) {
-                            return true;
-                        } else {
-                            using inner_t = meta::annotated_underlying_t<raw_t>;
-                            constexpr auto inner_kind = meta::kind_of<inner_t>();
-                            if constexpr(inner_kind == meta::type_kind::optional ||
-                                         inner_kind == meta::type_kind::pointer ||
-                                         inner_kind == meta::type_kind::null) {
-                                return true;
-                            } else {
-                                return scoped_context<rich_error>::fail(
-                                    rich_error::missing_field(schema::fields[Is].name));
-                            }
-                        }
-                    } else {
-                        return scoped_context<rich_error>::fail(
-                            rich_error::missing_field(schema::fields[Is].name));
-                    }
-                }()) &&
-                ...);
-    }(std::make_index_sequence<N>{});
+    std::uint64_t missing = required_mask<Config, T> & ~field_mask;
+    if(missing == 0) {
+        return true;
+    }
+    return scoped_context<rich_error>::fail(rich_error::missing_field(
+        meta::virtual_schema<T, Config>::fields[std::countr_zero(missing)].name));
 }
 
 /// External tagged: { "TagName": value }
