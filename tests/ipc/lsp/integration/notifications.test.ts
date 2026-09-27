@@ -1,5 +1,7 @@
 // Document notifications: opening a document publishes the stub's
-// diagnostics, and the others leave the server serving requests.
+// diagnostics, and the others leave the server serving requests. A
+// notification the server cannot decode shows as a warning in its log, which
+// fails the case.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -10,20 +12,9 @@ import {
   DidCloseTextDocumentNotification,
   DidOpenTextDocumentNotification,
   DidSaveTextDocumentNotification,
-  HoverRequest,
 } from "vscode-languageserver-protocol";
 
-import { withStub, type StubClient } from "./stub_client.ts";
-
-const TEST_URI = "file:///tmp/test.cpp";
-const POSITION = { line: 0, character: 0 };
-
-function hover(stub: StubClient) {
-  return stub.connection.sendRequest(HoverRequest.type, {
-    textDocument: { uri: TEST_URI },
-    position: POSITION,
-  });
-}
+import { POSITION, TEST_URI, withStub } from "../harness/stub_client.ts";
 
 test(
   "did_open_publishes_diagnostics",
@@ -39,9 +30,10 @@ test(
         },
       },
     );
-    const [diagnostic] = await stub.diagnostics(TEST_URI);
-    assert.equal(diagnostic.message, "stub warning");
-    assert.equal(diagnostic.severity, DiagnosticSeverity.Warning);
+    const diagnostics = await stub.diagnostics(TEST_URI);
+    assert.equal(diagnostics.length, 1);
+    assert.equal(diagnostics[0].message, "stub warning");
+    assert.equal(diagnostics[0].severity, DiagnosticSeverity.Warning);
   }),
 );
 
@@ -57,7 +49,7 @@ test(
         ],
       },
     );
-    assert.notEqual(await hover(stub), null);
+    assert.notEqual(await stub.hover(), null);
   }),
 );
 
@@ -66,11 +58,9 @@ test(
   withStub(async (stub) => {
     await stub.connection.sendNotification(
       DidCloseTextDocumentNotification.type,
-      {
-        textDocument: { uri: TEST_URI },
-      },
+      { textDocument: { uri: TEST_URI } },
     );
-    assert.notEqual(await hover(stub), null);
+    assert.notEqual(await stub.hover(), null);
   }),
 );
 
@@ -79,10 +69,8 @@ test(
   withStub(async (stub) => {
     await stub.connection.sendNotification(
       DidSaveTextDocumentNotification.type,
-      {
-        textDocument: { uri: TEST_URI },
-      },
+      { textDocument: { uri: TEST_URI } },
     );
-    assert.notEqual(await hover(stub), null);
+    assert.notEqual(await stub.hover(), null);
   }),
 );

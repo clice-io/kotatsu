@@ -19,7 +19,6 @@ import {
   DocumentSymbol,
   DocumentSymbolRequest,
   FoldingRangeRequest,
-  HoverRequest,
   ImplementationRequest,
   InlayHintKind,
   InlayHintRequest,
@@ -38,11 +37,9 @@ import {
   type DefinitionLink,
 } from "vscode-languageserver-protocol";
 
-import { withStub } from "./stub_client.ts";
+import { POSITION, TEST_URI, withStub } from "../harness/stub_client.ts";
 
-const TEST_URI = "file:///tmp/test.cpp";
 const DOCUMENT = { uri: TEST_URI };
-const POSITION = { line: 0, character: 0 };
 const FORMATTING = { tabSize: 4, insertSpaces: true };
 
 // The one location the stub answers a definition-like request with.
@@ -55,10 +52,7 @@ function location(result: Definition | DefinitionLink[] | null) {
 test(
   "hover_returns_markup",
   withStub(async (stub) => {
-    const hover = await stub.connection.sendRequest(HoverRequest.type, {
-      textDocument: DOCUMENT,
-      position: POSITION,
-    });
+    const hover = await stub.hover();
     assert.deepEqual(hover?.contents, {
       kind: MarkupKind.Markdown,
       value: "stub hover",
@@ -75,6 +69,7 @@ test(
     });
     assert.ok(list && !Array.isArray(list));
     assert.equal(list.isIncomplete, false);
+    assert.equal(list.items.length, 1);
     assert.equal(list.items[0].label, "stub_item");
   }),
 );
@@ -104,24 +99,21 @@ test(
         context: { includeDeclaration: true },
       },
     );
-    assert.ok(references);
     const lines = references
-      .map(({ range }) => range.start.line)
+      ?.map(({ range }) => range.start.line)
       .toSorted((a, b) => a - b);
     assert.deepEqual(lines, [1, 5]);
   }),
 );
 
 test(
-  "document_symbol_returns_symbols",
+  "document_symbol_returns_symbol",
   withStub(async (stub) => {
     const symbols = await stub.connection.sendRequest(
       DocumentSymbolRequest.type,
-      {
-        textDocument: DOCUMENT,
-      },
+      { textDocument: DOCUMENT },
     );
-    assert.ok(symbols && symbols.length >= 1);
+    assert.equal(symbols?.length, 1);
     const [symbol] = symbols;
     assert.ok(DocumentSymbol.is(symbol));
     assert.equal(symbol.name, "StubSymbol");
@@ -130,30 +122,29 @@ test(
 );
 
 test(
-  "formatting_returns_edits",
+  "formatting_returns_edit",
   withStub(async (stub) => {
     const edits = await stub.connection.sendRequest(
       DocumentFormattingRequest.type,
-      {
-        textDocument: DOCUMENT,
-        options: FORMATTING,
-      },
+      { textDocument: DOCUMENT, options: FORMATTING },
     );
-    assert.ok(edits && edits.length >= 1);
+    assert.equal(edits?.length, 1);
     assert.equal(edits[0].newText, "formatted\n");
   }),
 );
 
 test(
-  "code_action_returns_actions",
+  "code_action_returns_action",
   withStub(async (stub) => {
     const actions = await stub.connection.sendRequest(CodeActionRequest.type, {
       textDocument: DOCUMENT,
       range: { start: POSITION, end: { line: 0, character: 5 } },
       context: { diagnostics: [] },
     });
-    assert.ok(actions && actions.length >= 1);
+    assert.equal(actions?.length, 1);
     const [action] = actions;
+    // A code action, not a command. CodeAction.is would ask for an edit or a
+    // command as well, and the stub's action has neither.
     assert.ok(!Command.is(action));
     assert.equal(action.title, "stub action");
     assert.equal(action.kind, CodeActionKind.QuickFix);
@@ -179,10 +170,7 @@ test(
   withStub(async (stub) => {
     const highlights = await stub.connection.sendRequest(
       DocumentHighlightRequest.type,
-      {
-        textDocument: DOCUMENT,
-        position: POSITION,
-      },
+      { textDocument: DOCUMENT, position: POSITION },
     );
     assert.equal(highlights?.length, 1);
     assert.equal(highlights[0].kind, DocumentHighlightKind.Read);
@@ -212,7 +200,10 @@ test(
       textDocument: DOCUMENT,
       position: POSITION,
     });
-    assert.notEqual(range, null);
+    assert.deepEqual(range, {
+      start: { line: 0, character: 0 },
+      end: { line: 0, character: 3 },
+    });
   }),
 );
 
@@ -233,10 +224,7 @@ test(
   withStub(async (stub) => {
     const ranges = await stub.connection.sendRequest(
       SelectionRangeRequest.type,
-      {
-        textDocument: DOCUMENT,
-        positions: [POSITION],
-      },
+      { textDocument: DOCUMENT, positions: [POSITION] },
     );
     assert.equal(ranges?.length, 1);
     assert.equal(ranges[0].range.start.line, 0);
@@ -319,7 +307,7 @@ test(
 );
 
 test(
-  "range_formatting_returns_edits",
+  "range_formatting_returns_edit",
   withStub(async (stub) => {
     const edits = await stub.connection.sendRequest(
       DocumentRangeFormattingRequest.type,
@@ -329,21 +317,19 @@ test(
         options: FORMATTING,
       },
     );
-    assert.ok(edits && edits.length >= 1);
+    assert.equal(edits?.length, 1);
     assert.equal(edits[0].newText, "range formatted\n");
   }),
 );
 
 test(
-  "workspace_symbol_returns_symbols",
+  "workspace_symbol_returns_symbol",
   withStub(async (stub) => {
     const symbols = await stub.connection.sendRequest(
       WorkspaceSymbolRequest.type,
-      {
-        query: "Global",
-      },
+      { query: "Global" },
     );
-    assert.ok(symbols && symbols.length >= 1);
+    assert.equal(symbols?.length, 1);
     assert.equal(symbols[0].name, "GlobalFunc");
     assert.equal(symbols[0].kind, SymbolKind.Function);
   }),

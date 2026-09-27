@@ -5,7 +5,7 @@ import { test } from "node:test";
 
 import { CompletionRequest } from "vscode-languageserver-protocol";
 
-import { withStub } from "./stub_client.ts";
+import { withStub } from "../harness/stub_client.ts";
 
 test(
   "completion_reports_progress",

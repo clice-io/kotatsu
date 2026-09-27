@@ -5,23 +5,17 @@ import { test } from "node:test";
 
 import {
   ErrorCodes,
-  HoverRequest,
   SemanticTokensRequest,
 } from "vscode-languageserver-protocol";
 
-import { withStub } from "./stub_client.ts";
-
-const POSITION = { line: 0, character: 0 };
+import { TEST_URI, withStub } from "../harness/stub_client.ts";
 
 test(
   "hover_error_fails",
   withStub(async (stub) => {
+    stub.driver.expectLog(/^\[error\] error response: hover error triggered$/);
     // The stub's hover fails for this URI.
-    const hover = stub.connection.sendRequest(HoverRequest.type, {
-      textDocument: { uri: "file:///error" },
-      position: POSITION,
-    });
-    await assert.rejects(hover, {
+    await assert.rejects(stub.hover("file:///error"), {
       code: ErrorCodes.InvalidRequest,
       message: "hover error triggered",
     });
@@ -31,8 +25,9 @@ test(
 test(
   "unregistered_method_fails",
   withStub(async (stub) => {
+    stub.driver.expectLog(/^\[error\] error response: method not found: /);
     const tokens = stub.connection.sendRequest(SemanticTokensRequest.type, {
-      textDocument: { uri: "file:///tmp/test.cpp" },
+      textDocument: { uri: TEST_URI },
     });
     await assert.rejects(tokens, { code: ErrorCodes.MethodNotFound });
   }),

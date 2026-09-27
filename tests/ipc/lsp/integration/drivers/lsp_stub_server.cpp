@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 
+#include "ipc/harness/stderr_logger.h"
 #include "kota/ipc/codec/json.h"
 #include "kota/ipc/lsp/progress.h"
 #include "kota/ipc/lsp/protocol.h"
@@ -58,11 +59,7 @@ int main() {
     }
 
     ipc::JsonPeer peer(loop, std::move(*transport));
-    peer.set_logger(
-        [](ipc::LogLevel lvl, std::string msg) {
-            std::println(stderr, "[stub:{}] {}", static_cast<int>(lvl), msg);
-        },
-        ipc::LogLevel::trace);
+    peer.set_logger(kota::test::stderr_logger(), ipc::LogLevel::trace);
 
     bool shutdown_requested = false;
 

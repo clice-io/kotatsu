@@ -7,6 +7,9 @@ import type { Readable, Writable } from "node:stream";
 
 const SEPARATOR = "\r\n\r\n";
 
+/** A JSON-RPC message as it came, its members not yet checked. */
+export type Message = Record<string, unknown>;
+
 export class RawChannel {
   readonly #output: Writable;
   #input = Buffer.alloc(0);
@@ -36,7 +39,7 @@ export class RawChannel {
    * The next message, or undefined once the input ends between two frames.
    * One call at a time.
    */
-  async receive(): Promise<unknown> {
+  async receive(): Promise<Message | undefined> {
     for (;;) {
       const message = this.#take();
       if (message !== undefined) {
@@ -50,7 +53,7 @@ export class RawChannel {
     }
   }
 
-  #take(): unknown {
+  #take(): Message | undefined {
     const separator = this.#input.indexOf(SEPARATOR);
     if (separator < 0) {
       return undefined;
@@ -66,6 +69,13 @@ export class RawChannel {
     }
     const payload = this.#input.subarray(start, end).toString();
     this.#input = this.#input.subarray(end);
-    return JSON.parse(payload);
+    const message: unknown = JSON.parse(payload);
+    assert.ok(
+      typeof message === "object" &&
+        message !== null &&
+        !Array.isArray(message),
+      `not a message: ${payload}`,
+    );
+    return message as Message;
   }
 }

@@ -5,12 +5,11 @@
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 
-import type { ResponseMessage } from "vscode-jsonrpc";
 import { TextDocumentSyncKind } from "vscode-languageserver-protocol";
 
 import { Driver } from "../../harness/driver.ts";
 import type { RawChannel } from "../../harness/raw.ts";
-import { withStub } from "./stub_client.ts";
+import { withStub } from "../harness/stub_client.ts";
 
 async function initialized(t: TestContext): Promise<[Driver, RawChannel]> {
   const driver = await Driver.spawn(t, "lsp_stub_server");
@@ -21,9 +20,9 @@ async function initialized(t: TestContext): Promise<[Driver, RawChannel]> {
     method: "initialize",
     params: { processId: null, rootUri: null, capabilities: {} },
   });
-  const { id, result } = (await wire.receive()) as ResponseMessage;
-  assert.equal(id, 1);
-  assert.ok(result);
+  const response = await wire.receive();
+  assert.equal(response?.id, 1);
+  assert.ok(response.result);
   wire.send({ jsonrpc: "2.0", method: "initialized", params: {} });
   return [driver, wire];
 }
