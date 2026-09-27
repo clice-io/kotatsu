@@ -5,6 +5,9 @@
 #   system/   touches the operating system: files, processes, sockets, pipes,
 #             threads; built into system_tests
 #   harness/  helpers for the module's tests and the modules above it
+#   integration/
+#             programs talking over real protocols: TypeScript tests on
+#             node's test runner, and the drivers they spawn
 # Modules are added in dependency order.
 
 set(kota_test_binaries unit_tests system_tests)
@@ -36,6 +39,48 @@ function(kota_add_module_tests)
     endforeach()
 endfunction()
 
+# Adds the calling module's integration tests, integration/*.test.ts, as one
+# ctest test that node runs from the repo root; their npm packages come from
+# the root package.json (`pixi run npm-ci`). Each integration/drivers/<name>.cpp
+# builds the driver <name>, linked against the module's libraries, and the
+# tests find its path in the environment variable KOTA_<NAME>.
+function(kota_add_integration_tests)
+    cmake_parse_arguments(PARSE_ARGV 0 arg "" "" "LIBS")
+    find_program(KOTA_NODE node REQUIRED)
+
+    set(environment "")
+    file(GLOB drivers CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/integration/drivers/*.cpp")
+    foreach(source IN LISTS drivers)
+        get_filename_component(driver "${source}" NAME_WE)
+        add_executable(${driver} "${source}")
+        target_link_libraries(${driver} PRIVATE ${arg_LIBS})
+        kota_apply_project_options(${driver})
+        if(MSVC)
+            target_compile_options(${driver} PRIVATE /bigobj)
+        endif()
+        set_property(GLOBAL APPEND PROPERTY kota_integration_drivers ${driver})
+        string(TOUPPER "KOTA_${driver}" variable)
+        list(APPEND environment "${variable}=$<TARGET_FILE:${driver}>")
+    endforeach()
+
+    file(RELATIVE_PATH module "${PROJECT_SOURCE_DIR}/tests" "${CMAKE_CURRENT_SOURCE_DIR}")
+    string(REPLACE "/" "_" name "${module}_integration")
+    file(GLOB tests CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/integration/*.test.ts")
+    add_test(NAME ${name}
+        COMMAND "${KOTA_NODE}"
+            --import ./tests/check_npm_packages.ts
+            --test
+            --test-reporter=spec
+            --test-timeout=60000
+            ${tests}
+        WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+    )
+    set_tests_properties(${name} PROPERTIES
+        ENVIRONMENT "${environment}"
+        LABELS integration
+    )
+endfunction()
+
 add_subdirectory(support)
 add_subdirectory(meta)
 add_subdirectory(codec)
@@ -51,9 +96,11 @@ if(KOTA_ENABLE_HTTP)
 endif()
 add_subdirectory(zest)
 
-# The test executables, and zest's runner fixture, sit together in the build
-# root so that they find the same runtime DLLs.
-set_target_properties(${kota_test_binaries} zest_runner_fixture PROPERTIES
+# The test executables, zest's runner fixture and the integration drivers sit
+# together in the build root so that they find the same runtime DLLs.
+get_property(kota_integration_drivers GLOBAL PROPERTY kota_integration_drivers)
+set(kota_test_programs ${kota_test_binaries} zest_runner_fixture ${kota_integration_drivers})
+set_target_properties(${kota_test_programs} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
     RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}"
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}"
@@ -63,8 +110,11 @@ set_target_properties(${kota_test_binaries} zest_runner_fixture PROPERTIES
 
 if(KOTA_SANITIZE_ADDRESS AND MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     # clang-cl ASan uses a runtime DLL; copy it into the directory the test
-    # executables share, after either binary builds, so that any of them runs
-    # without tweaking PATH.
+    # programs share before any of them builds, so that each runs without
+    # tweaking PATH. The copy is a target of its own because a build event can
+    # only be attached in the directory that defines its target, and the
+    # drivers are defined in their modules' directories.
+    add_custom_target(kota_asan_runtime)
     get_filename_component(kota_clang_compiler_dir "${CMAKE_C_COMPILER}" DIRECTORY)
     set(kota_asan_runtime_search_paths
         "${kota_clang_compiler_dir}"
@@ -84,20 +134,22 @@ if(KOTA_SANITIZE_ADDRESS AND MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         endforeach()
 
         if(kota_asan_runtime_path)
-            foreach(binary IN LISTS kota_test_binaries)
-                add_custom_command(TARGET ${binary} POST_BUILD
-                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                        "${kota_asan_runtime_path}"
-                        "$<TARGET_FILE_DIR:${binary}>"
-                    VERBATIM
-                )
-            endforeach()
+            add_custom_command(TARGET kota_asan_runtime POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${kota_asan_runtime_path}"
+                    "${CMAKE_BINARY_DIR}"
+                VERBATIM
+            )
         else()
             message(WARNING
                 "KOTA_SANITIZE_ADDRESS=ON, but ${kota_asan_runtime_name} was not found. "
                 "Tried: ${kota_asan_runtime_search_paths}"
             )
         endif()
+    endforeach()
+
+    foreach(program IN LISTS kota_test_programs)
+        add_dependencies(${program} kota_asan_runtime)
     endforeach()
 endif()
 

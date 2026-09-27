@@ -157,17 +157,15 @@ fd -H -e yaml -e yml -E pnpm-lock.yaml -E '*.snap.yml' -x prettier.bat --write &
 fd -H "^\\.clang-(format|tidy)$" -x prettier.bat --write --parser yaml
 """
 
-[tasks]
-integration-test = "pytest tests/integration/ -v"
-
 # Regenerate include/kota/ipc/lsp/protocol.h; `--check` only verifies it.
 # Node's fetch honors HTTP(S)_PROXY only when told to.
 [tasks.lsp-codegen]
 cmd = "node scripts/lsp/codegen.ts"
 env = { NODE_USE_ENV_PROXY = "1" }
 
-# Installs the type checker (the scripts themselves need no npm packages);
-# skipped while the package files and node_modules are unchanged.
+# Installs the type checker and the packages the integration tests import (the
+# scripts need none); skipped while the package files and node_modules are
+# unchanged.
 [tasks.npm-ci]
 cmd = "npm ci"
 inputs = ["package.json", "package-lock.json"]
@@ -189,4 +187,9 @@ depends-on = [{ task = "configure", args = ["{{ preset }}"] }]
 [tasks.test]
 args = [{ arg = "preset", default = "debug" }]
 cmd = "ctest --preset {{ preset }}"
-depends-on = [{ task = "build", args = ["{{ preset }}"] }]
+depends-on = [{ task = "build", args = ["{{ preset }}"] }, "npm-ci"]
+
+[tasks.integration-test]
+args = [{ arg = "preset", default = "debug" }]
+cmd = "ctest --preset {{ preset }} -L integration"
+depends-on = [{ task = "build", args = ["{{ preset }}"] }, "npm-ci"]

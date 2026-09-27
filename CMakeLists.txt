@@ -359,7 +359,3 @@ endif()
 if(KOTA_ENABLE_EXAMPLES)
     add_subdirectory(examples)
 endif()
-
-if(KOTA_ENABLE_TEST AND BUILD_TESTING AND KOTA_CODEC_ENABLE_SIMDJSON)
-    add_subdirectory(tests/integration)
-endif()
