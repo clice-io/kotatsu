@@ -1,4 +1,10 @@
+#include <algorithm>
 #include <cstdint>
+#include <optional>
+#include <span>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #include "kota/zest/zest.h"
 #include "kota/ipc/lsp/position.h"
@@ -180,9 +186,8 @@ ZEST_CASE(to_offset_at_the_line_end_is_the_line_end) {
     }
 }
 
-// N6: a character past the line's end fails; LSP 3.17 has it default back to
-// the line's length.
-ZEST_CASE(to_offset_past_the_line_end_clamps_to_it, skip = true) {
+// LSP 3.17: a character past the line's length defaults back to it.
+ZEST_CASE(to_offset_past_the_line_end_clamps_to_it) {
     std::string_view content = "abc\ndef";
 
     for(auto encoding: {PositionEncoding::UTF8, PositionEncoding::UTF16, PositionEncoding::UTF32}) {
@@ -193,8 +198,7 @@ ZEST_CASE(to_offset_past_the_line_end_clamps_to_it, skip = true) {
     }
 }
 
-// N6: the \r of a \r\n is counted as part of the line.
-ZEST_CASE(crlf_ends_a_line, skip = true) {
+ZEST_CASE(crlf_ends_a_line) {
     std::string_view content = "ab\r\ncd";
     LineMap map(content, PositionEncoding::UTF16);
 
@@ -203,6 +207,77 @@ ZEST_CASE(crlf_ends_a_line, skip = true) {
     ASSERT(inside.has_value());
     EXPECT(*inside == protocol::Position{.line = 0, .character = 2});
     EXPECT(map.to_offset({.line = 0, .character = 3}) == 2U);
+}
+
+// Line starts stay what build_line_starts gives, which callers persist.
+ZEST_CASE(lone_cr_is_text) {
+    std::string_view content = "a\rb\nc";
+    LineMap map(content, PositionEncoding::UTF16);
+
+    EXPECT(std::vector(map.line_starts().begin(), map.line_starts().end()) ==
+           std::vector<std::uint32_t>{0, 4});
+    EXPECT(map.line_bounds(0).end == 3U);
+    auto after_cr = map.to_position(2);
+    ASSERT(after_cr.has_value());
+    EXPECT(*after_cr == protocol::Position{.line = 0, .character = 2});
+}
+
+ZEST_CASE(to_offset_past_a_non_ascii_line_end_clamps_to_it) {
+    std::string_view content = "a你b\r\nc";
+    LineMap map(content, PositionEncoding::UTF16);
+
+    EXPECT(map.to_offset({.line = 0, .character = 3}) == 5U);
+    EXPECT(map.to_offset({.line = 0, .character = 10}) == 5U);
+}
+
+// UTF-16 unit 1 of "🙂" is the second half of its surrogate pair.
+ZEST_CASE(to_offset_inside_a_surrogate_pair_fails) {
+    LineMap map("🙂", PositionEncoding::UTF16);
+
+    EXPECT(map.to_offset({.line = 0, .character = 1}) == std::nullopt);
+}
+
+// ASCII lines take a shortcut other lines do not: every line, in every
+// encoding, converts as a walk of its text would.
+ZEST_CASE(lines_convert_as_their_text_whatever_their_neighbours) {
+    std::string_view content = "abc\r\na你b\n\n🙂z\nxyz";
+    auto starts = build_line_starts(content);
+    for(auto encoding: {PositionEncoding::UTF8, PositionEncoding::UTF16, PositionEncoding::UTF32}) {
+        LineMap owned(content, encoding);
+        LineMap borrowed(content, std::span<const std::uint32_t>(starts), encoding);
+        for(std::uint32_t offset = 0; offset <= content.size(); ++offset) {
+            ZEST_CONTEXT("encoding {}, offset {}", static_cast<int>(encoding), offset);
+            auto bounds = owned.line_bounds(offset);
+            auto text = content.substr(bounds.start, std::min(offset, bounds.end) - bounds.start);
+            protocol::Position expected{.line = bounds.line,
+                                        .character = encoded_length(text, encoding)};
+            auto position = owned.to_position(offset);
+            ASSERT(position.has_value());
+            EXPECT(*position == expected);
+            auto from_borrowed = borrowed.to_position(offset);
+            ASSERT(from_borrowed.has_value());
+            EXPECT(*from_borrowed == expected);
+        }
+    }
+}
+
+// Which lines are ASCII is kept a bit per line, 64 to a word.
+ZEST_CASE(non_ascii_lines_far_apart_convert_by_their_text) {
+    std::string content;
+    for(int line = 0; line < 200; ++line) {
+        content += (line == 70 || line == 130) ? "a你b\n" : "abcde\n";
+    }
+    LineMap map(content, PositionEncoding::UTF16);
+
+    for(std::uint32_t line: {69U, 70U, 71U, 129U, 130U, 199U}) {
+        ZEST_CONTEXT("line {}", line);
+        auto start = map.line_starts()[line];
+        auto end = map.to_position(start + 4);
+        ASSERT(end.has_value());
+        const bool wide = line == 70 || line == 130;
+        EXPECT(*end == protocol::Position{.line = line, .character = wide ? 2U : 4U});
+        EXPECT(map.to_offset({.line = line, .character = 2}) == start + (wide ? 4U : 2U));
+    }
 }
 
 ZEST_CASE(encoding_override) {
