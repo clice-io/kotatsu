@@ -14,7 +14,9 @@ namespace kota {
 ///
 /// wait() waits for the next fire. A fire nobody waited for is kept for the
 /// next wait(): a signal counts every one, the others keep one, however
-/// many happened. One wait() may be pending at a time; a second fails with
+/// many happened; a timer drops it when it is started again, and a signal
+/// when it is started on a signal it does not watch. One wait() may be
+/// pending at a time; a second fails with
 /// error::resource_busy_or_locked. Cancelling a wait only withdraws it: the
 /// watcher runs on. Destroying the watcher ends a pending wait with
 /// error::operation_aborted.
@@ -43,9 +45,12 @@ public:
 protected:
     struct Self;
 
-    explicit watcher(unique_handle<Self> self) noexcept;
+    explicit watcher(detail::unique_handle<Self> self) noexcept;
 
-    unique_handle<Self> self;
+    /// Starts an idle, prepare or check watcher.
+    error start();
+
+    detail::unique_handle<Self> self;
 };
 
 /// Fires once `timeout` after start(), then every `repeat`, if not zero.
@@ -55,7 +60,8 @@ public:
 
     static timer create(event_loop& loop = event_loop::current());
 
-    /// Starts the timer, or restarts it with the new times.
+    /// Starts the timer, or restarts it with the new times; a fire kept from
+    /// before is dropped.
     error start(std::chrono::milliseconds timeout, std::chrono::milliseconds repeat = {});
 
 private:
@@ -72,7 +78,8 @@ public:
     static result<signal> create(event_loop& loop = event_loop::current());
 
     /// Watches `signum`, or switches to it; fails with invalid_argument for
-    /// a number that names no signal.
+    /// a number that names no signal. The fires kept are dropped unless it
+    /// watches `signum` already.
     error start(int signum);
 
 private:
@@ -87,7 +94,7 @@ public:
 
     static idle create(event_loop& loop = event_loop::current());
 
-    error start();
+    using watcher::start;
 
 private:
     using watcher::watcher;
@@ -100,7 +107,7 @@ public:
 
     static prepare create(event_loop& loop = event_loop::current());
 
-    error start();
+    using watcher::start;
 
 private:
     using watcher::watcher;
@@ -113,7 +120,7 @@ public:
 
     static check create(event_loop& loop = event_loop::current());
 
-    error start();
+    using watcher::start;
 
 private:
     using watcher::watcher;

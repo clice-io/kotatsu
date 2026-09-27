@@ -407,12 +407,36 @@ ZEST_CASE(destroying_a_socket_ends_its_recv) {
     EXPECT(received.error() == error::operation_aborted);
 }
 
-// After the first recv the socket receives on its own; of the datagrams that
-// arrive while no recv waits it keeps 64 and drops the rest. A datagram
-// socket pair hands what one end sends to the other before send() returns,
-// and each yield gives libuv a loop turn to read it all. Socket pairs are
-// POSIX only.
+// A datagram socket pair hands what one end sends to the other before send()
+// returns. Socket pairs are POSIX only.
 #ifndef _WIN32
+// A datagram wakes the pending recv, which resumes a few loop turns later; a
+// recv made before then fails, and the datagram stays the first one's. The
+// yield resumes after the loop has read the datagram, and before the first
+// recv, which the datagram queued after it.
+ZEST_CASE(recv_while_a_woken_one_has_not_resumed_fails) {
+    int fds[2] = {-1, -1};
+    ASSERT(::socketpair(AF_UNIX, SOCK_DGRAM, 0, fds) == 0);
+    auto receiver = udp::open(fds[0], loop);
+    ASSERT(receiver.has_value());
+    auto second = [&]() -> task<error> {
+        EXPECT(::send(fds[1], "first", 5, MSG_DONTWAIT) == 5);
+        co_await yield();
+        auto received = co_await receiver->recv();
+        co_return received.has_error() ? received.error() : error();
+    };
+
+    auto [first, busy] = run(receiver->recv(), second());
+    ::close(fds[1]);
+    ASSERT(first.has_value());
+    EXPECT(first->data == "first");
+    ASSERT(busy.has_value());
+    EXPECT(*busy == error::resource_busy_or_locked);
+}
+
+// After the first recv the socket receives on its own; of the datagrams that
+// arrive while no recv waits it keeps 64 and drops the rest. Each yield
+// gives libuv a loop turn to read it all.
 ZEST_CASE(datagrams_nobody_waits_for_are_kept_up_to_64) {
     int fds[2] = {-1, -1};
     ASSERT(::socketpair(AF_UNIX, SOCK_DGRAM, 0, fds) == 0);

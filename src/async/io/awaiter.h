@@ -54,7 +54,7 @@ struct uv_op : io_op {
 template <typename D, typename Req>
 struct request_op : uv_op<D> {
     Req req = {};
-    error result;
+    error status;
 
     request_op() noexcept {
         req.data = this;
@@ -62,21 +62,21 @@ struct request_op : uv_op<D> {
 
     /// Keeps the status of the submitting call; true if the request is on
     /// its way, false if libuv refused it.
-    bool submitted(int status) noexcept {
-        result = error(status);
-        return !result;
+    bool submitted(int code) noexcept {
+        status = error(code);
+        return !status;
     }
 
     void cancel() noexcept {}
 
-    static void on_done(Req* req, int status) {
+    static void on_done(Req* req, int code) {
         auto* op = static_cast<D*>(static_cast<request_op*>(req->data));
-        op->result = status_to_error(status);
+        op->status = status_to_error(code);
         op->complete();
     }
 
     error await_resume() noexcept {
-        return result;
+        return status;
     }
 };
 
@@ -87,9 +87,14 @@ struct request_op : uv_op<D> {
 /// over what arrives while a task waits. It holds one waiter, from the wait
 /// until the task resumes: a second wait meanwhile fails with
 /// resource_busy_or_locked. Cancelling the waiter only withdraws it.
-/// deliver() resumes it before returning; deliver_later() and abort() on a
-/// later loop turn, which is how stop() and destruction end a pending wait
-/// without resuming a task inside their caller.
+///
+/// deliver() resumes the waiter before it returns. deliver_later() and
+/// abort() resume it on a later loop turn instead, which is how stop() and
+/// destruction end a pending wait without resuming a task inside their
+/// caller. They go through the queue the loop completes io ops from, the one
+/// yield() uses, rather than the one of waits sync primitives granted: io
+/// ops complete one way, and an abort needs no more than to stay out of its
+/// caller.
 template <typename T>
 class waiter_slot {
 public:
@@ -97,12 +102,14 @@ public:
     using value_type = std::conditional_t<std::is_void_v<T>, error, result<T>>;
 
     struct awaiter : uv_op<awaiter> {
-        /// The slot it waits on, until it resumes, is withdrawn or aborted;
+        /// The slot it waits on, until it resumes or the slot lets it go;
         /// null when it never waited.
         waiter_slot* slot;
         /// What it resumes with: set up front by ready(), and by wait() to
         /// the error of a slot found taken; replaced by the slot.
         value_type value;
+        /// deliver_later() or abort() has queued its completion.
+        bool queued = false;
 
         awaiter(waiter_slot* slot, value_type value) noexcept :
             slot(slot), value(std::move(value)) {}
@@ -117,24 +124,24 @@ public:
         }
 
         void cancel() noexcept {
-            // Aborted: its queued completion ends it.
-            if(!slot) {
-                return;
-            }
-            const bool woken = slot->unlink();
-            slot = nullptr;
-            // Woken: its queued completion ends it.
-            if(!woken) {
+            leave();
+            // Otherwise its queued completion ends it.
+            if(!queued) {
                 this->complete();
             }
         }
 
         value_type await_resume() noexcept {
-            // Still linked when deliver_later() woke it.
-            if(slot) {
-                slot->unlink();
-            }
+            // Still in the slot when deliver_later() woke it.
+            leave();
             return std::move(value);
+        }
+
+        void leave() noexcept {
+            if(slot) {
+                slot->waiter = nullptr;
+                slot = nullptr;
+            }
         }
     };
 
@@ -149,41 +156,58 @@ public:
         return awaiter(nullptr, std::move(value));
     }
 
+    /// Whether a task waits, woken already or not.
+    bool taken() const noexcept {
+        return waiter != nullptr;
+    }
+
     /// Whether a task waits and nothing has woken it yet.
     bool waiting() const noexcept {
-        return waiter && !woken;
+        return waiter && !waiter->queued;
     }
 
     /// Wakes the waiter with `value` before it returns.
     void deliver(value_type value) {
         assert(waiting() && "deliver() needs a waiting task");
         auto* resumed = waiter;
-        unlink();
-        resumed->slot = nullptr;
+        resumed->leave();
         resumed->value = std::move(value);
         resumed->complete();
     }
 
-    /// Wakes the waiter with `value` on a later turn of `loop`.
-    void deliver_later(uv_loop_t& loop, value_type value) {
+    /// Wakes the waiter on a later turn of `loop`, with no error: what it
+    /// waits for is kept by the resource. The waiter holds the slot until it
+    /// resumes.
+    void deliver_later(uv_loop_t& loop)
+        requires std::is_void_v<T> {
         assert(waiting() && "deliver_later() needs a waiting task");
-        woken = true;
-        waiter->value = std::move(value);
+        waiter->value = {};
+        waiter->queued = true;
         complete_later(loop, *waiter);
     }
 
-    /// Ends the pending wait, if any, with `err` on a later turn of `loop`;
-    /// that includes a wait deliver_later() woke that has not resumed yet.
-    void abort(uv_loop_t& loop, error err) {
+    /// Ends the pending wait, if any, with operation_aborted on a later turn
+    /// of `loop`; that includes a wait deliver_later() woke that has not
+    /// resumed yet.
+    void abort(uv_loop_t& loop) {
         if(!waiter) {
             return;
         }
         auto* ended = waiter;
-        const bool queued = unlink();
-        ended->slot = nullptr;
-        ended->value = failure(err);
-        if(!queued) {
+        ended->leave();
+        ended->value = failure(error::operation_aborted);
+        if(!std::exchange(ended->queued, true)) {
             complete_later(loop, *ended);
+        }
+    }
+
+    /// Lets the pending wait, if any, go without ending it, for a loop being
+    /// destroyed, which completes nothing queued any more: the wait's cancel
+    /// ends it.
+    void detach() noexcept {
+        if(waiter) {
+            waiter->queued = false;
+            waiter->leave();
         }
     }
 
@@ -196,15 +220,7 @@ private:
         }
     }
 
-    /// Drops the waiter; returns whether a wake was already queued for it.
-    bool unlink() noexcept {
-        waiter = nullptr;
-        return std::exchange(woken, false);
-    }
-
     awaiter* waiter = nullptr;
-    /// Whether deliver_later() has queued the waiter's wake.
-    bool woken = false;
 };
 
 /// Base of a resource's state, `Derived`, which embeds its libuv handle as
@@ -213,31 +229,59 @@ private:
 /// done with the handle.
 template <typename Derived>
 struct owned_handle {
-    static unique_handle<Derived> make() {
-        unique_handle<Derived> self(new Derived());
+    static detail::unique_handle<Derived> make() {
+        detail::unique_handle<Derived> self(new Derived());
         self->handle.data = self.get();
         return self;
     }
 
+    /// After an init of `handle` failed: libuv may have listed the handle on
+    /// its loop and taken it off again, as uv_spawn on Unix and uv_tty_init
+    /// on macOS do on some failures. Such a handle must not be closed, so
+    /// destroy() frees it at once, as one the init never listed.
+    static void forget_if_unlisted(Derived& self) noexcept {
+        if(self.handle.loop == nullptr) {
+            return;
+        }
+
+        struct search {
+            const uv_handle_t* target;
+            bool found = false;
+        } walk{&self.handle};
+
+        ::uv_walk(
+            self.handle.loop,
+            [](uv_handle_t* handle, void* arg) {
+                auto& seen = *static_cast<search*>(arg);
+                seen.found = seen.found || handle == seen.target;
+            },
+            &walk);
+        if(!walk.found) {
+            self.handle.loop = nullptr;
+        }
+    }
+
     /// Ends a pending wait with operation_aborted, then closes the handle,
-    /// whose close callback frees Derived. A handle that was never
-    /// initialized goes at once, as does one the loop closed on its way out,
-    /// which cleared its `data` (event_loop::~event_loop). One that loop is
-    /// still closing, when a task the teardown resumed drops it, goes once
-    /// the loop has closed.
+    /// whose close callback frees Derived.
     static void destroy(Derived* self) noexcept {
         auto& handle = self->handle;
-        if(handle.loop == nullptr || handle.data == nullptr) {
-            delete self;
+        if(handle.loop != nullptr && handle.data != nullptr && !::uv_is_closing(&handle)) {
+            self->slot.abort(*handle.loop);
+            ::uv_close(&handle,
+                       [](uv_handle_t* closed) { delete static_cast<Derived*>(closed->data); });
             return;
         }
-        self->slot.abort(*handle.loop, error::operation_aborted);
-        if(::uv_is_closing(&handle)) {
+        // Never initialized, or taken off its loop by a failed init. Otherwise
+        // the loop is being destroyed and has closed the handle, clearing its
+        // `data` (event_loop::~event_loop), or closes it still, when a task
+        // that teardown resumed drops it; that loop completes nothing queued
+        // any more.
+        self->slot.detach();
+        if(handle.loop != nullptr && handle.data != nullptr) {
             free_when_closed(*handle.loop, [self] { delete self; });
-            return;
+        } else {
+            delete self;
         }
-        ::uv_close(&handle,
-                   [](uv_handle_t* closed) { delete static_cast<Derived*>(closed->data); });
     }
 };
 

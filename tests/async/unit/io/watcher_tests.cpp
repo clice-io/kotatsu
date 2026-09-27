@@ -84,6 +84,22 @@ ZEST_CASE(timer_keeps_a_fire_nobody_waited_for) {
     EXPECT(*result == 0U);
 }
 
+// The fire kept from before a restart is dropped: the next wait waits for the
+// new timeout, and the yield wins.
+ZEST_CASE(restarted_timer_drops_a_kept_fire) {
+    auto t = timer::create(loop);
+    ASSERT(!t.start(1ms));
+    auto waiter = [&]() -> task<std::size_t, error> {
+        co_await sleep(20ms);
+        EXPECT(!t.start(1h));
+        co_return co_await winner(t.wait(), yield()).or_fail();
+    };
+
+    auto [result] = run(waiter());
+    ASSERT(result.has_value());
+    EXPECT(*result == 1U);
+}
+
 // Some twenty fires go by while the sleep runs; the timer keeps one of them.
 ZEST_CASE(timer_keeps_one_of_the_fires_nobody_waited_for) {
     auto t = timer::create(loop);

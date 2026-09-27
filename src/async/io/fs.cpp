@@ -186,6 +186,15 @@ void close_descriptor(uv_fs_t& req) {
     run_sync(::uv_fs_close, descriptor_of(req));
 }
 
+void remove_temp_file(uv_fs_t& req) {
+    close_descriptor(req);
+    run_sync(::uv_fs_unlink, req.path);
+}
+
+void remove_temp_dir(uv_fs_t& req) {
+    run_sync(::uv_fs_rmdir, req.path);
+}
+
 dirent::type kind_of(uv_dirent_type_t type) {
     switch(type) {
         case UV_DIRENT_FILE: return dirent::type::file;
@@ -289,11 +298,11 @@ task<void, error> copyfile(std::string_view path,
 }
 
 task<std::string, error> mkdtemp(std::string_view tpl, event_loop& loop) {
-    return fs_call<path_of>(loop, ::uv_fs_mkdtemp, std::string(tpl));
+    return fs_call<path_of, remove_temp_dir>(loop, ::uv_fs_mkdtemp, std::string(tpl));
 }
 
 task<mkstemp_result, error> mkstemp(std::string_view tpl, event_loop& loop) {
-    return fs_call<temp_file_of, close_descriptor>(loop, ::uv_fs_mkstemp, std::string(tpl));
+    return fs_call<temp_file_of, remove_temp_file>(loop, ::uv_fs_mkstemp, std::string(tpl));
 }
 
 task<void, error> rmdir(std::string_view path, event_loop& loop) {

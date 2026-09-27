@@ -140,9 +140,9 @@ public:
 private:
     struct Self;
 
-    explicit process(unique_handle<Self> self) noexcept;
+    explicit process(detail::unique_handle<Self> self) noexcept;
 
-    unique_handle<Self> self;
+    detail::unique_handle<Self> self;
 };
 
 /// A launched child, with the parent's end of each pipe it asked for; the

@@ -3,6 +3,7 @@
 #include <optional>
 #include <utility>
 
+#include "async/harness/io.h"
 #include "async/harness/loop_fixture.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
@@ -30,6 +31,33 @@ ZEST_CASE(every_raised_signal_wakes_one_wait) {
 
     auto [result] = run(wait_twice());
     EXPECT(result.has_value());
+    EXPECT(!sig->stop());
+}
+
+// A signal raised while nobody waits is kept for the next wait(), also across
+// a start() on the signal watched already, and dropped by a start() that
+// switches to another. The loop reads a raised signal on its way to the
+// yield's turn.
+ZEST_CASE(switching_to_another_signal_drops_the_kept_fires) {
+    auto sig = signal::create(loop);
+    ASSERT(sig.has_value());
+    ASSERT(!sig->start(SIGUSR1));
+    auto waiter = [&]() -> task<std::pair<std::size_t, std::size_t>, error> {
+        ::raise(SIGUSR1);
+        co_await yield();
+        EXPECT(!sig->start(SIGUSR1));
+        auto kept = co_await test::winner(sig->wait(), yield()).or_fail();
+        ::raise(SIGUSR1);
+        co_await yield();
+        EXPECT(!sig->start(SIGUSR2));
+        auto dropped = co_await test::winner(sig->wait(), yield()).or_fail();
+        co_return std::pair{kept, dropped};
+    };
+
+    auto [result] = run(waiter());
+    ASSERT(result.has_value());
+    EXPECT(result->first == 0U);
+    EXPECT(result->second == 1U);
     EXPECT(!sig->stop());
 }
 

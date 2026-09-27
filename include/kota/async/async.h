@@ -19,4 +19,3 @@
 #include "kota/async/runtime/when.h"
 #include "kota/async/vocab/error.h"
 #include "kota/async/vocab/outcome.h"
-#include "kota/async/vocab/owned.h"

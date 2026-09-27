@@ -35,10 +35,12 @@ handle_type guess_handle(int fd);
 /// read before it are consumed, and from then on to every read. One read
 /// may be pending at a time; a second fails with
 /// error::resource_busy_or_locked. Cancelling a read only withdraws it: what
-/// arrives stays buffered for the next one. Destroying the stream ends a
-/// pending read with error::operation_aborted.
+/// arrives stays buffered for the next one.
 ///
 /// Writes may overlap: libuv sends them in the order they were made.
+///
+/// Destroying the stream ends a pending read, and the writes and the shutdown
+/// that have not gone out yet, with error::operation_aborted.
 ///
 /// A default-constructed or moved-from stream is inert: what can fail fails
 /// with error::invalid_argument.
@@ -78,10 +80,13 @@ public:
 
     /// Writes `data`, which must stay alive until the write completes. A
     /// cancelled write still goes out: libuv cannot take it back, and the
-    /// task ends once it has.
+    /// task ends once it has. A write goes out whole: empty data fails with
+    /// error::invalid_argument, and more than 4 GiB - 1 bytes with
+    /// error::value_too_large_for_defined_data_type.
     task<void, error> write(std::span<const char> data);
 
-    /// Writes what fits without waiting; returns how much that was.
+    /// Writes what fits without waiting; returns how much that was, 0 for
+    /// empty data.
     result<std::size_t> try_write(std::span<const char> data);
 
     /// Shuts the write side once the writes made before it have gone out:
@@ -110,9 +115,9 @@ public:
 protected:
     struct Self;
 
-    explicit stream(unique_handle<Self> self) noexcept;
+    explicit stream(detail::unique_handle<Self> self) noexcept;
 
-    unique_handle<Self> self;
+    detail::unique_handle<Self> self;
 
 private:
     template <typename Stream>
@@ -156,9 +161,9 @@ private:
 
     struct Self;
 
-    explicit acceptor(unique_handle<Self> self) noexcept;
+    explicit acceptor(detail::unique_handle<Self> self) noexcept;
 
-    unique_handle<Self> self;
+    detail::unique_handle<Self> self;
 };
 
 /// Pipe/socket wrapper (named pipe on Windows, Unix domain socket on Unix).
@@ -208,7 +213,7 @@ private:
     friend class kota::acceptor<pipe>;
     friend class process;
 
-    explicit pipe(unique_handle<Self> self) noexcept;
+    explicit pipe(detail::unique_handle<Self> self) noexcept;
 
     static pipe create(options opts, event_loop& loop);
 };
@@ -253,7 +258,7 @@ public:
 private:
     friend class kota::acceptor<tcp>;
 
-    explicit tcp(unique_handle<Self> self) noexcept;
+    explicit tcp(detail::unique_handle<Self> self) noexcept;
 
     static tcp create(event_loop& loop);
 };
@@ -301,7 +306,7 @@ public:
     static result<vterm_state> get_vterm_state();
 
 private:
-    explicit console(unique_handle<Self> self) noexcept;
+    explicit console(detail::unique_handle<Self> self) noexcept;
 };
 
 }  // namespace kota

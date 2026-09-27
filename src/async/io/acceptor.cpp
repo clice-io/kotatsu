@@ -24,7 +24,7 @@ struct acceptor<Stream>::Self : uv::owned_handle<Self> {
     std::size_t ready = 0;
 
     /// What ended listening; only libuv on Windows reports that.
-    error failed;
+    error ended;
 
     result<Stream> accept_one() {
         auto client = stream::Self::make();
@@ -42,9 +42,9 @@ struct acceptor<Stream>::Self : uv::owned_handle<Self> {
     static void on_connection(uv_stream_t* server, int status) {
         auto* self = static_cast<Self*>(server->data);
         if(status < 0) {
-            self->failed = uv::status_to_error(status);
+            self->ended = uv::status_to_error(status);
             if(self->slot.waiting()) {
-                self->slot.deliver(outcome_error(self->failed));
+                self->slot.deliver(outcome_error(self->ended));
             }
         } else if(self->slot.waiting()) {
             self->slot.deliver(self->accept_one());
@@ -67,7 +67,7 @@ template <typename Stream>
 acceptor<Stream>::~acceptor() = default;
 
 template <typename Stream>
-acceptor<Stream>::acceptor(unique_handle<Self> self) noexcept : self(std::move(self)) {}
+acceptor<Stream>::acceptor(detail::unique_handle<Self> self) noexcept : self(std::move(self)) {}
 
 template <typename Stream>
 task<Stream, error> acceptor<Stream>::accept() {
@@ -80,8 +80,8 @@ task<Stream, error> acceptor<Stream>::accept() {
         co_return self->accept_one();
     }
 
-    if(self->failed) {
-        co_await fail(self->failed);
+    if(self->ended) {
+        co_await fail(self->ended);
     }
 
     co_return co_await self->slot.wait();
@@ -93,7 +93,7 @@ error acceptor<Stream>::stop() {
         return error::invalid_argument;
     }
 
-    self->slot.abort(*self->handle.loop, error::operation_aborted);
+    self->slot.abort(*self->handle.loop);
     return {};
 }
 
@@ -135,7 +135,7 @@ unsigned int pipe_flags(const pipe::options& opts) {
 
 }  // namespace
 
-pipe::pipe(unique_handle<Self> self) noexcept : stream(std::move(self)) {}
+pipe::pipe(detail::unique_handle<Self> self) noexcept : stream(std::move(self)) {}
 
 pipe pipe::create(options opts, event_loop& loop) {
     auto self = Self::make();
@@ -192,7 +192,7 @@ result<pipe::acceptor> pipe::listen(std::string_view name, options opts, event_l
     return acceptor(std::move(self));
 }
 
-tcp::tcp(unique_handle<Self> self) noexcept : stream(std::move(self)) {}
+tcp::tcp(detail::unique_handle<Self> self) noexcept : stream(std::move(self)) {}
 
 tcp tcp::create(event_loop& loop) {
     auto self = Self::make();

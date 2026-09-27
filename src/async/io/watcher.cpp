@@ -36,6 +36,15 @@ struct watcher::Self : uv::owned_handle<Self> {
         static_cast<Self*>(handle->data)->fire();
     }
 
+    /// A new watcher's state, with the handle `init` sets up on `loop`; for
+    /// the handles whose init cannot fail.
+    template <typename Handle>
+    static detail::unique_handle<Self> create(event_loop& loop, int (*init)(uv_loop_t*, Handle*)) {
+        auto self = make();
+        init(loop.native_handle(), reinterpret_cast<Handle*>(&self->handle));
+        return self;
+    }
+
     static void on_signal(uv_signal_t* handle, int) {
         on_fire(handle);
     }
@@ -43,7 +52,7 @@ struct watcher::Self : uv::owned_handle<Self> {
 
 watcher::watcher() noexcept = default;
 
-watcher::watcher(unique_handle<Self> self) noexcept : self(std::move(self)) {}
+watcher::watcher(detail::unique_handle<Self> self) noexcept : self(std::move(self)) {}
 
 watcher::watcher(watcher&& other) noexcept = default;
 
@@ -64,8 +73,21 @@ error watcher::stop() {
         case UV_CHECK: ::uv_check_stop(&self->check); break;
         default: std::unreachable();
     }
-    self->slot.abort(*self->handle.loop, error::operation_aborted);
+    self->slot.abort(*self->handle.loop);
     return {};
+}
+
+error watcher::start() {
+    if(!self) {
+        return error::invalid_argument;
+    }
+
+    switch(self->handle.type) {
+        case UV_IDLE: return error(::uv_idle_start(&self->idle, Self::on_fire));
+        case UV_PREPARE: return error(::uv_prepare_start(&self->prepare, Self::on_fire));
+        case UV_CHECK: return error(::uv_check_start(&self->check, Self::on_fire));
+        default: std::unreachable();
+    }
 }
 
 task<void, error> watcher::wait() {
@@ -84,9 +106,7 @@ task<void, error> watcher::wait() {
 }
 
 timer timer::create(event_loop& loop) {
-    auto self = Self::make();
-    ::uv_timer_init(loop.native_handle(), &self->timer);
-    return timer(std::move(self));
+    return timer(Self::create(loop, ::uv_timer_init));
 }
 
 error timer::start(std::chrono::milliseconds timeout, std::chrono::milliseconds repeat) {
@@ -95,10 +115,14 @@ error timer::start(std::chrono::milliseconds timeout, std::chrono::milliseconds 
     }
 
     assert(timeout.count() >= 0 && repeat.count() >= 0 && "timer times must not be negative");
-    return error(::uv_timer_start(&self->timer,
-                                  Self::on_fire,
-                                  static_cast<std::uint64_t>(timeout.count()),
-                                  static_cast<std::uint64_t>(repeat.count())));
+    if(auto err = error(::uv_timer_start(&self->timer,
+                                         Self::on_fire,
+                                         static_cast<std::uint64_t>(timeout.count()),
+                                         static_cast<std::uint64_t>(repeat.count())))) {
+        return err;
+    }
+    self->missed = 0;
+    return {};
 }
 
 result<signal> signal::create(event_loop& loop) {
@@ -113,46 +137,28 @@ error signal::start(int signum) {
     if(!self) {
         return error::invalid_argument;
     }
-    return error(::uv_signal_start(&self->signal, Self::on_signal, signum));
+
+    // Stopped, it watches no signal (0).
+    const bool switching = self->signal.signum != signum;
+    if(auto err = error(::uv_signal_start(&self->signal, Self::on_signal, signum))) {
+        return err;
+    }
+    if(switching) {
+        self->missed = 0;
+    }
+    return {};
 }
 
 idle idle::create(event_loop& loop) {
-    auto self = Self::make();
-    ::uv_idle_init(loop.native_handle(), &self->idle);
-    return idle(std::move(self));
-}
-
-error idle::start() {
-    if(!self) {
-        return error::invalid_argument;
-    }
-    return error(::uv_idle_start(&self->idle, Self::on_fire));
+    return idle(Self::create(loop, ::uv_idle_init));
 }
 
 prepare prepare::create(event_loop& loop) {
-    auto self = Self::make();
-    ::uv_prepare_init(loop.native_handle(), &self->prepare);
-    return prepare(std::move(self));
-}
-
-error prepare::start() {
-    if(!self) {
-        return error::invalid_argument;
-    }
-    return error(::uv_prepare_start(&self->prepare, Self::on_fire));
+    return prepare(Self::create(loop, ::uv_prepare_init));
 }
 
 check check::create(event_loop& loop) {
-    auto self = Self::make();
-    ::uv_check_init(loop.native_handle(), &self->check);
-    return check(std::move(self));
-}
-
-error check::start() {
-    if(!self) {
-        return error::invalid_argument;
-    }
-    return error(::uv_check_start(&self->check, Self::on_fire));
+    return check(Self::create(loop, ::uv_check_init));
 }
 
 task<> sleep(std::chrono::milliseconds timeout, event_loop& loop) {

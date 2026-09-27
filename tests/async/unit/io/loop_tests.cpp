@@ -297,18 +297,25 @@ ZEST_CASE(on_destroy_callbacks_run_when_the_loop_goes) {
     EXPECT(called == 11);
 }
 
-// The loop closes the handles still open when it goes; a timer that outlives
-// it is freed by its own destructor afterwards. Only the sanitizer builds see
-// a use after free or a leak there; the check pins that the loop went first.
-ZEST_CASE(handle_outliving_its_loop_is_freed_after_it) {
-    bool loop_gone = false;
+// The loop closes the handles still open when it goes, and a wait pending on
+// one stays pending: nothing that loop queues runs any more. The timer is
+// freed by its own destructor afterwards, which lets the wait go, and the
+// wait's cancel ends it. The sanitizer builds catch a use of the freed timer
+// or a leak there.
+ZEST_CASE(wait_on_a_handle_outliving_its_loop_ends_when_cancelled) {
     std::optional<event_loop> own(std::in_place);
-    own->on_destroy([&] { loop_gone = true; });
     auto t = timer::create(*own);
-    EXPECT(!t.start(std::chrono::hours(1)));
+    auto waiting = t.wait();
 
+    own->schedule(waiting);
+    // The timer never started, so nothing keeps this loop running.
+    EXPECT(own->run() == 0);
+    ASSERT(!waiting.done());
     own.reset();
-    EXPECT(loop_gone);
+    t = timer();
+    EXPECT(!waiting.done());
+    waiting.cancel();
+    EXPECT(waiting.is_cancelled());
 }
 
 // The loop drops what relays sent but it never delivered.

@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <cassert>
 #include <limits>
 #include <utility>
 
@@ -96,7 +95,7 @@ stream& stream::operator=(stream&& other) noexcept = default;
 
 stream::~stream() = default;
 
-stream::stream(unique_handle<Self> self) noexcept : self(std::move(self)) {}
+stream::stream(detail::unique_handle<Self> self) noexcept : self(std::move(self)) {}
 
 handle_type guess_handle(int fd) {
     switch(::uv_guess_handle(fd)) {
@@ -171,7 +170,7 @@ error stream::stop() {
     }
 
     self->stop_reading();
-    self->slot.abort(*self->handle.loop, error::operation_aborted);
+    self->slot.abort(*self->handle.loop);
     return {};
 }
 

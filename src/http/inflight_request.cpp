@@ -405,14 +405,14 @@ void inflight_request::clear_runtime_binding() noexcept {
     [[maybe_unused]] auto err = curl::setopt(easy.get(), CURLOPT_PRIVATE, nullptr);
 }
 
-outcome<response, error, cancellation> inflight_request::finish() noexcept {
+outcome<response, error> inflight_request::finish() noexcept {
     if(result.kind != error_kind::curl || !curl::ok(result.curl_code)) {
-        return outcome<response, error, cancellation>(outcome_error(std::move(result)));
+        return outcome<response, error>(outcome_error(std::move(result)));
     }
 
     long status = 0;
     if(auto err = curl::getinfo(easy.get(), CURLINFO_RESPONSE_CODE, &status); !curl::ok(err)) {
-        return outcome<response, error, cancellation>(outcome_error(error::from_curl(err)));
+        return outcome<response, error>(outcome_error(error::from_curl(err)));
     }
     out.status = status;
 
@@ -425,7 +425,7 @@ outcome<response, error, cancellation> inflight_request::finish() noexcept {
     }
 
     easy.reset();
-    return outcome<response, error, cancellation>(std::move(out));
+    return outcome<response, error>(std::move(out));
 }
 
 }  // namespace detail

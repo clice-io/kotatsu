@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 #include <sys/stat.h>
+#include <thread>
 #include <utility>
 
 #include "async/harness/loop_fixture.h"
@@ -22,6 +23,20 @@ namespace {
 
 // Files are set up and read back with test::write_file and test::read_file,
 // not kota::async.
+
+/// Waits, blocking this thread, until `dir` holds an entry; false if none
+/// came within ten seconds. It polls, as nothing signals that a pool thread
+/// has made one.
+bool wait_for_an_entry(const std::filesystem::path& dir) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while(std::filesystem::is_empty(dir)) {
+        if(std::chrono::steady_clock::now() > deadline) {
+            return false;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return true;
+}
 
 ZEST_SUITE(async_io_fs, test::LoopFixture) {
 
@@ -364,6 +379,50 @@ ZEST_CASE(open_cancelled_too_late_closes_what_it_opened) {
     EXPECT(reason == ENXIO);
 }
 #endif
+
+// mkstemp makes its file on a pool thread, while the loop thread waits for
+// it without letting the loop turn: the race's cancel reaches mkstemp after
+// it took effect. It closes the file it made and removes it.
+ZEST_CASE(mkstemp_cancelled_too_late_removes_what_it_made) {
+    test::TempDir dir;
+    bool made = false;
+    auto wait_until_made = [&]() -> task<> {
+        made = wait_for_an_entry(dir.path);
+        co_return;
+    };
+    auto race = [&]() -> task<std::size_t, error> {
+        auto first = co_await or_fail(
+            co_await when_any(fs::mkstemp(dir.file("file-XXXXXX")), wait_until_made()));
+        co_return first.index();
+    };
+
+    auto [raced] = run(race());
+    ASSERT(raced.has_value());
+    EXPECT(*raced == 1U);
+    EXPECT(made);
+    EXPECT(std::filesystem::is_empty(dir.path));
+}
+
+// As for mkstemp: mkdtemp removes the directory it made.
+ZEST_CASE(mkdtemp_cancelled_too_late_removes_what_it_made) {
+    test::TempDir dir;
+    bool made = false;
+    auto wait_until_made = [&]() -> task<> {
+        made = wait_for_an_entry(dir.path);
+        co_return;
+    };
+    auto race = [&]() -> task<std::size_t, error> {
+        auto first = co_await or_fail(
+            co_await when_any(fs::mkdtemp(dir.file("dir-XXXXXX")), wait_until_made()));
+        co_return first.index();
+    };
+
+    auto [raced] = run(race());
+    ASSERT(raced.has_value());
+    EXPECT(*raced == 1U);
+    EXPECT(made);
+    EXPECT(std::filesystem::is_empty(dir.path));
+}
 
 #ifndef _WIN32
 

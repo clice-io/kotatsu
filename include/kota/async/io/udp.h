@@ -19,12 +19,14 @@ namespace kota {
 /// recv() starts receiving; from then on the socket receives until stop().
 /// Datagrams that arrive while no recv() waits queue up for the next ones;
 /// past 64 of them the newest are dropped, as the kernel drops them once its
-/// buffer is full. One recv() may be pending at a time; a second fails with
-/// error::resource_busy_or_locked. Cancelling a recv() only withdraws it.
-/// Destroying the socket ends a pending recv() with
-/// error::operation_aborted.
+/// buffer is full. One recv() may be pending at a time, until the datagram
+/// that woke it is taken; another fails with error::resource_busy_or_locked.
+/// Cancelling a recv() only withdraws it.
 ///
 /// Sends may overlap: libuv sends them in the order they were made.
+///
+/// Destroying the socket ends a pending recv(), and the sends that have not
+/// gone out yet, with error::operation_aborted.
 ///
 /// A default-constructed or moved-from socket is inert: what can fail fails
 /// with error::invalid_argument.
@@ -173,9 +175,9 @@ public:
 private:
     struct Self;
 
-    explicit udp(unique_handle<Self> self) noexcept;
+    explicit udp(detail::unique_handle<Self> self) noexcept;
 
-    unique_handle<Self> self;
+    detail::unique_handle<Self> self;
 };
 
 }  // namespace kota

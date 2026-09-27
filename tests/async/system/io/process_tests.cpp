@@ -1,3 +1,4 @@
+#include <chrono>
 #include <csignal>
 #include <cstddef>
 #include <fcntl.h>
@@ -156,6 +157,28 @@ ZEST_CASE(environment_and_directory_reach_the_child) {
     EXPECT(test::exit_status_of(status) == 0);
     EXPECT(trim_newlines(test::read_file(dir.path / "marker.txt")) == "42");
 }
+
+#ifndef _WIN32
+// libuv on Unix takes the handle of a spawn that fails before it forks off
+// the loop's list again, so the process must free it without closing it: a
+// second unlink would write through the neighbour it had then, the stdin
+// pipe made just before, which is gone by then. Handles made afterwards must
+// still work; the sanitizer builds catch the write into the freed pipe.
+ZEST_CASE(spawn_with_a_bad_descriptor_fails) {
+    auto opts = shell("exit 0");
+    opts.streams = {process::stdio::pipe(true, false),
+                    process::stdio::from_fd(-1),
+                    process::stdio::ignore()};
+
+    auto spawned = process::spawn(opts, loop);
+    ASSERT(spawned.has_error());
+    EXPECT(spawned.error() == error::invalid_argument);
+    auto t = timer::create(loop);
+    ASSERT(!t.start(std::chrono::milliseconds(1)));
+    auto [waited] = run(t.wait());
+    EXPECT(waited.has_value());
+}
+#endif
 
 ZEST_CASE(spawn_in_a_missing_directory_fails) {
     test::TempDir dir;

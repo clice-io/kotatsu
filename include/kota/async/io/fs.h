@@ -143,9 +143,11 @@ task<void, error> copyfile(std::string_view path,
                            event_loop& loop = event_loop::current());
 
 /// Create a unique temporary directory from a template (must end with "XXXXXX").
+/// Cancelled too late to stop it, it removes the directory it made.
 task<std::string, error> mkdtemp(std::string_view tpl, event_loop& loop = event_loop::current());
 
 /// Create a unique temporary file from a template (must end with "XXXXXX").
+/// Cancelled too late to stop it, it closes and removes the file it made.
 task<mkstemp_result, error> mkstemp(std::string_view tpl, event_loop& loop = event_loop::current());
 
 /// Remove an empty directory.

@@ -47,7 +47,7 @@ std::vector<char*> c_strings(const std::vector<std::string>& from) {
 
 process::process() noexcept = default;
 
-process::process(unique_handle<Self> self) noexcept : self(std::move(self)) {}
+process::process(detail::unique_handle<Self> self) noexcept : self(std::move(self)) {}
 
 process::~process() = default;
 
@@ -144,6 +144,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
     {
         std::lock_guard lock(spawn_mutex);
         if(auto err = error(::uv_spawn(loop.native_handle(), &proc.self->process, &uv_opts))) {
+            Self::forget_if_unlisted(*proc.self);
             return outcome_error(err);
         }
     }

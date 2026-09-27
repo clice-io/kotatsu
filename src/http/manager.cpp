@@ -245,14 +245,20 @@ manager::socket_context* manager::ensure_socket(curl_socket_t socket) noexcept {
     context->socket = socket;
     context->owner = this;
 
+    context->handle.data = context;
     if(::uv_poll_init_socket(loop().native_handle(),
                              &context->handle,
                              static_cast<uv_os_sock_t>(socket)) != 0) {
-        delete context;
+        // libuv on Windows can fail once it has listed the handle on the
+        // loop, which then has to close it.
+        if(context->handle.loop != nullptr) {
+            ::uv_close(reinterpret_cast<uv_handle_t*>(&context->handle), on_uv_socket_close);
+        } else {
+            delete context;
+        }
         return nullptr;
     }
 
-    context->handle.data = context;
     sockets.emplace(socket, context);
     return context;
 }

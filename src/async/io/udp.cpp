@@ -59,11 +59,14 @@ struct udp::Self : uv::owned_handle<Self> {
                 return outcome_error(uv::status_to_error(nread));
             }
             auto sender = uv::endpoint_of(*addr);
+            recv_flags received_flags{
+                .partial = (flags & UV_UDP_PARTIAL) != 0,
+                .mmsg_chunk = (flags & UV_UDP_MMSG_CHUNK) != 0,
+            };
             return recv_result{
                 .data = std::string(buf->base, static_cast<std::size_t>(nread)),
                 .sender = sender ? std::move(*sender) : endpoint{},
-                .flags = {.partial = (flags & UV_UDP_PARTIAL) != 0,
-                                                                 .mmsg_chunk = (flags & UV_UDP_MMSG_CHUNK) != 0},
+                .flags = received_flags,
             };
         }();
 
@@ -77,7 +80,7 @@ struct udp::Self : uv::owned_handle<Self> {
         // the pending recv() resumes on a later turn, and the queue does not
         // make room by stopping either.
         if(self->slot.waiting()) {
-            self->slot.deliver_later(*handle->loop, {});
+            self->slot.deliver_later(*handle->loop);
         }
     }
 };
@@ -108,7 +111,7 @@ struct send_op : uv::request_op<send_op, uv_udp_send_t> {
 
 udp::udp() noexcept = default;
 
-udp::udp(unique_handle<Self> self) noexcept : self(std::move(self)) {}
+udp::udp(detail::unique_handle<Self> self) noexcept : self(std::move(self)) {}
 
 udp::~udp() = default;
 
@@ -231,6 +234,11 @@ task<udp::recv_result, error> udp::recv() {
         co_await fail(error::invalid_argument);
     }
 
+    // The recv a datagram woke holds the slot until it resumes and takes it.
+    if(self->slot.taken()) {
+        co_await fail(error::resource_busy_or_locked);
+    }
+
     if(self->received.empty()) {
         if(!self->receiving) {
             self->buffer.resize(64 * 1024);
@@ -256,7 +264,7 @@ error udp::stop() {
 
     ::uv_udp_recv_stop(&self->udp);
     self->receiving = false;
-    self->slot.abort(*self->handle.loop, error::operation_aborted);
+    self->slot.abort(*self->handle.loop);
     return {};
 }
 

@@ -4,7 +4,7 @@
 
 namespace kota {
 
-console::console(unique_handle<Self> self) noexcept : stream(std::move(self)) {}
+console::console(detail::unique_handle<Self> self) noexcept : stream(std::move(self)) {}
 
 result<console> console::open(int fd, event_loop& loop) {
     return open(fd, options{}, loop);
@@ -13,6 +13,7 @@ result<console> console::open(int fd, event_loop& loop) {
 result<console> console::open(int fd, options opts, event_loop& loop) {
     auto self = Self::make();
     if(auto err = error(::uv_tty_init(loop.native_handle(), &self->tty, fd, opts.readable))) {
+        Self::forget_if_unlisted(*self);
         return outcome_error(err);
     }
     return console(std::move(self));

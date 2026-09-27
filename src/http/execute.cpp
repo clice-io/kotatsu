@@ -49,8 +49,6 @@ struct inflight_request_state : std::enable_shared_from_this<inflight_request_st
 };
 
 struct request_awaiter : uv::uv_op<request_awaiter> {
-    using result_type = outcome<response, error, cancellation>;
-
     inflight_request_ref state;
 
     request_awaiter(manager& manager, inflight_request_ref request_state) :
@@ -65,10 +63,10 @@ struct request_awaiter : uv::uv_op<request_awaiter> {
         state->mgr = nullptr;
     }
 
-    /// Hands the request to curl; false if it has ended already, which it
-    /// may have while curl was armed. It becomes the request's awaiter only
-    /// then, as a request that ends meanwhile, when arming it finishes others
-    /// whose tasks start more, must not resume this op before it is attached.
+    /// Hands the request to curl; false if the request has ended already.
+    /// Arming curl's timeout can end it: arming finishes other requests,
+    /// whose tasks may start more. So the op becomes the request's awaiter
+    /// only after that, as nothing may resume it before it is attached.
     bool start() noexcept {
         if(!state->request.bind_runtime(inflight_request_opaque(state))) {
             if(state->request.result.kind == error_kind::curl &&
@@ -101,7 +99,7 @@ struct request_awaiter : uv::uv_op<request_awaiter> {
         complete();
     }
 
-    result_type await_resume() noexcept {
+    outcome<response, error> await_resume() noexcept {
         state->detach_from_multi();
         return state->request.finish();
     }
@@ -171,11 +169,6 @@ task<response, error> execute_request(http::request request, event_loop& loop) {
     }
 
     auto result = co_await request_awaiter(manager->get(), std::move(state));
-
-    if(result.is_cancelled()) {
-        co_await cancel();
-    }
-
     if(result.has_error()) {
         co_await fail(std::move(result).error());
     }
