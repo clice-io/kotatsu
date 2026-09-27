@@ -42,11 +42,6 @@ ninja = "*"
 ccache = "*"
 openssl = "*"
 
-[feature.build.pypi-dependencies]
-pygls = ">=2.0"
-pytest = ">=8.0"
-pytest-asyncio = ">=0.24"
-
 [feature.linux-gcc.target.linux-64.dependencies]
 sysroot_linux-64 = "==2.17"
 gcc = "==14.2.0"
