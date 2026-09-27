@@ -45,6 +45,26 @@ struct Ready {
     }
 };
 
+/// An awaiter that suspends until a later turn of the loop, then gives
+/// `value`.
+struct Yielded {
+    yield_awaiter turn;
+    int value = 0;
+
+    bool await_ready() const noexcept {
+        return false;
+    }
+
+    template <typename Promise>
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> waiting) noexcept {
+        return turn.await_suspend(waiting);
+    }
+
+    int await_resume() const noexcept {
+        return value;
+    }
+};
+
 ZEST_SUITE(async_runtime_when_all, test::LoopFixture) {
 
 ZEST_CASE(result_type_follows_the_children_channels) {
@@ -145,6 +165,17 @@ ZEST_CASE(accepts_awaiters_that_are_not_tasks) {
 ZEST_CASE(accepts_awaiters_that_return_values) {
     auto combined = []() -> task<std::tuple<int, int>> {
         co_return co_await when_all(Ready{.value = 1}, Ready{.value = 2});
+    };
+
+    auto [result] = run(combined());
+    ASSERT(result.has_value());
+    EXPECT(*result == std::tuple{1, 2});
+}
+
+ZEST_CASE(accepts_awaiters_that_suspend_and_return_values) {
+    auto combined = [&]() -> task<std::tuple<int, int>> {
+        co_return co_await when_all(Yielded{.turn = yield(loop), .value = 1},
+                                    Yielded{.turn = yield(loop), .value = 2});
     };
 
     auto [result] = run(combined());

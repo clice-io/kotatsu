@@ -377,6 +377,9 @@ ZEST_CASE(open_cancelled_too_late_closes_what_it_opened) {
     const int reason = errno;
     EXPECT(again == -1);
     EXPECT(reason == ENXIO);
+    if(again >= 0) {
+        ::close(again);
+    }
 }
 #endif
 

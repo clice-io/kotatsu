@@ -288,7 +288,7 @@ struct http_loop_fixture : test::LoopFixture {
 /// running meanwhile.
 template <typename Task>
 auto run_task(http_loop_fixture& fixture, Task& task) {
-    auto [result] = fixture.run(std::move(task));
+    auto [result] = fixture.run(task);
     return result;
 }
 
@@ -328,11 +328,9 @@ task<void, http::error>
                                 std::optional<task<http::response, http::error>>& sibling) {
     auto first = co_await api.get(std::move(first_url)).send().or_fail();
     EXPECT(first.text() == "/first");
-    // A task must not be destroyed while it runs: end it first.
-    sibling->cancel();
+    // The sibling was scheduled and still runs: dropping it cancels it, and
+    // the loop frees it once it has ended.
     sibling.reset();
-    // The test server's listener keeps the loop running.
-    event_loop::current().stop();
 }
 
 task<std::string, http::error> recreate_manager_between_requests(http::bound_client api,
@@ -967,12 +965,9 @@ ZEST_CASE(destroying_a_sibling_task_after_http_completion_keeps_manager_healthy)
         client.on(loop).get(server.url("/second")).send());
     auto flow = destroy_sibling_after_first(client.on(loop), server.url("/first"), sibling);
 
-    loop.schedule(flow);
     loop.schedule(*sibling);
-    loop.run();
-
-    auto flow_result = flow.result();
-    ASSERT(flow_result);
+    auto [flow_result] = run(std::move(flow));
+    ASSERT(flow_result.has_value());
     EXPECT(!sibling);
     EXPECT(http::manager::for_loop(loop).pending_requests() == std::size_t(0));
 

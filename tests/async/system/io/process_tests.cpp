@@ -7,6 +7,7 @@
 #include <string_view>
 #include <utility>
 
+#include "async/harness/io.h"
 #include "async/harness/loop_fixture.h"
 #include "async/harness/os.h"
 #include "kota/zest/macro.h"
@@ -281,7 +282,7 @@ ZEST_CASE(cancelled_wait_leaves_the_child_running) {
 }
 
 // The child is not killed and runs on until its stdin closes.
-ZEST_CASE(destroying_a_process_ends_its_wait) {
+ZEST_CASE(wait_ended_by_destroying_its_process_fails) {
     auto spawned = process::spawn(test::stdin_reader(), loop);
     ASSERT(spawned.has_value());
     std::optional<process> proc = std::move(spawned->proc);
@@ -294,6 +295,23 @@ ZEST_CASE(destroying_a_process_ends_its_wait) {
     auto [waited, destroyed] = run(proc->wait(), destroy());
     ASSERT(waited.has_error());
     EXPECT(waited.error() == error::operation_aborted);
+}
+
+// The destroyed process's wait is cancelled after its destruction has ended
+// it, before the loop has resumed it: the cancel leaves that ending alone.
+ZEST_CASE(wait_cancelled_after_its_process_is_destroyed_ends) {
+    auto spawned = process::spawn(test::stdin_reader(), loop);
+    ASSERT(spawned.has_value());
+    std::optional<process> proc = std::move(spawned->proc);
+    auto destroy = [&]() -> task<> {
+        proc.reset();
+        spawned->stdin_pipe = pipe{};
+        co_return;
+    };
+
+    auto [result] = run(test::winner(proc->wait(), destroy()));
+    ASSERT(result.has_value());
+    EXPECT(*result == 1U);
 }
 
 ZEST_CASE(inert_process_fails) {

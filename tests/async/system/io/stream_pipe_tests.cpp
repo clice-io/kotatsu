@@ -517,7 +517,7 @@ ZEST_CASE(cancelled_reads_leave_the_pipe_usable) {
     EXPECT(*received == "after");
 }
 
-ZEST_CASE(destroying_a_stream_ends_its_read) {
+ZEST_CASE(read_ended_by_destroying_its_stream_fails) {
     auto ends = pipe_ends(loop);
     ASSERT(ends.has_value());
     std::optional<pipe> reader = std::move(ends->reader);
@@ -529,6 +529,22 @@ ZEST_CASE(destroying_a_stream_ends_its_read) {
     auto [read, destroyed] = run(reader->read(), destroy());
     ASSERT(read.has_error());
     EXPECT(read.error() == error::operation_aborted);
+}
+
+// The destroyed stream's read is cancelled after its destruction has ended
+// it, before the loop has resumed it: the cancel leaves that ending alone.
+ZEST_CASE(read_cancelled_after_its_stream_is_destroyed_ends) {
+    auto ends = pipe_ends(loop);
+    ASSERT(ends.has_value());
+    std::optional<pipe> reader = std::move(ends->reader);
+    auto destroy = [&]() -> task<> {
+        reader.reset();
+        co_return;
+    };
+
+    auto [result] = run(test::winner(reader->read(), destroy()));
+    ASSERT(result.has_value());
+    EXPECT(*result == 1U);
 }
 
 ZEST_CASE(open_of_a_bad_descriptor_fails) {
@@ -764,7 +780,7 @@ ZEST_CASE(acceptor_stop_aborts_an_accept) {
     EXPECT(connected.has_value());
 }
 
-ZEST_CASE(destroying_an_acceptor_ends_its_accept) {
+ZEST_CASE(accept_ended_by_destroying_its_acceptor_fails) {
     test::TempDir dir;
     auto listened = pipe::listen(pipe_name(dir), loop);
     ASSERT(listened.has_value());
@@ -777,6 +793,22 @@ ZEST_CASE(destroying_an_acceptor_ends_its_accept) {
     auto [accepted, destroyed] = run(listener->accept(), destroy());
     ASSERT(accepted.has_error());
     EXPECT(accepted.error() == error::operation_aborted);
+}
+
+// As for a read: the cancel leaves the ending the destruction queued alone.
+ZEST_CASE(accept_cancelled_after_its_acceptor_is_destroyed_ends) {
+    test::TempDir dir;
+    auto listened = pipe::listen(pipe_name(dir), loop);
+    ASSERT(listened.has_value());
+    std::optional<pipe::acceptor> listener = std::move(*listened);
+    auto destroy = [&]() -> task<> {
+        listener.reset();
+        co_return;
+    };
+
+    auto [result] = run(test::winner(listener->accept(), destroy()));
+    ASSERT(result.has_value());
+    EXPECT(*result == 1U);
 }
 
 };  // ZEST_SUITE(async_io_stream_pipe)

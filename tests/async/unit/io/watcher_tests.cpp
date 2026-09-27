@@ -292,7 +292,7 @@ ZEST_CASE(stop_ends_a_pending_wait) {
     EXPECT(again.has_value());
 }
 
-ZEST_CASE(destroying_a_watcher_ends_its_wait) {
+ZEST_CASE(wait_ended_by_destroying_its_watcher_fails) {
     std::optional<timer> t = timer::create(loop);
     auto destroy = [&]() -> task<> {
         t.reset();

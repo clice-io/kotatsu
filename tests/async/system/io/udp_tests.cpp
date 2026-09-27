@@ -41,6 +41,15 @@ result<Bound> bind_loopback(event_loop& loop, udp::create_options options = {}) 
     return Bound{.socket = std::move(created), .port = name->port};
 }
 
+#ifdef __linux__
+/// A loopback port that was bound and released again, so nothing listens on
+/// it; 0 if none could be bound.
+int closed_port(event_loop& loop) {
+    auto closed = bind_loopback(loop);
+    return closed ? closed->port : 0;
+}
+#endif
+
 ZEST_SUITE(async_io_udp, test::LoopFixture) {
 
 ZEST_CASE(datagram_arrives_with_its_sender) {
@@ -393,7 +402,7 @@ ZEST_CASE(stop_ends_a_pending_recv) {
     EXPECT(*received == "after");
 }
 
-ZEST_CASE(destroying_a_socket_ends_its_recv) {
+ZEST_CASE(recv_ended_by_destroying_its_socket_fails) {
     auto bound = bind_loopback(loop);
     ASSERT(bound.has_value());
     std::optional<udp> receiver = std::move(bound->socket);
@@ -407,8 +416,24 @@ ZEST_CASE(destroying_a_socket_ends_its_recv) {
     EXPECT(received.error() == error::operation_aborted);
 }
 
-// A datagram socket pair hands what one end sends to the other before send()
-// returns. Socket pairs are POSIX only.
+// The destroyed socket's recv is cancelled after its destruction has ended
+// it, before the loop has resumed it: the cancel leaves that ending alone.
+ZEST_CASE(recv_cancelled_after_its_socket_is_destroyed_ends) {
+    auto bound = bind_loopback(loop);
+    ASSERT(bound.has_value());
+    std::optional<udp> receiver = std::move(bound->socket);
+    auto destroy = [&]() -> task<> {
+        receiver.reset();
+        co_return;
+    };
+
+    auto [result] = run(test::winner(receiver->recv(), destroy()));
+    ASSERT(result.has_value());
+    EXPECT(*result == 1U);
+}
+
+// Socket pairs are POSIX only. A datagram socket pair hands what one end
+// sends to the other before send() returns.
 #ifndef _WIN32
 // A datagram wakes the pending recv, which resumes a few loop turns later; a
 // recv made before then fails, and the datagram stays the first one's. The
@@ -436,7 +461,9 @@ ZEST_CASE(recv_while_a_woken_one_has_not_resumed_fails) {
 
 // After the first recv the socket receives on its own; of the datagrams that
 // arrive while no recv waits it keeps 64 and drops the rest. Each yield
-// gives libuv a loop turn to read it all.
+// gives libuv a loop turn to read what was sent. The receiving end holds up
+// to net.unix.max_dgram_qlen datagrams (10 by default), so each round sends
+// fewer than that.
 ZEST_CASE(datagrams_nobody_waits_for_are_kept_up_to_64) {
     int fds[2] = {-1, -1};
     ASSERT(::socketpair(AF_UNIX, SOCK_DGRAM, 0, fds) == 0);
@@ -472,13 +499,6 @@ ZEST_CASE(datagrams_nobody_waits_for_are_kept_up_to_64) {
 #endif
 
 #ifdef __linux__
-/// A loopback port that was bound and released again, so nothing listens on
-/// it; 0 if none could be bound.
-int closed_port(event_loop& loop) {
-    auto closed = bind_loopback(loop);
-    return closed ? closed->port : 0;
-}
-
 // Linux reports the ICMP port unreachable that answers a connected socket
 // to its next read. libuv on Windows ignores that error for udp but stops
 // reading on others, which recv() must start again.
@@ -527,6 +547,32 @@ ZEST_CASE(task_woken_by_a_receive_error_can_stop_the_socket) {
     ASSERT(result.has_value());
     EXPECT(result->first == error::connection_refused);
     EXPECT(!result->second);
+}
+
+// Once try_send() finds the peer's end of a datagram socket pair full, a
+// send waits in libuv's queue, and closing the socket ends it: the send
+// fails with operation_aborted rather than cancelling its task. Linux only:
+// how a full datagram socket pair answers a send differs between systems.
+ZEST_CASE(send_ended_by_closing_its_socket_fails) {
+    int fds[2] = {-1, -1};
+    ASSERT(::socketpair(AF_UNIX, SOCK_DGRAM, 0, fds) == 0);
+    auto opened = udp::open(fds[0], loop);
+    ASSERT(opened.has_value());
+    std::optional<udp> sender = std::move(*opened);
+    error full;
+    for(int i = 0; i < 100'000 && !full; ++i) {
+        full = sender->try_send(std::string_view("x"));
+    }
+    ASSERT(full == error::resource_temporarily_unavailable);
+    auto close = [&]() -> task<> {
+        sender.reset();
+        co_return;
+    };
+
+    auto [sent, closed] = run(sender->send(std::string_view("queued")), close());
+    ::close(fds[1]);
+    ASSERT(sent.has_error());
+    EXPECT(sent.error() == error::operation_aborted);
 }
 #endif
 

@@ -204,7 +204,7 @@ ZEST_CASE(read_after_the_peer_resets_fails) {
 // The reset arrives while the reader holds the data sent before it, and is
 // reported once that is read. Windows drops the data a reset overtakes.
 #ifndef _WIN32
-ZEST_CASE(reset_after_data_is_reported_after_the_data) {
+ZEST_CASE(read_after_data_and_a_reset_fails) {
     auto listener = listen_loopback(loop);
     ASSERT(listener.has_value());
     auto sock = connect_raw(listener->port);

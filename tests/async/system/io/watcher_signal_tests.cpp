@@ -111,7 +111,7 @@ ZEST_CASE(cancelled_wait_leaves_the_signal_watched) {
     EXPECT(!sig->stop());
 }
 
-ZEST_CASE(destroying_a_signal_ends_its_wait) {
+ZEST_CASE(wait_ended_by_destroying_its_signal_fails) {
     auto created = signal::create(loop);
     ASSERT(created.has_value());
     ASSERT(!created->start(SIGUSR1));
