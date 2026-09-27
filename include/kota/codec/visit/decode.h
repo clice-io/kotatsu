@@ -8,6 +8,7 @@
 #include <memory>
 #include <optional>
 #include <ranges>
+#include <span>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -216,56 +217,49 @@ bool decode_field_value(Vis& vis, T& out) {
                               field::name);
 }
 
-/// Data-driven field matching: look up key in virtual_schema fields and decode the matching field.
-/// If field_mask is provided, sets the bit corresponding to the matched field index.
+/// The slot whose name or alias is key; fields.size() when none is.
+inline std::size_t find_field_slot(std::span<const meta::field_info> fields, std::string_view key) {
+    for(std::size_t i = 0; i < fields.size(); ++i) {
+        if(fields[i].name == key ||
+           std::ranges::find(fields[i].aliases, key) != fields[i].aliases.end()) {
+            return i;
+        }
+    }
+    return fields.size();
+}
+
+/// Data-driven field matching: decodes the slot key names into out, or
+/// skips (or rejects) an unknown key. Sets the slot's bit in field_mask
+/// when given.
 template <typename Config, typename T, typename Vis>
 bool match_field(std::string_view key, Vis& reader, T& out, std::uint64_t* field_mask = nullptr) {
     using schema = meta::virtual_schema<T, Config>;
-    using slots = typename schema::slots;
-    constexpr std::size_t N = type_list_size_v<slots>;
+    constexpr std::size_t N = type_list_size_v<typename schema::slots>;
     static_assert(N <= 64, "struct field count exceeds field_mask capacity (max 64 fields)");
 
-    return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
-        bool matched = false;
-        bool result = true;
-        (void)((!matched && ([&] {
-                   constexpr auto& fi = schema::fields[Is];
-                   bool found = fi.name == key;
-                   if(!found) {
-                       for(auto alias: fi.aliases) {
-                           if(alias == key) {
-                               found = true;
-                               break;
-                           }
-                       }
-                   }
-                   if(found) {
-                       matched = true;
-                       if(field_mask)
-                           *field_mask |= (1ULL << Is);
-                       result = decode_field_value<Config, Is>(reader, out);
-                   }
-                   return found;
-               }())) ||
-               ...);
-
-        if(!matched) {
-            if constexpr(Config::deny_unknown_fields || schema::deny_unknown) {
-                // Prefer the backend hook so DOM backends (e.g. TOML) can attach
-                // the offending node's source location to the error.
-                if constexpr(requires {
-                                 { reader.fail_unknown_field(key) } -> std::same_as<bool>;
-                             }) {
-                    return reader.fail_unknown_field(key);
-                } else {
-                    return scoped_context<rich_error>::fail(rich_error::unknown_field(key));
-                }
+    std::size_t slot = find_field_slot(schema::fields, key);
+    if(slot == N) {
+        if constexpr(Config::deny_unknown_fields || schema::deny_unknown) {
+            // Prefer the backend hook so DOM backends (e.g. TOML) can attach
+            // the offending node's source location to the error.
+            if constexpr(requires {
+                             { reader.fail_unknown_field(key) } -> std::same_as<bool>;
+                         }) {
+                return reader.fail_unknown_field(key);
             } else {
-                return reader.visit_skip();
+                return scoped_context<rich_error>::fail(rich_error::unknown_field(key));
             }
+        } else {
+            return reader.visit_skip();
         }
-        return result;
-    }(std::make_index_sequence<N>{});
+    }
+
+    if(field_mask) {
+        *field_mask |= std::uint64_t{1} << slot;
+    }
+    return with_index<N>(slot, [&](auto i) {
+        return decode_field_value<Config, decltype(i)::value>(reader, out);
+    });
 }
 
 /// Whether the input must carry a slot: its type is not nullable (seen
