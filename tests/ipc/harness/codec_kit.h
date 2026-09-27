@@ -3,11 +3,10 @@
 // The shared suite of the ipc codecs. JsonCodec and BincodeCodec implement one
 // duck-typed protocol (parse_message, encode_*, serialize_value,
 // deserialize_value), so its behaviour is written once, below, and each codec
-// runs it through an adapter over its wire format (codec_json.h,
-// codec_bincode.h):
+// runs it through an adapter (codec_json.h, codec_bincode.h):
 //
 //     ZEST_CASE_GROUP(protocol) {
-//         test::codec_protocol(test::CodecKit<test::JsonWire>{add_case});
+//         test::codec_protocol(test::CodecKit<test::JsonAdapter>{add_case});
 //     }
 //
 // The adapter writes and reads messages without the codec under test: json
@@ -70,49 +69,49 @@ struct Message {
 
 /// A codec adapter: the codec, its name and caps, values in its encoding,
 /// the messages a remote sends and a reader for those the codec writes.
-template <typename W>
-concept Wire = requires(const RequestID& id,
-                        const std::optional<RequestID>& maybe_id,
-                        std::string_view text,
-                        const ipc::Error& error) {
-    typename W::Codec;
-    { W::name } -> std::convertible_to<std::string_view>;
-    { W::caps } -> std::convertible_to<Caps>;
+template <typename A>
+concept CodecAdapter = requires(const RequestID& id,
+                                const std::optional<RequestID>& maybe_id,
+                                std::string_view text,
+                                const ipc::Error& error) {
+    typename A::Codec;
+    { A::name } -> std::convertible_to<std::string_view>;
+    { A::caps } -> std::convertible_to<Caps>;
     /// A payload that is no message.
-    { W::garbage } -> std::convertible_to<std::string_view>;
+    { A::garbage } -> std::convertible_to<std::string_view>;
     /// A body no struct with fields decodes from.
-    { W::not_a_value } -> std::convertible_to<std::string_view>;
-    { W::encode(AddParams{}) } -> std::same_as<std::string>;
-    { W::template decode<AddParams>(text) } -> std::same_as<std::optional<AddParams>>;
-    { W::request_raw(id, text, text) } -> std::same_as<std::string>;
-    { W::notification_raw(text, text) } -> std::same_as<std::string>;
-    { W::response_raw(id, text) } -> std::same_as<std::string>;
-    { W::error_response(maybe_id, error) } -> std::same_as<std::string>;
-    { W::read(text) } -> std::same_as<std::expected<Message, std::string>>;
+    { A::not_a_value } -> std::convertible_to<std::string_view>;
+    { A::encode(AddParams{}) } -> std::same_as<std::string>;
+    { A::template decode<AddParams>(text) } -> std::same_as<std::optional<AddParams>>;
+    { A::request_raw(id, text, text) } -> std::same_as<std::string>;
+    { A::notification_raw(text, text) } -> std::same_as<std::string>;
+    { A::response_raw(id, text) } -> std::same_as<std::string>;
+    { A::error_response(maybe_id, error) } -> std::same_as<std::string>;
+    { A::read(text) } -> std::same_as<std::expected<Message, std::string>>;
 };
 
 /// A request for `method` with `params`, as the remote sends it.
-template <Wire W, typename T>
+template <CodecAdapter A, typename T>
 std::string request(const RequestID& id, std::string_view method, const T& params) {
-    return W::request_raw(id, method, W::encode(params));
+    return A::request_raw(id, method, A::encode(params));
 }
 
 /// A notification for `method` with `params`, as the remote sends it.
-template <Wire W, typename T>
+template <CodecAdapter A, typename T>
 std::string notification(std::string_view method, const T& params) {
-    return W::notification_raw(method, W::encode(params));
+    return A::notification_raw(method, A::encode(params));
 }
 
 /// A success response carrying `result`, as the remote sends it.
-template <Wire W, typename T>
+template <CodecAdapter A, typename T>
 std::string response(const RequestID& id, const T& result) {
-    return W::response_raw(id, W::encode(result));
+    return A::response_raw(id, A::encode(result));
 }
 
 /// `body`, a message's params or result, decoded as T.
-template <typename T, Wire W>
+template <typename T, CodecAdapter A>
 std::optional<T> decoded(std::string_view body) {
-    return W::template decode<T>(body);
+    return A::template decode<T>(body);
 }
 
 /// The code of `error`, as the enumerator it matches.
@@ -120,44 +119,44 @@ inline ipc::protocol::ErrorCode code_of(const ipc::Error& error) {
     return static_cast<ipc::protocol::ErrorCode>(error.code);
 }
 
-/// Where the codec cases of adapter W are registered.
-template <Wire W>
+/// Where the codec cases of adapter A are registered.
+template <CodecAdapter A>
 struct CodecKit {
     const zest::CaseRegistrar& add;
 };
 
-template <Wire W>
-void codec_protocol(const CodecKit<W>& kit) {
+template <CodecAdapter A>
+void codec_protocol(const CodecKit<A>& kit) {
     using ipc::protocol::ErrorCode;
-    using Codec = typename W::Codec;
+    using Codec = typename A::Codec;
 
     kit.add("encode_request_writes_a_request", [] {
         Codec codec;
-        auto encoded = codec.encode_request(7, "test/add", W::encode(AddParams{.a = 1, .b = 2}));
+        auto encoded = codec.encode_request(7, "test/add", A::encode(AddParams{.a = 1, .b = 2}));
         ASSERT(encoded.has_value());
-        auto message = W::read(*encoded);
+        auto message = A::read(*encoded);
         ASSERT(message.has_value());
         EXPECT(message->kind == Message::Kind::Request);
         EXPECT(message->id == RequestID(7));
         EXPECT(message->method == "test/add");
-        auto params = decoded<AddParams, W>(message->body);
+        auto params = decoded<AddParams, A>(message->body);
         ASSERT(params.has_value());
         EXPECT(*params == AddParams{.a = 1, .b = 2});
     });
 
-    if constexpr(W::caps.string_ids) {
+    if constexpr(A::caps.string_ids) {
         kit.add("encode_request_writes_a_string_id", [] {
             Codec codec;
-            auto encoded = codec.encode_request("abc", "test/add", W::encode(AddParams{}));
+            auto encoded = codec.encode_request("abc", "test/add", A::encode(AddParams{}));
             ASSERT(encoded.has_value());
-            auto message = W::read(*encoded);
+            auto message = A::read(*encoded);
             ASSERT(message.has_value());
             EXPECT(message->id == RequestID("abc"));
         });
     } else {
         kit.add("encode_request_with_a_string_id_fails", [] {
             Codec codec;
-            auto encoded = codec.encode_request("abc", "test/add", W::encode(AddParams{}));
+            auto encoded = codec.encode_request("abc", "test/add", A::encode(AddParams{}));
             ASSERT(!encoded.has_value());
             EXPECT(code_of(encoded.error()) == ErrorCode::InternalError);
         });
@@ -165,27 +164,27 @@ void codec_protocol(const CodecKit<W>& kit) {
 
     kit.add("encode_notification_writes_a_notification", [] {
         Codec codec;
-        auto encoded = codec.encode_notification("test/note", W::encode(NoteParams{.text = "hi"}));
+        auto encoded = codec.encode_notification("test/note", A::encode(NoteParams{.text = "hi"}));
         ASSERT(encoded.has_value());
-        auto message = W::read(*encoded);
+        auto message = A::read(*encoded);
         ASSERT(message.has_value());
         EXPECT(message->kind == Message::Kind::Notification);
         EXPECT(!message->id.has_value());
         EXPECT(message->method == "test/note");
-        auto params = decoded<NoteParams, W>(message->body);
+        auto params = decoded<NoteParams, A>(message->body);
         ASSERT(params.has_value());
         EXPECT(params->text == "hi");
     });
 
     kit.add("encode_success_response_writes_a_result", [] {
         Codec codec;
-        auto encoded = codec.encode_success_response(42, W::encode(AddResult{.sum = 3}));
+        auto encoded = codec.encode_success_response(42, A::encode(AddResult{.sum = 3}));
         ASSERT(encoded.has_value());
-        auto message = W::read(*encoded);
+        auto message = A::read(*encoded);
         ASSERT(message.has_value());
         EXPECT(message->kind == Message::Kind::Result);
         EXPECT(message->id == RequestID(42));
-        auto result = decoded<AddResult, W>(message->body);
+        auto result = decoded<AddResult, A>(message->body);
         ASSERT(result.has_value());
         EXPECT(result->sum == 3);
     });
@@ -196,7 +195,7 @@ void codec_protocol(const CodecKit<W>& kit) {
             codec.encode_error_response(20,
                                         ipc::Error(ErrorCode::InternalError, "something broke"));
         ASSERT(encoded.has_value());
-        auto message = W::read(*encoded);
+        auto message = A::read(*encoded);
         ASSERT(message.has_value());
         EXPECT(message->kind == Message::Kind::Error);
         EXPECT(message->id == RequestID(20));
@@ -206,8 +205,8 @@ void codec_protocol(const CodecKit<W>& kit) {
 
     kit.add("parse_message_reads_a_request", [] {
         Codec codec;
-        auto params = W::encode(AddParams{.a = 1, .b = 2});
-        auto parsed = codec.parse_message(W::request_raw(99, "math/add", params));
+        auto params = A::encode(AddParams{.a = 1, .b = 2});
+        auto parsed = codec.parse_message(A::request_raw(99, "math/add", params));
         const auto* request = std::get_if<ipc::IncomingRequest>(&parsed);
         ASSERT(request != nullptr);
         EXPECT(request->id == RequestID(99));
@@ -215,10 +214,10 @@ void codec_protocol(const CodecKit<W>& kit) {
         EXPECT(request->params == params);
     });
 
-    if constexpr(W::caps.string_ids) {
+    if constexpr(A::caps.string_ids) {
         kit.add("parse_message_reads_a_string_id", [] {
             Codec codec;
-            auto parsed = codec.parse_message(request<W>("abc", "test/add", AddParams{}));
+            auto parsed = codec.parse_message(request<A>("abc", "test/add", AddParams{}));
             const auto* request = std::get_if<ipc::IncomingRequest>(&parsed);
             ASSERT(request != nullptr);
             EXPECT(request->id == RequestID("abc"));
@@ -227,8 +226,8 @@ void codec_protocol(const CodecKit<W>& kit) {
 
     kit.add("parse_message_reads_a_notification", [] {
         Codec codec;
-        auto params = W::encode(NoteParams{.text = "hello"});
-        auto parsed = codec.parse_message(W::notification_raw("log/info", params));
+        auto params = A::encode(NoteParams{.text = "hello"});
+        auto parsed = codec.parse_message(A::notification_raw("log/info", params));
         const auto* notification = std::get_if<ipc::IncomingNotification>(&parsed);
         ASSERT(notification != nullptr);
         EXPECT(notification->method == "log/info");
@@ -237,8 +236,8 @@ void codec_protocol(const CodecKit<W>& kit) {
 
     kit.add("parse_message_reads_a_result", [] {
         Codec codec;
-        auto result = W::encode(AddResult{.sum = 42});
-        auto parsed = codec.parse_message(W::response_raw(10, result));
+        auto result = A::encode(AddResult{.sum = 42});
+        auto parsed = codec.parse_message(A::response_raw(10, result));
         const auto* response = std::get_if<ipc::IncomingResponse>(&parsed);
         ASSERT(response != nullptr);
         EXPECT(response->id == RequestID(10));
@@ -248,7 +247,7 @@ void codec_protocol(const CodecKit<W>& kit) {
     kit.add("parse_message_reads_an_error", [] {
         Codec codec;
         auto parsed = codec.parse_message(
-            W::error_response(7, ipc::Error(ErrorCode::MethodNotFound, "method not found")));
+            A::error_response(7, ipc::Error(ErrorCode::MethodNotFound, "method not found")));
         const auto* response = std::get_if<ipc::IncomingErrorResponse>(&parsed);
         ASSERT(response != nullptr);
         EXPECT(response->id == RequestID(7));
@@ -269,7 +268,7 @@ void codec_protocol(const CodecKit<W>& kit) {
 
     kit.add("parse_message_of_garbage_fails", [] {
         Codec codec;
-        auto parsed = codec.parse_message(W::garbage);
+        auto parsed = codec.parse_message(A::garbage);
         const auto* failure = std::get_if<ipc::IncomingParseError>(&parsed);
         ASSERT(failure != nullptr);
         EXPECT(code_of(failure->error) == ErrorCode::ParseError);
@@ -287,7 +286,7 @@ void codec_protocol(const CodecKit<W>& kit) {
         Codec codec;
         auto serialized = codec.serialize_value(AddParams{.a = 1, .b = 2});
         ASSERT(serialized.has_value());
-        EXPECT(*serialized == W::encode(AddParams{.a = 1, .b = 2}));
+        EXPECT(*serialized == A::encode(AddParams{.a = 1, .b = 2}));
     });
 
     kit.add("serialize_value_of_an_unwritable_value_fails", [] {
@@ -301,18 +300,18 @@ void codec_protocol(const CodecKit<W>& kit) {
     kit.add("deserialize_value_reads_what_the_codec_writes", [] {
         Codec codec;
         auto value =
-            codec.template deserialize_value<AddParams>(W::encode(AddParams{.a = 4, .b = 5}));
+            codec.template deserialize_value<AddParams>(A::encode(AddParams{.a = 4, .b = 5}));
         ASSERT(value.has_value());
         EXPECT(*value == AddParams{.a = 4, .b = 5});
     });
 
     kit.add("deserialize_value_failure_carries_the_given_code", [] {
         Codec codec;
-        auto by_default = codec.template deserialize_value<AddParams>(W::not_a_value);
+        auto by_default = codec.template deserialize_value<AddParams>(A::not_a_value);
         ASSERT(!by_default.has_value());
         EXPECT(code_of(by_default.error()) == ErrorCode::RequestFailed);
         auto given =
-            codec.template deserialize_value<AddParams>(W::not_a_value, ErrorCode::InvalidParams);
+            codec.template deserialize_value<AddParams>(A::not_a_value, ErrorCode::InvalidParams);
         ASSERT(!given.has_value());
         EXPECT(code_of(given.error()) == ErrorCode::InvalidParams);
     });
@@ -326,9 +325,9 @@ void codec_protocol(const CodecKit<W>& kit) {
 
 /// Nothing is not params with fields: reading it fails rather than making up
 /// a default value.
-template <Wire W>
+template <CodecAdapter A>
 void deserialize_value_of_nothing_into_fields_fails() {
-    typename W::Codec codec;
+    typename A::Codec codec;
     auto value =
         codec.template deserialize_value<AddParams>("", ipc::protocol::ErrorCode::InvalidParams);
     ASSERT(!value.has_value());
@@ -336,9 +335,9 @@ void deserialize_value_of_nothing_into_fields_fails() {
 }
 
 /// An error's data survives its codec.
-template <Wire W>
+template <CodecAdapter A>
 void error_response_roundtrip_keeps_the_data() {
-    typename W::Codec codec;
+    typename A::Codec codec;
     codec::dyn::Value data{
         {"detail",  "bad state"},
         {"attempt", -1         },

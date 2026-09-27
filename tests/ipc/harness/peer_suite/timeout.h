@@ -12,9 +12,9 @@
 
 namespace kota::test {
 
-template <Wire W>
-void peer_timeout(const PeerKit<W>& kit) {
-    using Fixture = PeerFixture<W>;
+template <CodecAdapter A>
+void peer_timeout(const PeerKit<A>& kit) {
+    using Fixture = PeerFixture<A>;
     using ipc::protocol::CancelRequestParams;
     using ipc::protocol::ErrorCode;
     using namespace std::chrono_literals;
@@ -38,7 +38,7 @@ void peer_timeout(const PeerKit<W>& kit) {
         ASSERT(written.size() == 2U);
         EXPECT(written[0].id == RequestID(1));
         EXPECT(written[1].method == "$/cancelRequest");
-        auto cancelled = decoded<CancelRequestParams, W>(written[1].body);
+        auto cancelled = decoded<CancelRequestParams, A>(written[1].body);
         ASSERT(cancelled.has_value());
         EXPECT(cancelled->id == RequestID(1));
     });
@@ -65,7 +65,7 @@ void peer_timeout(const PeerKit<W>& kit) {
         };
         auto remote = [&]() -> task<> {
             co_await f.next();
-            f.remote.send(response<W>(1, AddResult{.sum = 5}));
+            f.remote.send(response<A>(1, AddResult{.sum = 5}));
             f.remote.end_input();
         };
 

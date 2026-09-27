@@ -14,9 +14,9 @@
 
 namespace kota::test {
 
-template <Wire W>
-void peer_lifecycle(const PeerKit<W>& kit) {
-    using Fixture = PeerFixture<W>;
+template <CodecAdapter A>
+void peer_lifecycle(const PeerKit<A>& kit) {
+    using Fixture = PeerFixture<A>;
     using Context = typename Fixture::Context;
     using ipc::protocol::ErrorCode;
 
@@ -43,7 +43,7 @@ void peer_lifecycle(const PeerKit<W>& kit) {
             co_return AddResult{.sum = params.a + params.b};
         });
         auto remote = [&]() -> task<> {
-            f.remote.send(request<W>(1, "test/add", AddParams{.a = 1, .b = 2}));
+            f.remote.send(request<A>(1, "test/add", AddParams{.a = 1, .b = 2}));
             co_await started.wait();
             f.remote.end_input();
             release.set();
@@ -53,7 +53,7 @@ void peer_lifecycle(const PeerKit<W>& kit) {
         EXPECT(ran.has_value());
         const auto& written = f.written();
         ASSERT(written.size() == 1U);
-        EXPECT(sum_of<W>(written[0]) == 3);
+        EXPECT(sum_of<A>(written[0]) == 3);
     });
 
     kit.add("close_ends_run", [](Fixture& f) {
@@ -123,9 +123,9 @@ void peer_lifecycle(const PeerKit<W>& kit) {
                               co_return AddResult{};
                           });
         auto remote = [&]() -> task<> {
-            f.remote.send(request<W>(1, "test/ping", EmptyParams{}));
-            f.remote.send(request<W>(2, "test/add", AddParams{}));
-            f.remote.send(request<W>(3, "test/add", AddParams{}));
+            f.remote.send(request<A>(1, "test/ping", EmptyParams{}));
+            f.remote.send(request<A>(2, "test/add", AddParams{}));
+            f.remote.send(request<A>(3, "test/add", AddParams{}));
             co_await f.next();
             co_await both_started.wait();
             f.peer.close();
@@ -159,7 +159,7 @@ void peer_lifecycle(const PeerKit<W>& kit) {
             f.peer.close();
             co_return AddResult{};
         });
-        f.remote.send(request<W>(1, "test/add", AddParams{}));
+        f.remote.send(request<A>(1, "test/add", AddParams{}));
 
         auto [ran] = f.run(f.peer.run());
         EXPECT(ran.has_value());
@@ -195,7 +195,7 @@ void peer_lifecycle(const PeerKit<W>& kit) {
         std::vector<std::string> seen;
         f.peer.on_notification([&](const NoteParams& params) { seen.push_back(params.text); });
         auto closed = f.peer.close_output();
-        f.remote.send(notification<W>("test/note", NoteParams{.text = "after"}));
+        f.remote.send(notification<A>("test/note", NoteParams{.text = "after"}));
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
@@ -218,7 +218,7 @@ void peer_lifecycle(const PeerKit<W>& kit) {
             co_return AddResult{};
         });
         auto remote = [&]() -> task<> {
-            f.remote.send(request<W>(1, "test/add", AddParams{}));
+            f.remote.send(request<A>(1, "test/add", AddParams{}));
             co_await started.wait();
             source.cancel();
         };
@@ -235,9 +235,9 @@ void peer_lifecycle(const PeerKit<W>& kit) {
         other.on_request([](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
             co_return AddResult{.sum = params.a * params.b};
         });
-        f.remote.send(request<W>(11, "test/add", AddParams{.a = 2, .b = 5}));
+        f.remote.send(request<A>(11, "test/add", AddParams{.a = 2, .b = 5}));
         f.remote.end_input();
-        other_remote.send(request<W>(22, "test/add", AddParams{.a = 7, .b = 3}));
+        other_remote.send(request<A>(22, "test/add", AddParams{.a = 7, .b = 3}));
         other_remote.end_input();
 
         auto [ran, other_ran] = f.run(f.peer.run(), other.run());
@@ -246,13 +246,13 @@ void peer_lifecycle(const PeerKit<W>& kit) {
         const auto& written = f.written();
         ASSERT(written.size() == 1U);
         EXPECT(written[0].id == RequestID(11));
-        EXPECT(sum_of<W>(written[0]) == 7);
+        EXPECT(sum_of<A>(written[0]) == 7);
         auto other_written = other_remote.drain();
         ASSERT(other_written.size() == 1U);
-        auto answer = W::read(other_written[0]);
+        auto answer = A::read(other_written[0]);
         ASSERT(answer.has_value());
         EXPECT(answer->id == RequestID(22));
-        EXPECT(sum_of<W>(*answer) == 21);
+        EXPECT(sum_of<A>(*answer) == 21);
     });
 }
 
@@ -260,14 +260,14 @@ void peer_lifecycle(const PeerKit<W>& kit) {
 /// sends then fails at once instead of waiting for good. The probe request
 /// fails only when the peer reads the end of its input, so the handler is
 /// released after that.
-template <Wire W>
+template <CodecAdapter A>
 void request_from_a_handler_after_end_of_input_fails() {
-    PeerFixture<W> f;
+    PeerFixture<A> f;
     event started;
     event input_ended;
     event release;
     std::optional<ipc::Error> failure;
-    f.peer.on_request([&](typename PeerFixture<W>::Context& context,
+    f.peer.on_request([&](typename PeerFixture<A>::Context& context,
                           const AddParams&) -> ipc::RequestResult<AddParams> {
         started.set();
         co_await release.wait();
@@ -282,7 +282,7 @@ void request_from_a_handler_after_end_of_input_fails() {
         input_ended.set();
     };
     auto remote = [&]() -> task<> {
-        f.remote.send(request<W>(1, "test/add", AddParams{}));
+        f.remote.send(request<A>(1, "test/add", AddParams{}));
         co_await started.wait();
         f.remote.end_input();
         co_await input_ended.wait();
@@ -296,9 +296,9 @@ void request_from_a_handler_after_end_of_input_fails() {
 }
 
 /// close_output() half-closes after what is queued has been written.
-template <Wire W>
+template <CodecAdapter A>
 void close_output_writes_queued_messages_first() {
-    PeerFixture<W> f;
+    PeerFixture<A> f;
     auto sent = f.peer.send_notification(NoteParams{.text = "queued"});
     auto closed = f.peer.close_output();
     f.remote.end_input();
@@ -314,14 +314,14 @@ void close_output_writes_queued_messages_first() {
 }
 
 /// After close_output() a send fails at once, and the input stays open.
-template <Wire W>
+template <CodecAdapter A>
 void send_after_close_output_fails() {
-    PeerFixture<W> f;
+    PeerFixture<A> f;
     std::vector<std::string> seen;
     f.peer.on_notification([&](const NoteParams& params) { seen.push_back(params.text); });
     ASSERT(f.peer.close_output().has_value());
     auto sent = f.peer.send_notification(NoteParams{.text = "late"});
-    f.remote.send(notification<W>("test/note", NoteParams{.text = "after"}));
+    f.remote.send(notification<A>("test/note", NoteParams{.text = "after"}));
     f.remote.end_input();
 
     auto [ran] = f.run(f.peer.run());

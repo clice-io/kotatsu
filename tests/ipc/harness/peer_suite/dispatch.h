@@ -14,9 +14,9 @@
 
 namespace kota::test {
 
-template <Wire W>
-void peer_dispatch(const PeerKit<W>& kit) {
-    using Fixture = PeerFixture<W>;
+template <CodecAdapter A>
+void peer_dispatch(const PeerKit<A>& kit) {
+    using Fixture = PeerFixture<A>;
     using Context = typename Fixture::Context;
     using ipc::protocol::ErrorCode;
 
@@ -29,7 +29,7 @@ void peer_dispatch(const PeerKit<W>& kit) {
                 id = context.id;
                 co_return AddResult{.sum = params.a + params.b};
             });
-        f.remote.send(request<W>(7, "test/add", AddParams{.a = 2, .b = 3}));
+        f.remote.send(request<A>(7, "test/add", AddParams{.a = 2, .b = 3}));
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
@@ -39,13 +39,13 @@ void peer_dispatch(const PeerKit<W>& kit) {
         const auto& written = f.written();
         ASSERT(written.size() == 1U);
         EXPECT(written[0].id == RequestID(7));
-        EXPECT(sum_of<W>(written[0]) == 5);
+        EXPECT(sum_of<A>(written[0]) == 5);
     });
 
-    if constexpr(W::caps.string_ids) {
+    if constexpr(A::caps.string_ids) {
         kit.add("request_with_a_string_id_is_answered_with_it", [](Fixture& f) {
             f.serve_add();
-            f.remote.send(request<W>("abc", "test/add", AddParams{.a = 2, .b = 3}));
+            f.remote.send(request<A>("abc", "test/add", AddParams{.a = 2, .b = 3}));
             f.remote.end_input();
 
             auto [ran] = f.run(f.peer.run());
@@ -53,7 +53,7 @@ void peer_dispatch(const PeerKit<W>& kit) {
             const auto& written = f.written();
             ASSERT(written.size() == 1U);
             EXPECT(written[0].id == RequestID("abc"));
-            EXPECT(sum_of<W>(written[0]) == 5);
+            EXPECT(sum_of<A>(written[0]) == 5);
         });
     }
 
@@ -65,7 +65,7 @@ void peer_dispatch(const PeerKit<W>& kit) {
                 method = std::string(context.method);
                 co_return AddResult{.sum = params.a + params.b};
             });
-        f.remote.send(request<W>(2, "custom/add", AddParams{.a = 7, .b = 8}));
+        f.remote.send(request<A>(2, "custom/add", AddParams{.a = 7, .b = 8}));
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
@@ -74,7 +74,7 @@ void peer_dispatch(const PeerKit<W>& kit) {
         const auto& written = f.written();
         ASSERT(written.size() == 1U);
         EXPECT(written[0].id == RequestID(2));
-        EXPECT(sum_of<W>(written[0]) == 15);
+        EXPECT(sum_of<A>(written[0]) == 15);
     });
 
     kit.add("notification_reaches_its_handler", [](Fixture& f) {
@@ -83,8 +83,8 @@ void peer_dispatch(const PeerKit<W>& kit) {
         f.peer.on_notification("custom/note", [&](const NoteParams& params) {
             seen.push_back("custom:" + params.text);
         });
-        f.remote.send(notification<W>("test/note", NoteParams{.text = "by traits"}));
-        f.remote.send(notification<W>("custom/note", NoteParams{.text = "by name"}));
+        f.remote.send(notification<A>("test/note", NoteParams{.text = "by traits"}));
+        f.remote.send(notification<A>("custom/note", NoteParams{.text = "by name"}));
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
@@ -101,8 +101,8 @@ void peer_dispatch(const PeerKit<W>& kit) {
             });
         f.peer.template on_notification<TaggedNote>(
             [&](const NoteParams& params) { notes.push_back(params.text); });
-        f.remote.send(request<W>(1, "test/taggedAdd", AddParams{.a = 10, .b = 20}));
-        f.remote.send(notification<W>("test/taggedNote", NoteParams{.text = "hello tag"}));
+        f.remote.send(request<A>(1, "test/taggedAdd", AddParams{.a = 10, .b = 20}));
+        f.remote.send(notification<A>("test/taggedNote", NoteParams{.text = "hello tag"}));
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
@@ -110,7 +110,7 @@ void peer_dispatch(const PeerKit<W>& kit) {
         EXPECT(notes == std::vector<std::string>{"hello tag"});
         const auto& written = f.written();
         ASSERT(written.size() == 1U);
-        EXPECT(sum_of<W>(written[0]) == 30);
+        EXPECT(sum_of<A>(written[0]) == 30);
     });
 
     // A handler runs until it first suspends before the peer reads on, so
@@ -122,9 +122,9 @@ void peer_dispatch(const PeerKit<W>& kit) {
             co_return AddResult{.sum = params.a + params.b};
         });
         f.peer.on_notification([&](const NoteParams& params) { order.push_back(params.text); });
-        f.remote.send(request<W>(1, "test/add", AddParams{.a = 2, .b = 3}));
-        f.remote.send(notification<W>("test/note", NoteParams{.text = "first"}));
-        f.remote.send(notification<W>("test/note", NoteParams{.text = "second"}));
+        f.remote.send(request<A>(1, "test/add", AddParams{.a = 2, .b = 3}));
+        f.remote.send(notification<A>("test/note", NoteParams{.text = "first"}));
+        f.remote.send(notification<A>("test/note", NoteParams{.text = "second"}));
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
@@ -132,7 +132,7 @@ void peer_dispatch(const PeerKit<W>& kit) {
         EXPECT(order == std::vector<std::string>{"request", "first", "second"});
         const auto& written = f.written();
         ASSERT(written.size() == 1U);
-        EXPECT(sum_of<W>(written[0]) == 5);
+        EXPECT(sum_of<A>(written[0]) == 5);
     });
 
     kit.add("second_request_handler_replaces_the_first", [](Fixture& f) {
@@ -140,14 +140,14 @@ void peer_dispatch(const PeerKit<W>& kit) {
         f.peer.on_request([](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
             co_return AddResult{.sum = params.a * params.b};
         });
-        f.remote.send(request<W>(1, "test/add", AddParams{.a = 2, .b = 3}));
+        f.remote.send(request<A>(1, "test/add", AddParams{.a = 2, .b = 3}));
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
         EXPECT(ran.has_value());
         const auto& written = f.written();
         ASSERT(written.size() == 1U);
-        EXPECT(sum_of<W>(written[0]) == 6);
+        EXPECT(sum_of<A>(written[0]) == 6);
     });
 
     kit.add("second_notification_handler_replaces_the_first", [](Fixture& f) {
@@ -156,7 +156,7 @@ void peer_dispatch(const PeerKit<W>& kit) {
             [&](const NoteParams& params) { seen.push_back("first:" + params.text); });
         f.peer.on_notification(
             [&](const NoteParams& params) { seen.push_back("second:" + params.text); });
-        f.remote.send(notification<W>("test/note", NoteParams{.text = "x"}));
+        f.remote.send(notification<A>("test/note", NoteParams{.text = "x"}));
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
@@ -165,7 +165,7 @@ void peer_dispatch(const PeerKit<W>& kit) {
     });
 
     kit.add("unknown_method_is_answered_with_method_not_found", [](Fixture& f) {
-        f.remote.send(request<W>(1, "unknown/method", EmptyParams{}));
+        f.remote.send(request<A>(1, "unknown/method", EmptyParams{}));
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
@@ -179,7 +179,7 @@ void peer_dispatch(const PeerKit<W>& kit) {
     });
 
     kit.add("unknown_notification_is_ignored", [](Fixture& f) {
-        f.remote.send(notification<W>("unknown/note", NoteParams{.text = "hello"}));
+        f.remote.send(notification<A>("unknown/note", NoteParams{.text = "hello"}));
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
@@ -188,8 +188,8 @@ void peer_dispatch(const PeerKit<W>& kit) {
     });
 
     kit.add("response_to_no_request_is_ignored", [](Fixture& f) {
-        f.remote.send(response<W>(999, AddResult{.sum = 42}));
-        f.remote.send(W::error_response(998, ipc::Error("stray")));
+        f.remote.send(response<A>(999, AddResult{.sum = 42}));
+        f.remote.send(A::error_response(998, ipc::Error("stray")));
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
@@ -208,8 +208,8 @@ void peer_dispatch(const PeerKit<W>& kit) {
             co_return AddResult{.sum = params.a + params.b};
         });
         auto remote = [&]() -> task<> {
-            f.remote.send(request<W>(1, "test/add", AddParams{.a = 1, .b = 2}));
-            f.remote.send(request<W>(1, "test/add", AddParams{.a = 3, .b = 4}));
+            f.remote.send(request<A>(1, "test/add", AddParams{.a = 1, .b = 2}));
+            f.remote.send(request<A>(1, "test/add", AddParams{.a = 3, .b = 4}));
             co_await f.next();
             release.set();
             co_await f.next();
@@ -226,7 +226,7 @@ void peer_dispatch(const PeerKit<W>& kit) {
         EXPECT(written[0].id == RequestID(1));
         EXPECT(code_of(written[0].error) == ErrorCode::InvalidRequest);
         EXPECT(written[1].id == RequestID(1));
-        EXPECT(sum_of<W>(written[1]) == 3);
+        EXPECT(sum_of<A>(written[1]) == 3);
     });
 
     kit.add("params_that_do_not_decode_are_answered_with_invalid_params", [](Fixture& f) {
@@ -235,7 +235,7 @@ void peer_dispatch(const PeerKit<W>& kit) {
             called = true;
             co_return AddResult{};
         });
-        f.remote.send(W::request_raw(11, "test/add", W::not_a_value));
+        f.remote.send(A::request_raw(11, "test/add", A::not_a_value));
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
@@ -251,7 +251,7 @@ void peer_dispatch(const PeerKit<W>& kit) {
     kit.add("notification_params_that_do_not_decode_are_dropped", [](Fixture& f) {
         bool called = false;
         f.peer.on_notification([&](const NoteParams&) { called = true; });
-        f.remote.send(W::notification_raw("test/note", W::not_a_value));
+        f.remote.send(A::notification_raw("test/note", A::not_a_value));
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
@@ -264,7 +264,7 @@ void peer_dispatch(const PeerKit<W>& kit) {
         f.peer.on_request([](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
             co_await fail(ErrorCode::InvalidParams, "forced invalid params");
         });
-        f.remote.send(request<W>(10, "test/add", AddParams{}));
+        f.remote.send(request<A>(10, "test/add", AddParams{}));
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
@@ -282,7 +282,7 @@ void peer_dispatch(const PeerKit<W>& kit) {
                           [](Context&, const EmptyParams&) -> task<Unwritable, ipc::Error> {
                               co_return Unwritable{};
                           });
-        f.remote.send(request<W>(4, "test/unwritable", EmptyParams{}));
+        f.remote.send(request<A>(4, "test/unwritable", EmptyParams{}));
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
@@ -296,7 +296,7 @@ void peer_dispatch(const PeerKit<W>& kit) {
 
     // Where the reply goes is the case below, which waits for P1.2.
     kit.add("unparsable_message_is_answered_with_a_parse_error", [](Fixture& f) {
-        f.remote.send(std::string(W::garbage));
+        f.remote.send(std::string(A::garbage));
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
@@ -310,10 +310,10 @@ void peer_dispatch(const PeerKit<W>& kit) {
 
 /// The reply to a message that does not parse answers no request, so it
 /// carries no id: a null one in JSON-RPC.
-template <Wire W>
+template <CodecAdapter A>
 void unparsable_message_is_answered_without_an_id() {
-    PeerFixture<W> f;
-    f.remote.send(std::string(W::garbage));
+    PeerFixture<A> f;
+    f.remote.send(std::string(A::garbage));
     f.remote.end_input();
 
     auto [ran] = f.run(f.peer.run());
@@ -326,16 +326,16 @@ void unparsable_message_is_answered_without_an_id() {
 
 /// A request without params for a handler whose params have fields is
 /// refused, rather than handled with made-up params.
-template <Wire W>
+template <CodecAdapter A>
 void request_without_params_is_answered_with_invalid_params() {
-    PeerFixture<W> f;
+    PeerFixture<A> f;
     bool called = false;
     f.peer.on_request(
-        [&](typename PeerFixture<W>::Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
+        [&](typename PeerFixture<A>::Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
             called = true;
             co_return AddResult{};
         });
-    f.remote.send(W::request_raw(1, "test/add", ""));
+    f.remote.send(A::request_raw(1, "test/add", ""));
     f.remote.end_input();
 
     auto [ran] = f.run(f.peer.run());
@@ -349,11 +349,11 @@ void request_without_params_is_answered_with_invalid_params() {
 
 /// An error response that answers no request is not answered in turn:
 /// two peers would otherwise trade such errors for good.
-template <Wire W>
+template <CodecAdapter A>
 void error_response_without_an_id_is_not_answered() {
-    PeerFixture<W> f;
+    PeerFixture<A> f;
     f.remote.send(
-        W::error_response(std::nullopt, ipc::Error(ipc::protocol::ErrorCode::ParseError, "bad")));
+        A::error_response(std::nullopt, ipc::Error(ipc::protocol::ErrorCode::ParseError, "bad")));
     f.remote.end_input();
 
     auto [ran] = f.run(f.peer.run());
@@ -363,21 +363,21 @@ void error_response_without_an_id_is_not_answered() {
 
 /// A handler that returns a RawValue has written its result itself: the
 /// requester gets it as it is.
-template <Wire W>
+template <CodecAdapter A>
 void raw_value_result_is_sent_as_it_is() {
-    PeerFixture<W> f;
-    f.peer.on_request([](typename PeerFixture<W>::Context&,
+    PeerFixture<A> f;
+    f.peer.on_request([](typename PeerFixture<A>::Context&,
                          const AddParams& params) -> task<codec::RawValue, ipc::Error> {
-        co_return codec::RawValue{W::encode(AddResult{.sum = params.a + params.b})};
+        co_return codec::RawValue{A::encode(AddResult{.sum = params.a + params.b})};
     });
-    f.remote.send(request<W>(1, "test/add", AddParams{.a = 10, .b = 20}));
+    f.remote.send(request<A>(1, "test/add", AddParams{.a = 10, .b = 20}));
     f.remote.end_input();
 
     auto [ran] = f.run(f.peer.run());
     EXPECT(ran.has_value());
     const auto& written = f.written();
     ASSERT(written.size() == 1U);
-    EXPECT(sum_of<W>(written[0]) == 30);
+    EXPECT(sum_of<A>(written[0]) == 30);
 }
 
 }  // namespace kota::test

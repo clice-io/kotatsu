@@ -15,7 +15,7 @@ namespace kota::ipc {
 
 namespace {
 
-using Fixture = test::PeerFixture<test::JsonWire>;
+using Fixture = test::PeerFixture<test::JsonAdapter>;
 using test::AddParams;
 using test::NoteParams;
 
@@ -55,7 +55,7 @@ ZEST_SUITE(ipc_peer_logger, Logged) {
 ZEST_CASE(trace_shows_each_message_read_and_written) {
     log_from(LogLevel::trace);
     serve_add();
-    auto received = test::request<test::JsonWire>(1, "test/add", AddParams{.a = 1, .b = 2});
+    auto received = test::request<test::JsonAdapter>(1, "test/add", AddParams{.a = 1, .b = 2});
     remote.send(received);
     remote.end_input();
 
@@ -70,8 +70,8 @@ ZEST_CASE(trace_shows_each_message_read_and_written) {
 ZEST_CASE(entries_below_the_level_are_left_out) {
     log_from(LogLevel::warn);
     serve_add();
-    remote.send(test::request<test::JsonWire>(1, "test/add", AddParams{.a = 1, .b = 2}));
-    remote.send(test::notification<test::JsonWire>("unknown/note", NoteParams{}));
+    remote.send(test::request<test::JsonAdapter>(1, "test/add", AddParams{.a = 1, .b = 2}));
+    remote.send(test::notification<test::JsonAdapter>("unknown/note", NoteParams{}));
     remote.end_input();
 
     auto [ran] = run(peer.run());
@@ -99,7 +99,7 @@ ZEST_CASE(params_that_do_not_decode_are_a_warning) {
 
 ZEST_CASE(unhandled_notification_is_a_warning) {
     log_from(LogLevel::warn);
-    remote.send(test::notification<test::JsonWire>("unknown/note", NoteParams{}));
+    remote.send(test::notification<test::JsonAdapter>("unknown/note", NoteParams{}));
     remote.end_input();
 
     auto [ran] = run(peer.run());

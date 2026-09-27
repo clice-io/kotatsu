@@ -6,7 +6,7 @@
 // every codec through the codec's adapter:
 //
 //     ZEST_CASE_GROUP(dispatch) {
-//         test::peer_dispatch(test::PeerKit<test::JsonWire>{add_case});
+//         test::peer_dispatch(test::PeerKit<test::JsonAdapter>{add_case});
 //     }
 //
 // Each case gets a fresh PeerFixture. The remote's side of a case is a
@@ -32,9 +32,9 @@
 
 namespace kota::test {
 
-template <Wire W>
+template <CodecAdapter A>
 struct PeerFixture : LoopFixture {
-    using Peer = ipc::Peer<typename W::Codec>;
+    using Peer = ipc::Peer<typename A::Codec>;
     using Context = typename Peer::RequestContext;
 
     Remote remote;
@@ -55,9 +55,9 @@ struct PeerFixture : LoopFixture {
         }
     }
 
-    /// Every message the peer wrote, in order, read back with W: those next()
-    /// returned and those still queued. One W cannot read fails the test and
-    /// is left out.
+    /// Every message the peer wrote, in order, read back with the adapter:
+    /// those next() waited for and those still queued. One the adapter cannot
+    /// read fails the test and is left out.
     const std::vector<Message>& written() {
         for(auto& payload: remote.drain()) {
             keep(payload);
@@ -67,9 +67,9 @@ struct PeerFixture : LoopFixture {
 
 private:
     void keep(const std::string& payload) {
-        auto message = W::read(payload);
+        auto message = A::read(payload);
         if(!message) {
-            ZEST_CONTEXT("{} cannot read what the peer wrote: {}", W::name, message.error());
+            ZEST_CONTEXT("{} cannot read what the peer wrote: {}", A::name, message.error());
             // Reports the failure: message holds an error here.
             EXPECT(message.has_value());
             return;
@@ -81,28 +81,28 @@ private:
 };
 
 /// The sum a result message carries, if it is one of AddResult.
-template <Wire W>
+template <CodecAdapter A>
 std::optional<std::int64_t> sum_of(const Message& message) {
     if(message.kind != Message::Kind::Result) {
         return std::nullopt;
     }
-    auto result = decoded<AddResult, W>(message.body);
+    auto result = decoded<AddResult, A>(message.body);
     if(!result) {
         return std::nullopt;
     }
     return result->sum;
 }
 
-/// Where the Peer cases of adapter W are registered.
-template <Wire W>
+/// Where the Peer cases of adapter A are registered.
+template <CodecAdapter A>
 struct PeerKit {
     const zest::CaseRegistrar& add_case;
 
-    /// Registers `body` as case `name`; it runs on a fresh PeerFixture<W>.
+    /// Registers `body` as case `name`; it runs on a fresh PeerFixture<A>.
     template <typename Body>
     void add(std::string name, Body body) const {
         add_case(std::move(name), [body] {
-            PeerFixture<W> fixture;
+            PeerFixture<A> fixture;
             body(fixture);
         });
     }
@@ -110,9 +110,9 @@ struct PeerKit {
 
 /// Two peers of one codec on one loop, each writing to the other through
 /// forward(). Closing both ends the case.
-template <Wire W>
+template <CodecAdapter A>
 struct LinkedPeers : LoopFixture {
-    using Peer = ipc::Peer<typename W::Codec>;
+    using Peer = ipc::Peer<typename A::Codec>;
     using Context = typename Peer::RequestContext;
 
     Remote a_end;

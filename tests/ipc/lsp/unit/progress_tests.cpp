@@ -15,7 +15,7 @@ namespace kota::ipc::lsp {
 
 namespace {
 
-using Fixture = test::PeerFixture<test::JsonWire>;
+using Fixture = test::PeerFixture<test::JsonAdapter>;
 
 ZEST_SUITE(ipc_lsp_progress, Fixture) {
 

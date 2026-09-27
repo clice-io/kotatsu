@@ -53,7 +53,7 @@ namespace kota::ipc {
 
 namespace {
 
-using Fixture = test::PeerFixture<test::JsonWire>;
+using Fixture = test::PeerFixture<test::JsonAdapter>;
 
 ZEST_SUITE(ipc_peer_rename, Fixture) {
 

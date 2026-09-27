@@ -18,15 +18,15 @@ using test::code_of;
 ZEST_SUITE(ipc_codec_json) {
 
 ZEST_CASE_GROUP(protocol) {
-    test::codec_protocol(test::CodecKit<test::JsonWire>{add_case});
+    test::codec_protocol(test::CodecKit<test::JsonAdapter>{add_case});
 }
 
 ZEST_CASE(error_response_roundtrip_keeps_the_data) {
-    test::error_response_roundtrip_keeps_the_data<test::JsonWire>();
+    test::error_response_roundtrip_keeps_the_data<test::JsonAdapter>();
 }
 
 ZEST_CASE(deserialize_value_of_nothing_into_fields_fails) {
-    test::deserialize_value_of_nothing_into_fields_fails<test::JsonWire>();
+    test::deserialize_value_of_nothing_into_fields_fails<test::JsonAdapter>();
 }
 
 ZEST_CASE(encode_error_response_writes_the_data) {
@@ -37,7 +37,7 @@ ZEST_CASE(encode_error_response_writes_the_data) {
     };
     auto encoded = codec.encode_error_response(9, Error(ErrorCode::RequestFailed, "fail", data));
     ASSERT(encoded.has_value());
-    auto message = test::JsonWire::read(*encoded);
+    auto message = test::JsonAdapter::read(*encoded);
     ASSERT(message.has_value());
     ASSERT(message->error.data.has_value());
     EXPECT(*message->error.data == data);

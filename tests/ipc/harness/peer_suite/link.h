@@ -13,9 +13,9 @@
 
 namespace kota::test {
 
-template <Wire W>
-void peer_link(const PeerKit<W>& kit) {
-    using Peers = LinkedPeers<W>;
+template <CodecAdapter A>
+void peer_link(const PeerKit<A>& kit) {
+    using Peers = LinkedPeers<A>;
     using Context = typename Peers::Context;
     using ipc::protocol::ErrorCode;
 
@@ -93,10 +93,10 @@ void peer_link(const PeerKit<W>& kit) {
 }
 
 /// An error's data reaches the peer that asked.
-template <Wire W>
+template <CodecAdapter A>
 void error_data_crosses_between_peers() {
-    using Context = typename LinkedPeers<W>::Context;
-    LinkedPeers<W> f;
+    using Context = typename LinkedPeers<A>::Context;
+    LinkedPeers<A> f;
     codec::dyn::Value data{
         {"detail",  "bad state"},
         {"attempt", -1         },

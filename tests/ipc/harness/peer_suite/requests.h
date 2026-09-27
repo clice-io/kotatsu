@@ -12,9 +12,9 @@
 
 namespace kota::test {
 
-template <Wire W>
-void peer_requests(const PeerKit<W>& kit) {
-    using Fixture = PeerFixture<W>;
+template <CodecAdapter A>
+void peer_requests(const PeerKit<A>& kit) {
+    using Fixture = PeerFixture<A>;
     using Context = typename Fixture::Context;
     using ipc::protocol::ErrorCode;
 
@@ -26,7 +26,7 @@ void peer_requests(const PeerKit<W>& kit) {
         };
         auto remote = [&]() -> task<> {
             co_await f.next();
-            f.remote.send(response<W>(1, AddResult{.sum = 9}));
+            f.remote.send(response<A>(1, AddResult{.sum = 9}));
             f.remote.end_input();
         };
 
@@ -40,7 +40,7 @@ void peer_requests(const PeerKit<W>& kit) {
         EXPECT(written[0].kind == Message::Kind::Request);
         EXPECT(written[0].id == RequestID(1));
         EXPECT(written[0].method == "worker/build");
-        auto params = decoded<AddParams, W>(written[0].body);
+        auto params = decoded<AddParams, A>(written[0].body);
         ASSERT(params.has_value());
         EXPECT(*params == AddParams{.a = 2, .b = 3});
     });
@@ -51,7 +51,7 @@ void peer_requests(const PeerKit<W>& kit) {
         };
         auto remote = [&]() -> task<> {
             co_await f.next();
-            f.remote.send(response<W>(1, AddResult{.sum = 2}));
+            f.remote.send(response<A>(1, AddResult{.sum = 2}));
             f.remote.end_input();
         };
 
@@ -74,7 +74,7 @@ void peer_requests(const PeerKit<W>& kit) {
         auto remote = [&]() -> task<> {
             co_await f.next();
             co_await f.next();
-            f.remote.send(response<W>(1, AddResult{.sum = 100}));
+            f.remote.send(response<A>(1, AddResult{.sum = 100}));
             f.remote.end_input();
         };
 
@@ -97,7 +97,7 @@ void peer_requests(const PeerKit<W>& kit) {
         };
         auto remote = [&]() -> task<> {
             co_await f.next();
-            f.remote.send(W::error_response(1, ipc::Error(-32001, "remote failed")));
+            f.remote.send(A::error_response(1, ipc::Error(-32001, "remote failed")));
             f.remote.end_input();
         };
 
@@ -116,9 +116,9 @@ void peer_requests(const PeerKit<W>& kit) {
         };
         auto remote = [&]() -> task<> {
             co_await f.next();
-            f.remote.send(response<W>(1, AddResult{.sum = 1}));
+            f.remote.send(response<A>(1, AddResult{.sum = 1}));
             co_await f.next();
-            f.remote.send(response<W>(2, AddResult{.sum = 2}));
+            f.remote.send(response<A>(2, AddResult{.sum = 2}));
             f.remote.end_input();
         };
 
@@ -140,8 +140,8 @@ void peer_requests(const PeerKit<W>& kit) {
         auto remote = [&]() -> task<> {
             co_await f.next();
             co_await f.next();
-            f.remote.send(response<W>(2, AddResult{.sum = 20}));
-            f.remote.send(response<W>(1, AddResult{.sum = 10}));
+            f.remote.send(response<A>(2, AddResult{.sum = 20}));
+            f.remote.send(response<A>(1, AddResult{.sum = 10}));
             f.remote.end_input();
         };
 
@@ -159,7 +159,7 @@ void peer_requests(const PeerKit<W>& kit) {
         };
         auto remote = [&]() -> task<> {
             co_await f.next();
-            f.remote.send(W::response_raw(1, W::not_a_value));
+            f.remote.send(A::response_raw(1, A::not_a_value));
             f.remote.end_input();
         };
 
@@ -198,11 +198,11 @@ void peer_requests(const PeerKit<W>& kit) {
         ASSERT(written.size() == 2U);
         EXPECT(written[0].kind == Message::Kind::Notification);
         EXPECT(written[0].method == "test/note");
-        auto first = decoded<NoteParams, W>(written[0].body);
+        auto first = decoded<NoteParams, A>(written[0].body);
         ASSERT(first.has_value());
         EXPECT(first->text == "by traits");
         EXPECT(written[1].method == "custom/note");
-        auto second = decoded<NoteParams, W>(written[1].body);
+        auto second = decoded<NoteParams, A>(written[1].body);
         ASSERT(second.has_value());
         EXPECT(second->text == "by name");
     });
@@ -235,13 +235,13 @@ void peer_requests(const PeerKit<W>& kit) {
             co_return AddResult{.sum = from_context.sum + from_peer.sum};
         });
         auto remote = [&]() -> task<> {
-            f.remote.send(request<W>(7, "test/add", AddParams{.a = 2, .b = 3}));
+            f.remote.send(request<A>(7, "test/add", AddParams{.a = 2, .b = 3}));
             co_await f.next();
             co_await f.next();
             co_await f.next();
-            f.remote.send(response<W>(1, AddResult{.sum = 9}));
+            f.remote.send(response<A>(1, AddResult{.sum = 9}));
             co_await f.next();
-            f.remote.send(response<W>(2, AddResult{.sum = 4}));
+            f.remote.send(response<A>(2, AddResult{.sum = 4}));
             co_await f.next();
             f.remote.end_input();
         };
@@ -252,25 +252,25 @@ void peer_requests(const PeerKit<W>& kit) {
         const auto& written = f.written();
         ASSERT(written.size() == 5U);
         EXPECT(written[0].kind == Message::Kind::Notification);
-        auto context_note = decoded<NoteParams, W>(written[0].body);
+        auto context_note = decoded<NoteParams, A>(written[0].body);
         ASSERT(context_note.has_value());
         EXPECT(context_note->text == "context");
         EXPECT(written[1].kind == Message::Kind::Notification);
-        auto peer_note = decoded<NoteParams, W>(written[1].body);
+        auto peer_note = decoded<NoteParams, A>(written[1].body);
         ASSERT(peer_note.has_value());
         EXPECT(peer_note->text == "peer");
         EXPECT(written[2].kind == Message::Kind::Request);
         EXPECT(written[2].id == RequestID(1));
-        auto context_params = decoded<AddParams, W>(written[2].body);
+        auto context_params = decoded<AddParams, A>(written[2].body);
         ASSERT(context_params.has_value());
         EXPECT(*context_params == AddParams{.a = 2, .b = 3});
         EXPECT(written[3].kind == Message::Kind::Request);
         EXPECT(written[3].id == RequestID(2));
-        auto peer_params = decoded<AddParams, W>(written[3].body);
+        auto peer_params = decoded<AddParams, A>(written[3].body);
         ASSERT(peer_params.has_value());
         EXPECT(*peer_params == AddParams{.a = 3, .b = 1});
         EXPECT(written[4].id == RequestID(7));
-        EXPECT(sum_of<W>(written[4]) == 13);
+        EXPECT(sum_of<A>(written[4]) == 13);
     });
 
     kit.add("handler_whose_own_request_fails_is_answered_with_its_error", [](Fixture& f) {
@@ -280,9 +280,9 @@ void peer_requests(const PeerKit<W>& kit) {
                     .or_fail();
             });
         auto remote = [&]() -> task<> {
-            f.remote.send(request<W>(7, "test/add", AddParams{.a = 2, .b = 3}));
+            f.remote.send(request<A>(7, "test/add", AddParams{.a = 2, .b = 3}));
             co_await f.next();
-            f.remote.send(W::response_raw(1, W::not_a_value));
+            f.remote.send(A::response_raw(1, A::not_a_value));
             co_await f.next();
             f.remote.end_input();
         };

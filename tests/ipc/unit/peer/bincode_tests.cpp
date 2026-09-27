@@ -14,7 +14,7 @@ namespace kota::ipc {
 
 namespace {
 
-using Kit = test::PeerKit<test::BincodeWire>;
+using Kit = test::PeerKit<test::BincodeAdapter>;
 
 ZEST_SUITE(ipc_peer_bincode) {
 
@@ -43,44 +43,44 @@ ZEST_CASE_GROUP(link) {
 }
 
 ZEST_CASE(error_response_without_an_id_is_not_answered) {
-    test::error_response_without_an_id_is_not_answered<test::BincodeWire>();
+    test::error_response_without_an_id_is_not_answered<test::BincodeAdapter>();
 }
 
 // BincodeCodec encodes the RawValue as a length-prefixed blob, so the
 // requester gets the result wrapped once more.
 ZEST_CASE(raw_value_result_is_sent_as_it_is, skip = true) {
-    test::raw_value_result_is_sent_as_it_is<test::BincodeWire>();
+    test::raw_value_result_is_sent_as_it_is<test::BincodeAdapter>();
 }
 
 // N5: empty params decode as a default AddParams, and the handler runs.
 ZEST_CASE(request_without_params_is_answered_with_invalid_params, skip = true) {
-    test::request_without_params_is_answered_with_invalid_params<test::BincodeWire>();
+    test::request_without_params_is_answered_with_invalid_params<test::BincodeAdapter>();
 }
 
 // P1.5: BincodeCodec drops Error::data.
 ZEST_CASE(error_data_crosses_between_peers, skip = true) {
-    test::error_data_crosses_between_peers<test::BincodeWire>();
+    test::error_data_crosses_between_peers<test::BincodeAdapter>();
 }
 
 // P1.2: the reply to an unparsable message carries id 0 instead of none.
 ZEST_CASE(unparsable_message_is_answered_without_an_id, skip = true) {
-    test::unparsable_message_is_answered_without_an_id<test::BincodeWire>();
+    test::unparsable_message_is_answered_without_an_id<test::BincodeAdapter>();
 }
 
 // N1: a request sent after the input ended waits for an answer for good.
 ZEST_CASE(request_from_a_handler_after_end_of_input_fails, skip = true) {
-    test::request_from_a_handler_after_end_of_input_fails<test::BincodeWire>();
+    test::request_from_a_handler_after_end_of_input_fails<test::BincodeAdapter>();
 }
 
 // N4: close_output() closes at once, so the queued message fails to write.
 ZEST_CASE(close_output_writes_queued_messages_first, skip = true) {
-    test::close_output_writes_queued_messages_first<test::BincodeWire>();
+    test::close_output_writes_queued_messages_first<test::BincodeAdapter>();
 }
 
 // N4: a send after close_output() is queued, fails to write, and the failure
 // closes the input too.
 ZEST_CASE(send_after_close_output_fails, skip = true) {
-    test::send_after_close_output_fails<test::BincodeWire>();
+    test::send_after_close_output_fails<test::BincodeAdapter>();
 }
 
 };  // ZEST_SUITE(ipc_peer_bincode)

@@ -20,7 +20,7 @@ namespace kota::test {
 /// JsonCodec for the ipc kits. The remote's messages are JSON-RPC text
 /// written by hand; what the codec writes is read through a dyn::Value, so a
 /// null id and a missing one stay apart.
-struct JsonWire {
+struct JsonAdapter {
     using Codec = ipc::JsonCodec;
     constexpr static std::string_view name = "json";
     constexpr static Caps caps{.string_ids = true};
@@ -32,7 +32,7 @@ struct JsonWire {
     template <typename T>
     static std::string encode(const T& value) {
         auto text = codec::json::to_string<ipc::lsp_config>(value);
-        ZEST_CONTEXT("JsonWire::encode");
+        ZEST_CONTEXT("JsonAdapter::encode");
         EXPECT(text.has_value());
         return text ? std::move(*text) : std::string();
     }

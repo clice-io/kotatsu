@@ -15,8 +15,8 @@ namespace kota::ipc {
 
 namespace {
 
-using Fixture = test::PeerFixture<test::JsonWire>;
-using Kit = test::PeerKit<test::JsonWire>;
+using Fixture = test::PeerFixture<test::JsonAdapter>;
+using Kit = test::PeerKit<test::JsonAdapter>;
 using protocol::ErrorCode;
 using test::AddParams;
 using test::AddResult;
@@ -50,42 +50,42 @@ ZEST_CASE_GROUP(link) {
 }
 
 ZEST_CASE(raw_value_result_is_sent_as_it_is) {
-    test::raw_value_result_is_sent_as_it_is<test::JsonWire>();
+    test::raw_value_result_is_sent_as_it_is<test::JsonAdapter>();
 }
 
 ZEST_CASE(request_without_params_is_answered_with_invalid_params) {
-    test::request_without_params_is_answered_with_invalid_params<test::JsonWire>();
+    test::request_without_params_is_answered_with_invalid_params<test::JsonAdapter>();
 }
 
 ZEST_CASE(error_data_crosses_between_peers) {
-    test::error_data_crosses_between_peers<test::JsonWire>();
+    test::error_data_crosses_between_peers<test::JsonAdapter>();
 }
 
 // P1.2: the reply to an unparsable message carries id 0 instead of null.
 ZEST_CASE(unparsable_message_is_answered_without_an_id, skip = true) {
-    test::unparsable_message_is_answered_without_an_id<test::JsonWire>();
+    test::unparsable_message_is_answered_without_an_id<test::JsonAdapter>();
 }
 
 // P1.2: an error response with a null id is taken for an invalid request and
 // answered.
 ZEST_CASE(error_response_without_an_id_is_not_answered, skip = true) {
-    test::error_response_without_an_id_is_not_answered<test::JsonWire>();
+    test::error_response_without_an_id_is_not_answered<test::JsonAdapter>();
 }
 
 // N1: a request sent after the input ended waits for an answer for good.
 ZEST_CASE(request_from_a_handler_after_end_of_input_fails, skip = true) {
-    test::request_from_a_handler_after_end_of_input_fails<test::JsonWire>();
+    test::request_from_a_handler_after_end_of_input_fails<test::JsonAdapter>();
 }
 
 // N4: close_output() closes at once, so the queued message fails to write.
 ZEST_CASE(close_output_writes_queued_messages_first, skip = true) {
-    test::close_output_writes_queued_messages_first<test::JsonWire>();
+    test::close_output_writes_queued_messages_first<test::JsonAdapter>();
 }
 
 // N4: a send after close_output() is queued, fails to write, and the failure
 // closes the input too.
 ZEST_CASE(send_after_close_output_fails, skip = true) {
-    test::send_after_close_output_fails<test::JsonWire>();
+    test::send_after_close_output_fails<test::JsonAdapter>();
 }
 
 // The id of an invalid request is answered by the P1.2 cases above.

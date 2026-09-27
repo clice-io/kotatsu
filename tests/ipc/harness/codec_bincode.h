@@ -53,7 +53,7 @@ using BincodeEnvelope =
 /// above, encoded by the bincode codec itself. Error data has no encoding in
 /// this format yet (P1.5), so error_response writes none and read leaves it
 /// empty.
-struct BincodeWire {
+struct BincodeAdapter {
     using Codec = ipc::BincodeCodec;
     constexpr static std::string_view name = "bincode";
     /// Not string_ids: an id travels as an int64.
@@ -66,7 +66,7 @@ struct BincodeWire {
     template <typename T>
     static std::string encode(const T& value) {
         auto bytes = codec::bincode::to_bytes(value);
-        ZEST_CONTEXT("BincodeWire::encode");
+        ZEST_CONTEXT("BincodeAdapter::encode");
         EXPECT(bytes.has_value());
         if(!bytes) {
             return {};

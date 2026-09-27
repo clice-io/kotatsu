@@ -11,9 +11,9 @@
 
 namespace kota::test {
 
-template <Wire W>
-void peer_cancel(const PeerKit<W>& kit) {
-    using Fixture = PeerFixture<W>;
+template <CodecAdapter A>
+void peer_cancel(const PeerKit<A>& kit) {
+    using Fixture = PeerFixture<A>;
     using Context = typename Fixture::Context;
     using ipc::protocol::CancelRequestParams;
     using ipc::protocol::ErrorCode;
@@ -29,9 +29,9 @@ void peer_cancel(const PeerKit<W>& kit) {
             co_return AddResult{};
         });
         auto remote = [&]() -> task<> {
-            f.remote.send(request<W>(22, "test/add", AddParams{}));
+            f.remote.send(request<A>(22, "test/add", AddParams{}));
             co_await started.wait();
-            f.remote.send(notification<W>("$/cancelRequest", CancelRequestParams{.id = 22}));
+            f.remote.send(notification<A>("$/cancelRequest", CancelRequestParams{.id = 22}));
             co_await f.next();
             f.remote.end_input();
         };
@@ -51,9 +51,9 @@ void peer_cancel(const PeerKit<W>& kit) {
     kit.add("cancel_request_after_the_answer_is_ignored", [](Fixture& f) {
         f.serve_add();
         auto remote = [&]() -> task<> {
-            f.remote.send(request<W>(1, "test/add", AddParams{.a = 1, .b = 2}));
+            f.remote.send(request<A>(1, "test/add", AddParams{.a = 1, .b = 2}));
             co_await f.next();
-            f.remote.send(notification<W>("$/cancelRequest", CancelRequestParams{.id = 1}));
+            f.remote.send(notification<A>("$/cancelRequest", CancelRequestParams{.id = 1}));
             f.remote.end_input();
         };
 
@@ -61,11 +61,11 @@ void peer_cancel(const PeerKit<W>& kit) {
         EXPECT(ran.has_value());
         const auto& written = f.written();
         ASSERT(written.size() == 1U);
-        EXPECT(sum_of<W>(written[0]) == 3);
+        EXPECT(sum_of<A>(written[0]) == 3);
     });
 
     kit.add("cancel_request_for_an_unknown_id_is_ignored", [](Fixture& f) {
-        f.remote.send(notification<W>("$/cancelRequest", CancelRequestParams{.id = 9999}));
+        f.remote.send(notification<A>("$/cancelRequest", CancelRequestParams{.id = 9999}));
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
@@ -79,9 +79,9 @@ void peer_cancel(const PeerKit<W>& kit) {
             co_await never.wait();
             co_return AddResult{};
         });
-        f.remote.send(request<W>(1, "test/add", AddParams{}));
-        f.remote.send(notification<W>("$/cancelRequest", CancelRequestParams{.id = 1}));
-        f.remote.send(notification<W>("$/cancelRequest", CancelRequestParams{.id = 1}));
+        f.remote.send(request<A>(1, "test/add", AddParams{}));
+        f.remote.send(notification<A>("$/cancelRequest", CancelRequestParams{.id = 1}));
+        f.remote.send(notification<A>("$/cancelRequest", CancelRequestParams{.id = 1}));
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
@@ -104,10 +104,10 @@ void peer_cancel(const PeerKit<W>& kit) {
                               co_return AddResult{};
                           });
         auto remote = [&]() -> task<> {
-            f.remote.send(request<W>(1, "test/add", AddParams{.a = 1, .b = 2}));
-            f.remote.send(notification<W>("$/cancelRequest", NoteParams{.text = "1"}));
-            f.remote.send(W::notification_raw("$/cancelRequest", W::not_a_value));
-            f.remote.send(request<W>(2, "test/ping", EmptyParams{}));
+            f.remote.send(request<A>(1, "test/add", AddParams{.a = 1, .b = 2}));
+            f.remote.send(notification<A>("$/cancelRequest", NoteParams{.text = "1"}));
+            f.remote.send(A::notification_raw("$/cancelRequest", A::not_a_value));
+            f.remote.send(request<A>(2, "test/ping", EmptyParams{}));
             co_await f.next();
             release.set();
             co_await f.next();
@@ -120,7 +120,7 @@ void peer_cancel(const PeerKit<W>& kit) {
         ASSERT(written.size() == 2U);
         EXPECT(written[0].id == RequestID(2));
         EXPECT(written[1].id == RequestID(1));
-        EXPECT(sum_of<W>(written[1]) == 3);
+        EXPECT(sum_of<A>(written[1]) == 3);
     });
 
     // The peer handles $/cancelRequest itself; a handler for it is never
@@ -129,7 +129,7 @@ void peer_cancel(const PeerKit<W>& kit) {
         bool called = false;
         f.peer.on_notification("$/cancelRequest",
                                [&](const CancelRequestParams&) { called = true; });
-        f.remote.send(notification<W>("$/cancelRequest", CancelRequestParams{.id = 5}));
+        f.remote.send(notification<A>("$/cancelRequest", CancelRequestParams{.id = 5}));
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
@@ -149,9 +149,9 @@ void peer_cancel(const PeerKit<W>& kit) {
                     .or_fail();
             });
         auto remote = [&]() -> task<> {
-            f.remote.send(request<W>(31, "test/add", AddParams{.a = 4, .b = 5}));
+            f.remote.send(request<A>(31, "test/add", AddParams{.a = 4, .b = 5}));
             co_await f.next();
-            f.remote.send(notification<W>("$/cancelRequest", CancelRequestParams{.id = 31}));
+            f.remote.send(notification<A>("$/cancelRequest", CancelRequestParams{.id = 31}));
             co_await f.next();
             co_await f.next();
             f.remote.end_input();
@@ -165,7 +165,7 @@ void peer_cancel(const PeerKit<W>& kit) {
         EXPECT(written[0].kind == Message::Kind::Request);
         EXPECT(written[0].id == RequestID(1));
         EXPECT(written[1].method == "$/cancelRequest");
-        auto cancelled = decoded<CancelRequestParams, W>(written[1].body);
+        auto cancelled = decoded<CancelRequestParams, A>(written[1].body);
         ASSERT(cancelled.has_value());
         EXPECT(cancelled->id == RequestID(1));
         EXPECT(written[2].kind == Message::Kind::Error);
@@ -199,7 +199,7 @@ void peer_cancel(const PeerKit<W>& kit) {
         EXPECT(written[0].id == RequestID(1));
         EXPECT(written[1].kind == Message::Kind::Notification);
         EXPECT(written[1].method == "$/cancelRequest");
-        auto cancelled = decoded<CancelRequestParams, W>(written[1].body);
+        auto cancelled = decoded<CancelRequestParams, A>(written[1].body);
         ASSERT(cancelled.has_value());
         EXPECT(cancelled->id == RequestID(1));
     });
@@ -236,7 +236,7 @@ void peer_cancel(const PeerKit<W>& kit) {
             co_await f.next();
             source.cancel();
             co_await f.next();
-            f.remote.send(response<W>(1, AddResult{.sum = 1}));
+            f.remote.send(response<A>(1, AddResult{.sum = 1}));
             f.remote.end_input();
         };
 

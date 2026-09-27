@@ -19,25 +19,25 @@ using test::code_of;
 std::string encoded_request() {
     BincodeCodec codec;
     auto encoded =
-        codec.encode_request(1, "test/add", test::BincodeWire::encode(test::AddParams{}));
+        codec.encode_request(1, "test/add", test::BincodeAdapter::encode(test::AddParams{}));
     return encoded ? *encoded : std::string();
 }
 
 ZEST_SUITE(ipc_codec_bincode) {
 
 ZEST_CASE_GROUP(protocol) {
-    test::codec_protocol(test::CodecKit<test::BincodeWire>{add_case});
+    test::codec_protocol(test::CodecKit<test::BincodeAdapter>{add_case});
 }
 
 // P1.5: encode_error_response writes an empty blob for Error::data, and
 // parse_message ignores the blob.
 ZEST_CASE(error_response_roundtrip_keeps_the_data, skip = true) {
-    test::error_response_roundtrip_keeps_the_data<test::BincodeWire>();
+    test::error_response_roundtrip_keeps_the_data<test::BincodeAdapter>();
 }
 
 // N5: deserialize_value returns a default T for empty bytes.
 ZEST_CASE(deserialize_value_of_nothing_into_fields_fails, skip = true) {
-    test::deserialize_value_of_nothing_into_fields_fails<test::BincodeWire>();
+    test::deserialize_value_of_nothing_into_fields_fails<test::BincodeAdapter>();
 }
 
 ZEST_CASE(truncated_message_fails) {
