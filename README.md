@@ -155,6 +155,7 @@ tests/
   <module>/    # Tests per module, mirroring include/kota/<module>/:
                #   unit/ in memory, system/ touching the OS, harness/ helpers,
                #   integration/ programs over real protocols (TypeScript)
+  examples/    # Tests of the examples, and the examples run end to end
   fixtures/    # Types shared by several modules' tests
   snapshots/   # Snapshot files, one directory per suite
 

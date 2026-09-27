@@ -22,7 +22,7 @@ A test's level is decided by what it touches, not by the module it tests.
 
 ## Layout
 
-Tests are grouped by module, then by level. `tests/<module>/` mirrors `include/kota/<module>/`; the modules are `support`, `meta`, `codec` with one directory per backend (`codec/json`, `codec/toml`, `codec/fbs`, `codec/bincode`, `codec/dyn`, `codec/debug`), `deco`, `async`, `ipc` with `ipc/lsp`, `http` and `zest`.
+Tests are grouped by module, then by level. `tests/<module>/` mirrors `include/kota/<module>/`; the modules are `support`, `meta`, `codec` with one directory per backend (`codec/json`, `codec/toml`, `codec/fbs`, `codec/bincode`, `codec/dyn`, `codec/debug`), `deco`, `async`, `ipc` with `ipc/lsp`, `http` and `zest`. `tests/examples/` holds the tests of `examples/`: unit tests of what an example builds on, and the example programs run end to end.
 
 ```
 tests/<module>/
@@ -33,7 +33,8 @@ tests/<module>/
   harness/*.h, harness/*.ts   helpers for this module's tests and the modules above,
                               integration tests' helpers included
   CMakeLists.txt              kota_add_module_tests(LIBS <the module's libraries>)
-                              kota_add_integration_tests(LIBS ...) if it has integration/
+                              kota_add_integration_tests(LIBS ... PROGRAMS ...) if it
+                              has integration/; PROGRAMS are targets built elsewhere
 tests/fixtures/               types shared by several modules' tests
 tests/snapshots/<suite>/      snapshot files
 ```
@@ -54,19 +55,22 @@ What each module's headers include, and so what its tests may use:
 Rules:
 
 - A module's tests include only what their module depends on, plus the harnesses of those modules: `#include "async/harness/loop_fixture.h"`, rooted at `tests/`. Shared fixtures in `tests/fixtures/` follow the same rule for the lowest module that uses them. The build does not enforce this; review does.
-- Tests use the public API: `include/kota/`, never a header from `src/` or anything from `examples/`.
+- Tests use the public API: `include/kota/`, never a header from `src/`, nor anything from `examples/` outside `tests/examples/`.
 - Behaviour defined once in the library is tested once. Backends of one protocol share one suite through the module's harness; a backend's own files test only what is specific to that backend.
 
 ## Integration tests
 
-- An integration test is a TypeScript file on node's test runner (`node:test`, `node:assert/strict`), run by node directly (type stripping, no build step) and type-checked by `pixi run typecheck`. Its npm packages are the root `package.json`'s devDependencies (`vscode-jsonrpc`, `vscode-languageserver-protocol`), installed by `pixi run npm-ci`.
-- A driver is a C++ program under test, `integration/drivers/<name>.cpp`, linked against the module's libraries by `kota_add_integration_tests`. ctest passes its path in `KOTA_<NAME>`; a test whose driver is unset or missing fails, it never skips.
+- An integration test is a TypeScript file on node's test runner (`node:test`, `node:assert/strict`), run by node directly (type stripping, no build step) and type-checked by `pixi run typecheck`. Its npm packages are the root `package.json`'s devDependencies (`vscode-jsonrpc`, `vscode-languageserver-protocol`, `vscode-uri`, `vscode-languageserver-textdocument`, `fast-check`), installed by `pixi run npm-ci`.
+- A driver is a C++ program under test, `integration/drivers/<name>.cpp`, linked against the module's libraries by `kota_add_integration_tests`; an example it runs is named in `PROGRAMS`. ctest passes each one's path in `KOTA_<NAME>`; a test whose driver is unset or missing fails, it never skips.
 - All of a module's `integration/*.test.ts` are one ctest test, `<module>_integration` (label `integration`); it needs nothing from zest and runs beside the other stages.
-- ipc's harness (`ipc/harness/driver.ts`) spawns a driver and talks to it over its stdio, through a vscode-jsonrpc connection or on the raw wire (`raw.ts`). `Driver.spawn` takes the test's context: a driver the test did not finish with is killed when the test ends, and how it ended printed with its stderr.
+- ipc's harness (`ipc/harness/driver.ts`) spawns a driver and talks to it over its stdio: through a vscode-jsonrpc connection, on the raw wire (`raw.ts`, and `session.ts`, which pairs responses with requests and keeps the strays), or in JSON lines (`jsonl.ts`) for a driver that is no JSON-RPC peer. `Driver.spawn` takes the test's context: a driver the test did not finish with is killed when the test ends, and how it ended printed with its stderr.
 - A driver logs through `test::stderr_logger()` (`ipc/harness/stderr_logger.h`), one `[<level>] <message>` line each.
 - Every test ends with `expectExit(code)`, which checks the exit code and fails on a sanitizer report in the driver's stderr, and on a warn or error line the case did not declare with `expectLog(pattern)`: a message the driver drops with a warning fails the case that sent it.
 - Cases are named like zest cases: `snake_case`, shaped `<subject>_<behaviour>`, `_fails` for an error. A file's comment says what its cases have in common.
 - No sleeps: wait for the message or the exit that says it happened. The runner's timeout (`--test-timeout` in `kota_add_integration_tests`) bounds each test, driver included.
+- A randomized test runs on fast-check through `fuzz()` (`ipc/harness/fuzz.ts`): a fixed seed, reported with the shrunk counterexample; `KOTA_FUZZ_SEED` and `KOTA_FUZZ_RUNS` override the seed and the 100 runs for long runs by hand. A run that stalls fails through `within()` before the test times out, and a run that fails kills its driver and reports its stderr.
+- LSP's types are drawn from the pinned metaModel (`ipc/lsp/harness/protocol_values.ts`), which also says whether protocol.h reads a value. Where kotatsu reads LSP otherwise, `ipc/lsp/harness/known_deviations.ts` has an entry naming the finding or "design"; the fix of a finding deletes its entry, and the tests then check it.
+- Behaviour the library owes but does not have yet is a case written for the correct behaviour, skipped with the finding that fixes it (`{ skip: "P1.2: ..." }`); the fix removes the skip.
 
 ## Trust
 
