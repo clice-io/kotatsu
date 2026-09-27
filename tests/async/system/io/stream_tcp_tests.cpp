@@ -201,14 +201,13 @@ ZEST_CASE(second_accept_while_one_is_pending_fails) {
     auto listener = listen_loopback(loop);
     ASSERT(listener.has_value());
     auto first = listener->acceptor.accept();
-    auto* node = first.operator->();
     auto second_then_cancel = [&]() -> task<result<tcp>> {
         auto second = co_await listener->acceptor.accept();
-        node->cancel();
+        first.cancel();
         co_return second;
     };
 
-    auto [pending, second] = run(std::move(first), second_then_cancel());
+    auto [pending, second] = run(first, second_then_cancel());
     EXPECT(pending.is_cancelled());
     ASSERT(second.has_value());
     ASSERT(second->has_error());
@@ -219,9 +218,8 @@ ZEST_CASE(cancelled_accept_leaves_the_listener_usable) {
     auto listener = listen_loopback(loop);
     ASSERT(listener.has_value());
     auto pending = listener->acceptor.accept();
-    auto* node = pending.operator->();
     auto cancel_then_serve = [&]() -> task<std::string, error> {
-        node->cancel();
+        pending.cancel();
         auto connection = co_await listener->acceptor.accept().or_fail();
         co_return co_await connection.read().or_fail();
     };
@@ -230,7 +228,7 @@ ZEST_CASE(cancelled_accept_leaves_the_listener_usable) {
         co_await connection.write(std::string_view("after")).or_fail();
     };
 
-    auto [cancelled, received, sent] = run(std::move(pending), cancel_then_serve(), client());
+    auto [cancelled, received, sent] = run(pending, cancel_then_serve(), client());
     EXPECT(cancelled.is_cancelled());
     ASSERT(received.has_value());
     EXPECT(*received == "after");
@@ -338,13 +336,12 @@ ZEST_CASE(connect_can_be_cancelled) {
     queued.fd = connect_raw(port);
     ASSERT(queued.fd != invalid_socket);
     auto connecting = tcp::connect("127.0.0.1", port, loop);
-    auto* node = connecting.operator->();
     auto cancel_it = [&]() -> task<> {
-        node->cancel();
+        connecting.cancel();
         co_return;
     };
 
-    auto [cancelled, driver] = run(std::move(connecting), cancel_it());
+    auto [cancelled, driver] = run(connecting, cancel_it());
     EXPECT(cancelled.is_cancelled());
 }
 #endif

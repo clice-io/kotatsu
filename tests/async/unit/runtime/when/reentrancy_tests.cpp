@@ -1,3 +1,4 @@
+#include <mutex>
 #include <optional>
 #include <tuple>
 #include <variant>
@@ -84,13 +85,15 @@ ZEST_CASE(any_unlocker_of_a_mutex_wins_over_its_waiter) {
     EXPECT(m.try_lock());
 }
 
+// The cancelled wait takes the mutex back before it ends; its guard unlocks it
+// as when_any destroys the waiter's frame.
 ZEST_CASE(any_notifier_of_a_condition_variable_wins_over_its_waiter) {
     mutex m;
     condition_variable cv;
     auto waiter = [&]() -> task<int> {
         co_await m.lock();
+        std::lock_guard guard(m, std::adopt_lock);
         co_await cv.wait(m);
-        m.unlock();
         co_return 1;
     };
     auto notifier = [&]() -> task<int> {
@@ -308,7 +311,7 @@ ZEST_CASE(child_firing_the_shared_token_cancels_all) {
     auto [result, drove] = run(combined(), trigger());
     ASSERT(result.has_value());
     EXPECT(*result);
-    EXPECT(never.get_head() == nullptr);
+    EXPECT(!never.has_waiters());
 }
 
 };  // ZEST_SUITE(async_runtime_when_reentrancy)

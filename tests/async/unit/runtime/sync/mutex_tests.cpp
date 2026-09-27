@@ -72,15 +72,14 @@ ZEST_CASE(cancelled_waiter_leaves_the_queue) {
         m.unlock();
     };
     auto target = waiter();
-    auto* node = target.operator->();
     auto cancel_it = [&]() -> task<bool> {
-        node->cancel();
-        bool queue_empty = m.get_head() == nullptr;
+        target.cancel();
+        bool queue_empty = !m.has_waiters();
         m.unlock();
         co_return queue_empty;
     };
 
-    auto [waited, queue_empty] = run(std::move(target), cancel_it());
+    auto [waited, queue_empty] = run(target, cancel_it());
     EXPECT(waited.is_cancelled());
     EXPECT(!acquired);
     ASSERT(queue_empty.has_value());
@@ -100,14 +99,13 @@ ZEST_CASE(cancelled_waiter_passes_on_a_handed_over_lock) {
         m.unlock();
     };
     auto first = waiter(1);
-    auto* first_node = first.operator->();
     auto hand_over = [&]() -> task<> {
         m.unlock();
-        first_node->cancel();
+        first.cancel();
         co_return;
     };
 
-    auto [cancelled, second, driver] = run(std::move(first), waiter(2), hand_over());
+    auto [cancelled, second, driver] = run(first, waiter(2), hand_over());
     EXPECT(cancelled.is_cancelled());
     EXPECT(second.has_value());
     EXPECT(acquired == std::vector{2});

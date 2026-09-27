@@ -26,8 +26,8 @@ struct event_loop::Self : relay::Self {
     uv_check_t check = {};
     bool idle_running = false;
     bool check_running = false;
-    std::deque<async_node*> tasks;
-    std::deque<async_node*> deferred;
+    std::deque<task_frame*> tasks;
+    std::deque<task_frame*> deferred;
     /// Ops suspended via yield(). New ops land in `yields_staged`; each()
     /// promotes the staged batch to `yields_ready` and completes the batch
     /// promoted by the previous each(). The two-step promotion guarantees an
@@ -128,8 +128,8 @@ void each(uv_idle_t* idle) {
     self->yields_ready = std::move(self->yields_staged);
     auto all = std::move(self->tasks);
 
-    for(auto& task: all) {
-        task->resume();
+    for(auto* root: all) {
+        detail::task_access::run_root(*root);
     }
 
     // Complete the previously promoted yields after this iteration's
@@ -142,29 +142,20 @@ void each(uv_idle_t* idle) {
     }
 }
 
-void event_loop::schedule(async_node& frame, std::source_location loc) {
-    assert(self && "schedule: no current event loop in this thread");
-
-    if(frame.state == async_node::Pending) {
-        frame.state = async_node::Running;
-    } else if(frame.state == async_node::Finished || frame.state == async_node::Running) {
-        std::abort();
-    }
-
-    frame.location = loc;
+void event_loop::schedule(task_frame& root) {
     auto& loop = *this;
     if(!loop->idle_running && loop->tasks.empty()) {
         loop->idle_running = true;
         uv::idle_start(loop->idle, each);
     }
-    loop->tasks.push_back(&frame);
+    loop->tasks.push_back(&root);
 }
 
 static void drain_deferred_queue(event_loop::Self* self) {
     while(!self->deferred.empty()) {
         auto batch = std::move(self->deferred);
-        for(auto* node: batch) {
-            node->resume();
+        for(auto* task: batch) {
+            detail::task_access::resume_woken(*task);
         }
     }
 }
@@ -179,8 +170,8 @@ static void on_check(uv_check_t* handle) {
     }
 }
 
-void event_loop::defer_resume(async_node& node) {
-    self->deferred.push_back(&node);
+void event_loop::defer_resume(task_frame& task) {
+    self->deferred.push_back(&task);
     if(!self->check_running) {
         self->check_running = true;
         uv::ref(self->check);
@@ -205,7 +196,7 @@ yield_awaiter::yield_awaiter(event_loop& loop) noexcept : loop(&loop) {
     };
 }
 
-std::coroutine_handle<> yield_awaiter::suspend(async_node& parent_node,
+std::coroutine_handle<> yield_awaiter::suspend(task_frame& parent_node,
                                                std::source_location loc) noexcept {
     auto* self = loop->operator->();
 

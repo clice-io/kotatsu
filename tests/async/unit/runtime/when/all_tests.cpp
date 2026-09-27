@@ -1,3 +1,4 @@
+#include <coroutine>
 #include <cstddef>
 #include <optional>
 #include <tuple>
@@ -28,6 +29,21 @@ using all_range_result_t =
 task<int> value(int v) {
     co_return v;
 }
+
+/// An awaiter that never suspends and gives `value`.
+struct Ready {
+    int value = 0;
+
+    bool await_ready() const noexcept {
+        return true;
+    }
+
+    void await_suspend(std::coroutine_handle<>) const noexcept {}
+
+    int await_resume() const noexcept {
+        return value;
+    }
+};
 
 ZEST_SUITE(async_runtime_when_all, test::LoopFixture) {
 
@@ -126,24 +142,14 @@ ZEST_CASE(accepts_awaiters_that_are_not_tasks) {
     EXPECT(!sem.try_acquire());
 }
 
-// event::wait_awaiter returns whether its wait was interrupted.
 ZEST_CASE(accepts_awaiters_that_return_values) {
-    event woken;
-    event interrupted;
-    using Waited = outcome<void, void, cancellation>;
-    auto combined = [&]() -> task<std::tuple<Waited, Waited>> {
-        co_return co_await when_all(event::wait_awaiter(woken), event::wait_awaiter(interrupted));
-    };
-    auto driver = [&]() -> task<> {
-        woken.set();
-        interrupted.interrupt();
-        co_return;
+    auto combined = []() -> task<std::tuple<int, int>> {
+        co_return co_await when_all(Ready{.value = 1}, Ready{.value = 2});
     };
 
-    auto [result, drove] = run(combined(), driver());
+    auto [result] = run(combined());
     ASSERT(result.has_value());
-    EXPECT(std::get<0>(*result).has_value());
-    EXPECT(std::get<1>(*result).is_cancelled());
+    EXPECT(*result == std::tuple{1, 2});
 }
 
 ZEST_CASE(empty_when_all_completes_at_once) {

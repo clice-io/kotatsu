@@ -1,74 +1,109 @@
 #include "kota/async/runtime/sync.h"
 
 #include <cassert>
+#include <utility>
 
 #include "kota/async/io/loop.h"
 
 namespace kota {
 
-void sync_primitive::insert(wait_node* link) {
-    assert(link && "insert: null wait_node");
-    assert(link->resource == nullptr && "insert: wait_node already linked");
-    assert(link->prev == nullptr && link->next == nullptr && "insert: wait_node has links");
-
-    link->resource = this;
-
-    if(tail) {
-        tail->next = link;
-        link->prev = tail;
-        tail = link;
-    } else {
-        head = link;
-        tail = link;
-    }
+void sync_primitive::insert(wait_node& waiter) noexcept {
+    assert(waiter.queue == nullptr && "waiter queued twice");
+    waiter.queue = this;
+    waiter.prev = tail;
+    waiter.next = nullptr;
+    (tail ? tail->next : head) = &waiter;
+    tail = &waiter;
 }
 
-void sync_primitive::remove(wait_node* link) {
-    assert(link && "remove: null wait_node");
-    assert(link->resource == this && "remove: wait_node not owned by resource");
-
-    if(link->prev) {
-        link->prev->next = link->next;
-    } else {
-        head = link->next;
-    }
-
-    if(link->next) {
-        link->next->prev = link->prev;
-    } else {
-        tail = link->prev;
-    }
-
-    link->prev = nullptr;
-    link->next = nullptr;
-    link->resource = nullptr;
+void sync_primitive::remove(wait_node& waiter) noexcept {
+    assert(waiter.queue == this && "waiter not queued here");
+    (waiter.prev ? waiter.prev->next : head) = waiter.next;
+    (waiter.next ? waiter.next->prev : tail) = waiter.prev;
+    waiter.prev = nullptr;
+    waiter.next = nullptr;
+    waiter.queue = nullptr;
 }
 
-bool sync_primitive::resume_waiter(wait_node& link) noexcept {
-    auto* awaiting = link.parent;
-    assert(awaiting && "resume_waiter: waiter has no parent");
-    assert(event_loop::has_current() && "resume_waiter: no event loop on this thread");
-    if(awaiting->is_cancelled()) {
-        link.parent = nullptr;
+bool sync_primitive::wake_one() {
+    if(head == nullptr) {
         return false;
     }
-    link.state = async_node::Finished;
-    event_loop::current().defer_resume(*awaiting);
+    auto& waiter = *head;
+    remove(waiter);
+    waiter.grant(*this);
     return true;
 }
 
-bool sync_primitive::cancel_waiter(wait_node& link) noexcept {
-    auto* awaiting = link.parent;
-    assert(awaiting && "cancel_waiter: waiter has no parent");
-    assert(event_loop::has_current() && "cancel_waiter: no event loop on this thread");
-    if(awaiting->is_cancelled()) {
-        link.parent = nullptr;
-        return false;
+wait_node::wait_node(condition_variable& owner, mutex& relock) noexcept :
+    async_node(NodeKind::Waiter), owner(&owner), relock(&relock) {}
+
+bool wait_node::await_ready() noexcept {
+    switch(owner->kind) {
+        case sync_primitive::Kind::Mutex: return static_cast<mutex*>(owner)->try_lock();
+        case sync_primitive::Kind::Semaphore: return static_cast<semaphore*>(owner)->try_acquire();
+        case sync_primitive::Kind::Event: return static_cast<event*>(owner)->is_set();
+        case sync_primitive::Kind::ConditionVariable: return false;
     }
-    link.state = async_node::Cancelled;
-    link.policy = static_cast<async_node::Policy>(link.policy | async_node::InterceptCancel);
-    event_loop::current().defer_resume(*awaiting);
-    return true;
+    std::unreachable();
+}
+
+std::coroutine_handle<> wait_node::wait(task_frame& waiting,
+                                        std::source_location location) noexcept {
+    if(auto ended = waiting.checkpoint()) {
+        // A condition variable wait ends here still holding its mutex.
+        return ended;
+    }
+    awaited_by(waiting, location);
+    if(relock != nullptr) {
+        relock->unlock();
+    }
+    owner->insert(*this);
+    return std::noop_coroutine();
+}
+
+void wait_node::grant(sync_primitive& from) {
+    if(relock != nullptr && &from == owner) {
+        // A notification. Like a thread woken from std::condition_variable,
+        // the wait now needs the mutex back.
+        if(!relock->try_lock()) {
+            relock->insert(*this);
+            return;
+        }
+    }
+    event_loop::current().defer_resume(static_cast<task_frame&>(*parent));
+}
+
+void wait_node::cancel_wait() {
+    if(queue != owner) {
+        // Granted, or a notified condition variable wait queued on its mutex
+        // again. Its task learns of the cancel when it is woken.
+        give_back();
+        return;
+    }
+
+    owner->remove(*this);
+    if(relock != nullptr && !relock->try_lock()) {
+        // A condition variable wait ends holding its mutex: the cancel waits
+        // for it.
+        relock->insert(*this);
+        return;
+    }
+    state = State::Cancelled;
+    resume_and_drain(std::exchange(parent, nullptr)->on_child_complete(*this));
+}
+
+void wait_node::give_back() {
+    switch(owner->kind) {
+        case sync_primitive::Kind::Mutex: static_cast<mutex*>(owner)->unlock(); break;
+        case sync_primitive::Kind::Semaphore: static_cast<semaphore*>(owner)->release(); break;
+        case sync_primitive::Kind::Event: break;
+        case sync_primitive::Kind::ConditionVariable:
+            // The notification; the wait keeps its mutex, which it holds or
+            // waits for.
+            static_cast<condition_variable*>(owner)->notify_one();
+            break;
+    }
 }
 
 }  // namespace kota

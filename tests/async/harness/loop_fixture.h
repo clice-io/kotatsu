@@ -5,10 +5,10 @@
 #include <cstddef>
 #include <cstdlib>
 #include <optional>
-#include <span>
 #include <stdexcept>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 
 #include "kota/zest/macro.h"
@@ -22,8 +22,7 @@ namespace kota::test {
 template <typename Task>
 using run_result_t = outcome<typename Task::value_type, typename Task::error_type, cancellation>;
 
-/// The task run() awaits for `Task`: the same frame, with its cancellation
-/// caught.
+/// The task run() awaits for `Task`: one that catches its cancellation.
 template <typename Task>
 using caught_t = task<typename Task::value_type, typename Task::error_type, cancellation>;
 
@@ -40,25 +39,46 @@ struct LoopFixture {
     /// Runs `tasks` on `loop`, started in the order given, until every one of
     /// them has finished, and returns what each ended with. The loop stops as
     /// soon as the last task finishes, whatever handles are still open. A task
-    /// that throws rethrows here once all of them have finished. Every task's
-    /// frame lives until run() returns, so a test may still cancel() a task
-    /// that has finished.
+    /// that throws rethrows here once all of them have finished. A task passed
+    /// as an lvalue stays the test's, which can cancel() it while it runs; the
+    /// frames of the others live until run() returns.
     template <typename... Tasks>
         requires (sizeof...(Tasks) > 0)
-    std::tuple<run_result_t<Tasks>...> run(Tasks... tasks) {
-        constexpr auto count = sizeof...(Tasks);
-        std::tuple<caught_t<Tasks>...> frames{std::move(tasks).catch_cancel()...};
-        std::tuple<std::optional<run_result_t<Tasks>>...> results;
-        std::array<async_node*, count> running;
-        std::size_t remaining = count;
+    std::tuple<run_result_t<std::remove_cvref_t<Tasks>>...> run(Tasks&&... tasks) {
+        std::tuple<caught_t<std::remove_cvref_t<Tasks>>...> frames{
+            catching(std::forward<Tasks>(tasks))...};
+        std::tuple<std::optional<run_result_t<std::remove_cvref_t<Tasks>>>...> results;
+        std::size_t remaining = sizeof...(Tasks);
         bool expired = false;
 
+        auto cancel_running = [&] {
+            // A task that has finished ignores the cancel.
+            std::apply([](auto&... frame) { (frame.cancel(), ...); }, frames);
+        };
         auto trackers = [&]<std::size_t... I>(std::index_sequence<I...>) {
-            running = {std::get<I>(frames).operator->()...};
-            return std::array<task<>, count>{
-                track(std::get<I>(frames), std::get<I>(results), running[I], remaining)...};
+            return std::array<task<>, sizeof...(Tasks)>{
+                track(std::get<I>(frames), std::get<I>(results), remaining)...};
         }(std::index_sequence_for<Tasks...>{});
-        auto guard = watch(running, remaining, expired);
+        auto watch = [&]() -> task<> {
+            co_await sleep(watchdog, loop);
+            // The loop may fire the timer in the turn the last task finished.
+            if(remaining == 0) {
+                co_return;
+            }
+            expired = true;
+            cancel_running();
+            // Still here once more: a cancellation that cannot complete, such
+            // as work stuck on a pool thread.
+            co_await sleep(watchdog, loop);
+            if(remaining == 0) {
+                co_return;
+            }
+            ZEST_CONTEXT("tasks still running {} after the watchdog cancelled them", watchdog);
+            // Reports the failure before the abort: remaining is not 0 here.
+            EXPECT(remaining == 0U);
+            std::abort();
+        };
+        auto guard = watch();
 
         for(auto& tracker: trackers) {
             loop.schedule(tracker);
@@ -74,12 +94,12 @@ struct LoopFixture {
                 EXPECT(remaining == 0U);
             }
             while(remaining != 0) {
-                cancel_running(running);
+                cancel_running();
                 loop.run();
             }
         }
         // Ends the watchdog's sleep.
-        guard->cancel();
+        guard.cancel();
 
         {
             ZEST_CONTEXT("tasks still running after {} were cancelled by the watchdog", watchdog);
@@ -90,7 +110,8 @@ struct LoopFixture {
             tracker.result();
         }
         return [&]<std::size_t... I>(std::index_sequence<I...>) {
-            return std::tuple<run_result_t<Tasks>...>(std::move(*std::get<I>(results))...);
+            return std::tuple<run_result_t<std::remove_cvref_t<Tasks>>...>(
+                std::move(*std::get<I>(results))...);
         }(std::index_sequence_for<Tasks...>{});
     }
 
@@ -98,12 +119,10 @@ private:
     /// Counts a task off on every way out of its tracker, a throw included,
     /// and stops the loop after the last one.
     struct Countdown {
-        async_node*& running;
         std::size_t& remaining;
         event_loop& loop;
 
         ~Countdown() {
-            running = nullptr;
             remaining -= 1;
             if(remaining == 0) {
                 loop.stop();
@@ -111,56 +130,32 @@ private:
         }
     };
 
-    /// Hands the frame back to where run() keeps it once the tracker is
-    /// done with it, a throw included.
-    template <typename Task>
-    struct GiveBack {
-        Task& owner;
-        typename Task::awaiter& awaiting;
-
-        ~GiveBack() {
-            owner = std::move(awaiting.awaitee);
-        }
-    };
-
-    template <typename Task>
-    task<> track(Task& owned,
-                 std::optional<run_result_t<Task>>& result,
-                 async_node*& running,
-                 std::size_t& remaining) {
-        Countdown countdown{running, remaining, loop};
-        typename Task::awaiter awaiting{std::move(owned)};
-        GiveBack<Task> give_back{owned, awaiting};
-        result.emplace(co_await awaiting);
+    template <typename T, typename E, typename C>
+    static caught_t<task<T, E, C>> catching(task<T, E, C>&& owned) {
+        return std::move(owned).catch_cancel();
     }
 
-    /// Cancelling one task can finish others, which clears their slots.
-    static void cancel_running(std::span<async_node*> running) {
-        for(auto* node: running) {
-            if(node) {
-                node->cancel();
-            }
+    /// A task the test keeps is awaited through one that ends as it does.
+    template <typename T, typename E>
+    static caught_t<task<T, E>> catching(task<T, E>& kept) {
+        return await_kept(kept).catch_cancel();
+    }
+
+    template <typename T, typename E>
+    static task<T, E> await_kept(task<T, E>& kept) {
+        if constexpr(!std::is_void_v<T>) {
+            co_return co_await kept;
+        } else if constexpr(!std::is_void_v<E>) {
+            co_await or_fail(co_await kept);
+        } else {
+            co_await kept;
         }
     }
 
-    task<> watch(std::span<async_node*> running, const std::size_t& remaining, bool& expired) {
-        co_await sleep(watchdog, loop);
-        // The loop may fire the timer in the turn the last task finished.
-        if(remaining == 0) {
-            co_return;
-        }
-        expired = true;
-        cancel_running(running);
-        // Still here once more: a cancellation that cannot complete, such as
-        // work stuck on a pool thread.
-        co_await sleep(watchdog, loop);
-        if(remaining == 0) {
-            co_return;
-        }
-        ZEST_CONTEXT("tasks still running {} after the watchdog cancelled them", watchdog);
-        // Reports the failure before the abort: remaining is not 0 here.
-        EXPECT(remaining == 0U);
-        std::abort();
+    template <typename Frame, typename Result>
+    task<> track(Frame& frame, std::optional<Result>& result, std::size_t& remaining) {
+        Countdown countdown{remaining, loop};
+        result.emplace(co_await frame);
     }
 };
 

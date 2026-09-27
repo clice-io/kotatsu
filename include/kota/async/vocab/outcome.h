@@ -2,8 +2,11 @@
 
 #include <cassert>
 #include <concepts>
-#include <cstdint>
+#include <exception>
+#include <string>
+#include <string_view>
 #include <type_traits>
+#include <utility>
 #include <variant>
 
 #include "kota/support/config.h"
@@ -45,14 +48,27 @@ outcome_cancel_t<std::decay_t<C>> outcome_cancel(C&& c) {
     return {std::forward<C>(c)};
 }
 
+/// Thrown by outcome::unwrap() when the outcome holds no value. what() is the
+/// error's message() when the error type has one, or says that the outcome
+/// holds an error or was cancelled.
+class bad_outcome_access : public std::exception {
+public:
+    explicit bad_outcome_access(std::string message) : message(std::move(message)) {}
+
+    const char* what() const noexcept override {
+        return message.c_str();
+    }
+
+private:
+    std::string message;
+};
+
 template <typename T, typename E, typename C>
 class outcome {
 public:
     using value_type = T;
     using error_type = E;
     using cancel_type = C;
-
-    enum class State : std::uint8_t { ok, err, cancelled };
 
 private:
     template <typename X>
@@ -80,10 +96,6 @@ public:
         requires std::is_void_v<T>
         : variant(std::in_place_index<0>) {}
 
-    State state() const noexcept {
-        return State(variant.index());
-    }
-
     bool has_value() const noexcept {
         return variant.index() == 0;
     }
@@ -102,93 +114,71 @@ public:
         return has_value();
     }
 
-    auto& value() &
+    template <typename Self>
+    auto&& value(this Self&& self)
         requires (!std::is_void_v<T>) {
-        assert(has_value());
-        return std::get<0>(variant);
+        assert(self.has_value());
+        return std::get<0>(std::forward<Self>(self).variant);
     }
 
-    const auto& value() const&
+    template <typename Self>
+    auto&& operator*(this Self&& self)
         requires (!std::is_void_v<T>) {
-        assert(has_value());
-        return std::get<0>(variant);
+        return std::forward<Self>(self).value();
     }
 
-    auto&& value() &&
+    template <typename Self>
+    auto* operator->(this Self&& self)
         requires (!std::is_void_v<T>) {
-        assert(has_value());
-        return std::move(std::get<0>(variant));
+        return &self.value();
     }
 
-    auto& operator*() &
-        requires (!std::is_void_v<T>) {
-        return value();
-    }
-
-    const auto& operator*() const&
-        requires (!std::is_void_v<T>) {
-        return value();
-    }
-
-    auto&& operator*() &&
-        requires (!std::is_void_v<T>) {
-        return std::move(*this).value();
-    }
-
-    auto* operator->()
-        requires (!std::is_void_v<T>) {
-        return &value();
-    }
-
-    const auto* operator->() const
-        requires (!std::is_void_v<T>) {
-        return &value();
-    }
-
-    auto& error() &
+    template <typename Self>
+    auto&& error(this Self&& self)
         requires (!std::is_void_v<E>) {
-        assert(has_error());
-        return std::get<1>(variant);
+        assert(self.has_error());
+        return std::get<1>(std::forward<Self>(self).variant);
     }
 
-    const auto& error() const&
-        requires (!std::is_void_v<E>) {
-        assert(has_error());
-        return std::get<1>(variant);
-    }
-
-    auto&& error() &&
-        requires (!std::is_void_v<E>) {
-        assert(has_error());
-        return std::move(std::get<1>(variant));
-    }
-
-    auto& cancellation() &
+    template <typename Self>
+    auto&& cancellation(this Self&& self)
         requires (!std::is_void_v<C>) {
-        assert(is_cancelled());
-        return std::get<2>(variant);
+        assert(self.is_cancelled());
+        return std::get<2>(std::forward<Self>(self).variant);
     }
 
-    const auto& cancellation() const&
-        requires (!std::is_void_v<C>) {
-        assert(is_cancelled());
-        return std::get<2>(variant);
-    }
-
-    auto&& cancellation() &&
-        requires (!std::is_void_v<C>) {
-        assert(is_cancelled());
-        return std::move(std::get<2>(variant));
+    /// The value, or a thrown bad_outcome_access when there is none. Aborts
+    /// instead in builds without exceptions.
+    template <typename Self>
+    decltype(auto) unwrap(this Self&& self) {
+        if(!self.has_value()) {
+            KOTA_THROW(bad_outcome_access(self.failure()));
+        }
+        if constexpr(!std::is_void_v<T>) {
+            return std::forward<Self>(self).value();
+        }
     }
 
 private:
+    /// What unwrap() reports for an outcome without a value.
+    std::string failure() const {
+        if constexpr(!std::is_void_v<E>) {
+            if(has_error()) {
+                if constexpr(requires(const E& e) { std::string_view(e.message()); }) {
+                    return std::string(std::string_view(error().message()));
+                } else {
+                    return "outcome holds an error";
+                }
+            }
+        }
+        return "outcome was cancelled";
+    }
+
     std::variant<member_t<T>, member_t<E>, member_t<C>> variant;
 };
 
 template <typename T>
 class outcome<T, void, void> {
-    using stored_type = std::conditional_t<std::is_void_v<T>, std::type_identity<void>, T>;
-
 public:
     using value_type = T;
     using error_type = void;
@@ -213,44 +203,30 @@ public:
         return true;
     }
 
-    auto& value() &
+    template <typename Self>
+    auto&& value(this Self&& self)
         requires (!std::is_void_v<T>) {
-        return data;
+        return std::forward<Self>(self).data;
     }
 
-    const auto& value() const&
+    template <typename Self>
+    auto&& operator*(this Self&& self)
         requires (!std::is_void_v<T>) {
-        return data;
+        return std::forward<Self>(self).data;
     }
 
-    auto&& value() &&
+    template <typename Self>
+    auto* operator->(this Self&& self)
         requires (!std::is_void_v<T>) {
-        return std::move(data);
+        return &self.data;
     }
 
-    auto& operator*() &
-        requires (!std::is_void_v<T>) {
-        return value();
-    }
-
-    const auto& operator*() const&
-        requires (!std::is_void_v<T>) {
-        return value();
-    }
-
-    auto&& operator*() &&
-        requires (!std::is_void_v<T>) {
-        return std::move(*this).value();
-    }
-
-    auto* operator->()
-        requires (!std::is_void_v<T>) {
-        return &value();
-    }
-
-    const auto* operator->() const
-        requires (!std::is_void_v<T>) {
-        return &value();
+    /// The value: an outcome without channels always holds one.
+    template <typename Self>
+    decltype(auto) unwrap(this Self&& self) {
+        if constexpr(!std::is_void_v<T>) {
+            return std::forward<Self>(self).value();
+        }
     }
 
 private:

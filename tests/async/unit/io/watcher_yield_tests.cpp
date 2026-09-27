@@ -84,15 +84,14 @@ ZEST_CASE(can_be_cancelled_while_suspended) {
         co_await yield();
         resumed = true;
     };
-    auto target = yielder();
-    auto* node = target.operator->();
+    auto target = yielder().catch_cancel();
     auto watched = [&]() -> task<bool> {
-        auto result = co_await std::move(target).catch_cancel();
+        auto result = co_await target;
         ended = true;
         co_return result.is_cancelled();
     };
     auto cancel_it = [&]() -> task<bool> {
-        node->cancel();
+        target.cancel();
         co_return ended;
     };
 
@@ -108,17 +107,16 @@ ZEST_CASE(can_be_cancelled_while_suspended) {
 // A task cancelled while it runs ends at its yield, once the queued yield
 // completes.
 ZEST_CASE(under_a_cancelled_task_ends_it) {
-    async_node* self = nullptr;
+    task<> target;
     bool resumed = false;
     auto yielder = [&]() -> task<> {
-        self->cancel();
+        target.cancel();
         co_await yield();
         resumed = true;
     };
-    auto target = yielder();
-    self = target.operator->();
+    target = yielder();
 
-    auto [yielded] = run(std::move(target));
+    auto [yielded] = run(target);
     EXPECT(yielded.is_cancelled());
     EXPECT(!resumed);
 }

@@ -312,14 +312,13 @@ ZEST_CASE(cancel_while_queued_drops_the_request) {
         co_await fs::mkdir(dir.file("never"), 0755).or_fail();
     };
     auto request = target();
-    auto* node = request.operator->();
     auto cancel_it = [&]() -> task<> {
         co_await busy.wait();
-        node->cancel();
+        request.cancel();
         pool.release();
     };
 
-    auto [held, cancelled, driver] = run(pool.hold(busy), std::move(request), cancel_it());
+    auto [held, cancelled, driver] = run(pool.hold(busy), request, cancel_it());
     EXPECT(held.has_value());
     EXPECT(cancelled.is_cancelled());
     EXPECT(!std::filesystem::exists(dir.path / "never"));

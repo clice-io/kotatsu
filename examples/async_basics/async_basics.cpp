@@ -133,7 +133,7 @@ void example_task_group() {
     };
 
     auto driver = [&]() -> task<> {
-        task_group<> group(loop);
+        task_group<> group;
 
         // Spawn a dynamic number of tasks at runtime.
         // Unlike async_scope, tasks start immediately on spawn().
@@ -209,7 +209,7 @@ void example_cancellation() {
         std::println("  6b: started={}, finished={}, cancelled={}",
                      started,
                      finished,
-                     guarded.value().has_value() ? "no" : "yes");
+                     guarded.result().has_value() ? "no" : "yes");
     }
 
     std::println("");
@@ -309,7 +309,7 @@ void example_combined() {
     };
 
     auto driver = [&]() -> task<int> {
-        task_group<> group(loop);
+        task_group<> group;
         for(int i = 0; i < 5; ++i) {
             group.spawn(pair_work(i));
         }
@@ -330,7 +330,7 @@ void example_combined() {
     loop.schedule(cancel_task);
     loop.run();
 
-    auto result = guarded.value();
+    auto result = guarded.result();
     if(result.has_value()) {
         std::println("  all done: {} pairs completed", *result);
     } else {

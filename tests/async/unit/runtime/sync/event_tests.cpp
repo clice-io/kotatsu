@@ -88,58 +88,6 @@ ZEST_CASE(reset_makes_waiters_wait_again) {
     EXPECT(order == std::vector{1, 2});
 }
 
-ZEST_CASE(interrupt_cancels_every_current_waiter) {
-    event ev;
-    int reached = 0;
-    auto waiter = [&]() -> task<> {
-        co_await ev.wait();
-        reached += 1;
-    };
-    auto interrupter = [&]() -> task<> {
-        ev.interrupt();
-        co_return;
-    };
-
-    auto [first, second, driver] = run(waiter(), waiter(), interrupter());
-    EXPECT(first.is_cancelled());
-    EXPECT(second.is_cancelled());
-    EXPECT(reached == 0);
-    EXPECT(!ev.is_set());
-}
-
-// interrupt() reaches only the waiters queued when it is called: an earlier
-// interrupt does nothing to a later wait, and a waiter that waits again after
-// being interrupted is woken by the next set().
-ZEST_CASE(interrupt_leaves_later_waits_alone) {
-    event ev;
-    ev.interrupt();
-    auto waiter = [&]() -> task<std::pair<bool, bool>> {
-        auto first = co_await ev.wait().catch_cancel();
-        auto second = co_await ev.wait().catch_cancel();
-        co_return std::pair{first.is_cancelled(), second.has_value()};
-    };
-    auto driver = [&]() -> task<> {
-        ev.interrupt();
-        co_await yield();
-        ev.set();
-    };
-
-    auto [waited, drove] = run(waiter(), driver());
-    ASSERT(waited.has_value());
-    EXPECT(waited->first);
-    EXPECT(waited->second);
-}
-
-ZEST_CASE(interrupt_keeps_the_signaled_state) {
-    event unset;
-    unset.interrupt();
-    EXPECT(!unset.is_set());
-
-    event set(true);
-    set.interrupt();
-    EXPECT(set.is_set());
-}
-
 ZEST_CASE(cancelled_waiter_leaves_the_queue) {
     event ev;
     bool reached = false;
@@ -148,16 +96,14 @@ ZEST_CASE(cancelled_waiter_leaves_the_queue) {
         reached = true;
     };
     auto target = waiter();
-    auto* node = target.operator->();
     auto cancel_it = [&]() -> task<bool> {
-        node->cancel();
-        bool queue_empty = ev.get_head() == nullptr;
-        ev.interrupt();
+        target.cancel();
+        bool queue_empty = !ev.has_waiters();
         ev.set();
         co_return queue_empty;
     };
 
-    auto [waited, queue_empty] = run(std::move(target), cancel_it());
+    auto [waited, queue_empty] = run(target, cancel_it());
     EXPECT(waited.is_cancelled());
     EXPECT(!reached);
     ASSERT(queue_empty.has_value());
@@ -167,20 +113,42 @@ ZEST_CASE(cancelled_waiter_leaves_the_queue) {
 // A task cancelled while it runs stops at the wait instead of queueing on it.
 ZEST_CASE(wait_under_a_cancelled_task_does_not_queue) {
     event ev;
-    async_node* self = nullptr;
+    task<> target;
     bool reached = false;
     auto worker = [&]() -> task<> {
-        self->cancel();
-        co_await event::wait_awaiter(ev);
+        target.cancel();
+        co_await ev.wait();
         reached = true;
     };
-    auto target = worker();
-    self = target.operator->();
+    target = worker();
 
-    auto [result] = run(std::move(target));
+    auto [result] = run(target);
     EXPECT(result.is_cancelled());
     EXPECT(!reached);
-    EXPECT(ev.get_head() == nullptr);
+    EXPECT(!ev.has_waiters());
+}
+
+// set() wakes a waiter before it runs; one cancelled in between ends
+// cancelled, and the event stays set for the others.
+ZEST_CASE(waiter_cancelled_after_set_ends_cancelled) {
+    event ev;
+    int reached = 0;
+    auto waiter = [&]() -> task<> {
+        co_await ev.wait();
+        reached += 1;
+    };
+    auto target = waiter();
+    auto set_then_cancel = [&]() -> task<> {
+        ev.set();
+        target.cancel();
+        co_return;
+    };
+
+    auto [cancelled, other, driver] = run(target, waiter(), set_then_cancel());
+    EXPECT(cancelled.is_cancelled());
+    EXPECT(other.has_value());
+    EXPECT(reached == 1);
+    EXPECT(ev.is_set());
 }
 
 ZEST_CASE(sets_chained_through_waiters_all_resume) {

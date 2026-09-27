@@ -163,13 +163,12 @@ ZEST_CASE(cancelled_send_still_delivers) {
     ASSERT(receiver.has_value());
     ASSERT(sender.has_value());
     auto sending = sender->send(std::string_view("kept"), "127.0.0.1", receiver->port);
-    auto* node = sending.operator->();
     auto cancel_it = [&]() -> task<> {
-        node->cancel();
+        sending.cancel();
         co_return;
     };
 
-    auto [sent, driver, received] = run(std::move(sending), cancel_it(), receiver->socket.recv());
+    auto [sent, driver, received] = run(sending, cancel_it(), receiver->socket.recv());
     EXPECT(sent.is_cancelled());
     ASSERT(received.has_value());
     EXPECT(received->data == "kept");
@@ -330,14 +329,13 @@ ZEST_CASE(second_recv_while_one_is_pending_fails) {
     auto receiver = bind_loopback(loop);
     ASSERT(receiver.has_value());
     auto first = receiver->socket.recv();
-    auto* node = first.operator->();
     auto second_then_cancel = [&]() -> task<result<udp::recv_result>> {
         auto second = co_await receiver->socket.recv();
-        node->cancel();
+        first.cancel();
         co_return second;
     };
 
-    auto [pending, second] = run(std::move(first), second_then_cancel());
+    auto [pending, second] = run(first, second_then_cancel());
     EXPECT(pending.is_cancelled());
     ASSERT(second.has_value());
     ASSERT(second->has_error());
@@ -350,16 +348,15 @@ ZEST_CASE(cancelled_recv_leaves_the_socket_usable) {
     ASSERT(receiver.has_value());
     ASSERT(sender.has_value());
     auto first = receiver->socket.recv();
-    auto* node = first.operator->();
     auto cancel_then_exchange = [&]() -> task<std::string, error> {
-        node->cancel();
+        first.cancel();
         co_await sender->socket.send(std::string_view("after"), "127.0.0.1", receiver->port)
             .or_fail();
         auto received = co_await receiver->socket.recv().or_fail();
         co_return std::move(received.data);
     };
 
-    auto [cancelled, received] = run(std::move(first), cancel_then_exchange());
+    auto [cancelled, received] = run(first, cancel_then_exchange());
     EXPECT(cancelled.is_cancelled());
     ASSERT(received.has_value());
     EXPECT(*received == "after");
@@ -379,16 +376,15 @@ ZEST_CASE(stop_recv_leaves_a_pending_recv_waiting) {
         co_return received;
     };
     auto pending = waiting();
-    auto* node = pending.operator->();
     auto stop_then_cancel = [&]() -> task<std::pair<error, bool>> {
         auto stopped = receiver->socket.stop_recv();
         co_await yield();
         bool ended_by_stop = ended;
-        node->cancel();
+        pending.cancel();
         co_return std::pair{stopped, ended_by_stop};
     };
 
-    auto [cancelled, driver] = run(std::move(pending), stop_then_cancel());
+    auto [cancelled, driver] = run(pending, stop_then_cancel());
     EXPECT(cancelled.is_cancelled());
     ASSERT(driver.has_value());
     EXPECT(!driver->first);

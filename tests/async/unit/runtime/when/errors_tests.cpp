@@ -52,7 +52,7 @@ ZEST_CASE(all_first_error_cancels_the_rest) {
     ASSERT(result.has_value());
     ASSERT(result->has_error());
     EXPECT(result->error() == error::connection_refused);
-    EXPECT(gate.get_head() == nullptr);
+    EXPECT(!gate.has_waiters());
 }
 
 ZEST_CASE(all_error_while_armed_starts_no_later_child) {
@@ -106,7 +106,7 @@ ZEST_CASE(any_first_error_wins_and_cancels_the_rest) {
     ASSERT(result.has_value());
     ASSERT(result->has_error());
     EXPECT(result->error() == error::connection_refused);
-    EXPECT(gate.get_head() == nullptr);
+    EXPECT(!gate.has_waiters());
 }
 
 ZEST_CASE(any_first_of_several_errors_wins) {
@@ -138,7 +138,7 @@ ZEST_CASE(all_range_error_cancels_the_rest) {
     ASSERT(result.has_value());
     ASSERT(result->has_error());
     EXPECT(result->error() == error::connection_refused);
-    EXPECT(gate.get_head() == nullptr);
+    EXPECT(!gate.has_waiters());
 }
 
 ZEST_CASE(any_range_error_wins) {
@@ -158,7 +158,7 @@ ZEST_CASE(any_range_error_wins) {
     ASSERT(result.has_value());
     ASSERT(result->has_error());
     EXPECT(result->error() == error::connection_refused);
-    EXPECT(gate.get_head() == nullptr);
+    EXPECT(!gate.has_waiters());
 }
 
 ZEST_CASE(all_range_success_has_no_error) {
@@ -211,8 +211,11 @@ ZEST_CASE(mixed_error_types_come_back_as_a_variant) {
 // is being cancelled still turns it into its error.
 ZEST_CASE(error_outranks_a_sibling_cancel) {
     event gate;
+    auto waiting = [&]() -> task<> {
+        co_await gate.wait();
+    };
     auto failing_when_cancelled = [&]() -> task<int, error, cancellation> {
-        co_await gate.wait().catch_cancel();
+        co_await waiting().catch_cancel();
         co_await fail(error::connection_refused);
     };
     auto cancelling = []() -> task<int, error, cancellation> {
@@ -234,10 +237,10 @@ ZEST_CASE(error_outranks_a_sibling_cancel) {
 ZEST_CASE(error_outranks_an_external_cancel) {
     event gate;
     event go;
-    async_node* scope = nullptr;
+    task<> target;
     auto failing = [&]() -> task<int, error, cancellation> {
         co_await go.wait();
-        scope->cancel();
+        target.cancel();
         co_await fail(error::connection_refused);
     };
     auto slow = [&]() -> task<int, error, cancellation> {
@@ -248,14 +251,13 @@ ZEST_CASE(error_outranks_an_external_cancel) {
     auto combined = [&]() -> task<> {
         seen.emplace(co_await when_all(failing(), slow()));
     };
-    auto target = combined();
-    scope = target.operator->();
+    target = combined();
     auto driver = [&]() -> task<> {
         go.set();
         co_return;
     };
 
-    auto [result, drove] = run(std::move(target), driver());
+    auto [result, drove] = run(target, driver());
     ASSERT(seen.has_value());
     ASSERT(seen->has_error());
     EXPECT(seen->error() == error::connection_refused);

@@ -117,7 +117,7 @@ struct request_awaiter : uv::await_op<request_awaiter> {
     result_type await_resume() noexcept {
         state->detach_from_multi();
 
-        if(static_cast<async_node&>(*this).state == async_node::Cancelled) {
+        if(this->is_cancelled()) {
             return result_type(outcome_cancel(cancellation("http request cancelled")));
         }
 

@@ -37,7 +37,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
 > change?" semantics without the platform-specific pitfalls.
 
 - Blocking-work offload via `queue(fn, loop)` onto the libuv thread pool.
-- Coroutine-friendly sync primitives: mutex, semaphore, event (with interrupt), and condition variable.
+- Coroutine-friendly sync primitives: mutex, semaphore, event, and condition variable.
 - Error vocabulary: `error` (libuv status wrapper with named codes), `result<T>`, and the general `outcome<T, E, C>`.
 
 ### `meta` (`include/kota/meta/*`)

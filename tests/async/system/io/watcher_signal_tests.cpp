@@ -36,14 +36,13 @@ ZEST_CASE(second_wait_while_one_is_pending_fails) {
     ASSERT(sig.has_value());
     ASSERT(!sig->start(SIGUSR1));
     auto first = sig->wait();
-    auto* node = first.operator->();
     auto second_then_cancel = [&]() -> task<result<void>> {
         auto second = co_await sig->wait();
-        node->cancel();
+        first.cancel();
         co_return second;
     };
 
-    auto [pending, second] = run(std::move(first), second_then_cancel());
+    auto [pending, second] = run(first, second_then_cancel());
     EXPECT(pending.is_cancelled());
     ASSERT(second.has_value());
     ASSERT(second->has_error());
@@ -56,13 +55,12 @@ ZEST_CASE(wait_can_be_cancelled) {
     ASSERT(sig.has_value());
     ASSERT(!sig->start(SIGUSR1));
     auto waiting = sig->wait();
-    auto* node = waiting.operator->();
     auto cancel_it = [&]() -> task<> {
-        node->cancel();
+        waiting.cancel();
         co_return;
     };
 
-    auto [cancelled, driver] = run(std::move(waiting), cancel_it());
+    auto [cancelled, driver] = run(waiting, cancel_it());
     EXPECT(cancelled.is_cancelled());
     EXPECT(!sig->stop());
 }

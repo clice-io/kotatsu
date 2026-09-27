@@ -322,6 +322,8 @@ task<void, http::error>
                                 std::optional<task<http::response, http::error>>& sibling) {
     auto first = co_await api.get(std::move(first_url)).send().or_fail();
     EXPECT(first.text() == "/first");
+    // A task must not be destroyed while it runs: end it first.
+    sibling->cancel();
     sibling.reset();
 }
 
@@ -923,7 +925,7 @@ ZEST_CASE(cancelled_request_does_not_break_following_requests) {
     auto cancel_after = [](task<http::response, http::error, cancellation>* pending,
                            event_loop& ev) -> task<> {
         co_await sleep(20ms, ev);
-        (*pending)->cancel();
+        pending->cancel();
     };
     auto canceler = cancel_after(&request, loop);
 
