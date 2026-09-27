@@ -260,61 +260,61 @@ void write_fails(const Kit<B>& kit, std::string name, Make make, Failure failure
 /// Overreads are the sanitizers' to catch. For backends with
 /// untrusted_input, whose documents are byte or character sequences.
 template <Backend B, typename Make>
-void hostile(const Kit<B>& kit, std::string name, Make make) {
+void hostile(const Kit<B>& kit, std::string name, [[maybe_unused]] Make make) {
     if constexpr(!B::caps.hostile_gap.empty()) {
         kit.add(std::move(name), [] {
             std::println("skipped: {}", B::caps.hostile_gap);
             zest::skip();
         });
-        return;
+    } else {
+        kit.add(std::move(name), [make] {
+            using T = decltype(make());
+            using Encoded = typename B::Encoded;
+            using Unit = std::ranges::range_value_t<Encoded>;
+
+            auto encoded = B::encode(make());
+            ASSERT(succeeds(encoded));
+            const Encoded& document = *encoded;
+
+            auto settles = [](const Encoded& input) {
+                T decoded{};
+                if(!B::decode(input, decoded)) {
+                    return;
+                }
+                auto first = B::encode(decoded);
+                ASSERT(succeeds(first));
+                T again{};
+                ASSERT(succeeds(B::decode(*first, again)));
+                auto second = B::encode(again);
+                ASSERT(succeeds(second));
+                // A changed length can give an unordered container several
+                // elements, which re-encode in an iteration order a decode may
+                // change; then the value is what must hold.
+                if(*second != *first) {
+                    EXPECT(meta::eq(again, decoded));
+                }
+            };
+            // One failure is enough to show; the rest would repeat it.
+            auto failed = [] {
+                return zest::current_test_state() == zest::TestState::Failed;
+            };
+
+            for(std::size_t size = 0; size < document.size() && !failed(); ++size) {
+                ZEST_CONTEXT("the first {} units", size);
+                settles(Encoded(document.begin(), document.begin() + size));
+            }
+            // One mask moves a digit or a structural character to its neighbour,
+            // the other sets the high bit.
+            for(unsigned mask: {0x01U, 0x80U}) {
+                for(std::size_t at = 0; at < document.size() && !failed(); ++at) {
+                    ZEST_CONTEXT("unit {} xor {:#04x}", at, mask);
+                    Encoded mutated = document;
+                    mutated[at] = static_cast<Unit>(static_cast<unsigned char>(mutated[at]) ^ mask);
+                    settles(mutated);
+                }
+            }
+        });
     }
-    kit.add(std::move(name), [make] {
-        using T = decltype(make());
-        using Encoded = typename B::Encoded;
-        using Unit = std::ranges::range_value_t<Encoded>;
-
-        auto encoded = B::encode(make());
-        ASSERT(succeeds(encoded));
-        const Encoded& document = *encoded;
-
-        auto settles = [](const Encoded& input) {
-            T decoded{};
-            if(!B::decode(input, decoded)) {
-                return;
-            }
-            auto first = B::encode(decoded);
-            ASSERT(succeeds(first));
-            T again{};
-            ASSERT(succeeds(B::decode(*first, again)));
-            auto second = B::encode(again);
-            ASSERT(succeeds(second));
-            // A changed length can give an unordered container several
-            // elements, which re-encode in an iteration order a decode may
-            // change; then the value is what must hold.
-            if(*second != *first) {
-                EXPECT(meta::eq(again, decoded));
-            }
-        };
-        // One failure is enough to show; the rest would repeat it.
-        auto failed = [] {
-            return zest::current_test_state() == zest::TestState::Failed;
-        };
-
-        for(std::size_t size = 0; size < document.size() && !failed(); ++size) {
-            ZEST_CONTEXT("the first {} units", size);
-            settles(Encoded(document.begin(), document.begin() + size));
-        }
-        // One mask moves a digit or a structural character to its neighbour,
-        // the other sets the high bit.
-        for(unsigned mask: {0x01U, 0x80U}) {
-            for(std::size_t at = 0; at < document.size() && !failed(); ++at) {
-                ZEST_CONTEXT("unit {} xor {:#04x}", at, mask);
-                Encoded mutated = document;
-                mutated[at] = static_cast<Unit>(static_cast<unsigned char>(mutated[at]) ^ mask);
-                settles(mutated);
-            }
-        }
-    });
 }
 
 /// A byte document in hex, sixteen bytes a line after the offset of the

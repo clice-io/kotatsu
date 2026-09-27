@@ -294,8 +294,13 @@ ZEST_CASE(to_toml_builds_the_table) {
 }
 
 ZEST_CASE(everything_lowering) {
-    // How each kind lowers into TOML text, in one document.
-    auto document = toml::to_string(test::Everything::typical());
+    // How each kind lowers into TOML text, in one document. toml++ prints a
+    // float in its shortest form with one standard library and to 17 digits
+    // with another; binary fractions print alike under both.
+    auto value = test::Everything::typical();
+    value.scalars.f32 = 3.25F;
+    value.scalars.f64 = 2.5;
+    auto document = toml::to_string(value);
     ASSERT(document);
     EXPECT_SNAPSHOT(test::Toml::render(*document));
 }
