@@ -1,5 +1,4 @@
 #include <memory>
-#include <source_location>
 
 #include "../async/io/awaiter.h"
 #include "kota/http/detail/inflight_request.h"
@@ -57,14 +56,9 @@ struct request_awaiter : uv::uv_op<request_awaiter> {
     request_awaiter(manager& manager, inflight_request_ref request_state) :
         state(std::move(request_state)) {
         state->mgr = &manager;
-        state->awaiter = this;
     }
 
     ~request_awaiter() {
-        if(!state) {
-            return;
-        }
-
         state->detach_from_multi();
         state->release_request();
         state->awaiter = nullptr;
@@ -72,12 +66,10 @@ struct request_awaiter : uv::uv_op<request_awaiter> {
     }
 
     /// Hands the request to curl; false if it has ended already, which it
-    /// may have while curl was armed.
+    /// may have while curl was armed. It becomes the request's awaiter only
+    /// then, as a request that ends meanwhile, when arming it finishes others
+    /// whose tasks start more, must not resume this op before it is attached.
     bool start() noexcept {
-        if(state->completed || state->request_released || !state->request.easy) {
-            return !state->completed;
-        }
-
         if(!state->request.bind_runtime(inflight_request_opaque(state))) {
             if(state->request.result.kind == error_kind::curl &&
                curl::ok(state->request.result.curl_code)) {
@@ -95,7 +87,11 @@ struct request_awaiter : uv::uv_op<request_awaiter> {
 
         state->registered = true;
         state->mgr->drive_timeout_arming(inflight_request_opaque(state));
-        return !state->completed;
+        if(state->completed) {
+            return false;
+        }
+        state->awaiter = this;
+        return true;
     }
 
     void cancel() noexcept {
@@ -107,12 +103,6 @@ struct request_awaiter : uv::uv_op<request_awaiter> {
 
     result_type await_resume() noexcept {
         state->detach_from_multi();
-
-        if(state->request_released) {
-            return result_type(
-                outcome_error(error::invalid_request("request state already released")));
-        }
-
         return state->request.finish();
     }
 };

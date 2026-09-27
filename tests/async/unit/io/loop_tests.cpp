@@ -226,8 +226,8 @@ ZEST_CASE(on_destroy_callbacks_run_when_the_loop_goes) {
 }
 
 // The loop closes the handles still open when it goes; a timer that outlives
-// it is freed by its own destructor afterwards, which the sanitizer builds
-// check for use after free and leaks.
+// it is freed by its own destructor afterwards. Only the sanitizer builds see
+// a use after free or a leak there; the check pins that the loop went first.
 ZEST_CASE(handle_outliving_its_loop_is_freed_after_it) {
     bool loop_gone = false;
     std::optional<event_loop> own(std::in_place);

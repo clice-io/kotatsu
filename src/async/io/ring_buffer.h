@@ -35,8 +35,8 @@ public:
 
 private:
     std::vector<char> data;
-    /// Where the unread bytes start; back at 0 whenever the ring empties,
-    /// so that a read after a drain gets all the room in one piece.
+    /// Where the unread bytes start; back at 0 when writable() finds the
+    /// ring empty.
     std::size_t head = 0;
     std::size_t size = 0;
 };

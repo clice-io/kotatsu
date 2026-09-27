@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "async/harness/io.h"
 #include "async/harness/loop_fixture.h"
 #include "async/harness/os.h"
 #include "kota/zest/macro.h"
@@ -63,26 +64,7 @@ result<Ends> pipe_ends(event_loop& loop) {
     return Ends{.reader = std::move(*reader), .writer = std::move(*writer)};
 }
 
-/// Everything `reader` reads until the end of the stream.
-task<std::string, error> read_all(stream& reader) {
-    std::string all;
-    while(true) {
-        auto piece = co_await reader.read();
-        if(!piece) {
-            if(piece.error() != error::end_of_file) {
-                co_await fail(piece.error());
-            }
-            co_return all;
-        }
-        all += *piece;
-    }
-}
-
-/// A task that finishes at once: when_any cancels what it races as soon as
-/// that has started.
-task<> finished() {
-    co_return;
-}
+using test::read_to_end;
 
 ZEST_SUITE(async_io_stream_pipe, test::LoopFixture) {
 
@@ -212,6 +194,14 @@ ZEST_CASE(read_after_draining_a_full_buffer_waits_for_data) {
     int fds[2] = {-1, -1};
     ASSERT(test::create_pipe(fds) == 0);
     const std::string full(64 * 1024, 'x');
+    // A user past pipe-user-pages-soft gets smaller pipes, which the write
+    // below would block on for good.
+    if(::fcntl(fds[1], F_GETPIPE_SZ) != static_cast<int>(full.size())) {
+        test::close_fd(fds[0]);
+        test::close_fd(fds[1]);
+        zest::skip();
+        return;
+    }
     ASSERT(test::write_fd(fds[1], full.data(), full.size()) == static_cast<ssize_t>(full.size()));
     auto reader = pipe::open(fds[0], loop);
     ASSERT(reader.has_value());
@@ -324,7 +314,7 @@ ZEST_CASE(write_reaches_the_reader) {
         ends->writer = pipe{};
     };
 
-    auto [sent, received] = run(send(), read_all(ends->reader));
+    auto [sent, received] = run(send(), read_to_end(ends->reader));
     EXPECT(sent.has_value());
     ASSERT(received.has_value());
     EXPECT(*received == "kotatsu-write");
@@ -342,29 +332,27 @@ ZEST_CASE(overlapping_writes_arrive_in_order) {
         ends->writer = pipe{};
     };
 
-    auto [sent, received] = run(send(), read_all(ends->reader));
+    auto [sent, received] = run(send(), read_to_end(ends->reader));
     EXPECT(sent.has_value());
     ASSERT(received.has_value());
     EXPECT(*received == first + second);
 }
 
 // libuv cannot take a write back: a cancelled write still goes out, and its
-// task ends cancelled once it has. The cancel reaches the write before
-// libuv reports it written, on a later loop turn.
+// task ends cancelled once it has, never resuming past it.
 ZEST_CASE(cancelled_write_still_delivers) {
     auto ends = pipe_ends(loop);
     ASSERT(ends.has_value());
-    cancellation_source source;
-    auto cancel_it = [&]() -> task<> {
-        source.cancel();
-        co_return;
+    bool resumed = false;
+    auto write = [&]() -> task<> {
+        [[maybe_unused]] auto written = co_await ends->writer.write(std::string_view("kept"));
+        resumed = true;
     };
 
-    auto [written, cancelled, received] =
-        run(with_token(ends->writer.write(std::string_view("kept")), source.token()),
-            cancel_it(),
-            ends->reader.read());
-    EXPECT(written.is_cancelled());
+    auto [raced, received] = run(test::winner(write(), test::finished()), ends->reader.read());
+    ASSERT(raced.has_value());
+    EXPECT(*raced == 1U);
+    EXPECT(!resumed);
     ASSERT(received.has_value());
     EXPECT(*received == "kept");
 }
@@ -374,7 +362,7 @@ ZEST_CASE(cancelled_write_still_delivers) {
 // them rather than cancelling them. Windows writes an anonymous pipe from a
 // thread that the close cannot stop.
 #ifndef _WIN32
-ZEST_CASE(write_and_shutdown_ended_by_closing_their_stream_fail) {
+ZEST_CASE(write_and_shutdown_ended_by_a_close_fails) {
     auto ends = pipe_ends(loop);
     ASSERT(ends.has_value());
     const std::string large(4 * 1024 * 1024, 'x');
@@ -456,10 +444,11 @@ ZEST_CASE(inert_stream_fails) {
     pipe inert;
     std::array<char, 8> buffer{};
 
-    auto [read, read_some, chunk, written] = run(inert.read(),
-                                                 inert.read_some(buffer),
-                                                 inert.read_chunk(),
-                                                 inert.write(std::string_view("x")));
+    auto [read, read_some, chunk, written, shut] = run(inert.read(),
+                                                       inert.read_some(buffer),
+                                                       inert.read_chunk(),
+                                                       inert.write(std::string_view("x")),
+                                                       inert.shutdown());
     ASSERT(read.has_error());
     EXPECT(read.error() == error::invalid_argument);
     ASSERT(read_some.has_error());
@@ -468,6 +457,8 @@ ZEST_CASE(inert_stream_fails) {
     EXPECT(chunk.error() == error::invalid_argument);
     ASSERT(written.has_error());
     EXPECT(written.error() == error::invalid_argument);
+    ASSERT(shut.has_error());
+    EXPECT(shut.error() == error::invalid_argument);
     EXPECT(inert.stop() == error::invalid_argument);
     EXPECT(inert.set_blocking(true) == error::invalid_argument);
     auto tried = inert.try_write(std::string_view("x"));
@@ -492,6 +483,8 @@ ZEST_CASE(stop_ends_a_pending_read) {
     auto [direct, again] = run(ends->reader.read_some(buffer), stop_it());
     ASSERT(direct.has_error());
     EXPECT(direct.error() == error::operation_aborted);
+    ASSERT(again.has_value());
+    EXPECT(!*again);
     auto exchange = [&]() -> task<std::string, error> {
         co_await ends->writer.write(std::string_view("after")).or_fail();
         co_return co_await ends->reader.read().or_fail();
@@ -589,25 +582,27 @@ ZEST_CASE(connect_to_a_missing_name_fails) {
     EXPECT(result.error() == error::no_such_file_or_directory);
 }
 
-// The cancel closes the connection it interrupts at once: the listener's end
-// reads EOF.
+// The cancel closes the connection it interrupts, and the connect's task
+// ends cancelled, never resuming past it: the listener's end reads EOF.
 ZEST_CASE(connect_can_be_cancelled) {
     test::TempDir dir;
     auto name = pipe_name(dir);
     auto listener = pipe::listen(name, loop);
     ASSERT(listener.has_value());
-    auto cancel_at_once = [&]() -> task<std::size_t, error> {
-        auto first = co_await or_fail(co_await when_any(pipe::connect(name, loop), finished()));
-        co_return first.index();
+    bool resumed = false;
+    auto connect = [&]() -> task<> {
+        [[maybe_unused]] auto connected = co_await pipe::connect(name, loop);
+        resumed = true;
     };
     auto serve = [&]() -> task<result<std::string>, error> {
         auto connection = co_await listener->accept().or_fail();
         co_return co_await connection.read();
     };
 
-    auto [raced, served] = run(cancel_at_once(), serve());
+    auto [raced, served] = run(test::winner(connect(), test::finished()), serve());
     ASSERT(raced.has_value());
     EXPECT(*raced == 1U);
+    EXPECT(!resumed);
     ASSERT(served.has_value());
     ASSERT(served->has_error());
     EXPECT(served->error() == error::end_of_file);
@@ -663,6 +658,37 @@ ZEST_CASE(listen_on_a_name_too_long_with_no_truncate_fails) {
 }
 #endif
 
+// A loop destroyed under a task that writes ends the write, and with it the
+// task, which drops its pipe while the loop still closes it; the pipe goes
+// once the loop has. Windows writes an anonymous pipe from a thread that the
+// close cannot stop.
+#ifndef _WIN32
+ZEST_CASE(stream_dropped_while_its_loop_closes_it_goes_after) {
+    int fds[2] = {-1, -1};
+    ASSERT(test::create_pipe(fds) == 0);
+    error written;
+    std::optional<event_loop> own(std::in_place);
+    auto writer = [&]() -> task<> {
+        auto end = pipe::open(fds[1], *own);
+        CO_ASSERT(end.has_value());
+        const std::string large(4 * 1024 * 1024, 'x');
+        auto result = co_await end->write(large);
+        written = result.has_error() ? result.error() : error();
+    };
+    auto stopper = [&]() -> task<> {
+        co_await yield(*own);
+        own->stop();
+    };
+
+    own->schedule(writer());
+    own->schedule(stopper());
+    own->run();
+    own.reset();
+    test::close_fd(fds[0]);
+    EXPECT(written == error::operation_aborted);
+}
+#endif
+
 // The shutdown waits for the writes made with it; the listener's end reads
 // them, then the end. It goes once it has, which ends the stream here too.
 ZEST_CASE(shutdown_lets_the_peer_read_to_the_end) {
@@ -672,14 +698,14 @@ ZEST_CASE(shutdown_lets_the_peer_read_to_the_end) {
     ASSERT(listener.has_value());
     auto serve = [&]() -> task<std::string, error> {
         auto connection = co_await listener->accept().or_fail();
-        co_return co_await read_all(connection).or_fail();
+        co_return co_await read_to_end(connection).or_fail();
     };
     auto client = [&]() -> task<std::string, error> {
         auto connection = co_await pipe::connect(name, loop).or_fail();
         co_await or_fail(co_await when_all(connection.write(std::string_view("first")),
                                            connection.write(std::string_view("second")),
                                            connection.shutdown()));
-        co_return co_await read_all(connection).or_fail();
+        co_return co_await read_to_end(connection).or_fail();
     };
 
     auto [served, left] = run(serve(), client());
@@ -700,14 +726,14 @@ ZEST_CASE(shutdown_leaves_the_peer_free_to_answer) {
     ASSERT(listener.has_value());
     auto serve = [&]() -> task<void, error> {
         auto connection = co_await listener->accept().or_fail();
-        auto request = co_await read_all(connection).or_fail();
+        auto request = co_await read_to_end(connection).or_fail();
         co_await connection.write(request + "-answered").or_fail();
     };
     auto client = [&]() -> task<std::string, error> {
         auto connection = co_await pipe::connect(name, loop).or_fail();
         co_await connection.write(std::string_view("asked")).or_fail();
         co_await connection.shutdown().or_fail();
-        co_return co_await read_all(connection).or_fail();
+        co_return co_await read_to_end(connection).or_fail();
     };
 
     auto [served, answer] = run(serve(), client());

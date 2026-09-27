@@ -75,13 +75,13 @@ task<Stream, error> acceptor<Stream>::accept() {
         co_await fail(error::invalid_argument);
     }
 
-    if(self->failed) {
-        co_await fail(self->failed);
-    }
-
     if(self->ready > 0) {
         self->ready -= 1;
         co_return self->accept_one();
+    }
+
+    if(self->failed) {
+        co_await fail(self->failed);
     }
 
     co_return co_await self->slot.wait();
@@ -103,14 +103,7 @@ result<endpoint> acceptor<Stream>::getsockname() const
     if(!self) {
         return outcome_error(error::invalid_argument);
     }
-
-    sockaddr_storage name{};
-    int length = sizeof(name);
-    if(auto err =
-           error(::uv_tcp_getsockname(&self->tcp, reinterpret_cast<sockaddr*>(&name), &length))) {
-        return outcome_error(err);
-    }
-    return uv::endpoint_of(reinterpret_cast<const sockaddr&>(name));
+    return uv::name_of(self->tcp, ::uv_tcp_getsockname);
 }
 
 template class acceptor<pipe>;
@@ -120,21 +113,19 @@ namespace {
 
 /// Connects a new stream: `submit` hands the request to libuv. Cancelling
 /// closes the stream, which makes libuv end the connect with ECANCELED.
-template <typename Stream>
-struct connect_op : uv::request_op<connect_op<Stream>, uv_connect_t> {
-    Stream& connection;
+struct connect_op : uv::request_op<connect_op, uv_connect_t> {
+    stream& connection;
     function_ref<int(uv_connect_t*, uv_connect_cb)> submit;
 
-    connect_op(Stream& connection, function_ref<int(uv_connect_t*, uv_connect_cb)> submit) :
+    connect_op(stream& connection, function_ref<int(uv_connect_t*, uv_connect_cb)> submit) :
         connection(connection), submit(submit) {}
 
     bool start() noexcept {
-        this->req.data = this;
-        return this->submitted(submit(&this->req, &connect_op::on_done));
+        return submitted(submit(&req, &on_done));
     }
 
     void cancel() noexcept {
-        connection = Stream();
+        connection = stream();
     }
 };
 
@@ -174,7 +165,7 @@ task<pipe, error> pipe::connect(std::string_view name, options opts, event_loop&
     auto submit = [&](uv_connect_t* req, uv_connect_cb done) {
         return ::uv_pipe_connect2(req, handle, name.data(), name.size(), pipe_flags(opts), done);
     };
-    if(auto err = co_await connect_op<pipe>(connection, submit)) {
+    if(auto err = co_await connect_op(connection, submit)) {
         co_await fail(err);
     }
     co_return std::move(connection);
@@ -203,25 +194,28 @@ result<pipe::acceptor> pipe::listen(std::string_view name, options opts, event_l
 
 tcp::tcp(unique_handle<Self> self) noexcept : stream(std::move(self)) {}
 
-result<tcp> tcp::open(int fd, event_loop& loop) {
+tcp tcp::create(event_loop& loop) {
     auto self = Self::make();
     ::uv_tcp_init(loop.native_handle(), &self->tcp);
-    if(auto err = error(::uv_tcp_open(&self->tcp, fd))) {
+    return tcp(std::move(self));
+}
+
+result<tcp> tcp::open(int fd, event_loop& loop) {
+    auto opened = create(loop);
+    if(auto err = error(::uv_tcp_open(&opened.self->tcp, fd))) {
         return outcome_error(err);
     }
-    return tcp(std::move(self));
+    return opened;
 }
 
 task<tcp, error> tcp::connect(std::string_view host, int port, event_loop& loop) {
     auto addr = co_await or_fail(uv::resolve_addr(host, port));
-    auto self = Self::make();
-    ::uv_tcp_init(loop.native_handle(), &self->tcp);
-    auto* handle = &self->tcp;
-    tcp connection(std::move(self));
+    auto connection = create(loop);
+    auto* handle = &connection.self->tcp;
     auto submit = [&](uv_connect_t* req, uv_connect_cb done) {
         return ::uv_tcp_connect(req, handle, reinterpret_cast<const sockaddr*>(&addr), done);
     };
-    if(auto err = co_await connect_op<tcp>(connection, submit)) {
+    if(auto err = co_await connect_op(connection, submit)) {
         co_await fail(err);
     }
     co_return std::move(connection);

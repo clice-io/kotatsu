@@ -18,11 +18,8 @@ struct write_op : uv::request_op<write_op, uv_write_t> {
     write_op(uv_stream_t* stream, uv_buf_t buf) noexcept : stream(stream), buf(buf) {}
 
     bool start() noexcept {
-        req.data = this;
         return submitted(::uv_write(&req, stream, &buf, 1, on_done));
     }
-
-    void cancel() noexcept {}
 };
 
 /// libuv shuts the write side once the writes before it have gone out,
@@ -34,11 +31,8 @@ struct shutdown_op : uv::request_op<shutdown_op, uv_shutdown_t> {
     explicit shutdown_op(uv_stream_t* stream) noexcept : stream(stream) {}
 
     bool start() noexcept {
-        req.data = this;
         return submitted(::uv_shutdown(&req, stream, on_done));
     }
-
-    void cancel() noexcept {}
 };
 
 }  // namespace
@@ -187,7 +181,7 @@ task<void, error> stream::write(std::span<const char> data) {
     }
 
     // A write goes out whole, and libuv takes no more than this at once.
-    if(data.size() > (std::numeric_limits<unsigned int>::max)()) {
+    if(data.size() > std::numeric_limits<unsigned int>::max()) {
         co_await fail(error::value_too_large_for_defined_data_type);
     }
 

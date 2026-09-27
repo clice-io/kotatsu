@@ -19,7 +19,7 @@ namespace kota {
 /// watcher runs on. Destroying the watcher ends a pending wait with
 /// error::operation_aborted.
 ///
-/// A default-constructed or moved-from watcher is inert: everything fails
+/// A default-constructed or moved-from watcher is inert: what can fail fails
 /// with error::invalid_argument.
 class watcher {
 public:
@@ -33,8 +33,8 @@ public:
 
     ~watcher();
 
-    /// Stops firing until the next start(); a pending wait() keeps waiting
-    /// for that.
+    /// Stops firing until the next start(), and ends a pending wait() with
+    /// error::operation_aborted. A fire kept for the next wait() stays.
     error stop();
 
     /// Waits for the next fire.

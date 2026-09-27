@@ -19,7 +19,6 @@ struct work_op : uv::request_op<work_op, uv_work_t> {
         loop(loop), work(std::move(work)), hook(std::move(hook)) {}
 
     bool start() noexcept {
-        req.data = this;
         // uv_queue_work fails only without a work callback.
         ::uv_queue_work(loop, &req, run, on_done);
         return true;
@@ -35,7 +34,7 @@ struct work_op : uv::request_op<work_op, uv_work_t> {
     }
 
     static void run(uv_work_t* req) {
-        static_cast<work_op*>(req->data)->work();
+        static_cast<work_op*>(static_cast<request_op*>(req->data))->work();
     }
 };
 

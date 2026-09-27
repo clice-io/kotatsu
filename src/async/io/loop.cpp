@@ -34,9 +34,13 @@ struct event_loop::Self : relay::Self {
     std::deque<io_op*> staged;
     std::deque<io_op*> ready;
     std::vector<function<void()>> destroy_callbacks;
+    /// What owners let go of while the loop was being destroyed and closing
+    /// their handles; run once it has closed them all.
+    std::vector<function<void()>> frees;
 
     /// Keeps each() running while it has work; starting a running idle
-    /// handle does nothing.
+    /// handle does nothing. Once the loop is being destroyed, and has closed
+    /// the idle handle, it runs nothing more.
     void ensure_idle();
 };
 
@@ -142,7 +146,9 @@ static void each(uv_idle_t* idle) {
 }
 
 void event_loop::Self::ensure_idle() {
-    ::uv_idle_start(&idle, each);
+    if(!::uv_is_closing(reinterpret_cast<uv_handle_t*>(&idle))) {
+        ::uv_idle_start(&idle, each);
+    }
 }
 
 void event_loop::schedule(async_node& frame, std::source_location loc) {
@@ -190,6 +196,10 @@ void uv::complete_later(uv_loop_t& loop, io_op& op) {
     auto* self = static_cast<event_loop::Self*>(loop.data);
     self->staged.push_back(&op);
     self->ensure_idle();
+}
+
+void uv::free_when_closed(uv_loop_t& loop, function<void()> free) {
+    static_cast<event_loop::Self*>(loop.data)->frees.push_back(std::move(free));
 }
 
 yield_awaiter::yield_awaiter(event_loop& loop) noexcept : loop(&loop) {
@@ -256,10 +266,15 @@ event_loop::~event_loop() {
             },
             nullptr);
 
-        // Run the loop until every close callback has fired.
+        // Run the loop until every close callback has fired. The requests
+        // they end resume their tasks, which may drop what they own.
         while(::uv_loop_close(loop) == UV_EBUSY) {
             ::uv_run(loop, UV_RUN_ONCE);
         }
+    }
+
+    for(auto& free: self->frees) {
+        free();
     }
 }
 

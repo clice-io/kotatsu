@@ -26,7 +26,7 @@ namespace kota {
 ///
 /// Sends may overlap: libuv sends them in the order they were made.
 ///
-/// A default-constructed or moved-from socket is inert: everything fails
+/// A default-constructed or moved-from socket is inert: what can fail fails
 /// with error::invalid_argument.
 class udp {
 public:
@@ -75,9 +75,9 @@ public:
 
     /// A socket bound on its first send, or by bind(). A socket is made
     /// IPv6-only when it is bound (bind_options::ipv6_only).
-    static result<udp> create(event_loop& loop = event_loop::current());
+    static udp create(event_loop& loop = event_loop::current());
 
-    static result<udp> create(create_options options, event_loop& loop = event_loop::current());
+    static udp create(create_options options, event_loop& loop = event_loop::current());
 
     /// Wraps an existing socket descriptor.
     static result<udp> open(int fd, event_loop& loop = event_loop::current());

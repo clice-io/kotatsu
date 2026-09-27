@@ -14,6 +14,7 @@
 #define NOMINMAX
 #endif
 #include "uv.h"
+#include "kota/support/functional.h"
 #include "kota/async/io/endpoint.h"
 #include "kota/async/runtime/node.h"
 #include "kota/async/vocab/error.h"
@@ -22,8 +23,9 @@ namespace kota::uv {
 
 /// The error a libuv status or byte count carries: none for zero or more.
 /// UV_ECANCELED is how libuv ends the requests of a handle being closed, an
-/// abort as far as their callers can tell; a request its task cancelled
-/// never gets here, as that task has already ended cancelled.
+/// abort as far as their callers can tell. It also ends a request a cancel
+/// took back with uv_cancel, but that op's task ends cancelled and never
+/// reads the error.
 inline error status_to_error(std::int64_t status) noexcept {
     if(status >= 0) {
         return {};
@@ -32,7 +34,8 @@ inline error status_to_error(std::int64_t status) noexcept {
 }
 
 /// A libuv buffer over `data`, cut to the first 4 GiB - 1 bytes: libuv takes
-/// the length as an unsigned int.
+/// the length as an unsigned int. (max) is parenthesized for the files that
+/// include <windows.h> without NOMINMAX before this header, as curl does.
 inline uv_buf_t buffer_of(std::span<const char> data) noexcept {
     auto length = std::min<std::size_t>(data.size(), (std::numeric_limits<unsigned int>::max)());
     return ::uv_buf_init(const_cast<char*>(data.data()), static_cast<unsigned int>(length));
@@ -69,9 +72,26 @@ inline result<endpoint> endpoint_of(const sockaddr& addr) {
     return endpoint{.addr = host, .port = port};
 }
 
+/// The address and port a handle is bound to, or connected to, as `query`
+/// (uv_tcp_getsockname, uv_udp_getpeername, ...) reports it.
+template <typename Handle, typename Query>
+result<endpoint> name_of(const Handle& handle, Query query) {
+    sockaddr_storage name{};
+    int length = sizeof(name);
+    if(auto err = error(query(&handle, reinterpret_cast<sockaddr*>(&name), &length))) {
+        return outcome_error(err);
+    }
+    return endpoint_of(reinterpret_cast<const sockaddr&>(name));
+}
+
 /// Completes `op` on a later turn of `loop`, after everything already
 /// queued there: the one way io code resumes a task from outside a libuv
-/// callback. Defined in loop.cpp.
+/// callback. Once the loop is being destroyed, nothing queued runs any more.
+/// Defined in loop.cpp.
 void complete_later(uv_loop_t& loop, io_op& op);
+
+/// Runs `free` once `loop`, which is being destroyed and closes the handles
+/// still open, has closed them all. Defined in loop.cpp.
+void free_when_closed(uv_loop_t& loop, function<void()> free);
 
 }  // namespace kota::uv

@@ -28,18 +28,19 @@ handle_type guess_handle(int fd);
 
 /// What pipe, tcp and console share: a byte stream.
 ///
-/// Reading is buffered: the stream reads ahead into a 64 KiB buffer of its
-/// own while a read is pending or data sits unconsumed, and stops once the
-/// buffer is full until a reader has drained it. The end of the stream or a
-/// read error is reported once the bytes read before it are consumed, and
-/// from then on to every read. One read may be pending at a time; a second
-/// fails with error::resource_busy_or_locked. Cancelling a read only
-/// withdraws it: what arrives stays buffered for the next one. Destroying
-/// the stream ends a pending read with error::operation_aborted.
+/// Reading is buffered: from the first read on, the stream reads ahead into
+/// a 64 KiB buffer of its own until stop(), the end of the stream, or a full
+/// buffer, and a full buffer is read into again once a reader has drained
+/// it. The end of the stream or a read error is reported once the bytes
+/// read before it are consumed, and from then on to every read. One read
+/// may be pending at a time; a second fails with
+/// error::resource_busy_or_locked. Cancelling a read only withdraws it: what
+/// arrives stays buffered for the next one. Destroying the stream ends a
+/// pending read with error::operation_aborted.
 ///
 /// Writes may overlap: libuv sends them in the order they were made.
 ///
-/// A default-constructed or moved-from stream is inert: everything fails
+/// A default-constructed or moved-from stream is inert: what can fail fails
 /// with error::invalid_argument.
 class stream {
 public:
@@ -96,8 +97,11 @@ public:
     /// answer after that.
     task<void, error> shutdown();
 
+    /// Whether the stream can be read from; false for an inert one.
     bool readable() const noexcept;
 
+    /// Whether the stream can be written to; false for an inert one, and
+    /// from shutdown() on.
     bool writable() const noexcept;
 
     /// Enable or disable blocking I/O on the stream.
@@ -250,6 +254,8 @@ private:
     friend class kota::acceptor<tcp>;
 
     explicit tcp(unique_handle<Self> self) noexcept;
+
+    static tcp create(event_loop& loop);
 };
 
 /// TTY/console wrapper.

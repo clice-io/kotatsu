@@ -15,6 +15,7 @@
 #include <unistd.h>
 #endif
 
+#include "async/harness/io.h"
 #include "async/harness/loop_fixture.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
@@ -119,26 +120,7 @@ result<Listener> listen_loopback(event_loop& loop) {
     return Listener{.acceptor = std::move(*acceptor), .port = name->port};
 }
 
-/// A task that finishes at once: when_any cancels what it races as soon as
-/// that has started.
-task<> finished() {
-    co_return;
-}
-
-/// Everything `connection` reads until the peer's end.
-task<std::string, error> read_to_end(stream& connection) {
-    std::string all;
-    while(true) {
-        auto piece = co_await connection.read();
-        if(!piece) {
-            if(piece.error() != error::end_of_file) {
-                co_await fail(piece.error());
-            }
-            co_return all;
-        }
-        all += *piece;
-    }
-}
+using test::read_to_end;
 
 ZEST_SUITE(async_io_stream_tcp, test::LoopFixture) {
 
@@ -301,7 +283,7 @@ ZEST_CASE(write_ended_by_closing_its_stream_fails) {
 
 // A second shutdown, even one made while the first is still pending, fails,
 // and so does a write after them.
-ZEST_CASE(write_and_shutdown_after_a_shutdown_fail) {
+ZEST_CASE(write_or_shutdown_after_a_shutdown_fails) {
     auto listener = listen_loopback(loop);
     ASSERT(listener.has_value());
     auto serve = [&]() -> task<std::string, error> {
@@ -476,15 +458,15 @@ ZEST_CASE(connect_can_be_cancelled) {
     RawSocket queued;
     queued.fd = connect_raw(port);
     ASSERT(queued.fd != invalid_socket);
-    auto cancel_at_once = [&]() -> task<std::size_t, error> {
-        auto first =
-            co_await or_fail(co_await when_any(tcp::connect("127.0.0.1", port, loop), finished()));
-        co_return first.index();
+    cancellation_source source;
+    auto cancel_it = [&]() -> task<> {
+        source.cancel();
+        co_return;
     };
 
-    auto [raced] = run(cancel_at_once());
-    ASSERT(raced.has_value());
-    EXPECT(*raced == 1U);
+    auto [connected, cancelled] =
+        run(with_token(tcp::connect("127.0.0.1", port, loop), source.token()), cancel_it());
+    EXPECT(connected.is_cancelled());
 }
 #endif
 

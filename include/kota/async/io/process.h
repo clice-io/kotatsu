@@ -22,7 +22,7 @@ namespace kota {
 /// exit status. To end the child, kill() it. Destroying the process ends a
 /// pending wait with error::operation_aborted and leaves the child running.
 ///
-/// A default-constructed or moved-from process is inert: everything fails
+/// A default-constructed or moved-from process is inert: what can fail fails
 /// with error::invalid_argument.
 class process {
 public:

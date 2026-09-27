@@ -3,6 +3,7 @@
 #include <optional>
 #include <vector>
 
+#include "async/harness/io.h"
 #include "async/harness/loop_fixture.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
@@ -22,13 +23,8 @@ task<int, error> wait_three_times(Watcher& watcher) {
     co_return 3;
 }
 
-/// Which of the two ends first: 0 for `first`, 1 for `second`, which
-/// when_any cancels if still pending.
-template <typename First, typename Second>
-task<std::size_t, error> winner(First first, Second second) {
-    auto won = co_await or_fail(co_await when_any(std::move(first), std::move(second)));
-    co_return won.index();
-}
+using test::finished;
+using test::winner;
 
 /// What a second wait() gets while `watcher` has one pending; the first is
 /// withdrawn once the second has failed.
@@ -115,19 +111,19 @@ ZEST_CASE(timer_wait_can_be_cancelled) {
     EXPECT(*result == 1U);
 }
 
+// A fire can come before the yield on a slow machine; the waits race again
+// until one is cancelled.
 ZEST_CASE(cancelled_wait_leaves_the_timer_running) {
     auto t = timer::create(loop);
     ASSERT(!t.start(50ms, 50ms));
-    auto waiter = [&]() -> task<std::size_t, error> {
-        auto first = co_await winner(t.wait(), yield()).or_fail();
+    auto waiter = [&]() -> task<void, error> {
+        while(co_await winner(t.wait(), yield()).or_fail() == 0) {}
         // The timer runs on: the next wait gets its fire.
         co_await t.wait().or_fail();
-        co_return first;
     };
 
     auto [result] = run(waiter());
-    ASSERT(result.has_value());
-    EXPECT(*result == 1U);
+    EXPECT(result.has_value());
 }
 
 ZEST_CASE(sleep_resumes_after_its_timeout) {
@@ -152,12 +148,7 @@ ZEST_CASE(shorter_sleep_wins_a_race) {
 }
 
 ZEST_CASE(sleep_can_be_cancelled) {
-    auto race = []() -> task<std::size_t> {
-        auto first = co_await when_any(sleep(1h), yield());
-        co_return first.index();
-    };
-
-    auto [result] = run(race());
+    auto [result] = run(winner(sleep(1h, loop), yield(loop)));
     ASSERT(result.has_value());
     EXPECT(*result == 1U);
 }
@@ -207,6 +198,28 @@ ZEST_CASE(tick_watchers_keep_one_of_the_fires_nobody_waited_for) {
     EXPECT(*checked == 1U);
 }
 
+// Each wait is cancelled as soon as it starts; the watchers run on, and the
+// next waits get their fires.
+ZEST_CASE(cancelled_waits_leave_the_tick_watchers_running) {
+    auto on_idle = idle::create(loop);
+    auto on_prepare = prepare::create(loop);
+    auto on_check = check::create(loop);
+    auto waiter = [&](auto& watcher) -> task<std::size_t, error> {
+        EXPECT(!watcher.start());
+        auto first = co_await winner(watcher.wait(), finished()).or_fail();
+        co_await watcher.wait().or_fail();
+        co_return first;
+    };
+
+    auto [idled, prepared, checked] = run(waiter(on_idle), waiter(on_prepare), waiter(on_check));
+    ASSERT(idled.has_value());
+    EXPECT(*idled == 1U);
+    ASSERT(prepared.has_value());
+    EXPECT(*prepared == 1U);
+    ASSERT(checked.has_value());
+    EXPECT(*checked == 1U);
+}
+
 // The watchers are not started, so only the cancel can end the waits.
 ZEST_CASE(tick_watcher_waits_can_be_cancelled) {
     auto on_idle = idle::create(loop);
@@ -242,6 +255,27 @@ ZEST_CASE(second_wait_while_one_is_pending_fails) {
     EXPECT(*checked == error::resource_busy_or_locked);
 }
 
+// stop() is not sticky: after a start(), the next wait gets the next fire.
+ZEST_CASE(stop_ends_a_pending_wait) {
+    auto t = timer::create(loop);
+    ASSERT(!t.start(1h));
+    auto stop_it = [&]() -> task<error> {
+        co_return t.stop();
+    };
+    auto restarted = [&]() -> task<void, error> {
+        EXPECT(!t.start(1ms));
+        co_await t.wait().or_fail();
+    };
+
+    auto [waited, stopped] = run(t.wait(), stop_it());
+    ASSERT(waited.has_error());
+    EXPECT(waited.error() == error::operation_aborted);
+    ASSERT(stopped.has_value());
+    EXPECT(!*stopped);
+    auto [again] = run(restarted());
+    EXPECT(again.has_value());
+}
+
 ZEST_CASE(destroying_a_watcher_ends_its_wait) {
     std::optional<timer> t = timer::create(loop);
     auto destroy = [&]() -> task<> {
@@ -254,8 +288,8 @@ ZEST_CASE(destroying_a_watcher_ends_its_wait) {
     EXPECT(waited.error() == error::operation_aborted);
 }
 
-// The destroyed timer's wait is cancelled before the loop gets to end it,
-// and its end must not reach back into the freed timer.
+// The destroyed timer's wait is cancelled after its destruction has ended
+// it, before the loop has resumed it: the cancel leaves that ending alone.
 ZEST_CASE(wait_cancelled_after_its_watcher_is_destroyed_ends) {
     std::optional<timer> t = timer::create(loop);
     auto destroy = [&]() -> task<> {
@@ -269,7 +303,7 @@ ZEST_CASE(wait_cancelled_after_its_watcher_is_destroyed_ends) {
 }
 
 // A default-constructed watcher watches nothing.
-ZEST_CASE(inert_watchers_fail) {
+ZEST_CASE(inert_watcher_fails) {
     timer inert_timer;
     idle inert_idle;
     prepare inert_prepare;

@@ -19,11 +19,10 @@ struct udp::Self : uv::owned_handle<Self> {
         uv_udp_t udp;
     };
 
-    /// The pending recv.
-    uv::waiter_slot<recv_result> slot;
+    /// The pending recv, woken once the queue has something for it.
+    uv::waiter_slot<void> slot;
 
-    /// Datagrams and errors that arrived while no recv() waited, oldest
-    /// first.
+    /// Datagrams and errors not taken by recv() yet, oldest first.
     std::deque<result<recv_result>> received;
 
     /// Room for one datagram of the largest size; allocated by the first
@@ -68,46 +67,25 @@ struct udp::Self : uv::owned_handle<Self> {
             };
         }();
 
-        // Receiving is not stopped here to make room: on Linux libuv goes on
-        // to read the socket's error queue after this callback, and asserts
-        // that the socket still receives.
-        if(self->slot.waiting()) {
-            self->slot.deliver(std::move(got));
-        } else if(self->received.size() < backlog) {
+        if(self->received.size() < backlog) {
             self->received.push_back(std::move(got));
+        }
+
+        // Nothing may stop receiving inside this callback, as a task resumed
+        // here could: after an EPOLLERR, libuv on Linux reads the socket's
+        // error queue next and asserts that the socket still receives. So
+        // the pending recv() resumes on a later turn, and the queue does not
+        // make room by stopping either.
+        if(self->slot.waiting()) {
+            self->slot.deliver_later(*handle->loop, {});
         }
     }
 };
 
 namespace {
 
-unsigned int bind_flags(const udp::bind_options& options) {
-    unsigned int out = 0;
-    if(options.ipv6_only) {
-        out |= UV_UDP_IPV6ONLY;
-    }
-    if(options.reuse_addr) {
-        out |= UV_UDP_REUSEADDR;
-    }
-    if(options.reuse_port) {
-        out |= UV_UDP_REUSEPORT;
-    }
-    return out;
-}
-
 uv_membership to_uv(udp::membership m) {
     return m == udp::membership::join ? UV_JOIN_GROUP : UV_LEAVE_GROUP;
-}
-
-/// The name libuv reports for a socket, as an endpoint.
-template <typename Query>
-result<endpoint> name_of(Query query, const uv_udp_t& socket) {
-    sockaddr_storage name{};
-    int length = sizeof(name);
-    if(auto err = error(query(&socket, reinterpret_cast<sockaddr*>(&name), &length))) {
-        return outcome_error(err);
-    }
-    return uv::endpoint_of(reinterpret_cast<const sockaddr&>(name));
 }
 
 /// libuv sends a datagram it has taken whatever happens to its task, and
@@ -122,11 +100,8 @@ struct send_op : uv::request_op<send_op, uv_udp_send_t> {
         socket(socket), buf(buf), addr(addr) {}
 
     bool start() noexcept {
-        req.data = this;
         return submitted(::uv_udp_send(&req, socket, &buf, 1, addr, on_done));
     }
-
-    void cancel() noexcept {}
 };
 
 }  // namespace
@@ -141,23 +116,22 @@ udp::udp(udp&& other) noexcept = default;
 
 udp& udp::operator=(udp&& other) noexcept = default;
 
-result<udp> udp::create(event_loop& loop) {
+udp udp::create(event_loop& loop) {
     return create(create_options{}, loop);
 }
 
-result<udp> udp::create(create_options options, event_loop& loop) {
+udp udp::create(create_options options, event_loop& loop) {
     auto self = Self::make();
     ::uv_udp_init_ex(loop.native_handle(), &self->udp, options.recvmmsg ? UV_UDP_RECVMMSG : 0U);
     return udp(std::move(self));
 }
 
 result<udp> udp::open(int fd, event_loop& loop) {
-    auto self = Self::make();
-    ::uv_udp_init(loop.native_handle(), &self->udp);
-    if(auto err = error(::uv_udp_open(&self->udp, fd))) {
+    auto opened = create(loop);
+    if(auto err = error(::uv_udp_open(&opened.self->udp, fd))) {
         return outcome_error(err);
     }
-    return udp(std::move(self));
+    return opened;
 }
 
 error udp::bind(std::string_view host, int port) {
@@ -173,8 +147,18 @@ error udp::bind(std::string_view host, int port, bind_options options) {
     if(!addr) {
         return addr.error();
     }
-    return error(
-        ::uv_udp_bind(&self->udp, reinterpret_cast<const sockaddr*>(&*addr), bind_flags(options)));
+
+    unsigned int flags = 0;
+    if(options.ipv6_only) {
+        flags |= UV_UDP_IPV6ONLY;
+    }
+    if(options.reuse_addr) {
+        flags |= UV_UDP_REUSEADDR;
+    }
+    if(options.reuse_port) {
+        flags |= UV_UDP_REUSEPORT;
+    }
+    return error(::uv_udp_bind(&self->udp, reinterpret_cast<const sockaddr*>(&*addr), flags));
 }
 
 error udp::connect(std::string_view host, int port) {
@@ -247,21 +231,22 @@ task<udp::recv_result, error> udp::recv() {
         co_await fail(error::invalid_argument);
     }
 
-    if(!self->received.empty()) {
-        auto next = std::move(self->received.front());
-        self->received.pop_front();
-        co_return std::move(next);
-    }
-
-    if(!self->receiving) {
-        self->buffer.resize(64 * 1024);
-        if(auto err = error(::uv_udp_recv_start(&self->udp, Self::on_alloc, Self::on_recv))) {
+    if(self->received.empty()) {
+        if(!self->receiving) {
+            self->buffer.resize(64 * 1024);
+            if(auto err = error(::uv_udp_recv_start(&self->udp, Self::on_alloc, Self::on_recv))) {
+                co_await fail(err);
+            }
+            self->receiving = true;
+        }
+        if(auto err = co_await self->slot.wait()) {
             co_await fail(err);
         }
-        self->receiving = true;
     }
 
-    co_return co_await self->slot.wait();
+    auto next = std::move(self->received.front());
+    self->received.pop_front();
+    co_return std::move(next);
 }
 
 error udp::stop() {
@@ -279,14 +264,14 @@ result<endpoint> udp::getsockname() const {
     if(!self) {
         return outcome_error(error::invalid_argument);
     }
-    return name_of(::uv_udp_getsockname, self->udp);
+    return uv::name_of(self->udp, ::uv_udp_getsockname);
 }
 
 result<endpoint> udp::getpeername() const {
     if(!self) {
         return outcome_error(error::invalid_argument);
     }
-    return name_of(::uv_udp_getpeername, self->udp);
+    return uv::name_of(self->udp, ::uv_udp_getpeername);
 }
 
 error udp::set_membership(std::string_view multicast_addr,

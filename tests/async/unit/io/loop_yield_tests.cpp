@@ -1,6 +1,7 @@
 #include <chrono>
 #include <vector>
 
+#include "async/harness/io.h"
 #include "async/harness/loop_fixture.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
@@ -77,25 +78,30 @@ ZEST_CASE(from_a_timer_callback_waits_for_the_next_iteration) {
 
 // A yield's cancel has nothing to undo: the yield stays queued, and its turn
 // ends the task cancelled. when_any cancels the yielder as soon as the task
-// raced against it has finished, and returns once the yield's turn came.
+// raced against it has finished, and returns only on the yield's turn, after
+// the task scheduled beside it has run.
 ZEST_CASE(can_be_cancelled_while_suspended) {
     bool resumed = false;
+    std::vector<int> order;
     auto yielder = [&]() -> task<> {
         co_await yield();
         resumed = true;
     };
-    auto done = []() -> task<> {
-        co_return;
-    };
     auto race = [&]() -> task<std::size_t> {
-        auto first = co_await when_any(yielder(), done());
+        auto first = co_await when_any(yielder(), test::finished());
+        order.push_back(2);
         co_return first.index();
     };
+    auto beside = [&]() -> task<> {
+        order.push_back(1);
+        co_return;
+    };
 
-    auto [result] = run(race());
+    auto [result, ran] = run(race(), beside());
     ASSERT(result.has_value());
     EXPECT(*result == 1U);
     EXPECT(!resumed);
+    EXPECT(order == std::vector{1, 2});
 }
 
 // A task cancelled while it runs ends at its yield, once the queued yield

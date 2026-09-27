@@ -31,29 +31,6 @@ struct process::Self : uv::owned_handle<Self> {
 
 namespace {
 
-unsigned int creation_flags(const process::creation_options& options) {
-    unsigned int out = 0;
-    if(options.detached) {
-        out |= UV_PROCESS_DETACHED;
-    }
-    if(options.windows_hide) {
-        out |= UV_PROCESS_WINDOWS_HIDE;
-    }
-    if(options.windows_hide_console) {
-        out |= UV_PROCESS_WINDOWS_HIDE_CONSOLE;
-    }
-    if(options.windows_hide_gui) {
-        out |= UV_PROCESS_WINDOWS_HIDE_GUI;
-    }
-    if(options.windows_verbatim_arguments) {
-        out |= UV_PROCESS_WINDOWS_VERBATIM_ARGUMENTS;
-    }
-    if(options.windows_file_path_exact_name) {
-        out |= UV_PROCESS_WINDOWS_FILE_PATH_EXACT_NAME;
-    }
-    return out;
-}
-
 /// A NULL-terminated array of the strings in `from`, which libuv takes as
 /// char* but only reads.
 std::vector<char*> c_strings(const std::vector<std::string>& from) {
@@ -138,7 +115,25 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
     uv_opts.args = argv.data();
     uv_opts.env = opts.env.empty() ? nullptr : envp.data();
     uv_opts.cwd = opts.cwd.empty() ? nullptr : opts.cwd.c_str();
-    uv_opts.flags = creation_flags(opts.creation);
+    const auto& creation = opts.creation;
+    if(creation.detached) {
+        uv_opts.flags |= UV_PROCESS_DETACHED;
+    }
+    if(creation.windows_hide) {
+        uv_opts.flags |= UV_PROCESS_WINDOWS_HIDE;
+    }
+    if(creation.windows_hide_console) {
+        uv_opts.flags |= UV_PROCESS_WINDOWS_HIDE_CONSOLE;
+    }
+    if(creation.windows_hide_gui) {
+        uv_opts.flags |= UV_PROCESS_WINDOWS_HIDE_GUI;
+    }
+    if(creation.windows_verbatim_arguments) {
+        uv_opts.flags |= UV_PROCESS_WINDOWS_VERBATIM_ARGUMENTS;
+    }
+    if(creation.windows_file_path_exact_name) {
+        uv_opts.flags |= UV_PROCESS_WINDOWS_FILE_PATH_EXACT_NAME;
+    }
     uv_opts.stdio_count = static_cast<int>(stdio_containers.size());
     uv_opts.stdio = stdio_containers.data();
 

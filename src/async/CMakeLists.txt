@@ -32,7 +32,7 @@ target_sources(kota_async PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/io/loop.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/io/process.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/io/request.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/io/ringbuffer.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/io/ring_buffer.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/io/stream.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/io/system.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/io/udp.cpp"

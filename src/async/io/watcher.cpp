@@ -64,6 +64,7 @@ error watcher::stop() {
         case UV_CHECK: ::uv_check_stop(&self->check); break;
         default: std::unreachable();
     }
+    self->slot.abort(*self->handle.loop, error::operation_aborted);
     return {};
 }
 
