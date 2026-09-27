@@ -4,10 +4,9 @@
 // list: what a deviation would change is not generated, and what it lets
 // through is taken as read.
 //
-// An entry named after a finding (P4.x, N6 in the ipc plan) is a bug: the
-// change that fixes it deletes its entry, and the tests then check the fix. An
-// entry marked "design" is how kotatsu reads LSP on purpose; one marked with an
-// open decision (D6) waits for it.
+// An entry named after a finding (P4.x in the ipc plan) is a bug: the change
+// that fixes it deletes its entry, and the tests then check the fix. An entry
+// marked "design" is how kotatsu reads LSP on purpose.
 
 export type Deviation =
   | "shadowedAlternatives"
@@ -19,8 +18,6 @@ export type Deviation =
   | "openEnumerations"
   | "unknownProperties"
   | "fullUinteger"
-  | "carriageReturnInLine"
-  | "characterPastLineEnd"
   | "linePastEnd"
   | "loneCarriageReturn"
   | "insideSurrogatePair";
@@ -56,18 +53,12 @@ export const deviations: Partial<Record<Deviation, string>> = {
   fullUinteger:
     "design: uinteger is std::uint32_t, which reads up to 2^32 - 1 where the " +
     "spec stops at 2^31 - 1.",
-  carriageReturnInLine:
-    "N6: LineMap counts the \\r of a \\r\\n as the line's last character, " +
-    "so the offset of the \\n is one character further than VS Code says, " +
-    "which puts it before the \\r.",
-  characterPastLineEnd:
-    "N6: LineMap has no offset for a character past the end of its line, " +
-    "which LSP says stands for the line's end.",
   linePastEnd:
-    "N6: LineMap has no offset for a line past the last one, where VS Code " +
-    "answers the end of the text.",
+    "design: LineMap has no offset for a line past the last one, where VS " +
+    "Code answers the end of the text.",
   loneCarriageReturn:
-    "D6: LineMap ends lines at \\n only; LSP ends them at a lone \\r too.",
+    "design (D6): LineMap ends lines at \\n only, so that the line starts " +
+    "callers persist stay valid; LSP ends them at a lone \\r too.",
   insideSurrogatePair:
     "design: LineMap has no offset for a character between the two halves of " +
     "a surrogate pair, which is no place in the text; VS Code answers the " +

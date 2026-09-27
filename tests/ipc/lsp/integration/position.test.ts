@@ -80,9 +80,6 @@ test("positions_of_offsets_match_vscode", { timeout: FUZZ_TIMEOUT }, (t) =>
       fc.asyncProperty(text, fc.nat(), async (content, pick) => {
         const all = boundaries(content);
         const { bytes, units: offset } = all[pick % all.length];
-        if (deviations.carriageReturnInLine) {
-          fc.pre(!(content[offset - 1] === "\r" && content[offset] === "\n"));
-        }
         const document = TextDocument.create(
           "file:///text",
           "plaintext",
@@ -120,13 +117,6 @@ test("offsets_of_positions_match_vscode", { timeout: FUZZ_TIMEOUT }, (t) =>
           const length =
             document.offsetAt({ line, character: Number.MAX_SAFE_INTEGER }) -
             start;
-          const crlf = content.startsWith("\r\n", start + length);
-          if (
-            deviations.characterPastLineEnd ||
-            (crlf && deviations.carriageReturnInLine)
-          ) {
-            fc.pre(character <= length);
-          }
           if (deviations.insideSurrogatePair) {
             const code = content.charCodeAt(start + character);
             fc.pre(!(character < length && code >= 0xdc00 && code <= 0xdfff));
