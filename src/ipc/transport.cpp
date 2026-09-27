@@ -141,14 +141,19 @@ Result<void> StreamTransport::close_output() {
     return release_stdout();
 }
 
+// Stopping the read may resume the read loop at once, which can end the
+// peer's run() and let its owner destroy the peer and this transport: the
+// streams are moved out first, and the stop comes last.
 Result<void> StreamTransport::close() {
-    read_stream.stop();
-    read_stream = stream{};
+    auto reading = std::move(read_stream);
     if(shared_stream) {
+        reading.stop();
         return {};
     }
-    write_stream = stream{};
-    return release_stdout();
+    auto writing = std::move(write_stream);
+    auto released = release_stdout();
+    reading.stop();
+    return released;
 }
 
 // libuv never closes fds 0 to 2 when it closes a stream over one (on Windows

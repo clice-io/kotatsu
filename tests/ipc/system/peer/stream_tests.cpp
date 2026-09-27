@@ -118,6 +118,41 @@ ZEST_CASE(close_during_a_write_ends_run, skip = true) {
     EXPECT(*closed);
 }
 
+// Closing stops the pending read, which resumes the read loop and ends run()
+// before close() returns; its owner then destroys the peer, and close() must
+// touch nothing of it after (under ASan, it would be a use after free).
+ZEST_CASE(peer_destroyed_as_close_ends_run) {
+    auto output = pipe_ends(loop);
+    auto input = pipe_ends(loop);
+    ASSERT(output.has_value());
+    ASSERT(input.has_value());
+    auto peer = std::make_unique<JsonPeer>(
+        loop,
+        std::make_unique<StreamTransport>(std::move(input->reader), std::move(output->writer)));
+    bool destroyed_in_close = false;
+    bool closing = false;
+    auto owner = [&]() -> task<> {
+        co_await peer->run();
+        destroyed_in_close = closing;
+        peer.reset();
+    };
+    // The owner's run() is reading by the time the closer starts: tasks run
+    // in order until they first suspend.
+    auto closer = [&]() -> task<> {
+        closing = true;
+        auto closed = peer->close();
+        closing = false;
+        EXPECT(closed.has_value());
+        co_return;
+    };
+
+    auto [owned, done] = run(owner(), closer());
+    EXPECT(owned.has_value());
+    EXPECT(done.has_value());
+    EXPECT(peer == nullptr);
+    EXPECT(destroyed_in_close);
+}
+
 // One TCP stream cannot half-close yet, so closing its output closes it and
 // ends run().
 ZEST_CASE(close_output_on_a_shared_stream_ends_run) {
