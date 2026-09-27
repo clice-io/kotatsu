@@ -257,11 +257,14 @@ void peer_lifecycle(const PeerKit<W>& kit) {
 }
 
 /// Once the input has ended no answer can arrive, so a request a handler
-/// sends then fails at once instead of waiting for good.
+/// sends then fails at once instead of waiting for good. The probe request
+/// fails only when the peer reads the end of its input, so the handler is
+/// released after that.
 template <Wire W>
 void request_from_a_handler_after_end_of_input_fails() {
     PeerFixture<W> f;
     event started;
+    event input_ended;
     event release;
     std::optional<ipc::Error> failure;
     f.peer.on_request([&](typename PeerFixture<W>::Context& context,
@@ -274,14 +277,19 @@ void request_from_a_handler_after_end_of_input_fails() {
         }
         co_return AddResult{};
     });
+    auto probe = [&]() -> task<> {
+        co_await f.peer.send_request(AddParams{});
+        input_ended.set();
+    };
     auto remote = [&]() -> task<> {
         f.remote.send(request<W>(1, "test/add", AddParams{}));
         co_await started.wait();
         f.remote.end_input();
+        co_await input_ended.wait();
         release.set();
     };
 
-    auto [ran, scripted] = f.run(f.peer.run(), remote());
+    auto [ran, probed, scripted] = f.run(f.peer.run(), probe(), remote());
     EXPECT(ran.has_value());
     ASSERT(failure.has_value());
     EXPECT(code_of(*failure) == ipc::protocol::ErrorCode::RequestFailed);
