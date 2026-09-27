@@ -717,12 +717,16 @@ void Peer<CodecT>::bind_request_callback(std::string_view method, Callback&& cal
         context.method = method_name;
 
         auto result = co_await std::invoke(cb, context, *parsed_params).or_fail();
-        auto serialized = peer->self->codec.serialize_value(result);
-        if(!serialized) {
-            co_await fail(Error(protocol::ErrorCode::InternalError, serialized.error().message));
+        // A RawValue result is already in the codec's encoding.
+        if constexpr(std::is_same_v<decltype(result), codec::RawValue>) {
+            co_return std::move(result.data);
+        } else {
+            auto serialized = peer->self->codec.serialize_value(result);
+            if(!serialized) {
+                co_await fail(Error(protocol::ErrorCode::InternalError, serialized.error().message));
+            }
+            co_return std::move(*serialized);
         }
-
-        co_return std::move(*serialized);
     };
 
     register_request_callback(method, std::move(wrapped));

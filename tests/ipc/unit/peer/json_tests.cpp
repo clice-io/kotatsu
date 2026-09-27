@@ -49,10 +49,6 @@ ZEST_CASE_GROUP(link) {
     test::peer_link(Kit{add_case});
 }
 
-ZEST_CASE(raw_value_result_is_sent_as_it_is) {
-    test::raw_value_result_is_sent_as_it_is<test::JsonAdapter>();
-}
-
 ZEST_CASE(error_data_crosses_between_peers) {
     test::error_data_crosses_between_peers<test::JsonAdapter>();
 }

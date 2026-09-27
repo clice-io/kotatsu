@@ -42,12 +42,6 @@ ZEST_CASE_GROUP(link) {
     test::peer_link(Kit{add_case});
 }
 
-// BincodeCodec encodes the RawValue as a length-prefixed blob, so the
-// requester gets the result wrapped once more.
-ZEST_CASE(raw_value_result_is_sent_as_it_is, skip = true) {
-    test::raw_value_result_is_sent_as_it_is<test::BincodeAdapter>();
-}
-
 // P1.5: BincodeCodec drops Error::data.
 ZEST_CASE(error_data_crosses_between_peers, skip = true) {
     test::error_data_crosses_between_peers<test::BincodeAdapter>();

@@ -135,6 +135,22 @@ void peer_dispatch(const PeerKit<A>& kit) {
         EXPECT(sum_of<A>(written[0]) == 5);
     });
 
+    // The handler wrote its result itself; the requester gets it as it is.
+    kit.add("raw_value_result_is_sent_as_it_is", [](Fixture& f) {
+        f.peer.on_request(
+            [](Context&, const AddParams& params) -> task<codec::RawValue, ipc::Error> {
+                co_return codec::RawValue{A::encode(AddResult{.sum = params.a + params.b})};
+            });
+        f.remote.send(request<A>(1, "test/add", AddParams{.a = 10, .b = 20}));
+        f.remote.end_input();
+
+        auto [ran] = f.run(f.peer.run());
+        EXPECT(ran.has_value());
+        const auto& written = f.written();
+        ASSERT(written.size() == 1U);
+        EXPECT(sum_of<A>(written[0]) == 30);
+    });
+
     kit.add("second_request_handler_replaces_the_first", [](Fixture& f) {
         f.serve_add();
         f.peer.on_request([](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
@@ -337,25 +353,6 @@ void peer_dispatch(const PeerKit<A>& kit) {
         EXPECT(ran.has_value());
         EXPECT(f.written().empty());
     });
-}
-
-/// A handler that returns a RawValue has written its result itself: the
-/// requester gets it as it is.
-template <CodecAdapter A>
-void raw_value_result_is_sent_as_it_is() {
-    PeerFixture<A> f;
-    f.peer.on_request([](typename PeerFixture<A>::Context&,
-                         const AddParams& params) -> task<codec::RawValue, ipc::Error> {
-        co_return codec::RawValue{A::encode(AddResult{.sum = params.a + params.b})};
-    });
-    f.remote.send(request<A>(1, "test/add", AddParams{.a = 10, .b = 20}));
-    f.remote.end_input();
-
-    auto [ran] = f.run(f.peer.run());
-    EXPECT(ran.has_value());
-    const auto& written = f.written();
-    ASSERT(written.size() == 1U);
-    EXPECT(sum_of<A>(written[0]) == 30);
 }
 
 }  // namespace kota::test
