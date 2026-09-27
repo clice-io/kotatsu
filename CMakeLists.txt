@@ -86,10 +86,13 @@ endif()
 
 if(KOTA_SANITIZE_ADDRESS)
     if(MSVC)
-        # /fsanitize=address disables __forceinline; suppress C4714 so /WX does not trip on it.
+        # /fsanitize=address disables __forceinline and the tail calls of
+        # coroutine symmetric transfer; suppress C4714 and C4737 so /WX does
+        # not trip on them.
         set(kota_sanitizer_compile_options
             "/fsanitize=address"
             "/wd4714"
+            "/wd4737"
         )
         set(kota_sanitizer_link_options "")
 
