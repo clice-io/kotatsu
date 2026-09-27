@@ -4,6 +4,7 @@
   "type": "module",
   "devDependencies": {
     "@types/node": "^24.19.0",
+    "fast-check": "^4.10.2",
     "typescript": "^7.0.2",
     "vscode-jsonrpc": "^9.0.3",
     "vscode-languageserver-protocol": "^3.18.4"

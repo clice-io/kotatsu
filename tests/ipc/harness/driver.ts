@@ -181,17 +181,36 @@ export class Driver {
     );
   }
 
+  /** What the driver has written to stderr so far. */
+  get stderr(): string {
+    return this.#stderr;
+  }
+
+  /**
+   * Kills the driver, for a test that reports its failure itself, and waits
+   * for it to end.
+   */
+  async kill(): Promise<void> {
+    this.#checked = true;
+    await this.#end();
+  }
+
   async #abandon(): Promise<void> {
     if (this.#checked) {
       return;
     }
+    const exit = await this.#end();
+    process.stderr.write(
+      `${this.name}, left unchecked by its test: ${JSON.stringify(exit)}; its stderr:\n${this.#stderr}\n`,
+    );
+  }
+
+  async #end(): Promise<Exit | string> {
     this.#child.kill("SIGKILL");
     // Bounded: something the driver started may hold its stderr open.
     const timeout = delay(5000, "still running", { ref: false });
     const exit = await Promise.race([this.#exited, timeout]);
     await Promise.race([this.#stderrEnded, timeout]);
-    process.stderr.write(
-      `${this.name}, left unchecked by its test: ${JSON.stringify(exit)}; its stderr:\n${this.#stderr}\n`,
-    );
+    return exit;
   }
 }
