@@ -242,6 +242,17 @@ struct Peer<CodecT>::Self {
         ET_IPC_LOG(this, LogLevel::info, "{}", "read loop ended");
     }
 
+    /// A result as it came in, read as T. A RawValue takes it as it is, the
+    /// way a handler's RawValue result is sent.
+    template <typename T>
+    Result<T> read_result(std::string raw) {
+        if constexpr(std::is_same_v<T, codec::RawValue>) {
+            return codec::RawValue{std::move(raw)};
+        } else {
+            return codec.template deserialize_value<T>(raw);
+        }
+    }
+
     void send_error(const std::optional<protocol::RequestID>& id, const Error& error) {
         ET_IPC_LOG(this, LogLevel::error, "error response: {}", error.message);
         auto response = codec.encode_error_response(id, error);
@@ -605,7 +616,7 @@ RequestResult<Params> Peer<CodecT>::send_request(const Params& params, request_o
         co_await send_request_impl(Traits::method, std::move(serialized_params), std::move(opts))
             .or_fail();
     co_return co_await or_fail(
-        self->codec.template deserialize_value<typename Traits::Result>(raw_result));
+        self->template read_result<typename Traits::Result>(std::move(raw_result)));
 }
 
 template <typename CodecT>
@@ -616,7 +627,7 @@ task<ResultT, Error> Peer<CodecT>::send_request(std::string_view method,
     auto serialized_params = co_await or_fail(self->codec.serialize_value(params));
     auto raw_result =
         co_await send_request_impl(method, std::move(serialized_params), std::move(opts)).or_fail();
-    co_return co_await or_fail(self->codec.template deserialize_value<ResultT>(raw_result));
+    co_return co_await or_fail(self->template read_result<ResultT>(std::move(raw_result)));
 }
 
 template <typename CodecT>
@@ -706,7 +717,7 @@ auto Peer<CodecT>::send_request(const typename protocol::RequestTraits<Tag>::Par
         co_await send_request_impl(Traits::method, std::move(serialized_params), std::move(opts))
             .or_fail();
     co_return co_await or_fail(
-        self->codec.template deserialize_value<typename Traits::Result>(raw_result));
+        self->template read_result<typename Traits::Result>(std::move(raw_result)));
 }
 
 template <typename CodecT>
@@ -779,7 +790,8 @@ void Peer<CodecT>::bind_request_callback(std::string_view method, Callback&& cal
         context.method = method_name;
 
         auto result = co_await std::invoke(cb, context, *parsed_params).or_fail();
-        // A RawValue result is already in the codec's encoding.
+        // A RawValue result is already in the codec's encoding; read_result
+        // takes it back as it is.
         if constexpr(std::is_same_v<decltype(result), codec::RawValue>) {
             co_return std::move(result.data);
         } else {

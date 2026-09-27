@@ -10,6 +10,7 @@
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
 #include "kota/codec/dyn/dyn.h"
+#include "kota/codec/visit/common.h"
 
 namespace kota::test {
 
@@ -38,6 +39,32 @@ void peer_link(const PeerKit<A>& kit) {
         ASSERT(asked.has_value());
         EXPECT(asked->sum == 5);
         EXPECT(notes == std::vector<std::string>{"hello"});
+    });
+
+    // clice's worker protocol: a handler returns a result it encoded, and
+    // the requester takes it as it is.
+    kit.add_case("raw_value_result_crosses_between_peers", [] {
+        Peers f;
+        f.b.on_request("test/raw",
+                       [](Context&, const AddParams& params) -> task<codec::RawValue, ipc::Error> {
+                           co_return codec::RawValue{
+                               A::encode(AddResult{.sum = params.a + params.b})};
+                       });
+        auto script = [&]() -> task<codec::RawValue, ipc::Error> {
+            auto result =
+                co_await f.a
+                    .template send_request<codec::RawValue>("test/raw", AddParams{.a = 2, .b = 3})
+                    .or_fail();
+            f.a.close();
+            f.b.close();
+            co_return result;
+        };
+
+        auto [asked] = f.run_with(script());
+        ASSERT(asked.has_value());
+        auto result = decoded<AddResult, A>(asked->data);
+        ASSERT(result.has_value());
+        EXPECT(result->sum == 5);
     });
 
     kit.add_case("error_crosses_between_peers", [] {

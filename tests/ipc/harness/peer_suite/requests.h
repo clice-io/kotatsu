@@ -9,6 +9,7 @@
 #include "ipc/harness/peer_fixture.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
+#include "kota/codec/visit/common.h"
 
 namespace kota::test {
 
@@ -151,6 +152,25 @@ void peer_requests(const PeerKit<A>& kit) {
         EXPECT(first->sum == 10);
         ASSERT(second.has_value());
         EXPECT(second->sum == 20);
+    });
+
+    // A RawValue result is the result as the codec wrote it.
+    kit.add("raw_value_result_is_read_as_it_is", [](Fixture& f) {
+        auto ask = [&]() -> task<codec::RawValue, ipc::Error> {
+            co_return co_await f.peer
+                .template send_request<codec::RawValue>("worker/build", AddParams{})
+                .or_fail();
+        };
+        auto remote = [&]() -> task<> {
+            co_await f.next();
+            f.remote.send(response<A>(1, AddResult{.sum = 9}));
+            f.remote.end_input();
+        };
+
+        auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
+        EXPECT(ran.has_value());
+        ASSERT(asked.has_value());
+        EXPECT(asked->data == A::encode(AddResult{.sum = 9}));
     });
 
     kit.add("result_that_does_not_decode_fails_the_request", [](Fixture& f) {
