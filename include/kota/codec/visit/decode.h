@@ -694,9 +694,11 @@ bool decode_one_field(Vis& vis, T& out) {
 
     if constexpr(tuple_has_spec_v<typename field::attrs, meta::behavior::skip_if>) {
         if(skipped<typename field::attrs>(field_ref, false)) {
+            // The document still holds the field, written through its
+            // attrs; read it the same way, into a value nobody keeps.
             typename field::type discard{};
             return vis.visit_field(idx, field::name, [&](auto& fv) -> bool {
-                return decode_value<Config>(fv, discard);
+                return decode_with_attrs<Config, typename field::attrs>(fv, discard);
             });
         }
     }

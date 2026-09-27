@@ -259,6 +259,27 @@ struct AsTargetsPlain {
     Point cell;
 };
 
+/// Skips its field on decode only, whatever the value.
+struct SkipCellOnDecode {
+    bool operator()(const GridIndex& /*cell*/, bool is_serialize) const {
+        return !is_serialize;
+    }
+};
+
+/// A field that travels as another type and is skipped on decode: the
+/// document still holds it, written as that other type.
+struct CellSkippedOnDecode {
+    meta::
+        annotation<GridIndex, meta::behavior::as<Point>, meta::behavior::skip_if<SkipCellOnDecode>>
+            cell;
+    int after = 0;
+};
+
+struct CellSkippedOnDecodePlain {
+    Point cell;
+    int after;
+};
+
 using AccessName =
     meta::annotation<Access, meta::behavior::enum_string<naming::rename_policy::lower_camel>>;
 

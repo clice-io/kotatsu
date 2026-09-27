@@ -210,6 +210,19 @@ void attrs(const Kit<B>& kit) {
             .score = -5,
         };
     };
+    // A field skipped on decode is still in the document, written through
+    // its attrs: a positional decode reads past it the same way, and the
+    // field it decodes into keeps its value.
+    reads<CellSkippedOnDecode>(
+        kit,
+        "skip_if_on_decode_reads_past_its_as_field",
+        [] {
+            return CellSkippedOnDecodePlain{
+                .cell = {.x = 1, .y = 2},
+                .after = 7
+            };
+        },
+        [] { return CellSkippedOnDecode{.cell = {}, .after = 7}; });
     if constexpr(B::caps.absent_fields) {
         auto kept = [] {
             return Skippable{
