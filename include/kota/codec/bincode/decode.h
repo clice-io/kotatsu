@@ -8,6 +8,7 @@
 #include <expected>
 #include <span>
 #include <string>
+#include <string_view>
 #include <type_traits>
 
 #include "kota/support/expected_try.h"
@@ -18,6 +19,16 @@
 #include "kota/codec/visit/decode.h"
 
 namespace kota::codec::bincode {
+
+namespace detail {
+
+// The messages a bincode decode fails with.
+constexpr inline std::string_view unexpected_eof = "unexpected eof";
+constexpr inline std::string_view type_mismatch = "type mismatch";
+constexpr inline std::string_view number_out_of_range = "number out of range";
+constexpr inline std::string_view trailing_bytes = "trailing bytes";
+
+}  // namespace detail
 
 struct Reader;
 
@@ -44,12 +55,12 @@ struct MapAccess {
 };
 
 /// Mirror of Writer: consumes `data` front to back in bincode's fixed
-/// little-endian layout, failing with UnexpectedEof / TypeMismatch /
-/// NumberOutOfRange through the scoped error context. Every read is
+/// little-endian layout, failing with "unexpected eof", "type mismatch" or
+/// "number out of range" through the scoped error context. Every read is
 /// length-checked via check_remaining before touching the buffer; integers
 /// are read at their widened 8-byte size and narrowed back into the target
 /// type with a range check. from_bytes additionally rejects buffers with
-/// bytes left over after the root value (TrailingBytes).
+/// bytes left over after the root value ("trailing bytes").
 struct Reader {
     std::span<const std::byte> data;
     std::size_t pos = 0;
@@ -59,7 +70,7 @@ struct Reader {
     bool check_remaining(std::uint64_t n) {
         assert(pos <= data.size());
         if(n > data.size() - pos) {
-            return fail(error_kind::UnexpectedEof);
+            return fail(detail::unexpected_eof);
         }
         return true;
     }
@@ -91,7 +102,7 @@ struct Reader {
         KOTA_CODEC_TRY(check_remaining(1));
         auto byte = read_u8();
         if(byte > 1U) {
-            return fail(error_kind::TypeMismatch);
+            return fail(detail::type_mismatch);
         }
         out = byte == 1U;
         return true;
@@ -102,7 +113,7 @@ struct Reader {
         KOTA_CODEC_TRY(check_remaining(sizeof(std::int64_t)));
         auto raw = read_le<std::int64_t>();
         if(!kota::narrow_int(raw, out)) {
-            return fail(error_kind::NumberOutOfRange);
+            return fail(detail::number_out_of_range);
         }
         return true;
     }
@@ -112,7 +123,7 @@ struct Reader {
         KOTA_CODEC_TRY(check_remaining(sizeof(std::uint64_t)));
         auto raw = read_le<std::uint64_t>();
         if(!kota::narrow_int(raw, out)) {
-            return fail(error_kind::NumberOutOfRange);
+            return fail(detail::number_out_of_range);
         }
         return true;
     }
@@ -167,7 +178,7 @@ struct Reader {
             return true;
         }
         if(byte != 0x01) {
-            return fail(error_kind::TypeMismatch);
+            return fail(detail::type_mismatch);
         }
         return body(*this);
     }
@@ -175,7 +186,7 @@ struct Reader {
     bool visit_null() {
         KOTA_CODEC_TRY(check_remaining(1));
         if(read_u8() != 0x00) {
-            return fail(error_kind::TypeMismatch);
+            return fail(detail::type_mismatch);
         }
         return true;
     }
@@ -224,8 +235,8 @@ struct Reader {
     }
 
 private:
-    static bool fail(error_kind kind) {
-        return scoped_context<rich_error>::fail(rich_error(std::string(error_message(kind))));
+    static bool fail(std::string_view message) {
+        return scoped_context<rich_error>::fail(rich_error(std::string(message)));
     }
 };
 
@@ -260,7 +271,7 @@ auto from_bytes(std::span<const std::byte> data, T& out) -> std::expected<void, 
     Reader r{data};
     KOTA_EXPECTED_TRY(codec::detail::run_decode<Config>(r, out));
     if(r.pos != data.size()) {
-        return std::unexpected(rich_error(std::string(error_message(error_kind::TrailingBytes))));
+        return std::unexpected(rich_error(std::string(detail::trailing_bytes)));
     }
     return {};
 }
