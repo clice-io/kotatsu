@@ -225,23 +225,6 @@ auto field_index(Member Object::* member) -> std::size_t {
     return fields.size();
 }
 
-// Any voffset >= vtable_size makes GetOptionalFieldOffset return 0 (absent).
-constexpr inline slot_id invalid_slot = std::numeric_limits<slot_id>::max();
-
-inline auto field_slot(std::size_t index) -> slot_id {
-    auto r = detail::field_voffset(index);
-    return r.has_value() ? *r : invalid_slot;
-}
-
-inline auto variant_tag_slot() -> slot_id {
-    return detail::first_field;
-}
-
-inline auto variant_payload_slot(std::size_t index) -> slot_id {
-    auto r = detail::variant_payload_voffset(index);
-    return r.has_value() ? *r : invalid_slot;
-}
-
 /// The typed flatbuffers vector pointer an element layout is read through;
 /// boxed and table layouts share the table-offset vector shape.
 template <typename Element, element_layout Layout = element_layout_of<Element>()>
@@ -550,19 +533,22 @@ bool verify_table(verifier_t& v, const Table* tbl) {
     if(!tbl->VerifyTableStart(v)) {
         return false;
     }
+    using detail::field_slot;
     bool ok;
     if constexpr(is_specialization_of<std::variant, T>) {
+        detail::assert_slots_fit<std::variant_size_v<T> + 1>();
         // variant_view::get<I>() is reachable for every alternative
         // regardless of the stored tag, so every payload slot must verify.
-        ok = tbl->VerifyField<std::uint32_t>(v, variant_tag_slot(), alignof(std::uint32_t)) &&
+        ok = tbl->VerifyField<std::uint32_t>(v, field_slot(0), alignof(std::uint32_t)) &&
              [&]<std::size_t... Is>(std::index_sequence<Is...>) {
                  return (verify_field<deep_clean_t<std::variant_alternative_t<Is, T>>>(
                              v,
                              tbl,
-                             variant_payload_slot(Is)) &&
+                             field_slot(Is + 1)) &&
                          ...);
              }(std::make_index_sequence<std::variant_size_v<T>>{});
     } else if constexpr(is_tuple_like_v<T>) {
+        detail::assert_slots_fit<std::tuple_size_v<T>>();
         ok = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
             return (
                 verify_field<deep_clean_t<std::tuple_element_t<Is, T>>>(v, tbl, field_slot(Is)) &&
@@ -571,6 +557,7 @@ bool verify_table(verifier_t& v, const Table* tbl) {
     } else {
         detail::assert_fields_reflected<T>();
         using slots = typename object_schema<T>::slots;
+        detail::assert_slots_fit<type_list_size_v<slots>>();
         ok = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
             return (verify_slot<type_list_element_t<Is, slots>>(v, tbl, field_slot(Is)) && ...);
         }(std::make_index_sequence<type_list_size_v<slots>>{});
@@ -626,8 +613,8 @@ bool verify_field(verifier_t& v, const Table* tbl, slot_id slot) {
             if(!entry->VerifyTableStart(v)) {
                 return false;
             }
-            const bool ok = verify_field<clean_key_t>(v, entry, field_slot(0)) &&
-                            verify_field<clean_mapped_t>(v, entry, field_slot(1));
+            const bool ok = verify_field<clean_key_t>(v, entry, detail::field_slot(0)) &&
+                            verify_field<clean_mapped_t>(v, entry, detail::field_slot(1));
             v.EndTable();
             if(!ok) {
                 return false;
@@ -862,7 +849,7 @@ public:
             return sizeof...(Ts);
         }
         return static_cast<std::size_t>(
-            view.template get_scalar<std::uint32_t>(proxy_detail::variant_tag_slot()));
+            view.template get_scalar<std::uint32_t>(detail::field_slot(0)));
     }
 
     template <std::size_t I>
@@ -877,7 +864,7 @@ public:
             return return_t{};
         }
 
-        return proxy_detail::read_field<clean_alt_t>(view, proxy_detail::variant_payload_slot(I));
+        return proxy_detail::read_field<clean_alt_t>(view, detail::field_slot(I + 1));
     }
 
     constexpr auto raw() const noexcept -> const Table* {
@@ -917,7 +904,7 @@ public:
             return return_t{};
         }
 
-        return proxy_detail::read_field<clean_element_t>(view, proxy_detail::field_slot(I));
+        return proxy_detail::read_field<clean_element_t>(view, detail::field_slot(I));
     }
 
     constexpr auto raw() const noexcept -> const Table* {
@@ -972,7 +959,7 @@ public:
         if(!entry.valid()) {
             return value_return_t{};
         }
-        return proxy_detail::read_field<clean_v>(entry, proxy_detail::field_slot(1));
+        return proxy_detail::read_field<clean_v>(entry, detail::field_slot(1));
     }
 
     template <typename U = K>
@@ -1010,7 +997,7 @@ private:
             auto mid = lo + (hi - lo) / 2;
             const auto* entry = vector->template GetAs<Table>(static_cast<uoffset_t>(mid));
             auto entry_key = proxy_detail::read_field<clean_k>(proxy_detail::table_ref(entry),
-                                                               proxy_detail::field_slot(0));
+                                                               detail::field_slot(0));
             if(proxy_detail::ordering_less(entry_key, key)) {
                 lo = mid + 1;
             } else {
@@ -1024,7 +1011,7 @@ private:
 
         const auto* entry = vector->template GetAs<Table>(static_cast<uoffset_t>(lo));
         auto entry_view = proxy_detail::table_ref(entry);
-        auto entry_key = proxy_detail::read_field<clean_k>(entry_view, proxy_detail::field_slot(0));
+        auto entry_key = proxy_detail::read_field<clean_k>(entry_view, detail::field_slot(0));
         if(proxy_detail::ordering_equal(entry_key, key)) {
             return entry_view;
         }
@@ -1120,7 +1107,7 @@ public:
         if(index >= proxy_detail::field_slot_count<object_type>()) {
             return false;
         }
-        return view.has(proxy_detail::field_slot(index));
+        return view.has(detail::field_slot(index));
     }
 
     template <typename Member>
@@ -1144,7 +1131,7 @@ public:
             return return_t{};
         }
 
-        return proxy_detail::read_field<member_type>(view, proxy_detail::field_slot(index));
+        return proxy_detail::read_field<member_type>(view, detail::field_slot(index));
     }
 
 private:

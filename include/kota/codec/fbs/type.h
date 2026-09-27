@@ -4,7 +4,6 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <expected>
 #include <limits>
 #include <type_traits>
 #include <utility>
@@ -72,21 +71,13 @@ using verifier_t = ::flatbuffers::Verifier;
 ///   ordering key mirrors find_entry (strings lexicographic, enums by
 ///   underlying value, scalars by value) so lookups can binary-search
 /// - variant → table with the u32 alternative index at the first slot and
-///   the payload at the slot for that alternative (variant_payload_voffset);
+///   the payload at the slot for that alternative (detail::field_slot);
 ///   a null alternative such as std::monostate leaves that slot absent
 /// - optional/pointer → disengaged fields simply leave their slot absent;
 ///   as vector elements they degrade to boxed tables. A null payload leaves
 ///   the slot absent too, so an engaged optional<std::monostate> reads back
 ///   disengaged
 struct format {};
-
-enum class object_error_code : std::uint8_t {
-    None = 0,
-    TooManyFields,
-};
-
-template <typename T>
-using object_result_t = std::expected<T, object_error_code>;
 
 /// Whether reflection sees a nonempty struct's fields: past the reflection
 /// field limit meta::field_count() collapses to zero, indistinguishable from
@@ -154,18 +145,25 @@ inline auto make_verifier(const std::uint8_t* data, std::size_t size) -> verifie
     return verifier_t(data, size, opts);
 }
 
-inline auto field_voffset(std::size_t index) -> object_result_t<voffset_t> {
-    constexpr auto max_voffset = static_cast<std::size_t>((std::numeric_limits<voffset_t>::max)());
-    const auto raw =
-        static_cast<std::size_t>(first_field) + index * static_cast<std::size_t>(field_step);
-    if(raw > max_voffset) {
-        return std::unexpected(object_error_code::TooManyFields);
-    }
-    return static_cast<voffset_t>(raw);
+/// The vtable slot of a table's index-th field: a struct field, a tuple
+/// element, a map entry's key (0) or value (1), or a variant's tag (0) and
+/// then the payload of alternative i (i + 1). Indices come from a type's
+/// field, element, and alternative counts, which assert_slots_fit bounds
+/// where the type is known, so a slot never wraps; the one runtime-supplied
+/// index, a decoded variant tag, is rejected by the dispatch before the
+/// payload slot it names is read.
+constexpr voffset_t field_slot(std::size_t index) {
+    return static_cast<voffset_t>(first_field + field_step * index);
 }
 
-inline auto variant_payload_voffset(std::size_t index) -> object_result_t<voffset_t> {
-    return field_voffset(index + 1);
+/// Fails to compile when a table with count fields would run past the last
+/// voffset.
+template <std::size_t Count>
+consteval void assert_slots_fit() {
+    constexpr std::size_t max_voffset = (std::numeric_limits<voffset_t>::max)();
+    static_assert(Count == 0 || first_field + field_step * (Count - 1) <= max_voffset,
+                  "the fbs backend gives every field, tuple element and variant alternative a "
+                  "vtable slot; this type has more than a flatbuffers table can address");
 }
 
 }  // namespace detail
