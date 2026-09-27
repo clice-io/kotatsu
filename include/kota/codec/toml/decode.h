@@ -231,10 +231,6 @@ struct ValueReader {
         return visit_seq(std::forward<Callback>(cb));
     }
 
-    bool visit_skip() {
-        return true;  // nothing to consume in a DOM backend
-    }
-
     /// Backend hook used by data-driven struct decoding: fail an unknown field
     /// with the offending value node's source location attached.
     bool fail_unknown_field(std::string_view key) {

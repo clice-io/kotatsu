@@ -129,7 +129,7 @@ struct deserialize_visit<Vis, kota::ipc::protocol::Error, Config> {
             } else if(key == "data") {
                 return decode_value<Config>(fv, error.data);
             } else {
-                return fv.visit_skip();
+                return true;
             }
         });
     }

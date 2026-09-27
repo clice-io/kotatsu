@@ -211,7 +211,7 @@ bool decode_field_value(Vis& vis, T& out) {
     // judge a value being written.
     if constexpr(tuple_has_spec_v<typename field::attrs, meta::behavior::skip_if>) {
         if(skipped<typename field::attrs>(field_ref, false)) {
-            return vis.visit_skip();
+            return true;
         }
     }
     return trace_path<Config>(decode_with_attrs<Config, typename field::attrs>(vis, field_ref),
@@ -251,7 +251,9 @@ bool match_field(std::string_view key, Vis& reader, T& out, std::uint64_t* field
                 return scoped_context<rich_error>::fail(rich_error::unknown_field(key));
             }
         } else {
-            return reader.visit_skip();
+            // An entry the callback does not read is simply passed over: the
+            // data-driven readers move to the next entry either way.
+            return true;
         }
     }
 
@@ -389,14 +391,14 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
     bool result = vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
         if(key == tag_key) {
             if(idx != npos)
-                return fv.visit_skip();
+                return true;
             return fail_unusable_tag(fv);
         }
         if(idx == npos) {
             // Without a usable tag data fields cannot be placed, and need
             // not be: the tag's own entry reports why it is unusable, and
             // an absent tag is reported after the pass.
-            return fv.visit_skip();
+            return true;
         }
         return with_index<sizeof...(Ts)>(idx, [&](auto i) {
             constexpr std::size_t I = decltype(i)::value;
@@ -441,7 +443,7 @@ bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
         if(key == tag_key) {
             ++tag_count;
             if(idx != npos)
-                return fv.visit_skip();
+                return true;
             return fail_unusable_tag(fv);
         }
         if(key == content_key) {
@@ -450,13 +452,13 @@ bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
                 // Without a usable tag the content cannot be placed: the
                 // tag's own entry reports why, and an absent tag is
                 // reported after the pass.
-                return fv.visit_skip();
+                return true;
             }
             if(content_count > 1)
-                return fv.visit_skip();
+                return true;
             return construct_and_visit<Config>(fv, var, idx);
         }
-        return fv.visit_skip();
+        return true;
     });
 
     if(!result)

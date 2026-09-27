@@ -146,10 +146,6 @@ struct ValueReader {
         return fn(fork);
     }
 
-    bool visit_skip() {
-        return true;
-    }
-
     template <typename Callback>
     bool visit_struct(Callback&& cb) {
         const auto* obj = node.get_object();

@@ -276,10 +276,6 @@ struct Reader {
         });
     }
 
-    bool visit_skip() {
-        return true;
-    }
-
     template <typename Callback>
     bool visit_struct(Callback&& cb) {
         auto r = src.apply([&](auto& s) { return s.get_object(); });
