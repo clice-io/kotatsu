@@ -113,10 +113,9 @@ ZEST_CASE(request_with_a_null_id_is_answered_with_invalid_request) {
     EXPECT(!written[0].id.has_value());
 }
 
-// N2: an error whose code is not an integer makes the whole response a parse
-// error, which is answered, while request 1 waits for good. The remote ends
-// the input only once the request has failed, so the end cannot fail it.
-ZEST_CASE(error_response_with_a_malformed_error_fails_its_request, skip = true) {
+// The remote ends the input only once the request has failed, so the end
+// cannot be what fails it.
+ZEST_CASE(error_response_with_a_malformed_error_fails_its_request) {
     Fixture f;
     event answered;
     auto ask = [&]() -> task<Error> {
@@ -138,9 +137,7 @@ ZEST_CASE(error_response_with_a_malformed_error_fails_its_request, skip = true) 
     EXPECT(f.written().size() == 1U);
 }
 
-// N2: a request whose method is not a string is answered as unparsable, with
-// id 0 instead of its own.
-ZEST_CASE(request_with_a_malformed_member_is_answered_with_its_id, skip = true) {
+ZEST_CASE(request_with_a_malformed_member_is_answered_with_its_id) {
     Fixture f;
     f.remote.send(R"({"jsonrpc":"2.0","id":5,"method":7})");
     f.remote.end_input();

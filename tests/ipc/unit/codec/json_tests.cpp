@@ -129,8 +129,7 @@ ZEST_CASE(result_with_a_null_id_answers_no_request) {
     EXPECT(!response->id.has_value());
 }
 
-// N3: JSON that parses but is no message is reported as a ParseError.
-ZEST_CASE(json_that_is_no_message_is_an_invalid_request, skip = true) {
+ZEST_CASE(json_that_is_no_message_is_an_invalid_request) {
     JsonCodec codec;
     for(std::string_view payload: {
             "42",
@@ -143,7 +142,32 @@ ZEST_CASE(json_that_is_no_message_is_an_invalid_request, skip = true) {
         auto parsed = codec.parse_message(payload);
         const auto* failure = std::get_if<IncomingParseError>(&parsed);
         ASSERT(failure != nullptr);
+        EXPECT(!failure->id.has_value());
         EXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
+    }
+}
+
+ZEST_CASE(request_with_a_malformed_member_keeps_its_id) {
+    JsonCodec codec;
+    auto parsed = codec.parse_message(R"({"jsonrpc":"2.0","id":5,"method":7})");
+    const auto* failure = std::get_if<IncomingParseError>(&parsed);
+    ASSERT(failure != nullptr);
+    EXPECT(failure->id == protocol::RequestID(5));
+    EXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
+}
+
+ZEST_CASE(response_with_a_malformed_error_keeps_its_id) {
+    JsonCodec codec;
+    for(std::string_view payload: {
+            R"({"jsonrpc":"2.0","id":1,"error":{"code":"E1","message":"x"}})",
+            R"({"jsonrpc":"2.0","id":1,"error":"x"})",
+        }) {
+        ZEST_CONTEXT("payload: {}", payload);
+        auto parsed = codec.parse_message(payload);
+        const auto* response = std::get_if<IncomingErrorResponse>(&parsed);
+        ASSERT(response != nullptr);
+        EXPECT(response->id == protocol::RequestID(1));
+        EXPECT(code_of(response->error) == ErrorCode::InvalidRequest);
     }
 }
 

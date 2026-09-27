@@ -4,6 +4,7 @@
 #include <string_view>
 
 #include "kota/ipc/codec/json.h"
+#include "kota/codec/dyn/dyn.h"
 #include "kota/codec/macro.h"
 
 namespace kota::ipc {
@@ -71,14 +72,49 @@ std::optional<protocol::RequestID> read_id(std::string_view raw) {
     return std::move(*id);
 }
 
+/// What to make of a message whose envelope did not decode. Text that is no
+/// JSON is a parse error; JSON that is no message object is an invalid
+/// request (batches are not supported). An object is read again, leniently,
+/// for the id it names: a request (it has a method) is answered as invalid
+/// under that id, and a response fails the request it answers, or is only
+/// logged when its id cannot be read.
+IncomingMessage read_malformed(std::string_view payload, std::string reason) {
+    auto document = codec::json::from_string<codec::dyn::Value>(payload);
+    if(!document) {
+        return IncomingParseError{std::nullopt,
+                                  Error(protocol::ErrorCode::ParseError, std::move(reason))};
+    }
+    const auto* object = document->get_object();
+    if(object == nullptr) {
+        return IncomingParseError{std::nullopt,
+                                  Error(protocol::ErrorCode::InvalidRequest,
+                                        document->is_array() ? "batch messages are not supported"
+                                                             : "message must be an object")};
+    }
+
+    std::optional<protocol::RequestID> id;
+    if(const auto* member = object->find("id")) {
+        if(auto number = member->get_int()) {
+            id = *number;
+        } else if(auto text = member->get_string()) {
+            id = std::string(*text);
+        }
+    }
+    if(object->contains("method")) {
+        return IncomingParseError{std::move(id),
+                                  Error(protocol::ErrorCode::InvalidRequest, std::move(reason))};
+    }
+    return IncomingErrorResponse{
+        std::move(id),
+        Error(protocol::ErrorCode::InvalidRequest, "malformed response: " + reason)};
+}
+
 }  // namespace
 
 IncomingMessage JsonCodec::parse_message(std::string_view payload) {
     auto envelope = codec::json::from_string<json_rpc_incoming>(payload);
     if(!envelope) {
-        return IncomingParseError{
-            std::nullopt,
-            Error(protocol::ErrorCode::ParseError, envelope.error().to_string())};
+        return read_malformed(payload, envelope.error().to_string());
     }
 
     const bool has_id = !envelope->id.empty();
