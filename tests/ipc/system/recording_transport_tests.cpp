@@ -100,7 +100,8 @@ ZEST_CASE(close_reaches_the_inner_transport) {
 }
 
 ZEST_CASE(close_output_reaches_the_inner_transport) {
-    EXPECT(transport.close_output().has_value());
+    auto [closed] = run(transport.close_output());
+    EXPECT(closed.has_value());
     EXPECT(remote.output_ended());
     EXPECT(!remote.closed());
 }

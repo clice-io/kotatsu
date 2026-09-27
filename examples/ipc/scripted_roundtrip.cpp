@@ -70,8 +70,8 @@ public:
         readable.set();
     }
 
-    ipc::Result<void> close_output() override {
-        return {};
+    kota::task<void, ipc::Error> close_output() override {
+        co_return;
     }
 
     ipc::Result<void> close() override {

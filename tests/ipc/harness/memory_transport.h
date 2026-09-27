@@ -114,12 +114,11 @@ public:
 
     /// Ends what the remote receives; the input stays open. Fails, and ends
     /// nothing, once the remote made it fail.
-    ipc::Result<void> close_output() override {
+    task<void, ipc::Error> close_output() override {
         if(link->close_output_fails) {
-            return outcome_error(ipc::Error("close_output failed"));
+            co_await fail(ipc::Error("close_output failed"));
         }
         link->outbound.end();
-        return {};
     }
 
     /// Ends both directions: a pending read returns nothing, and what the

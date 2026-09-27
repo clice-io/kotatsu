@@ -5,11 +5,13 @@
 #include <utility>
 #include <vector>
 
+#include "async/harness/io.h"
 #include "async/harness/loop_fixture.h"
 #include "async/harness/os.h"
 #include "ipc/harness/fixtures.h"
 #include "kota/ipc/codec/bincode.h"
 #include "kota/ipc/codec/json.h"
+#include "kota/ipc/framing.h"
 #include "kota/ipc/transport.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
@@ -147,9 +149,10 @@ ZEST_CASE(peer_destroyed_as_close_ends_run) {
     EXPECT(peer == nullptr);
 }
 
-// One TCP stream cannot half-close yet, so closing its output closes it and
-// ends run().
-ZEST_CASE(close_output_on_a_shared_stream_ends_run) {
+// One TCP stream both ways: close_output() shuts its write side down. The
+// remote reads the end of its input and can still send; run() ends with the
+// remote's own end.
+ZEST_CASE(close_output_on_a_shared_stream_keeps_reading) {
     auto listener = tcp::listen("127.0.0.1", 0, {}, loop);
     ASSERT(listener.has_value());
     auto name = listener->getsockname();
@@ -160,21 +163,24 @@ ZEST_CASE(close_output_on_a_shared_stream_ends_run) {
     ASSERT(accepted.has_value());
     ASSERT(connected.has_value());
     JsonPeer peer(loop, std::move(*connected));
-    auto drain = [&]() -> task<std::string> {
-        std::string received;
-        while(auto chunk = co_await accepted->read()) {
-            received += *chunk;
-        }
-        co_return received;
+    std::vector<std::string> notes;
+    peer.on_notification([&](const NoteParams& params) { notes.push_back(params.text); });
+    auto remote = [&]() -> task<void, error> {
+        auto received = co_await test::read_to_end(*accepted).or_fail();
+        static_cast<void>(received);
+        auto note = frame(R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"after"}})");
+        co_await accepted->write(std::span<const char>(note.data(), note.size())).or_fail();
+        co_await accepted->shutdown().or_fail();
     };
     auto closer = [&]() -> task<> {
         peer.close_output();
         co_return;
     };
 
-    auto [ran, drained, closed] = run(peer.run(), drain(), closer());
+    auto [ran, remote_ended, closed] = run(peer.run(), remote(), closer());
     EXPECT(ran.has_value());
-    EXPECT(drained.has_value());
+    EXPECT(remote_ended.has_value());
+    EXPECT(notes == std::vector<std::string>{"after"});
 }
 
 };  // ZEST_SUITE(ipc_peer_stream)

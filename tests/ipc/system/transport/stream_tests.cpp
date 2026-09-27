@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "async/harness/io.h"
 #include "async/harness/loop_fixture.h"
 #include "async/harness/os.h"
 #include "kota/ipc/transport.h"
@@ -290,6 +291,42 @@ ZEST_CASE(connect_tcp_exchanges_messages) {
     EXPECT(*served == "ping");
     ASSERT(asked.has_value());
     EXPECT(*asked == "pong");
+}
+
+// One socket both ways: close_output() shuts its write side down once what
+// was written has gone out. The remote reads it, then the end of its input,
+// and can still send; the transport reads what it sends.
+ZEST_CASE(close_output_on_a_shared_socket_ends_the_remote_input_and_keeps_reading) {
+    auto listener = tcp::listen("127.0.0.1", 0, {}, loop);
+    ASSERT(listener.has_value());
+    auto name = listener->getsockname();
+    ASSERT(name.has_value());
+    auto [accepted, connected] =
+        run(listener->accept(), StreamTransport::connect_tcp("127.0.0.1", name->port, loop));
+    ASSERT(accepted.has_value());
+    ASSERT(connected.has_value());
+    auto& transport = **connected;
+    auto remote = [&]() -> task<std::string, error> {
+        auto received = co_await test::read_to_end(*accepted).or_fail();
+        auto answer = frame("after");
+        co_await accepted->write(std::span<const char>(answer.data(), answer.size())).or_fail();
+        co_return received;
+    };
+    auto local = [&]() -> task<std::string, Error> {
+        co_await transport.write_message("before").or_fail();
+        co_await transport.close_output().or_fail();
+        auto read = co_await transport.read_message();
+        if(!read) {
+            co_await fail(Error(read.error().message));
+        }
+        co_return std::move(*read);
+    };
+
+    auto [received, read] = run(remote(), local());
+    ASSERT(received.has_value());
+    EXPECT(*received == frame("before"));
+    ASSERT(read.has_value());
+    EXPECT(*read == "after");
 }
 
 ZEST_CASE(connect_tcp_to_a_bad_address_fails) {

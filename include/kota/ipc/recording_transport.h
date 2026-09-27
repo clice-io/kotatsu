@@ -22,7 +22,7 @@ public:
 
     task<std::string, ReadError> read_message() override;
     task<void, Error> write_message(std::string_view payload) override;
-    Result<void> close_output() override;
+    task<void, Error> close_output() override;
     Result<void> close() override;
 
 private:

@@ -102,17 +102,28 @@ task<void, Error> StreamTransport::write_message(std::string_view payload) {
     auto& stream = shared_stream ? read_stream : write_stream;
     auto status = co_await stream.write(std::span<const char>(framed.data(), framed.size()));
     if(status.has_error()) {
+        // The stream was closed under the write.
+        if(status.error() == error::operation_aborted) {
+            co_await fail("transport closed");
+        }
         co_await fail(std::string(status.error().message()));
     }
 }
 
-Result<void> StreamTransport::close_output() {
+task<void, Error> StreamTransport::close_output() {
     if(shared_stream) {
-        return close();
+        auto shut = co_await read_stream.shutdown();
+        if(shut.has_error()) {
+            co_await fail(std::string(shut.error().message()));
+        }
+        co_return;
     }
 
     write_stream = stream{};
-    return release_stdout();
+    auto released = release_stdout();
+    if(!released) {
+        co_await fail(std::move(released).error());
+    }
 }
 
 // Stopping the read ends the read loop, which can end the peer's run() and

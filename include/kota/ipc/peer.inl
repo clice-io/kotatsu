@@ -163,7 +163,7 @@ struct Peer<CodecT>::Self {
         while(true) {
             if(outgoing_queue.empty()) {
                 if(closing_output || (answers_done && output_open)) {
-                    finish_output();
+                    co_await finish_output();
                 }
                 if(!output_open) {
                     break;
@@ -194,27 +194,29 @@ struct Peer<CodecT>::Self {
     /// Half-closes the transport once the queue is written. A half-close
     /// that fails leaves the remote waiting for the end of its input, so it
     /// fails the output as a write does.
-    void finish_output() {
+    task<> finish_output() {
         closing_output = false;
         output_open = false;
-        if(auto closed_output = transport->close_output(); !closed_output) {
+        // Cancelled with run(): the half-close still happens.
+        auto closed_output = co_await transport->close_output().catch_cancel();
+        if(closed_output.has_error()) {
             fail_output("closing the output failed", closed_output.error().message);
         }
     }
 
     /// A write or a half-close failed: nothing more can be written or
     /// answered, so every pending request fails and the transport closes,
-    /// which ends the read loop too.
+    /// which ends the read loop too. One that close() caused, by closing the
+    /// transport under it, is no failure: close() has done all that.
     void fail_output(std::string_view what, const std::string& message) {
+        if(closed) {
+            return;
+        }
         log(LogLevel::error, "{}: {}", what, message);
         output_open = false;
         closing_output = false;
         outgoing_queue.clear();
         fail_pending_requests(Error(message));
-        // A close() that caused the failure has closed the transport already.
-        if(closed) {
-            return;
-        }
         closed = true;
         // Their answers could not be written.
         cancel_handlers();

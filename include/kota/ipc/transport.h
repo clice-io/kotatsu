@@ -22,8 +22,9 @@ public:
 
     virtual task<void, Error> write_message(std::string_view payload) = 0;
 
-    /// Ends the output; the remote reads the end of its input.
-    virtual Result<void> close_output() = 0;
+    /// Ends the output once what was written has gone out; the remote reads
+    /// the end of its input, and the input stays open.
+    virtual task<void, Error> close_output() = 0;
 
     /// Closes both input and output, ending any pending read.
     virtual Result<void> close() = 0;
@@ -51,13 +52,12 @@ public:
     task<void, Error> write_message(std::string_view payload) override;
 
     /// The remote reads the end of its input. A transport over one stream
-    /// (connect_tcp) cannot close only one direction of it: there this is
-    /// close(), and the input ends too. Over stdio (open_stdio), the process's
-    /// stdout is pointed at the null device, as closing a stream over it
-    /// leaves it open; the remote reads the end once nothing else holds it,
-    /// such as a child that inherited it, a stderr sharing it, or stdin when
-    /// both are one socket.
-    Result<void> close_output() override;
+    /// (connect_tcp) shuts its write side down, and goes on reading. Over
+    /// stdio (open_stdio), the process's stdout is pointed at the null
+    /// device, as closing a stream over it leaves it open; the remote reads
+    /// the end once nothing else holds it, such as a child that inherited it,
+    /// a stderr sharing it, or stdin when both are one socket.
+    task<void, Error> close_output() override;
 
     Result<void> close() override;
 
