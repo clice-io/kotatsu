@@ -24,11 +24,18 @@
 
 namespace kota::codec {
 
-/// Backend-internal dispatch override for one (visitor, type) pair. Not a
-/// user extension point: declare a type's representation via meta::repr, or
-/// per-field via behavior::with — those are visible to schema consumers, a
-/// serialize_visit specialization is not.
-template <typename Vis, typename T, typename Config = default_config<>, typename = void>
+/// How a visitor writes one type, overridden per backend or protocol:
+/// specialize it for one visitor type, or for every visitor a constraint
+/// admits, with a static visit(Vis&, const T&) returning bool. The backends
+/// use it for their own document types (json RawValue, toml tables,
+/// dyn::Value) and protocol layers for types they shape themselves (ipc's
+/// Error and Literal). A specialization is consulted before everything
+/// else, annotations and meta::repr included, and a type may not have both
+/// a specialization and a meta::repr for the visitor's format. To say how a
+/// type of your own is represented, prefer meta::repr (or behavior::with on
+/// a field): those are visible to schema consumers (type_info, the JSON
+/// schema, the fbs views), a specialization is not.
+template <typename Vis, typename T, typename Config>
 struct serialize_visit {};
 
 template <typename Config, typename Vis, typename T>

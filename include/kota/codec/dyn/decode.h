@@ -266,11 +266,8 @@ struct deserialize_visit<dyn::ValueReader, dyn::Object, Config> {
 };
 
 template <typename Vis, typename Config>
-struct deserialize_visit<
-    Vis,
-    dyn::Value,
-    Config,
-    std::enable_if_t<detail::has_peek_kind<Vis> && !std::is_same_v<Vis, dyn::ValueReader>>> {
+    requires detail::has_peek_kind<Vis>
+struct deserialize_visit<Vis, dyn::Value, Config> {
     static bool visit(Vis& vis, dyn::Value& value) {
         auto kind = vis.peek_kind();
         switch(kind) {
@@ -340,11 +337,8 @@ struct deserialize_visit<
 };
 
 template <typename Vis, typename Config>
-struct deserialize_visit<
-    Vis,
-    dyn::Array,
-    Config,
-    std::enable_if_t<detail::has_peek_kind<Vis> && !std::is_same_v<Vis, dyn::ValueReader>>> {
+    requires detail::has_peek_kind<Vis>
+struct deserialize_visit<Vis, dyn::Array, Config> {
     static bool visit(Vis& vis, dyn::Array& value) {
         value = dyn::Array{};
         return vis.visit_seq([&](auto& ev) -> bool {
@@ -357,11 +351,8 @@ struct deserialize_visit<
 };
 
 template <typename Vis, typename Config>
-struct deserialize_visit<
-    Vis,
-    dyn::Object,
-    Config,
-    std::enable_if_t<detail::has_peek_kind<Vis> && !std::is_same_v<Vis, dyn::ValueReader>>> {
+    requires detail::has_peek_kind<Vis>
+struct deserialize_visit<Vis, dyn::Object, Config> {
     static bool visit(Vis& vis, dyn::Object& value) {
         value = dyn::Object{};
         return vis.visit_struct([&](std::string_view key, auto& fv) -> bool {

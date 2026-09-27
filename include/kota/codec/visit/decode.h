@@ -28,11 +28,12 @@
 
 namespace kota::codec {
 
-/// Backend-internal dispatch override for one (visitor, type) pair. Not a
-/// user extension point: declare a type's representation via meta::repr,
-/// or per-field via behavior::with — those are visible to schema consumers,
-/// a deserialize_visit specialization is not.
-template <typename Vis, typename T, typename Config = default_config<>, typename = void>
+/// How a visitor reads one type, overridden per backend or protocol; the
+/// decode counterpart of serialize_visit (see there), with a static
+/// visit(Vis&, T&) returning bool. It is consulted before annotations and
+/// meta::repr, and untagged variant probing always tries an alternative that
+/// has one, whatever its declared shape.
+template <typename Vis, typename T, typename Config>
 struct deserialize_visit {};
 
 template <typename Config, typename Vis, typename T>
