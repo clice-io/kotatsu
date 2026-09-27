@@ -279,7 +279,7 @@ struct WriteTableVisitor : detail::VisitorBase {
     template <typename F>
     bool visit_field(auto index, std::string_view /*name*/, F&& writer) {
         const std::size_t I = index;
-        const slot_id sid = detail::first_field + detail::field_step * static_cast<slot_id>(I);
+        const slot_id sid = detail::field_slot(I);
         const auto off = (I < offsets.size()) ? offsets[I] : uoffset_t{0};
         WriteFieldVisitor wv{.fbb = fbb, .sid = sid, .stored_offset = off};
         return writer(wv);
@@ -287,8 +287,7 @@ struct WriteTableVisitor : detail::VisitorBase {
 
     template <typename F>
     bool visit_element(F&& writer) {
-        const slot_id sid =
-            detail::first_field + detail::field_step * static_cast<slot_id>(next_idx);
+        const slot_id sid = detail::field_slot(next_idx);
         const auto off = (next_idx < offsets.size()) ? offsets[next_idx] : uoffset_t{0};
         WriteFieldVisitor wv{.fbb = fbb, .sid = sid, .stored_offset = off};
         ++next_idx;
@@ -697,8 +696,7 @@ bool encode_variant_table(builder_t& fbb, std::size_t index, Body&& body, uoffse
     AllocFieldVisitor payload_alloc{.fbb = fbb};
     KOTA_CODEC_TRY(body(payload_alloc));
 
-    const slot_id payload_slot =
-        detail::first_field + detail::field_step * static_cast<slot_id>(index + 1);
+    const slot_id payload_slot = detail::field_slot(index + 1);
 
     auto start = fbb.StartTable();
     fbb.AddElement<std::uint32_t>(detail::first_field, static_cast<std::uint32_t>(index));
@@ -783,6 +781,7 @@ bool AllocFieldVisitor::visit_seq(const Container& c, Body&& body) {
 
 template <typename T, typename Body>
 bool AllocFieldVisitor::visit_tuple(const T&, Body&& body) {
+    detail::assert_slots_fit<std::tuple_size_v<T>>();
     return two_pass(fbb, std::forward<Body>(body), stored_offset);
 }
 
@@ -807,6 +806,7 @@ bool TableElemVisitor::visit_struct(const T&, Body&& body) {
 
 template <typename T, typename Body>
 bool TableElemVisitor::visit_tuple(const T&, Body&& body) {
+    detail::assert_slots_fit<std::tuple_size_v<T>>();
     uoffset_t off = 0;
     KOTA_CODEC_TRY(two_pass(fbb, std::forward<Body>(body), off));
     table_offsets.push_back(table_offset_t(off));
@@ -886,6 +886,7 @@ bool RootVisitor::visit_seq(const Container& c, Body&& body) {
 
 template <typename T, typename Body>
 bool RootVisitor::visit_tuple(const T&, Body&& body) {
+    detail::assert_slots_fit<std::tuple_size_v<T>>();
     uoffset_t off = 0;
     KOTA_CODEC_TRY(two_pass(fbb, std::forward<Body>(body), off));
     root_off = table_offset_t(off);

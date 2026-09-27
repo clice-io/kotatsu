@@ -290,14 +290,14 @@ private:
 
 template <typename Idx, typename F>
 bool TableFieldReader::visit_field(Idx, std::string_view, F&& reader) {
-    const voffset_t vid = detail::first_field + detail::field_step * static_cast<voffset_t>(Idx{});
+    const voffset_t vid = detail::field_slot(Idx{});
     FieldReader fr{.tbl = tbl, .slot = vid, .verifier = verifier};
     return reader(fr);
 }
 
 template <typename F>
 bool TableFieldReader::visit_element(F&& reader) {
-    const voffset_t vid = detail::first_field + detail::field_step * static_cast<voffset_t>(idx);
+    const voffset_t vid = detail::field_slot(idx);
     FieldReader fr{.tbl = tbl, .slot = vid, .verifier = verifier};
     ++idx;
     return reader(fr);
@@ -316,6 +316,7 @@ struct RootReader : FieldReader {
 
     template <typename U, typename Body>
     bool visit_tuple(U&, Body&& body) {
+        detail::assert_slots_fit<std::tuple_size_v<std::remove_const_t<U>>>();
         TableFieldReader tfr{.tbl = tbl, .verifier = verifier};
         return body(tfr);
     }
@@ -326,11 +327,10 @@ struct RootReader : FieldReader {
             return fail_verify("variant tag");
         auto tag = tbl->GetField<std::uint32_t>(detail::first_field, 0);
         auto index = static_cast<std::size_t>(tag);
-        // A hostile tag can wrap this cast; safe because construct_and_visit
-        // rejects any out-of-range index before the payload reader is used.
-        const voffset_t payload_slot = static_cast<voffset_t>(
-            detail::first_field + detail::field_step * static_cast<voffset_t>(index + 1));
-        FieldReader pv{.tbl = tbl, .slot = payload_slot, .verifier = verifier};
+        // A hostile tag can name a slot past the table, or wrap; safe because
+        // construct_and_visit rejects any out-of-range index before the
+        // payload reader is used.
+        FieldReader pv{.tbl = tbl, .slot = detail::field_slot(index + 1), .verifier = verifier};
         return body(index, pv);
     }
 };
@@ -380,6 +380,7 @@ bool FieldReader::visit_seq([[maybe_unused]] T& out, Body&& body) {
 
 template <typename T, typename Body>
 bool FieldReader::visit_tuple(T&, Body&& body) {
+    detail::assert_slots_fit<std::tuple_size_v<std::remove_const_t<T>>>();
     const Table* child = nullptr;
     bool entered = false;
     if(!follow_table(child, entered, "tuple field"))
@@ -421,11 +422,12 @@ bool FieldReader::visit_variant(Body&& body) {
             return fail_verify("variant tag");
         auto tag = var_table->GetField<std::uint32_t>(detail::first_field, 0);
         auto index = static_cast<std::size_t>(tag);
-        // A hostile tag can wrap this cast; safe because construct_and_visit
-        // rejects any out-of-range index before the payload reader is used.
-        const voffset_t payload_slot = static_cast<voffset_t>(
-            detail::first_field + detail::field_step * static_cast<voffset_t>(index + 1));
-        FieldReader pv{.tbl = var_table, .slot = payload_slot, .verifier = verifier};
+        // A hostile tag can name a slot past the table, or wrap; safe because
+        // construct_and_visit rejects any out-of-range index before the
+        // payload reader is used.
+        FieldReader pv{.tbl = var_table,
+                       .slot = detail::field_slot(index + 1),
+                       .verifier = verifier};
         return body(index, pv);
     }();
     if(entered)
@@ -499,9 +501,7 @@ bool MapReader::visit_entry(KF&& key_fn, VF&& val_fn) {
     const bool ok = [&] {
         FieldReader kr{.tbl = entry, .slot = detail::first_field, .verifier = verifier};
         KOTA_CODEC_TRY(key_fn(kr));
-        FieldReader vr{.tbl = entry,
-                       .slot = detail::first_field + detail::field_step,
-                       .verifier = verifier};
+        FieldReader vr{.tbl = entry, .slot = detail::field_slot(1), .verifier = verifier};
         return val_fn(vr);
     }();
     verifier->EndTable();
