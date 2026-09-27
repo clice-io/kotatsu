@@ -73,13 +73,7 @@ private:
 };
 
 template <typename T>
-constexpr bool is_string_like_v = meta::str_like<T>;
-
-template <typename T>
-constexpr bool is_range_like_v = std::ranges::input_range<T> && !is_string_like_v<T>;
-
-template <typename T>
-constexpr bool is_tuple_like_v = meta::tuple_like<T>;
+constexpr bool is_range_like_v = std::ranges::input_range<T> && !meta::str_like<T>;
 
 template <typename T>
 constexpr bool is_scalar_v =
@@ -151,13 +145,13 @@ consteval element_layout element_layout_of() {
        k == meta::type_kind::map || k == meta::type_kind::bytes) {
         return element_layout::boxed;
     }
-    if(is_string_like_v<repr_t>) {
+    if(meta::str_like<repr_t>) {
         return element_layout::string;
     }
     if(is_scalar_v<repr_t>) {
         return element_layout::scalar;
     }
-    if(can_inline_struct_v<repr_t> && !is_tuple_like_v<repr_t>) {
+    if(can_inline_struct_v<repr_t> && !meta::tuple_like<repr_t>) {
         return element_layout::inline_struct;
     }
     return element_layout::table;
@@ -259,12 +253,6 @@ constexpr bool is_map_range_v = [] {
     }
 }();
 
-template <typename T, typename = void>
-struct field_return_type;
-
-template <typename T>
-using field_return_type_t = typename field_return_type<T>::type;
-
 template <typename T>
 struct variant_view_for;
 
@@ -318,77 +306,55 @@ struct map_view_for<T> {
 template <typename T>
 using map_view_for_t = typename map_view_for<T>::type;
 
-// Uses partial specialization to avoid eagerly instantiating type aliases for non-matching
-// branches.
-template <typename T, typename>
-struct field_return_type {
-    using type = table_view<T>;
-};
+/// The view type a sequence or map reads as.
+template <typename T>
+consteval auto range_view_impl() {
+    if constexpr(is_map_range_v<T>) {
+        return std::type_identity<map_view_for_t<T>>{};
+    } else {
+        // The raw element type is kept: array_view itself distinguishes the
+        // element layout (on the unpeeled representation) from the peeled
+        // view type.
+        return std::type_identity<array_view<std::remove_cvref_t<std::ranges::range_value_t<T>>>>{};
+    }
+}
+
+/// The type read_field returns for a value of view type T. Only the chosen
+/// branch's alias is instantiated.
+template <typename T>
+consteval auto field_return_impl() {
+    if constexpr(meta::str_like<T>) {
+        return std::type_identity<std::string_view>{};
+    } else if constexpr(is_specialization_of<std::variant, T>) {
+        return std::type_identity<variant_view_for_t<T>>{};
+    } else if constexpr(meta::tuple_like<T>) {
+        return std::type_identity<tuple_view_for_t<T>>{};
+    } else if constexpr(is_scalar_v<T> || can_inline_struct_v<T>) {
+        return std::type_identity<T>{};
+    } else if constexpr(is_range_like_v<T>) {
+        return range_view_impl<T>();
+    } else {
+        return std::type_identity<table_view<T>>{};
+    }
+}
 
 template <typename T>
-struct field_return_type<T, std::enable_if_t<is_string_like_v<T>>> {
-    using type = std::string_view;
-};
+using field_return_type_t = typename decltype(field_return_impl<T>())::type;
 
-template <typename T>
-struct field_return_type<T,
-                         std::enable_if_t<!is_string_like_v<T> && !is_tuple_like_v<T> &&
-                                          (is_scalar_v<T> || can_inline_struct_v<T>)>> {
-    using type = T;
-};
-
-template <typename T>
-struct field_return_type<T, std::enable_if_t<is_specialization_of<std::variant, T>>> {
-    using type = variant_view_for_t<T>;
-};
-
-template <typename T>
-struct field_return_type<
-    T,
-    std::enable_if_t<!is_specialization_of<std::variant, T> && is_tuple_like_v<T>>> {
-    using type = tuple_view_for_t<T>;
-};
-
-template <typename T>
-struct field_return_type<T, std::enable_if_t<is_map_range_v<T>>> {
-    using type = map_view_for_t<T>;
-};
-
-template <typename T>
-struct field_return_type<
-    T,
-    std::enable_if_t<!is_string_like_v<T> && !is_scalar_v<T> && !can_inline_struct_v<T> &&
-                     !is_specialization_of<std::variant, T> && !is_tuple_like_v<T> &&
-                     !is_map_range_v<T> && is_range_like_v<T>>> {
-    // The raw element type is kept: array_view itself distinguishes the
-    // element layout (on the unpeeled representation) from the peeled view type.
-    using type = array_view<std::remove_cvref_t<std::ranges::range_value_t<T>>>;
-};
-
-template <typename Member,
-          typename CleanMember = deep_clean_t<Member>,
-          bool IsRange = is_range_like_v<CleanMember> && !is_tuple_like_v<CleanMember>>
-struct member_return_impl;
-
-template <typename Member, typename CleanMember>
-    requires is_map_range_v<CleanMember>
-struct member_return_impl<Member, CleanMember, true> {
-    using type = map_view_for_t<CleanMember>;
-};
-
-template <typename Member, typename CleanMember>
-    requires (!is_map_range_v<CleanMember>)
-struct member_return_impl<Member, CleanMember, true> {
-    using type = array_view<std::remove_cvref_t<std::ranges::range_value_t<CleanMember>>>;
-};
-
-template <typename Member, typename CleanMember>
-struct member_return_impl<Member, CleanMember, false> {
-    using type = field_return_type_t<CleanMember>;
-};
+/// A struct member's view type: its cleaned type's, except that a member
+/// that is a sequence or map reads as one even if its type could inline.
+template <typename Member>
+consteval auto member_return_impl() {
+    using clean_t = deep_clean_t<Member>;
+    if constexpr(is_range_like_v<clean_t> && !meta::tuple_like<clean_t>) {
+        return range_view_impl<clean_t>();
+    } else {
+        return std::type_identity<field_return_type_t<clean_t>>{};
+    }
+}
 
 template <typename Member>
-using member_return_t = typename member_return_impl<Member>::type;
+using member_return_t = typename decltype(member_return_impl<Member>())::type;
 
 // Unchecked read: returns {} on miss rather than reporting errors.
 template <typename T>
@@ -412,13 +378,13 @@ auto read_field(table_ref view, slot_id field) -> field_return_type_t<T> {
         } else {
             return static_cast<T>(view.template get_scalar<double>(field));
         }
-    } else if constexpr(is_string_like_v<T>) {
+    } else if constexpr(meta::str_like<T>) {
         const auto* text = table->template GetPointer<const String*>(field);
         if(text == nullptr) {
             return {};
         }
         return std::string_view(text->data(), text->size());
-    } else if constexpr(is_specialization_of<std::variant, T> || is_tuple_like_v<T>) {
+    } else if constexpr(is_specialization_of<std::variant, T> || meta::tuple_like<T>) {
         // Table-shaped like the trailing else, but ordered before the range
         // branch: std::array is both tuple-like and range-like and must read
         // as a table.
@@ -547,7 +513,7 @@ bool verify_table(verifier_t& v, const Table* tbl) {
                              field_slot(Is + 1)) &&
                          ...);
              }(std::make_index_sequence<std::variant_size_v<T>>{});
-    } else if constexpr(is_tuple_like_v<T>) {
+    } else if constexpr(meta::tuple_like<T>) {
         detail::assert_slots_fit<std::tuple_size_v<T>>();
         ok = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
             return (
@@ -580,10 +546,10 @@ bool verify_field(verifier_t& v, const Table* tbl, slot_id slot) {
     } else if constexpr(meta::floating_like<T>) {
         using cell_t = scalar_cell_t<T>;
         return tbl->VerifyField<cell_t>(v, slot, alignof(cell_t));
-    } else if constexpr(is_string_like_v<T>) {
+    } else if constexpr(meta::str_like<T>) {
         return tbl->VerifyOffset(v, slot) &&
                v.VerifyString(tbl->template GetPointer<const String*>(slot));
-    } else if constexpr(is_specialization_of<std::variant, T> || is_tuple_like_v<T>) {
+    } else if constexpr(is_specialization_of<std::variant, T> || meta::tuple_like<T>) {
         // Table-shaped like the trailing else, but ordered before the range
         // branch to match read_field: std::array is both tuple-like and
         // range-like and travels as a table.

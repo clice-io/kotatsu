@@ -476,7 +476,7 @@ struct BoxedTableCollector {
 template <typename K>
 constexpr auto ordering_key_impl() {
     using clean_k = proxy_detail::deep_clean_t<K>;
-    if constexpr(proxy_detail::is_string_like_v<clean_k>) {
+    if constexpr(meta::str_like<clean_k>) {
         return std::type_identity<std::string>{};
     } else if constexpr(std::is_enum_v<clean_k>) {
         return std::type_identity<std::underlying_type_t<clean_k>>{};
