@@ -36,10 +36,10 @@ bool sync_primitive::wake_one() {
 }
 
 wait_node::wait_node(condition_variable& owner, mutex& relock) noexcept :
-    async_node(NodeKind::Waiter), owner(&owner), relock(&relock) {}
+    async_node(NodeKind::Waiter), owner(&owner), owner_kind(owner.kind), relock(&relock) {}
 
 bool wait_node::await_ready() noexcept {
-    switch(owner->kind) {
+    switch(owner_kind) {
         case sync_primitive::Kind::Mutex: return static_cast<mutex*>(owner)->try_lock();
         case sync_primitive::Kind::Semaphore: return static_cast<semaphore*>(owner)->try_acquire();
         case sync_primitive::Kind::Event: return static_cast<event*>(owner)->is_set();
@@ -55,6 +55,7 @@ std::coroutine_handle<> wait_node::wait(task_frame& waiting,
         return ended;
     }
     awaited_by(waiting, location);
+    loop = &event_loop::current();
     if(relock != nullptr) {
         relock->unlock();
     }
@@ -63,15 +64,18 @@ std::coroutine_handle<> wait_node::wait(task_frame& waiting,
 }
 
 void wait_node::grant(sync_primitive& from) {
-    if(relock != nullptr && &from == owner) {
+    if(&from == owner) {
+        if(owner_kind != sync_primitive::Kind::Event) {
+            owner->woken += 1;
+        }
         // A notification. Like a thread woken from std::condition_variable,
         // the wait now needs the mutex back.
-        if(!relock->try_lock()) {
+        if(relock != nullptr && !relock->try_lock()) {
             relock->insert(*this);
             return;
         }
     }
-    event_loop::current().defer_resume(static_cast<task_frame&>(*parent));
+    loop->defer_resume(*this);
 }
 
 void wait_node::cancel_wait() {
@@ -94,16 +98,35 @@ void wait_node::cancel_wait() {
 }
 
 void wait_node::give_back() {
-    switch(owner->kind) {
+    // An event grants nothing to hand on, and may be gone.
+    if(owner_kind == sync_primitive::Kind::Event) {
+        return;
+    }
+    owner->woken -= 1;
+    switch(owner_kind) {
         case sync_primitive::Kind::Mutex: static_cast<mutex*>(owner)->unlock(); break;
         case sync_primitive::Kind::Semaphore: static_cast<semaphore*>(owner)->release(); break;
-        case sync_primitive::Kind::Event: break;
         case sync_primitive::Kind::ConditionVariable:
             // The notification; the wait keeps its mutex, which it holds or
             // waits for.
             static_cast<condition_variable*>(owner)->notify_one();
             break;
+        case sync_primitive::Kind::Event: std::unreachable();
     }
+}
+
+void wait_node::resume() {
+    auto& task = static_cast<task_frame&>(*parent);
+    task.child = nullptr;
+    if(cancel_requested) {
+        // cancel_wait() has handed on what the wait was granted.
+        resume_and_drain(task.finish(State::Cancelled));
+        return;
+    }
+    if(owner_kind != sync_primitive::Kind::Event) {
+        owner->woken -= 1;
+    }
+    resume_and_drain(task.handle());
 }
 
 }  // namespace kota

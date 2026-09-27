@@ -316,7 +316,7 @@ ZEST_CASE(all_waits_for_cancelled_children_to_finish) {
     ASSERT(result.has_value());
     EXPECT(result->cancelled);
     EXPECT(result->frames_alive == 0);
-    EXPECT(op.is_cancelled());
+    EXPECT(op.cancel_requested());
     ASSERT(done_before.has_value());
     EXPECT(!*done_before);
     EXPECT(combined_done);
@@ -348,7 +348,7 @@ ZEST_CASE(any_waits_for_cancelled_children_to_finish) {
     ASSERT(result.has_value());
     // The fast child won, and the slow one's frame is gone.
     EXPECT(*result == std::pair<std::size_t, long>{1, 0});
-    EXPECT(op.is_cancelled());
+    EXPECT(op.cancel_requested());
     ASSERT(done_before.has_value());
     EXPECT(!*done_before);
 }

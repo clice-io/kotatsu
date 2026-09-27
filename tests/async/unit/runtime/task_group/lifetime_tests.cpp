@@ -1,4 +1,5 @@
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -144,6 +145,38 @@ ZEST_CASE(destroying_the_group_cancels_its_running_children) {
     EXPECT(frames.use_count() == 1);
 }
 
+// The destructor's cancel resumes a child that catches it, which runs on
+// inside the destructor to its next suspending co_await; the group refuses
+// what that child spawns meanwhile.
+ZEST_CASE(child_the_destructor_resumes_cannot_spawn) {
+    event gate;
+    task_group<>* dying = nullptr;
+    std::optional<bool> spawned;
+    auto waiting = [&]() -> task<> {
+        co_await gate.wait();
+    };
+    auto sibling = []() -> task<> {
+        co_return;
+    };
+    auto child = [&]() -> task<> {
+        co_await waiting().catch_cancel();
+        spawned = dying->spawn(sibling());
+    };
+    auto driver = [&]() -> task<> {
+        {
+            task_group<> group;
+            dying = &group;
+            group.spawn(child());
+        }
+        co_return;
+    };
+
+    auto [result] = run(driver());
+    EXPECT(result.has_value());
+    ASSERT(spawned.has_value());
+    EXPECT(!*spawned);
+}
+
 // A child let go keeps its frame until its cancellation completes, however
 // long after the group is gone that is.
 ZEST_CASE(destroyed_group_child_is_freed_once_its_cancel_completes) {
@@ -167,7 +200,7 @@ ZEST_CASE(destroyed_group_child_is_freed_once_its_cancel_completes) {
     auto [alive, finished] = run(driver(), finisher());
     ASSERT(alive.has_value());
     EXPECT(*alive == 1);
-    EXPECT(op.is_cancelled());
+    EXPECT(op.cancel_requested());
     EXPECT(frames.use_count() == 1);
 }
 
@@ -270,7 +303,7 @@ ZEST_CASE(join_after_cancel_waits_for_pending_children) {
 
     auto [result, joined_before] = run(driver(), finisher());
     EXPECT(result.has_value());
-    EXPECT(op.is_cancelled());
+    EXPECT(op.cancel_requested());
     ASSERT(joined_before.has_value());
     EXPECT(!*joined_before);
     EXPECT(joined);
@@ -308,7 +341,7 @@ ZEST_CASE(join_after_an_error_waits_for_pending_children) {
     auto [result, joined_before] = run(driver(), finisher());
     ASSERT(result.has_value());
     EXPECT(*result == std::vector{error::connection_refused});
-    EXPECT(op.is_cancelled());
+    EXPECT(op.cancel_requested());
     ASSERT(joined_before.has_value());
     EXPECT(!*joined_before);
     EXPECT(frames.use_count() == 1);

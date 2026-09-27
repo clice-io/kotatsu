@@ -112,19 +112,99 @@ ZEST_CASE(scheduled_temporary_ended_by_a_cancelled_child_is_destroyed) {
 }
 #endif
 
-ZEST_CASE(task_cancelled_before_it_starts_never_runs) {
-    bool ran = false;
+// A root cancelled before its first turn never runs, whether the cancel
+// comes before it is scheduled or after, from a root the turn runs first.
+ZEST_CASE(root_cancelled_before_its_first_turn_never_runs) {
+    int ran = 0;
     auto make = [&]() -> task<int> {
-        ran = true;
+        ran += 1;
         co_return 1;
     };
-    auto root = make();
-    root.cancel();
+    auto early = make();
+    auto late = make();
+    early.cancel();
+    auto canceller = [&]() -> task<> {
+        late.cancel();
+        co_return;
+    };
+    auto first = canceller();
 
-    loop.schedule(root);
+    loop.schedule(early);
+    loop.schedule(first);
+    loop.schedule(late);
     loop.run();
-    EXPECT(root.is_cancelled());
+    EXPECT(early.is_cancelled());
+    EXPECT(late.is_cancelled());
+    EXPECT(ran == 0);
+}
+
+// A root the loop owns and that was cancelled before its first turn never
+// runs, and the loop still frees it. Its frame holds a copy of `frame`, which
+// tells when it goes.
+ZEST_CASE(owned_root_cancelled_before_it_starts_is_freed) {
+    auto frame = std::make_shared<int>();
+    std::weak_ptr<int> watch = frame;
+    bool ran = false;
+    auto make = [&](std::shared_ptr<int>) -> task<> {
+        ran = true;
+        co_return;
+    };
+    auto owned = make(std::move(frame));
+    owned.cancel();
+
+    loop.schedule(std::move(owned));
+    EXPECT(!watch.expired());
+    loop.run();
+    EXPECT(watch.expired());
     EXPECT(!ran);
+}
+
+// A scheduled root its caller drops before the loop starts it is let go: it
+// never runs, and the loop frees it on the turn it would have started.
+ZEST_CASE(scheduled_root_dropped_before_its_turn_is_let_go) {
+    auto frame = std::make_shared<int>();
+    std::weak_ptr<int> watch = frame;
+    bool ran = false;
+    auto make = [&](std::shared_ptr<int>) -> task<> {
+        ran = true;
+        co_return;
+    };
+    {
+        auto root = make(std::move(frame));
+        loop.schedule(root);
+    }
+    EXPECT(!watch.expired());
+
+    EXPECT(loop.run() == 0);
+    EXPECT(watch.expired());
+    EXPECT(!ran);
+}
+
+// A running root its caller drops is let go too: the drop cancels it, which
+// ends its wait on the event, and the loop frees it as it ends.
+ZEST_CASE(running_root_dropped_by_its_caller_is_let_go) {
+    auto frame = std::make_shared<int>();
+    std::weak_ptr<int> watch = frame;
+    event never;
+    bool resumed = false;
+    auto make = [&](std::shared_ptr<int>) -> task<> {
+        co_await never.wait();
+        resumed = true;
+    };
+    std::optional<task<>> root(make(std::move(frame)));
+    auto dropper = [&]() -> task<> {
+        root.reset();
+        co_return;
+    };
+    auto dropping = dropper();
+
+    loop.schedule(*root);
+    loop.schedule(dropping);
+    EXPECT(loop.run() == 0);
+    EXPECT(dropping.done());
+    EXPECT(watch.expired());
+    EXPECT(!resumed);
+    EXPECT(!never.has_waiters());
 }
 
 ZEST_CASE(finished_roots_report_through_result) {

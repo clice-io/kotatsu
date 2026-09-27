@@ -38,7 +38,10 @@ public:
 
     /// Children still running are let go: each is cancelled and ends on its
     /// own, and what it failed with is dropped. Until then they may still use
-    /// what they reference; co_await join() to wait for them.
+    /// what they reference; co_await join() to wait for them. A child the
+    /// cancel ends at once, or that catches the cancellation and runs on to
+    /// its next suspending co_await, does so before the destructor returns;
+    /// spawn() refuses meanwhile.
     ~task_group() {
         abandon_children();
     }
@@ -65,7 +68,11 @@ public:
 
     /// Cancels every child. join() returns as usual once they have ended.
     void cancel() {
-        stop();
+        if(decided() || done()) {
+            return;
+        }
+        decision = Decision::Resume;
+        resume_and_drain(cancel_all());
     }
 
     /// Waits until every child has ended, then rethrows the first exception a

@@ -9,6 +9,7 @@
 #include "../libuv.h"
 #include "kota/support/functional.h"
 #include "kota/async/runtime/node.h"
+#include "kota/async/runtime/sync.h"
 #include "kota/async/runtime/task.h"
 
 namespace kota {
@@ -25,7 +26,8 @@ struct event_loop::Self : relay::Self {
     uv_idle_t idle = {};
     uv_check_t check = {};
     std::deque<task_frame*> tasks;
-    std::deque<task_frame*> deferred;
+    /// The waits sync primitives granted, whose tasks resume in this order.
+    std::deque<wait_node*> deferred;
     /// Ops to complete on a later iteration: yields, and waits that stop()
     /// or a destructor aborted. New ops land in `staged`; each() promotes
     /// the staged batch to `ready` and completes the batch promoted by the
@@ -43,10 +45,32 @@ struct event_loop::Self : relay::Self {
     /// handle does nothing. Once the loop is being destroyed, and has closed
     /// the idle handle, it runs nothing more.
     void ensure_idle();
+
+    /// Has on_check() drain `deferred` once the loop has polled, if nothing
+    /// drains it before; like ensure_idle(), not once the loop is being
+    /// destroyed.
+    void ensure_check();
+
+    /// Resumes the queued tasks one at a time from the front: a task resumed
+    /// here may drain the rest itself, and the order holds either way. The
+    /// check handle has nothing left to do then.
+    void drain_deferred();
+
+    static void on_relay(uv_async_t* handle);
+
+    static void each(uv_idle_t* idle);
+
+    static void on_check(uv_check_t* handle);
 };
 
-static void on_relay(uv_async_t* handle) {
-    auto* self = static_cast<event_loop::Self*>(handle->data);
+struct detail::loop_access {
+    static event_loop::Self& self(uv_loop_t& loop) noexcept {
+        return *static_cast<event_loop::Self*>(loop.data);
+    }
+};
+
+void event_loop::Self::on_relay(uv_async_t* handle) {
+    auto* self = static_cast<Self*>(handle->data);
     std::vector<function<void()>> batch;
     {
         std::lock_guard lock(self->mutex);
@@ -119,8 +143,8 @@ bool event_loop::has_current() noexcept {
     return current_loop != nullptr;
 }
 
-static void each(uv_idle_t* idle) {
-    auto self = static_cast<event_loop::Self*>(idle->data);
+void event_loop::Self::each(uv_idle_t* idle) {
+    auto* self = static_cast<Self*>(idle->data);
 
     if(self->tasks.empty() && self->staged.empty() && self->ready.empty()) {
         ::uv_idle_stop(idle);
@@ -152,32 +176,37 @@ void event_loop::Self::ensure_idle() {
     }
 }
 
+void event_loop::Self::ensure_check() {
+    if(!::uv_is_closing(reinterpret_cast<uv_handle_t*>(&check))) {
+        ::uv_check_start(&check, on_check);
+    }
+}
+
+void event_loop::Self::drain_deferred() {
+    while(!deferred.empty()) {
+        auto* waiter = deferred.front();
+        deferred.pop_front();
+        waiter->resume();
+    }
+    ::uv_check_stop(&check);
+}
+
+void event_loop::Self::on_check(uv_check_t* handle) {
+    static_cast<Self*>(handle->data)->drain_deferred();
+}
+
 void event_loop::schedule(task_frame& root) {
     self->ensure_idle();
     self->tasks.push_back(&root);
 }
 
-static void drain_deferred_queue(event_loop::Self* self) {
-    while(!self->deferred.empty()) {
-        auto batch = std::move(self->deferred);
-        for(auto* task: batch) {
-            detail::task_access::resume_woken(*task);
-        }
-    }
-}
-
-static void on_check(uv_check_t* handle) {
-    drain_deferred_queue(static_cast<event_loop::Self*>(handle->data));
-    ::uv_check_stop(handle);
-}
-
-void event_loop::defer_resume(task_frame& task) {
-    self->deferred.push_back(&task);
-    ::uv_check_start(&self->check, on_check);
+void event_loop::defer_resume(wait_node& waiter) {
+    self->deferred.push_back(&waiter);
+    self->ensure_check();
 }
 
 void event_loop::drain_deferred() {
-    drain_deferred_queue(self.get());
+    self->drain_deferred();
 }
 
 void event_loop::on_destroy(function<void()> callback) {
@@ -185,13 +214,13 @@ void event_loop::on_destroy(function<void()> callback) {
 }
 
 void uv::complete_later(uv_loop_t& loop, io_op& op) {
-    auto* self = static_cast<event_loop::Self*>(loop.data);
-    self->staged.push_back(&op);
-    self->ensure_idle();
+    auto& self = detail::loop_access::self(loop);
+    self.staged.push_back(&op);
+    self.ensure_idle();
 }
 
 void uv::free_when_closed(uv_loop_t& loop, function<void()> free) {
-    static_cast<event_loop::Self*>(loop.data)->frees.push_back(std::move(free));
+    detail::loop_access::self(loop).frees.push_back(std::move(free));
 }
 
 yield_awaiter::yield_awaiter(event_loop& loop) noexcept : loop(&loop) {
@@ -199,17 +228,17 @@ yield_awaiter::yield_awaiter(event_loop& loop) noexcept : loop(&loop) {
     // the queued completion in each() delivers the Cancelled outcome on the
     // next iteration (structured completion). Never dequeuing on cancel is
     // also what keeps the each() batch free of dangling pointers.
-    action = +[](io_op*) {
+    action = [](io_op*) {
     };
 }
 
-std::coroutine_handle<> yield_awaiter::suspend(task_frame& parent_node,
-                                               std::source_location loc) noexcept {
+std::coroutine_handle<> yield_awaiter::suspend(task_frame& waiting,
+                                               std::source_location location) noexcept {
     // Enqueue before attach: when the parent is already cancelled, attach's
     // cancellation checkpoint cancels this op in place, and the queued
     // completion still resolves it in a later iteration.
     uv::complete_later(*loop->native_handle(), *this);
-    return attach(parent_node, loc);
+    return attach(waiting, location);
 }
 
 event_loop::event_loop() : self(new Self()) {
@@ -225,7 +254,7 @@ event_loop::event_loop() : self(new Self()) {
     ::uv_check_init(loop, &self->check);
     self->check.data = self.get();
 
-    ::uv_async_init(loop, &self->async, on_relay);
+    ::uv_async_init(loop, &self->async, Self::on_relay);
     self->async.data = self.get();
     ::uv_unref(reinterpret_cast<uv_handle_t*>(&self->async));
 }
@@ -277,6 +306,9 @@ uv_loop_t* event_loop::native_handle() noexcept {
 int event_loop::run() {
     auto previous = current_loop;
     current_loop = this;
+    // What sync primitives woke while the loop did not run: its check handle
+    // would drain that only once a first poll returned.
+    self->drain_deferred();
     const int result = ::uv_run(&self->loop, UV_RUN_DEFAULT);
     current_loop = previous;
     return result;

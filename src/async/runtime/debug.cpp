@@ -55,27 +55,6 @@ static std::string_view basename(const char* path) {
     return pos != std::string_view::npos ? sv.substr(pos + 1) : sv;
 }
 
-static void emit_sync_node(const sync_primitive* resource, std::string& out) {
-    auto file = basename(resource->location.file_name());
-    std::string label;
-    if(!file.empty()) {
-        label = std::format(R"({}
-{}:{})",
-                            sync_kind_name(resource->kind),
-                            file,
-                            resource->location.line());
-    } else {
-        label = std::format("{}", sync_kind_name(resource->kind));
-    }
-
-    std::format_to(std::back_inserter(out),
-                   R"(  {} [label="{}", shape=ellipse, style=filled, fillcolor="{}"];
-)",
-                   node_id(resource),
-                   label,
-                   "#ADD8E6");
-}
-
 struct dot_emitter : async_visitor<dot_emitter> {
     std::string out;
 
@@ -104,7 +83,7 @@ struct dot_emitter : async_visitor<dot_emitter> {
     }
 
     bool visit_sync(const sync_primitive& resource) {
-        emit_sync_node(&resource, out);
+        emit(resource);
         return true;
     }
 
@@ -117,6 +96,27 @@ struct dot_emitter : async_visitor<dot_emitter> {
     }
 
 private:
+    void emit(const sync_primitive& resource) {
+        auto file = basename(resource.location.file_name());
+        std::string label;
+        if(!file.empty()) {
+            label = std::format(R"({}
+{}:{})",
+                                sync_kind_name(resource.kind),
+                                file,
+                                resource.location.line());
+        } else {
+            label = std::string(sync_kind_name(resource.kind));
+        }
+
+        std::format_to(std::back_inserter(out),
+                       R"(  {} [label="{}", shape=ellipse, style=filled, fillcolor="{}"];
+)",
+                       node_id(&resource),
+                       label,
+                       "#ADD8E6");
+    }
+
     bool emit(const async_node& node) {
         const auto& location = location_of(node);
         const auto state = state_of(node);

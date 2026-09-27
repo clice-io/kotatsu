@@ -41,11 +41,10 @@ ZEST_CASE(error_is_the_err_state) {
 }
 
 ZEST_CASE(cancellation_is_the_cancelled_state) {
-    Full o = outcome_cancel(cancellation("shutting down"));
-    ASSERT(o.is_cancelled());
+    Full o = outcome_cancel(cancellation{});
+    EXPECT(o.is_cancelled());
     EXPECT(!o.has_value());
     EXPECT(!o.has_error());
-    EXPECT(o.cancellation().reason() == "shutting down");
 }
 
 ZEST_CASE(void_value_is_ok) {
@@ -83,10 +82,9 @@ ZEST_CASE(accessors_follow_the_value_category) {
     EXPECT(zest::type_eq<decltype(std::move(failed).error()), error&&>());
     EXPECT(std::move(failed).error() == error::io_error);
 
-    outcome<std::string, error, cancellation> cancelled = outcome_cancel(cancellation("stop"));
+    outcome<std::string, error, cancellation> cancelled = outcome_cancel(cancellation{});
     ASSERT(cancelled.is_cancelled());
-    cancellation why = std::move(cancelled).cancellation();
-    EXPECT(why.reason() == "stop");
+    EXPECT(zest::type_eq<decltype(std::move(cancelled).cancellation()), cancellation&&>());
 }
 
 ZEST_CASE(outcome_without_channels_always_holds_a_value) {
@@ -147,7 +145,7 @@ ZEST_CASE(unwrap_of_an_error_fails, skip = test::exceptions_unreadable) {
 
 // Reads what was thrown; see test::exceptions_unreadable.
 ZEST_CASE(unwrap_of_a_cancellation_fails, skip = test::exceptions_unreadable) {
-    outcome<int, error, cancellation> cancelled = outcome_cancel(cancellation("stop"));
+    outcome<int, error, cancellation> cancelled = outcome_cancel(cancellation{});
     EXPECT(test::thrown<bad_outcome_access>([&] { std::move(cancelled).unwrap(); }) ==
            "outcome was cancelled");
 }

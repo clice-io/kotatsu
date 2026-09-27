@@ -68,7 +68,7 @@ struct fs_op : uv::uv_op<fs_op<Project, Release>> {
         auto* op = static_cast<fs_op*>(req->data);
         if(req->result < 0) {
             op->value = outcome_error(uv::status_to_error(req->result));
-        } else if(op->is_cancelled()) {
+        } else if(op->cancel_requested()) {
             Release(*req);
         } else if constexpr(std::is_void_v<value_of<Project>>) {
             op->value = {};

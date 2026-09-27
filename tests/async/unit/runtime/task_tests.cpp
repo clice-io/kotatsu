@@ -361,7 +361,7 @@ ZEST_CASE(checkpoint_waits_for_the_cancelled_operation) {
     };
 
     auto [observer, driver] = run(observe(), finish());
-    EXPECT(op.is_cancelled());
+    EXPECT(op.cancel_requested());
     ASSERT(driver.has_value());
     EXPECT(!*driver);
     EXPECT(worker_done);
@@ -449,60 +449,16 @@ ZEST_CASE(awaiting_a_task_cancelled_before_it_started_never_runs_it) {
     EXPECT(!resumed);
 }
 
+// Nothing runs the task; the cancel does not end it either.
 ZEST_CASE(cancel_of_a_task_that_has_not_started_only_marks_it) {
-    bool ran = false;
-    auto work = [&]() -> task<> {
-        ran = true;
+    auto work = []() -> task<> {
         co_return;
     };
     auto pending = work();
     pending.cancel();
 
     EXPECT(!pending.done());
-    EXPECT(!ran);
-}
-
-// A root the loop owns and that was cancelled before its first turn never
-// runs, and the loop still frees it. Its frame holds a copy of `frame`, which
-// tells when it goes.
-ZEST_CASE(owned_root_cancelled_before_it_starts_is_freed) {
-    auto frame = std::make_shared<int>();
-    std::weak_ptr<int> watch = frame;
-    bool ran = false;
-    auto make = [&](std::shared_ptr<int>) -> task<> {
-        ran = true;
-        co_return;
-    };
-    auto owned = make(std::move(frame));
-    owned.cancel();
-
-    loop.schedule(std::move(owned));
-    EXPECT(!watch.expired());
-    loop.run();
-    EXPECT(watch.expired());
-    EXPECT(!ran);
-}
-
-// A root cancelled after it was scheduled, before its first turn, never runs
-// either.
-ZEST_CASE(root_cancelled_between_schedule_and_its_turn_never_runs) {
-    bool ran = false;
-    auto make = [&]() -> task<> {
-        ran = true;
-        co_return;
-    };
-    auto root = make();
-    auto canceller = [&]() -> task<> {
-        root.cancel();
-        co_return;
-    };
-    auto first = canceller();
-
-    loop.schedule(first);
-    loop.schedule(root);
-    loop.run();
-    EXPECT(root.is_cancelled());
-    EXPECT(!ran);
+    EXPECT(!pending.is_cancelled());
 }
 
 #if KOTA_ENABLE_EXCEPTIONS

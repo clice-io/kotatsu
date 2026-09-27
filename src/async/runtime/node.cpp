@@ -151,21 +151,14 @@ std::coroutine_handle<> task_frame::finish(State end) {
     return std::exchange(parent, nullptr)->on_child_complete(*this);
 }
 
-void task_frame::resume_woken() {
-    child = nullptr;
-    // A waiter the cancel reached after its grant has handed the grant on.
-    resume_and_drain(cancel_requested ? finish(State::Cancelled) : handle());
-}
-
 void detail::task_access::run_root(task_frame& root) {
     task_frame::resume_and_drain(root.start(nullptr));
 }
 
-void detail::task_access::resume_woken(task_frame& task) {
-    task.resume_woken();
-}
-
 void aggregate_op::abandon_children() {
+    // A child the cancel ends at once, or resumes when it catches that, may
+    // run on here; it must not add to the group.
+    cancel_requested = true;
     while(auto* child = head) {
         unlink(*child);
         child->parent = nullptr;
@@ -238,14 +231,6 @@ std::coroutine_handle<> aggregate_op::await_children(task_frame& waiting,
         return cancel_all();
     }
     return std::noop_coroutine();
-}
-
-void aggregate_op::stop() {
-    if(decided() || done()) {
-        return;
-    }
-    decision = Decision::Resume;
-    resume_and_drain(cancel_all());
 }
 
 std::coroutine_handle<> aggregate_op::child_completed(task_frame& child) {
@@ -357,7 +342,7 @@ std::coroutine_handle<> io_op::attach(task_frame& waiting, std::source_location 
 }
 
 void io_op::complete() noexcept {
-    state = cancel_requested ? State::Cancelled : State::Succeeded;
+    state = cancel_requested() ? State::Cancelled : State::Succeeded;
     auto* awaiting = std::exchange(parent, nullptr);
     assert(awaiting != nullptr && "io_op completed while no task awaits it");
     resume_and_drain(awaiting->on_child_complete(*this));

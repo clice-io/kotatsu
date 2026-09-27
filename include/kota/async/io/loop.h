@@ -8,11 +8,19 @@
 
 #include "kota/support/functional.h"
 #include "kota/async/runtime/node.h"
+#include "kota/async/runtime/task.h"
 
 struct uv_loop_s;
 using uv_loop_t = uv_loop_s;
 
 namespace kota {
+
+namespace detail {
+
+/// How the io layer reaches the event loop behind a libuv loop.
+struct loop_access;
+
+}  // namespace detail
 
 /// A thread-safe relay for posting callbacks to an event loop.
 ///
@@ -70,11 +78,10 @@ public:
     /// mutex acquisition order.
     void send(function<void()> callback);
 
-    /// Opaque implementation detail. Defined in loop.cpp.
-    struct Self;
-
 private:
     friend class event_loop;
+
+    struct Self;
 
     explicit relay(Self* p) noexcept;
 
@@ -98,15 +105,18 @@ public:
     /// Returns true if a loop is running on the current thread.
     static bool has_current() noexcept;
 
-    /// Opaque implementation detail. Defined in loop.cpp.
-    struct Self;
-
     /// The libuv loop underneath, for code that runs libuv handles of its
     /// own on this loop. Its `data` belongs to the event_loop.
     uv_loop_t* native_handle() noexcept;
 
+    /// Runs the loop on this thread until it has nothing left to wait for, or
+    /// stop() ends it; tasks that wait on nothing but each other or a sync
+    /// primitive do not keep it running. Tasks a sync primitive woke while
+    /// the loop did not run resume first. Returns 0, or non-zero when stop()
+    /// ended it with work left.
     int run();
 
+    /// Makes run() return once the current loop iteration is over.
     void stop();
 
     /// Creates a relay that keeps this event loop alive until destroyed.
@@ -126,40 +136,45 @@ public:
     /// Schedules a task to start on this event loop's next turn. Passed as an
     /// rvalue, the task is the loop's, which destroys it once it ends; passed
     /// as an lvalue, it stays with the caller, who can still cancel() it and
-    /// read its result() once it ends. A task cancelled before it starts
-    /// never runs. Defined in task.h.
+    /// read its result() once it ends. Destroying it before it ends lets it
+    /// go: it is cancelled, and the loop frees it once it ends. A task
+    /// cancelled before it starts never runs.
     template <typename Task>
-    void schedule(Task&& task, std::source_location location = std::source_location::current());
+    void schedule(Task&& task, std::source_location location = std::source_location::current()) {
+        schedule(
+            detail::task_access::make_root(task, std::is_rvalue_reference_v<Task&&>, location));
+    }
 
 private:
     friend class async_node;
     friend class wait_node;
+    friend struct detail::loop_access;
+
+    struct Self;
 
     void schedule(task_frame& root);
 
-    /// Queues a task a sync primitive woke, to resume once whatever runs now
-    /// has suspended instead of inline.
-    void defer_resume(task_frame& task);
+    /// Queues the task of a wait a sync primitive granted, to resume once
+    /// whatever runs now has suspended instead of inline.
+    void defer_resume(wait_node& waiter);
 
-    /// Resumes the queued tasks. The runtime calls this after the outermost
-    /// coroutine resumption returns; a check handle is kept as a fallback so
-    /// they still run before the next loop iteration.
+    /// Resumes the queued tasks, in the order they were queued. The runtime
+    /// calls this after the outermost coroutine resumption returns; run()
+    /// calls it for what was queued while the loop did not run, and a check
+    /// handle for what a libuv callback queued outside any resumption.
     void drain_deferred();
 
     std::unique_ptr<Self> self;
 };
 
-/// Awaitable returned by yield(): suspends and resumes no earlier than the
-/// next event-loop iteration, strictly after every callback, deferred resume
-/// and scheduled task that existed when it was enqueued — regardless of
-/// which callback phase (timer, idle, poll, check) performed the enqueue.
+/// Awaitable returned by yield(): resumes on a later iteration of the loop,
+/// after everything that was due when it suspended, whichever callback it
+/// suspended from: the callbacks, the tasks woken and the tasks scheduled.
 ///
 /// This is the primitive for "let the current cascade settle, then decide"
 /// patterns (debounced cancellation, coalesced re-checks). Unlike sleep(0) it
-/// allocates no timer and does not depend on libuv timer-phase ordering, and
-/// unlike the internal deferred-resume queue it never resumes within the
-/// current drain cycle.
-struct yield_awaiter : io_op {
+/// allocates no timer and does not depend on the order of libuv's phases.
+struct yield_awaiter : private io_op {
     explicit yield_awaiter(event_loop& loop) noexcept;
 
     bool await_ready() const noexcept {
@@ -168,16 +183,16 @@ struct yield_awaiter : io_op {
 
     template <typename Promise>
     std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<Promise> h,
+        await_suspend(std::coroutine_handle<Promise> waiting,
                       std::source_location location = std::source_location::current()) noexcept {
-        return suspend(h.promise(), location);
+        return suspend(waiting.promise(), location);
     }
 
     void await_resume() const noexcept {}
 
 private:
-    /// Enqueues on the loop, then attaches. Defined in loop.cpp.
-    std::coroutine_handle<> suspend(task_frame& parent_node, std::source_location loc) noexcept;
+    /// Enqueues on the loop, then attaches.
+    std::coroutine_handle<> suspend(task_frame& waiting, std::source_location location) noexcept;
 
     event_loop* loop = nullptr;
 };

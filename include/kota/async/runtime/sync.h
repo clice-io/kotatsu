@@ -10,12 +10,16 @@
 
 namespace kota {
 
+class event_loop;
 class mutex;
 class condition_variable;
 
 /// Base of the sync primitives. Tasks wait on one through a wait_node, in a
 /// FIFO queue, and a primitive never resumes a task it grants inline: the task
-/// resumes once whatever runs has suspended.
+/// resumes once whatever runs has suspended. A mutex, semaphore or condition
+/// variable must not go while tasks wait on it, nor before the tasks it woke
+/// have resumed: one cancelled in between hands what it was granted back to
+/// it. An event may go once it is set.
 class sync_primitive {
 public:
     enum class Kind : std::uint8_t {
@@ -44,6 +48,7 @@ protected:
 
     ~sync_primitive() {
         assert(head == nullptr && "sync primitive destroyed while tasks wait on it");
+        assert(woken == 0 && "sync primitive destroyed before the tasks it woke resumed");
     }
 
     /// Grants the first waiter what it waits for; false when none waits.
@@ -64,6 +69,10 @@ private:
 
     wait_node* head = nullptr;
     wait_node* tail = nullptr;
+
+    /// The waits it granted whose tasks have not resumed yet; an event's are
+    /// not counted, as they need nothing more of it.
+    std::size_t woken = 0;
 };
 
 /// A task's wait on a sync primitive: what lock(), acquire() and wait() give
@@ -87,6 +96,7 @@ public:
 private:
     friend class async_node;
     friend class sync_primitive;
+    friend class event_loop;
     friend class mutex;
     friend class semaphore;
     friend class event;
@@ -95,7 +105,7 @@ private:
     friend class async_visitor;
 
     explicit wait_node(sync_primitive& owner) noexcept :
-        async_node(NodeKind::Waiter), owner(&owner) {}
+        async_node(NodeKind::Waiter), owner(&owner), owner_kind(owner.kind) {}
 
     /// A condition variable wait: it unlocks `relock` while it waits and locks
     /// it again before it ends, cancelled or not.
@@ -111,7 +121,19 @@ private:
     /// Hands on what the waiter was granted, for a task that will not use it.
     void give_back();
 
+    /// Resumes the task once the wait was granted, or ends it cancelled when a
+    /// cancel reached the wait since. The event loop calls this.
+    void resume();
+
     sync_primitive* owner;
+
+    /// What `owner` is, known without it: an event may be gone before the
+    /// task it woke is cancelled.
+    sync_primitive::Kind owner_kind;
+
+    /// The loop the task waits on, which resumes it once the wait is granted:
+    /// a primitive may grant it where no loop runs.
+    event_loop* loop = nullptr;
 
     /// The mutex a condition variable wait locks again.
     mutex* relock = nullptr;

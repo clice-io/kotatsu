@@ -11,7 +11,6 @@
 
 namespace kota {
 
-class event_loop;
 class task_frame;
 class aggregate_op;
 class wait_node;
@@ -162,10 +161,6 @@ protected:
     /// event loop owns is destroyed. Returns the coroutine to resume next.
     std::coroutine_handle<> finish(State end);
 
-    /// Resumes this task, which a sync primitive woke, or ends it cancelled
-    /// when a cancel reached it since.
-    void resume_woken();
-
     /// The coroutine frame. The promise knows its own handle, but this
     /// type-erased base cannot derive the frame address from `this`.
     void* address = nullptr;
@@ -179,6 +174,9 @@ protected:
     task_frame* next_sibling = nullptr;
 
     error_hook hook = nullptr;
+
+    /// The task was scheduled on an event loop, which starts it as a root.
+    bool scheduled = false;
 
     /// The event loop owns the frame and destroys it once the task ends.
     bool owned_by_loop = false;
@@ -258,12 +256,10 @@ protected:
     /// ended. Returns the coroutine to resume next.
     std::coroutine_handle<> await_children(task_frame& waiting, std::source_location location);
 
-    /// task_group::cancel(): cancels every child; the group settles as usual.
-    void stop();
-
     /// ~task_group: lets every running child go. Each is cancelled, ends on
     /// its own, and is freed by the event loop then; what it failed with is
-    /// dropped.
+    /// dropped. A child may end, or run on to its next suspending co_await,
+    /// before this returns; the group refuses to spawn meanwhile.
     void abandon_children();
 
     /// Records the completion of `child` and settles when it was the last.
@@ -319,8 +315,8 @@ public:
     void complete() noexcept;
 
     /// Whether cancel() has reached the operation.
-    bool is_cancelled() const noexcept {
-        return cancel_requested;
+    bool cancel_requested() const noexcept {
+        return async_node::cancel_requested;
     }
 
 protected:

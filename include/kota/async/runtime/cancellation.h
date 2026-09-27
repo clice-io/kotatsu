@@ -83,22 +83,12 @@ task<T, E, cancellation> with_token(task<T, E, C> inner_task, Tokens... tokens) 
             co_await fail(std::move(race_result).error());
         }
     }
-
-    // Guard value access with has_value() rather than relying on
-    // co_await cancel() making subsequent code unreachable — MSVC's
-    // coroutine codegen can fall through past a symmetric-transfer
-    // suspension, reaching the dereference on a cancelled outcome.
-    if constexpr(!std::is_void_v<T>) {
-        if(race_result.has_value()) {
-            co_return std::move(std::get<0>(*race_result));
-        }
-    } else {
-        if(race_result.has_value()) {
-            co_return;
-        }
+    if(race_result.is_cancelled()) {
+        co_await cancel();
     }
-
-    co_await cancel();
+    if constexpr(!std::is_void_v<T>) {
+        co_return std::move(std::get<0>(*race_result));
+    }
 }
 
 }  // namespace kota

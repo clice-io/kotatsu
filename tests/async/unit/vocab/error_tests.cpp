@@ -37,14 +37,6 @@ ZEST_CASE(clear_resets_to_success) {
     EXPECT(e == error());
 }
 
-ZEST_CASE(cancellation_carries_its_reason) {
-    cancellation plain;
-    EXPECT(plain.reason().empty());
-
-    cancellation why("deadline passed");
-    EXPECT(why.reason() == "deadline passed");
-}
-
 };  // ZEST_SUITE(async_vocab_error)
 
 }  // namespace

@@ -12,7 +12,6 @@
 #include <utility>
 
 #include "kota/support/config.h"
-#include "kota/async/io/loop.h"
 #include "kota/async/runtime/node.h"
 #include "kota/async/vocab/error.h"
 #include "kota/async/vocab/outcome.h"
@@ -59,6 +58,7 @@ struct task_access {
         task_frame& root = task.h.promise();
         assert(root.state == async_node::State::Pending && "a task starts once");
         root.location = location;
+        root.scheduled = true;
         root.owned_by_loop = owned;
         if(owned) {
             task.h = nullptr;
@@ -68,9 +68,6 @@ struct task_access {
 
     /// Starts a root the event loop scheduled.
     static void run_root(task_frame& root);
-
-    /// Resumes a task a sync primitive woke.
-    static void resume_woken(task_frame& task);
 };
 
 /// What cancel() gives to co_await.
@@ -261,7 +258,7 @@ struct task_promise : task_frame, promise_result<T, E> {
         return std::forward<Awaitable>(awaitable);
     }
 
-    /// What the task ended with. Rethrows what it threw.
+    /// What the task ended with, which it gives once. Rethrows what it threw.
     outcome<T, E, cancellation> take() {
 #if KOTA_ENABLE_EXCEPTIONS
         if(exception) {
@@ -271,16 +268,18 @@ struct task_promise : task_frame, promise_result<T, E> {
         if(state == State::Cancelled) {
             return outcome_cancel(cancellation{});
         }
-        assert(this->value.has_value() && "take() on a task that has not finished");
+        std::optional<outcome<T, E>> ended;
+        ended.swap(this->value);
+        assert(ended.has_value() && "take() of a task that has not finished, or twice");
         if constexpr(!std::is_void_v<E>) {
-            if(this->value->has_error()) {
-                return outcome_error(std::move(*this->value).error());
+            if(ended->has_error()) {
+                return outcome_error(std::move(*ended).error());
             }
         }
         if constexpr(std::is_void_v<T>) {
             return {};
         } else {
-            return std::move(**this->value);
+            return std::move(**ended);
         }
     }
 
@@ -351,7 +350,6 @@ auto or_fail(Outcome&& result) {
 /// its channels: T alone when E and C are void, `outcome<T, E>` with an error
 /// channel, `outcome<T, E, cancellation>` with a cancel channel. Without a
 /// cancel channel a task that ends cancelled cancels the task awaiting it too.
-/// A task must not be destroyed while it runs.
 template <typename T, typename E, typename C>
 class task {
 public:
@@ -379,14 +377,17 @@ public:
         return *this;
     }
 
+    /// Destroys the task. One scheduled on an event loop that has not ended is
+    /// let go instead: it is cancelled, and the loop frees it once it ends. A
+    /// task must not be destroyed while another task awaits it.
     ~task() {
         destroy();
     }
 
     /// Awaits the task, which keeps its frame: that lives on until this task
     /// object goes, so the task can still be cancelled or asked whether it is
-    /// done while another awaits it. The await takes what the task ended with;
-    /// result() does not give it again.
+    /// done while another awaits it. The await takes what the task ended with:
+    /// result() must not be called after it.
     auto operator co_await() & noexcept {
         return awaiter<task&>{*this};
     }
@@ -433,6 +434,7 @@ public:
 
     /// What the task ended with, as co_await gives it; rethrows what it threw.
     /// The task must have ended, and without a cancel channel not cancelled.
+    /// It gives that once, and not after an await of the task has taken it.
     auto result() {
         assert(done() && "result() of a task that has not ended");
         return narrow(h.promise().take());
@@ -492,19 +494,23 @@ private:
     }
 
     void destroy() noexcept {
-        if(h) {
-            assert(h.promise().state != async_node::State::Running &&
-                   "task destroyed while it runs");
-            h.destroy();
+        if(!h) {
+            return;
         }
+        auto& frame = h.promise();
+        if(frame.scheduled && !frame.done()) {
+            // The loop starts it, or runs it: let it go.
+            frame.owned_by_loop = true;
+            h = nullptr;
+            frame.cancel();
+            return;
+        }
+        assert(frame.state != async_node::State::Running &&
+               "task destroyed while another task awaits it");
+        h.destroy();
     }
 
     coroutine_handle h;
 };
-
-template <typename Task>
-void event_loop::schedule(Task&& task, std::source_location location) {
-    schedule(detail::task_access::make_root(task, std::is_rvalue_reference_v<Task&&>, location));
-}
 
 }  // namespace kota
