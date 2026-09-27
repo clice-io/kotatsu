@@ -232,6 +232,12 @@ void attrs(const Kit<B>& kit) {
         [] { return TextPlain{.text = "x"}; },
         [] { return SkipsEmptyText{.text = std::string("x")}; });
     if constexpr(B::caps.absent_fields) {
+        // ...and, encoding, it leaves out the value it matches.
+        encodes_as(
+            kit,
+            "one_argument_skip_if_omits_matching_field",
+            [] { return SkipsEmptyText{.text = std::string()}; },
+            [] { return Empty{}; });
         auto kept = [] {
             return Skippable{
                 .id = 1,

@@ -40,6 +40,13 @@ struct custom_pred {
     }
 };
 
+/// Takes only the value, so it speaks for encoding.
+struct is_zero {
+    constexpr bool operator()(const int& value) const {
+        return value == 0;
+    }
+};
+
 struct extras_tag {
     constexpr static auto spec =
         make_spec(dsl::description = "Converted field.", dsl::as = dsl::type<std::int64_t>);
@@ -129,6 +136,15 @@ ZEST_CASE(annotate_maps_components_to_behavior_attrs) {
     using adapted = annotate<with_tag>::type<int>;
     STATIC_EXPECT((tuple_has_v<typename adapted::attrs, behavior::with<probe_adapter>>));
     STATIC_EXPECT((tuple_has_v<typename with_extra::attrs, behavior::skip_if<custom_pred>>));
+}
+
+ZEST_CASE(skip_predicate_decides_by_direction) {
+    STATIC_EXPECT(evaluate_skip_predicate<custom_pred>(-1, true));
+    STATIC_EXPECT(!evaluate_skip_predicate<custom_pred>(-1, false));
+    // A one-argument predicate holds only when encoding.
+    STATIC_EXPECT(evaluate_skip_predicate<is_zero>(0, true));
+    STATIC_EXPECT(!evaluate_skip_predicate<is_zero>(0, false));
+    STATIC_EXPECT(!evaluate_skip_predicate<is_zero>(1, true));
 }
 
 ZEST_CASE(spec_of_reads_annotation_and_defaults_to_empty) {

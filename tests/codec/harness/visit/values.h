@@ -65,6 +65,15 @@ void values(const Kit<B>& kit) {
         "null_c_string_encodes_as_null",
         [] { return Field<const char*>{nullptr}; },
         [] { return Field<std::nullptr_t>{nullptr}; });
+    // A weak pointer writes what the shared pointer it locks to writes.
+    encodes_as(
+        kit,
+        "weak_ptr_encodes_as_shared_ptr",
+        [] {
+            const static auto owner = std::make_shared<int>(7);
+            return Field<std::weak_ptr<int>>{owner};
+        },
+        [] { return Field<std::shared_ptr<int>>{std::make_shared<int>(7)}; });
     encodes_as(
         kit,
         "c_string_map_key_encodes_as_string_key",
