@@ -67,8 +67,8 @@ A test in a bootstrap suite must not judge itself with what it tests: meta's com
 
 - Files: `<stem>[_<aspect>]_tests.cpp`, `.cpp` only.
 - Suites: the file's path under `tests/`, without the level directory and the `_tests` suffix, its components joined by `_`, and a word dropped when it repeats the word before it. For example, `tests/codec/toml/unit/toml_variant_tests.cpp` is `codec_toml_variant`, `tests/meta/unit/schema/schema_attrs_tests.cpp` is `meta_schema_attrs`, and `tests/async/unit/runtime/when/cancel_tests.cpp` is `async_runtime_when_cancel`.
-- One suite per file. Suite names are unique across both binaries, since the suite name is also its snapshot directory: when one header has both unit and system tests, the system file names its aspect (`relay_threads_tests.cpp`).
-- Cases: `snake_case`, shaped `<subject>_<behaviour>`. No suite prefix, no numbering. A case about an error ends in `_fails`. Spell it `roundtrip`, not `round_trip`.
+- One suite per file. Suite names are unique across both binaries, since the suite name is also its snapshot directory: when one header has both unit and system tests, the system file names its aspect (`io/loop_threads_tests.cpp` beside the unit `io/loop_tests.cpp`).
+- Cases: `snake_case`, shaped `<subject>_<behaviour>`. No suite prefix, no numbering. A case about an error ends in `_fails`, a thrown exception included. Spell it `roundtrip`, not `round_trip`.
 - Fixture types are PascalCase.
 
 ## Namespaces
@@ -92,8 +92,10 @@ A test in a bootstrap suite must not judge itself with what it tests: meta's com
 ## Determinism
 
 - Unit tests never order events by sleeping; they use events, latches or the loop's own ordering. A timer is fine as the subject of a test.
-- System tests bind port 0 and read the port back; create temporary directories under the system temp directory with an owner that removes them on every path; never use fixed file names.
-- `serial = true` and `skip = true` carry a one-line comment giving the reason.
+- System tests order events the same way wherever they can: wait for the event, a relay or a semaphore that says the other side is ready. A wait is left only to show that something does not happen, with a comment saying so.
+- System tests bind port 0 and read the port back. A case that needs a port twice (a second bind to share it, or to find it in use) binds port 0 first and reuses the port it read back.
+- System tests create temporary directories under the system temp directory with an owner that removes them on every path, and never use fixed file names. Windows named pipes live outside the file system; they take a random name instead (e.g. the temporary directory's name).
+- `serial = true` and `skip = true` carry a one-line comment giving the reason. A case that can only tell at run time that it cannot run (no IPv6 loopback, no pseudo-terminal) calls `zest::skip()` and returns; a comment on the check, or on the helper it asks, gives the reason.
 - A randomized test uses a fixed seed and prints it when it fails.
 
 ## Running

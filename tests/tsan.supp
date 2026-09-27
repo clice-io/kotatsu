@@ -1,0 +1,4 @@
+# libuv's signal handler walks its signal tree under uv__signal_lock, a lock
+# made of a pipe (a signal handler may not take a mutex), which
+# ThreadSanitizer does not see as synchronization with uv_signal_start.
+race:uv__signal_handler

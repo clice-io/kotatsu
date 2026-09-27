@@ -12,44 +12,18 @@ namespace {
 template <typename T>
 constexpr inline bool always_false_v = false;
 
-result<unsigned int> to_uv_pipe_flags(const pipe::options& opts) {
-    unsigned int out = 0;
-#ifdef UV_PIPE_NO_TRUNCATE
-    if(opts.no_truncate) {
-        out |= UV_PIPE_NO_TRUNCATE;
-    }
-#else
-    if(opts.no_truncate) {
-        return outcome_error(error::function_not_implemented);
-    }
-#endif
-    return out;
+unsigned int to_uv_pipe_flags(const pipe::options& opts) {
+    return opts.no_truncate ? static_cast<unsigned int>(UV_PIPE_NO_TRUNCATE) : 0U;
 }
 
-result<unsigned int> to_uv_pipe_connect_flags(const pipe::options& opts) {
-    return to_uv_pipe_flags(opts);
-}
-
-result<unsigned int> to_uv_tcp_bind_flags(const tcp::options& opts) {
+unsigned int to_uv_tcp_bind_flags(const tcp::options& opts) {
     unsigned int out = 0;
-#ifdef UV_TCP_IPV6ONLY
     if(opts.ipv6_only) {
         out |= UV_TCP_IPV6ONLY;
     }
-#else
-    if(opts.ipv6_only) {
-        return outcome_error(error::function_not_implemented);
-    }
-#endif
-#ifdef UV_TCP_REUSEPORT
     if(opts.reuse_port) {
         out |= UV_TCP_REUSEPORT;
     }
-#else
-    if(opts.reuse_port) {
-        return outcome_error(error::function_not_implemented);
-    }
-#endif
     return out;
 }
 
@@ -160,13 +134,7 @@ struct connect_await : uv::await_op<connect_await<Stream>> {
                 return;
             }
 
-            auto uv_flags = to_uv_pipe_connect_flags(opts);
-            if(!uv_flags) {
-                ready = false;
-                outcome = outcome_error(uv_flags.error());
-                return;
-            }
-            flags = uv_flags.value();
+            flags = to_uv_pipe_flags(opts);
         } else {
             static_assert(always_false_v<Stream>, "pipe constructor requires Stream=pipe");
         }
@@ -332,16 +300,11 @@ result<pipe::acceptor> pipe::listen(std::string_view name, pipe::options opts, e
     acc.pipe_ipc = opts.ipc ? 1 : 0;
     auto& handle = acc.pipe;
 
-    auto uv_flags = to_uv_pipe_flags(opts);
-    if(!uv_flags) {
-        return outcome_error(uv_flags.error());
-    }
-
     if(name.empty()) {
         return outcome_error(error::invalid_argument);
     }
 
-    if(auto err = uv::pipe_bind2(handle, name.data(), name.size(), uv_flags.value())) {
+    if(auto err = uv::pipe_bind2(handle, name.data(), name.size(), to_uv_pipe_flags(opts))) {
         return outcome_error(err);
     }
 
@@ -413,12 +376,7 @@ result<tcp::acceptor>
 
     ::sockaddr* addr_ptr = reinterpret_cast<sockaddr*>(&resolved->storage);
 
-    auto uv_flags = to_uv_tcp_bind_flags(opts);
-    if(!uv_flags) {
-        return outcome_error(uv_flags.error());
-    }
-
-    if(auto err = uv::tcp_bind(handle, addr_ptr, uv_flags.value())) {
+    if(auto err = uv::tcp_bind(handle, addr_ptr, to_uv_tcp_bind_flags(opts))) {
         return outcome_error(err);
     }
 

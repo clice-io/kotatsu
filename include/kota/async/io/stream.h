@@ -126,7 +126,8 @@ public:
         /// Enable IPC handle passing.
         bool ipc = false;
 
-        /// Do not truncate long pipe names (UV_PIPE_NO_TRUNCATE when supported).
+        /// Fail with invalid_argument instead of truncating a Unix socket
+        /// path longer than sun_path; Windows never truncates pipe names.
         bool no_truncate = false;
 
         /// Listen backlog size.

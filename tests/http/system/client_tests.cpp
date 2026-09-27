@@ -280,7 +280,7 @@ private:
     int port = 0;
 };
 
-struct http_loop_fixture : loop_fixture {
+struct http_loop_fixture : test::LoopFixture {
     ~http_loop_fixture() {
         http::manager::unregister_loop(loop);
     }

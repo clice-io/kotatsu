@@ -1,545 +1,318 @@
-// ZEST_SUITE(async_runtime_when_reentrancy): reentrant / arm-phase / looping cancel scenarios
-// for when_all/when_any. Covers deferred sync resumes where the signaler wins,
-// reentrant cancellation-token firing, looping tasks that must stop at the next
-// checkpoint when cancelled mid-loop, and the first_cancel_child bookkeeping
-// repros (sync child completing during arm + external cancel). Regular cancel
-// semantics live in cancel_tests.cpp.
+#include <optional>
+#include <tuple>
+#include <variant>
+
 #include "async/harness/loop_fixture.h"
+#include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
 
 namespace kota {
 
-ZEST_SUITE(async_runtime_when_reentrancy) {
+namespace {
 
-// b resumes from sleep, calls ev.set() (deferred resume for a), then co_returns.
-// b completes first — with deferred resume, the signaler finishes before the
-// waiter runs.
-ZEST_CASE(any_deferred_sync_resume_signaler_wins) {
+// Sync primitives resume the tasks they wake through the loop's deferred
+// queue: a child that wakes a sibling runs on to its end first, so it wins a
+// when_any and the woken sibling is cancelled instead of resumed.
+
+ZEST_SUITE(async_runtime_when_reentrancy, test::LoopFixture) {
+
+ZEST_CASE(any_setter_of_an_event_wins_over_its_waiters) {
     event ev;
-
-    auto a = [&]() -> task<int> {
+    auto waiter = [&](int id) -> task<int> {
         co_await ev.wait();
-        co_return 1;
+        co_return id;
     };
-
-    auto b = [&]() -> task<int> {
-        co_await sleep(1);
-        ev.set();
-        co_return 2;
-    };
-
-    auto combined = [&]() -> task<std::variant<int, int>> {
-        co_return co_await when_any(a(), b());
-    };
-
-    auto [winner] = run(combined());
-    EXPECT(winner);
-    EXPECT(winner->index() == 1U);
-    EXPECT(std::get<1>(*winner) == 2);
-}
-
-// Semaphore variant: b releases, then completes before a resumes.
-ZEST_CASE(any_deferred_semaphore_release) {
-    semaphore sem;
-
-    auto a = [&]() -> task<int> {
-        co_await sem.acquire();
-        co_return 1;
-    };
-
-    auto b = [&]() -> task<int> {
-        co_await sleep(1);
-        sem.release();
-        co_return 2;
-    };
-
-    auto combined = [&]() -> task<std::variant<int, int>> {
-        co_return co_await when_any(a(), b());
-    };
-
-    auto [winner] = run(combined());
-    EXPECT(winner);
-    EXPECT(winner->index() == 1U);
-    EXPECT(std::get<1>(*winner) == 2);
-}
-
-// Mutex variant: a unlocks (defers b's resume), then co_returns.
-// a completes first since b's resume is deferred.
-ZEST_CASE(any_deferred_mutex_unlock) {
-    mutex m;
-
-    auto a = [&]() -> task<int> {
-        co_await m.lock();
-        co_await sleep(1);
-        m.unlock();
-        co_return 1;
-    };
-
-    auto b = [&]() -> task<int> {
-        co_await m.lock();
-        co_return 2;
-    };
-
-    auto combined = [&]() -> task<std::variant<int, int>> {
-        co_return co_await when_any(a(), b());
-    };
-
-    auto [winner] = run(combined());
-    EXPECT(winner);
-    EXPECT(winner->index() == 0U);
-    EXPECT(std::get<0>(*winner) == 1);
-}
-
-// CV variant: b notifies (defers a's resume), then co_returns. b wins.
-ZEST_CASE(any_deferred_cv_notify) {
-    mutex m;
-    condition_variable cv;
-
-    auto a = [&]() -> task<int> {
-        co_await m.lock();
-        co_await cv.wait(m);
-        m.unlock();
-        co_return 1;
-    };
-
-    auto b = [&]() -> task<int> {
-        co_await sleep(1);
-        cv.notify_one();
-        co_return 2;
-    };
-
-    auto combined = [&]() -> task<std::variant<int, int>> {
-        co_return co_await when_any(a(), b());
-    };
-
-    auto [winner] = run(combined());
-    EXPECT(winner);
-    EXPECT(winner->index() == 1U);
-    EXPECT(std::get<1>(*winner) == 2);
-}
-
-// cancellation_token variant: src.cancel() fires an internal event that
-// resumes the token's wait task inline, triggering reentrancy.
-ZEST_CASE(any_reentrant_cancellation_token) {
-    cancellation_source src;
-
-    auto slow = [&]() -> task<int> {
-        co_await sleep(1000);
-        co_return 1;
-    };
-
-    auto canceler = [&]() -> task<int> {
-        co_await sleep(1);
-        src.cancel();
-        co_return 2;
-    };
-
-    auto guarded = with_token(slow(), src.token());
-    auto cancel_task = canceler();
-    run(guarded, cancel_task);
-
-    EXPECT(!guarded.value());
-}
-
-// when_all variant: reentrancy during when_all should not cause issues either.
-ZEST_CASE(all_reentrant_event_set) {
-    event ev;
-    int a_done = 0;
-    int b_done = 0;
-
-    auto a = [&]() -> task<> {
-        co_await ev.wait();
-        a_done = 1;
-    };
-
-    auto b = [&]() -> task<> {
-        co_await sleep(1);
-        ev.set();
-        b_done = 1;
-    };
-
-    auto combined = [&]() -> task<> {
-        co_await when_all(a(), b());
-    };
-
-    run(combined());
-    EXPECT(a_done == 1);
-    EXPECT(b_done == 1);
-}
-
-// Multiple waiters: c sets event (defers a, b), then co_returns. c wins.
-ZEST_CASE(any_deferred_event_multiple_waiters) {
-    event ev;
-
-    auto a = [&]() -> task<int> {
-        co_await ev.wait();
-        co_return 1;
-    };
-
-    auto b = [&]() -> task<int> {
-        co_await ev.wait();
-        co_return 2;
-    };
-
-    auto c = [&]() -> task<int> {
-        co_await sleep(1);
+    auto setter = [&]() -> task<int> {
+        co_await yield();
         ev.set();
         co_return 3;
     };
-
     auto combined = [&]() -> task<std::variant<int, int, int>> {
-        co_return co_await when_any(a(), b(), c());
-    };
-
-    auto [winner] = run(combined());
-    EXPECT(winner);
-    EXPECT(winner->index() == 2U);
-    EXPECT(std::get<2>(*winner) == 3);
-}
-
-// Repro: a looping task that gets cancelled reentrantly should stop at the
-// next co_await, not loop forever.  b loops calling ev.set() each iteration;
-// a waits on ev and completes, triggering when_any cancel on b mid-loop.
-// If the Cancelled state is lost, b runs all 100 iterations.
-ZEST_CASE(any_reentrant_cancel_stops_looping_task) {
-    event ev;
-    int loop_count = 0;
-
-    auto a = [&]() -> task<int> {
-        co_await ev.wait();
-        co_return 1;
-    };
-
-    auto b = [&]() -> task<int> {
-        for(int i = 0; i < 100; ++i) {
-            co_await sleep(1);
-            loop_count = i + 1;
-            ev.set();
-        }
-        co_return 2;
-    };
-
-    auto combined = [&]() -> task<std::variant<int, int>> {
-        co_return co_await when_any(a(), b());
-    };
-
-    auto [winner] = run(combined());
-    EXPECT(winner);
-    EXPECT(winner->index() == 0U);
-    EXPECT(std::get<0>(*winner) == 1);
-    EXPECT(loop_count < 10);
-}
-
-// Semaphore variant: b loops releasing a semaphore each iteration.
-// a acquires and completes, when_any cancels b mid-loop.
-ZEST_CASE(any_reentrant_cancel_stops_looping_task_semaphore) {
-    semaphore sem;
-    int loop_count = 0;
-
-    auto a = [&]() -> task<int> {
-        co_await sem.acquire();
-        co_return 1;
-    };
-
-    auto b = [&]() -> task<int> {
-        for(int i = 0; i < 100; ++i) {
-            co_await sleep(1);
-            loop_count = i + 1;
-            sem.release();
-        }
-        co_return 2;
-    };
-
-    auto combined = [&]() -> task<std::variant<int, int>> {
-        co_return co_await when_any(a(), b());
-    };
-
-    auto [winner] = run(combined());
-    EXPECT(winner);
-    EXPECT(winner->index() == 0U);
-    EXPECT(std::get<0>(*winner) == 1);
-    EXPECT(loop_count < 10);
-}
-
-// when_all variant: b loops and triggers a's completion via event.
-// Both should complete; b's cancel should terminate its loop.
-ZEST_CASE(all_reentrant_cancel_stops_looping_task_on_error) {
-    event ev;
-    int loop_count = 0;
-
-    auto a = [&]() -> task<int, error> {
-        co_await ev.wait();
-        co_await fail(error::connection_refused);
-    };
-
-    auto b = [&]() -> task<int, error> {
-        for(int i = 0; i < 100; ++i) {
-            co_await sleep(1);
-            loop_count = i + 1;
-            ev.set();
-        }
-        co_return 2;
-    };
-
-    auto combined = [&]() -> task<std::tuple<int, int>, error> {
-        co_return co_await when_all(a(), b());
+        co_return co_await when_any(waiter(1), waiter(2), setter());
     };
 
     auto [result] = run(combined());
-    EXPECT(result);
-    EXPECT(result->has_error());
-    EXPECT(loop_count < 10);
+    ASSERT(result.has_value());
+    ASSERT(result->index() == 2U);
+    EXPECT(std::get<2>(*result) == 3);
 }
 
-// Multiple co_await points after the cancel trigger: the cancelled task does
-// several co_awaits in a row before looping, all should finalize promptly.
-ZEST_CASE(any_reentrant_cancel_stops_after_multiple_awaits) {
-    event ev;
-    int step = 0;
-
-    auto a = [&]() -> task<int> {
-        co_await ev.wait();
+ZEST_CASE(any_releaser_of_a_semaphore_wins_over_its_waiter) {
+    semaphore sem;
+    auto waiter = [&]() -> task<int> {
+        co_await sem.acquire();
         co_return 1;
     };
-
-    auto b = [&]() -> task<int> {
-        co_await sleep(1);
-        ev.set();
-        step = 1;
-        co_await sleep(1);
-        step = 2;
-        co_await sleep(1);
-        step = 3;
+    auto releaser = [&]() -> task<int> {
+        co_await yield();
+        sem.release();
         co_return 2;
     };
-
     auto combined = [&]() -> task<std::variant<int, int>> {
-        co_return co_await when_any(a(), b());
+        co_return co_await when_any(waiter(), releaser());
     };
 
-    auto [winner] = run(combined());
-    EXPECT(winner);
-    EXPECT(winner->index() == 0U);
-    EXPECT(step == 1);
+    auto [result] = run(combined());
+    ASSERT(result.has_value());
+    EXPECT(result->index() == 1U);
+    // The cancelled waiter gave its unit back.
+    EXPECT(sem.try_acquire());
 }
 
-// Condition variable loop: b repeatedly notifies cv; a waits and completes.
-ZEST_CASE(any_reentrant_cancel_stops_looping_task_cv) {
+ZEST_CASE(any_unlocker_of_a_mutex_wins_over_its_waiter) {
+    mutex m;
+    auto holder = [&]() -> task<int> {
+        co_await m.lock();
+        co_await yield();
+        m.unlock();
+        co_return 1;
+    };
+    auto waiter = [&]() -> task<int> {
+        co_await m.lock();
+        m.unlock();
+        co_return 2;
+    };
+    auto combined = [&]() -> task<std::variant<int, int>> {
+        co_return co_await when_any(holder(), waiter());
+    };
+
+    auto [result] = run(combined());
+    ASSERT(result.has_value());
+    EXPECT(result->index() == 0U);
+    // The cancelled waiter gave the mutex back.
+    EXPECT(m.try_lock());
+}
+
+ZEST_CASE(any_notifier_of_a_condition_variable_wins_over_its_waiter) {
     mutex m;
     condition_variable cv;
-    int loop_count = 0;
-
-    auto a = [&]() -> task<int> {
+    auto waiter = [&]() -> task<int> {
         co_await m.lock();
         co_await cv.wait(m);
         m.unlock();
         co_return 1;
     };
+    auto notifier = [&]() -> task<int> {
+        co_await yield();
+        cv.notify_one();
+        co_return 2;
+    };
+    auto combined = [&]() -> task<std::variant<int, int>> {
+        co_return co_await when_any(waiter(), notifier());
+    };
 
-    auto b = [&]() -> task<int> {
+    auto [result] = run(combined());
+    ASSERT(result.has_value());
+    EXPECT(result->index() == 1U);
+    EXPECT(m.try_lock());
+}
+
+ZEST_CASE(all_child_waking_a_sibling_lets_both_finish) {
+    event ev;
+    int finished = 0;
+    auto waiter = [&]() -> task<> {
+        co_await ev.wait();
+        finished += 1;
+    };
+    auto setter = [&]() -> task<> {
+        co_await yield();
+        ev.set();
+        finished += 1;
+    };
+    auto combined = [&]() -> task<> {
+        co_await when_all(waiter(), setter());
+    };
+
+    auto [result] = run(combined());
+    EXPECT(result.has_value());
+    EXPECT(finished == 2);
+}
+
+// A sibling cancelled while it is between awaits stops at its next one. Were
+// the cancellation lost, the loop would run all its iterations.
+ZEST_CASE(any_cancel_stops_a_looping_sibling_at_its_next_await) {
+    event ev;
+    int iterations = 0;
+    auto waiter = [&]() -> task<int> {
+        co_await ev.wait();
+        co_return 1;
+    };
+    auto looper = [&]() -> task<int> {
         for(int i = 0; i < 100; ++i) {
-            co_await sleep(1);
-            loop_count = i + 1;
-            cv.notify_one();
+            co_await yield();
+            iterations += 1;
+            ev.set();
         }
         co_return 2;
     };
-
     auto combined = [&]() -> task<std::variant<int, int>> {
-        co_return co_await when_any(a(), b());
+        co_return co_await when_any(waiter(), looper());
     };
 
-    auto [winner] = run(combined());
-    EXPECT(winner);
-    EXPECT(winner->index() == 0U);
-    EXPECT(std::get<0>(*winner) == 1);
-    EXPECT(loop_count < 10);
+    auto [result] = run(combined());
+    ASSERT(result.has_value());
+    EXPECT(result->index() == 0U);
+    EXPECT(iterations == 1);
 }
 
-// Repro: when_all with a synchronously-completing child, two with_token
-// children waiting on the same event, and an external cancel arriving after
-// the event fires.  The sync child completes during the arm phase, and the
-// external cancel arrives while the inner when_any (inside with_token) has
-// already latched a Resume from its winning child.  async_node::cancel()
-// overwrites deferred to Cancel via defer_cancel(), but first_cancel_child
-// was never recorded — await_resume would index out of bounds.
-ZEST_CASE(all_sync_child_with_token_external_cancel) {
+ZEST_CASE(all_error_stops_a_looping_sibling_at_its_next_await) {
+    event ev;
+    int iterations = 0;
+    auto failing = [&]() -> task<int, error> {
+        co_await ev.wait();
+        co_await fail(error::connection_refused);
+    };
+    auto looper = [&]() -> task<int, error> {
+        for(int i = 0; i < 100; ++i) {
+            co_await yield();
+            iterations += 1;
+            ev.set();
+        }
+        co_return 2;
+    };
+    auto combined = [&]() -> task<result<std::tuple<int, int>>> {
+        co_return co_await when_all(failing(), looper());
+    };
+
+    auto [result] = run(combined());
+    ASSERT(result.has_value());
+    ASSERT(result->has_error());
+    EXPECT(result->error() == error::connection_refused);
+    EXPECT(iterations == 1);
+}
+
+// A token that fires once when_all has settled finds nothing left to cancel.
+ZEST_CASE(token_firing_after_all_settled_leaves_the_values) {
     event ev;
     cancellation_source source;
-
     auto request = [&]() -> task<int> {
         co_await ev.wait();
         co_return 42;
     };
-
-    auto driver = []() -> task<> {
+    auto done = []() -> task<> {
         co_return;
     };
-
-    auto combined = [&]() -> task<> {
-        auto result = co_await when_all{
-            with_token(request(), source.token()),
-            with_token(request(), source.token()),
-            driver(),
-        };
-
-        (void)result;
+    bool settled = false;
+    auto combined =
+        [&]() -> task<outcome<std::tuple<int, int, std::nullopt_t>, void, cancellation>> {
+        auto result = co_await when_all(with_token(request(), source.token()),
+                                        with_token(request(), source.token()),
+                                        done());
+        settled = true;
+        co_return result;
     };
-
-    auto trigger = [&]() -> task<> {
-        co_await sleep(1);
+    auto trigger = [&]() -> task<bool> {
         ev.set();
-        co_await sleep(1);
+        co_await yield();
+        bool settled_first = settled;
         source.cancel();
+        co_return settled_first;
     };
 
-    auto main_task = combined();
-    auto trigger_task = trigger();
-    run(main_task, trigger_task);
-    EXPECT(main_task->is_finished());
+    auto [result, settled_first] = run(combined(), trigger());
+    ASSERT(settled_first.has_value());
+    EXPECT(*settled_first);
+    ASSERT(result.has_value());
+    ASSERT(result->has_value());
+    EXPECT(std::get<0>(**result) == 42);
+    EXPECT(std::get<1>(**result) == 42);
 }
 
-// Same scenario as above but the token fires BEFORE the event, so
-// with_token's inner when_any is cancelled while still waiting for
-// the request.  This exercises first_cancel_child being set from the
-// cancelled token.wait() child even when deferred was already None.
-ZEST_CASE(all_sync_child_with_token_cancel_before_event) {
+// The three cases below are repros of a bookkeeping bug: when_all with a
+// child that completes while the aggregate is being armed, next to two
+// with_token children whose token and event fire in various orders, once
+// read the cancelling child's index before it was recorded.
+
+ZEST_CASE(token_firing_before_the_event_cancels_all) {
     event ev;
     cancellation_source source;
-    bool got_cancel = false;
-
     auto request = [&]() -> task<int> {
         co_await ev.wait();
         co_return 42;
     };
-
-    auto driver = []() -> task<> {
+    auto done = []() -> task<> {
+        co_return;
+    };
+    auto combined = [&]() -> task<bool> {
+        auto result = co_await when_all(with_token(request(), source.token()),
+                                        with_token(request(), source.token()),
+                                        done());
+        co_return result.is_cancelled();
+    };
+    auto trigger = [&]() -> task<> {
+        source.cancel();
         co_return;
     };
 
-    auto combined = [&]() -> task<> {
-        auto result = co_await when_all{
-            with_token(request(), source.token()),
-            with_token(request(), source.token()),
-            driver(),
-        };
-
-        got_cancel = result.is_cancelled();
-    };
-
-    auto trigger = [&]() -> task<> {
-        co_await sleep(1);
-        source.cancel();
-    };
-
-    auto main_task = combined();
-    auto trigger_task = trigger();
-    run(main_task, trigger_task);
-    EXPECT(main_task->is_finished());
-    EXPECT(got_cancel);
+    auto [result, drove] = run(combined(), trigger());
+    ASSERT(result.has_value());
+    EXPECT(*result);
 }
 
-// Minimal trigger for the first_cancel_child bookkeeping bug:
-// The driver fires the cancellation token AND the shared event during the
-// arm phase (source.cancel() first, then ev.set()).  Because the token's
-// internal event.set() is called before the shared event's set(), the
-// token-side deferred resumes appear before the event-side resumes in the
-// deferred queue.  Processing the token resumes first makes the inner
-// when_any (inside with_token) latch Deferred::Cancel.  Then when the
-// event-side resumes arrive, the second cancelled child must still update
-// first_cancel_child — otherwise tuple_visit_at_return hits index npos.
-ZEST_CASE(all_sync_driver_fires_cancel_then_event) {
+// The token fires before the event, both while the aggregate is armed, so
+// the token wake-ups are queued ahead of the requests'.
+ZEST_CASE(token_then_event_while_armed_cancels_all) {
     event ev;
     cancellation_source source;
-    bool got_cancel = false;
-
     auto request = [&]() -> task<int> {
         co_await ev.wait();
         co_return 42;
     };
-
-    auto driver = [&]() -> task<> {
+    auto fire = [&]() -> task<> {
         source.cancel();
         ev.set();
         co_return;
     };
-
-    auto combined = [&]() -> task<> {
-        auto result = co_await when_all{
-            with_token(request(), source.token()),
-            with_token(request(), source.token()),
-            driver(),
-        };
-
-        got_cancel = result.is_cancelled();
+    auto combined = [&]() -> task<bool> {
+        auto result = co_await when_all(with_token(request(), source.token()),
+                                        with_token(request(), source.token()),
+                                        fire());
+        co_return result.is_cancelled();
     };
 
-    auto main_task = combined();
-    run(main_task);
-    EXPECT(main_task->is_finished());
-    EXPECT(got_cancel);
+    auto [result] = run(combined());
+    ASSERT(result.has_value());
+    EXPECT(*result);
 }
 
-// Core repro for the first_cancel_child corruption bug.
-//
-// Trigger chain:
-//   1. Event fires → request_A completes and calls source.cancel()
-//   2. Inner when_any_A: winner = 0, deferred = Resume, cancel_siblings
-//   3. cancel_siblings cancels token_wait_A; the EventWaiter on the token's
-//      event was already Finished (from source.cancel()'s event.set()), so
-//      cancel is a no-op.  But resume_and_drain drains the token-side deferred
-//      resumes, which includes token_event_wait_B.
-//   4. token_event_wait_B → token_wait_B → Cancelled → inner when_any_B:
-//      Cancel → with_token_B Cancelled → outer when_all cancel_siblings →
-//      cancel with_token_A → inner when_any_A cancel() → defer_cancel()
-//      overwrites Resume → first_cancel_child was never set → CRASH.
-//
-// The sync driver completing during arm is essential: it means the outer
-// when_all has completed == 1 before the event fires, so after with_token_B
-// cancels, the outer when_all can cancel with_token_A.
-ZEST_CASE(sync_driver_event_fires_cancel_cascade) {
+// One request cancels the shared token as it completes; the cascade reaches
+// the other with_token child through the outer when_all.
+ZEST_CASE(child_firing_the_shared_token_cancels_all) {
     event ev;
-    event pending;
+    event never;
     cancellation_source source;
-    bool got_cancel = false;
-
-    auto request_a = [&]() -> task<int> {
+    auto cancels = [&]() -> task<int> {
         co_await ev.wait();
         source.cancel();
         co_return 42;
     };
-
-    auto request_b = [&]() -> task<int> {
-        co_await pending.wait();
+    auto waits = [&]() -> task<int> {
+        co_await never.wait();
         co_return 99;
     };
-
-    auto driver = []() -> task<> {
+    auto done = []() -> task<> {
+        co_return;
+    };
+    auto combined = [&]() -> task<bool> {
+        auto result = co_await when_all(with_token(waits(), source.token()),
+                                        with_token(cancels(), source.token()),
+                                        done());
+        co_return result.is_cancelled();
+    };
+    auto trigger = [&]() -> task<> {
+        ev.set();
         co_return;
     };
 
-    auto combined = [&]() -> task<> {
-        auto result = co_await when_all{
-            with_token(request_b(), source.token()),
-            with_token(request_a(), source.token()),
-            driver(),
-        };
-        got_cancel = result.is_cancelled();
-    };
-
-    auto trigger = [&]() -> task<> {
-        co_await sleep(1);
-        ev.set();
-    };
-
-    auto main_task = combined();
-    auto trigger_task = trigger();
-    run(main_task, trigger_task);
-    EXPECT(main_task->is_finished());
-    EXPECT(got_cancel);
+    auto [result, drove] = run(combined(), trigger());
+    ASSERT(result.has_value());
+    EXPECT(*result);
+    EXPECT(never.get_head() == nullptr);
 }
 
 };  // ZEST_SUITE(async_runtime_when_reentrancy)
+
+}  // namespace
 
 }  // namespace kota
