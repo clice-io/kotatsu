@@ -285,25 +285,18 @@ struct deserialize_visit<
                 value = dyn::Value(v);
                 return true;
             }
-            case meta::type_kind::int64:
-            case meta::type_kind::int8:
-            case meta::type_kind::int16:
-            case meta::type_kind::int32: {
+            case meta::type_kind::int64: {
                 std::int64_t v = 0;
                 KOTA_CODEC_TRY(vis.visit_int(v));
                 value = dyn::Value(v);
                 return true;
             }
-            case meta::type_kind::uint64:
-            case meta::type_kind::uint8:
-            case meta::type_kind::uint16:
-            case meta::type_kind::uint32: {
+            case meta::type_kind::uint64: {
                 std::uint64_t v = 0;
                 KOTA_CODEC_TRY(vis.visit_uint(v));
                 value = dyn::Value(v);
                 return true;
             }
-            case meta::type_kind::float32:
             case meta::type_kind::float64: {
                 double v = 0.0;
                 KOTA_CODEC_TRY(vis.visit_float(v));
@@ -316,9 +309,7 @@ struct deserialize_visit<
                 value = dyn::Value(std::move(v));
                 return true;
             }
-            case meta::type_kind::array:
-            case meta::type_kind::set:
-            case meta::type_kind::tuple: {
+            case meta::type_kind::array: {
                 dyn::Array arr;
                 KOTA_CODEC_TRY(vis.visit_seq([&](auto& ev) -> bool {
                     dyn::Value elem;
@@ -329,8 +320,7 @@ struct deserialize_visit<
                 value = dyn::Value(std::move(arr));
                 return true;
             }
-            case meta::type_kind::structure:
-            case meta::type_kind::map: {
+            case meta::type_kind::structure: {
                 dyn::Object obj;
                 KOTA_CODEC_TRY(vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
                     dyn::Value field_val;

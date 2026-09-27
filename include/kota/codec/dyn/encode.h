@@ -23,11 +23,6 @@
 
 namespace kota::codec::dyn {
 
-struct ValueWriter;
-struct StructWriter;
-struct SeqWriter;
-struct MapWriter;
-
 struct ValueWriter {
     dyn::Value& output;
     using error_type = rich_error;
@@ -91,16 +86,16 @@ struct ValueWriter {
     }
 
     template <typename T, typename Body>
-    inline bool visit_struct(const T&, Body&& body);
+    bool visit_struct(const T&, Body&& body);
 
     template <typename Container, typename Body>
-    inline bool visit_seq(const Container&, Body&& body);
+    bool visit_seq(const Container&, Body&& body);
 
     template <typename Container, typename Body>
-    inline bool visit_map(const Container&, Body&& body);
+    bool visit_map(const Container&, Body&& body);
 
     template <typename T, typename Body>
-    inline bool visit_tuple(const T&, Body&& body);
+    bool visit_tuple(const T&, Body&& body);
 };
 
 struct StructWriter {
@@ -108,21 +103,21 @@ struct StructWriter {
     using error_type = rich_error;
 
     template <typename F>
-    inline bool visit_field(std::size_t /*index*/, std::string_view name, F&& writer);
+    bool visit_field(std::size_t /*index*/, std::string_view name, F&& writer);
 };
 
 struct SeqWriter {
     dyn::Array& arr;
 
     template <typename F>
-    inline bool visit_element(F&& writer);
+    bool visit_element(F&& writer);
 };
 
 struct MapWriter {
     dyn::Object& obj;
 
     template <typename KF, typename VF>
-    inline bool visit_entry(KF&& key_fn, VF&& value_fn);
+    bool visit_entry(KF&& key_fn, VF&& value_fn);
 };
 
 template <typename T, typename Body>
