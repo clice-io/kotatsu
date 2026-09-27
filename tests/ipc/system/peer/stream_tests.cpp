@@ -92,8 +92,10 @@ ZEST_CASE(bincode_peers_talk_over_pipes) {
 }
 
 // A notification larger than the pipe holds, which the test reads only once,
-// is still being written when the peer closes. The write ends when the
-// stream closes, and run() ends as it does after any close().
+// is still being written when the peer closes. Where the stream can abort the
+// write it ends at once; a Windows pipe writes blocking, so there it ends
+// once the remote has read the rest. Either way run() ends, as it does after
+// any close().
 ZEST_CASE(close_during_a_write_ends_run) {
     auto output = pipe_ends(loop);
     auto input = pipe_ends(loop);
@@ -109,6 +111,8 @@ ZEST_CASE(close_during_a_write_ends_run) {
         std::array<char, 16> first{};
         co_await output->reader.read_some(first);
         peer.close();
+        auto rest = co_await test::read_to_end(output->reader);
+        static_cast<void>(rest);
         co_return sent.has_value();
     };
 
