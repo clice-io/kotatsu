@@ -119,22 +119,30 @@ inline void check_failure(const codec::rich_error& error, Failure failure) {
 
 }  // namespace detail
 
-/// make() survives encode and decode unchanged, and its decoded value encodes
-/// to the same document.
-template <typename Config = void, Backend B, typename Make>
-void roundtrip(const Kit<B>& kit, std::string name, Make make) {
-    kit.add(std::move(name), [make] {
+/// make() survives encode and decode unchanged, decoded over start(), and
+/// its decoded value encodes to the same document. A start other than the
+/// value shows a decoder that leaves part of its target alone where it should
+/// have written it.
+template <typename Config = void, Backend B, typename Make, typename Start>
+void roundtrip_over(const Kit<B>& kit, std::string name, Make make, Start start) {
+    kit.add(std::move(name), [make, start] {
         auto value = make();
         auto encoded = B::template encode<Config>(value);
         ASSERT(succeeds(encoded));
         ZEST_CONTEXT("{}: {}", B::name, B::render(*encoded));
-        decltype(value) decoded{};
+        decltype(value) decoded = start();
         ASSERT(succeeds(B::template decode<Config>(*encoded, decoded)));
         auto again = B::template encode<Config>(decoded);
         ASSERT(succeeds(again));
         EXPECT(*again == *encoded);
         EXPECT(meta::eq(decoded, value));
     });
+}
+
+/// roundtrip_over a value-initialized target.
+template <typename Config = void, Backend B, typename Make>
+void roundtrip(const Kit<B>& kit, std::string name, Make make) {
+    roundtrip_over<Config>(kit, std::move(name), make, [] { return decltype(make()){}; });
 }
 
 /// make() under Config encodes to the document plain() encodes to.
@@ -189,6 +197,26 @@ void read_fails(const Kit<B>& kit, std::string name, Plain plain, Failure failur
     });
 }
 
+/// The document plain() encodes to does not decode, under Config, over
+/// start(), and the failed decode leaves the target as start() made it.
+template <typename Config = void, Backend B, typename Plain, typename Start>
+void read_fails_over(const Kit<B>& kit,
+                     std::string name,
+                     Plain plain,
+                     Start start,
+                     Failure failure) {
+    kit.add(std::move(name), [plain, start, failure] {
+        auto document = B::encode(plain());
+        ASSERT(succeeds(document));
+        ZEST_CONTEXT("{}: {}", B::name, B::render(*document));
+        auto decoded = start();
+        auto status = B::template decode<Config>(*document, decoded);
+        ASSERT(!status);
+        detail::check_failure(status.error(), failure);
+        EXPECT(meta::eq(decoded, start()));
+    });
+}
+
 /// read_fails with the value in a field, as reads_in_field.
 template <typename V, typename Config = void, Backend B, typename Plain>
 void read_in_field_fails(const Kit<B>& kit, std::string name, Plain plain, Failure failure) {
@@ -196,6 +224,22 @@ void read_in_field_fails(const Kit<B>& kit, std::string name, Plain plain, Failu
         kit,
         std::move(name),
         [plain] { return Field<decltype(plain())>{plain()}; },
+        failure);
+}
+
+/// read_fails_over with the value in a field, as reads_in_field: the field
+/// starts as start() makes its value and keeps it.
+template <typename Config = void, Backend B, typename Plain, typename Start>
+void read_in_field_fails_over(const Kit<B>& kit,
+                              std::string name,
+                              Plain plain,
+                              Start start,
+                              Failure failure) {
+    read_fails_over<Config>(
+        kit,
+        std::move(name),
+        [plain] { return Field<decltype(plain())>{plain()}; },
+        [start] { return Field<decltype(start())>{start()}; },
         failure);
 }
 

@@ -50,6 +50,10 @@ created_at: 2026-09-26
             "y": -2,
         },
         "shared": "shared",
+        "nested": {
+            "x": 3,
+            "y": 4,
+        },
     },
     "absent": {
         "number": null,
@@ -58,6 +62,7 @@ created_at: 2026-09-26
         "table": null,
         "owned": null,
         "shared": null,
+        "nested": null,
     },
     "sequences": {
         "numbers": [

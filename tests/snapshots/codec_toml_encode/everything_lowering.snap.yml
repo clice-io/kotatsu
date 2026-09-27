@@ -51,6 +51,10 @@ number = 17
 shared = 'shared'
 text = 'text'
 
+    [present.nested]
+    x = 3
+    y = 4
+
     [present.owned]
     x = 1
     y = -2

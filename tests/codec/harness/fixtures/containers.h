@@ -26,10 +26,12 @@
 
 namespace kota::test {
 
-/// A variant with a smart-pointer alternative, compared by pointee.
+/// A variant with a smart-pointer alternative, compared by pointee. It
+/// starts on the other alternative, so a null that did not reach the pointer
+/// shows.
 template <typename Pointer, typename Other>
 struct PointerOr {
-    std::variant<Pointer, Other> value;
+    std::variant<Pointer, Other> value = Other{};
 
     bool operator==(const PointerOr& other) const {
         if(value.index() != other.value.index()) {
@@ -42,7 +44,7 @@ struct PointerOr {
     }
 };
 
-/// Every nullable kind, engaged or empty.
+/// Every nullable kind, and one nullable in another, engaged or empty.
 struct Nullables {
     std::optional<int> number;
     std::optional<std::string> text;
@@ -50,6 +52,7 @@ struct Nullables {
     std::optional<std::map<std::string, int>> table;
     std::unique_ptr<Point> owned;
     std::shared_ptr<std::string> shared;
+    std::optional<std::shared_ptr<Point>> nested;
 
     static Nullables engaged() {
         Point point{.x = 1, .y = -2};
@@ -60,13 +63,17 @@ struct Nullables {
             .table = std::map<std::string, int>{{"a", 1}},
             .owned = std::make_unique<Point>(point),
             .shared = std::make_shared<std::string>("shared"),
+            .nested = std::make_shared<Point>(Point{.x = 3, .y = 4}
+              ),
         };
     }
 
     bool operator==(const Nullables& other) const {
         return number == other.number && text == other.text && list == other.list &&
                table == other.table && same_pointee(owned, other.owned) &&
-               same_pointee(shared, other.shared);
+               same_pointee(shared, other.shared) &&
+               nested.has_value() == other.nested.has_value() &&
+               (!nested || same_pointee(*nested, *other.nested));
     }
 };
 

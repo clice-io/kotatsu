@@ -89,8 +89,11 @@ struct CirclePlain {
     double radius;
 };
 
-struct CircleTagLastPlain {
-    double radius;
+/// The tag after a data field in every backend's document: toml writes
+/// keys in order, and "height" comes before "kind".
+struct RectTagLastPlain {
+    double width;
+    double height;
     std::string kind;
 };
 
@@ -111,10 +114,12 @@ struct SegmentCamelPlain {
     int lineWidth;
 };
 
+/// `ext` and `adj` start on a number, so a monostate that did not reach
+/// them shows.
 struct TaggedHolder {
     std::string name;
-    ExternalShape ext;
-    AdjacentShape adj;
+    ExternalShape ext = ExternalShape{1};
+    AdjacentShape adj = AdjacentShape{1};
     InternalShape in;
 };
 

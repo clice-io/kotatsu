@@ -394,10 +394,11 @@ void attrs(const Kit<B>& kit) {
             [] { return AnnotatedStruct{.user_id = 7, .internal = "kept", .value = 2.5F}; });
 
         if constexpr(!B::caps.layout_computed) {
-            read_in_field_fails<Access, EnumStringConfig>(
+            read_in_field_fails_over<EnumStringConfig>(
                 kit,
                 "enum_repr_string_unknown_name_fails",
                 [] { return std::string("nope"); },
+                [] { return Access::full_control; },
                 {.message = "unknown enum value 'nope'", .path = "value"});
             // nan_repr::String only encodes: the names do not read back. One
             // name, so the path does not depend on the order of the keys.
@@ -406,14 +407,20 @@ void attrs(const Kit<B>& kit) {
                                                          [] { return std::string("NaN"); },
                                                          {.message = "", .path = "value"});
         }
-        read_fails<AccessGrant>(kit,
-                                "enum_string_unknown_name_fails",
-                                [] { return AccessGrantPlain{.level = "super_admin", .count = 1}; },
-                                {.message = "unknown enum value 'super_admin'", .path = "level"});
-        read_fails<AccessName>(kit,
-                               "enum_string_root_unknown_name_fails",
-                               [] { return std::string("super_admin"); },
-                               {.message = "unknown enum value 'super_admin'", .path = ""});
+        // A name that does not read leaves the enum as it was. `count` starts
+        // as the document has it, which toml reads before `level`.
+        read_fails_over(
+            kit,
+            "enum_string_unknown_name_fails",
+            [] { return AccessGrantPlain{.level = "super_admin", .count = 1}; },
+            [] { return AccessGrant{.level = Access::full_control, .count = 1}; },
+            {.message = "unknown enum value 'super_admin'", .path = "level"});
+        read_fails_over(
+            kit,
+            "enum_string_root_unknown_name_fails",
+            [] { return std::string("super_admin"); },
+            [] { return AccessName{Access::full_control}; },
+            {.message = "unknown enum value 'super_admin'", .path = ""});
 
         // Leaf errors are the backend's to word; their paths are the protocol's.
         using Texts = std::map<std::string, std::string>;

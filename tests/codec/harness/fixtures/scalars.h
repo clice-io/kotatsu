@@ -44,8 +44,8 @@ struct Scalars {
         };
     }
 
-    /// Each kind's lowest value. The character is the lowest printable ASCII
-    /// one: the text backends differ beyond ASCII, which their own tests pin.
+    /// Each kind's lowest value. A char's value is a codepoint from U+0000
+    /// to U+00FF on every backend, so the lowest char is U+0000.
     static Scalars lowest() {
         return {
             .b = false,
@@ -59,14 +59,14 @@ struct Scalars {
             .u64 = 0,
             .f32 = std::numeric_limits<float>::lowest(),
             .f64 = std::numeric_limits<double>::lowest(),
-            .c = ' ',
+            .c = '\0',
             .s = "",
         };
     }
 
     /// Each kind's highest value, except that uint64 stops at int64's maximum,
     /// the highest every backend carries; the root uint64 case takes the rest
-    /// of the range. The character is the highest printable ASCII one.
+    /// of the range. The highest char is U+00FF.
     static Scalars highest() {
         return {
             .b = true,
@@ -80,7 +80,7 @@ struct Scalars {
             .u64 = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()),
             .f32 = std::numeric_limits<float>::max(),
             .f64 = std::numeric_limits<double>::max(),
-            .c = '~',
+            .c = static_cast<char>(0xFF),
             .s = std::string(512, 'x'),
         };
     }

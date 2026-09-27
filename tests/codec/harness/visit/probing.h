@@ -170,11 +170,13 @@ void probing(const Kit<B>& kit) {
             return std::variant<std::vector<int>, std::map<std::string, int>>{
                 std::map<std::string, int>{{"a", 1}}};
         });
-    reads_in_field<std::variant<std::vector<int>, std::string>>(
+    // The sequence comes second, so an empty array that did not reach it
+    // would leave the first alternative.
+    reads_in_field<std::variant<std::string, std::vector<int>>>(
         kit,
         "empty_array_picks_sequence",
         [] { return std::vector<int>{}; },
-        [] { return std::variant<std::vector<int>, std::string>{std::vector<int>{}}; });
+        [] { return std::variant<std::string, std::vector<int>>{std::vector<int>{}}; });
     reads_in_field<std::variant<Point2d, std::map<std::string, int>>>(
         kit,
         "empty_object_skips_struct_with_required_fields",
@@ -309,6 +311,14 @@ void probing(const Kit<B>& kit) {
         "integer_input_skips_nested_double",
         [] { return 42; },
         [] { return std::variant<std::variant<double, std::string>, int>{42}; });
+    reads_in_field<std::variant<std::variant<double, std::string>, int>>(
+        kit,
+        "float_input_reaches_nested_double",
+        [] { return 3.14; },
+        [] {
+            return std::variant<std::variant<double, std::string>, int>{
+                std::variant<double, std::string>{3.14}};
+        });
     reads_in_field<std::variant<std::variant<double, int>, int>>(
         kit,
         "nested_exact_match_ties_with_outer",
@@ -423,6 +433,11 @@ void probing(const Kit<B>& kit) {
     read_in_field_fails<std::variant<int, std::string>>(kit,
                                                         "untagged_no_match_fails",
                                                         [] { return std::vector<int>{1}; },
+                                                        {.message = "", .path = "value"});
+    // A bool is neither an integer nor text: no pass widens it into one.
+    read_in_field_fails<std::variant<int, std::string>>(kit,
+                                                        "untagged_bool_no_match_fails",
+                                                        [] { return true; },
                                                         {.message = "", .path = "value"});
     read_in_field_fails<std::variant<int, std::string>>(kit,
                                                         "untagged_object_no_match_fails",

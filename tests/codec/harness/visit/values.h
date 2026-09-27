@@ -47,6 +47,9 @@ void values(const Kit<B>& kit) {
     roundtrip(kit, "double_roundtrip", [] { return -2.718281828459045; });
     roundtrip(kit, "float_roundtrip", [] { return 3.14F; });
     roundtrip(kit, "char_roundtrip", [] { return 'Z'; });
+    // A char's value, 0-255, is one codepoint, which a text backend writes
+    // in two bytes of UTF-8 above 0x7F.
+    roundtrip(kit, "char_above_ascii_roundtrip", [] { return static_cast<char>(0x80); });
     roundtrip(kit, "string_roundtrip", [] { return std::string("hello"); });
     roundtrip(kit, "enum_roundtrip", [] { return SignedEnum::neg; });
     roundtrip(kit, "unsigned_enum_roundtrip", [] { return UInt8Enum::c; });
@@ -59,7 +62,14 @@ void values(const Kit<B>& kit) {
     roundtrip(kit, "strings_roundtrip", [] { return Strings::typical(); });
     roundtrip(kit, "bytes_roundtrip", [] { return Bytes::typical(); });
     roundtrip(kit, "nullables_engaged_roundtrip", [] { return Nullables::engaged(); });
-    roundtrip(kit, "nullables_empty_roundtrip", [] { return Nullables{}; });
+    // Decoded over engaged values, so a null that did not reset its field
+    // shows. Where nulls do not travel, a null field is absent, and an
+    // absent field is left alone.
+    roundtrip_over(
+        kit,
+        "nullables_empty_roundtrip",
+        [] { return Nullables{}; },
+        [] { return B::caps.nested_nulls ? Nullables::engaged() : Nullables{}; });
     roundtrip(kit, "sequences_roundtrip", [] { return Sequences::typical(); });
     roundtrip(kit, "sets_roundtrip", [] { return Sets::typical(); });
     reads<std::unordered_set<int>>(
@@ -124,21 +134,51 @@ void values(const Kit<B>& kit) {
     roundtrip(kit, "empty_roundtrip", [] { return Empty{}; });
 
     roundtrip(kit, "everything_roundtrip", [] { return Everything::typical(); });
-    roundtrip(kit, "everything_default_roundtrip", [] { return Everything{}; });
+    // Decoded over a typical value, so a field the decode did not write
+    // shows; `present` holds nulls, which are absent where they do not
+    // travel.
+    roundtrip_over(
+        kit,
+        "everything_default_roundtrip",
+        [] { return Everything{}; },
+        [] {
+            auto start = Everything::typical();
+            if constexpr(!B::caps.nested_nulls) {
+                start.present = {};
+            }
+            return start;
+        });
     if constexpr(B::caps.untrusted_input) {
         hostile(kit, "hostile_everything", [] { return Everything::typical(); });
     }
 
     if constexpr(B::caps.self_describing) {
         // The leaf error is the backend's to word; its path is the protocol's.
-        read_in_field_fails<std::int8_t>(kit,
-                                         "int8_out_of_range_fails",
-                                         [] { return 300; },
-                                         {.message = "", .path = "value"});
-        read_in_field_fails<UInt8Enum>(kit,
-                                       "enum_out_of_range_fails",
-                                       [] { return 300; },
-                                       {.message = "", .path = "value"});
+        // A value that does not read leaves the target as it was.
+        read_in_field_fails_over(
+            kit,
+            "int8_out_of_range_fails",
+            [] { return 300; },
+            [] { return std::int8_t{5}; },
+            {.message = "", .path = "value"});
+        read_in_field_fails_over(
+            kit,
+            "enum_out_of_range_fails",
+            [] { return 300; },
+            [] { return UInt8Enum::c; },
+            {.message = "", .path = "value"});
+        read_in_field_fails_over(
+            kit,
+            "unsigned_enum_from_negative_fails",
+            [] { return -1; },
+            [] { return UInt8Enum::c; },
+            {.message = "", .path = "value"});
+        read_in_field_fails_over(
+            kit,
+            "enum_from_text_fails",
+            [] { return std::string("neg"); },
+            [] { return SignedEnum::neg; },
+            {.message = "", .path = "value"});
         read_in_field_fails<std::nullptr_t>(kit,
                                             "null_from_non_null_fails",
                                             [] { return 0; },

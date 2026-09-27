@@ -158,14 +158,26 @@ void variants(const Kit<B>& kit) {
             return std::vector<TaggedHolder>{number, text, point};
         }
     });
-    roundtrip(kit, "tagged_in_containers_roundtrip", [] {
-        return TaggedContainers{
-            .list = {AdjacentShape{1}, AdjacentShape{Point{.x = 1, .y = 2}}},
-            .by_name = {{"c", Circle{.radius = 1}}, {"r", Rect{.width = 2, .height = 3}}},
-            .maybe = ExternalShape{7},
-            .none = std::nullopt,
-        };
-    });
+    // `none` starts engaged where nulls travel, so a null that did not reset
+    // it shows.
+    roundtrip_over(
+        kit,
+        "tagged_in_containers_roundtrip",
+        [] {
+            return TaggedContainers{
+                .list = {AdjacentShape{1}, AdjacentShape{Point{.x = 1, .y = 2}}},
+                .by_name = {{"c", Circle{.radius = 1}}, {"r", Rect{.width = 2, .height = 3}}},
+                .maybe = ExternalShape{7},
+                .none = std::nullopt,
+            };
+        },
+        [] {
+            TaggedContainers start;
+            if constexpr(B::caps.nested_nulls) {
+                start.none = ExternalShape{1};
+            }
+            return start;
+        });
     roundtrip(kit, "tagged_nested_roundtrip", [] {
         return NestedTagged{
             TaggedWrapper{.id = "w", .inner = Point{.x = 1, .y = 2}}
@@ -229,6 +241,11 @@ void variants(const Kit<B>& kit) {
             {.message = "adjacently tagged variant: missing tag field", .path = "value"});
         read_in_field_fails<AdjacentShape>(
             kit,
+            "adjacent_empty_object_fails",
+            [] { return Empty{}; },
+            {.message = "adjacently tagged variant: missing tag field", .path = "value"});
+        read_in_field_fails<AdjacentShape>(
+            kit,
             "adjacent_missing_content_fails",
             [] {
                 return std::map<std::string, std::string>{
@@ -246,6 +263,16 @@ void variants(const Kit<B>& kit) {
             "adjacent_unknown_tag_after_content_fails",
             [] { return AdjacentContentFirst<int>{.c = 42, .t = "bad"}; },
             {.message = "unknown variant tag 'bad'", .path = "value"});
+        // A tag that is not text fails as the backend's type error.
+        read_in_field_fails<AdjacentShape>(kit,
+                                           "adjacent_tag_not_a_string_after_content_fails",
+                                           [] {
+                                               return Ints{
+                                                   {"c", 42},
+                                                   {"t", 1 }
+                                               };
+                                           },
+                                           {.message = "", .path = "value"});
         read_in_field_fails<AdjacentShape>(kit,
                                            "adjacent_not_an_object_fails",
                                            [] { return 42; },
@@ -291,13 +318,23 @@ void variants(const Kit<B>& kit) {
         reads_in_field<InternalShape>(
             kit,
             "internal_tag_after_fields_reads",
-            [] { return CircleTagLastPlain{.radius = 2.5, .kind = "circle"}; },
-            [] { return InternalShape(Circle{.radius = 2.5}); });
+            [] { return RectTagLastPlain{.width = 2, .height = 3, .kind = "rect"}; },
+            [] { return InternalShape(Rect{.width = 2, .height = 3}); });
         read_in_field_fails<InternalShape>(
             kit,
             "internal_unknown_tag_after_fields_fails",
-            [] { return CircleTagLastPlain{.radius = 2.5, .kind = "pentagon"}; },
+            [] { return RectTagLastPlain{.width = 2, .height = 3, .kind = "pentagon"}; },
             {.message = "unknown variant tag 'pentagon'", .path = "value"});
+        read_in_field_fails<InternalShape>(kit,
+                                           "internal_tag_not_a_string_after_fields_fails",
+                                           [] {
+                                               return std::map<std::string, double>{
+                                                   {"height", 3},
+                                                   {"kind",   1},
+                                                   {"width",  2}
+                                               };
+                                           },
+                                           {.message = "", .path = "value"});
         reads_in_field<InternalShape>(
             kit,
             "internal_extra_field_ignored",
