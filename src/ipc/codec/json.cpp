@@ -282,37 +282,52 @@ IncomingMessage JsonCodec::parse_message(std::string_view payload) {
         auto params =
             envelope->params.has_value() ? std::move(envelope->params->data) : std::string{};
         if(!has_id) {
-            return IncomingNotification{std::move(*envelope->method), std::move(params)};
+            return IncomingNotification{
+                .method = std::move(*envelope->method),
+                .params = std::move(params),
+            };
         }
         if(!id) {
-            return IncomingParseError{std::nullopt,
-                                      Error(protocol::ErrorCode::InvalidRequest,
-                                            "request id must be an integer or a string")};
+            return IncomingParseError{
+                .id = std::nullopt,
+                .error = Error(protocol::ErrorCode::InvalidRequest,
+                               "request id must be an integer or a string"),
+            };
         }
-        return IncomingRequest{std::move(*id), std::move(*envelope->method), std::move(params)};
+        return IncomingRequest{
+            .id = std::move(*id),
+            .method = std::move(*envelope->method),
+            .params = std::move(params),
+        };
     }
 
     const bool has_result = !envelope->result.empty();
     const bool has_error = envelope->error.has_value();
     if(!has_id && !has_result && !has_error) {
         return IncomingParseError{
-            std::nullopt,
-            Error(protocol::ErrorCode::InvalidRequest, "message must contain method or id")};
+            .id = std::nullopt,
+            .error =
+                Error(protocol::ErrorCode::InvalidRequest, "message must contain method or id"),
+        };
     }
     if(has_result == has_error) {
-        return IncomingErrorResponse{std::move(id),
-                                     Error(protocol::ErrorCode::InvalidRequest,
-                                           "response must contain exactly one of result or error")};
+        return IncomingErrorResponse{
+            .id = std::move(id),
+            .error = Error(protocol::ErrorCode::InvalidRequest,
+                           "response must contain exactly one of result or error"),
+        };
     }
     if(has_error) {
-        return IncomingErrorResponse{std::move(id), std::move(*envelope->error)};
+        return IncomingErrorResponse{.id = std::move(id), .error = std::move(*envelope->error)};
     }
     if(!id) {
-        return IncomingErrorResponse{std::nullopt,
-                                     Error(protocol::ErrorCode::InvalidRequest,
-                                           "response id must be an integer or a string")};
+        return IncomingErrorResponse{
+            .id = std::nullopt,
+            .error = Error(protocol::ErrorCode::InvalidRequest,
+                           "response id must be an integer or a string"),
+        };
     }
-    return IncomingResponse{std::move(*id), std::move(envelope->result.data)};
+    return IncomingResponse{.id = std::move(*id), .result = std::move(envelope->result.data)};
 }
 
 /// Members are read in order until the prefix ends, so a writer that puts a
