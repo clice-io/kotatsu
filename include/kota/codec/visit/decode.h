@@ -240,11 +240,7 @@ bool decode_field_value(Vis& vis, T& out) {
         auto& field_ref = *reinterpret_cast<raw_t*>(base + offset);
         using pred = typename tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
         if(meta::evaluate_skip_predicate<pred>(field_ref, false)) {
-            if constexpr(requires { vis.visit_skip(); }) {
-                return vis.visit_skip();
-            } else {
-                return true;
-            }
+            return vis.visit_skip();
         }
     }
 
@@ -402,7 +398,7 @@ bool fail_unusable_tag(Reader& tag) {
 
 /// Internal tagged: { "tag": "TagName", ...fields... }
 /// Two paths: data-driven, which looks the tag up before placing fields, and
-/// schema-driven (struct_reader).
+/// schema-driven, which reads the tag as the first field.
 template <typename Config, typename SpecAttr, typename Vis, typename... Ts>
 bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
     constexpr std::string_view tag_key = SpecAttr::value.tag;
@@ -475,20 +471,11 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
             return ok;
         }(std::index_sequence_for<Ts...>{});
     } else {
-        // Schema-driven: struct_reader with find_field / visit_field
         return vis.visit_struct(var, [&](auto& sv) -> bool {
             std::string tag_value;
-            if constexpr(requires {
-                             sv.find_field(std::string_view{}, [](auto&) -> bool { return true; });
-                         }) {
-                KOTA_CODEC_TRY(sv.find_field(tag_key, [&](auto& tv) -> bool {
-                    return tv.visit_str(tag_value);
-                }));
-            } else {
-                KOTA_CODEC_TRY(sv.visit_field(std::size_t(0), tag_key, [&](auto& tv) -> bool {
-                    return tv.visit_str(tag_value);
-                }));
-            }
+            KOTA_CODEC_TRY(sv.visit_field(std::size_t(0), tag_key, [&](auto& tv) -> bool {
+                return tv.visit_str(tag_value);
+            }));
 
             idx = find_tag_index(tag_value, names);
             if(idx >= npos) {
@@ -787,39 +774,18 @@ bool untagged_variant_pass(Vis& vis,
 
 template <typename Config, typename Vis, typename... Ts>
 bool decode_untagged_variant(Vis& vis, std::variant<Ts...>& out) {
-    if constexpr(has_try_read<Vis>) {
-        if constexpr(has_peek_kind<Vis>) {
-            // Exact-kind pass first, so an integer picks an int alternative
-            // over an earlier float one; the widening pass then admits the
-            // conversions the decoders themselves perform (visit_float from
-            // integer input). The last alternative runs once more on the real
-            // visitor so its error surfaces when nothing claims the value.
-            auto src_kind = vis.peek_kind();
-            constexpr std::size_t last = sizeof...(Ts) - 1;
-            return untagged_variant_pass<Config>(vis, out, src_kind, false) ||
-                   untagged_variant_pass<Config>(vis, out, src_kind, true) ||
-                   construct_and_visit<Config>(vis, out, last);
-        } else {
-            return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
-                [[maybe_unused]] constexpr std::size_t last = sizeof...(Ts) - 1;
-                return (([&] {
-                            if constexpr(Is == last) {
-                                return construct_and_visit<Config>(vis, out, Is);
-                            } else {
-                                return vis.try_read([&](auto& fork) -> bool {
-                                    return construct_and_visit<Config>(fork, out, Is);
-                                });
-                            }
-                        }()) ||
-                        ...);
-            }(std::index_sequence_for<Ts...>{});
-        }
-    } else {
-        static_assert(
-            has_try_read<Vis>,
-            "untagged variant decode requires a visitor with try_read or peek_kind support");
-        return false;
-    }
+    static_assert(has_try_read<Vis> && has_peek_kind<Vis>,
+                  "untagged variant decode requires a visitor with try_read and peek_kind");
+    // Exact-kind pass first, so an integer picks an int alternative over an
+    // earlier float one; the widening pass then admits the conversions the
+    // decoders themselves perform (visit_float from integer input). The last
+    // alternative runs once more on the real visitor so its error surfaces
+    // when nothing claims the value.
+    auto src_kind = vis.peek_kind();
+    constexpr std::size_t last = sizeof...(Ts) - 1;
+    return untagged_variant_pass<Config>(vis, out, src_kind, false) ||
+           untagged_variant_pass<Config>(vis, out, src_kind, true) ||
+           construct_and_visit<Config>(vis, out, last);
 }
 
 /// Decode a single struct field, applying behavior transforms if present.

@@ -213,17 +213,15 @@ bool encode_one_field(Vis& vis, const T& value) {
 
 template <typename Config, typename Vis, typename T>
 bool encode_value(Vis& vis, const T& value) {
-    using V = T;
-
-    if constexpr(requires(Vis& v, const V& val) {
-                     serialize_visit<Vis, V, Config>::visit(v, val);
+    if constexpr(requires(Vis& v, const T& val) {
+                     serialize_visit<Vis, T, Config>::visit(v, val);
                  }) {
-        static_assert(!meta::has_repr<V, meta::format_of_t<Vis>>,
+        static_assert(!meta::has_repr<T, meta::format_of_t<Vis>>,
                       "type has both a serialize_visit specialization and a meta::repr; "
                       "keep exactly one");
-        return serialize_visit<Vis, V, Config>::visit(vis, value);
-    } else if constexpr(meta::annotated_type<V>) {
-        using attrs_t = typename V::attrs;
+        return serialize_visit<Vis, T, Config>::visit(vis, value);
+    } else if constexpr(meta::annotated_type<T>) {
+        using attrs_t = typename T::attrs;
         auto&& inner = meta::annotated_value(value);
         using inner_t = std::remove_cvref_t<decltype(inner)>;
 
@@ -257,17 +255,17 @@ bool encode_value(Vis& vis, const T& value) {
         } else {
             return encode_value<Config>(vis, inner);
         }
-    } else if constexpr(meta::has_repr<V, meta::format_of_t<Vis>>) {
-        return detail::repr_encode<meta::repr_for<V, meta::format_of_t<Vis>>, Config>(vis, value);
+    } else if constexpr(meta::has_repr<T, meta::format_of_t<Vis>>) {
+        return detail::repr_encode<meta::repr_for<T, meta::format_of_t<Vis>>, Config>(vis, value);
     } else {
-        constexpr auto kind = meta::kind_of<V>();
+        constexpr auto kind = meta::kind_of<T>();
         using enum meta::type_kind;
 
         if constexpr(kind == boolean) {
             return vis.visit_bool(value);
-        } else if constexpr(meta::int_like<V>) {
+        } else if constexpr(meta::int_like<T>) {
             return vis.visit_int(value);
-        } else if constexpr(meta::uint_like<V>) {
+        } else if constexpr(meta::uint_like<T>) {
             return vis.visit_uint(value);
         } else if constexpr(kind == float32 || kind == float64) {
             if constexpr(Config::nan_repr != nan_repr::Passthrough) {
@@ -287,7 +285,7 @@ bool encode_value(Vis& vis, const T& value) {
                         return scoped_context<typename Vis::error_type>::fail(
                             rich_error("NaN or Infinity is not allowed"));
                     } else {
-                        static_assert(dependent_false<V>, "unknown nan_repr value");
+                        static_assert(dependent_false<T>, "unknown nan_repr value");
                     }
                 } else {
                     return vis.visit_float(value);
@@ -295,12 +293,12 @@ bool encode_value(Vis& vis, const T& value) {
             } else {
                 return vis.visit_float(value);
             }
-        } else if constexpr(meta::str_like<V> && std::is_array_v<V>) {
+        } else if constexpr(meta::str_like<T> && std::is_array_v<T>) {
             // A char array need not end in a null character, so its text
             // stops at the array's end.
-            std::string_view text(value, std::extent_v<V>);
+            std::string_view text(value, std::extent_v<T>);
             return vis.visit_str(text.substr(0, text.find('\0')));
-        } else if constexpr(meta::str_like<V>) {
+        } else if constexpr(meta::str_like<T>) {
             return vis.visit_str(value);
         } else if constexpr(kind == character) {
             return vis.visit_char(value);
@@ -309,7 +307,7 @@ bool encode_value(Vis& vis, const T& value) {
         } else if constexpr(kind == null) {
             return vis.visit_null();
         } else if constexpr(kind == optional || kind == pointer) {
-            if constexpr(is_specialization_of<std::weak_ptr, V>) {
+            if constexpr(is_specialization_of<std::weak_ptr, T>) {
                 auto sp = value.lock();
                 if constexpr(requires(Vis& v, const decltype(sp)& p) { v.visit_pointer(p); }) {
                     return vis.visit_pointer(sp);
@@ -320,7 +318,7 @@ bool encode_value(Vis& vis, const T& value) {
                     return vis.visit_null();
                 }
             } else if constexpr(kind == pointer &&
-                                requires(Vis& v, const V& p) { v.visit_pointer(p); }) {
+                                requires(Vis& v, const T& p) { v.visit_pointer(p); }) {
                 return vis.visit_pointer(value);
             } else {
                 if(value) {
@@ -343,7 +341,7 @@ bool encode_value(Vis& vis, const T& value) {
                 // side can never map back, so fail loudly instead.
                 auto raw = meta::enum_name(value);
                 if(raw.empty()) {
-                    using U = std::underlying_type_t<V>;
+                    using U = std::underlying_type_t<T>;
                     using wide =
                         std::conditional_t<std::is_signed_v<U>, std::int64_t, std::uint64_t>;
                     return scoped_context<typename Vis::error_type>::fail(
@@ -356,7 +354,7 @@ bool encode_value(Vis& vis, const T& value) {
             } else if constexpr(requires { vis.visit_enum(value); }) {
                 return vis.visit_enum(value);
             } else {
-                using U = std::underlying_type_t<V>;
+                using U = std::underlying_type_t<T>;
                 if constexpr(std::is_signed_v<U>) {
                     return vis.visit_int(static_cast<U>(value));
                 } else {
@@ -365,7 +363,7 @@ bool encode_value(Vis& vis, const T& value) {
             }
         } else if constexpr(kind == array || kind == set) {
             return vis.visit_seq(value, [&](auto& sv) -> bool {
-                using element_t = std::ranges::range_value_t<V>;
+                using element_t = std::ranges::range_value_t<T>;
                 std::size_t idx = 0;
                 for(const auto& elem: value) {
                     bool ok = sv.visit_element([&](auto& ev) -> bool {
@@ -406,7 +404,7 @@ bool encode_value(Vis& vis, const T& value) {
                         }
                         return ok;
                     }() && ...);
-                }(std::make_index_sequence<std::tuple_size_v<V>>{});
+                }(std::make_index_sequence<std::tuple_size_v<T>>{});
             });
         } else if constexpr(kind == map) {
             return vis.visit_map(value, [&](auto& mv) -> bool {
@@ -431,9 +429,9 @@ bool encode_value(Vis& vis, const T& value) {
                 return encode_struct_fields<Config>(sv, value);
             });
         } else if constexpr(kind == variant) {
-            if constexpr(is_expected_v<V>) {
+            if constexpr(is_expected_v<T>) {
                 if(value.has_value()) {
-                    if constexpr(!std::is_void_v<typename V::value_type>) {
+                    if constexpr(!std::is_void_v<typename T::value_type>) {
                         return encode_value<Config>(vis, *value);
                     } else {
                         return vis.visit_null();
@@ -463,15 +461,15 @@ bool encode_value(Vis& vis, const T& value) {
                     [&](const auto& alt) -> bool { return encode_value<Config>(vis, alt); },
                     value);
             }
-        } else if constexpr(std::is_pointer_v<V> &&
-                            requires(Vis& v, const V& p) { v.visit_pointer(p); }) {
+        } else if constexpr(std::is_pointer_v<T> &&
+                            requires(Vis& v, const T& p) { v.visit_pointer(p); }) {
             return vis.visit_pointer(value);
-        } else if constexpr(requires(Vis& v, const V& x) { v.visit_opaque(x); }) {
+        } else if constexpr(requires(Vis& v, const T& x) { v.visit_opaque(x); }) {
             // Only a backend that can show any value, like the debug one,
             // takes a type the schema knows nothing about.
             return vis.visit_opaque(value);
         } else {
-            static_assert(dependent_false<V>,
+            static_assert(dependent_false<T>,
                           "cannot serialize this type; specialize serialize_visit to add support");
             return false;
         }
