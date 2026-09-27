@@ -153,10 +153,10 @@ src/
 
 tests/
   <module>/    # Tests per module, mirroring include/kota/<module>/:
-               #   unit/ in memory, system/ touching the OS, harness/ helpers
+               #   unit/ in memory, system/ touching the OS, harness/ helpers,
+               #   integration/ programs over real protocols (TypeScript)
   fixtures/    # Types shared by several modules' tests
   snapshots/   # Snapshot files, one directory per suite
-  integration/ # Process-level IPC / LSP integration tests
 
 examples/
   async_basics/    # Introductory async runtime walkthroughs

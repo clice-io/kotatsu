@@ -13,7 +13,7 @@ A test's level is decided by what it touches, not by the module it tests.
 | ----------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------- |
 | unit        | the process's memory; an event loop, its timers and in-memory transports count as memory               | `tests/<module>/unit/` → `unit_tests`     |
 | system      | the operating system: files, processes, sockets, pipes, signals, threads and thread pools, environment | `tests/<module>/system/` → `system_tests` |
-| integration | several programs talking over real protocols, black box                                                | `tests/integration/`                      |
+| integration | several programs talking over real protocols, black box                                                | `tests/<module>/integration/` → ctest     |
 
 - The moment a test opens a file, spawns a process, binds a socket, installs a signal handler or starts a thread, it is a system test. zest's own I/O does not count: printing, and reading or writing snapshots through its snapshot macros, are fine in a unit test.
 - Compile-time facts that must hold are `STATIC_EXPECT` in a unit case.
@@ -28,11 +28,13 @@ Tests are grouped by module, then by level. `tests/<module>/` mirrors `include/k
 tests/<module>/
   unit/<path mirroring the headers>/...
   system/...                  same shape
-  harness/*.h                 helpers for this module's tests and the modules above
+  integration/*.test.ts       integration tests, TypeScript
+  integration/drivers/*.cpp   the programs they spawn, one per file
+  harness/*.h, harness/*.ts   helpers for this module's tests and the modules above
   CMakeLists.txt              kota_add_module_tests(LIBS <the module's libraries>)
+                              kota_add_integration_tests(LIBS ...) if it has integration/
 tests/fixtures/               types shared by several modules' tests
 tests/snapshots/<suite>/      snapshot files
-tests/integration/            cross-module tests with their own toolchain
 ```
 
 - The tests of header `<module>/a/b.h` are `unit/a/b_tests.cpp`. A large header's tests split by aspect, into `unit/a/b_<aspect>_tests.cpp` or into a directory `unit/a/b/<aspect>_tests.cpp`.
@@ -53,6 +55,16 @@ Rules:
 - A module's tests include only what their module depends on, plus the harnesses of those modules: `#include "async/harness/loop_fixture.h"`, rooted at `tests/`. Shared fixtures in `tests/fixtures/` follow the same rule for the lowest module that uses them. The build does not enforce this; review does.
 - Tests use the public API: `include/kota/`, never a header from `src/` or anything from `examples/`.
 - Behaviour defined once in the library is tested once. Backends of one protocol share one suite through the module's harness; a backend's own files test only what is specific to that backend.
+
+## Integration tests
+
+- An integration test is a TypeScript file on node's test runner (`node:test`, `node:assert/strict`), run by node directly (type stripping, no build step) and type-checked by `pixi run typecheck`. Its npm packages are the root `package.json`'s devDependencies (`vscode-jsonrpc`, `vscode-languageserver-protocol`), installed by `pixi run npm-ci`.
+- A driver is a C++ program under test, `integration/drivers/<name>.cpp`, linked against the module's libraries by `kota_add_integration_tests`. ctest passes its path in `KOTA_<NAME>`; a test whose driver is unset or missing fails, it never skips.
+- All of a module's `integration/*.test.ts` are one ctest test, `<module>_integration` (label `integration`); it needs nothing from zest and runs beside the other stages.
+- ipc's harness (`ipc/harness/driver.ts`) spawns a driver and talks to it over its stdio, through a vscode-jsonrpc connection or on the raw wire (`raw.ts`). `Driver.spawn` takes the test's context: a driver the test did not finish with is killed, and its stderr printed, when the test ends.
+- Every test ends with `expectExit(code)`, which checks the exit code and fails on a sanitizer report in the driver's stderr.
+- Cases are named like zest cases: `snake_case`, shaped `<subject>_<behaviour>`, `_fails` for an error. A file's comment says what its cases have in common.
+- No sleeps: wait for the message or the exit that says it happened. The runner's timeout (`--test-timeout` in `kota_add_integration_tests`) bounds each test, driver included.
 
 ## Trust
 
@@ -105,4 +117,10 @@ A test in a bootstrap suite must not judge itself with what it tests: meta's com
 
 ```bash
 ./build/debug/unit_tests --snapshot-dir=tests/snapshots --test-filter='codec_json_*'
+```
+
+`pixi run integration-test [preset]` runs only the integration tests. To run some by hand, do what ctest does, from the repo root with the driver's path set, and filter by name:
+
+```bash
+KOTA_LSP_STUB_SERVER=build/debug/lsp_stub_server pixi run node --test --test-name-pattern='^hover_' tests/ipc/lsp/integration/requests.test.ts
 ```

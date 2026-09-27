@@ -19,12 +19,14 @@ CI workflow — never use xmake for local development.
 
 ## Testing
 
-- Tests live in `tests/<module>/`, split by level into `unit_tests` and
-  `system_tests` (the test-style skill). `pixi run test [preset]` runs them
-  all through ctest, which handles the snapshot dir. Running a test binary by
-  hand — e.g. to pass `--test-filter` — must be done from the repo root with
+- Tests live in `tests/<module>/`, split by level into `unit_tests`,
+  `system_tests` and TypeScript integration tests (the test-style skill).
+  `pixi run test [preset]` runs them all through ctest, which handles the
+  snapshot dir and the drivers' paths. Running a test binary by hand — e.g. to
+  pass `--test-filter` — must be done from the repo root with
   `--snapshot-dir=tests/snapshots`, or snapshot tests fail spuriously.
-- Integration tests: `pixi run integration-test`.
+- Integration tests alone: `pixi run integration-test [preset]`
+  (`ctest -L integration`).
 
 ## Skills
 
