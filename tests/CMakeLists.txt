@@ -72,8 +72,13 @@ if(kota_node_problem)
 endif()
 
 # A plain Debug build, unoptimized and without sanitizers, compiles the
-# largest translation units fastest and in the least memory.
-if(CMAKE_BUILD_TYPE STREQUAL "Debug"
+# largest translation units fastest and in the least memory. A multi-config
+# generator picks the configuration at build time, which configure cannot
+# see, so it is never taken for one.
+get_property(kota_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+string(TOLOWER "${CMAKE_BUILD_TYPE}" kota_build_type)
+if(NOT kota_multi_config
+    AND kota_build_type STREQUAL "debug"
     AND NOT (KOTA_SANITIZE_ADDRESS OR KOTA_SANITIZE_MEMORY OR KOTA_SANITIZE_THREAD OR KOTA_SANITIZE_UNDEFINED))
     set(kota_plain_debug ON)
 else()
@@ -95,11 +100,15 @@ function(kota_add_integration_tests)
     endif()
 
     set(left_out "")
-    if(NOT kota_plain_debug)
-        foreach(file IN LISTS arg_DEBUG_ONLY)
-            list(APPEND left_out "${CMAKE_CURRENT_SOURCE_DIR}/integration/${file}")
-        endforeach()
-    endif()
+    foreach(file IN LISTS arg_DEBUG_ONLY)
+        set(path "${CMAKE_CURRENT_SOURCE_DIR}/integration/${file}")
+        if(NOT EXISTS "${path}")
+            message(FATAL_ERROR "DEBUG_ONLY names ${path}, which does not exist.")
+        endif()
+        if(NOT kota_plain_debug)
+            list(APPEND left_out "${path}")
+        endif()
+    endforeach()
 
     set(programs "")
     file(GLOB drivers CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/integration/drivers/*.cpp")
@@ -135,6 +144,10 @@ function(kota_add_integration_tests)
     endif()
     if(left_out)
         list(REMOVE_ITEM tests ${left_out})
+    endif()
+    # node --test given no file would run every *.test.ts it finds.
+    if(NOT tests)
+        return()
     endif()
     # A test that hangs fails at --test-timeout, its drivers killed; TIMEOUT
     # only catches the runner itself hanging.
