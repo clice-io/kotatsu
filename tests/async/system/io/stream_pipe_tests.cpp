@@ -243,13 +243,13 @@ ZEST_CASE(read_after_draining_a_full_buffer_waits_for_data) {
 }
 #endif
 
-// The reader holds its first chunk until the buffer is full, then drains it
-// all: reading stops while the buffer is full and picks up once it is
-// drained, losing nothing of four buffers' worth.
+// The reader looks at what arrives without consuming it until the buffer is
+// full, then drains it all: reading stops while the buffer is full and picks
+// up once it is drained, losing nothing of a MiB.
 ZEST_CASE(full_buffer_holds_the_rest_back_until_drained) {
     auto ends = pipe_ends(loop);
     ASSERT(ends.has_value());
-    std::string sent(256 * 1024, '\0');
+    std::string sent(1024 * 1024, '\0');
     for(std::size_t i = 0; i < sent.size(); ++i) {
         sent[i] = static_cast<char>('a' + i % 26);
     }
@@ -349,19 +349,22 @@ ZEST_CASE(overlapping_writes_arrive_in_order) {
 }
 
 // libuv cannot take a write back: a cancelled write still goes out, and its
-// task ends cancelled once it has.
+// task ends cancelled once it has. The cancel reaches the write before
+// libuv reports it written, on a later loop turn.
 ZEST_CASE(cancelled_write_still_delivers) {
     auto ends = pipe_ends(loop);
     ASSERT(ends.has_value());
-    auto cancel_at_once = [&]() -> task<std::size_t, error> {
-        auto first = co_await or_fail(
-            co_await when_any(ends->writer.write(std::string_view("kept")), finished()));
-        co_return first.index();
+    cancellation_source source;
+    auto cancel_it = [&]() -> task<> {
+        source.cancel();
+        co_return;
     };
 
-    auto [raced, received] = run(cancel_at_once(), ends->reader.read());
-    ASSERT(raced.has_value());
-    EXPECT(*raced == 1U);
+    auto [written, cancelled, received] =
+        run(with_token(ends->writer.write(std::string_view("kept")), source.token()),
+            cancel_it(),
+            ends->reader.read());
+    EXPECT(written.is_cancelled());
     ASSERT(received.has_value());
     EXPECT(*received == "kept");
 }

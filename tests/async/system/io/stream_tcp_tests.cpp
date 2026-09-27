@@ -1,5 +1,6 @@
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -269,6 +270,33 @@ ZEST_CASE(shutdown_lets_the_peer_read_to_the_end_and_answer) {
     EXPECT(*served == "firstsecond");
     ASSERT(answer.has_value());
     EXPECT(*answer == "firstsecond-answered");
+}
+
+// The server never reads, so more than the loopback buffers hold is still
+// going out when the client's stream closes: libuv ends the write, which
+// fails it with operation_aborted rather than cancelling its task.
+ZEST_CASE(write_ended_by_closing_its_stream_fails) {
+    auto listener = listen_loopback(loop);
+    ASSERT(listener.has_value());
+    const std::string large(32 * 1024 * 1024, 'x');
+    std::optional<tcp> connection;
+    event connected;
+    auto serve = [&]() -> task<void, error> {
+        auto accepted = co_await listener->acceptor.accept().or_fail();
+        co_await connected.wait();
+        co_await yield();
+        connection.reset();
+    };
+    auto client = [&]() -> task<void, error> {
+        connection = co_await tcp::connect("127.0.0.1", listener->port).or_fail();
+        connected.set();
+        co_await connection->write(large).or_fail();
+    };
+
+    auto [served, written] = run(serve(), client());
+    EXPECT(served.has_value());
+    ASSERT(written.has_error());
+    EXPECT(written.error() == error::operation_aborted);
 }
 
 // A second shutdown, even one made while the first is still pending, fails,
