@@ -3,8 +3,10 @@
 #include <utility>
 #include <vector>
 
+#include "ipc/harness/codec_bincode.h"
 #include "ipc/harness/codec_json.h"
 #include "ipc/harness/peer_fixture.h"
+#include "kota/ipc/codec/bincode.h"
 #include "kota/ipc/codec/json.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
@@ -116,6 +118,34 @@ ZEST_CASE(string_token_is_sent_as_a_string) {
 }
 
 };  // ZEST_SUITE(ipc_lsp_progress)
+
+// A binary codec writes the notification as the ProgressParams it is, so the
+// remote reads it as one.
+ZEST_SUITE(ipc_lsp_progress_bincode, test::PeerFixture<test::BincodeAdapter>) {
+
+ZEST_CASE(progress_reads_as_progress_params) {
+    ProgressReporter reporter(peer, protocol::ProgressToken(7));
+    auto report = [&]() -> task<> {
+        EXPECT(reporter.begin("Indexing", {}, protocol::uinteger(10)).has_value());
+        remote.end_input();
+        co_return;
+    };
+
+    auto [ran, reported] = run(peer.run(), report());
+    EXPECT(ran.has_value());
+    const auto& written = this->written();
+    ASSERT(written.size() == 1U);
+    EXPECT(written[0].method == "$/progress");
+    auto params = test::BincodeAdapter::decode<protocol::ProgressParams>(written[0].body);
+    ASSERT(params.has_value());
+    EXPECT(params->token == protocol::ProgressToken(7));
+    auto begin = codec::dyn::from_dyn<protocol::WorkDoneProgressBegin, lsp_config>(params->value);
+    ASSERT(begin.has_value());
+    EXPECT(begin->title == "Indexing");
+    EXPECT(begin->percentage == std::optional<protocol::uinteger>(10U));
+}
+
+};  // ZEST_SUITE(ipc_lsp_progress_bincode)
 
 }  // namespace
 

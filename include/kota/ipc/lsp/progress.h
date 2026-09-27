@@ -4,7 +4,9 @@
 #include <string>
 #include <utility>
 
+#include "kota/ipc/codec/json.h"
 #include "kota/ipc/peer.h"
+#include "kota/codec/dyn/dyn.h"
 #include "kota/ipc/lsp/protocol.h"
 
 namespace kota::ipc::lsp {
@@ -57,19 +59,18 @@ public:
     protocol::ProgressToken token;
 
 private:
-    /// ProgressParams with its value typed, which the peer's codec writes as
-    /// the LSPAny ProgressParams holds.
+    /// Sends ProgressParams, its LSPAny the typed `value` made dynamic, with
+    /// LSP's member names: every codec then writes the ProgressParams a
+    /// receiver reads, a binary one included.
     template <typename Value>
-    struct Progress {
-        protocol::ProgressToken token;
-        Value value;
-    };
-
-    template <typename Value>
-    Result<void> send_progress(Value value) {
+    Result<void> send_progress(const Value& value) {
+        auto any = codec::dyn::to_dyn<lsp_config>(value);
+        if(!any) {
+            return outcome_error(
+                Error(protocol::ErrorCode::InternalError, any.error().to_string()));
+        }
         return peer.send_notification(
-            protocol::NotificationTraits<protocol::ProgressParams>::method,
-            Progress<Value>{.token = token, .value = std::move(value)});
+            protocol::ProgressParams{.token = token, .value = std::move(*any)});
     }
 };
 
