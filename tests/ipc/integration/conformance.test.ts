@@ -217,42 +217,32 @@ async function end(driver: Driver, session: Session): Promise<void> {
   await driver.expectExit(0);
 }
 
-test(
-  "close_output_ends_the_output",
-  {
-    skip: "N10: close_output on stdio leaves fd 1 open, since libuv never closes fds 0 to 2",
-  },
-  async (t) => {
-    const [driver, session] = await wired(t);
-    const first = session.expect(1);
-    session.wire.send(echo(1));
-    assert.deepEqual((await first).result, [1]);
-    session.notify("test/closeOutput");
-    await session.ended;
-    await end(driver, session);
-  },
-);
+test("close_output_ends_the_output", async (t) => {
+  const [driver, session] = await wired(t);
+  const first = session.expect(1);
+  session.wire.send(echo(1));
+  assert.deepEqual((await first).result, [1]);
+  session.notify("test/closeOutput");
+  await session.ended;
+  await end(driver, session);
+});
 
-test(
-  "answers_queued_before_close_output_are_delivered",
-  { skip: "N4, N10: close_output drops what is queued, and leaves fd 1 open" },
-  async (t) => {
-    const [driver, session] = await wired(t);
-    const answers = [1, 2, 3].map((id) => session.expect(id));
-    await session.wire.write(
-      Buffer.concat([
-        ...[1, 2, 3].map((id) => frame(echo(id))),
-        frame({ jsonrpc: "2.0", method: "test/closeOutput" }),
-      ]),
-    );
-    assert.deepEqual(
-      (await Promise.all(answers)).map((answer) => answer.result),
-      [[1], [2], [3]],
-    );
-    await session.ended;
-    await end(driver, session);
-  },
-);
+test("answers_queued_before_close_output_are_delivered", async (t) => {
+  const [driver, session] = await wired(t);
+  const answers = [1, 2, 3].map((id) => session.expect(id));
+  await session.wire.write(
+    Buffer.concat([
+      ...[1, 2, 3].map((id) => frame(echo(id))),
+      frame({ jsonrpc: "2.0", method: "test/closeOutput" }),
+    ]),
+  );
+  assert.deepEqual(
+    (await Promise.all(answers)).map((answer) => answer.result),
+    [[1], [2], [3]],
+  );
+  await session.ended;
+  await end(driver, session);
+});
 
 test("bad_json_answers_parse_error_with_null_id", async (t) => {
   const [driver, session] = await wired(t);

@@ -1,13 +1,48 @@
 #include "kota/ipc/transport.h"
 
+#include <cerrno>
+#include <fcntl.h>
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
+
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace kota::ipc {
 
 namespace {
+
+/// Points the descriptor `fd` at the null device, which lets go of what it
+/// referred to.
+Result<void> point_at_null_device(int fd) {
+#ifdef _WIN32
+    const int null = _open("NUL", _O_WRONLY);
+#else
+    const int null = ::open("/dev/null", O_WRONLY);
+#endif
+    if(null < 0) {
+        return outcome_error(
+            Error("opening the null device failed: " + std::generic_category().message(errno)));
+    }
+#ifdef _WIN32
+    const int replaced = _dup2(null, fd);
+    _close(null);
+#else
+    const int replaced = ::dup2(null, fd);
+    ::close(null);
+#endif
+    if(replaced < 0) {
+        return outcome_error(
+            Error("releasing stdout failed: " + std::generic_category().message(errno)));
+    }
+    return {};
+}
 
 /// `opened` as a stream, or its error as an ipc error.
 template <typename Handle>
@@ -50,7 +85,10 @@ Result<std::unique_ptr<StreamTransport>> StreamTransport::open_stdio(event_loop&
         return outcome_error(output.error());
     }
 
-    return std::make_unique<StreamTransport>(std::move(*input), std::move(*output), max_payload);
+    auto transport =
+        std::make_unique<StreamTransport>(std::move(*input), std::move(*output), max_payload);
+    transport->over_stdout = true;
+    return transport;
 }
 
 task<std::unique_ptr<StreamTransport>, Error>
@@ -100,16 +138,28 @@ Result<void> StreamTransport::close_output() {
     }
 
     write_stream = stream{};
-    return {};
+    return release_stdout();
 }
 
 Result<void> StreamTransport::close() {
     read_stream.stop();
     read_stream = stream{};
-    if(!shared_stream) {
-        write_stream = stream{};
+    if(shared_stream) {
+        return {};
     }
-    return {};
+    write_stream = stream{};
+    return release_stdout();
+}
+
+// libuv never closes fds 0 to 2 when it closes a stream over one (on Windows
+// it closes a duplicate of the handle), so the pipe or file behind stdout
+// stays open until fd 1 lets go of it.
+Result<void> StreamTransport::release_stdout() {
+    if(!over_stdout) {
+        return {};
+    }
+    over_stdout = false;
+    return point_at_null_device(1);
 }
 
 }  // namespace kota::ipc

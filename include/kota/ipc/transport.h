@@ -52,15 +52,23 @@ public:
 
     /// The remote reads the end of its input. A transport over one stream
     /// (connect_tcp) cannot close only one direction of it: there this is
-    /// close(), and the input ends too.
+    /// close(), and the input ends too. Over stdio (open_stdio), the process's
+    /// stdout is pointed at the null device, as closing a stream over it
+    /// leaves it open; the remote reads the end once nothing else holds it,
+    /// such as a child that inherited it or a stderr sharing it.
     Result<void> close_output() override;
 
     Result<void> close() override;
 
 private:
+    /// Points stdout at the null device, once, if the output is stdout.
+    Result<void> release_stdout();
+
     stream read_stream;
     stream write_stream;
     bool shared_stream = false;
+    /// The output is the process's stdout (open_stdio).
+    bool over_stdout = false;
     FrameParser parser;
 };
 
