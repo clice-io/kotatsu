@@ -75,25 +75,13 @@ struct default_config :
 /// Such backends cannot carry a meta::dynamic repr: there is no layout to
 /// compute.
 template <typename Vis>
-constexpr bool is_layout_computed() {
-    if constexpr(requires { Vis::layout_computed; }) {
-        return Vis::layout_computed;
-    } else {
-        return false;
-    }
-}
+concept layout_computed = requires { requires Vis::layout_computed; };
 
 /// True when the visitor writes a struct's fields back to back with nothing
 /// marking which are present (bincode). It cannot leave a field out, so
 /// skip_if does not apply: every field is written, and decode reads it back.
 template <typename Vis>
-constexpr bool writes_every_field() {
-    if constexpr(requires { Vis::writes_every_field; }) {
-        return Vis::writes_every_field;
-    } else {
-        return false;
-    }
-}
+concept writes_every_field = requires { requires Vis::writes_every_field; };
 
 /// Config > Vis > true. Determines text vs binary serialization strategy for user-defined types.
 template <typename Config, typename Vis>

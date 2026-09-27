@@ -12,6 +12,7 @@
 
 #include "config.h"
 #include "context.h"
+#include "dispatch.h"
 #include "kota/support/type_list.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
@@ -53,7 +54,7 @@ template <typename Repr, typename Config, typename Vis, typename V>
 bool repr_encode(Vis& vis, const V& value) {
     using declared_t = meta::declared_repr_t<Repr>;
     if constexpr(std::is_same_v<declared_t, meta::dynamic>) {
-        static_assert(!is_layout_computed<Vis>(),
+        static_assert(!layout_computed<Vis>,
                       "this backend computes the output layout statically and cannot encode a "
                       "meta::dynamic repr");
     }
@@ -167,46 +168,24 @@ bool encode_with_attrs(Vis& vis, const T& value) {
 /// Encode a single struct field, applying behavior transforms if present.
 template <typename Config, std::size_t I, typename Vis, typename T>
 bool encode_one_field(Vis& vis, const T& value) {
-    using schema = meta::virtual_schema<T, Config>;
-    using slots = typename schema::slots;
-    using slot_t = type_list_element_t<I, slots>;
-    using raw_t = typename slot_t::raw_type;
-    using attrs_t = typename slot_t::attrs;
-
-    constexpr std::size_t offset = schema::fields[I].offset;
-    const auto* base = reinterpret_cast<const std::byte*>(std::addressof(value));
-    const auto& field_ref = *reinterpret_cast<const raw_t*>(base + offset);
+    using field = FieldAt<Config, I, T>;
+    const auto& field_ref = field::of(value);
 
     // A visitor that writes every field has nothing to mark one absent, so
     // skip_if omits fields only elsewhere.
-    if constexpr(!writes_every_field<Vis>()) {
-        if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
-            using pred = typename tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
-            if(meta::evaluate_skip_predicate<pred>(field_ref, true)) {
-                return true;
-            }
-        } else if constexpr(constexpr auto when = meta::spec_of<attrs_t>.skip_if;
-                            when != meta::skip_when::never) {
-            if(meta::evaluate_skip_when<when>(field_ref, true)) {
-                return true;
-            }
+    if constexpr(!writes_every_field<Vis>) {
+        if(skipped<typename field::attrs>(field_ref, true)) {
+            return true;
         }
     }
 
-    constexpr auto idx = std::integral_constant<std::size_t, I>{};
-    std::string_view name = schema::fields[I].name;
-
-    bool ok = vis.visit_field(idx, name, [&](auto& fv) -> bool {
-        return encode_with_attrs<Config, attrs_t>(fv, field_ref);
-    });
-
-    if constexpr(Config::detailed_error) {
-        if(!ok) {
-            if(auto* e = scoped_context<typename Vis::error_type>::try_current())
-                e->prepend_field(name);
-        }
-    }
-    return ok;
+    bool ok =
+        vis.visit_field(std::integral_constant<std::size_t, I>{},
+                        field::name,
+                        [&](auto& fv) -> bool {
+                            return encode_with_attrs<Config, typename field::attrs>(fv, field_ref);
+                        });
+    return trace_path<Config>(ok, field::name);
 }
 
 }  // namespace detail
@@ -242,25 +221,20 @@ bool encode_value(Vis& vis, const T& value) {
                 // double's range lands in the document as infinity and must
                 // take the non-finite path here.
                 double narrowed = static_cast<double>(value);
-                if(std::isnan(narrowed) || std::isinf(narrowed)) {
+                if(!std::isfinite(narrowed)) {
                     if constexpr(Config::nan_repr == nan_repr::Null) {
                         return vis.visit_null();
                     } else if constexpr(Config::nan_repr == nan_repr::String) {
                         return vis.visit_str(std::isnan(narrowed) ? "NaN"
                                              : narrowed > 0       ? "Infinity"
                                                                   : "-Infinity");
-                    } else if constexpr(Config::nan_repr == nan_repr::Error) {
-                        return scoped_context<typename Vis::error_type>::fail(
-                            rich_error("NaN or Infinity is not allowed"));
                     } else {
-                        static_assert(dependent_false<T>, "unknown nan_repr value");
+                        return scoped_context<rich_error>::fail(
+                            rich_error("NaN or Infinity is not allowed"));
                     }
-                } else {
-                    return vis.visit_float(value);
                 }
-            } else {
-                return vis.visit_float(value);
             }
+            return vis.visit_float(value);
         } else if constexpr(meta::str_like<T> && std::is_array_v<T>) {
             // A char array need not end in a null character, so its text
             // stops at the array's end.
@@ -312,7 +286,7 @@ bool encode_value(Vis& vis, const T& value) {
                     using U = std::underlying_type_t<T>;
                     using wide =
                         std::conditional_t<std::is_signed_v<U>, std::int64_t, std::uint64_t>;
-                    return scoped_context<typename Vis::error_type>::fail(
+                    return scoped_context<rich_error>::fail(
                         rich_error(std::format("enum value {} has no reflected name",
                                                static_cast<wide>(value))));
                 }
@@ -345,13 +319,7 @@ bool encode_value(Vis& vis, const T& value) {
                             return encode_value<Config>(ev, static_cast<element_t>(elem));
                         }
                     });
-                    if(!ok) {
-                        if constexpr(Config::detailed_error) {
-                            if(auto* e = scoped_context<typename Vis::error_type>::try_current())
-                                e->prepend_index(idx);
-                        }
-                        return false;
-                    }
+                    KOTA_CODEC_TRY(detail::trace_path<Config>(ok, idx));
                     ++idx;
                 }
                 return true;
@@ -359,19 +327,11 @@ bool encode_value(Vis& vis, const T& value) {
         } else if constexpr(kind == tuple) {
             return vis.visit_tuple(value, [&](auto& sv) -> bool {
                 return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                    return ([&] {
-                        bool ok = sv.visit_element([&](auto& ev) -> bool {
-                            return encode_value<Config>(ev, std::get<Is>(value));
-                        });
-                        if constexpr(Config::detailed_error) {
-                            if(!ok) {
-                                if(auto* e =
-                                       scoped_context<typename Vis::error_type>::try_current())
-                                    e->prepend_index(Is);
-                            }
-                        }
-                        return ok;
-                    }() && ...);
+                    return (detail::trace_path<Config>(sv.visit_element([&](auto& ev) -> bool {
+                                return encode_value<Config>(ev, std::get<Is>(value));
+                            }),
+                                                       Is) &&
+                            ...);
                 }(std::make_index_sequence<std::tuple_size_v<T>>{});
             });
         } else if constexpr(kind == map) {
@@ -381,13 +341,7 @@ bool encode_value(Vis& vis, const T& value) {
                     bool ok = mv.visit_entry(
                         [&](auto& kv) -> bool { return encode_value<Config>(kv, k); },
                         [&](auto& vv) -> bool { return encode_value<Config>(vv, v); });
-                    if(!ok) {
-                        if constexpr(Config::detailed_error) {
-                            if(auto* e = scoped_context<typename Vis::error_type>::try_current())
-                                e->prepend_index(idx);
-                        }
-                        return false;
-                    }
+                    KOTA_CODEC_TRY(detail::trace_path<Config>(ok, idx));
                     ++idx;
                 }
                 return true;
