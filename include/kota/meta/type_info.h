@@ -172,7 +172,7 @@ template <typename T, std::size_t I, typename Policy>
 struct renamed_name_static {
     constexpr static std::size_t len = apply_rename_cx<Policy>(meta::field_name<I, T>()).size();
 
-    constexpr static auto storage = [] {
+    constexpr static auto chars = [] {
         auto renamed = apply_rename_cx<Policy>(meta::field_name<I, T>());
         std::array<char, len> arr{};
         for(std::size_t i = 0; i < len; ++i)
@@ -180,7 +180,7 @@ struct renamed_name_static {
         return arr;
     }();
 
-    constexpr static std::string_view value{storage.data(), storage.size()};
+    constexpr static std::string_view value{chars.data(), chars.size()};
 };
 
 template <typename Config>
@@ -406,7 +406,7 @@ struct variant_info_node<std::variant<Ts...>, Config, AttrsTuple> {
     constexpr static std::array<type_info_fn, sizeof...(Ts)> alternatives = {
         type_info_of<Ts, Config>...};
 
-    // Backing storage is always sizeof...(Ts) (>=1 since variant must have alternatives);
+    // The backing array is always sizeof...(Ts) (>=1 since variant must have alternatives);
     // for non-tagged variants the elements stay default-constructed and the consumer
     // span below is explicitly given size 0, so no element is ever read.
     constexpr static auto alt_names = [] {

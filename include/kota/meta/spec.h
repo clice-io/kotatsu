@@ -32,11 +32,11 @@ enum class skip_when : std::uint8_t {
 struct name_list {
     constexpr static std::size_t capacity = 8;
 
-    std::array<std::string_view, capacity> storage = {};
+    std::array<std::string_view, capacity> items = {};
     std::size_t count = 0;
 
     constexpr std::span<const std::string_view> names() const {
-        return {storage.data(), count};
+        return {items.data(), count};
     }
 };
 
@@ -194,7 +194,7 @@ struct name_list_proxy {
         }
         value_component<A, Member, name_list> component{};
         for(auto name: names) {
-            component.value.storage[component.value.count++] = name;
+            component.value.items[component.value.count++] = name;
         }
         return component;
     }

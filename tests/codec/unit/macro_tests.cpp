@@ -83,13 +83,13 @@ ZEST_CASE(annotate_works_outside_kota) {
 ZEST_CASE(annotate_works_in_a_class_template) {
     constexpr const auto& spec = meta::field_spec_of<decltype(DownstreamBox<int>::value)>;
     STATIC_EXPECT(spec.alias.count == 1U);
-    STATIC_EXPECT(spec.alias.storage[0] == std::string_view("v"));
+    STATIC_EXPECT(spec.alias.names()[0] == std::string_view("v"));
 }
 
 ZEST_CASE(annotate_field_entries_make_a_field_spec) {
     constexpr const auto& id = meta::field_spec_of<decltype(Entries::user_id)>;
     STATIC_EXPECT(id.rename == std::string_view("id"));
-    STATIC_EXPECT(id.alias.storage[0] == std::string_view("uid"));
+    STATIC_EXPECT(id.alias.names()[0] == std::string_view("uid"));
     STATIC_EXPECT(id.description == std::string_view("Identifier."));
     STATIC_EXPECT(meta::field_spec_of<decltype(Entries::internal)>.skip);
     STATIC_EXPECT(meta::field_spec_of<decltype(Entries::profile)>.flatten);
@@ -114,7 +114,7 @@ ZEST_CASE(annotation_struct_entries_make_a_struct_spec) {
     constexpr const auto& shape = ShapeTag::spec;
     STATIC_EXPECT(shape.tagging == meta::tag_mode::internal);
     STATIC_EXPECT(shape.tag == std::string_view("kind"));
-    STATIC_EXPECT(shape.tag_names.storage[1] == std::string_view("rect"));
+    STATIC_EXPECT(shape.tag_names.names()[1] == std::string_view("rect"));
 
     constexpr const auto& strict = StrictCamel::spec;
     STATIC_EXPECT(strict.rename_all == naming::casing::lower_camel);

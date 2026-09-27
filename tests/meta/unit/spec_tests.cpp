@@ -100,8 +100,8 @@ ZEST_CASE(make_spec_folds_values) {
     STATIC_EXPECT(spec.description == "User identifier.");
     STATIC_EXPECT(spec.idx == 7u);
     STATIC_EXPECT(spec.alias.count == 2u);
-    STATIC_EXPECT(spec.alias.storage[0] == "user_id");
-    STATIC_EXPECT(spec.alias.storage[1] == "uid");
+    STATIC_EXPECT(spec.alias.names()[0] == "user_id");
+    STATIC_EXPECT(spec.alias.names()[1] == "uid");
     STATIC_EXPECT(!spec.skip);
     STATIC_EXPECT(!spec.flatten);
     STATIC_EXPECT(!spec.defaulted);
@@ -177,7 +177,7 @@ ZEST_CASE(make_struct_spec_folds_values_and_derives_tagging) {
     STATIC_EXPECT(internal.tagging == tag_mode::internal);
     STATIC_EXPECT(internal.tag == "kind");
     STATIC_EXPECT(internal.tag_names.count == 2u);
-    STATIC_EXPECT(internal.tag_names.storage[1] == "rect");
+    STATIC_EXPECT(internal.tag_names.names()[1] == "rect");
 
     constexpr const struct_spec& adjacent = adjacent_struct_tag::spec;
     STATIC_EXPECT(adjacent.tagging == tag_mode::adjacent);
