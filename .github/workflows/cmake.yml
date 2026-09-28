@@ -171,12 +171,6 @@ jobs:
               -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}"
               -DCMAKE_MODULE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}"
             )
-          elif [[ "${{ matrix.toolchain }}" == "mingw" ]]; then
-            # ld.bfd takes minutes on the test binaries.
-            extra_args=(
-              -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld
-              -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld
-            )
           fi
 
           # ${arr[@]+...} guard: macOS ships bash 3.2, where expanding an
