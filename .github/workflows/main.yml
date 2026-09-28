@@ -41,7 +41,7 @@ jobs:
               - 'pixi.toml'
               - 'package*.json'
               - 'tsconfig.json'
-              - 'scripts/lsp/**'
+              - 'scripts/**'
               - '.github/workflows/main.yml'
               - '.github/workflows/cmake.yml'
             xmake:

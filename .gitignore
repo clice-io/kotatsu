@@ -65,3 +65,6 @@ node_modules/
 openspec/
 # Results of mismatched snapshots, written next to the snapshot.
 *.snap.yml.new
+# Profiles of a coverage build's programs run outside ctest, which writes them
+# to build/coverage/profiles.
+*.profraw

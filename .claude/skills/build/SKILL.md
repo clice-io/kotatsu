@@ -1,6 +1,6 @@
 ---
 name: build
-description: Build kotatsu. Optional arg = cmake preset (default `debug`; also relwithdebinfo, asan, ubsan, asan-ubsan, tsan, no-exceptions, no-exceptions-no-rtti). Runs in a forked context — compile output and mechanical fixes stay out of the main conversation; only the outcome returns.
+description: Build kotatsu. Optional arg = cmake preset (default `debug`; also coverage, relwithdebinfo, asan, ubsan, asan-ubsan, tsan, no-exceptions, no-exceptions-no-rtti). Runs in a forked context — compile output and mechanical fixes stay out of the main conversation; only the outcome returns.
 context: fork
 ---
 

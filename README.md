@@ -168,6 +168,7 @@ examples/
   ipc/             # IPC stdio, scripted, and multi-process examples
 
 scripts/
+  coverage.ts      # Test coverage per module (`pixi run coverage`)
   lsp/             # LSP meta-model tooling (TypeScript, run by Node)
     metaModel.json # The pinned meta-model, sha256-checked
     metamodel.ts   # Its types, and the schema codegen and the tests read

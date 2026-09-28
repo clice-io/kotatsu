@@ -55,6 +55,7 @@ jobs:
           - { os_label: linux,   os: ubuntu-24.04, toolchain: clang,       preset: asan-ubsan }
           - { os_label: linux,   os: ubuntu-24.04, toolchain: clang,       preset: tsan }
           - { os_label: linux,   os: ubuntu-24.04, toolchain: clang,       preset: no-exceptions }
+          - { os_label: linux,   os: ubuntu-24.04, toolchain: clang,       preset: coverage }
 
           # macOS - Apple Clang
           - { os_label: macos,   os: macos-15,     toolchain: apple-clang, preset: debug }
@@ -161,7 +162,27 @@ jobs:
 
           cmake --build --preset "${{ matrix.preset }}" --parallel
 
-          ctest --preset "${{ matrix.preset }}" --verbose
+          # The coverage script runs ctest itself, then reports; a failing
+          # test fails it, the numbers never do.
+          if [[ "${{ matrix.preset }}" == "coverage" ]]; then
+            node scripts/coverage.ts --verbose
+          else
+            ctest --preset "${{ matrix.preset }}" --verbose
+          fi
+
+      - name: Summarize coverage
+        if: ${{ !cancelled() && hashFiles('build/coverage/report/summary.md') != '' }}
+        shell: bash
+        run: cat build/coverage/report/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage report
+        if: ${{ !cancelled() && hashFiles('build/coverage/report/summary.md') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            build/coverage/report/html
+            build/coverage/report/coverage.lcov
 
       - name: Show compiler cache stats
         if: always()
