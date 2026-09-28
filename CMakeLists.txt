@@ -26,6 +26,7 @@ option(KOTA_SANITIZE_ADDRESS "Enable AddressSanitizer" OFF)
 option(KOTA_SANITIZE_MEMORY "Enable MemorySanitizer" OFF)
 option(KOTA_SANITIZE_THREAD "Enable ThreadSanitizer" OFF)
 option(KOTA_SANITIZE_UNDEFINED "Enable UndefinedBehaviorSanitizer" OFF)
+option(KOTA_ENABLE_COVERAGE "Instrument kotatsu targets for clang source-based coverage" OFF)
 
 if(MSVC)
     if(KOTA_ENABLE_CCACHE)
@@ -82,6 +83,13 @@ if(KOTA_SANITIZE_UNDEFINED)
     if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         message(FATAL_ERROR "UndefinedBehaviorSanitizer requires Clang, AppleClang, or GCC.")
     endif()
+endif()
+
+if(KOTA_ENABLE_COVERAGE AND (MSVC OR NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
+    message(FATAL_ERROR
+        "KOTA_ENABLE_COVERAGE requires Clang or AppleClang with the GNU-style driver, "
+        "not ${CMAKE_CXX_COMPILER}."
+    )
 endif()
 
 if(KOTA_SANITIZE_ADDRESS)
@@ -164,8 +172,9 @@ endif()
 include(kota_dependencies)
 
 # kota::project_options carries ABI-relevant flags (exceptions, RTTI, source
-# encoding, compile definitions, MinGW link flags) and propagates PUBLIC so
-# that downstream consumers link-compatibly with kotatsu.
+# encoding, compile definitions, MinGW link flags, coverage instrumentation)
+# and propagates PUBLIC so that downstream consumers link-compatibly with
+# kotatsu.
 add_library(kota_project_options INTERFACE)
 add_library(kota::project_options ALIAS kota_project_options)
 
@@ -232,6 +241,20 @@ else()
             -Wl,--allow-multiple-definition
         )
     endif()
+endif()
+
+# Everything built on kotatsu is measured: its libraries, the tests, drivers
+# and examples, and the header-only modules through the code that instantiates
+# them. Third-party libraries are built without it; what kotatsu's code
+# compiles of their headers is measured too, and left out of the report by
+# scripts/coverage.ts. The link flag travels with the libraries, whose objects
+# need the profile runtime.
+if(KOTA_ENABLE_COVERAGE)
+    target_compile_options(kota_project_options INTERFACE
+        -fprofile-instr-generate
+        -fcoverage-mapping
+    )
+    target_link_options(kota_project_options INTERFACE -fprofile-instr-generate)
 endif()
 
 target_compile_definitions(kota_project_options INTERFACE

@@ -20,6 +20,11 @@
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
     },
     {
+      "name": "coverage",
+      "inherits": "debug",
+      "cacheVariables": { "KOTA_ENABLE_COVERAGE": "ON" }
+    },
+    {
       "name": "relwithdebinfo",
       "inherits": "base",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
@@ -60,6 +65,7 @@
   ],
   "buildPresets": [
     { "name": "debug", "configurePreset": "debug" },
+    { "name": "coverage", "configurePreset": "coverage" },
     { "name": "relwithdebinfo", "configurePreset": "relwithdebinfo" },
     { "name": "asan", "configurePreset": "asan" },
     { "name": "ubsan", "configurePreset": "ubsan" },
@@ -78,6 +84,14 @@
       "output": { "outputOnFailure": true }
     },
     { "name": "debug", "inherits": "base", "configurePreset": "debug" },
+    {
+      "name": "coverage",
+      "inherits": "base",
+      "configurePreset": "coverage",
+      "environment": {
+        "LLVM_PROFILE_FILE": "${sourceDir}/build/coverage/profiles/%p-%m.profraw"
+      }
+    },
     {
       "name": "relwithdebinfo",
       "inherits": "base",

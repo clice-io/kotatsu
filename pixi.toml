@@ -187,3 +187,10 @@ depends-on = [{ task = "build", args = ["{{ preset }}"] }, "npm-ci"]
 args = [{ arg = "preset", default = "debug" }]
 cmd = "ctest --preset {{ preset }} -L integration"
 depends-on = [{ task = "build", args = ["{{ preset }}"] }, "npm-ci"]
+
+# Runs every test stage on the `coverage` preset's build and reports how much
+# of include/kota and src they reach, per module (scripts/coverage.ts); any
+# arguments go to ctest.
+[tasks.coverage]
+cmd = "node scripts/coverage.ts"
+depends-on = [{ task = "build", args = ["coverage"] }, "npm-ci"]
