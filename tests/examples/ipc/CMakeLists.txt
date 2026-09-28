@@ -1,0 +1,1 @@
+kota_add_integration_tests(PROGRAMS jsonrpc_server jsonrpc_roundtrip spawn_worker)

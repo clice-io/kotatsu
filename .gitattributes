@@ -11,3 +11,6 @@ pixi.lock merge=binary linguist-language=YAML linguist-generated=true -diff
 *.cc text eol=lf
 *.h text eol=lf
 *.inl text eol=lf
+
+# The pinned LSP metaModel, checked byte for byte against its sha256
+scripts/lsp/metaModel.json -text linguist-vendored -diff

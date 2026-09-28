@@ -4,7 +4,9 @@
 #include <string>
 #include <utility>
 
+#include "kota/ipc/codec.h"
 #include "kota/ipc/peer.h"
+#include "kota/codec/dyn/dyn.h"
 #include "kota/ipc/lsp/protocol.h"
 
 namespace kota::ipc::lsp {
@@ -27,59 +29,48 @@ public:
                        std::optional<std::string> message = {},
                        std::optional<protocol::uinteger> percentage = {},
                        bool cancellable = false) {
-        protocol::LSPObject value{
-            {"kind",  "begin"         },
-            {"title", std::move(title)}
-        };
-        if(cancellable) {
-            value.insert("cancellable", true);
-        }
-        if(message) {
-            value.insert("message", std::move(*message));
-        }
-        if(percentage) {
-            value.insert("percentage", *percentage);
-        }
-        return send_progress(std::move(value));
+        return send_progress(protocol::WorkDoneProgressBegin{
+            .title = std::move(title),
+            // Absent reads as not cancellable, so false is left out.
+            .cancellable = cancellable ? std::optional<bool>(true) : std::nullopt,
+            .message = std::move(message),
+            .percentage = percentage,
+        });
     }
 
-    /// Send $/progress with kind=report.
+    /// Send $/progress with kind=report. An explicit `cancellable` sets the
+    /// cancel button's state; left out, the button stays as it is.
     Result<void> report(std::optional<std::string> message = {},
                         std::optional<protocol::uinteger> percentage = {},
                         std::optional<bool> cancellable = {}) {
-        protocol::LSPObject value{
-            {"kind", "report"}
-        };
-        if(cancellable) {
-            value.insert("cancellable", *cancellable);
-        }
-        if(message) {
-            value.insert("message", std::move(*message));
-        }
-        if(percentage) {
-            value.insert("percentage", *percentage);
-        }
-        return send_progress(std::move(value));
+        return send_progress(protocol::WorkDoneProgressReport{
+            .cancellable = cancellable,
+            .message = std::move(message),
+            .percentage = percentage,
+        });
     }
 
     /// Send $/progress with kind=end.
     Result<void> end(std::optional<std::string> message = {}) {
-        protocol::LSPObject value{
-            {"kind", "end"}
-        };
-        if(message) {
-            value.insert("message", std::move(*message));
-        }
-        return send_progress(std::move(value));
+        return send_progress(protocol::WorkDoneProgressEnd{.message = std::move(message)});
     }
 
     PeerT& peer;
     protocol::ProgressToken token;
 
 private:
-    Result<void> send_progress(protocol::LSPObject value) {
+    /// Sends ProgressParams, its LSPAny the typed `value` made dynamic, with
+    /// LSP's member names: every codec then writes the ProgressParams a
+    /// receiver reads, a binary one included.
+    template <typename Value>
+    Result<void> send_progress(const Value& value) {
+        auto any = codec::dyn::to_dyn<lsp_config>(value);
+        if(!any) {
+            return outcome_error(
+                Error(protocol::ErrorCode::InternalError, any.error().to_string()));
+        }
         return peer.send_notification(
-            protocol::ProgressParams{.token = token, .value = std::move(value)});
+            protocol::ProgressParams{.token = token, .value = std::move(*any)});
     }
 };
 

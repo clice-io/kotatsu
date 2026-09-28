@@ -42,11 +42,6 @@ ninja = "*"
 ccache = "*"
 openssl = "*"
 
-[feature.build.pypi-dependencies]
-pygls = ">=2.0"
-pytest = ">=8.0"
-pytest-asyncio = ">=0.24"
-
 [feature.linux-gcc.target.linux-64.dependencies]
 sysroot_linux-64 = "==2.17"
 gcc = "==14.2.0"
@@ -131,7 +126,7 @@ format-python = "ruff format ."
 format-lua = "stylua ."
 format-web = "fd -H -e js -e ts -e css -x prettier --write"
 format-markdown = "fd -H -e md -x prettier --write"
-format-json = "fd -H -e json -E package-lock.json -E .git -x prettier --write"
+format-json = "fd -H -e json -E package-lock.json -E metaModel.json -E .git -x prettier --write"
 format-toml = "fd -H -e toml -x tombi format"
 format-yaml = """
 fd -H -e yaml -e yml -E pnpm-lock.yaml -E '*.snap.yml' -x prettier --write && \
@@ -151,23 +146,20 @@ format = { depends-on = [
 [feature.format.target.win-64.tasks]
 format-web = "fd -H -e js -e ts -e css -x prettier.bat --write"
 format-markdown = "fd -H -e md -x prettier.bat --write"
-format-json = "fd -H -e json -E package-lock.json -E .git -x prettier.bat --write"
+format-json = "fd -H -e json -E package-lock.json -E metaModel.json -E .git -x prettier.bat --write"
 format-yaml = """
 fd -H -e yaml -e yml -E pnpm-lock.yaml -E '*.snap.yml' -x prettier.bat --write && \
 fd -H "^\\.clang-(format|tidy)$" -x prettier.bat --write --parser yaml
 """
 
-[tasks]
-integration-test = "pytest tests/integration/ -v"
-
-# Regenerate include/kota/ipc/lsp/protocol.h; `--check` only verifies it.
-# Node's fetch honors HTTP(S)_PROXY only when told to.
+# Regenerate include/kota/ipc/lsp/protocol.h and the tests' table of its
+# types; `--check` only verifies them.
 [tasks.lsp-codegen]
 cmd = "node scripts/lsp/codegen.ts"
-env = { NODE_USE_ENV_PROXY = "1" }
 
-# Installs the type checker (the scripts themselves need no npm packages);
-# skipped while the package files and node_modules are unchanged.
+# Installs the type checker and the packages the integration tests import (the
+# scripts need none); skipped while the package files and node_modules are
+# unchanged.
 [tasks.npm-ci]
 cmd = "npm ci"
 inputs = ["package.json", "package-lock.json"]
@@ -189,4 +181,9 @@ depends-on = [{ task = "configure", args = ["{{ preset }}"] }]
 [tasks.test]
 args = [{ arg = "preset", default = "debug" }]
 cmd = "ctest --preset {{ preset }}"
-depends-on = [{ task = "build", args = ["{{ preset }}"] }]
+depends-on = [{ task = "build", args = ["{{ preset }}"] }, "npm-ci"]
+
+[tasks.integration-test]
+args = [{ arg = "preset", default = "debug" }]
+cmd = "ctest --preset {{ preset }} -L integration"
+depends-on = [{ task = "build", args = ["{{ preset }}"] }, "npm-ci"]

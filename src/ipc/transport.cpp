@@ -1,145 +1,54 @@
 #include "kota/ipc/transport.h"
 
-#include <algorithm>
-#include <cctype>
-#include <limits>
-#include <optional>
+#include <cerrno>
+#include <fcntl.h>
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
+
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace kota::ipc {
 
 namespace {
 
-// Guard against a broken sender that never produces \r\n\r\n —
-// without a cap the header buffer would grow until OOM.
-constexpr std::size_t max_header_bytes = 8 * 1024;
-constexpr std::size_t max_payload_bytes = 64 * 1024 * 1024;
-
-std::string_view trim_ascii(std::string_view value) {
-    auto start = value.find_first_not_of(" \t");
-    if(start == std::string_view::npos) {
-        return {};
+/// `opened` as a stream, or its error as an ipc error.
+template <typename Handle>
+Result<stream> as_stream(result<Handle> opened) {
+    if(!opened) {
+        return outcome_error(Error(std::string(opened.error().message())));
     }
-    auto end = value.find_last_not_of(" \t");
-    return value.substr(start, end - start + 1);
-}
-
-bool iequals_ascii(std::string_view lhs, std::string_view rhs) {
-    return std::ranges::equal(lhs, rhs, [](char a, char b) {
-        return std::tolower(static_cast<unsigned char>(a)) ==
-               std::tolower(static_cast<unsigned char>(b));
-    });
-}
-
-std::optional<std::size_t> parse_content_length(std::string_view header) {
-    std::size_t pos = 0;
-    while(pos < header.size()) {
-        auto end = header.find("\r\n", pos);
-        if(end == std::string_view::npos) {
-            break;
-        }
-
-        auto line = header.substr(pos, end - pos);
-        pos = end + 2;
-
-        auto sep = line.find(':');
-        if(sep == std::string_view::npos) {
-            continue;
-        }
-
-        auto name = trim_ascii(line.substr(0, sep));
-        if(!iequals_ascii(name, "Content-Length")) {
-            continue;
-        }
-
-        auto value = trim_ascii(line.substr(sep + 1));
-        if(value.empty()) {
-            return std::nullopt;
-        }
-
-        std::size_t parsed = 0;
-        for(char ch: value) {
-            if(ch < '0' || ch > '9') {
-                return std::nullopt;
-            }
-            const auto digit = static_cast<std::size_t>(ch - '0');
-            if(parsed > ((std::numeric_limits<std::size_t>::max)() - digit) / 10) {
-                return std::nullopt;
-            }
-            parsed = parsed * 10 + digit;
-        }
-
-        if(parsed > max_payload_bytes) {
-            return std::nullopt;
-        }
-        return parsed;
-    }
-    return std::nullopt;
-}
-
-std::string to_error_text(error err) {
-    return std::string(err.message());
-}
-
-Result<stream> to_stream(result<tcp> socket) {
-    if(!socket) {
-        return outcome_error(Error(to_error_text(socket.error())));
-    }
-    return stream(std::move(*socket));
+    return stream(std::move(*opened));
 }
 
 Result<stream> open_stdio_stream(int fd, bool readable, event_loop& loop) {
     switch(guess_handle(fd)) {
-        case handle_type::tty: {
-            auto opened = console::open(fd, console::options{readable}, loop);
-            if(!opened) {
-                return outcome_error(Error(to_error_text(opened.error())));
-            }
-            return stream(std::move(*opened));
-        }
-
+        case handle_type::tty:
+            return as_stream(console::open(fd, console::options{readable}, loop));
         case handle_type::pipe:
         case handle_type::file:
-        case handle_type::unknown: {
-            auto opened = pipe::open(fd, pipe::options{}, loop);
-            if(!opened) {
-                return outcome_error(Error(to_error_text(opened.error())));
-            }
-            return stream(std::move(*opened));
-        }
-
-        case handle_type::tcp: {
-            auto opened = tcp::open(fd, loop);
-            if(!opened) {
-                return outcome_error(Error(to_error_text(opened.error())));
-            }
-            return stream(std::move(*opened));
-        }
-
+        case handle_type::unknown: return as_stream(pipe::open(fd, pipe::options{}, loop));
+        case handle_type::tcp: return as_stream(tcp::open(fd, loop));
         default: return outcome_error(Error("unsupported stdio handle type"));
     }
 }
 
 }  // namespace
 
-Result<void> Transport::close_output() {
-    return outcome_error(Error("transport does not support closing output"));
-}
+StreamTransport::StreamTransport(stream input, stream output, std::size_t max_payload) :
+    read_stream(std::move(input)), write_stream(std::move(output)), parser(max_payload) {}
 
-Result<void> Transport::close() {
-    return outcome_error(Error("transport does not support close"));
-}
+StreamTransport::StreamTransport(stream stream, std::size_t max_payload) :
+    read_stream(std::move(stream)), shared_stream(true), parser(max_payload) {}
 
-StreamTransport::StreamTransport(stream input, stream output) :
-    read_stream(std::move(input)), write_stream(std::move(output)) {}
-
-StreamTransport::StreamTransport(stream stream) :
-    read_stream(std::move(stream)), shared_stream(true) {}
-
-Result<std::unique_ptr<StreamTransport>> StreamTransport::open_stdio(event_loop& loop) {
+Result<std::unique_ptr<StreamTransport>> StreamTransport::open_stdio(event_loop& loop,
+                                                                     std::size_t max_payload) {
     auto input = open_stdio_stream(0, true, loop);
     if(!input) {
         return outcome_error(input.error());
@@ -150,113 +59,128 @@ Result<std::unique_ptr<StreamTransport>> StreamTransport::open_stdio(event_loop&
         return outcome_error(output.error());
     }
 
-    return std::make_unique<StreamTransport>(std::move(*input), std::move(*output));
+    auto transport =
+        std::make_unique<StreamTransport>(std::move(*input), std::move(*output), max_payload);
+    transport->over_stdout = true;
+    return transport;
 }
 
-task<std::unique_ptr<StreamTransport>, Error> StreamTransport::connect_tcp(std::string_view host,
-                                                                           int port,
-                                                                           event_loop& loop) {
+task<std::unique_ptr<StreamTransport>, Error>
+    StreamTransport::connect_tcp(std::string_view host,
+                                 int port,
+                                 event_loop& loop,
+                                 std::size_t max_payload) {
     auto connected = co_await tcp::connect(host, port, loop);
-    co_return std::make_unique<StreamTransport>(co_await or_fail(to_stream(std::move(connected))));
+    co_return std::make_unique<StreamTransport>(co_await or_fail(as_stream(std::move(connected))),
+                                                max_payload);
 }
 
-Result<std::unique_ptr<StreamTransport>> StreamTransport::open_tcp(int fd, event_loop& loop) {
-    auto channel = to_stream(tcp::open(fd, loop));
-    if(!channel) {
-        return outcome_error(channel.error());
-    }
-    return std::make_unique<StreamTransport>(std::move(*channel));
-}
-
-task<std::optional<std::string>> StreamTransport::read_message() {
-    std::string header;
-    std::optional<std::size_t> content_length;
-
-    while(!content_length.has_value()) {
+task<std::string, ReadError> StreamTransport::read_message() {
+    while(true) {
         auto chunk = co_await read_stream.read_chunk();
-        if(!chunk) [[unlikely]] {
-            read_stream.stop();
-            co_return std::nullopt;
+        if(!chunk) {
+            co_await fail(ReadError{
+                .kind = ReadError::Kind::Closed,
+                .message = std::string(chunk.error().message()),
+            });
         }
 
-        const auto old_size = header.size();
-        header.append(chunk->data(), chunk->size());
-
-        auto marker = header.find("\r\n\r\n");
-        if(marker == std::string::npos) {
-            if(header.size() > max_header_bytes) [[unlikely]] {
-                read_stream.stop();
-                co_return std::nullopt;
-            }
-            read_stream.consume(chunk->size());
+        auto step = parser.feed(std::string_view(chunk->data(), chunk->size()));
+        read_stream.consume(step.consumed);
+        if(!step.frame) {
             continue;
         }
-
-        const auto header_end = marker + 4;
-        if(header_end > max_header_bytes) [[unlikely]] {
-            read_stream.stop();
-            co_return std::nullopt;
+        if(!*step.frame) {
+            co_await fail(std::move(*step.frame).error());
         }
-        const auto consumed_from_chunk = header_end > old_size ? header_end - old_size : 0;
-        read_stream.consume(consumed_from_chunk);
-
-        auto view = std::string_view(header.data(), header_end);
-        content_length = parse_content_length(view);
-        if(!content_length.has_value()) [[unlikely]] {
-            read_stream.stop();
-            co_return std::nullopt;
-        }
+        co_return std::move(**step.frame);
     }
-
-    std::string payload;
-    payload.reserve(*content_length);
-
-    while(payload.size() < *content_length) {
-        auto chunk = co_await read_stream.read_chunk();
-        if(!chunk) [[unlikely]] {
-            read_stream.stop();
-            co_return std::nullopt;
-        }
-
-        const auto need = *content_length - payload.size();
-        const auto take = std::min<std::size_t>(need, chunk->size());
-        payload.append(chunk->data(), take);
-        read_stream.consume(take);
-    }
-
-    co_return payload;
 }
 
 task<void, Error> StreamTransport::write_message(std::string_view payload) {
-    std::string framed;
-    framed.reserve(32 + payload.size());
-    framed.append("Content-Length: ");
-    framed.append(std::to_string(payload.size()));
-    framed.append("\r\n\r\n");
-    framed.append(payload.data(), payload.size());
-
+    auto framed = frame(payload);
     auto& stream = shared_stream ? read_stream : write_stream;
     auto status = co_await stream.write(std::span<const char>(framed.data(), framed.size()));
     if(status.has_error()) {
+        // The stream was closed under the write.
+        if(status.error() == error::operation_aborted) {
+            co_await fail("transport closed");
+        }
         co_await fail(std::string(status.error().message()));
     }
 }
 
-Result<void> StreamTransport::close_output() {
+task<void, Error> StreamTransport::close_output() {
     if(shared_stream) {
-        read_stream = stream{};
-        return {};
+        auto shut = co_await read_stream.shutdown();
+        if(shut.has_error()) {
+            co_await fail(std::string(shut.error().message()));
+        }
+        co_return;
     }
 
     write_stream = stream{};
-    return {};
+    auto released = release_stdout();
+    if(!released) {
+        co_await fail(std::move(released).error());
+    }
 }
 
+// Stopping the read ends the read loop, which can end the peer's run() and
+// let its owner destroy the peer and this transport; the runtime resumes it
+// later, but should it resume it at once, nothing here is touched after: the
+// read stream is moved out first, and the stop comes last. The write stream
+// goes before stdout is released: closing it takes fd 1 out of the loop's
+// poll set by number, which would no longer find it once fd 1 is the null
+// device, and the pipe left in the set would wake the loop for good.
+// Destroying a stream resumes nothing at once; its close callbacks come
+// later.
 Result<void> StreamTransport::close() {
-    read_stream = stream{};
-    if(!shared_stream) {
-        write_stream = stream{};
+    auto reading = std::move(read_stream);
+    if(shared_stream) {
+        reading.stop();
+        return {};
     }
+    write_stream = stream{};
+    auto released = release_stdout();
+    reading.stop();
+    return released;
+}
+
+// libuv never closes fds 0 to 2 when it closes a stream over one (on Windows
+// it closes a duplicate of the handle), so the pipe or file behind stdout
+// stays open until fd 1 lets go of it: pointing fd 1 at the null device does.
+Result<void> StreamTransport::release_stdout() {
+    // Released once; one that fails is tried again by the next call, as
+    // close() makes after a failed close_output().
+    if(!over_stdout) {
+        return {};
+    }
+    // Not inherited by a child spawned meanwhile by another thread; dup2
+    // leaves fd 1 inheritable, as stdout is.
+#ifdef _WIN32
+    const int null = _open("NUL", _O_WRONLY | _O_NOINHERIT);
+#else
+    const int null = ::open("/dev/null", O_WRONLY | O_CLOEXEC);
+#endif
+    if(null < 0) {
+        return outcome_error(
+            Error("opening the null device failed: " + std::generic_category().message(errno)));
+    }
+#ifdef _WIN32
+    const int replaced = _dup2(null, 1);
+    const int error = errno;
+    _close(null);
+#else
+    const int replaced = ::dup2(null, 1);
+    const int error = errno;
+    ::close(null);
+#endif
+    if(replaced < 0) {
+        return outcome_error(
+            Error("releasing stdout failed: " + std::generic_category().message(error)));
+    }
+    over_stdout = false;
     return {};
 }
 

@@ -1,4 +1,6 @@
-# All example executables are output directly into ${CMAKE_BINARY_DIR}/examples.
+# Example executables go to ${CMAKE_BINARY_DIR}/examples, but for those the
+# integration tests run, which tests/CMakeLists.txt puts in the build root
+# beside the test programs.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples")
 
 if(KOTA_ENABLE_ASYNC)

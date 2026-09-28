@@ -1,6 +1,7 @@
 // Generate include/kota/ipc/lsp/protocol.h from the pinned LSP metaModel
-// (metamodel.ts). `--check` regenerates in memory and fails when the committed
-// header differs.
+// (metamodel.ts), and the table of its types the integration tests decode and
+// encode each of (tests/ipc/lsp/harness/protocol_types.inc). `--check`
+// regenerates both in memory and fails when a committed one differs.
 //
 // Mapping from the metaModel's TypeScript constructs to C++ (vocabulary in
 // kota/ipc/lsp/ts.h):
@@ -9,10 +10,14 @@
 //   `mixins`) inlined, so members are reached and designated directly; a
 //   property a structure redeclares narrows the inherited one in place.
 // - `LSPAny` / `LSPObject` / `LSPArray` alias the codec's dynamic value types.
-// - `T | null` is `nullable<T>` (over a `variant` for several alternatives), an
-//   optional property is `optional<T>`, an optional boolean is `optional_bool`
-//   (absent reads as false), and an optional property holding its own
-//   structure is `optional_ptr<T>`.
+// - `T | null` is `nullable<T>` (over a `variant` for several alternatives),
+//   which a structure requires present; an optional property is `optional<T>`,
+//   or `optional_nullable<T>` when null is among its values, so that null does
+//   not read as absent; an optional boolean is `optional_bool` (absent reads as
+//   false) but for the few TRI_STATE_BOOLEANS, `optional<boolean>`; and an
+//   optional property holding its own structure is `optional_ptr<T>`.
+// - an untagged variant lists a structure before the ones it derives from, so
+//   that a value reads as the most derived alternative it fills.
 // - a string literal type is `Literal<"...">`, which decodes only its own text
 //   so untagged variants tell their alternatives apart by it.
 // - enumerations keep unknown values: integer ones are `enum class` over the
@@ -23,26 +28,29 @@
 
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { isDeepStrictEqual, parseArgs } from "node:util";
+import { parseArgs } from "node:util";
 
 import {
   COMMIT,
+  Schema,
+  SchemaError,
+  TRI_STATE_BOOLEANS,
   VERSION,
+  isBase,
   loadMetaModel,
+  sortedBy,
   type BaseTypes,
   type Enumeration,
   type EnumerationEntry,
-  type MetaModel,
-  type Notification,
   type Property,
-  type Request,
   type Structure,
   type Type,
   type TypeAlias,
 } from "./metamodel.ts";
 
-const OUTPUT = "include/kota/ipc/lsp/protocol.h";
-const OUTPUT_PATH = join(import.meta.dirname, "../..", OUTPUT);
+const ROOT = join(import.meta.dirname, "../..");
+const HEADER = "include/kota/ipc/lsp/protocol.h";
+const TABLE = "tests/ipc/lsp/harness/protocol_types.inc";
 
 // Named after the metaModel; the aliases live in kota/ipc/protocol.h and ts.h.
 const BASE_TYPES = new Set<BaseTypes>([
@@ -62,8 +70,10 @@ const DYNAMIC_TYPES = new Map([
 ]);
 
 // An optional boolean becomes `optional_bool`, which reads absence as false;
-// a property documented to default to true would silently flip.
+// a property documented to default to true would silently flip, and one whose
+// documentation gives undefined a meaning of its own has to be tri-state.
 const DEFAULT_TRUE = /defaults? (?:to|is) true|true by default/i;
+const UNDEFINED = /undefined/i;
 
 // prettier-ignore
 const CPP_KEYWORDS = new Set([
@@ -80,18 +90,6 @@ const CPP_KEYWORDS = new Set([
   "true", "try", "typedef", "typeid", "typename", "union", "unsigned", "using",
   "virtual", "void", "volatile", "wchar_t", "while", "xor", "xor_eq",
 ]);
-
-/** The metaModel uses a construct this generator does not map. */
-class SchemaError extends Error {
-  override name = "SchemaError";
-}
-
-/** A request or notification, with the params type its traits are keyed by. */
-interface Message {
-  method: string;
-  params: Type;
-  result?: Type;
-}
 
 function identifier(name: string): string {
   if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(name) || CPP_KEYWORDS.has(name)) {
@@ -157,139 +155,9 @@ function separated(blocks: string[][]): string[] {
   return blocks.flatMap((block, i) => (i === 0 ? block : ["", ...block]));
 }
 
-function byName<T extends { name: string }>(items: T[]): Map<string, T> {
-  return new Map(items.map((item) => [item.name, item]));
-}
-
-/**
- * Items in code unit order of their key, which unlike localeCompare does not
- * depend on the locale.
- */
-function sortedBy<T>(items: Iterable<T>, key: (item: T) => string): T[] {
-  return [...items].sort((a, b) => {
-    const [x, y] = [key(a), key(b)];
-    return x < y ? -1 : x > y ? 1 : 0;
-  });
-}
-
-function isBase(t: Type, name: BaseTypes): boolean {
-  return t.kind === "base" && t.name === name;
-}
-
-/** Name of the empty params structure of a method that takes none. */
-function paramsName(message: Request | Notification): string {
-  const typeName = message.typeName ?? "";
-  for (const suffix of ["Request", "Notification"]) {
-    if (typeName.endsWith(suffix)) {
-      return typeName.slice(0, -suffix.length) + "Params";
-    }
-  }
-  throw new SchemaError(
-    `method \`${message.method}\` has an unexpected type name`,
-  );
-}
-
-class Generator {
-  readonly structures: Map<string, Structure>;
-  readonly enumerations: Map<string, Enumeration>;
-  readonly aliases: Map<string, TypeAlias>;
-  readonly requests: Message[];
-  readonly notifications: Message[];
-  readonly #properties = new Map<string, Property[]>();
-
-  constructor(model: MetaModel) {
-    this.structures = byName(model.structures);
-    this.enumerations = byName(model.enumerations);
-    this.aliases = byName(model.typeAliases);
-    this.requests = sortedBy(model.requests, (item) => item.method).map(
-      (request) => ({ ...this.withParams(request), result: request.result }),
-    );
-    this.notifications = sortedBy(
-      model.notifications,
-      (item) => item.method,
-    ).map((notification) => this.withParams(notification));
-  }
-
-  /**
-   * The message with its params type; one that takes none gets an empty
-   * params structure.
-   */
-  withParams(message: Request | Notification): Message {
-    const { method, params } = message;
-    if (Array.isArray(params)) {
-      throw new SchemaError(`method \`${method}\` takes positional params`);
-    }
-    if (params !== undefined) {
-      return { method, params };
-    }
-    const name = paramsName(message);
-    if (this.structures.has(name)) {
-      throw new SchemaError(`params structure \`${name}\` already exists`);
-    }
-    this.structures.set(name, {
-      name,
-      properties: [],
-      documentation: `Params of \`${method}\`, which takes none.`,
-    });
-    return { method, params: { kind: "reference", name } };
-  }
-
-  structure(name: string): Structure {
-    const structure = this.structures.get(name);
-    if (structure === undefined) {
-      throw new SchemaError(`\`${name}\` is not a structure`);
-    }
-    return structure;
-  }
-
-  properties(name: string): Property[] {
-    const cached = this.#properties.get(name);
-    if (cached !== undefined) {
-      return cached;
-    }
-    const structure = this.structure(name);
-    const merged = new Map<string, Property>();
-    for (const parent of [
-      ...(structure.extends ?? []),
-      ...(structure.mixins ?? []),
-    ]) {
-      if (parent.kind !== "reference") {
-        throw new SchemaError(`${name} inherits a \`${parent.kind}\` type`);
-      }
-      for (const prop of this.properties(parent.name)) {
-        const seen = merged.get(prop.name);
-        if (seen !== undefined && !isDeepStrictEqual(seen, prop)) {
-          throw new SchemaError(
-            `${name}: parents disagree on \`${prop.name}\``,
-          );
-        }
-        merged.set(prop.name, prop);
-      }
-    }
-    for (const prop of structure.properties) {
-      const inherited = merged.get(prop.name);
-      // The one redeclaration the spec makes narrows a string to a literal
-      // (`ResourceOperation.kind` in CreateFile and friends).
-      if (
-        inherited !== undefined &&
-        !(
-          isBase(inherited.type, "string") &&
-          prop.type.kind === "stringLiteral" &&
-          prop.optional === inherited.optional
-        )
-      ) {
-        throw new SchemaError(
-          `${name}.${prop.name} does not narrow its parent's`,
-        );
-      }
-      // Setting an existing key keeps its position: the narrowed property
-      // stays where the parent declared it.
-      merged.set(prop.name, prop);
-    }
-    const properties = [...merged.values()];
-    this.#properties.set(name, properties);
-    return properties;
-  }
+class Generator extends Schema {
+  // The TRI_STATE_BOOLEANS met, each of which must be.
+  readonly #triState = new Set<string>();
 
   render(t: Type): string {
     switch (t.kind) {
@@ -317,9 +185,9 @@ class Generator {
       case "tuple":
         return `std::tuple<${t.items.map((item) => this.render(item)).join(", ")}>`;
       case "or": {
-        const alternatives = t.items
-          .filter((item) => !isBase(item, "null"))
-          .map((item) => this.render(item));
+        const alternatives = this.derivedFirst(
+          t.items.filter((item) => !isBase(item, "null")),
+        ).map((item) => this.render(item));
         const rendered =
           alternatives.length === 1
             ? alternatives[0]
@@ -371,10 +239,22 @@ class Generator {
       return `optional_ptr<${owner}> ${name} = {};`;
     }
     if (prop.optional && isBase(t, "boolean")) {
+      if (TRI_STATE_BOOLEANS.has(`${owner}.${prop.name}`)) {
+        this.#triState.add(`${owner}.${prop.name}`);
+        return `optional<boolean> ${name} = {};`;
+      }
       if (DEFAULT_TRUE.test(prop.documentation ?? "")) {
         throw new SchemaError(`${owner}.${prop.name} defaults to true`);
       }
+      if (UNDEFINED.test(prop.documentation ?? "")) {
+        throw new SchemaError(
+          `${owner}.${prop.name} gives undefined a meaning; make it tri-state`,
+        );
+      }
       return `optional_bool ${name} = {};`;
+    }
+    if (prop.optional && this.admitsNull(t)) {
+      return `optional_nullable<${this.render(t)}> ${name} = {};`;
     }
     if (prop.optional) {
       return `optional<${this.render(t)}> ${name} = {};`;
@@ -539,12 +419,21 @@ class Generator {
     return order;
   }
 
+  /** Enumerations, then aliases and structures in dependency order. */
+  declarationOrder(): string[] {
+    return [
+      ...sortedBy(this.enumerations.keys(), (name) => name),
+      ...this.orderedDeclarations(),
+    ];
+  }
+
   generate(): string {
     const blocks = [
-      ...sortedBy(this.enumerations.values(), (item) => item.name).map(
-        (enumeration) => this.emitEnumeration(enumeration),
-      ),
-      ...this.orderedDeclarations().map((name) => {
+      ...this.declarationOrder().map((name) => {
+        const enumeration = this.enumerations.get(name);
+        if (enumeration !== undefined) {
+          return this.emitEnumeration(enumeration);
+        }
         const alias = this.aliases.get(name);
         return alias === undefined
           ? this.emitStructure(this.structure(name))
@@ -552,6 +441,11 @@ class Generator {
       }),
       this.emitTraits(),
     ];
+    for (const name of TRI_STATE_BOOLEANS) {
+      if (!this.#triState.has(name)) {
+        throw new SchemaError(`${name} is no optional boolean`);
+      }
+    }
     return [
       "#pragma once",
       "",
@@ -568,19 +462,43 @@ class Generator {
       "",
     ].join("\n");
   }
+
+  table(): string {
+    return [
+      `// Generated by scripts/lsp/codegen.ts from the LSP ${VERSION} metaModel at`,
+      `// microsoft/language-server-protocol@${COMMIT}. DO NOT EDIT.`,
+      "//",
+      "// Every type in kota/ipc/lsp/protocol.h, for tests that decode and encode",
+      "// each: KOTA_LSP_TYPE(name) for each enumeration, alias and structure, and",
+      "// KOTA_LSP_RESULT(method, params) for the result of each request, named by",
+      "// its params type as RequestTraits is.",
+      "",
+      ...this.declarationOrder().map((name) => `KOTA_LSP_TYPE(${name})`),
+      ...this.requests.map(
+        (request) =>
+          `KOTA_LSP_RESULT(${quoted(request.method)}, ${this.render(request.params)})`,
+      ),
+      "",
+    ].join("\n");
+  }
 }
 
 const { values: options } = parseArgs({
   options: { check: { type: "boolean" } },
 });
-const header = new Generator(await loadMetaModel()).generate();
-if (!options.check) {
-  await writeFile(OUTPUT_PATH, header);
-} else {
-  // A CRLF checkout (core.autocrlf) holds the same header.
-  const committed = await readFile(OUTPUT_PATH, "utf8");
-  if (committed.replaceAll("\r\n", "\n") !== header) {
-    console.error(`${OUTPUT} is stale; run \`pixi run lsp-codegen\``);
+const generator = new Generator(await loadMetaModel());
+for (const [path, text] of [
+  [HEADER, generator.generate()],
+  [TABLE, generator.table()],
+]) {
+  if (!options.check) {
+    await writeFile(join(ROOT, path), text);
+    continue;
+  }
+  // A CRLF checkout (core.autocrlf) holds the same text.
+  const committed = await readFile(join(ROOT, path), "utf8");
+  if (committed.replaceAll("\r\n", "\n") !== text) {
+    console.error(`${path} is stale; run \`pixi run lsp-codegen\``);
     process.exitCode = 1;
   }
 }

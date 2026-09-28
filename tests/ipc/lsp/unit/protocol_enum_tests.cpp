@@ -27,7 +27,7 @@ ZEST_CASE(known_string_enum_value) {
     EXPECT(content->kind == protocol::MarkupKind::Markdown);
 }
 
-ZEST_CASE(string_enum_round_trip) {
+ZEST_CASE(string_enum_roundtrip) {
     protocol::MarkupContent content{
         .kind = protocol::MarkupKind::Markdown,
         .value = "body",
@@ -37,7 +37,7 @@ ZEST_CASE(string_enum_round_trip) {
     EXPECT(*serialized == R"({"kind":"markdown","value":"body"})");
 }
 
-ZEST_CASE(unknown_value_round_trip) {
+ZEST_CASE(unknown_value_roundtrip) {
     constexpr std::string_view payload = R"({"kind":"asciidoc","value":"body"})";
     auto content = from_string<protocol::MarkupContent, lsp_config>(payload);
     ASSERT(content);

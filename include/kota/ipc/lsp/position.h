@@ -14,6 +14,13 @@ namespace kota::ipc::lsp {
 
 /// Source content + line starts for LSP position conversion.
 /// Line starts are held either as a borrowed span or as an owned vector.
+///
+/// A line ends at '\n', and a '\r' just before it belongs to the line's end,
+/// not its text. A lone '\r' is text: line starts stay those
+/// build_line_starts has always produced, which callers persist.
+///
+/// Lines without a byte past ASCII convert between bytes and every
+/// encoding's units one to one, without reading the line.
 class LineMap {
 public:
     using Offset = std::uint32_t;
@@ -25,7 +32,8 @@ public:
         /// Byte offset of the line start.
         Offset start;
 
-        /// Byte offset of the line end (before the newline).
+        /// Byte offset of the line end: its "\n" or "\r\n", or the end of
+        /// the content.
         Offset end;
     };
 
@@ -42,11 +50,14 @@ public:
             std::vector<Offset>&& line_starts,
             PositionEncoding encoding = PositionEncoding::UTF16);
 
-    /// Convert a byte offset to an LSP Position.
+    /// Convert a byte offset to an LSP Position. Every offset up to the
+    /// content's size has one: an offset inside a line's end is at the end.
     std::optional<protocol::Position>
         to_position(Offset offset, PositionEncoding encoding = PositionEncoding::Default) const;
 
-    /// Convert an LSP Position to a byte offset.
+    /// Convert an LSP Position to a byte offset. A character past the line's
+    /// end is its end, as LSP asks; a line past the last one has no offset,
+    /// nor has a UTF-16 unit inside a surrogate pair.
     std::optional<Offset> to_offset(protocol::Position position,
                                     PositionEncoding encoding = PositionEncoding::Default) const;
 
@@ -66,8 +77,17 @@ public:
 private:
     PositionEncoding resolve(PositionEncoding encoding) const;
 
+    /// Where `line`'s text ends.
+    Offset line_end(Offset line) const;
+
+    /// `line` holds only ASCII.
+    bool is_ascii(Offset line) const;
+
     std::string_view source;
     std::variant<std::vector<Offset>, std::span<const Offset>> starts;
+    /// A bit for each line holding a byte past ASCII, from the first line's
+    /// lowest bit on.
+    std::vector<std::uint64_t> non_ascii_lines;
     PositionEncoding enc;
 };
 

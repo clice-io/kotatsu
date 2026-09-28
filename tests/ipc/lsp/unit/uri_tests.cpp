@@ -32,7 +32,7 @@ ZEST_CASE(parse_no_authority) {
     EXPECT(!uri->has_fragment());
 }
 
-ZEST_CASE(parse_invalid_uri) {
+ZEST_CASE(parse_invalid_uri_fails) {
     EXPECT(!URI::parse("noscheme").has_value());
     EXPECT(!URI::parse("1abc://example.com").has_value());
     EXPECT(!URI::parse("://example.com").has_value());
@@ -54,7 +54,7 @@ ZEST_CASE(encode_non_ascii) {
     EXPECT(encoded == "%C3%A9");
 }
 
-ZEST_CASE(decode_invalid_input) {
+ZEST_CASE(decode_invalid_input_fails) {
     EXPECT(!URI::percent_decode("%").has_value());
     EXPECT(!URI::percent_decode("%1").has_value());
     EXPECT(!URI::percent_decode("%GG").has_value());
@@ -110,12 +110,12 @@ ZEST_CASE(file_unc_ipv6) {
     EXPECT(*path == "//[::1]/share/a.txt");
 }
 
-ZEST_CASE(reject_relative_path) {
+ZEST_CASE(relative_file_path_fails) {
     EXPECT(!URI::from_file_path("relative/file.txt").has_value());
     EXPECT(!URI::from_file_path("C:relative.txt").has_value());
 }
 
-ZEST_CASE(reject_unc_shareless) {
+ZEST_CASE(unc_path_without_a_share_fails) {
     EXPECT(!URI::from_file_path("\\\\server\\").has_value());
     EXPECT(!URI::from_file_path("\\\\server\\\\dir").has_value());
 }
@@ -140,7 +140,7 @@ ZEST_CASE(authority_handling) {
     EXPECT(*remote_path == "//server/share/a.txt");
 }
 
-ZEST_CASE(reject_bad_authority) {
+ZEST_CASE(file_path_of_a_bad_authority_fails) {
     auto slash_host = URI::parse("file://server%2Fteam/share/a.txt");
     ASSERT(slash_host);
     EXPECT(!slash_host->file_path());

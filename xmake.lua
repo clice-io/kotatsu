@@ -375,7 +375,7 @@ end)
 if has_config("test") and has_config("ztest") then
 	-- Mirrors tests/CMakeLists.txt: one binary per level, built from that
 	-- level's directory of every enabled module.
-	local test_modules = { "support", "meta", "async", "zest" }
+	local test_modules = { "support", "meta", "async", "zest", "examples/async" }
 	if has_config("codec") then
 		table.insert(test_modules, "codec")
 		table.insert(test_modules, "codec/bincode")

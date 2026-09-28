@@ -10,5 +10,5 @@
     "erasableSyntaxOnly": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["scripts"]
+  "include": ["scripts", "tests"]
 }

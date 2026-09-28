@@ -9,13 +9,12 @@
 
 namespace kota::ipc {
 
-struct lsp_config {
-    using field_rename = codec::rename_policy::lower_camel;
-};
-
-class JsonCodec {
-public:
+struct JsonCodec {
     IncomingMessage parse_message(std::string_view payload);
+
+    /// Reads what it can from `prefix`, the first bytes of a message too
+    /// large to read whole.
+    MessageHead peek(std::string_view prefix);
 
     Result<std::string> encode_request(const protocol::RequestID& id,
                                        std::string_view method,
@@ -26,7 +25,9 @@ public:
     Result<std::string> encode_success_response(const protocol::RequestID& id,
                                                 std::string_view result);
 
-    Result<std::string> encode_error_response(const protocol::RequestID& id, const Error& error);
+    /// Without an id, the error answers a message whose id could not be read.
+    Result<std::string> encode_error_response(const std::optional<protocol::RequestID>& id,
+                                              const Error& error);
 
     template <typename T>
     Result<std::string> serialize_value(const T& value) {

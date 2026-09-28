@@ -1,12 +1,18 @@
+#include <cstddef>
 #include <format>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <variant>
+#include <vector>
 
+#include "kota/ipc/codec.h"
 #include "kota/ipc/codec/json.h"
+#include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
+#include "kota/codec/bincode/bincode.h"
+#include "kota/codec/dyn/dyn.h"
 #include "kota/ipc/lsp/protocol.h"
 
 namespace kota::ipc::lsp {
@@ -26,7 +32,7 @@ ZEST_CASE(literal_encodes_its_text) {
     EXPECT(*serialized == R"({"kind":"create","uri":"file:///a"})");
 }
 
-ZEST_CASE(literal_rejects_other_input) {
+ZEST_CASE(literal_of_other_text_fails) {
     for(auto payload: {R"({"kind":"delete","uri":"file:///a"})",
                        R"({"kind":1,"uri":"file:///a"})",
                        R"({"uri":"file:///a"})"}) {
@@ -114,7 +120,7 @@ ZEST_CASE(inherited_properties_are_members) {
     EXPECT(std::get<std::string>(*params->work_done_token) == "t");
 }
 
-ZEST_CASE(self_containing_structure_round_trip) {
+ZEST_CASE(self_containing_structure_roundtrip) {
     constexpr protocol::Range range{
         .start = {.line = 0, .character = 0},
         .end = {.line = 0, .character = 1}
@@ -136,7 +142,7 @@ ZEST_CASE(self_containing_structure_round_trip) {
     EXPECT(decoded->parent->range.end.character == 1U);
 }
 
-ZEST_CASE(nested_structure_round_trip) {
+ZEST_CASE(nested_structure_roundtrip) {
     auto payload = std::format(
         R"({{"name":"outer","kind":5,"range":{0},"selectionRange":{0},"children":[{{"name":"inner","kind":6,"range":{0},"selectionRange":{0}}}]}})",
         range_json);
@@ -195,10 +201,145 @@ ZEST_CASE(nullable_result) {
 }
 
 ZEST_CASE(parameterless_methods) {
-    static_assert(
-        std::is_same_v<protocol::RequestTraits<protocol::ShutdownParams>::Result, protocol::null>);
+    EXPECT(
+        zest::type_eq<protocol::RequestTraits<protocol::ShutdownParams>::Result, protocol::null>());
     EXPECT(protocol::RequestTraits<protocol::ShutdownParams>::method == "shutdown");
     EXPECT(protocol::NotificationTraits<protocol::ExitParams>::method == "exit");
+}
+
+// Clients send the params of shutdown and exit as null, or leave them out.
+ZEST_CASE(parameterless_methods_read_null_params) {
+    JsonCodec codec;
+    for(std::string_view payload: {
+            R"({"jsonrpc":"2.0","id":1,"method":"shutdown","params":null})",
+            R"({"jsonrpc":"2.0","id":1,"method":"shutdown"})",
+        }) {
+        ZEST_CONTEXT("payload: {}", payload);
+        auto parsed = codec.parse_message(payload);
+        const auto* request = std::get_if<IncomingRequest>(&parsed);
+        ASSERT(request != nullptr);
+        EXPECT(codec.deserialize_value<protocol::ShutdownParams>(request->params).has_value());
+    }
+    auto parsed = codec.parse_message(R"({"jsonrpc":"2.0","method":"exit","params":null})");
+    const auto* notification = std::get_if<IncomingNotification>(&parsed);
+    ASSERT(notification != nullptr);
+    EXPECT(codec.deserialize_value<protocol::ExitParams>(notification->params).has_value());
+}
+
+// An untagged variant lists a structure before the one it derives from, so
+// an edit with an annotationId reads as the AnnotatedTextEdit it is, not as a
+// TextEdit that drops the id.
+ZEST_CASE(untagged_variant_takes_the_alternative_the_input_fills) {
+    auto edit = from_string<protocol::TextDocumentEdit, lsp_config>(std::format(
+        R"({{"textDocument":{{"uri":"file:///a","version":null}},"edits":[{{"range":{},"newText":"x","annotationId":"a"}}]}})",
+        range_json));
+    ASSERT(edit);
+    ASSERT(edit->edits.size() == 1U);
+    EXPECT(std::holds_alternative<protocol::AnnotatedTextEdit>(edit->edits[0]));
+}
+
+// In a report, `cancellable: false` disables the cancel button, where leaving
+// it out keeps the button as it is, so false is written.
+ZEST_CASE(tri_state_bool_writes_false) {
+    auto serialized = to_string<lsp_config>(protocol::WorkDoneProgressReport{.cancellable = false});
+    ASSERT(serialized);
+    EXPECT(zest::contains(*serialized, R"("cancellable":false)"));
+}
+
+// An optional member whose type admits null reads null as present.
+ZEST_CASE(optional_nullable_member_reads_null_as_present) {
+    auto params = from_string<protocol::InitializeParams, lsp_config>(
+        R"({"processId":null,"rootUri":null,"capabilities":{},"workspaceFolders":null})");
+    ASSERT(params);
+    ASSERT(params->workspace_folders.has_value());
+    EXPECT(!params->workspace_folders->has_value());
+}
+
+// So is an optional LSPAny, such as `data`: an item carries its null back
+// to the server.
+ZEST_CASE(optional_any_member_reads_null_as_present) {
+    auto item = from_string<protocol::CompletionItem, lsp_config>(R"({"label":"a","data":null})");
+    ASSERT(item);
+    ASSERT(item->data.has_value());
+    EXPECT(item->data->is_null());
+    auto written = to_string<lsp_config>(*item);
+    ASSERT(written);
+    EXPECT(*written == R"({"label":"a","data":null})");
+}
+
+// A required `T | null` must be present: null is a value, absent is not.
+ZEST_CASE(required_nullable_member_absent_fails) {
+    auto params = from_string<protocol::InitializeParams, lsp_config>(
+        R"({"rootUri":null,"capabilities":{}})");
+    ASSERT(!params);
+    EXPECT(zest::contains(params.error().to_string(), "processId"));
+}
+
+// Real LSP payloads nest up to about 130 levels: a SelectionRange parent
+// chain, say.
+ZEST_CASE(nesting_of_real_payloads_is_read) {
+    JsonCodec codec;
+    std::string chain;
+    for(int level = 0; level < 125; ++level) {
+        chain += R"({"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":1}})";
+        chain += level + 1 < 125 ? R"(,"parent":)" : "";
+    }
+    chain += std::string(125, '}');
+    auto parsed =
+        codec.parse_message(std::format(R"({{"jsonrpc":"2.0","id":1,"result":[{}]}})", chain));
+    const auto* response = std::get_if<IncomingResponse>(&parsed);
+    ASSERT(response != nullptr);
+    auto ranges = codec.deserialize_value<std::vector<protocol::SelectionRange>>(response->result);
+    ASSERT(ranges.has_value());
+    EXPECT(ranges->size() == 1U);
+}
+
+// Bincode writes every field, an absent optional member's too, and reads its
+// three states back.
+ZEST_CASE(optional_nullable_member_roundtrips_through_bincode) {
+    for(auto active: {protocol::optional_nullable<protocol::nullable<protocol::uinteger>>{},
+                      protocol::optional_nullable<protocol::nullable<protocol::uinteger>>{
+                          protocol::nullable<protocol::uinteger>{}},
+                      protocol::optional_nullable<protocol::nullable<protocol::uinteger>>{
+                          protocol::nullable<protocol::uinteger>{2U}}}) {
+        protocol::SignatureInformation info{.label = "f(int)", .active_parameter = active};
+        auto bytes = codec::bincode::to_bytes(info);
+        ASSERT(bytes);
+        protocol::SignatureInformation back{};
+        ASSERT(codec::bincode::from_bytes(std::span<const std::byte>(*bytes), back));
+        EXPECT((back.active_parameter == info.active_parameter));
+    }
+}
+
+// dyn has no format of its own: a present null stays present through it.
+ZEST_CASE(optional_nullable_member_roundtrips_through_dyn) {
+    for(auto active: {protocol::optional_nullable<protocol::nullable<protocol::uinteger>>{},
+                      protocol::optional_nullable<protocol::nullable<protocol::uinteger>>{
+                          protocol::nullable<protocol::uinteger>{}},
+                      protocol::optional_nullable<protocol::nullable<protocol::uinteger>>{
+                          protocol::nullable<protocol::uinteger>{2U}}}) {
+        protocol::SignatureInformation info{.label = "f(int)", .active_parameter = active};
+        auto value = codec::dyn::to_dyn(info);
+        ASSERT(value);
+        auto back = codec::dyn::from_dyn<protocol::SignatureInformation>(*value);
+        ASSERT(back);
+        EXPECT((back->active_parameter == info.active_parameter));
+    }
+}
+
+struct NullableMembers {
+    protocol::nullable<protocol::integer> required;
+    protocol::optional_nullable<protocol::nullable<protocol::integer>> optional;
+
+    bool operator==(const NullableMembers&) const = default;
+};
+
+ZEST_CASE(nullable_members_compare) {
+    NullableMembers a{.required = 1, .optional = protocol::nullable<protocol::integer>{}};
+    NullableMembers b = a;
+    EXPECT((a == b));
+    b.optional.reset();
+    EXPECT(!(a == b));
 }
 
 };  // ZEST_SUITE(ipc_lsp_protocol_model)

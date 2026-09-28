@@ -11,8 +11,7 @@
 #include "kota/ipc/codec/json.h"
 #include "kota/async/async.h"
 
-namespace et = kota;
-namespace ipc = et::ipc;
+namespace ipc = kota::ipc;
 
 namespace {
 
@@ -45,10 +44,10 @@ public:
         }
     }
 
-    et::task<std::optional<std::string>> read_message() override {
+    kota::task<std::string, ipc::ReadError> read_message() override {
         while(read_index >= incoming_messages.size()) {
             if(closed) {
-                co_return std::nullopt;
+                co_await kota::fail(ipc::ReadError{.kind = ipc::ReadError::Kind::Closed});
             }
 
             co_await readable.wait();
@@ -58,7 +57,7 @@ public:
         co_return incoming_messages[read_index++];
     }
 
-    et::task<void, ipc::Error> write_message(std::string_view payload) override {
+    kota::task<void, ipc::Error> write_message(std::string_view payload) override {
         outgoing_messages.emplace_back(payload);
         if(write_hook) {
             write_hook(payload, *this);
@@ -69,6 +68,10 @@ public:
     void push_incoming(std::string payload) {
         incoming_messages.push_back(std::move(payload));
         readable.set();
+    }
+
+    kota::task<void, ipc::Error> close_output() override {
+        co_return;
     }
 
     ipc::Result<void> close() override {
@@ -86,14 +89,14 @@ private:
     std::vector<std::string> outgoing_messages;
     std::size_t read_index = 0;
     WriteHook write_hook;
-    et::event readable;
+    kota::event readable;
     bool closed = false;
 };
 
 }  // namespace
 
 int main() {
-    et::event_loop loop;
+    kota::event_loop loop;
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{
             R"({"jsonrpc":"2.0","id":7,"method":"example/add","params":{"a":2,"b":3}})",
@@ -120,14 +123,14 @@ int main() {
             auto notify_status =
                 context->send_notification("example/note", NoteParams{.text = "handling request"});
             if(!notify_status) {
-                co_return et::outcome_error(notify_status.error());
+                co_return kota::outcome_error(notify_status.error());
             }
 
             auto remote_sum =
                 co_await context->send_request<AddResult>("client/add",
                                                           ClientAddParams{.a = params.b, .b = 1});
             if(!remote_sum) {
-                co_return et::outcome_error(remote_sum.error());
+                co_return kota::outcome_error(remote_sum.error());
             }
 
             co_return AddResult{.sum = params.a + params.b + remote_sum->sum};

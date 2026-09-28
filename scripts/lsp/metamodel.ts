@@ -1,27 +1,28 @@
 // The LSP metaModel pinned to one commit of microsoft/language-server-protocol,
-// so everything derived from it is reproducible; bump COMMIT and SHA256 (and
-// VERSION for a new release) to follow the spec.
+// committed as metaModel.json so that everything derived from it is
+// reproducible without the network. To follow the spec, replace the file with
+// the one at SOURCE for the new COMMIT (and VERSION, for a new release), and
+// update SHA256; the loader refuses a file that does not match it.
 //
 // The types transcribe metaModel.schema.json at the pinned commit. The loader
 // trusts the model to match them, so a new pin needs the schema diffed too.
+//
+// Schema is the model as codegen.ts and the tests read it.
 
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
 export const VERSION = "3.18";
 export const COMMIT = "b7f5132c95261c0898ae5124e7a91707abc48fcd";
 const SHA256 =
   "caae8df639a4248520a3f589fd72945365e9d8ebca5baf564161a515430d9d41";
-const SOURCE_URL =
+export const SOURCE =
   "https://raw.githubusercontent.com/microsoft/language-server-protocol/" +
   `${COMMIT}/_specifications/lsp/${VERSION}/metaModel/metaModel.json`;
 
-const CACHE_PATH = join(
-  import.meta.dirname,
-  "../../.cache/lsp",
-  `metaModel-${COMMIT}.json`,
-);
+const PATH = join(import.meta.dirname, "metaModel.json");
 
 export type BaseTypes =
   | "URI"
@@ -180,37 +181,229 @@ export interface MetaModel {
   typeAliases: TypeAlias[];
 }
 
-function sha256(bytes: Uint8Array): string {
-  return createHash("sha256").update(bytes).digest("hex");
-}
-
-async function metaModelBytes(): Promise<Uint8Array> {
-  // A missing or damaged cache is fetched again.
-  const cached = await readFile(CACHE_PATH).catch(() => undefined);
-  if (cached !== undefined && sha256(cached) === SHA256) {
-    return cached;
-  }
-  console.error(`fetching ${SOURCE_URL}`);
-  // A stalled server fails the download rather than hanging the run; the
-  // signal also bounds reading the body.
-  const response = await fetch(SOURCE_URL, {
-    signal: AbortSignal.timeout(60_000),
-  });
-  if (!response.ok) {
-    throw new Error(`fetching ${SOURCE_URL}: HTTP ${response.status}`);
-  }
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  const digest = sha256(bytes);
-  if (digest !== SHA256) {
-    throw new Error(`${SOURCE_URL} has sha256 ${digest}, pinned ${SHA256}`);
-  }
-  await mkdir(dirname(CACHE_PATH), { recursive: true });
-  await writeFile(CACHE_PATH, bytes);
-  return bytes;
-}
-
-/** The pinned metaModel, downloaded once into .cache/. */
+/** The pinned metaModel. */
 export async function loadMetaModel(): Promise<MetaModel> {
-  const text = new TextDecoder().decode(await metaModelBytes());
-  return JSON.parse(text) as MetaModel;
+  const bytes = await readFile(PATH);
+  const digest = createHash("sha256").update(bytes).digest("hex");
+  if (digest !== SHA256) {
+    throw new Error(`${PATH} has sha256 ${digest}, pinned ${SHA256}`);
+  }
+  return JSON.parse(new TextDecoder().decode(bytes)) as MetaModel;
+}
+
+/**
+ * The optional booleans for which absent does not mean false. protocol.h
+ * keeps these three states (`optional<boolean>`), and writes every other
+ * optional boolean's false as absent (`optional_bool`).
+ */
+export const TRI_STATE_BOOLEANS = new Set([
+  "ExecutionSummary.success",
+  "WorkDoneProgressBegin.cancellable",
+  "WorkDoneProgressReport.cancellable",
+  "SemanticTokensClientCapabilities.augmentsSyntaxTokens",
+]);
+
+/** The metaModel uses a construct the tools here do not handle. */
+export class SchemaError extends Error {
+  override name = "SchemaError";
+}
+
+export function isBase(t: Type, name: BaseTypes): boolean {
+  return t.kind === "base" && t.name === name;
+}
+
+/**
+ * Items in code unit order of their key, which unlike localeCompare does not
+ * depend on the locale.
+ */
+export function sortedBy<T>(items: Iterable<T>, key: (item: T) => string): T[] {
+  return [...items].sort((a, b) => {
+    const [x, y] = [key(a), key(b)];
+    return x < y ? -1 : x > y ? 1 : 0;
+  });
+}
+
+function byName<T extends { name: string }>(items: T[]): Map<string, T> {
+  return new Map(items.map((item) => [item.name, item]));
+}
+
+/** A request or notification, with the params type its traits are keyed by. */
+export interface Message {
+  method: string;
+  messageDirection: MessageDirection;
+  params: Type;
+  result?: Type;
+}
+
+/** Name of the empty params structure of a method that takes none. */
+function paramsName(message: Request | Notification): string {
+  const typeName = message.typeName ?? "";
+  for (const suffix of ["Request", "Notification"]) {
+    if (typeName.endsWith(suffix)) {
+      return typeName.slice(0, -suffix.length) + "Params";
+    }
+  }
+  throw new SchemaError(
+    `method \`${message.method}\` has an unexpected type name`,
+  );
+}
+
+/**
+ * The metaModel's declarations by name, its methods in method order with
+ * their params, and each structure's properties with the inherited ones
+ * inlined. A method that takes no params gets an empty params structure, so
+ * that every method has a params type of its own.
+ */
+export class Schema {
+  readonly structures: Map<string, Structure>;
+  readonly enumerations: Map<string, Enumeration>;
+  readonly aliases: Map<string, TypeAlias>;
+  readonly requests: Message[];
+  readonly notifications: Message[];
+  readonly #properties = new Map<string, Property[]>();
+
+  constructor(model: MetaModel) {
+    this.structures = byName(model.structures);
+    this.enumerations = byName(model.enumerations);
+    this.aliases = byName(model.typeAliases);
+    this.requests = sortedBy(model.requests, (item) => item.method).map(
+      (request) => ({ ...this.#withParams(request), result: request.result }),
+    );
+    this.notifications = sortedBy(
+      model.notifications,
+      (item) => item.method,
+    ).map((notification) => this.#withParams(notification));
+  }
+
+  #withParams(message: Request | Notification): Message {
+    const { method, messageDirection, params } = message;
+    if (Array.isArray(params)) {
+      throw new SchemaError(`method \`${method}\` takes positional params`);
+    }
+    if (params !== undefined) {
+      return { method, messageDirection, params };
+    }
+    const name = paramsName(message);
+    if (this.structures.has(name)) {
+      throw new SchemaError(`params structure \`${name}\` already exists`);
+    }
+    this.structures.set(name, {
+      name,
+      properties: [],
+      documentation: `Params of \`${method}\`, which takes none.`,
+    });
+    return { method, messageDirection, params: { kind: "reference", name } };
+  }
+
+  structure(name: string): Structure {
+    const structure = this.structures.get(name);
+    if (structure === undefined) {
+      throw new SchemaError(`\`${name}\` is not a structure`);
+    }
+    return structure;
+  }
+
+  /** The structures `name` inherits from, by `extends` and `mixins`. */
+  parents(name: string): string[] {
+    const structure = this.structure(name);
+    return [...(structure.extends ?? []), ...(structure.mixins ?? [])].map(
+      (parent) => {
+        if (parent.kind !== "reference") {
+          throw new SchemaError(`${name} inherits a \`${parent.kind}\` type`);
+        }
+        return parent.name;
+      },
+    );
+  }
+
+  /** Whether the structure `name` derives from the structure `base`. */
+  derives(name: string, base: string): boolean {
+    return (
+      this.structures.has(name) &&
+      this.parents(name).some(
+        (parent) => parent === base || this.derives(parent, base),
+      )
+    );
+  }
+
+  /**
+   * The alternatives, each structure moved before the first one it derives
+   * from, as protocol.h lists them: an untagged variant reads the first
+   * alternative a value fits.
+   */
+  derivedFirst(items: Type[]): Type[] {
+    const ordered: Type[] = [];
+    for (const item of items) {
+      const base =
+        item.kind === "reference"
+          ? ordered.findIndex(
+              (earlier) =>
+                earlier.kind === "reference" &&
+                this.derives(item.name, earlier.name),
+            )
+          : -1;
+      ordered.splice(base < 0 ? ordered.length : base, 0, item);
+    }
+    return ordered;
+  }
+
+  /** Whether null is among the values of `t`. */
+  admitsNull(t: Type): boolean {
+    if (t.kind === "reference") {
+      const alias = this.aliases.get(t.name);
+      return alias !== undefined && this.admitsNull(alias.type);
+    }
+    return (
+      isBase(t, "null") ||
+      (t.kind === "or" && t.items.some((item) => this.admitsNull(item)))
+    );
+  }
+
+  /**
+   * The structure's properties, the inherited ones (`extends` and `mixins`)
+   * first; a property the structure redeclares narrows the inherited one in
+   * place.
+   */
+  properties(name: string): Property[] {
+    const cached = this.#properties.get(name);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const structure = this.structure(name);
+    const merged = new Map<string, Property>();
+    for (const parent of this.parents(name)) {
+      for (const prop of this.properties(parent)) {
+        const seen = merged.get(prop.name);
+        if (seen !== undefined && !isDeepStrictEqual(seen, prop)) {
+          throw new SchemaError(
+            `${name}: parents disagree on \`${prop.name}\``,
+          );
+        }
+        merged.set(prop.name, prop);
+      }
+    }
+    for (const prop of structure.properties) {
+      const inherited = merged.get(prop.name);
+      // The one redeclaration the spec makes narrows a string to a literal
+      // (`ResourceOperation.kind` in CreateFile and friends).
+      if (
+        inherited !== undefined &&
+        !(
+          isBase(inherited.type, "string") &&
+          prop.type.kind === "stringLiteral" &&
+          prop.optional === inherited.optional
+        )
+      ) {
+        throw new SchemaError(
+          `${name}.${prop.name} does not narrow its parent's`,
+        );
+      }
+      // Setting an existing key keeps its position: the narrowed property
+      // stays where the parent declared it.
+      merged.set(prop.name, prop);
+    }
+    const properties = [...merged.values()];
+    this.#properties.set(name, properties);
+    return properties;
+  }
 }
