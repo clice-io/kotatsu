@@ -39,7 +39,9 @@ nodejs = "24.*"
 python = "*"
 cmake = ">=3.25"
 ninja = "*"
-ccache = "*"
+# 4.14 turns direct mode off for any translation unit whose headers contain
+# the text "#embed".
+ccache = "4.13.*"
 openssl = "*"
 
 [feature.linux-gcc.target.linux-64.dependencies]
@@ -82,6 +84,8 @@ CXX = "clang++"
 [feature.windows-mingw.target.win-64.dependencies]
 gcc = "==14.2.0"
 gxx = "==14.2.0"
+# cmake.yml links the mingw legs with it.
+lld = "==20.1.8"
 sccache = "*"
 
 [feature.windows-mingw.target.win-64.activation.env]

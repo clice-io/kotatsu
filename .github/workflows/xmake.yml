@@ -55,6 +55,8 @@ jobs:
           activate-environment: true
           cache: false
           locked: true
+          # Deleting the environment when the job ends only takes time.
+          post-cleanup: false
 
       - name: Configure
         run: >

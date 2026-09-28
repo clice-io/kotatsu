@@ -141,7 +141,15 @@ endif()
 
 if(kota_sanitizer_compile_options)
     if(NOT MSVC)
-        list(APPEND kota_sanitizer_compile_options "-g" "-fno-omit-frame-pointer")
+        # Outside Debug, sanitizer builds compile at -O1, as the ASan docs
+        # suggest, with line tables only (-g1), which keep file and line in the
+        # reports' stacks: about half the build time of -O2 -g. Bugs only -O2
+        # exposes are left to the builds without sanitizers.
+        list(APPEND kota_sanitizer_compile_options
+            "$<IF:$<CONFIG:Debug>,-g,-g1>"
+            "$<$<NOT:$<CONFIG:Debug>>:-O1>"
+            "-fno-omit-frame-pointer"
+        )
     endif()
     add_compile_options(${kota_sanitizer_compile_options})
     add_link_options(${kota_sanitizer_link_options})

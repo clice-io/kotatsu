@@ -101,16 +101,21 @@ jobs:
           activate-environment: true
           cache: false
           locked: true
+          # Deleting the environment when the job ends only takes time.
+          post-cleanup: false
 
       - name: Setup MSVC environment
         if: env.NEEDS_MSVC_ENV == 'true'
         uses: ilammy/msvc-dev-cmd@v1
 
+      # Keyed on the files that declare the dependencies, and saved from main
+      # right after configure, which fetches them; pull requests reuse main's.
       - name: Restore CPM cache
-        uses: actions/cache@v4
+        id: cpm-cache
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.CPM_SOURCE_CACHE }}
-          key: cpm-${{ runner.os }}-${{ hashFiles('pixi.lock', '.github/workflows/cmake.yml', 'CMakePresets.json', 'CMakeLists.txt', 'src/**/CMakeLists.txt') }}
+          key: cpm-${{ runner.os }}-${{ hashFiles('cmake/kota_dependencies.cmake', 'src/*/CMakeLists.txt') }}
           restore-keys: |
             cpm-${{ runner.os }}-
 
@@ -126,26 +131,38 @@ jobs:
       - name: Install npm packages
         run: pixi run -e ${{ env.PIXI_ENV }} npm-ci
 
+      # An entry cannot be overwritten, so each run saves a new one keyed on its
+      # commit and restores the newest by prefix. GitHub keeps an entry to the
+      # ref that saved it and searches the run's own ref before main's, so a
+      # pull request starts from its own last run, or else from main.
       - name: Restore compiler cache
+        id: compiler-cache
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.COMPILER_CACHE == 'sccache' && env.SCCACHE_DIR || env.CCACHE_DIR }}
-          key: ${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.preset }}
+          key: ${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.preset }}/${{ github.sha }}
+          restore-keys: ${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.preset }}/
 
-      - name: Configure, build, and test
+      # pixi's clang builds against Xcode's SDK.
+      - name: Setup macOS SDK
+        if: runner.os == 'macOS' && env.CC == 'clang'
+        shell: bash
+        run: |
+          sdk="$(xcrun --sdk macosx --show-sdk-path)"
+          echo "SDKROOT=${sdk}" >> "$GITHUB_ENV"
+          echo "CONDA_BUILD_SYSROOT=${sdk}" >> "$GITHUB_ENV"
+
+      - name: Configure
         shell: bash
         run: |
           set -euxo pipefail
           if [[ "${{ env.COMPILER_CACHE }}" == "ccache" ]]; then
             ccache --zero-stats || true
           else
-            sccache --stop-server || true
             sccache --zero-stats || true
           fi
           extra_args=()
           if [[ "${{ runner.os }}" == "macOS" && "${{ env.CC }}" == "clang" ]]; then
-            export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
-            export CONDA_BUILD_SYSROOT="${SDKROOT}"
             extra_args=(
               -DCMAKE_OSX_SYSROOT="${SDKROOT}"
               -DCMAKE_C_FLAGS="--sysroot=${SDKROOT}"
@@ -154,14 +171,37 @@ jobs:
               -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}"
               -DCMAKE_MODULE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}"
             )
+          elif [[ "${{ matrix.toolchain }}" == "mingw" ]]; then
+            # ld.bfd takes minutes on the test binaries.
+            extra_args=(
+              -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld
+              -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld
+            )
           fi
 
           # ${arr[@]+...} guard: macOS ships bash 3.2, where expanding an
           # empty array under set -u is an unbound-variable error.
           cmake --preset "${{ matrix.preset }}" ${extra_args[@]+"${extra_args[@]}"}
 
+      - name: Save CPM cache
+        if: github.ref == 'refs/heads/main' && steps.cpm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.CPM_SOURCE_CACHE }}
+          key: ${{ steps.cpm-cache.outputs.cache-primary-key }}
+
+      - name: Build
+        id: build
+        shell: bash
+        run: |
+          # "Trim compiler cache" keeps what the build uses from here on, taken
+          # a second early since `date +%s` rounds down.
+          echo "BUILD_STARTED_AT=$(( $(date +%s) - 1 ))" >> "$GITHUB_ENV"
           cmake --build --preset "${{ matrix.preset }}" --parallel
 
+      - name: Test
+        shell: bash
+        run: |
           # The coverage script runs ctest itself, then reports; a failing
           # test fails it, the numbers never do.
           if [[ "${{ matrix.preset }}" == "coverage" ]]; then
@@ -195,18 +235,48 @@ jobs:
             sccache --stop-server || true
           fi
 
-      - name: Delete old compiler cache
-        if: always() && github.ref == 'refs/heads/main'
+      # Drops the objects this build did not use, so that a saved entry holds
+      # one build instead of growing to the size limit run after run; both
+      # tools refresh an object's mtime when the build uses it. After a failed
+      # build nothing is dropped, since what it did not reach is still good.
+      - name: Trim compiler cache
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        continue-on-error: true
         shell: bash
         run: |
-          gh actions-cache delete "${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.preset }}" \
-            --ref refs/heads/main --confirm || true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          if [[ "${COMPILER_CACHE}" == "ccache" ]]; then
+            dir="${CCACHE_DIR}"
+            ccache --evict-older-than "$(( $(date +%s) - BUILD_STARTED_AT ))s"
+          else
+            # sccache has no such command; its server, which keeps count of
+            # these files, stopped with the stats above. It runs on Windows.
+            dir="$(cygpath -u "${SCCACHE_DIR}")"
+            find "${dir}" -type f ! -newermt "@${BUILD_STARTED_AT}" -delete
+          fi
+          du -sh "${dir}"
 
+      # After a failed build too, which keeps what it compiled. Not from a
+      # fork, whose token cannot delete the entries a new one replaces.
       - name: Save compiler cache
-        if: always() && github.ref == 'refs/heads/main'
+        id: compiler-cache-save
+        if: ${{ !cancelled() && steps.build.outcome != 'skipped' && steps.compiler-cache.outputs.cache-hit != 'true' && !github.event.pull_request.head.repo.fork }}
         uses: actions/cache/save@v4
         with:
           path: ${{ env.COMPILER_CACHE == 'sccache' && env.SCCACHE_DIR || env.CCACHE_DIR }}
-          key: ${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.preset }}
+          key: ${{ steps.compiler-cache.outputs.cache-primary-key }}
+
+      # The ref's older entries for this leg, which would otherwise sit in the
+      # repository's cache pool until evicted; a failure here only leaves them.
+      # A failed save only warns, so they go only once the new entry is listed.
+      - name: Delete replaced compiler cache
+        if: ${{ !cancelled() && steps.compiler-cache-save.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          KEY: ${{ steps.compiler-cache.outputs.cache-primary-key }}
+        run: |
+          gh cache list --ref "${GITHUB_REF}" --key "${KEY%/*}/" --limit 100 --json id,key \
+              --jq "if any(.[]; .key == \"${KEY}\") then .[] | select(.key != \"${KEY}\") | .id else empty end" |
+            while read -r id; do gh cache delete "${id}"; done
