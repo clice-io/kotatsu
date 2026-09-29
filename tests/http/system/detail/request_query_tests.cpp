@@ -14,7 +14,7 @@ ZEST_SUITE(http_detail_request_query, test::LoopFixture) {
 ZEST_CASE(query_parameters_are_percent_encoded_in_order) {
     test::HttpServer server(loop);
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop)
                            .get(server.url("/inspect"))
@@ -31,7 +31,7 @@ ZEST_CASE(query_parameters_are_percent_encoded_in_order) {
 ZEST_CASE(query_extends_a_url_that_has_one) {
     test::HttpServer server(loop);
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(server.url("/p?x=1")).query("y", "2").send());
     EXPECT(reply.has_value());
@@ -43,7 +43,7 @@ ZEST_CASE(query_extends_a_url_that_has_one) {
 ZEST_CASE(response_url_carries_the_query) {
     test::HttpServer server(loop);
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(server.url("/p")).query("y", "2").send());
     ASSERT(reply.has_value());

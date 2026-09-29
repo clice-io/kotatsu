@@ -21,7 +21,7 @@ ZEST_CASE(request_past_its_timeout_fails) {
     test::HttpServer server(loop,
                             [&](const test::Received&) { return test::Reply{.hold = &never}; });
     ASSERT(server.listening());
-    auto client = http::client().timeout(50ms);
+    auto client = test::loopback_client().timeout(50ms);
 
     auto [reply] = run(client.on(loop).get(server.url("/")).send());
     ASSERT(reply.has_error());
@@ -29,13 +29,13 @@ ZEST_CASE(request_past_its_timeout_fails) {
     EXPECT(reply.error().curl_code == CURLE_OPERATION_TIMEDOUT);
 }
 
-ZEST_CASE(request_timeout_replaces_the_clients) {
+ZEST_CASE(request_timeout_shorter_than_the_clients_fails) {
     event never;
     test::HttpServer server(loop, [&](const test::Received& request) {
         return request.target == "/slow" ? test::Reply{.hold = &never} : test::Reply{};
     });
     ASSERT(server.listening());
-    auto client = http::client().timeout(1h);
+    auto client = test::loopback_client().timeout(1h);
 
     auto [reply] = run(client.on(loop).get(server.url("/slow")).timeout(50ms).send());
     ASSERT(reply.has_error());

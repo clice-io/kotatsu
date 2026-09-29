@@ -1,6 +1,7 @@
 #include <array>
 #include <cstddef>
 #include <format>
+#include <functional>
 #include <optional>
 #include <string>
 #include <thread>
@@ -15,7 +16,7 @@ namespace kota::http {
 
 namespace {
 
-/// What one thread saw: whether each of its requests went through, and the
+/// What one thread saw: how many of its requests went through, and the
 /// cookies its last request carried.
 struct Seen {
     std::size_t done = 0;
@@ -60,7 +61,7 @@ ZEST_SUITE(http_detail_client_threads) {
 // curl cannot share a cookie jar between threads: each loop keeps its own.
 ZEST_CASE(copies_on_two_threads_keep_a_jar_each) {
     constexpr int rounds = 20;
-    http::client shared;
+    auto shared = test::loopback_client();
     std::array<Seen, 2> seen;
 
     std::thread first(exchange, shared, 0, rounds, std::ref(seen[0]));

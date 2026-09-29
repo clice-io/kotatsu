@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
@@ -24,7 +25,7 @@ constexpr inline std::string_view connect = "CONNECT";
 
 }  // namespace method
 
-enum class error_kind {
+enum class error_kind : std::uint8_t {
     /// libcurl failed the transfer; `curl_code` says why.
     curl,
     /// The request cannot be sent as built: a missing url, a body on GET, a

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <expected>
 #include <functional>
+#include <map>
 #include <memory>
 #include <unordered_map>
 
@@ -68,12 +69,6 @@ private:
     struct timer_watch;
     struct socket_watch;
 
-    /// The curl share of one client's requests on this loop.
-    struct jar {
-        std::weak_ptr<const detail::share_key> key;
-        std::shared_ptr<curl::share_handle> share;
-    };
-
     manager(event_loop& loop, curl::multi_handle multi) noexcept;
 
     /// The curl share of the requests of `key` on this loop, made by the
@@ -102,9 +97,13 @@ private:
     static int on_timeout(CURLM* multi, long timeout_ms, void* self) noexcept;
 
     event_loop* bound_loop;
-    /// Before the multi handle, so that the shares its transfers used
-    /// outlive it.
-    std::unordered_map<const detail::share_key*, jar> jars;
+    /// The curl share of each client that sent requests here, found by its
+    /// key's control block. Declared before the multi handle, so that the
+    /// shares its transfers used outlive it.
+    std::map<std::weak_ptr<const detail::share_key>,
+             std::shared_ptr<curl::share_handle>,
+             std::owner_less<>>
+        jars;
     curl::multi_handle multi;
     kota::detail::unique_handle<timer_watch> timer;
     std::unordered_map<curl_socket_t, kota::detail::unique_handle<socket_watch>> sockets;

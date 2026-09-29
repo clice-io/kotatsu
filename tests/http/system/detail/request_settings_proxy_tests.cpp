@@ -17,7 +17,7 @@ ZEST_SUITE(http_detail_request_settings_proxy, test::LoopFixture) {
 ZEST_CASE(requests_go_through_the_proxy) {
     test::HttpServer proxy(loop);
     ASSERT(proxy.listening());
-    auto client = http::client().proxy(proxy.url(""));
+    auto client = test::loopback_client().proxy(proxy.url(""));
 
     auto [reply] = run(client.on(loop).get("http://kotatsu.invalid/path?q=1").send());
     EXPECT(reply.has_value());
@@ -31,7 +31,7 @@ ZEST_CASE(requests_go_through_the_proxy) {
 ZEST_CASE(proxy_credentials_are_sent) {
     test::HttpServer proxy(loop);
     ASSERT(proxy.listening());
-    auto client = http::client().proxy(http::proxy{
+    auto client = test::loopback_client().proxy(http::proxy{
         .url = proxy.url(""),
         .username = "user",
         .password = "secret",
@@ -49,7 +49,7 @@ ZEST_CASE(no_proxy_goes_straight_to_the_server) {
     ASSERT(server.listening());
     test::RefusingPort nowhere;
     ASSERT(nowhere.port > 0);
-    auto client = http::client().proxy(nowhere.url());
+    auto client = test::loopback_client().proxy(nowhere.url());
 
     auto [reply] = run(client.on(loop).get(server.url("/direct")).no_proxy().send());
     EXPECT(reply.has_value());
@@ -61,7 +61,7 @@ ZEST_CASE(no_proxy_goes_straight_to_the_server) {
 ZEST_CASE(proxy_replaces_a_no_proxy) {
     test::HttpServer proxy(loop);
     ASSERT(proxy.listening());
-    auto client = http::client().no_proxy();
+    auto client = test::loopback_client().no_proxy();
 
     auto [reply] = run(client.on(loop).get("http://kotatsu.invalid/").proxy(proxy.url("")).send());
     EXPECT(reply.has_value());

@@ -20,7 +20,7 @@ ZEST_SUITE(http_detail_request_method, test::LoopFixture) {
 ZEST_CASE(builders_send_their_methods) {
     test::HttpServer server(loop);
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
     auto api = client.on(loop);
     auto url = server.url("/");
     std::vector<std::pair<std::string_view, http::request>> built{
@@ -40,6 +40,7 @@ ZEST_CASE(builders_send_their_methods) {
 
     ASSERT(server.requests().size() == built.size());
     for(std::size_t i = 0; i < built.size(); ++i) {
+        ZEST_CONTEXT("{}", built[i].first);
         EXPECT(server.requests()[i].method == built[i].first);
     }
 }
@@ -47,7 +48,7 @@ ZEST_CASE(builders_send_their_methods) {
 ZEST_CASE(other_methods_go_as_written) {
     test::HttpServer server(loop);
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
     auto api = client.on(loop);
 
     for(std::string method: {"OPTIONS", "PROPFIND", "put"}) {
@@ -66,7 +67,7 @@ ZEST_CASE(other_methods_go_as_written) {
 ZEST_CASE(get_head_and_post_match_any_case) {
     test::HttpServer server(loop);
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
     auto api = client.on(loop);
 
     for(std::string method: {"get", "Head", "pOST"}) {
@@ -84,7 +85,7 @@ ZEST_CASE(get_head_and_post_match_any_case) {
 ZEST_CASE(method_replaces_the_builders) {
     test::HttpServer server(loop);
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(server.url("/")).method("PUT").body("data").send());
     EXPECT(reply.has_value());
@@ -102,7 +103,7 @@ ZEST_CASE(head_reply_has_headers_and_no_body) {
         };
     });
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).head(server.url("/only-headers")).send());
     ASSERT(reply.has_value());

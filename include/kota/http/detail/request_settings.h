@@ -15,9 +15,7 @@
 
 namespace kota::http::detail {
 
-struct transfer;
-
-/// Sets `option` to a copy of `text`.
+/// A hook that sets `option` to a copy of `text`.
 inline curl_option_hook set_text(CURLoption option, std::string text) {
     return [option, text = std::move(text)](CURL* easy) -> curl::easy_error {
         return curl::setopt(easy, option, text.c_str());
@@ -105,7 +103,9 @@ public:
 
     /// Sets a libcurl option kotatsu has no setting for, after its own
     /// options, when the request starts; see make_curl_option() for what is
-    /// copied. CURLOPT_PRIVATE is kotatsu's.
+    /// copied. CURLOPT_PRIVATE is kotatsu's. A POST or a request with a body
+    /// sends it with CURLOPT_POSTFIELDS: set that to nullptr to have a
+    /// CURLOPT_READFUNCTION of your own send it.
     template <typename T>
     decltype(auto) curl_option(this auto&& self, CURLoption option, T&& value) {
         self.curl_options.push_back(detail::make_curl_option(option, std::forward<T>(value)));
@@ -163,8 +163,6 @@ public:
     }
 
 protected:
-    friend struct transfer;
-
     std::vector<http::header> header_list{};
     std::string cookie_string{};
     std::string user_agent_value{};

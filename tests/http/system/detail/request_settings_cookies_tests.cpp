@@ -1,3 +1,5 @@
+#include <string>
+
 #include "async/harness/loop_fixture.h"
 #include "http/harness/server.h"
 #include "kota/http/http.h"
@@ -9,22 +11,12 @@ namespace kota::http {
 
 namespace {
 
-/// Sets cookie `value` on /seed..., answers everything else plainly.
-test::HttpServer::Handler seeding(std::string value) {
-    return [value = std::move(value)](const test::Received& request) {
-        if(request.target.starts_with("/seed")) {
-            return test::Reply{.headers = {{"Set-Cookie", value + "; Path=/"}}};
-        }
-        return test::Reply{};
-    };
-}
-
 ZEST_SUITE(http_detail_request_settings_cookies, test::LoopFixture) {
 
 ZEST_CASE(cookie_a_reply_sets_goes_with_the_next_request) {
-    test::HttpServer server(loop, seeding("session=alpha"));
+    test::HttpServer server(loop, test::seeding("session=alpha"));
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
     auto api = client.on(loop);
 
     auto [seed] = run(api.get(server.url("/seed")).send());
@@ -40,7 +32,7 @@ ZEST_CASE(cookie_a_reply_sets_goes_with_the_next_request) {
 ZEST_CASE(cookies_are_sent_as_given) {
     test::HttpServer server(loop);
     ASSERT(server.listening());
-    auto client = http::client().record_cookie(false);
+    auto client = test::loopback_client().record_cookie(false);
 
     auto [reply] = run(client.on(loop).get(server.url("/")).cookies("a=1; b=two").send());
     EXPECT(reply.has_value());
@@ -50,9 +42,9 @@ ZEST_CASE(cookies_are_sent_as_given) {
 }
 
 ZEST_CASE(cookies_given_join_the_recorded_ones) {
-    test::HttpServer server(loop, seeding("session=alpha"));
+    test::HttpServer server(loop, test::seeding("session=alpha"));
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
     auto api = client.on(loop);
 
     auto [seed] = run(api.get(server.url("/seed")).send());
@@ -70,7 +62,7 @@ ZEST_CASE(record_cookie_false_neither_keeps_nor_sends_cookies) {
         return test::Reply{.headers = {{"Set-Cookie", std::string(value) + "; Path=/"}}};
     });
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
 
     auto [seed] = run(client.on(loop).get(server.url("/seed")).send());
     client.record_cookie(false);
@@ -88,9 +80,9 @@ ZEST_CASE(record_cookie_false_neither_keeps_nor_sends_cookies) {
 }
 
 ZEST_CASE(record_cookie_false_keeps_cookies_given) {
-    test::HttpServer server(loop, seeding("session=jar"));
+    test::HttpServer server(loop, test::seeding("session=jar"));
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
 
     auto [seed] = run(client.on(loop).get(server.url("/seed")).send());
     client.record_cookie(false);
@@ -103,9 +95,9 @@ ZEST_CASE(record_cookie_false_keeps_cookies_given) {
 }
 
 ZEST_CASE(record_cookie_can_be_turned_off_for_one_request) {
-    test::HttpServer server(loop, seeding("session=jar"));
+    test::HttpServer server(loop, test::seeding("session=jar"));
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
     auto api = client.on(loop);
 
     auto [seed] = run(api.get(server.url("/seed")).send());

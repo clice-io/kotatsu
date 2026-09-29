@@ -2,9 +2,18 @@
 
 #include <memory>
 
-#include "kota/http/detail/request.h"
 #include "kota/http/detail/request_settings.h"
 #include "kota/async/io/loop.h"
+
+namespace kota::http::detail {
+
+/// What a client and its copies have in common. Each event loop keeps one
+/// curl share (cookie jar, DNS cache, TLS sessions) for the requests of
+/// each key, for as long as the key lives: a client, its copies and the
+/// requests made from them hold it.
+struct share_key {};
+
+}  // namespace kota::http::detail
 
 namespace kota::http {
 

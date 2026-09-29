@@ -21,7 +21,7 @@ ZEST_CASE(string_option_given_as_a_c_string_is_copied) {
     test::HttpServer server(loop);
     ASSERT(server.listening());
     std::string agent = "original-agent";
-    auto client = http::client().curl_option(CURLOPT_USERAGENT, agent.c_str());
+    auto client = test::loopback_client().curl_option(CURLOPT_USERAGENT, agent.c_str());
     agent.replace(0, 8, "replaced");
 
     auto [reply] = run(client.on(loop).get(server.url("/")).send());
@@ -34,7 +34,7 @@ ZEST_CASE(string_option_given_as_a_c_string_is_copied) {
 ZEST_CASE(string_option_given_as_a_string_is_copied) {
     test::HttpServer server(loop);
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
     std::string_view view = "from-view";
     auto api = client.on(loop);
 
@@ -55,7 +55,7 @@ ZEST_CASE(pointer_option_is_passed_as_it_is) {
     test::RefusingPort nowhere;
     ASSERT(nowhere.port > 0);
     char message[CURL_ERROR_SIZE] = {};
-    http::client client;
+    auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop)
                            .get(nowhere.url())
@@ -70,7 +70,7 @@ ZEST_CASE(options_go_after_the_requests_own) {
         return test::Reply{.status = 302, .headers = {{"Location", "/elsewhere"}}};
     });
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop)
                            .get(server.url("/"))
@@ -85,10 +85,26 @@ ZEST_CASE(options_go_after_the_requests_own) {
     EXPECT(server.requests()[0].header("user-agent") == "option");
 }
 
-ZEST_CASE(option_curl_refuses_fails_the_request) {
+// kotatsu finds a transfer by CURLOPT_PRIVATE, which it sets after the
+// caller's options.
+ZEST_CASE(private_option_leaves_the_request_working) {
+    test::HttpServer server(loop, [](const test::Received&) { return test::Reply{.body = "ok"}; });
+    ASSERT(server.listening());
+    auto client = test::loopback_client();
+    int mine = 0;
+
+    auto [reply] = run(client.on(loop)
+                           .get(server.url("/"))
+                           .curl_option(CURLOPT_PRIVATE, static_cast<void*>(&mine))
+                           .send());
+    ASSERT(reply.has_value());
+    EXPECT(reply->text() == "ok");
+}
+
+ZEST_CASE(option_curl_refuses_fails) {
     test::HttpServer server(loop);
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
 
     auto [reply] =
         run(client.on(loop).get(server.url("/")).curl_option(CURLOPT_SSLVERSION, 999L).send());

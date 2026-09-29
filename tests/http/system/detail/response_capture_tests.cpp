@@ -1,6 +1,4 @@
-#include <cstddef>
 #include <string>
-#include <string_view>
 #include <vector>
 
 #include "async/harness/loop_fixture.h"
@@ -21,7 +19,7 @@ ZEST_CASE(error_status_is_a_response) {
         return test::Reply{.status = 404, .body = "missing"};
     });
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(server.url("/gone")).send());
     ASSERT(reply.has_value());
@@ -38,7 +36,7 @@ ZEST_CASE(headers_are_kept_in_order_with_duplicates) {
         };
     });
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(server.url("/")).send());
     ASSERT(reply.has_value());
@@ -65,7 +63,7 @@ ZEST_CASE(body_keeps_every_byte) {
     test::HttpServer server(loop,
                             [&](const test::Received&) { return test::Reply{.body = bytes}; });
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(server.url("/")).send());
     ASSERT(reply.has_value());
@@ -79,11 +77,12 @@ ZEST_CASE(large_body_arrives_whole) {
     test::HttpServer server(loop,
                             [&](const test::Received&) { return test::Reply{.body = large}; });
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(server.url("/")).send());
     ASSERT(reply.has_value());
     EXPECT(reply->body.size() == large.size());
+    // Compared as a plain bool, so that a failure does not print 4 MiB.
     EXPECT((reply->text() == large));
 }
 

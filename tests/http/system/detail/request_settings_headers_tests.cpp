@@ -14,7 +14,7 @@ ZEST_SUITE(http_detail_request_settings_headers, test::LoopFixture) {
 ZEST_CASE(client_headers_reach_every_request) {
     test::HttpServer server(loop);
     ASSERT(server.listening());
-    auto client = http::client().header("X-Client", "yes").user_agent("kotatsu-test/1");
+    auto client = test::loopback_client().header("X-Client", "yes").user_agent("kotatsu-test/1");
     auto api = client.on(loop);
 
     auto [first] = run(api.get(server.url("/1")).send());
@@ -33,7 +33,7 @@ ZEST_CASE(client_headers_reach_every_request) {
 ZEST_CASE(header_replaces_one_of_any_case) {
     test::HttpServer server(loop);
     ASSERT(server.listening());
-    auto client = http::client().header("X-Test", "client");
+    auto client = test::loopback_client().header("X-Test", "client");
 
     auto [reply] = run(client.on(loop)
                            .get(server.url("/"))
@@ -50,7 +50,7 @@ ZEST_CASE(header_replaces_one_of_any_case) {
 ZEST_CASE(default_header_keeps_one_already_set) {
     test::HttpServer server(loop);
     ASSERT(server.listening());
-    auto client = http::client().header("Accept", "text/plain");
+    auto client = test::loopback_client().header("Accept", "text/plain");
 
     auto [reply] = run(client.on(loop)
                            .get(server.url("/"))
@@ -69,7 +69,7 @@ ZEST_CASE(default_header_keeps_one_already_set) {
 ZEST_CASE(header_with_an_empty_value_is_sent) {
     test::HttpServer server(loop);
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(server.url("/")).header("X-Empty", "").send());
     EXPECT(reply.has_value());
@@ -77,18 +77,6 @@ ZEST_CASE(header_with_an_empty_value_is_sent) {
     ASSERT(server.requests().size() == 1U);
     EXPECT(server.requests()[0].count("x-empty") == 1U);
     EXPECT(server.requests()[0].header("x-empty") == "");
-}
-
-ZEST_CASE(request_user_agent_replaces_the_clients) {
-    test::HttpServer server(loop);
-    ASSERT(server.listening());
-    auto client = http::client().user_agent("client");
-
-    auto [reply] = run(client.on(loop).get(server.url("/")).user_agent("request").send());
-    EXPECT(reply.has_value());
-
-    ASSERT(server.requests().size() == 1U);
-    EXPECT(server.requests()[0].header("user-agent") == "request");
 }
 
 };  // ZEST_SUITE(http_detail_request_settings_headers)

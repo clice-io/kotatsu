@@ -17,7 +17,7 @@ ZEST_SUITE(http_detail_request_errors, test::LoopFixture) {
 ZEST_CASE(refused_connection_fails) {
     test::RefusingPort nowhere;
     ASSERT(nowhere.port > 0);
-    http::client client;
+    auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(nowhere.url()).send());
     ASSERT(reply.has_error());
@@ -28,7 +28,7 @@ ZEST_CASE(refused_connection_fails) {
 ZEST_CASE(connection_closed_without_a_reply_fails) {
     test::HttpServer server(loop, [](const test::Received&) { return test::Reply{.raw = ""}; });
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(server.url("/")).send());
     ASSERT(reply.has_error());
@@ -41,7 +41,7 @@ ZEST_CASE(reply_that_is_not_http_fails) {
         return test::Reply{.raw = "not http at all\r\n\r\n"};
     });
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(server.url("/")).send());
     ASSERT(reply.has_error());
@@ -57,7 +57,7 @@ ZEST_CASE(body_cut_short_fails) {
         };
     });
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(server.url("/")).send());
     ASSERT(reply.has_error());

@@ -20,12 +20,7 @@
 
 namespace kota::http::detail {
 
-/// What a client and its copies have in common. Each event loop keeps one
-/// curl share (cookie jar, DNS cache, TLS sessions) for the requests of
-/// each key, for as long as the key lives: a client, its copies and the
-/// requests made from them hold it.
-struct share_key {};
-
+struct share_key;
 struct transfer;
 
 }  // namespace kota::http::detail

@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <initializer_list>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -19,8 +20,8 @@ namespace kota::http {
 
 namespace {
 
-/// Each loop's manager, and an entry, empty after unregister_loop(), from
-/// the loop's first request until the loop goes.
+/// The manager of each loop that has sent a request. A loop keeps its
+/// entry until it is destroyed; unregister_loop() empties it.
 using manager_table = std::unordered_map<event_loop*, std::unique_ptr<manager>>;
 
 std::mutex& table_mutex() {
@@ -192,11 +193,11 @@ std::size_t manager::pending_requests() const noexcept {
 
 std::expected<std::shared_ptr<curl::share_handle>, error>
     manager::share_for(const std::shared_ptr<const detail::share_key>& key) {
-    // A jar whose key has gone may sit at the address of a new one.
-    if(auto found = jars.find(key.get()); found != jars.end() && !found->second.key.expired()) {
-        return found->second.share;
+    if(auto found = jars.find(key); found != jars.end()) {
+        return found->second;
     }
-    std::erase_if(jars, [](const auto& entry) { return entry.second.key.expired(); });
+    // The shares of the clients that have gone go before a new one comes.
+    std::erase_if(jars, [](const auto& entry) { return entry.first.expired(); });
 
     auto share = std::make_shared<curl::share_handle>(curl::share_handle::create());
     if(!*share) {
@@ -211,7 +212,7 @@ std::expected<std::shared_ptr<curl::share_handle>, error>
     // Only a curl built with TLS shares its sessions.
     curl::share_setopt(share->get(), CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION);
 
-    jars.insert_or_assign(key.get(), jar{.key = key, .share = share});
+    jars.emplace(key, share);
     return share;
 }
 
@@ -265,8 +266,8 @@ void manager::drive(curl_socket_t socket, int events) noexcept {
 }
 
 int manager::watch_socket(curl_socket_t socket, int what, socket_watch* watch) noexcept {
-    // Curl forgets the watch as this returns. It removes only sockets it
-    // announced, which have a watch: one whose poll failed never was.
+    // curl forgets the watch as this returns. It removes only the sockets it
+    // has announced, and only a socket that got a watch counts as announced.
     if(what == CURL_POLL_REMOVE) {
         sockets.erase(socket);
         return 0;

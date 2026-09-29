@@ -6,7 +6,10 @@
 // and answers it with the Reply the test's handler returns, closing the
 // connection after the reply. It parses on its own, with none of the http
 // module's helpers, so that it checks them rather than trusts them.
-// RefusingPort is a loopback port that refuses connections.
+//
+// Beside it: seeding(), a handler that sets a cookie; loopback_client(), a
+// client no proxy of the environment comes between; and RefusingPort, a
+// loopback port that refuses connections.
 
 #include <charconv>
 #include <cstddef>
@@ -293,6 +296,23 @@ private:
     /// Goes first, ending the wait for the next connection.
     task<> accepting;
 };
+
+/// A handler that sets `cookie` in its reply to /seed, and answers every
+/// other request plainly.
+inline HttpServer::Handler seeding(std::string cookie) {
+    return [cookie = std::move(cookie)](const Received& request) {
+        if(request.target == "/seed") {
+            return Reply{.headers = {{"Set-Cookie", cookie + "; Path=/"}}};
+        }
+        return Reply{};
+    };
+}
+
+/// A client that goes straight to loopback servers: without no_proxy(), a
+/// proxy the environment names (http_proxy and the like) comes between.
+inline http::client loopback_client() {
+    return http::client().no_proxy();
+}
 
 /// A loopback port that refuses connections: a socket holds it bound, so
 /// that nothing else takes it, and never listens. A port a listener has just

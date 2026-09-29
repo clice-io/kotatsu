@@ -37,17 +37,14 @@ void check_moves(Handle made) {
 ZEST_SUITE(http_detail_curl_handles) {
 
 ZEST_CASE(easy_handle_passes_its_handle_along) {
-    ZEST_CONTEXT("easy");
     check_moves(easy_handle::create());
 }
 
 ZEST_CASE(multi_handle_passes_its_handle_along) {
-    ZEST_CONTEXT("multi");
     check_moves(multi_handle::create());
 }
 
 ZEST_CASE(share_handle_passes_its_handle_along) {
-    ZEST_CONTEXT("share");
     check_moves(share_handle::create());
 }
 

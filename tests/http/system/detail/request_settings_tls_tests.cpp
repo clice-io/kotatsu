@@ -1,8 +1,10 @@
 #include <cstddef>
+#include <string_view>
 #include <vector>
 
 #include "async/harness/loop_fixture.h"
 #include "http/harness/server.h"
+#include "kota/http/detail/manager.h"
 #include "kota/http/http.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
@@ -14,25 +16,34 @@ namespace kota::http {
 
 namespace {
 
+/// Whether curl's TLS is Schannel, which keeps no CA directories.
+bool schannel() {
+    const auto* version = ::curl_version_info(CURLVERSION_NOW);
+    return version->ssl_version != nullptr &&
+           std::string_view(version->ssl_version).find("Schannel") != std::string_view::npos;
+}
+
 ZEST_SUITE(http_detail_request_settings_tls, test::LoopFixture) {
 
-ZEST_CASE(https_only_refuses_plain_http) {
+ZEST_CASE(plain_http_under_https_only_fails) {
     test::HttpServer server(loop);
     ASSERT(server.listening());
-    auto client = http::client().https_only();
+    auto client = test::loopback_client().https_only();
 
     auto [reply] = run(client.on(loop).get(server.url("/")).send());
     ASSERT(reply.has_error());
     EXPECT(reply.error().kind == error_kind::curl);
     EXPECT(reply.error().curl_code == CURLE_UNSUPPORTED_PROTOCOL);
     EXPECT(server.requests().empty());
+    EXPECT(manager::for_loop(loop).pending_requests() == 0U);
 }
 
-// curl takes each of them as it is set, so each is set once here.
+// curl checks each of these values when it is set, so the case sets
+// each once.
 ZEST_CASE(tls_settings_leave_plain_http_alone) {
     test::HttpServer server(loop);
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
     auto api = client.on(loop);
     auto url = server.url("/");
     std::vector<http::request> built{
@@ -54,19 +65,18 @@ ZEST_CASE(tls_settings_leave_plain_http_alone) {
     EXPECT(server.requests().size() == built.size());
 }
 
-// Schannel, the TLS of curl on Windows, keeps no CA directories.
 ZEST_CASE(ca_path_leaves_plain_http_alone_where_curl_has_it) {
     test::HttpServer server(loop);
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(server.url("/")).ca_path("kotatsu-missing-ca").send());
-#ifdef _WIN32
-    ASSERT(reply.has_error());
-    EXPECT(reply.error().curl_code == CURLE_NOT_BUILT_IN);
-#else
-    EXPECT(reply.has_value());
-#endif
+    if(schannel()) {
+        ASSERT(reply.has_error());
+        EXPECT(reply.error().curl_code == CURLE_NOT_BUILT_IN);
+    } else {
+        EXPECT(reply.has_value());
+    }
 }
 
 };  // ZEST_SUITE(http_detail_request_settings_tls)

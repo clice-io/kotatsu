@@ -1,3 +1,4 @@
+#include <format>
 #include <string>
 
 #include "async/harness/loop_fixture.h"
@@ -37,7 +38,7 @@ ZEST_SUITE(http_detail_request_settings_redirect, RedirectFixture) {
 
 ZEST_CASE(redirects_are_followed_by_default) {
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(server.url("/hop/1")).send());
     ASSERT(reply.has_value());
@@ -52,7 +53,7 @@ ZEST_CASE(redirects_are_followed_by_default) {
 
 ZEST_CASE(redirect_policy_none_returns_the_redirect) {
     ASSERT(server.listening());
-    auto client = http::client().redirect(redirect_policy::none());
+    auto client = test::loopback_client().redirect(redirect_policy::none());
 
     auto [reply] = run(client.on(loop).get(server.url("/hop/0")).send());
     ASSERT(reply.has_value());
@@ -63,9 +64,18 @@ ZEST_CASE(redirect_policy_none_returns_the_redirect) {
     EXPECT(server.requests().size() == 1U);
 }
 
-ZEST_CASE(more_redirects_than_allowed_fail) {
+ZEST_CASE(redirects_up_to_the_limit_are_followed) {
     ASSERT(server.listening());
-    auto client = http::client().redirect(redirect_policy::limited(1));
+    auto client = test::loopback_client().redirect(redirect_policy::limited(1));
+
+    auto [reply] = run(client.on(loop).get(server.url("/hop/0")).send());
+    ASSERT(reply.has_value());
+    EXPECT(reply->text() == "final");
+}
+
+ZEST_CASE(more_redirects_than_allowed_fails) {
+    ASSERT(server.listening());
+    auto client = test::loopback_client().redirect(redirect_policy::limited(1));
 
     auto [reply] = run(client.on(loop).get(server.url("/hop/1")).send());
     ASSERT(reply.has_error());
@@ -75,7 +85,7 @@ ZEST_CASE(more_redirects_than_allowed_fail) {
 
 ZEST_CASE(referer_goes_with_a_redirect) {
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(server.url("/hop/0")).send());
     EXPECT(reply.has_value());
@@ -87,7 +97,7 @@ ZEST_CASE(referer_goes_with_a_redirect) {
 
 ZEST_CASE(referer_false_leaves_it_out) {
     ASSERT(server.listening());
-    auto client = http::client().referer(false);
+    auto client = test::loopback_client().referer(false);
 
     auto [reply] = run(client.on(loop).get(server.url("/hop/0")).send());
     EXPECT(reply.has_value());

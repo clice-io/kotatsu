@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdio>
+#include <format>
 #include <limits>
 #include <string>
 #include <string_view>
@@ -177,9 +179,10 @@ std::optional<error> transfer::setup() {
     set(CURLOPT_WRITEDATA, static_cast<void*>(this));
     set(CURLOPT_HEADERFUNCTION, static_cast<curl_write_callback>(on_header));
     set(CURLOPT_HEADERDATA, static_cast<void*>(this));
-    // curl's own reader reads the process's stdin, for an upload a
-    // curl_option() asks for without a reader of its own.
+    // curl's own reader reads the process's stdin when an upload a
+    // curl_option() asks for comes without a CURLOPT_READDATA.
     set(CURLOPT_READFUNCTION, static_cast<curl_read_callback>(on_read));
+    set(CURLOPT_READDATA, static_cast<void*>(nullptr));
     set(CURLOPT_SHARE, share->get());
     if(request.record_cookie_enabled) {
         set(CURLOPT_COOKIEFILE, "");
@@ -199,16 +202,19 @@ std::optional<error> transfer::setup() {
     } else if(!post && !iequals(method, http::method::get)) {
         set(CURLOPT_CUSTOMREQUEST, method.c_str());
     }
-    // A POST always has a body, if an empty one: without it curl would read
-    // one with the reader above, chunked.
-    if(post || !request.body_text.empty()) {
+    if(!request.body_text.empty()) {
         set(CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(request.body_text.size()));
         set(CURLOPT_POSTFIELDS, request.body_text.c_str());
+    } else if(post) {
+        // Without a body, a POST would read one with the reader above,
+        // chunked. curl takes this one's length with strlen, as it does that
+        // of a CURLOPT_POSTFIELDS a curl_option() sets instead.
+        set(CURLOPT_POSTFIELDS, "");
     }
 
     for(const auto& [name, value]: request.header_list) {
         // "Name;" sends a header with no value; "Name:" would remove it.
-        auto line = value.empty() ? name + ";" : name + ": " + value;
+        auto line = value.empty() ? std::format("{};", name) : std::format("{}: {}", name, value);
         if(!header_lines.append(line.c_str())) {
             return error::from_curl(CURLE_OUT_OF_MEMORY);
         }
@@ -300,8 +306,12 @@ std::size_t transfer::on_header(char* data, std::size_t size, std::size_t count,
     return size * count;
 }
 
-std::size_t transfer::on_read(char*, std::size_t, std::size_t, void*) {
-    return 0;
+std::size_t transfer::on_read(char* data, std::size_t size, std::size_t count, void* file) {
+    // curl's own reader, but one that reads nothing when no file was given.
+    if(file == nullptr) {
+        return 0;
+    }
+    return std::fread(data, size, count, static_cast<std::FILE*>(file));
 }
 
 }  // namespace kota::http::detail

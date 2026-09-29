@@ -17,11 +17,12 @@ namespace kota::http::detail {
 /// receives for it, and the task awaiting it. It lives in that task's
 /// frame, whose address curl's callbacks keep.
 ///
-/// Its manager tracks it from start() until it resumes or is cancelled. A
-/// finished transfer is queued to complete on a later turn of the loop, as
-/// the requests a manager aborts as it goes are, so that no task resumes
-/// inside the manager. A manager going while the loop is being destroyed,
-/// which completes nothing queued any more, leaves them to their cancel.
+/// Its manager tracks it from start() until it resumes or is cancelled.
+/// What curl finishes, and what a manager aborts when it goes while its loop
+/// lives, completes on a later turn of the loop, so that no task resumes
+/// inside the manager. A manager that goes while its loop is being
+/// destroyed leaves its transfers to their tasks' cancellation, since that
+/// loop runs nothing queued any more.
 struct transfer : uv::uv_op<transfer> {
     transfer(http::request request, manager& target) noexcept;
 
@@ -59,7 +60,7 @@ private:
 
     static std::size_t on_write(char* data, std::size_t size, std::size_t count, void* self);
     static std::size_t on_header(char* data, std::size_t size, std::size_t count, void* self);
-    static std::size_t on_read(char* data, std::size_t size, std::size_t count, void* self);
+    static std::size_t on_read(char* data, std::size_t size, std::size_t count, void* file);
 };
 
 }  // namespace kota::http::detail

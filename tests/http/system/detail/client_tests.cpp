@@ -13,22 +13,12 @@ namespace kota::http {
 
 namespace {
 
-/// Sets cookie `value` on /seed, answers everything else plainly.
-test::HttpServer::Handler seeding(std::string value) {
-    return [value = std::move(value)](const test::Received& request) {
-        if(request.target == "/seed") {
-            return test::Reply{.headers = {{"Set-Cookie", value + "; Path=/"}}};
-        }
-        return test::Reply{};
-    };
-}
-
 ZEST_SUITE(http_detail_client, test::LoopFixture) {
 
 ZEST_CASE(copies_share_a_jar) {
-    test::HttpServer server(loop, seeding("session=shared"));
+    test::HttpServer server(loop, test::seeding("session=shared"));
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
     auto [seed] = run(client.on(loop).get(server.url("/seed")).send());
     auto copy = client;
 
@@ -41,9 +31,9 @@ ZEST_CASE(copies_share_a_jar) {
 }
 
 ZEST_CASE(moved_client_keeps_the_jar) {
-    test::HttpServer server(loop, seeding("session=moved"));
+    test::HttpServer server(loop, test::seeding("session=moved"));
     ASSERT(server.listening());
-    http::client client;
+    auto client = test::loopback_client();
     auto [seed] = run(client.on(loop).get(server.url("/seed")).send());
     http::client moved;
     moved = std::move(client);
@@ -57,10 +47,10 @@ ZEST_CASE(moved_client_keeps_the_jar) {
 }
 
 ZEST_CASE(clients_keep_separate_jars) {
-    test::HttpServer server(loop, seeding("session=left"));
+    test::HttpServer server(loop, test::seeding("session=left"));
     ASSERT(server.listening());
-    http::client left;
-    http::client right;
+    auto left = test::loopback_client();
+    auto right = test::loopback_client();
 
     auto [seed] = run(left.on(loop).get(server.url("/seed")).send());
     auto [from_right] = run(right.on(loop).get(server.url("/right")).send());
@@ -74,11 +64,29 @@ ZEST_CASE(clients_keep_separate_jars) {
     EXPECT(server.requests()[2].header("cookie") == "session=left");
 }
 
+// The loop drops the jar of a client that has gone as the next one comes.
+ZEST_CASE(client_made_after_one_has_gone_starts_with_an_empty_jar) {
+    test::HttpServer server(loop, test::seeding("session=gone"));
+    ASSERT(server.listening());
+    {
+        auto gone = test::loopback_client();
+        auto [seed] = run(gone.on(loop).get(server.url("/seed")).send());
+        EXPECT(seed.has_value());
+    }
+    auto client = test::loopback_client();
+
+    auto [next] = run(client.on(loop).get(server.url("/next")).send());
+    EXPECT(next.has_value());
+
+    ASSERT(server.requests().size() == 2U);
+    EXPECT(server.requests()[1].count("cookie") == 0U);
+}
+
 ZEST_CASE(request_keeps_the_jar_of_a_client_gone) {
-    test::HttpServer server(loop, seeding("session=kept"));
+    test::HttpServer server(loop, test::seeding("session=kept"));
     ASSERT(server.listening());
     auto built = [&] {
-        http::client client;
+        auto client = test::loopback_client();
         auto [seed] = run(client.on(loop).get(server.url("/seed")).send());
         EXPECT(seed.has_value());
         return client.on(loop).get(server.url("/next"));
@@ -92,10 +100,10 @@ ZEST_CASE(request_keeps_the_jar_of_a_client_gone) {
 }
 
 ZEST_CASE(bound_client_keeps_the_jar_of_a_client_gone) {
-    test::HttpServer server(loop, seeding("session=kept"));
+    test::HttpServer server(loop, test::seeding("session=kept"));
     ASSERT(server.listening());
     auto api = [&] {
-        http::client client;
+        auto client = test::loopback_client();
         auto [seed] = run(client.on(loop).get(server.url("/seed")).send());
         EXPECT(seed.has_value());
         return client.on(loop);
@@ -119,7 +127,7 @@ ZEST_CASE(request_in_flight_outlives_its_client) {
         return test::Reply{.body = "late", .hold = &release};
     });
     ASSERT(server.listening());
-    std::optional<http::client> client(std::in_place);
+    std::optional<http::client> client(test::loopback_client());
     auto [seed] = run(client->on(loop).get(server.url("/seed")).send());
     EXPECT(seed.has_value());
 
@@ -142,7 +150,8 @@ ZEST_CASE(temporary_client_sends_through_on) {
     test::HttpServer server(loop);
     ASSERT(server.listening());
 
-    auto [reply] = run(http::client().user_agent("temporary").on(loop).get(server.url("/")).send());
+    auto [reply] =
+        run(test::loopback_client().user_agent("temporary").on(loop).get(server.url("/")).send());
     EXPECT(reply.has_value());
 
     ASSERT(server.requests().size() == 1U);
@@ -152,7 +161,7 @@ ZEST_CASE(temporary_client_sends_through_on) {
 ZEST_CASE(bound_client_keeps_the_settings_it_was_bound_with) {
     test::HttpServer server(loop);
     ASSERT(server.listening());
-    auto client = http::client().user_agent("bound");
+    auto client = test::loopback_client().user_agent("bound");
     auto api = client.on(loop);
     client.user_agent("later");
 
@@ -168,7 +177,8 @@ ZEST_CASE(request_settings_override_the_clients) {
     ASSERT(server.listening());
     test::RefusingPort nowhere;
     ASSERT(nowhere.port > 0);
-    auto client = http::client().proxy(nowhere.url()).user_agent("client").cookies("from=client");
+    auto client =
+        test::loopback_client().proxy(nowhere.url()).user_agent("client").cookies("from=client");
 
     auto [reply] = run(client.on(loop)
                            .get(server.url("/"))

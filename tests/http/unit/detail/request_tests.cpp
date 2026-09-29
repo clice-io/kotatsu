@@ -89,7 +89,7 @@ ZEST_CASE(method_that_is_no_token_fails) {
 
 ZEST_CASE(body_on_get_or_head_fails) {
     auto api = client.on(loop);
-    for(auto method: {"GET", "HEAD"}) {
+    for(auto method: {"GET", "HEAD", "get", "Head"}) {
         ZEST_CONTEXT("{}", method);
         auto failed = failure_of(api.request(method, std::string(nowhere)).body("unexpected"));
         ASSERT(failed.has_value());
@@ -122,7 +122,7 @@ ZEST_CASE(header_that_would_break_its_line_fails) {
     }
 }
 
-ZEST_CASE(cookies_or_user_agent_that_would_break_their_line_fail) {
+ZEST_CASE(cookie_or_user_agent_that_would_break_its_line_fails) {
     auto api = client.on(loop);
     const std::vector<std::pair<std::string_view, http::request>> built{
         {"cookies",    api.get(std::string(nowhere)).cookies("a=1\r\nX-Injected: 2")     },
@@ -161,7 +161,7 @@ ZEST_CASE(negative_timeout_fails) {
     EXPECT(failed->message() == "timeout must be non-negative");
 }
 
-// Only a 32-bit long, Windows', holds fewer milliseconds than a timeout can.
+// A timeout can exceed only a 32-bit long, which Windows has.
 ZEST_CASE(timeout_beyond_a_long_fails, skip = sizeof(long) > 4) {
     auto failed =
         failure_of(client.on(loop).get(std::string(nowhere)).timeout(std::chrono::days(30)));
