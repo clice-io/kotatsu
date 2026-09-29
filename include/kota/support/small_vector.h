@@ -508,12 +508,19 @@ public:
             copies.mark(mem::uninitialized_copy(range, copies.data()));
             return insert_from(index, count, std::make_move_iterator(copies.data()));
         } else {
-            // An input range is read once: each element is inserted as it comes.
-            auto at = index;
-            for(auto&& value: range) {
-                insert(head + at, std::forward<decltype(value)>(value));
-                ++at;
+            // An input range is read once: its elements are appended, as they come, and then
+            // rotated into place. If one fails, those appended are dropped.
+            const auto old_size = size();
+            KOTA_TRY {
+                for(auto&& value: range) {
+                    emplace_back(std::forward<decltype(value)>(value));
+                }
             }
+            KOTA_CATCH_ALL() {
+                truncate(old_size);
+                KOTA_RETHROW();
+            }
+            std::rotate(head + index, head + old_size, end());
             return head + index;
         }
     }
@@ -657,6 +664,12 @@ protected:
         }
     }
 
+// GCC sees the allocation traded below equal the inline buffer's address, and reports freeing
+// it as freeing memory that is not from the heap; it is from the heap.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wfree-nonheap-object"
+#endif
     /// An allocation for `capacity` elements. An inline buffer of no elements ends the
     /// object, and an allocator can hand out the address right after it, which would read as
     /// the inline buffer and so never be freed: such an allocation is traded for another. A
@@ -671,6 +684,9 @@ protected:
         mem::deallocate(allocation, capacity);
         return other;
     }
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
     /// Replaces the buffer with an allocation of room for `new_room`, in which `fill(first)`
     /// constructs `count` elements, which may read the old ones, and returns their end.
@@ -1011,8 +1027,10 @@ public:
     }
 
     constexpr small_vector&
-        operator=(small_vector&& other) noexcept(std::is_nothrow_move_constructible_v<value_type>) {
+        operator=(small_vector&& other) noexcept(std::is_nothrow_move_constructible_v<value_type> &&
+                                                 std::is_nothrow_move_assignable_v<value_type>) {
         if(this != std::addressof(other)) {
+            reclaim_inline_buffer();
             this->move_assign(other, InlineCapacity);
         }
         return *this;
@@ -1020,6 +1038,7 @@ public:
 
     template <unsigned int OtherCapacity>
     constexpr small_vector& operator=(small_vector<value_type, OtherCapacity>&& other) {
+        reclaim_inline_buffer();
         this->move_assign(other, OtherCapacity);
         return *this;
     }
@@ -1075,6 +1094,17 @@ public:
             this->rebuild(count, count, [this](value_type* first) {
                 return mem::uninitialized_move(this->begin(), this->end(), first);
             });
+        }
+    }
+
+private:
+    /// Gives an empty vector its inline buffer back, when a move through hybrid_vector took
+    /// the buffer's room away with its allocation.
+    constexpr void reclaim_inline_buffer() noexcept {
+        if !consteval {
+            if(!this->on_heap() && this->capacity() == 0) {
+                this->reset_to_small(InlineCapacity);
+            }
         }
     }
 };

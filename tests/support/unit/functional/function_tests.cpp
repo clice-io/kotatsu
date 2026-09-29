@@ -193,6 +193,12 @@ ZEST_CASE(converts_arguments_at_the_call) {
     EXPECT(widen(7) == 7L);
 }
 
+ZEST_CASE(keeps_a_function_of_a_convertible_signature) {
+    function<long(int)> widened(negate);
+    EXPECT(widened(4) == -4L);
+    STATIC_EXPECT(Function::sbo_eligible<long (*)(int)>);
+}
+
 ZEST_CASE(converts_the_result) {
     function<long(int)> widen([](int x) { return x; });
     EXPECT(widen(7) == 7L);

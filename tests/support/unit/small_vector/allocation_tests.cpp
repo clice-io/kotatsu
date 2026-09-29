@@ -78,14 +78,14 @@ struct std::allocator<kota::Probe> {
         return static_cast<kota::Probe*>(::operator new(count * sizeof(kota::Probe)));
     }
 
-    void deallocate(kota::Probe* data, std::size_t count) {
+    void deallocate(kota::Probe* data, std::size_t) {
         kota::ledger.deallocations += 1;
         const auto* bytes = reinterpret_cast<const std::byte*>(data);
         std::less<const std::byte*> less;
         if(!less(bytes, kota::ledger.placed_first) && less(bytes, kota::ledger.placed_last)) {
             return;
         }
-        ::operator delete(data, count * sizeof(kota::Probe));
+        ::operator delete(data);
     }
 };
 

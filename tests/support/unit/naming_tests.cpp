@@ -59,6 +59,8 @@ ZEST_CASE(lower_snake_keeps_utf8_letters) {
     EXPECT(normalize_to_lower_snake("naïveApi") == "naïve_api");
     EXPECT(normalize_to_lower_snake("größe") == "größe");
     EXPECT(normalize_to_lower_snake("名前Value") == "名前_value");
+    // A UTF-8 byte has no case: it does not end a run of capitals.
+    EXPECT(normalize_to_lower_snake("HTTP名前") == "http名前");
 }
 
 ZEST_CASE(camel_case_from_any_spelling) {

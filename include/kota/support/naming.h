@@ -54,12 +54,13 @@ constexpr std::string normalize_to_lower_snake(std::string_view text) {
     for(std::size_t i = 0; i < text.size(); ++i) {
         const char c = text[i];
         if(is_upper(c)) {
-            // Within a word, an uppercase letter starts a new one after a lowercase letter or
-            // a digit ("fooBar", "v2Go"), and ends a run of capitals before a lowercase letter
-            // ("HTTPServer").
+            // Within a word, an uppercase letter starts a new one after a lowercase letter, a
+            // UTF-8 byte or a digit ("fooBar", "名前Value", "v2Go"), and ends a run of capitals
+            // before a lowercase letter ("HTTPServer"); a UTF-8 byte has no case, and ends no
+            // such run ("HTTP名前").
             const bool in_word = !out.empty() && out.back() != '_';
             if(in_word && (is_lower_like(text[i - 1]) || is_digit(text[i - 1]) ||
-                           (i + 1 < text.size() && is_lower_like(text[i + 1])))) {
+                           (i + 1 < text.size() && is_lower(text[i + 1])))) {
                 out += '_';
             }
             out += to_lower(c);

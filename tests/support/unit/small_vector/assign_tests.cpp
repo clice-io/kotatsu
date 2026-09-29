@@ -4,6 +4,7 @@
 #include <ranges>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -14,6 +15,16 @@
 namespace kota {
 
 namespace {
+
+/// An element whose move construction cannot throw but whose move assignment can.
+struct ThrowingAssignment {
+    ThrowingAssignment() = default;
+    ThrowingAssignment(ThrowingAssignment&&) noexcept = default;
+
+    ThrowingAssignment& operator=(ThrowingAssignment&&) noexcept(false) {
+        return *this;
+    }
+};
 
 ZEST_SUITE(support_small_vector_assign) {
 
@@ -109,6 +120,12 @@ ZEST_CASE(move_assignment_of_inline_elements_moves_each) {
     EXPECT(census.moves == moves);
     EXPECT(census.live == 1);
     EXPECT(source.empty());
+}
+
+ZEST_CASE(move_assignment_is_noexcept_when_the_element_moves_are) {
+    STATIC_EXPECT(std::is_nothrow_move_assignable_v<small_vector<int, 2>>);
+    // Inline elements are move-assigned over the vector's own.
+    STATIC_EXPECT(!std::is_nothrow_move_assignable_v<small_vector<ThrowingAssignment, 2>>);
 }
 
 ZEST_CASE(move_assignment_of_move_only_elements_moves_them) {

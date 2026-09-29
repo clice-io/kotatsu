@@ -1,4 +1,6 @@
 #include <array>
+#include <ranges>
+#include <sstream>
 #include <stdexcept>
 #include <vector>
 
@@ -126,6 +128,22 @@ ZEST_CASE(insert_range_with_a_throwing_tail_move_fails) {
         census.throw_after = 2;
         EXPECT(test::throws<std::runtime_error>([&] { v.insert(v.begin() + 1, source); }));
         EXPECT(census.live == static_cast<int>(v.size()) + 3);
+    }
+    EXPECT(census.live == 0);
+}
+
+ZEST_CASE(insert_input_range_with_a_throwing_move_fails) {
+    // The range's elements are appended before they rotate into place: those appended before
+    // the failure are dropped.
+    test::Census census;
+    {
+        small_vector<test::ThrowingTracked, 4> v = {1, 2};
+        std::istringstream text("3 4 5");
+        census.throw_after = 2;
+        EXPECT(test::throws<std::runtime_error>(
+            [&] { v.insert(v.begin() + 1, std::views::istream<int>(text)); }));
+        EXPECT(v.size() == 2U);
+        EXPECT(census.live == 2);
     }
     EXPECT(census.live == 0);
 }

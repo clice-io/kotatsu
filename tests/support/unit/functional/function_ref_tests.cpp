@@ -121,6 +121,13 @@ ZEST_CASE(converts_arguments_at_the_call) {
     EXPECT(widen(7) == 7L);
 }
 
+ZEST_CASE(refers_to_a_function_of_a_convertible_signature) {
+    function_ref<long(int)> widened(twice);
+    EXPECT(widened(4) == 8L);
+    function_ref<void(int, int)> discarded(add);
+    discarded(1, 2);
+}
+
 ZEST_CASE(converts_the_result) {
     auto identity = [](int x) {
         return x;

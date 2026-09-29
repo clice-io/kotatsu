@@ -46,7 +46,8 @@ auto enum_strings() -> const std::vector<std::string>& {
 
 /// The enumerator `value` names: renamed back by `Policy`, then as camel case, each also with
 /// the trailing `_` of a keyword-like enumerator (`Delete_`) or, for one that starts with a
-/// digit, the leading `_` or `V` that makes it an identifier (`_2d`, `V3`).
+/// digit, the leading `_` or `V` that makes it an identifier (`_2d`, `V3`); failing those, the
+/// enumerator whose renamed name it is (`HTTPServer` for `httpServer`).
 template <enum_type E, typename Policy = naming::rename_policy::lower_camel>
 std::optional<E> map_string_to_enum(std::string_view value) {
     auto try_parse = [](std::string_view candidate) -> std::optional<E> {
@@ -74,7 +75,16 @@ std::optional<E> map_string_to_enum(std::string_view value) {
     if(auto parsed = try_parse(naming::snake_to_camel(mapped, false))) {
         return parsed;
     }
-    return try_parse(naming::snake_to_camel(mapped, true));
+    if(auto parsed = try_parse(naming::snake_to_camel(mapped, true))) {
+        return parsed;
+    }
+    const auto& names = enum_strings<E, Policy>();
+    for(std::size_t i = 0; i < names.size(); ++i) {
+        if(names[i] == value) {
+            return reflection<E>::member_values[i];
+        }
+    }
+    return std::nullopt;
 }
 
 }  // namespace kota::meta

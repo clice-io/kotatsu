@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdlib>
 #include <functional>
 #include <memory>
 #include <new>
@@ -46,6 +47,11 @@ public:
         if constexpr(std::is_convertible_v<Class&&, R (*)(Args...)>) {
             call = &call_pointer;
             bound.fn = invocable;
+        } else if constexpr(std::is_function_v<std::remove_reference_t<Class>>) {
+            // A function of another signature, called through its own pointer type.
+            using Pointer = std::remove_reference_t<Class>*;
+            call = &call_function<Pointer>;
+            bound.function = reinterpret_cast<void (*)()>(&invocable);
         } else {
             call = &call_object<std::remove_reference_t<Class>>;
             bound.object = std::addressof(invocable);
@@ -65,6 +71,8 @@ private:
     union Bound {
         const void* object;
         R (*fn)(Args...);
+        /// A function pointer of another signature, cast back before the call.
+        void (*function)();
     };
 
     using Call = R (*)(Bound, Args&&...);
@@ -73,6 +81,13 @@ private:
 
     constexpr static R call_pointer(Bound bound, Args&&... args) {
         return bound.fn(std::forward<Args>(args)...);
+    }
+
+    /// Calls the function of pointer type Pointer that `bound` holds.
+    template <typename Pointer>
+    static R call_function(Bound bound, Args&&... args) {
+        return std::invoke_r<R>(reinterpret_cast<Pointer>(bound.function),
+                                std::forward<Args>(args)...);
     }
 
     /// Calls the object of type T, possibly const, that `bound` points to.
@@ -119,18 +134,19 @@ public:
 
     template <typename Class>
         requires (!std::is_base_of_v<ErasedCallable, std::remove_cvref_t<Class>>) &&
-                 std::is_invocable_r_v<R, target_t<std::remove_cvref_t<Class>>&, Args...>
+                 std::is_invocable_r_v<R, target_t<std::decay_t<Class>>&, Args...>
     constexpr ErasedCallable(Class&& invocable) {
-        using T = std::remove_cvref_t<Class>;
+        // A function decays to its pointer, which lives inline.
+        using T = std::decay_t<Class>;
         if constexpr(std::is_convertible_v<Class&&, R (*)(Args...)>) {
             buffer.fn = static_cast<R (*)(Args...)>(std::forward<Class>(invocable));
-            ops = &pointer_ops;
+            ops = pointer_ops();
         } else if constexpr(sbo_eligible<T>) {
             ::new (static_cast<void*>(buffer.bytes)) T(std::forward<Class>(invocable));
-            ops = &inline_ops<T>;
+            ops = inline_ops<T>();
         } else {
             buffer.heap = new T(std::forward<Class>(invocable));
-            ops = &heap_ops<T>;
+            ops = heap_ops<T>();
         }
     }
 
@@ -138,14 +154,14 @@ public:
     ErasedCallable& operator=(const ErasedCallable&) = delete;
 
     constexpr ErasedCallable(ErasedCallable&& other) noexcept :
-        ops(std::exchange(other.ops, nullptr)) {
+        ops(std::exchange(other.ops, empty_ops())) {
         take_buffer(other);
     }
 
     constexpr ErasedCallable& operator=(ErasedCallable&& other) noexcept {
         if(this != &other) {
             destroy();
-            ops = std::exchange(other.ops, nullptr);
+            ops = std::exchange(other.ops, empty_ops());
             take_buffer(other);
         }
         return *this;
@@ -157,13 +173,11 @@ public:
 
     constexpr R operator()(Args... args)
         requires (!Const) {
-        assert(ops && "Attempting to call an empty function object");
         return ops->call(buffer, std::forward<Args>(args)...);
     }
 
     constexpr R operator()(Args... args) const
         requires Const {
-        assert(ops && "Attempting to call an empty function object");
         return ops->call(buffer, std::forward<Args>(args)...);
     }
 
@@ -219,21 +233,62 @@ private:
         delete static_cast<T*>(buffer.heap);
     }
 
-    constexpr static Ops pointer_ops = {&call_pointer, nullptr, nullptr};
+    /// How to relocate an inline T: null when copying its bytes does.
+    template <typename T>
+    constexpr static auto inline_relocate() noexcept -> void (*)(Buffer&, Buffer&) noexcept {
+        if constexpr(std::is_trivially_copyable_v<T>) {
+            return nullptr;
+        } else {
+            return &relocate_inline<T>;
+        }
+    }
+
+    /// How to destroy an inline T: null when there is nothing to do.
+    template <typename T>
+    constexpr static auto inline_destroy() noexcept -> void (*)(Buffer&) noexcept {
+        if constexpr(std::is_trivially_destructible_v<T>) {
+            return nullptr;
+        } else {
+            return &destroy_inline<T>;
+        }
+    }
+
+    // The ops of each kind of callable are function-local constants: MSVC leaves a static
+    // data member template zero-filled for some local lambda types (warning C4268).
+
+    [[noreturn]] static R call_empty(BufferRef, Args&&...) {
+        assert(false && "Attempting to call an empty function object");
+        std::abort();
+    }
+
+    /// The ops of a function moved from, which holds nothing. No ops are ever null: GCC does
+    /// not compare the address of a constant with null in constant evaluation when null
+    /// checks are sanitized.
+    constexpr const static Ops* empty_ops() noexcept {
+        constexpr static Ops ops = {&call_empty, nullptr, nullptr};
+        return &ops;
+    }
+
+    constexpr const static Ops* pointer_ops() noexcept {
+        constexpr static Ops ops = {&call_pointer, nullptr, nullptr};
+        return &ops;
+    }
 
     template <typename T>
-    constexpr static Ops inline_ops = {
-        &call_inline<T>,
-        std::is_trivially_copyable_v<T> ? nullptr : &relocate_inline<T>,
-        std::is_trivially_destructible_v<T> ? nullptr : &destroy_inline<T>,
-    };
+    constexpr const static Ops* inline_ops() noexcept {
+        constexpr static Ops ops = {&call_inline<T>, inline_relocate<T>(), inline_destroy<T>()};
+        return &ops;
+    }
 
     template <typename T>
-    constexpr static Ops heap_ops = {&call_heap<T>, nullptr, &destroy_heap<T>};
+    constexpr const static Ops* heap_ops() noexcept {
+        constexpr static Ops ops = {&call_heap<T>, nullptr, &destroy_heap<T>};
+        return &ops;
+    }
 
     /// Takes the callable in `other`'s buffer, whose ops this function now has.
     constexpr void take_buffer(ErasedCallable& other) noexcept {
-        if(ops != nullptr && ops->relocate != nullptr) {
+        if(ops->relocate != nullptr) {
             ops->relocate(buffer, other.buffer);
         } else {
             buffer = other.buffer;
@@ -241,13 +296,13 @@ private:
     }
 
     constexpr void destroy() noexcept {
-        if(ops != nullptr && ops->destroy != nullptr) {
+        if(ops->destroy != nullptr) {
             ops->destroy(buffer);
         }
     }
 
     Buffer buffer{};
-    /// Null once moved from.
+    /// empty_ops() once moved from.
     const Ops* ops;
 };
 

@@ -18,6 +18,7 @@ enum class Color {
     /// Names that start with a digit, generated with a prefix.
     _2d,
     V3,
+    HTTPServer,
 };
 
 struct Echo {
@@ -51,8 +52,13 @@ ZEST_CASE(enum_to_string_renames_the_enumerator) {
 
 ZEST_CASE(enum_strings_lists_every_enumerator_renamed) {
     const auto& names = enum_strings<Color>();
-    EXPECT(names ==
-           std::vector<std::string>{"red", "lightBlue", "greenLight", "delete", "2d", "v3"});
+    EXPECT(names == std::vector<std::string>{"red",
+                                             "lightBlue",
+                                             "greenLight",
+                                             "delete",
+                                             "2d",
+                                             "v3",
+                                             "httpServer"});
     EXPECT(&enum_strings<Color>() == &names);
 }
 
@@ -67,6 +73,16 @@ ZEST_CASE(string_to_enum_finds_generated_names) {
     EXPECT(map_string_to_enum<Color>("delete") == Color::Delete_);
     EXPECT(map_string_to_enum<Color>("2d") == Color::_2d);
     EXPECT(map_string_to_enum<Color>("3") == Color::V3);
+}
+
+ZEST_CASE(string_to_enum_reads_back_every_renamed_name) {
+    // `httpServer` reads back as `http_server`, which no alias of `HTTPServer` spells.
+    EXPECT(map_string_to_enum<Color>("httpServer") == Color::HTTPServer);
+    for(const auto value: reflection<Color>::member_values) {
+        const auto name = map_enum_to_string(value);
+        ZEST_CONTEXT("enumerator spelled `{}`", name);
+        EXPECT(map_string_to_enum<Color>(name) == value);
+    }
 }
 
 ZEST_CASE(string_to_enum_of_an_unknown_name_fails) {

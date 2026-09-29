@@ -128,6 +128,25 @@ ZEST_CASE(insert_input_range_inserts_each_as_it_comes) {
     EXPECT(it == v.begin() + 1);
 }
 
+ZEST_CASE(insert_input_range_constructs_elements_explicitly) {
+    struct Explicit {
+        int value;
+
+        explicit Explicit(int value) : value(value) {}
+    };
+
+    std::istringstream text("2 3");
+    small_vector<Explicit, 2> v;
+    v.emplace_back(1);
+    v.emplace_back(4);
+    v.insert(v.begin() + 1, std::views::istream<int>(text));
+    ASSERT(v.size() == 4U);
+    for(int i = 0; i < 4; ++i) {
+        ZEST_CONTEXT("element {}", i);
+        EXPECT(v[i].value == i + 1);
+    }
+}
+
 ZEST_CASE(insert_empty_range_changes_nothing) {
     test::Census census;
     small_vector<test::Tracked, 4> v = {1, 2, 3};

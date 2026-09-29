@@ -107,6 +107,17 @@ ZEST_CASE(small_vector_constructs_from_one) {
     EXPECT(source == std::vector{4});
 }
 
+ZEST_CASE(move_assignment_gives_back_the_inline_buffer_a_base_move_took) {
+    small_vector<int, 2> source = {1, 2, 3};
+    hybrid_vector<int>& erased = source;
+    small_vector<int, 8> taken(std::move(erased));
+    ASSERT(source.capacity() == 0U);
+    source = small_vector<int, 2>{7, 8};
+    EXPECT(source == std::vector{7, 8});
+    EXPECT(source.inlined());
+    EXPECT(source.capacity() == 2U);
+}
+
 ZEST_CASE(assign_copies_one) {
     small_vector<int, 2> source = {1, 2, 3};
     small_vector<int, 8> target = {9};
