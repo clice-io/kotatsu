@@ -1,7 +1,7 @@
 # kotatsu
 
 `kotatsu` is a C++23 toolkit extracted from the `clice` ecosystem.
-It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv), and now also includes compile-time reflection, an attribute-driven codec framework, a typed IPC layer with generated LSP protocol bindings, a lightweight test framework, an LLVM-compatible option parsing library, a declarative CLI layer built on top, and a shared support layer of containers, traits, and string utilities.
+It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv), and now also includes compile-time reflection, an attribute-driven codec framework, a typed IPC layer with generated LSP protocol bindings, an HTTP client on libcurl, a lightweight test framework, an LLVM-compatible option parsing library, a declarative CLI layer built on top, and a shared support layer of containers, traits, and string utilities.
 
 All public APIs live under the `kota::` namespace, public headers under `include/kota/`, and CMake/xmake options use the `KOTA_` prefix.
 
@@ -95,6 +95,14 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - `LineMap` for byte-offset ↔ LSP `{line, character}` conversion across UTF-8 / UTF-16 / UTF-32 position encodings.
 - `ProgressReporter` helper for `$/progress` work-done notifications.
 
+### `http` (`include/kota/http/*`)
+
+- An HTTP client on [libcurl](https://curl.se/libcurl/) and the `async` runtime: `http::client` holds settings (headers, cookies, user agent, proxy, timeout, redirect policy, TLS options, raw `curl_option`s) that every request copies and may override; `client.on(loop)` binds a copy to an event loop as a `bound_client`, whose `get` / `post` / `put` / `patch` / `del` / `head` / `request(method, url)` build a `request`; `co_await request.send()` gives an `outcome<response, http::error>`.
+- Request builders: `query`, `header` / `default_header`, `bearer_auth` / `basic_auth`, `body`, `json_text`, `form`, and `json(value)` through the JSON codec. A request that cannot be sent as built (no url, a body on GET or HEAD, a header that CR or LF would break, ...) fails with `error_kind::invalid_request` before curl sees it; curl's failures carry its code (`error_kind::curl`).
+- `response`: the status, the effective url, the last response's headers in order, and the body as bytes or text.
+- One `http::manager` per event loop drives its requests on one curl multi handle, with the libuv polls and timer curl asks for. Requests follow the lifecycle of `async`'s resources: cancelling a task cancels its request; the loop's destruction takes its manager, and requests still in flight then end when their tasks are cancelled; a request sent while the loop is being destroyed, like one in flight when `manager::unregister_loop` drops the manager, fails with `error_kind::aborted`.
+- Threads: a `bound_client` belongs to the loop it names, and its requests are awaited in tasks on that loop. A client and its copies share one cookie jar, DNS cache and TLS session cache per event loop; used on two loops, a client keeps two of each, since curl cannot share cookies between threads.
+
 ### `option` (`include/kota/option/*`)
 
 - LLVM-compatible option parsing model (`OptTable`, `Option`, `ParsedArgument`).
@@ -136,6 +144,7 @@ include/kota/
   async/       # Coroutine runtime, event loop, I/O, sync primitives, cancellation
   codec/       # Attribute-driven serde framework + JSON / Bincode / TOML / FlatBuffers backends
   deco/        # Declarative CLI layer on top of option + meta
+  http/        # HTTP client on libcurl and the async runtime
   ipc/         # JSON-RPC peer, transport, codecs
     lsp/       # Generated LSP protocol model + URI / position / progress helpers
   meta/        # Compile-time reflection, attribute markers, schema IR, runtime type info
@@ -147,6 +156,7 @@ src/
   async/       # Async runtime implementations
   codec/       # Codec backend implementations (content / FlatBuffers)
   deco/        # Deco runtime and text rendering
+  http/        # HTTP client implementation
   ipc/         # IPC peer and transport implementations
     lsp/       # URI / position implementations
   option/      # Option parser implementation
@@ -165,6 +175,7 @@ examples/
   async_basics/    # Introductory async runtime walkthroughs
   build_system/    # Dependency-graph build-system demo
   dump_dot/        # DOT-graph dumping example
+  http/            # HTTP client demos (they reach the internet)
   ipc/             # IPC stdio, scripted, and multi-process examples
 
 scripts/

@@ -1,7 +1,6 @@
 #include <print>
 #include <string>
 
-#include "kota/http/detail/manager.h"
 #include "kota/http/http.h"
 #include "kota/async/async.h"
 
@@ -74,6 +73,5 @@ int main() {
     auto root = run_demo(loop);
     loop.schedule(root);
     loop.run();
-    http::manager::unregister_loop(loop);
     return 0;
 }

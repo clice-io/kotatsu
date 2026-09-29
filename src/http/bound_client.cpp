@@ -9,10 +9,7 @@ bound_client::bound_client(client owner, event_loop& loop) noexcept :
     owner(std::move(owner)), dispatch_loop(&loop) {}
 
 http::request bound_client::request(std::string method, std::string url) const noexcept {
-    auto req = http::request(owner, owner.shared, dispatch_loop);
-    req.method(std::move(method));
-    req.url_string = std::move(url);
-    return req;
+    return http::request(owner, owner.key, *dispatch_loop, std::move(method), std::move(url));
 }
 
 http::request bound_client::get(std::string url) const noexcept {

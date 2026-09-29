@@ -4,6 +4,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "kota/http/detail/util.h"
 
@@ -14,18 +15,16 @@ std::string error::message() const {
 }
 
 std::string message(const error& err) {
-    switch(err.kind) {
-        case error_kind::curl:
-            if(!err.detail.empty()) {
-                return err.detail;
-            }
-            return std::string(curl::message(err.curl_code));
-        case error_kind::invalid_request:
-            return err.detail.empty() ? std::string("invalid http request") : err.detail;
-        case error_kind::json_encode:
-            return err.detail.empty() ? std::string("json encode failed") : err.detail;
+    if(!err.detail.empty()) {
+        return err.detail;
     }
-    return "unknown http error";
+    switch(err.kind) {
+        case error_kind::curl: return std::string(curl::message(err.curl_code));
+        case error_kind::invalid_request: return "invalid http request";
+        case error_kind::json_encode: return "json encode failed";
+        case error_kind::aborted: return "http request aborted";
+    }
+    std::unreachable();
 }
 
 std::span<const std::byte> response::bytes() const noexcept {

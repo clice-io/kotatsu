@@ -94,4 +94,10 @@ void complete_later(uv_loop_t& loop, io_op& op);
 /// still open, has closed them all. Defined in loop.cpp.
 void free_when_closed(uv_loop_t& loop, function<void()> free);
 
+/// Whether the event loop behind `loop` is being destroyed. It then runs
+/// only the on_destroy() callbacks registered before and closes only the
+/// handles open when it starts closing them, so nothing may open a handle
+/// or register a callback on it any more. Defined in loop.cpp.
+bool destroying(uv_loop_t& loop) noexcept;
+
 }  // namespace kota::uv

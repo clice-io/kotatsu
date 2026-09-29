@@ -55,14 +55,6 @@ std::string trim_ascii(std::string_view text) {
     return std::string(text.substr(begin, end - begin));
 }
 
-std::string lower_ascii(std::string_view text) {
-    std::string out(text);
-    for(auto& ch: out) {
-        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-    }
-    return out;
-}
-
 std::string percent_encode(std::string_view text) {
     constexpr char hex[] = "0123456789ABCDEF";
 

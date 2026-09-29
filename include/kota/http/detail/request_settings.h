@@ -15,22 +15,35 @@
 
 namespace kota::http::detail {
 
+/// A hook that sets `option` to a copy of `text`.
+inline curl_option_hook set_text(CURLoption option, std::string text) {
+    return [option, text = std::move(text)](CURL* easy) -> curl::easy_error {
+        return curl::setopt(easy, option, text.c_str());
+    };
+}
+
+/// A hook that sets `option` to `value` once a request starts. Text is
+/// copied now: a std::string or std::string_view always, a C string when
+/// curl copies the option's value itself (a string option), since the
+/// caller's may be gone by then. Anything else, a pointer curl keeps (such
+/// as CURLOPT_ERRORBUFFER's) included, is passed as it is.
 template <typename T>
 curl_option_hook make_curl_option(CURLoption option, T&& value) {
     using stored_t = std::decay_t<T>;
     static_assert(std::is_copy_constructible_v<stored_t>,
                   "native curl option values must be copy constructible");
 
-    if constexpr(std::same_as<stored_t, std::string>) {
-        return [option, value = std::move(value)](CURL* easy) -> curl::easy_error {
-            return curl::setopt(easy, option, value.c_str());
-        };
-    } else if constexpr(std::same_as<stored_t, std::string_view>) {
-        std::string owned(value);
-        return [option, owned = std::move(owned)](CURL* easy) -> curl::easy_error {
-            return curl::setopt(easy, option, owned.c_str());
-        };
+    if constexpr(std::same_as<stored_t, std::string> || std::same_as<stored_t, std::string_view>) {
+        return set_text(option, std::string(std::forward<T>(value)));
     } else {
+        if constexpr(std::same_as<stored_t, const char*> || std::same_as<stored_t, char*>) {
+            // A string literal comes as a reference to its array, never null.
+            const char* text = value;
+            const auto* known = ::curl_easy_option_by_id(option);
+            if(text != nullptr && known != nullptr && known->type == CURLOT_STRING) {
+                return set_text(option, text);
+            }
+        }
         return [option, value = std::forward<T>(value)](CURL* easy) -> curl::easy_error {
             return curl::setopt(easy, option, value);
         };
@@ -90,6 +103,11 @@ public:
         return std::forward<decltype(self)>(self);
     }
 
+    /// Sets a libcurl option kotatsu has no setting for, after its own
+    /// options, when the request starts; see make_curl_option() for what is
+    /// copied. CURLOPT_PRIVATE is kotatsu's. A POST or a request with a body
+    /// sends it with CURLOPT_POSTFIELDS: set that to nullptr to have a
+    /// CURLOPT_READFUNCTION of your own send it.
     template <typename T>
     decltype(auto) curl_option(this auto&& self, CURLoption option, T&& value) {
         self.curl_options.push_back(detail::make_curl_option(option, std::forward<T>(value)));

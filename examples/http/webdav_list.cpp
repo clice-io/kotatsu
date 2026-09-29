@@ -2,7 +2,6 @@
 #include <string>
 #include <string_view>
 
-#include "kota/http/detail/manager.h"
 #include "kota/http/http.h"
 #include "kota/async/async.h"
 
@@ -50,6 +49,5 @@ int main() {
     auto root = list_webdav_directory(loop);
     loop.schedule(root);
     loop.run();
-    http::manager::unregister_loop(loop);
     return 0;
 }

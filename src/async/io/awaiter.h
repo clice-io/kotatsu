@@ -224,9 +224,9 @@ private:
 };
 
 /// Base of a resource's state, `Derived`, which embeds its libuv handle as
-/// `handle` (a uv_handle_t in a union with the concrete handle type) and
-/// the waiter its callbacks wake as `slot`. Derived lives until libuv is
-/// done with the handle.
+/// `handle` (a uv_handle_t in a union with the concrete handle type) and,
+/// when a task waits on it, the waiter its callbacks wake as `slot`.
+/// Derived lives until libuv is done with the handle.
 template <typename Derived>
 struct owned_handle {
     static detail::unique_handle<Derived> make() {
@@ -264,9 +264,12 @@ struct owned_handle {
     /// Ends a pending wait with operation_aborted, then closes the handle,
     /// whose close callback frees Derived.
     static void destroy(Derived* self) noexcept {
+        constexpr bool waited_on = requires(Derived& state) { state.slot; };
         auto& handle = self->handle;
         if(handle.loop != nullptr && handle.data != nullptr && !::uv_is_closing(&handle)) {
-            self->slot.abort(*handle.loop);
+            if constexpr(waited_on) {
+                self->slot.abort(*handle.loop);
+            }
             ::uv_close(&handle,
                        [](uv_handle_t* closed) { delete static_cast<Derived*>(closed->data); });
             return;
@@ -276,7 +279,9 @@ struct owned_handle {
         // `data` (event_loop::~event_loop), or closes it still, when a task
         // that teardown resumed drops it; that loop completes nothing queued
         // any more.
-        self->slot.detach();
+        if constexpr(waited_on) {
+            self->slot.detach();
+        }
         if(handle.loop != nullptr && handle.data != nullptr) {
             free_when_closed(*handle.loop, [self] { delete self; });
         } else {

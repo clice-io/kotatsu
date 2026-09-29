@@ -2,7 +2,6 @@
 #include <print>
 #include <string>
 
-#include "kota/http/detail/manager.h"
 #include "kota/http/http.h"
 #include "kota/async/async.h"
 #include "kota/codec/dyn/dyn.h"
@@ -46,6 +45,5 @@ int main() {
     auto root = request_openai(loop);
     loop.schedule(root);
     loop.run();
-    http::manager::unregister_loop(loop);
     return 0;
 }
