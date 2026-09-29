@@ -100,6 +100,11 @@ ZEST_CASE(small_vector_constructs_from_one) {
     small_vector<int, 8> moved(std::move(erased));
     EXPECT(moved == std::vector{1, 2, 3});
     EXPECT(moved.data() == allocation);
+    // Through the base, the source's inline capacity is unknown: it is left with none.
+    EXPECT(source.empty());
+    EXPECT(source.capacity() == 0U);
+    source.push_back(4);
+    EXPECT(source == std::vector{4});
 }
 
 ZEST_CASE(assign_copies_one) {

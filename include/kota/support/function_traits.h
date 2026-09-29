@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <tuple>
 #include <type_traits>
 
@@ -27,8 +28,9 @@ struct tuple_push_front<T, std::tuple<Ts...>> {
 template <typename T, typename Tuple>
 using tuple_push_front_t = typename tuple_push_front<T, Tuple>::type;
 
-/// The return type and the arguments of a function type. `object_type<C>` is how a member
-/// function of this type, of class C, takes its object: `const C&` for a const one.
+/// The return type and the arguments of a function type. `function_type` is the type without
+/// its qualifiers, and `object_type<C>` how a member function of this type, of class C, takes
+/// its object: `const C&` for a const one.
 template <typename Fn>
 struct function_traits;
 
@@ -37,6 +39,7 @@ struct function_traits;
     struct function_traits<R(Args...) QUALIFIERS> {                                                \
         using return_type = R;                                                                     \
         using args_type = std::tuple<Args...>;                                                     \
+        using function_type = R(Args...);                                                          \
         template <typename C>                                                                      \
         using object_type = OBJECT;                                                                \
         constexpr static std::size_t args_count = sizeof...(Args);                                 \
@@ -64,7 +67,7 @@ template <typename T>
 using function_args_t = typename function_traits<T>::args_type;
 
 template <typename T>
-constexpr std::size_t function_args_count = function_traits<T>::args_count;
+constexpr std::size_t function_args_count_v = function_traits<T>::args_count;
 
 // traits for member pointers
 template <typename T>

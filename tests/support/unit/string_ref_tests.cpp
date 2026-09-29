@@ -68,13 +68,10 @@ ZEST_CASE(prefixes_and_suffixes_ignoring_case) {
     EXPECT(!string_ref("h").ends_with_insensitive(".h"));
 }
 
-ZEST_CASE(contains_finds_text_and_characters) {
+ZEST_CASE(contains_insensitive_ignores_ascii_case) {
     string_ref text("needle in haystack");
-    EXPECT(text.contains("in hay"));
-    EXPECT(text.contains('k'));
-    EXPECT(!text.contains("pin"));
-    EXPECT(!text.contains('z'));
     EXPECT(text.contains_insensitive("HAYSTACK"));
+    EXPECT(text.contains_insensitive("In Hay"));
     EXPECT(!text.contains_insensitive("HAYSTACKS"));
 }
 

@@ -122,7 +122,7 @@ ZEST_CASE(sequences_without_an_insertion_are_not) {
     STATIC_EXPECT(!detail::sequence_insertable<std::forward_list<int>, int>);
 }
 
-// meta compares containers by the concepts of ranges.h, which these suites check: the
+// meta compares containers by the concepts of ranges.h, which this suite checks: the
 // comparisons below are plain `==`, their operands left undecomposed.
 
 ZEST_CASE(append_sequence_element_uses_the_form_available) {

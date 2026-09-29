@@ -165,18 +165,6 @@ constexpr T* uninitialized_move(T* first, T* last, T* dest) {
     return uninitialized_copy(move_range(first, last), dest);
 }
 
-/// Constructs [first, last) anew from `dest` on, for elements moving to a new buffer: by
-/// moving, unless the move can throw and T can be copied, which leaves the sources as they
-/// were when a construction throws (std::move_if_noexcept).
-template <typename T>
-constexpr T* uninitialized_relocate(T* first, T* last, T* dest) {
-    if constexpr(!std::is_nothrow_move_constructible_v<T> && std::is_copy_constructible_v<T>) {
-        return uninitialized_copy(std::ranges::subrange(first, last), dest);
-    } else {
-        return uninitialized_move(first, last, dest);
-    }
-}
-
 /// Constructs each of [first, last) with `construct_one(p)`. If one throws, those constructed
 /// so far are destroyed.
 template <typename T, typename ConstructOne>

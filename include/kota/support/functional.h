@@ -8,24 +8,18 @@
 #include <type_traits>
 #include <utility>
 
+#include "kota/support/function_traits.h"
+
 namespace kota {
 
-/// The class and the signature of member function `V`.
-template <auto V, typename T = decltype(V)>
+/// The class and the signature of member function `V`, without its qualifiers.
+template <auto V>
 struct mem_fn {
-    static_assert(std::is_member_function_pointer_v<T>, "V must be a member function pointer");
-};
+    static_assert(std::is_member_function_pointer_v<decltype(V)>,
+                  "V must be a member function pointer");
 
-template <auto V, typename Class, typename Ret, typename... Args>
-struct mem_fn<V, Ret (Class::*)(Args...)> {
-    using class_type = Class;
-    using function_type = Ret(Args...);
-};
-
-template <auto V, typename Class, typename Ret, typename... Args>
-struct mem_fn<V, Ret (Class::*)(Args...) const> {
-    using class_type = Class;
-    using function_type = Ret(Args...);
+    using class_type = class_type_t<decltype(V)>;
+    using function_type = typename function_traits<member_type_t<decltype(V)>>::function_type;
 };
 
 /// Whether `MemFn`, a mem_fn, is a member function of Class, whatever its cv-qualifiers.

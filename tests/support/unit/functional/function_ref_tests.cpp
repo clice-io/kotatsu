@@ -33,6 +33,10 @@ struct Adder {
     int add_const(int x) const {
         return base + x;
     }
+
+    int get() const noexcept {
+        return base;
+    }
 };
 
 struct Offset {
@@ -51,8 +55,9 @@ ZEST_CASE(calls_a_function) {
 }
 
 ZEST_CASE(keeps_a_lambda_without_captures_by_value) {
-    // Constant evaluation rejects a call through a reference to a dead object, so this only
-    // compiles if the lambda was converted to a function pointer, which outlives it.
+    // Constant evaluation can call through the function pointer the lambda converts to, which
+    // outlives it, but not through a reference to the lambda, a cast from `const void*` it
+    // does not allow before C++26: this compiles only on the pointer path.
     constexpr auto result = [] {
         function_ref<int(int, int)> fn(add);
         {
@@ -122,8 +127,14 @@ ZEST_CASE(converts_the_result) {
     };
     function_ref<long(int)> widen(identity);
     EXPECT(widen(7) == 7L);
-    function_ref<void(int)> discard(identity);
+    int calls = 0;
+    auto count = [&calls](int x) {
+        calls += 1;
+        return x;
+    };
+    function_ref<void(int)> discard(count);
     discard(1);
+    EXPECT(calls == 1);
 }
 
 ZEST_CASE(forwards_reference_parameters) {
@@ -181,6 +192,13 @@ ZEST_CASE(binds_a_const_member_function) {
     auto fn = bind_ref<&Adder::add_const>(adder);
     EXPECT(fn(8) == 50);
     EXPECT(zest::type_eq<decltype(fn), function_ref<int(int)>>());
+}
+
+ZEST_CASE(binds_a_member_function_of_any_qualifiers) {
+    Adder adder{7};
+    auto fn = bind_ref<&Adder::get>(adder);
+    EXPECT(fn() == 7);
+    EXPECT(zest::type_eq<mem_fn<&Adder::get>::function_type, int()>());
 }
 
 ZEST_CASE(refuses_to_refer_to_a_temporary) {

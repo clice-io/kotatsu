@@ -25,10 +25,13 @@ template <typename List, typename T>
 using type_list_prepend_t = typename type_list_prepend<List, T>::type;
 
 template <typename List, typename T>
-constexpr inline bool type_list_contains_v = false;
+struct type_list_contains;
 
 template <typename... Ts, typename T>
-constexpr inline bool type_list_contains_v<type_list<Ts...>, T> = (std::same_as<T, Ts> || ...);
+struct type_list_contains<type_list<Ts...>, T> : std::bool_constant<is_one_of<T, Ts...>> {};
+
+template <typename List, typename T>
+constexpr inline bool type_list_contains_v = type_list_contains<List, T>::value;
 
 template <typename List, template <typename> typename Predicate>
 struct type_list_filter;
@@ -127,10 +130,13 @@ template <typename... Lists>
 using type_list_concat_t = typename type_list_concat<Lists...>::type;
 
 template <typename List>
-constexpr inline std::size_t type_list_size_v = 0;
+struct type_list_size;
 
 template <typename... Ts>
-constexpr inline std::size_t type_list_size_v<type_list<Ts...>> = sizeof...(Ts);
+struct type_list_size<type_list<Ts...>> : std::integral_constant<std::size_t, sizeof...(Ts)> {};
+
+template <typename List>
+constexpr inline std::size_t type_list_size_v = type_list_size<List>::value;
 
 template <typename List>
 struct type_list_to_union;

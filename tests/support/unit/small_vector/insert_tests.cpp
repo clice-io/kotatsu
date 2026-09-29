@@ -77,11 +77,17 @@ ZEST_CASE(insert_count_reallocating) {
     EXPECT(v == std::vector{1, 9, 9, 9, 5});
 }
 
-ZEST_CASE(insert_count_of_zero_returns_the_position) {
-    small_vector<int, 2> v = {1, 2};
-    auto it = v.insert(v.begin() + 1, 0, 9);
-    EXPECT(v == std::vector{1, 2});
+ZEST_CASE(insert_count_of_zero_changes_nothing) {
+    test::Census census;
+    small_vector<test::Tracked, 4> v = {1, 2};
+    const auto copies = census.copies;
+    const auto moves = census.moves;
+    auto it = v.insert(v.begin() + 1, 0, test::Tracked(9));
+    EXPECT(test::values(v) == std::vector{1, 2});
     EXPECT(it == v.begin() + 1);
+    EXPECT(census.copies == copies);
+    EXPECT(census.moves == moves);
+    EXPECT(census.assignments == 0);
 }
 
 ZEST_CASE(insert_range_fewer_than_the_elements_after) {
@@ -123,14 +129,35 @@ ZEST_CASE(insert_input_range_inserts_each_as_it_comes) {
 }
 
 ZEST_CASE(insert_empty_range_changes_nothing) {
-    // Strings, which moving one onto itself would empty.
-    small_vector<std::string, 4> v = {"a", "b", "c"};
-    auto it = v.insert(v.begin() + 1, std::vector<std::string>{});
-    EXPECT(v == std::vector<std::string>{"a", "b", "c"});
+    test::Census census;
+    small_vector<test::Tracked, 4> v = {1, 2, 3};
+    const auto moves = census.moves;
+    auto it = v.insert(v.begin() + 1, std::vector<test::Tracked>{});
     EXPECT(it == v.begin() + 1);
     it = v.insert(v.begin(), std::ranges::subrange(v.begin(), v.begin()));
-    EXPECT(v == std::vector<std::string>{"a", "b", "c"});
     EXPECT(it == v.begin());
+    EXPECT(test::values(v) == std::vector{1, 2, 3});
+    EXPECT(census.moves == moves);
+    EXPECT(census.assignments == 0);
+}
+
+ZEST_CASE(insert_takes_a_const_iterator) {
+    small_vector<int, 4> v = {1, 3};
+    auto it = v.insert(v.cbegin() + 1, 2);
+    EXPECT(it == v.begin() + 1);
+    it = v.emplace(v.cend(), 4);
+    EXPECT(it == v.begin() + 3);
+    EXPECT(v == std::vector{1, 2, 3, 4});
+}
+
+ZEST_CASE(insert_of_an_element_that_is_a_range_inserts_it_whole) {
+    small_vector<std::vector<int>, 2> v;
+    std::vector<int> row = {5};
+    v.insert(v.begin(), row);
+    v.insert(v.end(), std::vector<int>{6, 7});
+    ASSERT(v.size() == 2U);
+    EXPECT(v[0] == std::vector{5});
+    EXPECT(v[1] == std::vector{6, 7});
 }
 
 ZEST_CASE(insert_initializer_list_inserts_its_elements) {

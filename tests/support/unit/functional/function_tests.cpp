@@ -40,6 +40,10 @@ struct Counter {
     int& bump() {
         return ++count;
     }
+
+    int read() const noexcept {
+        return count;
+    }
 };
 
 struct Padded {
@@ -289,7 +293,7 @@ ZEST_CASE(move_assignment_between_kinds) {
     }
 }
 
-ZEST_CASE(const_form_moves) {
+ZEST_CASE(const_form_moves_its_callable_once) {
     using ConstFunction = function<int(int) const>;
     test::Census census;
     {
@@ -341,6 +345,11 @@ ZEST_CASE(bind_calls_a_const_member_function) {
 ZEST_CASE(bind_keeps_a_large_object) {
     auto fn = bind<&Padded::operator()>(Padded{50});
     EXPECT(fn(7) == 57);
+}
+
+ZEST_CASE(bind_calls_a_noexcept_member_function) {
+    auto fn = bind<&Counter::read>(Counter{5});
+    EXPECT(fn() == 5);
 }
 
 ZEST_CASE(bind_returns_what_the_member_function_returns) {

@@ -38,11 +38,14 @@ constexpr inline bool is_small_vector_v<hybrid_vector<T>> = true;
 template <typename T, unsigned int InlineCapacity>
 constexpr inline bool is_small_vector_v<small_vector<T, InlineCapacity>> = true;
 
+/// A range of values to construct elements from; not a small_vector, which has overloads of
+/// its own, nor an element that happens to be a range itself (a std::vector<int> inserted
+/// into a small_vector of them).
 template <typename Range, typename T>
 concept small_vector_compatible_range =
     std::ranges::input_range<Range> &&
     std::constructible_from<T, std::ranges::range_reference_t<Range>> &&
-    !is_small_vector_v<std::remove_cvref_t<Range>>;
+    !is_small_vector_v<std::remove_cvref_t<Range>> && !std::same_as<std::remove_cvref_t<Range>, T>;
 
 /// The integer a vector keeps its size and capacity in: 32 bits, or 64 bits for elements under
 /// 4 bytes on a 64-bit target, which can hold more of them than 32 bits count.
@@ -115,9 +118,14 @@ struct alignas(T) inline_buffer<T, 0> {};
 /// hybrid_vector part of the object, where inline_begin() finds it.
 ///
 /// An argument may be one of the vector's own elements, to copy or move, or a range of
-/// references to them, to append, assign or insert; a vector moved from may be owned by one of
-/// the elements when it holds an allocation. Other views of the elements, such as a range that
-/// transforms them, must not be passed where the vector grows or overwrites them.
+/// references to them, to append, assign or insert. Other views of the elements, such as a
+/// range that transforms them, must not be passed where the vector grows or overwrites them;
+/// nor may a vector assigned from belong to one of the elements it replaces (a node's
+/// children replacing the nodes): move it to a local first.
+///
+/// Growth moves the elements to the new buffer, as LLVM's SmallVector does, where std::vector
+/// copies those whose move can throw: when such a move throws, the vector keeps its elements,
+/// but some may have been moved from.
 template <typename T>
 class hybrid_vector {
     template <typename, unsigned int>
@@ -303,7 +311,7 @@ public:
     constexpr void reserve(size_type new_capacity) {
         if(new_capacity > capacity()) {
             rebuild(next_capacity(new_capacity), size(), [this](pointer first) {
-                return mem::uninitialized_relocate(begin(), end(), first);
+                return mem::uninitialized_move(begin(), end(), first);
             });
         }
     }
@@ -472,6 +480,9 @@ public:
 
     constexpr iterator insert(const_iterator pos, size_type count, const_reference value) {
         assert(valid_insert_position(pos));
+        if(count == 0) {
+            return head + index_of(pos);
+        }
         // The insertion moves the elements, and `value` may be one of them.
         const value_type copy(value);
         return insert_items(
@@ -625,9 +636,10 @@ protected:
         room = static_cast<compact_size_type>(capacity);
     }
 
-    /// Moves `other`'s elements into this empty vector, constructing rather than assigning
-    /// them, and leaves `other` empty: by taking its allocation when it has one, which leaves
-    /// it with `other_inline_capacity`.
+    /// Moves `other`'s elements into this empty vector and leaves `other` empty: by taking its
+    /// allocation when it has one, which leaves it with `other_inline_capacity`. Unlike
+    /// move_assign(), it only constructs elements, so elements that cannot be assigned can
+    /// still be moved.
     constexpr void take_elements(hybrid_vector& other, size_type other_inline_capacity) {
         if(!take_allocation(other, other_inline_capacity)) {
             append(mem::move_range(other.begin(), other.end()));
@@ -691,7 +703,7 @@ protected:
             KOTA_RETHROW();
         }
         KOTA_TRY {
-            mem::uninitialized_relocate(begin(), end(), new_head);
+            mem::uninitialized_move(begin(), end(), new_head);
         }
         KOTA_CATCH_ALL() {
             std::ranges::destroy(tail, new_head + new_size);
@@ -799,8 +811,7 @@ private:
 
     /// Takes `other`'s allocation, and its elements with it, when it has one this vector can
     /// hold (see allocate()), destroying this vector's elements and freeing its allocation.
-    /// `other` is left empty with its inline buffer, of `other_inline_capacity`, before that:
-    /// one of the elements destroyed may own it.
+    /// `other` is left empty with its inline buffer, of `other_inline_capacity`.
     constexpr bool take_allocation(hybrid_vector& other, size_type other_inline_capacity) noexcept {
         if(!other.on_heap() || other.head == inline_begin()) {
             return false;
@@ -885,11 +896,11 @@ private:
         if(new_size > capacity()) {
             const auto new_room = next_capacity(new_size);
             mem::AllocationGuard<value_type> guard(allocate(new_room), new_room);
-            auto* out = mem::uninitialized_relocate(begin(), head + index, guard.data());
+            auto* out = mem::uninitialized_move(begin(), head + index, guard.data());
             guard.mark(out);
             out = construct(out, 0);
             guard.mark(out);
-            guard.mark(mem::uninitialized_relocate(head + index, end(), out));
+            guard.mark(mem::uninitialized_move(head + index, end(), out));
             adopt_allocation(guard.release(), new_size, new_room);
             return head + index;
         }
@@ -1055,14 +1066,14 @@ public:
         if !consteval {
             if(count <= InlineCapacity) {
                 auto* inline_head = this->inline_begin();
-                mem::uninitialized_relocate(this->begin(), this->end(), inline_head);
+                mem::uninitialized_move(this->begin(), this->end(), inline_head);
                 this->adopt_allocation(inline_head, count, InlineCapacity);
                 return;
             }
         }
         if(count != this->capacity()) {
             this->rebuild(count, count, [this](value_type* first) {
-                return mem::uninitialized_relocate(this->begin(), this->end(), first);
+                return mem::uninitialized_move(this->begin(), this->end(), first);
             });
         }
     }

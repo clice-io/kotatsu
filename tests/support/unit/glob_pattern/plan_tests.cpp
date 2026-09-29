@@ -264,6 +264,7 @@ ZEST_CASE(patterns_too_large_to_keep_inline_copy_and_move) {
     *assigned = std::move(*pattern);
     const GlobPattern& moved_in = *assigned;
     for(const auto* compiled: {&copy, &moved_in}) {
+        ZEST_CONTEXT("the {}", compiled == &copy ? "copy" : "pattern moved in");
         EXPECT(compiled->match("b/xz/5q/deep/down/y/main.c"));
         EXPECT(compiled->match("c/x/0!/y/main.h"));
         EXPECT(!compiled->match("d/xz/5q/y/main.c"));

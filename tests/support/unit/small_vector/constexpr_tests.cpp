@@ -34,7 +34,7 @@ struct Ints {
 struct IntFacts {
     Ints ints;
     int popped = 0;
-    bool inlined = true;
+    bool below_a_larger_vector = false;
 };
 
 constexpr IntFacts int_operations() {
@@ -47,7 +47,11 @@ constexpr IntFacts int_operations() {
     v[6] = 12;
     const auto popped = v.pop_back_val();
     v.shrink_to_fit();
-    return {.ints = Ints::of(v), .popped = popped, .inlined = v.inlined()};
+    return {
+        .ints = Ints::of(v),
+        .popped = popped,
+        .below_a_larger_vector = (v <=> small_vector<int, 0>{1, 9, 3, 4, 5, 12}) < 0,
+    };
 }
 
 struct StringFacts {
@@ -141,7 +145,7 @@ ZEST_CASE(int_elements_go_through_every_operation) {
     STATIC_EXPECT(facts.ints.size == 6U);
     STATIC_EXPECT(facts.ints.elements == std::array{1, 9, 3, 4, 5, 11, 0, 0});
     STATIC_EXPECT(facts.popped == 12);
-    STATIC_EXPECT(!facts.inlined);
+    STATIC_EXPECT(facts.below_a_larger_vector);
 }
 
 ZEST_CASE(string_elements_go_through_every_operation) {

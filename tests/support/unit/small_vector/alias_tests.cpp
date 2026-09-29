@@ -103,7 +103,7 @@ ZEST_CASE(assign_part_of_itself) {
     EXPECT(v == std::vector{beta, alpha});
 }
 
-ZEST_CASE(part_of_itself_of_trivial_elements) {
+ZEST_CASE(part_of_itself_of_trivial_elements_is_copied_without_overlap) {
     // Trivially copyable elements are copied as bytes, which must not overlap the elements.
     small_vector<int, 8> v = {1, 2, 3, 4};
     v.assign(std::ranges::subrange(v.begin() + 1, v.end()));

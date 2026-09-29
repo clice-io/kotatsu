@@ -161,7 +161,7 @@ ZEST_CASE(move_of_inline_elements_moves_each) {
     EXPECT(source.empty());
 }
 
-ZEST_CASE(move_of_move_only_elements) {
+ZEST_CASE(move_of_move_only_elements_moves_them) {
     small_vector<std::unique_ptr<int>, 2> source;
     source.push_back(std::make_unique<int>(1));
     small_vector<std::unique_ptr<int>, 2> inline_moved(std::move(source));

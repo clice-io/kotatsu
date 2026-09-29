@@ -68,7 +68,7 @@ ZEST_CASE(with_itself_changes_nothing) {
     EXPECT(v == std::vector{1, 2, 3});
 }
 
-ZEST_CASE(inline_with_heap_moves_each_element_once) {
+ZEST_CASE(inline_with_heap_copies_no_element) {
     test::Census census;
     {
         small_vector<test::Tracked, 2> a = {1, 2};

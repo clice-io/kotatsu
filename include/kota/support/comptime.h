@@ -28,52 +28,30 @@ public:
     constexpr static size_t reserved_size = record.data.size();
 
 private:
-    using counting_memory = std::allocator<char>;
-    using sized_memory = char[record.count + 1];
+    /// What the counting pass holds: nothing, its bytes come from std::allocator.
+    struct NoBytes {};
 
-    alignas(
-        std::max_align_t) std::conditional_t<is_counting, counting_memory, sized_memory> memory{};
+    /// The sized pass holds every byte the counting pass allocated.
+    std::conditional_t<is_counting, NoBytes, char[record.count + 1]> bytes{};
     std::array<size_t, reserved_size> reserved{};
     size_t idx = 0;
 
 public:
-    constexpr static size_t aligned_offset(size_t current_idx, size_t alignment) {
-        return (current_idx + alignment - 1) & ~(alignment - 1);
-    }
-
-    constexpr void* allocate(size_t n, size_t alignment) {
-        size_t start = aligned_offset(idx, alignment);
-        idx = start + n;
-
+    /// `count` bytes: fresh ones while counting, and the object's own next ones once sized.
+    constexpr char* allocate(size_t count) {
+        const size_t start = idx;
+        idx += count;
         if constexpr(is_counting) {
-            return memory.allocate(n);
+            return std::allocator<char>{}.allocate(count);
         } else {
-            return &memory[start];
+            return &bytes[start];
         }
     }
 
-    constexpr void deallocate(void* p, size_t n) {
+    /// Gives back what allocate() returned; the sized pass keeps its bytes.
+    constexpr void deallocate(char* allocated, size_t count) {
         if constexpr(is_counting) {
-            memory.deallocate(static_cast<char*>(p), n);
-        }
-    }
-
-    template <typename T>
-    constexpr T* allocate_type(size_t count_elements) {
-        size_t start = aligned_offset(idx, alignof(T));
-        idx = start + count_elements * sizeof(T);
-
-        if constexpr(is_counting) {
-            return std::allocator<T>{}.allocate(count_elements);
-        } else {
-            return static_cast<T*>(&memory[start]);
-        }
-    }
-
-    template <typename T>
-    constexpr void deallocate_type(T* p, size_t count_elements) {
-        if constexpr(is_counting) {
-            std::allocator<T>{}.deallocate(p, count_elements);
+            std::allocator<char>{}.deallocate(allocated, count);
         }
     }
 

@@ -19,10 +19,8 @@ namespace kota {
 /// Layout: three machine words {text, length, allocated}, `allocated` being the size of the
 /// owned allocation:
 ///   - allocated == 0: borrowed mode, `text` points into an external buffer
-///   - allocated > 0: owned mode, `text` points to memory from mem::allocate<char>
-///
-/// Owned buffers are allocated via mem::allocate<char> and can be transferred
-/// to small_string via release().
+///   - allocated > 0: owned mode, `text` points to memory from mem::allocate<char>, which
+///     release() hands over to a small_string
 class cow_string {
 public:
     /// Default constructor: empty borrowed string.

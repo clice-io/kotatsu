@@ -71,10 +71,10 @@ class GlobPattern {
 public:
     /// A pattern is at most 4 GiB, brace expansion included: every offset
     /// the compiled form keeps is 32-bit, as are the error positions.
-    /// Brace expansion may produce at most `max_subpattern_num` arms, one for each
+    /// Brace expansion may produce at most `max_arms` arms, one for each
     /// choice of the braces' terms; 0 turns it off, and braces then match themselves.
-    [[nodiscard]] static std::expected<GlobPattern, GlobError>
-        create(std::string_view s, size_t max_subpattern_num = 100);
+    [[nodiscard]] static std::expected<GlobPattern, GlobError> create(std::string_view s,
+                                                                      size_t max_arms = 100);
 
     [[nodiscard]] bool is_trivial_match_all() const {
         return mode == Mode::Any;

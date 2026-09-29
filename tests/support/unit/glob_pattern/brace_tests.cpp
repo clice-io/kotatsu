@@ -10,21 +10,21 @@ namespace {
 
 ZEST_SUITE(support_glob_pattern_brace) {
 
-ZEST_CASE(terms_of_whole_names) {
+ZEST_CASE(any_term_matches_a_whole_name) {
     test::expect_glob("{node_modules,testing}",
                       {"node_modules", "testing"},
                       {"node_module", "dtesting"});
     test::expect_glob("{AAA,BBB,AB*}", {"AAA", "BBB", "AB", "ABCD"}, {"CCC"});
 }
 
-ZEST_CASE(terms_of_extensions) {
+ZEST_CASE(any_term_matches_an_extension) {
     test::expect_glob("*.{html,js}",
                       {"foo.js", "foo.html"},
                       {"folder/foo.js", "/node_modules/foo.js", "foo.jss", "some.js/test"});
     test::expect_glob("*.{html}", {"foo.html"}, {"foo.js"});
 }
 
-ZEST_CASE(terms_within_a_path) {
+ZEST_CASE(terms_within_a_path_match_their_segment) {
     test::expect_glob("proj/{build*,include,src}/*.{cc,cpp,h,hpp}",
                       {"proj/include/foo.cc",
                        "proj/include/bar.cpp",
@@ -37,7 +37,7 @@ ZEST_CASE(several_braces_multiply) {
     test::expect_glob("{a,b}.{c,d}", {"a.c", "a.d", "b.c", "b.d"}, {"a.e", "c.a"});
 }
 
-ZEST_CASE(terms_with_globstars) {
+ZEST_CASE(terms_with_globstars_match_at_any_depth) {
     test::expect_glob("**/{foo,bar}",
                       {"foo", "bar", "test/foo", "other/more/bar", "/foo", "/other/more/bar"},
                       {"baz", "foox"});
@@ -56,7 +56,7 @@ ZEST_CASE(terms_with_globstars) {
                       {"xpackage.json", "/xpackage.json"});
 }
 
-ZEST_CASE(terms_after_a_prefix) {
+ZEST_CASE(terms_after_a_prefix_keep_it) {
     test::expect_glob("prefix/{**/*.d.ts,**/*.js,foo.[0-9]}",
                       {"prefix/foo.5", "prefix/foo.8", "prefix/foo.js"},
                       {"prefix/bar.5", "prefix/foo.f"});
@@ -75,7 +75,7 @@ ZEST_CASE(escaped_comma_is_part_of_a_term) {
     test::expect_glob(R"({a\,b,c})", {"a,b", "c"}, {"a", "b"});
 }
 
-ZEST_CASE(brackets_inside_terms) {
+ZEST_CASE(brackets_inside_terms_match_one_character) {
     test::expect_glob("{[a-z]oo,[0-9]ar}", {"foo", "boo", "1ar", "9ar"}, {"Foo", "bar"});
     test::expect_glob(R"({foo.[\*\?],bar})", {"foo.*", "foo.?", "bar"}, {"foo.x"});
 }
@@ -90,7 +90,7 @@ ZEST_CASE(globstar_term_matches_everything) {
     test::expect_glob("foo/{**,x}", {"foo", "foo/x", "foo/a/b"}, {"bar"});
 }
 
-ZEST_CASE(terms_before_a_globstar) {
+ZEST_CASE(terms_before_a_globstar_match_their_trees) {
     test::expect_glob("{src,include}/**",
                       {"src", "src/", "src/中文.cpp", "include/a/b"},
                       {"", "/src", "srcx/a", "x/include/a"});

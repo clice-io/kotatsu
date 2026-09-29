@@ -15,7 +15,11 @@ struct Facts {
     bool borrowed = false;
     bool made_owned = false;
     bool owned_text = false;
+    bool named_owned = false;
+    bool named_text = false;
     bool copy_owned = false;
+    bool copy_has_its_own_text = false;
+    bool copy_text = false;
     bool moved_from_empty = false;
     bool released_text = false;
     bool released_from_empty = false;
@@ -28,8 +32,13 @@ constexpr Facts borrow_own_and_release() {
     made.make_owned();
     facts.made_owned = made.is_owned();
     facts.owned_text = made.ref() == "world";
+    const cow_string named = cow_string::owned(string_ref("named"));
+    facts.named_owned = named.is_owned();
+    facts.named_text = named.ref() == "named";
     cow_string copy(made);
-    facts.copy_owned = copy.is_owned() && copy.data() != made.data();
+    facts.copy_owned = copy.is_owned();
+    facts.copy_has_its_own_text = copy.data() != made.data();
+    facts.copy_text = copy.ref() == "world";
     cow_string moved(std::move(made));
     facts.moved_from_empty = made.empty();
     small_string<0> released = moved.release();
@@ -45,7 +54,11 @@ ZEST_CASE(works_in_constant_evaluation) {
     STATIC_EXPECT(facts.borrowed);
     STATIC_EXPECT(facts.made_owned);
     STATIC_EXPECT(facts.owned_text);
+    STATIC_EXPECT(facts.named_owned);
+    STATIC_EXPECT(facts.named_text);
     STATIC_EXPECT(facts.copy_owned);
+    STATIC_EXPECT(facts.copy_has_its_own_text);
+    STATIC_EXPECT(facts.copy_text);
     STATIC_EXPECT(facts.moved_from_empty);
     STATIC_EXPECT(facts.released_text);
     STATIC_EXPECT(facts.released_from_empty);

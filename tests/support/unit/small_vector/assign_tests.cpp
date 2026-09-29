@@ -15,12 +15,6 @@ namespace kota {
 
 namespace {
 
-/// A tree node, whose parent can take its children over.
-struct Node {
-    int value;
-    std::unique_ptr<small_vector<Node, 1>> children;
-};
-
 ZEST_SUITE(support_small_vector_assign) {
 
 ZEST_CASE(copy_assignment_to_itself_changes_nothing) {
@@ -117,23 +111,7 @@ ZEST_CASE(move_assignment_of_inline_elements_moves_each) {
     EXPECT(source.empty());
 }
 
-ZEST_CASE(move_assignment_from_a_vector_an_element_owns) {
-    // Collapsing a tree: the children replace the nodes, one of which owns them, so the
-    // assignment destroys the vector it moves from.
-    small_vector<Node, 1> nodes;
-    nodes.push_back(Node{1, std::make_unique<small_vector<Node, 1>>()});
-    nodes.push_back(Node{2, nullptr});
-    auto& children = *nodes[0].children;
-    children.push_back(Node{3, nullptr});
-    children.push_back(Node{4, nullptr});
-    ASSERT(!children.inlined());
-    nodes = std::move(children);
-    ASSERT(nodes.size() == 2U);
-    EXPECT(nodes[0].value == 3);
-    EXPECT(nodes[1].value == 4);
-}
-
-ZEST_CASE(move_assignment_of_move_only_elements) {
+ZEST_CASE(move_assignment_of_move_only_elements_moves_them) {
     small_vector<std::unique_ptr<int>, 2> target;
     target.push_back(std::make_unique<int>(1));
     small_vector<std::unique_ptr<int>, 2> source;

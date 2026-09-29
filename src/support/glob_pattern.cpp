@@ -335,8 +335,7 @@ size_t find_segment(std::string_view str, size_t from, char first, std::string_v
 
 }  // namespace
 
-std::expected<GlobPattern, GlobError> GlobPattern::create(std::string_view s,
-                                                          size_t max_subpattern_num) {
+std::expected<GlobPattern, GlobError> GlobPattern::create(std::string_view s, size_t max_arms) {
     // Offsets into the pattern, its literals and its tokens are 32-bit.
     assert(s.size() <= std::numeric_limits<std::uint32_t>::max());
 
@@ -407,7 +406,7 @@ std::expected<GlobPattern, GlobError> GlobPattern::create(std::string_view s,
 
     small_vector<Brace, 0> braces;
     size_t arm_count = 1;
-    if(max_subpattern_num != 0 && s.substr(from).contains('{')) {
+    if(max_arms != 0 && s.substr(from).contains('{')) {
         KOTA_EXPECTED_TRY_V(braces, parse_braces(s, from));
         for(const auto& brace: braces) {
             if(arm_count > std::numeric_limits<size_t>::max() / brace.terms.size()) {
@@ -416,7 +415,7 @@ std::expected<GlobPattern, GlobError> GlobPattern::create(std::string_view s,
             }
             arm_count *= brace.terms.size();
         }
-        if(arm_count > max_subpattern_num) [[unlikely]] {
+        if(arm_count > max_arms) [[unlikely]] {
             return std::unexpected{
                 GlobError{GlobError::TooManyExpansions, 0, 0, "too many brace expansions"}
             };

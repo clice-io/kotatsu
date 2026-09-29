@@ -30,9 +30,9 @@ struct Build {
         letters.emplace_back('x');
         letters.clear();
         letters.push_back('y');
-        char* bytes = resource.template allocate_type<char>(4);
+        char* bytes = resource.allocate(4);
         if constexpr(Resource::is_counting) {
-            resource.template deallocate_type<char>(bytes, 4);
+            resource.deallocate(bytes, 4);
         } else {
             for(std::size_t i = 0; i < 3; ++i) {
                 bytes[i] = "abc"[i];

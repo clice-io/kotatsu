@@ -48,7 +48,7 @@ auto enum_strings() -> const std::vector<std::string>& {
 /// the trailing `_` of a keyword-like enumerator (`Delete_`) or, for one that starts with a
 /// digit, the leading `_` or `V` that makes it an identifier (`_2d`, `V3`).
 template <enum_type E, typename Policy = naming::rename_policy::lower_camel>
-constexpr std::optional<E> map_string_to_enum(std::string_view value) {
+std::optional<E> map_string_to_enum(std::string_view value) {
     auto try_parse = [](std::string_view candidate) -> std::optional<E> {
         if(auto parsed = enum_value<E>(candidate)) {
             return parsed;

@@ -31,16 +31,27 @@ ZEST_SUITE(support_function_traits) {
 ZEST_CASE(function_types_give_the_return_and_arguments) {
     EXPECT(zest::type_eq<function_return_t<int(char, long&)>, int>());
     EXPECT(zest::type_eq<function_args_t<int(char, long&)>, std::tuple<char, long&>>());
-    STATIC_EXPECT(function_args_count<int(char, long&)> == 2U);
+    STATIC_EXPECT(function_args_count_v<int(char, long&)> == 2U);
     EXPECT(zest::type_eq<function_return_t<void() const & noexcept>, void>());
-    STATIC_EXPECT(function_args_count<void(int) & noexcept> == 1U);
+    STATIC_EXPECT(function_args_count_v<void(int) & noexcept> == 1U);
+    EXPECT(zest::type_eq<function_traits<int(char) const & noexcept>::function_type, int(char)>());
 }
 
 ZEST_CASE(object_type_follows_the_qualifiers) {
+    // Each of the twelve forms, with and without noexcept.
     EXPECT(zest::type_eq<function_traits<void()>::object_type<Widget>, Widget&>());
     EXPECT(zest::type_eq<function_traits<void() &>::object_type<Widget>, Widget&>());
     EXPECT(zest::type_eq<function_traits<void() &&>::object_type<Widget>, Widget&&>());
     EXPECT(zest::type_eq<function_traits<void() const>::object_type<Widget>, const Widget&>());
+    EXPECT(zest::type_eq<function_traits<void() const&>::object_type<Widget>, const Widget&>());
+    EXPECT(zest::type_eq<function_traits<void() const&&>::object_type<Widget>, const Widget&&>());
+    EXPECT(zest::type_eq<function_traits<void() noexcept>::object_type<Widget>, Widget&>());
+    EXPECT(zest::type_eq<function_traits<void() & noexcept>::object_type<Widget>, Widget&>());
+    EXPECT(zest::type_eq<function_traits<void() && noexcept>::object_type<Widget>, Widget&&>());
+    EXPECT(zest::type_eq<function_traits<void() const noexcept>::object_type<Widget>,
+                         const Widget&>());
+    EXPECT(zest::type_eq<function_traits<void() const & noexcept>::object_type<Widget>,
+                         const Widget&>());
     EXPECT(zest::type_eq<function_traits<void() const && noexcept>::object_type<Widget>,
                          const Widget&&>());
 }
