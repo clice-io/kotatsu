@@ -87,6 +87,10 @@ private:
     /// has finished.
     void drive(curl_socket_t socket, int events) noexcept;
 
+    /// Starts the timer that drives curl's timeouts, due in `timeout_ms`, or
+    /// stops it for -1.
+    void arm_timer(long timeout_ms) noexcept;
+
     /// Polls `socket` for what curl waits on (`what`), or stops for
     /// CURL_POLL_REMOVE; `watch` is the socket's poll, null before the first.
     int watch_socket(curl_socket_t socket, int what, socket_watch* watch) noexcept;

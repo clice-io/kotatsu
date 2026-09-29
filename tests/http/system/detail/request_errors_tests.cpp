@@ -15,11 +15,11 @@ namespace {
 ZEST_SUITE(http_detail_request_errors, test::LoopFixture) {
 
 ZEST_CASE(refused_connection_fails) {
-    test::RefusingPort nowhere;
-    ASSERT(nowhere.port > 0);
+    auto nowhere = test::refusing_url();
+    ASSERT(!nowhere.empty());
     auto client = test::loopback_client();
 
-    auto [reply] = run(client.on(loop).get(nowhere.url()).send());
+    auto [reply] = run(client.on(loop).get(nowhere).send());
     ASSERT(reply.has_error());
     EXPECT(reply.error().kind == error_kind::curl);
     EXPECT(reply.error().curl_code == CURLE_COULDNT_CONNECT);

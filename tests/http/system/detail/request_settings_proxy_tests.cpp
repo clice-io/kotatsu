@@ -47,9 +47,9 @@ ZEST_CASE(proxy_credentials_are_sent) {
 ZEST_CASE(no_proxy_goes_straight_to_the_server) {
     test::HttpServer server(loop);
     ASSERT(server.listening());
-    test::RefusingPort nowhere;
-    ASSERT(nowhere.port > 0);
-    auto client = test::loopback_client().proxy(nowhere.url());
+    auto nowhere = test::refusing_url();
+    ASSERT(!nowhere.empty());
+    auto client = test::loopback_client().proxy(nowhere);
 
     auto [reply] = run(client.on(loop).get(server.url("/direct")).no_proxy().send());
     EXPECT(reply.has_value());

@@ -37,9 +37,11 @@ curl_option_hook make_curl_option(CURLoption option, T&& value) {
         return set_text(option, std::string(std::forward<T>(value)));
     } else {
         if constexpr(std::same_as<stored_t, const char*> || std::same_as<stored_t, char*>) {
+            // A string literal comes as a reference to its array, never null.
+            const char* text = value;
             const auto* known = ::curl_easy_option_by_id(option);
-            if(value != nullptr && known != nullptr && known->type == CURLOT_STRING) {
-                return set_text(option, value);
+            if(text != nullptr && known != nullptr && known->type == CURLOT_STRING) {
+                return set_text(option, text);
             }
         }
         return [option, value = std::forward<T>(value)](CURL* easy) -> curl::easy_error {

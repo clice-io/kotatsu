@@ -52,13 +52,13 @@ ZEST_CASE(string_option_given_as_a_string_is_copied) {
 // curl writes into the buffer: a copy would take the text in, not the error
 // out.
 ZEST_CASE(pointer_option_is_passed_as_it_is) {
-    test::RefusingPort nowhere;
-    ASSERT(nowhere.port > 0);
+    auto nowhere = test::refusing_url();
+    ASSERT(!nowhere.empty());
     char message[CURL_ERROR_SIZE] = {};
     auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop)
-                           .get(nowhere.url())
+                           .get(nowhere)
                            .curl_option(CURLOPT_ERRORBUFFER, static_cast<char*>(message))
                            .send());
     ASSERT(reply.has_error());

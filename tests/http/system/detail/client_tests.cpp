@@ -175,10 +175,10 @@ ZEST_CASE(bound_client_keeps_the_settings_it_was_bound_with) {
 ZEST_CASE(request_settings_override_the_clients) {
     test::HttpServer server(loop);
     ASSERT(server.listening());
-    test::RefusingPort nowhere;
-    ASSERT(nowhere.port > 0);
+    auto nowhere = test::refusing_url();
+    ASSERT(!nowhere.empty());
     auto client =
-        test::loopback_client().proxy(nowhere.url()).user_agent("client").cookies("from=client");
+        test::loopback_client().proxy(nowhere).user_agent("client").cookies("from=client");
 
     auto [reply] = run(client.on(loop)
                            .get(server.url("/"))

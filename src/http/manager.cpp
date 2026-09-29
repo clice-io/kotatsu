@@ -63,7 +63,14 @@ struct manager::timer_watch : uv::owned_handle<timer_watch> {
     manager* owner = nullptr;
 
     static void on_fire(uv_timer_t* timer) {
-        static_cast<timer_watch*>(timer->data)->owner->drive(CURL_SOCKET_TIMEOUT, 0);
+        auto& owner = *static_cast<timer_watch*>(timer->data)->owner;
+        owner.drive(CURL_SOCKET_TIMEOUT, 0);
+        // libuv counts from the time its loop cached, so the timer can fire
+        // before curl's deadline, which an older curl then keeps as set,
+        // never asking again: arm the timer for whatever curl has next.
+        long next = -1;
+        ::curl_multi_timeout(owner.multi.get(), &next);
+        owner.arm_timer(next);
     }
 };
 
@@ -304,17 +311,21 @@ int manager::on_socket(CURL*, curl_socket_t socket, int what, void* self, void* 
                                                      static_cast<socket_watch*>(watch));
 }
 
-int manager::on_timeout(CURLM*, long timeout_ms, void* self) noexcept {
-    auto& timer = static_cast<manager*>(self)->timer->timer;
+void manager::arm_timer(long timeout_ms) noexcept {
+    auto& handle = timer->timer;
     if(timeout_ms < 0) {
-        ::uv_timer_stop(&timer);
-        return 0;
+        ::uv_timer_stop(&handle);
+        return;
     }
-    // Curl asks for 0 to be driven at once, but not from inside this call.
-    ::uv_timer_start(&timer,
+    // curl asks for 0 to be driven at once, but not from inside its call.
+    ::uv_timer_start(&handle,
                      &timer_watch::on_fire,
                      static_cast<std::uint64_t>((std::max)(timeout_ms, 1L)),
                      0);
+}
+
+int manager::on_timeout(CURLM*, long timeout_ms, void* self) noexcept {
+    static_cast<manager*>(self)->arm_timer(timeout_ms);
     return 0;
 }
 

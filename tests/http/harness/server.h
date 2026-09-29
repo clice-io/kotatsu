@@ -8,8 +8,8 @@
 // module's helpers, so that it checks them rather than trusts them.
 //
 // Beside it: seeding(), a handler that sets a cookie; loopback_client(), a
-// client no proxy of the environment comes between; and RefusingPort, a
-// loopback port that refuses connections.
+// client no proxy of the environment comes between; and refusing_url(), a
+// loopback url that refuses connections.
 
 #include <charconv>
 #include <cstddef>
@@ -314,25 +314,19 @@ inline http::client loopback_client() {
     return http::client().no_proxy();
 }
 
-/// A loopback port that refuses connections: a socket holds it bound, so
-/// that nothing else takes it, and never listens. A port a listener has just
-/// left will not do: WSL's loopback relay goes on taking connections to it
-/// for a while, and resets them later.
-struct RefusingPort {
+/// A url on a loopback port that refuses connections, or an empty one when
+/// no port was free: a socket bound it without listening and let it go.
+/// A port a listener has just left will not do, since WSL's loopback relay
+/// goes on taking connections to it for a while; nor will one a socket
+/// still holds, since macOS drops the connections to it instead.
+inline std::string refusing_url() {
     RawSocket bound;
-    /// 0 when no port could be bound.
-    int port = 0;
-
-    RefusingPort() {
-        bound.fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-        if(bound.fd != invalid_socket) {
-            port = bind_loopback_raw(bound.fd);
-        }
+    bound.fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if(bound.fd == invalid_socket) {
+        return {};
     }
-
-    std::string url() const {
-        return std::format("http://127.0.0.1:{}/", port);
-    }
-};
+    auto port = bind_loopback_raw(bound.fd);
+    return port == 0 ? std::string() : std::format("http://127.0.0.1:{}/", port);
+}
 
 }  // namespace kota::test
