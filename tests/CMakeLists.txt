@@ -119,6 +119,7 @@ function(kota_add_integration_tests)
         else()
             add_executable(${driver} "${source}")
             list(APPEND programs ${driver})
+            set_property(GLOBAL APPEND PROPERTY kota_default_drivers ${driver})
         endif()
         target_include_directories(${driver} PRIVATE "${PROJECT_SOURCE_DIR}/tests")
         target_link_libraries(${driver} PRIVATE ${arg_LIBS})
@@ -203,6 +204,21 @@ set_target_properties(${kota_test_programs} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_BINARY_DIR}"
     RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${CMAKE_BINARY_DIR}"
 )
+
+# ninja starts the ready compiles with the most steps still after them first,
+# and breaks ties by their order in build.ninja, which puts every module's
+# drivers after the test binaries' sources. So the LSP drivers, the heaviest
+# translation units of the tests, started last and ran on for minutes after
+# the rest had linked. A step after every driver starts them right after the
+# libraries; it runs a command because ninja does not count phony steps.
+get_property(kota_default_drivers GLOBAL PROPERTY kota_default_drivers)
+if(kota_default_drivers)
+    add_custom_command(OUTPUT kota_integration_drivers.stamp
+        COMMAND "${CMAKE_COMMAND}" -E touch kota_integration_drivers.stamp
+        DEPENDS ${kota_default_drivers}
+    )
+    add_custom_target(kota_integration_drivers ALL DEPENDS kota_integration_drivers.stamp)
+endif()
 
 if(KOTA_SANITIZE_ADDRESS AND MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     # clang-cl ASan uses a runtime DLL; copy it into the build root before any

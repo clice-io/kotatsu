@@ -39,7 +39,9 @@ nodejs = "24.*"
 python = "*"
 cmake = ">=3.25"
 ninja = "*"
-ccache = "*"
+# 4.14 turns direct mode off for any translation unit whose headers contain
+# the text "#embed".
+ccache = "4.13.*"
 openssl = "*"
 
 [feature.linux-gcc.target.linux-64.dependencies]

@@ -10,7 +10,7 @@
 // Instantiating the codec for every protocol type makes this the largest
 // translation unit of the tests: with clang, about 2 minutes and 2.7 GB in
 // Debug, 5 minutes and 4.2 GB at -O2, and 25 minutes and 8.9 GB under ASan and
-// UBSan. So only plain Debug builds build and run it (tests/ipc/lsp's
+// UBSan at -O2. So only plain Debug builds build and run it (tests/ipc/lsp's
 // CMakeLists.txt). Splitting the table does not help: every part instantiates
 // most of the types again, as members of the ones it has.
 
