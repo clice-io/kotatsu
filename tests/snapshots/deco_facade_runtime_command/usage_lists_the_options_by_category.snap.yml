@@ -1,0 +1,19 @@
+---
+source: runtime_command_tests.cpp
+created_at: 2026-09-29
+---
+usage: webcli [OPTIONS]
+
+Options:
+Group <version> (version-only mode), exclusive with other groups:
+  -v|--version                    Show version and exit
+
+Group <request> (request options), exclusive with other groups:
+  --verbose                       Enable verbose output
+  -X|--type <Method>              no description provided
+  --url <URL>                     Request URL
+
+Group <help> (help-only mode), exclusive with other groups:
+  -h|--help                       Show this help message and exit
+
+

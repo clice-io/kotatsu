@@ -1,0 +1,13 @@
+---
+source: text_subcommand_tests.cpp
+created_at: 2026-09-29
+---
+\e[1mA build tool\e[0m
+
+\e[1;38;5;81mUsage\e[0m \e[1mtool [OPTIONS] <command>\e[0m
+
+\e[1;38;5;81mCommands\e[0m
+  \e[1;38;5;117mrun\e[0m  \e[39mRun a target\e[0m
+  \e[1;38;5;117minspect\e[0m  \e[39mShow metadata\e[0m \e[38;5;150m(show)\e[0m
+  \e[1;38;5;117mx\e[0m
+

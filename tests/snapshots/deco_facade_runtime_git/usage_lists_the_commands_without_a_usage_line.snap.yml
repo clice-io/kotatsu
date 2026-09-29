@@ -1,0 +1,11 @@
+---
+source: runtime_git_tests.cpp
+created_at: 2026-09-29
+---
+A fast, scalable, distributed version control system
+
+Subcommands:
+  commit  Record changes to the repository
+  clone   Clone a repository into a new directory
+  tag     Create, list or delete tags
+

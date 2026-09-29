@@ -4,8 +4,10 @@
 #include <array>
 #include <cassert>
 #include <cctype>
+#include <cstdint>
 #include <cstring>
 #include <expected>
+#include <functional>
 #include <ranges>
 #include <set>
 #include <span>
@@ -18,7 +20,7 @@ using namespace kota::option;
 
 namespace {
 
-enum class AcceptResult {
+enum class AcceptResult : std::uint8_t {
     Matched,
     NoMatch,
     MissingValue,
@@ -403,11 +405,11 @@ void consume_unknown_values(const OptTable& table,
     }
 }
 
-int parse_step(const OptTable& table,
-               ArgsRef args,
-               std::uint32_t& index,
-               ParsedArg& out,
-               const ParseOptions& options) {
+AcceptResult parse_step(const OptTable& table,
+                        ArgsRef args,
+                        std::uint32_t& index,
+                        ParsedArg& out,
+                        const ParseOptions& options) {
     std::uint32_t prev = index;
     auto str = args[index];
 
@@ -416,7 +418,7 @@ int parse_step(const OptTable& table,
         out.id = table.input_option_id;
         out.spelling = str;
         out.index = index++;
-        return static_cast<int>(AcceptResult::Matched);
+        return AcceptResult::Matched;
     }
 
     auto range = search_range(table);
@@ -425,13 +427,13 @@ int parse_step(const OptTable& table,
     if(scan.result == AcceptResult::Matched) {
         index = scan.new_index;
         out = scan.out;
-        return static_cast<int>(AcceptResult::Matched);
+        return AcceptResult::Matched;
     }
 
     if(scan.result == AcceptResult::MissingValue) {
         index = scan.new_index;
         out.index = prev;
-        return static_cast<int>(AcceptResult::MissingValue);
+        return AcceptResult::MissingValue;
     }
 
     if(str[0] == '/') {
@@ -439,7 +441,7 @@ int parse_step(const OptTable& table,
         out.id = table.input_option_id;
         out.spelling = str;
         out.index = index++;
-        return static_cast<int>(AcceptResult::Matched);
+        return AcceptResult::Matched;
     }
 
     out.clear();
@@ -451,15 +453,24 @@ int parse_step(const OptTable& table,
         consume_unknown_values(table, range, args, index, out, options);
     }
 
-    return static_cast<int>(AcceptResult::Matched);
+    return AcceptResult::Matched;
 }
 
-int parse_step_grouped(const OptTable& table,
-                       ArgsRef args,
-                       std::uint32_t& index,
-                       ParsedArg& out,
-                       std::string& group_buf,
-                       const ParseOptions& options) {
+struct GroupedStep {
+    AcceptResult result;
+
+    /// What is left of a group of short options after the one parsed, e.g. "bc" of "-abc";
+    /// empty once the element is used up.
+    std::string_view rest;
+};
+
+/// parse_step() with grouped short options: an element that names no option but starts with
+/// a one-letter flag, "-abc", parses as that flag and leaves the rest of the group.
+GroupedStep parse_step_grouped(const OptTable& table,
+                               ArgsRef args,
+                               std::uint32_t& index,
+                               ParsedArg& out,
+                               const ParseOptions& options) {
     auto str = args[index];
 
     if(is_input(table, str)) {
@@ -467,8 +478,7 @@ int parse_step_grouped(const OptTable& table,
         out.id = table.input_option_id;
         out.spelling = str;
         out.index = index++;
-        group_buf.clear();
-        return static_cast<int>(AcceptResult::Matched);
+        return {AcceptResult::Matched, {}};
     }
 
     auto range = search_range(table);
@@ -479,66 +489,81 @@ int parse_step_grouped(const OptTable& table,
     if(scan.result == AcceptResult::Matched) {
         index = scan.new_index;
         out = scan.out;
-        group_buf.clear();
-        return static_cast<int>(AcceptResult::Matched);
+        return {AcceptResult::Matched, {}};
     }
 
     if(scan.result == AcceptResult::MissingValue) {
         index = scan.new_index;
         out.index = prev;
-        return static_cast<int>(AcceptResult::MissingValue);
+        return {AcceptResult::MissingValue, {}};
     }
 
     if(scan.fallback_flag) {
-        OptionRef opt(*scan.fallback_flag, table);
-        if(str.size() > 2 && str[2] == '=') {
+        // A flag given a value, "-a=1", is no group.
+        if(str[2] == '=') {
             out.clear();
             out.id = table.unknown_option_id;
             out.spelling = str;
             out.index = index++;
-            group_buf.clear();
-            return static_cast<int>(AcceptResult::Matched);
+            return {AcceptResult::Matched, {}};
         }
 
-        auto a = accept_opt(opt, args, str.substr(0, 2), true, index, out);
-        if(a == AcceptResult::Matched) {
-            // Save remaining before mutating group_buf, since str may be a
-            // view into group_buf and would be invalidated by the assignment.
-            auto remaining = str.substr(2);
-            group_buf = "-";
-            group_buf += remaining;
-            return static_cast<int>(AcceptResult::Matched);
-        }
+        OptionRef opt(*scan.fallback_flag, table);
+        accept_opt(opt, args, str.substr(0, 2), true, index, out);
+        return {AcceptResult::Matched, str.substr(2)};
     }
 
     if(str.size() > 1 && str[1] != '-') {
-        auto first_flag_name = str.substr(0, 2);
         out.clear();
         out.id = table.unknown_option_id;
-        out.spelling = first_flag_name;
+        out.spelling = str.substr(0, 2);
         out.index = index;
         if(str.size() > 2) {
-            auto remaining = str.substr(2);
-            group_buf = "-";
-            group_buf += remaining;
-        } else {
-            group_buf.clear();
-            ++index;
+            return {AcceptResult::Matched, str.substr(2)};
         }
-        return static_cast<int>(AcceptResult::Matched);
+        ++index;
+        return {AcceptResult::Matched, {}};
     }
 
     out.clear();
     out.id = table.unknown_option_id;
     out.spelling = str;
     out.index = index++;
-    group_buf.clear();
 
     if(options.greedy_unknown && str != "--") {
         consume_unknown_values(table, range, args, index, out, options);
     }
 
-    return static_cast<int>(AcceptResult::Matched);
+    return {AcceptResult::Matched, {}};
+}
+
+/// argv with its element at `index` read as `element` instead: the rest of a group of short
+/// options, behind a '-', so that an option at the end of the group takes its values from
+/// the elements after it.
+struct GroupOverlay {
+    ArgsRef args;
+    std::uint32_t index;
+    std::string_view element;
+
+    ArgsRef view() const {
+        return ArgsRef(this, args.size(), [](const void* data, std::uint32_t i) {
+            const auto& overlay = *static_cast<const GroupOverlay*>(data);
+            return i == overlay.index ? overlay.element : overlay.args[i];
+        });
+    }
+};
+
+/// Points the values of `out` that lie in `group`, the rest of a group behind its '-', at the
+/// same text in `element`, the argv element the group is written in, which outlives the parse.
+void rebase_group_values(ParsedArg& out, std::string_view group, std::string_view element) {
+    const std::less_equal<const char*> before_or_at;
+    const auto* group_end = group.data() + group.size();
+    for(auto& value: out.values) {
+        if(before_or_at(group.data(), value.data()) && before_or_at(value.data(), group_end)) {
+            const auto from_end = static_cast<std::size_t>(group_end - value.data());
+            value = std::string_view(element.data() + element.size() - from_end, value.size());
+        }
+    }
 }
 
 }  // namespace
@@ -679,8 +704,7 @@ bool ParseOptions::excludes(const OptionRef& opt) const {
 }
 
 ParseIter::ParseIter(const OptTable* table, ArgsRef args, ParseOptions options) :
-    table(table), args(args), options(options), done(false),
-    is_grouped(options.grouped_short_options) {
+    table(table), args(args), options(options), done(false) {
     advance();
 }
 
@@ -724,52 +748,30 @@ void ParseIter::advance() {
             return;
         }
 
-        if(is_grouped && !in_group) {
-            ParsedArg out;
-            auto result = parse_step_grouped(*table, args, index, out, group_buf, options);
-            if(result == static_cast<int>(AcceptResult::Matched)) {
-                if(!group_buf.empty())
-                    in_group = true;
-                out.next_index = index;
-                current = out;
-                return;
-            }
-            if(result == static_cast<int>(AcceptResult::MissingValue)) {
-                current = std::unexpected(ParseError{out.index, "missing argument value"});
-                return;
-            }
-        } else if(is_grouped && in_group) {
-            ParsedArg out;
-            std::array<std::string_view, 1> buf_arr = {group_buf};
-            std::uint32_t buf_index = 0;
-            auto result =
-                parse_step_grouped(*table, ArgsRef(buf_arr), buf_index, out, group_buf, options);
-            out.index = index;
-            if(result == static_cast<int>(AcceptResult::Matched)) {
-                if(group_buf.empty()) {
-                    in_group = false;
-                    ++index;
-                }
-                out.next_index = index;
-                current = out;
-                return;
-            }
-            in_group = false;
-            ++index;
-            continue;
+        ParsedArg out;
+        AcceptResult result;
+        if(!options.grouped_short_options) {
+            result = parse_step(*table, args, index, out, options);
         } else {
-            ParsedArg out;
-            auto result = parse_step(*table, args, index, out, options);
-            if(result == static_cast<int>(AcceptResult::Matched)) {
-                out.next_index = index;
-                current = out;
-                return;
+            const bool in_group = !group_buf.empty();
+            const GroupOverlay overlay{.args = args, .index = index, .element = group_buf};
+            const auto step =
+                parse_step_grouped(*table, in_group ? overlay.view() : args, index, out, options);
+            result = step.result;
+            if(in_group) {
+                rebase_group_values(out, group_buf, args[out.index]);
             }
-            if(result == static_cast<int>(AcceptResult::MissingValue)) {
-                current = std::unexpected(ParseError{out.index, "missing argument value"});
-                return;
-            }
+            // The rest may view the buffer it replaces.
+            group_buf = step.rest.empty() ? std::string() : "-" + std::string(step.rest);
         }
+
+        if(result == AcceptResult::MissingValue) {
+            current = std::unexpected(ParseError{out.index, "missing argument value"});
+            return;
+        }
+        out.next_index = index;
+        current = std::move(out);
+        return;
     }
     done = true;
 }

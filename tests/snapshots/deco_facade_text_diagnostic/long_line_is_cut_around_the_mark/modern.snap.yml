@@ -1,0 +1,8 @@
+---
+source: text_diagnostic_tests.cpp
+created_at: 2026-09-29
+---
+\e[1;38;5;203merror\e[0m \e[39m[argv[2]]\e[0m
+\e[39m│\e[0m
+\e[39m│\e[0m ...aaaaaaaaaaaaaaa \e[1;38;5;117mbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\e[0m...
+\e[39m│\e[0m                    \e[1;38;5;204m╰─▶\e[0m \e[1mtoo long\e[0m

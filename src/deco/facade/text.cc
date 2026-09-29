@@ -59,33 +59,12 @@ auto highlight_span(std::string_view text,
                     std::size_t width,
                     std::string_view ansi) -> std::string;
 auto modern_heading(std::string_view title, std::string_view body) -> std::string;
-auto text_style_from_config(const CompatibleRendererConfig& config) -> TextStyle;
-auto text_style_from_config(const ModernRendererConfig& config) -> TextStyle;
-auto fallback_renderer_from_config(const config::Config& current) -> Renderer;
+auto lay_out_entry(std::string_view usage,
+                   std::size_t width,
+                   std::string_view help,
+                   std::size_t help_column) -> std::string;
 
 struct CompatibleRendererImpl {
-    static auto render_usage_entry(const UsageEntry& entry,
-                                   bool include_help,
-                                   const TextStyle& style) -> std::string {
-        if(!include_help) {
-            return entry.usage;
-        }
-
-        const auto help_text =
-            entry.help.empty() ? style.usage.default_help : std::string_view(entry.help);
-        if(entry.usage.size() >= style.usage.help_column) {
-            std::string rendered = std::format("  {}\n  ", entry.usage);
-            rendered.append(style.usage.help_column, ' ');
-            rendered += help_text;
-            return rendered;
-        }
-        std::string rendered = "  ";
-        rendered += entry.usage;
-        rendered.append(style.usage.help_column - entry.usage.size(), ' ');
-        rendered += help_text;
-        return rendered;
-    }
-
     static auto render_usage_document(const UsageDocument& document,
                                       bool include_help,
                                       const TextStyle& style) -> std::string {
@@ -94,7 +73,8 @@ struct CompatibleRendererImpl {
 
         auto append_entries = [&](std::span<const UsageEntry> entries) {
             for(const auto& entry: entries) {
-                rendered += render_usage_entry(entry, include_help, style);
+                rendered +=
+                    include_help ? render_usage_entry(entry, style.usage) : "  " + entry.usage;
                 rendered.push_back('\n');
             }
         };
@@ -144,7 +124,7 @@ struct CompatibleRendererImpl {
         }
 
         rendered += style.subcommand.heading;
-        rendered += ":\n";
+        rendered.push_back('\n');
 
         std::size_t max_name_len = 0;
         if(style.subcommand.align_description) {
@@ -218,15 +198,11 @@ struct ModernRendererImpl {
         if(!include_help) {
             return "  " + syntax;
         }
-
-        const auto help_text =
-            entry.help.empty() ? std::string(style.usage.default_help) : entry.help;
-        const auto help = paint(ansi_help, help_text);
-        if(entry.usage.size() >= style.usage.help_column) {
-            return "  " + syntax + "\n" + std::string(style.usage.help_column, ' ') + "  " + help;
-        }
-        return "  " + syntax + std::string(style.usage.help_column - entry.usage.size(), ' ') +
-               help;
+        const std::string_view help = entry.help.empty() ? style.usage.default_help : entry.help;
+        return lay_out_entry(syntax,
+                             entry.usage.size(),
+                             paint(ansi_help, help),
+                             style.usage.help_column);
     }
 
     static auto render_usage_document(const UsageDocument& document,
@@ -259,7 +235,6 @@ struct ModernRendererImpl {
             rendered.push_back(' ');
             rendered += paint(ansi_group_title, group.title);
             if(group.exclusive) {
-                rendered.push_back(' ');
                 rendered += paint(ansi_help, style.usage.exclusive_suffix);
             }
             rendered.push_back('\n');
@@ -440,12 +415,16 @@ auto excerpt_diagnostic_line(std::string_view line,
         return excerpt;
     }
 
-    constexpr std::size_t context_before_marker = 16;
+    // Up to 16 characters before the marker, fewer when the width leaves room for less
+    // between an ellipsis on either side, so that the marker stays in view.
+    const std::size_t between_ellipses =
+        max_width > 2 * ellipsis.size() ? max_width - 2 * ellipsis.size() : 0;
+    const std::size_t context_before_marker =
+        std::min<std::size_t>(16, between_ellipses == 0 ? 0 : between_ellipses - 1);
 
     std::size_t content_start = 0;
     if(marker_start >= line.size()) {
-        const auto reserve = max_width > ellipsis.size() ? max_width - ellipsis.size() : max_width;
-        content_start = line.size() > reserve ? line.size() - reserve : 0;
+        content_start = line.size() - (max_width - ellipsis.size());
     } else if(marker_start > context_before_marker) {
         content_start = marker_start - context_before_marker;
     }
@@ -458,20 +437,18 @@ auto excerpt_diagnostic_line(std::string_view line,
     std::size_t content_end = std::min(line.size(), content_start + available);
     bool crop_right = content_end < line.size();
     if(crop_right) {
-        available = available > ellipsis.size() ? available - ellipsis.size() : 0;
-        content_end = std::min(line.size(), content_start + available);
-        crop_right = content_end < line.size();
+        if(available > ellipsis.size()) {
+            available -= ellipsis.size();
+            content_end = content_start + available;
+        } else {
+            // No room for a second ellipsis: the line just stops.
+            crop_right = false;
+        }
     }
 
-    if(content_end >= line.size()) {
-        crop_right = false;
-        available = max_width;
-        if(crop_left) {
-            available -= ellipsis.size();
-        }
-        content_start = line.size() > available ? line.size() - available : 0;
-        crop_left = content_start > 0;
-        content_end = line.size();
+    if(content_end == line.size()) {
+        // The marker is near the end, and the window ends there: fill it from the end back.
+        content_start = line.size() - available;
     }
 
     std::string rendered;
@@ -515,6 +492,16 @@ auto highlight_span(std::string_view text,
     return rendered;
 }
 
+auto lay_out_entry(std::string_view usage,
+                   std::size_t width,
+                   std::string_view help,
+                   std::size_t help_column) -> std::string {
+    if(width >= help_column) {
+        return std::format("  {}\n  {:{}}{}", usage, "", help_column, help);
+    }
+    return std::format("  {}{:{}}{}", usage, "", help_column - width, help);
+}
+
 auto modern_heading(std::string_view title, std::string_view body) -> std::string {
     std::string rendered = paint(ansi_usage_heading, title);
     if(!body.empty()) {
@@ -524,7 +511,8 @@ auto modern_heading(std::string_view title, std::string_view body) -> std::strin
     return rendered;
 }
 
-auto text_style_from_config(const CompatibleRendererConfig& config) -> TextStyle {
+template <typename RendererConfig>
+auto text_style_of(const RendererConfig& config) -> TextStyle {
     return TextStyle{
         .diagnostic = config.diagnostic,
         .usage = config.usage,
@@ -532,51 +520,23 @@ auto text_style_from_config(const CompatibleRendererConfig& config) -> TextStyle
     };
 }
 
-auto text_style_from_config(const ModernRendererConfig& config) -> TextStyle {
-    return TextStyle{
-        .diagnostic = config.diagnostic,
-        .usage = config.usage,
-        .subcommand = config.subcommand,
-    };
-}
-
-auto fallback_renderer_from_config(const config::Config& current) -> Renderer {
-    return CompatibleRenderer(current.render.compatible);
-}
-
-auto deco_text_mutable_global_config() -> config::Config& {
+auto global_config() -> config::Config& {
     static thread_local config::Config current{};
     return current;
 }
 
-auto deco_text_mutable_config_renderer() -> Renderer& {
-    static thread_local Renderer renderer =
-        fallback_renderer_from_config(deco_text_mutable_global_config());
+/// The renderer the global config makes, which renders when no default renderer is set.
+auto config_renderer() -> Renderer& {
+    static thread_local Renderer renderer = CompatibleRenderer(global_config().render.compatible);
     return renderer;
 }
 
-auto deco_text_mutable_explicit_default_renderer() -> std::optional<Renderer>& {
+auto explicit_renderer() -> std::optional<Renderer>& {
     static thread_local std::optional<Renderer> renderer;
     return renderer;
 }
 
 }  // namespace
-
-namespace detail {
-
-auto mutable_global_config() -> config::Config& {
-    return deco_text_mutable_global_config();
-}
-
-auto mutable_config_renderer() -> Renderer& {
-    return deco_text_mutable_config_renderer();
-}
-
-auto mutable_explicit_default_renderer() -> std::optional<Renderer>& {
-    return deco_text_mutable_explicit_default_renderer();
-}
-
-}  // namespace detail
 
 auto looks_like_rendered_diagnostic([[maybe_unused]] std::string_view text) -> bool {
     return false;
@@ -606,7 +566,7 @@ Renderer::Renderer() = default;
 CompatibleRenderer::CompatibleRenderer() : CompatibleRenderer(CompatibleRendererConfig{}) {}
 
 CompatibleRenderer::CompatibleRenderer(CompatibleRendererConfig config) : Renderer() {
-    style = text_style_from_config(config);
+    style = text_style_of(config);
     usage = [](const UsageDocument& document, bool include_help, const TextStyle& active_style) {
         return CompatibleRendererImpl::render_usage_document(document, include_help, active_style);
     };
@@ -621,7 +581,7 @@ CompatibleRenderer::CompatibleRenderer(CompatibleRendererConfig config) : Render
 ModernRenderer::ModernRenderer() : ModernRenderer(ModernRendererConfig{}) {}
 
 ModernRenderer::ModernRenderer(ModernRendererConfig config) : Renderer() {
-    style = text_style_from_config(config);
+    style = text_style_of(config);
     usage = [](const UsageDocument& document, bool include_help, const TextStyle& active_style) {
         return ModernRendererImpl::render_usage_document(document, include_help, active_style);
     };
@@ -633,31 +593,24 @@ ModernRenderer::ModernRenderer(ModernRendererConfig config) : Renderer() {
     };
 }
 
-auto explicit_default_renderer_ptr_impl() -> const Renderer* {
-    if(auto& explicit_renderer = detail::mutable_explicit_default_renderer();
-       explicit_renderer.has_value()) {
-        return &*explicit_renderer;
-    }
-    return nullptr;
-}
-
 auto explicit_default_renderer() -> const Renderer* {
-    return explicit_default_renderer_ptr_impl();
+    const auto& renderer = explicit_renderer();
+    return renderer.has_value() ? &*renderer : nullptr;
 }
 
 auto default_renderer() -> const Renderer& {
-    if(const auto* renderer = explicit_default_renderer_ptr_impl(); renderer != nullptr) {
+    if(const auto* renderer = explicit_default_renderer()) {
         return *renderer;
     }
-    return detail::mutable_config_renderer();
+    return config_renderer();
 }
 
 void set_default_renderer(Renderer renderer) {
-    detail::mutable_explicit_default_renderer() = std::move(renderer);
+    explicit_renderer() = std::move(renderer);
 }
 
 void clear_default_renderer() {
-    detail::mutable_explicit_default_renderer().reset();
+    explicit_renderer().reset();
 }
 
 auto resolve_renderer(const Renderer* renderer) -> const Renderer& {
@@ -676,6 +629,13 @@ auto render_usage(const UsageDocument& document, bool include_help, const Render
     return CompatibleRendererImpl::render_usage_document(document,
                                                          include_help,
                                                          active_renderer.style);
+}
+
+auto render_usage_entry(const UsageEntry& entry, const UsageStyle& style) -> std::string {
+    return lay_out_entry(entry.usage,
+                         entry.usage.size(),
+                         entry.help.empty() ? style.default_help : entry.help,
+                         style.help_column);
 }
 
 auto render_subcommands(const SubCommandDocument& document, const Renderer* renderer)
@@ -700,13 +660,12 @@ auto render_diagnostic(const Diagnostic& diagnostic, const Renderer* renderer) -
 namespace kota::deco::config {
 
 auto get() -> const Config& {
-    return ::kota::deco::cli::text::detail::mutable_global_config();
+    return cli::text::global_config();
 }
 
 void set(Config config) {
-    ::kota::deco::cli::text::detail::mutable_global_config() = std::move(config);
-    ::kota::deco::cli::text::detail::mutable_config_renderer() =
-        ::kota::deco::cli::text::CompatibleRenderer(get().render.compatible);
+    cli::text::global_config() = std::move(config);
+    cli::text::config_renderer() = cli::text::CompatibleRenderer(get().render.compatible);
 }
 
 void set_render(BuiltInRenderConfig render) {
