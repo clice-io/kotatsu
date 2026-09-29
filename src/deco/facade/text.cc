@@ -59,14 +59,12 @@ auto highlight_span(std::string_view text,
                     std::size_t width,
                     std::string_view ansi) -> std::string;
 auto modern_heading(std::string_view title, std::string_view body) -> std::string;
+auto lay_out_entry(std::string_view usage,
+                   std::size_t width,
+                   std::string_view help,
+                   std::size_t help_column) -> std::string;
 
 struct CompatibleRendererImpl {
-    static auto render_usage_entry(const UsageEntry& entry,
-                                   bool include_help,
-                                   const TextStyle& style) -> std::string {
-        return include_help ? text::render_usage_entry(entry, style.usage) : "  " + entry.usage;
-    }
-
     static auto render_usage_document(const UsageDocument& document,
                                       bool include_help,
                                       const TextStyle& style) -> std::string {
@@ -75,7 +73,8 @@ struct CompatibleRendererImpl {
 
         auto append_entries = [&](std::span<const UsageEntry> entries) {
             for(const auto& entry: entries) {
-                rendered += render_usage_entry(entry, include_help, style);
+                rendered +=
+                    include_help ? render_usage_entry(entry, style.usage) : "  " + entry.usage;
                 rendered.push_back('\n');
             }
         };
@@ -199,15 +198,11 @@ struct ModernRendererImpl {
         if(!include_help) {
             return "  " + syntax;
         }
-
-        const auto help_text =
-            entry.help.empty() ? std::string(style.usage.default_help) : entry.help;
-        const auto help = paint(ansi_help, help_text);
-        if(entry.usage.size() >= style.usage.help_column) {
-            return "  " + syntax + "\n" + std::string(style.usage.help_column, ' ') + "  " + help;
-        }
-        return "  " + syntax + std::string(style.usage.help_column - entry.usage.size(), ' ') +
-               help;
+        const std::string_view help = entry.help.empty() ? style.usage.default_help : entry.help;
+        return lay_out_entry(syntax,
+                             entry.usage.size(),
+                             paint(ansi_help, help),
+                             style.usage.help_column);
     }
 
     static auto render_usage_document(const UsageDocument& document,
@@ -451,15 +446,9 @@ auto excerpt_diagnostic_line(std::string_view line,
         }
     }
 
-    if(content_end >= line.size()) {
-        crop_right = false;
-        available = max_width;
-        if(crop_left) {
-            available -= ellipsis.size();
-        }
-        content_start = line.size() > available ? line.size() - available : 0;
-        crop_left = content_start > 0;
-        content_end = line.size();
+    if(content_end == line.size()) {
+        // The marker is near the end, and the window ends there: fill it from the end back.
+        content_start = line.size() - available;
     }
 
     std::string rendered;
@@ -501,6 +490,16 @@ auto highlight_span(std::string_view text,
     rendered += ansi_reset;
     rendered += text.substr(start + width);
     return rendered;
+}
+
+auto lay_out_entry(std::string_view usage,
+                   std::size_t width,
+                   std::string_view help,
+                   std::size_t help_column) -> std::string {
+    if(width >= help_column) {
+        return std::format("  {}\n  {:{}}{}", usage, "", help_column, help);
+    }
+    return std::format("  {}{:{}}{}", usage, "", help_column - width, help);
 }
 
 auto modern_heading(std::string_view title, std::string_view body) -> std::string {
@@ -633,11 +632,10 @@ auto render_usage(const UsageDocument& document, bool include_help, const Render
 }
 
 auto render_usage_entry(const UsageEntry& entry, const UsageStyle& style) -> std::string {
-    const std::string_view help = entry.help.empty() ? style.default_help : entry.help;
-    if(entry.usage.size() >= style.help_column) {
-        return std::format("  {}\n  {:{}}{}", entry.usage, "", style.help_column, help);
-    }
-    return std::format("  {:{}}{}", entry.usage, style.help_column, help);
+    return lay_out_entry(entry.usage,
+                         entry.usage.size(),
+                         entry.help.empty() ? style.default_help : entry.help,
+                         style.help_column);
 }
 
 auto render_subcommands(const SubCommandDocument& document, const Renderer* renderer)

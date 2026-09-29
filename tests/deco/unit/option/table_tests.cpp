@@ -97,14 +97,14 @@ ZEST_CASE(given_prefixes_replace_the_options_own) {
     EXPECT(parse.args[0].id == FilterInputId);
 }
 
-ZEST_CASE(option_by_id) {
+ZEST_CASE(option_is_found_by_id) {
     const auto& table = kinds_table();
     EXPECT(!table.option(0).has_value());
     ASSERT(table.option(test::FlagId).has_value());
     EXPECT(table.option(test::FlagId)->prefixed_name() == "-f");
 }
 
-ZEST_CASE(find_option_by_spelling) {
+ZEST_CASE(find_option_finds_a_spelling) {
     const auto& table = kinds_table();
     const auto flag = table.find_option("-f");
     ASSERT(flag.has_value());
@@ -162,6 +162,7 @@ ZEST_CASE(tablegen_mode_missing_value_fails) {
     ASSERT(parse.args.size() == 1U);
     ASSERT(parse.errors.size() == 1U);
     EXPECT(parse.errors[0].error.index == 1U);
+    EXPECT(std::string_view(parse.errors[0].error.message) == "missing argument value");
 }
 
 ZEST_CASE(every_option_is_visible_by_default) {

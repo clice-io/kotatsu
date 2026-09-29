@@ -4,6 +4,7 @@
 #include <array>
 #include <cassert>
 #include <cctype>
+#include <cstdint>
 #include <cstring>
 #include <expected>
 #include <functional>
@@ -19,7 +20,7 @@ using namespace kota::option;
 
 namespace {
 
-enum class AcceptResult {
+enum class AcceptResult : std::uint8_t {
     Matched,
     NoMatch,
     MissingValue,

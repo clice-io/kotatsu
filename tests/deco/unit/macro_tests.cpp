@@ -14,6 +14,7 @@
 #endif
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -58,10 +59,10 @@ struct Declared {
     <int> joined = 7;
 
     DecoComma(names = {"-T"};)
-    <> tags;
+    <> tags = std::vector<std::string>{"x", "y"};
 
     DecoMulti(2, names = {"-P"};)
-    <std::vector<int>> pair;
+    <std::vector<int>> pair = std::vector<int>{1, 2};
 
     DecoFlag(after_parsed = Action::stop;)
     stops;
@@ -162,6 +163,8 @@ ZEST_CASE(option_starts_with_its_default) {
     EXPECT(*declared.input == 42);
     ASSERT(declared.joined.has_value());
     EXPECT(*declared.joined == 7);
+    EXPECT(declared.pair.as_optional() == std::optional(std::vector<int>{1, 2}));
+    EXPECT(declared.tags.as_optional() == std::optional(std::vector<std::string>{"x", "y"}));
     EXPECT(!declared.path.has_value());
     EXPECT(!declared.verbose.has_value());
 }

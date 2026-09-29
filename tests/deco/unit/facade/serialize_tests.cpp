@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -68,7 +69,7 @@ struct Written {
     <std::string> input;
 };
 
-struct Values {
+struct Numbers {
     DECO_CFG_START(required = false);
 
     DecoKV()
@@ -76,12 +77,6 @@ struct Values {
 
     DecoKV()
     <float> scale;
-
-    DecoKV()
-    <Color> color;
-
-    DecoComma()
-    <std::vector<Color>> colors;
 
     DecoKV()
     <bool> enabled;
@@ -92,9 +87,29 @@ struct Values {
     DecoKVStyled(decl::KVStyle::Joined)
     <int> x;
 
-    DecoFlagAlias(names = {"--red"}; forward = {"--color", "red"};) _;
+    DecoKVStyled(decl::KVStyle::JoinedOrSeparate)
+    <std::string> label;
 
     DECO_CFG_END();
+};
+
+struct Colors {
+    DECO_CFG_START(required = false);
+
+    DecoKV()
+    <Color> color;
+
+    DecoComma()
+    <std::vector<Color>> colors;
+
+    DECO_CFG_END();
+};
+
+struct Aliased {
+    DecoKV(required = false;)
+    <Color> color;
+
+    DecoFlagAlias(names = {"--red"}; forward = {"--color", "red"};) _;
 };
 
 struct InputList {
@@ -199,45 +214,70 @@ ZEST_CASE(input_list_writes_each_input) {
 }
 
 ZEST_CASE(floating_point_writes_what_reads_back_the_same) {
-    Values values;
+    Numbers values;
     values.ratio = 0.1234567891;
     values.scale = 1e-7F;
     auto argv = ser::to_argv(values);
     EXPECT(argv == (std::vector<std::string>{"--ratio", "0.1234567891", "--scale", "1e-07"}));
-    const auto parsed = cli::parse<Values>(argv);
+    const auto parsed = cli::parse<Numbers>(argv);
     ASSERT(parsed.has_value());
     EXPECT(parsed->options.ratio.as_optional() == values.ratio.as_optional());
     EXPECT(parsed->options.scale.as_optional() == values.scale.as_optional());
 }
 
 ZEST_CASE(enum_writes_its_name) {
-    Values values;
+    Colors values;
     values.color = Color::DarkGreen;
     values.colors = std::vector<Color>{Color::Red, Color::DarkGreen};
     auto argv = ser::to_argv(values);
     EXPECT(argv == (std::vector<std::string>{"--color", "darkGreen", "--colors,red,darkGreen"}));
-    const auto parsed = cli::parse<Values>(argv);
+    const auto parsed = cli::parse<Colors>(argv);
     ASSERT(parsed.has_value());
     EXPECT(parsed->options.color.as_optional() == values.color.as_optional());
     EXPECT(parsed->options.colors.as_optional() == values.colors.as_optional());
 }
 
 ZEST_CASE(bool_and_char_write_what_they_parse_from) {
-    Values values;
+    Numbers values;
     values.enabled = false;
     values.small = 'A';
     auto argv = ser::to_argv(values);
     EXPECT(argv == (std::vector<std::string>{"--enabled", "false", "--small", "65"}));
-    const auto parsed = cli::parse<Values>(argv);
+    const auto parsed = cli::parse<Numbers>(argv);
     ASSERT(parsed.has_value());
     EXPECT(parsed->options.enabled.as_optional() == values.enabled.as_optional());
     EXPECT(parsed->options.small.as_optional() == values.small.as_optional());
 }
 
-ZEST_CASE(joined_generated_name_takes_its_value_after_it) {
-    Values values;
+ZEST_CASE(generated_name_takes_its_value_after_equals) {
+    Numbers values;
     values.x = 4;
-    EXPECT(ser::to_argv(values) == std::vector<std::string>{"-x4"});
+    auto argv = ser::to_argv(values);
+    EXPECT(argv == std::vector<std::string>{"-x=4"});
+    const auto parsed = cli::parse<Numbers>(argv);
+    ASSERT(parsed.has_value());
+    EXPECT(parsed->options.x.as_optional() == std::optional(4));
+}
+
+ZEST_CASE(any_value_reads_back_after_equals) {
+    // Written separate, an empty value would read as missing, and joined without the '=',
+    // one starting with '=' would lose it.
+    for(const auto* label: {"", "=a", "-v"}) {
+        ZEST_CONTEXT("label '{}'", label);
+        Numbers values;
+        values.label = std::string(label);
+        auto argv = ser::to_argv(values);
+        EXPECT(argv == std::vector<std::string>{std::string("--label=") + label});
+        const auto parsed = cli::parse<Numbers>(argv);
+        ASSERT(parsed.has_value());
+        EXPECT(parsed->options.label.as_optional() == values.label.as_optional());
+    }
+}
+
+ZEST_CASE(alias_writes_nothing_of_its_own) {
+    Aliased values;
+    values.color = Color::Red;
+    EXPECT(ser::to_argv(values) == (std::vector<std::string>{"--color", "red"}));
 }
 
 };  // ZEST_SUITE(deco_facade_serialize)

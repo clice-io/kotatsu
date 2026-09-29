@@ -1,4 +1,5 @@
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "deco/harness/option_table.h"
@@ -67,6 +68,7 @@ ZEST_CASE(separate_given_an_empty_value_fails) {
     const auto parse = parse_table(kinds_table(), test::args("-s", "", "-f"));
     ASSERT(parse.errors.size() == 1U);
     EXPECT(parse.errors[0].error.index == 0U);
+    EXPECT(std::string_view(parse.errors[0].error.message) == "missing argument value");
     ASSERT(parse.args.size() == 1U);
     EXPECT(parse.args[0].id == test::FlagId);
 }
@@ -101,6 +103,7 @@ ZEST_CASE(multi_arg_short_of_values_fails) {
     EXPECT(parse.args.empty());
     ASSERT(parse.errors.size() == 1U);
     EXPECT(parse.errors[0].error.index == 0U);
+    EXPECT(std::string_view(parse.errors[0].error.message) == "missing argument value");
 }
 
 ZEST_CASE(joined_or_separate_takes_either) {
@@ -116,7 +119,9 @@ ZEST_CASE(joined_or_separate_takes_either) {
 ZEST_CASE(joined_or_separate_without_value_fails) {
     const auto parse = parse_table(kinds_table(), "-o");
     EXPECT(parse.args.empty());
-    EXPECT(parse.errors.size() == 1U);
+    ASSERT(parse.errors.size() == 1U);
+    EXPECT(parse.errors[0].error.index == 0U);
+    EXPECT(std::string_view(parse.errors[0].error.message) == "missing argument value");
 }
 
 ZEST_CASE(joined_and_separate_takes_both) {
@@ -131,7 +136,9 @@ ZEST_CASE(joined_and_separate_takes_both) {
 ZEST_CASE(joined_and_separate_without_second_value_fails) {
     const auto parse = parse_table(kinds_table(), "-xa");
     EXPECT(parse.args.empty());
-    EXPECT(parse.errors.size() == 1U);
+    ASSERT(parse.errors.size() == 1U);
+    EXPECT(parse.errors[0].error.index == 0U);
+    EXPECT(std::string_view(parse.errors[0].error.message) == "missing argument value");
 }
 
 ZEST_CASE(remaining_args_take_everything_after) {

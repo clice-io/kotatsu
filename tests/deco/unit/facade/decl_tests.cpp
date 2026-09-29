@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <string>
@@ -143,7 +144,7 @@ ZEST_CASE(alias_forward_of_a_null_function_is_empty) {
     EXPECT(!forward);
 }
 
-ZEST_CASE(parse_control_next_and_stop) {
+ZEST_CASE(parse_control_goes_on_or_stops) {
     EXPECT(decl::ParseControl::next().action == decl::ParseControl::Action::Continue);
     EXPECT(decl::ParseControl::stop().action == decl::ParseControl::Action::Stop);
 }

@@ -15,7 +15,6 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "backend.h"
@@ -46,7 +45,7 @@ struct Invocation {
     std::shared_ptr<std::vector<std::string>> owned_active_argv{};
     std::vector<ParsedArgOwning> parsed_arguments{};
     std::vector<std::string> command_path{};
-    std::string_view command_overview{};
+    std::string command_overview{};
     std::optional<config::Config> usage_config{};
     std::optional<text::Renderer> resolved_renderer{};
     void (*usage_writer)(std::ostream&,
@@ -83,9 +82,9 @@ struct Invocation {
         return matched_categories.contains(&category);
     }
 
-    /// The renderer the invocation renders with: the one its command resolved for it, else
-    /// the command's own, else the default renderer. The invocation keeps a resolved renderer
-    /// itself, so that it renders the same once moved.
+    /// The renderer the invocation renders with: the one its command resolved for it, which it
+    /// keeps a copy of, so that it renders the same once moved or once the command is gone;
+    /// else, while its command parses, the command's; else the default renderer.
     auto renderer() const -> const text::Renderer& {
         if(resolved_renderer.has_value()) {
             return *resolved_renderer;
@@ -447,34 +446,28 @@ std::string check_valid(const T& options,
     if(!err.empty()) {
         return err;
     }
-    // check category requirements
-    const auto& c_map = generator.category_map();
+    // check category requirements; the options without one are the dummy, the unknown option
+    // and an input option no DecoInput stands for
     std::set<const decl::Category*> required_categories;
-    // 0 is dummy
-    for(std::size_t i = 1; i < c_map.size(); ++i) {
-        const auto* category = c_map[i];
+    for(const auto* category: generator.category_map()) {
         if(category != nullptr && category->required) {
             required_categories.insert(category);
         }
     }
-    if(generator.has_trailing_option()) {
-        if(const auto* trailing = generator.trailing_category();
-           trailing != nullptr && trailing->required) {
-            required_categories.insert(trailing);
-        }
+    if(const auto* trailing = generator.trailing_category();
+       trailing != nullptr && trailing->required) {
+        required_categories.insert(trailing);
     }
     for(const auto* category: required_categories) {
         if(!matched_categories.contains(category)) {
-            err = std::format("required {} is missing", desc::detail::category_desc(*category));
-            return err;
+            return std::format("required {} is missing", desc::detail::category_desc(*category));
         }
     }
     // check category exclusiveness
-    for(auto category: matched_categories) {
+    for(const auto* category: matched_categories) {
         if(category->exclusive && matched_categories.size() > 1) {
-            err = std::format("options in {} are exclusive, but multiple categories are matched",
-                              desc::detail::category_desc(*category));
-            return err;
+            return std::format("options in {} are exclusive, but multiple categories are matched",
+                               desc::detail::category_desc(*category));
         }
     }
     return {};
@@ -486,7 +479,7 @@ template <typename T, typename OnOption>
 std::expected<Invocation<T>, ParseError>
     run_parse_session(std::span<std::string> argv,
                       OnOption&& on_option,
-                      const text::Renderer* formatter = nullptr) {
+                      const text::Renderer* renderer = nullptr) {
     const auto& generator = ::kota::deco::detail::generator_of<T>();
     backend::OptTable table = generator.make_opt_table();
     backend::ParseOptions parse_options = generator.make_parse_options();
@@ -535,7 +528,7 @@ std::expected<Invocation<T>, ParseError>
                 auto& parse_error = result.error();
                 err = ParseError{
                     ParseError::Type::BackendParsing,
-                    decl::IntoContext::at_cursor(argv_view, parse_error.index, formatter)
+                    decl::IntoContext::at_cursor(argv_view, parse_error.index, renderer)
                         .format_error(parse_error.message),
                 };
                 break;
@@ -545,7 +538,7 @@ std::expected<Invocation<T>, ParseError>
             const std::uint32_t next_cursor = raw_parg.next_index;
             auto arg_snapshot = ParsedArgOwning::from(raw_parg);
             const auto into_context =
-                decl::IntoContext::from_argument(argv_view, arg_snapshot, formatter);
+                decl::IntoContext::from_argument(argv_view, arg_snapshot, renderer);
             if(raw_parg.id == generator.unknown_option_id) {
                 err = ParseError{
                     ParseError::Type::BackendParsing,
@@ -651,7 +644,7 @@ std::expected<Invocation<T>, ParseError>
             std::span<const std::string>(res.active_argv.data(), res.active_argv.size());
         return std::unexpected(ParseError{
             ParseError::Type::DecoParsing,
-            decl::IntoContext::at_cursor(active_argv, res.next_index, formatter)
+            decl::IntoContext::at_cursor(active_argv, res.next_index, renderer)
                 .format_error(check_err),
         });
     }
@@ -680,13 +673,13 @@ std::expected<ParsedResult<T>, ParseError> parse_with_callback(std::span<std::st
 
 template <typename T>
 std::expected<Invocation<T>, ParseError> invoke(std::span<std::string> argv,
-                                                const text::Renderer& formatter) {
+                                                const text::Renderer& renderer) {
     return detail::run_parse_session<T>(
         argv,
         [](auto&, decl::DecoOptionBase&, const ParsedArgOwning&, std::uint32_t, auto) {
             return decl::ParseControl::next();
         },
-        &formatter);
+        &renderer);
 }
 
 template <typename T>
@@ -700,8 +693,8 @@ std::expected<Invocation<T>, ParseError> invoke(std::span<std::string> argv) {
 
 template <typename T>
 std::expected<Invocation<T>, ParseError> parse(std::span<std::string> argv,
-                                               const text::Renderer& formatter) {
-    return invoke<T>(argv, formatter);
+                                               const text::Renderer& renderer) {
+    return invoke<T>(argv, renderer);
 }
 
 template <typename T>
@@ -787,17 +780,15 @@ class Command {
         std::println(stderr, "{}", err.message);
     };
 
-    auto renderer_ptr() const -> const text::Renderer* {
-        return text_renderer.has_value() ? &*text_renderer : nullptr;
-    }
-
     auto resolved_config() const -> config::Config {
         return config::merge(config::get(), config_override);
     }
 
-    auto make_fallback_renderer() const -> std::optional<text::Renderer> {
-        if(renderer_ptr() != nullptr) {
-            return std::nullopt;
+    /// The renderer the command renders with: its own, else the one its config makes, unless
+    /// a default renderer is set, which rendering then looks up.
+    auto active_renderer() const -> std::optional<text::Renderer> {
+        if(text_renderer.has_value()) {
+            return text_renderer;
         }
         if(text::explicit_default_renderer() != nullptr) {
             return std::nullopt;
@@ -929,23 +920,20 @@ public:
     }
 
     auto invoke(std::span<std::string> argv) -> std::expected<invocation_t, ParseError> {
-        std::optional<text::Renderer> fallback_renderer = make_fallback_renderer();
-        const text::Renderer* active_renderer = renderer_ptr();
-        if(fallback_renderer.has_value()) {
-            active_renderer = &*fallback_renderer;
-        }
+        std::optional<text::Renderer> renderer = active_renderer();
+        const text::Renderer* renderer_ptr = renderer.has_value() ? &*renderer : nullptr;
 
         auto res = detail::run_parse_session<T>(
             argv,
-            [this, active_renderer](invocation_t& invocation,
-                                    decl::DecoOptionBase& accessor,
-                                    const ParsedArgOwning& arg,
-                                    std::uint32_t cursor,
-                                    std::span<std::string> active_argv) {
+            [this, renderer_ptr](invocation_t& invocation,
+                                 decl::DecoOptionBase& accessor,
+                                 const ParsedArgOwning& arg,
+                                 std::uint32_t cursor,
+                                 std::span<std::string> active_argv) {
                 if(after_hooks.empty()) {
                     return decl::ParseControl::next();
                 }
-                bind_runtime(invocation, active_renderer);
+                bind_runtime(invocation, renderer_ptr);
                 for(auto& hook: after_hooks) {
                     if(hook.matches(invocation.options, &accessor)) {
                         const auto control =
@@ -957,15 +945,13 @@ public:
                 }
                 return decl::ParseControl::next();
             },
-            active_renderer);
+            renderer_ptr);
         if(!res.has_value()) {
             return res;
         }
 
-        // The invocation keeps the fallback itself, since a pointer to it would not survive
-        // the invocation being moved.
-        res->resolved_renderer = std::move(fallback_renderer);
-        bind_runtime(*res, renderer_ptr());
+        res->resolved_renderer = std::move(renderer);
+        bind_runtime(*res, nullptr);
         for(auto& finalize: finalizers) {
             finalize(*res);
         }
@@ -975,12 +961,12 @@ public:
     template <typename Os>
     auto usage(Os& os, bool include_help = true) const -> void {
         const auto usage_config = resolved_config();
-        const auto fallback_renderer = make_fallback_renderer();
+        const auto renderer = active_renderer();
         write_usage_for<T>(os,
                            command_overview,
                            include_help,
                            &usage_config,
-                           fallback_renderer.has_value() ? &*fallback_renderer : renderer_ptr());
+                           renderer.has_value() ? &*renderer : nullptr);
     }
 
     auto execute(std::span<std::string> argv) -> void {

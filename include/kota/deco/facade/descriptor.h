@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "config.h"
@@ -140,8 +141,10 @@ inline std::string placeholder_name(decl::DecoType deco_field_ty) {
         case decl::DecoType::KV: return "--<option>";
         case decl::DecoType::CommaJoined: return "--<list-option>";
         case decl::DecoType::Multi: return "--<multi-option>";
-        default: return "<option>";
+        case decl::DecoType::Input:
+        case decl::DecoType::TrailingInput: break;
     }
+    std::unreachable();
 }
 
 /// The names of named option `cfg`: its explicit names, else the one generated from its

@@ -366,6 +366,20 @@ ZEST_CASE(invocation_renders_the_same_once_moved) {
     EXPECT(zest::starts_with(moved_error, "at end of argv:"));
 }
 
+ZEST_CASE(invocation_outlives_its_command) {
+    // The command is gone by the end of the statement; its invocation keeps what it renders
+    // with.
+    auto argv = test::split("-v");
+    const auto parsed =
+        cli::command<WebCli>("webcli [OPTIONS]").render_with(test::tagged_renderer()).invoke(argv);
+    ASSERT(parsed.has_value());
+    EXPECT(parsed->command_overview == "webcli [OPTIONS]");
+    std::ostringstream out;
+    parsed->usage(out);
+    EXPECT(out.str() == "USAGE<webcli [OPTIONS]:help>");
+    EXPECT(parsed->format_error("late") == "ERR<1:late>");
+}
+
 ZEST_CASE(invocation_of_a_command_names_its_command) {
     auto command = cli::command<WebCli>("webcli [OPTIONS]");
     auto argv = test::split("-v");

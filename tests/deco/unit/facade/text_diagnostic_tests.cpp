@@ -57,7 +57,7 @@ ZEST_CASE(end_of_argv_is_marked_past_it) {
     expect_laid_out(diagnostic_at(argv, 3, 3, "missing value"));
 }
 
-ZEST_CASE(empty_argv_is_marked_at_its_end) {
+ZEST_CASE(empty_argv_is_labelled_at_its_end) {
     expect_laid_out(diagnostic_at({}, 0, 0, "nothing given"));
 }
 

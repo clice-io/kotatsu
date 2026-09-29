@@ -184,7 +184,7 @@ ZEST_CASE(restart_goes_on_from_an_argv_of_its_own) {
     const auto parsed = cli::parse<RestartsOnItsOwnArgv>(argv);
     ASSERT(parsed.has_value());
     EXPECT(parsed->options.verbose.as_optional() == std::optional(true));
-    EXPECT(parsed->argv().size() == 1U);
+    ASSERT(parsed->argv().size() == 1U);
     EXPECT(parsed->argv()[0] == "-v");
     EXPECT(parsed->next_cursor() == 1U);
 }

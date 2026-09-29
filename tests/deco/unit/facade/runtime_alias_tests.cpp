@@ -80,6 +80,24 @@ struct Forwarded {
     DECO_CFG_END();
 };
 
+/// KV aliases of each style, named and not.
+struct KVAliases {
+    DECO_CFG_START(required = false);
+
+    DecoKV(names = {"--target"};)
+    <std::string> target;
+
+    DecoKV(names = {"--level"};)
+    <std::string> level;
+
+    DecoKVAliasStyled(decl::KVStyle::JoinedOrSeparate, names = {"--target=", "--target-alias"};
+                      forward = {"--target"};) _;
+
+    DecoKVAliasStyled(decl::KVStyle::JoinedOrSeparate, forward = {"--level"};) level_alias;
+
+    DECO_CFG_END();
+};
+
 ZEST_SUITE(deco_facade_runtime_alias) {
 
 ZEST_CASE(flag_alias_forwards_its_tokens) {
@@ -123,12 +141,43 @@ ZEST_CASE(joined_kv_alias_forwards_its_value) {
     EXPECT(parsed->options.define.as_optional() == std::optional<std::string>("NAME=1"));
 }
 
+ZEST_CASE(comma_alias_forwards_its_values) {
+    auto argv = test::split("--tags-alias,a,b");
+    const auto parsed = cli::parse<Forwarded>(argv);
+    ASSERT(parsed.has_value());
+    EXPECT(parsed->options.tags.as_optional() == std::optional(strings{"a", "b"}));
+}
+
 ZEST_CASE(comma_alias_joins_its_values_to_the_last_token) {
-    auto argv = test::split("--tags-alias,a,b --verbose-tags,c");
+    auto argv = test::split("--verbose-tags,c");
     const auto parsed = cli::parse<Forwarded>(argv);
     ASSERT(parsed.has_value());
     EXPECT(parsed->options.tags.as_optional() == std::optional(strings{"c"}));
     EXPECT(parsed->options.verbose.as_optional() == std::optional(true));
+}
+
+ZEST_CASE(joined_or_separate_kv_alias_takes_each_name_by_its_end) {
+    auto joined = test::split("--target=42");
+    const auto by_joined = cli::parse<KVAliases>(joined);
+    ASSERT(by_joined.has_value());
+    EXPECT(by_joined->options.target.as_optional() == std::optional<std::string>("42"));
+
+    auto separate = test::split("--target-alias 7");
+    const auto by_separate = cli::parse<KVAliases>(separate);
+    ASSERT(by_separate.has_value());
+    EXPECT(by_separate->options.target.as_optional() == std::optional<std::string>("7"));
+}
+
+ZEST_CASE(kv_alias_generated_name_also_takes_its_value_after_equals) {
+    auto separate = test::split("--level-alias 7");
+    const auto by_separate = cli::parse<KVAliases>(separate);
+    ASSERT(by_separate.has_value());
+    EXPECT(by_separate->options.level.as_optional() == std::optional<std::string>("7"));
+
+    auto joined = test::split("--level-alias=42");
+    const auto by_joined = cli::parse<KVAliases>(joined);
+    ASSERT(by_joined.has_value());
+    EXPECT(by_joined->options.level.as_optional() == std::optional<std::string>("42"));
 }
 
 ZEST_CASE(comma_alias_without_tokens_fails) {

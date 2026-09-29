@@ -15,34 +15,29 @@
 #include "ty.h"
 #include "kota/support/comptime.h"
 #include "kota/support/config.h"
-#include "kota/support/type_traits.h"
 
 namespace kota::deco::detail {
 
-struct ParsedNamedOption {
-    std::span<const std::string_view> prefixes = backend::pfx_none;
-    std::string_view prefix;
-    std::string_view name;
-};
-
-constexpr auto parse_named_option(std::string_view full_name) {
+/// The prefixes an option named `full_name` accepts: "--name" takes "--", "-n" takes "-", and
+/// "/name" takes "/" or "-".
+constexpr auto prefixes_of(std::string_view full_name) -> std::span<const std::string_view> {
     if(full_name.starts_with("--")) {
         if(full_name.size() <= 2) {
             KOTA_THROW("Option name cannot be only '--'");
         }
-        return ParsedNamedOption{backend::pfx_double, "--", full_name.substr(2)};
+        return backend::pfx_double;
     }
     if(full_name.starts_with("-")) {
         if(full_name.size() <= 1) {
             KOTA_THROW("Option name cannot be only '-'");
         }
-        return ParsedNamedOption{backend::pfx_dash, "-", full_name.substr(1)};
+        return backend::pfx_dash;
     }
     if(full_name.starts_with("/")) {
         if(full_name.size() <= 1) {
             KOTA_THROW("Option name cannot be only '/'");
         }
-        return ParsedNamedOption{backend::pfx_slash_dash, "/", full_name.substr(1)};
+        return backend::pfx_slash_dash;
     }
     KOTA_THROW("Option name must start with '-', '--', or '/'");
 }
@@ -61,6 +56,10 @@ private:
         decl::ConfigFields cfg{};
         std::size_t level = 0;
     };
+
+    /// What option or alias `FieldTy` is declared with.
+    template <typename FieldTy>
+    using declaration_of = decltype(ty::dyn_cast(std::declval<const FieldTy&>()));
 
     /// Applies config field `FieldTy`, met at nesting `level`: Start and Next push their
     /// overrides, End drops everything back to the nearest Start.
@@ -151,16 +150,8 @@ private:
             if constexpr(ty::is_config_field<FieldTy>) {
                 apply_config_field<FieldTy>(config_stack, level);
                 return true;
-            } else if constexpr(ty::deco_option_like<FieldTy>) {
-                using CfgTy = ty::field_ty_of<FieldTy>;
-                const auto cfg = make_configured_cfg<CfgTy>(config_stack);
-                const bool keep_going =
-                    bool(on_option(field.value(), cfg, name, std::index_sequence<Path..., idx>{}));
-                drop_next_configs(config_stack, level);
-                return keep_going;
-            } else if constexpr(ty::is_alias_field<FieldTy>) {
-                using CfgTy = ty::alias_ty_of<FieldTy>;
-                const auto cfg = make_configured_cfg<CfgTy>(config_stack);
+            } else if constexpr(ty::deco_option_like<FieldTy> || ty::is_alias_field<FieldTy>) {
+                const auto cfg = make_configured_cfg<declaration_of<FieldTy>>(config_stack);
                 const bool keep_going =
                     bool(on_option(field.value(), cfg, name, std::index_sequence<Path..., idx>{}));
                 drop_next_configs(config_stack, level);
@@ -190,18 +181,8 @@ private:
         if constexpr(ty::is_config_field<FieldTy>) {
             apply_config_field<FieldTy>(config_stack, level);
             return true;
-        } else if constexpr(ty::deco_option_like<FieldTy>) {
-            using CfgTy = ty::field_ty_of<FieldTy>;
-            const auto cfg = make_configured_cfg<CfgTy>(config_stack);
-            const bool keep_going = bool(on_option(std::type_identity<FieldTy>{},
-                                                   cfg,
-                                                   name,
-                                                   std::index_sequence<Path..., I>{}));
-            drop_next_configs(config_stack, level);
-            return keep_going;
-        } else if constexpr(ty::is_alias_field<FieldTy>) {
-            using CfgTy = ty::alias_ty_of<FieldTy>;
-            const auto cfg = make_configured_cfg<CfgTy>(config_stack);
+        } else if constexpr(ty::deco_option_like<FieldTy> || ty::is_alias_field<FieldTy>) {
+            const auto cfg = make_configured_cfg<declaration_of<FieldTy>>(config_stack);
             const bool keep_going = bool(on_option(std::type_identity<FieldTy>{},
                                                    cfg,
                                                    name,
@@ -374,8 +355,6 @@ private:
     // The tokens of static alias forwards, which alias_metas view.
     pool_t<std::string_view, 5> alias_tokens;
 
-    bool has_input = false;
-    bool has_trailing = false;
     Trailing trailing{};
 
     /// Adds an option of `kind` taking `num_args` values, which parses into the field
@@ -418,22 +397,13 @@ private:
 
     /// Gives option `id` the name `full_name`: "--name", "-n" or "/name".
     constexpr void set_name(std::uint32_t id, std::string_view full_name) {
-        const auto parsed = parse_named_option(full_name);
-        items[id].prefixes = parsed.prefixes;
-        items[id].prefixed_name = str_pool.add(parsed.prefix, parsed.name);
+        items[id].prefixes = prefixes_of(full_name);
+        items[id].prefixed_name = str_pool.add(full_name);
     }
 
-    /// Gives option `id` the name generated from its field's name, followed by `suffix`.
-    constexpr void set_generated_name(std::uint32_t id,
-                                      std::string_view field_name,
-                                      std::string_view suffix = {}) {
-        items[id].prefixes = field_name.size() == 1 ? backend::pfx_dash : backend::pfx_double;
-        items[id].prefixed_name =
-            str_pool.add(decl::detail::generated_option_name(field_name), suffix);
-    }
-
+    /// Gives option `id` its help text and meta var.
     template <typename FieldsTy>
-    constexpr void set_common_options(std::uint32_t id, const FieldsTy& fields) {
+    constexpr void set_help(std::uint32_t id, const FieldsTy& fields) {
         if(!fields.help.empty()) {
             items[id].help_text = str_pool.add(fields.help).data();
         }
@@ -442,17 +412,20 @@ private:
         }
     }
 
-    /// Names option `id` after its declaration: the first of `fields.names` names it and each
-    /// further one adds a spelling of it, of the kind `kind_of(name)` gives; without names, its
-    /// field's name does.
+    /// Names option `id` after its declaration, and gives it its help, which each spelling then
+    /// copies: the first of `fields.names` names it and each further one adds a spelling of it,
+    /// of the kind `kind_of(name)` gives; without names, its field's name does.
     template <typename FieldsTy, typename KindOf>
     constexpr void name_option(std::uint32_t id,
                                std::string_view field_name,
                                const FieldsTy& fields,
                                const KindOf& kind_of) {
-        set_common_options(id, fields);
+        set_help(id, fields);
         if(fields.names.empty()) {
-            set_generated_name(id, field_name);
+            if(decl::is_alias_placeholder_name(field_name)) {
+                KOTA_THROW("Deco placeholder fields must declare explicit names");
+            }
+            set_name(id, decl::detail::generated_option_name(field_name));
             return;
         }
         auto name = [&](std::uint32_t target, std::string_view full_name) {
@@ -506,7 +479,7 @@ private:
         if(fields.names.empty() && joined) {
             const auto spelling = add_spelling(id);
             items[spelling].kind = backend::Kind::Joined;
-            set_generated_name(spelling, field_name, "=");
+            set_name(spelling, decl::detail::generated_option_name(field_name) + "=");
         }
     }
 
@@ -577,7 +550,7 @@ private:
     }
 
 public:
-    constexpr explicit LLVMOptGenerator() :
+    constexpr LLVMOptGenerator() :
         str_pool(resource), items(resource), accessors(resource), categories(resource),
         callbacks(resource), alias_metas(resource), alias_tokens(resource) {
         // The dummy, then the unknown and input options.
@@ -586,6 +559,7 @@ public:
         new_option(backend::Kind::Input, 0, nullptr, nullptr);
         items[unknown_option_id] = backend::Option::unknown(unknown_option_id);
         items[input_option_id] = backend::Option::input(input_option_id);
+        this->consume_deco_struct_schema();
     }
 
     LLVMOptGenerator(const LLVMOptGenerator&) = delete;
@@ -593,23 +567,18 @@ public:
     LLVMOptGenerator(LLVMOptGenerator&&) = delete;
     auto operator=(LLVMOptGenerator&&) -> LLVMOptGenerator& = delete;
 
-    constexpr explicit LLVMOptGenerator(std::in_place_t) : LLVMOptGenerator() {
-        build();
-    }
-
     template <typename FieldTy, typename CfgTy, std::size_t... Path>
     constexpr bool on_input_config(std::type_identity<FieldTy>,
                                    const CfgTy& cfg,
                                    std::string_view,
                                    std::index_sequence<Path...> path) {
-        if(has_input) {
+        if(has_input_option()) {
             KOTA_THROW("Only one DecoInput can be declared");
         }
-        has_input = true;
         accessors[input_option_id] = base_t::accessor_from_path(path);
         categories[input_option_id] = cfg.category.ptr();
         callbacks[input_option_id] = make_parse_callback(cfg);
-        set_common_options(input_option_id, cfg);
+        set_help(input_option_id, cfg);
         return true;
     }
 
@@ -618,10 +587,9 @@ public:
                                             const CfgTy& cfg,
                                             std::string_view,
                                             std::index_sequence<Path...> path) {
-        if(has_trailing) {
+        if(has_trailing_option()) {
             KOTA_THROW("Only one DecoPack can be declared");
         }
-        has_trailing = true;
         trailing = Trailing{
             .accessor = base_t::accessor_from_path(path),
             .category = cfg.category.ptr(),
@@ -689,9 +657,6 @@ public:
         if(!cfg.forward) {
             KOTA_THROW("Deco alias requires forward");
         }
-        if(cfg.names.empty() && decl::is_alias_placeholder_name(field_name)) {
-            KOTA_THROW("Deco alias placeholders must declare explicit names");
-        }
         const auto meta = make_alias_meta(cfg);
         if constexpr(CfgTy::deco_field_ty == decl::DecoType::Flag) {
             add_named(backend::Kind::Flag, 0, cfg, field_name, nullptr, {}, meta);
@@ -711,16 +676,12 @@ public:
         return true;
     }
 
-    constexpr void build() {
-        this->consume_deco_struct_schema();
-    }
-
     constexpr bool has_input_option() const {
-        return has_input;
+        return accessors[input_option_id] != nullptr;
     }
 
     constexpr bool has_trailing_option() const {
-        return has_trailing;
+        return trailing.accessor != nullptr;
     }
 
     /// The options of the table, from the unknown option on (without the dummy).
@@ -759,7 +720,7 @@ public:
 
     /// The DecoPack of `object`; the struct must declare one.
     constexpr void* trailing_ptr_of(RootTy& object) const {
-        assert(has_trailing);
+        assert(has_trailing_option());
         return trailing.accessor(&object);
     }
 
@@ -789,8 +750,8 @@ public:
 
     auto make_parse_options() const {
         backend::ParseOptions opts;
-        opts.dash_dash_parsing = has_trailing;
-        opts.dash_dash_packing = has_trailing;
+        opts.dash_dash_parsing = has_trailing_option();
+        opts.dash_dash_packing = has_trailing_option();
         return opts;
     }
 
@@ -802,8 +763,7 @@ public:
 
 template <typename OptDeco>
 consteval auto build_record() {
-    LLVMOptGenerator<OptDeco> counter;
-    counter.build();
+    const LLVMOptGenerator<OptDeco> counter;
     return counter.gen_record();
 }
 
@@ -817,7 +777,7 @@ struct SizedGenerator {
 /// The generator of `OptDeco`, built on first use.
 template <typename OptDeco>
 const auto& generator_of() {
-    const static typename SizedGenerator<OptDeco>::type generator{std::in_place};
+    const static typename SizedGenerator<OptDeco>::type generator;
     return generator;
 }
 

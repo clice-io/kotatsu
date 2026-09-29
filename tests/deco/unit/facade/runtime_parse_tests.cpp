@@ -281,6 +281,7 @@ ZEST_CASE(required_option_of_a_matched_category_fails) {
     auto argv = test::split("-X GET");
     const auto parsed = cli::parse<WebCli>(argv);
     ASSERT(!parsed.has_value());
+    EXPECT(parsed.error().type == cli::ParseError::Type::DecoParsing);
     EXPECT(zest::ends_with(parsed.error().message, "required option --url <URL> is missing"));
 }
 

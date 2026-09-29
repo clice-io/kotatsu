@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "backend.h"
+#include "kota/support/type_traits.h"
 
 namespace kota::deco::ser {
 
@@ -52,25 +53,24 @@ class Serializer : public kota::deco::detail::DecoStructConsumer<Serializer<Stru
 
     template <typename ValueTy>
     static std::string scalar_to_arg(const ValueTy& value) {
-        using raw_ty = std::remove_cvref_t<ValueTy>;
-        if constexpr(std::same_as<raw_ty, std::string>) {
+        if constexpr(std::same_as<ValueTy, std::string>) {
             return value;
-        } else if constexpr(std::same_as<raw_ty, bool>) {
+        } else if constexpr(std::same_as<ValueTy, bool>) {
             return value ? "true" : "false";
-        } else if constexpr(std::integral<raw_ty>) {
+        } else if constexpr(std::integral<ValueTy>) {
             // Promoted, so that a char is written as the number it parses from.
             return std::format("{}", +value);
-        } else if constexpr(std::floating_point<raw_ty>) {
+        } else if constexpr(std::floating_point<ValueTy>) {
             // The shortest text that reads back as the same value.
             return std::format("{}", value);
-        } else if constexpr(std::is_enum_v<raw_ty>) {
+        } else if constexpr(std::is_enum_v<ValueTy>) {
             return kota::codec::spelling::map_enum_to_string(value);
-        } else if constexpr(requires(std::ostream& os, const raw_ty& v) { os << v; }) {
+        } else if constexpr(requires(std::ostream& os, const ValueTy& v) { os << v; }) {
             std::ostringstream oss;
             oss << value;
             return oss.str();
         } else {
-            static_assert(kota::dependent_false<raw_ty>,
+            static_assert(kota::dependent_false<ValueTy>,
                           "Unsupported scalar value type for kota::deco::ser::Serializer.");
             return {};
         }
@@ -78,15 +78,14 @@ class Serializer : public kota::deco::detail::DecoStructConsumer<Serializer<Stru
 
     template <typename VectorTy>
     static std::vector<std::string> vector_to_args(const VectorTy& values) {
-        using raw_ty = std::remove_cvref_t<VectorTy>;
-        if constexpr(std::ranges::range<raw_ty>) {
+        if constexpr(std::ranges::range<VectorTy>) {
             std::vector<std::string> output;
             for(const auto& value: values) {
                 output.push_back(scalar_to_arg(value));
             }
             return output;
         } else {
-            static_assert(kota::dependent_false<raw_ty>,
+            static_assert(kota::dependent_false<VectorTy>,
                           "Vector option result type must be a range for serialization.");
             return {};
         }
@@ -124,7 +123,7 @@ public:
         if(!should_emit(cfg) || !field.has_value()) {
             return true;
         }
-        using result_ty = typename std::remove_cvref_t<FieldTy>::result_type;
+        using result_ty = typename FieldTy::result_type;
         if constexpr(trait::ScalarResultType<result_ty>) {
             argv.push_back(scalar_to_arg(*field));
         } else {
@@ -158,7 +157,7 @@ public:
             return true;
         }
         const auto name = option_name(cfg, field_name);
-        using result_ty = typename std::remove_cvref_t<FieldTy>::result_type;
+        using result_ty = typename FieldTy::result_type;
         if constexpr(std::same_as<result_ty, bool>) {
             if(*field) {
                 argv.push_back(name);
@@ -182,7 +181,11 @@ public:
         }
         const auto name = option_name(cfg, field_name);
         const auto value = scalar_to_arg(*field);
-        if(decl::detail::is_joined_kv_name(cfg.style, name)) {
+        if(cfg.names.empty() && decl::detail::has_kv_style(cfg.style, decl::KVStyle::Joined)) {
+            // A generated name takes its value after '=': the form that reads back any value,
+            // an empty one or one starting with '=' too.
+            argv.push_back(name + "=" + value);
+        } else if(decl::detail::is_joined_kv_name(cfg.style, name)) {
             argv.push_back(name + value);
         } else {
             argv.push_back(name);

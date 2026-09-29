@@ -154,17 +154,18 @@ ZEST_CASE(field_names_become_option_names) {
 ZEST_CASE(names_keep_their_prefix) {
     const auto* dash = option_named<Everything>("-v");
     ASSERT(dash != nullptr);
-    EXPECT(dash->prefixes.size() == 1U);
+    ASSERT(dash->prefixes.size() == 1U);
     EXPECT(dash->prefixes[0] == "-");
 
     const auto* double_dash = option_named<Everything>("--verbose");
     ASSERT(double_dash != nullptr);
+    ASSERT(double_dash->prefixes.size() == 1U);
     EXPECT(double_dash->prefixes[0] == "--");
 
     // A '/' option may be written with '-' too.
     const auto* slash = option_named<Everything>("/w");
     ASSERT(slash != nullptr);
-    EXPECT(slash->prefixes.size() == 2U);
+    ASSERT(slash->prefixes.size() == 2U);
     EXPECT(slash->prefixes[0] == "/");
 }
 

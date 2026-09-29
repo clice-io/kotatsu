@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include <cassert>
 #include <cctype>
 #include <cerrno>
 #include <charconv>
@@ -19,6 +20,7 @@
 #include "trait.h"
 #include "kota/deco/option/arg.h"
 #include "kota/support/spelling.h"
+#include "kota/support/type_traits.h"
 
 namespace kota::deco {
 
@@ -583,23 +585,25 @@ struct DecoOptionBase {
 /// every type share one table: `invoke` casts `callback` back to its own type and calls it.
 struct ErasedParseCallback {
     using erased_fn = void (*)();
-    using invoker_t = ParseControl (*)(erased_fn callback,
-                                       const ParsedArgOwning& arg,
-                                       std::uint32_t next_cursor,
-                                       std::span<std::string> argv,
-                                       const DecoOptionBase& option);
+    using invoker_fn = ParseControl (*)(erased_fn callback,
+                                        const ParsedArgOwning& arg,
+                                        std::uint32_t next_cursor,
+                                        std::span<std::string> argv,
+                                        const DecoOptionBase& option);
 
     erased_fn callback = nullptr;
-    invoker_t invoke = nullptr;
+    invoker_fn invoke = nullptr;
 
     constexpr explicit operator bool() const {
         return invoke != nullptr;
     }
 
+    /// Calls the callback, which there must be.
     auto operator()(const ParsedArgOwning& arg,
                     std::uint32_t next_cursor,
                     std::span<std::string> argv,
                     const DecoOptionBase& option) const -> ParseControl {
+        assert(invoke != nullptr);
         return invoke(callback, arg, next_cursor, argv, option);
     }
 };
@@ -776,7 +780,7 @@ std::optional<std::string> parse_primitive_scalar(ResTy& out, std::string_view t
         out = ResTy(text);
         return std::nullopt;
     } else {
-        static_assert(!sizeof(ResTy), "Unsupported scalar result type.");
+        static_assert(kota::dependent_false<ResTy>, "Unsupported scalar result type.");
         return "unsupported scalar result type";
     }
 }

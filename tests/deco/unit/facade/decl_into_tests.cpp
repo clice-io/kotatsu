@@ -189,7 +189,10 @@ ZEST_CASE(integer_of_other_text_fails) {
 
 ZEST_CASE(unsigned_of_a_negative_fails) {
     std::optional<unsigned> value;
-    EXPECT(read("-1", value).has_value());
+    const auto error = read("-1", value);
+    ASSERT(error.has_value());
+    EXPECT(*error == "invalid integer value: -1");
+    EXPECT(!value.has_value());
 }
 
 ZEST_CASE(floating_point_reads_decimal_and_exponent) {

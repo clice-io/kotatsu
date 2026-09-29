@@ -1,4 +1,5 @@
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -95,16 +96,22 @@ struct MetaVar {
     <std::string> count;
 };
 
-/// What each option of T is declared with once the configs in scope are applied, by name.
+/// What an option is declared with once the configs in scope are applied.
 struct Declared {
     bool required;
     const decl::Category* category;
     std::string help;
 };
 
+using Fields = std::map<std::string, Declared>;
+
+/// The help of an option that sets none.
+constexpr auto unset = "not provided";
+
+/// What each option of T is declared with, by field name.
 template <typename T>
-std::map<std::string, Declared> declared() {
-    std::map<std::string, Declared> fields;
+Fields declared() {
+    Fields fields;
     detail::generator_of<T>().visit_fields(
         T{},
         [&](const auto&, const auto& cfg, std::string_view name, auto) {
@@ -121,81 +128,77 @@ std::map<std::string, Declared> declared() {
 ZEST_SUITE(deco_facade_backend_config) {
 
 ZEST_CASE(next_config_applies_to_the_next_option) {
-    const auto fields = declared<NextApplies>();
-    ASSERT(fields.contains("first"));
-    ASSERT(fields.contains("second"));
-    EXPECT(!fields.at("first").required);
-    EXPECT(fields.at("first").help == "first only");
-    EXPECT(fields.at("second").required);
-    EXPECT(fields.at("second").help == "not provided");
+    EXPECT(declared<NextApplies>() ==
+           (Fields{
+               {"first",  {false, &decl::default_category, "first only"} },
+               {"second", {true, &decl::default_category, "not provided"}},
+    }));
 }
 
 ZEST_CASE(scope_applies_between_start_and_end) {
-    const auto fields = declared<ScopeApplies>();
-    ASSERT(fields.size() == 4U);
-    EXPECT(fields.at("before").required);
-    EXPECT(!fields.at("inside").required);
-    EXPECT(fields.at("inside").category == &top_category);
-    EXPECT(!fields.at("also_inside").required);
-    EXPECT(fields.at("after").required);
-    EXPECT(fields.at("after").category == &decl::default_category);
+    EXPECT(declared<ScopeApplies>() == (Fields{
+                                           {"before",      {true, &decl::default_category, unset}},
+                                           {"inside",      {false, &top_category, unset}         },
+                                           {"also_inside", {false, &top_category, unset}         },
+                                           {"after",       {true, &decl::default_category, unset}},
+    }));
 }
 
 ZEST_CASE(next_config_on_a_nested_struct_applies_to_its_options) {
-    const auto fields = declared<NextOnNested>();
-    ASSERT(fields.size() == 3U);
-    EXPECT(fields.at("left").category == &inner_category);
-    EXPECT(fields.at("right").category == &inner_category);
-    EXPECT(fields.at("tail").category == &decl::default_category);
+    EXPECT(declared<NextOnNested>() == (Fields{
+                                           {"left",  {true, &inner_category, unset}        },
+                                           {"right", {true, &inner_category, unset}        },
+                                           {"tail",  {true, &decl::default_category, unset}},
+    }));
 }
 
 ZEST_CASE(scopes_nest_across_structs) {
-    const auto fields = declared<DeepScopes>();
-    ASSERT(fields.size() == 4U);
-    EXPECT(fields.at("top").category == &top_category);
-    EXPECT(fields.at("deep").category == &inner_category);
-    // The inner scope ends inside the nested struct; the outer one still applies.
-    EXPECT(fields.at("after_deep").category == &top_category);
-    EXPECT(fields.at("tail").category == &top_category);
-    EXPECT(!fields.at("deep").required);
+    // The inner scope ends inside the nested struct; the outer one still applies after it.
+    EXPECT(declared<DeepScopes>() == (Fields{
+                                         {"top",        {false, &top_category, unset}  },
+                                         {"deep",       {false, &inner_category, unset}},
+                                         {"after_deep", {false, &top_category, unset}  },
+                                         {"tail",       {false, &top_category, unset}  },
+    }));
 }
 
 ZEST_CASE(later_config_wins_until_it_ends) {
-    const auto fields = declared<LaterWins>();
-    EXPECT(fields.at("first").help == "next");
-    EXPECT(fields.at("second").help == "scoped");
+    EXPECT(declared<LaterWins>() == (Fields{
+                                        {"first",  {true, &decl::default_category, "next"}  },
+                                        {"second", {true, &decl::default_category, "scoped"}},
+    }));
 }
 
 ZEST_CASE(next_config_passes_over_a_plain_member) {
-    const auto fields = declared<PlainMember>();
-    ASSERT(fields.size() == 1U);
-    EXPECT(fields.at("flag").help == "for the flag");
+    EXPECT(declared<PlainMember>() == (Fields{
+                                          {"flag", {true, &decl::default_category, "for the flag"}},
+    }));
 }
 
 ZEST_CASE(config_meta_var_is_explicit) {
-    bool is_explicit = false;
+    std::optional<decl::MetaVarField> meta_var;
     detail::generator_of<MetaVar>().visit_fields(MetaVar{},
                                                  [&](const auto&, const auto& cfg, auto, auto) {
-                                                     is_explicit = cfg.meta_var.is_explicit();
-                                                     EXPECT(cfg.meta_var.value == "N");
+                                                     meta_var = cfg.meta_var;
                                                      return true;
                                                  });
-    EXPECT(is_explicit);
+    ASSERT(meta_var.has_value());
+    EXPECT(meta_var->value == "N");
+    EXPECT(meta_var->is_explicit());
 }
 
 ZEST_CASE(schema_visit_applies_the_same_configs) {
-    std::map<std::string, bool> required;
-    detail::generator_of<ScopeApplies>().visit_schema_fields(
+    Fields fields;
+    detail::generator_of<DeepScopes>().visit_schema_fields(
         [&](auto, const auto& cfg, std::string_view name, auto) {
-            required[std::string(name)] = cfg.required;
+            fields[std::string(name)] = Declared{
+                .required = cfg.required,
+                .category = cfg.category.ptr(),
+                .help = std::string(cfg.help),
+            };
             return true;
         });
-    const auto fields = declared<ScopeApplies>();
-    ASSERT(required.size() == fields.size());
-    for(const auto& [name, field]: fields) {
-        ZEST_CONTEXT("option {}", name);
-        EXPECT(required.at(name) == field.required);
-    }
+    EXPECT(fields == declared<DeepScopes>());
 }
 
 };  // ZEST_SUITE(deco_facade_backend_config)
