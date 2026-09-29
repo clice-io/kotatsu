@@ -60,11 +60,6 @@ struct type_list_unique;
 template <typename Accum, typename List>
 struct type_list_unique_impl;
 
-template <>
-struct type_list_unique<type_list<>> {
-    using type = type_list<>;
-};
-
 template <typename... Ts>
 struct type_list_unique_impl<type_list<Ts...>, type_list<>> {
     using type = type_list<Ts...>;

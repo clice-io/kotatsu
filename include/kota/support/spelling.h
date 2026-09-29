@@ -1,39 +1,18 @@
 #pragma once
 
 #include <concepts>
-#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
-#include <utility>
 #include <vector>
 
 #include "kota/support/naming.h"
-#include "kota/support/type_traits.h"
 #include "kota/meta/enum.h"
 
 namespace kota::codec {
 
 namespace spelling {
-
-namespace detail {
-
-template <typename Mapped>
-std::string to_string_storage(Mapped&& mapped) {
-    using mapped_t = std::remove_cvref_t<Mapped>;
-    if constexpr(std::same_as<mapped_t, std::string>) {
-        return std::forward<Mapped>(mapped);
-    } else if constexpr(std::convertible_to<Mapped, std::string_view>) {
-        return std::string(static_cast<std::string_view>(mapped));
-    } else {
-        static_assert(dependent_false<mapped_t>,
-                      "rename policy must return std::string or string-like value");
-        return {};
-    }
-}
-
-}  // namespace detail
 
 namespace rename_policy {
 
@@ -46,14 +25,15 @@ using upper_case = naming::rename_policy::upper_case;
 
 }  // namespace rename_policy
 
+/// `value` renamed by `Policy`, whose call operator takes whether the name is being
+/// serialized and the name, and returns a std::string or anything convertible to a
+/// std::string_view.
 template <typename Policy>
-std::string apply_rename_policy(bool is_serialize, std::string_view value) {
-    if constexpr(requires(Policy policy) { policy(is_serialize, value); }) {
-        return detail::to_string_storage(Policy{}(is_serialize, value));
-    } else {
-        static_assert(dependent_false<Policy>,
-                      "rename policy must support operator()(bool, std::string_view)");
+    requires requires(Policy policy, bool is_serialize, std::string_view value) {
+        { policy(is_serialize, value) } -> std::convertible_to<std::string_view>;
     }
+std::string apply_rename_policy(bool is_serialize, std::string_view value) {
+    return std::string(Policy{}(is_serialize, value));
 }
 
 template <typename E, typename Policy = rename_policy::lower_camel>

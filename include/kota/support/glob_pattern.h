@@ -27,6 +27,8 @@ struct GlobError {
     };
 
     Kind kind;
+    /// The offending bytes, [begin, end) of the pattern given to GlobPattern::create(),
+    /// whatever brace alternative they were found in; both 0 for TooManyExpansions.
     std::uint32_t begin;
     std::uint32_t end;
     std::string message;
@@ -69,6 +71,8 @@ class GlobPattern {
 public:
     /// A pattern is at most 4 GiB, brace expansion included: every offset
     /// the compiled form keeps is 32-bit, as are the error positions.
+    /// Brace expansion may produce at most `max_subpattern_num` alternatives;
+    /// 0 turns it off, and braces then match themselves.
     [[nodiscard]] static std::expected<GlobPattern, GlobError>
         create(std::string_view s, size_t max_subpattern_num = 100);
 

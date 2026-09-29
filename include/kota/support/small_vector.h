@@ -14,7 +14,8 @@
 #include <type_traits>
 #include <utility>
 
-#include "memory.h"
+#include "kota/support/config.h"
+#include "kota/support/memory.h"
 
 namespace kota {
 
@@ -27,20 +28,22 @@ class small_vector;
 namespace detail {
 
 template <typename T>
-struct is_small_vector : std::false_type {};
+constexpr inline bool is_small_vector_v = false;
 
 template <typename T>
-struct is_small_vector<hybrid_vector<T>> : std::true_type {};
+constexpr inline bool is_small_vector_v<hybrid_vector<T>> = true;
 
 template <typename T, unsigned int InlineCapacity>
-struct is_small_vector<small_vector<T, InlineCapacity>> : std::true_type {};
+constexpr inline bool is_small_vector_v<small_vector<T, InlineCapacity>> = true;
 
 template <typename Range, typename T>
 concept small_vector_compatible_range =
     std::ranges::input_range<Range> &&
     std::constructible_from<T, std::ranges::range_reference_t<Range>> &&
-    !is_small_vector<std::remove_cvref_t<Range>>::value;
+    !is_small_vector_v<std::remove_cvref_t<Range>>;
 
+/// The integer a vector keeps its size and capacity in: 32 bits, or a word for elements
+/// under 4 bytes, of which an address space holds more than 32 bits count.
 template <typename T>
 using small_vector_size_type =
     std::conditional_t<sizeof(T) < 4 && sizeof(void*) >= 8, std::uint64_t, std::uint32_t>;
@@ -50,7 +53,7 @@ struct default_buffer_size {
     constexpr static std::size_t preferred_size = 64;
 
     static_assert(sizeof(T) <= 256,
-                  "Default small_vector inline storage would be too large. "
+                  "Default small_vector inline buffer would be too large. "
                   "Use small_vector<T, N> with an explicit inline capacity.");
 
     constexpr static std::size_t inline_bytes = preferred_size > sizeof(small_vector<T, 0>)
@@ -105,6 +108,12 @@ struct alignas(T) inline_buffer<T, 0> {};
 
 }  // namespace detail
 
+/// A small_vector of any inline capacity, for code that takes one by reference without
+/// caring what that capacity is. A small_vector places its inline buffer right after this
+/// header, where inline_begin() finds it.
+///
+/// An argument may view the vector's own elements: an element to copy, or a range of them
+/// to append, assign or insert.
 template <typename T>
 class hybrid_vector {
     template <typename, unsigned int>
@@ -122,714 +131,39 @@ public:
     using const_iterator = const_pointer;
     using reverse_iterator = std::reverse_iterator<iterator>;
     using const_reverse_iterator = std::reverse_iterator<const_iterator>;
-    using size_storage_type = detail::small_vector_size_type<value_type>;
 
-    constexpr static bool takes_param_by_value =
-        std::is_trivially_copy_constructible_v<value_type> &&
-        std::is_trivially_move_constructible_v<value_type> &&
-        std::is_trivially_destructible_v<value_type> && sizeof(value_type) <= 2 * sizeof(void*);
+    hybrid_vector(const hybrid_vector&) = delete;
 
-protected:
-    constexpr explicit hybrid_vector(size_type inline_capacity) noexcept :
-        m_begin(std::is_constant_evaluated() ? nullptr : first_element()),
-        m_capacity(
-            static_cast<size_storage_type>(std::is_constant_evaluated() ? 0 : inline_capacity)) {}
-
-    [[nodiscard]] constexpr pointer inline_begin() noexcept {
-        if(std::is_constant_evaluated()) {
-            return nullptr;
+    /// Copies `other`'s elements, reusing this vector's elements and buffer where they suffice.
+    constexpr hybrid_vector& operator=(const hybrid_vector& other) {
+        if(!same_object(other)) {
+            assign_items(other.begin(), other.size());
         }
-        return first_element();
+        return *this;
     }
 
-    [[nodiscard]] constexpr const_pointer inline_begin() const noexcept {
-        if(std::is_constant_evaluated()) {
-            return nullptr;
-        }
-        return first_element();
-    }
-
-    constexpr void reset_to_small(size_type inline_capacity) noexcept {
-        this->m_begin = inline_begin();
-        this->m_size = 0;
-        this->m_capacity = static_cast<size_storage_type>(inline_capacity);
-    }
-
-    constexpr void set_size(size_type count) noexcept {
-        assert(count <= capacity());
-        m_size = static_cast<size_storage_type>(count);
-    }
-
-private:
-    constexpr static std::size_t header_alignment = alignof(pointer) > alignof(size_storage_type)
-                                                        ? alignof(pointer)
-                                                        : alignof(size_storage_type);
-
-    struct alignment_and_size {
-        alignas(header_alignment) std::byte header[sizeof(pointer) + 2 * sizeof(size_storage_type)];
-        alignas(value_type) std::byte first_element[sizeof(value_type)];
-    };
-
-    pointer m_begin;
-    size_storage_type m_size = 0;
-    size_storage_type m_capacity;
-
-protected:
-    [[nodiscard]] constexpr static auto pointer_range(pointer first, pointer last) noexcept {
-        return std::ranges::subrange(first, last);
-    }
-
-    [[nodiscard]]
-    constexpr static auto pointer_range(const_pointer first, const_pointer last) noexcept {
-        return std::ranges::subrange(first, last);
-    }
-
-    [[nodiscard]] constexpr static auto counted_range(pointer first, size_type count) noexcept {
-        if(count == 0) {
-            return pointer_range(first, first);
-        }
-
-        assert(first != nullptr);
-        return pointer_range(first, first + static_cast<difference_type>(count));
-    }
-
-    [[nodiscard]]
-    constexpr static auto counted_range(const_pointer first, size_type count) noexcept {
-        if(count == 0) {
-            return pointer_range(first, first);
-        }
-
-        assert(first != nullptr);
-        return pointer_range(first, first + static_cast<difference_type>(count));
-    }
-
-    [[nodiscard]] constexpr auto range_to(pointer last) noexcept {
-        return pointer_range(begin(), last);
-    }
-
-    [[nodiscard]] constexpr auto range_to(const_pointer last) const noexcept {
-        return pointer_range(begin(), last);
-    }
-
-private:
-    [[nodiscard]] pointer first_element() noexcept {
-        return reinterpret_cast<pointer>(reinterpret_cast<std::byte*>(this) +
-                                         offsetof(alignment_and_size, first_element));
-    }
-
-    [[nodiscard]] const_pointer first_element() const noexcept {
-        return reinterpret_cast<const_pointer>(reinterpret_cast<const std::byte*>(this) +
-                                               offsetof(alignment_and_size, first_element));
-    }
-
-    [[nodiscard]] constexpr auto elements() noexcept {
-        return pointer_range(begin(), end());
-    }
-
-    [[nodiscard]] constexpr auto elements() const noexcept {
-        return pointer_range(begin(), end());
-    }
-
-    [[nodiscard]] constexpr auto prefix(size_type count) noexcept {
-        return counted_range(begin(), count);
-    }
-
-    [[nodiscard]] constexpr auto prefix(size_type count) const noexcept {
-        return counted_range(begin(), count);
-    }
-
-    [[nodiscard]] constexpr auto suffix(size_type offset) noexcept {
-        return pointer_range(prefix(offset).end(), end());
-    }
-
-    [[nodiscard]] constexpr auto suffix(size_type offset) const noexcept {
-        return pointer_range(prefix(offset).end(), end());
-    }
-
-    [[nodiscard]] constexpr static auto make_allocation_guard(size_type capacity) {
-        return mem::allocation_guard<value_type>(capacity);
-    }
-
-    template <typename... Args>
-    [[nodiscard]] constexpr static auto make_temporary(Args&&... args) {
-        return mem::stack_temporary<value_type>(std::forward<Args>(args)...);
-    }
-
-    [[nodiscard]] constexpr bool references_storage(const_pointer ptr) const noexcept {
-        if(std::is_constant_evaluated()) {
-            for(auto current = begin(); current != end(); ++current) {
-                if(std::addressof(*current) == ptr) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        return mem::pointer_in_range(ptr, elements());
-    }
-
-    template <std::ranges::range Range>
-    [[nodiscard]] constexpr bool range_references_storage(Range&& range) const noexcept {
-        using reference_type = std::ranges::range_reference_t<Range>;
-
-        if constexpr(std::is_reference_v<reference_type> &&
-                     std::same_as<std::remove_cvref_t<reference_type>, value_type>) {
-            for(auto&& element: range) {
-                if(references_storage(std::addressof(element))) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    constexpr void assert_safe_to_reference_after_resize(const_pointer ptr,
-                                                         size_type new_size) const noexcept {
-        [[maybe_unused]] auto safe = [&]() noexcept {
-            if(!references_storage(ptr)) {
-                return true;
-            }
-            if(new_size <= size()) {
-                return ptr < prefix(new_size).end();
-            }
-            return new_size <= capacity();
-        };
-        assert(safe() &&
-               "Attempting to reference an element of the vector in an operation that "
-               "invalidates it");
-    }
-
-    template <std::ranges::range Range>
-    constexpr void assert_safe_to_reference_after_clear(Range&& range) const noexcept {
-        if(std::is_constant_evaluated()) {
-            return;
-        }
-
-        if constexpr(std::ranges::contiguous_range<Range> && std::ranges::sized_range<Range> &&
-                     std::same_as<std::remove_cv_t<std::ranges::range_value_t<Range>>,
-                                  value_type>) {
-            const auto count = static_cast<size_type>(std::ranges::size(range));
-            if(count == 0) {
-                return;
-            }
-
-            const_pointer first = std::ranges::data(range);
-            assert_safe_to_reference_after_resize(first, 0);
-            assert_safe_to_reference_after_resize(first + static_cast<difference_type>(count - 1),
-                                                  0);
-        }
-    }
-
-    template <std::ranges::range Range>
-    constexpr void assert_safe_to_add_range(Range&& range) const noexcept {
-        if(std::is_constant_evaluated()) {
-            return;
-        }
-
-        if constexpr(std::ranges::contiguous_range<Range> && std::ranges::sized_range<Range> &&
-                     std::same_as<std::remove_cv_t<std::ranges::range_value_t<Range>>,
-                                  value_type>) {
-            const auto count = static_cast<size_type>(std::ranges::size(range));
-            if(count == 0) {
-                return;
-            }
-
-            const_pointer first = std::ranges::data(range);
-            const auto new_size = checked_size(this->m_size, count);
-            assert_safe_to_reference_after_resize(first, new_size);
-            assert_safe_to_reference_after_resize(first + static_cast<difference_type>(count - 1),
-                                                  new_size);
-        }
-    }
-
-    [[nodiscard]] constexpr bool valid_insert_position(const_iterator pos) const noexcept {
-        std::less<const_pointer> less;
-        return !less(pos, begin()) && !less(end(), pos);
-    }
-
-    [[nodiscard]] constexpr bool valid_erase_range(const_iterator first,
-                                                   const_iterator last) const noexcept {
-        std::less<const_pointer> less;
-        return !less(first, begin()) && !less(last, first) && !less(end(), last);
-    }
-
-    [[nodiscard]] constexpr bool same_object(const hybrid_vector& other) const noexcept {
-        return reinterpret_cast<const void*>(this) == reinterpret_cast<const void*>(&other);
-    }
-
-    [[nodiscard]] constexpr size_type checked_size(size_type base, size_type extra) const {
-        if(extra > max_size() - base) {
-            KOTA_THROW(std::length_error("small_vector capacity overflow"));
-        }
-        return base + extra;
-    }
-
-    [[nodiscard]] constexpr size_type next_capacity(size_type min_capacity) const {
-        if(min_capacity > max_size()) {
-            KOTA_THROW(std::length_error("small_vector capacity overflow"));
-        }
-
-        size_type grown = this->m_capacity == 0 ? 1 : this->m_capacity * 2;
-        if(grown < this->m_capacity || grown < min_capacity) {
-            grown = min_capacity;
-        }
-        return grown;
-    }
-
-    constexpr void destroy_elements() noexcept {
-        mem::destroy_range(elements());
-        this->m_size = 0;
-    }
-
-    constexpr void commit_replacement(pointer new_begin,
-                                      size_type new_size,
-                                      size_type new_capacity) noexcept {
-        auto old_begin = this->m_begin;
-        const auto old_size = this->m_size;
-        const auto old_capacity = this->m_capacity;
-        const auto was_inline = old_begin == inline_begin();
-
-        this->m_begin = new_begin;
-        this->m_size = static_cast<decltype(this->m_size)>(new_size);
-        this->m_capacity = static_cast<decltype(this->m_capacity)>(new_capacity);
-
-        mem::destroy_range(counted_range(old_begin, old_size));
-        if(!was_inline) {
-            mem::deallocate(old_begin, old_capacity);
-        }
-    }
-
-    constexpr void grow_to(size_type min_capacity) {
-        const auto new_capacity = next_capacity(min_capacity);
-        auto guard = make_allocation_guard(new_capacity);
-        auto* out = mem::uninitialized_relocate(elements(), guard.data());
-        guard.mark(out);
-        commit_replacement(guard.release(), size(), new_capacity);
-    }
-
-    constexpr void reserve_for_append(size_type count) {
-        const auto new_size = checked_size(size(), count);
-        if(new_size > capacity()) {
-            grow_to(new_size);
-        }
-    }
-
-    constexpr void resize_fill(size_type count, const_reference value) {
-        if(count < size()) {
-            shrink_to_size(count);
-            return;
-        }
-
-        if(count == size()) {
-            return;
-        }
-
-        reserve(count);
-        mem::uninitialized_fill(counted_range(end(), count - size()), value);
-        this->set_size(count);
-    }
-
-    constexpr void shrink_to_size(size_type count) noexcept {
-        mem::destroy_range(suffix(count));
-        this->set_size(count);
-    }
-
-    template <bool ForOverwrite>
-    constexpr void resize_impl(size_type count) {
-        if(count < size()) {
-            shrink_to_size(count);
-            return;
-        }
-
-        if(count == size()) {
-            return;
-        }
-
-        reserve(count);
-        if constexpr(ForOverwrite) {
-            mem::uninitialized_default_construct(counted_range(end(), count - size()));
-        } else {
-            mem::uninitialized_value_construct(counted_range(end(), count - size()));
-        }
-        this->set_size(count);
-    }
-
-    [[nodiscard]] constexpr bool
-        should_steal_allocation_from(const hybrid_vector& other) const noexcept {
-        return other.begin() != other.inline_begin();
-    }
-
-    constexpr void append_copies(size_type count, const_reference value) {
-        if(count == 0) {
-            return;
-        }
-
-        reserve_for_append(count);
-        mem::uninitialized_fill(counted_range(end(), count), value);
-        this->set_size(size() + count);
-    }
-
-    constexpr void assign_copies(size_type count, const_reference value) {
-        if(count > capacity()) {
-            const auto new_capacity = next_capacity(count);
-            auto guard = make_allocation_guard(new_capacity);
-            auto* out = mem::uninitialized_fill(counted_range(guard.data(), count), value);
-            guard.mark(out);
-            commit_replacement(guard.release(), count, new_capacity);
-            return;
-        }
-
-        std::ranges::fill_n(begin(), (std::min)(count, size()), value);
-        if(count > size()) {
-            mem::uninitialized_fill(counted_range(end(), count - size()), value);
-        } else if(count < size()) {
-            mem::destroy_range(suffix(count));
-        }
-        this->set_size(count);
-    }
-
-    constexpr iterator insert_copies(iterator pos, size_type count, const_reference value) {
-        if(count == 0) {
-            return pos;
-        }
-
-        if(checked_size(size(), count) > capacity()) {
-            return insert_fill_reallocate(pos, count, value);
-        }
-        return insert_fill_inplace(pos, count, value);
-    }
-
-    template <typename... Args>
-    constexpr reference reallocate_and_emplace_back(Args&&... args) {
-        const auto old_size = size();
-        const auto new_size = checked_size(old_size, 1);
-        const auto new_capacity = next_capacity(new_size);
-        auto* new_begin = mem::allocate<value_type>(new_capacity);
-        auto* relocated_end = new_begin;
-        bool back_constructed = false;
-
-        KOTA_TRY {
-            mem::construct(counted_range(new_begin, old_size).end(), std::forward<Args>(args)...);
-            back_constructed = true;
-            relocated_end = mem::uninitialized_relocate(elements(), new_begin);
-        }
-        KOTA_CATCH_ALL() {
-            mem::destroy_range(std::ranges::subrange(new_begin, relocated_end));
-            if(back_constructed) {
-                mem::destroy(counted_range(new_begin, old_size).end());
-            }
-            mem::deallocate(new_begin, new_capacity);
-            KOTA_RETHROW();
-        }
-
-        commit_replacement(new_begin, new_size, new_capacity);
-        return back();
-    }
-
-    template <typename U>
-    constexpr iterator reallocate_and_insert_one(const_iterator pos, U&& value) {
-        const auto index = mem::range_length(range_to(pos));
-        const auto old_size = size();
-        const auto new_size = checked_size(old_size, 1);
-        const auto new_capacity = next_capacity(new_size);
-        auto guard = make_allocation_guard(new_capacity);
-
-        auto* out = mem::uninitialized_relocate(prefix(index), guard.data());
-        guard.mark(out);
-        mem::construct(out, std::forward<U>(value));
-        ++out;
-        guard.mark(out);
-        out = mem::uninitialized_relocate(suffix(index), out);
-        guard.mark(out);
-
-        commit_replacement(guard.release(), new_size, new_capacity);
-        return prefix(index).end();
-    }
-
-    template <typename U>
-    constexpr iterator insert_one_impl(const_iterator pos, U&& value) {
-        const auto index = mem::range_length(range_to(pos));
-
-        if(index == size()) {
-            emplace_back(std::forward<U>(value));
-            return end() - 1;
-        }
-
-        if(size() == capacity()) {
-            return reallocate_and_insert_one(pos, std::forward<U>(value));
-        }
-
-        auto insert_pos = prefix(index).end();
-        auto old_end = end();
-
-        mem::construct(old_end, std::move(*(old_end - 1)));
-        this->set_size(size() + 1);
-        std::ranges::move_backward(insert_pos, old_end - 1, old_end);
-        *insert_pos = std::forward<U>(value);
-        return insert_pos;
-    }
-
-    constexpr iterator insert_fill_reallocate(const_iterator pos,
-                                              size_type count,
-                                              const_reference value) {
-        const auto index = mem::range_length(range_to(pos));
-        const auto old_size = size();
-        const auto new_size = checked_size(old_size, count);
-        const auto new_capacity = next_capacity(new_size);
-        auto guard = make_allocation_guard(new_capacity);
-
-        auto* out = mem::uninitialized_relocate(prefix(index), guard.data());
-        guard.mark(out);
-        out = mem::uninitialized_fill(counted_range(out, count), value);
-        guard.mark(out);
-        out = mem::uninitialized_relocate(suffix(index), out);
-        guard.mark(out);
-
-        commit_replacement(guard.release(), new_size, new_capacity);
-        return prefix(index).end();
-    }
-
-    constexpr iterator insert_fill_inplace(const_iterator pos,
-                                           size_type count,
-                                           const_reference value) {
-        const auto index = mem::range_length(range_to(pos));
-        auto insert_pos = prefix(index).end();
-
-        if(index == size()) {
-            append(count, value);
-            return prefix(index).end();
-        }
-
-        auto old_end = end();
-        const auto elems_after = static_cast<size_type>(old_end - insert_pos);
-
-        if(elems_after > count) {
-            mem::uninitialized_copy(mem::move_range(old_end - count, old_end), old_end);
-            this->set_size(size() + count);
-            std::ranges::move_backward(insert_pos, old_end - count, old_end);
-            std::ranges::fill_n(insert_pos, count, value);
-            return insert_pos;
-        }
-
-        auto* middle = mem::uninitialized_fill(counted_range(old_end, count - elems_after), value);
-        middle = mem::uninitialized_copy(mem::move_range(insert_pos, old_end), middle);
-        this->set_size(size() + count);
-        std::ranges::fill_n(insert_pos, elems_after, value);
-        return insert_pos;
-    }
-
-    template <std::ranges::forward_range Range>
-    constexpr iterator insert_range_reallocate(const_iterator pos, Range&& range, size_type count) {
-        const auto index = mem::range_length(range_to(pos));
-        const auto old_size = size();
-        const auto new_size = checked_size(old_size, count);
-        const auto new_capacity = next_capacity(new_size);
-        auto guard = make_allocation_guard(new_capacity);
-
-        auto* out = mem::uninitialized_relocate(prefix(index), guard.data());
-        guard.mark(out);
-        out = mem::uninitialized_copy(std::forward<Range>(range), out);
-        guard.mark(out);
-        out = mem::uninitialized_relocate(suffix(index), out);
-        guard.mark(out);
-
-        commit_replacement(guard.release(), new_size, new_capacity);
-        return prefix(index).end();
-    }
-
-    template <std::ranges::forward_range Range>
-    constexpr iterator insert_aliased_forward_range(const_iterator pos,
-                                                    Range&& range,
-                                                    size_type count) {
-        auto guard = make_allocation_guard(count);
-        auto* out = mem::uninitialized_copy(std::forward<Range>(range), guard.data());
-        guard.mark(out);
-
-        auto temp_range = std::ranges::subrange(guard.data(), out);
-        if(checked_size(size(), count) > capacity()) {
-            return insert_range_reallocate(pos, temp_range, count);
-        }
-
-        return insert_range_inplace(pos, temp_range, count);
-    }
-
-    template <std::ranges::forward_range Range>
-    constexpr iterator insert_range_inplace(const_iterator pos, Range&& range, size_type count) {
-        const auto index = mem::range_length(range_to(pos));
-        auto insert_pos = prefix(index).end();
-
-        if(index == size()) {
-            append(std::forward<Range>(range));
-            return prefix(index).end();
-        }
-
-        auto old_end = end();
-        const auto elems_after = static_cast<size_type>(old_end - insert_pos);
-
-        if(elems_after > count) {
-            mem::uninitialized_copy(mem::move_range(old_end - count, old_end), old_end);
-            this->set_size(size() + count);
-            std::ranges::move_backward(insert_pos, old_end - count, old_end);
-            std::ranges::copy(range, insert_pos);
-            return insert_pos;
-        }
-
-        auto first_part_end = std::ranges::next(std::ranges::begin(range), elems_after);
-        auto tail_range = std::ranges::subrange(first_part_end, std::ranges::end(range));
-        auto* middle = mem::uninitialized_copy(tail_range, old_end);
-        middle = mem::uninitialized_copy(mem::move_range(insert_pos, old_end), middle);
-        this->set_size(size() + count);
-        std::ranges::copy(std::ranges::subrange(std::ranges::begin(range), first_part_end),
-                          insert_pos);
-        return insert_pos;
-    }
-
-    template <std::ranges::forward_range Range>
-    constexpr iterator insert_forward_range(const_iterator pos, Range&& range) {
-        const auto count = mem::range_length(range);
-        if(count == 0) {
-            return const_cast<pointer>(pos);
-        }
-
-        if(range_references_storage(range)) {
-            return insert_aliased_forward_range(pos, std::forward<Range>(range), count);
-        }
-
-        assert_safe_to_add_range(range);
-        if(checked_size(size(), count) > capacity()) {
-            return insert_range_reallocate(pos, std::forward<Range>(range), count);
-        }
-
-        return insert_range_inplace(pos, std::forward<Range>(range), count);
-    }
-
-    template <std::ranges::input_range Range>
-    constexpr iterator insert_input_range(const_iterator pos, Range&& range) {
-        size_type index = mem::range_length(range_to(pos));
-        const auto original_index = index;
-        for(auto&& value: range) {
-            insert(prefix(index).end(), std::forward<decltype(value)>(value));
-            ++index;
-        }
-        return prefix(original_index).end();
-    }
-
-    constexpr void steal_allocation_from(hybrid_vector& other) noexcept {
-        this->m_begin = other.m_begin;
-        this->m_size = other.m_size;
-        this->m_capacity = other.m_capacity;
-        other.reset_to_small(0);
-    }
-
-protected:
-    /// Adopt a pre-allocated buffer. The buffer must have been allocated with
-    /// mem::allocate<value_type>. After this call, the hybrid_vector owns the
-    /// buffer and will deallocate it on destruction.
-    constexpr void adopt_allocation(pointer data, size_type count, size_type cap) noexcept {
-        assert(count <= cap);
-        destroy_elements();
-        if(begin() != inline_begin()) {
-            mem::deallocate(this->m_begin, this->m_capacity);
-        }
-        this->m_begin = data;
-        this->m_size = static_cast<size_storage_type>(count);
-        this->m_capacity = static_cast<size_storage_type>(cap);
-    }
-
-    constexpr void move_from_other(hybrid_vector&& other) {
-        if(other.empty()) {
-            return;
-        }
-
-        if(should_steal_allocation_from(other)) {
-            steal_allocation_from(other);
-            return;
-        }
-
-        append(mem::move_range(other.begin(), other.end()));
-        other.clear();
-    }
-
-    constexpr void copy_assign_from_other(const hybrid_vector& other) {
-        const auto other_size = other.size();
-        size_type current_size = size();
-
-        if(current_size >= other_size) {
-            if(other_size != 0) {
-                std::ranges::copy_n(other.begin(), other_size, begin());
-            }
-            mem::destroy_range(suffix(other_size));
-            this->set_size(other_size);
-            return;
-        }
-
-        if(capacity() < other_size) {
-            clear();
-            current_size = 0;
-            reserve(other_size);
-        } else if(current_size != 0) {
-            std::ranges::copy_n(other.begin(), current_size, begin());
-        }
-
-        mem::uninitialized_copy(other.suffix(current_size), prefix(current_size).end());
-        this->set_size(other_size);
-    }
-
-    constexpr void move_assign_from_other(hybrid_vector&& other) {
-        if(should_steal_allocation_from(other)) {
-            auto old_begin = this->m_begin;
-            const auto old_capacity = this->m_capacity;
-            const auto was_inline = old_begin == inline_begin();
-            destroy_elements();
-            if(!was_inline) {
-                mem::deallocate(old_begin, old_capacity);
-            }
-            steal_allocation_from(other);
-            return;
-        }
-
-        const auto other_size = other.size();
-        size_type current_size = size();
-
-        if(current_size >= other_size) {
-            if(other_size != 0) {
-                std::ranges::move(other.begin(), other.end(), begin());
-            }
-            mem::destroy_range(suffix(other_size));
-            this->set_size(other_size);
+    /// Takes `other`'s allocation, or moves its elements when they are inline, and leaves it
+    /// empty. Through this type `other`'s inline capacity is unknown, so taking its
+    /// allocation leaves it a capacity of 0 until it grows again.
+    constexpr hybrid_vector& operator=(hybrid_vector&& other) {
+        if(!same_object(other) && !take_allocation(other)) {
+            assign_items(std::make_move_iterator(other.begin()), other.size());
             other.clear();
-            return;
         }
-
-        if(capacity() < other_size) {
-            clear();
-            current_size = 0;
-            reserve(other_size);
-        } else if(current_size != 0) {
-            std::ranges::move(other.prefix(current_size), begin());
-        }
-
-        mem::uninitialized_copy(mem::move_range(other.prefix(current_size).end(), other.end()),
-                                prefix(current_size).end());
-        this->set_size(other_size);
-        other.clear();
+        return *this;
     }
 
-public:
     constexpr ~hybrid_vector() {
         destroy_elements();
-        if(begin() != inline_begin()) {
-            mem::deallocate(this->m_begin, this->m_capacity);
-        }
+        free_allocation();
     }
 
     [[nodiscard]] constexpr iterator begin() noexcept {
-        return this->m_begin;
+        return head;
     }
 
     [[nodiscard]] constexpr const_iterator begin() const noexcept {
-        return this->m_begin;
+        return head;
     }
 
     [[nodiscard]] constexpr const_iterator cbegin() const noexcept {
@@ -837,11 +171,11 @@ public:
     }
 
     [[nodiscard]] constexpr iterator end() noexcept {
-        return prefix(size()).end();
+        return head + used;
     }
 
     [[nodiscard]] constexpr const_iterator end() const noexcept {
-        return prefix(size()).end();
+        return head + used;
     }
 
     [[nodiscard]] constexpr const_iterator cend() const noexcept {
@@ -873,15 +207,15 @@ public:
     }
 
     [[nodiscard]] constexpr pointer data() noexcept {
-        return begin();
+        return head;
     }
 
     [[nodiscard]] constexpr const_pointer data() const noexcept {
-        return begin();
+        return head;
     }
 
     [[nodiscard]] constexpr size_type size() const noexcept {
-        return m_size;
+        return used;
     }
 
     [[nodiscard]] constexpr size_type size_in_bytes() const noexcept {
@@ -889,71 +223,74 @@ public:
     }
 
     [[nodiscard]] constexpr bool empty() const noexcept {
-        return m_size == 0;
+        return used == 0;
     }
 
     [[nodiscard]] constexpr size_type capacity() const noexcept {
-        return m_capacity;
+        return room;
     }
 
     [[nodiscard]] constexpr size_type capacity_in_bytes() const noexcept {
         return capacity() * sizeof(value_type);
     }
 
+    /// Whether the elements are in the inline buffer; never in constant evaluation, where
+    /// every buffer is allocated.
     [[nodiscard]] constexpr bool inlined() const noexcept {
-        if(std::is_constant_evaluated()) {
+        if consteval {
             return false;
+        } else {
+            return !on_heap();
         }
-        return begin() == inline_begin();
     }
 
     [[nodiscard]] constexpr size_type max_size() const noexcept {
-        return (std::min)(static_cast<size_type>((std::numeric_limits<size_storage_type>::max)()),
+        return (std::min)(static_cast<size_type>((std::numeric_limits<compact_size_type>::max)()),
                           (std::numeric_limits<size_type>::max)() / sizeof(value_type));
     }
 
     [[nodiscard]] constexpr reference operator[](size_type idx) noexcept {
         assert(idx < size());
-        return begin()[idx];
+        return head[idx];
     }
 
     [[nodiscard]] constexpr const_reference operator[](size_type idx) const noexcept {
         assert(idx < size());
-        return begin()[idx];
+        return head[idx];
     }
 
     constexpr reference at(size_type idx) {
         if(idx >= size()) {
             KOTA_THROW(std::out_of_range("small_vector index out of range"));
         }
-        return (*this)[idx];
+        return head[idx];
     }
 
     constexpr const_reference at(size_type idx) const {
         if(idx >= size()) {
             KOTA_THROW(std::out_of_range("small_vector index out of range"));
         }
-        return (*this)[idx];
+        return head[idx];
     }
 
     [[nodiscard]] constexpr reference front() noexcept {
         assert(!empty());
-        return begin()[0];
+        return head[0];
     }
 
     [[nodiscard]] constexpr const_reference front() const noexcept {
         assert(!empty());
-        return begin()[0];
+        return head[0];
     }
 
     [[nodiscard]] constexpr reference back() noexcept {
         assert(!empty());
-        return end()[-1];
+        return head[used - 1];
     }
 
     [[nodiscard]] constexpr const_reference back() const noexcept {
         assert(!empty());
-        return end()[-1];
+        return head[used - 1];
     }
 
     constexpr void clear() noexcept {
@@ -962,79 +299,65 @@ public:
 
     constexpr void reserve(size_type new_capacity) {
         if(new_capacity > capacity()) {
-            grow_to(new_capacity);
+            rebuild(next_capacity(new_capacity), size(), [this](pointer first) {
+                return mem::uninitialized_move(begin(), end(), first);
+            });
         }
     }
 
     constexpr void resize(size_type count) {
-        resize_impl<false>(count);
-    }
-
-    constexpr void resize_for_overwrite(size_type count) {
-        resize_impl<true>(count);
-    }
-
-    constexpr void resize(size_type count, value_type value)
-        requires (takes_param_by_value) {
-        resize_fill(count, value);
-    }
-
-    constexpr void resize(size_type count, const_reference value)
-        requires (!takes_param_by_value) {
-        if(count > capacity() && references_storage(std::addressof(value))) {
-            auto tmp = make_temporary(value);
-            resize_fill(count, tmp.get());
+        if(count <= size()) {
+            truncate(count);
             return;
         }
+        reserve(count);
+        mem::uninitialized_value_construct(end(), head + count);
+        set_size(count);
+    }
 
-        resize_fill(count, value);
+    /// Like resize(count), but default-initializes the new elements.
+    constexpr void resize_for_overwrite(size_type count) {
+        if(count <= size()) {
+            truncate(count);
+            return;
+        }
+        reserve(count);
+        mem::uninitialized_default_construct(end(), head + count);
+        set_size(count);
+    }
+
+    constexpr void resize(size_type count, const_reference value) {
+        if(count <= size()) {
+            truncate(count);
+            return;
+        }
+        append(count - size(), value);
     }
 
     constexpr void truncate(size_type count) {
         assert(count <= size());
-        shrink_to_size(count);
+        std::ranges::destroy(head + count, end());
+        set_size(count);
     }
 
-    constexpr void push_back(value_type value)
-        requires (takes_param_by_value) {
+    constexpr void push_back(const_reference value) {
         emplace_back(value);
     }
 
-    constexpr void push_back(const_reference value)
-        requires (!takes_param_by_value) {
-        if(references_storage(std::addressof(value))) {
-            auto tmp = make_temporary(value);
-            emplace_back(tmp.get());
-            return;
-        }
-        emplace_back(value);
-    }
-
-    constexpr void push_back(value_type&& value)
-        requires (!takes_param_by_value) {
-        if(references_storage(std::addressof(value))) {
-            auto tmp = make_temporary(std::move(value));
-            emplace_back(std::move(tmp.release()));
-            return;
-        }
+    constexpr void push_back(value_type&& value) {
         emplace_back(std::move(value));
     }
 
     template <typename... Args>
     constexpr reference emplace_back(Args&&... args) {
-        if(size() == capacity()) {
-            return reallocate_and_emplace_back(std::forward<Args>(args)...);
-        }
-
-        mem::construct(end(), std::forward<Args>(args)...);
-        this->set_size(size() + 1);
+        append_with(1, [&](pointer tail) { std::construct_at(tail, std::forward<Args>(args)...); });
         return back();
     }
 
     constexpr void pop_back() noexcept {
         assert(!empty());
-        this->set_size(size() - 1);
-        mem::destroy(end());
+        set_size(size() - 1);
+        std::destroy_at(end());
     }
 
     constexpr void pop_back_n(size_type count) noexcept {
@@ -1048,37 +371,20 @@ public:
         return result;
     }
 
-    constexpr void append(size_type count, value_type value)
-        requires (takes_param_by_value) {
-        append_copies(count, value);
-    }
-
-    constexpr void append(size_type count, const_reference value)
-        requires (!takes_param_by_value) {
-        if(references_storage(std::addressof(value))) {
-            auto tmp = make_temporary(value);
-            append_copies(count, tmp.get());
-            return;
-        }
-
-        append_copies(count, value);
+    constexpr void append(size_type count, const_reference value) {
+        append_with(count,
+                    [&](pointer tail) { mem::uninitialized_fill(tail, tail + count, value); });
     }
 
     template <detail::small_vector_compatible_range<value_type> Range>
     constexpr void append(Range&& range) {
         if constexpr(std::ranges::forward_range<Range>) {
-            assert_safe_to_add_range(range);
-            const auto count = mem::range_length(range);
-            if(count == 0) {
-                return;
-            }
-
-            reserve_for_append(count);
-            mem::uninitialized_copy(std::forward<Range>(range), end());
-            this->set_size(size() + count);
+            append_with(mem::range_length(range), [&](pointer tail) {
+                mem::uninitialized_copy(std::forward<Range>(range), tail);
+            });
         } else {
-            for(auto&& current: range) {
-                emplace_back(std::forward<decltype(current)>(current));
+            for(auto&& value: range) {
+                emplace_back(std::forward<decltype(value)>(value));
             }
         }
     }
@@ -1091,6 +397,8 @@ public:
         append(std::ranges::subrange(other.begin(), other.end()));
     }
 
+    /// Moves `other`'s elements to the end and leaves it empty; appending a vector to itself
+    /// this way does nothing.
     constexpr void append(hybrid_vector&& other) {
         if(same_object(other)) {
             return;
@@ -1099,25 +407,37 @@ public:
         other.clear();
     }
 
-    constexpr void assign(size_type count, value_type value)
-        requires (takes_param_by_value) {
-        assign_copies(count, value);
-    }
-
-    constexpr void assign(size_type count, const_reference value)
-        requires (!takes_param_by_value) {
-        if(references_storage(std::addressof(value))) {
-            auto tmp = make_temporary(value);
-            assign_copies(count, tmp.get());
+    constexpr void assign(size_type count, const_reference value) {
+        if(count > capacity()) {
+            // The copies are made in the new allocation while `value`, which may be an
+            // element, is still in place.
+            rebuild(next_capacity(count), count, [&](pointer first) {
+                return mem::uninitialized_fill(first, first + count, value);
+            });
             return;
         }
-
-        assign_copies(count, value);
+        std::ranges::fill_n(begin(), (std::min)(count, size()), value);
+        if(count > size()) {
+            mem::uninitialized_fill(end(), head + count, value);
+        } else {
+            std::ranges::destroy(head + count, end());
+        }
+        set_size(count);
     }
 
     template <detail::small_vector_compatible_range<value_type> Range>
     constexpr void assign(Range&& range) {
-        assert_safe_to_reference_after_clear(range);
+        if constexpr(std::ranges::forward_range<Range>) {
+            if(range_references_elements(range)) {
+                // Clearing destroys what the range views: copy it out first.
+                const auto count = mem::range_length(range);
+                mem::AllocationGuard<value_type> copies(mem::allocate<value_type>(count), count);
+                copies.mark(mem::uninitialized_copy(range, copies.data()));
+                destroy_elements();
+                append(mem::move_range(copies.data(), copies.data() + count));
+                return;
+            }
+        }
         destroy_elements();
         append(std::forward<Range>(range));
     }
@@ -1128,65 +448,62 @@ public:
     }
 
     constexpr void assign(const hybrid_vector& other) {
-        if(same_object(other)) {
-            return;
-        }
-        destroy_elements();
-        append(std::ranges::subrange(other.begin(), other.end()));
+        *this = other;
     }
 
     constexpr void assign(hybrid_vector&& other) {
-        if(same_object(other)) {
-            return;
+        *this = std::move(other);
+    }
+
+    constexpr iterator insert(iterator pos, const_reference value) {
+        return emplace(pos, value);
+    }
+
+    constexpr iterator insert(iterator pos, value_type&& value) {
+        assert(valid_insert_position(pos));
+        if(references_elements(std::addressof(value))) {
+            return emplace(pos, std::move(value));
         }
-
-        move_assign_from_other(std::move(other));
+        return insert_one(index_of(pos), std::move(value));
     }
 
-    constexpr iterator insert(iterator pos, value_type value)
-        requires (takes_param_by_value) {
+    constexpr iterator insert(iterator pos, size_type count, const_reference value) {
         assert(valid_insert_position(pos));
-        return insert_one_impl(pos, value);
-    }
-
-    constexpr iterator insert(iterator pos, const_reference value)
-        requires (!takes_param_by_value) {
-        assert(valid_insert_position(pos));
-        auto tmp = make_temporary(value);
-        return insert_one_impl(pos, std::move(tmp.release()));
-    }
-
-    constexpr iterator insert(iterator pos, value_type&& value)
-        requires (!takes_param_by_value) {
-        assert(valid_insert_position(pos));
-        if(references_storage(std::addressof(value))) {
-            auto tmp = make_temporary(std::move(value));
-            return insert_one_impl(pos, std::move(tmp.release()));
+        if(count == 0) {
+            return pos;
         }
-        return insert_one_impl(pos, std::move(value));
-    }
-
-    constexpr iterator insert(iterator pos, size_type count, value_type value)
-        requires (takes_param_by_value) {
-        assert(valid_insert_position(pos));
-        return insert_copies(pos, count, value);
-    }
-
-    constexpr iterator insert(iterator pos, size_type count, const_reference value)
-        requires (!takes_param_by_value) {
-        assert(valid_insert_position(pos));
-        auto tmp = make_temporary(value);
-        return insert_copies(pos, count, tmp.get());
+        // The insertion moves the elements, and `value` may be one of them.
+        const value_type copy(value);
+        return insert_items(
+            index_of(pos),
+            count,
+            [&](pointer dest, size_type from) {
+                return mem::uninitialized_fill(dest, dest + (count - from), copy);
+            },
+            [&](pointer dest, size_type n) { std::fill_n(dest, n, copy); });
     }
 
     template <detail::small_vector_compatible_range<value_type> Range>
     constexpr iterator insert(iterator pos, Range&& range) {
         assert(valid_insert_position(pos));
+        const auto index = index_of(pos);
         if constexpr(std::ranges::forward_range<Range>) {
-            return insert_forward_range(pos, std::forward<Range>(range));
+            const auto count = mem::range_length(range);
+            if(!range_references_elements(range)) {
+                return insert_from(index, count, std::ranges::begin(range));
+            }
+            // The insertion moves the elements the range views: copy them out first.
+            mem::AllocationGuard<value_type> copies(mem::allocate<value_type>(count), count);
+            copies.mark(mem::uninitialized_copy(range, copies.data()));
+            return insert_from(index, count, std::make_move_iterator(copies.data()));
         } else {
-            assert_safe_to_add_range(range);
-            return insert_input_range(pos, std::forward<Range>(range));
+            // An input range is read once: each element is inserted as it comes.
+            auto at = index;
+            for(auto&& value: range) {
+                insert(head + at, std::forward<decltype(value)>(value));
+                ++at;
+            }
+            return head + index;
         }
     }
 
@@ -1196,8 +513,10 @@ public:
 
     template <typename... Args>
     constexpr iterator emplace(iterator pos, Args&&... args) {
-        auto tmp = make_temporary(std::forward<Args>(args)...);
-        return insert(pos, std::move(tmp.release()));
+        assert(valid_insert_position(pos));
+        // The arguments may name elements the insertion moves.
+        value_type value(std::forward<Args>(args)...);
+        return insert_one(index_of(pos), std::move(value));
     }
 
     constexpr iterator erase(const_iterator pos) {
@@ -1207,15 +526,12 @@ public:
 
     constexpr iterator erase(const_iterator first, const_iterator last) {
         assert(valid_erase_range(first, last));
-        if(first == last) {
-            return const_cast<pointer>(first);
+        auto* erase_begin = head + index_of(first);
+        auto* erase_end = head + index_of(last);
+        if(erase_begin != erase_end) {
+            auto* new_end = std::ranges::move(erase_end, end(), erase_begin).out;
+            truncate(index_of(new_end));
         }
-
-        auto erase_begin = const_cast<pointer>(first);
-        auto erase_end = const_cast<pointer>(last);
-        auto new_end = std::ranges::move(erase_end, end(), erase_begin).out;
-        mem::destroy_range(std::ranges::subrange(new_end, end()));
-        this->set_size(static_cast<size_type>(new_end - begin()));
         return erase_begin;
     }
 
@@ -1223,41 +539,26 @@ public:
         if(same_object(other)) {
             return;
         }
-
-        if(begin() != inline_begin() && other.begin() != other.inline_begin()) {
-            std::swap(this->m_begin, other.m_begin);
-            std::swap(this->m_size, other.m_size);
-            std::swap(this->m_capacity, other.m_capacity);
+        if(on_heap() && other.on_heap() && head != other.inline_begin() &&
+           other.head != inline_begin()) {
+            std::swap(head, other.head);
+            std::swap(used, other.used);
+            std::swap(room, other.room);
             return;
         }
-
         reserve(other.size());
         other.reserve(size());
-
-        const size_type shared = (std::min)(size(), other.size());
-
-        for(size_type i = 0; i != shared; ++i) {
-            std::swap((*this)[i], other[i]);
-        }
-
-        if(size() > other.size()) {
-            const auto diff = size() - other.size();
-            mem::uninitialized_copy(mem::move_range(prefix(shared).end(), end()), other.end());
-            other.set_size(other.size() + diff);
-            mem::destroy_range(suffix(shared));
-            this->set_size(shared);
-        } else if(other.size() > size()) {
-            const auto diff = other.size() - size();
-            mem::uninitialized_copy(mem::move_range(other.prefix(shared).end(), other.end()),
-                                    end());
-            this->set_size(size() + diff);
-            mem::destroy_range(other.suffix(shared));
-            other.set_size(shared);
-        }
+        const auto shared = (std::min)(size(), other.size());
+        std::swap_ranges(begin(), begin() + shared, other.begin());
+        auto& longer = size() > other.size() ? *this : other;
+        auto& shorter = size() > other.size() ? other : *this;
+        mem::uninitialized_move(longer.begin() + shared, longer.end(), shorter.end());
+        shorter.set_size(longer.size());
+        longer.truncate(shared);
     }
 
     friend constexpr bool operator==(const hybrid_vector& lhs, const hybrid_vector& rhs) {
-        return lhs.size() == rhs.size() && std::ranges::equal(lhs, rhs);
+        return std::ranges::equal(lhs, rhs);
     }
 
     friend constexpr auto operator<=>(const hybrid_vector& lhs, const hybrid_vector& rhs) {
@@ -1267,12 +568,342 @@ public:
                                                       rhs.end(),
                                                       detail::synth_three_way{});
     }
+
+protected:
+    constexpr explicit hybrid_vector(size_type inline_capacity) noexcept : head(nullptr), room(0) {
+        reset_to_small(inline_capacity);
+    }
+
+    /// The inline buffer; null in constant evaluation, where every buffer is allocated.
+    [[nodiscard]] constexpr pointer inline_begin() noexcept {
+        if consteval {
+            return nullptr;
+        } else {
+            return reinterpret_cast<pointer>(reinterpret_cast<std::byte*>(this) +
+                                             offsetof(alignment_and_size, first_element));
+        }
+    }
+
+    [[nodiscard]] constexpr const_pointer inline_begin() const noexcept {
+        if consteval {
+            return nullptr;
+        } else {
+            return reinterpret_cast<const_pointer>(reinterpret_cast<const std::byte*>(this) +
+                                                   offsetof(alignment_and_size, first_element));
+        }
+    }
+
+    /// Makes the empty inline buffer, of `inline_capacity` elements, the vector's buffer,
+    /// forgetting any allocation.
+    constexpr void reset_to_small(size_type inline_capacity) noexcept {
+        head = inline_begin();
+        used = 0;
+        if consteval {
+            room = 0;
+        } else {
+            room = static_cast<compact_size_type>(inline_capacity);
+        }
+    }
+
+    [[nodiscard]] constexpr bool on_heap() const noexcept {
+        return head != inline_begin();
+    }
+
+    constexpr void set_size(size_type count) noexcept {
+        assert(count <= capacity());
+        used = static_cast<compact_size_type>(count);
+    }
+
+    /// Makes `data` the vector's buffer, holding `count` elements with room for `capacity`:
+    /// an allocation from allocate() or mem::allocate<value_type>, or the inline buffer. The
+    /// old elements are destroyed and the old allocation is freed.
+    constexpr void adopt_allocation(pointer data, size_type count, size_type capacity) noexcept {
+        assert(count <= capacity);
+        destroy_elements();
+        free_allocation();
+        head = data;
+        used = static_cast<compact_size_type>(count);
+        room = static_cast<compact_size_type>(capacity);
+    }
+
+    /// Moves `other`'s elements into this empty vector, constructing rather than assigning
+    /// them, and leaves `other` empty: by taking its allocation when it has one, as operator=
+    /// does.
+    constexpr void take_elements(hybrid_vector& other) {
+        if(!take_allocation(other)) {
+            append(mem::move_range(other.begin(), other.end()));
+            other.clear();
+        }
+    }
+
+    /// An allocation for `capacity` elements. An inline buffer of no elements ends the
+    /// object, and an allocator can hand out the address right after it, which would read as
+    /// the inline buffer and so never be freed: such an allocation is traded for another. A
+    /// move or a swap does not take an allocation from another vector that starts there
+    /// either, and moves the elements instead.
+    [[nodiscard]] constexpr pointer allocate(size_type capacity) {
+        auto* allocation = mem::allocate<value_type>(capacity);
+        if(allocation != inline_begin()) [[likely]] {
+            return allocation;
+        }
+        auto* other = mem::allocate<value_type>(capacity);
+        mem::deallocate(allocation, capacity);
+        return other;
+    }
+
+    /// Replaces the buffer with an allocation of room for `new_room`, in which `fill(first)`
+    /// constructs `count` elements, which may read the old ones, and returns their end.
+    template <typename Fill>
+    constexpr void rebuild(size_type new_room, size_type count, Fill fill) {
+        mem::AllocationGuard<value_type> guard(allocate(new_room), new_room);
+        guard.mark(fill(guard.data()));
+        adopt_allocation(guard.release(), count, new_room);
+    }
+
+    /// Adds `count` elements, which `construct(tail)` builds from `tail` on. It may read the
+    /// elements: when the vector grows, it builds the new ones in the new allocation while the
+    /// old ones are still in place, and moves those after.
+    template <typename Construct>
+    constexpr void append_with(size_type count, Construct construct) {
+        const auto new_size = checked_size(size(), count);
+        if(new_size <= capacity()) {
+            construct(end());
+            set_size(new_size);
+            return;
+        }
+        const auto new_room = next_capacity(new_size);
+        auto* new_head = allocate(new_room);
+        auto* tail = new_head + size();
+        KOTA_TRY {
+            construct(tail);
+        }
+        KOTA_CATCH_ALL() {
+            mem::deallocate(new_head, new_room);
+            KOTA_RETHROW();
+        }
+        KOTA_TRY {
+            mem::uninitialized_move(begin(), end(), new_head);
+        }
+        KOTA_CATCH_ALL() {
+            std::ranges::destroy(tail, new_head + new_size);
+            mem::deallocate(new_head, new_room);
+            KOTA_RETHROW();
+        }
+        adopt_allocation(new_head, new_size, new_room);
+    }
+
+private:
+    using compact_size_type = detail::small_vector_size_type<value_type>;
+
+    constexpr static std::size_t header_alignment = alignof(pointer) > alignof(compact_size_type)
+                                                        ? alignof(pointer)
+                                                        : alignof(compact_size_type);
+
+    struct alignment_and_size {
+        alignas(header_alignment) std::byte header[sizeof(pointer) + 2 * sizeof(compact_size_type)];
+        alignas(value_type) std::byte first_element[sizeof(value_type)];
+    };
+
+    /// The first element, in the inline buffer or an allocation.
+    pointer head;
+    compact_size_type used = 0;
+    /// How many elements the buffer has room for.
+    compact_size_type room;
+
+    [[nodiscard]] constexpr bool same_object(const hybrid_vector& other) const noexcept {
+        return this == std::addressof(other);
+    }
+
+    [[nodiscard]] constexpr size_type index_of(const_iterator pos) const noexcept {
+        return static_cast<size_type>(pos - begin());
+    }
+
+    [[nodiscard]] constexpr bool valid_insert_position(const_iterator pos) const noexcept {
+        std::less<const_pointer> less;
+        return !less(pos, begin()) && !less(end(), pos);
+    }
+
+    [[nodiscard]] constexpr bool valid_erase_range(const_iterator first,
+                                                   const_iterator last) const noexcept {
+        std::less<const_pointer> less;
+        return !less(first, begin()) && !less(last, first) && !less(end(), last);
+    }
+
+    [[nodiscard]] constexpr bool references_elements(const_pointer ptr) const noexcept {
+        if consteval {
+            // Pointers into different objects do not order in constant evaluation.
+            return std::ranges::any_of(*this, [ptr](const value_type& element) {
+                return std::addressof(element) == ptr;
+            });
+        } else {
+            return mem::pointer_in_range(ptr, begin(), end());
+        }
+    }
+
+    template <std::ranges::forward_range Range>
+    [[nodiscard]] constexpr bool range_references_elements(Range& range) const noexcept {
+        using reference_type = std::ranges::range_reference_t<Range>;
+        if constexpr(!std::is_reference_v<reference_type> ||
+                     !std::same_as<std::remove_cvref_t<reference_type>, value_type>) {
+            return false;
+        } else if constexpr(std::ranges::contiguous_range<Range>) {
+            // A contiguous range that views any element has its first or last one among them.
+            const auto count = mem::range_length(range);
+            const auto* first = std::ranges::data(range);
+            return count != 0 &&
+                   (references_elements(first) || references_elements(first + (count - 1)));
+        } else {
+            return std::ranges::any_of(range, [this](const value_type& element) {
+                return references_elements(std::addressof(element));
+            });
+        }
+    }
+
+    [[nodiscard]] constexpr size_type checked_size(size_type base, size_type extra) const {
+        if(extra > max_size() - base) {
+            KOTA_THROW(std::length_error("small_vector capacity overflow"));
+        }
+        return base + extra;
+    }
+
+    /// The capacity to grow to for at least `min_capacity` elements: twice the current one,
+    /// within max_size().
+    [[nodiscard]] constexpr size_type next_capacity(size_type min_capacity) const {
+        if(min_capacity > max_size()) {
+            KOTA_THROW(std::length_error("small_vector capacity overflow"));
+        }
+        const auto doubled =
+            capacity() > max_size() / 2 ? max_size() : (std::max)(2 * capacity(), size_type(1));
+        return (std::max)(doubled, min_capacity);
+    }
+
+    constexpr void destroy_elements() noexcept {
+        std::ranges::destroy(begin(), end());
+        used = 0;
+    }
+
+    constexpr void free_allocation() noexcept {
+        if(on_heap()) {
+            mem::deallocate(head, room);
+        }
+    }
+
+    /// Takes `other`'s allocation, and its elements with it, when it has one this vector can
+    /// hold (see allocate()); this vector's elements and allocation go first. `other` is left
+    /// with neither, and a capacity of 0.
+    constexpr bool take_allocation(hybrid_vector& other) noexcept {
+        if(!other.on_heap() || other.head == inline_begin()) {
+            return false;
+        }
+        adopt_allocation(other.head, other.used, other.room);
+        other.reset_to_small(0);
+        return true;
+    }
+
+    /// Makes the elements copies of the `count` from `first` on, which are not this vector's,
+    /// reusing its elements and buffer where they suffice.
+    template <typename Iterator>
+    constexpr void assign_items(Iterator first, size_type count) {
+        if(count > capacity()) {
+            rebuild(next_capacity(count), count, [&](pointer dest) {
+                return mem::uninitialized_copy(counted(first, count), dest);
+            });
+            return;
+        }
+        const auto kept = (std::min)(count, size());
+        std::ranges::copy(counted(first, kept), begin());
+        if(count > size()) {
+            mem::uninitialized_copy(counted(std::ranges::next(first, kept), count - kept), end());
+        } else {
+            std::ranges::destroy(head + count, end());
+        }
+        set_size(count);
+    }
+
+    /// The `count` elements from `first` on.
+    template <typename Iterator>
+    [[nodiscard]] constexpr static auto counted(Iterator first, size_type count) {
+        return std::views::counted(first, static_cast<std::iter_difference_t<Iterator>>(count));
+    }
+
+    /// Inserts `value`, which is not an element, at `index`.
+    template <typename U>
+    constexpr iterator insert_one(size_type index, U&& value) {
+        return insert_items(
+            index,
+            1,
+            [&](pointer dest, size_type from) {
+                return from == 0 ? std::construct_at(dest, std::forward<U>(value)) + 1 : dest;
+            },
+            [&](pointer dest, size_type n) {
+                if(n != 0) {
+                    *dest = std::forward<U>(value);
+                }
+            });
+    }
+
+    /// Inserts copies of the `count` elements from `first` on, which are not this vector's,
+    /// at `index`.
+    template <typename Iterator>
+    constexpr iterator insert_from(size_type index, size_type count, Iterator first) {
+        return insert_items(
+            index,
+            count,
+            [&](pointer dest, size_type from) {
+                return mem::uninitialized_copy(
+                    counted(std::ranges::next(first, from), count - from),
+                    dest);
+            },
+            [&](pointer dest, size_type n) { std::ranges::copy(counted(first, n), dest); });
+    }
+
+    /// Inserts `count` elements at `index` and returns the first. `construct(dest, from)`
+    /// constructs those from the `from`-th on at uninitialized `dest` and returns their end,
+    /// and `assign(dest, n)` assigns the first `n` over [dest, dest + n); neither reads this
+    /// vector.
+    template <typename Construct, typename Assign>
+    constexpr iterator
+        insert_items(size_type index, size_type count, Construct construct, Assign assign) {
+        const auto new_size = checked_size(size(), count);
+        if(new_size > capacity()) {
+            const auto new_room = next_capacity(new_size);
+            mem::AllocationGuard<value_type> guard(allocate(new_room), new_room);
+            auto* out = mem::uninitialized_move(begin(), head + index, guard.data());
+            guard.mark(out);
+            out = construct(out, 0);
+            guard.mark(out);
+            guard.mark(mem::uninitialized_move(head + index, end(), out));
+            adopt_allocation(guard.release(), new_size, new_room);
+            return head + index;
+        }
+
+        auto* gap = head + index;
+        auto* old_end = end();
+        const auto after = static_cast<size_type>(old_end - gap);
+        if(after > count) {
+            // The last `count` elements move into uninitialized memory, the rest move back
+            // over elements, and the new ones are assigned into the gap.
+            mem::uninitialized_move(old_end - count, old_end, old_end);
+            set_size(new_size);
+            std::move_backward(gap, old_end - count, old_end);
+            assign(gap, count);
+            return gap;
+        }
+        // The new elements that land past the old end are constructed there, the elements
+        // after the gap move behind them, and the rest of the new ones are assigned into the
+        // gap. The size grows after each step, so that an exception leaves no element unowned.
+        construct(old_end, after);
+        set_size(size() + count - after);
+        mem::uninitialized_move(gap, old_end, gap + count);
+        set_size(new_size);
+        assign(gap, after);
+        return gap;
+    }
 };
 
 template <typename T, unsigned int InlineCapacity = detail::default_buffer_size<T>::value>
 class small_vector : public hybrid_vector<T>, private detail::inline_buffer<T, InlineCapacity> {
     using base_type = hybrid_vector<T>;
-    using storage_base = detail::inline_buffer<T, InlineCapacity>;
 
 public:
     using typename base_type::const_reference;
@@ -1282,14 +913,6 @@ public:
 
     constexpr static size_type inline_capacity_v = InlineCapacity;
 
-private:
-    template <unsigned int OtherCapacity>
-    constexpr void move_from_typed_small_vector(small_vector<value_type, OtherCapacity>&& other) {
-        this->move_from_other(static_cast<base_type&&>(other));
-        other.reset_to_small(OtherCapacity);
-    }
-
-public:
     constexpr small_vector() noexcept : base_type(InlineCapacity) {}
 
     constexpr explicit small_vector(size_type count) : small_vector() {
@@ -1320,11 +943,11 @@ public:
     }
 
     constexpr small_vector(const base_type& other) : small_vector() {
-        this->append(std::ranges::subrange(other.begin(), other.end()));
+        this->append(other);
     }
 
     constexpr small_vector(base_type&& other) : small_vector() {
-        this->move_from_other(std::move(other));
+        this->take_elements(other);
     }
 
     constexpr small_vector(const small_vector& other) :
@@ -1336,48 +959,44 @@ public:
 
     constexpr small_vector(small_vector&& other) noexcept(
         std::is_nothrow_move_constructible_v<value_type>) : small_vector() {
-        move_from_typed_small_vector(std::move(other));
+        this->take_elements(other);
+        refill(other);
     }
 
     template <unsigned int OtherCapacity>
     constexpr small_vector(small_vector<value_type, OtherCapacity>&& other) : small_vector() {
-        move_from_typed_small_vector(std::move(other));
+        this->take_elements(other);
+        refill(other);
     }
 
     constexpr small_vector& operator=(const base_type& other) {
-        if(static_cast<const base_type*>(this) == std::addressof(other)) {
-            return *this;
-        }
-        this->copy_assign_from_other(other);
+        base_type::operator=(other);
         return *this;
     }
 
-    constexpr small_vector&
-        operator=(base_type&& other) noexcept(std::is_nothrow_move_constructible_v<value_type>) {
-        if(static_cast<const base_type*>(this) == std::addressof(other)) {
-            return *this;
-        }
-        this->move_assign_from_other(std::move(other));
+    constexpr small_vector& operator=(base_type&& other) {
+        base_type::operator=(std::move(other));
         return *this;
     }
 
     constexpr small_vector& operator=(const small_vector& other) {
-        return *this = static_cast<const base_type&>(other);
+        base_type::operator=(other);
+        return *this;
     }
 
     constexpr small_vector&
         operator=(small_vector&& other) noexcept(std::is_nothrow_move_constructible_v<value_type>) {
         if(this != std::addressof(other)) {
-            this->move_assign_from_other(static_cast<base_type&&>(other));
-            other.reset_to_small(InlineCapacity);
+            base_type::operator=(std::move(other));
+            refill(other);
         }
         return *this;
     }
 
     template <unsigned int OtherCapacity>
     constexpr small_vector& operator=(small_vector<value_type, OtherCapacity>&& other) {
-        this->move_assign_from_other(static_cast<base_type&&>(other));
-        other.reset_to_small(OtherCapacity);
+        base_type::operator=(std::move(other));
+        refill(other);
         return *this;
     }
 
@@ -1388,13 +1007,7 @@ public:
 
     template <unsigned int OtherCapacity>
     constexpr void assign(small_vector<value_type, OtherCapacity>&& other) {
-        if(reinterpret_cast<const void*>(this) ==
-           reinterpret_cast<const void*>(std::addressof(other))) {
-            return;
-        }
-
-        this->move_assign_from_other(static_cast<base_type&&>(other));
-        other.reset_to_small(OtherCapacity);
+        *this = std::move(other);
     }
 
     /// Construct a small_vector by adopting a pre-allocated buffer.
@@ -1403,11 +1016,13 @@ public:
     [[nodiscard]] constexpr static small_vector from_raw_parts(value_type* data,
                                                                size_type count,
                                                                size_type capacity) {
-        small_vector result;
+        // Moved out of a local, so that the move checks the buffer against the inline buffer
+        // of the vector it ends up in (see allocate()).
+        small_vector adopted;
         if(data != nullptr && capacity > 0) {
-            result.adopt_allocation(data, count, capacity);
+            adopted.adopt_allocation(data, count, capacity);
         }
-        return result;
+        return small_vector(std::move(adopted));
     }
 
     [[nodiscard]] constexpr size_type inline_capacity() const noexcept {
@@ -1418,53 +1033,32 @@ public:
         return this->size() <= InlineCapacity;
     }
 
+    /// Frees what the elements do not need: back into the inline buffer when they fit, into
+    /// an allocation of their size otherwise.
     constexpr void shrink_to_fit() {
-        if(this->begin() == this->inline_begin()) {
+        if(!this->on_heap()) {
             return;
         }
-
-        if(this->size() == 0) {
-            auto old_begin = this->m_begin;
-            const auto old_capacity = this->m_capacity;
-            this->reset_to_small(InlineCapacity);
-            mem::deallocate(old_begin, old_capacity);
-            return;
+        const auto count = this->size();
+        if(!std::is_constant_evaluated() && count <= InlineCapacity) {
+            auto* inline_head = this->inline_begin();
+            mem::uninitialized_move(this->begin(), this->end(), inline_head);
+            this->adopt_allocation(inline_head, count, InlineCapacity);
+        } else if(count != this->capacity()) {
+            this->rebuild(count, count, [this](value_type* first) {
+                return mem::uninitialized_move(this->begin(), this->end(), first);
+            });
         }
+    }
 
-        if(!std::is_constant_evaluated() && this->size() <= InlineCapacity) {
-            auto* new_begin = this->inline_begin();
-            auto* constructed = new_begin;
-            KOTA_TRY {
-                constructed =
-                    mem::uninitialized_relocate(std::ranges::subrange(this->begin(), this->end()),
-                                                new_begin);
-            }
-            KOTA_CATCH_ALL() {
-                mem::destroy_range(std::ranges::subrange(new_begin, constructed));
-                KOTA_RETHROW();
-            }
-
-            auto old_begin = this->m_begin;
-            const auto old_size = this->m_size;
-            const auto old_capacity = this->m_capacity;
-
-            this->m_begin = new_begin;
-            this->m_capacity = static_cast<decltype(this->m_capacity)>(InlineCapacity);
-            mem::destroy_range(base_type::counted_range(old_begin, old_size));
-            mem::deallocate(old_begin, old_capacity);
-            return;
+private:
+    /// Gives `other`, moved from, the room of its inline buffer back: through the base,
+    /// taking its allocation left it none. One that kept its allocation keeps it.
+    template <unsigned int OtherCapacity>
+    constexpr static void refill(small_vector<value_type, OtherCapacity>& other) noexcept {
+        if(!other.on_heap()) {
+            other.reset_to_small(OtherCapacity);
         }
-
-        if(this->size() == this->capacity()) {
-            return;
-        }
-
-        auto guard = mem::allocation_guard<value_type>(this->size());
-        auto* out = mem::uninitialized_relocate(std::ranges::subrange(this->begin(), this->end()),
-                                                guard.data());
-        guard.mark(out);
-
-        this->commit_replacement(guard.release(), this->size(), this->size());
     }
 };
 
