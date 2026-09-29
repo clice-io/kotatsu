@@ -142,8 +142,14 @@ public:
             buffer.fn = static_cast<R (*)(Args...)>(std::forward<Class>(invocable));
             ops = pointer_ops();
         } else if constexpr(sbo_eligible<T>) {
-            ::new (static_cast<void*>(buffer.bytes)) T(std::forward<Class>(invocable));
-            ops = inline_ops<T>();
+            if consteval {
+                // Constant evaluation has no placement new: the callable goes on the heap.
+                buffer.heap = new T(std::forward<Class>(invocable));
+                ops = heap_ops<T>();
+            } else {
+                ::new (static_cast<void*>(buffer.bytes)) T(std::forward<Class>(invocable));
+                ops = inline_ops<T>();
+            }
         } else {
             buffer.heap = new T(std::forward<Class>(invocable));
             ops = heap_ops<T>();
@@ -190,15 +196,24 @@ private:
 
     using BufferRef = std::conditional_t<Const, const Buffer&, Buffer&>;
 
-    /// How to call, move and destroy the kind of callable the buffer holds.
+    /// How to call, move and destroy the kind of callable the buffer holds. None is null:
+    /// GCC does not compare an address with null in constant evaluation when null checks are
+    /// sanitized.
     struct Ops {
         R (*call)(BufferRef, Args&&...);
         /// Moves the callable from the second buffer into the first and destroys it in the
-        /// second; null when copying the buffer's bytes moves it.
+        /// second.
         void (*relocate)(Buffer&, Buffer&) noexcept;
-        /// Null when there is nothing to destroy.
         void (*destroy)(Buffer&) noexcept;
     };
+
+    /// Moves a callable whose bytes are all there is to it: a function pointer, a pointer to
+    /// one on the heap, or a trivially copyable one inline.
+    constexpr static void relocate_bytes(Buffer& to, Buffer& from) noexcept {
+        to = from;
+    }
+
+    constexpr static void destroy_nothing(Buffer&) noexcept {}
 
     constexpr static R call_pointer(BufferRef buffer, Args&&... args) {
         return buffer.fn(std::forward<Args>(args)...);
@@ -229,25 +244,23 @@ private:
     }
 
     template <typename T>
-    static void destroy_heap(Buffer& buffer) noexcept {
+    constexpr static void destroy_heap(Buffer& buffer) noexcept {
         delete static_cast<T*>(buffer.heap);
     }
 
-    /// How to relocate an inline T: null when copying its bytes does.
     template <typename T>
     constexpr static auto inline_relocate() noexcept -> void (*)(Buffer&, Buffer&) noexcept {
         if constexpr(std::is_trivially_copyable_v<T>) {
-            return nullptr;
+            return &relocate_bytes;
         } else {
             return &relocate_inline<T>;
         }
     }
 
-    /// How to destroy an inline T: null when there is nothing to do.
     template <typename T>
     constexpr static auto inline_destroy() noexcept -> void (*)(Buffer&) noexcept {
         if constexpr(std::is_trivially_destructible_v<T>) {
-            return nullptr;
+            return &destroy_nothing;
         } else {
             return &destroy_inline<T>;
         }
@@ -261,16 +274,14 @@ private:
         std::abort();
     }
 
-    /// The ops of a function moved from, which holds nothing. No ops are ever null: GCC does
-    /// not compare the address of a constant with null in constant evaluation when null
-    /// checks are sanitized.
+    /// The ops of a function moved from, which holds nothing.
     constexpr const static Ops* empty_ops() noexcept {
-        constexpr static Ops ops = {&call_empty, nullptr, nullptr};
+        constexpr static Ops ops = {&call_empty, &relocate_bytes, &destroy_nothing};
         return &ops;
     }
 
     constexpr const static Ops* pointer_ops() noexcept {
-        constexpr static Ops ops = {&call_pointer, nullptr, nullptr};
+        constexpr static Ops ops = {&call_pointer, &relocate_bytes, &destroy_nothing};
         return &ops;
     }
 
@@ -282,23 +293,17 @@ private:
 
     template <typename T>
     constexpr const static Ops* heap_ops() noexcept {
-        constexpr static Ops ops = {&call_heap<T>, nullptr, &destroy_heap<T>};
+        constexpr static Ops ops = {&call_heap<T>, &relocate_bytes, &destroy_heap<T>};
         return &ops;
     }
 
     /// Takes the callable in `other`'s buffer, whose ops this function now has.
     constexpr void take_buffer(ErasedCallable& other) noexcept {
-        if(ops->relocate != nullptr) {
-            ops->relocate(buffer, other.buffer);
-        } else {
-            buffer = other.buffer;
-        }
+        ops->relocate(buffer, other.buffer);
     }
 
     constexpr void destroy() noexcept {
-        if(ops->destroy != nullptr) {
-            ops->destroy(buffer);
-        }
+        ops->destroy(buffer);
     }
 
     Buffer buffer{};
@@ -309,7 +314,8 @@ private:
 }  // namespace detail
 
 /// An owning callable of signature R(Args...), move-only. A small callable whose move cannot
-/// throw lives in the function itself; any other, on the heap.
+/// throw lives in the function itself; any other, and every one in constant evaluation, on
+/// the heap.
 template <typename R, typename... Args>
 class function<R(Args...)> : public detail::ErasedCallable<false, R, Args...> {
 public:

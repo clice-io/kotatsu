@@ -5,7 +5,9 @@
 #include <type_traits>
 #include <utility>
 
+#include "support/harness/throws.h"
 #include "kota/zest/zest.h"
+#include "kota/support/config.h"
 #include "kota/support/small_vector.h"
 
 namespace kota {
@@ -26,6 +28,8 @@ struct Ledger {
     Probe* next = nullptr;
     std::byte* placed_first = nullptr;
     std::byte* placed_last = nullptr;
+    /// Whether the next allocation not placed fails, with std::bad_alloc.
+    bool fail_next = false;
 };
 
 Ledger ledger;
@@ -74,6 +78,9 @@ struct std::allocator<kota::Probe> {
         kota::ledger.allocations += 1;
         if(kota::ledger.next != nullptr) {
             return std::exchange(kota::ledger.next, nullptr);
+        }
+        if(std::exchange(kota::ledger.fail_next, false)) {
+            KOTA_THROW(std::bad_alloc());
         }
         return static_cast<kota::Probe*>(::operator new(count * sizeof(kota::Probe)));
     }
@@ -200,6 +207,24 @@ ZEST_CASE(swap_leaves_an_allocation_where_an_inline_buffer_begins) {
     }
     EXPECT(ledger.allocations == ledger.deallocations);
 }
+
+#if KOTA_ENABLE_EXCEPTIONS
+
+ZEST_CASE(allocation_traded_is_freed_when_its_replacement_fails) {
+    Recording recording;
+    Arena arena;
+    auto* spot = arena.inline_buffer();
+    auto* v = std::construct_at(arena.vector());
+    recording.place_next(spot, arena.bytes);
+    ledger.fail_next = true;
+    EXPECT(test::throws<std::bad_alloc>([&] { v->push_back(Probe{1}); }));
+    EXPECT(v->empty());
+    EXPECT(ledger.allocations == 2);
+    EXPECT(ledger.deallocations == 1);
+    std::destroy_at(v);
+}
+
+#endif
 
 ZEST_CASE(from_raw_parts_leaves_a_buffer_where_the_inline_buffer_begins) {
     Recording recording;

@@ -190,6 +190,16 @@ ZEST_CASE(resize_with_a_throwing_copy_fails) {
     EXPECT(census.live == 1);
 }
 
+ZEST_CASE(assign_of_a_range_whose_traversal_throws_fails) {
+    // The range views the elements through a filter whose predicate throws, which it first
+    // calls while the vector checks whether the range views its elements.
+    small_vector<int, 4> v = {1, 2, 3};
+    auto viewed =
+        v | std::views::filter([](int) -> bool { throw std::runtime_error("filter failed"); });
+    EXPECT(test::throws<std::runtime_error>([&] { v.assign(viewed); }));
+    EXPECT(v == std::vector{1, 2, 3});
+}
+
 ZEST_CASE(growing_past_max_size_fails) {
     small_vector<int, 2> v = {1};
     EXPECT(test::throws<std::length_error>([&] { v.reserve(v.max_size() + 1); }));

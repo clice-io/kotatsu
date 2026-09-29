@@ -688,9 +688,9 @@ protected:
         if(allocation != inline_begin()) [[likely]] {
             return allocation;
         }
-        auto* other = mem::allocate<value_type>(capacity);
-        mem::deallocate(allocation, capacity);
-        return other;
+        // Held until the other is: taking another cannot hand back the same address.
+        mem::AllocationGuard<value_type> traded(allocation, capacity);
+        return mem::allocate<value_type>(capacity);
     }
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic pop
@@ -793,7 +793,7 @@ private:
     }
 
     template <std::ranges::forward_range Range>
-    [[nodiscard]] constexpr bool range_references_elements(Range& range) const noexcept {
+    [[nodiscard]] constexpr bool range_references_elements(Range& range) const {
         using reference_type = std::ranges::range_reference_t<Range>;
         if constexpr(!std::is_reference_v<reference_type> ||
                      !std::same_as<std::remove_cvref_t<reference_type>, value_type>) {

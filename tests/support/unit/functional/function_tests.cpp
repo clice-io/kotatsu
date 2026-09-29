@@ -342,6 +342,20 @@ ZEST_CASE(calls_a_function_in_constant_evaluation) {
     STATIC_EXPECT(result == 81);
 }
 
+// Calling a stored callable casts from `void*`, which constant evaluation allows from C++26
+// on, and GCC already does.
+#if __cpp_constexpr >= 202306L || (defined(__GNUC__) && !defined(__clang__))
+ZEST_CASE(calls_a_capturing_lambda_in_constant_evaluation) {
+    constexpr auto result = [] {
+        int base = 10;
+        Function fn([base](int x) { return x + base; });
+        Function moved(std::move(fn));
+        return moved(1);
+    }();
+    STATIC_EXPECT(result == 11);
+}
+#endif
+
 ZEST_CASE(bind_owns_a_copy_of_the_object) {
     Adder adder{50};
     auto fn = bind<&Adder::add>(adder);
