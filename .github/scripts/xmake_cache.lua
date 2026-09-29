@@ -43,8 +43,9 @@ function _keys()
 		COMPILER_HASH = hash.strhash128((os.iorunv(cxx, { "--version" }))),
 		STARTED_AT = os.time(),
 	})
-	-- sccache indexes its directory on its first lookup, which configure's
-	-- compiles made; a new server finds what the restore adds.
+	-- Asking the compiler for its version started sccache's server, which
+	-- indexes its directory on its first lookup; the build's server, started
+	-- after the restore, finds what that adds.
 	if os.getenv("COMPILER_CACHE") == "sccache" then
 		os.execv("sccache", { "--stop-server" }, { try = true })
 	end
@@ -67,12 +68,13 @@ function _trim_package_cache()
 	end
 end
 
--- Removes the entries the build did not use, so that a saved entry holds one
--- build instead of growing run after run, and outputs whether it changed.
+-- Outputs whether the build wrote to the cache, without which the entry
+-- restored stays as it is; if it did, removes the entries the build did not
+-- use, so that a saved entry holds one build instead of growing run after run.
+-- What configure wrote (its checks' compiles) is older than STARTED_AT.
 function _trim_compiler_cache()
 	local pattern = path.join(os.getenv("COMPILER_CACHE_DIR"), "**")
 	local started = tonumber(os.getenv("STARTED_AT"))
-	local dropped = 0
 	local changed
 	if os.getenv("COMPILER_CACHE") == "sccache" then
 		-- sccache refreshes an entry's mtime on a hit, and its server keeps
@@ -82,41 +84,52 @@ function _trim_compiler_cache()
 		os.execv("sccache", { "--stop-server" })
 		-- xmake finding the real clang-cl would otherwise go unnoticed.
 		assert(stats.compile_requests > 0, "no compile went through sccache")
+		changed = stats.cache_writes > 0
+		if changed then
+			local dropped = 0
+			for _, file in ipairs(os.files(pattern)) do
+				if os.mtime(file) < started then
+					os.rm(file)
+					dropped = dropped + 1
+				end
+			end
+			print("compiler cache: %d entries written, %d dropped", stats.cache_writes, dropped)
+		end
+	else
+		-- A hit leaves no trace on the cached copy, which only a miss writes.
+		local objects, added = {}, 0
 		for _, file in ipairs(os.files(pattern)) do
-			if os.mtime(file) < started then
-				os.rm(file)
-				dropped = dropped + 1
+			if not file:endswith(".txt") then
+				table.insert(objects, file)
+				if os.mtime(file) >= started then
+					added = added + 1
+				end
 			end
 		end
-		print("compiler cache: %d entries dropped", dropped)
-		changed = stats.cache_writes + dropped > 0
-	else
-		-- xmake's cache leaves no trace of a hit, but each object in
-		-- build/.objs, compiled or taken from the cache, is byte for byte a
-		-- copy that the cache holds.
-		local objects = hashset.new()
-		for _, file in ipairs(os.files("build/.objs/**")) do
-			objects:insert(hash.xxhash128(file))
-		end
-		assert(not objects:empty(), "the build left no objects")
-		local added, size = 0, 0
-		for _, file in ipairs(os.files(pattern)) do
-			-- Next to an object, <key>.txt holds the compiler output a hit replays.
-			if not file:endswith(".txt") then
-				if objects:has(hash.xxhash128(file)) then
+		changed = added > 0
+		if changed then
+			-- Each object in build/.objs, compiled or taken from the cache, is
+			-- byte for byte a copy that the cache holds.
+			local used = hashset.new()
+			for _, file in ipairs(os.files("build/.objs/**")) do
+				used:insert(hash.xxhash128(file))
+			end
+			local dropped, size = 0, 0
+			for _, file in ipairs(objects) do
+				if used:has(hash.xxhash128(file)) then
 					size = size + os.filesize(file)
-					if os.mtime(file) >= started then
-						added = added + 1
-					end
 				else
 					os.rm(file)
+					-- The compiler output that a hit replays.
 					os.tryrm(file .. ".txt")
 					dropped = dropped + 1
 				end
 			end
+			print("compiler cache: %d objects added, %d dropped, %.0f MiB kept", added, dropped, size / 1024 / 1024)
 		end
-		print("compiler cache: %d objects added, %d dropped, %.0f MiB kept", added, dropped, size / 1024 / 1024)
-		changed = added + dropped > 0
+	end
+	if not changed then
+		print("compiler cache: the build wrote nothing to it")
 	end
 	_append("GITHUB_OUTPUT", { changed = changed and "true" or "false" })
 end
