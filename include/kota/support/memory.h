@@ -76,21 +76,27 @@ class AllocationGuard {
 public:
     /// Takes `buffer`, allocated with allocate<T>(capacity), holding no elements yet.
     constexpr AllocationGuard(T* buffer, std::size_t capacity) noexcept :
-        buffer(buffer), capacity(capacity), constructed_end(buffer) {}
+        buffer(buffer), capacity(capacity), constructed_begin(buffer), constructed_end(buffer) {}
 
     AllocationGuard(const AllocationGuard&) = delete;
     AllocationGuard& operator=(const AllocationGuard&) = delete;
 
     constexpr ~AllocationGuard() {
         if(buffer != nullptr) {
-            std::ranges::destroy(buffer, constructed_end);
+            std::ranges::destroy(constructed_begin, constructed_end);
             deallocate(buffer, capacity);
         }
     }
 
     /// Records that the elements up to `end` are constructed.
     constexpr void mark(T* end) noexcept {
-        constructed_end = end;
+        mark(buffer, end);
+    }
+
+    /// Records that the elements of [first, last) are constructed, and no others.
+    constexpr void mark(T* first, T* last) noexcept {
+        constructed_begin = first;
+        constructed_end = last;
     }
 
     [[nodiscard]] constexpr T* data() const noexcept {
@@ -105,7 +111,43 @@ public:
 private:
     T* buffer;
     std::size_t capacity;
+    T* constructed_begin;
     T* constructed_end;
+};
+
+/// The elements a series of constructions has built from `first` on, destroyed when it goes
+/// out of scope unless released: what is left to undo when one of the constructions throws.
+template <typename T>
+class ConstructedRange {
+public:
+    constexpr explicit ConstructedRange(T* first) noexcept : first(first), last(first) {}
+
+    ConstructedRange(const ConstructedRange&) = delete;
+    ConstructedRange& operator=(const ConstructedRange&) = delete;
+
+    constexpr ~ConstructedRange() {
+        std::ranges::destroy(first, last);
+    }
+
+    /// Where the next element goes.
+    [[nodiscard]] constexpr T* end() const noexcept {
+        return last;
+    }
+
+    /// Records that the element at end() is constructed.
+    constexpr void extend() noexcept {
+        ++last;
+    }
+
+    /// Keeps the elements, and returns their end.
+    constexpr T* release() noexcept {
+        first = last;
+        return last;
+    }
+
+private:
+    T* first;
+    T* last;
 };
 
 template <std::ranges::forward_range Range>
@@ -134,18 +176,12 @@ T* copy_bytes(const void* source, std::size_t count, T* dest) noexcept {
 /// Constructs a T from each element of `range` from `dest` on, as uninitialized_copy() does.
 template <typename T, typename Range>
 constexpr T* construct_from_each(Range&& range, T* dest) {
-    T* out = dest;
-    KOTA_TRY {
-        for(auto&& value: range) {
-            std::construct_at(out, std::forward<decltype(value)>(value));
-            ++out;
-        }
-        return out;
+    ConstructedRange<T> built(dest);
+    for(auto&& value: range) {
+        std::construct_at(built.end(), std::forward<decltype(value)>(value));
+        built.extend();
     }
-    KOTA_CATCH_ALL() {
-        std::ranges::destroy(dest, out);
-        KOTA_RETHROW();
-    }
+    return built.release();
 }
 
 }  // namespace detail
@@ -192,17 +228,11 @@ constexpr T* uninitialized_move(T* first, T* last, T* dest) {
 /// so far are destroyed.
 template <typename T, typename ConstructOne>
 constexpr T* construct_each(T* first, T* last, ConstructOne construct_one) {
-    T* current = first;
-    KOTA_TRY {
-        for(; current != last; ++current) {
-            construct_one(current);
-        }
-        return current;
+    ConstructedRange<T> built(first);
+    for(; built.end() != last; built.extend()) {
+        construct_one(built.end());
     }
-    KOTA_CATCH_ALL() {
-        std::ranges::destroy(first, current);
-        KOTA_RETHROW();
-    }
+    return built.release();
 }
 
 template <typename T>

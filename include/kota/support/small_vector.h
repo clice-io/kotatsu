@@ -518,17 +518,23 @@ public:
         } else {
             // An input range is read once: its elements are appended, as they come, and then
             // rotated into place. If one fails, those appended are dropped.
-            const auto old_size = size();
-            KOTA_TRY {
-                for(auto&& value: range) {
-                    emplace_back(std::forward<decltype(value)>(value));
+            struct Appended {
+                hybrid_vector& vector;
+                size_type old_size;
+                bool kept = false;
+
+                constexpr ~Appended() {
+                    if(!kept) {
+                        vector.truncate(old_size);
+                    }
                 }
+            } appended{*this, size()};
+
+            for(auto&& value: range) {
+                emplace_back(std::forward<decltype(value)>(value));
             }
-            KOTA_CATCH_ALL() {
-                truncate(old_size);
-                KOTA_RETHROW();
-            }
-            std::rotate(head + index, head + old_size, end());
+            appended.kept = true;
+            std::rotate(head + index, head + appended.old_size, end());
             return head + index;
         }
     }
@@ -717,24 +723,12 @@ protected:
             return;
         }
         const auto new_room = next_capacity(new_size);
-        auto* new_head = allocate(new_room);
-        auto* tail = new_head + size();
-        KOTA_TRY {
-            construct(tail);
-        }
-        KOTA_CATCH_ALL() {
-            mem::deallocate(new_head, new_room);
-            KOTA_RETHROW();
-        }
-        KOTA_TRY {
-            mem::uninitialized_move(begin(), end(), new_head);
-        }
-        KOTA_CATCH_ALL() {
-            std::ranges::destroy(tail, new_head + new_size);
-            mem::deallocate(new_head, new_room);
-            KOTA_RETHROW();
-        }
-        adopt_allocation(new_head, new_size, new_room);
+        mem::AllocationGuard<value_type> guard(allocate(new_room), new_room);
+        auto* tail = guard.data() + size();
+        construct(tail);
+        guard.mark(tail, tail + count);
+        mem::uninitialized_move(begin(), end(), guard.data());
+        adopt_allocation(guard.release(), new_size, new_room);
     }
 
 private:
