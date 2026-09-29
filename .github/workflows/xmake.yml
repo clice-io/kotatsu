@@ -11,10 +11,13 @@ jobs:
       matrix:
         mode: [debug, release]
         target:
+          # xmake's clang-cl compiles bypass its compiler cache, so sccache
+          # runs them instead.
           - os: windows-2025
             toolchain: clang-cl
             pixi_env: windows-llvm
-            config_args: "--toolchain=clang-cl"
+            config_args: "--toolchain=clang-cl --bin=$env:RUNNER_TEMP/sccache"
+            compiler_cache: sccache
           - os: ubuntu-24.04
             toolchain: default
             pixi_env: linux-gcc
@@ -34,6 +37,17 @@ jobs:
 
     runs-on: ${{ matrix.target.os }}
 
+    env:
+      # Cache keys are "<prefix>/<version>", as in cmake.yml.
+      PACKAGE_CACHE_PREFIX: xmake-packages-${{ matrix.target.os }}-${{ matrix.target.toolchain }}-${{ matrix.mode }}
+      COMPILER_CACHE_PREFIX: xmake-compiler-${{ matrix.target.os }}-${{ matrix.target.toolchain }}-${{ matrix.mode }}
+      XMAKE_PKG_INSTALLDIR: ${{ github.workspace }}/.cache/xmake/packages
+      # xmake's own compiler cache keeps a copy of each object, keyed on the
+      # compiler's path, the flags and the preprocessed source.
+      COMPILER_CACHE: ${{ matrix.target.compiler_cache || 'xmake' }}
+      COMPILER_CACHE_DIR: ${{ github.workspace }}/.cache/compiler
+      SCCACHE_DIR: ${{ github.workspace }}/.cache/compiler
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -41,11 +55,8 @@ jobs:
       - name: Setup xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
-          xmake-version: "3.0.7"
+          xmake-version: "3.1.1"
           actions-cache-folder: ".xmake-cache"
-          actions-cache-key: ${{ matrix.target.os }}-${{ matrix.mode }}-${{ matrix.target.toolchain }}
-          package-cache: true
-          package-cache-key: ${{ matrix.target.os }}-${{ matrix.mode }}-${{ matrix.target.toolchain }}
 
       - name: Setup Pixi
         uses: prefix-dev/setup-pixi@v0.9.6
@@ -58,18 +69,92 @@ jobs:
           # Deleting the environment when the job ends only takes time.
           post-cleanup: false
 
+      # A copy of sccache named clang-cl acts as `sccache clang-cl`. In the
+      # --bin directory, it is the compiler xmake takes, for the packages it
+      # builds too: CMake, which builds most of them, takes no launcher there.
+      - name: Setup sccache
+        if: env.COMPILER_CACHE == 'sccache'
+        run: |
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\sccache"
+          Copy-Item (Get-Command sccache).Source "$env:RUNNER_TEMP\sccache\clang-cl.exe"
+
+      # Keyed on the packages the configuration uses, which only xmake can tell
+      # once configured: this restores the leg's newest entry, and configure
+      # installs what it lacks.
+      - name: Restore package cache
+        id: package-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.XMAKE_PKG_INSTALLDIR }}
+          key: ${{ env.PACKAGE_CACHE_PREFIX }}/
+          restore-keys: ${{ env.PACKAGE_CACHE_PREFIX }}/
+
+      # The steps that run xmake use the default shell: Git's bash on Windows
+      # sets MSYSTEM, which makes xmake take the host for MSYS.
       - name: Configure
         run: >
           xmake config --clean --yes
           --mode=${{ matrix.mode }}
           ${{ matrix.target.config_args }}
+          --ccachedir="${{ env.COMPILER_CACHE_DIR }}"
           --dev=y
           --codec_simdjson=y
           --codec_flatbuffers=y
           --codec_toml=y
 
+      - name: Compute cache keys
+        run: xmake lua .github/scripts/xmake_cache.lua keys
+
+      # Only when the entry restored is not this configuration's.
+      - name: Trim package cache
+        if: steps.package-cache.outputs.cache-matched-key != env.PACKAGE_CACHE_KEY
+        continue-on-error: true
+        run: xmake lua .github/scripts/xmake_cache.lua trim-package-cache
+
+      - name: Save package cache
+        if: steps.package-cache.outputs.cache-matched-key != env.PACKAGE_CACHE_KEY
+        uses: ./.github/actions/replace-cache
+        with:
+          path: ${{ env.XMAKE_PKG_INSTALLDIR }}
+          key: ${{ env.PACKAGE_CACHE_KEY }}
+
+      # As in cmake.yml, a new entry per commit, restored by prefix, which finds
+      # the run's own ref before main. The compiler's hash goes after the "/",
+      # so that an entry of a new compiler replaces an old one's.
+      - name: Restore compiler cache
+        id: compiler-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.COMPILER_CACHE_DIR }}
+          key: ${{ env.COMPILER_CACHE_PREFIX }}/${{ env.COMPILER_HASH }}-${{ github.sha }}
+          restore-keys: ${{ env.COMPILER_CACHE_PREFIX }}/${{ env.COMPILER_HASH }}-
+
+      # Outside xmake, which ends every process it started when it exits: a
+      # server that a compile started would be gone before the stats.
+      - name: Start sccache
+        if: env.COMPILER_CACHE == 'sccache'
+        run: sccache --start-server
+
       - name: Build
+        id: build
         run: xmake --all --verbose --diagnosis
 
       - name: Test
         run: xmake test --verbose
+
+      # After a failed build nothing is dropped, since what it did not reach is
+      # still good.
+      - name: Trim compiler cache
+        id: compiler-cache-trim
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        continue-on-error: true
+        run: xmake lua .github/scripts/xmake_cache.lua trim-compiler-cache
+
+      # After a failed build too, which keeps what it compiled; not when the
+      # build wrote nothing to the entry restored.
+      - name: Save compiler cache
+        if: ${{ !cancelled() && steps.build.outcome != 'skipped' && steps.compiler-cache.outputs.cache-hit != 'true' && steps.compiler-cache-trim.outputs.changed != 'false' }}
+        uses: ./.github/actions/replace-cache
+        with:
+          path: ${{ env.COMPILER_CACHE_DIR }}
+          key: ${{ steps.compiler-cache.outputs.cache-primary-key }}
