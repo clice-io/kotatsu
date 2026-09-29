@@ -26,13 +26,24 @@ jobs:
           - os: windows-2025
             toolchain: xclang
             pixi_env: windows-xclang
-            config_args: "--plat=mingw --toolchain=llvm --sdk=$env:CONDA_PREFIX/opt/xclang"
+            config_args: "--plat=mingw --toolchain=llvm --sdk=$CONDA_PREFIX/opt/xclang"
           - os: windows-2025
             toolchain: mingw
             pixi_env: windows-mingw
-            config_args: "--plat=mingw --toolchain=mingw --mingw=$env:CONDA_PREFIX/Library"
+            config_args: "--plat=mingw --toolchain=mingw --mingw=$CONDA_PREFIX/Library"
 
     runs-on: ${{ matrix.target.os }}
+
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      LEG: ${{ matrix.target.os }}-${{ matrix.target.toolchain }}-${{ matrix.mode }}
+      XMAKE_PKG_INSTALLDIR: ${{ github.workspace }}/.cache/xmake/packages
+      # xmake's own compiler cache: a copy of each object it compiles, keyed on
+      # the compiler's path, the flags and the preprocessed source.
+      XMAKE_BUILD_CACHE: ${{ github.workspace }}/.cache/xmake/build
 
     steps:
       - name: Checkout repository
@@ -41,11 +52,9 @@ jobs:
       - name: Setup xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
-          xmake-version: "3.0.7"
+          xmake-version: "3.1.1"
           actions-cache-folder: ".xmake-cache"
-          actions-cache-key: ${{ matrix.target.os }}-${{ matrix.mode }}-${{ matrix.target.toolchain }}
-          package-cache: true
-          package-cache-key: ${{ matrix.target.os }}-${{ matrix.mode }}-${{ matrix.target.toolchain }}
+          actions-cache-key: ${{ env.LEG }}
 
       - name: Setup Pixi
         uses: prefix-dev/setup-pixi@v0.9.6
@@ -58,18 +67,140 @@ jobs:
           # Deleting the environment when the job ends only takes time.
           post-cleanup: false
 
+      # Keyed on the packages the configuration requires, which only xmake can
+      # tell once configured; so this restores the leg's newest entry, and
+      # configure installs whatever it lacks.
+      - name: Restore package cache
+        id: package-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.XMAKE_PKG_INSTALLDIR }}
+          key: xmake-packages-${{ env.LEG }}/
+          restore-keys: xmake-packages-${{ env.LEG }}/
+
       - name: Configure
         run: >
           xmake config --clean --yes
           --mode=${{ matrix.mode }}
           ${{ matrix.target.config_args }}
+          --ccachedir="${XMAKE_BUILD_CACHE}"
           --dev=y
           --codec_simdjson=y
           --codec_flatbuffers=y
           --codec_toml=y
 
+      # The packages' key covers their names, versions and build hashes. The
+      # build cache's covers the compiler's version, which xmake's own keys
+      # leave out; an entry is only reused by the same compiler.
+      - name: Compute cache keys
+        run: |
+          xmake_lua() { xmake lua -c "import('core.project.config'); config.load(); $1"; }
+          packages="$(xmake_lua "import('utils.ci.packageskey')()")"
+          compiler="$(xmake_lua "import('core.tool.compiler'); local cxx = compiler.load('cxx'):program(); print(hash.strhash128((os.iorunv(cxx, {'--version'}))))")"
+          [[ -n "${packages}" && -n "${compiler}" ]]
+          {
+            echo "PACKAGES_KEY=xmake-packages-${LEG}/${packages}"
+            echo "BUILD_CACHE_PREFIX=xmake-build-${LEG}/${compiler}-"
+          } >> "$GITHUB_ENV"
+
+      # Only when the entry restored is not the one this configuration needs:
+      # first without the packages it no longer requires, which xmake tells
+      # from the references configure just recorded.
+      - name: Trim package cache
+        if: steps.package-cache.outputs.cache-matched-key != env.PACKAGES_KEY
+        run: xmake require --clean --clean_modes=package --yes
+
+      - name: Save package cache
+        id: package-cache-save
+        if: ${{ steps.package-cache.outputs.cache-matched-key != env.PACKAGES_KEY && !github.event.pull_request.head.repo.fork }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.XMAKE_PKG_INSTALLDIR }}
+          key: ${{ env.PACKAGES_KEY }}
+
+      - name: Delete replaced package cache
+        if: steps.package-cache-save.outcome == 'success'
+        continue-on-error: true
+        uses: ./.github/actions/delete-replaced-caches
+        with:
+          key: ${{ env.PACKAGES_KEY }}
+
+      # As in cmake.yml: a new entry per commit, restored by prefix, which
+      # finds the run's own ref before main.
+      - name: Restore build cache
+        id: build-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.XMAKE_BUILD_CACHE }}
+          key: ${{ env.BUILD_CACHE_PREFIX }}${{ github.sha }}
+          restore-keys: ${{ env.BUILD_CACHE_PREFIX }}
+
       - name: Build
-        run: xmake --all --verbose --diagnosis
+        id: build
+        run: |
+          # "Trim build cache" tells the objects this build added from here on.
+          echo "BUILD_STARTED_AT=$(( $(date +%s) - 1 ))" >> "$GITHUB_ENV"
+          xmake --all --verbose --diagnosis
 
       - name: Test
         run: xmake test --verbose
+
+      # Drops the objects this build did not use, so that a saved entry holds
+      # one build instead of growing run after run. A hit leaves no trace on
+      # the cached copy, but each object in build/.objs, compiled or taken from
+      # the cache, is byte for byte the copy the cache holds. After a failed
+      # build nothing is dropped, since what it did not reach is still good.
+      - name: Trim build cache
+        id: build-cache-trim
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          python - <<'EOF'
+          import hashlib
+          import os
+          from pathlib import Path
+
+          def digest(path):
+              with open(path, "rb") as f:
+                  return hashlib.file_digest(f, "sha1").digest()
+
+          used = {digest(p) for p in Path("build/.objs").rglob("*") if p.is_file()}
+          started = int(os.environ["BUILD_STARTED_AT"])
+          taken = added = dropped = size = 0
+          for entry in Path(os.environ["XMAKE_BUILD_CACHE"]).rglob("*"):
+              if not entry.is_file() or entry.suffix == ".txt":
+                  continue
+              if digest(entry) not in used:
+                  # With the compiler output it replays on a hit, if any.
+                  entry.unlink()
+                  entry.with_name(entry.name + ".txt").unlink(missing_ok=True)
+                  dropped += 1
+                  continue
+              stat = entry.stat()
+              size += stat.st_size
+              if stat.st_mtime >= started:
+                  added += 1
+              else:
+                  taken += 1
+          print(f"build cache: {taken} objects taken, {added} added, {dropped} dropped, {size / 2**20:.0f} MiB kept")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              print(f"changed={str(bool(added or dropped)).lower()}", file=output)
+          EOF
+
+      # After a failed build too, which keeps what it compiled; not when the
+      # entry restored is unchanged. Not from a fork, whose token cannot delete
+      # the entries a new one replaces.
+      - name: Save build cache
+        id: build-cache-save
+        if: ${{ !cancelled() && steps.build.outcome != 'skipped' && steps.build-cache.outputs.cache-hit != 'true' && steps.build-cache-trim.outputs.changed != 'false' && !github.event.pull_request.head.repo.fork }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.XMAKE_BUILD_CACHE }}
+          key: ${{ steps.build-cache.outputs.cache-primary-key }}
+
+      - name: Delete replaced build cache
+        if: ${{ !cancelled() && steps.build-cache-save.outcome == 'success' }}
+        continue-on-error: true
+        uses: ./.github/actions/delete-replaced-caches
+        with:
+          key: ${{ steps.build-cache.outputs.cache-primary-key }}

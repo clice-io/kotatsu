@@ -42,6 +42,7 @@ jobs:
               - 'package*.json'
               - 'tsconfig.json'
               - 'scripts/**'
+              - '.github/actions/**'
               - '.github/workflows/main.yml'
               - '.github/workflows/cmake.yml'
             xmake:
@@ -51,6 +52,7 @@ jobs:
               - 'examples/**'
               - 'xmake.lua'
               - 'pixi.toml'
+              - '.github/actions/**'
               - '.github/workflows/main.yml'
               - '.github/workflows/xmake.yml'
 
@@ -77,6 +79,9 @@ jobs:
   xmake:
     needs: changes
     if: ${{ needs.changes.outputs.xmake == 'true' }}
+    permissions:
+      contents: read
+      actions: write
     uses: ./.github/workflows/xmake.yml
 
   checks-passed:
