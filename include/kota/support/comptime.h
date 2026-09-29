@@ -19,7 +19,7 @@ struct Record {
 };
 
 template <size_t reserved>
-constexpr inline static auto counting_flag = Record<reserved>{};
+constexpr inline auto counting_flag = Record<reserved>{};
 
 template <auto record>
 class ComptimeMemoryResource {
@@ -105,39 +105,6 @@ public:
     }
 
     constexpr ComptimeMemoryResource() = default;
-};
-
-template <typename T, auto record>
-class ComptimeAllocator {
-public:
-    using Resource = ComptimeMemoryResource<record>;
-    constexpr static bool is_counting = Resource::is_counting;
-    using value_type = T;
-
-    template <typename U>
-    struct rebind {
-        using other = ComptimeAllocator<U, record>;
-    };
-
-    Resource* res;
-
-    constexpr ComptimeAllocator(Resource& r) : res(&r) {}
-
-    template <typename U>
-    constexpr ComptimeAllocator(const ComptimeAllocator<U, record>& other) : res(other.res) {}
-
-    constexpr T* allocate(std::size_t n) {
-        return res->template allocate_type<T>(n);
-    }
-
-    constexpr void deallocate(T* p, std::size_t n) {
-        res->template deallocate_type<T>(p, n);
-    }
-
-    template <typename U>
-    constexpr bool operator==(const ComptimeAllocator<U, record>& other) const {
-        return res == other.res;
-    }
 };
 
 template <typename T, typename ResourceTy, size_t reserved_id>

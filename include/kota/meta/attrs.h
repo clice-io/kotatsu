@@ -105,29 +105,29 @@ namespace detail {
 /// One merged policy layer over Base. Each specialization declares only the
 /// members its policies actually set, so an untouched policy keeps shining
 /// through from Base.
-template <typename Base, naming::casing RenameAll, bool DenyUnknown>
+template <typename Base, naming::Casing RenameAll, bool DenyUnknown>
 struct merged_config : Base {
     using field_rename = naming::rename_policy_t<RenameAll>;
     constexpr static bool deny_unknown_fields = DenyUnknown;
 };
 
-template <typename Base, naming::casing RenameAll>
+template <typename Base, naming::Casing RenameAll>
 struct merged_config<Base, RenameAll, false> : Base {
     using field_rename = naming::rename_policy_t<RenameAll>;
 };
 
 template <typename Base>
-struct merged_config<Base, naming::casing::identity, true> : Base {
+struct merged_config<Base, naming::Casing::Identity, true> : Base {
     constexpr static bool deny_unknown_fields = true;
 };
 
-template <typename Base, naming::casing RenameAll, bool DenyUnknown>
+template <typename Base, naming::Casing RenameAll, bool DenyUnknown>
 struct merge_config_impl {
     using type = merged_config<Base, RenameAll, DenyUnknown>;
 };
 
 template <typename Base>
-struct merge_config_impl<Base, naming::casing::identity, false> {
+struct merge_config_impl<Base, naming::Casing::Identity, false> {
     using type = Base;
 };
 
@@ -135,15 +135,15 @@ struct merge_config_impl<Base, naming::casing::identity, false> {
 /// instead of stacking (deeper rename overrides, deny is sticky), so
 /// equivalent merge chains produce the same config type — type_info instance
 /// sharing (and thus one $defs entry per struct) depends on that.
-template <typename Base, naming::casing R0, bool D0, naming::casing RenameAll, bool DenyUnknown>
+template <typename Base, naming::Casing R0, bool D0, naming::Casing RenameAll, bool DenyUnknown>
 struct merge_config_impl<merged_config<Base, R0, D0>, RenameAll, DenyUnknown> {
     using type = merged_config<Base,
-                               RenameAll != naming::casing::identity ? RenameAll : R0,
+                               RenameAll != naming::Casing::Identity ? RenameAll : R0,
                                D0 || DenyUnknown>;
 };
 
-template <typename Base, naming::casing R0, bool D0>
-struct merge_config_impl<merged_config<Base, R0, D0>, naming::casing::identity, false> {
+template <typename Base, naming::Casing R0, bool D0>
+struct merge_config_impl<merged_config<Base, R0, D0>, naming::Casing::Identity, false> {
     using type = merged_config<Base, R0, D0>;
 };
 

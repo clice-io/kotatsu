@@ -12,7 +12,7 @@
 
 namespace kota {
 
-/// A SmallVector<char> with string-like convenience methods.
+/// A small_vector<char> with string-like convenience methods.
 /// All string operations delegate to string_ref.
 template <unsigned InlineCapacity>
 class small_string : public small_vector<char, InlineCapacity> {

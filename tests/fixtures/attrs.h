@@ -94,7 +94,7 @@ struct RenameTarget {
 
 struct RenameAllCamelTag {
     constexpr static auto spec =
-        meta::make_struct_spec(meta::dsl::rename_all = naming::casing::lower_camel);
+        meta::make_struct_spec(meta::dsl::rename_all = naming::Casing::LowerCamel);
 };
 
 using RenamedRoot = meta::annotate<RenameAllCamelTag>::type<RenameTarget>;

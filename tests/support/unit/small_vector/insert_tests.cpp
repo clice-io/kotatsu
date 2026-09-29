@@ -114,7 +114,7 @@ ZEST_CASE(insert_range_that_is_not_random_access) {
     EXPECT(w == std::vector<std::string>{"a", "x", "b", "c", "d", "e"});
 }
 
-ZEST_CASE(insert_input_range) {
+ZEST_CASE(insert_input_range_inserts_each_as_it_comes) {
     std::istringstream text("2 3");
     small_vector<int, 2> v = {1, 4};
     auto it = v.insert(v.begin() + 1, std::views::istream<int>(text));
@@ -122,14 +122,18 @@ ZEST_CASE(insert_input_range) {
     EXPECT(it == v.begin() + 1);
 }
 
-ZEST_CASE(insert_empty_range_returns_the_position) {
-    small_vector<int, 2> v = {1, 2};
-    auto it = v.insert(v.begin() + 1, std::array<int, 0>{});
-    EXPECT(v == std::vector{1, 2});
+ZEST_CASE(insert_empty_range_changes_nothing) {
+    // Strings, which moving one onto itself would empty.
+    small_vector<std::string, 4> v = {"a", "b", "c"};
+    auto it = v.insert(v.begin() + 1, std::vector<std::string>{});
+    EXPECT(v == std::vector<std::string>{"a", "b", "c"});
     EXPECT(it == v.begin() + 1);
+    it = v.insert(v.begin(), std::ranges::subrange(v.begin(), v.begin()));
+    EXPECT(v == std::vector<std::string>{"a", "b", "c"});
+    EXPECT(it == v.begin());
 }
 
-ZEST_CASE(insert_initializer_list) {
+ZEST_CASE(insert_initializer_list_inserts_its_elements) {
     small_vector<int, 4> v = {1, 5};
     v.insert(v.begin() + 1, {2, 3, 4});
     EXPECT(v == std::vector{1, 2, 3, 4, 5});

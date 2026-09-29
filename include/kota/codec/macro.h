@@ -47,7 +47,7 @@
             using ::kota::meta::dsl::tag_names;                                                    \
             using ::kota::meta::dsl::type;                                                         \
             using ::kota::meta::skip_when;                                                         \
-            using ::kota::naming::casing;                                                          \
+            using ::kota::naming::Casing;                                                          \
             return ::kota::meta::make_annotation(__VA_ARGS__);                                     \
         }();                                                                                       \
     }

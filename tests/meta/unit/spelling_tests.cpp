@@ -1,12 +1,11 @@
-#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "kota/zest/zest.h"
-#include "kota/support/spelling.h"
+#include "kota/meta/spelling.h"
 
-namespace kota::codec::spelling {
+namespace kota::meta {
 
 namespace {
 
@@ -33,25 +32,21 @@ struct Constant {
     }
 };
 
-ZEST_SUITE(support_spelling) {
+ZEST_SUITE(meta_spelling) {
 
 ZEST_CASE(policies_may_return_views) {
     EXPECT(apply_rename_policy<Echo>(true, "asIs") == "asIs");
     EXPECT(apply_rename_policy<Constant>(true, "x") == "out");
     EXPECT(apply_rename_policy<Constant>(false, "x") == "in");
-    EXPECT(apply_rename_policy<rename_policy::upper_snake>(true, "fooBar") == "FOO_BAR");
-}
-
-ZEST_CASE(policy_names_are_the_naming_ones) {
-    EXPECT(zest::type_eq<codec::rename_policy::lower_camel, naming::rename_policy::lower_camel>());
-    EXPECT(zest::type_eq<rename_policy::upper_case, naming::rename_policy::upper_snake>());
+    EXPECT(apply_rename_policy<naming::rename_policy::upper_snake>(true, "fooBar") == "FOO_BAR");
 }
 
 ZEST_CASE(enum_to_string_renames_the_enumerator) {
     EXPECT(map_enum_to_string(Color::light_blue) == "lightBlue");
     EXPECT(map_enum_to_string(Color::GreenLight) == "greenLight");
-    EXPECT((map_enum_to_string<Color, rename_policy::identity>(Color::light_blue) == "light_blue"));
-    EXPECT((map_enum_to_string<Color, rename_policy::upper_snake>(Color::red) == "RED"));
+    EXPECT(map_enum_to_string<Color, naming::rename_policy::identity>(Color::light_blue) ==
+           "light_blue");
+    EXPECT(map_enum_to_string<Color, naming::rename_policy::upper_snake>(Color::red) == "RED");
 }
 
 ZEST_CASE(enum_strings_lists_every_enumerator_renamed) {
@@ -74,13 +69,13 @@ ZEST_CASE(string_to_enum_finds_generated_names) {
     EXPECT(map_string_to_enum<Color>("3") == Color::V3);
 }
 
-ZEST_CASE(string_to_enum_of_an_unknown_name_is_empty) {
+ZEST_CASE(string_to_enum_of_an_unknown_name_fails) {
     EXPECT(!map_string_to_enum<Color>("purple").has_value());
     EXPECT(!map_string_to_enum<Color>("").has_value());
 }
 
-};  // ZEST_SUITE(support_spelling)
+};  // ZEST_SUITE(meta_spelling)
 
 }  // namespace
 
-}  // namespace kota::codec::spelling
+}  // namespace kota::meta

@@ -25,14 +25,10 @@ template <typename List, typename T>
 using type_list_prepend_t = typename type_list_prepend<List, T>::type;
 
 template <typename List, typename T>
-struct type_list_contains;
+constexpr inline bool type_list_contains_v = false;
 
 template <typename... Ts, typename T>
-struct type_list_contains<type_list<Ts...>, T> :
-    std::bool_constant<(std::same_as<T, Ts> || ...)> {};
-
-template <typename List, typename T>
-constexpr inline bool type_list_contains_v = type_list_contains<List, T>::value;
+constexpr inline bool type_list_contains_v<type_list<Ts...>, T> = (std::same_as<T, Ts> || ...);
 
 template <typename List, template <typename> typename Predicate>
 struct type_list_filter;
@@ -131,13 +127,10 @@ template <typename... Lists>
 using type_list_concat_t = typename type_list_concat<Lists...>::type;
 
 template <typename List>
-struct type_list_size;
+constexpr inline std::size_t type_list_size_v = 0;
 
 template <typename... Ts>
-struct type_list_size<type_list<Ts...>> : std::integral_constant<std::size_t, sizeof...(Ts)> {};
-
-template <typename List>
-constexpr inline std::size_t type_list_size_v = type_list_size<List>::value;
+constexpr inline std::size_t type_list_size_v<type_list<Ts...>> = sizeof...(Ts);
 
 template <typename List>
 struct type_list_to_union;
@@ -157,5 +150,9 @@ template <typename... Ts>
 struct type_list_to_union<type_list<Ts...>> {
     using type = std::variant<Ts...>;
 };
+
+/// Nothing (void) for no type, the type for one, a variant of them for more.
+template <typename List>
+using type_list_to_union_t = typename type_list_to_union<List>::type;
 
 }  // namespace kota

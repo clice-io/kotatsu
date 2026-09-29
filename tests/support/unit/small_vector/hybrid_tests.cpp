@@ -102,12 +102,28 @@ ZEST_CASE(small_vector_constructs_from_one) {
     EXPECT(moved.data() == allocation);
 }
 
+ZEST_CASE(assign_copies_one) {
+    small_vector<int, 2> source = {1, 2, 3};
+    small_vector<int, 8> target = {9};
+    hybrid_vector<int>& erased = target;
+    erased.assign(static_cast<const hybrid_vector<int>&>(source));
+    EXPECT(target == std::vector{1, 2, 3});
+    EXPECT(target.inlined());
+    EXPECT(source == std::vector{1, 2, 3});
+}
+
 ZEST_CASE(small_vector_assigns_from_one) {
     small_vector<int, 2> source = {1, 2, 3};
-    const hybrid_vector<int>& erased = source;
+    const auto* allocation = source.data();
+    hybrid_vector<int>& erased = source;
     small_vector<int, 8> target = {9};
-    target = erased;
+    target = static_cast<const hybrid_vector<int>&>(erased);
     EXPECT(target == std::vector{1, 2, 3});
+    small_vector<int, 1> taken = {7};
+    taken = std::move(erased);
+    EXPECT(taken == std::vector{1, 2, 3});
+    EXPECT(taken.data() == allocation);
+    EXPECT(source.empty());
 }
 
 };  // ZEST_SUITE(support_small_vector_hybrid)

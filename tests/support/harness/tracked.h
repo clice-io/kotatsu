@@ -36,7 +36,8 @@ struct Census {
         return innermost != nullptr ? *innermost : fallback;
     }
 
-    /// Called by a construction that the armed count lets throw.
+    /// Called by every construction that counts towards throw_after: throws once the armed
+    /// count has run out, and counts it down otherwise.
     void construct_or_throw() {
         if(throw_after == 0) {
             throw_after = -1;

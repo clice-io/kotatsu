@@ -28,7 +28,7 @@ struct GlobError {
 
     Kind kind;
     /// The offending bytes, [begin, end) of the pattern given to GlobPattern::create(),
-    /// whatever brace alternative they were found in; both 0 for TooManyExpansions.
+    /// whichever arm of a brace expansion they were found in; both 0 for TooManyExpansions.
     std::uint32_t begin;
     std::uint32_t end;
     std::string message;
@@ -64,15 +64,15 @@ struct GlobError {
 /// positive range can name it.
 /// Character ranges use code-point order, without locale collation or Unicode normalization.
 ///
-/// A pattern compiles once into a literal prefix shared by every brace
-/// alternative plus one segment program per alternative. Matching never
+/// A pattern compiles once into a literal prefix shared by every arm of its
+/// brace expansion plus one segment program per arm. Matching never
 /// allocates and never truncates its search.
 class GlobPattern {
 public:
     /// A pattern is at most 4 GiB, brace expansion included: every offset
     /// the compiled form keeps is 32-bit, as are the error positions.
-    /// Brace expansion may produce at most `max_subpattern_num` alternatives;
-    /// 0 turns it off, and braces then match themselves.
+    /// Brace expansion may produce at most `max_subpattern_num` arms, one for each
+    /// choice of the braces' terms; 0 turns it off, and braces then match themselves.
     [[nodiscard]] static std::expected<GlobPattern, GlobError>
         create(std::string_view s, size_t max_subpattern_num = 100);
 
@@ -182,7 +182,8 @@ private:
         std::uint32_t end = 0;
     };
 
-    /// One brace alternative. The plan is read off the compiled segments,
+    /// One arm of the brace expansion: the pattern past the prefix, each brace replaced
+    /// by one of its terms. The plan is read off the compiled segments,
     /// so equivalent spellings always execute the same way.
     struct Arm {
         enum class Plan : std::uint8_t {

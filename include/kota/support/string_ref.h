@@ -77,16 +77,6 @@ public:
                ascii_strncasecmp(drop_front(size() - suffix.size()), suffix, suffix.size()) == 0;
     }
 
-    /// Return true if the given string is a substring of *this.
-    [[nodiscard]] constexpr bool contains(string_ref other) const {
-        return find(other) != npos;
-    }
-
-    /// Return true if the given character is contained in *this.
-    [[nodiscard]] constexpr bool contains(char c) const {
-        return find(c) != npos;
-    }
-
     /// Return true if the given string is a substring of *this, ignoring case.
     [[nodiscard]] constexpr bool contains_insensitive(string_ref other) const {
         return find_insensitive(other) != npos;

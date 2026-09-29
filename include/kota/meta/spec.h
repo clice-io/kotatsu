@@ -84,7 +84,7 @@ enum class tag_mode : std::uint8_t {
 /// and its bare form have different serialized schemas).
 struct struct_spec {
     /// Naming policy applied to every serialized field name.
-    naming::casing rename_all = naming::casing::identity;
+    naming::Casing rename_all = naming::Casing::Identity;
     /// Reject unknown keys during deserialization.
     bool deny_unknown_fields = false;
     /// Variant tagging mode; derived from tagged/tag/content by make_struct_spec.
@@ -246,7 +246,7 @@ struct type_proxy {
 
 [[maybe_unused]] constexpr inline value_proxy<aspect::rename_all,
                                               &struct_spec::rename_all,
-                                              naming::casing> rename_all{};
+                                              naming::Casing> rename_all{};
 [[maybe_unused]] constexpr inline value_proxy<aspect::deny_unknown_fields,
                                               &struct_spec::deny_unknown_fields,
                                               bool> deny_unknown_fields{};

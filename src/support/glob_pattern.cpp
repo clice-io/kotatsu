@@ -185,7 +185,7 @@ std::expected<CharClassRanges, GlobError> parse_bracket_charset(std::string_view
     return merged;
 }
 
-/// A brace expression: where it spans in the pattern, and its alternatives, which view the
+/// A brace expression: where it spans in the pattern, and its terms, which view the
 /// pattern.
 struct Brace {
     std::uint32_t begin;
@@ -252,14 +252,14 @@ std::expected<small_vector<Brace, 0>, GlobError> parse_braces(std::string_view p
     return braces;
 }
 
-/// One brace alternative: the pattern from `from` on, each brace replaced by one of its
-/// terms. It keeps the pieces of the pattern it is made of, which map an offset into it back
-/// to one into the pattern.
-struct Alternative {
+/// The text of one arm: the pattern from `from` on, each brace replaced by one of its terms.
+/// It keeps the pieces of the pattern it is made of, which map an offset into it back to one
+/// into the pattern.
+struct ArmText {
     small_vector<std::string_view, 4> pieces;
     std::string text;
 
-    /// Builds the alternative that takes term `choice[k]` of brace `k`.
+    /// Builds the arm that takes term `choice[k]` of brace `k`.
     void build(std::string_view pattern,
                std::uint32_t from,
                std::span<const Brace> braces,
@@ -278,8 +278,8 @@ struct Alternative {
         }
     }
 
-    /// The offset in `pattern` of the alternative's byte at `offset`.
-    std::uint32_t source(std::string_view pattern, std::uint32_t offset) const {
+    /// The offset in `pattern` of the arm's byte at `offset`.
+    std::uint32_t origin(std::string_view pattern, std::uint32_t offset) const {
         for(auto piece: pieces) {
             if(offset < piece.size()) {
                 return static_cast<std::uint32_t>(piece.data() - pattern.data()) + offset;
@@ -289,16 +289,16 @@ struct Alternative {
         std::unreachable();
     }
 
-    /// `error`, found in the alternative, spanning the same bytes of `pattern`.
+    /// `error`, found in the arm, spanning the same bytes of `pattern`.
     GlobError rebase(std::string_view pattern, GlobError error) const {
-        error.end = source(pattern, error.end - 1) + 1;
-        error.begin = source(pattern, error.begin);
+        error.end = origin(pattern, error.end - 1) + 1;
+        error.begin = origin(pattern, error.begin);
         return error;
     }
 };
 
-/// Steps `choice` to the next alternative, the last brace's term changing fastest; false
-/// after the last one.
+/// Steps `choice` to the next arm, the last brace's term changing fastest; false after the
+/// last one.
 bool next_choice(std::span<std::uint32_t> choice, std::span<const Brace> braces) {
     for(auto k = choice.size(); k-- > 0;) {
         if(++choice[k] != braces[k].terms.size()) {
@@ -406,46 +406,46 @@ std::expected<GlobPattern, GlobError> GlobPattern::create(std::string_view s,
     const auto from = static_cast<std::uint32_t>(prefix_size);
 
     small_vector<Brace, 0> braces;
-    size_t alternatives = 1;
+    size_t arm_count = 1;
     if(max_subpattern_num != 0 && s.substr(from).contains('{')) {
         KOTA_EXPECTED_TRY_V(braces, parse_braces(s, from));
         for(const auto& brace: braces) {
-            if(alternatives > std::numeric_limits<size_t>::max() / brace.terms.size()) {
-                alternatives = std::numeric_limits<size_t>::max();
+            if(arm_count > std::numeric_limits<size_t>::max() / brace.terms.size()) {
+                arm_count = std::numeric_limits<size_t>::max();
                 break;
             }
-            alternatives *= brace.terms.size();
+            arm_count *= brace.terms.size();
         }
-        if(alternatives > max_subpattern_num) [[unlikely]] {
+        if(arm_count > max_subpattern_num) [[unlikely]] {
             return std::unexpected{
                 GlobError{GlobError::TooManyExpansions, 0, 0, "too many brace expansions"}
             };
         }
     }
-    // Every alternative adds at most its own size in literal bytes and
+    // Every arm adds at most its own size in literal bytes and
     // tokens, and one more segment; the pools index with 32 bits too.
-    assert(alternatives * (s.size() - from + 1) <= std::numeric_limits<std::uint32_t>::max());
+    assert(arm_count * (s.size() - from + 1) <= std::numeric_limits<std::uint32_t>::max());
 
     const bool root = pat.prefix.empty() && !pat.prefix_at_seg_end;
     const bool at_segment_start = pat.prefix.empty() || pat.prefix_at_seg_end;
     bool match_all = false;
     small_vector<std::uint32_t, 4> choice(braces.size(), 0U);
-    Alternative alternative;
+    ArmText arm_text;
     do {
-        alternative.build(s, from, braces, choice);
-        const auto& text = alternative.text;
-        // Expansion is textual: an alternative starting with `/` right after the prefix's
+        arm_text.build(s, from, braces, choice);
+        const auto& text = arm_text.text;
+        // Expansion is textual: an arm starting with `/` right after the prefix's
         // separator spells `//`, which neither scan sees.
         if(pat.prefix_at_seg_end && text.starts_with('/')) [[unlikely]] {
             return std::unexpected{
                 GlobError{GlobError::MultipleSlash,
                           from - 1,
-                          alternative.source(s, 0) + 1,
+                          arm_text.origin(s, 0) + 1,
                           "multiple `/` is not allowed"}
             };
         }
         if(auto compiled = pat.compile_arm(text, at_segment_start); !compiled) [[unlikely]] {
-            return std::unexpected{alternative.rebase(s, std::move(compiled.error()))};
+            return std::unexpected{arm_text.rebase(s, std::move(compiled.error()))};
         }
         match_all |= root && (text == "**" || text == "**/");
     } while(next_choice(choice, braces));

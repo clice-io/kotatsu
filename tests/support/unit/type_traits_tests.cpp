@@ -18,7 +18,7 @@ struct EqualOnly {
 
 ZEST_SUITE(support_type_traits) {
 
-ZEST_CASE(specialization_of) {
+ZEST_CASE(specialization_of_matches_the_template_exactly) {
     STATIC_EXPECT(is_specialization_of<std::vector, std::vector<int>>);
     STATIC_EXPECT(!is_specialization_of<std::vector, std::string>);
     STATIC_EXPECT(!is_specialization_of<std::optional, const std::optional<int>>);
@@ -32,7 +32,7 @@ ZEST_CASE(optional_and_expected_see_through_references) {
     STATIC_EXPECT(!is_expected_v<std::optional<int>>);
 }
 
-ZEST_CASE(comparison_concepts) {
+ZEST_CASE(comparison_concepts_follow_the_operators) {
     STATIC_EXPECT(eq_comparable_with<int, long>);
     STATIC_EXPECT(eq_comparable_with<EqualOnly, EqualOnly>);
     STATIC_EXPECT(!eq_comparable_with<Unordered, Unordered>);

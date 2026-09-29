@@ -79,12 +79,12 @@ struct external_struct_tag {
 };
 
 struct config_struct_tag {
-    constexpr static auto spec = make_struct_spec(dsl::rename_all = naming::casing::lower_camel,
+    constexpr static auto spec = make_struct_spec(dsl::rename_all = naming::Casing::LowerCamel,
                                                   dsl::deny_unknown_fields = true);
 };
 
 struct config_struct_tag_twin {
-    constexpr static auto spec = make_struct_spec(dsl::rename_all = naming::casing::lower_camel,
+    constexpr static auto spec = make_struct_spec(dsl::rename_all = naming::Casing::LowerCamel,
                                                   dsl::deny_unknown_fields = true);
 };
 
@@ -203,7 +203,7 @@ ZEST_CASE(make_struct_spec_folds_values_and_derives_tagging) {
     STATIC_EXPECT(external_struct_tag::spec.tagging == tag_mode::external);
 
     constexpr const struct_spec& config = config_struct_tag::spec;
-    STATIC_EXPECT(config.rename_all == naming::casing::lower_camel);
+    STATIC_EXPECT(config.rename_all == naming::Casing::LowerCamel);
     STATIC_EXPECT(config.deny_unknown_fields);
     STATIC_EXPECT(config.tagging == tag_mode::none);
 
@@ -211,14 +211,14 @@ ZEST_CASE(make_struct_spec_folds_values_and_derives_tagging) {
 }
 
 ZEST_CASE(casing_maps_to_rename_policies) {
-    using naming::casing;
+    using naming::Casing;
     using naming::rename_policy_t;
     namespace policy = naming::rename_policy;
-    STATIC_EXPECT((std::is_same_v<rename_policy_t<casing::identity>, policy::identity>));
-    STATIC_EXPECT((std::is_same_v<rename_policy_t<casing::lower_snake>, policy::lower_snake>));
-    STATIC_EXPECT((std::is_same_v<rename_policy_t<casing::lower_camel>, policy::lower_camel>));
-    STATIC_EXPECT((std::is_same_v<rename_policy_t<casing::upper_camel>, policy::upper_camel>));
-    STATIC_EXPECT((std::is_same_v<rename_policy_t<casing::upper_snake>, policy::upper_snake>));
+    STATIC_EXPECT((std::is_same_v<rename_policy_t<Casing::Identity>, policy::identity>));
+    STATIC_EXPECT((std::is_same_v<rename_policy_t<Casing::LowerSnake>, policy::lower_snake>));
+    STATIC_EXPECT((std::is_same_v<rename_policy_t<Casing::LowerCamel>, policy::lower_camel>));
+    STATIC_EXPECT((std::is_same_v<rename_policy_t<Casing::UpperCamel>, policy::upper_camel>));
+    STATIC_EXPECT((std::is_same_v<rename_policy_t<Casing::UpperSnake>, policy::upper_snake>));
 }
 
 ZEST_CASE(annotate_attaches_struct_spec) {

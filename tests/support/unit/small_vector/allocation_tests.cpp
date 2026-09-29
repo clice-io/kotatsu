@@ -2,6 +2,7 @@
 #include <functional>
 #include <memory>
 #include <new>
+#include <type_traits>
 #include <utility>
 
 #include "kota/zest/zest.h"
@@ -60,6 +61,14 @@ struct Recording {
 template <>
 struct std::allocator<kota::Probe> {
     using value_type = kota::Probe;
+    using size_type = std::size_t;
+    using difference_type = std::ptrdiff_t;
+    using propagate_on_container_move_assignment = std::true_type;
+
+    constexpr allocator() noexcept = default;
+
+    template <typename U>
+    constexpr allocator(const allocator<U>&) noexcept {}
 
     kota::Probe* allocate(std::size_t count) {
         kota::ledger.allocations += 1;
@@ -86,8 +95,8 @@ namespace {
 
 using Probes = vector<Probe>;
 
-/// Room for a Probes and, right after it, the one element its first allocation holds: the
-/// empty inline buffer of an N = 0 vector starts where the object ends.
+/// Room for a Probes and, after it, the one element its first allocation holds, with room to
+/// spare: the empty inline buffer of an N = 0 vector starts where the object ends.
 struct Arena {
     alignas(Probes) std::byte bytes[2 * sizeof(Probes) + sizeof(Probe)];
 
@@ -191,7 +200,9 @@ ZEST_CASE(from_raw_parts_leaves_a_buffer_where_the_inline_buffer_begins) {
     auto* buffer = mem::allocate<Probe>(1);
     ASSERT(buffer == spot);
     std::construct_at(buffer, Probe{5});
-    auto* v = std::construct_at(arena.vector(), Probes::from_raw_parts(buffer, 1, 1));
+    // Placement new builds the result in the arena itself, rather than moving it there.
+    auto* v =
+        ::new (static_cast<void*>(arena.vector())) Probes(Probes::from_raw_parts(buffer, 1, 1));
     EXPECT(v->data() != spot);
     ASSERT(v->size() == 1U);
     EXPECT(v->front().value == 5);

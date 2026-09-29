@@ -1,5 +1,6 @@
 #include <array>
 #include <forward_list>
+#include <memory>
 #include <ranges>
 #include <sstream>
 #include <string>
@@ -52,6 +53,19 @@ ZEST_CASE(push_back_keeps_every_value_across_growth) {
     EXPECT(v == expected);
 }
 
+ZEST_CASE(push_back_of_move_only_elements_grows) {
+    small_vector<std::unique_ptr<int>, 2> v;
+    for(int i = 0; i < 5; ++i) {
+        v.push_back(std::make_unique<int>(i));
+    }
+    ASSERT(v.size() == 5U);
+    for(int i = 0; i < 5; ++i) {
+        ZEST_CONTEXT("element {}", i);
+        ASSERT(v[i] != nullptr);
+        EXPECT(*v[i] == i);
+    }
+}
+
 ZEST_CASE(emplace_back_constructs_in_place) {
     small_vector<std::string, 2> v;
     v.emplace_back(3, 'x');
@@ -75,7 +89,7 @@ ZEST_CASE(append_count_copies_the_value) {
     EXPECT(v == std::vector{1, 7, 7, 7});
 }
 
-ZEST_CASE(append_contiguous_range) {
+ZEST_CASE(append_contiguous_range_copies_it) {
     small_vector<int, 3> v = {1, 2, 3};
     v.append(std::array{4, 5, 6});
     EXPECT(v == std::vector{1, 2, 3, 4, 5, 6});
@@ -88,21 +102,21 @@ ZEST_CASE(append_forward_range_of_unknown_size) {
     EXPECT(v == std::vector<std::string>{"a", "b", "c"});
 }
 
-ZEST_CASE(append_input_range) {
+ZEST_CASE(append_input_range_reads_it_once) {
     std::istringstream text("4 5 6");
     small_vector<int, 2> v = {1};
     v.append(std::views::istream<int>(text));
     EXPECT(v == std::vector{1, 4, 5, 6});
 }
 
-ZEST_CASE(append_converting_range) {
+ZEST_CASE(append_converting_range_converts_each) {
     std::array<const char*, 2> words = {"x", "y"};
     small_vector<std::string, 1> v;
     v.append(words);
     EXPECT(v == std::vector<std::string>{"x", "y"});
 }
 
-ZEST_CASE(append_initializer_list) {
+ZEST_CASE(append_initializer_list_copies_it) {
     small_vector<int, 4> v = {1, 2};
     v.append({3, 4, 5});
     EXPECT(v == std::vector{1, 2, 3, 4, 5});

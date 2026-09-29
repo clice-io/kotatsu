@@ -10,40 +10,27 @@
 
 namespace kota {
 
+/// The class and the signature of member function `V`.
 template <auto V, typename T = decltype(V)>
 struct mem_fn {
     static_assert(std::is_member_function_pointer_v<T>, "V must be a member function pointer");
 };
 
 template <auto V, typename Class, typename Ret, typename... Args>
-    requires std::is_member_function_pointer_v<decltype(V)>
 struct mem_fn<V, Ret (Class::*)(Args...)> {
-    using ClassType = Class;
-    using ClassFunctionType = Ret (Class::*)(Args...);
-    using FunctionType = Ret(Args...);
-
-    constexpr static ClassFunctionType get() {
-        return V;
-    }
+    using class_type = Class;
+    using function_type = Ret(Args...);
 };
 
 template <auto V, typename Class, typename Ret, typename... Args>
-    requires std::is_member_function_pointer_v<decltype(V)>
 struct mem_fn<V, Ret (Class::*)(Args...) const> {
-    using ClassType = Class;
-    using ClassFunctionType = Ret (Class::*)(Args...) const;
-    using FunctionType = Ret(Args...);
-
-    constexpr static ClassFunctionType get() {
-        return V;
-    }
+    using class_type = Class;
+    using function_type = Ret(Args...);
 };
 
+/// Whether `MemFn`, a mem_fn, is a member function of Class, whatever its cv-qualifiers.
 template <typename Class, typename MemFn>
-concept is_mem_fn_of = requires {
-    typename MemFn::ClassType;
-    requires std::is_same_v<std::remove_cv_t<Class>, typename MemFn::ClassType>;
-};
+concept is_mem_fn_of = std::is_same_v<std::remove_cv_t<Class>, typename MemFn::class_type>;
 
 template <typename Sign>
 class function_ref {
@@ -78,8 +65,8 @@ public:
 private:
     template <auto MemFnPointer, typename Class, typename Mem>
         requires std::is_lvalue_reference_v<Class&&> &&
-                 is_mem_fn_of<std::remove_cvref_t<Class>, Mem>
-    friend constexpr function_ref<typename Mem::FunctionType> bind_ref(Class&& obj);
+                 is_mem_fn_of<std::remove_reference_t<Class>, Mem>
+    friend constexpr function_ref<typename Mem::function_type> bind_ref(Class&& obj);
 
     union Bound {
         const void* object;
@@ -122,7 +109,7 @@ namespace detail {
 /// What `function<R(Args...)>` and `function<R(Args...) const>` share. `Const` says whether
 /// the callable is called as const, and so whether calling the function is const.
 template <bool Const, typename R, typename... Args>
-class function_impl {
+class ErasedCallable {
     template <typename T>
     using target_t = std::conditional_t<Const, const T, T>;
 
@@ -137,9 +124,9 @@ public:
         sizeof(T) <= sbo_size && alignof(T) <= sbo_align && std::is_nothrow_move_constructible_v<T>;
 
     template <typename Class>
-        requires (!std::is_base_of_v<function_impl, std::remove_cvref_t<Class>>) &&
+        requires (!std::is_base_of_v<ErasedCallable, std::remove_cvref_t<Class>>) &&
                  std::is_invocable_r_v<R, target_t<std::remove_cvref_t<Class>>&, Args...>
-    constexpr function_impl(Class&& invocable) {
+    constexpr ErasedCallable(Class&& invocable) {
         using T = std::remove_cvref_t<Class>;
         if constexpr(std::is_convertible_v<Class&&, R (*)(Args...)>) {
             buffer.fn = static_cast<R (*)(Args...)>(std::forward<Class>(invocable));
@@ -153,15 +140,15 @@ public:
         }
     }
 
-    function_impl(const function_impl&) = delete;
-    function_impl& operator=(const function_impl&) = delete;
+    ErasedCallable(const ErasedCallable&) = delete;
+    ErasedCallable& operator=(const ErasedCallable&) = delete;
 
-    constexpr function_impl(function_impl&& other) noexcept :
+    constexpr ErasedCallable(ErasedCallable&& other) noexcept :
         ops(std::exchange(other.ops, nullptr)) {
         take_buffer(other);
     }
 
-    constexpr function_impl& operator=(function_impl&& other) noexcept {
+    constexpr ErasedCallable& operator=(ErasedCallable&& other) noexcept {
         if(this != &other) {
             destroy();
             ops = std::exchange(other.ops, nullptr);
@@ -170,7 +157,7 @@ public:
         return *this;
     }
 
-    constexpr ~function_impl() {
+    constexpr ~ErasedCallable() {
         destroy();
     }
 
@@ -198,8 +185,8 @@ private:
     /// How to call, move and destroy the kind of callable the buffer holds.
     struct Ops {
         R (*call)(BufferRef, Args&&...);
-        /// Moves the callable from the second buffer into the first and destroys it there;
-        /// null when copying the buffer's bytes moves it.
+        /// Moves the callable from the second buffer into the first and destroys it in the
+        /// second; null when copying the buffer's bytes moves it.
         void (*relocate)(Buffer&, Buffer&) noexcept;
         /// Null when there is nothing to destroy.
         void (*destroy)(Buffer&) noexcept;
@@ -251,7 +238,7 @@ private:
     constexpr static Ops heap_ops = {&call_heap<T>, nullptr, &destroy_heap<T>};
 
     /// Takes the callable in `other`'s buffer, whose ops this function now has.
-    constexpr void take_buffer(function_impl& other) noexcept {
+    constexpr void take_buffer(ErasedCallable& other) noexcept {
         if(ops != nullptr && ops->relocate != nullptr) {
             ops->relocate(buffer, other.buffer);
         } else {
@@ -273,26 +260,27 @@ private:
 }  // namespace detail
 
 /// An owning callable of signature R(Args...), move-only. A small callable whose move cannot
-/// throw lives inline; a larger one, on the heap.
+/// throw lives in the function itself; any other, on the heap.
 template <typename R, typename... Args>
-class function<R(Args...)> : public detail::function_impl<false, R, Args...> {
+class function<R(Args...)> : public detail::ErasedCallable<false, R, Args...> {
 public:
-    using detail::function_impl<false, R, Args...>::function_impl;
+    using detail::ErasedCallable<false, R, Args...>::ErasedCallable;
 };
 
 /// Like function<R(Args...)>, for a callable called as const, which lets the function itself
 /// be called as const.
 template <typename R, typename... Args>
-class function<R(Args...) const> : public detail::function_impl<true, R, Args...> {
+class function<R(Args...) const> : public detail::ErasedCallable<true, R, Args...> {
 public:
-    using detail::function_impl<true, R, Args...>::function_impl;
+    using detail::ErasedCallable<true, R, Args...>::ErasedCallable;
 };
 
 /// A function_ref calling member function `MemFnPointer` on `obj`, which must outlive it.
 template <auto MemFnPointer, typename Class, typename Mem = mem_fn<MemFnPointer>>
-    requires std::is_lvalue_reference_v<Class&&> && is_mem_fn_of<std::remove_cvref_t<Class>, Mem>
-constexpr function_ref<typename Mem::FunctionType> bind_ref(Class&& obj) {
-    using ref = function_ref<typename Mem::FunctionType>;
+    requires std::is_lvalue_reference_v<Class&&> &&
+             is_mem_fn_of<std::remove_reference_t<Class>, Mem>
+constexpr function_ref<typename Mem::function_type> bind_ref(Class&& obj) {
+    using ref = function_ref<typename Mem::function_type>;
     using object_type = std::remove_reference_t<Class>;
     return ref(&ref::template call_member<MemFnPointer, object_type>,
                typename ref::Bound{.object = std::addressof(obj)});
@@ -300,9 +288,10 @@ constexpr function_ref<typename Mem::FunctionType> bind_ref(Class&& obj) {
 
 /// A function owning `obj`, moved or copied in, that calls member function `MemFnPointer` on it.
 template <auto MemFnPointer, typename Class, typename Mem = mem_fn<MemFnPointer>>
-    requires is_mem_fn_of<std::remove_cvref_t<Class>, Mem>
-constexpr function<typename Mem::FunctionType> bind(Class&& obj) {
-    return [object = std::forward<Class>(obj)]<typename... Args>(Args&&... args) mutable {
+    requires is_mem_fn_of<std::remove_reference_t<Class>, Mem>
+constexpr function<typename Mem::function_type> bind(Class&& obj) {
+    return [object = std::forward<Class>(obj)]<typename... Args>(
+               Args&&... args) mutable -> decltype(auto) {
         return std::invoke(MemFnPointer, object, std::forward<Args>(args)...);
     };
 }

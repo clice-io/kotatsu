@@ -122,25 +122,28 @@ ZEST_CASE(sequences_without_an_insertion_are_not) {
     STATIC_EXPECT(!detail::sequence_insertable<std::forward_list<int>, int>);
 }
 
+// meta compares containers by the concepts of ranges.h, which these suites check: the
+// comparisons below are plain `==`, their operands left undecomposed.
+
 ZEST_CASE(append_sequence_element_uses_the_form_available) {
     std::vector<std::string> emplaced;
     detail::append_sequence_element(emplaced, "a");
-    EXPECT(emplaced == std::vector<std::string>{"a"});
+    EXPECT((emplaced == std::vector<std::string>{"a"}));
 
     PushOnly pushed;
     detail::append_sequence_element(pushed, 1);
     detail::append_sequence_element(pushed, 2);
-    EXPECT(pushed.values == std::vector{1, 2});
+    EXPECT((pushed.values == std::vector{1, 2}));
 
     InsertAtEnd inserted;
     detail::append_sequence_element(inserted, 3);
     detail::append_sequence_element(inserted, 4);
-    EXPECT(inserted.values == std::vector{3, 4});
+    EXPECT((inserted.values == std::vector{3, 4}));
 
     std::set<int> set;
     detail::append_sequence_element(set, 5);
     detail::append_sequence_element(set, 5);
-    EXPECT(set == std::set{5});
+    EXPECT((set == std::set{5}));
 }
 
 ZEST_CASE(maps_insertable_by_a_known_form) {
@@ -156,9 +159,9 @@ ZEST_CASE(insert_map_entry_uses_the_form_available) {
         {"a", 1}
     };
     detail::insert_map_entry(map, std::string("a"), 2);
-    EXPECT(map == std::map<std::string, int>{
-                      {"a", 2}
-    });
+    EXPECT((map == std::map<std::string, int>{
+                       {"a", 2}
+    }));
 
     std::multimap<int, int> multimap;
     detail::insert_map_entry(multimap, 1, 1);
@@ -167,9 +170,9 @@ ZEST_CASE(insert_map_entry_uses_the_form_available) {
 
     InsertOnlyMap inserted;
     detail::insert_map_entry(inserted, std::string("b"), 3);
-    EXPECT(inserted.entries == std::map<std::string, int>{
-                                   {"b", 3}
-    });
+    EXPECT((inserted.entries == std::map<std::string, int>{
+                                    {"b", 3}
+    }));
 }
 
 };  // ZEST_SUITE(support_ranges)

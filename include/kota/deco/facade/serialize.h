@@ -64,7 +64,7 @@ class Serializer : public kota::deco::detail::DecoStructConsumer<Serializer<Stru
             // The shortest text that reads back as the same value.
             return std::format("{}", value);
         } else if constexpr(std::is_enum_v<ValueTy>) {
-            return kota::codec::spelling::map_enum_to_string(value);
+            return kota::meta::map_enum_to_string(value);
         } else if constexpr(requires(std::ostream& os, const ValueTy& v) { os << v; }) {
             std::ostringstream oss;
             oss << value;

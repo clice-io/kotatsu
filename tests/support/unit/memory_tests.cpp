@@ -1,7 +1,8 @@
 #include <array>
-#include <cstdint>
+#include <cstddef>
 #include <list>
 #include <memory>
+#include <ranges>
 #include <string>
 #include <vector>
 

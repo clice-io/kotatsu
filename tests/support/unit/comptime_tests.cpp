@@ -58,7 +58,7 @@ ZEST_CASE(counting_records_the_peak_of_each_pool) {
     STATIC_EXPECT(!record.counting);
     STATIC_EXPECT(record.data[0] == 5U);
     STATIC_EXPECT(record.data[1] == 1U);
-    STATIC_EXPECT(record.count >= 4U);
+    STATIC_EXPECT(record.count == 4U);
     STATIC_EXPECT(Build<record>::Resource::read_reserved<0>() == 5U);
     STATIC_EXPECT(Build<record>::Resource::read_reserved(1) == 1U);
 }
@@ -75,8 +75,8 @@ ZEST_CASE(sized_pools_hold_what_the_counting_saw) {
 }
 
 ZEST_CASE(sized_buffer_holds_the_bytes) {
-    STATIC_EXPECT((std::string_view(sized.text) == "abc"));
-    STATIC_EXPECT(sized.resource.used_size() >= 4U);
+    STATIC_EXPECT(std::string_view(sized.text) == "abc");
+    STATIC_EXPECT(sized.resource.used_size() == 4U);
 }
 
 ZEST_CASE(pools_iterate_and_compare) {
@@ -87,9 +87,14 @@ ZEST_CASE(pools_iterate_and_compare) {
     EXPECT(sum == 3);
     EXPECT(sized.numbers.end() - sized.numbers.begin() == 3);
     EXPECT(sized.numbers.cend() - sized.numbers.cbegin() == 3);
-    EXPECT(sized.numbers.data() == sized.numbers.begin());
-    // The pool's own comparison, not the checks'.
-    EXPECT((sized.numbers == sized.numbers));
+    // The pool's own comparison, not the checks', against a pool built the same way at run
+    // time and then changed.
+    Build<record> other;
+    EXPECT((other.numbers == sized.numbers));
+    other.numbers.pop_back();
+    EXPECT(!(other.numbers == sized.numbers));
+    other.numbers.push_back(7);
+    EXPECT(!(other.numbers == sized.numbers));
 }
 
 };  // ZEST_SUITE(support_comptime)

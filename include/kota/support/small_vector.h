@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <cassert>
 #include <compare>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <initializer_list>
 #include <iterator>
 #include <limits>
@@ -42,8 +44,8 @@ concept small_vector_compatible_range =
     std::constructible_from<T, std::ranges::range_reference_t<Range>> &&
     !is_small_vector_v<std::remove_cvref_t<Range>>;
 
-/// The integer a vector keeps its size and capacity in: 32 bits, or a word for elements
-/// under 4 bytes, of which an address space holds more than 32 bits count.
+/// The integer a vector keeps its size and capacity in: 32 bits, or 64 bits for elements under
+/// 4 bytes on a 64-bit target, which can hold more of them than 32 bits count.
 template <typename T>
 using small_vector_size_type =
     std::conditional_t<sizeof(T) < 4 && sizeof(void*) >= 8, std::uint64_t, std::uint32_t>;
@@ -109,11 +111,13 @@ struct alignas(T) inline_buffer<T, 0> {};
 }  // namespace detail
 
 /// A small_vector of any inline capacity, for code that takes one by reference without
-/// caring what that capacity is. A small_vector places its inline buffer right after this
-/// header, where inline_begin() finds it.
+/// caring what that capacity is. A small_vector places its inline buffer right after the
+/// hybrid_vector part of the object, where inline_begin() finds it.
 ///
-/// An argument may view the vector's own elements: an element to copy, or a range of them
-/// to append, assign or insert.
+/// An argument may be one of the vector's own elements, to copy or move, or a range of
+/// references to them, to append, assign or insert; a vector moved from may be owned by one of
+/// the elements when it holds an allocation. Other views of the elements, such as a range that
+/// transforms them, must not be passed where the vector grows or overwrites them.
 template <typename T>
 class hybrid_vector {
     template <typename, unsigned int>
@@ -146,9 +150,8 @@ public:
     /// empty. Through this type `other`'s inline capacity is unknown, so taking its
     /// allocation leaves it a capacity of 0 until it grows again.
     constexpr hybrid_vector& operator=(hybrid_vector&& other) {
-        if(!same_object(other) && !take_allocation(other)) {
-            assign_items(std::make_move_iterator(other.begin()), other.size());
-            other.clear();
+        if(!same_object(other)) {
+            move_assign(other, 0);
         }
         return *this;
     }
@@ -300,7 +303,7 @@ public:
     constexpr void reserve(size_type new_capacity) {
         if(new_capacity > capacity()) {
             rebuild(next_capacity(new_capacity), size(), [this](pointer first) {
-                return mem::uninitialized_move(begin(), end(), first);
+                return mem::uninitialized_relocate(begin(), end(), first);
             });
         }
     }
@@ -455,11 +458,11 @@ public:
         *this = std::move(other);
     }
 
-    constexpr iterator insert(iterator pos, const_reference value) {
+    constexpr iterator insert(const_iterator pos, const_reference value) {
         return emplace(pos, value);
     }
 
-    constexpr iterator insert(iterator pos, value_type&& value) {
+    constexpr iterator insert(const_iterator pos, value_type&& value) {
         assert(valid_insert_position(pos));
         if(references_elements(std::addressof(value))) {
             return emplace(pos, std::move(value));
@@ -467,11 +470,8 @@ public:
         return insert_one(index_of(pos), std::move(value));
     }
 
-    constexpr iterator insert(iterator pos, size_type count, const_reference value) {
+    constexpr iterator insert(const_iterator pos, size_type count, const_reference value) {
         assert(valid_insert_position(pos));
-        if(count == 0) {
-            return pos;
-        }
         // The insertion moves the elements, and `value` may be one of them.
         const value_type copy(value);
         return insert_items(
@@ -484,7 +484,7 @@ public:
     }
 
     template <detail::small_vector_compatible_range<value_type> Range>
-    constexpr iterator insert(iterator pos, Range&& range) {
+    constexpr iterator insert(const_iterator pos, Range&& range) {
         assert(valid_insert_position(pos));
         const auto index = index_of(pos);
         if constexpr(std::ranges::forward_range<Range>) {
@@ -507,12 +507,12 @@ public:
         }
     }
 
-    constexpr iterator insert(iterator pos, std::initializer_list<value_type> init) {
+    constexpr iterator insert(const_iterator pos, std::initializer_list<value_type> init) {
         return insert(pos, std::ranges::subrange(init.begin(), init.end()));
     }
 
     template <typename... Args>
-    constexpr iterator emplace(iterator pos, Args&&... args) {
+    constexpr iterator emplace(const_iterator pos, Args&&... args) {
         assert(valid_insert_position(pos));
         // The arguments may name elements the insertion moves.
         value_type value(std::forward<Args>(args)...);
@@ -520,7 +520,6 @@ public:
     }
 
     constexpr iterator erase(const_iterator pos) {
-        assert(valid_erase_range(pos, std::next(pos)));
         return erase(pos, pos + 1);
     }
 
@@ -570,7 +569,7 @@ public:
     }
 
 protected:
-    constexpr explicit hybrid_vector(size_type inline_capacity) noexcept : head(nullptr), room(0) {
+    constexpr explicit hybrid_vector(size_type inline_capacity) noexcept {
         reset_to_small(inline_capacity);
     }
 
@@ -627,11 +626,21 @@ protected:
     }
 
     /// Moves `other`'s elements into this empty vector, constructing rather than assigning
-    /// them, and leaves `other` empty: by taking its allocation when it has one, as operator=
-    /// does.
-    constexpr void take_elements(hybrid_vector& other) {
-        if(!take_allocation(other)) {
+    /// them, and leaves `other` empty: by taking its allocation when it has one, which leaves
+    /// it with `other_inline_capacity`.
+    constexpr void take_elements(hybrid_vector& other, size_type other_inline_capacity) {
+        if(!take_allocation(other, other_inline_capacity)) {
             append(mem::move_range(other.begin(), other.end()));
+            other.clear();
+        }
+    }
+
+    /// Moves `other`'s elements into this vector and leaves `other` empty: by taking its
+    /// allocation when it has one, which leaves it with `other_inline_capacity`, or element by
+    /// element.
+    constexpr void move_assign(hybrid_vector& other, size_type other_inline_capacity) {
+        if(!take_allocation(other, other_inline_capacity)) {
+            assign_items(std::make_move_iterator(other.begin()), other.size());
             other.clear();
         }
     }
@@ -682,7 +691,7 @@ protected:
             KOTA_RETHROW();
         }
         KOTA_TRY {
-            mem::uninitialized_move(begin(), end(), new_head);
+            mem::uninitialized_relocate(begin(), end(), new_head);
         }
         KOTA_CATCH_ALL() {
             std::ranges::destroy(tail, new_head + new_size);
@@ -706,7 +715,7 @@ private:
 
     /// The first element, in the inline buffer or an allocation.
     pointer head;
-    compact_size_type used = 0;
+    compact_size_type used;
     /// How many elements the buffer has room for.
     compact_size_type room;
 
@@ -789,14 +798,18 @@ private:
     }
 
     /// Takes `other`'s allocation, and its elements with it, when it has one this vector can
-    /// hold (see allocate()); this vector's elements and allocation go first. `other` is left
-    /// with neither, and a capacity of 0.
-    constexpr bool take_allocation(hybrid_vector& other) noexcept {
+    /// hold (see allocate()), destroying this vector's elements and freeing its allocation.
+    /// `other` is left empty with its inline buffer, of `other_inline_capacity`, before that:
+    /// one of the elements destroyed may own it.
+    constexpr bool take_allocation(hybrid_vector& other, size_type other_inline_capacity) noexcept {
         if(!other.on_heap() || other.head == inline_begin()) {
             return false;
         }
-        adopt_allocation(other.head, other.used, other.room);
-        other.reset_to_small(0);
+        auto* taken = other.head;
+        const auto count = other.used;
+        const auto taken_room = other.room;
+        other.reset_to_small(other_inline_capacity);
+        adopt_allocation(taken, count, taken_room);
         return true;
     }
 
@@ -864,15 +877,19 @@ private:
     template <typename Construct, typename Assign>
     constexpr iterator
         insert_items(size_type index, size_type count, Construct construct, Assign assign) {
+        if(count == 0) {
+            // In place, the moves below would assign each element after the gap to itself.
+            return head + index;
+        }
         const auto new_size = checked_size(size(), count);
         if(new_size > capacity()) {
             const auto new_room = next_capacity(new_size);
             mem::AllocationGuard<value_type> guard(allocate(new_room), new_room);
-            auto* out = mem::uninitialized_move(begin(), head + index, guard.data());
+            auto* out = mem::uninitialized_relocate(begin(), head + index, guard.data());
             guard.mark(out);
             out = construct(out, 0);
             guard.mark(out);
-            guard.mark(mem::uninitialized_move(head + index, end(), out));
+            guard.mark(mem::uninitialized_relocate(head + index, end(), out));
             adopt_allocation(guard.release(), new_size, new_room);
             return head + index;
         }
@@ -947,7 +964,7 @@ public:
     }
 
     constexpr small_vector(base_type&& other) : small_vector() {
-        this->take_elements(other);
+        this->take_elements(other, 0);
     }
 
     constexpr small_vector(const small_vector& other) :
@@ -959,14 +976,12 @@ public:
 
     constexpr small_vector(small_vector&& other) noexcept(
         std::is_nothrow_move_constructible_v<value_type>) : small_vector() {
-        this->take_elements(other);
-        refill(other);
+        this->take_elements(other, InlineCapacity);
     }
 
     template <unsigned int OtherCapacity>
     constexpr small_vector(small_vector<value_type, OtherCapacity>&& other) : small_vector() {
-        this->take_elements(other);
-        refill(other);
+        this->take_elements(other, OtherCapacity);
     }
 
     constexpr small_vector& operator=(const base_type& other) {
@@ -987,16 +1002,14 @@ public:
     constexpr small_vector&
         operator=(small_vector&& other) noexcept(std::is_nothrow_move_constructible_v<value_type>) {
         if(this != std::addressof(other)) {
-            base_type::operator=(std::move(other));
-            refill(other);
+            this->move_assign(other, InlineCapacity);
         }
         return *this;
     }
 
     template <unsigned int OtherCapacity>
     constexpr small_vector& operator=(small_vector<value_type, OtherCapacity>&& other) {
-        base_type::operator=(std::move(other));
-        refill(other);
+        this->move_assign(other, OtherCapacity);
         return *this;
     }
 
@@ -1010,16 +1023,15 @@ public:
         *this = std::move(other);
     }
 
-    /// Construct a small_vector by adopting a pre-allocated buffer.
-    /// The buffer must have been allocated with mem::allocate<value_type>.
-    /// The small_vector takes ownership and will deallocate it on destruction.
+    /// A small_vector that owns `data`, an allocation from mem::allocate<value_type> of room
+    /// for `capacity` elements, of which the first `count` are constructed; empty for null.
     [[nodiscard]] constexpr static small_vector from_raw_parts(value_type* data,
                                                                size_type count,
                                                                size_type capacity) {
         // Moved out of a local, so that the move checks the buffer against the inline buffer
         // of the vector it ends up in (see allocate()).
         small_vector adopted;
-        if(data != nullptr && capacity > 0) {
+        if(data != nullptr) {
             adopted.adopt_allocation(data, count, capacity);
         }
         return small_vector(std::move(adopted));
@@ -1040,24 +1052,18 @@ public:
             return;
         }
         const auto count = this->size();
-        if(!std::is_constant_evaluated() && count <= InlineCapacity) {
-            auto* inline_head = this->inline_begin();
-            mem::uninitialized_move(this->begin(), this->end(), inline_head);
-            this->adopt_allocation(inline_head, count, InlineCapacity);
-        } else if(count != this->capacity()) {
-            this->rebuild(count, count, [this](value_type* first) {
-                return mem::uninitialized_move(this->begin(), this->end(), first);
-            });
+        if !consteval {
+            if(count <= InlineCapacity) {
+                auto* inline_head = this->inline_begin();
+                mem::uninitialized_relocate(this->begin(), this->end(), inline_head);
+                this->adopt_allocation(inline_head, count, InlineCapacity);
+                return;
+            }
         }
-    }
-
-private:
-    /// Gives `other`, moved from, the room of its inline buffer back: through the base,
-    /// taking its allocation left it none. One that kept its allocation keeps it.
-    template <unsigned int OtherCapacity>
-    constexpr static void refill(small_vector<value_type, OtherCapacity>& other) noexcept {
-        if(!other.on_heap()) {
-            other.reset_to_small(OtherCapacity);
+        if(count != this->capacity()) {
+            this->rebuild(count, count, [this](value_type* first) {
+                return mem::uninitialized_relocate(this->begin(), this->end(), first);
+            });
         }
     }
 };

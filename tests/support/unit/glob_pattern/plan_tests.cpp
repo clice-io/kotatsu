@@ -148,7 +148,7 @@ ZEST_CASE(randomized_patterns_agree_with_a_reference) {
                     path += atoms[atom];
                 }
             }
-            const bool expected = source == "**" || reference_path(segments, words);
+            const bool expected = reference_path(segments, words);
             if(compiled->match(path) != expected) {
                 ZEST_CONTEXT("path `{}`", path);
                 EXPECT(compiled->match(path) == expected);
@@ -226,7 +226,7 @@ ZEST_CASE(extension_sets_agree_with_a_linear_check) {
     }
 }
 
-ZEST_CASE(affix_plans) {
+ZEST_CASE(affix_plans_match_the_head_and_the_tail) {
     test::expect_glob("**/foo*foo",
                       {"foofoo", "目录/foo中文foo"},
                       {"foo", "foo/foo", "目录/foofoo/"});
@@ -252,6 +252,23 @@ ZEST_CASE(compiled_patterns_copy_and_move) {
     const auto tree_moved = std::move(*tree);
     EXPECT(tree_copy.match("/work/项目[demo]/src/test.cpp"));
     EXPECT(tree_moved.match("/work/项目[demo]/src/test.cpp"));
+}
+
+ZEST_CASE(patterns_too_large_to_keep_inline_copy_and_move) {
+    // Enough arms, segments, tokens and classes that none of them fits inline.
+    auto pattern = GlobPattern::create("{a,b,c}/x*/[0-9]?/**/y/*.{c,h}");
+    ASSERT(pattern.has_value());
+    const auto copy = *pattern;
+    auto assigned = GlobPattern::create("other");
+    ASSERT(assigned.has_value());
+    *assigned = std::move(*pattern);
+    const GlobPattern& moved_in = *assigned;
+    for(const auto* compiled: {&copy, &moved_in}) {
+        EXPECT(compiled->match("b/xz/5q/deep/down/y/main.c"));
+        EXPECT(compiled->match("c/x/0!/y/main.h"));
+        EXPECT(!compiled->match("d/xz/5q/y/main.c"));
+        EXPECT(!compiled->match("other"));
+    }
 }
 
 };  // ZEST_SUITE(support_glob_pattern_plan)

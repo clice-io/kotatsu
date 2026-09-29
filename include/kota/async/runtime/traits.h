@@ -63,8 +63,8 @@ struct keep_non_void : std::bool_constant<!std::is_void_v<T>> {};
 /// The one channel type for several: void when none of them has one, the type
 /// when they share one, a variant of the distinct types otherwise.
 template <typename... Ts>
-using merged_channel_t = typename type_list_to_union<
-    type_list_unique_t<type_list_filter_t<type_list<Ts...>, keep_non_void>>>::type;
+using merged_channel_t =
+    type_list_to_union_t<type_list_unique_t<type_list_filter_t<type_list<Ts...>, keep_non_void>>>;
 
 /// What a child that succeeded contributes to its aggregate's value.
 template <typename Task>

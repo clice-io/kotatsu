@@ -1,6 +1,7 @@
 #include <array>
 #include <cstdint>
 #include <list>
+#include <memory>
 #include <ranges>
 #include <sstream>
 #include <string>
@@ -84,7 +85,7 @@ ZEST_CASE(input_range_is_read_once) {
     EXPECT(v == std::vector{1, 2, 3, 4, 5});
 }
 
-ZEST_CASE(initializer_list) {
+ZEST_CASE(initializer_list_copies_its_elements) {
     small_vector<int, 4> v = {1, 2, 3, 4, 5};
     EXPECT(v == std::vector{1, 2, 3, 4, 5});
 }
@@ -157,6 +158,21 @@ ZEST_CASE(move_of_inline_elements_moves_each) {
     small_vector<test::Tracked, 4> moved(std::move(source));
     EXPECT(test::values(moved) == std::vector{1, 2, 3});
     EXPECT(census.moves - moves == 3);
+    EXPECT(source.empty());
+}
+
+ZEST_CASE(move_of_move_only_elements) {
+    small_vector<std::unique_ptr<int>, 2> source;
+    source.push_back(std::make_unique<int>(1));
+    small_vector<std::unique_ptr<int>, 2> inline_moved(std::move(source));
+    ASSERT(inline_moved.size() == 1U);
+    EXPECT(*inline_moved[0] == 1);
+    source.push_back(std::make_unique<int>(2));
+    source.push_back(std::make_unique<int>(3));
+    source.push_back(std::make_unique<int>(4));
+    small_vector<std::unique_ptr<int>, 2> heap_moved(std::move(source));
+    ASSERT(heap_moved.size() == 3U);
+    EXPECT(*heap_moved[2] == 4);
     EXPECT(source.empty());
 }
 

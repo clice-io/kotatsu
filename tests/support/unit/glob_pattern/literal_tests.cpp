@@ -39,19 +39,19 @@ ZEST_CASE(trailing_slash_is_literal) {
 ZEST_CASE(escaped_wildcards_are_literal) {
     test::expect_glob(R"(\*star)", {"*star"}, {"xstar"});
     test::expect_glob(R"(\{\*\})", {"{*}"}, {"{x}"});
-    test::expect_glob(R"(\中\文\*\?\[\{\\)", {"中文*?[{\\"}, {"中文*?[{\\x", "中文x?[{\\"});
+    test::expect_glob(R"(\中\文\*\?\[\{\\)", {R"(中文*?[{\)"}, {R"(中文*?[{\x)", R"(中文x?[{\)"});
 }
 
 ZEST_CASE(escaped_backslash_before_a_separator) {
     // The first backslash escapes the second; the slash is a real separator.
-    test::expect_glob(R"(\\/)", {"\\/"}, {"/"});
-    test::expect_glob(R"(**/\\/目标)", {"x/\\/目标"}, {"x/目标"});
+    test::expect_glob(R"(\\/)", {R"(\/)"}, {"/"});
+    test::expect_glob(R"(**/\\/目标)", {R"(x/\/目标)"}, {"x/目标"});
 }
 
 ZEST_CASE(backslashes_in_paths_are_ordinary_characters) {
-    test::expect_glob("?", {"\\"});
-    test::expect_glob("*", {"a\\b", "\\"});
-    test::expect_glob("**/*.txt", {"path\\with\\backslash.txt"});
+    test::expect_glob("?", {R"(\)"});
+    test::expect_glob("*", {R"(a\b)", R"(\)"});
+    test::expect_glob("**/*.txt", {R"(path\with\backslash.txt)"});
 }
 
 ZEST_CASE(literal_prefix_with_escapes) {

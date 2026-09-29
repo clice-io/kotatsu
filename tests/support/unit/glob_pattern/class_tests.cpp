@@ -12,7 +12,7 @@ namespace {
 
 ZEST_SUITE(support_glob_pattern_class) {
 
-ZEST_CASE(ranges_and_members) {
+ZEST_CASE(members_and_ranges_match_one_character) {
     test::expect_glob("foo.[0-9]", {"foo.5", "foo.8"}, {"bar.5", "foo.f"});
     test::expect_glob(R"([a-zA-Z\]])", {"]", "s", "S"}, {"[", "0"});
     test::expect_glob(R"([\\^a-zA-Z""\\])", {"\"", "^", "\\", "x", "X"}, {"0"});

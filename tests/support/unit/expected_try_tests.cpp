@@ -1,7 +1,6 @@
 #include <expected>
 #include <memory>
 #include <string>
-#include <utility>
 
 #include "kota/zest/zest.h"
 #include "kota/support/expected_try.h"

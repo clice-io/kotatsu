@@ -69,11 +69,11 @@ constexpr std::string normalize_to_lower_snake(std::string_view text) {
             out += '_';
         }
     }
-    auto start = out.find_first_not_of('_');
-    if(start == std::string::npos)
-        return {};
-    auto end = out.find_last_not_of('_');
-    return out.substr(start, end - start + 1);
+    // A separator only ever follows a word, so the one left to drop is a trailing one.
+    if(!out.empty() && out.back() == '_') {
+        out.pop_back();
+    }
+    return out;
 }
 
 constexpr std::string snake_to_camel(std::string_view text, bool upper_first) {
@@ -169,38 +169,36 @@ struct upper_snake {
     }
 };
 
-using upper_case = upper_snake;
-
 }  // namespace rename_policy
 
 /// The rename policies as values, for use in annotation specs
-/// (`rename_all = casing::lower_camel`).
-enum class casing : std::uint8_t {
-    identity,
-    lower_snake,
-    lower_camel,
-    upper_camel,
-    upper_snake,
+/// (`rename_all = Casing::LowerCamel`).
+enum class Casing : std::uint8_t {
+    Identity,
+    LowerSnake,
+    LowerCamel,
+    UpperCamel,
+    UpperSnake,
 };
 
 namespace detail {
 
-template <casing C>
+template <Casing C>
 struct casing_policy;
 
 // clang-format off
-template <> struct casing_policy<casing::identity> { using type = rename_policy::identity; };
-template <> struct casing_policy<casing::lower_snake> { using type = rename_policy::lower_snake; };
-template <> struct casing_policy<casing::lower_camel> { using type = rename_policy::lower_camel; };
-template <> struct casing_policy<casing::upper_camel> { using type = rename_policy::upper_camel; };
-template <> struct casing_policy<casing::upper_snake> { using type = rename_policy::upper_snake; };
+template <> struct casing_policy<Casing::Identity> { using type = rename_policy::identity; };
+template <> struct casing_policy<Casing::LowerSnake> { using type = rename_policy::lower_snake; };
+template <> struct casing_policy<Casing::LowerCamel> { using type = rename_policy::lower_camel; };
+template <> struct casing_policy<Casing::UpperCamel> { using type = rename_policy::upper_camel; };
+template <> struct casing_policy<Casing::UpperSnake> { using type = rename_policy::upper_snake; };
 
 // clang-format on
 
 }  // namespace detail
 
-/// The rename_policy type behind a casing value.
-template <casing C>
+/// The rename_policy type behind a Casing value.
+template <Casing C>
 using rename_policy_t = typename detail::casing_policy<C>::type;
 
 }  // namespace kota::naming

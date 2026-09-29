@@ -27,26 +27,33 @@ struct tuple_push_front<T, std::tuple<Ts...>> {
 template <typename T, typename Tuple>
 using tuple_push_front_t = typename tuple_push_front<T, Tuple>::type;
 
-// traits for function types
+/// The return type and the arguments of a function type. `object_type<C>` is how a member
+/// function of this type, of class C, takes its object: `const C&` for a const one.
 template <typename Fn>
 struct function_traits;
 
-#define FUNCTION_TRAITS_SPECIALIZE(...)                                                            \
+#define FUNCTION_TRAITS_SPECIALIZE(QUALIFIERS, OBJECT)                                             \
     template <typename R, typename... Args>                                                        \
-    struct function_traits<R(Args...) __VA_ARGS__> {                                               \
+    struct function_traits<R(Args...) QUALIFIERS> {                                                \
         using return_type = R;                                                                     \
         using args_type = std::tuple<Args...>;                                                     \
+        template <typename C>                                                                      \
+        using object_type = OBJECT;                                                                \
         constexpr static std::size_t args_count = sizeof...(Args);                                 \
     };
 
-FUNCTION_TRAITS_SPECIALIZE()
-FUNCTION_TRAITS_SPECIALIZE(&)
-FUNCTION_TRAITS_SPECIALIZE(const)
-FUNCTION_TRAITS_SPECIALIZE(const&)
-FUNCTION_TRAITS_SPECIALIZE(noexcept)
-FUNCTION_TRAITS_SPECIALIZE(& noexcept)
-FUNCTION_TRAITS_SPECIALIZE(const noexcept)
-FUNCTION_TRAITS_SPECIALIZE(const& noexcept)
+FUNCTION_TRAITS_SPECIALIZE(, C&)
+FUNCTION_TRAITS_SPECIALIZE(&, C&)
+FUNCTION_TRAITS_SPECIALIZE(&&, C&&)
+FUNCTION_TRAITS_SPECIALIZE(const, const C&)
+FUNCTION_TRAITS_SPECIALIZE(const&, const C&)
+FUNCTION_TRAITS_SPECIALIZE(const&&, const C&&)
+FUNCTION_TRAITS_SPECIALIZE(noexcept, C&)
+FUNCTION_TRAITS_SPECIALIZE(& noexcept, C&)
+FUNCTION_TRAITS_SPECIALIZE(&& noexcept, C&&)
+FUNCTION_TRAITS_SPECIALIZE(const noexcept, const C&)
+FUNCTION_TRAITS_SPECIALIZE(const& noexcept, const C&)
+FUNCTION_TRAITS_SPECIALIZE(const&& noexcept, const C&&)
 
 #undef FUNCTION_TRAITS_SPECIALIZE
 
@@ -80,9 +87,12 @@ using class_type_t = typename member_traits<T>::class_type;
 template <typename T, typename SFINAE = void>
 struct callable_traits;
 
+/// A member function takes its object first.
 template <typename T>
 struct callable_traits<T, std::enable_if_t<std::is_member_function_pointer_v<T>>> {
-    using args_type = tuple_push_front_t<class_type_t<T>&, function_args_t<member_type_t<T>>>;
+    using args_type = tuple_push_front_t<
+        typename function_traits<member_type_t<T>>::template object_type<class_type_t<T>>,
+        function_args_t<member_type_t<T>>>;
     using return_type = function_return_t<member_type_t<T>>;
 };
 

@@ -1,8 +1,10 @@
 #include <array>
 #include <list>
+#include <memory>
 #include <ranges>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "support/harness/tracked.h"
@@ -12,6 +14,12 @@
 namespace kota {
 
 namespace {
+
+/// A tree node, whose parent can take its children over.
+struct Node {
+    int value;
+    std::unique_ptr<small_vector<Node, 1>> children;
+};
 
 ZEST_SUITE(support_small_vector_assign) {
 
@@ -109,6 +117,34 @@ ZEST_CASE(move_assignment_of_inline_elements_moves_each) {
     EXPECT(source.empty());
 }
 
+ZEST_CASE(move_assignment_from_a_vector_an_element_owns) {
+    // Collapsing a tree: the children replace the nodes, one of which owns them, so the
+    // assignment destroys the vector it moves from.
+    small_vector<Node, 1> nodes;
+    nodes.push_back(Node{1, std::make_unique<small_vector<Node, 1>>()});
+    nodes.push_back(Node{2, nullptr});
+    auto& children = *nodes[0].children;
+    children.push_back(Node{3, nullptr});
+    children.push_back(Node{4, nullptr});
+    ASSERT(!children.inlined());
+    nodes = std::move(children);
+    ASSERT(nodes.size() == 2U);
+    EXPECT(nodes[0].value == 3);
+    EXPECT(nodes[1].value == 4);
+}
+
+ZEST_CASE(move_assignment_of_move_only_elements) {
+    small_vector<std::unique_ptr<int>, 2> target;
+    target.push_back(std::make_unique<int>(1));
+    small_vector<std::unique_ptr<int>, 2> source;
+    source.push_back(std::make_unique<int>(7));
+    target = std::move(source);
+    ASSERT(target.size() == 1U);
+    ASSERT(target[0] != nullptr);
+    EXPECT(*target[0] == 7);
+    EXPECT(source.empty());
+}
+
 ZEST_CASE(move_assignment_across_capacities_leaves_the_source_its_buffer) {
     small_vector<int, 2> source = {1, 2, 3};
     small_vector<int, 8> target = {10};
@@ -168,75 +204,19 @@ ZEST_CASE(assign_range_replaces_the_elements) {
     EXPECT(v == std::vector{4, 5});
 }
 
-ZEST_CASE(assign_input_range) {
+ZEST_CASE(assign_input_range_reads_it_once) {
     std::istringstream text("3 2 1");
     small_vector<int, 2> v = {9};
     v.assign(std::views::istream<int>(text));
     EXPECT(v == std::vector{3, 2, 1});
 }
 
-ZEST_CASE(assign_initializer_list) {
+ZEST_CASE(assign_initializer_list_replaces_the_elements) {
     small_vector<int, 4> v;
     v.assign({100, 200});
     EXPECT(v == std::vector{100, 200});
     v = {1, 2, 3, 4, 5};
     EXPECT(v == std::vector{1, 2, 3, 4, 5});
-}
-
-ZEST_CASE(swap_inline_vectors) {
-    small_vector<int, 4> a = {1, 2};
-    small_vector<int, 4> b = {3, 4, 5};
-    a.swap(b);
-    EXPECT(a == std::vector{3, 4, 5});
-    EXPECT(b == std::vector{1, 2});
-}
-
-ZEST_CASE(swap_heap_vectors_exchanges_allocations) {
-    small_vector<int, 1> a = {1, 2};
-    small_vector<int, 1> b = {3, 4, 5};
-    const auto* a_allocation = a.data();
-    const auto* b_allocation = b.data();
-    a.swap(b);
-    EXPECT(a == std::vector{3, 4, 5});
-    EXPECT(b == std::vector{1, 2});
-    EXPECT(a.data() == b_allocation);
-    EXPECT(b.data() == a_allocation);
-}
-
-ZEST_CASE(swap_inline_with_heap) {
-    small_vector<int, 2> a = {1, 2};
-    small_vector<int, 2> b = {3, 4, 5, 6};
-    a.swap(b);
-    EXPECT(a == std::vector{3, 4, 5, 6});
-    EXPECT(b == std::vector{1, 2});
-}
-
-ZEST_CASE(swap_across_capacities) {
-    small_vector<int, 2> a = {1, 2, 3};
-    small_vector<int, 6> b = {7, 8};
-    a.swap(b);
-    EXPECT(a == std::vector{7, 8});
-    EXPECT(b == std::vector{1, 2, 3});
-    EXPECT(b.inlined());
-}
-
-ZEST_CASE(swap_with_an_empty_vector) {
-    test::Census census;
-    {
-        small_vector<test::Tracked, 2> a;
-        small_vector<test::Tracked, 2> b = {1, 2};
-        a.swap(b);
-        EXPECT(test::values(a) == std::vector{1, 2});
-        EXPECT(b.empty());
-        EXPECT(census.live == 2);
-    }
-    EXPECT(census.live == 0);
-}
-
-ZEST_CASE(swap_with_itself_changes_nothing) {
-    small_vector<int, 2> v = {1, 2, 3};
-    v.swap(v);
-    EXPECT(v == std::vector{1, 2, 3});
 }
 
 };  // ZEST_SUITE(support_small_vector_assign)

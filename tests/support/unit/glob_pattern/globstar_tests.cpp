@@ -82,7 +82,7 @@ ZEST_CASE(middle_matches_any_depth_between) {
                       {"src/test1.cpp/child", "src/a/test10.cpp", "other/test1.cpp"});
 }
 
-ZEST_CASE(several_globstars) {
+ZEST_CASE(several_globstars_each_match_any_depth) {
     test::expect_glob("**/**/*.js",
                       {"foo.js", "/foo.js", "folder/foo.js"},
                       {"foo.jss", "some.js/test"});
@@ -101,7 +101,7 @@ ZEST_CASE(several_globstars) {
                       {"foo/test"});
 }
 
-ZEST_CASE(directory_anywhere) {
+ZEST_CASE(globstars_around_a_path_find_it_anywhere) {
     test::expect_glob("**/中/文/**",
                       {"中/文", "x/中/文/y", "x中/文z/中/文/y"},
                       {"x中/文/y", "中/文字/y"});
@@ -126,10 +126,12 @@ ZEST_CASE(zero_segments_leave_empty_ones_to_stars) {
 ZEST_CASE(trailing_slash_after_a_globstar) {
     test::expect_glob("**/a/", {"a/", "x/a/", "a/a/", "a/b/a/"}, {"a", "a/b/", "a/a", "a/a/x"});
     test::expect_glob("**/{中,文}/", {"x/中/文/"}, {"x/中/文"});
+    // After a directory, a trailing `**/` matches what `**/*` does: anything below it.
+    test::expect_glob("foo/**/", {"foo/x", "foo/x/y", "foo/"}, {"foo", "foox", "bar/x"});
 }
 
 ZEST_CASE(prefix_before_a_globstar_segment_stays_in_its_segment) {
-    // Each pattern behaves as its brace-wrapped twin, whose alternative keeps the prefix.
+    // Each pattern behaves as its brace-wrapped twin, whose one arm keeps the prefix.
     for(auto pattern: {"a**/?", "{a**/?}"}) {
         test::expect_glob(pattern, {"a/c", "aa/c"}, {"aa", "ab", "a"});
     }

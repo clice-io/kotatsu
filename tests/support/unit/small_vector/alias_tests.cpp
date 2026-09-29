@@ -103,6 +103,17 @@ ZEST_CASE(assign_part_of_itself) {
     EXPECT(v == std::vector{beta, alpha});
 }
 
+ZEST_CASE(part_of_itself_of_trivial_elements) {
+    // Trivially copyable elements are copied as bytes, which must not overlap the elements.
+    small_vector<int, 8> v = {1, 2, 3, 4};
+    v.assign(std::ranges::subrange(v.begin() + 1, v.end()));
+    EXPECT(v == std::vector{2, 3, 4});
+    v.insert(v.begin(), std::ranges::subrange(v.begin() + 1, v.end()));
+    EXPECT(v == std::vector{3, 4, 2, 3, 4});
+    v.append(std::ranges::subrange(v.begin() + 3, v.end()));
+    EXPECT(v == std::vector{3, 4, 2, 3, 4, 3, 4});
+}
+
 ZEST_CASE(assign_itself_reversed) {
     auto v = full();
     v.assign(v | std::views::reverse);

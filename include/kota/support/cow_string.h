@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <ranges>
 #include <string>
 #include <utility>
 
@@ -15,9 +16,10 @@ namespace kota {
 /// unescaped strings borrow from the source buffer, while escaped strings
 /// allocate and own their data.
 ///
-/// Layout: three machine words {pointer, size, capacity}.
-///   - allocated == 0: borrowed mode, pointer refers to external buffer
-///   - allocated > 0: owned mode, pointer refers to allocator-managed memory
+/// Layout: three machine words {text, length, allocated}, `allocated` being the size of the
+/// owned allocation:
+///   - allocated == 0: borrowed mode, `text` points into an external buffer
+///   - allocated > 0: owned mode, `text` points to memory from mem::allocate<char>
 ///
 /// Owned buffers are allocated via mem::allocate<char> and can be transferred
 /// to small_string via release().
@@ -198,9 +200,7 @@ private:
 
     constexpr static char* alloc_copy(const char* src, std::size_t len, std::size_t cap) {
         char* buf = mem::allocate<char>(cap);
-        if(len > 0) {
-            mem::uninitialized_copy(std::ranges::subrange(src, src + len), buf);
-        }
+        mem::uninitialized_copy(std::ranges::subrange(src, src + len), buf);
         return buf;
     }
 

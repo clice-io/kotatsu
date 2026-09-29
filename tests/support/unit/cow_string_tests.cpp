@@ -9,21 +9,46 @@ namespace kota {
 
 namespace {
 
-constexpr bool borrow_own_and_release() {
-    cow_string borrowed("hello");
-    cow_string owned = cow_string::owned(string_ref("world"));
-    cow_string copy(owned);
-    copy.make_owned();
-    cow_string moved(std::move(owned));
+/// What borrowing, owning, copying, moving and releasing leave in constant evaluation, one
+/// fact at a time.
+struct Facts {
+    bool borrowed = false;
+    bool made_owned = false;
+    bool owned_text = false;
+    bool copy_owned = false;
+    bool moved_from_empty = false;
+    bool released_text = false;
+    bool released_from_empty = false;
+};
+
+constexpr Facts borrow_own_and_release() {
+    Facts facts;
+    cow_string made("world");
+    facts.borrowed = made.is_borrowed();
+    made.make_owned();
+    facts.made_owned = made.is_owned();
+    facts.owned_text = made.ref() == "world";
+    cow_string copy(made);
+    facts.copy_owned = copy.is_owned() && copy.data() != made.data();
+    cow_string moved(std::move(made));
+    facts.moved_from_empty = made.empty();
     small_string<0> released = moved.release();
-    return borrowed.is_borrowed() && copy.is_owned() && copy.ref() == "world" &&
-           released.ref() == "world" && moved.empty() && owned.empty();
+    facts.released_text = released.ref() == "world";
+    facts.released_from_empty = moved.empty();
+    return facts;
 }
 
 ZEST_SUITE(support_cow_string) {
 
 ZEST_CASE(works_in_constant_evaluation) {
-    STATIC_EXPECT(borrow_own_and_release());
+    constexpr auto facts = borrow_own_and_release();
+    STATIC_EXPECT(facts.borrowed);
+    STATIC_EXPECT(facts.made_owned);
+    STATIC_EXPECT(facts.owned_text);
+    STATIC_EXPECT(facts.copy_owned);
+    STATIC_EXPECT(facts.moved_from_empty);
+    STATIC_EXPECT(facts.released_text);
+    STATIC_EXPECT(facts.released_from_empty);
 }
 
 ZEST_CASE(default_is_empty_and_borrowed) {
@@ -75,6 +100,15 @@ ZEST_CASE(copy_of_owned_owns_its_own) {
     EXPECT(b.ref() == "deep");
 }
 
+ZEST_CASE(move_of_borrowed_borrows_the_same_text) {
+    const char* text = "shared";
+    cow_string a(text);
+    cow_string b(std::move(a));
+    EXPECT(b.is_borrowed());
+    EXPECT(b.data() == text);
+    EXPECT(a.empty());
+}
+
 ZEST_CASE(move_hands_over_and_empties) {
     cow_string a = cow_string::owned(string_ref("move me"));
     const auto* data = a.data();
@@ -98,6 +132,18 @@ ZEST_CASE(copy_assignment_owns_its_own) {
     const auto& same = b;
     b = same;
     EXPECT(b.data() == data);
+}
+
+ZEST_CASE(copy_assignment_into_an_owned_string_frees_its_text) {
+    cow_string a = cow_string::owned(string_ref("new text"));
+    cow_string b = cow_string::owned(string_ref("old text"));
+    b = a;
+    EXPECT(b.is_owned());
+    EXPECT(b.ref() == "new text");
+    const cow_string borrowed("borrowed");
+    b = borrowed;
+    EXPECT(b.is_borrowed());
+    EXPECT(b.data() == borrowed.data());
 }
 
 ZEST_CASE(move_assignment_frees_the_old_text) {
@@ -140,6 +186,23 @@ ZEST_CASE(release_of_owned_hands_over_the_buffer) {
     EXPECT(released.data() == data);
     EXPECT(s.empty());
     EXPECT(s.is_borrowed());
+}
+
+ZEST_CASE(released_buffer_grows_like_any_other) {
+    cow_string s = cow_string::owned(string_ref("release me"));
+    small_string<4> released = s.release<4>();
+    released += ", then grow past the buffer handed over";
+    EXPECT(released.ref() == "release me, then grow past the buffer handed over");
+    released.clear();
+    released.shrink_to_fit();
+    EXPECT(released.inlined());
+}
+
+ZEST_CASE(release_of_empty_is_empty) {
+    cow_string s;
+    small_string<4> released = s.release<4>();
+    EXPECT(released.empty());
+    EXPECT(released.inlined());
 }
 
 ZEST_CASE(release_of_borrowed_copies_into_the_inline_buffer) {

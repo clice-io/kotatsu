@@ -229,7 +229,7 @@ constexpr bool is_runtime_struct_spec_attr_v = false;
 template <typename Tag>
 constexpr bool is_runtime_struct_spec_attr_v<attrs::struct_spec<Tag>> =
     attrs::struct_spec<Tag>::value.tagging != tag_mode::none ||
-    attrs::struct_spec<Tag>::value.rename_all != naming::casing::identity ||
+    attrs::struct_spec<Tag>::value.rename_all != naming::Casing::Identity ||
     attrs::struct_spec<Tag>::value.deny_unknown_fields;
 
 template <typename Tuple>

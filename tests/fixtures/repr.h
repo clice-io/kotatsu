@@ -28,7 +28,7 @@ struct BasisPoints {
 
 struct StrictCamelTag {
     constexpr static auto spec =
-        meta::make_struct_spec(meta::dsl::rename_all = naming::casing::lower_camel,
+        meta::make_struct_spec(meta::dsl::rename_all = naming::Casing::LowerCamel,
                                meta::dsl::deny_unknown_fields = true);
 };
 

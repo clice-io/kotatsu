@@ -1,5 +1,7 @@
+#include <cstddef>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -32,9 +34,26 @@ struct Adder {
     }
 };
 
+struct Counter {
+    int count = 0;
+
+    int& bump() {
+        return ++count;
+    }
+};
+
 struct Padded {
     int value;
     char padding[32] = {};
+
+    int operator()(int x) const {
+        return value + x;
+    }
+};
+
+/// A small callable aligned past what a function's buffer is.
+struct alignas(2 * alignof(std::max_align_t)) OverAligned {
+    int value;
 
     int operator()(int x) const {
         return value + x;
@@ -67,7 +86,7 @@ struct SelfPointing {
     }
 };
 
-/// A function holding a Tracked on the heap: too large to live inline.
+/// A callable holding a Tracked, too large for a function to keep inline.
 auto large_tracked(int value) {
     return [tracked = test::Tracked(value), padding = Padded{0}](int x) {
         return tracked.value() + padding(x);
@@ -76,6 +95,27 @@ auto large_tracked(int value) {
 
 using Function = function<int(int)>;
 
+/// A way a function keeps its callable, and one such function.
+struct Kind {
+    std::string_view name;
+    Function (*make)();
+    /// What the function returns for 1.
+    int result;
+    /// How many Tracked the callable holds.
+    int tracked;
+};
+
+const Kind kinds[] = {
+    {"pointer",                   [] { return Function(negate); },                                  -1, 0},
+    {"trivially copyable inline",
+     [] { return Function([base = 30](int x) { return base + x; }); },
+     31,                                                                                                0},
+    {"inline",
+     [] { return Function([tracked = test::Tracked(10)](int x) { return tracked.value() + x; }); },
+     11,                                                                                                1},
+    {"heap",                      [] { return Function(large_tracked(20)); },                       21, 1},
+};
+
 ZEST_SUITE(support_functional_function) {
 
 ZEST_CASE(small_callables_whose_move_cannot_throw_live_inline) {
@@ -83,6 +123,7 @@ ZEST_CASE(small_callables_whose_move_cannot_throw_live_inline) {
     STATIC_EXPECT(Function::sbo_eligible<test::Tracked>);
     STATIC_EXPECT(!Function::sbo_eligible<Padded>);
     STATIC_EXPECT(!Function::sbo_eligible<ThrowingMove>);
+    STATIC_EXPECT(!Function::sbo_eligible<OverAligned>);
 }
 
 ZEST_CASE(calls_a_function) {
@@ -104,6 +145,17 @@ ZEST_CASE(calls_an_inline_callable) {
 ZEST_CASE(calls_a_heap_callable) {
     Function fn(Padded{42});
     EXPECT(fn(8) == 50);
+}
+
+ZEST_CASE(calls_an_over_aligned_callable) {
+    Function fn(OverAligned{4});
+    Function moved(std::move(fn));
+    EXPECT(moved(1) == 5);
+}
+
+ZEST_CASE(passes_arguments_in_order) {
+    function<int(int, int, int)> fn([](int a, int b, int c) { return a * 100 + b * 10 + c; });
+    EXPECT(fn(1, 2, 3) == 123);
 }
 
 ZEST_CASE(calls_a_callable_whose_move_can_throw) {
@@ -135,6 +187,20 @@ ZEST_CASE(converts_arguments_at_the_call) {
     EXPECT(echo("text") == "text");
     function<long(long)> widen([](long x) { return x; });
     EXPECT(widen(7) == 7L);
+}
+
+ZEST_CASE(converts_the_result) {
+    function<long(int)> widen([](int x) { return x; });
+    EXPECT(widen(7) == 7L);
+    function<std::string()> text([] { return "text"; });
+    EXPECT(text() == "text");
+    int calls = 0;
+    function<void(int)> discard([&calls](int x) {
+        calls += 1;
+        return x;
+    });
+    discard(1);
+    EXPECT(calls == 1);
 }
 
 ZEST_CASE(passes_move_only_values) {
@@ -190,45 +256,49 @@ ZEST_CASE(move_keeps_an_inline_small_vector) {
     EXPECT(kept() == 7);
 }
 
-ZEST_CASE(inline_callable_is_destroyed_once) {
-    test::Census census;
-    {
-        Function fn([tracked = test::Tracked(10)](int x) { return tracked.value() + x; });
-        Function moved(std::move(fn));
-        Function assigned(negate);
-        assigned = std::move(moved);
-        EXPECT(assigned(5) == 15);
-        EXPECT(census.live == 1);
+ZEST_CASE(move_construction_keeps_each_kind) {
+    for(const auto& kind: kinds) {
+        ZEST_CONTEXT("{} function", kind.name);
+        test::Census census;
+        {
+            Function fn = kind.make();
+            Function moved(std::move(fn));
+            EXPECT(moved(1) == kind.result);
+            EXPECT(census.live == kind.tracked);
+        }
+        EXPECT(census.live == 0);
     }
-    EXPECT(census.live == 0);
 }
 
-ZEST_CASE(heap_callable_is_destroyed_once) {
-    test::Census census;
-    {
-        Function fn(large_tracked(20));
-        Function moved(std::move(fn));
-        Function assigned(large_tracked(1));
-        assigned = std::move(moved);
-        EXPECT(assigned(5) == 25);
-        EXPECT(census.live == 1);
+ZEST_CASE(move_assignment_between_kinds) {
+    // The callable assigned over is destroyed once, and the one moved in is not copied.
+    for(const auto& from: kinds) {
+        for(const auto& to: kinds) {
+            ZEST_CONTEXT("{} function assigned to a {} one", from.name, to.name);
+            test::Census census;
+            {
+                Function source = from.make();
+                Function target = to.make();
+                target = std::move(source);
+                EXPECT(target(1) == from.result);
+                EXPECT(census.live == from.tracked);
+                EXPECT(census.copies == 0);
+            }
+            EXPECT(census.live == 0);
+        }
     }
-    EXPECT(census.live == 0);
 }
 
-ZEST_CASE(move_assignment_across_kinds) {
+ZEST_CASE(const_form_moves) {
+    using ConstFunction = function<int(int) const>;
     test::Census census;
     {
-        Function inline_fn([tracked = test::Tracked(10)](int x) { return tracked.value() + x; });
-        Function heap_fn(large_tracked(30));
-        Function pointer_fn(negate);
-        heap_fn = std::move(inline_fn);
-        EXPECT(heap_fn(1) == 11);
-        pointer_fn = std::move(heap_fn);
-        EXPECT(pointer_fn(1) == 11);
-        Function other(large_tracked(40));
-        pointer_fn = std::move(other);
-        EXPECT(pointer_fn(1) == 41);
+        ConstFunction inline_fn(
+            [tracked = test::Tracked(10)](int x) { return tracked.value() + x; });
+        ConstFunction moved(std::move(inline_fn));
+        ConstFunction heap(large_tracked(20));
+        heap = std::move(moved);
+        EXPECT(heap(1) == 11);
         EXPECT(census.live == 1);
     }
     EXPECT(census.live == 0);
@@ -271,6 +341,14 @@ ZEST_CASE(bind_calls_a_const_member_function) {
 ZEST_CASE(bind_keeps_a_large_object) {
     auto fn = bind<&Padded::operator()>(Padded{50});
     EXPECT(fn(7) == 57);
+}
+
+ZEST_CASE(bind_returns_what_the_member_function_returns) {
+    auto fn = bind<&Counter::bump>(Counter{});
+    EXPECT(zest::type_eq<decltype(fn), function<int&()>>());
+    int& count = fn();
+    count += 10;
+    EXPECT(fn() == 12);
 }
 
 };  // ZEST_SUITE(support_functional_function)

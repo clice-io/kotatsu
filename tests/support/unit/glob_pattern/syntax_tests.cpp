@@ -1,6 +1,3 @@
-#include <cstddef>
-#include <string_view>
-
 #include "support/harness/glob.h"
 #include "kota/zest/zest.h"
 #include "kota/support/glob_pattern.h"
@@ -10,7 +7,7 @@ namespace kota {
 namespace {
 
 // Each error spans the offending bytes of the pattern as written, whether they sit in the
-// literal prefix, after it, or inside a brace alternative.
+// literal prefix, after it, or inside a brace term.
 
 ZEST_SUITE(support_glob_pattern_syntax) {
 
@@ -19,7 +16,7 @@ ZEST_CASE(unmatched_bracket_fails) {
     test::expect_glob_error("foo.[a-z", GlobError::UnmatchedBracket, 4, 5);
     test::expect_glob_error("*[", GlobError::UnmatchedBracket, 1, 2);
     test::expect_glob_error("{a,[}", GlobError::UnmatchedBracket, 3, 4);
-    test::expect_glob_error("{[abc\\]}", GlobError::UnmatchedBracket, 1, 2);
+    test::expect_glob_error(R"({[abc\]})", GlobError::UnmatchedBracket, 1, 2);
     // A `]` right after `[`, or after its negation, is a member, not the end.
     test::expect_glob_error("[]", GlobError::UnmatchedBracket, 0, 1);
     test::expect_glob_error("[!]", GlobError::UnmatchedBracket, 0, 1);
@@ -29,11 +26,11 @@ ZEST_CASE(unmatched_bracket_fails) {
 }
 
 ZEST_CASE(stray_backslash_fails) {
-    test::expect_glob_error("foo\\", GlobError::StrayBackslash, 3, 4);
-    test::expect_glob_error("*\\", GlobError::StrayBackslash, 1, 2);
-    test::expect_glob_error("{a}\\", GlobError::StrayBackslash, 3, 4);
+    test::expect_glob_error(R"(foo\)", GlobError::StrayBackslash, 3, 4);
+    test::expect_glob_error(R"(*\)", GlobError::StrayBackslash, 1, 2);
+    test::expect_glob_error(R"({a}\)", GlobError::StrayBackslash, 3, 4);
     test::expect_glob_error(R"(a\[b\)", GlobError::StrayBackslash, 4, 5);
-    test::expect_glob_error("x*[\\", GlobError::StrayBackslash, 3, 4);
+    test::expect_glob_error(R"(x*[\)", GlobError::StrayBackslash, 3, 4);
 }
 
 ZEST_CASE(nested_brace_fails) {
@@ -48,7 +45,7 @@ ZEST_CASE(incomplete_brace_fails) {
     test::expect_glob_error("{foo,bar", GlobError::IncompleteBrace, 0, 1);
     test::expect_glob_error("xx{a", GlobError::IncompleteBrace, 2, 3);
     // The backslash escapes the closing brace.
-    test::expect_glob_error("{foo\\}", GlobError::IncompleteBrace, 0, 1);
+    test::expect_glob_error(R"({foo\})", GlobError::IncompleteBrace, 0, 1);
 }
 
 ZEST_CASE(inverted_range_fails) {
@@ -58,7 +55,7 @@ ZEST_CASE(inverted_range_fails) {
     test::expect_glob_error("{a,[z-a]}", GlobError::InvalidRange, 4, 7);
     test::expect_glob_error("xx{a,[z-a]}", GlobError::InvalidRange, 6, 9);
     test::expect_glob_error("{a,b}[z-a]", GlobError::InvalidRange, 6, 9);
-    test::expect_glob_error("[a-c\\z-\\a]", GlobError::InvalidRange, 4, 9);
+    test::expect_glob_error(R"([a-c\z-\a])", GlobError::InvalidRange, 4, 9);
 }
 
 ZEST_CASE(double_slash_fails) {
@@ -71,8 +68,8 @@ ZEST_CASE(double_slash_fails) {
     test::expect_glob_error("x{a/,b}/c", GlobError::MultipleSlash, 3, 8);
 }
 
-ZEST_CASE(alternative_starting_with_a_slash_after_the_prefix_fails) {
-    // Expansion is textual: the prefix's `/` and the alternative's spell `//`, and the span
+ZEST_CASE(term_starting_with_a_slash_after_the_prefix_fails) {
+    // Expansion is textual: the prefix's `/` and the term's spell `//`, and the span
     // runs from one to the other.
     test::expect_glob_error("a/{/}", GlobError::MultipleSlash, 1, 4);
     test::expect_glob_error("a/{/b}", GlobError::MultipleSlash, 1, 4);
@@ -110,15 +107,19 @@ ZEST_CASE(invalid_utf8_fails) {
     test::expect_glob_error("a[\xFF]", GlobError::InvalidUtf8, 2, 3);
 }
 
-ZEST_CASE(error_in_a_later_alternative_fails) {
+ZEST_CASE(error_in_a_later_arm_fails) {
     test::expect_glob_error("{ok,***}", GlobError::MultipleStar, 4, 7);
     test::expect_glob_error("{a,b}{c,[}", GlobError::UnmatchedBracket, 8, 9);
+    // Found in the arm `a***`, whose stars follow the first brace's term.
+    test::expect_glob_error("{a,bb}{c,***}", GlobError::MultipleStar, 9, 12);
 }
 
 ZEST_CASE(expansion_past_the_limit_fails) {
     auto product = GlobPattern::create("{a,b}.{c,d}", 2);
     ASSERT(!product.has_value());
     EXPECT(product.error().kind == GlobError::TooManyExpansions);
+    EXPECT(product.error().begin == 0U);
+    EXPECT(product.error().end == 0U);
     auto single = GlobPattern::create("{a,b,c}", 2);
     ASSERT(!single.has_value());
     EXPECT(single.error().kind == GlobError::TooManyExpansions);
@@ -138,6 +139,7 @@ ZEST_CASE(limit_of_zero_reads_braces_literally) {
     ASSERT(literal.has_value());
     EXPECT(literal->match("{a,b}"));
     EXPECT(!literal->match("a"));
+    EXPECT(!literal->match("b"));
     auto nested = GlobPattern::create("x{a,{b}}*", 0);
     ASSERT(nested.has_value());
     EXPECT(nested->match("x{a,{b}}yz"));

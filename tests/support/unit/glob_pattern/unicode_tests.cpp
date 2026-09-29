@@ -29,7 +29,7 @@ ZEST_CASE(classes_take_one_code_point) {
 }
 
 ZEST_CASE(escapes_and_literals_take_code_points) {
-    test::expect_glob("\\中.txt", {"中.txt"}, {"文.txt"});
+    test::expect_glob(R"(\中.txt)", {"中.txt"}, {"文.txt"});
     test::expect_glob("*文.txt", {"中文.txt", "文.txt"}, {"中英.txt"});
     test::expect_glob("**/中.txt", {"a/b/中.txt", "中.txt"});
     test::expect_glob("中/文.txt", {"中/文.txt"}, {"中文.txt"});

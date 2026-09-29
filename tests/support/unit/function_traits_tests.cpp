@@ -13,6 +13,8 @@ struct Widget {
 
     double scale(int factor, float bias);
     std::string name() const;
+    std::string take() &&;
+    int peek() const& noexcept;
 };
 
 struct Functor {
@@ -26,7 +28,7 @@ struct Overloaded {
 
 ZEST_SUITE(support_function_traits) {
 
-ZEST_CASE(function_types) {
+ZEST_CASE(function_types_give_the_return_and_arguments) {
     EXPECT(zest::type_eq<function_return_t<int(char, long&)>, int>());
     EXPECT(zest::type_eq<function_args_t<int(char, long&)>, std::tuple<char, long&>>());
     STATIC_EXPECT(function_args_count<int(char, long&)> == 2U);
@@ -34,7 +36,16 @@ ZEST_CASE(function_types) {
     STATIC_EXPECT(function_args_count<void(int) & noexcept> == 1U);
 }
 
-ZEST_CASE(member_pointers) {
+ZEST_CASE(object_type_follows_the_qualifiers) {
+    EXPECT(zest::type_eq<function_traits<void()>::object_type<Widget>, Widget&>());
+    EXPECT(zest::type_eq<function_traits<void() &>::object_type<Widget>, Widget&>());
+    EXPECT(zest::type_eq<function_traits<void() &&>::object_type<Widget>, Widget&&>());
+    EXPECT(zest::type_eq<function_traits<void() const>::object_type<Widget>, const Widget&>());
+    EXPECT(zest::type_eq<function_traits<void() const && noexcept>::object_type<Widget>,
+                         const Widget&&>());
+}
+
+ZEST_CASE(member_pointers_give_the_member_and_class) {
     EXPECT(zest::type_eq<member_type_t<int Widget::*>, int>());
     EXPECT(zest::type_eq<class_type_t<int Widget::*>, Widget>());
     EXPECT(zest::type_eq<class_type_t<decltype(&Widget::scale)>, Widget>());
@@ -51,7 +62,10 @@ ZEST_CASE(callables_of_each_kind) {
     // A member function takes its object first.
     EXPECT(zest::type_eq<callable_args_t<method>, std::tuple<Widget&, int, float>>());
     STATIC_EXPECT(callable_args_count_v<method> == 3U);
-    EXPECT(zest::type_eq<callable_args_t<decltype(&Widget::name)>, std::tuple<Widget&>>());
+    EXPECT(zest::type_eq<callable_args_t<decltype(&Widget::name)>, std::tuple<const Widget&>>());
+    EXPECT(zest::type_eq<callable_args_t<decltype(&Widget::take)>, std::tuple<Widget&&>>());
+    EXPECT(zest::type_eq<callable_args_t<decltype(&Widget::peek)>, std::tuple<const Widget&>>());
+    EXPECT(zest::type_eq<callable_return_t<decltype(&Widget::peek)>, int>());
 
     STATIC_EXPECT(is_functor_v<Functor>);
     EXPECT(zest::type_eq<callable_return_t<Functor>, bool>());

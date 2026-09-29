@@ -13,7 +13,7 @@ using Numbers = type_list<int, double, int, char>;
 
 ZEST_SUITE(support_type_list) {
 
-ZEST_CASE(one_of) {
+ZEST_CASE(is_one_of_finds_a_type_among_several) {
     STATIC_EXPECT(is_one_of<int, char, int>);
     STATIC_EXPECT(!is_one_of<long, char, int>);
     STATIC_EXPECT(!is_one_of<int>);
@@ -26,7 +26,7 @@ ZEST_CASE(contains_and_size) {
     STATIC_EXPECT(type_list_size_v<type_list<>> == 0U);
 }
 
-ZEST_CASE(element_by_index) {
+ZEST_CASE(element_is_found_by_index) {
     EXPECT(zest::type_eq<type_list_element_t<0, Numbers>, int>());
     EXPECT(zest::type_eq<type_list_element_t<3, Numbers>, char>());
 }

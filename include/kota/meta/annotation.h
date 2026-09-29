@@ -129,8 +129,6 @@ constexpr auto operator==(const L& lhs, const R& rhs) -> bool {
     return lhs == annotated_value(rhs);
 }
 
-namespace rename_policy = naming::rename_policy;
-
 namespace detail {
 
 /// Maps a DSL type component to the equivalent behavior attr.

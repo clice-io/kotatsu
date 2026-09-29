@@ -2,6 +2,7 @@
 #include <stdexcept>
 #include <vector>
 
+#include "support/harness/throws.h"
 #include "kota/zest/zest.h"
 #include "kota/support/config.h"
 #include "kota/support/small_vector.h"
@@ -12,7 +13,7 @@ namespace {
 
 ZEST_SUITE(support_small_vector_access) {
 
-ZEST_CASE(elements_by_index) {
+ZEST_CASE(index_reaches_each_element) {
     small_vector<int, 4> v = {10, 20, 30};
     v[1] = 99;
     EXPECT(v[0] == 10);
@@ -39,9 +40,9 @@ ZEST_CASE(front_back_and_data) {
 
 ZEST_CASE(at_past_the_end_fails) {
     small_vector<int, 2> v = {1};
-    EXPECT_THROWS(v.at(1));
+    EXPECT(test::throws<std::out_of_range>([&] { v.at(1); }));
     const auto& constant = v;
-    EXPECT_THROWS(constant.at(100));
+    EXPECT(test::throws<std::out_of_range>([&] { constant.at(100); }));
 }
 
 #endif

@@ -1,5 +1,4 @@
 #include <string>
-#include <string_view>
 
 #include "kota/zest/zest.h"
 #include "kota/support/naming.h"
@@ -76,7 +75,7 @@ ZEST_CASE(camel_case_cannot_mark_a_word_starting_with_a_digit) {
     EXPECT(snake_to_camel("2nd_try", true) == "2ndTry");
 }
 
-ZEST_CASE(upper_snake) {
+ZEST_CASE(snake_to_upper_spells_upper_snake_case) {
     EXPECT(snake_to_upper("fooBar") == "FOO_BAR");
     EXPECT(snake_to_upper("http_server") == "HTTP_SERVER");
 }
@@ -97,7 +96,6 @@ ZEST_CASE(policies_rename_for_serialization) {
     EXPECT(rename_policy::lower_camel{}(true, "foo_bar") == "fooBar");
     EXPECT(rename_policy::upper_camel{}(true, "foo_bar") == "FooBar");
     EXPECT(rename_policy::upper_snake{}(true, "fooBar") == "FOO_BAR");
-    EXPECT(rename_policy::upper_case{}(true, "fooBar") == "FOO_BAR");
 }
 
 ZEST_CASE(policies_read_back_to_lower_snake) {
@@ -109,17 +107,17 @@ ZEST_CASE(policies_read_back_to_lower_snake) {
 }
 
 ZEST_CASE(casing_names_its_policy) {
-    EXPECT(zest::type_eq<rename_policy_t<casing::identity>, rename_policy::identity>());
-    EXPECT(zest::type_eq<rename_policy_t<casing::lower_snake>, rename_policy::lower_snake>());
-    EXPECT(zest::type_eq<rename_policy_t<casing::lower_camel>, rename_policy::lower_camel>());
-    EXPECT(zest::type_eq<rename_policy_t<casing::upper_camel>, rename_policy::upper_camel>());
-    EXPECT(zest::type_eq<rename_policy_t<casing::upper_snake>, rename_policy::upper_snake>());
+    EXPECT(zest::type_eq<rename_policy_t<Casing::Identity>, rename_policy::identity>());
+    EXPECT(zest::type_eq<rename_policy_t<Casing::LowerSnake>, rename_policy::lower_snake>());
+    EXPECT(zest::type_eq<rename_policy_t<Casing::LowerCamel>, rename_policy::lower_camel>());
+    EXPECT(zest::type_eq<rename_policy_t<Casing::UpperCamel>, rename_policy::upper_camel>());
+    EXPECT(zest::type_eq<rename_policy_t<Casing::UpperSnake>, rename_policy::upper_snake>());
 }
 
 ZEST_CASE(renames_in_constant_evaluation) {
-    STATIC_EXPECT((normalize_to_lower_snake("fooBar") == "foo_bar"));
-    STATIC_EXPECT((snake_to_camel("foo_bar", true) == "FooBar"));
-    STATIC_EXPECT((normalize_identifier("1x") == "_1x"));
+    STATIC_EXPECT(normalize_to_lower_snake("fooBar") == "foo_bar");
+    STATIC_EXPECT(snake_to_camel("foo_bar", true) == "FooBar");
+    STATIC_EXPECT(normalize_identifier("1x") == "_1x");
 }
 
 };  // ZEST_SUITE(support_naming)

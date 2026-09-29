@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -50,17 +51,19 @@ ZEST_CASE(calls_a_function) {
 }
 
 ZEST_CASE(keeps_a_lambda_without_captures_by_value) {
-    function_ref<int(int, int)> fn = +[](int a, int b) {
-        return a * b;
-    };
-    {
-        auto multiply = [](int a, int b) {
-            return a * b;
-        };
-        fn = multiply;
-    }
-    // The lambda converted to a function pointer, which outlives it.
-    EXPECT(fn(3, 4) == 12);
+    // Constant evaluation rejects a call through a reference to a dead object, so this only
+    // compiles if the lambda was converted to a function pointer, which outlives it.
+    constexpr auto result = [] {
+        function_ref<int(int, int)> fn(add);
+        {
+            auto multiply = [](int a, int b) {
+                return a * b;
+            };
+            fn = multiply;
+        }
+        return fn(3, 4);
+    }();
+    STATIC_EXPECT(result == 12);
 }
 
 ZEST_CASE(refers_to_a_callable) {
@@ -111,6 +114,16 @@ ZEST_CASE(converts_arguments_at_the_call) {
         return x;
     };
     EXPECT(widen(7) == 7L);
+}
+
+ZEST_CASE(converts_the_result) {
+    auto identity = [](int x) {
+        return x;
+    };
+    function_ref<long(int)> widen(identity);
+    EXPECT(widen(7) == 7L);
+    function_ref<void(int)> discard(identity);
+    discard(1);
 }
 
 ZEST_CASE(forwards_reference_parameters) {
@@ -189,13 +202,11 @@ ZEST_CASE(calls_a_function_in_constant_evaluation) {
 ZEST_CASE(mem_fn_names_the_class_and_signature) {
     using non_const = mem_fn<&Adder::add>;
     using constant = mem_fn<&Adder::add_const>;
-    EXPECT(zest::type_eq<non_const::ClassType, Adder>());
-    EXPECT(zest::type_eq<non_const::FunctionType, int(int)>());
-    EXPECT(zest::type_eq<constant::ClassType, Adder>());
-    EXPECT(zest::type_eq<constant::FunctionType, int(int)>());
-    Adder adder{10};
-    EXPECT((adder.*non_const::get())(5) == 15);
-    EXPECT((adder.*constant::get())(1) == 11);
+    EXPECT(zest::type_eq<non_const::class_type, Adder>());
+    EXPECT(zest::type_eq<non_const::function_type, int(int)>());
+    EXPECT(zest::type_eq<constant::class_type, Adder>());
+    EXPECT(zest::type_eq<constant::function_type, int(int)>());
+    STATIC_EXPECT(is_mem_fn_of<Adder, non_const>);
     STATIC_EXPECT(is_mem_fn_of<const Adder, constant>);
     STATIC_EXPECT(!is_mem_fn_of<Offset, constant>);
 }

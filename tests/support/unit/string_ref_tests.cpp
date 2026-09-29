@@ -1,4 +1,3 @@
-#include <cctype>
 #include <format>
 #include <string>
 #include <utility>
@@ -69,7 +68,7 @@ ZEST_CASE(prefixes_and_suffixes_ignoring_case) {
     EXPECT(!string_ref("h").ends_with_insensitive(".h"));
 }
 
-ZEST_CASE(contains) {
+ZEST_CASE(contains_finds_text_and_characters) {
     string_ref text("needle in haystack");
     EXPECT(text.contains("in hay"));
     EXPECT(text.contains('k'));
@@ -131,7 +130,7 @@ ZEST_CASE(substr_and_slice_clamp_to_the_text) {
     EXPECT(text.slice(2, 100) == "llo");
 }
 
-ZEST_CASE(take_and_drop) {
+ZEST_CASE(take_and_drop_clamp_to_the_text) {
     string_ref text("hello");
     EXPECT(text.take_front(2) == "he");
     EXPECT(text.take_front(10) == "hello");
@@ -174,7 +173,7 @@ ZEST_CASE(consume_affixes_ignoring_case) {
     EXPECT(!text.consume_back_insensitive("x"));
 }
 
-ZEST_CASE(trim_characters) {
+ZEST_CASE(trim_removes_a_character_from_either_end) {
     string_ref text("xxmiddlexx");
     EXPECT(text.ltrim('x') == "middlexx");
     EXPECT(text.rtrim('x') == "xxmiddle");

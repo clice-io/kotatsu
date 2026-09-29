@@ -353,9 +353,9 @@ struct casing_child {
 };
 
 struct repeated_child_annotation {
-    KOTATSU_ANNOTATE(rename_all = casing::lower_camel)
+    KOTATSU_ANNOTATE(rename_all = Casing::LowerCamel)
     <casing_child> left;
-    KOTATSU_ANNOTATE(rename_all = casing::lower_camel)
+    KOTATSU_ANNOTATE(rename_all = Casing::LowerCamel)
     <casing_child> right;
 };
 
@@ -815,11 +815,11 @@ struct renamed_defaults_child {
 };
 
 struct renamed_defaults_holder {
-    KOTATSU_ANNOTATE(rename_all = casing::lower_camel)
+    KOTATSU_ANNOTATE(rename_all = Casing::LowerCamel)
     <renamed_defaults_child> child;
 };
 
-KOTATSU_ANNOTATION(renamed_defaults_root_annotation, rename_all = casing::lower_camel);
+KOTATSU_ANNOTATION(renamed_defaults_root_annotation, rename_all = Casing::LowerCamel);
 using renamed_defaults_root =
     annotate<renamed_defaults_root_annotation>::type<renamed_defaults_child>;
 
