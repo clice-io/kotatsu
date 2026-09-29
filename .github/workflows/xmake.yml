@@ -16,7 +16,7 @@ jobs:
           - os: windows-2025
             toolchain: clang-cl
             pixi_env: windows-llvm
-            config_args: '--toolchain=clang-cl "--cxx=clang_cl@sccache clang-cl"'
+            config_args: "--toolchain=clang-cl --bin=$env:RUNNER_TEMP/sccache"
             compiler_cache: sccache
           - os: ubuntu-24.04
             toolchain: default
@@ -68,6 +68,15 @@ jobs:
           locked: true
           # Deleting the environment when the job ends only takes time.
           post-cleanup: false
+
+      # A copy of sccache named clang-cl acts as `sccache clang-cl`. In the
+      # --bin directory, it is the compiler xmake takes, for the packages it
+      # builds too: CMake, which builds most of them, takes no launcher there.
+      - name: Setup sccache
+        if: env.COMPILER_CACHE == 'sccache'
+        run: |
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\sccache"
+          Copy-Item (Get-Command sccache).Source "$env:RUNNER_TEMP\sccache\clang-cl.exe"
 
       # Keyed on the packages the configuration uses, which only xmake can tell
       # once configured: this restores the leg's newest entry, and configure

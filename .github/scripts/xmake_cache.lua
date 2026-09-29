@@ -4,6 +4,7 @@
 --     xmake lua .github/scripts/xmake_cache.lua <command>
 
 import("core.base.hashset")
+import("core.base.json")
 import("core.cache.localcache")
 import("core.package.package")
 import("core.project.config")
@@ -42,24 +43,26 @@ function _keys()
 		COMPILER_HASH = hash.strhash128((os.iorunv(cxx, { "--version" }))),
 		STARTED_AT = os.time(),
 	})
-	-- Configure ran compiles through sccache, whose server indexes its
-	-- directory once, when it starts; the build's server then finds what the
-	-- restore adds.
+	-- sccache indexes its directory on its first lookup, which configure's
+	-- compiles made; a new server finds what the restore adds.
 	if os.getenv("COMPILER_CACHE") == "sccache" then
 		os.execv("sccache", { "--stop-server" }, { try = true })
 	end
 end
 
--- Removes the packages this configuration does not use: the directories
--- <root>/<letter>/<name>/<version>/<build hash>, and those inside an unused
--- package that has no version.
+-- Removes the packages this configuration does not use, installed in
+-- <root>/<letter>/<name>/<version>/<build hash>, or in <build hash> directly
+-- under the name for a package without a version.
 function _trim_package_cache()
 	local used = hashset.from(_used_packages())
-	for _, dir in ipairs(os.dirs(path.join(package.installdir(), "*", "*", "*", "*"))) do
-		dir = path.normalize(dir)
-		if not used:has(dir) and not used:has(path.directory(dir)) then
-			print("removing %s", dir)
-			os.rm(dir)
+	for _, dir in ipairs(os.dirs(path.join(package.installdir(), "*", "*", "*"))) do
+		local installdirs = os.isfile(path.join(dir, "manifest.txt")) and { dir } or os.dirs(path.join(dir, "*"))
+		for _, installdir in ipairs(installdirs) do
+			installdir = path.normalize(installdir)
+			if not used:has(installdir) then
+				print("removing %s", installdir)
+				os.rm(installdir)
+			end
 		end
 	end
 end
@@ -67,59 +70,49 @@ end
 -- Removes the entries the build did not use, so that a saved entry holds one
 -- build instead of growing run after run, and outputs whether it changed.
 function _trim_compiler_cache()
-	local dir = os.getenv("COMPILER_CACHE_DIR")
+	local pattern = path.join(os.getenv("COMPILER_CACHE_DIR"), "**")
 	local started = tonumber(os.getenv("STARTED_AT"))
+	local dropped = 0
 	local changed
 	if os.getenv("COMPILER_CACHE") == "sccache" then
 		-- sccache refreshes an entry's mtime on a hit, and its server keeps
 		-- count of the entries, so it stops first.
 		os.execv("sccache", { "--show-stats" })
-		os.execv("sccache", { "--stop-server" }, { try = true })
-		local dropped = 0
-		for _, file in ipairs(os.files(path.join(dir, "**"))) do
+		local stats = json.decode(os.iorunv("sccache", { "--show-stats", "--stats-format=json" })).stats
+		os.execv("sccache", { "--stop-server" })
+		-- xmake finding the real clang-cl would otherwise go unnoticed.
+		assert(stats.compile_requests > 0, "no compile went through sccache")
+		for _, file in ipairs(os.files(pattern)) do
 			if os.mtime(file) < started then
 				os.rm(file)
 				dropped = dropped + 1
 			end
 		end
 		print("compiler cache: %d entries dropped", dropped)
-		changed = true
+		changed = stats.cache_writes + dropped > 0
 	else
 		-- xmake's cache leaves no trace of a hit, but each object in
 		-- build/.objs, compiled or taken from the cache, is byte for byte a
-		-- copy that the cache holds. Of several copies, the newest stays.
+		-- copy that the cache holds.
 		local objects = hashset.new()
 		for _, file in ipairs(os.files("build/.objs/**")) do
 			objects:insert(hash.xxhash128(file))
 		end
 		assert(not objects:empty(), "the build left no objects")
-		local kept = {}
-		local dropped = 0
-		local function drop(file)
-			os.rm(file)
-			-- The compiler output that a hit replays.
-			os.tryrm(file .. ".txt")
-			dropped = dropped + 1
-		end
-		for _, file in ipairs(os.files(path.join(dir, "**"))) do
-			if not file:endswith(".txt") then
-				local digest = hash.xxhash128(file)
-				local other = kept[digest]
-				if not objects:has(digest) or (other and os.mtime(other) >= os.mtime(file)) then
-					drop(file)
-				else
-					if other then
-						drop(other)
-					end
-					kept[digest] = file
-				end
-			end
-		end
 		local added, size = 0, 0
-		for _, file in pairs(kept) do
-			size = size + os.filesize(file)
-			if os.mtime(file) >= started then
-				added = added + 1
+		for _, file in ipairs(os.files(pattern)) do
+			-- Next to an object, <key>.txt holds the compiler output a hit replays.
+			if not file:endswith(".txt") then
+				if objects:has(hash.xxhash128(file)) then
+					size = size + os.filesize(file)
+					if os.mtime(file) >= started then
+						added = added + 1
+					end
+				else
+					os.rm(file)
+					os.tryrm(file .. ".txt")
+					dropped = dropped + 1
+				end
 			end
 		end
 		print("compiler cache: %d objects added, %d dropped, %.0f MiB kept", added, dropped, size / 1024 / 1024)
