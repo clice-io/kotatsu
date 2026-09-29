@@ -40,12 +40,10 @@ add_library(kota::http ALIAS kota_http)
 target_sources(kota_http PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/bound_client.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/client.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/execute.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/inflight_request.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/manager.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/request.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/response.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/runtime.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/transfer.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/util.cpp"
 )
 

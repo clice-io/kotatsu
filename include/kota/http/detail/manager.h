@@ -3,23 +3,30 @@
 #include <cstddef>
 #include <expected>
 #include <functional>
+#include <memory>
 #include <unordered_map>
 
 #include "kota/http/detail/common.h"
 #include "kota/http/detail/curl.h"
 #include "kota/async/io/loop.h"
+#include "kota/async/vocab/owned.h"
 
-struct uv_handle_s;
-using uv_handle_t = uv_handle_s;
+namespace kota::http::detail {
 
-struct uv_timer_s;
-using uv_timer_t = uv_timer_s;
+struct share_key;
+struct transfer;
 
-struct uv_poll_s;
-using uv_poll_t = uv_poll_s;
+}  // namespace kota::http::detail
 
 namespace kota::http {
 
+/// Drives the requests of one event loop: one curl multi handle, the libuv
+/// timer and socket polls curl asks for, and the curl share of each client
+/// that sent requests there. The first request sent on a loop makes its
+/// manager, and the loop destroys it as it goes; requests still in flight
+/// then stay with their tasks, and cancelling those ends them.
+///
+/// A manager lives on its loop's thread: call its functions there.
 class manager {
 public:
     manager(const manager&) = delete;
@@ -30,77 +37,79 @@ public:
 
     ~manager();
 
+    /// The manager of `loop`, made by the first call. Fails with
+    /// error_kind::aborted once the loop is being destroyed, and with a curl
+    /// error when curl cannot be set up.
     static std::expected<std::reference_wrapper<manager>, error> try_for_loop(event_loop& loop);
 
+    /// try_for_loop(), which must succeed: a failure aborts the process.
     static manager& for_loop(event_loop& loop);
 
+    /// Destroys the manager of `loop`, if it has one: its requests in flight
+    /// end with error_kind::aborted on a later turn of the loop, and the next
+    /// request makes a new manager, with new curl shares.
     static void unregister_loop(event_loop& loop);
 
-    curl::multi_error add_request(CURL* easy) noexcept;
-
-    curl::multi_error remove_request(CURL* easy) noexcept;
-
-    void drive_timeout() noexcept;
-
-    void drain_completed() noexcept;
-
-    void drive_timeout_arming(void* arming_request) noexcept;
-
-    void drain_completed_arming(void* arming_request) noexcept;
-
-    std::size_t pending_requests() const noexcept {
-        return active_requests;
-    }
+    /// The requests curl is driving.
+    std::size_t pending_requests() const noexcept;
 
     event_loop& loop() const noexcept {
         return *bound_loop;
     }
 
+    /// The curl multi handle, for the options kotatsu does not set.
     CURLM* native_multi() const noexcept {
         return multi.get();
     }
 
 private:
-    struct timer_context;
-    struct socket_context;
+    friend struct detail::transfer;
 
-    static int on_curl_socket(CURL* easy,
-                              curl_socket_t socket,
-                              int action,
-                              void* userp,
-                              void* socketp) noexcept;
+    struct timer_watch;
+    struct socket_watch;
 
-    static int on_curl_timeout(CURLM* multi, long timeout_ms, void* userp) noexcept;
-
-    static void on_uv_socket(uv_poll_t* handle, int status, int events) noexcept;
-
-    static void on_uv_timeout(uv_timer_t* handle) noexcept;
-
-    static void on_uv_socket_close(uv_handle_t* handle) noexcept;
-
-    static void on_uv_timer_close(uv_handle_t* handle) noexcept;
-
-    socket_context* ensure_socket(curl_socket_t socket) noexcept;
-
-    void update_socket(curl_socket_t socket, int action, void* socketp) noexcept;
-
-    void update_timeout(long timeout_ms) noexcept;
-
-    void drive_socket(curl_socket_t socket, int flags) noexcept;
-
-    void drain_completed_impl(void* arming_request) noexcept;
-
-    void close_watchers() noexcept;
+    /// The curl share of one client's requests on this loop.
+    struct jar {
+        std::weak_ptr<const detail::share_key> key;
+        std::shared_ptr<curl::share_handle> share;
+    };
 
     manager(event_loop& loop, curl::multi_handle multi) noexcept;
 
-    std::expected<void, error> initialize();
+    /// The curl share of the requests of `key` on this loop, made by the
+    /// first call.
+    std::expected<std::shared_ptr<curl::share_handle>, error>
+        share_for(const std::shared_ptr<const detail::share_key>& key);
 
-    event_loop* bound_loop = nullptr;
+    /// Hands `job` to curl and tracks it.
+    curl::multi_error add(detail::transfer& job) noexcept;
+
+    /// Stops tracking `job`, and takes it from curl if curl still drives it.
+    void drop(detail::transfer& job) noexcept;
+
+    /// Lets curl act on `events` of `socket`, or on its timeout for
+    /// CURL_SOCKET_TIMEOUT, then queues the completion of every transfer it
+    /// has finished.
+    void drive(curl_socket_t socket, int events) noexcept;
+
+    /// Polls `socket` for what curl waits on (`what`), or stops for
+    /// CURL_POLL_REMOVE; `watch` is the socket's poll, null before the first.
+    int watch_socket(curl_socket_t socket, int what, socket_watch* watch) noexcept;
+
+    static int
+        on_socket(CURL* easy, curl_socket_t socket, int what, void* self, void* watch) noexcept;
+
+    static int on_timeout(CURLM* multi, long timeout_ms, void* self) noexcept;
+
+    event_loop* bound_loop;
+    /// Before the multi handle, so that the shares its transfers used
+    /// outlive it.
+    std::unordered_map<const detail::share_key*, jar> jars;
     curl::multi_handle multi;
-    timer_context* timer = nullptr;
-    std::unordered_map<curl_socket_t, socket_context*> sockets;
-    std::size_t active_requests = 0;
+    kota::detail::unique_handle<timer_watch> timer;
+    std::unordered_map<curl_socket_t, kota::detail::unique_handle<socket_watch>> sockets;
+    /// The transfers it tracks, linked through transfer::prev and next.
+    detail::transfer* transfers = nullptr;
 };
 
 }  // namespace kota::http

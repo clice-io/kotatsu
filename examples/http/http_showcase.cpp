@@ -5,7 +5,6 @@
 #include <utility>
 #include <vector>
 
-#include "kota/http/detail/manager.h"
 #include "kota/http/http.h"
 #include "kota/async/async.h"
 
@@ -114,6 +113,5 @@ int main() {
     loop.schedule(root);
     loop.run();
 
-    http::manager::unregister_loop(loop);
     return 0;
 }

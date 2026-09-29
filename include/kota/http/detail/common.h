@@ -25,13 +25,22 @@ constexpr inline std::string_view connect = "CONNECT";
 }  // namespace method
 
 enum class error_kind {
+    /// libcurl failed the transfer; `curl_code` says why.
     curl,
+    /// The request cannot be sent as built: a missing url, a body on GET, a
+    /// header that would break its line, ...
     invalid_request,
+    /// json() could not encode its value.
     json_encode,
+    /// The request ended unfinished: its event loop's manager went
+    /// (manager::unregister_loop), or it was sent while the loop was being
+    /// destroyed.
+    aborted,
 };
 
 struct error {
     error_kind kind = error_kind::curl;
+    /// For error_kind::curl.
     curl::easy_error curl_code = CURLE_OK;
     std::string detail;
 
@@ -55,6 +64,12 @@ struct error {
         return {.kind = error_kind::json_encode, .detail = std::move(detail)};
     }
 
+    static error aborted(std::string detail) {
+        return {.kind = error_kind::aborted, .detail = std::move(detail)};
+    }
+
+    /// `detail` when there is one; otherwise curl's text for its code, or a
+    /// fixed text for the kind.
     std::string message() const;
 };
 
