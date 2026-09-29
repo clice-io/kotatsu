@@ -1,6 +1,6 @@
 #pragma once
 #include <algorithm>
-#include <array>
+#include <cctype>
 #include <cerrno>
 #include <charconv>
 #include <concepts>
@@ -574,36 +574,33 @@ struct DecoOptionBase {
     virtual std::optional<std::string> into(const ParsedArgOwning& arg) = 0;
 
     virtual std::optional<std::string> into(const ParsedArgOwning& arg,
-                                            const IntoContext& context) {
-        (void)context;
+                                            [[maybe_unused]] const IntoContext& context) {
         return into(arg);
     }
 };
 
+/// An option's `after_parsed` callback with its result type erased, so that the options of
+/// every type share one table: `invoke` casts `callback` back to its own type and calls it.
 struct ErasedParseCallback {
-    constexpr static std::size_t storage_size = sizeof(void (*)());
-    using storage_t = std::array<char, storage_size>;
-    using invoker_t = ParseControl (*)(const storage_t& storage,
+    using erased_fn = void (*)();
+    using invoker_t = ParseControl (*)(erased_fn callback,
                                        const ParsedArgOwning& arg,
                                        std::uint32_t next_cursor,
                                        std::span<std::string> argv,
                                        const DecoOptionBase& option);
 
-    storage_t storage{};
+    erased_fn callback = nullptr;
     invoker_t invoke = nullptr;
 
     constexpr explicit operator bool() const {
         return invoke != nullptr;
     }
 
-    constexpr auto operator()(const ParsedArgOwning& arg,
-                              std::uint32_t next_cursor,
-                              std::span<std::string> argv,
-                              const DecoOptionBase& option) const -> ParseControl {
-        if(invoke == nullptr) {
-            return ParseControl::next();
-        }
-        return invoke(storage, arg, next_cursor, argv, option);
+    auto operator()(const ParsedArgOwning& arg,
+                    std::uint32_t next_cursor,
+                    std::span<std::string> argv,
+                    const DecoOptionBase& option) const -> ParseControl {
+        return invoke(callback, arg, next_cursor, argv, option);
     }
 };
 
@@ -652,6 +649,30 @@ struct DecoOption : public DecoOptionBase, private std::optional<ResTy> {
 };
 
 namespace detail {
+
+constexpr bool has_kv_style(char style, KVStyle expected) {
+    return (style & static_cast<char>(expected)) != 0;
+}
+
+/// Whether a KV option of `style` spelled `name` takes its value joined to the name: always
+/// for Joined, never for Separate, and for JoinedOrSeparate when the name ends in '=' or ':'
+/// (`--name=`, `/name:`), so that each name of an option picks its own form.
+constexpr bool is_joined_kv_name(char style, std::string_view name) {
+    if(!has_kv_style(style, KVStyle::Joined)) {
+        return false;
+    }
+    return !has_kv_style(style, KVStyle::Separate) || name.ends_with('=') || name.ends_with(':');
+}
+
+/// The name an option without explicit names answers to: its field's name with '_' spelled
+/// '-', after "-" when it is one letter long and "--" otherwise.
+constexpr std::string generated_option_name(std::string_view field_name) {
+    std::string name(field_name.size() == 1 ? "-" : "--");
+    for(const char ch: field_name) {
+        name.push_back(ch == '_' ? '-' : ch);
+    }
+    return name;
+}
 
 inline bool iequals_ascii(std::string_view lhs, std::string_view rhs) {
     if(lhs.size() != rhs.size()) {
@@ -718,8 +739,6 @@ std::optional<std::string> parse_primitive_scalar(ResTy& out, std::string_view t
         }
         out = parsed;
         return std::nullopt;
-    } else if constexpr(std::same_as<ResTy, long double>) {
-        return "unsupported floating-point type: long double";
     } else if constexpr(std::is_enum_v<ResTy>) {
         if(auto parsed = kota::codec::spelling::map_string_to_enum<ResTy>(text)) {
             out = *parsed;
@@ -727,6 +746,11 @@ std::optional<std::string> parse_primitive_scalar(ResTy& out, std::string_view t
         }
         return format_invalid_enum_value<ResTy>(text);
     } else if constexpr(std::floating_point<ResTy>) {
+        // strtod would skip leading spaces and read an empty text as 0; an integer takes
+        // neither.
+        if(text.empty() || std::isspace(static_cast<unsigned char>(text.front()))) {
+            return "invalid floating-point value: " + std::string(text);
+        }
         std::string copy(text);
         char* parse_end = nullptr;
         errno = 0;
@@ -766,7 +790,7 @@ std::optional<std::string> assign_scalar(std::optional<ResTy>& target,
         return res.into(text, context);
     } else if constexpr(trait::CustomStringResultTy<ResTy>) {
         auto& res = target.emplace();
-        return res.into(text);
+        return context.format_error(res.into(text));
     } else {
         ResTy parsed{};
         if(auto err = parse_primitive_scalar(parsed, text)) {

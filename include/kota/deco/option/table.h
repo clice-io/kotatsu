@@ -156,14 +156,9 @@ private:
     /// Most recently produced result (valid after each advance).
     value_type current;
 
-    /// Whether grouped-short-option mode is active for this parse.
-    bool is_grouped = false;
-
-    /// Scratch buffer for expanding grouped short options (e.g. "-abc").
+    /// While inside a group of short options, "-abc", the rest of it behind a '-', "-bc";
+    /// empty otherwise.
     std::string group_buf;
-
-    /// True while iterating inside an expanded group.
-    bool in_group = false;
 
     /// True after "--" has been seen (dash_dash_parsing mode).
     bool past_dash_dash = false;

@@ -125,18 +125,25 @@ struct ParsedArg {
     }
 };
 
-constexpr inline std::string_view _pfx_dash[] = {"-"};
-constexpr inline std::string_view _pfx_dash_double[] = {"-", "--"};
-constexpr inline std::string_view _pfx_double[] = {"--"};
-constexpr inline std::string_view _pfx_all[] = {"--", "/", "-"};
-constexpr inline std::string_view _pfx_slash_dash[] = {"/", "-"};
+namespace detail {
 
+constexpr inline std::string_view dash_prefixes[] = {"-"};
+constexpr inline std::string_view dash_double_prefixes[] = {"-", "--"};
+constexpr inline std::string_view double_prefixes[] = {"--"};
+constexpr inline std::string_view all_prefixes[] = {"--", "/", "-"};
+constexpr inline std::string_view slash_dash_prefixes[] = {"/", "-"};
+
+}  // namespace detail
+
+/// The prefixes an option accepts, the first being the one it is written with.
 constexpr inline auto pfx_none = std::span<const std::string_view>();
-constexpr inline auto pfx_dash = std::span<const std::string_view>(_pfx_dash);
-constexpr inline auto pfx_dash_double = std::span<const std::string_view>(_pfx_dash_double);
-constexpr inline auto pfx_double = std::span<const std::string_view>(_pfx_double);
-constexpr inline auto pfx_all = std::span<const std::string_view>(_pfx_all);
-constexpr inline auto pfx_slash_dash = std::span<const std::string_view>(_pfx_slash_dash);
+constexpr inline auto pfx_dash = std::span<const std::string_view>(detail::dash_prefixes);
+constexpr inline auto pfx_dash_double =
+    std::span<const std::string_view>(detail::dash_double_prefixes);
+constexpr inline auto pfx_double = std::span<const std::string_view>(detail::double_prefixes);
+constexpr inline auto pfx_all = std::span<const std::string_view>(detail::all_prefixes);
+constexpr inline auto pfx_slash_dash =
+    std::span<const std::string_view>(detail::slash_dash_prefixes);
 
 /// Type-erased reference to a contiguous range of string-like arguments.
 /// Non-owning — the underlying range must outlive this object.

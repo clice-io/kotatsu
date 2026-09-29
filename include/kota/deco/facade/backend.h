@@ -1,9 +1,10 @@
 #pragma once
 
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
-#include <expected>
 #include <limits>
+#include <ranges>
 #include <span>
 #include <string_view>
 #include <type_traits>
@@ -13,12 +14,10 @@
 #include "decl.h"
 #include "ty.h"
 #include "kota/support/comptime.h"
-#include "kota/support/memory.h"
+#include "kota/support/config.h"
 #include "kota/support/type_traits.h"
 
 namespace kota::deco::detail {
-
-using namespace kota::comptime;
 
 struct ParsedNamedOption {
     std::span<const std::string_view> prefixes = backend::pfx_none;
@@ -48,24 +47,31 @@ constexpr auto parse_named_option(std::string_view full_name) {
     KOTA_THROW("Option name must start with '-', '--', or '/'");
 }
 
+/// Walks a deco struct in declaration order, nested structs included, and hands each option
+/// and alias to `Derived` with its declaration after the config fields in scope are applied:
+/// consume_deco_struct() hands over the fields of an object, consume_deco_struct_schema()
+/// only their types, as `std::type_identity`.
 template <typename Derived, typename RootTy>
 class DecoStructConsumer {
 public:
     using accessor_fn = void* (*)(void*);
 
 private:
-    struct config_state {
+    struct ConfigState {
         decl::ConfigFields cfg{};
         std::size_t level = 0;
     };
 
-    constexpr static void config_push(std::vector<config_state>& config_stack,
-                                      const decl::ConfigFields& cfg,
-                                      std::size_t level) {
-        config_stack.push_back(config_state{.cfg = cfg, .level = level});
-    }
-
-    constexpr static void config_pop_nearest_start(std::vector<config_state>& config_stack) {
+    /// Applies config field `FieldTy`, met at nesting `level`: Start and Next push their
+    /// overrides, End drops everything back to the nearest Start.
+    template <typename FieldTy>
+    constexpr static void apply_config_field(std::vector<ConfigState>& config_stack,
+                                             std::size_t level) {
+        const auto cfg = ty::cfg_ty_of<FieldTy>{};
+        if(cfg.type != decl::ConfigFields::Type::End) {
+            config_stack.push_back(ConfigState{.cfg = cfg, .level = level});
+            return;
+        }
         for(std::size_t i = config_stack.size(); i > 0; --i) {
             if(config_stack[i - 1].cfg.type == decl::ConfigFields::Type::Start) {
                 config_stack.resize(i - 1);
@@ -75,142 +81,67 @@ private:
         KOTA_THROW("Unmatched config end field");
     }
 
-    constexpr static void config_consume_next(std::vector<config_state>& config_stack,
-                                              std::size_t level) {
-        config_stack.erase(std::remove_if(config_stack.begin(),
-                                          config_stack.end(),
-                                          [level](const config_state& item) {
-                                              return item.level == level &&
-                                                     item.cfg.type ==
-                                                         decl::ConfigFields::Type::Next;
-                                          }),
-                           config_stack.end());
+    /// Drops the Next configs met at nesting `level`, once the field they apply to is visited.
+    constexpr static void drop_next_configs(std::vector<ConfigState>& config_stack,
+                                            std::size_t level) {
+        std::erase_if(config_stack, [level](const ConfigState& state) {
+            return state.level == level && state.cfg.type == decl::ConfigFields::Type::Next;
+        });
     }
 
-    constexpr static void on_config_field(std::vector<config_state>& config_stack,
-                                          const auto& cfg_owner,
-                                          std::size_t level) {
-        auto cfg = ty::cfg_ty_of<decltype(cfg_owner)>{};
-        switch(cfg.type) {
-            case decl::ConfigFields::Type::Start: config_push(config_stack, cfg, level); break;
-            case decl::ConfigFields::Type::End: config_pop_nearest_start(config_stack); break;
-            case decl::ConfigFields::Type::Next: config_push(config_stack, cfg, level); break;
-        }
-    }
-
-    template <typename OptTy>
-    constexpr static void apply_current_config(OptTy& opt,
-                                               const std::vector<config_state>& config_stack) {
-        for(const auto& cfg_state: config_stack) {
-            const auto& cfg = cfg_state.cfg;
-            if(cfg.required.is_overridden()) {
-                opt.required = cfg.required.get();
-            }
-            if(cfg.category.is_overridden()) {
-                opt.category = cfg.category.get();
-            }
-            if(cfg.help.is_overridden()) {
-                opt.help = cfg.help.get();
-            }
-            if(cfg.meta_var.is_overridden()) {
-                auto meta_var = cfg.meta_var.get();
-                meta_var.explicit_value = true;
-                opt.meta_var = meta_var;
-            }
-        }
-    }
-
+    /// The declaration `CfgTy` of an option, with the overrides of the configs in scope.
     template <typename CfgTy>
-    constexpr static CfgTy make_configured_cfg(const std::vector<config_state>& config_stack) {
+    constexpr static CfgTy make_configured_cfg(const std::vector<ConfigState>& config_stack) {
         static_assert(std::is_base_of_v<decl::CommonOptionFields, CfgTy>);
         CfgTy cfg{};
-        apply_current_config(static_cast<decl::CommonOptionFields&>(cfg), config_stack);
+        for(const auto& state: config_stack) {
+            const auto& config = state.cfg;
+            if(config.required.is_overridden()) {
+                cfg.required = config.required.get();
+            }
+            if(config.category.is_overridden()) {
+                cfg.category = config.category.get();
+            }
+            if(config.help.is_overridden()) {
+                cfg.help = config.help.get();
+            }
+            if(config.meta_var.is_overridden()) {
+                cfg.meta_var = config.meta_var.get();
+                cfg.meta_var.explicit_value = true;
+            }
+        }
         return cfg;
     }
 
+    /// Hands `field`, an option or an alias, to the handler of its kind; `field` is the field
+    /// itself, or `std::type_identity` of its type when only the declaration is visited.
     template <typename FieldTy, typename CfgTy, std::size_t... Path>
-    constexpr static bool dispatch_deco_option(Derived& derived,
-                                               const FieldTy& field,
-                                               const CfgTy& cfg,
-                                               std::string_view field_name,
-                                               std::index_sequence<Path...> path) {
-        if constexpr(CfgTy::deco_field_ty == decl::DecoType::Input) {
-            return bool(derived.on_input_config(field, cfg, field_name, path));
+    constexpr static bool dispatch(Derived& derived,
+                                   const FieldTy& field,
+                                   const CfgTy& cfg,
+                                   std::string_view field_name,
+                                   std::index_sequence<Path...> path) {
+        if constexpr(std::is_base_of_v<decl::AliasFields, CfgTy>) {
+            return derived.on_alias(field, cfg, field_name, path);
+        } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::Input) {
+            return derived.on_input_config(field, cfg, field_name, path);
         } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::TrailingInput) {
-            return bool(derived.on_trailing_input_config(field, cfg, field_name, path));
+            return derived.on_trailing_input_config(field, cfg, field_name, path);
         } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::Flag) {
-            if constexpr(std::is_base_of_v<decl::AliasFields, CfgTy>) {
-                return bool(derived.on_flag_alias(field, cfg, field_name, path));
-            } else {
-                return bool(derived.on_flag_config(field, cfg, field_name, path));
-            }
+            return derived.on_flag_config(field, cfg, field_name, path);
         } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::KV) {
-            if constexpr(std::is_base_of_v<decl::AliasFields, CfgTy>) {
-                return bool(derived.on_kv_alias(field, cfg, field_name, path));
-            } else {
-                return bool(derived.on_kv_config(field, cfg, field_name, path));
-            }
+            return derived.on_kv_config(field, cfg, field_name, path);
         } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::CommaJoined) {
-            if constexpr(std::is_base_of_v<decl::AliasFields, CfgTy>) {
-                return bool(derived.on_comma_joined_alias(field, cfg, field_name, path));
-            } else {
-                return bool(derived.on_comma_joined_config(field, cfg, field_name, path));
-            }
-        } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::Multi) {
-            if constexpr(std::is_base_of_v<decl::AliasFields, CfgTy>) {
-                return bool(derived.on_multi_alias(field, cfg, field_name, path));
-            } else {
-                return bool(derived.on_multi_config(field, cfg, field_name, path));
-            }
+            return derived.on_comma_joined_config(field, cfg, field_name, path);
         } else {
-            static_assert(kota::dependent_false<CfgTy>, "Unsupported deco cfg type.");
-            return true;
-        }
-    }
-
-    template <typename FieldTy, typename CfgTy, std::size_t... Path>
-    constexpr static bool dispatch_deco_option_schema(Derived& derived,
-                                                      const CfgTy& cfg,
-                                                      std::string_view field_name,
-                                                      std::index_sequence<Path...> path) {
-        if constexpr(CfgTy::deco_field_ty == decl::DecoType::Input) {
-            return bool(derived.template on_input_config<FieldTy>(cfg, field_name, path));
-        } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::TrailingInput) {
-            return bool(derived.template on_trailing_input_config<FieldTy>(cfg, field_name, path));
-        } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::Flag) {
-            if constexpr(std::is_base_of_v<decl::AliasFields, CfgTy>) {
-                return bool(derived.template on_flag_alias<FieldTy>(cfg, field_name, path));
-            } else {
-                return bool(derived.template on_flag_config<FieldTy>(cfg, field_name, path));
-            }
-        } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::KV) {
-            if constexpr(std::is_base_of_v<decl::AliasFields, CfgTy>) {
-                return bool(derived.template on_kv_alias<FieldTy>(cfg, field_name, path));
-            } else {
-                return bool(derived.template on_kv_config<FieldTy>(cfg, field_name, path));
-            }
-        } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::CommaJoined) {
-            if constexpr(std::is_base_of_v<decl::AliasFields, CfgTy>) {
-                return bool(derived.template on_comma_joined_alias<FieldTy>(cfg, field_name, path));
-            } else {
-                return bool(
-                    derived.template on_comma_joined_config<FieldTy>(cfg, field_name, path));
-            }
-        } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::Multi) {
-            if constexpr(std::is_base_of_v<decl::AliasFields, CfgTy>) {
-                return bool(derived.template on_multi_alias<FieldTy>(cfg, field_name, path));
-            } else {
-                return bool(derived.template on_multi_config<FieldTy>(cfg, field_name, path));
-            }
-        } else {
-            static_assert(kota::dependent_false<CfgTy>, "Unsupported deco cfg type.");
-            return true;
+            static_assert(CfgTy::deco_field_ty == decl::DecoType::Multi);
+            return derived.on_multi_config(field, cfg, field_name, path);
         }
     }
 
     template <typename CurrentTy, typename OnOption, std::size_t... Path>
     constexpr static bool visit_fields_impl(const CurrentTy& object,
-                                            std::vector<config_state>& config_stack,
+                                            std::vector<ConfigState>& config_stack,
                                             std::size_t level,
                                             OnOption& on_option) {
         return refl::for_each(object, [&](auto field) {
@@ -218,21 +149,21 @@ private:
             constexpr auto idx = decltype(field)::index();
             constexpr auto name = decltype(field)::name();
             if constexpr(ty::is_config_field<FieldTy>) {
-                on_config_field(config_stack, field.value(), level);
+                apply_config_field<FieldTy>(config_stack, level);
                 return true;
             } else if constexpr(ty::deco_option_like<FieldTy>) {
                 using CfgTy = ty::field_ty_of<FieldTy>;
                 const auto cfg = make_configured_cfg<CfgTy>(config_stack);
                 const bool keep_going =
                     bool(on_option(field.value(), cfg, name, std::index_sequence<Path..., idx>{}));
-                config_consume_next(config_stack, level);
+                drop_next_configs(config_stack, level);
                 return keep_going;
             } else if constexpr(ty::is_alias_field<FieldTy>) {
                 using CfgTy = ty::alias_ty_of<FieldTy>;
                 const auto cfg = make_configured_cfg<CfgTy>(config_stack);
                 const bool keep_going =
                     bool(on_option(field.value(), cfg, name, std::index_sequence<Path..., idx>{}));
-                config_consume_next(config_stack, level);
+                drop_next_configs(config_stack, level);
                 return keep_going;
             } else if constexpr(refl::reflectable_class<FieldTy>) {
                 const bool keep_going =
@@ -240,35 +171,24 @@ private:
                                                                        config_stack,
                                                                        level + 1,
                                                                        on_option);
-                config_consume_next(config_stack, level);
+                drop_next_configs(config_stack, level);
                 return keep_going;
             } else {
-                // now we just ignore it, some times we just need parameter in this
-                // struct but do not want to change it.
+                // A plain member is the struct's own business: deco leaves it alone, and a
+                // Next config applies to the deco field after it.
                 return true;
             }
         });
     }
 
-    template <typename FieldTy>
-    constexpr static void on_config_field_type(std::vector<config_state>& config_stack,
-                                               std::size_t level) {
-        auto cfg = ty::cfg_ty_of<FieldTy>{};
-        switch(cfg.type) {
-            case decl::ConfigFields::Type::Start: config_push(config_stack, cfg, level); break;
-            case decl::ConfigFields::Type::End: config_pop_nearest_start(config_stack); break;
-            case decl::ConfigFields::Type::Next: config_push(config_stack, cfg, level); break;
-        }
-    }
-
     template <typename CurrentTy, std::size_t I, typename OnOption, std::size_t... Path>
-    constexpr static bool visit_schema_field(std::vector<config_state>& config_stack,
+    constexpr static bool visit_schema_field(std::vector<ConfigState>& config_stack,
                                              std::size_t level,
                                              OnOption& on_option) {
         using FieldTy = ty::base_ty<refl::field_type<CurrentTy, I>>;
         constexpr auto name = refl::field_name<I, CurrentTy>();
         if constexpr(ty::is_config_field<FieldTy>) {
-            on_config_field_type<FieldTy>(config_stack, level);
+            apply_config_field<FieldTy>(config_stack, level);
             return true;
         } else if constexpr(ty::deco_option_like<FieldTy>) {
             using CfgTy = ty::field_ty_of<FieldTy>;
@@ -277,7 +197,7 @@ private:
                                                    cfg,
                                                    name,
                                                    std::index_sequence<Path..., I>{}));
-            config_consume_next(config_stack, level);
+            drop_next_configs(config_stack, level);
             return keep_going;
         } else if constexpr(ty::is_alias_field<FieldTy>) {
             using CfgTy = ty::alias_ty_of<FieldTy>;
@@ -286,14 +206,14 @@ private:
                                                    cfg,
                                                    name,
                                                    std::index_sequence<Path..., I>{}));
-            config_consume_next(config_stack, level);
+            drop_next_configs(config_stack, level);
             return keep_going;
         } else if constexpr(refl::reflectable_class<FieldTy>) {
             const bool keep_going =
                 visit_schema_fields_impl<FieldTy, OnOption, Path..., I>(config_stack,
                                                                         level + 1,
                                                                         on_option);
-            config_consume_next(config_stack, level);
+            drop_next_configs(config_stack, level);
             return keep_going;
         } else {
             return true;
@@ -302,7 +222,7 @@ private:
 
     template <typename CurrentTy, typename OnOption, std::size_t... Path, std::size_t... Is>
     constexpr static bool visit_schema_fields_indices(std::index_sequence<Is...>,
-                                                      std::vector<config_state>& config_stack,
+                                                      std::vector<ConfigState>& config_stack,
                                                       std::size_t level,
                                                       OnOption& on_option) {
         return (
@@ -311,7 +231,7 @@ private:
     }
 
     template <typename CurrentTy, typename OnOption, std::size_t... Path>
-    constexpr static bool visit_schema_fields_impl(std::vector<config_state>& config_stack,
+    constexpr static bool visit_schema_fields_impl(std::vector<ConfigState>& config_stack,
                                                    std::size_t level,
                                                    OnOption& on_option) {
         return visit_schema_fields_indices<CurrentTy, OnOption, Path...>(
@@ -335,11 +255,7 @@ protected:
 
     template <std::size_t... Path>
     static void* field_accessor(void* object) {
-        if(object == nullptr) {
-            return nullptr;
-        }
-        auto& field = field_by_path<RootTy, Path...>(*static_cast<RootTy*>(object));
-        return static_cast<void*>(&field);
+        return &field_by_path<RootTy, Path...>(*static_cast<RootTy*>(object));
     }
 
     template <std::size_t... Path>
@@ -348,45 +264,35 @@ protected:
     }
 
 public:
+    /// Calls `on_option(field, cfg, name, path)` for each option and alias of `object`, until
+    /// it returns false; returns whether it never did.
     template <typename OnOption>
     constexpr bool visit_fields(const RootTy& object, OnOption&& on_option) const {
-        std::vector<config_state> config_stack;
+        std::vector<ConfigState> config_stack;
         return visit_fields_impl<RootTy>(object, config_stack, 0, on_option);
     }
 
+    /// visit_fields() over the declaration alone: `field` is `std::type_identity` of its type.
     template <typename OnOption>
     constexpr bool visit_schema_fields(OnOption&& on_option) const {
-        std::vector<config_state> config_stack;
+        std::vector<ConfigState> config_stack;
         return visit_schema_fields_impl<RootTy>(config_stack, 0, on_option);
     }
 
-    constexpr bool consume_deco_struct(const RootTy& object = {}) {
+    constexpr void consume_deco_struct(const RootTy& object) {
         static_assert(refl::reflectable_class<RootTy>,
                       "DecoStructConsumer root type must be a reflectable struct");
-        auto on_option =
-            [this](const auto& field, const auto& cfg, std::string_view field_name, auto path) {
-                using FieldTy = std::remove_cvref_t<decltype(field)>;
-                return dispatch_deco_option<FieldTy>(static_cast<Derived&>(*this),
-                                                     field,
-                                                     cfg,
-                                                     field_name,
-                                                     path);
-            };
-        return visit_fields(object, on_option);
+        visit_fields(object, [this](const auto& field, const auto& cfg, auto name, auto path) {
+            return dispatch(static_cast<Derived&>(*this), field, cfg, name, path);
+        });
     }
 
-    constexpr bool consume_deco_struct_schema() {
+    constexpr void consume_deco_struct_schema() {
         static_assert(refl::reflectable_class<RootTy>,
                       "DecoStructConsumer root type must be a reflectable struct");
-        auto on_option =
-            [this](auto field_tag, const auto& cfg, std::string_view field_name, auto path) {
-                using FieldTy = typename decltype(field_tag)::type;
-                return dispatch_deco_option_schema<FieldTy>(static_cast<Derived&>(*this),
-                                                            cfg,
-                                                            field_name,
-                                                            path);
-            };
-        return visit_schema_fields(on_option);
+        visit_schema_fields([this](const auto& field, const auto& cfg, auto name, auto path) {
+            return dispatch(static_cast<Derived&>(*this), field, cfg, name, path);
+        });
     }
 };
 
@@ -394,54 +300,32 @@ template <typename ResourceTy>
 class StrPool {
     ResourceTy& resource;
 
-    template <typename... Args>
-        requires ((std::is_convertible_v<Args, std::string_view> && ...))
-    constexpr void add_into(char* mem, std::string_view first, Args&&... args) {
-        char* out = mem;
-        auto append = [&](std::string_view part) {
-            std::copy(part.data(), part.data() + part.size(), out);
-            out += part.size();
-        };
-        append(first);
-        (append(std::string_view(args)), ...);
-    }
-
 public:
     constexpr explicit StrPool(ResourceTy& resource) : resource(resource) {}
 
+    /// Copies the concatenation of `first` and `rest` into the pool, NUL-terminated, and
+    /// returns it; a counting pool only counts it and returns an empty view.
     template <typename... Args>
         requires ((std::is_convertible_v<Args, std::string_view> && ...))
-    constexpr std::string_view add(std::string_view first, Args&&... args) {
-        auto total_size = (first.size() + ... + std::string_view(args).size()) + 1;
+    constexpr std::string_view add(std::string_view first, Args&&... rest) {
+        const auto total_size = (first.size() + ... + std::string_view(rest).size()) + 1;
         auto* mem = resource.template allocate_type<char>(total_size);
-        if(ResourceTy::is_counting) {
+        if constexpr(ResourceTy::is_counting) {
             resource.template deallocate_type<char>(mem, total_size);
-            return first;
+            return {};
+        } else {
+            char* out = std::ranges::copy(first, mem).out;
+            ((out = std::ranges::copy(std::string_view(rest), out).out), ...);
+            *out = '\0';
+            return std::string_view(mem, total_size - 1);
         }
-        add_into(mem, first, std::forward<Args>(args)...);
-        mem[total_size - 1] = '\0';
-        return std::string_view(mem, total_size - 1);
-    }
-
-    constexpr std::string_view add_replace(std::string_view str, char old_char, char new_char) {
-        const auto total_size = str.size() + 1;
-        auto* mem = resource.template allocate_type<char>(total_size);
-        if(ResourceTy::is_counting) {
-            resource.template deallocate_type<char>(mem, total_size);
-            return str;
-        }
-        for(std::size_t i = 0; i < str.size(); ++i) {
-            mem[i] = (str[i] == old_char) ? new_char : str[i];
-        }
-        mem[str.size()] = '\0';
-        return std::string_view(mem, str.size());
-    }
-
-    constexpr std::size_t size() const {
-        return resource.used_size();
     }
 };
 
+/// Builds the backend option table of deco struct `RootTy`, together with what the runtime
+/// needs about each option, by id: the field it parses into, its category, its `after_parsed`
+/// callback and, for an alias, its forward. A counting generator (the default `record`) only
+/// measures the pools; built with the record it produced, the generator holds them inline.
 template <typename RootTy, auto record = kota::comptime::counting_flag<6>>
 class LLVMOptGenerator : public DecoStructConsumer<LLVMOptGenerator<RootTy, record>, RootTy> {
     using base_t = DecoStructConsumer<LLVMOptGenerator<RootTy, record>, RootTy>;
@@ -450,541 +334,239 @@ public:
     using accessor_fn = typename base_t::accessor_fn;
     using parse_callback_t = decl::ErasedParseCallback;
 
+    /// What an alias forwards to: the argv its arguments are rewritten into.
     struct AliasRuntimeMeta {
-        enum class Kind : char {
-            None = 0,
-            Flag = 1,
-            KV = 2,
-            CommaJoined = 3,
-            Multi = 4,
-        };
-
-        Kind kind = Kind::None;
+        /// The kind of the alias: Flag, KV, CommaJoined or Multi.
+        decl::DecoType kind = decl::DecoType::Flag;
+        /// None for an option that is no alias.
         decl::AliasForwardField::Kind forward_kind = decl::AliasForwardField::Kind::None;
         std::span<const std::string_view> static_tokens = {};
         decl::AliasForwardFn dynamic = nullptr;
         decl::AliasForwardFnWithContext dynamic_with_context = nullptr;
-        std::uint32_t arg_num = 0;
-        char style = 0;
     };
+
+    /// Every table has these two: the unknown option, and the input option that positional
+    /// arguments parse as, whether the struct declares a DecoInput or not.
+    constexpr static std::uint32_t unknown_option_id = 1;
+    constexpr static std::uint32_t input_option_id = 2;
 
 private:
-    using info_item = backend::Option;
     using resource_ty = kota::comptime::ComptimeMemoryResource<record>;
-    using item_pool_type = kota::comptime::ComptimeVector<info_item, resource_ty, 0>;
-    using id_map_type = kota::comptime::ComptimeVector<accessor_fn, resource_ty, 1>;
-    using category_map_type = kota::comptime::ComptimeVector<const decl::Category*, resource_ty, 2>;
-    using callback_map_type = kota::comptime::ComptimeVector<parse_callback_t, resource_ty, 3>;
 
-    using alias_meta_map_type = kota::comptime::ComptimeVector<AliasRuntimeMeta, resource_ty, 4>;
-    using string_pool_type = kota::comptime::ComptimeVector<std::string_view, resource_ty, 5>;
+    template <typename T, std::size_t reserved_id>
+    using pool_t = kota::comptime::ComptimeVector<T, resource_ty, reserved_id>;
 
-    // Keep a dummy at index 0 so item.id can be used as direct index.
-    resource_ty resource{};
-    StrPool<resource_ty> strPool;
-    item_pool_type itemPool{};
-    id_map_type idMap{};
-    category_map_type categoryMap{};
-    callback_map_type callbackMap{};
-    alias_meta_map_type aliasMetaMap{};
-    string_pool_type aliasStringPool{};
-
-    bool hasInputSlot = false;
-    bool hasTrailingSlot = false;
-    bool hasTrailingPack = false;
-    std::uint32_t inputOptionId = 0;
-    accessor_fn trailingAccessor = nullptr;
-    const decl::Category* trailingCategory = nullptr;
-    parse_callback_t trailingCallback{};
-
-    constexpr static auto make_default_item(std::uint32_t id) {
-        return info_item::unaliased_one(backend::pfx_none,
-                                        "",
-                                        id,
-                                        backend::Kind::Unknown,
-                                        0,
-                                        "no help text",
-                                        "");
-    }
-
-    constexpr auto& item_by_id(std::uint32_t id) {
-        return itemPool[id];
-    }
-
-    constexpr auto& new_item(accessor_fn mapped_accessor = nullptr) {
-        const auto item_id = static_cast<std::uint32_t>(itemPool.size());
-        itemPool.push_back(make_default_item(item_id));
-        auto& item = itemPool.back();
-        item.id = item_id;
-        idMap.push_back(mapped_accessor);
-        categoryMap.push_back(nullptr);
-        callbackMap.push_back({});
-        aliasMetaMap.push_back({});
-        return item;
-    }
-
-    constexpr static bool is_placeholder_field_name(std::string_view field_name) {
-        return decl::is_alias_placeholder_name(field_name);
-    }
-
-    constexpr void set_category_for_item(std::uint32_t item_id, const decl::Category* category) {
-        categoryMap[item_id] = category;
-    }
-
-    constexpr void set_callback_for_item(std::uint32_t item_id, parse_callback_t callback) {
-        callbackMap[item_id] = callback;
-    }
-
-    constexpr auto store_alias_tokens(std::span<const std::string_view> tokens)
-        -> std::span<const std::string_view> {
-        const auto offset = aliasStringPool.size();
-        for(const auto token: tokens) {
-            aliasStringPool.push_back(strPool.add(token));
-        }
-        return std::span<const std::string_view>(aliasStringPool.data() + offset, tokens.size());
-    }
-
-    constexpr void set_alias_meta_for_item(std::uint32_t item_id, AliasRuntimeMeta meta) {
-        if(!meta.static_tokens.empty()) {
-            meta.static_tokens = store_alias_tokens(meta.static_tokens);
-        }
-        aliasMetaMap[item_id] = meta;
-    }
-
-    struct AliasStorageSnapshot {
-        AliasRuntimeMeta meta{};
+    /// Where a DecoPack parses into: its arguments arrive as the input option spelled "--".
+    struct Trailing {
+        accessor_fn accessor = nullptr;
+        const decl::Category* category = nullptr;
+        parse_callback_t callback{};
     };
 
-    constexpr auto snapshot_alias_storage(std::uint32_t item_id) const -> AliasStorageSnapshot {
-        return AliasStorageSnapshot{.meta = aliasMetaMap[item_id]};
+    resource_ty resource{};
+    StrPool<resource_ty> str_pool;
+    // Indexed by option id. Id 0 is a dummy, so that ids index them directly.
+    pool_t<backend::Option, 0> items;
+    pool_t<accessor_fn, 1> accessors;
+    pool_t<const decl::Category*, 2> categories;
+    pool_t<parse_callback_t, 3> callbacks;
+    pool_t<AliasRuntimeMeta, 4> alias_metas;
+    // The tokens of static alias forwards, which alias_metas view.
+    pool_t<std::string_view, 5> alias_tokens;
+
+    bool has_input = false;
+    bool has_trailing = false;
+    Trailing trailing{};
+
+    /// Adds an option of `kind` taking `num_args` values, which parses into the field
+    /// `accessor` reaches (an alias reaches none), and returns its id. It is named later.
+    constexpr std::uint32_t new_option(backend::Kind kind,
+                                       unsigned char num_args,
+                                       accessor_fn accessor,
+                                       const decl::Category* category,
+                                       parse_callback_t callback = {},
+                                       const AliasRuntimeMeta& alias_meta = {}) {
+        const auto id = static_cast<std::uint32_t>(items.size());
+        items.push_back(backend::Option::unaliased_one(backend::pfx_none,
+                                                       "",
+                                                       id,
+                                                       kind,
+                                                       num_args,
+                                                       "no help text",
+                                                       ""));
+        accessors.push_back(accessor);
+        categories.push_back(category);
+        callbacks.push_back(callback);
+        alias_metas.push_back(alias_meta);
+        return id;
     }
 
-    constexpr void restore_alias_storage(std::uint32_t item_id,
-                                         const AliasStorageSnapshot& snapshot) {
-        aliasMetaMap[item_id] = snapshot.meta;
+    /// Adds another spelling of option `id`: a copy of it that parses into the same field,
+    /// with the same category, callback and forward, and returns the copy's id.
+    constexpr std::uint32_t add_spelling(std::uint32_t id) {
+        const auto option = items[id];
+        const auto spelling = new_option(option.kind,
+                                         option.num_args,
+                                         accessors[id],
+                                         categories[id],
+                                         callbacks[id],
+                                         alias_metas[id]);
+        items[spelling] = option;
+        items[spelling].id = spelling;
+        return spelling;
     }
 
-    template <typename CallbackTy>
-    constexpr static auto encode_callback(CallbackTy callback) -> parse_callback_t::storage_t {
-        static_assert(sizeof(CallbackTy) == parse_callback_t::storage_size,
-                      "Eventide Error: callback pointer size mismatch");
-        parse_callback_t::storage_t storage{};
-        const auto* src = reinterpret_cast<const char*>(&callback);
-        for(std::size_t i = 0; i < sizeof(CallbackTy); ++i) {
-            storage[i] = src[i];
+    /// Gives option `id` the name `full_name`: "--name", "-n" or "/name".
+    constexpr void set_name(std::uint32_t id, std::string_view full_name) {
+        const auto parsed = parse_named_option(full_name);
+        items[id].prefixes = parsed.prefixes;
+        items[id].prefixed_name = str_pool.add(parsed.prefix, parsed.name);
+    }
+
+    /// Gives option `id` the name generated from its field's name, followed by `suffix`.
+    constexpr void set_generated_name(std::uint32_t id,
+                                      std::string_view field_name,
+                                      std::string_view suffix = {}) {
+        items[id].prefixes = field_name.size() == 1 ? backend::pfx_dash : backend::pfx_double;
+        items[id].prefixed_name =
+            str_pool.add(decl::detail::generated_option_name(field_name), suffix);
+    }
+
+    template <typename FieldsTy>
+    constexpr void set_common_options(std::uint32_t id, const FieldsTy& fields) {
+        if(!fields.help.empty()) {
+            items[id].help_text = str_pool.add(fields.help).data();
         }
-        return storage;
+        if(!fields.meta_var.empty()) {
+            items[id].meta_var = str_pool.add(fields.meta_var).data();
+        }
     }
 
-    template <typename CallbackTy>
-    static auto decode_callback(const parse_callback_t::storage_t& storage) -> CallbackTy {
-        static_assert(sizeof(CallbackTy) == parse_callback_t::storage_size,
-                      "Eventide Error: callback pointer size mismatch");
-        CallbackTy callback = nullptr;
-        auto* dst = reinterpret_cast<char*>(&callback);
-        for(std::size_t i = 0; i < sizeof(CallbackTy); ++i) {
-            dst[i] = storage[i];
+    /// Names option `id` after its declaration: the first of `fields.names` names it and each
+    /// further one adds a spelling of it, of the kind `kind_of(name)` gives; without names, its
+    /// field's name does.
+    template <typename FieldsTy, typename KindOf>
+    constexpr void name_option(std::uint32_t id,
+                               std::string_view field_name,
+                               const FieldsTy& fields,
+                               const KindOf& kind_of) {
+        set_common_options(id, fields);
+        if(fields.names.empty()) {
+            set_generated_name(id, field_name);
+            return;
         }
-        return callback;
+        auto name = [&](std::uint32_t target, std::string_view full_name) {
+            set_name(target, full_name);
+            items[target].kind = kind_of(full_name);
+        };
+        name(id, fields.names.front());
+        for(const auto full_name: fields.names | std::views::drop(1)) {
+            name(add_spelling(id), full_name);
+        }
+    }
+
+    /// Adds option or alias `fields` of `kind`, whatever its names.
+    template <typename FieldsTy>
+    constexpr void add_named(backend::Kind kind,
+                             unsigned char num_args,
+                             const FieldsTy& fields,
+                             std::string_view field_name,
+                             accessor_fn accessor,
+                             parse_callback_t callback,
+                             const AliasRuntimeMeta& alias_meta = {}) {
+        const auto id =
+            new_option(kind, num_args, accessor, fields.category.ptr(), callback, alias_meta);
+        name_option(id, field_name, fields, [kind](std::string_view) { return kind; });
+    }
+
+    /// Adds KV option or alias `fields`: each explicit name takes its value the way
+    /// is_joined_kv_name() says, and a generated name takes it separate, joined to the name
+    /// and '=', or both, as the style allows.
+    template <typename FieldsTy>
+    constexpr void add_kv(const FieldsTy& fields,
+                          std::string_view field_name,
+                          accessor_fn accessor,
+                          parse_callback_t callback,
+                          const AliasRuntimeMeta& alias_meta = {}) {
+        const bool joined = decl::detail::has_kv_style(fields.style, decl::KVStyle::Joined);
+        const bool separate = decl::detail::has_kv_style(fields.style, decl::KVStyle::Separate);
+        if(!joined && !separate) {
+            KOTA_THROW("KV style must include Joined and/or Separate");
+        }
+        const auto id = new_option(separate ? backend::Kind::Separate : backend::Kind::Joined,
+                                   1,
+                                   accessor,
+                                   fields.category.ptr(),
+                                   callback,
+                                   alias_meta);
+        name_option(id, field_name, fields, [style = fields.style](std::string_view name) {
+            return decl::detail::is_joined_kv_name(style, name) ? backend::Kind::Joined
+                                                                : backend::Kind::Separate;
+        });
+        if(fields.names.empty() && joined) {
+            const auto spelling = add_spelling(id);
+            items[spelling].kind = backend::Kind::Joined;
+            set_generated_name(spelling, field_name, "=");
+        }
+    }
+
+    constexpr static unsigned char checked_arg_num(std::uint32_t arg_num) {
+        if(arg_num == 0) {
+            KOTA_THROW("DecoMulti arg_num must be greater than 0");
+        }
+        if(arg_num > std::numeric_limits<unsigned char>::max()) {
+            KOTA_THROW("DecoMulti arg_num exceeds backend param capacity");
+        }
+        return static_cast<unsigned char>(arg_num);
     }
 
     template <typename ResultTy, typename CallbackTy>
-    static auto invoke_parse_callback(const parse_callback_t::storage_t& storage,
+    static auto invoke_parse_callback(parse_callback_t::erased_fn callback,
                                       const ParsedArgOwning& arg,
                                       std::uint32_t next_cursor,
                                       std::span<std::string> argv,
                                       const decl::DecoOptionBase& option) -> decl::ParseControl {
-        const auto callback = decode_callback<CallbackTy>(storage);
-        if(callback == nullptr) {
-            return decl::ParseControl::next();
-        }
         const auto& typed_option = static_cast<const decl::DecoOption<ResultTy>&>(option);
         const decl::ParseStep<ResultTy> step(arg, next_cursor, argv, typed_option.value());
-        return callback(step);
+        return reinterpret_cast<CallbackTy>(callback)(step);
     }
 
-    template <typename ResultTy, typename CallbackTy>
-    constexpr static auto make_parse_callback(CallbackTy callback) -> parse_callback_t {
+    template <typename CfgTy>
+    constexpr static auto make_parse_callback(const CfgTy& cfg) -> parse_callback_t {
+        using callback_t = decltype(cfg.after_parsed);
         if constexpr(resource_ty::is_counting) {
             return {};
-        }
-        if(callback == nullptr) {
-            return {};
-        }
-        return parse_callback_t{
-            .storage = encode_callback(callback),
-            .invoke = &invoke_parse_callback<ResultTy, CallbackTy>,
-        };
-    }
-
-    template <typename FieldsTy>
-    constexpr auto& set_common_options(info_item& item, const FieldsTy& fields) {
-        static_assert(std::is_base_of_v<decl::CommonOptionFields, std::remove_cvref_t<FieldsTy>>);
-        if(!fields.help.empty()) {
-            item.help_text = strPool.add(fields.help).data();
-        }
-        if(!fields.meta_var.empty()) {
-            item.meta_var = strPool.add(fields.meta_var).data();
-        }
-        return item;
-    }
-
-    constexpr std::string_view generate_name_from_field(std::string_view field_name,
-                                                        bool with_prefix = false) {
-        auto normalized_name = strPool.add_replace(field_name, '_', '-');
-        if(!with_prefix) {
-            return normalized_name;
-        }
-        if(normalized_name.size() == 1) {
-            return strPool.add("-", normalized_name);
         } else {
-            return strPool.add("--", normalized_name);
+            if(cfg.after_parsed == nullptr) {
+                return {};
+            }
+            return parse_callback_t{
+                .callback = reinterpret_cast<parse_callback_t::erased_fn>(cfg.after_parsed),
+                .invoke = &invoke_parse_callback<typename CfgTy::result_type, callback_t>,
+            };
         }
     }
 
-    constexpr void set_generated_name_from_field(info_item& item,
-                                                 std::string_view field_name,
-                                                 std::string_view suffix = {}) {
-        auto normalized_name = generate_name_from_field(field_name);
-        if(normalized_name.size() == 1) {
-            item.prefixes = backend::pfx_dash;
-            item.prefixed_name = suffix.empty() ? strPool.add("-", normalized_name)
-                                                : strPool.add("-", normalized_name, suffix);
-        } else {
-            item.prefixes = backend::pfx_double;
-            item.prefixed_name = suffix.empty() ? strPool.add("--", normalized_name)
-                                                : strPool.add("--", normalized_name, suffix);
+    /// Copies `tokens` into the pools and returns the copy.
+    constexpr auto store_alias_tokens(std::span<const std::string_view> tokens)
+        -> std::span<const std::string_view> {
+        const auto offset = alias_tokens.size();
+        for(const auto token: tokens) {
+            alias_tokens.push_back(str_pool.add(token));
         }
-    }
-
-    constexpr void set_prefixed_name(info_item& target, std::string_view full_name) {
-        auto parsed = parse_named_option(full_name);
-        target.prefixes = parsed.prefixes;
-        target.prefixed_name = strPool.add(parsed.prefix, parsed.name);
-    }
-
-    template <typename FieldsTy>
-    constexpr auto& set_named_options(std::uint32_t item_id,
-                                      accessor_fn mapped_accessor,
-                                      std::string_view field_name,
-                                      const FieldsTy& fields,
-                                      parse_callback_t callback = {}) {
-        static_assert(std::is_base_of_v<decl::NamedOptionFields, std::remove_cvref_t<FieldsTy>>);
-        const auto category = fields.category.ptr();
-        auto& item = item_by_id(item_id);
-        if(fields.names.empty()) {
-            set_generated_name_from_field(item, field_name);
-            set_common_options(item, fields);
-            set_category_for_item(item.id, category);
-            set_callback_for_item(item.id, callback);
-            return item;
-        }
-
-        set_prefixed_name(item, fields.names.front());
-        set_category_for_item(item.id, category);
-        set_callback_for_item(item.id, callback);
-
-        const auto item_snapshot = item;
-        for(std::size_t i = 1; i < fields.names.size(); ++i) {
-            const auto alias_storage = snapshot_alias_storage(item.id);
-            auto& alias = new_item(mapped_accessor);
-            auto alias_id = alias.id;
-            alias = item_snapshot;
-            alias.id = alias_id;
-            set_prefixed_name(alias, fields.names[i]);
-            set_common_options(alias, fields);
-            set_category_for_item(alias.id, category);
-            set_callback_for_item(alias.id, callback);
-            restore_alias_storage(alias.id, alias_storage);
-        }
-
-        set_common_options(item_by_id(item_id), fields);
-        return item_by_id(item_id);
-    }
-
-    template <typename CfgTy>
-    constexpr void add_input_option(const CfgTy& cfg, accessor_fn mapped_accessor) {
-        static_assert(std::is_base_of_v<decl::CommonOptionFields, std::remove_cvref_t<CfgTy>>);
-        if(hasInputSlot) {
-            KOTA_THROW("Only one DecoInput can be declared");
-        }
-        hasInputSlot = true;
-        if(inputOptionId == 0) {
-            auto& item = new_item(mapped_accessor);
-            item = info_item::input(item.id);
-            inputOptionId = item.id;
-        }
-        idMap[inputOptionId] = mapped_accessor;
-        set_common_options(item_by_id(inputOptionId), cfg);
-        set_category_for_item(inputOptionId, cfg.category.ptr());
-        set_callback_for_item(inputOptionId,
-                              make_parse_callback<typename CfgTy::result_type>(cfg.after_parsed));
-    }
-
-    template <typename CfgTy>
-    constexpr void add_trailing_option(const CfgTy& cfg, accessor_fn mapped_accessor) {
-        static_assert(std::is_base_of_v<decl::CommonOptionFields, std::remove_cvref_t<CfgTy>>);
-        if(hasTrailingSlot) {
-            KOTA_THROW("Only one DecoPack can be declared");
-        }
-        hasTrailingSlot = true;
-        hasTrailingPack = true;
-        trailingAccessor = mapped_accessor;
-        trailingCategory = cfg.category.ptr();
-        trailingCallback = make_parse_callback<typename CfgTy::result_type>(cfg.after_parsed);
-
-        // The backend only has one input id slot. If trailing appears first, reserve that slot
-        // now so parse_args can still emit a valid input option id.
-        if(inputOptionId == 0) {
-            auto& item = new_item(mapped_accessor);
-            item = info_item::input(item.id);
-            inputOptionId = item.id;
-            set_common_options(item, cfg);
-            set_category_for_item(item.id, cfg.category.ptr());
-        }
-    }
-
-    template <typename CfgTy>
-    constexpr void add_flag_option(const CfgTy& cfg,
-                                   accessor_fn mapped_accessor,
-                                   std::string_view field_name) {
-        const auto callback = make_parse_callback<typename CfgTy::result_type>(cfg.after_parsed);
-        auto& item = new_item(mapped_accessor);
-        item.kind = backend::Kind::Flag;
-        item.num_args = 0;
-        set_named_options(item.id, mapped_accessor, field_name, cfg, callback);
-    }
-
-    constexpr static bool has_kv_style(char style, decl::KVStyle expected) {
-        return (style & static_cast<char>(expected)) != 0;
-    }
-
-    constexpr static backend::Kind kv_kind_from_name(std::string_view full_name) {
-        if(full_name.ends_with('=') || full_name.ends_with(':')) {
-            return backend::Kind::Joined;
-        }
-        return backend::Kind::Separate;
-    }
-
-    template <typename FieldsTy>
-    constexpr void add_generated_kv_joined_alias(std::uint32_t item_id,
-                                                 accessor_fn mapped_accessor,
-                                                 std::string_view field_name,
-                                                 const FieldsTy& fields) {
-        const auto base_item = item_by_id(item_id);
-        const auto alias_storage = snapshot_alias_storage(item_id);
-        auto& alias = new_item(mapped_accessor);
-        auto alias_id = alias.id;
-        alias = base_item;
-        alias.id = alias_id;
-        alias.kind = backend::Kind::Joined;
-        set_generated_name_from_field(alias, field_name, "=");
-        set_common_options(alias, fields);
-        set_category_for_item(alias.id, fields.category.ptr());
-        set_callback_for_item(
-            alias.id,
-            make_parse_callback<typename FieldsTy::result_type>(fields.after_parsed));
-        restore_alias_storage(alias.id, alias_storage);
-    }
-
-    template <typename FieldsTy>
-    constexpr void add_generated_kv_joined_alias_without_callback(std::uint32_t item_id,
-                                                                  std::string_view field_name,
-                                                                  const FieldsTy& fields) {
-        const auto base_item = item_by_id(item_id);
-        const auto alias_storage = snapshot_alias_storage(item_id);
-        auto& alias = new_item(nullptr);
-        auto alias_id = alias.id;
-        alias = base_item;
-        alias.id = alias_id;
-        alias.kind = backend::Kind::Joined;
-        set_generated_name_from_field(alias, field_name, "=");
-        set_common_options(alias, fields);
-        set_category_for_item(alias.id, fields.category.ptr());
-        restore_alias_storage(alias.id, alias_storage);
-    }
-
-    template <typename FieldsTy>
-    constexpr auto& set_kv_alias_options_split_by_name(std::uint32_t item_id,
-                                                       std::string_view field_name,
-                                                       const FieldsTy& fields) {
-        const auto category = fields.category.ptr();
-        auto& item = item_by_id(item_id);
-
-        auto set_kv_name_and_kind = [&](info_item& target, std::string_view full_name) {
-            set_prefixed_name(target, full_name);
-            target.kind = kv_kind_from_name(full_name);
-        };
-
-        if(fields.names.empty()) {
-            set_generated_name_from_field(item, field_name);
-            item.kind = backend::Kind::Separate;
-            set_common_options(item, fields);
-            set_category_for_item(item.id, category);
-            add_generated_kv_joined_alias_without_callback(item.id, field_name, fields);
-            return item_by_id(item_id);
-        }
-
-        set_kv_name_and_kind(item, fields.names.front());
-        set_category_for_item(item.id, category);
-
-        const auto item_snapshot = item;
-        for(std::size_t i = 1; i < fields.names.size(); ++i) {
-            const auto alias_storage = snapshot_alias_storage(item.id);
-            auto& alias = new_item(nullptr);
-            auto alias_id = alias.id;
-            alias = item_snapshot;
-            alias.id = alias_id;
-            set_kv_name_and_kind(alias, fields.names[i]);
-            set_common_options(alias, fields);
-            set_category_for_item(alias.id, category);
-            restore_alias_storage(alias.id, alias_storage);
-        }
-
-        set_common_options(item_by_id(item_id), fields);
-        return item_by_id(item_id);
-    }
-
-    template <typename FieldsTy>
-    constexpr auto& set_kv_options_split_by_name(std::uint32_t item_id,
-                                                 accessor_fn mapped_accessor,
-                                                 std::string_view field_name,
-                                                 const FieldsTy& fields) {
-        const auto category = fields.category.ptr();
-        auto& item = item_by_id(item_id);
-
-        auto set_kv_name_and_kind = [&](info_item& target, std::string_view full_name) {
-            set_prefixed_name(target, full_name);
-            target.kind = kv_kind_from_name(full_name);
-        };
-
-        if(fields.names.empty()) {
-            set_generated_name_from_field(item, field_name);
-            item.kind = backend::Kind::Separate;
-            set_common_options(item, fields);
-            set_category_for_item(item.id, category);
-            set_callback_for_item(
-                item.id,
-                make_parse_callback<typename FieldsTy::result_type>(fields.after_parsed));
-            add_generated_kv_joined_alias(item.id, mapped_accessor, field_name, fields);
-            return item_by_id(item_id);
-        }
-
-        set_kv_name_and_kind(item, fields.names.front());
-        set_category_for_item(item.id, category);
-        set_callback_for_item(
-            item.id,
-            make_parse_callback<typename FieldsTy::result_type>(fields.after_parsed));
-
-        const auto item_snapshot = item;
-        for(std::size_t i = 1; i < fields.names.size(); ++i) {
-            const auto alias_storage = snapshot_alias_storage(item.id);
-            auto& alias = new_item(mapped_accessor);
-            auto alias_id = alias.id;
-            alias = item_snapshot;
-            alias.id = alias_id;
-            set_kv_name_and_kind(alias, fields.names[i]);
-            set_common_options(alias, fields);
-            set_category_for_item(alias.id, category);
-            set_callback_for_item(
-                alias.id,
-                make_parse_callback<typename FieldsTy::result_type>(fields.after_parsed));
-            restore_alias_storage(alias.id, alias_storage);
-        }
-
-        set_common_options(item_by_id(item_id), fields);
-        return item_by_id(item_id);
-    }
-
-    template <typename CfgTy>
-    constexpr void add_kv_option(const CfgTy& cfg,
-                                 accessor_fn mapped_accessor,
-                                 std::string_view field_name) {
-        const auto callback = make_parse_callback<typename CfgTy::result_type>(cfg.after_parsed);
-        const bool allow_joined = has_kv_style(cfg.style, decl::KVStyle::Joined);
-        const bool allow_separate = has_kv_style(cfg.style, decl::KVStyle::Separate);
-        if(!allow_joined && !allow_separate) {
-            KOTA_THROW("DecoKV style must include Joined and/or Separate");
-        }
-
-        auto& item = new_item(mapped_accessor);
-        item.num_args = 1;
-        if(allow_joined && allow_separate) {
-            set_kv_options_split_by_name(item.id, mapped_accessor, field_name, cfg);
-            return;
-        }
-        item.kind = allow_joined ? backend::Kind::Joined : backend::Kind::Separate;
-        set_named_options(item.id, mapped_accessor, field_name, cfg, callback);
-        if(allow_joined && cfg.names.empty()) {
-            add_generated_kv_joined_alias(item.id, mapped_accessor, field_name, cfg);
-        }
-    }
-
-    template <typename CfgTy>
-    constexpr void add_comma_option(const CfgTy& cfg,
-                                    accessor_fn mapped_accessor,
-                                    std::string_view field_name) {
-        const auto callback = make_parse_callback<typename CfgTy::result_type>(cfg.after_parsed);
-        auto& item = new_item(mapped_accessor);
-        item.kind = backend::Kind::CommaJoined;
-        item.num_args = 1;
-        set_named_options(item.id, mapped_accessor, field_name, cfg, callback);
-    }
-
-    template <typename CfgTy>
-    constexpr void add_multi_option(const CfgTy& cfg,
-                                    accessor_fn mapped_accessor,
-                                    std::string_view field_name) {
-        const auto callback = make_parse_callback<typename CfgTy::result_type>(cfg.after_parsed);
-        if(cfg.arg_num == 0) {
-            KOTA_THROW("DecoMulti arg_num must be greater than 0");
-        }
-        if(cfg.arg_num > std::numeric_limits<unsigned char>::max()) {
-            KOTA_THROW("DecoMulti arg_num exceeds backend param capacity");
-        }
-        auto& item = new_item(mapped_accessor);
-        item.kind = backend::Kind::MultiArg;
-        item.num_args = static_cast<unsigned char>(cfg.arg_num);
-        set_named_options(item.id, mapped_accessor, field_name, cfg, callback);
-    }
-
-    constexpr static auto alias_kind_for(const decl::FlagAliasFields&) {
-        return AliasRuntimeMeta::Kind::Flag;
-    }
-
-    constexpr static auto alias_kind_for(const decl::KVAliasFields&) {
-        return AliasRuntimeMeta::Kind::KV;
-    }
-
-    constexpr static auto alias_kind_for(const decl::CommaJoinedAliasFields&) {
-        return AliasRuntimeMeta::Kind::CommaJoined;
-    }
-
-    constexpr static auto alias_kind_for(const decl::MultiAliasFields&) {
-        return AliasRuntimeMeta::Kind::Multi;
+        return std::span<const std::string_view>(alias_tokens.data() + offset, tokens.size());
     }
 
     template <typename CfgTy>
     constexpr auto make_alias_meta(const CfgTy& cfg) -> AliasRuntimeMeta {
-        AliasRuntimeMeta meta{};
-        meta.kind = alias_kind_for(cfg);
-        if constexpr(requires { cfg.arg_num; }) {
-            meta.arg_num = cfg.arg_num;
-        } else {
-            meta.arg_num = 0u;
-        }
-        if constexpr(requires { cfg.style; }) {
-            meta.style = cfg.style;
-        } else {
-            meta.style = char{};
-        }
-        meta.forward_kind = cfg.forward.kind;
+        AliasRuntimeMeta meta{
+            .kind = CfgTy::deco_field_ty,
+            .forward_kind = cfg.forward.kind,
+        };
         switch(cfg.forward.kind) {
-            case decl::AliasForwardField::Kind::None: break;
+            case decl::AliasForwardField::Kind::None: std::unreachable();
             case decl::AliasForwardField::Kind::Static:
-                meta.static_tokens =
-                    std::span<const std::string_view>(cfg.forward.static_tokens.data(),
-                                                      cfg.forward.static_tokens.size());
+                meta.static_tokens = store_alias_tokens(cfg.forward.static_tokens);
                 break;
             case decl::AliasForwardField::Kind::Dynamic: meta.dynamic = cfg.forward.dynamic; break;
             case decl::AliasForwardField::Kind::DynamicWithContext:
@@ -994,54 +576,16 @@ private:
         return meta;
     }
 
-    template <typename CfgTy>
-    constexpr auto create_alias_item(const CfgTy& cfg,
-                                     std::string_view field_name,
-                                     backend::Kind kind,
-                                     unsigned char param) -> std::uint32_t {
-        if(!cfg.forward) {
-            KOTA_THROW("Deco alias requires forward");
-        }
-        if(cfg.names.empty() && is_placeholder_field_name(field_name)) {
-            KOTA_THROW("Deco alias placeholders must declare explicit names");
-        }
-        auto& item = new_item(nullptr);
-        item.kind = kind;
-        item.num_args = param;
-        set_alias_meta_for_item(item.id, make_alias_meta(cfg));
-        return item.id;
-    }
-
-    template <typename CfgTy>
-    constexpr auto add_alias_option(const CfgTy& cfg,
-                                    std::string_view field_name,
-                                    backend::Kind kind,
-                                    unsigned char param) -> std::uint32_t {
-        const auto item_id = create_alias_item(cfg, field_name, kind, param);
-        set_named_options(item_id, nullptr, field_name, cfg, {});
-        return item_id;
-    }
-
-    template <typename DecoTy>
-    constexpr static bool is_field_present(const DecoTy& field) {
-        return field.has_value();
-    }
-
 public:
-    constexpr static std::uint32_t unknown_option_id = 1;
-
     constexpr explicit LLVMOptGenerator() :
-        strPool(resource), itemPool(resource), idMap(resource), categoryMap(resource),
-        callbackMap(resource), aliasMetaMap(resource), aliasStringPool(resource) {
-        // Dummy item: keeps id and index aligned (id 0 => index 0).
-        itemPool.push_back(make_default_item(0));
-        idMap.push_back(nullptr);
-        categoryMap.push_back(nullptr);
-        callbackMap.push_back({});
-        aliasMetaMap.push_back({});
-
-        auto& unknown = new_item(nullptr);
-        unknown = info_item::unknown(unknown.id);
+        str_pool(resource), items(resource), accessors(resource), categories(resource),
+        callbacks(resource), alias_metas(resource), alias_tokens(resource) {
+        // The dummy, then the unknown and input options.
+        new_option(backend::Kind::Unknown, 0, nullptr, nullptr);
+        new_option(backend::Kind::Unknown, 0, nullptr, nullptr);
+        new_option(backend::Kind::Input, 0, nullptr, nullptr);
+        items[unknown_option_id] = backend::Option::unknown(unknown_option_id);
+        items[input_option_id] = backend::Option::input(input_option_id);
     }
 
     LLVMOptGenerator(const LLVMOptGenerator&) = delete;
@@ -1054,239 +598,185 @@ public:
     }
 
     template <typename FieldTy, typename CfgTy, std::size_t... Path>
-    constexpr bool on_input_config(const CfgTy& cfg,
+    constexpr bool on_input_config(std::type_identity<FieldTy>,
+                                   const CfgTy& cfg,
                                    std::string_view,
                                    std::index_sequence<Path...> path) {
-        const auto mapped_accessor = base_t::accessor_from_path(path);
-        add_input_option(cfg, mapped_accessor);
+        if(has_input) {
+            KOTA_THROW("Only one DecoInput can be declared");
+        }
+        has_input = true;
+        accessors[input_option_id] = base_t::accessor_from_path(path);
+        categories[input_option_id] = cfg.category.ptr();
+        callbacks[input_option_id] = make_parse_callback(cfg);
+        set_common_options(input_option_id, cfg);
         return true;
     }
 
     template <typename FieldTy, typename CfgTy, std::size_t... Path>
-    constexpr bool on_trailing_input_config(const CfgTy& cfg,
+    constexpr bool on_trailing_input_config(std::type_identity<FieldTy>,
+                                            const CfgTy& cfg,
                                             std::string_view,
                                             std::index_sequence<Path...> path) {
-        const auto mapped_accessor = base_t::accessor_from_path(path);
-        add_trailing_option(cfg, mapped_accessor);
+        if(has_trailing) {
+            KOTA_THROW("Only one DecoPack can be declared");
+        }
+        has_trailing = true;
+        trailing = Trailing{
+            .accessor = base_t::accessor_from_path(path),
+            .category = cfg.category.ptr(),
+            .callback = make_parse_callback(cfg),
+        };
         return true;
     }
 
     template <typename FieldTy, typename CfgTy, std::size_t... Path>
-    constexpr bool on_flag_config(const CfgTy& cfg,
+    constexpr bool on_flag_config(std::type_identity<FieldTy>,
+                                  const CfgTy& cfg,
                                   std::string_view field_name,
                                   std::index_sequence<Path...> path) {
-        const auto mapped_accessor = base_t::accessor_from_path(path);
-        add_flag_option(cfg, mapped_accessor, field_name);
+        add_named(backend::Kind::Flag,
+                  0,
+                  cfg,
+                  field_name,
+                  base_t::accessor_from_path(path),
+                  make_parse_callback(cfg));
         return true;
     }
 
     template <typename FieldTy, typename CfgTy, std::size_t... Path>
-    constexpr bool on_kv_config(const CfgTy& cfg,
+    constexpr bool on_kv_config(std::type_identity<FieldTy>,
+                                const CfgTy& cfg,
                                 std::string_view field_name,
                                 std::index_sequence<Path...> path) {
-        const auto mapped_accessor = base_t::accessor_from_path(path);
-        add_kv_option(cfg, mapped_accessor, field_name);
+        add_kv(cfg, field_name, base_t::accessor_from_path(path), make_parse_callback(cfg));
         return true;
     }
 
     template <typename FieldTy, typename CfgTy, std::size_t... Path>
-    constexpr bool on_comma_joined_config(const CfgTy& cfg,
+    constexpr bool on_comma_joined_config(std::type_identity<FieldTy>,
+                                          const CfgTy& cfg,
                                           std::string_view field_name,
                                           std::index_sequence<Path...> path) {
-        const auto mapped_accessor = base_t::accessor_from_path(path);
-        add_comma_option(cfg, mapped_accessor, field_name);
+        add_named(backend::Kind::CommaJoined,
+                  1,
+                  cfg,
+                  field_name,
+                  base_t::accessor_from_path(path),
+                  make_parse_callback(cfg));
         return true;
     }
 
     template <typename FieldTy, typename CfgTy, std::size_t... Path>
-    constexpr bool on_multi_config(const CfgTy& cfg,
+    constexpr bool on_multi_config(std::type_identity<FieldTy>,
+                                   const CfgTy& cfg,
                                    std::string_view field_name,
                                    std::index_sequence<Path...> path) {
-        const auto mapped_accessor = base_t::accessor_from_path(path);
-        add_multi_option(cfg, mapped_accessor, field_name);
+        add_named(backend::Kind::MultiArg,
+                  checked_arg_num(cfg.arg_num),
+                  cfg,
+                  field_name,
+                  base_t::accessor_from_path(path),
+                  make_parse_callback(cfg));
         return true;
     }
 
     template <typename FieldTy, typename CfgTy, std::size_t... Path>
-    constexpr bool on_flag_alias(const CfgTy& cfg,
-                                 std::string_view field_name,
-                                 std::index_sequence<Path...>) {
-        add_alias_option(cfg, field_name, backend::Kind::Flag, 0);
-        return true;
-    }
-
-    template <typename FieldTy, typename CfgTy, std::size_t... Path>
-    constexpr bool on_kv_alias(const CfgTy& cfg,
-                               std::string_view field_name,
-                               std::index_sequence<Path...>) {
-        const bool allow_joined = has_kv_style(cfg.style, decl::KVStyle::Joined);
-        const bool allow_separate = has_kv_style(cfg.style, decl::KVStyle::Separate);
-        if(!allow_joined && !allow_separate) {
-            KOTA_THROW("DecoKVAlias style must include Joined and/or Separate");
+    constexpr bool on_alias(std::type_identity<FieldTy>,
+                            const CfgTy& cfg,
+                            std::string_view field_name,
+                            std::index_sequence<Path...>) {
+        if(!cfg.forward) {
+            KOTA_THROW("Deco alias requires forward");
         }
-        if(allow_joined && allow_separate) {
-            const auto item_id = create_alias_item(cfg, field_name, backend::Kind::Separate, 1);
-            set_kv_alias_options_split_by_name(item_id, field_name, cfg);
-            return true;
+        if(cfg.names.empty() && decl::is_alias_placeholder_name(field_name)) {
+            KOTA_THROW("Deco alias placeholders must declare explicit names");
         }
-        const auto item_id =
-            add_alias_option(cfg,
-                             field_name,
-                             allow_joined ? backend::Kind::Joined : backend::Kind::Separate,
-                             1);
-        if(allow_joined && cfg.names.empty()) {
-            add_generated_kv_joined_alias_without_callback(item_id, field_name, cfg);
+        const auto meta = make_alias_meta(cfg);
+        if constexpr(CfgTy::deco_field_ty == decl::DecoType::Flag) {
+            add_named(backend::Kind::Flag, 0, cfg, field_name, nullptr, {}, meta);
+        } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::KV) {
+            add_kv(cfg, field_name, nullptr, {}, meta);
+        } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::CommaJoined) {
+            add_named(backend::Kind::CommaJoined, 1, cfg, field_name, nullptr, {}, meta);
+        } else {
+            add_named(backend::Kind::MultiArg,
+                      checked_arg_num(cfg.arg_num),
+                      cfg,
+                      field_name,
+                      nullptr,
+                      {},
+                      meta);
         }
-        return true;
-    }
-
-    template <typename FieldTy, typename CfgTy, std::size_t... Path>
-    constexpr bool on_comma_joined_alias(const CfgTy& cfg,
-                                         std::string_view field_name,
-                                         std::index_sequence<Path...>) {
-        add_alias_option(cfg, field_name, backend::Kind::CommaJoined, 1);
-        return true;
-    }
-
-    template <typename FieldTy, typename CfgTy, std::size_t... Path>
-    constexpr bool on_multi_alias(const CfgTy& cfg,
-                                  std::string_view field_name,
-                                  std::index_sequence<Path...>) {
-        if(cfg.arg_num == 0) {
-            KOTA_THROW("DecoMultiAlias arg_num must be greater than 0");
-        }
-        if(cfg.arg_num > std::numeric_limits<unsigned char>::max()) {
-            KOTA_THROW("DecoMultiAlias arg_num exceeds backend param capacity");
-        }
-        add_alias_option(cfg,
-                         field_name,
-                         backend::Kind::MultiArg,
-                         static_cast<unsigned char>(cfg.arg_num));
         return true;
     }
 
     constexpr void build() {
-        (void)this->consume_deco_struct_schema();
-    }
-
-    constexpr bool is_unknown_option_id(std::uint32_t id) const {
-        return id == 0 || id == unknown_option_id;
+        this->consume_deco_struct_schema();
     }
 
     constexpr bool has_input_option() const {
-        return hasInputSlot;
+        return has_input;
     }
 
     constexpr bool has_trailing_option() const {
-        return hasTrailingSlot;
+        return has_trailing;
     }
 
-    constexpr std::size_t opt_size() const {
-        return itemPool.size() - 1;
-    }
-
-    constexpr std::size_t strpool_size() const {
-        return strPool.size();
-    }
-
+    /// The options of the table, from the unknown option on (without the dummy).
     constexpr auto option_infos() const {
-        return std::span<const info_item>(itemPool.data() + 1, itemPool.size() - 1);
+        return std::span<const backend::Option>(items.data() + 1, items.size() - 1);
     }
 
-    constexpr auto id_map() const {
-        return std::span<const accessor_fn>(idMap.data(), idMap.size());
-    }
-
+    /// The category of each option, by id; the dummy, unknown and input options have none
+    /// unless the struct declares a DecoInput, which the input option then stands for.
     constexpr auto category_map() const {
-        return std::span<const decl::Category* const>(categoryMap.data(), categoryMap.size());
+        return std::span<const decl::Category* const>(categories.data(), categories.size());
     }
 
-    constexpr auto callback_map() const {
-        return std::span<const parse_callback_t>(callbackMap.data(), callbackMap.size());
-    }
-
-    constexpr auto alias_meta_map() const {
-        return std::span<const AliasRuntimeMeta>(aliasMetaMap.data(), aliasMetaMap.size());
-    }
-
-    constexpr bool is_alias_option_id(std::uint32_t opt) const {
-        if(opt == 0) {
-            return false;
-        }
-        if(opt >= aliasMetaMap.size()) {
-            return false;
-        }
-        return aliasMetaMap[opt].kind != AliasRuntimeMeta::Kind::None;
-    }
-
-    constexpr auto alias_meta_of(std::uint32_t opt) const -> const AliasRuntimeMeta* {
-        if(!is_alias_option_id(opt)) {
+    /// The forward of alias `id`, or null when `id` is no alias.
+    constexpr auto alias_meta_of(std::uint32_t id) const -> const AliasRuntimeMeta* {
+        if(alias_metas[id].forward_kind == decl::AliasForwardField::Kind::None) {
             return nullptr;
         }
-        return &aliasMetaMap[opt];
+        return &alias_metas[id];
     }
 
-    constexpr void* field_ptr_of(std::uint32_t opt, RootTy& object) const {
-        if(opt == 0) {
-            return nullptr;
-        }
-        if(opt >= id_map().size()) {
-            return nullptr;
-        }
-        auto accessor = idMap[opt];
-        if(accessor == nullptr) {
-            return nullptr;
-        }
-        return accessor(static_cast<void*>(&object));
+    /// The field of `object` that option `id` parses into; `id` must reach one, which the
+    /// unknown option, an alias and the input option of a struct without a DecoInput do not.
+    constexpr void* field_ptr_of(std::uint32_t id, RootTy& object) const {
+        assert(accessors[id] != nullptr);
+        return accessors[id](&object);
     }
 
     constexpr bool is_input_argument(const backend::ParsedArg& arg) const {
-        if(arg.id != inputOptionId) {
-            return false;
-        }
-        return !is_trailing_argument(arg);
+        return arg.id == input_option_id && arg.spelling != "--";
     }
 
     constexpr bool is_trailing_argument(const backend::ParsedArg& arg) const {
-        if(arg.id != inputOptionId) {
-            return false;
-        }
-        return arg.spelling == "--";
+        return arg.id == input_option_id && arg.spelling == "--";
     }
 
+    /// The DecoPack of `object`; the struct must declare one.
     constexpr void* trailing_ptr_of(RootTy& object) const {
-        if(trailingAccessor == nullptr) {
-            return nullptr;
-        }
-        return trailingAccessor(static_cast<void*>(&object));
+        assert(has_trailing);
+        return trailing.accessor(&object);
     }
 
     constexpr const decl::Category* trailing_category() const {
-        return trailingCategory;
+        return trailing.category;
     }
 
     constexpr parse_callback_t trailing_callback() const {
-        return trailingCallback;
+        return trailing.callback;
     }
 
-    constexpr const decl::Category* category_of(std::uint32_t opt) const {
-        if(opt == 0) {
-            return nullptr;
-        }
-        if(opt >= category_map().size()) {
-            return nullptr;
-        }
-        return categoryMap[opt];
+    constexpr const decl::Category* category_of(std::uint32_t id) const {
+        return categories[id];
     }
 
-    constexpr parse_callback_t callback_of(std::uint32_t opt) const {
-        if(opt == 0) {
-            return {};
-        }
-        if(opt >= callback_map().size()) {
-            return {};
-        }
-        return callbackMap[opt];
+    constexpr parse_callback_t callback_of(std::uint32_t id) const {
+        return callbacks[id];
     }
 
     auto make_opt_table() const& {
@@ -1295,14 +785,14 @@ public:
         return table;
     }
 
-    auto make_parse_options() const& {
+    auto make_opt_table() const&& = delete;
+
+    auto make_parse_options() const {
         backend::ParseOptions opts;
-        opts.dash_dash_parsing = hasTrailingPack;
-        opts.dash_dash_packing = hasTrailingPack;
+        opts.dash_dash_parsing = has_trailing;
+        opts.dash_dash_packing = has_trailing;
         return opts;
     }
-
-    auto make_opt_table() const&& = delete;
 
     consteval auto gen_record() const {
         static_assert(resource_ty::is_counting, "gen_record() is only for counting builders");
@@ -1317,16 +807,18 @@ consteval auto build_record() {
     return counter.gen_record();
 }
 
+/// The generator of `OptDeco` with its pools sized by a counting pass.
 template <typename OptDeco>
-struct BuildStorage {
+struct SizedGenerator {
     constexpr inline static auto record = build_record<OptDeco>();
-    using builder_t = LLVMOptGenerator<OptDeco, record>;
+    using type = LLVMOptGenerator<OptDeco, record>;
 };
 
+/// The generator of `OptDeco`, built on first use.
 template <typename OptDeco>
-const auto& build_storage() {
-    const static typename BuildStorage<OptDeco>::builder_t value{std::in_place};
-    return value;
+const auto& generator_of() {
+    const static typename SizedGenerator<OptDeco>::type generator{std::in_place};
+    return generator;
 }
 
 }  // namespace kota::deco::detail

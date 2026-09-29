@@ -1,0 +1,13 @@
+---
+source: text_usage_tests.cpp
+created_at: 2026-09-29
+---
+usage: app [OPTIONS] <FILE>
+
+Options:
+  -v|--verbose                    Show more
+  <FILE>                          no description provided
+  --list                          List them
+  --a-long-option-name-indeed <VALUE>
+                                  Reaches the help column
+

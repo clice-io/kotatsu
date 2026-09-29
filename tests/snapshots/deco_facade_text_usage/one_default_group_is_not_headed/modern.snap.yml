@@ -1,0 +1,10 @@
+---
+source: text_usage_tests.cpp
+created_at: 2026-09-29
+---
+\e[1;38;5;81mUsage\e[0m \e[1mapp\e[0m
+
+\e[1;38;5;81mOptions\e[0m
+  \e[1;38;5;117m-v|--verbose\e[0m                    \e[39mShow more\e[0m
+  \e[1;38;5;117m<FILE>\e[0m                          \e[39mno description provided\e[0m
+

@@ -1,0 +1,11 @@
+---
+source: text_subcommand_tests.cpp
+created_at: 2026-09-29
+---
+A build tool
+
+Subcommands:
+  run      Run a target
+  inspect  Show metadata (show)
+  x
+

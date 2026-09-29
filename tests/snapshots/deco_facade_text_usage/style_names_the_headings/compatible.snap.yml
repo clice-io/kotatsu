@@ -1,0 +1,17 @@
+---
+source: text_usage_tests.cpp
+created_at: 2026-09-29
+---
+usage: app [OPTIONS] <FILE>
+
+Flags:
+Section <default> (the default category for options):
+  -v|--verbose    Show more
+  <FILE>          ?
+
+Section <mode> (one mode at a time) (pick one):
+  --list          List them
+  --a-long-option-name-indeed <VALUE>
+                  Reaches the help column
+
+

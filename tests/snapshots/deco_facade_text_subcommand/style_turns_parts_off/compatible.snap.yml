@@ -1,0 +1,9 @@
+---
+source: text_subcommand_tests.cpp
+created_at: 2026-09-29
+---
+Subcommands:
+  run
+  inspect
+  x
+

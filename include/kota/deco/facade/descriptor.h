@@ -9,22 +9,22 @@
 
 #include "config.h"
 #include "decl.h"
+#include "text.h"
 #include "ty.h"
 #include "kota/support/spelling.h"
 
 /*
- * generate string that describes the structure of options declared in kota::deco::desc namespace,
- * and provide utilities to access the fields of the options by their corresponding option
- * specifiers.
+ * Describes declared options in text: the forms an option is written in (`-o|--output <FILE>`),
+ * and with its help, the line of a usage listing.
  */
 
 namespace kota::deco::desc {
 namespace detail {
 
-constexpr std::string_view defaultHelpText = "not provided";
+constexpr std::string_view default_help_text = "not provided";
 
 constexpr inline bool has_help_text(std::string_view help_text) {
-    return !help_text.empty() && help_text != defaultHelpText;
+    return !help_text.empty() && help_text != default_help_text;
 }
 
 inline std::string category_desc(const decl::Category& category) {
@@ -38,17 +38,6 @@ inline std::string category_desc(const decl::Category& category) {
         return std::string(category.description);
     }
     return std::string("<unnamed category>");
-}
-
-inline std::string field_desc(std::string_view field_name, const decl::CommonOptionFields& cfg) {
-    if(has_help_text(cfg.help)) {
-        return std::format("{} ({})", field_name, cfg.help);
-    }
-    const auto category = cfg.category.ptr();
-    if(!category->name.empty() || !category->description.empty()) {
-        return std::format("{} [category: {}]", field_name, category_desc(*category));
-    }
-    return std::string(field_name);
 }
 
 inline std::string meta_var_token(std::string_view meta_var) {
@@ -155,70 +144,56 @@ inline std::string placeholder_name(decl::DecoType deco_field_ty) {
     }
 }
 
-inline std::string normalize_member_name(std::string_view member_name) {
-    std::string normalized(member_name);
-    for(auto& ch: normalized) {
-        if(ch == '_') {
-            ch = '-';
-        }
-    }
-    return normalized;
-}
-
-inline bool is_placeholder_member_name(std::string_view member_name) {
-    return decl::is_alias_placeholder_name(member_name);
-}
-
-inline std::string default_name_from_member(std::string_view member_name) {
-    if(is_placeholder_member_name(member_name)) {
-        return "";
-    }
-    const auto normalized_name = normalize_member_name(member_name);
-    if(normalized_name.empty()) {
-        return "";
-    }
-    if(normalized_name.size() == 1) {
-        return std::format("-{}", normalized_name);
-    }
-    return std::format("--{}", normalized_name);
-}
-
+/// The names of named option `cfg`: its explicit names, else the one generated from its
+/// field, else, for a field that is a placeholder, a placeholder of its kind.
 template <typename CfgTy>
 inline std::vector<std::string> named_aliases(const CfgTy& cfg, std::string_view fallback_name) {
-    std::vector<std::string> aliases;
-    if constexpr(std::is_base_of_v<decl::NamedOptionFields, CfgTy>) {
-        aliases.reserve(cfg.names.size());
-        for(auto name: cfg.names) {
-            aliases.emplace_back(name);
-        }
+    if(!cfg.names.empty()) {
+        return std::vector<std::string>(cfg.names.begin(), cfg.names.end());
     }
-    if(aliases.empty()) {
-        const auto generated_name = default_name_from_member(fallback_name);
-        if(!generated_name.empty()) {
-            aliases.push_back(generated_name);
-        } else {
-            aliases.emplace_back(placeholder_name(CfgTy::deco_field_ty));
-        }
+    if(fallback_name.empty() || decl::is_alias_placeholder_name(fallback_name)) {
+        return {placeholder_name(CfgTy::deco_field_ty)};
     }
-    return aliases;
+    return {decl::detail::generated_option_name(fallback_name)};
 }
 
 inline std::string join_aliases(const std::vector<std::string>& aliases, bool help_mode) {
     return join_strings(aliases, help_mode ? ", " : "|");
 }
 
-constexpr inline bool has_kv_style(char style, decl::KVStyle expected) {
-    return (style & static_cast<char>(expected)) != 0;
-}
+/// The forms KV option `cfg` is written in, as the parser takes them: its names that take
+/// their value separate together, `-o|--output <FILE>`, then each that takes it joined,
+/// `--output=<FILE>`. A generated name takes its value joined after '='.
+template <typename CfgTy>
+inline std::string kv_usage_text(const CfgTy& cfg,
+                                 bool help_mode,
+                                 std::string_view fallback_name,
+                                 std::string_view value_token) {
+    std::vector<std::string> separate;
+    std::vector<std::string> joined;
+    if(cfg.names.empty()) {
+        const auto name = named_aliases(cfg, fallback_name).front();
+        if(decl::detail::has_kv_style(cfg.style, decl::KVStyle::Separate)) {
+            separate.push_back(name);
+        }
+        if(decl::detail::has_kv_style(cfg.style, decl::KVStyle::Joined)) {
+            joined.push_back(name + "=");
+        }
+    } else {
+        for(const auto name: cfg.names) {
+            (decl::detail::is_joined_kv_name(cfg.style, name) ? joined : separate)
+                .emplace_back(name);
+        }
+    }
 
-inline std::string kv_joined_alias(std::string_view alias, std::string_view value_token) {
-    if(alias.starts_with("--")) {
-        return std::format("{}={}", alias, value_token);
+    std::vector<std::string> forms;
+    if(!separate.empty()) {
+        forms.push_back(std::format("{} {}", join_aliases(separate, help_mode), value_token));
     }
-    if(alias.starts_with("/")) {
-        return std::format("{}:{}", alias, value_token);
+    for(const auto& name: joined) {
+        forms.push_back(name + std::string(value_token));
     }
-    return std::format("{}{}", alias, value_token);
+    return join_aliases(forms, help_mode);
 }
 
 inline std::string comma_joined_alias(std::string_view alias, std::string_view value_token) {
@@ -262,26 +237,7 @@ inline std::string usage_text(const CfgTy& cfg,
     } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::Flag) {
         return join_aliases(named_aliases(cfg, fallback_name), help_mode);
     } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::KV) {
-        const auto aliases = named_aliases(cfg, fallback_name);
-        const bool allow_separate = has_kv_style(cfg.style, decl::KVStyle::Separate);
-        const bool allow_joined = has_kv_style(cfg.style, decl::KVStyle::Joined);
-        if(allow_separate && !allow_joined) {
-            return std::format("{} {}", join_aliases(aliases, help_mode), value_token);
-        }
-        std::vector<std::string> forms;
-        if(allow_separate) {
-            forms.push_back(std::format("{} {}", join_aliases(aliases, help_mode), value_token));
-        }
-        if(allow_joined) {
-            forms.reserve(forms.size() + aliases.size());
-            for(const auto& alias: aliases) {
-                forms.push_back(kv_joined_alias(alias, value_token));
-            }
-        }
-        if(forms.empty()) {
-            return std::format("{} {}", join_aliases(aliases, help_mode), value_token);
-        }
-        return join_aliases(forms, help_mode);
+        return kv_usage_text(cfg, help_mode, fallback_name, value_token);
     } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::CommaJoined) {
         const auto aliases = named_aliases(cfg, fallback_name);
         std::vector<std::string> forms;
@@ -290,38 +246,12 @@ inline std::string usage_text(const CfgTy& cfg,
             forms.push_back(comma_joined_alias(alias, value_token));
         }
         return join_aliases(forms, help_mode);
-    } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::Multi) {
+    } else {
+        static_assert(CfgTy::deco_field_ty == decl::DecoType::Multi);
         return std::format("{} {}",
                            join_aliases(named_aliases(cfg, fallback_name), help_mode),
                            repeated_meta_vars(value_token, cfg.arg_num));
-    } else {
-        return "<unsupported>";
     }
-}
-
-inline std::string render_help_text(std::string_view usage,
-                                    std::string_view help,
-                                    const config::UsageStyle& style) {
-    if(usage.size() >= style.help_column) {
-        return std::format(R"(  {}
-    {:<{}}{})",
-                           usage,
-                           "",
-                           style.help_column,
-                           help);
-    }
-    return std::format("  {:<{}}{}", usage, style.help_column, help);
-}
-
-template <typename CfgTy>
-inline std::string help_text(const CfgTy& cfg,
-                             std::string_view fallback_name,
-                             std::string_view value_token,
-                             const config::Config& config) {
-    const auto usage = usage_text(cfg, true, fallback_name, value_token);
-    const auto help =
-        has_help_text(cfg.help) ? cfg.help : config.render.compatible.usage.default_help;
-    return render_help_text(usage, help, config.render.compatible.usage);
 }
 
 template <typename FieldTy, typename CfgTy>
@@ -348,41 +278,28 @@ inline std::string usage_text_for_field(const FieldTy&,
     }
 }
 
-template <typename FieldTy, typename CfgTy>
-inline std::string help_text_for_field(const FieldTy& field,
-                                       const CfgTy& cfg,
-                                       std::string_view fallback_name,
-                                       const config::Config& config) {
-    const auto usage = usage_text_for_field(field, cfg, true, fallback_name, config);
-    const auto help =
-        has_help_text(cfg.help) ? cfg.help : config.render.compatible.usage.default_help;
-    return render_help_text(usage, help, config.render.compatible.usage);
-}
-
 }  // namespace detail
 
+/// The forms `field` is written in; with `include_help`, its line in a usage listing, laid out
+/// as the compatible renderer of `override_config` (or the global config) lays it out.
+/// `fallback_name` names a field declared without names.
 template <ty::is_deco_field_or_option T>
 inline std::string from_deco_option(const T& field,
                                     bool include_help = false,
                                     std::string_view fallback_name = {},
                                     const config::Config* override_config = nullptr) {
     const auto cfg = ty::dyn_cast(field);
-    const auto& active = detail::active_config(override_config);
-    if(include_help) {
-        if constexpr(ty::deco_option_like<T>) {
-            return detail::help_text_for_field(field, cfg, fallback_name, active);
-        } else {
-            return detail::help_text(cfg,
-                                     fallback_name,
-                                     detail::meta_var_token(cfg.meta_var),
-                                     active);
-        }
+    const auto& config = detail::active_config(override_config);
+    auto usage = detail::usage_text_for_field(field, cfg, include_help, fallback_name, config);
+    if(!include_help) {
+        return usage;
     }
-    if constexpr(ty::deco_option_like<T>) {
-        return detail::usage_text_for_field(field, cfg, false, fallback_name, active);
-    } else {
-        return detail::usage_text(cfg, false, fallback_name, detail::meta_var_token(cfg.meta_var));
-    }
+    return cli::text::render_usage_entry(
+        cli::text::UsageEntry{
+            .usage = std::move(usage),
+            .help = detail::has_help_text(cfg.help) ? std::string(cfg.help) : std::string{},
+        },
+        config.render.compatible.usage);
 }
 
 }  // namespace kota::deco::desc

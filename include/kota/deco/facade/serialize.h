@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <format>
 #include <ranges>
 #include <span>
 #include <sstream>
@@ -15,7 +16,6 @@ namespace kota::deco::ser {
 
 template <typename StructTy>
 class Serializer : public kota::deco::detail::DecoStructConsumer<Serializer<StructTy>, StructTy> {
-    using base_t = detail::DecoStructConsumer<Serializer<StructTy>, StructTy>;
     using category_span_t = std::span<const decl::Category* const>;
 
     const StructTy& object;
@@ -41,47 +41,13 @@ class Serializer : public kota::deco::detail::DecoStructConsumer<Serializer<Stru
         return category_selected(cfg.category.ptr());
     }
 
-    static std::string normalized_field_name(std::string_view field_name) {
-        std::string normalized(field_name);
-        for(auto& ch: normalized) {
-            if(ch == '_') {
-                ch = '-';
-            }
-        }
-        return normalized;
-    }
-
-    static std::string generated_option_name(std::string_view field_name) {
-        auto normalized = normalized_field_name(field_name);
-        if(normalized.empty()) {
-            return {};
-        }
-        if(normalized.size() == 1) {
-            return "-" + normalized;
-        }
-        return "--" + normalized;
-    }
-
+    /// The name the option is written with: its first name, else the generated one.
     template <typename CfgTy>
     static std::string option_name(const CfgTy& cfg, std::string_view field_name) {
-        if constexpr(requires { cfg.names; }) {
-            if(!cfg.names.empty()) {
-                return std::string(cfg.names.front());
-            }
+        if(!cfg.names.empty()) {
+            return std::string(cfg.names.front());
         }
-        return generated_option_name(field_name);
-    }
-
-    constexpr static bool has_kv_style(char style, decl::KVStyle expected) {
-        return (style & static_cast<char>(expected)) != 0;
-    }
-
-    static bool name_has_joined_suffix(std::string_view name) {
-        return name.ends_with('=') || name.ends_with(':');
-    }
-
-    static std::string kv_joined_arg(std::string_view name, std::string_view value) {
-        return std::string(name) + std::string(value);
+        return decl::detail::generated_option_name(field_name);
     }
 
     template <typename ValueTy>
@@ -89,18 +55,16 @@ class Serializer : public kota::deco::detail::DecoStructConsumer<Serializer<Stru
         using raw_ty = std::remove_cvref_t<ValueTy>;
         if constexpr(std::same_as<raw_ty, std::string>) {
             return value;
-        } else if constexpr(std::same_as<raw_ty, std::string_view>) {
-            return std::string(value);
-        } else if constexpr(std::same_as<raw_ty, const char*> || std::same_as<raw_ty, char*>) {
-            return value ? std::string(value) : std::string{};
         } else if constexpr(std::same_as<raw_ty, bool>) {
             return value ? "true" : "false";
-        } else if constexpr(std::signed_integral<raw_ty>) {
-            return std::to_string(static_cast<long long>(value));
-        } else if constexpr(std::unsigned_integral<raw_ty>) {
-            return std::to_string(static_cast<unsigned long long>(value));
+        } else if constexpr(std::integral<raw_ty>) {
+            // Promoted, so that a char is written as the number it parses from.
+            return std::format("{}", +value);
         } else if constexpr(std::floating_point<raw_ty>) {
-            return std::to_string(static_cast<long double>(value));
+            // The shortest text that reads back as the same value.
+            return std::format("{}", value);
+        } else if constexpr(std::is_enum_v<raw_ty>) {
+            return kota::codec::spelling::map_enum_to_string(value);
         } else if constexpr(requires(std::ostream& os, const raw_ty& v) { os << v; }) {
             std::ostringstream oss;
             oss << value;
@@ -136,7 +100,7 @@ public:
         argv.clear();
         trailing_values.clear();
         has_trailing = false;
-        (void)this->consume_deco_struct(object);
+        this->consume_deco_struct(object);
         if(has_trailing) {
             argv.emplace_back("--");
             for(auto& value: trailing_values) {
@@ -146,12 +110,17 @@ public:
         return argv;
     }
 
+    /// An alias has no value of its own: the option it forwards to is written instead.
+    template <typename FieldTy, typename CfgTy, std::size_t... Path>
+    bool on_alias(const FieldTy&, const CfgTy&, std::string_view, std::index_sequence<Path...>) {
+        return true;
+    }
+
     template <typename FieldTy, typename CfgTy, std::size_t... Path>
     bool on_input_config(const FieldTy& field,
                          const CfgTy& cfg,
                          std::string_view,
                          std::index_sequence<Path...>) {
-        (void)sizeof...(Path);
         if(!should_emit(cfg) || !field.has_value()) {
             return true;
         }
@@ -172,7 +141,6 @@ public:
                                   const CfgTy& cfg,
                                   std::string_view,
                                   std::index_sequence<Path...>) {
-        (void)sizeof...(Path);
         if(!should_emit(cfg) || !field.has_value()) {
             return true;
         }
@@ -186,7 +154,6 @@ public:
                         const CfgTy& cfg,
                         std::string_view field_name,
                         std::index_sequence<Path...>) {
-        (void)sizeof...(Path);
         if(!should_emit(cfg) || !field.has_value()) {
             return true;
         }
@@ -210,17 +177,13 @@ public:
                       const CfgTy& cfg,
                       std::string_view field_name,
                       std::index_sequence<Path...>) {
-        (void)sizeof...(Path);
         if(!should_emit(cfg) || !field.has_value()) {
             return true;
         }
         const auto name = option_name(cfg, field_name);
         const auto value = scalar_to_arg(*field);
-        const bool allow_joined = has_kv_style(cfg.style, decl::KVStyle::Joined);
-        const bool allow_separate = has_kv_style(cfg.style, decl::KVStyle::Separate);
-        const bool use_joined = name_has_joined_suffix(name) || (allow_joined && !allow_separate);
-        if(use_joined) {
-            argv.push_back(kv_joined_arg(name, value));
+        if(decl::detail::is_joined_kv_name(cfg.style, name)) {
+            argv.push_back(name + value);
         } else {
             argv.push_back(name);
             argv.push_back(value);
@@ -233,7 +196,6 @@ public:
                                 const CfgTy& cfg,
                                 std::string_view field_name,
                                 std::index_sequence<Path...>) {
-        (void)sizeof...(Path);
         if(!should_emit(cfg) || !field.has_value()) {
             return true;
         }
@@ -255,7 +217,6 @@ public:
                          const CfgTy& cfg,
                          std::string_view field_name,
                          std::index_sequence<Path...>) {
-        (void)sizeof...(Path);
         if(!should_emit(cfg) || !field.has_value()) {
             return true;
         }

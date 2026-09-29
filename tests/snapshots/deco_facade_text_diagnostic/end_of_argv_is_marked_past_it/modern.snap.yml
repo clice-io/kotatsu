@@ -1,0 +1,8 @@
+---
+source: text_diagnostic_tests.cpp
+created_at: 2026-09-29
+---
+\e[1;38;5;203merror\e[0m \e[39m[argv[end]]\e[0m
+\e[39m│\e[0m
+\e[39m│\e[0m app --nope x
+\e[39m│\e[0m             \e[1;38;5;204m╰─▶\e[0m \e[1mmissing value\e[0m
