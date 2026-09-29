@@ -97,6 +97,14 @@ struct synth_three_way {
 
 template <typename T, unsigned int InlineCapacity>
 struct inline_buffer {
+    /// Constant evaluation never uses the buffer, yet MSVC reads it when it evaluates a move
+    /// assignment there: it is zeroed for it, and left alone at run time.
+    constexpr inline_buffer() noexcept {
+        if consteval {
+            std::ranges::fill(buffer, std::byte{});
+        }
+    }
+
 protected:
     alignas(T) std::byte buffer[InlineCapacity * sizeof(T)];
 };
