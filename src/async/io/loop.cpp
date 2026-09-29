@@ -41,6 +41,8 @@ struct event_loop::Self : relay::Self {
     /// What owners let go of while the loop was being destroyed and closing
     /// their handles; run once it has closed them all.
     std::vector<function<void()>> frees;
+    /// ~event_loop has begun.
+    bool destroying = false;
 
     /// Keeps each() running while it has work; starting a running idle
     /// handle does nothing. Once the loop is being destroyed, and has closed
@@ -224,6 +226,10 @@ void uv::free_when_closed(uv_loop_t& loop, function<void()> free) {
     detail::loop_access::self(loop).frees.push_back(std::move(free));
 }
 
+bool uv::destroying(uv_loop_t& loop) noexcept {
+    return detail::loop_access::self(loop).destroying;
+}
+
 yield_awaiter::yield_awaiter(event_loop& loop) noexcept : loop(&loop) {
     // Cancellation needs no action: the op is intentionally left queued, and
     // the queued completion in each() delivers the Cancelled outcome on the
@@ -263,6 +269,7 @@ event_loop::event_loop() : self(new Self()) {
 event_loop::~event_loop() {
     assert(self->count.load(std::memory_order_acquire) == 0 &&
            "event_loop destroyed with live relays");
+    self->destroying = true;
 
     {
         std::lock_guard lock(self->mutex);
