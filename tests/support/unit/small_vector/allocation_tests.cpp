@@ -80,7 +80,7 @@ struct std::allocator<kota::Probe> {
             return std::exchange(kota::ledger.next, nullptr);
         }
         if(std::exchange(kota::ledger.fail_next, false)) {
-            KOTA_THROW(std::bad_alloc());
+            KOTA_THROW(std::bad_alloc{});
         }
         return static_cast<kota::Probe*>(::operator new(count * sizeof(kota::Probe)));
     }
