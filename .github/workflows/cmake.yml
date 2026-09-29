@@ -249,20 +249,11 @@ jobs:
           fi
           du -sh "${dir}"
 
-      # After a failed build too, which keeps what it compiled. Not from a
-      # fork, whose token cannot delete the entries a new one replaces.
+      # After a failed build too, which keeps what it compiled; the entry
+      # replaces the ref's older ones for this leg.
       - name: Save compiler cache
-        id: compiler-cache-save
-        if: ${{ !cancelled() && steps.build.outcome != 'skipped' && steps.compiler-cache.outputs.cache-hit != 'true' && !github.event.pull_request.head.repo.fork }}
-        uses: actions/cache/save@v4
+        if: ${{ !cancelled() && steps.build.outcome != 'skipped' && steps.compiler-cache.outputs.cache-hit != 'true' }}
+        uses: ./.github/actions/replace-cache
         with:
           path: ${{ env.COMPILER_CACHE == 'sccache' && env.SCCACHE_DIR || env.CCACHE_DIR }}
-          key: ${{ steps.compiler-cache.outputs.cache-primary-key }}
-
-      # The ref's older entries for this leg; a failure here only leaves them.
-      - name: Delete replaced compiler cache
-        if: ${{ !cancelled() && steps.compiler-cache-save.outcome == 'success' }}
-        continue-on-error: true
-        uses: ./.github/actions/delete-replaced-caches
-        with:
           key: ${{ steps.compiler-cache.outputs.cache-primary-key }}

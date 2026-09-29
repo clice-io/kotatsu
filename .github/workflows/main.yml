@@ -53,6 +53,7 @@ jobs:
               - 'xmake.lua'
               - 'pixi.toml'
               - '.github/actions/**'
+              - '.github/scripts/xmake_cache.lua'
               - '.github/workflows/main.yml'
               - '.github/workflows/xmake.yml'
 
