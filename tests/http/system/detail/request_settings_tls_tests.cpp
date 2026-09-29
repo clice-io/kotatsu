@@ -1,9 +1,9 @@
 #include <cstddef>
-#include <string_view>
 #include <vector>
 
 #include "async/harness/loop_fixture.h"
 #include "http/harness/server.h"
+#include "kota/http/detail/curl.h"
 #include "kota/http/detail/manager.h"
 #include "kota/http/http.h"
 #include "kota/zest/macro.h"
@@ -16,11 +16,11 @@ namespace kota::http {
 
 namespace {
 
-/// Whether curl's TLS is Schannel, which keeps no CA directories.
-bool schannel() {
-    const auto* version = ::curl_version_info(CURLVERSION_NOW);
-    return version->ssl_version != nullptr &&
-           std::string_view(version->ssl_version).find("Schannel") != std::string_view::npos;
+/// Whether curl's TLS takes a CA directory, which Schannel and Secure
+/// Transport do not.
+bool curl_takes_ca_path() {
+    auto probe = curl::easy_handle::create();
+    return curl::setopt(probe.get(), CURLOPT_CAPATH, "kotatsu") != CURLE_NOT_BUILT_IN;
 }
 
 ZEST_SUITE(http_detail_request_settings_tls, test::LoopFixture) {
@@ -65,17 +65,19 @@ ZEST_CASE(tls_settings_leave_plain_http_alone) {
     EXPECT(server.requests().size() == built.size());
 }
 
-ZEST_CASE(ca_path_leaves_plain_http_alone_where_curl_has_it) {
+// A TLS that keeps no CA directories refuses the option, and the request
+// fails with curl's error; any other leaves plain http alone.
+ZEST_CASE(ca_path_goes_to_curl) {
     test::HttpServer server(loop);
     ASSERT(server.listening());
     auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(server.url("/")).ca_path("kotatsu-missing-ca").send());
-    if(schannel()) {
+    if(curl_takes_ca_path()) {
+        EXPECT(reply.has_value());
+    } else {
         ASSERT(reply.has_error());
         EXPECT(reply.error().curl_code == CURLE_NOT_BUILT_IN);
-    } else {
-        EXPECT(reply.has_value());
     }
 }
 
