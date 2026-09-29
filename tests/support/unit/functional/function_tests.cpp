@@ -55,6 +55,10 @@ struct Padded {
     }
 };
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4324)  // padded to its alignment, which is the point
+#endif
 /// A small callable aligned past what a function's buffer is.
 struct alignas(2 * alignof(std::max_align_t)) OverAligned {
     int value;
@@ -63,6 +67,9 @@ struct alignas(2 * alignof(std::max_align_t)) OverAligned {
         return value + x;
     }
 };
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 /// A callable whose move can throw, which a function cannot move in place.
 struct ThrowingMove {

@@ -119,21 +119,21 @@ template <typename Iterator>
     return std::ranges::subrange(std::make_move_iterator(first), std::make_move_iterator(last));
 }
 
-/// Constructs a T from each element of `range` into uninitialized memory from `dest` on and
-/// returns the end of what it constructed. If a constructor throws, the elements constructed
-/// so far are destroyed.
-template <typename T, std::ranges::input_range Range>
-constexpr T* uninitialized_copy(Range&& range, T* dest) {
-    if constexpr(std::ranges::contiguous_range<Range> && std::ranges::sized_range<Range> &&
-                 is_bitwise_constructible_v<T, std::ranges::range_reference_t<Range>>) {
-        if !consteval {
-            const auto count = static_cast<std::size_t>(std::ranges::size(range));
-            if(count != 0) {
-                std::memcpy(static_cast<void*>(dest), std::ranges::data(range), count * sizeof(T));
-            }
-            return dest + count;
-        }
+namespace detail {
+
+/// Copies the bytes of `count` T from `source` to `dest`, which do not overlap, and returns
+/// the end of the copies.
+template <typename T>
+T* copy_bytes(const void* source, std::size_t count, T* dest) noexcept {
+    if(count != 0) {
+        std::memcpy(static_cast<void*>(dest), source, count * sizeof(T));
     }
+    return dest + count;
+}
+
+/// Constructs a T from each element of `range` from `dest` on, as uninitialized_copy() does.
+template <typename T, typename Range>
+constexpr T* construct_from_each(Range&& range, T* dest) {
     T* out = dest;
     KOTA_TRY {
         for(auto&& value: range) {
@@ -148,21 +148,44 @@ constexpr T* uninitialized_copy(Range&& range, T* dest) {
     }
 }
 
+}  // namespace detail
+
+// Each function below spells out the constant-evaluation branch rather than falling through
+// to it: MSVC reports the code after an `if !consteval` that returns as unreachable.
+
+/// Constructs a T from each element of `range` into uninitialized memory from `dest` on and
+/// returns the end of what it constructed. If a constructor throws, the elements constructed
+/// so far are destroyed.
+template <typename T, std::ranges::input_range Range>
+constexpr T* uninitialized_copy(Range&& range, T* dest) {
+    if constexpr(std::ranges::contiguous_range<Range> && std::ranges::sized_range<Range> &&
+                 is_bitwise_constructible_v<T, std::ranges::range_reference_t<Range>>) {
+        if consteval {
+            return detail::construct_from_each(range, dest);
+        } else {
+            return detail::copy_bytes(std::ranges::data(range),
+                                      static_cast<std::size_t>(std::ranges::size(range)),
+                                      dest);
+        }
+    } else {
+        return detail::construct_from_each(std::forward<Range>(range), dest);
+    }
+}
+
 /// Move-constructs [first, last) into uninitialized memory from `dest` on, copying the bytes
 /// of a trivially copyable T, and returns the end of the copies. The sources stay alive,
 /// moved from.
 template <typename T>
 constexpr T* uninitialized_move(T* first, T* last, T* dest) {
     if constexpr(std::is_trivially_copyable_v<T>) {
-        if !consteval {
-            const auto count = static_cast<std::size_t>(last - first);
-            if(count != 0) {
-                std::memcpy(static_cast<void*>(dest), first, count * sizeof(T));
-            }
-            return dest + count;
+        if consteval {
+            return detail::construct_from_each(move_range(first, last), dest);
+        } else {
+            return detail::copy_bytes(first, static_cast<std::size_t>(last - first), dest);
         }
+    } else {
+        return detail::construct_from_each(move_range(first, last), dest);
     }
-    return uninitialized_copy(move_range(first, last), dest);
 }
 
 /// Constructs each of [first, last) with `construct_one(p)`. If one throws, those constructed

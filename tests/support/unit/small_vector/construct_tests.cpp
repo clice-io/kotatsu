@@ -15,9 +15,16 @@ namespace kota {
 
 namespace {
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4324)  // padded to its alignment, which is the point
+#endif
 struct alignas(64) Wide {
     int value = 0;
 };
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 struct Big {
     char bytes[100] = {};

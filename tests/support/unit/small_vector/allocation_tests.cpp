@@ -78,6 +78,12 @@ struct std::allocator<kota::Probe> {
         return static_cast<kota::Probe*>(::operator new(count * sizeof(kota::Probe)));
     }
 
+// The arena's memory reaches deallocate(), which returns before deleting it; GCC sees the
+// arena reach the delete below all the same.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wfree-nonheap-object"
+#endif
     void deallocate(kota::Probe* data, std::size_t) {
         kota::ledger.deallocations += 1;
         const auto* bytes = reinterpret_cast<const std::byte*>(data);
@@ -87,6 +93,9 @@ struct std::allocator<kota::Probe> {
         }
         ::operator delete(data);
     }
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 };
 
 namespace kota {
