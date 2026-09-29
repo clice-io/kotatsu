@@ -155,7 +155,7 @@ ZEST_CASE(bool_reads_its_spellings) {
         {"No",    false},
         {"OFF",   false},
     };
-    for(const auto [text, expected]: spellings) {
+    for(const auto& [text, expected]: spellings) {
         ZEST_CONTEXT("text {}", text);
         std::optional<bool> value;
         EXPECT(!read(text, value));

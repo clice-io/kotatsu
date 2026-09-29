@@ -260,6 +260,15 @@ ZEST_CASE(dash_dash_without_a_pack_fails) {
     EXPECT(zest::ends_with(parsed.error().message, "unknown option '--'"));
 }
 
+ZEST_CASE(dash_dash_to_positionals_alone_fails) {
+    // With no option to take a prefix from, "--" reads as a positional, the one a pack takes.
+    auto argv = test::split("a -- b");
+    const auto parsed = cli::parse<Inputs>(argv);
+    ASSERT(!parsed.has_value());
+    EXPECT(parsed.error().type == cli::ParseError::Type::DecoParsing);
+    EXPECT(zest::ends_with(parsed.error().message, "unexpected trailing argument --"));
+}
+
 ZEST_CASE(required_option_missing_fails) {
     auto argv = test::split("--other");
     const auto parsed = cli::parse<Required>(argv);

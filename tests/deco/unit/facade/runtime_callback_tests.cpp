@@ -13,13 +13,13 @@ namespace {
 
 using strings = std::vector<std::string>;
 
-/// What the last callback saw, kept per thread since a callback is a plain function.
+/// What the last callback saw, kept statically since a callback is a plain function.
 struct Seen {
-    inline thread_local static std::uint32_t index = 0;
-    inline thread_local static std::uint32_t next_cursor = 0;
-    inline thread_local static std::size_t argv_size = 0;
-    inline thread_local static std::string value;
-    inline thread_local static int calls = 0;
+    inline static std::uint32_t index = 0;
+    inline static std::uint32_t next_cursor = 0;
+    inline static std::size_t argv_size = 0;
+    inline static std::string value;
+    inline static int calls = 0;
 
     Seen() {
         index = 0;

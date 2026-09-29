@@ -236,7 +236,7 @@ ZEST_CASE(render_style_follows_the_kind) {
         std::pair{Kind::RemainingArgs,       RenderStyle::Separate   },
         std::pair{Kind::RemainingArgsJoined, RenderStyle::Separate   },
     };
-    for(const auto [kind, style]: styles) {
+    for(const auto& [kind, style]: styles) {
         ZEST_CONTEXT("kind {}", static_cast<int>(kind));
         const OneOption one(kind);
         EXPECT(one.option().render_style() == style);

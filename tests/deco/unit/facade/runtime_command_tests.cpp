@@ -46,7 +46,7 @@ struct Nested {
 };
 
 struct FieldCallbackCounter {
-    inline thread_local static int calls = 0;
+    inline static int calls = 0;
 };
 
 struct Ordered {
