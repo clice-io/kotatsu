@@ -16,7 +16,8 @@ namespace {
 
 // In constant evaluation there is no inline buffer: every vector allocates. Each function
 // below runs a vector through a series of operations and returns what they left, which a
-// constant can hold, for the checks to read one fact at a time.
+// constant can hold, for the checks to read one fact at a time. The constants are static: MSVC
+// does not read every member of a large local one in constant evaluation.
 
 /// Up to 8 elements of an int vector, and its size.
 struct Ints {
@@ -141,7 +142,7 @@ ZEST_CASE(deduction_takes_the_element_type) {
 }
 
 ZEST_CASE(int_elements_go_through_every_operation) {
-    constexpr auto facts = int_operations();
+    constexpr static auto facts = int_operations();
     STATIC_EXPECT(facts.ints.size == 6U);
     STATIC_EXPECT(facts.ints.elements == std::array{1, 9, 3, 4, 5, 11, 0, 0});
     STATIC_EXPECT(facts.popped == 12);
@@ -149,7 +150,7 @@ ZEST_CASE(int_elements_go_through_every_operation) {
 }
 
 ZEST_CASE(string_elements_go_through_every_operation) {
-    constexpr auto facts = string_operations();
+    constexpr static auto facts = string_operations();
     STATIC_EXPECT(facts.size == 4U);
     STATIC_EXPECT(facts.first_is_beta);
     STATIC_EXPECT(facts.second_is_alpha);
@@ -157,20 +158,20 @@ ZEST_CASE(string_elements_go_through_every_operation) {
 }
 
 ZEST_CASE(optional_elements_go_through_every_operation) {
-    constexpr auto ints = optional_operations();
+    constexpr static auto ints = optional_operations();
     STATIC_EXPECT(ints.size == 4U);
     STATIC_EXPECT(ints.elements == std::array{1, 3, -1, 4, 0, 0, 0, 0});
 }
 
 ZEST_CASE(variant_elements_go_through_every_operation) {
-    constexpr auto facts = variant_operations();
+    constexpr static auto facts = variant_operations();
     STATIC_EXPECT(facts.size == 2U);
     STATIC_EXPECT(facts.first_is_two);
     STATIC_EXPECT(facts.second == 3);
 }
 
 ZEST_CASE(moved_from_vectors_are_reusable) {
-    constexpr auto facts = moved_from_vectors();
+    constexpr static auto facts = moved_from_vectors();
     STATIC_EXPECT(facts.source.size == 1U);
     STATIC_EXPECT(facts.source.elements[0] == 3);
     STATIC_EXPECT(facts.moved.size == 1U);
@@ -180,7 +181,7 @@ ZEST_CASE(moved_from_vectors_are_reusable) {
 }
 
 ZEST_CASE(arguments_may_view_the_elements) {
-    constexpr auto ints = aliasing_arguments();
+    constexpr static auto ints = aliasing_arguments();
     STATIC_EXPECT(ints.size == 6U);
     STATIC_EXPECT(ints.elements == std::array{1, 2, 1, 1, 2, 1, 0, 0});
 }

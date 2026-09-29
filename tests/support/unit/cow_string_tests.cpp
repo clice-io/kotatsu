@@ -50,7 +50,7 @@ constexpr Facts borrow_own_and_release() {
 ZEST_SUITE(support_cow_string) {
 
 ZEST_CASE(works_in_constant_evaluation) {
-    constexpr auto facts = borrow_own_and_release();
+    constexpr static auto facts = borrow_own_and_release();
     STATIC_EXPECT(facts.borrowed);
     STATIC_EXPECT(facts.made_owned);
     STATIC_EXPECT(facts.owned_text);

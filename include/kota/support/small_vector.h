@@ -736,10 +736,17 @@ private:
                                                         ? alignof(pointer)
                                                         : alignof(compact_size_type);
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4324)  // an over-aligned element pads the header, as it must
+#endif
     struct alignment_and_size {
         alignas(header_alignment) std::byte header[sizeof(pointer) + 2 * sizeof(compact_size_type)];
         alignas(value_type) std::byte first_element[sizeof(value_type)];
     };
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
     /// The first element, in the inline buffer or an allocation.
     pointer head;
