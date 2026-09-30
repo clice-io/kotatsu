@@ -290,9 +290,9 @@ public:
         requires ((std::is_convertible_v<Args, std::string_view> && ...))
     constexpr std::string_view add(std::string_view first, Args&&... rest) {
         const auto total_size = (first.size() + ... + std::string_view(rest).size()) + 1;
-        auto* mem = resource.template allocate_type<char>(total_size);
+        auto* mem = resource.allocate(total_size);
         if constexpr(ResourceTy::is_counting) {
-            resource.template deallocate_type<char>(mem, total_size);
+            resource.deallocate(mem, total_size);
             return {};
         } else {
             char* out = std::ranges::copy(first, mem).out;

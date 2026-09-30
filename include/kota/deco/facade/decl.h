@@ -19,8 +19,8 @@
 #include "text.h"
 #include "trait.h"
 #include "kota/deco/option/arg.h"
-#include "kota/support/spelling.h"
 #include "kota/support/type_traits.h"
+#include "kota/meta/spelling.h"
 
 namespace kota::deco {
 
@@ -703,7 +703,7 @@ std::string format_invalid_enum_value(std::string_view text) {
     std::string message = "invalid enum value: ";
     message += text;
 
-    const auto& values = kota::codec::spelling::enum_strings<EnumTy>();
+    const auto& values = kota::meta::enum_strings<EnumTy>();
     if(values.empty()) {
         return message;
     }
@@ -744,7 +744,7 @@ std::optional<std::string> parse_primitive_scalar(ResTy& out, std::string_view t
         out = parsed;
         return std::nullopt;
     } else if constexpr(std::is_enum_v<ResTy>) {
-        if(auto parsed = kota::codec::spelling::map_string_to_enum<ResTy>(text)) {
+        if(auto parsed = kota::meta::map_string_to_enum<ResTy>(text)) {
             out = *parsed;
             return std::nullopt;
         }

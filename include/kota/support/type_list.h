@@ -28,8 +28,7 @@ template <typename List, typename T>
 struct type_list_contains;
 
 template <typename... Ts, typename T>
-struct type_list_contains<type_list<Ts...>, T> :
-    std::bool_constant<(std::same_as<T, Ts> || ...)> {};
+struct type_list_contains<type_list<Ts...>, T> : std::bool_constant<is_one_of<T, Ts...>> {};
 
 template <typename List, typename T>
 constexpr inline bool type_list_contains_v = type_list_contains<List, T>::value;
@@ -59,11 +58,6 @@ struct type_list_unique;
 
 template <typename Accum, typename List>
 struct type_list_unique_impl;
-
-template <>
-struct type_list_unique<type_list<>> {
-    using type = type_list<>;
-};
 
 template <typename... Ts>
 struct type_list_unique_impl<type_list<Ts...>, type_list<>> {
@@ -162,5 +156,9 @@ template <typename... Ts>
 struct type_list_to_union<type_list<Ts...>> {
     using type = std::variant<Ts...>;
 };
+
+/// Nothing (void) for no type, the type for one, a variant of them for more.
+template <typename List>
+using type_list_to_union_t = typename type_list_to_union<List>::type;
 
 }  // namespace kota

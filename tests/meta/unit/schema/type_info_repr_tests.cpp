@@ -20,7 +20,7 @@ struct MergePoint {
 };
 
 struct CamelOnly {
-    constexpr static auto spec = make_struct_spec(dsl::rename_all = naming::casing::lower_camel);
+    constexpr static auto spec = make_struct_spec(dsl::rename_all = naming::Casing::LowerCamel);
 };
 
 struct DenyOnly {

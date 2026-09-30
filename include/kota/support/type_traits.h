@@ -2,7 +2,6 @@
 
 #include <concepts>
 #include <expected>
-#include <format>
 #include <optional>
 #include <type_traits>
 
@@ -16,9 +15,6 @@ constexpr inline bool is_specialization_of = false;
 
 template <template <typename...> typename HKT, typename... Ts>
 constexpr inline bool is_specialization_of<HKT, HKT<Ts...>> = true;
-
-template <typename T>
-concept Formattable = std::formattable<T, char>;
 
 template <typename L, typename R>
 concept eq_comparable_with = requires(const L& lhs, const R& rhs) {

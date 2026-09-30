@@ -12,7 +12,7 @@
 #include "decl.h"
 #include "text.h"
 #include "ty.h"
-#include "kota/support/spelling.h"
+#include "kota/meta/spelling.h"
 
 /*
  * Describes declared options in text: the forms an option is written in (`-o|--output <FILE>`),
@@ -116,8 +116,7 @@ inline std::string inferred_meta_var_token(const decl::MetaVarField& meta_var,
     }
     if constexpr(!std::is_void_v<enum_ty>) {
         if(config.enum_meta_var.enabled) {
-            return enum_meta_var_token(kota::codec::spelling::enum_strings<enum_ty>(),
-                                       config.enum_meta_var);
+            return enum_meta_var_token(kota::meta::enum_strings<enum_ty>(), config.enum_meta_var);
         }
     }
     return meta_var_token(meta_var.value);

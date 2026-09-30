@@ -19,7 +19,7 @@ struct Record {
 };
 
 template <size_t reserved>
-constexpr inline static auto counting_flag = Record<reserved>{};
+constexpr inline auto counting_flag = Record<reserved>{};
 
 template <auto record>
 class ComptimeMemoryResource {
@@ -28,51 +28,30 @@ public:
     constexpr static size_t reserved_size = record.data.size();
 
 private:
-    using counting_cont = std::allocator<char>;
-    using storage_cont = char[record.count + 1];
+    /// What the counting pass holds: nothing, its bytes come from std::allocator.
+    struct NoBytes {};
 
-    alignas(std::max_align_t) std::conditional_t<is_counting, counting_cont, storage_cont> memory{};
+    /// The sized pass holds every byte the counting pass allocated.
+    std::conditional_t<is_counting, NoBytes, char[record.count + 1]> bytes{};
     std::array<size_t, reserved_size> reserved{};
     size_t idx = 0;
 
 public:
-    constexpr static size_t aligned_offset(size_t current_idx, size_t alignment) {
-        return (current_idx + alignment - 1) & ~(alignment - 1);
-    }
-
-    constexpr void* allocate(size_t n, size_t alignment) {
-        size_t start = aligned_offset(idx, alignment);
-        idx = start + n;
-
+    /// `count` bytes: fresh ones while counting, and the object's own next ones once sized.
+    constexpr char* allocate(size_t count) {
+        const size_t start = idx;
+        idx += count;
         if constexpr(is_counting) {
-            return memory.allocate(n);
+            return std::allocator<char>{}.allocate(count);
         } else {
-            return &memory[start];
+            return &bytes[start];
         }
     }
 
-    constexpr void deallocate(void* p, size_t n) {
+    /// Gives back what allocate() returned; the sized pass keeps its bytes.
+    constexpr void deallocate(char* allocated, size_t count) {
         if constexpr(is_counting) {
-            memory.deallocate(static_cast<char*>(p), n);
-        }
-    }
-
-    template <typename T>
-    constexpr T* allocate_type(size_t count_elements) {
-        size_t start = aligned_offset(idx, alignof(T));
-        idx = start + count_elements * sizeof(T);
-
-        if constexpr(is_counting) {
-            return std::allocator<T>{}.allocate(count_elements);
-        } else {
-            return static_cast<T*>(&memory[start]);
-        }
-    }
-
-    template <typename T>
-    constexpr void deallocate_type(T* p, size_t count_elements) {
-        if constexpr(is_counting) {
-            std::allocator<T>{}.deallocate(p, count_elements);
+            std::allocator<char>{}.deallocate(allocated, count);
         }
     }
 
@@ -80,10 +59,11 @@ public:
         return idx;
     }
 
-    constexpr void set_reserved(size_t i, size_t value) {
+    /// Raises reserved value `i` to at least `value`: a pool records the most it held at once.
+    constexpr void raise_reserved(size_t i, size_t value) {
         static_assert(is_counting, "Reserved data can only be set in counting mode");
         assert(i < reserved.size());
-        reserved[i] = value;
+        reserved[i] = std::max(reserved[i], value);
     }
 
     template <size_t i>
@@ -105,39 +85,6 @@ public:
     constexpr ComptimeMemoryResource() = default;
 };
 
-template <typename T, auto record>
-class ComptimeAllocator {
-public:
-    using Resource = ComptimeMemoryResource<record>;
-    constexpr static bool is_counting = Resource::is_counting;
-    using value_type = T;
-
-    template <typename U>
-    struct rebind {
-        using other = ComptimeAllocator<U, record>;
-    };
-
-    Resource* res;
-
-    constexpr ComptimeAllocator(Resource& r) : res(&r) {}
-
-    template <typename U>
-    constexpr ComptimeAllocator(const ComptimeAllocator<U, record>& other) : res(other.res) {}
-
-    constexpr T* allocate(std::size_t n) {
-        return res->template allocate_type<T>(n);
-    }
-
-    constexpr void deallocate(T* p, std::size_t n) {
-        res->template deallocate_type<T>(p, n);
-    }
-
-    template <typename U>
-    constexpr bool operator==(const ComptimeAllocator<U, record>& other) const {
-        return res == other.res;
-    }
-};
-
 template <typename T, typename ResourceTy, size_t reserved_id>
 class ComptimeVector {
 public:
@@ -152,14 +99,14 @@ public:
 private:
     constexpr void sync_counting_state() {
         if constexpr(ResourceTy::is_counting) {
-            sz = storage.size();
-            resource.set_reserved(reserved_id, sz);
+            sz = elements.size();
+            resource.raise_reserved(reserved_id, sz);
         }
     }
 
     size_t sz;
     ResourceTy& resource;
-    cont_ty storage = {};
+    cont_ty elements = {};
 
 public:
     constexpr ComptimeVector(ResourceTy& resource) : sz(0), resource(resource) {}
@@ -174,18 +121,18 @@ public:
 
     constexpr size_t capacity() const {
         if constexpr(ResourceTy::is_counting) {
-            return storage.capacity();
+            return elements.capacity();
         } else {
-            return storage.size();
+            return elements.size();
         }
     }
 
     constexpr T* data() {
-        return storage.data();
+        return elements.data();
     }
 
     constexpr const T* data() const {
-        return storage.data();
+        return elements.data();
     }
 
     constexpr T* begin() {
@@ -214,50 +161,50 @@ public:
 
     constexpr void reserve(size_t n) {
         if constexpr(ResourceTy::is_counting) {
-            storage.reserve(n);
+            elements.reserve(n);
         } else {
-            assert(n <= storage.size());
+            assert(n <= elements.size());
         }
     }
 
     constexpr void push_back(const T& value) {
         if constexpr(ResourceTy::is_counting) {
-            storage.push_back(value);
+            elements.push_back(value);
             sync_counting_state();
         } else {
-            assert(sz < storage.size());
-            storage[sz++] = value;
+            assert(sz < elements.size());
+            elements[sz++] = value;
         }
     }
 
     constexpr void push_back(T&& value) {
         if constexpr(ResourceTy::is_counting) {
-            storage.push_back(std::move(value));
+            elements.push_back(std::move(value));
             sync_counting_state();
         } else {
-            assert(sz < storage.size());
-            storage[sz++] = std::move(value);
+            assert(sz < elements.size());
+            elements[sz++] = std::move(value);
         }
     }
 
     template <typename... Args>
     constexpr T& emplace_back(Args&&... args) {
         if constexpr(ResourceTy::is_counting) {
-            storage.emplace_back(std::forward<Args>(args)...);
+            elements.emplace_back(std::forward<Args>(args)...);
             sync_counting_state();
-            return storage.back();
+            return elements.back();
         } else {
-            assert(sz < storage.size());
-            storage[sz] = T(std::forward<Args>(args)...);
+            assert(sz < elements.size());
+            elements[sz] = T(std::forward<Args>(args)...);
             ++sz;
-            return storage[sz - 1];
+            return elements[sz - 1];
         }
     }
 
     constexpr void pop_back() {
         assert(sz > 0);
         if constexpr(ResourceTy::is_counting) {
-            storage.pop_back();
+            elements.pop_back();
             sync_counting_state();
         } else {
             --sz;
@@ -266,39 +213,39 @@ public:
 
     constexpr T& front() {
         assert(sz > 0);
-        return storage[0];
+        return elements[0];
     }
 
     constexpr const T& front() const {
         assert(sz > 0);
-        return storage[0];
+        return elements[0];
     }
 
     constexpr T& back() {
         assert(sz > 0);
-        return storage[sz - 1];
+        return elements[sz - 1];
     }
 
     constexpr const T& back() const {
         assert(sz > 0);
-        return storage[sz - 1];
+        return elements[sz - 1];
     }
 
     constexpr const T& operator[](size_t index) const {
         assert(index < sz);
-        return storage[index];
+        return elements[index];
     }
 
     constexpr T& operator[](size_t index) {
         assert(index < sz);
-        return storage[index];
+        return elements[index];
     }
 
     constexpr bool operator==(const ComptimeVector& other) const {
         if(sz != other.sz)
             return false;
         for(size_t i = 0; i < sz; ++i) {
-            if(storage[i] != other.storage[i])
+            if(elements[i] != other.elements[i])
                 return false;
         }
         return true;
@@ -306,7 +253,7 @@ public:
 
     constexpr void clear() {
         if constexpr(ResourceTy::is_counting) {
-            storage.clear();
+            elements.clear();
             sync_counting_state();
         } else {
             sz = 0;

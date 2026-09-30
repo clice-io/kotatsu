@@ -64,12 +64,12 @@ struct Behaviors {
 };
 
 KOTATSU_ANNOTATION(ShapeTag, tag = "kind", tag_names = {"circle", "rect"});
-KOTATSU_ANNOTATION(StrictCamel, rename_all = casing::lower_camel, deny_unknown_fields = true);
+KOTATSU_ANNOTATION(StrictCamel, rename_all = Casing::LowerCamel, deny_unknown_fields = true);
 
 struct StructEntriesOnFields {
     KOTATSU_ANNOTATE(tag = "kind", tag_names = {"circle", "rect"})
     <std::variant<test::Circle, test::Rect>> shape;
-    KOTATSU_ANNOTATE(rename_all = casing::upper_snake, deny_unknown_fields = true)
+    KOTATSU_ANNOTATE(rename_all = Casing::UpperSnake, deny_unknown_fields = true)
     <Profile> inner;
 };
 
@@ -117,7 +117,7 @@ ZEST_CASE(annotation_struct_entries_make_a_struct_spec) {
     STATIC_EXPECT(shape.tag_names.names()[1] == std::string_view("rect"));
 
     constexpr const auto& strict = StrictCamel::spec;
-    STATIC_EXPECT(strict.rename_all == naming::casing::lower_camel);
+    STATIC_EXPECT(strict.rename_all == naming::Casing::LowerCamel);
     STATIC_EXPECT(strict.deny_unknown_fields);
     EXPECT(zest::type_eq<meta::annotate<StrictCamel>::type<Profile>,
                          meta::annotation<Profile, meta::attrs::struct_spec<StrictCamel>>>());
@@ -130,7 +130,7 @@ ZEST_CASE(annotate_takes_struct_entries_on_a_field) {
     STATIC_EXPECT(shape.tag == std::string_view("kind"));
     constexpr const auto& inner =
         meta::struct_spec_of<decltype(StructEntriesOnFields::inner)::attrs>;
-    STATIC_EXPECT(inner.rename_all == naming::casing::upper_snake);
+    STATIC_EXPECT(inner.rename_all == naming::Casing::UpperSnake);
     STATIC_EXPECT(inner.deny_unknown_fields);
 }
 

@@ -1,15 +1,18 @@
 #pragma once
 
 #include <cstddef>
+#include <initializer_list>
 #include <string>
 #include <string_view>
+#include <utility>
 
-#include "small_vector.h"
-#include "string_ref.h"
+#include "kota/support/memory.h"
+#include "kota/support/small_vector.h"
+#include "kota/support/string_ref.h"
 
 namespace kota {
 
-/// A SmallVector<char> with string-like convenience methods.
+/// A small_vector<char> with string-like convenience methods.
 /// All string operations delegate to string_ref.
 template <unsigned InlineCapacity>
 class small_string : public small_vector<char, InlineCapacity> {
@@ -33,9 +36,7 @@ public:
                                                                std::size_t count,
                                                                std::size_t capacity) {
         small_string result;
-        if(data != nullptr && capacity > 0) {
-            result.adopt_allocation(data, count, capacity);
-        }
+        static_cast<base&>(result) = base::from_raw_parts(data, count, capacity);
         return result;
     }
 
@@ -48,10 +49,10 @@ public:
         base::assign(rhs);
     }
 
-    /// Assign from a list of string_views.
+    /// Assign the concatenation of a list of string_views, which may view this string.
     constexpr void assign(std::initializer_list<std::string_view> refs) {
-        this->clear();
-        append(refs);
+        small_string joined(refs);
+        *this = std::move(joined);
     }
 
     // --- String Concatenation ---
@@ -63,18 +64,17 @@ public:
         base::append(rhs);
     }
 
-    /// Append from a list of string_views.
+    /// Append the concatenation of a list of string_views, which may view this string.
     constexpr void append(std::initializer_list<std::string_view> refs) {
-        std::size_t current_size = this->size();
-        std::size_t size_needed = current_size;
-        for(const std::string_view& ref: refs) {
-            size_needed += ref.size();
+        std::size_t count = 0;
+        for(auto ref: refs) {
+            count += ref.size();
         }
-        this->resize_for_overwrite(size_needed);
-        for(const std::string_view& ref: refs) {
-            std::copy(ref.begin(), ref.end(), this->begin() + current_size);
-            current_size += ref.size();
-        }
+        this->append_with(count, [refs](char* out) {
+            for(auto ref: refs) {
+                out = mem::uninitialized_copy(ref, out);
+            }
+        });
     }
 
     // --- Conversion ---

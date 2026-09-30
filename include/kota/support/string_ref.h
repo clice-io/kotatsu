@@ -16,20 +16,6 @@ namespace kota {
 class string_ref : public std::string_view {
     using base = std::string_view;
 
-    constexpr static int compare_memory(const char* lhs, const char* rhs, std::size_t length) {
-        if(length == 0) {
-            return 0;
-        }
-        for(std::size_t i = 0; i < length; ++i) {
-            auto l = static_cast<unsigned char>(lhs[i]);
-            auto r = static_cast<unsigned char>(rhs[i]);
-            if(l != r) {
-                return l < r ? -1 : 1;
-            }
-        }
-        return 0;
-    }
-
     constexpr static char to_lower(char c) {
         return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c;
     }
@@ -61,18 +47,7 @@ public:
 
     // --- Comparison ---
 
-    /// Compare two strings; result is negative, zero, or positive.
-    [[nodiscard]] constexpr int compare(string_ref rhs) const {
-        if(int res = compare_memory(data(), rhs.data(), std::min(size(), rhs.size()))) {
-            return res;
-        }
-        if(size() == rhs.size()) {
-            return 0;
-        }
-        return size() < rhs.size() ? -1 : 1;
-    }
-
-    /// Compare two strings, ignoring case.
+    /// Compare two strings, ignoring ASCII case; result is negative, zero, or positive.
     [[nodiscard]] constexpr int compare_insensitive(string_ref rhs) const {
         auto min = std::min(size(), rhs.size());
         if(int res = ascii_strncasecmp(*this, rhs, min)) {
@@ -100,16 +75,6 @@ public:
     [[nodiscard]] constexpr bool ends_with_insensitive(string_ref suffix) const {
         return size() >= suffix.size() &&
                ascii_strncasecmp(drop_front(size() - suffix.size()), suffix, suffix.size()) == 0;
-    }
-
-    /// Return true if the given string is a substring of *this.
-    [[nodiscard]] constexpr bool contains(string_ref other) const {
-        return find(other) != npos;
-    }
-
-    /// Return true if the given character is contained in *this.
-    [[nodiscard]] constexpr bool contains(char c) const {
-        return find(c) != npos;
     }
 
     /// Return true if the given string is a substring of *this, ignoring case.
@@ -184,21 +149,6 @@ public:
         for(std::size_t i = size() - n + 1; i != 0;) {
             --i;
             if(substr(i, n).equals_insensitive(str)) {
-                return i;
-            }
-        }
-        return npos;
-    }
-
-    /// Find the last character in the string that is not c, or npos if not found.
-    [[nodiscard]] constexpr std::size_t find_last_not_of(char c, std::size_t from = npos) const {
-        if(empty()) {
-            return npos;
-        }
-        from = std::min(from, size() - 1);
-        for(std::size_t i = from + 1; i != 0;) {
-            --i;
-            if(data()[i] != c) {
                 return i;
             }
         }
@@ -344,12 +294,12 @@ public:
 
     /// Return string with consecutive char characters starting from the left removed.
     [[nodiscard]] constexpr string_ref ltrim(char c) const {
-        return drop_front(std::min(size(), base::find_first_not_of(c)));
+        return drop_front(std::min(size(), find_first_not_of(c)));
     }
 
     /// Return string with consecutive characters in chars starting from the left removed.
     [[nodiscard]] constexpr string_ref ltrim(string_ref chars = " \t\n\v\f\r") const {
-        return drop_front(std::min(size(), base::find_first_not_of(chars)));
+        return drop_front(std::min(size(), find_first_not_of(chars)));
     }
 
     /// Return string with consecutive char characters starting from the right removed.
@@ -359,7 +309,7 @@ public:
 
     /// Return string with consecutive characters in chars starting from the right removed.
     [[nodiscard]] constexpr string_ref rtrim(string_ref chars = " \t\n\v\f\r") const {
-        return drop_back(size() - std::min(size(), base::find_last_not_of(chars) + 1));
+        return drop_back(size() - std::min(size(), find_last_not_of(chars) + 1));
     }
 
     /// Return string with consecutive char characters from both sides removed.

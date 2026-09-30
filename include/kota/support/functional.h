@@ -1,145 +1,111 @@
 #pragma once
+
 #include <cassert>
 #include <cstddef>
+#include <cstdlib>
 #include <functional>
+#include <memory>
 #include <new>
 #include <type_traits>
 #include <utility>
 
+#include "kota/support/function_traits.h"
+
 namespace kota {
 
-template <auto V, typename T = decltype(V)>
+/// The class and the signature of member function `V`, without its qualifiers.
+template <auto V>
 struct mem_fn {
-    static_assert(std::is_member_function_pointer_v<T>, "V must be a member function pointer");
+    static_assert(std::is_member_function_pointer_v<decltype(V)>,
+                  "V must be a member function pointer");
+
+    using class_type = class_type_t<decltype(V)>;
+    using function_type = typename function_traits<member_type_t<decltype(V)>>::function_type;
 };
 
-template <auto V, typename Class, typename Ret, typename... Args>
-    requires std::is_member_function_pointer_v<decltype(V)>
-struct mem_fn<V, Ret (Class::*)(Args...)> {
-    using ClassType = Class;
-    using ClassFunctionType = Ret (Class::*)(Args...);
-    using FunctionType = Ret(Args...);
-
-    constexpr static ClassFunctionType get() {
-        return V;
-    }
-};
-
-template <auto V, typename Class, typename Ret, typename... Args>
-    requires std::is_member_function_pointer_v<decltype(V)>
-struct mem_fn<V, Ret (Class::*)(Args...) const> {
-    using ClassType = Class;
-    using ClassFunctionType = Ret (Class::*)(Args...) const;
-    using FunctionType = Ret(Args...);
-
-    constexpr static ClassFunctionType get() {
-        return V;
-    }
-};
-
+/// Whether `MemFn`, a mem_fn, is a member function of Class, whatever its cv-qualifiers.
 template <typename Class, typename MemFn>
-concept is_mem_fn_of = requires {
-    typename MemFn::ClassType;
-    requires std::is_same_v<std::remove_cv_t<Class>, typename MemFn::ClassType>;
-};
-
-template <typename Ret, typename Fn, typename... Args>
-constexpr Ret invoke_ret(Fn&& fn, Args&&... args) {
-    if constexpr(std::is_void_v<Ret>) {
-        std::invoke(std::forward<Fn>(fn), std::forward<Args>(args)...);
-    } else {
-        return std::invoke(std::forward<Fn>(fn), std::forward<Args>(args)...);
-    }
-}
+concept is_mem_fn_of = std::is_same_v<std::remove_cv_t<Class>, typename MemFn::class_type>;
 
 template <typename Sign>
 class function_ref {
     static_assert(false, "Sign must be a function type");
 };
 
+/// A reference to a callable: it neither owns nor copies it, so the callable must outlive
+/// every call. A function pointer, including a lambda without captures that converts to one,
+/// is kept by value instead.
 template <typename R, typename... Args>
 class function_ref<R(Args...)> {
 public:
-    using Sign = R(Args...);
-
-    using Erased = union {
-        const void* ctx;
-        Sign* fn;
-    };
-
-    function_ref(const function_ref&) = default;
-    function_ref(function_ref&&) = default;
-
-    function_ref& operator=(const function_ref&) = default;
-    function_ref& operator=(function_ref&&) = default;
-
-private:
-    constexpr function_ref(R (*proxy)(const function_ref*, Args&...), Erased ctx) noexcept :
-        proxy{proxy}, erased{ctx} {}
-
-    template <typename Class, typename MemFn, typename ClassType = std::remove_reference_t<Class>>
-        requires std::is_lvalue_reference_v<Class&&> && is_mem_fn_of<ClassType, MemFn> &&
-                 std::is_invocable_r_v<R, decltype(MemFn::get()), ClassType&, Args...>
-    constexpr static function_ref make(Class&& invocable, MemFn) noexcept {
-        return function_ref(
-            [](const function_ref* self, Args&... args) -> R {
-                auto& fn = *const_cast<ClassType*>(static_cast<const ClassType*>(self->erased.ctx));
-                return invoke_ret<R>(MemFn::get(), fn, static_cast<Args&&>(args)...);
-            },
-            Erased{.ctx = &invocable});
-    }
-
-    constexpr static function_ref make(Sign* invocable) noexcept {
-        return function_ref(
-            [](const function_ref* self, Args&... args) -> R {
-                Sign* fn = self->erased.fn;
-                return (*fn)(static_cast<Args&&>(args)...);
-            },
-            Erased{.fn = invocable});
-    }
-
-    template <typename Class>
-    constexpr static function_ref make(Class&& invocable) {
-        if constexpr(std::is_convertible_v<Class&&, Sign*>) {
-            return make(static_cast<Sign*>(std::forward<Class>(invocable)));
-        } else {
-            using ClassType = std::remove_reference_t<Class>;
-            return function_ref(
-                [](const function_ref* self, Args&... args) -> R {
-                    auto& fn =
-                        *const_cast<ClassType*>(static_cast<const ClassType*>(self->erased.ctx));
-                    return invoke_ret<R>(fn, static_cast<Args&&>(args)...);
-                },
-                Erased{.ctx = &invocable});
-        }
-    }
-
-public:
-    template <auto MemFnPointer, typename Class, typename Mem>
-        requires std::is_lvalue_reference_v<Class&&>
-    friend constexpr function_ref<typename Mem::FunctionType> bind_ref(Class&& obj);
-
-    constexpr function_ref(Sign* invocable) noexcept : function_ref(make(invocable)) {}
+    constexpr function_ref(R (*fn)(Args...)) noexcept : call(&call_pointer), bound{.fn = fn} {}
 
     template <typename Class>
         requires (!std::is_same_v<std::remove_cvref_t<Class>, function_ref>) &&
                  std::is_lvalue_reference_v<Class&&> && std::is_invocable_r_v<R, Class, Args...>
-    constexpr function_ref(Class&& invocable) noexcept :
-        function_ref(make(std::forward<Class>(invocable))) {}
+    constexpr function_ref(Class&& invocable) noexcept {
+        if constexpr(std::is_convertible_v<Class&&, R (*)(Args...)>) {
+            call = &call_pointer;
+            bound.fn = invocable;
+        } else if constexpr(std::is_function_v<std::remove_reference_t<Class>>) {
+            // A function of another signature, called through its own pointer type.
+            using Pointer = std::remove_reference_t<Class>*;
+            call = &call_function<Pointer>;
+            bound.function = reinterpret_cast<void (*)()>(&invocable);
+        } else {
+            call = &call_object<std::remove_reference_t<Class>>;
+            bound.object = std::addressof(invocable);
+        }
+    }
 
-    template <typename... CallArgs>
-    constexpr R operator()(CallArgs&&... args) const {
-        static_assert(
-            requires(Sign* fn, CallArgs&&... call_args) {
-                fn(std::forward<CallArgs>(call_args)...);
-            },
-            "invocable object must be callable with the given arguments");
-        return proxy(this, args...);
+    constexpr R operator()(Args... args) const {
+        return call(bound, std::forward<Args>(args)...);
     }
 
 private:
-    R (*proxy)(const function_ref*, Args&...);
-    Erased erased;
+    template <auto MemFnPointer, typename Class, typename Mem>
+        requires std::is_lvalue_reference_v<Class&&> &&
+                 is_mem_fn_of<std::remove_reference_t<Class>, Mem>
+    friend constexpr function_ref<typename Mem::function_type> bind_ref(Class&& obj);
+
+    union Bound {
+        const void* object;
+        R (*fn)(Args...);
+        /// A function pointer of another signature, cast back before the call.
+        void (*function)();
+    };
+
+    using Call = R (*)(Bound, Args&&...);
+
+    constexpr function_ref(Call call, Bound bound) noexcept : call(call), bound(bound) {}
+
+    constexpr static R call_pointer(Bound bound, Args&&... args) {
+        return bound.fn(std::forward<Args>(args)...);
+    }
+
+    /// Calls the function of pointer type Pointer that `bound` holds.
+    template <typename Pointer>
+    static R call_function(Bound bound, Args&&... args) {
+        return std::invoke_r<R>(reinterpret_cast<Pointer>(bound.function),
+                                std::forward<Args>(args)...);
+    }
+
+    /// Calls the object of type T, possibly const, that `bound` points to.
+    template <typename T>
+    constexpr static R call_object(Bound bound, Args&&... args) {
+        auto& object = *static_cast<T*>(const_cast<void*>(bound.object));
+        return std::invoke_r<R>(object, std::forward<Args>(args)...);
+    }
+
+    /// Calls member function `MemFnPointer` on the object of type T `bound` points to.
+    template <auto MemFnPointer, typename T>
+    constexpr static R call_member(Bound bound, Args&&... args) {
+        auto& object = *static_cast<T*>(const_cast<void*>(bound.object));
+        return std::invoke_r<R>(MemFnPointer, object, std::forward<Args>(args)...);
+    }
+
+    Call call;
+    Bound bound;
 };
 
 template <typename Sign>
@@ -147,398 +113,242 @@ class function {
     static_assert(false, "Sign must be a function type");
 };
 
-template <typename R, typename... Args>
-class function<R(Args...)> {
+namespace detail {
+
+/// What `function<R(Args...)>` and `function<R(Args...) const>` share. `Const` says whether
+/// the callable is called as const, and so whether calling the function is const.
+template <bool Const, typename R, typename... Args>
+class ErasedCallable {
+    template <typename T>
+    using target_t = std::conditional_t<Const, const T, T>;
+
 public:
-    using Sign = R(Args...);
+    constexpr static std::size_t sbo_size = 24;
+    constexpr static std::size_t sbo_align = alignof(std::max_align_t);
 
-    using Erased = union {
-        void* ctx;
-        Sign* fn;
+    /// Whether a callable of type T is kept in the function itself rather than on the heap:
+    /// it fits, and moving it cannot throw, as moving the function cannot.
+    template <typename T>
+    constexpr static bool sbo_eligible =
+        sizeof(T) <= sbo_size && alignof(T) <= sbo_align && std::is_nothrow_move_constructible_v<T>;
+
+    template <typename Class>
+        requires (!std::is_base_of_v<ErasedCallable, std::remove_cvref_t<Class>>) &&
+                 std::is_invocable_r_v<R, target_t<std::decay_t<Class>>&, Args...>
+    constexpr ErasedCallable(Class&& invocable) {
+        // A function decays to its pointer, which lives inline.
+        using T = std::decay_t<Class>;
+        if constexpr(std::is_convertible_v<Class&&, R (*)(Args...)>) {
+            buffer.fn = static_cast<R (*)(Args...)>(std::forward<Class>(invocable));
+            ops = pointer_ops();
+        } else if constexpr(sbo_eligible<T>) {
+            if consteval {
+                // Constant evaluation has no placement new: the callable goes on the heap.
+                buffer.heap = new T(std::forward<Class>(invocable));
+                ops = heap_ops<T>();
+            } else {
+                ::new (static_cast<void*>(buffer.bytes)) T(std::forward<Class>(invocable));
+                ops = inline_ops<T>();
+            }
+        } else {
+            buffer.heap = new T(std::forward<Class>(invocable));
+            ops = heap_ops<T>();
+        }
+    }
+
+    ErasedCallable(const ErasedCallable&) = delete;
+    ErasedCallable& operator=(const ErasedCallable&) = delete;
+
+    constexpr ErasedCallable(ErasedCallable&& other) noexcept :
+        ops(std::exchange(other.ops, empty_ops())) {
+        take_buffer(other);
+    }
+
+    constexpr ErasedCallable& operator=(ErasedCallable&& other) noexcept {
+        if(this != &other) {
+            destroy();
+            ops = std::exchange(other.ops, empty_ops());
+            take_buffer(other);
+        }
+        return *this;
+    }
+
+    constexpr ~ErasedCallable() {
+        destroy();
+    }
+
+    constexpr R operator()(Args... args)
+        requires (!Const) {
+        return ops->call(buffer, std::forward<Args>(args)...);
+    }
+
+    constexpr R operator()(Args... args) const
+        requires Const {
+        return ops->call(buffer, std::forward<Args>(args)...);
+    }
+
+private:
+    union Buffer {
+        alignas(sbo_align) std::byte bytes[sbo_size];
+        void* heap;
+        R (*fn)(Args...);
     };
 
-    using Deleter = void(function*);
+    using BufferRef = std::conditional_t<Const, const Buffer&, Buffer&>;
 
-    constexpr static size_t sbo_size = 24;
-    constexpr static size_t sbo_align = alignof(std::max_align_t);
-
-    using Storage = union {
-        alignas(sbo_align) std::byte sbo[sbo_size];
-        Erased erased;
+    /// How to call, move and destroy the kind of callable the buffer holds. None is null:
+    /// GCC does not compare an address with null in constant evaluation when null checks are
+    /// sanitized.
+    struct Ops {
+        R (*call)(BufferRef, Args&&...);
+        /// Moves the callable from the second buffer into the first and destroys it in the
+        /// second.
+        void (*relocate)(Buffer&, Buffer&) noexcept;
+        void (*destroy)(Buffer&) noexcept;
     };
 
-    struct vtable {
-        R (*proxy)(function*, Args&...);
-        Deleter* deleter;
-    };
+    /// Moves a callable whose bytes are all there is to it: a function pointer, a pointer to
+    /// one on the heap, or a trivially copyable one inline.
+    constexpr static void relocate_bytes(Buffer& to, Buffer& from) noexcept {
+        to = from;
+    }
+
+    constexpr static void destroy_nothing(Buffer&) noexcept {}
+
+    constexpr static R call_pointer(BufferRef buffer, Args&&... args) {
+        return buffer.fn(std::forward<Args>(args)...);
+    }
 
     template <typename T>
-    constexpr static bool sbo_eligible = sizeof(T) <= sbo_size && alignof(T) <= sbo_align;
-
-    function(const function&) = delete;
-
-    constexpr function(function&& other) noexcept {
-        this->vptr = std::exchange(other.vptr, nullptr);
-        this->storage = std::exchange(other.storage, Storage{});
+    constexpr static R call_inline(BufferRef buffer, Args&&... args) {
+        auto& target = *std::launder(reinterpret_cast<target_t<T>*>(buffer.bytes));
+        return std::invoke_r<R>(target, std::forward<Args>(args)...);
     }
-
-    function& operator=(const function&) = delete;
-
-    constexpr function& operator=(function&& other) noexcept {
-        if(this == &other) {
-            return *this;
-        }
-        this->~function();
-        return *new (this) function(std::move(other));
-    }
-
-    constexpr ~function() {
-        if(vptr && vptr->deleter) {
-            vptr->deleter(this);
-        }
-    }
-
-private:
-    constexpr function(const vtable* vptr, Storage storage = {}) noexcept :
-        storage{storage}, vptr{vptr} {}
-
-    constexpr static function make(Sign* invocable) noexcept {
-        constexpr static vtable vt = {
-            [](function* self, Args&... args) -> R {
-                Sign* fn = self->storage.erased.fn;
-                return (*fn)(static_cast<Args&&>(args)...);
-            },
-            nullptr  // No-op deleter for raw function pointers
-        };
-        return function(&vt, Storage{.erased = Erased{.fn = invocable}});
-    }
-
-    template <typename Class, typename MemFn, typename ClassType = std::remove_cvref_t<Class>>
-        requires sbo_eligible<ClassType> && is_mem_fn_of<ClassType, MemFn>
-    constexpr static function make(Class&& invocable, MemFn) {
-        if consteval {
-            constexpr static vtable vt = {
-                [](function* self, Args&... args) -> R {
-                    return (static_cast<ClassType*>(self->storage.erased.ctx)->*MemFn::get())(
-                        static_cast<Args&&>(args)...);
-                },
-                [](function* self) { delete static_cast<ClassType*>(self->storage.erased.ctx); }};
-
-            return function(
-                &vt,
-                Storage{.erased = Erased{.ctx = new ClassType(std::forward<Class>(invocable))}});
-        } else {
-            constexpr static vtable vt = {
-                [](function* self, Args&... args) -> R {
-                    return (self->storage_as<ClassType>()->*MemFn::get())(
-                        static_cast<Args&&>(args)...);
-                },
-                [](function* self) { self->storage_as<ClassType>()->~ClassType(); }};
-            Storage storage{};
-            new (storage.sbo) ClassType(std::forward<Class>(invocable));
-            return function(&vt, storage);
-        }
-    }
-
-    template <typename Class, typename MemFn, typename ClassType = std::remove_cvref_t<Class>>
-        requires (!sbo_eligible<ClassType>) && is_mem_fn_of<ClassType, MemFn>
-    constexpr static function make(Class&& invocable, MemFn) {
-        constexpr static vtable vt = {
-            [](function* self, Args&... args) -> R {
-                return (static_cast<ClassType*>(self->storage.erased.ctx)->*MemFn::get())(
-                    static_cast<Args&&>(args)...);
-            },
-            [](function* self) { delete static_cast<ClassType*>(self->storage.erased.ctx); }};
-
-        return function(
-            &vt,
-            Storage{.erased = Erased{.ctx = new ClassType(std::forward<Class>(invocable))}});
-    }
-
-    template <typename Class>
-    constexpr static function make(Class&& invocable) {
-        if constexpr(std::is_convertible_v<Class&&, Sign*>) {
-            return make(static_cast<Sign*>(std::forward<Class>(invocable)));
-        } else {
-            using ClassType = std::remove_cvref_t<Class>;
-            if constexpr(sbo_eligible<ClassType>) {
-                if consteval {
-                    constexpr static vtable vt = {
-                        [](function* self, Args&... args) -> R {
-                            auto& fn = *static_cast<ClassType*>(self->storage.erased.ctx);
-                            return invoke_ret<R>(fn, static_cast<Args&&>(args)...);
-                        },
-                        [](function* self) {
-                            delete static_cast<ClassType*>(self->storage.erased.ctx);
-                        }};
-
-                    return function(&vt,
-                                    Storage{.erased = Erased{.ctx = new ClassType(
-                                                                 std::forward<Class>(invocable))}});
-                } else {
-                    constexpr static vtable vt = {
-                        [](function* self, Args&... args) -> R {
-                            auto& fn = *self->storage_as<ClassType>();
-                            return invoke_ret<R>(fn, static_cast<Args&&>(args)...);
-                        },
-                        [](function* self) { self->storage_as<ClassType>()->~ClassType(); }};
-                    Storage storage{};
-                    new (storage.sbo) ClassType(std::forward<Class>(invocable));
-                    return function(&vt, storage);
-                }
-            } else {
-                constexpr static vtable vt = {
-                    [](function* self, Args&... args) -> R {
-                        auto& fn = *static_cast<ClassType*>(self->storage.erased.ctx);
-                        return invoke_ret<R>(fn, static_cast<Args&&>(args)...);
-                    },
-                    [](function* self) {
-                        delete static_cast<ClassType*>(self->storage.erased.ctx);
-                    }};
-
-                return function(&vt,
-                                Storage{.erased = Erased{
-                                            .ctx = new ClassType(std::forward<Class>(invocable))}});
-            }
-        }
-    }
-
-public:
-    template <auto MemFnPointer, typename Class, typename Mem>
-    friend constexpr function<typename Mem::FunctionType> bind(Class&& obj);
-
-    template <typename Class>
-        requires (!std::is_same_v<std::remove_cvref_t<Class>, function>) &&
-                 std::is_invocable_r_v<R, Class, Args...>
-    constexpr function(Class&& invocable) : function(make(std::forward<Class>(invocable))) {}
-
-    template <typename... CallArgs>
-    constexpr R operator()(CallArgs&&... args) {
-        static_assert(
-            requires(Sign* fn, CallArgs&&... call_args) {
-                fn(std::forward<CallArgs>(call_args)...);
-            },
-            "invocable object must be callable with the given arguments");
-        assert(vptr && "Attempting to call an empty function object");
-        return vptr->proxy(this, args...);
-    }
-
-private:
-    template <typename Class>
-    const Class* storage_as() const {
-        return std::launder(reinterpret_cast<const Class*>(this->storage.sbo));
-    }
-
-    template <typename Class>
-    Class* storage_as() {
-        return std::launder(reinterpret_cast<Class*>(this->storage.sbo));
-    }
-
-    Storage storage;
-    const vtable* vptr;
-};
-
-template <typename R, typename... Args>
-class function<R(Args...) const> {
-public:
-    using Sign = R(Args...);
-
-    using Erased = union {
-        const void* ctx;
-        Sign* fn;
-    };
-
-    using Deleter = void(function*);
-
-    constexpr static size_t sbo_size = 24;
-    constexpr static size_t sbo_align = alignof(std::max_align_t);
-
-    using Storage = union {
-        alignas(sbo_align) std::byte sbo[sbo_size];
-        Erased erased;
-    };
-
-    struct vtable {
-        R (*proxy)(const function*, Args&...);
-        Deleter* deleter;
-    };
 
     template <typename T>
-    constexpr static bool sbo_eligible = sizeof(T) <= sbo_size && alignof(T) <= sbo_align;
-
-    function(const function&) = delete;
-
-    constexpr function(function&& other) noexcept {
-        this->vptr = std::exchange(other.vptr, nullptr);
-        this->storage = std::exchange(other.storage, Storage{});
+    static void relocate_inline(Buffer& to, Buffer& from) noexcept {
+        auto* source = std::launder(reinterpret_cast<T*>(from.bytes));
+        ::new (static_cast<void*>(to.bytes)) T(std::move(*source));
+        source->~T();
     }
 
-    function& operator=(const function&) = delete;
-
-    constexpr function& operator=(function&& other) noexcept {
-        if(this == &other) {
-            return *this;
-        }
-        this->~function();
-        return *new (this) function(std::move(other));
+    template <typename T>
+    static void destroy_inline(Buffer& buffer) noexcept {
+        std::launder(reinterpret_cast<T*>(buffer.bytes))->~T();
     }
 
-    constexpr ~function() {
-        if(vptr && vptr->deleter) {
-            vptr->deleter(this);
-        }
+    template <typename T>
+    constexpr static R call_heap(BufferRef buffer, Args&&... args) {
+        return std::invoke_r<R>(*static_cast<target_t<T>*>(buffer.heap),
+                                std::forward<Args>(args)...);
     }
 
-private:
-    constexpr function(const vtable* vptr, Storage storage = {}) noexcept :
-        storage{storage}, vptr{vptr} {}
-
-    constexpr static function make(Sign* invocable) noexcept {
-        constexpr static vtable vt = {
-            [](const function* self, Args&... args) -> R {
-                Sign* fn = self->storage.erased.fn;
-                return (*fn)(static_cast<Args&&>(args)...);
-            },
-            nullptr  // No-op deleter for raw function pointers
-        };
-        return function(&vt, Storage{.erased = Erased{.fn = invocable}});
+    template <typename T>
+    constexpr static void destroy_heap(Buffer& buffer) noexcept {
+        delete static_cast<T*>(buffer.heap);
     }
 
-    template <typename Class, typename MemFn, typename ClassType = std::remove_cvref_t<Class>>
-        requires sbo_eligible<ClassType> && is_mem_fn_of<ClassType, MemFn> &&
-                 std::is_invocable_r_v<R, decltype(MemFn::get()), const ClassType&, Args...>
-    constexpr static function make(Class&& invocable, MemFn) {
-        if consteval {
-            constexpr static vtable vt = {
-                [](const function* self, Args&... args) -> R {
-                    return (static_cast<const ClassType*>(self->storage.erased.ctx)->*MemFn::get())(
-                        static_cast<Args&&>(args)...);
-                },
-                [](function* self) {
-                    delete static_cast<const ClassType*>(self->storage.erased.ctx);
-                }};
-
-            return function(
-                &vt,
-                Storage{.erased = Erased{.ctx = new ClassType(std::forward<Class>(invocable))}});
+    template <typename T>
+    constexpr static auto inline_relocate() noexcept -> void (*)(Buffer&, Buffer&) noexcept {
+        if constexpr(std::is_trivially_copyable_v<T>) {
+            return &relocate_bytes;
         } else {
-            constexpr static vtable vt = {
-                [](const function* self, Args&... args) -> R {
-                    return (self->storage_as<ClassType>()->*MemFn::get())(
-                        static_cast<Args&&>(args)...);
-                },
-                [](function* self) { self->storage_as<ClassType>()->~ClassType(); }};
-            Storage storage{};
-            new (storage.sbo) ClassType(std::forward<Class>(invocable));
-            return function(&vt, storage);
+            return &relocate_inline<T>;
         }
     }
 
-    template <typename Class, typename MemFn, typename ClassType = std::remove_cvref_t<Class>>
-        requires (!sbo_eligible<ClassType>) && is_mem_fn_of<ClassType, MemFn> &&
-                 std::is_invocable_r_v<R, decltype(MemFn::get()), const ClassType&, Args...>
-    constexpr static function make(Class&& invocable, MemFn) {
-        constexpr static vtable vt = {
-            [](const function* self, Args&... args) -> R {
-                return (static_cast<const ClassType*>(self->storage.erased.ctx)->*MemFn::get())(
-                    static_cast<Args&&>(args)...);
-            },
-            [](function* self) { delete static_cast<const ClassType*>(self->storage.erased.ctx); }};
-
-        return function(
-            &vt,
-            Storage{.erased = Erased{.ctx = new ClassType(std::forward<Class>(invocable))}});
-    }
-
-    template <typename Class>
-    constexpr static function make(Class&& invocable) {
-        if constexpr(std::is_convertible_v<Class&&, Sign*>) {
-            return make(static_cast<Sign*>(std::forward<Class>(invocable)));
+    template <typename T>
+    constexpr static auto inline_destroy() noexcept -> void (*)(Buffer&) noexcept {
+        if constexpr(std::is_trivially_destructible_v<T>) {
+            return &destroy_nothing;
         } else {
-            using ClassType = std::remove_cvref_t<Class>;
-            if constexpr(sbo_eligible<ClassType>) {
-                if consteval {
-                    constexpr static vtable vt = {
-                        [](const function* self, Args&... args) -> R {
-                            auto& fn = *static_cast<const ClassType*>(self->storage.erased.ctx);
-                            return invoke_ret<R>(fn, static_cast<Args&&>(args)...);
-                        },
-                        [](function* self) {
-                            delete static_cast<const ClassType*>(self->storage.erased.ctx);
-                        }};
-
-                    return function(&vt,
-                                    Storage{.erased = Erased{.ctx = new ClassType(
-                                                                 std::forward<Class>(invocable))}});
-                } else {
-                    constexpr static vtable vt = {
-                        [](const function* self, Args&... args) -> R {
-                            auto& fn = *self->storage_as<ClassType>();
-                            return invoke_ret<R>(fn, static_cast<Args&&>(args)...);
-                        },
-                        [](function* self) { self->storage_as<ClassType>()->~ClassType(); }};
-                    Storage storage{};
-                    new (storage.sbo) ClassType(std::forward<Class>(invocable));
-                    return function(&vt, storage);
-                }
-            } else {
-                constexpr static vtable vt = {
-                    [](const function* self, Args&... args) -> R {
-                        auto& fn = *static_cast<const ClassType*>(self->storage.erased.ctx);
-                        return invoke_ret<R>(fn, static_cast<Args&&>(args)...);
-                    },
-                    [](function* self) {
-                        delete static_cast<const ClassType*>(self->storage.erased.ctx);
-                    }};
-
-                return function(&vt,
-                                Storage{.erased = Erased{
-                                            .ctx = new ClassType(std::forward<Class>(invocable))}});
-            }
+            return &destroy_inline<T>;
         }
     }
 
-public:
-    template <typename Class>
-        requires (!std::is_same_v<std::remove_cvref_t<Class>, function>) &&
-                 std::is_invocable_r_v<R, const std::remove_reference_t<Class>&, Args...>
-    constexpr function(Class&& invocable) : function(make(std::forward<Class>(invocable))) {}
+    // The ops of each kind of callable are function-local constants: MSVC leaves a static
+    // data member template zero-filled for some local lambda types (warning C4268).
 
-    template <typename... CallArgs>
-    constexpr R operator()(CallArgs&&... args) const {
-        static_assert(
-            requires(Sign* fn, CallArgs&&... call_args) {
-                fn(std::forward<CallArgs>(call_args)...);
-            },
-            "invocable object must be callable with the given arguments");
-        assert(vptr && "Attempting to call an empty function object");
-        return vptr->proxy(this, args...);
+    [[noreturn]] static R call_empty(BufferRef, Args&&...) {
+        assert(false && "Attempting to call an empty function object");
+        std::abort();
     }
 
-private:
-    template <typename Class>
-    const Class* storage_as() const {
-        return std::launder(reinterpret_cast<const Class*>(this->storage.sbo));
+    /// The ops of a function moved from, which holds nothing.
+    constexpr const static Ops* empty_ops() noexcept {
+        constexpr static Ops ops = {&call_empty, &relocate_bytes, &destroy_nothing};
+        return &ops;
     }
 
-    template <typename Class>
-    Class* storage_as() {
-        return std::launder(reinterpret_cast<Class*>(this->storage.sbo));
+    constexpr const static Ops* pointer_ops() noexcept {
+        constexpr static Ops ops = {&call_pointer, &relocate_bytes, &destroy_nothing};
+        return &ops;
     }
 
-    Storage storage;
-    const vtable* vptr;
+    template <typename T>
+    constexpr const static Ops* inline_ops() noexcept {
+        constexpr static Ops ops = {&call_inline<T>, inline_relocate<T>(), inline_destroy<T>()};
+        return &ops;
+    }
+
+    template <typename T>
+    constexpr const static Ops* heap_ops() noexcept {
+        constexpr static Ops ops = {&call_heap<T>, &relocate_bytes, &destroy_heap<T>};
+        return &ops;
+    }
+
+    /// Takes the callable in `other`'s buffer, whose ops this function now has.
+    constexpr void take_buffer(ErasedCallable& other) noexcept {
+        ops->relocate(buffer, other.buffer);
+    }
+
+    constexpr void destroy() noexcept {
+        ops->destroy(buffer);
+    }
+
+    Buffer buffer{};
+    /// empty_ops() once moved from.
+    const Ops* ops;
 };
 
+}  // namespace detail
+
+/// An owning callable of signature R(Args...), move-only. A small callable whose move cannot
+/// throw lives in the function itself; any other, and every one in constant evaluation, on
+/// the heap.
+template <typename R, typename... Args>
+class function<R(Args...)> : public detail::ErasedCallable<false, R, Args...> {
+public:
+    using detail::ErasedCallable<false, R, Args...>::ErasedCallable;
+};
+
+/// Like function<R(Args...)>, for a callable called as const, which lets the function itself
+/// be called as const.
+template <typename R, typename... Args>
+class function<R(Args...) const> : public detail::ErasedCallable<true, R, Args...> {
+public:
+    using detail::ErasedCallable<true, R, Args...>::ErasedCallable;
+};
+
+/// A function_ref calling member function `MemFnPointer` on `obj`, which must outlive it.
 template <auto MemFnPointer, typename Class, typename Mem = mem_fn<MemFnPointer>>
-    requires std::is_lvalue_reference_v<Class&&>
-constexpr function_ref<typename Mem::FunctionType> bind_ref(Class&& obj) {
-    return function_ref<typename Mem::FunctionType>::make(std::forward<Class>(obj), Mem{});
+    requires std::is_lvalue_reference_v<Class&&> &&
+             is_mem_fn_of<std::remove_reference_t<Class>, Mem>
+constexpr function_ref<typename Mem::function_type> bind_ref(Class&& obj) {
+    using ref = function_ref<typename Mem::function_type>;
+    using object_type = std::remove_reference_t<Class>;
+    return ref(&ref::template call_member<MemFnPointer, object_type>,
+               typename ref::Bound{.object = std::addressof(obj)});
 }
 
+/// A function owning `obj`, moved or copied in, that calls member function `MemFnPointer` on it.
 template <auto MemFnPointer, typename Class, typename Mem = mem_fn<MemFnPointer>>
-constexpr function<typename Mem::FunctionType> bind(Class&& obj) {
-    return function<typename Mem::FunctionType>::make(std::forward<Class>(obj), Mem{});
+    requires is_mem_fn_of<std::remove_reference_t<Class>, Mem>
+constexpr function<typename Mem::function_type> bind(Class&& obj) {
+    return [object = std::forward<Class>(obj)]<typename... Args>(
+               Args&&... args) mutable -> decltype(auto) {
+        return std::invoke(MemFnPointer, object, std::forward<Args>(args)...);
+    };
 }
 
 }  // namespace kota

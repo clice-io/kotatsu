@@ -116,7 +116,7 @@ struct RenameTargetWithExtra {
 /// On a field, a struct-level annotation's policies apply inside it.
 struct UpperSnakeStrictTag {
     constexpr static auto spec =
-        meta::make_struct_spec(meta::dsl::rename_all = naming::casing::upper_snake,
+        meta::make_struct_spec(meta::dsl::rename_all = naming::Casing::UpperSnake,
                                meta::dsl::deny_unknown_fields = true);
 };
 

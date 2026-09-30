@@ -4,7 +4,6 @@
 
 #include "kota/ipc/codec.h"
 #include "kota/ipc/peer.h"
-#include "kota/support/spelling.h"
 #include "kota/codec/json/json.h"
 
 namespace kota::ipc {
