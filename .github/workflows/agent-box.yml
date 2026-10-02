@@ -18,13 +18,35 @@ on:
         type: choice
         default: linux
         options: [linux, linux-arm, macos, macos-intel, windows, windows-arm]
-permissions: {}
+permissions:
+  contents: read
 jobs:
   box:
     if: github.event_name == 'workflow_dispatch' && github.actor == '16bit-ykiko' && github.triggering_actor == '16bit-ykiko'
     runs-on: ${{ fromJSON('{"linux":"ubuntu-24.04","linux-arm":"ubuntu-24.04-arm","macos":"macos-15","macos-intel":"macos-15-intel","windows":"windows-2025","windows-arm":"windows-11-arm"}')[inputs.os] || 'ubuntu-24.04' }}
     timeout-minutes: 350
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      # Pixi only, as cmake.yml pins it: a box builds whatever tree `box push`
+      # sends, whose pixi.toml may name environments main's lock does not, so
+      # the environments install on the first `pixi run`.
+      - uses: prefix-dev/setup-pixi@v0.9.6
+        with:
+          pixi-version: v0.71.1
+          run-install: false
+          cache: false
+          post-cleanup: false
+      - name: Notes
+        shell: bash
+        run: |
+          mkdir -p ~/.box
+          cat > ~/.box/notes <<'NOTES'
+          Only pixi is installed; the first `pixi run` installs the environment it needs.
+          Build and test as CI does: pixi run test <preset> (CMake presets in CMakePresets.json).
+          NOTES
       - uses: 16bit-ykiko/agent-box@1d433bb4c6ac84e877e2f9861b72fd251adee496
         with:
           pubkey: ${{ inputs.pubkey }}
