@@ -3011,7 +3011,8 @@ ZEST_CASE(defaulted_fields_requires_nothing) {
 
 ZEST_CASE(defaulted_fields_on_a_field_leaves_its_holder_required) {
     const auto result = json::schema_string<test::TunablesHolder>().value();
-    EXPECT(zest::contains(result, R"("required":["count"])"));
+    // The field itself is the holder's to require.
+    EXPECT(zest::contains(result, R"("required":["tunables","count"])"));
     EXPECT(!zest::contains(result, R"("required":["threads")"));
 }
 
