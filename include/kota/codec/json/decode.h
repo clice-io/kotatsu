@@ -99,19 +99,28 @@ private:
     constexpr static std::uintptr_t tag = 1;
 };
 
+/// The text a decode reads, and the line and column Reader::location() last
+/// counted up to. A Reader and every reader it makes share one, so that
+/// locations asked for in document order, as unknown fields are, count each
+/// line once in all.
+struct Text {
+    const char* data;
+    std::size_t size;
+    std::size_t counted = 0;
+    std::size_t line = 1;
+    std::size_t column = 1;
+};
+
 struct Reader {
     Source src;
-    const char* buf_base;
-    std::size_t buf_size;
+    Text* text;
     constexpr static bool data_driven = true;
     constexpr static bool human_readable = true;
     using format = json::format;
 
-    Reader(ondemand::Document& d, const char* base, std::size_t size) :
-        src(d), buf_base(base), buf_size(size) {}
+    Reader(ondemand::Document& d, Text& text) : src(d), text(&text) {}
 
-    Reader(ondemand::Value& v, const char* base, std::size_t size) :
-        src(v), buf_base(base), buf_size(size) {}
+    Reader(ondemand::Value& v, Text& text) : src(v), text(&text) {}
 
     template <typename F>
     decltype(auto) apply(F&& f) const {
@@ -125,20 +134,24 @@ struct Reader {
             return std::nullopt;
         }
         const char* loc = loc_result.value_unsafe();
-        if(loc < buf_base || loc > buf_base + buf_size) {
+        if(loc < text->data || loc > text->data + text->size) {
             return std::nullopt;
         }
-        auto offset = static_cast<std::size_t>(loc - buf_base);
-        std::size_t line = 1, col = 1;
-        for(std::size_t i = 0; i < offset; ++i) {
-            if(buf_base[i] == '\n') {
-                ++line;
-                col = 1;
+        auto offset = static_cast<std::size_t>(loc - text->data);
+        // Behind what was counted, after a speculative read rolled back:
+        // count from the start again.
+        if(offset < text->counted) {
+            *text = {.data = text->data, .size = text->size};
+        }
+        for(; text->counted < offset; ++text->counted) {
+            if(text->data[text->counted] == '\n') {
+                ++text->line;
+                text->column = 1;
             } else {
-                ++col;
+                ++text->column;
             }
         }
-        return rich_error::source_location{line, col, offset};
+        return rich_error::source_location{text->line, text->column, offset};
     }
 
     bool fail_located(rich_error err) {
@@ -302,7 +315,7 @@ struct Reader {
                 break;
             }
             auto fv = std::move(field).value();
-            Reader sub{fv, buf_base, buf_size};
+            Reader sub{fv, *text};
             if(!cb(key.value_unsafe(), sub)) {
                 ok = false;
                 break;
@@ -324,7 +337,7 @@ struct Reader {
                 break;
             }
             auto val = std::move(elem).value_unsafe();
-            Reader sub{val, buf_base, buf_size};
+            Reader sub{val, *text};
             if(!cb(sub)) {
                 ok = false;
                 break;
@@ -398,7 +411,8 @@ auto from_string(std::string_view json, T& out) -> std::expected<void, rich_erro
     }
     doc.rewind();
 
-    Reader r{doc, padded.data(), padded.size()};
+    Text text{.data = padded.data(), .size = padded.size()};
+    Reader r{doc, text};
     return codec::detail::run_decode<Config>(r, out);
 }
 

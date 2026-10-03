@@ -66,7 +66,8 @@ ZEST_CASE(string_buffer_reclaimed) {
     json::ondemand::Parser parser;
     json::ondemand::Document doc;
     ASSERT(parser.iterate(padded).get(doc) == json::success);
-    auto r = Reader{doc, padded.data(), padded.size()};
+    json::Text text{.data = padded.data(), .size = padded.size()};
+    auto r = Reader{doc, text};
     auto& ji = r.src.json_iter();
     auto* buf_before = ji.string_buf_loc();
 
@@ -84,7 +85,8 @@ ZEST_CASE(depth_restored) {
     json::ondemand::Parser parser;
     json::ondemand::Document doc;
     ASSERT(parser.iterate(padded).get(doc) == json::success);
-    auto r = Reader{doc, padded.data(), padded.size()};
+    json::Text text{.data = padded.data(), .size = padded.size()};
+    auto r = Reader{doc, text};
     auto& ji = r.src.json_iter();
     auto depth_before = ji.depth();
 
@@ -102,7 +104,8 @@ ZEST_CASE(token_position_restored) {
     json::ondemand::Parser parser;
     json::ondemand::Document doc;
     ASSERT(parser.iterate(padded).get(doc) == json::success);
-    auto r = Reader{doc, padded.data(), padded.size()};
+    json::Text text{.data = padded.data(), .size = padded.size()};
+    auto r = Reader{doc, text};
     auto& ji = r.src.json_iter();
     auto pos_before = ji.position();
 
@@ -122,7 +125,8 @@ ZEST_CASE(all_state_with_large_string) {
     json::ondemand::Parser parser;
     json::ondemand::Document doc;
     ASSERT(parser.iterate(padded).get(doc) == json::success);
-    auto r = Reader{doc, padded.data(), padded.size()};
+    json::Text text{.data = padded.data(), .size = padded.size()};
+    auto r = Reader{doc, text};
     auto& ji = r.src.json_iter();
 
     auto pos_before = ji.position();
@@ -146,7 +150,8 @@ ZEST_CASE(success_advances_state) {
     json::ondemand::Parser parser;
     json::ondemand::Document doc;
     ASSERT(parser.iterate(padded).get(doc) == json::success);
-    auto r = Reader{doc, padded.data(), padded.size()};
+    json::Text text{.data = padded.data(), .size = padded.size()};
+    auto r = Reader{doc, text};
     auto& ji = r.src.json_iter();
 
     auto pos_before = ji.position();
@@ -167,7 +172,8 @@ ZEST_CASE(multiple_failures_no_drift) {
     json::ondemand::Parser parser;
     json::ondemand::Document doc;
     ASSERT(parser.iterate(padded).get(doc) == json::success);
-    auto r = Reader{doc, padded.data(), padded.size()};
+    json::Text text{.data = padded.data(), .size = padded.size()};
+    auto r = Reader{doc, text};
     auto& ji = r.src.json_iter();
 
     auto pos_original = ji.position();

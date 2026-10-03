@@ -24,6 +24,11 @@ namespace {
 constexpr std::string_view incorrect_type =
     "INCORRECT_TYPE: The JSON element does not have the requested type.";
 
+/// One of Point's fields: the alternative after Point in a probe.
+struct OnlyX {
+    int x;
+};
+
 ZEST_SUITE(codec_json_decode) {
 
 ZEST_CASE(value_overload_takes_config) {
@@ -72,6 +77,31 @@ ZEST_CASE(unknown_fields_reported_at_their_values) {
     ASSERT(sink.entries[1].location);
     EXPECT(sink.entries[1].location->line == 8U);
     EXPECT(sink.entries[1].location->column == 14U);
+}
+
+ZEST_CASE(unknown_field_located_behind_a_failed_probe) {
+    // Probing Point reports `a` and `b`, then misses `y`, and its reports go;
+    // OnlyX then reports `a` again, behind where lines were counted to.
+    UnknownFields sink;
+    scoped_context<UnknownFields> scope(sink);
+    std::variant<test::Point, OnlyX> out;
+    auto status = json::from_string(R"({
+  "a": 1,
+  "x": 2,
+  "b": 3
+})",
+                                    out);
+    ASSERT(status);
+    EXPECT(out.index() == 1U);
+    ASSERT(sink.entries.size() == 2U);
+    EXPECT(sink.entries[0].format_path() == "a");
+    ASSERT(sink.entries[0].location);
+    EXPECT(sink.entries[0].location->line == 2U);
+    EXPECT(sink.entries[0].location->column == 8U);
+    EXPECT(sink.entries[1].format_path() == "b");
+    ASSERT(sink.entries[1].location);
+    EXPECT(sink.entries[1].location->line == 4U);
+    EXPECT(sink.entries[1].location->column == 8U);
 }
 
 ZEST_CASE(unknown_field_fails_at_its_value) {
