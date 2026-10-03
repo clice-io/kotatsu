@@ -29,6 +29,22 @@ namespace kota::zest {
 
 namespace {
 
+/// Removes the first complete line from `pending` and returns it without its
+/// '\n', nor a '\r' right before it, as stream::read_line() reads a line;
+/// nothing while no line is complete.
+std::optional<std::string> take_line(std::string& pending) {
+    auto newline = pending.find('\n');
+    if(newline == std::string::npos) {
+        return std::nullopt;
+    }
+    auto line = pending.substr(0, newline);
+    pending.erase(0, newline + 1);
+    if(line.ends_with('\r')) {
+        line.pop_back();
+    }
+    return line;
+}
+
 /// The worker's end of the runner's channel.
 struct Channel {
 #ifdef _WIN32
@@ -69,7 +85,7 @@ struct Channel {
     /// The next line without its newline, or nothing once the runner hangs up.
     std::optional<std::string> read_line() {
         while(true) {
-            if(auto line = protocol::take_line(pending)) {
+            if(auto line = take_line(pending)) {
                 return line;
             }
             char buffer[4096];
@@ -134,16 +150,6 @@ std::optional<TestState> parse_state(std::string_view name) {
         }
     }
     return std::nullopt;
-}
-
-std::optional<std::string> take_line(std::string& pending) {
-    auto newline = pending.find('\n');
-    if(newline == std::string::npos) {
-        return std::nullopt;
-    }
-    auto line = pending.substr(0, newline);
-    pending.erase(0, newline + 1);
-    return line;
 }
 
 }  // namespace protocol

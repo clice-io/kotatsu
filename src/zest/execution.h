@@ -73,10 +73,6 @@ std::string_view state_name(TestState state);
 
 std::optional<TestState> parse_state(std::string_view name);
 
-/// Removes the first complete line from `pending` and returns it without its
-/// newline, or nothing while no line is complete.
-std::optional<std::string> take_line(std::string& pending);
-
 }  // namespace protocol
 
 /// Snapshot files checked since the last call, which a worker passes on.
