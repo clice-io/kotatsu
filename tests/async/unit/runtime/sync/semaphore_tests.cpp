@@ -196,6 +196,35 @@ ZEST_CASE(guard_releases_once_whether_early_or_moved) {
     EXPECT(!sem.try_acquire());
 }
 
+// Assigning over a guard releases the unit it held, and takes the other's.
+ZEST_CASE(guard_assigned_over_releases_what_it_held) {
+    semaphore sem(2);
+
+    struct Seen {
+        bool one_back = false;
+        bool none_left = false;
+    };
+
+    auto use = [&]() -> task<Seen> {
+        Seen seen;
+        auto held = co_await sem.scoped_acquire();
+        auto other = co_await sem.scoped_acquire();
+        held = std::move(other);
+        seen.one_back = sem.try_acquire();
+        seen.none_left = !sem.try_acquire();
+        sem.release();
+        co_return seen;
+    };
+
+    auto [result] = run(use());
+    ASSERT(result.has_value());
+    EXPECT(result->one_back);
+    EXPECT(result->none_left);
+    EXPECT(sem.try_acquire());
+    EXPECT(sem.try_acquire());
+    EXPECT(!sem.try_acquire());
+}
+
 // A scoped_acquire() a cancel ends gives no guard, and a unit handed over to
 // it before it resumed goes back.
 ZEST_CASE(cancelled_scoped_acquire_gives_no_guard) {

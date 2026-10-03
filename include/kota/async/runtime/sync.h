@@ -15,8 +15,12 @@ class event_loop;
 class mutex;
 class condition_variable;
 
+namespace detail {
+
 template <typename Primitive>
 class scoped_wait;
+
+}  // namespace detail
 
 /// Base of the sync primitives. Tasks wait on one through a wait_node, in a
 /// FIFO queue, and a primitive never resumes a task it grants inline: the task
@@ -107,7 +111,7 @@ private:
     friend class event;
     friend class condition_variable;
     template <typename Primitive>
-    friend class scoped_wait;
+    friend class detail::scoped_wait;
     template <typename Derived>
     friend class async_visitor;
 
@@ -152,6 +156,8 @@ private:
     wait_node* next = nullptr;
 };
 
+namespace detail {
+
 /// What mutex::scoped_lock() and semaphore::scoped_acquire() give to
 /// co_await: the wait of lock() or acquire(), which then gives a guard of what
 /// it took. A wait that a cancel ends gives none, and keeps nothing.
@@ -182,41 +188,67 @@ private:
     Primitive& owner;
 };
 
+/// What mutex::guard and semaphore::guard share: what a scoped wait took from
+/// `Primitive`, which `Guard::give_back` hands back once the guard goes,
+/// unless it was handed back before. A moved-from guard holds nothing.
+template <typename Guard, typename Primitive>
+class basic_guard {
+public:
+    basic_guard(basic_guard&& other) noexcept : held(std::exchange(other.held, nullptr)) {}
+
+    /// Hands back what this guard held, and takes what `other` holds.
+    basic_guard& operator=(basic_guard other) noexcept {
+        std::swap(held, other.held);
+        return *this;
+    }
+
+    ~basic_guard() {
+        if(held != nullptr) {
+            Guard::give_back(*held);
+        }
+    }
+
+protected:
+    explicit basic_guard(Primitive& taken) noexcept : held(&taken) {}
+
+    /// Hands back what the guard holds before it goes.
+    void give_back_early() noexcept {
+        assert(held != nullptr && "guard handed back twice");
+        Guard::give_back(*std::exchange(held, nullptr));
+    }
+
+private:
+    Primitive* held;
+};
+
+}  // namespace detail
+
 /// Mutual exclusion between tasks, handed from each unlock() to the first
 /// task waiting in lock().
 class mutex : public sync_primitive {
 public:
     using lock_awaiter = wait_node;
 
+    using scoped_lock_awaiter = detail::scoped_wait<mutex>;
+
     /// Holds the mutex scoped_lock() locked, and unlocks it when it goes,
     /// unless unlock() did before. A moved-from guard holds nothing.
-    class [[nodiscard]] guard {
+    class [[nodiscard]] guard : public detail::basic_guard<guard, mutex> {
     public:
-        guard(guard&& other) noexcept : held(std::exchange(other.held, nullptr)) {}
-
-        guard& operator=(guard other) noexcept {
-            std::swap(held, other.held);
-            return *this;
-        }
-
-        ~guard() {
-            if(held != nullptr) {
-                held->unlock();
-            }
-        }
-
         /// Unlocks the mutex now.
         void unlock() noexcept {
-            assert(held != nullptr && "mutex::guard::unlock without the mutex");
-            std::exchange(held, nullptr)->unlock();
+            give_back_early();
         }
 
     private:
-        friend class scoped_wait<mutex>;
+        friend detail::basic_guard<guard, mutex>;
+        friend scoped_lock_awaiter;
 
-        explicit guard(mutex& locked) noexcept : held(&locked) {}
+        explicit guard(mutex& locked) noexcept : basic_guard(locked) {}
 
-        mutex* held;
+        static void give_back(mutex& locked) noexcept {
+            locked.unlock();
+        }
     };
 
     explicit mutex(std::source_location location = std::source_location::current()) noexcept :
@@ -228,8 +260,8 @@ public:
     }
 
     /// Locks the mutex as lock() does, and gives a guard that unlocks it.
-    scoped_wait<mutex> scoped_lock() noexcept {
-        return scoped_wait<mutex>(*this);
+    scoped_lock_awaiter scoped_lock() noexcept {
+        return scoped_lock_awaiter(*this);
     }
 
     /// Locks the mutex if it is free.
@@ -259,35 +291,26 @@ class semaphore : public sync_primitive {
 public:
     using acquire_awaiter = wait_node;
 
+    using scoped_acquire_awaiter = detail::scoped_wait<semaphore>;
+
     /// Holds the unit scoped_acquire() took, and releases it when it goes,
     /// unless release() did before. A moved-from guard holds nothing.
-    class [[nodiscard]] guard {
+    class [[nodiscard]] guard : public detail::basic_guard<guard, semaphore> {
     public:
-        guard(guard&& other) noexcept : held(std::exchange(other.held, nullptr)) {}
-
-        guard& operator=(guard other) noexcept {
-            std::swap(held, other.held);
-            return *this;
-        }
-
-        ~guard() {
-            if(held != nullptr) {
-                held->release();
-            }
-        }
-
         /// Releases the unit now.
-        void release() {
-            assert(held != nullptr && "semaphore::guard::release without a unit");
-            std::exchange(held, nullptr)->release();
+        void release() noexcept {
+            give_back_early();
         }
 
     private:
-        friend class scoped_wait<semaphore>;
+        friend detail::basic_guard<guard, semaphore>;
+        friend scoped_acquire_awaiter;
 
-        explicit guard(semaphore& acquired) noexcept : held(&acquired) {}
+        explicit guard(semaphore& acquired) noexcept : basic_guard(acquired) {}
 
-        semaphore* held;
+        static void give_back(semaphore& acquired) noexcept {
+            acquired.release();
+        }
     };
 
     explicit semaphore(std::ptrdiff_t initial = 0,
@@ -302,8 +325,8 @@ public:
     }
 
     /// Takes a unit as acquire() does, and gives a guard that releases it.
-    scoped_wait<semaphore> scoped_acquire() noexcept {
-        return scoped_wait<semaphore>(*this);
+    scoped_acquire_awaiter scoped_acquire() noexcept {
+        return scoped_acquire_awaiter(*this);
     }
 
     /// Takes a unit if there is one.
@@ -316,7 +339,7 @@ public:
     }
 
     /// Adds `n` units, handing each to the first waiter while one waits.
-    void release(std::ptrdiff_t n = 1) {
+    void release(std::ptrdiff_t n = 1) noexcept {
         assert(n >= 0 && "semaphore::release count must be non-negative");
         for(; n > 0; --n) {
             if(!wake_one()) {

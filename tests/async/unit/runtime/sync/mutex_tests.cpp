@@ -195,6 +195,35 @@ ZEST_CASE(guard_unlocks_once_whether_early_or_moved) {
     EXPECT(!m.try_lock());
 }
 
+// Assigning over a guard unlocks the mutex it held, and takes the other's.
+ZEST_CASE(guard_assigned_over_unlocks_what_it_held) {
+    mutex first;
+    mutex second;
+
+    struct Seen {
+        bool first_free = false;
+        bool second_held = false;
+    };
+
+    auto use = [&]() -> task<Seen> {
+        Seen seen;
+        auto held = co_await first.scoped_lock();
+        auto other = co_await second.scoped_lock();
+        held = std::move(other);
+        seen.first_free = first.try_lock();
+        seen.second_held = !second.try_lock();
+        first.unlock();
+        co_return seen;
+    };
+
+    auto [result] = run(use());
+    ASSERT(result.has_value());
+    EXPECT(result->first_free);
+    EXPECT(result->second_held);
+    EXPECT(first.try_lock());
+    EXPECT(second.try_lock());
+}
+
 // A scoped_lock() a cancel ends gives no guard: the mutex stays with its
 // holder, and nothing unlocks it on the cancelled task's behalf.
 ZEST_CASE(cancelled_scoped_lock_gives_no_guard) {
@@ -218,6 +247,29 @@ ZEST_CASE(cancelled_scoped_lock_gives_no_guard) {
     EXPECT(!acquired);
     EXPECT(!m.try_lock());
     m.unlock();
+    EXPECT(m.try_lock());
+}
+
+// unlock() hands the mutex to a scoped_lock() waiter, which a cancel then
+// reaches before it resumes: it gives no guard and passes the mutex back.
+ZEST_CASE(scoped_lock_cancelled_after_the_hand_over_gives_the_mutex_back) {
+    mutex m;
+    ASSERT(m.try_lock());
+    bool acquired = false;
+    auto waiter = [&]() -> task<> {
+        auto held = co_await m.scoped_lock();
+        acquired = true;
+    };
+    auto target = waiter();
+    auto hand_over = [&]() -> task<> {
+        m.unlock();
+        target.cancel();
+        co_return;
+    };
+
+    auto [cancelled, driver] = run(target, hand_over());
+    EXPECT(cancelled.is_cancelled());
+    EXPECT(!acquired);
     EXPECT(m.try_lock());
 }
 
