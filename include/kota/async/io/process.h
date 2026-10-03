@@ -42,6 +42,17 @@ public:
 
         /// Terminating signal number if signalled, 0 otherwise.
         int term_signal;
+
+        /// Whether the child exited with code 0 rather than by a signal.
+        bool success() const noexcept {
+            return status == 0 && term_signal == 0;
+        }
+
+        /// How the child ended, for people: "exit code 3", or "signal 9" with
+        /// the signal's name where the system has one. On Windows a crash
+        /// ends the child with an NTSTATUS code, given in hex and named when
+        /// it is a common one: "exit code 0xC0000005 (access violation)".
+        std::string to_string() const;
     };
 
     struct stdio {
@@ -136,6 +147,11 @@ public:
     /// Sends a signal to the child; fails with no_such_process once its exit
     /// has been observed.
     error kill(int signum);
+
+    /// Ends the child at once: SIGKILL on POSIX, TerminateProcess on Windows,
+    /// whose exit status libuv reports with SIGKILL as well. Fails as
+    /// kill(signum) does.
+    error kill();
 
 private:
     struct Self;

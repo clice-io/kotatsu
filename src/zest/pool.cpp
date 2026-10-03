@@ -3,7 +3,6 @@
 #include <chrono>
 #include <csignal>
 #include <cstdint>
-#include <cstring>
 #include <fcntl.h>
 #include <filesystem>
 #include <format>
@@ -34,26 +33,6 @@ namespace stdfs = std::filesystem;
 
 using std::chrono::milliseconds;
 using std::chrono::steady_clock;
-
-#ifdef SIGKILL
-constexpr int kill_signal = SIGKILL;
-#else
-// libuv reads 9 as SIGKILL on Windows and terminates the process.
-constexpr int kill_signal = 9;
-#endif
-
-std::string describe(const process::exit_status& status) {
-#ifndef _WIN32
-    if(status.term_signal != 0) {
-        return std::format("signal {} ({})", status.term_signal, ::strsignal(status.term_signal));
-    }
-#endif
-    // Windows reports a crash as an NTSTATUS exit code, which reads best in hex.
-    if(status.status >= 0xC000'0000) {
-        return std::format("exit code 0x{:08X}", status.status);
-    }
-    return std::format("exit code {}", status.status);
-}
 
 std::string utf8(const stdfs::path& path) {
     auto text = path.u8string();
@@ -143,7 +122,7 @@ struct Worker {
 
     /// Ends the worker whatever state it is in.
     task<process::exit_status> kill() {
-        [[maybe_unused]] auto error = proc.kill(kill_signal);
+        [[maybe_unused]] auto error = proc.kill();
         co_return co_await wait();
     }
 };
@@ -203,7 +182,7 @@ struct Pool {
             auto status = co_await worker.kill();
             co_return std::unexpected(WorkerFailure{
                 .detail =
-                    ready ? std::format("a worker ended while starting with {}", describe(status))
+                    ready ? std::format("a worker ended while starting with {}", status.to_string())
                           : std::string("a worker did not start within --timeout"),
                 .output = worker.take_output(),
             });
@@ -245,7 +224,7 @@ struct Pool {
             .verdict = Verdict::Crashed,
             .duration = duration,
             .output = worker.take_output(),
-            .detail = std::format("{} before the test finished", describe(status)),
+            .detail = std::format("{} before the test finished", status.to_string()),
         };
     }
 
@@ -286,10 +265,10 @@ struct Pool {
                 .detail = "a worker did not exit within --timeout after its last test",
                 .output = worker->whole_output(),
             });
-        } else if(status->status != 0 || status->term_signal != 0) {
+        } else if(!status->success()) {
             failures.push_back(WorkerFailure{
                 .detail =
-                    std::format("a worker ended with {} after its last test", describe(*status)),
+                    std::format("a worker ended with {} after its last test", status->to_string()),
                 .output = worker->whole_output(),
             });
         }

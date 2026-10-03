@@ -56,7 +56,10 @@ ZEST_CASE(wait_reports_the_exit_code) {
     EXPECT(test::exit_status_of(succeeded) == 0);
     ASSERT(succeeded.has_value());
     EXPECT(succeeded->term_signal == 0);
+    EXPECT(succeeded->success());
     EXPECT(test::exit_status_of(failed) == 3);
+    ASSERT(failed.has_value());
+    EXPECT(!failed->success());
 }
 
 // With inherited stdio the child shares the test's own streams.
@@ -240,6 +243,19 @@ ZEST_CASE(kill_ends_a_running_child) {
     EXPECT(status->term_signal == SIGTERM);
 }
 
+// libuv reports the TerminateProcess it does on Windows as SIGKILL too, which
+// the CRT does not name: 9 everywhere.
+ZEST_CASE(kill_without_a_signal_ends_the_child_at_once) {
+    auto spawned = process::spawn(test::stdin_reader(), loop);
+    ASSERT(spawned.has_value());
+    EXPECT(!spawned->proc.kill());
+
+    auto [status] = run(spawned->proc.wait());
+    ASSERT(status.has_value());
+    EXPECT(status->term_signal == 9);
+    EXPECT(!status->success());
+}
+
 ZEST_CASE(kill_with_an_invalid_signal_fails) {
     auto spawned = process::spawn(test::stdin_reader(), loop);
     ASSERT(spawned.has_value());
@@ -258,6 +274,7 @@ ZEST_CASE(kill_after_the_exit_fails) {
     auto [status] = run(spawned->proc.wait());
     EXPECT(test::exit_status_of(status) == 0);
     EXPECT(spawned->proc.kill(SIGTERM) == error::no_such_process);
+    EXPECT(spawned->proc.kill() == error::no_such_process);
 }
 
 // Cancelling wait() only abandons the wait: the child runs on until its
@@ -321,6 +338,7 @@ ZEST_CASE(inert_process_fails) {
     ASSERT(waited.has_error());
     EXPECT(waited.error() == error::invalid_argument);
     EXPECT(inert.kill(SIGTERM) == error::invalid_argument);
+    EXPECT(inert.kill() == error::invalid_argument);
     EXPECT(inert.pid() == -1);
 }
 

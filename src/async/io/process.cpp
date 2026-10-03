@@ -1,7 +1,12 @@
 #include "kota/async/io/process.h"
 
+#include <csignal>
+#include <cstdint>
+#include <cstring>
+#include <format>
 #include <mutex>
 #include <optional>
+#include <string_view>
 #include <utility>
 
 #include "stream_self.h"
@@ -43,7 +48,43 @@ std::vector<char*> c_strings(const std::vector<std::string>& from) {
     return out;
 }
 
+#ifdef _WIN32
+/// The name of a common NTSTATUS code a crash ends a process with, or nothing.
+std::string_view crash_name(std::uint32_t code) {
+    switch(code) {
+        case 0xC000'0005: return "access violation";
+        case 0xC000'001D: return "illegal instruction";
+        case 0xC000'0094: return "integer divide by zero";
+        case 0xC000'00FD: return "stack overflow";
+        case 0xC000'0135: return "DLL not found";
+        case 0xC000'0374: return "heap corruption";
+        case 0xC000'0409: return "stack buffer overrun";
+        default: return {};
+    }
+}
+#endif
+
 }  // namespace
+
+std::string process::exit_status::to_string() const {
+    if(term_signal != 0) {
+#ifdef _WIN32
+        return std::format("signal {}", term_signal);
+#else
+        return std::format("signal {} ({})", term_signal, ::strsignal(term_signal));
+#endif
+    }
+#ifdef _WIN32
+    if(status >= 0xC000'0000) {
+        auto code = static_cast<std::uint32_t>(status);
+        if(auto name = crash_name(code); !name.empty()) {
+            return std::format("exit code 0x{:08X} ({})", code, name);
+        }
+        return std::format("exit code 0x{:08X}", code);
+    }
+#endif
+    return std::format("exit code {}", status);
+}
 
 process::process() noexcept = default;
 
@@ -185,6 +226,10 @@ error process::kill(int signum) {
     }
 
     return error(::uv_process_kill(&self->process, signum));
+}
+
+error process::kill() {
+    return kill(SIGKILL);
 }
 
 }  // namespace kota
