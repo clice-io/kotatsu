@@ -84,6 +84,19 @@ struct AdjacentWithExtraPlain {
     int c;
 };
 
+/// The point of an externally tagged point with a key Point does not have.
+struct PointWithExtraTagPlain {
+    PointWithExtra point;
+};
+
+/// An adjacently tagged point with a key beside the tag and the content, and
+/// a key Point does not have in the content.
+struct AdjacentPointWithExtrasPlain {
+    std::string t;
+    bool extra;
+    PointWithExtra c;
+};
+
 struct CirclePlain {
     std::string kind;
     double radius;

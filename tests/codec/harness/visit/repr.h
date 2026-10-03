@@ -264,7 +264,8 @@ void repr(const Kit<B>& kit) {
                                                 .value = {.byteCount = 3, .x = 1}
                                             };
                                         },
-                                        {.message = "unknown field 'x'", .path = "value"});
+                                        // Under the field, then the content key.
+                                        {.message = "unknown field 'x'", .path = "value.value"});
         // Untagged probing judges an alternative by the repr the backend's
         // format selects.
         using JournalOrNumber = std::variant<Journal, std::int64_t>;

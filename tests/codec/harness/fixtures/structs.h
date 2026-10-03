@@ -26,6 +26,13 @@ struct Point {
     auto operator<=>(const Point&) const = default;
 };
 
+/// Point with a key Point does not have.
+struct PointWithExtra {
+    std::int32_t x;
+    std::int32_t y;
+    std::int32_t extra;
+};
+
 struct Point2d {
     double x;
     double y;

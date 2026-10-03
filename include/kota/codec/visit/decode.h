@@ -362,11 +362,12 @@ bool check_required_fields(std::uint64_t field_mask) {
         meta::virtual_schema<T, Config>::fields[std::countr_zero(missing)].name));
 }
 
-/// External tagged: { "TagName": value }
+/// External tagged: { "TagName": value }, the value's path below its tag.
 template <typename Config, typename SpecAttr, typename Vis, typename... Ts>
 bool decode_externally_tagged(Vis& vis, std::variant<Ts...>& var) {
     constexpr auto names = meta::resolve_tag_names<SpecAttr, Ts...>();
     bool found = false;
+    auto* sink = scoped_context<UnknownFields>::try_current();
     bool result = vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
         if(found) {
             return scoped_context<rich_error>::fail(
@@ -377,7 +378,9 @@ bool decode_externally_tagged(Vis& vis, std::variant<Ts...>& var) {
         if(idx >= sizeof...(Ts)) {
             return fail_unknown_tag(key);
         }
-        return construct_and_visit<Config>(fv, var, idx);
+        return decode_step<Config>(sink, key, [&] {
+            return construct_and_visit<Config>(fv, var, idx);
+        });
     });
     if(result && !found) {
         return scoped_context<rich_error>::fail(
@@ -480,7 +483,8 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
     });
 }
 
-/// Adjacent tagged: { "t": "TagName", "c": value }
+/// Adjacent tagged: { "t": "TagName", "c": value }, the value's path below
+/// its content key. Other keys are passed over, unknown fields to a sink.
 template <typename Config, typename SpecAttr, typename Vis, typename... Ts>
 bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
     static_assert(data_driven<Vis> && has_try_read<Vis>,
@@ -494,17 +498,24 @@ bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
 
     std::size_t tag_count = 0;
     std::size_t content_count = 0;
+    auto* sink = scoped_context<UnknownFields>::try_current();
 
     bool result = vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
         if(key == tag_key) {
             ++tag_count;
             return idx != npos || fail_unusable_tag(fv);
         }
+        if(key != content_key) {
+            report_unknown_field(sink, key, fv);
+            return true;
+        }
         // Without a usable tag the content cannot be placed: the tag's own
         // entry reports why, and an absent tag is reported after the pass.
         // A duplicate content entry is reported after the pass too.
-        if(key == content_key && ++content_count == 1 && idx != npos) {
-            return construct_and_visit<Config>(fv, var, idx);
+        if(++content_count == 1 && idx != npos) {
+            return decode_step<Config>(sink, key, [&] {
+                return construct_and_visit<Config>(fv, var, idx);
+            });
         }
         return true;
     });

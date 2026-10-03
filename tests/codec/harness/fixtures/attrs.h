@@ -130,13 +130,6 @@ struct SettingsPartialPlain {
     OwnerNamePlain owner;
 };
 
-/// Point with a key Point does not have.
-struct PointWithExtra {
-    int x;
-    int y;
-    int extra;
-};
-
 /// Structs wherever a decode reaches one: a field, a sequence element, a map
 /// value.
 struct Placed {
