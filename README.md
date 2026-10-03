@@ -146,18 +146,14 @@ with `:ipc_json` (JSON-RPC) and `:ipc_lsp`, and `:zest`; HTTP builds with
 CMake only for now.
 
 ```starlark
-bazel_dep(name = "kotatsu")
-git_override(
-    module_name = "kotatsu",
-    commit = "<commit>",
-    remote = "https://github.com/clice-io/kotatsu.git",
-)
-
+bazel_dep(name = "kotatsu", version = "0.1.0.<n>")
 ```
 
-Its third-party libraries (simdjson, toml++, flatbuffers, libuv, cpptrace)
-are modules of the [clice Bazel registry](https://bazel.clice.io), which the
-depending build lists before the Bazel Central Registry:
+Every commit of `main` that passes the Bazel build is a version of the
+module on the [clice Bazel registry](https://bazel.clice.io), `0.1.0.<n>`
+for the n-th commit (`git rev-list --count`), as are its third-party
+libraries (simdjson, toml++, flatbuffers, libuv, cpptrace). The depending
+build lists that registry before the Bazel Central Registry:
 
 ```
 common --registry=https://bazel.clice.io/
