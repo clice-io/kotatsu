@@ -237,6 +237,57 @@ ZEST_CASE(response_with_a_malformed_error_keeps_its_id) {
     }
 }
 
+// JSON-RPC 2.0 requires "jsonrpc" to be exactly "2.0".
+ZEST_CASE(request_without_jsonrpc_2_0_is_an_invalid_request) {
+    JsonCodec codec;
+    for(std::string_view payload: {
+            R"({"id":5,"method":"test/echo","params":[]})",
+            R"({"jsonrpc":"1.0","id":5,"method":"test/echo","params":[]})",
+            R"({"jsonrpc":2,"id":5,"method":"test/echo","params":[]})",
+        }) {
+        ZEST_CONTEXT("payload: {}", payload);
+        auto parsed = codec.parse_message(payload);
+        const auto* failure = std::get_if<IncomingParseError>(&parsed);
+        ASSERT(failure != nullptr);
+        EXPECT(!failure->notification);
+        EXPECT(failure->id == protocol::RequestID(5));
+        EXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
+    }
+}
+
+ZEST_CASE(notification_without_jsonrpc_2_0_is_never_answered) {
+    JsonCodec codec;
+    auto parsed = codec.parse_message(R"({"jsonrpc":"1.0","method":"test/note","params":{}})");
+    const auto* failure = std::get_if<IncomingParseError>(&parsed);
+    ASSERT(failure != nullptr);
+    EXPECT(failure->notification);
+}
+
+ZEST_CASE(response_without_jsonrpc_2_0_fails_its_request) {
+    JsonCodec codec;
+    auto parsed = codec.parse_message(R"({"id":3,"result":7})");
+    const auto* response = std::get_if<IncomingErrorResponse>(&parsed);
+    ASSERT(response != nullptr);
+    EXPECT(response->id == protocol::RequestID(3));
+    EXPECT(code_of(response->error) == ErrorCode::InvalidRequest);
+}
+
+// JSON-RPC requires an error object's code and message.
+ZEST_CASE(error_without_its_code_or_message_fails_its_request) {
+    JsonCodec codec;
+    for(std::string_view payload: {
+            R"({"jsonrpc":"2.0","id":1,"error":{"message":"x"}})",
+            R"({"jsonrpc":"2.0","id":1,"error":{"code":-32000}})",
+        }) {
+        ZEST_CONTEXT("payload: {}", payload);
+        auto parsed = codec.parse_message(payload);
+        const auto* response = std::get_if<IncomingErrorResponse>(&parsed);
+        ASSERT(response != nullptr);
+        EXPECT(response->id == protocol::RequestID(1));
+        EXPECT(code_of(response->error) == ErrorCode::InvalidRequest);
+    }
+}
+
 // Reading a value recurses once per level, so a message nested deeper than
 // the codec reads is judged without reading its values; at 50000 levels,
 // reading it would overflow the stack.

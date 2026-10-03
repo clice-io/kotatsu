@@ -51,6 +51,7 @@ struct outgoing_error_response_message {
 };
 
 struct json_rpc_incoming {
+    std::optional<std::string> jsonrpc;
     // RawValue, not optional<RequestID>, so that a null id stays apart from
     // a missing one: absent → empty(), null → "null" text.
     KOTATSU_ANNOTATE(defaulted = true)
@@ -391,7 +392,7 @@ HeadMembers read_head(std::string_view text) {
 }
 
 /// What to make of JSON that is not read as a whole: its envelope did not
-/// decode, or it nests too deeply. JSON that is no message object is an
+/// decode, names no JSON-RPC 2.0, or nests too deeply. JSON that is no message object is an
 /// invalid request (batches are not supported). An object's members are read
 /// for the id it names, without decoding their values: a request (it has a
 /// method, and an id member) is answered as invalid under that id, a
@@ -447,6 +448,21 @@ IncomingMessage JsonCodec::parse_message(std::string_view payload) {
     }
 
     const bool has_id = !envelope->id.empty();
+    const bool has_result = !envelope->result.empty();
+    const bool has_error = envelope->error.has_value();
+    // A message with none of the members that tell what it is is answered
+    // as invalid, whatever version it names.
+    if(!envelope->method && !has_id && !has_result && !has_error) {
+        return IncomingParseError{
+            .id = std::nullopt,
+            .error =
+                Error(protocol::ErrorCode::InvalidRequest, "message must contain method or id"),
+        };
+    }
+    if(envelope->jsonrpc != "2.0") {
+        return read_malformed(payload, R"(jsonrpc must be "2.0")");
+    }
+
     auto id = has_id ? read_id(envelope->id.data) : std::nullopt;
 
     if(envelope->method.has_value()) {
@@ -472,15 +488,6 @@ IncomingMessage JsonCodec::parse_message(std::string_view payload) {
         };
     }
 
-    const bool has_result = !envelope->result.empty();
-    const bool has_error = envelope->error.has_value();
-    if(!has_id && !has_result && !has_error) {
-        return IncomingParseError{
-            .id = std::nullopt,
-            .error =
-                Error(protocol::ErrorCode::InvalidRequest, "message must contain method or id"),
-        };
-    }
     if(has_result == has_error) {
         return IncomingErrorResponse{
             .id = std::move(id),

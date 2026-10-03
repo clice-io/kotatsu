@@ -100,17 +100,29 @@ struct serialize_visit<Vis, kota::ipc::protocol::Error, Config> {
 template <typename Vis, typename Config>
 struct deserialize_visit<Vis, kota::ipc::protocol::Error, Config> {
     static bool visit(Vis& vis, kota::ipc::protocol::Error& error) {
-        return vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
+        bool has_code = false;
+        bool has_message = false;
+        KOTA_CODEC_TRY(vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
             if(key == "code") {
+                has_code = true;
                 return decode_value<Config>(fv, error.code);
             } else if(key == "message") {
+                has_message = true;
                 return decode_value<Config>(fv, error.message);
             } else if(key == "data") {
                 return decode_value<Config>(fv, error.data);
             } else {
                 return true;
             }
-        });
+        }));
+        // JSON-RPC requires both: without them it is no error object.
+        if(!has_code) {
+            return scoped_context<rich_error>::fail(rich_error::missing_field("code"));
+        }
+        if(!has_message) {
+            return scoped_context<rich_error>::fail(rich_error::missing_field("message"));
+        }
+        return true;
     }
 };
 
