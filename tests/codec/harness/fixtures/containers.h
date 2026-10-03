@@ -26,6 +26,28 @@
 
 namespace kota::test {
 
+/// A list whose default constructor is explicit, as llvm::DenseMap's is.
+struct ExplicitList : std::vector<int> {
+    using std::vector<int>::vector;
+
+    explicit ExplicitList() = default;
+};
+
+/// An aggregate only value-initialization makes: `HoldsExplicit{}`
+/// copy-list-initializes `list` from `{}`, which its explicit default
+/// constructor rejects.
+struct HoldsExplicit {
+    ExplicitList list;
+    int count;
+
+    auto operator==(const HoldsExplicit&) const -> bool = default;
+};
+
+/// A type with no default constructor at all.
+struct NoDefault {
+    explicit NoDefault(int) {}
+};
+
 /// A variant with a smart-pointer alternative, compared by pointee. It
 /// starts on the other alternative, so a null that did not reach the pointer
 /// shows.
@@ -182,6 +204,20 @@ struct NullElements {
                std::ranges::equal(pointers, other.pointers, [](const auto& lhs, const auto& rhs) {
                    return same_pointee(lhs, rhs);
                });
+    }
+};
+
+/// HoldsExplicit where decoding makes a value of its own: a sequence element,
+/// a map value.
+struct ExplicitElements {
+    std::vector<HoldsExplicit> items;
+    std::map<std::string, HoldsExplicit> by_name;
+
+    static ExplicitElements typical() {
+        return {
+            .items = {{.list = {1, 2}, .count = 2}, {.list = ExplicitList(), .count = 0}},
+            .by_name = {{"a", {.list = {3}, .count = 1}}},
+        };
     }
 };
 

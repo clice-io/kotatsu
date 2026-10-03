@@ -130,6 +130,11 @@ void values(const Kit<B>& kit) {
                 {"c", 3}
             };
         });
+    // An element or a map value is value-initialized before it is read: the
+    // explicit default constructor of one of its members rejects `{}`.
+    roundtrip(kit, "explicit_default_constructor_elements_roundtrip", [] {
+        return ExplicitElements::typical();
+    });
     roundtrip(kit, "tuples_roundtrip", [] { return Tuples::typical(); });
     // Tuple-likes at the root and as elements, which a backend may lay out
     // otherwise than as fields.

@@ -71,7 +71,7 @@ bool repr_decode(Vis& vis, V& out) {
             requires(declared_t&& d) { out = Repr::from(std::move(d)); },
             "repr protocol: from() must accept the declared representation type and return "
             "the value type");
-        declared_t declared{};
+        auto declared = declared_t();
         KOTA_CODEC_TRY(decode_value<Config>(vis, declared));
         out = Repr::from(std::move(declared));
         return true;
@@ -195,7 +195,7 @@ bool decode_with_attrs(Vis& vis, T& out) {
         return repr_decode<adapter, Config>(vis, out);
     } else if constexpr(tuple_has_spec_v<Attrs, meta::behavior::as>) {
         using target = typename tuple_find_spec_t<Attrs, meta::behavior::as>::target;
-        target converted{};
+        auto converted = target();
         KOTA_CODEC_TRY(decode_value<Config>(vis, converted));
         out = T(std::move(converted));
         return true;
@@ -621,7 +621,7 @@ template <typename Config, typename Vis, typename T>
 bool nested_alternative_pass(Vis& vis, T& out, meta::type_kind src_kind, bool widen) {
     if constexpr(meta::has_repr<T, meta::format_of_t<Vis>>) {
         using chosen = meta::repr_for<T, meta::format_of_t<Vis>>;
-        meta::declared_repr_t<chosen> declared{};
+        auto declared = meta::declared_repr_t<chosen>();
         KOTA_CODEC_TRY(nested_alternative_pass<Config>(vis, declared, src_kind, widen));
         out = chosen::from(std::move(declared));
         return true;
@@ -709,7 +709,7 @@ bool decode_one_field(Vis& vis, T& out) {
                               [&](auto& fv) -> bool {
                                   if constexpr(tuple_has_spec_v<attrs, meta::behavior::skip_if>) {
                                       if(skipped<attrs>(field_ref, false)) {
-                                          typename field::type discard{};
+                                          auto discard = typename field::type();
                                           return decode_with_attrs<Config, attrs>(fv, discard);
                                       }
                                   }
@@ -840,7 +840,7 @@ bool decode_value(Vis& vis, T& out) {
                 }
                 std::size_t idx = 0;
                 return vis.visit_seq([&](auto& ev) -> bool {
-                    element_t item{};
+                    auto item = element_t();
                     KOTA_CODEC_TRY(detail::trace_path<Config>(decode_value<Config>(ev, item), idx));
                     kota::detail::append_sequence_element(out, std::move(item));
                     ++idx;
@@ -853,7 +853,7 @@ bool decode_value(Vis& vis, T& out) {
                     }
                     std::size_t idx = 0;
                     while(sv.has_element()) {
-                        element_t item{};
+                        auto item = element_t();
                         bool ok = sv.visit_element(
                             [&](auto& ev) -> bool { return decode_value<Config>(ev, item); });
                         KOTA_CODEC_TRY(detail::trace_path<Config>(ok, idx));
@@ -909,9 +909,9 @@ bool decode_value(Vis& vis, T& out) {
                 }
                 std::size_t idx = 0;
                 return vis.visit_map([&](auto& kv, auto& vv) -> bool {
-                    key_t key{};
+                    auto key = key_t();
                     KOTA_CODEC_TRY(detail::trace_path<Config>(decode_value<Config>(kv, key), idx));
-                    mapped_t val{};
+                    auto val = mapped_t();
                     KOTA_CODEC_TRY(detail::trace_path<Config>(decode_value<Config>(vv, val), idx));
                     kota::detail::insert_map_entry(out, std::move(key), std::move(val));
                     ++idx;
@@ -924,8 +924,8 @@ bool decode_value(Vis& vis, T& out) {
                     }
                     std::size_t idx = 0;
                     while(sv.has_entry()) {
-                        key_t key{};
-                        mapped_t val{};
+                        auto key = key_t();
+                        auto val = mapped_t();
                         bool ok = sv.visit_entry(
                             [&](auto& kv) -> bool { return decode_value<Config>(kv, key); },
                             [&](auto& vv) -> bool { return decode_value<Config>(vv, val); });

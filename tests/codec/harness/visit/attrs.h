@@ -174,6 +174,11 @@ void attrs(const Kit<B>& kit) {
         };
     });
     roundtrip(kit, "as_roundtrip", as_targets);
+    // The target is value-initialized before it is read: the explicit default
+    // constructor of one of its members rejects `{}`.
+    roundtrip(kit, "as_value_initialized_target_roundtrip", [] {
+        return Field<TallyAsHeld>{TallyAsHeld(Tally(std::vector<int>{1, 2}))};
+    });
     using Decimal = meta::annotation<int, meta::behavior::with<DecimalText>>;
     auto decimal = [] {
         return Field<Decimal>{42};
@@ -223,6 +228,19 @@ void attrs(const Kit<B>& kit) {
             };
         },
         [] { return CellSkippedOnDecode{.cell = {}, .after = 7}; });
+    // ...into a value-initialized one, here of a type `{}` cannot make.
+    reads<HeldSkippedOnDecode>(
+        kit,
+        "skip_if_on_decode_reads_past_a_value_initialized_field",
+        [] {
+            return HeldSkippedOnDecodePlain{
+                .held = {.list = {1, 2}, .count = 2},
+                .after = 7
+            };
+        },
+        [] {
+            return HeldSkippedOnDecode{.held = {{.list = ExplicitList(), .count = 0}}, .after = 7};
+        });
     // A one-argument predicate judges the value being written: a decode
     // reads the field whatever the value it decodes into holds, here the
     // empty text the predicate matches.

@@ -7,19 +7,42 @@
 #include <vector>
 
 #include "codec/harness/fixtures/configs.h"
+#include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/repr.h"
 #include "codec/harness/fixtures/structs.h"
 #include "codec/harness/fixtures/tagged.h"
 #include "fixtures/attrs.h"
 #include "fixtures/configs.h"
 #include "kota/zest/zest.h"
+#include "kota/meta/compare.h"
 #include "kota/codec/toml/toml.h"
 
 namespace kota::codec {
 
 namespace {
 
+/// Whether the value-returning overload takes T.
+template <typename T>
+concept decodes_by_value = requires(std::string_view text) { toml::from_string<T>(text); };
+
 ZEST_SUITE(codec_toml_decode) {
+
+ZEST_CASE(value_overload_value_initializes) {
+    // `T value{}` would copy-list-initialize the explicit list from `{}`.
+    auto result = toml::from_string<test::HoldsExplicit>(R"(
+count = 2
+list = [1, 2]
+)");
+    ASSERT(result);
+    const test::HoldsExplicit expected{
+        .list = {1, 2},
+        .count = 2
+    };
+    EXPECT(meta::eq(*result, expected));
+    STATIC_EXPECT(decodes_by_value<test::HoldsExplicit>);
+    // A type with no default constructor has no value to decode into.
+    STATIC_EXPECT(!decodes_by_value<test::NoDefault>);
+}
 
 ZEST_CASE(value_overload_takes_config) {
     auto result = toml::from_string<test::RenameAllTarget, test::CamelConfig>(R"(

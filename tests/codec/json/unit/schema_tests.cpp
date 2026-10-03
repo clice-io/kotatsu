@@ -12,6 +12,7 @@
 #include <variant>
 #include <vector>
 
+#include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/repr.h"
 #include "codec/harness/fixtures/structs.h"
 #include "fixtures/repr.h"
@@ -668,6 +669,12 @@ struct defaults_leaf {
 
     KOTATSU_ANNOTATE(defaulted = true)
     <std::string> name = "worker";
+};
+
+/// A member only value-initialization makes, beside one with a default.
+struct defaults_explicit_member {
+    test::ExplicitList list;
+    std::optional<std::int32_t> count = 3;
 };
 
 struct defaults_root {
@@ -2814,6 +2821,13 @@ ZEST_CASE(defaults_annotated) {
     EXPECT(zest::contains(result, R"("mirror":{"$ref":"#/$defs/defaults_leaf"})"));
     EXPECT(zest::contains(result, R"("maximum":2147483647,"default":4})"));
     EXPECT(zest::contains(result, R"("name":{"type":"string","default":"worker"})"));
+}
+
+ZEST_CASE(defaults_value_initialize) {
+    // The fresh instance is value-initialized: `{}` would copy-list-initialize
+    // the explicit list.
+    const auto result = json::schema_string<defaults_explicit_member>().value();
+    EXPECT(zest::contains(result, R"({"type":"null"}],"default":3})"));
 }
 
 ZEST_CASE(defaults_skip_condition) {

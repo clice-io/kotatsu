@@ -1,6 +1,5 @@
 #pragma once
 
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -294,7 +293,7 @@ auto from_toml(const Table& tbl, T& out) -> std::expected<void, rich_error> {
 }
 
 /// Decodes TOML text into `out` (or, in the value-returning overload, into a
-/// default-constructed T): parse_table followed by from_toml.
+/// value-initialized T): parse_table followed by from_toml.
 template <typename Config = void, typename T>
 auto from_string(std::string_view text, T& out) -> std::expected<void, rich_error> {
     KOTA_EXPECTED_TRY_V(auto table, parse_table(text));
@@ -302,9 +301,9 @@ auto from_string(std::string_view text, T& out) -> std::expected<void, rich_erro
 }
 
 template <typename T, typename Config = void>
-    requires std::default_initializable<T>
+    requires std::is_default_constructible_v<T>
 auto from_string(std::string_view text) -> std::expected<T, rich_error> {
-    T value{};
+    auto value = T();
     KOTA_EXPECTED_TRY(from_string<Config>(text, value));
     return value;
 }

@@ -260,11 +260,8 @@ struct empty {
 struct default_value {
     template <typename T>
     constexpr bool operator()(const T& value, bool is_serialize) const {
-        if constexpr(requires {
-                         T{};
-                         value == T{};
-                     }) {
-            return is_serialize && static_cast<bool>(value == T{});
+        if constexpr(requires { value == T(); }) {
+            return is_serialize && static_cast<bool>(value == T());
         } else {
             return false;
         }
