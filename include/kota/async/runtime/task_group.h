@@ -18,9 +18,9 @@ namespace kota {
 
 /// Runs a dynamic set of child tasks that all end before join() returns. A
 /// child starts at once and runs until it first suspends. A child that fails
-/// or is cancelled cancels its siblings; join() then reports the failure,
-/// while a cancelled child is no failure. The group keeps no child that has
-/// ended.
+/// cancels its siblings, and join() reports the failure; a child that ends
+/// cancelled just ends, and its siblings run on. The group keeps no child that
+/// has ended.
 template <typename... Errors>
 class task_group : aggregate_op {
 public:
@@ -48,8 +48,8 @@ public:
 
     /// Starts `child` and runs it until it first suspends. Refused, returning
     /// false, once the children are being cancelled (by cancel(), by a child
-    /// that failed or was cancelled, or by a cancel of the task awaiting
-    /// join()) or join() has returned.
+    /// that failed, or by a cancel of the task awaiting join()) or join() has
+    /// returned.
     template <typename T, typename E, typename C>
         requires std::is_void_v<E> || is_one_of<E, Errors...>
     bool spawn(task<T, E, C>&& child,

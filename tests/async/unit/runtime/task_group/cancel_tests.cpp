@@ -9,28 +9,37 @@ namespace {
 
 ZEST_SUITE(async_runtime_task_group_cancel, test::LoopFixture) {
 
-// A child's own cancellation cancels its siblings but is no failure: join()
-// returns normally.
-ZEST_CASE(child_cancel_cancels_the_siblings) {
+// A child's own cancellation is no failure and leaves its siblings running:
+// join() returns normally once they have ended.
+ZEST_CASE(child_cancel_leaves_the_siblings_running) {
     event gate;
-    auto slow = [&]() -> task<> {
+    event cancelling;
+    bool sibling_finished = false;
+    auto sibling = [&]() -> task<> {
         co_await gate.wait();
+        sibling_finished = true;
     };
-    auto canceler = []() -> task<> {
+    auto canceler = [&]() -> task<> {
         co_await yield();
+        // The releaser runs once this resumption is over: after this child
+        // has ended.
+        cancelling.set();
         co_await cancel();
     };
     auto driver = [&]() -> task<> {
         task_group<> group;
-        group.spawn(slow());
+        group.spawn(sibling());
         group.spawn(canceler());
         co_await group.join();
     };
+    auto releaser = [&]() -> task<> {
+        co_await cancelling.wait();
+        gate.set();
+    };
 
-    auto [result] = run(driver());
+    auto [result, released] = run(driver(), releaser());
     EXPECT(result.has_value());
-    // The gate is never set: its wait went because the cancel reached it.
-    EXPECT(!gate.has_waiters());
+    EXPECT(sibling_finished);
 }
 
 ZEST_CASE(cancel_before_join_cancels_every_child) {
