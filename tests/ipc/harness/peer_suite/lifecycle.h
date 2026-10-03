@@ -418,7 +418,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
     // The owner lets the peer go as soon as run() returns, here cancelled:
     // run() has let go of it by then.
     kit.add_case("peer_destroyed_once_a_cancelled_run_returns", [] {
-        LoopFixture f;
+        zest::LoopFixture f;
         Remote remote;
         auto peer = std::make_unique<typename Fixture::Peer>(f.loop, remote.transport());
         cancellation_source source;
