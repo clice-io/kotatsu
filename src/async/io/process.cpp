@@ -1,7 +1,11 @@
 #include "kota/async/io/process.h"
 
+#include <csignal>
+#include <cstdint>
+#include <format>
 #include <mutex>
 #include <optional>
+#include <string_view>
 #include <utility>
 
 #include "stream_self.h"
@@ -31,6 +35,48 @@ struct process::Self : uv::owned_handle<Self> {
 
 namespace {
 
+/// The name of signal `signum`, among those that end a process; empty for
+/// another.
+std::string_view signal_name(int signum) {
+    switch(signum) {
+        case SIGINT: return "SIGINT";
+        case SIGILL: return "SIGILL";
+        case SIGABRT: return "SIGABRT";
+        case SIGFPE: return "SIGFPE";
+        case SIGSEGV: return "SIGSEGV";
+        case SIGTERM: return "SIGTERM";
+        case SIGKILL: return "SIGKILL";
+#ifndef _WIN32
+        case SIGHUP: return "SIGHUP";
+        case SIGQUIT: return "SIGQUIT";
+        case SIGTRAP: return "SIGTRAP";
+        case SIGBUS: return "SIGBUS";
+        case SIGPIPE: return "SIGPIPE";
+        case SIGALRM: return "SIGALRM";
+        case SIGUSR1: return "SIGUSR1";
+        case SIGUSR2: return "SIGUSR2";
+#endif
+        default: return {};
+    }
+}
+
+#ifdef _WIN32
+/// What the NTSTATUS `status` of a crash says, for the common ones; empty for
+/// another.
+std::string_view exception_name(std::uint32_t status) {
+    switch(status) {
+        case 0x80000003: return "breakpoint";
+        case 0xC0000005: return "access violation";
+        case 0xC000001D: return "illegal instruction";
+        case 0xC0000094: return "integer division by zero";
+        case 0xC00000FD: return "stack overflow";
+        case 0xC0000374: return "heap corruption";
+        case 0xC0000409: return "fail fast";
+        default: return {};
+    }
+}
+#endif
+
 /// A NULL-terminated array of the strings in `from`, which libuv takes as
 /// char* but only reads.
 std::vector<char*> c_strings(const std::vector<std::string>& from) {
@@ -44,6 +90,24 @@ std::vector<char*> c_strings(const std::vector<std::string>& from) {
 }
 
 }  // namespace
+
+std::string process::exit_status::to_string() const {
+    if(term_signal != 0) {
+        auto name = signal_name(term_signal);
+        return name.empty() ? std::format("signal {}", term_signal)
+                            : std::format("signal {} ({})", term_signal, name);
+    }
+#ifdef _WIN32
+    // A crash exits with its exception's NTSTATUS, an error or a warning.
+    const auto code = static_cast<std::uint32_t>(status);
+    if(code >= 0x8000'0000) {
+        auto name = exception_name(code);
+        return name.empty() ? std::format("exception 0x{:08X}", code)
+                            : std::format("exception 0x{:08X} ({})", code, name);
+    }
+#endif
+    return std::format("exit code {}", status);
+}
 
 process::process() noexcept = default;
 
@@ -185,6 +249,11 @@ error process::kill(int signum) {
     }
 
     return error(::uv_process_kill(&self->process, signum));
+}
+
+error process::kill() {
+    // libuv defines SIGKILL on Windows, and terminates the process for it.
+    return kill(SIGKILL);
 }
 
 }  // namespace kota

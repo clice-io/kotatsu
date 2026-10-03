@@ -56,7 +56,10 @@ ZEST_CASE(wait_reports_the_exit_code) {
     EXPECT(test::exit_status_of(succeeded) == 0);
     ASSERT(succeeded.has_value());
     EXPECT(succeeded->term_signal == 0);
+    EXPECT(succeeded->success());
     EXPECT(test::exit_status_of(failed) == 3);
+    ASSERT(failed.has_value());
+    EXPECT(!failed->success());
 }
 
 // With inherited stdio the child shares the test's own streams.
@@ -238,6 +241,17 @@ ZEST_CASE(kill_ends_a_running_child) {
     auto [status] = run(spawned->proc.wait());
     ASSERT(status.has_value());
     EXPECT(status->term_signal == SIGTERM);
+}
+
+ZEST_CASE(kill_without_a_signal_ends_a_running_child) {
+    auto spawned = process::spawn(test::stdin_reader(), loop);
+    ASSERT(spawned.has_value());
+    EXPECT(!spawned->proc.kill());
+
+    auto [status] = run(spawned->proc.wait());
+    ASSERT(status.has_value());
+    EXPECT(!status->success());
+    EXPECT(status->to_string() == "signal 9 (SIGKILL)");
 }
 
 ZEST_CASE(kill_with_an_invalid_signal_fails) {
