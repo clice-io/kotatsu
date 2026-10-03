@@ -343,30 +343,70 @@ struct Peer<CodecT>::Self {
         log(LogLevel::error, "error response: {}", error.message);
         auto response = codec.encode_error_response(id, error);
         if(response) {
-            enqueue_outgoing(std::move(*response));
+            send_answer(id, std::move(*response));
         }
     }
 
-    /// Tells the remote that the request `id` is no longer awaited. It is a
-    /// courtesy: one the codec cannot encode is logged and not sent.
-    void send_cancel_request(const protocol::RequestID& id) {
-        auto params = codec.serialize_value(protocol::CancelRequestParams{id});
-        if(!params) {
-            log(LogLevel::error,
-                "$/cancelRequest for id={} not sent: {}",
-                detail::LoggedId{id},
-                params.error().message);
+    /// Whether the remote reads `payload`.
+    bool fits(std::string_view payload) const {
+        return payload.size() <= transport->max_payload();
+    }
+
+    /// The error of `what`, a message of `size` bytes over the remote's limit.
+    Error too_large(std::string_view what, std::size_t size) const {
+        return Error(protocol::ErrorCode::MessageTooLarge,
+                     std::format("a {} of {} bytes exceeds the limit of {} bytes",
+                                 what,
+                                 size,
+                                 transport->max_payload()));
+    }
+
+    /// Queues `response`, which answers `id`. One over the remote's limit is
+    /// replaced by a MessageTooLarge error, itself dropped when even that is
+    /// over the limit.
+    void send_answer(const std::optional<protocol::RequestID>& id, std::string response) {
+        if(fits(response)) {
+            enqueue_outgoing(std::move(response));
             return;
         }
-        auto notification = codec.encode_notification("$/cancelRequest", *params);
+        auto error = too_large("response", response.size());
+        log(LogLevel::warn, "answered instead: {}", error.message);
+        auto replacement = codec.encode_error_response(id, error);
+        if(replacement && fits(*replacement)) {
+            enqueue_outgoing(std::move(*replacement));
+        } else {
+            log(LogLevel::error, "dropped an answer: the limit leaves no room for its error");
+        }
+    }
+
+    /// Sends the notification `method` with `params`, encoded; one the remote
+    /// would not read fails unsent.
+    Result<void> notify(std::string_view method, std::string_view params) {
+        if(auto unsendable = this->unsendable(false)) {
+            return outcome_error(std::move(*unsendable));
+        }
+        auto notification = codec.encode_notification(method, params);
         if(!notification) {
-            log(LogLevel::error,
-                "$/cancelRequest for id={} not sent: {}",
-                detail::LoggedId{id},
-                notification.error().message);
-            return;
+            return outcome_error(notification.error());
+        }
+        if(!fits(*notification)) {
+            return outcome_error(too_large("notification", notification->size()));
         }
         enqueue_outgoing(std::move(*notification));
+        return {};
+    }
+
+    /// Tells the remote that the request `id` is no longer awaited. It is a
+    /// courtesy: one that cannot be sent is logged.
+    void send_cancel_request(const protocol::RequestID& id) {
+        auto params = codec.serialize_value(protocol::CancelRequestParams{id});
+        auto sent = params ? notify("$/cancelRequest", *params) : outcome_error(params.error());
+        if(!sent) {
+            log(LogLevel::error,
+                "$/cancelRequest for id={} not sent: {}",
+                detail::LoggedId{id},
+                sent.error().message);
+        }
     }
 
     /// Waits for `signal`: a task, whose cancellation its awaiter can catch.
@@ -522,7 +562,7 @@ struct Peer<CodecT>::Self {
             co_return;
         }
 
-        enqueue_outgoing(std::move(*response));
+        send_answer(id, std::move(*response));
     }
 
     void dispatch_incoming_message(std::string_view payload, task_group<>& handlers) {
@@ -649,6 +689,9 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
     if(!encoded) {
         co_await fail(encoded.error());
     }
+    if(!self->fits(*encoded)) {
+        co_await fail(self->too_large("request", encoded->size()));
+    }
 
     auto pending = std::make_shared<typename Self::PendingRequest>();
     self->pending_requests.emplace(id, pending);
@@ -682,17 +725,7 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
 
 template <typename CodecT>
 Result<void> Peer<CodecT>::send_notification_impl(std::string_view method, std::string params) {
-    if(auto unsendable = self->unsendable(false)) {
-        return outcome_error(std::move(*unsendable));
-    }
-
-    auto notification_encoded = self->codec.encode_notification(method, params);
-    if(!notification_encoded) {
-        return outcome_error(notification_encoded.error());
-    }
-
-    self->enqueue_outgoing(std::move(*notification_encoded));
-    return {};
+    return self->notify(method, params);
 }
 
 // The typed members: they encode params and decode results for the ones above.

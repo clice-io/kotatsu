@@ -13,8 +13,10 @@
 // remote.receive() returns once the peer has written a message.
 
 #include <cassert>
+#include <cstddef>
 #include <deque>
 #include <expected>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -81,6 +83,8 @@ struct Link {
     bool close_output_fails = false;
     /// The peer called close() on its transport.
     bool closed = false;
+    /// The largest payload the peer may write.
+    std::size_t max_payload = std::numeric_limits<std::size_t>::max();
 };
 
 /// The peer's end of a Link.
@@ -131,6 +135,10 @@ public:
         return {};
     }
 
+    std::size_t max_payload() const noexcept override {
+        return link->max_payload;
+    }
+
 private:
     std::shared_ptr<Link> link;
 };
@@ -174,6 +182,11 @@ public:
     /// Makes the peer's close_output() fail.
     void fail_close_output() {
         link->close_output_fails = true;
+    }
+
+    /// Takes no payload larger than `bytes` from the peer.
+    void limit_payload(std::size_t bytes) {
+        link->max_payload = bytes;
     }
 
     /// The next message the peer wrote, waiting for it; nothing once the

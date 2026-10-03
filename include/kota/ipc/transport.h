@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <limits>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -28,10 +29,17 @@ public:
 
     /// Closes both input and output, ending any pending read.
     virtual Result<void> close() = 0;
+
+    /// The largest payload the remote reads, as both ends configure it:
+    /// Peer sends no larger one. No limit unless the transport has one.
+    virtual std::size_t max_payload() const noexcept {
+        return std::numeric_limits<std::size_t>::max();
+    }
 };
 
 /// Messages framed as the LSP base protocol frames them, over streams. A
-/// message whose payload is larger than `max_payload` is skipped.
+/// message whose payload is larger than `max_payload` is skipped, and none
+/// larger is sent: both ends should configure the same limit.
 class StreamTransport : public Transport {
 public:
     StreamTransport(stream input, stream output, std::size_t max_payload = default_max_payload);
@@ -64,6 +72,8 @@ public:
     task<void, Error> close_output() override;
 
     Result<void> close() override;
+
+    std::size_t max_payload() const noexcept override;
 
 private:
     /// Points stdout at the null device, once, if the output is stdout.

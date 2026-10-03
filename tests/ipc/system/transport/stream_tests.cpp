@@ -214,6 +214,14 @@ ZEST_CASE(oversized_message_is_skipped_and_reading_goes_on) {
     EXPECT(next == "next");
 }
 
+// The limit it reads with is the one Peer sends within.
+ZEST_CASE(max_payload_is_the_limit_it_reads_with) {
+    auto input = feed(loop, 8);
+    ASSERT(input.has_value());
+    EXPECT(input->transport->max_payload() == 8U);
+    test::close_fd(input->writer);
+}
+
 ZEST_CASE(close_wakes_a_pending_read) {
     auto ends = pipe_ends(loop);
     ASSERT(ends.has_value());

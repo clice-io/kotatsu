@@ -152,6 +152,10 @@ Result<void> StreamTransport::close() {
     return released;
 }
 
+std::size_t StreamTransport::max_payload() const noexcept {
+    return parser.max_payload();
+}
+
 // libuv never closes fds 0 to 2 when it closes a stream over one (on Windows
 // it closes a duplicate of the handle), so the pipe or file behind stdout
 // stays open until fd 1 lets go of it: pointing fd 1 at the null device does.

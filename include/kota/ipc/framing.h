@@ -52,6 +52,11 @@ public:
 
     explicit FrameParser(std::size_t max_payload = default_max_payload);
 
+    /// The largest payload read; a frame with a larger one is skipped.
+    std::size_t max_payload() const noexcept {
+        return limit;
+    }
+
     /// What one feed() did: how many bytes of its input it took, and, when
     /// they finished a frame, its payload or why it cannot be read.
     struct Step {
@@ -76,7 +81,7 @@ private:
         Broken,
     };
 
-    std::size_t max_payload;
+    std::size_t limit;
     Phase phase = Phase::Header;
     /// The header read so far.
     std::string header;
