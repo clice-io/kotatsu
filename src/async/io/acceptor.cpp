@@ -145,7 +145,18 @@ unsigned int pipe_flags(const pipe::options& opts) {
     return opts.no_truncate ? static_cast<unsigned int>(UV_PIPE_NO_TRUNCATE) : 0U;
 }
 
-#ifndef _WIN32
+#ifdef _WIN32
+/// Why a stream cannot read `fd`, if it cannot: libuv reads pipes only, and
+/// fails on other handles each in a way of its own. A bad one is left to
+/// uv_pipe_open() to report.
+error unreadable_as_stream(int fd) {
+    const auto type = ::uv_guess_handle(fd);
+    if(type == UV_FILE || type == UV_TTY) {
+        return error::socket_operation_on_non_socket;
+    }
+    return {};
+}
+#else
 /// Why a stream cannot read `fd`, if it cannot. The loop waits for a regular
 /// file to be readable, which it never reports as a pipe does: epoll refuses
 /// one, and libuv aborts on the first read; kqueue stops reporting one at its
@@ -193,12 +204,10 @@ result<pipe> pipe::open(int fd, event_loop& loop) {
 }
 
 result<pipe> pipe::open(int fd, options opts, event_loop& loop) {
-#ifndef _WIN32
-    // Before uv_pipe_open(), which makes the descriptor non-blocking.
+    // Before uv_pipe_open(), which on Unix makes the descriptor non-blocking.
     if(auto err = unreadable_as_stream(fd)) {
         return outcome_error(err);
     }
-#endif
     auto opened = create(opts, loop);
     if(auto err = error(::uv_pipe_open(&opened.self->pipe, fd))) {
         return outcome_error(err);
