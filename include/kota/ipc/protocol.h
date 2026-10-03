@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <format>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -29,14 +28,6 @@ using string = std::string;
 using null = std::nullptr_t;
 
 using RequestID = std::variant<std::int64_t, std::string>;
-
-/// `id` as the peer's logs show it: a number as it is, a string in quotes.
-inline std::string to_string(const RequestID& id) {
-    if(const auto* number = std::get_if<std::int64_t>(&id)) {
-        return std::to_string(*number);
-    }
-    return std::format(R"("{}")", std::get<std::string>(id));
-}
 
 enum class ErrorCode : integer {
     ParseError = -32700,

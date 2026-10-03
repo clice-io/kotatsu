@@ -137,17 +137,18 @@ ZEST_CASE(answer_after_the_timeout_is_debug) {
     }
 }
 
-// An id the peer never gave a request of its own.
+// An id the peer never gave a request of its own. The log shows a number as
+// it is and a string in quotes, so that 7 and "7" read apart.
 ZEST_CASE(answer_to_an_unknown_id_is_a_warning) {
     log_from(LogLevel::warn);
     remote.send(test::response<test::JsonAdapter>(7, AddResult{}));
-    remote.send(test::response<test::JsonAdapter>("seven", AddResult{}));
+    remote.send(test::response<test::JsonAdapter>("7", AddResult{}));
     remote.end_input();
 
     auto [ran] = run(peer.run());
     EXPECT(ran.has_value());
     EXPECT(has(LogLevel::warn, "orphan response for id=7"));
-    EXPECT(has(LogLevel::warn, R"(orphan response for id="seven")"));
+    EXPECT(has(LogLevel::warn, R"(orphan response for id="7")"));
 }
 
 // run() is cancelled once the request is read and before its handler starts:

@@ -59,6 +59,14 @@ consteval void validate_request_callback_signature() {
                   "request callback first parameter should be RequestContext");
 }
 
+/// `id` as the peer's logs show it: a number as it is, a string in quotes.
+inline std::string shown_id(const protocol::RequestID& id) {
+    if(const auto* number = std::get_if<std::int64_t>(&id)) {
+        return std::to_string(*number);
+    }
+    return std::format(R"("{}")", std::get<std::string>(id));
+}
+
 template <typename Callback>
 consteval void validate_notification_callback_signature() {
     static_assert(std::tuple_size_v<callback_args_t<Callback>> == 1,
@@ -343,7 +351,7 @@ struct Peer<CodecT>::Self {
         if(!params) {
             log(LogLevel::error,
                 "$/cancelRequest for id={} not sent: {}",
-                protocol::to_string(id),
+                detail::shown_id(id),
                 params.error().message);
             return;
         }
@@ -351,7 +359,7 @@ struct Peer<CodecT>::Self {
         if(!notification) {
             log(LogLevel::error,
                 "$/cancelRequest for id={} not sent: {}",
-                protocol::to_string(id),
+                detail::shown_id(id),
                 notification.error().message);
             return;
         }
@@ -470,14 +478,14 @@ struct Peer<CodecT>::Self {
             // The answer to a request that timed out, or that failed with a
             // message too large to read, may still come; nothing awaits it.
             if(issued(id)) {
-                log(LogLevel::debug, "late response for id={}", protocol::to_string(id));
+                log(LogLevel::debug, "late response for id={}", detail::shown_id(id));
             } else {
-                log(LogLevel::warn, "orphan response for id={}", protocol::to_string(id));
+                log(LogLevel::warn, "orphan response for id={}", detail::shown_id(id));
             }
             return;
         }
 
-        log(LogLevel::debug, "response received for id={}", protocol::to_string(id));
+        log(LogLevel::debug, "response received for id={}", detail::shown_id(id));
 
         auto pending = std::move(it->second);
         pending_requests.erase(it);
@@ -538,7 +546,7 @@ struct Peer<CodecT>::Self {
                           const protocol::RequestID& id,
                           std::string_view params,
                           task_group<>& handlers) {
-        log(LogLevel::debug, "request: {} id={}", method, protocol::to_string(id));
+        log(LogLevel::debug, "request: {} id={}", method, detail::shown_id(id));
 
         if(incoming_requests.contains(id)) {
             send_error(id, Error(protocol::ErrorCode::InvalidRequest, "duplicate request id"));
