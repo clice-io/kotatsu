@@ -25,7 +25,8 @@
 //   full integer, string ones wrap `std::string` with named constants.
 // - every request / notification gets a `RequestTraits` / `NotificationTraits`
 //   specialization keyed by its params type; methods without params get an
-//   empty params structure so the key stays unique.
+//   empty params structure so the key stays unique, and traits that say so
+//   (`takes_params = false`), so that no params are sent.
 
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -384,6 +385,9 @@ class Generator extends Schema {
             ? []
             : [`    using Result = ${this.render(message.result)};`]),
           `    constexpr static std::string_view method = ${quoted(message.method)};`,
+          ...(message.takesParams
+            ? []
+            : ["    constexpr static bool takes_params = false;"]),
           "};",
         ]),
       );

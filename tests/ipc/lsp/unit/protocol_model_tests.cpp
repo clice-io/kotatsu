@@ -26,6 +26,14 @@ constexpr std::string_view range_json =
 
 ZEST_SUITE(ipc_lsp_protocol_model) {
 
+// The methods without params, such as the refresh requests, say so in their
+// traits: Peer sends them none, as other clients and servers expect.
+ZEST_CASE(methods_without_params_say_so) {
+    STATIC_EXPECT(!protocol::RequestTraits<protocol::ShutdownParams>::takes_params);
+    STATIC_EXPECT(!protocol::RequestTraits<protocol::CodeLensRefreshParams>::takes_params);
+    STATIC_EXPECT(!protocol::NotificationTraits<protocol::ExitParams>::takes_params);
+}
+
 ZEST_CASE(literal_encodes_its_text) {
     auto serialized = to_string<lsp_config>(protocol::CreateFile{.uri = "file:///a"});
     ASSERT(serialized);

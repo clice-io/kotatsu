@@ -7201,6 +7201,7 @@ template <>
 struct RequestTraits<ShutdownParams> {
     using Result = null;
     constexpr static std::string_view method = "shutdown";
+    constexpr static bool takes_params = false;
 };
 
 template <>
@@ -7453,6 +7454,7 @@ template <>
 struct RequestTraits<CodeLensRefreshParams> {
     using Result = null;
     constexpr static std::string_view method = "workspace/codeLens/refresh";
+    constexpr static bool takes_params = false;
 };
 
 template <>
@@ -7471,6 +7473,7 @@ template <>
 struct RequestTraits<DiagnosticRefreshParams> {
     using Result = null;
     constexpr static std::string_view method = "workspace/diagnostic/refresh";
+    constexpr static bool takes_params = false;
 };
 
 template <>
@@ -7483,24 +7486,28 @@ template <>
 struct RequestTraits<FoldingRangeRefreshParams> {
     using Result = null;
     constexpr static std::string_view method = "workspace/foldingRange/refresh";
+    constexpr static bool takes_params = false;
 };
 
 template <>
 struct RequestTraits<InlayHintRefreshParams> {
     using Result = null;
     constexpr static std::string_view method = "workspace/inlayHint/refresh";
+    constexpr static bool takes_params = false;
 };
 
 template <>
 struct RequestTraits<InlineValueRefreshParams> {
     using Result = null;
     constexpr static std::string_view method = "workspace/inlineValue/refresh";
+    constexpr static bool takes_params = false;
 };
 
 template <>
 struct RequestTraits<SemanticTokensRefreshParams> {
     using Result = null;
     constexpr static std::string_view method = "workspace/semanticTokens/refresh";
+    constexpr static bool takes_params = false;
 };
 
 template <>
@@ -7543,6 +7550,7 @@ template <>
 struct RequestTraits<WorkspaceFoldersParams> {
     using Result = nullable<std::vector<WorkspaceFolder>>;
     constexpr static std::string_view method = "workspace/workspaceFolders";
+    constexpr static bool takes_params = false;
 };
 
 template <>
@@ -7574,6 +7582,7 @@ struct NotificationTraits<SetTraceParams> {
 template <>
 struct NotificationTraits<ExitParams> {
     constexpr static std::string_view method = "exit";
+    constexpr static bool takes_params = false;
 };
 
 template <>

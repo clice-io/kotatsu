@@ -15,10 +15,12 @@ struct JsonCodec {
     /// large to read whole.
     MessageHead peek(std::string_view prefix);
 
+    /// Empty params, those of a method that takes none, leave the member out.
     Result<std::string> encode_request(const protocol::RequestID& id,
                                        std::string_view method,
                                        std::string_view params);
 
+    /// Empty params leave the member out, as for a request.
     Result<std::string> encode_notification(std::string_view method, std::string_view params);
 
     Result<std::string> encode_success_response(const protocol::RequestID& id,

@@ -199,6 +199,34 @@ void peer_requests(const PeerKit<A>& kit) {
         EXPECT(f.written().empty());
     });
 
+    // A method whose traits say it takes no params is sent none.
+    kit.add("method_that_takes_no_params_is_sent_none", [](Fixture& f) {
+        bool notified = false;
+        auto ask = [&]() -> task<std::nullptr_t, ipc::Error> {
+            notified = f.peer.send_notification(NoParams{}).has_value();
+            co_return co_await f.peer.send_request(NoParams{}).or_fail();
+        };
+        auto remote = [&]() -> task<> {
+            co_await f.next();
+            co_await f.next();
+            f.remote.send(response<A>(1, nullptr));
+            f.remote.end_input();
+        };
+
+        auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
+        EXPECT(ran.has_value());
+        EXPECT(notified);
+        EXPECT(asked.has_value());
+        const auto& written = f.written();
+        ASSERT(written.size() == 2U);
+        EXPECT(written[0].kind == Message::Kind::Notification);
+        EXPECT(written[0].method == "test/none");
+        EXPECT(written[0].body.empty());
+        EXPECT(written[1].kind == Message::Kind::Request);
+        EXPECT(written[1].method == "test/none");
+        EXPECT(written[1].body.empty());
+    });
+
     kit.add("send_notification_writes_a_notification", [](Fixture& f) {
         auto by_traits = f.peer.send_notification(NoteParams{.text = "by traits"});
         auto by_name = f.peer.send_notification("custom/note", NoteParams{.text = "by name"});

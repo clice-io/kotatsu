@@ -41,6 +41,17 @@ ZEST_CASE(encode_error_response_writes_the_data) {
     EXPECT(*message->error.data == data);
 }
 
+// Empty params, those of a method that takes none, leave the member out.
+ZEST_CASE(encode_without_params_leaves_them_out) {
+    JsonCodec codec;
+    auto request = codec.encode_request(1, "shutdown", "");
+    auto notification = codec.encode_notification("exit", "");
+    ASSERT(request.has_value());
+    ASSERT(notification.has_value());
+    EXPECT(*request == R"({"jsonrpc":"2.0","id":1,"method":"shutdown"})");
+    EXPECT(*notification == R"({"jsonrpc":"2.0","method":"exit"})");
+}
+
 // JSON-RPC lets an error without data leave the member out.
 ZEST_CASE(encode_error_response_without_data_leaves_it_out) {
     JsonCodec codec;

@@ -28,14 +28,26 @@ struct outgoing_request_message {
     std::string jsonrpc = "2.0";
     protocol::RequestID id;
     std::string method;
-    codec::RawValue params;
+    /// Left out for a method that takes none.
+    KOTATSU_ANNOTATE(skip_if = skip_when::none)
+    <std::optional<codec::RawValue>> params;
 };
 
 struct outgoing_notification_message {
     std::string jsonrpc = "2.0";
     std::string method;
-    codec::RawValue params;
+    /// Left out for a method that takes none.
+    KOTATSU_ANNOTATE(skip_if = skip_when::none)
+    <std::optional<codec::RawValue>> params;
 };
+
+/// Params as a message carries them: none when they are empty.
+std::optional<codec::RawValue> params_member(std::string_view params) {
+    if(params.empty()) {
+        return std::nullopt;
+    }
+    return codec::RawValue{std::string(params)};
+}
 
 struct outgoing_success_response_message {
     std::string jsonrpc = "2.0";
@@ -522,7 +534,7 @@ Result<std::string> JsonCodec::encode_request(const protocol::RequestID& id,
     return serialize_value(outgoing_request_message{
         .id = id,
         .method = std::string(method),
-        .params = codec::RawValue{std::string(params)},
+        .params = params_member(params),
     });
 }
 
@@ -530,7 +542,7 @@ Result<std::string> JsonCodec::encode_notification(std::string_view method,
                                                    std::string_view params) {
     return serialize_value(outgoing_notification_message{
         .method = std::string(method),
-        .params = codec::RawValue{std::string(params)},
+        .params = params_member(params),
     });
 }
 

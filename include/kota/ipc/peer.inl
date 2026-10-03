@@ -59,6 +59,10 @@ template <typename Params>
 constexpr bool has_notification_traits_v =
     requires { protocol::NotificationTraits<Params>::method; };
 
+/// Traits of a method that takes no params, keyed by an empty structure.
+template <typename Traits>
+constexpr bool takes_no_params_v = requires { requires !Traits::takes_params; };
+
 template <typename Callback>
 using callback_args_t = callable_args_t<std::remove_cvref_t<Callback>>;
 
@@ -149,6 +153,17 @@ struct Peer<CodecT>::Self {
     void log(LogLevel level, std::format_string<Args...> format, Args&&... args) {
         if(logger && level >= min_level) {
             logger(level, std::format(format, std::forward<Args>(args)...));
+        }
+    }
+
+    /// What `params` is sent as: nothing at all, for the params of a method
+    /// that takes none.
+    template <template <typename> class Traits, typename Params>
+    Result<std::string> encode_params(const Params& params) {
+        if constexpr(detail::takes_no_params_v<Traits<Params>>) {
+            return std::string();
+        } else {
+            return codec.serialize_value(params);
         }
     }
 
@@ -696,7 +711,8 @@ template <typename ResultT, typename Params>
 task<ResultT, Error> Peer<CodecT>::send_request(std::string_view method,
                                                 const Params& params,
                                                 request_options opts) {
-    auto serialized_params = co_await or_fail(self->codec.serialize_value(params));
+    auto serialized_params =
+        co_await or_fail(self->template encode_params<protocol::RequestTraits>(params));
     auto raw_result =
         co_await send_request_impl(method, std::move(serialized_params), std::move(opts)).or_fail();
     co_return co_await or_fail(self->template read_result<ResultT>(std::move(raw_result)));
@@ -713,7 +729,8 @@ Result<void> Peer<CodecT>::send_notification(const Params& params) {
 template <typename CodecT>
 template <typename Params>
 Result<void> Peer<CodecT>::send_notification(std::string_view method, const Params& params) {
-    auto serialized_params = self->codec.serialize_value(params);
+    auto serialized_params =
+        self->template encode_params<protocol::NotificationTraits>(params);
     if(!serialized_params) {
         return outcome_error(serialized_params.error());
     }
