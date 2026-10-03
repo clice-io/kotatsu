@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <source_location>
+#include <utility>
 
 #include "kota/async/runtime/node.h"
 
@@ -13,6 +14,13 @@ namespace kota {
 class event_loop;
 class mutex;
 class condition_variable;
+
+namespace detail {
+
+template <typename Primitive>
+class ScopedWait;
+
+}  // namespace detail
 
 /// Base of the sync primitives. Tasks wait on one through a wait_node, in a
 /// FIFO queue, and a primitive never resumes a task it grants inline: the task
@@ -102,6 +110,8 @@ private:
     friend class semaphore;
     friend class event;
     friend class condition_variable;
+    template <typename Primitive>
+    friend class detail::ScopedWait;
     template <typename Derived>
     friend class async_visitor;
 
@@ -146,11 +156,100 @@ private:
     wait_node* next = nullptr;
 };
 
+namespace detail {
+
+/// What mutex::scoped_lock() and semaphore::scoped_acquire() give to
+/// co_await: the wait of lock() or acquire(), which then gives a guard of what
+/// it took. A wait a cancel ends gives none and keeps nothing.
+template <typename Primitive>
+class ScopedWait {
+public:
+    bool await_ready() noexcept {
+        return wait.await_ready();
+    }
+
+    template <typename Promise>
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<Promise> waiting,
+                      std::source_location location = std::source_location::current()) noexcept {
+        return wait.await_suspend(waiting, location);
+    }
+
+    typename Primitive::guard await_resume() noexcept {
+        return typename Primitive::guard(owner);
+    }
+
+private:
+    friend Primitive;
+
+    explicit ScopedWait(Primitive& owner) noexcept : wait(owner), owner(owner) {}
+
+    wait_node wait;
+    Primitive& owner;
+};
+
+/// What mutex::guard and semaphore::guard share: what a scoped wait took from
+/// `Primitive`, which `Guard::give_back` hands back when the guard goes,
+/// unless it was handed back before. A moved-from guard holds nothing.
+template <typename Guard, typename Primitive>
+class BasicGuard {
+public:
+    BasicGuard(BasicGuard&& other) noexcept : held(std::exchange(other.held, nullptr)) {}
+
+    /// Hands back what this guard holds, and takes what `other` holds.
+    BasicGuard& operator=(BasicGuard other) noexcept {
+        std::swap(held, other.held);
+        return *this;
+    }
+
+    ~BasicGuard() {
+        if(held != nullptr) {
+            Guard::give_back(*held);
+        }
+    }
+
+protected:
+    explicit BasicGuard(Primitive& taken) noexcept : held(&taken) {}
+
+    /// Hands back what the guard holds before it goes.
+    void give_back_now() noexcept {
+        assert(held != nullptr && "guard handed back twice");
+        Guard::give_back(*std::exchange(held, nullptr));
+    }
+
+private:
+    Primitive* held;
+};
+
+}  // namespace detail
+
 /// Mutual exclusion between tasks, handed from each unlock() to the first
 /// task waiting in lock().
 class mutex : public sync_primitive {
 public:
     using lock_awaiter = wait_node;
+
+    using scoped_lock_awaiter = detail::ScopedWait<mutex>;
+
+    /// Holds the mutex scoped_lock() locked, and unlocks it when it goes,
+    /// unless unlock() did before. A moved-from guard holds nothing.
+    class [[nodiscard]] guard : public detail::BasicGuard<guard, mutex> {
+    public:
+        /// Unlocks the mutex now.
+        void unlock() noexcept {
+            give_back_now();
+        }
+
+    private:
+        friend detail::BasicGuard<guard, mutex>;
+        friend scoped_lock_awaiter;
+
+        explicit guard(mutex& locked) noexcept : BasicGuard(locked) {}
+
+        static void give_back(mutex& locked) noexcept {
+            locked.unlock();
+        }
+    };
 
     explicit mutex(std::source_location location = std::source_location::current()) noexcept :
         sync_primitive(Kind::Mutex, location) {}
@@ -158,6 +257,11 @@ public:
     /// Locks the mutex; waits for it while another task holds it.
     lock_awaiter lock() noexcept {
         return lock_awaiter(*this);
+    }
+
+    /// Locks the mutex as lock() does, and gives a guard that unlocks it.
+    scoped_lock_awaiter scoped_lock() noexcept {
+        return scoped_lock_awaiter(*this);
     }
 
     /// Locks the mutex if it is free.
@@ -187,6 +291,28 @@ class semaphore : public sync_primitive {
 public:
     using acquire_awaiter = wait_node;
 
+    using scoped_acquire_awaiter = detail::ScopedWait<semaphore>;
+
+    /// Holds the unit scoped_acquire() took, and releases it when it goes,
+    /// unless release() did before. A moved-from guard holds nothing.
+    class [[nodiscard]] guard : public detail::BasicGuard<guard, semaphore> {
+    public:
+        /// Releases the unit now.
+        void release() noexcept {
+            give_back_now();
+        }
+
+    private:
+        friend detail::BasicGuard<guard, semaphore>;
+        friend scoped_acquire_awaiter;
+
+        explicit guard(semaphore& acquired) noexcept : BasicGuard(acquired) {}
+
+        static void give_back(semaphore& acquired) noexcept {
+            acquired.release();
+        }
+    };
+
     explicit semaphore(std::ptrdiff_t initial = 0,
                        std::source_location location = std::source_location::current()) noexcept :
         sync_primitive(Kind::Semaphore, location), count(initial) {
@@ -196,6 +322,11 @@ public:
     /// Takes a unit; waits for one while there is none.
     acquire_awaiter acquire() noexcept {
         return acquire_awaiter(*this);
+    }
+
+    /// Takes a unit as acquire() does, and gives a guard that releases it.
+    scoped_acquire_awaiter scoped_acquire() noexcept {
+        return scoped_acquire_awaiter(*this);
     }
 
     /// Takes a unit if there is one.
