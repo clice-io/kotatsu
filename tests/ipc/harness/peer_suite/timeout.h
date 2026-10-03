@@ -102,6 +102,8 @@ void peer_timeout(const PeerKit<A>& kit) {
 
     // The token sent $/cancelRequest, which the remote ignores: the request
     // fails at the deadline all the same, and the remote is not told again.
+    // The token fires in the turn the request is sent, so that however slow
+    // the run, the cancel comes before the deadline.
     kit.add("token_then_a_silent_remote_times_out", [](Fixture& f) {
         cancellation_source source;
         event ended;
@@ -112,8 +114,8 @@ void peer_timeout(const PeerKit<A>& kit) {
             co_return co_await or_fail(std::move(asked));
         };
         auto remote = [&]() -> task<> {
-            co_await f.next();
             source.cancel();
+            co_await f.next();
             co_await f.next();
             co_await ended.wait();
             f.remote.end_input();
@@ -130,7 +132,8 @@ void peer_timeout(const PeerKit<A>& kit) {
     });
 
     // The caller is cancelled and the remote ignores $/cancelRequest: the
-    // caller ends cancelled at the deadline.
+    // caller ends cancelled at the deadline. It is cancelled in the turn the
+    // request is sent, as above.
     kit.add("cancelled_caller_and_a_silent_remote_end_at_the_timeout", [](Fixture& f) {
         cancellation_source source;
         event ended;
@@ -143,8 +146,8 @@ void peer_timeout(const PeerKit<A>& kit) {
             co_return asked.is_cancelled();
         };
         auto remote = [&]() -> task<> {
-            co_await f.next();
             source.cancel();
+            co_await f.next();
             co_await f.next();
             co_await ended.wait();
             f.remote.end_input();

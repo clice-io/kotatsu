@@ -137,6 +137,24 @@ ZEST_CASE(answer_after_the_timeout_is_debug) {
     }
 }
 
+// The answer is larger than the transport carries: the error that replaces
+// it says so, and so does a warning.
+ZEST_CASE(response_over_the_limit_is_a_warning) {
+    log_from(LogLevel::warn);
+    remote.limit_payload(64);
+    peer.on_request("test/repeat",
+                    [](Context&, const AddParams& params) -> task<NoteParams, Error> {
+                        co_return NoteParams{
+                            .text = std::string(static_cast<std::size_t>(params.a), 'x')};
+                    });
+    remote.send(test::request<test::JsonAdapter>(1, "test/repeat", AddParams{.a = 100}));
+    remote.end_input();
+
+    auto [ran] = run(peer.run());
+    EXPECT(ran.has_value());
+    EXPECT(has(LogLevel::warn, "response replaced: a message of"));
+}
+
 // An id the peer never gave a request of its own. The log shows a number as
 // it is and a string in quotes, so that 7 and "7" read apart.
 ZEST_CASE(answer_to_an_unknown_id_is_a_warning) {

@@ -63,6 +63,42 @@ void peer_limit(const PeerKit<A>& kit) {
         EXPECT(written[0].method == "test/add");
     });
 
+    // The limit is the largest payload carried, as the reading side reads
+    // it: a request exactly at it is sent, one a byte larger is not. The
+    // codec gives the sizes, ids 1 and 2 taking as many bytes.
+    kit.add("request_at_the_limit_is_sent_and_one_a_byte_larger_is_not", [](Fixture& f) {
+        typename A::Codec codec;
+        auto request_size = [&](std::int64_t id, std::size_t length) -> std::size_t {
+            auto params = codec.serialize_value(NoteParams{.text = std::string(length, 'x')});
+            auto encoded = codec.encode_request(RequestID(id), "test/note", *params);
+            return encoded.has_value() ? encoded->size() : 0;
+        };
+        const auto limit = request_size(1, payload_limit);
+        ASSERT(request_size(2, payload_limit + 1) == limit + 1);
+        f.remote.limit_payload(limit);
+        auto ask = [&](std::size_t length) -> task<ipc::Error> {
+            auto asked = co_await f.peer.template send_request<AddResult>(
+                "test/note",
+                NoteParams{.text = std::string(length, 'x')});
+            co_return asked.has_error() ? asked.error() : ipc::Error("no error");
+        };
+        auto remote = [&]() -> task<> {
+            co_await f.next();
+            f.remote.end_input();
+        };
+
+        auto [ran, at, over, scripted] =
+            f.run(f.peer.run(), ask(payload_limit), ask(payload_limit + 1), remote());
+        EXPECT(ran.has_value());
+        ASSERT(at.has_value());
+        EXPECT(code_of(*at) == ErrorCode::ConnectionClosed);
+        ASSERT(over.has_value());
+        EXPECT(code_of(*over) == ErrorCode::MessageTooLarge);
+        const auto& written = f.written();
+        ASSERT(written.size() == 1U);
+        EXPECT(written[0].id == RequestID(1));
+    });
+
     kit.add("notification_over_the_limit_fails_without_writing", [](Fixture& f) {
         f.remote.limit_payload(payload_limit);
         auto large = f.peer.send_notification(NoteParams{.text = beyond_the_limit()});
@@ -105,6 +141,41 @@ void peer_limit(const PeerKit<A>& kit) {
         EXPECT(written[1].id == RequestID(2));
         EXPECT(code_of(written[1].error) == ErrorCode::MessageTooLarge);
         EXPECT(!written[1].error.data.has_value());
+    });
+
+    // The same for a result: one exactly at the limit is sent, one a byte
+    // larger replaced.
+    kit.add("result_at_the_limit_is_sent_and_one_a_byte_larger_is_not", [](Fixture& f) {
+        typename A::Codec codec;
+        auto response_size = [&](std::int64_t id, std::size_t length) -> std::size_t {
+            auto result = codec.serialize_value(NoteParams{.text = std::string(length, 'x')});
+            auto encoded = codec.encode_success_response(RequestID(id), *result);
+            return encoded.has_value() ? encoded->size() : 0;
+        };
+        const auto limit = response_size(1, payload_limit);
+        ASSERT(response_size(2, payload_limit + 1) == limit + 1);
+        f.remote.limit_payload(limit);
+        f.peer.on_request("test/repeat",
+                          [](Context&, const AddParams& params) -> task<NoteParams, ipc::Error> {
+                              co_return NoteParams{
+                                  .text = std::string(static_cast<std::size_t>(params.a), 'x')};
+                          });
+        f.remote.send(
+            request<A>(1, "test/repeat", AddParams{.a = static_cast<std::int64_t>(payload_limit)}));
+        f.remote.send(request<A>(2,
+                                 "test/repeat",
+                                 AddParams{.a = static_cast<std::int64_t>(payload_limit + 1)}));
+        f.remote.end_input();
+
+        auto [ran] = f.run(f.peer.run());
+        EXPECT(ran.has_value());
+        const auto& written = f.written();
+        ASSERT(written.size() == 2U);
+        EXPECT(written[0].kind == Message::Kind::Result);
+        EXPECT(written[0].id == RequestID(1));
+        EXPECT(written[1].kind == Message::Kind::Error);
+        EXPECT(written[1].id == RequestID(2));
+        EXPECT(code_of(written[1].error) == ErrorCode::MessageTooLarge);
     });
 
     // The error's data is what makes it too large; the error that replaces

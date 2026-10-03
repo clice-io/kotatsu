@@ -4,6 +4,7 @@
 // handler, and a cancelled send_request tells the remote with one, once, and
 // waits for its answer.
 
+#include <cstddef>
 #include <string>
 
 #include "ipc/harness/peer_fixture.h"
@@ -165,6 +166,7 @@ void peer_cancel(const PeerKit<A>& kit) {
     // cancelled twice, by its token and with the handler, and the remote told
     // once; the handler ends once the remote has answered it.
     kit.add("handler_cancellation_cancels_its_own_request", [](Fixture& f) {
+        std::size_t written_before_the_answer = 0;
         f.peer.on_request(
             [&](Context& context, const AddParams& params) -> ipc::RequestResult<AddParams> {
                 co_return co_await context
@@ -178,6 +180,8 @@ void peer_cancel(const PeerKit<A>& kit) {
             co_await f.next();
             f.remote.send(notification<A>("$/cancelRequest", CancelRequestParams{.id = 31}));
             co_await f.next();
+            // The handler still waits for the answer to its request.
+            written_before_the_answer = f.written().size();
             f.remote.send(
                 A::error_response(1, ipc::Error(ErrorCode::RequestCancelled, "request cancelled")));
             co_await f.next();
@@ -187,6 +191,7 @@ void peer_cancel(const PeerKit<A>& kit) {
         auto [ran, scripted] = f.run(f.peer.run(), remote());
         EXPECT(ran.has_value());
         EXPECT(scripted.has_value());
+        EXPECT(written_before_the_answer == 2U);
         const auto& written = f.written();
         ASSERT(written.size() == 3U);
         EXPECT(written[0].kind == Message::Kind::Request);
