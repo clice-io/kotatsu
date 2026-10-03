@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <chrono>
 #include <format>
 #include <string>
 #include <utility>
@@ -17,7 +18,9 @@ namespace {
 
 using Fixture = test::PeerFixture<test::JsonAdapter>;
 using test::AddParams;
+using test::AddResult;
 using test::NoteParams;
+using namespace std::chrono_literals;
 
 struct LogEntry {
     LogLevel level;
@@ -105,6 +108,45 @@ ZEST_CASE(unhandled_notification_is_a_warning) {
     auto [ran] = run(peer.run());
     EXPECT(ran.has_value());
     EXPECT(has(LogLevel::warn, "unhandled notification: unknown/note"));
+}
+
+// The remote answers once the request has timed out: nothing awaits the
+// answer, which is no surprise, so it is no warning.
+ZEST_CASE(answer_after_the_timeout_is_debug) {
+    log_from(LogLevel::debug);
+    event ended;
+    auto ask = [&]() -> task<> {
+        co_await peer.send_request(AddParams{}, {.timeout = 10ms});
+        ended.set();
+    };
+    auto respond = [&]() -> task<> {
+        co_await next();
+        co_await next();
+        co_await ended.wait();
+        remote.send(test::response<test::JsonAdapter>(1, AddResult{.sum = 1}));
+        remote.end_input();
+    };
+
+    auto [ran, asked, responded] = run(peer.run(), ask(), respond());
+    EXPECT(ran.has_value());
+    EXPECT(has(LogLevel::debug, "late response for id=1"));
+    for(const auto& entry: entries) {
+        ZEST_CONTEXT("entry: {}", entry.text);
+        EXPECT(entry.level < LogLevel::warn);
+    }
+}
+
+// An id the peer never gave a request of its own.
+ZEST_CASE(answer_to_an_unknown_id_is_a_warning) {
+    log_from(LogLevel::warn);
+    remote.send(test::response<test::JsonAdapter>(7, AddResult{}));
+    remote.send(test::response<test::JsonAdapter>("seven", AddResult{}));
+    remote.end_input();
+
+    auto [ran] = run(peer.run());
+    EXPECT(ran.has_value());
+    EXPECT(has(LogLevel::warn, "orphan response for id=7"));
+    EXPECT(has(LogLevel::warn, R"(orphan response for id="seven")"));
 }
 
 ZEST_CASE(run_logs_where_its_read_loop_starts_and_ends) {

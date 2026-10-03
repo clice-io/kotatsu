@@ -85,37 +85,37 @@ void peer_link(const PeerKit<A>& kit) {
         EXPECT(failure->message == "remote failed");
     });
 
-    // b's handler sees its cancellation arrive, which shows the
-    // $/cancelRequest crossed, before the script closes both.
+    // The $/cancelRequest crosses and cancels b's handler, and b's answer,
+    // that it cancelled the request, crosses back as what the request gives.
     kit.add_case("cancellation_crosses_between_peers", [] {
         Peers f;
         event started;
-        event cancelled;
         event never;
+        bool cancelled = false;
         f.b.on_request([&](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
             started.set();
             auto waited = co_await wait_for(never).catch_cancel();
-            if(waited.is_cancelled()) {
-                cancelled.set();
-            }
+            cancelled = waited.is_cancelled();
             co_return AddResult{};
         });
         cancellation_source source;
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
-            co_return co_await f.a.send_request(AddParams{}, {.token = source.token()}).or_fail();
+        auto ask = [&]() -> task<ipc::Error> {
+            auto result = co_await f.a.send_request(AddParams{}, {.token = source.token()});
+            f.a.close();
+            f.b.close();
+            co_return result.has_error() ? result.error() : ipc::Error("no error");
         };
         auto script = [&]() -> task<> {
             co_await started.wait();
             source.cancel();
-            co_await cancelled.wait();
-            f.a.close();
-            f.b.close();
         };
 
         auto [asked, scripted] = f.run_with(ask(), script());
         EXPECT(scripted.has_value());
-        ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::RequestCancelled);
+        EXPECT(cancelled);
+        ASSERT(asked.has_value());
+        EXPECT(code_of(*asked) == ErrorCode::RequestCancelled);
+        EXPECT(asked->message == "request cancelled");
     });
 }
 

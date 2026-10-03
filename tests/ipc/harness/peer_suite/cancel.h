@@ -1,7 +1,8 @@
 #pragma once
 
 // Cancellation both ways: $/cancelRequest from the remote cancels a running
-// handler, and a cancelled send_request tells the remote with one.
+// handler, and a cancelled send_request tells the remote with one, once, and
+// waits for its answer.
 
 #include <string>
 
@@ -138,7 +139,9 @@ void peer_cancel(const PeerKit<A>& kit) {
     });
 
     // The handler passes its own cancellation to the request it sends; the
-    // remote cancels the handler once it sees that request.
+    // remote cancels the handler once it sees that request. The request is
+    // cancelled twice, by its token and with the handler, and the remote told
+    // once; the handler ends once the remote has answered it.
     kit.add("handler_cancellation_cancels_its_own_request", [](Fixture& f) {
         f.peer.on_request(
             [&](Context& context, const AddParams& params) -> ipc::RequestResult<AddParams> {
@@ -153,6 +156,8 @@ void peer_cancel(const PeerKit<A>& kit) {
             co_await f.next();
             f.remote.send(notification<A>("$/cancelRequest", CancelRequestParams{.id = 31}));
             co_await f.next();
+            f.remote.send(
+                A::error_response(1, ipc::Error(ErrorCode::RequestCancelled, "request cancelled")));
             co_await f.next();
             f.remote.end_input();
         };
@@ -173,7 +178,9 @@ void peer_cancel(const PeerKit<A>& kit) {
         EXPECT(code_of(written[2].error) == ErrorCode::RequestCancelled);
     });
 
-    kit.add("send_request_cancelled_by_its_token_sends_cancel_request", [](Fixture& f) {
+    // The request gives what the remote answers after $/cancelRequest, as it
+    // is: as a rule, that it cancelled it.
+    kit.add("send_request_cancelled_by_its_token_returns_the_remote_error", [](Fixture& f) {
         cancellation_source source;
         auto ask = [&]() -> task<AddResult, ipc::Error> {
             co_return co_await f.peer
@@ -186,6 +193,9 @@ void peer_cancel(const PeerKit<A>& kit) {
             co_await f.next();
             source.cancel();
             co_await f.next();
+            f.remote.send(A::error_response(
+                1,
+                ipc::Error(ErrorCode::RequestCancelled, "cancelled by the remote")));
             f.remote.end_input();
         };
 
@@ -193,7 +203,7 @@ void peer_cancel(const PeerKit<A>& kit) {
         EXPECT(ran.has_value());
         ASSERT(asked.has_error());
         EXPECT(code_of(asked.error()) == ErrorCode::RequestCancelled);
-        EXPECT(asked.error().message == "request cancelled");
+        EXPECT(asked.error().message == "cancelled by the remote");
         const auto& written = f.written();
         ASSERT(written.size() == 2U);
         EXPECT(written[0].id == RequestID(1));
@@ -224,9 +234,100 @@ void peer_cancel(const PeerKit<A>& kit) {
         EXPECT(f.written().empty());
     });
 
-    // A remote may answer a request after it was told of the cancellation;
-    // that answer goes nowhere.
-    kit.add("answer_after_cancel_request_is_ignored", [](Fixture& f) {
+    // A remote may have finished the request before it read the
+    // cancellation; its result then counts.
+    kit.add("send_request_cancelled_by_its_token_returns_a_result_that_came_first", [](Fixture& f) {
+        cancellation_source source;
+        auto ask = [&]() -> task<AddResult, ipc::Error> {
+            co_return co_await f.peer
+                .send_request(AddParams{.a = 1, .b = 2}, {.token = source.token()})
+                .or_fail();
+        };
+        auto remote = [&]() -> task<> {
+            co_await f.next();
+            source.cancel();
+            co_await f.next();
+            f.remote.send(response<A>(1, AddResult{.sum = 3}));
+            f.remote.end_input();
+        };
+
+        auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
+        EXPECT(ran.has_value());
+        ASSERT(asked.has_value());
+        EXPECT(asked->sum == 3);
+        EXPECT(f.written().size() == 2U);
+    });
+
+    // The task awaiting the request is cancelled, not the request: the remote
+    // is told all the same, and the task ends cancelled once the remote has
+    // answered, whatever the answer. It is still waiting when the remote reads
+    // $/cancelRequest.
+    kit.add("send_request_whose_caller_is_cancelled_waits_for_the_answer", [](Fixture& f) {
+        cancellation_source source;
+        bool ended = false;
+        bool ended_before_the_answer = true;
+        auto ask = [&]() -> task<AddResult, ipc::Error> {
+            co_return co_await f.peer.template send_request<AddResult>("worker/build", AddParams{})
+                .or_fail();
+        };
+        auto caller = [&]() -> task<bool> {
+            auto asked = co_await with_token(ask(), source.token());
+            ended = true;
+            co_return asked.is_cancelled();
+        };
+        auto remote = [&]() -> task<> {
+            co_await f.next();
+            source.cancel();
+            co_await f.next();
+            ended_before_the_answer = ended;
+            f.remote.send(response<A>(1, AddResult{.sum = 1}));
+            f.remote.end_input();
+        };
+
+        auto [ran, cancelled, scripted] = f.run(f.peer.run(), caller(), remote());
+        EXPECT(ran.has_value());
+        EXPECT(scripted.has_value());
+        EXPECT(!ended_before_the_answer);
+        ASSERT(cancelled.has_value());
+        EXPECT(*cancelled);
+        const auto& written = f.written();
+        ASSERT(written.size() == 2U);
+        EXPECT(written[1].method == "$/cancelRequest");
+        auto cancel_params = decoded<CancelRequestParams, A>(written[1].body);
+        ASSERT(cancel_params.has_value());
+        EXPECT(cancel_params->id == RequestID(1));
+    });
+
+    // The token fires, then the caller is cancelled too: the remote is told
+    // once.
+    kit.add("send_request_cancelled_twice_sends_cancel_request_once", [](Fixture& f) {
+        cancellation_source token;
+        cancellation_source caller;
+        auto ask = [&]() -> task<AddResult, ipc::Error> {
+            co_return co_await f.peer.send_request(AddParams{}, {.token = token.token()}).or_fail();
+        };
+        auto remote = [&]() -> task<> {
+            co_await f.next();
+            token.cancel();
+            co_await f.next();
+            caller.cancel();
+            f.remote.send(
+                A::error_response(1, ipc::Error(ErrorCode::RequestCancelled, "request cancelled")));
+            f.remote.end_input();
+        };
+
+        auto [ran, asked, scripted] =
+            f.run(f.peer.run(), with_token(ask(), caller.token()), remote());
+        EXPECT(ran.has_value());
+        EXPECT(asked.is_cancelled());
+        const auto& written = f.written();
+        ASSERT(written.size() == 2U);
+        EXPECT(written[1].method == "$/cancelRequest");
+    });
+
+    // A remote that does not answer after $/cancelRequest: closing the peer
+    // ends the wait, failing a request its token cancelled.
+    kit.add("close_after_a_token_cancel_fails_the_request", [](Fixture& f) {
         cancellation_source source;
         auto ask = [&]() -> task<AddResult, ipc::Error> {
             co_return co_await f.peer.send_request(AddParams{}, {.token = source.token()})
@@ -236,44 +337,34 @@ void peer_cancel(const PeerKit<A>& kit) {
             co_await f.next();
             source.cancel();
             co_await f.next();
-            f.remote.send(response<A>(1, AddResult{.sum = 1}));
-            f.remote.end_input();
+            f.peer.close();
         };
 
         auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
         EXPECT(ran.has_value());
         ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::RequestCancelled);
-        EXPECT(f.written().size() == 2U);
+        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
+        EXPECT(asked.error().message == "peer closed");
     });
 
-    // The task awaiting the request is cancelled, not the request: the
-    // remote is told all the same, and the answer it may still send goes
-    // nowhere.
-    kit.add("send_request_whose_caller_is_cancelled_sends_cancel_request", [](Fixture& f) {
+    // The same, with the caller cancelled: it ends cancelled.
+    kit.add("close_after_the_caller_is_cancelled_ends_it_cancelled", [](Fixture& f) {
         cancellation_source source;
         auto ask = [&]() -> task<AddResult, ipc::Error> {
-            co_return co_await f.peer.template send_request<AddResult>("worker/build", AddParams{})
-                .or_fail();
+            co_return co_await f.peer.send_request(AddParams{}).or_fail();
         };
         auto remote = [&]() -> task<> {
             co_await f.next();
             source.cancel();
             co_await f.next();
-            f.remote.send(response<A>(1, AddResult{.sum = 1}));
-            f.remote.end_input();
+            f.peer.close();
         };
 
         auto [ran, asked, scripted] =
             f.run(f.peer.run(), with_token(ask(), source.token()), remote());
         EXPECT(ran.has_value());
         EXPECT(asked.is_cancelled());
-        const auto& written = f.written();
-        ASSERT(written.size() == 2U);
-        EXPECT(written[1].method == "$/cancelRequest");
-        auto cancelled = decoded<CancelRequestParams, A>(written[1].body);
-        ASSERT(cancelled.has_value());
-        EXPECT(cancelled->id == RequestID(1));
+        EXPECT(f.written().size() == 2U);
     });
 
     // Once run() is cancelled, here while a handler runs, nothing more can

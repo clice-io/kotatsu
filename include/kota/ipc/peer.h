@@ -50,10 +50,16 @@ template <typename Params, typename ResultT = typename protocol::RequestTraits<P
 using RequestResult = task<ResultT, Error>;
 
 struct request_options {
-    /// Cancels the request: it fails with RequestCancelled and the remote is
-    /// sent $/cancelRequest.
+    /// Cancels the request: the remote is sent $/cancelRequest, and the
+    /// request gives what the remote answers then, as it is: the result, if
+    /// it finished first, or the error, as a rule RequestCancelled. A token
+    /// that fired before the request is sent fails it at once with
+    /// RequestCancelled, and nothing is sent.
     std::optional<cancellation_token> token = std::nullopt;
-    /// Cancels the request the same way once it has waited this long.
+    /// How long the request waits for its answer, counted from the send, a
+    /// cancel or not. Once it passes, the remote is sent $/cancelRequest, if
+    /// it was not already, and the request fails with RequestCancelled; an
+    /// answer that comes later is dropped.
     std::optional<std::chrono::milliseconds> timeout = std::nullopt;
 };
 
@@ -65,6 +71,13 @@ struct request_options {
 /// A handler returns RequestResult<Params> or, for a result it has encoded
 /// itself, task<codec::RawValue, Error>; a request whose result type is
 /// codec::RawValue gets the result as the codec wrote it.
+///
+/// A request whose awaiting task is cancelled sends the remote
+/// $/cancelRequest and waits for its answer, then ends cancelled: a cancelled
+/// task ends once what it awaits has ended. A remote that ignores
+/// $/cancelRequest and never answers keeps the canceller waiting until the
+/// request's timeout, if it has one, or until the peer closes or its input
+/// ends.
 ///
 /// Nothing larger than the transport's max_payload() is written, since the
 /// remote would skip it unread: a request or notification that large fails

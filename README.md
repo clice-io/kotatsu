@@ -84,7 +84,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
   - what fails because the link is unusable (the peer closed, its input or output ended, a write failed, a frame could not be read) fails with `ConnectionClosed` (-32011); an error a remote sends keeps its own code
 - Cancellation integration with the `async` runtime:
   - inbound `$/cancelRequest` cancels the matching in-flight handler and reports `RequestCancelled`
-  - outbound requests accept an optional cancellation token and/or timeout; cancelling a still-pending request sends `$/cancelRequest` to the peer
+  - outbound requests accept an optional cancellation token and/or timeout; cancelling a still-pending request, through its token or by cancelling the task awaiting it, sends `$/cancelRequest` to the peer and waits for its answer, which the token's request then returns and the cancelled task drops; the timeout bounds the wait from the send, cancel or not
   - `RequestContext` exposes the inbound handler's cancellation token for easy propagation into nested outbound calls
 - Optional structured logging hook (log level + callback).
 

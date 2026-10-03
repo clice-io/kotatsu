@@ -5,6 +5,7 @@
 #endif
 
 #include <cassert>
+#include <coroutine>
 #include <cstdint>
 #include <deque>
 #include <format>
@@ -12,12 +13,14 @@
 #include <memory>
 #include <optional>
 #include <ranges>
+#include <source_location>
 #include <string>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "kota/support/function_traits.h"
@@ -80,7 +83,6 @@ struct Peer<CodecT>::Self {
     /// How the wait for an answer ended.
     enum class Ending : std::uint8_t {
         Answered,
-        Cancelled,
         TimedOut,
     };
 
@@ -363,26 +365,121 @@ struct Peer<CodecT>::Self {
         co_return Ending::Answered;
     }
 
-    static task<Ending> cancelled(cancellation_token token) {
-        co_await token.wait().catch_cancel();
-        co_return Ending::Cancelled;
-    }
-
     static task<Ending> expired(std::chrono::milliseconds timeout, event_loop& loop) {
         co_await sleep(timeout, loop);
         co_return Ending::TimedOut;
     }
 
-    /// The ending that comes first; the others are cancelled with the wait.
-    static task<Ending> first_of(std::vector<task<Ending>> waits) {
-        auto first = co_await when_any(std::move(waits));
-        co_return first.second;
+    /// What a request awaits once it is sent: its answer. A cancel of the
+    /// awaiting task does not end this wait at once, as it ends others: it
+    /// sends the remote $/cancelRequest and the wait goes on, and the task
+    /// ends cancelled once it is over, as queue() waits for its work. The
+    /// token firing sends $/cancelRequest too, and the request then gives
+    /// what the remote answers. The wait is over once the answer is in, once
+    /// the pending requests fail, or once the timeout passes, which fails the
+    /// request.
+    ///
+    /// A watcher ends the wait: a task in a group the wait owns and nobody
+    /// joins, so that it starts at once and a cancel of the request never
+    /// reaches it. An event or a timer wakes it, so the request resumes from
+    /// there, never inside the call that answered or failed it.
+    struct AnswerWait : io_op {
+        Self& self;
+        protocol::RequestID id;
+        std::shared_ptr<PendingRequest> pending;
+        request_options opts;
+        /// $/cancelRequest is queued.
+        bool cancel_sent = false;
+        task_group<> watcher;
+
+        AnswerWait(Self& self,
+                   protocol::RequestID id,
+                   std::shared_ptr<PendingRequest> pending,
+                   request_options opts) :
+            self(self), id(std::move(id)), pending(std::move(pending)), opts(std::move(opts)) {
+            action = [](io_op* op) {
+                static_cast<AnswerWait*>(op)->send_cancel();
+            };
+        }
+
+        bool await_ready() const noexcept {
+            return false;
+        }
+
+        template <typename Promise>
+        std::coroutine_handle<>
+            await_suspend(std::coroutine_handle<Promise> waiting,
+                          std::source_location location = std::source_location::current()) noexcept {
+            // The watcher suspends at once: nothing it waits for has come.
+            watcher.spawn(watch(*this));
+            return attach(waiting.promise(), location);
+        }
+
+        void await_resume() const noexcept {}
+
+        /// Tells the remote, once, that the request is no longer awaited,
+        /// unless its answer is in.
+        void send_cancel() {
+            if(cancel_sent || pending->response) {
+                return;
+            }
+            cancel_sent = true;
+            self.send_cancel_request(id);
+        }
+
+        /// Ends `wait`, which is the last thing it does: the request may end
+        /// there, and `wait` and its group with it, which lets the watcher go
+        /// to end on its own.
+        static task<> watch(AnswerWait& wait) {
+            std::vector<task<Ending>> waits;
+            waits.push_back(answered(wait.pending));
+            if(wait.opts.token) {
+                waits.push_back(cancel_on(wait, *wait.opts.token));
+            }
+            if(wait.opts.timeout) {
+                waits.push_back(expired(*wait.opts.timeout, wait.self.loop));
+            }
+            auto first = co_await when_any(std::move(waits));
+            // An answer that came in the same turn still counts; one that
+            // comes later is dropped.
+            if(first.second == Ending::TimedOut && !wait.pending->response) {
+                wait.send_cancel();
+                wait.self.pending_requests.erase(wait.id);
+                wait.pending->response =
+                    outcome_error(Error(protocol::ErrorCode::RequestCancelled, "request timed out"));
+            }
+            wait.complete();
+        }
+
+        /// Sends $/cancelRequest once `token` fires, then waits for the
+        /// answer as answered() does.
+        static task<Ending> cancel_on(AnswerWait& wait, cancellation_token token) {
+            co_await token.wait().catch_cancel();
+            // Resumed as well when the wait ends before the token fires.
+            if(token.cancelled()) {
+                wait.send_cancel();
+            }
+            co_await wait.pending->ready.wait();
+            co_return Ending::Answered;
+        }
+    };
+
+    /// Whether `id` is one this peer gave a request of its own.
+    bool issued(const protocol::RequestID& id) const {
+        const auto* number = std::get_if<std::int64_t>(&id);
+        return number != nullptr && *number >= 1 && *number < next_request_id;
     }
 
     void complete_pending_request(const protocol::RequestID& id, Result<std::string>&& response) {
         auto it = pending_requests.find(id);
         if(it == pending_requests.end()) {
-            log(LogLevel::warn, "orphan response for id={}", id);
+            // The answer to a request that timed out, or that failed with a
+            // message too large to read, may still come; nothing awaits it.
+            if(issued(id)) {
+                log(LogLevel::debug, "late response for id={}", id);
+            } else {
+                log(LogLevel::warn, "orphan response for id={}", id);
+            }
             return;
         }
 
@@ -616,8 +713,6 @@ template <typename CodecT>
 task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method,
                                                          std::string params,
                                                          request_options opts) {
-    using Ending = typename Self::Ending;
-
     if(opts.timeout && *opts.timeout <= std::chrono::milliseconds::zero()) {
         co_await fail(protocol::ErrorCode::RequestCancelled, "request timed out");
     }
@@ -641,29 +736,9 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
     self->pending_requests.emplace(id, pending);
     self->enqueue_outgoing(std::move(*encoded));
 
-    // The answer, the caller's cancellation or the deadline, whichever comes
-    // first.
-    std::vector<task<Ending>> waits;
-    waits.push_back(Self::answered(pending));
-    if(opts.token) {
-        waits.push_back(Self::cancelled(*opts.token));
-    }
-    if(opts.timeout) {
-        waits.push_back(Self::expired(*opts.timeout, self->loop));
-    }
-    auto ending = co_await Self::first_of(std::move(waits)).catch_cancel();
-
-    // An answer that came in the same turn as the cancellation still counts.
-    if(!pending->response) {
-        self->pending_requests.erase(id);
-        self->send_cancel_request(id);
-        if(ending.has_value()) {
-            co_await fail(protocol::ErrorCode::RequestCancelled,
-                          *ending == Ending::TimedOut ? "request timed out" : "request cancelled");
-        }
-        // Whoever awaited the request was cancelled, rather than the request.
-        co_await cancel();
-    }
+    // Over only once the response is in, a timeout's included; a cancel of
+    // this task ends it cancelled then.
+    co_await typename Self::AnswerWait(*self, id, pending, std::move(opts));
     co_return co_await or_fail(std::move(*pending->response));
 }
 
