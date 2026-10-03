@@ -86,8 +86,9 @@ public:
     task<> run();
 
     /// Shuts the peer down: cancels the running handlers, fails pending
-    /// requests, discards queued messages and closes the transport, so that
-    /// run() returns. Later sends fail; calls after the first do nothing.
+    /// requests with ConnectionClosed, discards queued messages and closes
+    /// the transport, so that run() returns. Later sends fail; calls after
+    /// the first do nothing.
     Result<void> close();
 
     /// Half-closes: what is queued is still written, then the transport's

@@ -31,7 +31,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
             f.run(f.peer.run(), f.peer.send_request(AddParams{}), remote());
         EXPECT(ran.has_value());
         ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::RequestFailed);
+        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
         EXPECT(asked.error().message == "transport closed");
     });
 
@@ -117,7 +117,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         auto [ran, asked, closed] = f.run(f.peer.run(), f.peer.send_request(AddParams{}), closer());
         EXPECT(ran.has_value());
         ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::RequestFailed);
+        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
         EXPECT(asked.error().message == "peer closed");
     });
 
@@ -193,9 +193,11 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         auto [ran, asked] = f.run(f.peer.run(), f.peer.send_request(AddParams{}));
         EXPECT(ran.has_value());
         ASSERT(sent.has_error());
-        EXPECT(code_of(sent.error()) == ErrorCode::RequestFailed);
+        EXPECT(code_of(sent.error()) == ErrorCode::ConnectionClosed);
+        EXPECT(sent.error().message == "peer closed");
         ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::RequestFailed);
+        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
+        EXPECT(asked.error().message == "peer closed");
         EXPECT(f.written().empty());
     });
 
@@ -211,10 +213,10 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         EXPECT(ran.has_value());
         ASSERT(asked.has_value());
         auto& [failure, after] = *asked;
-        EXPECT(code_of(failure) == ErrorCode::RequestFailed);
+        EXPECT(code_of(failure) == ErrorCode::ConnectionClosed);
         EXPECT(failure.message == "write failed");
         ASSERT(after.has_error());
-        EXPECT(code_of(after.error()) == ErrorCode::RequestFailed);
+        EXPECT(code_of(after.error()) == ErrorCode::ConnectionClosed);
         EXPECT(f.remote.closed());
     });
 
@@ -282,7 +284,8 @@ void peer_lifecycle(const PeerKit<A>& kit) {
             f.run(f.peer.run(), f.peer.send_request(AddParams{}), closer());
         EXPECT(ran.has_value());
         ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::RequestFailed);
+        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
+        EXPECT(asked.error().message == "close_output failed");
         EXPECT(f.remote.closed());
     });
 
@@ -297,9 +300,11 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         auto [ran, asked] = f.run(f.peer.run(), f.peer.send_request(AddParams{}));
         EXPECT(ran.has_value());
         ASSERT(sent.has_error());
-        EXPECT(code_of(sent.error()) == ErrorCode::RequestFailed);
+        EXPECT(code_of(sent.error()) == ErrorCode::ConnectionClosed);
+        EXPECT(sent.error().message == "peer output closed");
         ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::RequestFailed);
+        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
+        EXPECT(asked.error().message == "peer output closed");
         EXPECT(seen == std::vector<std::string>{"after"});
         EXPECT(f.written().empty());
     });
@@ -361,7 +366,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         auto [ran, probed, scripted] = f.run(f.peer.run(), probe(), remote());
         EXPECT(ran.has_value());
         ASSERT(failure.has_value());
-        EXPECT(code_of(*failure) == ErrorCode::RequestFailed);
+        EXPECT(code_of(*failure) == ErrorCode::ConnectionClosed);
         EXPECT(failure->message == "peer input closed");
     });
 
@@ -389,7 +394,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         EXPECT(ran.is_cancelled());
         EXPECT(!completed);
         ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::RequestFailed);
+        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
     });
 
     // Nothing can use the peer again once run() is cancelled, so its

@@ -37,10 +37,17 @@ enum class ErrorCode : integer {
     MethodNotFound = -32601,
     InvalidParams = -32602,
     InternalError = -32603,
+    /// What an Error made from a message alone carries. Not LSP's
+    /// LSPErrorCodes::RequestFailed, which is -32803.
     RequestFailed = -32000,
     /// A message larger than the transport reads: the request it was, or
     /// that it answered, fails with this.
     MessageTooLarge = -32010,
+    /// The link to the remote is unusable: the peer closed, its input or
+    /// output ended, a write failed, or a frame could not be read. What the
+    /// peer cannot send, and a request it can no longer get the answer to,
+    /// fail with this.
+    ConnectionClosed = -32011,
     RequestCancelled = -32800,
 };
 

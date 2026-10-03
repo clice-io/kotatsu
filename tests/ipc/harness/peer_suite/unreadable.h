@@ -132,7 +132,7 @@ void peer_unreadable(const PeerKit<A>& kit) {
     });
 
     // A connection whose frames cannot be followed is as good as gone:
-    // pending requests fail with RequestFailed, as when it closes.
+    // pending requests fail with ConnectionClosed, as when it closes.
     kit.add("malformed_frame_ends_the_input", [](Fixture& f) {
         auto remote = [&]() -> task<> {
             co_await f.next();
@@ -146,7 +146,7 @@ void peer_unreadable(const PeerKit<A>& kit) {
             f.run(f.peer.run(), f.peer.send_request(AddParams{}), remote());
         EXPECT(ran.has_value());
         ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::RequestFailed);
+        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
         EXPECT(asked.error().message == "missing Content-Length");
     });
 }

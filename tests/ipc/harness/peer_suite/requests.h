@@ -83,6 +83,34 @@ void peer_requests(const PeerKit<A>& kit) {
         EXPECT(asked.error().message == "remote failed");
     });
 
+    // A remote's error keeps its code, even one the peer gives its own
+    // failures: the remote's handler failed, the link did not.
+    kit.add("error_response_keeps_the_remote_code", [](Fixture& f) {
+        auto ask = [&]() -> task<std::pair<ipc::Error, ipc::Error>> {
+            auto first = co_await f.peer.send_request(AddParams{});
+            auto second = co_await f.peer.send_request(AddParams{});
+            co_return std::pair{first.has_error() ? first.error() : ipc::Error("no error"),
+                                second.has_error() ? second.error() : ipc::Error("no error")};
+        };
+        auto remote = [&]() -> task<> {
+            co_await f.next();
+            f.remote.send(A::error_response(1, ipc::Error("remote failed")));
+            co_await f.next();
+            f.remote.send(
+                A::error_response(2, ipc::Error(ErrorCode::ConnectionClosed, "remote link down")));
+            f.remote.end_input();
+        };
+
+        auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
+        EXPECT(ran.has_value());
+        ASSERT(asked.has_value());
+        auto& [first, second] = *asked;
+        EXPECT(code_of(first) == ErrorCode::RequestFailed);
+        EXPECT(first.message == "remote failed");
+        EXPECT(code_of(second) == ErrorCode::ConnectionClosed);
+        EXPECT(second.message == "remote link down");
+    });
+
     kit.add("send_request_ids_count_up_from_one", [](Fixture& f) {
         auto ask = [&]() -> task<std::pair<AddResult, AddResult>, ipc::Error> {
             auto first = co_await f.peer.send_request(AddParams{.a = 1, .b = 0}).or_fail();

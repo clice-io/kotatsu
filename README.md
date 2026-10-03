@@ -81,6 +81,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
   - structurally invalid messages map to `InvalidRequest`, answered under the request's id when it can be read, and with null id otherwise
   - parameter decode failures map to `InvalidParams`
   - a handler that throws is answered with `InternalError`
+  - what fails because the link is unusable (the peer closed, its input or output ended, a write failed, a frame could not be read) fails with `ConnectionClosed` (-32011); an error a remote sends keeps its own code
 - Cancellation integration with the `async` runtime:
   - inbound `$/cancelRequest` cancels the matching in-flight handler and reports `RequestCancelled`
   - outbound requests accept an optional cancellation token and/or timeout; cancelling a still-pending request sends `$/cancelRequest` to the peer
