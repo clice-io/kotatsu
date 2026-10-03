@@ -3,8 +3,9 @@
 #include <utility>
 #include <vector>
 
-#include "async/harness/loop_fixture.h"
 #include "async/harness/pending_op.h"
+#include "support/harness/throws.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/support/config.h"
@@ -23,7 +24,7 @@ template <typename Task, typename... Errors>
 concept takes_body =
     requires(Task (&body)(task_group<Errors...>&)) { with_task_group<Errors...>(body); };
 
-ZEST_SUITE(async_runtime_task_group_scoped, test::LoopFixture) {
+ZEST_SUITE(async_runtime_task_group_scoped, zest::LoopFixture) {
 
 ZEST_CASE(body_returns_a_task_without_a_value_the_group_takes) {
     STATIC_EXPECT(takes_body<task<>>);

@@ -9,7 +9,6 @@
 #include <utility>
 #include <vector>
 
-#include "async/harness/io.h"
 #include "async/harness/os.h"
 #include "kota/ipc/transport.h"
 #include "kota/zest/async.h"
@@ -319,7 +318,7 @@ ZEST_CASE(close_output_on_a_shared_socket_ends_the_remote_input_and_keeps_readin
     ASSERT(connected.has_value());
     auto& transport = **connected;
     auto remote = [&]() -> task<std::string, error> {
-        auto received = co_await test::read_to_end(*accepted).or_fail();
+        auto received = co_await accepted->read_to_end().or_fail();
         auto answer = frame("after");
         co_await accepted->write(std::span<const char>(answer.data(), answer.size())).or_fail();
         co_return received;

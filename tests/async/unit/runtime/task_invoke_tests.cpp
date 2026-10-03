@@ -2,7 +2,7 @@
 #include <string>
 #include <utility>
 
-#include "async/harness/loop_fixture.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -11,7 +11,7 @@ namespace kota {
 
 namespace {
 
-ZEST_SUITE(async_runtime_task_invoke, test::LoopFixture) {
+ZEST_SUITE(async_runtime_task_invoke, zest::LoopFixture) {
 
 ZEST_CASE(invoke_gives_the_task_type_the_callable_returns) {
     auto plain = []() -> task<int> {

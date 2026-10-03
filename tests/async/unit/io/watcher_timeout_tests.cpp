@@ -1,7 +1,7 @@
 #include <chrono>
 
-#include "async/harness/loop_fixture.h"
 #include "async/harness/pending_op.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -18,7 +18,7 @@ task<> wait_on(event& gate) {
     co_await gate.wait();
 }
 
-ZEST_SUITE(async_io_watcher_timeout, test::LoopFixture) {
+ZEST_SUITE(async_io_watcher_timeout, zest::LoopFixture) {
 
 ZEST_CASE(task_that_ends_in_time_gives_its_value) {
     auto quick = []() -> task<int> {
