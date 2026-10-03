@@ -669,6 +669,15 @@ task<> Peer<CodecT>::run() {
     assert(!self->started && "Peer::run() is called once");
     self->started = true;
     self->running = true;
+    // Cleared as run() ends, however it ends, before the task awaiting it
+    // resumes: its owner may destroy the peer then.
+    struct Running {
+        Self& self;
+
+        ~Running() {
+            self.running = false;
+        }
+    } running{*self};
 
     task_group<> handlers;
 
@@ -692,13 +701,9 @@ task<> Peer<CodecT>::run() {
     auto loops = [&]() -> task<> {
         co_await when_all(read_loop(), self->write_loop());
     };
-    // Cleared however run() ends, a cancel included, and last: the owner may
-    // destroy the peer as soon as run() returns.
-    auto ended = co_await loops().catch_cancel();
-    self->running = false;
-    if(ended.is_cancelled()) {
-        co_await cancel();
-    }
+    // A cancel caught here lets run() reach its end, where `running` is
+    // cleared; it was cancelled first, so it still ends cancelled.
+    co_await loops().catch_cancel();
 }
 
 template <typename CodecT>

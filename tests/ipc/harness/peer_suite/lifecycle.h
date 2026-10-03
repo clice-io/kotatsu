@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -438,6 +439,31 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         EXPECT(peer == nullptr);
         EXPECT(remote.closed());
     });
+
+#if KOTA_ENABLE_EXCEPTIONS
+    // The same, with run() ended by what its logger throws.
+    kit.add_case("peer_destroyed_once_a_throwing_run_returns", [] {
+        zest::LoopFixture f;
+        Remote remote;
+        auto peer = std::make_unique<typename Fixture::Peer>(f.loop, remote.transport());
+        peer->set_logger([](ipc::LogLevel, std::string) { throw std::runtime_error("logger"); });
+        auto owner = [&]() -> task<bool> {
+            bool threw = false;
+            try {
+                co_await peer->run();
+            } catch(const std::runtime_error&) {
+                threw = true;
+            }
+            peer.reset();
+            co_return threw;
+        };
+
+        auto [owned] = f.run(owner());
+        ASSERT(owned.has_value());
+        EXPECT(*owned);
+        EXPECT(peer == nullptr);
+    });
+#endif
 
     kit.add("two_peers_answer_on_one_loop", [](Fixture& f) {
         Remote other_remote;
