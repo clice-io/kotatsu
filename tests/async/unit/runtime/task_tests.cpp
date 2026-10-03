@@ -526,6 +526,49 @@ ZEST_CASE(exception_after_cancel_still_fails_the_task, skip = test::exceptions_u
 
 #endif  // KOTA_ENABLE_EXCEPTIONS
 
+// The lambda is a temporary gone before the task starts: co_invoke keeps it.
+ZEST_CASE(co_invoke_keeps_the_callable_for_the_task) {
+    auto read = co_invoke([text = std::string("kept by co_invoke")]() -> task<std::string> {
+        co_await yield();
+        co_return text;
+    });
+
+    auto [result] = run(std::move(read));
+    ASSERT(result.has_value());
+    EXPECT(*result == "kept by co_invoke");
+}
+
+ZEST_CASE(co_invoke_keeps_the_arguments_for_the_task) {
+    auto read = [](const std::string& text) -> task<std::string> {
+        co_await yield();
+        co_return text;
+    };
+    auto invoked = co_invoke(read, std::string("an argument"));
+
+    auto [result] = run(std::move(invoked));
+    ASSERT(result.has_value());
+    EXPECT(*result == "an argument");
+}
+
+ZEST_CASE(co_invoke_passes_the_error_through) {
+    auto failing = []() -> task<void, error> {
+        co_await fail(error::connection_refused);
+    };
+
+    auto [result] = run(co_invoke(failing));
+    ASSERT(result.has_error());
+    EXPECT(result.error() == error::connection_refused);
+}
+
+ZEST_CASE(co_invoke_ends_cancelled_with_the_task) {
+    auto cancelling = []() -> task<int> {
+        co_await cancel();
+    };
+
+    auto [result] = run(co_invoke(cancelling));
+    EXPECT(result.is_cancelled());
+}
+
 };  // ZEST_SUITE(async_runtime_task)
 
 }  // namespace

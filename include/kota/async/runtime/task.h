@@ -521,4 +521,37 @@ private:
     coroutine_handle h;
 };
 
+namespace detail {
+
+/// A task without a cancel channel.
+template <typename Task>
+constexpr inline bool is_plain_task_v = false;
+
+template <typename T, typename E>
+constexpr inline bool is_plain_task_v<task<T, E>> = true;
+
+}  // namespace detail
+
+/// Calls `fn` with `args` from a coroutine frame of its own, which holds both,
+/// moved in, until the task `fn` returns has ended, and ends as that task
+/// does. A lambda coroutine keeps its captures in the lambda, not in its
+/// frame, so one that captures must outlive its task: through co_invoke() a
+/// temporary one does. `fn` gets `args` as lvalues, which a reference
+/// parameter may keep for the whole task.
+///
+///   group.spawn(co_invoke([this, path = std::move(path)]() -> task<> {
+///       co_await load(path);
+///   }));
+///
+template <typename Fn, typename... Args>
+    requires std::invocable<Fn&, Args&...> &&
+             detail::is_plain_task_v<std::invoke_result_t<Fn&, Args&...>>
+std::invoke_result_t<Fn&, Args&...> co_invoke(Fn fn, Args... args) {
+    if constexpr(std::is_void_v<typename std::invoke_result_t<Fn&, Args&...>::error_type>) {
+        co_return co_await fn(args...);
+    } else {
+        co_return co_await fn(args...).or_fail();
+    }
+}
+
 }  // namespace kota
