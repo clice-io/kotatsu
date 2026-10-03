@@ -156,13 +156,13 @@ struct Peer<CodecT>::Self {
     /// the input open for its answer.
     std::optional<Error> unsendable(bool expects_answer) const {
         if(closed) {
-            return Error("peer closed");
+            return Error(protocol::ErrorCode::ConnectionClosed, "peer closed");
         }
         if(!output_open || closing_output) {
-            return Error("peer output closed");
+            return Error(protocol::ErrorCode::ConnectionClosed, "peer output closed");
         }
         if(expects_answer && !input_open) {
-            return Error("peer input closed");
+            return Error(protocol::ErrorCode::ConnectionClosed, "peer input closed");
         }
         return std::nullopt;
     }
@@ -250,7 +250,7 @@ struct Peer<CodecT>::Self {
         output_open = false;
         closing_output = false;
         outgoing_queue.clear();
-        fail_pending_requests(Error(message));
+        fail_pending_requests(Error(protocol::ErrorCode::ConnectionClosed, message));
         closed = true;
         // Their answers could not be written.
         cancel_handlers();
@@ -561,11 +561,12 @@ task<> Peer<CodecT>::run() {
     // Pending requests fail as soon as the input ends, before the handlers
     // still running finish and before run() returns. A connection that went
     // away and a frame that cannot be read both fail them with
-    // RequestFailed.
+    // ConnectionClosed.
     auto read_loop = [&]() -> task<> {
         auto ended = co_await self->read_loop(handlers).catch_cancel();
         const bool malformed = ended.has_value() && ended->kind == ReadError::Kind::Malformed;
-        self->end_input(Error(malformed ? ended->message : "transport closed"));
+        self->end_input(Error(protocol::ErrorCode::ConnectionClosed,
+                              malformed ? ended->message : "transport closed"));
         if(ended.is_cancelled()) {
             handlers.cancel();
         }
@@ -590,7 +591,7 @@ Result<void> Peer<CodecT>::close() {
     self->log(LogLevel::info, "peer closing");
     self->cancel_handlers();
 
-    self->fail_pending_requests(Error("peer closed"));
+    self->fail_pending_requests(Error(protocol::ErrorCode::ConnectionClosed, "peer closed"));
     self->outgoing_queue.clear();
     self->write_event.set();
 

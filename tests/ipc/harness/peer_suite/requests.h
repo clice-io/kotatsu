@@ -83,6 +83,26 @@ void peer_requests(const PeerKit<A>& kit) {
         EXPECT(asked.error().message == "remote failed");
     });
 
+    // A remote's error made without a code is RequestFailed, which the
+    // local ConnectionClosed stays apart from.
+    kit.add("send_request_tells_a_remote_error_from_a_closed_connection", [](Fixture& f) {
+        auto ask = [&]() -> task<AddResult, ipc::Error> {
+            co_return co_await f.peer.send_request(AddParams{}).or_fail();
+        };
+        auto remote = [&]() -> task<> {
+            co_await f.next();
+            f.remote.send(A::error_response(1, ipc::Error("remote failed")));
+            f.remote.end_input();
+        };
+        auto [ran, answered, scripted] = f.run(f.peer.run(), ask(), remote());
+        auto [after] = f.run(ask());
+        EXPECT(ran.has_value());
+        ASSERT(answered.has_error());
+        EXPECT(code_of(answered.error()) == ErrorCode::RequestFailed);
+        ASSERT(after.has_error());
+        EXPECT(code_of(after.error()) == ErrorCode::ConnectionClosed);
+    });
+
     kit.add("send_request_ids_count_up_from_one", [](Fixture& f) {
         auto ask = [&]() -> task<std::pair<AddResult, AddResult>, ipc::Error> {
             auto first = co_await f.peer.send_request(AddParams{.a = 1, .b = 0}).or_fail();
