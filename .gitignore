@@ -68,3 +68,8 @@ openspec/
 # Profiles of a coverage build's programs run outside ctest, which writes them
 # to build/coverage/profiles.
 *.profraw
+
+# Bazel
+/bazel-*
+/user.bazelrc
+MODULE.bazel.lock

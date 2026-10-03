@@ -1,0 +1,212 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//bazel:command_test.bzl", "command_test")
+load("//bazel:defs.bzl", "kota_binary", "kota_test")
+
+# The tests of each module, as tests/CMakeLists.txt lays them out, but a test
+# binary per module and level rather than one per level: a change to a module
+# reruns only the tests of the modules above it. Every test includes what the
+# tests share relative to tests/.
+
+cc_library(
+    name = "fixtures",
+    hdrs = glob(["fixtures/*.h"]),
+    strip_include_prefix = "/tests",
+    deps = [
+        "//:meta",
+        "//:support",
+    ],
+)
+
+# Each module's harness/, with what it builds on.
+[cc_library(
+    name = module.replace("/", "_") + "_harness",
+    hdrs = glob(
+        ["%s/harness/**/*.h" % module],
+        allow_empty = True,
+    ),
+    strip_include_prefix = "/tests",
+    textual_hdrs = glob(
+        ["%s/harness/**/*.inc" % module],
+        allow_empty = True,
+    ),
+    deps = deps + ["//:zest"],
+) for module, deps in [
+    ("support", ["//:support"]),
+    ("async", ["//:async"]),
+    ("codec", [
+        ":fixtures",
+        "//:codec",
+    ]),
+    ("codec/bincode", [":codec_harness"]),
+    ("codec/dyn", [":codec_harness"]),
+    ("codec/fbs", [
+        ":codec_harness",
+        "//:codec_flatbuffers",
+    ]),
+    ("codec/json", [
+        ":codec_harness",
+        "//:codec_json",
+    ]),
+    ("codec/toml", [
+        ":codec_harness",
+        "//:codec_toml",
+    ]),
+    ("deco", ["//:deco"]),
+    ("ipc", [
+        ":async_harness",
+        "//:codec_json",
+        "//:ipc",
+        "//:ipc_json",
+    ]),
+    ("ipc/lsp", ["//:ipc_lsp"]),
+]]
+
+# <module>_unit_tests and <module>_system_tests, run from the repository root
+# of the runfiles as ctest runs them, with the module's snapshots.
+[kota_test(
+    name = "%s_%s_tests" % (module.replace("/", "_"), level),
+    size = "medium",
+    srcs = ["main.cpp"] + glob(["%s/%s/**/*.cpp" % (module, level)]),
+    args = ["--snapshot-dir=tests/snapshots"],
+    # The module's snapshots, and the files its tests read beside them.
+    data = glob(
+        [
+            "snapshots/%s_*/**" % module.replace("/", "_"),
+            "%s/%s/**" % (module, level),
+        ],
+        allow_empty = True,
+        exclude = ["**/*.cpp"],
+    ),
+    local_defines = defines,
+    # zest's snapshot cases rewrite a snapshot of tests/snapshots and put it
+    # back, as under ctest, which a sandbox's read-only runfiles refuse.
+    tags = [level] + (["no-sandbox"] if module == "zest" else []),
+    deps = deps + ["//:zest"],
+) for module, level, deps, defines in [
+    ("support", "unit", [":support_harness"], []),
+    ("meta", "unit", [":fixtures"], []),
+    ("codec", "unit", [":codec_harness"], []),
+    ("codec/bincode", "unit", [":codec_bincode_harness"], []),
+    ("codec/debug", "unit", [":codec_harness"], []),
+    ("codec/dyn", "unit", [":codec_dyn_harness"], []),
+    ("codec/fbs", "unit", [":codec_fbs_harness"], []),
+    ("codec/json", "unit", [":codec_json_harness"], []),
+    ("codec/toml", "unit", [":codec_toml_harness"], []),
+    ("deco", "unit", [":deco_harness"], []),
+    ("async", "unit", [":async_harness"], []),
+    ("async", "system", [":async_harness"], []),
+    ("ipc", "unit", [":ipc_harness"], []),
+    ("ipc", "system", [":ipc_harness"], []),
+    ("ipc/lsp", "unit", [
+        ":ipc_harness",
+        ":ipc_lsp_harness",
+    ], []),
+    ("zest", "unit", [], []),
+    # zest's EXPECT_SNAPSHOT_JSON cases need the JSON codec.
+    ("zest", "system", ["//:codec_json"], ["KOTA_TEST_HAS_JSON=1"]),
+    ("examples/async", "unit", [
+        ":async_harness",
+        "//examples:build_system_graph",
+    ], []),
+]]
+
+# The integration tests' drivers: integration/drivers/<name>.cpp of a module.
+[kota_binary(
+    name = driver,
+    srcs = ["%s/integration/drivers/%s.cpp" % (module, driver)],
+    # One translation unit instantiating the codec for every LSP type: about
+    # 2 minutes and 2.7 GB in a debug build, far more optimized or sanitized.
+    tags = ["manual"] if driver == "lsp_roundtrip" else [],
+    deps = deps,
+) for module, deps, drivers in [
+    ("ipc", [":ipc_harness"], [
+        "jsonrpc_driver",
+        "stdio_close",
+    ]),
+    ("ipc/lsp", [
+        ":ipc_harness",
+        ":ipc_lsp_harness",
+    ], [
+        "lsp_probe",
+        "lsp_roundtrip",
+        "lsp_stub_server",
+    ]),
+] for driver in drivers]
+
+# zest's own runner, checked end to end by zest/integration/check_runner.cmake.
+kota_binary(
+    name = "zest_runner_fixture",
+    srcs = ["zest/integration/runner_fixture.cpp"],
+    deps = ["//:zest"],
+)
+
+# zest's runner end to end, against tests that crash, hang or exit early.
+command_test(
+    name = "zest_runner_test",
+    command = [
+        "cmake",
+        "-DFIXTURE=${FIXTURE}",
+        "-DWORK_DIR=${TEST_TMPDIR}/zest_runner",
+        "-P",
+        "tests/zest/integration/check_runner.cmake",
+    ],
+    data = [
+        "zest/integration/check_runner.cmake",
+        ":zest_runner_fixture",
+    ],
+    env = {"FIXTURE": "$(rootpath :zest_runner_fixture)"},
+)
+
+# A module's integration/*.test.ts, which node runs from the source tree as
+# ctest does (`pixi run npm-ci` installs their npm packages there), each
+# program named in KOTA_<NAME>.
+[command_test(
+    name = module.replace("/", "_") + "_integration",
+    size = "large",
+    command = [
+        "node",
+        "--import",
+        "./tests/check_npm_packages.ts",
+        "--test",
+        "--test-reporter=spec",
+        "--test-timeout=20000",
+    ] + ["tests/" + test for test in glob(
+        ["%s/integration/*.test.ts" % module],
+        exclude = exclude,
+    )],
+    data = programs + glob(
+        ["**/*.ts"],
+        exclude = [
+            "benchmarks/**",
+            "conformance/**",
+        ],
+    ) + [
+        "//:package-lock.json",
+        "//:package.json",
+    ],
+    env = {
+        "KOTA_" + program.split(":")[-1].upper(): "$(rootpath %s)" % program
+        for program in programs
+    },
+    source_tree = True,
+    tags = ["integration"],
+) for module, programs, exclude in [
+    ("ipc", [
+        ":jsonrpc_driver",
+        ":stdio_close",
+    ], []),
+    # roundtrip.test.ts needs lsp_roundtrip, a debug build's only.
+    ("ipc/lsp", [
+        ":lsp_probe",
+        ":lsp_stub_server",
+    ], ["ipc/lsp/integration/roundtrip.test.ts"]),
+    ("examples/async", [
+        "//examples:async_basics",
+        "//examples:dump_dot",
+    ], []),
+    ("examples/ipc", [
+        "//examples:jsonrpc_roundtrip",
+        "//examples:jsonrpc_server",
+        "//examples:spawn_worker",
+    ], []),
+]]

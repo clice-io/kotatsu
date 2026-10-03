@@ -18,6 +18,7 @@ jobs:
     outputs:
       format: ${{ steps.filter.outputs.format }}
       cmake: ${{ steps.filter.outputs.cmake }}
+      bazel: ${{ steps.filter.outputs.bazel }}
       xmake: ${{ steps.filter.outputs.xmake }}
     steps:
       - name: Checkout repository
@@ -45,6 +46,21 @@ jobs:
               - '.github/actions/**'
               - '.github/workflows/main.yml'
               - '.github/workflows/cmake.yml'
+            bazel:
+              - 'src/**'
+              - 'include/**'
+              - 'tests/**'
+              - 'examples/**'
+              - 'bazel/**'
+              - '**/BUILD.bazel'
+              - 'MODULE.bazel'
+              - '.bazel*'
+              - 'pixi.toml'
+              - 'pixi.lock'
+              - 'package*.json'
+              - '.github/actions/**'
+              - '.github/workflows/main.yml'
+              - '.github/workflows/bazel.yml'
             xmake:
               - 'src/**'
               - 'include/**'
@@ -77,6 +93,14 @@ jobs:
       actions: write
     uses: ./.github/workflows/cmake.yml
 
+  bazel:
+    needs: changes
+    if: ${{ needs.changes.outputs.bazel == 'true' }}
+    permissions:
+      contents: read
+      actions: write
+    uses: ./.github/workflows/bazel.yml
+
   xmake:
     needs: changes
     if: ${{ needs.changes.outputs.xmake == 'true' }}
@@ -90,11 +114,12 @@ jobs:
     needs:
       - format
       - cmake
+      - bazel
       - xmake
     runs-on: ubuntu-latest
     steps:
       - name: Check results
         uses: re-actors/alls-green@release/v1
         with:
-          allowed-skips: format,cmake,xmake
+          allowed-skips: format,cmake,bazel,xmake
           jobs: ${{ toJSON(needs) }}

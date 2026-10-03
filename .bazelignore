@@ -1,0 +1,5 @@
+.pixi
+build
+node_modules
+temp
+tests/conformance/node_modules
