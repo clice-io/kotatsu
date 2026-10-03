@@ -3,9 +3,11 @@
 #include <cstddef>
 #include <fcntl.h>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "async/harness/io.h"
 #include "async/harness/loop_fixture.h"
@@ -34,6 +36,34 @@ process::options shell(std::string_view command) {
     opts.args = {opts.file, std::string(by_platform("-c", "/c")), std::string(command)};
     opts.streams = {process::stdio::ignore(), process::stdio::ignore(), process::stdio::ignore()};
     return opts;
+}
+
+/// A child that prints its environment, a `NAME=VALUE` line each.
+process::options environment_printer() {
+    process::options opts;
+#ifdef _WIN32
+    opts.file = "cmd.exe";
+    opts.args = {opts.file, "/c", "set"};
+#else
+    opts.file = "/usr/bin/env";
+#endif
+    opts.streams[0] = process::stdio::ignore();
+    return opts;
+}
+
+/// The values `printed`, what environment_printer() printed, gives `name`.
+std::vector<std::string> values_of(std::string_view printed, std::string_view name) {
+    std::vector<std::string> values;
+    for(auto piece: printed | std::views::split('\n')) {
+        std::string_view line(piece.begin(), piece.end());
+        if(line.ends_with('\r')) {
+            line.remove_suffix(1);
+        }
+        if(line.starts_with(name) && line.substr(name.size()).starts_with('=')) {
+            values.emplace_back(line.substr(name.size() + 1));
+        }
+    }
+    return values;
 }
 
 std::string trim_newlines(std::string text) {
@@ -166,6 +196,75 @@ ZEST_CASE(capture_of_a_missing_file_fails) {
     auto [captured] = run(process::capture(opts, loop));
     ASSERT(captured.has_error());
     EXPECT(captured.error() == error::no_such_file_or_directory);
+}
+
+ZEST_CASE(env_set_and_env_unset_apply_over_env) {
+    auto opts = environment_printer();
+    opts.env = {"KOTA_KEPT=kept", "KOTA_DROPPED=dropped", "KOTA_REPLACED=old"};
+    opts.env_set = {"KOTA_REPLACED=new", "KOTA_ADDED=added"};
+    opts.env_unset = {"KOTA_DROPPED"};
+
+    auto [captured] = run(process::capture(opts, loop));
+    ASSERT(captured.has_value());
+    const auto& printed = captured->stdout_text;
+    EXPECT(values_of(printed, "KOTA_KEPT") == std::vector<std::string>{"kept"});
+    EXPECT(values_of(printed, "KOTA_REPLACED") == std::vector<std::string>{"new"});
+    EXPECT(values_of(printed, "KOTA_ADDED") == std::vector<std::string>{"added"});
+    EXPECT(values_of(printed, "KOTA_DROPPED").empty());
+}
+
+ZEST_CASE(env_set_and_env_unset_apply_over_the_inherited_environment) {
+    test::EnvironmentVariable kept("KOTA_TEST_KEPT", "kept");
+    test::EnvironmentVariable dropped("KOTA_TEST_DROPPED", "dropped");
+    test::EnvironmentVariable replaced("KOTA_TEST_REPLACED", "old");
+    auto opts = environment_printer();
+    opts.env_set = {"KOTA_TEST_REPLACED=new", "KOTA_TEST_ADDED=added"};
+    opts.env_unset = {"KOTA_TEST_DROPPED"};
+
+    auto [captured] = run(process::capture(opts, loop));
+    ASSERT(captured.has_value());
+    const auto& printed = captured->stdout_text;
+    EXPECT(values_of(printed, "KOTA_TEST_KEPT") == std::vector<std::string>{"kept"});
+    EXPECT(values_of(printed, "KOTA_TEST_REPLACED") == std::vector<std::string>{"new"});
+    EXPECT(values_of(printed, "KOTA_TEST_ADDED") == std::vector<std::string>{"added"});
+    EXPECT(values_of(printed, "KOTA_TEST_DROPPED").empty());
+}
+
+// The overlay names variables in another case than the inherited ones: the
+// same variables on Windows only.
+ZEST_CASE(env_overlay_names_match_as_the_system_matches_them) {
+    test::EnvironmentVariable dropped("KOTA_TEST_DROPPED", "dropped");
+    test::EnvironmentVariable replaced("KOTA_TEST_REPLACED", "old");
+    auto opts = environment_printer();
+    opts.env_set = {"kota_test_replaced=new"};
+    opts.env_unset = {"kota_test_dropped"};
+
+    auto [captured] = run(process::capture(opts, loop));
+    ASSERT(captured.has_value());
+    const auto& printed = captured->stdout_text;
+    EXPECT(values_of(printed, "kota_test_replaced") == std::vector<std::string>{"new"});
+#ifdef _WIN32
+    EXPECT(values_of(printed, "KOTA_TEST_REPLACED").empty());
+    EXPECT(values_of(printed, "KOTA_TEST_DROPPED").empty());
+#else
+    EXPECT(values_of(printed, "KOTA_TEST_REPLACED") == std::vector<std::string>{"old"});
+    EXPECT(values_of(printed, "KOTA_TEST_DROPPED") == std::vector<std::string>{"dropped"});
+#endif
+}
+
+// An overlay that leaves no variable gives the child none, rather than the
+// inherited ones; libuv adds those Windows cannot run without.
+ZEST_CASE(env_overlay_that_removes_every_variable_leaves_none) {
+    auto opts = environment_printer();
+    opts.env = {"KOTA_ONLY=only"};
+    opts.env_unset = {"KOTA_ONLY"};
+
+    auto [captured] = run(process::capture(opts, loop));
+    ASSERT(captured.has_value());
+    EXPECT(values_of(captured->stdout_text, "KOTA_ONLY").empty());
+#ifndef _WIN32
+    EXPECT(captured->stdout_text.empty());
+#endif
 }
 
 ZEST_CASE(stdout_goes_to_a_given_descriptor) {

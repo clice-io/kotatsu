@@ -122,6 +122,15 @@ public:
         /// Environment variables in `KEY=VALUE` form; empty means inherit.
         std::vector<std::string> env;
 
+        /// Variables in `KEY=VALUE` form set over the environment the child
+        /// would get, `env` or else the inherited one, each replacing the
+        /// variable of its name. On Windows names match whatever their case.
+        std::vector<std::string> env_set;
+
+        /// Names of variables removed from that environment before env_set
+        /// applies.
+        std::vector<std::string> env_unset;
+
         /// Working directory; empty means inherit.
         std::string cwd;
 
