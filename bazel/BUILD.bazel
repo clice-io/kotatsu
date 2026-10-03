@@ -1,0 +1,50 @@
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+exports_files(["command_test.ts"])
+
+# CMake's KOTA_ENABLE_EXCEPTIONS and KOTA_ENABLE_RTTI: a build without them
+# sets --@kotatsu//bazel:exceptions=false or --@kotatsu//bazel:rtti=false.
+# They reach the defines kotatsu's headers read and kotatsu's own compiles;
+# simdjson has a flag of its own (.bazelrc's no-exceptions sets both).
+bool_flag(
+    name = "exceptions",
+    build_setting_default = True,
+    visibility = ["//visibility:public"],
+)
+
+bool_flag(
+    name = "rtti",
+    build_setting_default = True,
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "no_exceptions",
+    flag_values = {":exceptions": "false"},
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "no_rtti",
+    flag_values = {":rtti": "false"},
+    visibility = ["//visibility:public"],
+)
+
+# What every kotatsu target and its dependents compile with, as CMake's
+# kota::project_options: the defines are public, so a consumer's view of
+# kotatsu's headers matches how kotatsu was built.
+cc_library(
+    name = "options",
+    defines = select({
+        ":no_exceptions": ["KOTA_ENABLE_EXCEPTIONS=0"],
+        "//conditions:default": ["KOTA_ENABLE_EXCEPTIONS=1"],
+    }) + select({
+        ":no_rtti": ["KOTA_ENABLE_RTTI=0"],
+        "//conditions:default": ["KOTA_ENABLE_RTTI=1"],
+    }) + select({
+        "@platforms//os:windows": ["_CRT_SECURE_NO_WARNINGS"],
+        "//conditions:default": [],
+    }),
+    visibility = ["//:__subpackages__"],
+)

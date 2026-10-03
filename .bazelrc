@@ -1,0 +1,36 @@
+common --enable_platform_specific_config
+# xclang comes from the clice Bazel registry, the rest from the Bazel Central
+# Registry.
+common --registry=https://bazel.clice.io/
+common --registry=https://bcr.bazel.build/
+# The toolchain is xclang's (MODULE.bazel), on every platform; rules_cc's
+# detection of another is off.
+common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+common --cxxopt=-std=c++23 --host_cxxopt=-std=c++23
+# Warnings fail kotatsu's own sources here only: a consumer's build compiles
+# them without -Werror (bazel/defs.bzl).
+common --per_file_copt=^(src|tests|examples)/@-Werror
+# The SDK's availability markings otherwise follow Bazel's default, older
+# than the libc++ features kotatsu uses; clice pins the same.
+common:macos --macos_minimum_os=15.0
+test --test_output=errors
+# node, and cmake for zest's runner check, come from pixi's environment.
+test --test_env=PATH
+# The tests run from their runfiles tree (bazel/command_test.bzl).
+common:windows --enable_runfiles
+
+# The sanitizer builds of CMakePresets.json, compiled at -O1 with line tables
+# as there. The toolchain's features bring what each needs: libc++'s ASan
+# build for asan, the runtimes' rpath on macOS.
+common:sanitizer --copt=-O1 --copt=-g1 --copt=-fno-omit-frame-pointer --strip=never
+common:asan --config=sanitizer --features=asan
+common:ubsan --config=sanitizer --features=ubsan --copt=-fno-sanitize-recover=undefined
+common:tsan --config=sanitizer --features=tsan
+
+# The flags of a build without exceptions or RTTI, as the no-exceptions and
+# no-exceptions-no-rtti presets.
+common:no-exceptions --//bazel:exceptions=false --@simdjson//:exceptions=false
+common:no-rtti --//bazel:rtti=false
+
+# A local file of one's own, never committed.
+try-import %workspace%/user.bazelrc

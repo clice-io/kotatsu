@@ -1,0 +1,87 @@
+name: bazel
+
+on:
+  workflow_call:
+
+env:
+  npm_config_cache: ${{ github.workspace }}/.cache/npm
+  # Where bazelisk keeps the Bazel releases it downloads.
+  BAZELISK_HOME: ${{ github.workspace }}/.cache/bazelisk
+
+jobs:
+  build:
+    name: ${{ matrix.os_label }} | ${{ matrix.config }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      # prettier-ignore
+      matrix:
+        include:
+          - { os_label: linux,   os: ubuntu-24.04, config: default }
+          - { os_label: linux,   os: ubuntu-24.04, config: no-exceptions-no-rtti, flags: "--config=no-exceptions --config=no-rtti" }
+          - { os_label: macos,   os: macos-15,     config: default }
+          - { os_label: windows, os: windows-2025, config: default }
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Pixi
+        uses: prefix-dev/setup-pixi@v0.9.6
+        with:
+          pixi-version: v0.71.1
+          environments: bazel
+          activate-environment: true
+          cache: false
+          locked: true
+          post-cleanup: false
+
+      - name: Restore npm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.npm_config_cache }}
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            npm-${{ runner.os }}-
+
+      # Bazel's disk cache of actions and its repository cache of downloads,
+      # saved by each run under its commit and restored by prefix, as
+      # cmake.yml's compiler cache. Outside the checkout: Bazel refuses a
+      # repository cache inside the main repository.
+      - name: Restore Bazel cache
+        id: bazel-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/bazel
+          key: bazel-${{ runner.os }}-${{ matrix.config }}/${{ github.sha }}
+          restore-keys: bazel-${{ runner.os }}-${{ matrix.config }}/
+
+      - name: Test
+        id: test
+        shell: bash
+        run: |
+          # "Trim Bazel cache" keeps what the build uses from here on, taken a
+          # second early since `date +%s` rounds down.
+          echo "BUILD_STARTED_AT=$(( $(date +%s) - 1 ))" >> "$GITHUB_ENV"
+          cache="${RUNNER_TEMP}/bazel"
+          pixi run -e bazel bazel test //... \
+            --disk_cache="${cache}/disk" \
+            --repository_cache="${cache}/repos" \
+            ${{ matrix.flags }}
+
+      # Bazel refreshes an entry's mtime when a build uses it; the rest go, so
+      # that a saved entry holds one build. After a failed build nothing goes.
+      - name: Trim Bazel cache
+        if: ${{ !cancelled() && steps.test.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          find "${RUNNER_TEMP}/bazel/disk" -type f ! -newermt "@${BUILD_STARTED_AT}" -delete
+          du -sh "${RUNNER_TEMP}/bazel"
+
+      - name: Save Bazel cache
+        if: ${{ !cancelled() && steps.test.outcome != 'skipped' && steps.bazel-cache.outputs.cache-hit != 'true' }}
+        uses: ./.github/actions/replace-cache
+        with:
+          path: ${{ runner.temp }}/bazel
+          key: ${{ steps.bazel-cache.outputs.cache-primary-key }}

@@ -1,0 +1,173 @@
+load("//bazel:defs.bzl", "kota_library")
+
+# For the tests: the npm packages the integration tests import, and the LSP
+# metamodel the LSP ones read.
+exports_files([
+    "MODULE.bazel",
+    "package-lock.json",
+    "package.json",
+    "scripts/lsp/metaModel.json",
+    "scripts/lsp/metamodel.ts",
+])
+
+# One target per module of include/kota (and per codec backend, each with its
+# third-party library), as CMake's kota::<module> targets. Each owns its
+# headers alone, so that a module can become a C++20 module as it stands.
+# HTTP (libcurl) is CMake's only, for now.
+
+kota_library(
+    name = "support",
+    srcs = ["src/support/glob_pattern.cpp"],
+    hdrs = glob(["include/kota/support/**"]),
+)
+
+kota_library(
+    name = "meta",
+    hdrs = glob(["include/kota/meta/**"]),
+    deps = [":support"],
+)
+
+kota_library(
+    name = "codec",
+    hdrs = ["include/kota/codec/macro.h"] + glob([
+        "include/kota/codec/bincode/**",
+        "include/kota/codec/debug/**",
+        "include/kota/codec/dyn/**",
+        "include/kota/codec/visit/**",
+    ]),
+    deps = [
+        ":meta",
+        ":support",
+    ],
+)
+
+kota_library(
+    name = "codec_json",
+    hdrs = glob(["include/kota/codec/json/**"]),
+    deps = [
+        ":codec",
+        "@simdjson",
+    ],
+)
+
+kota_library(
+    name = "codec_toml",
+    hdrs = glob(["include/kota/codec/toml/**"]),
+    # kota/codec/toml/type.h requires toml++ without exceptions, whatever
+    # kotatsu's own setting.
+    defines = ["TOML_EXCEPTIONS=0"],
+    deps = [
+        ":codec",
+        "@tomlplusplus",
+    ],
+)
+
+kota_library(
+    name = "codec_flatbuffers",
+    hdrs = glob(["include/kota/codec/fbs/**"]),
+    deps = [
+        ":codec",
+        "@flatbuffers",
+    ],
+)
+
+kota_library(
+    name = "option",
+    srcs = glob(["src/deco/option/*.cc"]),
+    hdrs = ["include/kota/deco/option.h"] + glob(["include/kota/deco/option/**"]),
+    deps = [":support"],
+)
+
+kota_library(
+    name = "deco",
+    srcs = glob(["src/deco/facade/*.cc"]),
+    hdrs = [
+        "include/kota/deco/deco.h",
+        "include/kota/deco/macro.h",
+    ] + glob(["include/kota/deco/facade/**"]),
+    deps = [
+        ":meta",
+        ":option",
+        ":support",
+    ],
+)
+
+kota_library(
+    name = "async",
+    srcs = glob([
+        "src/async/**/*.cpp",
+        "src/async/**/*.h",
+    ]),
+    hdrs = glob(["include/kota/async/**"]),
+    deps = [
+        ":support",
+        "@libuv",
+    ],
+)
+
+kota_library(
+    name = "ipc",
+    srcs = [
+        "src/ipc/codec/bincode.cpp",
+        "src/ipc/framing.cpp",
+        "src/ipc/recording_transport.cpp",
+        "src/ipc/transport.cpp",
+    ],
+    hdrs = glob(
+        [
+            "include/kota/ipc/*",
+            "include/kota/ipc/codec/bincode.h",
+        ],
+    ),
+    deps = [
+        ":async",
+        ":codec",
+        ":meta",
+        ":support",
+    ],
+)
+
+# JSON-RPC over ipc, on the JSON codec: CMake builds it into kota::ipc when
+# simdjson is enabled.
+kota_library(
+    name = "ipc_json",
+    srcs = ["src/ipc/codec/json.cpp"],
+    hdrs = ["include/kota/ipc/codec/json.h"],
+    deps = [
+        ":codec",
+        ":codec_json",
+        ":ipc",
+    ],
+)
+
+kota_library(
+    name = "ipc_lsp",
+    srcs = glob(["src/ipc/lsp/*.cpp"]),
+    hdrs = glob(["include/kota/ipc/lsp/**"]),
+    deps = [
+        ":codec",
+        ":ipc",
+        ":meta",
+    ],
+)
+
+kota_library(
+    name = "zest",
+    srcs = glob([
+        "src/zest/*.cpp",
+        "src/zest/*.h",
+    ]),
+    hdrs = glob(["include/kota/zest/**"]),
+    linkopts = select({
+        "@platforms//os:windows": ["-lshell32"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":async",
+        ":codec",
+        ":deco",
+        ":meta",
+        ":support",
+        "@cpptrace",
+    ],
+)
