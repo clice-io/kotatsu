@@ -380,10 +380,10 @@ struct Peer<CodecT>::Self {
     /// awaiting task does not end this wait at once, as it ends others: it
     /// sends the remote $/cancelRequest and the wait goes on, and the task
     /// ends cancelled once it is over, as queue() waits for its work. The
-    /// token firing sends $/cancelRequest too, and the request then gives
-    /// what the remote answers. The wait is over once the answer is in, once
-    /// the pending requests fail, or once the timeout passes, which fails the
-    /// request.
+    /// token firing sends $/cancelRequest too, from a callback on it, and the
+    /// request then gives what the remote answers. The wait is over once the
+    /// answer is in, once the pending requests fail, or once the timeout
+    /// passes, which fails the request.
     ///
     /// A watcher ends the wait: a task in a group the wait owns and nobody
     /// joins, so that it starts at once and a cancel of the request never
@@ -397,6 +397,9 @@ struct Peer<CodecT>::Self {
         /// $/cancelRequest is queued.
         bool cancel_sent = false;
         task_group<> watcher;
+        /// Sends $/cancelRequest once the token fires; it only queues it, so
+        /// it may run inside the source's cancel().
+        cancellation_callback on_token;
 
         AnswerWait(Self& self,
                    protocol::RequestID id,
@@ -418,6 +421,9 @@ struct Peer<CodecT>::Self {
                           std::source_location location = std::source_location::current()) noexcept {
             // The watcher suspends at once: nothing it waits for has come.
             watcher.spawn(watch(*this));
+            if(opts.token) {
+                on_token = opts.token->on_cancel([this] { send_cancel(); });
+            }
             return attach(waiting.promise(), location);
         }
 
@@ -439,9 +445,6 @@ struct Peer<CodecT>::Self {
         static task<> watch(AnswerWait& wait) {
             std::vector<task<Ending>> waits;
             waits.push_back(answered(wait.pending));
-            if(wait.opts.token) {
-                waits.push_back(cancel_on(wait, *wait.opts.token));
-            }
             if(wait.opts.timeout) {
                 waits.push_back(expired(*wait.opts.timeout, wait.self.loop));
             }
@@ -455,18 +458,6 @@ struct Peer<CodecT>::Self {
                     outcome_error(Error(protocol::ErrorCode::RequestCancelled, "request timed out"));
             }
             wait.complete();
-        }
-
-        /// Sends $/cancelRequest once `token` fires, then waits for the
-        /// answer as answered() does.
-        static task<Ending> cancel_on(AnswerWait& wait, cancellation_token token) {
-            co_await token.wait().catch_cancel();
-            // Resumed as well when the wait ends before the token fires.
-            if(token.cancelled()) {
-                wait.send_cancel();
-            }
-            co_await wait.pending->ready.wait();
-            co_return Ending::Answered;
         }
     };
 
