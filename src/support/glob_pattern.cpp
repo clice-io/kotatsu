@@ -15,8 +15,17 @@ namespace kota {
 
 namespace {
 
+/// `\`, which escapes the byte after it, and the bytes that start a wildcard: where the
+/// plain text a pattern starts with ends.
+constexpr std::string_view escape_or_wildcard = R"(\?*[{)";
+
 /// The bytes that start a wildcard, unless a `\` escapes them.
-constexpr std::string_view wildcards = "?*[{";
+constexpr std::string_view wildcards = escape_or_wildcard.substr(1);
+
+/// The bytes that end a term of a brace expression. Outside one they are plain text, so they
+/// do not end a pattern's plain start, but escape() protects them as well: what it makes may
+/// stand as a term.
+constexpr std::string_view brace_term_ends = ",}";
 
 /// One matching unit: a decoded Unicode scalar value, or a byte that is
 /// not valid UTF-8 mapped above the Unicode range so it only compares
@@ -353,7 +362,7 @@ std::expected<GlobPattern, GlobError> GlobPattern::create(std::string_view s, si
     }
 
     GlobPattern pat;
-    size_t prefix_size = s.find_first_of("?*[{\\");
+    size_t prefix_size = s.find_first_of(escape_or_wildcard);
     if(prefix_size == std::string_view::npos) {
         prefix_size = s.size();
     }
@@ -493,7 +502,7 @@ std::string GlobPattern::escape(std::string_view literal) {
     std::string escaped;
     escaped.reserve(literal.size());
     for(char c: literal) {
-        if(std::string_view(R"(\?*[{},)").contains(c)) {
+        if(escape_or_wildcard.contains(c) || brace_term_ends.contains(c)) {
             escaped += '\\';
         }
         escaped += c;
