@@ -240,9 +240,10 @@ bool decode_step(UnknownFields* sink, const Step& at, F&& step) {
 /// reader knows where it is.
 template <bool Deny, typename Reader>
 bool pass_unknown_field(std::string_view key, const Reader& reader, UnknownFields* sink) {
+    constexpr bool located = requires(const Reader& r) { r.key_location(); };
     auto unknown = [&] {
         auto error = rich_error::unknown_field(key);
-        if constexpr(requires { reader.key_location(); }) {
+        if constexpr(located) {
             error.location = reader.key_location();
         }
         return error;

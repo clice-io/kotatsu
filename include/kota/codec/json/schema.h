@@ -479,26 +479,24 @@ private:
     }
 
     /// The branches of a schema whose `type` is one of types: the schema
-    /// itself, or the branches of the anyOf a nullable or nan_repr makes.
-    static std::vector<dyn::Object*> typed_branches(dyn::Value& schema,
-                                                    std::initializer_list<std::string_view> types) {
-        auto typed = [&](const dyn::Object& branch) {
-            const auto* type = branch.find("type");
-            auto name = type != nullptr ? type->get_string() : std::nullopt;
-            return name && std::ranges::find(types, *name) != types.end();
-        };
-        std::vector<dyn::Object*> branches;
-        auto& object = *schema.get_object();
-        if(typed(object)) {
-            branches.push_back(&object);
-        } else if(auto* any = object.find("anyOf")) {
+    /// itself, or, through the anyOf a nullable, a nan_repr or an untagged
+    /// variant makes, nested as deep as they nest, its branches.
+    static void typed_branches(dyn::Value& schema,
+                               std::initializer_list<std::string_view> types,
+                               std::vector<dyn::Object*>& branches) {
+        auto* object = schema.get_object();
+        if(object == nullptr) {
+            return;
+        }
+        const auto* type = object->find("type");
+        auto name = type != nullptr ? type->get_string() : std::nullopt;
+        if(name && std::ranges::find(types, *name) != types.end()) {
+            branches.push_back(object);
+        } else if(auto* any = object->find("anyOf")) {
             for(auto& branch: *any->get_array()) {
-                if(auto* candidate = branch.get_object(); candidate && typed(*candidate)) {
-                    branches.push_back(candidate);
-                }
+                typed_branches(branch, types, branches);
             }
         }
-        return branches;
     }
 
     static dyn::Value to_dyn(const meta::schema_number& number) {
@@ -554,7 +552,8 @@ private:
         bool bounded = !std::holds_alternative<std::monostate>(f.minimum) ||
                        !std::holds_alternative<std::monostate>(f.maximum);
         if(bounded) {
-            auto numbers = typed_branches(schema, {"integer", "number"});
+            std::vector<dyn::Object*> numbers;
+            typed_branches(schema, {"integer", "number"}, numbers);
             if(numbers.empty()) {
                 return std::unexpected(rich_error(
                     std::format("minimum or maximum on field '{}', which is not a number",
@@ -568,7 +567,8 @@ private:
             }
         }
         if(!f.choices.empty()) {
-            auto strings = typed_branches(schema, {"string"});
+            std::vector<dyn::Object*> strings;
+            typed_branches(schema, {"string"}, strings);
             if(strings.empty()) {
                 return std::unexpected(rich_error(
                     std::format("choices on field '{}', which is not a string", f.name)));

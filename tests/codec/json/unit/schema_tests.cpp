@@ -614,6 +614,9 @@ struct bounded_fields {
     <double> ratio;
     KOTATSU_ANNOTATE(maximum = 10)
     <std::optional<std::int32_t>> limit;
+    /// Nullable twice over: its own null, and nan_repr's.
+    KOTATSU_ANNOTATE(minimum = 0.25)
+    <std::optional<double>> share;
 };
 
 struct bounded_text {
@@ -2620,6 +2623,9 @@ ZEST_CASE(bounds_join_the_number_schema) {
     // A float or a nullable takes them in its number branch.
     EXPECT(zest::contains(result, R"("ratio":{"anyOf":[{"type":"number","minimum":0.5},)"));
     EXPECT(zest::contains(result, R"("minimum":-2147483648,"maximum":10},{"type":"null"}])"));
+    EXPECT(zest::contains(
+        result,
+        R"("share":{"anyOf":[{"anyOf":[{"type":"number","minimum":0.25},{"type":"null"}]},)"));
 }
 
 ZEST_CASE(bound_on_a_field_that_is_no_number_fails) {

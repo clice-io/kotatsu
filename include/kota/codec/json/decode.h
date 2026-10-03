@@ -429,16 +429,21 @@ auto from_string(std::string_view json, T& out) -> std::expected<void, rich_erro
     auto reported = sink ? sink->entries.size() : 0;
     Reader r{doc, padded.data(), padded.size()};
     auto result = codec::detail::run_decode<Config>(r, out);
-    // The locations the decode leaves behind hold their byte offsets.
+    // The locations this decode leaves behind hold their byte offsets; one a
+    // decode nested in it (an adapter reading a JSON string) counted in its
+    // own text already has its line.
     std::vector<rich_error::source_location*> locations;
-    if(!result && result.error().location) {
-        locations.push_back(&*result.error().location);
+    auto uncounted = [&](std::optional<rich_error::source_location>& location) {
+        if(location && location->line == 0) {
+            locations.push_back(&*location);
+        }
+    };
+    if(!result) {
+        uncounted(result.error().location);
     }
     if(sink) {
         for(auto& entry: std::span(sink->entries).subspan(reported)) {
-            if(entry.location) {
-                locations.push_back(&*entry.location);
-            }
+            uncounted(entry.location);
         }
     }
     detail::count_lines(json, locations);
