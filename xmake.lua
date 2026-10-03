@@ -229,6 +229,16 @@ if has_config("ztest") then
 			add_syslinks("shell32")
 		end
 	end)
+
+	-- kota/zest/async.h, the fixtures for tests of kota::async code; mirrors
+	-- kota::zest::async in src/zest/CMakeLists.txt.
+	target("ztest_async", function()
+		set_kind("headeronly")
+		add_includedirs("include", { public = true })
+		add_headerfiles("include/(kota/zest/async.h)")
+		add_rules("cl-flags")
+		add_deps("ztest", "async", { public = true })
+	end)
 end
 
 if has_config("async") then

@@ -1,8 +1,8 @@
 #include <chrono>
 
-#include "async/harness/loop_fixture.h"
 #include "http/harness/server.h"
 #include "kota/http/http.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -13,7 +13,7 @@ namespace {
 
 using namespace std::chrono_literals;
 
-ZEST_SUITE(http_detail_request_settings_timeout, test::LoopFixture) {
+ZEST_SUITE(http_detail_request_settings_timeout, zest::LoopFixture) {
 
 // The subject is curl's timer: the server holds its reply for good.
 ZEST_CASE(request_past_its_timeout_fails) {

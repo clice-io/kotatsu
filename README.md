@@ -129,6 +129,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - The predicates `contains`, `starts_with`, `ends_with` and `type_eq` report their inputs (`EXPECT(!contains(log, "error"))`), and `ZEST_CONTEXT("…", args…)` adds a line to every check failing inside its scope; `EXPECT_THROWS` / `EXPECT_NOTHROWS` check exceptions.
 - Default CLI runner: filter by `suite[.test]` with wildcards (`--test-filter=…`) and `--verbose`. Tests run on a pool of worker processes (`--jobs=N`), so a crash or a hang past `--timeout` fails that test alone and a fresh worker takes over; `--no-isolation` runs everything in-process for debuggers.
 - Failure reporting uses `std::source_location` to point at the failing expression.
+- `kota::zest::LoopFixture` (`kota/zest/async.h`, target `kota::zest::async`) owns an event loop for a suite's tests: `run(tasks...)` runs coroutines to their end and returns what each ended with, and a watchdog (10 s by default) cancels and fails a test that hangs.
 
 ### `support` (`include/kota/support/*`)
 

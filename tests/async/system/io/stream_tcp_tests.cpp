@@ -6,8 +6,8 @@
 #include <utility>
 
 #include "async/harness/io.h"
-#include "async/harness/loop_fixture.h"
 #include "async/harness/socket.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -42,7 +42,7 @@ using test::RawSocket;
 using test::reset_socket;
 using test::socket_t;
 
-ZEST_SUITE(async_io_stream_tcp, test::LoopFixture) {
+ZEST_SUITE(async_io_stream_tcp, zest::LoopFixture) {
 
 ZEST_CASE(both_ends_write_and_read) {
     auto listener = listen_loopback(loop);

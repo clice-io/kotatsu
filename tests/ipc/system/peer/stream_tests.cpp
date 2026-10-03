@@ -6,13 +6,13 @@
 #include <vector>
 
 #include "async/harness/io.h"
-#include "async/harness/loop_fixture.h"
 #include "async/harness/os.h"
 #include "ipc/harness/fixtures.h"
 #include "kota/ipc/codec/bincode.h"
 #include "kota/ipc/codec/json.h"
 #include "kota/ipc/framing.h"
 #include "kota/ipc/transport.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -47,7 +47,7 @@ std::optional<Ends> pipe_ends(event_loop& loop) {
 /// Two peers of one codec, each reading the pipe the other writes. b sums
 /// test/add and keeps the notes it gets; a asks, then closes both.
 template <typename Codec>
-void talk_over_pipes(test::LoopFixture& fixture) {
+void talk_over_pipes(zest::LoopFixture& fixture) {
     using CodecPeer = Peer<Codec>;
     auto a_to_b = pipe_ends(fixture.loop);
     auto b_to_a = pipe_ends(fixture.loop);
@@ -81,7 +81,7 @@ void talk_over_pipes(test::LoopFixture& fixture) {
     EXPECT(notes == std::vector<std::string>{"hello"});
 }
 
-ZEST_SUITE(ipc_peer_stream, test::LoopFixture) {
+ZEST_SUITE(ipc_peer_stream, zest::LoopFixture) {
 
 ZEST_CASE(json_peers_talk_over_pipes) {
     talk_over_pipes<JsonCodec>(*this);

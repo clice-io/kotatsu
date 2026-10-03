@@ -1,6 +1,6 @@
-#include "async/harness/loop_fixture.h"
 #include "http/harness/server.h"
 #include "kota/http/http.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -9,7 +9,7 @@ namespace kota::http {
 
 namespace {
 
-ZEST_SUITE(http_detail_request_query, test::LoopFixture) {
+ZEST_SUITE(http_detail_request_query, zest::LoopFixture) {
 
 ZEST_CASE(query_parameters_are_percent_encoded_in_order) {
     test::HttpServer server(loop);

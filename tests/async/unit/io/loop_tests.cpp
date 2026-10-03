@@ -5,7 +5,8 @@
 #include <utility>
 #include <vector>
 
-#include "async/harness/loop_fixture.h"
+#include "support/harness/throws.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/support/config.h"
@@ -16,7 +17,7 @@ namespace kota {
 namespace {
 
 // Tests of event_loop itself drive `loop` by hand; the rest go through run().
-ZEST_SUITE(async_io_loop, test::LoopFixture) {
+ZEST_SUITE(async_io_loop, zest::LoopFixture) {
 
 ZEST_CASE(current_is_the_running_loop) {
     EXPECT(!event_loop::has_current());

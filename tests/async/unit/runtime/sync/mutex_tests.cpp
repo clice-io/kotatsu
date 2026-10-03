@@ -1,7 +1,7 @@
 #include <utility>
 #include <vector>
 
-#include "async/harness/loop_fixture.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -10,7 +10,7 @@ namespace kota {
 
 namespace {
 
-ZEST_SUITE(async_runtime_sync_mutex, test::LoopFixture) {
+ZEST_SUITE(async_runtime_sync_mutex, zest::LoopFixture) {
 
 ZEST_CASE(try_lock_takes_a_free_mutex_only) {
     mutex m;

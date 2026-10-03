@@ -2,9 +2,9 @@
 #include <string>
 #include <string_view>
 
-#include "async/harness/loop_fixture.h"
 #include "http/harness/server.h"
 #include "kota/http/http.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -13,7 +13,7 @@ namespace kota::http {
 
 namespace {
 
-ZEST_SUITE(http_detail_request_settings_curl_option, test::LoopFixture) {
+ZEST_SUITE(http_detail_request_settings_curl_option, zest::LoopFixture) {
 
 // The option is set only when the request starts: a C string's text is
 // copied at once, before its buffer changes.

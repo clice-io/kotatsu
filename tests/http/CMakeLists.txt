@@ -1,1 +1,1 @@
-kota_add_module_tests(LIBS kota::http)
+kota_add_module_tests(LIBS kota::http kota::zest::async)

@@ -5,43 +5,38 @@
 #include <cstddef>
 #include <cstdlib>
 #include <optional>
-#include <stdexcept>
-#include <string>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 
-#include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
-#include "kota/support/config.h"
 #include "kota/async/async.h"
 
-namespace kota::test {
+// zest's support for tests of kota::async code, which takes the kota::zest::async target:
+// plain zest does not bring kota::async to its users.
 
-/// What run() reports for a task: its value or error, or that it was cancelled.
+namespace kota::zest {
+
+/// What LoopFixture::run() reports for a task: its value or error, or that it was cancelled.
 template <typename Task>
 using run_result_t = outcome<typename Task::value_type, typename Task::error_type, cancellation>;
 
-/// The task run() awaits for `Task`: one that catches its cancellation.
-template <typename Task>
-using caught_t = task<typename Task::value_type, typename Task::error_type, cancellation>;
-
-/// Owns the event loop a test runs its tasks on.
+/// A suite fixture owning the event loop its tests run their tasks on:
+/// `ZEST_SUITE(name, kota::zest::LoopFixture)`.
 struct LoopFixture {
     event_loop loop;
 
-    /// How long run() waits for its tasks. Past it the test fails and the
-    /// tasks still running are cancelled, so a hang ends the test, not the
-    /// job; tasks that are still running one more period later abort the
-    /// process, since nothing can safely free their frames.
-    constexpr static std::chrono::seconds watchdog{10};
+    /// How long run() waits for its tasks. Past it the test fails and the tasks still running
+    /// are cancelled, so a hang ends the test, not the run; tasks still running one more period
+    /// later abort the process, since nothing can safely free their frames. A suite or a test
+    /// sets it before run() to give its tasks longer.
+    std::chrono::milliseconds watchdog = std::chrono::seconds(10);
 
-    /// Runs `tasks` on `loop`, started in the order given, until every one of
-    /// them has finished, and returns what each ended with. The loop stops as
-    /// soon as the last task finishes, whatever handles are still open. A task
-    /// that throws rethrows here once all of them have finished. A task passed
-    /// as an lvalue stays the test's, which can cancel() it while it runs; the
-    /// frames of the others live until run() returns.
+    /// Runs `tasks` on `loop`, started in the order given, until every one of them has
+    /// finished, and returns what each ended with. The loop stops as soon as the last task
+    /// finishes, whatever handles are still open. A task that throws rethrows here once all of
+    /// them have finished. A task passed as an lvalue stays the test's, which can cancel() it
+    /// while it runs; the frames of the others live until run() returns.
     template <typename... Tasks>
         requires (sizeof...(Tasks) > 0)
     std::tuple<run_result_t<std::remove_cvref_t<Tasks>>...> run(Tasks&&... tasks) {
@@ -116,6 +111,10 @@ struct LoopFixture {
     }
 
 private:
+    /// The task run() awaits for `Task`: one that catches its cancellation.
+    template <typename Task>
+    using caught_t = task<typename Task::value_type, typename Task::error_type, cancellation>;
+
     /// Counts a task off on every way out of its tracker, a throw included,
     /// and stops the loop after the last one.
     struct Countdown {
@@ -159,33 +158,4 @@ private:
     }
 };
 
-// clang-cl's ASan hands an exception handler a broken reference to the
-// exception, so reading what was thrown crashes there. Cases that read it are
-// declared `skip = test::exceptions_unreadable`.
-#if defined(_WIN32) && defined(__clang__)
-#if __has_feature(address_sanitizer)
-#define KOTA_TEST_EXCEPTIONS_UNREADABLE
-#endif
-#endif
-
-#ifdef KOTA_TEST_EXCEPTIONS_UNREADABLE
-constexpr bool exceptions_unreadable = true;
-#else
-constexpr bool exceptions_unreadable = false;
-#endif
-
-#if KOTA_ENABLE_EXCEPTIONS
-/// The message of the `Exception` that `fn` throws, or nothing when it
-/// throws none; an exception of another type propagates and fails the test.
-template <typename Exception = std::runtime_error, typename Fn>
-std::optional<std::string> thrown(Fn&& fn) {
-    try {
-        std::forward<Fn>(fn)();
-    } catch(const Exception& e) {
-        return e.what();
-    }
-    return std::nullopt;
-}
-#endif
-
-}  // namespace kota::test
+}  // namespace kota::zest

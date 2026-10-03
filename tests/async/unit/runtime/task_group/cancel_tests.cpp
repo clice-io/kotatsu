@@ -1,4 +1,4 @@
-#include "async/harness/loop_fixture.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -7,7 +7,7 @@ namespace kota {
 
 namespace {
 
-ZEST_SUITE(async_runtime_task_group_cancel, test::LoopFixture) {
+ZEST_SUITE(async_runtime_task_group_cancel, zest::LoopFixture) {
 
 // A child's own cancellation is no failure and leaves its siblings running:
 // join() returns normally once they have ended.

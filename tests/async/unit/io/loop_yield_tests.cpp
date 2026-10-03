@@ -2,7 +2,7 @@
 #include <vector>
 
 #include "async/harness/io.h"
-#include "async/harness/loop_fixture.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -11,7 +11,7 @@ namespace kota {
 
 namespace {
 
-ZEST_SUITE(async_io_loop_yield, test::LoopFixture) {
+ZEST_SUITE(async_io_loop_yield, zest::LoopFixture) {
 
 ZEST_CASE(other_tasks_run_first) {
     std::vector<int> order;

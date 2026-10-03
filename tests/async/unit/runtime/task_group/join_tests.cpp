@@ -1,7 +1,7 @@
 #include <tuple>
 #include <vector>
 
-#include "async/harness/loop_fixture.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -10,7 +10,7 @@ namespace kota {
 
 namespace {
 
-ZEST_SUITE(async_runtime_task_group_join, test::LoopFixture) {
+ZEST_SUITE(async_runtime_task_group_join, zest::LoopFixture) {
 
 ZEST_CASE(join_waits_for_every_child) {
     event gates[3];

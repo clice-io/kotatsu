@@ -115,6 +115,13 @@ expect_code(1)
 expect_output("[   WORKER ] a worker did not exit within --timeout after its last test")
 expect_output("[  PASSED  ] 1 tests.")
 
+# A LoopFixture's watchdog, set short by the test, cancels a task that would
+# wait for ever, and fails the test.
+run_fixture("${FIXTURE}" --test-filter=fixture_loop.* --jobs=1)
+expect_code(1)
+expect_output("[   FAILED ] fixture_loop.outlasts_the_watchdog (")
+expect_output("context: tasks still running after 50ms were cancelled by the watchdog")
+
 # Snapshots checked by different workers are all counted as checked: the
 # stale one is rewritten, and only the orphan is cleaned up.
 file(WRITE "${snapshots}/fixture_snapshot/checked.snap.yml" "stale")

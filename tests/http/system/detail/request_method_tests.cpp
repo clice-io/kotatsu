@@ -4,9 +4,9 @@
 #include <utility>
 #include <vector>
 
-#include "async/harness/loop_fixture.h"
 #include "http/harness/server.h"
 #include "kota/http/http.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -15,7 +15,7 @@ namespace kota::http {
 
 namespace {
 
-ZEST_SUITE(http_detail_request_method, test::LoopFixture) {
+ZEST_SUITE(http_detail_request_method, zest::LoopFixture) {
 
 ZEST_CASE(builders_send_their_methods) {
     test::HttpServer server(loop);

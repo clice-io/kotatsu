@@ -2,7 +2,7 @@
 #include <utility>
 #include <vector>
 
-#include "async/harness/loop_fixture.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -15,7 +15,7 @@ task<int> ready(int value) {
     co_return value;
 }
 
-ZEST_SUITE(async_runtime_cancellation, test::LoopFixture) {
+ZEST_SUITE(async_runtime_cancellation, zest::LoopFixture) {
 
 ZEST_CASE(cancel_reaches_every_token) {
     cancellation_source source;

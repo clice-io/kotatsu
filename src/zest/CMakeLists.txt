@@ -71,3 +71,13 @@ target_link_libraries(kota_zest PRIVATE
 )
 
 kota_apply_project_options(kota_zest)
+
+# kota::zest::async: kota/zest/async.h, the fixtures for tests of kota::async
+# code. It brings kota::async to its users, which plain kota::zest does not.
+add_library(kota_zest_async INTERFACE)
+add_library(kota::zest::async ALIAS kota_zest_async)
+
+target_link_libraries(kota_zest_async INTERFACE
+    kota::zest
+    kota::async
+)
