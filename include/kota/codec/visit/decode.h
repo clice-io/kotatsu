@@ -143,21 +143,37 @@ concept has_peek_kind = requires(Vis& v) {
     { v.peek_kind() } -> std::same_as<meta::type_kind>;
 };
 
+/// The callable has_try_read hands try_read. A named type rather than a
+/// lambda: once a named module checks the concept and its BMI is compiled to
+/// an object file, clang crashes mangling a lambda declared in a
+/// requires-expression (llvm/llvm-project#181933).
+template <typename Vis>
+struct try_read_callable {
+    bool operator()(Vis&) const {
+        return true;
+    }
+};
+
 /// True when the visitor supports speculative read with automatic rollback on failure.
 template <typename Vis>
 concept has_try_read = requires(Vis& v) {
-    {
-        v.try_read([](Vis&) -> bool { return true; })
-    } -> std::same_as<bool>;
+    { v.try_read(try_read_callable<Vis>{}) } -> std::same_as<bool>;
 };
 
 /// Sentinel type: no tag attribute (untagged variant).
 struct no_tag {};
 
+/// The callable has_native_variant hands visit_variant, named for the reason
+/// try_read_callable is.
+struct visit_variant_callable {
+    bool operator()(std::size_t, auto&) const {
+        return true;
+    }
+};
+
 /// True when the visitor provides native variant support (bincode/fbs).
 template <typename Vis>
-concept has_native_variant =
-    requires(Vis& v) { v.visit_variant([](std::size_t, auto&) -> bool { return true; }); };
+concept has_native_variant = requires(Vis& v) { v.visit_variant(visit_variant_callable{}); };
 
 /// The alternative a tag names; N when it names none.
 template <std::size_t N>
