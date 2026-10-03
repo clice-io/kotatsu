@@ -23,6 +23,15 @@ struct AppError {
     AppError(int code, std::string detail) : code(code), detail(std::move(detail)) {}
 };
 
+struct Counter {
+    task<int> next();
+};
+
+/// Whether co_invoke() takes `Fn` with `Args`.
+template <typename Fn, typename... Args>
+concept invocable_through_co_invoke =
+    requires(Fn fn, Args... args) { co_invoke(std::move(fn), std::move(args)...); };
+
 ZEST_SUITE(async_runtime_task, test::LoopFixture) {
 
 ZEST_CASE(await_returns_the_child_value) {
@@ -565,6 +574,15 @@ ZEST_CASE(co_invoke_keeps_the_arguments_for_the_task) {
     auto [result] = run(std::move(invoked));
     ASSERT(result.has_value());
     EXPECT(*result == "an argument");
+}
+
+ZEST_CASE(co_invoke_takes_what_can_be_called) {
+    using member = task<int> (Counter::*)();
+    STATIC_EXPECT(invocable_through_co_invoke<task<int> (*)()>);
+    STATIC_EXPECT(!invocable_through_co_invoke<int (*)()>);
+    STATIC_EXPECT(!invocable_through_co_invoke<task<int, void, cancellation> (*)()>);
+    // A member function is no callable: bind it in a lambda.
+    STATIC_EXPECT(!invocable_through_co_invoke<member, Counter*>);
 }
 
 ZEST_CASE(co_invoke_passes_the_error_through) {

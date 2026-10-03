@@ -4,6 +4,7 @@
 #include <utility>
 #include <vector>
 
+#include "resumption.h"
 #include "kota/async/io/loop.h"
 #include "kota/async/runtime/sync.h"
 #include "kota/async/runtime/task.h"
@@ -27,11 +28,21 @@ void destroy_frame(std::coroutine_handle<> frame) {
 #endif
 }
 
+/// A resumption is under way on this thread, or a ResumptionScope stands for
+/// one.
+thread_local bool draining = false;
+
 }  // namespace
 
-void async_node::resume_and_drain(std::coroutine_handle<> handle) {
-    static thread_local bool draining = false;
+detail::ResumptionScope::ResumptionScope() noexcept : outermost(!std::exchange(draining, true)) {}
 
+detail::ResumptionScope::~ResumptionScope() {
+    if(outermost) {
+        draining = false;
+    }
+}
+
+void async_node::resume_and_drain(std::coroutine_handle<> handle) {
     const bool outermost = !std::exchange(draining, true);
     handle.resume();
     if(!outermost) {

@@ -523,6 +523,10 @@ private:
 
 namespace detail {
 
+/// What calling `Fn` with `Args` gives.
+template <typename Fn, typename... Args>
+using call_result_t = decltype(std::declval<Fn>()(std::declval<Args>()...));
+
 /// A task without a cancel channel.
 template <typename Task>
 constexpr inline bool is_plain_task_v = false;
@@ -544,10 +548,9 @@ constexpr inline bool is_plain_task_v<task<T, E>> = true;
 ///   }));
 ///
 template <typename Fn, typename... Args>
-    requires std::invocable<Fn&, Args&...> &&
-             detail::is_plain_task_v<std::invoke_result_t<Fn&, Args&...>>
-std::invoke_result_t<Fn&, Args&...> co_invoke(Fn fn, Args... args) {
-    if constexpr(std::is_void_v<typename std::invoke_result_t<Fn&, Args&...>::error_type>) {
+    requires detail::is_plain_task_v<detail::call_result_t<Fn&, Args&...>>
+detail::call_result_t<Fn&, Args&...> co_invoke(Fn fn, Args... args) {
+    if constexpr(std::is_void_v<typename detail::call_result_t<Fn&, Args&...>::error_type>) {
         co_return co_await fn(args...);
     } else {
         co_return co_await fn(args...).or_fail();

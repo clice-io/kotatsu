@@ -1,5 +1,6 @@
 #include "kota/async/runtime/cancellation.h"
 
+#include "resumption.h"
 #include "kota/async/runtime/sync.h"
 
 namespace kota {
@@ -105,6 +106,9 @@ void cancellation_source::cancel() noexcept {
     // A callback may destroy this source: nothing below touches it.
     auto held = state;
     held->fired.set();
+    // A callback that cancels a task outside any resumption would resume the
+    // waits just woken, inside this cancel(), before the later callbacks.
+    detail::ResumptionScope scope;
     while(auto* node = held->head) {
         held->unlink(*node);
         // Taken out first: the callback may destroy its own registration.

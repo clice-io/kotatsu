@@ -451,6 +451,44 @@ ZEST_CASE(on_cancel_runs_before_the_waits_resume) {
     EXPECT(order == std::vector<std::string>{"callback", "cancelled", "wait"});
 }
 
+// A cancel() made outside any task, here a relay's, runs every callback
+// before the waits it woke resume, even when a callback cancels a task.
+ZEST_CASE(on_cancel_outside_a_task_runs_every_callback_before_the_waits) {
+    cancellation_source source;
+    auto token = source.token();
+    event gate;
+    std::vector<std::string> order;
+    auto waiting = [&]() -> task<> {
+        co_await gate.wait();
+    };
+    auto guarded = [&]() -> task<> {
+        auto result = co_await with_token(waiting(), token);
+        if(result.is_cancelled()) {
+            order.emplace_back("guarded");
+        }
+    };
+    auto other = waiting();
+    auto first = token.on_cancel([&] {
+        other.cancel();
+        order.emplace_back("first");
+    });
+    auto second = token.on_cancel([&] { order.emplace_back("second"); });
+    auto relay = loop.create_relay();
+    auto firer = [&]() -> task<> {
+        co_await yield();
+        relay.send([&] {
+            source.cancel();
+            order.emplace_back("returned");
+        });
+    };
+
+    auto [guarded_result, other_result, fired] = run(guarded(), other, firer());
+    EXPECT(guarded_result.has_value());
+    EXPECT(other_result.is_cancelled());
+    EXPECT(fired.has_value());
+    EXPECT(order == std::vector<std::string>{"first", "second", "returned", "guarded"});
+}
+
 };  // ZEST_SUITE(async_runtime_cancellation)
 
 }  // namespace

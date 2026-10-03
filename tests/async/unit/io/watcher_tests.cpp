@@ -202,6 +202,21 @@ ZEST_CASE(with_timeout_cancels_a_task_past_its_deadline) {
     EXPECT(!gate.has_waiters());
 }
 
+// A deadline already past lets the task start, and cancels it on the loop's
+// next turn.
+ZEST_CASE(with_timeout_past_its_deadline_cancels_on_the_next_turn) {
+    event gate;
+    bool started = false;
+    auto waiting = [&]() -> task<> {
+        started = true;
+        co_await gate.wait();
+    };
+
+    auto [result] = run(with_timeout(waiting(), -1ms, loop));
+    EXPECT(result.is_cancelled());
+    EXPECT(started);
+}
+
 // A cancel from outside ends the task and the deadline's timer with it, long
 // before the deadline.
 ZEST_CASE(with_timeout_ends_when_cancelled_from_outside) {
