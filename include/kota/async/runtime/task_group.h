@@ -16,6 +16,15 @@
 
 namespace kota {
 
+namespace detail {
+
+/// Whether a task_group<Errors...> takes a child that fails with `E`: one
+/// that cannot fail with an error, or fails with one of `Errors`.
+template <typename E, typename... Errors>
+concept group_error = std::is_void_v<E> || is_one_of<E, Errors...>;
+
+}  // namespace detail
+
 /// Runs a dynamic set of child tasks that all end before join() returns. A
 /// child starts at once and runs until it first suspends. A child that fails
 /// cancels its siblings, and join() reports the failure; a child that ends
@@ -27,10 +36,15 @@ class task_group : aggregate_op {
 public:
     using error_type = detail::merged_channel_t<Errors...>;
 
-    /// What join() gives: nothing when no child can fail with an error, or the
-    /// errors of the children that failed, in the order they failed.
-    using result_type = std::
-        conditional_t<std::is_void_v<error_type>, void, outcome<void, std::vector<error_type>>>;
+    /// The errors join() gives: those of the children that failed, in the
+    /// order they failed; void when no child can fail with an error.
+    using errors_type =
+        std::conditional_t<std::is_void_v<error_type>, void, std::vector<error_type>>;
+
+    /// What join() gives: nothing when no child can fail with an error, or
+    /// the errors.
+    using result_type =
+        std::conditional_t<std::is_void_v<errors_type>, void, outcome<void, errors_type>>;
 
     task_group() noexcept : aggregate_op(NodeKind::TaskGroup) {}
 
@@ -52,7 +66,7 @@ public:
     /// that failed, or by a cancel of the task awaiting join()) or join() has
     /// returned.
     template <typename T, typename E, typename C>
-        requires std::is_void_v<E> || is_one_of<E, Errors...>
+        requires detail::group_error<E, Errors...>
     bool spawn(task<T, E, C>&& child,
                std::source_location location = std::source_location::current()) {
         if(decided() || done()) {
@@ -125,9 +139,7 @@ private:
             static_cast<typename task<T, E>::promise_type&>(child).take_error());
     }
 
-    std::
-        conditional_t<std::is_void_v<error_type>, std::type_identity<void>, std::vector<error_type>>
-            errors;
+    std::conditional_t<std::is_void_v<errors_type>, std::type_identity<void>, errors_type> errors;
 };
 
 namespace detail {
@@ -138,13 +150,7 @@ template <typename Task, typename... Errors>
 constexpr inline bool is_group_body_v = false;
 
 template <typename E, typename... Errors>
-constexpr inline bool is_group_body_v<task<void, E>, Errors...> =
-    std::is_void_v<E> || is_one_of<E, Errors...>;
-
-/// The error channel of with_task_group(): the errors join() gives, or none
-/// when no child can fail with an error.
-template <typename E>
-using join_errors_t = std::conditional_t<std::is_void_v<E>, void, std::vector<E>>;
+constexpr inline bool is_group_body_v<task<void, E>, Errors...> = group_error<E, Errors...>;
 
 }  // namespace detail
 
@@ -166,12 +172,12 @@ using join_errors_t = std::conditional_t<std::is_void_v<E>, void, std::vector<E>
 ///
 template <typename... Errors, typename Body>
     requires detail::is_group_body_v<std::invoke_result_t<Body&, task_group<Errors...>&>, Errors...>
-task<void, detail::join_errors_t<typename task_group<Errors...>::error_type>>
+task<void, typename task_group<Errors...>::errors_type>
     with_task_group(Body body, std::source_location location = std::source_location::current()) {
     task_group<Errors...> group;
     // A group that has just been made takes any child.
     group.spawn(body(group), location);
-    if constexpr(std::is_void_v<typename task_group<Errors...>::error_type>) {
+    if constexpr(std::is_void_v<typename task_group<Errors...>::errors_type>) {
         co_await group.join();
     } else {
         co_await or_fail(co_await group.join());
