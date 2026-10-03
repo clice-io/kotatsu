@@ -523,8 +523,8 @@ private:
 /// the document a value-initialized instance encodes to under the resolved
 /// config, keyed by the normalized name the emitter gives the type's $def.
 /// collect_fresh mirrors the emitter's reach — struct fields (flattened
-/// included, skipped excluded), each under the config its slot's rename_all
-/// / deny_unknown spec merges to, optional and pointer inners, sequence and
+/// included, skipped excluded), each under the config its slot's
+/// struct-level spec merges to, optional and pointer inners, sequence and
 /// set elements, map values (keys encode as object keys and carry no
 /// schema), tuple elements, variant alternatives. A repr-routed type is
 /// skipped, subtree included, field-level behavior attrs (`with`, `as`) are

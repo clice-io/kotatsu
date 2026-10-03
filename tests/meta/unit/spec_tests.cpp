@@ -93,6 +93,20 @@ struct noop_struct_tag {
     constexpr static auto spec = make_struct_spec(dsl::deny_unknown_fields = false);
 };
 
+struct defaulted_fields_tag {
+    constexpr static auto spec = make_struct_spec(dsl::defaulted_fields = true);
+};
+
+struct defaulted_fields_tag_twin {
+    constexpr static auto spec = make_struct_spec(dsl::defaulted_fields = true);
+};
+
+/// A struct with one inside, for a policy that reaches nested structs.
+struct pair_holder {
+    int count = 0;
+    inner_pair pair;
+};
+
 struct spec_struct {
     annotate<full_tag>::type<int> user_id;
     annotate<skip_tag>::type<int> internal = 0;
@@ -206,7 +220,9 @@ ZEST_CASE(make_struct_spec_folds_values_and_derives_tagging) {
     constexpr const struct_spec& config = config_struct_tag::spec;
     STATIC_EXPECT(config.rename_all == naming::Casing::LowerCamel);
     STATIC_EXPECT(config.deny_unknown_fields);
+    STATIC_EXPECT(!config.defaulted_fields);
     STATIC_EXPECT(config.tagging == tag_mode::none);
+    STATIC_EXPECT(defaulted_fields_tag::spec.defaulted_fields);
 
     STATIC_EXPECT(make_struct_spec(dsl::tagged = false).tagging == tag_mode::none);
 }
@@ -240,6 +256,29 @@ ZEST_CASE(equivalent_untagged_struct_specs_share_type_info) {
     // A spec whose values match the defaults collapses to the bare type.
     using noop = annotate<noop_struct_tag>::type<inner_pair>;
     STATIC_EXPECT((&type_info_of<noop>() == &type_info_of<inner_pair>()));
+}
+
+ZEST_CASE(defaulted_fields_defaults_every_field) {
+    using defaulted = annotate<defaulted_fields_tag>::type<pair_holder>;
+    // The spec forks the type_info: its fields have defaults the bare
+    // struct's do not.
+    STATIC_EXPECT((&type_info_of<defaulted>() != &type_info_of<pair_holder>()));
+    const auto& info = static_cast<const struct_type_info&>(type_info_of<defaulted>());
+    ASSERT(info.fields.size() == 2u);
+    EXPECT(info.fields[0].has_default);
+    EXPECT(info.fields[1].has_default);
+    const auto& bare = static_cast<const struct_type_info&>(type_info_of<pair_holder>());
+    ASSERT(bare.fields.size() == 2u);
+    EXPECT(!bare.fields[0].has_default);
+
+    // It reaches the struct inside, as deny_unknown_fields does.
+    const auto& inner = static_cast<const struct_type_info&>(info.fields[1].type());
+    ASSERT(inner.fields.size() == 2u);
+    EXPECT(inner.fields[0].has_default);
+    EXPECT(inner.fields[1].has_default);
+
+    using twin = annotate<defaulted_fields_tag_twin>::type<pair_holder>;
+    STATIC_EXPECT((&type_info_of<twin>() == &type_info_of<defaulted>()));
 }
 
 ZEST_CASE(variant_type_info_carries_struct_spec) {

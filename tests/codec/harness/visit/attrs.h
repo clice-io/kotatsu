@@ -67,6 +67,11 @@ void attrs(const Kit<B>& kit) {
         };
     };
     roundtrip<CamelConfig>(kit, "field_rename_roundtrip", nested_rename);
+    roundtrip(kit, "defaulted_fields_roundtrip", [] {
+        return DefaultedSettings{
+            {.retries = 7, .name = "n", .owner = {.user_name = 1, .display_name = "ada"}}
+        };
+    });
     auto documented = [] {
         return Documented{.id = 7, .name = "ada"};
     };
@@ -365,6 +370,31 @@ void attrs(const Kit<B>& kit) {
             "defaulted_present_reads",
             [] { return DefaultStructPlain{.with_default = 9, .version = "v1", .plain = 2}; },
             [] { return DefaultStruct{.with_default = 9, .version = "v1", .plain = 2}; });
+        // A struct-level defaulted_fields lets any field be absent, the
+        // nested struct's too, each keeping the value it held.
+        auto partial_settings = [] {
+            return SettingsPartialPlain{.retries = 7, .owner = {.display_name = "ada"}};
+        };
+        auto partial_read = [] {
+            return DefaultedSettings{
+                {.retries = 7,
+                 .name = "default",
+                 .owner = {.user_name = 0, .display_name = "ada"}}
+            };
+        };
+        reads<DefaultedSettings>(kit,
+                                 "defaulted_fields_absent_keep_their_values",
+                                 partial_settings,
+                                 partial_read);
+        reads<DefaultedSettings>(
+            kit,
+            "defaulted_fields_empty_document_reads",
+            [] { return Empty{}; },
+            [] { return DefaultedSettings{}; });
+        read_fails<Settings>(kit,
+                             "absent_fields_without_defaulted_fields_fails",
+                             partial_settings,
+                             {.message = "missing required field 'user_name'", .path = "owner"});
         reads<Nullables>(
             kit,
             "nullable_fields_may_be_absent",

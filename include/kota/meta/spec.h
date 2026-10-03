@@ -87,6 +87,11 @@ struct struct_spec {
     naming::Casing rename_all = naming::Casing::Identity;
     /// Reject unknown keys during deserialization.
     bool deny_unknown_fields = false;
+    /// Allow every field to be absent during deserialization (keeping its
+    /// value), as if each carried field-level `defaulted`; like
+    /// deny_unknown_fields, it holds in the structs nested inside too. An
+    /// entry of its own: `defaulted` alone makes a field annotation.
+    bool defaulted_fields = false;
     /// Variant tagging mode; derived from tagged/tag/content by make_struct_spec.
     tag_mode tagging = tag_mode::none;
     /// Tag field name (internal and adjacent tagging).
@@ -121,6 +126,7 @@ enum class aspect : std::uint8_t {
     // struct_spec
     rename_all,
     deny_unknown_fields,
+    defaulted_fields,
     tagged,
     tag,
     content,
@@ -250,6 +256,9 @@ struct type_proxy {
 [[maybe_unused]] constexpr inline value_proxy<aspect::deny_unknown_fields,
                                               &struct_spec::deny_unknown_fields,
                                               bool> deny_unknown_fields{};
+[[maybe_unused]] constexpr inline value_proxy<aspect::defaulted_fields,
+                                              &struct_spec::defaulted_fields,
+                                              bool> defaulted_fields{};
 [[maybe_unused]] constexpr inline tagged_proxy tagged{};
 [[maybe_unused]] constexpr inline value_proxy<aspect::tag, &struct_spec::tag, std::string_view>
     tag{};

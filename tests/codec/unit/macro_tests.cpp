@@ -65,6 +65,7 @@ struct Behaviors {
 
 KOTATSU_ANNOTATION(ShapeTag, tag = "kind", tag_names = {"circle", "rect"});
 KOTATSU_ANNOTATION(StrictCamel, rename_all = Casing::LowerCamel, deny_unknown_fields = true);
+KOTATSU_ANNOTATION(AllDefaulted, defaulted_fields = true);
 
 struct StructEntriesOnFields {
     KOTATSU_ANNOTATE(tag = "kind", tag_names = {"circle", "rect"})
@@ -121,6 +122,12 @@ ZEST_CASE(annotation_struct_entries_make_a_struct_spec) {
     STATIC_EXPECT(strict.deny_unknown_fields);
     EXPECT(zest::type_eq<meta::annotate<StrictCamel>::type<Profile>,
                          meta::annotation<Profile, meta::attrs::struct_spec<StrictCamel>>>());
+    STATIC_EXPECT(!strict.defaulted_fields);
+
+    // Unlike `defaulted`, which alone makes a field spec.
+    STATIC_EXPECT(AllDefaulted::spec.defaulted_fields);
+    EXPECT(zest::type_eq<meta::annotate<AllDefaulted>::type<Profile>,
+                         meta::annotation<Profile, meta::attrs::struct_spec<AllDefaulted>>>());
 }
 
 ZEST_CASE(annotate_takes_struct_entries_on_a_field) {

@@ -161,7 +161,7 @@ bool encode_tagged_variant(Vis& vis, const Var& var) {
 
 /// Encodes a value under a node's attributes (a struct field's, or an
 /// annotation's): behavior::with > behavior::as > behavior::enum_string >
-/// variant tagging > the rename_all / deny_unknown_fields merge, the
+/// variant tagging > the struct-level policy merge (merged_config_t), the
 /// precedence meta's repr resolver replays.
 template <typename Config, typename Attrs, typename Vis, typename T>
 bool encode_with_attrs(Vis& vis, const T& value) {

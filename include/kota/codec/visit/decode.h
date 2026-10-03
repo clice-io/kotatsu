@@ -186,8 +186,8 @@ bool decode_enum_name(Vis& vis, E& out, Rename rename) {
 
 /// Decodes a value under a node's attributes (a struct field's, or an
 /// annotation's), mirroring encode_with_attrs: behavior::with >
-/// behavior::as > behavior::enum_string > variant tagging > the rename_all /
-/// deny_unknown_fields merge.
+/// behavior::as > behavior::enum_string > variant tagging > the struct-level
+/// policy merge (merged_config_t).
 template <typename Config, typename Attrs, typename Vis, typename T>
 bool decode_with_attrs(Vis& vis, T& out) {
     if constexpr(tuple_has_spec_v<Attrs, meta::behavior::with>) {
@@ -301,11 +301,15 @@ constexpr bool slot_required = [] {
     }
 }();
 
-/// Bit I set when slot I of T under Config is required.
+/// Bit I set when slot I of T under Config is required; none is when a
+/// struct-level defaulted_fields reached T.
 template <typename Config, typename T>
 constexpr std::uint64_t required_mask = []<typename... Slots>(type_list<Slots...>) {
     static_assert(sizeof...(Slots) <= 64,
                   "struct field count exceeds field_mask capacity (max 64 fields)");
+    if(meta::virtual_schema<T, Config>::defaulted_fields) {
+        return std::uint64_t{0};
+    }
     std::uint64_t mask = 0;
     std::size_t i = 0;
     ((mask |= std::uint64_t{slot_required<Slots>} << i++), ...);

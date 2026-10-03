@@ -102,6 +102,33 @@ struct DefaultStructAbsent {
     int plain;
 };
 
+struct DefaultedFieldsTag {
+    constexpr static auto spec = meta::make_struct_spec(meta::dsl::defaulted_fields = true);
+};
+
+/// No field annotated: under DefaultedFieldsTag every field may be absent,
+/// the nested struct's included.
+struct Settings {
+    int retries = 3;
+    std::string name = "default";
+    RenameTarget owner;
+
+    auto operator==(const Settings&) const -> bool = default;
+};
+
+using DefaultedSettings = meta::annotate<DefaultedFieldsTag>::type<Settings>;
+
+/// The owner of SettingsPartialPlain: its name alone.
+struct OwnerNamePlain {
+    std::string display_name;
+};
+
+/// A Settings document without `name`, and its owner without `user_name`.
+struct SettingsPartialPlain {
+    int retries;
+    OwnerNamePlain owner;
+};
+
 struct RenameTargetCamel {
     int userName;
     std::string displayName;

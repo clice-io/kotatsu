@@ -41,6 +41,7 @@
             using ::kota::meta::dsl::enum_string;                                                  \
             using ::kota::meta::dsl::rename_all;                                                   \
             using ::kota::meta::dsl::deny_unknown_fields;                                          \
+            using ::kota::meta::dsl::defaulted_fields;                                             \
             using ::kota::meta::dsl::tagged;                                                       \
             using ::kota::meta::dsl::tag;                                                          \
             using ::kota::meta::dsl::content;                                                      \

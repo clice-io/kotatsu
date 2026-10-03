@@ -463,6 +463,20 @@ struct explicit_member_holder {
     std::vector<explicit_member_defaults> items;
 };
 
+/// all_default's fields, defaulted by a struct-level spec instead.
+struct defaulted_by_struct {
+    std::int32_t x;
+    std::string y;
+};
+
+KOTATSU_ANNOTATION(defaulted_fields_annotation, defaulted_fields = true);
+using defaulted_fields_root = annotate<defaulted_fields_annotation>::type<defaulted_by_struct>;
+
+struct defaulted_fields_holder {
+    KOTATSU_ANNOTATE(defaulted_fields = true)
+    <defaulted_by_struct> section;
+};
+
 struct skip_default {
     std::string name;
     KOTATSU_ANNOTATE(skip = true)
@@ -1371,6 +1385,27 @@ ZEST_CASE(defaults_of_a_value_initialized_struct) {
     const auto held = json::schema_string<explicit_member_holder>().value();
     EXPECT(zest::contains(held, R"("$defs")"));
     EXPECT(zest::contains(held, R"("maximum":2147483647,"default":4})"));
+}
+
+ZEST_CASE(defaulted_fields_struct_requires_nothing) {
+    // As all_default, whose fields each carry `defaulted`.
+    const auto result = json::schema_string<defaulted_fields_root>().value();
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("x":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647,"default":0},)"
+                     R"("y":{"type":"string","default":""}}})");
+    const auto bare = json::schema_string<defaulted_by_struct>().value();
+    EXPECT(zest::contains(bare, R"("required":["x","y"])"));
+}
+
+ZEST_CASE(defaulted_fields_on_a_field_requires_nothing_inside) {
+    // The field itself stays required; the struct it holds requires nothing.
+    const auto result = json::schema_string<defaulted_fields_holder>().value();
+    EXPECT(zest::contains(result, R"("required":["section"])"));
+    EXPECT(result.find(R"("required")") == result.rfind(R"("required")"));
 }
 
 // ---------------------------------------------------------------------------
