@@ -5,6 +5,7 @@
 #include <coroutine>
 #include <cstdlib>
 #include <exception>
+#include <functional>
 #include <optional>
 #include <source_location>
 #include <tuple>
@@ -12,6 +13,7 @@
 #include <utility>
 
 #include "kota/support/config.h"
+#include "kota/support/type_traits.h"
 #include "kota/async/runtime/node.h"
 #include "kota/async/vocab/error.h"
 #include "kota/async/vocab/outcome.h"
@@ -520,5 +522,39 @@ private:
 
     coroutine_handle h;
 };
+
+namespace detail {
+
+template <typename T>
+constexpr inline bool is_task_v = is_specialization_of<task, T>;
+
+}  // namespace detail
+
+/// Calls `fn` with `args` and gives a task that ends as the task it returns
+/// does. `fn` and `args` are moved into the frame of the task given, which
+/// calls `fn` once it starts and keeps both until it ends: a lambda's
+/// captures and the arguments outlive the full-expression that called
+/// co_invoke(), where a task made by calling a temporary lambda would refer
+/// to the lambda after it is gone.
+///
+///   return co_invoke([config = load()]() -> task<> { co_await serve(config); });
+///
+template <typename Fn, typename... Args>
+    requires detail::is_task_v<std::invoke_result_t<Fn&, Args...>>
+std::invoke_result_t<Fn&, Args...> co_invoke(Fn fn, Args... args) {
+    using Task = std::invoke_result_t<Fn&, Args...>;
+    auto ended = co_await std::invoke(fn, std::move(args)...).catch_cancel();
+    if constexpr(!std::is_void_v<typename Task::error_type>) {
+        if(ended.has_error()) {
+            co_await fail(std::move(ended).error());
+        }
+    }
+    if(ended.is_cancelled()) {
+        co_await cancel();
+    }
+    if constexpr(!std::is_void_v<typename Task::value_type>) {
+        co_return std::move(*ended);
+    }
+}
 
 }  // namespace kota
