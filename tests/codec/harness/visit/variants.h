@@ -12,6 +12,7 @@
 #include <variant>
 #include <vector>
 
+#include "codec/harness/fixtures/attrs.h"
 #include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/structs.h"
 #include "codec/harness/fixtures/tagged.h"
@@ -260,6 +261,37 @@ void variants(const Kit<B>& kit) {
             },
             [] { return Field<AdjacentShape>{AdjacentShape{5}}; },
             {"unknown field 'extra' at value"});
+        // Inside a tagged value, unknown fields are reported where it sits:
+        // beside the tag, below it, below the content key.
+        reads_reporting<Field<InternalShape>>(
+            kit,
+            "internal_extra_fields_reported",
+            [] {
+                return Field<CircleWithExtraPlain>{
+                    {.kind = "circle", .radius = 5, .extra = "x"}
+                };
+            },
+            [] { return Field<InternalShape>{InternalShape(Circle{.radius = 5})}; },
+            {"unknown field 'extra' at value"});
+        reads_reporting<Field<ExternalShape>>(
+            kit,
+            "external_content_extra_fields_reported",
+            [] {
+                return Field<std::map<std::string, PointWithExtra>>{
+                    {{"point", {.x = 1, .y = 2, .extra = true}}}};
+            },
+            [] { return Field<ExternalShape>{ExternalShape(Point{.x = 1, .y = 2})}; },
+            {"unknown field 'extra' at value.point"});
+        reads_reporting<Field<AdjacentShape>>(
+            kit,
+            "adjacent_content_extra_fields_reported",
+            [] {
+                return Field<AdjacentPlain<PointWithExtra>>{
+                    {.t = "point", .c = {.x = 1, .y = 2, .extra = true}}
+                };
+            },
+            [] { return Field<AdjacentShape>{AdjacentShape(Point{.x = 1, .y = 2})}; },
+            {"unknown field 'extra' at value.c"});
         read_in_field_fails<AdjacentShape, StrictConfig>(
             kit,
             "adjacent_extra_field_denied_fails",

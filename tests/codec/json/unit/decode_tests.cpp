@@ -284,6 +284,34 @@ ZEST_CASE(unknown_fields_reported_at_their_keys) {
     EXPECT(unknown.entries[1].to_string() == "unknown field 'floor' at addr (line 5, column 40)");
 }
 
+ZEST_CASE(unknown_field_in_an_element_reported_at_its_key) {
+    UnknownFields unknown;
+    scoped_context<UnknownFields> scope(unknown);
+    std::vector<test::Point> out;
+    auto status = json::from_string(R"([
+  {"x": 1, "y": 2},
+  {"x": 3, "z": 0, "y": 4}
+])",
+                                    out);
+    ASSERT(status);
+    ASSERT(unknown.entries.size() == 1U);
+    EXPECT(unknown.entries[0].to_string() == "unknown field 'z' at [1] (line 3, column 12)");
+}
+
+ZEST_CASE(unknown_fields_of_two_decodes_keep_their_locations) {
+    // One collector over two documents: each decode counts the lines of what
+    // it reported in its own text.
+    UnknownFields unknown;
+    scoped_context<UnknownFields> scope(unknown);
+    test::Point first{};
+    ASSERT(json::from_string("{\n\n\"x\": 1, \"y\": 2, \"a\": 0}", first));
+    test::Point second{};
+    ASSERT(json::from_string(R"({"b": 0, "x": 1, "y": 2})", second));
+    ASSERT(unknown.entries.size() == 2U);
+    EXPECT(unknown.entries[0].to_string() == "unknown field 'a' (line 3, column 17)");
+    EXPECT(unknown.entries[1].to_string() == "unknown field 'b' (line 1, column 2)");
+}
+
 ZEST_CASE(nested_type_mismatch_text_fails) {
     test::Person out{};
     auto status =

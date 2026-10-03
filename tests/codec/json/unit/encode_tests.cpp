@@ -85,6 +85,20 @@ ZEST_CASE(fields_follow_declaration_order) {
     EXPECT(json::to_string(person) == R"({"id":7,"name":"alice","scores":[10,20],"active":true})");
 }
 
+ZEST_CASE(tree_text_not_utf8_fails) {
+    // A tree's strings and keys go through the same check as a value's.
+    auto text = json::to_string(dyn::Value{
+        {"name", "caf\xE9"},
+    });
+    ASSERT(!text);
+    EXPECT(text.error().message == "invalid UTF-8 in a string");
+    auto key = json::to_string(dyn::Value{
+        {"caf\xE9", 1},
+    });
+    ASSERT(!key);
+    EXPECT(key.error().message == "invalid UTF-8 in a string");
+}
+
 ZEST_CASE(strings_escape_quotes_and_backslashes) {
     EXPECT(json::to_string(std::string(R"(a"b\c/)")) == R"("a\"b\\c/")");
 }

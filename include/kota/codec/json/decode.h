@@ -425,8 +425,8 @@ auto from_string(std::string_view json, T& out) -> std::expected<void, rich_erro
     }
     doc.rewind();
 
-    auto* unknown = scoped_context<UnknownFields>::try_current();
-    auto reported = unknown ? unknown->entries.size() : 0;
+    auto* sink = scoped_context<UnknownFields>::try_current();
+    auto reported = sink ? sink->entries.size() : 0;
     Reader r{doc, padded.data(), padded.size()};
     auto result = codec::detail::run_decode<Config>(r, out);
     // The locations the decode leaves behind hold their byte offsets.
@@ -434,8 +434,8 @@ auto from_string(std::string_view json, T& out) -> std::expected<void, rich_erro
     if(!result && result.error().location) {
         locations.push_back(&*result.error().location);
     }
-    if(unknown) {
-        for(auto& entry: std::span(unknown->entries).subspan(reported)) {
+    if(sink) {
+        for(auto& entry: std::span(sink->entries).subspan(reported)) {
             if(entry.location) {
                 locations.push_back(&*entry.location);
             }

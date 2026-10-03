@@ -367,31 +367,38 @@ struct type_instance :
                        typename Resolved::tag_attrs,
                        typename Resolved::config> {};
 
+/// The info of enum E, its members spelled through Rename when it travels as
+/// a behavior::enum_string's names.
+template <typename E, std::string (*Rename)(bool, std::string_view) = nullptr>
+struct enum_info_node {
+    constexpr static auto& names = meta::reflection<E>::member_names;
+    constexpr static auto& values = meta::reflection<E>::member_values;
+
+    constexpr inline static enum_type_info value = {
+        {type_kind::enumeration, meta::type_name<E>()},
+        {names.data(),           names.size()        },
+        static_cast<const void*>(values.data()),
+        kind_of<std::underlying_type_t<E>>(),
+        Rename,
+    };
+};
+
+/// Policy's spelling of an enumerator's name, as a plain function.
+template <typename Policy>
+std::string rename_with(bool is_serialize, std::string_view name) {
+    return Policy{}(is_serialize, name);
+}
+
 /// An enum annotated with behavior::enum_string: the enum's members, which
 /// travel as the policy spells their names. Resolution maps the annotation to
 /// a string, which is what the codec reads and writes; this instance keeps
 /// the members a schema lists.
 template <typename T, typename Config, typename Resolved>
     requires annotated_type<T> && tuple_has_spec_v<typename T::attrs, behavior::enum_string>
-struct type_instance<T, Config, Resolved> {
-    using enum_t = typename T::annotated_type;
-    using policy = typename tuple_find_spec_t<typename T::attrs, behavior::enum_string>::policy;
-
-    static std::string rename(bool is_serialize, std::string_view name) {
-        return policy{}(is_serialize, name);
-    }
-
-    constexpr static auto& names = meta::reflection<enum_t>::member_names;
-    constexpr static auto& values = meta::reflection<enum_t>::member_values;
-
-    constexpr inline static enum_type_info value = {
-        {type_kind::enumeration, meta::type_name<enum_t>()},
-        {names.data(),           names.size()             },
-        static_cast<const void*>(values.data()),
-        kind_of<std::underlying_type_t<enum_t>>(),
-        &rename,
-    };
-};
+struct type_instance<T, Config, Resolved> :
+    enum_info_node<typename T::annotated_type,
+                   &rename_with<typename tuple_find_spec_t<typename T::attrs,
+                                                           behavior::enum_string>::policy>> {};
 
 template <typename T, std::size_t I>
 constexpr std::size_t single_field_count();
@@ -597,18 +604,7 @@ struct type_instance_impl<T, AttrsT, Config, type_kind::structure> {
 };
 
 template <typename T, typename AttrsT, typename Config>
-struct type_instance_impl<T, AttrsT, Config, type_kind::enumeration> {
-    constexpr static auto& names = meta::reflection<T>::member_names;
-    constexpr static auto& values = meta::reflection<T>::member_values;
-    using underlying_t = std::underlying_type_t<T>;
-
-    constexpr inline static enum_type_info value = {
-        {type_kind::enumeration, meta::type_name<T>()},
-        {names.data(),           names.size()        },
-        static_cast<const void*>(values.data()),
-        kind_of<underlying_t>(),
-    };
-};
+struct type_instance_impl<T, AttrsT, Config, type_kind::enumeration> : enum_info_node<T> {};
 
 template <typename T, typename Config, std::size_t I>
 constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offset);
@@ -685,11 +681,11 @@ template <typename T, typename Format = void>
 using resolved_repr_t =
     typename decltype(detail::resolve_repr<std::remove_cvref_t<T>, format_config<Format>>())::type;
 
-/// The config T's resolution ends with: every rename_all / deny_unknown_fields
-/// / defaulted_fields spec crossed on the way — a structural annotation on T itself included —
-/// merged onto Config, exactly as the codec dispatch layers them while
-/// reading or writing a T. Config is a codec config (as for type_info_of),
-/// not a bare format tag; its format selects format-scoped reprs.
+/// The config T's resolution ends with: every rename_all /
+/// deny_unknown_fields / defaulted_fields spec crossed on the way — a
+/// structural annotation on T itself included — merged onto Config, exactly
+/// as the codec dispatch layers them while reading or writing a T. Config is a codec config (as for
+/// type_info_of), not a bare format tag; its format selects format-scoped reprs.
 template <typename T, typename Config>
 using resolved_config_t =
     typename decltype(detail::resolve_repr<std::remove_cvref_t<T>, Config>())::config;

@@ -216,9 +216,10 @@ bool decode_with_attrs(Vis& vis, T& out) {
     }
 }
 
-/// Runs one step of a data-driven decode, below at, a key as the document
-/// spells it or an element index: the error the step fails with, and every
-/// unknown field reported to sink inside it, gets at in front of its path.
+/// Runs one step of a data-driven decode: the value under `at`, a key as the
+/// document spells it or an element index. `at` goes in front of the path of
+/// the error the step fails with, and of every unknown field it reports to
+/// sink.
 template <typename Config, typename Step, typename F>
 bool decode_step(UnknownFields* sink, const Step& at, F&& step) {
     if(!sink) {
@@ -234,9 +235,9 @@ bool decode_step(UnknownFields* sink, const Step& at, F&& step) {
     return ok;
 }
 
-/// Passes over key, whose value reader reads, which nothing answers to: fails
-/// when Deny, reports it to sink otherwise. Located at the key for a reader
-/// that knows where it is.
+/// An unknown key, whose value reader reads: fails under Deny, and is
+/// otherwise reported to sink. The error is located at the key when the
+/// reader knows where it is.
 template <bool Deny, typename Reader>
 bool pass_unknown_field(std::string_view key, const Reader& reader, UnknownFields* sink) {
     auto unknown = [&] {
@@ -427,9 +428,7 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
     static_assert(data_driven<Vis> && has_try_read<Vis>,
                   "a tagged variant decodes through a data-driven visitor with try_read");
     constexpr std::string_view tag_key = SpecAttr::value.tag;
-    static_assert((!has_field_named<Config, Ts>(tag_key) && ...),
-                  "internally tagged: an alternative has a field the tag is named like, so "
-                  "its document would hold the key twice");
+    assert_internal_tag_fits<Config, SpecAttr, Ts...>();
     constexpr auto names = meta::resolve_tag_names<SpecAttr, Ts...>();
     constexpr std::size_t npos = sizeof...(Ts);
 

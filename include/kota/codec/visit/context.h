@@ -26,6 +26,9 @@ struct rich_error {
 
     std::string message;
     /// Path from root to error site, built by prepend_field/prepend_index during stack unwinding.
+    /// Decoding a keyed document (json, toml, dyn), a member is named by its
+    /// key as the document spells it; otherwise a field is named by its name,
+    /// and an element or a map entry, encoding too, by its index.
     std::vector<path_segment> path;
     /// Source position in the input document (e.g. TOML line/column).
     std::optional<source_location> location;
@@ -44,10 +47,6 @@ struct rich_error {
 
     void prepend_index(std::size_t idx) {
         path.insert(path.begin(), idx);
-    }
-
-    void set_location(source_location loc) {
-        location = loc;
     }
 
     /// Formats path as "foo.bar[3].baz".

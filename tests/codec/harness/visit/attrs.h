@@ -417,7 +417,7 @@ void attrs(const Kit<B>& kit) {
                 };
             });
         read_fails<TunablesHolder>(kit,
-                                   "defaulted_fields_on_a_field_leaves_its_holder_required",
+                                   "defaulted_fields_on_a_field_holder_field_missing_fails",
                                    [] {
                                        return std::map<std::string, Sections>{
                                            {"tunables", {}}
@@ -480,6 +480,35 @@ void attrs(const Kit<B>& kit) {
             [] { return Point{.x = 1, .y = 2}; },
             [] { return Point{.x = 1, .y = 2}; },
             {});
+        // With detailed_error off, the unknown fields have no paths either.
+        reads_reporting<Layout, NoPathConfig>(
+            kit,
+            "unknown_fields_reported_without_path_when_detail_is_off",
+            [] {
+                return LayoutWithExtrasPlain{
+                    .id = 1,
+                    .origin = {.x = 1, .y = 2, .extra = true},
+                    .points = {{.x = 3, .y = 4, .extra = true}},
+                    .named = {},
+                    .stray = true,
+                };
+            },
+            [] {
+                return Layout{
+                    .id = 1,
+                    .origin = {.x = 1, .y = 2},
+                    .points = {{.x = 3, .y = 4}},
+                    .named = {},
+                };
+            },
+            {"unknown field 'stray'", "unknown field 'extra'", "unknown field 'extra'"});
+        // A decode that fails keeps what it reported before.
+        read_fails_reporting<Point>(
+            kit,
+            "failed_decode_keeps_reported_fields_fails",
+            [] { return ExtraBeforeTextPlain{.extra = true, .x = "one", .y = 2}; },
+            {.message = "", .path = "x"},
+            {"unknown field 'extra'"});
         // A path names a field as the document does, by an alias too.
         reads_reporting<AliasedOrigin>(
             kit,

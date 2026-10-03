@@ -76,6 +76,10 @@ struct default_config :
     /// Handling of a string that is not UTF-8, in a UTF-8 text document.
     KOTA_CFG_FIELD_(invalid_utf8, kota::codec::invalid_utf8::Error);
 
+    /// Encode: leave out the fields annotated `schema_default = false`, as
+    /// json::schema does for the documents it takes defaults from.
+    KOTA_CFG_FIELD_(omit_unstated_defaults, false);
+
     /// Deserialize: reject unknown fields in data-driven mode.
     KOTA_CFG_FIELD_(deny_unknown_fields, false);
 

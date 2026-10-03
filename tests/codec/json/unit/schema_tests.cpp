@@ -652,14 +652,30 @@ struct machine_root {
     <std::uint32_t> jobs = 8;
 };
 
-struct aliased_required {
-    KOTATSU_ANNOTATE(alias = {"legacy"})
-    <std::int32_t> value;
-};
-
 enum class level_kind : std::uint8_t {
     low_level,
     high_level,
+};
+
+/// Sections in an array, which carries their encoded objects as its default.
+struct machine_sections {
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::vector<machine_section>> sections = {machine_section{}};
+};
+
+struct bounded_enum {
+    KOTATSU_ANNOTATE(maximum = 1)
+    <level_kind> level;
+};
+
+struct wide_bounds {
+    KOTATSU_ANNOTATE(minimum = -1, maximum = ~0ULL)
+    <std::uint64_t> count;
+};
+
+struct aliased_required {
+    KOTATSU_ANNOTATE(alias = {"legacy"})
+    <std::int32_t> value;
 };
 
 struct enum_string_field {
@@ -754,6 +770,10 @@ struct defaults_leaf {
 struct defaults_explicit_member {
     test::ExplicitList list;
     std::optional<std::int32_t> count = 3;
+};
+
+struct defaults_explicit_holder {
+    defaults_explicit_member inner;
 };
 
 struct defaults_root {
@@ -980,7 +1000,7 @@ ZEST_CASE(root_floats) {
 ZEST_CASE(root_char) {
     const auto result = json::schema_string<char>().value();
     EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-                     R"("type":"string"})");
+                     R"("type":"string","pattern":"^[\\u0000-\\u00FF]$"})");
 }
 
 ZEST_CASE(root_string) {
@@ -1025,7 +1045,7 @@ ZEST_CASE(scalar_wrapper_char) {
     EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
                      R"("type":"object",)"
                      R"("properties":{)"
-                     R"("v":{"type":"string"}},)"
+                     R"("v":{"type":"string","pattern":"^[\\u0000-\\u00FF]$"}},)"
                      R"("required":["v"]})");
 }
 
@@ -2605,10 +2625,10 @@ ZEST_CASE(bounds_join_the_number_schema) {
 ZEST_CASE(bound_on_a_field_that_is_no_number_fails) {
     auto text = json::schema_string<bounded_text>();
     ASSERT(!text);
-    EXPECT(text.error().message == "minimum or maximum on field 'name', which is no number");
+    EXPECT(text.error().message == "minimum or maximum on field 'name', which is not a number");
     auto fractional = json::schema_string<fractional_bound_on_integer>();
     ASSERT(!fractional);
-    EXPECT(fractional.error().message == "a floating-point maximum on an integer field");
+    EXPECT(fractional.error().message == "floating-point maximum on integer field 'count'");
 }
 
 ZEST_CASE(choices_join_the_string_schema) {
@@ -2622,7 +2642,36 @@ ZEST_CASE(choices_join_the_string_schema) {
 ZEST_CASE(choices_on_a_field_that_is_no_string_fails) {
     auto result = json::schema_string<chosen_number>();
     ASSERT(!result);
-    EXPECT(result.error().message == "choices on field 'count', which is no string");
+    EXPECT(result.error().message == "choices on field 'count', which is not a string");
+}
+
+ZEST_CASE(unstated_default_leaves_the_document_alone) {
+    // Only the schema's default documents leave the field out.
+    auto text = json::to_string(machine_root{});
+    ASSERT(text);
+    EXPECT(*text == R"({"section":{"workers":8,"retries":3},"jobs":8})");
+}
+
+ZEST_CASE(unstated_default_leaves_element_defaults_out) {
+    const auto result = json::schema_string<machine_sections>().value();
+    EXPECT(zest::contains(result, R"("default":[{"retries":3}])"));
+    EXPECT(!zest::contains(result, R"("workers":8)"));
+}
+
+ZEST_CASE(bounds_on_an_enum_join_its_integer) {
+    const auto result = json::schema_string<bounded_enum>().value();
+    EXPECT(zest::contains(result, R"("level":{"type":"integer","minimum":0,"maximum":1})"));
+    // Spelled by name, it is not a number.
+    auto named = json::schema_string<bounded_enum, test::EnumStringConfig>();
+    ASSERT(!named);
+    EXPECT(named.error().message == "minimum or maximum on field 'level', which is not a number");
+}
+
+ZEST_CASE(bounds_looser_than_uint64_keep_its_own) {
+    const auto result = json::schema_string<wide_bounds>().value();
+    EXPECT(
+        zest::contains(result,
+                       R"("count":{"type":"integer","minimum":0,"maximum":18446744073709551615})"));
 }
 
 ZEST_CASE(unstated_default_appears_nowhere) {
@@ -2634,6 +2683,12 @@ ZEST_CASE(unstated_default_appears_nowhere) {
     EXPECT(
         zest::contains(result, R"("workers":{"type":"integer","minimum":0,"maximum":4294967295})"));
     EXPECT(!zest::contains(result, R"("default":8)"));
+}
+
+ZEST_CASE(alias_is_allowed_where_unknown_fields_are_denied) {
+    const auto result = json::schema_string<aliased_required, test::StrictConfig>().value();
+    EXPECT(zest::contains(result, R"("legacy":{"type":"integer")"));
+    EXPECT(zest::contains(result, R"("additionalProperties":false)"));
 }
 
 ZEST_CASE(alias_is_a_property_and_satisfies_required) {
@@ -2653,15 +2708,23 @@ ZEST_CASE(field_enum_string_lists_its_members) {
 
 ZEST_CASE(map_keys_spell_what_they_decode_from) {
     const auto result = json::schema_string<keyed_maps>().value();
-    EXPECT(zest::contains(result, R"("propertyNames":{"pattern":"^-?[0-9]+$"})"));
-    EXPECT(zest::contains(result, R"("propertyNames":{"pattern":"^[0-9]+$"})"));
+    EXPECT(zest::contains(
+        result,
+        R"("by_id":{"type":"object","additionalProperties":{"type":"integer","minimum":-2147483648,"maximum":2147483647},"propertyNames":{"pattern":"^-?[0-9]+$"}})"));
+    EXPECT(zest::contains(
+        result,
+        R"("by_byte":{"type":"object","additionalProperties":{"type":"integer","minimum":-2147483648,"maximum":2147483647},"propertyNames":{"pattern":"^[0-9]+$"}})"));
+    // An enum key spells its number, or its name under enum_repr::String.
+    EXPECT(zest::contains(
+        result,
+        R"("by_level":{"type":"object","additionalProperties":{"type":"integer","minimum":-2147483648,"maximum":2147483647},"propertyNames":{"pattern":"^[0-9]+$"}})"));
     const auto named = json::schema_string<keyed_maps, test::EnumStringConfig>().value();
     EXPECT(zest::contains(named, R"("propertyNames":{"enum":["low_level","high_level"]})"));
 }
 
 ZEST_CASE(char_is_one_code_point_up_to_ff) {
     const auto result = json::schema_string<char_field>().value();
-    EXPECT(zest::contains(result, R"("letter":{"type":"string","pattern":"^[\u0000-\u00FF]$"})"));
+    EXPECT(zest::contains(result, R"("letter":{"type":"string","pattern":"^[\\u0000-\\u00FF]$"})"));
 }
 
 // ---------------------------------------------------------------------------
@@ -2996,9 +3059,11 @@ ZEST_CASE(defaults_annotated) {
 
 ZEST_CASE(defaults_value_initialize) {
     // The fresh instance is value-initialized: `{}` would copy-list-initialize
-    // the explicit list.
+    // the explicit list. So is a $def's.
     const auto result = json::schema_string<defaults_explicit_member>().value();
     EXPECT(zest::contains(result, R"({"type":"null"}],"default":3})"));
+    const auto nested = json::schema_string<defaults_explicit_holder>().value();
+    EXPECT(zest::contains(nested, R"({"type":"null"}],"default":3})"));
 }
 
 ZEST_CASE(defaulted_fields_requires_nothing) {

@@ -4,6 +4,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -315,12 +316,17 @@ ZEST_CASE(optional_nullable_member_roundtrips_through_bincode) {
 // each of its states back, a present null and an object included.
 ZEST_CASE(diagnostic_data_roundtrips_through_bincode) {
     using Data = protocol::optional_nullable<protocol::LSPAny>;
-    for(const auto& data: {Data{},
-                           Data{protocol::LSPAny{}},
-                           Data{protocol::LSPAny{
-                               {"fix", "insert"},
-                               {"at", std::int64_t{3}},
-                           }}}) {
+    const std::pair<std::string_view, Data> states[] = {
+        {"absent", Data{}                  },
+        {"null",   Data{protocol::LSPAny{}}},
+        {"object",
+         Data{protocol::LSPAny{
+             {"fix", "insert"},
+             {"at", std::int64_t{3}},
+         }}                                },
+    };
+    for(const auto& [state, data]: states) {
+        ZEST_CONTEXT("data {}", state);
         protocol::Diagnostic diagnostic{
             .range = {.start = {.line = 1, .character = 2}, .end = {.line = 1, .character = 5}},
             .severity = protocol::DiagnosticSeverity::Warning,
@@ -333,9 +339,9 @@ ZEST_CASE(diagnostic_data_roundtrips_through_bincode) {
         protocol::Diagnostic back{};
         ASSERT(codec::bincode::from_bytes(std::span<const std::byte>(*bytes), back));
         EXPECT((back.data == diagnostic.data));
-        EXPECT((back.severity == diagnostic.severity));
-        EXPECT((back.source == diagnostic.source));
-        EXPECT((back.range.end.character == 5U));
+        EXPECT(back.severity == diagnostic.severity);
+        EXPECT(back.source == diagnostic.source);
+        EXPECT(back.range.end.character == 5U);
     }
 }
 

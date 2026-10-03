@@ -17,8 +17,10 @@ ZEST_CASE(utf8_accepts_whole_code_points) {
     // U+00E9, U+20AC, U+10FFFF: two, three and four bytes.
     EXPECT(is_utf8("caf\xC3\xA9 \xE2\x82\xAC \xF4\x8F\xBF\xBF"));
     EXPECT(is_utf8("\0"sv));
-    // Past a run of ASCII long enough to pass eight bytes at a time.
+    // Past a run of ASCII long enough to pass eight bytes at a time, and
+    // inside such a word.
     EXPECT(is_utf8("eight bytes, then \xC3\xA9"));
+    EXPECT(is_utf8("caf\xC3\xA9 and then more text"));
 }
 
 ZEST_CASE(utf8_rejects_what_is_no_code_point) {
@@ -35,6 +37,7 @@ ZEST_CASE(utf8_rejects_what_is_no_code_point) {
     EXPECT(!is_utf8("\xED\xA0\x80"));
     EXPECT(!is_utf8("\xF4\x90\x80\x80"));
     EXPECT(!is_utf8("eight bytes, then \xE9"));
+    EXPECT(!is_utf8("caf\xE9 and then more text"));
 }
 
 ZEST_CASE(replacement_takes_each_maximal_subpart) {

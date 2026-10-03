@@ -6,6 +6,8 @@
 // names them (hence names such as `userName`).
 
 #include <charconv>
+#include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <utility>
@@ -180,6 +182,14 @@ struct LayoutWithExtrasPlain {
     std::vector<PointWithExtra> points;
     std::map<std::string, PointWithExtra> named;
     bool stray;
+};
+
+/// An unknown key, then a field the document gives a text where Point has a
+/// number.
+struct ExtraBeforeTextPlain {
+    bool extra;
+    std::string x;
+    std::int32_t y;
 };
 
 struct AliasAnchor {

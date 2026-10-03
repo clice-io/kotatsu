@@ -331,21 +331,25 @@ private:
         }
     }
 
+    /// How an enum's values are spelled: through a behavior::enum_string's
+    /// policy whatever enum_repr says, through the config's enum_rename under
+    /// enum_repr::String; null when they travel as integers.
+    enum_rename_fn spelling(const meta::enum_type_info* ei) const {
+        if(ei->rename != nullptr) {
+            return ei->rename;
+        }
+        return opts.enums == enum_repr::String ? opts.rename : nullptr;
+    }
+
     result_t make_enum(const meta::type_info* ti) const {
         auto* ei = static_cast<const meta::enum_type_info*>(ti);
-        // A behavior::enum_string spells the names through its own policy,
-        // whatever enum_repr says.
-        auto rename = ei->rename;
+        auto rename = spelling(ei);
         if(rename == nullptr) {
-            if(opts.enums != enum_repr::String) {
-                // enum_repr::Integer: the codec casts through the underlying
-                // type without checking membership, and name reflection only
-                // covers a limited scan range — values outside it still
-                // encode. The honest constraint is the underlying integer's
-                // range, not a value list.
-                return make_integer_kind(ei->underlying_kind);
-            }
-            rename = opts.rename;
+            // enum_repr::Integer: the codec casts through the underlying type
+            // without checking membership, and name reflection only covers a
+            // limited scan range — values outside it still encode. The honest
+            // constraint is the underlying integer's range, not a value list.
+            return make_integer_kind(ei->underlying_kind);
         }
         // Exhaustive: a value without a reflected member name has no string
         // spelling, so the encoder rejects it instead of emitting one.
@@ -389,7 +393,7 @@ private:
         auto kind = ti->kind;
         if(kind == tk::enumeration) {
             auto* ei = static_cast<const meta::enum_type_info*>(ti);
-            if(ei->rename != nullptr || opts.enums == enum_repr::String) {
+            if(spelling(ei) != nullptr) {
                 // An enum's schema never fails.
                 return *make_enum(ti);
             }
@@ -497,10 +501,31 @@ private:
         return branches;
     }
 
-    /// Writes a bound the annotation states into a number branch, where it
-    /// is tighter than the bound the type has (tighter: the ordering a
-    /// tighter bound has against a looser one).
+    static dyn::Value to_dyn(const meta::schema_number& number) {
+        if(const auto* i = std::get_if<std::int64_t>(&number)) {
+            return *i;
+        }
+        if(const auto* u = std::get_if<std::uint64_t>(&number)) {
+            return *u;
+        }
+        return std::get<double>(number);
+    }
+
+    static meta::schema_number number_of(const dyn::Value& value) {
+        if(auto i = value.get_int()) {
+            return *i;
+        }
+        if(auto u = value.get_uint()) {
+            return *u;
+        }
+        return *value.get_double();
+    }
+
+    /// Writes into a number branch a bound the annotation of field f states,
+    /// where it is tighter than the one the type gives: tighter is greater
+    /// for a minimum, less for a maximum.
     static std::expected<void, rich_error> bound(dyn::Object& branch,
+                                                 const meta::field_info& f,
                                                  std::string_view key,
                                                  const meta::schema_number& number,
                                                  std::partial_ordering tighter) {
@@ -510,33 +535,14 @@ private:
         if(branch.find("type")->get_string() == "integer" &&
            std::holds_alternative<double>(number)) {
             return std::unexpected(
-                rich_error(std::format("a floating-point {} on an integer field", key)));
+                rich_error(std::format("floating-point {} on integer field '{}'", key, f.name)));
         }
-        auto value = std::visit(
-            []<typename N>(N n) -> dyn::Value {
-                if constexpr(std::same_as<N, std::monostate>) {
-                    return {};
-                } else {
-                    return dyn::Value(n);
-                }
-            },
-            number);
         if(auto* current = branch.find(key)) {
-            auto type_bound = std::visit(
-                []<typename V>(const V& v) -> meta::schema_number {
-                    if constexpr(std::same_as<V, std::int64_t> || std::same_as<V, std::uint64_t> ||
-                                 std::same_as<V, double>) {
-                        return v;
-                    } else {
-                        return {};
-                    }
-                },
-                current->variant());
-            if(meta::compare_numbers(number, type_bound) == tighter) {
-                *current = std::move(value);
+            if(meta::compare_numbers(number, number_of(*current)) == tighter) {
+                *current = to_dyn(number);
             }
         } else {
-            branch.insert(std::string(key), std::move(value));
+            branch.insert(std::string(key), to_dyn(number));
         }
         return {};
     }
@@ -551,20 +557,21 @@ private:
             auto numbers = typed_branches(schema, {"integer", "number"});
             if(numbers.empty()) {
                 return std::unexpected(rich_error(
-                    std::format("minimum or maximum on field '{}', which is no number", f.name)));
+                    std::format("minimum or maximum on field '{}', which is not a number",
+                                f.name)));
             }
             for(auto* branch: numbers) {
                 KOTA_EXPECTED_TRY(
-                    bound(*branch, "minimum", f.minimum, std::partial_ordering::greater));
+                    bound(*branch, f, "minimum", f.minimum, std::partial_ordering::greater));
                 KOTA_EXPECTED_TRY(
-                    bound(*branch, "maximum", f.maximum, std::partial_ordering::less));
+                    bound(*branch, f, "maximum", f.maximum, std::partial_ordering::less));
             }
         }
         if(!f.choices.empty()) {
             auto strings = typed_branches(schema, {"string"});
             if(strings.empty()) {
-                return std::unexpected(
-                    rich_error(std::format("choices on field '{}', which is no string", f.name)));
+                return std::unexpected(rich_error(
+                    std::format("choices on field '{}', which is not a string", f.name)));
             }
             dyn::Array values;
             for(auto choice: f.choices) {
@@ -788,7 +795,7 @@ private:
 
     static void annotate_properties(dyn::Object& body, const dyn::Value& doc_value) {
         // A non-struct root pairs with a non-object document (an array, a
-        // scalar, the null a default-constructed nullable root encodes to);
+        // scalar, the null a value-initialized nullable root encodes to);
         // it has no properties to annotate from.
         const auto* doc = doc_value.get_object();
         if(doc == nullptr) {

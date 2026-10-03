@@ -43,7 +43,7 @@ struct FieldAt {
 };
 
 /// Whether a field of struct T under Config answers to name, by its own name
-/// or an alias: an internal tag of that name would be the field's key too.
+/// or an alias.
 template <typename Config, typename T>
 consteval bool has_field_named(std::string_view name) {
     return std::ranges::any_of(meta::virtual_schema<T, Config>::fields,
@@ -52,6 +52,15 @@ consteval bool has_field_named(std::string_view name) {
                                           std::ranges::find(field.aliases, name) !=
                                               field.aliases.end();
                                });
+}
+
+/// Rejects an internally tagged variant one of whose alternatives has a
+/// field named like the tag: its document would hold the key twice.
+template <typename Config, typename SpecAttr, typename... Ts>
+consteval void assert_internal_tag_fits() {
+    static_assert((!has_field_named<Config, Ts>(SpecAttr::value.tag) && ...),
+                  "internally tagged: an alternative has a field named like the tag, so its "
+                  "document would hold the key twice");
 }
 
 /// Whether a node of type T can carry a tagging spec: only a std::variant

@@ -6,6 +6,7 @@
 #include <variant>
 #include <vector>
 
+#include "codec/harness/fixtures/attrs.h"
 #include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/repr.h"
@@ -139,6 +140,34 @@ floor = 3
     ASSERT(unknown.entries.size() == 2U);
     EXPECT(unknown.entries[0].to_string() == "unknown field 'floor' at addr (line 9, column 1)");
     EXPECT(unknown.entries[1].to_string() == "unknown field 'nick' (line 3, column 1)");
+}
+
+ZEST_CASE(unknown_fields_in_arrays_of_tables_and_dotted_keys_reported_at_their_keys) {
+    UnknownFields unknown;
+    scoped_context<UnknownFields> scope(unknown);
+    test::Layout out{};
+    auto status = toml::from_string(R"(
+id = 1
+origin.x = 1
+origin.y = 2
+origin.z = 0
+
+[[points]]
+x = 3
+y = 4
+
+[[points]]
+x = 5
+w = 0
+y = 6
+
+[named]
+)",
+                                    out);
+    ASSERT(status);
+    ASSERT(unknown.entries.size() == 2U);
+    EXPECT(unknown.entries[0].to_string() == "unknown field 'z' at origin (line 5, column 8)");
+    EXPECT(unknown.entries[1].to_string() == "unknown field 'w' at points[1] (line 13, column 1)");
 }
 
 ZEST_CASE(integer_out_of_range_fails) {

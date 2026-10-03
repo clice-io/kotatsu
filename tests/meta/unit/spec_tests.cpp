@@ -18,6 +18,21 @@ struct full_tag {
                                            dsl::idx = 7u);
 };
 
+/// A member whose default constructor is explicit.
+struct explicit_member {
+    explicit explicit_member() = default;
+
+    auto operator==(const explicit_member&) const -> bool = default;
+};
+
+/// Only value-initialization makes it.
+struct only_value_initialized {
+    explicit_member member;
+    int count = 0;
+
+    auto operator==(const only_value_initialized&) const -> bool = default;
+};
+
 struct schema_tag {
     constexpr static auto spec = make_spec(dsl::minimum = 1,
                                            dsl::maximum = 2.5,
@@ -310,6 +325,12 @@ ZEST_CASE(skip_when_evaluates_builtin_predicates) {
     STATIC_EXPECT(!evaluate_skip_when<skip_when::default_value>(1, true));
     // Deserialization never skips.
     STATIC_EXPECT(!evaluate_skip_when<skip_when::default_value>(0, false));
+    // The default value is value-initialized: `{}` would copy-list-initialize
+    // the explicit member.
+    auto fresh = only_value_initialized();
+    EXPECT(evaluate_skip_when<skip_when::default_value>(fresh, true));
+    fresh.count = 1;
+    EXPECT(!evaluate_skip_when<skip_when::default_value>(fresh, true));
 }
 
 };  // ZEST_SUITE(meta_spec)
