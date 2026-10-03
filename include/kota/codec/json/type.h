@@ -22,13 +22,18 @@ namespace kota::codec::json {
 /// - null, empty optional, null pointer → `null`; engaged optional/pointer →
 ///   the payload itself, no wrapper
 /// - boolean → `true` / `false`
-/// - integers → JSON numbers; uint64 is emitted full-range, beyond 2^53
+/// - integers → JSON numbers; uint64 is emitted full-range, beyond 2^53,
+///   which JavaScript's JSON.parse rounds to the nearest double: a reader in
+///   JavaScript needs a lossless parser (BigInt) for such values. Decode
+///   reads integer tokens only: `1.0`, an integer to JSON Schema, does not
+///   read into an integer
 /// - float32/float64 → JSON numbers; non-finite values follow Config's
 ///   nan_repr, except that JSON has no non-finite literal, so Passthrough
 ///   also emits `null`
 /// - character → single-codepoint string (the char's value 0-255 encoded as
 ///   UTF-8); decode accepts exactly one codepoint ≤ 255
-/// - string → quoted, escaped string
+/// - string → quoted, escaped string; one that is not UTF-8 follows Config's
+///   invalid_utf8
 /// - bytes → array of octet numbers
 /// - enumeration → underlying integer, or the renamed enumerator name under
 ///   enum_repr::String
@@ -39,7 +44,10 @@ namespace kota::codec::json {
 /// - variant → shaped by the spec's tag_mode (see encode_tagged_variant in
 ///   visit/encode.h); untagged variants emit the bare payload
 /// - RawValue → spliced into the output verbatim; an empty RawValue is `null`
-struct format {};
+struct format {
+    /// Its documents are UTF-8 text.
+    constexpr static bool utf8 = true;
+};
 
 using StringBuilder = simdjson::builder::string_builder;
 

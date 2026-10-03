@@ -1,13 +1,16 @@
 #pragma once
 
-#include <concepts>
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "kota/support/expected_try.h"
 #include "kota/support/numeric.h"
@@ -59,6 +62,25 @@ struct steal {
 template struct steal<doc_iter_tag, doc_iter_ptr, &simdjson::ondemand::document::iter>;
 template struct steal<val_iter_tag, val_iter_ptr, &simdjson::ondemand::value::iter>;
 
+/// Sets the line and column, from 1, of each location, which holds its byte
+/// offset into text, in one pass over the text for all of them.
+inline void count_lines(std::string_view text, std::span<rich_error::source_location*> locations) {
+    std::ranges::sort(locations, {}, [](const auto* location) { return location->byte_offset; });
+    std::size_t line = 1;
+    std::size_t line_start = 0;
+    std::size_t at = 0;
+    for(auto* location: locations) {
+        for(; at < location->byte_offset; ++at) {
+            if(text[at] == '\n') {
+                ++line;
+                line_start = at + 1;
+            }
+        }
+        location->line = line;
+        location->column = location->byte_offset - line_start + 1;
+    }
+}
+
 }  // namespace detail
 
 struct Source {
@@ -103,6 +125,9 @@ struct Reader {
     Source src;
     const char* buf_base;
     std::size_t buf_size;
+    /// The opening quote of the key an object member's reader reads the
+    /// value of; null for any other reader.
+    const char* key_at = nullptr;
     constexpr static bool data_driven = true;
     constexpr static bool human_readable = true;
     using format = json::format;
@@ -118,25 +143,30 @@ struct Reader {
         return src.apply(std::forward<F>(f));
     }
 
+    /// Fails with err located where the iterator stopped, by byte offset
+    /// alone: from_string counts the line and column of the location it
+    /// reports once the decode is over, so that the failures of untagged
+    /// probes, which nobody sees, do not each count from the start.
     bool fail_located(rich_error err) {
         auto loc_result = src.apply([](auto& s) { return s.current_location(); });
         if(!loc_result.error()) {
             const char* loc = loc_result.value_unsafe();
             if(loc >= buf_base && loc <= buf_base + buf_size) {
-                auto offset = static_cast<std::size_t>(loc - buf_base);
-                std::size_t line = 1, col = 1;
-                for(std::size_t i = 0; i < offset; ++i) {
-                    if(buf_base[i] == '\n') {
-                        ++line;
-                        col = 1;
-                    } else {
-                        ++col;
-                    }
-                }
-                err.set_location({line, col, offset});
+                err.location = rich_error::source_location{
+                    .byte_offset = static_cast<std::size_t>(loc - buf_base)};
             }
         }
         return scoped_context<rich_error>::fail(std::move(err));
+    }
+
+    /// Where the key this reader's value belongs to starts, by byte offset
+    /// alone, as fail_located.
+    std::optional<rich_error::source_location> key_location() const {
+        if(!key_at) {
+            return std::nullopt;
+        }
+        return rich_error::source_location{.byte_offset =
+                                               static_cast<std::size_t>(key_at - buf_base)};
     }
 
     bool fail_simdjson(simdjson::error_code ec) {
@@ -289,6 +319,9 @@ struct Reader {
                 break;
             }
             auto field = std::move(field_result).value_unsafe();
+            // The raw key starts after its opening quote; unescaping it lets
+            // go of it, so it is taken first.
+            const char* key_at = field.key().raw() - 1;
             auto key = field.unescaped_key();
             if(key.error()) {
                 ok = fail_simdjson(key.error());
@@ -296,6 +329,7 @@ struct Reader {
             }
             auto fv = std::move(field).value();
             Reader sub{fv, buf_base, buf_size};
+            sub.key_at = key_at;
             if(!cb(key.value_unsafe(), sub)) {
                 ok = false;
                 break;
@@ -370,7 +404,7 @@ bool Reader::try_read(F&& fn) {
 }
 
 /// Decodes JSON text into `out` (or, in the value-returning overload, into a
-/// default-constructed T).
+/// value-initialized T).
 template <typename Config = void, typename T>
 auto from_string(std::string_view json, T& out) -> std::expected<void, rich_error> {
     padded_string padded(json);
@@ -391,14 +425,35 @@ auto from_string(std::string_view json, T& out) -> std::expected<void, rich_erro
     }
     doc.rewind();
 
+    auto* sink = scoped_context<UnknownFields>::try_current();
+    auto reported = sink ? sink->entries.size() : 0;
     Reader r{doc, padded.data(), padded.size()};
-    return codec::detail::run_decode<Config>(r, out);
+    auto result = codec::detail::run_decode<Config>(r, out);
+    // The locations this decode leaves behind hold their byte offsets; one a
+    // decode nested in it (an adapter reading a JSON string) counted in its
+    // own text already has its line.
+    std::vector<rich_error::source_location*> locations;
+    auto uncounted = [&](std::optional<rich_error::source_location>& location) {
+        if(location && location->line == 0) {
+            locations.push_back(&*location);
+        }
+    };
+    if(!result) {
+        uncounted(result.error().location);
+    }
+    if(sink) {
+        for(auto& entry: std::span(sink->entries).subspan(reported)) {
+            uncounted(entry.location);
+        }
+    }
+    detail::count_lines(json, locations);
+    return result;
 }
 
 template <typename T, typename Config = void>
-    requires std::default_initializable<T>
+    requires std::is_default_constructible_v<T>
 auto from_string(std::string_view json) -> std::expected<T, rich_error> {
-    T value{};
+    auto value = T();
     KOTA_EXPECTED_TRY(from_string<Config>(json, value));
     return value;
 }

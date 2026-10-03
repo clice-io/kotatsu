@@ -33,6 +33,14 @@ struct StrictConfig {
     constexpr static bool deny_unknown_fields = true;
 };
 
+struct DefaultedConfig {
+    constexpr static bool defaulted_fields = true;
+};
+
+struct ReplaceUtf8Config {
+    constexpr static auto invalid_utf8 = codec::invalid_utf8::Replace;
+};
+
 struct NoPathConfig {
     constexpr static bool detailed_error = false;
 };

@@ -26,6 +26,9 @@ struct rich_error {
 
     std::string message;
     /// Path from root to error site, built by prepend_field/prepend_index during stack unwinding.
+    /// Decoding a keyed document (json, toml, dyn), a member is named by its
+    /// key as the document spells it; otherwise a field is named by its name,
+    /// and an element or a map entry, encoding too, by its index.
     std::vector<path_segment> path;
     /// Source position in the input document (e.g. TOML line/column).
     std::optional<source_location> location;
@@ -44,10 +47,6 @@ struct rich_error {
 
     void prepend_index(std::size_t idx) {
         path.insert(path.begin(), idx);
-    }
-
-    void set_location(source_location loc) {
-        location = loc;
     }
 
     /// Formats path as "foo.bar[3].baz".
@@ -94,6 +93,22 @@ struct rich_error {
     static rich_error invalid_type(std::string_view expected, std::string_view got) {
         return rich_error(std::format("invalid type: expected {}, got {}", expected, got));
     }
+};
+
+/// The keys that the decodes on this thread pass over while it is installed
+/// (scoped_context<UnknownFields>): object keys no field of the struct they
+/// are read into answers to, and the keys of an adjacently tagged object
+/// other than its tag and content. Each is the error a decode under
+/// deny_unknown_fields would fail with: "unknown field 'name'", the path of
+/// the object holding the key, as the document spells it, and where the key
+/// is, for a backend that knows (json, toml). Decoding goes on as it would
+/// without the sink, so one decode reads the value and reports every key it
+/// passed over; where unknown fields are denied, the first still fails the
+/// decode and is not reported. An untagged probe that fails takes back what
+/// it reported; a decode that fails keeps what it reported before.
+struct UnknownFields {
+    /// In the order the decodes met the keys.
+    std::vector<rich_error> entries;
 };
 
 /// RAII thread_local context slot. Each type T gets an independent thread_local pointer.

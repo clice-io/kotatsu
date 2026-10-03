@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <concepts>
 #include <cstddef>
 #include <memory>
@@ -41,6 +42,27 @@ struct FieldAt {
     }
 };
 
+/// Whether a field of struct T under Config answers to name, by its own name
+/// or an alias.
+template <typename Config, typename T>
+consteval bool has_field_named(std::string_view name) {
+    return std::ranges::any_of(meta::virtual_schema<T, Config>::fields,
+                               [&](const meta::field_info& field) {
+                                   return field.name == name ||
+                                          std::ranges::find(field.aliases, name) !=
+                                              field.aliases.end();
+                               });
+}
+
+/// Rejects an internally tagged variant one of whose alternatives has a
+/// field named like the tag: its document would hold the key twice.
+template <typename Config, typename SpecAttr, typename... Ts>
+consteval void assert_internal_tag_fits() {
+    static_assert((!has_field_named<Config, Ts>(SpecAttr::value.tag) && ...),
+                  "internally tagged: an alternative has a field named like the tag, so its "
+                  "document would hold the key twice");
+}
+
 /// Whether a node of type T can carry a tagging spec: only a std::variant
 /// has alternatives to tag.
 template <typename T>
@@ -61,19 +83,25 @@ bool skipped(const T& value, bool is_serialize) {
     }
 }
 
-/// When a step fails, prepends where it was, a field name or an element
-/// index, to the active error's path; returns ok. Config::detailed_error
-/// turns the tracking off.
+/// Puts a step, a key or an element index, in front of error's path.
+template <typename Step>
+void prepend_step(rich_error& error, const Step& at) {
+    if constexpr(std::is_convertible_v<const Step&, std::string_view>) {
+        error.prepend_field(at);
+    } else {
+        error.prepend_index(at);
+    }
+}
+
+/// When a step fails, prepends where it was, a key or an element index, to
+/// the active error's path; returns ok. Config::detailed_error turns the
+/// tracking off.
 template <typename Config, typename Step>
 bool trace_path(bool ok, const Step& at) {
     if constexpr(Config::detailed_error) {
         if(!ok) {
             if(auto* e = scoped_context<rich_error>::try_current()) {
-                if constexpr(std::is_convertible_v<const Step&, std::string_view>) {
-                    e->prepend_field(at);
-                } else {
-                    e->prepend_index(at);
-                }
+                prepend_step(*e, at);
             }
         }
     }

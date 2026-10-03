@@ -12,6 +12,7 @@
 #include <variant>
 #include <vector>
 
+#include "codec/harness/fixtures/attrs.h"
 #include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/structs.h"
 #include "codec/harness/fixtures/tagged.h"
@@ -197,6 +198,7 @@ void variants(const Kit<B>& kit) {
     if constexpr(B::caps.self_describing) {
         // Tagged decoding: what a keyed document may and may not do.
         using Ints = std::map<std::string, int>;
+        using Texts = std::map<std::string, std::string>;
         read_in_field_fails<ExternalShape>(
             kit,
             "external_unknown_tag_fails",
@@ -206,6 +208,15 @@ void variants(const Kit<B>& kit) {
                 };
             },
             {.message = "unknown variant tag 'bad'", .path = "value"});
+        // The value sits below its tag, which names it in a path.
+        read_in_field_fails<ExternalShape>(kit,
+                                           "external_content_mismatch_fails_below_its_tag",
+                                           [] {
+                                               return std::map<std::string, Texts>{
+                                                   {"point", {{"x", "one"}}}
+                                               };
+                                           },
+                                           {.message = "", .path = "value.point.x"});
         read_in_field_fails<ExternalShape>(
             kit,
             "external_two_tags_fails",
@@ -240,6 +251,52 @@ void variants(const Kit<B>& kit) {
             "adjacent_extra_fields_ignored",
             [] { return AdjacentWithExtraPlain{.t = "number", .extra = true, .c = 5}; },
             [] { return AdjacentShape{5}; });
+        reads_reporting<Field<AdjacentShape>>(
+            kit,
+            "adjacent_extra_fields_reported",
+            [] {
+                return Field<AdjacentWithExtraPlain>{
+                    {.t = "number", .extra = true, .c = 5}
+                };
+            },
+            [] { return Field<AdjacentShape>{AdjacentShape{5}}; },
+            {"unknown field 'extra' at value"});
+        // Inside a tagged value, unknown fields are reported where it sits:
+        // beside the tag, below it, below the content key.
+        reads_reporting<Field<InternalShape>>(
+            kit,
+            "internal_extra_fields_reported",
+            [] {
+                return Field<CircleWithExtraPlain>{
+                    {.kind = "circle", .radius = 5, .extra = "x"}
+                };
+            },
+            [] { return Field<InternalShape>{InternalShape(Circle{.radius = 5})}; },
+            {"unknown field 'extra' at value"});
+        reads_reporting<Field<ExternalShape>>(
+            kit,
+            "external_content_extra_fields_reported",
+            [] {
+                return Field<std::map<std::string, PointWithExtra>>{
+                    {{"point", {.x = 1, .y = 2, .extra = true}}}};
+            },
+            [] { return Field<ExternalShape>{ExternalShape(Point{.x = 1, .y = 2})}; },
+            {"unknown field 'extra' at value.point"});
+        reads_reporting<Field<AdjacentShape>>(
+            kit,
+            "adjacent_content_extra_fields_reported",
+            [] {
+                return Field<AdjacentPlain<PointWithExtra>>{
+                    {.t = "point", .c = {.x = 1, .y = 2, .extra = true}}
+                };
+            },
+            [] { return Field<AdjacentShape>{AdjacentShape(Point{.x = 1, .y = 2})}; },
+            {"unknown field 'extra' at value.c"});
+        read_in_field_fails<AdjacentShape, StrictConfig>(
+            kit,
+            "adjacent_extra_field_denied_fails",
+            [] { return AdjacentWithExtraPlain{.t = "number", .extra = true, .c = 5}; },
+            {.message = "unknown field 'extra'", .path = "value"});
         read_in_field_fails<AdjacentShape>(
             kit,
             "adjacent_missing_tag_fails",
@@ -268,6 +325,12 @@ void variants(const Kit<B>& kit) {
             "adjacent_unknown_tag_fails",
             [] { return AdjacentPlain<int>{.t = "bad", .c = 42}; },
             {.message = "unknown variant tag 'bad'", .path = "value"});
+        // The value sits below the content key, which names it in a path.
+        read_in_field_fails<AdjacentShape>(
+            kit,
+            "adjacent_content_mismatch_fails_below_its_key",
+            [] { return AdjacentPlain<Texts>{.t = "point", .c = {{"x", "one"}}}; },
+            {.message = "", .path = "value.c.x"});
         read_in_field_fails<AdjacentShape>(
             kit,
             "adjacent_unknown_tag_after_content_fails",

@@ -16,6 +16,7 @@
 #include <variant>
 #include <vector>
 
+#include "codec/harness/fixtures/containers.h"
 #include "fixtures/repr.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
@@ -100,6 +101,22 @@ struct BoxedScalar {
     std::variant<std::int8_t, double> v;
 
     auto operator==(const BoxedScalar&) const -> bool = default;
+};
+
+/// BoxedScalar with a member only value-initialization makes (see
+/// HoldsExplicit).
+struct ExplicitBoxedScalar {
+    ExplicitList list;
+    std::variant<std::int8_t, double> v;
+};
+
+/// Declares ExplicitBoxedScalar, whose own repr declares an untagged variant:
+/// decoding value-initializes the declared value, and so does probing on its
+/// way to the variant.
+struct ViaExplicitBox {
+    double value;
+
+    auto operator==(const ViaExplicitBox&) const -> bool = default;
 };
 
 /// Adapters for behavior::with.
@@ -363,6 +380,32 @@ struct repr<test::LineRange> {
     static test::LineRange from(const type& span) {
         const auto& s = annotated_value(span);
         return {.first = s.start_line, .last = s.start_line + s.line_count};
+    }
+};
+
+template <>
+struct repr<test::ExplicitBoxedScalar> {
+    using type = std::variant<std::int8_t, double>;
+
+    static type to(const test::ExplicitBoxedScalar& b) {
+        return b.v;
+    }
+
+    static test::ExplicitBoxedScalar from(type v) {
+        return {.list = test::ExplicitList(), .v = v};
+    }
+};
+
+template <>
+struct repr<test::ViaExplicitBox> {
+    using type = test::ExplicitBoxedScalar;
+
+    static type to(const test::ViaExplicitBox& x) {
+        return {.list = test::ExplicitList(), .v = x.value};
+    }
+
+    static test::ViaExplicitBox from(type b) {
+        return {.value = std::visit([](auto v) { return static_cast<double>(v); }, b.v)};
     }
 };
 

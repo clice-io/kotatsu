@@ -11,6 +11,10 @@ namespace {
 
 namespace fx = ::kota::test;
 
+struct DefaultedPolicy {
+    constexpr static bool defaulted_fields = true;
+};
+
 ZEST_SUITE(meta_schema_attrs) {
 
 ZEST_CASE(simple_struct_fields) {
@@ -138,6 +142,19 @@ ZEST_CASE(default_value) {
     STATIC_EXPECT(fields[0].has_default);
     STATIC_EXPECT(!fields[1].has_default);
     STATIC_EXPECT(!fields[2].has_default);
+}
+
+ZEST_CASE(defaulted_fields_config_defaults_every_field) {
+    // Every field has a default, in the structs nested inside too.
+    // DefaultStruct's first field is defaulted of its own.
+    constexpr auto& fields = virtual_schema<fx::DefaultStruct, DefaultedPolicy>::fields;
+    STATIC_EXPECT(fields[1].has_default);
+    STATIC_EXPECT(fields[2].has_default);
+
+    constexpr auto& items = virtual_schema<fx::NestedStruct, DefaultedPolicy>::fields;
+    constexpr auto& element = static_cast<const array_type_info&>(items[0].type()).element();
+    constexpr auto& simple = static_cast<const struct_type_info&>(element);
+    STATIC_EXPECT(simple.fields[0].has_default);
 }
 
 ZEST_CASE(deny_unknown_default_false) {

@@ -39,8 +39,13 @@
             using ::kota::meta::dsl::as;                                                           \
             using ::kota::meta::dsl::with;                                                         \
             using ::kota::meta::dsl::enum_string;                                                  \
+            using ::kota::meta::dsl::schema_default;                                               \
+            using ::kota::meta::dsl::minimum;                                                      \
+            using ::kota::meta::dsl::maximum;                                                      \
+            using ::kota::meta::dsl::choices;                                                      \
             using ::kota::meta::dsl::rename_all;                                                   \
             using ::kota::meta::dsl::deny_unknown_fields;                                          \
+            using ::kota::meta::dsl::defaulted_fields;                                             \
             using ::kota::meta::dsl::tagged;                                                       \
             using ::kota::meta::dsl::tag;                                                          \
             using ::kota::meta::dsl::content;                                                      \

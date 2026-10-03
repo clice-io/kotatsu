@@ -64,8 +64,10 @@ ZEST_CASE(with_adapter_type_info) {
 ZEST_CASE(enum_string) {
     constexpr auto& fields = virtual_schema<fx::EnumStringStruct>::fields;
 
-    // enum_string encodes through a non-owning view
-    STATIC_EXPECT(fields[0].type().kind == type_kind::string);
+    // enum_string encodes through a non-owning view; the field's type_info
+    // keeps the members, spelled through the policy.
+    STATIC_EXPECT(fields[0].type().kind == type_kind::enumeration);
+    EXPECT(static_cast<const enum_type_info&>(fields[0].type()).rename != nullptr);
     STATIC_EXPECT(fields[0].has_behavior);
     EXPECT(zest::type_eq<resolved_repr_t<decltype(fx::EnumStringStruct::color_field)>,
                          std::string_view>());

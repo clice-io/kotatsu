@@ -20,6 +20,7 @@ struct Json {
         .nested_nulls = true,
         .untrusted_input = true,
         .format_tag = true,
+        .utf8_text = true,
     };
     using Encoded = std::string;
 
