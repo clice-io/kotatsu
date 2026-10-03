@@ -69,11 +69,7 @@ bool trace_path(bool ok, const Step& at) {
     if constexpr(Config::detailed_error) {
         if(!ok) {
             if(auto* e = scoped_context<rich_error>::try_current()) {
-                if constexpr(std::is_convertible_v<const Step&, std::string_view>) {
-                    e->prepend_field(at);
-                } else {
-                    e->prepend_index(at);
-                }
+                rich_error::prepend_segment(e->path, at);
             }
         }
     }

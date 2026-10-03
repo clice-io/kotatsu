@@ -6,6 +6,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -26,7 +27,7 @@ struct rich_error {
     using path_segment = std::variant<std::string, std::size_t>;
 
     std::string message;
-    /// Path from root to error site, built by prepend_field/prepend_index during stack unwinding.
+    /// Path from root to error site, built by prepend_segment during stack unwinding.
     std::vector<path_segment> path;
     /// Source position in the input document (e.g. TOML line/column).
     std::optional<source_location> location;
@@ -39,21 +40,20 @@ struct rich_error {
         return !message.empty();
     }
 
-    void prepend_field(std::string_view name) {
-        path.insert(path.begin(), std::string(name));
-    }
-
-    void prepend_index(std::size_t idx) {
-        path.insert(path.begin(), idx);
-    }
-
-    void set_location(source_location loc) {
-        location = loc;
-    }
-
     /// Formats path as "foo.bar[3].baz".
     std::string format_path() const {
         return format_path(path);
+    }
+
+    /// Puts a step, a field name or an element index, in front of a path
+    /// from the root, as each frame of a decode does on its way out.
+    template <typename Step>
+    static void prepend_segment(std::vector<path_segment>& path, const Step& at) {
+        if constexpr(std::is_convertible_v<const Step&, std::string_view>) {
+            path.emplace(path.begin(), std::in_place_type<std::string>, std::string_view(at));
+        } else {
+            path.emplace(path.begin(), std::in_place_type<std::size_t>, at);
+        }
     }
 
     /// Formats a path from the root as "foo.bar[3].baz".

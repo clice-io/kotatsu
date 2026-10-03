@@ -227,11 +227,7 @@ bool decode_step(UnknownFields* sink, const Step& at, F&& step) {
     auto reported = sink->entries.size();
     bool ok = trace_path<Config>(step(), at);
     for(auto& entry: std::span(sink->entries).subspan(reported)) {
-        if constexpr(std::is_convertible_v<const Step&, std::string_view>) {
-            entry.path.insert(entry.path.begin(), std::string(std::string_view(at)));
-        } else {
-            entry.path.insert(entry.path.begin(), at);
-        }
+        rich_error::prepend_segment(entry.path, at);
     }
     return ok;
 }
@@ -239,11 +235,20 @@ bool decode_step(UnknownFields* sink, const Step& at, F&& step) {
 /// Where the value reader reads starts in the input, from a backend that
 /// tells (a location() hook).
 template <typename Reader>
-std::optional<rich_error::source_location> location_of(Reader& reader) {
+std::optional<rich_error::source_location> reader_location(Reader& reader) {
     if constexpr(requires { reader.location(); }) {
         return reader.location();
     } else {
         return std::nullopt;
+    }
+}
+
+/// Reports to sink, when one is installed, the key of an entry nothing reads;
+/// reader reads its value.
+template <typename Reader>
+void report_unknown_field(UnknownFields* sink, std::string_view key, Reader& reader) {
+    if(sink) {
+        sink->entries.push_back({.path = {std::string(key)}, .location = reader_location(reader)});
     }
 }
 
@@ -290,15 +295,12 @@ bool match_field(std::string_view key,
     if(slot == N) {
         if constexpr(Config::deny_unknown_fields || schema::deny_unknown) {
             auto err = rich_error::unknown_field(key);
-            err.location = location_of(reader);
+            err.location = reader_location(reader);
             return scoped_context<rich_error>::fail(std::move(err));
         } else {
             // An entry the callback does not read is simply passed over: the
             // data-driven readers move to the next entry either way.
-            if(sink) {
-                sink->entries.push_back(
-                    {.path = {std::string(key)}, .location = location_of(reader)});
-            }
+            report_unknown_field(sink, key, reader);
             return true;
         }
     }

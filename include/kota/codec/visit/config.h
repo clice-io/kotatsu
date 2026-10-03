@@ -65,7 +65,7 @@ struct default_config :
     /// Deserialize: reject unknown fields in data-driven mode.
     KOTA_CFG_FIELD_(deny_unknown_fields, false);
 
-    /// Generate error path tracking code (prepend_field/prepend_index).
+    /// Generate error path tracking code (the path of a rich_error).
     KOTA_CFG_FIELD_(detailed_error, true);
 };
 
