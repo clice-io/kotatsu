@@ -86,10 +86,11 @@ struct fail_await {
     std::tuple<Args&&...> args;
 };
 
-/// An outcome with an error channel and no cancel channel.
+/// An outcome that may hold something else than a value: an error, or a
+/// cancellation.
 template <typename Outcome>
-concept or_fail_result = is_outcome_v<Outcome> && std::is_void_v<typename Outcome::cancel_type> &&
-                         (!std::is_void_v<typename Outcome::error_type>);
+concept or_fail_result = is_outcome_v<Outcome> && (!std::is_void_v<typename Outcome::error_type> ||
+                                                   !std::is_void_v<typename Outcome::cancel_type>);
 
 /// What or_fail(outcome) gives to co_await: a reference to the outcome, so it
 /// must be awaited at once, like std::forward_as_tuple.
@@ -221,38 +222,48 @@ struct task_promise : task_frame, promise_result<T, E> {
         return finish_await{*this, State::Failed};
     }
 
-    /// co_await or_fail(outcome): end with its error, or resume with its value.
-    template <typename Ref>
+    /// co_await or_fail(outcome): end with its error, or cancelled when it
+    /// holds a cancellation, or resume with its value.
+    template <typename Ref, typename Outcome = std::remove_cvref_t<Ref>>
     auto await_transform(or_fail_await<Ref>&& awaited)
-        requires (!std::is_void_v<E>) &&
-                 std::constructible_from<E, typename std::remove_cvref_t<Ref>::error_type> {
+        requires std::is_void_v<typename Outcome::error_type> ||
+                 ((!std::is_void_v<E>) && std::constructible_from<E, typename Outcome::error_type>)
+    {
         // Refers to the outcome instead of holding it: MSVC gives up the tail
         // call of symmetric transfer from an await that holds a large one.
         struct awaiter {
             Ref result;
-            /// The task to end; null when the outcome has a value.
-            task_promise* failing;
+            /// The task to end, and how; null when the outcome has a value.
+            task_promise* ending;
+            State end;
 
             bool await_ready() const noexcept {
-                return failing == nullptr;
+                return ending == nullptr;
             }
 
             std::coroutine_handle<> await_suspend(std::coroutine_handle<>) const noexcept {
-                return failing->finish(State::Failed);
+                return ending->finish(end);
             }
 
             auto await_resume() {
-                if constexpr(!std::is_void_v<typename std::remove_cvref_t<Ref>::value_type>) {
+                if constexpr(!std::is_void_v<typename Outcome::value_type>) {
                     return *std::forward<Ref>(result);
                 }
             }
         };
 
-        if(awaited.result.has_error()) {
-            this->value.emplace(outcome_error(E(std::forward<Ref>(awaited.result).error())));
-            return awaiter{std::forward<Ref>(awaited.result), this};
+        if constexpr(!std::is_void_v<typename Outcome::error_type>) {
+            if(awaited.result.has_error()) {
+                this->value.emplace(outcome_error(E(std::forward<Ref>(awaited.result).error())));
+                return awaiter{std::forward<Ref>(awaited.result), this, State::Failed};
+            }
         }
-        return awaiter{std::forward<Ref>(awaited.result), nullptr};
+        if constexpr(!std::is_void_v<typename Outcome::cancel_type>) {
+            if(awaited.result.is_cancelled()) {
+                return awaiter{std::forward<Ref>(awaited.result), this, State::Cancelled};
+            }
+        }
+        return awaiter{std::forward<Ref>(awaited.result), nullptr, State::Succeeded};
     }
 
     /// co_await task.or_fail(): end with the child's error without resuming.
@@ -344,10 +355,16 @@ auto fail(Args&&... args) {
     return detail::fail_await<Args...>{std::forward_as_tuple(std::forward<Args>(args)...)};
 }
 
-/// co_await or_fail(result): ends the current task with the error of
-/// `result`, or goes on with its value.
+/// co_await or_fail(result): ends the current task as `result` says when it
+/// holds no value, with its error or cancelled, or goes on with its value.
+/// After catch_cancel(), it ends the task as the task it awaited ended, once
+/// what must run either way has run.
 ///
 ///   auto value = co_await or_fail(some_result);
+///
+///   auto ended = co_await work().catch_cancel();
+///   release();
+///   co_await or_fail(std::move(ended));
 ///
 template <typename Outcome>
     requires detail::or_fail_result<std::remove_cvref_t<Outcome>>
@@ -543,17 +560,11 @@ template <typename Fn, typename... Args>
     requires detail::is_task_v<std::invoke_result_t<Fn&, Args...>>
 std::invoke_result_t<Fn&, Args...> co_invoke(Fn fn, Args... args) {
     using Task = std::invoke_result_t<Fn&, Args...>;
-    auto ended = co_await std::invoke(fn, std::move(args)...).catch_cancel();
-    if constexpr(!std::is_void_v<typename Task::error_type>) {
-        if(ended.has_error()) {
-            co_await fail(std::move(ended).error());
-        }
-    }
-    if(ended.is_cancelled()) {
-        co_await cancel();
-    }
-    if constexpr(!std::is_void_v<typename Task::value_type>) {
-        co_return std::move(*ended);
+    if constexpr(std::is_void_v<typename Task::error_type> &&
+                 std::is_void_v<typename Task::cancel_type>) {
+        co_return co_await std::invoke(fn, std::move(args)...);
+    } else {
+        co_return co_await or_fail(co_await std::invoke(fn, std::move(args)...));
     }
 }
 

@@ -112,17 +112,10 @@ task<T, E, cancellation> with_token(task<T, E, C> inner_task, Tokens... tokens) 
     // The token waits never succeed: they only end cancelled, which cancels
     // the race. The task's own cancellation, caught, does the same.
     auto race_result = co_await when_any(std::move(inner_task).catch_cancel(), tokens.wait()...);
-
-    if constexpr(!std::is_void_v<E>) {
-        if(race_result.has_error()) {
-            co_await fail(std::move(race_result).error());
-        }
-    }
-    if(race_result.is_cancelled()) {
-        co_await cancel();
-    }
-    if constexpr(!std::is_void_v<T>) {
-        co_return std::move(std::get<0>(*race_result));
+    if constexpr(std::is_void_v<T>) {
+        co_await or_fail(std::move(race_result));
+    } else {
+        co_return std::get<0>(co_await or_fail(std::move(race_result)));
     }
 }
 

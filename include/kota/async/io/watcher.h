@@ -145,19 +145,14 @@ template <typename T, typename E, typename C>
 task<T, E, cancellation> with_timeout(task<T, E, C> inner_task,
                                       std::chrono::milliseconds timeout,
                                       event_loop& loop = event_loop::current()) {
-    auto raced = co_await when_any(std::move(inner_task).catch_cancel(), sleep(timeout, loop));
-
-    if constexpr(!std::is_void_v<E>) {
-        if(raced.has_error()) {
-            co_await fail(std::move(raced).error());
-        }
-    }
+    auto won = co_await or_fail(
+        co_await when_any(std::move(inner_task).catch_cancel(), sleep(timeout, loop)));
     // The deadline won the race when the sleep ended first.
-    if(raced.is_cancelled() || raced->index() != 0) {
+    if(won.index() != 0) {
         co_await cancel();
     }
     if constexpr(!std::is_void_v<T>) {
-        co_return std::get<0>(std::move(*raced));
+        co_return std::get<0>(std::move(won));
     }
 }
 

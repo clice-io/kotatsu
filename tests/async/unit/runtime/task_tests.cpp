@@ -158,6 +158,53 @@ ZEST_CASE(or_fail_ends_the_task_with_a_failed_outcome) {
     EXPECT(!after);
 }
 
+// An outcome caught with catch_cancel() passes its cancellation on: the
+// task ends cancelled, and its own awaiter, without a cancel channel, too.
+ZEST_CASE(or_fail_ends_the_task_cancelled_with_a_cancelled_outcome) {
+    event gate;
+    bool after = false;
+    auto waiting = [&]() -> task<int> {
+        co_await gate.wait();
+        co_return 1;
+    };
+    auto parent = [&]() -> task<int> {
+        auto caught = co_await waiting().catch_cancel();
+        auto value = co_await or_fail(std::move(caught));
+        after = true;
+        co_return value;
+    };
+    auto target = parent();
+    auto canceler = [&]() -> task<> {
+        target.cancel();
+        co_return;
+    };
+
+    auto [result, cancelled] = run(target, canceler());
+    EXPECT(result.is_cancelled());
+    EXPECT(!after);
+}
+
+ZEST_CASE(or_fail_passes_on_each_channel_of_a_caught_outcome) {
+    auto value = []() -> task<int, error> {
+        co_return co_await or_fail(outcome<int, error, cancellation>(7));
+    };
+    auto failed = []() -> task<int, error> {
+        co_return co_await or_fail(
+            outcome<int, error, cancellation>(outcome_error(error::broken_pipe)));
+    };
+    auto cancelled = []() -> task<int, error, cancellation> {
+        co_return co_await or_fail(
+            outcome<int, error, cancellation>(outcome_cancel(cancellation{})));
+    };
+
+    auto [seven, broken, ended] = run(value(), failed(), cancelled());
+    ASSERT(seven.has_value());
+    EXPECT(*seven == 7);
+    ASSERT(broken.has_error());
+    EXPECT(broken.error() == error::broken_pipe);
+    EXPECT(ended.is_cancelled());
+}
+
 ZEST_CASE(or_fail_on_a_task_unwraps_its_value) {
     auto child = []() -> task<int, error> {
         co_return 5;

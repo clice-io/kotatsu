@@ -229,6 +229,27 @@ ZEST_CASE(with_token_cancels_the_task_in_flight) {
     EXPECT(driver.has_value());
 }
 
+// The token's cancel reaches the task once the task that fired it has
+// suspended, not inside cancel(): the task still waits right after it.
+ZEST_CASE(with_token_delivers_the_cancel_after_the_firing_task_suspends) {
+    cancellation_source source;
+    event gate;
+    auto worker = [&]() -> task<int> {
+        co_await gate.wait();
+        co_return 1;
+    };
+    auto fire = [&]() -> task<bool> {
+        source.cancel();
+        co_return gate.has_waiters();
+    };
+
+    auto [guarded, waiting_after_cancel] = run(with_token(worker(), source.token()), fire());
+    ASSERT(waiting_after_cancel.has_value());
+    EXPECT(*waiting_after_cancel);
+    EXPECT(guarded.is_cancelled());
+    EXPECT(!gate.has_waiters());
+}
+
 // MSVC's coroutine codegen once fell through the cancelled path of the void
 // specialization and dereferenced the cancelled race result.
 ZEST_CASE(with_token_cancels_a_void_task_in_flight) {
