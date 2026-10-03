@@ -42,6 +42,10 @@ struct ReadError {
 /// blank line, then the payload.
 std::string frame(std::string_view payload);
 
+/// Why a message of `size` bytes is not carried where `limit` is the
+/// largest payload: what reading and sending one both report.
+std::string payload_too_large(std::size_t size, std::size_t limit);
+
 /// Reads the frames of a byte stream handed to it in pieces of any size.
 /// Header names are matched without regard to case, headers other than
 /// Content-Length are ignored, and the first Content-Length counts.

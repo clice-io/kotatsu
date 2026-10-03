@@ -156,10 +156,7 @@ struct Peer<CodecT>::Self {
         if(payload.size() <= limit) {
             return std::nullopt;
         }
-        return Error(protocol::ErrorCode::MessageTooLarge,
-                     std::format("a message of {} bytes exceeds the limit of {} bytes",
-                                 payload.size(),
-                                 limit));
+        return Error(protocol::ErrorCode::MessageTooLarge, payload_too_large(payload.size(), limit));
     }
 
     /// Queues `payload`; an answer the output can no longer take is dropped.
