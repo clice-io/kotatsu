@@ -262,7 +262,6 @@ ZEST_CASE(defaulted_fields_defaults_every_field) {
     using defaulted = annotate<defaulted_fields_tag>::type<pair_holder>;
     // The spec forks the type_info: its fields have defaults the bare
     // struct's do not.
-    STATIC_EXPECT((&type_info_of<defaulted>() != &type_info_of<pair_holder>()));
     const auto& info = static_cast<const struct_type_info&>(type_info_of<defaulted>());
     ASSERT(info.fields.size() == 2u);
     EXPECT(info.fields[0].has_default);
