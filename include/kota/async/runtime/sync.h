@@ -232,7 +232,8 @@ public:
     using scoped_lock_awaiter = detail::ScopedWait<mutex>;
 
     /// Holds the mutex scoped_lock() locked, and unlocks it when it goes,
-    /// unless unlock() did before. A moved-from guard holds nothing.
+    /// unless unlock() did before: in a task a cancel ended, once its owner
+    /// destroys the task's frame. A moved-from guard holds nothing.
     class [[nodiscard]] guard : public detail::BasicGuard<guard, mutex> {
     public:
         /// Unlocks the mutex now.
@@ -294,7 +295,8 @@ public:
     using scoped_acquire_awaiter = detail::ScopedWait<semaphore>;
 
     /// Holds the unit scoped_acquire() took, and releases it when it goes,
-    /// unless release() did before. A moved-from guard holds nothing.
+    /// unless release() did before: in a task a cancel ended, once its owner
+    /// destroys the task's frame. A moved-from guard holds nothing.
     class [[nodiscard]] guard : public detail::BasicGuard<guard, semaphore> {
     public:
         /// Releases the unit now.

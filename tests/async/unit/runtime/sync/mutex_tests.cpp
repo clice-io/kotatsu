@@ -171,30 +171,31 @@ ZEST_CASE(scoped_lock_guard_unlocks_once) {
     m.unlock();
 }
 
-// A task cancelled while it holds the guard unlocks as its frame goes: the
-// next waiter gets the mutex.
+// A task cancelled while it holds the guard unlocks once its frame goes, as
+// a group's child goes once it has ended: the next waiter gets the mutex.
 ZEST_CASE(scoped_lock_guard_unlocks_when_its_task_is_cancelled) {
     mutex m;
     event gate;
+    cancellation_source stop;
     bool waiter_locked = false;
     auto holder = [&]() -> task<> {
         auto held = co_await m.scoped_lock();
         co_await gate.wait();
     };
-    auto held = holder();
     auto waiter = [&]() -> task<> {
         auto locked = co_await m.scoped_lock();
         waiter_locked = true;
     };
-    auto canceller = [&]() -> task<> {
-        co_await yield();
-        held.cancel();
+    auto driver = [&]() -> task<> {
+        task_group<> group;
+        group.spawn(with_token(holder(), stop.token()));
+        group.spawn(waiter());
+        stop.cancel();
+        co_await group.join();
     };
 
-    auto [cancelled, waited, cancelling] = run(held, waiter(), canceller());
-    EXPECT(cancelled.is_cancelled());
-    EXPECT(waited.has_value());
-    EXPECT(cancelling.has_value());
+    auto [result] = run(driver());
+    EXPECT(result.has_value());
     EXPECT(waiter_locked);
 }
 

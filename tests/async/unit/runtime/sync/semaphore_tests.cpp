@@ -168,30 +168,31 @@ ZEST_CASE(scoped_acquire_guard_releases_once) {
     EXPECT(!s.try_acquire());
 }
 
-// A task cancelled while it holds the guard releases the unit as its frame
-// goes: the next waiter gets it.
+// A task cancelled while it holds the guard releases the unit once its frame
+// goes, as a group's child goes once it has ended: the next waiter gets it.
 ZEST_CASE(scoped_acquire_guard_releases_when_its_task_is_cancelled) {
     semaphore s(1);
     event gate;
+    cancellation_source stop;
     bool waiter_acquired = false;
     auto holder = [&]() -> task<> {
         auto held = co_await s.scoped_acquire();
         co_await gate.wait();
     };
-    auto held = holder();
     auto waiter = [&]() -> task<> {
         auto acquired = co_await s.scoped_acquire();
         waiter_acquired = true;
     };
-    auto canceller = [&]() -> task<> {
-        co_await yield();
-        held.cancel();
+    auto driver = [&]() -> task<> {
+        task_group<> group;
+        group.spawn(with_token(holder(), stop.token()));
+        group.spawn(waiter());
+        stop.cancel();
+        co_await group.join();
     };
 
-    auto [cancelled, waited, cancelling] = run(held, waiter(), canceller());
-    EXPECT(cancelled.is_cancelled());
-    EXPECT(waited.has_value());
-    EXPECT(cancelling.has_value());
+    auto [result] = run(driver());
+    EXPECT(result.has_value());
     EXPECT(waiter_acquired);
 }
 
