@@ -12,6 +12,12 @@
 
 namespace kota::ipc::lsp {
 
+namespace detail {
+
+struct Located;
+
+}  // namespace detail
+
 /// Source content + line starts for LSP position conversion.
 /// Line starts are held either as a borrowed span or as an owned vector.
 ///
@@ -85,6 +91,10 @@ public:
 
 private:
     PositionEncoding resolve(PositionEncoding encoding) const;
+
+    /// Where `position` falls: the offset to_offset_clamped gives it, exact
+    /// where to_offset gives it too.
+    detail::Located locate(protocol::Position position, PositionEncoding encoding) const;
 
     /// Where `line`'s text ends.
     Offset line_end(Offset line) const;

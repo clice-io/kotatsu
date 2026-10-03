@@ -36,11 +36,4 @@ std::optional<std::uint32_t> encoded_offset(std::string_view text,
                                             std::uint32_t character,
                                             PositionEncoding encoding);
 
-/// Converts an encoded character offset back to a byte offset within `text`,
-/// leniently: a character past the end is the end, and one inside a code
-/// point is that code point's start.
-std::uint32_t encoded_offset_clamped(std::string_view text,
-                                     std::uint32_t character,
-                                     PositionEncoding encoding);
-
 }  // namespace kota::ipc::lsp
