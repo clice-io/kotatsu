@@ -1,11 +1,8 @@
 #pragma once
 
 #include <cstdint>
-#include <format>
-#include <functional>
 #include <optional>
 #include <string>
-#include <type_traits>
 #include <utility>
 #include <variant>
 
@@ -67,40 +64,6 @@ struct CancelRequestParams {
 };
 
 }  // namespace kota::ipc::protocol
-
-namespace std {
-
-template <>
-struct hash<kota::ipc::protocol::RequestID> {
-    std::size_t operator()(const kota::ipc::protocol::RequestID& id) const noexcept {
-        return std::visit(
-            [](const auto& v) -> std::size_t {
-                return std::hash<std::remove_cvref_t<decltype(v)>>{}(v);
-            },
-            id);
-    }
-};
-
-template <>
-struct formatter<kota::ipc::protocol::RequestID> {
-    constexpr auto parse(format_parse_context& ctx) {
-        return ctx.begin();
-    }
-
-    auto format(const kota::ipc::protocol::RequestID& id, format_context& ctx) const {
-        return std::visit(
-            [&](const auto& v) {
-                if constexpr(std::is_same_v<std::remove_cvref_t<decltype(v)>, std::string>) {
-                    return std::format_to(ctx.out(), "\"{}\"", v);
-                } else {
-                    return std::format_to(ctx.out(), "{}", v);
-                }
-            },
-            id);
-    }
-};
-
-}  // namespace std
 
 namespace kota::codec {
 

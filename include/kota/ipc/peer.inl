@@ -22,6 +22,29 @@
 
 #include "kota/support/function_traits.h"
 
+namespace kota::ipc::detail {
+
+/// A request id as Peer's log writes it: a number as it is, a string quoted.
+struct LoggedId {
+    const protocol::RequestID& id;
+};
+
+}  // namespace kota::ipc::detail
+
+template <>
+struct std::formatter<kota::ipc::detail::LoggedId> {
+    constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    auto format(const kota::ipc::detail::LoggedId& logged, std::format_context& ctx) const {
+        if(const auto* text = std::get_if<std::string>(&logged.id)) {
+            return std::format_to(ctx.out(), "\"{}\"", *text);
+        }
+        return std::format_to(ctx.out(), "{}", std::get<std::int64_t>(logged.id));
+    }
+};
+
 namespace kota::ipc {
 
 namespace detail {
@@ -314,14 +337,17 @@ struct Peer<CodecT>::Self {
     void send_cancel_request(const protocol::RequestID& id) {
         auto params = codec.serialize_value(protocol::CancelRequestParams{id});
         if(!params) {
-            log(LogLevel::error, "$/cancelRequest for id={} not sent: {}", id, params.error().message);
+            log(LogLevel::error,
+                "$/cancelRequest for id={} not sent: {}",
+                detail::LoggedId{id},
+                params.error().message);
             return;
         }
         auto notification = codec.encode_notification("$/cancelRequest", *params);
         if(!notification) {
             log(LogLevel::error,
                 "$/cancelRequest for id={} not sent: {}",
-                id,
+                detail::LoggedId{id},
                 notification.error().message);
             return;
         }
@@ -357,11 +383,11 @@ struct Peer<CodecT>::Self {
     void complete_pending_request(const protocol::RequestID& id, Result<std::string>&& response) {
         auto it = pending_requests.find(id);
         if(it == pending_requests.end()) {
-            log(LogLevel::warn, "orphan response for id={}", id);
+            log(LogLevel::warn, "orphan response for id={}", detail::LoggedId{id});
             return;
         }
 
-        log(LogLevel::debug, "response received for id={}", id);
+        log(LogLevel::debug, "response received for id={}", detail::LoggedId{id});
 
         auto pending = std::move(it->second);
         pending_requests.erase(it);
@@ -422,7 +448,7 @@ struct Peer<CodecT>::Self {
                           const protocol::RequestID& id,
                           std::string_view params,
                           task_group<>& handlers) {
-        log(LogLevel::debug, "request: {} id={}", method, id);
+        log(LogLevel::debug, "request: {} id={}", method, detail::LoggedId{id});
 
         if(incoming_requests.contains(id)) {
             send_error(id, Error(protocol::ErrorCode::InvalidRequest, "duplicate request id"));
