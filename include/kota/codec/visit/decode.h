@@ -216,18 +216,50 @@ bool decode_with_attrs(Vis& vis, T& out) {
     }
 }
 
+/// Runs one step of a data-driven decode, below a field name or an element
+/// index: the step joins the path of an error it fails with (trace_path)
+/// and, failing or not, the path of every unknown field it reports to sink.
+template <typename Config, typename Step, typename F>
+bool decode_step(UnknownFields* sink, const Step& at, F&& step) {
+    if(!sink) {
+        return trace_path<Config>(step(), at);
+    }
+    auto reported = sink->entries.size();
+    bool ok = trace_path<Config>(step(), at);
+    for(auto& entry: std::span(sink->entries).subspan(reported)) {
+        if constexpr(std::is_convertible_v<const Step&, std::string_view>) {
+            entry.path.insert(entry.path.begin(), std::string(std::string_view(at)));
+        } else {
+            entry.path.insert(entry.path.begin(), at);
+        }
+    }
+    return ok;
+}
+
+/// Where the value reader reads starts in the input, from a backend that
+/// tells (a location() hook).
+template <typename Reader>
+std::optional<rich_error::source_location> location_of(Reader& reader) {
+    if constexpr(requires { reader.location(); }) {
+        return reader.location();
+    } else {
+        return std::nullopt;
+    }
+}
+
 /// Decode a field's value applying behavior transforms, without visit_field wrapping.
 /// Used by match_field (data-driven path) where the field reader is already provided.
 template <typename Config, std::size_t I, typename Vis, typename T>
-bool decode_field_value(Vis& vis, T& out) {
+bool decode_field_value(Vis& vis, T& out, UnknownFields* sink) {
     using field = FieldAt<Config, I, T>;
     auto& field_ref = field::of(out);
     // A keyed entry the field skips is passed over unread.
     if(skipped<typename field::attrs>(field_ref, false)) {
         return true;
     }
-    return trace_path<Config>(decode_with_attrs<Config, typename field::attrs>(vis, field_ref),
-                              field::name);
+    return decode_step<Config>(sink, field::name, [&] {
+        return decode_with_attrs<Config, typename field::attrs>(vis, field_ref);
+    });
 }
 
 /// The slot whose name or alias is key; fields.size() when none is.
@@ -241,11 +273,15 @@ inline std::size_t find_field_slot(std::span<const meta::field_info> fields, std
     return fields.size();
 }
 
-/// Data-driven field matching: decodes the slot key names into out, or
-/// skips (or rejects) an unknown key. Sets the slot's bit in field_mask
-/// when given.
+/// Data-driven field matching: decodes the slot key names into out and sets
+/// the slot's bit in field_mask, or rejects an unknown key, or passes over
+/// it and reports it to sink.
 template <typename Config, typename T, typename Vis>
-bool match_field(std::string_view key, Vis& reader, T& out, std::uint64_t* field_mask = nullptr) {
+bool match_field(std::string_view key,
+                 Vis& reader,
+                 T& out,
+                 std::uint64_t& field_mask,
+                 UnknownFields* sink) {
     using schema = meta::virtual_schema<T, Config>;
     constexpr std::size_t N = type_list_size_v<typename schema::slots>;
     static_assert(N <= 64, "struct field count exceeds field_mask capacity (max 64 fields)");
@@ -253,27 +289,23 @@ bool match_field(std::string_view key, Vis& reader, T& out, std::uint64_t* field
     std::size_t slot = find_field_slot(schema::fields, key);
     if(slot == N) {
         if constexpr(Config::deny_unknown_fields || schema::deny_unknown) {
-            // Prefer the backend hook so DOM backends (e.g. TOML) can attach
-            // the offending node's source location to the error.
-            if constexpr(requires {
-                             { reader.fail_unknown_field(key) } -> std::same_as<bool>;
-                         }) {
-                return reader.fail_unknown_field(key);
-            } else {
-                return scoped_context<rich_error>::fail(rich_error::unknown_field(key));
-            }
+            auto err = rich_error::unknown_field(key);
+            err.location = location_of(reader);
+            return scoped_context<rich_error>::fail(std::move(err));
         } else {
             // An entry the callback does not read is simply passed over: the
             // data-driven readers move to the next entry either way.
+            if(sink) {
+                sink->entries.push_back(
+                    {.path = {std::string(key)}, .location = location_of(reader)});
+            }
             return true;
         }
     }
 
-    if(field_mask) {
-        *field_mask |= std::uint64_t{1} << slot;
-    }
+    field_mask |= std::uint64_t{1} << slot;
     return with_index<N>(slot, [&](auto i) {
-        return decode_field_value<Config, decltype(i)::value>(reader, out);
+        return decode_field_value<Config, decltype(i)::value>(reader, out, sink);
     });
 }
 
@@ -405,6 +437,7 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
 
     std::uint64_t field_mask = 0;
     std::size_t tag_count = 0;
+    auto* sink = scoped_context<UnknownFields>::try_current();
     bool result = vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
         if(key == tag_key) {
             ++tag_count;
@@ -422,7 +455,8 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
                 key,
                 fv,
                 std::get<I>(var),
-                &field_mask);
+                field_mask,
+                sink);
         });
     });
 
@@ -655,6 +689,7 @@ bool untagged_variant_pass(Vis& vis,
                            std::variant<Ts...>& out,
                            meta::type_kind src_kind,
                            bool widen) {
+    auto* sink = scoped_context<UnknownFields>::try_current();
     return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
         return (([&] {
                     using alt_t = std::variant_alternative_t<Is, std::variant<Ts...>>;
@@ -665,7 +700,8 @@ bool untagged_variant_pass(Vis& vis,
                                        : strict;
                     if(!admit)
                         return false;
-                    return vis.try_read([&](auto& fork) -> bool {
+                    auto reported = sink ? sink->entries.size() : 0;
+                    bool claimed = vis.try_read([&](auto& fork) -> bool {
                         if constexpr(nested) {
                             return nested_alternative_pass<Config>(fork,
                                                                    out.template emplace<Is>(),
@@ -675,6 +711,12 @@ bool untagged_variant_pass(Vis& vis,
                             return construct_and_visit<Config>(fork, out, Is);
                         }
                     });
+                    // A probe that fails takes back the unknown fields it
+                    // reported: the value they were in is not the one read.
+                    if(!claimed && sink) {
+                        sink->entries.resize(reported);
+                    }
+                    return claimed;
                 }()) ||
                 ...);
     }(std::index_sequence_for<Ts...>{});
@@ -824,8 +866,9 @@ bool decode_value(Vis& vis, T& out) {
         } else if constexpr(kind == structure) {
             if constexpr(detail::data_driven<Vis>) {
                 std::uint64_t field_mask = 0;
+                auto* sink = scoped_context<UnknownFields>::try_current();
                 bool result = vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
-                    return detail::match_field<Config, V>(key, fv, out, &field_mask);
+                    return detail::match_field<Config, V>(key, fv, out, field_mask, sink);
                 });
                 if(result) {
                     result = detail::check_required_fields<Config, V>(field_mask);
@@ -843,9 +886,12 @@ bool decode_value(Vis& vis, T& out) {
                     out.clear();
                 }
                 std::size_t idx = 0;
+                auto* sink = scoped_context<UnknownFields>::try_current();
                 return vis.visit_seq([&](auto& ev) -> bool {
                     auto item = element_t();
-                    KOTA_CODEC_TRY(detail::trace_path<Config>(decode_value<Config>(ev, item), idx));
+                    KOTA_CODEC_TRY(detail::decode_step<Config>(sink, idx, [&] {
+                        return decode_value<Config>(ev, item);
+                    }));
                     kota::detail::append_sequence_element(out, std::move(item));
                     ++idx;
                     return true;
@@ -871,15 +917,17 @@ bool decode_value(Vis& vis, T& out) {
             if constexpr(detail::data_driven<Vis>) {
                 constexpr std::size_t expected = std::tuple_size_v<V>;
                 std::size_t idx = 0;
+                auto* sink = scoped_context<UnknownFields>::try_current();
                 bool seq_ok = vis.visit_tuple([&](auto& ev) -> bool {
                     if(idx == expected) {
                         return scoped_context<rich_error>::fail(rich_error(
                             std::format("too many elements for tuple (expected {})", expected)));
                     }
-                    bool ok = detail::with_index<std::tuple_size_v<V>>(idx, [&](auto i) {
-                        return decode_value<Config>(ev, std::get<decltype(i)::value>(out));
-                    });
-                    KOTA_CODEC_TRY(detail::trace_path<Config>(ok, idx));
+                    KOTA_CODEC_TRY(detail::decode_step<Config>(sink, idx, [&] {
+                        return detail::with_index<std::tuple_size_v<V>>(idx, [&](auto i) {
+                            return decode_value<Config>(ev, std::get<decltype(i)::value>(out));
+                        });
+                    }));
                     ++idx;
                     return true;
                 });
@@ -912,11 +960,14 @@ bool decode_value(Vis& vis, T& out) {
                     out.clear();
                 }
                 std::size_t idx = 0;
+                auto* sink = scoped_context<UnknownFields>::try_current();
                 return vis.visit_map([&](auto& kv, auto& vv) -> bool {
                     auto key = key_t();
                     KOTA_CODEC_TRY(detail::trace_path<Config>(decode_value<Config>(kv, key), idx));
                     auto val = mapped_t();
-                    KOTA_CODEC_TRY(detail::trace_path<Config>(decode_value<Config>(vv, val), idx));
+                    KOTA_CODEC_TRY(detail::decode_step<Config>(sink, idx, [&] {
+                        return decode_value<Config>(vv, val);
+                    }));
                     kota::detail::insert_map_entry(out, std::move(key), std::move(val));
                     ++idx;
                     return true;

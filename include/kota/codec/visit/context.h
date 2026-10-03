@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <format>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -52,6 +53,11 @@ struct rich_error {
 
     /// Formats path as "foo.bar[3].baz".
     std::string format_path() const {
+        return format_path(path);
+    }
+
+    /// Formats a path from the root as "foo.bar[3].baz".
+    static std::string format_path(std::span<const path_segment> path) {
         std::string result;
         for(std::size_t i = 0; i < path.size(); ++i) {
             if(auto* field = std::get_if<std::string>(&path[i])) {
@@ -94,6 +100,30 @@ struct rich_error {
     static rich_error invalid_type(std::string_view expected, std::string_view got) {
         return rich_error(std::format("invalid type: expected {}, got {}", expected, got));
     }
+};
+
+/// The unknown fields of the decodes run on this thread while it is
+/// installed (scoped_context<UnknownFields>): the keys of an object that no
+/// field of the struct read from it answers to. Decoding goes on as without
+/// it, so one decode both reads the value and reports every key it passed
+/// over. A struct that denies unknown fields still fails on the first, which
+/// is not collected, and a decode that fails keeps what it collected before.
+struct UnknownFields {
+    struct Entry {
+        /// From the root to the key, the key last, in the segments of a
+        /// decode error's path: "section.key", "rules[0].key".
+        std::vector<rich_error::path_segment> path;
+        /// Where the key's value starts in the input, when the backend knows
+        /// (json, toml).
+        std::optional<rich_error::source_location> location;
+
+        std::string format_path() const {
+            return rich_error::format_path(path);
+        }
+    };
+
+    /// In the order the decodes met them.
+    std::vector<Entry> entries;
 };
 
 /// RAII thread_local context slot. Each type T gets an independent thread_local pointer.

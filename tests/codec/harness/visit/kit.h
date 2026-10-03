@@ -20,6 +20,7 @@
 // move-only. A plain value always encodes under the default config; Config
 // applies to the value under test only.
 
+#include <algorithm>
 #include <concepts>
 #include <cstddef>
 #include <expected>
@@ -29,6 +30,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "codec/harness/fixtures/structs.h"
 #include "kota/zest/zest.h"
@@ -181,6 +183,34 @@ void reads_in_field(const Kit<B>& kit, std::string name, Plain plain, Expect exp
         std::move(name),
         [plain] { return Field<decltype(plain())>{plain()}; },
         [expect] { return Field<V>{expect()}; });
+}
+
+/// reads under an installed codec::UnknownFields: the document plain()
+/// encodes to decodes, under Config, into expect(), reporting the unknown
+/// fields at `unknown`, in any order.
+template <typename T, typename Config = void, Backend B, typename Plain, typename Expect>
+void reads_reporting(const Kit<B>& kit,
+                     std::string name,
+                     Plain plain,
+                     Expect expect,
+                     std::vector<std::string> unknown) {
+    std::ranges::sort(unknown);
+    kit.add(std::move(name), [plain, expect, unknown] {
+        auto document = B::encode(plain());
+        ASSERT(succeeds(document));
+        ZEST_CONTEXT("{}: {}", B::name, B::render(*document));
+        codec::UnknownFields sink;
+        codec::scoped_context<codec::UnknownFields> scope(sink);
+        T decoded{};
+        ASSERT(succeeds(B::template decode<Config>(*document, decoded)));
+        EXPECT(meta::eq(decoded, expect()));
+        std::vector<std::string> paths;
+        for(const auto& entry: sink.entries) {
+            paths.push_back(entry.format_path());
+        }
+        std::ranges::sort(paths);
+        EXPECT(paths == unknown);
+    });
 }
 
 /// The document plain() encodes to does not decode into T under Config.

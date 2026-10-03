@@ -6,6 +6,7 @@
 // names them (hence names such as `userName`).
 
 #include <charconv>
+#include <map>
 #include <optional>
 #include <string>
 #include <utility>
@@ -127,6 +128,42 @@ struct OwnerNamePlain {
 struct SettingsPartialPlain {
     int retries;
     OwnerNamePlain owner;
+};
+
+/// Point with a key Point does not have.
+struct PointWithExtra {
+    int x;
+    int y;
+    int extra;
+};
+
+/// Structs wherever a decode reaches one: a field, a sequence element, a map
+/// value.
+struct Placed {
+    Point at;
+    std::vector<Point> trail;
+    std::map<std::string, Point> named;
+};
+
+/// Placed's document with a key nothing reads at every depth.
+struct PlacedWithExtras {
+    PointWithExtra at;
+    std::vector<PointWithExtra> trail;
+    std::map<std::string, PointWithExtra> named;
+    int extra;
+};
+
+/// Point's x and a label: an untagged variant probes Point first, which
+/// passes over `label` before it misses `y`.
+struct Labeled {
+    int x;
+    std::string label;
+};
+
+struct LabeledWithExtra {
+    int x;
+    std::string label;
+    int extra;
 };
 
 struct RenameTargetCamel {

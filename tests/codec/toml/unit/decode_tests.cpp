@@ -111,6 +111,34 @@ extra = true
     EXPECT(status.error().location->column == 9U);
 }
 
+ZEST_CASE(unknown_fields_reported_at_their_values) {
+    UnknownFields sink;
+    scoped_context<UnknownFields> scope(sink);
+    test::Person out{};
+    auto status = toml::from_string(R"(
+name = "alice"
+age = 30
+extra = true
+[addr]
+city = "NY"
+zip = 10001
+floor = 3
+)",
+                                    out);
+    ASSERT(status);
+    EXPECT(out.addr.zip == 10001);
+    // A table holds its keys in order, so `addr` comes first.
+    ASSERT(sink.entries.size() == 2U);
+    EXPECT(sink.entries[0].format_path() == "addr.floor");
+    ASSERT(sink.entries[0].location);
+    EXPECT(sink.entries[0].location->line == 8U);
+    EXPECT(sink.entries[0].location->column == 9U);
+    EXPECT(sink.entries[1].format_path() == "extra");
+    ASSERT(sink.entries[1].location);
+    EXPECT(sink.entries[1].location->line == 4U);
+    EXPECT(sink.entries[1].location->column == 9U);
+}
+
 ZEST_CASE(integer_out_of_range_fails) {
     std::uint8_t out = 0;
     auto status = toml::from_string("__value = 300", out);

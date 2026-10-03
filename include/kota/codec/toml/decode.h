@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <expected>
 #include <format>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -231,12 +232,9 @@ struct ValueReader {
         return visit_seq(std::forward<Callback>(cb));
     }
 
-    /// Backend hook used by data-driven struct decoding: fail an unknown field
-    /// with the offending value node's source location attached.
-    bool fail_unknown_field(std::string_view key) {
-        auto err = rich_error::unknown_field(key);
-        attach_location(err);
-        return scoped_context<rich_error>::fail(std::move(err));
+    /// Where the node starts in the input; none for an absent node.
+    std::optional<rich_error::source_location> location() const {
+        return node ? detail::location_of(node->source()) : std::nullopt;
     }
 
 private:
@@ -248,22 +246,16 @@ private:
         return node ? node->template as<T>() : nullptr;
     }
 
-    void attach_location(rich_error& err) {
-        if(node) {
-            err.location = detail::location_of(node->source());
-        }
-    }
-
     bool fail_type(std::string_view expected) {
         auto got = detail::node_type_name(node);
         auto err = rich_error::invalid_type(expected, got);
-        attach_location(err);
+        err.location = location();
         return scoped_context<rich_error>::fail(std::move(err));
     }
 
     bool fail_with_location(std::string msg) {
         rich_error err(std::move(msg));
-        attach_location(err);
+        err.location = location();
         return scoped_context<rich_error>::fail(std::move(err));
     }
 };

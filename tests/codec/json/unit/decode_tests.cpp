@@ -6,6 +6,7 @@
 #include <variant>
 #include <vector>
 
+#include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/structs.h"
 #include "codec/harness/fixtures/tagged.h"
@@ -43,6 +44,44 @@ ZEST_CASE(value_overload_value_initializes) {
         .count = 2
     };
     EXPECT(meta::eq(*result, expected));
+}
+
+ZEST_CASE(unknown_fields_reported_at_their_values) {
+    UnknownFields sink;
+    scoped_context<UnknownFields> scope(sink);
+    test::Person out{};
+    auto status = json::from_string(R"({
+  "name": "alice",
+  "age": 30,
+  "extra": true,
+  "addr": {
+    "city": "NY",
+    "zip": 10001,
+    "floor": 3
+  }
+})",
+                                    out);
+    ASSERT(status);
+    EXPECT(out.addr.zip == 10001);
+    ASSERT(sink.entries.size() == 2U);
+    EXPECT(sink.entries[0].format_path() == "extra");
+    ASSERT(sink.entries[0].location);
+    EXPECT(sink.entries[0].location->line == 4U);
+    EXPECT(sink.entries[0].location->column == 12U);
+    EXPECT(sink.entries[1].format_path() == "addr.floor");
+    ASSERT(sink.entries[1].location);
+    EXPECT(sink.entries[1].location->line == 8U);
+    EXPECT(sink.entries[1].location->column == 14U);
+}
+
+ZEST_CASE(unknown_field_fails_at_its_value) {
+    test::Point out{};
+    auto status = json::from_string<test::StrictConfig>(R"({"x": 1, "y": 2, "extra": true})", out);
+    ASSERT(!status);
+    EXPECT(status.error().message == "unknown field 'extra'");
+    ASSERT(status.error().location);
+    EXPECT(status.error().location->line == 1U);
+    EXPECT(status.error().location->column == 27U);
 }
 
 ZEST_CASE(number_out_of_range_fails) {

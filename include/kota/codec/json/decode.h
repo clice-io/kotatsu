@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -117,24 +118,31 @@ struct Reader {
         return src.apply(std::forward<F>(f));
     }
 
-    bool fail_located(rich_error err) {
+    /// Where the value starts in the input, when simdjson can tell.
+    std::optional<rich_error::source_location> location() const {
         auto loc_result = src.apply([](auto& s) { return s.current_location(); });
-        if(!loc_result.error()) {
-            const char* loc = loc_result.value_unsafe();
-            if(loc >= buf_base && loc <= buf_base + buf_size) {
-                auto offset = static_cast<std::size_t>(loc - buf_base);
-                std::size_t line = 1, col = 1;
-                for(std::size_t i = 0; i < offset; ++i) {
-                    if(buf_base[i] == '\n') {
-                        ++line;
-                        col = 1;
-                    } else {
-                        ++col;
-                    }
-                }
-                err.set_location({line, col, offset});
+        if(loc_result.error()) {
+            return std::nullopt;
+        }
+        const char* loc = loc_result.value_unsafe();
+        if(loc < buf_base || loc > buf_base + buf_size) {
+            return std::nullopt;
+        }
+        auto offset = static_cast<std::size_t>(loc - buf_base);
+        std::size_t line = 1, col = 1;
+        for(std::size_t i = 0; i < offset; ++i) {
+            if(buf_base[i] == '\n') {
+                ++line;
+                col = 1;
+            } else {
+                ++col;
             }
         }
+        return rich_error::source_location{line, col, offset};
+    }
+
+    bool fail_located(rich_error err) {
+        err.location = location();
         return scoped_context<rich_error>::fail(std::move(err));
     }
 

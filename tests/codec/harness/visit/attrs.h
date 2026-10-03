@@ -24,6 +24,7 @@
 #include "fixtures/configs.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
+#include "kota/codec/visit/context.h"
 
 namespace kota::test {
 
@@ -427,6 +428,56 @@ void attrs(const Kit<B>& kit) {
                                         "unknown_field_under_config_fails",
                                         with_extra,
                                         {.message = "unknown field 'extra'", .path = ""});
+        // An installed UnknownFields collects every unknown field, with its
+        // path, and the decode goes on.
+        reads_reporting<Placed>(
+            kit,
+            "unknown_fields_reported_at_every_depth",
+            [] {
+                return PlacedWithExtras{
+                    .at = {.x = 1, .y = 2, .extra = 0},
+                    .trail = {{.x = 3, .y = 4, .extra = 0}},
+                    .named = {{"home", {.x = 5, .y = 6, .extra = 0}}},
+                    .extra = 0,
+                };
+            },
+            [] {
+                return Placed{
+                    .at = {.x = 1, .y = 2},
+                    .trail = {{.x = 3, .y = 4}},
+                    .named = {{"home", {.x = 5, .y = 6}}},
+                };
+            },
+            {"at.extra", "extra", "named[0].extra", "trail[0].extra"});
+        // Probing Point passes over `label` and `extra`, then misses `y`:
+        // what the failed probe reported goes with it.
+        reads_reporting<Field<std::variant<Point, Labeled>>>(
+            kit,
+            "unknown_fields_of_a_failed_probe_dropped",
+            [] {
+                return Field<LabeledWithExtra>{
+                    {.x = 1, .label = "a", .extra = 2}
+                };
+            },
+            [] {
+                return Field<std::variant<Point, Labeled>>{
+                    Labeled{.x = 1, .label = "a"}
+                };
+            },
+            {"value.extra"});
+        // Denying unknown fields, the decode still fails on the first, which
+        // is not collected.
+        kit.add("unknown_field_fails_past_unknown_fields", [with_extra] {
+            auto document = B::encode(with_extra());
+            ASSERT(succeeds(document));
+            codec::UnknownFields sink;
+            codec::scoped_context<codec::UnknownFields> scope(sink);
+            Point decoded{};
+            auto status = B::template decode<StrictConfig>(*document, decoded);
+            ASSERT(!status);
+            EXPECT(status.error().message == "unknown field 'extra'");
+            EXPECT(sink.entries.empty());
+        });
         read_in_field_fails<SnakeStrict>(kit,
                                          "rename_all_on_field_denies_unknown_fails",
                                          [] {
