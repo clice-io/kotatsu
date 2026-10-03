@@ -169,4 +169,9 @@ task<> sleep(std::chrono::milliseconds timeout, event_loop& loop) {
     co_await t.self->slot.wait();
 }
 
+task<> detail::expire(std::chrono::milliseconds timeout, event_loop& loop) {
+    co_await sleep(timeout, loop);
+    co_await cancel();
+}
+
 }  // namespace kota

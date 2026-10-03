@@ -102,21 +102,17 @@ private:
     std::shared_ptr<detail::cancellation_state> state;
 };
 
-/// Runs `inner_task`, cancelling it once any of `tokens` fires: the cancel
-/// reaches the task once whatever runs when the token fires has suspended,
-/// not inside the source's cancel(). The result reports that cancellation,
-/// or one of the task itself, as a value.
-template <typename T, typename E, typename C, std::same_as<cancellation_token>... Tokens>
-    requires (sizeof...(Tokens) > 0)
-task<T, E, cancellation> with_token(task<T, E, C> inner_task, Tokens... tokens) {
-    // A fired token keeps the task from starting at all.
-    if((tokens.cancelled() || ...)) {
-        co_await cancel();
-    }
+namespace detail {
 
-    // The token waits never succeed: they only end cancelled, which cancels
-    // the race. The task's own cancellation, caught, does the same.
-    auto race_result = co_await when_any(std::move(inner_task).catch_cancel(), tokens.wait()...);
+/// Runs `inner_task` until it ends, or until one of `stops`, tasks that never
+/// succeed, ends cancelled, which cancels it. A stop that ends at once keeps
+/// the task from starting at all. The result reports that cancellation, or
+/// one of the task itself, as a value.
+template <typename T, typename E, typename C, typename... Stops>
+task<T, E, cancellation> run_until(task<T, E, C> inner_task, Stops... stops) {
+    // The stops start first. The task's own cancellation, caught, ends the
+    // race as a stop does.
+    auto race_result = co_await when_any(std::move(stops)..., std::move(inner_task).catch_cancel());
 
     if constexpr(!std::is_void_v<E>) {
         if(race_result.has_error()) {
@@ -127,8 +123,21 @@ task<T, E, cancellation> with_token(task<T, E, C> inner_task, Tokens... tokens) 
         co_await cancel();
     }
     if constexpr(!std::is_void_v<T>) {
-        co_return std::move(std::get<0>(*race_result));
+        co_return std::move(std::get<sizeof...(Stops)>(*race_result));
     }
+}
+
+}  // namespace detail
+
+/// Runs `inner_task`, cancelling it once any of `tokens` fires: the cancel
+/// reaches the task once whatever runs when the token fires has suspended,
+/// not inside the source's cancel(). A token that has fired keeps the task
+/// from starting at all. The result reports that cancellation, or one of the
+/// task itself, as a value.
+template <typename T, typename E, typename C, std::same_as<cancellation_token>... Tokens>
+    requires (sizeof...(Tokens) > 0)
+task<T, E, cancellation> with_token(task<T, E, C> inner_task, Tokens... tokens) {
+    return detail::run_until(std::move(inner_task), tokens.wait()...);
 }
 
 }  // namespace kota
