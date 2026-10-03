@@ -12,26 +12,29 @@ using namespace std::literals;
 ZEST_SUITE(codec_visit_common) {
 
 ZEST_CASE(utf8_accepts_whole_code_points) {
-    STATIC_EXPECT(is_utf8(""));
-    STATIC_EXPECT(is_utf8("ascii"));
+    EXPECT(is_utf8(""));
+    EXPECT(is_utf8("ascii"));
     // U+00E9, U+20AC, U+10FFFF: two, three and four bytes.
-    STATIC_EXPECT(is_utf8("caf\xC3\xA9 \xE2\x82\xAC \xF4\x8F\xBF\xBF"));
-    STATIC_EXPECT(is_utf8("\0"sv));
+    EXPECT(is_utf8("caf\xC3\xA9 \xE2\x82\xAC \xF4\x8F\xBF\xBF"));
+    EXPECT(is_utf8("\0"sv));
+    // Past a run of ASCII long enough to pass eight bytes at a time.
+    EXPECT(is_utf8("eight bytes, then \xC3\xA9"));
 }
 
 ZEST_CASE(utf8_rejects_what_is_no_code_point) {
     // A lone continuation byte, and a lead byte no code point starts with.
-    STATIC_EXPECT(!is_utf8("\x80"));
-    STATIC_EXPECT(!is_utf8("\xFF"));
+    EXPECT(!is_utf8("\x80"));
+    EXPECT(!is_utf8("\xFF"));
     // A sequence cut short, at the end and before ASCII.
-    STATIC_EXPECT(!is_utf8("\xE2\x82"));
-    STATIC_EXPECT(!is_utf8("\xE2\x82x"));
+    EXPECT(!is_utf8("\xE2\x82"));
+    EXPECT(!is_utf8("\xE2\x82x"));
     // Overlong forms of '/' and of U+0800.
-    STATIC_EXPECT(!is_utf8("\xC0\xAF"));
-    STATIC_EXPECT(!is_utf8("\xE0\x9F\xBF"));
+    EXPECT(!is_utf8("\xC0\xAF"));
+    EXPECT(!is_utf8("\xE0\x9F\xBF"));
     // A surrogate, U+D800, and U+110000, past the last code point.
-    STATIC_EXPECT(!is_utf8("\xED\xA0\x80"));
-    STATIC_EXPECT(!is_utf8("\xF4\x90\x80\x80"));
+    EXPECT(!is_utf8("\xED\xA0\x80"));
+    EXPECT(!is_utf8("\xF4\x90\x80\x80"));
+    EXPECT(!is_utf8("eight bytes, then \xE9"));
 }
 
 ZEST_CASE(replacement_takes_each_maximal_subpart) {

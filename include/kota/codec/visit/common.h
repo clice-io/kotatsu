@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -83,9 +85,16 @@ constexpr Utf8Step utf8_step(std::string_view text) {
 }  // namespace detail
 
 /// Whether text is UTF-8: whole code points, none overlong, a surrogate or
-/// past U+10FFFF.
-constexpr bool is_utf8(std::string_view text) {
+/// past U+10FFFF. Runs of ASCII pass eight bytes at a time.
+inline bool is_utf8(std::string_view text) {
     for(std::size_t at = 0; at < text.size();) {
+        if(std::uint64_t word; at + sizeof(word) <= text.size()) {
+            std::memcpy(&word, text.data() + at, sizeof(word));
+            if((word & 0x8080'8080'8080'8080) == 0) {
+                at += sizeof(word);
+                continue;
+            }
+        }
         if(static_cast<unsigned char>(text[at]) < 0x80) {
             ++at;
             continue;
