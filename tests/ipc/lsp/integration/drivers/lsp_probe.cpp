@@ -7,6 +7,8 @@
 //   {"text": "...", "offset": <byte>}      {"line": l, "character": c} or {}
 //   {"text": "...", "line": l, "character": c}
 //                                          {"offset": <byte>} or {}
+//   {"text": "...", "line": l, "character": c, "clamped": true}
+//                                          {"offset": <byte>}
 //
 // Positions count UTF-16 code units, as LSP's default encoding does. It exits
 // with 0 when its input ends.
@@ -36,6 +38,7 @@ struct Question {
     std::optional<std::uint32_t> offset;
     std::optional<std::uint32_t> line;
     std::optional<std::uint32_t> character;
+    std::optional<bool> clamped;
 };
 
 KOTATSU_ANNOTATION(left_out_if_none, skip_if = skip_when::none);
@@ -78,7 +81,12 @@ Answer answer(const Question& question) {
         }
     } else {
         lsp::LineMap map(*question.text);
-        answer.offset = map.to_offset({.line = *question.line, .character = *question.character});
+        ipc::protocol::Position position{.line = *question.line, .character = *question.character};
+        if(question.clamped.value_or(false)) {
+            answer.offset = map.to_offset_clamped(position);
+        } else {
+            answer.offset = map.to_offset(position);
+        }
     }
     return answer;
 }

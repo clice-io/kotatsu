@@ -34,6 +34,25 @@ std::string hex(std::string_view text) {
     return shown;
 }
 
+/// Bytes that are not UTF-8, each of which counts as a code point of its
+/// own, the scan going on from the next byte: a lead byte without its
+/// continuation bytes, overlong forms, surrogates, code points past
+/// U+10FFFF, truncated sequences and stray continuation bytes.
+const std::string not_utf8[] = {
+    bytes('a', 0xE4, 'X', 'b'),
+    bytes(0xC2, 'A'),
+    bytes(0xE1, 0x80, 'B'),
+    bytes(0xF1, 'C', 0x80, 0x80),
+    bytes(0xF1, 0x80, 0x80, 'D'),
+    bytes(0xC0, 0x80),
+    bytes(0xE0, 0x80, 0x80),
+    bytes(0xED, 0xA0, 0x80),
+    bytes(0xF4, 0x90, 0x80, 0x80),
+    bytes(0xF5, 0x80, 0x80, 0x80),
+    bytes('a', 0xF0, 0x9F, 'b'),
+    bytes(0x80, 0xBF, 'a'),
+};
+
 // Throughout this suite: 你 is 3 UTF-8 bytes and one UTF-16 unit, 🙂 is 4
 // UTF-8 bytes and two UTF-16 units.
 ZEST_SUITE(ipc_lsp_text) {
@@ -51,37 +70,12 @@ ZEST_CASE(encoded_length_counts_units_of_the_encoding) {
     EXPECT(encoded_length(content, PositionEncoding::UTF32) == 4U);
 }
 
-// A lead byte without its continuation bytes counts as one unit, and the
-// scan goes on from the next byte.
-ZEST_CASE(encoded_length_counts_a_broken_sequence_byte_by_byte) {
-    for(auto text: {
-            bytes('a', 0xE4, 'X', 'b'),
-            bytes(0xC2, 'A'),
-            bytes(0xE1, 0x80, 'B'),
-            bytes(0xF1, 'C', 0x80, 0x80),
-            bytes(0xF1, 0x80, 0x80, 'D'),
-        }) {
+ZEST_CASE(encoded_length_counts_what_is_not_utf8_byte_by_byte) {
+    for(const auto& text: not_utf8) {
         for(auto encoding: encodings) {
             ZEST_CONTEXT("text: {}, encoding: {}", hex(text), static_cast<int>(encoding));
             EXPECT(encoded_length(text, encoding) == text.size());
         }
-    }
-}
-
-// Overlong forms, surrogates, code points past U+10FFFF and truncated
-// sequences are not UTF-8 either.
-ZEST_CASE(encoded_length_counts_what_strict_utf8_rejects_byte_by_byte) {
-    for(auto text: {
-            bytes(0xC0, 0x80),
-            bytes(0xE0, 0x80, 0x80),
-            bytes(0xED, 0xA0, 0x80),
-            bytes(0xF4, 0x90, 0x80, 0x80),
-            bytes(0xF5, 0x80, 0x80, 0x80),
-            bytes('a', 0xF0, 0x9F, 'b'),
-        }) {
-        ZEST_CONTEXT("text: {}", hex(text));
-        EXPECT(encoded_length(text, PositionEncoding::UTF16) == text.size());
-        EXPECT(encoded_length(text, PositionEncoding::UTF32) == text.size());
     }
 }
 
@@ -99,6 +93,35 @@ ZEST_CASE(encoded_offset_maps_units_back_to_bytes) {
 // UTF-16 unit 3 is the second half of 🙂's surrogate pair.
 ZEST_CASE(encoded_offset_inside_a_code_point_fails) {
     EXPECT(encoded_offset("a你🙂b", 3, PositionEncoding::UTF16) == std::nullopt);
+}
+
+// Bytes 2 and 3 are inside 你, 5 to 7 inside 🙂.
+ZEST_CASE(encoded_offset_inside_a_utf8_sequence_fails) {
+    std::string_view content = "a你🙂b";
+
+    for(std::uint32_t character: {2U, 3U, 5U, 6U, 7U}) {
+        ZEST_CONTEXT("character {}", character);
+        EXPECT(encoded_offset(content, character, PositionEncoding::UTF8) == std::nullopt);
+    }
+    for(std::uint32_t character: {0U, 1U, 4U, 8U, 9U}) {
+        ZEST_CONTEXT("character {}", character);
+        EXPECT(encoded_offset(content, character, PositionEncoding::UTF8) == character);
+    }
+}
+
+// Every byte encoded_length counts as a code point of its own has an offset.
+ZEST_CASE(encoded_offset_steps_through_what_is_not_utf8_byte_by_byte) {
+    for(const auto& text: not_utf8) {
+        for(auto encoding: encodings) {
+            for(std::uint32_t character = 0; character <= text.size(); ++character) {
+                ZEST_CONTEXT("text: {}, encoding: {}, character: {}",
+                             hex(text),
+                             static_cast<int>(encoding),
+                             character);
+                EXPECT(encoded_offset(text, character, encoding) == character);
+            }
+        }
+    }
 }
 
 ZEST_CASE(encoded_offset_past_the_end_fails) {

@@ -224,10 +224,24 @@ ZEST_CASE(lone_cr_is_text) {
 
 ZEST_CASE(to_offset_past_a_non_ascii_line_end_clamps_to_it) {
     std::string_view content = "a你b\r\nc";
-    LineMap map(content, PositionEncoding::UTF16);
 
-    EXPECT(map.to_offset({.line = 0, .character = 3}) == 5U);
-    EXPECT(map.to_offset({.line = 0, .character = 10}) == 5U);
+    struct Sample {
+        PositionEncoding encoding;
+        /// The line's length in the encoding's units.
+        std::uint32_t length;
+    };
+
+    for(auto sample: {
+            Sample{PositionEncoding::UTF8,  5},
+            Sample{PositionEncoding::UTF16, 3},
+            Sample{PositionEncoding::UTF32, 3}
+    }) {
+        LineMap map(content, sample.encoding);
+        ZEST_CONTEXT("encoding: {}", static_cast<int>(sample.encoding));
+        EXPECT(map.to_offset({.line = 0, .character = sample.length}) == 5U);
+        EXPECT(map.to_offset({.line = 0, .character = sample.length + 1}) == 5U);
+        EXPECT(map.to_offset({.line = 0, .character = 99}) == 5U);
+    }
 }
 
 // UTF-16 unit 1 of "🙂" is the second half of its surrogate pair.
@@ -235,6 +249,98 @@ ZEST_CASE(to_offset_inside_a_surrogate_pair_fails) {
     LineMap map("🙂", PositionEncoding::UTF16);
 
     EXPECT(map.to_offset({.line = 0, .character = 1}) == std::nullopt);
+}
+
+// Bytes 2 to 4 of "a🙂b" are inside 🙂, which starts at byte 1.
+ZEST_CASE(to_offset_inside_a_utf8_sequence_fails) {
+    LineMap map("a🙂b", PositionEncoding::UTF8);
+
+    for(std::uint32_t character: {2U, 3U, 4U}) {
+        ZEST_CONTEXT("character {}", character);
+        EXPECT(map.to_offset({.line = 0, .character = character}) == std::nullopt);
+    }
+    EXPECT(map.to_offset({.line = 0, .character = 1}) == 1U);
+    EXPECT(map.to_offset({.line = 0, .character = 5}) == 5U);
+}
+
+ZEST_CASE(to_position_inside_a_code_point_is_at_its_start) {
+    std::string_view content = "a🙂b";
+
+    for(auto encoding: {PositionEncoding::UTF8, PositionEncoding::UTF16, PositionEncoding::UTF32}) {
+        LineMap map(content, encoding);
+        for(std::uint32_t offset: {2U, 3U, 4U}) {
+            ZEST_CONTEXT("encoding {}, offset {}", static_cast<int>(encoding), offset);
+            auto position = map.to_position(offset);
+            ASSERT(position.has_value());
+            EXPECT(*position == protocol::Position{.line = 0, .character = 1});
+        }
+    }
+}
+
+// So a range never runs backwards, whatever bytes its ends fall on.
+ZEST_CASE(to_position_never_decreases_with_the_offset) {
+    std::string_view content = "a你b\r\n🙂x\n\xF0\x9F\x99y";
+
+    for(auto encoding: {PositionEncoding::UTF8, PositionEncoding::UTF16, PositionEncoding::UTF32}) {
+        LineMap map(content, encoding);
+        protocol::Position last{};
+        for(std::uint32_t offset = 0; offset <= content.size(); ++offset) {
+            ZEST_CONTEXT("encoding {}, offset {}", static_cast<int>(encoding), offset);
+            auto position = map.to_position(offset);
+            ASSERT(position.has_value());
+            EXPECT(position->line >= last.line);
+            if(position->line == last.line) {
+                EXPECT(position->character >= last.character);
+            }
+            last = *position;
+        }
+    }
+}
+
+ZEST_CASE(to_offset_clamped_past_the_last_line_is_the_end) {
+    std::string_view content = "abc\ndef";
+    LineMap map(content, PositionEncoding::UTF16);
+
+    EXPECT(map.to_offset_clamped({.line = 2, .character = 0}) == 7U);
+    EXPECT(map.to_offset_clamped({.line = 9, .character = 4}) == 7U);
+}
+
+ZEST_CASE(to_offset_clamped_inside_a_code_point_is_its_start) {
+    std::string_view content = "a🙂b";
+
+    LineMap utf16(content, PositionEncoding::UTF16);
+    EXPECT(utf16.to_offset_clamped({.line = 0, .character = 2}) == 1U);
+
+    LineMap utf8(content, PositionEncoding::UTF8);
+    for(std::uint32_t character: {2U, 3U, 4U}) {
+        ZEST_CONTEXT("character {}", character);
+        EXPECT(utf8.to_offset_clamped({.line = 0, .character = character}) == 1U);
+    }
+}
+
+// Where to_offset has an offset, to_offset_clamped has the same; elsewhere,
+// one to_position and to_offset take back unchanged.
+ZEST_CASE(to_offset_clamped_lands_on_a_place_in_the_text) {
+    std::string_view content = "a你🙂b\r\nxy\n\n🙂";
+
+    for(auto encoding: {PositionEncoding::UTF8, PositionEncoding::UTF16, PositionEncoding::UTF32}) {
+        LineMap map(content, encoding);
+        const auto lines = static_cast<std::uint32_t>(map.line_starts().size());
+        for(std::uint32_t line = 0; line <= lines; ++line) {
+            for(std::uint32_t character = 0; character < 14; ++character) {
+                ZEST_CONTEXT("encoding {}, {}:{}", static_cast<int>(encoding), line, character);
+                protocol::Position position{.line = line, .character = character};
+                auto clamped = map.to_offset_clamped(position);
+                if(auto offset = map.to_offset(position)) {
+                    EXPECT(clamped == *offset);
+                    continue;
+                }
+                auto back = map.to_position(clamped);
+                ASSERT(back.has_value());
+                EXPECT(map.to_offset(*back) == clamped);
+            }
+        }
+    }
 }
 
 // ASCII lines take a shortcut other lines do not: every line, in every
@@ -248,7 +354,15 @@ ZEST_CASE(lines_convert_as_their_text_whatever_their_neighbours) {
         for(std::uint32_t offset = 0; offset <= content.size(); ++offset) {
             ZEST_CONTEXT("encoding {}, offset {}", static_cast<int>(encoding), offset);
             auto bounds = owned.line_bounds(offset);
-            auto text = content.substr(bounds.start, std::min(offset, bounds.end) - bounds.start);
+            // An offset inside a code point counts to the code point's start;
+            // the text is valid UTF-8, so that start is the nearest byte back
+            // that is no continuation byte.
+            auto cut = std::min(offset, bounds.end);
+            while(cut > bounds.start && cut < bounds.end &&
+                  (static_cast<unsigned char>(content[cut]) & 0xC0) == 0x80) {
+                --cut;
+            }
+            auto text = content.substr(bounds.start, cut - bounds.start);
             protocol::Position expected{.line = bounds.line,
                                         .character = encoded_length(text, encoding)};
             auto position = owned.to_position(offset);
