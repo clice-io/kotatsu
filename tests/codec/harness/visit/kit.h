@@ -74,6 +74,8 @@ struct Caps {
     std::string_view hostile_gap = {};
     /// A format tag scopes meta::repr specializations to the backend.
     bool format_tag = false;
+    /// Documents are UTF-8 text, so a string must be UTF-8 to encode.
+    bool utf8_text = false;
 };
 
 /// A backend adapter: its name and caps, its document type, encode and decode

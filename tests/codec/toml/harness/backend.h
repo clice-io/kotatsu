@@ -29,6 +29,7 @@ struct Toml {
             "table header whose key starts with a character no key may start with "
             "([`a]), which the sweep reaches; run it once toml++ rejects that header",
         .format_tag = true,
+        .utf8_text = true,
     };
     using Encoded = std::string;
 

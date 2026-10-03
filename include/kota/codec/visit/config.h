@@ -31,6 +31,17 @@ enum class nan_repr {
     Error,
 };
 
+/// What a backend whose documents are UTF-8 text (json, toml) does with a
+/// string that is not UTF-8. Decoding never meets one: those backends' parsers
+/// reject a document that is not UTF-8.
+enum class invalid_utf8 {
+    /// Fail encoding with an error.
+    Error,
+    /// Write it as a UTF-8 decoder reads it, each ill-formed sequence as
+    /// U+FFFD.
+    Replace,
+};
+
 namespace detail {
 
 struct empty_config_base {};
@@ -61,6 +72,9 @@ struct default_config :
 
     /// NaN/Infinity handling.
     KOTA_CFG_FIELD_(nan_repr, kota::codec::nan_repr::Passthrough);
+
+    /// Handling of a string that is not UTF-8, in a UTF-8 text document.
+    KOTA_CFG_FIELD_(invalid_utf8, kota::codec::invalid_utf8::Error);
 
     /// Deserialize: reject unknown fields in data-driven mode.
     KOTA_CFG_FIELD_(deny_unknown_fields, false);

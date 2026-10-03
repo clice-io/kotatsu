@@ -11,6 +11,7 @@
 #include <utility>
 #include <variant>
 
+#include "common.h"
 #include "config.h"
 #include "context.h"
 #include "dispatch.h"
@@ -46,7 +47,30 @@ bool encode_value(Vis& vis, const T& value);
 template <typename Config, typename Vis, typename T>
 bool encode_struct_fields(Vis& vis, const T& value);
 
+/// True when the visitor writes UTF-8 text (json, toml), which its format tag
+/// says, so its value and map key writers alike.
+template <typename Vis>
+concept writes_utf8 = requires { requires meta::format_of_t<Vis>::utf8; };
+
 namespace detail {
+
+/// Writes text, a string the value holds. A visitor writing UTF-8 text gets
+/// it checked first: one that is not UTF-8 fails, or is replaced as a decoder
+/// reads it, as Config::invalid_utf8 says.
+template <typename Config, typename Vis, typename Text>
+bool encode_text(Vis& vis, const Text& text) {
+    if constexpr(writes_utf8<Vis>) {
+        std::string_view view(text);
+        if(!is_utf8(view)) {
+            if constexpr(Config::invalid_utf8 == invalid_utf8::Replace) {
+                return vis.visit_str(replace_invalid_utf8(view));
+            } else {
+                return scoped_context<rich_error>::fail(rich_error("invalid UTF-8 in a string"));
+            }
+        }
+    }
+    return vis.visit_str(text);
+}
 
 /// Encode a value through a representation declaration (a meta::repr
 /// specialization or a behavior::with adapter): declarative to() when
@@ -260,7 +284,7 @@ bool encode_value(Vis& vis, const T& value) {
             // A char array need not end in a null character, so its text
             // stops at the array's end.
             std::string_view text(value, std::extent_v<T>);
-            return vis.visit_str(text.substr(0, text.find('\0')));
+            return detail::encode_text<Config>(vis, text.substr(0, text.find('\0')));
         } else if constexpr(meta::str_like<T> && std::is_pointer_v<T>) {
             // A null C string holds no text at all: it writes null, where
             // the visitor can write one; a map key writer cannot.
@@ -271,9 +295,9 @@ bool encode_value(Vis& vis, const T& value) {
                     return scoped_context<rich_error>::fail(rich_error("null C string map key"));
                 }
             }
-            return vis.visit_str(value);
+            return detail::encode_text<Config>(vis, value);
         } else if constexpr(meta::str_like<T>) {
-            return vis.visit_str(value);
+            return detail::encode_text<Config>(vis, value);
         } else if constexpr(kind == character) {
             return vis.visit_char(value);
         } else if constexpr(kind == bytes) {

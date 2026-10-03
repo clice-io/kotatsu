@@ -53,7 +53,7 @@ namespace kota::codec::toml {
 ///   value to toml++ (TOML has nan/inf literals)
 /// - character → single-codepoint string (the char's value 0-255 encoded as
 ///   UTF-8); decode accepts exactly one codepoint ≤ 255
-/// - string → TOML string
+/// - string → TOML string; one that is not UTF-8 follows Config's invalid_utf8
 /// - bytes → array of integer octets; decode range-checks each into [0, 255]
 /// - enumeration → underlying integer, or the renamed name under
 ///   enum_repr::String
@@ -63,7 +63,10 @@ namespace kota::codec::toml {
 /// - structure → table keyed by (renamed) field names
 /// - variant → shaped by the spec's tag_mode (see encode_tagged_variant in
 ///   visit/encode.h); untagged variants emit the bare payload
-struct format {};
+struct format {
+    /// Its documents are UTF-8 text.
+    constexpr static bool utf8 = true;
+};
 
 using Table = ::toml::table;
 using Array = ::toml::array;

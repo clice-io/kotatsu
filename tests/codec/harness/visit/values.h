@@ -18,6 +18,7 @@
 #include <variant>
 #include <vector>
 
+#include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/enums.h"
 #include "codec/harness/fixtures/everything.h"
@@ -220,6 +221,22 @@ void values(const Kit<B>& kit) {
         });
     if constexpr(B::caps.untrusted_input) {
         hostile(kit, "hostile_everything", [] { return Everything::typical(); });
+    }
+    if constexpr(B::caps.utf8_text) {
+        // "caf" and Latin-1's é, a lone byte UTF-8 does not have.
+        write_fails(kit,
+                    "string_not_utf8_fails",
+                    [] { return Field<std::string>{"caf\xE9"}; },
+                    {.message = "invalid UTF-8 in a string", .path = "value"});
+        write_fails(kit,
+                    "map_key_not_utf8_fails",
+                    [] { return Field<std::map<std::string, int>>{{{"caf\xE9", 1}}}; },
+                    {.message = "invalid UTF-8 in a string", .path = "value[0]"});
+        encodes_as<ReplaceUtf8Config>(
+            kit,
+            "string_not_utf8_replaced_encodes_as_replacement_character",
+            [] { return Field<std::string>{"caf\xE9!"}; },
+            [] { return Field<std::string>{"caf\xEF\xBF\xBD!"}; });
     }
 
     if constexpr(B::caps.self_describing) {
