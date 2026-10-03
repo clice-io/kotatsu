@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <cassert>
 #include <chrono>
-#include <csignal>
 #include <cstdint>
 #include <fcntl.h>
 #include <filesystem>
@@ -310,13 +309,6 @@ std::expected<std::vector<WorkerFailure>, WorkerFailure>
                 std::format("cannot create a directory for worker output: {}", error.message()),
         });
     }
-
-#ifdef SIGPIPE
-    // A worker that dies between tests closes the channel under the next
-    // command; the write should fail and report the crash, not kill the runner.
-    // libuv starts every child, workers included, with default dispositions.
-    std::signal(SIGPIPE, SIG_IGN);
-#endif
 
     std::vector<const Entry*> concurrent;
     std::vector<const Entry*> serial;

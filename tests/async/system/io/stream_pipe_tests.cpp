@@ -420,6 +420,26 @@ ZEST_CASE(write_and_shutdown_ended_by_a_close_fails) {
 }
 #endif
 
+#ifndef _WIN32
+// The loop ignores SIGPIPE, which would end the process at a write to a pipe
+// nobody reads.
+ZEST_CASE(write_to_a_pipe_nobody_reads_fails) {
+    int fds[2] = {-1, -1};
+    ASSERT(test::create_pipe(fds) == 0);
+    test::close_fd(fds[0]);
+    auto writer = pipe::open(fds[1], loop);
+    ASSERT(writer.has_value());
+    auto write = [&]() -> task<void, error> {
+        std::string_view text = "text";
+        co_await writer->write(std::span(text.data(), text.size())).or_fail();
+    };
+
+    auto [written] = run(write());
+    ASSERT(written.has_error());
+    EXPECT(written.error() == error::broken_pipe);
+}
+#endif
+
 ZEST_CASE(write_of_nothing_fails) {
     auto ends = pipe_ends(loop);
     ASSERT(ends.has_value());
