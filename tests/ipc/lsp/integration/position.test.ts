@@ -2,7 +2,8 @@
 // through lsp_probe, in UTF-16 code units as LSP counts by default:
 //
 // - the position of every code point boundary of a text;
-// - the offset of any position, in or past the text.
+// - the offset of any position, in or past the text, by to_offset and by
+//   to_offset_clamped.
 //
 // Where LineMap answers otherwise, known_deviations.ts says so, and those
 // inputs are not drawn.
@@ -135,4 +136,52 @@ test("offsets_of_positions_match_vscode", { timeout: FUZZ_TIMEOUT }, (t) =>
       ),
     ),
   ),
+);
+
+test(
+  "clamped_offsets_of_positions_match_vscode",
+  { timeout: FUZZ_TIMEOUT },
+  (t) =>
+    withProbe(t, (lines) =>
+      fuzz(
+        fc.asyncProperty(
+          text,
+          fc.nat({ max: 8 }),
+          fc.nat({ max: 8 }),
+          async (content, line, character) => {
+            const document = TextDocument.create(
+              "file:///text",
+              "plaintext",
+              0,
+              content,
+            );
+            if (deviations.insideSurrogatePair && line < document.lineCount) {
+              const start = document.offsetAt({ line, character: 0 });
+              const code = content.charCodeAt(start + character);
+              const length =
+                document.offsetAt({
+                  line,
+                  character: Number.MAX_SAFE_INTEGER,
+                }) - start;
+              fc.pre(!(character < length && code >= 0xdc00 && code <= 0xdfff));
+            }
+            const answer = await ask(lines, {
+              text: content,
+              line,
+              character,
+              clamped: true,
+            });
+            assert.ok(
+              answer.offset !== undefined,
+              `no clamped offset for ${line}:${character}`,
+            );
+            assert.equal(
+              units(content, answer.offset),
+              document.offsetAt({ line, character }),
+              `the clamped offset of ${line}:${character} in ${JSON.stringify(content)}`,
+            );
+          },
+        ),
+      ),
+    ),
 );
