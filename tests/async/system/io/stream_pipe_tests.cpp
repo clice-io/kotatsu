@@ -593,6 +593,49 @@ ZEST_CASE(open_of_a_bad_descriptor_fails) {
     EXPECT(opened.error() == error::bad_file_descriptor);
 }
 
+// A regular file is no stream the loop can watch. On Linux epoll refuses it,
+// and libuv would abort at the first read; Windows takes no handle but a
+// pipe's. macOS reads it.
+ZEST_CASE(open_of_a_file_to_read_fails) {
+    test::TempDir dir;
+    test::write_file(dir.file("file.txt"), "text");
+    auto file = fs::sync::open(dir.file("file.txt"), O_RDONLY, 0);
+    ASSERT(file.has_value());
+
+    auto opened = pipe::open(*file, loop);
+#ifdef __APPLE__
+    ASSERT(opened.has_value());
+    auto [text] = run(read_to_end(*opened));
+    ASSERT(text.has_value());
+    EXPECT(*text == "text");
+#else
+    ASSERT(opened.has_error());
+    EXPECT(opened.error() == error::socket_operation_on_non_socket);
+    EXPECT(!fs::sync::close(*file));
+#endif
+}
+
+#ifndef _WIN32
+// Writes to a regular file never wait, so the loop never watches one open
+// only for writing.
+ZEST_CASE(open_of_a_file_to_write_writes_to_it) {
+    test::TempDir dir;
+    auto file = fs::sync::open(dir.file("file.txt"), O_CREAT | O_WRONLY, 0644);
+    ASSERT(file.has_value());
+    auto opened = pipe::open(*file, loop);
+    ASSERT(opened.has_value());
+    auto writer = [&]() -> task<void, error> {
+        std::string_view text = "text";
+        co_await opened->write(std::span(text.data(), text.size())).or_fail();
+    };
+
+    auto [written] = run(writer());
+    EXPECT(written.has_value());
+    *opened = pipe();
+    EXPECT(test::read_file(dir.file("file.txt")) == "text");
+}
+#endif
+
 ZEST_CASE(guess_handle_tells_a_pipe_from_a_file) {
     test::TempDir dir;
     int fds[2] = {-1, -1};

@@ -1,6 +1,13 @@
 #include <cstddef>
 #include <utility>
 
+#ifdef __linux__
+#include <cerrno>
+#include <fcntl.h>
+#include <sys/epoll.h>
+#include <unistd.h>
+#endif
+
 #include "stream_self.h"
 #include "kota/support/functional.h"
 
@@ -134,6 +141,28 @@ unsigned int pipe_flags(const pipe::options& opts) {
     return opts.no_truncate ? static_cast<unsigned int>(UV_PIPE_NO_TRUNCATE) : 0U;
 }
 
+#ifdef __linux__
+/// Why a stream cannot read `fd`, if it cannot. libuv watches a reading
+/// stream with epoll, which refuses a regular file, a directory or a device
+/// such as /dev/null, and libuv aborts on the first read from one. A
+/// descriptor open only for writing is never watched for reading, and a bad
+/// one is left to uv_pipe_open() to report.
+error unreadable_as_stream(int fd) {
+    const int mode = ::fcntl(fd, F_GETFL);
+    if(mode == -1 || (mode & O_ACCMODE) == O_WRONLY) {
+        return {};
+    }
+    const int probe = ::epoll_create1(EPOLL_CLOEXEC);
+    if(probe == -1) {
+        return error(::uv_translate_sys_error(errno));
+    }
+    epoll_event watched{.events = EPOLLIN, .data = {}};
+    const bool refused = ::epoll_ctl(probe, EPOLL_CTL_ADD, fd, &watched) == -1 && errno == EPERM;
+    ::close(probe);
+    return refused ? error::socket_operation_on_non_socket : error();
+}
+#endif
+
 }  // namespace
 
 pipe::pipe(detail::unique_handle<Self> self) noexcept : stream(std::move(self)) {}
@@ -149,6 +178,12 @@ result<pipe> pipe::open(int fd, event_loop& loop) {
 }
 
 result<pipe> pipe::open(int fd, options opts, event_loop& loop) {
+#ifdef __linux__
+    // Before uv_pipe_open(), which makes the descriptor non-blocking.
+    if(auto err = unreadable_as_stream(fd)) {
+        return outcome_error(err);
+    }
+#endif
     auto opened = create(opts, loop);
     if(auto err = error(::uv_pipe_open(&opened.self->pipe, fd))) {
         return outcome_error(err);
