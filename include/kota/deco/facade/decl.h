@@ -460,6 +460,17 @@ struct OptionCallbackField {
     constexpr OptionCallbackField() = default;
 };
 
+/// What an option is declared with: the fields of its kind, `CfgTy`, and an `after_parsed`
+/// callback over its result, `ResTy`. Every option's `__deco_field_ty`, the deco macros' and
+/// HelpOption's, derives from it and sets the fields in its constructor; the macros' using
+/// blocks reach the two bases through the aliases.
+template <typename CfgTy, typename ResTy>
+struct OptionDeclaration : CfgTy, OptionCallbackField<ResTy> {
+    using _deco_base_t = CfgTy;
+    using _deco_callback_base_t = OptionCallbackField<ResTy>;
+    using result_type = ResTy;
+};
+
 template <typename Ty>
 struct ConfigOverrideField {
     Ty value{};
@@ -979,10 +990,8 @@ struct VectorOption : DecoOption<ResTy> {
 /// cli::Command's operator() prints the usage to stdout and returns 0 without running a
 /// handler. invoke() and parse() leave that to their caller, which finds the flag set.
 struct HelpOption : FlagOption<bool> {
-    // What DecoFlag would declare, spelled out: deco's headers leave its macros out.
-    struct __deco_field_ty : FlagFields, OptionCallbackField<bool> {
-        using result_type = bool;
-
+    // What DecoFlag would declare, written without it: deco's headers leave its macros out.
+    struct __deco_field_ty : OptionDeclaration<FlagFields, bool> {
         constexpr __deco_field_ty() {
             names = {"-h", "--help"};
             help = "display this help and exit";
