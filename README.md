@@ -119,6 +119,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - Compile-time option-table generation driven by `meta` reflection on top of `kota::option`, wired via `DECO_CFG` / `DECO_DECLARE_OPTION_*` macros.
 - Field-level attributes: `required`, help text, meta-var, spellings / aliases, category (exclusive / required groups), argument style and arity, `after_parsed` callbacks.
 - Sub-command routing, nested config scopes, and built-in usage / help rendering.
+- `Command` and `SubCommander` return their handler's `int` as the exit code (0 for a handler returning nothing, `parse_error_exit_code` = 2 when argv does not parse). `decl::HelpOption` is the standard `-h` / `--help` an options struct can hold: it stops the parse, and the command prints its usage and exits with 0.
 
 ### `zest` test framework (`include/kota/zest/*`)
 

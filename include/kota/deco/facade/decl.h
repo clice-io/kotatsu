@@ -974,6 +974,24 @@ struct VectorOption : DecoOption<ResTy> {
     }
 };
 
+/// The standard help flag, `-h` and `--help`, for an options struct to hold, at any depth:
+/// given, it stops parsing where it stands, so that no required option is missed, and
+/// cli::Command's operator() prints the usage to stdout and returns 0 without running a
+/// handler. invoke() and parse() leave that to their caller, which finds the flag set.
+struct HelpOption : FlagOption<bool> {
+    // What DecoFlag would declare, spelled out: deco's headers leave its macros out.
+    struct __deco_field_ty : FlagFields, OptionCallbackField<bool> {
+        using result_type = bool;
+
+        constexpr __deco_field_ty() {
+            names = {"-h", "--help"};
+            help = "display this help and exit";
+            required = false;
+            after_parsed = Action::stop;
+        }
+    };
+};
+
 struct SubCommand {
     std::string_view name;
     std::string_view description;

@@ -53,8 +53,7 @@ constexpr std::string_view clear = "\033[0m";
 struct CliOptions {
     Options zest;
 
-    DecoFlag(help = "display this help and exit"; required = false; names = {"--help", "-h"})
-    help = false;
+    kota::deco::decl::HelpOption help;
 
     DecoInput(meta_var = "<PATTERN>"; help = "positional fallback for test name filter";
               required = false)
@@ -323,35 +322,22 @@ TestState run_in_process(const Entry& entry) {
 
 int run_cli(int argc, char** argv, std::string_view command_overview) {
     auto args = kota::deco::util::argvify(argc, argv);
-    auto renderer = kota::deco::cli::text::ModernRenderer();
     kota::deco::cli::Command<CliOptions> command(command_overview);
-    command.render_with(renderer);
-    command.after<&CliOptions::help>([](auto& step) {
-        step.print_usage();
-        return step.stop();
-    });
-
-    auto parsed = command.invoke(args);
-    if(!parsed.has_value()) {
-        std::println(stderr, "Error parsing options: {}", parsed.error().message);
-        return 1;
-    }
-
-    auto& cli = parsed->options;
-    if(cli.help.has_value() && *cli.help) {
-        return 0;
-    }
-
-    if(cli.test_filter_input.has_value() && !cli.zest.test_filter->empty()) {
-        std::println(stderr, "Error: cannot use both positional filter and --test-filter");
-        return 1;
-    }
-
-    if(cli.test_filter_input.has_value()) {
-        cli.zest.test_filter = std::move(*cli.test_filter_input);
-    }
-
-    return run_tests(std::move(cli.zest), argc, argv);
+    command.render_with(kota::deco::cli::text::ModernRenderer())
+        .on_error([](const kota::deco::cli::ParseError& error) {
+            std::println(stderr, "Error parsing options: {}", error.message);
+        })
+        .match_all([&](CliOptions cli) {
+            if(cli.test_filter_input.has_value() && !cli.zest.test_filter->empty()) {
+                std::println(stderr, "Error: cannot use both positional filter and --test-filter");
+                return 1;
+            }
+            if(cli.test_filter_input.has_value()) {
+                cli.zest.test_filter = std::move(*cli.test_filter_input);
+            }
+            return run_tests(std::move(cli.zest), argc, argv);
+        });
+    return command(args);
 }
 
 int run_tests(Options options, int argc, const char* const* argv) {

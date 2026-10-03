@@ -651,7 +651,40 @@ std::expected<Invocation<T>, ParseError>
     return res;
 }
 
+/// Calls a handler and returns the exit code it gives: its int, or 0 when it returns nothing.
+template <typename Call>
+int exit_code_of(Call&& call) {
+    using result_t = std::invoke_result_t<Call&>;
+    if constexpr(std::is_void_v<result_t>) {
+        call();
+        return 0;
+    } else {
+        static_assert(std::same_as<result_t, int>,
+                      "A handler returns nothing, or an int that is the exit code.");
+        return call();
+    }
+}
+
+/// Whether `options` hold a decl::HelpOption that was given.
+template <typename T>
+bool help_requested(const T& options) {
+    bool requested = false;
+    ::kota::deco::detail::generator_of<T>().visit_fields(
+        options,
+        [&](const auto& field, const auto&, std::string_view, auto) {
+            if constexpr(std::same_as<std::remove_cvref_t<decltype(field)>, decl::HelpOption>) {
+                requested = field.has_value();
+            }
+            return !requested;
+        });
+    return requested;
+}
+
 }  // namespace detail
+
+/// What a Command or SubCommander returns when its argv does not parse, after its error
+/// handler has seen the error: the usual exit status of a usage error.
+constexpr int parse_error_exit_code = 2;
 
 template <typename T, typename Fn>
     requires std::is_invocable_r_v<bool, Fn, const T&, decl::DecoOptionBase*>
@@ -706,7 +739,7 @@ template <typename T>
 class Command {
     using invocation_t = Invocation<T>;
     using finalize_handler_t = runtime_callable_t<void(invocation_t&)>;
-    using match_handler_t = runtime_callable_t<void(invocation_t&)>;
+    using match_handler_t = runtime_callable_t<int(invocation_t&)>;
     using error_fn_t = runtime_callable_t<void(ParseError)>;
     using step_runner_t = runtime_callable_t<decl::ParseControl(invocation_t&,
                                                                 const ParsedArgOwning&,
@@ -743,21 +776,21 @@ class Command {
     template <typename Handler>
     static auto adapt_match_handler(Handler&& handler) -> match_handler_t {
         using HandlerTy = std::remove_cvref_t<Handler>;
-        return match_handler_t(
-            [handler = std::forward<Handler>(handler)](invocation_t& invocation) mutable {
-                if constexpr(std::is_invocable_v<HandlerTy&, T>) {
-                    handler(std::move(invocation.options));
-                } else if constexpr(std::is_invocable_v<HandlerTy&, invocation_t>) {
-                    handler(std::move(invocation));
-                } else if constexpr(std::is_invocable_v<HandlerTy&, invocation_t&>) {
-                    handler(invocation);
-                } else if constexpr(std::is_invocable_v<HandlerTy&, const invocation_t&>) {
-                    handler(invocation);
-                } else {
-                    static_assert(kota::dependent_false<HandlerTy>,
-                                  "Command match handler must accept T or Invocation<T>.");
-                }
-            });
+        return match_handler_t([handler = std::forward<Handler>(handler)](
+                                   invocation_t& invocation) mutable -> int {
+            if constexpr(std::is_invocable_v<HandlerTy&, T>) {
+                return detail::exit_code_of([&] { return handler(std::move(invocation.options)); });
+            } else if constexpr(std::is_invocable_v<HandlerTy&, invocation_t>) {
+                return detail::exit_code_of([&] { return handler(std::move(invocation)); });
+            } else if constexpr(std::is_invocable_v<HandlerTy&, invocation_t&>) {
+                return detail::exit_code_of([&] { return handler(invocation); });
+            } else if constexpr(std::is_invocable_v<HandlerTy&, const invocation_t&>) {
+                return detail::exit_code_of([&] { return handler(invocation); });
+            } else {
+                static_assert(kota::dependent_false<HandlerTy>,
+                              "Command match handler must accept T or Invocation<T>.");
+            }
+        });
     }
 
     static auto default_command_name(std::string_view overview) -> std::string {
@@ -969,26 +1002,35 @@ public:
                            renderer.has_value() ? &*renderer : nullptr);
     }
 
-    auto execute(std::span<std::string> argv) -> void {
+    /// Parses `argv` and runs the handler of the first category it matched, else the
+    /// match_all handler, and returns what the handler returns: 0 for one that returns
+    /// nothing, or when no handler runs. A decl::HelpOption given prints the usage to stdout
+    /// and returns 0, running no handler; an argv that does not parse goes to the error
+    /// handler and returns parse_error_exit_code.
+    auto execute(std::span<std::string> argv) -> int {
         auto res = invoke(argv);
         if(!res.has_value()) {
             error_handler(std::move(res.error()));
-            return;
+            return parse_error_exit_code;
+        }
+        if(detail::help_requested(res->options)) {
+            res->print_usage();
+            return 0;
         }
 
         for(auto& item: category_matches) {
             if(res->matched(*item.category)) {
-                item.handler(*res);
-                return;
+                return item.handler(*res);
             }
         }
         if(match_all_handler.has_value()) {
-            (*match_all_handler)(*res);
+            return (*match_all_handler)(*res);
         }
+        return 0;
     }
 
-    auto operator()(std::span<std::string> argv) -> void {
-        execute(argv);
+    auto operator()(std::span<std::string> argv) -> int {
+        return execute(argv);
     }
 };
 
@@ -999,7 +1041,7 @@ auto command(std::string_view command_overview) -> Command<T> {
 
 class SubCommander {
     using match_t = SubCommandMatch;
-    using handler_fn_t = runtime_callable_t<void(match_t)>;
+    using handler_fn_t = runtime_callable_t<int(match_t)>;
     using error_fn_t = runtime_callable_t<void(SubCommandError)>;
 
     struct SubCommandHandler {
@@ -1012,19 +1054,20 @@ class SubCommander {
     template <typename Handler>
     static auto adapt_handler(Handler&& handler) -> handler_fn_t {
         using HandlerTy = std::remove_cvref_t<Handler>;
-        return handler_fn_t([handler = std::forward<Handler>(handler)](match_t match) mutable {
-            if constexpr(std::is_invocable_v<HandlerTy&, std::span<std::string>>) {
-                handler(match.args());
-            } else if constexpr(std::is_invocable_v<HandlerTy&, match_t>) {
-                handler(std::move(match));
-            } else if constexpr(std::is_invocable_v<HandlerTy&, const match_t&>) {
-                handler(match);
-            } else {
-                static_assert(kota::dependent_false<HandlerTy>,
-                              "SubCommander handler must accept std::span<std::string> or "
-                              "SubCommandMatch.");
-            }
-        });
+        return handler_fn_t(
+            [handler = std::forward<Handler>(handler)](match_t match) mutable -> int {
+                if constexpr(std::is_invocable_v<HandlerTy&, std::span<std::string>>) {
+                    return detail::exit_code_of([&] { return handler(match.args()); });
+                } else if constexpr(std::is_invocable_v<HandlerTy&, match_t>) {
+                    return detail::exit_code_of([&] { return handler(std::move(match)); });
+                } else if constexpr(std::is_invocable_v<HandlerTy&, const match_t&>) {
+                    return detail::exit_code_of([&] { return handler(match); });
+                } else {
+                    static_assert(kota::dependent_false<HandlerTy>,
+                                  "SubCommander handler must accept std::span<std::string> or "
+                                  "SubCommandMatch.");
+                }
+            });
     }
 
     error_fn_t error_handler = [](const SubCommandError& err) {
@@ -1067,13 +1110,13 @@ public:
 
     template <typename OptTy>
     auto& add(const decl::SubCommand& subcommand, Command<OptTy>& command) {
-        return add(subcommand, [&command](const match_t& match) { command(match.args()); });
+        return add(subcommand, [&command](const match_t& match) { return command(match.args()); });
     }
 
     template <typename OptTy>
     auto& add(const decl::SubCommand& subcommand, Command<OptTy>&& command) {
         return add(subcommand, [command = std::move(command)](const match_t& match) mutable {
-            command(match.args());
+            return command(match.args());
         });
     }
 
@@ -1110,8 +1153,11 @@ public:
     auto when_err(std::ostream& os) -> SubCommander&;
     void usage(std::ostream& os) const;
     auto match(std::span<std::string> argv) const -> std::expected<match_t, SubCommandError>;
-    void parse(std::span<std::string> argv);
-    void operator()(std::span<std::string> argv);
+    /// Runs the handler of the subcommand `argv` starts with, else the default handler, and
+    /// returns what it returns, 0 for one that returns nothing. A missing or unknown
+    /// subcommand goes to the error handler and returns parse_error_exit_code.
+    auto parse(std::span<std::string> argv) -> int;
+    auto operator()(std::span<std::string> argv) -> int;
 };
 
 };  // namespace kota::deco::cli
