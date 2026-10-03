@@ -114,6 +114,9 @@ struct Peer<CodecT>::Self {
     bool answers_done = false;
     /// run() was called; it is called once.
     bool started = false;
+    /// run() has started and not returned, cancelled or not: the Peer must
+    /// not go.
+    bool running = false;
     event write_event;
 
     LogCallback logger;
@@ -654,12 +657,15 @@ Peer<CodecT>::Peer(event_loop& loop, std::unique_ptr<Transport> transport, Codec
 }
 
 template <typename CodecT>
-Peer<CodecT>::~Peer() = default;
+Peer<CodecT>::~Peer() {
+    assert(!self->running && "Peer destroyed while its run() runs: destroy it once run() returned");
+}
 
 template <typename CodecT>
 task<> Peer<CodecT>::run() {
     assert(!self->started && "Peer::run() is called once");
     self->started = true;
+    self->running = true;
 
     task_group<> handlers;
 
@@ -680,7 +686,16 @@ task<> Peer<CodecT>::run() {
         self->write_event.set();
     };
 
-    co_await when_all(read_loop(), self->write_loop());
+    auto loops = [&]() -> task<> {
+        co_await when_all(read_loop(), self->write_loop());
+    };
+    // Cleared however run() ends, a cancel included, and last: the owner may
+    // destroy the peer as soon as run() returns.
+    auto ended = co_await loops().catch_cancel();
+    self->running = false;
+    if(ended.is_cancelled()) {
+        co_await cancel();
+    }
 }
 
 template <typename CodecT>

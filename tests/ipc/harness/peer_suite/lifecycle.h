@@ -4,6 +4,7 @@
 // outside cancellation), what becomes of pending requests and running
 // handlers, and what close_output() leaves open.
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -412,6 +413,30 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         auto [ran, cancelled] = f.run(with_token(f.peer.run(), source.token()), canceller());
         EXPECT(ran.is_cancelled());
         EXPECT(f.remote.closed());
+    });
+
+    // The owner lets the peer go as soon as run() returns, here cancelled:
+    // run() has let go of it by then.
+    kit.add_case("peer_destroyed_once_a_cancelled_run_returns", [] {
+        LoopFixture f;
+        Remote remote;
+        auto peer = std::make_unique<typename Fixture::Peer>(f.loop, remote.transport());
+        cancellation_source source;
+        auto owner = [&]() -> task<bool> {
+            auto ran = co_await with_token(peer->run(), source.token());
+            peer.reset();
+            co_return ran.is_cancelled();
+        };
+        auto canceller = [&]() -> task<> {
+            source.cancel();
+            co_return;
+        };
+
+        auto [owned, cancelled] = f.run(owner(), canceller());
+        ASSERT(owned.has_value());
+        EXPECT(*owned);
+        EXPECT(peer == nullptr);
+        EXPECT(remote.closed());
     });
 
     kit.add("two_peers_answer_on_one_loop", [](Fixture& f) {

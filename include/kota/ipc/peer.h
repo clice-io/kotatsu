@@ -101,11 +101,16 @@ public:
     Peer(Peer&&) = delete;
     Peer& operator=(Peer&&) = delete;
 
+    /// run(), if it was called, has returned: the Peer must outlive it.
     ~Peer();
 
     /// Reads and dispatches messages and writes what is sent, until the input
     /// ends and every handler has finished, or until close(). Every pending
     /// request has failed by the time it returns. Called once.
+    ///
+    /// The Peer must outlive it: destroy the Peer only once run() has
+    /// returned, cancelled or not, as an owner that awaits run() and then
+    /// lets the Peer go does. A debug build asserts it.
     task<> run();
 
     /// Shuts the peer down: cancels the running handlers, fails pending
