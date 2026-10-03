@@ -96,7 +96,9 @@ void peer_dispatch(const PeerKit<A>& kit) {
 
     // A handler runs until it first suspends before the peer reads on, so
     // handlers start in the order their messages arrived.
-    kit.add("handlers_start_in_arrival_order", [](Fixture& f) {
+    // A handler starts once what was read with its request is dispatched:
+    // the notifications behind it come first.
+    kit.add("handler_starts_after_the_messages_read_with_its_request", [](Fixture& f) {
         std::vector<std::string> order;
         f.peer.on_request([&](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
             order.emplace_back("request");
@@ -110,7 +112,7 @@ void peer_dispatch(const PeerKit<A>& kit) {
 
         auto [ran] = f.run(f.peer.run());
         EXPECT(ran.has_value());
-        EXPECT(order == std::vector<std::string>{"request", "first", "second"});
+        EXPECT(order == std::vector<std::string>{"first", "second", "request"});
         const auto& written = f.written();
         ASSERT(written.size() == 1U);
         EXPECT(sum_of<A>(written[0]) == 5);

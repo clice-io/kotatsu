@@ -48,6 +48,27 @@ void peer_cancel(const PeerKit<A>& kit) {
         EXPECT(written[0].error.message == "request cancelled");
     });
 
+    // A $/cancelRequest read with its request reaches it before its handler
+    // starts, which then never does.
+    kit.add("request_cancelled_with_it_is_never_handled", [](Fixture& f) {
+        bool called = false;
+        f.peer.on_request([&](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
+            called = true;
+            co_return AddResult{};
+        });
+        f.remote.send(request<A>(22, "test/add", AddParams{}));
+        f.remote.send(notification<A>("$/cancelRequest", CancelRequestParams{.id = 22}));
+        f.remote.end_input();
+
+        auto [ran] = f.run(f.peer.run());
+        EXPECT(ran.has_value());
+        EXPECT(!called);
+        const auto& written = f.written();
+        ASSERT(written.size() == 1U);
+        EXPECT(written[0].id == RequestID(22));
+        EXPECT(code_of(written[0].error) == ErrorCode::RequestCancelled);
+    });
+
     kit.add("cancel_request_after_the_answer_is_ignored", [](Fixture& f) {
         f.serve_add();
         auto remote = [&]() -> task<> {
