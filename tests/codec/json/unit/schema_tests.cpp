@@ -12,6 +12,7 @@
 #include <variant>
 #include <vector>
 
+#include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/repr.h"
 #include "codec/harness/fixtures/structs.h"
@@ -1705,14 +1706,12 @@ ZEST_CASE(variant_adjacent_tag) {
                      R"("c":{"type":"integer",)"
                      R"("minimum":-2147483648,)"
                      R"("maximum":2147483647}},)"
-                     R"("required":["t","c"],)"
-                     R"("additionalProperties":false},)"
+                     R"("required":["t","c"]},)"
                      R"({"type":"object",)"
                      R"("properties":{)"
                      R"("t":{"const":"text"},)"
                      R"("c":{"type":"string"}},)"
-                     R"("required":["t","c"],)"
-                     R"("additionalProperties":false}]}},)"
+                     R"("required":["t","c"]}]}},)"
                      R"("required":["v"]})");
 }
 
@@ -1752,7 +1751,27 @@ ZEST_CASE(root_internal_variant) {
 }
 
 ZEST_CASE(root_adjacent_variant) {
+    // Keys beside the tag and the content are passed over, so allowed.
     const auto result = json::schema_string<root_adjacent_variant>().value();
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("oneOf":[)"
+                     R"({"type":"object",)"
+                     R"("properties":{)"
+                     R"("type":{"const":"integer"},)"
+                     R"("value":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["type","value"]},)"
+                     R"({"type":"object",)"
+                     R"("properties":{)"
+                     R"("type":{"const":"text"},)"
+                     R"("value":{"type":"string"}},)"
+                     R"("required":["type","value"]}]})");
+}
+
+ZEST_CASE(root_adjacent_variant_denies_other_keys) {
+    // ...unless unknown fields are denied, as the decoder then does.
+    const auto result = json::schema_string<root_adjacent_variant, test::StrictConfig>().value();
     EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
                      R"("oneOf":[)"
                      R"({"type":"object",)"

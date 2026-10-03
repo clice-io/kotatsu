@@ -96,6 +96,22 @@ struct rich_error {
     }
 };
 
+/// The keys that the decodes on this thread pass over while it is installed
+/// (scoped_context<UnknownFields>): object keys no field of the struct they
+/// are read into answers to, and the keys of an adjacently tagged object
+/// other than its tag and content. Each is the error a decode under
+/// deny_unknown_fields would fail with: "unknown field 'name'", the path of
+/// the object holding the key, as the document spells it, and where the key
+/// is, for a backend that knows (json, toml). Decoding goes on as it would
+/// without the sink, so one decode reads the value and reports every key it
+/// passed over; where unknown fields are denied, the first still fails the
+/// decode and is not reported. An untagged probe that fails takes back what
+/// it reported; a decode that fails keeps what it reported before.
+struct UnknownFields {
+    /// In the order the decodes met the keys.
+    std::vector<rich_error> entries;
+};
+
 /// RAII thread_local context slot. Each type T gets an independent thread_local pointer.
 /// Used directly for user context (e.g. scoped_context<EntityRegistry>), and internally by
 /// error_sink for error propagation.

@@ -158,6 +158,53 @@ struct MixedRenameStructCamel {
     std::string itemName;
 };
 
+/// Point with a key Point has no field for.
+struct PointWithExtra {
+    std::int32_t x;
+    std::int32_t y;
+    bool extra;
+};
+
+/// Unknown keys at each depth of a keyed document: a struct, a struct inside
+/// it, a sequence element and a map value.
+struct Layout {
+    int id;
+    Point origin;
+    std::vector<Point> points;
+    std::map<std::string, Point> named;
+};
+
+struct LayoutWithExtrasPlain {
+    int id;
+    PointWithExtra origin;
+    std::vector<PointWithExtra> points;
+    std::map<std::string, PointWithExtra> named;
+    bool stray;
+};
+
+struct AliasAnchor {
+    constexpr static auto spec = meta::make_spec(meta::dsl::alias = {"anchor"});
+};
+
+/// A field the document may name by an alias.
+struct AliasedOrigin {
+    meta::annotate<AliasAnchor>::type<Point> origin;
+};
+
+template <typename T>
+struct AnchorPlain {
+    T anchor;
+};
+
+/// An alternative probed before Point that the same keys and a third make.
+struct Measured {
+    std::int32_t x;
+    std::int32_t y;
+    std::int32_t length;
+
+    auto operator==(const Measured&) const -> bool = default;
+};
+
 /// Two fields answering to one name.
 struct AliasDup {
     constexpr static auto spec = meta::make_spec(meta::dsl::alias = {"dup"});

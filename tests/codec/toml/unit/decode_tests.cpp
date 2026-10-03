@@ -103,7 +103,7 @@ zip = "wrong"
            "invalid type: expected integer, got string at addr.zip (line 6, column 7)");
 }
 
-ZEST_CASE(unknown_field_fails_at_its_value) {
+ZEST_CASE(unknown_field_fails_at_its_key) {
     test::Point out{};
     auto status = toml::from_string<test::StrictConfig>(R"(
 x = 1
@@ -115,7 +115,30 @@ extra = true
     EXPECT(status.error().message == "unknown field 'extra'");
     ASSERT(status.error().location);
     EXPECT(status.error().location->line == 4U);
-    EXPECT(status.error().location->column == 9U);
+    EXPECT(status.error().location->column == 1U);
+}
+
+ZEST_CASE(unknown_fields_reported_at_their_keys) {
+    UnknownFields unknown;
+    scoped_context<UnknownFields> scope(unknown);
+    test::Person out{};
+    auto status = toml::from_string(R"(
+name = "alice"
+nick = "al"
+age = 30
+
+[addr]
+city = "NY"
+zip = 10001
+floor = 3
+)",
+                                    out);
+    ASSERT(status);
+    EXPECT(out.addr.zip == 10001);
+    // A table's keys are read in order of their names: addr before nick.
+    ASSERT(unknown.entries.size() == 2U);
+    EXPECT(unknown.entries[0].to_string() == "unknown field 'floor' at addr (line 9, column 1)");
+    EXPECT(unknown.entries[1].to_string() == "unknown field 'nick' (line 3, column 1)");
 }
 
 ZEST_CASE(integer_out_of_range_fails) {

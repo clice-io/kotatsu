@@ -20,6 +20,7 @@
 // move-only. A plain value always encodes under the default config; Config
 // applies to the value under test only.
 
+#include <algorithm>
 #include <concepts>
 #include <cstddef>
 #include <expected>
@@ -29,6 +30,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "codec/harness/fixtures/structs.h"
 #include "kota/zest/zest.h"
@@ -183,6 +185,44 @@ void reads_in_field(const Kit<B>& kit, std::string name, Plain plain, Expect exp
         [expect] { return Field<V>{expect()}; });
 }
 
+namespace detail {
+
+/// What a test says of an unknown field reported to a codec::UnknownFields:
+/// its error, the location left out, which only the backends' own tests pin.
+inline std::vector<std::string> describe(const codec::UnknownFields& unknown) {
+    std::vector<std::string> described;
+    for(const auto& entry: unknown.entries) {
+        auto path = entry.format_path();
+        described.push_back(path.empty() ? entry.message : entry.message + " at " + path);
+    }
+    std::ranges::sort(described);
+    return described;
+}
+
+}  // namespace detail
+
+/// reads with a codec::UnknownFields installed, which then holds the unknown
+/// fields `unknown` describes ("unknown field 'k' at a.b"), in any order.
+template <typename T, typename Config = void, Backend B, typename Plain, typename Expect>
+void reads_reporting(const Kit<B>& kit,
+                     std::string name,
+                     Plain plain,
+                     Expect expect,
+                     std::vector<std::string> unknown) {
+    std::ranges::sort(unknown);
+    kit.add(std::move(name), [plain, expect, unknown] {
+        auto document = B::encode(plain());
+        ASSERT(succeeds(document));
+        ZEST_CONTEXT("{}: {}", B::name, B::render(*document));
+        codec::UnknownFields reported;
+        codec::scoped_context<codec::UnknownFields> scope(reported);
+        auto decoded = T();
+        ASSERT(succeeds(B::template decode<Config>(*document, decoded)));
+        EXPECT(meta::eq(decoded, expect()));
+        EXPECT(detail::describe(reported) == unknown);
+    });
+}
+
 /// The document plain() encodes to does not decode into T under Config.
 template <typename T, typename Config = void, Backend B, typename Plain>
 void read_fails(const Kit<B>& kit, std::string name, Plain plain, Failure failure) {
@@ -225,6 +265,29 @@ void read_in_field_fails(const Kit<B>& kit, std::string name, Plain plain, Failu
         std::move(name),
         [plain] { return Field<decltype(plain())>{plain()}; },
         failure);
+}
+
+/// read_fails with a codec::UnknownFields installed, which then holds the
+/// unknown fields `unknown` describes, as reads_reporting.
+template <typename T, typename Config = void, Backend B, typename Plain>
+void read_fails_reporting(const Kit<B>& kit,
+                          std::string name,
+                          Plain plain,
+                          Failure failure,
+                          std::vector<std::string> unknown) {
+    std::ranges::sort(unknown);
+    kit.add(std::move(name), [plain, failure, unknown] {
+        auto document = B::encode(plain());
+        ASSERT(succeeds(document));
+        ZEST_CONTEXT("{}: {}", B::name, B::render(*document));
+        codec::UnknownFields reported;
+        codec::scoped_context<codec::UnknownFields> scope(reported);
+        auto decoded = T();
+        auto status = B::template decode<Config>(*document, decoded);
+        ASSERT(!status);
+        detail::check_failure(status.error(), failure);
+        EXPECT(detail::describe(reported) == unknown);
+    });
 }
 
 /// read_fails_over with the value in a field, as reads_in_field: the field

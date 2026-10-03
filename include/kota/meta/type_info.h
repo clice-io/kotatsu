@@ -108,6 +108,9 @@ struct variant_type_info : type_info {
     std::string_view tag_field;
     std::string_view content_field;
     std::span<const std::string_view> alt_names;
+    /// Under adjacent tagging, keys beside the tag and the content are
+    /// denied, as a struct's unknown fields, rather than passed over.
+    bool deny_unknown = false;
 };
 
 struct optional_type_info : type_info {
@@ -436,6 +439,7 @@ struct variant_info_node<std::variant<Ts...>, Config, AttrsTuple> {
         spec.tag,
         spec.content,
         {alt_names.data(),    has_tag ? alt_names.size() : 0},
+        config_denies_unknown<Config>(),
     };
 };
 

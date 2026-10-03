@@ -4,11 +4,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "kota/support/expected_try.h"
 #include "kota/support/numeric.h"
@@ -62,8 +64,7 @@ template struct steal<val_iter_tag, val_iter_ptr, &simdjson::ondemand::value::it
 
 /// Sets the line and column, from 1, of each location, which holds its byte
 /// offset into text, in one pass over the text for all of them.
-inline void count_lines(std::string_view text,
-                        std::span<rich_error::source_location*> locations) {
+inline void count_lines(std::string_view text, std::span<rich_error::source_location*> locations) {
     std::ranges::sort(locations, {}, [](const auto* location) { return location->byte_offset; });
     std::size_t line = 1;
     std::size_t line_start = 0;
@@ -124,6 +125,9 @@ struct Reader {
     Source src;
     const char* buf_base;
     std::size_t buf_size;
+    /// The opening quote of the key an object member's reader reads the
+    /// value of; null for any other reader.
+    const char* key_at = nullptr;
     constexpr static bool data_driven = true;
     constexpr static bool human_readable = true;
     using format = json::format;
@@ -153,6 +157,16 @@ struct Reader {
             }
         }
         return scoped_context<rich_error>::fail(std::move(err));
+    }
+
+    /// Where the key this reader's value belongs to starts, by byte offset
+    /// alone, as fail_located.
+    std::optional<rich_error::source_location> key_location() const {
+        if(!key_at) {
+            return std::nullopt;
+        }
+        return rich_error::source_location{.byte_offset =
+                                               static_cast<std::size_t>(key_at - buf_base)};
     }
 
     bool fail_simdjson(simdjson::error_code ec) {
@@ -310,8 +324,11 @@ struct Reader {
                 ok = fail_simdjson(key.error());
                 break;
             }
+            // The raw key starts after its opening quote.
+            const char* key_at = field.key().raw() - 1;
             auto fv = std::move(field).value();
             Reader sub{fv, buf_base, buf_size};
+            sub.key_at = key_at;
             if(!cb(key.value_unsafe(), sub)) {
                 ok = false;
                 break;
@@ -407,12 +424,23 @@ auto from_string(std::string_view json, T& out) -> std::expected<void, rich_erro
     }
     doc.rewind();
 
+    auto* unknown = scoped_context<UnknownFields>::try_current();
+    auto reported = unknown ? unknown->entries.size() : 0;
     Reader r{doc, padded.data(), padded.size()};
     auto result = codec::detail::run_decode<Config>(r, out);
+    // The locations the decode leaves behind hold their byte offsets.
+    std::vector<rich_error::source_location*> locations;
     if(!result && result.error().location) {
-        rich_error::source_location* location = &*result.error().location;
-        detail::count_lines(json, std::span(&location, 1));
+        locations.push_back(&*result.error().location);
     }
+    if(unknown) {
+        for(auto& entry: std::span(unknown->entries).subspan(reported)) {
+            if(entry.location) {
+                locations.push_back(&*entry.location);
+            }
+        }
+    }
+    detail::count_lines(json, locations);
     return result;
 }
 

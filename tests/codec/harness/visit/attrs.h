@@ -406,6 +406,78 @@ void attrs(const Kit<B>& kit) {
         reads<Point>(kit, "unknown_field_ignored", with_extra, [] {
             return Point{.x = 1, .y = 2};
         });
+        // An installed UnknownFields hears of every key nothing reads, under
+        // the path the document gives the object holding it.
+        reads_reporting<Layout>(
+            kit,
+            "unknown_fields_reported_at_every_depth",
+            [] {
+                return LayoutWithExtrasPlain{
+                    .id = 1,
+                    .origin = {.x = 1, .y = 2, .extra = true},
+                    .points = {{.x = 3, .y = 4, .extra = true}, {.x = 5, .y = 6, .extra = true}},
+                    .named = {{"a", {.x = 7, .y = 8, .extra = true}}},
+                    .stray = true,
+                };
+            },
+            [] {
+                return Layout{
+                    .id = 1,
+                    .origin = {.x = 1, .y = 2},
+                    .points = {{.x = 3, .y = 4}, {.x = 5, .y = 6}},
+                    .named = {{"a", {.x = 7, .y = 8}}},
+                };
+            },
+            {"unknown field 'stray'",
+             "unknown field 'extra' at origin",
+             "unknown field 'extra' at points[0]",
+             "unknown field 'extra' at points[1]",
+             "unknown field 'extra' at named.a"});
+        reads_reporting<Point>(
+            kit,
+            "known_fields_report_nothing",
+            [] { return Point{.x = 1, .y = 2}; },
+            [] { return Point{.x = 1, .y = 2}; },
+            {});
+        // A path names a field as the document does, by an alias too.
+        reads_reporting<AliasedOrigin>(
+            kit,
+            "unknown_field_under_alias_reported_by_alias",
+            [] {
+                return AnchorPlain<PointWithExtra>{
+                    {.x = 1, .y = 2, .extra = true}
+                };
+            },
+            [] { return AliasedOrigin{{{.x = 1, .y = 2}}}; },
+            {"unknown field 'extra' at anchor"});
+        read_fails<AliasedOrigin>(
+            kit,
+            "field_under_alias_mismatch_fails_at_alias",
+            [] { return AnchorPlain<std::map<std::string, std::string>>{{{"x", "one"}}}; },
+            {.message = "", .path = "anchor.x"});
+        // An untagged probe that fails takes back what it reported: Measured
+        // reads x and y, passes over extra, then misses its length.
+        reads_reporting<Field<std::variant<Measured, Point>>>(
+            kit,
+            "failed_probe_takes_back_its_unknown_fields",
+            [] {
+                return Field<PointWithExtra>{
+                    {.x = 1, .y = 2, .extra = true}
+                };
+            },
+            [] {
+                return Field<std::variant<Measured, Point>>{
+                    Point{.x = 1, .y = 2}
+                };
+            },
+            {"unknown field 'extra' at value"});
+        // Where unknown fields are denied the first fails, and is not reported.
+        read_fails_reporting<StrictRoot>(
+            kit,
+            "denied_unknown_field_fails_unreported",
+            [] { return RenameTargetWithExtra{.user_name = 7, .display_name = "ada", .extra = 1}; },
+            {.message = "unknown field 'extra'", .path = ""},
+            {});
         read_fails<StrictRoot>(
             kit,
             "unknown_field_fails",
@@ -502,7 +574,7 @@ void attrs(const Kit<B>& kit) {
                                           {"b", "two"}
                                       };
                                   },
-                                  {.message = "", .path = "value[1]"});
+                                  {.message = "", .path = "value.b"});
         read_in_field_fails<std::map<int, int>>(
             kit,
             "map_key_not_integer_fails",
@@ -511,7 +583,7 @@ void attrs(const Kit<B>& kit) {
                     {"abc", 1}
                 };
             },
-            {.message = "cannot parse map key 'abc' as integer", .path = "value[0]"});
+            {.message = "cannot parse map key 'abc' as integer", .path = "value.abc"});
         read_in_field_fails<std::map<std::uint32_t, int>>(
             kit,
             "map_key_negative_unsigned_fails",
@@ -520,7 +592,7 @@ void attrs(const Kit<B>& kit) {
                     {"-1", 1}
                 };
             },
-            {.message = "cannot parse map key '-1' as unsigned integer", .path = "value[0]"});
+            {.message = "cannot parse map key '-1' as unsigned integer", .path = "value.-1"});
         auto wide_key = [] {
             return Ints{
                 {"1",   1},
@@ -531,12 +603,12 @@ void attrs(const Kit<B>& kit) {
             kit,
             "map_key_out_of_integer_range_fails",
             wide_key,
-            {.message = "map key '300' out of integer range", .path = "value[1]"});
+            {.message = "map key '300' out of integer range", .path = "value.300"});
         read_in_field_fails<std::map<std::uint8_t, int>>(
             kit,
             "map_key_out_of_unsigned_range_fails",
             wide_key,
-            {.message = "map key '300' out of unsigned integer range", .path = "value[1]"});
+            {.message = "map key '300' out of unsigned integer range", .path = "value.300"});
         read_in_field_fails<std::tuple<int, int>>(
             kit,
             "tuple_too_long_fails",

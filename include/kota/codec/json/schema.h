@@ -481,20 +481,24 @@ private:
                 case meta::tag_mode::adjacent: {
                     auto alt_name = alternative_name(vi, i);
                     KOTA_EXPECTED_TRY_V(auto schema, make_schema(&vi->alternatives[i]()));
-                    alts.push_back({
-                        {"type",                 "object"},
+                    dyn::Object branch{
+                        {"type",       "object"},
                         {"properties",
                          dyn::Object{
                              {std::string(vi->tag_field), {{"const", alt_name}}},
                              {std::string(vi->content_field), std::move(schema)},
-                         }                               },
+                         }                     },
                         {"required",
                          dyn::Array{
                              dyn::Value(vi->tag_field),
                              dyn::Value(vi->content_field),
-                         }                               },
-                        {"additionalProperties", false   },
-                    });
+                         }                     },
+                    };
+                    // Other keys are passed over unless unknown fields are denied.
+                    if(vi->deny_unknown) {
+                        branch.insert("additionalProperties", false);
+                    }
+                    alts.push_back(std::move(branch));
                     break;
                 }
             }

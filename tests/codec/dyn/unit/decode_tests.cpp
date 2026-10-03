@@ -71,6 +71,20 @@ ZEST_CASE(tree_inside_a_value_reads_itself) {
     }));
 }
 
+ZEST_CASE(unknown_fields_reported_without_location) {
+    UnknownFields unknown;
+    scoped_context<UnknownFields> scope(unknown);
+    auto point = dyn::from_dyn<test::Point>(dyn::Value{
+        {"x",     std::int64_t{1}},
+        {"y",     std::int64_t{2}},
+        {"extra", true           },
+    });
+    ASSERT(point);
+    ASSERT(unknown.entries.size() == 1U);
+    EXPECT(unknown.entries[0].message == "unknown field 'extra'");
+    EXPECT(!unknown.entries[0].location);
+}
+
 ZEST_CASE(duplicate_keys_last_wins) {
     // A tree may hold a key twice. The reader visits every entry in order,
     // so the last one wins, the one Object::find returns.

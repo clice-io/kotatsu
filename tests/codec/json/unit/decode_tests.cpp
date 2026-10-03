@@ -6,6 +6,7 @@
 #include <variant>
 #include <vector>
 
+#include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/structs.h"
 #include "codec/harness/fixtures/tagged.h"
@@ -248,6 +249,39 @@ ZEST_CASE(located_type_mismatch_fails) {
     EXPECT(status.error().location->line == 3U);
     EXPECT(status.error().location->column == 10U);
     EXPECT(status.error().location->byte_offset == 30U);
+}
+
+ZEST_CASE(unknown_field_fails_at_its_key) {
+    test::Point out{};
+    auto status = json::from_string<test::StrictConfig>(R"({
+  "x": 1,
+  "extra": true,
+  "y": 2
+})",
+                                                        out);
+    ASSERT(!status);
+    EXPECT(status.error().message == "unknown field 'extra'");
+    ASSERT(status.error().location);
+    EXPECT(status.error().location->line == 3U);
+    EXPECT(status.error().location->column == 3U);
+}
+
+ZEST_CASE(unknown_fields_reported_at_their_keys) {
+    UnknownFields unknown;
+    scoped_context<UnknownFields> scope(unknown);
+    test::Person out{};
+    auto status = json::from_string(R"({
+  "name": "alice",
+  "nick": "al",
+  "age": 30,
+  "addr": {"city": "NY", "zip": 10001, "floor": 3}
+})",
+                                    out);
+    ASSERT(status);
+    EXPECT(out.addr.zip == 10001);
+    ASSERT(unknown.entries.size() == 2U);
+    EXPECT(unknown.entries[0].to_string() == "unknown field 'nick' (line 3, column 3)");
+    EXPECT(unknown.entries[1].to_string() == "unknown field 'floor' at addr (line 5, column 40)");
 }
 
 ZEST_CASE(nested_type_mismatch_text_fails) {
