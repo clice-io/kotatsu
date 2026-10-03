@@ -15,6 +15,9 @@ namespace kota {
 
 namespace {
 
+/// The bytes that start a wildcard, unless a `\` escapes them.
+constexpr std::string_view wildcards = "?*[{";
+
 /// One matching unit: a decoded Unicode scalar value, or a byte that is
 /// not valid UTF-8 mapped above the Unicode range so it only compares
 /// equal to the same byte. Patterns are validated to be UTF-8 at create(),
@@ -378,7 +381,7 @@ std::expected<GlobPattern, GlobError> GlobPattern::create(std::string_view s, si
                                   "`/` cannot be escaped"}
                     };
                 }
-            } else if(std::string_view("?*[{").contains(s[i])) {
+            } else if(wildcards.contains(s[i])) {
                 break;
             }
             pat.prefix += s[i++];
@@ -484,6 +487,43 @@ std::expected<GlobPattern, GlobError> GlobPattern::create(std::string_view s, si
     }
 
     return pat;
+}
+
+std::string GlobPattern::escape(std::string_view literal) {
+    std::string escaped;
+    escaped.reserve(literal.size());
+    for(char c: literal) {
+        if(std::string_view(R"(\?*[{},)").contains(c)) {
+            escaped += '\\';
+        }
+        escaped += c;
+    }
+    return escaped;
+}
+
+std::string GlobPattern::unescape(std::string_view pattern) {
+    std::string literal;
+    literal.reserve(pattern.size());
+    for(size_t i = 0; i < pattern.size(); ++i) {
+        if(pattern[i] == '\\' && i + 1 != pattern.size()) {
+            ++i;
+        }
+        literal += pattern[i];
+    }
+    return literal;
+}
+
+std::pair<std::string_view, std::string_view>
+    GlobPattern::split_literal_root(std::string_view pattern) {
+    size_t root = 0;
+    for(size_t i = 0; i < pattern.size() && !wildcards.contains(pattern[i]); ++i) {
+        if(pattern[i] == '\\') {
+            ++i;
+        } else if(pattern[i] == '/') {
+            root = i + 1;
+        }
+    }
+    return {pattern.substr(0, root), pattern.substr(root)};
 }
 
 std::expected<void, GlobError> GlobPattern::compile_arm(std::string_view s, bool at_segment_start) {
