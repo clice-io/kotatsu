@@ -592,7 +592,7 @@ private:
 
     static void annotate_properties(dyn::Object& body, const dyn::Value& doc_value) {
         // A non-struct root pairs with a non-object document (an array, a
-        // scalar, the null a default-constructed nullable root encodes to);
+        // scalar, the null a value-initialized nullable root encodes to);
         // it has no properties to annotate from.
         const auto* doc = doc_value.get_object();
         if(doc == nullptr) {

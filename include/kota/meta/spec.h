@@ -63,8 +63,8 @@ struct field_spec {
     bool skip = false;
     /// Inline the fields of a nested struct into the parent.
     bool flatten = false;
-    /// Allow the field to be absent during deserialization (keeps its
-    /// default-constructed value). Equivalent to Rust's #[serde(default)].
+    /// Allow the field to be absent during deserialization (it keeps the
+    /// value it holds). Equivalent to Rust's #[serde(default)].
     bool defaulted = false;
 };
 
@@ -87,8 +87,8 @@ struct struct_spec {
     naming::Casing rename_all = naming::Casing::Identity;
     /// Reject unknown keys during deserialization.
     bool deny_unknown_fields = false;
-    /// Allow every field to be absent during deserialization (keeping its
-    /// value), as if each carried field-level `defaulted`; like
+    /// Allow every field to be absent during deserialization (each keeps the
+    /// value it holds), as if each carried field-level `defaulted`; like
     /// deny_unknown_fields, it holds in the structs nested inside too. An
     /// entry of its own: `defaulted` alone makes a field annotation.
     bool defaulted_fields = false;
