@@ -100,6 +100,7 @@ result<std::vector<std::string>> inherited_environment() {
     if(auto err = error(::uv_os_environ(&items, &count))) {
         return outcome_error(err);
     }
+
     // Freed on every way out, a throwing copy below included.
     struct Freed {
         uv_env_item_t* items;
@@ -109,6 +110,7 @@ result<std::vector<std::string>> inherited_environment() {
             ::uv_os_free_environ(items, count);
         }
     } freed{items, count};
+
     std::vector<std::string> entries;
     entries.reserve(static_cast<std::size_t>(count));
     for(const auto& item: std::span(items, static_cast<std::size_t>(count))) {

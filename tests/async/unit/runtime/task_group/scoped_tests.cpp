@@ -25,7 +25,7 @@ ZEST_SUITE(async_runtime_task_group_scoped, test::LoopFixture) {
 ZEST_CASE(with_task_group_gives_what_join_gives) {
     EXPECT(zest::type_eq<decltype(with_task_group(plain_body{})), task<>>());
     EXPECT(zest::type_eq<decltype(with_task_group<error>(error_body{})),
-                          task<void, std::vector<error>>>());
+                         task<void, std::vector<error>>>());
 }
 
 ZEST_CASE(with_task_group_takes_a_body_its_group_takes) {
@@ -67,6 +67,7 @@ ZEST_CASE(with_task_group_waits_for_what_the_body_spawned) {
 ZEST_CASE(with_task_group_keeps_the_body_captures_for_the_children) {
     event gate;
     auto alive = std::make_shared<bool>(true);
+
     struct Probe {
         std::shared_ptr<bool> alive;
 
@@ -80,6 +81,7 @@ ZEST_CASE(with_task_group_keeps_the_body_captures_for_the_children) {
             }
         }
     };
+
     bool seen_alive = false;
     auto reader = [&](const Probe&) -> task<> {
         co_await gate.wait();

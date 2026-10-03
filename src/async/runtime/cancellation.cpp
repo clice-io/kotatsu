@@ -45,8 +45,8 @@ void CancellationState::unlink(CancellationNode& node) noexcept {
 
 cancellation_callback::cancellation_callback() noexcept = default;
 
-cancellation_callback::cancellation_callback(std::unique_ptr<detail::CancellationNode> node) noexcept
-    : node(std::move(node)) {}
+cancellation_callback::cancellation_callback(
+    std::unique_ptr<detail::CancellationNode> node) noexcept : node(std::move(node)) {}
 
 cancellation_callback::cancellation_callback(cancellation_callback&& other) noexcept = default;
 
@@ -61,8 +61,8 @@ cancellation_callback::~cancellation_callback() {
     }
 }
 
-cancellation_token::cancellation_token(std::shared_ptr<detail::CancellationState> state) noexcept
-    : state(std::move(state)) {}
+cancellation_token::cancellation_token(std::shared_ptr<detail::CancellationState> state) noexcept :
+    state(std::move(state)) {}
 
 bool cancellation_token::cancelled() const noexcept {
     return state && state->fired.is_set();

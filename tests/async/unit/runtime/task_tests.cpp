@@ -530,6 +530,7 @@ ZEST_CASE(exception_after_cancel_still_fails_the_task, skip = test::exceptions_u
 // for as long as the task runs.
 ZEST_CASE(co_invoke_keeps_the_callable_for_the_task) {
     auto alive = std::make_shared<bool>(true);
+
     struct Probe {
         std::shared_ptr<bool> alive;
 
@@ -543,6 +544,7 @@ ZEST_CASE(co_invoke_keeps_the_callable_for_the_task) {
             }
         }
     };
+
     auto read = co_invoke([&alive, probe = Probe(alive)]() -> task<bool> {
         co_await yield();
         co_return *alive;

@@ -203,7 +203,9 @@ ZEST_CASE(env_changes_go_over_the_inherited_environment) {
     test::TempDir dir;
     test::ScopedVariable inherited("KOTA_TEST_INHERITED", "inherited");
     auto opts = print_two("KOTA_TEST_SET", "KOTA_TEST_INHERITED");
-    opts.env_changes = {{.name = "KOTA_TEST_SET", .value = "set"}};
+    opts.env_changes = {
+        {.name = "KOTA_TEST_SET", .value = "set"}
+    };
 
     auto [written] = run(marker_of(opts, dir, loop));
     ASSERT(written.has_value());
@@ -215,7 +217,9 @@ ZEST_CASE(env_changes_go_over_a_given_environment) {
     test::ScopedVariable inherited("KOTA_TEST_INHERITED", "inherited");
     auto opts = print_two("KOTA_TEST_GIVEN", "KOTA_TEST_INHERITED");
     opts.env = {"KOTA_TEST_GIVEN=given"};
-    opts.env_changes = {{.name = "KOTA_TEST_SET", .value = "set"}};
+    opts.env_changes = {
+        {.name = "KOTA_TEST_SET", .value = "set"}
+    };
 
     auto [written] = run(marker_of(opts, dir, loop));
     ASSERT(written.has_value());
@@ -227,9 +231,9 @@ ZEST_CASE(last_env_change_of_a_name_counts) {
     auto opts = print_two("KOTA_TEST_SET", "KOTA_TEST_REMOVED");
     opts.env = {"KOTA_TEST_REMOVED=given"};
     opts.env_changes = {
-        {.name = "KOTA_TEST_SET", .value = "first"},
+        {.name = "KOTA_TEST_SET",     .value = "first"     },
         {.name = "KOTA_TEST_REMOVED", .value = std::nullopt},
-        {.name = "KOTA_TEST_SET", .value = "last"},
+        {.name = "KOTA_TEST_SET",     .value = "last"      },
     };
 
     auto [written] = run(marker_of(opts, dir, loop));
@@ -244,7 +248,9 @@ ZEST_CASE(env_changes_removing_every_variable_inherit_nothing) {
     test::ScopedVariable inherited("KOTA_TEST_INHERITED", "inherited");
     auto opts = print_two("KOTA_TEST_GIVEN", "KOTA_TEST_INHERITED");
     opts.env = {"KOTA_TEST_GIVEN=given"};
-    opts.env_changes = {{.name = "KOTA_TEST_GIVEN", .value = std::nullopt}};
+    opts.env_changes = {
+        {.name = "KOTA_TEST_GIVEN", .value = std::nullopt}
+    };
 
     auto [written] = run(marker_of(opts, dir, loop));
     ASSERT(written.has_value());
@@ -257,8 +263,8 @@ ZEST_CASE(env_changes_match_names_without_regard_to_case) {
     auto opts = print_two("KOTA_TEST_SET", "KOTA_TEST_GIVEN");
     opts.env = {"kota_test_given=given"};
     opts.env_changes = {
-        {.name = "kota_test_set", .value = "lower"},
-        {.name = "KOTA_TEST_SET", .value = "upper"},
+        {.name = "kota_test_set",   .value = "lower"     },
+        {.name = "KOTA_TEST_SET",   .value = "upper"     },
         {.name = "KOTA_TEST_GIVEN", .value = std::nullopt},
     };
     auto [written] = run(marker_of(opts, dir, loop));
