@@ -571,6 +571,15 @@ struct Peer<CodecT>::Self {
         }
     }
 
+    /// Runs `handler` once every message read with its request is
+    /// dispatched: a notification that came with the request reaches its
+    /// handler first, and a $/cancelRequest that came with it fires the
+    /// token, which keeps the handler from starting.
+    task<std::string, Error> after_read(task<std::string, Error> handler) {
+        co_await yield(loop);
+        co_return co_await std::move(handler).or_fail();
+    }
+
     task<> run_request(protocol::RequestID id,
                        RequestCallback callback,
                        std::string params,
@@ -579,7 +588,7 @@ struct Peer<CodecT>::Self {
         // A handler that throws is answered InternalError; the exception
         // does not reach the other handlers, nor run().
         KOTA_TRY {
-            guarded_result = co_await with_token(callback(id, params, token), token);
+            guarded_result = co_await with_token(after_read(callback(id, params, token)), token);
         }
         KOTA_CATCH_ALL() {
             guarded_result =

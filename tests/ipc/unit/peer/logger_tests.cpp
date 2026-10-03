@@ -17,6 +17,7 @@ namespace kota::ipc {
 namespace {
 
 using Fixture = test::PeerFixture<test::JsonAdapter>;
+using Context = Fixture::Context;
 using test::AddParams;
 using test::AddResult;
 using test::NoteParams;
@@ -147,6 +148,29 @@ ZEST_CASE(answer_to_an_unknown_id_is_a_warning) {
     EXPECT(ran.has_value());
     EXPECT(has(LogLevel::warn, "orphan response for id=7"));
     EXPECT(has(LogLevel::warn, R"(orphan response for id="seven")"));
+}
+
+// run() is cancelled once the request is read and before its handler starts:
+// the request is answered RequestCancelled all the same, an answer the output
+// closed with run() then drops.
+ZEST_CASE(request_cancelled_with_run_before_its_handler_starts_is_answered) {
+    log_from(LogLevel::debug);
+    bool ran = false;
+    peer.on_request([&](Context&, const AddParams&) -> RequestResult<AddParams> {
+        ran = true;
+        co_return AddResult{};
+    });
+    remote.send(test::request<test::JsonAdapter>(1, "test/add", AddParams{}));
+    cancellation_source source;
+    auto stop = [&]() -> task<> {
+        source.cancel();
+        co_return;
+    };
+
+    auto [stopped_run, stopped] = run(with_token(peer.run(), source.token()), stop());
+    EXPECT(stopped_run.is_cancelled());
+    EXPECT(!ran);
+    EXPECT(has(LogLevel::error, "error response: request cancelled"));
 }
 
 ZEST_CASE(run_logs_where_its_read_loop_starts_and_ends) {

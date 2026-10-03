@@ -72,6 +72,10 @@ struct request_options {
 /// itself, task<codec::RawValue, Error>; a request whose result type is
 /// codec::RawValue gets the result as the codec wrote it.
 ///
+/// A request's handler starts once the messages read with the request are
+/// dispatched, so that a notification sent after the request reaches its
+/// handler first, and a $/cancelRequest for it cancels it before it starts.
+///
 /// A request whose awaiting task is cancelled sends the remote
 /// $/cancelRequest and waits for its answer, then ends cancelled: a cancelled
 /// task ends once what it awaits has ended. A remote that ignores

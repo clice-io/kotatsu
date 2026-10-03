@@ -223,9 +223,11 @@ void peer_lifecycle(const PeerKit<A>& kit) {
     // The handler's answer could not be written: it is cancelled, and run()
     // ends without waiting for it.
     kit.add("write_failure_cancels_running_handlers", [](Fixture& f) {
+        event started;
         event never;
         bool cancelled = false;
         f.peer.on_request([&](Context& context, const AddParams&) -> ipc::RequestResult<AddParams> {
+            started.set();
             co_await wait_for(never).catch_cancel();
             cancelled = context.cancelled();
             co_return AddResult{};
@@ -233,6 +235,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         f.remote.fail_writes();
         f.remote.send(request<A>(1, "test/add", AddParams{}));
         auto ask = [&]() -> task<> {
+            co_await started.wait();
             co_await f.peer.send_request(AddParams{});
         };
 
