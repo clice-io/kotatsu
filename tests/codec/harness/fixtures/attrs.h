@@ -225,6 +225,25 @@ struct SharedAlias {
     meta::annotate<AliasDup>::type<int> right;
 };
 
+struct AliasLegacy {
+    constexpr static auto spec = meta::make_spec(meta::dsl::alias = {"legacy"});
+};
+
+/// A struct in a field that answers to `legacy` too.
+struct AliasedPoint {
+    meta::annotate<AliasLegacy>::type<Point> current;
+};
+
+/// AliasedPoint under its alias, with a key Point does not have.
+struct AliasedPointLegacyWithExtra {
+    PointWithExtra legacy;
+};
+
+/// AliasedPoint under its alias, without Point's fields.
+struct AliasedPointLegacyEmpty {
+    Empty legacy;
+};
+
 /// Two fields that lower_camel renames to one name.
 struct CamelCollision {
     int user_id;

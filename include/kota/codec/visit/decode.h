@@ -216,9 +216,10 @@ bool decode_with_attrs(Vis& vis, T& out) {
     }
 }
 
-/// Runs one step of a data-driven decode, below a field name or an element
-/// index: the step joins the path of an error it fails with (trace_path)
-/// and, failing or not, the path of every unknown field it reports to sink.
+/// Runs one step of a data-driven decode, below a key as the input spells it
+/// or an element index: the step joins the path of an error it fails with
+/// (trace_path) and, failing or not, the path of every unknown field it
+/// reports to sink.
 template <typename Config, typename Step, typename F>
 bool decode_step(UnknownFields* sink, const Step& at, F&& step) {
     if(!sink) {
@@ -254,15 +255,17 @@ void report_unknown_field(UnknownFields* sink, std::string_view key, Reader& rea
 
 /// Decode a field's value applying behavior transforms, without visit_field wrapping.
 /// Used by match_field (data-driven path) where the field reader is already provided.
+/// Paths below the field start with key, the field's name or one of its
+/// aliases as the input spells it.
 template <typename Config, std::size_t I, typename Vis, typename T>
-bool decode_field_value(Vis& vis, T& out, UnknownFields* sink) {
+bool decode_field_value(std::string_view key, Vis& vis, T& out, UnknownFields* sink) {
     using field = FieldAt<Config, I, T>;
     auto& field_ref = field::of(out);
     // A keyed entry the field skips is passed over unread.
     if(skipped<typename field::attrs>(field_ref, false)) {
         return true;
     }
-    return decode_step<Config>(sink, field::name, [&] {
+    return decode_step<Config>(sink, key, [&] {
         return decode_with_attrs<Config, typename field::attrs>(vis, field_ref);
     });
 }
@@ -307,7 +310,7 @@ bool match_field(std::string_view key,
 
     field_mask |= std::uint64_t{1} << slot;
     return with_index<N>(slot, [&](auto i) {
-        return decode_field_value<Config, decltype(i)::value>(reader, out, sink);
+        return decode_field_value<Config, decltype(i)::value>(key, reader, out, sink);
     });
 }
 

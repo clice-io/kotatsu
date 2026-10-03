@@ -370,6 +370,22 @@ void attrs(const Kit<B>& kit) {
                                     };
                                 },
                                 {.message = "missing required field 'right'", .path = ""});
+        // Paths below a field read under an alias start with the alias, as
+        // the document spells it, not with the field's name.
+        reads_reporting<AliasedPoint>(
+            kit,
+            "unknown_field_under_an_alias_reported_at_the_alias",
+            [] {
+                return AliasedPointLegacyWithExtra{
+                    .legacy = {.x = 1, .y = 2, .extra = 3}
+                };
+            },
+            [] { return AliasedPoint{.current = {{.x = 1, .y = 2}}}; },
+            {"legacy.extra"});
+        read_fails<AliasedPoint>(kit,
+                                 "field_under_an_alias_fails_at_the_alias",
+                                 [] { return AliasedPointLegacyEmpty{}; },
+                                 {.message = "missing required field 'x'", .path = "legacy"});
         read_fails<CamelCollision, CamelConfig>(
             kit,
             "rename_collision_fails",
