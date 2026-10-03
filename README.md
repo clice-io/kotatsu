@@ -146,6 +146,35 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - Naming-convention conversion (`naming.h`): identity, lower-snake, lower-camel, upper-camel, upper-snake.
 - Type-level utilities: `type_list<Ts...>`, `tuple_traits`, `type_traits`, `expected_try`, `comptime` helpers, and miscellaneous `memory` / `ranges` / `functional` adapters.
 
+## Using kotatsu from Bazel
+
+kotatsu is a Bazel module (Bazel 9). The targets are one per module:
+`@kotatsu//:support`, `:meta`, `:codec` with the backends `:codec_json`,
+`:codec_toml` and `:codec_flatbuffers`, `:option`, `:deco`, `:async`, `:ipc`
+with `:ipc_json` (JSON-RPC) and `:ipc_lsp`, and `:zest`; HTTP builds with
+CMake only for now.
+
+```starlark
+bazel_dep(name = "kotatsu", version = "0.1.0.<n>")
+```
+
+Every commit of `main` that passes the Bazel build is a version of the
+module on the [clice Bazel registry](https://bazel.clice.io), `0.1.0.<n>`
+for the n-th commit (`git rev-list --count`), as are its third-party
+libraries (simdjson, toml++, flatbuffers, libuv, cpptrace). The depending
+build lists that registry before the Bazel Central Registry:
+
+```
+common --registry=https://bazel.clice.io/
+common --registry=https://bcr.bazel.build/
+```
+
+The depending build brings the C++23 toolchain (`--cxxopt=-std=c++23`). A
+build without exceptions or RTTI sets `--@kotatsu//bazel:exceptions=false`
+(and `--@simdjson//:exceptions=false`) or `--@kotatsu//bazel:rtti=false`,
+which kotatsu's headers see through `KOTA_ENABLE_EXCEPTIONS` and
+`KOTA_ENABLE_RTTI`.
+
 ## Repository Layout
 
 ```text
@@ -171,6 +200,8 @@ src/
   option/      # Option parser implementation
   meta/        # Meta target wiring (header-only public APIs)
   zest/        # Test runner implementation
+
+bazel/         # Bazel: build settings, the rule running the tests' commands
 
 tests/
   <module>/    # Tests per module, mirroring include/kota/<module>/:

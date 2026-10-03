@@ -16,6 +16,14 @@ CI workflow — never use xmake for local development.
   never the system compiler.
 - The main CI matrix is `cmake.yml` (all toolchains, sanitizers,
   no-exceptions/no-rtti variants), driving the same presets.
+- Bazel (`MODULE.bazel`) is the build clice consumes, kept in step with
+  CMake: a target per module in `BUILD.bazel`, the tests in
+  `tests/BUILD.bazel`, the third-party libraries and the toolchain (xclang)
+  from the clice Bazel registry, bazel.clice.io. `pixi run -e bazel bazel
+  test //...` builds and tests it with xclang (`--config=no-exceptions`,
+  `--config=no-rtti`, `--config=asan`, ... in `.bazelrc`); `bazel.yml` runs
+  it in CI. A source, test or dependency
+  added to CMake is added there too.
 
 ## Testing
 

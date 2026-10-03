@@ -1,0 +1,23 @@
+module(
+    name = "kotatsu",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "rules_cc", version = "0.2.25")
+
+# The third-party libraries, as the clice Bazel registry (.bazelrc) packages
+# them, at the versions the CMake build pins. A module that uses one too
+# depends on it the same way and links the one copy Bazel resolves.
+bazel_dep(name = "cpptrace", version = "1.0.4.clice.1")
+bazel_dep(name = "flatbuffers", version = "25.2.10.clice.1")
+bazel_dep(name = "libuv", version = "1.52.0.clice.1")
+bazel_dep(name = "simdjson", version = "4.2.4.clice.1")
+bazel_dep(name = "tomlplusplus", version = "3.4.0.clice.1")
+
+# The C++ toolchain on every platform: xclang's module, from the clice Bazel
+# registry (.bazelrc), which downloads the release of its version for the
+# host. Development only: a module depending on kotatsu brings its own
+# toolchain.
+bazel_dep(name = "xclang", version = "23.1.2.5", dev_dependency = True)

@@ -110,10 +110,11 @@ ZEST_CASE(directories_are_reported) {
     EXPECT(std::filesystem::is_directory(*tmp));
 }
 
+// CMake builds system_tests, Bazel a binary per module: async_system_tests.
 ZEST_CASE(executable_path_names_this_program) {
     auto path = sys::executable_path();
     ASSERT(path.has_value());
-    EXPECT(std::filesystem::path(*path).stem().string() == "system_tests");
+    EXPECT(std::filesystem::path(*path).stem().string().ends_with("system_tests"));
 }
 
 // Setting the priority it already has leaves the process as it was.

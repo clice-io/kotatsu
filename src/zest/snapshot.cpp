@@ -441,11 +441,9 @@ bool check_snapshot_glob(std::string_view base_dir_str,
         if(!entry.is_regular_file()) {
             continue;
         }
-        std::error_code rel_ec;
-        auto rel = fs::relative(entry.path(), scan_dir, rel_ec);
-        if(rel_ec) {
-            continue;
-        }
+        // Lexically: fs::relative resolves symlinks, so a file linked from
+        // elsewhere (as in Bazel's runfiles) would be named by its target.
+        auto rel = entry.path().lexically_relative(scan_dir);
         if(glob->match(rel.generic_string())) {
             matched.emplace_back(rel);
         }

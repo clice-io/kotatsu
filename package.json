@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "devDependencies": {
+    "@bazel/bazelisk": "^1.28.1",
     "@types/node": "^24.19.0",
     "fast-check": "^4.10.2",
     "typescript": "^7.0.2",

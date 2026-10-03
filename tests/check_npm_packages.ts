@@ -23,7 +23,9 @@ const stale = Object.keys(manifest.devDependencies).filter((name) => {
   const installed = readJson(`node_modules/${name}/package.json`) as {
     version?: string;
   };
-  return installed?.version !== lock.packages[`node_modules/${name}`]?.version;
+  // @bazel/bazelisk's own package.json writes its version as "v1.28.1".
+  const version = installed?.version?.replace(/^v/, "");
+  return version !== lock.packages[`node_modules/${name}`]?.version;
 });
 if (stale.length > 0) {
   console.error(

@@ -1,0 +1,25 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//bazel:defs.bzl", "kota_binary")
+
+package(default_visibility = ["//tests:__pkg__"])
+
+[kota_binary(
+    name = name,
+    srcs = [src],
+    deps = deps,
+) for name, src, deps in [
+    ("async_basics", "async_basics/async_basics.cpp", ["//:async"]),
+    ("build_system", "build_system/build_system.cpp", [":build_system_graph"]),
+    ("dump_dot", "dump_dot/dump_dot.cpp", ["//:async"]),
+    ("jsonrpc_server", "ipc/stdio_server.cpp", ["//:ipc_json"]),
+    ("jsonrpc_roundtrip", "ipc/scripted_roundtrip.cpp", ["//:ipc_json"]),
+    ("spawn_worker", "ipc/spawn_worker.cpp", ["//:ipc_json"]),
+]]
+
+# build_system's graph, which its tests check.
+cc_library(
+    name = "build_system_graph",
+    hdrs = ["build_system/compile_graph.h"],
+    strip_include_prefix = "build_system",
+    deps = ["//:async"],
+)

@@ -27,6 +27,7 @@ windows-msvc = ["build", "windows-msvc"]
 windows-mingw = ["build", "windows-mingw"]
 windows-llvm = ["build", "windows-llvm"]
 windows-xclang = ["build", "windows-xclang"]
+bazel = ["build", "bazel"]
 format = ["format"]
 
 # Shared by every environment: the TypeScript tooling under scripts/ runs in
@@ -110,6 +111,23 @@ scripts = ["scripts/activate_windows_llvm.bat"]
 [feature.windows-xclang.target.win-64.dependencies]
 xclang = "==23.1.2.2"
 sccache = "*"
+
+# Bazel (MODULE.bazel), whose toolchain is xclang's module: it downloads
+# xclang's release for the host itself. Bazel itself is the release
+# .bazelversion names, fetched by bazelisk (an npm package): conda-forge's
+# build runs only in batch mode, with its output inside the environment.
+# `pixi run -e bazel bazel <command> <targets>` runs it; zest's runner check
+# runs on cmake.
+[feature.bazel.tasks.bazel]
+cmd = "npx --no -- bazelisk"
+depends-on = ["npm-ci"]
+
+# Bazel's default output root is too deep for Windows paths, and without
+# symlinks its runfiles hold copies, from which the integration tests cannot
+# find the source tree (bazel/command_test.ts).
+[feature.bazel.target.win-64.tasks.bazel]
+cmd = "npx --no -- bazelisk --output_user_root=C:/b --windows_enable_symlinks"
+depends-on = ["npm-ci"]
 
 # ============================================================================== #
 #                                    FORMAT                                      #

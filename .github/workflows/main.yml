@@ -18,6 +18,7 @@ jobs:
     outputs:
       format: ${{ steps.filter.outputs.format }}
       cmake: ${{ steps.filter.outputs.cmake }}
+      bazel: ${{ steps.filter.outputs.bazel }}
       xmake: ${{ steps.filter.outputs.xmake }}
     steps:
       - name: Checkout repository
@@ -45,6 +46,21 @@ jobs:
               - '.github/actions/**'
               - '.github/workflows/main.yml'
               - '.github/workflows/cmake.yml'
+            bazel:
+              - 'src/**'
+              - 'include/**'
+              - 'tests/**'
+              - 'examples/**'
+              - 'bazel/**'
+              - '**/BUILD.bazel'
+              - 'MODULE.bazel'
+              - '.bazel*'
+              - 'pixi.toml'
+              - 'pixi.lock'
+              - 'package*.json'
+              - '.github/actions/**'
+              - '.github/workflows/main.yml'
+              - '.github/workflows/bazel.yml'
             xmake:
               - 'src/**'
               - 'include/**'
@@ -77,6 +93,14 @@ jobs:
       actions: write
     uses: ./.github/workflows/cmake.yml
 
+  bazel:
+    needs: changes
+    if: ${{ needs.changes.outputs.bazel == 'true' }}
+    permissions:
+      contents: read
+      actions: write
+    uses: ./.github/workflows/bazel.yml
+
   xmake:
     needs: changes
     if: ${{ needs.changes.outputs.xmake == 'true' }}
@@ -85,16 +109,51 @@ jobs:
       actions: write
     uses: ./.github/workflows/xmake.yml
 
+  # Every commit of main that passed bazel.yml is a version of the kotatsu
+  # module on the clice Bazel registry (https://bazel.clice.io):
+  # 0.1.0.<n> for the n-th commit of main, MODULE.bazel's version and the
+  # commit's count. Its source archive is the commit's tree, published
+  # through clice-io/bazel's action.
+  publish-bazel:
+    needs: bazel
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.bazel.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Module archive
+        run: |
+          base=$(sed -n 's/^    version = "\(.*\)",$/\1/p' MODULE.bazel)
+          version="${base}.$(git rev-list --count HEAD)"
+          dir="kotatsu-${version}"
+          stage="${RUNNER_TEMP}/module"
+          mkdir -p "${stage}" dist
+          git archive --prefix="${dir}/" HEAD | tar -x -C "${stage}"
+          sed -i "s/^    version = \"${base}\",$/    version = \"${version}\",/" "${stage}/${dir}/MODULE.bazel"
+          grep -q "version = \"${version}\"" "${stage}/${dir}/MODULE.bazel"
+          tar -C "${stage}" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -cf - "${dir}" | gzip -9n > "dist/${dir}.tar.gz"
+          echo "kotatsu ${version} ($(git rev-parse --short HEAD))" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: clice-io/bazel@main
+        with:
+          archives: dist/kotatsu-*.tar.gz
+          token: ${{ secrets.UPLOAD_BAZEL }}
+
   checks-passed:
     if: ${{ always() }}
     needs:
       - format
       - cmake
+      - bazel
       - xmake
     runs-on: ubuntu-latest
     steps:
       - name: Check results
         uses: re-actors/alls-green@release/v1
         with:
-          allowed-skips: format,cmake,xmake
+          allowed-skips: format,cmake,bazel,xmake
           jobs: ${{ toJSON(needs) }}
