@@ -1,3 +1,4 @@
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -25,6 +26,9 @@ ZEST_CASE(with_task_group_gives_what_join_gives) {
     EXPECT(zest::type_eq<decltype(with_task_group(plain_body{})), task<>>());
     EXPECT(zest::type_eq<decltype(with_task_group<error>(error_body{})),
                           task<void, std::vector<error>>>());
+}
+
+ZEST_CASE(with_task_group_takes_a_body_its_group_takes) {
     STATIC_EXPECT(group_body<plain_body>);
     STATIC_EXPECT(group_body<error_body, error>);
     STATIC_EXPECT(!group_body<error_body>);
@@ -59,20 +63,34 @@ ZEST_CASE(with_task_group_waits_for_what_the_body_spawned) {
 }
 
 // The body's captures live in with_task_group's frame: a child reads them
-// after the body has ended.
+// after the body has ended, and the lambda the task was made from is gone.
 ZEST_CASE(with_task_group_keeps_the_body_captures_for_the_children) {
     event gate;
-    std::string seen;
-    auto reader = [&](const std::string& text) -> task<> {
+    auto alive = std::make_shared<bool>(true);
+    struct Probe {
+        std::shared_ptr<bool> alive;
+
+        Probe(std::shared_ptr<bool> alive) : alive(std::move(alive)) {}
+
+        Probe(Probe&&) = default;
+
+        ~Probe() {
+            if(alive) {
+                *alive = false;
+            }
+        }
+    };
+    bool seen_alive = false;
+    auto reader = [&](const Probe&) -> task<> {
         co_await gate.wait();
-        seen = text;
+        seen_alive = *alive;
     };
     auto driver = [&]() -> task<> {
-        co_await with_task_group(
-            [&, text = std::string("captured by the body")](task_group<>& group) -> task<> {
-                group.spawn(reader(text));
-                co_return;
-            });
+        auto scoped = with_task_group([&, probe = Probe(alive)](task_group<>& group) -> task<> {
+            group.spawn(reader(probe));
+            co_return;
+        });
+        co_await std::move(scoped);
     };
     auto opener = [&]() -> task<> {
         co_await yield();
@@ -82,7 +100,8 @@ ZEST_CASE(with_task_group_keeps_the_body_captures_for_the_children) {
     auto [result, opened] = run(driver(), opener());
     EXPECT(result.has_value());
     EXPECT(opened.has_value());
-    EXPECT(seen == "captured by the body");
+    EXPECT(seen_alive);
+    EXPECT(!*alive);
 }
 
 ZEST_CASE(with_task_group_child_failure_cancels_the_body_fails) {
@@ -104,6 +123,25 @@ ZEST_CASE(with_task_group_child_failure_cancels_the_body_fails) {
     ASSERT(result.has_error());
     EXPECT(result.error() == std::vector{error::connection_refused});
     EXPECT(!body_finished);
+    EXPECT(!gate.has_waiters());
+}
+
+ZEST_CASE(with_task_group_body_failure_cancels_the_children_fails) {
+    event gate;
+    auto waiting = [&]() -> task<> {
+        co_await gate.wait();
+    };
+    auto driver = [&]() -> task<void, std::vector<error>> {
+        return with_task_group<error>([&](task_group<error>& group) -> task<void, error> {
+            group.spawn(waiting());
+            co_await yield();
+            co_await fail(error::connection_refused);
+        });
+    };
+
+    auto [result] = run(driver());
+    ASSERT(result.has_error());
+    EXPECT(result.error() == std::vector{error::connection_refused});
     EXPECT(!gate.has_waiters());
 }
 

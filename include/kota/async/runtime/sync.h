@@ -18,7 +18,7 @@ class condition_variable;
 namespace detail {
 
 template <typename Primitive>
-class ScopedWait;
+class ScopedAwaiter;
 
 }  // namespace detail
 
@@ -111,7 +111,7 @@ private:
     friend class event;
     friend class condition_variable;
     template <typename Primitive>
-    friend class detail::ScopedWait;
+    friend class detail::ScopedAwaiter;
     template <typename Derived>
     friend class async_visitor;
 
@@ -162,7 +162,7 @@ namespace detail {
 /// co_await: the wait of lock() or acquire(), which then gives a guard of what
 /// it took. A wait a cancel ends gives none and keeps nothing.
 template <typename Primitive>
-class ScopedWait {
+class ScopedAwaiter {
 public:
     bool await_ready() noexcept {
         return wait.await_ready();
@@ -176,16 +176,15 @@ public:
     }
 
     typename Primitive::guard await_resume() noexcept {
-        return typename Primitive::guard(owner);
+        return typename Primitive::guard(static_cast<Primitive&>(*wait.owner));
     }
 
 private:
     friend Primitive;
 
-    explicit ScopedWait(Primitive& owner) noexcept : wait(owner), owner(owner) {}
+    explicit ScopedAwaiter(Primitive& owner) noexcept : wait(owner) {}
 
     wait_node wait;
-    Primitive& owner;
 };
 
 /// What mutex::guard and semaphore::guard share: what a scoped wait took from
@@ -229,7 +228,7 @@ class mutex : public sync_primitive {
 public:
     using lock_awaiter = wait_node;
 
-    using scoped_lock_awaiter = detail::ScopedWait<mutex>;
+    using scoped_lock_awaiter = detail::ScopedAwaiter<mutex>;
 
     /// Holds the mutex scoped_lock() locked, and unlocks it when it goes,
     /// unless unlock() did before: in a task a cancel ended, once its owner
@@ -292,7 +291,7 @@ class semaphore : public sync_primitive {
 public:
     using acquire_awaiter = wait_node;
 
-    using scoped_acquire_awaiter = detail::ScopedWait<semaphore>;
+    using scoped_acquire_awaiter = detail::ScopedAwaiter<semaphore>;
 
     /// Holds the unit scoped_acquire() took, and releases it when it goes,
     /// unless release() did before: in a task a cancel ended, once its owner

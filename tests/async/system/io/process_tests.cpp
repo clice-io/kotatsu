@@ -44,6 +44,40 @@ std::string trim_newlines(std::string text) {
     return text;
 }
 
+/// What `opts`, a shell command that writes to marker.txt, writes there when
+/// run in `dir`, or how it ended when it failed.
+task<std::string> marker_of(process::options opts, const test::TempDir& dir, event_loop& loop) {
+    opts.cwd = dir.path.string();
+    auto spawned = process::spawn(opts, loop);
+    if(!spawned) {
+        co_return std::format("spawn failed: {}", spawned.error().message());
+    }
+    auto status = co_await spawned->proc.wait();
+    if(!status) {
+        co_return std::format("wait failed: {}", status.error().message());
+    }
+    if(!status->success()) {
+        co_return status->to_string();
+    }
+    co_return trim_newlines(test::read_file(dir.path / "marker.txt"));
+}
+
+/// A shell command that writes variables `first` and `second` to marker.txt,
+/// joined by '|'. One that is not set reads as unset(name).
+process::options print_two(std::string_view first, std::string_view second) {
+    return shell(
+        by_platform(std::format(R"(printf "%s|%s" "${{{}-unset}}" "${{{}-unset}}" > marker.txt)",
+                                first,
+                                second),
+                    std::format(">marker.txt echo %{}%^|%{}%", first, second)));
+}
+
+/// What print_two() writes for a variable `name` that is not set: cmd leaves
+/// the reference as it was written.
+std::string unset(std::string_view name) {
+    return std::string(by_platform("unset", std::format("%{}%", name)));
+}
+
 ZEST_SUITE(async_io_process, test::LoopFixture) {
 
 ZEST_CASE(wait_reports_the_exit_code) {
@@ -163,48 +197,29 @@ ZEST_CASE(environment_and_directory_reach_the_child) {
     EXPECT(trim_newlines(test::read_file(dir.path / "marker.txt")) == "42");
 }
 
-/// What `opts`, a shell command that writes to marker.txt, writes there when
-/// run in `dir`.
-task<std::string> marker_of(process::options opts, const test::TempDir& dir, event_loop& loop) {
-    opts.cwd = dir.path.string();
-    auto spawned = process::spawn(opts, loop);
-    if(!spawned) {
-        co_return "spawn failed";
-    }
-    auto status = co_await spawned->proc.wait();
-    if(!status) {
-        co_return "wait failed";
-    }
-    co_return trim_newlines(test::read_file(dir.path / "marker.txt"));
-}
-
-/// A shell command that writes variables `first` and `second` to marker.txt,
-/// joined by '|'.
-process::options print_two(std::string_view first, std::string_view second) {
-    return shell(by_platform(std::format(R"(printf "%s|%s" "${}" "${}" > marker.txt)", first, second),
-                             std::format(">marker.txt echo %{}%^|%{}%", first, second)));
-}
-
 // The changes go over the inherited environment: the child still has what
 // this process has.
 ZEST_CASE(env_changes_go_over_the_inherited_environment) {
     test::TempDir dir;
-    auto opts = print_two("KOTA_TEST_SET", by_platform("HOME", "SystemRoot"));
+    test::ScopedVariable inherited("KOTA_TEST_INHERITED", "inherited");
+    auto opts = print_two("KOTA_TEST_SET", "KOTA_TEST_INHERITED");
     opts.env_changes = {{.name = "KOTA_TEST_SET", .value = "set"}};
+
     auto [written] = run(marker_of(opts, dir, loop));
     ASSERT(written.has_value());
-    EXPECT(zest::starts_with(*written, "set|"));
-    EXPECT(*written != "set|");
+    EXPECT(*written == "set|inherited");
 }
 
 ZEST_CASE(env_changes_go_over_a_given_environment) {
     test::TempDir dir;
-    auto opts = print_two("KOTA_TEST_GIVEN", "KOTA_TEST_SET");
+    test::ScopedVariable inherited("KOTA_TEST_INHERITED", "inherited");
+    auto opts = print_two("KOTA_TEST_GIVEN", "KOTA_TEST_INHERITED");
     opts.env = {"KOTA_TEST_GIVEN=given"};
     opts.env_changes = {{.name = "KOTA_TEST_SET", .value = "set"}};
+
     auto [written] = run(marker_of(opts, dir, loop));
     ASSERT(written.has_value());
-    EXPECT(*written == "given|set");
+    EXPECT(*written == "given|" + unset("KOTA_TEST_INHERITED"));
 }
 
 ZEST_CASE(last_env_change_of_a_name_counts) {
@@ -216,10 +231,24 @@ ZEST_CASE(last_env_change_of_a_name_counts) {
         {.name = "KOTA_TEST_REMOVED", .value = std::nullopt},
         {.name = "KOTA_TEST_SET", .value = "last"},
     };
-    // cmd leaves a variable that is not set as it was written.
+
     auto [written] = run(marker_of(opts, dir, loop));
     ASSERT(written.has_value());
-    EXPECT(*written == by_platform("last|", "last|%KOTA_TEST_REMOVED%"));
+    EXPECT(*written == "last|" + unset("KOTA_TEST_REMOVED"));
+}
+
+// Changes that remove every variable leave the child an empty environment,
+// not the inherited one.
+ZEST_CASE(env_changes_removing_every_variable_inherit_nothing) {
+    test::TempDir dir;
+    test::ScopedVariable inherited("KOTA_TEST_INHERITED", "inherited");
+    auto opts = print_two("KOTA_TEST_GIVEN", "KOTA_TEST_INHERITED");
+    opts.env = {"KOTA_TEST_GIVEN=given"};
+    opts.env_changes = {{.name = "KOTA_TEST_GIVEN", .value = std::nullopt}};
+
+    auto [written] = run(marker_of(opts, dir, loop));
+    ASSERT(written.has_value());
+    EXPECT(*written == unset("KOTA_TEST_GIVEN") + "|" + unset("KOTA_TEST_INHERITED"));
 }
 
 #ifdef _WIN32
@@ -234,7 +263,7 @@ ZEST_CASE(env_changes_match_names_without_regard_to_case) {
     };
     auto [written] = run(marker_of(opts, dir, loop));
     ASSERT(written.has_value());
-    EXPECT(*written == "upper|%KOTA_TEST_GIVEN%");
+    EXPECT(*written == "upper|" + unset("KOTA_TEST_GIVEN"));
 }
 #endif
 

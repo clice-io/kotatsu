@@ -253,13 +253,11 @@ std::coroutine_handle<> yield_awaiter::suspend(task_frame& waiting,
 }
 
 #ifndef _WIN32
-namespace {
-
 /// A write to a peer that went away raises SIGPIPE, whose default action
 /// ends the process; ignored, the write fails with EPIPE instead. A program
 /// that set an action of its own keeps it. libuv starts every child with the
 /// default actions.
-void ignore_sigpipe() {
+static void ignore_sigpipe() {
     static std::once_flag once;
     std::call_once(once, [] {
         struct sigaction current = {};
@@ -268,8 +266,6 @@ void ignore_sigpipe() {
         }
     });
 }
-
-}  // namespace
 #endif
 
 event_loop::event_loop() : self(new Self()) {

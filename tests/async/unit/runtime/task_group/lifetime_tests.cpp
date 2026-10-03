@@ -72,8 +72,8 @@ ZEST_CASE(spawn_after_cancel_fails) {
     EXPECT(started == 1);
 }
 
-// A child that fails, or ends cancelled, cancels its siblings, and the group
-// takes no child after that.
+// A child that fails cancels its siblings, and the group takes no child after
+// that.
 ZEST_CASE(spawn_after_a_child_failed_fails) {
     int started = 0;
     auto work = [&]() -> task<void, error> {

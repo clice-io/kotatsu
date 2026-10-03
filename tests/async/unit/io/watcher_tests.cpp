@@ -202,6 +202,28 @@ ZEST_CASE(with_timeout_cancels_a_task_past_its_deadline) {
     EXPECT(!gate.has_waiters());
 }
 
+// A cancel from outside ends the task and the deadline's timer with it, long
+// before the deadline.
+ZEST_CASE(with_timeout_ends_when_cancelled_from_outside) {
+    event gate;
+    auto waiting = [&]() -> task<> {
+        co_await gate.wait();
+    };
+    auto timed = [&]() -> task<> {
+        co_await with_timeout(waiting(), 1h, loop);
+    };
+    auto watched = timed();
+    auto canceller = [&]() -> task<> {
+        co_await yield();
+        watched.cancel();
+    };
+
+    auto [result, cancelling] = run(watched, canceller());
+    EXPECT(result.is_cancelled());
+    EXPECT(cancelling.has_value());
+    EXPECT(!gate.has_waiters());
+}
+
 // The deadline cancels the task, which ends only once what it awaits has; the
 // timeout ends with it.
 ZEST_CASE(with_timeout_ends_once_the_cancelled_task_has) {

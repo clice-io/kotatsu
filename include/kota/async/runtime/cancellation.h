@@ -2,7 +2,6 @@
 
 #include <concepts>
 #include <memory>
-#include <type_traits>
 #include <utility>
 
 #include "kota/support/functional.h"
@@ -14,10 +13,10 @@ namespace kota {
 namespace detail {
 
 /// What a cancellation_source shares with its tokens.
-struct cancellation_state;
+struct CancellationState;
 
 /// A callback cancellation_token::on_cancel() registered.
-struct cancellation_node;
+struct CancellationNode;
 
 }  // namespace detail
 
@@ -29,16 +28,18 @@ public:
     cancellation_callback() noexcept;
 
     cancellation_callback(cancellation_callback&& other) noexcept;
-    cancellation_callback& operator=(cancellation_callback&& other) noexcept;
+
+    /// Deregisters the callback this holds, and takes the one `other` holds.
+    cancellation_callback& operator=(cancellation_callback other) noexcept;
 
     ~cancellation_callback();
 
 private:
     friend class cancellation_token;
 
-    explicit cancellation_callback(std::unique_ptr<detail::cancellation_node> node) noexcept;
+    explicit cancellation_callback(std::unique_ptr<detail::CancellationNode> node) noexcept;
 
-    std::unique_ptr<detail::cancellation_node> node;
+    std::unique_ptr<detail::CancellationNode> node;
 };
 
 /// A view of a cancellation_source: whether it has cancelled, a wait for it
@@ -67,12 +68,12 @@ public:
 private:
     friend class cancellation_source;
 
-    explicit cancellation_token(std::shared_ptr<detail::cancellation_state> state) noexcept;
+    explicit cancellation_token(std::shared_ptr<detail::CancellationState> state) noexcept;
 
     /// A coroutine of its own, which keeps the state while it waits.
-    static task<> wait_for(std::shared_ptr<detail::cancellation_state> state);
+    static task<> wait_for(std::shared_ptr<detail::CancellationState> state);
 
-    std::shared_ptr<detail::cancellation_state> state;
+    std::shared_ptr<detail::CancellationState> state;
 };
 
 /// Cancels the tasks its tokens guard, once: on cancel() or when it goes.
@@ -99,35 +100,8 @@ public:
     cancellation_token token() const noexcept;
 
 private:
-    std::shared_ptr<detail::cancellation_state> state;
+    std::shared_ptr<detail::CancellationState> state;
 };
-
-namespace detail {
-
-/// Runs `inner_task` until it ends, or until one of `stops`, tasks that never
-/// succeed, ends cancelled, which cancels it. A stop that ends at once keeps
-/// the task from starting at all. The result reports that cancellation, or
-/// one of the task itself, as a value.
-template <typename T, typename E, typename C, typename... Stops>
-task<T, E, cancellation> run_until(task<T, E, C> inner_task, Stops... stops) {
-    // The stops start first. The task's own cancellation, caught, ends the
-    // race as a stop does.
-    auto race_result = co_await when_any(std::move(stops)..., std::move(inner_task).catch_cancel());
-
-    if constexpr(!std::is_void_v<E>) {
-        if(race_result.has_error()) {
-            co_await fail(std::move(race_result).error());
-        }
-    }
-    if(race_result.is_cancelled()) {
-        co_await cancel();
-    }
-    if constexpr(!std::is_void_v<T>) {
-        co_return std::move(std::get<sizeof...(Stops)>(*race_result));
-    }
-}
-
-}  // namespace detail
 
 /// Runs `inner_task`, cancelling it once any of `tokens` fires: the cancel
 /// reaches the task once whatever runs when the token fires has suspended,

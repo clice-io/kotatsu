@@ -6,32 +6,34 @@ namespace kota {
 
 namespace detail {
 
-struct cancellation_state {
+struct CancellationState {
     event fired;
 
     /// The callbacks that have not run, in the order they were registered.
-    cancellation_node* head = nullptr;
-    cancellation_node* tail = nullptr;
+    CancellationNode* head = nullptr;
+    CancellationNode* tail = nullptr;
 
-    void link(cancellation_node& node) noexcept;
-    void unlink(cancellation_node& node) noexcept;
+    void link(CancellationNode& node) noexcept;
+    void unlink(CancellationNode& node) noexcept;
 };
 
-struct cancellation_node {
+struct CancellationNode {
     /// The state whose list holds this node; null once it is off the list.
-    std::shared_ptr<cancellation_state> state;
+    /// The source keeps it while the node is on it: it takes every node off
+    /// when it cancels, which it does when it goes.
+    CancellationState* state;
     function<void()> callback;
-    cancellation_node* prev = nullptr;
-    cancellation_node* next = nullptr;
+    CancellationNode* prev = nullptr;
+    CancellationNode* next = nullptr;
 };
 
-void cancellation_state::link(cancellation_node& node) noexcept {
+void CancellationState::link(CancellationNode& node) noexcept {
     node.prev = tail;
     (tail ? tail->next : head) = &node;
     tail = &node;
 }
 
-void cancellation_state::unlink(cancellation_node& node) noexcept {
+void CancellationState::unlink(CancellationNode& node) noexcept {
     (node.prev ? node.prev->next : head) = node.next;
     (node.next ? node.next->prev : tail) = node.prev;
     node.prev = nullptr;
@@ -43,28 +45,23 @@ void cancellation_state::unlink(cancellation_node& node) noexcept {
 
 cancellation_callback::cancellation_callback() noexcept = default;
 
-cancellation_callback::cancellation_callback(std::unique_ptr<detail::cancellation_node> node) noexcept
+cancellation_callback::cancellation_callback(std::unique_ptr<detail::CancellationNode> node) noexcept
     : node(std::move(node)) {}
 
 cancellation_callback::cancellation_callback(cancellation_callback&& other) noexcept = default;
 
-cancellation_callback& cancellation_callback::operator=(cancellation_callback&& other) noexcept {
-    if(this != &other) {
-        cancellation_callback dropped(std::move(*this));
-        node = std::move(other.node);
-    }
+cancellation_callback& cancellation_callback::operator=(cancellation_callback other) noexcept {
+    std::swap(node, other.node);
     return *this;
 }
 
 cancellation_callback::~cancellation_callback() {
     if(node && node->state) {
-        // unlink() resets the node's state, which may be the last reference.
-        auto state = node->state;
-        state->unlink(*node);
+        node->state->unlink(*node);
     }
 }
 
-cancellation_token::cancellation_token(std::shared_ptr<detail::cancellation_state> state) noexcept
+cancellation_token::cancellation_token(std::shared_ptr<detail::CancellationState> state) noexcept
     : state(std::move(state)) {}
 
 bool cancellation_token::cancelled() const noexcept {
@@ -75,7 +72,7 @@ task<> cancellation_token::wait() const {
     return wait_for(state);
 }
 
-task<> cancellation_token::wait_for(std::shared_ptr<detail::cancellation_state> state) {
+task<> cancellation_token::wait_for(std::shared_ptr<detail::CancellationState> state) {
     if(state) {
         co_await state->fired.wait();
     } else {
@@ -94,12 +91,12 @@ cancellation_callback cancellation_token::on_cancel(function<void()> callback) c
         callback();
         return {};
     }
-    auto node = std::make_unique<detail::cancellation_node>(state, std::move(callback));
+    auto node = std::make_unique<detail::CancellationNode>(state.get(), std::move(callback));
     state->link(*node);
     return cancellation_callback(std::move(node));
 }
 
-cancellation_source::cancellation_source() : state(std::make_shared<detail::cancellation_state>()) {}
+cancellation_source::cancellation_source() : state(std::make_shared<detail::CancellationState>()) {}
 
 void cancellation_source::cancel() noexcept {
     if(state->fired.is_set()) {

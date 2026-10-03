@@ -613,9 +613,9 @@ ZEST_CASE(open_of_a_bad_descriptor_fails) {
     EXPECT(opened.error() == error::bad_file_descriptor);
 }
 
-// A regular file is no stream the loop can watch. On Linux epoll refuses it,
-// and libuv would abort at the first read; Windows takes no handle but a
-// pipe's. macOS reads it.
+// The loop cannot wait on a regular file to read it: on Linux epoll refuses
+// one, and libuv would abort at the first read; on macOS kqueue stops
+// reporting one at its end; Windows takes no handle but a pipe's.
 ZEST_CASE(open_of_a_file_to_read_fails) {
     test::TempDir dir;
     test::write_file(dir.file("file.txt"), "text");
@@ -623,16 +623,9 @@ ZEST_CASE(open_of_a_file_to_read_fails) {
     ASSERT(file.has_value());
 
     auto opened = pipe::open(*file, loop);
-#ifdef __APPLE__
-    ASSERT(opened.has_value());
-    auto [text] = run(read_to_end(*opened));
-    ASSERT(text.has_value());
-    EXPECT(*text == "text");
-#else
     ASSERT(opened.has_error());
     EXPECT(opened.error() == error::socket_operation_on_non_socket);
     EXPECT(!fs::sync::close(*file));
-#endif
 }
 
 #ifndef _WIN32

@@ -171,6 +171,52 @@ ZEST_CASE(scoped_lock_guard_unlocks_once) {
     m.unlock();
 }
 
+ZEST_CASE(scoped_lock_guard_assigned_over_unlocks_what_it_held) {
+    mutex first;
+    mutex second;
+    auto locker = [&]() -> task<std::vector<bool>> {
+        auto held = co_await first.scoped_lock();
+        auto other = co_await second.scoped_lock();
+        held = std::move(other);
+        std::vector<bool> free{first.try_lock(), second.try_lock()};
+        co_return free;
+    };
+
+    auto [result] = run(locker());
+    ASSERT(result.has_value());
+    EXPECT(*result == std::vector{true, false});
+    first.unlock();
+    EXPECT(second.try_lock());
+    second.unlock();
+}
+
+// A wait for the lock that a cancel ends gives no guard, and leaves the
+// mutex to its holder.
+ZEST_CASE(scoped_lock_cancelled_while_waiting_takes_nothing) {
+    mutex m;
+    cancellation_source stop;
+    bool waiter_locked = false;
+    auto waiter = [&]() -> task<> {
+        auto locked = co_await m.scoped_lock();
+        waiter_locked = true;
+    };
+    auto driver = [&]() -> task<bool> {
+        auto held = co_await m.scoped_lock();
+        task_group<> group;
+        group.spawn(with_token(waiter(), stop.token()));
+        stop.cancel();
+        co_await group.join();
+        held.unlock();
+        co_return m.try_lock();
+    };
+
+    auto [result] = run(driver());
+    ASSERT(result.has_value());
+    EXPECT(*result);
+    EXPECT(!waiter_locked);
+    m.unlock();
+}
+
 // A task cancelled while it holds the guard unlocks once its frame goes, as
 // a group's child goes once it has ended: the next waiter gets the mutex.
 ZEST_CASE(scoped_lock_guard_unlocks_when_its_task_is_cancelled) {

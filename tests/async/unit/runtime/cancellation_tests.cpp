@@ -413,17 +413,18 @@ ZEST_CASE(callback_may_destroy_the_source) {
     EXPECT(later_calls == 1);
 }
 
-// A registration may outlive the source and every token: it holds what it
-// deregisters from.
+// A registration may outlive its source, which ran the callback as it went:
+// destroying the registration then does nothing more.
 ZEST_CASE(registration_outlives_its_source) {
     int calls = 0;
     cancellation_callback registration;
     {
         cancellation_source source;
         registration = source.token().on_cancel([&] { calls += 1; });
-        registration = cancellation_callback();
     }
-    EXPECT(calls == 0);
+    EXPECT(calls == 1);
+    registration = cancellation_callback();
+    EXPECT(calls == 1);
 }
 
 // Callbacks run inside cancel(); the waits a token guards resume only after.

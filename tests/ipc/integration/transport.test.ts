@@ -10,35 +10,51 @@ import { test } from "node:test";
 
 import { Driver } from "../../harness/driver.ts";
 
-// A stdin the loop cannot watch, such as the null device or a regular file,
-// fails open_stdio on Linux and Windows; macOS reads it to its end.
-async function expectStdinNotWatched(driver: Driver): Promise<void> {
-  if (process.platform === "darwin") {
-    await driver.expectExit(0);
-    return;
-  }
+// A stdin the loop cannot wait on to read fails open_stdio: a regular file,
+// and on Linux and Windows the null device, which macOS reads to its end.
+function expectOpenStdioFailed(driver: Driver): Promise<void> {
   driver.expectLog(/^\[error\] open_stdio: /);
-  await driver.expectExit(1);
+  return driver.expectExit(1);
 }
 
-test("open_stdio_over_the_null_device_ends_the_driver", async (t) => {
-  const driver = await Driver.spawn(t, "jsonrpc_driver", [], {
-    stdin: "ignore",
-  });
-  await expectStdinNotWatched(driver);
-});
-
-test("open_stdio_over_a_file_ends_the_driver", async (t) => {
+test("open_stdio_over_a_file_fails", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "kota-transport-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const path = join(dir, "input.txt");
   writeFileSync(path, "");
   const file = openSync(path, "r");
-  t.after(() => closeSync(file));
-
+  // The child has its own copy once it runs.
   const driver = await Driver.spawn(t, "jsonrpc_driver", [], { stdin: file });
-  await expectStdinNotWatched(driver);
+  closeSync(file);
+  await expectOpenStdioFailed(driver);
 });
+
+const nullDeviceFails =
+  process.platform === "darwin" ? "macOS reads the null device" : false;
+const nullDeviceReads =
+  process.platform === "darwin" ? false : "only macOS reads the null device";
+
+test(
+  "open_stdio_over_the_null_device_fails",
+  { skip: nullDeviceFails },
+  async (t) => {
+    const driver = await Driver.spawn(t, "jsonrpc_driver", [], {
+      stdin: "ignore",
+    });
+    await expectOpenStdioFailed(driver);
+  },
+);
+
+test(
+  "open_stdio_over_the_null_device_reads_its_end",
+  { skip: nullDeviceReads },
+  async (t) => {
+    const driver = await Driver.spawn(t, "jsonrpc_driver", [], {
+      stdin: "ignore",
+    });
+    await driver.expectExit(0);
+  },
+);
 
 // The driver sets its pipes up with POSIX calls.
 const skip = process.platform === "win32" ? "POSIX pipes only" : false;

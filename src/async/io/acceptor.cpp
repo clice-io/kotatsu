@@ -1,9 +1,13 @@
 #include <cstddef>
 #include <utility>
 
+#ifndef _WIN32
+#include <fcntl.h>
+#include <sys/stat.h>
+#endif
+
 #ifdef __linux__
 #include <cerrno>
-#include <fcntl.h>
 #include <sys/epoll.h>
 #include <unistd.h>
 #endif
@@ -141,17 +145,24 @@ unsigned int pipe_flags(const pipe::options& opts) {
     return opts.no_truncate ? static_cast<unsigned int>(UV_PIPE_NO_TRUNCATE) : 0U;
 }
 
-#ifdef __linux__
-/// Why a stream cannot read `fd`, if it cannot. libuv watches a reading
-/// stream with epoll, which refuses a regular file, a directory or a device
-/// such as /dev/null, and libuv aborts on the first read from one. A
-/// descriptor open only for writing is never watched for reading, and a bad
-/// one is left to uv_pipe_open() to report.
+#ifndef _WIN32
+/// Why a stream cannot read `fd`, if it cannot. The loop waits for a regular
+/// file to be readable, which it never reports as a pipe does: epoll refuses
+/// one, and libuv aborts on the first read; kqueue stops reporting one at its
+/// end, and the read waits for good. On Linux epoll refuses some devices too,
+/// such as /dev/null, which a throwaway epoll finds out. A descriptor open
+/// only for writing is never watched for reading, and a bad one is left to
+/// uv_pipe_open() to report.
 error unreadable_as_stream(int fd) {
     const int mode = ::fcntl(fd, F_GETFL);
     if(mode == -1 || (mode & O_ACCMODE) == O_WRONLY) {
         return {};
     }
+    struct stat status = {};
+    if(::fstat(fd, &status) == 0 && S_ISREG(status.st_mode)) {
+        return error::socket_operation_on_non_socket;
+    }
+#ifdef __linux__
     const int probe = ::epoll_create1(EPOLL_CLOEXEC);
     if(probe == -1) {
         return error(::uv_translate_sys_error(errno));
@@ -159,7 +170,11 @@ error unreadable_as_stream(int fd) {
     epoll_event watched{.events = EPOLLIN, .data = {}};
     const bool refused = ::epoll_ctl(probe, EPOLL_CTL_ADD, fd, &watched) == -1 && errno == EPERM;
     ::close(probe);
-    return refused ? error::socket_operation_on_non_socket : error();
+    if(refused) {
+        return error::socket_operation_on_non_socket;
+    }
+#endif
+    return {};
 }
 #endif
 
@@ -178,7 +193,7 @@ result<pipe> pipe::open(int fd, event_loop& loop) {
 }
 
 result<pipe> pipe::open(int fd, options opts, event_loop& loop) {
-#ifdef __linux__
+#ifndef _WIN32
     // Before uv_pipe_open(), which makes the descriptor non-blocking.
     if(auto err = unreadable_as_stream(fd)) {
         return outcome_error(err);

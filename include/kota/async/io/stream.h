@@ -189,11 +189,10 @@ public:
     // default member initializers cannot be a default argument within its
     // enclosing class.
 
-    /// Wrap an existing file descriptor. One the loop cannot watch, such as a
-    /// regular file or /dev/null, fails with
-    /// error::socket_operation_on_non_socket: on Windows any that is no pipe,
-    /// on Linux one open for reading. On macOS libuv reads it through a
-    /// thread of its own.
+    /// Wrap an existing file descriptor. One the loop cannot wait on to read
+    /// fails with error::socket_operation_on_non_socket: a regular file, on
+    /// Windows any handle but a pipe's, and on Linux a device such as
+    /// /dev/null too. On Unix one open only for writing is taken as it is.
     static result<pipe> open(int fd, event_loop& loop = event_loop::current());
 
     static result<pipe> open(int fd, options opts, event_loop& loop = event_loop::current());

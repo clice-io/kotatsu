@@ -1,6 +1,5 @@
 #include "kota/async/io/process.h"
 
-#include <algorithm>
 #include <csignal>
 #include <cstdint>
 #include <format>
@@ -11,6 +10,7 @@
 #include <utility>
 
 #include "stream_self.h"
+#include "kota/support/string_ref.h"
 
 namespace kota {
 
@@ -87,10 +87,7 @@ std::string_view env_name(std::string_view entry) {
 
 bool same_env_name(std::string_view left, std::string_view right) {
 #ifdef _WIN32
-    auto lower = [](char c) {
-        return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
-    };
-    return std::ranges::equal(left, right, {}, lower, lower);
+    return string_ref(left).equals_insensitive(right);
 #else
     return left == right;
 #endif

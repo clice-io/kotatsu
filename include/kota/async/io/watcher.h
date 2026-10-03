@@ -3,8 +3,8 @@
 #include <chrono>
 
 #include "kota/async/io/loop.h"
-#include "kota/async/runtime/cancellation.h"
 #include "kota/async/runtime/task.h"
+#include "kota/async/runtime/when.h"
 #include "kota/async/vocab/error.h"
 #include "kota/async/vocab/owned.h"
 

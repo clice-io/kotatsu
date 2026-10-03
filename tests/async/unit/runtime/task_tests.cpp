@@ -526,16 +526,31 @@ ZEST_CASE(exception_after_cancel_still_fails_the_task, skip = test::exceptions_u
 
 #endif  // KOTA_ENABLE_EXCEPTIONS
 
-// The lambda is a temporary gone before the task starts: co_invoke keeps it.
+// The lambda is a temporary gone before the task starts: co_invoke keeps it
+// for as long as the task runs.
 ZEST_CASE(co_invoke_keeps_the_callable_for_the_task) {
-    auto read = co_invoke([text = std::string("kept by co_invoke")]() -> task<std::string> {
+    auto alive = std::make_shared<bool>(true);
+    struct Probe {
+        std::shared_ptr<bool> alive;
+
+        Probe(std::shared_ptr<bool> alive) : alive(std::move(alive)) {}
+
+        Probe(Probe&&) = default;
+
+        ~Probe() {
+            if(alive) {
+                *alive = false;
+            }
+        }
+    };
+    auto read = co_invoke([&alive, probe = Probe(alive)]() -> task<bool> {
         co_await yield();
-        co_return text;
+        co_return *alive;
     });
 
     auto [result] = run(std::move(read));
     ASSERT(result.has_value());
-    EXPECT(*result == "kept by co_invoke");
+    EXPECT(*result);
 }
 
 ZEST_CASE(co_invoke_keeps_the_arguments_for_the_task) {

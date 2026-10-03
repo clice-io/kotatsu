@@ -263,7 +263,7 @@ struct Pool {
                 .detail = "a worker did not exit within --timeout after its last test",
                 .output = worker->whole_output(),
             });
-        } else if(status->status != 0 || status->term_signal != 0) {
+        } else if(!status->success()) {
             failures.push_back(WorkerFailure{
                 .detail =
                     std::format("a worker ended with {} after its last test", status->to_string()),
