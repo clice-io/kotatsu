@@ -41,6 +41,25 @@ ZEST_CASE(encode_error_response_writes_the_data) {
     EXPECT(*message->error.data == data);
 }
 
+// JSON-RPC lets an error without data leave the member out.
+ZEST_CASE(encode_error_response_without_data_leaves_it_out) {
+    JsonCodec codec;
+    auto encoded = codec.encode_error_response(9, Error(ErrorCode::RequestFailed, "fail"));
+    ASSERT(encoded.has_value());
+    EXPECT(*encoded == R"({"jsonrpc":"2.0","id":9,"error":{"code":-32000,"message":"fail"}})");
+}
+
+// Data that is null is data all the same.
+ZEST_CASE(encode_error_response_writes_null_data) {
+    JsonCodec codec;
+    auto encoded = codec.encode_error_response(
+        9,
+        Error(ErrorCode::RequestFailed, "fail", codec::dyn::Value(nullptr)));
+    ASSERT(encoded.has_value());
+    EXPECT(*encoded ==
+           R"({"jsonrpc":"2.0","id":9,"error":{"code":-32000,"message":"fail","data":null}})");
+}
+
 ZEST_CASE(parse_message_reads_error_data) {
     JsonCodec codec;
     auto parsed = codec.parse_message(

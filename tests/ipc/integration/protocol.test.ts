@@ -285,8 +285,13 @@ class Call implements Command {
         break;
       case "error": {
         const { code, message, data } = this.policy;
+        // An error without data leaves the member out, and so does one
+        // whose data is null, which reads as none.
         assert.deepEqual(outcome, {
-          error: { code, message, data: roundtrip(data ?? null) },
+          error:
+            data === undefined || data === null
+              ? { code, message }
+              : { code, message, data: roundtrip(data) },
         });
         break;
       }

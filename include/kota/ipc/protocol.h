@@ -70,13 +70,20 @@ namespace kota::codec {
 template <typename Vis, typename Config>
 struct serialize_visit<Vis, kota::ipc::protocol::Error, Config> {
     static bool visit(Vis& vis, const kota::ipc::protocol::Error& error) {
-        return vis.visit_struct(error, [&](auto& sv) -> bool {
+        return vis.visit_struct(error, [&]<typename StructVis>(StructVis& sv) -> bool {
             KOTA_CODEC_TRY(sv.visit_field(std::size_t(0), "code", [&](auto& fv) -> bool {
                 return encode_value<Config>(fv, error.code);
             }));
             KOTA_CODEC_TRY(sv.visit_field(std::size_t(1), "message", [&](auto& fv) -> bool {
                 return encode_value<Config>(fv, error.message);
             }));
+            // JSON-RPC lets an error without data leave the member out; a
+            // visitor that writes every field has nothing to mark it absent.
+            if constexpr(!writes_every_field<StructVis>) {
+                if(!error.data) {
+                    return true;
+                }
+            }
             return sv.visit_field(std::size_t(2), "data", [&](auto& fv) -> bool {
                 return encode_value<Config>(fv, error.data);
             });
