@@ -1,8 +1,10 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -57,6 +59,26 @@ struct steal {
 // allowing us to form pointers to the protected members.
 template struct steal<doc_iter_tag, doc_iter_ptr, &simdjson::ondemand::document::iter>;
 template struct steal<val_iter_tag, val_iter_ptr, &simdjson::ondemand::value::iter>;
+
+/// Sets the line and column, from 1, of each location, which holds its byte
+/// offset into text, in one pass over the text for all of them.
+inline void count_lines(std::string_view text,
+                        std::span<rich_error::source_location*> locations) {
+    std::ranges::sort(locations, {}, [](const auto* location) { return location->byte_offset; });
+    std::size_t line = 1;
+    std::size_t line_start = 0;
+    std::size_t at = 0;
+    for(auto* location: locations) {
+        for(; at < location->byte_offset; ++at) {
+            if(text[at] == '\n') {
+                ++line;
+                line_start = at + 1;
+            }
+        }
+        location->line = line;
+        location->column = location->byte_offset - line_start + 1;
+    }
+}
 
 }  // namespace detail
 
@@ -117,22 +139,17 @@ struct Reader {
         return src.apply(std::forward<F>(f));
     }
 
+    /// Fails with err located where the iterator stopped, by byte offset
+    /// alone: from_string counts the line and column of the location it
+    /// reports once the decode is over, so that the failures of untagged
+    /// probes, which nobody sees, do not each count from the start.
     bool fail_located(rich_error err) {
         auto loc_result = src.apply([](auto& s) { return s.current_location(); });
         if(!loc_result.error()) {
             const char* loc = loc_result.value_unsafe();
             if(loc >= buf_base && loc <= buf_base + buf_size) {
-                auto offset = static_cast<std::size_t>(loc - buf_base);
-                std::size_t line = 1, col = 1;
-                for(std::size_t i = 0; i < offset; ++i) {
-                    if(buf_base[i] == '\n') {
-                        ++line;
-                        col = 1;
-                    } else {
-                        ++col;
-                    }
-                }
-                err.set_location({line, col, offset});
+                err.location = rich_error::source_location{
+                    .byte_offset = static_cast<std::size_t>(loc - buf_base)};
             }
         }
         return scoped_context<rich_error>::fail(std::move(err));
@@ -391,7 +408,12 @@ auto from_string(std::string_view json, T& out) -> std::expected<void, rich_erro
     doc.rewind();
 
     Reader r{doc, padded.data(), padded.size()};
-    return codec::detail::run_decode<Config>(r, out);
+    auto result = codec::detail::run_decode<Config>(r, out);
+    if(!result && result.error().location) {
+        rich_error::source_location* location = &*result.error().location;
+        detail::count_lines(json, std::span(&location, 1));
+    }
+    return result;
 }
 
 template <typename T, typename Config = void>
