@@ -311,6 +311,34 @@ ZEST_CASE(optional_nullable_member_roundtrips_through_bincode) {
     }
 }
 
+// LSPAny inside a structure, beside other optional members: bincode reads
+// each of its states back, a present null and an object included.
+ZEST_CASE(diagnostic_data_roundtrips_through_bincode) {
+    using Data = protocol::optional_nullable<protocol::LSPAny>;
+    for(const auto& data: {Data{},
+                           Data{protocol::LSPAny{}},
+                           Data{protocol::LSPAny{
+                               {"fix", "insert"},
+                               {"at", std::int64_t{3}},
+                           }}}) {
+        protocol::Diagnostic diagnostic{
+            .range = {.start = {.line = 1, .character = 2}, .end = {.line = 1, .character = 5}},
+            .severity = protocol::DiagnosticSeverity::Warning,
+            .source = "clice",
+            .message = "unused variable",
+            .data = data,
+        };
+        auto bytes = codec::bincode::to_bytes(diagnostic);
+        ASSERT(bytes);
+        protocol::Diagnostic back{};
+        ASSERT(codec::bincode::from_bytes(std::span<const std::byte>(*bytes), back));
+        EXPECT((back.data == diagnostic.data));
+        EXPECT((back.severity == diagnostic.severity));
+        EXPECT((back.source == diagnostic.source));
+        EXPECT((back.range.end.character == 5U));
+    }
+}
+
 // dyn has no format of its own: a present null stays present through it.
 ZEST_CASE(optional_nullable_member_roundtrips_through_dyn) {
     for(auto active: {protocol::optional_nullable<protocol::nullable<protocol::uinteger>>{},
