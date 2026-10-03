@@ -20,7 +20,8 @@ namespace kota {
 /// child starts at once and runs until it first suspends. A child that fails
 /// cancels its siblings, and join() reports the failure; a child that ends
 /// cancelled just ends, and its siblings run on. The group keeps no child that
-/// has ended.
+/// has ended. with_task_group() keeps a group where it cannot go before its
+/// children.
 template <typename... Errors>
 class task_group : aggregate_op {
 public:
@@ -128,5 +129,53 @@ private:
         conditional_t<std::is_void_v<error_type>, std::type_identity<void>, std::vector<error_type>>
             errors;
 };
+
+namespace detail {
+
+/// What a with_task_group() body may return: a task without a value that a
+/// task_group<Errors...> takes.
+template <typename Task, typename... Errors>
+constexpr inline bool is_group_body_v = false;
+
+template <typename E, typename... Errors>
+constexpr inline bool is_group_body_v<task<void, E>, Errors...> =
+    std::is_void_v<E> || is_one_of<E, Errors...>;
+
+/// The error channel of with_task_group(): the errors join() gives, or none
+/// when no child can fail with an error.
+template <typename E>
+using join_errors_t = std::conditional_t<std::is_void_v<E>, void, std::vector<E>>;
+
+}  // namespace detail
+
+/// Runs `body` as the first child of a task_group of its own, and ends once
+/// every child has ended, `body` and what it spawned alike. Awaited, it gives
+/// what join() gives. The group and `body` live in this task's frame, so both
+/// outlive every child, which may use what `body` captures; a group a task
+/// keeps itself lets its children go if it goes first. `body` is a child like
+/// the others: if it fails, it cancels them; if it ends cancelled, it just
+/// ends. A cancel of the task awaiting this one cancels every child, as
+/// through join().
+///
+///   co_await with_task_group([&](task_group<>& group) -> task<> {
+///       for(auto& request: requests) {
+///           group.spawn(answer(request));
+///       }
+///       co_return;
+///   });
+///
+template <typename... Errors, typename Body>
+    requires detail::is_group_body_v<std::invoke_result_t<Body&, task_group<Errors...>&>, Errors...>
+task<void, detail::join_errors_t<typename task_group<Errors...>::error_type>>
+    with_task_group(Body body, std::source_location location = std::source_location::current()) {
+    task_group<Errors...> group;
+    // A group that has just been made takes any child.
+    group.spawn(body(group), location);
+    if constexpr(std::is_void_v<typename task_group<Errors...>::error_type>) {
+        co_await group.join();
+    } else {
+        co_await or_fail(co_await group.join());
+    }
+}
 
 }  // namespace kota

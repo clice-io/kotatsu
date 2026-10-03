@@ -14,6 +14,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
   - `when_all(...)` — wait for all children; first error cancels the rest.
   - `when_any(...)` — race children; the winner cancels the rest.
   - `task_group` — spawn a dynamic fan-out of tasks that start immediately, then join.
+  - `with_task_group(body)` — run `body` with a `task_group` that outlives every child it spawns, and wait for them all.
 - Cooperative cancellation model:
   - `cancellation_token` / `cancellation_source` for cancelling from outside the tasks, on their loop's thread (post from other threads through a `relay`).
   - `with_token(task, tokens...)` races a task against one or more tokens.
