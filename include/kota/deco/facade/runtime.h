@@ -651,17 +651,18 @@ std::expected<Invocation<T>, ParseError>
     return res;
 }
 
-/// Calls a handler and returns the exit code it gives: its int, or 0 when it returns nothing.
-template <typename Call>
-int exit_code_of(Call&& call) {
-    using result_t = std::invoke_result_t<Call&>;
+/// Calls `handler` with `args` and returns the exit code it gives: its int, or 0 when it
+/// returns nothing.
+template <typename Handler, typename... Args>
+int exit_code_of(Handler& handler, Args&&... args) {
+    using result_t = std::invoke_result_t<Handler&, Args...>;
     if constexpr(std::is_void_v<result_t>) {
-        call();
+        std::invoke(handler, std::forward<Args>(args)...);
         return 0;
     } else {
         static_assert(std::same_as<result_t, int>,
                       "A handler returns nothing, or an int that is the exit code.");
-        return call();
+        return std::invoke(handler, std::forward<Args>(args)...);
     }
 }
 
@@ -776,21 +777,21 @@ class Command {
     template <typename Handler>
     static auto adapt_match_handler(Handler&& handler) -> match_handler_t {
         using HandlerTy = std::remove_cvref_t<Handler>;
-        return match_handler_t([handler = std::forward<Handler>(handler)](
-                                   invocation_t& invocation) mutable -> int {
-            if constexpr(std::is_invocable_v<HandlerTy&, T>) {
-                return detail::exit_code_of([&] { return handler(std::move(invocation.options)); });
-            } else if constexpr(std::is_invocable_v<HandlerTy&, invocation_t>) {
-                return detail::exit_code_of([&] { return handler(std::move(invocation)); });
-            } else if constexpr(std::is_invocable_v<HandlerTy&, invocation_t&>) {
-                return detail::exit_code_of([&] { return handler(invocation); });
-            } else if constexpr(std::is_invocable_v<HandlerTy&, const invocation_t&>) {
-                return detail::exit_code_of([&] { return handler(invocation); });
-            } else {
-                static_assert(kota::dependent_false<HandlerTy>,
-                              "Command match handler must accept T or Invocation<T>.");
-            }
-        });
+        return match_handler_t(
+            [handler = std::forward<Handler>(handler)](invocation_t& invocation) mutable -> int {
+                if constexpr(std::is_invocable_v<HandlerTy&, T>) {
+                    return detail::exit_code_of(handler, std::move(invocation.options));
+                } else if constexpr(std::is_invocable_v<HandlerTy&, invocation_t>) {
+                    return detail::exit_code_of(handler, std::move(invocation));
+                } else if constexpr(std::is_invocable_v<HandlerTy&, invocation_t&>) {
+                    return detail::exit_code_of(handler, invocation);
+                } else if constexpr(std::is_invocable_v<HandlerTy&, const invocation_t&>) {
+                    return detail::exit_code_of(handler, invocation);
+                } else {
+                    static_assert(kota::dependent_false<HandlerTy>,
+                                  "Command match handler must accept T or Invocation<T>.");
+                }
+            });
     }
 
     static auto default_command_name(std::string_view overview) -> std::string {
@@ -1057,11 +1058,11 @@ class SubCommander {
         return handler_fn_t(
             [handler = std::forward<Handler>(handler)](match_t match) mutable -> int {
                 if constexpr(std::is_invocable_v<HandlerTy&, std::span<std::string>>) {
-                    return detail::exit_code_of([&] { return handler(match.args()); });
+                    return detail::exit_code_of(handler, match.args());
                 } else if constexpr(std::is_invocable_v<HandlerTy&, match_t>) {
-                    return detail::exit_code_of([&] { return handler(std::move(match)); });
+                    return detail::exit_code_of(handler, std::move(match));
                 } else if constexpr(std::is_invocable_v<HandlerTy&, const match_t&>) {
-                    return detail::exit_code_of([&] { return handler(match); });
+                    return detail::exit_code_of(handler, match);
                 } else {
                     static_assert(kota::dependent_false<HandlerTy>,
                                   "SubCommander handler must accept std::span<std::string> or "
