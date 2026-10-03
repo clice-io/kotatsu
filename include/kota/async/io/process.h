@@ -123,12 +123,15 @@ public:
         std::vector<std::string> env;
 
         /// Variables in `KEY=VALUE` form set over the environment the child
-        /// would get, `env` or else the inherited one, each replacing the
-        /// variable of its name. On Windows names match whatever their case.
+        /// would get, `env` or else the inherited one, in order: each
+        /// replaces the variable of its name, one set by an earlier entry
+        /// too. On Windows names match whatever their case.
         std::vector<std::string> env_set;
 
         /// Names of variables removed from that environment before env_set
-        /// applies.
+        /// applies. On Windows libuv puts back the variables a process needs
+        /// (PATH, SYSTEMROOT, SYSTEMDRIVE, TEMP, USERPROFILE, WINDIR and a few
+        /// more) when they are missing, so removing those does nothing there.
         std::vector<std::string> env_unset;
 
         /// Working directory; empty means inherit.
@@ -152,8 +155,10 @@ public:
     /// Runs the child `opts` describes to its end, with its stdout and stderr
     /// piped whatever `opts.streams` says for them, and gives how it ended and
     /// all it wrote to each. The pipes are read while the child runs, so a
-    /// child that fills one does not stall. A read that fails, or a cancel,
-    /// leaves the child running, as destroying a process does.
+    /// child that fills one does not stall. The child reads no stdin of this
+    /// process's: an inherited stdin becomes the null device, and a stdin
+    /// pipe ends at once; a descriptor `opts` gives stays. A read that fails,
+    /// or a cancel, leaves the child running, as destroying a process does.
     static task<capture_result, error> capture(options opts,
                                                event_loop& loop = event_loop::current());
 

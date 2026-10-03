@@ -4,8 +4,9 @@
 // TempDir, read_file() and write_file(), stdin_reader() for a child that
 // runs until its stdin closes and exit_status_of() for how it ended,
 // EnvironmentVariable to set one of this process's, create_pipe(),
-// close_fd() and write_fd() on raw descriptors, and BusyPool, which holds
-// libuv's thread pool busy.
+// close_fd() and write_fd() on raw descriptors, StdinFrom to point this
+// process's stdin elsewhere, and BusyPool, which holds libuv's thread pool
+// busy.
 
 #include <algorithm>
 #include <atomic>
@@ -160,6 +161,44 @@ inline ssize_t write_fd(int fd, const char* data, std::size_t len) {
     return ::write(fd, data, len);
 }
 #endif
+
+/// Points this process's stdin, which children inherit, at `fd`, which it
+/// takes, until it goes; then back at what it was.
+struct StdinFrom {
+    explicit StdinFrom(int fd) : saved(duplicate(0)) {
+        point_stdin_at(fd);
+        close_fd(fd);
+    }
+
+    StdinFrom(const StdinFrom&) = delete;
+    StdinFrom& operator=(const StdinFrom&) = delete;
+
+    ~StdinFrom() {
+        point_stdin_at(saved);
+        close_fd(saved);
+    }
+
+    const int saved;
+
+private:
+#ifdef _WIN32
+    static int duplicate(int fd) {
+        return _dup(fd);
+    }
+
+    static void point_stdin_at(int fd) {
+        _dup2(fd, 0);
+    }
+#else
+    static int duplicate(int fd) {
+        return ::dup(fd);
+    }
+
+    static void point_stdin_at(int fd) {
+        ::dup2(fd, 0);
+    }
+#endif
+};
 
 /// Keeps every thread of libuv's pool busy until release(), so that work
 /// queued meanwhile stays in the queue, where cancelling it dequeues it.

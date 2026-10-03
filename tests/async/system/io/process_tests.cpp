@@ -173,10 +173,48 @@ ZEST_CASE(capture_gives_the_status_and_what_the_child_wrote) {
     EXPECT(trim_newlines(captured->stderr_text) == "err");
 }
 
+// What `opts.streams` says for stdout and stderr does not matter: capture()
+// pipes both.
+ZEST_CASE(capture_pipes_stdout_and_stderr_whatever_the_options_say) {
+    auto opts = shell(by_platform("printf out; printf err 1>&2", "echo out& 1>&2 echo err"));
+    opts.streams[1] = process::stdio::inherit();
+    opts.streams[2] = process::stdio::ignore();
+
+    auto [captured] = run(process::capture(opts, loop));
+    ASSERT(captured.has_value());
+    EXPECT(captured->status.success());
+    EXPECT(trim_newlines(captured->stdout_text) == "out");
+    EXPECT(trim_newlines(captured->stderr_text) == "err");
+}
+
+// The test's own stdin holds a line while capture() runs children that copy
+// their stdin to their stdout: one inheriting stdin reads none of it, and
+// one given a stdin pipe reads its end at once, so both end with nothing.
+ZEST_CASE(capture_gives_the_child_no_stdin) {
+    int fds[2] = {-1, -1};
+    ASSERT(test::create_pipe(fds) == 0);
+    ASSERT(test::write_fd(fds[1], "parent-stdin\n", 13) == 13);
+    test::close_fd(fds[1]);
+    test::StdinFrom held(fds[0]);
+    auto inherited = test::stdin_reader();
+    inherited.streams[0] = process::stdio::inherit();
+
+    auto [from_inherited, from_pipe] =
+        run(process::capture(inherited, loop), process::capture(test::stdin_reader(), loop));
+    ASSERT(from_inherited.has_value());
+    EXPECT(from_inherited->status.success());
+    EXPECT(trim_newlines(from_inherited->stdout_text).empty());
+    ASSERT(from_pipe.has_value());
+    EXPECT(from_pipe->status.success());
+    EXPECT(trim_newlines(from_pipe->stdout_text).empty());
+}
+
+// Windows has no program at hand that writes this much quickly: cmd would
+// echo it a line at a time, and the async tests build no helper program to
+// spawn.
 #ifndef _WIN32
 // The child writes more to stderr than a pipe holds, then to stdout: it ends
-// only because both pipes are read while it runs. cmd has no quick way to
-// write that much.
+// only because both pipes are read while it runs.
 ZEST_CASE(capture_reads_both_pipes_while_the_child_runs) {
     auto opts = shell(R"(head -c 300000 /dev/zero | tr '\0' e 1>&2; )"
                       R"(head -c 300000 /dev/zero | tr '\0' o)");
@@ -211,6 +249,16 @@ ZEST_CASE(env_set_and_env_unset_apply_over_env) {
     EXPECT(values_of(printed, "KOTA_REPLACED") == std::vector<std::string>{"new"});
     EXPECT(values_of(printed, "KOTA_ADDED") == std::vector<std::string>{"added"});
     EXPECT(values_of(printed, "KOTA_DROPPED").empty());
+}
+
+ZEST_CASE(later_env_set_entry_replaces_an_earlier_one_of_its_name) {
+    auto opts = environment_printer();
+    opts.env = {"KOTA_KEPT=kept"};
+    opts.env_set = {"KOTA_TWICE=1", "KOTA_TWICE=2"};
+
+    auto [captured] = run(process::capture(opts, loop));
+    ASSERT(captured.has_value());
+    EXPECT(values_of(captured->stdout_text, "KOTA_TWICE") == std::vector<std::string>{"2"});
 }
 
 ZEST_CASE(env_set_and_env_unset_apply_over_the_inherited_environment) {

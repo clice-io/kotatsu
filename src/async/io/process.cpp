@@ -1,6 +1,5 @@
 #include "kota/async/io/process.h"
 
-#include <algorithm>
 #include <csignal>
 #include <cstdint>
 #include <cstring>
@@ -69,17 +68,24 @@ bool same_name(std::string_view lhs, std::string_view rhs) {
 
 /// This process's environment, in `NAME=VALUE` form.
 result<std::vector<std::string>> inherited_environment() {
-    uv_env_item_t* items = nullptr;
-    int count = 0;
-    if(auto err = error(::uv_os_environ(&items, &count))) {
+    // Freed on every way out; a failed uv_os_environ() leaves it empty.
+    struct Listed {
+        uv_env_item_t* items = nullptr;
+        int count = 0;
+
+        ~Listed() {
+            ::uv_os_free_environ(items, count);
+        }
+    } listed;
+
+    if(auto err = error(::uv_os_environ(&listed.items, &listed.count))) {
         return outcome_error(err);
     }
     std::vector<std::string> env;
-    env.reserve(static_cast<std::size_t>(count));
-    for(const auto& item: std::span(items, static_cast<std::size_t>(count))) {
+    env.reserve(static_cast<std::size_t>(listed.count));
+    for(const auto& item: std::span(listed.items, static_cast<std::size_t>(listed.count))) {
         env.push_back(std::format("{}={}", item.name, item.value));
     }
-    ::uv_os_free_environ(items, count);
     return env;
 }
 
@@ -102,14 +108,18 @@ result<std::optional<std::vector<std::string>>> child_environment(const process:
     } else {
         env = opts.env;
     }
-    std::erase_if(env, [&](const std::string& entry) {
-        auto replaced = [&](std::string_view other) {
-            return same_name(name_of(entry), name_of(other));
-        };
-        return std::ranges::any_of(opts.env_unset, replaced) ||
-               std::ranges::any_of(opts.env_set, replaced);
-    });
-    env.insert(env.end(), opts.env_set.begin(), opts.env_set.end());
+    auto remove = [&](std::string_view name) {
+        std::erase_if(env,
+                      [&](const std::string& entry) { return same_name(name_of(entry), name); });
+    };
+    for(const auto& name: opts.env_unset) {
+        remove(name);
+    }
+    // In order: a later entry replaces an earlier one of its name.
+    for(const auto& entry: opts.env_set) {
+        remove(name_of(entry));
+        env.push_back(entry);
+    }
     return env;
 }
 
@@ -269,9 +279,14 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
 }
 
 task<process::capture_result, error> process::capture(options opts, event_loop& loop) {
+    if(opts.streams[0].type == stdio::kind::inherit) {
+        opts.streams[0] = stdio::ignore();
+    }
     opts.streams[1] = stdio::pipe(false, true);
     opts.streams[2] = stdio::pipe(false, true);
     auto spawned = co_await or_fail(spawn(opts, loop));
+    // The child reads the end of a stdin pipe at once.
+    spawned.stdin_pipe = pipe{};
     // A child blocks on a full pipe until it is read, so both are read while
     // it runs.
     auto [stdout_text, stderr_text, status] =
