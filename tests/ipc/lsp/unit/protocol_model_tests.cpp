@@ -311,6 +311,52 @@ ZEST_CASE(optional_nullable_member_roundtrips_through_bincode) {
     }
 }
 
+// Diagnostics through bincode, each with its LSPAny `data` next to other
+// optional members, some set and some left out: `data` absent, null and an
+// object each read back as they were.
+ZEST_CASE(diagnostic_data_roundtrips_through_bincode) {
+    using Data = protocol::optional_nullable<protocol::LSPAny>;
+    std::vector<protocol::Diagnostic> diagnostics;
+    for(auto data: {Data{},
+                    Data{protocol::LSPAny{}},
+                    Data{protocol::LSPAny{
+                        {"fix", "remove"},
+                        {"index", 3},
+                    }}}) {
+        diagnostics.push_back(protocol::Diagnostic{
+            .range = {.start = {.line = 3, .character = 4}, .end = {.line = 3, .character = 9}},
+            .severity = protocol::DiagnosticSeverity::Warning,
+            .code = "unused-variable",
+            .source = "clang",
+            .message = "unused variable 'x'",
+            .tags = std::vector{protocol::DiagnosticTag::Unnecessary},
+            .data = std::move(data),
+        });
+    }
+
+    auto bytes = codec::bincode::to_bytes(diagnostics);
+    ASSERT(bytes);
+    std::vector<protocol::Diagnostic> back;
+    ASSERT(codec::bincode::from_bytes(std::span<const std::byte>(*bytes), back));
+    ASSERT(back.size() == diagnostics.size());
+    // The generated structures have no operator==, and meta cannot compare
+    // their optional members: each member is compared on its own.
+    for(std::size_t i = 0; i < back.size(); ++i) {
+        ZEST_CONTEXT("diagnostic {}", i);
+        EXPECT((back[i].data == diagnostics[i].data));
+        EXPECT(back[i].range == diagnostics[i].range);
+        EXPECT((back[i].severity == diagnostics[i].severity));
+        EXPECT((back[i].code == diagnostics[i].code));
+        EXPECT(!back[i].code_description.has_value());
+        EXPECT((back[i].source == diagnostics[i].source));
+        const auto* message = std::get_if<std::string>(&back[i].message);
+        ASSERT(message != nullptr);
+        EXPECT(*message == "unused variable 'x'");
+        EXPECT((back[i].tags == diagnostics[i].tags));
+        EXPECT(!back[i].related_information.has_value());
+    }
+}
+
 // dyn has no format of its own: a present null stays present through it.
 ZEST_CASE(optional_nullable_member_roundtrips_through_dyn) {
     for(auto active: {protocol::optional_nullable<protocol::nullable<protocol::uinteger>>{},
