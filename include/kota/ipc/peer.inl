@@ -662,6 +662,9 @@ Peer<CodecT>::Peer(event_loop& loop, std::unique_ptr<Transport> transport, Codec
 template <typename CodecT>
 Peer<CodecT>::~Peer() {
     assert(!self->running && "Peer destroyed while its run() runs: destroy it once run() returned");
+    // Requests sent while run() never ran. Their waits go on after the peer,
+    // and touch it only while no response is in.
+    self->fail_pending_requests(Error(protocol::ErrorCode::ConnectionClosed, "peer destroyed"));
 }
 
 template <typename CodecT>

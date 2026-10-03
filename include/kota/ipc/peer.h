@@ -102,6 +102,8 @@ public:
     Peer& operator=(Peer&&) = delete;
 
     /// run(), if it was called, has returned: the Peer must outlive it.
+    /// Requests still pending, sent while run() never ran, fail with
+    /// ConnectionClosed.
     ~Peer();
 
     /// Reads and dispatches messages and writes what is sent, until the input

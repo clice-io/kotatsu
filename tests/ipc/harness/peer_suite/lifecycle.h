@@ -4,6 +4,7 @@
 // outside cancellation), what becomes of pending requests and running
 // handlers, and what close_output() leaves open.
 
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -440,8 +441,35 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         EXPECT(remote.closed());
     });
 
+    // A request sent while run() never runs is pending when the peer goes:
+    // it fails, and neither its token firing nor its timeout touches the
+    // peer after.
+    kit.add_case("peer_destroyed_without_running_fails_pending_requests", [] {
+        zest::LoopFixture f;
+        Remote remote;
+        auto peer = std::make_unique<typename Fixture::Peer>(f.loop, remote.transport());
+        cancellation_source source;
+        auto ask = [&]() -> task<ipc::Error> {
+            auto asked = co_await peer->send_request(
+                AddParams{},
+                {.token = source.token(), .timeout = std::chrono::milliseconds(10)});
+            co_return asked.has_error() ? asked.error() : ipc::Error("no error");
+        };
+        auto drop = [&]() -> task<> {
+            peer.reset();
+            source.cancel();
+            co_return;
+        };
+
+        auto [asked, dropped] = f.run(ask(), drop());
+        ASSERT(asked.has_value());
+        EXPECT(code_of(*asked) == ErrorCode::ConnectionClosed);
+        EXPECT(asked->message == "peer destroyed");
+    });
+
 #if KOTA_ENABLE_EXCEPTIONS
-    // The same, with run() ended by what its logger throws.
+    // The owner lets the peer go as soon as run() returns, here ended by what
+    // its logger throws.
     kit.add_case("peer_destroyed_once_a_throwing_run_returns", [] {
         zest::LoopFixture f;
         Remote remote;
