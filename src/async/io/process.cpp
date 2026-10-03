@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "stream_self.h"
+#include "kota/async/runtime/when.h"
 
 namespace kota {
 
@@ -195,6 +196,23 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
         .stdin_pipe = std::move(pipes[0]),
         .stdout_pipe = std::move(pipes[1]),
         .stderr_pipe = std::move(pipes[2]),
+    };
+}
+
+task<process::capture_result, error> process::capture(options opts, event_loop& loop) {
+    opts.streams[1] = stdio::pipe(false, true);
+    opts.streams[2] = stdio::pipe(false, true);
+    auto spawned = co_await or_fail(spawn(opts, loop));
+    // A child blocks on a full pipe until it is read, so both are read while
+    // it runs.
+    auto [stdout_text, stderr_text, status] =
+        co_await or_fail(co_await when_all(spawned.stdout_pipe.read_to_end(),
+                                           spawned.stderr_pipe.read_to_end(),
+                                           spawned.proc.wait()));
+    co_return capture_result{
+        .status = status,
+        .stdout_text = std::move(stdout_text),
+        .stderr_text = std::move(stderr_text),
     };
 }
 

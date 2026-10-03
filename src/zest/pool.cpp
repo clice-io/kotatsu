@@ -60,23 +60,16 @@ struct Worker {
     pipe channel;
     /// The worker's stdout and stderr, its own file for its whole life.
     stdfs::path log;
-    /// Bytes read from the channel past the last complete line.
-    std::string pending = {};
     /// Log bytes already handed out.
     std::uintmax_t offset = 0;
 
     /// The next line from the worker, or nothing once its end closes.
     task<std::optional<std::string>> read_line() {
-        while(true) {
-            if(auto line = protocol::take_line(pending)) {
-                co_return line;
-            }
-            auto data = co_await channel.read();
-            if(!data.has_value()) {
-                co_return std::nullopt;
-            }
-            pending += *data;
+        auto line = co_await channel.read_line();
+        if(!line) {
+            co_return std::nullopt;
         }
+        co_return std::move(*line);
     }
 
     /// The state reported for the running test, counting the snapshots it

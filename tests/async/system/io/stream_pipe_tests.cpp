@@ -64,7 +64,17 @@ result<Ends> pipe_ends(event_loop& loop) {
     return Ends{.reader = std::move(*reader), .writer = std::move(*writer)};
 }
 
-using test::read_to_end;
+/// Every line `reader` reads, until read_line() fails, and how it failed.
+task<std::pair<std::vector<std::string>, error>> read_lines(stream& reader) {
+    std::vector<std::string> lines;
+    while(true) {
+        auto line = co_await reader.read_line();
+        if(!line) {
+            co_return std::pair{std::move(lines), line.error()};
+        }
+        lines.push_back(std::move(*line));
+    }
+}
 
 ZEST_SUITE(async_io_stream_pipe, test::LoopFixture) {
 
@@ -316,6 +326,81 @@ ZEST_CASE(full_buffer_holds_the_rest_back_until_drained) {
     EXPECT(received->second == sent);
 }
 
+ZEST_CASE(read_to_end_reads_past_a_full_buffer) {
+    auto ends = pipe_ends(loop);
+    ASSERT(ends.has_value());
+    std::string sent(1024 * 1024, '\0');
+    for(std::size_t i = 0; i < sent.size(); ++i) {
+        sent[i] = static_cast<char>('a' + i % 26);
+    }
+    auto send = [&]() -> task<void, error> {
+        co_await ends->writer.write(sent).or_fail();
+        ends->writer = pipe{};
+    };
+
+    auto [sent_all, received] = run(send(), ends->reader.read_to_end());
+    EXPECT(sent_all.has_value());
+    ASSERT(received.has_value());
+    EXPECT(*received == sent);
+}
+
+ZEST_CASE(read_to_end_of_an_empty_stream_gives_nothing) {
+    auto reader = pipe_holding("", loop);
+    ASSERT(reader.has_value());
+
+    auto [received] = run(reader->read_to_end());
+    ASSERT(received.has_value());
+    EXPECT(received->empty());
+}
+
+// A line ends at '\n', and at "\r\n"; the last one may have neither.
+ZEST_CASE(read_line_gives_each_line_without_its_end) {
+    auto reader = pipe_holding("first\nsecond\r\n\nlast", loop);
+    ASSERT(reader.has_value());
+
+    auto [result] = run(read_lines(*reader));
+    ASSERT(result.has_value());
+    EXPECT(result->first == std::vector<std::string>{"first", "second", "", "last"});
+    EXPECT(result->second == error::end_of_file);
+}
+
+// However the pieces arrive, a line is whole, and a '\r' that comes apart
+// from its '\n' still goes.
+ZEST_CASE(read_line_joins_a_line_written_in_pieces) {
+    auto ends = pipe_ends(loop);
+    ASSERT(ends.has_value());
+    auto send = [&]() -> task<void, error> {
+        for(std::string_view piece: {"par", "tial\r", "\nnext\n"}) {
+            co_await ends->writer.write(piece).or_fail();
+            co_await yield();
+        }
+        ends->writer = pipe{};
+    };
+
+    auto [sent, result] = run(send(), read_lines(ends->reader));
+    EXPECT(sent.has_value());
+    ASSERT(result.has_value());
+    EXPECT(result->first == std::vector<std::string>{"partial", "next"});
+    EXPECT(result->second == error::end_of_file);
+}
+
+// A line longer than the stream's buffer is read as the buffer drains.
+ZEST_CASE(read_line_reads_a_line_longer_than_the_buffer) {
+    auto ends = pipe_ends(loop);
+    ASSERT(ends.has_value());
+    const std::string longest(200 * 1024, 'x');
+    auto send = [&]() -> task<void, error> {
+        co_await ends->writer.write(longest + "\nshort\n").or_fail();
+        ends->writer = pipe{};
+    };
+
+    auto [sent, result] = run(send(), read_lines(ends->reader));
+    EXPECT(sent.has_value());
+    ASSERT(result.has_value());
+    EXPECT(result->first == std::vector<std::string>{longest, "short"});
+    EXPECT(result->second == error::end_of_file);
+}
+
 ZEST_CASE(second_read_while_one_is_pending_fails) {
     auto ends = pipe_ends(loop);
     ASSERT(ends.has_value());
@@ -354,7 +439,7 @@ ZEST_CASE(write_reaches_the_reader) {
         ends->writer = pipe{};
     };
 
-    auto [sent, received] = run(send(), read_to_end(ends->reader));
+    auto [sent, received] = run(send(), ends->reader.read_to_end());
     EXPECT(sent.has_value());
     ASSERT(received.has_value());
     EXPECT(*received == "kotatsu-write");
@@ -372,7 +457,7 @@ ZEST_CASE(overlapping_writes_arrive_in_order) {
         ends->writer = pipe{};
     };
 
-    auto [sent, received] = run(send(), read_to_end(ends->reader));
+    auto [sent, received] = run(send(), ends->reader.read_to_end());
     EXPECT(sent.has_value());
     ASSERT(received.has_value());
     EXPECT(*received == first + second);
@@ -484,13 +569,20 @@ ZEST_CASE(inert_stream_fails) {
     pipe inert;
     std::array<char, 8> buffer{};
 
-    auto [read, read_some, chunk, written, shut] = run(inert.read(),
-                                                       inert.read_some(buffer),
-                                                       inert.read_chunk(),
-                                                       inert.write(std::string_view("x")),
-                                                       inert.shutdown());
+    auto [read, read_some, chunk, to_end, line, written, shut] =
+        run(inert.read(),
+            inert.read_some(buffer),
+            inert.read_chunk(),
+            inert.read_to_end(),
+            inert.read_line(),
+            inert.write(std::string_view("x")),
+            inert.shutdown());
     ASSERT(read.has_error());
     EXPECT(read.error() == error::invalid_argument);
+    ASSERT(to_end.has_error());
+    EXPECT(to_end.error() == error::invalid_argument);
+    ASSERT(line.has_error());
+    EXPECT(line.error() == error::invalid_argument);
     ASSERT(read_some.has_error());
     EXPECT(read_some.error() == error::invalid_argument);
     ASSERT(chunk.has_error());
@@ -754,14 +846,14 @@ ZEST_CASE(shutdown_lets_the_peer_read_to_the_end) {
     ASSERT(listener.has_value());
     auto serve = [&]() -> task<std::string, error> {
         auto connection = co_await listener->accept().or_fail();
-        co_return co_await read_to_end(connection).or_fail();
+        co_return co_await connection.read_to_end().or_fail();
     };
     auto client = [&]() -> task<std::string, error> {
         auto connection = co_await pipe::connect(name, loop).or_fail();
         co_await or_fail(co_await when_all(connection.write(std::string_view("first")),
                                            connection.write(std::string_view("second")),
                                            connection.shutdown()));
-        co_return co_await read_to_end(connection).or_fail();
+        co_return co_await connection.read_to_end().or_fail();
     };
 
     auto [served, left] = run(serve(), client());
@@ -782,14 +874,14 @@ ZEST_CASE(shutdown_leaves_the_peer_free_to_answer) {
     ASSERT(listener.has_value());
     auto serve = [&]() -> task<void, error> {
         auto connection = co_await listener->accept().or_fail();
-        auto request = co_await read_to_end(connection).or_fail();
+        auto request = co_await connection.read_to_end().or_fail();
         co_await connection.write(request + "-answered").or_fail();
     };
     auto client = [&]() -> task<std::string, error> {
         auto connection = co_await pipe::connect(name, loop).or_fail();
         co_await connection.write(std::string_view("asked")).or_fail();
         co_await connection.shutdown().or_fail();
-        co_return co_await read_to_end(connection).or_fail();
+        co_return co_await connection.read_to_end().or_fail();
     };
 
     auto [served, answer] = run(serve(), client());

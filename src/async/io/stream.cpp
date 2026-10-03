@@ -168,6 +168,52 @@ void stream::consume(std::size_t n) {
     }
 }
 
+task<std::string, error> stream::read_to_end() {
+    if(!self) {
+        co_await fail(error::invalid_argument);
+    }
+
+    std::string all;
+    while(true) {
+        if(auto err = co_await self->fill()) {
+            if(err == error::end_of_file) {
+                co_return all;
+            }
+            co_await fail(err);
+        }
+        auto chunk = self->buffer.readable();
+        all.append(chunk.begin(), chunk.end());
+        self->buffer.consume(chunk.size());
+    }
+}
+
+task<std::string, error> stream::read_line() {
+    if(!self) {
+        co_await fail(error::invalid_argument);
+    }
+
+    std::string line;
+    while(true) {
+        if(auto err = co_await self->fill()) {
+            if(err == error::end_of_file && !line.empty()) {
+                co_return line;
+            }
+            co_await fail(err);
+        }
+        auto chunk = self->buffer.readable();
+        auto newline = std::ranges::find(chunk, '\n');
+        line.append(chunk.begin(), newline);
+        if(newline != chunk.end()) {
+            self->buffer.consume(static_cast<std::size_t>(newline - chunk.begin()) + 1);
+            if(line.ends_with('\r')) {
+                line.pop_back();
+            }
+            co_return line;
+        }
+        self->buffer.consume(chunk.size());
+    }
+}
+
 error stream::stop() {
     if(!self) {
         return error::invalid_argument;

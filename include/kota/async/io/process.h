@@ -138,6 +138,16 @@ public:
     static result<spawn_result> spawn(const options& opts,
                                       event_loop& loop = event_loop::current());
 
+    struct capture_result;
+
+    /// Runs the child `opts` describes to its end, with its stdout and stderr
+    /// piped whatever `opts.streams` says for them, and gives how it ended and
+    /// all it wrote to each. The pipes are read while the child runs, so a
+    /// child that fills one does not stall. A read that fails, or a cancel,
+    /// leaves the child running, as destroying a process does.
+    static task<capture_result, error> capture(options opts,
+                                               event_loop& loop = event_loop::current());
+
     /// Waits for the child to exit.
     task<exit_status, error> wait();
 
@@ -171,6 +181,15 @@ struct process::spawn_result {
     pipe stdout_pipe;
 
     pipe stderr_pipe;
+};
+
+/// How a child that process::capture() ran ended, and what it wrote.
+struct process::capture_result {
+    exit_status status;
+
+    std::string stdout_text;
+
+    std::string stderr_text;
 };
 
 }  // namespace kota

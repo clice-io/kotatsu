@@ -130,6 +130,44 @@ ZEST_CASE(stdin_pipe_feeds_the_child) {
     EXPECT(test::exit_status_of(status) == 0);
 }
 
+// cmd reads a digit before > as the handle to redirect, so the redirection
+// goes first.
+ZEST_CASE(capture_gives_the_status_and_what_the_child_wrote) {
+    auto opts = shell(
+        by_platform("printf out; printf err 1>&2; exit 3", "echo out& 1>&2 echo err& exit 3"));
+
+    auto [captured] = run(process::capture(opts, loop));
+    ASSERT(captured.has_value());
+    EXPECT(captured->status.status == 3);
+    EXPECT(trim_newlines(captured->stdout_text) == "out");
+    EXPECT(trim_newlines(captured->stderr_text) == "err");
+}
+
+#ifndef _WIN32
+// The child writes more to stderr than a pipe holds, then to stdout: it ends
+// only because both pipes are read while it runs. cmd has no quick way to
+// write that much.
+ZEST_CASE(capture_reads_both_pipes_while_the_child_runs) {
+    auto opts = shell(R"(head -c 300000 /dev/zero | tr '\0' e 1>&2; )"
+                      R"(head -c 300000 /dev/zero | tr '\0' o)");
+
+    auto [captured] = run(process::capture(opts, loop));
+    ASSERT(captured.has_value());
+    EXPECT(captured->status.success());
+    EXPECT(captured->stdout_text == std::string(300000, 'o'));
+    EXPECT(captured->stderr_text == std::string(300000, 'e'));
+}
+#endif
+
+ZEST_CASE(capture_of_a_missing_file_fails) {
+    process::options opts;
+    opts.file = by_platform("/nonexistent/kotatsu-nope", R"(Z:\nonexistent\kotatsu-nope.exe)");
+
+    auto [captured] = run(process::capture(opts, loop));
+    ASSERT(captured.has_error());
+    EXPECT(captured.error() == error::no_such_file_or_directory);
+}
+
 ZEST_CASE(stdout_goes_to_a_given_descriptor) {
     test::TempDir dir;
     auto path = dir.file("stdout.txt");
