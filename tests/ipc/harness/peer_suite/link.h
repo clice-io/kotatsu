@@ -86,7 +86,7 @@ void peer_link(const PeerKit<A>& kit) {
     });
 
     // b's handler sees its cancellation arrive, which shows the
-    // $/cancelRequest crossed, before the script closes both.
+    // $/cancelRequest crossed, and a's request ends with b's answer.
     kit.add_case("cancellation_crosses_between_peers", [] {
         Peers f;
         event started;
@@ -101,21 +101,22 @@ void peer_link(const PeerKit<A>& kit) {
             co_return AddResult{};
         });
         cancellation_source source;
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
-            co_return co_await f.a.send_request(AddParams{}, {.token = source.token()}).or_fail();
+        auto ask = [&]() -> task<ipc::Error> {
+            auto result = co_await f.a.send_request(AddParams{}, {.token = source.token()});
+            f.a.close();
+            f.b.close();
+            co_return result.has_error() ? result.error() : ipc::Error("no error");
         };
         auto script = [&]() -> task<> {
             co_await started.wait();
             source.cancel();
-            co_await cancelled.wait();
-            f.a.close();
-            f.b.close();
         };
 
-        auto [asked, scripted] = f.run_with(ask(), script());
+        auto [failure, scripted] = f.run_with(ask(), script());
         EXPECT(scripted.has_value());
-        ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::RequestCancelled);
+        EXPECT(cancelled.is_set());
+        ASSERT(failure.has_value());
+        EXPECT(code_of(*failure) == ErrorCode::RequestCancelled);
     });
 }
 

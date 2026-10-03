@@ -50,10 +50,16 @@ template <typename Params, typename ResultT = typename protocol::RequestTraits<P
 using RequestResult = task<ResultT, Error>;
 
 struct request_options {
-    /// Cancels the request: it fails with RequestCancelled and the remote is
-    /// sent $/cancelRequest.
-    std::optional<cancellation_token> token = std::nullopt;
-    /// Cancels the request the same way once it has waited this long.
+    /// Once it fires, the remote is sent $/cancelRequest, and the request
+    /// ends with the remote's answer: usually RequestCancelled, or the result
+    /// it had already. A cancel of the task awaiting the request does the
+    /// same, and that task ends cancelled once the answer is in. A remote
+    /// that never answers keeps the request waiting until the connection
+    /// closes or the timeout passes.
+    cancellation_token token = {};
+    /// Ends the request with RequestCancelled once it has waited this long,
+    /// a cancel or not, and sends the remote $/cancelRequest; it counts from
+    /// the send, and ends a request while run() runs.
     std::optional<std::chrono::milliseconds> timeout = std::nullopt;
 };
 
@@ -82,7 +88,10 @@ public:
 
     /// Reads and dispatches messages and writes what is sent, until the input
     /// ends and every handler has finished, or until close(). Every pending
-    /// request has failed by the time it returns. Called once.
+    /// request has failed by the time it returns. Called once. The Peer must
+    /// outlive it: destroying the Peer before run() has ended is undefined,
+    /// and a debug build asserts. A request still pending when the Peer goes
+    /// fails with ConnectionClosed.
     task<> run();
 
     /// Shuts the peer down: cancels the running handlers, fails pending

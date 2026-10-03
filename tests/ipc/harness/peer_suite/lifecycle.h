@@ -4,6 +4,7 @@
 // outside cancellation), what becomes of pending requests and running
 // handlers, and what close_output() leaves open.
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -106,6 +107,26 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         auto [ran] = f.run(f.peer.run());
         EXPECT(ran.has_value());
         EXPECT(f.remote.closed());
+    });
+
+    // A request sent before run() fails when its Peer goes first; nothing of
+    // the Peer is touched after.
+    kit.add("peer_destroyed_before_run_fails_its_pending_requests", [](Fixture& f) {
+        Remote other_remote;
+        auto other = std::make_unique<typename Fixture::Peer>(f.loop, other_remote.transport());
+        auto ask = [&]() -> task<AddResult, ipc::Error> {
+            co_return co_await other->send_request(AddParams{}).or_fail();
+        };
+        auto destroy = [&]() -> task<> {
+            co_await yield();
+            other.reset();
+        };
+
+        auto [asked, destroyed] = f.run(ask(), destroy());
+        EXPECT(destroyed.has_value());
+        ASSERT(asked.has_error());
+        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
+        EXPECT(asked.error().message == "peer destroyed");
     });
 
     kit.add("close_fails_pending_requests", [](Fixture& f) {

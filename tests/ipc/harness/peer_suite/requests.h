@@ -5,6 +5,7 @@
 
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "ipc/harness/peer_fixture.h"
 #include "kota/zest/zest.h"
@@ -101,6 +102,29 @@ void peer_requests(const PeerKit<A>& kit) {
         EXPECT(code_of(answered.error()) == ErrorCode::RequestFailed);
         ASSERT(after.has_error());
         EXPECT(code_of(after.error()) == ErrorCode::ConnectionClosed);
+    });
+
+    // An answer resumes its requester once what was read with it is
+    // dispatched, never inside the read loop.
+    kit.add("answer_resumes_its_requester_after_the_messages_read_with_it", [](Fixture& f) {
+        std::vector<std::string> order;
+        f.peer.on_notification([&](const NoteParams& params) { order.push_back(params.text); });
+        auto ask = [&]() -> task<AddResult, ipc::Error> {
+            auto result = co_await f.peer.send_request(AddParams{}).or_fail();
+            order.emplace_back("answered");
+            co_return result;
+        };
+        auto remote = [&]() -> task<> {
+            co_await f.next();
+            f.remote.send(response<A>(1, AddResult{.sum = 1}));
+            f.remote.send(notification<A>("test/note", NoteParams{.text = "note"}));
+            f.remote.end_input();
+        };
+
+        auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
+        EXPECT(ran.has_value());
+        EXPECT(asked.has_value());
+        EXPECT(order == std::vector<std::string>{"note", "answered"});
     });
 
     kit.add("send_request_ids_count_up_from_one", [](Fixture& f) {

@@ -75,25 +75,60 @@ void peer_timeout(const PeerKit<A>& kit) {
         EXPECT(asked->sum == 5);
     });
 
-    kit.add("token_before_the_timeout_reports_cancelled", [](Fixture& f) {
+    // A cancelled request goes on waiting for its answer, but no longer than
+    // its timeout: the remote is told once.
+    kit.add("timeout_ends_a_cancelled_request_the_remote_never_answers", [](Fixture& f) {
         cancellation_source source;
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
-            co_return co_await f.peer
-                .send_request(AddParams{}, {.token = source.token(), .timeout = 1min})
-                .or_fail();
+        event done;
+        auto ask = [&]() -> task<ipc::Error> {
+            auto asked = co_await f.peer.send_request(AddParams{},
+                                                      {.token = source.token(), .timeout = 20ms});
+            done.set();
+            co_return asked.has_error() ? asked.error() : ipc::Error("answered");
         };
         auto remote = [&]() -> task<> {
             co_await f.next();
             source.cancel();
             co_await f.next();
+            co_await done.wait();
             f.remote.end_input();
         };
 
-        auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
+        auto [ran, failure, scripted] = f.run(f.peer.run(), ask(), remote());
         EXPECT(ran.has_value());
-        ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::RequestCancelled);
-        EXPECT(asked.error().message == "request cancelled");
+        ASSERT(failure.has_value());
+        EXPECT(code_of(*failure) == ErrorCode::RequestCancelled);
+        EXPECT(failure->message == "request timed out");
+        const auto& written = f.written();
+        ASSERT(written.size() == 2U);
+        EXPECT(written[1].method == "$/cancelRequest");
+    });
+
+    // The timeout caps the wait of a cancelled caller too.
+    kit.add("timeout_ends_the_wait_of_a_cancelled_caller", [](Fixture& f) {
+        cancellation_source source;
+        event done;
+        auto ask = [&]() -> task<AddResult, ipc::Error> {
+            co_return co_await f.peer.send_request(AddParams{}, {.timeout = 20ms}).or_fail();
+        };
+        auto caller = [&]() -> task<bool> {
+            auto asked = co_await with_token(ask(), source.token());
+            done.set();
+            co_return asked.is_cancelled();
+        };
+        auto remote = [&]() -> task<> {
+            co_await f.next();
+            source.cancel();
+            co_await f.next();
+            co_await done.wait();
+            f.remote.end_input();
+        };
+
+        auto [ran, cancelled, scripted] = f.run(f.peer.run(), caller(), remote());
+        EXPECT(ran.has_value());
+        ASSERT(cancelled.has_value());
+        EXPECT(*cancelled);
+        EXPECT(f.written().size() == 2U);
     });
 
     kit.add("timeout_before_the_token_reports_timed_out", [](Fixture& f) {
