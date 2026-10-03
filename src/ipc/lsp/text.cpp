@@ -8,6 +8,11 @@
 
 namespace {
 
+/// Whether `byte` continues a UTF-8 sequence, being 10xxxxxx.
+constexpr bool is_continuation(unsigned char byte) {
+    return (byte & 0xC0u) == 0x80u;
+}
+
 // Decodes one UTF-8 code point starting at `index`.
 // Returns:
 // - first: consumed UTF-8 byte count
@@ -20,10 +25,6 @@ std::pair<std::uint32_t, std::uint32_t> next_codepoint_sizes(std::string_view te
 
     // First byte >= ascii_limit starts a multi-byte UTF-8 sequence.
     constexpr unsigned char ascii_limit = 0x80u;
-
-    // Continuation byte shape is 10xxxxxx.
-    constexpr unsigned char continuation_mask = 0xC0u;
-    constexpr unsigned char continuation_value = 0x80u;
 
     // Minimum valid 2-byte lead is C2 (C0/C1 are overlong).
     constexpr unsigned char two_byte_min = 0xC2u;
@@ -71,7 +72,7 @@ std::pair<std::uint32_t, std::uint32_t> next_codepoint_sizes(std::string_view te
         }
 
         const auto b2 = static_cast<unsigned char>(text[index + 1]);
-        if((b2 & continuation_mask) != continuation_value) [[unlikely]] {
+        if(!is_continuation(b2)) [[unlikely]] {
             return {1, 1};
         }
 
@@ -86,8 +87,7 @@ std::pair<std::uint32_t, std::uint32_t> next_codepoint_sizes(std::string_view te
 
         const auto b2 = static_cast<unsigned char>(text[index + 1]);
         const auto b3 = static_cast<unsigned char>(text[index + 2]);
-        if((b2 & continuation_mask) != continuation_value ||
-           (b3 & continuation_mask) != continuation_value) [[unlikely]] {
+        if(!is_continuation(b2) || !is_continuation(b3)) [[unlikely]] {
             return {1, 1};
         }
 
@@ -111,9 +111,7 @@ std::pair<std::uint32_t, std::uint32_t> next_codepoint_sizes(std::string_view te
         const auto b2 = static_cast<unsigned char>(text[index + 1]);
         const auto b3 = static_cast<unsigned char>(text[index + 2]);
         const auto b4 = static_cast<unsigned char>(text[index + 3]);
-        if((b2 & continuation_mask) != continuation_value ||
-           (b3 & continuation_mask) != continuation_value ||
-           (b4 & continuation_mask) != continuation_value) [[unlikely]] {
+        if(!is_continuation(b2) || !is_continuation(b3) || !is_continuation(b4)) [[unlikely]] {
             return {1, 1};
         }
 
@@ -145,17 +143,17 @@ detail::Located detail::locate(std::string_view text,
             return {.offset = size, .exact = character == size};
         }
         // UTF-8 resynchronizes: a byte that is no continuation byte starts a
-        // unit, and a continuation byte lies inside the sequence of the
+        // code point, and a continuation byte lies inside the sequence of the
         // nearest such byte before it, at most three back, if that sequence
-        // reaches it; else it is a unit of its own.
-        auto is_continuation = [&](std::uint32_t at) {
-            return (static_cast<unsigned char>(text[at]) & 0xC0u) == 0x80u;
+        // reaches it; else it is a code point of its own.
+        auto continues = [&](std::uint32_t at) {
+            return is_continuation(static_cast<unsigned char>(text[at]));
         };
         auto lead = character;
-        while(is_continuation(lead) && lead > 0 && character - lead < 3) {
+        while(continues(lead) && lead > 0 && character - lead < 3) {
             --lead;
         }
-        if(lead != character && !is_continuation(lead) &&
+        if(lead != character && !continues(lead) &&
            lead + next_codepoint_sizes(text, lead).first > character) {
             return {.offset = lead, .exact = false};
         }

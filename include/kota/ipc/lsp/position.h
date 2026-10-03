@@ -69,10 +69,10 @@ public:
     std::optional<Offset> to_offset(protocol::Position position,
                                     PositionEncoding encoding = PositionEncoding::Default) const;
 
-    /// Convert an LSP Position to a byte offset, giving every position one,
-    /// as LSP asks of a position past the text: a line past the last one is
-    /// the end of the content, a character past the line's end is its end,
-    /// and a unit inside a code point is the code point's start.
+    /// Convert an LSP Position to a byte offset, giving every position one: a
+    /// line past the last one is the end of the content, as VS Code answers;
+    /// a character past the line's end is its end, as LSP asks; and a unit
+    /// inside a code point is the code point's start.
     Offset to_offset_clamped(protocol::Position position,
                              PositionEncoding encoding = PositionEncoding::Default) const;
 

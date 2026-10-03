@@ -7,15 +7,16 @@
 
 namespace kota::ipc::lsp::detail {
 
-/// Where a unit falls in a text: the start of the code point it begins or
-/// lies inside, or the text's end for a unit past it; exact when it begins a
-/// code point or is the end itself.
+/// Where a unit was placed: its offset, and whether that offset is exactly
+/// the unit's, or the nearest one to a unit that has none.
 struct Located {
     std::uint32_t offset;
     bool exact;
 };
 
-/// Where unit `character` of `text`, counted in `encoding`'s units, falls.
+/// Where unit `character` of `text`, counted in `encoding`'s units, falls:
+/// at the start of the code point it begins, exact, or lies inside, not
+/// exact; at the text's end past that, exact only for the end itself.
 Located locate(std::string_view text, std::uint32_t character, PositionEncoding encoding);
 
 }  // namespace kota::ipc::lsp::detail
