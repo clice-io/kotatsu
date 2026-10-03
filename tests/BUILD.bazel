@@ -159,7 +159,7 @@ command_test(
 
 # A module's integration/*.test.ts, which node runs from the source tree as
 # ctest does (`pixi run npm-ci` installs their npm packages there), each
-# program named in KOTA_<NAME>.
+# program named in KOTA_<NAME>, with the files they read beyond tests/.
 [command_test(
     name = module.replace("/", "_") + "_integration",
     size = "large",
@@ -183,30 +183,33 @@ command_test(
     ) + [
         "//:package-lock.json",
         "//:package.json",
-    ],
+    ] + files,
     env = {
         "KOTA_" + program.split(":")[-1].upper(): "$(rootpath %s)" % program
         for program in programs
     },
     source_tree = True,
     tags = ["integration"],
-) for module, programs, exclude in [
+) for module, programs, exclude, files in [
     ("ipc", [
         ":jsonrpc_driver",
         ":stdio_close",
-    ], []),
+    ], [], []),
     # roundtrip.test.ts needs lsp_roundtrip, a debug build's only.
     ("ipc/lsp", [
         ":lsp_probe",
         ":lsp_stub_server",
-    ], ["ipc/lsp/integration/roundtrip.test.ts"]),
+    ], ["ipc/lsp/integration/roundtrip.test.ts"], [
+        "//:scripts/lsp/metaModel.json",
+        "//:scripts/lsp/metamodel.ts",
+    ]),
     ("examples/async", [
         "//examples:async_basics",
         "//examples:dump_dot",
-    ], []),
+    ], [], []),
     ("examples/ipc", [
         "//examples:jsonrpc_roundtrip",
         "//examples:jsonrpc_server",
         "//examples:spawn_worker",
-    ], []),
+    ], [], []),
 ]]

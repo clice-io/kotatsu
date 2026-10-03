@@ -196,8 +196,7 @@ src/
   meta/        # Meta target wiring (header-only public APIs)
   zest/        # Test runner implementation
 
-bazel/         # Bazel: build settings, third-party BUILD files, the rule
-               # running the tests' commands
+bazel/         # Bazel: build settings, the rule running the tests' commands
 
 tests/
   <module>/    # Tests per module, mirroring include/kota/<module>/:

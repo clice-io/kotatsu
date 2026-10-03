@@ -1,10 +1,13 @@
 load("//bazel:defs.bzl", "kota_library")
 
-# For the tests: the npm packages the integration tests import.
+# For the tests: the npm packages the integration tests import, and the LSP
+# metamodel the LSP ones read.
 exports_files([
     "MODULE.bazel",
     "package-lock.json",
     "package.json",
+    "scripts/lsp/metaModel.json",
+    "scripts/lsp/metamodel.ts",
 ])
 
 # One target per module of include/kota (and per codec backend, each with its
