@@ -1,6 +1,5 @@
 #pragma once
 
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -370,7 +369,7 @@ bool Reader::try_read(F&& fn) {
 }
 
 /// Decodes JSON text into `out` (or, in the value-returning overload, into a
-/// default-constructed T).
+/// value-initialized T).
 template <typename Config = void, typename T>
 auto from_string(std::string_view json, T& out) -> std::expected<void, rich_error> {
     padded_string padded(json);
@@ -396,9 +395,9 @@ auto from_string(std::string_view json, T& out) -> std::expected<void, rich_erro
 }
 
 template <typename T, typename Config = void>
-    requires std::default_initializable<T>
+    requires std::is_default_constructible_v<T>
 auto from_string(std::string_view json) -> std::expected<T, rich_error> {
-    T value{};
+    auto value = T();
     KOTA_EXPECTED_TRY(from_string<Config>(json, value));
     return value;
 }

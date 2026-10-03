@@ -185,4 +185,18 @@ struct NullElements {
     }
 };
 
+/// HoldsExplicit where decoding makes a value of its own: a sequence element
+/// and a map value.
+struct ExplicitElements {
+    std::vector<HoldsExplicit> items;
+    std::map<std::string, HoldsExplicit> by_name;
+
+    static ExplicitElements typical() {
+        return {
+            .items = {{.list = {1, 2}, .count = 2}, {.list = ExplicitList(), .count = 0}},
+            .by_name = {{"a", {.list = {3}, .count = 1}}},
+        };
+    }
+};
+
 }  // namespace kota::test

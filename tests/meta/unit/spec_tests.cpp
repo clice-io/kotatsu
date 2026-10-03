@@ -2,6 +2,7 @@
 #include <type_traits>
 #include <variant>
 
+#include "fixtures/containers.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/schema.h"
 
@@ -274,6 +275,14 @@ ZEST_CASE(skip_when_evaluates_builtin_predicates) {
     STATIC_EXPECT(!evaluate_skip_when<skip_when::default_value>(1, true));
     // Deserialization never skips.
     STATIC_EXPECT(!evaluate_skip_when<skip_when::default_value>(0, false));
+    // The default is value-initialized: `T{}` would copy-list-initialize the
+    // explicit list from `{}`.
+    EXPECT(evaluate_skip_when<skip_when::default_value>(
+        test::HoldsExplicit{.list = test::ExplicitList(), .count = 0},
+        true));
+    EXPECT(
+        !evaluate_skip_when<skip_when::default_value>(test::HoldsExplicit{.list = {1}, .count = 0},
+                                                      true));
 }
 
 };  // ZEST_SUITE(meta_spec)

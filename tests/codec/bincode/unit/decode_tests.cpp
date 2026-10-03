@@ -9,9 +9,11 @@
 #include <variant>
 #include <vector>
 
+#include "codec/harness/fixtures/containers.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
+#include "kota/meta/compare.h"
 #include "kota/meta/repr.h"
 #include "kota/codec/bincode/bincode.h"
 
@@ -87,6 +89,19 @@ namespace kota::codec {
 namespace {
 
 ZEST_SUITE(codec_bincode_decode) {
+
+ZEST_CASE(value_overload_value_initializes) {
+    // `T value{}` would copy-list-initialize the explicit list from `{}`.
+    const test::HoldsExplicit value{
+        .list = {1, 2},
+        .count = 2
+    };
+    auto encoded = bincode::to_bytes(value);
+    ASSERT(encoded);
+    auto result = bincode::from_bytes<test::HoldsExplicit>(*encoded);
+    ASSERT(result);
+    EXPECT(meta::eq(*result, value));
+}
 
 ZEST_CASE(truncated_payload_fails) {
     auto encoded = bincode::to_bytes(std::string("hello"));

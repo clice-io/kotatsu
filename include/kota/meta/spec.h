@@ -24,7 +24,7 @@ enum class skip_when : std::uint8_t {
     none,
     /// Container whose .empty() returns true.
     empty,
-    /// Value that compares equal to a default-constructed one.
+    /// Value that compares equal to a value-initialized one.
     default_value,
 };
 

@@ -6,11 +6,13 @@
 #include <variant>
 #include <vector>
 
+#include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/structs.h"
 #include "codec/harness/fixtures/tagged.h"
 #include "fixtures/attrs.h"
 #include "fixtures/configs.h"
 #include "kota/zest/zest.h"
+#include "kota/meta/compare.h"
 #include "kota/codec/dyn/dyn.h"
 #include "kota/codec/json/json.h"
 
@@ -30,6 +32,17 @@ ZEST_CASE(value_overload_takes_config) {
     EXPECT(result->user_name == 2);
     EXPECT(result->total_score == 1.5F);
     EXPECT(result->item_id == "abc");
+}
+
+ZEST_CASE(value_overload_value_initializes) {
+    // `T value{}` would copy-list-initialize the explicit list from `{}`.
+    auto result = json::from_string<test::HoldsExplicit>(R"({"list":[1,2],"count":2})");
+    ASSERT(result);
+    const test::HoldsExplicit expected{
+        .list = {1, 2},
+        .count = 2
+    };
+    EXPECT(meta::eq(*result, expected));
 }
 
 ZEST_CASE(number_out_of_range_fails) {

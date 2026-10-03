@@ -14,6 +14,7 @@
 
 #include "codec/harness/fixtures/repr.h"
 #include "codec/harness/fixtures/structs.h"
+#include "fixtures/containers.h"
 #include "fixtures/repr.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/attrs.h"
@@ -448,6 +449,18 @@ struct all_default {
     <std::int32_t> x;
     KOTATSU_ANNOTATE(defaulted = true)
     <std::string> y;
+};
+
+/// Only value-initialization makes one: the list's default constructor is
+/// explicit.
+struct explicit_member_defaults {
+    test::ExplicitList list;
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::int32_t> count = 4;
+};
+
+struct explicit_member_holder {
+    std::vector<explicit_member_defaults> items;
 };
 
 struct skip_default {
@@ -1348,6 +1361,16 @@ ZEST_CASE(all_default_fields) {
                      R"("minimum":-2147483648,)"
                      R"("maximum":2147483647,"default":0},)"
                      R"("y":{"type":"string","default":""}}})");
+}
+
+ZEST_CASE(defaults_of_a_value_initialized_struct) {
+    // `T{}` would copy-list-initialize the explicit list from `{}`: the root
+    // and a $def alike take their defaults from a value-initialized value.
+    const auto root = json::schema_string<explicit_member_defaults>().value();
+    EXPECT(zest::contains(root, R"("maximum":2147483647,"default":4})"));
+    const auto held = json::schema_string<explicit_member_holder>().value();
+    EXPECT(zest::contains(held, R"("$defs")"));
+    EXPECT(zest::contains(held, R"("maximum":2147483647,"default":4})"));
 }
 
 // ---------------------------------------------------------------------------

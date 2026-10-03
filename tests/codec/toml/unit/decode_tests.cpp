@@ -7,12 +7,14 @@
 #include <vector>
 
 #include "codec/harness/fixtures/configs.h"
+#include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/repr.h"
 #include "codec/harness/fixtures/structs.h"
 #include "codec/harness/fixtures/tagged.h"
 #include "fixtures/attrs.h"
 #include "fixtures/configs.h"
 #include "kota/zest/zest.h"
+#include "kota/meta/compare.h"
 #include "kota/codec/toml/toml.h"
 
 namespace kota::codec {
@@ -31,6 +33,20 @@ userName = 2
     EXPECT(result->user_name == 2);
     EXPECT(result->total_score == 1.5F);
     EXPECT(result->item_id == "abc");
+}
+
+ZEST_CASE(value_overload_value_initializes) {
+    // `T value{}` would copy-list-initialize the explicit list from `{}`.
+    auto result = toml::from_string<test::HoldsExplicit>(R"(
+count = 2
+list = [1, 2]
+)");
+    ASSERT(result);
+    const test::HoldsExplicit expected{
+        .list = {1, 2},
+        .count = 2
+    };
+    EXPECT(meta::eq(*result, expected));
 }
 
 ZEST_CASE(parse_error_fails_with_location) {
