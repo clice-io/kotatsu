@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <source_location>
+#include <utility>
 
 #include "kota/async/runtime/node.h"
 
@@ -13,6 +14,9 @@ namespace kota {
 class event_loop;
 class mutex;
 class condition_variable;
+
+template <typename Primitive>
+class scoped_wait;
 
 /// Base of the sync primitives. Tasks wait on one through a wait_node, in a
 /// FIFO queue, and a primitive never resumes a task it grants inline: the task
@@ -102,6 +106,8 @@ private:
     friend class semaphore;
     friend class event;
     friend class condition_variable;
+    template <typename Primitive>
+    friend class scoped_wait;
     template <typename Derived>
     friend class async_visitor;
 
@@ -146,11 +152,72 @@ private:
     wait_node* next = nullptr;
 };
 
+/// What mutex::scoped_lock() and semaphore::scoped_acquire() give to
+/// co_await: the wait of lock() or acquire(), which then gives a guard of what
+/// it took. A wait that a cancel ends gives none, and keeps nothing.
+template <typename Primitive>
+class scoped_wait {
+public:
+    bool await_ready() noexcept {
+        return wait.await_ready();
+    }
+
+    template <typename Promise>
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<Promise> waiting,
+                      std::source_location location = std::source_location::current()) noexcept {
+        return wait.await_suspend(waiting, location);
+    }
+
+    typename Primitive::guard await_resume() noexcept {
+        return typename Primitive::guard(owner);
+    }
+
+private:
+    friend Primitive;
+
+    explicit scoped_wait(Primitive& owner) noexcept : wait(owner), owner(owner) {}
+
+    wait_node wait;
+    Primitive& owner;
+};
+
 /// Mutual exclusion between tasks, handed from each unlock() to the first
 /// task waiting in lock().
 class mutex : public sync_primitive {
 public:
     using lock_awaiter = wait_node;
+
+    /// Holds the mutex scoped_lock() locked, and unlocks it when it goes,
+    /// unless unlock() did before. A moved-from guard holds nothing.
+    class [[nodiscard]] guard {
+    public:
+        guard(guard&& other) noexcept : held(std::exchange(other.held, nullptr)) {}
+
+        guard& operator=(guard other) noexcept {
+            std::swap(held, other.held);
+            return *this;
+        }
+
+        ~guard() {
+            if(held != nullptr) {
+                held->unlock();
+            }
+        }
+
+        /// Unlocks the mutex now.
+        void unlock() noexcept {
+            assert(held != nullptr && "mutex::guard::unlock without the mutex");
+            std::exchange(held, nullptr)->unlock();
+        }
+
+    private:
+        friend class scoped_wait<mutex>;
+
+        explicit guard(mutex& locked) noexcept : held(&locked) {}
+
+        mutex* held;
+    };
 
     explicit mutex(std::source_location location = std::source_location::current()) noexcept :
         sync_primitive(Kind::Mutex, location) {}
@@ -158,6 +225,11 @@ public:
     /// Locks the mutex; waits for it while another task holds it.
     lock_awaiter lock() noexcept {
         return lock_awaiter(*this);
+    }
+
+    /// Locks the mutex as lock() does, and gives a guard that unlocks it.
+    scoped_wait<mutex> scoped_lock() noexcept {
+        return scoped_wait<mutex>(*this);
     }
 
     /// Locks the mutex if it is free.
@@ -187,6 +259,37 @@ class semaphore : public sync_primitive {
 public:
     using acquire_awaiter = wait_node;
 
+    /// Holds the unit scoped_acquire() took, and releases it when it goes,
+    /// unless release() did before. A moved-from guard holds nothing.
+    class [[nodiscard]] guard {
+    public:
+        guard(guard&& other) noexcept : held(std::exchange(other.held, nullptr)) {}
+
+        guard& operator=(guard other) noexcept {
+            std::swap(held, other.held);
+            return *this;
+        }
+
+        ~guard() {
+            if(held != nullptr) {
+                held->release();
+            }
+        }
+
+        /// Releases the unit now.
+        void release() {
+            assert(held != nullptr && "semaphore::guard::release without a unit");
+            std::exchange(held, nullptr)->release();
+        }
+
+    private:
+        friend class scoped_wait<semaphore>;
+
+        explicit guard(semaphore& acquired) noexcept : held(&acquired) {}
+
+        semaphore* held;
+    };
+
     explicit semaphore(std::ptrdiff_t initial = 0,
                        std::source_location location = std::source_location::current()) noexcept :
         sync_primitive(Kind::Semaphore, location), count(initial) {
@@ -196,6 +299,11 @@ public:
     /// Takes a unit; waits for one while there is none.
     acquire_awaiter acquire() noexcept {
         return acquire_awaiter(*this);
+    }
+
+    /// Takes a unit as acquire() does, and gives a guard that releases it.
+    scoped_wait<semaphore> scoped_acquire() noexcept {
+        return scoped_wait<semaphore>(*this);
     }
 
     /// Takes a unit if there is one.

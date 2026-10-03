@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <utility>
 #include <vector>
 
 #include "async/harness/loop_fixture.h"
@@ -134,6 +135,114 @@ ZEST_CASE(cancelled_last_waiter_returns_a_handed_over_unit) {
     EXPECT(cancelled.is_cancelled());
     EXPECT(sem.try_acquire());
     EXPECT(!sem.try_acquire());
+}
+
+ZEST_CASE(scoped_acquire_holds_a_unit_until_the_guard_goes) {
+    semaphore sem(1);
+    std::vector<int> order;
+    auto holder = [&]() -> task<> {
+        auto held = co_await sem.scoped_acquire();
+        // Lets the waiter queue up for the unit.
+        co_await yield();
+        order.push_back(0);
+    };
+    auto waiter = [&]() -> task<> {
+        auto held = co_await sem.scoped_acquire();
+        order.push_back(1);
+    };
+
+    auto [held, waited] = run(holder(), waiter());
+    EXPECT(held.has_value());
+    EXPECT(waited.has_value());
+    EXPECT(order == std::vector{0, 1});
+    EXPECT(sem.try_acquire());
+    EXPECT(!sem.try_acquire());
+}
+
+// release() gives the unit back before the guard goes, which then leaves the
+// count alone; a guard moved from holds nothing either.
+ZEST_CASE(guard_releases_once_whether_early_or_moved) {
+    semaphore sem(1);
+
+    struct Seen {
+        bool back_after_release = false;
+        bool held_after_move = false;
+        bool back_after_moved_to_goes = false;
+    };
+
+    auto use = [&]() -> task<Seen> {
+        Seen seen;
+        {
+            auto held = co_await sem.scoped_acquire();
+            held.release();
+            seen.back_after_release = sem.try_acquire();
+            sem.release();
+        }
+        auto held = co_await sem.scoped_acquire();
+        {
+            auto moved = std::move(held);
+            seen.held_after_move = !sem.try_acquire();
+        }
+        seen.back_after_moved_to_goes = sem.try_acquire();
+        co_return seen;
+    };
+
+    auto [result] = run(use());
+    ASSERT(result.has_value());
+    EXPECT(result->back_after_release);
+    EXPECT(result->held_after_move);
+    EXPECT(result->back_after_moved_to_goes);
+    // The successful try_acquire() above still holds the one unit.
+    EXPECT(!sem.try_acquire());
+}
+
+// A scoped_acquire() a cancel ends gives no guard, and a unit handed over to
+// it before it resumed goes back.
+ZEST_CASE(cancelled_scoped_acquire_gives_no_guard) {
+    semaphore sem;
+    bool acquired = false;
+    auto waiter = [&]() -> task<> {
+        auto held = co_await sem.scoped_acquire();
+        acquired = true;
+    };
+    auto waiting = waiter();
+    auto handed_over = waiter();
+    auto cancel_them = [&]() -> task<> {
+        waiting.cancel();
+        sem.release();
+        handed_over.cancel();
+        co_return;
+    };
+
+    auto [first, second, driver] = run(waiting, handed_over, cancel_them());
+    EXPECT(first.is_cancelled());
+    EXPECT(second.is_cancelled());
+    EXPECT(!acquired);
+    EXPECT(sem.try_acquire());
+    EXPECT(!sem.try_acquire());
+}
+
+// A task cancelled while it holds a guard keeps the unit until its frame
+// goes, which releases it.
+ZEST_CASE(guard_releases_when_the_frame_holding_it_goes) {
+    semaphore sem(1);
+    event gate;
+    auto holder = [&]() -> task<> {
+        auto held = co_await sem.scoped_acquire();
+        co_await gate.wait();
+    };
+    auto driver = [&]() -> task<std::pair<bool, bool>> {
+        auto race = when_any(holder(), yield());
+        auto raced = co_await race;
+        bool held_after_race = !sem.try_acquire();
+        co_return std::pair{raced.index() == 1, held_after_race};
+    };
+
+    auto [result] = run(driver());
+    ASSERT(result.has_value());
+    EXPECT(result->first);
+    EXPECT(result->second);
+    EXPECT(sem.try_acquire());
 }
 
 };  // ZEST_SUITE(async_runtime_sync_semaphore)
