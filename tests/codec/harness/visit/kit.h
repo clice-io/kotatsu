@@ -144,7 +144,7 @@ void roundtrip_over(const Kit<B>& kit, std::string name, Make make, Start start)
 /// roundtrip_over a value-initialized target.
 template <typename Config = void, Backend B, typename Make>
 void roundtrip(const Kit<B>& kit, std::string name, Make make) {
-    roundtrip_over<Config>(kit, std::move(name), make, [] { return decltype(make()){}; });
+    roundtrip_over<Config>(kit, std::move(name), make, [] { return decltype(make())(); });
 }
 
 /// make() under Config encodes to the document plain() encodes to.
@@ -167,7 +167,7 @@ void reads(const Kit<B>& kit, std::string name, Plain plain, Expect expect) {
         auto document = B::encode(plain());
         ASSERT(succeeds(document));
         ZEST_CONTEXT("{}: {}", B::name, B::render(*document));
-        T decoded{};
+        auto decoded = T();
         ASSERT(succeeds(B::template decode<Config>(*document, decoded)));
         EXPECT(meta::eq(decoded, expect()));
     });
@@ -201,7 +201,7 @@ void reads_reporting(const Kit<B>& kit,
         ZEST_CONTEXT("{}: {}", B::name, B::render(*document));
         codec::UnknownFields sink;
         codec::scoped_context<codec::UnknownFields> scope(sink);
-        T decoded{};
+        auto decoded = T();
         ASSERT(succeeds(B::template decode<Config>(*document, decoded)));
         EXPECT(meta::eq(decoded, expect()));
         std::vector<std::string> paths;
@@ -220,7 +220,7 @@ void read_fails(const Kit<B>& kit, std::string name, Plain plain, Failure failur
         auto document = B::encode(plain());
         ASSERT(succeeds(document));
         ZEST_CONTEXT("{}: {}", B::name, B::render(*document));
-        T decoded{};
+        auto decoded = T();
         auto status = B::template decode<Config>(*document, decoded);
         ASSERT(!status);
         detail::check_failure(status.error(), failure);
@@ -307,13 +307,13 @@ void hostile(const Kit<B>& kit, std::string name, [[maybe_unused]] Make make) {
             const Encoded& document = *encoded;
 
             auto settles = [](const Encoded& input) {
-                T decoded{};
+                auto decoded = T();
                 if(!B::decode(input, decoded)) {
                     return;
                 }
                 auto first = B::encode(decoded);
                 ASSERT(succeeds(first));
-                T again{};
+                auto again = T();
                 ASSERT(succeeds(B::decode(*first, again)));
                 auto second = B::encode(again);
                 ASSERT(succeeds(second));

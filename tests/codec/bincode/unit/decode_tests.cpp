@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "codec/harness/fixtures/containers.h"
+#include "codec/harness/fixtures/structs.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
@@ -88,6 +89,11 @@ namespace kota::codec {
 
 namespace {
 
+/// Whether the value-returning overload takes T.
+template <typename T>
+concept decodes_by_value =
+    requires(std::span<const std::byte> bytes) { bincode::from_bytes<T>(bytes); };
+
 ZEST_SUITE(codec_bincode_decode) {
 
 ZEST_CASE(value_overload_value_initializes) {
@@ -101,6 +107,9 @@ ZEST_CASE(value_overload_value_initializes) {
     auto result = bincode::from_bytes<test::HoldsExplicit>(*encoded);
     ASSERT(result);
     EXPECT(meta::eq(*result, value));
+    STATIC_EXPECT(decodes_by_value<test::HoldsExplicit>);
+    // A type with no default constructor has no value to decode into.
+    STATIC_EXPECT(!decodes_by_value<test::NoDefault>);
 }
 
 ZEST_CASE(truncated_payload_fails) {

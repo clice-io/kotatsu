@@ -296,6 +296,11 @@ void expect_hostile_bytes_contained(const T& input, Probe probe) {
     }
 }
 
+/// Whether the value-returning overload takes T.
+template <typename T>
+concept decodes_by_value =
+    requires(std::span<const std::byte> bytes) { fbs::from_bytes<T>(bytes); };
+
 ZEST_SUITE(codec_fbs_decode) {
 
 ZEST_CASE(value_overload_value_initializes) {
@@ -309,6 +314,9 @@ ZEST_CASE(value_overload_value_initializes) {
     auto result = fbs::from_bytes<test::HoldsExplicit>(*encoded);
     ASSERT(result);
     EXPECT(meta::eq(*result, value));
+    STATIC_EXPECT(decodes_by_value<test::HoldsExplicit>);
+    // A type with no default constructor has no value to decode into.
+    STATIC_EXPECT(!decodes_by_value<test::NoDefault>);
 }
 
 ZEST_CASE(buffer_below_eight_bytes_fails) {

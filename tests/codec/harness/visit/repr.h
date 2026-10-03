@@ -86,6 +86,11 @@ void repr(const Kit<B>& kit) {
     };
     encodes_as(kit, "chained_encodes_as_plain", ticket, [] { return Field<std::uint32_t>{7}; });
     roundtrip(kit, "chained_roundtrip", ticket);
+    // The declared value is value-initialized before it is read: an
+    // explicit default constructor of one of its members rejects `{}`.
+    roundtrip(kit, "repr_declaring_a_value_initialized_type_roundtrip", [] {
+        return Field<ViaExplicitBox>{{.value = 2.5}};
+    });
     // Decoding into a Stamped whose stamp starts nonzero: the null reaches
     // Lamport's repr, which resets it.
     auto unstamped = [] {

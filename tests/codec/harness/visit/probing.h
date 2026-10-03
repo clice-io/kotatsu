@@ -389,6 +389,12 @@ void probing(const Kit<B>& kit) {
         "repr_nested_widening_reachable_without_outer_match",
         [] { return 1000; },
         [] { return std::variant<BoxedScalar, std::string>{BoxedScalar{.v = 1000.0}}; });
+    // Probing value-initializes each declared value on its way to the variant.
+    reads_in_field<std::variant<ViaExplicitBox, std::string>>(
+        kit,
+        "repr_chain_through_a_value_initialized_type_reaches_variant",
+        [] { return 2.5; },
+        [] { return std::variant<ViaExplicitBox, std::string>{ViaExplicitBox{.value = 2.5}}; });
     reads_in_field<std::variant<std::optional<BoxedScalar>, std::int64_t>>(
         kit,
         "optional_repr_nested_widening_defers_to_outer_exact_match",

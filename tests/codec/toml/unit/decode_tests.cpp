@@ -21,6 +21,10 @@ namespace kota::codec {
 
 namespace {
 
+/// Whether the value-returning overload takes T.
+template <typename T>
+concept decodes_by_value = requires(std::string_view text) { toml::from_string<T>(text); };
+
 ZEST_SUITE(codec_toml_decode) {
 
 ZEST_CASE(value_overload_takes_config) {
@@ -47,6 +51,9 @@ list = [1, 2]
         .count = 2
     };
     EXPECT(meta::eq(*result, expected));
+    STATIC_EXPECT(decodes_by_value<test::HoldsExplicit>);
+    // A type with no default constructor has no value to decode into.
+    STATIC_EXPECT(!decodes_by_value<test::NoDefault>);
 }
 
 ZEST_CASE(parse_error_fails_with_location) {

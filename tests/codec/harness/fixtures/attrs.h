@@ -16,6 +16,7 @@
 #include "codec/harness/fixtures/enums.h"
 #include "codec/harness/fixtures/structs.h"
 #include "fixtures/attrs.h"
+#include "fixtures/containers.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
 
@@ -304,6 +305,27 @@ struct GridIndex {
     auto operator==(const GridIndex&) const -> bool = default;
 };
 
+/// Travels as HoldsExplicit (behavior::as), a target only
+/// value-initialization makes.
+struct Tally {
+    std::vector<int> marks;
+
+    Tally() = default;
+
+    Tally(std::vector<int> list) : marks(std::move(list)) {}
+
+    Tally(const HoldsExplicit& held) : marks(held.list.begin(), held.list.end()) {}
+
+    operator HoldsExplicit() const {
+        return {.list = ExplicitList(marks.begin(), marks.end()),
+                .count = static_cast<int>(marks.size())};
+    }
+
+    auto operator==(const Tally&) const -> bool = default;
+};
+
+using TallyAsHeld = meta::annotation<Tally, meta::behavior::as<HoldsExplicit>>;
+
 struct AsTargets {
     meta::annotation<UserId, meta::behavior::as<std::string>> owner;
     meta::annotation<Samples, meta::behavior::as<std::vector<int>>> samples;
@@ -334,6 +356,25 @@ struct CellSkippedOnDecode {
 
 struct CellSkippedOnDecodePlain {
     Point cell;
+    int after;
+};
+
+/// Skips its field on decode only, whatever the value.
+struct SkipHeldOnDecode {
+    bool operator()(const HoldsExplicit& /*held*/, bool is_serialize) const {
+        return !is_serialize;
+    }
+};
+
+/// A field skipped on decode whose type only value-initialization makes: a
+/// positional decode reads past it into a value of its own.
+struct HeldSkippedOnDecode {
+    meta::annotation<HoldsExplicit, meta::behavior::skip_if<SkipHeldOnDecode>> held;
+    int after = 0;
+};
+
+struct HeldSkippedOnDecodePlain {
+    HoldsExplicit held;
     int after;
 };
 

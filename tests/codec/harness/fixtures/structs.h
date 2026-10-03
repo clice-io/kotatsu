@@ -26,6 +26,13 @@ struct Point {
     auto operator<=>(const Point&) const = default;
 };
 
+/// Constructible only from a value: no value to decode into.
+struct NoDefault {
+    explicit NoDefault(int number) : number(number) {}
+
+    int number;
+};
+
 /// Point with a key Point does not have.
 struct PointWithExtra {
     std::int32_t x;
