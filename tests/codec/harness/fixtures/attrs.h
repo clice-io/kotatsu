@@ -205,6 +205,33 @@ struct Measured {
     auto operator==(const Measured&) const -> bool = default;
 };
 
+/// Fields with initializers, one of them a struct with its own.
+struct Limits {
+    int low = 1;
+    int high = 9;
+
+    auto operator==(const Limits&) const -> bool = default;
+};
+
+struct Tunables {
+    int threads = 4;
+    std::string name = "worker";
+    Limits limits;
+
+    auto operator==(const Tunables&) const -> bool = default;
+};
+
+struct DefaultedFieldsTag {
+    constexpr static auto spec = meta::make_struct_spec(meta::dsl::defaulted_fields = true);
+};
+
+/// defaulted_fields on a field reaches the struct below it, not the one
+/// holding it.
+struct TunablesHolder {
+    meta::annotate<DefaultedFieldsTag>::type<Tunables> tunables;
+    int count;
+};
+
 /// Two fields answering to one name.
 struct AliasDup {
     constexpr static auto spec = meta::make_spec(meta::dsl::alias = {"dup"});

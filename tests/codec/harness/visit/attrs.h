@@ -383,6 +383,47 @@ void attrs(const Kit<B>& kit) {
             "defaulted_present_reads",
             [] { return DefaultStructPlain{.with_default = 9, .version = "v1", .plain = 2}; },
             [] { return DefaultStruct{.with_default = 9, .version = "v1", .plain = 2}; });
+        // Under defaulted_fields every field may be absent, in the structs
+        // nested inside too, and keeps its value.
+        using Sections = std::map<std::string, Ints>;
+        reads<Tunables, DefaultedConfig>(
+            kit,
+            "defaulted_fields_config_reads_what_is_there",
+            [] {
+                return Sections{
+                    {"limits", {{"high", 20}}}
+                };
+            },
+            [] {
+                return Tunables{
+                    .threads = 4,
+                    .name = "worker",
+                    .limits = {.low = 1, .high = 20}
+                };
+            });
+        reads<TunablesHolder>(
+            kit,
+            "defaulted_fields_on_a_field_reads_what_is_there",
+            [] {
+                return std::map<std::string, std::variant<int, Sections>>{
+                    {"count",    3                                 },
+                    {"tunables", Sections{{"limits", {{"low", 0}}}}},
+                };
+            },
+            [] {
+                return TunablesHolder{
+                    .tunables = {{.threads = 4, .name = "worker", .limits = {.low = 0, .high = 9}}},
+                    .count = 3,
+                };
+            });
+        read_fails<TunablesHolder>(kit,
+                                   "defaulted_fields_on_a_field_leaves_its_holder_required",
+                                   [] {
+                                       return std::map<std::string, Sections>{
+                                           {"tunables", {}}
+                                       };
+                                   },
+                                   {.message = "missing required field 'count'", .path = ""});
         reads<Nullables>(
             kit,
             "nullable_fields_may_be_absent",

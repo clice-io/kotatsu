@@ -225,7 +225,8 @@ constexpr bool is_runtime_spec_attr_v<attrs::spec<Tag>> =
 
 /// A struct spec whose values matter at encode/decode dispatch: the tagged
 /// variant paths read the tagging mode and names from the slot attrs, and a
-/// rename_all/deny_unknown spec on a field merges into the config there.
+/// rename_all / deny_unknown_fields / defaulted_fields spec on a field merges
+/// into the config there.
 template <typename Attr>
 constexpr bool is_runtime_struct_spec_attr_v = false;
 
@@ -233,7 +234,8 @@ template <typename Tag>
 constexpr bool is_runtime_struct_spec_attr_v<attrs::struct_spec<Tag>> =
     attrs::struct_spec<Tag>::value.tagging != tag_mode::none ||
     attrs::struct_spec<Tag>::value.rename_all != naming::Casing::Identity ||
-    attrs::struct_spec<Tag>::value.deny_unknown_fields;
+    attrs::struct_spec<Tag>::value.deny_unknown_fields ||
+    attrs::struct_spec<Tag>::value.defaulted_fields;
 
 template <typename Tuple>
 struct filter_runtime_attrs;
@@ -273,7 +275,7 @@ struct unwrap_annotated<T> {
 /// A resolved representation: the type the codec ultimately reads and writes
 /// for T, the tagging spec attr accompanying a tagged variant (an empty tuple
 /// otherwise), and the config after merging every rename_all /
-/// deny_unknown_fields crossed on the way.
+/// deny_unknown_fields / defaulted_fields crossed on the way.
 template <typename T, typename TagAttrs, typename Config>
 struct resolved_repr {
     using type = T;
@@ -291,12 +293,12 @@ struct resolved_repr {
 /// Every chosen representation re-enters the resolver, so chained reprs and
 /// annotations nested inside representation types resolve to the final type,
 /// matching the codec's recursive re-dispatch on the converted value. The
-/// rename_all / deny_unknown_fields of annotated nodes merge into the carried
-/// config through node_config_t, the alias the dispatch uses, so the
-/// resulting type_info describes the documents the codec reads and writes. A
-/// tagged variant keeps its tagging spec attr; the spec's own rename_all /
-/// deny stay inert for the alternatives, as in the codec, where the tagging
-/// branch is taken before the config merge.
+/// rename_all / deny_unknown_fields / defaulted_fields of annotated nodes
+/// merge into the carried config through node_config_t, the alias the
+/// dispatch uses, so the resulting type_info describes the documents the codec
+/// reads and writes. A tagged variant keeps its tagging spec attr; the spec's
+/// own policies stay inert for the alternatives, as in the codec, where the
+/// tagging branch is taken before the config merge.
 template <typename T, typename Config = default_config>
 constexpr auto resolve_repr();
 
@@ -404,6 +406,16 @@ template <typename Config>
 constexpr bool config_denies_unknown() {
     if constexpr(requires { Config::deny_unknown_fields; }) {
         return Config::deny_unknown_fields;
+    } else {
+        return false;
+    }
+}
+
+/// Defaulted policy carried by the config itself, as config_denies_unknown.
+template <typename Config>
+constexpr bool config_defaults_fields() {
+    if constexpr(requires { Config::defaulted_fields; }) {
+        return Config::defaulted_fields;
     } else {
         return false;
     }
@@ -576,7 +588,7 @@ constexpr field_info make_field_info(std::size_t base_offset) {
         .offset = base_offset + meta::field_offset<T>(I),
         .physical_index = I,
         .type = type_info_of<field_t, Config>,
-        .has_default = spec.defaulted,
+        .has_default = spec.defaulted || config_defaults_fields<Config>(),
         .has_skip_if =
             spec.skip_if != skip_when::never || tuple_has_spec_v<attrs_t, behavior::skip_if>,
         .has_behavior = tuple_any_of_v<attrs_t, is_behavior_provider>,
@@ -632,7 +644,7 @@ using resolved_repr_t =
     typename decltype(detail::resolve_repr<std::remove_cvref_t<T>, format_config<Format>>())::type;
 
 /// The config T's resolution ends with: every rename_all / deny_unknown_fields
-/// spec crossed on the way — a structural annotation on T itself included —
+/// / defaulted_fields spec crossed on the way — a structural annotation on T itself included —
 /// merged onto Config, exactly as the codec dispatch layers them while
 /// reading or writing a T. Config is a codec config (as for type_info_of),
 /// not a bare format tag; its format selects format-scoped reprs.

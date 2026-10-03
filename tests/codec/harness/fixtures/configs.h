@@ -33,6 +33,10 @@ struct StrictConfig {
     constexpr static bool deny_unknown_fields = true;
 };
 
+struct DefaultedConfig {
+    constexpr static bool defaulted_fields = true;
+};
+
 struct NoPathConfig {
     constexpr static bool detailed_error = false;
 };

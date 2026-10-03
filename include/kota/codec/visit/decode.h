@@ -187,7 +187,7 @@ bool decode_enum_name(Vis& vis, E& out, Rename rename) {
 /// Decodes a value under a node's attributes (a struct field's, or an
 /// annotation's), mirroring encode_with_attrs: behavior::with >
 /// behavior::as > behavior::enum_string > variant tagging > the rename_all /
-/// deny_unknown_fields merge.
+/// deny_unknown_fields / defaulted_fields merge.
 template <typename Config, typename Attrs, typename Vis, typename T>
 bool decode_with_attrs(Vis& vis, T& out) {
     if constexpr(tuple_has_spec_v<Attrs, meta::behavior::with>) {
@@ -299,8 +299,8 @@ bool match_field(std::string_view key,
     if(slot == N) {
         // The data-driven readers move to the next entry whether or not the
         // callback read this one.
-        return pass_unknown_field < Config::deny_unknown_fields ||
-               schema::deny_unknown > (key, reader, sink);
+        constexpr bool deny = Config::deny_unknown_fields || schema::deny_unknown;
+        return pass_unknown_field<deny>(key, reader, sink);
     }
 
     field_mask |= std::uint64_t{1} << slot;
@@ -333,11 +333,15 @@ constexpr bool slot_required = [] {
     }
 }();
 
-/// Bit I set when slot I of T under Config is required.
+/// Bit I set when slot I of T under Config is required; none is under
+/// defaulted_fields.
 template <typename Config, typename T>
 constexpr std::uint64_t required_mask = []<typename... Slots>(type_list<Slots...>) {
     static_assert(sizeof...(Slots) <= 64,
                   "struct field count exceeds field_mask capacity (max 64 fields)");
+    if(Config::defaulted_fields) {
+        return std::uint64_t{0};
+    }
     std::uint64_t mask = 0;
     std::size_t i = 0;
     ((mask |= std::uint64_t{slot_required<Slots>} << i++), ...);

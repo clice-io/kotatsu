@@ -12,6 +12,7 @@
 #include <variant>
 #include <vector>
 
+#include "codec/harness/fixtures/attrs.h"
 #include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/repr.h"
@@ -2847,6 +2848,20 @@ ZEST_CASE(defaults_value_initialize) {
     // the explicit list.
     const auto result = json::schema_string<defaults_explicit_member>().value();
     EXPECT(zest::contains(result, R"({"type":"null"}],"default":3})"));
+}
+
+ZEST_CASE(defaulted_fields_requires_nothing) {
+    // Every property may be absent and carries its default, nested ones too.
+    const auto result = json::schema_string<test::Tunables, test::DefaultedConfig>().value();
+    EXPECT(!zest::contains(result, R"("required")"));
+    EXPECT(zest::contains(result, R"("maximum":2147483647,"default":4})"));
+    EXPECT(zest::contains(result, R"("maximum":2147483647,"default":9})"));
+}
+
+ZEST_CASE(defaulted_fields_on_a_field_leaves_its_holder_required) {
+    const auto result = json::schema_string<test::TunablesHolder>().value();
+    EXPECT(zest::contains(result, R"("required":["count"])"));
+    EXPECT(!zest::contains(result, R"("required":["threads")"));
 }
 
 ZEST_CASE(defaults_skip_condition) {

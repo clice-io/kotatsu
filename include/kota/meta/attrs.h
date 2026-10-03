@@ -102,70 +102,94 @@ constexpr const inline struct_spec& struct_spec_of = [] -> const struct_spec& {
 
 namespace detail {
 
-/// One merged policy layer over Base. Each specialization declares only the
-/// members its policies actually set, so an untouched policy keeps shining
-/// through from Base.
-template <typename Base, naming::Casing RenameAll, bool DenyUnknown>
-struct merged_config : Base {
-    using field_rename = naming::rename_policy_t<RenameAll>;
-    constexpr static bool deny_unknown_fields = DenyUnknown;
-};
-
+/// The layers of a merged config, one per policy: each declares its member
+/// only when its policy is set, so an untouched policy keeps shining through
+/// from Base.
 template <typename Base, naming::Casing RenameAll>
-struct merged_config<Base, RenameAll, false> : Base {
+struct rename_layer : Base {
     using field_rename = naming::rename_policy_t<RenameAll>;
 };
 
 template <typename Base>
-struct merged_config<Base, naming::Casing::Identity, true> : Base {
+struct rename_layer<Base, naming::Casing::Identity> : Base {};
+
+template <typename Base, bool DenyUnknown>
+struct deny_layer : Base {
     constexpr static bool deny_unknown_fields = true;
 };
 
-template <typename Base, naming::Casing RenameAll, bool DenyUnknown>
-struct merge_config_impl {
-    using type = merged_config<Base, RenameAll, DenyUnknown>;
+template <typename Base>
+struct deny_layer<Base, false> : Base {};
+
+template <typename Base, bool DefaultedFields>
+struct defaulted_layer : Base {
+    constexpr static bool defaulted_fields = true;
 };
 
 template <typename Base>
-struct merge_config_impl<Base, naming::Casing::Identity, false> {
+struct defaulted_layer<Base, false> : Base {};
+
+/// Base under every policy layer: the one config type a merge makes.
+template <typename Base, naming::Casing RenameAll, bool DenyUnknown, bool DefaultedFields>
+struct merged_config :
+    defaulted_layer<deny_layer<rename_layer<Base, RenameAll>, DenyUnknown>, DefaultedFields> {};
+
+template <typename Base, naming::Casing RenameAll, bool DenyUnknown, bool DefaultedFields>
+struct merge_config_impl {
+    using type = merged_config<Base, RenameAll, DenyUnknown, DefaultedFields>;
+};
+
+template <typename Base>
+struct merge_config_impl<Base, naming::Casing::Identity, false, false> {
     using type = Base;
 };
 
 /// Merging onto an already-merged base rebuilds a single normalized layer
-/// instead of stacking (deeper rename overrides, deny is sticky), so
-/// equivalent merge chains produce the same config type — type_info instance
-/// sharing (and thus one $defs entry per struct) depends on that.
-template <typename Base, naming::Casing R0, bool D0, naming::Casing RenameAll, bool DenyUnknown>
-struct merge_config_impl<merged_config<Base, R0, D0>, RenameAll, DenyUnknown> {
+/// instead of stacking (deeper rename overrides, deny and defaulted are
+/// sticky), so equivalent merge chains produce the same config type —
+/// type_info instance sharing (and thus one $defs entry per struct) depends
+/// on that.
+template <typename Base,
+          naming::Casing R0,
+          bool D0,
+          bool F0,
+          naming::Casing RenameAll,
+          bool DenyUnknown,
+          bool DefaultedFields>
+struct merge_config_impl<merged_config<Base, R0, D0, F0>, RenameAll, DenyUnknown, DefaultedFields> {
     using type = merged_config<Base,
                                RenameAll != naming::Casing::Identity ? RenameAll : R0,
-                               D0 || DenyUnknown>;
+                               D0 || DenyUnknown,
+                               F0 || DefaultedFields>;
 };
 
-template <typename Base, naming::Casing R0, bool D0>
-struct merge_config_impl<merged_config<Base, R0, D0>, naming::Casing::Identity, false> {
-    using type = merged_config<Base, R0, D0>;
+template <typename Base, naming::Casing R0, bool D0, bool F0>
+struct merge_config_impl<merged_config<Base, R0, D0, F0>, naming::Casing::Identity, false, false> {
+    using type = merged_config<Base, R0, D0, F0>;
 };
 
 }  // namespace detail
 
-/// Base config with an annotated node's rename_all / deny_unknown_fields
-/// layered on top; a spec carrying neither policy leaves Base untouched.
-/// A deeper merge overrides an earlier rename, deny is sticky: once set it is
-/// never merged away. This is the single implementation of the merge — the
-/// codec dispatch applies it when crossing an annotated reflectable node and
-/// meta's repr resolver replays it, so type_info always describes the
-/// documents the codec reads and writes.
+/// Base config with an annotated node's rename_all / deny_unknown_fields /
+/// defaulted_fields layered on top; a spec carrying none of these policies
+/// leaves Base untouched. A deeper merge overrides an earlier rename, deny
+/// and defaulted are sticky: once set they are never merged away. This is the
+/// single implementation of the merge — the codec dispatch applies it when
+/// crossing an annotated reflectable node and meta's repr resolver replays
+/// it, so type_info always describes the documents the codec reads and
+/// writes.
 template <typename Base, typename AttrsTuple>
 using merged_config_t =
     typename detail::merge_config_impl<Base,
                                        struct_spec_of<AttrsTuple>.rename_all,
-                                       struct_spec_of<AttrsTuple>.deny_unknown_fields>::type;
+                                       struct_spec_of<AttrsTuple>.deny_unknown_fields,
+                                       struct_spec_of<AttrsTuple>.defaulted_fields>::type;
 
 /// The config a node of type T carrying AttrsTuple (a field's attrs, or an
 /// annotation's) is read and written under: its rename_all /
-/// deny_unknown_fields merge onto Config when T is a reflectable struct, the
-/// only kind those policies act on, and are inert on every other node.
+/// deny_unknown_fields / defaulted_fields merge onto Config when T is a
+/// reflectable struct, the only kind those policies act on, and are inert on
+/// every other node.
 template <typename Config, typename T, typename AttrsTuple>
 using node_config_t =
     std::conditional_t<reflectable_class<T>, merged_config_t<Config, AttrsTuple>, Config>;
