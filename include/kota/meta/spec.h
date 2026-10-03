@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <compare>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -10,6 +11,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 #include "kota/support/config.h"
 #include "kota/support/naming.h"
@@ -40,6 +42,69 @@ struct name_list {
     }
 };
 
+/// A number a schema states, exact whatever its type: an integer of either
+/// sign, or a floating-point value; monostate when unset.
+using schema_number = std::variant<std::monostate, std::int64_t, std::uint64_t, double>;
+
+namespace detail {
+
+/// i <=> d exactly, beyond the 53 bits a double holds.
+template <typename Integer>
+constexpr std::partial_ordering compare_with_double(Integer i, double d) {
+    if(d != d) {
+        return std::partial_ordering::unordered;
+    }
+    // Every Integer lies in [-2^63, 2^64), both ends exact as doubles.
+    if(d >= 18446744073709551616.0) {
+        return std::partial_ordering::less;
+    }
+    if(d < -9223372036854775808.0) {
+        return std::partial_ordering::greater;
+    }
+    // d's integer part, toward zero, then the fraction it leaves.
+    if(d >= 0) {
+        auto whole = static_cast<std::uint64_t>(d);
+        if(std::cmp_not_equal(i, whole)) {
+            return std::cmp_less(i, whole) ? std::partial_ordering::less
+                                           : std::partial_ordering::greater;
+        }
+        return d > static_cast<double>(whole) ? std::partial_ordering::less
+                                              : std::partial_ordering::equivalent;
+    }
+    auto whole = static_cast<std::int64_t>(d);
+    if(std::cmp_not_equal(i, whole)) {
+        return std::cmp_less(i, whole) ? std::partial_ordering::less
+                                       : std::partial_ordering::greater;
+    }
+    return d < static_cast<double>(whole) ? std::partial_ordering::greater
+                                          : std::partial_ordering::equivalent;
+}
+
+}  // namespace detail
+
+/// a <=> b exactly, whatever their types; unordered when either is unset or
+/// NaN.
+constexpr std::partial_ordering compare_numbers(const schema_number& a, const schema_number& b) {
+    return std::visit(
+        []<typename X, typename Y>(X x, Y y) -> std::partial_ordering {
+            if constexpr(std::same_as<X, std::monostate> || std::same_as<Y, std::monostate>) {
+                return std::partial_ordering::unordered;
+            } else if constexpr(std::same_as<X, double> && std::same_as<Y, double>) {
+                return x <=> y;
+            } else if constexpr(std::same_as<Y, double>) {
+                return detail::compare_with_double(x, y);
+            } else if constexpr(std::same_as<X, double>) {
+                return 0 <=> detail::compare_with_double(y, x);
+            } else {
+                return std::cmp_less(x, y)      ? std::partial_ordering::less
+                       : std::cmp_greater(x, y) ? std::partial_ordering::greater
+                                                : std::partial_ordering::equivalent;
+            }
+        },
+        a,
+        b);
+}
+
 /// The value part of a field annotation. One non-template type, built by
 /// KOTATSU_ANNOTATE at compile time; downstream code reads it through
 /// field_spec_of so mangled names never contain the string payloads. Designed
@@ -67,6 +132,20 @@ struct field_spec {
     /// it had, the one its initializer gives in a value decoded fresh.
     /// Equivalent to Rust's #[serde(default)].
     bool defaulted = false;
+
+    // What a schema states beyond the type, for its readers: the decoder
+    // checks none of it.
+
+    /// Whether a schema states the field's default value; false for one that
+    /// differs between machines or runs. Whether the field is required does
+    /// not change.
+    bool schema_default = true;
+    /// The least and the greatest value of a number field, beside the bounds
+    /// of its type.
+    schema_number minimum = {};
+    schema_number maximum = {};
+    /// The values a string field takes.
+    name_list choices = {};
 };
 
 /// How a variant is tagged in serialized form.
@@ -123,6 +202,10 @@ enum class aspect : std::uint8_t {
     as,
     with,
     enum_string,
+    schema_default,
+    minimum,
+    maximum,
+    choices,
     // struct_spec
     rename_all,
     deny_unknown_fields,
@@ -192,6 +275,24 @@ struct value_proxy {
     }
 };
 
+/// `minimum = 1`: any integer or floating-point value, kept exactly.
+template <aspect A, auto Member>
+struct number_proxy {
+    template <typename T>
+        requires (std::is_arithmetic_v<T> && !std::same_as<T, bool>)
+    constexpr auto operator=(T value) const {
+        schema_number number;
+        if constexpr(std::is_floating_point_v<T>) {
+            number = static_cast<double>(value);
+        } else if constexpr(std::is_signed_v<T>) {
+            number = static_cast<std::int64_t>(value);
+        } else {
+            number = static_cast<std::uint64_t>(value);
+        }
+        return value_component<A, Member, schema_number>{number};
+    }
+};
+
 template <aspect A, auto Member>
 struct name_list_proxy {
     constexpr auto operator=(std::initializer_list<std::string_view> names) const {
@@ -249,6 +350,12 @@ struct type_proxy {
 [[maybe_unused]] constexpr inline type_proxy<aspect::as> as{};
 [[maybe_unused]] constexpr inline type_proxy<aspect::with> with{};
 [[maybe_unused]] constexpr inline type_proxy<aspect::enum_string> enum_string{};
+[[maybe_unused]] constexpr inline value_proxy<aspect::schema_default,
+                                              &field_spec::schema_default,
+                                              bool> schema_default{};
+[[maybe_unused]] constexpr inline number_proxy<aspect::minimum, &field_spec::minimum> minimum{};
+[[maybe_unused]] constexpr inline number_proxy<aspect::maximum, &field_spec::maximum> maximum{};
+[[maybe_unused]] constexpr inline name_list_proxy<aspect::choices, &field_spec::choices> choices{};
 
 [[maybe_unused]] constexpr inline value_proxy<aspect::rename_all,
                                               &struct_spec::rename_all,
@@ -316,6 +423,22 @@ constexpr void validate_spec(const field_spec& spec) {
         for(std::size_t j = i + 1; j < aliases.size(); ++j) {
             if(aliases[i] == aliases[j]) {
                 KOTA_THROW("annotation: duplicate alias name");
+            }
+        }
+    }
+    if(compare_numbers(spec.minimum, spec.maximum) == std::partial_ordering::greater) {
+        KOTA_THROW("annotation: minimum exceeds maximum");
+    }
+    for(auto bound: {spec.minimum, spec.maximum}) {
+        if(auto* number = std::get_if<double>(&bound); number && *number != *number) {
+            KOTA_THROW("annotation: a NaN bound");
+        }
+    }
+    auto choices = spec.choices.names();
+    for(std::size_t i = 0; i < choices.size(); ++i) {
+        for(std::size_t j = i + 1; j < choices.size(); ++j) {
+            if(choices[i] == choices[j]) {
+                KOTA_THROW("annotation: duplicate choice");
             }
         }
     }

@@ -601,6 +601,83 @@ struct set_of_struct {
 };
 
 // ---------------------------------------------------------------------------
+// fixtures of what an annotation states for a schema alone
+// ---------------------------------------------------------------------------
+
+struct bounded_fields {
+    KOTATSU_ANNOTATE(minimum = 1, maximum = 64)
+    <std::uint32_t> workers;
+    /// Looser than its type, whose bound stays.
+    KOTATSU_ANNOTATE(minimum = -1000)
+    <std::int8_t> offset;
+    KOTATSU_ANNOTATE(minimum = 0.5)
+    <double> ratio;
+    KOTATSU_ANNOTATE(maximum = 10)
+    <std::optional<std::int32_t>> limit;
+};
+
+struct bounded_text {
+    KOTATSU_ANNOTATE(minimum = 1)
+    <std::string> name;
+};
+
+struct fractional_bound_on_integer {
+    KOTATSU_ANNOTATE(maximum = 2.5)
+    <std::int32_t> count;
+};
+
+struct chosen_fields {
+    KOTATSU_ANNOTATE(choices = {"off", "on", "auto"})
+    <std::string> readonly;
+    KOTATSU_ANNOTATE(choices = {"a", "b"})
+    <std::optional<std::string>> mode;
+};
+
+struct chosen_number {
+    KOTATSU_ANNOTATE(choices = {"1"})
+    <std::int32_t> count;
+};
+
+struct machine_section {
+    KOTATSU_ANNOTATE(defaulted = true, schema_default = false)
+    <std::uint32_t> workers = 8;
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::uint32_t> retries = 3;
+};
+
+struct machine_root {
+    KOTATSU_ANNOTATE(defaulted = true)
+    <machine_section> section;
+    KOTATSU_ANNOTATE(defaulted = true, schema_default = false)
+    <std::uint32_t> jobs = 8;
+};
+
+struct aliased_required {
+    KOTATSU_ANNOTATE(alias = {"legacy"})
+    <std::int32_t> value;
+};
+
+enum class level_kind : std::uint8_t {
+    low_level,
+    high_level,
+};
+
+struct enum_string_field {
+    KOTATSU_ANNOTATE(enum_string = type<naming::rename_policy::lower_camel>)
+    <level_kind> level;
+};
+
+struct keyed_maps {
+    std::map<std::int32_t, std::int32_t> by_id;
+    std::map<std::uint8_t, std::int32_t> by_byte;
+    std::map<level_kind, std::int32_t> by_level;
+};
+
+struct char_field {
+    char letter;
+};
+
+// ---------------------------------------------------------------------------
 // description fixtures
 // ---------------------------------------------------------------------------
 
@@ -1033,8 +1110,7 @@ ZEST_CASE(container_set_i32) {
                      R"("v":{"type":"array",)"
                      R"("items":{"type":"integer",)"
                      R"("minimum":-2147483648,)"
-                     R"("maximum":2147483647},)"
-                     R"("uniqueItems":true}},)"
+                     R"("maximum":2147483647}}},)"
                      R"("required":["v"]})");
 }
 
@@ -1898,8 +1974,7 @@ ZEST_CASE(set_of_string) {
                      R"("type":"object",)"
                      R"("properties":{)"
                      R"("tags":{"type":"array",)"
-                     R"("items":{"type":"string"},)"
-                     R"("uniqueItems":true}},)"
+                     R"("items":{"type":"string"}}},)"
                      R"("required":["tags"]})");
 }
 
@@ -2264,8 +2339,7 @@ ZEST_CASE(combo_set_of_struct) {
                      R"("ids":{"type":"array",)"
                      R"("items":{"type":"integer",)"
                      R"("minimum":-2147483648,)"
-                     R"("maximum":2147483647},)"
-                     R"("uniqueItems":true},)"
+                     R"("maximum":2147483647}},)"
                      R"("name":{"type":"string"}},)"
                      R"("required":["ids","name"]})");
 }
@@ -2511,6 +2585,83 @@ ZEST_CASE(bytes_field) {
                      R"("minimum":0,)"
                      R"("maximum":255}}},)"
                      R"("required":["data"]})");
+}
+
+// ---------------------------------------------------------------------------
+// what an annotation states for a schema alone
+// ---------------------------------------------------------------------------
+
+ZEST_CASE(bounds_join_the_number_schema) {
+    const auto result = json::schema_string<bounded_fields>().value();
+    // Tighter than the type's, they replace its bounds.
+    EXPECT(zest::contains(result, R"("workers":{"type":"integer","minimum":1,"maximum":64})"));
+    // Looser, they leave them.
+    EXPECT(zest::contains(result, R"("offset":{"type":"integer","minimum":-128,"maximum":127})"));
+    // A float or a nullable takes them in its number branch.
+    EXPECT(zest::contains(result, R"("ratio":{"anyOf":[{"type":"number","minimum":0.5},)"));
+    EXPECT(zest::contains(result, R"("minimum":-2147483648,"maximum":10},{"type":"null"}])"));
+}
+
+ZEST_CASE(bound_on_a_field_that_is_no_number_fails) {
+    auto text = json::schema_string<bounded_text>();
+    ASSERT(!text);
+    EXPECT(text.error().message == "minimum or maximum on field 'name', which is no number");
+    auto fractional = json::schema_string<fractional_bound_on_integer>();
+    ASSERT(!fractional);
+    EXPECT(fractional.error().message == "a floating-point maximum on an integer field");
+}
+
+ZEST_CASE(choices_join_the_string_schema) {
+    const auto result = json::schema_string<chosen_fields>().value();
+    EXPECT(zest::contains(result, R"("readonly":{"type":"string","enum":["off","on","auto"]})"));
+    EXPECT(
+        zest::contains(result,
+                       R"("mode":{"anyOf":[{"type":"string","enum":["a","b"]},{"type":"null"}])"));
+}
+
+ZEST_CASE(choices_on_a_field_that_is_no_string_fails) {
+    auto result = json::schema_string<chosen_number>();
+    ASSERT(!result);
+    EXPECT(result.error().message == "choices on field 'count', which is no string");
+}
+
+ZEST_CASE(unstated_default_appears_nowhere) {
+    // Neither its own property, its $def, nor a whole-object default holding
+    // it states the default.
+    const auto result = json::schema_string<machine_root>().value();
+    EXPECT(zest::contains(result, R"("jobs":{"type":"integer","minimum":0,"maximum":4294967295})"));
+    EXPECT(zest::contains(result, R"("default":{"retries":3})"));
+    EXPECT(
+        zest::contains(result, R"("workers":{"type":"integer","minimum":0,"maximum":4294967295})"));
+    EXPECT(!zest::contains(result, R"("default":8)"));
+}
+
+ZEST_CASE(alias_is_a_property_and_satisfies_required) {
+    const auto result = json::schema_string<aliased_required>().value();
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("value":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
+                     R"("legacy":{"type":"integer","minimum":-2147483648,"maximum":2147483647}},)"
+                     R"("allOf":[{"anyOf":[{"required":["value"]},{"required":["legacy"]}]}]})");
+}
+
+ZEST_CASE(field_enum_string_lists_its_members) {
+    const auto result = json::schema_string<enum_string_field>().value();
+    EXPECT(zest::contains(result, R"("level":{"enum":["lowLevel","highLevel"]})"));
+}
+
+ZEST_CASE(map_keys_spell_what_they_decode_from) {
+    const auto result = json::schema_string<keyed_maps>().value();
+    EXPECT(zest::contains(result, R"("propertyNames":{"pattern":"^-?[0-9]+$"})"));
+    EXPECT(zest::contains(result, R"("propertyNames":{"pattern":"^[0-9]+$"})"));
+    const auto named = json::schema_string<keyed_maps, test::EnumStringConfig>().value();
+    EXPECT(zest::contains(named, R"("propertyNames":{"enum":["low_level","high_level"]})"));
+}
+
+ZEST_CASE(char_is_one_code_point_up_to_ff) {
+    const auto result = json::schema_string<char_field>().value();
+    EXPECT(zest::contains(result, R"("letter":{"type":"string","pattern":"^[\u0000-\u00FF]$"})"));
 }
 
 // ---------------------------------------------------------------------------

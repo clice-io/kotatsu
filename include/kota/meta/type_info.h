@@ -96,6 +96,10 @@ struct enum_type_info : type_info {
     std::span<const std::string_view> member_names;
     const void* member_values;
     type_kind underlying_kind;
+    /// The policy of the behavior::enum_string an annotated enum travels
+    /// through: its members are strings, spelled as it says, whatever the
+    /// config's enum_repr. Null for a plain enum.
+    std::string (*rename)(bool is_serialize, std::string_view name) = nullptr;
 };
 
 struct tuple_type_info : type_info {
@@ -140,6 +144,14 @@ struct field_info {
 
     /// Documentation text from the annotation, empty when absent.
     std::string_view description = {};
+
+    /// What a schema states beyond the type, from the annotation (see
+    /// field_spec): whether it states the default, the bounds of a number,
+    /// the values of a string.
+    bool schema_default = true;
+    schema_number minimum = {};
+    schema_number maximum = {};
+    std::span<const std::string_view> choices = {};
 };
 
 struct struct_type_info : type_info {
@@ -354,6 +366,32 @@ struct type_instance :
     type_instance_impl<typename Resolved::type,
                        typename Resolved::tag_attrs,
                        typename Resolved::config> {};
+
+/// An enum annotated with behavior::enum_string: the enum's members, which
+/// travel as the policy spells their names. Resolution maps the annotation to
+/// a string, which is what the codec reads and writes; this instance keeps
+/// the members a schema lists.
+template <typename T, typename Config, typename Resolved>
+    requires annotated_type<T> && tuple_has_spec_v<typename T::attrs, behavior::enum_string>
+struct type_instance<T, Config, Resolved> {
+    using enum_t = typename T::annotated_type;
+    using policy = typename tuple_find_spec_t<typename T::attrs, behavior::enum_string>::policy;
+
+    static std::string rename(bool is_serialize, std::string_view name) {
+        return policy{}(is_serialize, name);
+    }
+
+    constexpr static auto& names = meta::reflection<enum_t>::member_names;
+    constexpr static auto& values = meta::reflection<enum_t>::member_values;
+
+    constexpr inline static enum_type_info value = {
+        {type_kind::enumeration, meta::type_name<enum_t>()},
+        {names.data(),           names.size()             },
+        static_cast<const void*>(values.data()),
+        kind_of<std::underlying_type_t<enum_t>>(),
+        &rename,
+    };
+};
 
 template <typename T, std::size_t I>
 constexpr std::size_t single_field_count();
@@ -596,6 +634,10 @@ constexpr field_info make_field_info(std::size_t base_offset) {
                     raw_kind == type_kind::null,
         .idx = spec.idx,
         .description = spec.description,
+        .schema_default = spec.schema_default,
+        .minimum = spec.minimum,
+        .maximum = spec.maximum,
+        .choices = spec.choices.names(),
     };
 }
 

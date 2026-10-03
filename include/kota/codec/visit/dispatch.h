@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <concepts>
 #include <cstddef>
 #include <memory>
@@ -40,6 +41,18 @@ struct FieldAt {
         return *reinterpret_cast<field_t*>(base + schema::fields[I].offset);
     }
 };
+
+/// Whether a field of struct T under Config answers to name, by its own name
+/// or an alias: an internal tag of that name would be the field's key too.
+template <typename Config, typename T>
+consteval bool has_field_named(std::string_view name) {
+    return std::ranges::any_of(meta::virtual_schema<T, Config>::fields,
+                               [&](const meta::field_info& field) {
+                                   return field.name == name ||
+                                          std::ranges::find(field.aliases, name) !=
+                                              field.aliases.end();
+                               });
+}
 
 /// Whether a node of type T can carry a tagging spec: only a std::variant
 /// has alternatives to tag.

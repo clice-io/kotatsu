@@ -319,13 +319,14 @@ struct Reader {
                 break;
             }
             auto field = std::move(field_result).value_unsafe();
+            // The raw key starts after its opening quote; unescaping it lets
+            // go of it, so it is taken first.
+            const char* key_at = field.key().raw() - 1;
             auto key = field.unescaped_key();
             if(key.error()) {
                 ok = fail_simdjson(key.error());
                 break;
             }
-            // The raw key starts after its opening quote.
-            const char* key_at = field.key().raw() - 1;
             auto fv = std::move(field).value();
             Reader sub{fv, buf_base, buf_size};
             sub.key_at = key_at;

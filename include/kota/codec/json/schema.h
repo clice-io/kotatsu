@@ -1,12 +1,15 @@
 #pragma once
 
 #include <algorithm>
+#include <compare>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <format>
+#include <initializer_list>
 #include <limits>
+#include <optional>
 #include <ranges>
 #include <string>
 #include <string_view>
@@ -145,6 +148,11 @@ private:
                     {"type", "boolean"}
                 };
             case tk::character:
+                // One code point up to U+00FF, the char's value.
+                return dyn::Value{
+                    {"type",    "string"              },
+                    {"pattern", R"(^[\u0000-\u00FF]$)"},
+                };
             case tk::string:
                 return dyn::Value{
                     {"type", "string"}
@@ -213,10 +221,26 @@ private:
         target.insert("type", "object");
         KOTA_EXPECTED_TRY_V(auto props, make_properties(si));
         dyn::Array required;
+        // A required field the document may name by an alias is present under
+        // one of its names.
+        dyn::Array named_once;
         for(const auto& f: si->fields) {
-            if(is_required(f)) {
-                required.push_back(dyn::Value(f.name));
+            if(!is_required(f)) {
+                continue;
             }
+            if(f.aliases.empty()) {
+                required.push_back(dyn::Value(f.name));
+                continue;
+            }
+            dyn::Array names{dyn::Value{{"required", dyn::Array{dyn::Value(f.name)}}}};
+            for(auto alias: f.aliases) {
+                names.push_back(dyn::Value{
+                    {"required", dyn::Array{dyn::Value(alias)}}
+                });
+            }
+            named_once.push_back(dyn::Value{
+                {"anyOf", std::move(names)}
+            });
         }
         if(tag) {
             props.get_object()->insert(std::string(tag->field),
@@ -228,6 +252,9 @@ private:
         target.insert("properties", std::move(props));
         if(!required.empty()) {
             target.insert("required", std::move(required));
+        }
+        if(!named_once.empty()) {
+            target.insert("allOf", std::move(named_once));
         }
         if(si->deny_unknown) {
             target.insert("additionalProperties", false);
@@ -306,18 +333,25 @@ private:
 
     result_t make_enum(const meta::type_info* ti) const {
         auto* ei = static_cast<const meta::enum_type_info*>(ti);
-        if(opts.enums != enum_repr::String) {
-            // enum_repr::Integer: the codec casts through the underlying type
-            // without checking membership, and name reflection only covers a
-            // limited scan range — values outside it still encode. The honest
-            // constraint is the underlying integer's range, not a value list.
-            return make_integer_kind(ei->underlying_kind);
+        // A behavior::enum_string spells the names through its own policy,
+        // whatever enum_repr says.
+        auto rename = ei->rename;
+        if(rename == nullptr) {
+            if(opts.enums != enum_repr::String) {
+                // enum_repr::Integer: the codec casts through the underlying
+                // type without checking membership, and name reflection only
+                // covers a limited scan range — values outside it still
+                // encode. The honest constraint is the underlying integer's
+                // range, not a value list.
+                return make_integer_kind(ei->underlying_kind);
+            }
+            rename = opts.rename;
         }
         // Exhaustive: a value without a reflected member name has no string
         // spelling, so the encoder rejects it instead of emitting one.
         dyn::Array values;
         for(const auto& name: ei->member_names) {
-            values.push_back(dyn::Value(opts.rename(true, name)));
+            values.push_back(dyn::Value(rename(true, name)));
         }
         return dyn::Value{
             {"enum", std::move(values)}
@@ -327,23 +361,57 @@ private:
     result_t make_array(const meta::type_info* ti) {
         auto* ai = static_cast<const meta::array_type_info*>(ti);
         KOTA_EXPECTED_TRY_V(auto items, make_schema(&ai->element()));
-        dyn::Object obj{
+        // No uniqueItems for a set: the decoder takes duplicates and keeps
+        // one, and a multiset encodes them.
+        return dyn::Value{
             {"type",  "array"         },
             {"items", std::move(items)},
         };
-        if(ti->kind == tk::set) {
-            obj.insert("uniqueItems", true);
-        }
-        return dyn::Value(std::move(obj));
     }
 
     result_t make_map(const meta::type_info* ti) {
         auto* mi = static_cast<const meta::map_type_info*>(ti);
         KOTA_EXPECTED_TRY_V(auto val_schema, make_schema(&mi->value()));
-        return dyn::Value{
+        dyn::Object obj{
             {"type",                 "object"             },
             {"additionalProperties", std::move(val_schema)},
         };
+        if(auto names = key_names(&mi->key())) {
+            obj.insert("propertyNames", std::move(*names));
+        }
+        return dyn::Value(std::move(obj));
+    }
+
+    /// What a map's keys must spell, beyond a string, as its keys decode:
+    /// the decimal digits of an integer, the name of an enumerator. The
+    /// range of an integer key is not stated.
+    std::optional<dyn::Value> key_names(const meta::type_info* ti) const {
+        auto kind = ti->kind;
+        if(kind == tk::enumeration) {
+            auto* ei = static_cast<const meta::enum_type_info*>(ti);
+            if(ei->rename != nullptr || opts.enums == enum_repr::String) {
+                // An enum's schema never fails.
+                return *make_enum(ti);
+            }
+            kind = ei->underlying_kind;
+        }
+        switch(kind) {
+            case tk::int8:
+            case tk::int16:
+            case tk::int32:
+            case tk::int64:
+                return dyn::Value{
+                    {"pattern", "^-?[0-9]+$"}
+                };
+            case tk::uint8:
+            case tk::uint16:
+            case tk::uint32:
+            case tk::uint64:
+                return dyn::Value{
+                    {"pattern", "^[0-9]+$"}
+                };
+            default: return std::nullopt;
+        }
     }
 
     result_t make_tuple(const meta::type_info* ti) {
@@ -392,12 +460,121 @@ private:
         dyn::Object props;
         for(const auto& f: si->fields) {
             KOTA_EXPECTED_TRY_V(auto schema, make_schema(&f.type()));
+            KOTA_EXPECTED_TRY(constrain(schema, f));
+            // An alias reads the same value; the field describes it.
+            auto aliased = f.aliases.empty() ? dyn::Value() : schema;
             if(!f.description.empty()) {
                 schema.get_object()->insert("description", f.description);
             }
             props.insert(std::string(f.name), std::move(schema));
+            for(auto alias: f.aliases) {
+                props.insert(std::string(alias), aliased);
+            }
         }
         return dyn::Value(std::move(props));
+    }
+
+    /// The branches of a schema whose `type` is one of types: the schema
+    /// itself, or the branches of the anyOf a nullable or nan_repr makes.
+    static std::vector<dyn::Object*> typed_branches(dyn::Value& schema,
+                                                    std::initializer_list<std::string_view> types) {
+        auto typed = [&](const dyn::Object& branch) {
+            const auto* type = branch.find("type");
+            auto name = type != nullptr ? type->get_string() : std::nullopt;
+            return name && std::ranges::find(types, *name) != types.end();
+        };
+        std::vector<dyn::Object*> branches;
+        auto& object = *schema.get_object();
+        if(typed(object)) {
+            branches.push_back(&object);
+        } else if(auto* any = object.find("anyOf")) {
+            for(auto& branch: *any->get_array()) {
+                if(auto* candidate = branch.get_object(); candidate && typed(*candidate)) {
+                    branches.push_back(candidate);
+                }
+            }
+        }
+        return branches;
+    }
+
+    /// Writes a bound the annotation states into a number branch, where it
+    /// is tighter than the bound the type has (tighter: the ordering a
+    /// tighter bound has against a looser one).
+    static std::expected<void, rich_error> bound(dyn::Object& branch,
+                                                 std::string_view key,
+                                                 const meta::schema_number& number,
+                                                 std::partial_ordering tighter) {
+        if(std::holds_alternative<std::monostate>(number)) {
+            return {};
+        }
+        if(branch.find("type")->get_string() == "integer" &&
+           std::holds_alternative<double>(number)) {
+            return std::unexpected(
+                rich_error(std::format("a floating-point {} on an integer field", key)));
+        }
+        auto value = std::visit(
+            []<typename N>(N n) -> dyn::Value {
+                if constexpr(std::same_as<N, std::monostate>) {
+                    return {};
+                } else {
+                    return dyn::Value(n);
+                }
+            },
+            number);
+        if(auto* current = branch.find(key)) {
+            auto type_bound = std::visit(
+                []<typename V>(const V& v) -> meta::schema_number {
+                    if constexpr(std::same_as<V, std::int64_t> || std::same_as<V, std::uint64_t> ||
+                                 std::same_as<V, double>) {
+                        return v;
+                    } else {
+                        return {};
+                    }
+                },
+                current->variant());
+            if(meta::compare_numbers(number, type_bound) == tighter) {
+                *current = std::move(value);
+            }
+        } else {
+            branch.insert(std::string(key), std::move(value));
+        }
+        return {};
+    }
+
+    /// What the field's annotation states beyond its type: the bounds of a
+    /// number, the values of a string. The decoder checks neither.
+    static std::expected<void, rich_error> constrain(dyn::Value& schema,
+                                                     const meta::field_info& f) {
+        bool bounded = !std::holds_alternative<std::monostate>(f.minimum) ||
+                       !std::holds_alternative<std::monostate>(f.maximum);
+        if(bounded) {
+            auto numbers = typed_branches(schema, {"integer", "number"});
+            if(numbers.empty()) {
+                return std::unexpected(rich_error(
+                    std::format("minimum or maximum on field '{}', which is no number", f.name)));
+            }
+            for(auto* branch: numbers) {
+                KOTA_EXPECTED_TRY(
+                    bound(*branch, "minimum", f.minimum, std::partial_ordering::greater));
+                KOTA_EXPECTED_TRY(
+                    bound(*branch, "maximum", f.maximum, std::partial_ordering::less));
+            }
+        }
+        if(!f.choices.empty()) {
+            auto strings = typed_branches(schema, {"string"});
+            if(strings.empty()) {
+                return std::unexpected(
+                    rich_error(std::format("choices on field '{}', which is no string", f.name)));
+            }
+            dyn::Array values;
+            for(auto choice: f.choices) {
+                values.push_back(dyn::Value(choice));
+            }
+            for(auto* branch: strings) {
+                branch->insert("enum", values);
+            }
+        }
+        return {};
     }
 
     /// A field is required only when it always appears in the output: no decode
@@ -586,12 +763,27 @@ public:
     }
 
 private:
-    static bool is_required(const dyn::Array* required, std::string_view name) {
-        if(required == nullptr) {
-            return false;
-        }
-        return std::ranges::any_of(*required,
+    static bool lists(const dyn::Value* required, std::string_view name) {
+        return required != nullptr &&
+               std::ranges::any_of(*required->get_array(),
                                    [&](const dyn::Value& v) { return v.get_string() == name; });
+    }
+
+    /// Whether body requires the property: in its required list, or, for a
+    /// field the document may name by an alias, under one of its names.
+    static bool is_required(const dyn::Object& body, std::string_view name) {
+        if(lists(body.find("required"), name)) {
+            return true;
+        }
+        const auto* named_once = body.find("allOf");
+        return named_once != nullptr &&
+               std::ranges::any_of(*named_once->get_array(), [&](const dyn::Value& names) {
+                   const auto* any = names.get_object()->find("anyOf");
+                   return any != nullptr &&
+                          std::ranges::any_of(*any->get_array(), [&](const dyn::Value& one) {
+                              return lists(one.get_object()->find("required"), name);
+                          });
+               });
     }
 
     static void annotate_properties(dyn::Object& body, const dyn::Value& doc_value) {
@@ -606,13 +798,9 @@ private:
         if(props == nullptr) {
             return;
         }
-        const dyn::Array* required = nullptr;
-        if(const auto* r = body.find("required")) {
-            required = r->get_array();
-        }
         for(auto& [name, prop]: *props->get_object()) {
             const auto* v = doc->find(name);
-            if(v != nullptr && !is_required(required, name)) {
+            if(v != nullptr && !is_required(body, name)) {
                 prop.get_object()->insert("default", *v);
             }
         }
@@ -670,6 +858,15 @@ private:
 template <typename Config>
 struct schema_config : default_config<Config> {
     using format = json::format;
+};
+
+/// The config the documents the defaults come from are encoded under:
+/// Config, leaving out the fields whose default the schema does not state
+/// (schema_default = false), wherever they sit, so that neither their own
+/// property nor the whole-object default of one holding them states it.
+template <typename Config>
+struct default_document_config : default_config<Config> {
+    constexpr static bool omit_unstated_defaults = true;
 };
 
 /// schema_options as a codec config declares them. No visitor participates
@@ -745,7 +942,7 @@ void collect_fresh(FreshDefaults& out) {
                 // document.
                 out.docs.erase(name);
             } else if constexpr(std::is_default_constructible_v<T>) {
-                if(auto text = to_string<cfg>(T())) {
+                if(auto text = to_string<default_document_config<cfg>>(T())) {
                     if(auto doc = from_string<dyn::Value>(*text)) {
                         out.docs.emplace(name, std::move(*doc));
                     }
@@ -808,6 +1005,14 @@ inline std::expected<std::string, rich_error> stringify(dyn::Value value, bool p
 /// unannotated schema; an opaque root — one whose JSON-resolved
 /// representation still reflects as kind unknown — keeps reporting the
 /// emission error at runtime.
+///
+/// A reader taking a property's default takes the one at the property's own
+/// site over the one inside the $def it refers to: the site's default is the
+/// whole value an enclosing initializer gives it. A field annotated
+/// `schema_default = false` has no default stated anywhere. The bounds
+/// (`minimum`, `maximum`) and the values (`choices`) a field annotation
+/// states join its schema for the schema's readers; the decoder checks none
+/// of them.
 template <typename T, typename Config = void>
 std::expected<dyn::Value, rich_error> schema() {
     using resolved = meta::resolved_repr_t<T, format>;
@@ -819,7 +1024,7 @@ std::expected<dyn::Value, rich_error> schema() {
         (detail::SchemaEmitter{detail::options_of<Config>(), annotate_defaults}.emit(
             meta::type_info_of<T, detail::schema_config<Config>>())));
     if constexpr(annotate_defaults) {
-        KOTA_EXPECTED_TRY_V(auto text, to_string<Config>(T()));
+        KOTA_EXPECTED_TRY_V(auto text, to_string<detail::default_document_config<Config>>(T()));
         KOTA_EXPECTED_TRY_V(auto doc, from_string<dyn::Value>(text));
         detail::FreshDefaults fresh;
         detail::collect_fresh<T, detail::schema_config<Config>>(fresh);

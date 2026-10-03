@@ -427,6 +427,9 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
     static_assert(data_driven<Vis> && has_try_read<Vis>,
                   "a tagged variant decodes through a data-driven visitor with try_read");
     constexpr std::string_view tag_key = SpecAttr::value.tag;
+    static_assert((!has_field_named<Config, Ts>(tag_key) && ...),
+                  "internally tagged: an alternative has a field the tag is named like, so "
+                  "its document would hold the key twice");
     constexpr auto names = meta::resolve_tag_names<SpecAttr, Ts...>();
     constexpr std::size_t npos = sizeof...(Ts);
 

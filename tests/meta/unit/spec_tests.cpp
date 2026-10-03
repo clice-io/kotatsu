@@ -1,3 +1,5 @@
+#include <compare>
+#include <cstdint>
 #include <tuple>
 #include <type_traits>
 #include <variant>
@@ -14,6 +16,13 @@ struct full_tag {
                                            dsl::alias = {"user_id", "uid"},
                                            dsl::description = "User identifier.",
                                            dsl::idx = 7u);
+};
+
+struct schema_tag {
+    constexpr static auto spec = make_spec(dsl::minimum = 1,
+                                           dsl::maximum = 2.5,
+                                           dsl::choices = {"off", "on"},
+                                           dsl::schema_default = false);
 };
 
 struct defaulted_tag {
@@ -114,6 +123,33 @@ ZEST_CASE(make_spec_folds_values) {
     STATIC_EXPECT(!spec.defaulted);
     STATIC_EXPECT(spec.skip_if == skip_when::never);
     STATIC_EXPECT(std::tuple_size_v<decltype(full_tag::spec)::extras> == 0);
+}
+
+ZEST_CASE(make_spec_folds_what_a_schema_states) {
+    constexpr const field_spec& spec = schema_tag::spec.value;
+    STATIC_EXPECT(std::get<std::int64_t>(spec.minimum) == 1);
+    STATIC_EXPECT(std::get<double>(spec.maximum) == 2.5);
+    STATIC_EXPECT(spec.choices.names()[1] == "on");
+    STATIC_EXPECT(!spec.schema_default);
+    // Unset, a field states its default and no bounds.
+    STATIC_EXPECT(full_tag::spec.value.schema_default);
+    STATIC_EXPECT(std::holds_alternative<std::monostate>(full_tag::spec.value.minimum));
+    // Unsigned values keep their sign.
+    STATIC_EXPECT(std::get<std::uint64_t>(make_spec(dsl::maximum = ~0ULL).value.maximum) == ~0ULL);
+}
+
+ZEST_CASE(numbers_compare_exactly) {
+    using std::partial_ordering;
+    STATIC_EXPECT(compare_numbers(std::int64_t{-1}, std::uint64_t{0}) == partial_ordering::less);
+    STATIC_EXPECT(compare_numbers(~0ULL, std::int64_t{-1}) == partial_ordering::greater);
+    // 2^53 + 1 is no double: its nearest, 2^53, is below it.
+    constexpr std::int64_t odd = (std::int64_t{1} << 53) + 1;
+    STATIC_EXPECT(compare_numbers(odd, 9007199254740992.0) == partial_ordering::greater);
+    STATIC_EXPECT(compare_numbers(2.5, std::int64_t{2}) == partial_ordering::greater);
+    STATIC_EXPECT(compare_numbers(-2.5, std::int64_t{-2}) == partial_ordering::less);
+    STATIC_EXPECT(compare_numbers(std::int64_t{3}, 3.0) == partial_ordering::equivalent);
+    STATIC_EXPECT(compare_numbers(std::uint64_t{1}, 1e30) == partial_ordering::less);
+    STATIC_EXPECT(compare_numbers(schema_number{}, std::int64_t{1}) == partial_ordering::unordered);
 }
 
 ZEST_CASE(make_spec_keeps_type_components_in_type) {

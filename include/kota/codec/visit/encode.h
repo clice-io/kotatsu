@@ -152,6 +152,9 @@ bool encode_tagged_variant(Vis& vis, const Var& var) {
                         using alt_t = std::remove_cvref_t<decltype(alt)>;
                         static_assert(meta::reflectable_class<alt_t>,
                                       "internally tagged requires struct alternatives");
+                        static_assert(!has_field_named<Config, alt_t>(SpecAttr::value.tag),
+                                      "internally tagged: an alternative has a field the tag "
+                                      "is named like, so its document would hold the key twice");
                         return vis.visit_struct(alt, [&](auto& sv) -> bool {
                             KOTA_CODEC_TRY(sv.visit_field(
                                 std::size_t(0),
@@ -215,6 +218,14 @@ template <typename Config, std::size_t I, typename Vis, typename T>
 bool encode_one_field(Vis& vis, const T& value) {
     using field = FieldAt<Config, I, T>;
     const auto& field_ref = field::of(value);
+
+    // The documents a JSON schema takes its defaults from leave out the
+    // fields it states no default for (see json::schema).
+    if constexpr(requires { requires Config::omit_unstated_defaults; }) {
+        if constexpr(!field::schema::fields[I].schema_default) {
+            return true;
+        }
+    }
 
     // A visitor that writes every field has nothing to mark one absent, so
     // skip_if omits fields only elsewhere.

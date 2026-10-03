@@ -22,7 +22,11 @@ namespace kota::codec::json {
 /// - null, empty optional, null pointer → `null`; engaged optional/pointer →
 ///   the payload itself, no wrapper
 /// - boolean → `true` / `false`
-/// - integers → JSON numbers; uint64 is emitted full-range, beyond 2^53
+/// - integers → JSON numbers; uint64 is emitted full-range, beyond 2^53,
+///   which JavaScript's JSON.parse rounds to the nearest double: a reader in
+///   JavaScript needs a lossless parser (BigInt) for such values. Decode
+///   reads integer tokens only: `1.0`, an integer to JSON Schema, does not
+///   read into an integer
 /// - float32/float64 → JSON numbers; non-finite values follow Config's
 ///   nan_repr, except that JSON has no non-finite literal, so Passthrough
 ///   also emits `null`
