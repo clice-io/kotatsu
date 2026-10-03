@@ -74,7 +74,7 @@ ZEST_CASE(spawn_after_cancel_fails) {
 
 // A child that fails, or ends cancelled, cancels its siblings, and the group
 // takes no child after that.
-ZEST_CASE(spawn_after_a_child_ended_the_group_fails) {
+ZEST_CASE(spawn_after_a_child_failed_fails) {
     int started = 0;
     auto work = [&]() -> task<void, error> {
         started += 1;
@@ -83,23 +83,42 @@ ZEST_CASE(spawn_after_a_child_ended_the_group_fails) {
     auto failing = []() -> task<void, error> {
         co_await fail(error::connection_refused);
     };
-    auto cancelling = []() -> task<void, error> {
-        co_await cancel();
-    };
-    auto after = [&](task<void, error> ender) -> task<bool> {
+    auto driver = [&]() -> task<bool> {
         task_group<error> group;
-        group.spawn(std::move(ender));
+        group.spawn(failing());
         bool accepted = group.spawn(work());
         [[maybe_unused]] auto joined = co_await group.join();
         co_return accepted;
     };
 
-    auto [after_failure, after_cancel] = run(after(failing()), after(cancelling()));
-    ASSERT(after_failure.has_value());
-    EXPECT(!*after_failure);
-    ASSERT(after_cancel.has_value());
-    EXPECT(!*after_cancel);
+    auto [result] = run(driver());
+    ASSERT(result.has_value());
+    EXPECT(!*result);
     EXPECT(started == 0);
+}
+
+// A child that ended cancelled leaves the group open.
+ZEST_CASE(spawn_after_a_child_ended_cancelled_starts_the_child) {
+    int started = 0;
+    auto work = [&]() -> task<> {
+        started += 1;
+        co_return;
+    };
+    auto cancelling = []() -> task<> {
+        co_await cancel();
+    };
+    auto driver = [&]() -> task<bool> {
+        task_group<> group;
+        group.spawn(cancelling());
+        bool accepted = group.spawn(work());
+        co_await group.join();
+        co_return accepted;
+    };
+
+    auto [result] = run(driver());
+    ASSERT(result.has_value());
+    EXPECT(*result);
+    EXPECT(started == 1);
 }
 
 // A group whose children all finished while being spawned may go without a
@@ -245,12 +264,14 @@ ZEST_CASE(finished_children_are_reclaimed_at_once) {
 }
 
 // A child cancelled before it is spawned never runs: it ends cancelled at
-// once, which cancels its siblings as any child's cancellation does.
+// once, and its siblings run on.
 ZEST_CASE(child_cancelled_before_spawn_never_runs) {
     event gate;
     bool ran = false;
+    bool slow_finished = false;
     auto slow = [&]() -> task<> {
         co_await gate.wait();
+        slow_finished = true;
     };
     auto work = [&]() -> task<> {
         ran = true;
@@ -262,6 +283,7 @@ ZEST_CASE(child_cancelled_before_spawn_never_runs) {
         auto cancelled = work();
         cancelled.cancel();
         bool accepted = group.spawn(std::move(cancelled));
+        gate.set();
         co_await group.join();
         co_return accepted;
     };
@@ -270,7 +292,8 @@ ZEST_CASE(child_cancelled_before_spawn_never_runs) {
     ASSERT(result.has_value());
     EXPECT(*result);
     EXPECT(!ran);
-    EXPECT(!gate.has_waiters());
+    // Its sibling ran on.
+    EXPECT(slow_finished);
 }
 
 // Structured completion: join() returns only once every cancelled child has
