@@ -32,7 +32,9 @@ tests/<module>/
   integration/drivers/*.cpp   the programs they spawn, one per file
   harness/*.h, harness/*.ts   helpers for this module's tests and the modules above,
                               integration tests' helpers included
-  CMakeLists.txt              kota_add_module_tests(LIBS <the module's libraries>)
+  CMakeLists.txt              kota_add_module_tests(LIBS <the module's libraries>),
+                              kota::zest::async among them when a suite runs on
+                              zest::LoopFixture
                               kota_add_integration_tests(LIBS ... PROGRAMS ...
                               DEBUG_ONLY ...) if it has integration/; PROGRAMS are
                               targets built elsewhere
