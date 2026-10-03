@@ -14,7 +14,6 @@
 #include <string>
 #include <string_view>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "execution.h"
@@ -68,11 +67,11 @@ task<std::optional<T>> within(task<T> work, milliseconds timeout) {
     if(timeout.count() == 0) {
         co_return co_await std::move(work);
     }
-    auto first = co_await when_any(std::move(work), sleep(timeout));
-    if(first.index() != 0) {
+    auto finished = co_await with_timeout(std::move(work), timeout);
+    if(finished.is_cancelled()) {
         co_return std::nullopt;
     }
-    co_return std::get<0>(std::move(first));
+    co_return std::move(*finished);
 }
 
 /// A running worker process.
