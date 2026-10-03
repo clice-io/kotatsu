@@ -54,6 +54,28 @@ ZEST_CASE(parse_message_reads_error_data) {
     });
 }
 
+// JSON-RPC lets an error leave out its data.
+ZEST_CASE(encode_error_response_leaves_out_empty_data) {
+    JsonCodec codec;
+    auto encoded = codec.encode_error_response(9, Error(ErrorCode::RequestFailed, "fail"));
+    ASSERT(encoded.has_value());
+    EXPECT(*encoded == R"({"jsonrpc":"2.0","id":9,"error":{"code":-32000,"message":"fail"}})");
+}
+
+ZEST_CASE(parse_message_reads_absent_and_null_error_data_as_none) {
+    JsonCodec codec;
+    for(auto payload:
+        {R"({"jsonrpc":"2.0","id":9,"error":{"code":-32000,"message":"fail"}})",
+         R"({"jsonrpc":"2.0","id":9,"error":{"code":-32000,"message":"fail","data":null}})"}) {
+        ZEST_CONTEXT("payload: {}", payload);
+        auto parsed = codec.parse_message(payload);
+        const auto* response = std::get_if<IncomingErrorResponse>(&parsed);
+        ASSERT(response != nullptr);
+        EXPECT(response->error.message == "fail");
+        EXPECT(!response->error.data.has_value());
+    }
+}
+
 ZEST_CASE(request_without_params_reads_empty_params) {
     JsonCodec codec;
     auto parsed = codec.parse_message(R"({"jsonrpc":"2.0","id":1,"method":"test/noparams"})");

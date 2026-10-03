@@ -121,6 +121,13 @@ struct serialize_visit<Vis, kota::ipc::protocol::Error, Config> {
             KOTA_CODEC_TRY(sv.visit_field(std::size_t(1), "message", [&](auto& fv) -> bool {
                 return encode_value<Config>(fv, error.message);
             }));
+            // Empty data is left out, as JSON-RPC allows, except by a visitor
+            // that writes every field, whose decoder reads every field.
+            if constexpr(!writes_every_field<std::remove_cvref_t<decltype(sv)>>) {
+                if(!error.data) {
+                    return true;
+                }
+            }
             return sv.visit_field(std::size_t(2), "data", [&](auto& fv) -> bool {
                 return encode_value<Config>(fv, error.data);
             });

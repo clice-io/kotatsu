@@ -180,7 +180,7 @@ test("call_timing_out_cancels_the_client_request", async (t) => {
     timeoutMs: 20,
   });
   assert.deepEqual(outcome, {
-    error: { code: -32800, message: "request timed out", data: null },
+    error: { code: -32800, message: "request timed out" },
   });
   await cancelled.promise;
   await finish(driver, connection);

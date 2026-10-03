@@ -26,12 +26,6 @@ inline std::string beyond_the_limit() {
     return std::string(4 * payload_limit, 'x');
 }
 
-/// Whether `error` carries no data: JsonCodec writes an error without data
-/// with a null one.
-inline bool without_data(const ipc::Error& error) {
-    return !error.data || error.data->is_null();
-}
-
 template <CodecAdapter A>
 void peer_limit(const PeerKit<A>& kit) {
     using Fixture = PeerFixture<A>;
@@ -110,7 +104,7 @@ void peer_limit(const PeerKit<A>& kit) {
         EXPECT(written[1].kind == Message::Kind::Error);
         EXPECT(written[1].id == RequestID(2));
         EXPECT(code_of(written[1].error) == ErrorCode::MessageTooLarge);
-        EXPECT(without_data(written[1].error));
+        EXPECT(!written[1].error.data.has_value());
     });
 
     // The error's data is what makes it too large; the error that replaces
@@ -130,7 +124,7 @@ void peer_limit(const PeerKit<A>& kit) {
         EXPECT(written[0].kind == Message::Kind::Error);
         EXPECT(written[0].id == RequestID(1));
         EXPECT(code_of(written[0].error) == ErrorCode::MessageTooLarge);
-        EXPECT(without_data(written[0].error));
+        EXPECT(!written[0].error.data.has_value());
     });
 }
 
