@@ -377,6 +377,29 @@ ZEST_CASE(checkpoint_waits_for_the_cancelled_operation) {
     EXPECT(observer.has_value());
 }
 
+// An operation completed inside another task resumes the one awaiting it
+// once that task has suspended, not in the middle of it.
+ZEST_CASE(complete_deferred_resumes_once_the_completer_suspends) {
+    test::PendingOp op;
+    std::vector<std::string> order;
+    auto waiter = [&]() -> task<> {
+        co_await op;
+        order.emplace_back("waiter");
+    };
+    auto completer = [&]() -> task<> {
+        co_await yield();
+        op.complete_deferred(loop);
+        order.emplace_back("completer");
+        co_await yield();
+        order.emplace_back("completer resumed");
+    };
+
+    auto [waited, completed] = run(waiter(), completer());
+    EXPECT(waited.has_value());
+    EXPECT(completed.has_value());
+    EXPECT(order == std::vector<std::string>{"completer", "waiter", "completer resumed"});
+}
+
 ZEST_CASE(error_after_cancel_is_still_reported) {
     task<int, error> target;
     auto worker = [&]() -> task<int, error> {

@@ -15,6 +15,7 @@ class task_frame;
 class aggregate_op;
 class wait_node;
 class io_op;
+class event_loop;
 
 template <typename T, typename E, typename C>
 class task;
@@ -314,6 +315,12 @@ public:
     /// Ends the operation and resumes the task awaiting it. An operation that
     /// cancel() reached stays cancelled, whatever it finished with.
     void complete() noexcept;
+
+    /// Like complete(), once whatever runs now has suspended, as a sync
+    /// primitive resumes the tasks it grants: for an operation that ends
+    /// inside another task, which must not resume the task awaiting it in
+    /// the middle. `loop` is the awaiting task's.
+    void complete_deferred(event_loop& loop) noexcept;
 
     /// Whether cancel() has reached the operation.
     bool cancel_requested() const noexcept {

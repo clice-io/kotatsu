@@ -153,6 +153,7 @@ public:
 private:
     friend class async_node;
     friend class wait_node;
+    friend class io_op;
     friend struct detail::loop_access;
 
     struct Self;
@@ -162,6 +163,10 @@ private:
     /// Queues the task of a wait a sync primitive granted, to resume once
     /// whatever runs now has suspended instead of inline.
     void defer_resume(wait_node& waiter);
+
+    /// Queues `op` to complete once whatever runs now has suspended, in turn
+    /// with the waits queued by defer_resume().
+    void defer_complete(io_op& op);
 
     /// Resumes the queued tasks, in the order they were queued. The runtime
     /// calls this after the outermost coroutine resumption returns; run()

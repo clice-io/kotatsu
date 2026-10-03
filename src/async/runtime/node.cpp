@@ -371,6 +371,10 @@ std::coroutine_handle<> io_op::attach(task_frame& waiting, std::source_location 
     return std::noop_coroutine();
 }
 
+void io_op::complete_deferred(event_loop& loop) noexcept {
+    loop.defer_complete(*this);
+}
+
 void io_op::complete() noexcept {
     state = cancel_requested() ? State::Cancelled : State::Succeeded;
     auto* awaiting = std::exchange(parent, nullptr);
