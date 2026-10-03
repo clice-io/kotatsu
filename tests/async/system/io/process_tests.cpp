@@ -2,6 +2,7 @@
 #include <csignal>
 #include <cstddef>
 #include <fcntl.h>
+#include <format>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -161,6 +162,81 @@ ZEST_CASE(environment_and_directory_reach_the_child) {
     EXPECT(test::exit_status_of(status) == 0);
     EXPECT(trim_newlines(test::read_file(dir.path / "marker.txt")) == "42");
 }
+
+/// What `opts`, a shell command that writes to marker.txt, writes there when
+/// run in `dir`.
+task<std::string> marker_of(process::options opts, const test::TempDir& dir, event_loop& loop) {
+    opts.cwd = dir.path.string();
+    auto spawned = process::spawn(opts, loop);
+    if(!spawned) {
+        co_return "spawn failed";
+    }
+    auto status = co_await spawned->proc.wait();
+    if(!status) {
+        co_return "wait failed";
+    }
+    co_return trim_newlines(test::read_file(dir.path / "marker.txt"));
+}
+
+/// A shell command that writes variables `first` and `second` to marker.txt,
+/// joined by '|'.
+process::options print_two(std::string_view first, std::string_view second) {
+    return shell(by_platform(std::format(R"(printf "%s|%s" "${}" "${}" > marker.txt)", first, second),
+                             std::format(">marker.txt echo %{}%^|%{}%", first, second)));
+}
+
+// The changes go over the inherited environment: the child still has what
+// this process has.
+ZEST_CASE(env_changes_go_over_the_inherited_environment) {
+    test::TempDir dir;
+    auto opts = print_two("KOTA_TEST_SET", by_platform("HOME", "SystemRoot"));
+    opts.env_changes = {{.name = "KOTA_TEST_SET", .value = "set"}};
+    auto [written] = run(marker_of(opts, dir, loop));
+    ASSERT(written.has_value());
+    EXPECT(zest::starts_with(*written, "set|"));
+    EXPECT(*written != "set|");
+}
+
+ZEST_CASE(env_changes_go_over_a_given_environment) {
+    test::TempDir dir;
+    auto opts = print_two("KOTA_TEST_GIVEN", "KOTA_TEST_SET");
+    opts.env = {"KOTA_TEST_GIVEN=given"};
+    opts.env_changes = {{.name = "KOTA_TEST_SET", .value = "set"}};
+    auto [written] = run(marker_of(opts, dir, loop));
+    ASSERT(written.has_value());
+    EXPECT(*written == "given|set");
+}
+
+ZEST_CASE(last_env_change_of_a_name_counts) {
+    test::TempDir dir;
+    auto opts = print_two("KOTA_TEST_SET", "KOTA_TEST_REMOVED");
+    opts.env = {"KOTA_TEST_REMOVED=given"};
+    opts.env_changes = {
+        {.name = "KOTA_TEST_SET", .value = "first"},
+        {.name = "KOTA_TEST_REMOVED", .value = std::nullopt},
+        {.name = "KOTA_TEST_SET", .value = "last"},
+    };
+    // cmd leaves a variable that is not set as it was written.
+    auto [written] = run(marker_of(opts, dir, loop));
+    ASSERT(written.has_value());
+    EXPECT(*written == by_platform("last|", "last|%KOTA_TEST_REMOVED%"));
+}
+
+#ifdef _WIN32
+ZEST_CASE(env_changes_match_names_without_regard_to_case) {
+    test::TempDir dir;
+    auto opts = print_two("KOTA_TEST_SET", "KOTA_TEST_GIVEN");
+    opts.env = {"kota_test_given=given"};
+    opts.env_changes = {
+        {.name = "kota_test_set", .value = "lower"},
+        {.name = "KOTA_TEST_SET", .value = "upper"},
+        {.name = "KOTA_TEST_GIVEN", .value = std::nullopt},
+    };
+    auto [written] = run(marker_of(opts, dir, loop));
+    ASSERT(written.has_value());
+    EXPECT(*written == "upper|%KOTA_TEST_GIVEN%");
+}
+#endif
 
 #ifndef _WIN32
 // libuv on Unix takes the handle of a spawn that fails before it forks off

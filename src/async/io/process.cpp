@@ -1,10 +1,12 @@
 #include "kota/async/io/process.h"
 
+#include <algorithm>
 #include <csignal>
 #include <cstdint>
 #include <format>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string_view>
 #include <utility>
 
@@ -77,6 +79,71 @@ std::string_view exception_name(std::uint32_t status) {
 }
 #endif
 
+/// The name in `entry`, a `KEY=VALUE` string. On Windows a name may start
+/// with '=', as the per-drive directories do.
+std::string_view env_name(std::string_view entry) {
+    return entry.substr(0, entry.find('=', 1));
+}
+
+bool same_env_name(std::string_view left, std::string_view right) {
+#ifdef _WIN32
+    auto lower = [](char c) {
+        return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
+    };
+    return std::ranges::equal(left, right, {}, lower, lower);
+#else
+    return left == right;
+#endif
+}
+
+/// The variables of this process, as `KEY=VALUE` strings.
+result<std::vector<std::string>> inherited_environment() {
+    uv_env_item_t* items = nullptr;
+    int count = 0;
+    if(auto err = error(::uv_os_environ(&items, &count))) {
+        return outcome_error(err);
+    }
+    // Freed on every way out, a throwing copy below included.
+    struct Freed {
+        uv_env_item_t* items;
+        int count;
+
+        ~Freed() {
+            ::uv_os_free_environ(items, count);
+        }
+    } freed{items, count};
+    std::vector<std::string> entries;
+    entries.reserve(static_cast<std::size_t>(count));
+    for(const auto& item: std::span(items, static_cast<std::size_t>(count))) {
+        entries.push_back(std::format("{}={}", item.name, item.value));
+    }
+    return entries;
+}
+
+/// The child's environment as `opts` asks for it: `env`, or the inherited
+/// one, with `env_changes` made in order.
+result<std::vector<std::string>> child_environment(const process::options& opts) {
+    std::vector<std::string> entries;
+    if(opts.env.empty()) {
+        auto inherited = inherited_environment();
+        if(!inherited) {
+            return outcome_error(inherited.error());
+        }
+        entries = std::move(*inherited);
+    } else {
+        entries = opts.env;
+    }
+    for(const auto& change: opts.env_changes) {
+        std::erase_if(entries, [&](const std::string& entry) {
+            return same_env_name(env_name(entry), change.name);
+        });
+        if(change.value) {
+            entries.push_back(std::format("{}={}", change.name, *change.value));
+        }
+    }
+    return entries;
+}
+
 /// A NULL-terminated array of the strings in `from`, which libuv takes as
 /// char* but only reads.
 std::vector<char*> c_strings(const std::vector<std::string>& from) {
@@ -140,7 +207,16 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
     if(opts.args.empty()) {
         argv.insert(argv.begin(), const_cast<char*>(opts.file.c_str()));
     }
-    auto envp = c_strings(opts.env);
+    std::vector<std::string> changed_env;
+    if(!opts.env_changes.empty()) {
+        auto built = child_environment(opts);
+        if(!built) {
+            return outcome_error(built.error());
+        }
+        changed_env = std::move(*built);
+    }
+    const bool inherit_env = opts.env.empty() && opts.env_changes.empty();
+    auto envp = c_strings(opts.env_changes.empty() ? opts.env : changed_env);
 
     std::array<pipe, 3> pipes;
     std::array<uv_stdio_container_t, 3> stdio_containers{};
@@ -177,7 +253,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
     uv_opts.exit_cb = Self::on_exit;
     uv_opts.file = opts.file.c_str();
     uv_opts.args = argv.data();
-    uv_opts.env = opts.env.empty() ? nullptr : envp.data();
+    uv_opts.env = inherit_env ? nullptr : envp.data();
     uv_opts.cwd = opts.cwd.empty() ? nullptr : opts.cwd.c_str();
     const auto& creation = opts.creation;
     if(creation.detached) {

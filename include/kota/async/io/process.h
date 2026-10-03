@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -114,6 +115,13 @@ public:
         bool windows_file_path_exact_name = false;
     };
 
+    /// A change to the child's environment: sets variable `name` to `value`,
+    /// or removes it when there is no value.
+    struct env_change {
+        std::string name;
+        std::optional<std::string> value;
+    };
+
     struct options {
         /// Executable path.
         std::string file;
@@ -123,6 +131,12 @@ public:
 
         /// Environment variables in `KEY=VALUE` form; empty means inherit.
         std::vector<std::string> env;
+
+        /// Changes made, in order, to `env`, or to the inherited environment
+        /// when `env` is empty; the last change of a name counts. Names
+        /// compare without regard to ASCII case on Windows, as Windows
+        /// compares them.
+        std::vector<env_change> env_changes;
 
         /// Working directory; empty means inherit.
         std::string cwd;
