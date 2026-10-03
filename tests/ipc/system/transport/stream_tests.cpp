@@ -215,6 +215,18 @@ ZEST_CASE(oversized_message_is_skipped_and_reading_goes_on) {
     EXPECT(next == "next");
 }
 
+// A Peer over the transport sends nothing larger than it reads.
+ZEST_CASE(max_payload_is_the_limit_it_reads_with) {
+    auto limited = feed(loop, 8);
+    auto by_default = feed(loop);
+    ASSERT(limited.has_value());
+    ASSERT(by_default.has_value());
+    EXPECT(limited->transport->max_payload() == 8U);
+    EXPECT(by_default->transport->max_payload() == default_max_payload);
+    EXPECT(test::close_fd(limited->writer) == 0);
+    EXPECT(test::close_fd(by_default->writer) == 0);
+}
+
 ZEST_CASE(close_wakes_a_pending_read) {
     auto ends = pipe_ends(loop);
     ASSERT(ends.has_value());

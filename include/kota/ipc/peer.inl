@@ -144,6 +144,19 @@ struct Peer<CodecT>::Self {
         return std::nullopt;
     }
 
+    /// Why `payload` is not sent, if it is larger than the transport
+    /// carries: the remote would skip it unread.
+    std::optional<Error> oversized(std::string_view payload) const {
+        const auto limit = transport->max_payload();
+        if(payload.size() <= limit) {
+            return std::nullopt;
+        }
+        return Error(protocol::ErrorCode::MessageTooLarge,
+                     std::format("a message of {} bytes exceeds the limit of {} bytes",
+                                 payload.size(),
+                                 limit));
+    }
+
     /// Queues `payload`; an answer the output can no longer take is dropped.
     void enqueue_outgoing(std::string payload) {
         if(!output_open || closing_output) {
@@ -305,8 +318,20 @@ struct Peer<CodecT>::Self {
         log(LogLevel::error, "error response: {}", error.message);
         auto response = codec.encode_error_response(id, error);
         if(response) {
-            enqueue_outgoing(std::move(*response));
+            enqueue_response(id, std::move(*response));
         }
+    }
+
+    /// Queues `response`, the answer to `id`. One larger than the transport
+    /// carries is replaced by a MessageTooLarge error without data, which the
+    /// remote can read; the handler that answered never learns of it.
+    void enqueue_response(const std::optional<protocol::RequestID>& id, std::string response) {
+        if(auto too_large = oversized(response)) {
+            log(LogLevel::warn, "response replaced: {}", too_large->message);
+            // An error without data always encodes.
+            response = *codec.encode_error_response(id, *too_large);
+        }
+        enqueue_outgoing(std::move(response));
     }
 
     /// Tells the remote that the request `id` is no longer awaited. It is a
@@ -481,7 +506,7 @@ struct Peer<CodecT>::Self {
             co_return;
         }
 
-        enqueue_outgoing(std::move(*response));
+        enqueue_response(id, std::move(*response));
     }
 
     void dispatch_incoming_message(std::string_view payload, task_group<>& handlers) {
@@ -608,6 +633,9 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
     if(!encoded) {
         co_await fail(encoded.error());
     }
+    if(auto too_large = self->oversized(*encoded)) {
+        co_await fail(std::move(*too_large));
+    }
 
     auto pending = std::make_shared<typename Self::PendingRequest>();
     self->pending_requests.emplace(id, pending);
@@ -648,6 +676,9 @@ Result<void> Peer<CodecT>::send_notification_impl(std::string_view method, std::
     auto notification_encoded = self->codec.encode_notification(method, params);
     if(!notification_encoded) {
         return outcome_error(notification_encoded.error());
+    }
+    if(auto too_large = self->oversized(*notification_encoded)) {
+        return outcome_error(std::move(*too_large));
     }
 
     self->enqueue_outgoing(std::move(*notification_encoded));

@@ -94,6 +94,11 @@ ZEST_CASE(written_messages_are_passed_on_unrecorded) {
     EXPECT(test::read_file(path).empty());
 }
 
+ZEST_CASE(max_payload_is_the_inner_transports) {
+    remote.limit_payload(100);
+    EXPECT(transport.max_payload() == 100U);
+}
+
 ZEST_CASE(close_reaches_the_inner_transport) {
     EXPECT(transport.close().has_value());
     EXPECT(remote.closed());

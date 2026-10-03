@@ -65,6 +65,12 @@ struct request_options {
 /// A handler returns RequestResult<Params> or, for a result it has encoded
 /// itself, task<codec::RawValue, Error>; a request whose result type is
 /// codec::RawValue gets the result as the codec wrote it.
+///
+/// Nothing larger than the transport's max_payload() is written, since the
+/// remote would skip it unread: a request or notification that large fails
+/// with MessageTooLarge, and an answer that large is replaced by a
+/// MessageTooLarge error. The limit is this end's, so both ends should use
+/// the same one.
 template <typename Codec>
 class Peer {
 public:

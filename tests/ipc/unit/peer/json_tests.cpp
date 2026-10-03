@@ -5,6 +5,7 @@
 #include "ipc/harness/peer_suite/cancel.h"
 #include "ipc/harness/peer_suite/dispatch.h"
 #include "ipc/harness/peer_suite/lifecycle.h"
+#include "ipc/harness/peer_suite/limit.h"
 #include "ipc/harness/peer_suite/link.h"
 #include "ipc/harness/peer_suite/requests.h"
 #include "ipc/harness/peer_suite/timeout.h"
@@ -50,6 +51,10 @@ ZEST_CASE_GROUP(lifecycle) {
 
 ZEST_CASE_GROUP(link) {
     test::peer_link(Kit{add_case});
+}
+
+ZEST_CASE_GROUP(limit) {
+    test::peer_limit(Kit{add_case});
 }
 
 ZEST_CASE_GROUP(unreadable) {

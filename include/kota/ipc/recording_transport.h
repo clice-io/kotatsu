@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstddef>
 #include <cstdio>
 #include <memory>
 #include <string>
@@ -24,6 +25,8 @@ public:
     task<void, Error> write_message(std::string_view payload) override;
     task<void, Error> close_output() override;
     Result<void> close() override;
+    /// The inner transport's.
+    std::size_t max_payload() const noexcept override;
 
 private:
     void write_record(std::string_view payload);
