@@ -93,6 +93,11 @@ private:
 /// All async operations (tasks, timers, I/O) require an event_loop.
 /// Each thread may have at most one active loop (thread-local).
 /// Use event_loop::current() inside a running loop to get a reference.
+///
+/// On Unix the first loop a process makes ignores SIGPIPE, unless the
+/// program set an action of its own for it: a write to a peer that went
+/// away then fails with error::broken_pipe rather than ending the process.
+/// Children start with the default action.
 class event_loop {
 public:
     event_loop();

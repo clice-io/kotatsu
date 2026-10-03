@@ -4,6 +4,7 @@
 
 #include "kota/async/io/loop.h"
 #include "kota/async/runtime/task.h"
+#include "kota/async/runtime/when.h"
 #include "kota/async/vocab/error.h"
 #include "kota/async/vocab/owned.h"
 
@@ -131,6 +132,24 @@ task<> sleep(std::chrono::milliseconds timeout, event_loop& loop = event_loop::c
 
 inline task<> sleep(int ms, event_loop& loop = event_loop::current()) {
     return sleep(std::chrono::milliseconds{ms}, loop);
+}
+
+namespace detail {
+
+/// Ends cancelled once `timeout` has passed: it never succeeds.
+task<> expire(std::chrono::milliseconds timeout, event_loop& loop);
+
+}  // namespace detail
+
+/// Runs `inner_task`, cancelling it once `timeout` has passed; one not above
+/// zero passes on the loop's next turn. A task that takes its time to end
+/// once cancelled still ends first: this one ends with it. The result reports
+/// that cancellation, or one of the task itself, as a value.
+template <typename T, typename E, typename C>
+task<T, E, cancellation> with_timeout(task<T, E, C> inner_task,
+                                      std::chrono::milliseconds timeout,
+                                      event_loop& loop = event_loop::current()) {
+    return detail::run_until(std::move(inner_task), detail::expire(timeout, loop));
 }
 
 }  // namespace kota

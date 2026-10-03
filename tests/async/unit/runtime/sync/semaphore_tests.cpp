@@ -136,6 +136,66 @@ ZEST_CASE(cancelled_last_waiter_returns_a_handed_over_unit) {
     EXPECT(!sem.try_acquire());
 }
 
+ZEST_CASE(scoped_acquire_guard_releases_when_it_goes) {
+    semaphore s(1);
+    auto acquirer = [&]() -> task<std::vector<bool>> {
+        std::vector<bool> available;
+        {
+            auto held = co_await s.scoped_acquire();
+            available.push_back(s.try_acquire());
+        }
+        available.push_back(s.try_acquire());
+        co_return available;
+    };
+
+    auto [result] = run(acquirer());
+    ASSERT(result.has_value());
+    EXPECT(*result == std::vector{false, true});
+}
+
+ZEST_CASE(scoped_acquire_guard_releases_once) {
+    semaphore s(1);
+    auto acquirer = [&]() -> task<> {
+        auto held = co_await s.scoped_acquire();
+        auto moved = std::move(held);
+        moved.release();
+        co_return;
+    };
+
+    auto [result] = run(acquirer());
+    EXPECT(result.has_value());
+    EXPECT(s.try_acquire());
+    EXPECT(!s.try_acquire());
+}
+
+// A task cancelled while it holds the guard releases the unit once its frame
+// goes, as a group's child goes once it has ended: the next waiter gets it.
+ZEST_CASE(scoped_acquire_guard_releases_when_its_task_is_cancelled) {
+    semaphore s(1);
+    event gate;
+    cancellation_source stop;
+    bool waiter_acquired = false;
+    auto holder = [&]() -> task<> {
+        auto held = co_await s.scoped_acquire();
+        co_await gate.wait();
+    };
+    auto waiter = [&]() -> task<> {
+        auto acquired = co_await s.scoped_acquire();
+        waiter_acquired = true;
+    };
+    auto driver = [&]() -> task<> {
+        task_group<> group;
+        group.spawn(with_token(holder(), stop.token()));
+        group.spawn(waiter());
+        stop.cancel();
+        co_await group.join();
+    };
+
+    auto [result] = run(driver());
+    EXPECT(result.has_value());
+    EXPECT(waiter_acquired);
+}
+
 };  // ZEST_SUITE(async_runtime_sync_semaphore)
 
 }  // namespace

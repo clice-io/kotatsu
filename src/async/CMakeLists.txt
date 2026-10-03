@@ -22,6 +22,7 @@ add_library(kota_async STATIC)
 add_library(kota::async ALIAS kota_async)
 
 target_sources(kota_async PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/runtime/cancellation.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/runtime/debug.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/runtime/node.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/runtime/sync.cpp"

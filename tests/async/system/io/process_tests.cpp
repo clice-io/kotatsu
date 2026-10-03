@@ -2,6 +2,7 @@
 #include <csignal>
 #include <cstddef>
 #include <fcntl.h>
+#include <format>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -43,6 +44,40 @@ std::string trim_newlines(std::string text) {
     return text;
 }
 
+/// What `opts`, a shell command that writes to marker.txt, writes there when
+/// run in `dir`, or how it ended when it failed.
+task<std::string> marker_of(process::options opts, const test::TempDir& dir, event_loop& loop) {
+    opts.cwd = dir.path.string();
+    auto spawned = process::spawn(opts, loop);
+    if(!spawned) {
+        co_return std::format("spawn failed: {}", spawned.error().message());
+    }
+    auto status = co_await spawned->proc.wait();
+    if(!status) {
+        co_return std::format("wait failed: {}", status.error().message());
+    }
+    if(!status->success()) {
+        co_return status->to_string();
+    }
+    co_return trim_newlines(test::read_file(dir.path / "marker.txt"));
+}
+
+/// A shell command that writes variables `first` and `second` to marker.txt,
+/// joined by '|'. One that is not set reads as unset(name).
+process::options print_two(std::string_view first, std::string_view second) {
+    return shell(
+        by_platform(std::format(R"(printf "%s|%s" "${{{}-unset}}" "${{{}-unset}}" > marker.txt)",
+                                first,
+                                second),
+                    std::format(">marker.txt echo %{}%^|%{}%", first, second)));
+}
+
+/// What print_two() writes for a variable `name` that is not set: cmd leaves
+/// the reference as it was written.
+std::string unset(std::string_view name) {
+    return std::string(by_platform("unset", std::format("%{}%", name)));
+}
+
 ZEST_SUITE(async_io_process, test::LoopFixture) {
 
 ZEST_CASE(wait_reports_the_exit_code) {
@@ -56,7 +91,10 @@ ZEST_CASE(wait_reports_the_exit_code) {
     EXPECT(test::exit_status_of(succeeded) == 0);
     ASSERT(succeeded.has_value());
     EXPECT(succeeded->term_signal == 0);
+    EXPECT(succeeded->success());
     EXPECT(test::exit_status_of(failed) == 3);
+    ASSERT(failed.has_value());
+    EXPECT(!failed->success());
 }
 
 // With inherited stdio the child shares the test's own streams.
@@ -159,6 +197,82 @@ ZEST_CASE(environment_and_directory_reach_the_child) {
     EXPECT(trim_newlines(test::read_file(dir.path / "marker.txt")) == "42");
 }
 
+// The changes go over the inherited environment: the child still has what
+// this process has.
+ZEST_CASE(env_changes_go_over_the_inherited_environment) {
+    test::TempDir dir;
+    test::ScopedVariable inherited("KOTA_TEST_INHERITED", "inherited");
+    auto opts = print_two("KOTA_TEST_SET", "KOTA_TEST_INHERITED");
+    opts.env_changes = {
+        {.name = "KOTA_TEST_SET", .value = "set"}
+    };
+
+    auto [written] = run(marker_of(opts, dir, loop));
+    ASSERT(written.has_value());
+    EXPECT(*written == "set|inherited");
+}
+
+ZEST_CASE(env_changes_go_over_a_given_environment) {
+    test::TempDir dir;
+    test::ScopedVariable inherited("KOTA_TEST_INHERITED", "inherited");
+    auto opts = print_two("KOTA_TEST_GIVEN", "KOTA_TEST_INHERITED");
+    opts.env = {"KOTA_TEST_GIVEN=given"};
+    opts.env_changes = {
+        {.name = "KOTA_TEST_SET", .value = "set"}
+    };
+
+    auto [written] = run(marker_of(opts, dir, loop));
+    ASSERT(written.has_value());
+    EXPECT(*written == "given|" + unset("KOTA_TEST_INHERITED"));
+}
+
+ZEST_CASE(last_env_change_of_a_name_counts) {
+    test::TempDir dir;
+    auto opts = print_two("KOTA_TEST_SET", "KOTA_TEST_REMOVED");
+    opts.env = {"KOTA_TEST_REMOVED=given"};
+    opts.env_changes = {
+        {.name = "KOTA_TEST_SET",     .value = "first"     },
+        {.name = "KOTA_TEST_REMOVED", .value = std::nullopt},
+        {.name = "KOTA_TEST_SET",     .value = "last"      },
+    };
+
+    auto [written] = run(marker_of(opts, dir, loop));
+    ASSERT(written.has_value());
+    EXPECT(*written == "last|" + unset("KOTA_TEST_REMOVED"));
+}
+
+// Changes that remove every variable leave the child an empty environment,
+// not the inherited one.
+ZEST_CASE(env_changes_removing_every_variable_inherit_nothing) {
+    test::TempDir dir;
+    test::ScopedVariable inherited("KOTA_TEST_INHERITED", "inherited");
+    auto opts = print_two("KOTA_TEST_GIVEN", "KOTA_TEST_INHERITED");
+    opts.env = {"KOTA_TEST_GIVEN=given"};
+    opts.env_changes = {
+        {.name = "KOTA_TEST_GIVEN", .value = std::nullopt}
+    };
+
+    auto [written] = run(marker_of(opts, dir, loop));
+    ASSERT(written.has_value());
+    EXPECT(*written == unset("KOTA_TEST_GIVEN") + "|" + unset("KOTA_TEST_INHERITED"));
+}
+
+#ifdef _WIN32
+ZEST_CASE(env_changes_match_names_without_regard_to_case) {
+    test::TempDir dir;
+    auto opts = print_two("KOTA_TEST_SET", "KOTA_TEST_GIVEN");
+    opts.env = {"kota_test_given=given"};
+    opts.env_changes = {
+        {.name = "kota_test_set",   .value = "lower"     },
+        {.name = "KOTA_TEST_SET",   .value = "upper"     },
+        {.name = "KOTA_TEST_GIVEN", .value = std::nullopt},
+    };
+    auto [written] = run(marker_of(opts, dir, loop));
+    ASSERT(written.has_value());
+    EXPECT(*written == "upper|" + unset("KOTA_TEST_GIVEN"));
+}
+#endif
+
 #ifndef _WIN32
 // libuv on Unix takes the handle of a spawn that fails before it forks off
 // the loop's list again, so the process must free it without closing it: a
@@ -238,6 +352,17 @@ ZEST_CASE(kill_ends_a_running_child) {
     auto [status] = run(spawned->proc.wait());
     ASSERT(status.has_value());
     EXPECT(status->term_signal == SIGTERM);
+}
+
+ZEST_CASE(kill_without_a_signal_ends_a_running_child) {
+    auto spawned = process::spawn(test::stdin_reader(), loop);
+    ASSERT(spawned.has_value());
+    EXPECT(!spawned->proc.kill());
+
+    auto [status] = run(spawned->proc.wait());
+    ASSERT(status.has_value());
+    EXPECT(!status->success());
+    EXPECT(status->to_string() == "signal 9 (SIGKILL)");
 }
 
 ZEST_CASE(kill_with_an_invalid_signal_fails) {

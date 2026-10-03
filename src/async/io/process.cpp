@@ -1,10 +1,16 @@
 #include "kota/async/io/process.h"
 
+#include <csignal>
+#include <cstdint>
+#include <format>
 #include <mutex>
 #include <optional>
+#include <span>
+#include <string_view>
 #include <utility>
 
 #include "stream_self.h"
+#include "kota/support/string_ref.h"
 
 namespace kota {
 
@@ -31,6 +37,112 @@ struct process::Self : uv::owned_handle<Self> {
 
 namespace {
 
+/// The name of signal `signum`, among those that end a process; empty for
+/// another.
+std::string_view signal_name(int signum) {
+    switch(signum) {
+        case SIGINT: return "SIGINT";
+        case SIGILL: return "SIGILL";
+        case SIGABRT: return "SIGABRT";
+        case SIGFPE: return "SIGFPE";
+        case SIGSEGV: return "SIGSEGV";
+        case SIGTERM: return "SIGTERM";
+        case SIGKILL: return "SIGKILL";
+#ifndef _WIN32
+        case SIGHUP: return "SIGHUP";
+        case SIGQUIT: return "SIGQUIT";
+        case SIGTRAP: return "SIGTRAP";
+        case SIGBUS: return "SIGBUS";
+        case SIGPIPE: return "SIGPIPE";
+        case SIGALRM: return "SIGALRM";
+        case SIGUSR1: return "SIGUSR1";
+        case SIGUSR2: return "SIGUSR2";
+#endif
+        default: return {};
+    }
+}
+
+#ifdef _WIN32
+/// What the NTSTATUS `status` of a crash says, for the common ones; empty for
+/// another.
+std::string_view exception_name(std::uint32_t status) {
+    switch(status) {
+        case 0x80000003: return "breakpoint";
+        case 0xC0000005: return "access violation";
+        case 0xC000001D: return "illegal instruction";
+        case 0xC0000094: return "integer division by zero";
+        case 0xC00000FD: return "stack overflow";
+        case 0xC0000374: return "heap corruption";
+        case 0xC0000409: return "fail fast";
+        default: return {};
+    }
+}
+#endif
+
+/// The name in `entry`, a `KEY=VALUE` string. On Windows a name may start
+/// with '=', as the per-drive directories do.
+std::string_view env_name(std::string_view entry) {
+    return entry.substr(0, entry.find('=', 1));
+}
+
+bool same_env_name(std::string_view left, std::string_view right) {
+#ifdef _WIN32
+    return string_ref(left).equals_insensitive(right);
+#else
+    return left == right;
+#endif
+}
+
+/// The variables of this process, as `KEY=VALUE` strings.
+result<std::vector<std::string>> inherited_environment() {
+    uv_env_item_t* items = nullptr;
+    int count = 0;
+    if(auto err = error(::uv_os_environ(&items, &count))) {
+        return outcome_error(err);
+    }
+
+    // Freed on every way out, a throwing copy below included.
+    struct Freed {
+        uv_env_item_t* items;
+        int count;
+
+        ~Freed() {
+            ::uv_os_free_environ(items, count);
+        }
+    } freed{items, count};
+
+    std::vector<std::string> entries;
+    entries.reserve(static_cast<std::size_t>(count));
+    for(const auto& item: std::span(items, static_cast<std::size_t>(count))) {
+        entries.push_back(std::format("{}={}", item.name, item.value));
+    }
+    return entries;
+}
+
+/// The child's environment as `opts` asks for it: `env`, or the inherited
+/// one, with `env_changes` made in order.
+result<std::vector<std::string>> child_environment(const process::options& opts) {
+    std::vector<std::string> entries;
+    if(opts.env.empty()) {
+        auto inherited = inherited_environment();
+        if(!inherited) {
+            return outcome_error(inherited.error());
+        }
+        entries = std::move(*inherited);
+    } else {
+        entries = opts.env;
+    }
+    for(const auto& change: opts.env_changes) {
+        std::erase_if(entries, [&](const std::string& entry) {
+            return same_env_name(env_name(entry), change.name);
+        });
+        if(change.value) {
+            entries.push_back(std::format("{}={}", change.name, *change.value));
+        }
+    }
+    return entries;
+}
+
 /// A NULL-terminated array of the strings in `from`, which libuv takes as
 /// char* but only reads.
 std::vector<char*> c_strings(const std::vector<std::string>& from) {
@@ -44,6 +156,24 @@ std::vector<char*> c_strings(const std::vector<std::string>& from) {
 }
 
 }  // namespace
+
+std::string process::exit_status::to_string() const {
+    if(term_signal != 0) {
+        auto name = signal_name(term_signal);
+        return name.empty() ? std::format("signal {}", term_signal)
+                            : std::format("signal {} ({})", term_signal, name);
+    }
+#ifdef _WIN32
+    // A crash exits with its exception's NTSTATUS, an error or a warning.
+    const auto code = static_cast<std::uint32_t>(status);
+    if(code >= 0x8000'0000) {
+        auto name = exception_name(code);
+        return name.empty() ? std::format("exception 0x{:08X}", code)
+                            : std::format("exception 0x{:08X} ({})", code, name);
+    }
+#endif
+    return std::format("exit code {}", status);
+}
 
 process::process() noexcept = default;
 
@@ -76,7 +206,16 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
     if(opts.args.empty()) {
         argv.insert(argv.begin(), const_cast<char*>(opts.file.c_str()));
     }
-    auto envp = c_strings(opts.env);
+    std::vector<std::string> changed_env;
+    if(!opts.env_changes.empty()) {
+        auto built = child_environment(opts);
+        if(!built) {
+            return outcome_error(built.error());
+        }
+        changed_env = std::move(*built);
+    }
+    const bool inherit_env = opts.env.empty() && opts.env_changes.empty();
+    auto envp = c_strings(opts.env_changes.empty() ? opts.env : changed_env);
 
     std::array<pipe, 3> pipes;
     std::array<uv_stdio_container_t, 3> stdio_containers{};
@@ -113,7 +252,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
     uv_opts.exit_cb = Self::on_exit;
     uv_opts.file = opts.file.c_str();
     uv_opts.args = argv.data();
-    uv_opts.env = opts.env.empty() ? nullptr : envp.data();
+    uv_opts.env = inherit_env ? nullptr : envp.data();
     uv_opts.cwd = opts.cwd.empty() ? nullptr : opts.cwd.c_str();
     const auto& creation = opts.creation;
     if(creation.detached) {
@@ -185,6 +324,11 @@ error process::kill(int signum) {
     }
 
     return error(::uv_process_kill(&self->process, signum));
+}
+
+error process::kill() {
+    // libuv defines SIGKILL on Windows, and terminates the process for it.
+    return kill(SIGKILL);
 }
 
 }  // namespace kota

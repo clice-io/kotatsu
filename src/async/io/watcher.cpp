@@ -1,5 +1,6 @@
 #include "kota/async/io/watcher.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <utility>
@@ -167,6 +168,12 @@ task<> sleep(std::chrono::milliseconds timeout, event_loop& loop) {
     // A fresh timer has no other waiter, and it lives until it fires: the
     // wait ends with no error.
     co_await t.self->slot.wait();
+}
+
+task<> detail::expire(std::chrono::milliseconds timeout, event_loop& loop) {
+    // A deadline already past expires on the loop's next turn.
+    co_await sleep(std::max(timeout, std::chrono::milliseconds::zero()), loop);
+    co_await cancel();
 }
 
 }  // namespace kota

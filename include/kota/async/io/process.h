@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -37,11 +38,24 @@ public:
     ~process();
 
     struct exit_status {
-        /// Exit code reported by the child.
+        /// Exit code reported by the child. On Windows, a child that crashed
+        /// exits with the NTSTATUS of its exception, such as 0xC0000005.
         int64_t status;
 
-        /// Terminating signal number if signalled, 0 otherwise.
+        /// Terminating signal number if signalled, 0 otherwise. On Windows,
+        /// the signal kill() sent, if it ended the child.
         int term_signal;
+
+        /// Whether the child exited with code 0, rather than failing,
+        /// crashing or being killed.
+        bool success() const noexcept {
+            return status == 0 && term_signal == 0;
+        }
+
+        /// How the child ended, for a person: "exit code 1", "signal 9
+        /// (SIGKILL)", or on Windows "exception 0xC0000005 (access
+        /// violation)".
+        std::string to_string() const;
     };
 
     struct stdio {
@@ -101,6 +115,13 @@ public:
         bool windows_file_path_exact_name = false;
     };
 
+    /// A change to the child's environment: sets variable `name` to `value`,
+    /// or removes it when there is no value.
+    struct env_change {
+        std::string name;
+        std::optional<std::string> value;
+    };
+
     struct options {
         /// Executable path.
         std::string file;
@@ -110,6 +131,12 @@ public:
 
         /// Environment variables in `KEY=VALUE` form; empty means inherit.
         std::vector<std::string> env;
+
+        /// Changes made, in order, to `env`, or to the inherited environment
+        /// when `env` is empty; the last change of a name counts. Names
+        /// compare without regard to ASCII case on Windows, as Windows
+        /// compares them.
+        std::vector<env_change> env_changes;
 
         /// Working directory; empty means inherit.
         std::string cwd;
@@ -136,6 +163,10 @@ public:
     /// Sends a signal to the child; fails with no_such_process once its exit
     /// has been observed.
     error kill(int signum);
+
+    /// Ends the child at once, which it cannot catch: SIGKILL, or on Windows
+    /// TerminateProcess. Fails as kill(signum) does.
+    error kill();
 
 private:
     struct Self;

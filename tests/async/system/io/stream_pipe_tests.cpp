@@ -420,6 +420,26 @@ ZEST_CASE(write_and_shutdown_ended_by_a_close_fails) {
 }
 #endif
 
+#ifndef _WIN32
+// The loop ignores SIGPIPE, which would end the process at a write to a pipe
+// nobody reads.
+ZEST_CASE(write_to_a_pipe_nobody_reads_fails) {
+    int fds[2] = {-1, -1};
+    ASSERT(test::create_pipe(fds) == 0);
+    test::close_fd(fds[0]);
+    auto writer = pipe::open(fds[1], loop);
+    ASSERT(writer.has_value());
+    auto write = [&]() -> task<void, error> {
+        std::string_view text = "text";
+        co_await writer->write(std::span(text.data(), text.size())).or_fail();
+    };
+
+    auto [written] = run(write());
+    ASSERT(written.has_error());
+    EXPECT(written.error() == error::broken_pipe);
+}
+#endif
+
 ZEST_CASE(write_of_nothing_fails) {
     auto ends = pipe_ends(loop);
     ASSERT(ends.has_value());
@@ -592,6 +612,42 @@ ZEST_CASE(open_of_a_bad_descriptor_fails) {
     ASSERT(opened.has_error());
     EXPECT(opened.error() == error::bad_file_descriptor);
 }
+
+// The loop cannot wait on a regular file to read it: on Linux epoll refuses
+// one, and libuv would abort at the first read; on macOS kqueue stops
+// reporting one at its end; Windows takes no handle but a pipe's.
+ZEST_CASE(open_of_a_file_to_read_fails) {
+    test::TempDir dir;
+    test::write_file(dir.file("file.txt"), "text");
+    auto file = fs::sync::open(dir.file("file.txt"), O_RDONLY, 0);
+    ASSERT(file.has_value());
+
+    auto opened = pipe::open(*file, loop);
+    ASSERT(opened.has_error());
+    EXPECT(opened.error() == error::socket_operation_on_non_socket);
+    EXPECT(!fs::sync::close(*file));
+}
+
+#ifndef _WIN32
+// Writes to a regular file never wait, so the loop never watches one open
+// only for writing.
+ZEST_CASE(open_of_a_file_to_write_writes_to_it) {
+    test::TempDir dir;
+    auto file = fs::sync::open(dir.file("file.txt"), O_CREAT | O_WRONLY, 0644);
+    ASSERT(file.has_value());
+    auto opened = pipe::open(*file, loop);
+    ASSERT(opened.has_value());
+    auto writer = [&]() -> task<void, error> {
+        std::string_view text = "text";
+        co_await opened->write(std::span(text.data(), text.size())).or_fail();
+    };
+
+    auto [written] = run(writer());
+    EXPECT(written.has_value());
+    *opened = pipe();
+    EXPECT(test::read_file(dir.file("file.txt")) == "text");
+}
+#endif
 
 ZEST_CASE(guess_handle_tells_a_pipe_from_a_file) {
     test::TempDir dir;

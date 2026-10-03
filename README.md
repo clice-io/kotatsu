@@ -13,10 +13,12 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - Task composition with sibling cancellation:
   - `when_all(...)` — wait for all children; first error cancels the rest.
   - `when_any(...)` — race children; the winner cancels the rest.
-  - `task_group` — spawn a dynamic fan-out of tasks that start immediately, then join.
+  - `task_group` — spawn a dynamic fan-out of tasks that start immediately, then join; a failure cancels the rest, a child that ends cancelled just ends.
+  - `with_task_group(body)` — a `task_group` in a frame of its own, which ends once every child has.
 - Cooperative cancellation model:
   - `cancellation_token` / `cancellation_source` for cancelling from outside the tasks, on their loop's thread (post from other threads through a `relay`).
-  - `with_token(task, tokens...)` races a task against one or more tokens.
+  - `with_token(task, tokens...)` races a task against one or more tokens; `with_timeout(task, timeout)` against a deadline.
+  - `token.on_cancel(callback)` runs a callback when the source cancels, until its registration goes.
   - `co_await cancel()` explicitly transitions a task to cancelled.
   - `.catch_cancel()` converts cancellation into an explicit `outcome` channel.
   - `.or_fail()` short-circuits error propagation without resuming at the await site.
@@ -25,7 +27,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
   - stream base abstraction
   - pipes, TCP sockets, TCP acceptors, console / TTY streams
   - UDP sockets with multicast and per-packet send/recv
-- Child process API (`process::spawn`) with stdio piping, async wait/kill, and resource-usage reporting.
+- Child process API (`process::spawn`) with stdio piping, environment changes, async wait/kill, exit statuses that tell how the child ended, and resource-usage reporting.
 - Async filesystem API covering the full libuv fs surface (stat / mkdir / scandir / chmod / link / rename / sendfile / utime / mkstemp / …).
 - Libuv watcher wrappers: timer, idle, prepare, check, signal, plus a `sleep` helper.
 
@@ -37,7 +39,8 @@ All public APIs live under the `kota::` namespace, public headers under `include
 > change?" semantics without the platform-specific pitfalls.
 
 - Blocking-work offload via `queue(fn, loop)` onto the libuv thread pool.
-- Coroutine-friendly sync primitives: mutex, semaphore, event, and condition variable.
+- Coroutine-friendly sync primitives: mutex, semaphore, event, and condition variable; `scoped_lock()` / `scoped_acquire()` give guards that let go when a cancel ends the task.
+- `co_invoke(fn, args...)` keeps a capturing lambda coroutine and its arguments alive for its task.
 - Error vocabulary: `error` (libuv status wrapper with named codes), `result<T>`, and the general `outcome<T, E, C>`.
 
 ### `meta` (`include/kota/meta/*`)

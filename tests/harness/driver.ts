@@ -5,7 +5,7 @@
 // driver exited.
 
 import assert from "node:assert/strict";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
 import { existsSync } from "node:fs";
 import type { Readable, Writable } from "node:stream";
@@ -44,18 +44,27 @@ function driverPath(name: string): string {
 
 type Exit = { code: number | null; signal: NodeJS.Signals | null };
 
+/**
+ * The driver's stdin: a pipe the test writes to, the null device ("ignore"),
+ * or a descriptor of the test's, such as a file it opened.
+ */
+type Stdin = "pipe" | "ignore" | number;
+
 export class Driver {
   readonly name: string;
-  readonly #child: ChildProcessWithoutNullStreams;
+  readonly #child: ChildProcess;
+  readonly #stdout: Readable;
   readonly #exited: Promise<Exit>;
   readonly #stderrEnded: Promise<unknown>;
   readonly #allowances: Allowance[] = [];
   #stderr = "";
   #checked = false;
 
-  private constructor(name: string, child: ChildProcessWithoutNullStreams) {
+  private constructor(name: string, child: ChildProcess) {
+    assert.ok(child.stdout !== null && child.stderr !== null);
     this.name = name;
     this.#child = child;
+    this.#stdout = child.stdout;
     this.#exited = new Promise((resolve) =>
       child.once("exit", (code, signal) => resolve({ code, signal })),
     );
@@ -64,22 +73,23 @@ export class Driver {
     this.#stderrEnded = once(child.stderr, "end");
     // A driver that exits before reading all its input breaks the pipe; how
     // it exited is what the test checks.
-    child.stdin.on("error", () => {});
+    child.stdin?.on("error", () => {});
   }
 
   /**
-   * Spawns the driver `name` with `args`. If the test ends before it checked
-   * the driver's exit, because it failed, the driver is killed and how it
-   * ended printed.
+   * Spawns the driver `name` with `args`, its stdin `stdin`. If the test ends
+   * before it checked the driver's exit, because it failed, the driver is
+   * killed and how it ended printed.
    */
   static async spawn(
     t: TestContext,
     name: string,
     args: string[] = [],
+    { stdin = "pipe" }: { stdin?: Stdin } = {},
   ): Promise<Driver> {
     const driver = new Driver(
       name,
-      spawn(driverPath(name), args, { stdio: "pipe" }),
+      spawn(driverPath(name), args, { stdio: [stdin, "pipe", "pipe"] }),
     );
     t.after(() => driver.#abandon());
     await once(driver.#child, "spawn");
@@ -88,16 +98,17 @@ export class Driver {
 
   /** The driver's input, for a channel in its protocol. */
   get stdin(): Writable {
+    assert.ok(this.#child.stdin !== null, "the driver's stdin is no pipe");
     return this.#child.stdin;
   }
 
   /** The driver's output, for a channel in its protocol. */
   get stdout(): Readable {
-    return this.#child.stdout;
+    return this.#stdout;
   }
 
   jsonLines(): JsonLines {
-    return new JsonLines(this.#child.stdout, this.#child.stdin);
+    return new JsonLines(this.#stdout, this.stdin);
   }
 
   /**
@@ -145,9 +156,9 @@ export class Driver {
 
   /** Everything the driver writes to stdout, once it closes it. */
   async output(): Promise<string> {
-    this.#child.stdout.setEncoding("utf8");
+    this.#stdout.setEncoding("utf8");
     let text = "";
-    for await (const chunk of this.#child.stdout) {
+    for await (const chunk of this.#stdout) {
       text += chunk;
     }
     return text;
