@@ -11,10 +11,10 @@
 #include <unistd.h>
 #endif
 
-#include "async/harness/loop_fixture.h"
 #include "async/harness/os.h"
 #include "http/harness/server.h"
 #include "kota/http/http.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -81,7 +81,7 @@ private:
     int saved = -1;
 };
 
-ZEST_SUITE(http_detail_request_body, test::LoopFixture) {
+ZEST_SUITE(http_detail_request_body, zest::LoopFixture) {
 
 // Without a body of its own, curl would read one, chunked, with its own
 // reader, which reads the process's stdin.

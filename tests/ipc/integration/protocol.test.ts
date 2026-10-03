@@ -284,9 +284,13 @@ class Call implements Command {
         assert.deepEqual(outcome, { result: roundtrip(this.policy.value) });
         break;
       case "error": {
+        // Data that is absent or null comes back absent.
         const { code, message, data } = this.policy;
         assert.deepEqual(outcome, {
-          error: { code, message, data: roundtrip(data ?? null) },
+          error:
+            data === undefined || data === null
+              ? { code, message }
+              : { code, message, data: roundtrip(data) },
         });
         break;
       }

@@ -42,6 +42,17 @@ public:
 
         /// Terminating signal number if signalled, 0 otherwise.
         int term_signal;
+
+        /// Whether the child exited with code 0 rather than by a signal.
+        bool success() const noexcept {
+            return status == 0 && term_signal == 0;
+        }
+
+        /// How the child ended, for people: "exit code 3", or "signal 9" with
+        /// the signal's name where the system has one. On Windows a crash
+        /// ends the child with an NTSTATUS code, given in hex and named when
+        /// it is a common one: "exit code 0xC0000005 (access violation)".
+        std::string to_string() const;
     };
 
     struct stdio {
@@ -111,6 +122,18 @@ public:
         /// Environment variables in `KEY=VALUE` form; empty means inherit.
         std::vector<std::string> env;
 
+        /// Variables in `KEY=VALUE` form set over the environment the child
+        /// would get, `env` or else the inherited one, in order: each
+        /// replaces the variable of its name, one set by an earlier entry
+        /// too. On Windows names match whatever their case.
+        std::vector<std::string> env_set;
+
+        /// Names of variables removed from that environment before env_set
+        /// applies. On Windows libuv puts back the variables a process needs
+        /// (PATH, SYSTEMROOT, SYSTEMDRIVE, TEMP, USERPROFILE, WINDIR and a few
+        /// more) when they are missing, so removing those does nothing there.
+        std::vector<std::string> env_unset;
+
         /// Working directory; empty means inherit.
         std::string cwd;
 
@@ -127,6 +150,18 @@ public:
     static result<spawn_result> spawn(const options& opts,
                                       event_loop& loop = event_loop::current());
 
+    struct capture_result;
+
+    /// Runs the child `opts` describes to its end, with its stdout and stderr
+    /// piped whatever `opts.streams` says for them, and gives how it ended and
+    /// all it wrote to each. The pipes are read while the child runs, so a
+    /// child that fills one does not stall. The child reads no stdin of this
+    /// process's: an inherited stdin becomes the null device, and a stdin
+    /// pipe ends at once; a descriptor `opts` gives stays. A read that fails,
+    /// or a cancel, leaves the child running, as destroying a process does.
+    static task<capture_result, error> capture(options opts,
+                                               event_loop& loop = event_loop::current());
+
     /// Waits for the child to exit.
     task<exit_status, error> wait();
 
@@ -136,6 +171,11 @@ public:
     /// Sends a signal to the child; fails with no_such_process once its exit
     /// has been observed.
     error kill(int signum);
+
+    /// Ends the child at once: SIGKILL on POSIX, TerminateProcess on Windows,
+    /// whose exit status libuv reports with SIGKILL as well. Fails as
+    /// kill(signum) does.
+    error kill();
 
 private:
     struct Self;
@@ -155,6 +195,15 @@ struct process::spawn_result {
     pipe stdout_pipe;
 
     pipe stderr_pipe;
+};
+
+/// How a child that process::capture() ran ended, and what it wrote.
+struct process::capture_result {
+    exit_status status;
+
+    std::string stdout_text;
+
+    std::string stderr_text;
 };
 
 }  // namespace kota

@@ -5,7 +5,7 @@
 #include <variant>
 #include <vector>
 
-#include "async/harness/loop_fixture.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -26,7 +26,7 @@ task<int, error> success(int value) {
     co_return value;
 }
 
-ZEST_SUITE(async_runtime_when_errors, test::LoopFixture) {
+ZEST_SUITE(async_runtime_when_errors, zest::LoopFixture) {
 
 // The failing child comes second, so the error is taken from its slot.
 ZEST_CASE(all_first_error_cancels_the_rest) {

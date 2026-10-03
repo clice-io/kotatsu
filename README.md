@@ -9,23 +9,26 @@ All public APIs live under the `kota::` namespace, public headers under `include
 
 ### `async` runtime (`include/kota/async/*`)
 
-- Typed coroutine tasks `task<T, E, C>` with explicit value, error, and cancellation channels, surfaced through `outcome<T, E, C>`.
+- Typed coroutine tasks `task<T, E, C>` with explicit value, error, and cancellation channels, surfaced through `outcome<T, E, C>`. `co_invoke(fn, args...)` keeps a callable (a lambda and its captures) and its arguments in the frame of the task it returns, so they outlive the expression that started it.
 - Task composition with sibling cancellation:
   - `when_all(...)` — wait for all children; first error cancels the rest.
   - `when_any(...)` — race children; the winner cancels the rest.
-  - `task_group` — spawn a dynamic fan-out of tasks that start immediately, then join.
+  - `task_group` — spawn a dynamic fan-out of tasks that start immediately, then join; a child that fails cancels its siblings, one that ends cancelled just ends.
+  - `with_task_group(body)` — run `body` with a `task_group` that outlives every child it spawns, and wait for them all.
 - Cooperative cancellation model:
   - `cancellation_token` / `cancellation_source` for cancelling from outside the tasks, on their loop's thread (post from other threads through a `relay`).
-  - `with_token(task, tokens...)` races a task against one or more tokens.
+  - `cancellation_token::on_cancel(callback)` registers a callback the source's cancel runs; the registration it returns deregisters it when it goes.
+  - `with_token(task, tokens...)` cancels a task once any of the tokens fires, and ends when the task does.
+  - `with_timeout(task, timeout)` cancels a task once `timeout` has passed, and ends when the task does.
   - `co_await cancel()` explicitly transitions a task to cancelled.
   - `.catch_cancel()` converts cancellation into an explicit `outcome` channel.
   - `.or_fail()` short-circuits error propagation without resuming at the await site.
 - Single-threaded libuv-backed `event_loop`; `run(tasks...)` helper; thread-safe `relay` for hopping onto a loop from another thread.
 - Network and IPC I/O:
-  - stream base abstraction
+  - stream base abstraction, with `read_to_end()` and `read_line()`
   - pipes, TCP sockets, TCP acceptors, console / TTY streams
   - UDP sockets with multicast and per-packet send/recv
-- Child process API (`process::spawn`) with stdio piping, async wait/kill, and resource-usage reporting.
+- Child process API (`process::spawn`) with stdio piping, async wait, `kill(signum)` and `kill()` (SIGKILL, or TerminateProcess on Windows), and resource-usage reporting; `options::env_set` / `env_unset` set and remove variables over the environment the child would get, and `process::capture(options)` runs a child to its end and gives its exit status with all it wrote to stdout and stderr. An `exit_status` tells `success()` and spells itself with `to_string()`: "exit code 3", or the signal with the system's name for it.
 - Async filesystem API covering the full libuv fs surface (stat / mkdir / scandir / chmod / link / rename / sendfile / utime / mkstemp / …).
 - Libuv watcher wrappers: timer, idle, prepare, check, signal, plus a `sleep` helper.
 
@@ -37,7 +40,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
 > change?" semantics without the platform-specific pitfalls.
 
 - Blocking-work offload via `queue(fn, loop)` onto the libuv thread pool.
-- Coroutine-friendly sync primitives: mutex, semaphore, event, and condition variable.
+- Coroutine-friendly sync primitives: mutex, semaphore, event, and condition variable; `co_await mutex.scoped_lock()` and `co_await semaphore.scoped_acquire()` give a guard that unlocks or releases when it goes.
 - Error vocabulary: `error` (libuv status wrapper with named codes), `result<T>`, and the general `outcome<T, E, C>`.
 
 ### `meta` (`include/kota/meta/*`)
@@ -50,9 +53,10 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - Reflection-powered comparison (`compare.h`): transparent `eq` / `ne` / `lt` / `le` / `gt` / `ge` functors that recursively handle aggregates, variants, optionals, and ranges.
 - Attributes for the codec layer (`spec.h`, `attrs.h`, `annotation.h`):
   - field values: `rename`, `alias`, `description`, `skip`, `flatten`, `defaulted`, `skip_if` (a built-in `skip_when` condition or a predicate type), and `idx`, which is metadata only: it reaches `field_info`, but no backend lays fields out by it
-  - struct/variant values: `rename_all`, `deny_unknown_fields`, and variant tagging (`tagged` / `tag` / `content` / `tag_names`) in external, internal or adjacent form
+  - struct/variant values: `rename_all`, `deny_unknown_fields`, `defaulted_fields` (every field may be absent, as if each were `defaulted`), and variant tagging (`tagged` / `tag` / `content` / `tag_names`) in external, internal or adjacent form; the first three reach the structs nested inside
   - behaviors: `as<Target>` (travel as another type), `with<Adapter>` (a per-field representation), `enum_string<Policy>`, `skip_if<Pred>`; a predicate taking only the value applies when encoding, one taking `(value, is_serialize)` decides both ways
   - declared with `KOTATSU_ANNOTATE(...)` on a field or `KOTATSU_ANNOTATION(name, ...)` for a reusable tag (both in `kota/codec/macro.h`), or with `annotate<Tag>::type<T>` / `annotation<T, Attrs...>` (which wrap, inherit or inherit-and-use T as its kind requires); the strings live in one constexpr spec per annotation, so they never enter mangled names
+  - `std::format` formats an annotation as the value it annotates, format spec included
 - Type representations (`repr.h`): specializing `repr<T>` or `repr<T, Format>` says what a type travels as, declaratively (`to` / `from`) or imperatively (`serialize` / `deserialize` over the visitor); a repr declaring `meta::dynamic` covers shapes known only at run time (not on FlatBuffers). Reprs chain, and a format-scoped one wins for its backend.
 - Compile-time schema (`schema.h`, `type_info.h`): `virtual_schema<T, Config>` lists a struct's slots (`field_slot<RawType, BehaviorAttrs>`) and `field_info` table with flattening and skipping resolved up front; `type_info_of<T, Config>()` gives runtime descriptors (struct, enum, tuple, variant, array, map, optional) that follow reprs and attributes (`resolved_repr_t`) exactly as the codec does.
 
@@ -61,6 +65,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - One visitor protocol shared by every backend (`codec/visit/`): `encode_value` / `decode_value` dispatch on a backend override (`serialize_visit` / `deserialize_visit`, specialized per visitor, as ipc does for its protocol types), then annotations and `meta::repr`, then `meta::type_kind`. A backend is a visitor; text backends read data-driven (by key, with speculative `try_read` for untagged variants), binary backends positionally.
 - Attributes and config apply the same on every backend: renames and aliases, skipping, flattening, defaults and required fields, `as` / `with` / `enum_string`, tagged variants (a tag wins over the variant type's own repr) and untagged ones picked by probing the input. `default_config<UserConfig>` supplies `enum_repr`, `nan_repr`, `deny_unknown_fields`, `detailed_error`, and takes `field_rename` / `enum_rename` policies; `human_readable = false` turns tagging off on a text backend (a binary backend cannot turn it on).
 - Errors: every encode and decode entry point returns `std::expected<…, rich_error>` (a FlatBuffers view that fails verification is an invalid view instead); a `rich_error` carries the message, the path from the root to the failing value (`a.b[3]`), and a source location where the backend knows one.
+- Unknown fields: a `codec::UnknownFields` installed with `scoped_context<UnknownFields>` collects every key a decode passes over, with its path and, on JSON and TOML, its location, while the decode goes on; `deny_unknown_fields` still fails on the first.
 - Backends:
   - JSON (`codec/json/`): simdjson-based `to_string` / `from_string`, `prettify`, `RawValue` for pass-through JSON, and JSON Schema generation (`schema<T>()`) that agrees with what the encoder writes.
   - TOML (`codec/toml/`): toml++-based `to_toml` / `from_toml` and `to_string` / `from_string`; values that are not tables are boxed under a root key.
@@ -71,9 +76,9 @@ All public APIs live under the `kota::` namespace, public headers under `include
 
 ### `ipc` (`include/kota/ipc/*`)
 
-- JSON-RPC 2.0 protocol model with typed request / notification traits, structured errors (`Error { code, message, data }`), and the full set of spec error codes (including LSP-aligned `RequestCancelled`).
-- Transport abstraction for framed message IO: `Transport` interface, `StreamTransport` over stdio (`open_stdio`), a TCP connection (`connect_tcp`) or any pair of async streams, and a `RecordingTransport` decorator that captures traffic to JSONL for replay testing.
-- The LSP base protocol's framing in `framing.h`: `frame()` writes a `Content-Length` header, and `FrameParser` reads frames from input split anywhere. A frame larger than the transport's limit (64 MiB by default) is skipped, not buffered, and reading goes on; the peer fails only what the frame's first bytes say it concerns: a request is answered with `MessageTooLarge` (-32010), a response fails the request it answers, a notification is dropped, and a message of no kind it can tell fails every pending request.
+- JSON-RPC 2.0 protocol model with typed request / notification traits, structured errors (`Error { code, message, data }`, `data` left out when empty), and in `ErrorCode` the spec's codes, LSP's `RequestCancelled`, and kotatsu's own `MessageTooLarge` (-32010) and `ConnectionClosed` (-32011).
+- Transport abstraction for framed message IO: `Transport` interface, whose `max_payload()` is the largest payload it carries, `StreamTransport` over stdio (`open_stdio`), a TCP connection (`connect_tcp`) or any pair of async streams, and a `RecordingTransport` decorator that captures traffic to JSONL for replay testing.
+- The LSP base protocol's framing in `framing.h`: `frame()` writes a `Content-Length` header, and `FrameParser` reads frames from input split anywhere. A frame larger than the transport's limit (64 MiB by default) is skipped, not buffered, and reading goes on; the peer fails only what the frame's first bytes say it concerns: a request is answered with `MessageTooLarge` (-32010), a response fails the request it answers, a notification is dropped, and a message of no kind it can tell fails every pending request. The peer writes nothing over the transport's limit either, since the remote would skip it: a request or notification that large fails with `MessageTooLarge`, and an answer that large is replaced by a `MessageTooLarge` error. Both ends should use the same limit.
 - Codec-parametric typed peer runtime (`Peer<Codec>`) supporting request dispatch, notifications, and nested RPC; predefined peers for JSON (with LSP camelCase policy) and Bincode codecs.
 - Externally-driven execution model: callers own the event loop, schedule the peer's run loop, and drive shutdown explicitly.
 - `std::expected`-based result type (`ipc::Result<T>`) with protocol validation aligned with the JSON-RPC spec:
@@ -81,9 +86,10 @@ All public APIs live under the `kota::` namespace, public headers under `include
   - structurally invalid messages map to `InvalidRequest`, answered under the request's id when it can be read, and with null id otherwise
   - parameter decode failures map to `InvalidParams`
   - a handler that throws is answered with `InternalError`
+  - what fails because the link is unusable (the peer closed, its input or output ended, a write failed, a frame could not be read) fails with `ConnectionClosed` (-32011); an error a remote sends keeps its own code
 - Cancellation integration with the `async` runtime:
   - inbound `$/cancelRequest` cancels the matching in-flight handler and reports `RequestCancelled`
-  - outbound requests accept an optional cancellation token and/or timeout; cancelling a still-pending request sends `$/cancelRequest` to the peer
+  - outbound requests accept an optional cancellation token and/or timeout; cancelling a still-pending request, through its token or by cancelling the task awaiting it, sends `$/cancelRequest` to the peer and waits for its answer, which the token's request then returns and the cancelled task drops; the timeout bounds the wait from the send, cancel or not
   - `RequestContext` exposes the inbound handler's cancellation token for easy propagation into nested outbound calls
 - Optional structured logging hook (log level + callback).
 
@@ -92,7 +98,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - C++ protocol model generated from the pinned LSP 3.18 meta-model by `scripts/lsp/codegen.ts`: aggregates with inherited properties inlined, same-shaped variant alternatives told apart by their string literal members, and `LSPAny` as `codec::dyn::Value`. Regenerate with `pixi run lsp-codegen`; CI checks that the committed header is current.
 - LSP request / notification traits layered on top of `kota::ipc::protocol`.
 - `URI` parsing / manipulation with percent-encoding helpers and `from_file_path` factories.
-- `LineMap` for byte-offset ↔ LSP `{line, character}` conversion across UTF-8 / UTF-16 / UTF-32 position encodings.
+- `LineMap` for byte-offset ↔ LSP `{line, character}` conversion across UTF-8 / UTF-16 / UTF-32 position encodings; `to_offset` has no offset for a position past the last line or inside a code point, and `to_offset_clamped` reads such a position as leniently as LSP clients do.
 - `ProgressReporter` helper for `$/progress` work-done notifications.
 
 ### `http` (`include/kota/http/*`)
@@ -116,6 +122,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - Compile-time option-table generation driven by `meta` reflection on top of `kota::option`, wired via `DECO_CFG` / `DECO_DECLARE_OPTION_*` macros.
 - Field-level attributes: `required`, help text, meta-var, spellings / aliases, category (exclusive / required groups), argument style and arity, `after_parsed` callbacks.
 - Sub-command routing, nested config scopes, and built-in usage / help rendering.
+- `Command` and `SubCommander` return their handler's `int` as the exit code (0 for a handler returning nothing, `parse_error_exit_code` = 2 when argv does not parse). `decl::HelpOption` is the standard `-h` / `--help` an options struct can hold: it stops the parse, and the command prints its usage and exits with 0.
 
 ### `zest` test framework (`include/kota/zest/*`)
 
@@ -125,6 +132,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - The predicates `contains`, `starts_with`, `ends_with` and `type_eq` report their inputs (`EXPECT(!contains(log, "error"))`), and `ZEST_CONTEXT("…", args…)` adds a line to every check failing inside its scope; `EXPECT_THROWS` / `EXPECT_NOTHROWS` check exceptions.
 - Default CLI runner: filter by `suite[.test]` with wildcards (`--test-filter=…`) and `--verbose`. Tests run on a pool of worker processes (`--jobs=N`), so a crash or a hang past `--timeout` fails that test alone and a fresh worker takes over; `--no-isolation` runs everything in-process for debuggers.
 - Failure reporting uses `std::source_location` to point at the failing expression.
+- `kota::zest::LoopFixture` (`kota/zest/async.h`, target `kota::zest::async`) owns an event loop for a suite's tests: `run(tasks...)` runs coroutines to their end and returns what each ended with, and a watchdog (10 s by default) cancels and fails a test that hangs.
 
 ### `support` (`include/kota/support/*`)
 
@@ -134,6 +142,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
   - `small_vector<T, N>` / `hybrid_vector<T>` — SBO vectors with per-element-size tuned size types
   - `small_string<N>` — SBO string, shares layout with `small_vector<char>`
 - Compile-time string utilities: `string_ref`.
+- Glob patterns (`glob_pattern.h`): `GlobPattern::create(pattern)` compiles a VS Code-style glob (`*`, `?`, `**`, `{a,b}`, `[0-9]`, `[!...]`) and `match(path)` tests a path; `escape(literal)` makes a pattern that matches a literal, `unescape` undoes it, and `split_literal_root(pattern)` splits a pattern at the directory every path it matches is in.
 - Naming-convention conversion (`naming.h`): identity, lower-snake, lower-camel, upper-camel, upper-snake.
 - Type-level utilities: `type_list<Ts...>`, `tuple_traits`, `type_traits`, `expected_try`, `comptime` helpers, and miscellaneous `memory` / `ranges` / `functional` adapters.
 

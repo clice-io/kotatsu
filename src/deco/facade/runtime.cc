@@ -153,22 +153,21 @@ auto SubCommander::match(std::span<std::string> argv) const
                             std::format("unknown subcommand '{}'", argv.front()));
 }
 
-void SubCommander::parse(std::span<std::string> argv) {
+auto SubCommander::parse(std::span<std::string> argv) -> int {
     auto matched = match(argv);
     if(!matched.has_value()) {
         error_handler(std::move(matched.error()));
-        return;
+        return parse_error_exit_code;
     }
     if(matched->is_command()) {
         auto& handler = handlers[command_to_handler.find(matched->command)->second].handler;
-        handler(std::move(*matched));
-        return;
+        return handler(std::move(*matched));
     }
-    (*default_handler)(std::move(*matched));
+    return (*default_handler)(std::move(*matched));
 }
 
-void SubCommander::operator()(std::span<std::string> argv) {
-    parse(argv);
+auto SubCommander::operator()(std::span<std::string> argv) -> int {
+    return parse(argv);
 }
 
 }  // namespace kota::deco::cli

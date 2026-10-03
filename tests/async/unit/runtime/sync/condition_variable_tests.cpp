@@ -3,7 +3,7 @@
 #include <utility>
 #include <vector>
 
-#include "async/harness/loop_fixture.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -18,7 +18,7 @@ task<> owner(task<> waiter) {
     co_await std::move(waiter).catch_cancel();
 }
 
-ZEST_SUITE(async_runtime_sync_condition_variable, test::LoopFixture) {
+ZEST_SUITE(async_runtime_sync_condition_variable, zest::LoopFixture) {
 
 ZEST_CASE(wait_releases_the_mutex_and_takes_it_back) {
     mutex m;

@@ -277,7 +277,7 @@ endif()
 add_test(NAME zest_bootstrap_unit
     COMMAND unit_tests
         --no-isolation
-        "--test-filter={support_*,meta_compare,meta_name,meta_spelling,codec_debug_*,deco_*,async_vocab_outcome,async_vocab_error,async_runtime_task,async_runtime_when_*,async_io_loop,async_io_watcher}.*"
+        "--test-filter={support_*,meta_compare,meta_name,meta_spelling,codec_debug_*,deco_*,async_vocab_outcome,async_vocab_error,async_runtime_task,async_runtime_when_*,async_io_loop,async_io_process_status,async_io_watcher,async_io_watcher_timeout,zest_async}.*"
         "--snapshot-dir=tests/snapshots"
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 )
@@ -296,6 +296,7 @@ set_tests_properties(zest_bootstrap_unit zest_bootstrap_system PROPERTIES
 add_test(NAME zest_runner
     COMMAND "${CMAKE_COMMAND}"
         "-DFIXTURE=$<TARGET_FILE:zest_runner_fixture>"
+        "-DCLI=$<TARGET_FILE:unit_tests>"
         "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/zest_runner"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/zest/integration/check_runner.cmake"
 )

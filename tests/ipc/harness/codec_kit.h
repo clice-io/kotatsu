@@ -215,6 +215,24 @@ void codec_protocol(const CodecKit<A>& kit) {
         EXPECT(code_of(message->error) == ErrorCode::ParseError);
     });
 
+    // An error without data is written without any, as JSON-RPC allows, and
+    // reads back without any. JSON leaves the member out: the adapter would
+    // read a null one as data.
+    kit.add("error_response_without_data_roundtrips_without_data", [] {
+        Codec codec;
+        auto encoded =
+            codec.encode_error_response(20, ipc::Error(ErrorCode::InternalError, "broke"));
+        ASSERT(encoded.has_value());
+        auto message = A::read(*encoded);
+        ASSERT(message.has_value());
+        EXPECT(!message->error.data.has_value());
+        auto parsed = codec.parse_message(*encoded);
+        const auto* response = std::get_if<ipc::IncomingErrorResponse>(&parsed);
+        ASSERT(response != nullptr);
+        EXPECT(response->error.message == "broke");
+        EXPECT(!response->error.data.has_value());
+    });
+
     kit.add("parse_message_reads_a_request", [] {
         Codec codec;
         auto params = A::encode(AddParams{.a = 1, .b = 2});

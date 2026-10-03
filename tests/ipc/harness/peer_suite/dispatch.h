@@ -3,6 +3,7 @@
 // Dispatch: what the peer does with each message it reads, requests and
 // notifications to their handlers, and what it answers.
 
+#include <cstdint>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -94,15 +95,17 @@ void peer_dispatch(const PeerKit<A>& kit) {
         EXPECT(f.written().empty());
     });
 
-    // A handler runs until it first suspends before the peer reads on, so
-    // handlers start in the order their messages arrived.
-    kit.add("handlers_start_in_arrival_order", [](Fixture& f) {
-        std::vector<std::string> order;
+    // A handler starts once the messages read with its request are
+    // dispatched, as a client's edit sent right after a request is: the
+    // handler sees the state the notifications leave.
+    kit.add("notifications_read_with_a_request_reach_their_handler_first", [](Fixture& f) {
+        std::vector<std::string> notes;
+        std::vector<std::string> seen;
         f.peer.on_request([&](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
-            order.emplace_back("request");
+            seen = notes;
             co_return AddResult{.sum = params.a + params.b};
         });
-        f.peer.on_notification([&](const NoteParams& params) { order.push_back(params.text); });
+        f.peer.on_notification([&](const NoteParams& params) { notes.push_back(params.text); });
         f.remote.send(request<A>(1, "test/add", AddParams{.a = 2, .b = 3}));
         f.remote.send(notification<A>("test/note", NoteParams{.text = "first"}));
         f.remote.send(notification<A>("test/note", NoteParams{.text = "second"}));
@@ -110,10 +113,28 @@ void peer_dispatch(const PeerKit<A>& kit) {
 
         auto [ran] = f.run(f.peer.run());
         EXPECT(ran.has_value());
-        EXPECT(order == std::vector<std::string>{"request", "first", "second"});
+        EXPECT(seen == std::vector<std::string>{"first", "second"});
         const auto& written = f.written();
         ASSERT(written.size() == 1U);
         EXPECT(sum_of<A>(written[0]) == 5);
+    });
+
+    // Requests read together start their handlers in the order they came.
+    kit.add("requests_read_together_start_their_handlers_in_arrival_order", [](Fixture& f) {
+        std::vector<std::int64_t> started;
+        f.peer.on_request([&](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
+            started.push_back(params.a);
+            co_return AddResult{.sum = params.a + params.b};
+        });
+        f.remote.send(request<A>(1, "test/add", AddParams{.a = 1}));
+        f.remote.send(request<A>(2, "test/add", AddParams{.a = 2}));
+        f.remote.send(request<A>(3, "test/add", AddParams{.a = 3}));
+        f.remote.end_input();
+
+        auto [ran] = f.run(f.peer.run());
+        EXPECT(ran.has_value());
+        EXPECT(started == std::vector<std::int64_t>{1, 2, 3});
+        EXPECT(f.written().size() == 3U);
     });
 
     // The handler wrote its result itself; the requester gets it as it is.

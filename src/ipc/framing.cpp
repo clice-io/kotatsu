@@ -63,7 +63,11 @@ std::string frame(std::string_view payload) {
     return framed;
 }
 
-FrameParser::FrameParser(std::size_t max_payload) : max_payload(max_payload) {}
+std::string payload_too_large(std::size_t size, std::size_t limit) {
+    return std::format("a message of {} bytes exceeds the limit of {} bytes", size, limit);
+}
+
+FrameParser::FrameParser(std::size_t max_payload) : limit(max_payload) {}
 
 std::optional<std::size_t> FrameParser::header_end(std::string_view next) const {
     constexpr std::string_view blank_line = "\r\n\r\n";
@@ -128,7 +132,7 @@ FrameParser::Step FrameParser::feed(std::string_view input) {
                 payload.clear();
                 prefix.clear();
                 remaining = *length;
-                if(*length > max_payload) {
+                if(*length > limit) {
                     phase = Phase::Skip;
                     skipped_size = *length;
                 } else {
@@ -164,10 +168,7 @@ FrameParser::Step FrameParser::feed(std::string_view input) {
                     .consumed = consumed,
                     .frame = std::unexpected(ReadError{
                         .kind = ReadError::Kind::Oversized,
-                        .message =
-                            std::format("a message of {} bytes exceeds the limit of {} bytes",
-                                        skipped_size,
-                                        max_payload),
+                        .message = payload_too_large(skipped_size, limit),
                         .size = skipped_size,
                         .prefix = std::move(prefix),
                     }),

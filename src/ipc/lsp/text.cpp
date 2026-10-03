@@ -4,6 +4,10 @@
 #include <cstddef>
 #include <utility>
 
+#include "locate.h"
+
+namespace kota::ipc::lsp {
+
 namespace {
 
 // Decodes one UTF-8 code point starting at `index`.
@@ -132,7 +136,26 @@ std::pair<std::uint32_t, std::uint32_t> next_codepoint_sizes(std::string_view te
 
 }  // namespace
 
-namespace kota::ipc::lsp {
+detail::Located detail::locate(std::string_view text,
+                               std::uint32_t character,
+                               PositionEncoding encoding) {
+    std::uint32_t units = 0;
+    for(std::size_t i = 0; i < text.size();) {
+        if(units == character) {
+            return {.offset = static_cast<std::uint32_t>(i), .exact = true};
+        }
+        auto [utf8, utf16] = next_codepoint_sizes(text, i);
+        auto step = encoding == PositionEncoding::UTF8    ? utf8
+                    : encoding == PositionEncoding::UTF16 ? utf16
+                                                          : 1;
+        if(character < units + step) {
+            return {.offset = static_cast<std::uint32_t>(i), .exact = false};
+        }
+        units += step;
+        i += utf8;
+    }
+    return {.offset = static_cast<std::uint32_t>(text.size()), .exact = units == character};
+}
 
 std::vector<std::uint32_t> build_line_starts(std::string_view content) {
     std::vector<std::uint32_t> starts;
@@ -162,34 +185,11 @@ std::uint32_t encoded_length(std::string_view text, PositionEncoding encoding) {
 std::optional<std::uint32_t> encoded_offset(std::string_view text,
                                             std::uint32_t character,
                                             PositionEncoding encoding) {
-    if(character == 0) {
-        return 0;
+    auto located = detail::locate(text, character, encoding);
+    if(!located.exact) {
+        return std::nullopt;
     }
-
-    if(encoding == PositionEncoding::UTF8) {
-        if(character > text.size()) [[unlikely]] {
-            return std::nullopt;
-        }
-        return character;
-    }
-
-    std::uint32_t offset = 0;
-    auto target = character;
-    for(std::size_t i = 0; i < text.size();) {
-        auto [utf8, utf16] = next_codepoint_sizes(text, i);
-        auto step = (encoding == PositionEncoding::UTF16) ? utf16 : 1;
-        if(target < step) [[unlikely]] {
-            return std::nullopt;
-        }
-        target -= step;
-        offset += utf8;
-        i += utf8;
-        if(target == 0) {
-            return offset;
-        }
-    }
-
-    return std::nullopt;
+    return located.offset;
 }
 
 }  // namespace kota::ipc::lsp

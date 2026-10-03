@@ -22,7 +22,9 @@ namespace kota::meta {
 /// Either direction may be omitted; using the missing direction is a compile
 /// error. Signatures are checked against `type` at the call site.
 ///
-/// Imperative form (streaming backends only; the body drives the visitor):
+/// Imperative form (works on all backends; the body drives the visitor, and
+/// must write and read the shape `type` declares, which flatbuffers lays the
+/// value out by):
 ///
 ///     template <>
 ///     struct kota::meta::repr<Weird> {

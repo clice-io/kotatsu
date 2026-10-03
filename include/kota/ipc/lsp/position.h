@@ -12,6 +12,12 @@
 
 namespace kota::ipc::lsp {
 
+namespace detail {
+
+struct Located;
+
+}  // namespace detail
+
 /// Source content + line starts for LSP position conversion.
 /// Line starts are held either as a borrowed span or as an owned vector.
 ///
@@ -51,15 +57,24 @@ public:
             PositionEncoding encoding = PositionEncoding::UTF16);
 
     /// Convert a byte offset to an LSP Position. Every offset up to the
-    /// content's size has one: an offset inside a line's end is at the end.
+    /// content's size has one: an offset inside a line's end is at the end,
+    /// and one inside a code point at the code point's start.
     std::optional<protocol::Position>
         to_position(Offset offset, PositionEncoding encoding = PositionEncoding::Default) const;
 
     /// Convert an LSP Position to a byte offset. A character past the line's
     /// end is its end, as LSP asks; a line past the last one has no offset,
-    /// nor has a UTF-16 unit inside a surrogate pair.
+    /// nor has a unit inside a code point: a UTF-16 unit inside a surrogate
+    /// pair, or a UTF-8 byte inside a multi-byte sequence.
     std::optional<Offset> to_offset(protocol::Position position,
                                     PositionEncoding encoding = PositionEncoding::Default) const;
+
+    /// Convert an LSP Position to a byte offset, as leniently as LSP clients
+    /// read positions: a line past the last one is the end of the content, a
+    /// character past the line's end is its end, and a unit inside a code
+    /// point is the code point's start.
+    Offset to_offset_clamped(protocol::Position position,
+                             PositionEncoding encoding = PositionEncoding::Default) const;
 
     /// Convert a byte range to an LSP Range.
     std::optional<protocol::Range>
@@ -76,6 +91,10 @@ public:
 
 private:
     PositionEncoding resolve(PositionEncoding encoding) const;
+
+    /// Where `position` falls: the offset to_offset_clamped gives it, exact
+    /// where to_offset gives it too.
+    detail::Located locate(protocol::Position position, PositionEncoding encoding) const;
 
     /// Where `line`'s text ends.
     Offset line_end(Offset line) const;

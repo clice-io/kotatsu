@@ -96,9 +96,23 @@ ZEST_CASE(encoded_offset_maps_units_back_to_bytes) {
     EXPECT(encoded_offset(content, 4, PositionEncoding::UTF8) == 4U);
 }
 
-// UTF-16 unit 3 is the second half of 🙂's surrogate pair.
+// UTF-16 unit 3 is the second half of 🙂's surrogate pair; UTF-8 bytes 2
+// and 3 are inside 你, 5 to 7 inside 🙂.
 ZEST_CASE(encoded_offset_inside_a_code_point_fails) {
     EXPECT(encoded_offset("a你🙂b", 3, PositionEncoding::UTF16) == std::nullopt);
+    for(std::uint32_t inside: {2U, 3U, 5U, 6U, 7U}) {
+        ZEST_CONTEXT("byte {}", inside);
+        EXPECT(encoded_offset("a你🙂b", inside, PositionEncoding::UTF8) == std::nullopt);
+    }
+}
+
+// A broken sequence is no code point: each of its bytes is one of its own.
+ZEST_CASE(encoded_offset_after_a_broken_sequence_byte_succeeds) {
+    auto text = bytes('a', 0xE4, 'X', 'b');
+    for(auto encoding: encodings) {
+        ZEST_CONTEXT("encoding: {}", static_cast<int>(encoding));
+        EXPECT(encoded_offset(text, 2, encoding) == 2U);
+    }
 }
 
 ZEST_CASE(encoded_offset_past_the_end_fails) {

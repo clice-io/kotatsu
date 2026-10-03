@@ -3,8 +3,10 @@
 // What system tests take from the operating system without kota::async:
 // TempDir, read_file() and write_file(), stdin_reader() for a child that
 // runs until its stdin closes and exit_status_of() for how it ended,
-// create_pipe(), close_fd() and write_fd() on raw descriptors, and
-// BusyPool, which holds libuv's thread pool busy.
+// EnvironmentVariable to set one of this process's, create_pipe(),
+// close_fd() and write_fd() on raw descriptors, StdinFrom to point this
+// process's stdin elsewhere, and BusyPool, which holds libuv's thread pool
+// busy.
 
 #include <algorithm>
 #include <atomic>
@@ -104,6 +106,32 @@ std::optional<std::int64_t> exit_status_of(const Waited& waited) {
     return waited->status;
 }
 
+/// Sets variable `name` of this process's environment, which children
+/// inherit, until it goes, which removes the variable.
+struct EnvironmentVariable {
+    EnvironmentVariable(const char* name, const char* value) : name(name) {
+#ifdef _WIN32
+        _putenv_s(name, value);
+#else
+        ::setenv(name, value, 1);
+#endif
+    }
+
+    EnvironmentVariable(const EnvironmentVariable&) = delete;
+    EnvironmentVariable& operator=(const EnvironmentVariable&) = delete;
+
+    ~EnvironmentVariable() {
+#ifdef _WIN32
+        // An empty value removes the variable.
+        _putenv_s(name, "");
+#else
+        ::unsetenv(name);
+#endif
+    }
+
+    const char* const name;
+};
+
 // Windows pipes have a 4 KB buffer: writing more than that before the loop
 // reads blocks write_fd() for good. Write from a std::thread when the data
 // may exceed it.
@@ -133,6 +161,44 @@ inline ssize_t write_fd(int fd, const char* data, std::size_t len) {
     return ::write(fd, data, len);
 }
 #endif
+
+/// Points this process's stdin, which children inherit, at `fd`, which it
+/// takes, until it goes; then back at what it was.
+struct StdinFrom {
+    explicit StdinFrom(int fd) : saved(duplicate(0)) {
+        point_stdin_at(fd);
+        close_fd(fd);
+    }
+
+    StdinFrom(const StdinFrom&) = delete;
+    StdinFrom& operator=(const StdinFrom&) = delete;
+
+    ~StdinFrom() {
+        point_stdin_at(saved);
+        close_fd(saved);
+    }
+
+    const int saved;
+
+private:
+#ifdef _WIN32
+    static int duplicate(int fd) {
+        return _dup(fd);
+    }
+
+    static void point_stdin_at(int fd) {
+        _dup2(fd, 0);
+    }
+#else
+    static int duplicate(int fd) {
+        return ::dup(fd);
+    }
+
+    static void point_stdin_at(int fd) {
+        ::dup2(fd, 0);
+    }
+#endif
+};
 
 /// Keeps every thread of libuv's pool busy until release(), so that work
 /// queued meanwhile stays in the queue, where cancelling it dequeues it.

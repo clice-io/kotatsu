@@ -263,7 +263,11 @@ std::coroutine_handle<> aggregate_op::child_completed(task_frame& child) {
             break;
 
         case State::Cancelled:
-            decide(kind == NodeKind::TaskGroup ? Decision::Resume : Decision::Cancel);
+            // A task_group child that ends cancelled just ends: its siblings
+            // run on.
+            if(kind != NodeKind::TaskGroup) {
+                decide(Decision::Cancel);
+            }
             break;
 
         case State::Succeeded:

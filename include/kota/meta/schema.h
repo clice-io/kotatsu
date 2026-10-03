@@ -80,6 +80,9 @@ struct virtual_schema {
     constexpr static bool is_trivially_copyable =
         detail::type_instance<T, Config>::is_trivially_copyable;
     constexpr static bool deny_unknown = detail::type_instance<T, Config>::deny_unknown;
+    /// Every field may be absent from the input: a struct-level
+    /// defaulted_fields reached T.
+    constexpr static bool defaulted_fields = detail::type_instance<T, Config>::defaulted_fields;
 };
 
 }  // namespace kota::meta

@@ -29,7 +29,9 @@ std::vector<std::uint32_t> build_line_starts(std::string_view content);
 std::uint32_t encoded_length(std::string_view text, PositionEncoding encoding);
 
 /// Converts an encoded character offset back to a byte offset within `text`.
-/// Returns `std::nullopt` if the character offset is out of range.
+/// Returns `std::nullopt` if the character offset is past the end, or inside
+/// a code point: a UTF-16 unit inside a surrogate pair, or a UTF-8 byte
+/// inside a multi-byte sequence.
 std::optional<std::uint32_t> encoded_offset(std::string_view text,
                                             std::uint32_t character,
                                             PositionEncoding encoding);

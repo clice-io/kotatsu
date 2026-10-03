@@ -1,9 +1,9 @@
 #include <format>
 #include <string>
 
-#include "async/harness/loop_fixture.h"
 #include "http/harness/server.h"
 #include "kota/http/http.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -30,7 +30,7 @@ test::HttpServer::Handler hops(const test::HttpServer& server) {
     };
 }
 
-struct RedirectFixture : test::LoopFixture {
+struct RedirectFixture : zest::LoopFixture {
     test::HttpServer server{loop, hops(server)};
 };
 

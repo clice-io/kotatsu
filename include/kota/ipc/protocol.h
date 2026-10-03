@@ -1,8 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <format>
-#include <functional>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -37,10 +35,17 @@ enum class ErrorCode : integer {
     MethodNotFound = -32601,
     InvalidParams = -32602,
     InternalError = -32603,
+    /// What an Error made from a message alone carries. Not LSP's
+    /// LSPErrorCodes::RequestFailed, which is -32803.
     RequestFailed = -32000,
     /// A message larger than the transport reads: the request it was, or
     /// that it answered, fails with this.
     MessageTooLarge = -32010,
+    /// The link to the remote is unusable: the peer closed, its input or
+    /// output ended, a write failed, or a frame could not be read. What the
+    /// peer cannot send, and a request it can no longer get the answer to,
+    /// fail with this.
+    ConnectionClosed = -32011,
     RequestCancelled = -32800,
 };
 
@@ -68,40 +73,6 @@ struct CancelRequestParams {
 
 }  // namespace kota::ipc::protocol
 
-namespace std {
-
-template <>
-struct hash<kota::ipc::protocol::RequestID> {
-    std::size_t operator()(const kota::ipc::protocol::RequestID& id) const noexcept {
-        return std::visit(
-            [](const auto& v) -> std::size_t {
-                return std::hash<std::remove_cvref_t<decltype(v)>>{}(v);
-            },
-            id);
-    }
-};
-
-template <>
-struct formatter<kota::ipc::protocol::RequestID> {
-    constexpr auto parse(format_parse_context& ctx) {
-        return ctx.begin();
-    }
-
-    auto format(const kota::ipc::protocol::RequestID& id, format_context& ctx) const {
-        return std::visit(
-            [&](const auto& v) {
-                if constexpr(std::is_same_v<std::remove_cvref_t<decltype(v)>, std::string>) {
-                    return std::format_to(ctx.out(), "\"{}\"", v);
-                } else {
-                    return std::format_to(ctx.out(), "{}", v);
-                }
-            },
-            id);
-    }
-};
-
-}  // namespace std
-
 namespace kota::codec {
 
 template <typename Vis, typename Config>
@@ -114,6 +85,13 @@ struct serialize_visit<Vis, kota::ipc::protocol::Error, Config> {
             KOTA_CODEC_TRY(sv.visit_field(std::size_t(1), "message", [&](auto& fv) -> bool {
                 return encode_value<Config>(fv, error.message);
             }));
+            // Empty data is left out, as JSON-RPC allows, except by a visitor
+            // that writes every field, whose decoder reads every field.
+            if constexpr(!writes_every_field<std::remove_cvref_t<decltype(sv)>>) {
+                if(!error.data) {
+                    return true;
+                }
+            }
             return sv.visit_field(std::size_t(2), "data", [&](auto& fv) -> bool {
                 return encode_value<Config>(fv, error.data);
             });

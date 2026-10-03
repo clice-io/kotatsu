@@ -50,10 +50,16 @@ template <typename Params, typename ResultT = typename protocol::RequestTraits<P
 using RequestResult = task<ResultT, Error>;
 
 struct request_options {
-    /// Cancels the request: it fails with RequestCancelled and the remote is
-    /// sent $/cancelRequest.
+    /// Cancels the request: the remote is sent $/cancelRequest, and the
+    /// request gives what the remote answers then, as it is: the result, if
+    /// it finished first, or the error, as a rule RequestCancelled. A token
+    /// that fired before the request is sent fails it at once with
+    /// RequestCancelled, and nothing is sent.
     std::optional<cancellation_token> token = std::nullopt;
-    /// Cancels the request the same way once it has waited this long.
+    /// How long the request waits for its answer, counted from the send, a
+    /// cancel or not. Once it passes, the remote is sent $/cancelRequest, if
+    /// it was not already, and the request fails with RequestCancelled; an
+    /// answer that comes later is dropped.
     std::optional<std::chrono::milliseconds> timeout = std::nullopt;
 };
 
@@ -65,6 +71,25 @@ struct request_options {
 /// A handler returns RequestResult<Params> or, for a result it has encoded
 /// itself, task<codec::RawValue, Error>; a request whose result type is
 /// codec::RawValue gets the result as the codec wrote it.
+///
+/// A request's handler starts once the messages read with the request are
+/// dispatched, so that a notification sent after the request reaches its
+/// handler first, and a $/cancelRequest for it cancels it before it starts.
+///
+/// A request whose awaiting task is cancelled sends the remote
+/// $/cancelRequest and waits for its answer, then ends cancelled: a cancelled
+/// task ends once what it awaits has ended. A remote that ignores
+/// $/cancelRequest and never answers keeps the canceller waiting until the
+/// request's timeout, if it has one, or until the peer closes or its input
+/// ends.
+///
+/// Nothing larger than the transport's max_payload() is written, since the
+/// remote would skip it unread: a request or notification that large fails
+/// with MessageTooLarge, and an answer that large is replaced by a
+/// MessageTooLarge error. Under a limit too small for that error the answer
+/// is dropped, with an error logged, and the remote's request goes
+/// unanswered. The limit is this end's, so both ends should use the same
+/// one.
 template <typename Codec>
 class Peer {
 public:
@@ -78,16 +103,24 @@ public:
     Peer(Peer&&) = delete;
     Peer& operator=(Peer&&) = delete;
 
+    /// run(), if it was called, has returned: the Peer must outlive it.
+    /// Requests still pending, sent while run() never ran, fail with
+    /// ConnectionClosed.
     ~Peer();
 
     /// Reads and dispatches messages and writes what is sent, until the input
     /// ends and every handler has finished, or until close(). Every pending
     /// request has failed by the time it returns. Called once.
+    ///
+    /// The Peer must outlive it: destroy the Peer only once run() has
+    /// returned, cancelled or not, as an owner that awaits run() and then
+    /// lets the Peer go does. A debug build asserts it.
     task<> run();
 
     /// Shuts the peer down: cancels the running handlers, fails pending
-    /// requests, discards queued messages and closes the transport, so that
-    /// run() returns. Later sends fail; calls after the first do nothing.
+    /// requests with ConnectionClosed, discards queued messages and closes
+    /// the transport, so that run() returns. Later sends fail; calls after
+    /// the first do nothing.
     Result<void> close();
 
     /// Half-closes: what is queued is still written, then the transport's

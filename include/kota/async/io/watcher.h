@@ -1,9 +1,13 @@
 #pragma once
 
 #include <chrono>
+#include <type_traits>
+#include <utility>
+#include <variant>
 
 #include "kota/async/io/loop.h"
 #include "kota/async/runtime/task.h"
+#include "kota/async/runtime/when.h"
 #include "kota/async/vocab/error.h"
 #include "kota/async/vocab/owned.h"
 
@@ -131,6 +135,25 @@ task<> sleep(std::chrono::milliseconds timeout, event_loop& loop = event_loop::c
 
 inline task<> sleep(int ms, event_loop& loop = event_loop::current()) {
     return sleep(std::chrono::milliseconds{ms}, loop);
+}
+
+/// Runs `inner_task` for `timeout` at most: once that has passed, it cancels
+/// the task and waits for it to end. The result reports that cancellation, or
+/// one of the task itself, as a value; an error the task fails with, even
+/// while it is being cancelled, comes back as the error.
+template <typename T, typename E, typename C>
+task<T, E, cancellation> with_timeout(task<T, E, C> inner_task,
+                                      std::chrono::milliseconds timeout,
+                                      event_loop& loop = event_loop::current()) {
+    auto won = co_await or_fail(
+        co_await when_any(std::move(inner_task).catch_cancel(), sleep(timeout, loop)));
+    // The deadline won the race when the sleep ended first.
+    if(won.index() != 0) {
+        co_await cancel();
+    }
+    if constexpr(!std::is_void_v<T>) {
+        co_return std::get<0>(std::move(won));
+    }
 }
 
 }  // namespace kota

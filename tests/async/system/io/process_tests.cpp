@@ -3,13 +3,15 @@
 #include <cstddef>
 #include <fcntl.h>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "async/harness/io.h"
-#include "async/harness/loop_fixture.h"
 #include "async/harness/os.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -36,6 +38,34 @@ process::options shell(std::string_view command) {
     return opts;
 }
 
+/// A child that prints its environment, a `NAME=VALUE` line each.
+process::options environment_printer() {
+    process::options opts;
+#ifdef _WIN32
+    opts.file = "cmd.exe";
+    opts.args = {opts.file, "/c", "set"};
+#else
+    opts.file = "/usr/bin/env";
+#endif
+    opts.streams[0] = process::stdio::ignore();
+    return opts;
+}
+
+/// The values `printed`, what environment_printer() printed, gives `name`.
+std::vector<std::string> values_of(std::string_view printed, std::string_view name) {
+    std::vector<std::string> values;
+    for(auto piece: printed | std::views::split('\n')) {
+        std::string_view line(piece.begin(), piece.end());
+        if(line.ends_with('\r')) {
+            line.remove_suffix(1);
+        }
+        if(line.starts_with(name) && line.substr(name.size()).starts_with('=')) {
+            values.emplace_back(line.substr(name.size() + 1));
+        }
+    }
+    return values;
+}
+
 std::string trim_newlines(std::string text) {
     while(!text.empty() && (text.back() == '\n' || text.back() == '\r')) {
         text.pop_back();
@@ -43,7 +73,7 @@ std::string trim_newlines(std::string text) {
     return text;
 }
 
-ZEST_SUITE(async_io_process, test::LoopFixture) {
+ZEST_SUITE(async_io_process, zest::LoopFixture) {
 
 ZEST_CASE(wait_reports_the_exit_code) {
     auto success = process::spawn(shell("exit 0"), loop);
@@ -56,7 +86,10 @@ ZEST_CASE(wait_reports_the_exit_code) {
     EXPECT(test::exit_status_of(succeeded) == 0);
     ASSERT(succeeded.has_value());
     EXPECT(succeeded->term_signal == 0);
+    EXPECT(succeeded->success());
     EXPECT(test::exit_status_of(failed) == 3);
+    ASSERT(failed.has_value());
+    EXPECT(!failed->success());
 }
 
 // With inherited stdio the child shares the test's own streams.
@@ -125,6 +158,161 @@ ZEST_CASE(stdin_pipe_feeds_the_child) {
     ASSERT(output.has_value());
     EXPECT(trim_newlines(*output) == "kotatsu-stdin");
     EXPECT(test::exit_status_of(status) == 0);
+}
+
+// cmd reads a digit before > as the handle to redirect, so the redirection
+// goes first.
+ZEST_CASE(capture_gives_the_status_and_what_the_child_wrote) {
+    auto opts = shell(
+        by_platform("printf out; printf err 1>&2; exit 3", "echo out& 1>&2 echo err& exit 3"));
+
+    auto [captured] = run(process::capture(opts, loop));
+    ASSERT(captured.has_value());
+    EXPECT(captured->status.status == 3);
+    EXPECT(trim_newlines(captured->stdout_text) == "out");
+    EXPECT(trim_newlines(captured->stderr_text) == "err");
+}
+
+// What `opts.streams` says for stdout and stderr does not matter: capture()
+// pipes both.
+ZEST_CASE(capture_pipes_stdout_and_stderr_whatever_the_options_say) {
+    auto opts = shell(by_platform("printf out; printf err 1>&2", "echo out& 1>&2 echo err"));
+    opts.streams[1] = process::stdio::inherit();
+    opts.streams[2] = process::stdio::ignore();
+
+    auto [captured] = run(process::capture(opts, loop));
+    ASSERT(captured.has_value());
+    EXPECT(captured->status.success());
+    EXPECT(trim_newlines(captured->stdout_text) == "out");
+    EXPECT(trim_newlines(captured->stderr_text) == "err");
+}
+
+// The test's own stdin holds a line while capture() runs children that copy
+// their stdin to their stdout: one inheriting stdin reads none of it, and
+// one given a stdin pipe reads its end at once, so both end with nothing.
+ZEST_CASE(capture_gives_the_child_no_stdin) {
+    int fds[2] = {-1, -1};
+    ASSERT(test::create_pipe(fds) == 0);
+    ASSERT(test::write_fd(fds[1], "parent-stdin\n", 13) == 13);
+    test::close_fd(fds[1]);
+    test::StdinFrom held(fds[0]);
+    auto inherited = test::stdin_reader();
+    inherited.streams[0] = process::stdio::inherit();
+
+    auto [from_inherited, from_pipe] =
+        run(process::capture(inherited, loop), process::capture(test::stdin_reader(), loop));
+    ASSERT(from_inherited.has_value());
+    EXPECT(from_inherited->status.success());
+    EXPECT(trim_newlines(from_inherited->stdout_text).empty());
+    ASSERT(from_pipe.has_value());
+    EXPECT(from_pipe->status.success());
+    EXPECT(trim_newlines(from_pipe->stdout_text).empty());
+}
+
+// Windows has no program at hand that writes this much quickly: cmd would
+// echo it a line at a time, and the async tests build no helper program to
+// spawn.
+#ifndef _WIN32
+// The child writes more to stderr than a pipe holds, then to stdout: it ends
+// only because both pipes are read while it runs.
+ZEST_CASE(capture_reads_both_pipes_while_the_child_runs) {
+    auto opts = shell(R"(head -c 300000 /dev/zero | tr '\0' e 1>&2; )"
+                      R"(head -c 300000 /dev/zero | tr '\0' o)");
+
+    auto [captured] = run(process::capture(opts, loop));
+    ASSERT(captured.has_value());
+    EXPECT(captured->status.success());
+    EXPECT(captured->stdout_text == std::string(300000, 'o'));
+    EXPECT(captured->stderr_text == std::string(300000, 'e'));
+}
+#endif
+
+ZEST_CASE(capture_of_a_missing_file_fails) {
+    process::options opts;
+    opts.file = by_platform("/nonexistent/kotatsu-nope", R"(Z:\nonexistent\kotatsu-nope.exe)");
+
+    auto [captured] = run(process::capture(opts, loop));
+    ASSERT(captured.has_error());
+    EXPECT(captured.error() == error::no_such_file_or_directory);
+}
+
+ZEST_CASE(env_set_and_env_unset_apply_over_env) {
+    auto opts = environment_printer();
+    opts.env = {"KOTA_KEPT=kept", "KOTA_DROPPED=dropped", "KOTA_REPLACED=old"};
+    opts.env_set = {"KOTA_REPLACED=new", "KOTA_ADDED=added"};
+    opts.env_unset = {"KOTA_DROPPED"};
+
+    auto [captured] = run(process::capture(opts, loop));
+    ASSERT(captured.has_value());
+    const auto& printed = captured->stdout_text;
+    EXPECT(values_of(printed, "KOTA_KEPT") == std::vector<std::string>{"kept"});
+    EXPECT(values_of(printed, "KOTA_REPLACED") == std::vector<std::string>{"new"});
+    EXPECT(values_of(printed, "KOTA_ADDED") == std::vector<std::string>{"added"});
+    EXPECT(values_of(printed, "KOTA_DROPPED").empty());
+}
+
+ZEST_CASE(later_env_set_entry_replaces_an_earlier_one_of_its_name) {
+    auto opts = environment_printer();
+    opts.env = {"KOTA_KEPT=kept"};
+    opts.env_set = {"KOTA_TWICE=1", "KOTA_TWICE=2"};
+
+    auto [captured] = run(process::capture(opts, loop));
+    ASSERT(captured.has_value());
+    EXPECT(values_of(captured->stdout_text, "KOTA_TWICE") == std::vector<std::string>{"2"});
+}
+
+ZEST_CASE(env_set_and_env_unset_apply_over_the_inherited_environment) {
+    test::EnvironmentVariable kept("KOTA_TEST_KEPT", "kept");
+    test::EnvironmentVariable dropped("KOTA_TEST_DROPPED", "dropped");
+    test::EnvironmentVariable replaced("KOTA_TEST_REPLACED", "old");
+    auto opts = environment_printer();
+    opts.env_set = {"KOTA_TEST_REPLACED=new", "KOTA_TEST_ADDED=added"};
+    opts.env_unset = {"KOTA_TEST_DROPPED"};
+
+    auto [captured] = run(process::capture(opts, loop));
+    ASSERT(captured.has_value());
+    const auto& printed = captured->stdout_text;
+    EXPECT(values_of(printed, "KOTA_TEST_KEPT") == std::vector<std::string>{"kept"});
+    EXPECT(values_of(printed, "KOTA_TEST_REPLACED") == std::vector<std::string>{"new"});
+    EXPECT(values_of(printed, "KOTA_TEST_ADDED") == std::vector<std::string>{"added"});
+    EXPECT(values_of(printed, "KOTA_TEST_DROPPED").empty());
+}
+
+// The overlay names variables in another case than the inherited ones: the
+// same variables on Windows only.
+ZEST_CASE(env_overlay_names_match_as_the_system_matches_them) {
+    test::EnvironmentVariable dropped("KOTA_TEST_DROPPED", "dropped");
+    test::EnvironmentVariable replaced("KOTA_TEST_REPLACED", "old");
+    auto opts = environment_printer();
+    opts.env_set = {"kota_test_replaced=new"};
+    opts.env_unset = {"kota_test_dropped"};
+
+    auto [captured] = run(process::capture(opts, loop));
+    ASSERT(captured.has_value());
+    const auto& printed = captured->stdout_text;
+    EXPECT(values_of(printed, "kota_test_replaced") == std::vector<std::string>{"new"});
+#ifdef _WIN32
+    EXPECT(values_of(printed, "KOTA_TEST_REPLACED").empty());
+    EXPECT(values_of(printed, "KOTA_TEST_DROPPED").empty());
+#else
+    EXPECT(values_of(printed, "KOTA_TEST_REPLACED") == std::vector<std::string>{"old"});
+    EXPECT(values_of(printed, "KOTA_TEST_DROPPED") == std::vector<std::string>{"dropped"});
+#endif
+}
+
+// An overlay that leaves no variable gives the child none, rather than the
+// inherited ones; libuv adds those Windows cannot run without.
+ZEST_CASE(env_overlay_that_removes_every_variable_leaves_none) {
+    auto opts = environment_printer();
+    opts.env = {"KOTA_ONLY=only"};
+    opts.env_unset = {"KOTA_ONLY"};
+
+    auto [captured] = run(process::capture(opts, loop));
+    ASSERT(captured.has_value());
+    EXPECT(values_of(captured->stdout_text, "KOTA_ONLY").empty());
+#ifndef _WIN32
+    EXPECT(captured->stdout_text.empty());
+#endif
 }
 
 ZEST_CASE(stdout_goes_to_a_given_descriptor) {
@@ -240,6 +428,19 @@ ZEST_CASE(kill_ends_a_running_child) {
     EXPECT(status->term_signal == SIGTERM);
 }
 
+// libuv reports the TerminateProcess it does on Windows as SIGKILL too, which
+// the CRT does not name: 9 everywhere.
+ZEST_CASE(kill_without_a_signal_ends_the_child_at_once) {
+    auto spawned = process::spawn(test::stdin_reader(), loop);
+    ASSERT(spawned.has_value());
+    EXPECT(!spawned->proc.kill());
+
+    auto [status] = run(spawned->proc.wait());
+    ASSERT(status.has_value());
+    EXPECT(status->term_signal == 9);
+    EXPECT(!status->success());
+}
+
 ZEST_CASE(kill_with_an_invalid_signal_fails) {
     auto spawned = process::spawn(test::stdin_reader(), loop);
     ASSERT(spawned.has_value());
@@ -258,6 +459,7 @@ ZEST_CASE(kill_after_the_exit_fails) {
     auto [status] = run(spawned->proc.wait());
     EXPECT(test::exit_status_of(status) == 0);
     EXPECT(spawned->proc.kill(SIGTERM) == error::no_such_process);
+    EXPECT(spawned->proc.kill() == error::no_such_process);
 }
 
 // Cancelling wait() only abandons the wait: the child runs on until its
@@ -321,6 +523,7 @@ ZEST_CASE(inert_process_fails) {
     ASSERT(waited.has_error());
     EXPECT(waited.error() == error::invalid_argument);
     EXPECT(inert.kill(SIGTERM) == error::invalid_argument);
+    EXPECT(inert.kill() == error::invalid_argument);
     EXPECT(inert.pid() == -1);
 }
 

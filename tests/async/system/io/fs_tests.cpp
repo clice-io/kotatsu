@@ -11,8 +11,8 @@
 #include <thread>
 #include <utility>
 
-#include "async/harness/loop_fixture.h"
 #include "async/harness/os.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -38,7 +38,7 @@ bool wait_for_an_entry(const std::filesystem::path& dir) {
     return true;
 }
 
-ZEST_SUITE(async_io_fs, test::LoopFixture) {
+ZEST_SUITE(async_io_fs, zest::LoopFixture) {
 
 ZEST_CASE(write_then_read_back) {
     test::TempDir dir;

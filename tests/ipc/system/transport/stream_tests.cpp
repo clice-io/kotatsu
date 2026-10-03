@@ -9,10 +9,9 @@
 #include <utility>
 #include <vector>
 
-#include "async/harness/io.h"
-#include "async/harness/loop_fixture.h"
 #include "async/harness/os.h"
 #include "kota/ipc/transport.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -68,7 +67,7 @@ std::optional<Feed> feed(event_loop& loop, std::size_t max_payload = default_max
     };
 }
 
-struct StreamFixture : test::LoopFixture {
+struct StreamFixture : zest::LoopFixture {
     /// What one read_message() returns from a pipe that holds `text` and was
     /// closed after it.
     std::expected<std::string, ReadError>
@@ -215,6 +214,18 @@ ZEST_CASE(oversized_message_is_skipped_and_reading_goes_on) {
     EXPECT(next == "next");
 }
 
+// A Peer over the transport sends nothing larger than it reads.
+ZEST_CASE(max_payload_is_the_limit_it_reads_with) {
+    auto limited = feed(loop, 8);
+    auto by_default = feed(loop);
+    ASSERT(limited.has_value());
+    ASSERT(by_default.has_value());
+    EXPECT(limited->transport->max_payload() == 8U);
+    EXPECT(by_default->transport->max_payload() == default_max_payload);
+    EXPECT(test::close_fd(limited->writer) == 0);
+    EXPECT(test::close_fd(by_default->writer) == 0);
+}
+
 ZEST_CASE(close_wakes_a_pending_read) {
     auto ends = pipe_ends(loop);
     ASSERT(ends.has_value());
@@ -307,7 +318,7 @@ ZEST_CASE(close_output_on_a_shared_socket_ends_the_remote_input_and_keeps_readin
     ASSERT(connected.has_value());
     auto& transport = **connected;
     auto remote = [&]() -> task<std::string, error> {
-        auto received = co_await test::read_to_end(*accepted).or_fail();
+        auto received = co_await accepted->read_to_end().or_fail();
         auto answer = frame("after");
         co_await accepted->write(std::span<const char>(answer.data(), answer.size())).or_fail();
         co_return received;

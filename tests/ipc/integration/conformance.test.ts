@@ -155,8 +155,8 @@ test("call_answers_with_the_client_error", async (t) => {
 
 test("call_timing_out_cancels_the_client_request", async (t) => {
   const [driver, connection] = await connected(t);
-  // The client answers once cancelled, which the driver no longer waits for.
-  driver.expectLog(/^\[warn\] orphan response for id=1$/);
+  // The client answers once cancelled, which the driver no longer waits for:
+  // it drops the answer, logging it below warn.
   const cancelled = Promise.withResolvers<void>();
   // The $/cancelRequest may be read before the request is handled, when the
   // token is cancelled already and onCancellationRequested never fires.
@@ -180,7 +180,7 @@ test("call_timing_out_cancels_the_client_request", async (t) => {
     timeoutMs: 20,
   });
   assert.deepEqual(outcome, {
-    error: { code: -32800, message: "request timed out", data: null },
+    error: { code: -32800, message: "request timed out" },
   });
   await cancelled.promise;
   await finish(driver, connection);
@@ -224,18 +224,36 @@ test("close_output_ends_the_output", async (t) => {
   await session.finish(driver);
 });
 
+// The three handlers start together, once the frames read with them are
+// dispatched, and their answers are queued together; the first one out shows
+// the others are queued or out when close_output comes.
 test("answers_queued_before_close_output_are_delivered", async (t) => {
   const [driver, session] = await spawn(t);
   const answers = [1, 2, 3].map((id) => session.expect(id));
+  await session.channel.write(
+    Buffer.concat([1, 2, 3].map((id) => frame(echo(id)))),
+  );
+  assert.deepEqual(resultOf(await answers[0]), [1]);
+  session.notify("test/closeOutput");
+  assert.deepEqual((await Promise.all(answers)).map(resultOf), [[1], [2], [3]]);
+  await session.ended;
+  await session.finish(driver);
+});
+
+// A handler starts once the frames read with its request are dispatched, so
+// a close_output read with the requests closes the output before they are
+// answered.
+test("close_output_read_with_requests_comes_before_their_answers", async (t) => {
+  const [driver, session] = await spawn(t);
   await session.channel.write(
     Buffer.concat([
       ...[1, 2, 3].map((id) => frame(echo(id))),
       frame({ jsonrpc: "2.0", method: "test/closeOutput" }),
     ]),
   );
-  assert.deepEqual((await Promise.all(answers)).map(resultOf), [[1], [2], [3]]);
   await session.ended;
   await session.finish(driver);
+  assert.deepEqual(session.strays, []);
 });
 
 test("bad_json_answers_parse_error_with_null_id", async (t) => {

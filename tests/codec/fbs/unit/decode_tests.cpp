@@ -13,10 +13,12 @@
 #include <vector>
 
 #include "codec/fbs/harness/struct_keys.h"
+#include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/structs.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
+#include "kota/meta/compare.h"
 #include "kota/codec/fbs/fbs.h"
 
 // What the fbs decoders do with bytes that did not come from to_bytes. The
@@ -294,7 +296,28 @@ void expect_hostile_bytes_contained(const T& input, Probe probe) {
     }
 }
 
+/// Whether the value-returning overload takes T.
+template <typename T>
+concept decodes_by_value =
+    requires(std::span<const std::byte> bytes) { fbs::from_bytes<T>(bytes); };
+
 ZEST_SUITE(codec_fbs_decode) {
+
+ZEST_CASE(value_overload_value_initializes) {
+    // `T value{}` would copy-list-initialize the explicit list from `{}`.
+    const test::HoldsExplicit value{
+        .list = {1, 2},
+        .count = 2
+    };
+    auto encoded = fbs::to_bytes(value);
+    ASSERT(encoded);
+    auto result = fbs::from_bytes<test::HoldsExplicit>(*encoded);
+    ASSERT(result);
+    EXPECT(meta::eq(*result, value));
+    STATIC_EXPECT(decodes_by_value<test::HoldsExplicit>);
+    // A type with no default constructor has no value to decode into.
+    STATIC_EXPECT(!decodes_by_value<test::NoDefault>);
+}
 
 ZEST_CASE(buffer_below_eight_bytes_fails) {
     // Anything shorter than a root offset and an identifier.

@@ -32,7 +32,9 @@ tests/<module>/
   integration/drivers/*.cpp   the programs they spawn, one per file
   harness/*.h, harness/*.ts   helpers for this module's tests and the modules above,
                               integration tests' helpers included
-  CMakeLists.txt              kota_add_module_tests(LIBS <the module's libraries>)
+  CMakeLists.txt              kota_add_module_tests(LIBS <the module's libraries>),
+                              kota::zest::async among them when a suite runs on
+                              zest::LoopFixture
                               kota_add_integration_tests(LIBS ... PROGRAMS ...
                               DEBUG_ONLY ...) if it has integration/; PROGRAMS are
                               targets built elsewhere
@@ -59,7 +61,7 @@ What each module's headers include, and so what its tests may use:
 
 Rules:
 
-- A module's tests include only what their module depends on, plus the harnesses of those modules: `#include "async/harness/loop_fixture.h"`, rooted at `tests/`. Shared fixtures in `tests/fixtures/` follow the same rule for the lowest module that uses them. The build does not enforce this; review does.
+- A module's tests include only what their module depends on, plus the harnesses of those modules: `#include "ipc/harness/peer_fixture.h"`, rooted at `tests/`. Shared fixtures in `tests/fixtures/` follow the same rule for the lowest module that uses them. The build does not enforce this; review does.
 - Tests use the public API: `include/kota/`, never a header from `src/`, nor anything from `examples/` outside `tests/examples/`.
 - Behaviour defined once in the library is tested once. Backends of one protocol share one suite through the module's harness; a backend's own files test only what is specific to that backend.
 

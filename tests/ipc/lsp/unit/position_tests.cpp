@@ -237,8 +237,87 @@ ZEST_CASE(to_offset_inside_a_surrogate_pair_fails) {
     EXPECT(map.to_offset({.line = 0, .character = 1}) == std::nullopt);
 }
 
+// UTF-8 bytes 2 and 3 are inside 你.
+ZEST_CASE(to_offset_inside_a_utf8_sequence_fails) {
+    LineMap map("a你b", PositionEncoding::UTF8);
+
+    EXPECT(map.to_offset({.line = 0, .character = 2}) == std::nullopt);
+    EXPECT(map.to_offset({.line = 0, .character = 3}) == std::nullopt);
+    EXPECT(map.to_offset({.line = 0, .character = 4}) == 4U);
+}
+
+// Line 0 is "a你🙂b": 你 at bytes 1 to 3, 🙂 at 4 to 7; line 1 is "x".
+ZEST_CASE(to_offset_clamped_inside_a_code_point_is_its_start) {
+    std::string_view content = "a你🙂b\nx";
+    LineMap map8(content, PositionEncoding::UTF8);
+    LineMap map16(content, PositionEncoding::UTF16);
+
+    EXPECT(map8.to_offset_clamped({.line = 0, .character = 2}) == 1U);
+    EXPECT(map8.to_offset_clamped({.line = 0, .character = 3}) == 1U);
+    EXPECT(map8.to_offset_clamped({.line = 0, .character = 6}) == 4U);
+    EXPECT(map16.to_offset_clamped({.line = 0, .character = 3}) == 4U);
+}
+
+ZEST_CASE(to_offset_clamped_past_the_line_end_is_the_line_end) {
+    std::string_view content = "a你b\r\nxyz";
+    for(auto encoding: {PositionEncoding::UTF8, PositionEncoding::UTF16, PositionEncoding::UTF32}) {
+        LineMap map(content, encoding);
+        ZEST_CONTEXT("encoding: {}", static_cast<int>(encoding));
+        EXPECT(map.to_offset_clamped({.line = 0, .character = 10}) == 5U);
+        EXPECT(map.to_offset_clamped({.line = 1, .character = 4}) == 10U);
+    }
+}
+
+ZEST_CASE(to_offset_clamped_past_the_last_line_is_the_end) {
+    std::string_view content = "a你b\nxyz";
+    for(auto encoding: {PositionEncoding::UTF8, PositionEncoding::UTF16, PositionEncoding::UTF32}) {
+        LineMap map(content, encoding);
+        ZEST_CONTEXT("encoding: {}", static_cast<int>(encoding));
+        EXPECT(map.to_offset_clamped({.line = 2, .character = 0}) == content.size());
+        EXPECT(map.to_offset_clamped({.line = 9, .character = 9}) == content.size());
+    }
+}
+
+// Every position to_offset gives an offset for, to_offset_clamped gives the
+// same one.
+ZEST_CASE(to_offset_clamped_is_to_offset_where_that_has_one) {
+    std::string_view content = "abc\r\na你🙂b\n\nxyz";
+    for(auto encoding: {PositionEncoding::UTF8, PositionEncoding::UTF16, PositionEncoding::UTF32}) {
+        LineMap map(content, encoding);
+        for(std::uint32_t line = 0; line < 4; ++line) {
+            for(std::uint32_t character = 0; character < 12; ++character) {
+                ZEST_CONTEXT("encoding {}, {}:{}", static_cast<int>(encoding), line, character);
+                protocol::Position position{.line = line, .character = character};
+                if(auto offset = map.to_offset(position)) {
+                    EXPECT(map.to_offset_clamped(position) == *offset);
+                }
+            }
+        }
+    }
+}
+
+// An offset inside a code point is at the code point's start: bytes 2 and 3
+// at 你's, 5 to 7 at 🙂's.
+ZEST_CASE(to_position_inside_a_code_point_is_at_its_start) {
+    std::string_view content = "a你🙂b";
+    for(auto encoding: {PositionEncoding::UTF8, PositionEncoding::UTF16, PositionEncoding::UTF32}) {
+        LineMap map(content, encoding);
+        ZEST_CONTEXT("encoding: {}", static_cast<int>(encoding));
+        auto at_ni = map.to_position(1);
+        auto at_smile = map.to_position(4);
+        ASSERT(at_ni.has_value());
+        ASSERT(at_smile.has_value());
+        for(std::uint32_t offset: {2U, 3U, 5U, 6U, 7U}) {
+            ZEST_CONTEXT("offset {}", offset);
+            auto position = map.to_position(offset);
+            ASSERT(position.has_value());
+            EXPECT(*position == (offset < 4 ? *at_ni : *at_smile));
+        }
+    }
+}
+
 // ASCII lines take a shortcut other lines do not: every line, in every
-// encoding, converts as a walk of its text would.
+// encoding, converts as a walk of its text would, at every code point.
 ZEST_CASE(lines_convert_as_their_text_whatever_their_neighbours) {
     std::string_view content = "abc\r\na你b\n\n🙂z\nxyz";
     auto starts = build_line_starts(content);
@@ -246,6 +325,11 @@ ZEST_CASE(lines_convert_as_their_text_whatever_their_neighbours) {
         LineMap owned(content, encoding);
         LineMap borrowed(content, std::span<const std::uint32_t>(starts), encoding);
         for(std::uint32_t offset = 0; offset <= content.size(); ++offset) {
+            // A byte inside a code point.
+            if(offset < content.size() &&
+               (static_cast<unsigned char>(content[offset]) & 0xC0) == 0x80) {
+                continue;
+            }
             ZEST_CONTEXT("encoding {}, offset {}", static_cast<int>(encoding), offset);
             auto bounds = owned.line_bounds(offset);
             auto text = content.substr(bounds.start, std::min(offset, bounds.end) - bounds.start);

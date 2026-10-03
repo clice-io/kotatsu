@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cassert>
 
+#include "locate.h"
+
 namespace kota::ipc::lsp {
 
 /// A bit for each line of `content`, split at '\n' as build_line_starts
@@ -81,37 +83,47 @@ std::optional<protocol::Position> LineMap::to_position(std::uint32_t offset,
     if(offset > source.size()) [[unlikely]] {
         return std::nullopt;
     }
-    auto actual = resolve(encoding);
     auto bounds = line_bounds(offset);
     auto column = std::min(offset, bounds.end) - bounds.start;
-    if(actual != PositionEncoding::UTF8 && !is_ascii(bounds.line)) {
-        column = encoded_length(source.substr(bounds.start, column), actual);
+    if(!is_ascii(bounds.line)) {
+        auto text = source.substr(bounds.start, bounds.end - bounds.start);
+        // From the start of the code point the offset is in.
+        auto start = detail::locate(text, column, PositionEncoding::UTF8).offset;
+        column = encoded_length(text.substr(0, start), resolve(encoding));
     }
     return protocol::Position{.line = bounds.line, .character = column};
 }
 
-std::optional<std::uint32_t> LineMap::to_offset(protocol::Position position,
-                                                PositionEncoding encoding) const {
-    auto actual = resolve(encoding);
+detail::Located LineMap::locate(protocol::Position position, PositionEncoding encoding) const {
     auto line = position.line;
     if(line >= line_starts().size()) [[unlikely]] {
-        return std::nullopt;
+        return {.offset = static_cast<std::uint32_t>(source.size()), .exact = false};
     }
 
     auto begin = line_starts()[line];
     auto end = line_end(line);
-    if(actual == PositionEncoding::UTF8 || is_ascii(line)) {
-        return begin + std::min(position.character, end - begin);
+    if(is_ascii(line)) {
+        return {.offset = begin + std::min(position.character, end - begin), .exact = true};
     }
 
-    auto text = source.substr(begin, end - begin);
-    if(auto offset = encoded_offset(text, position.character, actual)) {
-        return begin + *offset;
+    auto found =
+        detail::locate(source.substr(begin, end - begin), position.character, resolve(encoding));
+    // A character past the line's end is the end, as LSP asks.
+    return {.offset = begin + found.offset, .exact = found.exact || begin + found.offset == end};
+}
+
+std::optional<std::uint32_t> LineMap::to_offset(protocol::Position position,
+                                                PositionEncoding encoding) const {
+    auto found = locate(position, encoding);
+    if(!found.exact) {
+        return std::nullopt;
     }
-    if(position.character >= encoded_length(text, actual)) {
-        return end;
-    }
-    return std::nullopt;
+    return found.offset;
+}
+
+std::uint32_t LineMap::to_offset_clamped(protocol::Position position,
+                                         PositionEncoding encoding) const {
+    return locate(position, encoding).offset;
 }
 
 std::optional<protocol::Range> LineMap::to_range(std::uint32_t begin,

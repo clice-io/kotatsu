@@ -7,10 +7,10 @@
 #include <string_view>
 #include <vector>
 
-#include "async/harness/loop_fixture.h"
 #include "async/harness/os.h"
 #include "ipc/harness/memory_transport.h"
 #include "kota/ipc/recording_transport.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -28,7 +28,7 @@ struct Record {
 
 /// A RecordingTransport over a Remote's transport, writing to a file in a
 /// directory of its own.
-struct Recording : test::LoopFixture {
+struct Recording : zest::LoopFixture {
     test::TempDir dir;
     std::string path = dir.file("trace.jsonl");
     test::Remote remote;
@@ -92,6 +92,11 @@ ZEST_CASE(written_messages_are_passed_on_unrecorded) {
     EXPECT(written.has_value());
     EXPECT(remote.drain() == std::vector<std::string>{"hello"});
     EXPECT(test::read_file(path).empty());
+}
+
+ZEST_CASE(max_payload_is_the_inner_transports) {
+    remote.limit_payload(100);
+    EXPECT(transport.max_payload() == 100U);
 }
 
 ZEST_CASE(close_reaches_the_inner_transport) {

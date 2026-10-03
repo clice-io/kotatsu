@@ -1,5 +1,6 @@
 # Runs zest_runner_fixture (path in FIXTURE; scratch space in WORK_DIR) and
 # checks that every misbehaving test fails on its own while the run completes.
+# CLI is a test program whose main() is zest's run_cli().
 
 function(run_fixture)
     execute_process(
@@ -115,6 +116,13 @@ expect_code(1)
 expect_output("[   WORKER ] a worker did not exit within --timeout after its last test")
 expect_output("[  PASSED  ] 1 tests.")
 
+# A LoopFixture's watchdog, set short by the test, cancels a task that would
+# wait for ever, and fails the test.
+run_fixture("${FIXTURE}" --test-filter=fixture_loop.* --jobs=1)
+expect_code(1)
+expect_output("[   FAILED ] fixture_loop.outlasts_the_watchdog (")
+expect_output("context: tasks still running after 50ms were cancelled by the watchdog")
+
 # Snapshots checked by different workers are all counted as checked: the
 # stale one is rewritten, and only the orphan is cleaned up.
 file(WRITE "${snapshots}/fixture_snapshot/checked.snap.yml" "stale")
@@ -174,3 +182,19 @@ expect_output("more than one test is named fixture.passes")
 run_fixture("${FIXTURE}" --no-isolation --test-filter=fixture.fails_on_thread)
 expect_code(1)
 expect_output("[   FAILED ] fixture.fails_on_thread (")
+
+# run_cli()'s command line: an unknown option is a parse error, exit code 2;
+# --help prints the usage and runs no test; a positional filter and
+# --test-filter together are refused.
+run_fixture("${CLI}" --nope)
+expect_code(2)
+expect_output("Error parsing options: ")
+expect_output("unknown option '--nope'")
+run_fixture("${CLI}" --help)
+expect_code(0)
+expect_output("Usage")
+expect_output("--test-filter")
+expect_no_output("Global test environment")
+run_fixture("${CLI}" "zest_async.*" "--test-filter=zest_async.*")
+expect_code(1)
+expect_output("Error: cannot use both positional filter and --test-filter")

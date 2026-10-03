@@ -516,15 +516,15 @@ auto from_bytes(std::span<const std::uint8_t> buf, T& out) -> std::expected<void
 }
 
 template <typename T, typename Config = void>
-    requires std::default_initializable<T>
+    requires std::is_default_constructible_v<T>
 auto from_bytes(std::span<const std::byte> buf) -> std::expected<T, rich_error> {
-    T value{};
+    auto value = T();
     KOTA_EXPECTED_TRY(from_bytes<Config>(buf, value));
     return value;
 }
 
 template <typename T, typename Config = void>
-    requires std::default_initializable<T>
+    requires std::is_default_constructible_v<T>
 auto from_bytes(std::span<const std::uint8_t> buf) -> std::expected<T, rich_error> {
     return from_bytes<T, Config>(std::as_bytes(buf));
 }

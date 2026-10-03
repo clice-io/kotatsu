@@ -6,11 +6,14 @@
 #include <variant>
 #include <vector>
 
+#include "codec/harness/fixtures/configs.h"
+#include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/structs.h"
 #include "codec/harness/fixtures/tagged.h"
 #include "fixtures/attrs.h"
 #include "fixtures/configs.h"
 #include "kota/zest/zest.h"
+#include "kota/meta/compare.h"
 #include "kota/codec/dyn/dyn.h"
 #include "kota/codec/json/json.h"
 
@@ -21,6 +24,15 @@ namespace {
 constexpr std::string_view incorrect_type =
     "INCORRECT_TYPE: The JSON element does not have the requested type.";
 
+/// One of Point's fields: the alternative after Point in a probe.
+struct OnlyX {
+    int x;
+};
+
+/// Whether the value-returning overload takes T.
+template <typename T>
+concept decodes_by_value = requires(std::string_view text) { json::from_string<T>(text); };
+
 ZEST_SUITE(codec_json_decode) {
 
 ZEST_CASE(value_overload_takes_config) {
@@ -30,6 +42,83 @@ ZEST_CASE(value_overload_takes_config) {
     EXPECT(result->user_name == 2);
     EXPECT(result->total_score == 1.5F);
     EXPECT(result->item_id == "abc");
+}
+
+ZEST_CASE(value_overload_value_initializes) {
+    // `T value{}` would copy-list-initialize the explicit list from `{}`.
+    auto result = json::from_string<test::HoldsExplicit>(R"({"list":[1,2],"count":2})");
+    ASSERT(result);
+    const test::HoldsExplicit expected{
+        .list = {1, 2},
+        .count = 2
+    };
+    EXPECT(meta::eq(*result, expected));
+    STATIC_EXPECT(decodes_by_value<test::HoldsExplicit>);
+    // A type with no default constructor has no value to decode into.
+    STATIC_EXPECT(!decodes_by_value<test::NoDefault>);
+}
+
+ZEST_CASE(unknown_fields_reported_at_their_values) {
+    UnknownFields sink;
+    scoped_context<UnknownFields> scope(sink);
+    test::Person out{};
+    auto status = json::from_string(R"({
+  "name": "alice",
+  "age": 30,
+  "extra": true,
+  "addr": {
+    "city": "NY",
+    "zip": 10001,
+    "floor": 3
+  }
+})",
+                                    out);
+    ASSERT(status);
+    EXPECT(out.addr.zip == 10001);
+    ASSERT(sink.entries.size() == 2U);
+    EXPECT(sink.entries[0].format_path() == "extra");
+    ASSERT(sink.entries[0].location);
+    EXPECT(sink.entries[0].location->line == 4U);
+    EXPECT(sink.entries[0].location->column == 12U);
+    EXPECT(sink.entries[1].format_path() == "addr.floor");
+    ASSERT(sink.entries[1].location);
+    EXPECT(sink.entries[1].location->line == 8U);
+    EXPECT(sink.entries[1].location->column == 14U);
+}
+
+ZEST_CASE(unknown_field_located_behind_a_failed_probe) {
+    // Probing Point reports `a` and `b`, then misses `y`, and its reports go;
+    // OnlyX then reports `a` again, behind where lines were counted to.
+    UnknownFields sink;
+    scoped_context<UnknownFields> scope(sink);
+    std::variant<test::Point, OnlyX> out;
+    auto status = json::from_string(R"({
+  "a": 1,
+  "x": 2,
+  "b": 3
+})",
+                                    out);
+    ASSERT(status);
+    EXPECT(out.index() == 1U);
+    ASSERT(sink.entries.size() == 2U);
+    EXPECT(sink.entries[0].format_path() == "a");
+    ASSERT(sink.entries[0].location);
+    EXPECT(sink.entries[0].location->line == 2U);
+    EXPECT(sink.entries[0].location->column == 8U);
+    EXPECT(sink.entries[1].format_path() == "b");
+    ASSERT(sink.entries[1].location);
+    EXPECT(sink.entries[1].location->line == 4U);
+    EXPECT(sink.entries[1].location->column == 8U);
+}
+
+ZEST_CASE(unknown_field_fails_at_its_value) {
+    test::Point out{};
+    auto status = json::from_string<test::StrictConfig>(R"({"x": 1, "y": 2, "extra": true})", out);
+    ASSERT(!status);
+    EXPECT(status.error().message == "unknown field 'extra'");
+    ASSERT(status.error().location);
+    EXPECT(status.error().location->line == 1U);
+    EXPECT(status.error().location->column == 27U);
 }
 
 ZEST_CASE(number_out_of_range_fails) {

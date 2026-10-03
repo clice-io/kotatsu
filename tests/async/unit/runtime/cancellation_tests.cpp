@@ -1,6 +1,8 @@
 #include <optional>
+#include <utility>
+#include <vector>
 
-#include "async/harness/loop_fixture.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -13,7 +15,7 @@ task<int> ready(int value) {
     co_return value;
 }
 
-ZEST_SUITE(async_runtime_cancellation, test::LoopFixture) {
+ZEST_SUITE(async_runtime_cancellation, zest::LoopFixture) {
 
 ZEST_CASE(cancel_reaches_every_token) {
     cancellation_source source;
@@ -34,6 +36,116 @@ ZEST_CASE(destroying_the_source_cancels_its_tokens) {
     auto token = source->token();
     source.reset();
     EXPECT(token.cancelled());
+}
+
+ZEST_CASE(on_cancel_runs_once_when_the_source_cancels) {
+    cancellation_source source;
+    int runs = 0;
+    auto registration = source.token().on_cancel([&] { runs += 1; });
+    EXPECT(runs == 0);
+
+    source.cancel();
+    source.cancel();
+    EXPECT(runs == 1);
+}
+
+ZEST_CASE(on_cancel_runs_when_the_source_goes) {
+    std::optional<cancellation_source> source(std::in_place);
+    int runs = 0;
+    auto registration = source->token().on_cancel([&] { runs += 1; });
+
+    source.reset();
+    EXPECT(runs == 1);
+}
+
+ZEST_CASE(on_cancel_runs_the_callbacks_in_the_order_they_were_registered) {
+    cancellation_source source;
+    auto token = source.token();
+    std::vector<int> order;
+    auto first = token.on_cancel([&] { order.push_back(1); });
+    auto second = source.token().on_cancel([&] { order.push_back(2); });
+    auto third = token.on_cancel([&] { order.push_back(3); });
+
+    source.cancel();
+    EXPECT(order == std::vector{1, 2, 3});
+}
+
+// The callback runs inside on_cancel(), and the registration holds nothing:
+// destroying it does nothing more.
+ZEST_CASE(on_cancel_of_a_cancelled_token_runs_at_once) {
+    cancellation_source source;
+    source.cancel();
+    int runs = 0;
+
+    std::optional registration(source.token().on_cancel([&] { runs += 1; }));
+    EXPECT(runs == 1);
+    registration.reset();
+    EXPECT(runs == 1);
+}
+
+ZEST_CASE(destroying_the_registration_deregisters_the_callback) {
+    cancellation_source source;
+    int runs = 0;
+    std::optional registration(source.token().on_cancel([&] { runs += 1; }));
+    auto kept = source.token().on_cancel([&] { runs += 10; });
+
+    registration.reset();
+    source.cancel();
+    EXPECT(runs == 10);
+}
+
+// A moved registration keeps the callback; the moved-from one holds nothing,
+// and assigning over a registration deregisters what it held.
+ZEST_CASE(moved_registration_keeps_its_callback) {
+    cancellation_source source;
+    auto token = source.token();
+    std::vector<int> ran;
+    auto first = token.on_cancel([&] { ran.push_back(1); });
+    auto second = token.on_cancel([&] { ran.push_back(2); });
+
+    cancellation_callback moved(std::move(first));
+    { [[maybe_unused]] auto gone = std::move(first); }
+    second = std::move(moved);
+    source.cancel();
+    EXPECT(ran == std::vector{1});
+}
+
+// A callback that destroys its own registration, and the one registered
+// after it, runs on safely, and keeps the other from running; one it
+// registers runs at once.
+ZEST_CASE(callback_may_destroy_registrations_and_register_more) {
+    cancellation_source source;
+    auto token = source.token();
+    std::vector<int> ran;
+    std::optional<cancellation_callback> own;
+    std::optional<cancellation_callback> later;
+    std::optional<cancellation_callback> nested;
+    own.emplace(token.on_cancel([&] {
+        own.reset();
+        later.reset();
+        nested.emplace(token.on_cancel([&] { ran.push_back(3); }));
+        ran.push_back(1);
+    }));
+    later.emplace(token.on_cancel([&] { ran.push_back(2); }));
+
+    source.cancel();
+    EXPECT(ran == std::vector{3, 1});
+}
+
+ZEST_CASE(callback_may_destroy_the_source) {
+    std::optional<cancellation_source> source(std::in_place);
+    auto token = source->token();
+    std::vector<int> ran;
+    auto first = token.on_cancel([&] {
+        source.reset();
+        ran.push_back(1);
+    });
+    auto second = token.on_cancel([&] { ran.push_back(2); });
+
+    source->cancel();
+    EXPECT(!source.has_value());
+    EXPECT(token.cancelled());
+    EXPECT(ran == std::vector{1, 2});
 }
 
 ZEST_CASE(token_wait_ends_cancelled_when_the_source_fires) {
@@ -115,6 +227,27 @@ ZEST_CASE(with_token_cancels_the_task_in_flight) {
     EXPECT(started == 1);
     EXPECT(!gate.has_waiters());
     EXPECT(driver.has_value());
+}
+
+// The token's cancel reaches the task once the task that fired it has
+// suspended, not inside cancel(): the task still waits right after it.
+ZEST_CASE(with_token_delivers_the_cancel_after_the_firing_task_suspends) {
+    cancellation_source source;
+    event gate;
+    auto worker = [&]() -> task<int> {
+        co_await gate.wait();
+        co_return 1;
+    };
+    auto fire = [&]() -> task<bool> {
+        source.cancel();
+        co_return gate.has_waiters();
+    };
+
+    auto [guarded, waiting_after_cancel] = run(with_token(worker(), source.token()), fire());
+    ASSERT(waiting_after_cancel.has_value());
+    EXPECT(*waiting_after_cancel);
+    EXPECT(guarded.is_cancelled());
+    EXPECT(!gate.has_waiters());
 }
 
 // MSVC's coroutine codegen once fell through the cancelled path of the void

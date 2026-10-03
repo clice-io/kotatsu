@@ -3,8 +3,10 @@
 #include <cstddef>
 #include <format>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -25,7 +27,7 @@ struct rich_error {
     using path_segment = std::variant<std::string, std::size_t>;
 
     std::string message;
-    /// Path from root to error site, built by prepend_field/prepend_index during stack unwinding.
+    /// Path from root to error site, built by prepend_segment during stack unwinding.
     std::vector<path_segment> path;
     /// Source position in the input document (e.g. TOML line/column).
     std::optional<source_location> location;
@@ -38,20 +40,24 @@ struct rich_error {
         return !message.empty();
     }
 
-    void prepend_field(std::string_view name) {
-        path.insert(path.begin(), std::string(name));
-    }
-
-    void prepend_index(std::size_t idx) {
-        path.insert(path.begin(), idx);
-    }
-
-    void set_location(source_location loc) {
-        location = loc;
-    }
-
     /// Formats path as "foo.bar[3].baz".
     std::string format_path() const {
+        return format_path(path);
+    }
+
+    /// Puts a step, a field name or an element index, in front of a path
+    /// from the root, as each frame of a decode does on its way out.
+    template <typename Step>
+    static void prepend_segment(std::vector<path_segment>& path, const Step& at) {
+        if constexpr(std::is_convertible_v<const Step&, std::string_view>) {
+            path.emplace(path.begin(), std::in_place_type<std::string>, std::string_view(at));
+        } else {
+            path.emplace(path.begin(), std::in_place_type<std::size_t>, at);
+        }
+    }
+
+    /// Formats a path from the root as "foo.bar[3].baz".
+    static std::string format_path(std::span<const path_segment> path) {
         std::string result;
         for(std::size_t i = 0; i < path.size(); ++i) {
             if(auto* field = std::get_if<std::string>(&path[i])) {
@@ -94,6 +100,30 @@ struct rich_error {
     static rich_error invalid_type(std::string_view expected, std::string_view got) {
         return rich_error(std::format("invalid type: expected {}, got {}", expected, got));
     }
+};
+
+/// The unknown fields of the decodes run on this thread while it is
+/// installed (scoped_context<UnknownFields>): the keys of an object that no
+/// field of the struct read from it answers to. Decoding goes on as without
+/// it, so one decode both reads the value and reports every key it passed
+/// over. A struct that denies unknown fields still fails on the first, which
+/// is not collected, and a decode that fails keeps what it collected before.
+struct UnknownFields {
+    struct Entry {
+        /// From the root to the key, the key last, in the segments of a
+        /// decode error's path: "section.key", "rules[0].key".
+        std::vector<rich_error::path_segment> path;
+        /// Where the key's value starts in the input, when the backend knows
+        /// (json, toml).
+        std::optional<rich_error::source_location> location;
+
+        std::string format_path() const {
+            return rich_error::format_path(path);
+        }
+    };
+
+    /// In the order the decodes met them.
+    std::vector<Entry> entries;
 };
 
 /// RAII thread_local context slot. Each type T gets an independent thread_local pointer.

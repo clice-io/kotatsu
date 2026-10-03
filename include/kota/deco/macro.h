@@ -86,12 +86,8 @@
 #define DECO_DECLARE_OPTION_TYPED_IMPL(id, option_base_ty, cfg_base_ty, using_block, ...)          \
     struct DECO_OPTION_STRUCT_NAME(id) : public option_base_ty {                                   \
         struct __deco_field_ty :                                                                   \
-            public cfg_base_ty,                                                                    \
-            public kota::deco::decl::OptionCallbackField<typename option_base_ty::result_type> {   \
-            using _deco_base_t = cfg_base_ty;                                                      \
-            using _deco_callback_base_t =                                                          \
-                kota::deco::decl::OptionCallbackField<typename option_base_ty::result_type>;       \
-            using result_type = typename option_base_ty::result_type;                              \
+            public kota::deco::decl::OptionDeclaration<cfg_base_ty,                                \
+                                                       typename option_base_ty::result_type> {     \
             using_block constexpr __deco_field_ty() {                                              \
                 __VA_ARGS__;                                                                       \
             }                                                                                      \
@@ -119,6 +115,8 @@
 #define DECO_DECLARE_ALIAS(cfg_base_ty, using_block, ...)                                          \
     DECO_DECLARE_ALIAS_IMPL(__LINE__, cfg_base_ty, using_block, __VA_ARGS__)
 
+// The declaration's base depends on ResTy here, so the using block finds its aliases only once
+// they are named again.
 #define DECO_DECLARE_OPTION_TEMPLATE_IMPL(id,                                                      \
                                           res_concept,                                             \
                                           default_res_type,                                        \
@@ -128,12 +126,10 @@
                                           ...)                                                     \
     template <res_concept ResTy = default_res_type>                                                \
     struct DECO_OPTION_STRUCT_NAME(id) : public option_base_tpl<ResTy> {                           \
-        struct __deco_field_ty :                                                                   \
-            public cfg_base_ty,                                                                    \
-            public kota::deco::decl::OptionCallbackField<ResTy> {                                  \
-            using _deco_base_t = cfg_base_ty;                                                      \
-            using _deco_callback_base_t = kota::deco::decl::OptionCallbackField<ResTy>;            \
-            using result_type = ResTy;                                                             \
+        struct __deco_field_ty : public kota::deco::decl::OptionDeclaration<cfg_base_ty, ResTy> {  \
+            using typename kota::deco::decl::OptionDeclaration<cfg_base_ty, ResTy>::_deco_base_t;  \
+            using typename kota::deco::decl::OptionDeclaration<cfg_base_ty,                        \
+                                                               ResTy>::_deco_callback_base_t;      \
             using_block constexpr __deco_field_ty() {                                              \
                 __VA_ARGS__;                                                                       \
             }                                                                                      \

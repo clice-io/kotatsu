@@ -142,7 +142,10 @@ kota_library(
 
 kota_library(
     name = "ipc_lsp",
-    srcs = glob(["src/ipc/lsp/*.cpp"]),
+    srcs = glob([
+        "src/ipc/lsp/*.cpp",
+        "src/ipc/lsp/*.h",
+    ]),
     hdrs = glob(["include/kota/ipc/lsp/**"]),
     deps = [
         ":codec",
@@ -157,7 +160,10 @@ kota_library(
         "src/zest/*.cpp",
         "src/zest/*.h",
     ]),
-    hdrs = glob(["include/kota/zest/**"]),
+    hdrs = glob(
+        ["include/kota/zest/**"],
+        exclude = ["include/kota/zest/async.h"],
+    ),
     linkopts = select({
         "@platforms//os:windows": ["-lshell32"],
         "//conditions:default": [],
@@ -169,5 +175,16 @@ kota_library(
         ":meta",
         ":support",
         "@cpptrace",
+    ],
+)
+
+# kota/zest/async.h, the fixtures for tests of kota::async code, as CMake's
+# kota::zest::async.
+kota_library(
+    name = "zest_async",
+    hdrs = ["include/kota/zest/async.h"],
+    deps = [
+        ":async",
+        ":zest",
     ],
 )

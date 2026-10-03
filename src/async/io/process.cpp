@@ -1,10 +1,18 @@
 #include "kota/async/io/process.h"
 
+#include <csignal>
+#include <cstdint>
+#include <cstring>
+#include <format>
 #include <mutex>
 #include <optional>
+#include <span>
+#include <string_view>
 #include <utility>
 
 #include "stream_self.h"
+#include "kota/support/string_ref.h"
+#include "kota/async/runtime/when.h"
 
 namespace kota {
 
@@ -43,7 +51,115 @@ std::vector<char*> c_strings(const std::vector<std::string>& from) {
     return out;
 }
 
+/// The name in `entry`, a `NAME=VALUE` variable or a bare name. On Windows
+/// a name may start with '='.
+std::string_view name_of(std::string_view entry) {
+    return entry.substr(0, entry.find('=', 1));
+}
+
+/// Whether two variable names are the same, as the system compares them.
+bool same_name(std::string_view lhs, std::string_view rhs) {
+#ifdef _WIN32
+    return string_ref(lhs).equals_insensitive(rhs);
+#else
+    return lhs == rhs;
+#endif
+}
+
+/// This process's environment, in `NAME=VALUE` form.
+result<std::vector<std::string>> inherited_environment() {
+    // Freed on every way out; a failed uv_os_environ() leaves it empty.
+    struct Listed {
+        uv_env_item_t* items = nullptr;
+        int count = 0;
+
+        ~Listed() {
+            ::uv_os_free_environ(items, count);
+        }
+    } listed;
+
+    if(auto err = error(::uv_os_environ(&listed.items, &listed.count))) {
+        return outcome_error(err);
+    }
+    std::vector<std::string> env;
+    env.reserve(static_cast<std::size_t>(listed.count));
+    for(const auto& item: std::span(listed.items, static_cast<std::size_t>(listed.count))) {
+        env.push_back(std::format("{}={}", item.name, item.value));
+    }
+    return env;
+}
+
+/// The environment `opts` gives the child, in `NAME=VALUE` form, or nothing
+/// when it inherits this process's as it is.
+result<std::optional<std::vector<std::string>>> child_environment(const process::options& opts) {
+    if(opts.env_set.empty() && opts.env_unset.empty()) {
+        if(opts.env.empty()) {
+            return std::nullopt;
+        }
+        return opts.env;
+    }
+    std::vector<std::string> env;
+    if(opts.env.empty()) {
+        auto inherited = inherited_environment();
+        if(!inherited) {
+            return outcome_error(inherited.error());
+        }
+        env = std::move(*inherited);
+    } else {
+        env = opts.env;
+    }
+    auto remove = [&](std::string_view name) {
+        std::erase_if(env,
+                      [&](const std::string& entry) { return same_name(name_of(entry), name); });
+    };
+    for(const auto& name: opts.env_unset) {
+        remove(name);
+    }
+    // In order: a later entry replaces an earlier one of its name.
+    for(const auto& entry: opts.env_set) {
+        remove(name_of(entry));
+        env.push_back(entry);
+    }
+    return env;
+}
+
+#ifdef _WIN32
+/// The name of a common NTSTATUS code a crash ends a process with, or nothing.
+std::string_view crash_name(std::uint32_t code) {
+    switch(code) {
+        case 0xC000'0005: return "access violation";
+        case 0xC000'001D: return "illegal instruction";
+        case 0xC000'0094: return "integer divide by zero";
+        case 0xC000'00FD: return "stack overflow";
+        case 0xC000'0135: return "DLL not found";
+        case 0xC000'0374: return "heap corruption";
+        case 0xC000'0409: return "stack buffer overrun";
+        default: return {};
+    }
+}
+#endif
+
 }  // namespace
+
+std::string process::exit_status::to_string() const {
+    if(term_signal != 0) {
+#ifdef _WIN32
+        return std::format("signal {}", term_signal);
+#else
+        return std::format("signal {} ({})", term_signal, ::strsignal(term_signal));
+#endif
+    }
+#ifdef _WIN32
+    if(status >= 0xC000'0000) {
+        auto code = static_cast<std::uint32_t>(status);
+        if(auto name = crash_name(code); !name.empty()) {
+            return std::format("exit code 0x{:08X} ({})", code, name);
+        }
+        return std::format("exit code 0x{:08X}", code);
+    }
+#endif
+    return std::format("exit code {}", status);
+}
 
 process::process() noexcept = default;
 
@@ -76,7 +192,12 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
     if(opts.args.empty()) {
         argv.insert(argv.begin(), const_cast<char*>(opts.file.c_str()));
     }
-    auto envp = c_strings(opts.env);
+    auto env = child_environment(opts);
+    if(!env) {
+        return outcome_error(env.error());
+    }
+    // Points into *env, which outlives the spawn.
+    auto envp = *env ? c_strings(**env) : std::vector<char*>{};
 
     std::array<pipe, 3> pipes;
     std::array<uv_stdio_container_t, 3> stdio_containers{};
@@ -113,7 +234,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
     uv_opts.exit_cb = Self::on_exit;
     uv_opts.file = opts.file.c_str();
     uv_opts.args = argv.data();
-    uv_opts.env = opts.env.empty() ? nullptr : envp.data();
+    uv_opts.env = *env ? envp.data() : nullptr;
     uv_opts.cwd = opts.cwd.empty() ? nullptr : opts.cwd.c_str();
     const auto& creation = opts.creation;
     if(creation.detached) {
@@ -157,6 +278,28 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
     };
 }
 
+task<process::capture_result, error> process::capture(options opts, event_loop& loop) {
+    if(opts.streams[0].type == stdio::kind::inherit) {
+        opts.streams[0] = stdio::ignore();
+    }
+    opts.streams[1] = stdio::pipe(false, true);
+    opts.streams[2] = stdio::pipe(false, true);
+    auto spawned = co_await or_fail(spawn(opts, loop));
+    // The child reads the end of a stdin pipe at once.
+    spawned.stdin_pipe = pipe{};
+    // A child blocks on a full pipe until it is read, so both are read while
+    // it runs.
+    auto [stdout_text, stderr_text, status] =
+        co_await or_fail(co_await when_all(spawned.stdout_pipe.read_to_end(),
+                                           spawned.stderr_pipe.read_to_end(),
+                                           spawned.proc.wait()));
+    co_return capture_result{
+        .status = status,
+        .stdout_text = std::move(stdout_text),
+        .stderr_text = std::move(stderr_text),
+    };
+}
+
 task<process::exit_status, error> process::wait() {
     if(!self) {
         co_await fail(error::invalid_argument);
@@ -185,6 +328,10 @@ error process::kill(int signum) {
     }
 
     return error(::uv_process_kill(&self->process, signum));
+}
+
+error process::kill() {
+    return kill(SIGKILL);
 }
 
 }  // namespace kota

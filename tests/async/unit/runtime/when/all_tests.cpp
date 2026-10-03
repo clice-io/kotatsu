@@ -6,7 +6,7 @@
 #include <variant>
 #include <vector>
 
-#include "async/harness/loop_fixture.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -65,7 +65,7 @@ struct Yielded {
     }
 };
 
-ZEST_SUITE(async_runtime_when_all, test::LoopFixture) {
+ZEST_SUITE(async_runtime_when_all, zest::LoopFixture) {
 
 ZEST_CASE(result_type_follows_the_children_channels) {
     EXPECT(zest::type_eq<all_result_t<task<int>, task<int>>, std::tuple<int, int>>());

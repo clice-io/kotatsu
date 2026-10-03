@@ -3,7 +3,6 @@
 #include <chrono>
 #include <csignal>
 #include <cstdint>
-#include <cstring>
 #include <fcntl.h>
 #include <filesystem>
 #include <format>
@@ -14,7 +13,6 @@
 #include <string>
 #include <string_view>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "execution.h"
@@ -36,26 +34,6 @@ namespace stdfs = std::filesystem;
 using std::chrono::milliseconds;
 using std::chrono::steady_clock;
 
-#ifdef SIGKILL
-constexpr int kill_signal = SIGKILL;
-#else
-// libuv reads 9 as SIGKILL on Windows and terminates the process.
-constexpr int kill_signal = 9;
-#endif
-
-std::string describe(const process::exit_status& status) {
-#ifndef _WIN32
-    if(status.term_signal != 0) {
-        return std::format("signal {} ({})", status.term_signal, ::strsignal(status.term_signal));
-    }
-#endif
-    // Windows reports a crash as an NTSTATUS exit code, which reads best in hex.
-    if(status.status >= 0xC000'0000) {
-        return std::format("exit code 0x{:08X}", status.status);
-    }
-    return std::format("exit code {}", status.status);
-}
-
 std::string utf8(const stdfs::path& path) {
     auto text = path.u8string();
     return {text.begin(), text.end()};
@@ -68,11 +46,11 @@ task<std::optional<T>> within(task<T> work, milliseconds timeout) {
     if(timeout.count() == 0) {
         co_return co_await std::move(work);
     }
-    auto first = co_await when_any(std::move(work), sleep(timeout));
-    if(first.index() != 0) {
+    auto finished = co_await with_timeout(std::move(work), timeout);
+    if(finished.is_cancelled()) {
         co_return std::nullopt;
     }
-    co_return std::get<0>(std::move(first));
+    co_return std::move(*finished);
 }
 
 /// A running worker process.
@@ -82,23 +60,16 @@ struct Worker {
     pipe channel;
     /// The worker's stdout and stderr, its own file for its whole life.
     stdfs::path log;
-    /// Bytes read from the channel past the last complete line.
-    std::string pending = {};
     /// Log bytes already handed out.
     std::uintmax_t offset = 0;
 
     /// The next line from the worker, or nothing once its end closes.
     task<std::optional<std::string>> read_line() {
-        while(true) {
-            if(auto line = protocol::take_line(pending)) {
-                co_return line;
-            }
-            auto data = co_await channel.read();
-            if(!data.has_value()) {
-                co_return std::nullopt;
-            }
-            pending += *data;
+        auto line = co_await channel.read_line();
+        if(!line) {
+            co_return std::nullopt;
         }
+        co_return std::move(*line);
     }
 
     /// The state reported for the running test, counting the snapshots it
@@ -144,7 +115,7 @@ struct Worker {
 
     /// Ends the worker whatever state it is in.
     task<process::exit_status> kill() {
-        [[maybe_unused]] auto error = proc.kill(kill_signal);
+        [[maybe_unused]] auto error = proc.kill();
         co_return co_await wait();
     }
 };
@@ -204,7 +175,7 @@ struct Pool {
             auto status = co_await worker.kill();
             co_return std::unexpected(WorkerFailure{
                 .detail =
-                    ready ? std::format("a worker ended while starting with {}", describe(status))
+                    ready ? std::format("a worker ended while starting with {}", status.to_string())
                           : std::string("a worker did not start within --timeout"),
                 .output = worker.take_output(),
             });
@@ -246,7 +217,7 @@ struct Pool {
             .verdict = Verdict::Crashed,
             .duration = duration,
             .output = worker.take_output(),
-            .detail = std::format("{} before the test finished", describe(status)),
+            .detail = std::format("{} before the test finished", status.to_string()),
         };
     }
 
@@ -287,10 +258,10 @@ struct Pool {
                 .detail = "a worker did not exit within --timeout after its last test",
                 .output = worker->whole_output(),
             });
-        } else if(status->status != 0 || status->term_signal != 0) {
+        } else if(!status->success()) {
             failures.push_back(WorkerFailure{
                 .detail =
-                    std::format("a worker ended with {} after its last test", describe(*status)),
+                    std::format("a worker ended with {} after its last test", status->to_string()),
                 .output = worker->whole_output(),
             });
         }

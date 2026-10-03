@@ -6,10 +6,10 @@
 #include <utility>
 #include <vector>
 
-#include "async/harness/loop_fixture.h"
 #include "http/harness/server.h"
 #include "kota/http/detail/manager.h"
 #include "kota/http/http.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -31,7 +31,7 @@ task<> wait_for(event& signal) {
     co_await signal.wait();
 }
 
-ZEST_SUITE(http_detail_manager, test::LoopFixture) {
+ZEST_SUITE(http_detail_manager, zest::LoopFixture) {
 
 ZEST_CASE(requests_on_a_loop_share_its_manager) {
     test::HttpServer server(loop, echo_target);

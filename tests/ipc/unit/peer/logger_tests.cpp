@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <chrono>
 #include <format>
 #include <string>
 #include <utility>
@@ -16,8 +17,11 @@ namespace kota::ipc {
 namespace {
 
 using Fixture = test::PeerFixture<test::JsonAdapter>;
+using Context = Fixture::Context;
 using test::AddParams;
+using test::AddResult;
 using test::NoteParams;
+using namespace std::chrono_literals;
 
 struct LogEntry {
     LogLevel level;
@@ -105,6 +109,102 @@ ZEST_CASE(unhandled_notification_is_a_warning) {
     auto [ran] = run(peer.run());
     EXPECT(ran.has_value());
     EXPECT(has(LogLevel::warn, "unhandled notification: unknown/note"));
+}
+
+// The remote answers once the request has timed out: nothing awaits the
+// answer, which is no surprise, so it is no warning.
+ZEST_CASE(answer_after_the_timeout_is_debug) {
+    log_from(LogLevel::debug);
+    event ended;
+    auto ask = [&]() -> task<> {
+        co_await peer.send_request(AddParams{}, {.timeout = 10ms});
+        ended.set();
+    };
+    auto respond = [&]() -> task<> {
+        co_await next();
+        co_await next();
+        co_await ended.wait();
+        remote.send(test::response<test::JsonAdapter>(1, AddResult{.sum = 1}));
+        remote.end_input();
+    };
+
+    auto [ran, asked, responded] = run(peer.run(), ask(), respond());
+    EXPECT(ran.has_value());
+    EXPECT(has(LogLevel::debug, "late response for id=1"));
+    for(const auto& entry: entries) {
+        ZEST_CONTEXT("entry: {}", entry.text);
+        EXPECT(entry.level < LogLevel::warn);
+    }
+}
+
+// The answer is larger than the transport carries: the error that replaces
+// it says so, and so does a warning.
+ZEST_CASE(response_over_the_limit_is_a_warning) {
+    log_from(LogLevel::warn);
+    remote.limit_payload(64);
+    peer.on_request("test/repeat",
+                    [](Context&, const AddParams& params) -> task<NoteParams, Error> {
+                        co_return NoteParams{
+                            .text = std::string(static_cast<std::size_t>(params.a), 'x')};
+                    });
+    remote.send(test::request<test::JsonAdapter>(1, "test/repeat", AddParams{.a = 100}));
+    remote.end_input();
+
+    auto [ran] = run(peer.run());
+    EXPECT(ran.has_value());
+    EXPECT(has(LogLevel::warn, "response replaced: a message of"));
+}
+
+// The error that would replace the answer is over the limit too: an error
+// says the answer is dropped, and why.
+ZEST_CASE(response_over_a_limit_too_small_for_its_replacement_is_an_error) {
+    log_from(LogLevel::warn);
+    remote.limit_payload(8);
+    serve_add();
+    remote.send(test::request<test::JsonAdapter>(1, "test/add", AddParams{.a = 1, .b = 2}));
+    remote.end_input();
+
+    auto [ran] = run(peer.run());
+    EXPECT(ran.has_value());
+    EXPECT(has(LogLevel::warn, "response replaced: a message of"));
+    EXPECT(has(LogLevel::error, "response dropped, its replacement is too large: a message of"));
+}
+
+// An id the peer never gave a request of its own. The log shows a number as
+// it is and a string in quotes, so that 7 and "7" read apart.
+ZEST_CASE(answer_to_an_unknown_id_is_a_warning) {
+    log_from(LogLevel::warn);
+    remote.send(test::response<test::JsonAdapter>(7, AddResult{}));
+    remote.send(test::response<test::JsonAdapter>("7", AddResult{}));
+    remote.end_input();
+
+    auto [ran] = run(peer.run());
+    EXPECT(ran.has_value());
+    EXPECT(has(LogLevel::warn, "orphan response for id=7"));
+    EXPECT(has(LogLevel::warn, R"(orphan response for id="7")"));
+}
+
+// run() is cancelled once the request is read and before its handler starts:
+// the request is answered RequestCancelled all the same, an answer the output
+// closed with run() then drops.
+ZEST_CASE(request_cancelled_with_run_before_its_handler_starts_is_answered) {
+    log_from(LogLevel::debug);
+    bool ran = false;
+    peer.on_request([&](Context&, const AddParams&) -> RequestResult<AddParams> {
+        ran = true;
+        co_return AddResult{};
+    });
+    remote.send(test::request<test::JsonAdapter>(1, "test/add", AddParams{}));
+    cancellation_source source;
+    auto stop = [&]() -> task<> {
+        source.cancel();
+        co_return;
+    };
+
+    auto [stopped_run, stopped] = run(with_token(peer.run(), source.token()), stop());
+    EXPECT(stopped_run.is_cancelled());
+    EXPECT(!ran);
+    EXPECT(has(LogLevel::error, "error response: request cancelled"));
 }
 
 ZEST_CASE(run_logs_where_its_read_loop_starts_and_ends) {

@@ -1,8 +1,8 @@
 #include <cstddef>
 #include <filesystem>
 
-#include "async/harness/loop_fixture.h"
 #include "async/harness/os.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -15,7 +15,7 @@ namespace {
 // uses, and not a multiple of four, which every Windows pid is.
 constexpr int missing_pid = 999'999'999;
 
-ZEST_SUITE(async_io_system, test::LoopFixture) {
+ZEST_SUITE(async_io_system, zest::LoopFixture) {
 
 ZEST_CASE(pid_is_this_process) {
     EXPECT(sys::pid() > 0);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <concepts>
+#include <format>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -187,3 +188,15 @@ struct annotate<Tag> {
 };
 
 }  // namespace kota::meta
+
+/// Formats an annotation as the value it annotates, format spec included: without it std::format
+/// would see the annotation itself, so one of a string would print as a list of chars and one of
+/// a scalar would not format at all.
+template <typename T, typename CharT, typename... Attrs>
+    requires std::formattable<T, CharT>
+struct std::formatter<kota::meta::annotation<T, Attrs...>, CharT> : std::formatter<T, CharT> {
+    template <typename Context>
+    auto format(const kota::meta::annotation<T, Attrs...>& value, Context& context) const {
+        return std::formatter<T, CharT>::format(kota::meta::annotated_value(value), context);
+    }
+};

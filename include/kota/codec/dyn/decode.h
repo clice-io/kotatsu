@@ -1,6 +1,5 @@
 #pragma once
 
-#include <concepts>
 #include <cstdint>
 #include <expected>
 #include <string>
@@ -209,7 +208,7 @@ private:
 };
 
 /// Decodes a dyn::Value DOM tree into `out` (or, in the value-returning
-/// overload, into a default-constructed T).
+/// overload, into a value-initialized T).
 template <typename Config = void, typename T>
 auto from_dyn(const Value& value, T& out) -> std::expected<void, rich_error> {
     ValueReader vis{value};
@@ -217,9 +216,9 @@ auto from_dyn(const Value& value, T& out) -> std::expected<void, rich_error> {
 }
 
 template <typename T, typename Config = void>
-    requires std::default_initializable<T>
+    requires std::is_default_constructible_v<T>
 auto from_dyn(const Value& value) -> std::expected<T, rich_error> {
-    T out{};
+    auto out = T();
     KOTA_EXPECTED_TRY(from_dyn<Config>(value, out));
     return out;
 }

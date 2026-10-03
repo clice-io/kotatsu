@@ -11,12 +11,18 @@ namespace kota {
 
 namespace detail {
 
-/// Runs `work` on the thread pool of `loop`; see queue().
+/// Runs `work` on libuv's thread pool and completes on `loop`; see queue().
 task<> run_on_pool(function<void()> work, function<void()> on_cancel, event_loop& loop);
 
 }  // namespace detail
 
-/// Runs `fn` on libuv's thread pool and returns what it returns.
+/// Runs `fn` on libuv's thread pool and returns what it returns, resuming on
+/// `loop`.
+///
+/// The pool is libuv's one per process, shared by every loop and by the fs
+/// operations. It starts when first used, with as many threads as
+/// UV_THREADPOOL_SIZE says then (4 by default, at most 1024), and keeps them:
+/// work queued while every thread is busy waits for one.
 ///
 /// If the awaiting task is cancelled while `fn` is still queued, `fn` is
 /// dequeued and never runs, and `on_cancel` is not called. Once `fn` runs it
@@ -38,7 +44,8 @@ task<R> queue(Fn fn, function<void()> on_cancel = [] {}, event_loop& loop = even
     }
 }
 
-/// Runs `fn` on the thread pool of `loop`, with no cancellation hook.
+/// Runs `fn` on libuv's thread pool, resuming on `loop`, with no cancellation
+/// hook.
 template <typename Fn>
 task<std::invoke_result_t<Fn&>> queue(Fn fn, event_loop& loop) {
     return queue(std::move(fn), [] {}, loop);

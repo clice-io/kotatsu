@@ -6,6 +6,7 @@
 // names them (hence names such as `userName`).
 
 #include <charconv>
+#include <map>
 #include <optional>
 #include <string>
 #include <utility>
@@ -15,6 +16,7 @@
 #include "codec/harness/fixtures/enums.h"
 #include "codec/harness/fixtures/structs.h"
 #include "fixtures/attrs.h"
+#include "fixtures/containers.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
 
@@ -102,6 +104,62 @@ struct DefaultStructAbsent {
     int plain;
 };
 
+struct DefaultedFieldsTag {
+    constexpr static auto spec = meta::make_struct_spec(meta::dsl::defaulted_fields = true);
+};
+
+/// No field annotated: under DefaultedFieldsTag every field may be absent,
+/// the nested struct's included.
+struct Settings {
+    int retries = 3;
+    std::string name = "default";
+    RenameTarget owner;
+
+    auto operator==(const Settings&) const -> bool = default;
+};
+
+using DefaultedSettings = meta::annotate<DefaultedFieldsTag>::type<Settings>;
+
+/// The owner of SettingsPartialPlain: its name alone.
+struct OwnerNamePlain {
+    std::string display_name;
+};
+
+/// A Settings document without `name`, and its owner without `user_name`.
+struct SettingsPartialPlain {
+    int retries;
+    OwnerNamePlain owner;
+};
+
+/// Structs wherever a decode reaches one: a field, a sequence element, a map
+/// value.
+struct Placed {
+    Point at;
+    std::vector<Point> trail;
+    std::map<std::string, Point> named;
+};
+
+/// Placed's document with a key nothing reads at every depth.
+struct PlacedWithExtras {
+    PointWithExtra at;
+    std::vector<PointWithExtra> trail;
+    std::map<std::string, PointWithExtra> named;
+    int extra;
+};
+
+/// Point's x and a label: an untagged variant probes Point first, which
+/// passes over `label` before it misses `y`.
+struct Labeled {
+    int x;
+    std::string label;
+};
+
+struct LabeledWithExtra {
+    int x;
+    std::string label;
+    int extra;
+};
+
 struct RenameTargetCamel {
     int userName;
     std::string displayName;
@@ -165,6 +223,25 @@ struct AliasDup {
 struct SharedAlias {
     meta::annotate<AliasDup>::type<int> left;
     meta::annotate<AliasDup>::type<int> right;
+};
+
+struct AliasLegacy {
+    constexpr static auto spec = meta::make_spec(meta::dsl::alias = {"legacy"});
+};
+
+/// A struct in a field that answers to `legacy` too.
+struct AliasedPoint {
+    meta::annotate<AliasLegacy>::type<Point> current;
+};
+
+/// AliasedPoint under its alias, with a key Point does not have.
+struct AliasedPointLegacyWithExtra {
+    PointWithExtra legacy;
+};
+
+/// AliasedPoint under its alias, without Point's fields.
+struct AliasedPointLegacyEmpty {
+    Empty legacy;
 };
 
 /// Two fields that lower_camel renames to one name.
@@ -247,6 +324,27 @@ struct GridIndex {
     auto operator==(const GridIndex&) const -> bool = default;
 };
 
+/// Travels as HoldsExplicit (behavior::as), a target only
+/// value-initialization makes.
+struct Tally {
+    std::vector<int> marks;
+
+    Tally() = default;
+
+    Tally(std::vector<int> list) : marks(std::move(list)) {}
+
+    Tally(const HoldsExplicit& held) : marks(held.list.begin(), held.list.end()) {}
+
+    operator HoldsExplicit() const {
+        return {.list = ExplicitList(marks.begin(), marks.end()),
+                .count = static_cast<int>(marks.size())};
+    }
+
+    auto operator==(const Tally&) const -> bool = default;
+};
+
+using TallyAsHeld = meta::annotation<Tally, meta::behavior::as<HoldsExplicit>>;
+
 struct AsTargets {
     meta::annotation<UserId, meta::behavior::as<std::string>> owner;
     meta::annotation<Samples, meta::behavior::as<std::vector<int>>> samples;
@@ -277,6 +375,25 @@ struct CellSkippedOnDecode {
 
 struct CellSkippedOnDecodePlain {
     Point cell;
+    int after;
+};
+
+/// Skips its field on decode only, whatever the value.
+struct SkipHeldOnDecode {
+    bool operator()(const HoldsExplicit& /*held*/, bool is_serialize) const {
+        return !is_serialize;
+    }
+};
+
+/// A field skipped on decode whose type only value-initialization makes: a
+/// positional decode reads past it into a value of its own.
+struct HeldSkippedOnDecode {
+    meta::annotation<HoldsExplicit, meta::behavior::skip_if<SkipHeldOnDecode>> held;
+    int after = 0;
+};
+
+struct HeldSkippedOnDecodePlain {
+    HoldsExplicit held;
     int after;
 };
 

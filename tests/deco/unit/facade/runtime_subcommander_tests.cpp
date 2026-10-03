@@ -216,6 +216,43 @@ ZEST_CASE(command_object_can_be_handed_over) {
     EXPECT(seen == "web");
 }
 
+ZEST_CASE(handler_returns_the_exit_code) {
+    cli::SubCommander commander("tool <command>");
+    commander
+        .add(decl::SubCommand{.name = "fail", .description = ""},
+             [](std::span<std::string>) { return 3; })
+        .add(decl::SubCommand{.name = "pass", .description = ""}, [](std::span<std::string>) {})
+        .add([](const cli::SubCommandMatch&) { return 4; });
+    auto fail = test::split("fail");
+    EXPECT(commander(fail) == 3);
+    auto pass = test::split("pass");
+    EXPECT(commander(pass) == 0);
+    auto other = test::split("other");
+    EXPECT(commander.parse(other) == 4);
+}
+
+ZEST_CASE(command_object_returns_its_exit_code) {
+    auto web = cli::command<WebCli>("web [OPTIONS]");
+    web.match_all([](WebCli) { return 6; });
+    cli::SubCommander commander("tool <command>");
+    commander.add(decl::SubCommand{.name = "web", .description = ""}, std::move(web));
+    auto argv = test::split("web -v");
+    EXPECT(commander(argv) == 6);
+}
+
+ZEST_CASE(unknown_or_missing_command_exits_with_the_parse_error_code) {
+    cli::SubCommander commander("tool <command>");
+    std::ostringstream errors;
+    commander.when_err(errors).add(decl::SubCommand{.name = "run", .description = ""},
+                                   [](std::span<std::string>) { return 0; });
+    auto walk = test::split("walk");
+    EXPECT(commander(walk) == cli::parse_error_exit_code);
+    EXPECT(zest::contains(errors.str(), "unknown subcommand 'walk'"));
+    std::vector<std::string> none;
+    EXPECT(commander(none) == cli::parse_error_exit_code);
+    EXPECT(zest::contains(errors.str(), "subcommand is required"));
+}
+
 ZEST_CASE(unknown_command_to_a_stream_fails) {
     cli::SubCommander commander("tool <command>");
     std::ostringstream errors;

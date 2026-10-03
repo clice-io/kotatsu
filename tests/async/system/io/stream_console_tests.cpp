@@ -10,8 +10,8 @@
 #include <unistd.h>
 #endif
 
-#include "async/harness/loop_fixture.h"
 #include "async/harness/os.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -69,7 +69,7 @@ struct PseudoTerminal {
 };
 #endif
 
-ZEST_SUITE(async_io_stream_console, test::LoopFixture) {
+ZEST_SUITE(async_io_stream_console, zest::LoopFixture) {
 
 ZEST_CASE(reset_mode_without_a_raw_console_succeeds) {
     EXPECT(!console::reset_mode());

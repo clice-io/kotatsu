@@ -1,11 +1,11 @@
 #include <cstddef>
 #include <vector>
 
-#include "async/harness/loop_fixture.h"
 #include "http/harness/server.h"
 #include "kota/http/detail/curl.h"
 #include "kota/http/detail/manager.h"
 #include "kota/http/http.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -23,7 +23,7 @@ bool curl_takes_ca_path() {
     return curl::setopt(probe.get(), CURLOPT_CAPATH, "kotatsu") != CURLE_NOT_BUILT_IN;
 }
 
-ZEST_SUITE(http_detail_request_settings_tls, test::LoopFixture) {
+ZEST_SUITE(http_detail_request_settings_tls, zest::LoopFixture) {
 
 ZEST_CASE(plain_http_under_https_only_fails) {
     test::HttpServer server(loop);

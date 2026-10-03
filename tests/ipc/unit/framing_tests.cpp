@@ -208,7 +208,11 @@ ZEST_CASE(oversized_frame_keeps_its_size_and_first_bytes) {
     EXPECT(read.error().kind == ReadError::Kind::Oversized);
     EXPECT(read.error().size == payload.size());
     EXPECT(read.error().prefix == payload.substr(0, skipped_prefix_size));
-    EXPECT(zest::contains(read.error().message, std::to_string(payload.size())));
+    EXPECT(read.error().message == payload_too_large(payload.size(), 16));
+}
+
+ZEST_CASE(payload_too_large_names_the_size_and_the_limit) {
+    EXPECT(payload_too_large(10, 4) == "a message of 10 bytes exceeds the limit of 4 bytes");
 }
 
 ZEST_CASE(payload_at_the_limit_is_read) {

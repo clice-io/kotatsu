@@ -5,14 +5,13 @@
 #include <utility>
 #include <vector>
 
-#include "async/harness/io.h"
-#include "async/harness/loop_fixture.h"
 #include "async/harness/os.h"
 #include "ipc/harness/fixtures.h"
 #include "kota/ipc/codec/bincode.h"
 #include "kota/ipc/codec/json.h"
 #include "kota/ipc/framing.h"
 #include "kota/ipc/transport.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -47,7 +46,7 @@ std::optional<Ends> pipe_ends(event_loop& loop) {
 /// Two peers of one codec, each reading the pipe the other writes. b sums
 /// test/add and keeps the notes it gets; a asks, then closes both.
 template <typename Codec>
-void talk_over_pipes(test::LoopFixture& fixture) {
+void talk_over_pipes(zest::LoopFixture& fixture) {
     using CodecPeer = Peer<Codec>;
     auto a_to_b = pipe_ends(fixture.loop);
     auto b_to_a = pipe_ends(fixture.loop);
@@ -81,7 +80,7 @@ void talk_over_pipes(test::LoopFixture& fixture) {
     EXPECT(notes == std::vector<std::string>{"hello"});
 }
 
-ZEST_SUITE(ipc_peer_stream, test::LoopFixture) {
+ZEST_SUITE(ipc_peer_stream, zest::LoopFixture) {
 
 ZEST_CASE(json_peers_talk_over_pipes) {
     talk_over_pipes<JsonCodec>(*this);
@@ -129,7 +128,7 @@ ZEST_CASE(close_during_a_write_ends_run) {
     // Windows' loopback buffers take the whole notification, so there the
     // write has ended before the close.
 #ifndef _WIN32
-    auto [rest] = run(test::read_to_end(*accepted));
+    auto [rest] = run(accepted->read_to_end());
     ASSERT(rest.has_value());
     EXPECT(rest->size() < size);
 #endif
@@ -183,7 +182,7 @@ ZEST_CASE(close_output_on_a_shared_stream_keeps_reading) {
     std::vector<std::string> notes;
     peer.on_notification([&](const NoteParams& params) { notes.push_back(params.text); });
     auto remote = [&]() -> task<void, error> {
-        auto received = co_await test::read_to_end(*accepted).or_fail();
+        auto received = co_await accepted->read_to_end().or_fail();
         static_cast<void>(received);
         auto note = frame(R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"after"}})");
         co_await accepted->write(std::span<const char>(note.data(), note.size())).or_fail();

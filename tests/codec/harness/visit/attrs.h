@@ -24,6 +24,7 @@
 #include "fixtures/configs.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
+#include "kota/codec/visit/context.h"
 
 namespace kota::test {
 
@@ -67,6 +68,11 @@ void attrs(const Kit<B>& kit) {
         };
     };
     roundtrip<CamelConfig>(kit, "field_rename_roundtrip", nested_rename);
+    roundtrip(kit, "defaulted_fields_roundtrip", [] {
+        return DefaultedSettings{
+            {.retries = 7, .name = "n", .owner = {.user_name = 1, .display_name = "ada"}}
+        };
+    });
     auto documented = [] {
         return Documented{.id = 7, .name = "ada"};
     };
@@ -174,6 +180,11 @@ void attrs(const Kit<B>& kit) {
         };
     });
     roundtrip(kit, "as_roundtrip", as_targets);
+    // The target is value-initialized before it is read: an explicit
+    // default constructor of one of its members rejects `{}`.
+    roundtrip(kit, "as_value_initialized_target_roundtrip", [] {
+        return Field<TallyAsHeld>{TallyAsHeld(Tally(std::vector<int>{1, 2}))};
+    });
     using Decimal = meta::annotation<int, meta::behavior::with<DecimalText>>;
     auto decimal = [] {
         return Field<Decimal>{42};
@@ -223,6 +234,19 @@ void attrs(const Kit<B>& kit) {
             };
         },
         [] { return CellSkippedOnDecode{.cell = {}, .after = 7}; });
+    // ...into a value-initialized one, here of a type `{}` cannot make.
+    reads<HeldSkippedOnDecode>(
+        kit,
+        "skip_if_on_decode_reads_past_a_value_initialized_field",
+        [] {
+            return HeldSkippedOnDecodePlain{
+                .held = {.list = {1, 2}, .count = 2},
+                .after = 7
+            };
+        },
+        [] {
+            return HeldSkippedOnDecode{.held = {{.list = ExplicitList(), .count = 0}}, .after = 7};
+        });
     // A one-argument predicate judges the value being written: a decode
     // reads the field whatever the value it decodes into holds, here the
     // empty text the predicate matches.
@@ -346,6 +370,22 @@ void attrs(const Kit<B>& kit) {
                                     };
                                 },
                                 {.message = "missing required field 'right'", .path = ""});
+        // Paths below a field read under an alias start with the alias, as
+        // the document spells it, not with the field's name.
+        reads_reporting<AliasedPoint>(
+            kit,
+            "unknown_field_under_an_alias_reported_at_the_alias",
+            [] {
+                return AliasedPointLegacyWithExtra{
+                    .legacy = {.x = 1, .y = 2, .extra = 3}
+                };
+            },
+            [] { return AliasedPoint{.current = {{.x = 1, .y = 2}}}; },
+            {"legacy.extra"});
+        read_fails<AliasedPoint>(kit,
+                                 "field_under_an_alias_fails_at_the_alias",
+                                 [] { return AliasedPointLegacyEmpty{}; },
+                                 {.message = "missing required field 'x'", .path = "legacy"});
         read_fails<CamelCollision, CamelConfig>(
             kit,
             "rename_collision_fails",
@@ -365,6 +405,31 @@ void attrs(const Kit<B>& kit) {
             "defaulted_present_reads",
             [] { return DefaultStructPlain{.with_default = 9, .version = "v1", .plain = 2}; },
             [] { return DefaultStruct{.with_default = 9, .version = "v1", .plain = 2}; });
+        // A struct-level defaulted_fields lets any field be absent, the
+        // nested struct's too, each keeping the value it held.
+        auto partial_settings = [] {
+            return SettingsPartialPlain{.retries = 7, .owner = {.display_name = "ada"}};
+        };
+        auto partial_read = [] {
+            return DefaultedSettings{
+                {.retries = 7,
+                 .name = "default",
+                 .owner = {.user_name = 0, .display_name = "ada"}}
+            };
+        };
+        reads<DefaultedSettings>(kit,
+                                 "defaulted_fields_absent_keep_their_values",
+                                 partial_settings,
+                                 partial_read);
+        reads<DefaultedSettings>(
+            kit,
+            "defaulted_fields_empty_document_reads",
+            [] { return Empty{}; },
+            [] { return DefaultedSettings{}; });
+        read_fails<Settings>(kit,
+                             "absent_fields_without_defaulted_fields_fails",
+                             partial_settings,
+                             {.message = "missing required field 'user_name'", .path = "owner"});
         reads<Nullables>(
             kit,
             "nullable_fields_may_be_absent",
@@ -397,6 +462,56 @@ void attrs(const Kit<B>& kit) {
                                         "unknown_field_under_config_fails",
                                         with_extra,
                                         {.message = "unknown field 'extra'", .path = ""});
+        // An installed UnknownFields collects every unknown field, with its
+        // path, and the decode goes on.
+        reads_reporting<Placed>(
+            kit,
+            "unknown_fields_reported_at_every_depth",
+            [] {
+                return PlacedWithExtras{
+                    .at = {.x = 1, .y = 2, .extra = 0},
+                    .trail = {{.x = 3, .y = 4, .extra = 0}},
+                    .named = {{"home", {.x = 5, .y = 6, .extra = 0}}},
+                    .extra = 0,
+                };
+            },
+            [] {
+                return Placed{
+                    .at = {.x = 1, .y = 2},
+                    .trail = {{.x = 3, .y = 4}},
+                    .named = {{"home", {.x = 5, .y = 6}}},
+                };
+            },
+            {"at.extra", "extra", "named[0].extra", "trail[0].extra"});
+        // Probing Point passes over `label` and `extra`, then misses `y`:
+        // what the failed probe reported goes with it.
+        reads_reporting<Field<std::variant<Point, Labeled>>>(
+            kit,
+            "unknown_fields_of_a_failed_probe_dropped",
+            [] {
+                return Field<LabeledWithExtra>{
+                    {.x = 1, .label = "a", .extra = 2}
+                };
+            },
+            [] {
+                return Field<std::variant<Point, Labeled>>{
+                    Labeled{.x = 1, .label = "a"}
+                };
+            },
+            {"value.extra"});
+        // Denying unknown fields, the decode still fails on the first, which
+        // is not collected.
+        kit.add("unknown_field_fails_past_unknown_fields", [with_extra] {
+            auto document = B::encode(with_extra());
+            ASSERT(succeeds(document));
+            codec::UnknownFields sink;
+            codec::scoped_context<codec::UnknownFields> scope(sink);
+            Point decoded{};
+            auto status = B::template decode<StrictConfig>(*document, decoded);
+            ASSERT(!status);
+            EXPECT(status.error().message == "unknown field 'extra'");
+            EXPECT(sink.entries.empty());
+        });
         read_in_field_fails<SnakeStrict>(kit,
                                          "rename_all_on_field_denies_unknown_fails",
                                          [] {

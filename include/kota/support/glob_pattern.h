@@ -76,6 +76,27 @@ public:
     [[nodiscard]] static std::expected<GlobPattern, GlobError> create(std::string_view s,
                                                                       size_t max_arms = 100);
 
+    /// `literal` as a pattern that matches it and nothing else, each of `\ ? * [ { } ,`
+    /// escaped, so that the result also stands inside a segment or as a term of a brace
+    /// expression. `/` stays a separator, since it cannot be escaped: a literal with `//`
+    /// has no pattern, and create() rejects its escape with MultipleSlash.
+    [[nodiscard]] static std::string escape(std::string_view literal);
+
+    /// The inverse of escape(): `pattern` with each escaping `\` dropped and the character it
+    /// escapes kept, wildcards copied as they are, so that the root split_literal_root() gives
+    /// turns into the directory it names. A lone `\` at the end escapes nothing and is kept,
+    /// though create() rejects it with StrayBackslash.
+    [[nodiscard]] static std::string unescape(std::string_view pattern);
+
+    /// Splits `pattern` into its literal root and the rest, both slices of `pattern` with
+    /// their escapes: the root runs up to and including the last `/` before the first
+    /// unescaped `?`, `*`, `[` or `{`, so every path the pattern matches is in that
+    /// directory, or is the directory itself (`src/**` matches `src`). `src/a{b,c}/*.cpp`
+    /// splits into `src/` and `a{b,c}/*.cpp`, `*.cpp` into an empty root and itself, and a
+    /// pattern without wildcards at its last `/`. The pattern is not validated.
+    [[nodiscard]] static std::pair<std::string_view, std::string_view>
+        split_literal_root(std::string_view pattern);
+
     [[nodiscard]] bool is_trivial_match_all() const {
         return mode == Mode::Any;
     }

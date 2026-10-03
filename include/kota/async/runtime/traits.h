@@ -13,9 +13,6 @@
 
 namespace kota::detail {
 
-template <typename T>
-constexpr inline bool is_task_v = is_specialization_of<task, T>;
-
 /// The task when_all and when_any run for an awaitable: the awaitable itself
 /// when it is a task.
 template <typename Awaitable>

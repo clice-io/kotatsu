@@ -6,7 +6,8 @@
 #include <variant>
 #include <vector>
 
-#include "async/harness/loop_fixture.h"
+#include "support/harness/throws.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/support/config.h"
@@ -27,7 +28,7 @@ template <typename Range>
 using any_range_result_t =
     decltype(std::declval<decltype(when_any(std::declval<Range>()))&>().await_resume());
 
-ZEST_SUITE(async_runtime_when_any, test::LoopFixture) {
+ZEST_SUITE(async_runtime_when_any, zest::LoopFixture) {
 
 ZEST_CASE(result_type_follows_the_children_channels) {
     EXPECT(zest::type_eq<any_result_t<task<int>, task<int>>, std::variant<int, int>>());

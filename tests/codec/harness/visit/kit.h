@@ -20,6 +20,7 @@
 // move-only. A plain value always encodes under the default config; Config
 // applies to the value under test only.
 
+#include <algorithm>
 #include <concepts>
 #include <cstddef>
 #include <expected>
@@ -29,6 +30,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "codec/harness/fixtures/structs.h"
 #include "kota/zest/zest.h"
@@ -142,7 +144,7 @@ void roundtrip_over(const Kit<B>& kit, std::string name, Make make, Start start)
 /// roundtrip_over a value-initialized target.
 template <typename Config = void, Backend B, typename Make>
 void roundtrip(const Kit<B>& kit, std::string name, Make make) {
-    roundtrip_over<Config>(kit, std::move(name), make, [] { return decltype(make()){}; });
+    roundtrip_over<Config>(kit, std::move(name), make, [] { return decltype(make())(); });
 }
 
 /// make() under Config encodes to the document plain() encodes to.
@@ -165,7 +167,7 @@ void reads(const Kit<B>& kit, std::string name, Plain plain, Expect expect) {
         auto document = B::encode(plain());
         ASSERT(succeeds(document));
         ZEST_CONTEXT("{}: {}", B::name, B::render(*document));
-        T decoded{};
+        auto decoded = T();
         ASSERT(succeeds(B::template decode<Config>(*document, decoded)));
         EXPECT(meta::eq(decoded, expect()));
     });
@@ -183,6 +185,34 @@ void reads_in_field(const Kit<B>& kit, std::string name, Plain plain, Expect exp
         [expect] { return Field<V>{expect()}; });
 }
 
+/// reads under an installed codec::UnknownFields: the document plain()
+/// encodes to decodes, under Config, into expect(), reporting the unknown
+/// fields at `unknown`, in any order.
+template <typename T, typename Config = void, Backend B, typename Plain, typename Expect>
+void reads_reporting(const Kit<B>& kit,
+                     std::string name,
+                     Plain plain,
+                     Expect expect,
+                     std::vector<std::string> unknown) {
+    std::ranges::sort(unknown);
+    kit.add(std::move(name), [plain, expect, unknown] {
+        auto document = B::encode(plain());
+        ASSERT(succeeds(document));
+        ZEST_CONTEXT("{}: {}", B::name, B::render(*document));
+        codec::UnknownFields sink;
+        codec::scoped_context<codec::UnknownFields> scope(sink);
+        auto decoded = T();
+        ASSERT(succeeds(B::template decode<Config>(*document, decoded)));
+        EXPECT(meta::eq(decoded, expect()));
+        std::vector<std::string> paths;
+        for(const auto& entry: sink.entries) {
+            paths.push_back(entry.format_path());
+        }
+        std::ranges::sort(paths);
+        EXPECT(paths == unknown);
+    });
+}
+
 /// The document plain() encodes to does not decode into T under Config.
 template <typename T, typename Config = void, Backend B, typename Plain>
 void read_fails(const Kit<B>& kit, std::string name, Plain plain, Failure failure) {
@@ -190,7 +220,7 @@ void read_fails(const Kit<B>& kit, std::string name, Plain plain, Failure failur
         auto document = B::encode(plain());
         ASSERT(succeeds(document));
         ZEST_CONTEXT("{}: {}", B::name, B::render(*document));
-        T decoded{};
+        auto decoded = T();
         auto status = B::template decode<Config>(*document, decoded);
         ASSERT(!status);
         detail::check_failure(status.error(), failure);
@@ -277,13 +307,13 @@ void hostile(const Kit<B>& kit, std::string name, [[maybe_unused]] Make make) {
             const Encoded& document = *encoded;
 
             auto settles = [](const Encoded& input) {
-                T decoded{};
+                auto decoded = T();
                 if(!B::decode(input, decoded)) {
                     return;
                 }
                 auto first = B::encode(decoded);
                 ASSERT(succeeds(first));
-                T again{};
+                auto again = T();
                 ASSERT(succeeds(B::decode(*first, again)));
                 auto second = B::encode(again);
                 ASSERT(succeeds(second));

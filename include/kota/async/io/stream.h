@@ -73,6 +73,18 @@ public:
     /// read_chunk() showed.
     void consume(std::size_t n);
 
+    /// Reads until the end of the stream and gives all it read. Another read
+    /// error fails it, and what it read is lost, as it is when it is
+    /// cancelled.
+    task<std::string, error> read_to_end();
+
+    /// Reads a line: the bytes up to the next '\n', which it consumes but
+    /// does not give, nor a '\r' right before it. At the end of the stream a
+    /// last line without a '\n' comes as it is, and the next read_line()
+    /// fails with error::end_of_file. Another read error fails it, and what
+    /// it read of the line is lost, as it is when it is cancelled.
+    task<std::string, error> read_line();
+
     /// Stops reading ahead and ends a pending read with
     /// error::operation_aborted. What is buffered stays; the next read
     /// starts reading again.

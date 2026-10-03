@@ -1,5 +1,8 @@
+#include <cstddef>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 #include "kota/zest/zest.h"
 #include "kota/codec/visit/context.h"
@@ -12,9 +15,9 @@ namespace {
 /// frames prepend on the way out, innermost first.
 rich_error unwound(std::string message) {
     rich_error error(std::move(message));
-    error.prepend_index(3);
-    error.prepend_field("b");
-    error.prepend_field("a");
+    rich_error::prepend_segment(error.path, std::size_t{3});
+    rich_error::prepend_segment(error.path, "b");
+    rich_error::prepend_segment(error.path, std::string_view("a"));
     return error;
 }
 
@@ -31,9 +34,17 @@ ZEST_CASE(path_joins_fields_and_indices) {
 
 ZEST_CASE(path_starting_with_an_index) {
     rich_error error("broken");
-    error.prepend_field("scores");
-    error.prepend_index(2);
+    rich_error::prepend_segment(error.path, "scores");
+    rich_error::prepend_segment(error.path, std::size_t{2});
     EXPECT(error.format_path() == "[2].scores");
+}
+
+ZEST_CASE(prepend_segment_puts_the_step_first) {
+    std::vector<rich_error::path_segment> path;
+    rich_error::prepend_segment(path, "key");
+    rich_error::prepend_segment(path, std::size_t{0});
+    rich_error::prepend_segment(path, "rules");
+    EXPECT(rich_error::format_path(path) == "rules[0].key");
 }
 
 ZEST_CASE(empty_path_formats_empty) {
@@ -50,7 +61,7 @@ ZEST_CASE(to_string_adds_the_path) {
 
 ZEST_CASE(to_string_adds_the_location) {
     auto error = unwound("broken");
-    error.set_location({.line = 3, .column = 10, .byte_offset = 30});
+    error.location = {.line = 3, .column = 10, .byte_offset = 30};
     EXPECT(error.to_string() == "broken at a.b[3] (line 3, column 10)");
 }
 

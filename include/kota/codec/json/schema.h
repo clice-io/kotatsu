@@ -518,13 +518,13 @@ private:
 };
 
 /// The fresh documents the default-annotation pass pairs schema bodies with:
-/// for every default-initializable struct the decoder reads directly (see
+/// for every default-constructible struct the decoder reads directly (see
 /// decoder_reads_directly) reachable through the resolved type structure,
 /// the document a value-initialized instance encodes to under the resolved
 /// config, keyed by the normalized name the emitter gives the type's $def.
 /// collect_fresh mirrors the emitter's reach — struct fields (flattened
-/// included, skipped excluded), each under the config its slot's rename_all
-/// / deny_unknown spec merges to, optional and pointer inners, sequence and
+/// included, skipped excluded), each under the config its slot's
+/// struct-level spec merges to, optional and pointer inners, sequence and
 /// set elements, map values (keys encode as object keys and carry no
 /// schema), tuple elements, variant alternatives. A repr-routed type is
 /// skipped, subtree included, field-level behavior attrs (`with`, `as`) are
@@ -592,7 +592,7 @@ private:
 
     static void annotate_properties(dyn::Object& body, const dyn::Value& doc_value) {
         // A non-struct root pairs with a non-object document (an array, a
-        // scalar, the null a default-constructed nullable root encodes to);
+        // scalar, the null a value-initialized nullable root encodes to);
         // it has no properties to annotate from.
         const auto* doc = doc_value.get_object();
         if(doc == nullptr) {
@@ -740,8 +740,8 @@ void collect_fresh(FreshDefaults& out) {
                 // — annotate neither rather than pair one with the other's
                 // document.
                 out.docs.erase(name);
-            } else if constexpr(std::default_initializable<T>) {
-                if(auto text = to_string<cfg>(T{})) {
+            } else if constexpr(std::is_default_constructible_v<T>) {
+                if(auto text = to_string<cfg>(T())) {
                     if(auto doc = from_string<dyn::Value>(*text)) {
                         out.docs.emplace(name, std::move(*doc));
                     }
@@ -786,17 +786,17 @@ inline std::expected<std::string, rich_error> stringify(dyn::Value value, bool p
 
 }  // namespace detail
 
-/// When T is default-initializable and the decoder reads it directly — T
+/// When T is default-constructible and the decoder reads it directly — T
 /// resolves to itself, or is a structural meta::annotate wrapper of the type
 /// it resolves to — the schema also carries `default` annotations: fresh
 /// instances are encoded through the real JSON encoder under Config and
 /// parsed back into documents, so the values match what to_string emits byte
 /// for byte (enum renames, nan handling, structural annotations on the root
-/// itself included). Root properties take the values of T{}; each $def and
+/// itself included). Root properties take the values of T(); each $def and
 /// inlined variant branch takes the values of a freshly constructed instance
 /// of its own type, with non-required sites layering their whole-object
 /// defaults on top (see DefaultAnnotator). Two consequences of riding the
-/// real encoder: T{} must encode under Config — an instance the encoder
+/// real encoder: T() must encode under Config — an instance the encoder
 /// rejects (a NaN member under nan_repr::Error, an enum value without a
 /// reflected name under enum_repr::String) fails schema generation with that
 /// error — and a T whose fields the codec cannot serialize fails to compile,
@@ -807,7 +807,7 @@ inline std::expected<std::string, rich_error> stringify(dyn::Value value, bool p
 template <typename T, typename Config = void>
 std::expected<dyn::Value, rich_error> schema() {
     using resolved = meta::resolved_repr_t<T, format>;
-    constexpr bool annotate_defaults = std::default_initializable<T> &&
+    constexpr bool annotate_defaults = std::is_default_constructible_v<T> &&
                                        meta::kind_of<resolved>() != meta::type_kind::unknown &&
                                        detail::decoder_reads_directly<T>();
     KOTA_EXPECTED_TRY_V(
@@ -815,7 +815,7 @@ std::expected<dyn::Value, rich_error> schema() {
         (detail::SchemaEmitter{detail::options_of<Config>(), annotate_defaults}.emit(
             meta::type_info_of<T, detail::schema_config<Config>>())));
     if constexpr(annotate_defaults) {
-        KOTA_EXPECTED_TRY_V(auto text, to_string<Config>(T{}));
+        KOTA_EXPECTED_TRY_V(auto text, to_string<Config>(T()));
         KOTA_EXPECTED_TRY_V(auto doc, from_string<dyn::Value>(text));
         detail::FreshDefaults fresh;
         detail::collect_fresh<T, detail::schema_config<Config>>(fresh);

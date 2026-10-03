@@ -14,6 +14,7 @@
 
 #include "codec/harness/fixtures/repr.h"
 #include "codec/harness/fixtures/structs.h"
+#include "fixtures/containers.h"
 #include "fixtures/repr.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/attrs.h"
@@ -448,6 +449,32 @@ struct all_default {
     <std::int32_t> x;
     KOTATSU_ANNOTATE(defaulted = true)
     <std::string> y;
+};
+
+/// Only value-initialization makes one: the list's default constructor is
+/// explicit.
+struct explicit_member_defaults {
+    test::ExplicitList list;
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::int32_t> count = 4;
+};
+
+struct explicit_member_holder {
+    std::vector<explicit_member_defaults> items;
+};
+
+/// all_default's fields, defaulted by a struct-level spec instead.
+struct defaulted_by_struct {
+    std::int32_t x;
+    std::string y;
+};
+
+KOTATSU_ANNOTATION(defaulted_fields_annotation, defaulted_fields = true);
+using defaulted_fields_root = annotate<defaulted_fields_annotation>::type<defaulted_by_struct>;
+
+struct defaulted_fields_holder {
+    KOTATSU_ANNOTATE(defaulted_fields = true)
+    <defaulted_by_struct> section;
 };
 
 struct skip_default {
@@ -1348,6 +1375,37 @@ ZEST_CASE(all_default_fields) {
                      R"("minimum":-2147483648,)"
                      R"("maximum":2147483647,"default":0},)"
                      R"("y":{"type":"string","default":""}}})");
+}
+
+ZEST_CASE(defaults_of_a_value_initialized_struct) {
+    // `T{}` would copy-list-initialize the explicit list from `{}`: the root
+    // and a $def alike take their defaults from a value-initialized value.
+    const auto root = json::schema_string<explicit_member_defaults>().value();
+    EXPECT(zest::contains(root, R"("maximum":2147483647,"default":4})"));
+    const auto held = json::schema_string<explicit_member_holder>().value();
+    EXPECT(zest::contains(held, R"("$defs")"));
+    EXPECT(zest::contains(held, R"("maximum":2147483647,"default":4})"));
+}
+
+ZEST_CASE(defaulted_fields_struct_requires_nothing) {
+    // As all_default, whose fields each carry `defaulted`.
+    const auto result = json::schema_string<defaulted_fields_root>().value();
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("x":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647,"default":0},)"
+                     R"("y":{"type":"string","default":""}}})");
+    const auto bare = json::schema_string<defaulted_by_struct>().value();
+    EXPECT(zest::contains(bare, R"("required":["x","y"])"));
+}
+
+ZEST_CASE(defaulted_fields_on_a_field_requires_nothing_inside) {
+    // The field itself stays required; the struct it holds requires nothing.
+    const auto result = json::schema_string<defaulted_fields_holder>().value();
+    EXPECT(zest::contains(result, R"("required":["section"])"));
+    EXPECT(result.find(R"("required")") == result.rfind(R"("required")"));
 }
 
 // ---------------------------------------------------------------------------

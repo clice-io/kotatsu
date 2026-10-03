@@ -355,6 +355,60 @@ void variants(const Kit<B>& kit) {
             "internal_alternatives_follow_field_rename",
             [] { return SegmentCamelPlain{.kind = "segment", .lineWidth = 7}; },
             [] { return InternalShape(Segment{.line_width = 7}); });
+
+        // A tagged value's path runs through the key it is under: the tag,
+        // externally, the content key, adjacently, and none, internally,
+        // where the fields sit beside the tag.
+        using Texts = std::map<std::string, std::string>;
+        auto texts_for_point = [] {
+            return Texts{
+                {"x", "one"},
+                {"y", "two"}
+            };
+        };
+        read_in_field_fails<ExternalShape>(kit,
+                                           "external_content_mismatch_fails",
+                                           [texts_for_point] {
+                                               return std::map<std::string, Texts>{
+                                                   {"point", texts_for_point()}
+                                               };
+                                           },
+                                           {.message = "", .path = "value.point.x"});
+        read_in_field_fails<AdjacentShape>(kit,
+                                           "adjacent_content_mismatch_fails",
+                                           [texts_for_point] {
+                                               return AdjacentPlain<Texts>{.t = "point",
+                                                                           .c = texts_for_point()};
+                                           },
+                                           {.message = "", .path = "value.c.x"});
+        // So are the unknown fields reported in it. A key beside an adjacent
+        // tag and its content is one; an internal tag is none.
+        reads_reporting<Field<ExternalShape>>(
+            kit,
+            "external_unknown_fields_reported",
+            [] { return Field<PointWithExtraTagPlain>{{.point = {.x = 1, .y = 2, .extra = 3}}}; },
+            [] { return Field<ExternalShape>{ExternalShape(Point{.x = 1, .y = 2})}; },
+            {"value.point.extra"});
+        reads_reporting<Field<AdjacentShape>>(
+            kit,
+            "adjacent_unknown_fields_reported",
+            [] {
+                return Field<AdjacentPointWithExtrasPlain>{
+                    {.t = "point", .extra = true, .c = {.x = 1, .y = 2, .extra = 3}}
+                };
+            },
+            [] { return Field<AdjacentShape>{AdjacentShape(Point{.x = 1, .y = 2})}; },
+            {"value.c.extra", "value.extra"});
+        reads_reporting<Field<InternalShape>>(
+            kit,
+            "internal_unknown_fields_reported",
+            [] {
+                return Field<CircleWithExtraPlain>{
+                    {.kind = "circle", .radius = 1, .extra = "x"}
+                };
+            },
+            [] { return Field<InternalShape>{InternalShape(Circle{.radius = 1})}; },
+            {"value.extra"});
     }
 }
 
