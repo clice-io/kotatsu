@@ -344,14 +344,17 @@ struct Peer<CodecT>::Self {
     void send_cancel_request(const protocol::RequestID& id) {
         auto params = codec.serialize_value(protocol::CancelRequestParams{id});
         if(!params) {
-            log(LogLevel::error, "$/cancelRequest for id={} not sent: {}", id, params.error().message);
+            log(LogLevel::error,
+                "$/cancelRequest for id={} not sent: {}",
+                protocol::to_string(id),
+                params.error().message);
             return;
         }
         auto notification = codec.encode_notification("$/cancelRequest", *params);
         if(!notification) {
             log(LogLevel::error,
                 "$/cancelRequest for id={} not sent: {}",
-                id,
+                protocol::to_string(id),
                 notification.error().message);
             return;
         }
@@ -479,14 +482,14 @@ struct Peer<CodecT>::Self {
             // The answer to a request that timed out, or that failed with a
             // message too large to read, may still come; nothing awaits it.
             if(issued(id)) {
-                log(LogLevel::debug, "late response for id={}", id);
+                log(LogLevel::debug, "late response for id={}", protocol::to_string(id));
             } else {
-                log(LogLevel::warn, "orphan response for id={}", id);
+                log(LogLevel::warn, "orphan response for id={}", protocol::to_string(id));
             }
             return;
         }
 
-        log(LogLevel::debug, "response received for id={}", id);
+        log(LogLevel::debug, "response received for id={}", protocol::to_string(id));
 
         auto pending = std::move(it->second);
         pending_requests.erase(it);
@@ -547,7 +550,7 @@ struct Peer<CodecT>::Self {
                           const protocol::RequestID& id,
                           std::string_view params,
                           task_group<>& handlers) {
-        log(LogLevel::debug, "request: {} id={}", method, id);
+        log(LogLevel::debug, "request: {} id={}", method, protocol::to_string(id));
 
         if(incoming_requests.contains(id)) {
             send_error(id, Error(protocol::ErrorCode::InvalidRequest, "duplicate request id"));

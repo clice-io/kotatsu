@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <format>
-#include <functional>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -30,6 +29,14 @@ using string = std::string;
 using null = std::nullptr_t;
 
 using RequestID = std::variant<std::int64_t, std::string>;
+
+/// `id` as the peer's logs show it: a number as it is, a string in quotes.
+inline std::string to_string(const RequestID& id) {
+    if(const auto* number = std::get_if<std::int64_t>(&id)) {
+        return std::to_string(*number);
+    }
+    return std::format(R"("{}")", std::get<std::string>(id));
+}
 
 enum class ErrorCode : integer {
     ParseError = -32700,
@@ -74,40 +81,6 @@ struct CancelRequestParams {
 };
 
 }  // namespace kota::ipc::protocol
-
-namespace std {
-
-template <>
-struct hash<kota::ipc::protocol::RequestID> {
-    std::size_t operator()(const kota::ipc::protocol::RequestID& id) const noexcept {
-        return std::visit(
-            [](const auto& v) -> std::size_t {
-                return std::hash<std::remove_cvref_t<decltype(v)>>{}(v);
-            },
-            id);
-    }
-};
-
-template <>
-struct formatter<kota::ipc::protocol::RequestID> {
-    constexpr auto parse(format_parse_context& ctx) {
-        return ctx.begin();
-    }
-
-    auto format(const kota::ipc::protocol::RequestID& id, format_context& ctx) const {
-        return std::visit(
-            [&](const auto& v) {
-                if constexpr(std::is_same_v<std::remove_cvref_t<decltype(v)>, std::string>) {
-                    return std::format_to(ctx.out(), "\"{}\"", v);
-                } else {
-                    return std::format_to(ctx.out(), "{}", v);
-                }
-            },
-            id);
-    }
-};
-
-}  // namespace std
 
 namespace kota::codec {
 
