@@ -334,14 +334,29 @@ struct Peer<CodecT>::Self {
 
     /// Queues `response`, the answer to `id`. One larger than the transport
     /// carries is replaced by a MessageTooLarge error without data, which the
-    /// remote can read; the handler that answered never learns of it.
+    /// remote can read; the handler that answered never learns of it. Under a
+    /// limit too small for that error as well, or from a codec that cannot
+    /// encode it, the answer is dropped with an error logged, and the request
+    /// goes unanswered.
     void enqueue_response(const std::optional<protocol::RequestID>& id, std::string response) {
-        if(auto too_large = oversized(response)) {
-            log(LogLevel::warn, "response replaced: {}", too_large->message);
-            // An error without data always encodes.
-            response = *codec.encode_error_response(id, *too_large);
+        auto too_large = oversized(response);
+        if(!too_large) {
+            enqueue_outgoing(std::move(response));
+            return;
         }
-        enqueue_outgoing(std::move(response));
+        log(LogLevel::warn, "response replaced: {}", too_large->message);
+        auto replacement = codec.encode_error_response(id, *too_large);
+        if(!replacement) {
+            log(LogLevel::error, "response dropped: {}", replacement.error().message);
+            return;
+        }
+        if(auto still_too_large = oversized(*replacement)) {
+            log(LogLevel::error,
+                "response dropped, its replacement is too large: {}",
+                still_too_large->message);
+            return;
+        }
+        enqueue_outgoing(std::move(*replacement));
     }
 
     /// Tells the remote that the request `id` is no longer awaited. It is a

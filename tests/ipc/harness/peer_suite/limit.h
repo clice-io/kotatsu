@@ -3,7 +3,8 @@
 // The transport's payload limit on what the peer writes: a message larger
 // than the transport carries is never written, since the remote would skip
 // it unread. A request or notification that large fails at once; an answer
-// that large is replaced by a MessageTooLarge error the remote can read.
+// that large is replaced by a MessageTooLarge error the remote can read, or
+// dropped when that error does not fit either.
 
 #include <cstddef>
 #include <cstdint>
@@ -25,6 +26,9 @@ constexpr std::size_t payload_limit = 256;
 inline std::string beyond_the_limit() {
     return std::string(4 * payload_limit, 'x');
 }
+
+/// A limit no codec writes a message within, MessageTooLarge errors included.
+constexpr std::size_t tiny_limit = 8;
 
 template <CodecAdapter A>
 void peer_limit(const PeerKit<A>& kit) {
@@ -196,6 +200,20 @@ void peer_limit(const PeerKit<A>& kit) {
         EXPECT(written[0].id == RequestID(1));
         EXPECT(code_of(written[0].error) == ErrorCode::MessageTooLarge);
         EXPECT(!written[0].error.data.has_value());
+    });
+
+    // The error that would replace the answer is over the limit too: the
+    // request goes unanswered, as nothing within the limit can answer it,
+    // and the peer ends as usual.
+    kit.add("answer_over_a_limit_too_small_for_message_too_large_is_dropped", [](Fixture& f) {
+        f.remote.limit_payload(tiny_limit);
+        f.serve_add();
+        f.remote.send(request<A>(1, "test/add", AddParams{.a = 1, .b = 2}));
+        f.remote.end_input();
+
+        auto [ran] = f.run(f.peer.run());
+        EXPECT(ran.has_value());
+        EXPECT(f.written().empty());
     });
 }
 

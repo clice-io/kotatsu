@@ -86,8 +86,10 @@ struct request_options {
 /// Nothing larger than the transport's max_payload() is written, since the
 /// remote would skip it unread: a request or notification that large fails
 /// with MessageTooLarge, and an answer that large is replaced by a
-/// MessageTooLarge error. The limit is this end's, so both ends should use
-/// the same one.
+/// MessageTooLarge error. Under a limit too small for that error the answer
+/// is dropped, with an error logged, and the remote's request goes
+/// unanswered. The limit is this end's, so both ends should use the same
+/// one.
 template <typename Codec>
 class Peer {
 public:

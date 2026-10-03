@@ -155,6 +155,21 @@ ZEST_CASE(response_over_the_limit_is_a_warning) {
     EXPECT(has(LogLevel::warn, "response replaced: a message of"));
 }
 
+// The error that would replace the answer is over the limit too: an error
+// says the answer is dropped, and why.
+ZEST_CASE(response_over_a_limit_too_small_for_its_replacement_is_an_error) {
+    log_from(LogLevel::warn);
+    remote.limit_payload(8);
+    serve_add();
+    remote.send(test::request<test::JsonAdapter>(1, "test/add", AddParams{.a = 1, .b = 2}));
+    remote.end_input();
+
+    auto [ran] = run(peer.run());
+    EXPECT(ran.has_value());
+    EXPECT(has(LogLevel::warn, "response replaced: a message of"));
+    EXPECT(has(LogLevel::error, "response dropped, its replacement is too large: a message of"));
+}
+
 // An id the peer never gave a request of its own. The log shows a number as
 // it is and a string in quotes, so that 7 and "7" read apart.
 ZEST_CASE(answer_to_an_unknown_id_is_a_warning) {
