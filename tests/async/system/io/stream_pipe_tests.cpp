@@ -364,24 +364,37 @@ ZEST_CASE(read_line_gives_each_line_without_its_end) {
     EXPECT(result->second == error::end_of_file);
 }
 
-// However the pieces arrive, a line is whole, and a '\r' that comes apart
-// from its '\n' still goes.
-ZEST_CASE(read_line_joins_a_line_written_in_pieces) {
+// The reader has "partial\r" buffered before the rest is written, so
+// read_line() takes the '\r' and its '\n' from separate reads: the line is
+// whole, and the '\r' still goes.
+ZEST_CASE(read_line_joins_a_line_whose_end_comes_apart) {
     auto ends = pipe_ends(loop);
     ASSERT(ends.has_value());
+    event buffered;
     auto send = [&]() -> task<void, error> {
-        for(std::string_view piece: {"par", "tial\r", "\nnext\n"}) {
-            co_await ends->writer.write(piece).or_fail();
-            co_await yield();
-        }
+        co_await ends->writer.write(std::string_view("partial\r")).or_fail();
+        co_await buffered.wait();
+        co_await ends->writer.write(std::string_view("\nnext\n")).or_fail();
         ends->writer = pipe{};
     };
+    auto receive = [&]() -> task<std::pair<std::string, std::vector<std::string>>, error> {
+        auto chunk = co_await ends->reader.read_chunk().or_fail();
+        std::string first(chunk.data(), chunk.size());
+        // The writer goes on once this task has suspended, inside read_line()
+        // with the buffer consumed.
+        buffered.set();
+        auto [lines, ended] = co_await read_lines(ends->reader);
+        if(ended != error::end_of_file) {
+            co_await fail(ended);
+        }
+        co_return std::pair{std::move(first), std::move(lines)};
+    };
 
-    auto [sent, result] = run(send(), read_lines(ends->reader));
+    auto [sent, received] = run(send(), receive());
     EXPECT(sent.has_value());
-    ASSERT(result.has_value());
-    EXPECT(result->first == std::vector<std::string>{"partial", "next"});
-    EXPECT(result->second == error::end_of_file);
+    ASSERT(received.has_value());
+    ASSERT(received->first == "partial\r");
+    EXPECT(received->second == std::vector<std::string>{"partial", "next"});
 }
 
 // A line longer than the stream's buffer is read as the buffer drains.

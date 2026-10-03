@@ -1,6 +1,5 @@
 #include <cstdint>
 
-#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -17,7 +16,7 @@ process::exit_status signalled(int signal) {
     return {.status = 0, .term_signal = signal};
 }
 
-ZEST_SUITE(async_io_process_status, zest::LoopFixture) {
+ZEST_SUITE(async_io_process_status) {
 
 ZEST_CASE(success_is_exit_code_zero_without_a_signal) {
     EXPECT(exited(0).success());
