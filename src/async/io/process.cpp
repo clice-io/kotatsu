@@ -97,6 +97,8 @@ bool same_env_name(std::string_view left, std::string_view right) {
 result<std::vector<std::string>> inherited_environment() {
     uv_env_item_t* items = nullptr;
     int count = 0;
+    // Only reads the environment: spawns on several threads may call it at
+    // once, and only a write to the environment meanwhile would race it.
     if(auto err = error(::uv_os_environ(&items, &count))) {
         return outcome_error(err);
     }
