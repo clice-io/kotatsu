@@ -40,12 +40,12 @@ void peer_unreadable(const PeerKit<A>& kit) {
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
-        EXPECT(ran.has_value());
+        ZEXPECT(ran.has_value());
         const auto& written = f.written();
-        ASSERT(written.size() == 1U);
-        EXPECT(written[0].kind == Message::Kind::Error);
-        EXPECT(written[0].id == RequestID(5));
-        EXPECT(code_of(written[0].error) == ErrorCode::MessageTooLarge);
+        ZASSERT(written.size() == 1U);
+        ZEXPECT(written[0].kind == Message::Kind::Error);
+        ZEXPECT(written[0].id == RequestID(5));
+        ZEXPECT(code_of(written[0].error) == ErrorCode::MessageTooLarge);
     });
 
     kit.add("oversized_response_fails_only_its_request", [](Fixture& f) {
@@ -61,11 +61,11 @@ void peer_unreadable(const PeerKit<A>& kit) {
                                                     f.peer.send_request(AddParams{}),
                                                     f.peer.send_request(AddParams{}),
                                                     remote());
-        EXPECT(ran.has_value());
-        ASSERT(first.has_error());
-        EXPECT(code_of(first.error()) == ErrorCode::MessageTooLarge);
-        ASSERT(second.has_value());
-        EXPECT(second->sum == 2);
+        ZEXPECT(ran.has_value());
+        ZASSERT(first.has_error());
+        ZEXPECT(code_of(first.error()) == ErrorCode::MessageTooLarge);
+        ZASSERT(second.has_value());
+        ZEXPECT(second->sum == 2);
     });
 
     // An error response whose id is null answers none of the peer's
@@ -81,9 +81,9 @@ void peer_unreadable(const PeerKit<A>& kit) {
 
         auto [ran, asked, scripted] =
             f.run(f.peer.run(), f.peer.send_request(AddParams{}), remote());
-        EXPECT(ran.has_value());
-        ASSERT(asked.has_value());
-        EXPECT(asked->sum == 1);
+        ZEXPECT(ran.has_value());
+        ZASSERT(asked.has_value());
+        ZEXPECT(asked->sum == 1);
     });
 
     kit.add("oversized_notification_is_dropped", [](Fixture& f) {
@@ -96,10 +96,10 @@ void peer_unreadable(const PeerKit<A>& kit) {
 
         auto [ran, asked, scripted] =
             f.run(f.peer.run(), f.peer.send_request(AddParams{}), remote());
-        EXPECT(ran.has_value());
-        ASSERT(asked.has_value());
-        EXPECT(asked->sum == 1);
-        EXPECT(f.written().size() == 1U);
+        ZEXPECT(ran.has_value());
+        ZASSERT(asked.has_value());
+        ZEXPECT(asked->sum == 1);
+        ZEXPECT(f.written().size() == 1U);
     });
 
     // It could have answered any of them; reading goes on after it.
@@ -123,12 +123,12 @@ void peer_unreadable(const PeerKit<A>& kit) {
                                                     f.peer.send_request(AddParams{}),
                                                     f.peer.send_request(AddParams{}),
                                                     remote());
-        EXPECT(ran.has_value());
-        ASSERT(first.has_error());
-        EXPECT(code_of(first.error()) == ErrorCode::MessageTooLarge);
-        ASSERT(second.has_error());
-        EXPECT(code_of(second.error()) == ErrorCode::MessageTooLarge);
-        EXPECT(notes == std::vector<std::string>{"after"});
+        ZEXPECT(ran.has_value());
+        ZASSERT(first.has_error());
+        ZEXPECT(code_of(first.error()) == ErrorCode::MessageTooLarge);
+        ZASSERT(second.has_error());
+        ZEXPECT(code_of(second.error()) == ErrorCode::MessageTooLarge);
+        ZEXPECT(notes == std::vector<std::string>{"after"});
     });
 
     // A connection whose frames cannot be followed is as good as gone:
@@ -144,10 +144,10 @@ void peer_unreadable(const PeerKit<A>& kit) {
 
         auto [ran, asked, scripted] =
             f.run(f.peer.run(), f.peer.send_request(AddParams{}), remote());
-        EXPECT(ran.has_value());
-        ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
-        EXPECT(asked.error().message == "missing Content-Length");
+        ZEXPECT(ran.has_value());
+        ZASSERT(asked.has_error());
+        ZEXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
+        ZEXPECT(asked.error().message == "missing Content-Length");
     });
 }
 

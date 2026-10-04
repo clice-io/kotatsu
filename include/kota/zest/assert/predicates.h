@@ -1,16 +1,20 @@
 #pragma once
 
 #include <algorithm>
+#include <exception>
 #include <format>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 #include "kota/zest/assert/check.h"
+#include "kota/zest/assert/trace.h"
 #include "kota/meta/compare.h"
 #include "kota/meta/name.h"
 
-// Predicates for checks, e.g. `EXPECT(contains(text, "key"))`. Each returns a
+// Predicates for checks, e.g. `ZEXPECT(contains(text, "key"))`. Each returns a
 // Match, which carries how to show its inputs when the check fails; `!`
 // negates one and keeps that. A predicate takes its arguments by reference:
 // the explanation reads them, and they live as long as the check.
@@ -85,5 +89,51 @@ Match type_eq() {
             },
     };
 }
+
+// Plain try and catch: these exist only where exceptions do, and catching by
+// type has no KOTA_ macro.
+#ifdef __cpp_exceptions
+
+/// Calling `body` throws, an `E` if `E` is given; `!throws(body)` is that it
+/// throws nothing. The explanation names what was thrown, if anything.
+template <typename E = void, typename F>
+Match throws(F&& body) {
+    // Kept, not read and not rethrown: clang-cl's ASan breaks the reference
+    // a handler gets, and a rethrow, so only a failing check reads it.
+    std::exception_ptr thrown;
+    bool held = false;
+    if constexpr(std::is_void_v<E>) {
+        try {
+            std::forward<F>(body)();
+        } catch(...) {
+            thrown = std::current_exception();
+            held = true;
+        }
+    } else {
+        try {
+            std::forward<F>(body)();
+        } catch(const E&) {
+            thrown = std::current_exception();
+            held = true;
+        } catch(...) {
+            thrown = std::current_exception();
+        }
+    }
+    return Match{
+        .held = held,
+        .explain =
+            [thrown] {
+                auto what = thrown ? std::format("thrown: {}", describe_exception(thrown))
+                                   : std::string("nothing was thrown");
+                if constexpr(std::is_void_v<E>) {
+                    return what;
+                } else {
+                    return std::format("expected: {}\n{}", meta::type_name<E>(), what);
+                }
+            },
+    };
+}
+
+#endif
 
 }  // namespace kota::zest

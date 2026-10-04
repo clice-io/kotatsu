@@ -136,28 +136,28 @@ ZEST_SUITE(deco_facade_descriptor) {
 
 ZEST_CASE(flag_shows_its_names) {
     const Described options{};
-    EXPECT(desc::from_deco_option(options.verbose) == "-v|--verbose");
+    ZEXPECT(desc::from_deco_option(options.verbose) == "-v|--verbose");
 }
 
 ZEST_CASE(separate_kv_shows_its_names_then_the_value) {
     const Described options{};
-    EXPECT(desc::from_deco_option(options.output) == "-o|--output <FILE>");
+    ZEXPECT(desc::from_deco_option(options.output) == "-o|--output <FILE>");
 }
 
 ZEST_CASE(kv_shows_each_name_as_the_parser_takes_it) {
     const Forms options{};
-    EXPECT(desc::from_deco_option(options.include) == "-I<value>|--include<value>");
-    EXPECT(desc::from_deco_option(options.flags) == "--flags <value>|--flags=<value>");
-    EXPECT(desc::from_deco_option(options.filter) == "--filter <value>");
-    EXPECT(desc::from_deco_option(options.object) == "/Fo:<value>");
+    ZEXPECT(desc::from_deco_option(options.include) == "-I<value>|--include<value>");
+    ZEXPECT(desc::from_deco_option(options.flags) == "--flags <value>|--flags=<value>");
+    ZEXPECT(desc::from_deco_option(options.filter) == "--filter <value>");
+    ZEXPECT(desc::from_deco_option(options.object) == "/Fo:<value>");
 }
 
 ZEST_CASE(kv_generated_name_also_takes_its_value_after_equals) {
     const Forms options{};
-    EXPECT(desc::from_deco_option(options.level_name, false, "level_name") ==
-           "--level-name <value>|--level-name=<value>");
-    EXPECT(desc::from_deco_option(options.x, false, "x") == "-x <value>|-x=<value>");
-    EXPECT(desc::from_deco_option(options.joined, false, "joined") == "--joined=<value>");
+    ZEXPECT(desc::from_deco_option(options.level_name, false, "level_name") ==
+            "--level-name <value>|--level-name=<value>");
+    ZEXPECT(desc::from_deco_option(options.x, false, "x") == "-x <value>|-x=<value>");
+    ZEXPECT(desc::from_deco_option(options.joined, false, "joined") == "--joined=<value>");
 }
 
 ZEST_CASE(every_kv_form_shown_parses) {
@@ -170,12 +170,12 @@ ZEST_CASE(every_kv_form_shown_parses) {
             }
             return true;
         });
-    EXPECT(shown.size() == 13U);
+    ZEXPECT(shown.size() == 13U);
 
     for(auto& [name, argv]: shown) {
         ZEST_CONTEXT("{} written {}", name, argv.front());
         auto parsed = cli::parse<Forms>(argv);
-        ASSERT(parsed.has_value());
+        ZASSERT(parsed.has_value());
         std::optional<std::string> value;
         detail::generator_of<Forms>().visit_fields(
             parsed->options,
@@ -185,82 +185,82 @@ ZEST_CASE(every_kv_form_shown_parses) {
                 }
                 return true;
             });
-        EXPECT(value == std::optional<std::string>("x"));
+        ZEXPECT(value == std::optional<std::string>("x"));
     }
 }
 
 ZEST_CASE(help_mode_separates_names_with_commas) {
     const Described options{};
-    EXPECT(
+    ZEXPECT(
         zest::starts_with(desc::from_deco_option(options.output, true), "  -o, --output <FILE>"));
 }
 
 ZEST_CASE(comma_shows_the_list_after_each_name) {
     const Described options{};
-    EXPECT(desc::from_deco_option(options.tags) == "--tags,<TAG>[,<TAG>...]|-T,<TAG>[,<TAG>...]");
+    ZEXPECT(desc::from_deco_option(options.tags) == "--tags,<TAG>[,<TAG>...]|-T,<TAG>[,<TAG>...]");
 }
 
 ZEST_CASE(multi_numbers_its_values) {
     const Described options{};
-    EXPECT(desc::from_deco_option(options.pair) == "--pair <VAL1> <VAL2>");
+    ZEXPECT(desc::from_deco_option(options.pair) == "--pair <VAL1> <VAL2>");
 }
 
 ZEST_CASE(input_and_pack_show_their_values) {
     const Described options{};
-    EXPECT(desc::from_deco_option(options.input) == "<INPUT>");
-    EXPECT(desc::from_deco_option(options.trailing) == "-- <ARG>...");
+    ZEXPECT(desc::from_deco_option(options.input) == "<INPUT>");
+    ZEXPECT(desc::from_deco_option(options.trailing) == "-- <ARG>...");
     const VectorInput vector{};
-    EXPECT(desc::from_deco_option(vector.files) == "<FILE>...");
+    ZEXPECT(desc::from_deco_option(vector.files) == "<FILE>...");
 }
 
 ZEST_CASE(unnamed_option_takes_its_field_name) {
     const Described options{};
-    EXPECT(desc::from_deco_option(options.unnamed, false, "u") == "-u");
-    EXPECT(desc::from_deco_option(options.unnamed, false, "long_name") == "--long-name");
+    ZEXPECT(desc::from_deco_option(options.unnamed, false, "u") == "-u");
+    ZEXPECT(desc::from_deco_option(options.unnamed, false, "long_name") == "--long-name");
 }
 
 ZEST_CASE(unnamed_option_without_a_name_shows_a_placeholder) {
     const Described options{};
-    EXPECT(desc::from_deco_option(options.unnamed) == "--<flag>");
-    EXPECT(desc::from_deco_option(options.unnamed, false, "_") == "--<flag>");
+    ZEXPECT(desc::from_deco_option(options.unnamed) == "--<flag>");
+    ZEXPECT(desc::from_deco_option(options.unnamed, false, "_") == "--<flag>");
 }
 
 ZEST_CASE(alias_shows_its_names) {
     const Described options{};
-    EXPECT(desc::from_deco_option(options._, false, "_") == "-O1");
+    ZEXPECT(desc::from_deco_option(options._, false, "_") == "-O1");
 }
 
 ZEST_CASE(meta_var_is_bracketed_once) {
-    EXPECT(desc::detail::meta_var_token("FILE") == "<FILE>");
-    EXPECT(desc::detail::meta_var_token("<FILE>") == "<FILE>");
-    EXPECT(desc::detail::meta_var_token("") == "<value>");
+    ZEXPECT(desc::detail::meta_var_token("FILE") == "<FILE>");
+    ZEXPECT(desc::detail::meta_var_token("<FILE>") == "<FILE>");
+    ZEXPECT(desc::detail::meta_var_token("") == "<value>");
 }
 
 ZEST_CASE(enum_value_shows_its_names) {
     const Enums options{};
-    EXPECT(desc::from_deco_option(options.level, false, "level") == "--level <low|mid|high>");
-    EXPECT(desc::from_deco_option(options.levels, false, "levels") ==
-           "--levels,<low|mid|high>[,<low|mid|high>...]");
-    EXPECT(desc::from_deco_option(options.pair, false, "pair") ==
-           "--pair <low|mid|high> <low|mid|high>");
-    EXPECT(desc::from_deco_option(options.inputs) == "<low|mid|high>...");
+    ZEXPECT(desc::from_deco_option(options.level, false, "level") == "--level <low|mid|high>");
+    ZEXPECT(desc::from_deco_option(options.levels, false, "levels") ==
+            "--levels,<low|mid|high>[,<low|mid|high>...]");
+    ZEXPECT(desc::from_deco_option(options.pair, false, "pair") ==
+            "--pair <low|mid|high> <low|mid|high>");
+    ZEXPECT(desc::from_deco_option(options.inputs) == "<low|mid|high>...");
 }
 
 ZEST_CASE(enum_names_past_the_limit_are_cut) {
     const Enums options{};
-    EXPECT(desc::from_deco_option(options.many, false, "many") == "--many <a|b|c|d|e|f|...>");
+    ZEXPECT(desc::from_deco_option(options.many, false, "many") == "--many <a|b|c|d|e|f|...>");
 }
 
 ZEST_CASE(explicit_meta_var_beats_enum_names) {
     const Enums options{};
-    EXPECT(desc::from_deco_option(options.named, false, "named") == "--named <L>");
+    ZEXPECT(desc::from_deco_option(options.named, false, "named") == "--named <L>");
 }
 
 ZEST_CASE(enum_names_can_be_turned_off) {
     const Enums options{};
     auto config = config::get();
     config.enum_meta_var.enabled = false;
-    EXPECT(desc::from_deco_option(options.level, false, "level", &config) == "--level <value>");
+    ZEXPECT(desc::from_deco_option(options.level, false, "level", &config) == "--level <value>");
 }
 
 ZEST_CASE(enum_names_follow_the_config) {
@@ -269,24 +269,24 @@ ZEST_CASE(enum_names_follow_the_config) {
     config.enum_meta_var.max_items = 2;
     config.enum_meta_var.separator = ",";
     config.enum_meta_var.overflow_suffix = ",etc";
-    EXPECT(desc::from_deco_option(options.level, false, "level", &config) ==
-           "--level <low,mid,etc>");
+    ZEXPECT(desc::from_deco_option(options.level, false, "level", &config) ==
+            "--level <low,mid,etc>");
 }
 
 ZEST_CASE(help_line_pads_the_usage_to_the_help_column) {
     const Described options{};
     auto config = config::get();
     config.render.compatible.usage.help_column = 16;
-    EXPECT(desc::from_deco_option(options.verbose, true, {}, &config) ==
-           "  -v, --verbose   Show more");
+    ZEXPECT(desc::from_deco_option(options.verbose, true, {}, &config) ==
+            "  -v, --verbose   Show more");
 }
 
 ZEST_CASE(help_line_of_a_long_usage_starts_below_at_the_help_column) {
     const Described options{};
     auto config = config::get();
     config.render.compatible.usage.help_column = 8;
-    EXPECT(desc::from_deco_option(options.output, true, {}, &config) ==
-           "  -o, --output <FILE>\n          Write output to FILE");
+    ZEXPECT(desc::from_deco_option(options.output, true, {}, &config) ==
+            "  -o, --output <FILE>\n          Write output to FILE");
 }
 
 ZEST_CASE(help_line_without_help_shows_the_default) {
@@ -294,16 +294,16 @@ ZEST_CASE(help_line_without_help_shows_the_default) {
     auto config = config::get();
     config.render.compatible.usage.help_column = 16;
     config.render.compatible.usage.default_help = "nothing to say";
-    EXPECT(desc::from_deco_option(options.unnamed, true, "unnamed", &config) ==
-           "  --unnamed       nothing to say");
+    ZEXPECT(desc::from_deco_option(options.unnamed, true, "unnamed", &config) ==
+            "  --unnamed       nothing to say");
 }
 
 ZEST_CASE(category_shows_what_it_has) {
-    EXPECT(desc::detail::category_desc({.name = "mode", .description = "one mode"}) ==
-           "<mode> (one mode)");
-    EXPECT(desc::detail::category_desc({.name = "mode", .description = ""}) == "<mode>");
-    EXPECT(desc::detail::category_desc({.name = "", .description = "one mode"}) == "one mode");
-    EXPECT(desc::detail::category_desc({}) == "<unnamed category>");
+    ZEXPECT(desc::detail::category_desc({.name = "mode", .description = "one mode"}) ==
+            "<mode> (one mode)");
+    ZEXPECT(desc::detail::category_desc({.name = "mode", .description = ""}) == "<mode>");
+    ZEXPECT(desc::detail::category_desc({.name = "", .description = "one mode"}) == "one mode");
+    ZEXPECT(desc::detail::category_desc({}) == "<unnamed category>");
 }
 
 };  // ZEST_SUITE(deco_facade_descriptor)

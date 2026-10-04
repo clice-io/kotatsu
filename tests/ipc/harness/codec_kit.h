@@ -133,60 +133,60 @@ void codec_protocol(const CodecKit<A>& kit) {
     kit.add("encode_request_writes_a_request", [] {
         Codec codec;
         auto encoded = codec.encode_request(7, "test/add", A::encode(AddParams{.a = 1, .b = 2}));
-        ASSERT(encoded.has_value());
+        ZASSERT(encoded.has_value());
         auto message = A::read(*encoded);
-        ASSERT(message.has_value());
-        EXPECT(message->kind == Message::Kind::Request);
-        EXPECT(message->id == RequestID(7));
-        EXPECT(message->method == "test/add");
+        ZASSERT(message.has_value());
+        ZEXPECT(message->kind == Message::Kind::Request);
+        ZEXPECT(message->id == RequestID(7));
+        ZEXPECT(message->method == "test/add");
         auto params = decoded<AddParams, A>(message->body);
-        ASSERT(params.has_value());
-        EXPECT(*params == AddParams{.a = 1, .b = 2});
+        ZASSERT(params.has_value());
+        ZEXPECT(*params == AddParams{.a = 1, .b = 2});
     });
 
     if constexpr(A::caps.string_ids) {
         kit.add("encode_request_writes_a_string_id", [] {
             Codec codec;
             auto encoded = codec.encode_request("abc", "test/add", A::encode(AddParams{}));
-            ASSERT(encoded.has_value());
+            ZASSERT(encoded.has_value());
             auto message = A::read(*encoded);
-            ASSERT(message.has_value());
-            EXPECT(message->id == RequestID("abc"));
+            ZASSERT(message.has_value());
+            ZEXPECT(message->id == RequestID("abc"));
         });
     } else {
         kit.add("encode_request_with_a_string_id_fails", [] {
             Codec codec;
             auto encoded = codec.encode_request("abc", "test/add", A::encode(AddParams{}));
-            ASSERT(!encoded.has_value());
-            EXPECT(code_of(encoded.error()) == ErrorCode::InternalError);
+            ZASSERT(!encoded.has_value());
+            ZEXPECT(code_of(encoded.error()) == ErrorCode::InternalError);
         });
     }
 
     kit.add("encode_notification_writes_a_notification", [] {
         Codec codec;
         auto encoded = codec.encode_notification("test/note", A::encode(NoteParams{.text = "hi"}));
-        ASSERT(encoded.has_value());
+        ZASSERT(encoded.has_value());
         auto message = A::read(*encoded);
-        ASSERT(message.has_value());
-        EXPECT(message->kind == Message::Kind::Notification);
-        EXPECT(!message->id.has_value());
-        EXPECT(message->method == "test/note");
+        ZASSERT(message.has_value());
+        ZEXPECT(message->kind == Message::Kind::Notification);
+        ZEXPECT(!message->id.has_value());
+        ZEXPECT(message->method == "test/note");
         auto params = decoded<NoteParams, A>(message->body);
-        ASSERT(params.has_value());
-        EXPECT(params->text == "hi");
+        ZASSERT(params.has_value());
+        ZEXPECT(params->text == "hi");
     });
 
     kit.add("encode_success_response_writes_a_result", [] {
         Codec codec;
         auto encoded = codec.encode_success_response(42, A::encode(AddResult{.sum = 3}));
-        ASSERT(encoded.has_value());
+        ZASSERT(encoded.has_value());
         auto message = A::read(*encoded);
-        ASSERT(message.has_value());
-        EXPECT(message->kind == Message::Kind::Result);
-        EXPECT(message->id == RequestID(42));
+        ZASSERT(message.has_value());
+        ZEXPECT(message->kind == Message::Kind::Result);
+        ZEXPECT(message->id == RequestID(42));
         auto result = decoded<AddResult, A>(message->body);
-        ASSERT(result.has_value());
-        EXPECT(result->sum == 3);
+        ZASSERT(result.has_value());
+        ZEXPECT(result->sum == 3);
     });
 
     kit.add("encode_error_response_writes_an_error", [] {
@@ -194,25 +194,25 @@ void codec_protocol(const CodecKit<A>& kit) {
         auto encoded =
             codec.encode_error_response(20,
                                         ipc::Error(ErrorCode::InternalError, "something broke"));
-        ASSERT(encoded.has_value());
+        ZASSERT(encoded.has_value());
         auto message = A::read(*encoded);
-        ASSERT(message.has_value());
-        EXPECT(message->kind == Message::Kind::Error);
-        EXPECT(message->id == RequestID(20));
-        EXPECT(code_of(message->error) == ErrorCode::InternalError);
-        EXPECT(message->error.message == "something broke");
+        ZASSERT(message.has_value());
+        ZEXPECT(message->kind == Message::Kind::Error);
+        ZEXPECT(message->id == RequestID(20));
+        ZEXPECT(code_of(message->error) == ErrorCode::InternalError);
+        ZEXPECT(message->error.message == "something broke");
     });
 
     kit.add("encode_error_response_without_an_id_writes_none", [] {
         Codec codec;
         auto encoded =
             codec.encode_error_response(std::nullopt, ipc::Error(ErrorCode::ParseError, "bad"));
-        ASSERT(encoded.has_value());
+        ZASSERT(encoded.has_value());
         auto message = A::read(*encoded);
-        ASSERT(message.has_value());
-        EXPECT(message->kind == Message::Kind::Error);
-        EXPECT(!message->id.has_value());
-        EXPECT(code_of(message->error) == ErrorCode::ParseError);
+        ZASSERT(message.has_value());
+        ZEXPECT(message->kind == Message::Kind::Error);
+        ZEXPECT(!message->id.has_value());
+        ZEXPECT(code_of(message->error) == ErrorCode::ParseError);
     });
 
     kit.add("parse_message_reads_a_request", [] {
@@ -220,10 +220,10 @@ void codec_protocol(const CodecKit<A>& kit) {
         auto params = A::encode(AddParams{.a = 1, .b = 2});
         auto parsed = codec.parse_message(A::request_raw(99, "math/add", params));
         const auto* request = std::get_if<ipc::IncomingRequest>(&parsed);
-        ASSERT(request != nullptr);
-        EXPECT(request->id == RequestID(99));
-        EXPECT(request->method == "math/add");
-        EXPECT(request->params == params);
+        ZASSERT(request != nullptr);
+        ZEXPECT(request->id == RequestID(99));
+        ZEXPECT(request->method == "math/add");
+        ZEXPECT(request->params == params);
     });
 
     if constexpr(A::caps.string_ids) {
@@ -231,8 +231,8 @@ void codec_protocol(const CodecKit<A>& kit) {
             Codec codec;
             auto parsed = codec.parse_message(request<A>("abc", "test/add", AddParams{}));
             const auto* request = std::get_if<ipc::IncomingRequest>(&parsed);
-            ASSERT(request != nullptr);
-            EXPECT(request->id == RequestID("abc"));
+            ZASSERT(request != nullptr);
+            ZEXPECT(request->id == RequestID("abc"));
         });
     }
 
@@ -241,9 +241,9 @@ void codec_protocol(const CodecKit<A>& kit) {
         auto params = A::encode(NoteParams{.text = "hello"});
         auto parsed = codec.parse_message(A::notification_raw("log/info", params));
         const auto* notification = std::get_if<ipc::IncomingNotification>(&parsed);
-        ASSERT(notification != nullptr);
-        EXPECT(notification->method == "log/info");
-        EXPECT(notification->params == params);
+        ZASSERT(notification != nullptr);
+        ZEXPECT(notification->method == "log/info");
+        ZEXPECT(notification->params == params);
     });
 
     kit.add("parse_message_reads_a_result", [] {
@@ -251,9 +251,9 @@ void codec_protocol(const CodecKit<A>& kit) {
         auto result = A::encode(AddResult{.sum = 42});
         auto parsed = codec.parse_message(A::response_raw(10, result));
         const auto* response = std::get_if<ipc::IncomingResponse>(&parsed);
-        ASSERT(response != nullptr);
-        EXPECT(response->id == RequestID(10));
-        EXPECT(response->result == result);
+        ZASSERT(response != nullptr);
+        ZEXPECT(response->id == RequestID(10));
+        ZEXPECT(response->result == result);
     });
 
     kit.add("parse_message_reads_an_error", [] {
@@ -261,10 +261,10 @@ void codec_protocol(const CodecKit<A>& kit) {
         auto parsed = codec.parse_message(
             A::error_response(7, ipc::Error(ErrorCode::MethodNotFound, "method not found")));
         const auto* response = std::get_if<ipc::IncomingErrorResponse>(&parsed);
-        ASSERT(response != nullptr);
-        EXPECT(response->id == RequestID(7));
-        EXPECT(code_of(response->error) == ErrorCode::MethodNotFound);
-        EXPECT(response->error.message == "method not found");
+        ZASSERT(response != nullptr);
+        ZEXPECT(response->id == RequestID(7));
+        ZEXPECT(code_of(response->error) == ErrorCode::MethodNotFound);
+        ZEXPECT(response->error.message == "method not found");
     });
 
     kit.add("parse_message_reads_an_error_without_an_id", [] {
@@ -272,37 +272,37 @@ void codec_protocol(const CodecKit<A>& kit) {
         auto parsed = codec.parse_message(
             A::error_response(std::nullopt, ipc::Error(ErrorCode::ParseError, "bad")));
         const auto* response = std::get_if<ipc::IncomingErrorResponse>(&parsed);
-        ASSERT(response != nullptr);
-        EXPECT(!response->id.has_value());
-        EXPECT(code_of(response->error) == ErrorCode::ParseError);
+        ZASSERT(response != nullptr);
+        ZEXPECT(!response->id.has_value());
+        ZEXPECT(code_of(response->error) == ErrorCode::ParseError);
     });
 
     kit.add("request_with_empty_params_roundtrip", [] {
         Codec codec;
         auto encoded = codec.encode_request(1, "test/empty", "");
-        ASSERT(encoded.has_value());
+        ZASSERT(encoded.has_value());
         auto parsed = codec.parse_message(*encoded);
         const auto* request = std::get_if<ipc::IncomingRequest>(&parsed);
-        ASSERT(request != nullptr);
-        EXPECT(request->method == "test/empty");
-        EXPECT(request->params.empty());
+        ZASSERT(request != nullptr);
+        ZEXPECT(request->method == "test/empty");
+        ZEXPECT(request->params.empty());
     });
 
     kit.add("parse_message_of_garbage_fails", [] {
         Codec codec;
         auto parsed = codec.parse_message(A::garbage);
         const auto* failure = std::get_if<ipc::IncomingParseError>(&parsed);
-        ASSERT(failure != nullptr);
-        EXPECT(code_of(failure->error) == ErrorCode::ParseError);
-        EXPECT(!failure->id.has_value());
+        ZASSERT(failure != nullptr);
+        ZEXPECT(code_of(failure->error) == ErrorCode::ParseError);
+        ZEXPECT(!failure->id.has_value());
     });
 
     kit.add("parse_message_of_nothing_fails", [] {
         Codec codec;
         auto parsed = codec.parse_message("");
         const auto* failure = std::get_if<ipc::IncomingParseError>(&parsed);
-        ASSERT(failure != nullptr);
-        EXPECT(code_of(failure->error) == ErrorCode::ParseError);
+        ZASSERT(failure != nullptr);
+        ZEXPECT(code_of(failure->error) == ErrorCode::ParseError);
     });
 
     // A message too large to read shows only its first bytes, cut here
@@ -317,80 +317,80 @@ void codec_protocol(const CodecKit<A>& kit) {
     kit.add("peek_reads_a_request_head", [cut, long_note] {
         Codec codec;
         auto head = codec.peek(cut(request<A>(5, "test/note", long_note())));
-        EXPECT(head.kind == ipc::MessageHead::Kind::Request);
-        EXPECT(head.id == RequestID(5));
+        ZEXPECT(head.kind == ipc::MessageHead::Kind::Request);
+        ZEXPECT(head.id == RequestID(5));
     });
 
     kit.add("peek_reads_a_notification_head", [cut, long_note] {
         Codec codec;
         auto head = codec.peek(cut(notification<A>("test/note", long_note())));
-        EXPECT(head.kind == ipc::MessageHead::Kind::Notification);
-        EXPECT(!head.id.has_value());
+        ZEXPECT(head.kind == ipc::MessageHead::Kind::Notification);
+        ZEXPECT(!head.id.has_value());
     });
 
     kit.add("peek_reads_a_response_head", [cut, long_note] {
         Codec codec;
         auto result = codec.peek(cut(response<A>(9, long_note())));
-        EXPECT(result.kind == ipc::MessageHead::Kind::Response);
-        EXPECT(result.id == RequestID(9));
+        ZEXPECT(result.kind == ipc::MessageHead::Kind::Response);
+        ZEXPECT(result.id == RequestID(9));
         auto error = codec.peek(A::error_response(4, ipc::Error(ErrorCode::InternalError, "x")));
-        EXPECT(error.kind == ipc::MessageHead::Kind::Response);
-        EXPECT(error.id == RequestID(4));
+        ZEXPECT(error.kind == ipc::MessageHead::Kind::Response);
+        ZEXPECT(error.id == RequestID(4));
     });
 
     kit.add("peek_of_bytes_that_start_no_message_knows_nothing", [] {
         Codec codec;
         auto head = codec.peek("??");
-        EXPECT(head.kind == ipc::MessageHead::Kind::Unknown);
-        EXPECT(!head.id.has_value());
+        ZEXPECT(head.kind == ipc::MessageHead::Kind::Unknown);
+        ZEXPECT(!head.id.has_value());
     });
 
     kit.add("serialize_value_writes_what_the_codec_writes", [] {
         Codec codec;
         auto serialized = codec.serialize_value(AddParams{.a = 1, .b = 2});
-        ASSERT(serialized.has_value());
-        EXPECT(*serialized == A::encode(AddParams{.a = 1, .b = 2}));
+        ZASSERT(serialized.has_value());
+        ZEXPECT(*serialized == A::encode(AddParams{.a = 1, .b = 2}));
     });
 
     kit.add("serialize_value_of_an_unwritable_value_fails", [] {
         Codec codec;
         auto serialized = codec.serialize_value(Unwritable{});
-        ASSERT(!serialized.has_value());
-        EXPECT(code_of(serialized.error()) == ErrorCode::InternalError);
-        EXPECT(zest::contains(serialized.error().message, "unwritable"));
+        ZASSERT(!serialized.has_value());
+        ZEXPECT(code_of(serialized.error()) == ErrorCode::InternalError);
+        ZEXPECT(zest::contains(serialized.error().message, "unwritable"));
     });
 
     kit.add("deserialize_value_reads_what_the_codec_writes", [] {
         Codec codec;
         auto value =
             codec.template deserialize_value<AddParams>(A::encode(AddParams{.a = 4, .b = 5}));
-        ASSERT(value.has_value());
-        EXPECT(*value == AddParams{.a = 4, .b = 5});
+        ZASSERT(value.has_value());
+        ZEXPECT(*value == AddParams{.a = 4, .b = 5});
     });
 
     kit.add("deserialize_value_failure_carries_the_given_code", [] {
         Codec codec;
         auto by_default = codec.template deserialize_value<AddParams>(A::not_a_value);
-        ASSERT(!by_default.has_value());
-        EXPECT(code_of(by_default.error()) == ErrorCode::RequestFailed);
+        ZASSERT(!by_default.has_value());
+        ZEXPECT(code_of(by_default.error()) == ErrorCode::RequestFailed);
         auto given =
             codec.template deserialize_value<AddParams>(A::not_a_value, ErrorCode::InvalidParams);
-        ASSERT(!given.has_value());
-        EXPECT(code_of(given.error()) == ErrorCode::InvalidParams);
+        ZASSERT(!given.has_value());
+        ZEXPECT(code_of(given.error()) == ErrorCode::InvalidParams);
     });
 
     // What a params-less message carries reads as params without fields,
     // and only as those: nothing is not params with fields.
     kit.add("deserialize_value_of_nothing_reads_empty_params", [] {
         Codec codec;
-        EXPECT(codec.template deserialize_value<EmptyParams>("").has_value());
+        ZEXPECT(codec.template deserialize_value<EmptyParams>("").has_value());
     });
 
     kit.add("deserialize_value_of_nothing_into_fields_fails", [] {
         Codec codec;
         auto value = codec.template deserialize_value<AddParams>("", ErrorCode::InvalidParams);
-        ASSERT(!value.has_value());
-        EXPECT(code_of(value.error()) == ErrorCode::InvalidParams);
+        ZASSERT(!value.has_value());
+        ZEXPECT(code_of(value.error()) == ErrorCode::InvalidParams);
     });
 }
 
@@ -405,12 +405,12 @@ void error_response_roundtrip_keeps_the_data() {
     auto encoded = codec.encode_error_response(
         3,
         ipc::Error(ipc::protocol::ErrorCode::InvalidParams, "rejected", data));
-    ASSERT(encoded.has_value());
+    ZASSERT(encoded.has_value());
     auto parsed = codec.parse_message(*encoded);
     const auto* response = std::get_if<ipc::IncomingErrorResponse>(&parsed);
-    ASSERT(response != nullptr);
-    ASSERT(response->error.data.has_value());
-    EXPECT(*response->error.data == data);
+    ZASSERT(response != nullptr);
+    ZASSERT(response->error.data.has_value());
+    ZEXPECT(*response->error.data == data);
 }
 
 }  // namespace kota::test

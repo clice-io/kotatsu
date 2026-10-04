@@ -33,18 +33,18 @@ void peer_requests(const PeerKit<A>& kit) {
         };
 
         auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
-        EXPECT(ran.has_value());
-        EXPECT(scripted.has_value());
-        ASSERT(asked.has_value());
-        EXPECT(asked->sum == 9);
+        ZEXPECT(ran.has_value());
+        ZEXPECT(scripted.has_value());
+        ZASSERT(asked.has_value());
+        ZEXPECT(asked->sum == 9);
         const auto& written = f.written();
-        ASSERT(written.size() == 1U);
-        EXPECT(written[0].kind == Message::Kind::Request);
-        EXPECT(written[0].id == RequestID(1));
-        EXPECT(written[0].method == "worker/build");
+        ZASSERT(written.size() == 1U);
+        ZEXPECT(written[0].kind == Message::Kind::Request);
+        ZEXPECT(written[0].id == RequestID(1));
+        ZEXPECT(written[0].method == "worker/build");
         auto params = decoded<AddParams, A>(written[0].body);
-        ASSERT(params.has_value());
-        EXPECT(*params == AddParams{.a = 2, .b = 3});
+        ZASSERT(params.has_value());
+        ZEXPECT(*params == AddParams{.a = 2, .b = 3});
     });
 
     kit.add("send_request_by_traits_names_the_traits_method", [](Fixture& f) {
@@ -58,12 +58,12 @@ void peer_requests(const PeerKit<A>& kit) {
         };
 
         auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
-        EXPECT(ran.has_value());
-        ASSERT(asked.has_value());
-        EXPECT(asked->sum == 2);
+        ZEXPECT(ran.has_value());
+        ZASSERT(asked.has_value());
+        ZEXPECT(asked->sum == 2);
         const auto& written = f.written();
-        ASSERT(written.size() == 1U);
-        EXPECT(written[0].method == "test/add");
+        ZASSERT(written.size() == 1U);
+        ZEXPECT(written[0].method == "test/add");
     });
 
     kit.add("send_request_returns_the_error_response", [](Fixture& f) {
@@ -78,10 +78,10 @@ void peer_requests(const PeerKit<A>& kit) {
         };
 
         auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
-        EXPECT(ran.has_value());
-        ASSERT(asked.has_error());
-        EXPECT(asked.error().code == -32001);
-        EXPECT(asked.error().message == "remote failed");
+        ZEXPECT(ran.has_value());
+        ZASSERT(asked.has_error());
+        ZEXPECT(asked.error().code == -32001);
+        ZEXPECT(asked.error().message == "remote failed");
     });
 
     // A remote's error made without a code is RequestFailed, which the
@@ -97,11 +97,11 @@ void peer_requests(const PeerKit<A>& kit) {
         };
         auto [ran, answered, scripted] = f.run(f.peer.run(), ask(), remote());
         auto [after] = f.run(ask());
-        EXPECT(ran.has_value());
-        ASSERT(answered.has_error());
-        EXPECT(code_of(answered.error()) == ErrorCode::RequestFailed);
-        ASSERT(after.has_error());
-        EXPECT(code_of(after.error()) == ErrorCode::ConnectionClosed);
+        ZEXPECT(ran.has_value());
+        ZASSERT(answered.has_error());
+        ZEXPECT(code_of(answered.error()) == ErrorCode::RequestFailed);
+        ZASSERT(after.has_error());
+        ZEXPECT(code_of(after.error()) == ErrorCode::ConnectionClosed);
     });
 
     // An answer resumes its requester once what was read with it is
@@ -122,9 +122,9 @@ void peer_requests(const PeerKit<A>& kit) {
         };
 
         auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
-        EXPECT(ran.has_value());
-        EXPECT(asked.has_value());
-        EXPECT(order == std::vector<std::string>{"note", "answered"});
+        ZEXPECT(ran.has_value());
+        ZEXPECT(asked.has_value());
+        ZEXPECT(order == std::vector<std::string>{"note", "answered"});
     });
 
     kit.add("send_request_ids_count_up_from_one", [](Fixture& f) {
@@ -142,14 +142,14 @@ void peer_requests(const PeerKit<A>& kit) {
         };
 
         auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
-        EXPECT(ran.has_value());
-        ASSERT(asked.has_value());
-        EXPECT(asked->first.sum == 1);
-        EXPECT(asked->second.sum == 2);
+        ZEXPECT(ran.has_value());
+        ZASSERT(asked.has_value());
+        ZEXPECT(asked->first.sum == 1);
+        ZEXPECT(asked->second.sum == 2);
         const auto& written = f.written();
-        ASSERT(written.size() == 2U);
-        EXPECT(written[0].id == RequestID(1));
-        EXPECT(written[1].id == RequestID(2));
+        ZASSERT(written.size() == 2U);
+        ZEXPECT(written[0].id == RequestID(1));
+        ZEXPECT(written[1].id == RequestID(2));
     });
 
     kit.add("responses_in_any_order_complete_their_own_requests", [](Fixture& f) {
@@ -165,11 +165,11 @@ void peer_requests(const PeerKit<A>& kit) {
         };
 
         auto [ran, first, second, scripted] = f.run(f.peer.run(), ask(1), ask(2), remote());
-        EXPECT(ran.has_value());
-        ASSERT(first.has_value());
-        EXPECT(first->sum == 10);
-        ASSERT(second.has_value());
-        EXPECT(second->sum == 20);
+        ZEXPECT(ran.has_value());
+        ZASSERT(first.has_value());
+        ZEXPECT(first->sum == 10);
+        ZASSERT(second.has_value());
+        ZEXPECT(second->sum == 20);
     });
 
     // A RawValue result is the result as the codec wrote it.
@@ -186,9 +186,9 @@ void peer_requests(const PeerKit<A>& kit) {
         };
 
         auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
-        EXPECT(ran.has_value());
-        ASSERT(asked.has_value());
-        EXPECT(asked->data == A::encode(AddResult{.sum = 9}));
+        ZEXPECT(ran.has_value());
+        ZASSERT(asked.has_value());
+        ZEXPECT(asked->data == A::encode(AddResult{.sum = 9}));
     });
 
     kit.add("result_that_does_not_decode_fails_the_request", [](Fixture& f) {
@@ -202,10 +202,10 @@ void peer_requests(const PeerKit<A>& kit) {
         };
 
         auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
-        EXPECT(ran.has_value());
-        ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::RequestFailed);
-        EXPECT(f.written().size() == 1U);
+        ZEXPECT(ran.has_value());
+        ZASSERT(asked.has_error());
+        ZEXPECT(code_of(asked.error()) == ErrorCode::RequestFailed);
+        ZEXPECT(f.written().size() == 1U);
     });
 
     kit.add("send_request_with_params_that_do_not_encode_fails", [](Fixture& f) {
@@ -217,10 +217,10 @@ void peer_requests(const PeerKit<A>& kit) {
         };
 
         auto [ran, asked] = f.run(f.peer.run(), ask());
-        EXPECT(ran.has_value());
-        ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::InternalError);
-        EXPECT(f.written().empty());
+        ZEXPECT(ran.has_value());
+        ZASSERT(asked.has_error());
+        ZEXPECT(code_of(asked.error()) == ErrorCode::InternalError);
+        ZEXPECT(f.written().empty());
     });
 
     // A method whose traits say it takes no params is sent none.
@@ -238,17 +238,17 @@ void peer_requests(const PeerKit<A>& kit) {
         };
 
         auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
-        EXPECT(ran.has_value());
-        EXPECT(notified);
-        EXPECT(asked.has_value());
+        ZEXPECT(ran.has_value());
+        ZEXPECT(notified);
+        ZEXPECT(asked.has_value());
         const auto& written = f.written();
-        ASSERT(written.size() == 2U);
-        EXPECT(written[0].kind == Message::Kind::Notification);
-        EXPECT(written[0].method == "test/none");
-        EXPECT(written[0].body.empty());
-        EXPECT(written[1].kind == Message::Kind::Request);
-        EXPECT(written[1].method == "test/none");
-        EXPECT(written[1].body.empty());
+        ZASSERT(written.size() == 2U);
+        ZEXPECT(written[0].kind == Message::Kind::Notification);
+        ZEXPECT(written[0].method == "test/none");
+        ZEXPECT(written[0].body.empty());
+        ZEXPECT(written[1].kind == Message::Kind::Request);
+        ZEXPECT(written[1].method == "test/none");
+        ZEXPECT(written[1].body.empty());
     });
 
     kit.add("send_notification_writes_a_notification", [](Fixture& f) {
@@ -257,20 +257,20 @@ void peer_requests(const PeerKit<A>& kit) {
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
-        EXPECT(ran.has_value());
-        EXPECT(by_traits.has_value());
-        EXPECT(by_name.has_value());
+        ZEXPECT(ran.has_value());
+        ZEXPECT(by_traits.has_value());
+        ZEXPECT(by_name.has_value());
         const auto& written = f.written();
-        ASSERT(written.size() == 2U);
-        EXPECT(written[0].kind == Message::Kind::Notification);
-        EXPECT(written[0].method == "test/note");
+        ZASSERT(written.size() == 2U);
+        ZEXPECT(written[0].kind == Message::Kind::Notification);
+        ZEXPECT(written[0].method == "test/note");
         auto first = decoded<NoteParams, A>(written[0].body);
-        ASSERT(first.has_value());
-        EXPECT(first->text == "by traits");
-        EXPECT(written[1].method == "custom/note");
+        ZASSERT(first.has_value());
+        ZEXPECT(first->text == "by traits");
+        ZEXPECT(written[1].method == "custom/note");
         auto second = decoded<NoteParams, A>(written[1].body);
-        ASSERT(second.has_value());
-        EXPECT(second->text == "by name");
+        ZASSERT(second.has_value());
+        ZEXPECT(second->text == "by name");
     });
 
     kit.add("send_notification_with_params_that_do_not_encode_fails", [](Fixture& f) {
@@ -278,10 +278,10 @@ void peer_requests(const PeerKit<A>& kit) {
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
-        EXPECT(ran.has_value());
-        ASSERT(sent.has_error());
-        EXPECT(code_of(sent.error()) == ErrorCode::InternalError);
-        EXPECT(f.written().empty());
+        ZEXPECT(ran.has_value());
+        ZASSERT(sent.has_error());
+        ZEXPECT(code_of(sent.error()) == ErrorCode::InternalError);
+        ZEXPECT(f.written().empty());
     });
 
     // Through its context and through the peer alike, a handler sends
@@ -313,30 +313,30 @@ void peer_requests(const PeerKit<A>& kit) {
         };
 
         auto [ran, scripted] = f.run(f.peer.run(), remote());
-        EXPECT(ran.has_value());
-        EXPECT(scripted.has_value());
+        ZEXPECT(ran.has_value());
+        ZEXPECT(scripted.has_value());
         const auto& written = f.written();
-        ASSERT(written.size() == 5U);
-        EXPECT(written[0].kind == Message::Kind::Notification);
+        ZASSERT(written.size() == 5U);
+        ZEXPECT(written[0].kind == Message::Kind::Notification);
         auto context_note = decoded<NoteParams, A>(written[0].body);
-        ASSERT(context_note.has_value());
-        EXPECT(context_note->text == "context");
-        EXPECT(written[1].kind == Message::Kind::Notification);
+        ZASSERT(context_note.has_value());
+        ZEXPECT(context_note->text == "context");
+        ZEXPECT(written[1].kind == Message::Kind::Notification);
         auto peer_note = decoded<NoteParams, A>(written[1].body);
-        ASSERT(peer_note.has_value());
-        EXPECT(peer_note->text == "peer");
-        EXPECT(written[2].kind == Message::Kind::Request);
-        EXPECT(written[2].id == RequestID(1));
+        ZASSERT(peer_note.has_value());
+        ZEXPECT(peer_note->text == "peer");
+        ZEXPECT(written[2].kind == Message::Kind::Request);
+        ZEXPECT(written[2].id == RequestID(1));
         auto context_params = decoded<AddParams, A>(written[2].body);
-        ASSERT(context_params.has_value());
-        EXPECT(*context_params == AddParams{.a = 2, .b = 3});
-        EXPECT(written[3].kind == Message::Kind::Request);
-        EXPECT(written[3].id == RequestID(2));
+        ZASSERT(context_params.has_value());
+        ZEXPECT(*context_params == AddParams{.a = 2, .b = 3});
+        ZEXPECT(written[3].kind == Message::Kind::Request);
+        ZEXPECT(written[3].id == RequestID(2));
         auto peer_params = decoded<AddParams, A>(written[3].body);
-        ASSERT(peer_params.has_value());
-        EXPECT(*peer_params == AddParams{.a = 3, .b = 1});
-        EXPECT(written[4].id == RequestID(7));
-        EXPECT(sum_of<A>(written[4]) == 13);
+        ZASSERT(peer_params.has_value());
+        ZEXPECT(*peer_params == AddParams{.a = 3, .b = 1});
+        ZEXPECT(written[4].id == RequestID(7));
+        ZEXPECT(sum_of<A>(written[4]) == 13);
     });
 
     kit.add("handler_whose_own_request_fails_is_answered_with_its_error", [](Fixture& f) {
@@ -354,12 +354,12 @@ void peer_requests(const PeerKit<A>& kit) {
         };
 
         auto [ran, scripted] = f.run(f.peer.run(), remote());
-        EXPECT(ran.has_value());
+        ZEXPECT(ran.has_value());
         const auto& written = f.written();
-        ASSERT(written.size() == 2U);
-        EXPECT(written[1].kind == Message::Kind::Error);
-        EXPECT(written[1].id == RequestID(7));
-        EXPECT(code_of(written[1].error) == ErrorCode::RequestFailed);
+        ZASSERT(written.size() == 2U);
+        ZEXPECT(written[1].kind == Message::Kind::Error);
+        ZEXPECT(written[1].id == RequestID(7));
+        ZEXPECT(code_of(written[1].error) == ErrorCode::RequestFailed);
     });
 }
 

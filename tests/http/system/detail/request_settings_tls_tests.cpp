@@ -27,22 +27,22 @@ ZEST_SUITE(http_detail_request_settings_tls, zest::LoopFixture) {
 
 ZEST_CASE(plain_http_under_https_only_fails) {
     test::HttpServer server(loop);
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client().https_only();
 
     auto [reply] = run(client.on(loop).get(server.url("/")).send());
-    ASSERT(reply.has_error());
-    EXPECT(reply.error().kind == error_kind::curl);
-    EXPECT(reply.error().curl_code == CURLE_UNSUPPORTED_PROTOCOL);
-    EXPECT(server.requests().empty());
-    EXPECT(manager::for_loop(loop).pending_requests() == 0U);
+    ZASSERT(reply.has_error());
+    ZEXPECT(reply.error().kind == error_kind::curl);
+    ZEXPECT(reply.error().curl_code == CURLE_UNSUPPORTED_PROTOCOL);
+    ZEXPECT(server.requests().empty());
+    ZEXPECT(manager::for_loop(loop).pending_requests() == 0U);
 }
 
 // curl checks each of these values when it is set, so the case sets
 // each once.
 ZEST_CASE(tls_settings_leave_plain_http_alone) {
     test::HttpServer server(loop);
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
     auto api = client.on(loop);
     auto url = server.url("/");
@@ -60,24 +60,24 @@ ZEST_CASE(tls_settings_leave_plain_http_alone) {
     for(std::size_t i = 0; i < built.size(); ++i) {
         ZEST_CONTEXT("request {}", i);
         auto [reply] = run(built[i].send());
-        EXPECT(reply.has_value());
+        ZEXPECT(reply.has_value());
     }
-    EXPECT(server.requests().size() == built.size());
+    ZEXPECT(server.requests().size() == built.size());
 }
 
 // A TLS that keeps no CA directories refuses the option, and the request
 // fails with curl's error; any other leaves plain http alone.
 ZEST_CASE(ca_path_goes_to_curl) {
     test::HttpServer server(loop);
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(server.url("/")).ca_path("kotatsu-missing-ca").send());
     if(curl_takes_ca_path()) {
-        EXPECT(reply.has_value());
+        ZEXPECT(reply.has_value());
     } else {
-        ASSERT(reply.has_error());
-        EXPECT(reply.error().curl_code == CURLE_NOT_BUILT_IN);
+        ZASSERT(reply.has_error());
+        ZEXPECT(reply.error().curl_code == CURLE_NOT_BUILT_IN);
     }
 }
 

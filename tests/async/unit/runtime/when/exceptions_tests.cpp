@@ -37,8 +37,8 @@ ZEST_CASE(all_exception_cancels_the_rest_and_rethrows, skip = test::exceptions_u
         co_return;
     };
 
-    EXPECT(test::thrown([&] { run(combined(), driver()); }) == "boom");
-    EXPECT(!gate.has_waiters());
+    ZEXPECT(test::thrown([&] { run(combined(), driver()); }) == "boom");
+    ZEXPECT(!gate.has_waiters());
 }
 
 // Reads what was thrown; see test::exceptions_unreadable.
@@ -56,8 +56,8 @@ ZEST_CASE(all_exception_while_armed_starts_no_later_child, skip = test::exceptio
         co_return co_await when_all(thrower(), later());
     };
 
-    EXPECT(test::thrown([&] { run(combined()); }) == "immediate");
-    EXPECT(started == 0);
+    ZEXPECT(test::thrown([&] { run(combined()); }) == "immediate");
+    ZEXPECT(started == 0);
 }
 
 // Reads what was thrown; see test::exceptions_unreadable.
@@ -80,8 +80,8 @@ ZEST_CASE(any_exception_cancels_the_rest_and_rethrows, skip = test::exceptions_u
         co_return;
     };
 
-    EXPECT(test::thrown([&] { run(combined(), driver()); }) == "boom");
-    EXPECT(!gate.has_waiters());
+    ZEXPECT(test::thrown([&] { run(combined(), driver()); }) == "boom");
+    ZEXPECT(!gate.has_waiters());
 }
 
 // Reads what was thrown; see test::exceptions_unreadable.
@@ -108,9 +108,9 @@ ZEST_CASE(range_exception_rethrows, skip = test::exceptions_unreadable) {
         co_await when_any(std::move(tasks));
     };
 
-    EXPECT(test::thrown([&] { run(all()); }) == "range boom");
-    EXPECT(test::thrown([&] { run(any()); }) == "range boom");
-    EXPECT(!gate.has_waiters());
+    ZEXPECT(test::thrown([&] { run(all()); }) == "range boom");
+    ZEXPECT(test::thrown([&] { run(any()); }) == "range boom");
+    ZEXPECT(!gate.has_waiters());
 }
 
 // Reads what was thrown; see test::exceptions_unreadable.
@@ -133,9 +133,9 @@ ZEST_CASE(nested_exception_reaches_the_outer_combinator, skip = test::exceptions
         co_return a + b;
     };
 
-    EXPECT(test::thrown([&] { run(outer()); }) == "deep");
+    ZEXPECT(test::thrown([&] { run(outer()); }) == "deep");
     // Both slow children, inner and outer, were cancelled off the gate.
-    EXPECT(!gate.has_waiters());
+    ZEXPECT(!gate.has_waiters());
 }
 
 ZEST_CASE(caught_exception_stays_a_value) {
@@ -158,8 +158,8 @@ ZEST_CASE(caught_exception_stays_a_value) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    EXPECT(*result == std::tuple{-1, 42});
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == std::tuple{-1, 42});
 }
 
 // A child that cancels the whole scope and then throws still delivers the
@@ -187,7 +187,7 @@ ZEST_CASE(exception_outranks_an_external_cancel, skip = test::exceptions_unreada
         co_return;
     };
 
-    EXPECT(test::thrown([&] { run(target, driver()); }) == "after cancel");
+    ZEXPECT(test::thrown([&] { run(target, driver()); }) == "after cancel");
 }
 
 };  // ZEST_SUITE(async_runtime_when_exceptions)

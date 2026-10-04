@@ -14,9 +14,9 @@ namespace {
 ZEST_SUITE(support_glob_pattern_escape) {
 
 ZEST_CASE(escape_puts_a_backslash_before_each_special_byte) {
-    EXPECT(GlobPattern::escape(R"(a*b?c[d]e{f,g}h\i)") == R"(a\*b\?c\[d\]e\{f\,g\}h\\i)");
-    EXPECT(GlobPattern::escape("plain/path name.txt") == "plain/path name.txt");
-    EXPECT(GlobPattern::escape("").empty());
+    ZEXPECT(GlobPattern::escape(R"(a*b?c[d]e{f,g}h\i)") == R"(a\*b\?c\[d\]e\{f\,g\}h\\i)");
+    ZEXPECT(GlobPattern::escape("plain/path name.txt") == "plain/path name.txt");
+    ZEXPECT(GlobPattern::escape("").empty());
 }
 
 ZEST_CASE(escaped_ascii_byte_matches_itself_alone) {
@@ -25,7 +25,7 @@ ZEST_CASE(escaped_ascii_byte_matches_itself_alone) {
         auto literal = std::string(1, static_cast<char>(byte));
         ZEST_CONTEXT("byte {:#04x}", byte);
         auto escaped = GlobPattern::escape(literal);
-        EXPECT(escaped == (special.contains(literal[0]) ? "\\" + literal : literal));
+        ZEXPECT(escaped == (special.contains(literal[0]) ? "\\" + literal : literal));
         test::expect_glob(escaped, {literal}, {byte == 'a' ? "b" : "a"});
     }
 }

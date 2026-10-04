@@ -1,10 +1,17 @@
 #include "kota/zest/assert/check.h"
 
 #include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <iostream>
+#include <mutex>
 #include <print>
 #include <string_view>
+#include <thread>
 #include <vector>
 
+#include "execution.h"
 #include "kota/zest/assert/trace.h"
 #include "kota/zest/runner/registry.h"
 
@@ -12,7 +19,7 @@ namespace kota::zest {
 
 namespace {
 
-struct Entry {
+struct ContextEntry {
     std::uint64_t id;
     std::string message;
 };
@@ -20,8 +27,8 @@ struct Entry {
 /// Contexts entered on this thread and not yet ended, outermost first. It
 /// holds their messages rather than the contexts: one that ends on another
 /// thread, as a coroutine's may, is left here instead of dangling.
-std::vector<Entry>& contexts() {
-    thread_local std::vector<Entry> stack;
+std::vector<ContextEntry>& contexts() {
+    thread_local std::vector<ContextEntry> stack;
     return stack;
 }
 
@@ -51,7 +58,94 @@ void print_contexts() {
     }
 }
 
+struct Hook {
+    std::uint64_t id;
+    function<void()> run;
+};
+
+/// The fatal hooks alive, oldest first. The thread ending the process holds
+/// the mutex to the end, and its hooks may create or destroy hooks of their
+/// own, hence recursive.
+struct Hooks {
+    std::recursive_mutex mutex;
+    std::vector<Hook> alive;
+    std::uint64_t next_id = 0;
+};
+
+/// Built on first use: a FatalHook of static duration may come first.
+Hooks& hooks() {
+    static Hooks instance;
+    return instance;
+}
+
+/// This thread has started ending the process.
+thread_local bool ending_here = false;
+
+/// This thread runs the fatal hooks.
+thread_local bool running_hooks = false;
+
+/// Starts ending the process for a failed ZASSERT, before its report: from
+/// here on no other thread ends the process or replies for the test.
+void begin_fatal() {
+    static std::atomic<bool> ending = false;
+    // Begun already by this ZASSERT's check, or by the one whose hooks run.
+    if(ending_here) {
+        return;
+    }
+    if(ending.exchange(true)) {
+        // Another thread ends the process, and this one with it.
+        while(true) {
+            std::this_thread::sleep_for(std::chrono::hours(1));
+        }
+    }
+    ending_here = true;
+    reply_mutex().lock();
+    // From here on, a FatalHook another thread creates or destroys waits, so
+    // that what its hook cleans up is not half torn down by the exit.
+    hooks().mutex.lock();
+}
+
+/// Ends the process for a failed ZASSERT, whose report is printed.
+[[noreturn]] void end_fatally() {
+    begin_fatal();
+    // A hook's own ZASSERT: the runner knows already.
+    if(running_hooks) {
+        flush_output();
+        std::_Exit(fatal_exit_code);
+    }
+    running_hooks = true;
+    if(auto notice = fatal_notice.load()) {
+        notice();
+    }
+
+    auto& registry = hooks();
+    while(!registry.alive.empty()) {
+        auto hook = std::move(registry.alive.back());
+        registry.alive.pop_back();
+#ifdef __cpp_exceptions
+        // What a hook throws is printed, and the next one runs.
+        trace_exception(std::move(hook.run));
+#else
+        hook.run();
+#endif
+    }
+    flush_output();
+    std::_Exit(fatal_exit_code);
+}
+
 }  // namespace
+
+std::recursive_mutex& reply_mutex() {
+    static std::recursive_mutex mutex;
+    return mutex;
+}
+
+void flush_output() {
+    // std::cout buffers on its own once sync_with_stdio(false) is set.
+    std::cout.flush();
+    std::clog.flush();
+    std::fflush(nullptr);
+}
 
 std::uint64_t Context::enter(std::string message) {
     static std::atomic<std::uint64_t> next_id = 0;
@@ -62,7 +156,22 @@ std::uint64_t Context::enter(std::string message) {
 
 // Not necessarily the innermost: coroutines interleave their contexts.
 Context::~Context() {
-    std::erase_if(contexts(), [this](const Entry& entry) { return entry.id == id; });
+    std::erase_if(contexts(), [this](const ContextEntry& entry) { return entry.id == id; });
+}
+
+FatalHook::FatalHook(function<void()> hook) {
+    auto& registry = hooks();
+    std::lock_guard lock(registry.mutex);
+    id = registry.next_id++;
+    registry.alive.push_back({.id = id, .run = std::move(hook)});
+}
+
+// Its entry is gone already if the hook ran. While another thread ends the
+// process, this waits on the mutex until the process is gone.
+FatalHook::~FatalHook() {
+    auto& registry = hooks();
+    std::lock_guard lock(registry.mutex);
+    std::erase_if(registry.alive, [this](const Hook& hook) { return hook.id == id; });
 }
 
 namespace detail {
@@ -78,32 +187,26 @@ void report_failure(std::string_view expression,
     print_line("at", std::format("{}:{}", location.file_name(), location.line()));
     print_trace(location);
     failure();
-}
-
-void fail_reported(std::source_location location) {
-    print_contexts();
-    print_trace(location);
-    failure();
-}
-
-#ifdef __cpp_exceptions
-
-void check_throws(function<void()> body,
-                  std::string_view expression,
-                  bool expect_throw,
-                  std::source_location location) {
-    // An unexpected exception is printed where it is caught.
-    bool threw = trace_exception(std::move(body), !expect_throw);
-    if(threw != expect_throw) {
-        report_failure(expression,
-                       {
-                           {"", expect_throw ? "expected to throw" : "expected not to throw"}
-        },
-                       location);
+    if(failures_are_fatal) {
+        end_fatally();
     }
 }
 
+void fail_fatally(function_ref<void()> report) {
+    begin_fatal();
+#ifdef __cpp_exceptions
+    // A report that throws, as a predicate's explanation may, still ends the
+    // process. Plain try and catch: only built with exceptions.
+    try {
+        report();
+    } catch(...) {
+        std::println("[ exception ] {}", describe_exception(std::current_exception()));
+    }
+#else
+    report();
 #endif
+    end_fatally();
+}
 
 }  // namespace detail
 

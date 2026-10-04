@@ -1,8 +1,10 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <expected>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <string>
@@ -30,6 +32,8 @@ enum class Verdict : std::uint8_t {
     Crashed,
     /// The test outlived --timeout and its worker was killed.
     TimedOut,
+    /// A crash test finished instead of crashing.
+    Survived,
 };
 
 struct Outcome {
@@ -37,7 +41,9 @@ struct Outcome {
     std::chrono::milliseconds duration;
     /// What the test printed, when a worker ran it.
     std::string output = {};
-    /// How the worker died, for a crash.
+    /// A line the report adds under the test's status: how a crash or a crash
+    /// test ended its worker, why the test was skipped, or what went wrong
+    /// after a failed ZASSERT.
     std::string detail = {};
 };
 
@@ -51,12 +57,39 @@ inline std::chrono::milliseconds elapsed_since(std::chrono::steady_clock::time_p
 /// Runs one test in this process and returns its state.
 TestState run_in_process(const Entry& entry);
 
+/// Tells whoever runs this process's tests that a failed ZASSERT is ending it,
+/// before the fatal hooks run: the runner a worker serves, or the report of a
+/// run without isolation. Set while tests run, and null otherwise.
+inline std::atomic<void (*)()> fatal_notice = nullptr;
+
+/// Tells the runner a worker serves of a snapshot file the moment the test
+/// checks it, so that a crash test that passes has its snapshots counted.
+inline std::atomic<void (*)(std::string_view path)> snapshot_notice = nullptr;
+
+/// Whether a failed check ends the process as a failed ZASSERT does: in a
+/// crash test, whose worker could not report the failure once it crashed.
+inline std::atomic<bool> failures_are_fatal = false;
+
+/// Held for each line a worker sends the runner, and for good from the moment
+/// a failed ZASSERT begins ending the process, so that nothing replies for its
+/// test meanwhile. Recursive: the thread ending the process still sends.
+std::recursive_mutex& reply_mutex();
+
+/// What a process exits with once a failed ZASSERT has run its hooks: a code
+/// abort() and the sanitizers do not use.
+constexpr int fatal_exit_code = 86;
+
+/// Hands everything printed so far to the output file or terminal.
+void flush_output();
+
 /// Lines a runner and its workers exchange over the worker's stdin:
 ///
 ///     worker -> runner   ready              (once, when it can take tests)
 ///     runner -> worker   run SUITE.TEST
-///     worker -> runner   snapshot PATH      (once per snapshot file checked)
+///     worker -> runner   snapshot PATH      (as the test checks a snapshot file)
 ///     worker -> runner   done passed|skipped|failed
+///                        or fatal           (a failed ZASSERT: the test
+///                                            failed, and the worker exits)
 ///
 /// The runner hangs up once it has no more tests, and the worker exits.
 namespace protocol {
@@ -67,6 +100,7 @@ constexpr std::string_view worker_flag = "--zest-worker";
 constexpr std::string_view ready = "ready";
 constexpr std::string_view run = "run ";
 constexpr std::string_view snapshot = "snapshot ";
+constexpr std::string_view fatal = "fatal";
 constexpr std::string_view done = "done ";
 
 std::string_view state_name(TestState state);
@@ -74,9 +108,6 @@ std::string_view state_name(TestState state);
 std::optional<TestState> parse_state(std::string_view name);
 
 }  // namespace protocol
-
-/// Snapshot files checked since the last call, which a worker passes on.
-std::vector<std::string> take_accessed_snapshots();
 
 /// Counts `path` as checked, as if this process had checked it.
 void record_snapshot_access(std::string_view path);

@@ -23,112 +23,112 @@ ZEST_SUITE(async_vocab_outcome) {
 
 ZEST_CASE(value_is_the_ok_state) {
     Full o = 42;
-    ASSERT(o.has_value());
-    EXPECT(!o.has_error());
-    EXPECT(!o.is_cancelled());
-    EXPECT(static_cast<bool>(o));
-    EXPECT(o.value() == 42);
-    EXPECT(*o == 42);
+    ZASSERT(o.has_value());
+    ZEXPECT(!o.has_error());
+    ZEXPECT(!o.is_cancelled());
+    ZEXPECT(static_cast<bool>(o));
+    ZEXPECT(o.value() == 42);
+    ZEXPECT(*o == 42);
 }
 
 ZEST_CASE(error_is_the_err_state) {
     Full o = outcome_error(error::invalid_argument);
-    ASSERT(o.has_error());
-    EXPECT(!o.has_value());
-    EXPECT(!o.is_cancelled());
-    EXPECT(!static_cast<bool>(o));
-    EXPECT(o.error() == error::invalid_argument);
+    ZASSERT(o.has_error());
+    ZEXPECT(!o.has_value());
+    ZEXPECT(!o.is_cancelled());
+    ZEXPECT(!static_cast<bool>(o));
+    ZEXPECT(o.error() == error::invalid_argument);
 }
 
 ZEST_CASE(cancellation_is_the_cancelled_state) {
     Full o = outcome_cancel(cancellation{});
-    EXPECT(o.is_cancelled());
-    EXPECT(!o.has_value());
-    EXPECT(!o.has_error());
+    ZEXPECT(o.is_cancelled());
+    ZEXPECT(!o.has_value());
+    ZEXPECT(!o.has_error());
 }
 
 ZEST_CASE(void_value_is_ok) {
     outcome<void, error, cancellation> defaulted;
-    EXPECT(defaulted.has_value());
+    ZEXPECT(defaulted.has_value());
 
     outcome<void, error, cancellation> tagged = outcome_value();
-    EXPECT(tagged.has_value());
+    ZEXPECT(tagged.has_value());
 }
 
 ZEST_CASE(arrow_reaches_into_the_value) {
     outcome<std::string, error> o = std::string("kotatsu");
-    ASSERT(o.has_value());
-    EXPECT(o->size() == 7U);
+    ZASSERT(o.has_value());
+    ZEXPECT(o->size() == 7U);
 
     const auto& constant = o;
-    EXPECT(constant->front() == 'k');
-    EXPECT(*constant == "kotatsu");
+    ZEXPECT(constant->front() == 'k');
+    ZEXPECT(*constant == "kotatsu");
 }
 
 ZEST_CASE(accessors_follow_the_value_category) {
     outcome<std::string, error, cancellation> value = std::string("payload");
     const auto& constant = value;
-    ASSERT(value.has_value());
-    EXPECT(zest::type_eq<decltype(value.value()), std::string&>());
-    EXPECT(zest::type_eq<decltype(constant.value()), const std::string&>());
-    EXPECT(zest::type_eq<decltype(*constant), const std::string&>());
-    EXPECT(zest::type_eq<decltype(std::move(value).value()), std::string&&>());
-    EXPECT(zest::type_eq<decltype(*std::move(value)), std::string&&>());
+    ZASSERT(value.has_value());
+    ZEXPECT(zest::type_eq<decltype(value.value()), std::string&>());
+    ZEXPECT(zest::type_eq<decltype(constant.value()), const std::string&>());
+    ZEXPECT(zest::type_eq<decltype(*constant), const std::string&>());
+    ZEXPECT(zest::type_eq<decltype(std::move(value).value()), std::string&&>());
+    ZEXPECT(zest::type_eq<decltype(*std::move(value)), std::string&&>());
     std::string taken = std::move(value).value();
-    EXPECT(taken == "payload");
+    ZEXPECT(taken == "payload");
 
     outcome<std::string, error, cancellation> failed = outcome_error(error::io_error);
-    ASSERT(failed.has_error());
-    EXPECT(zest::type_eq<decltype(std::move(failed).error()), error&&>());
-    EXPECT(std::move(failed).error() == error::io_error);
+    ZASSERT(failed.has_error());
+    ZEXPECT(zest::type_eq<decltype(std::move(failed).error()), error&&>());
+    ZEXPECT(std::move(failed).error() == error::io_error);
 
     outcome<std::string, error, cancellation> cancelled = outcome_cancel(cancellation{});
-    ASSERT(cancelled.is_cancelled());
-    EXPECT(zest::type_eq<decltype(std::move(cancelled).cancellation()), cancellation&&>());
+    ZASSERT(cancelled.is_cancelled());
+    ZEXPECT(zest::type_eq<decltype(std::move(cancelled).cancellation()), cancellation&&>());
 }
 
 ZEST_CASE(outcome_without_channels_always_holds_a_value) {
     outcome<int> number = 3;
-    ASSERT(number.has_value());
-    EXPECT(static_cast<bool>(number));
-    EXPECT(*number == 3);
+    ZASSERT(number.has_value());
+    ZEXPECT(static_cast<bool>(number));
+    ZEXPECT(*number == 3);
 
     outcome<void> nothing;
-    EXPECT(nothing.has_value());
+    ZEXPECT(nothing.has_value());
 }
 
 ZEST_CASE(channel_types_are_exposed) {
-    EXPECT(zest::type_eq<Full::value_type, int>());
-    EXPECT(zest::type_eq<Full::error_type, error>());
-    EXPECT(zest::type_eq<Full::cancel_type, cancellation>());
-    EXPECT(zest::type_eq<result<int>, outcome<int, error, void>>());
-    STATIC_EXPECT(is_outcome_v<result<int>>);
-    STATIC_EXPECT(!is_outcome_v<int>);
+    ZEXPECT(zest::type_eq<Full::value_type, int>());
+    ZEXPECT(zest::type_eq<Full::error_type, error>());
+    ZEXPECT(zest::type_eq<Full::cancel_type, cancellation>());
+    ZEXPECT(zest::type_eq<result<int>, outcome<int, error, void>>());
+    ZSTATIC_EXPECT(is_outcome_v<result<int>>);
+    ZSTATIC_EXPECT(!is_outcome_v<int>);
 }
 
 ZEST_CASE(value_is_not_converted_from_another_outcome) {
     // An outcome's explicit operator bool would otherwise build a bool value.
-    STATIC_EXPECT(!std::constructible_from<outcome<bool, error>, outcome<int, error>>);
+    ZSTATIC_EXPECT(!std::constructible_from<outcome<bool, error>, outcome<int, error>>);
     // An outcome of exactly that type is a value like any other.
-    STATIC_EXPECT(std::constructible_from<outcome<result<int>, error>, result<int>>);
+    ZSTATIC_EXPECT(std::constructible_from<outcome<result<int>, error>, result<int>>);
 }
 
 ZEST_CASE(unwrap_gives_the_value_in_its_value_category) {
     outcome<std::string, error, cancellation> value = std::string("payload");
     const auto& constant = value;
-    EXPECT(zest::type_eq<decltype(value.unwrap()), std::string&>());
-    EXPECT(zest::type_eq<decltype(constant.unwrap()), const std::string&>());
-    EXPECT(zest::type_eq<decltype(std::move(value).unwrap()), std::string&&>());
-    EXPECT(value.unwrap() == "payload");
+    ZEXPECT(zest::type_eq<decltype(value.unwrap()), std::string&>());
+    ZEXPECT(zest::type_eq<decltype(constant.unwrap()), const std::string&>());
+    ZEXPECT(zest::type_eq<decltype(std::move(value).unwrap()), std::string&&>());
+    ZEXPECT(value.unwrap() == "payload");
     std::string taken = std::move(value).unwrap();
-    EXPECT(taken == "payload");
+    ZEXPECT(taken == "payload");
 
     outcome<void, error> nothing;
-    EXPECT(zest::type_eq<decltype(nothing.unwrap()), void>());
+    ZEXPECT(zest::type_eq<decltype(nothing.unwrap()), void>());
     nothing.unwrap();
 
     outcome<int> plain = 3;
-    EXPECT(plain.unwrap() == 3);
+    ZEXPECT(plain.unwrap() == 3);
 }
 
 #if KOTA_ENABLE_EXCEPTIONS
@@ -136,18 +136,18 @@ ZEST_CASE(unwrap_gives_the_value_in_its_value_category) {
 // Reads what was thrown; see test::exceptions_unreadable.
 ZEST_CASE(unwrap_of_an_error_fails, skip = test::exceptions_unreadable) {
     result<int> failed = outcome_error(error::connection_refused);
-    EXPECT(test::thrown<bad_outcome_access>([&] { failed.unwrap(); }) ==
-           std::string(error::connection_refused.message()));
+    ZEXPECT(test::thrown<bad_outcome_access>([&] { failed.unwrap(); }) ==
+            std::string(error::connection_refused.message()));
 
     outcome<void, Plain> plain = outcome_error(Plain{.code = 7});
-    EXPECT(test::thrown<bad_outcome_access>([&] { plain.unwrap(); }) == "outcome holds an error");
+    ZEXPECT(test::thrown<bad_outcome_access>([&] { plain.unwrap(); }) == "outcome holds an error");
 }
 
 // Reads what was thrown; see test::exceptions_unreadable.
 ZEST_CASE(unwrap_of_a_cancellation_fails, skip = test::exceptions_unreadable) {
     outcome<int, error, cancellation> cancelled = outcome_cancel(cancellation{});
-    EXPECT(test::thrown<bad_outcome_access>([&] { std::move(cancelled).unwrap(); }) ==
-           "outcome was cancelled");
+    ZEXPECT(test::thrown<bad_outcome_access>([&] { std::move(cancelled).unwrap(); }) ==
+            "outcome was cancelled");
 }
 
 #endif  // KOTA_ENABLE_EXCEPTIONS

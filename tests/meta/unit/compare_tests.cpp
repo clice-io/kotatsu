@@ -184,22 +184,22 @@ static_assert(!std::ranges::sized_range<const unsized_unordered_set<int>>);
 ZEST_SUITE(meta_compare) {
 
 ZEST_CASE(primitive_types) {
-    EXPECT(eq(7, 7));
-    EXPECT(ne(7, 8));
-    EXPECT(lt(7, 8));
-    EXPECT(le(7, 7));
-    EXPECT(gt(9, 8));
-    EXPECT(ge(9, 9));
+    ZEXPECT(eq(7, 7));
+    ZEXPECT(ne(7, 8));
+    ZEXPECT(lt(7, 8));
+    ZEXPECT(le(7, 7));
+    ZEXPECT(gt(9, 8));
+    ZEXPECT(ge(9, 9));
 }
 
 ZEST_CASE(mixed_sign_integers_compare_by_value) {
     constexpr unsigned max = std::numeric_limits<unsigned>::max();
-    EXPECT(lt(-1, 0u));
-    EXPECT(le(-1, 0u));
-    EXPECT(gt(0u, -1));
-    EXPECT(ge(0u, -1));
-    EXPECT(ne(-1, max));
-    EXPECT(!eq(-1, max));
+    ZEXPECT(lt(-1, 0u));
+    ZEXPECT(le(-1, 0u));
+    ZEXPECT(gt(0u, -1));
+    ZEXPECT(ge(0u, -1));
+    ZEXPECT(ne(-1, max));
+    ZEXPECT(!eq(-1, max));
 }
 
 // char is signed on some targets and unsigned on others; either way its
@@ -207,11 +207,11 @@ ZEST_CASE(mixed_sign_integers_compare_by_value) {
 enum char_backed : char { char_min = std::numeric_limits<char>::min() };
 
 ZEST_CASE(char_backed_enums_compare_by_value) {
-    EXPECT(lt(char_min, 1u));
-    EXPECT(le(char_min, 1u));
-    EXPECT(gt(1u, char_min));
-    EXPECT(ge(1u, char_min));
-    EXPECT(ne(char_min, std::numeric_limits<unsigned>::max()));
+    ZEXPECT(lt(char_min, 1u));
+    ZEXPECT(le(char_min, 1u));
+    ZEXPECT(gt(1u, char_min));
+    ZEXPECT(ge(1u, char_min));
+    ZEXPECT(ne(char_min, std::numeric_limits<unsigned>::max()));
 }
 
 ZEST_CASE(string_native) {
@@ -219,11 +219,11 @@ ZEST_CASE(string_native) {
     constexpr char literal[] = "kotatsu";
     const std::string str = "kotatsu";
 
-    EXPECT(eq(view, literal));
-    EXPECT(eq(literal, view));
-    EXPECT(eq(str, literal));
-    EXPECT(eq(literal, str));
-    EXPECT(!ne(view, literal));
+    ZEXPECT(eq(view, literal));
+    ZEXPECT(eq(literal, view));
+    ZEXPECT(eq(str, literal));
+    ZEXPECT(eq(literal, str));
+    ZEXPECT(!ne(view, literal));
 }
 
 ZEST_CASE(struct_recursive) {
@@ -244,20 +244,20 @@ ZEST_CASE(struct_recursive) {
         .id = 0,
     };
 
-    EXPECT(eq(a, b));
-    EXPECT(!ne(a, b));
-    EXPECT(le(a, b));
-    EXPECT(ge(a, b));
-    EXPECT(!eq(a, c));
-    EXPECT(ne(a, c));
-    EXPECT(lt(a, c));
-    EXPECT(le(a, c));
-    EXPECT(!gt(a, c));
-    EXPECT(!ge(a, c));
-    EXPECT(gt(c, a));
-    EXPECT(ge(c, a));
-    EXPECT(lt(c, d));
-    EXPECT(gt(d, c));
+    ZEXPECT(eq(a, b));
+    ZEXPECT(!ne(a, b));
+    ZEXPECT(le(a, b));
+    ZEXPECT(ge(a, b));
+    ZEXPECT(!eq(a, c));
+    ZEXPECT(ne(a, c));
+    ZEXPECT(lt(a, c));
+    ZEXPECT(le(a, c));
+    ZEXPECT(!gt(a, c));
+    ZEXPECT(!ge(a, c));
+    ZEXPECT(gt(c, a));
+    ZEXPECT(ge(c, a));
+    ZEXPECT(lt(c, d));
+    ZEXPECT(gt(d, c));
 }
 
 ZEST_CASE(vector_nested) {
@@ -274,41 +274,41 @@ ZEST_CASE(vector_nested) {
         {.x = 2, .y = 4},
     };
 
-    EXPECT(eq(a, b));
-    EXPECT(!ne(a, b));
-    EXPECT(!lt(a, b));
-    EXPECT(!gt(a, b));
-    EXPECT(le(a, b));
-    EXPECT(ge(a, b));
+    ZEXPECT(eq(a, b));
+    ZEXPECT(!ne(a, b));
+    ZEXPECT(!lt(a, b));
+    ZEXPECT(!gt(a, b));
+    ZEXPECT(le(a, b));
+    ZEXPECT(ge(a, b));
 
-    EXPECT(!eq(a, c));
-    EXPECT(ne(a, c));
-    EXPECT(lt(a, c));
-    EXPECT(le(a, c));
-    EXPECT(!gt(a, c));
-    EXPECT(!ge(a, c));
+    ZEXPECT(!eq(a, c));
+    ZEXPECT(ne(a, c));
+    ZEXPECT(lt(a, c));
+    ZEXPECT(le(a, c));
+    ZEXPECT(!gt(a, c));
+    ZEXPECT(!ge(a, c));
 
-    EXPECT(gt(c, a));
-    EXPECT(ge(c, a));
+    ZEXPECT(gt(c, a));
+    ZEXPECT(ge(c, a));
 
     std::vector<std::vector<c_point>> nested_a{a, {{.x = 3, .y = 1}}};
     std::vector<std::vector<c_point>> nested_b{b, {{.x = 3, .y = 1}}};
     std::vector<std::vector<c_point>> nested_c{b, {{.x = 3, .y = 2}}};
 
-    EXPECT(eq(nested_a, nested_b));
-    EXPECT(!ne(nested_a, nested_b));
-    EXPECT(le(nested_a, nested_b));
-    EXPECT(ge(nested_a, nested_b));
+    ZEXPECT(eq(nested_a, nested_b));
+    ZEXPECT(!ne(nested_a, nested_b));
+    ZEXPECT(le(nested_a, nested_b));
+    ZEXPECT(ge(nested_a, nested_b));
 
-    EXPECT(!eq(nested_a, nested_c));
-    EXPECT(ne(nested_a, nested_c));
-    EXPECT(lt(nested_a, nested_c));
-    EXPECT(le(nested_a, nested_c));
-    EXPECT(!gt(nested_a, nested_c));
-    EXPECT(!ge(nested_a, nested_c));
+    ZEXPECT(!eq(nested_a, nested_c));
+    ZEXPECT(ne(nested_a, nested_c));
+    ZEXPECT(lt(nested_a, nested_c));
+    ZEXPECT(le(nested_a, nested_c));
+    ZEXPECT(!gt(nested_a, nested_c));
+    ZEXPECT(!ge(nested_a, nested_c));
 
-    EXPECT(gt(nested_c, nested_a));
-    EXPECT(ge(nested_c, nested_a));
+    ZEXPECT(gt(nested_c, nested_a));
+    ZEXPECT(ge(nested_c, nested_a));
 }
 
 ZEST_CASE(vector_custom) {
@@ -326,20 +326,20 @@ ZEST_CASE(vector_custom) {
     };
 
     // If reflection fallback were used, `eq(a, b)` would be false because x differs.
-    EXPECT(eq(a, b));
-    EXPECT(!ne(a, b));
-    EXPECT(le(a, b));
-    EXPECT(ge(a, b));
+    ZEXPECT(eq(a, b));
+    ZEXPECT(!ne(a, b));
+    ZEXPECT(le(a, b));
+    ZEXPECT(ge(a, b));
 
-    EXPECT(!eq(a, c));
-    EXPECT(ne(a, c));
-    EXPECT(lt(a, c));
-    EXPECT(le(a, c));
-    EXPECT(!gt(a, c));
-    EXPECT(!ge(a, c));
+    ZEXPECT(!eq(a, c));
+    ZEXPECT(ne(a, c));
+    ZEXPECT(lt(a, c));
+    ZEXPECT(le(a, c));
+    ZEXPECT(!gt(a, c));
+    ZEXPECT(!ge(a, c));
 
-    EXPECT(gt(c, a));
-    EXPECT(ge(c, a));
+    ZEXPECT(gt(c, a));
+    ZEXPECT(ge(c, a));
 }
 
 ZEST_CASE(set_mixed) {
@@ -356,20 +356,20 @@ ZEST_CASE(set_mixed) {
         {.x = 2, .y = 4}
     };
 
-    EXPECT(eq(no_ops_a, no_ops_b));
-    EXPECT(!ne(no_ops_a, no_ops_b));
-    EXPECT(le(no_ops_a, no_ops_b));
-    EXPECT(ge(no_ops_a, no_ops_b));
+    ZEXPECT(eq(no_ops_a, no_ops_b));
+    ZEXPECT(!ne(no_ops_a, no_ops_b));
+    ZEXPECT(le(no_ops_a, no_ops_b));
+    ZEXPECT(ge(no_ops_a, no_ops_b));
 
-    EXPECT(!eq(no_ops_a, no_ops_c));
-    EXPECT(ne(no_ops_a, no_ops_c));
-    EXPECT(lt(no_ops_a, no_ops_c));
-    EXPECT(le(no_ops_a, no_ops_c));
-    EXPECT(!gt(no_ops_a, no_ops_c));
-    EXPECT(!ge(no_ops_a, no_ops_c));
+    ZEXPECT(!eq(no_ops_a, no_ops_c));
+    ZEXPECT(ne(no_ops_a, no_ops_c));
+    ZEXPECT(lt(no_ops_a, no_ops_c));
+    ZEXPECT(le(no_ops_a, no_ops_c));
+    ZEXPECT(!gt(no_ops_a, no_ops_c));
+    ZEXPECT(!ge(no_ops_a, no_ops_c));
 
-    EXPECT(gt(no_ops_c, no_ops_a));
-    EXPECT(ge(no_ops_c, no_ops_a));
+    ZEXPECT(gt(no_ops_c, no_ops_a));
+    ZEXPECT(ge(no_ops_c, no_ops_a));
 
     std::set<with_custom_ops> ops_a{
         {.x = 100, .y = 1},
@@ -384,20 +384,20 @@ ZEST_CASE(set_mixed) {
         {.x = 999, .y = 3}
     };
 
-    EXPECT(eq(ops_a, ops_b));
-    EXPECT(!ne(ops_a, ops_b));
-    EXPECT(le(ops_a, ops_b));
-    EXPECT(ge(ops_a, ops_b));
+    ZEXPECT(eq(ops_a, ops_b));
+    ZEXPECT(!ne(ops_a, ops_b));
+    ZEXPECT(le(ops_a, ops_b));
+    ZEXPECT(ge(ops_a, ops_b));
 
-    EXPECT(!eq(ops_a, ops_c));
-    EXPECT(ne(ops_a, ops_c));
-    EXPECT(lt(ops_a, ops_c));
-    EXPECT(le(ops_a, ops_c));
-    EXPECT(!gt(ops_a, ops_c));
-    EXPECT(!ge(ops_a, ops_c));
+    ZEXPECT(!eq(ops_a, ops_c));
+    ZEXPECT(ne(ops_a, ops_c));
+    ZEXPECT(lt(ops_a, ops_c));
+    ZEXPECT(le(ops_a, ops_c));
+    ZEXPECT(!gt(ops_a, ops_c));
+    ZEXPECT(!ge(ops_a, ops_c));
 
-    EXPECT(gt(ops_c, ops_a));
-    EXPECT(ge(ops_c, ops_a));
+    ZEXPECT(gt(ops_c, ops_a));
+    ZEXPECT(ge(ops_c, ops_a));
 }
 
 ZEST_CASE(uset_mixed) {
@@ -414,10 +414,10 @@ ZEST_CASE(uset_mixed) {
         {.x = 2, .y = 4},
     };
 
-    EXPECT(eq(no_ops_a, no_ops_b));
-    EXPECT(!ne(no_ops_a, no_ops_b));
-    EXPECT(!eq(no_ops_a, no_ops_c));
-    EXPECT(ne(no_ops_a, no_ops_c));
+    ZEXPECT(eq(no_ops_a, no_ops_b));
+    ZEXPECT(!ne(no_ops_a, no_ops_b));
+    ZEXPECT(!eq(no_ops_a, no_ops_c));
+    ZEXPECT(ne(no_ops_a, no_ops_c));
 
     std::unordered_set<with_custom_ops, with_custom_ops_hash, with_custom_ops_equal> ops_a{
         {.x = 100, .y = 1},
@@ -432,10 +432,10 @@ ZEST_CASE(uset_mixed) {
         {.x = 999, .y = 3},
     };
 
-    EXPECT(eq(ops_a, ops_b));
-    EXPECT(!ne(ops_a, ops_b));
-    EXPECT(!eq(ops_a, ops_c));
-    EXPECT(ne(ops_a, ops_c));
+    ZEXPECT(eq(ops_a, ops_b));
+    ZEXPECT(!ne(ops_a, ops_b));
+    ZEXPECT(!eq(ops_a, ops_c));
+    ZEXPECT(ne(ops_a, ops_c));
 }
 
 ZEST_CASE(uset_unsized_range_regression) {
@@ -458,11 +458,11 @@ ZEST_CASE(uset_unsized_range_regression) {
         {.x = 2, .y = 3},
     };
 
-    EXPECT(!eq(unsized_small, unsized_large));
-    EXPECT(!eq(unsized_small, sized_large));
-    EXPECT(!eq(sized_small, unsized_large));
-    EXPECT(eq(unsized_large, sized_large));
-    EXPECT(eq(sized_large, unsized_large));
+    ZEXPECT(!eq(unsized_small, unsized_large));
+    ZEXPECT(!eq(unsized_small, sized_large));
+    ZEXPECT(!eq(sized_small, unsized_large));
+    ZEXPECT(eq(unsized_large, sized_large));
+    ZEXPECT(eq(sized_large, unsized_large));
 }
 
 ZEST_CASE(map_mixed) {
@@ -479,20 +479,20 @@ ZEST_CASE(map_mixed) {
         {2, {.x = 2, .y = 4}}
     };
 
-    EXPECT(eq(no_ops_a, no_ops_b));
-    EXPECT(!ne(no_ops_a, no_ops_b));
-    EXPECT(le(no_ops_a, no_ops_b));
-    EXPECT(ge(no_ops_a, no_ops_b));
+    ZEXPECT(eq(no_ops_a, no_ops_b));
+    ZEXPECT(!ne(no_ops_a, no_ops_b));
+    ZEXPECT(le(no_ops_a, no_ops_b));
+    ZEXPECT(ge(no_ops_a, no_ops_b));
 
-    EXPECT(!eq(no_ops_a, no_ops_c));
-    EXPECT(ne(no_ops_a, no_ops_c));
-    EXPECT(lt(no_ops_a, no_ops_c));
-    EXPECT(le(no_ops_a, no_ops_c));
-    EXPECT(!gt(no_ops_a, no_ops_c));
-    EXPECT(!ge(no_ops_a, no_ops_c));
+    ZEXPECT(!eq(no_ops_a, no_ops_c));
+    ZEXPECT(ne(no_ops_a, no_ops_c));
+    ZEXPECT(lt(no_ops_a, no_ops_c));
+    ZEXPECT(le(no_ops_a, no_ops_c));
+    ZEXPECT(!gt(no_ops_a, no_ops_c));
+    ZEXPECT(!ge(no_ops_a, no_ops_c));
 
-    EXPECT(gt(no_ops_c, no_ops_a));
-    EXPECT(ge(no_ops_c, no_ops_a));
+    ZEXPECT(gt(no_ops_c, no_ops_a));
+    ZEXPECT(ge(no_ops_c, no_ops_a));
 
     std::map<int, with_custom_ops> ops_a{
         {1, {.x = 100, .y = 1}},
@@ -507,20 +507,20 @@ ZEST_CASE(map_mixed) {
         {2, {.x = 999, .y = 3}}
     };
 
-    EXPECT(eq(ops_a, ops_b));
-    EXPECT(!ne(ops_a, ops_b));
-    EXPECT(le(ops_a, ops_b));
-    EXPECT(ge(ops_a, ops_b));
+    ZEXPECT(eq(ops_a, ops_b));
+    ZEXPECT(!ne(ops_a, ops_b));
+    ZEXPECT(le(ops_a, ops_b));
+    ZEXPECT(ge(ops_a, ops_b));
 
-    EXPECT(!eq(ops_a, ops_c));
-    EXPECT(ne(ops_a, ops_c));
-    EXPECT(lt(ops_a, ops_c));
-    EXPECT(le(ops_a, ops_c));
-    EXPECT(!gt(ops_a, ops_c));
-    EXPECT(!ge(ops_a, ops_c));
+    ZEXPECT(!eq(ops_a, ops_c));
+    ZEXPECT(ne(ops_a, ops_c));
+    ZEXPECT(lt(ops_a, ops_c));
+    ZEXPECT(le(ops_a, ops_c));
+    ZEXPECT(!gt(ops_a, ops_c));
+    ZEXPECT(!ge(ops_a, ops_c));
 
-    EXPECT(gt(ops_c, ops_a));
-    EXPECT(ge(ops_c, ops_a));
+    ZEXPECT(gt(ops_c, ops_a));
+    ZEXPECT(ge(ops_c, ops_a));
 }
 
 ZEST_CASE(umap_mixed) {
@@ -537,10 +537,10 @@ ZEST_CASE(umap_mixed) {
         {1, {.x = 1, .y = 2}}
     };
 
-    EXPECT(eq(no_ops_a, no_ops_b));
-    EXPECT(!ne(no_ops_a, no_ops_b));
-    EXPECT(!eq(no_ops_a, no_ops_c));
-    EXPECT(ne(no_ops_a, no_ops_c));
+    ZEXPECT(eq(no_ops_a, no_ops_b));
+    ZEXPECT(!ne(no_ops_a, no_ops_b));
+    ZEXPECT(!eq(no_ops_a, no_ops_c));
+    ZEXPECT(ne(no_ops_a, no_ops_c));
 
     std::unordered_map<int, with_custom_ops> ops_a{
         {1, {.x = 100, .y = 1}},
@@ -555,10 +555,10 @@ ZEST_CASE(umap_mixed) {
         {1, {.x = 0, .y = 1}  }
     };
 
-    EXPECT(eq(ops_a, ops_b));
-    EXPECT(!ne(ops_a, ops_b));
-    EXPECT(!eq(ops_a, ops_c));
-    EXPECT(ne(ops_a, ops_c));
+    ZEXPECT(eq(ops_a, ops_b));
+    ZEXPECT(!ne(ops_a, ops_b));
+    ZEXPECT(!eq(ops_a, ops_c));
+    ZEXPECT(ne(ops_a, ops_c));
 }
 
 ZEST_CASE(umap_unsized_range_regression) {
@@ -581,11 +581,11 @@ ZEST_CASE(umap_unsized_range_regression) {
         {2, {.x = 2, .y = 3}},
     };
 
-    EXPECT(!eq(unsized_small, unsized_large));
-    EXPECT(!eq(unsized_small, sized_large));
-    EXPECT(!eq(sized_small, unsized_large));
-    EXPECT(eq(unsized_large, sized_large));
-    EXPECT(eq(sized_large, unsized_large));
+    ZEXPECT(!eq(unsized_small, unsized_large));
+    ZEXPECT(!eq(unsized_small, sized_large));
+    ZEXPECT(!eq(sized_small, unsized_large));
+    ZEXPECT(eq(unsized_large, sized_large));
+    ZEXPECT(eq(sized_large, unsized_large));
 }
 
 ZEST_CASE(custom_plain) {
@@ -602,20 +602,20 @@ ZEST_CASE(custom_plain) {
         {.x = 2, .y = 4}
     });
 
-    EXPECT(eq(a, b));
-    EXPECT(!ne(a, b));
-    EXPECT(le(a, b));
-    EXPECT(ge(a, b));
+    ZEXPECT(eq(a, b));
+    ZEXPECT(!ne(a, b));
+    ZEXPECT(le(a, b));
+    ZEXPECT(ge(a, b));
 
-    EXPECT(!eq(a, c));
-    EXPECT(ne(a, c));
-    EXPECT(lt(a, c));
-    EXPECT(le(a, c));
-    EXPECT(!gt(a, c));
-    EXPECT(!ge(a, c));
+    ZEXPECT(!eq(a, c));
+    ZEXPECT(ne(a, c));
+    ZEXPECT(lt(a, c));
+    ZEXPECT(le(a, c));
+    ZEXPECT(!gt(a, c));
+    ZEXPECT(!ge(a, c));
 
-    EXPECT(gt(c, a));
-    EXPECT(ge(c, a));
+    ZEXPECT(gt(c, a));
+    ZEXPECT(ge(c, a));
 }
 
 ZEST_CASE(custom_ops) {
@@ -632,20 +632,20 @@ ZEST_CASE(custom_ops) {
         {.x = 999, .y = 3}
     });
 
-    EXPECT(eq(a, b));
-    EXPECT(!ne(a, b));
-    EXPECT(le(a, b));
-    EXPECT(ge(a, b));
+    ZEXPECT(eq(a, b));
+    ZEXPECT(!ne(a, b));
+    ZEXPECT(le(a, b));
+    ZEXPECT(ge(a, b));
 
-    EXPECT(!eq(a, c));
-    EXPECT(ne(a, c));
-    EXPECT(lt(a, c));
-    EXPECT(le(a, c));
-    EXPECT(!gt(a, c));
-    EXPECT(!ge(a, c));
+    ZEXPECT(!eq(a, c));
+    ZEXPECT(ne(a, c));
+    ZEXPECT(lt(a, c));
+    ZEXPECT(le(a, c));
+    ZEXPECT(!gt(a, c));
+    ZEXPECT(!ge(a, c));
 
-    EXPECT(gt(c, a));
-    EXPECT(ge(c, a));
+    ZEXPECT(gt(c, a));
+    ZEXPECT(ge(c, a));
 }
 
 struct v_circle {
@@ -682,10 +682,10 @@ ZEST_CASE(variant_eq_unreflectable_alt) {
     shape_t c = v_circle{.radius = 4};
     shape_t d = v_rect{.width = 1, .height = 2};
 
-    EXPECT(eq(a, b));
-    EXPECT(!eq(a, c));
-    EXPECT(!eq(a, d));
-    EXPECT(ne(a, c));
+    ZEXPECT(eq(a, b));
+    ZEXPECT(!eq(a, c));
+    ZEXPECT(!eq(a, d));
+    ZEXPECT(ne(a, c));
 }
 
 ZEST_CASE(variant_lt_index_tie_break) {
@@ -693,19 +693,19 @@ ZEST_CASE(variant_lt_index_tie_break) {
     shape_t a = v_circle{.radius = 10};
     shape_t b = v_rect{.width = 1, .height = 1};
 
-    EXPECT(lt(a, b));
-    EXPECT(!lt(b, a));
-    EXPECT(le(a, b));
-    EXPECT(gt(b, a));
-    EXPECT(ge(b, a));
+    ZEXPECT(lt(a, b));
+    ZEXPECT(!lt(b, a));
+    ZEXPECT(le(a, b));
+    ZEXPECT(gt(b, a));
+    ZEXPECT(ge(b, a));
 }
 
 ZEST_CASE(variant_lt_same_alternative) {
     using shape_t = std::variant<v_circle, v_rect>;
     shape_t small = v_rect{.width = 1, .height = 2};
     shape_t big = v_rect{.width = 1, .height = 5};
-    EXPECT(lt(small, big));
-    EXPECT(!lt(big, small));
+    ZEXPECT(lt(small, big));
+    ZEXPECT(!lt(big, small));
 }
 
 #if KOTA_ENABLE_EXCEPTIONS
@@ -717,20 +717,20 @@ ZEST_CASE(variant_valueless_compares_less) {
         throwing_alt seed;
         valueless.emplace<throwing_alt>(seed);
     } catch(const std::exception&) {}
-    ASSERT(valueless.valueless_by_exception());
+    ZASSERT(valueless.valueless_by_exception());
 
-    EXPECT(lt(valueless, valued));
-    EXPECT(!lt(valued, valueless));
-    EXPECT(!eq(valueless, valued));
+    ZEXPECT(lt(valueless, valued));
+    ZEXPECT(!lt(valued, valueless));
+    ZEXPECT(!eq(valueless, valued));
 
     shape_t valueless2;
     try {
         throwing_alt seed;
         valueless2.emplace<throwing_alt>(seed);
     } catch(const std::exception&) {}
-    ASSERT(valueless2.valueless_by_exception());
-    EXPECT(!lt(valueless, valueless2));
-    EXPECT(!lt(valueless2, valueless));
+    ZASSERT(valueless2.valueless_by_exception());
+    ZEXPECT(!lt(valueless, valueless2));
+    ZEXPECT(!lt(valueless2, valueless));
 }
 #endif
 
@@ -743,9 +743,9 @@ ZEST_CASE(variant_in_annotation) {
     tagged_shape_t lhs = v_circle{.radius = 2};
     tagged_shape_t rhs = v_circle{.radius = 2};
     tagged_shape_t other = v_rect{.width = 3, .height = 4};
-    EXPECT(eq(lhs, rhs));
-    EXPECT(!eq(lhs, other));
-    EXPECT(lt(lhs, other));
+    ZEXPECT(eq(lhs, rhs));
+    ZEXPECT(!eq(lhs, other));
+    ZEXPECT(lt(lhs, other));
 }
 
 ZEST_CASE(functor_sort) {
@@ -760,15 +760,15 @@ ZEST_CASE(functor_sort) {
 
     // zest compares a check's operands with meta's comparisons, so the tests of
     // those check plain bools: a parenthesized check is not split.
-    ASSERT((values.size() == 4U));
-    EXPECT((values[0].x == 1));
-    EXPECT((values[0].y == 2));
-    EXPECT((values[1].x == 1));
-    EXPECT((values[1].y == 3));
-    EXPECT((values[2].x == 1));
-    EXPECT((values[2].y == 4));
-    EXPECT((values[3].x == 2));
-    EXPECT((values[3].y == 1));
+    ZASSERT((values.size() == 4U));
+    ZEXPECT((values[0].x == 1));
+    ZEXPECT((values[0].y == 2));
+    ZEXPECT((values[1].x == 1));
+    ZEXPECT((values[1].y == 3));
+    ZEXPECT((values[2].x == 1));
+    ZEXPECT((values[2].y == 4));
+    ZEXPECT((values[3].x == 2));
+    ZEXPECT((values[3].y == 1));
 }
 
 };  // ZEST_SUITE(meta_compare)

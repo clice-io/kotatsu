@@ -41,8 +41,8 @@ ZEST_CASE(normal_compilation_completes) {
     auto graph = make_test_graph(started);
 
     auto [compiled] = run(graph.compile("main.cpp", loop));
-    ASSERT(compiled.has_value());
-    EXPECT(*compiled);
+    ZASSERT(compiled.has_value());
+    ZEXPECT(*compiled);
 }
 
 // The update comes while main.cpp's first dependency, parser.h, is at work.
@@ -55,7 +55,7 @@ ZEST_CASE(update_cancels_in_flight) {
     };
 
     auto [compiled, updated] = run(graph.compile("main.cpp", loop), updater());
-    EXPECT(compiled.is_cancelled());
+    ZEXPECT(compiled.is_cancelled());
 }
 
 // lexer.h has not started when it changes; parser.cpp, which depends on it,
@@ -69,7 +69,7 @@ ZEST_CASE(chain_cancel_propagates) {
     };
 
     auto [compiled, updated] = run(graph.compile("parser.cpp", loop), updater());
-    EXPECT(compiled.is_cancelled());
+    ZEXPECT(compiled.is_cancelled());
 }
 
 ZEST_CASE(recompile_after_update) {
@@ -83,8 +83,8 @@ ZEST_CASE(recompile_after_update) {
     };
 
     auto [compiled] = run(twice());
-    ASSERT(compiled.has_value());
-    EXPECT(*compiled == std::pair{true, true});
+    ZASSERT(compiled.has_value());
+    ZEXPECT(*compiled == std::pair{true, true});
 }
 
 ZEST_CASE(independent_compilations_unaffected) {
@@ -97,9 +97,9 @@ ZEST_CASE(independent_compilations_unaffected) {
 
     auto [parser, codegen, updated] =
         run(graph.compile("parser.cpp", loop), graph.compile("codegen.cpp", loop), updater());
-    EXPECT(parser.is_cancelled());
-    ASSERT(codegen.has_value());
-    EXPECT(*codegen);
+    ZEXPECT(parser.is_cancelled());
+    ZASSERT(codegen.has_value());
+    ZEXPECT(*codegen);
 }
 
 // a.cpp and b.cpp both depend on common.h, which is compiled once: three
@@ -118,9 +118,9 @@ ZEST_CASE(shared_dependency_compiled_once) {
     };
 
     auto [compiled] = run(both());
-    ASSERT(compiled.has_value());
-    EXPECT(*compiled == std::tuple{true, true});
-    EXPECT(compile_count == 3);
+    ZASSERT(compiled.has_value());
+    ZEXPECT(*compiled == std::tuple{true, true});
+    ZEXPECT(compile_count == 3);
 }
 
 };  // ZEST_SUITE(examples_build_system)

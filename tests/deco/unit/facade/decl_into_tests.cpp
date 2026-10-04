@@ -105,42 +105,42 @@ ZEST_SUITE(deco_facade_decl_into) {
 
 ZEST_CASE(flag_is_set_by_its_argument) {
     decl::FlagOption<bool> flag;
-    EXPECT(!flag.into(arg_of("-v")));
-    ASSERT(flag.has_value());
-    EXPECT(*flag);
+    ZEXPECT(!flag.into(arg_of("-v")));
+    ZASSERT(flag.has_value());
+    ZEXPECT(*flag);
 }
 
 ZEST_CASE(flag_given_a_value_fails) {
     decl::FlagOption<bool> flag;
     const auto error = flag.into(arg_of("-v", {"1"}));
-    ASSERT(error.has_value());
-    EXPECT(*error == "flag option does not accept values");
-    EXPECT(!flag.has_value());
+    ZASSERT(error.has_value());
+    ZEXPECT(*error == "flag option does not accept values");
+    ZEXPECT(!flag.has_value());
 }
 
 ZEST_CASE(counting_flag_counts_each_argument) {
     decl::FlagOption<std::uint32_t> count;
     for(int i = 0; i < 3; ++i) {
         ZEST_CONTEXT("argument {}", i);
-        EXPECT(!count.into(arg_of("-v")));
+        ZEXPECT(!count.into(arg_of("-v")));
     }
-    ASSERT(count.has_value());
-    EXPECT(*count == 3U);
+    ZASSERT(count.has_value());
+    ZEXPECT(*count == 3U);
 }
 
 ZEST_CASE(scalar_takes_one_value) {
     decl::ScalarOption<std::string> option;
-    EXPECT(!option.into(arg_of("-o", {"out"})));
-    ASSERT(option.has_value());
-    EXPECT(*option == "out");
+    ZEXPECT(!option.into(arg_of("-o", {"out"})));
+    ZASSERT(option.has_value());
+    ZEXPECT(*option == "out");
 }
 
 ZEST_CASE(scalar_given_two_values_fails) {
     decl::ScalarOption<std::string> option;
     const auto error = option.into(arg_of("-o", {"a", "b"}));
-    ASSERT(error.has_value());
-    EXPECT(*error == "expected exactly one value");
-    EXPECT(!option.has_value());
+    ZASSERT(error.has_value());
+    ZEXPECT(*error == "expected exactly one value");
+    ZEXPECT(!option.has_value());
 }
 
 ZEST_CASE(bool_reads_its_spellings) {
@@ -158,23 +158,23 @@ ZEST_CASE(bool_reads_its_spellings) {
     for(const auto& [text, expected]: spellings) {
         ZEST_CONTEXT("text {}", text);
         std::optional<bool> value;
-        EXPECT(!read(text, value));
-        EXPECT(value == std::optional(expected));
+        ZEXPECT(!read(text, value));
+        ZEXPECT(value == std::optional(expected));
     }
 }
 
 ZEST_CASE(bool_of_other_text_fails) {
     std::optional<bool> value;
     const auto error = read("maybe", value);
-    ASSERT(error.has_value());
-    EXPECT(*error == "invalid boolean value: maybe");
-    EXPECT(!value.has_value());
+    ZASSERT(error.has_value());
+    ZEXPECT(*error == "invalid boolean value: maybe");
+    ZEXPECT(!value.has_value());
 }
 
 ZEST_CASE(integer_reads_decimal) {
     std::optional<int> value;
-    EXPECT(!read("-42", value));
-    EXPECT(value == std::optional(-42));
+    ZEXPECT(!read("-42", value));
+    ZEXPECT(value == std::optional(-42));
 }
 
 ZEST_CASE(integer_of_other_text_fails) {
@@ -182,29 +182,29 @@ ZEST_CASE(integer_of_other_text_fails) {
         ZEST_CONTEXT("text '{}'", text);
         std::optional<int> value;
         const auto error = read(text, value);
-        ASSERT(error.has_value());
-        EXPECT(*error == std::string("invalid integer value: ") + text);
+        ZASSERT(error.has_value());
+        ZEXPECT(*error == std::string("invalid integer value: ") + text);
     }
 }
 
 ZEST_CASE(unsigned_of_a_negative_fails) {
     std::optional<unsigned> value;
     const auto error = read("-1", value);
-    ASSERT(error.has_value());
-    EXPECT(*error == "invalid integer value: -1");
-    EXPECT(!value.has_value());
+    ZASSERT(error.has_value());
+    ZEXPECT(*error == "invalid integer value: -1");
+    ZEXPECT(!value.has_value());
 }
 
 ZEST_CASE(floating_point_reads_decimal_and_exponent) {
     std::optional<double> value;
-    EXPECT(!read("3.25", value));
-    EXPECT(value == std::optional(3.25));
-    EXPECT(!read("-1e3", value));
-    EXPECT(value == std::optional(-1000.0));
+    ZEXPECT(!read("3.25", value));
+    ZEXPECT(value == std::optional(3.25));
+    ZEXPECT(!read("-1e3", value));
+    ZEXPECT(value == std::optional(-1000.0));
 
     std::optional<float> single;
-    EXPECT(!read("0.5", single));
-    EXPECT(single == std::optional(0.5F));
+    ZEXPECT(!read("0.5", single));
+    ZEXPECT(single == std::optional(0.5F));
 }
 
 ZEST_CASE(floating_point_of_other_text_fails) {
@@ -213,50 +213,50 @@ ZEST_CASE(floating_point_of_other_text_fails) {
         ZEST_CONTEXT("text '{}'", text);
         std::optional<double> value;
         const auto error = read(text, value);
-        ASSERT(error.has_value());
-        EXPECT(*error == std::string("invalid floating-point value: ") + text);
-        EXPECT(!value.has_value());
+        ZASSERT(error.has_value());
+        ZEXPECT(*error == std::string("invalid floating-point value: ") + text);
+        ZEXPECT(!value.has_value());
     }
 }
 
 ZEST_CASE(floating_point_out_of_range_fails) {
     std::optional<double> value;
     const auto error = read("1e999", value);
-    ASSERT(error.has_value());
-    EXPECT(*error == "floating-point value out of range: 1e999");
+    ZASSERT(error.has_value());
+    ZEXPECT(*error == "floating-point value out of range: 1e999");
 }
 
 ZEST_CASE(enum_reads_its_name_in_either_camel_case) {
     for(const auto text: {"beta", "Beta"}) {
         ZEST_CONTEXT("text {}", text);
         std::optional<Mode> value;
-        EXPECT(!read(text, value));
-        EXPECT(value == std::optional(Mode::Beta));
+        ZEXPECT(!read(text, value));
+        ZEXPECT(value == std::optional(Mode::Beta));
     }
 }
 
 ZEST_CASE(enum_reads_snake_keyword_and_numeric_spellings) {
     std::optional<Spelled> value;
-    EXPECT(!read("my_value", value));
-    EXPECT(value == std::optional(Spelled::myValue));
-    EXPECT(!read("delete", value));
-    EXPECT(value == std::optional(Spelled::Delete_));
-    EXPECT(!read("123", value));
-    EXPECT(value == std::optional(Spelled::V123));
+    ZEXPECT(!read("my_value", value));
+    ZEXPECT(value == std::optional(Spelled::myValue));
+    ZEXPECT(!read("delete", value));
+    ZEXPECT(value == std::optional(Spelled::Delete_));
+    ZEXPECT(!read("123", value));
+    ZEXPECT(value == std::optional(Spelled::V123));
 }
 
 ZEST_CASE(enum_of_other_text_fails) {
     std::optional<Mode> value;
     const auto error = read("delta", value);
-    ASSERT(error.has_value());
-    EXPECT(*error == "invalid enum value: delta (supported: alpha, beta, gamma)");
+    ZASSERT(error.has_value());
+    ZEXPECT(*error == "invalid enum value: delta (supported: alpha, beta, gamma)");
 }
 
 ZEST_CASE(custom_scalar_reads_through_into) {
     decl::ScalarOption<Name> option;
-    EXPECT(!option.into(arg_of("--name", {"alice"})));
-    ASSERT(option.has_value());
-    EXPECT(option->text == "alice");
+    ZEXPECT(!option.into(arg_of("--name", {"alice"})));
+    ZASSERT(option.has_value());
+    ZEXPECT(option->text == "alice");
 }
 
 ZEST_CASE(custom_scalar_bad_value_fails) {
@@ -266,8 +266,8 @@ ZEST_CASE(custom_scalar_bad_value_fails) {
     decl::ScalarOption<Name> option;
     const auto error =
         option.into(arg_of("--name", {"bad"}, 1), decl::IntoContext(argv, 1, 3, &renderer));
-    ASSERT(error.has_value());
-    EXPECT(*error == "ERR<2:bad name>");
+    ZASSERT(error.has_value());
+    ZEXPECT(*error == "ERR<2:bad name>");
 }
 
 ZEST_CASE(custom_scalar_with_context_bad_value_fails) {
@@ -277,8 +277,8 @@ ZEST_CASE(custom_scalar_with_context_bad_value_fails) {
     decl::ScalarOption<LocatedName> option;
     const auto error =
         option.into(arg_of("--name", {"bad"}), decl::IntoContext(argv, 0, 2, &renderer));
-    ASSERT(error.has_value());
-    EXPECT(*error == "ERR<1:bad located name>");
+    ZASSERT(error.has_value());
+    ZEXPECT(*error == "ERR<1:bad located name>");
 }
 
 ZEST_CASE(scalar_bad_value_fails) {
@@ -288,75 +288,75 @@ ZEST_CASE(scalar_bad_value_fails) {
     decl::ScalarOption<int> option;
     const auto error =
         option.into(arg_of("--count", {"x"}), decl::IntoContext(argv, 0, 2, &renderer));
-    ASSERT(error.has_value());
-    EXPECT(*error == "ERR<1:invalid integer value: x>");
+    ZASSERT(error.has_value());
+    ZEXPECT(*error == "ERR<1:invalid integer value: x>");
 }
 
 ZEST_CASE(input_reads_its_spelling) {
     decl::InputOption<int> input;
-    EXPECT(!input.into(arg_of("123")));
-    EXPECT(input.as_optional() == std::optional(123));
+    ZEXPECT(!input.into(arg_of("123")));
+    ZEXPECT(input.as_optional() == std::optional(123));
 }
 
 ZEST_CASE(input_reads_one_value) {
     decl::InputOption<std::string> input;
-    EXPECT(!input.into(arg_of("--", {"tail"})));
-    EXPECT(input.as_optional() == std::optional<std::string>("tail"));
+    ZEXPECT(!input.into(arg_of("--", {"tail"})));
+    ZEXPECT(input.as_optional() == std::optional<std::string>("tail"));
 }
 
 ZEST_CASE(input_given_two_values_fails) {
     decl::InputOption<std::string> input;
     const auto error = input.into(arg_of("--", {"a", "b"}));
-    ASSERT(error.has_value());
-    EXPECT(*error == "input option expects at most one value");
+    ZASSERT(error.has_value());
+    ZEXPECT(*error == "input option expects at most one value");
 }
 
 ZEST_CASE(input_list_gathers_every_argument) {
     decl::InputOption<std::vector<int>> inputs;
-    EXPECT(!inputs.into(arg_of("7")));
-    EXPECT(!inputs.into(arg_of("--", {"8", "9"})));
-    EXPECT(inputs.as_optional() == std::optional(std::vector<int>{7, 8, 9}));
+    ZEXPECT(!inputs.into(arg_of("7")));
+    ZEXPECT(!inputs.into(arg_of("--", {"8", "9"})));
+    ZEXPECT(inputs.as_optional() == std::optional(std::vector<int>{7, 8, 9}));
 }
 
 ZEST_CASE(input_list_bad_argument_fails) {
     // The list keeps what it had, and goes on from there.
     decl::InputOption<std::vector<int>> inputs;
-    EXPECT(!inputs.into(arg_of("7")));
+    ZEXPECT(!inputs.into(arg_of("7")));
     const auto error = inputs.into(arg_of("x"));
-    ASSERT(error.has_value());
-    EXPECT(*error == "invalid vector value at index 1: invalid integer value: x");
-    EXPECT(!inputs.into(arg_of("8")));
-    EXPECT(inputs.as_optional() == std::optional(std::vector<int>{7, 8}));
+    ZASSERT(error.has_value());
+    ZEXPECT(*error == "invalid vector value at index 1: invalid integer value: x");
+    ZEXPECT(!inputs.into(arg_of("8")));
+    ZEXPECT(inputs.as_optional() == std::optional(std::vector<int>{7, 8}));
 }
 
 ZEST_CASE(vector_reads_each_value) {
     decl::VectorOption<std::vector<Mode>> option;
-    EXPECT(!option.into(arg_of("--modes", {"alpha", "gamma"})));
-    EXPECT(option.as_optional() == std::optional(std::vector<Mode>{Mode::Alpha, Mode::Gamma}));
+    ZEXPECT(!option.into(arg_of("--modes", {"alpha", "gamma"})));
+    ZEXPECT(option.as_optional() == std::optional(std::vector<Mode>{Mode::Alpha, Mode::Gamma}));
 }
 
 ZEST_CASE(vector_reads_no_values_as_empty) {
     decl::VectorOption<std::vector<int>> option;
-    EXPECT(!option.into(arg_of("--list")));
-    ASSERT(option.has_value());
-    EXPECT(option->empty());
+    ZEXPECT(!option.into(arg_of("--list")));
+    ZASSERT(option.has_value());
+    ZEXPECT(option->empty());
 }
 
 ZEST_CASE(vector_bad_value_fails) {
     decl::VectorOption<std::vector<Mode>> option;
     const auto error = option.into(arg_of("--modes", {"alpha", "delta"}));
-    ASSERT(error.has_value());
-    EXPECT(*error ==
-           "invalid vector value at index 1: invalid enum value: delta "
-           "(supported: alpha, beta, gamma)");
-    EXPECT(!option.has_value());
+    ZASSERT(error.has_value());
+    ZEXPECT(*error ==
+            "invalid vector value at index 1: invalid enum value: delta "
+            "(supported: alpha, beta, gamma)");
+    ZEXPECT(!option.has_value());
 }
 
 ZEST_CASE(custom_vector_reads_through_into) {
     decl::VectorOption<Names> option;
-    EXPECT(!option.into(arg_of("--names", {"x", "y"})));
-    ASSERT(option.has_value());
-    EXPECT(option->values == (std::vector<std::string>{"x", "y"}));
+    ZEXPECT(!option.into(arg_of("--names", {"x", "y"})));
+    ZASSERT(option.has_value());
+    ZEXPECT(option->values == (std::vector<std::string>{"x", "y"}));
 }
 
 ZEST_CASE(custom_vector_bad_value_fails) {
@@ -365,17 +365,17 @@ ZEST_CASE(custom_vector_bad_value_fails) {
     decl::VectorOption<Names> option;
     const auto error =
         option.into(arg_of("--names", {"bad"}), decl::IntoContext(argv, 0, 2, &renderer));
-    ASSERT(error.has_value());
-    EXPECT(*error == "ERR<0:bad names>");
+    ZASSERT(error.has_value());
+    ZEXPECT(*error == "ERR<0:bad names>");
 }
 
 ZEST_CASE(custom_vector_with_context_is_given_it) {
     const auto argv = test::args("-v", "--names", "x");
     decl::VectorOption<LocatedNames> option;
-    EXPECT(!option.into(arg_of("--names", {"x"}, 1), decl::IntoContext(argv, 1, 3)));
-    ASSERT(option.has_value());
-    EXPECT(option->values == std::vector<std::string>{"x"});
-    EXPECT(option->begin == 1U);
+    ZEXPECT(!option.into(arg_of("--names", {"x"}, 1), decl::IntoContext(argv, 1, 3)));
+    ZASSERT(option.has_value());
+    ZEXPECT(option->values == std::vector<std::string>{"x"});
+    ZEXPECT(option->begin == 1U);
 }
 
 };  // ZEST_SUITE(deco_facade_decl_into)

@@ -41,10 +41,10 @@ ZEST_CASE(wait_releases_the_mutex_and_takes_it_back) {
     };
 
     auto [held_after_wait, notified] = run(waiter(), notifier());
-    ASSERT(held_after_wait.has_value());
-    EXPECT(*held_after_wait);
-    EXPECT(notified.has_value());
-    EXPECT(m.try_lock());
+    ZASSERT(held_after_wait.has_value());
+    ZEXPECT(*held_after_wait);
+    ZEXPECT(notified.has_value());
+    ZEXPECT(m.try_lock());
 }
 
 ZEST_CASE(notify_one_wakes_the_first_waiter_only) {
@@ -66,10 +66,10 @@ ZEST_CASE(notify_one_wakes_the_first_waiter_only) {
     };
 
     auto [first, second, woken_by_one] = run(waiter(1), waiter(2), notifier());
-    EXPECT(second.has_value());
-    ASSERT(woken_by_one.has_value());
-    EXPECT(*woken_by_one == 1U);
-    EXPECT(order == std::vector{1, 2});
+    ZEXPECT(second.has_value());
+    ZASSERT(woken_by_one.has_value());
+    ZEXPECT(*woken_by_one == 1U);
+    ZEXPECT(order == std::vector{1, 2});
 }
 
 ZEST_CASE(notify_all_wakes_every_waiter) {
@@ -88,8 +88,8 @@ ZEST_CASE(notify_all_wakes_every_waiter) {
     };
 
     auto [first, second, third, driver] = run(waiter(), waiter(), waiter(), notifier());
-    EXPECT(third.has_value());
-    EXPECT(woken == 3);
+    ZEXPECT(third.has_value());
+    ZEXPECT(woken == 3);
 }
 
 ZEST_CASE(notify_without_a_waiter_is_lost) {
@@ -112,10 +112,10 @@ ZEST_CASE(notify_without_a_waiter_is_lost) {
     };
 
     auto [waited, woken_before] = run(waiter(), notifier());
-    EXPECT(waited.has_value());
-    ASSERT(woken_before.has_value());
-    EXPECT(!*woken_before);
-    EXPECT(woken);
+    ZEXPECT(waited.has_value());
+    ZASSERT(woken_before.has_value());
+    ZEXPECT(!*woken_before);
+    ZEXPECT(woken);
 }
 
 ZEST_CASE(cancelled_waiter_leaves_the_queue) {
@@ -136,9 +136,9 @@ ZEST_CASE(cancelled_waiter_leaves_the_queue) {
     };
 
     auto [cancelled, second, drove] = run(first, owner(waiter(2)), driver());
-    EXPECT(cancelled.is_cancelled());
-    EXPECT(second.has_value());
-    EXPECT(woken == std::vector{2});
+    ZEXPECT(cancelled.is_cancelled());
+    ZEXPECT(second.has_value());
+    ZEXPECT(woken == std::vector{2});
 }
 
 // Like std::condition_variable, a wait ends holding the mutex on every way
@@ -160,8 +160,8 @@ ZEST_CASE(waiter_cancelled_after_notify_ends_holding_the_mutex) {
     };
 
     auto [cancelled, drove] = run(target, driver());
-    EXPECT(cancelled.is_cancelled());
-    EXPECT(!m.try_lock());
+    ZEXPECT(cancelled.is_cancelled());
+    ZEXPECT(!m.try_lock());
 }
 
 // The cancel of a wait is delivered only once the wait holds the mutex
@@ -205,12 +205,12 @@ ZEST_CASE(cancelled_wait_takes_the_mutex_back_before_it_ends) {
     };
 
     auto [cancelled, seen] = run(guarded(), driver());
-    ASSERT(cancelled.has_value());
-    EXPECT(*cancelled);
-    ASSERT(seen.has_value());
-    EXPECT(!seen->ended_while_held);
-    EXPECT(seen->ended_after_unlock);
-    EXPECT(seen->free_after);
+    ZASSERT(cancelled.has_value());
+    ZEXPECT(*cancelled);
+    ZASSERT(seen.has_value());
+    ZEXPECT(!seen->ended_while_held);
+    ZEXPECT(seen->ended_after_unlock);
+    ZEXPECT(seen->free_after);
 }
 
 // A task cancelled before it waits does not wait: it goes on holding the
@@ -227,9 +227,9 @@ ZEST_CASE(wait_under_a_cancelled_task_keeps_the_mutex) {
     target = waiter();
 
     auto [result] = run(target);
-    EXPECT(result.is_cancelled());
-    EXPECT(!cv.has_waiters());
-    EXPECT(!m.try_lock());
+    ZEXPECT(result.is_cancelled());
+    ZEXPECT(!cv.has_waiters());
+    ZEXPECT(!m.try_lock());
 }
 
 // notify_one() hands its notification to the first waiter before that waiter
@@ -254,11 +254,11 @@ ZEST_CASE(notify_one_to_a_waiter_cancelled_before_it_runs_passes_it_on) {
     };
 
     auto [cancelled, second, woken_by_one] = run(first, owner(waiter(2)), driver());
-    EXPECT(cancelled.is_cancelled());
-    EXPECT(second.has_value());
-    ASSERT(woken_by_one.has_value());
-    EXPECT(*woken_by_one == 1U);
-    EXPECT(woken == std::vector{2});
+    ZEXPECT(cancelled.is_cancelled());
+    ZEXPECT(second.has_value());
+    ZASSERT(woken_by_one.has_value());
+    ZEXPECT(*woken_by_one == 1U);
+    ZEXPECT(woken == std::vector{2});
 }
 
 // A notified waiter that waits for the mutex again and is cancelled then
@@ -288,11 +288,11 @@ ZEST_CASE(waiter_cancelled_while_it_waits_for_the_mutex_passes_the_notification_
     };
 
     auto [cancelled, second, woken_while_held] = run(first, owner(waiter(2)), driver());
-    EXPECT(cancelled.is_cancelled());
-    EXPECT(second.has_value());
-    ASSERT(woken_while_held.has_value());
-    EXPECT(*woken_while_held == 0U);
-    EXPECT(woken == std::vector{2});
+    ZEXPECT(cancelled.is_cancelled());
+    ZEXPECT(second.has_value());
+    ZASSERT(woken_while_held.has_value());
+    ZEXPECT(*woken_while_held == 0U);
+    ZEXPECT(woken == std::vector{2});
 }
 
 };  // ZEST_SUITE(async_runtime_sync_condition_variable)

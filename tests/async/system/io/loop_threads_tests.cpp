@@ -34,8 +34,8 @@ ZEST_CASE(callback_sent_from_another_thread_runs_on_the_loop) {
 
     auto [result] = run(receive());
     sender.join();
-    ASSERT(result.has_value());
-    EXPECT(*result);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result);
 }
 
 ZEST_CASE(callbacks_from_one_thread_arrive_in_order) {
@@ -60,11 +60,11 @@ ZEST_CASE(callbacks_from_one_thread_arrive_in_order) {
 
     auto [result] = run(receive());
     sender.join();
-    ASSERT(result.has_value());
-    ASSERT(result->size() == static_cast<std::size_t>(count));
+    ZASSERT(result.has_value());
+    ZASSERT(result->size() == static_cast<std::size_t>(count));
     for(int i = 0; i < count; ++i) {
         ZEST_CONTEXT("callback {}", i);
-        EXPECT((*result)[static_cast<std::size_t>(i)] == i);
+        ZEXPECT((*result)[static_cast<std::size_t>(i)] == i);
     }
 }
 
@@ -98,8 +98,8 @@ ZEST_CASE(concurrent_senders_deliver_every_callback) {
     };
 
     auto [result] = run(receive());
-    ASSERT(result.has_value());
-    EXPECT(*result == threads * per_thread);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == threads * per_thread);
 }
 
 // The relay held here would keep the loop running for good; only stop()
@@ -114,9 +114,9 @@ ZEST_CASE(callback_from_another_thread_can_stop_the_loop) {
         });
     });
 
-    EXPECT(loop.run() != 0);
+    ZEXPECT(loop.run() != 0);
     sender.join();
-    EXPECT(stopped);
+    ZEXPECT(stopped);
 }
 
 // Letting go of one of two relays takes one hold off the loop, not all of
@@ -134,11 +134,11 @@ ZEST_CASE(loop_stays_held_while_one_of_two_relays_lives) {
         held.send([&] { called = true; });
     });
 
-    EXPECT(loop.run() == 0);
+    ZEXPECT(loop.run() == 0);
     returned = true;
     holder.join();
-    EXPECT(!returned_early);
-    EXPECT(called);
+    ZEXPECT(!returned_early);
+    ZEXPECT(called);
 }
 
 // A producer that sends and drops its relay while the loop is running an
@@ -159,9 +159,9 @@ ZEST_CASE(callback_sent_while_the_relay_goes_is_delivered) {
         second_sent.release();
     });
 
-    EXPECT(loop.run() == 0);
+    ZEXPECT(loop.run() == 0);
     sender.join();
-    EXPECT(second_ran);
+    ZEXPECT(second_ran);
 }
 
 };  // ZEST_SUITE(async_io_loop_threads)

@@ -16,37 +16,37 @@ ZEST_SUITE(http_detail_request_errors, zest::LoopFixture) {
 
 ZEST_CASE(refused_connection_fails) {
     auto nowhere = test::refusing_url();
-    ASSERT(!nowhere.empty());
+    ZASSERT(!nowhere.empty());
     auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(nowhere).send());
-    ASSERT(reply.has_error());
-    EXPECT(reply.error().kind == error_kind::curl);
-    EXPECT(reply.error().curl_code == CURLE_COULDNT_CONNECT);
+    ZASSERT(reply.has_error());
+    ZEXPECT(reply.error().kind == error_kind::curl);
+    ZEXPECT(reply.error().curl_code == CURLE_COULDNT_CONNECT);
 }
 
 ZEST_CASE(connection_closed_without_a_reply_fails) {
     test::HttpServer server(loop, [](const test::Received&) { return test::Reply{.raw = ""}; });
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(server.url("/")).send());
-    ASSERT(reply.has_error());
-    EXPECT(reply.error().kind == error_kind::curl);
-    EXPECT(reply.error().curl_code == CURLE_GOT_NOTHING);
+    ZASSERT(reply.has_error());
+    ZEXPECT(reply.error().kind == error_kind::curl);
+    ZEXPECT(reply.error().curl_code == CURLE_GOT_NOTHING);
 }
 
 ZEST_CASE(reply_that_is_not_http_fails) {
     test::HttpServer server(loop, [](const test::Received&) {
         return test::Reply{.raw = "not http at all\r\n\r\n"};
     });
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(server.url("/")).send());
-    ASSERT(reply.has_error());
-    EXPECT(reply.error().kind == error_kind::curl);
-    EXPECT(reply.error().curl_code == CURLE_UNSUPPORTED_PROTOCOL);
+    ZASSERT(reply.has_error());
+    ZEXPECT(reply.error().kind == error_kind::curl);
+    ZEXPECT(reply.error().curl_code == CURLE_UNSUPPORTED_PROTOCOL);
 }
 
 ZEST_CASE(body_cut_short_fails) {
@@ -56,13 +56,13 @@ ZEST_CASE(body_cut_short_fails) {
             .body = "short",
         };
     });
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(server.url("/")).send());
-    ASSERT(reply.has_error());
-    EXPECT(reply.error().kind == error_kind::curl);
-    EXPECT(reply.error().curl_code == CURLE_PARTIAL_FILE);
+    ZASSERT(reply.has_error());
+    ZEXPECT(reply.error().kind == error_kind::curl);
+    ZEXPECT(reply.error().curl_code == CURLE_PARTIAL_FILE);
 }
 
 };  // ZEST_SUITE(http_detail_request_errors)

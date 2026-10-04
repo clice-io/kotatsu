@@ -414,11 +414,6 @@ if has_config("test") and has_config("ztest") then
 				end
 			end
 			add_includedirs("examples/build_system")
-			if has_config("codec") and has_config("codec_simdjson") then
-				-- Lets suites of other modules opt into cases that need the
-				-- JSON codec, such as zest's EXPECT_SNAPSHOT_JSON tests.
-				add_defines("KOTA_TEST_HAS_JSON=1")
-			end
 
 			add_deps("kotatsu")
 

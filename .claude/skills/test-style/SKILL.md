@@ -15,8 +15,8 @@ A test's level is decided by what it touches, not by the module it tests.
 | system      | the operating system: files, processes, sockets, pipes, signals, threads and thread pools, environment | `tests/<module>/system/` → `system_tests` |
 | integration | several programs talking over real protocols, black box                                                | `tests/<module>/integration/` → ctest     |
 
-- The moment a test opens a file, spawns a process, binds a socket, installs a signal handler or starts a thread, it is a system test. zest's own I/O does not count: printing, and reading or writing snapshots through its snapshot macros, are fine in a unit test.
-- Compile-time facts that must hold are `STATIC_EXPECT` in a unit case.
+- The moment a test opens a file, spawns a process, binds a socket, installs a signal handler or starts a thread, it is a system test. zest's own I/O does not count: printing, and reading or writing snapshots through `zest::snapshot`, are fine in a unit test.
+- Compile-time facts that must hold are `ZSTATIC_EXPECT` in a unit case.
 - Nothing reaches the network beyond loopback. Tests that need the internet are not part of any suite.
 - zest's own runner check (`tests/zest/integration/`) is integration-level, but it is the one integration test in C++ and CMake rather than TypeScript: it runs from CMake as a bootstrap stage (see Trust), so it needs nothing beyond the build.
 
@@ -82,10 +82,10 @@ Rules:
 zest decides pass or fail with meta's comparisons, prints operands with the debug codec, matches test filters with support's glob patterns, parses its options with deco and drives its worker processes with kota::async. ctest therefore runs in stages, each needing the one before:
 
 1. `zest_bootstrap_unit`, `zest_bootstrap_system`: the tests of what zest relies on, in this process, without the worker pool. Their filters are in `tests/CMakeLists.txt`.
-2. `zest_runner`: the worker pool end to end, LoopFixture's watchdog, and `run_cli`'s command line.
+2. `zest_runner`: the worker pool end to end, failed `ZASSERT`s and crash tests, LoopFixture's watchdog, and `run_cli`'s command line.
 3. `unit_tests`, `system_tests`: everything.
 
-A test in a bootstrap suite must not judge itself with what it tests: meta's comparison tests use unary checks (`EXPECT(eq(a, b))`) or parenthesized plain bools (`EXPECT((a.x == 1))`), never a split comparison. A new suite covering something zest relies on joins a bootstrap filter; a renamed one updates it.
+A test in a bootstrap suite must not judge itself with what it tests: meta's comparison tests use unary checks (`ZEXPECT(eq(a, b))`) or parenthesized plain bools (`ZEXPECT((a.x == 1))`), never a split comparison. A new suite covering something zest relies on joins a bootstrap filter; a renamed one updates it.
 
 ## Naming
 
@@ -104,17 +104,20 @@ A test in a bootstrap suite must not judge itself with what it tests: meta's com
 
 ## Checks
 
-- One expression per check. `EXPECT(a == b)` reports both operands; `EXPECT(x)` and `EXPECT(!x)` report `x`. Split `a && b` into two checks.
-- `ASSERT` before anything that relies on the check: dereferencing an optional, expected or pointer, indexing, `.value()`. In a coroutine, `CO_ASSERT`.
-- An expected error is checked for what it is, not only that it happened: `ASSERT(!result); EXPECT(result.error().kind == ...)`.
-- Predicates: `contains`, `starts_with`, `ends_with` for text and ranges, `type_eq<A, B>()` for types.
+- One expression per check. `ZEXPECT(a == b)` reports both operands; `ZEXPECT(x)` and `ZEXPECT(!x)` report `x`. Split `a && b` into two checks.
+- `ZASSERT` before anything that relies on the check: dereferencing an optional, expected or pointer, indexing, `.value()`. A failed `ZASSERT` ends the test's process without unwinding, so it serves alike in a coroutine, a helper that returns a value, a callback or another thread.
+- What a failed `ZASSERT` would leave behind outside the process (a temporary directory, a child process) is cleaned up by a `zest::FatalHook`, declared after what it cleans up: a member of the owning type, as `test::TempDir` has, or a local beside a resource the test cannot change. A suite's constructor and destructor are its setup and teardown; a failed `ZASSERT` skips the destructor.
+- An expected error is checked for what it is, not only that it happened: `ZASSERT(!result); ZEXPECT(result.error().kind == ...)`.
+- Predicates: `contains`, `starts_with`, `ends_with` for text and ranges, `type_eq<A, B>()` for types, `throws(fn)` / `throws<E>(fn)` and `!throws(fn)` for exceptions.
 - `ZEST_CONTEXT` in helpers and loops, naming the input a failing check was about.
-- Large expected text (pretty output, schemas, diagnostics) is a snapshot. Updating snapshots is a deliberate act.
-- `EXPECT((a == b))` compares with the type's own operator; use it only for a type meta cannot compare.
+- Large expected text (pretty output, schemas, diagnostics) is a snapshot: `ZEXPECT(zest::snapshot(text))`, or `zest::snapshot(text, "name")` for more than one in a case; a value that is not text is snapshotted as the debug codec renders it. Updating snapshots is a deliberate act.
+- A case that must crash its process (an abort, a failed `assert`, `std::terminate`) is declared `crashes = true`; it passes only by crashing, and crashes by defined means, never by undefined behaviour. A crash that depends on the build mode is a constant attribute, e.g. `crashes = !KOTA_ENABLE_EXCEPTIONS`.
+- `ZEXPECT((a == b))` compares with the type's own operator; use it only for a type meta cannot compare.
 - Every case checks something. Checks inside a callback or coroutine are backed by a check, after the run, that they ran.
 
 ## Determinism
 
+- Cases are independent. Each case runs on a fresh instance of its suite, so a case never clears or resets suite members, at its start or its end. Cases run in no set order, spread over worker processes that run at once, so a case never relies on another having run, or on its leftovers. A worker does run several cases one after another, so its process-wide state (globals and singletons, the environment, the current directory) is not fresh: a case that changes it restores it with an RAII guard such as `test::ScopedVariable`.
 - Unit tests never order events by sleeping; they use events, latches or the loop's own ordering. A timer is fine as the subject of a test.
 - System tests order events the same way wherever they can: wait for the event, a relay or a semaphore that says the other side is ready. A wait is left only to show that something does not happen, with a comment saying so.
 - System tests bind port 0 and read the port back. A case that needs a port twice (a second bind to share it, or to find it in use) binds port 0 first and reuses the port it read back.

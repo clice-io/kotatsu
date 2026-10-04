@@ -37,9 +37,9 @@ ZEST_CASE(child_cancel_leaves_the_siblings_running) {
     };
 
     auto [result, opened] = run(driver(), opener());
-    EXPECT(result.has_value());
-    EXPECT(opened.has_value());
-    EXPECT(slow_finished);
+    ZEXPECT(result.has_value());
+    ZEXPECT(opened.has_value());
+    ZEXPECT(slow_finished);
 }
 
 ZEST_CASE(cancel_before_join_cancels_every_child) {
@@ -57,8 +57,8 @@ ZEST_CASE(cancel_before_join_cancels_every_child) {
     };
 
     auto [result] = run(driver());
-    EXPECT(result.has_value());
-    EXPECT(!gate.has_waiters());
+    ZEXPECT(result.has_value());
+    ZEXPECT(!gate.has_waiters());
 }
 
 ZEST_CASE(cancel_of_an_empty_group_lets_join_complete) {
@@ -69,7 +69,7 @@ ZEST_CASE(cancel_of_an_empty_group_lets_join_complete) {
     };
 
     auto [result] = run(driver());
-    EXPECT(result.has_value());
+    ZEXPECT(result.has_value());
 }
 
 ZEST_CASE(cancel_while_join_waits_cancels_the_rest) {
@@ -98,9 +98,9 @@ ZEST_CASE(cancel_while_join_waits_cancels_the_rest) {
     };
 
     auto [result, drove] = run(driver(), canceler());
-    EXPECT(result.has_value());
-    EXPECT(fast_finished == 1);
-    EXPECT(!slow_gate.has_waiters());
+    ZEXPECT(result.has_value());
+    ZEXPECT(fast_finished == 1);
+    ZEXPECT(!slow_gate.has_waiters());
 }
 
 ZEST_CASE(child_can_cancel_its_group_after_suspending) {
@@ -122,8 +122,8 @@ ZEST_CASE(child_can_cancel_its_group_after_suspending) {
     };
 
     auto [result] = run(driver());
-    EXPECT(result.has_value());
-    EXPECT(!gate.has_waiters());
+    ZEXPECT(result.has_value());
+    ZEXPECT(!gate.has_waiters());
 }
 
 // spawn() runs a child until it first suspends; one that cancels its group
@@ -154,8 +154,8 @@ ZEST_CASE(child_cancelling_its_group_runs_to_its_first_suspension) {
     };
 
     auto [result, drove] = run(driver(), spawner());
-    ASSERT(result.has_value());
-    EXPECT(*result);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result);
 }
 
 ZEST_CASE(joiner_cancel_cancels_the_children) {
@@ -176,8 +176,8 @@ ZEST_CASE(joiner_cancel_cancels_the_children) {
     };
 
     auto [result, drove] = run(target, cancel_it());
-    EXPECT(result.is_cancelled());
-    EXPECT(!gate.has_waiters());
+    ZEXPECT(result.is_cancelled());
+    ZEXPECT(!gate.has_waiters());
 }
 
 // join() under a cancelled task cancels the children and waits for them
@@ -197,8 +197,8 @@ ZEST_CASE(checkpoint_join_cancels_the_group) {
     target = worker();
 
     auto [result] = run(target);
-    EXPECT(result.is_cancelled());
-    EXPECT(!gate.has_waiters());
+    ZEXPECT(result.is_cancelled());
+    ZEXPECT(!gate.has_waiters());
 }
 
 };  // ZEST_SUITE(async_runtime_task_group_cancel)

@@ -5,9 +5,8 @@
 // dependency on another zest header, this translation unit stops compiling.
 #include "kota/zest/macro.h"
 
-#if !defined(ZEST_SUITE) || !defined(ZEST_CASE) || !defined(EXPECT) || !defined(ASSERT) ||         \
-    !defined(STATIC_EXPECT) || !defined(ZEST_CONTEXT) || !defined(EXPECT_SNAPSHOT) ||              \
-    !defined(EXPECT_SNAPSHOT_JSON)
+#if !defined(ZEST_SUITE) || !defined(ZEST_CASE) || !defined(ZEXPECT) || !defined(ZASSERT) ||       \
+    !defined(ZSTATIC_EXPECT) || !defined(ZEST_CONTEXT)
 #error "kota/zest/macro.h must define the zest test macros on its own"
 #endif
 
@@ -22,9 +21,9 @@ namespace {
 ZEST_SUITE(zest_macro_standalone) {
 
 ZEST_CASE(macros_usable_without_declaration_headers) {
-    STATIC_EXPECT(1 + 1 == 2);
-    ASSERT(true);
-    EXPECT(std::string("a") == std::string("a"));
+    ZSTATIC_EXPECT(1 + 1 == 2);
+    ZASSERT(true);
+    ZEXPECT(std::string("a") == std::string("a"));
 }
 
 };  // ZEST_SUITE(zest_macro_standalone)

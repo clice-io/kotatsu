@@ -21,10 +21,10 @@ void expect_split(std::string_view pattern,
                   std::source_location location = std::source_location::current()) {
     ZEST_CONTEXT("glob `{}`, checked at line {}", pattern, location.line());
     auto root = GlobPattern::split_root(pattern);
-    EXPECT(root.directory == directory);
-    EXPECT(root.rest == rest);
+    ZEXPECT(root.directory == directory);
+    ZEXPECT(root.rest == rest);
     // The pointers, not the text they point to.
-    EXPECT((root.rest.data() == pattern.data() + pattern.size() - rest.size()));
+    ZEXPECT((root.rest.data() == pattern.data() + pattern.size() - rest.size()));
 }
 
 ZEST_SUITE(support_glob_pattern_root) {
@@ -74,7 +74,7 @@ ZEST_CASE(split_root_ends_at_an_escape_create_rejects) {
 ZEST_CASE(split_root_rebuilds_a_pattern_matching_alike) {
     auto pattern = std::string_view(R"(src/a\[1\]/**/*.cpp)");
     auto root = GlobPattern::split_root(pattern);
-    EXPECT(root.directory == "src/a[1]/");
+    ZEXPECT(root.directory == "src/a[1]/");
     auto rebuilt = GlobPattern::escape(root.directory) + std::string(root.rest);
     for(std::string_view each: {pattern, std::string_view(rebuilt)}) {
         test::expect_glob(each,

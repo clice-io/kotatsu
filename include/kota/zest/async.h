@@ -7,7 +7,6 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
-#include <cstdlib>
 #include <optional>
 #include <tuple>
 #include <type_traits>
@@ -28,9 +27,9 @@ struct LoopFixture {
 
     /// How long run() waits for its tasks. Past it the test fails and the
     /// tasks still running are cancelled, so a hang ends the test, not the
-    /// job; tasks that are still running one more period later abort the
-    /// process, since nothing can safely free their frames. A suite or a test
-    /// sets it before run() to give its tasks longer or shorter.
+    /// job; tasks that are still running one more period later end the process
+    /// as a failed ZASSERT does, since nothing can safely free their frames. A
+    /// suite or a test sets it before run() to give its tasks longer or shorter.
     std::chrono::milliseconds watchdog = std::chrono::seconds(10);
 
     /// Runs `tasks` on `loop`, started in the order given, until every one of
@@ -64,16 +63,11 @@ struct LoopFixture {
             }
             expired = true;
             cancel_running();
-            // Still here once more: a cancellation that cannot complete, such
-            // as work stuck on a pool thread.
+            // Still running a period later: a cancellation that cannot
+            // complete, such as work stuck on a pool thread, ends the process.
             co_await sleep(watchdog, loop);
-            if(remaining == 0) {
-                co_return;
-            }
             ZEST_CONTEXT("tasks still running {} after the watchdog cancelled them", watchdog);
-            // Reports the failure before the abort: remaining is not 0 here.
-            EXPECT(remaining == 0U);
-            std::abort();
+            ZASSERT(remaining == 0U);
         };
         auto guard = watch();
 
@@ -88,7 +82,7 @@ struct LoopFixture {
             {
                 ZEST_CONTEXT("run(): the loop was stopped with {} tasks running", remaining);
                 // Reports the failure: remaining is not 0 here.
-                EXPECT(remaining == 0U);
+                ZEXPECT(remaining == 0U);
             }
             while(remaining != 0) {
                 cancel_running();
@@ -100,7 +94,7 @@ struct LoopFixture {
 
         {
             ZEST_CONTEXT("tasks still running after {} were cancelled by the watchdog", watchdog);
-            EXPECT(!expired);
+            ZEXPECT(!expired);
         }
         for(auto& tracker: trackers) {
             // Rethrows what the task threw.

@@ -90,16 +90,16 @@ ZEST_CASE(only_whole_globstars_match_everything_trivially) {
     for(auto pattern: {"**", "{foo,**}", "**/"}) {
         ZEST_CONTEXT("glob `{}`", pattern);
         auto compiled = GlobPattern::create(pattern);
-        ASSERT(compiled.has_value());
-        EXPECT(compiled->is_trivial_match_all());
+        ZASSERT(compiled.has_value());
+        ZEXPECT(compiled->is_trivial_match_all());
     }
     // A leading `/` still constrains, though it leaves no literal prefix behind.
     for(auto pattern:
         {"*", "**/*", "foo/**", "*.js", "{a,b}", "/*", "/**", "{*,foo}", "a{*,foo}"}) {
         ZEST_CONTEXT("glob `{}`", pattern);
         auto compiled = GlobPattern::create(pattern);
-        ASSERT(compiled.has_value());
-        EXPECT(!compiled->is_trivial_match_all());
+        ZASSERT(compiled.has_value());
+        ZEXPECT(!compiled->is_trivial_match_all());
     }
 }
 
@@ -133,7 +133,7 @@ ZEST_CASE(randomized_patterns_agree_with_a_reference) {
         }
         ZEST_CONTEXT("seed {}, trial {}, glob `{}`", seed, trial, source);
         auto compiled = GlobPattern::create(source);
-        ASSERT(compiled.has_value());
+        ZASSERT(compiled.has_value());
         for(int sample = 0; sample < 16; ++sample) {
             std::vector<std::vector<std::size_t>> words(1 + random() % 5);
             std::string path;
@@ -151,7 +151,7 @@ ZEST_CASE(randomized_patterns_agree_with_a_reference) {
             const bool expected = reference_path(segments, words);
             if(compiled->match(path) != expected) {
                 ZEST_CONTEXT("path `{}`", path);
-                EXPECT(compiled->match(path) == expected);
+                ZEXPECT(compiled->match(path) == expected);
                 return;
             }
         }
@@ -167,8 +167,8 @@ ZEST_CASE(suffix_checks_read_no_byte_outside_the_path) {
         ZEST_CONTEXT("literal of {} bytes", literal.size());
         auto recursive = GlobPattern::create("**/*" + literal);
         auto segment = GlobPattern::create("*" + literal);
-        ASSERT(recursive.has_value());
-        ASSERT(segment.has_value());
+        ZASSERT(recursive.has_value());
+        ZASSERT(segment.has_value());
         const auto copied = *recursive;
         for(std::size_t padding = 0; padding < 25; ++padding) {
             const std::string filler(padding, 'q');
@@ -180,9 +180,9 @@ ZEST_CASE(suffix_checks_read_no_byte_outside_the_path) {
                 auto exact = std::make_unique<char[]>(text.size());
                 std::ranges::copy(text, exact.get());
                 const std::string_view path(exact.get(), text.size());
-                EXPECT(recursive->match(path) == path.ends_with(literal));
-                EXPECT(copied.match(path) == path.ends_with(literal));
-                EXPECT(segment->match(path) == (path.ends_with(literal) && !path.contains('/')));
+                ZEXPECT(recursive->match(path) == path.ends_with(literal));
+                ZEXPECT(copied.match(path) == path.ends_with(literal));
+                ZEXPECT(segment->match(path) == (path.ends_with(literal) && !path.contains('/')));
             }
         }
     }
@@ -206,7 +206,7 @@ ZEST_CASE(extension_sets_agree_with_a_linear_check) {
             source += '}';
             ZEST_CONTEXT("{} extensions, the last `{}`", count, last);
             auto compiled = GlobPattern::create(source);
-            ASSERT(compiled.has_value());
+            ZASSERT(compiled.has_value());
             const auto moved = std::move(*compiled);
             for(const auto& extension: extensions) {
                 for(const auto& path: {extension,
@@ -218,10 +218,10 @@ ZEST_CASE(extension_sets_agree_with_a_linear_check) {
                     const bool expected = std::ranges::any_of(extensions, [&](const auto& suffix) {
                         return path.ends_with(suffix);
                     });
-                    EXPECT(moved.match(path) == expected);
+                    ZEXPECT(moved.match(path) == expected);
                 }
             }
-            EXPECT(!moved.match("no_extension"));
+            ZEXPECT(!moved.match("no_extension"));
         }
     }
 }
@@ -236,39 +236,39 @@ ZEST_CASE(affix_plans_match_the_head_and_the_tail) {
 
 ZEST_CASE(compiled_patterns_copy_and_move) {
     auto pattern = GlobPattern::create(R"(src/*/test_\[中\]*.cpp)");
-    ASSERT(pattern.has_value());
+    ZASSERT(pattern.has_value());
     auto copy = *pattern;
     auto moved = std::move(copy);
     auto other = GlobPattern::create("other");
-    ASSERT(other.has_value());
+    ZASSERT(other.has_value());
     *pattern = *other;
-    EXPECT(moved.match("src/x/test_[中].cpp"));
-    EXPECT(!moved.match("other"));
-    EXPECT(pattern->match("other"));
+    ZEXPECT(moved.match("src/x/test_[中].cpp"));
+    ZEXPECT(!moved.match("other"));
+    ZEXPECT(pattern->match("other"));
 
     auto tree = GlobPattern::create(R"(/work/项目\[demo\]/src/**/*.cpp)");
-    ASSERT(tree.has_value());
+    ZASSERT(tree.has_value());
     const auto tree_copy = *tree;
     const auto tree_moved = std::move(*tree);
-    EXPECT(tree_copy.match("/work/项目[demo]/src/test.cpp"));
-    EXPECT(tree_moved.match("/work/项目[demo]/src/test.cpp"));
+    ZEXPECT(tree_copy.match("/work/项目[demo]/src/test.cpp"));
+    ZEXPECT(tree_moved.match("/work/项目[demo]/src/test.cpp"));
 }
 
 ZEST_CASE(patterns_too_large_to_keep_inline_copy_and_move) {
     // Enough arms, segments, tokens and classes that none of them fits inline.
     auto pattern = GlobPattern::create("{a,b,c}/x*/[0-9]?/**/y/*.{c,h}");
-    ASSERT(pattern.has_value());
+    ZASSERT(pattern.has_value());
     const auto copy = *pattern;
     auto assigned = GlobPattern::create("other");
-    ASSERT(assigned.has_value());
+    ZASSERT(assigned.has_value());
     *assigned = std::move(*pattern);
     const GlobPattern& moved_in = *assigned;
     for(const auto* compiled: {&copy, &moved_in}) {
         ZEST_CONTEXT("the {}", compiled == &copy ? "copy" : "pattern moved in");
-        EXPECT(compiled->match("b/xz/5q/deep/down/y/main.c"));
-        EXPECT(compiled->match("c/x/0!/y/main.h"));
-        EXPECT(!compiled->match("d/xz/5q/y/main.c"));
-        EXPECT(!compiled->match("other"));
+        ZEXPECT(compiled->match("b/xz/5q/deep/down/y/main.c"));
+        ZEXPECT(compiled->match("c/x/0!/y/main.h"));
+        ZEXPECT(!compiled->match("d/xz/5q/y/main.c"));
+        ZEXPECT(!compiled->match("other"));
     }
 }
 

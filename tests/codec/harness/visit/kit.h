@@ -114,11 +114,11 @@ namespace detail {
 
 inline void check_failure(const codec::rich_error& error, Failure failure) {
     if(failure.message.empty()) {
-        EXPECT(!error.message.empty());
+        ZEXPECT(!error.message.empty());
     } else {
-        EXPECT(error.message == failure.message);
+        ZEXPECT(error.message == failure.message);
     }
-    EXPECT(error.format_path() == failure.path);
+    ZEXPECT(error.format_path() == failure.path);
 }
 
 }  // namespace detail
@@ -132,14 +132,14 @@ void roundtrip_over(const Kit<B>& kit, std::string name, Make make, Start start)
     kit.add(std::move(name), [make, start] {
         auto value = make();
         auto encoded = B::template encode<Config>(value);
-        ASSERT(succeeds(encoded));
+        ZASSERT(succeeds(encoded));
         ZEST_CONTEXT("{}: {}", B::name, B::render(*encoded));
         decltype(value) decoded = start();
-        ASSERT(succeeds(B::template decode<Config>(*encoded, decoded)));
+        ZASSERT(succeeds(B::template decode<Config>(*encoded, decoded)));
         auto again = B::template encode<Config>(decoded);
-        ASSERT(succeeds(again));
-        EXPECT(*again == *encoded);
-        EXPECT(meta::eq(decoded, value));
+        ZASSERT(succeeds(again));
+        ZEXPECT(*again == *encoded);
+        ZEXPECT(meta::eq(decoded, value));
     });
 }
 
@@ -154,11 +154,11 @@ template <typename Config = void, Backend B, typename Make, typename Plain>
 void encodes_as(const Kit<B>& kit, std::string name, Make make, Plain plain) {
     kit.add(std::move(name), [make, plain] {
         auto expected = B::encode(plain());
-        ASSERT(succeeds(expected));
+        ZASSERT(succeeds(expected));
         ZEST_CONTEXT("{}: {}", B::name, B::render(*expected));
         auto encoded = B::template encode<Config>(make());
-        ASSERT(succeeds(encoded));
-        EXPECT(*encoded == *expected);
+        ZASSERT(succeeds(encoded));
+        ZEXPECT(*encoded == *expected);
     });
 }
 
@@ -167,11 +167,11 @@ template <typename T, typename Config = void, Backend B, typename Plain, typenam
 void reads(const Kit<B>& kit, std::string name, Plain plain, Expect expect) {
     kit.add(std::move(name), [plain, expect] {
         auto document = B::encode(plain());
-        ASSERT(succeeds(document));
+        ZASSERT(succeeds(document));
         ZEST_CONTEXT("{}: {}", B::name, B::render(*document));
         auto decoded = T();
-        ASSERT(succeeds(B::template decode<Config>(*document, decoded)));
-        EXPECT(meta::eq(decoded, expect()));
+        ZASSERT(succeeds(B::template decode<Config>(*document, decoded)));
+        ZEXPECT(meta::eq(decoded, expect()));
     });
 }
 
@@ -214,14 +214,14 @@ void reads_reporting(const Kit<B>& kit,
     std::ranges::sort(unknown);
     kit.add(std::move(name), [plain, expect, unknown] {
         auto document = B::encode(plain());
-        ASSERT(succeeds(document));
+        ZASSERT(succeeds(document));
         ZEST_CONTEXT("{}: {}", B::name, B::render(*document));
         codec::UnknownFields reported;
         codec::scoped_context<codec::UnknownFields> scope(reported);
         auto decoded = T();
-        ASSERT(succeeds(B::template decode<Config>(*document, decoded)));
-        EXPECT(meta::eq(decoded, expect()));
-        EXPECT(detail::describe(reported) == unknown);
+        ZASSERT(succeeds(B::template decode<Config>(*document, decoded)));
+        ZEXPECT(meta::eq(decoded, expect()));
+        ZEXPECT(detail::describe(reported) == unknown);
     });
 }
 
@@ -230,11 +230,11 @@ template <typename T, typename Config = void, Backend B, typename Plain>
 void read_fails(const Kit<B>& kit, std::string name, Plain plain, Failure failure) {
     kit.add(std::move(name), [plain, failure] {
         auto document = B::encode(plain());
-        ASSERT(succeeds(document));
+        ZASSERT(succeeds(document));
         ZEST_CONTEXT("{}: {}", B::name, B::render(*document));
         auto decoded = T();
         auto status = B::template decode<Config>(*document, decoded);
-        ASSERT(!status);
+        ZASSERT(!status);
         detail::check_failure(status.error(), failure);
     });
 }
@@ -249,13 +249,13 @@ void read_fails_over(const Kit<B>& kit,
                      Failure failure) {
     kit.add(std::move(name), [plain, start, failure] {
         auto document = B::encode(plain());
-        ASSERT(succeeds(document));
+        ZASSERT(succeeds(document));
         ZEST_CONTEXT("{}: {}", B::name, B::render(*document));
         auto decoded = start();
         auto status = B::template decode<Config>(*document, decoded);
-        ASSERT(!status);
+        ZASSERT(!status);
         detail::check_failure(status.error(), failure);
-        EXPECT(meta::eq(decoded, start()));
+        ZEXPECT(meta::eq(decoded, start()));
     });
 }
 
@@ -280,15 +280,15 @@ void read_fails_reporting(const Kit<B>& kit,
     std::ranges::sort(unknown);
     kit.add(std::move(name), [plain, failure, unknown] {
         auto document = B::encode(plain());
-        ASSERT(succeeds(document));
+        ZASSERT(succeeds(document));
         ZEST_CONTEXT("{}: {}", B::name, B::render(*document));
         codec::UnknownFields reported;
         codec::scoped_context<codec::UnknownFields> scope(reported);
         auto decoded = T();
         auto status = B::template decode<Config>(*document, decoded);
-        ASSERT(!status);
+        ZASSERT(!status);
         detail::check_failure(status.error(), failure);
-        EXPECT(detail::describe(reported) == unknown);
+        ZEXPECT(detail::describe(reported) == unknown);
     });
 }
 
@@ -313,7 +313,7 @@ template <typename Config = void, Backend B, typename Make>
 void write_fails(const Kit<B>& kit, std::string name, Make make, Failure failure) {
     kit.add(std::move(name), [make, failure] {
         auto encoded = B::template encode<Config>(make());
-        ASSERT(!encoded);
+        ZASSERT(!encoded);
         detail::check_failure(encoded.error(), failure);
     });
 }
@@ -338,7 +338,7 @@ void hostile(const Kit<B>& kit, std::string name, [[maybe_unused]] Make make) {
             using Unit = std::ranges::range_value_t<Encoded>;
 
             auto encoded = B::encode(make());
-            ASSERT(succeeds(encoded));
+            ZASSERT(succeeds(encoded));
             const Encoded& document = *encoded;
 
             auto settles = [](const Encoded& input) {
@@ -347,16 +347,16 @@ void hostile(const Kit<B>& kit, std::string name, [[maybe_unused]] Make make) {
                     return;
                 }
                 auto first = B::encode(decoded);
-                ASSERT(succeeds(first));
+                ZASSERT(succeeds(first));
                 auto again = T();
-                ASSERT(succeeds(B::decode(*first, again)));
+                ZASSERT(succeeds(B::decode(*first, again)));
                 auto second = B::encode(again);
-                ASSERT(succeeds(second));
+                ZASSERT(succeeds(second));
                 // A changed length can give an unordered container several
                 // elements, which re-encode in an iteration order a decode may
                 // change; then the value is what must hold.
                 if(*second != *first) {
-                    EXPECT(meta::eq(again, decoded));
+                    ZEXPECT(meta::eq(again, decoded));
                 }
             };
             // One failure is enough to show; the rest would repeat it.

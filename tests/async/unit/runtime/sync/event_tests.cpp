@@ -26,10 +26,10 @@ ZEST_CASE(set_wakes_every_waiter) {
     };
 
     auto [first, second, set] = run(waiter(), waiter(), setter());
-    EXPECT(first.has_value());
-    EXPECT(second.has_value());
-    EXPECT(woken == 2);
-    EXPECT(ev.is_set());
+    ZEXPECT(first.has_value());
+    ZEXPECT(second.has_value());
+    ZEXPECT(woken == 2);
+    ZEXPECT(ev.is_set());
 }
 
 ZEST_CASE(set_resumes_waiters_after_the_setter_suspends) {
@@ -46,8 +46,8 @@ ZEST_CASE(set_resumes_waiters_after_the_setter_suspends) {
     };
 
     auto [waited, set] = run(waiter(), setter());
-    EXPECT(waited.has_value());
-    EXPECT(order == std::vector{1, 2});
+    ZEXPECT(waited.has_value());
+    ZEXPECT(order == std::vector{1, 2});
 }
 
 // A set event stays set: the first wait does not use it up for the second.
@@ -64,15 +64,15 @@ ZEST_CASE(wait_on_a_set_event_does_not_suspend) {
     };
 
     auto [first, second, third] = run(waiter(1), waiter(2), other());
-    EXPECT(first.has_value());
-    EXPECT(second.has_value());
-    EXPECT(order == std::vector{1, 2, 3});
+    ZEXPECT(first.has_value());
+    ZEXPECT(second.has_value());
+    ZEXPECT(order == std::vector{1, 2, 3});
 }
 
 ZEST_CASE(reset_makes_waiters_wait_again) {
     event ev(true);
     ev.reset();
-    EXPECT(!ev.is_set());
+    ZEXPECT(!ev.is_set());
     std::vector<int> order;
     auto waiter = [&]() -> task<> {
         co_await ev.wait();
@@ -85,8 +85,8 @@ ZEST_CASE(reset_makes_waiters_wait_again) {
     };
 
     auto [waited, set] = run(waiter(), setter());
-    EXPECT(waited.has_value());
-    EXPECT(order == std::vector{1, 2});
+    ZEXPECT(waited.has_value());
+    ZEXPECT(order == std::vector{1, 2});
 }
 
 ZEST_CASE(cancelled_waiter_leaves_the_queue) {
@@ -105,10 +105,10 @@ ZEST_CASE(cancelled_waiter_leaves_the_queue) {
     };
 
     auto [waited, queue_empty] = run(target, cancel_it());
-    EXPECT(waited.is_cancelled());
-    EXPECT(!reached);
-    ASSERT(queue_empty.has_value());
-    EXPECT(*queue_empty);
+    ZEXPECT(waited.is_cancelled());
+    ZEXPECT(!reached);
+    ZASSERT(queue_empty.has_value());
+    ZEXPECT(*queue_empty);
 }
 
 // A task cancelled while it runs stops at the wait instead of queueing on it.
@@ -124,9 +124,9 @@ ZEST_CASE(wait_under_a_cancelled_task_does_not_queue) {
     target = worker();
 
     auto [result] = run(target);
-    EXPECT(result.is_cancelled());
-    EXPECT(!reached);
-    EXPECT(!ev.has_waiters());
+    ZEXPECT(result.is_cancelled());
+    ZEXPECT(!reached);
+    ZEXPECT(!ev.has_waiters());
 }
 
 // set() wakes a waiter before it runs; one cancelled in between ends
@@ -146,10 +146,10 @@ ZEST_CASE(waiter_cancelled_after_set_ends_cancelled) {
     };
 
     auto [cancelled, other, driver] = run(target, waiter(), set_then_cancel());
-    EXPECT(cancelled.is_cancelled());
-    EXPECT(other.has_value());
-    EXPECT(reached == 1);
-    EXPECT(ev.is_set());
+    ZEXPECT(cancelled.is_cancelled());
+    ZEXPECT(other.has_value());
+    ZEXPECT(reached == 1);
+    ZEXPECT(ev.is_set());
 }
 
 ZEST_CASE(sets_chained_through_waiters_all_resume) {
@@ -173,8 +173,8 @@ ZEST_CASE(sets_chained_through_waiters_all_resume) {
 
     auto [end, middle, start, driver] =
         run(last(), relay(second, third, 2), relay(first, second, 1), trigger());
-    EXPECT(end.has_value());
-    EXPECT(order == std::vector{1, 2, 3});
+    ZEXPECT(end.has_value());
+    ZEXPECT(order == std::vector{1, 2, 3});
 }
 
 // An event may go once it is set: a waiter it woke and that is cancelled
@@ -196,8 +196,8 @@ ZEST_CASE(waiter_cancelled_after_its_event_is_gone_ends_cancelled) {
     };
 
     auto [cancelled, driver] = run(target, set_drop_cancel());
-    EXPECT(cancelled.is_cancelled());
-    EXPECT(!reached);
+    ZEXPECT(cancelled.is_cancelled());
+    ZEXPECT(!reached);
 }
 
 // A set() outside a running loop, once run() has returned, queues the waiter
@@ -213,13 +213,13 @@ ZEST_CASE(set_after_the_loop_returned_resumes_the_waiter_on_its_next_run) {
 
     loop.schedule(target);
     // A task waiting on an event keeps no loop running.
-    EXPECT(loop.run() == 0);
-    ASSERT(!target.done());
+    ZEXPECT(loop.run() == 0);
+    ZASSERT(!target.done());
     ev.set();
-    EXPECT(!reached);
-    EXPECT(loop.run() == 0);
-    EXPECT(reached);
-    EXPECT(target.done());
+    ZEXPECT(!reached);
+    ZEXPECT(loop.run() == 0);
+    ZEXPECT(reached);
+    ZEXPECT(target.done());
 }
 
 // Waiters a set() outside any task wakes resume in the order they were
@@ -246,8 +246,8 @@ ZEST_CASE(waiters_woken_outside_a_task_resume_in_the_order_they_were_woken) {
 
     auto [set, woken, woken_after, sent] =
         run(setter(), waiter(first, 2), waiter(second, 3), send());
-    EXPECT(woken_after.has_value());
-    EXPECT(order == std::vector{1, 2, 3});
+    ZEXPECT(woken_after.has_value());
+    ZEXPECT(order == std::vector{1, 2, 3});
 }
 
 };  // ZEST_SUITE(async_runtime_sync_event)

@@ -65,7 +65,7 @@ ZEST_CASE(string_buffer_reclaimed) {
     json::padded_string padded{std::string_view{input}};
     json::ondemand::Parser parser;
     json::ondemand::Document doc;
-    ASSERT(parser.iterate(padded).get(doc) == json::success);
+    ZASSERT(parser.iterate(padded).get(doc) == json::success);
     auto r = Reader{doc, padded.data(), padded.size()};
     auto& ji = r.src.json_iter();
     auto* buf_before = ji.string_buf_loc();
@@ -74,8 +74,8 @@ ZEST_CASE(string_buffer_reclaimed) {
         SimpleA a;
         return decode_value<default_config<>>(sub, a);
     });
-    EXPECT(!ok);
-    EXPECT(ji.string_buf_loc() == buf_before);
+    ZEXPECT(!ok);
+    ZEXPECT(ji.string_buf_loc() == buf_before);
 }
 
 ZEST_CASE(depth_restored) {
@@ -83,7 +83,7 @@ ZEST_CASE(depth_restored) {
     json::padded_string padded{std::string_view{input}};
     json::ondemand::Parser parser;
     json::ondemand::Document doc;
-    ASSERT(parser.iterate(padded).get(doc) == json::success);
+    ZASSERT(parser.iterate(padded).get(doc) == json::success);
     auto r = Reader{doc, padded.data(), padded.size()};
     auto& ji = r.src.json_iter();
     auto depth_before = ji.depth();
@@ -92,8 +92,8 @@ ZEST_CASE(depth_restored) {
         SimpleA a;
         return decode_value<default_config<>>(sub, a);
     });
-    EXPECT(!ok);
-    EXPECT(ji.depth() == depth_before);
+    ZEXPECT(!ok);
+    ZEXPECT(ji.depth() == depth_before);
 }
 
 ZEST_CASE(token_position_restored) {
@@ -101,7 +101,7 @@ ZEST_CASE(token_position_restored) {
     json::padded_string padded{std::string_view{input}};
     json::ondemand::Parser parser;
     json::ondemand::Document doc;
-    ASSERT(parser.iterate(padded).get(doc) == json::success);
+    ZASSERT(parser.iterate(padded).get(doc) == json::success);
     auto r = Reader{doc, padded.data(), padded.size()};
     auto& ji = r.src.json_iter();
     auto pos_before = ji.position();
@@ -110,8 +110,8 @@ ZEST_CASE(token_position_restored) {
         SimpleA a;
         return decode_value<default_config<>>(sub, a);
     });
-    EXPECT(!ok);
-    EXPECT(ji.position() == pos_before);
+    ZEXPECT(!ok);
+    ZEXPECT(ji.position() == pos_before);
 }
 
 ZEST_CASE(all_state_with_large_string) {
@@ -121,7 +121,7 @@ ZEST_CASE(all_state_with_large_string) {
     json::padded_string padded{std::string_view{input}};
     json::ondemand::Parser parser;
     json::ondemand::Document doc;
-    ASSERT(parser.iterate(padded).get(doc) == json::success);
+    ZASSERT(parser.iterate(padded).get(doc) == json::success);
     auto r = Reader{doc, padded.data(), padded.size()};
     auto& ji = r.src.json_iter();
 
@@ -133,11 +133,11 @@ ZEST_CASE(all_state_with_large_string) {
         HasRequired h;
         return decode_value<default_config<>>(sub, h);
     });
-    EXPECT(!ok);
+    ZEXPECT(!ok);
 
-    EXPECT(ji.position() == pos_before);
-    EXPECT(ji.string_buf_loc() == buf_before);
-    EXPECT(ji.depth() == depth_before);
+    ZEXPECT(ji.position() == pos_before);
+    ZEXPECT(ji.string_buf_loc() == buf_before);
+    ZEXPECT(ji.depth() == depth_before);
 }
 
 ZEST_CASE(success_advances_state) {
@@ -145,7 +145,7 @@ ZEST_CASE(success_advances_state) {
     json::padded_string padded{std::string_view{input}};
     json::ondemand::Parser parser;
     json::ondemand::Document doc;
-    ASSERT(parser.iterate(padded).get(doc) == json::success);
+    ZASSERT(parser.iterate(padded).get(doc) == json::success);
     auto r = Reader{doc, padded.data(), padded.size()};
     auto& ji = r.src.json_iter();
 
@@ -156,9 +156,9 @@ ZEST_CASE(success_advances_state) {
         SimpleB b;
         return decode_value<default_config<>>(sub, b);
     });
-    EXPECT(ok);
-    EXPECT(ji.position() != pos_before);
-    EXPECT(ji.string_buf_loc() != buf_before);
+    ZEXPECT(ok);
+    ZEXPECT(ji.position() != pos_before);
+    ZEXPECT(ji.string_buf_loc() != buf_before);
 }
 
 ZEST_CASE(multiple_failures_no_drift) {
@@ -166,7 +166,7 @@ ZEST_CASE(multiple_failures_no_drift) {
     json::padded_string padded{std::string_view{input}};
     json::ondemand::Parser parser;
     json::ondemand::Document doc;
-    ASSERT(parser.iterate(padded).get(doc) == json::success);
+    ZASSERT(parser.iterate(padded).get(doc) == json::success);
     auto r = Reader{doc, padded.data(), padded.size()};
     auto& ji = r.src.json_iter();
 
@@ -179,12 +179,12 @@ ZEST_CASE(multiple_failures_no_drift) {
             SimpleA a;
             return decode_value<default_config<>>(sub, a);
         });
-        EXPECT(!ok);
+        ZEXPECT(!ok);
     }
 
-    EXPECT(ji.position() == pos_original);
-    EXPECT(ji.string_buf_loc() == buf_original);
-    EXPECT(ji.depth() == depth_original);
+    ZEXPECT(ji.position() == pos_original);
+    ZEXPECT(ji.string_buf_loc() == buf_original);
+    ZEXPECT(ji.depth() == depth_original);
 }
 
 ZEST_CASE(variant_fallback_reclaims) {
@@ -195,9 +195,9 @@ ZEST_CASE(variant_fallback_reclaims) {
 
     NestedVariant out;
     auto result = from_string<>(input, out);
-    ASSERT(result);
-    ASSERT(out.index() == 1U);
-    EXPECT(std::get<Shallow>(out).a.size() == 8192U);
+    ZASSERT(result);
+    ZASSERT(out.index() == 1U);
+    ZEXPECT(std::get<Shallow>(out).a.size() == 8192U);
 }
 
 ZEST_CASE(variant_fallback_reclaims_256kb) {
@@ -206,9 +206,9 @@ ZEST_CASE(variant_fallback_reclaims_256kb) {
 
     NestedVariant out;
     auto result = from_string<>(input, out);
-    ASSERT(result);
-    ASSERT(out.index() == 1U);
-    EXPECT(std::get<Shallow>(out).a.size() == 256U * 1024U);
+    ZASSERT(result);
+    ZASSERT(out.index() == 1U);
+    ZEXPECT(std::get<Shallow>(out).a.size() == 256U * 1024U);
 }
 
 ZEST_CASE(variant_first_alternative_succeeds) {
@@ -220,12 +220,12 @@ ZEST_CASE(variant_first_alternative_succeeds) {
 
     NestedVariant out;
     auto result = from_string<>(input, out);
-    ASSERT(result);
-    ASSERT(out.index() == 0U);
+    ZASSERT(result);
+    ZASSERT(out.index() == 0U);
     auto& n = std::get<Nested>(out);
-    EXPECT(n.a.size() == 4096U);
-    EXPECT(n.b.size() == 4096U);
-    EXPECT(n.c.size() == 4096U);
+    ZEXPECT(n.a.size() == 4096U);
+    ZEXPECT(n.b.size() == 4096U);
+    ZEXPECT(n.c.size() == 4096U);
 }
 
 ZEST_CASE(value_level_variant) {
@@ -233,10 +233,10 @@ ZEST_CASE(value_level_variant) {
     auto input = R"({"items":[{"value":"world"}]})";
     Wrapper w;
     auto result = from_string<>(input, w);
-    ASSERT(result);
-    ASSERT(w.items.size() == 1U);
-    ASSERT(w.items[0].index() == 1U);
-    EXPECT(std::get<SimpleB>(w.items[0]).value == "world");
+    ZASSERT(result);
+    ZASSERT(w.items.size() == 1U);
+    ZASSERT(w.items[0].index() == 1U);
+    ZEXPECT(std::get<SimpleB>(w.items[0]).value == "world");
 }
 
 };  // ZEST_SUITE(codec_json_decode_checkpoint)

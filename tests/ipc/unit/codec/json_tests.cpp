@@ -34,11 +34,11 @@ ZEST_CASE(encode_error_response_writes_the_data) {
         {"count", 3   },
     };
     auto encoded = codec.encode_error_response(9, Error(ErrorCode::RequestFailed, "fail", data));
-    ASSERT(encoded.has_value());
+    ZASSERT(encoded.has_value());
     auto message = test::JSONAdapter::read(*encoded);
-    ASSERT(message.has_value());
-    ASSERT(message->error.data.has_value());
-    EXPECT(*message->error.data == data);
+    ZASSERT(message.has_value());
+    ZASSERT(message->error.data.has_value());
+    ZEXPECT(*message->error.data == data);
 }
 
 // Empty params, those of a method that takes none, leave the member out.
@@ -46,18 +46,18 @@ ZEST_CASE(encode_without_params_leaves_them_out) {
     JSONCodec codec;
     auto request = codec.encode_request(1, "shutdown", "");
     auto notification = codec.encode_notification("exit", "");
-    ASSERT(request.has_value());
-    ASSERT(notification.has_value());
-    EXPECT(*request == R"({"jsonrpc":"2.0","id":1,"method":"shutdown"})");
-    EXPECT(*notification == R"({"jsonrpc":"2.0","method":"exit"})");
+    ZASSERT(request.has_value());
+    ZASSERT(notification.has_value());
+    ZEXPECT(*request == R"({"jsonrpc":"2.0","id":1,"method":"shutdown"})");
+    ZEXPECT(*notification == R"({"jsonrpc":"2.0","method":"exit"})");
 }
 
 // JSON-RPC lets an error without data leave the member out.
 ZEST_CASE(encode_error_response_without_data_leaves_it_out) {
     JSONCodec codec;
     auto encoded = codec.encode_error_response(9, Error(ErrorCode::RequestFailed, "fail"));
-    ASSERT(encoded.has_value());
-    EXPECT(*encoded == R"({"jsonrpc":"2.0","id":9,"error":{"code":-32000,"message":"fail"}})");
+    ZASSERT(encoded.has_value());
+    ZEXPECT(*encoded == R"({"jsonrpc":"2.0","id":9,"error":{"code":-32000,"message":"fail"}})");
 }
 
 // Data that is null is data all the same.
@@ -66,9 +66,9 @@ ZEST_CASE(encode_error_response_writes_null_data) {
     auto encoded = codec.encode_error_response(
         9,
         Error(ErrorCode::RequestFailed, "fail", codec::dyn::Value(nullptr)));
-    ASSERT(encoded.has_value());
-    EXPECT(*encoded ==
-           R"({"jsonrpc":"2.0","id":9,"error":{"code":-32000,"message":"fail","data":null}})");
+    ZASSERT(encoded.has_value());
+    ZEXPECT(*encoded ==
+            R"({"jsonrpc":"2.0","id":9,"error":{"code":-32000,"message":"fail","data":null}})");
 }
 
 ZEST_CASE(parse_message_reads_error_data) {
@@ -76,11 +76,11 @@ ZEST_CASE(parse_message_reads_error_data) {
     auto parsed = codec.parse_message(
         R"({"jsonrpc":"2.0","id":9,"error":{"code":-32000,"message":"fail","data":{"retry":true,"count":3}}})");
     const auto* response = std::get_if<IncomingErrorResponse>(&parsed);
-    ASSERT(response != nullptr);
-    ASSERT(response->error.data.has_value());
-    EXPECT(*response->error.data == codec::dyn::Value{
-                                        {"retry", true},
-                                        {"count", 3   },
+    ZASSERT(response != nullptr);
+    ZASSERT(response->error.data.has_value());
+    ZEXPECT(*response->error.data == codec::dyn::Value{
+                                         {"retry", true},
+                                         {"count", 3   },
     });
 }
 
@@ -88,9 +88,9 @@ ZEST_CASE(request_without_params_reads_empty_params) {
     JSONCodec codec;
     auto parsed = codec.parse_message(R"({"jsonrpc":"2.0","id":1,"method":"test/noparams"})");
     const auto* request = std::get_if<IncomingRequest>(&parsed);
-    ASSERT(request != nullptr);
-    EXPECT(request->method == "test/noparams");
-    EXPECT(request->params.empty());
+    ZASSERT(request != nullptr);
+    ZEXPECT(request->method == "test/noparams");
+    ZEXPECT(request->params.empty());
 }
 
 // shutdown and exit take no params; clients send them as null, or not at all.
@@ -99,17 +99,17 @@ ZEST_CASE(null_params_read_as_no_params) {
     auto parsed =
         codec.parse_message(R"({"jsonrpc":"2.0","id":1,"method":"shutdown","params":null})");
     const auto* request = std::get_if<IncomingRequest>(&parsed);
-    ASSERT(request != nullptr);
-    EXPECT(request->params.empty());
-    EXPECT(codec.deserialize_value<test::EmptyParams>(request->params).has_value());
+    ZASSERT(request != nullptr);
+    ZEXPECT(request->params.empty());
+    ZEXPECT(codec.deserialize_value<test::EmptyParams>(request->params).has_value());
 }
 
 ZEST_CASE(null_result_is_a_result) {
     JSONCodec codec;
     auto parsed = codec.parse_message(R"({"jsonrpc":"2.0","id":3,"result":null})");
     const auto* response = std::get_if<IncomingResponse>(&parsed);
-    ASSERT(response != nullptr);
-    EXPECT(response->result == "null");
+    ZASSERT(response != nullptr);
+    ZEXPECT(response->result == "null");
 }
 
 ZEST_CASE(response_with_both_result_and_error_is_an_invalid_response) {
@@ -117,44 +117,44 @@ ZEST_CASE(response_with_both_result_and_error_is_an_invalid_response) {
     auto parsed = codec.parse_message(
         R"({"jsonrpc":"2.0","id":5,"result":{"x":1},"error":{"code":-1,"message":"oops"}})");
     const auto* response = std::get_if<IncomingErrorResponse>(&parsed);
-    ASSERT(response != nullptr);
-    EXPECT(response->id == protocol::RequestID(5));
-    EXPECT(code_of(response->error) == ErrorCode::InvalidRequest);
+    ZASSERT(response != nullptr);
+    ZEXPECT(response->id == protocol::RequestID(5));
+    ZEXPECT(code_of(response->error) == ErrorCode::InvalidRequest);
 }
 
 ZEST_CASE(response_with_neither_result_nor_error_is_an_invalid_response) {
     JSONCodec codec;
     auto parsed = codec.parse_message(R"({"jsonrpc":"2.0","id":5})");
     const auto* response = std::get_if<IncomingErrorResponse>(&parsed);
-    ASSERT(response != nullptr);
-    EXPECT(response->id == protocol::RequestID(5));
-    EXPECT(code_of(response->error) == ErrorCode::InvalidRequest);
+    ZASSERT(response != nullptr);
+    ZEXPECT(response->id == protocol::RequestID(5));
+    ZEXPECT(code_of(response->error) == ErrorCode::InvalidRequest);
 }
 
 ZEST_CASE(object_without_method_or_id_is_an_invalid_request) {
     JSONCodec codec;
     auto parsed = codec.parse_message("{}");
     const auto* failure = std::get_if<IncomingParseError>(&parsed);
-    ASSERT(failure != nullptr);
-    EXPECT(!failure->id.has_value());
-    EXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
+    ZASSERT(failure != nullptr);
+    ZEXPECT(!failure->id.has_value());
+    ZEXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
 }
 
 ZEST_CASE(request_with_a_null_id_is_an_invalid_request) {
     JSONCodec codec;
     auto parsed = codec.parse_message(R"({"jsonrpc":"2.0","id":null,"method":"test/add"})");
     const auto* failure = std::get_if<IncomingParseError>(&parsed);
-    ASSERT(failure != nullptr);
-    EXPECT(!failure->id.has_value());
-    EXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
+    ZASSERT(failure != nullptr);
+    ZEXPECT(!failure->id.has_value());
+    ZEXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
 }
 
 ZEST_CASE(result_with_a_null_id_answers_no_request) {
     JSONCodec codec;
     auto parsed = codec.parse_message(R"({"jsonrpc":"2.0","id":null,"result":1})");
     const auto* response = std::get_if<IncomingErrorResponse>(&parsed);
-    ASSERT(response != nullptr);
-    EXPECT(!response->id.has_value());
+    ZASSERT(response != nullptr);
+    ZEXPECT(!response->id.has_value());
 }
 
 ZEST_CASE(json_that_is_no_message_is_an_invalid_request) {
@@ -169,9 +169,9 @@ ZEST_CASE(json_that_is_no_message_is_an_invalid_request) {
         ZEST_CONTEXT("payload: {}", payload);
         auto parsed = codec.parse_message(payload);
         const auto* failure = std::get_if<IncomingParseError>(&parsed);
-        ASSERT(failure != nullptr);
-        EXPECT(!failure->id.has_value());
-        EXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
+        ZASSERT(failure != nullptr);
+        ZEXPECT(!failure->id.has_value());
+        ZEXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
     }
 }
 
@@ -187,9 +187,9 @@ ZEST_CASE(json_with_numbers_past_64_bits_is_an_invalid_request) {
         ZEST_CONTEXT("payload: {}", payload);
         auto parsed = codec.parse_message(payload);
         const auto* failure = std::get_if<IncomingParseError>(&parsed);
-        ASSERT(failure != nullptr);
-        EXPECT(!failure->id.has_value());
-        EXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
+        ZASSERT(failure != nullptr);
+        ZEXPECT(!failure->id.has_value());
+        ZEXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
     }
 }
 
@@ -218,9 +218,9 @@ ZEST_CASE(text_that_is_no_json_is_a_parse_error) {
         ZEST_CONTEXT("payload: {}", payload);
         auto parsed = codec.parse_message(payload);
         const auto* failure = std::get_if<IncomingParseError>(&parsed);
-        ASSERT(failure != nullptr);
-        EXPECT(!failure->id.has_value());
-        EXPECT(code_of(failure->error) == ErrorCode::ParseError);
+        ZASSERT(failure != nullptr);
+        ZEXPECT(!failure->id.has_value());
+        ZEXPECT(code_of(failure->error) == ErrorCode::ParseError);
     }
 }
 
@@ -228,9 +228,9 @@ ZEST_CASE(request_with_a_malformed_member_keeps_its_id) {
     JSONCodec codec;
     auto parsed = codec.parse_message(R"({"jsonrpc":"2.0","id":5,"method":7})");
     const auto* failure = std::get_if<IncomingParseError>(&parsed);
-    ASSERT(failure != nullptr);
-    EXPECT(failure->id == protocol::RequestID(5));
-    EXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
+    ZASSERT(failure != nullptr);
+    ZEXPECT(failure->id == protocol::RequestID(5));
+    ZEXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
 }
 
 ZEST_CASE(response_with_a_malformed_error_keeps_its_id) {
@@ -242,9 +242,9 @@ ZEST_CASE(response_with_a_malformed_error_keeps_its_id) {
         ZEST_CONTEXT("payload: {}", payload);
         auto parsed = codec.parse_message(payload);
         const auto* response = std::get_if<IncomingErrorResponse>(&parsed);
-        ASSERT(response != nullptr);
-        EXPECT(response->id == protocol::RequestID(1));
-        EXPECT(code_of(response->error) == ErrorCode::InvalidRequest);
+        ZASSERT(response != nullptr);
+        ZEXPECT(response->id == protocol::RequestID(1));
+        ZEXPECT(code_of(response->error) == ErrorCode::InvalidRequest);
     }
 }
 
@@ -259,10 +259,10 @@ ZEST_CASE(request_without_jsonrpc_2_0_is_an_invalid_request) {
         ZEST_CONTEXT("payload: {}", payload);
         auto parsed = codec.parse_message(payload);
         const auto* failure = std::get_if<IncomingParseError>(&parsed);
-        ASSERT(failure != nullptr);
-        EXPECT(!failure->notification);
-        EXPECT(failure->id == protocol::RequestID(5));
-        EXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
+        ZASSERT(failure != nullptr);
+        ZEXPECT(!failure->notification);
+        ZEXPECT(failure->id == protocol::RequestID(5));
+        ZEXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
     }
 }
 
@@ -276,9 +276,9 @@ ZEST_CASE(notification_without_jsonrpc_2_0_is_never_answered) {
         ZEST_CONTEXT("payload: {}", payload);
         auto parsed = codec.parse_message(payload);
         const auto* failure = std::get_if<IncomingParseError>(&parsed);
-        ASSERT(failure != nullptr);
-        EXPECT(failure->notification);
-        EXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
+        ZASSERT(failure != nullptr);
+        ZEXPECT(failure->notification);
+        ZEXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
     }
 }
 
@@ -286,9 +286,9 @@ ZEST_CASE(response_without_jsonrpc_2_0_fails_its_request) {
     JSONCodec codec;
     auto parsed = codec.parse_message(R"({"id":3,"result":7})");
     const auto* response = std::get_if<IncomingErrorResponse>(&parsed);
-    ASSERT(response != nullptr);
-    EXPECT(response->id == protocol::RequestID(3));
-    EXPECT(code_of(response->error) == ErrorCode::InvalidRequest);
+    ZASSERT(response != nullptr);
+    ZEXPECT(response->id == protocol::RequestID(3));
+    ZEXPECT(code_of(response->error) == ErrorCode::InvalidRequest);
 }
 
 // JSON-RPC requires an error object's code and message.
@@ -301,9 +301,9 @@ ZEST_CASE(error_without_its_code_or_message_fails_its_request) {
         ZEST_CONTEXT("payload: {}", payload);
         auto parsed = codec.parse_message(payload);
         const auto* response = std::get_if<IncomingErrorResponse>(&parsed);
-        ASSERT(response != nullptr);
-        EXPECT(response->id == protocol::RequestID(1));
-        EXPECT(code_of(response->error) == ErrorCode::InvalidRequest);
+        ZASSERT(response != nullptr);
+        ZEXPECT(response->id == protocol::RequestID(1));
+        ZEXPECT(code_of(response->error) == ErrorCode::InvalidRequest);
     }
 }
 
@@ -316,9 +316,9 @@ ZEST_CASE(deeply_nested_array_is_an_invalid_request) {
         ZEST_CONTEXT("depth: {}", depth);
         auto parsed = codec.parse_message(std::string(depth, '[') + std::string(depth, ']'));
         const auto* failure = std::get_if<IncomingParseError>(&parsed);
-        ASSERT(failure != nullptr);
-        EXPECT(!failure->id.has_value());
-        EXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
+        ZASSERT(failure != nullptr);
+        ZEXPECT(!failure->id.has_value());
+        ZEXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
     }
 }
 
@@ -328,9 +328,9 @@ ZEST_CASE(deeply_nested_notification_is_never_answered) {
     auto parsed = codec.parse_message(
         std::format(R"({{"jsonrpc":"2.0","method":"test/note","params":{}}})", deep));
     const auto* failure = std::get_if<IncomingParseError>(&parsed);
-    ASSERT(failure != nullptr);
-    EXPECT(failure->notification);
-    EXPECT(!failure->id.has_value());
+    ZASSERT(failure != nullptr);
+    ZEXPECT(failure->notification);
+    ZEXPECT(!failure->id.has_value());
 }
 
 ZEST_CASE(request_with_deeply_nested_params_is_invalid_under_its_id) {
@@ -339,9 +339,9 @@ ZEST_CASE(request_with_deeply_nested_params_is_invalid_under_its_id) {
     auto parsed = codec.parse_message(
         std::format(R"({{"jsonrpc":"2.0","id":7,"method":"test/echo","params":{}}})", deep));
     const auto* failure = std::get_if<IncomingParseError>(&parsed);
-    ASSERT(failure != nullptr);
-    EXPECT(failure->id == protocol::RequestID(7));
-    EXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
+    ZASSERT(failure != nullptr);
+    ZEXPECT(failure->id == protocol::RequestID(7));
+    ZEXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
 }
 
 ZEST_CASE(response_with_deeply_nested_error_data_fails_its_request) {
@@ -351,36 +351,36 @@ ZEST_CASE(response_with_deeply_nested_error_data_fails_its_request) {
         std::format(R"({{"jsonrpc":"2.0","id":3,"error":{{"code":1,"message":"m","data":{}}}}})",
                     deep));
     const auto* response = std::get_if<IncomingErrorResponse>(&parsed);
-    ASSERT(response != nullptr);
-    EXPECT(response->id == protocol::RequestID(3));
-    EXPECT(code_of(response->error) == ErrorCode::InvalidRequest);
+    ZASSERT(response != nullptr);
+    ZEXPECT(response->id == protocol::RequestID(3));
+    ZEXPECT(code_of(response->error) == ErrorCode::InvalidRequest);
 }
 
 // A key with escapes names the member it spells.
 ZEST_CASE(escaped_member_names_are_read) {
     JSONCodec codec;
     auto head = codec.peek(R"({"jsonrpc":"2.0","\u0069d":3,"m\u0065thod":"test/echo","params":[)");
-    EXPECT(head.kind == MessageHead::Kind::Request);
-    EXPECT(head.id == protocol::RequestID(3));
+    ZEXPECT(head.kind == MessageHead::Kind::Request);
+    ZEXPECT(head.id == protocol::RequestID(3));
 
     auto deep = std::string(50000, '[') + std::string(50000, ']');
     auto parsed = codec.parse_message(
         std::format(R"({{"jsonrpc":"2.0","\u0069d":7,"m\u0065thod":"test/echo","params":{}}})",
                     deep));
     const auto* failure = std::get_if<IncomingParseError>(&parsed);
-    ASSERT(failure != nullptr);
-    EXPECT(!failure->notification);
-    EXPECT(failure->id == protocol::RequestID(7));
+    ZASSERT(failure != nullptr);
+    ZEXPECT(!failure->notification);
+    ZEXPECT(failure->id == protocol::RequestID(7));
 }
 
 // Which request a response answers is unknown until its id is read.
 ZEST_CASE(peek_of_a_response_whose_id_is_past_the_prefix_knows_no_kind) {
     JSONCodec codec;
     auto head = codec.peek(R"({"jsonrpc":"2.0","result":["a very long)");
-    EXPECT(head.kind == MessageHead::Kind::Unknown);
+    ZEXPECT(head.kind == MessageHead::Kind::Unknown);
     auto null_id = codec.peek(R"({"jsonrpc":"2.0","id":null,"error":{"code":1,"message":"a very)");
-    EXPECT(null_id.kind == MessageHead::Kind::Response);
-    EXPECT(!null_id.id.has_value());
+    ZEXPECT(null_id.kind == MessageHead::Kind::Response);
+    ZEXPECT(!null_id.id.has_value());
 }
 
 // JSON-RPC's invalid request objects: an id that is no integer or string
@@ -393,10 +393,10 @@ ZEST_CASE(malformed_request_objects_are_answered) {
         ZEST_CONTEXT("head: {}", head);
         auto parsed = codec.parse_message(payload);
         const auto* failure = std::get_if<IncomingParseError>(&parsed);
-        ASSERT(failure != nullptr);
-        EXPECT(!failure->notification);
-        EXPECT(!failure->id.has_value());
-        EXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
+        ZASSERT(failure != nullptr);
+        ZEXPECT(!failure->notification);
+        ZEXPECT(!failure->id.has_value());
+        ZEXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
     }
 }
 
@@ -406,9 +406,9 @@ ZEST_CASE(invalid_member_the_envelope_skips_is_a_parse_error) {
     JSONCodec codec;
     auto parsed = codec.parse_message(R"({"jsonrpc":"2.0","id":1,"method":"x","extra":tru})");
     const auto* failure = std::get_if<IncomingParseError>(&parsed);
-    ASSERT(failure != nullptr);
-    EXPECT(!failure->id.has_value());
-    EXPECT(code_of(failure->error) == ErrorCode::ParseError);
+    ZASSERT(failure != nullptr);
+    ZEXPECT(!failure->id.has_value());
+    ZEXPECT(code_of(failure->error) == ErrorCode::ParseError);
 }
 
 // Brackets inside a string are text, not nesting.
@@ -418,7 +418,7 @@ ZEST_CASE(brackets_inside_strings_do_not_nest) {
         std::format(R"({{"jsonrpc":"2.0","id":1,"method":"test/echo","params":["{}\"{}"]}})",
                     std::string(1000, '['),
                     std::string(1000, '{')));
-    EXPECT(std::holds_alternative<IncomingRequest>(parsed));
+    ZEXPECT(std::holds_alternative<IncomingRequest>(parsed));
 }
 
 };  // ZEST_SUITE(ipc_codec_json)

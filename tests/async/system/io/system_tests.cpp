@@ -18,122 +18,122 @@ constexpr int missing_pid = 999'999'999;
 ZEST_SUITE(async_io_system, zest::LoopFixture) {
 
 ZEST_CASE(pid_is_this_process) {
-    EXPECT(sys::pid() > 0);
+    ZEXPECT(sys::pid() > 0);
     auto self = sys::process();
-    ASSERT(self.has_value());
-    EXPECT(self->pid == sys::pid());
+    ZASSERT(self.has_value());
+    ZEXPECT(self->pid == sys::pid());
 }
 
 ZEST_CASE(memory_figures_are_consistent) {
     auto info = sys::memory();
-    EXPECT(info.total > 0U);
-    EXPECT(info.free <= info.total);
-    EXPECT(info.available <= info.total);
+    ZEXPECT(info.total > 0U);
+    ZEXPECT(info.free <= info.total);
+    ZEXPECT(info.available <= info.total);
 
     auto rss = sys::resident_memory();
-    ASSERT(rss.has_value());
-    EXPECT(*rss > 0U);
+    ZASSERT(rss.has_value());
+    ZEXPECT(*rss > 0U);
 }
 
 ZEST_CASE(process_describes_this_process) {
     auto self = sys::process();
-    ASSERT(self.has_value());
-    EXPECT(self->rss > 0U);
-    EXPECT(self->vsize > 0U);
-    EXPECT(self->max_rss > 0U);
+    ZASSERT(self.has_value());
+    ZEXPECT(self->rss > 0U);
+    ZEXPECT(self->vsize > 0U);
+    ZEXPECT(self->max_rss > 0U);
 
     auto by_pid = sys::process(sys::pid());
-    ASSERT(by_pid.has_value());
-    EXPECT(by_pid->pid == sys::pid());
-    EXPECT(by_pid->rss > 0U);
+    ZASSERT(by_pid.has_value());
+    ZEXPECT(by_pid->pid == sys::pid());
+    ZEXPECT(by_pid->rss > 0U);
 }
 
 ZEST_CASE(process_describes_a_child) {
     auto spawned = process::spawn(test::stdin_reader(), loop);
-    ASSERT(spawned.has_value());
+    ZASSERT(spawned.has_value());
     auto pid = spawned->proc.pid();
 
     auto child = sys::process(pid);
     // Closing its stdin ends the child.
     spawned->stdin_pipe = pipe{};
     auto [status] = run(spawned->proc.wait());
-    EXPECT(test::exit_status_of(status) == 0);
-    ASSERT(child.has_value());
-    EXPECT(child->pid == pid);
-    EXPECT(child->rss > 0U);
+    ZEXPECT(test::exit_status_of(status) == 0);
+    ZASSERT(child.has_value());
+    ZEXPECT(child->pid == pid);
+    ZEXPECT(child->rss > 0U);
 }
 
 ZEST_CASE(process_of_a_missing_pid_fails) {
     auto stat = sys::process(missing_pid);
-    ASSERT(stat.has_error());
-    EXPECT(stat.error() == error::no_such_process);
+    ZASSERT(stat.has_error());
+    ZEXPECT(stat.error() == error::no_such_process);
 }
 
 ZEST_CASE(cpu_cores_are_listed) {
     auto cores = sys::cpu_cores();
-    ASSERT(cores.has_value());
-    EXPECT(!cores->empty());
-    EXPECT(sys::parallelism() >= 1U);
+    ZASSERT(cores.has_value());
+    ZEXPECT(!cores->empty());
+    ZEXPECT(sys::parallelism() >= 1U);
     for(std::size_t i = 0; i < cores->size(); ++i) {
         ZEST_CONTEXT("core {}", i);
-        EXPECT(!(*cores)[i].model.empty());
+        ZEXPECT(!(*cores)[i].model.empty());
         // Virtual machines may report no clock speed.
-        EXPECT((*cores)[i].speed_mhz >= 0);
+        ZEXPECT((*cores)[i].speed_mhz >= 0);
     }
 }
 
 ZEST_CASE(uname_names_the_system) {
     auto name = sys::uname();
-    ASSERT(name.has_value());
-    EXPECT(!name->sysname.empty());
-    EXPECT(!name->release.empty());
-    EXPECT(!name->machine.empty());
+    ZASSERT(name.has_value());
+    ZEXPECT(!name->sysname.empty());
+    ZEXPECT(!name->release.empty());
+    ZEXPECT(!name->machine.empty());
 }
 
 ZEST_CASE(hostname_and_uptime_are_reported) {
     auto host = sys::hostname();
-    ASSERT(host.has_value());
-    EXPECT(!host->empty());
+    ZASSERT(host.has_value());
+    ZEXPECT(!host->empty());
 
     auto up = sys::uptime();
-    ASSERT(up.has_value());
-    EXPECT(up->count() > 0);
+    ZASSERT(up.has_value());
+    ZEXPECT(up->count() > 0);
 }
 
 ZEST_CASE(directories_are_reported) {
     auto home = sys::home_directory();
-    ASSERT(home.has_value());
-    EXPECT(!home->empty());
+    ZASSERT(home.has_value());
+    ZEXPECT(!home->empty());
 
     auto tmp = sys::temp_directory();
-    ASSERT(tmp.has_value());
-    EXPECT(std::filesystem::is_directory(*tmp));
+    ZASSERT(tmp.has_value());
+    ZEXPECT(std::filesystem::is_directory(*tmp));
 }
 
 // CMake builds system_tests, Bazel a binary per module: async_system_tests.
 ZEST_CASE(executable_path_names_this_program) {
     auto path = sys::executable_path();
-    ASSERT(path.has_value());
-    EXPECT(std::filesystem::path(*path).stem().string().ends_with("system_tests"));
+    ZASSERT(path.has_value());
+    ZEXPECT(std::filesystem::path(*path).stem().string().ends_with("system_tests"));
 }
 
 // Setting the priority it already has leaves the process as it was.
 ZEST_CASE(priority_is_read_and_set) {
     auto original = sys::priority();
-    ASSERT(original.has_value());
-    EXPECT(!sys::set_priority(*original));
+    ZASSERT(original.has_value());
+    ZEXPECT(!sys::set_priority(*original));
     auto again = sys::priority();
-    ASSERT(again.has_value());
-    EXPECT(*again == *original);
+    ZASSERT(again.has_value());
+    ZEXPECT(*again == *original);
 }
 
 // Windows answers a pid it cannot open with ERROR_INVALID_PARAMETER.
 ZEST_CASE(priority_of_a_missing_pid_fails) {
     // Windows reports the pid OpenProcess rejects as ESRCH too.
     auto read = sys::priority(missing_pid);
-    ASSERT(read.has_error());
-    EXPECT(read.error() == error::no_such_process);
-    EXPECT(sys::set_priority(0, missing_pid) == error::no_such_process);
+    ZASSERT(read.has_error());
+    ZEXPECT(read.error() == error::no_such_process);
+    ZEXPECT(sys::set_priority(0, missing_pid) == error::no_such_process);
 }
 
 // Lowering a child's priority needs no privilege; Windows maps the value to
@@ -141,7 +141,7 @@ ZEST_CASE(priority_of_a_missing_pid_fails) {
 #ifndef _WIN32
 ZEST_CASE(priority_of_a_child_is_set) {
     auto spawned = process::spawn(test::stdin_reader(), loop);
-    ASSERT(spawned.has_value());
+    ZASSERT(spawned.has_value());
     auto pid = spawned->proc.pid();
 
     auto set = sys::set_priority(10, pid);
@@ -149,10 +149,10 @@ ZEST_CASE(priority_of_a_child_is_set) {
     // Closing its stdin ends the child.
     spawned->stdin_pipe = pipe{};
     auto [status] = run(spawned->proc.wait());
-    EXPECT(test::exit_status_of(status) == 0);
-    EXPECT(!set);
-    ASSERT(read.has_value());
-    EXPECT(*read == 10);
+    ZEXPECT(test::exit_status_of(status) == 0);
+    ZEXPECT(!set);
+    ZASSERT(read.has_value());
+    ZEXPECT(*read == 10);
 }
 #endif
 

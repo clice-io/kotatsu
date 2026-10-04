@@ -71,8 +71,8 @@ ZEST_CASE(copies_on_two_threads_keep_a_jar_each) {
 
     for(std::size_t i = 0; i < seen.size(); ++i) {
         ZEST_CONTEXT("thread {}", i);
-        EXPECT(seen[i].done == 2U * rounds);
-        EXPECT(seen[i].cookie == std::format("t{}=v", i));
+        ZEXPECT(seen[i].done == 2U * rounds);
+        ZEXPECT(seen[i].cookie == std::format("t{}=v", i));
     }
 }
 

@@ -48,42 +48,42 @@ ZEST_SUITE(support_expected_try) {
 ZEST_CASE(try_goes_on_after_success) {
     int reached = 0;
     auto result = checked_twice(true, true, reached);
-    ASSERT(result.has_value());
-    EXPECT(*result == 2);
-    EXPECT(reached == 2);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 2);
+    ZEXPECT(reached == 2);
 }
 
 ZEST_CASE(try_of_an_error_fails) {
     int reached = 0;
     auto result = checked_twice(true, false, reached);
-    ASSERT(!result.has_value());
-    EXPECT(result.error() == "check failed");
-    EXPECT(reached == 1);
+    ZASSERT(!result.has_value());
+    ZEXPECT(result.error() == "check failed");
+    ZEXPECT(reached == 1);
 
     reached = 0;
-    EXPECT(!checked_twice(false, true, reached).has_value());
-    EXPECT(reached == 0);
+    ZEXPECT(!checked_twice(false, true, reached).has_value());
+    ZEXPECT(reached == 0);
 }
 
 ZEST_CASE(try_v_declares_the_value) {
     auto result = sum(2, 3);
-    ASSERT(result.has_value());
-    EXPECT(*result == 5);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 5);
 }
 
 ZEST_CASE(try_v_of_an_error_fails) {
     auto result = sum(2, -1);
-    ASSERT(!result.has_value());
-    EXPECT(result.error() == "negative");
+    ZASSERT(!result.has_value());
+    ZEXPECT(result.error() == "negative");
 }
 
 ZEST_CASE(try_v_assigns_an_existing_variable) {
     auto result = into_existing(7);
-    ASSERT(result.has_value());
-    EXPECT(*result == 7);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 7);
     auto failed = into_existing(-7);
-    ASSERT(!failed.has_value());
-    EXPECT(failed.error() == "negative");
+    ZASSERT(!failed.has_value());
+    ZEXPECT(failed.error() == "negative");
 }
 
 };  // ZEST_SUITE(support_expected_try)

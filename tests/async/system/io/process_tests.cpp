@@ -88,18 +88,18 @@ ZEST_SUITE(async_io_process, zest::LoopFixture) {
 ZEST_CASE(wait_reports_the_exit_code) {
     auto success = process::spawn(shell("exit 0"), loop);
     auto failure = process::spawn(shell("exit 3"), loop);
-    ASSERT(success.has_value());
-    ASSERT(failure.has_value());
-    EXPECT(success->proc.pid() > 0);
+    ZASSERT(success.has_value());
+    ZASSERT(failure.has_value());
+    ZEXPECT(success->proc.pid() > 0);
 
     auto [succeeded, failed] = run(success->proc.wait(), failure->proc.wait());
-    EXPECT(test::exit_status_of(succeeded) == 0);
-    ASSERT(succeeded.has_value());
-    EXPECT(succeeded->term_signal == 0);
-    EXPECT(succeeded->success());
-    EXPECT(test::exit_status_of(failed) == 3);
-    ASSERT(failed.has_value());
-    EXPECT(!failed->success());
+    ZEXPECT(test::exit_status_of(succeeded) == 0);
+    ZASSERT(succeeded.has_value());
+    ZEXPECT(succeeded->term_signal == 0);
+    ZEXPECT(succeeded->success());
+    ZEXPECT(test::exit_status_of(failed) == 3);
+    ZASSERT(failed.has_value());
+    ZEXPECT(!failed->success());
 }
 
 // With inherited stdio the child shares the test's own streams.
@@ -109,10 +109,10 @@ ZEST_CASE(spawn_with_inherited_stdio_runs) {
                     process::stdio::inherit(),
                     process::stdio::inherit()};
     auto spawned = process::spawn(opts, loop);
-    ASSERT(spawned.has_value());
+    ZASSERT(spawned.has_value());
 
     auto [status] = run(spawned->proc.wait());
-    EXPECT(test::exit_status_of(status) == 0);
+    ZEXPECT(test::exit_status_of(status) == 0);
 }
 
 ZEST_CASE(spawn_of_a_missing_file_fails) {
@@ -120,20 +120,20 @@ ZEST_CASE(spawn_of_a_missing_file_fails) {
     opts.file = by_platform("/nonexistent/kotatsu-nope", R"(Z:\nonexistent\kotatsu-nope.exe)");
 
     auto spawned = process::spawn(opts, loop);
-    ASSERT(spawned.has_error());
-    EXPECT(spawned.error() == error::no_such_file_or_directory);
+    ZASSERT(spawned.has_error());
+    ZEXPECT(spawned.error() == error::no_such_file_or_directory);
 }
 
 ZEST_CASE(stdout_pipe_carries_the_output) {
     auto opts = shell(by_platform("printf kotatsu-stdout", "echo kotatsu-stdout"));
     opts.streams[1] = process::stdio::pipe(false, true);
     auto spawned = process::spawn(opts, loop);
-    ASSERT(spawned.has_value());
+    ZASSERT(spawned.has_value());
 
     auto [output, status] = run(spawned->stdout_pipe.read(), spawned->proc.wait());
-    ASSERT(output.has_value());
-    EXPECT(trim_newlines(*output) == "kotatsu-stdout");
-    EXPECT(test::exit_status_of(status) == 0);
+    ZASSERT(output.has_value());
+    ZEXPECT(trim_newlines(*output) == "kotatsu-stdout");
+    ZEXPECT(test::exit_status_of(status) == 0);
 }
 
 ZEST_CASE(stderr_pipe_carries_the_errors) {
@@ -141,22 +141,22 @@ ZEST_CASE(stderr_pipe_carries_the_errors) {
     opts.streams[1] = process::stdio::pipe(false, true);
     opts.streams[2] = process::stdio::pipe(false, true);
     auto spawned = process::spawn(opts, loop);
-    ASSERT(spawned.has_value());
+    ZASSERT(spawned.has_value());
 
     auto [output, errors, status] =
         run(spawned->stdout_pipe.read(), spawned->stderr_pipe.read(), spawned->proc.wait());
-    ASSERT(output.has_error());
-    EXPECT(output.error() == error::end_of_file);
-    ASSERT(errors.has_value());
-    EXPECT(zest::contains(*errors, "kotatsu-stderr"));
-    EXPECT(test::exit_status_of(status) == 0);
+    ZASSERT(output.has_error());
+    ZEXPECT(output.error() == error::end_of_file);
+    ZASSERT(errors.has_value());
+    ZEXPECT(zest::contains(*errors, "kotatsu-stderr"));
+    ZEXPECT(test::exit_status_of(status) == 0);
 }
 
 ZEST_CASE(stdin_pipe_feeds_the_child) {
     auto opts = test::stdin_reader();
     opts.streams[1] = process::stdio::pipe(false, true);
     auto spawned = process::spawn(opts, loop);
-    ASSERT(spawned.has_value());
+    ZASSERT(spawned.has_value());
     auto feed = [&]() -> task<void, error> {
         co_await spawned->stdin_pipe.write(std::string_view("kotatsu-stdin\n")).or_fail();
         // Closing stdin ends the child.
@@ -164,26 +164,26 @@ ZEST_CASE(stdin_pipe_feeds_the_child) {
     };
 
     auto [fed, output, status] = run(feed(), spawned->stdout_pipe.read(), spawned->proc.wait());
-    EXPECT(fed.has_value());
-    ASSERT(output.has_value());
-    EXPECT(trim_newlines(*output) == "kotatsu-stdin");
-    EXPECT(test::exit_status_of(status) == 0);
+    ZEXPECT(fed.has_value());
+    ZASSERT(output.has_value());
+    ZEXPECT(trim_newlines(*output) == "kotatsu-stdin");
+    ZEXPECT(test::exit_status_of(status) == 0);
 }
 
 ZEST_CASE(stdout_goes_to_a_given_descriptor) {
     test::TempDir dir;
     auto path = dir.file("stdout.txt");
     auto fd = fs::sync::open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    ASSERT(fd.has_value());
+    ZASSERT(fd.has_value());
     auto opts = shell(by_platform("printf kotatsu-fd", "echo kotatsu-fd"));
     opts.streams[1] = process::stdio::from_fd(*fd);
     auto spawned = process::spawn(opts, loop);
-    EXPECT(!fs::sync::close(*fd));
-    ASSERT(spawned.has_value());
+    ZEXPECT(!fs::sync::close(*fd));
+    ZASSERT(spawned.has_value());
 
     auto [status] = run(spawned->proc.wait());
-    EXPECT(test::exit_status_of(status) == 0);
-    EXPECT(trim_newlines(test::read_file(dir.path / "stdout.txt")) == "kotatsu-fd");
+    ZEXPECT(test::exit_status_of(status) == 0);
+    ZEXPECT(trim_newlines(test::read_file(dir.path / "stdout.txt")) == "kotatsu-fd");
 }
 
 ZEST_CASE(environment_and_directory_reach_the_child) {
@@ -195,11 +195,11 @@ ZEST_CASE(environment_and_directory_reach_the_child) {
     opts.env = {"KOTA_TEST_VALUE=42"};
     opts.cwd = dir.path.string();
     auto spawned = process::spawn(opts, loop);
-    ASSERT(spawned.has_value());
+    ZASSERT(spawned.has_value());
 
     auto [status] = run(spawned->proc.wait());
-    EXPECT(test::exit_status_of(status) == 0);
-    EXPECT(trim_newlines(test::read_file(dir.path / "marker.txt")) == "42");
+    ZEXPECT(test::exit_status_of(status) == 0);
+    ZEXPECT(trim_newlines(test::read_file(dir.path / "marker.txt")) == "42");
 }
 
 // The changes go over the inherited environment: the child still has what
@@ -213,8 +213,8 @@ ZEST_CASE(env_changes_go_over_the_inherited_environment) {
     };
 
     auto [written] = run(marker_of(opts, dir, loop));
-    ASSERT(written.has_value());
-    EXPECT(*written == "set|inherited");
+    ZASSERT(written.has_value());
+    ZEXPECT(*written == "set|inherited");
 }
 
 ZEST_CASE(env_changes_go_over_a_given_environment) {
@@ -227,8 +227,8 @@ ZEST_CASE(env_changes_go_over_a_given_environment) {
     };
 
     auto [written] = run(marker_of(opts, dir, loop));
-    ASSERT(written.has_value());
-    EXPECT(*written == "given|" + unset("KOTA_TEST_INHERITED"));
+    ZASSERT(written.has_value());
+    ZEXPECT(*written == "given|" + unset("KOTA_TEST_INHERITED"));
 }
 
 ZEST_CASE(last_env_change_of_a_name_counts) {
@@ -242,8 +242,8 @@ ZEST_CASE(last_env_change_of_a_name_counts) {
     };
 
     auto [written] = run(marker_of(opts, dir, loop));
-    ASSERT(written.has_value());
-    EXPECT(*written == "last|" + unset("KOTA_TEST_REMOVED"));
+    ZASSERT(written.has_value());
+    ZEXPECT(*written == "last|" + unset("KOTA_TEST_REMOVED"));
 }
 
 // Changes that remove every variable leave the child an empty environment,
@@ -258,8 +258,8 @@ ZEST_CASE(env_changes_removing_every_variable_inherit_nothing) {
     };
 
     auto [written] = run(marker_of(opts, dir, loop));
-    ASSERT(written.has_value());
-    EXPECT(*written == unset("KOTA_TEST_GIVEN") + "|" + unset("KOTA_TEST_INHERITED"));
+    ZASSERT(written.has_value());
+    ZEXPECT(*written == unset("KOTA_TEST_GIVEN") + "|" + unset("KOTA_TEST_INHERITED"));
 }
 
 #ifdef _WIN32
@@ -273,8 +273,8 @@ ZEST_CASE(env_changes_match_names_without_regard_to_case) {
         {.name = "KOTA_TEST_GIVEN", .value = std::nullopt},
     };
     auto [written] = run(marker_of(opts, dir, loop));
-    ASSERT(written.has_value());
-    EXPECT(*written == "upper|" + unset("KOTA_TEST_GIVEN"));
+    ZASSERT(written.has_value());
+    ZEXPECT(*written == "upper|" + unset("KOTA_TEST_GIVEN"));
 }
 #endif
 
@@ -291,12 +291,12 @@ ZEST_CASE(spawn_with_a_bad_descriptor_fails) {
                     process::stdio::ignore()};
 
     auto spawned = process::spawn(opts, loop);
-    ASSERT(spawned.has_error());
-    EXPECT(spawned.error() == error::invalid_argument);
+    ZASSERT(spawned.has_error());
+    ZEXPECT(spawned.error() == error::invalid_argument);
     auto t = timer::create(loop);
-    ASSERT(!t.start(std::chrono::milliseconds(1)));
+    ZASSERT(!t.start(std::chrono::milliseconds(1)));
     auto [waited] = run(t.wait());
-    EXPECT(waited.has_value());
+    ZEXPECT(waited.has_value());
 }
 #endif
 
@@ -306,33 +306,33 @@ ZEST_CASE(spawn_in_a_missing_directory_fails) {
     opts.cwd = dir.file("missing");
 
     auto spawned = process::spawn(opts, loop);
-    ASSERT(spawned.has_error());
-    EXPECT(spawned.error() == error::no_such_file_or_directory);
+    ZASSERT(spawned.has_error());
+    ZEXPECT(spawned.error() == error::no_such_file_or_directory);
 }
 
 ZEST_CASE(detached_child_still_reports_its_exit) {
     auto opts = shell("exit 7");
     opts.creation.detached = true;
     auto spawned = process::spawn(opts, loop);
-    ASSERT(spawned.has_value());
+    ZASSERT(spawned.has_value());
 
     auto [status] = run(spawned->proc.wait());
-    EXPECT(test::exit_status_of(status) == 7);
+    ZEXPECT(test::exit_status_of(status) == 7);
 }
 
 ZEST_CASE(second_wait_while_one_is_pending_fails) {
     auto spawned = process::spawn(shell("exit 0"), loop);
-    ASSERT(spawned.has_value());
+    ZASSERT(spawned.has_value());
 
     auto [first, second] = run(spawned->proc.wait(), spawned->proc.wait());
-    EXPECT(test::exit_status_of(first) == 0);
-    ASSERT(second.has_error());
-    EXPECT(second.error() == error::resource_busy_or_locked);
+    ZEXPECT(test::exit_status_of(first) == 0);
+    ZASSERT(second.has_error());
+    ZEXPECT(second.error() == error::resource_busy_or_locked);
 }
 
 ZEST_CASE(wait_after_the_exit_returns_the_same_status) {
     auto spawned = process::spawn(shell("exit 5"), loop);
-    ASSERT(spawned.has_value());
+    ZASSERT(spawned.has_value());
     using waited = result<process::exit_status>;
     auto wait_twice = [&]() -> task<std::pair<waited, waited>> {
         auto first = co_await spawned->proc.wait();
@@ -341,53 +341,53 @@ ZEST_CASE(wait_after_the_exit_returns_the_same_status) {
     };
 
     auto [result] = run(wait_twice());
-    ASSERT(result.has_value());
+    ZASSERT(result.has_value());
     auto& [first, second] = *result;
-    ASSERT(first.has_value());
-    ASSERT(second.has_value());
-    EXPECT(first->status == 5);
-    EXPECT(second->status == 5);
+    ZASSERT(first.has_value());
+    ZASSERT(second.has_value());
+    ZEXPECT(first->status == 5);
+    ZEXPECT(second->status == 5);
 }
 
 ZEST_CASE(kill_ends_a_running_child) {
     auto spawned = process::spawn(test::stdin_reader(), loop);
-    ASSERT(spawned.has_value());
-    EXPECT(!spawned->proc.kill(SIGTERM));
+    ZASSERT(spawned.has_value());
+    ZEXPECT(!spawned->proc.kill(SIGTERM));
 
     auto [status] = run(spawned->proc.wait());
-    ASSERT(status.has_value());
-    EXPECT(status->term_signal == SIGTERM);
+    ZASSERT(status.has_value());
+    ZEXPECT(status->term_signal == SIGTERM);
 }
 
 ZEST_CASE(kill_without_a_signal_ends_a_running_child) {
     auto spawned = process::spawn(test::stdin_reader(), loop);
-    ASSERT(spawned.has_value());
-    EXPECT(!spawned->proc.kill());
+    ZASSERT(spawned.has_value());
+    ZEXPECT(!spawned->proc.kill());
 
     auto [status] = run(spawned->proc.wait());
-    ASSERT(status.has_value());
-    EXPECT(!status->success());
-    EXPECT(status->to_string() == "signal 9 (SIGKILL)");
+    ZASSERT(status.has_value());
+    ZEXPECT(!status->success());
+    ZEXPECT(status->to_string() == "signal 9 (SIGKILL)");
 }
 
 ZEST_CASE(kill_with_an_invalid_signal_fails) {
     auto spawned = process::spawn(test::stdin_reader(), loop);
-    ASSERT(spawned.has_value());
-    EXPECT(spawned->proc.kill(-1) == error::invalid_argument);
+    ZASSERT(spawned.has_value());
+    ZEXPECT(spawned->proc.kill(-1) == error::invalid_argument);
     // Closing its stdin ends the child.
     spawned->stdin_pipe = pipe{};
 
     auto [status] = run(spawned->proc.wait());
-    EXPECT(test::exit_status_of(status) == 0);
+    ZEXPECT(test::exit_status_of(status) == 0);
 }
 
 ZEST_CASE(kill_after_the_exit_fails) {
     auto spawned = process::spawn(shell("exit 0"), loop);
-    ASSERT(spawned.has_value());
+    ZASSERT(spawned.has_value());
 
     auto [status] = run(spawned->proc.wait());
-    EXPECT(test::exit_status_of(status) == 0);
-    EXPECT(spawned->proc.kill(SIGTERM) == error::no_such_process);
+    ZEXPECT(test::exit_status_of(status) == 0);
+    ZEXPECT(spawned->proc.kill(SIGTERM) == error::no_such_process);
 }
 
 // Cancelling wait() only abandons the wait: the child runs on until its
@@ -395,26 +395,26 @@ ZEST_CASE(kill_after_the_exit_fails) {
 // runs until then, so only the cancel can end the first wait.
 ZEST_CASE(cancelled_wait_leaves_the_child_running) {
     auto spawned = process::spawn(test::stdin_reader(), loop);
-    ASSERT(spawned.has_value());
+    ZASSERT(spawned.has_value());
     auto race = [&]() -> task<std::size_t, error> {
         auto first = co_await or_fail(co_await when_any(spawned->proc.wait(), yield()));
         co_return first.index();
     };
 
     auto [cancelled] = run(race());
-    ASSERT(cancelled.has_value());
-    EXPECT(*cancelled == 1U);
+    ZASSERT(cancelled.has_value());
+    ZEXPECT(*cancelled == 1U);
     spawned->stdin_pipe = pipe{};
     auto [status] = run(spawned->proc.wait());
-    ASSERT(status.has_value());
-    EXPECT(status->status == 0);
-    EXPECT(status->term_signal == 0);
+    ZASSERT(status.has_value());
+    ZEXPECT(status->status == 0);
+    ZEXPECT(status->term_signal == 0);
 }
 
 // The child is not killed and runs on until its stdin closes.
 ZEST_CASE(wait_ended_by_destroying_its_process_fails) {
     auto spawned = process::spawn(test::stdin_reader(), loop);
-    ASSERT(spawned.has_value());
+    ZASSERT(spawned.has_value());
     std::optional<process> proc = std::move(spawned->proc);
     auto destroy = [&]() -> task<> {
         proc.reset();
@@ -423,15 +423,15 @@ ZEST_CASE(wait_ended_by_destroying_its_process_fails) {
     };
 
     auto [waited, destroyed] = run(proc->wait(), destroy());
-    ASSERT(waited.has_error());
-    EXPECT(waited.error() == error::operation_aborted);
+    ZASSERT(waited.has_error());
+    ZEXPECT(waited.error() == error::operation_aborted);
 }
 
 // The destroyed process's wait is cancelled after its destruction has ended
 // it, before the loop has resumed it: the cancel leaves that ending alone.
 ZEST_CASE(wait_cancelled_after_its_process_is_destroyed_ends) {
     auto spawned = process::spawn(test::stdin_reader(), loop);
-    ASSERT(spawned.has_value());
+    ZASSERT(spawned.has_value());
     std::optional<process> proc = std::move(spawned->proc);
     auto destroy = [&]() -> task<> {
         proc.reset();
@@ -440,18 +440,18 @@ ZEST_CASE(wait_cancelled_after_its_process_is_destroyed_ends) {
     };
 
     auto [result] = run(test::winner(proc->wait(), destroy()));
-    ASSERT(result.has_value());
-    EXPECT(*result == 1U);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 1U);
 }
 
 ZEST_CASE(inert_process_fails) {
     process inert;
 
     auto [waited] = run(inert.wait());
-    ASSERT(waited.has_error());
-    EXPECT(waited.error() == error::invalid_argument);
-    EXPECT(inert.kill(SIGTERM) == error::invalid_argument);
-    EXPECT(inert.pid() == -1);
+    ZASSERT(waited.has_error());
+    ZEXPECT(waited.error() == error::invalid_argument);
+    ZEXPECT(inert.kill(SIGTERM) == error::invalid_argument);
+    ZEXPECT(inert.pid() == -1);
 }
 
 #ifndef _WIN32
@@ -463,7 +463,7 @@ ZEST_CASE(stdout_chunks_arrive_as_written) {
                     process::stdio::pipe(false, true),
                     process::stdio::ignore()};
     auto spawned = process::spawn(opts, loop);
-    ASSERT(spawned.has_value());
+    ZASSERT(spawned.has_value());
     auto read_chunks = [&]() -> task<std::pair<std::string, std::string>, error> {
         auto first = co_await spawned->stdout_pipe.read_chunk().or_fail();
         std::string one(first.data(), first.size());
@@ -476,10 +476,10 @@ ZEST_CASE(stdout_chunks_arrive_as_written) {
     };
 
     auto [chunks, status] = run(read_chunks(), spawned->proc.wait());
-    ASSERT(chunks.has_value());
-    EXPECT(chunks->first == "chunk-one");
-    EXPECT(chunks->second == "chunk-two");
-    EXPECT(test::exit_status_of(status) == 0);
+    ZASSERT(chunks.has_value());
+    ZEXPECT(chunks->first == "chunk-one");
+    ZEXPECT(chunks->second == "chunk-two");
+    ZEXPECT(test::exit_status_of(status) == 0);
 }
 #endif
 
@@ -488,19 +488,19 @@ ZEST_CASE(capture_returns_what_the_child_wrote_and_how_it_ended) {
         by_platform("printf out; printf err 1>&2; exit 3", "echo out& echo err 1>&2& exit /b 3"));
 
     auto [captured] = run(process::capture(opts, loop));
-    ASSERT(captured.has_value());
-    EXPECT(trim_newlines(captured->stdout_data) == "out");
-    EXPECT(zest::contains(captured->stderr_data, "err"));
-    EXPECT(captured->status.status == 3);
+    ZASSERT(captured.has_value());
+    ZEXPECT(trim_newlines(captured->stdout_data) == "out");
+    ZEXPECT(zest::contains(captured->stderr_data, "err"));
+    ZEXPECT(captured->status.status == 3);
 }
 
 // A child that reads its stdin to the end exits at once: there is nothing
 // to read.
 ZEST_CASE(capture_gives_the_child_no_input) {
     auto [captured] = run(process::capture(test::stdin_reader(), loop));
-    ASSERT(captured.has_value());
-    EXPECT(captured->status.success());
-    EXPECT(trim_newlines(captured->stdout_data).empty());
+    ZASSERT(captured.has_value());
+    ZEXPECT(captured->status.success());
+    ZEXPECT(trim_newlines(captured->stdout_data).empty());
 }
 
 ZEST_CASE(capture_of_a_missing_file_fails) {
@@ -508,8 +508,8 @@ ZEST_CASE(capture_of_a_missing_file_fails) {
     opts.file = by_platform("/nonexistent/kotatsu-nope", R"(Z:\nonexistent\kotatsu-nope.exe)");
 
     auto [captured] = run(process::capture(opts, loop));
-    ASSERT(captured.has_error());
-    EXPECT(captured.error() == error::no_such_file_or_directory);
+    ZASSERT(captured.has_error());
+    ZEXPECT(captured.error() == error::no_such_file_or_directory);
 }
 
 #ifndef _WIN32
@@ -519,10 +519,10 @@ ZEST_CASE(capture_reads_both_pipes_while_the_child_runs) {
     auto opts = shell("head -c 1048576 /dev/zero >&2; head -c 1048576 /dev/zero");
 
     auto [captured] = run(process::capture(opts, loop));
-    ASSERT(captured.has_value());
-    EXPECT(captured->status.success());
-    EXPECT(captured->stdout_data.size() == 1048576U);
-    EXPECT(captured->stderr_data.size() == 1048576U);
+    ZASSERT(captured.has_value());
+    ZEXPECT(captured->status.success());
+    ZEXPECT(captured->stdout_data.size() == 1048576U);
+    ZEXPECT(captured->stderr_data.size() == 1048576U);
 }
 
 // The child writes its pid to one FIFO, then reads another that never ends,
@@ -532,14 +532,14 @@ ZEST_CASE(capture_reads_both_pipes_while_the_child_runs) {
 // mkfifo is POSIX.
 ZEST_CASE(cancelled_capture_kills_the_child) {
     test::TempDir dir;
-    ASSERT(::mkfifo(dir.file("pid").c_str(), 0600) == 0);
-    ASSERT(::mkfifo(dir.file("hold").c_str(), 0600) == 0);
+    ZASSERT(::mkfifo(dir.file("pid").c_str(), 0600) == 0);
+    ZASSERT(::mkfifo(dir.file("hold").c_str(), 0600) == 0);
     auto pid_fifo = fs::sync::open(dir.file("pid"), O_RDWR, 0);
-    ASSERT(pid_fifo.has_value());
+    ZASSERT(pid_fifo.has_value());
     auto hold = fs::sync::open(dir.file("hold"), O_RDWR, 0);
-    ASSERT(hold.has_value());
+    ZASSERT(hold.has_value());
     auto reader = pipe::open(*pid_fifo, loop);
-    ASSERT(reader.has_value());
+    ZASSERT(reader.has_value());
     auto opts = shell("echo $$ > pid; exec cat < hold");
     opts.cwd = dir.path.string();
     cancellation_source source;
@@ -551,14 +551,14 @@ ZEST_CASE(cancelled_capture_kills_the_child) {
 
     auto [captured, pid] =
         run(with_token(process::capture(opts, loop), source.token()), canceller());
-    EXPECT(captured.is_cancelled());
-    ASSERT(pid.has_value());
-    ASSERT(pid->has_value());
+    ZEXPECT(captured.is_cancelled());
+    ZASSERT(pid.has_value());
+    ZASSERT(pid->has_value());
     const int found = ::kill(std::stoi(**pid), 0);
     const int why = errno;
-    EXPECT(found == -1);
-    EXPECT(why == ESRCH);
-    EXPECT(!fs::sync::close(*hold));
+    ZEXPECT(found == -1);
+    ZEXPECT(why == ESRCH);
+    ZEXPECT(!fs::sync::close(*hold));
 }
 #endif
 

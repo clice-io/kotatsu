@@ -74,18 +74,13 @@ struct StreamFixture : zest::LoopFixture {
     std::expected<std::string, ReadError>
         read_after(std::string_view text, std::size_t max_payload = default_max_payload) {
         auto input = feed(loop, max_payload);
-        if(!input) {
-            ZEST_CONTEXT("cannot make a pipe");
-            // Reports the failure: there is no pipe here.
-            EXPECT(input.has_value());
-            return std::unexpected(ReadError{});
-        }
+        ZASSERT(input.has_value());
         auto written = test::write_fd(input->writer, text.data(), text.size());
         test::close_fd(input->writer);
-        EXPECT(written == static_cast<ssize_t>(text.size()));
+        ZEXPECT(written == static_cast<ssize_t>(text.size()));
         auto [read] = run(input->transport->read_message());
         // Reports the failure: nothing here cancels the read.
-        EXPECT(!read.is_cancelled());
+        ZEXPECT(!read.is_cancelled());
         if(!read.has_value()) {
             return std::unexpected(read.has_error() ? std::move(read).error() : ReadError{});
         }
@@ -97,16 +92,16 @@ ZEST_SUITE(ipc_transport_stream, StreamFixture) {
 
 ZEST_CASE(messages_in_one_write_read_in_order) {
     auto input = feed(loop);
-    ASSERT(input.has_value());
+    ZASSERT(input.has_value());
     std::vector<std::string> sent;
     std::string frames;
     for(int i = 0; i < 10; ++i) {
         sent.push_back(std::format(R"({{"i":{}}})", i));
         frames += frame(sent.back());
     }
-    ASSERT(test::write_fd(input->writer, frames.data(), frames.size()) ==
-           static_cast<ssize_t>(frames.size()));
-    ASSERT(test::close_fd(input->writer) == 0);
+    ZASSERT(test::write_fd(input->writer, frames.data(), frames.size()) ==
+            static_cast<ssize_t>(frames.size()));
+    ZASSERT(test::close_fd(input->writer) == 0);
     auto read_all = [&]() -> task<std::vector<std::string>> {
         std::vector<std::string> messages;
         while(auto message = co_await input->transport->read_message()) {
@@ -116,15 +111,15 @@ ZEST_CASE(messages_in_one_write_read_in_order) {
     };
 
     auto [read] = run(read_all());
-    ASSERT(read.has_value());
-    EXPECT(*read == sent);
+    ZASSERT(read.has_value());
+    ZEXPECT(*read == sent);
 }
 
 // The writer's pieces split the header name, the blank line and the
 // payload; however the pipe hands them over, each message reads whole.
 ZEST_CASE(messages_split_across_writes_read_whole) {
     auto ends = pipe_ends(loop);
-    ASSERT(ends.has_value());
+    ZASSERT(ends.has_value());
     StreamTransport transport(stream(std::move(ends->reader)));
     const std::vector<std::string> sent{"first", R"({"second":2})"};
     const auto frames = frame(sent[0]) + frame(sent[1]);
@@ -143,20 +138,20 @@ ZEST_CASE(messages_split_across_writes_read_whole) {
     };
 
     auto [wrote, read] = run(write_in_pieces(), read_all());
-    EXPECT(wrote.has_value());
-    ASSERT(read.has_value());
-    EXPECT(*read == sent);
+    ZEXPECT(wrote.has_value());
+    ZASSERT(read.has_value());
+    ZEXPECT(*read == sent);
 }
 
 ZEST_CASE(empty_payload_reads_as_empty) {
-    EXPECT(read_after("Content-Length: 0\r\n\r\n") == std::string());
+    ZEXPECT(read_after("Content-Length: 0\r\n\r\n") == std::string());
 }
 
 // Windows pipes hold 4 KB, so the 10 KB frame is written from a thread while
 // the loop reads; the header is small and the chunk holding it is not.
 ZEST_CASE(large_payload_reads_whole) {
     auto input = feed(loop);
-    ASSERT(input.has_value());
+    ZASSERT(input.has_value());
     const std::string payload(10 * 1024, 'x');
     const auto data = frame(payload);
     ssize_t written = 0;
@@ -167,9 +162,9 @@ ZEST_CASE(large_payload_reads_whole) {
 
     auto [read] = run(input->transport->read_message());
     writer.join();
-    EXPECT(written == static_cast<ssize_t>(data.size()));
-    ASSERT(read.has_value());
-    EXPECT(read->size() == payload.size());
+    ZEXPECT(written == static_cast<ssize_t>(data.size()));
+    ZASSERT(read.has_value());
+    ZEXPECT(read->size() == payload.size());
 }
 
 // The input ends between messages or inside one alike.
@@ -177,8 +172,8 @@ ZEST_CASE(end_of_input_is_closed) {
     for(std::string_view text: {"", "Content-Length: 10\r\n", "Content-Length: 100\r\n\r\nhello"}) {
         ZEST_CONTEXT("input: {} bytes", text.size());
         auto read = read_after(text);
-        ASSERT(!read.has_value());
-        EXPECT(read.error().kind == ReadError::Kind::Closed);
+        ZASSERT(!read.has_value());
+        ZEXPECT(read.error().kind == ReadError::Kind::Closed);
     }
 }
 
@@ -186,18 +181,18 @@ ZEST_CASE(end_of_input_is_closed) {
 // reaches the reader through a pipe.
 ZEST_CASE(unreadable_header_fails) {
     auto read = read_after("Content-Length: 5x\r\n\r\nhello");
-    ASSERT(!read.has_value());
-    EXPECT(read.error().kind == ReadError::Kind::Malformed);
+    ZASSERT(!read.has_value());
+    ZEXPECT(read.error().kind == ReadError::Kind::Malformed);
 }
 
 // A frame over the transport's limit is skipped, and the next one reads.
 ZEST_CASE(oversized_message_is_skipped_and_reading_goes_on) {
     auto input = feed(loop, 8);
-    ASSERT(input.has_value());
+    ZASSERT(input.has_value());
     const auto data = frame("0123456789") + frame("next");
-    ASSERT(test::write_fd(input->writer, data.data(), data.size()) ==
-           static_cast<ssize_t>(data.size()));
-    ASSERT(test::close_fd(input->writer) == 0);
+    ZASSERT(test::write_fd(input->writer, data.data(), data.size()) ==
+            static_cast<ssize_t>(data.size()));
+    ZASSERT(test::close_fd(input->writer) == 0);
 
     auto read_twice = [&]() -> task<std::pair<ReadError, std::string>, ReadError> {
         auto skipped = co_await input->transport->read_message();
@@ -207,44 +202,44 @@ ZEST_CASE(oversized_message_is_skipped_and_reading_goes_on) {
     };
 
     auto [read] = run(read_twice());
-    ASSERT(read.has_value());
+    ZASSERT(read.has_value());
     auto& [skipped, next] = *read;
-    EXPECT(skipped.kind == ReadError::Kind::Oversized);
-    EXPECT(skipped.size == 10U);
-    EXPECT(skipped.prefix == "0123456789");
-    EXPECT(next == "next");
+    ZEXPECT(skipped.kind == ReadError::Kind::Oversized);
+    ZEXPECT(skipped.size == 10U);
+    ZEXPECT(skipped.prefix == "0123456789");
+    ZEXPECT(next == "next");
 }
 
 // The limit it reads with says nothing of what the remote reads: what it
 // sends has no limit until it is told one.
 ZEST_CASE(remote_max_payload_is_unlimited_until_set) {
     auto input = feed(loop, 8);
-    ASSERT(input.has_value());
+    ZASSERT(input.has_value());
     auto& transport = *input->transport;
-    EXPECT(transport.remote_max_payload() == std::numeric_limits<std::size_t>::max());
+    ZEXPECT(transport.remote_max_payload() == std::numeric_limits<std::size_t>::max());
     transport.set_remote_max_payload(8);
-    EXPECT(transport.remote_max_payload() == 8U);
+    ZEXPECT(transport.remote_max_payload() == 8U);
     test::close_fd(input->writer);
 }
 
 ZEST_CASE(close_wakes_a_pending_read) {
     auto ends = pipe_ends(loop);
-    ASSERT(ends.has_value());
+    ZASSERT(ends.has_value());
     StreamTransport transport(stream(std::move(ends->reader)), stream(std::move(ends->writer)));
     auto closer = [&]() -> task<bool> {
         co_return transport.close().has_value();
     };
 
     auto [read, closed] = run(transport.read_message(), closer());
-    ASSERT(read.has_error());
-    EXPECT(read.error().kind == ReadError::Kind::Closed);
-    ASSERT(closed.has_value());
-    EXPECT(*closed);
+    ZASSERT(read.has_error());
+    ZEXPECT(read.error().kind == ReadError::Kind::Closed);
+    ZASSERT(closed.has_value());
+    ZEXPECT(*closed);
 }
 
 ZEST_CASE(write_frames_the_payload) {
     auto ends = pipe_ends(loop);
-    ASSERT(ends.has_value());
+    ZASSERT(ends.has_value());
     StreamTransport transport(stream(std::move(ends->writer)));
     auto send = [&]() -> task<void, Error> {
         co_await transport.write_message("hello").or_fail();
@@ -259,27 +254,27 @@ ZEST_CASE(write_frames_the_payload) {
     };
 
     auto [sent, read] = run(send(), read_all());
-    EXPECT(sent.has_value());
-    ASSERT(read.has_value());
-    EXPECT(*read == "Content-Length: 5\r\n\r\nhello");
+    ZEXPECT(sent.has_value());
+    ZASSERT(read.has_value());
+    ZEXPECT(*read == "Content-Length: 5\r\n\r\nhello");
 }
 
 // A pipe's read end is not writable, so the write fails without a signal.
 ZEST_CASE(write_to_the_read_end_fails) {
     auto ends = pipe_ends(loop);
-    ASSERT(ends.has_value());
+    ZASSERT(ends.has_value());
     StreamTransport transport(stream(std::move(ends->writer)), stream(std::move(ends->reader)));
 
     auto [written] = run(transport.write_message("hello"));
-    ASSERT(written.has_error());
-    EXPECT(written.error().message == error::broken_pipe.message());
+    ZASSERT(written.has_error());
+    ZEXPECT(written.error().message == error::broken_pipe.message());
 }
 
 ZEST_CASE(connect_tcp_exchanges_messages) {
     auto listener = tcp::listen("127.0.0.1", 0, {}, loop);
-    ASSERT(listener.has_value());
+    ZASSERT(listener.has_value());
     auto name = listener->getsockname();
-    ASSERT(name.has_value());
+    ZASSERT(name.has_value());
     const int port = name->port;
     auto serve = [&]() -> task<std::optional<std::string>> {
         auto connection = co_await listener->accept();
@@ -299,10 +294,10 @@ ZEST_CASE(connect_tcp_exchanges_messages) {
     };
 
     auto [served, asked] = run(serve(), ask());
-    ASSERT(served.has_value());
-    EXPECT(*served == "ping");
-    ASSERT(asked.has_value());
-    EXPECT(*asked == "pong");
+    ZASSERT(served.has_value());
+    ZEXPECT(*served == "ping");
+    ZASSERT(asked.has_value());
+    ZEXPECT(*asked == "pong");
 }
 
 // One socket both ways: close_output() shuts its write side down once what
@@ -310,13 +305,13 @@ ZEST_CASE(connect_tcp_exchanges_messages) {
 // and can still send; the transport reads what it sends.
 ZEST_CASE(close_output_on_a_shared_socket_ends_the_remote_input_and_keeps_reading) {
     auto listener = tcp::listen("127.0.0.1", 0, {}, loop);
-    ASSERT(listener.has_value());
+    ZASSERT(listener.has_value());
     auto name = listener->getsockname();
-    ASSERT(name.has_value());
+    ZASSERT(name.has_value());
     auto [accepted, connected] =
         run(listener->accept(), StreamTransport::connect_tcp("127.0.0.1", name->port, loop));
-    ASSERT(accepted.has_value());
-    ASSERT(connected.has_value());
+    ZASSERT(accepted.has_value());
+    ZASSERT(connected.has_value());
     auto& transport = **connected;
     auto remote = [&]() -> task<std::string, error> {
         auto received = co_await accepted->read_to_end().or_fail();
@@ -335,16 +330,16 @@ ZEST_CASE(close_output_on_a_shared_socket_ends_the_remote_input_and_keeps_readin
     };
 
     auto [received, read] = run(remote(), local());
-    ASSERT(received.has_value());
-    EXPECT(*received == frame("before"));
-    ASSERT(read.has_value());
-    EXPECT(*read == "after");
+    ZASSERT(received.has_value());
+    ZEXPECT(*received == frame("before"));
+    ZASSERT(read.has_value());
+    ZEXPECT(*read == "after");
 }
 
 ZEST_CASE(connect_tcp_to_a_bad_address_fails) {
     auto [connected] = run(StreamTransport::connect_tcp("not-an-address", 80, loop));
-    ASSERT(connected.has_error());
-    EXPECT(connected.error().message == error::invalid_argument.message());
+    ZASSERT(connected.has_error());
+    ZEXPECT(connected.error().message == error::invalid_argument.message());
 }
 
 };  // ZEST_SUITE(ipc_transport_stream)

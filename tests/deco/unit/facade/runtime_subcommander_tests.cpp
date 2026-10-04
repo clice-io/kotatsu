@@ -74,60 +74,60 @@ ZEST_SUITE(deco_facade_runtime_subcommander) {
 ZEST_CASE(command_gets_the_arguments_after_it) {
     Tool tool;
     tool("run -v --dry");
-    EXPECT(tool.ran == "run");
-    EXPECT(tool.args == (strings{"-v", "--dry"}));
-    EXPECT(!tool.error.has_value());
+    ZEXPECT(tool.ran == "run");
+    ZEXPECT(tool.args == (strings{"-v", "--dry"}));
+    ZEXPECT(!tool.error.has_value());
 }
 
 ZEST_CASE(command_may_be_written_other_than_its_name) {
     Tool tool;
     tool("show x");
-    EXPECT(tool.ran == "inspect/show");
-    EXPECT(tool.args == strings{"x"});
+    ZEXPECT(tool.ran == "inspect/show");
+    ZEXPECT(tool.args == strings{"x"});
 
     tool.ran.clear();
     tool("inspect");
-    EXPECT(tool.ran == "default");
+    ZEXPECT(tool.ran == "default");
 }
 
 ZEST_CASE(default_route_gets_every_argument) {
     Tool tool;
     tool("--help me");
-    EXPECT(tool.ran == "default");
-    EXPECT(tool.args == (strings{"--help", "me"}));
+    ZEXPECT(tool.ran == "default");
+    ZEXPECT(tool.args == (strings{"--help", "me"}));
 }
 
 ZEST_CASE(match_reports_the_command) {
     Tool tool;
     auto argv = test::split("show x y");
     const auto match = tool.commander.match(argv);
-    ASSERT(match.has_value());
-    EXPECT(match->is_command());
-    EXPECT(!match->is_default());
-    EXPECT(match->token == "show");
-    EXPECT(match->name == "inspect");
-    EXPECT(match->command == "show");
-    EXPECT(match->original_argv.size() == 3U);
-    EXPECT(joined(match->args()) == (strings{"x", "y"}));
+    ZASSERT(match.has_value());
+    ZEXPECT(match->is_command());
+    ZEXPECT(!match->is_default());
+    ZEXPECT(match->token == "show");
+    ZEXPECT(match->name == "inspect");
+    ZEXPECT(match->command == "show");
+    ZEXPECT(match->original_argv.size() == 3U);
+    ZEXPECT(joined(match->args()) == (strings{"x", "y"}));
 }
 
 ZEST_CASE(match_reports_the_default_route) {
     Tool tool;
     auto argv = test::split("--version");
     const auto match = tool.commander.match(argv);
-    ASSERT(match.has_value());
-    EXPECT(match->is_default());
-    EXPECT(match->token == "--version");
-    EXPECT(joined(match->args()) == strings{"--version"});
+    ZASSERT(match.has_value());
+    ZEXPECT(match->is_default());
+    ZEXPECT(match->token == "--version");
+    ZEXPECT(joined(match->args()) == strings{"--version"});
 }
 
 ZEST_CASE(default_route_takes_no_arguments_too) {
     Tool tool;
     std::vector<std::string> argv;
     const auto match = tool.commander.match(argv);
-    ASSERT(match.has_value());
-    EXPECT(match->is_default());
-    EXPECT(match->token.empty());
+    ZASSERT(match.has_value());
+    ZEXPECT(match->is_default());
+    ZEXPECT(match->token.empty());
 }
 
 ZEST_CASE(unknown_command_fails) {
@@ -137,10 +137,10 @@ ZEST_CASE(unknown_command_fails) {
         .when_err([&](cli::SubCommandError err) { error = std::move(err); });
     auto argv = test::split("walk");
     // The usual exit status of a usage error.
-    EXPECT(commander(argv) == 2);
-    ASSERT(error.has_value());
-    EXPECT(error->type == cli::SubCommandError::Type::UnknownSubCommand);
-    EXPECT(error->message == "at argv[0]:\n  walk\n  ^~~~\n  unknown subcommand 'walk'");
+    ZEXPECT(commander(argv) == 2);
+    ZASSERT(error.has_value());
+    ZEXPECT(error->type == cli::SubCommandError::Type::UnknownSubCommand);
+    ZEXPECT(error->message == "at argv[0]:\n  walk\n  ^~~~\n  unknown subcommand 'walk'");
 }
 
 ZEST_CASE(missing_command_fails) {
@@ -149,9 +149,9 @@ ZEST_CASE(missing_command_fails) {
                   [](std::span<std::string>) {});
     std::vector<std::string> argv;
     const auto match = commander.match(argv);
-    ASSERT(!match.has_value());
-    EXPECT(match.error().type == cli::SubCommandError::Type::MissingSubCommand);
-    EXPECT(zest::ends_with(match.error().message, "subcommand is required"));
+    ZASSERT(!match.has_value());
+    ZEXPECT(match.error().type == cli::SubCommandError::Type::MissingSubCommand);
+    ZEXPECT(zest::ends_with(match.error().message, "subcommand is required"));
 }
 
 ZEST_CASE(missing_command_to_an_exit_code_handler_fails) {
@@ -159,7 +159,7 @@ ZEST_CASE(missing_command_to_an_exit_code_handler_fails) {
     commander.add(decl::SubCommand{.name = "run", .description = ""}, [](std::span<std::string>) {})
         .when_err([](const cli::SubCommandError&) { return 5; });
     std::vector<std::string> argv;
-    EXPECT(commander(argv) == 5);
+    ZEXPECT(commander(argv) == 5);
 }
 
 // The default error handler prints the error to stderr.
@@ -168,7 +168,7 @@ ZEST_CASE(missing_command_to_the_default_handler_fails) {
     commander.add(decl::SubCommand{.name = "run", .description = ""},
                   [](std::span<std::string>) {});
     std::vector<std::string> argv;
-    EXPECT(commander(argv) == 2);
+    ZEXPECT(commander(argv) == 2);
 }
 
 ZEST_CASE(adding_a_command_without_a_name_fails) {
@@ -177,9 +177,9 @@ ZEST_CASE(adding_a_command_without_a_name_fails) {
     commander.when_err([&](cli::SubCommandError err) { error = std::move(err); })
         .add(decl::SubCommand{.name = "", .description = "", .command = ""},
              [](std::span<std::string>) {});
-    ASSERT(error.has_value());
-    EXPECT(error->type == cli::SubCommandError::Type::Internal);
-    EXPECT(error->message == "subcommand name/command must not be empty");
+    ZASSERT(error.has_value());
+    ZEXPECT(error->type == cli::SubCommandError::Type::Internal);
+    ZEXPECT(error->message == "subcommand name/command must not be empty");
 }
 
 ZEST_CASE(command_without_a_name_is_named_by_its_command) {
@@ -188,8 +188,8 @@ ZEST_CASE(command_without_a_name_is_named_by_its_command) {
                   [](std::span<std::string>) {});
     auto argv = test::split("go");
     const auto match = commander.match(argv);
-    ASSERT(match.has_value());
-    EXPECT(match->name == "go");
+    ZASSERT(match.has_value());
+    ZEXPECT(match->name == "go");
 }
 
 ZEST_CASE(adding_a_command_again_replaces_it_in_place) {
@@ -205,23 +205,23 @@ ZEST_CASE(adding_a_command_again_replaces_it_in_place) {
         .render_with(test::tagged_renderer());
     auto argv = test::split("a");
     commander(argv);
-    EXPECT(ran == "a2");
-    EXPECT(usage_of(commander) == "SUB<tool <command>:2>");
+    ZEXPECT(ran == "a2");
+    ZEXPECT(usage_of(commander) == "SUB<tool <command>:2>");
 }
 
 ZEST_CASE(command_object_parses_what_follows_it) {
     std::string url;
     auto web = cli::command<WebCli>("web [OPTIONS]");
     web.match(WebCli::request_category, [&](WebCli options) {
-        ASSERT(options.request.url.has_value());
+        ZASSERT(options.request.url.has_value());
         url = options.request.url->url;
     });
 
     cli::SubCommander commander("tool <command>");
     commander.add(decl::SubCommand{.name = "web", .description = ""}, web);
     auto argv = test::split("web -X GET --url https://example.com");
-    EXPECT(commander(argv) == 0);
-    EXPECT(url == "https://example.com");
+    ZEXPECT(commander(argv) == 0);
+    ZEXPECT(url == "https://example.com");
 }
 
 ZEST_CASE(handler_exit_code_is_the_commander_exit_code) {
@@ -239,7 +239,7 @@ ZEST_CASE(handler_exit_code_is_the_commander_exit_code) {
     }) {
         ZEST_CONTEXT("argv `{}`", line);
         auto argv = test::split(line);
-        EXPECT(commander(argv) == code);
+        ZEXPECT(commander(argv) == code);
     }
 }
 
@@ -254,8 +254,8 @@ ZEST_CASE(command_object_can_be_handed_over) {
     cli::SubCommander commander("tool <command>");
     commander.add(decl::SubCommand{.name = "web", .description = ""}, std::move(web));
     auto argv = test::split("web -v");
-    EXPECT(commander(argv) == 3);
-    EXPECT(seen == "web");
+    ZEXPECT(commander(argv) == 3);
+    ZEXPECT(seen == "web");
 }
 
 ZEST_CASE(unknown_command_to_a_stream_fails) {
@@ -265,8 +265,8 @@ ZEST_CASE(unknown_command_to_a_stream_fails) {
     commander.add(decl::SubCommand{.name = "run", .description = ""},
                   [](std::span<std::string>) {});
     auto argv = test::split("walk");
-    EXPECT(commander.parse(argv) == 2);
-    EXPECT(errors.str() == "ERR<0:unknown subcommand 'walk'>\n");
+    ZEXPECT(commander.parse(argv) == 2);
+    ZEXPECT(errors.str() == "ERR<0:unknown subcommand 'walk'>\n");
 }
 
 ZEST_CASE(enabled_help_prints_the_commands) {
@@ -277,10 +277,10 @@ ZEST_CASE(enabled_help_prints_the_commands) {
         auto argv = test::split(line);
         int code = -1;
         auto printed = test::printed_by([&] { code = tool.commander(argv); });
-        EXPECT(code == 0);
-        EXPECT(printed == usage_of(tool.commander));
+        ZEXPECT(code == 0);
+        ZEXPECT(printed == usage_of(tool.commander));
     }
-    EXPECT(tool.ran.empty());
+    ZEXPECT(tool.ran.empty());
 }
 
 // Only the first argument asks the commander for help; after a command, it is the command's.
@@ -288,34 +288,34 @@ ZEST_CASE(enabled_help_leaves_a_command_s_help_to_it) {
     Tool tool;
     tool.commander.enable_help();
     auto printed = test::printed_by([&] { tool("run --help"); });
-    EXPECT(tool.ran == "run");
-    EXPECT(tool.args == (strings{"--help"}));
-    EXPECT(printed.empty());
+    ZEXPECT(tool.ran == "run");
+    ZEXPECT(tool.args == (strings{"--help"}));
+    ZEXPECT(printed.empty());
 }
 
 ZEST_CASE(usage_lists_the_commands) {
     Tool tool;
-    EXPECT_SNAPSHOT(usage_of(tool.commander));
+    ZEXPECT(zest::snapshot(usage_of(tool.commander)));
 }
 
 ZEST_CASE(usage_shows_the_usage_line_only_with_a_default) {
     cli::SubCommander commander("tool <command>", "A build tool");
     commander.add(decl::SubCommand{.name = "run", .description = ""},
                   [](std::span<std::string>) {});
-    EXPECT(!zest::contains(usage_of(commander), "usage: tool <command>"));
+    ZEXPECT(!zest::contains(usage_of(commander), "usage: tool <command>"));
     commander.add([](std::span<std::string>) {});
-    EXPECT(zest::contains(usage_of(commander), "usage: tool <command>"));
+    ZEXPECT(zest::contains(usage_of(commander), "usage: tool <command>"));
 }
 
 ZEST_CASE(usage_takes_the_renderer_and_config) {
     Tool tool;
     tool.commander.render_with_modern();
-    EXPECT(zest::contains(usage_of(tool.commander), "Commands"));
+    ZEXPECT(zest::contains(usage_of(tool.commander), "Commands"));
 
     config::BuiltInRenderConfig render;
     render.compatible.subcommand.heading = "Verbs:";
     tool.commander.render_with_compatible(render.compatible);
-    EXPECT(zest::contains(usage_of(tool.commander), "Verbs:"));
+    ZEXPECT(zest::contains(usage_of(tool.commander), "Verbs:"));
 }
 
 ZEST_CASE(usage_takes_the_config_of_the_commander) {
@@ -325,7 +325,7 @@ ZEST_CASE(usage_takes_the_config_of_the_commander) {
     config::BuiltInRenderConfig render;
     render.compatible.subcommand.heading = "Verbs:";
     tool.commander.config({.enum_meta_var = std::nullopt, .render = render});
-    EXPECT(zest::contains(usage_of(tool.commander), "Verbs:"));
+    ZEXPECT(zest::contains(usage_of(tool.commander), "Verbs:"));
 }
 
 };  // ZEST_SUITE(deco_facade_runtime_subcommander)

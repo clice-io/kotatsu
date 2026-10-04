@@ -21,6 +21,7 @@ constexpr TestAttrs merge_attrs(TestAttrs suite, TestAttrs test_case) {
         .skip = suite.skip || test_case.skip,
         .focus = suite.focus || test_case.focus,
         .serial = suite.serial || test_case.serial,
+        .crashes = suite.crashes || test_case.crashes,
     };
 }
 
@@ -28,6 +29,10 @@ constexpr TestAttrs merge_attrs(TestAttrs suite, TestAttrs test_case) {
 /// dynamically named test case inside the enclosing suite.
 using CaseRegistrar = std::function<void(std::string, std::function<void()>)>;
 
+/// The base ZEST_SUITE gives a suite. Each ZEST_CASE runs on an instance of its
+/// own: the suite's constructor sets up for the case and its destructor tears
+/// down after it, a throw included. A failed ZASSERT skips the destructor;
+/// what must be cleaned up then goes in a FatalHook member.
 template <typename Derived>
 struct TestSuiteDef {
     using Self = Derived;
@@ -73,17 +78,9 @@ struct TestSuiteDef {
             constexpr auto sn = _suite_name();
             constexpr auto cn = meta::member_name<test_body>();
             auto cn_sv = strip_test_prefix(std::string_view(cn.data(), cn.size()));
-            reset_snapshot_context(std::string_view(sn.data(), sn.size()), cn_sv, path);
+            detail::reset_snapshot_context(std::string_view(sn.data(), sn.size()), cn_sv);
             Derived test;
-            if constexpr(requires { test.setup(); }) {
-                test.setup();
-            }
-
             (test.*test_body)();
-
-            if constexpr(requires { test.teardown(); }) {
-                test.teardown();
-            }
         };
 
         auto cn = strip_test_prefix(std::string_view(case_name_ref.data(), case_name_ref.size()));
@@ -96,7 +93,7 @@ struct TestSuiteDef {
         CaseRegistrar registrar = [](std::string name, std::function<void()> body) {
             auto run = [name, body = std::move(body)] {
                 constexpr auto sn = _suite_name();
-                reset_snapshot_context(std::string_view(sn.data(), sn.size()), name, path);
+                detail::reset_snapshot_context(std::string_view(sn.data(), sn.size()), name);
                 body();
             };
             test_cases().emplace_back(std::move(name),

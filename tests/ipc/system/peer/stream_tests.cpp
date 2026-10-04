@@ -51,8 +51,8 @@ void talk_over_pipes(zest::LoopFixture& fixture) {
     using CodecPeer = Peer<Codec>;
     auto a_to_b = pipe_ends(fixture.loop);
     auto b_to_a = pipe_ends(fixture.loop);
-    ASSERT(a_to_b.has_value());
-    ASSERT(b_to_a.has_value());
+    ZASSERT(a_to_b.has_value());
+    ZASSERT(b_to_a.has_value());
     CodecPeer a(
         fixture.loop,
         std::make_unique<StreamTransport>(std::move(b_to_a->reader), std::move(a_to_b->writer)));
@@ -74,11 +74,11 @@ void talk_over_pipes(zest::LoopFixture& fixture) {
     };
 
     auto [ran_a, ran_b, asked] = fixture.run(a.run(), b.run(), ask());
-    EXPECT(ran_a.has_value());
-    EXPECT(ran_b.has_value());
-    ASSERT(asked.has_value());
-    EXPECT(asked->sum == 5);
-    EXPECT(notes == std::vector<std::string>{"hello"});
+    ZEXPECT(ran_a.has_value());
+    ZEXPECT(ran_b.has_value());
+    ZASSERT(asked.has_value());
+    ZEXPECT(asked->sum == 5);
+    ZEXPECT(notes == std::vector<std::string>{"hello"});
 }
 
 ZEST_SUITE(ipc_peer_stream, zest::LoopFixture) {
@@ -98,15 +98,15 @@ ZEST_CASE(bincode_peers_talk_over_pipes) {
 // pipe writes blocking and its close waits for the write.
 ZEST_CASE(close_during_a_write_ends_run) {
     auto input = pipe_ends(loop);
-    ASSERT(input.has_value());
+    ZASSERT(input.has_value());
     auto listener = tcp::listen("127.0.0.1", 0, {}, loop);
-    ASSERT(listener.has_value());
+    ZASSERT(listener.has_value());
     auto name = listener->getsockname();
-    ASSERT(name.has_value());
+    ZASSERT(name.has_value());
     auto [accepted, connected] =
         run(listener->accept(), tcp::connect("127.0.0.1", name->port, loop));
-    ASSERT(accepted.has_value());
-    ASSERT(connected.has_value());
+    ZASSERT(accepted.has_value());
+    ZASSERT(connected.has_value());
     JSONPeer peer(
         loop,
         std::make_unique<StreamTransport>(std::move(input->reader), stream(std::move(*connected))));
@@ -122,16 +122,16 @@ ZEST_CASE(close_during_a_write_ends_run) {
     };
 
     auto [ran, closed] = run(peer.run(), closer());
-    EXPECT(ran.has_value());
-    ASSERT(closed.has_value());
-    EXPECT(*closed);
+    ZEXPECT(ran.has_value());
+    ZASSERT(closed.has_value());
+    ZEXPECT(*closed);
     // What had gone out before the close is all there is: the write was cut.
     // Windows' loopback buffers take the whole notification, so there the
     // write has ended before the close.
 #ifndef _WIN32
     auto [rest] = run(accepted->read_to_end());
-    ASSERT(rest.has_value());
-    EXPECT(rest->size() < size);
+    ZASSERT(rest.has_value());
+    ZEXPECT(rest->size() < size);
 #endif
 }
 
@@ -143,8 +143,8 @@ ZEST_CASE(close_during_a_write_ends_run) {
 ZEST_CASE(peer_destroyed_as_close_ends_run) {
     auto output = pipe_ends(loop);
     auto input = pipe_ends(loop);
-    ASSERT(output.has_value());
-    ASSERT(input.has_value());
+    ZASSERT(output.has_value());
+    ZASSERT(input.has_value());
     auto peer = std::make_unique<JSONPeer>(
         loop,
         std::make_unique<StreamTransport>(std::move(input->reader), std::move(output->writer)));
@@ -156,14 +156,14 @@ ZEST_CASE(peer_destroyed_as_close_ends_run) {
     // in order until they first suspend.
     auto closer = [&]() -> task<> {
         auto closed = peer->close();
-        EXPECT(closed.has_value());
+        ZEXPECT(closed.has_value());
         co_return;
     };
 
     auto [owned, done] = run(owner(), closer());
-    EXPECT(owned.has_value());
-    EXPECT(done.has_value());
-    EXPECT(peer == nullptr);
+    ZEXPECT(owned.has_value());
+    ZEXPECT(done.has_value());
+    ZEXPECT(peer == nullptr);
 }
 
 // A request and a notification written at once come in one read: the handler
@@ -171,8 +171,8 @@ ZEST_CASE(peer_destroyed_as_close_ends_run) {
 ZEST_CASE(task_starts_after_the_messages_read_with_its_request) {
     auto input = pipe_ends(loop);
     auto output = pipe_ends(loop);
-    ASSERT(input.has_value());
-    ASSERT(output.has_value());
+    ZASSERT(input.has_value());
+    ZASSERT(output.has_value());
     JSONPeer peer(
         loop,
         std::make_unique<StreamTransport>(std::move(input->reader), std::move(output->writer)));
@@ -196,9 +196,9 @@ ZEST_CASE(task_starts_after_the_messages_read_with_its_request) {
     };
 
     auto [ran, written] = run(peer.run(), remote());
-    EXPECT(ran.has_value());
-    EXPECT(written.has_value());
-    EXPECT(order == std::vector<std::string>{"handler", "note", "task"});
+    ZEXPECT(ran.has_value());
+    ZEXPECT(written.has_value());
+    ZEXPECT(order == std::vector<std::string>{"handler", "note", "task"});
 }
 
 // One TCP stream both ways: close_output() shuts its write side down. The
@@ -206,14 +206,14 @@ ZEST_CASE(task_starts_after_the_messages_read_with_its_request) {
 // remote's own end.
 ZEST_CASE(close_output_on_a_shared_stream_keeps_reading) {
     auto listener = tcp::listen("127.0.0.1", 0, {}, loop);
-    ASSERT(listener.has_value());
+    ZASSERT(listener.has_value());
     auto name = listener->getsockname();
-    ASSERT(name.has_value());
+    ZASSERT(name.has_value());
     const int port = name->port;
     auto [accepted, connected] =
         run(listener->accept(), StreamTransport::connect_tcp("127.0.0.1", port, loop));
-    ASSERT(accepted.has_value());
-    ASSERT(connected.has_value());
+    ZASSERT(accepted.has_value());
+    ZASSERT(connected.has_value());
     JSONPeer peer(loop, std::move(*connected));
     std::vector<std::string> notes;
     peer.on_notification([&](const NoteParams& params) { notes.push_back(params.text); });
@@ -230,9 +230,9 @@ ZEST_CASE(close_output_on_a_shared_stream_keeps_reading) {
     };
 
     auto [ran, remote_ended, closed] = run(peer.run(), remote(), closer());
-    EXPECT(ran.has_value());
-    EXPECT(remote_ended.has_value());
-    EXPECT(notes == std::vector<std::string>{"after"});
+    ZEXPECT(ran.has_value());
+    ZEXPECT(remote_ended.has_value());
+    ZEXPECT(notes == std::vector<std::string>{"after"});
 }
 
 };  // ZEST_SUITE(ipc_peer_stream)

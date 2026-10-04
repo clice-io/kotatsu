@@ -52,7 +52,8 @@ struct Options {
 
     DecoFlag(help =
                  "run tests one after another in this process, for debuggers: a crash "
-                 "ends the run and --timeout does not apply";
+                 "or a failed ZASSERT ends the run, crash tests are skipped and "
+                 "--timeout does not apply";
              required = false)
     no_isolation = false;
 

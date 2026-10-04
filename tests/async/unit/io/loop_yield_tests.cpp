@@ -26,8 +26,8 @@ ZEST_CASE(other_tasks_run_first) {
     };
 
     auto [yielded, ran] = run(yielder(), other());
-    EXPECT(yielded.has_value());
-    EXPECT(order == std::vector{1, 2, 3});
+    ZEXPECT(yielded.has_value());
+    ZEXPECT(order == std::vector{1, 2, 3});
 }
 
 // Every resume the current step queued (here the waiter woken by set())
@@ -47,8 +47,8 @@ ZEST_CASE(queued_resumes_run_first) {
     };
 
     auto [waited, set] = run(waiter(), setter());
-    EXPECT(waited.has_value());
-    EXPECT(order == std::vector{1, 2});
+    ZEXPECT(waited.has_value());
+    ZEXPECT(order == std::vector{1, 2});
 }
 
 // A yield queued from a timer callback does not resume in that iteration's
@@ -59,10 +59,10 @@ ZEST_CASE(from_a_timer_callback_waits_for_the_next_iteration) {
     std::vector<int> order;
     auto checker = [&]() -> task<void, error> {
         co_await go.wait();
-        EXPECT(!on_check.start());
+        ZEXPECT(!on_check.start());
         co_await on_check.wait().or_fail();
         order.push_back(1);
-        EXPECT(!on_check.stop());
+        ZEXPECT(!on_check.stop());
     };
     auto yielder = [&]() -> task<> {
         co_await sleep(std::chrono::milliseconds(1));
@@ -72,8 +72,8 @@ ZEST_CASE(from_a_timer_callback_waits_for_the_next_iteration) {
     };
 
     auto [checked, yielded] = run(checker(), yielder());
-    EXPECT(checked.has_value());
-    EXPECT(order == std::vector{1, 2});
+    ZEXPECT(checked.has_value());
+    ZEXPECT(order == std::vector{1, 2});
 }
 
 // A yield's cancel has nothing to undo: the yield stays queued, and its turn
@@ -98,10 +98,10 @@ ZEST_CASE(can_be_cancelled_while_suspended) {
     };
 
     auto [result, ran] = run(race(), beside());
-    ASSERT(result.has_value());
-    EXPECT(*result == 1U);
-    EXPECT(!resumed);
-    EXPECT(order == std::vector{1, 2});
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 1U);
+    ZEXPECT(!resumed);
+    ZEXPECT(order == std::vector{1, 2});
 }
 
 // A task cancelled while it runs ends at its yield, once the queued yield
@@ -117,8 +117,8 @@ ZEST_CASE(under_a_cancelled_task_ends_it) {
     target = yielder();
 
     auto [yielded] = run(target);
-    EXPECT(yielded.is_cancelled());
-    EXPECT(!resumed);
+    ZEXPECT(yielded.is_cancelled());
+    ZEXPECT(!resumed);
 }
 
 };  // ZEST_SUITE(async_io_loop_yield)

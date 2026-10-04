@@ -466,45 +466,45 @@ ZEST_SUITE(codec_fbs_encode) {
 
 ZEST_CASE(buffer_carries_the_identifier) {
     auto bytes = fbs::to_bytes(test::Point{.x = 1, .y = 2});
-    ASSERT(bytes);
-    EXPECT(::flatbuffers::BufferHasIdentifier(bytes->data(), "EVTO"));
+    ZASSERT(bytes);
+    ZEXPECT(::flatbuffers::BufferHasIdentifier(bytes->data(), "EVTO"));
 }
 
 ZEST_CASE(trivially_copyable_struct_field_is_inline) {
-    STATIC_EXPECT(fbs::can_inline_struct_v<test::Point>);
-    STATIC_EXPECT(!fbs::can_inline_struct_v<test::Address>);
+    ZSTATIC_EXPECT(fbs::can_inline_struct_v<test::Point>);
+    ZSTATIC_EXPECT(!fbs::can_inline_struct_v<test::Address>);
     auto bytes = fbs::to_bytes(Frame{
         .id = 7,
         .pos = {.x = 10,      .y = 20      },
         .addr = {.city = "sh", .zip = 200000}
     });
-    ASSERT(bytes);
+    ZASSERT(bytes);
     const auto* root = root_of(*bytes);
-    EXPECT(root->GetField<std::int32_t>(slot(0), 0) == 7);
+    ZEXPECT(root->GetField<std::int32_t>(slot(0), 0) == 7);
     const auto* pos = root->GetStruct<const test::Point*>(slot(1));
-    ASSERT(pos != nullptr);
-    EXPECT(pos->x == 10);
-    EXPECT(pos->y == 20);
+    ZASSERT(pos != nullptr);
+    ZEXPECT(pos->x == 10);
+    ZEXPECT(pos->y == 20);
     const auto* addr = root->GetPointer<const fbs::Table*>(slot(2));
-    ASSERT(addr != nullptr);
-    EXPECT(addr->GetField<std::int32_t>(slot(1), 0) == 200000);
+    ZASSERT(addr != nullptr);
+    ZEXPECT(addr->GetField<std::int32_t>(slot(1), 0) == 200000);
 }
 
 ZEST_CASE(char_and_byte_fields_keep_a_struct_inline) {
-    STATIC_EXPECT(fbs::can_inline_struct_v<Probe>);
+    ZSTATIC_EXPECT(fbs::can_inline_struct_v<Probe>);
     const Placed<Probe> input{
         .entries = {{.tag = 'k', .flags = std::byte{0x5A}, .count = 3}},
         .solo = {.tag = 'q', .flags = std::byte{0xA5}, .count = -1},
     };
     auto bytes = fbs::to_bytes(input);
-    ASSERT(bytes);
+    ZASSERT(bytes);
     const auto* solo = root_of(*bytes)->GetStruct<const Probe*>(slot(1));
-    ASSERT(solo != nullptr);
-    EXPECT(solo->flags == std::byte{0xA5});
+    ZASSERT(solo != nullptr);
+    ZEXPECT(solo->flags == std::byte{0xA5});
     auto decoded = fbs::from_bytes<Placed<Probe>>(*bytes);
-    ASSERT(decoded);
-    EXPECT(decoded->entries == input.entries);
-    EXPECT(decoded->solo == input.solo);
+    ZASSERT(decoded);
+    ZEXPECT(decoded->entries == input.entries);
+    ZEXPECT(decoded->solo == input.solo);
 }
 
 ZEST_CASE(inline_structs_in_a_vector_are_a_struct_vector) {
@@ -514,41 +514,41 @@ ZEST_CASE(inline_structs_in_a_vector_are_a_struct_vector) {
         .waypoints = {{.x = 5, .y = 6}, {.x = 7, .y = 8}},
     };
     auto bytes = fbs::to_bytes(input);
-    ASSERT(bytes);
+    ZASSERT(bytes);
     const auto* root = root_of(*bytes);
     for(std::size_t field: {0U, 1U}) {
         ZEST_CONTEXT("field {}", field);
         const auto* points = root->GetPointer<const fbs::Vector<const test::Point*>*>(slot(field));
-        ASSERT(points != nullptr);
-        ASSERT(points->size() == 2U);
-        EXPECT(points->Get(1)->y == (field == 0 ? 4 : 8));
+        ZASSERT(points != nullptr);
+        ZASSERT(points->size() == 2U);
+        ZEXPECT(points->Get(1)->y == (field == 0 ? 4 : 8));
     }
     auto decoded = fbs::from_bytes<Route>(*bytes);
-    ASSERT(decoded);
-    EXPECT(*decoded == input);
+    ZASSERT(decoded);
+    ZEXPECT(*decoded == input);
 }
 
 ZEST_CASE(skipped_field_takes_no_slot) {
     // Slots follow the schema, which leaves the skipped field out; the views
     // map members to slots through the same schema.
     auto bytes = fbs::to_bytes(test::FlattenInnerWithSkip{.keep_a = 3, .drop_b = 999, .keep_c = 5});
-    ASSERT(bytes);
+    ZASSERT(bytes);
     const auto* root = root_of(*bytes);
-    EXPECT(root->GetField<std::int32_t>(slot(0), 0) == 3);
-    EXPECT(root->GetField<std::int32_t>(slot(1), 0) == 5);
-    EXPECT(root->GetOptionalFieldOffset(slot(2)) == 0U);
+    ZEXPECT(root->GetField<std::int32_t>(slot(0), 0) == 3);
+    ZEXPECT(root->GetField<std::int32_t>(slot(1), 0) == 5);
+    ZEXPECT(root->GetOptionalFieldOffset(slot(2)) == 0U);
 }
 
 ZEST_CASE(engaged_optional_of_a_null_reads_back_disengaged) {
     // A null payload leaves its slot absent, as a disengaged optional does,
     // so nothing tells the two apart.
     auto bytes = fbs::to_bytes(NullPayload{.none = std::monostate{}, .tail = 7});
-    ASSERT(bytes);
-    EXPECT(root_of(*bytes)->GetOptionalFieldOffset(slot(0)) == 0U);
+    ZASSERT(bytes);
+    ZEXPECT(root_of(*bytes)->GetOptionalFieldOffset(slot(0)) == 0U);
     auto decoded = fbs::from_bytes<NullPayload>(*bytes);
-    ASSERT(decoded);
-    EXPECT(!decoded->none);
-    EXPECT(decoded->tail == 7);
+    ZASSERT(decoded);
+    ZEXPECT(!decoded->none);
+    ZEXPECT(decoded->tail == 7);
 }
 
 ZEST_CASE(absent_slot_reads_as_null) {
@@ -556,20 +556,20 @@ ZEST_CASE(absent_slot_reads_as_null) {
     // travels: whatever the target held, the field reads as null, empty or
     // zero. Skippable's initializers are none of those.
     auto bytes = fbs::to_bytes(test::IdOnly{.id = 1});
-    ASSERT(bytes);
+    ZASSERT(bytes);
     test::Skippable decoded{};
-    ASSERT(fbs::from_bytes(*bytes, decoded));
-    EXPECT(meta::eq(
+    ZASSERT(fbs::from_bytes(*bytes, decoded));
+    ZEXPECT(meta::eq(
         decoded,
         test::Skippable{.id = 1, .note = std::nullopt, .tags = {}, .generation = 0, .score = 0}));
 }
 
 ZEST_CASE(empty_nullable_leaves_its_slot_absent) {
     auto empty = fbs::to_bytes(Optionals{});
-    ASSERT(empty);
+    ZASSERT(empty);
     for(std::size_t field: {0U, 1U, 2U}) {
         ZEST_CONTEXT("field {}", field);
-        EXPECT(root_of(*empty)->GetOptionalFieldOffset(slot(field)) == 0U);
+        ZEXPECT(root_of(*empty)->GetOptionalFieldOffset(slot(field)) == 0U);
     }
 
     auto engaged = fbs::to_bytes(Optionals{
@@ -577,28 +577,28 @@ ZEST_CASE(empty_nullable_leaves_its_slot_absent) {
         .owned = std::make_unique<test::Point>(),
         .addr = test::Address{},
     });
-    ASSERT(engaged);
+    ZASSERT(engaged);
     for(std::size_t field: {0U, 1U, 2U}) {
         ZEST_CONTEXT("field {}", field);
-        EXPECT(root_of(*engaged)->GetOptionalFieldOffset(slot(field)) != 0U);
+        ZEXPECT(root_of(*engaged)->GetOptionalFieldOffset(slot(field)) != 0U);
     }
 }
 
 ZEST_CASE(non_table_root_is_boxed_at_the_first_slot) {
     auto number = fbs::to_bytes(std::int32_t{42});
-    ASSERT(number);
-    EXPECT(root_of(*number)->GetField<std::int32_t>(slot(0), 0) == 42);
+    ZASSERT(number);
+    ZEXPECT(root_of(*number)->GetField<std::int32_t>(slot(0), 0) == 42);
 
     auto list = fbs::to_bytes(std::vector<std::int32_t>{3, 5, 8});
-    ASSERT(list);
+    ZASSERT(list);
     const auto* vec = root_of(*list)->GetPointer<const fbs::Vector<std::int32_t>*>(slot(0));
-    ASSERT(vec != nullptr);
-    ASSERT(vec->size() == 3U);
-    EXPECT(vec->Get(2) == 8);
+    ZASSERT(vec != nullptr);
+    ZASSERT(vec->size() == 3U);
+    ZEXPECT(vec->Get(2) == 8);
 
     auto none = fbs::to_bytes(std::optional<std::int32_t>{});
-    ASSERT(none);
-    EXPECT(root_of(*none)->GetOptionalFieldOffset(slot(0)) == 0U);
+    ZASSERT(none);
+    ZEXPECT(root_of(*none)->GetOptionalFieldOffset(slot(0)) == 0U);
 }
 
 ZEST_CASE(tuple_is_a_table_of_slots) {
@@ -609,15 +609,15 @@ ZEST_CASE(tuple_is_a_table_of_slots) {
         "seven",
         {1, 3, 5}
     });
-    ASSERT(bytes);
+    ZASSERT(bytes);
     const auto* root = root_of(*bytes);
-    EXPECT(root->GetField<std::int32_t>(slot(0), 0) == 7);
+    ZEXPECT(root->GetField<std::int32_t>(slot(0), 0) == 7);
     const auto* text = root->GetPointer<const fbs::String*>(slot(1));
-    ASSERT(text != nullptr);
-    EXPECT(text->str() == "seven");
+    ZASSERT(text != nullptr);
+    ZEXPECT(text->str() == "seven");
     const auto* triple = root->GetPointer<const fbs::Table*>(slot(2));
-    ASSERT(triple != nullptr);
-    EXPECT(triple->GetField<std::int32_t>(slot(2), 0) == 5);
+    ZASSERT(triple != nullptr);
+    ZEXPECT(triple->GetField<std::int32_t>(slot(2), 0) == 5);
 }
 
 ZEST_CASE(variant_is_a_tag_and_a_payload_slot) {
@@ -627,26 +627,26 @@ ZEST_CASE(variant_is_a_tag_and_a_payload_slot) {
     auto list = fbs::to_bytes(Choice{
         std::vector<std::int32_t>{1, 2, 3}
     });
-    ASSERT(list);
+    ZASSERT(list);
     const auto* root = root_of(*list);
-    EXPECT(root->GetField<std::uint32_t>(slot(0), 99) == 1U);
+    ZEXPECT(root->GetField<std::uint32_t>(slot(0), 99) == 1U);
     const auto* vec = root->GetPointer<const fbs::Vector<std::int32_t>*>(slot(2));
-    ASSERT(vec != nullptr);
-    EXPECT(vec->size() == 3U);
+    ZASSERT(vec != nullptr);
+    ZEXPECT(vec->size() == 3U);
 
     auto point = fbs::to_bytes(Choice{
         test::Point{.x = 1, .y = 2}
     });
-    ASSERT(point);
+    ZASSERT(point);
     const auto* stored = root_of(*point)->GetStruct<const test::Point*>(slot(3));
-    ASSERT(stored != nullptr);
-    EXPECT(stored->y == 2);
+    ZASSERT(stored != nullptr);
+    ZEXPECT(stored->y == 2);
 
     // A monostate payload is a null: its slot is absent.
     auto none = fbs::to_bytes(Choice{});
-    ASSERT(none);
-    EXPECT(root_of(*none)->GetField<std::uint32_t>(slot(0), 99) == 0U);
-    EXPECT(root_of(*none)->GetOptionalFieldOffset(slot(1)) == 0U);
+    ZASSERT(none);
+    ZEXPECT(root_of(*none)->GetField<std::uint32_t>(slot(0), 99) == 0U);
+    ZEXPECT(root_of(*none)->GetOptionalFieldOffset(slot(1)) == 0U);
 }
 
 ZEST_CASE(nullable_and_container_elements_are_boxed) {
@@ -661,19 +661,19 @@ ZEST_CASE(nullable_and_container_elements_are_boxed) {
         .maybe = {5,                 std::nullopt},
         .blobs = {{std::byte{0xAA}}, {}          }
     });
-    ASSERT(bytes);
+    ZASSERT(bytes);
     const auto* maybe = root_of(*bytes)->GetPointer<const EntryVector*>(slot(0));
-    ASSERT(maybe != nullptr);
-    ASSERT(maybe->size() == 2U);
-    EXPECT(maybe->Get(0)->GetField<std::int32_t>(slot(0), 0) == 5);
-    EXPECT(maybe->Get(1)->GetOptionalFieldOffset(slot(0)) == 0U);
+    ZASSERT(maybe != nullptr);
+    ZASSERT(maybe->size() == 2U);
+    ZEXPECT(maybe->Get(0)->GetField<std::int32_t>(slot(0), 0) == 5);
+    ZEXPECT(maybe->Get(1)->GetOptionalFieldOffset(slot(0)) == 0U);
     const auto* blobs = root_of(*bytes)->GetPointer<const EntryVector*>(slot(1));
-    ASSERT(blobs != nullptr);
-    ASSERT(blobs->size() == 2U);
+    ZASSERT(blobs != nullptr);
+    ZASSERT(blobs->size() == 2U);
     const auto* first = blobs->Get(0)->GetPointer<const fbs::Vector<std::uint8_t>*>(slot(0));
-    ASSERT(first != nullptr);
-    ASSERT(first->size() == 1U);
-    EXPECT(first->Get(0) == 0xAAU);
+    ZASSERT(first != nullptr);
+    ZASSERT(first->size() == 1U);
+    ZEXPECT(first->Get(0) == 0xAAU);
 }
 
 ZEST_CASE(map_entries_sort_by_their_key) {
@@ -693,16 +693,16 @@ ZEST_CASE(map_entries_sort_by_their_key) {
                   {test::SignedEnum::zero, 2}                          },
     };
     auto bytes = fbs::to_bytes(input);
-    ASSERT(bytes);
+    ZASSERT(bytes);
     const auto* root = root_of(*bytes);
-    EXPECT(entry_key<std::int32_t>(root, 0, 0) == -7);
-    EXPECT(entry_key<std::int32_t>(root, 0, 1) == 2);
-    EXPECT(entry_key<std::int32_t>(root, 0, 2) == 10);
-    EXPECT(entry_key<std::uint64_t>(root, 1, 0) == 2U);
-    EXPECT(entry_key<std::uint64_t>(root, 1, 1) == 42U);
-    EXPECT(entry_key<std::uint64_t>(root, 1, 2) == 0x8000000000000001ULL);
-    EXPECT(entry_key<std::int32_t>(root, 2, 0) == -42);
-    EXPECT(entry_key<std::int32_t>(root, 2, 2) == 42);
+    ZEXPECT(entry_key<std::int32_t>(root, 0, 0) == -7);
+    ZEXPECT(entry_key<std::int32_t>(root, 0, 1) == 2);
+    ZEXPECT(entry_key<std::int32_t>(root, 0, 2) == 10);
+    ZEXPECT(entry_key<std::uint64_t>(root, 1, 0) == 2U);
+    ZEXPECT(entry_key<std::uint64_t>(root, 1, 1) == 42U);
+    ZEXPECT(entry_key<std::uint64_t>(root, 1, 2) == 0x8000000000000001ULL);
+    ZEXPECT(entry_key<std::int32_t>(root, 2, 0) == -42);
+    ZEXPECT(entry_key<std::int32_t>(root, 2, 2) == 42);
 }
 
 ZEST_CASE(struct_keyed_map_entries_sort_field_by_field) {
@@ -734,28 +734,28 @@ ZEST_CASE(struct_keyed_map_entries_sort_field_by_field) {
         hashed.data.emplace(keys[i], static_cast<std::int32_t>(i));
     }
     auto ordered_bytes = fbs::to_bytes(ordered);
-    ASSERT(ordered_bytes);
+    ZASSERT(ordered_bytes);
     auto hashed_bytes = fbs::to_bytes(hashed);
-    ASSERT(hashed_bytes);
+    ZASSERT(hashed_bytes);
 
     // The entry vector is sorted; the entry tables themselves sit wherever
     // the builder placed them, in the container's order.
     for(const Buffer* bytes: {&*ordered_bytes, &*hashed_bytes}) {
         const auto* entries = root_of(*bytes)->GetPointer<const EntryVector*>(slot(0));
-        ASSERT(entries != nullptr);
-        ASSERT(entries->size() == keys.size());
+        ZASSERT(entries != nullptr);
+        ZASSERT(entries->size() == keys.size());
         for(std::size_t i = 0; i < keys.size(); ++i) {
             ZEST_CONTEXT("entry {}", i);
             const auto* key = entries->Get(static_cast<fbs::uoffset_t>(i))
                                   ->GetStruct<const OccurrenceKey*>(slot(0));
-            ASSERT(key != nullptr);
-            EXPECT(*key == keys[i]);
+            ZASSERT(key != nullptr);
+            ZEXPECT(*key == keys[i]);
         }
     }
 
     auto decoded = fbs::from_bytes<Ordered>(*ordered_bytes);
-    ASSERT(decoded);
-    EXPECT(meta::eq(decoded->data, ordered.data));
+    ZASSERT(decoded);
+    ZEXPECT(meta::eq(decoded->data, ordered.data));
 }
 
 ZEST_CASE(long_double_is_a_double_cell) {
@@ -770,17 +770,17 @@ ZEST_CASE(long_double_is_a_double_cell) {
         .scale = 3.5L
     };
     auto bytes = fbs::to_bytes(input);
-    ASSERT(bytes);
+    ZASSERT(bytes);
     const auto* root = root_of(*bytes);
     const auto* values = root->GetPointer<const fbs::Vector<double>*>(slot(0));
-    ASSERT(values != nullptr);
-    ASSERT(values->size() == 2U);
-    EXPECT(values->Get(1) == -2.25);
-    EXPECT(root->GetField<double>(slot(1), 0) == 3.5);
+    ZASSERT(values != nullptr);
+    ZASSERT(values->size() == 2U);
+    ZEXPECT(values->Get(1) == -2.25);
+    ZEXPECT(root->GetField<double>(slot(1), 0) == 3.5);
     auto decoded = fbs::from_bytes<Samples>(*bytes);
-    ASSERT(decoded);
-    EXPECT(decoded->values == input.values);
-    EXPECT(decoded->scale == input.scale);
+    ZASSERT(decoded);
+    ZEXPECT(decoded->values == input.values);
+    ZEXPECT(decoded->scale == input.scale);
 }
 
 ZEST_CASE(members_that_keep_a_struct_a_table) {
@@ -788,18 +788,18 @@ ZEST_CASE(members_that_keep_a_struct_a_table) {
     // are not valid for every byte pattern, a repr or an annotation replaces
     // the raw member, and a struct past the reflection limit shows no
     // fields: none can be a memcpy image. An explicit enum base can.
-    STATIC_EXPECT(std::is_trivially_copyable_v<WithOptional>);
-    STATIC_EXPECT(!fbs::can_inline_struct_v<WithOptional>);
-    STATIC_EXPECT(std::is_trivially_copyable_v<WithLongDouble>);
-    STATIC_EXPECT(!fbs::can_inline_struct_v<WithLongDouble>);
-    STATIC_EXPECT(!fbs::can_inline_struct_v<WithDeducedEnum>);
-    STATIC_EXPECT(fbs::can_inline_struct_v<WithFixedEnum>);
-    STATIC_EXPECT(!fbs::can_inline_struct_v<CellProbe>);
-    STATIC_EXPECT(!fbs::can_inline_struct_v<AdaptedProbe>);
-    STATIC_EXPECT(!fbs::can_inline_struct_v<ProbeFrame>);
-    STATIC_EXPECT(meta::field_count<OverLimit>() == 0U);
-    STATIC_EXPECT(!fbs::can_inline_struct_v<OverLimit>);
-    STATIC_EXPECT(!fbs::can_inline_struct_v<HoldsOverLimit>);
+    ZSTATIC_EXPECT(std::is_trivially_copyable_v<WithOptional>);
+    ZSTATIC_EXPECT(!fbs::can_inline_struct_v<WithOptional>);
+    ZSTATIC_EXPECT(std::is_trivially_copyable_v<WithLongDouble>);
+    ZSTATIC_EXPECT(!fbs::can_inline_struct_v<WithLongDouble>);
+    ZSTATIC_EXPECT(!fbs::can_inline_struct_v<WithDeducedEnum>);
+    ZSTATIC_EXPECT(fbs::can_inline_struct_v<WithFixedEnum>);
+    ZSTATIC_EXPECT(!fbs::can_inline_struct_v<CellProbe>);
+    ZSTATIC_EXPECT(!fbs::can_inline_struct_v<AdaptedProbe>);
+    ZSTATIC_EXPECT(!fbs::can_inline_struct_v<ProbeFrame>);
+    ZSTATIC_EXPECT(meta::field_count<OverLimit>() == 0U);
+    ZSTATIC_EXPECT(!fbs::can_inline_struct_v<OverLimit>);
+    ZSTATIC_EXPECT(!fbs::can_inline_struct_v<HoldsOverLimit>);
 }
 
 ZEST_CASE(table_shaped_structs_roundtrip) {
@@ -823,12 +823,12 @@ ZEST_CASE(table_shaped_structs_roundtrip) {
         using T = std::remove_cvref_t<decltype(input)>;
         ZEST_CONTEXT("{}", meta::type_name<T>());
         auto bytes = fbs::to_bytes(input);
-        ASSERT(bytes);
-        EXPECT(solo_is_a_table(*bytes));
+        ZASSERT(bytes);
+        ZEXPECT(solo_is_a_table(*bytes));
         auto decoded = fbs::from_bytes<T>(*bytes);
-        ASSERT(decoded);
-        EXPECT(decoded->entries == input.entries);
-        EXPECT(decoded->solo == input.solo);
+        ZASSERT(decoded);
+        ZEXPECT(decoded->entries == input.entries);
+        ZEXPECT(decoded->solo == input.solo);
     };
     check(optional);
     check(wide);
@@ -848,24 +848,24 @@ ZEST_CASE(annotated_member_keeps_its_adapter_at_any_depth) {
     input.frame.probe.cal.code = 27;
     input.frame.id = 4;
     auto bytes = fbs::to_bytes(input);
-    ASSERT(bytes);
+    ZASSERT(bytes);
     const auto* frame = root_of(*bytes)->GetPointer<const fbs::Table*>(slot(0));
-    ASSERT(frame != nullptr);
+    ZASSERT(frame != nullptr);
     const auto* probe = frame->GetPointer<const fbs::Table*>(slot(0));
-    ASSERT(probe != nullptr);
+    ZASSERT(probe != nullptr);
     const auto* cal = probe->GetPointer<const fbs::String*>(slot(0));
-    ASSERT(cal != nullptr);
-    EXPECT(cal->str() == "27");
+    ZASSERT(cal != nullptr);
+    ZEXPECT(cal->str() == "27");
     auto decoded = fbs::from_bytes<Holder>(*bytes);
-    ASSERT(decoded);
-    EXPECT(decoded->frame == input.frame);
+    ZASSERT(decoded);
+    ZEXPECT(decoded->frame == input.frame);
 }
 
 ZEST_CASE(non_assignable_struct_decodes_field_by_field) {
     // Copying a Pinned is deprecated, so the struct holds one only as a
     // field and the roundtrip never needs the whole object.
-    STATIC_EXPECT(std::is_trivially_copyable_v<Pinned>);
-    STATIC_EXPECT(!fbs::can_inline_struct_v<Pinned>);
+    ZSTATIC_EXPECT(std::is_trivially_copyable_v<Pinned>);
+    ZSTATIC_EXPECT(!fbs::can_inline_struct_v<Pinned>);
 
     struct Holder {
         Pinned solo;
@@ -877,12 +877,12 @@ ZEST_CASE(non_assignable_struct_decodes_field_by_field) {
         .tail = 3
     };
     auto bytes = fbs::to_bytes(input);
-    ASSERT(bytes);
-    EXPECT(root_of(*bytes)->GetPointer<const fbs::Table*>(slot(0)) != nullptr);
+    ZASSERT(bytes);
+    ZEXPECT(root_of(*bytes)->GetPointer<const fbs::Table*>(slot(0)) != nullptr);
     Holder decoded{};
-    ASSERT(fbs::from_bytes(*bytes, decoded));
-    EXPECT(decoded.solo == input.solo);
-    EXPECT(decoded.tail == input.tail);
+    ZASSERT(fbs::from_bytes(*bytes, decoded));
+    ZEXPECT(decoded.solo == input.solo);
+    ZEXPECT(decoded.tail == input.tail);
 }
 
 ZEST_CASE(inline_struct_padding_is_zero) {
@@ -903,50 +903,50 @@ ZEST_CASE(inline_struct_padding_is_zero) {
     quiet.scores.emplace(Padded{.tag = 'k', .id = 3}, 1);
 
     auto noisy_bytes = fbs::to_bytes(noisy);
-    ASSERT(noisy_bytes);
+    ZASSERT(noisy_bytes);
     auto quiet_bytes = fbs::to_bytes(quiet);
-    ASSERT(quiet_bytes);
+    ZASSERT(quiet_bytes);
     // Anything short of identical bytes would disclose the memory under the
     // padding and make encoding nondeterministic.
-    EXPECT(*noisy_bytes == *quiet_bytes);
+    ZEXPECT(*noisy_bytes == *quiet_bytes);
 
     const auto* root = root_of(*noisy_bytes);
     const auto* items = root->GetPointer<const fbs::Vector<const Padded*>*>(slot(0));
-    ASSERT(items != nullptr);
-    ASSERT(items->size() == 1U);
-    EXPECT(padding_is_zero(items->Get(0)));
+    ZASSERT(items != nullptr);
+    ZASSERT(items->size() == 1U);
+    ZEXPECT(padding_is_zero(items->Get(0)));
     const auto* solo = root->GetStruct<const Padded*>(slot(1));
-    ASSERT(solo != nullptr);
-    EXPECT(padding_is_zero(solo));
+    ZASSERT(solo != nullptr);
+    ZEXPECT(padding_is_zero(solo));
     const auto* entries = root->GetPointer<const EntryVector*>(slot(2));
-    ASSERT(entries != nullptr);
-    ASSERT(entries->size() == 1U);
+    ZASSERT(entries != nullptr);
+    ZASSERT(entries->size() == 1U);
     const auto* key = entries->Get(0)->GetStruct<const Padded*>(slot(0));
-    ASSERT(key != nullptr);
-    EXPECT(padding_is_zero(key));
+    ZASSERT(key != nullptr);
+    ZEXPECT(padding_is_zero(key));
 
     auto decoded = fbs::from_bytes<WithPadded>(*noisy_bytes);
-    ASSERT(decoded);
-    EXPECT(decoded->solo == quiet.solo);
-    EXPECT(decoded->items == quiet.items);
+    ZASSERT(decoded);
+    ZEXPECT(decoded->solo == quiet.solo);
+    ZEXPECT(decoded->items == quiet.items);
 }
 
 ZEST_CASE(inline_struct_with_default_initializers_stays_inline) {
-    STATIC_EXPECT(fbs::can_inline_struct_v<SentinelRange>);
-    STATIC_EXPECT(fbs::can_inline_struct_v<OccurrenceKey>);
+    ZSTATIC_EXPECT(fbs::can_inline_struct_v<SentinelRange>);
+    ZSTATIC_EXPECT(fbs::can_inline_struct_v<OccurrenceKey>);
     const Placed<OccurrenceKey> input{
         .entries = {{.range = {.begin = 1, .end = 5}, .target = 9, .weight = 0}},
         .solo = {.range = {.begin = 8, .end = 9}, .target = 1, .weight = 2},
     };
     auto bytes = fbs::to_bytes(input);
-    ASSERT(bytes);
+    ZASSERT(bytes);
     const auto* solo = root_of(*bytes)->GetStruct<const OccurrenceKey*>(slot(1));
-    ASSERT(solo != nullptr);
-    EXPECT(solo->range.end == 9U);
+    ZASSERT(solo != nullptr);
+    ZEXPECT(solo->range.end == 9U);
     auto decoded = fbs::from_bytes<Placed<OccurrenceKey>>(*bytes);
-    ASSERT(decoded);
-    EXPECT(decoded->entries == input.entries);
-    EXPECT(decoded->solo == input.solo);
+    ZASSERT(decoded);
+    ZEXPECT(decoded->entries == input.entries);
+    ZEXPECT(decoded->solo == input.solo);
 }
 
 ZEST_CASE(string_repr_elements_are_strings) {
@@ -964,20 +964,20 @@ ZEST_CASE(string_repr_elements_are_strings) {
         .numbers = {12, -3},
     };
     auto bytes = fbs::to_bytes(input);
-    ASSERT(bytes);
+    ZASSERT(bytes);
     const auto* root = root_of(*bytes);
     const auto* groups = root->GetPointer<const fbs::Vector<fbs::offset_t<fbs::String>>*>(slot(0));
-    ASSERT(groups != nullptr);
-    ASSERT(groups->size() == 3U);
-    EXPECT(groups->Get(0)->str() == "10,20");
+    ZASSERT(groups != nullptr);
+    ZASSERT(groups->size() == 3U);
+    ZEXPECT(groups->Get(0)->str() == "10,20");
     const auto* numbers = root->GetPointer<const fbs::Vector<fbs::offset_t<fbs::String>>*>(slot(1));
-    ASSERT(numbers != nullptr);
-    ASSERT(numbers->size() == 2U);
-    EXPECT(numbers->Get(1)->str() == "-3");
+    ZASSERT(numbers != nullptr);
+    ZASSERT(numbers->size() == 2U);
+    ZEXPECT(numbers->Get(1)->str() == "-3");
     auto decoded = fbs::from_bytes<Lists>(*bytes);
-    ASSERT(decoded);
-    EXPECT(decoded->groups == input.groups);
-    EXPECT(meta::eq(decoded->numbers, input.numbers));
+    ZASSERT(decoded);
+    ZEXPECT(decoded->groups == input.groups);
+    ZEXPECT(meta::eq(decoded->numbers, input.numbers));
 }
 
 ZEST_CASE(table_repr_elements_are_tables) {
@@ -987,14 +987,14 @@ ZEST_CASE(table_repr_elements_are_tables) {
         {"beta",  443}
     };
     auto bytes = fbs::to_bytes(input);
-    ASSERT(bytes);
+    ZASSERT(bytes);
     const auto* tables = root_of(*bytes)->GetPointer<const EntryVector*>(slot(0));
-    ASSERT(tables != nullptr);
-    ASSERT(tables->size() == 3U);
-    EXPECT(tables->Get(2)->GetField<std::uint32_t>(slot(1), 0) == 443U);
+    ZASSERT(tables != nullptr);
+    ZASSERT(tables->size() == 3U);
+    ZEXPECT(tables->Get(2)->GetField<std::uint32_t>(slot(1), 0) == 443U);
     auto decoded = fbs::from_bytes<std::vector<Endpoint>>(*bytes);
-    ASSERT(decoded);
-    EXPECT(*decoded == input);
+    ZASSERT(decoded);
+    ZEXPECT(*decoded == input);
 }
 
 ZEST_CASE(nullable_null_and_bytes_repr_elements_are_boxed) {
@@ -1015,40 +1015,40 @@ ZEST_CASE(nullable_null_and_bytes_repr_elements_are_boxed) {
         .blobs_by_id = {{10, ByteBag{{std::byte{0x11}}}}},
     };
     auto bytes = fbs::to_bytes(input);
-    ASSERT(bytes);
+    ZASSERT(bytes);
     const auto* root = root_of(*bytes);
     const auto* stamps = root->GetPointer<const EntryVector*>(slot(0));
-    ASSERT(stamps != nullptr);
-    ASSERT(stamps->size() == 3U);
-    EXPECT(stamps->Get(0)->GetField<std::uint32_t>(slot(0), 0) == 7U);
-    EXPECT(stamps->Get(1)->GetOptionalFieldOffset(slot(0)) == 0U);
+    ZASSERT(stamps != nullptr);
+    ZASSERT(stamps->size() == 3U);
+    ZEXPECT(stamps->Get(0)->GetField<std::uint32_t>(slot(0), 0) == 7U);
+    ZEXPECT(stamps->Get(1)->GetOptionalFieldOffset(slot(0)) == 0U);
     const auto* markers = root->GetPointer<const EntryVector*>(slot(1));
-    ASSERT(markers != nullptr);
-    EXPECT(markers->size() == 3U);
+    ZASSERT(markers != nullptr);
+    ZEXPECT(markers->size() == 3U);
     const auto* blobs = root->GetPointer<const EntryVector*>(slot(2));
-    ASSERT(blobs != nullptr);
-    ASSERT(blobs->size() == 2U);
+    ZASSERT(blobs != nullptr);
+    ZASSERT(blobs->size() == 2U);
     const auto* first_blob = blobs->Get(0)->GetPointer<const fbs::Vector<std::uint8_t>*>(slot(0));
-    ASSERT(first_blob != nullptr);
-    EXPECT(first_blob->size() == 2U);
+    ZASSERT(first_blob != nullptr);
+    ZEXPECT(first_blob->size() == 2U);
 
     auto decoded = fbs::from_bytes<Lists>(*bytes);
-    ASSERT(decoded);
-    EXPECT(decoded->stamps == input.stamps);
-    EXPECT(decoded->markers.size() == 3U);
-    EXPECT(decoded->blobs == input.blobs);
-    EXPECT(decoded->blobs_by_id == input.blobs_by_id);
+    ZASSERT(decoded);
+    ZEXPECT(decoded->stamps == input.stamps);
+    ZEXPECT(decoded->markers.size() == 3U);
+    ZEXPECT(decoded->blobs == input.blobs);
+    ZEXPECT(decoded->blobs_by_id == input.blobs_by_id);
 }
 
 ZEST_CASE(format_scoped_repr_elements_are_scalars) {
     // Journal's fbs repr is an integer: its elements are integer cells.
     const std::vector<test::Journal> input{{.page = 3}, {.page = 9}};
     auto bytes = fbs::to_bytes(input);
-    ASSERT(bytes);
+    ZASSERT(bytes);
     const auto* cells = root_of(*bytes)->GetPointer<const fbs::Vector<std::int64_t>*>(slot(0));
-    ASSERT(cells != nullptr);
-    ASSERT(cells->size() == 2U);
-    EXPECT(cells->Get(1) == 9);
+    ZASSERT(cells != nullptr);
+    ZASSERT(cells->size() == 2U);
+    ZEXPECT(cells->Get(1) == 9);
 }
 
 ZEST_CASE(nested_table_encode_error_fails) {
@@ -1059,24 +1059,24 @@ ZEST_CASE(nested_table_encode_error_fails) {
     ReadingLog element;
     element.readings = {{}, bad};
     auto in_element = fbs::to_bytes<test::NanErrorConfig>(element);
-    ASSERT(!in_element);
-    EXPECT(in_element.error().message == "NaN or Infinity is not allowed");
-    EXPECT(in_element.error().format_path() == "readings[1].value");
+    ZASSERT(!in_element);
+    ZEXPECT(in_element.error().message == "NaN or Infinity is not allowed");
+    ZEXPECT(in_element.error().format_path() == "readings[1].value");
 
     ReadingLog map_value;
     map_value.by_name = {
         {"a", bad}
     };
     auto in_map_value = fbs::to_bytes<test::NanErrorConfig>(map_value);
-    ASSERT(!in_map_value);
-    EXPECT(in_map_value.error().message == "NaN or Infinity is not allowed");
+    ZASSERT(!in_map_value);
+    ZEXPECT(in_map_value.error().message == "NaN or Infinity is not allowed");
 
     ReadingLog tuple_field;
     tuple_field.numbered = {1, bad};
     auto in_tuple_field = fbs::to_bytes<test::NanErrorConfig>(tuple_field);
-    ASSERT(!in_tuple_field);
-    EXPECT(in_tuple_field.error().message == "NaN or Infinity is not allowed");
-    EXPECT(in_tuple_field.error().format_path() == "numbered[1].value");
+    ZASSERT(!in_tuple_field);
+    ZEXPECT(in_tuple_field.error().message == "NaN or Infinity is not allowed");
+    ZEXPECT(in_tuple_field.error().format_path() == "numbered[1].value");
 
     ReadingLog tuple_element;
     tuple_element.numbered_list = {
@@ -1084,14 +1084,14 @@ ZEST_CASE(nested_table_encode_error_fails) {
         NumberedReading{2, bad}
     };
     auto in_tuple_element = fbs::to_bytes<test::NanErrorConfig>(tuple_element);
-    ASSERT(!in_tuple_element);
-    EXPECT(in_tuple_element.error().message == "NaN or Infinity is not allowed");
-    EXPECT(in_tuple_element.error().format_path() == "numbered_list[1][1].value");
+    ZASSERT(!in_tuple_element);
+    ZEXPECT(in_tuple_element.error().message == "NaN or Infinity is not allowed");
+    ZEXPECT(in_tuple_element.error().format_path() == "numbered_list[1][1].value");
 
     auto in_root_tuple =
         fbs::to_bytes<test::NanErrorConfig>(std::tuple<int, LabelledReading>{1, bad});
-    ASSERT(!in_root_tuple);
-    EXPECT(in_root_tuple.error().format_path() == "[1].value");
+    ZASSERT(!in_root_tuple);
+    ZEXPECT(in_root_tuple.error().format_path() == "[1].value");
 }
 
 ZEST_CASE(nan_repr_does_not_reach_inline_structs) {
@@ -1101,15 +1101,15 @@ ZEST_CASE(nan_repr_does_not_reach_inline_structs) {
     // into a table under a config; whether such configs should be rejected
     // for types holding inline floats, or checked against the image, is open.
     // The case pins today's behaviour.
-    STATIC_EXPECT(fbs::can_inline_struct_v<Reading>);
+    ZSTATIC_EXPECT(fbs::can_inline_struct_v<Reading>);
     const double nan = std::numeric_limits<double>::quiet_NaN();
     auto inline_error = fbs::to_bytes<test::NanErrorConfig>(test::Field<Reading>{
         {.value = nan, .error = 0}
     });
-    EXPECT(inline_error.has_value());
+    ZEXPECT(inline_error.has_value());
     auto loose_error = fbs::to_bytes<test::NanErrorConfig>(test::Field<double>{nan});
-    ASSERT(!loose_error);
-    EXPECT(loose_error.error().message == "NaN or Infinity is not allowed");
+    ZASSERT(!loose_error);
+    ZEXPECT(loose_error.error().message == "NaN or Infinity is not allowed");
 }
 
 };  // ZEST_SUITE(codec_fbs_encode)

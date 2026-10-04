@@ -78,46 +78,44 @@ cc_library(
         allow_empty = True,
         exclude = ["**/*.cpp"],
     ),
-    local_defines = defines,
     # zest's snapshot cases rewrite a snapshot of tests/snapshots and put it
     # back, as under ctest, which a sandbox's read-only runfiles refuse.
     tags = [level] + (["no-sandbox"] if module == "zest" else []),
     deps = deps + ["//:zest"],
-) for module, level, deps, defines in [
-    ("support", "unit", [":support_harness"], []),
-    ("meta", "unit", [":fixtures"], []),
-    ("codec", "unit", [":codec_harness"], []),
-    ("codec/bincode", "unit", [":codec_bincode_harness"], []),
-    ("codec/debug", "unit", [":codec_harness"], []),
-    ("codec/dyn", "unit", [":codec_dyn_harness"], []),
-    ("codec/fbs", "unit", [":codec_fbs_harness"], []),
-    ("codec/json", "unit", [":codec_json_harness"], []),
-    ("codec/toml", "unit", [":codec_toml_harness"], []),
-    ("deco", "unit", [":deco_harness"], []),
+) for module, level, deps in [
+    ("support", "unit", [":support_harness"]),
+    ("meta", "unit", [":fixtures"]),
+    ("codec", "unit", [":codec_harness"]),
+    ("codec/bincode", "unit", [":codec_bincode_harness"]),
+    ("codec/debug", "unit", [":codec_harness"]),
+    ("codec/dyn", "unit", [":codec_dyn_harness"]),
+    ("codec/fbs", "unit", [":codec_fbs_harness"]),
+    ("codec/json", "unit", [":codec_json_harness"]),
+    ("codec/toml", "unit", [":codec_toml_harness"]),
+    ("deco", "unit", [":deco_harness"]),
     ("async", "unit", [
         ":async_harness",
         "//:zest_async",
-    ], []),
+    ]),
     ("async", "system", [
         ":async_harness",
         "//:zest_async",
-    ], []),
-    ("ipc", "unit", [":ipc_harness"], []),
-    ("ipc", "system", [":ipc_harness"], []),
+    ]),
+    ("ipc", "unit", [":ipc_harness"]),
+    ("ipc", "system", [":ipc_harness"]),
     ("ipc/lsp", "unit", [
         ":ipc_harness",
         ":ipc_lsp_harness",
-    ], []),
+    ]),
     ("zest", "unit", [
         ":async_harness",
         "//:zest_async",
-    ], []),
-    # zest's EXPECT_SNAPSHOT_JSON cases need the JSON codec.
-    ("zest", "system", ["//:codec_json"], ["KOTA_TEST_HAS_JSON=1"]),
+    ]),
+    ("zest", "system", []),
     ("examples/async", "unit", [
         "//:zest_async",
         "//examples:build_system_graph",
-    ], []),
+    ]),
 ]]
 
 # The integration tests' drivers: integration/drivers/<name>.cpp of a module.
@@ -153,8 +151,9 @@ kota_binary(
     ],
 )
 
-# zest's runner end to end, against tests that crash, hang or exit early, and
-# run_cli()'s command line on zest's unit tests.
+# zest's runner end to end, against tests that crash, hang, exit early or fail
+# a ZASSERT and against crash tests; run_cli()'s command line on zest's unit
+# tests.
 command_test(
     name = "zest_runner_test",
     command = [

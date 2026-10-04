@@ -59,6 +59,29 @@ private:
     std::uint64_t id;
 };
 
+/// Runs a hook if a failed ZASSERT ends the process while this is alive: the
+/// cleanup of what outlives the process, such as files or child processes. A
+/// local one wraps what the test cannot change, a member one cleans up after
+/// its type, and one of static duration serves the whole program.
+///
+/// The hooks alive then run newest first, on the thread that failed, once the
+/// runner knows the test failed; the other threads go on running. From then
+/// on another thread that creates or destroys a FatalHook waits for the end,
+/// so that what the hooks use stays alive, and a hook must not wait for the
+/// test's other threads. A hook's own failed ZASSERT ends the process at once.
+/// Declare a FatalHook after what its hook uses, so that it goes first.
+struct FatalHook {
+    explicit FatalHook(function<void()> hook);
+
+    FatalHook(const FatalHook&) = delete;
+    FatalHook& operator=(const FatalHook&) = delete;
+
+    ~FatalHook();
+
+private:
+    std::uint64_t id;
+};
+
 namespace detail {
 
 struct ReportLine {
@@ -72,9 +95,11 @@ void report_failure(std::string_view expression,
                     std::initializer_list<ReportLine> lines,
                     std::source_location location);
 
-/// Fails the running test for a check that printed its own report, such as a
-/// snapshot, adding the contexts in scope and the stack.
-void fail_reported(std::source_location location);
+/// Ends the process for a failed ZASSERT once `report` has printed it, even if
+/// it throws: tells the runner, runs the fatal hooks and exits, without
+/// unwinding the stack. No other thread ends the process or replies for the
+/// test from before the report on.
+[[noreturn]] void fail_fatally(function_ref<void()> report);
 
 template <typename U>
 constexpr void reject_logic() {
@@ -270,27 +295,28 @@ struct Decomposer {
     }
 };
 
-/// Reports `split` if it does not hold; returns whether it held.
+/// Reports `split` if it does not hold.
 template <typename Split>
-bool check(const Split& split,
+void check(const Split& split,
            std::string_view expression,
            std::source_location location = std::source_location::current()) {
-    if(split.holds()) {
-        return true;
+    if(!split.holds()) [[unlikely]] {
+        split.fail(expression, location);
     }
-    split.fail(expression, location);
-    return false;
 }
 
-#ifdef __cpp_exceptions
-
-/// Runs `body` and reports whether it threw as `expect_throw` says it should.
-void check_throws(function<void()> body,
-                  std::string_view expression,
-                  bool expect_throw,
-                  std::source_location location = std::source_location::current());
-
-#endif
+/// Reports `split` if it does not hold, and then ends the process.
+template <typename Split>
+void check_fatal(const Split& split,
+                 std::string_view expression,
+                 std::source_location location = std::source_location::current()) {
+    if(!split.holds()) [[unlikely]] {
+        auto report = [&] {
+            split.fail(expression, location);
+        };
+        fail_fatally(report);
+    }
+}
 
 }  // namespace detail
 

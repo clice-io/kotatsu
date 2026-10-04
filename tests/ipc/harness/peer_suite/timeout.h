@@ -30,17 +30,17 @@ void peer_timeout(const PeerKit<A>& kit) {
         };
 
         auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
-        EXPECT(ran.has_value());
-        ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::RequestCancelled);
-        EXPECT(asked.error().message == "request timed out");
+        ZEXPECT(ran.has_value());
+        ZASSERT(asked.has_error());
+        ZEXPECT(code_of(asked.error()) == ErrorCode::RequestCancelled);
+        ZEXPECT(asked.error().message == "request timed out");
         const auto& written = f.written();
-        ASSERT(written.size() == 2U);
-        EXPECT(written[0].id == RequestID(1));
-        EXPECT(written[1].method == "$/cancelRequest");
+        ZASSERT(written.size() == 2U);
+        ZEXPECT(written[0].id == RequestID(1));
+        ZEXPECT(written[1].method == "$/cancelRequest");
         auto cancelled = decoded<CancelRequestParams, A>(written[1].body);
-        ASSERT(cancelled.has_value());
-        EXPECT(cancelled->id == RequestID(1));
+        ZASSERT(cancelled.has_value());
+        ZEXPECT(cancelled->id == RequestID(1));
     });
 
     kit.add("zero_timeout_fails_without_writing", [](Fixture& f) {
@@ -50,11 +50,11 @@ void peer_timeout(const PeerKit<A>& kit) {
         };
 
         auto [ran, asked] = f.run(f.peer.run(), ask());
-        EXPECT(ran.has_value());
-        ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::RequestCancelled);
-        EXPECT(asked.error().message == "request timed out");
-        EXPECT(f.written().empty());
+        ZEXPECT(ran.has_value());
+        ZASSERT(asked.has_error());
+        ZEXPECT(code_of(asked.error()) == ErrorCode::RequestCancelled);
+        ZEXPECT(asked.error().message == "request timed out");
+        ZEXPECT(f.written().empty());
     });
 
     // The timer stops with the request: a leaked one shows under ASan.
@@ -70,9 +70,9 @@ void peer_timeout(const PeerKit<A>& kit) {
         };
 
         auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
-        EXPECT(ran.has_value());
-        ASSERT(asked.has_value());
-        EXPECT(asked->sum == 5);
+        ZEXPECT(ran.has_value());
+        ZASSERT(asked.has_value());
+        ZEXPECT(asked->sum == 5);
     });
 
     // Deadlines expire in order, not as requests were sent: the later one
@@ -95,16 +95,16 @@ void peer_timeout(const PeerKit<A>& kit) {
 
         auto [ran, answered, timed_out, scripted] =
             f.run(f.peer.run(), first(), second(), remote());
-        EXPECT(ran.has_value());
-        ASSERT(answered.has_value());
-        EXPECT(answered->sum == 5);
-        ASSERT(timed_out.has_error());
-        EXPECT(timed_out.error().message == "request timed out");
+        ZEXPECT(ran.has_value());
+        ZASSERT(answered.has_value());
+        ZEXPECT(answered->sum == 5);
+        ZASSERT(timed_out.has_error());
+        ZEXPECT(timed_out.error().message == "request timed out");
         const auto& written = f.written();
-        ASSERT(written.size() == 3U);
+        ZASSERT(written.size() == 3U);
         auto cancelled = decoded<CancelRequestParams, A>(written[2].body);
-        ASSERT(cancelled.has_value());
-        EXPECT(cancelled->id == RequestID(2));
+        ZASSERT(cancelled.has_value());
+        ZEXPECT(cancelled->id == RequestID(2));
     });
 
     // A deadline past what the clock counts is never reached.
@@ -122,9 +122,9 @@ void peer_timeout(const PeerKit<A>& kit) {
         };
 
         auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
-        EXPECT(ran.has_value());
-        ASSERT(asked.has_value());
-        EXPECT(asked->sum == 5);
+        ZEXPECT(ran.has_value());
+        ZASSERT(asked.has_value());
+        ZEXPECT(asked->sum == 5);
     });
 
     // A cancelled request goes on waiting for its answer, but no longer than
@@ -147,13 +147,13 @@ void peer_timeout(const PeerKit<A>& kit) {
         };
 
         auto [ran, failure, scripted] = f.run(f.peer.run(), ask(), remote());
-        EXPECT(ran.has_value());
-        ASSERT(failure.has_value());
-        EXPECT(code_of(*failure) == ErrorCode::RequestCancelled);
-        EXPECT(failure->message == "request timed out");
+        ZEXPECT(ran.has_value());
+        ZASSERT(failure.has_value());
+        ZEXPECT(code_of(*failure) == ErrorCode::RequestCancelled);
+        ZEXPECT(failure->message == "request timed out");
         const auto& written = f.written();
-        ASSERT(written.size() == 2U);
-        EXPECT(written[1].method == "$/cancelRequest");
+        ZASSERT(written.size() == 2U);
+        ZEXPECT(written[1].method == "$/cancelRequest");
     });
 
     // The timeout caps the wait of a cancelled caller too.
@@ -177,10 +177,10 @@ void peer_timeout(const PeerKit<A>& kit) {
         };
 
         auto [ran, cancelled, scripted] = f.run(f.peer.run(), caller(), remote());
-        EXPECT(ran.has_value());
-        ASSERT(cancelled.has_value());
-        EXPECT(*cancelled);
-        EXPECT(f.written().size() == 2U);
+        ZEXPECT(ran.has_value());
+        ZASSERT(cancelled.has_value());
+        ZEXPECT(*cancelled);
+        ZEXPECT(f.written().size() == 2U);
     });
 
     kit.add("timeout_before_the_token_reports_timed_out", [](Fixture& f) {
@@ -197,10 +197,10 @@ void peer_timeout(const PeerKit<A>& kit) {
         };
 
         auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
-        EXPECT(ran.has_value());
-        ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::RequestCancelled);
-        EXPECT(asked.error().message == "request timed out");
+        ZEXPECT(ran.has_value());
+        ZASSERT(asked.has_error());
+        ZEXPECT(code_of(asked.error()) == ErrorCode::RequestCancelled);
+        ZEXPECT(asked.error().message == "request timed out");
     });
 }
 

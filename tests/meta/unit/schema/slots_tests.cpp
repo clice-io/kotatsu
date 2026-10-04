@@ -55,39 +55,39 @@ ZEST_SUITE(meta_schema_slots) {
 
 ZEST_CASE(simple_struct_slots) {
     using slots = virtual_schema<fx::SimpleStruct>::slots;
-    STATIC_EXPECT(type_list_size_v<slots> == 3U);
+    ZSTATIC_EXPECT(type_list_size_v<slots> == 3U);
 
     using slot0 = type_list_element_t<0, slots>;
     using slot1 = type_list_element_t<1, slots>;
     using slot2 = type_list_element_t<2, slots>;
 
     // raw_type matches field types
-    STATIC_EXPECT(kind_of<slot0::raw_type>() == type_kind::int32);
-    STATIC_EXPECT(kind_of<slot1::raw_type>() == type_kind::string);
-    STATIC_EXPECT(kind_of<slot2::raw_type>() == type_kind::float32);
+    ZSTATIC_EXPECT(kind_of<slot0::raw_type>() == type_kind::int32);
+    ZSTATIC_EXPECT(kind_of<slot1::raw_type>() == type_kind::string);
+    ZSTATIC_EXPECT(kind_of<slot2::raw_type>() == type_kind::float32);
 
     // attrs is empty tuple for plain fields
-    EXPECT(zest::type_eq<slot0::attrs, std::tuple<>>());
+    ZEXPECT(zest::type_eq<slot0::attrs, std::tuple<>>());
 }
 
 ZEST_CASE(skip_and_flatten_slot_counts) {
     // skip removes "internal", leaving 2
     using ann_slots = virtual_schema<fx::AnnotatedStruct>::slots;
-    STATIC_EXPECT(type_list_size_v<ann_slots> == 2U);
+    ZSTATIC_EXPECT(type_list_size_v<ann_slots> == 2U);
 
     // flatten expands inner, yielding 4
     using outer_slots = virtual_schema<fx::Outer>::slots;
-    STATIC_EXPECT(type_list_size_v<outer_slots> == 4U);
+    ZSTATIC_EXPECT(type_list_size_v<outer_slots> == 4U);
 
     // Verify flattened slot types: all int32
     using os0 = type_list_element_t<0, outer_slots>;
     using os1 = type_list_element_t<1, outer_slots>;
     using os2 = type_list_element_t<2, outer_slots>;
     using os3 = type_list_element_t<3, outer_slots>;
-    STATIC_EXPECT(kind_of<os0::raw_type>() == type_kind::int32);
-    STATIC_EXPECT(kind_of<os1::raw_type>() == type_kind::int32);
-    STATIC_EXPECT(kind_of<os2::raw_type>() == type_kind::int32);
-    STATIC_EXPECT(kind_of<os3::raw_type>() == type_kind::int32);
+    ZSTATIC_EXPECT(kind_of<os0::raw_type>() == type_kind::int32);
+    ZSTATIC_EXPECT(kind_of<os1::raw_type>() == type_kind::int32);
+    ZSTATIC_EXPECT(kind_of<os2::raw_type>() == type_kind::int32);
+    ZSTATIC_EXPECT(kind_of<os3::raw_type>() == type_kind::int32);
 }
 
 ZEST_CASE(behavior_slot_attrs) {
@@ -95,18 +95,18 @@ ZEST_CASE(behavior_slot_attrs) {
 
     // Field 0 (maybe): raw=optional<int>, has skip_if attr
     using slot0 = type_list_element_t<0, slots>;
-    EXPECT(zest::type_eq<slot0::raw_type, std::optional<int>>());
-    STATIC_EXPECT(!std::is_same_v<slot0::attrs, std::tuple<>>);
+    ZEXPECT(zest::type_eq<slot0::raw_type, std::optional<int>>());
+    ZSTATIC_EXPECT(!std::is_same_v<slot0::attrs, std::tuple<>>);
 
     // Field 1 (as_str): the slot keeps the raw type; the behavior transform
     // lives in the field's type_info kind, not the slot.
     using slot1 = type_list_element_t<1, slots>;
-    EXPECT(zest::type_eq<slot1::raw_type, int>());
+    ZEXPECT(zest::type_eq<slot1::raw_type, int>());
 
     // Field 2 (plain): empty attrs
     using slot2 = type_list_element_t<2, slots>;
-    STATIC_EXPECT(kind_of<slot2::raw_type>() == type_kind::float32);
-    EXPECT(zest::type_eq<slot2::attrs, std::tuple<>>());
+    ZSTATIC_EXPECT(kind_of<slot2::raw_type>() == type_kind::float32);
+    ZEXPECT(zest::type_eq<slot2::attrs, std::tuple<>>());
 }
 
 ZEST_CASE(repr_field_type_info) {
@@ -116,12 +116,12 @@ ZEST_CASE(repr_field_type_info) {
     // The slot keeps the raw field type; repr substitution shows up in the
     // field's type_info (a dynamic repr degrades to type_kind::any).
     using slot0 = type_list_element_t<0, slots>;
-    EXPECT(zest::type_eq<slot0::raw_type, ns::RepId>());
+    ZEXPECT(zest::type_eq<slot0::raw_type, ns::RepId>());
 
     constexpr auto& fields = virtual_schema<ns::ReprStruct>::fields;
-    STATIC_EXPECT(fields[0].type().kind == type_kind::uint32);
-    STATIC_EXPECT(fields[1].type().kind == type_kind::any);
-    STATIC_EXPECT(fields[2].type().kind == type_kind::int32);
+    ZSTATIC_EXPECT(fields[0].type().kind == type_kind::uint32);
+    ZSTATIC_EXPECT(fields[1].type().kind == type_kind::any);
+    ZSTATIC_EXPECT(fields[2].type().kind == type_kind::int32);
 }
 
 ZEST_CASE(tagged_variant_slot) {
@@ -129,9 +129,9 @@ ZEST_CASE(tagged_variant_slot) {
     using slot0 = type_list_element_t<0, slots>;
 
     // tagged<> is a schema attr that appears in behavior attrs filter
-    EXPECT(zest::type_eq<slot0::raw_type, std::variant<int, std::string>>());
+    ZEXPECT(zest::type_eq<slot0::raw_type, std::variant<int, std::string>>());
     // attrs is not empty (contains tagged<>)
-    STATIC_EXPECT(!std::is_same_v<slot0::attrs, std::tuple<>>);
+    ZSTATIC_EXPECT(!std::is_same_v<slot0::attrs, std::tuple<>>);
 }
 
 };  // ZEST_SUITE(meta_schema_slots)

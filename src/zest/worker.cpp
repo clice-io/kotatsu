@@ -2,7 +2,7 @@
 #include <cstdio>
 #include <fcntl.h>
 #include <format>
-#include <iostream>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -116,6 +116,16 @@ struct Channel {
     }
 };
 
+/// The runner's channel, which the test's threads send on too.
+std::optional<Channel> channel;
+
+/// Sends `line` to the runner, once all the test printed is in the log.
+void send(std::string_view line) {
+    std::lock_guard lock(reply_mutex());
+    flush_output();
+    channel->write(std::format("{}\n", line));
+}
+
 }  // namespace
 
 namespace protocol {
@@ -141,7 +151,13 @@ std::optional<TestState> parse_state(std::string_view name) {
 }  // namespace protocol
 
 void serve(std::span<const Entry> entries) {
-    auto channel = Channel::take_stdin();
+    channel = Channel::take_stdin();
+    fatal_notice = [] {
+        send(protocol::fatal);
+    };
+    snapshot_notice = [](std::string_view path) {
+        send(std::format("{}{}", protocol::snapshot, path));
+    };
 
     // Output goes to a file the runner reads after each test. Unbuffered, all
     // of it is there by the time the test is reported, even after a crash.
@@ -152,29 +168,21 @@ void serve(std::span<const Entry> entries) {
     for(const auto& entry: entries) {
         tests.emplace(entry.name, &entry);
     }
-    channel.write(std::format("{}\n", protocol::ready));
+    channel->write(std::format("{}\n", protocol::ready));
 
-    while(auto line = channel.read_line()) {
+    while(auto line = channel->read_line()) {
         assert(line->starts_with(protocol::run));
         auto name = std::string_view(*line).substr(protocol::run.size());
         // The runner names only tests it collected from this same program.
         auto test = tests.find(name);
         assert(test != tests.end());
 
+        failures_are_fatal = test->second->test_case.attrs.crashes;
         auto state = run_in_process(*test->second);
-        // All the test printed must be in the log before the runner reads it.
-        // std::cout buffers on its own once sync_with_stdio(false) is set.
-        std::cout.flush();
-        std::clog.flush();
-        std::fflush(nullptr);
-
-        std::string reply;
-        for(const auto& path: take_accessed_snapshots()) {
-            reply += std::format("{}{}\n", protocol::snapshot, path);
-        }
-        reply += std::format("{}{}\n", protocol::done, protocol::state_name(state));
-        channel.write(reply);
+        send(std::format("{}{}", protocol::done, protocol::state_name(state)));
     }
+    fatal_notice = nullptr;
+    snapshot_notice = nullptr;
 }
 
 }  // namespace kota::zest

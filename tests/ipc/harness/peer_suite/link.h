@@ -36,9 +36,9 @@ void peer_link(const PeerKit<A>& kit) {
         };
 
         auto [asked] = f.run_with(script());
-        ASSERT(asked.has_value());
-        EXPECT(asked->sum == 5);
-        EXPECT(notes == std::vector<std::string>{"hello"});
+        ZASSERT(asked.has_value());
+        ZEXPECT(asked->sum == 5);
+        ZEXPECT(notes == std::vector<std::string>{"hello"});
     });
 
     // clice's worker protocol: a handler returns a result it encoded, and
@@ -61,10 +61,10 @@ void peer_link(const PeerKit<A>& kit) {
         };
 
         auto [asked] = f.run_with(script());
-        ASSERT(asked.has_value());
+        ZASSERT(asked.has_value());
         auto result = decoded<AddResult, A>(asked->data);
-        ASSERT(result.has_value());
-        EXPECT(result->sum == 5);
+        ZASSERT(result.has_value());
+        ZEXPECT(result->sum == 5);
     });
 
     kit.add_case("error_crosses_between_peers", [] {
@@ -80,9 +80,9 @@ void peer_link(const PeerKit<A>& kit) {
         };
 
         auto [failure] = f.run_with(script());
-        ASSERT(failure.has_value());
-        EXPECT(failure->code == -32001);
-        EXPECT(failure->message == "remote failed");
+        ZASSERT(failure.has_value());
+        ZEXPECT(failure->code == -32001);
+        ZEXPECT(failure->message == "remote failed");
     });
 
     // b's handler sees its cancellation arrive, which shows the
@@ -113,10 +113,10 @@ void peer_link(const PeerKit<A>& kit) {
         };
 
         auto [failure, scripted] = f.run_with(ask(), script());
-        EXPECT(scripted.has_value());
-        EXPECT(cancelled.is_set());
-        ASSERT(failure.has_value());
-        EXPECT(code_of(*failure) == ErrorCode::RequestCancelled);
+        ZEXPECT(scripted.has_value());
+        ZEXPECT(cancelled.is_set());
+        ZASSERT(failure.has_value());
+        ZEXPECT(code_of(*failure) == ErrorCode::RequestCancelled);
     });
 }
 
@@ -140,10 +140,10 @@ void error_data_crosses_between_peers() {
     };
 
     auto [failure] = f.run_with(script());
-    ASSERT(failure.has_value());
-    EXPECT(code_of(*failure) == ipc::protocol::ErrorCode::InvalidParams);
-    ASSERT(failure->data.has_value());
-    EXPECT(*failure->data == data);
+    ZASSERT(failure.has_value());
+    ZEXPECT(code_of(*failure) == ipc::protocol::ErrorCode::InvalidParams);
+    ZASSERT(failure->data.has_value());
+    ZEXPECT(*failure->data == data);
 }
 
 }  // namespace kota::test

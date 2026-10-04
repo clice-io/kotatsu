@@ -76,7 +76,7 @@ private:
         if(!message) {
             ZEST_CONTEXT("{} cannot read what the peer wrote: {}", A::name, message.error());
             // Reports the failure: message holds an error here.
-            EXPECT(message.has_value());
+            ZEXPECT(message.has_value());
             return;
         }
         kept.push_back(std::move(*message));
@@ -135,10 +135,10 @@ struct LinkedPeers : zest::LoopFixture {
                            forward(a_end, b_end),
                            forward(b_end, a_end),
                            std::move(scripts)...);
-        EXPECT(std::get<0>(results).has_value());
-        EXPECT(std::get<1>(results).has_value());
-        EXPECT(std::get<2>(results).has_value());
-        EXPECT(std::get<3>(results).has_value());
+        ZEXPECT(std::get<0>(results).has_value());
+        ZEXPECT(std::get<1>(results).has_value());
+        ZEXPECT(std::get<2>(results).has_value());
+        ZEXPECT(std::get<3>(results).has_value());
         return [&]<std::size_t... I>(std::index_sequence<I...>) {
             return std::tuple<zest::run_result_t<Tasks>...>(std::move(std::get<I + 4>(results))...);
         }(std::index_sequence_for<Tasks...>{});

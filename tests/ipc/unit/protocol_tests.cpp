@@ -11,7 +11,7 @@ ZEST_SUITE(ipc_protocol) {
 ZEST_CASE(error_from_a_null_c_string_has_no_message) {
     const char* message = nullptr;
     Error error(message);
-    EXPECT(error.message.empty());
+    ZEXPECT(error.message.empty());
 }
 
 };  // ZEST_SUITE(ipc_protocol)

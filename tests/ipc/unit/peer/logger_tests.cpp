@@ -60,11 +60,11 @@ ZEST_CASE(trace_shows_each_message_read_and_written) {
     remote.end_input();
 
     auto [ran] = run(peer.run());
-    EXPECT(ran.has_value());
+    ZEXPECT(ran.has_value());
     auto sent = remote.drain();
-    ASSERT(sent.size() == 1U);
-    EXPECT(has(LogLevel::trace, "recv: " + received));
-    EXPECT(has(LogLevel::trace, "send: " + sent[0]));
+    ZASSERT(sent.size() == 1U);
+    ZEXPECT(has(LogLevel::trace, "recv: " + received));
+    ZEXPECT(has(LogLevel::trace, "send: " + sent[0]));
 }
 
 ZEST_CASE(entries_below_the_level_are_left_out) {
@@ -75,11 +75,11 @@ ZEST_CASE(entries_below_the_level_are_left_out) {
     remote.end_input();
 
     auto [ran] = run(peer.run());
-    EXPECT(ran.has_value());
-    ASSERT(!entries.empty());
+    ZEXPECT(ran.has_value());
+    ZASSERT(!entries.empty());
     for(const auto& entry: entries) {
         ZEST_CONTEXT("entry: {}", entry.text);
-        EXPECT(entry.level >= LogLevel::warn);
+        ZEXPECT(entry.level >= LogLevel::warn);
     }
 }
 
@@ -92,9 +92,9 @@ ZEST_CASE(params_that_do_not_decode_are_a_warning) {
     remote.end_input();
 
     auto [ran] = run(peer.run());
-    EXPECT(ran.has_value());
-    EXPECT(has(LogLevel::warn, "notification params deserialization failed"));
-    EXPECT(has(LogLevel::warn, "request 'test/add' params deserialization failed"));
+    ZEXPECT(ran.has_value());
+    ZEXPECT(has(LogLevel::warn, "notification params deserialization failed"));
+    ZEXPECT(has(LogLevel::warn, "request 'test/add' params deserialization failed"));
 }
 
 ZEST_CASE(unhandled_notification_is_a_warning) {
@@ -103,8 +103,8 @@ ZEST_CASE(unhandled_notification_is_a_warning) {
     remote.end_input();
 
     auto [ran] = run(peer.run());
-    EXPECT(ran.has_value());
-    EXPECT(has(LogLevel::warn, "unhandled notification: unknown/note"));
+    ZEXPECT(ran.has_value());
+    ZEXPECT(has(LogLevel::warn, "unhandled notification: unknown/note"));
 }
 
 ZEST_CASE(notification_that_is_not_jsonrpc_2_0_is_dropped_with_a_warning) {
@@ -115,10 +115,10 @@ ZEST_CASE(notification_that_is_not_jsonrpc_2_0_is_dropped_with_a_warning) {
     remote.end_input();
 
     auto [ran] = run(peer.run());
-    EXPECT(ran.has_value());
-    EXPECT(!called);
-    EXPECT(written().empty());
-    EXPECT(has(LogLevel::warn, "dropped a notification"));
+    ZEXPECT(ran.has_value());
+    ZEXPECT(!called);
+    ZEXPECT(written().empty());
+    ZEXPECT(has(LogLevel::warn, "dropped a notification"));
 }
 
 // A string id is logged quoted, so that it stays apart from a number.
@@ -129,9 +129,9 @@ ZEST_CASE(orphan_response_logs_its_id_as_written) {
     remote.end_input();
 
     auto [ran] = run(peer.run());
-    EXPECT(ran.has_value());
-    EXPECT(has(LogLevel::warn, R"(orphan response for id="7")"));
-    EXPECT(has(LogLevel::warn, "orphan response for id=7"));
+    ZEXPECT(ran.has_value());
+    ZEXPECT(has(LogLevel::warn, R"(orphan response for id="7")"));
+    ZEXPECT(has(LogLevel::warn, "orphan response for id=7"));
 }
 
 // close() fails the handler's own request before it cancels the handler,
@@ -151,13 +151,13 @@ ZEST_CASE(close_tells_the_remote_nothing_of_a_handlers_request) {
     };
 
     auto [ran, closed] = run(peer.run(), closer());
-    EXPECT(ran.has_value());
-    EXPECT(has(LogLevel::error, "failing 1 pending request(s): peer closed"));
-    EXPECT(std::ranges::none_of(entries, [](const LogEntry& entry) {
+    ZEXPECT(ran.has_value());
+    ZEXPECT(has(LogLevel::error, "failing 1 pending request(s): peer closed"));
+    ZEXPECT(std::ranges::none_of(entries, [](const LogEntry& entry) {
         return entry.text.find("$/cancelRequest") != std::string::npos;
     }));
-    ASSERT(written().size() == 1U);
-    EXPECT(written()[0].method == "client/add");
+    ZASSERT(written().size() == 1U);
+    ZEXPECT(written()[0].method == "client/add");
 }
 
 ZEST_CASE(run_logs_where_its_read_loop_starts_and_ends) {
@@ -165,9 +165,9 @@ ZEST_CASE(run_logs_where_its_read_loop_starts_and_ends) {
     remote.end_input();
 
     auto [ran] = run(peer.run());
-    EXPECT(ran.has_value());
-    EXPECT(has(LogLevel::info, "read loop started"));
-    EXPECT(has(LogLevel::info, "read loop ended"));
+    ZEXPECT(ran.has_value());
+    ZEXPECT(has(LogLevel::info, "read loop started"));
+    ZEXPECT(has(LogLevel::info, "read loop ended"));
 }
 
 };  // ZEST_SUITE(ipc_peer_logger)

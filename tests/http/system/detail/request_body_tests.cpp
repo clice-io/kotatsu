@@ -87,61 +87,61 @@ ZEST_SUITE(http_detail_request_body, zest::LoopFixture) {
 // reader, which reads the process's stdin.
 ZEST_CASE(post_without_a_body_sends_an_empty_one) {
     StdinHolding input("from-stdin");
-    ASSERT(input.holding());
+    ZASSERT(input.holding());
     test::HttpServer server(loop);
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).post(server.url("/")).send());
-    EXPECT(reply.has_value());
+    ZEXPECT(reply.has_value());
 
-    ASSERT(server.requests().size() == 1U);
+    ZASSERT(server.requests().size() == 1U);
     const auto& sent = server.requests()[0];
-    EXPECT(sent.method == "POST");
-    EXPECT(sent.header("content-length") == "0");
-    EXPECT(!sent.chunked);
-    EXPECT(sent.body.empty());
+    ZEXPECT(sent.method == "POST");
+    ZEXPECT(sent.header("content-length") == "0");
+    ZEXPECT(!sent.chunked);
+    ZEXPECT(sent.body.empty());
 }
 
 ZEST_CASE(empty_form_sends_an_empty_body) {
     StdinHolding input("from-stdin");
-    ASSERT(input.holding());
+    ZASSERT(input.holding());
     test::HttpServer server(loop);
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).post(server.url("/")).form({}).send());
-    EXPECT(reply.has_value());
+    ZEXPECT(reply.has_value());
 
-    ASSERT(server.requests().size() == 1U);
-    EXPECT(server.requests()[0].header("content-length") == "0");
-    EXPECT(server.requests()[0].body.empty());
+    ZASSERT(server.requests().size() == 1U);
+    ZEXPECT(server.requests()[0].header("content-length") == "0");
+    ZEXPECT(server.requests()[0].body.empty());
 }
 
 // A curl_option() may ask for an upload with no CURLOPT_READDATA: it reads
 // nothing, where curl's own reader would read the process's stdin.
 ZEST_CASE(upload_without_a_file_sends_nothing) {
     StdinHolding input("from-stdin");
-    ASSERT(input.holding());
+    ZASSERT(input.holding());
     test::HttpServer server(loop);
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).put(server.url("/")).curl_option(CURLOPT_UPLOAD, 1L).send());
-    EXPECT(reply.has_value());
+    ZEXPECT(reply.has_value());
 
-    ASSERT(server.requests().size() == 1U);
-    EXPECT(server.requests()[0].chunked);
-    EXPECT(server.requests()[0].body.empty());
+    ZASSERT(server.requests().size() == 1U);
+    ZEXPECT(server.requests()[0].chunked);
+    ZEXPECT(server.requests()[0].body.empty());
 }
 
 ZEST_CASE(upload_of_a_file_given_to_curl_sends_it) {
     std::unique_ptr<std::FILE, int (*)(std::FILE*)> file(std::tmpfile(), std::fclose);
-    ASSERT((file != nullptr));
+    ZASSERT((file != nullptr));
     std::fputs("from-file", file.get());
     std::rewind(file.get());
     test::HttpServer server(loop);
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop)
@@ -149,41 +149,41 @@ ZEST_CASE(upload_of_a_file_given_to_curl_sends_it) {
                            .curl_option(CURLOPT_UPLOAD, 1L)
                            .curl_option(CURLOPT_READDATA, static_cast<void*>(file.get()))
                            .send());
-    EXPECT(reply.has_value());
+    ZEXPECT(reply.has_value());
 
-    ASSERT(server.requests().size() == 1U);
-    EXPECT(server.requests()[0].body == "from-file");
+    ZASSERT(server.requests().size() == 1U);
+    ZEXPECT(server.requests()[0].body == "from-file");
 }
 
 ZEST_CASE(post_fields_given_to_curl_are_sent) {
     test::HttpServer server(loop);
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
 
     auto [reply] =
         run(client.on(loop).post(server.url("/")).curl_option(CURLOPT_POSTFIELDS, "a=1").send());
-    EXPECT(reply.has_value());
+    ZEXPECT(reply.has_value());
 
-    ASSERT(server.requests().size() == 1U);
-    EXPECT(server.requests()[0].body == "a=1");
+    ZASSERT(server.requests().size() == 1U);
+    ZEXPECT(server.requests()[0].body == "a=1");
 }
 
 ZEST_CASE(body_goes_with_its_length) {
     test::HttpServer server(loop);
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).post(server.url("/")).body("hello").send());
-    EXPECT(reply.has_value());
+    ZEXPECT(reply.has_value());
 
-    ASSERT(server.requests().size() == 1U);
-    EXPECT(server.requests()[0].header("content-length") == "5");
-    EXPECT(server.requests()[0].body == "hello");
+    ZASSERT(server.requests().size() == 1U);
+    ZEXPECT(server.requests()[0].header("content-length") == "5");
+    ZEXPECT(server.requests()[0].body == "hello");
 }
 
 ZEST_CASE(put_patch_and_delete_send_their_bodies) {
     test::HttpServer server(loop);
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
     auto api = client.on(loop);
     auto url = server.url("/");
@@ -196,21 +196,21 @@ ZEST_CASE(put_patch_and_delete_send_their_bodies) {
     for(const auto& [method, body]: sends) {
         ZEST_CONTEXT("{}", method);
         auto [reply] = run(api.request(method, url).body(body).send());
-        EXPECT(reply.has_value());
+        ZEXPECT(reply.has_value());
     }
 
-    ASSERT(server.requests().size() == 3U);
-    EXPECT(server.requests()[0].method == "PUT");
-    EXPECT(server.requests()[0].body == "put");
-    EXPECT(server.requests()[1].method == "PATCH");
-    EXPECT(server.requests()[1].body == "patch");
-    EXPECT(server.requests()[2].method == "DELETE");
-    EXPECT(server.requests()[2].body == "delete");
+    ZASSERT(server.requests().size() == 3U);
+    ZEXPECT(server.requests()[0].method == "PUT");
+    ZEXPECT(server.requests()[0].body == "put");
+    ZEXPECT(server.requests()[1].method == "PATCH");
+    ZEXPECT(server.requests()[1].body == "patch");
+    ZEXPECT(server.requests()[2].method == "DELETE");
+    ZEXPECT(server.requests()[2].body == "delete");
 }
 
 ZEST_CASE(body_keeps_every_byte) {
     test::HttpServer server(loop);
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
     std::string bytes;
     for(int i = 0; i < 256; ++i) {
@@ -218,62 +218,62 @@ ZEST_CASE(body_keeps_every_byte) {
     }
 
     auto [reply] = run(client.on(loop).post(server.url("/")).body(bytes).send());
-    EXPECT(reply.has_value());
+    ZEXPECT(reply.has_value());
 
-    ASSERT(server.requests().size() == 1U);
-    EXPECT(server.requests()[0].body == bytes);
+    ZASSERT(server.requests().size() == 1U);
+    ZEXPECT(server.requests()[0].body == bytes);
 }
 
 // Past 1 MiB curl asks whether to go on (Expect: 100-continue) before it
 // sends the body.
 ZEST_CASE(large_body_arrives_whole) {
     test::HttpServer server(loop);
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
     std::string large(3 << 20, 'x');
     large.back() = 'y';
 
     auto [reply] = run(client.on(loop).post(server.url("/")).body(large).send());
-    EXPECT(reply.has_value());
+    ZEXPECT(reply.has_value());
 
-    ASSERT(server.requests().size() == 1U);
-    EXPECT(server.requests()[0].body.size() == large.size());
+    ZASSERT(server.requests().size() == 1U);
+    ZEXPECT(server.requests()[0].body.size() == large.size());
     // Compared as a plain bool, so that a failure does not print 3 MiB.
-    EXPECT((server.requests()[0].body == large));
+    ZEXPECT((server.requests()[0].body == large));
 }
 
 ZEST_CASE(json_text_is_sent_as_json) {
     test::HttpServer server(loop);
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).post(server.url("/")).json_text(R"({"a":1})").send());
-    EXPECT(reply.has_value());
+    ZEXPECT(reply.has_value());
 
-    ASSERT(server.requests().size() == 1U);
-    EXPECT(server.requests()[0].header("content-type") == "application/json");
-    EXPECT(server.requests()[0].body == R"({"a":1})");
+    ZASSERT(server.requests().size() == 1U);
+    ZEXPECT(server.requests()[0].header("content-type") == "application/json");
+    ZEXPECT(server.requests()[0].body == R"({"a":1})");
 }
 
 #if KOTA_HTTP_HAS_CODEC_JSON
 ZEST_CASE(json_sends_its_value_encoded) {
     test::HttpServer server(loop);
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
 
     auto [reply] =
         run(client.on(loop).post(server.url("/")).json(std::vector<int>{1, 2, 3}).send());
-    EXPECT(reply.has_value());
+    ZEXPECT(reply.has_value());
 
-    ASSERT(server.requests().size() == 1U);
-    EXPECT(server.requests()[0].header("content-type") == "application/json");
-    EXPECT(server.requests()[0].body == "[1,2,3]");
+    ZASSERT(server.requests().size() == 1U);
+    ZEXPECT(server.requests()[0].header("content-type") == "application/json");
+    ZEXPECT(server.requests()[0].body == "[1,2,3]");
 }
 #endif
 
 ZEST_CASE(form_is_sent_percent_encoded) {
     test::HttpServer server(loop);
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop)
@@ -283,11 +283,11 @@ ZEST_CASE(form_is_sent_percent_encoded) {
                                {"note", "a b+c"}
     })
                            .send());
-    EXPECT(reply.has_value());
+    ZEXPECT(reply.has_value());
 
-    ASSERT(server.requests().size() == 1U);
-    EXPECT(server.requests()[0].header("content-type") == "application/x-www-form-urlencoded");
-    EXPECT(server.requests()[0].body == "name=alice&note=a%20b%2Bc");
+    ZASSERT(server.requests().size() == 1U);
+    ZEXPECT(server.requests()[0].header("content-type") == "application/x-www-form-urlencoded");
+    ZEXPECT(server.requests()[0].body == "name=alice&note=a%20b%2Bc");
 }
 
 };  // ZEST_SUITE(http_detail_request_body)

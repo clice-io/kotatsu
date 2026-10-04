@@ -18,15 +18,15 @@ ZEST_CASE(error_status_is_a_response) {
     test::HttpServer server(loop, [](const test::Received&) {
         return test::Reply{.status = 404, .body = "missing"};
     });
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(server.url("/gone")).send());
-    ASSERT(reply.has_value());
-    EXPECT(reply->status == 404);
-    EXPECT(!reply->ok());
-    EXPECT(reply->text() == "missing");
-    EXPECT(reply->url == server.url("/gone"));
+    ZASSERT(reply.has_value());
+    ZEXPECT(reply->status == 404);
+    ZEXPECT(!reply->ok());
+    ZEXPECT(reply->text() == "missing");
+    ZEXPECT(reply->url == server.url("/gone"));
 }
 
 ZEST_CASE(headers_are_kept_in_order_with_duplicates) {
@@ -35,11 +35,11 @@ ZEST_CASE(headers_are_kept_in_order_with_duplicates) {
             .headers = {{"X-A", "1"}, {"X-B", " spaced\t"}, {"x-a", "3"}}
         };
     });
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(server.url("/")).send());
-    ASSERT(reply.has_value());
+    ZASSERT(reply.has_value());
     std::vector<header> ours;
     for(const auto& item: reply->headers) {
         if(item.name.starts_with("X-") || item.name.starts_with("x-")) {
@@ -51,8 +51,8 @@ ZEST_CASE(headers_are_kept_in_order_with_duplicates) {
         {"X-B", "spaced"},
         {"x-a", "3"     },
     };
-    EXPECT(ours == expected);
-    EXPECT(reply->header_value("x-a") == "1");
+    ZEXPECT(ours == expected);
+    ZEXPECT(reply->header_value("x-a") == "1");
 }
 
 ZEST_CASE(body_keeps_every_byte) {
@@ -62,13 +62,13 @@ ZEST_CASE(body_keeps_every_byte) {
     }
     test::HttpServer server(loop,
                             [&](const test::Received&) { return test::Reply{.body = bytes}; });
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(server.url("/")).send());
-    ASSERT(reply.has_value());
-    EXPECT(reply->bytes().size() == bytes.size());
-    EXPECT(reply->text() == bytes);
+    ZASSERT(reply.has_value());
+    ZEXPECT(reply->bytes().size() == bytes.size());
+    ZEXPECT(reply->text() == bytes);
 }
 
 ZEST_CASE(large_body_arrives_whole) {
@@ -76,14 +76,14 @@ ZEST_CASE(large_body_arrives_whole) {
     large.back() = 'y';
     test::HttpServer server(loop,
                             [&](const test::Received&) { return test::Reply{.body = large}; });
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(server.url("/")).send());
-    ASSERT(reply.has_value());
-    EXPECT(reply->body.size() == large.size());
+    ZASSERT(reply.has_value());
+    ZEXPECT(reply->body.size() == large.size());
     // Compared as a plain bool, so that a failure does not print 4 MiB.
-    EXPECT((reply->text() == large));
+    ZEXPECT((reply->text() == large));
 }
 
 };  // ZEST_SUITE(http_detail_response_capture)

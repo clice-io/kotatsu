@@ -58,44 +58,44 @@ const std::string not_utf8[] = {
 ZEST_SUITE(ipc_lsp_text) {
 
 ZEST_CASE(line_starts_marks_each_line) {
-    EXPECT(line_starts("") == std::vector<std::uint32_t>{0});
-    EXPECT(line_starts("ab\n\ncd\n") == std::vector<std::uint32_t>{0, 3, 4, 7});
-    EXPECT(line_starts("a\rb\r\nc") == std::vector<std::uint32_t>{0, 5});
+    ZEXPECT(line_starts("") == std::vector<std::uint32_t>{0});
+    ZEXPECT(line_starts("ab\n\ncd\n") == std::vector<std::uint32_t>{0, 3, 4, 7});
+    ZEXPECT(line_starts("a\rb\r\nc") == std::vector<std::uint32_t>{0, 5});
 }
 
 ZEST_CASE(is_ascii_finds_any_byte_past_ascii) {
-    EXPECT(is_ascii(""));
-    EXPECT(is_ascii("abc\r\n\x7F"));
-    EXPECT(!is_ascii("ab你"));
-    EXPECT(!is_ascii(bytes('a', 0x80)));
+    ZEXPECT(is_ascii(""));
+    ZEXPECT(is_ascii("abc\r\n\x7F"));
+    ZEXPECT(!is_ascii("ab你"));
+    ZEXPECT(!is_ascii(bytes('a', 0x80)));
 }
 
 ZEST_CASE(non_ascii_lines_marks_lines_holding_a_byte_past_ascii) {
-    EXPECT(non_ascii_lines("ab\ncd\n").empty());
+    ZEXPECT(non_ascii_lines("ab\ncd\n").empty());
     // Lines 1 and 3; the words end at the last marked line.
-    EXPECT(non_ascii_lines("a\n你\nb\nc🙂\nd") == std::vector<std::uint64_t>{0b1010});
-    EXPECT(non_ascii_lines(bytes('a', '\n', 0xFF)) == std::vector<std::uint64_t>{0b10});
+    ZEXPECT(non_ascii_lines("a\n你\nb\nc🙂\nd") == std::vector<std::uint64_t>{0b1010});
+    ZEXPECT(non_ascii_lines(bytes('a', '\n', 0xFF)) == std::vector<std::uint64_t>{0b10});
 }
 
 ZEST_CASE(non_ascii_lines_takes_a_word_per_64_lines) {
     std::string content(64, '\n');
     content += "你";
-    EXPECT(non_ascii_lines(content) == std::vector<std::uint64_t>{0, 1});
+    ZEXPECT(non_ascii_lines(content) == std::vector<std::uint64_t>{0, 1});
 }
 
 ZEST_CASE(encoded_length_counts_units_of_the_encoding) {
     std::string_view content = "a你🙂z";
 
-    EXPECT(encoded_length(content, PositionEncoding::UTF8) == 9U);
-    EXPECT(encoded_length(content, PositionEncoding::UTF16) == 5U);
-    EXPECT(encoded_length(content, PositionEncoding::UTF32) == 4U);
+    ZEXPECT(encoded_length(content, PositionEncoding::UTF8) == 9U);
+    ZEXPECT(encoded_length(content, PositionEncoding::UTF16) == 5U);
+    ZEXPECT(encoded_length(content, PositionEncoding::UTF32) == 4U);
 }
 
 ZEST_CASE(encoded_length_counts_what_is_not_utf8_byte_by_byte) {
     for(const auto& text: not_utf8) {
         for(auto encoding: encodings) {
             ZEST_CONTEXT("text: {}, encoding: {}", hex(text), static_cast<int>(encoding));
-            EXPECT(encoded_length(text, encoding) == text.size());
+            ZEXPECT(encoded_length(text, encoding) == text.size());
         }
     }
 }
@@ -103,17 +103,17 @@ ZEST_CASE(encoded_length_counts_what_is_not_utf8_byte_by_byte) {
 ZEST_CASE(encoded_offset_maps_units_back_to_bytes) {
     std::string_view content = "a你🙂b";
 
-    EXPECT(encoded_offset(content, 0, PositionEncoding::UTF16) == 0U);
-    EXPECT(encoded_offset(content, 2, PositionEncoding::UTF16) == 4U);
-    EXPECT(encoded_offset(content, 4, PositionEncoding::UTF16) == 8U);
-    EXPECT(encoded_offset(content, 5, PositionEncoding::UTF16) == 9U);
-    EXPECT(encoded_offset(content, 3, PositionEncoding::UTF32) == 8U);
-    EXPECT(encoded_offset(content, 4, PositionEncoding::UTF8) == 4U);
+    ZEXPECT(encoded_offset(content, 0, PositionEncoding::UTF16) == 0U);
+    ZEXPECT(encoded_offset(content, 2, PositionEncoding::UTF16) == 4U);
+    ZEXPECT(encoded_offset(content, 4, PositionEncoding::UTF16) == 8U);
+    ZEXPECT(encoded_offset(content, 5, PositionEncoding::UTF16) == 9U);
+    ZEXPECT(encoded_offset(content, 3, PositionEncoding::UTF32) == 8U);
+    ZEXPECT(encoded_offset(content, 4, PositionEncoding::UTF8) == 4U);
 }
 
 // UTF-16 unit 3 is the second half of 🙂's surrogate pair.
 ZEST_CASE(encoded_offset_inside_a_code_point_fails) {
-    EXPECT(encoded_offset("a你🙂b", 3, PositionEncoding::UTF16) == std::nullopt);
+    ZEXPECT(encoded_offset("a你🙂b", 3, PositionEncoding::UTF16) == std::nullopt);
 }
 
 // Bytes 2 and 3 are inside 你, 5 to 7 inside 🙂.
@@ -122,11 +122,11 @@ ZEST_CASE(encoded_offset_inside_a_utf8_sequence_fails) {
 
     for(std::uint32_t character: {2U, 3U, 5U, 6U, 7U}) {
         ZEST_CONTEXT("character {}", character);
-        EXPECT(encoded_offset(content, character, PositionEncoding::UTF8) == std::nullopt);
+        ZEXPECT(encoded_offset(content, character, PositionEncoding::UTF8) == std::nullopt);
     }
     for(std::uint32_t character: {0U, 1U, 4U, 8U, 9U}) {
         ZEST_CONTEXT("character {}", character);
-        EXPECT(encoded_offset(content, character, PositionEncoding::UTF8) == character);
+        ZEXPECT(encoded_offset(content, character, PositionEncoding::UTF8) == character);
     }
 }
 
@@ -139,7 +139,7 @@ ZEST_CASE(encoded_offset_steps_through_what_is_not_utf8_byte_by_byte) {
                              hex(text),
                              static_cast<int>(encoding),
                              character);
-                EXPECT(encoded_offset(text, character, encoding) == character);
+                ZEXPECT(encoded_offset(text, character, encoding) == character);
             }
         }
     }
@@ -148,7 +148,7 @@ ZEST_CASE(encoded_offset_steps_through_what_is_not_utf8_byte_by_byte) {
 ZEST_CASE(encoded_offset_past_the_end_fails) {
     for(auto encoding: encodings) {
         ZEST_CONTEXT("encoding: {}", static_cast<int>(encoding));
-        EXPECT(encoded_offset("abc", 4, encoding) == std::nullopt);
+        ZEXPECT(encoded_offset("abc", 4, encoding) == std::nullopt);
     }
 }
 

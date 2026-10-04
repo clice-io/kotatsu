@@ -42,9 +42,9 @@ ZEST_SUITE(codec_dyn_document_write) {
 ZEST_CASE(assignment_changes_kind) {
     dyn::Value value(std::int64_t{1});
     value = dyn::Value("x");
-    EXPECT(value == dyn::Value("x"));
+    ZEXPECT(value == dyn::Value("x"));
     value = dyn::Value(dyn::Array{std::int64_t{2}});
-    EXPECT(value == dyn::Value(dyn::Array{std::int64_t{2}}));
+    ZEXPECT(value == dyn::Value(dyn::Array{std::int64_t{2}}));
 }
 
 ZEST_CASE(array_push_back_and_emplace_back) {
@@ -53,7 +53,7 @@ ZEST_CASE(array_push_back_and_emplace_back) {
     array.push_back(dyn::Value(true));
     array.emplace_back(std::int64_t{7});
     array.emplace_back("z");
-    EXPECT(array == (dyn::Array{nullptr, true, std::int64_t{7}, "z"}));
+    ZEXPECT(array == (dyn::Array{nullptr, true, std::int64_t{7}, "z"}));
 }
 
 ZEST_CASE(array_clear_and_reserve) {
@@ -61,11 +61,11 @@ ZEST_CASE(array_clear_and_reserve) {
     array.reserve(4);
     array.push_back(std::int64_t{1});
     array.push_back(std::int64_t{2});
-    EXPECT(array.size() == 2U);
+    ZEXPECT(array.size() == 2U);
 
     array.clear();
-    EXPECT(array.empty());
-    EXPECT(array.size() == 0U);
+    ZEXPECT(array.empty());
+    ZEXPECT(array.size() == 0U);
 }
 
 ZEST_CASE(array_elements_mutable_through_iteration) {
@@ -73,7 +73,7 @@ ZEST_CASE(array_elements_mutable_through_iteration) {
     for(auto& value: array) {
         value = dyn::Value(value.as_int() * 10);
     }
-    EXPECT(array == (dyn::Array{std::int64_t{10}, std::int64_t{20}, std::int64_t{30}}));
+    ZEXPECT(array == (dyn::Array{std::int64_t{10}, std::int64_t{20}, std::int64_t{30}}));
 }
 
 ZEST_CASE(object_values_mutable_through_iteration) {
@@ -83,8 +83,8 @@ ZEST_CASE(object_values_mutable_through_iteration) {
     for(auto& [name, value]: object) {
         value = dyn::Value(value.as_int() + 100);
     }
-    EXPECT(lookup(object, "a") == std::int64_t{101});
-    EXPECT(lookup(object, "b") == std::int64_t{102});
+    ZEXPECT(lookup(object, "a") == std::int64_t{101});
+    ZEXPECT(lookup(object, "b") == std::int64_t{102});
 }
 
 ZEST_CASE(object_assign_is_upsert) {
@@ -92,18 +92,18 @@ ZEST_CASE(object_assign_is_upsert) {
     object.assign("a", std::int64_t{1});
     object.assign("a", std::int64_t{2});
     object.assign("b", std::int64_t{3});
-    EXPECT(object.size() == 2U);
-    EXPECT(lookup(object, "a") == std::int64_t{2});
-    EXPECT(lookup(object, "b") == std::int64_t{3});
+    ZEXPECT(object.size() == 2U);
+    ZEXPECT(lookup(object, "a") == std::int64_t{2});
+    ZEXPECT(lookup(object, "b") == std::int64_t{3});
 }
 
 ZEST_CASE(object_insert_keeps_duplicates) {
     dyn::Object object;
     object.insert("k", std::int64_t{1});
     object.insert("k", std::int64_t{2});
-    ASSERT(object.size() == 2U);
-    EXPECT(object.begin()[0].second == dyn::Value(std::int64_t{1}));
-    EXPECT(object.begin()[1].second == dyn::Value(std::int64_t{2}));
+    ZASSERT(object.size() == 2U);
+    ZEXPECT(object.begin()[0].second == dyn::Value(std::int64_t{1}));
+    ZEXPECT(object.begin()[1].second == dyn::Value(std::int64_t{2}));
 }
 
 ZEST_CASE(object_find_returns_last_duplicate) {
@@ -113,8 +113,8 @@ ZEST_CASE(object_find_returns_last_duplicate) {
         for(int i = 0; i < size; ++i) {
             object.insert("dup", std::int64_t{i});
         }
-        EXPECT(object.contains("dup"));
-        EXPECT(lookup(object, "dup") == std::int64_t{size - 1});
+        ZEXPECT(object.contains("dup"));
+        ZEXPECT(lookup(object, "dup") == std::int64_t{size - 1});
     }
 }
 
@@ -124,11 +124,11 @@ ZEST_CASE(object_remove_erases_every_match) {
     object.assign("b", std::int64_t{2});
     object.insert("a", std::int64_t{11});
 
-    EXPECT(object.remove("a") == 2U);
-    EXPECT(object.remove("a") == 0U);
-    EXPECT(!object.contains("a"));
-    EXPECT(object.contains("b"));
-    EXPECT(object.size() == 1U);
+    ZEXPECT(object.remove("a") == 2U);
+    ZEXPECT(object.remove("a") == 0U);
+    ZEXPECT(!object.contains("a"));
+    ZEXPECT(object.contains("b"));
+    ZEXPECT(object.size() == 1U);
 }
 
 ZEST_CASE(lookup_finds_every_key) {
@@ -137,10 +137,10 @@ ZEST_CASE(lookup_finds_every_key) {
         auto object = numbered(size);
         for(int i = 0; i < size; ++i) {
             ZEST_CONTEXT("key {}", key(i));
-            EXPECT(lookup(object, key(i)) == std::int64_t{i});
+            ZEXPECT(lookup(object, key(i)) == std::int64_t{i});
         }
-        EXPECT(object.find("missing") == nullptr);
-        EXPECT(!object.contains("missing"));
+        ZEXPECT(object.find("missing") == nullptr);
+        ZEXPECT(!object.contains("missing"));
     }
 }
 
@@ -148,11 +148,11 @@ ZEST_CASE(insert_after_lookup_is_found) {
     for(int size: sizes) {
         ZEST_CONTEXT("{} entries", size);
         auto object = numbered(size);
-        EXPECT(lookup(object, "k5") == std::int64_t{5});
+        ZEXPECT(lookup(object, "k5") == std::int64_t{5});
         object.insert("new", std::int64_t{99});
-        EXPECT(lookup(object, "new") == std::int64_t{99});
-        EXPECT(lookup(object, "k0") == std::int64_t{0});
-        EXPECT(lookup(object, key(size - 1)) == std::int64_t{size - 1});
+        ZEXPECT(lookup(object, "new") == std::int64_t{99});
+        ZEXPECT(lookup(object, "k0") == std::int64_t{0});
+        ZEXPECT(lookup(object, key(size - 1)) == std::int64_t{size - 1});
     }
 }
 
@@ -160,18 +160,18 @@ ZEST_CASE(assign_after_lookup_is_found) {
     for(int size: sizes) {
         ZEST_CONTEXT("{} entries", size);
         auto object = numbered(size);
-        EXPECT(lookup(object, "k5") == std::int64_t{5});
+        ZEXPECT(lookup(object, "k5") == std::int64_t{5});
         // An existing key's value is replaced in place, and the lookups
         // after it go through the index the first one built.
         object.assign("k5", std::int64_t{50});
-        EXPECT(lookup(object, "k5") == std::int64_t{50});
-        EXPECT(lookup(object, "k0") == std::int64_t{0});
-        EXPECT(lookup(object, key(size - 1)) == std::int64_t{size - 1});
-        EXPECT(object.size() == static_cast<std::size_t>(size));
+        ZEXPECT(lookup(object, "k5") == std::int64_t{50});
+        ZEXPECT(lookup(object, "k0") == std::int64_t{0});
+        ZEXPECT(lookup(object, key(size - 1)) == std::int64_t{size - 1});
+        ZEXPECT(object.size() == static_cast<std::size_t>(size));
         object.assign("new", std::int64_t{99});
-        EXPECT(lookup(object, "new") == std::int64_t{99});
-        EXPECT(lookup(object, "k5") == std::int64_t{50});
-        EXPECT(object.size() == static_cast<std::size_t>(size + 1));
+        ZEXPECT(lookup(object, "new") == std::int64_t{99});
+        ZEXPECT(lookup(object, "k5") == std::int64_t{50});
+        ZEXPECT(object.size() == static_cast<std::size_t>(size + 1));
     }
 }
 
@@ -179,14 +179,14 @@ ZEST_CASE(remove_after_lookup_is_missed) {
     for(int size: sizes) {
         ZEST_CONTEXT("{} entries", size);
         auto object = numbered(size);
-        EXPECT(lookup(object, "k5") == std::int64_t{5});
-        EXPECT(object.remove("k5") == 1U);
-        EXPECT(object.find("k5") == nullptr);
-        EXPECT(lookup(object, "k0") == std::int64_t{0});
-        EXPECT(lookup(object, key(size - 1)) == std::int64_t{size - 1});
+        ZEXPECT(lookup(object, "k5") == std::int64_t{5});
+        ZEXPECT(object.remove("k5") == 1U);
+        ZEXPECT(object.find("k5") == nullptr);
+        ZEXPECT(lookup(object, "k0") == std::int64_t{0});
+        ZEXPECT(lookup(object, key(size - 1)) == std::int64_t{size - 1});
 
         object.insert("k5", std::int64_t{99});
-        EXPECT(lookup(object, "k5") == std::int64_t{99});
+        ZEXPECT(lookup(object, "k5") == std::int64_t{99});
     }
 }
 
@@ -194,10 +194,10 @@ ZEST_CASE(clear_after_lookup_misses_every_key) {
     for(int size: sizes) {
         ZEST_CONTEXT("{} entries", size);
         auto object = numbered(size);
-        EXPECT(lookup(object, "k0") == std::int64_t{0});
+        ZEXPECT(lookup(object, "k0") == std::int64_t{0});
         object.clear();
-        EXPECT(object.empty());
-        EXPECT(object.find("k0") == nullptr);
+        ZEXPECT(object.empty());
+        ZEXPECT(object.find("k0") == nullptr);
     }
 }
 
@@ -209,13 +209,13 @@ ZEST_CASE(lookups_stay_correct_while_growing) {
         object.insert(key(i), std::int64_t{i});
         if(i % 15 == 0) {
             ZEST_CONTEXT("after {} inserts", i + 1);
-            EXPECT(lookup(object, "k0") == std::int64_t{0});
-            EXPECT(lookup(object, key(i)) == std::int64_t{i});
+            ZEXPECT(lookup(object, "k0") == std::int64_t{0});
+            ZEXPECT(lookup(object, key(i)) == std::int64_t{i});
         }
     }
     for(int i = 0; i < 100; ++i) {
         ZEST_CONTEXT("key {}", key(i));
-        EXPECT(lookup(object, key(i)) == std::int64_t{i});
+        ZEXPECT(lookup(object, key(i)) == std::int64_t{i});
     }
 }
 

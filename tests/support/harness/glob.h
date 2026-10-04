@@ -27,14 +27,14 @@ inline void expect_glob(std::string_view pattern,
                         std::source_location location = std::source_location::current()) {
     ZEST_CONTEXT("glob `{}`, checked at line {}", pattern, location.line());
     auto compiled = GlobPattern::create(pattern);
-    ASSERT(compiled.has_value());
+    ZASSERT(compiled.has_value());
     for(auto path: hits) {
         ZEST_CONTEXT("path `{}`", path);
-        EXPECT(compiled->match(path));
+        ZEXPECT(compiled->match(path));
     }
     for(auto path: misses) {
         ZEST_CONTEXT("path `{}`", path);
-        EXPECT(!compiled->match(path));
+        ZEXPECT(!compiled->match(path));
     }
 }
 
@@ -46,12 +46,12 @@ inline void expect_glob_error(std::string_view pattern,
                               std::source_location location = std::source_location::current()) {
     ZEST_CONTEXT("glob `{}`, checked at line {}", pattern, location.line());
     auto compiled = GlobPattern::create(pattern);
-    ASSERT(!compiled.has_value());
+    ZASSERT(!compiled.has_value());
     const auto& error = compiled.error();
-    EXPECT(error.kind == kind);
-    EXPECT(error.begin == begin);
-    EXPECT(error.end == end);
-    EXPECT(!error.message.empty());
+    ZEXPECT(error.kind == kind);
+    ZEXPECT(error.begin == begin);
+    ZEXPECT(error.end == end);
+    ZEXPECT(!error.message.empty());
 }
 
 }  // namespace kota::test

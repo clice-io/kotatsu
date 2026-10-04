@@ -27,16 +27,16 @@ struct TagsOff {
 ZEST_SUITE(codec_visit_config) {
 
 ZEST_CASE(human_readable_config_fits_text_visitors) {
-    STATIC_EXPECT(detail::human_readable_allowed<default_config<>, TextVisitor>);
-    STATIC_EXPECT(detail::human_readable_allowed<default_config<TagsOn>, TextVisitor>);
-    STATIC_EXPECT(detail::human_readable_allowed<default_config<TagsOff>, TextVisitor>);
-    STATIC_EXPECT(detail::human_readable_allowed<default_config<TagsOn>, UndeclaredVisitor>);
+    ZSTATIC_EXPECT(detail::human_readable_allowed<default_config<>, TextVisitor>);
+    ZSTATIC_EXPECT(detail::human_readable_allowed<default_config<TagsOn>, TextVisitor>);
+    ZSTATIC_EXPECT(detail::human_readable_allowed<default_config<TagsOff>, TextVisitor>);
+    ZSTATIC_EXPECT(detail::human_readable_allowed<default_config<TagsOn>, UndeclaredVisitor>);
 }
 
 ZEST_CASE(human_readable_config_turns_binary_visitors_off_only) {
-    STATIC_EXPECT(detail::human_readable_allowed<default_config<>, BinaryVisitor>);
-    STATIC_EXPECT(detail::human_readable_allowed<default_config<TagsOff>, BinaryVisitor>);
-    STATIC_EXPECT(!detail::human_readable_allowed<default_config<TagsOn>, BinaryVisitor>);
+    ZSTATIC_EXPECT(detail::human_readable_allowed<default_config<>, BinaryVisitor>);
+    ZSTATIC_EXPECT(detail::human_readable_allowed<default_config<TagsOff>, BinaryVisitor>);
+    ZSTATIC_EXPECT(!detail::human_readable_allowed<default_config<TagsOn>, BinaryVisitor>);
 }
 
 };  // ZEST_SUITE(codec_visit_config)

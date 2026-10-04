@@ -13,8 +13,8 @@ ZEST_SUITE(http_detail_bound_client, zest::LoopFixture) {
 ZEST_CASE(loop_is_the_one_it_was_bound_to) {
     event_loop other;
     http::client client;
-    EXPECT((&client.on(loop).loop() == &loop));
-    EXPECT((&client.on(other).loop() == &other));
+    ZEXPECT((&client.on(loop).loop() == &loop));
+    ZEXPECT((&client.on(other).loop() == &other));
 }
 
 ZEST_CASE(on_binds_the_running_loop_by_default) {
@@ -24,8 +24,8 @@ ZEST_CASE(on_binds_the_running_loop_by_default) {
     };
 
     auto [bound] = run(bind());
-    ASSERT(bound.has_value());
-    EXPECT((*bound == &loop));
+    ZASSERT(bound.has_value());
+    ZEXPECT((*bound == &loop));
 }
 
 };  // ZEST_SUITE(http_detail_bound_client)

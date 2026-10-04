@@ -50,6 +50,9 @@ constexpr std::string_view yellow = "\033[33m";
 constexpr std::string_view red = "\033[31m";
 constexpr std::string_view clear = "\033[0m";
 
+/// The test running in this process, under --no-isolation.
+const Entry* running = nullptr;
+
 struct CliOptions {
     Options zest;
 
@@ -219,6 +222,7 @@ struct Reporter {
                                  entry.name,
                                  outcome.duration.count(),
                                  clear);
+                    print_detail(green, outcome.detail);
                 }
                 return;
             case Verdict::Skipped:
@@ -226,6 +230,7 @@ struct Reporter {
                 if(verbose) {
                     print_output(outcome.output);
                     std::println("{}[ SKIPPED  ] {}{}", yellow, entry.name, clear);
+                    print_detail(yellow, outcome.detail);
                 }
                 return;
             case Verdict::Failed: fail(entry, outcome, "FAILED", ""); return;
@@ -233,6 +238,13 @@ struct Reporter {
                 fail(entry, outcome, "CRASHED", std::format("crashed: {}", outcome.detail));
                 return;
             case Verdict::TimedOut: fail(entry, outcome, "TIMEOUT", "timed out"); return;
+            case Verdict::Survived: fail(entry, outcome, "FAILED", "expected a crash"); return;
+        }
+    }
+
+    static void print_detail(std::string_view color, std::string_view detail) {
+        if(!detail.empty()) {
+            std::println("{}             {}{}", color, detail, clear);
         }
     }
 
@@ -247,9 +259,7 @@ struct Reporter {
                      entry.name,
                      outcome.duration.count(),
                      clear);
-        if(!outcome.detail.empty()) {
-            std::println("{}             {}{}", red, outcome.detail, clear);
-        }
+        print_detail(red, outcome.detail);
         summary.failed += 1;
         summary.failed_tests.push_back(FailedTest{
             .name = entry.name,
@@ -311,7 +321,7 @@ TestState run_in_process(const Entry& entry) {
     auto& state = current_test_state();
     state = TestState::Passed;
 #ifdef __cpp_exceptions
-    if(trace_exception([&] { entry.test_case.test(); }, true)) {
+    if(trace_exception([&] { entry.test_case.test(); })) {
         failure();
     }
 #else
@@ -356,8 +366,8 @@ void Runner::add_suite(std::string_view name, std::vector<TestCase> (*cases)()) 
 
 int Runner::run_tests(Options options, int argc, const char* const* argv) {
     silence_crash_dialogs();
-    set_update_snapshots(*options.update_snapshots);
-    set_snapshot_dir(*options.snapshot_dir);
+    detail::set_update_snapshots(*options.update_snapshots);
+    detail::set_snapshot_dir(*options.snapshot_dir);
 
     auto entries = collect_entries(suites);
     // Read from argv rather than `options`, which the embedding program may
@@ -435,15 +445,31 @@ int Runner::run_tests(Options options, int argc, const char* const* argv) {
 
     auto begin = steady_clock::now();
     if(*options.no_isolation) {
+        fatal_notice = [] {
+            flush_output();
+            std::println("{}[    FATAL ] {} ended the run{}", red, running->name, clear);
+            flush_output();
+        };
         for(const auto* entry: runnable) {
+            if(entry->test_case.attrs.crashes) {
+                reporter.record(*entry,
+                                Outcome{
+                                    .verdict = Verdict::Skipped,
+                                    .duration = {},
+                                    .detail = "a crash test runs only in a worker",
+                                });
+                continue;
+            }
             if(verbose) {
                 std::println("{}[ RUN      ] {}{}", green, entry->name, clear);
             }
             auto test_begin = steady_clock::now();
+            running = entry;
             auto verdict = verdict_of(run_in_process(*entry));
             reporter.record(*entry,
                             Outcome{.verdict = verdict, .duration = elapsed_since(test_begin)});
         }
+        fatal_notice = nullptr;
     } else {
         PoolOptions pool{
             .args = program_args(argc, argv),
@@ -472,7 +498,7 @@ int Runner::run_tests(Options options, int argc, const char* const* argv) {
         // look orphaned.
         if(summary.failed != 0) {
             std::println("[snapshot] cleanup skipped: some tests failed");
-        } else if(auto removed = cleanup_unused_snapshots(); removed > 0) {
+        } else if(auto removed = detail::cleanup_unused_snapshots(); removed > 0) {
             std::println("[snapshot] cleaned up {} orphaned file{}",
                          removed,
                          removed == 1 ? "" : "s");

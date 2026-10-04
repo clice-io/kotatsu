@@ -265,12 +265,12 @@ auto make_chain(std::size_t depth) -> Node {
 template <typename T, typename Probe>
 void expect_hostile_bytes_contained(const T& input, Probe probe) {
     auto encoded = fbs::to_bytes(input);
-    ASSERT(encoded);
+    ZASSERT(encoded);
     auto decoded = fbs::from_bytes<T>(*encoded);
-    ASSERT(decoded);
-    EXPECT(*decoded == input);
+    ZASSERT(decoded);
+    ZEXPECT(*decoded == input);
     auto intact = table_view<T>::from_bytes(*encoded);
-    ASSERT(intact.valid());
+    ZASSERT(intact.valid());
     probe(intact);
 
     for(std::size_t size = 8; size < encoded->size(); ++size) {
@@ -278,7 +278,7 @@ void expect_hostile_bytes_contained(const T& input, Probe probe) {
         auto prefix = std::span<const std::uint8_t>(encoded->data(), size);
         auto result = fbs::from_bytes<T>(prefix);
         if(result) {
-            EXPECT(*result == input);
+            ZEXPECT(*result == input);
         }
         if(auto root = table_view<T>::from_bytes(prefix); root.valid()) {
             probe(root);
@@ -310,17 +310,17 @@ ZEST_CASE(value_overload_value_initializes) {
         .count = 2
     };
     auto encoded = fbs::to_bytes(value);
-    ASSERT(encoded);
+    ZASSERT(encoded);
     auto result = fbs::from_bytes<test::HoldsExplicit>(std::as_bytes(std::span(*encoded)));
-    ASSERT(result);
+    ZASSERT(result);
     const test::HoldsExplicit expected{
         .list = {1, 2},
         .count = 2
     };
-    EXPECT(meta::eq(*result, expected));
-    STATIC_EXPECT(decodes_by_value<test::HoldsExplicit>);
+    ZEXPECT(meta::eq(*result, expected));
+    ZSTATIC_EXPECT(decodes_by_value<test::HoldsExplicit>);
     // A type with no default constructor has no value to decode into.
-    STATIC_EXPECT(!decodes_by_value<test::NoDefault>);
+    ZSTATIC_EXPECT(!decodes_by_value<test::NoDefault>);
 }
 
 ZEST_CASE(buffer_below_eight_bytes_fails) {
@@ -330,41 +330,41 @@ ZEST_CASE(buffer_below_eight_bytes_fails) {
         ZEST_CONTEXT("{} bytes", size);
         auto span = std::span<const std::uint8_t>(tiny.data(), size);
         auto result = fbs::from_bytes<Rich>(span);
-        ASSERT(!result);
-        EXPECT(result.error().message == "buffer too small");
-        EXPECT(!table_view<Rich>::from_bytes(span).valid());
+        ZASSERT(!result);
+        ZEXPECT(result.error().message == "buffer too small");
+        ZEXPECT(!table_view<Rich>::from_bytes(span).valid());
     }
 }
 
 ZEST_CASE(wrong_identifier_fails) {
     auto encoded = fbs::to_bytes(make_rich());
-    ASSERT(encoded);
+    ZASSERT(encoded);
     auto tampered = *encoded;
     tampered[4] ^= 0xFF;
     auto result = fbs::from_bytes<Rich>(tampered);
-    ASSERT(!result);
-    EXPECT(result.error().message == "invalid buffer identifier");
-    EXPECT(!table_view<Rich>::from_bytes(tampered).valid());
+    ZASSERT(!result);
+    ZEXPECT(result.error().message == "invalid buffer identifier");
+    ZEXPECT(!table_view<Rich>::from_bytes(tampered).valid());
 }
 
 ZEST_CASE(root_offset_outside_the_buffer_fails) {
     auto encoded = fbs::to_bytes(make_rich());
-    ASSERT(encoded);
+    ZASSERT(encoded);
     auto tampered = *encoded;
     tampered[0] = 0xFF;
     tampered[1] = 0xFF;
     tampered[2] = 0xFF;
     tampered[3] = 0x7F;
     auto result = fbs::from_bytes<Rich>(tampered);
-    ASSERT(!result);
-    EXPECT(result.error().message == "buffer verification failed: root offset");
-    EXPECT(!table_view<Rich>::from_bytes(tampered).valid());
+    ZASSERT(!result);
+    ZEXPECT(result.error().message == "buffer verification failed: root offset");
+    ZEXPECT(!table_view<Rich>::from_bytes(tampered).valid());
 
     // The std::byte overloads verify the same way.
     auto bytes = std::as_bytes(std::span(tampered));
     Rich sink{};
-    EXPECT(!fbs::from_bytes(bytes, sink));
-    EXPECT(!table_view<Rich>::from_bytes(bytes).valid());
+    ZEXPECT(!fbs::from_bytes(bytes, sink));
+    ZEXPECT(!table_view<Rich>::from_bytes(bytes).valid());
 }
 
 ZEST_CASE(root_table_in_the_identifier_fails) {
@@ -372,15 +372,15 @@ ZEST_CASE(root_table_in_the_identifier_fails) {
     // offset points into the identifier, or at the end.
     const std::array<std::uint8_t, 8> into_identifier = {4, 0, 0, 0, 'E', 'V', 'T', 'O'};
     auto into = fbs::from_bytes<Rich>(into_identifier);
-    ASSERT(!into);
-    EXPECT(into.error().message == "buffer verification failed: root table");
-    EXPECT(!table_view<Rich>::from_bytes(into_identifier).valid());
+    ZASSERT(!into);
+    ZEXPECT(into.error().message == "buffer verification failed: root table");
+    ZEXPECT(!table_view<Rich>::from_bytes(into_identifier).valid());
 
     const std::array<std::uint8_t, 8> at_end = {8, 0, 0, 0, 'E', 'V', 'T', 'O'};
     auto end = fbs::from_bytes<Rich>(at_end);
-    ASSERT(!end);
-    EXPECT(end.error().message == "buffer verification failed: root offset");
-    EXPECT(!table_view<Rich>::from_bytes(at_end).valid());
+    ZASSERT(!end);
+    ZEXPECT(end.error().message == "buffer verification failed: root offset");
+    ZEXPECT(!table_view<Rich>::from_bytes(at_end).valid());
 }
 
 ZEST_CASE(hostile_bytes_stay_in_bounds) {
@@ -463,26 +463,26 @@ ZEST_CASE(hostile_bytes_stay_in_bounds_for_struct_keys) {
 ZEST_CASE(inline_struct_bool_byte_other_than_zero_or_one_fails) {
     // Verification by size and alignment admits any image, but reading a
     // bool byte other than 0 or 1 is undefined behaviour.
-    STATIC_EXPECT(fbs::can_inline_struct_v<BoolFlags>);
-    STATIC_EXPECT(fbs::can_inline_struct_v<NestedBool>);
+    ZSTATIC_EXPECT(fbs::can_inline_struct_v<BoolFlags>);
+    ZSTATIC_EXPECT(fbs::can_inline_struct_v<NestedBool>);
     const WithBoolStructs input{
         .solo = {.ready = true,               .code = 7                          },
         .items = {{.ready = false, .code = 1}, {.ready = true, .code = 2}         },
         .deep = {.id = 3,                     .inner = {.ready = true, .code = 4}},
     };
     auto encoded = fbs::to_bytes(input);
-    ASSERT(encoded);
+    ZASSERT(encoded);
 
     // Slots follow declaration order: solo at 4, items at 6, deep at 8.
     const auto* data = encoded->data();
     const auto* root = ::flatbuffers::GetRoot<fbs::Table>(data);
     const auto* solo = root->GetStruct<const BoolFlags*>(4);
-    ASSERT(solo != nullptr);
+    ZASSERT(solo != nullptr);
     const auto* items = root->GetPointer<const fbs::Vector<const BoolFlags*>*>(6);
-    ASSERT(items != nullptr);
-    ASSERT(items->size() == 2U);
+    ZASSERT(items != nullptr);
+    ZASSERT(items->size() == 2U);
     const auto* deep = root->GetStruct<const NestedBool*>(8);
-    ASSERT(deep != nullptr);
+    ZASSERT(deep != nullptr);
     auto byte_at = [&](const void* stored, std::size_t offset) {
         return static_cast<std::size_t>(static_cast<const std::uint8_t*>(stored) - data) + offset;
     };
@@ -495,21 +495,21 @@ ZEST_CASE(inline_struct_bool_byte_other_than_zero_or_one_fails) {
         auto tampered = *encoded;
         tampered[at] = 0x02;
         auto result = fbs::from_bytes<WithBoolStructs>(tampered);
-        ASSERT(!result);
-        EXPECT(
+        ZASSERT(!result);
+        ZEXPECT(
             zest::starts_with(result.error().message, "buffer verification failed: inline struct"));
-        EXPECT(!table_view<WithBoolStructs>::from_bytes(tampered).valid());
+        ZEXPECT(!table_view<WithBoolStructs>::from_bytes(tampered).valid());
     }
 
     // 1 is a valid image and reads as true.
     auto flipped = *encoded;
     flipped[byte_at(items->Get(0), offsetof(BoolFlags, ready))] = 0x01;
     auto decoded = fbs::from_bytes<WithBoolStructs>(flipped);
-    ASSERT(decoded);
-    EXPECT(decoded->items[0].ready);
+    ZASSERT(decoded);
+    ZEXPECT(decoded->items[0].ready);
     auto view = table_view<WithBoolStructs>::from_bytes(flipped);
-    ASSERT(view.valid());
-    EXPECT(view[&WithBoolStructs::items][0].ready);
+    ZASSERT(view.valid());
+    ZEXPECT(view[&WithBoolStructs::items][0].ready);
 }
 
 ZEST_CASE(monostate_payload_written_as_an_empty_table_reads) {
@@ -531,11 +531,11 @@ ZEST_CASE(monostate_payload_written_as_an_empty_table_reads) {
     MaybeAddress decoded{
         .maybe = test::Address{.city = "x", .zip = 1}
     };
-    ASSERT(fbs::from_bytes(bytes, decoded));
-    EXPECT(decoded.maybe.index() == 0U);
+    ZASSERT(fbs::from_bytes(bytes, decoded));
+    ZEXPECT(decoded.maybe.index() == 0U);
     auto root = table_view<MaybeAddress>::from_bytes(bytes);
-    ASSERT(root.valid());
-    EXPECT(root[&MaybeAddress::maybe].index() == 0U);
+    ZASSERT(root.valid());
+    ZEXPECT(root[&MaybeAddress::maybe].index() == 0U);
 }
 
 ZEST_CASE(nesting_deeper_than_64_tables_fails) {
@@ -543,18 +543,18 @@ ZEST_CASE(nesting_deeper_than_64_tables_fails) {
     // cycle of offsets, which is a chain without end. Straddle it so a
     // change in what a table costs shows here.
     auto shallow = fbs::to_bytes(make_chain(60));
-    ASSERT(shallow);
+    ZASSERT(shallow);
     Node shallow_out{};
-    EXPECT(fbs::from_bytes(*shallow, shallow_out));
-    EXPECT(table_view<Node>::from_bytes(*shallow).valid());
+    ZEXPECT(fbs::from_bytes(*shallow, shallow_out));
+    ZEXPECT(table_view<Node>::from_bytes(*shallow).valid());
 
     auto deep = fbs::to_bytes(make_chain(70));
-    ASSERT(deep);
+    ZASSERT(deep);
     Node deep_out{};
     auto result = fbs::from_bytes(*deep, deep_out);
-    ASSERT(!result);
-    EXPECT(result.error().message == "buffer verification failed: struct field");
-    EXPECT(!table_view<Node>::from_bytes(*deep).valid());
+    ZASSERT(!result);
+    ZEXPECT(result.error().message == "buffer verification failed: struct field");
+    ZEXPECT(!table_view<Node>::from_bytes(*deep).valid());
 }
 
 ZEST_CASE(imperative_adapter_cannot_read_past_a_vector) {
@@ -563,38 +563,38 @@ ZEST_CASE(imperative_adapter_cannot_read_past_a_vector) {
     auto shorted = fbs::to_bytes(GreedySeq{
         .nums = {1, 2}
     });
-    ASSERT(shorted);
+    ZASSERT(shorted);
     auto failed = fbs::from_bytes<GreedySeq>(*shorted);
-    ASSERT(!failed);
-    EXPECT(failed.error().message == "buffer verification failed: vector element out of range");
+    ZASSERT(!failed);
+    ZEXPECT(failed.error().message == "buffer verification failed: vector element out of range");
 
     const GreedySeq exact{
         .nums = {1, 2, 3, 4}
     };
     auto encoded = fbs::to_bytes(exact);
-    ASSERT(encoded);
+    ZASSERT(encoded);
     auto decoded = fbs::from_bytes<GreedySeq>(*encoded);
-    ASSERT(decoded);
-    EXPECT(*decoded == exact);
+    ZASSERT(decoded);
+    ZEXPECT(*decoded == exact);
 }
 
 ZEST_CASE(imperative_adapter_cannot_read_past_a_map) {
     auto shorted = fbs::to_bytes(GreedyMap{
         .entries = {{"a", 1}, {"b", 2}}
     });
-    ASSERT(shorted);
+    ZASSERT(shorted);
     auto failed = fbs::from_bytes<GreedyMap>(*shorted);
-    ASSERT(!failed);
-    EXPECT(failed.error().message == "buffer verification failed: map entry out of range");
+    ZASSERT(!failed);
+    ZEXPECT(failed.error().message == "buffer verification failed: map entry out of range");
 
     const GreedyMap exact{
         .entries = {{"a", 1}, {"b", 2}, {"c", 3}, {"d", 4}}
     };
     auto encoded = fbs::to_bytes(exact);
-    ASSERT(encoded);
+    ZASSERT(encoded);
     auto decoded = fbs::from_bytes<GreedyMap>(*encoded);
-    ASSERT(decoded);
-    EXPECT(*decoded == exact);
+    ZASSERT(decoded);
+    ZEXPECT(*decoded == exact);
 }
 
 ZEST_CASE(imperative_adapter_reads_a_tuple_table_over_its_own_type) {
@@ -602,20 +602,20 @@ ZEST_CASE(imperative_adapter_reads_a_tuple_table_over_its_own_type) {
     // adapter's business, at the root and in a field.
     const LabeledCount root{.count = 3, .label = "three"};
     auto root_bytes = fbs::to_bytes(root);
-    ASSERT(root_bytes);
+    ZASSERT(root_bytes);
     auto root_back = fbs::from_bytes<LabeledCount>(*root_bytes);
-    ASSERT(root_back);
-    EXPECT(*root_back == root);
+    ZASSERT(root_back);
+    ZEXPECT(*root_back == root);
 
     const HoldsLabeledCount holder{
         .entry = {.count = 5, .label = "five"},
         .after = 9
     };
     auto holder_bytes = fbs::to_bytes(holder);
-    ASSERT(holder_bytes);
+    ZASSERT(holder_bytes);
     auto holder_back = fbs::from_bytes<HoldsLabeledCount>(*holder_bytes);
-    ASSERT(holder_back);
-    EXPECT(*holder_back == holder);
+    ZASSERT(holder_back);
+    ZEXPECT(*holder_back == holder);
 }
 
 };  // ZEST_SUITE(codec_fbs_decode)

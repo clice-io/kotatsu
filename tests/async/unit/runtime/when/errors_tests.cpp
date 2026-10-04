@@ -49,10 +49,10 @@ ZEST_CASE(all_first_error_cancels_the_rest) {
     };
 
     auto [result, drove] = run(combined(), driver());
-    ASSERT(result.has_value());
-    ASSERT(result->has_error());
-    EXPECT(result->error() == error::connection_refused);
-    EXPECT(!gate.has_waiters());
+    ZASSERT(result.has_value());
+    ZASSERT(result->has_error());
+    ZEXPECT(result->error() == error::connection_refused);
+    ZEXPECT(!gate.has_waiters());
 }
 
 ZEST_CASE(all_error_while_armed_starts_no_later_child) {
@@ -66,10 +66,10 @@ ZEST_CASE(all_error_while_armed_starts_no_later_child) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    ASSERT(result->has_error());
-    EXPECT(result->error() == error::connection_refused);
-    EXPECT(started == 0);
+    ZASSERT(result.has_value());
+    ZASSERT(result->has_error());
+    ZEXPECT(result->error() == error::connection_refused);
+    ZEXPECT(started == 0);
 }
 
 ZEST_CASE(all_success_has_no_error) {
@@ -78,9 +78,9 @@ ZEST_CASE(all_success_has_no_error) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    ASSERT(result->has_value());
-    EXPECT(**result == std::tuple{1, 2});
+    ZASSERT(result.has_value());
+    ZASSERT(result->has_value());
+    ZEXPECT(**result == std::tuple{1, 2});
 }
 
 ZEST_CASE(any_first_error_wins_and_cancels_the_rest) {
@@ -103,10 +103,10 @@ ZEST_CASE(any_first_error_wins_and_cancels_the_rest) {
     };
 
     auto [result, drove] = run(combined(), driver());
-    ASSERT(result.has_value());
-    ASSERT(result->has_error());
-    EXPECT(result->error() == error::connection_refused);
-    EXPECT(!gate.has_waiters());
+    ZASSERT(result.has_value());
+    ZASSERT(result->has_error());
+    ZEXPECT(result->error() == error::connection_refused);
+    ZEXPECT(!gate.has_waiters());
 }
 
 ZEST_CASE(any_first_of_several_errors_wins) {
@@ -116,9 +116,9 @@ ZEST_CASE(any_first_of_several_errors_wins) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    ASSERT(result->has_error());
-    EXPECT(result->error() == error::connection_refused);
+    ZASSERT(result.has_value());
+    ZASSERT(result->has_error());
+    ZEXPECT(result->error() == error::connection_refused);
 }
 
 ZEST_CASE(all_range_error_cancels_the_rest) {
@@ -135,10 +135,10 @@ ZEST_CASE(all_range_error_cancels_the_rest) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    ASSERT(result->has_error());
-    EXPECT(result->error() == error::connection_refused);
-    EXPECT(!gate.has_waiters());
+    ZASSERT(result.has_value());
+    ZASSERT(result->has_error());
+    ZEXPECT(result->error() == error::connection_refused);
+    ZEXPECT(!gate.has_waiters());
 }
 
 ZEST_CASE(any_range_error_wins) {
@@ -155,10 +155,10 @@ ZEST_CASE(any_range_error_wins) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    ASSERT(result->has_error());
-    EXPECT(result->error() == error::connection_refused);
-    EXPECT(!gate.has_waiters());
+    ZASSERT(result.has_value());
+    ZASSERT(result->has_error());
+    ZEXPECT(result->error() == error::connection_refused);
+    ZEXPECT(!gate.has_waiters());
 }
 
 ZEST_CASE(all_range_success_has_no_error) {
@@ -171,10 +171,10 @@ ZEST_CASE(all_range_success_has_no_error) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    ASSERT(result->has_value());
+    ZASSERT(result.has_value());
+    ZASSERT(result->has_value());
     auto& values = **result;
-    EXPECT(std::vector<int>(values.begin(), values.end()) == std::vector{1, 2, 3});
+    ZEXPECT(std::vector<int>(values.begin(), values.end()) == std::vector{1, 2, 3});
 }
 
 ZEST_CASE(mixed_error_types_come_back_as_a_variant) {
@@ -197,14 +197,14 @@ ZEST_CASE(mixed_error_types_come_back_as_a_variant) {
     };
 
     auto [all_result, any_result] = run(all(), any());
-    ASSERT(all_result.has_value());
-    ASSERT(all_result->has_error());
-    ASSERT(std::holds_alternative<error>(all_result->error()));
-    EXPECT(std::get<error>(all_result->error()) == error::connection_refused);
-    ASSERT(any_result.has_value());
-    ASSERT(any_result->has_error());
-    ASSERT(std::holds_alternative<CustomError>(any_result->error()));
-    EXPECT(std::get<CustomError>(any_result->error()).code == 7);
+    ZASSERT(all_result.has_value());
+    ZASSERT(all_result->has_error());
+    ZASSERT(std::holds_alternative<error>(all_result->error()));
+    ZEXPECT(std::get<error>(all_result->error()) == error::connection_refused);
+    ZASSERT(any_result.has_value());
+    ZASSERT(any_result->has_error());
+    ZASSERT(std::holds_alternative<CustomError>(any_result->error()));
+    ZEXPECT(std::get<CustomError>(any_result->error()).code == 7);
 }
 
 // A sibling's cancel decides the outcome first; a child that fails while it
@@ -227,9 +227,9 @@ ZEST_CASE(error_outranks_a_sibling_cancel) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    ASSERT(result->has_error());
-    EXPECT(result->error() == error::connection_refused);
+    ZASSERT(result.has_value());
+    ZASSERT(result->has_error());
+    ZEXPECT(result->error() == error::connection_refused);
 }
 
 // A child that cancels the whole scope and then fails still reports its
@@ -258,11 +258,11 @@ ZEST_CASE(error_outranks_an_external_cancel) {
     };
 
     auto [result, drove] = run(target, driver());
-    ASSERT(seen.has_value());
-    ASSERT(seen->has_error());
-    EXPECT(seen->error() == error::connection_refused);
+    ZASSERT(seen.has_value());
+    ZASSERT(seen->has_error());
+    ZEXPECT(seen->error() == error::connection_refused);
     // The scope still ends cancelled once it has seen the error.
-    EXPECT(result.is_cancelled());
+    ZEXPECT(result.is_cancelled());
 }
 
 };  // ZEST_SUITE(async_runtime_when_errors)

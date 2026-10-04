@@ -6,6 +6,12 @@
 
 #ifdef __cpp_exceptions
 #include <cpptrace/from_current.hpp>
+#if !defined(_MSC_VER) && __has_include(<cxxabi.h>)
+#include <cxxabi.h>
+#define ZEST_ITANIUM_EXCEPTIONS
+#elif defined(_CPPRTTI)
+#include <typeinfo>
+#endif
 #endif
 
 #include "kota/support/functional.h"
@@ -20,6 +26,26 @@ void println_trace(const cpptrace::stacktrace& trace) {
         std::println("{}", frame.to_string());
     }
 }
+
+#ifdef __cpp_exceptions
+
+/// The type of the exception being handled, which is `error` when that is
+/// not null. The Itanium ABI knows the type of any exception; elsewhere only
+/// RTTI names one, and only a std::exception.
+std::string handled_type([[maybe_unused]] const std::exception* error) {
+#ifdef ZEST_ITANIUM_EXCEPTIONS
+    return cpptrace::demangle(abi::__cxa_current_exception_type()->name());
+#else
+#ifdef _CPPRTTI
+    if(error != nullptr) {
+        return typeid(*error).name();
+    }
+#endif
+    return "an exception of unknown type";
+#endif
+}
+
+#endif
 
 }  // namespace
 
@@ -40,29 +66,28 @@ void print_trace(std::source_location location) {
 
 #ifdef __cpp_exceptions
 
-bool trace_exception(function<void()> cb, bool print) {
-    bool ret = false;
-
+bool trace_exception(function<void()> cb) {
     CPPTRACE_TRY {
-        CPPTRACE_TRY {
-            cb();
-        }
-        CPPTRACE_CATCH(const std::exception& e) {
-            if(print) {
-                std::println("[ exception ] {}", e.what());
-                println_trace(cpptrace::from_current_exception());
-            }
-            ret = true;
-        }
+        cb();
     }
     CPPTRACE_CATCH(...) {
-        if(print) {
-            std::println("[ exception ] <non-std exception>");
-            println_trace(cpptrace::from_current_exception());
-        }
-        ret = true;
+        std::println("[ exception ] {}", describe_exception(std::current_exception()));
+        println_trace(cpptrace::from_current_exception());
+        return true;
     }
-    return ret;
+    return false;
+}
+
+// Plain try and catch, as in predicates.h: built only with exceptions, and
+// catching by type has no KOTA_ macro.
+std::string describe_exception(std::exception_ptr exception) {
+    try {
+        std::rethrow_exception(exception);
+    } catch(const std::exception& error) {
+        return std::format("{}: {}", handled_type(&error), error.what());
+    } catch(...) {
+        return handled_type(nullptr);
+    }
 }
 
 #endif

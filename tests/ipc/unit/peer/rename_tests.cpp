@@ -66,10 +66,10 @@ ZEST_CASE(request_params_and_result_are_lower_camel) {
     remote.end_input();
 
     auto [ran] = run(peer.run());
-    EXPECT(ran.has_value());
+    ZEXPECT(ran.has_value());
     auto sent = remote.drain();
-    ASSERT(sent.size() == 1U);
-    EXPECT(sent[0] == R"({"jsonrpc":"2.0","id":1,"result":{"computedSum":30}})");
+    ZASSERT(sent.size() == 1U);
+    ZEXPECT(sent[0] == R"({"jsonrpc":"2.0","id":1,"result":{"computedSum":30}})");
 }
 
 ZEST_CASE(notification_params_are_lower_camel) {
@@ -84,9 +84,9 @@ ZEST_CASE(notification_params_are_lower_camel) {
     remote.end_input();
 
     auto [ran] = run(peer.run());
-    EXPECT(ran.has_value());
-    EXPECT(name == "alice");
-    EXPECT(count == 3);
+    ZEXPECT(ran.has_value());
+    ZEXPECT(name == "alice");
+    ZEXPECT(count == 3);
 }
 
 ZEST_CASE(sent_params_and_read_result_are_lower_camel) {
@@ -102,12 +102,12 @@ ZEST_CASE(sent_params_and_read_result_are_lower_camel) {
     };
 
     auto [ran, asked, received] = run(peer.run(), ask(), remote_side());
-    EXPECT(ran.has_value());
-    ASSERT(asked.has_value());
-    EXPECT(asked->computed_sum == 99);
-    ASSERT(received.has_value());
-    ASSERT(received->has_value());
-    EXPECT(
+    ZEXPECT(ran.has_value());
+    ZASSERT(asked.has_value());
+    ZEXPECT(asked->computed_sum == 99);
+    ZASSERT(received.has_value());
+    ZASSERT(received->has_value());
+    ZEXPECT(
         **received ==
         R"({"jsonrpc":"2.0","id":1,"method":"test/rangeAdd","params":{"firstValue":40,"secondValue":50}})");
 }

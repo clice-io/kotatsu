@@ -45,10 +45,10 @@ ZEST_CASE(create_registers_the_token) {
         run(peer.run(),
             reporter.create(),
             answer_create(R"({"jsonrpc":"2.0","id":1,"result":null})", 0));
-    EXPECT(ran.has_value());
-    EXPECT(created.has_value());
-    ASSERT(received.has_value());
-    EXPECT(
+    ZEXPECT(ran.has_value());
+    ZEXPECT(created.has_value());
+    ZASSERT(received.has_value());
+    ZEXPECT(
         *received ==
         std::vector<std::string>{
             R"({"jsonrpc":"2.0","id":1,"method":"window/workDoneProgress/create","params":{"token":1}})",
@@ -64,9 +64,9 @@ ZEST_CASE(create_failure_is_the_remote_error) {
             answer_create(
                 R"({"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"not supported"}})",
                 0));
-    EXPECT(ran.has_value());
-    ASSERT(created.has_error());
-    EXPECT(created.error().message == "not supported");
+    ZEXPECT(ran.has_value());
+    ZASSERT(created.has_error());
+    ZEXPECT(created.error().message == "not supported");
 }
 
 // begin leaves out a false `cancellable`; report keeps an explicit one,
@@ -84,18 +84,18 @@ ZEST_CASE(begin_report_end_send_progress) {
 
     auto [ran, reported, received] =
         run(peer.run(), report(), answer_create(R"({"jsonrpc":"2.0","id":1,"result":null})", 3));
-    EXPECT(ran.has_value());
-    EXPECT(reported.has_value());
-    EXPECT(sent == std::vector{true, true, true});
-    ASSERT(received.has_value());
-    ASSERT(received->size() == 4U);
-    EXPECT(
+    ZEXPECT(ran.has_value());
+    ZEXPECT(reported.has_value());
+    ZEXPECT(sent == std::vector{true, true, true});
+    ZASSERT(received.has_value());
+    ZASSERT(received->size() == 4U);
+    ZEXPECT(
         (*received)[1] ==
         R"({"jsonrpc":"2.0","method":"$/progress","params":{"token":42,"value":{"kind":"begin","title":"Indexing","message":"Starting...","percentage":0}}})");
-    EXPECT(
+    ZEXPECT(
         (*received)[2] ==
         R"({"jsonrpc":"2.0","method":"$/progress","params":{"token":42,"value":{"kind":"report","cancellable":false,"message":"50% done","percentage":50}}})");
-    EXPECT(
+    ZEXPECT(
         (*received)[3] ==
         R"({"jsonrpc":"2.0","method":"$/progress","params":{"token":42,"value":{"kind":"end","message":"Complete"}}})");
 }
@@ -109,12 +109,12 @@ ZEST_CASE(string_token_is_sent_as_a_string) {
 
     auto [ran, reported, received] =
         run(peer.run(), report(), answer_create(R"({"jsonrpc":"2.0","id":1,"result":null})", 1));
-    EXPECT(ran.has_value());
-    EXPECT(reported.has_value());
-    ASSERT(received.has_value());
-    ASSERT(received->size() == 2U);
-    EXPECT(zest::contains((*received)[0], R"("token":"my-token")"));
-    EXPECT(zest::contains((*received)[1], R"("token":"my-token")"));
+    ZEXPECT(ran.has_value());
+    ZEXPECT(reported.has_value());
+    ZASSERT(received.has_value());
+    ZASSERT(received->size() == 2U);
+    ZEXPECT(zest::contains((*received)[0], R"("token":"my-token")"));
+    ZEXPECT(zest::contains((*received)[1], R"("token":"my-token")"));
 }
 
 };  // ZEST_SUITE(ipc_lsp_progress)
@@ -126,23 +126,23 @@ ZEST_SUITE(ipc_lsp_progress_bincode, test::PeerFixture<test::BincodeAdapter>) {
 ZEST_CASE(progress_reads_as_progress_params) {
     ProgressReporter reporter(peer, protocol::ProgressToken(7));
     auto report = [&]() -> task<> {
-        EXPECT(reporter.begin("Indexing", {}, protocol::uinteger(10)).has_value());
+        ZEXPECT(reporter.begin("Indexing", {}, protocol::uinteger(10)).has_value());
         remote.end_input();
         co_return;
     };
 
     auto [ran, reported] = run(peer.run(), report());
-    EXPECT(ran.has_value());
+    ZEXPECT(ran.has_value());
     const auto& written = this->written();
-    ASSERT(written.size() == 1U);
-    EXPECT(written[0].method == "$/progress");
+    ZASSERT(written.size() == 1U);
+    ZEXPECT(written[0].method == "$/progress");
     auto params = test::BincodeAdapter::decode<protocol::ProgressParams>(written[0].body);
-    ASSERT(params.has_value());
-    EXPECT(params->token == protocol::ProgressToken(7));
+    ZASSERT(params.has_value());
+    ZEXPECT(params->token == protocol::ProgressToken(7));
     auto begin = codec::dyn::from_dyn<protocol::WorkDoneProgressBegin, lsp_config>(params->value);
-    ASSERT(begin.has_value());
-    EXPECT(begin->title == "Indexing");
-    EXPECT(begin->percentage == std::optional<protocol::uinteger>(10U));
+    ZASSERT(begin.has_value());
+    ZEXPECT(begin->title == "Indexing");
+    ZEXPECT(begin->percentage == std::optional<protocol::uinteger>(10U));
 }
 
 };  // ZEST_SUITE(ipc_lsp_progress_bincode)

@@ -128,50 +128,51 @@ Fields declared() {
 ZEST_SUITE(deco_facade_backend_config) {
 
 ZEST_CASE(next_config_applies_to_the_next_option) {
-    EXPECT(declared<NextApplies>() ==
-           (Fields{
-               {"first",  {false, &decl::default_category, "first only"} },
-               {"second", {true, &decl::default_category, "not provided"}},
+    ZEXPECT(declared<NextApplies>() ==
+            (Fields{
+                {"first",  {false, &decl::default_category, "first only"} },
+                {"second", {true, &decl::default_category, "not provided"}},
     }));
 }
 
 ZEST_CASE(scope_applies_between_start_and_end) {
-    EXPECT(declared<ScopeApplies>() == (Fields{
-                                           {"before",      {true, &decl::default_category, unset}},
-                                           {"inside",      {false, &top_category, unset}         },
-                                           {"also_inside", {false, &top_category, unset}         },
-                                           {"after",       {true, &decl::default_category, unset}},
+    ZEXPECT(declared<ScopeApplies>() == (Fields{
+                                            {"before",      {true, &decl::default_category, unset}},
+                                            {"inside",      {false, &top_category, unset}         },
+                                            {"also_inside", {false, &top_category, unset}         },
+                                            {"after",       {true, &decl::default_category, unset}},
     }));
 }
 
 ZEST_CASE(next_config_on_a_nested_struct_applies_to_its_options) {
-    EXPECT(declared<NextOnNested>() == (Fields{
-                                           {"left",  {true, &inner_category, unset}        },
-                                           {"right", {true, &inner_category, unset}        },
-                                           {"tail",  {true, &decl::default_category, unset}},
+    ZEXPECT(declared<NextOnNested>() == (Fields{
+                                            {"left",  {true, &inner_category, unset}        },
+                                            {"right", {true, &inner_category, unset}        },
+                                            {"tail",  {true, &decl::default_category, unset}},
     }));
 }
 
 ZEST_CASE(scopes_nest_across_structs) {
     // The inner scope ends inside the nested struct; the outer one still applies after it.
-    EXPECT(declared<DeepScopes>() == (Fields{
-                                         {"top",        {false, &top_category, unset}  },
-                                         {"deep",       {false, &inner_category, unset}},
-                                         {"after_deep", {false, &top_category, unset}  },
-                                         {"tail",       {false, &top_category, unset}  },
+    ZEXPECT(declared<DeepScopes>() == (Fields{
+                                          {"top",        {false, &top_category, unset}  },
+                                          {"deep",       {false, &inner_category, unset}},
+                                          {"after_deep", {false, &top_category, unset}  },
+                                          {"tail",       {false, &top_category, unset}  },
     }));
 }
 
 ZEST_CASE(later_config_wins_until_it_ends) {
-    EXPECT(declared<LaterWins>() == (Fields{
-                                        {"first",  {true, &decl::default_category, "next"}  },
-                                        {"second", {true, &decl::default_category, "scoped"}},
+    ZEXPECT(declared<LaterWins>() == (Fields{
+                                         {"first",  {true, &decl::default_category, "next"}  },
+                                         {"second", {true, &decl::default_category, "scoped"}},
     }));
 }
 
 ZEST_CASE(next_config_passes_over_a_plain_member) {
-    EXPECT(declared<PlainMember>() == (Fields{
-                                          {"flag", {true, &decl::default_category, "for the flag"}},
+    ZEXPECT(declared<PlainMember>() ==
+            (Fields{
+                {"flag", {true, &decl::default_category, "for the flag"}},
     }));
 }
 
@@ -182,9 +183,9 @@ ZEST_CASE(config_meta_var_is_explicit) {
                                                      meta_var = cfg.meta_var;
                                                      return true;
                                                  });
-    ASSERT(meta_var.has_value());
-    EXPECT(meta_var->value == "N");
-    EXPECT(meta_var->is_explicit());
+    ZASSERT(meta_var.has_value());
+    ZEXPECT(meta_var->value == "N");
+    ZEXPECT(meta_var->is_explicit());
 }
 
 ZEST_CASE(schema_visit_applies_the_same_configs) {
@@ -198,7 +199,7 @@ ZEST_CASE(schema_visit_applies_the_same_configs) {
             };
             return true;
         });
-    EXPECT(fields == declared<DeepScopes>());
+    ZEXPECT(fields == declared<DeepScopes>());
 }
 
 };  // ZEST_SUITE(deco_facade_backend_config)

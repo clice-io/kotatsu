@@ -46,10 +46,8 @@ struct Recording : zest::LoopFixture {
             rest = end == std::string_view::npos ? std::string_view() : rest.substr(end + 1);
             auto record = codec::json::from_string<Record>(line);
             ZEST_CONTEXT("line: {}", line);
-            EXPECT(record.has_value());
-            if(record) {
-                lines.push_back(std::move(*record));
-            }
+            ZASSERT(record.has_value());
+            lines.push_back(std::move(*record));
         }
         return lines;
     }
@@ -76,43 +74,43 @@ ZEST_CASE(read_messages_are_recorded_and_passed_on) {
     };
 
     auto [read] = run(read_all());
-    ASSERT(read.has_value());
-    EXPECT(*read == sent);
+    ZASSERT(read.has_value());
+    ZEXPECT(*read == sent);
     auto lines = records();
-    ASSERT(lines.size() == 2U);
+    ZASSERT(lines.size() == 2U);
     for(std::size_t i = 0; i < lines.size(); ++i) {
         ZEST_CONTEXT("record {}", i);
-        EXPECT(lines[i].msg == sent[i]);
-        EXPECT(lines[i].ts >= 0);
+        ZEXPECT(lines[i].msg == sent[i]);
+        ZEXPECT(lines[i].ts >= 0);
     }
 }
 
 ZEST_CASE(written_messages_are_passed_on_unrecorded) {
     auto [written] = run(transport.write_message("hello"));
-    EXPECT(written.has_value());
-    EXPECT(remote.drain() == std::vector<std::string>{"hello"});
-    EXPECT(test::read_file(path).empty());
+    ZEXPECT(written.has_value());
+    ZEXPECT(remote.drain() == std::vector<std::string>{"hello"});
+    ZEXPECT(test::read_file(path).empty());
 }
 
 ZEST_CASE(close_reaches_the_inner_transport) {
-    EXPECT(transport.close().has_value());
-    EXPECT(remote.closed());
+    ZEXPECT(transport.close().has_value());
+    ZEXPECT(remote.closed());
 }
 
 ZEST_CASE(close_output_reaches_the_inner_transport) {
     auto [closed] = run(transport.close_output());
-    EXPECT(closed.has_value());
-    EXPECT(remote.output_ended());
-    EXPECT(!remote.closed());
+    ZEXPECT(closed.has_value());
+    ZEXPECT(remote.output_ended());
+    ZEXPECT(!remote.closed());
 }
 
 ZEST_CASE(unreadable_message_is_passed_on_unrecorded) {
     remote.send_unreadable(ReadError{.kind = ReadError::Kind::Oversized, .message = "too large"});
 
     auto [read] = run(transport.read_message());
-    ASSERT(read.has_error());
-    EXPECT(read.error().kind == ReadError::Kind::Oversized);
-    EXPECT(test::read_file(path).empty());
+    ZASSERT(read.has_error());
+    ZEXPECT(read.error().kind == ReadError::Kind::Oversized);
+    ZEXPECT(test::read_file(path).empty());
 }
 
 // A file that cannot be opened loses the recording, not the messages.
@@ -123,22 +121,22 @@ ZEST_CASE(unopenable_file_still_passes_messages_on) {
     other.send("hello");
 
     auto [read] = run(unrecorded.read_message());
-    ASSERT(read.has_value());
-    EXPECT(*read == "hello");
-    EXPECT(!std::filesystem::exists(missing));
+    ZASSERT(read.has_value());
+    ZEXPECT(*read == "hello");
+    ZEXPECT(!std::filesystem::exists(missing));
 }
 
 ZEST_CASE(remote_max_payload_is_the_inner_transports) {
     remote.limit_payload(100);
-    EXPECT(transport.remote_max_payload() == 100U);
+    ZEXPECT(transport.remote_max_payload() == 100U);
 }
 
 ZEST_CASE(write_failure_reaches_the_caller) {
     remote.fail_writes();
 
     auto [written] = run(transport.write_message("hello"));
-    ASSERT(written.has_error());
-    EXPECT(written.error().message == "write failed");
+    ZASSERT(written.has_error());
+    ZEXPECT(written.error().message == "write failed");
 }
 
 };  // ZEST_SUITE(ipc_recording_transport)

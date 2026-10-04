@@ -92,57 +92,57 @@ ZEST_SUITE(deco_facade_runtime_git) {
 ZEST_CASE(clone_takes_its_repository_and_branch) {
     Git git;
     git("clone https://example.com/demo.git -b main");
-    EXPECT(!git.error.has_value());
-    EXPECT(!git.routing_error.has_value());
-    ASSERT(git.cloned.has_value());
-    EXPECT(git.cloned->repo.as_optional() ==
-           std::optional<std::string>("https://example.com/demo.git"));
-    EXPECT(git.cloned->branch.as_optional() == std::optional<std::string>("main"));
+    ZEXPECT(!git.error.has_value());
+    ZEXPECT(!git.routing_error.has_value());
+    ZASSERT(git.cloned.has_value());
+    ZEXPECT(git.cloned->repo.as_optional() ==
+            std::optional<std::string>("https://example.com/demo.git"));
+    ZEXPECT(git.cloned->branch.as_optional() == std::optional<std::string>("main"));
 }
 
 ZEST_CASE(commit_without_its_message_fails) {
     Git git;
     git("commit -a");
-    EXPECT(!git.committed.has_value());
-    ASSERT(git.error.has_value());
-    EXPECT(zest::ends_with(*git.error, "required option -m|--message <MSG> is missing"));
+    ZEXPECT(!git.committed.has_value());
+    ZASSERT(git.error.has_value());
+    ZEXPECT(zest::ends_with(*git.error, "required option -m|--message <MSG> is missing"));
 }
 
 ZEST_CASE(commit_with_its_message_commits) {
     Git git;
     git("commit -a -m fix");
-    ASSERT(git.committed.has_value());
-    EXPECT(git.committed->all.as_optional() == std::optional(true));
-    EXPECT(git.committed->message.as_optional() == std::optional<std::string>("fix"));
+    ZASSERT(git.committed.has_value());
+    ZEXPECT(git.committed->all.as_optional() == std::optional(true));
+    ZEXPECT(git.committed->message.as_optional() == std::optional<std::string>("fix"));
 }
 
 ZEST_CASE(tag_without_a_mode_fails) {
     Git git;
     git("tag");
-    ASSERT(git.error.has_value());
-    EXPECT(zest::ends_with(*git.error, "required <mode> (tag operation mode) is missing"));
+    ZASSERT(git.error.has_value());
+    ZEXPECT(zest::ends_with(*git.error, "required <mode> (tag operation mode) is missing"));
 }
 
 ZEST_CASE(unknown_command_fails) {
     Git git;
     git("cherry-pick main");
-    ASSERT(git.routing_error.has_value());
-    EXPECT(zest::ends_with(*git.routing_error, "unknown subcommand 'cherry-pick'"));
-    EXPECT(!git.error.has_value());
+    ZASSERT(git.routing_error.has_value());
+    ZEXPECT(zest::ends_with(*git.routing_error, "unknown subcommand 'cherry-pick'"));
+    ZEXPECT(!git.error.has_value());
 }
 
 ZEST_CASE(usage_lists_the_commands_without_a_usage_line) {
     Git git;
     std::ostringstream usage;
     git.git.usage(usage);
-    EXPECT_SNAPSHOT(usage.str());
+    ZEXPECT(zest::snapshot(usage.str()));
 }
 
 ZEST_CASE(command_usage_lists_its_options) {
     Git git;
     std::ostringstream usage;
     git.clone.usage(usage);
-    EXPECT_SNAPSHOT(usage.str());
+    ZEXPECT(zest::snapshot(usage.str()));
 }
 
 };  // ZEST_SUITE(deco_facade_runtime_git)

@@ -16,21 +16,21 @@ ZEST_SUITE(http_detail_request_settings_proxy, zest::LoopFixture) {
 
 ZEST_CASE(requests_go_through_the_proxy) {
     test::HttpServer proxy(loop);
-    ASSERT(proxy.listening());
+    ZASSERT(proxy.listening());
     auto client = test::loopback_client().proxy(proxy.url(""));
 
     auto [reply] = run(client.on(loop).get("http://kotatsu.invalid/path?q=1").send());
-    EXPECT(reply.has_value());
+    ZEXPECT(reply.has_value());
 
-    ASSERT(proxy.requests().size() == 1U);
-    EXPECT(proxy.requests()[0].target == "http://kotatsu.invalid/path?q=1");
-    EXPECT(proxy.requests()[0].header("host") == "kotatsu.invalid");
-    EXPECT(proxy.requests()[0].count("proxy-authorization") == 0U);
+    ZASSERT(proxy.requests().size() == 1U);
+    ZEXPECT(proxy.requests()[0].target == "http://kotatsu.invalid/path?q=1");
+    ZEXPECT(proxy.requests()[0].header("host") == "kotatsu.invalid");
+    ZEXPECT(proxy.requests()[0].count("proxy-authorization") == 0U);
 }
 
 ZEST_CASE(proxy_credentials_are_sent) {
     test::HttpServer proxy(loop);
-    ASSERT(proxy.listening());
+    ZASSERT(proxy.listening());
     auto client = test::loopback_client().proxy(http::proxy{
         .url = proxy.url(""),
         .username = "user",
@@ -38,36 +38,36 @@ ZEST_CASE(proxy_credentials_are_sent) {
     });
 
     auto [reply] = run(client.on(loop).get("http://kotatsu.invalid/").send());
-    EXPECT(reply.has_value());
+    ZEXPECT(reply.has_value());
 
-    ASSERT(proxy.requests().size() == 1U);
-    EXPECT(proxy.requests()[0].header("proxy-authorization") == "Basic dXNlcjpzZWNyZXQ=");
+    ZASSERT(proxy.requests().size() == 1U);
+    ZEXPECT(proxy.requests()[0].header("proxy-authorization") == "Basic dXNlcjpzZWNyZXQ=");
 }
 
 ZEST_CASE(no_proxy_goes_straight_to_the_server) {
     test::HttpServer server(loop);
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto nowhere = test::refusing_url();
-    ASSERT(!nowhere.empty());
+    ZASSERT(!nowhere.empty());
     auto client = test::loopback_client().proxy(nowhere);
 
     auto [reply] = run(client.on(loop).get(server.url("/direct")).no_proxy().send());
-    EXPECT(reply.has_value());
+    ZEXPECT(reply.has_value());
 
-    ASSERT(server.requests().size() == 1U);
-    EXPECT(server.requests()[0].target == "/direct");
+    ZASSERT(server.requests().size() == 1U);
+    ZEXPECT(server.requests()[0].target == "/direct");
 }
 
 ZEST_CASE(proxy_replaces_a_no_proxy) {
     test::HttpServer proxy(loop);
-    ASSERT(proxy.listening());
+    ZASSERT(proxy.listening());
     auto client = test::loopback_client().no_proxy();
 
     auto [reply] = run(client.on(loop).get("http://kotatsu.invalid/").proxy(proxy.url("")).send());
-    EXPECT(reply.has_value());
+    ZEXPECT(reply.has_value());
 
-    ASSERT(proxy.requests().size() == 1U);
-    EXPECT(proxy.requests()[0].target == "http://kotatsu.invalid/");
+    ZASSERT(proxy.requests().size() == 1U);
+    ZEXPECT(proxy.requests()[0].target == "http://kotatsu.invalid/");
 }
 
 };  // ZEST_SUITE(http_detail_request_settings_proxy)

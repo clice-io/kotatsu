@@ -71,13 +71,13 @@ ZEST_CASE(object_without_method_or_id_is_answered_with_invalid_request) {
     f.remote.end_input();
 
     auto [ran] = f.run(f.peer.run());
-    EXPECT(ran.has_value());
+    ZEXPECT(ran.has_value());
     const auto& written = f.written();
-    ASSERT(written.size() == 1U);
-    EXPECT(written[0].kind == Message::Kind::Error);
-    EXPECT(code_of(written[0].error) == ErrorCode::InvalidRequest);
-    EXPECT(written[0].error.message == "message must contain method or id");
-    EXPECT(!written[0].id.has_value());
+    ZASSERT(written.size() == 1U);
+    ZEXPECT(written[0].kind == Message::Kind::Error);
+    ZEXPECT(code_of(written[0].error) == ErrorCode::InvalidRequest);
+    ZEXPECT(written[0].error.message == "message must contain method or id");
+    ZEXPECT(!written[0].id.has_value());
 }
 
 // LSP allows no null request id; JSON-RPC answers one as an invalid request.
@@ -92,13 +92,13 @@ ZEST_CASE(request_with_a_null_id_is_answered_with_invalid_request) {
     f.remote.end_input();
 
     auto [ran] = f.run(f.peer.run());
-    EXPECT(ran.has_value());
-    EXPECT(!called);
+    ZEXPECT(ran.has_value());
+    ZEXPECT(!called);
     const auto& written = f.written();
-    ASSERT(written.size() == 1U);
-    EXPECT(written[0].kind == Message::Kind::Error);
-    EXPECT(code_of(written[0].error) == ErrorCode::InvalidRequest);
-    EXPECT(!written[0].id.has_value());
+    ZASSERT(written.size() == 1U);
+    ZEXPECT(written[0].kind == Message::Kind::Error);
+    ZEXPECT(code_of(written[0].error) == ErrorCode::InvalidRequest);
+    ZEXPECT(!written[0].id.has_value());
 }
 
 // The remote ends the input only once the request has failed, so the end
@@ -119,10 +119,10 @@ ZEST_CASE(error_response_with_a_malformed_error_fails_its_request) {
     };
 
     auto [ran, failure, scripted] = f.run(f.peer.run(), ask(), remote());
-    EXPECT(ran.has_value());
-    ASSERT(failure.has_value());
-    EXPECT(code_of(*failure) == ErrorCode::InvalidRequest);
-    EXPECT(f.written().size() == 1U);
+    ZEXPECT(ran.has_value());
+    ZASSERT(failure.has_value());
+    ZEXPECT(code_of(*failure) == ErrorCode::InvalidRequest);
+    ZEXPECT(f.written().size() == 1U);
 }
 
 ZEST_CASE(request_with_a_malformed_member_is_answered_with_its_id) {
@@ -131,12 +131,12 @@ ZEST_CASE(request_with_a_malformed_member_is_answered_with_its_id) {
     f.remote.end_input();
 
     auto [ran] = f.run(f.peer.run());
-    EXPECT(ran.has_value());
+    ZEXPECT(ran.has_value());
     const auto& written = f.written();
-    ASSERT(written.size() == 1U);
-    EXPECT(written[0].kind == Message::Kind::Error);
-    EXPECT(written[0].id == protocol::RequestID(5));
-    EXPECT(code_of(written[0].error) == ErrorCode::InvalidRequest);
+    ZASSERT(written.size() == 1U);
+    ZEXPECT(written[0].kind == Message::Kind::Error);
+    ZEXPECT(written[0].id == protocol::RequestID(5));
+    ZEXPECT(code_of(written[0].error) == ErrorCode::InvalidRequest);
 }
 
 // JSON-RPC never answers a notification, even one it cannot read.
@@ -149,9 +149,9 @@ ZEST_CASE(deeply_nested_notification_is_dropped) {
     f.remote.end_input();
 
     auto [ran] = f.run(f.peer.run());
-    EXPECT(ran.has_value());
-    EXPECT(!called);
-    EXPECT(f.written().empty());
+    ZEXPECT(ran.has_value());
+    ZEXPECT(!called);
+    ZEXPECT(f.written().empty());
 }
 
 };  // ZEST_SUITE(ipc_peer_json)

@@ -137,53 +137,53 @@ constexpr Ints aliasing_arguments() {
 ZEST_SUITE(support_small_vector_constexpr) {
 
 ZEST_CASE(deduction_takes_the_element_type) {
-    STATIC_EXPECT(small_vector{1, 2, 3}.size() == 3U);
-    STATIC_EXPECT(vector<int>{1, 2, 3, 4}.size() == 4U);
+    ZSTATIC_EXPECT(small_vector{1, 2, 3}.size() == 3U);
+    ZSTATIC_EXPECT(vector<int>{1, 2, 3, 4}.size() == 4U);
 }
 
 ZEST_CASE(int_elements_go_through_every_operation) {
     constexpr static auto facts = int_operations();
-    STATIC_EXPECT(facts.ints.size == 6U);
-    STATIC_EXPECT(facts.ints.elements == std::array{1, 9, 3, 4, 5, 11, 0, 0});
-    STATIC_EXPECT(facts.popped == 12);
-    STATIC_EXPECT(facts.below_a_larger_vector);
+    ZSTATIC_EXPECT(facts.ints.size == 6U);
+    ZSTATIC_EXPECT(facts.ints.elements == std::array{1, 9, 3, 4, 5, 11, 0, 0});
+    ZSTATIC_EXPECT(facts.popped == 12);
+    ZSTATIC_EXPECT(facts.below_a_larger_vector);
 }
 
 ZEST_CASE(string_elements_go_through_every_operation) {
     constexpr static auto facts = string_operations();
-    STATIC_EXPECT(facts.size == 4U);
-    STATIC_EXPECT(facts.first_is_beta);
-    STATIC_EXPECT(facts.second_is_alpha);
-    STATIC_EXPECT(facts.last_is_tail);
+    ZSTATIC_EXPECT(facts.size == 4U);
+    ZSTATIC_EXPECT(facts.first_is_beta);
+    ZSTATIC_EXPECT(facts.second_is_alpha);
+    ZSTATIC_EXPECT(facts.last_is_tail);
 }
 
 ZEST_CASE(optional_elements_go_through_every_operation) {
     constexpr static auto ints = optional_operations();
-    STATIC_EXPECT(ints.size == 4U);
-    STATIC_EXPECT(ints.elements == std::array{1, 3, -1, 4, 0, 0, 0, 0});
+    ZSTATIC_EXPECT(ints.size == 4U);
+    ZSTATIC_EXPECT(ints.elements == std::array{1, 3, -1, 4, 0, 0, 0, 0});
 }
 
 ZEST_CASE(variant_elements_go_through_every_operation) {
     constexpr static auto facts = variant_operations();
-    STATIC_EXPECT(facts.size == 2U);
-    STATIC_EXPECT(facts.first_is_two);
-    STATIC_EXPECT(facts.second == 3);
+    ZSTATIC_EXPECT(facts.size == 2U);
+    ZSTATIC_EXPECT(facts.first_is_two);
+    ZSTATIC_EXPECT(facts.second == 3);
 }
 
 ZEST_CASE(moved_from_vectors_are_reusable) {
     constexpr static auto facts = moved_from_vectors();
-    STATIC_EXPECT(facts.source.size == 1U);
-    STATIC_EXPECT(facts.source.elements[0] == 3);
-    STATIC_EXPECT(facts.moved.size == 1U);
-    STATIC_EXPECT(facts.moved.elements[0] == 4);
-    STATIC_EXPECT(facts.assigned.size == 2U);
-    STATIC_EXPECT(facts.assigned.elements[1] == 2);
+    ZSTATIC_EXPECT(facts.source.size == 1U);
+    ZSTATIC_EXPECT(facts.source.elements[0] == 3);
+    ZSTATIC_EXPECT(facts.moved.size == 1U);
+    ZSTATIC_EXPECT(facts.moved.elements[0] == 4);
+    ZSTATIC_EXPECT(facts.assigned.size == 2U);
+    ZSTATIC_EXPECT(facts.assigned.elements[1] == 2);
 }
 
 ZEST_CASE(arguments_may_view_the_elements) {
     constexpr static auto ints = aliasing_arguments();
-    STATIC_EXPECT(ints.size == 6U);
-    STATIC_EXPECT(ints.elements == std::array{1, 2, 1, 1, 2, 1, 0, 0});
+    ZSTATIC_EXPECT(ints.size == 6U);
+    ZSTATIC_EXPECT(ints.elements == std::array{1, 2, 1, 1, 2, 1, 0, 0});
 }
 
 };  // ZEST_SUITE(support_small_vector_constexpr)

@@ -35,19 +35,19 @@ ZEST_SUITE(http_detail_manager, zest::LoopFixture) {
 
 ZEST_CASE(requests_on_a_loop_share_its_manager) {
     test::HttpServer server(loop, echo_target);
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
     auto api = client.on(loop);
 
     auto [first] = run(api.get(server.url("/1")).send());
     auto* first_manager = &manager::for_loop(loop);
     auto [second] = run(test::loopback_client().on(loop).get(server.url("/2")).send());
-    EXPECT(first.has_value());
-    EXPECT(second.has_value());
-    EXPECT((&manager::for_loop(loop) == first_manager));
-    EXPECT((&first_manager->loop() == &loop));
-    EXPECT((first_manager->native_multi() != nullptr));
-    EXPECT(first_manager->pending_requests() == 0U);
+    ZEXPECT(first.has_value());
+    ZEXPECT(second.has_value());
+    ZEXPECT((&manager::for_loop(loop) == first_manager));
+    ZEXPECT((&first_manager->loop() == &loop));
+    ZEXPECT((first_manager->native_multi() != nullptr));
+    ZEXPECT(first_manager->pending_requests() == 0U);
 }
 
 ZEST_CASE(pending_requests_counts_the_requests_in_flight) {
@@ -57,7 +57,7 @@ ZEST_CASE(pending_requests_counts_the_requests_in_flight) {
         arrived.set();
         return test::Reply{.hold = &release};
     });
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
     auto count = [&]() -> task<std::size_t> {
         co_await arrived.wait();
@@ -67,16 +67,16 @@ ZEST_CASE(pending_requests_counts_the_requests_in_flight) {
     };
 
     auto [reply, pending] = run(client.on(loop).get(server.url("/")).send(), count());
-    EXPECT(reply.has_value());
-    ASSERT(pending.has_value());
-    EXPECT(*pending == 1U);
-    EXPECT(manager::for_loop(loop).pending_requests() == 0U);
+    ZEXPECT(reply.has_value());
+    ZASSERT(pending.has_value());
+    ZEXPECT(*pending == 1U);
+    ZEXPECT(manager::for_loop(loop).pending_requests() == 0U);
 }
 
 ZEST_CASE(many_requests_at_once_all_complete) {
     constexpr int count = 64;
     test::HttpServer server(loop, echo_target);
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
     auto api = client.on(loop);
     auto all = [&]() -> task<std::vector<response>, error> {
@@ -90,22 +90,22 @@ ZEST_CASE(many_requests_at_once_all_complete) {
     };
 
     auto [replies] = run(all());
-    ASSERT(replies.has_value());
-    ASSERT(replies->size() == std::size_t(count));
+    ZASSERT(replies.has_value());
+    ZASSERT(replies->size() == std::size_t(count));
     for(int i = 0; i < count; ++i) {
         ZEST_CONTEXT("request {}", i);
         const auto& reply = (*replies)[i];
-        EXPECT(reply.text() == std::format("/{}", i));
+        ZEXPECT(reply.text() == std::format("/{}", i));
         // Each response has its own headers.
-        EXPECT(reply.header_value("x-target") == std::format("/{}", i));
+        ZEXPECT(reply.header_value("x-target") == std::format("/{}", i));
     }
-    EXPECT(server.requests().size() == std::size_t(count));
-    EXPECT(manager::for_loop(loop).pending_requests() == 0U);
+    ZEXPECT(server.requests().size() == std::size_t(count));
+    ZEXPECT(manager::for_loop(loop).pending_requests() == 0U);
 }
 
 ZEST_CASE(request_sent_after_a_wait_on_another_task_completes) {
     test::HttpServer server(loop, echo_target);
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
     auto api = client.on(loop);
     event first_done;
@@ -121,10 +121,10 @@ ZEST_CASE(request_sent_after_a_wait_on_another_task_completes) {
     };
 
     auto [one, two] = run(first(), second());
-    ASSERT(one.has_value());
-    ASSERT(two.has_value());
-    EXPECT(*one == "/first");
-    EXPECT(*two == "/second");
+    ZASSERT(one.has_value());
+    ZASSERT(two.has_value());
+    ZEXPECT(*one == "/first");
+    ZEXPECT(*two == "/second");
 }
 
 ZEST_CASE(cancelled_request_leaves_the_manager_working) {
@@ -137,7 +137,7 @@ ZEST_CASE(cancelled_request_leaves_the_manager_working) {
         }
         return echo_target(request);
     });
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
     auto api = client.on(loop);
     auto race = [&]() -> task<std::size_t, error> {
@@ -149,13 +149,13 @@ ZEST_CASE(cancelled_request_leaves_the_manager_working) {
     };
 
     auto [raced] = run(race());
-    ASSERT(raced.has_value());
-    EXPECT(*raced == 1U);
-    EXPECT(manager::for_loop(loop).pending_requests() == 0U);
+    ZASSERT(raced.has_value());
+    ZEXPECT(*raced == 1U);
+    ZEXPECT(manager::for_loop(loop).pending_requests() == 0U);
 
     auto [next] = run(api.get(server.url("/next")).send());
-    ASSERT(next.has_value());
-    EXPECT(next->text() == "/next");
+    ZASSERT(next.has_value());
+    ZEXPECT(next->text() == "/next");
 }
 
 ZEST_CASE(dropping_a_task_in_flight_cancels_its_request) {
@@ -168,7 +168,7 @@ ZEST_CASE(dropping_a_task_in_flight_cancels_its_request) {
         }
         return echo_target(request);
     });
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
     auto api = client.on(loop);
     std::optional<task<response, error>> held(api.get(server.url("/held")).send());
@@ -180,12 +180,12 @@ ZEST_CASE(dropping_a_task_in_flight_cancels_its_request) {
     };
 
     auto [pending] = run(drop());
-    ASSERT(pending.has_value());
-    EXPECT(*pending == 0U);
+    ZASSERT(pending.has_value());
+    ZEXPECT(*pending == 0U);
 
     auto [next] = run(api.get(server.url("/next")).send());
-    ASSERT(next.has_value());
-    EXPECT(next->text() == "/next");
+    ZASSERT(next.has_value());
+    ZEXPECT(next->text() == "/next");
 }
 
 // A request whose task is cancelled after the manager aborted it ends
@@ -200,7 +200,7 @@ ZEST_CASE(request_cancelled_after_unregister_loop_ends_cancelled) {
         }
         return echo_target(request);
     });
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
     auto api = client.on(loop);
     auto sent = api.get(server.url("/held")).send();
@@ -211,12 +211,12 @@ ZEST_CASE(request_cancelled_after_unregister_loop_ends_cancelled) {
     };
 
     auto [reply, cancelled] = run(sent, unregister_and_cancel());
-    EXPECT(reply.is_cancelled());
-    EXPECT(manager::for_loop(loop).pending_requests() == 0U);
+    ZEXPECT(reply.is_cancelled());
+    ZEXPECT(manager::for_loop(loop).pending_requests() == 0U);
 
     auto [next] = run(api.get(server.url("/next")).send());
-    ASSERT(next.has_value());
-    EXPECT(next->text() == "/next");
+    ZASSERT(next.has_value());
+    ZEXPECT(next->text() == "/next");
 }
 
 // Both replies come on one turn, and the first one's task drops the
@@ -235,7 +235,7 @@ ZEST_CASE(dropping_a_task_whose_reply_came_leaves_the_manager_working) {
         }
         return reply;
     });
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
     auto api = client.on(loop);
     std::optional<task<response, error>> second(api.get(server.url("/second")).send());
@@ -251,14 +251,14 @@ ZEST_CASE(dropping_a_task_whose_reply_came_leaves_the_manager_working) {
     };
 
     auto [text, released] = run(first(), release_both());
-    ASSERT(text.has_value());
-    EXPECT(*text == "/first");
-    EXPECT(!second.has_value());
-    EXPECT(manager::for_loop(loop).pending_requests() == 0U);
+    ZASSERT(text.has_value());
+    ZEXPECT(*text == "/first");
+    ZEXPECT(!second.has_value());
+    ZEXPECT(manager::for_loop(loop).pending_requests() == 0U);
 
     auto [next] = run(api.get(server.url("/next")).send());
-    ASSERT(next.has_value());
-    EXPECT(next->text() == "/next");
+    ZASSERT(next.has_value());
+    ZEXPECT(next->text() == "/next");
 }
 
 ZEST_CASE(request_in_flight_at_unregister_loop_fails) {
@@ -268,7 +268,7 @@ ZEST_CASE(request_in_flight_at_unregister_loop_fails) {
         arrived.set();
         return test::Reply{.hold = &never};
     });
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
     auto unregister = [&]() -> task<> {
         co_await arrived.wait();
@@ -276,9 +276,9 @@ ZEST_CASE(request_in_flight_at_unregister_loop_fails) {
     };
 
     auto [reply, unregistered] = run(client.on(loop).get(server.url("/")).send(), unregister());
-    ASSERT(reply.has_error());
-    EXPECT(reply.error().kind == error_kind::aborted);
-    EXPECT(reply.error().message() == "the event loop's http manager was destroyed");
+    ZASSERT(reply.has_error());
+    ZEXPECT(reply.error().kind == error_kind::aborted);
+    ZEXPECT(reply.error().message() == "the event loop's http manager was destroyed");
 }
 
 // The next request makes a new manager, with nothing of the old one: its
@@ -290,7 +290,7 @@ ZEST_CASE(unregister_loop_starts_the_loop_afresh) {
         }
         return echo_target(request);
     });
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
     auto api = client.on(loop);
     auto flow = [&]() -> task<std::string, error> {
@@ -301,11 +301,11 @@ ZEST_CASE(unregister_loop_starts_the_loop_afresh) {
     };
 
     auto [text] = run(flow());
-    ASSERT(text.has_value());
-    EXPECT(*text == "/next");
-    ASSERT(server.requests().size() == 2U);
-    EXPECT(server.requests()[1].count("cookie") == 0U);
-    EXPECT(manager::for_loop(loop).pending_requests() == 0U);
+    ZASSERT(text.has_value());
+    ZEXPECT(*text == "/next");
+    ZASSERT(server.requests().size() == 2U);
+    ZEXPECT(server.requests()[1].count("cookie") == 0U);
+    ZEXPECT(manager::for_loop(loop).pending_requests() == 0U);
 }
 
 };  // ZEST_SUITE(http_detail_manager)

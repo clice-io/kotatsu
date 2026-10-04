@@ -22,15 +22,15 @@ ZEST_CASE(queue_runs_the_work_on_a_pool_thread) {
     auto work = queue([&] { work_thread = std::this_thread::get_id(); }, loop);
 
     auto [result] = run(std::move(work));
-    EXPECT(result.has_value());
-    EXPECT(work_thread != std::thread::id());
-    EXPECT(work_thread != loop_thread);
+    ZEXPECT(result.has_value());
+    ZEXPECT(work_thread != std::thread::id());
+    ZEXPECT(work_thread != loop_thread);
 }
 
 ZEST_CASE(queue_returns_the_work_value) {
     auto [result] = run(queue([] { return 42; }, loop));
-    ASSERT(result.has_value());
-    EXPECT(*result == 42);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 42);
 }
 
 ZEST_CASE(queue_runs_every_work) {
@@ -40,10 +40,10 @@ ZEST_CASE(queue_runs_every_work) {
     };
 
     auto [first, second, third] = run(queue(work, loop), queue(work, loop), queue(work, loop));
-    EXPECT(first.has_value());
-    EXPECT(second.has_value());
-    EXPECT(third.has_value());
-    EXPECT(ran.load() == 3);
+    ZEXPECT(first.has_value());
+    ZEXPECT(second.has_value());
+    ZEXPECT(third.has_value());
+    ZEXPECT(ran.load() == 3);
 }
 
 // The hook runs on the loop thread, if at all.
@@ -52,9 +52,9 @@ ZEST_CASE(cancel_hook_stays_unused_when_the_work_completes) {
     auto work = queue([] { return 7; }, [&] { hook_ran = true; }, loop);
 
     auto [result] = run(std::move(work));
-    ASSERT(result.has_value());
-    EXPECT(*result == 7);
-    EXPECT(!hook_ran);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 7);
+    ZEXPECT(!hook_ran);
 }
 
 // With every pool thread busy the work waits in the queue; cancelling it
@@ -80,11 +80,11 @@ ZEST_CASE(cancel_while_queued_drops_the_work) {
     };
 
     auto [held, raced] = run(pool.hold(busy), cancel_queued());
-    EXPECT(held.has_value());
-    ASSERT(raced.has_value());
-    EXPECT(*raced == 1U);
-    EXPECT(!ran.load());
-    EXPECT(!hook_ran);
+    ZEXPECT(held.has_value());
+    ZASSERT(raced.has_value());
+    ZEXPECT(*raced == 1U);
+    ZEXPECT(!ran.load());
+    ZEXPECT(!hook_ran);
 }
 
 // Running work cannot be dequeued: the hook, run on the loop thread, is how
@@ -113,10 +113,10 @@ ZEST_CASE(cancel_while_running_calls_the_hook) {
     };
 
     auto [seen] = run(cancel_running());
-    ASSERT(seen.has_value());
+    ZASSERT(seen.has_value());
     // Cancelled, with the work already returned.
-    EXPECT(*seen == std::pair<std::size_t, bool>{1, true});
-    EXPECT(hook_on_loop_thread);
+    ZEXPECT(*seen == std::pair<std::size_t, bool>{1, true});
+    ZEXPECT(hook_on_loop_thread);
 }
 
 };  // ZEST_SUITE(async_io_request)

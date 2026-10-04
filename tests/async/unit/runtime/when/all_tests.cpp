@@ -68,23 +68,23 @@ struct Yielded {
 ZEST_SUITE(async_runtime_when_all, zest::LoopFixture) {
 
 ZEST_CASE(result_type_follows_the_children_channels) {
-    EXPECT(zest::type_eq<all_result_t<task<int>, task<int>>, std::tuple<int, int>>());
-    EXPECT(zest::type_eq<all_result_t<task<int>, task<>>, std::tuple<int, std::nullopt_t>>());
-    EXPECT(zest::type_eq<all_result_t<task<int, error>, task<int>>,
-                         outcome<std::tuple<int, int>, error, void>>());
-    EXPECT(zest::type_eq<all_result_t<task<int, error>, task<>>,
-                         outcome<std::tuple<int, std::nullopt_t>, error, void>>());
-    EXPECT(zest::type_eq<all_result_t<task<int, error>, task<int, error>>,
-                         outcome<std::tuple<int, int>, error, void>>());
-    EXPECT(zest::type_eq<all_result_t<task<int, error>, task<int, CustomError>>,
-                         outcome<std::tuple<int, int>, std::variant<error, CustomError>, void>>());
-    EXPECT(zest::type_eq<all_result_t<task<int, void, cancellation>, task<int>>,
-                         outcome<std::tuple<int, int>, void, cancellation>>());
-    EXPECT(zest::type_eq<all_result_t<task<int, error, cancellation>, task<>>,
-                         outcome<std::tuple<int, std::nullopt_t>, error, cancellation>>());
-    EXPECT(zest::type_eq<all_range_result_t<std::vector<task<int>>>, small_vector<int>>());
-    EXPECT(zest::type_eq<all_range_result_t<std::vector<task<int, error>>>,
-                         outcome<small_vector<int>, error, void>>());
+    ZEXPECT(zest::type_eq<all_result_t<task<int>, task<int>>, std::tuple<int, int>>());
+    ZEXPECT(zest::type_eq<all_result_t<task<int>, task<>>, std::tuple<int, std::nullopt_t>>());
+    ZEXPECT(zest::type_eq<all_result_t<task<int, error>, task<int>>,
+                          outcome<std::tuple<int, int>, error, void>>());
+    ZEXPECT(zest::type_eq<all_result_t<task<int, error>, task<>>,
+                          outcome<std::tuple<int, std::nullopt_t>, error, void>>());
+    ZEXPECT(zest::type_eq<all_result_t<task<int, error>, task<int, error>>,
+                          outcome<std::tuple<int, int>, error, void>>());
+    ZEXPECT(zest::type_eq<all_result_t<task<int, error>, task<int, CustomError>>,
+                          outcome<std::tuple<int, int>, std::variant<error, CustomError>, void>>());
+    ZEXPECT(zest::type_eq<all_result_t<task<int, void, cancellation>, task<int>>,
+                          outcome<std::tuple<int, int>, void, cancellation>>());
+    ZEXPECT(zest::type_eq<all_result_t<task<int, error, cancellation>, task<>>,
+                          outcome<std::tuple<int, std::nullopt_t>, error, cancellation>>());
+    ZEXPECT(zest::type_eq<all_range_result_t<std::vector<task<int>>>, small_vector<int>>());
+    ZEXPECT(zest::type_eq<all_range_result_t<std::vector<task<int, error>>>,
+                          outcome<small_vector<int>, error, void>>());
 }
 
 ZEST_CASE(values_come_back_in_argument_order) {
@@ -96,10 +96,10 @@ ZEST_CASE(values_come_back_in_argument_order) {
     };
 
     auto [three_values, one_value] = run(three(), one());
-    ASSERT(three_values.has_value());
-    EXPECT(*three_values == std::tuple{1, 2, 3});
-    ASSERT(one_value.has_value());
-    EXPECT(*one_value == std::tuple{42});
+    ZASSERT(three_values.has_value());
+    ZEXPECT(*three_values == std::tuple{1, 2, 3});
+    ZASSERT(one_value.has_value());
+    ZEXPECT(*one_value == std::tuple{42});
 }
 
 ZEST_CASE(void_children_give_nullopt) {
@@ -113,8 +113,8 @@ ZEST_CASE(void_children_give_nullopt) {
     };
 
     auto [result] = run(combined());
-    EXPECT(result.has_value());
-    EXPECT(ran == 2);
+    ZEXPECT(result.has_value());
+    ZEXPECT(ran == 2);
 }
 
 ZEST_CASE(waits_for_the_last_child) {
@@ -140,11 +140,11 @@ ZEST_CASE(waits_for_the_last_child) {
     };
 
     auto [result, done_after_one] = run(combined(), driver());
-    ASSERT(result.has_value());
-    EXPECT(*result == std::tuple{0, 10});
-    EXPECT(finished == std::vector{1, 0});
-    ASSERT(done_after_one.has_value());
-    EXPECT(!*done_after_one);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == std::tuple{0, 10});
+    ZEXPECT(finished == std::vector{1, 0});
+    ZASSERT(done_after_one.has_value());
+    ZEXPECT(!*done_after_one);
 }
 
 ZEST_CASE(accepts_awaiters_that_are_not_tasks) {
@@ -158,8 +158,8 @@ ZEST_CASE(accepts_awaiters_that_are_not_tasks) {
     };
 
     auto [result, driver] = run(combined(), releaser());
-    EXPECT(result.has_value());
-    EXPECT(!sem.try_acquire());
+    ZEXPECT(result.has_value());
+    ZEXPECT(!sem.try_acquire());
 }
 
 ZEST_CASE(accepts_awaiters_that_return_values) {
@@ -168,8 +168,8 @@ ZEST_CASE(accepts_awaiters_that_return_values) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    EXPECT(*result == std::tuple{1, 2});
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == std::tuple{1, 2});
 }
 
 ZEST_CASE(accepts_awaiters_that_suspend_and_return_values) {
@@ -179,8 +179,8 @@ ZEST_CASE(accepts_awaiters_that_suspend_and_return_values) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    EXPECT(*result == std::tuple{1, 2});
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == std::tuple{1, 2});
 }
 
 ZEST_CASE(empty_when_all_completes_at_once) {
@@ -189,7 +189,7 @@ ZEST_CASE(empty_when_all_completes_at_once) {
     };
 
     auto [result] = run(combined());
-    EXPECT(result.has_value());
+    ZEXPECT(result.has_value());
 }
 
 ZEST_CASE(range_values_come_back_in_order) {
@@ -202,8 +202,8 @@ ZEST_CASE(range_values_come_back_in_order) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    EXPECT(*result == std::vector{3, 4});
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == std::vector{3, 4});
 }
 
 ZEST_CASE(empty_range_completes_at_once) {
@@ -214,8 +214,8 @@ ZEST_CASE(empty_range_completes_at_once) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    EXPECT(*result == 0U);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 0U);
 }
 
 ZEST_CASE(range_of_void_tasks_gives_nullopt) {
@@ -233,9 +233,9 @@ ZEST_CASE(range_of_void_tasks_gives_nullopt) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    EXPECT(*result == 2U);
-    EXPECT(ran == 2);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 2U);
+    ZEXPECT(ran == 2);
 }
 
 ZEST_CASE(range_of_awaiters_that_are_not_tasks) {
@@ -253,9 +253,9 @@ ZEST_CASE(range_of_awaiters_that_are_not_tasks) {
     };
 
     auto [result, driver] = run(combined(), releaser());
-    ASSERT(result.has_value());
-    EXPECT(*result == 2U);
-    EXPECT(!sem.try_acquire());
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 2U);
+    ZEXPECT(!sem.try_acquire());
 }
 
 };  // ZEST_SUITE(async_runtime_when_all)

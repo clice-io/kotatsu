@@ -15,23 +15,23 @@ namespace {
 /// moved-from empty, and that reset() and release() let it go.
 template <typename Handle>
 void check_moves(Handle made) {
-    ASSERT(made);
+    ZASSERT(made);
     auto* raw = made.get();
 
     Handle constructed(std::move(made));
-    EXPECT(!made);
-    EXPECT((constructed.get() == raw));
+    ZEXPECT(!made);
+    ZEXPECT((constructed.get() == raw));
 
     Handle assigned;
     assigned = std::move(constructed);
-    EXPECT(!constructed);
-    EXPECT((assigned.get() == raw));
+    ZEXPECT(!constructed);
+    ZEXPECT((assigned.get() == raw));
 
     Handle released(assigned.release());
-    EXPECT(!assigned);
-    EXPECT((released.get() == raw));
+    ZEXPECT(!assigned);
+    ZEXPECT((released.get() == raw));
     released.reset();
-    EXPECT(!released);
+    ZEXPECT(!released);
 }
 
 ZEST_SUITE(http_detail_curl_handles) {
