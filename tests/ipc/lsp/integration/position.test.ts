@@ -1,11 +1,12 @@
-// LineMap's positions against VS Code's (vscode-languageserver-textdocument),
-// through lsp_probe, in UTF-16 code units as LSP counts by default:
+// kotatsu's positions (kota/ipc/lsp/position.h) against VS Code's
+// (vscode-languageserver-textdocument), through lsp_probe, in UTF-16 code
+// units as LSP counts by default:
 //
 // - the position of every code point boundary of a text;
 // - the offset of any position, in or past the text, by to_offset and by
 //   to_offset_clamped.
 //
-// Where LineMap answers otherwise, known_deviations.ts says so, and those
+// Where kotatsu answers otherwise, known_deviations.ts says so, and those
 // inputs are not drawn.
 
 import assert from "node:assert/strict";
@@ -101,7 +102,7 @@ test("positions_of_offsets_match_vscode", { timeout: FUZZ_TIMEOUT }, (t) =>
 );
 
 /**
- * Checks LineMap's offset of any position against VS Code's: to_offset's, or
+ * Checks kotatsu's offset of any position against VS Code's: to_offset's, or
  * to_offset_clamped's when `clamped`, which also has one for a line past the
  * last.
  */

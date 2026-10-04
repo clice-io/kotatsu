@@ -7,13 +7,6 @@
 
 namespace kota::ipc::lsp::detail {
 
-/// Where a unit was placed: its offset, and whether that offset is exactly
-/// the unit's, or the nearest one to a unit that has none.
-struct Located {
-    std::uint32_t offset;
-    bool exact;
-};
-
 /// Where unit `character` of `text`, counted in `encoding`'s units, falls:
 /// at the start of the code point it begins, exact, or lies inside, not
 /// exact; at the text's end past that, exact only for the end itself.

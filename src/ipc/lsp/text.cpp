@@ -1,5 +1,6 @@
 #include "kota/ipc/lsp/text.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <utility>
@@ -175,7 +176,7 @@ detail::Located detail::locate(std::string_view text,
     return {.offset = size, .exact = units == character};
 }
 
-std::vector<std::uint32_t> build_line_starts(std::string_view content) {
+std::vector<std::uint32_t> line_starts(std::string_view content) {
     std::vector<std::uint32_t> starts;
     starts.push_back(0);
     for(std::uint32_t i = 0; i < content.size(); ++i) {
@@ -184,6 +185,34 @@ std::vector<std::uint32_t> build_line_starts(std::string_view content) {
         }
     }
     return starts;
+}
+
+bool is_ascii(std::string_view text) {
+    // One OR over every byte, which compilers vectorize, rather than a test
+    // per byte.
+    unsigned char seen = 0;
+    for(unsigned char byte: text) {
+        seen |= byte;
+    }
+    return seen < 0x80;
+}
+
+std::vector<std::uint64_t> non_ascii_lines(std::string_view content) {
+    std::vector<std::uint64_t> bits;
+    std::size_t line = 0;
+    std::size_t at = 0;
+    while(true) {
+        auto end = content.find('\n', at);
+        if(!is_ascii(content.substr(at, end - at))) {
+            bits.resize(std::max(bits.size(), line / 64 + 1));
+            bits[line / 64] |= std::uint64_t{1} << (line % 64);
+        }
+        if(end == std::string_view::npos) {
+            return bits;
+        }
+        at = end + 1;
+        ++line;
+    }
 }
 
 std::uint32_t encoded_length(std::string_view text, PositionEncoding encoding) {
