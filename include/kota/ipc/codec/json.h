@@ -59,7 +59,7 @@ struct JsonCodec {
     }
 };
 
-using JsonPeer = Peer<JsonCodec>;
+using JSONPeer = Peer<JsonCodec>;
 
 extern template class Peer<JsonCodec>;
 

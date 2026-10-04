@@ -5,7 +5,7 @@
 // system, so tests on it are unit tests.
 //
 //     Remote remote;
-//     ipc::JsonPeer peer(loop, remote.transport());
+//     ipc::JSONPeer peer(loop, remote.transport());
 //     remote.send(R"({"jsonrpc":"2.0","method":"exit"})");
 //     remote.end_input();
 //

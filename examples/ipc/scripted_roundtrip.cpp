@@ -114,11 +114,11 @@ int main() {
         });
     auto* transport_ptr = transport.get();
 
-    ipc::JsonPeer peer(loop, std::move(transport));
+    ipc::JSONPeer peer(loop, std::move(transport));
 
     peer.on_request(
         "example/add",
-        [](ipc::JsonPeer::RequestContext& context,
+        [](ipc::JSONPeer::RequestContext& context,
            const AddParams& params) -> ipc::RequestResult<AddParams, AddResult> {
             auto notify_status =
                 context->send_notification("example/note", NoteParams{.text = "handling request"});

@@ -34,7 +34,7 @@ namespace {
 
 using ipc::protocol::Error;
 using Value = codec::dyn::Value;
-using Context = ipc::JsonPeer::RequestContext;
+using Context = ipc::JSONPeer::RequestContext;
 
 struct SleepParams {
     std::uint32_t ms = 0;
@@ -67,7 +67,7 @@ struct CallOutcome {
 
 struct CloseOutputParams {};
 
-void serve(ipc::JsonPeer& peer) {
+void serve(ipc::JSONPeer& peer) {
     peer.on_request("test/echo",
                     [](Context&, const Value& params) -> task<Value, Error> { co_return params; });
 
@@ -128,7 +128,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    kota::ipc::JsonPeer peer(loop, std::move(*transport));
+    kota::ipc::JSONPeer peer(loop, std::move(*transport));
     peer.set_logger(kota::test::stderr_logger(), kota::ipc::LogLevel::trace);
     kota::test::serve(peer);
     loop.schedule(peer.run());
