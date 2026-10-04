@@ -16,6 +16,7 @@
 #include "context.h"
 #include "dispatch.h"
 #include "kota/support/type_list.h"
+#include "kota/support/utf8.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
 #include "kota/meta/enum.h"
@@ -216,26 +217,28 @@ bool encode_with_attrs(Vis& vis, const T& value) {
 template <typename Config, std::size_t I, typename Vis, typename T>
 bool encode_one_field(Vis& vis, const T& value) {
     using field = FieldAt<Config, I, T>;
-    const auto& field_ref = field::of(value);
 
     // A visitor that writes every field has nothing to mark one absent, so
     // skip_if and omit_unstated_defaults omit fields only elsewhere.
-    if constexpr(!writes_every_field<Vis>) {
-        if constexpr(Config::omit_unstated_defaults && !field::schema::fields[I].schema_default) {
-            return true;
+    if constexpr(!writes_every_field<Vis> && Config::omit_unstated_defaults &&
+                 !field::schema::fields[I].schema_default) {
+        return true;
+    } else {
+        const auto& field_ref = field::of(value);
+        if constexpr(!writes_every_field<Vis>) {
+            if(skipped<typename field::attrs>(field_ref, true)) {
+                return true;
+            }
         }
-        if(skipped<typename field::attrs>(field_ref, true)) {
-            return true;
-        }
-    }
 
-    bool ok =
-        vis.visit_field(std::integral_constant<std::size_t, I>{},
-                        field::name,
-                        [&](auto& fv) -> bool {
-                            return encode_with_attrs<Config, typename field::attrs>(fv, field_ref);
-                        });
-    return trace_path<Config>(ok, field::name);
+        bool ok = vis.visit_field(
+            std::integral_constant<std::size_t, I>{},
+            field::name,
+            [&](auto& fv) -> bool {
+                return encode_with_attrs<Config, typename field::attrs>(fv, field_ref);
+            });
+        return trace_path<Config>(ok, field::name);
+    }
 }
 
 }  // namespace detail

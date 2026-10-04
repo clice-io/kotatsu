@@ -16,6 +16,7 @@
 
 #include "kota/support/config.h"
 #include "kota/support/naming.h"
+#include "kota/support/numeric.h"
 
 namespace kota::meta {
 
@@ -47,42 +48,6 @@ struct name_list {
 /// sign, or a floating-point value; monostate when unset.
 using schema_number = std::variant<std::monostate, std::int64_t, std::uint64_t, double>;
 
-namespace detail {
-
-/// i <=> d exactly, beyond the 53 bits a double holds.
-template <typename Integer>
-constexpr std::partial_ordering compare_with_double(Integer i, double d) {
-    if(d != d) {
-        return std::partial_ordering::unordered;
-    }
-    // Every Integer lies in [-2^63, 2^64), both ends exact as doubles.
-    if(d >= 18446744073709551616.0) {
-        return std::partial_ordering::less;
-    }
-    if(d < -9223372036854775808.0) {
-        return std::partial_ordering::greater;
-    }
-    // d's integer part, toward zero, then the fraction it leaves.
-    if(d >= 0) {
-        auto whole = static_cast<std::uint64_t>(d);
-        if(std::cmp_not_equal(i, whole)) {
-            return std::cmp_less(i, whole) ? std::partial_ordering::less
-                                           : std::partial_ordering::greater;
-        }
-        return d > static_cast<double>(whole) ? std::partial_ordering::less
-                                              : std::partial_ordering::equivalent;
-    }
-    auto whole = static_cast<std::int64_t>(d);
-    if(std::cmp_not_equal(i, whole)) {
-        return std::cmp_less(i, whole) ? std::partial_ordering::less
-                                       : std::partial_ordering::greater;
-    }
-    return d < static_cast<double>(whole) ? std::partial_ordering::greater
-                                          : std::partial_ordering::equivalent;
-}
-
-}  // namespace detail
-
 /// a <=> b exactly, whatever their types; unordered when either is unset or
 /// NaN.
 constexpr std::partial_ordering compare_numbers(const schema_number& a, const schema_number& b) {
@@ -93,10 +58,10 @@ constexpr std::partial_ordering compare_numbers(const schema_number& a, const sc
             } else if constexpr(std::same_as<X, double> && std::same_as<Y, double>) {
                 return x <=> y;
             } else if constexpr(std::same_as<Y, double>) {
-                return detail::compare_with_double(x, y);
+                return compare_exact(x, y);
             } else if constexpr(std::same_as<X, double>) {
                 // y against x, turned around.
-                return 0 <=> detail::compare_with_double(y, x);
+                return 0 <=> compare_exact(y, x);
             } else {
                 return std::cmp_less(x, y)      ? std::partial_ordering::less
                        : std::cmp_greater(x, y) ? std::partial_ordering::greater

@@ -1,15 +1,35 @@
 #include <string_view>
 
 #include "kota/zest/zest.h"
-#include "kota/codec/visit/common.h"
+#include "kota/support/utf8.h"
 
-namespace kota::codec {
+namespace kota {
 
 namespace {
 
 using namespace std::literals;
 
-ZEST_SUITE(codec_visit_common) {
+ZEST_SUITE(support_utf8) {
+
+ZEST_CASE(decode_reads_one_code_point) {
+    STATIC_EXPECT(decode_utf8("a").code_point == U'a');
+    STATIC_EXPECT(decode_utf8("\xC3\xA9!").code_point == U'\u00E9');
+    STATIC_EXPECT(decode_utf8("\xC3\xA9!").length == 2);
+    STATIC_EXPECT(decode_utf8("\xE2\x82\xAC").code_point == U'\u20AC');
+    STATIC_EXPECT(decode_utf8("\xF4\x8F\xBF\xBF").code_point == U'\U0010FFFF');
+    STATIC_EXPECT(decode_utf8("\xF4\x8F\xBF\xBF").length == 4);
+}
+
+ZEST_CASE(decode_takes_the_maximal_subpart_of_what_is_no_code_point) {
+    // A code point cut short: its prefix, read as U+FFFD.
+    constexpr auto cut = decode_utf8("\xE2\x82x");
+    STATIC_EXPECT(!cut.valid);
+    STATIC_EXPECT(cut.length == 2);
+    STATIC_EXPECT(cut.code_point == U'\uFFFD');
+    // An overlong lead and the first byte of a surrogate start no prefix.
+    STATIC_EXPECT(decode_utf8("\xC0\xAF").length == 1);
+    STATIC_EXPECT(decode_utf8("\xED\xA0\x80").length == 1);
+}
 
 ZEST_CASE(utf8_accepts_whole_code_points) {
     EXPECT(is_utf8(""));
@@ -53,8 +73,8 @@ ZEST_CASE(replacement_takes_each_maximal_subpart) {
     EXPECT(replace_invalid_utf8("\xED\xA0\x80") == "\xEF\xBF\xBD\xEF\xBF\xBD\xEF\xBF\xBD");
 }
 
-};  // ZEST_SUITE(codec_visit_common)
+};  // ZEST_SUITE(support_utf8)
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kota
