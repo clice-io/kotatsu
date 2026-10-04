@@ -2,6 +2,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -140,10 +141,14 @@ ZEST_CASE(await_of_a_failing_child_hands_its_error_to_the_parent) {
     EXPECT(result->error() == error::connection_refused);
 }
 
-// Nothing happens until the task starts; it then ends with the error,
-// converted to the task's error type.
+// The error is made as the task is, from a view of text gone by the time the
+// task starts; nothing else happens until then, and the task ends with it.
 ZEST_CASE(task_made_from_an_outcome_error_fails) {
-    task<void, std::string, cancellation> failing = outcome_error("bad input");
+    auto make = []() -> task<void, std::string, cancellation> {
+        std::string text = "bad input";
+        return outcome_error(std::string_view(text));
+    };
+    auto failing = make();
     EXPECT(!failing.done());
 
     auto [result] = run(std::move(failing));
