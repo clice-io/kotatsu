@@ -343,12 +343,13 @@ task<process::capture_result, error> process::capture(options opts, event_loop& 
     if(!spawned) {
         co_await fail(spawned.error());
     }
-    // Both pipes are read while the child runs: one that fills a pipe waits
-    // for it to be read before it can exit.
-    auto [stdout_data, stderr_data, status] =
-        co_await or_fail(co_await when_all(spawned->stdout_pipe.read_to_end(),
-                                           spawned->stderr_pipe.read_to_end(),
-                                           Self::ExitWait(*spawned->proc.self)));
+    // The exit wait starts first, so that a read failing at once still kills
+    // the child and waits for it. Both pipes are read while the child runs:
+    // one that fills a pipe waits for it to be read before it can exit.
+    auto [status, stdout_data, stderr_data] =
+        co_await or_fail(co_await when_all(Self::ExitWait(*spawned->proc.self),
+                                           spawned->stdout_pipe.read_to_end(),
+                                           spawned->stderr_pipe.read_to_end()));
     co_return capture_result{
         .status = status,
         .stdout_data = std::move(stdout_data),
