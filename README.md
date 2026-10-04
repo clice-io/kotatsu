@@ -92,7 +92,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - C++ protocol model generated from the pinned LSP 3.18 meta-model by `scripts/lsp/codegen.ts`: aggregates with inherited properties inlined, same-shaped variant alternatives told apart by their string literal members, and `LSPAny` as `codec::dyn::Value`. Regenerate with `pixi run lsp-codegen`; CI checks that the committed header is current.
 - LSP request / notification traits layered on top of `kota::ipc::protocol`.
 - `URI` parsing / manipulation with percent-encoding helpers and `from_file_path` factories.
-- `LineMap` for byte-offset ↔ LSP `{line, character}` conversion across UTF-8 / UTF-16 / UTF-32 position encodings.
+- Byte-offset ↔ LSP `{line, character}` conversion across UTF-8 / UTF-16 / UTF-32 position encodings (`position.h`): over line starts the caller keeps in any integer range, with what it knows of which lines are ASCII, over a text alone for one conversion, or over the size and line starts of an ASCII text it keeps no copy of.
 - `ProgressReporter` helper for `$/progress` work-done notifications.
 
 ### `http` (`include/kota/http/*`)

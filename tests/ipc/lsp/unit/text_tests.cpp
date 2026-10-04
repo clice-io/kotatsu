@@ -57,9 +57,30 @@ const std::string not_utf8[] = {
 // UTF-8 bytes and two UTF-16 units.
 ZEST_SUITE(ipc_lsp_text) {
 
-ZEST_CASE(build_line_starts_marks_each_line) {
-    EXPECT(build_line_starts("") == std::vector<std::uint32_t>{0});
-    EXPECT(build_line_starts("ab\n\ncd\n") == std::vector<std::uint32_t>{0, 3, 4, 7});
+ZEST_CASE(line_starts_marks_each_line) {
+    EXPECT(line_starts("") == std::vector<std::uint32_t>{0});
+    EXPECT(line_starts("ab\n\ncd\n") == std::vector<std::uint32_t>{0, 3, 4, 7});
+    EXPECT(line_starts("a\rb\r\nc") == std::vector<std::uint32_t>{0, 5});
+}
+
+ZEST_CASE(is_ascii_finds_any_byte_past_ascii) {
+    EXPECT(is_ascii(""));
+    EXPECT(is_ascii("abc\r\n\x7F"));
+    EXPECT(!is_ascii("ab你"));
+    EXPECT(!is_ascii(bytes('a', 0x80)));
+}
+
+ZEST_CASE(non_ascii_lines_marks_lines_holding_a_byte_past_ascii) {
+    EXPECT(non_ascii_lines("ab\ncd\n").empty());
+    // Lines 1 and 3; the words end at the last marked line.
+    EXPECT(non_ascii_lines("a\n你\nb\nc🙂\nd") == std::vector<std::uint64_t>{0b1010});
+    EXPECT(non_ascii_lines(bytes('a', '\n', 0xFF)) == std::vector<std::uint64_t>{0b10});
+}
+
+ZEST_CASE(non_ascii_lines_takes_a_word_per_64_lines) {
+    std::string content(64, '\n');
+    content += "你";
+    EXPECT(non_ascii_lines(content) == std::vector<std::uint64_t>{0, 1});
 }
 
 ZEST_CASE(encoded_length_counts_units_of_the_encoding) {

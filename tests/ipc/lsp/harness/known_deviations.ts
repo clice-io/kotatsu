@@ -1,6 +1,6 @@
 // Where kota::ipc::lsp answers other than the spec, or than VS Code, says:
 // protocol.h reading and writing the metaModel's types (protocol_values.ts),
-// and LineMap converting positions (position.test.ts). The tests consult this
+// and position.h converting positions (position.test.ts). The tests consult this
 // list: what a deviation would change is not generated, and what it lets
 // through is taken as read.
 //
@@ -41,13 +41,13 @@ export const deviations: Partial<Record<Deviation, string>> = {
     "design: uinteger is std::uint32_t, which reads up to 2^32 - 1 where the " +
     "spec stops at 2^31 - 1.",
   linePastEnd:
-    "design: LineMap's to_offset has no offset for a line past the last one, " +
+    "design: to_offset has no offset for a line past the last one, " +
     "where VS Code answers the end of the text, as to_offset_clamped does.",
   loneCarriageReturn:
-    "design: LineMap ends lines at \\n only, so that the line starts " +
+    "design: position.h ends lines at \\n only, so that the line starts " +
     "callers persist stay valid; LSP ends them at a lone \\r too.",
   insideSurrogatePair:
-    "design: LineMap has no offset for a character between the two halves of " +
+    "design: to_offset has no offset for a character between the two halves of " +
     "a surrogate pair, which is no place in the text, and to_offset_clamped " +
     "answers the pair's start; VS Code answers the offset between them.",
 };

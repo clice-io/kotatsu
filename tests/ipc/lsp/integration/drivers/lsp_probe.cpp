@@ -73,19 +73,26 @@ Answer answer(const Question& question) {
         } else {
             answer.error = std::move(path).error();
         }
-    } else if(question.offset) {
-        lsp::LineMap map(*question.text);
-        if(auto position = map.to_position(*question.offset)) {
-            answer.line = position->line;
-            answer.character = position->character;
-        }
     } else {
-        lsp::LineMap map(*question.text);
-        ipc::protocol::Position position{.line = *question.line, .character = *question.character};
-        if(question.clamped.value_or(false)) {
-            answer.offset = map.to_offset_clamped(position);
+        // The conversions read only the lines the caller does not know to
+        // hold only ASCII, as a server keeping what it knows would ask.
+        const auto& text = *question.text;
+        auto lines = lsp::line_starts(text);
+        auto non_ascii = lsp::non_ascii_lines(text);
+        auto utf16 = lsp::PositionEncoding::UTF16;
+        if(question.offset) {
+            if(auto position = lsp::to_position(text, lines, *question.offset, utf16, non_ascii)) {
+                answer.line = position->line;
+                answer.character = position->character;
+            }
         } else {
-            answer.offset = map.to_offset(position);
+            ipc::protocol::Position position{.line = *question.line,
+                                             .character = *question.character};
+            if(question.clamped.value_or(false)) {
+                answer.offset = lsp::to_offset_clamped(text, lines, position, utf16, non_ascii);
+            } else {
+                answer.offset = lsp::to_offset(text, lines, position, utf16, non_ascii);
+            }
         }
     }
     return answer;
