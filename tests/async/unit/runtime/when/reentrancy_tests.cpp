@@ -3,7 +3,7 @@
 #include <tuple>
 #include <variant>
 
-#include "async/harness/loop_fixture.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -16,7 +16,7 @@ namespace {
 // queue: a child that wakes a sibling runs on to its end first, so it wins a
 // when_any and the woken sibling is cancelled instead of resumed.
 
-ZEST_SUITE(async_runtime_when_reentrancy, test::LoopFixture) {
+ZEST_SUITE(async_runtime_when_reentrancy, zest::LoopFixture) {
 
 ZEST_CASE(any_setter_of_an_event_wins_over_its_waiters) {
     event ev;

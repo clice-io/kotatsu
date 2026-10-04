@@ -2,9 +2,11 @@
 #include <span>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "deco/harness/argv.h"
+#include "deco/harness/stdout.h"
 #include "deco/harness/text.h"
 #include "deco/harness/web_cli.h"
 #include "kota/deco/deco.h"
@@ -134,7 +136,8 @@ ZEST_CASE(unknown_command_fails) {
     commander.add(decl::SubCommand{.name = "run", .description = ""}, [](std::span<std::string>) {})
         .when_err([&](cli::SubCommandError err) { error = std::move(err); });
     auto argv = test::split("walk");
-    commander(argv);
+    // The usual exit status of a usage error.
+    EXPECT(commander(argv) == 2);
     ASSERT(error.has_value());
     EXPECT(error->type == cli::SubCommandError::Type::UnknownSubCommand);
     EXPECT(error->message == "at argv[0]:\n  walk\n  ^~~~\n  unknown subcommand 'walk'");
@@ -149,6 +152,23 @@ ZEST_CASE(missing_command_fails) {
     ASSERT(!match.has_value());
     EXPECT(match.error().type == cli::SubCommandError::Type::MissingSubCommand);
     EXPECT(zest::ends_with(match.error().message, "subcommand is required"));
+}
+
+ZEST_CASE(missing_command_to_an_exit_code_handler_fails) {
+    cli::SubCommander commander("tool <command>");
+    commander.add(decl::SubCommand{.name = "run", .description = ""}, [](std::span<std::string>) {})
+        .when_err([](const cli::SubCommandError&) { return 5; });
+    std::vector<std::string> argv;
+    EXPECT(commander(argv) == 5);
+}
+
+// The default error handler prints the error to stderr.
+ZEST_CASE(missing_command_to_the_default_handler_fails) {
+    cli::SubCommander commander("tool <command>");
+    commander.add(decl::SubCommand{.name = "run", .description = ""},
+                  [](std::span<std::string>) {});
+    std::vector<std::string> argv;
+    EXPECT(commander(argv) == 2);
 }
 
 ZEST_CASE(adding_a_command_without_a_name_fails) {
@@ -200,19 +220,41 @@ ZEST_CASE(command_object_parses_what_follows_it) {
     cli::SubCommander commander("tool <command>");
     commander.add(decl::SubCommand{.name = "web", .description = ""}, web);
     auto argv = test::split("web -X GET --url https://example.com");
-    commander(argv);
+    EXPECT(commander(argv) == 0);
     EXPECT(url == "https://example.com");
+}
+
+ZEST_CASE(handler_exit_code_is_the_commander_exit_code) {
+    auto web = cli::command<WebCli>("web [OPTIONS]");
+    web.match_all([](WebCli) { return 3; });
+    cli::SubCommander commander("tool <command>");
+    commander.add(decl::SubCommand{.name = "web", .description = ""}, web)
+        .add(decl::SubCommand{.name = "run", .description = ""},
+             [](std::span<std::string>) { return 4; })
+        .add([](const cli::SubCommandMatch&) { return 5; });
+    for(auto [line, code]: {
+            std::pair{"web -v",   3},
+            std::pair{"run",      4},
+            std::pair{"anything", 5},
+    }) {
+        ZEST_CONTEXT("argv `{}`", line);
+        auto argv = test::split(line);
+        EXPECT(commander(argv) == code);
+    }
 }
 
 ZEST_CASE(command_object_can_be_handed_over) {
     std::string seen;
     auto web = cli::command<WebCli>("web [OPTIONS]");
-    web.match_all([&](WebCli) { seen = "web"; });
+    web.match_all([&](WebCli) {
+        seen = "web";
+        return 3;
+    });
 
     cli::SubCommander commander("tool <command>");
     commander.add(decl::SubCommand{.name = "web", .description = ""}, std::move(web));
     auto argv = test::split("web -v");
-    commander(argv);
+    EXPECT(commander(argv) == 3);
     EXPECT(seen == "web");
 }
 
@@ -223,8 +265,32 @@ ZEST_CASE(unknown_command_to_a_stream_fails) {
     commander.add(decl::SubCommand{.name = "run", .description = ""},
                   [](std::span<std::string>) {});
     auto argv = test::split("walk");
-    commander.parse(argv);
+    EXPECT(commander.parse(argv) == 2);
     EXPECT(errors.str() == "ERR<0:unknown subcommand 'walk'>\n");
+}
+
+ZEST_CASE(enabled_help_prints_the_commands) {
+    Tool tool;
+    tool.commander.enable_help();
+    for(auto line: {"-h", "--help"}) {
+        ZEST_CONTEXT("argv `{}`", line);
+        auto argv = test::split(line);
+        int code = -1;
+        auto printed = test::printed_by([&] { code = tool.commander(argv); });
+        EXPECT(code == 0);
+        EXPECT(printed == usage_of(tool.commander));
+    }
+    EXPECT(tool.ran.empty());
+}
+
+// Only the first argument asks the commander for help; after a command, it is the command's.
+ZEST_CASE(enabled_help_leaves_a_command_s_help_to_it) {
+    Tool tool;
+    tool.commander.enable_help();
+    auto printed = test::printed_by([&] { tool("run --help"); });
+    EXPECT(tool.ran == "run");
+    EXPECT(tool.args == (strings{"--help"}));
+    EXPECT(printed.empty());
 }
 
 ZEST_CASE(usage_lists_the_commands) {

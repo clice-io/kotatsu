@@ -3,7 +3,7 @@
 #include <utility>
 
 #include "compile_graph.h"
-#include "async/harness/loop_fixture.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 
@@ -34,7 +34,7 @@ CompileGraph make_test_graph(event& started) {
     return graph;
 }
 
-ZEST_SUITE(examples_build_system, test::LoopFixture) {
+ZEST_SUITE(examples_build_system, zest::LoopFixture) {
 
 ZEST_CASE(normal_compilation_completes) {
     event started;

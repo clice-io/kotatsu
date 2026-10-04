@@ -3,7 +3,8 @@
 #include <variant>
 #include <vector>
 
-#include "async/harness/loop_fixture.h"
+#include "async/harness/exceptions.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/support/config.h"
@@ -23,7 +24,7 @@ task<> wait_on(event& gate) {
     co_await gate.wait();
 }
 
-ZEST_SUITE(async_runtime_task_group_errors, test::LoopFixture) {
+ZEST_SUITE(async_runtime_task_group_errors, zest::LoopFixture) {
 
 ZEST_CASE(join_reports_the_first_error_and_cancels_the_rest) {
     event first_gate;

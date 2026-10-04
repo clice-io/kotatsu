@@ -1,7 +1,7 @@
 #include <chrono>
 #include <string>
 
-#include "async/harness/loop_fixture.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -10,7 +10,7 @@ namespace kota {
 
 namespace {
 
-ZEST_SUITE(async_runtime_debug, test::LoopFixture) {
+ZEST_SUITE(async_runtime_debug, zest::LoopFixture) {
 
 // A cancel does not end a task that has not started: it still draws as
 // pending.

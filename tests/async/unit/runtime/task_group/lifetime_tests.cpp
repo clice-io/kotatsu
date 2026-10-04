@@ -3,8 +3,8 @@
 #include <utility>
 #include <vector>
 
-#include "async/harness/loop_fixture.h"
 #include "async/harness/pending_op.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -20,7 +20,7 @@ struct CustomError {
 template <typename Group, typename Task>
 concept spawnable = requires(Group& group, Task task) { group.spawn(std::move(task)); };
 
-ZEST_SUITE(async_runtime_task_group_lifetime, test::LoopFixture) {
+ZEST_SUITE(async_runtime_task_group_lifetime, zest::LoopFixture) {
 
 ZEST_CASE(spawn_accepts_the_declared_error_types_only) {
     STATIC_EXPECT(spawnable<task_group<>, task<>>);

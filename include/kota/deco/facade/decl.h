@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cctype>
 #include <cerrno>
@@ -458,6 +459,16 @@ struct OptionCallbackField {
     ParseCallback after_parsed = nullptr;
 
     constexpr OptionCallbackField() = default;
+};
+
+/// What an option is declared with: the fields of its kind, `CfgTy`, and an `after_parsed`
+/// callback over its result, `ResTy`. Every option's `__deco_field_ty`, the deco macros' and
+/// HelpOption's, derives from it and sets the fields in its constructor.
+template <typename CfgTy, typename ResTy>
+struct OptionDeclaration : CfgTy, OptionCallbackField<ResTy> {
+    using _deco_base_t = CfgTy;
+    using _deco_callback_base_t = OptionCallbackField<ResTy>;
+    using result_type = ResTy;
 };
 
 template <typename Ty>
@@ -972,6 +983,28 @@ struct VectorOption : DecoOption<ResTy> {
             views.emplace_back(v);
         return detail::assign_vector(this->as_optional(), views, context);
     }
+};
+
+/// The names help is asked for by: HelpOption's, and the first argument
+/// cli::SubCommander::enable_help() answers.
+constexpr inline std::array<std::string_view, 2> help_names = {"-h", "--help"};
+
+/// The standard help option, `-h` and `--help`, for an options struct to hold, at any depth.
+/// Given, it stops parsing where it stands, so that no required option is missed, and
+/// cli::Command's operator() prints the usage to stdout and returns 0 without running a
+/// handler; invoke() and parse() leave that to their caller, which finds it set. Stopping
+/// skips the options' checks, so cli::Command's finalize() handlers do not run either; nor
+/// do the `after<>` hooks of the help option itself.
+struct HelpOption : FlagOption<bool> {
+    // What DecoFlag would declare, written without it: deco's headers leave its macros out.
+    struct __deco_field_ty : OptionDeclaration<FlagFields, bool> {
+        constexpr __deco_field_ty() {
+            names = {help_names.begin(), help_names.end()};
+            help = "display this help and exit";
+            required = false;
+            after_parsed = Action::stop;
+        }
+    };
 };
 
 struct SubCommand {

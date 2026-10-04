@@ -4,7 +4,7 @@
 #include <utility>
 #include <vector>
 
-#include "async/harness/loop_fixture.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -72,7 +72,7 @@ struct Collector : async_visitor<Collector> {
 
 using Kind = async_node::NodeKind;
 
-ZEST_SUITE(async_runtime_walk, test::LoopFixture) {
+ZEST_SUITE(async_runtime_walk, zest::LoopFixture) {
 
 ZEST_CASE(visitor_walks_down_to_the_resources) {
     event gate;

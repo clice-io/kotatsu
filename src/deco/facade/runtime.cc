@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <iostream>
 #include <utility>
 
 #include "kota/deco/deco.h"
@@ -66,15 +68,12 @@ auto SubCommander::add(SubCommander::handler_fn_t handler) -> SubCommander& {
     return *this;
 }
 
-auto SubCommander::when_err(SubCommander::error_fn_t handler) -> SubCommander& {
-    error_handler = std::move(handler);
-    return *this;
+auto SubCommander::when_err(std::ostream& os) -> SubCommander& {
+    return when_err([&os](const SubCommandError& err) { os << err.message << "\n"; });
 }
 
-auto SubCommander::when_err(std::ostream& os) -> SubCommander& {
-    error_handler = [&os](const SubCommandError& err) {
-        os << err.message << "\n";
-    };
+auto SubCommander::enable_help() -> SubCommander& {
+    help_enabled = true;
     return *this;
 }
 
@@ -153,22 +152,25 @@ auto SubCommander::match(std::span<std::string> argv) const
                             std::format("unknown subcommand '{}'", argv.front()));
 }
 
-void SubCommander::parse(std::span<std::string> argv) {
+auto SubCommander::parse(std::span<std::string> argv) -> int {
+    if(help_enabled && !argv.empty() &&
+       std::ranges::find(decl::help_names, argv.front()) != decl::help_names.end()) {
+        usage(std::cout);
+        return 0;
+    }
     auto matched = match(argv);
     if(!matched.has_value()) {
-        error_handler(std::move(matched.error()));
-        return;
+        return error_handler(std::move(matched.error()));
     }
     if(matched->is_command()) {
         auto& handler = handlers[command_to_handler.find(matched->command)->second].handler;
-        handler(std::move(*matched));
-        return;
+        return handler(std::move(*matched));
     }
-    (*default_handler)(std::move(*matched));
+    return (*default_handler)(std::move(*matched));
 }
 
-void SubCommander::operator()(std::span<std::string> argv) {
-    parse(argv);
+auto SubCommander::operator()(std::span<std::string> argv) -> int {
+    return parse(argv);
 }
 
 }  // namespace kota::deco::cli

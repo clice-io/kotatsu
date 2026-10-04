@@ -23,11 +23,11 @@
 #include <utility>
 #include <vector>
 
-#include "async/harness/loop_fixture.h"
 #include "ipc/harness/codec_kit.h"
 #include "ipc/harness/fixtures.h"
 #include "ipc/harness/memory_transport.h"
 #include "kota/ipc/peer.h"
+#include "kota/zest/async.h"
 #include "kota/zest/zest.h"
 
 namespace kota::test {
@@ -38,7 +38,7 @@ inline task<> wait_for(event& signal) {
 }
 
 template <CodecAdapter A>
-struct PeerFixture : LoopFixture {
+struct PeerFixture : zest::LoopFixture {
     using Peer = ipc::Peer<typename A::Codec>;
     using Context = typename Peer::RequestContext;
 
@@ -116,7 +116,7 @@ struct PeerKit {
 /// Two peers of one codec on one loop, each writing to the other through
 /// forward(). Closing both ends the case.
 template <CodecAdapter A>
-struct LinkedPeers : LoopFixture {
+struct LinkedPeers : zest::LoopFixture {
     using Peer = ipc::Peer<typename A::Codec>;
     using Context = typename Peer::RequestContext;
 
@@ -129,7 +129,7 @@ struct LinkedPeers : LoopFixture {
     /// checks that the peers and the forwarding ended well, and returns what
     /// each script ended with.
     template <typename... Tasks>
-    std::tuple<run_result_t<Tasks>...> run_with(Tasks... scripts) {
+    std::tuple<zest::run_result_t<Tasks>...> run_with(Tasks... scripts) {
         auto results = run(a.run(),
                            b.run(),
                            forward(a_end, b_end),
@@ -140,7 +140,7 @@ struct LinkedPeers : LoopFixture {
         EXPECT(std::get<2>(results).has_value());
         EXPECT(std::get<3>(results).has_value());
         return [&]<std::size_t... I>(std::index_sequence<I...>) {
-            return std::tuple<run_result_t<Tasks>...>(std::move(std::get<I + 4>(results))...);
+            return std::tuple<zest::run_result_t<Tasks>...>(std::move(std::get<I + 4>(results))...);
         }(std::index_sequence_for<Tasks...>{});
     }
 };

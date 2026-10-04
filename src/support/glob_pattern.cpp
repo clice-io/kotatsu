@@ -15,6 +15,37 @@ namespace kota {
 
 namespace {
 
+/// The bytes that start a wildcard, unless a `\` escapes them.
+constexpr std::string_view wildcards = "?*[{";
+
+/// The bytes escape() escapes: the escape itself, the wildcards, and the
+/// bytes that close a wildcard or end a brace term.
+constexpr std::string_view special_bytes = R"(\?*[]{},)";
+
+/// The literal head of a pattern: the bytes before its first unescaped
+/// wildcard, escapes resolved, and where it ends in the pattern. It ends at a
+/// `\` too that escapes nothing, at the pattern's end, or escapes a `/`: two
+/// escapes create() rejects.
+struct LiteralHead {
+    std::string text;
+    size_t end = 0;
+};
+
+LiteralHead literal_head(std::string_view pattern) {
+    LiteralHead head;
+    auto& i = head.end;
+    while(i < pattern.size() && !wildcards.contains(pattern[i])) {
+        if(pattern[i] == '\\') {
+            if(i + 1 == pattern.size() || pattern[i + 1] == '/') {
+                break;
+            }
+            ++i;
+        }
+        head.text += pattern[i++];
+    }
+    return head;
+}
+
 /// One matching unit: a decoded Unicode scalar value, or a byte that is
 /// not valid UTF-8 mapped above the Unicode range so it only compares
 /// equal to the same byte. Patterns are validated to be UTF-8 at create(),
@@ -350,41 +381,22 @@ std::expected<GlobPattern, GlobError> GlobPattern::create(std::string_view s, si
     }
 
     GlobPattern pat;
-    size_t prefix_size = s.find_first_of("?*[{\\");
-    if(prefix_size == std::string_view::npos) {
-        prefix_size = s.size();
-    }
-    pat.prefix.assign(s.substr(0, prefix_size));
+    // Escapes name literal characters, not a dynamic pattern: the literal
+    // prefix is the head with them resolved.
+    auto head = literal_head(s);
+    const auto prefix_size = head.end;
     if(prefix_size < s.size() && s[prefix_size] == '\\') {
-        // Escapes name literal characters, not a dynamic pattern. Decode the
-        // literal prefix once, retaining raw offsets for validation/errors.
-        size_t i = prefix_size;
-        while(i < s.size()) {
-            if(s[i] == '\\') {
-                auto backslash = i++;
-                if(i == s.size()) {
-                    return std::unexpected{
-                        GlobError{GlobError::StrayBackslash,
-                                  static_cast<std::uint32_t>(backslash),
-                                  static_cast<std::uint32_t>(i),
-                                  "stray `\\`"}
-                    };
-                }
-                if(s[i] == '/') {
-                    return std::unexpected{
-                        GlobError{GlobError::InvalidEscape,
-                                  static_cast<std::uint32_t>(backslash),
-                                  static_cast<std::uint32_t>(i + 1),
-                                  "`/` cannot be escaped"}
-                    };
-                }
-            } else if(std::string_view("?*[{").contains(s[i])) {
-                break;
-            }
-            pat.prefix += s[i++];
+        const auto backslash = static_cast<std::uint32_t>(prefix_size);
+        if(prefix_size + 1 == s.size()) {
+            return std::unexpected{
+                GlobError{GlobError::StrayBackslash, backslash, backslash + 1, "stray `\\`"}
+            };
         }
-        prefix_size = i;
+        return std::unexpected{
+            GlobError{GlobError::InvalidEscape, backslash, backslash + 2, "`/` cannot be escaped"}
+        };
     }
+    pat.prefix = std::move(head.text);
     for(size_t i = 1; i < prefix_size; ++i) {
         if(s[i] == '/' && s[i - 1] == '/') [[unlikely]] {
             return std::unexpected{
@@ -484,6 +496,27 @@ std::expected<GlobPattern, GlobError> GlobPattern::create(std::string_view s, si
     }
 
     return pat;
+}
+
+std::string GlobPattern::escape(std::string_view literal) {
+    std::string escaped;
+    escaped.reserve(literal.size());
+    for(char c: literal) {
+        if(special_bytes.contains(c)) {
+            escaped += '\\';
+        }
+        escaped += c;
+    }
+    return escaped;
+}
+
+GlobRoot GlobPattern::split_root(std::string_view pattern) {
+    auto head = literal_head(pattern);
+    // No `/` in the head is escaped, so its last one is the head's last
+    // separator in the pattern and in the text alike.
+    auto cut = pattern.substr(0, head.end).rfind('/') + 1;
+    head.text.resize(head.text.rfind('/') + 1);
+    return {.directory = std::move(head.text), .rest = pattern.substr(cut)};
 }
 
 std::expected<void, GlobError> GlobPattern::compile_arm(std::string_view s, bool at_segment_start) {

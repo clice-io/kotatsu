@@ -2,9 +2,9 @@
 #include <string>
 #include <utility>
 
-#include "async/harness/loop_fixture.h"
 #include "http/harness/server.h"
 #include "kota/http/http.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -13,7 +13,7 @@ namespace kota::http {
 
 namespace {
 
-ZEST_SUITE(http_detail_client, test::LoopFixture) {
+ZEST_SUITE(http_detail_client, zest::LoopFixture) {
 
 ZEST_CASE(copies_share_a_jar) {
     test::HttpServer server(loop, test::seeding("session=shared"));

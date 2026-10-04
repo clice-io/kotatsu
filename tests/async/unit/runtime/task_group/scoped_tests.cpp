@@ -2,8 +2,9 @@
 #include <string>
 #include <vector>
 
-#include "async/harness/loop_fixture.h"
+#include "async/harness/exceptions.h"
 #include "async/harness/pending_op.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -20,7 +21,7 @@ using plain_body = task<> (*)(task_group<>&);
 using error_body = task<void, error> (*)(task_group<error>&);
 using value_body = task<int> (*)(task_group<>&);
 
-ZEST_SUITE(async_runtime_task_group_scoped, test::LoopFixture) {
+ZEST_SUITE(async_runtime_task_group_scoped, zest::LoopFixture) {
 
 ZEST_CASE(with_task_group_gives_what_join_gives) {
     EXPECT(zest::type_eq<decltype(with_task_group(plain_body{})), task<>>());

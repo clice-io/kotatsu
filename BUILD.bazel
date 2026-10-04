@@ -161,7 +161,10 @@ kota_library(
         "src/zest/*.cpp",
         "src/zest/*.h",
     ]),
-    hdrs = glob(["include/kota/zest/**"]),
+    hdrs = glob(
+        ["include/kota/zest/**"],
+        exclude = ["include/kota/zest/async.h"],
+    ),
     linkopts = select({
         "@platforms//os:windows": ["-lshell32"],
         "//conditions:default": [],
@@ -173,5 +176,15 @@ kota_library(
         ":meta",
         ":support",
         "@cpptrace",
+    ],
+)
+
+# zest's support for tests of kota::async code, as CMake's kota::zest::async.
+kota_library(
+    name = "zest_async",
+    hdrs = ["include/kota/zest/async.h"],
+    deps = [
+        ":async",
+        ":zest",
     ],
 )

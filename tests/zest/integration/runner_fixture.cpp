@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "kota/deco/deco.h"
+#include "kota/zest/async.h"
 #include "kota/zest/zest.h"
 
 // Tests that misbehave on purpose, for check_runner.cmake: each must fail on
@@ -155,6 +156,35 @@ ZEST_CASE(throws_nothing) {
 #endif
 
 };  // ZEST_SUITE(fixture_report)
+
+// run() of tasks that do not end as they should: each case fails, and the task
+// is cancelled, which ends the run.
+ZEST_SUITE(fixture_loop, LoopFixture) {
+
+// A task that waits for ever outlasts the watchdog the test sets.
+
+ZEST_CASE(outlasts_the_watchdog) {
+    watchdog = std::chrono::milliseconds(50);
+    event never;
+    auto waits = [&]() -> task<> {
+        co_await never.wait();
+    };
+    auto [waited] = run(waits());
+    EXPECT(waited.is_cancelled());
+}
+
+// A task stops the loop under run(), then waits for ever.
+ZEST_CASE(stopped_under_run) {
+    event never;
+    auto stops = [&]() -> task<> {
+        loop.stop();
+        co_await never.wait();
+    };
+    auto [stopped] = run(stops());
+    EXPECT(stopped.is_cancelled());
+}
+
+};  // ZEST_SUITE(fixture_loop)
 
 // Two workers each check one snapshot; the runner must count both as checked.
 ZEST_SUITE(fixture_snapshot) {

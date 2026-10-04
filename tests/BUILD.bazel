@@ -57,6 +57,7 @@ cc_library(
         "//:codec_json",
         "//:ipc",
         "//:ipc_json",
+        "//:zest_async",
     ]),
     ("ipc/lsp", ["//:ipc_lsp"]),
 ]]
@@ -93,19 +94,28 @@ cc_library(
     ("codec/json", "unit", [":codec_json_harness"], []),
     ("codec/toml", "unit", [":codec_toml_harness"], []),
     ("deco", "unit", [":deco_harness"], []),
-    ("async", "unit", [":async_harness"], []),
-    ("async", "system", [":async_harness"], []),
+    ("async", "unit", [
+        ":async_harness",
+        "//:zest_async",
+    ], []),
+    ("async", "system", [
+        ":async_harness",
+        "//:zest_async",
+    ], []),
     ("ipc", "unit", [":ipc_harness"], []),
     ("ipc", "system", [":ipc_harness"], []),
     ("ipc/lsp", "unit", [
         ":ipc_harness",
         ":ipc_lsp_harness",
     ], []),
-    ("zest", "unit", [], []),
+    ("zest", "unit", [
+        ":async_harness",
+        "//:zest_async",
+    ], []),
     # zest's EXPECT_SNAPSHOT_JSON cases need the JSON codec.
     ("zest", "system", ["//:codec_json"], ["KOTA_TEST_HAS_JSON=1"]),
     ("examples/async", "unit", [
-        ":async_harness",
+        "//:zest_async",
         "//examples:build_system_graph",
     ], []),
 ]]
@@ -137,15 +147,20 @@ cc_library(
 kota_binary(
     name = "zest_runner_fixture",
     srcs = ["zest/integration/runner_fixture.cpp"],
-    deps = ["//:zest"],
+    deps = [
+        "//:zest",
+        "//:zest_async",
+    ],
 )
 
-# zest's runner end to end, against tests that crash, hang or exit early.
+# zest's runner end to end, against tests that crash, hang or exit early, and
+# run_cli()'s command line on zest's unit tests.
 command_test(
     name = "zest_runner_test",
     command = [
         "cmake",
         "-DFIXTURE=${FIXTURE}",
+        "-DCLI=${CLI}",
         "-DWORK_DIR=${TEST_TMPDIR}/zest_runner",
         "-P",
         "tests/zest/integration/check_runner.cmake",
@@ -153,8 +168,12 @@ command_test(
     data = [
         "zest/integration/check_runner.cmake",
         ":zest_runner_fixture",
+        ":zest_unit_tests",
     ],
-    env = {"FIXTURE": "$(rootpath :zest_runner_fixture)"},
+    env = {
+        "CLI": "$(rootpath :zest_unit_tests)",
+        "FIXTURE": "$(rootpath :zest_runner_fixture)",
+    },
 )
 
 # A module's integration/*.test.ts, which node runs from the source tree as

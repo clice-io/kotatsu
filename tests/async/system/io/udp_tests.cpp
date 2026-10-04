@@ -14,7 +14,7 @@
 #endif
 
 #include "async/harness/io.h"
-#include "async/harness/loop_fixture.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -50,7 +50,7 @@ int closed_port(event_loop& loop) {
 }
 #endif
 
-ZEST_SUITE(async_io_udp, test::LoopFixture) {
+ZEST_SUITE(async_io_udp, zest::LoopFixture) {
 
 ZEST_CASE(datagram_arrives_with_its_sender) {
     auto receiver = bind_loopback(loop);

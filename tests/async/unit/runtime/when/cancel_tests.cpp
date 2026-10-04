@@ -5,8 +5,8 @@
 #include <variant>
 #include <vector>
 
-#include "async/harness/loop_fixture.h"
 #include "async/harness/pending_op.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -20,7 +20,7 @@ task<int> cancelled_value() {
     co_return 0;
 }
 
-ZEST_SUITE(async_runtime_when_cancel, test::LoopFixture) {
+ZEST_SUITE(async_runtime_when_cancel, zest::LoopFixture) {
 
 ZEST_CASE(all_child_cancel_cancels_the_rest) {
     event gate;

@@ -119,6 +119,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - Compile-time option-table generation driven by `meta` reflection on top of `kota::option`, wired via `DECO_CFG` / `DECO_DECLARE_OPTION_*` macros.
 - Field-level attributes: `required`, help text, meta-var, spellings / aliases, category (exclusive / required groups), argument style and arity, `after_parsed` callbacks.
 - Sub-command routing, nested config scopes, and built-in usage / help rendering.
+- Handlers may return an `int` exit code, which `Command` and `SubCommander` return; an argv that does not parse returns `parse_error_exit_code` (2) unless the error handler returns a code of its own. `decl::HelpOption` gives an options struct the standard `-h` / `--help`, and `SubCommander::enable_help()` lists the subcommands for either.
 
 ### `zest` test framework (`include/kota/zest/*`)
 
@@ -128,6 +129,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - The predicates `contains`, `starts_with`, `ends_with` and `type_eq` report their inputs (`EXPECT(!contains(log, "error"))`), and `ZEST_CONTEXT("…", args…)` adds a line to every check failing inside its scope; `EXPECT_THROWS` / `EXPECT_NOTHROWS` check exceptions.
 - Default CLI runner: filter by `suite[.test]` with wildcards (`--test-filter=…`) and `--verbose`. Tests run on a pool of worker processes (`--jobs=N`), so a crash or a hang past `--timeout` fails that test alone and a fresh worker takes over; `--no-isolation` runs everything in-process for debuggers.
 - Failure reporting uses `std::source_location` to point at the failing expression.
+- `kota::zest::LoopFixture` (`kota/zest/async.h`, target `kota::zest::async`) for tests of `async` code: it owns an event loop, and its `run(tasks...)` runs the tasks until every one has finished and returns what each ended with, failing the test when they outlast its `watchdog`.
 
 ### `support` (`include/kota/support/*`)
 
@@ -145,8 +147,8 @@ All public APIs live under the `kota::` namespace, public headers under `include
 kotatsu is a Bazel module (Bazel 9). The targets are one per module:
 `@kotatsu//:support`, `:meta`, `:codec` with the backends `:codec_json`,
 `:codec_toml` and `:codec_flatbuffers`, `:option`, `:deco`, `:async`, `:ipc`
-with `:ipc_json` (JSON-RPC) and `:ipc_lsp`, and `:zest`; HTTP builds with
-CMake only for now.
+with `:ipc_json` (JSON-RPC) and `:ipc_lsp`, and `:zest` with `:zest_async`;
+HTTP builds with CMake only for now.
 
 ```starlark
 bazel_dep(name = "kotatsu", version = "0.1.0.<n>")

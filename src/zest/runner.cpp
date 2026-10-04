@@ -53,8 +53,7 @@ constexpr std::string_view clear = "\033[0m";
 struct CliOptions {
     Options zest;
 
-    DecoFlag(help = "display this help and exit"; required = false; names = {"--help", "-h"})
-    help = false;
+    kota::deco::decl::HelpOption help;
 
     DecoInput(meta_var = "<PATTERN>"; help = "positional fallback for test name filter";
               required = false)
@@ -326,32 +325,20 @@ int run_cli(int argc, char** argv, std::string_view command_overview) {
     auto renderer = kota::deco::cli::text::ModernRenderer();
     kota::deco::cli::Command<CliOptions> command(command_overview);
     command.render_with(renderer);
-    command.after<&CliOptions::help>([](auto& step) {
-        step.print_usage();
-        return step.stop();
+    command.on_error([](const kota::deco::cli::ParseError& err) {
+        std::println(stderr, "Error parsing options: {}", err.message);
     });
-
-    auto parsed = command.invoke(args);
-    if(!parsed.has_value()) {
-        std::println(stderr, "Error parsing options: {}", parsed.error().message);
-        return 1;
-    }
-
-    auto& cli = parsed->options;
-    if(cli.help.has_value() && *cli.help) {
-        return 0;
-    }
-
-    if(cli.test_filter_input.has_value() && !cli.zest.test_filter->empty()) {
-        std::println(stderr, "Error: cannot use both positional filter and --test-filter");
-        return 1;
-    }
-
-    if(cli.test_filter_input.has_value()) {
-        cli.zest.test_filter = std::move(*cli.test_filter_input);
-    }
-
-    return run_tests(std::move(cli.zest), argc, argv);
+    command.match_all([&](CliOptions cli) {
+        if(cli.test_filter_input.has_value() && !cli.zest.test_filter->empty()) {
+            std::println(stderr, "Error: cannot use both positional filter and --test-filter");
+            return 1;
+        }
+        if(cli.test_filter_input.has_value()) {
+            cli.zest.test_filter = std::move(*cli.test_filter_input);
+        }
+        return run_tests(std::move(cli.zest), argc, argv);
+    });
+    return command(args);
 }
 
 int run_tests(Options options, int argc, const char* const* argv) {

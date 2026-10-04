@@ -71,3 +71,13 @@ target_link_libraries(kota_zest PRIVATE
 )
 
 kota_apply_project_options(kota_zest)
+
+# zest's support for tests of kota::async code (kota/zest/async.h): a target of
+# its own, so that kota::zest does not bring kota::async to its users.
+add_library(kota_zest_async INTERFACE)
+add_library(kota::zest::async ALIAS kota_zest_async)
+
+target_link_libraries(kota_zest_async INTERFACE
+    kota::zest
+    kota::async
+)

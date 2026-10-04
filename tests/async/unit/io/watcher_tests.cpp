@@ -4,8 +4,8 @@
 #include <vector>
 
 #include "async/harness/io.h"
-#include "async/harness/loop_fixture.h"
 #include "async/harness/pending_op.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -35,7 +35,7 @@ task<error> second_wait(Watcher& watcher) {
     co_return both.has_error() ? both.error() : error();
 }
 
-ZEST_SUITE(async_io_watcher, test::LoopFixture) {
+ZEST_SUITE(async_io_watcher, zest::LoopFixture) {
 
 ZEST_CASE(timers_fire_in_timeout_order) {
     auto slow = timer::create(loop);

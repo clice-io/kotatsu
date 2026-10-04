@@ -14,8 +14,8 @@
 #endif
 
 #include "async/harness/io.h"
-#include "async/harness/loop_fixture.h"
 #include "async/harness/os.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -83,7 +83,7 @@ std::string unset(std::string_view name) {
     return std::string(by_platform("unset", std::format("%{}%", name)));
 }
 
-ZEST_SUITE(async_io_process, test::LoopFixture) {
+ZEST_SUITE(async_io_process, zest::LoopFixture) {
 
 ZEST_CASE(wait_reports_the_exit_code) {
     auto success = process::spawn(shell("exit 0"), loop);

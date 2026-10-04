@@ -2,7 +2,7 @@
 #include <string>
 #include <utility>
 
-#include "async/harness/loop_fixture.h"
+#include "async/harness/exceptions.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/support/config.h"

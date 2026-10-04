@@ -1,8 +1,8 @@
 #include <string>
 
-#include "async/harness/loop_fixture.h"
 #include "http/harness/server.h"
 #include "kota/http/http.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -11,7 +11,7 @@ namespace kota::http {
 
 namespace {
 
-ZEST_SUITE(http_detail_request_settings_cookies, test::LoopFixture) {
+ZEST_SUITE(http_detail_request_settings_cookies, zest::LoopFixture) {
 
 ZEST_CASE(cookie_a_reply_sets_goes_with_the_next_request) {
     test::HttpServer server(loop, test::seeding("session=alpha"));
