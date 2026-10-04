@@ -60,7 +60,7 @@ ZEST_CASE(escaped_literal_with_a_double_slash_fails) {
 }
 
 ZEST_CASE(escaped_literal_that_is_not_utf8_fails) {
-    test::expect_glob_error(GlobPattern::escape("a*\xFF"), GlobError::InvalidUtf8, 3, 4);
+    test::expect_glob_error(GlobPattern::escape("a*\xFF"), GlobError::InvalidUTF8, 3, 4);
 }
 
 };  // ZEST_SUITE(support_glob_pattern_escape)
