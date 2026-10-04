@@ -230,8 +230,22 @@ struct Pool {
             };
         }
         // Whatever broke the channel, the worker must be gone before its
-        // status says how it ended.
-        auto status = co_await worker->kill();
+        // status says how it ended. Hung up on, a worker still serving exits;
+        // one that does not is killed, and its status is then the runner's.
+        worker->channel = pipe{};
+        auto exited = co_await within(worker->wait(), options.timeout);
+        if(!exited) {
+            co_await worker->kill();
+            auto output = worker->take_output();
+            worker.reset();
+            co_return Outcome{
+                .verdict = Verdict::TimedOut,
+                .duration = elapsed_since(begin),
+                .output = std::move(output),
+                .detail = "the worker stopped answering and did not exit",
+            };
+        }
+        auto status = *exited;
         auto output = worker->take_output();
         worker.reset();
         if(crashes && !status.success()) {

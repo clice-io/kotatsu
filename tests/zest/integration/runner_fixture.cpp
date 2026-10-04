@@ -8,6 +8,10 @@
 #include <thread>
 #include <utility>
 
+#ifndef _WIN32
+#include <unistd.h>
+#endif
+
 #include "kota/deco/deco.h"
 #include "kota/zest/async.h"
 #include "kota/zest/zest.h"
@@ -95,6 +99,17 @@ ZEST_CASE(hangs) {
 ZEST_CASE(passes_after) {
     ZEXPECT(1 == 1);
 }
+
+#ifndef _WIN32
+// Closes the runner's channel and goes on: the runner kills its worker, which
+// is no crash of its own.
+ZEST_CASE(closes_the_channel, crashes = true) {
+    for(int fd = 3; fd < 1024; ++fd) {
+        ::close(fd);
+    }
+    std::this_thread::sleep_for(std::chrono::hours(1));
+}
+#endif
 
 // Passes, but under ZEST_FIXTURE_HANG_AT_EXIT its worker then hangs on its
 // way out, until the runner kills it.
@@ -252,6 +267,17 @@ ZEST_CASE(hook_throws) {
     FatalHook older{[] { std::println("hook older than the throw ran"); }};
     FatalHook throws{[] { throw std::runtime_error("thrown by a hook"); }};
     ZASSERT(1 == 2);
+}
+#endif
+
+#if defined(__cpp_exceptions) && !defined(ZEST_FIXTURE_BROKEN_CATCH)
+// A report that throws still ends the worker, after its hooks.
+ZEST_CASE(report_throws) {
+    FatalHook hook{[] { std::println("hook after a throwing report ran"); }};
+    ZASSERT(Match{
+        .held = false,
+        .explain = []() -> std::string { throw std::runtime_error("thrown by a report"); },
+    });
 }
 #endif
 

@@ -95,13 +95,11 @@ void report_failure(std::string_view expression,
                     std::initializer_list<ReportLine> lines,
                     std::source_location location);
 
-/// Starts ending the process for a failed ZASSERT, before its report: from
-/// here on no other thread ends the process or replies for the test.
-void begin_fatal();
-
-/// Ends the process for a failed ZASSERT, whose report is printed: tells the
-/// runner, runs the fatal hooks and exits, without unwinding the stack.
-[[noreturn]] void end_fatally();
+/// Ends the process for a failed ZASSERT once `report` has printed it, even if
+/// it throws: tells the runner, runs the fatal hooks and exits, without
+/// unwinding the stack. No other thread ends the process or replies for the
+/// test from before the report on.
+[[noreturn]] void fail_fatally(function_ref<void()> report);
 
 template <typename U>
 constexpr void reject_logic() {
@@ -313,9 +311,10 @@ void check_fatal(const Split& split,
                  std::string_view expression,
                  std::source_location location = std::source_location::current()) {
     if(!split.holds()) [[unlikely]] {
-        begin_fatal();
-        split.fail(expression, location);
-        end_fatally();
+        auto report = [&] {
+            split.fail(expression, location);
+        };
+        fail_fatally(report);
     }
 }
 

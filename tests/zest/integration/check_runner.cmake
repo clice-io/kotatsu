@@ -141,10 +141,17 @@ if(serial_at EQUAL -1 OR NOT later EQUAL -1)
     message(FATAL_ERROR "fixture.fails_at_exit did not run last:\n${output}")
 endif()
 
-# One worker: the hang must not keep the next test from running.
+# One worker: the hang must not keep the next test from running. A crash test
+# that only closes its channel is killed after --timeout, and does not pass.
+run_fixture("${FIXTURE}" --list-tests --test-filter=fixture_hang.*)
+string(FIND "${output}" "fixture_hang.closes_the_channel" closes_the_channel)
 run_fixture("${FIXTURE}" --test-filter=fixture_hang.* --jobs=1 --timeout=2)
 expect_code(1)
 expect_output_of("[  TIMEOUT ] fixture_hang.hangs (" "printed by fixture_hang.hangs")
+if(NOT closes_the_channel EQUAL -1)
+    expect_detail_of("[  TIMEOUT ] fixture_hang.closes_the_channel ("
+        "the worker stopped answering and did not exit")
+endif()
 expect_output("[  PASSED  ] 2 tests.")
 
 # A worker that does not exit after its last test is killed once --timeout
@@ -179,6 +186,10 @@ string(FIND "${output}" "fixture_fatal.hook_throws" hook_throws)
 if(NOT hook_throws EQUAL -1)
     math(EXPR fatal_failures "${fatal_failures} + 1")
 endif()
+string(FIND "${output}" "fixture_fatal.report_throws" report_throws)
+if(NOT report_throws EQUAL -1)
+    math(EXPR fatal_failures "${fatal_failures} + 1")
+endif()
 run_fixture("${FIXTURE}" --test-filter=fixture_fatal* --jobs=1)
 expect_code(1)
 expect_output_of("[   FAILED ] fixture_fatal.in_body (" "second hook ran\nfirst hook ran")
@@ -188,6 +199,11 @@ expect_detail_of("[   FAILED ] fixture_fatal.hook_crashes (" "the fatal hooks en
 if(NOT hook_throws EQUAL -1)
     expect_output_of("[   FAILED ] fixture_fatal.hook_throws (" "hook older than the throw ran")
     expect_output("thrown by a hook")
+endif()
+if(NOT report_throws EQUAL -1)
+    expect_output_of("[   FAILED ] fixture_fatal.report_throws ("
+        "hook after a throwing report ran")
+    expect_output("thrown by a report")
 endif()
 expect_output("[   FAILED ] fixture_fatal.hook_asserts (")
 expect_output("[ expect ] 2 == 3")

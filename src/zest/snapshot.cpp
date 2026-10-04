@@ -228,6 +228,9 @@ std::optional<std::string> check_impl(const fs::path& snap_path,
                                       std::string_view value,
                                       std::string_view input_file,
                                       std::source_location loc) {
+    // The test's threads may check one file at once.
+    static std::mutex files_mutex;
+    std::lock_guard lock(files_mutex);
     migrate_snap_extension(snap_path);
     record_access(snap_path);
 

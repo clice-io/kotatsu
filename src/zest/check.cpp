@@ -84,6 +84,55 @@ thread_local bool ending_here = false;
 /// This thread runs the fatal hooks.
 thread_local bool running_hooks = false;
 
+/// Starts ending the process for a failed ZASSERT, before its report: from
+/// here on no other thread ends the process or replies for the test.
+void begin_fatal() {
+    static std::atomic<bool> ending = false;
+    // Begun already by this ZASSERT's check, or by the one whose hooks run.
+    if(ending_here) {
+        return;
+    }
+    if(ending.exchange(true)) {
+        // Another thread ends the process, and this one with it.
+        while(true) {
+            std::this_thread::sleep_for(std::chrono::hours(1));
+        }
+    }
+    ending_here = true;
+    reply_mutex().lock();
+    // From here on, a FatalHook another thread creates or destroys waits, so
+    // that what its hook cleans up is not half torn down by the exit.
+    hooks().mutex.lock();
+}
+
+/// Ends the process for a failed ZASSERT, whose report is printed.
+[[noreturn]] void end_fatally() {
+    begin_fatal();
+    // A hook's own ZASSERT: the runner knows already.
+    if(running_hooks) {
+        flush_output();
+        std::_Exit(fatal_exit_code);
+    }
+    running_hooks = true;
+    if(auto notice = fatal_notice.load()) {
+        notice();
+    }
+
+    auto& registry = hooks();
+    while(!registry.alive.empty()) {
+        auto hook = std::move(registry.alive.back());
+        registry.alive.pop_back();
+#ifdef __cpp_exceptions
+        // What a hook throws is printed, and the next one runs.
+        trace_exception(std::move(hook.run));
+#else
+        hook.run();
+#endif
+    }
+    flush_output();
+    std::_Exit(fatal_exit_code);
+}
+
 }  // namespace
 
 std::recursive_mutex& reply_mutex() {
@@ -143,48 +192,20 @@ void report_failure(std::string_view expression,
     }
 }
 
-void begin_fatal() {
-    static std::atomic<bool> ending = false;
-    // Begun already by this ZASSERT's check, or by the one whose hooks run.
-    if(ending_here) {
-        return;
-    }
-    if(ending.exchange(true)) {
-        // Another thread ends the process, and this one with it.
-        while(true) {
-            std::this_thread::sleep_for(std::chrono::hours(1));
-        }
-    }
-    ending_here = true;
-    reply_mutex().lock();
-}
-
-void end_fatally() {
+void fail_fatally(function_ref<void()> report) {
     begin_fatal();
-    // A hook's own ZASSERT: the runner knows already.
-    if(running_hooks) {
-        flush_output();
-        std::_Exit(fatal_exit_code);
-    }
-    running_hooks = true;
-    if(auto notice = fatal_notice.load()) {
-        notice();
-    }
-
-    auto& registry = hooks();
-    registry.mutex.lock();
-    while(!registry.alive.empty()) {
-        auto hook = std::move(registry.alive.back());
-        registry.alive.pop_back();
 #ifdef __cpp_exceptions
-        // What a hook throws is printed, and the next one runs.
-        trace_exception(std::move(hook.run));
-#else
-        hook.run();
-#endif
+    // A report that throws, as a predicate's explanation may, still ends the
+    // process. Plain try and catch: only built with exceptions.
+    try {
+        report();
+    } catch(...) {
+        std::println("[ exception ] {}", describe_exception(std::current_exception()));
     }
-    flush_output();
-    std::_Exit(fatal_exit_code);
+#else
+    report();
+#endif
+    end_fatally();
 }
 
 }  // namespace detail
