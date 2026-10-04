@@ -296,6 +296,7 @@ set_tests_properties(zest_bootstrap_unit zest_bootstrap_system PROPERTIES
 add_test(NAME zest_runner
     COMMAND "${CMAKE_COMMAND}"
         "-DFIXTURE=$<TARGET_FILE:zest_runner_fixture>"
+        "-DCLI=$<TARGET_FILE:unit_tests>"
         "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/zest_runner"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/zest/integration/check_runner.cmake"
 )
