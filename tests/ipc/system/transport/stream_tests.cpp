@@ -1,6 +1,7 @@
 #include <cstddef>
 #include <expected>
 #include <format>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -214,11 +215,15 @@ ZEST_CASE(oversized_message_is_skipped_and_reading_goes_on) {
     EXPECT(next == "next");
 }
 
-// The limit it reads with is the one Peer sends within.
-ZEST_CASE(max_payload_is_the_limit_it_reads_with) {
+// The limit it reads with says nothing of what the remote reads: what it
+// sends has no limit until it is told one.
+ZEST_CASE(remote_max_payload_is_unlimited_until_set) {
     auto input = feed(loop, 8);
     ASSERT(input.has_value());
-    EXPECT(input->transport->max_payload() == 8U);
+    auto& transport = *input->transport;
+    EXPECT(transport.remote_max_payload() == std::numeric_limits<std::size_t>::max());
+    transport.set_remote_max_payload(8);
+    EXPECT(transport.remote_max_payload() == 8U);
     test::close_fd(input->writer);
 }
 

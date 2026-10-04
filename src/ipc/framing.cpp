@@ -63,7 +63,7 @@ std::string frame(std::string_view payload) {
     return framed;
 }
 
-FrameParser::FrameParser(std::size_t max_payload) : limit(max_payload) {}
+FrameParser::FrameParser(std::size_t max_payload) : max_payload(max_payload) {}
 
 std::optional<std::size_t> FrameParser::header_end(std::string_view next) const {
     constexpr std::string_view blank_line = "\r\n\r\n";
@@ -128,7 +128,7 @@ FrameParser::Step FrameParser::feed(std::string_view input) {
                 payload.clear();
                 prefix.clear();
                 remaining = *length;
-                if(*length > limit) {
+                if(*length > max_payload) {
                     phase = Phase::Skip;
                     skipped_size = *length;
                 } else {
@@ -167,7 +167,7 @@ FrameParser::Step FrameParser::feed(std::string_view input) {
                         .message =
                             std::format("a message of {} bytes exceeds the limit of {} bytes",
                                         skipped_size,
-                                        limit),
+                                        max_payload),
                         .size = skipped_size,
                         .prefix = std::move(prefix),
                     }),

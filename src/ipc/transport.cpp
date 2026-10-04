@@ -152,8 +152,12 @@ Result<void> StreamTransport::close() {
     return released;
 }
 
-std::size_t StreamTransport::max_payload() const noexcept {
-    return parser.max_payload();
+void StreamTransport::set_remote_max_payload(std::size_t bytes) noexcept {
+    remote_limit = bytes;
+}
+
+std::size_t StreamTransport::remote_max_payload() const noexcept {
+    return remote_limit;
 }
 
 // libuv never closes fds 0 to 2 when it closes a stream over one (on Windows

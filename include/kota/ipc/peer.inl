@@ -438,7 +438,7 @@ struct Peer<CodecT>::Self {
 
     /// Whether the remote reads `payload`.
     bool fits(std::string_view payload) const {
-        return payload.size() <= transport->max_payload();
+        return payload.size() <= transport->remote_max_payload();
     }
 
     /// The error of `what`, a message of `size` bytes over the remote's limit.
@@ -447,7 +447,7 @@ struct Peer<CodecT>::Self {
                      std::format("a {} of {} bytes exceeds the limit of {} bytes",
                                  what,
                                  size,
-                                 transport->max_payload()));
+                                 transport->remote_max_payload()));
     }
 
     /// Queues `response`, which answers `id`. One over the remote's limit is

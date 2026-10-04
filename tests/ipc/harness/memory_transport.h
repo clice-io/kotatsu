@@ -135,7 +135,7 @@ public:
         return {};
     }
 
-    std::size_t max_payload() const noexcept override {
+    std::size_t remote_max_payload() const noexcept override {
         return link->max_payload;
     }
 
@@ -185,7 +185,7 @@ public:
     }
 
     /// Reads no payload larger than `bytes`, which the peer learns from its
-    /// transport's max_payload().
+    /// transport's remote_max_payload().
     void limit_payload(std::size_t bytes) {
         link->max_payload = bytes;
     }
