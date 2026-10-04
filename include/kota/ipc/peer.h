@@ -72,7 +72,10 @@ struct request_options {
 ///
 /// A handler returns RequestResult<Params> or, for a result it has encoded
 /// itself, task<codec::RawValue, Error>; a request whose result type is
-/// codec::RawValue gets the result as the codec wrote it.
+/// codec::RawValue gets the result as the codec wrote it. Request handlers
+/// start in the order their requests were read, once the loop has come
+/// round: what was read with a request, or meanwhile, such as a
+/// $/cancelRequest for it or a change behind it, is dispatched first.
 template <typename Codec>
 class Peer {
 public:
@@ -96,8 +99,8 @@ public:
     /// fails with ConnectionClosed.
     task<> run();
 
-    /// Shuts the peer down: cancels the running handlers, fails pending
-    /// requests, discards queued messages and closes the transport, so that
+    /// Shuts the peer down: fails pending requests, cancels the running
+    /// handlers, discards queued messages and closes the transport, so that
     /// run() returns. Later sends fail; calls after the first do nothing.
     Result<void> close();
 

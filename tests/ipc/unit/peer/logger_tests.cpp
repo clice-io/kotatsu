@@ -134,6 +134,32 @@ ZEST_CASE(orphan_response_logs_its_id_as_written) {
     EXPECT(has(LogLevel::warn, "orphan response for id=7"));
 }
 
+// close() fails the handler's own request before it cancels the handler,
+// whose token then finds nothing left to tell the remote.
+ZEST_CASE(close_tells_the_remote_nothing_of_a_handlers_request) {
+    log_from(LogLevel::error);
+    peer.on_request([](Fixture::Context& context,
+                       const AddParams& params) -> RequestResult<AddParams> {
+        co_return co_await context
+            ->send_request<test::AddResult>("client/add", params, {.token = context.cancellation})
+            .or_fail();
+    });
+    remote.send(test::request<test::JsonAdapter>(1, "test/add", AddParams{}));
+    auto closer = [&]() -> task<> {
+        co_await next();
+        peer.close();
+    };
+
+    auto [ran, closed] = run(peer.run(), closer());
+    EXPECT(ran.has_value());
+    EXPECT(has(LogLevel::error, "failing 1 pending request(s): peer closed"));
+    EXPECT(std::ranges::none_of(entries, [](const LogEntry& entry) {
+        return entry.text.find("$/cancelRequest") != std::string::npos;
+    }));
+    ASSERT(written().size() == 1U);
+    EXPECT(written()[0].method == "client/add");
+}
+
 ZEST_CASE(run_logs_where_its_read_loop_starts_and_ends) {
     log_from(LogLevel::info);
     remote.end_input();

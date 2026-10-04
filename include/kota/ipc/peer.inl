@@ -131,6 +131,17 @@ struct Peer<CodecT>::Self {
             };
         }
 
+        PendingRequest(const PendingRequest&) = delete;
+        PendingRequest& operator=(const PendingRequest&) = delete;
+
+        /// One its sender left unsettled, as an exception unwound it before
+        /// it waited, takes itself off the Peer.
+        ~PendingRequest() {
+            if(!response) {
+                peer.forget(*this);
+            }
+        }
+
         bool await_ready() const noexcept {
             return false;
         }
@@ -494,13 +505,19 @@ struct Peer<CodecT>::Self {
         co_await signal.wait();
     }
 
-    /// Settles `pending` with `response`, and has its sender resume once
-    /// whatever runs has suspended: never inside the read loop.
-    void settle(PendingRequest& pending, Result<std::string> response) {
+    /// Takes `pending` off the requests awaiting an answer, and its deadline
+    /// with it.
+    void forget(PendingRequest& pending) {
         pending_requests.erase(pending.id);
         if(pending.deadline) {
             deadlines.erase(*pending.deadline);
         }
+    }
+
+    /// Settles `pending` with `response`, and has its sender resume once
+    /// whatever runs has suspended: never inside the read loop.
+    void settle(PendingRequest& pending, Result<std::string> response) {
+        forget(pending);
         pending.response = std::move(response);
         pending.complete_deferred(loop);
     }
@@ -508,7 +525,12 @@ struct Peer<CodecT>::Self {
     /// Files when `pending` times out, waking the deadline loop when that is
     /// before every other deadline.
     void file_deadline(PendingRequest& pending, std::chrono::milliseconds timeout) {
-        auto filed = deadlines.emplace(Clock::now() + timeout, &pending);
+        // A timeout past what the clock counts never passes.
+        const auto now = Clock::now();
+        const auto room =
+            std::chrono::floor<std::chrono::milliseconds>(Clock::time_point::max() - now);
+        const auto at = timeout < room ? now + timeout : Clock::time_point::max();
+        auto filed = deadlines.emplace(at, &pending);
         pending.deadline = filed;
         if(filed == deadlines.begin()) {
             deadline_changed.set();
@@ -639,7 +661,8 @@ struct Peer<CodecT>::Self {
                        RequestCallback callback,
                        std::string params,
                        cancellation_token token) {
-        // What was read with this request is dispatched first: a
+        // The handler starts once the loop has come round: what was read
+        // with this request, or meanwhile, is dispatched first, so a
         // $/cancelRequest or a change behind it reaches the handler before it
         // starts, and a handler cancelled meanwhile never starts.
         co_await yield(loop);
@@ -750,9 +773,10 @@ Result<void> Peer<CodecT>::close() {
     self->output_open = false;
     self->closing_output = false;
     self->log(LogLevel::info, "peer closing");
-    self->cancel_handlers();
-
+    // The requests first: a handler cancelled below finds its own requests
+    // settled, with nothing left to tell the remote.
     self->fail_pending_requests(Error(protocol::ErrorCode::ConnectionClosed, "peer closed"));
+    self->cancel_handlers();
     self->outgoing_queue.clear();
     self->write_event.set();
 

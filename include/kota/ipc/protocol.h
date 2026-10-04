@@ -49,7 +49,8 @@ enum class ErrorCode : integer {
     MessageTooLarge = -32010,
     /// The connection to the remote is closed or broken: a request that
     /// cannot be sent, or whose answer can no longer come, fails with this.
-    /// Peer makes it locally and never sends it.
+    /// Peer makes it locally, and sends it only as the error a handler failed
+    /// with.
     ConnectionClosed = -32011,
     RequestCancelled = -32800,
 };

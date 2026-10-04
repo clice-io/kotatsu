@@ -107,6 +107,26 @@ void peer_timeout(const PeerKit<A>& kit) {
         EXPECT(cancelled->id == RequestID(2));
     });
 
+    // A deadline past what the clock counts is never reached.
+    kit.add("timeout_past_the_clocks_range_never_passes", [](Fixture& f) {
+        auto ask = [&]() -> task<AddResult, ipc::Error> {
+            co_return co_await f.peer
+                .send_request(AddParams{.a = 2, .b = 3},
+                              {.timeout = std::chrono::milliseconds::max()})
+                .or_fail();
+        };
+        auto remote = [&]() -> task<> {
+            co_await f.next();
+            f.remote.send(response<A>(1, AddResult{.sum = 5}));
+            f.remote.end_input();
+        };
+
+        auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
+        EXPECT(ran.has_value());
+        ASSERT(asked.has_value());
+        EXPECT(asked->sum == 5);
+    });
+
     // A cancelled request goes on waiting for its answer, but no longer than
     // its timeout: the remote is told once.
     kit.add("timeout_ends_a_cancelled_request_the_remote_never_answers", [](Fixture& f) {
