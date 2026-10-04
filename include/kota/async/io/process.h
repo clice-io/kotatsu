@@ -154,6 +154,16 @@ public:
     static result<spawn_result> spawn(const options& opts,
                                       event_loop& loop = event_loop::current());
 
+    struct capture_result;
+
+    /// Runs the child to its exit, and returns what it wrote: its stdin
+    /// reads nothing, and its stdout and stderr are read while it runs,
+    /// whatever `opts` asks for them. A cancel kills the child, as kill()
+    /// does, and the task ends once the child has exited: it leaves no child
+    /// behind.
+    static task<capture_result, error> capture(options opts,
+                                               event_loop& loop = event_loop::current());
+
     /// Waits for the child to exit.
     task<exit_status, error> wait();
 
@@ -186,6 +196,15 @@ struct process::spawn_result {
     pipe stdout_pipe;
 
     pipe stderr_pipe;
+};
+
+/// How a captured child ended, and all it wrote.
+struct process::capture_result {
+    exit_status status;
+
+    std::string stdout_data;
+
+    std::string stderr_data;
 };
 
 }  // namespace kota

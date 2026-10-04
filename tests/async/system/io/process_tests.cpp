@@ -1,3 +1,4 @@
+#include <cerrno>
 #include <chrono>
 #include <csignal>
 #include <cstddef>
@@ -7,6 +8,10 @@
 #include <string>
 #include <string_view>
 #include <utility>
+
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
 
 #include "async/harness/io.h"
 #include "async/harness/loop_fixture.h"
@@ -475,6 +480,66 @@ ZEST_CASE(stdout_chunks_arrive_as_written) {
     EXPECT(chunks->first == "chunk-one");
     EXPECT(chunks->second == "chunk-two");
     EXPECT(test::exit_status_of(status) == 0);
+}
+#endif
+
+ZEST_CASE(capture_returns_what_the_child_wrote_and_how_it_ended) {
+    auto opts = shell(
+        by_platform("printf out; printf err 1>&2; exit 3", "echo out& echo err 1>&2& exit /b 3"));
+
+    auto [captured] = run(process::capture(opts, loop));
+    ASSERT(captured.has_value());
+    EXPECT(trim_newlines(captured->stdout_data) == "out");
+    EXPECT(zest::contains(captured->stderr_data, "err"));
+    EXPECT(captured->status.status == 3);
+}
+
+// A child that reads its stdin to the end exits at once: there is nothing
+// to read.
+ZEST_CASE(capture_gives_the_child_no_input) {
+    auto [captured] = run(process::capture(test::stdin_reader(), loop));
+    ASSERT(captured.has_value());
+    EXPECT(captured->status.success());
+    EXPECT(trim_newlines(captured->stdout_data).empty());
+}
+
+ZEST_CASE(capture_of_a_missing_file_fails) {
+    process::options opts;
+    opts.file = by_platform("/nonexistent/kotatsu-nope", R"(Z:\nonexistent\kotatsu-nope.exe)");
+
+    auto [captured] = run(process::capture(opts, loop));
+    ASSERT(captured.has_error());
+    EXPECT(captured.error() == error::no_such_file_or_directory);
+}
+
+#ifndef _WIN32
+// The child writes its pid to a FIFO, then sleeps. Once the pid is read the
+// capture is cancelled, and it ends only once the child is gone: no process
+// has that pid any more. The FIFO is opened for writing too, so that it
+// never reads as ended before the child writes. mkfifo is POSIX.
+ZEST_CASE(cancelled_capture_kills_the_child) {
+    test::TempDir dir;
+    ASSERT(::mkfifo(dir.file("pid").c_str(), 0600) == 0);
+    auto reader = pipe::open(::open(dir.file("pid").c_str(), O_RDWR), loop);
+    ASSERT(reader.has_value());
+    auto opts = shell("echo $$ > pid; exec sleep 60");
+    opts.cwd = dir.path.string();
+    cancellation_source source;
+    auto canceller = [&]() -> task<std::optional<std::string>, error> {
+        auto pid = co_await reader->read_line().or_fail();
+        source.cancel();
+        co_return pid;
+    };
+
+    auto [captured, pid] =
+        run(with_token(process::capture(opts, loop), source.token()), canceller());
+    EXPECT(captured.is_cancelled());
+    ASSERT(pid.has_value());
+    ASSERT(pid->has_value());
+    const int found = ::kill(std::stoi(**pid), 0);
+    const int why = errno;
+    EXPECT(found == -1);
+    EXPECT(why == ESRCH);
 }
 #endif
 

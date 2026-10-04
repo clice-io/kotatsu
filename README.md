@@ -24,10 +24,10 @@ All public APIs live under the `kota::` namespace, public headers under `include
   - `.or_fail()` short-circuits error propagation without resuming at the await site.
 - Single-threaded libuv-backed `event_loop`; `run(tasks...)` helper; thread-safe `relay` for hopping onto a loop from another thread.
 - Network and IPC I/O:
-  - stream base abstraction
+  - stream base abstraction, with `read_line()` and `read_to_end()`
   - pipes, TCP sockets, TCP acceptors, console / TTY streams
   - UDP sockets with multicast and per-packet send/recv
-- Child process API (`process::spawn`) with stdio piping, environment changes, async wait/kill, exit statuses that tell how the child ended, and resource-usage reporting.
+- Child process API (`process::spawn`) with stdio piping, environment changes, async wait/kill, exit statuses that tell how the child ended, and resource-usage reporting; `process::capture` runs a child to its exit and returns its output, killing it if cancelled.
 - Async filesystem API covering the full libuv fs surface (stat / mkdir / scandir / chmod / link / rename / sendfile / utime / mkstemp / …).
 - Libuv watcher wrappers: timer, idle, prepare, check, signal, plus a `sleep` helper.
 

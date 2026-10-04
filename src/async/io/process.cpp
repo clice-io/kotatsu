@@ -11,6 +11,7 @@
 
 #include "stream_self.h"
 #include "kota/support/string_ref.h"
+#include "kota/async/runtime/when.h"
 
 namespace kota {
 
@@ -26,14 +27,48 @@ struct process::Self : uv::owned_handle<Self> {
     /// How the child ended, once it has.
     std::optional<exit_status> exited;
 
-    static void on_exit(uv_process_t* handle, std::int64_t status, int term_signal) {
-        auto* self = static_cast<Self*>(handle->data);
-        self->exited = exit_status{.status = status, .term_signal = term_signal};
-        if(self->slot.waiting()) {
-            self->slot.deliver(*self->exited);
+    struct ExitWait;
+
+    /// capture()'s wait for the exit, while it waits.
+    ExitWait* exit_wait = nullptr;
+
+    static void on_exit(uv_process_t* handle, std::int64_t status, int term_signal);
+};
+
+/// Waits for the child to exit; a cancel kills it, and the wait goes on
+/// until it has exited.
+struct process::Self::ExitWait : uv::uv_op<ExitWait> {
+    Self& self;
+
+    explicit ExitWait(Self& self) noexcept : self(self) {}
+
+    bool start() noexcept {
+        if(self.exited) {
+            return false;
         }
+        self.exit_wait = this;
+        return true;
+    }
+
+    void cancel() noexcept {
+        ::uv_process_kill(&self.process, SIGKILL);
+    }
+
+    exit_status await_resume() const noexcept {
+        return *self.exited;
     }
 };
+
+void process::Self::on_exit(uv_process_t* handle, std::int64_t status, int term_signal) {
+    auto* self = static_cast<Self*>(handle->data);
+    self->exited = exit_status{.status = status, .term_signal = term_signal};
+    if(self->slot.waiting()) {
+        self->slot.deliver(*self->exited);
+    }
+    if(auto* waiting = std::exchange(self->exit_wait, nullptr)) {
+        waiting->complete();
+    }
+}
 
 namespace {
 
@@ -295,6 +330,28 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
         .stdin_pipe = std::move(pipes[0]),
         .stdout_pipe = std::move(pipes[1]),
         .stderr_pipe = std::move(pipes[2]),
+    };
+}
+
+task<process::capture_result, error> process::capture(options opts, event_loop& loop) {
+    opts.streams = {stdio::ignore(), stdio::pipe(false, true), stdio::pipe(false, true)};
+    auto spawned = spawn(opts, loop);
+    if(!spawned) {
+        co_await fail(spawned.error());
+    }
+    auto reap = [](Self& self) -> task<exit_status, error> {
+        co_return co_await Self::ExitWait(self);
+    };
+    // Both pipes are read while the child runs: one that fills a pipe waits
+    // for it to be read before it can exit.
+    auto [stdout_data, stderr_data, status] =
+        co_await or_fail(co_await when_all(spawned->stdout_pipe.read_to_end(),
+                                           spawned->stderr_pipe.read_to_end(),
+                                           reap(*spawned->proc.self)));
+    co_return capture_result{
+        .status = status,
+        .stdout_data = std::move(stdout_data),
+        .stderr_data = std::move(stderr_data),
     };
 }
 
