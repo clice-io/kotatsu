@@ -41,6 +41,10 @@ struct ReplaceUtf8Config {
     constexpr static auto invalid_utf8 = codec::invalid_utf8::Replace;
 };
 
+struct OmitUnstatedConfig {
+    constexpr static bool omit_unstated_defaults = true;
+};
+
 struct NoPathConfig {
     constexpr static bool detailed_error = false;
 };

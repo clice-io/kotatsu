@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
+#include <limits>
 #include <span>
 #include <string_view>
 #include <tuple>
@@ -430,9 +431,13 @@ constexpr void validate_spec(const field_spec& spec) {
     if(compare_numbers(spec.minimum, spec.maximum) == std::partial_ordering::greater) {
         KOTA_THROW("annotation: minimum exceeds maximum");
     }
+    // JSON has no number for NaN or an infinity; an unbounded side is left
+    // unstated.
+    constexpr double largest = std::numeric_limits<double>::max();
     for(auto bound: {spec.minimum, spec.maximum}) {
-        if(auto* number = std::get_if<double>(&bound); number && *number != *number) {
-            KOTA_THROW("annotation: a NaN bound");
+        if(auto* number = std::get_if<double>(&bound);
+           number && !(*number >= -largest && *number <= largest)) {
+            KOTA_THROW("annotation: a bound that is not finite");
         }
     }
     auto choices = spec.choices.names();

@@ -77,7 +77,8 @@ struct default_config :
     KOTA_CFG_FIELD_(invalid_utf8, kota::codec::invalid_utf8::Error);
 
     /// Encode: leave out the fields annotated `schema_default = false`, as
-    /// json::schema does for the documents it takes defaults from.
+    /// json::schema does for the documents it takes defaults from. A format
+    /// that writes every field (bincode) writes them still.
     KOTA_CFG_FIELD_(omit_unstated_defaults, false);
 
     /// Deserialize: reject unknown fields in data-driven mode.

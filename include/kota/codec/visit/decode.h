@@ -937,7 +937,7 @@ bool decode_value(Vis& vis, T& out) {
                             std::format("too many elements for tuple (expected {})", expected)));
                     }
                     KOTA_CODEC_TRY(detail::decode_step<Config>(sink, idx, [&] {
-                        return detail::with_index<expected>(idx, [&](auto i) {
+                        return detail::with_index<std::tuple_size_v<V>>(idx, [&](auto i) {
                             return decode_value<Config>(ev, std::get<decltype(i)::value>(out));
                         });
                     }));

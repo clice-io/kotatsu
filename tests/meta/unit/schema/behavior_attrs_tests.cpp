@@ -82,6 +82,13 @@ ZEST_CASE(enum_string) {
     STATIC_EXPECT(!fields[1].has_behavior);
 }
 
+ZEST_CASE(enum_string_through_a_chain) {
+    // The members survive an as<> that resolves to the annotated enum.
+    constexpr auto& fields = virtual_schema<fx::EnumStringThroughAs>::fields;
+    STATIC_EXPECT(fields[0].type().kind == type_kind::enumeration);
+    EXPECT(static_cast<const enum_type_info&>(fields[0].type()).rename != nullptr);
+}
+
 ZEST_CASE(tagged_variant) {
     constexpr auto& fields = virtual_schema<fx::TaggedVariantStruct>::fields;
     STATIC_EXPECT(fields[0].type().kind == type_kind::variant);

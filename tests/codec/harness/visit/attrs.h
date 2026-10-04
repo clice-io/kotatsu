@@ -298,6 +298,20 @@ void attrs(const Kit<B>& kit) {
         roundtrip(kit, "skip_if_matching_fields_roundtrip", matching);
     }
 
+    // omit_unstated_defaults leaves out a schema_default = false field where
+    // a field can be absent, and writes it where every field is written.
+    auto unstated = [] {
+        return WithUnstated{.id = 1, .seed = 7};
+    };
+    if constexpr(B::caps.absent_fields) {
+        encodes_as<OmitUnstatedConfig>(kit,
+                                       "omit_unstated_defaults_leaves_out_unstated_fields",
+                                       unstated,
+                                       [] { return IdOnly{.id = 1}; });
+    } else {
+        roundtrip<OmitUnstatedConfig>(kit, "omit_unstated_defaults_writes_every_field", unstated);
+    }
+
     if constexpr(!B::caps.layout_computed) {
         encodes_as<EnumStringConfig>(
             kit,

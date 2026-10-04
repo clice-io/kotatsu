@@ -56,7 +56,8 @@ namespace detail {
 
 /// Writes text, a string the value holds. A visitor writing UTF-8 text gets
 /// it checked first: one that is not UTF-8 fails, or is replaced as a decoder
-/// reads it, as Config::invalid_utf8 says.
+/// reads it, as Config::invalid_utf8 says. Names the program declares (field
+/// and tag names, enumerator spellings) are written as they are.
 template <typename Config, typename Vis, typename Text>
 bool encode_text(Vis& vis, const Text& text) {
     if constexpr(writes_utf8<Vis>) {
@@ -217,13 +218,12 @@ bool encode_one_field(Vis& vis, const T& value) {
     using field = FieldAt<Config, I, T>;
     const auto& field_ref = field::of(value);
 
-    if constexpr(Config::omit_unstated_defaults && !field::schema::fields[I].schema_default) {
-        return true;
-    }
-
     // A visitor that writes every field has nothing to mark one absent, so
-    // skip_if omits fields only elsewhere.
+    // skip_if and omit_unstated_defaults omit fields only elsewhere.
     if constexpr(!writes_every_field<Vis>) {
+        if constexpr(Config::omit_unstated_defaults && !field::schema::fields[I].schema_default) {
+            return true;
+        }
         if(skipped<typename field::attrs>(field_ref, true)) {
             return true;
         }

@@ -284,15 +284,40 @@ struct unwrap_annotated<T> {
     using attrs = typename T::attrs;
 };
 
+/// The info of enum E, its members spelled through Rename when it travels as
+/// a behavior::enum_string's names.
+template <typename E, std::string (*Rename)(bool, std::string_view) = nullptr>
+struct enum_info_node {
+    constexpr static auto& names = meta::reflection<E>::member_names;
+    constexpr static auto& values = meta::reflection<E>::member_values;
+
+    constexpr inline static enum_type_info value = {
+        {type_kind::enumeration, meta::type_name<E>()},
+        {names.data(),           names.size()        },
+        static_cast<const void*>(values.data()),
+        kind_of<std::underlying_type_t<E>>(),
+        Rename,
+    };
+};
+
+/// Policy's spelling of an enumerator's name, as a plain function.
+template <typename Policy>
+std::string rename_with(bool is_serialize, std::string_view name) {
+    return Policy{}(is_serialize, name);
+}
+
 /// A resolved representation: the type the codec ultimately reads and writes
 /// for T, the tagging spec attr accompanying a tagged variant (an empty tuple
-/// otherwise), and the config after merging every rename_all /
-/// deny_unknown_fields / defaulted_fields crossed on the way.
-template <typename T, typename TagAttrs, typename Config>
+/// otherwise), the config after merging every rename_all /
+/// deny_unknown_fields / defaulted_fields crossed on the way, and, for an enum
+/// a behavior::enum_string turned into text, the info of its members (void
+/// otherwise), which a schema lists.
+template <typename T, typename TagAttrs, typename Config, typename SpelledEnum = void>
 struct resolved_repr {
     using type = T;
     using tag_attrs = TagAttrs;
     using config = Config;
+    using spelled_enum = SpelledEnum;
 };
 
 /// Precedence mirrors the codec dispatch (encode_with_attrs /
@@ -328,7 +353,11 @@ constexpr auto resolve_node() {
         using target = typename tuple_find_spec_t<attrs_t, behavior::as>::target;
         return resolve_repr<target, Config>();
     } else if constexpr(tuple_has_spec_v<attrs_t, behavior::enum_string>) {
-        return resolved_repr<std::string_view, std::tuple<>, Config>{};
+        using policy = typename tuple_find_spec_t<attrs_t, behavior::enum_string>::policy;
+        return resolved_repr<std::string_view,
+                             std::tuple<>,
+                             Config,
+                             enum_info_node<raw_t, &rename_with<policy>>>{};
     } else if constexpr(is_specialization_of<std::variant, raw_t> &&
                         struct_spec_of<attrs_t>.tagging != tag_mode::none) {
         return resolved_repr<raw_t,
@@ -363,42 +392,11 @@ template <typename T,
           typename Config = default_config,
           typename Resolved = decltype(resolve_repr<std::remove_cv_t<T>, Config>())>
 struct type_instance :
-    type_instance_impl<typename Resolved::type,
-                       typename Resolved::tag_attrs,
-                       typename Resolved::config> {};
-
-/// The info of enum E, its members spelled through Rename when it travels as
-/// a behavior::enum_string's names.
-template <typename E, std::string (*Rename)(bool, std::string_view) = nullptr>
-struct enum_info_node {
-    constexpr static auto& names = meta::reflection<E>::member_names;
-    constexpr static auto& values = meta::reflection<E>::member_values;
-
-    constexpr inline static enum_type_info value = {
-        {type_kind::enumeration, meta::type_name<E>()},
-        {names.data(),           names.size()        },
-        static_cast<const void*>(values.data()),
-        kind_of<std::underlying_type_t<E>>(),
-        Rename,
-    };
-};
-
-/// Policy's spelling of an enumerator's name, as a plain function.
-template <typename Policy>
-std::string rename_with(bool is_serialize, std::string_view name) {
-    return Policy{}(is_serialize, name);
-}
-
-/// An enum annotated with behavior::enum_string: the enum's members, which
-/// travel as the policy spells their names. Resolution maps the annotation to
-/// a string, which is what the codec reads and writes; this instance keeps
-/// the members a schema lists.
-template <typename T, typename Config, typename Resolved>
-    requires annotated_type<T> && tuple_has_spec_v<typename T::attrs, behavior::enum_string>
-struct type_instance<T, Config, Resolved> :
-    enum_info_node<typename T::annotated_type,
-                   &rename_with<typename tuple_find_spec_t<typename T::attrs,
-                                                           behavior::enum_string>::policy>> {};
+    std::conditional_t<std::is_void_v<typename Resolved::spelled_enum>,
+                       type_instance_impl<typename Resolved::type,
+                                          typename Resolved::tag_attrs,
+                                          typename Resolved::config>,
+                       typename Resolved::spelled_enum> {};
 
 template <typename T, std::size_t I>
 constexpr std::size_t single_field_count();

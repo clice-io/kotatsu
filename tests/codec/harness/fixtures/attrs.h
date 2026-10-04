@@ -242,6 +242,16 @@ struct TunablesHolder {
     int count;
 };
 
+/// A field whose default a schema leaves unstated.
+struct UnstatedDefault {
+    constexpr static auto spec = meta::make_spec(meta::dsl::schema_default = false);
+};
+
+struct WithUnstated {
+    int id;
+    meta::annotate<UnstatedDefault>::type<int> seed;
+};
+
 /// Two fields answering to one name.
 struct AliasDup {
     constexpr static auto spec = meta::make_spec(meta::dsl::alias = {"dup"});
