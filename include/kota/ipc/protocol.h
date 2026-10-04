@@ -1,8 +1,10 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 
@@ -13,9 +15,14 @@
 
 namespace kota::ipc::protocol {
 
+/// What a request with params `Params` is: its `method` name and its
+/// `Result` type. A method that takes no params, keyed by an empty structure,
+/// says `takes_params = false`, and is sent without params.
 template <typename Params>
 struct RequestTraits;
 
+/// What a notification with params `Params` is: its `method` name, and
+/// `takes_params = false` as for a request.
 template <typename Params>
 struct NotificationTraits;
 

@@ -341,8 +341,8 @@ void peer_cancel(const PeerKit<A>& kit) {
         EXPECT(f.written().size() == 1U);
     });
 
-    // A remote that is never answered still lets a cancelled caller go once
-    // the connection closes.
+    // A request the remote never answers still lets a cancelled caller go
+    // once the connection closes.
     kit.add("cancelled_caller_ends_when_the_connection_closes", [](Fixture& f) {
         cancellation_source source;
         auto ask = [&]() -> task<AddResult, ipc::Error> {

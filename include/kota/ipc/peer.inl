@@ -10,13 +10,13 @@
 #include <coroutine>
 #include <cstdint>
 #include <deque>
-#include <map>
 #include <format>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
-#include <source_location>
 #include <ranges>
+#include <source_location>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -190,7 +190,7 @@ struct Peer<CodecT>::Self {
     bool answers_done = false;
     /// run() was called; it is called once.
     bool started = false;
-    /// run() has not ended: the Peer must not go.
+    /// run() is running: the Peer must not go.
     bool running = false;
     event write_event;
 
@@ -346,7 +346,7 @@ struct Peer<CodecT>::Self {
         deadline_changed.set();
     }
 
-    /// What run() runs.
+    /// Runs the read, write and deadline loops until all three have ended.
     task<> serve() {
         task_group<> handlers;
 
@@ -459,7 +459,7 @@ struct Peer<CodecT>::Self {
 
     /// Sends the notification `method` with `params`, encoded; one the remote
     /// would not read fails unsent.
-    Result<void> notify(std::string_view method, std::string_view params) {
+    Result<void> send_notification(std::string_view method, std::string_view params) {
         if(auto unsendable = this->unsendable(false)) {
             return outcome_error(std::move(*unsendable));
         }
@@ -478,7 +478,8 @@ struct Peer<CodecT>::Self {
     /// and logged, when that cannot be sent.
     bool send_cancel_request(const protocol::RequestID& id) {
         auto params = codec.serialize_value(protocol::CancelRequestParams{id});
-        auto sent = params ? notify("$/cancelRequest", *params) : outcome_error(params.error());
+        auto sent = params ? send_notification("$/cancelRequest", *params)
+                           : outcome_error(params.error());
         if(!sent) {
             log(LogLevel::error,
                 "$/cancelRequest for id={} not sent: {}",
@@ -811,11 +812,6 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
     co_return co_await or_fail(std::move(*pending.response));
 }
 
-template <typename CodecT>
-Result<void> Peer<CodecT>::send_notification_impl(std::string_view method, std::string params) {
-    return self->notify(method, params);
-}
-
 // The typed members: they encode params and decode results for the ones above.
 
 template <typename CodecT>
@@ -850,12 +846,11 @@ Result<void> Peer<CodecT>::send_notification(const Params& params) {
 template <typename CodecT>
 template <typename Params>
 Result<void> Peer<CodecT>::send_notification(std::string_view method, const Params& params) {
-    auto serialized_params =
-        self->template encode_params<protocol::NotificationTraits>(params);
+    auto serialized_params = self->template encode_params<protocol::NotificationTraits>(params);
     if(!serialized_params) {
         return outcome_error(serialized_params.error());
     }
-    return send_notification_impl(method, std::move(*serialized_params));
+    return self->send_notification(method, *serialized_params);
 }
 
 template <typename CodecT>

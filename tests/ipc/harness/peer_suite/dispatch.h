@@ -94,8 +94,6 @@ void peer_dispatch(const PeerKit<A>& kit) {
         EXPECT(f.written().empty());
     });
 
-    // A handler runs until it first suspends before the peer reads on, so
-    // handlers start in the order their messages arrived.
     // A handler starts once what was read with its request is dispatched:
     // the notifications behind it come first.
     kit.add("handler_starts_after_the_messages_read_with_its_request", [](Fixture& f) {

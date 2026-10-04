@@ -55,7 +55,9 @@ struct request_options {
     /// it had already. A cancel of the task awaiting the request does the
     /// same, and that task ends cancelled once the answer is in. A remote
     /// that never answers keeps the request waiting until the connection
-    /// closes or the timeout passes.
+    /// closes or the timeout passes; one that cannot be told, the
+    /// $/cancelRequest failing to be sent, ends it with RequestCancelled at
+    /// once.
     cancellation_token token = {};
     /// Ends the request with RequestCancelled once it has waited this long,
     /// a cancel or not, and sends the remote $/cancelRequest; it counts from
@@ -143,8 +145,6 @@ private:
     task<std::string, Error> send_request_impl(std::string_view method,
                                                std::string params,
                                                request_options opts);
-
-    Result<void> send_notification_impl(std::string_view method, std::string params);
 
     /// Register a callback whose signature the caller has checked.
     template <typename Callback>

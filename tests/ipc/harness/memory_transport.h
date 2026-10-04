@@ -184,7 +184,8 @@ public:
         link->close_output_fails = true;
     }
 
-    /// Takes no payload larger than `bytes` from the peer.
+    /// Reads no payload larger than `bytes`, which the peer learns from its
+    /// transport's max_payload().
     void limit_payload(std::size_t bytes) {
         link->max_payload = bytes;
     }

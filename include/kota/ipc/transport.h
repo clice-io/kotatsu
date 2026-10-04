@@ -38,8 +38,8 @@ public:
 };
 
 /// Messages framed as the LSP base protocol frames them, over streams. A
-/// message whose payload is larger than `max_payload` is skipped, and none
-/// larger is sent: both ends should configure the same limit.
+/// message whose payload is larger than `max_payload` is skipped, and a Peer
+/// over it sends none larger: both ends should configure the same limit.
 class StreamTransport : public Transport {
 public:
     StreamTransport(stream input, stream output, std::size_t max_payload = default_max_payload);

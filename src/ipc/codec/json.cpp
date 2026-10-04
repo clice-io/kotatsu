@@ -29,25 +29,17 @@ struct outgoing_request_message {
     protocol::RequestID id;
     std::string method;
     /// Left out for a method that takes none.
-    KOTATSU_ANNOTATE(skip_if = skip_when::none)
-    <std::optional<codec::RawValue>> params;
+    KOTATSU_ANNOTATE(skip_if = skip_when::empty)
+    <codec::RawValue> params;
 };
 
 struct outgoing_notification_message {
     std::string jsonrpc = "2.0";
     std::string method;
     /// Left out for a method that takes none.
-    KOTATSU_ANNOTATE(skip_if = skip_when::none)
-    <std::optional<codec::RawValue>> params;
+    KOTATSU_ANNOTATE(skip_if = skip_when::empty)
+    <codec::RawValue> params;
 };
-
-/// Params as a message carries them: none when they are empty.
-std::optional<codec::RawValue> params_member(std::string_view params) {
-    if(params.empty()) {
-        return std::nullopt;
-    }
-    return codec::RawValue{std::string(params)};
-}
 
 struct outgoing_success_response_message {
     std::string jsonrpc = "2.0";
@@ -404,13 +396,13 @@ HeadMembers read_head(std::string_view text) {
 }
 
 /// What to make of JSON that is not read as a whole: its envelope did not
-/// decode, names no JSON-RPC 2.0, or nests too deeply. JSON that is no message object is an
-/// invalid request (batches are not supported). An object's members are read
-/// for the id it names, without decoding their values: a request (it has a
-/// method, and an id member) is answered as invalid under that id, a
-/// notification (a string method and no id) is never answered, and a
-/// response fails the request it answers, or is only logged when its id
-/// cannot be read.
+/// decode, names no JSON-RPC 2.0, or nests too deeply. JSON that is no
+/// message object is an invalid request (batches are not supported). An
+/// object's members are read for the id it names, without decoding their
+/// values: a request (it has a method, and an id member) is answered as
+/// invalid under that id, a notification (a string method and no id) is
+/// never answered, and a response fails the request it answers, or is only
+/// logged when its id cannot be read.
 IncomingMessage read_malformed(std::string_view payload, std::string reason) {
     PrefixReader reader{payload};
     if(!reader.take('{')) {
@@ -534,7 +526,7 @@ Result<std::string> JsonCodec::encode_request(const protocol::RequestID& id,
     return serialize_value(outgoing_request_message{
         .id = id,
         .method = std::string(method),
-        .params = params_member(params),
+        .params = {codec::RawValue{std::string(params)}},
     });
 }
 
@@ -542,7 +534,7 @@ Result<std::string> JsonCodec::encode_notification(std::string_view method,
                                                    std::string_view params) {
     return serialize_value(outgoing_notification_message{
         .method = std::string(method),
-        .params = params_member(params),
+        .params = {codec::RawValue{std::string(params)}},
     });
 }
 
