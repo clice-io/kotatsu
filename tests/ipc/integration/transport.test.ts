@@ -16,8 +16,8 @@ import { test } from "node:test";
 
 import { Driver } from "../../harness/driver.ts";
 
-// A stdin the loop cannot wait on to read fails open_stdio: a regular file,
-// and on Linux and Windows the null device, which macOS reads to its end.
+// open_stdio takes a pipe, a console or a socket as stdin: a file or a
+// device fails it, whether or not the loop could wait on it.
 function expectOpenStdioFailed(driver: Driver): Promise<void> {
   driver.expectLog(/^\[error\] open_stdio: /);
   return driver.expectExit(1);
@@ -35,29 +35,28 @@ test("open_stdio_over_a_file_fails", async (t) => {
   await expectOpenStdioFailed(driver);
 });
 
-const nullDeviceFails =
-  process.platform === "darwin" ? "macOS reads the null device" : false;
-const nullDeviceReads =
-  process.platform === "darwin" ? false : "only macOS reads the null device";
+test("open_stdio_over_the_null_device_fails", async (t) => {
+  const driver = await Driver.spawn(t, "jsonrpc_driver", [], {
+    stdin: "ignore",
+  });
+  await expectOpenStdioFailed(driver);
+});
 
+// stdout is only written to: the null device, which node opens for reading
+// and writing, takes it.
 test(
-  "open_stdio_over_the_null_device_fails",
-  { skip: nullDeviceFails },
-  async (t) => {
-    const driver = await Driver.spawn(t, "jsonrpc_driver", [], {
-      stdin: "ignore",
-    });
-    await expectOpenStdioFailed(driver);
+  "open_stdio_with_stdout_on_the_null_device_runs",
+  {
+    skip:
+      process.platform === "win32"
+        ? "Windows opens a pipe's handle only"
+        : false,
   },
-);
-
-test(
-  "open_stdio_over_the_null_device_reads_its_end",
-  { skip: nullDeviceReads },
   async (t) => {
     const driver = await Driver.spawn(t, "jsonrpc_driver", [], {
-      stdin: "ignore",
+      stdout: "ignore",
     });
+    driver.stdin.end();
     await driver.expectExit(0);
   },
 );

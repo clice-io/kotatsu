@@ -615,20 +615,43 @@ ZEST_CASE(open_of_a_bad_descriptor_fails) {
 
 // The loop cannot wait on a regular file to read it: on Linux epoll refuses
 // one, and libuv would abort at the first read; on macOS kqueue stops
-// reporting one at its end; Windows takes no handle but a pipe's.
-ZEST_CASE(open_of_a_file_to_read_fails) {
+// reporting one at its end. Windows opens no handle but a pipe's.
+ZEST_CASE(read_of_a_file_fails) {
     test::TempDir dir;
     test::write_file(dir.file("file.txt"), "text");
     auto file = fs::sync::open(dir.file("file.txt"), O_RDONLY, 0);
     ASSERT(file.has_value());
 
     auto opened = pipe::open(*file, loop);
+#ifdef _WIN32
     ASSERT(opened.has_error());
     EXPECT(opened.error() == error::socket_operation_on_non_socket);
     EXPECT(!fs::sync::close(*file));
+#else
+    ASSERT(opened.has_value());
+    auto [read] = run(opened->read());
+    ASSERT(read.has_error());
+    EXPECT(read.error() == error::socket_operation_on_non_socket);
+#endif
 }
 
 #ifndef _WIN32
+// The null device as a child's ignored stdout is open for reading and
+// writing: writes to it go out, whether or not the loop could wait to read.
+ZEST_CASE(null_device_open_to_read_and_write_takes_writes) {
+    auto file = fs::sync::open("/dev/null", O_RDWR, 0);
+    ASSERT(file.has_value());
+    auto opened = pipe::open(*file, loop);
+    ASSERT(opened.has_value());
+    auto writer = [&]() -> task<void, error> {
+        std::string_view text = "text";
+        co_await opened->write(std::span(text.data(), text.size())).or_fail();
+    };
+
+    auto [written] = run(writer());
+    EXPECT(written.has_value());
+}
+
 // Writes to a regular file never wait, so the loop never watches one open
 // only for writing.
 ZEST_CASE(open_of_a_file_to_write_writes_to_it) {

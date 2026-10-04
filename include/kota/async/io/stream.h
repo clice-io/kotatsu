@@ -189,10 +189,11 @@ public:
     // default member initializers cannot be a default argument within its
     // enclosing class.
 
-    /// Wrap an existing file descriptor. One the loop cannot wait on to read
-    /// fails with error::socket_operation_on_non_socket: a regular file, on
-    /// Windows any handle but a pipe's, and on Linux a device such as
-    /// /dev/null too. On Unix one open only for writing is taken as it is.
+    /// Wrap an existing file descriptor. Reading one the loop cannot wait on
+    /// fails with error::socket_operation_on_non_socket, a regular file and
+    /// on Linux a device such as /dev/null too, while writing to it works.
+    /// Windows opens a pipe's handle only: another fails with
+    /// error::socket_operation_on_non_socket.
     static result<pipe> open(int fd, event_loop& loop = event_loop::current());
 
     static result<pipe> open(int fd, options opts, event_loop& loop = event_loop::current());

@@ -45,15 +45,15 @@ function driverPath(name: string): string {
 type Exit = { code: number | null; signal: NodeJS.Signals | null };
 
 /**
- * The driver's stdin: a pipe the test writes to, the null device ("ignore"),
- * or a descriptor of the test's, such as a file it opened.
+ * The driver's stdin or stdout: a pipe the test uses, the null device
+ * ("ignore"), or a descriptor of the test's, such as a file it opened.
  */
-type Stdin = "pipe" | "ignore" | number;
+type Stdio = "pipe" | "ignore" | number;
 
 export class Driver {
   readonly name: string;
   readonly #child: ChildProcess;
-  readonly #stdout: Readable;
+  readonly #stdout: Readable | null;
   readonly #exited: Promise<Exit>;
   readonly #stderrEnded: Promise<unknown>;
   readonly #allowances: Allowance[] = [];
@@ -61,7 +61,7 @@ export class Driver {
   #checked = false;
 
   private constructor(name: string, child: ChildProcess) {
-    assert.ok(child.stdout !== null && child.stderr !== null);
+    assert.ok(child.stderr !== null);
     this.name = name;
     this.#child = child;
     this.#stdout = child.stdout;
@@ -77,19 +77,19 @@ export class Driver {
   }
 
   /**
-   * Spawns the driver `name` with `args`, its stdin `stdin`. If the test ends
-   * before it checked the driver's exit, because it failed, the driver is
-   * killed and how it ended printed.
+   * Spawns the driver `name` with `args`, its stdin `stdin` and its stdout
+   * `stdout`. If the test ends before it checked the driver's exit, because
+   * it failed, the driver is killed and how it ended printed.
    */
   static async spawn(
     t: TestContext,
     name: string,
     args: string[] = [],
-    { stdin = "pipe" }: { stdin?: Stdin } = {},
+    { stdin = "pipe", stdout = "pipe" }: { stdin?: Stdio; stdout?: Stdio } = {},
   ): Promise<Driver> {
     const driver = new Driver(
       name,
-      spawn(driverPath(name), args, { stdio: [stdin, "pipe", "pipe"] }),
+      spawn(driverPath(name), args, { stdio: [stdin, stdout, "pipe"] }),
     );
     t.after(() => driver.#abandon());
     await once(driver.#child, "spawn");
@@ -104,11 +104,12 @@ export class Driver {
 
   /** The driver's output, for a channel in its protocol. */
   get stdout(): Readable {
+    assert.ok(this.#stdout !== null, "the driver's stdout is no pipe");
     return this.#stdout;
   }
 
   jsonLines(): JsonLines {
-    return new JsonLines(this.#stdout, this.stdin);
+    return new JsonLines(this.stdout, this.stdin);
   }
 
   /**
@@ -156,9 +157,10 @@ export class Driver {
 
   /** Everything the driver writes to stdout, once it closes it. */
   async output(): Promise<string> {
-    this.#stdout.setEncoding("utf8");
+    const stdout = this.stdout;
+    stdout.setEncoding("utf8");
     let text = "";
-    for await (const chunk of this.#stdout) {
+    for await (const chunk of stdout) {
       text += chunk;
     }
     return text;

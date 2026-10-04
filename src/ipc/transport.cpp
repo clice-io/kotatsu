@@ -31,8 +31,13 @@ Result<stream> open_stdio_stream(int fd, bool readable, event_loop& loop) {
     switch(guess_handle(fd)) {
         case handle_type::tty:
             return as_stream(console::open(fd, console::options{readable}, loop));
-        case handle_type::pipe:
         case handle_type::file:
+            // The loop cannot wait to read a file, nor every device.
+            if(readable) {
+                return outcome_error(Error("stdin is a file or a device, not a stream"));
+            }
+            [[fallthrough]];
+        case handle_type::pipe:
         case handle_type::unknown: return as_stream(pipe::open(fd, pipe::options{}, loop));
         case handle_type::tcp: return as_stream(tcp::open(fd, loop));
         default: return outcome_error(Error("unsupported stdio handle type"));
