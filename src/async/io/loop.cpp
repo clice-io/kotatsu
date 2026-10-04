@@ -31,8 +31,9 @@ struct event_loop::Self : relay::Self {
     uv_idle_t idle = {};
     uv_check_t check = {};
     std::deque<task_frame*> tasks;
-    /// The waits sync primitives granted, whose tasks resume in this order.
-    std::deque<wait_node*> deferred;
+    /// The waits sync primitives granted, whose tasks resume in this order,
+    /// and the io ops complete_deferred() queued among them.
+    std::deque<async_node*> deferred;
     /// Ops to complete on a later iteration: yields, and waits that stop()
     /// or a destructor aborted. New ops land in `staged`; each() promotes
     /// the staged batch to `ready` and completes the batch promoted by the
@@ -191,9 +192,13 @@ void event_loop::Self::ensure_check() {
 
 void event_loop::Self::drain_deferred() {
     while(!deferred.empty()) {
-        auto* waiter = deferred.front();
+        auto* node = deferred.front();
         deferred.pop_front();
-        waiter->resume();
+        if(node->kind == async_node::NodeKind::Waiter) {
+            static_cast<wait_node*>(node)->resume();
+        } else {
+            static_cast<io_op*>(node)->complete();
+        }
     }
     ::uv_check_stop(&check);
 }
@@ -209,6 +214,11 @@ void event_loop::schedule(task_frame& root) {
 
 void event_loop::defer_resume(wait_node& waiter) {
     self->deferred.push_back(&waiter);
+    self->ensure_check();
+}
+
+void event_loop::defer_complete(io_op& op) {
+    self->deferred.push_back(&op);
     self->ensure_check();
 }
 

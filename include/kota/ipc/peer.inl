@@ -4,14 +4,19 @@
 #include "kota/ipc/peer.h"
 #endif
 
+#include <algorithm>
 #include <cassert>
+#include <chrono>
+#include <coroutine>
 #include <cstdint>
 #include <deque>
 #include <format>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <ranges>
+#include <source_location>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -21,6 +26,29 @@
 #include <vector>
 
 #include "kota/support/function_traits.h"
+
+namespace kota::ipc::detail {
+
+/// A request id as Peer's log writes it: a number as it is, a string quoted.
+struct LoggedId {
+    const protocol::RequestID& id;
+};
+
+}  // namespace kota::ipc::detail
+
+template <>
+struct std::formatter<kota::ipc::detail::LoggedId> {
+    constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    auto format(const kota::ipc::detail::LoggedId& logged, std::format_context& ctx) const {
+        if(const auto* text = std::get_if<std::string>(&logged.id)) {
+            return std::format_to(ctx.out(), "\"{}\"", *text);
+        }
+        return std::format_to(ctx.out(), "{}", std::get<std::int64_t>(logged.id));
+    }
+};
 
 namespace kota::ipc {
 
@@ -35,6 +63,10 @@ constexpr bool has_request_traits_v = requires {
 template <typename Params>
 constexpr bool has_notification_traits_v =
     requires { protocol::NotificationTraits<Params>::method; };
+
+/// Traits of a method that takes no params, keyed by an empty structure.
+template <typename Traits>
+constexpr bool takes_no_params_v = requires { requires !Traits::takes_params; };
 
 template <typename Callback>
 using callback_args_t = callable_args_t<std::remove_cvref_t<Callback>>;
@@ -72,16 +104,70 @@ struct Peer<CodecT>::Self {
         task<std::string, Error>(const protocol::RequestID&, std::string_view, cancellation_token)>;
     using NotificationCallback = std::function<void(std::string_view)>;
 
-    struct PendingRequest {
-        event ready;
-        std::optional<Result<std::string>> response;
-    };
+    using Clock = std::chrono::steady_clock;
 
-    /// How the wait for an answer ended.
-    enum class Ending : std::uint8_t {
-        Answered,
-        Cancelled,
-        TimedOut,
+    struct PendingRequest;
+
+    /// When each request with a timeout times out.
+    using Deadlines = std::multimap<Clock::time_point, PendingRequest*>;
+
+    /// A request sent and not settled yet, which its sender awaits. A cancel
+    /// of the sender tells the remote and goes on waiting: the answer, a
+    /// failure of the connection or the deadline settles it.
+    struct PendingRequest : io_op {
+        Self& peer;
+        protocol::RequestID id;
+        /// What settled it. Once set, nothing touches the Peer again, which
+        /// may be gone by then.
+        std::optional<Result<std::string>> response;
+        /// Its entry in `deadlines`, while it has one.
+        std::optional<typename Deadlines::iterator> deadline;
+        /// The remote was told that the request is no longer awaited.
+        bool cancel_sent = false;
+
+        PendingRequest(Self& peer, protocol::RequestID id) : peer(peer), id(std::move(id)) {
+            action = [](io_op* op) {
+                static_cast<PendingRequest*>(op)->cancel_remote();
+            };
+        }
+
+        PendingRequest(const PendingRequest&) = delete;
+        PendingRequest& operator=(const PendingRequest&) = delete;
+
+        /// One its sender left unsettled, as an exception unwound it before
+        /// it waited, takes itself off the Peer.
+        ~PendingRequest() {
+            if(!response) {
+                peer.forget(*this);
+            }
+        }
+
+        bool await_ready() const noexcept {
+            return false;
+        }
+
+        template <typename Promise>
+        std::coroutine_handle<> await_suspend(
+            std::coroutine_handle<Promise> waiting,
+            std::source_location location = std::source_location::current()) noexcept {
+            return attach(waiting.promise(), location);
+        }
+
+        void await_resume() const noexcept {}
+
+        /// Tells the remote, once, that the request is no longer awaited, and
+        /// goes on waiting for its answer; when the remote cannot be told,
+        /// it gives up at once instead.
+        void cancel_remote() {
+            if(response || cancel_sent) {
+                return;
+            }
+            cancel_sent = true;
+            if(!peer.send_cancel_request(id)) {
+                peer.settle(*this, outcome_error(Error(protocol::ErrorCode::RequestCancelled,
+                                                       "request cancelled")));
+            }
+        }
     };
 
     event_loop& loop;
@@ -94,7 +180,10 @@ struct Peer<CodecT>::Self {
     std::unordered_map<std::string, RequestCallback> request_callbacks;
     std::unordered_map<std::string, NotificationCallback> notification_callbacks;
 
-    std::unordered_map<protocol::RequestID, std::shared_ptr<PendingRequest>> pending_requests;
+    std::unordered_map<protocol::RequestID, PendingRequest*> pending_requests;
+    Deadlines deadlines;
+    /// A deadline earlier than the others was filed, or the input ended.
+    event deadline_changed;
     std::unordered_map<protocol::RequestID, std::shared_ptr<cancellation_source>> incoming_requests;
 
     /// Answers can still arrive: the read loop has not ended. Once it has,
@@ -112,6 +201,8 @@ struct Peer<CodecT>::Self {
     bool answers_done = false;
     /// run() was called; it is called once.
     bool started = false;
+    /// run() is running: the Peer must not go.
+    bool running = false;
     event write_event;
 
     LogCallback logger;
@@ -129,17 +220,28 @@ struct Peer<CodecT>::Self {
         }
     }
 
+    /// What `params` is sent as: nothing at all, for the params of a method
+    /// that takes none.
+    template <template <typename> class Traits, typename Params>
+    Result<std::string> encode_params(const Params& params) {
+        if constexpr(detail::takes_no_params_v<Traits<Params>>) {
+            return std::string();
+        } else {
+            return codec.serialize_value(params);
+        }
+    }
+
     /// Why a message cannot be sent now, if it cannot; a request also needs
     /// the input open for its answer.
     std::optional<Error> unsendable(bool expects_answer) const {
         if(closed) {
-            return Error("peer closed");
+            return Error(protocol::ErrorCode::ConnectionClosed, "peer closed");
         }
         if(!output_open || closing_output) {
-            return Error("peer output closed");
+            return Error(protocol::ErrorCode::ConnectionClosed, "peer output closed");
         }
         if(expects_answer && !input_open) {
-            return Error("peer input closed");
+            return Error(protocol::ErrorCode::ConnectionClosed, "peer input closed");
         }
         return std::nullopt;
     }
@@ -227,7 +329,7 @@ struct Peer<CodecT>::Self {
         output_open = false;
         closing_output = false;
         outgoing_queue.clear();
-        fail_pending_requests(Error(message));
+        fail_pending_requests(Error(protocol::ErrorCode::ConnectionClosed, message));
         closed = true;
         // Their answers could not be written.
         cancel_handlers();
@@ -252,6 +354,31 @@ struct Peer<CodecT>::Self {
     void end_input(const Error& why) {
         input_open = false;
         fail_pending_requests(why);
+        deadline_changed.set();
+    }
+
+    /// Runs the read, write and deadline loops until all three have ended.
+    task<> serve() {
+        task_group<> handlers;
+
+        // Pending requests fail as soon as the input ends, before the
+        // handlers still running finish and before run() returns. A
+        // connection that went away and a frame that cannot be read both
+        // fail them with ConnectionClosed.
+        auto reading = [&]() -> task<> {
+            auto ended = co_await read_loop(handlers).catch_cancel();
+            const bool malformed = ended.has_value() && ended->kind == ReadError::Kind::Malformed;
+            end_input(Error(protocol::ErrorCode::ConnectionClosed,
+                            malformed ? ended->message : "transport closed"));
+            if(ended.is_cancelled()) {
+                handlers.cancel();
+            }
+            co_await handlers.join();
+            answers_done = true;
+            write_event.set();
+        };
+
+        co_await when_all(reading(), write_loop(), deadline_loop());
     }
 
     /// Reads and dispatches until the input ends, and returns why it ended:
@@ -305,27 +432,72 @@ struct Peer<CodecT>::Self {
         log(LogLevel::error, "error response: {}", error.message);
         auto response = codec.encode_error_response(id, error);
         if(response) {
-            enqueue_outgoing(std::move(*response));
+            send_answer(id, std::move(*response));
         }
     }
 
-    /// Tells the remote that the request `id` is no longer awaited. It is a
-    /// courtesy: one the codec cannot encode is logged and not sent.
-    void send_cancel_request(const protocol::RequestID& id) {
-        auto params = codec.serialize_value(protocol::CancelRequestParams{id});
-        if(!params) {
-            log(LogLevel::error, "$/cancelRequest for id={} not sent: {}", id, params.error().message);
+    /// Whether the remote reads `payload`.
+    bool fits(std::string_view payload) const {
+        return payload.size() <= transport->remote_max_payload();
+    }
+
+    /// The error of `what`, a message of `size` bytes over the remote's limit.
+    Error too_large(std::string_view what, std::size_t size) const {
+        return Error(protocol::ErrorCode::MessageTooLarge,
+                     std::format("a {} of {} bytes exceeds the limit of {} bytes",
+                                 what,
+                                 size,
+                                 transport->remote_max_payload()));
+    }
+
+    /// Queues `response`, which answers `id`. One over the remote's limit is
+    /// replaced by a MessageTooLarge error, itself dropped when even that is
+    /// over the limit.
+    void send_answer(const std::optional<protocol::RequestID>& id, std::string response) {
+        if(fits(response)) {
+            enqueue_outgoing(std::move(response));
             return;
         }
-        auto notification = codec.encode_notification("$/cancelRequest", *params);
+        auto error = too_large("response", response.size());
+        log(LogLevel::warn, "answered instead: {}", error.message);
+        auto replacement = codec.encode_error_response(id, error);
+        if(replacement && fits(*replacement)) {
+            enqueue_outgoing(std::move(*replacement));
+        } else {
+            log(LogLevel::error, "dropped an answer: the limit leaves no room for its error");
+        }
+    }
+
+    /// Sends the notification `method` with `params`, encoded; one the remote
+    /// would not read fails unsent.
+    Result<void> send_notification(std::string_view method, std::string_view params) {
+        if(auto unsendable = this->unsendable(false)) {
+            return outcome_error(std::move(*unsendable));
+        }
+        auto notification = codec.encode_notification(method, params);
         if(!notification) {
-            log(LogLevel::error,
-                "$/cancelRequest for id={} not sent: {}",
-                id,
-                notification.error().message);
-            return;
+            return outcome_error(notification.error());
+        }
+        if(!fits(*notification)) {
+            return outcome_error(too_large("notification", notification->size()));
         }
         enqueue_outgoing(std::move(*notification));
+        return {};
+    }
+
+    /// Tells the remote that the request `id` is no longer awaited; false,
+    /// and logged, when that cannot be sent.
+    bool send_cancel_request(const protocol::RequestID& id) {
+        auto params = codec.serialize_value(protocol::CancelRequestParams{id});
+        auto sent = params ? send_notification("$/cancelRequest", *params)
+                           : outcome_error(params.error());
+        if(!sent) {
+            log(LogLevel::error,
+                "$/cancelRequest for id={} not sent: {}",
+                detail::LoggedId{id},
+                sent.error().message);
+        }
+        return sent.has_value();
     }
 
     /// Waits for `signal`: a task, whose cancellation its awaiter can catch.
@@ -333,40 +505,78 @@ struct Peer<CodecT>::Self {
         co_await signal.wait();
     }
 
-    static task<Ending> answered(std::shared_ptr<PendingRequest> pending) {
-        co_await pending->ready.wait();
-        co_return Ending::Answered;
+    /// Takes `pending` off the requests awaiting an answer, and its deadline
+    /// with it.
+    void forget(PendingRequest& pending) {
+        pending_requests.erase(pending.id);
+        if(pending.deadline) {
+            deadlines.erase(*pending.deadline);
+        }
     }
 
-    static task<Ending> cancelled(cancellation_token token) {
-        co_await token.wait().catch_cancel();
-        co_return Ending::Cancelled;
+    /// Settles `pending` with `response`, and has its sender resume once
+    /// whatever runs has suspended: never inside the read loop.
+    void settle(PendingRequest& pending, Result<std::string> response) {
+        forget(pending);
+        pending.response = std::move(response);
+        pending.complete_deferred(loop);
     }
 
-    static task<Ending> expired(std::chrono::milliseconds timeout, event_loop& loop) {
-        co_await sleep(timeout, loop);
-        co_return Ending::TimedOut;
+    /// Files when `pending` times out, waking the deadline loop when that is
+    /// before every other deadline.
+    void file_deadline(PendingRequest& pending, std::chrono::milliseconds timeout) {
+        // A timeout past what the clock counts never passes.
+        const auto now = Clock::now();
+        const auto room =
+            std::chrono::floor<std::chrono::milliseconds>(Clock::time_point::max() - now);
+        const auto at = timeout < room ? now + timeout : Clock::time_point::max();
+        auto filed = deadlines.emplace(at, &pending);
+        pending.deadline = filed;
+        if(filed == deadlines.begin()) {
+            deadline_changed.set();
+        }
     }
 
-    /// The ending that comes first; the others are cancelled with the wait.
-    static task<Ending> first_of(std::vector<task<Ending>> waits) {
-        auto first = co_await when_any(std::move(waits));
-        co_return first.second;
+    /// Ends the requests whose timeout has passed, telling the remote.
+    void expire_due() {
+        const auto now = Clock::now();
+        while(!deadlines.empty() && deadlines.begin()->first <= now) {
+            auto& pending = *deadlines.begin()->second;
+            if(!pending.cancel_sent) {
+                pending.cancel_sent = true;
+                send_cancel_request(pending.id);
+            }
+            settle(pending,
+                   outcome_error(
+                       Error(protocol::ErrorCode::RequestCancelled, "request timed out")));
+        }
+    }
+
+    /// Ends each request whose timeout has passed, until the input ends: no
+    /// request is left to time out then.
+    task<> deadline_loop() {
+        while(input_open) {
+            expire_due();
+            deadline_changed.reset();
+            if(deadlines.empty()) {
+                co_await deadline_changed.wait();
+                continue;
+            }
+            auto left = std::chrono::ceil<std::chrono::milliseconds>(deadlines.begin()->first -
+                                                                     Clock::now());
+            co_await when_any(sleep(std::max(left, std::chrono::milliseconds::zero()), loop),
+                              wait_for(deadline_changed));
+        }
     }
 
     void complete_pending_request(const protocol::RequestID& id, Result<std::string>&& response) {
         auto it = pending_requests.find(id);
         if(it == pending_requests.end()) {
-            log(LogLevel::warn, "orphan response for id={}", id);
+            log(LogLevel::warn, "orphan response for id={}", detail::LoggedId{id});
             return;
         }
-
-        log(LogLevel::debug, "response received for id={}", id);
-
-        auto pending = std::move(it->second);
-        pending_requests.erase(it);
-        pending->response = std::move(response);
-        pending->ready.set();
+        log(LogLevel::debug, "response received for id={}", detail::LoggedId{id});
+        settle(*it->second, std::move(response));
     }
 
     void fail_pending_requests(const Error& error) {
@@ -379,13 +589,11 @@ struct Peer<CodecT>::Self {
             pending_requests.size(),
             error.message);
 
+        // settle() takes each off the map.
         auto values = pending_requests | std::views::values;
-        std::vector<std::shared_ptr<PendingRequest>> pending(values.begin(), values.end());
-        pending_requests.clear();
-
-        for(auto& state: pending) {
-            state->response = outcome_error(error);
-            state->ready.set();
+        std::vector<PendingRequest*> pending(values.begin(), values.end());
+        for(auto* request: pending) {
+            settle(*request, outcome_error(error));
         }
     }
 
@@ -422,7 +630,7 @@ struct Peer<CodecT>::Self {
                           const protocol::RequestID& id,
                           std::string_view params,
                           task_group<>& handlers) {
-        log(LogLevel::debug, "request: {} id={}", method, id);
+        log(LogLevel::debug, "request: {} id={}", method, detail::LoggedId{id});
 
         if(incoming_requests.contains(id)) {
             send_error(id, Error(protocol::ErrorCode::InvalidRequest, "duplicate request id"));
@@ -481,7 +689,7 @@ struct Peer<CodecT>::Self {
             co_return;
         }
 
-        enqueue_outgoing(std::move(*response));
+        send_answer(id, std::move(*response));
     }
 
     void dispatch_incoming_message(std::string_view payload, task_group<>& handlers) {
@@ -523,32 +731,30 @@ Peer<CodecT>::Peer(event_loop& loop, std::unique_ptr<Transport> transport, Codec
 }
 
 template <typename CodecT>
-Peer<CodecT>::~Peer() = default;
+Peer<CodecT>::~Peer() {
+    assert(!self->running && "a Peer destroyed while its run() runs");
+    // A request sent before run(), and not answered, ends with the Peer.
+    self->fail_pending_requests(Error(protocol::ErrorCode::ConnectionClosed, "peer destroyed"));
+}
 
 template <typename CodecT>
 task<> Peer<CodecT>::run() {
     assert(!self->started && "Peer::run() is called once");
     self->started = true;
-
-    task_group<> handlers;
-
-    // Pending requests fail as soon as the input ends, before the handlers
-    // still running finish and before run() returns. A connection that went
-    // away and a frame that cannot be read both fail them with
-    // RequestFailed.
-    auto read_loop = [&]() -> task<> {
-        auto ended = co_await self->read_loop(handlers).catch_cancel();
-        const bool malformed = ended.has_value() && ended->kind == ReadError::Kind::Malformed;
-        self->end_input(Error(malformed ? ended->message : "transport closed"));
-        if(ended.is_cancelled()) {
-            handlers.cancel();
-        }
-        co_await handlers.join();
-        self->answers_done = true;
-        self->write_event.set();
-    };
-
-    co_await when_all(read_loop(), self->write_loop());
+    self->running = true;
+    // However serve() ends, run() is done with the Peer once it has.
+    outcome<void, void, cancellation> served;
+    KOTA_TRY {
+        served = co_await self->serve().catch_cancel();
+    }
+    KOTA_CATCH_ALL() {
+        self->running = false;
+        KOTA_RETHROW();
+    }
+    self->running = false;
+    if(served.is_cancelled()) {
+        co_await cancel();
+    }
 }
 
 template <typename CodecT>
@@ -562,9 +768,10 @@ Result<void> Peer<CodecT>::close() {
     self->output_open = false;
     self->closing_output = false;
     self->log(LogLevel::info, "peer closing");
+    // The requests first: a handler cancelled below finds its own requests
+    // settled, with nothing left to tell the remote.
+    self->fail_pending_requests(Error(protocol::ErrorCode::ConnectionClosed, "peer closed"));
     self->cancel_handlers();
-
-    self->fail_pending_requests(Error("peer closed"));
     self->outgoing_queue.clear();
     self->write_event.set();
 
@@ -590,15 +797,13 @@ template <typename CodecT>
 task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method,
                                                          std::string params,
                                                          request_options opts) {
-    using Ending = typename Self::Ending;
-
     if(opts.timeout && *opts.timeout <= std::chrono::milliseconds::zero()) {
         co_await fail(protocol::ErrorCode::RequestCancelled, "request timed out");
     }
     if(auto unsendable = self->unsendable(true)) {
         co_await fail(std::move(*unsendable));
     }
-    if(opts.token && opts.token->cancelled()) {
+    if(opts.token.cancelled()) {
         co_await fail(protocol::ErrorCode::RequestCancelled, "request cancelled");
     }
 
@@ -607,50 +812,23 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
     if(!encoded) {
         co_await fail(encoded.error());
     }
+    if(!self->fits(*encoded)) {
+        co_await fail(self->too_large("request", encoded->size()));
+    }
 
-    auto pending = std::make_shared<typename Self::PendingRequest>();
-    self->pending_requests.emplace(id, pending);
+    typename Self::PendingRequest pending(*self, id);
+    self->pending_requests.emplace(id, &pending);
+    if(opts.timeout) {
+        self->file_deadline(pending, *opts.timeout);
+    }
     self->enqueue_outgoing(std::move(*encoded));
 
-    // The answer, the caller's cancellation or the deadline, whichever comes
-    // first.
-    std::vector<task<Ending>> waits;
-    waits.push_back(Self::answered(pending));
-    if(opts.token) {
-        waits.push_back(Self::cancelled(*opts.token));
-    }
-    if(opts.timeout) {
-        waits.push_back(Self::expired(*opts.timeout, self->loop));
-    }
-    auto ending = co_await Self::first_of(std::move(waits)).catch_cancel();
-
-    // An answer that came in the same turn as the cancellation still counts.
-    if(!pending->response) {
-        self->pending_requests.erase(id);
-        self->send_cancel_request(id);
-        if(ending.has_value()) {
-            co_await fail(protocol::ErrorCode::RequestCancelled,
-                          *ending == Ending::TimedOut ? "request timed out" : "request cancelled");
-        }
-        // Whoever awaited the request was cancelled, rather than the request.
-        co_await cancel();
-    }
-    co_return co_await or_fail(std::move(*pending->response));
-}
-
-template <typename CodecT>
-Result<void> Peer<CodecT>::send_notification_impl(std::string_view method, std::string params) {
-    if(auto unsendable = self->unsendable(false)) {
-        return outcome_error(std::move(*unsendable));
-    }
-
-    auto notification_encoded = self->codec.encode_notification(method, params);
-    if(!notification_encoded) {
-        return outcome_error(notification_encoded.error());
-    }
-
-    self->enqueue_outgoing(std::move(*notification_encoded));
-    return {};
+    // The token's cancel tells the remote; its answer still counts.
+    auto told = opts.token.on_cancel([&pending] { pending.cancel_remote(); });
+    // A cancel of this task does the same, and ends it once the request is
+    // settled.
+    co_await pending;
+    co_return co_await or_fail(std::move(*pending.response));
 }
 
 // The typed members: they encode params and decode results for the ones above.
@@ -669,7 +847,8 @@ template <typename ResultT, typename Params>
 task<ResultT, Error> Peer<CodecT>::send_request(std::string_view method,
                                                 const Params& params,
                                                 request_options opts) {
-    auto serialized_params = co_await or_fail(self->codec.serialize_value(params));
+    auto serialized_params =
+        co_await or_fail(self->template encode_params<protocol::RequestTraits>(params));
     auto raw_result =
         co_await send_request_impl(method, std::move(serialized_params), std::move(opts)).or_fail();
     co_return co_await or_fail(self->template read_result<ResultT>(std::move(raw_result)));
@@ -686,11 +865,11 @@ Result<void> Peer<CodecT>::send_notification(const Params& params) {
 template <typename CodecT>
 template <typename Params>
 Result<void> Peer<CodecT>::send_notification(std::string_view method, const Params& params) {
-    auto serialized_params = self->codec.serialize_value(params);
+    auto serialized_params = self->template encode_params<protocol::NotificationTraits>(params);
     if(!serialized_params) {
         return outcome_error(serialized_params.error());
     }
-    return send_notification_impl(method, std::move(*serialized_params));
+    return self->send_notification(method, *serialized_params);
 }
 
 template <typename CodecT>

@@ -1,11 +1,10 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
-#include <format>
-#include <functional>
 #include <optional>
 #include <string>
-#include <type_traits>
+#include <string_view>
 #include <utility>
 #include <variant>
 
@@ -16,9 +15,14 @@
 
 namespace kota::ipc::protocol {
 
+/// What a request with params `Params` is: its `method` name and its
+/// `Result` type. A method that takes no params, keyed by an empty structure,
+/// says `takes_params = false`, and is sent without params.
 template <typename Params>
 struct RequestTraits;
 
+/// What a notification with params `Params` is: its `method` name, and
+/// `takes_params = false` as for a request.
 template <typename Params>
 struct NotificationTraits;
 
@@ -37,10 +41,17 @@ enum class ErrorCode : integer {
     MethodNotFound = -32601,
     InvalidParams = -32602,
     InternalError = -32603,
+    /// What an error made without a code carries, such as a handler's
+    /// Error("..."). Not LSP's RequestFailed, which is -32803.
     RequestFailed = -32000,
     /// A message larger than the transport reads: the request it was, or
     /// that it answered, fails with this.
     MessageTooLarge = -32010,
+    /// The connection to the remote is closed or broken: a request that
+    /// cannot be sent, or whose answer can no longer come, fails with this.
+    /// Peer makes it locally, and sends it only as the error a handler failed
+    /// with.
+    ConnectionClosed = -32011,
     RequestCancelled = -32800,
 };
 
@@ -68,52 +79,25 @@ struct CancelRequestParams {
 
 }  // namespace kota::ipc::protocol
 
-namespace std {
-
-template <>
-struct hash<kota::ipc::protocol::RequestID> {
-    std::size_t operator()(const kota::ipc::protocol::RequestID& id) const noexcept {
-        return std::visit(
-            [](const auto& v) -> std::size_t {
-                return std::hash<std::remove_cvref_t<decltype(v)>>{}(v);
-            },
-            id);
-    }
-};
-
-template <>
-struct formatter<kota::ipc::protocol::RequestID> {
-    constexpr auto parse(format_parse_context& ctx) {
-        return ctx.begin();
-    }
-
-    auto format(const kota::ipc::protocol::RequestID& id, format_context& ctx) const {
-        return std::visit(
-            [&](const auto& v) {
-                if constexpr(std::is_same_v<std::remove_cvref_t<decltype(v)>, std::string>) {
-                    return std::format_to(ctx.out(), "\"{}\"", v);
-                } else {
-                    return std::format_to(ctx.out(), "{}", v);
-                }
-            },
-            id);
-    }
-};
-
-}  // namespace std
-
 namespace kota::codec {
 
 template <typename Vis, typename Config>
 struct serialize_visit<Vis, kota::ipc::protocol::Error, Config> {
     static bool visit(Vis& vis, const kota::ipc::protocol::Error& error) {
-        return vis.visit_struct(error, [&](auto& sv) -> bool {
+        return vis.visit_struct(error, [&]<typename StructVis>(StructVis& sv) -> bool {
             KOTA_CODEC_TRY(sv.visit_field(std::size_t(0), "code", [&](auto& fv) -> bool {
                 return encode_value<Config>(fv, error.code);
             }));
             KOTA_CODEC_TRY(sv.visit_field(std::size_t(1), "message", [&](auto& fv) -> bool {
                 return encode_value<Config>(fv, error.message);
             }));
+            // JSON-RPC lets an error without data leave the member out; a
+            // visitor that writes every field has nothing to mark it absent.
+            if constexpr(!writes_every_field<StructVis>) {
+                if(!error.data) {
+                    return true;
+                }
+            }
             return sv.visit_field(std::size_t(2), "data", [&](auto& fv) -> bool {
                 return encode_value<Config>(fv, error.data);
             });
@@ -124,17 +108,29 @@ struct serialize_visit<Vis, kota::ipc::protocol::Error, Config> {
 template <typename Vis, typename Config>
 struct deserialize_visit<Vis, kota::ipc::protocol::Error, Config> {
     static bool visit(Vis& vis, kota::ipc::protocol::Error& error) {
-        return vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
+        bool has_code = false;
+        bool has_message = false;
+        KOTA_CODEC_TRY(vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
             if(key == "code") {
+                has_code = true;
                 return decode_value<Config>(fv, error.code);
             } else if(key == "message") {
+                has_message = true;
                 return decode_value<Config>(fv, error.message);
             } else if(key == "data") {
                 return decode_value<Config>(fv, error.data);
             } else {
                 return true;
             }
-        });
+        }));
+        // JSON-RPC requires both: without them it is no error object.
+        if(!has_code) {
+            return scoped_context<rich_error>::fail(rich_error::missing_field("code"));
+        }
+        if(!has_message) {
+            return scoped_context<rich_error>::fail(rich_error::missing_field("message"));
+        }
+        return true;
     }
 };
 

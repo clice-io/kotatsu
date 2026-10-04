@@ -128,6 +128,11 @@ ZEST_CASE(unopenable_file_still_passes_messages_on) {
     EXPECT(!std::filesystem::exists(missing));
 }
 
+ZEST_CASE(remote_max_payload_is_the_inner_transports) {
+    remote.limit_payload(100);
+    EXPECT(transport.remote_max_payload() == 100U);
+}
+
 ZEST_CASE(write_failure_reaches_the_caller) {
     remote.fail_writes();
 

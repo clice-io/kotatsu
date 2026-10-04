@@ -17,11 +17,11 @@
 
 namespace kota::test {
 
-/// JsonCodec for the ipc kits. The remote's messages are JSON-RPC text
+/// JSONCodec for the ipc kits. The remote's messages are JSON-RPC text
 /// written by hand; what the codec writes is read through a dyn::Value, so a
 /// null id and a missing one stay apart.
-struct JsonAdapter {
-    using Codec = ipc::JsonCodec;
+struct JSONAdapter {
+    using Codec = ipc::JSONCodec;
     constexpr static std::string_view name = "json";
     constexpr static Caps caps{.string_ids = true};
     /// A request cut off before its closing brace.
@@ -32,7 +32,7 @@ struct JsonAdapter {
     template <typename T>
     static std::string encode(const T& value) {
         auto text = codec::json::to_string<ipc::lsp_config>(value);
-        ZEST_CONTEXT("JsonAdapter::encode");
+        ZEST_CONTEXT("JSONAdapter::encode");
         EXPECT(text.has_value());
         return text ? std::move(*text) : std::string();
     }

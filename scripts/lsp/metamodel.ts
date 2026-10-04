@@ -232,6 +232,8 @@ export interface Message {
   method: string;
   messageDirection: MessageDirection;
   params: Type;
+  /** False for a method that takes no params, keyed by an empty structure. */
+  takesParams: boolean;
   result?: Type;
 }
 
@@ -281,7 +283,7 @@ export class Schema {
       throw new SchemaError(`method \`${method}\` takes positional params`);
     }
     if (params !== undefined) {
-      return { method, messageDirection, params };
+      return { method, messageDirection, params, takesParams: true };
     }
     const name = paramsName(message);
     if (this.structures.has(name)) {
@@ -292,7 +294,12 @@ export class Schema {
       properties: [],
       documentation: `Params of \`${method}\`, which takes none.`,
     });
-    return { method, messageDirection, params: { kind: "reference", name } };
+    return {
+      method,
+      messageDirection,
+      params: { kind: "reference", name },
+      takesParams: false,
+    };
   }
 
   structure(name: string): Structure {

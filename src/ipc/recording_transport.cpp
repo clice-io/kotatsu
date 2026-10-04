@@ -41,6 +41,10 @@ Result<void> RecordingTransport::close() {
     return inner->close();
 }
 
+std::size_t RecordingTransport::remote_max_payload() const noexcept {
+    return inner->remote_max_payload();
+}
+
 void RecordingTransport::write_record(std::string_view payload) {
     if(!file) {
         return;

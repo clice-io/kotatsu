@@ -1,12 +1,12 @@
 #pragma once
 
-// The shared suite of the ipc codecs. JsonCodec and BincodeCodec implement one
+// The shared suite of the ipc codecs. JSONCodec and BincodeCodec implement one
 // duck-typed protocol (parse_message, encode_*, serialize_value,
 // deserialize_value), so its behaviour is written once, below, and each codec
 // runs it through an adapter (codec_json.h, codec_bincode.h):
 //
 //     ZEST_CASE_GROUP(protocol) {
-//         test::codec_protocol(test::CodecKit<test::JsonAdapter>{add_case});
+//         test::codec_protocol(test::CodecKit<test::JSONAdapter>{add_case});
 //     }
 //
 // The adapter writes and reads messages without the codec under test: json

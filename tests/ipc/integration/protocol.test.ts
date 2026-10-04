@@ -285,8 +285,13 @@ class Call implements Command {
         break;
       case "error": {
         const { code, message, data } = this.policy;
+        // An error without data leaves the member out, and so does one
+        // whose data is null, which reads as none.
         assert.deepEqual(outcome, {
-          error: { code, message, data: roundtrip(data ?? null) },
+          error:
+            data === undefined || data === null
+              ? { code, message }
+              : { code, message, data: roundtrip(data) },
         });
         break;
       }
@@ -336,8 +341,9 @@ function answer(calls: Map<number, Message>) {
 }
 
 // Messages no conforming client sends, each with the answer JSON-RPC asks
-// for: an error response with a null id, or none.
-type Junk = { payload: string; code?: number };
+// for: an error response, under the id a request named or a null one, or
+// none.
+type Junk = { payload: string; code?: number; id?: string };
 
 const junk: fc.Arbitrary<Junk> = fc.oneof(
   // Not JSON.
@@ -379,6 +385,17 @@ const junk: fc.Arbitrary<Junk> = fc.oneof(
       }),
       code: -32600,
     })),
+  // A request that names no JSON-RPC 2.0, answered under its id.
+  fc.constantFrom({}, { jsonrpc: "1.0" }, { jsonrpc: 2 }).map((envelope) => ({
+    payload: JSON.stringify({
+      ...envelope,
+      id: "junk",
+      method: "test/echo",
+      params: [],
+    }),
+    code: -32600,
+    id: "junk",
+  })),
   // An error response without id, which must not be answered.
   fc
     .constantFrom({ jsonrpc: "2.0", id: null }, { jsonrpc: "2.0" })
@@ -397,7 +414,7 @@ class Garbage implements Command {
   }
   check = () => true;
   async run(_: Model, real: Real) {
-    const { code } = this.junk;
+    const { code, id = null } = this.junk;
     real.driver.expectLog(
       code === undefined
         ? /^\[warn\] error response without an id: /
@@ -409,7 +426,7 @@ class Garbage implements Command {
     const replies = await probe(real.session);
     assert.deepEqual(
       replies.map((reply) => ({ id: reply.id, code: errorOf(reply).code })),
-      code === undefined ? [] : [{ id: null, code }],
+      code === undefined ? [] : [{ id, code }],
     );
   }
   toString = () => `garbage ${JSON.stringify(this.junk.payload)}`;

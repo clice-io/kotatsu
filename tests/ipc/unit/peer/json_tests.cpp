@@ -5,6 +5,7 @@
 #include "ipc/harness/peer_suite/cancel.h"
 #include "ipc/harness/peer_suite/dispatch.h"
 #include "ipc/harness/peer_suite/lifecycle.h"
+#include "ipc/harness/peer_suite/limit.h"
 #include "ipc/harness/peer_suite/link.h"
 #include "ipc/harness/peer_suite/requests.h"
 #include "ipc/harness/peer_suite/timeout.h"
@@ -18,8 +19,8 @@ namespace kota::ipc {
 
 namespace {
 
-using Fixture = test::PeerFixture<test::JsonAdapter>;
-using Kit = test::PeerKit<test::JsonAdapter>;
+using Fixture = test::PeerFixture<test::JSONAdapter>;
+using Kit = test::PeerKit<test::JSONAdapter>;
 using protocol::ErrorCode;
 using test::AddParams;
 using test::AddResult;
@@ -48,6 +49,10 @@ ZEST_CASE_GROUP(lifecycle) {
     test::peer_lifecycle(Kit{add_case});
 }
 
+ZEST_CASE_GROUP(limit) {
+    test::peer_limit(Kit{add_case});
+}
+
 ZEST_CASE_GROUP(link) {
     test::peer_link(Kit{add_case});
 }
@@ -57,7 +62,7 @@ ZEST_CASE_GROUP(unreadable) {
 }
 
 ZEST_CASE(error_data_crosses_between_peers) {
-    test::error_data_crosses_between_peers<test::JsonAdapter>();
+    test::error_data_crosses_between_peers<test::JSONAdapter>();
 }
 
 ZEST_CASE(object_without_method_or_id_is_answered_with_invalid_request) {

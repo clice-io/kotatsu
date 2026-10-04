@@ -9,7 +9,7 @@
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
 
-// JsonCodec writes and reads params and results under lsp_config, which
+// JSONCodec writes and reads params and results under lsp_config, which
 // names fields in lowerCamelCase.
 
 namespace kota::ipc {
@@ -53,7 +53,7 @@ namespace kota::ipc {
 
 namespace {
 
-using Fixture = test::PeerFixture<test::JsonAdapter>;
+using Fixture = test::PeerFixture<test::JSONAdapter>;
 
 ZEST_SUITE(ipc_peer_rename, Fixture) {
 

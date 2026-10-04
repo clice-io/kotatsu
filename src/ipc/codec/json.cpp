@@ -28,13 +28,17 @@ struct outgoing_request_message {
     std::string jsonrpc = "2.0";
     protocol::RequestID id;
     std::string method;
-    codec::RawValue params;
+    /// Left out for a method that takes none.
+    KOTATSU_ANNOTATE(skip_if = skip_when::empty)
+    <codec::RawValue> params;
 };
 
 struct outgoing_notification_message {
     std::string jsonrpc = "2.0";
     std::string method;
-    codec::RawValue params;
+    /// Left out for a method that takes none.
+    KOTATSU_ANNOTATE(skip_if = skip_when::empty)
+    <codec::RawValue> params;
 };
 
 struct outgoing_success_response_message {
@@ -51,6 +55,7 @@ struct outgoing_error_response_message {
 };
 
 struct json_rpc_incoming {
+    std::optional<std::string> jsonrpc;
     // RawValue, not optional<RequestID>, so that a null id stays apart from
     // a missing one: absent → empty(), null → "null" text.
     KOTATSU_ANNOTATE(defaulted = true)
@@ -161,7 +166,7 @@ struct PrefixReader {
 /// how deeply the value nests. A number of any size is JSON, where simdjson
 /// refuses integers past 64 bits. It keeps its own stack rather than
 /// recursing, however deep the value.
-struct JsonChecker {
+struct JSONChecker {
     std::string_view text;
     std::size_t at = 0;
     /// The deepest the arrays and objects nest.
@@ -391,13 +396,13 @@ HeadMembers read_head(std::string_view text) {
 }
 
 /// What to make of JSON that is not read as a whole: its envelope did not
-/// decode, or it nests too deeply. JSON that is no message object is an
-/// invalid request (batches are not supported). An object's members are read
-/// for the id it names, without decoding their values: a request (it has a
-/// method, and an id member) is answered as invalid under that id, a
-/// notification (a string method and no id) is never answered, and a
-/// response fails the request it answers, or is only logged when its id
-/// cannot be read.
+/// decode, names no JSON-RPC 2.0, or nests too deeply. JSON that is no
+/// message object is an invalid request (batches are not supported). An
+/// object's members are read for the id it names, without decoding their
+/// values: a request (it has a method, and an id member) is answered as
+/// invalid under that id, a notification (a string method and no id) is
+/// never answered, and a response fails the request it answers, or is only
+/// logged when its id cannot be read.
 IncomingMessage read_malformed(std::string_view payload, std::string reason) {
     PrefixReader reader{payload};
     if(!reader.take('{')) {
@@ -425,11 +430,11 @@ IncomingMessage read_malformed(std::string_view payload, std::string reason) {
 
 }  // namespace
 
-IncomingMessage JsonCodec::parse_message(std::string_view payload) {
+IncomingMessage JSONCodec::parse_message(std::string_view payload) {
     // simdjson does not check the members it skips, so the grammar is checked
     // first, in a pass that also measures the nesting: text that is no JSON
     // is a parse error wherever it breaks.
-    JsonChecker checker{.text = payload};
+    JSONChecker checker{.text = payload};
     if(!checker.check()) {
         return IncomingParseError{
             .id = std::nullopt,
@@ -447,6 +452,21 @@ IncomingMessage JsonCodec::parse_message(std::string_view payload) {
     }
 
     const bool has_id = !envelope->id.empty();
+    const bool has_result = !envelope->result.empty();
+    const bool has_error = envelope->error.has_value();
+    // A message with none of the members that tell what it is is answered
+    // as invalid, whatever version it names.
+    if(!envelope->method && !has_id && !has_result && !has_error) {
+        return IncomingParseError{
+            .id = std::nullopt,
+            .error =
+                Error(protocol::ErrorCode::InvalidRequest, "message must contain method or id"),
+        };
+    }
+    if(envelope->jsonrpc != "2.0") {
+        return read_malformed(payload, R"(jsonrpc must be "2.0")");
+    }
+
     auto id = has_id ? read_id(envelope->id.data) : std::nullopt;
 
     if(envelope->method.has_value()) {
@@ -472,15 +492,6 @@ IncomingMessage JsonCodec::parse_message(std::string_view payload) {
         };
     }
 
-    const bool has_result = !envelope->result.empty();
-    const bool has_error = envelope->error.has_value();
-    if(!has_id && !has_result && !has_error) {
-        return IncomingParseError{
-            .id = std::nullopt,
-            .error =
-                Error(protocol::ErrorCode::InvalidRequest, "message must contain method or id"),
-        };
-    }
     if(has_result == has_error) {
         return IncomingErrorResponse{
             .id = std::move(id),
@@ -505,29 +516,29 @@ IncomingMessage JsonCodec::parse_message(std::string_view payload) {
 /// request's id after its method, past the prefix, reads as a notification,
 /// and a response's id after its result as Unknown. kotatsu, like
 /// vscode-jsonrpc, writes the id first.
-MessageHead JsonCodec::peek(std::string_view prefix) {
+MessageHead JSONCodec::peek(std::string_view prefix) {
     return read_head(prefix).head();
 }
 
-Result<std::string> JsonCodec::encode_request(const protocol::RequestID& id,
+Result<std::string> JSONCodec::encode_request(const protocol::RequestID& id,
                                               std::string_view method,
                                               std::string_view params) {
     return serialize_value(outgoing_request_message{
         .id = id,
         .method = std::string(method),
-        .params = codec::RawValue{std::string(params)},
+        .params = {codec::RawValue{std::string(params)}},
     });
 }
 
-Result<std::string> JsonCodec::encode_notification(std::string_view method,
+Result<std::string> JSONCodec::encode_notification(std::string_view method,
                                                    std::string_view params) {
     return serialize_value(outgoing_notification_message{
         .method = std::string(method),
-        .params = codec::RawValue{std::string(params)},
+        .params = {codec::RawValue{std::string(params)}},
     });
 }
 
-Result<std::string> JsonCodec::encode_success_response(const protocol::RequestID& id,
+Result<std::string> JSONCodec::encode_success_response(const protocol::RequestID& id,
                                                        std::string_view result) {
     return serialize_value(outgoing_success_response_message{
         .id = id,
@@ -535,7 +546,7 @@ Result<std::string> JsonCodec::encode_success_response(const protocol::RequestID
     });
 }
 
-Result<std::string> JsonCodec::encode_error_response(const std::optional<protocol::RequestID>& id,
+Result<std::string> JSONCodec::encode_error_response(const std::optional<protocol::RequestID>& id,
                                                      const Error& error) {
     return serialize_value(outgoing_error_response_message{
         .id = id,
@@ -543,6 +554,6 @@ Result<std::string> JsonCodec::encode_error_response(const std::optional<protoco
     });
 }
 
-template class Peer<JsonCodec>;
+template class Peer<JSONCodec>;
 
 }  // namespace kota::ipc

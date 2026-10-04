@@ -57,14 +57,14 @@ int main() {
         return 1;
     }
 
-    ipc::JsonPeer peer(loop, std::move(*transport));
+    ipc::JSONPeer peer(loop, std::move(*transport));
     peer.set_logger(kota::test::stderr_logger(), ipc::LogLevel::trace);
 
     bool shutdown_requested = false;
 
     // initialize
     peer.on_request(
-        [&](ipc::JsonPeer::RequestContext&,
+        [&](ipc::JSONPeer::RequestContext&,
             const proto::InitializeParams&) -> ipc::RequestResult<proto::InitializeParams> {
             co_return proto::InitializeResult{
                 .capabilities = make_capabilities(),
@@ -73,7 +73,7 @@ int main() {
         });
 
     // shutdown
-    peer.on_request([&](ipc::JsonPeer::RequestContext&,
+    peer.on_request([&](ipc::JSONPeer::RequestContext&,
                         const proto::ShutdownParams&) -> ipc::RequestResult<proto::ShutdownParams> {
         shutdown_requested = true;
         co_return nullptr;
@@ -86,7 +86,7 @@ int main() {
     peer.on_notification([&](const proto::ExitParams&) { peer.close(); });
 
     // textDocument/hover
-    peer.on_request([](ipc::JsonPeer::RequestContext&,
+    peer.on_request([](ipc::JSONPeer::RequestContext&,
                        const proto::HoverParams& p) -> ipc::RequestResult<proto::HoverParams> {
         auto uri = p.text_document.uri;
         if(uri == "file:///error") {
@@ -105,7 +105,7 @@ int main() {
 
     // textDocument/completion
     peer.on_request(
-        [&](ipc::JsonPeer::RequestContext&,
+        [&](ipc::JSONPeer::RequestContext&,
             const proto::CompletionParams& p) -> ipc::RequestResult<proto::CompletionParams> {
             auto uri = p.text_document.uri;
             if(uri == "file:///progress") {
@@ -127,7 +127,7 @@ int main() {
 
     // textDocument/definition
     peer.on_request(
-        [](ipc::JsonPeer::RequestContext&,
+        [](ipc::JSONPeer::RequestContext&,
            const proto::DefinitionParams& p) -> ipc::RequestResult<proto::DefinitionParams> {
             co_return proto::Definition{
                 proto::Location{
@@ -139,7 +139,7 @@ int main() {
 
     // textDocument/references
     peer.on_request(
-        [](ipc::JsonPeer::RequestContext&,
+        [](ipc::JSONPeer::RequestContext&,
            const proto::ReferenceParams& p) -> ipc::RequestResult<proto::ReferenceParams> {
             auto uri = p.text_document.uri;
             co_return std::vector<proto::Location>{
@@ -150,7 +150,7 @@ int main() {
 
     // textDocument/documentSymbol
     peer.on_request(
-        [](ipc::JsonPeer::RequestContext&,
+        [](ipc::JSONPeer::RequestContext&,
            const proto::DocumentSymbolParams&) -> ipc::RequestResult<proto::DocumentSymbolParams> {
             co_return std::vector<proto::DocumentSymbol>{
                 {
@@ -163,7 +163,7 @@ int main() {
         });
 
     // textDocument/formatting
-    peer.on_request([](ipc::JsonPeer::RequestContext&, const proto::DocumentFormattingParams&)
+    peer.on_request([](ipc::JSONPeer::RequestContext&, const proto::DocumentFormattingParams&)
                         -> ipc::RequestResult<proto::DocumentFormattingParams> {
         co_return std::vector<proto::TextEdit>{
             {
@@ -175,7 +175,7 @@ int main() {
 
     // textDocument/codeAction
     peer.on_request(
-        [](ipc::JsonPeer::RequestContext&,
+        [](ipc::JSONPeer::RequestContext&,
            const proto::CodeActionParams&) -> ipc::RequestResult<proto::CodeActionParams> {
             co_return std::vector<proto::variant<proto::Command, proto::CodeAction>>{
                 proto::CodeAction{
@@ -186,7 +186,7 @@ int main() {
         });
 
     // textDocument/signatureHelp
-    peer.on_request([](ipc::JsonPeer::RequestContext&, const proto::SignatureHelpParams&)
+    peer.on_request([](ipc::JSONPeer::RequestContext&, const proto::SignatureHelpParams&)
                         -> ipc::RequestResult<proto::SignatureHelpParams> {
         co_return proto::SignatureHelp{
             .signatures = {proto::SignatureInformation{
@@ -203,7 +203,7 @@ int main() {
     });
 
     // textDocument/documentHighlight
-    peer.on_request([](ipc::JsonPeer::RequestContext&, const proto::DocumentHighlightParams&)
+    peer.on_request([](ipc::JSONPeer::RequestContext&, const proto::DocumentHighlightParams&)
                         -> ipc::RequestResult<proto::DocumentHighlightParams> {
         co_return std::vector<proto::DocumentHighlight>{
             {
@@ -214,7 +214,7 @@ int main() {
     });
 
     // textDocument/rename
-    peer.on_request([](ipc::JsonPeer::RequestContext&,
+    peer.on_request([](ipc::JSONPeer::RequestContext&,
                        const proto::RenameParams& p) -> ipc::RequestResult<proto::RenameParams> {
         auto uri = p.text_document.uri;
         co_return proto::WorkspaceEdit{
@@ -227,14 +227,14 @@ int main() {
 
     // textDocument/prepareRename
     peer.on_request(
-        [](ipc::JsonPeer::RequestContext&,
+        [](ipc::JSONPeer::RequestContext&,
            const proto::PrepareRenameParams&) -> ipc::RequestResult<proto::PrepareRenameParams> {
             co_return proto::PrepareRenameResult{make_range(0, 0, 3)};
         });
 
     // textDocument/foldingRange
     peer.on_request(
-        [](ipc::JsonPeer::RequestContext&,
+        [](ipc::JSONPeer::RequestContext&,
            const proto::FoldingRangeParams&) -> ipc::RequestResult<proto::FoldingRangeParams> {
             co_return std::vector<proto::FoldingRange>{
                 proto::FoldingRange{
@@ -247,7 +247,7 @@ int main() {
 
     // textDocument/selectionRange
     peer.on_request(
-        [](ipc::JsonPeer::RequestContext&,
+        [](ipc::JSONPeer::RequestContext&,
            const proto::SelectionRangeParams&) -> ipc::RequestResult<proto::SelectionRangeParams> {
             // SelectionRange owns its parent, so it is move-only, and an
             // initializer_list can only be copied from.
@@ -258,7 +258,7 @@ int main() {
 
     // textDocument/declaration
     peer.on_request(
-        [](ipc::JsonPeer::RequestContext&,
+        [](ipc::JSONPeer::RequestContext&,
            const proto::DeclarationParams& p) -> ipc::RequestResult<proto::DeclarationParams> {
             co_return proto::Declaration{
                 proto::Location{
@@ -269,7 +269,7 @@ int main() {
         });
 
     // textDocument/typeDefinition
-    peer.on_request([](ipc::JsonPeer::RequestContext&, const proto::TypeDefinitionParams& p)
+    peer.on_request([](ipc::JSONPeer::RequestContext&, const proto::TypeDefinitionParams& p)
                         -> ipc::RequestResult<proto::TypeDefinitionParams> {
         co_return proto::Definition{
             proto::Location{
@@ -280,7 +280,7 @@ int main() {
     });
 
     // textDocument/implementation
-    peer.on_request([](ipc::JsonPeer::RequestContext&, const proto::ImplementationParams& p)
+    peer.on_request([](ipc::JSONPeer::RequestContext&, const proto::ImplementationParams& p)
                         -> ipc::RequestResult<proto::ImplementationParams> {
         co_return proto::Definition{
             proto::Location{
@@ -292,7 +292,7 @@ int main() {
 
     // textDocument/documentLink
     peer.on_request(
-        [](ipc::JsonPeer::RequestContext&,
+        [](ipc::JSONPeer::RequestContext&,
            const proto::DocumentLinkParams&) -> ipc::RequestResult<proto::DocumentLinkParams> {
             co_return std::vector<proto::DocumentLink>{
                 {
@@ -303,7 +303,7 @@ int main() {
         });
 
     // textDocument/codeLens
-    peer.on_request([](ipc::JsonPeer::RequestContext&,
+    peer.on_request([](ipc::JSONPeer::RequestContext&,
                        const proto::CodeLensParams&) -> ipc::RequestResult<proto::CodeLensParams> {
         co_return std::vector<proto::CodeLens>{
             {
@@ -315,7 +315,7 @@ int main() {
 
     // textDocument/inlayHint
     peer.on_request(
-        [](ipc::JsonPeer::RequestContext&,
+        [](ipc::JSONPeer::RequestContext&,
            const proto::InlayHintParams&) -> ipc::RequestResult<proto::InlayHintParams> {
             co_return std::vector<proto::InlayHint>{
                 {
@@ -327,7 +327,7 @@ int main() {
         });
 
     // textDocument/rangeFormatting
-    peer.on_request([](ipc::JsonPeer::RequestContext&, const proto::DocumentRangeFormattingParams&)
+    peer.on_request([](ipc::JSONPeer::RequestContext&, const proto::DocumentRangeFormattingParams&)
                         -> ipc::RequestResult<proto::DocumentRangeFormattingParams> {
         co_return std::vector<proto::TextEdit>{
             {
@@ -338,7 +338,7 @@ int main() {
     });
 
     // workspace/symbol
-    peer.on_request([](ipc::JsonPeer::RequestContext&, const proto::WorkspaceSymbolParams&)
+    peer.on_request([](ipc::JSONPeer::RequestContext&, const proto::WorkspaceSymbolParams&)
                         -> ipc::RequestResult<proto::WorkspaceSymbolParams> {
         co_return std::vector<proto::SymbolInformation>{
             {

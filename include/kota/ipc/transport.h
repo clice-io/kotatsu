@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <limits>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -28,10 +29,18 @@ public:
 
     /// Closes both input and output, ending any pending read.
     virtual Result<void> close() = 0;
+
+    /// The largest payload the remote reads: Peer sends no larger one. No
+    /// limit unless the transport was told one.
+    virtual std::size_t remote_max_payload() const noexcept {
+        return std::numeric_limits<std::size_t>::max();
+    }
 };
 
 /// Messages framed as the LSP base protocol frames them, over streams. A
-/// message whose payload is larger than `max_payload` is skipped.
+/// message whose payload is larger than `max_payload` is skipped. What it
+/// sends has no limit, unless set_remote_max_payload() says how much the
+/// remote reads.
 class StreamTransport : public Transport {
 public:
     StreamTransport(stream input, stream output, std::size_t max_payload = default_max_payload);
@@ -65,6 +74,14 @@ public:
 
     Result<void> close() override;
 
+    /// Has a Peer over it send no payload larger than `bytes`, as much as the
+    /// remote reads: over a link between two StreamTransports, the
+    /// `max_payload` the other end reads with. A remote with no limit, such
+    /// as an editor, needs none.
+    void set_remote_max_payload(std::size_t bytes) noexcept;
+
+    std::size_t remote_max_payload() const noexcept override;
+
 private:
     /// Points stdout at the null device, once, if the output is stdout.
     Result<void> release_stdout();
@@ -75,6 +92,7 @@ private:
     /// The output is the process's stdout (open_stdio).
     bool over_stdout = false;
     FrameParser parser;
+    std::size_t remote_limit = std::numeric_limits<std::size_t>::max();
 };
 
 }  // namespace kota::ipc

@@ -50,10 +50,18 @@ template <typename Params, typename ResultT = typename protocol::RequestTraits<P
 using RequestResult = task<ResultT, Error>;
 
 struct request_options {
-    /// Cancels the request: it fails with RequestCancelled and the remote is
-    /// sent $/cancelRequest.
-    std::optional<cancellation_token> token = std::nullopt;
-    /// Cancels the request the same way once it has waited this long.
+    /// Once it fires, the remote is sent $/cancelRequest, and the request
+    /// ends with the remote's answer: usually RequestCancelled, or the result
+    /// it had already. A cancel of the task awaiting the request does the
+    /// same, and that task ends cancelled once the answer is in. A remote
+    /// that never answers keeps the request waiting until the connection
+    /// closes or the timeout passes; one that cannot be told, the
+    /// $/cancelRequest failing to be sent, ends it with RequestCancelled at
+    /// once.
+    cancellation_token token = {};
+    /// Ends the request with RequestCancelled once it has waited this long,
+    /// a cancel or not, and sends the remote $/cancelRequest; it counts from
+    /// the send, and ends a request while run() runs.
     std::optional<std::chrono::milliseconds> timeout = std::nullopt;
 };
 
@@ -64,7 +72,11 @@ struct request_options {
 ///
 /// A handler returns RequestResult<Params> or, for a result it has encoded
 /// itself, task<codec::RawValue, Error>; a request whose result type is
-/// codec::RawValue gets the result as the codec wrote it.
+/// codec::RawValue gets the result as the codec wrote it. A request handler
+/// starts as its request is dispatched and runs until it first suspends
+/// before the peer reads on, so what it does up to then sees no message read
+/// after its request; one that should see them, a $/cancelRequest for it or
+/// a change behind it, yields first.
 template <typename Codec>
 class Peer {
 public:
@@ -82,11 +94,14 @@ public:
 
     /// Reads and dispatches messages and writes what is sent, until the input
     /// ends and every handler has finished, or until close(). Every pending
-    /// request has failed by the time it returns. Called once.
+    /// request has failed by the time it returns. Called once. The Peer must
+    /// outlive it: destroying the Peer before run() has ended is undefined,
+    /// and a debug build asserts. A request still pending when the Peer goes
+    /// fails with ConnectionClosed.
     task<> run();
 
-    /// Shuts the peer down: cancels the running handlers, fails pending
-    /// requests, discards queued messages and closes the transport, so that
+    /// Shuts the peer down: fails pending requests, cancels the running
+    /// handlers, discards queued messages and closes the transport, so that
     /// run() returns. Later sends fail; calls after the first do nothing.
     Result<void> close();
 
@@ -134,8 +149,6 @@ private:
     task<std::string, Error> send_request_impl(std::string_view method,
                                                std::string params,
                                                request_options opts);
-
-    Result<void> send_notification_impl(std::string_view method, std::string params);
 
     /// Register a callback whose signature the caller has checked.
     template <typename Callback>

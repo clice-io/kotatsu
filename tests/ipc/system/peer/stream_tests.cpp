@@ -83,7 +83,7 @@ void talk_over_pipes(test::LoopFixture& fixture) {
 ZEST_SUITE(ipc_peer_stream, test::LoopFixture) {
 
 ZEST_CASE(json_peers_talk_over_pipes) {
-    talk_over_pipes<JsonCodec>(*this);
+    talk_over_pipes<JSONCodec>(*this);
 }
 
 ZEST_CASE(bincode_peers_talk_over_pipes) {
@@ -106,7 +106,7 @@ ZEST_CASE(close_during_a_write_ends_run) {
         run(listener->accept(), tcp::connect("127.0.0.1", name->port, loop));
     ASSERT(accepted.has_value());
     ASSERT(connected.has_value());
-    JsonPeer peer(
+    JSONPeer peer(
         loop,
         std::make_unique<StreamTransport>(std::move(input->reader), stream(std::move(*connected))));
     constexpr std::size_t size = 16 << 20;
@@ -144,7 +144,7 @@ ZEST_CASE(peer_destroyed_as_close_ends_run) {
     auto input = pipe_ends(loop);
     ASSERT(output.has_value());
     ASSERT(input.has_value());
-    auto peer = std::make_unique<JsonPeer>(
+    auto peer = std::make_unique<JSONPeer>(
         loop,
         std::make_unique<StreamTransport>(std::move(input->reader), std::move(output->writer)));
     auto owner = [&]() -> task<> {
@@ -178,7 +178,7 @@ ZEST_CASE(close_output_on_a_shared_stream_keeps_reading) {
         run(listener->accept(), StreamTransport::connect_tcp("127.0.0.1", port, loop));
     ASSERT(accepted.has_value());
     ASSERT(connected.has_value());
-    JsonPeer peer(loop, std::move(*connected));
+    JSONPeer peer(loop, std::move(*connected));
     std::vector<std::string> notes;
     peer.on_notification([&](const NoteParams& params) { notes.push_back(params.text); });
     auto remote = [&]() -> task<void, error> {

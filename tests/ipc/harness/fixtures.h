@@ -2,6 +2,7 @@
 
 // The params and results the ipc tests send, with their method traits.
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -31,6 +32,10 @@ struct NoteParams {
 /// object.
 struct EmptyParams {};
 
+/// Params of a request and a notification that take none: their traits say
+/// so, and they are sent without params.
+struct NoParams {};
+
 /// A value no codec can write: encoding it fails.
 struct Unwritable {};
 
@@ -47,6 +52,19 @@ struct RequestTraits<test::AddParams> {
 template <>
 struct NotificationTraits<test::NoteParams> {
     constexpr inline static std::string_view method = "test/note";
+};
+
+template <>
+struct RequestTraits<test::NoParams> {
+    using Result = std::nullptr_t;
+    constexpr inline static std::string_view method = "test/none";
+    constexpr inline static bool takes_params = false;
+};
+
+template <>
+struct NotificationTraits<test::NoParams> {
+    constexpr inline static std::string_view method = "test/none";
+    constexpr inline static bool takes_params = false;
 };
 
 }  // namespace kota::ipc::protocol

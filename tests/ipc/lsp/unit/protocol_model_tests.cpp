@@ -27,6 +27,14 @@ constexpr std::string_view range_json =
 
 ZEST_SUITE(ipc_lsp_protocol_model) {
 
+// The methods without params, such as the refresh requests, say so in their
+// traits: Peer sends them none, as other clients and servers expect.
+ZEST_CASE(methods_without_params_say_so) {
+    STATIC_EXPECT(!protocol::RequestTraits<protocol::ShutdownParams>::takes_params);
+    STATIC_EXPECT(!protocol::RequestTraits<protocol::CodeLensRefreshParams>::takes_params);
+    STATIC_EXPECT(!protocol::NotificationTraits<protocol::ExitParams>::takes_params);
+}
+
 ZEST_CASE(literal_encodes_its_text) {
     auto serialized = to_string<lsp_config>(protocol::CreateFile{.uri = "file:///a"});
     ASSERT(serialized);
@@ -210,7 +218,7 @@ ZEST_CASE(parameterless_methods) {
 
 // Clients send the params of shutdown and exit as null, or leave them out.
 ZEST_CASE(parameterless_methods_read_null_params) {
-    JsonCodec codec;
+    JSONCodec codec;
     for(std::string_view payload: {
             R"({"jsonrpc":"2.0","id":1,"method":"shutdown","params":null})",
             R"({"jsonrpc":"2.0","id":1,"method":"shutdown"})",
@@ -279,7 +287,7 @@ ZEST_CASE(required_nullable_member_absent_fails) {
 // Real LSP payloads nest up to about 130 levels: a SelectionRange parent
 // chain, say.
 ZEST_CASE(nesting_of_real_payloads_is_read) {
-    JsonCodec codec;
+    JSONCodec codec;
     std::string chain;
     for(int level = 0; level < 125; ++level) {
         chain += R"({"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":1}})";

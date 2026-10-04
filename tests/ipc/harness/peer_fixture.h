@@ -6,7 +6,7 @@
 // every codec through the codec's adapter:
 //
 //     ZEST_CASE_GROUP(dispatch) {
-//         test::peer_dispatch(test::PeerKit<test::JsonAdapter>{add_case});
+//         test::peer_dispatch(test::PeerKit<test::JSONAdapter>{add_case});
 //     }
 //
 // Each case gets a fresh PeerFixture. The remote's side of a case is a

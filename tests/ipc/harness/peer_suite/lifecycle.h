@@ -4,6 +4,7 @@
 // outside cancellation), what becomes of pending requests and running
 // handlers, and what close_output() leaves open.
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -31,7 +32,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
             f.run(f.peer.run(), f.peer.send_request(AddParams{}), remote());
         EXPECT(ran.has_value());
         ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::RequestFailed);
+        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
         EXPECT(asked.error().message == "transport closed");
     });
 
@@ -108,6 +109,26 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         EXPECT(f.remote.closed());
     });
 
+    // A request sent before run() fails when its Peer goes first; nothing of
+    // the Peer is touched after.
+    kit.add("peer_destroyed_before_run_fails_its_pending_requests", [](Fixture& f) {
+        Remote other_remote;
+        auto other = std::make_unique<typename Fixture::Peer>(f.loop, other_remote.transport());
+        auto ask = [&]() -> task<AddResult, ipc::Error> {
+            co_return co_await other->send_request(AddParams{}).or_fail();
+        };
+        auto destroy = [&]() -> task<> {
+            co_await yield();
+            other.reset();
+        };
+
+        auto [asked, destroyed] = f.run(ask(), destroy());
+        EXPECT(destroyed.has_value());
+        ASSERT(asked.has_error());
+        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
+        EXPECT(asked.error().message == "peer destroyed");
+    });
+
     kit.add("close_fails_pending_requests", [](Fixture& f) {
         auto closer = [&]() -> task<> {
             co_await f.next();
@@ -117,7 +138,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         auto [ran, asked, closed] = f.run(f.peer.run(), f.peer.send_request(AddParams{}), closer());
         EXPECT(ran.has_value());
         ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::RequestFailed);
+        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
         EXPECT(asked.error().message == "peer closed");
     });
 
@@ -193,9 +214,9 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         auto [ran, asked] = f.run(f.peer.run(), f.peer.send_request(AddParams{}));
         EXPECT(ran.has_value());
         ASSERT(sent.has_error());
-        EXPECT(code_of(sent.error()) == ErrorCode::RequestFailed);
+        EXPECT(code_of(sent.error()) == ErrorCode::ConnectionClosed);
         ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::RequestFailed);
+        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
         EXPECT(f.written().empty());
     });
 
@@ -211,19 +232,21 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         EXPECT(ran.has_value());
         ASSERT(asked.has_value());
         auto& [failure, after] = *asked;
-        EXPECT(code_of(failure) == ErrorCode::RequestFailed);
+        EXPECT(code_of(failure) == ErrorCode::ConnectionClosed);
         EXPECT(failure.message == "write failed");
         ASSERT(after.has_error());
-        EXPECT(code_of(after.error()) == ErrorCode::RequestFailed);
+        EXPECT(code_of(after.error()) == ErrorCode::ConnectionClosed);
         EXPECT(f.remote.closed());
     });
 
     // The handler's answer could not be written: it is cancelled, and run()
     // ends without waiting for it.
     kit.add("write_failure_cancels_running_handlers", [](Fixture& f) {
+        event started;
         event never;
         bool cancelled = false;
         f.peer.on_request([&](Context& context, const AddParams&) -> ipc::RequestResult<AddParams> {
+            started.set();
             co_await wait_for(never).catch_cancel();
             cancelled = context.cancelled();
             co_return AddResult{};
@@ -231,6 +254,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         f.remote.fail_writes();
         f.remote.send(request<A>(1, "test/add", AddParams{}));
         auto ask = [&]() -> task<> {
+            co_await started.wait();
             co_await f.peer.send_request(AddParams{});
         };
 
@@ -282,7 +306,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
             f.run(f.peer.run(), f.peer.send_request(AddParams{}), closer());
         EXPECT(ran.has_value());
         ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::RequestFailed);
+        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
         EXPECT(f.remote.closed());
     });
 
@@ -297,9 +321,9 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         auto [ran, asked] = f.run(f.peer.run(), f.peer.send_request(AddParams{}));
         EXPECT(ran.has_value());
         ASSERT(sent.has_error());
-        EXPECT(code_of(sent.error()) == ErrorCode::RequestFailed);
+        EXPECT(code_of(sent.error()) == ErrorCode::ConnectionClosed);
         ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::RequestFailed);
+        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
         EXPECT(seen == std::vector<std::string>{"after"});
         EXPECT(f.written().empty());
     });
@@ -361,7 +385,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         auto [ran, probed, scripted] = f.run(f.peer.run(), probe(), remote());
         EXPECT(ran.has_value());
         ASSERT(failure.has_value());
-        EXPECT(code_of(*failure) == ErrorCode::RequestFailed);
+        EXPECT(code_of(*failure) == ErrorCode::ConnectionClosed);
         EXPECT(failure->message == "peer input closed");
     });
 
@@ -389,7 +413,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         EXPECT(ran.is_cancelled());
         EXPECT(!completed);
         ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::RequestFailed);
+        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
     });
 
     // Nothing can use the peer again once run() is cancelled, so its

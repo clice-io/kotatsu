@@ -5,6 +5,7 @@
 
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "ipc/harness/peer_fixture.h"
 #include "kota/zest/zest.h"
@@ -81,6 +82,49 @@ void peer_requests(const PeerKit<A>& kit) {
         ASSERT(asked.has_error());
         EXPECT(asked.error().code == -32001);
         EXPECT(asked.error().message == "remote failed");
+    });
+
+    // A remote's error made without a code is RequestFailed, which the
+    // local ConnectionClosed stays apart from.
+    kit.add("send_request_tells_a_remote_error_from_a_closed_connection", [](Fixture& f) {
+        auto ask = [&]() -> task<AddResult, ipc::Error> {
+            co_return co_await f.peer.send_request(AddParams{}).or_fail();
+        };
+        auto remote = [&]() -> task<> {
+            co_await f.next();
+            f.remote.send(A::error_response(1, ipc::Error("remote failed")));
+            f.remote.end_input();
+        };
+        auto [ran, answered, scripted] = f.run(f.peer.run(), ask(), remote());
+        auto [after] = f.run(ask());
+        EXPECT(ran.has_value());
+        ASSERT(answered.has_error());
+        EXPECT(code_of(answered.error()) == ErrorCode::RequestFailed);
+        ASSERT(after.has_error());
+        EXPECT(code_of(after.error()) == ErrorCode::ConnectionClosed);
+    });
+
+    // An answer resumes its requester once what was read with it is
+    // dispatched, never inside the read loop.
+    kit.add("answer_resumes_its_requester_after_the_messages_read_with_it", [](Fixture& f) {
+        std::vector<std::string> order;
+        f.peer.on_notification([&](const NoteParams& params) { order.push_back(params.text); });
+        auto ask = [&]() -> task<AddResult, ipc::Error> {
+            auto result = co_await f.peer.send_request(AddParams{}).or_fail();
+            order.emplace_back("answered");
+            co_return result;
+        };
+        auto remote = [&]() -> task<> {
+            co_await f.next();
+            f.remote.send(response<A>(1, AddResult{.sum = 1}));
+            f.remote.send(notification<A>("test/note", NoteParams{.text = "note"}));
+            f.remote.end_input();
+        };
+
+        auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
+        EXPECT(ran.has_value());
+        EXPECT(asked.has_value());
+        EXPECT(order == std::vector<std::string>{"note", "answered"});
     });
 
     kit.add("send_request_ids_count_up_from_one", [](Fixture& f) {
@@ -177,6 +221,34 @@ void peer_requests(const PeerKit<A>& kit) {
         ASSERT(asked.has_error());
         EXPECT(code_of(asked.error()) == ErrorCode::InternalError);
         EXPECT(f.written().empty());
+    });
+
+    // A method whose traits say it takes no params is sent none.
+    kit.add("method_that_takes_no_params_is_sent_none", [](Fixture& f) {
+        bool notified = false;
+        auto ask = [&]() -> task<std::nullptr_t, ipc::Error> {
+            notified = f.peer.send_notification(NoParams{}).has_value();
+            co_return co_await f.peer.send_request(NoParams{}).or_fail();
+        };
+        auto remote = [&]() -> task<> {
+            co_await f.next();
+            co_await f.next();
+            f.remote.send(response<A>(1, nullptr));
+            f.remote.end_input();
+        };
+
+        auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
+        EXPECT(ran.has_value());
+        EXPECT(notified);
+        EXPECT(asked.has_value());
+        const auto& written = f.written();
+        ASSERT(written.size() == 2U);
+        EXPECT(written[0].kind == Message::Kind::Notification);
+        EXPECT(written[0].method == "test/none");
+        EXPECT(written[0].body.empty());
+        EXPECT(written[1].kind == Message::Kind::Request);
+        EXPECT(written[1].method == "test/none");
+        EXPECT(written[1].body.empty());
     });
 
     kit.add("send_notification_writes_a_notification", [](Fixture& f) {

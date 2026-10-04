@@ -152,6 +152,14 @@ Result<void> StreamTransport::close() {
     return released;
 }
 
+void StreamTransport::set_remote_max_payload(std::size_t bytes) noexcept {
+    remote_limit = bytes;
+}
+
+std::size_t StreamTransport::remote_max_payload() const noexcept {
+    return remote_limit;
+}
+
 // libuv never closes fds 0 to 2 when it closes a stream over one (on Windows
 // it closes a duplicate of the handle), so the pipe or file behind stdout
 // stays open until fd 1 lets go of it: pointing fd 1 at the null device does.
