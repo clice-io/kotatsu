@@ -22,7 +22,7 @@ struct GlobError {
         MultipleSlash,
         MultipleStar,
         TooManyExpansions,
-        InvalidUtf8,
+        InvalidUTF8,
         InvalidEscape,
     };
 
@@ -67,7 +67,7 @@ struct GlobRoot {
 /// A brace-expanded arm of exactly `**` makes the whole pattern match-all.
 ///
 /// Patterns must be valid UTF-8; create() rejects anything else with
-/// InvalidUtf8. Matching is Unicode-aware: `?`, `[]` and escaped literals
+/// InvalidUTF8. Matching is Unicode-aware: `?`, `[]` and escaped literals
 /// consume one decoded code point at a time, while `*`, `**` and literal
 /// runs stay byte-level (UTF-8 is self-synchronizing, so this cannot
 /// change which code points they cover). Matched paths need not be valid
@@ -92,7 +92,7 @@ public:
     /// `\ ? * [ ] { } ,` escaped, so that it also stands as a term of a brace
     /// expression. `/` stays a separator, as it cannot be escaped. A literal
     /// that is not UTF-8, or that holds `//`, has no pattern: create() rejects
-    /// its escape with InvalidUtf8 or MultipleSlash.
+    /// its escape with InvalidUTF8 or MultipleSlash.
     [[nodiscard]] static std::string escape(std::string_view literal);
 
     /// `pattern` cut at the last `/` before its first unescaped `?`, `*`, `[`

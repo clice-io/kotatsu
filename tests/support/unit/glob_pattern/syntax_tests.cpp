@@ -97,14 +97,14 @@ ZEST_CASE(escaped_slash_fails) {
 }
 
 ZEST_CASE(invalid_utf8_fails) {
-    test::expect_glob_error("\x80", GlobError::InvalidUtf8, 0, 1);
-    test::expect_glob_error("caf\xC3", GlobError::InvalidUtf8, 3, 4);
-    test::expect_glob_error("caf\xE9*", GlobError::InvalidUtf8, 3, 4);
+    test::expect_glob_error("\x80", GlobError::InvalidUTF8, 0, 1);
+    test::expect_glob_error("caf\xC3", GlobError::InvalidUTF8, 3, 4);
+    test::expect_glob_error("caf\xE9*", GlobError::InvalidUTF8, 3, 4);
     // Overlong, surrogate and truncated sequences.
-    test::expect_glob_error("\xC0\x80", GlobError::InvalidUtf8, 0, 1);
-    test::expect_glob_error("\xED\xA0\x80", GlobError::InvalidUtf8, 0, 1);
-    test::expect_glob_error("\xE1\x80\x41", GlobError::InvalidUtf8, 0, 1);
-    test::expect_glob_error("a[\xFF]", GlobError::InvalidUtf8, 2, 3);
+    test::expect_glob_error("\xC0\x80", GlobError::InvalidUTF8, 0, 1);
+    test::expect_glob_error("\xED\xA0\x80", GlobError::InvalidUTF8, 0, 1);
+    test::expect_glob_error("\xE1\x80\x41", GlobError::InvalidUTF8, 0, 1);
+    test::expect_glob_error("a[\xFF]", GlobError::InvalidUTF8, 2, 3);
 }
 
 ZEST_CASE(error_in_a_later_arm_fails) {

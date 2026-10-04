@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "kota/support/expected_try.h"
+#include "kota/support/utf8.h"
 
 namespace kota {
 
@@ -49,55 +50,22 @@ LiteralHead literal_head(std::string_view pattern) {
 /// One matching unit: a decoded Unicode scalar value, or a byte that is
 /// not valid UTF-8 mapped above the Unicode range so it only compares
 /// equal to the same byte. Patterns are validated to be UTF-8 at create(),
-/// so invalid atoms can only come from the matched path.
-struct Utf8Atom {
+/// so invalid atoms can only come from the matched path. decode_utf8 takes
+/// no overlong form, surrogate or value past U+10FFFF, so a decoded atom
+/// never aliases a differently spelled byte sequence.
+struct UTF8Atom {
     char32_t cp;
     std::uint32_t len;
 };
 
 constexpr char32_t invalid_atom_base = 0x110000;
 
-Utf8Atom decode_utf8_atom(std::string_view s, size_t at) {
-    const auto lead = static_cast<std::uint8_t>(s[at]);
-    if(lead < 0x80) [[likely]] {
-        return {lead, 1};
+UTF8Atom decode_utf8_atom(std::string_view s, size_t at) {
+    auto sequence = decode_utf8(s.substr(at));
+    if(!sequence.valid) [[unlikely]] {
+        return {invalid_atom_base + static_cast<std::uint8_t>(s[at]), 1};
     }
-
-    const auto invalid = Utf8Atom{invalid_atom_base + lead, 1};
-
-    std::uint32_t len;
-    char32_t cp;
-    if((lead & 0xE0) == 0xC0) {
-        len = 2;
-        cp = lead & 0x1F;
-    } else if((lead & 0xF0) == 0xE0) {
-        len = 3;
-        cp = lead & 0x0F;
-    } else if((lead & 0xF8) == 0xF0) {
-        len = 4;
-        cp = lead & 0x07;
-    } else {
-        return invalid;
-    }
-
-    if(s.size() - at < len) {
-        return invalid;
-    }
-    for(std::uint32_t k = 1; k < len; ++k) {
-        const auto cont = static_cast<std::uint8_t>(s[at + k]);
-        if((cont & 0xC0) != 0x80) {
-            return invalid;
-        }
-        cp = (cp << 6) | (cont & 0x3F);
-    }
-
-    // Reject overlong encodings, surrogates and out-of-range values so a
-    // decoded atom never aliases a differently-spelled byte sequence.
-    constexpr char32_t min_for_len[] = {0, 0, 0x80, 0x800, 0x10000};
-    if(cp < min_for_len[len] || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
-        return invalid;
-    }
-    return {cp, len};
+    return {sequence.code_point, static_cast<std::uint32_t>(sequence.length)};
 }
 
 /// Byte offset of the first ill-formed UTF-8 subsequence, or nullopt.
@@ -376,7 +344,7 @@ std::expected<GlobPattern, GlobError> GlobPattern::create(std::string_view s, si
     // decode pattern bytes without ever seeing an ill-formed sequence.
     if(auto pos = find_invalid_utf8(s)) [[unlikely]] {
         return std::unexpected{
-            GlobError{GlobError::InvalidUtf8, *pos, *pos + 1, "pattern is not valid UTF-8"}
+            GlobError{GlobError::InvalidUTF8, *pos, *pos + 1, "pattern is not valid UTF-8"}
         };
     }
 
