@@ -462,7 +462,26 @@ private:
 
     result_t make_properties(const meta::struct_type_info* si) {
         dyn::Object props;
+        // A key the decoder gives the first field answering to it: a second
+        // field's property under the same name would claim it too.
+        auto claim = [&](std::string_view name,
+                         const meta::field_info& f) -> std::expected<void, rich_error> {
+            if(props.find(name) != nullptr) {
+                return std::unexpected(
+                    rich_error(std::format("field '{}' answers to '{}', as another field does",
+                                           f.name,
+                                           name)));
+            }
+            return {};
+        };
         for(const auto& f: si->fields) {
+            // A required field is in every document, so a default holding
+            // it cannot leave it out; it has no default of its own to hide.
+            if(!f.schema_default && is_required(f)) {
+                return std::unexpected(rich_error(
+                    std::format("schema_default = false on field '{}', which is required",
+                                f.name)));
+            }
             KOTA_EXPECTED_TRY_V(auto schema, make_schema(&f.type()));
             KOTA_EXPECTED_TRY(constrain(schema, f));
             // An alias reads the same value; the field describes it.
@@ -470,8 +489,10 @@ private:
             if(!f.description.empty()) {
                 schema.get_object()->insert("description", f.description);
             }
+            KOTA_EXPECTED_TRY(claim(f.name, f));
             props.insert(std::string(f.name), std::move(schema));
             for(auto alias: f.aliases) {
+                KOTA_EXPECTED_TRY(claim(alias, f));
                 props.insert(std::string(alias), aliased);
             }
         }

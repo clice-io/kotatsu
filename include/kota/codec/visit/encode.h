@@ -74,6 +74,15 @@ bool encode_text(Vis& vis, const Text& text) {
     return vis.visit_str(text);
 }
 
+/// Fails the encode of an enum value without a reflected member name, which
+/// has no string spelling: "" would make a document no decode maps back.
+template <typename E>
+bool fail_unnamed_enum(E value) {
+    // Unary plus keeps a char-sized underlying value a number.
+    return scoped_context<rich_error>::fail(
+        rich_error(std::format("enum value {} has no reflected name", +std::to_underlying(value))));
+}
+
 /// Encode a value through a representation declaration (a meta::repr
 /// specialization or a behavior::with adapter): declarative to() when
 /// present, the imperative serialize<Config>() body otherwise.
@@ -202,7 +211,11 @@ bool encode_with_attrs(Vis& vis, const T& value) {
     } else if constexpr(tuple_has_spec_v<Attrs, meta::behavior::enum_string>) {
         using policy = typename tuple_find_spec_t<Attrs, meta::behavior::enum_string>::policy;
         static_assert(std::is_enum_v<T>, "behavior::enum_string requires an enum type");
-        auto renamed = policy{}(true, meta::enum_name(value));
+        auto raw = meta::enum_name(value);
+        if(raw.empty()) {
+            return fail_unnamed_enum(value);
+        }
+        auto renamed = policy{}(true, raw);
         return vis.visit_str(std::string_view(renamed));
     } else if constexpr(meta::struct_spec_of<Attrs>.tagging != meta::tag_mode::none) {
         static_assert(taggable<T>, "a tagging attribute requires a std::variant");
@@ -336,15 +349,9 @@ bool encode_value(Vis& vis, const T& value) {
             }
         } else if constexpr(kind == enumeration) {
             if constexpr(Config::enum_repr == enum_repr::String) {
-                // A value without a reflected member name has no string
-                // spelling: emitting "" would produce a document the decode
-                // side can never map back, so fail loudly instead.
                 auto raw = meta::enum_name(value);
                 if(raw.empty()) {
-                    // Unary plus keeps a char-sized underlying value a number.
-                    return scoped_context<rich_error>::fail(
-                        rich_error(std::format("enum value {} has no reflected name",
-                                               +std::to_underlying(value))));
+                    return detail::fail_unnamed_enum(value);
                 }
                 auto name = apply_enum_rename<Config>(true, raw);
                 std::string_view sv(name);

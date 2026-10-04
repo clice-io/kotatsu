@@ -681,6 +681,26 @@ struct aliased_required {
     <std::int32_t> value;
 };
 
+/// A required field whose default a schema would leave unstated.
+struct unstated_required {
+    KOTATSU_ANNOTATE(schema_default = false)
+    <std::uint32_t> seed = 1;
+};
+
+/// Two fields answering to "dup", and an alias taking another field's name.
+struct shared_alias {
+    KOTATSU_ANNOTATE(alias = {"dup"})
+    <std::int32_t> left;
+    KOTATSU_ANNOTATE(alias = {"dup"})
+    <std::int32_t> right;
+};
+
+struct alias_on_a_name {
+    KOTATSU_ANNOTATE(alias = {"right"})
+    <std::int32_t> left;
+    std::int32_t right;
+};
+
 struct enum_string_field {
     KOTATSU_ANNOTATE(enum_string = type<naming::rename_policy::lower_camel>)
     <level_kind> level;
@@ -2689,6 +2709,23 @@ ZEST_CASE(unstated_default_appears_nowhere) {
     EXPECT(
         zest::contains(result, R"("workers":{"type":"integer","minimum":0,"maximum":4294967295})"));
     EXPECT(!zest::contains(result, R"("default":8)"));
+}
+
+ZEST_CASE(unstated_default_on_a_required_field_fails) {
+    // A default holding the field could not leave it out.
+    auto result = json::schema_string<unstated_required>();
+    ASSERT(!result);
+    EXPECT(result.error().message == "schema_default = false on field 'seed', which is required");
+}
+
+ZEST_CASE(a_name_two_fields_answer_to_fails) {
+    // The decoder gives the key to the first field answering to it.
+    auto shared = json::schema_string<shared_alias>();
+    ASSERT(!shared);
+    EXPECT(shared.error().message == "field 'right' answers to 'dup', as another field does");
+    auto taken = json::schema_string<alias_on_a_name>();
+    ASSERT(!taken);
+    EXPECT(taken.error().message == "field 'right' answers to 'right', as another field does");
 }
 
 ZEST_CASE(alias_is_allowed_where_unknown_fields_are_denied) {

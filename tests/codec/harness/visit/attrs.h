@@ -206,6 +206,10 @@ void attrs(const Kit<B>& kit) {
         return std::string("fullControl");
     });
     roundtrip(kit, "enum_string_root_roundtrip", access_name);
+    write_fails(kit,
+                "enum_string_unnamed_value_fails",
+                [] { return Field<AccessName>{AccessName{static_cast<Access>(9)}}; },
+                {.message = "enum value 9 has no reflected name", .path = "value"});
     auto matching = [] {
         return Skippable{
             .id = 1,
