@@ -1,6 +1,17 @@
 #include <cstddef>
 #include <utility>
 
+#ifndef _WIN32
+#include <fcntl.h>
+#include <sys/stat.h>
+#endif
+
+#ifdef __linux__
+#include <cerrno>
+#include <sys/epoll.h>
+#include <unistd.h>
+#endif
+
 #include "stream_self.h"
 #include "kota/support/functional.h"
 
@@ -134,6 +145,49 @@ unsigned int pipe_flags(const pipe::options& opts) {
     return opts.no_truncate ? static_cast<unsigned int>(UV_PIPE_NO_TRUNCATE) : 0U;
 }
 
+#ifdef _WIN32
+/// Why libuv cannot open `fd` as a pipe, if it cannot: it takes pipes only,
+/// and fails on other handles each in a way of its own. A bad one is left to
+/// uv_pipe_open() to report.
+error not_a_pipe(int fd) {
+    const auto type = ::uv_guess_handle(fd);
+    if(type == UV_FILE || type == UV_TTY) {
+        return error::socket_operation_on_non_socket;
+    }
+    return {};
+}
+#else
+/// Whether the loop can wait for `fd` to be readable. It cannot for a
+/// regular file, which it never reports as a pipe does: epoll refuses one,
+/// and libuv aborts on the first read; kqueue stops reporting one at its end,
+/// and the read waits for good. On Linux epoll refuses some devices too, such
+/// as /dev/null, which a throwaway epoll finds out. A descriptor open only
+/// for writing is never read, and a bad one is left to uv_pipe_open() to
+/// report.
+result<bool> waitable_to_read(int fd) {
+    const int mode = ::fcntl(fd, F_GETFL);
+    if(mode == -1 || (mode & O_ACCMODE) == O_WRONLY) {
+        return true;
+    }
+    struct stat status = {};
+    if(::fstat(fd, &status) == 0 && S_ISREG(status.st_mode)) {
+        return false;
+    }
+#ifdef __linux__
+    const int probe = ::epoll_create1(EPOLL_CLOEXEC);
+    if(probe == -1) {
+        return outcome_error(error(::uv_translate_sys_error(errno)));
+    }
+    epoll_event watched{.events = EPOLLIN, .data = {}};
+    const bool refused = ::epoll_ctl(probe, EPOLL_CTL_ADD, fd, &watched) == -1 && errno == EPERM;
+    ::close(probe);
+    return !refused;
+#else
+    return true;
+#endif
+}
+#endif
+
 }  // namespace
 
 pipe::pipe(detail::unique_handle<Self> self) noexcept : stream(std::move(self)) {}
@@ -149,10 +203,28 @@ result<pipe> pipe::open(int fd, event_loop& loop) {
 }
 
 result<pipe> pipe::open(int fd, options opts, event_loop& loop) {
+    // Before uv_pipe_open(): a descriptor whose open fails stays the caller's.
+#ifdef _WIN32
+    if(auto err = not_a_pipe(fd)) {
+        return outcome_error(err);
+    }
+#else
+    auto waitable = waitable_to_read(fd);
+    if(!waitable) {
+        return outcome_error(waitable.error());
+    }
+#endif
     auto opened = create(opts, loop);
     if(auto err = error(::uv_pipe_open(&opened.self->pipe, fd))) {
         return outcome_error(err);
     }
+#ifndef _WIN32
+    if(!*waitable) {
+        // Every read fails rather than waiting on what the loop cannot wait
+        // on; writes go out.
+        opened.self->ended = error::socket_operation_on_non_socket;
+    }
+#endif
     return opened;
 }
 

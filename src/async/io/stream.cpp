@@ -1,5 +1,8 @@
 #include <algorithm>
 #include <limits>
+#include <optional>
+#include <string>
+#include <string_view>
 #include <utility>
 
 #include "stream_self.h"
@@ -165,6 +168,51 @@ task<stream::chunk, error> stream::read_chunk() {
 void stream::consume(std::size_t n) {
     if(self) {
         self->buffer.consume(n);
+    }
+}
+
+task<std::string, error> stream::read_to_end() {
+    std::string out;
+    while(true) {
+        auto chunk = co_await read_chunk();
+        if(chunk.has_error()) {
+            if(chunk.error() != error::end_of_file) {
+                co_await fail(chunk.error());
+            }
+            co_return out;
+        }
+        out.append(chunk->begin(), chunk->end());
+        consume(chunk->size());
+    }
+}
+
+task<std::optional<std::string>, error> stream::read_line() {
+    std::string line;
+    while(true) {
+        auto chunk = co_await read_chunk();
+        if(chunk.has_error()) {
+            if(chunk.error() != error::end_of_file) {
+                co_await fail(chunk.error());
+            }
+            if(line.empty()) {
+                co_return std::nullopt;
+            }
+            co_return line;
+        }
+        const std::string_view text(chunk->data(), chunk->size());
+        const auto end = text.find('\n');
+        if(end == std::string_view::npos) {
+            line.append(text);
+            consume(text.size());
+            continue;
+        }
+        line.append(text.substr(0, end));
+        consume(end + 1);
+        // The '\r' of a "\r\n" may have come in an earlier chunk.
+        if(line.ends_with('\r')) {
+            line.pop_back();
+        }
+        co_return line;
     }
 }
 

@@ -13,6 +13,7 @@
 #include "kota/support/config.h"
 #include "kota/support/small_vector.h"
 #include "kota/async/runtime/node.h"
+#include "kota/async/runtime/task.h"
 #include "kota/async/runtime/traits.h"
 #include "kota/async/vocab/error.h"
 #include "kota/async/vocab/outcome.h"
@@ -292,5 +293,32 @@ when_any(Awaitables...) -> when_any<detail::normalized_task_t<Awaitables>...>;
 
 template <detail::async_range Range>
 when_any(Range) -> when_any<detail::range_tasks<detail::normalized_range_task_t<Range>>>;
+
+namespace detail {
+
+/// Runs `inner_task` until it ends, or until one of `stops`, tasks that never
+/// succeed, ends cancelled, which cancels it. A stop that ends at once keeps
+/// the task from starting at all. The result reports that cancellation, or
+/// one of the task itself, as a value.
+template <typename T, typename E, typename C, typename... Stops>
+task<T, E, cancellation> run_until(task<T, E, C> inner_task, Stops... stops) {
+    // The stops start first. The task's own cancellation, caught, ends the
+    // race as a stop does.
+    auto race_result = co_await when_any(std::move(stops)..., std::move(inner_task).catch_cancel());
+
+    if constexpr(!std::is_void_v<E>) {
+        if(race_result.has_error()) {
+            co_await fail(std::move(race_result).error());
+        }
+    }
+    if(race_result.is_cancelled()) {
+        co_await cancel();
+    }
+    if constexpr(!std::is_void_v<T>) {
+        co_return std::move(std::get<sizeof...(Stops)>(*race_result));
+    }
+}
+
+}  // namespace detail
 
 }  // namespace kota

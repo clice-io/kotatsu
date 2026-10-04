@@ -4,6 +4,7 @@
 #include <utility>
 #include <vector>
 
+#include "resumption.h"
 #include "kota/async/io/loop.h"
 #include "kota/async/runtime/sync.h"
 #include "kota/async/runtime/task.h"
@@ -27,11 +28,34 @@ void destroy_frame(std::coroutine_handle<> frame) {
 #endif
 }
 
+/// Destroys the frames that ended in the outermost resumption on this
+/// thread, which has just returned: only now is none of them on the stack.
+void destroy_ended_frames() {
+#if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    while(!pending_frame_destroys.empty()) {
+        for(auto frame: std::exchange(pending_frame_destroys, {})) {
+            frame.destroy();
+        }
+    }
+#endif
+}
+
+/// A resumption is under way on this thread, or a ResumptionScope stands for
+/// one.
+thread_local bool draining = false;
+
 }  // namespace
 
-void async_node::resume_and_drain(std::coroutine_handle<> handle) {
-    static thread_local bool draining = false;
+detail::ResumptionScope::ResumptionScope() noexcept : outermost(!std::exchange(draining, true)) {}
 
+detail::ResumptionScope::~ResumptionScope() {
+    if(outermost) {
+        destroy_ended_frames();
+        draining = false;
+    }
+}
+
+void async_node::resume_and_drain(std::coroutine_handle<> handle) {
     const bool outermost = !std::exchange(draining, true);
     handle.resume();
     if(!outermost) {
@@ -40,14 +64,7 @@ void async_node::resume_and_drain(std::coroutine_handle<> handle) {
     if(event_loop::has_current()) {
         event_loop::current().drain_deferred();
     }
-#if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    // Only now is no frame that ended still on the stack.
-    while(!pending_frame_destroys.empty()) {
-        for(auto frame: std::exchange(pending_frame_destroys, {})) {
-            frame.destroy();
-        }
-    }
-#endif
+    destroy_ended_frames();
     draining = false;
 }
 
@@ -263,7 +280,11 @@ std::coroutine_handle<> aggregate_op::child_completed(task_frame& child) {
             break;
 
         case State::Cancelled:
-            decide(kind == NodeKind::TaskGroup ? Decision::Resume : Decision::Cancel);
+            // A task_group child that ends cancelled just ends: its siblings
+            // run on.
+            if(kind != NodeKind::TaskGroup) {
+                decide(Decision::Cancel);
+            }
             break;
 
         case State::Succeeded:

@@ -47,16 +47,11 @@ static task<> run_shell(event_loop& loop) {
     co_await prompt();
 
     while(true) {
-        auto chunk = co_await input.read();
-        if(!chunk.has_value()) {
+        auto read = co_await input.read_line();
+        if(!read.has_value() || !read->has_value()) {
             break;
         }
-
-        auto line = *chunk;
-        // Trim trailing newline
-        while(!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
-            line.pop_back();
-        }
+        auto line = std::move(**read);
 
         if(line.empty()) {
             co_await prompt();
