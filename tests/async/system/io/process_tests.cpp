@@ -1,11 +1,17 @@
+#include <cerrno>
 #include <chrono>
 #include <csignal>
 #include <cstddef>
 #include <fcntl.h>
+#include <format>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
+
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
 
 #include "async/harness/io.h"
 #include "async/harness/os.h"
@@ -43,6 +49,40 @@ std::string trim_newlines(std::string text) {
     return text;
 }
 
+/// What `opts`, a shell command that writes to marker.txt, writes there when
+/// run in `dir`, or how it ended when it failed.
+task<std::string> marker_of(process::options opts, const test::TempDir& dir, event_loop& loop) {
+    opts.cwd = dir.path.string();
+    auto spawned = process::spawn(opts, loop);
+    if(!spawned) {
+        co_return std::format("spawn failed: {}", spawned.error().message());
+    }
+    auto status = co_await spawned->proc.wait();
+    if(!status) {
+        co_return std::format("wait failed: {}", status.error().message());
+    }
+    if(!status->success()) {
+        co_return status->to_string();
+    }
+    co_return trim_newlines(test::read_file(dir.path / "marker.txt"));
+}
+
+/// A shell command that writes variables `first` and `second` to marker.txt,
+/// joined by '|'. One that is not set reads as unset(name).
+process::options print_two(std::string_view first, std::string_view second) {
+    return shell(
+        by_platform(std::format(R"(printf "%s|%s" "${{{}-unset}}" "${{{}-unset}}" > marker.txt)",
+                                first,
+                                second),
+                    std::format(">marker.txt echo %{}%^|%{}%", first, second)));
+}
+
+/// What print_two() writes for a variable `name` that is not set: cmd leaves
+/// the reference as it was written.
+std::string unset(std::string_view name) {
+    return std::string(by_platform("unset", std::format("%{}%", name)));
+}
+
 ZEST_SUITE(async_io_process, zest::LoopFixture) {
 
 ZEST_CASE(wait_reports_the_exit_code) {
@@ -56,7 +96,10 @@ ZEST_CASE(wait_reports_the_exit_code) {
     EXPECT(test::exit_status_of(succeeded) == 0);
     ASSERT(succeeded.has_value());
     EXPECT(succeeded->term_signal == 0);
+    EXPECT(succeeded->success());
     EXPECT(test::exit_status_of(failed) == 3);
+    ASSERT(failed.has_value());
+    EXPECT(!failed->success());
 }
 
 // With inherited stdio the child shares the test's own streams.
@@ -159,6 +202,82 @@ ZEST_CASE(environment_and_directory_reach_the_child) {
     EXPECT(trim_newlines(test::read_file(dir.path / "marker.txt")) == "42");
 }
 
+// The changes go over the inherited environment: the child still has what
+// this process has.
+ZEST_CASE(env_changes_go_over_the_inherited_environment) {
+    test::TempDir dir;
+    test::ScopedVariable inherited("KOTA_TEST_INHERITED", "inherited");
+    auto opts = print_two("KOTA_TEST_SET", "KOTA_TEST_INHERITED");
+    opts.env_changes = {
+        {.name = "KOTA_TEST_SET", .value = "set"}
+    };
+
+    auto [written] = run(marker_of(opts, dir, loop));
+    ASSERT(written.has_value());
+    EXPECT(*written == "set|inherited");
+}
+
+ZEST_CASE(env_changes_go_over_a_given_environment) {
+    test::TempDir dir;
+    test::ScopedVariable inherited("KOTA_TEST_INHERITED", "inherited");
+    auto opts = print_two("KOTA_TEST_GIVEN", "KOTA_TEST_INHERITED");
+    opts.env = {"KOTA_TEST_GIVEN=given"};
+    opts.env_changes = {
+        {.name = "KOTA_TEST_SET", .value = "set"}
+    };
+
+    auto [written] = run(marker_of(opts, dir, loop));
+    ASSERT(written.has_value());
+    EXPECT(*written == "given|" + unset("KOTA_TEST_INHERITED"));
+}
+
+ZEST_CASE(last_env_change_of_a_name_counts) {
+    test::TempDir dir;
+    auto opts = print_two("KOTA_TEST_SET", "KOTA_TEST_REMOVED");
+    opts.env = {"KOTA_TEST_REMOVED=given"};
+    opts.env_changes = {
+        {.name = "KOTA_TEST_SET",     .value = "first"     },
+        {.name = "KOTA_TEST_REMOVED", .value = std::nullopt},
+        {.name = "KOTA_TEST_SET",     .value = "last"      },
+    };
+
+    auto [written] = run(marker_of(opts, dir, loop));
+    ASSERT(written.has_value());
+    EXPECT(*written == "last|" + unset("KOTA_TEST_REMOVED"));
+}
+
+// Changes that remove every variable leave the child an empty environment,
+// not the inherited one.
+ZEST_CASE(env_changes_removing_every_variable_inherit_nothing) {
+    test::TempDir dir;
+    test::ScopedVariable inherited("KOTA_TEST_INHERITED", "inherited");
+    auto opts = print_two("KOTA_TEST_GIVEN", "KOTA_TEST_INHERITED");
+    opts.env = {"KOTA_TEST_GIVEN=given"};
+    opts.env_changes = {
+        {.name = "KOTA_TEST_GIVEN", .value = std::nullopt}
+    };
+
+    auto [written] = run(marker_of(opts, dir, loop));
+    ASSERT(written.has_value());
+    EXPECT(*written == unset("KOTA_TEST_GIVEN") + "|" + unset("KOTA_TEST_INHERITED"));
+}
+
+#ifdef _WIN32
+ZEST_CASE(env_changes_match_names_without_regard_to_case) {
+    test::TempDir dir;
+    auto opts = print_two("KOTA_TEST_SET", "KOTA_TEST_GIVEN");
+    opts.env = {"kota_test_given=given"};
+    opts.env_changes = {
+        {.name = "kota_test_set",   .value = "lower"     },
+        {.name = "KOTA_TEST_SET",   .value = "upper"     },
+        {.name = "KOTA_TEST_GIVEN", .value = std::nullopt},
+    };
+    auto [written] = run(marker_of(opts, dir, loop));
+    ASSERT(written.has_value());
+    EXPECT(*written == "upper|" + unset("KOTA_TEST_GIVEN"));
+}
+#endif
+
 #ifndef _WIN32
 // libuv on Unix takes the handle of a spawn that fails before it forks off
 // the loop's list again, so the process must free it without closing it: a
@@ -238,6 +357,17 @@ ZEST_CASE(kill_ends_a_running_child) {
     auto [status] = run(spawned->proc.wait());
     ASSERT(status.has_value());
     EXPECT(status->term_signal == SIGTERM);
+}
+
+ZEST_CASE(kill_without_a_signal_ends_a_running_child) {
+    auto spawned = process::spawn(test::stdin_reader(), loop);
+    ASSERT(spawned.has_value());
+    EXPECT(!spawned->proc.kill());
+
+    auto [status] = run(spawned->proc.wait());
+    ASSERT(status.has_value());
+    EXPECT(!status->success());
+    EXPECT(status->to_string() == "signal 9 (SIGKILL)");
 }
 
 ZEST_CASE(kill_with_an_invalid_signal_fails) {
@@ -350,6 +480,85 @@ ZEST_CASE(stdout_chunks_arrive_as_written) {
     EXPECT(chunks->first == "chunk-one");
     EXPECT(chunks->second == "chunk-two");
     EXPECT(test::exit_status_of(status) == 0);
+}
+#endif
+
+ZEST_CASE(capture_returns_what_the_child_wrote_and_how_it_ended) {
+    auto opts = shell(
+        by_platform("printf out; printf err 1>&2; exit 3", "echo out& echo err 1>&2& exit /b 3"));
+
+    auto [captured] = run(process::capture(opts, loop));
+    ASSERT(captured.has_value());
+    EXPECT(trim_newlines(captured->stdout_data) == "out");
+    EXPECT(zest::contains(captured->stderr_data, "err"));
+    EXPECT(captured->status.status == 3);
+}
+
+// A child that reads its stdin to the end exits at once: there is nothing
+// to read.
+ZEST_CASE(capture_gives_the_child_no_input) {
+    auto [captured] = run(process::capture(test::stdin_reader(), loop));
+    ASSERT(captured.has_value());
+    EXPECT(captured->status.success());
+    EXPECT(trim_newlines(captured->stdout_data).empty());
+}
+
+ZEST_CASE(capture_of_a_missing_file_fails) {
+    process::options opts;
+    opts.file = by_platform("/nonexistent/kotatsu-nope", R"(Z:\nonexistent\kotatsu-nope.exe)");
+
+    auto [captured] = run(process::capture(opts, loop));
+    ASSERT(captured.has_error());
+    EXPECT(captured.error() == error::no_such_file_or_directory);
+}
+
+#ifndef _WIN32
+// The child fills stderr before it writes to stdout: reading one pipe after
+// the other, the capture would wait on it for good. The command is POSIX.
+ZEST_CASE(capture_reads_both_pipes_while_the_child_runs) {
+    auto opts = shell("head -c 1048576 /dev/zero >&2; head -c 1048576 /dev/zero");
+
+    auto [captured] = run(process::capture(opts, loop));
+    ASSERT(captured.has_value());
+    EXPECT(captured->status.success());
+    EXPECT(captured->stdout_data.size() == 1048576U);
+    EXPECT(captured->stderr_data.size() == 1048576U);
+}
+
+// The child writes its pid to one FIFO, then reads another that never ends,
+// so only a kill ends it. Once the pid is read the capture is cancelled, and
+// it ends only once the child is gone: no process has that pid any more.
+// Both FIFOs are opened for writing too, so that neither reads as ended.
+// mkfifo is POSIX.
+ZEST_CASE(cancelled_capture_kills_the_child) {
+    test::TempDir dir;
+    ASSERT(::mkfifo(dir.file("pid").c_str(), 0600) == 0);
+    ASSERT(::mkfifo(dir.file("hold").c_str(), 0600) == 0);
+    auto pid_fifo = fs::sync::open(dir.file("pid"), O_RDWR, 0);
+    ASSERT(pid_fifo.has_value());
+    auto hold = fs::sync::open(dir.file("hold"), O_RDWR, 0);
+    ASSERT(hold.has_value());
+    auto reader = pipe::open(*pid_fifo, loop);
+    ASSERT(reader.has_value());
+    auto opts = shell("echo $$ > pid; exec cat < hold");
+    opts.cwd = dir.path.string();
+    cancellation_source source;
+    auto canceller = [&]() -> task<std::optional<std::string>, error> {
+        auto pid = co_await reader->read_line().or_fail();
+        source.cancel();
+        co_return pid;
+    };
+
+    auto [captured, pid] =
+        run(with_token(process::capture(opts, loop), source.token()), canceller());
+    EXPECT(captured.is_cancelled());
+    ASSERT(pid.has_value());
+    ASSERT(pid->has_value());
+    const int found = ::kill(std::stoi(**pid), 0);
+    const int why = errno;
+    EXPECT(found == -1);
+    EXPECT(why == ESRCH);
+    EXPECT(!fs::sync::close(*hold));
 }
 #endif
 

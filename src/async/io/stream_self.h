@@ -20,8 +20,8 @@ struct stream::Self : uv::owned_handle<Self> {
 
     ring_buffer buffer;
 
-    /// What ended reading, the end of the stream included; reported once
-    /// the buffer is drained, and for good.
+    /// What ended reading, the end of the stream included, or why reading
+    /// can never start; reported once the buffer is drained, and for good.
     error ended;
 
     bool reading = false;

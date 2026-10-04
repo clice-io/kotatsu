@@ -1,3 +1,4 @@
+#include <compare>
 #include <cstdint>
 #include <limits>
 
@@ -72,6 +73,33 @@ ZEST_CASE(leaves_the_target_alone_when_it_does_not_fit) {
 ZEST_CASE(works_in_constant_evaluation) {
     STATIC_EXPECT(narrowed<std::uint8_t>(200) == 200);
     STATIC_EXPECT(narrowed<std::uint8_t>(-5) == 42);
+}
+
+ZEST_CASE(compare_exact_takes_the_whole_integer) {
+    using std::partial_ordering;
+    // 2^53 + 1 is no double: its nearest, 2^53, is below it.
+    constexpr std::int64_t odd = (std::int64_t{1} << 53) + 1;
+    STATIC_EXPECT(compare_exact(odd, 9007199254740992.0) == partial_ordering::greater);
+    STATIC_EXPECT(compare_exact(std::int64_t{3}, 3.0) == partial_ordering::equivalent);
+    // A fraction decides between the integers either side of it.
+    STATIC_EXPECT(compare_exact(2, 2.5) == partial_ordering::less);
+    STATIC_EXPECT(compare_exact(-2, -2.5) == partial_ordering::greater);
+    STATIC_EXPECT(compare_exact(-3, -2.5) == partial_ordering::less);
+}
+
+ZEST_CASE(compare_exact_past_every_integer) {
+    using std::partial_ordering;
+    STATIC_EXPECT(compare_exact(std::numeric_limits<std::uint64_t>::max(),
+                                18446744073709551616.0) == partial_ordering::less);
+    STATIC_EXPECT(compare_exact(std::uint64_t{1}, 1e30) == partial_ordering::less);
+    STATIC_EXPECT(compare_exact(std::numeric_limits<std::int64_t>::min(), -1e30) ==
+                  partial_ordering::greater);
+    STATIC_EXPECT(compare_exact(std::numeric_limits<std::int64_t>::min(), -9223372036854775808.0) ==
+                  partial_ordering::equivalent);
+    STATIC_EXPECT(compare_exact(0, std::numeric_limits<double>::infinity()) ==
+                  partial_ordering::less);
+    STATIC_EXPECT(compare_exact(0, std::numeric_limits<double>::quiet_NaN()) ==
+                  partial_ordering::unordered);
 }
 
 };  // ZEST_SUITE(support_numeric)

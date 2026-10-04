@@ -24,6 +24,15 @@ struct AppError {
     AppError(int code, std::string detail) : code(code), detail(std::move(detail)) {}
 };
 
+struct Counter {
+    task<int> next();
+};
+
+/// Whether co_invoke() takes `Fn` with `Args`.
+template <typename Fn, typename... Args>
+concept invocable_through_co_invoke =
+    requires(Fn fn, Args... args) { co_invoke(std::move(fn), std::move(args)...); };
+
 ZEST_SUITE(async_runtime_task, zest::LoopFixture) {
 
 ZEST_CASE(await_returns_the_child_value) {
@@ -526,6 +535,75 @@ ZEST_CASE(exception_after_cancel_still_fails_the_task, skip = test::exceptions_u
 }
 
 #endif  // KOTA_ENABLE_EXCEPTIONS
+
+// The lambda is a temporary gone before the task starts: co_invoke keeps it
+// for as long as the task runs.
+ZEST_CASE(co_invoke_keeps_the_callable_for_the_task) {
+    auto alive = std::make_shared<bool>(true);
+
+    struct Probe {
+        std::shared_ptr<bool> alive;
+
+        Probe(std::shared_ptr<bool> alive) : alive(std::move(alive)) {}
+
+        Probe(Probe&&) = default;
+
+        ~Probe() {
+            if(alive) {
+                *alive = false;
+            }
+        }
+    };
+
+    auto read = co_invoke([&alive, probe = Probe(alive)]() -> task<bool> {
+        co_await yield();
+        co_return *alive;
+    });
+
+    auto [result] = run(std::move(read));
+    ASSERT(result.has_value());
+    EXPECT(*result);
+}
+
+ZEST_CASE(co_invoke_keeps_the_arguments_for_the_task) {
+    auto read = [](const std::string& text) -> task<std::string> {
+        co_await yield();
+        co_return text;
+    };
+    auto invoked = co_invoke(read, std::string("an argument"));
+
+    auto [result] = run(std::move(invoked));
+    ASSERT(result.has_value());
+    EXPECT(*result == "an argument");
+}
+
+ZEST_CASE(co_invoke_takes_what_can_be_called) {
+    using member = task<int> (Counter::*)();
+    STATIC_EXPECT(invocable_through_co_invoke<task<int> (*)()>);
+    STATIC_EXPECT(!invocable_through_co_invoke<int (*)()>);
+    STATIC_EXPECT(!invocable_through_co_invoke<task<int, void, cancellation> (*)()>);
+    // A member function is no callable: bind it in a lambda.
+    STATIC_EXPECT(!invocable_through_co_invoke<member, Counter*>);
+}
+
+ZEST_CASE(co_invoke_passes_the_error_through) {
+    auto failing = []() -> task<void, error> {
+        co_await fail(error::connection_refused);
+    };
+
+    auto [result] = run(co_invoke(failing));
+    ASSERT(result.has_error());
+    EXPECT(result.error() == error::connection_refused);
+}
+
+ZEST_CASE(co_invoke_ends_cancelled_with_the_task) {
+    auto cancelling = []() -> task<int> {
+        co_await cancel();
+    };
+
+    auto [result] = run(co_invoke(cancelling));
+    EXPECT(result.is_cancelled());
+}
 
 };  // ZEST_SUITE(async_runtime_task)
 

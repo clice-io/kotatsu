@@ -3,6 +3,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -34,8 +35,9 @@ handle_type guess_handle(int fd);
 /// it. The end of the stream or a read error is reported once the bytes
 /// read before it are consumed, and from then on to every read. One read
 /// may be pending at a time; a second fails with
-/// error::resource_busy_or_locked. Cancelling a read only withdraws it: what
-/// arrives stays buffered for the next one.
+/// error::resource_busy_or_locked. Cancelling read(), read_some() or
+/// read_chunk() only withdraws it: what arrives stays buffered for the next
+/// one.
 ///
 /// Writes may overlap: libuv sends them in the order they were made.
 ///
@@ -73,6 +75,15 @@ public:
     /// read_chunk() showed.
     void consume(std::size_t n);
 
+    /// Reads until the end of the stream. A cancel loses what was read.
+    task<std::string, error> read_to_end();
+
+    /// Reads a line, without its "\n" or "\r\n"; at the end of the stream,
+    /// what follows the last line break if anything does, then nothing. A
+    /// cancel loses the part of the line read so far: the next read starts
+    /// inside the line.
+    task<std::optional<std::string>, error> read_line();
+
     /// Stops reading ahead and ends a pending read with
     /// error::operation_aborted. What is buffered stays; the next read
     /// starts reading again.
@@ -102,7 +113,9 @@ public:
     /// answer after that.
     task<void, error> shutdown();
 
-    /// Whether the stream can be read from; false for an inert one.
+    /// Whether the stream was opened for reading; false for an inert one. A
+    /// pipe over a descriptor the loop cannot wait on was, though its reads
+    /// fail.
     bool readable() const noexcept;
 
     /// Whether the stream can be written to; false for an inert one, and
@@ -189,7 +202,11 @@ public:
     // default member initializers cannot be a default argument within its
     // enclosing class.
 
-    /// Wrap an existing file descriptor.
+    /// Wrap an existing file descriptor. Reading one the loop cannot wait on
+    /// fails with error::socket_operation_on_non_socket, a regular file and
+    /// on Linux a device such as /dev/null too, while writing to it works.
+    /// Windows opens a pipe's handle only: another fails with
+    /// error::socket_operation_on_non_socket.
     static result<pipe> open(int fd, event_loop& loop = event_loop::current());
 
     static result<pipe> open(int fd, options opts, event_loop& loop = event_loop::current());

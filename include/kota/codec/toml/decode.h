@@ -1,10 +1,10 @@
 #pragma once
 
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <format>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -67,6 +67,9 @@ auto select_root_node(const Table& tbl) -> const Node* {
 
 struct ValueReader {
     const Node* node;
+    /// The key a table member's reader reads the value of; null for any
+    /// other reader.
+    const ::toml::key* key = nullptr;
     constexpr static bool data_driven = true;
     constexpr static bool human_readable = true;
     using format = toml::format;
@@ -75,7 +78,7 @@ struct ValueReader {
     bool try_read(F&& fn) {
         rich_error discard_err;
         scoped_context<rich_error> guard(discard_err);
-        ValueReader fork{node};
+        ValueReader fork = *this;
         return fn(fork);
     }
 
@@ -198,7 +201,7 @@ struct ValueReader {
             return fail_type("table");
         }
         for(const auto& [k, v]: *tbl) {
-            ValueReader sub{&v};
+            ValueReader sub{.node = &v, .key = &k};
             KOTA_CODEC_TRY(cb(std::string_view(k), sub));
         }
         return true;
@@ -232,12 +235,12 @@ struct ValueReader {
         return visit_seq(std::forward<Callback>(cb));
     }
 
-    /// Backend hook used by data-driven struct decoding: fail an unknown field
-    /// with the offending value node's source location attached.
-    bool fail_unknown_field(std::string_view key) {
-        auto err = rich_error::unknown_field(key);
-        attach_location(err);
-        return scoped_context<rich_error>::fail(std::move(err));
+    /// Where the key this reader's value belongs to is written.
+    std::optional<rich_error::source_location> key_location() const {
+        if(!key) {
+            return std::nullopt;
+        }
+        return detail::location_of(key->source());
     }
 
 private:
@@ -294,7 +297,7 @@ auto from_toml(const Table& tbl, T& out) -> std::expected<void, rich_error> {
 }
 
 /// Decodes TOML text into `out` (or, in the value-returning overload, into a
-/// default-constructed T): parse_table followed by from_toml.
+/// value-initialized T): parse_table followed by from_toml.
 template <typename Config = void, typename T>
 auto from_string(std::string_view text, T& out) -> std::expected<void, rich_error> {
     KOTA_EXPECTED_TRY_V(auto table, parse_table(text));
@@ -302,9 +305,9 @@ auto from_string(std::string_view text, T& out) -> std::expected<void, rich_erro
 }
 
 template <typename T, typename Config = void>
-    requires std::default_initializable<T>
+    requires std::is_default_constructible_v<T>
 auto from_string(std::string_view text) -> std::expected<T, rich_error> {
-    T value{};
+    auto value = T();
     KOTA_EXPECTED_TRY(from_string<Config>(text, value));
     return value;
 }

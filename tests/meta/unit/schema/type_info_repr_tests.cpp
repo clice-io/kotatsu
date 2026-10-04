@@ -27,6 +27,15 @@ struct DenyOnly {
     constexpr static auto spec = make_struct_spec(dsl::deny_unknown_fields = true);
 };
 
+struct DefaultedOnly {
+    constexpr static auto spec = make_struct_spec(dsl::defaulted_fields = true);
+};
+
+/// A struct whose field merges a policy of its own below a defaulted one.
+struct RenamedInside {
+    annotate<CamelOnly>::type<MergePoint> inner;
+};
+
 /// "camel, then deny" across two chained reprs, and both on one.
 struct DenyStep {};
 
@@ -70,6 +79,18 @@ ZEST_CASE(equivalent_merge_chains_share_type_info) {
     EXPECT(info.deny_unknown);
     ASSERT(info.fields.size() == 1U);
     EXPECT(info.fields[0].name == "xVal");
+}
+
+ZEST_CASE(defaulted_fields_stays_through_a_deeper_merge) {
+    // Like deny, defaulted is sticky: the rename merged below it keeps it.
+    const auto& info = static_cast<const struct_type_info&>(
+        type_info_of<annotate<DefaultedOnly>::type<RenamedInside>>());
+    ASSERT(info.fields.size() == 1U);
+    EXPECT(info.fields[0].has_default);
+    const auto& inner = static_cast<const struct_type_info&>(info.fields[0].type());
+    ASSERT(inner.fields.size() == 1U);
+    EXPECT(inner.fields[0].name == "xVal");
+    EXPECT(inner.fields[0].has_default);
 }
 
 ZEST_CASE(annotation_in_declared_repr_resolves) {

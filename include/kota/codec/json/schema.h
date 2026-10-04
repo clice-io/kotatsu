@@ -1,12 +1,15 @@
 #pragma once
 
 #include <algorithm>
+#include <compare>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <format>
+#include <initializer_list>
 #include <limits>
+#include <optional>
 #include <ranges>
 #include <string>
 #include <string_view>
@@ -145,6 +148,11 @@ private:
                     {"type", "boolean"}
                 };
             case tk::character:
+                // One code point up to U+00FF, the char's value.
+                return dyn::Value{
+                    {"type",    "string"              },
+                    {"pattern", R"(^[\u0000-\u00FF]$)"},
+                };
             case tk::string:
                 return dyn::Value{
                     {"type", "string"}
@@ -213,10 +221,26 @@ private:
         target.insert("type", "object");
         KOTA_EXPECTED_TRY_V(auto props, make_properties(si));
         dyn::Array required;
+        // A required field the document may name by an alias is present under
+        // one of its names.
+        dyn::Array named_once;
         for(const auto& f: si->fields) {
-            if(is_required(f)) {
-                required.push_back(dyn::Value(f.name));
+            if(!is_required(f)) {
+                continue;
             }
+            if(f.aliases.empty()) {
+                required.push_back(dyn::Value(f.name));
+                continue;
+            }
+            dyn::Array names{dyn::Value{{"required", dyn::Array{dyn::Value(f.name)}}}};
+            for(auto alias: f.aliases) {
+                names.push_back(dyn::Value{
+                    {"required", dyn::Array{dyn::Value(alias)}}
+                });
+            }
+            named_once.push_back(dyn::Value{
+                {"anyOf", std::move(names)}
+            });
         }
         if(tag) {
             props.get_object()->insert(std::string(tag->field),
@@ -228,6 +252,9 @@ private:
         target.insert("properties", std::move(props));
         if(!required.empty()) {
             target.insert("required", std::move(required));
+        }
+        if(!named_once.empty()) {
+            target.insert("allOf", std::move(named_once));
         }
         if(si->deny_unknown) {
             target.insert("additionalProperties", false);
@@ -304,9 +331,20 @@ private:
         }
     }
 
+    /// How an enum's values are spelled: through a behavior::enum_string's
+    /// policy whatever enum_repr says, through the config's enum_rename under
+    /// enum_repr::String; null when they travel as integers.
+    enum_rename_fn spelling(const meta::enum_type_info* ei) const {
+        if(ei->rename != nullptr) {
+            return ei->rename;
+        }
+        return opts.enums == enum_repr::String ? opts.rename : nullptr;
+    }
+
     result_t make_enum(const meta::type_info* ti) const {
         auto* ei = static_cast<const meta::enum_type_info*>(ti);
-        if(opts.enums != enum_repr::String) {
+        auto rename = spelling(ei);
+        if(rename == nullptr) {
             // enum_repr::Integer: the codec casts through the underlying type
             // without checking membership, and name reflection only covers a
             // limited scan range — values outside it still encode. The honest
@@ -317,7 +355,7 @@ private:
         // spelling, so the encoder rejects it instead of emitting one.
         dyn::Array values;
         for(const auto& name: ei->member_names) {
-            values.push_back(dyn::Value(opts.rename(true, name)));
+            values.push_back(dyn::Value(rename(true, name)));
         }
         return dyn::Value{
             {"enum", std::move(values)}
@@ -327,23 +365,57 @@ private:
     result_t make_array(const meta::type_info* ti) {
         auto* ai = static_cast<const meta::array_type_info*>(ti);
         KOTA_EXPECTED_TRY_V(auto items, make_schema(&ai->element()));
-        dyn::Object obj{
+        // No uniqueItems for a set: the decoder takes duplicates and keeps
+        // one, and a multiset encodes them.
+        return dyn::Value{
             {"type",  "array"         },
             {"items", std::move(items)},
         };
-        if(ti->kind == tk::set) {
-            obj.insert("uniqueItems", true);
-        }
-        return dyn::Value(std::move(obj));
     }
 
     result_t make_map(const meta::type_info* ti) {
         auto* mi = static_cast<const meta::map_type_info*>(ti);
         KOTA_EXPECTED_TRY_V(auto val_schema, make_schema(&mi->value()));
-        return dyn::Value{
+        dyn::Object obj{
             {"type",                 "object"             },
             {"additionalProperties", std::move(val_schema)},
         };
+        if(auto names = key_names(&mi->key())) {
+            obj.insert("propertyNames", std::move(*names));
+        }
+        return dyn::Value(std::move(obj));
+    }
+
+    /// What a map's keys must spell, beyond a string, as its keys decode:
+    /// the decimal digits of an integer, the name of an enumerator. The
+    /// range of an integer key is not stated.
+    std::optional<dyn::Value> key_names(const meta::type_info* ti) const {
+        auto kind = ti->kind;
+        if(kind == tk::enumeration) {
+            auto* ei = static_cast<const meta::enum_type_info*>(ti);
+            if(spelling(ei) != nullptr) {
+                // An enum's schema never fails.
+                return *make_enum(ti);
+            }
+            kind = ei->underlying_kind;
+        }
+        switch(kind) {
+            case tk::int8:
+            case tk::int16:
+            case tk::int32:
+            case tk::int64:
+                return dyn::Value{
+                    {"pattern", "^-?[0-9]+$"}
+                };
+            case tk::uint8:
+            case tk::uint16:
+            case tk::uint32:
+            case tk::uint64:
+                return dyn::Value{
+                    {"pattern", "^[0-9]+$"}
+                };
+            default: return std::nullopt;
+        }
     }
 
     result_t make_tuple(const meta::type_info* ti) {
@@ -390,14 +462,147 @@ private:
 
     result_t make_properties(const meta::struct_type_info* si) {
         dyn::Object props;
+        // A key the decoder gives the first field answering to it: a second
+        // field's property under the same name would claim it too.
+        auto claim = [&](std::string_view name,
+                         const meta::field_info& f) -> std::expected<void, rich_error> {
+            if(props.find(name) != nullptr) {
+                return std::unexpected(
+                    rich_error(std::format("field '{}' answers to '{}', as another field does",
+                                           f.name,
+                                           name)));
+            }
+            return {};
+        };
         for(const auto& f: si->fields) {
+            // A required field is in every document, so a default holding
+            // it cannot leave it out; it has no default of its own to hide.
+            if(!f.schema_default && is_required(f)) {
+                return std::unexpected(rich_error(
+                    std::format("schema_default = false on field '{}', which is required",
+                                f.name)));
+            }
             KOTA_EXPECTED_TRY_V(auto schema, make_schema(&f.type()));
+            KOTA_EXPECTED_TRY(constrain(schema, f));
+            // An alias reads the same value; the field describes it.
+            auto aliased = f.aliases.empty() ? dyn::Value() : schema;
             if(!f.description.empty()) {
                 schema.get_object()->insert("description", f.description);
             }
+            KOTA_EXPECTED_TRY(claim(f.name, f));
             props.insert(std::string(f.name), std::move(schema));
+            for(auto alias: f.aliases) {
+                KOTA_EXPECTED_TRY(claim(alias, f));
+                props.insert(std::string(alias), aliased);
+            }
         }
         return dyn::Value(std::move(props));
+    }
+
+    /// The branches of a schema whose `type` is one of types: the schema
+    /// itself, or, through the anyOf a nullable, a nan_repr or an untagged
+    /// variant makes, nested as deep as they nest, its branches.
+    static void typed_branches(dyn::Value& schema,
+                               std::initializer_list<std::string_view> types,
+                               std::vector<dyn::Object*>& branches) {
+        auto* object = schema.get_object();
+        if(object == nullptr) {
+            return;
+        }
+        const auto* type = object->find("type");
+        auto name = type != nullptr ? type->get_string() : std::nullopt;
+        if(name && std::ranges::find(types, *name) != types.end()) {
+            branches.push_back(object);
+        } else if(auto* any = object->find("anyOf")) {
+            for(auto& branch: *any->get_array()) {
+                typed_branches(branch, types, branches);
+            }
+        }
+    }
+
+    static dyn::Value to_dyn(const meta::schema_number& number) {
+        if(const auto* i = std::get_if<std::int64_t>(&number)) {
+            return *i;
+        }
+        if(const auto* u = std::get_if<std::uint64_t>(&number)) {
+            return *u;
+        }
+        return std::get<double>(number);
+    }
+
+    static meta::schema_number number_of(const dyn::Value& value) {
+        if(auto i = value.get_int()) {
+            return *i;
+        }
+        if(auto u = value.get_uint()) {
+            return *u;
+        }
+        return *value.get_double();
+    }
+
+    /// Writes into a number branch a bound the annotation of field f states,
+    /// where it is tighter than the one the type gives: tighter is greater
+    /// for a minimum, less for a maximum.
+    static std::expected<void, rich_error> bound(dyn::Object& branch,
+                                                 const meta::field_info& f,
+                                                 std::string_view key,
+                                                 const meta::schema_number& number,
+                                                 std::partial_ordering tighter) {
+        if(std::holds_alternative<std::monostate>(number)) {
+            return {};
+        }
+        if(branch.find("type")->get_string() == "integer" &&
+           std::holds_alternative<double>(number)) {
+            return std::unexpected(
+                rich_error(std::format("floating-point {} on integer field '{}'", key, f.name)));
+        }
+        if(auto* current = branch.find(key)) {
+            if(meta::compare_numbers(number, number_of(*current)) == tighter) {
+                *current = to_dyn(number);
+            }
+        } else {
+            branch.insert(std::string(key), to_dyn(number));
+        }
+        return {};
+    }
+
+    /// What the field's annotation states beyond its type: the bounds of a
+    /// number, the values of a string. The decoder checks neither.
+    static std::expected<void, rich_error> constrain(dyn::Value& schema,
+                                                     const meta::field_info& f) {
+        bool bounded = !std::holds_alternative<std::monostate>(f.minimum) ||
+                       !std::holds_alternative<std::monostate>(f.maximum);
+        if(bounded) {
+            std::vector<dyn::Object*> numbers;
+            typed_branches(schema, {"integer", "number"}, numbers);
+            if(numbers.empty()) {
+                return std::unexpected(rich_error(
+                    std::format("minimum or maximum on field '{}', which is not a number",
+                                f.name)));
+            }
+            for(auto* branch: numbers) {
+                KOTA_EXPECTED_TRY(
+                    bound(*branch, f, "minimum", f.minimum, std::partial_ordering::greater));
+                KOTA_EXPECTED_TRY(
+                    bound(*branch, f, "maximum", f.maximum, std::partial_ordering::less));
+            }
+        }
+        if(!f.choices.empty()) {
+            std::vector<dyn::Object*> strings;
+            typed_branches(schema, {"string"}, strings);
+            if(strings.empty()) {
+                return std::unexpected(rich_error(
+                    std::format("choices on field '{}', which is not a string", f.name)));
+            }
+            dyn::Array values;
+            for(auto choice: f.choices) {
+                values.push_back(dyn::Value(choice));
+            }
+            for(auto* branch: strings) {
+                branch->insert("enum", values);
+            }
+        }
+        return {};
     }
 
     /// A field is required only when it always appears in the output: no decode
@@ -481,20 +686,24 @@ private:
                 case meta::tag_mode::adjacent: {
                     auto alt_name = alternative_name(vi, i);
                     KOTA_EXPECTED_TRY_V(auto schema, make_schema(&vi->alternatives[i]()));
-                    alts.push_back({
-                        {"type",                 "object"},
+                    dyn::Object branch{
+                        {"type",       "object"},
                         {"properties",
                          dyn::Object{
                              {std::string(vi->tag_field), {{"const", alt_name}}},
                              {std::string(vi->content_field), std::move(schema)},
-                         }                               },
+                         }                     },
                         {"required",
                          dyn::Array{
                              dyn::Value(vi->tag_field),
                              dyn::Value(vi->content_field),
-                         }                               },
-                        {"additionalProperties", false   },
-                    });
+                         }                     },
+                    };
+                    // Other keys are passed over unless unknown fields are denied.
+                    if(vi->deny_unknown) {
+                        branch.insert("additionalProperties", false);
+                    }
+                    alts.push_back(std::move(branch));
                     break;
                 }
             }
@@ -518,13 +727,13 @@ private:
 };
 
 /// The fresh documents the default-annotation pass pairs schema bodies with:
-/// for every default-initializable struct the decoder reads directly (see
+/// for every default-constructible struct the decoder reads directly (see
 /// decoder_reads_directly) reachable through the resolved type structure,
 /// the document a value-initialized instance encodes to under the resolved
 /// config, keyed by the normalized name the emitter gives the type's $def.
 /// collect_fresh mirrors the emitter's reach — struct fields (flattened
-/// included, skipped excluded), each under the config its slot's rename_all
-/// / deny_unknown spec merges to, optional and pointer inners, sequence and
+/// included, skipped excluded), each under the config its slot's struct-level
+/// spec merges to, optional and pointer inners, sequence and
 /// set elements, map values (keys encode as object keys and carry no
 /// schema), tuple elements, variant alternatives. A repr-routed type is
 /// skipped, subtree included, field-level behavior attrs (`with`, `as`) are
@@ -582,17 +791,32 @@ public:
     }
 
 private:
-    static bool is_required(const dyn::Array* required, std::string_view name) {
-        if(required == nullptr) {
-            return false;
-        }
-        return std::ranges::any_of(*required,
+    static bool lists(const dyn::Value* required, std::string_view name) {
+        return required != nullptr &&
+               std::ranges::any_of(*required->get_array(),
                                    [&](const dyn::Value& v) { return v.get_string() == name; });
+    }
+
+    /// Whether body requires the property: in its required list, or, for a
+    /// field the document may name by an alias, under one of its names.
+    static bool is_required(const dyn::Object& body, std::string_view name) {
+        if(lists(body.find("required"), name)) {
+            return true;
+        }
+        const auto* named_once = body.find("allOf");
+        return named_once != nullptr &&
+               std::ranges::any_of(*named_once->get_array(), [&](const dyn::Value& names) {
+                   const auto* any = names.get_object()->find("anyOf");
+                   return any != nullptr &&
+                          std::ranges::any_of(*any->get_array(), [&](const dyn::Value& one) {
+                              return lists(one.get_object()->find("required"), name);
+                          });
+               });
     }
 
     static void annotate_properties(dyn::Object& body, const dyn::Value& doc_value) {
         // A non-struct root pairs with a non-object document (an array, a
-        // scalar, the null a default-constructed nullable root encodes to);
+        // scalar, the null a value-initialized nullable root encodes to);
         // it has no properties to annotate from.
         const auto* doc = doc_value.get_object();
         if(doc == nullptr) {
@@ -602,13 +826,9 @@ private:
         if(props == nullptr) {
             return;
         }
-        const dyn::Array* required = nullptr;
-        if(const auto* r = body.find("required")) {
-            required = r->get_array();
-        }
         for(auto& [name, prop]: *props->get_object()) {
             const auto* v = doc->find(name);
-            if(v != nullptr && !is_required(required, name)) {
+            if(v != nullptr && !is_required(body, name)) {
                 prop.get_object()->insert("default", *v);
             }
         }
@@ -666,6 +886,15 @@ private:
 template <typename Config>
 struct schema_config : default_config<Config> {
     using format = json::format;
+};
+
+/// The config the documents the defaults come from are encoded under:
+/// Config, leaving out the fields whose default the schema does not state
+/// (schema_default = false), wherever they sit, so that neither their own
+/// property nor the whole-object default of one holding them states it.
+template <typename Config>
+struct default_document_config : default_config<Config> {
+    constexpr static bool omit_unstated_defaults = true;
 };
 
 /// schema_options as a codec config declares them. No visitor participates
@@ -740,8 +969,8 @@ void collect_fresh(FreshDefaults& out) {
                 // — annotate neither rather than pair one with the other's
                 // document.
                 out.docs.erase(name);
-            } else if constexpr(std::default_initializable<T>) {
-                if(auto text = to_string<cfg>(T{})) {
+            } else if constexpr(std::is_default_constructible_v<T>) {
+                if(auto text = to_string<default_document_config<cfg>>(T())) {
                     if(auto doc = from_string<dyn::Value>(*text)) {
                         out.docs.emplace(name, std::move(*doc));
                     }
@@ -786,17 +1015,17 @@ inline std::expected<std::string, rich_error> stringify(dyn::Value value, bool p
 
 }  // namespace detail
 
-/// When T is default-initializable and the decoder reads it directly — T
+/// When T is default-constructible and the decoder reads it directly — T
 /// resolves to itself, or is a structural meta::annotate wrapper of the type
 /// it resolves to — the schema also carries `default` annotations: fresh
 /// instances are encoded through the real JSON encoder under Config and
 /// parsed back into documents, so the values match what to_string emits byte
 /// for byte (enum renames, nan handling, structural annotations on the root
-/// itself included). Root properties take the values of T{}; each $def and
+/// itself included). Root properties take the values of T(); each $def and
 /// inlined variant branch takes the values of a freshly constructed instance
 /// of its own type, with non-required sites layering their whole-object
 /// defaults on top (see DefaultAnnotator). Two consequences of riding the
-/// real encoder: T{} must encode under Config — an instance the encoder
+/// real encoder: T() must encode under Config — an instance the encoder
 /// rejects (a NaN member under nan_repr::Error, an enum value without a
 /// reflected name under enum_repr::String) fails schema generation with that
 /// error — and a T whose fields the codec cannot serialize fails to compile,
@@ -804,10 +1033,18 @@ inline std::expected<std::string, rich_error> stringify(dyn::Value value, bool p
 /// unannotated schema; an opaque root — one whose JSON-resolved
 /// representation still reflects as kind unknown — keeps reporting the
 /// emission error at runtime.
+///
+/// A reader taking a property's default takes the one at the property's own
+/// site over the one inside the $def it refers to: the site's default is the
+/// whole value an enclosing initializer gives it. A field annotated
+/// `schema_default = false` has no default stated anywhere. The bounds
+/// (`minimum`, `maximum`) and the values (`choices`) a field annotation
+/// states join its schema for the schema's readers; the decoder checks none
+/// of them.
 template <typename T, typename Config = void>
 std::expected<dyn::Value, rich_error> schema() {
     using resolved = meta::resolved_repr_t<T, format>;
-    constexpr bool annotate_defaults = std::default_initializable<T> &&
+    constexpr bool annotate_defaults = std::is_default_constructible_v<T> &&
                                        meta::kind_of<resolved>() != meta::type_kind::unknown &&
                                        detail::decoder_reads_directly<T>();
     KOTA_EXPECTED_TRY_V(
@@ -815,7 +1052,7 @@ std::expected<dyn::Value, rich_error> schema() {
         (detail::SchemaEmitter{detail::options_of<Config>(), annotate_defaults}.emit(
             meta::type_info_of<T, detail::schema_config<Config>>())));
     if constexpr(annotate_defaults) {
-        KOTA_EXPECTED_TRY_V(auto text, to_string<Config>(T{}));
+        KOTA_EXPECTED_TRY_V(auto text, to_string<detail::default_document_config<Config>>(T()));
         KOTA_EXPECTED_TRY_V(auto doc, from_string<dyn::Value>(text));
         detail::FreshDefaults fresh;
         detail::collect_fresh<T, detail::schema_config<Config>>(fresh);

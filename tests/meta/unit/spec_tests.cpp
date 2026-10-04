@@ -1,3 +1,5 @@
+#include <compare>
+#include <cstdint>
 #include <tuple>
 #include <type_traits>
 #include <variant>
@@ -14,6 +16,28 @@ struct full_tag {
                                            dsl::alias = {"user_id", "uid"},
                                            dsl::description = "User identifier.",
                                            dsl::idx = 7u);
+};
+
+/// A member whose default constructor is explicit.
+struct explicit_member {
+    explicit explicit_member() = default;
+
+    auto operator==(const explicit_member&) const -> bool = default;
+};
+
+/// Only value-initialization makes it.
+struct only_value_initialized {
+    explicit_member member;
+    int count = 0;
+
+    auto operator==(const only_value_initialized&) const -> bool = default;
+};
+
+struct schema_tag {
+    constexpr static auto spec = make_spec(dsl::minimum = 1,
+                                           dsl::maximum = 2.5,
+                                           dsl::choices = {"off", "on"},
+                                           dsl::schema_default = false);
 };
 
 struct defaulted_tag {
@@ -114,6 +138,30 @@ ZEST_CASE(make_spec_folds_values) {
     STATIC_EXPECT(!spec.defaulted);
     STATIC_EXPECT(spec.skip_if == skip_when::never);
     STATIC_EXPECT(std::tuple_size_v<decltype(full_tag::spec)::extras> == 0);
+}
+
+ZEST_CASE(make_spec_folds_what_a_schema_states) {
+    constexpr const field_spec& spec = schema_tag::spec.value;
+    STATIC_EXPECT(std::get<std::int64_t>(spec.minimum) == 1);
+    STATIC_EXPECT(std::get<double>(spec.maximum) == 2.5);
+    STATIC_EXPECT(spec.choices.names()[1] == "on");
+    STATIC_EXPECT(!spec.schema_default);
+    // Unset, a field states its default and no bounds.
+    STATIC_EXPECT(full_tag::spec.value.schema_default);
+    STATIC_EXPECT(std::holds_alternative<std::monostate>(full_tag::spec.value.minimum));
+    // Unsigned values keep their sign.
+    STATIC_EXPECT(std::get<std::uint64_t>(make_spec(dsl::maximum = ~0ULL).value.maximum) == ~0ULL);
+}
+
+ZEST_CASE(numbers_compare_exactly) {
+    using std::partial_ordering;
+    STATIC_EXPECT(compare_numbers(std::int64_t{-1}, std::uint64_t{0}) == partial_ordering::less);
+    STATIC_EXPECT(compare_numbers(~0ULL, std::int64_t{-1}) == partial_ordering::greater);
+    // An integer against a double, either way round.
+    STATIC_EXPECT(compare_numbers(2.5, std::int64_t{2}) == partial_ordering::greater);
+    STATIC_EXPECT(compare_numbers(std::int64_t{2}, 2.5) == partial_ordering::less);
+    STATIC_EXPECT(compare_numbers(1.5, 2.5) == partial_ordering::less);
+    STATIC_EXPECT(compare_numbers(schema_number{}, std::int64_t{1}) == partial_ordering::unordered);
 }
 
 ZEST_CASE(make_spec_keeps_type_components_in_type) {
@@ -274,6 +322,12 @@ ZEST_CASE(skip_when_evaluates_builtin_predicates) {
     STATIC_EXPECT(!evaluate_skip_when<skip_when::default_value>(1, true));
     // Deserialization never skips.
     STATIC_EXPECT(!evaluate_skip_when<skip_when::default_value>(0, false));
+    // The default value is value-initialized: `{}` would copy-list-initialize
+    // the explicit member.
+    auto fresh = only_value_initialized();
+    EXPECT(evaluate_skip_when<skip_when::default_value>(fresh, true));
+    fresh.count = 1;
+    EXPECT(!evaluate_skip_when<skip_when::default_value>(fresh, true));
 }
 
 };  // ZEST_SUITE(meta_spec)

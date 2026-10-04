@@ -64,8 +64,6 @@ result<Ends> pipe_ends(event_loop& loop) {
     return Ends{.reader = std::move(*reader), .writer = std::move(*writer)};
 }
 
-using test::read_to_end;
-
 ZEST_SUITE(async_io_stream_pipe, zest::LoopFixture) {
 
 ZEST_CASE(read_returns_what_was_written_then_eof) {
@@ -84,6 +82,58 @@ ZEST_CASE(read_returns_what_was_written_then_eof) {
     EXPECT(*first == "kotatsu-pipe");
     ASSERT(second.has_error());
     EXPECT(second.error() == error::end_of_file);
+}
+
+// A line ends with "\n" or "\r\n"; what follows the last line break is a
+// line of its own.
+ZEST_CASE(read_line_splits_the_stream_into_lines) {
+    auto reader = pipe_holding("first\r\nsecond\n\nlast", loop);
+    ASSERT(reader.has_value());
+    auto read_lines = [&]() -> task<std::vector<std::string>, error> {
+        std::vector<std::string> lines;
+        while(auto line = co_await reader->read_line().or_fail()) {
+            lines.push_back(std::move(*line));
+        }
+        co_return lines;
+    };
+
+    auto [lines] = run(read_lines());
+    ASSERT(lines.has_value());
+    EXPECT(*lines == std::vector<std::string>{"first", "second", "", "last"});
+}
+
+// The "\r" of a "\r\n" is buffered before its "\n" is written, so the two
+// come in different chunks; the line still ends without it.
+ZEST_CASE(read_line_drops_a_carriage_return_read_before_its_newline) {
+    int fds[2] = {-1, -1};
+    ASSERT(test::create_pipe(fds) == 0);
+    auto reader = pipe::open(fds[0], loop);
+    ASSERT(reader.has_value());
+    ASSERT(test::write_fd(fds[1], "first\r", 6) == 6);
+    auto read_split = [&]() -> task<std::optional<std::string>, error> {
+        co_await reader->read_chunk().or_fail();
+        test::write_fd(fds[1], "\n", 1);
+        test::close_fd(fds[1]);
+        co_return co_await reader->read_line().or_fail();
+    };
+
+    auto [line] = run(read_split());
+    ASSERT(line.has_value());
+    EXPECT(*line == std::optional<std::string>("first"));
+}
+
+ZEST_CASE(read_line_after_the_last_line_break_reads_nothing) {
+    auto reader = pipe_holding("line\n", loop);
+    ASSERT(reader.has_value());
+    auto read_twice = [&]() -> task<std::vector<std::optional<std::string>>, error> {
+        auto first = co_await reader->read_line().or_fail();
+        auto second = co_await reader->read_line().or_fail();
+        co_return std::vector{std::move(first), std::move(second)};
+    };
+
+    auto [lines] = run(read_twice());
+    ASSERT(lines.has_value());
+    EXPECT(*lines == std::vector<std::optional<std::string>>{"line", std::nullopt});
 }
 
 // An empty buffer reads nothing without waiting; then read_some reads four
@@ -354,7 +404,7 @@ ZEST_CASE(write_reaches_the_reader) {
         ends->writer = pipe{};
     };
 
-    auto [sent, received] = run(send(), read_to_end(ends->reader));
+    auto [sent, received] = run(send(), ends->reader.read_to_end());
     EXPECT(sent.has_value());
     ASSERT(received.has_value());
     EXPECT(*received == "kotatsu-write");
@@ -372,7 +422,7 @@ ZEST_CASE(overlapping_writes_arrive_in_order) {
         ends->writer = pipe{};
     };
 
-    auto [sent, received] = run(send(), read_to_end(ends->reader));
+    auto [sent, received] = run(send(), ends->reader.read_to_end());
     EXPECT(sent.has_value());
     ASSERT(received.has_value());
     EXPECT(*received == first + second);
@@ -417,6 +467,26 @@ ZEST_CASE(write_and_shutdown_ended_by_a_close_fails) {
     EXPECT(written.error() == error::operation_aborted);
     ASSERT(shut.has_error());
     EXPECT(shut.error() == error::operation_aborted);
+}
+#endif
+
+#ifndef _WIN32
+// The loop ignores SIGPIPE, which would end the process at a write to a pipe
+// nobody reads.
+ZEST_CASE(write_to_a_pipe_nobody_reads_fails) {
+    int fds[2] = {-1, -1};
+    ASSERT(test::create_pipe(fds) == 0);
+    test::close_fd(fds[0]);
+    auto writer = pipe::open(fds[1], loop);
+    ASSERT(writer.has_value());
+    auto write = [&]() -> task<void, error> {
+        std::string_view text = "text";
+        co_await writer->write(std::span(text.data(), text.size())).or_fail();
+    };
+
+    auto [written] = run(write());
+    ASSERT(written.has_error());
+    EXPECT(written.error() == error::broken_pipe);
 }
 #endif
 
@@ -593,6 +663,83 @@ ZEST_CASE(open_of_a_bad_descriptor_fails) {
     EXPECT(opened.error() == error::bad_file_descriptor);
 }
 
+// The loop cannot wait on a regular file to read it: on Linux epoll refuses
+// one, and libuv would abort at the first read; on macOS kqueue stops
+// reporting one at its end. Windows opens no handle but a pipe's.
+ZEST_CASE(read_of_a_file_fails) {
+    test::TempDir dir;
+    test::write_file(dir.file("file.txt"), "text");
+    auto file = fs::sync::open(dir.file("file.txt"), O_RDONLY, 0);
+    ASSERT(file.has_value());
+
+    auto opened = pipe::open(*file, loop);
+#ifdef _WIN32
+    ASSERT(opened.has_error());
+    EXPECT(opened.error() == error::socket_operation_on_non_socket);
+    EXPECT(!fs::sync::close(*file));
+#else
+    ASSERT(opened.has_value());
+    auto read_each_way = [&]() -> task<std::vector<error>> {
+        auto read = co_await opened->read();
+        auto rest = co_await opened->read_to_end();
+        auto line = co_await opened->read_line();
+        co_return std::vector{read.has_error() ? read.error() : error(),
+                              rest.has_error() ? rest.error() : error(),
+                              line.has_error() ? line.error() : error()};
+    };
+
+    auto [errors] = run(read_each_way());
+    ASSERT(errors.has_value());
+    EXPECT(*errors == std::vector<error>(3, error::socket_operation_on_non_socket));
+#endif
+}
+
+#ifndef _WIN32
+// The null device as a child's ignored stdout is open for reading and
+// writing: writes to it go out, whether or not the loop can wait to read it.
+ZEST_CASE(open_of_the_null_device_to_read_and_write_writes_to_it) {
+    auto file = fs::sync::open("/dev/null", O_RDWR, 0);
+    ASSERT(file.has_value());
+    auto opened = pipe::open(*file, loop);
+    ASSERT(opened.has_value());
+    auto write_then_read = [&]() -> task<error, error> {
+        std::string_view text = "text";
+        co_await opened->write(std::span(text.data(), text.size())).or_fail();
+        auto read = co_await opened->read();
+        co_return read.has_error() ? read.error() : error();
+    };
+
+    auto [read] = run(write_then_read());
+    ASSERT(read.has_value());
+#ifdef __linux__
+    // epoll refuses the null device.
+    EXPECT(*read == error::socket_operation_on_non_socket);
+#else
+    // kqueue reads it to its end.
+    EXPECT(*read == error::end_of_file);
+#endif
+}
+
+// Writes to a regular file never wait, so the loop never watches one open
+// only for writing.
+ZEST_CASE(open_of_a_file_to_write_writes_to_it) {
+    test::TempDir dir;
+    auto file = fs::sync::open(dir.file("file.txt"), O_CREAT | O_WRONLY, 0644);
+    ASSERT(file.has_value());
+    auto opened = pipe::open(*file, loop);
+    ASSERT(opened.has_value());
+    auto writer = [&]() -> task<void, error> {
+        std::string_view text = "text";
+        co_await opened->write(std::span(text.data(), text.size())).or_fail();
+    };
+
+    auto [written] = run(writer());
+    EXPECT(written.has_value());
+    *opened = pipe();
+    EXPECT(test::read_file(dir.file("file.txt")) == "text");
+}
+#endif
+
 ZEST_CASE(guess_handle_tells_a_pipe_from_a_file) {
     test::TempDir dir;
     int fds[2] = {-1, -1};
@@ -754,14 +901,14 @@ ZEST_CASE(shutdown_lets_the_peer_read_to_the_end) {
     ASSERT(listener.has_value());
     auto serve = [&]() -> task<std::string, error> {
         auto connection = co_await listener->accept().or_fail();
-        co_return co_await read_to_end(connection).or_fail();
+        co_return co_await connection.read_to_end().or_fail();
     };
     auto client = [&]() -> task<std::string, error> {
         auto connection = co_await pipe::connect(name, loop).or_fail();
         co_await or_fail(co_await when_all(connection.write(std::string_view("first")),
                                            connection.write(std::string_view("second")),
                                            connection.shutdown()));
-        co_return co_await read_to_end(connection).or_fail();
+        co_return co_await connection.read_to_end().or_fail();
     };
 
     auto [served, left] = run(serve(), client());
@@ -782,14 +929,14 @@ ZEST_CASE(shutdown_leaves_the_peer_free_to_answer) {
     ASSERT(listener.has_value());
     auto serve = [&]() -> task<void, error> {
         auto connection = co_await listener->accept().or_fail();
-        auto request = co_await read_to_end(connection).or_fail();
+        auto request = co_await connection.read_to_end().or_fail();
         co_await connection.write(request + "-answered").or_fail();
     };
     auto client = [&]() -> task<std::string, error> {
         auto connection = co_await pipe::connect(name, loop).or_fail();
         co_await connection.write(std::string_view("asked")).or_fail();
         co_await connection.shutdown().or_fail();
-        co_return co_await read_to_end(connection).or_fail();
+        co_return co_await connection.read_to_end().or_fail();
     };
 
     auto [served, answer] = run(serve(), client());

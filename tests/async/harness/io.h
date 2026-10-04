@@ -1,10 +1,9 @@
 #pragma once
 
 // What the io tests share: finished() and winner() to cancel an operation
-// by racing it, and read_to_end() to read a stream to its end.
+// by racing it.
 
 #include <cstddef>
-#include <string>
 #include <utility>
 
 #include "kota/async/async.h"
@@ -27,21 +26,6 @@ task<std::size_t, error> winner(First first, Second second) {
         co_return picked.index();
     } else {
         co_return won.index();
-    }
-}
-
-/// Everything `reader` reads until the end of the stream.
-inline task<std::string, error> read_to_end(stream& reader) {
-    std::string all;
-    while(true) {
-        auto piece = co_await reader.read();
-        if(!piece) {
-            if(piece.error() != error::end_of_file) {
-                co_await fail(piece.error());
-            }
-            co_return all;
-        }
-        all += *piece;
     }
 }
 

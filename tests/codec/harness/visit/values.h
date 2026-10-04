@@ -18,6 +18,7 @@
 #include <variant>
 #include <vector>
 
+#include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/enums.h"
 #include "codec/harness/fixtures/everything.h"
@@ -130,6 +131,11 @@ void values(const Kit<B>& kit) {
                 {"c", 3}
             };
         });
+    // An element or a map value is value-initialized before it is read: the
+    // explicit default constructor of one of its members rejects `{}`.
+    roundtrip(kit, "explicit_default_constructor_elements_roundtrip", [] {
+        return ExplicitElements::typical();
+    });
     roundtrip(kit, "tuples_roundtrip", [] { return Tuples::typical(); });
     // Tuple-likes at the root and as elements, which a backend may lay out
     // otherwise than as fields.
@@ -215,6 +221,31 @@ void values(const Kit<B>& kit) {
         });
     if constexpr(B::caps.untrusted_input) {
         hostile(kit, "hostile_everything", [] { return Everything::typical(); });
+    }
+    if constexpr(B::caps.utf8_text) {
+        // "caf" and Latin-1's é, a lone byte UTF-8 does not have.
+        write_fails(kit,
+                    "string_not_utf8_fails",
+                    [] { return Field<std::string>{"caf\xE9"}; },
+                    {.message = "invalid UTF-8 in a string", .path = "value"});
+        write_fails(kit,
+                    "map_key_not_utf8_fails",
+                    [] { return Field<std::map<std::string, int>>{{{"caf\xE9", 1}}}; },
+                    {.message = "invalid UTF-8 in a string", .path = "value[0]"});
+        write_fails(kit,
+                    "c_string_not_utf8_fails",
+                    [] { return Field<const char*>{"caf\xE9"}; },
+                    {.message = "invalid UTF-8 in a string", .path = "value"});
+        encodes_as<ReplaceUTF8Config>(
+            kit,
+            "map_key_not_utf8_replaced_encodes_as_replacement_character",
+            [] { return Field<std::map<std::string, int>>{{{"caf\xE9", 1}}}; },
+            [] { return Field<std::map<std::string, int>>{{{"caf\xEF\xBF\xBD", 1}}}; });
+        encodes_as<ReplaceUTF8Config>(
+            kit,
+            "string_not_utf8_replaced_encodes_as_replacement_character",
+            [] { return Field<std::string>{"caf\xE9!"}; },
+            [] { return Field<std::string>{"caf\xEF\xBF\xBD!"}; });
     }
 
     if constexpr(B::caps.self_describing) {

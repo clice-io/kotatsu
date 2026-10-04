@@ -1,4 +1,7 @@
+#include <memory>
 #include <optional>
+#include <string>
+#include <vector>
 
 #include "kota/zest/async.h"
 #include "kota/zest/macro.h"
@@ -263,6 +266,227 @@ ZEST_CASE(nested_with_token_sharing_one_token_cancels_the_inner_task) {
     auto [guarded, driver] = run(with_token(outer(), token), fire());
     EXPECT(inner_cancelled);
     EXPECT(driver.has_value());
+}
+
+ZEST_CASE(default_token_never_fires) {
+    cancellation_token token;
+    bool called = false;
+    auto registration = token.on_cancel([&] { called = true; });
+
+    auto [guarded] = run(with_token(ready(3), token));
+    EXPECT(!token.cancelled());
+    ASSERT(guarded.has_value());
+    EXPECT(*guarded == 3);
+    EXPECT(!called);
+}
+
+// A wait on a token without a source ends only when it is cancelled.
+ZEST_CASE(default_token_wait_ends_when_cancelled) {
+    cancellation_token token;
+    auto waiting = token.wait();
+    auto canceller = [&]() -> task<> {
+        co_await yield();
+        waiting.cancel();
+    };
+
+    auto [waited, cancelled] = run(waiting, canceller());
+    EXPECT(waited.is_cancelled());
+    EXPECT(cancelled.has_value());
+}
+
+ZEST_CASE(on_cancel_runs_inside_cancel_in_registration_order) {
+    cancellation_source source;
+    auto token = source.token();
+    std::vector<std::string> order;
+    bool seen_cancelled = false;
+    auto first = token.on_cancel([&] {
+        seen_cancelled = token.cancelled();
+        order.emplace_back("first");
+    });
+    auto second = token.on_cancel([&] { order.emplace_back("second"); });
+
+    source.cancel();
+    order.emplace_back("returned");
+    source.cancel();
+    EXPECT(seen_cancelled);
+    EXPECT(order == std::vector<std::string>{"first", "second", "returned"});
+}
+
+ZEST_CASE(on_cancel_of_a_fired_token_runs_at_once) {
+    cancellation_source source;
+    source.cancel();
+    int calls = 0;
+    auto registration = source.token().on_cancel([&] { calls += 1; });
+    EXPECT(calls == 1);
+}
+
+ZEST_CASE(destroying_the_source_runs_the_callbacks) {
+    std::optional<cancellation_source> source(std::in_place);
+    int calls = 0;
+    auto registration = source->token().on_cancel([&] { calls += 1; });
+    source.reset();
+    EXPECT(calls == 1);
+}
+
+ZEST_CASE(destroyed_registration_never_runs) {
+    cancellation_source source;
+    int calls = 0;
+    {
+        auto registration = source.token().on_cancel([&] { calls += 1; });
+    }
+    source.cancel();
+    EXPECT(calls == 0);
+}
+
+ZEST_CASE(moved_registration_runs_once) {
+    cancellation_source source;
+    int calls = 0;
+    auto registration = source.token().on_cancel([&] { calls += 1; });
+    auto moved = std::move(registration);
+    cancellation_callback assigned;
+    assigned = std::move(moved);
+    source.cancel();
+    EXPECT(calls == 1);
+}
+
+ZEST_CASE(assigning_a_registration_deregisters_the_one_it_held) {
+    cancellation_source source;
+    int replaced = 0;
+    int kept = 0;
+    auto registration = source.token().on_cancel([&] { replaced += 1; });
+    registration = source.token().on_cancel([&] { kept += 1; });
+    source.cancel();
+    EXPECT(replaced == 0);
+    EXPECT(kept == 1);
+}
+
+ZEST_CASE(callback_deregistering_a_later_one_keeps_it_from_running) {
+    cancellation_source source;
+    auto token = source.token();
+    int later_calls = 0;
+    std::optional<cancellation_callback> later;
+    auto first = token.on_cancel([&] { later.reset(); });
+    later.emplace(token.on_cancel([&] { later_calls += 1; }));
+
+    source.cancel();
+    EXPECT(later_calls == 0);
+}
+
+ZEST_CASE(callback_may_destroy_its_own_registration) {
+    cancellation_source source;
+    auto token = source.token();
+    std::optional<cancellation_callback> own;
+    int calls = 0;
+    own.emplace(token.on_cancel([&] {
+        calls += 1;
+        own.reset();
+    }));
+
+    source.cancel();
+    EXPECT(calls == 1);
+    EXPECT(!own.has_value());
+}
+
+ZEST_CASE(callback_registering_another_runs_it_at_once) {
+    cancellation_source source;
+    auto token = source.token();
+    std::vector<std::string> order;
+    cancellation_callback nested;
+    auto outer = token.on_cancel([&] {
+        nested = token.on_cancel([&] { order.emplace_back("nested"); });
+        order.emplace_back("outer");
+    });
+
+    source.cancel();
+    EXPECT(order == std::vector<std::string>{"nested", "outer"});
+}
+
+ZEST_CASE(callback_may_destroy_the_source) {
+    auto source = std::make_unique<cancellation_source>();
+    auto token = source->token();
+    int later_calls = 0;
+    auto first = token.on_cancel([&] { source.reset(); });
+    auto later = token.on_cancel([&] { later_calls += 1; });
+
+    source->cancel();
+    EXPECT(source == nullptr);
+    EXPECT(later_calls == 1);
+}
+
+// A registration may outlive its source, which ran the callback as it went:
+// destroying the registration then does nothing more.
+ZEST_CASE(registration_outlives_its_source) {
+    int calls = 0;
+    cancellation_callback registration;
+    {
+        cancellation_source source;
+        registration = source.token().on_cancel([&] { calls += 1; });
+    }
+    EXPECT(calls == 1);
+    registration = cancellation_callback();
+    EXPECT(calls == 1);
+}
+
+// Callbacks run inside cancel(); the waits a token guards resume only after.
+ZEST_CASE(on_cancel_runs_before_the_waits_resume) {
+    cancellation_source source;
+    auto token = source.token();
+    std::vector<std::string> order;
+    auto registration = token.on_cancel([&] { order.emplace_back("callback"); });
+    auto waiter = [&]() -> task<> {
+        auto waited = co_await token.wait().catch_cancel();
+        if(waited.is_cancelled()) {
+            order.emplace_back("wait");
+        }
+    };
+    auto fire = [&]() -> task<> {
+        co_await yield();
+        source.cancel();
+        order.emplace_back("cancelled");
+    };
+
+    auto [waited, fired] = run(waiter(), fire());
+    EXPECT(waited.has_value());
+    EXPECT(fired.has_value());
+    EXPECT(order == std::vector<std::string>{"callback", "cancelled", "wait"});
+}
+
+// A cancel() made outside any task, here a relay's, runs every callback
+// before the waits it woke resume, even when a callback cancels a task.
+ZEST_CASE(on_cancel_outside_a_task_runs_every_callback_before_the_waits) {
+    cancellation_source source;
+    auto token = source.token();
+    event gate;
+    std::vector<std::string> order;
+    auto waiting = [&]() -> task<> {
+        co_await gate.wait();
+    };
+    auto guarded = [&]() -> task<> {
+        auto result = co_await with_token(waiting(), token);
+        if(result.is_cancelled()) {
+            order.emplace_back("guarded");
+        }
+    };
+    auto other = waiting();
+    auto first = token.on_cancel([&] {
+        other.cancel();
+        order.emplace_back("first");
+    });
+    auto second = token.on_cancel([&] { order.emplace_back("second"); });
+    auto relay = loop.create_relay();
+    auto firer = [&]() -> task<> {
+        co_await yield();
+        relay.send([&] {
+            source.cancel();
+            order.emplace_back("returned");
+        });
+    };
+
+    auto [guarded_result, other_result, fired] = run(guarded(), other, firer());
+    EXPECT(guarded_result.has_value());
+    EXPECT(other_result.is_cancelled());
+    EXPECT(fired.has_value());
+    EXPECT(order == std::vector<std::string>{"first", "second", "returned", "guarded"});
 }
 
 };  // ZEST_SUITE(async_runtime_cancellation)

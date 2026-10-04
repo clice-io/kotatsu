@@ -192,7 +192,8 @@ protected:
 /// stack frame still walking the children, so a child that finishes inside
 /// such a walk never settles the aggregate under it. What the aggregate
 /// settles as follows from what happened, in this order: a child failed, it
-/// was cancelled (by a child, or from outside), or it succeeded.
+/// was cancelled (by a when_all or when_any child, or from outside), or it
+/// succeeded.
 class aggregate_op : public async_node {
 protected:
     friend class async_node;
@@ -205,8 +206,8 @@ protected:
     /// error replaces any other: errors are never dropped.
     enum class Decision : std::uint8_t {
         None,
-        /// Resume the awaiting task: a when_any child won, or a task_group
-        /// child was cancelled or task_group::cancel() called.
+        /// Resume the awaiting task: a when_any child won, or
+        /// task_group::cancel() was called.
         Resume,
         /// A when_all or when_any child was cancelled.
         Cancel,

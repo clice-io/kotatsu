@@ -174,6 +174,11 @@ void attrs(const Kit<B>& kit) {
         };
     });
     roundtrip(kit, "as_roundtrip", as_targets);
+    // The target is value-initialized before it is read: the explicit default
+    // constructor of one of its members rejects `{}`.
+    roundtrip(kit, "as_value_initialized_target_roundtrip", [] {
+        return Field<TallyAsHeld>{TallyAsHeld(Tally(std::vector<int>{1, 2}))};
+    });
     using Decimal = meta::annotation<int, meta::behavior::with<DecimalText>>;
     auto decimal = [] {
         return Field<Decimal>{42};
@@ -201,6 +206,10 @@ void attrs(const Kit<B>& kit) {
         return std::string("fullControl");
     });
     roundtrip(kit, "enum_string_root_roundtrip", access_name);
+    write_fails(kit,
+                "enum_string_unnamed_value_fails",
+                [] { return Field<AccessName>{AccessName{static_cast<Access>(9)}}; },
+                {.message = "enum value 9 has no reflected name", .path = "value"});
     auto matching = [] {
         return Skippable{
             .id = 1,
@@ -223,6 +232,19 @@ void attrs(const Kit<B>& kit) {
             };
         },
         [] { return CellSkippedOnDecode{.cell = {}, .after = 7}; });
+    // ...into a value-initialized one, here of a type `{}` cannot make.
+    reads<HeldSkippedOnDecode>(
+        kit,
+        "skip_if_on_decode_reads_past_a_value_initialized_field",
+        [] {
+            return HeldSkippedOnDecodePlain{
+                .held = {.list = {1, 2}, .count = 2},
+                .after = 7
+            };
+        },
+        [] {
+            return HeldSkippedOnDecode{.held = {{.list = ExplicitList(), .count = 0}}, .after = 7};
+        });
     // A one-argument predicate judges the value being written: a decode
     // reads the field whatever the value it decodes into holds, here the
     // empty text the predicate matches.
@@ -278,6 +300,20 @@ void attrs(const Kit<B>& kit) {
         // Nothing can mark a field absent, so skip_if omits nothing: a field
         // it matches is written, and reads back over the initializer.
         roundtrip(kit, "skip_if_matching_fields_roundtrip", matching);
+    }
+
+    // omit_unstated_defaults leaves out a schema_default = false field where
+    // a field can be absent, and writes it where every field is written.
+    auto unstated = [] {
+        return WithUnstated{.id = 1, .seed = 7};
+    };
+    if constexpr(B::caps.absent_fields) {
+        encodes_as<OmitUnstatedConfig>(kit,
+                                       "omit_unstated_defaults_leaves_out_unstated_fields",
+                                       unstated,
+                                       [] { return IdOnly{.id = 1}; });
+    } else {
+        roundtrip<OmitUnstatedConfig>(kit, "omit_unstated_defaults_writes_every_field", unstated);
     }
 
     if constexpr(!B::caps.layout_computed) {
@@ -365,6 +401,47 @@ void attrs(const Kit<B>& kit) {
             "defaulted_present_reads",
             [] { return DefaultStructPlain{.with_default = 9, .version = "v1", .plain = 2}; },
             [] { return DefaultStruct{.with_default = 9, .version = "v1", .plain = 2}; });
+        // Under defaulted_fields every field may be absent, in the structs
+        // nested inside too, and keeps its value.
+        using Sections = std::map<std::string, Ints>;
+        reads<Tunables, DefaultedConfig>(
+            kit,
+            "defaulted_fields_config_reads_what_is_there",
+            [] {
+                return Sections{
+                    {"limits", {{"high", 20}}}
+                };
+            },
+            [] {
+                return Tunables{
+                    .threads = 4,
+                    .name = "worker",
+                    .limits = {.low = 1, .high = 20}
+                };
+            });
+        reads<TunablesHolder>(
+            kit,
+            "defaulted_fields_on_a_field_reads_what_is_there",
+            [] {
+                return std::map<std::string, std::variant<int, Sections>>{
+                    {"count",    3                                 },
+                    {"tunables", Sections{{"limits", {{"low", 0}}}}},
+                };
+            },
+            [] {
+                return TunablesHolder{
+                    .tunables = {{.threads = 4, .name = "worker", .limits = {.low = 0, .high = 9}}},
+                    .count = 3,
+                };
+            });
+        read_fails<TunablesHolder>(kit,
+                                   "defaulted_fields_on_a_field_holder_field_missing_fails",
+                                   [] {
+                                       return std::map<std::string, Sections>{
+                                           {"tunables", {}}
+                                       };
+                                   },
+                                   {.message = "missing required field 'count'", .path = ""});
         reads<Nullables>(
             kit,
             "nullable_fields_may_be_absent",
@@ -388,6 +465,107 @@ void attrs(const Kit<B>& kit) {
         reads<Point>(kit, "unknown_field_ignored", with_extra, [] {
             return Point{.x = 1, .y = 2};
         });
+        // An installed UnknownFields hears of every key nothing reads, under
+        // the path the document gives the object holding it.
+        reads_reporting<Layout>(
+            kit,
+            "unknown_fields_reported_at_every_depth",
+            [] {
+                return LayoutWithExtrasPlain{
+                    .id = 1,
+                    .origin = {.x = 1, .y = 2, .extra = true},
+                    .points = {{.x = 3, .y = 4, .extra = true}, {.x = 5, .y = 6, .extra = true}},
+                    .named = {{"a", {.x = 7, .y = 8, .extra = true}}},
+                    .stray = true,
+                };
+            },
+            [] {
+                return Layout{
+                    .id = 1,
+                    .origin = {.x = 1, .y = 2},
+                    .points = {{.x = 3, .y = 4}, {.x = 5, .y = 6}},
+                    .named = {{"a", {.x = 7, .y = 8}}},
+                };
+            },
+            {"unknown field 'stray'",
+             "unknown field 'extra' at origin",
+             "unknown field 'extra' at points[0]",
+             "unknown field 'extra' at points[1]",
+             "unknown field 'extra' at named.a"});
+        reads_reporting<Point>(
+            kit,
+            "known_fields_report_nothing",
+            [] { return Point{.x = 1, .y = 2}; },
+            [] { return Point{.x = 1, .y = 2}; },
+            {});
+        // With detailed_error off, the unknown fields have no paths either.
+        reads_reporting<Layout, NoPathConfig>(
+            kit,
+            "unknown_fields_reported_without_path_when_detail_is_off",
+            [] {
+                return LayoutWithExtrasPlain{
+                    .id = 1,
+                    .origin = {.x = 1, .y = 2, .extra = true},
+                    .points = {{.x = 3, .y = 4, .extra = true}},
+                    .named = {},
+                    .stray = true,
+                };
+            },
+            [] {
+                return Layout{
+                    .id = 1,
+                    .origin = {.x = 1, .y = 2},
+                    .points = {{.x = 3, .y = 4}},
+                    .named = {},
+                };
+            },
+            {"unknown field 'stray'", "unknown field 'extra'", "unknown field 'extra'"});
+        // A decode that fails keeps what it reported before.
+        read_fails_reporting<Point>(
+            kit,
+            "failed_decode_keeps_reported_fields_fails",
+            [] { return ExtraBeforeTextPlain{.extra = true, .x = "one", .y = 2}; },
+            {.message = "", .path = "x"},
+            {"unknown field 'extra'"});
+        // A path names a field as the document does, by an alias too.
+        reads_reporting<AliasedOrigin>(
+            kit,
+            "unknown_field_under_alias_reported_by_alias",
+            [] {
+                return AnchorPlain<PointWithExtra>{
+                    {.x = 1, .y = 2, .extra = true}
+                };
+            },
+            [] { return AliasedOrigin{{{.x = 1, .y = 2}}}; },
+            {"unknown field 'extra' at anchor"});
+        read_fails<AliasedOrigin>(
+            kit,
+            "field_under_alias_mismatch_fails_at_alias",
+            [] { return AnchorPlain<std::map<std::string, std::string>>{{{"x", "one"}}}; },
+            {.message = "", .path = "anchor.x"});
+        // An untagged probe that fails takes back what it reported: Measured
+        // reads x and y, passes over extra, then misses its length.
+        reads_reporting<Field<std::variant<Measured, Point>>>(
+            kit,
+            "failed_probe_takes_back_its_unknown_fields",
+            [] {
+                return Field<PointWithExtra>{
+                    {.x = 1, .y = 2, .extra = true}
+                };
+            },
+            [] {
+                return Field<std::variant<Measured, Point>>{
+                    Point{.x = 1, .y = 2}
+                };
+            },
+            {"unknown field 'extra' at value"});
+        // Where unknown fields are denied the first fails, and is not reported.
+        read_fails_reporting<StrictRoot>(
+            kit,
+            "denied_unknown_field_fails_unreported",
+            [] { return RenameTargetWithExtra{.user_name = 7, .display_name = "ada", .extra = 1}; },
+            {.message = "unknown field 'extra'", .path = ""},
+            {});
         read_fails<StrictRoot>(
             kit,
             "unknown_field_fails",
@@ -484,7 +662,7 @@ void attrs(const Kit<B>& kit) {
                                           {"b", "two"}
                                       };
                                   },
-                                  {.message = "", .path = "value[1]"});
+                                  {.message = "", .path = "value.b"});
         read_in_field_fails<std::map<int, int>>(
             kit,
             "map_key_not_integer_fails",
@@ -493,7 +671,7 @@ void attrs(const Kit<B>& kit) {
                     {"abc", 1}
                 };
             },
-            {.message = "cannot parse map key 'abc' as integer", .path = "value[0]"});
+            {.message = "cannot parse map key 'abc' as integer", .path = "value.abc"});
         read_in_field_fails<std::map<std::uint32_t, int>>(
             kit,
             "map_key_negative_unsigned_fails",
@@ -502,7 +680,7 @@ void attrs(const Kit<B>& kit) {
                     {"-1", 1}
                 };
             },
-            {.message = "cannot parse map key '-1' as unsigned integer", .path = "value[0]"});
+            {.message = "cannot parse map key '-1' as unsigned integer", .path = "value.-1"});
         auto wide_key = [] {
             return Ints{
                 {"1",   1},
@@ -513,12 +691,12 @@ void attrs(const Kit<B>& kit) {
             kit,
             "map_key_out_of_integer_range_fails",
             wide_key,
-            {.message = "map key '300' out of integer range", .path = "value[1]"});
+            {.message = "map key '300' out of integer range", .path = "value.300"});
         read_in_field_fails<std::map<std::uint8_t, int>>(
             kit,
             "map_key_out_of_unsigned_range_fails",
             wide_key,
-            {.message = "map key '300' out of unsigned integer range", .path = "value[1]"});
+            {.message = "map key '300' out of unsigned integer range", .path = "value.300"});
         read_in_field_fails<std::tuple<int, int>>(
             kit,
             "tuple_too_long_fails",

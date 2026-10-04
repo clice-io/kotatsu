@@ -11,10 +11,12 @@
 #include <utility>
 #include <variant>
 
+#include "common.h"
 #include "config.h"
 #include "context.h"
 #include "dispatch.h"
 #include "kota/support/type_list.h"
+#include "kota/support/utf8.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
 #include "kota/meta/enum.h"
@@ -46,7 +48,40 @@ bool encode_value(Vis& vis, const T& value);
 template <typename Config, typename Vis, typename T>
 bool encode_struct_fields(Vis& vis, const T& value);
 
+/// True when the visitor writes UTF-8 text (json, toml), which its format tag
+/// says, so its value and map key writers alike.
+template <typename Vis>
+concept writes_utf8 = requires { requires meta::format_of_t<Vis>::utf8; };
+
 namespace detail {
+
+/// Writes text, a string the value holds. A visitor writing UTF-8 text gets
+/// it checked first: one that is not UTF-8 fails, or is replaced as a decoder
+/// reads it, as Config::invalid_utf8 says. Names the program declares (field
+/// and tag names, enumerator spellings) are written as they are.
+template <typename Config, typename Vis, typename Text>
+bool encode_text(Vis& vis, const Text& text) {
+    if constexpr(writes_utf8<Vis>) {
+        std::string_view view(text);
+        if(!is_utf8(view)) {
+            if constexpr(Config::invalid_utf8 == invalid_utf8::Replace) {
+                return vis.visit_str(replace_invalid_utf8(view));
+            } else {
+                return scoped_context<rich_error>::fail(rich_error("invalid UTF-8 in a string"));
+            }
+        }
+    }
+    return vis.visit_str(text);
+}
+
+/// Fails the encode of an enum value without a reflected member name, which
+/// has no string spelling: "" would make a document no decode maps back.
+template <typename E>
+bool fail_unnamed_enum(E value) {
+    // Unary plus keeps a char-sized underlying value a number.
+    return scoped_context<rich_error>::fail(
+        rich_error(std::format("enum value {} has no reflected name", +std::to_underlying(value))));
+}
 
 /// Encode a value through a representation declaration (a meta::repr
 /// specialization or a behavior::with adapter): declarative to() when
@@ -128,6 +163,7 @@ bool encode_tagged_variant(Vis& vis, const Var& var) {
                         using alt_t = std::remove_cvref_t<decltype(alt)>;
                         static_assert(meta::reflectable_class<alt_t>,
                                       "internally tagged requires struct alternatives");
+                        assert_internal_tag_fits<Config, SpecAttr, alt_t>();
                         return vis.visit_struct(alt, [&](auto& sv) -> bool {
                             KOTA_CODEC_TRY(sv.visit_field(
                                 std::size_t(0),
@@ -161,7 +197,7 @@ bool encode_tagged_variant(Vis& vis, const Var& var) {
 
 /// Encodes a value under a node's attributes (a struct field's, or an
 /// annotation's): behavior::with > behavior::as > behavior::enum_string >
-/// variant tagging > the rename_all / deny_unknown_fields merge, the
+/// variant tagging > the struct-level policy merge (merged_config_t), the
 /// precedence meta's repr resolver replays.
 template <typename Config, typename Attrs, typename Vis, typename T>
 bool encode_with_attrs(Vis& vis, const T& value) {
@@ -175,7 +211,11 @@ bool encode_with_attrs(Vis& vis, const T& value) {
     } else if constexpr(tuple_has_spec_v<Attrs, meta::behavior::enum_string>) {
         using policy = typename tuple_find_spec_t<Attrs, meta::behavior::enum_string>::policy;
         static_assert(std::is_enum_v<T>, "behavior::enum_string requires an enum type");
-        auto renamed = policy{}(true, meta::enum_name(value));
+        auto raw = meta::enum_name(value);
+        if(raw.empty()) {
+            return fail_unnamed_enum(value);
+        }
+        auto renamed = policy{}(true, raw);
         return vis.visit_str(std::string_view(renamed));
     } else if constexpr(meta::struct_spec_of<Attrs>.tagging != meta::tag_mode::none) {
         static_assert(taggable<T>, "a tagging attribute requires a std::variant");
@@ -190,23 +230,28 @@ bool encode_with_attrs(Vis& vis, const T& value) {
 template <typename Config, std::size_t I, typename Vis, typename T>
 bool encode_one_field(Vis& vis, const T& value) {
     using field = FieldAt<Config, I, T>;
-    const auto& field_ref = field::of(value);
 
     // A visitor that writes every field has nothing to mark one absent, so
-    // skip_if omits fields only elsewhere.
-    if constexpr(!writes_every_field<Vis>) {
-        if(skipped<typename field::attrs>(field_ref, true)) {
-            return true;
+    // skip_if and omit_unstated_defaults omit fields only elsewhere.
+    if constexpr(!writes_every_field<Vis> && Config::omit_unstated_defaults &&
+                 !field::schema::fields[I].schema_default) {
+        return true;
+    } else {
+        const auto& field_ref = field::of(value);
+        if constexpr(!writes_every_field<Vis>) {
+            if(skipped<typename field::attrs>(field_ref, true)) {
+                return true;
+            }
         }
-    }
 
-    bool ok =
-        vis.visit_field(std::integral_constant<std::size_t, I>{},
-                        field::name,
-                        [&](auto& fv) -> bool {
-                            return encode_with_attrs<Config, typename field::attrs>(fv, field_ref);
-                        });
-    return trace_path<Config>(ok, field::name);
+        bool ok = vis.visit_field(
+            std::integral_constant<std::size_t, I>{},
+            field::name,
+            [&](auto& fv) -> bool {
+                return encode_with_attrs<Config, typename field::attrs>(fv, field_ref);
+            });
+        return trace_path<Config>(ok, field::name);
+    }
 }
 
 }  // namespace detail
@@ -260,7 +305,7 @@ bool encode_value(Vis& vis, const T& value) {
             // A char array need not end in a null character, so its text
             // stops at the array's end.
             std::string_view text(value, std::extent_v<T>);
-            return vis.visit_str(text.substr(0, text.find('\0')));
+            return detail::encode_text<Config>(vis, text.substr(0, text.find('\0')));
         } else if constexpr(meta::str_like<T> && std::is_pointer_v<T>) {
             // A null C string holds no text at all: it writes null, where
             // the visitor can write one; a map key writer cannot.
@@ -271,9 +316,9 @@ bool encode_value(Vis& vis, const T& value) {
                     return scoped_context<rich_error>::fail(rich_error("null C string map key"));
                 }
             }
-            return vis.visit_str(value);
+            return detail::encode_text<Config>(vis, value);
         } else if constexpr(meta::str_like<T>) {
-            return vis.visit_str(value);
+            return detail::encode_text<Config>(vis, value);
         } else if constexpr(kind == character) {
             return vis.visit_char(value);
         } else if constexpr(kind == bytes) {
@@ -304,15 +349,9 @@ bool encode_value(Vis& vis, const T& value) {
             }
         } else if constexpr(kind == enumeration) {
             if constexpr(Config::enum_repr == enum_repr::String) {
-                // A value without a reflected member name has no string
-                // spelling: emitting "" would produce a document the decode
-                // side can never map back, so fail loudly instead.
                 auto raw = meta::enum_name(value);
                 if(raw.empty()) {
-                    // Unary plus keeps a char-sized underlying value a number.
-                    return scoped_context<rich_error>::fail(
-                        rich_error(std::format("enum value {} has no reflected name",
-                                               +std::to_underlying(value))));
+                    return detail::fail_unnamed_enum(value);
                 }
                 auto name = apply_enum_rename<Config>(true, raw);
                 std::string_view sv(name);

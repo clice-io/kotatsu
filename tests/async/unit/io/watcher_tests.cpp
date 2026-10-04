@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "async/harness/io.h"
+#include "async/harness/pending_op.h"
 #include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
@@ -167,6 +168,104 @@ ZEST_CASE(sleep_can_be_cancelled) {
     auto [result] = run(winner(sleep(1h, loop), yield(loop)));
     ASSERT(result.has_value());
     EXPECT(*result == 1U);
+}
+
+ZEST_CASE(with_timeout_passes_the_value_through) {
+    auto value = []() -> task<int> {
+        co_await yield();
+        co_return 7;
+    };
+
+    auto [result] = run(with_timeout(value(), 1h, loop));
+    ASSERT(result.has_value());
+    EXPECT(*result == 7);
+}
+
+ZEST_CASE(with_timeout_passes_the_error_through) {
+    auto failing = []() -> task<int, error> {
+        co_await fail(error::connection_refused);
+    };
+
+    auto [result] = run(with_timeout(failing(), 1h, loop));
+    ASSERT(result.has_error());
+    EXPECT(result.error() == error::connection_refused);
+}
+
+ZEST_CASE(with_timeout_cancels_a_task_past_its_deadline) {
+    event gate;
+    auto waiting = [&]() -> task<> {
+        co_await gate.wait();
+    };
+
+    auto [result] = run(with_timeout(waiting(), 1ms, loop));
+    EXPECT(result.is_cancelled());
+    EXPECT(!gate.has_waiters());
+}
+
+// A deadline already past lets the task start, and cancels it on the loop's
+// next turn.
+ZEST_CASE(with_timeout_past_its_deadline_cancels_on_the_next_turn) {
+    event gate;
+    bool started = false;
+    auto waiting = [&]() -> task<> {
+        started = true;
+        co_await gate.wait();
+    };
+
+    auto [result] = run(with_timeout(waiting(), -1ms, loop));
+    EXPECT(result.is_cancelled());
+    EXPECT(started);
+}
+
+// A cancel from outside ends the task and the deadline's timer with it, long
+// before the deadline.
+ZEST_CASE(with_timeout_ends_when_cancelled_from_outside) {
+    event gate;
+    auto waiting = [&]() -> task<> {
+        co_await gate.wait();
+    };
+    auto timed = [&]() -> task<> {
+        co_await with_timeout(waiting(), 1h, loop);
+    };
+    auto watched = timed();
+    auto canceller = [&]() -> task<> {
+        co_await yield();
+        watched.cancel();
+    };
+
+    auto [result, cancelling] = run(watched, canceller());
+    EXPECT(result.is_cancelled());
+    EXPECT(cancelling.has_value());
+    EXPECT(!gate.has_waiters());
+}
+
+// The deadline cancels the task, which ends only once what it awaits has; the
+// timeout ends with it.
+ZEST_CASE(with_timeout_ends_once_the_cancelled_task_has) {
+    test::PendingOp op;
+    auto pending = [&]() -> task<> {
+        co_await op;
+    };
+    bool ended = false;
+    auto timed = [&]() -> task<bool> {
+        auto timed_out = co_await with_timeout(pending(), 1ms, loop);
+        ended = true;
+        co_return timed_out.is_cancelled();
+    };
+    auto completer = [&]() -> task<bool> {
+        while(!op.cancel_requested()) {
+            co_await yield();
+        }
+        bool ended_before_the_task = ended;
+        op.complete();
+        co_return ended_before_the_task;
+    };
+
+    auto [result, ended_early] = run(timed(), completer());
+    ASSERT(result.has_value());
+    EXPECT(*result);
+    ASSERT(ended_early.has_value());
+    EXPECT(!*ended_early);
 }
 
 // prepare and check wake around the poll, which blocks when nothing else is

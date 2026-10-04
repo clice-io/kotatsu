@@ -38,6 +38,10 @@ public:
 
     explicit StreamTransport(stream stream, std::size_t max_payload = default_max_payload);
 
+    /// Over the process's stdin and stdout. stdin must be a pipe, a console
+    /// or a socket: a file, a device or anything else fails. stdout may be a
+    /// file or a device too, except on Windows, which opens a pipe's handle
+    /// only.
     static Result<std::unique_ptr<StreamTransport>>
         open_stdio(event_loop& loop, std::size_t max_payload = default_max_payload);
 
