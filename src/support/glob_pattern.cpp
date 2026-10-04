@@ -15,6 +15,17 @@ namespace kota {
 
 namespace {
 
+/// `\`, which escapes the byte after it, and the bytes that start a
+/// wildcard: where the plain text a pattern starts with ends.
+constexpr std::string_view escape_or_wildcard = R"(\?*[{)";
+
+/// The bytes that start a wildcard, unless a `\` escapes them.
+constexpr std::string_view wildcards = escape_or_wildcard.substr(1);
+
+/// The bytes escape() escapes: the escape itself, the wildcards, and the
+/// bytes that close a wildcard or end a brace term.
+constexpr std::string_view special_bytes = R"(\?*[]{},)";
+
 /// One matching unit: a decoded Unicode scalar value, or a byte that is
 /// not valid UTF-8 mapped above the Unicode range so it only compares
 /// equal to the same byte. Patterns are validated to be UTF-8 at create(),
@@ -350,7 +361,7 @@ std::expected<GlobPattern, GlobError> GlobPattern::create(std::string_view s, si
     }
 
     GlobPattern pat;
-    size_t prefix_size = s.find_first_of("?*[{\\");
+    size_t prefix_size = s.find_first_of(escape_or_wildcard);
     if(prefix_size == std::string_view::npos) {
         prefix_size = s.size();
     }
@@ -378,7 +389,7 @@ std::expected<GlobPattern, GlobError> GlobPattern::create(std::string_view s, si
                                   "`/` cannot be escaped"}
                     };
                 }
-            } else if(std::string_view("?*[{").contains(s[i])) {
+            } else if(wildcards.contains(s[i])) {
                 break;
             }
             pat.prefix += s[i++];
@@ -484,6 +495,42 @@ std::expected<GlobPattern, GlobError> GlobPattern::create(std::string_view s, si
     }
 
     return pat;
+}
+
+std::string GlobPattern::escape(std::string_view literal) {
+    std::string escaped;
+    escaped.reserve(literal.size());
+    for(char c: literal) {
+        if(special_bytes.contains(c)) {
+            escaped += '\\';
+        }
+        escaped += c;
+    }
+    return escaped;
+}
+
+GlobRoot GlobPattern::split_root(std::string_view pattern) {
+    GlobRoot root;
+    // The segment being read, its escapes resolved, which joins the
+    // directory once a `/` ends it.
+    std::string segment;
+    size_t cut = 0;
+    for(size_t i = 0; i < pattern.size() && !wildcards.contains(pattern[i]); ++i) {
+        if(pattern[i] == '/') {
+            root.directory += segment;
+            root.directory += '/';
+            segment.clear();
+            cut = i + 1;
+            continue;
+        }
+        // An escape names the byte after it.
+        if(pattern[i] == '\\' && i + 1 < pattern.size()) {
+            ++i;
+        }
+        segment += pattern[i];
+    }
+    root.rest = pattern.substr(cut);
+    return root;
 }
 
 std::expected<void, GlobError> GlobPattern::compile_arm(std::string_view s, bool at_segment_start) {

@@ -34,6 +34,17 @@ struct GlobError {
     std::string message;
 };
 
+/// A pattern cut at its literal root (GlobPattern::split_root()): the
+/// directory every path it matches is in, or is, and the rest.
+struct GlobRoot {
+    /// The directory, its escapes resolved, up to and including its last `/`;
+    /// empty when the pattern's first segment has a wildcard.
+    std::string directory;
+
+    /// The rest of the pattern, as written.
+    std::string_view rest;
+};
+
 /// Glob pattern matcher supporting VS Code-style glob syntax.
 /// Case-sensitive, whole-string matching. Callers normalize path separators
 /// to `/`; backslashes in inputs, pattern whitespace and trailing `/` are literal.
@@ -75,6 +86,21 @@ public:
     /// choice of the braces' terms; 0 turns it off, and braces then match themselves.
     [[nodiscard]] static std::expected<GlobPattern, GlobError> create(std::string_view s,
                                                                       size_t max_arms = 100);
+
+    /// `literal` as a pattern that matches it and nothing else, each of
+    /// `\ ? * [ ] { } ,` escaped, so that it also stands as a term of a brace
+    /// expression. `/` stays a separator, as it cannot be escaped: a literal
+    /// with `//` has no pattern, and create() rejects its escape with
+    /// MultipleSlash.
+    [[nodiscard]] static std::string escape(std::string_view literal);
+
+    /// `pattern` cut at the last `/` before its first unescaped `?`, `*`, `[`
+    /// or `{`, so that every path it matches is in, or is, the directory
+    /// before the cut: `src/a{b,c}/*.cpp` cuts into `src/` and `a{b,c}/*.cpp`,
+    /// `*.cpp` into no directory and itself, and a pattern without wildcards
+    /// at its last `/`. The pattern is not validated; create() reports what is
+    /// wrong with it.
+    [[nodiscard]] static GlobRoot split_root(std::string_view pattern);
 
     [[nodiscard]] bool is_trivial_match_all() const {
         return mode == Mode::Any;
